@@ -44,8 +44,8 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 - [provider-conventions.md](references/provider-conventions.md) — provider 모듈 작성 규칙 (action id 명명, 재시도, 모델 배치, 서버 필터와 클라이언트 후처리)
 - [output-contract.md](references/output-contract.md) — CLI 출력·에러·exit code 규약, `Listing` 필드 규칙
 - [code-style.md](references/code-style.md) — 문자열, import 순서, pydantic 선언, 타입 힌트, docstring, 테스트 코드 형식
-- [deploy.md](references/deploy.md) — 이슈 → 브랜치 → 커밋 → PR 절차
-- [release.md](references/release.md) — 버전 번호 규칙, CHANGELOG 쓰는 법, 릴리스·태그 절차
+- [workflow.md](references/workflow.md) — 이슈 → 브랜치 → 커밋 → PR 절차
+- [release.md](references/release.md) — 버전 번호 규칙, CHANGELOG 쓰는 법, 릴리스·태그·GitHub Release 절차
 
 소스별 개발 가이드 (`references/providers/`) — 그 소스에만 있는 구현·예외
 
@@ -70,9 +70,9 @@ README는 제작 목적·설치·LLM 연결 방법·문서 링크를 담는다. 
 
 ## 작업 절차
 
-커밋 전에 **[references/deploy.md](references/deploy.md)** 를 읽는다. 요약:
+커밋 전에 **[references/workflow.md](references/workflow.md)** 를 읽는다. 요약:
 **커밋 전에 `.github/ISSUE_TEMPLATE/` 템플릿으로 이슈를 연다.** `main` 에 직접 커밋하지 않고
 `<type>/<slug>` 브랜치에서 `Refs #12` 로 이슈를 달아 커밋한다. 모든 변경은 PR 템플릿을 채운 PR 로
 들어가고, 이슈는 PR 본문(`Closes #12`)에서 닫는다. 커밋 하나에 관심사 하나, `git add -A` 금지.
-사용자에게 보이는 변경은 그 PR 에서 `CHANGELOG.md` 에 적는다. 버전 올리기·태그는
+사용자에게 보이는 변경은 그 PR 에서 `CHANGELOG.md` 에 적는다. 버전 올리기·태그·GitHub Release 는
 [references/release.md](references/release.md) 를 따른다.

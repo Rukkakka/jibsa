@@ -1,6 +1,6 @@
 # Release
 
-버전 번호를 정하는 규칙과 릴리스 절차. 변경이 `main` 에 들어가기까지의 절차는 [deploy.md](deploy.md) 를 본다.
+버전 번호를 정하는 규칙과 릴리스 절차. 변경이 `main` 에 들어가기까지의 절차는 [workflow.md](workflow.md) 를 본다.
 
 ## 버전은 `pyproject.toml` 한 곳에
 
@@ -66,7 +66,7 @@
 변경이 어느 정도 모이면 릴리스한다. 정해진 주기는 없다. 사용자는 `upgrade` 할 때 `main` 을 바로 받으므로,
 릴리스는 급한 수정을 내보내는 일이 아니라 "이 커밋이 몇 버전"인지 이름을 붙이는 일이다.
 
-1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([deploy.md](deploy.md)).
+1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([workflow.md](workflow.md)).
 2. 한 커밋으로 아래 두 가지를 바꾼다.
    - `pyproject.toml` 의 `version` 을 올린다. `Unreleased` 에 `수정` 만 있으면 패치, 다른 분류가 하나라도 있으면
      작은 자리 (1.0 이후 `⚠️ 호환 깨짐` 은 앞자리).
@@ -80,6 +80,24 @@
    git push origin v0.2.0
    ```
 
-5. (선택) GitHub 에서 그 태그로 Release 를 만들고 본문에 CHANGELOG 의 해당 절을 붙인다.
+5. 그 태그로 GitHub Release 를 만든다. 본문은 CHANGELOG 의 해당 절이고, 저장소 첫 화면의 Releases 에 버전과
+   변경 내용이 보인다.
+
+   ```
+   awk '/^## 0\.2\.0/{f=1; next} /^## /{if (f) exit} f' CHANGELOG.md > /tmp/notes.md
+   gh release create v0.2.0 --verify-tag --title v0.2.0 --notes-file /tmp/notes.md
+   ```
+
+   `--verify-tag` 는 push 한 태그가 없으면 멈춘다. 빼면 `gh` 가 기본 브랜치 끝에 태그를 새로 만든다.
+6. GitHub 주소로 새로 설치해 버전을 확인한다. 쓰던 설치본을 건드리지 않게 임시 가상환경에 설치하고, 실제 조회도
+   한 번 해 본다.
+
+   ```
+   python3 -m venv /tmp/jibsa-check
+   /tmp/jibsa-check/bin/pip install -q git+https://github.com/Rukkakka/jibsa
+   /tmp/jibsa-check/bin/jibsa --version   # jibsa 0.2.0 (커밋 <머지 커밋>)
+   /tmp/jibsa-check/bin/jibsa daangn search listings 역삼동 --limit 1
+   rm -rf /tmp/jibsa-check
+   ```
 
 태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리킨다.

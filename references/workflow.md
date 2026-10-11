@@ -1,7 +1,7 @@
-# Deploy
+# Workflow
 
 작업이 아이디어에서 `main` 에 들어가기까지의 절차. 형식 규칙은
-[code-style.md](code-style.md), 버전 번호와 릴리스는 [release.md](release.md) 를 본다.
+[code-style.md](code-style.md), 버전 번호·태그·GitHub Release 는 [release.md](release.md) 를 본다.
 
 ## 모든 커밋은 이슈에서 시작한다
 
