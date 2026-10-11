@@ -748,7 +748,7 @@ def _search_result(
         listings=listings,
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다
         notes=notes
-        + limit_notes(in_radius, len(listings), limit, approximate=True)
+        + limit_notes(in_radius, len(listings), limit, approximate=True, radius=True)
         + beyond_radius_notes(listings, radius_km),
     )
 

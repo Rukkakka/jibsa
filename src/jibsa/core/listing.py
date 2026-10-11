@@ -193,6 +193,7 @@ def limit_notes(
     approximate: bool = False,
     basis: str = '',
     narrow: str = '거래 유형·매물 유형·가격 조건',
+    radius: bool = False,
 ) -> list[str]:
     """조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려줄 때의 안내.
 
@@ -207,17 +208,19 @@ def limit_notes(
         approximate: `total` 이 근사값이면 True ('약 N건').
         basis: `total` 이 어떤 조건까지 적용한 수인지 덧붙일 말 (예: '가격 조건 적용 전').
         narrow: 좁히라고 권할 조건. 그 명령에 있는 옵션만 적는다 (예: 상가 '업종·가격 조건').
+        radius: 반경 검색이면 True. 역·좌표로 이미 좁게 찾았으니 역 이름 대신 `--radius` 를 줄이라고 권한다
+            (동 경계·시군구 검색에 권하는 '역 이름처럼 더 좁은 지역' 을 강남역 검색에도 붙이던 문제).
     """
     if returned < limit:
         return []
     if total is None or total <= returned:
         return []
     lead = f"조건에 맞는 매물이 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '') + '이라'
+    area = '--radius 를 줄여' if radius else '역 이름처럼 더 좁은 지역으로'
     # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
     return [
         f'{lead} {order} {returned}건만 보여 줍니다. '
-        f'--limit 을 늘리거나, {narrow}을 좁히거나, '
-        '역 이름처럼 더 좁은 지역으로 다시 검색하세요'
+        f'--limit 을 늘리거나, {narrow}을 좁히거나, {area} 다시 검색하세요'
     ]
 
 
