@@ -1,0 +1,642 @@
+{
+ "_comment": "README 데모용 가상 응답. 매물 번호·제목·가격·지번은 모두 지어낸 값이고, 역 이름·좌표만 공개 지역 정보다.",
+ "search": {
+  "success": true,
+  "code": "200",
+  "items": [
+   {
+    "id": 31,
+    "type": "subway",
+    "name": "강남역",
+    "hint": "2호선, 신분당선",
+    "description": "서울특별시 강남구 역삼동",
+    "lat": 37.497942,
+    "lng": 127.027621,
+    "zoom": 3,
+    "polygon": [
+     [
+      734.75,
+      398.75
+     ],
+     [
+      734.75,
+      419.25
+     ],
+     [
+      755.75,
+      419.25
+     ],
+     [
+      755.75,
+      398.75
+     ],
+     [
+      734.75,
+      398.75
+     ]
+    ],
+    "_score": null,
+    "_source": {
+     "name_length": 3,
+     "local1": "서울특별시",
+     "local2": "강남구",
+     "local3": "역삼동",
+     "suggestions": [],
+     "suggestions_insensitive": [],
+     "distance": 1000
+    },
+    "zoom_level": {
+     "google": 14,
+     "daum": 4
+    },
+    "zoom_level_v2": {
+     "app": 6,
+     "web": 4
+    }
+   }
+  ],
+  "next": null,
+  "limit": 10
+ },
+ "token": {
+  "result": true,
+  "token": "00000000-0000-0000-0000-000000000000"
+ },
+ "pins": {
+  "onerooms": [
+   {
+    "id": 90000101,
+    "lat": 37.499027,
+    "lng": 127.028755,
+    "userNo": 0
+   },
+   {
+    "id": 90000102,
+    "lat": 37.500474,
+    "lng": 127.030115,
+    "userNo": 0
+   },
+   {
+    "id": 90000103,
+    "lat": 37.501559,
+    "lng": 127.023653,
+    "userNo": 0
+   },
+   {
+    "id": 90000104,
+    "lat": 37.49342,
+    "lng": 127.032156,
+    "userNo": 0
+   },
+   {
+    "id": 90000105,
+    "lat": 37.492697,
+    "lng": 127.022179,
+    "userNo": 0
+   },
+   {
+    "id": 90000106,
+    "lat": 37.503911,
+    "lng": 127.03329,
+    "userNo": 0
+   }
+  ],
+  "officetels": [
+   {
+    "id": 90000201,
+    "lat": 37.496585,
+    "lng": 127.02558,
+    "userNo": 0,
+    "buildingId": 99001
+   },
+   {
+    "id": 90000202,
+    "lat": 37.502012,
+    "lng": 127.032383,
+    "userNo": 0,
+    "buildingId": 99002
+   },
+   {
+    "id": 90000203,
+    "lat": 37.492335,
+    "lng": 127.033857,
+    "userNo": 0,
+    "buildingId": 99003
+   }
+  ],
+  "villas": [
+   {
+    "id": 90000301,
+    "lat": 37.495229,
+    "lng": 127.024787,
+    "userNo": 0
+   },
+   {
+    "id": 90000302,
+    "lat": 37.502916,
+    "lng": 127.021952,
+    "userNo": 0
+   },
+   {
+    "id": 90000303,
+    "lat": 37.491611,
+    "lng": 127.021385,
+    "userNo": 0
+   }
+  ]
+ },
+ "summaries": {
+  "90000101": {
+   "item_id": 90000101,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 65,
+   "size_m2": 23.1,
+   "공급면적": {
+    "m2": 32.34,
+    "p": "9.8"
+   },
+   "전용면적": {
+    "m2": 23.1,
+    "p": "7.0"
+   },
+   "floor": "3",
+   "floor_string": "3",
+   "building_floor": "5",
+   "title": "강남역 3분 풀옵션 분리형 원룸",
+   "room_type": "02",
+   "status": true,
+   "tags": [],
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.499027,
+    "lng": 127.028755
+   },
+   "manage_cost": "70000",
+   "reg_date": "2026-10-09T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "local4": "",
+    "address2": "823-12",
+    "localText": "강남구 역삼동",
+    "fullText": "서울특별시 강남구 역삼동"
+   },
+   "address1": "서울특별시 강남구 역삼동"
+  },
+  "90000201": {
+   "item_id": 90000201,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 70,
+   "size_m2": 19.8,
+   "공급면적": {
+    "m2": 27.72,
+    "p": "8.4"
+   },
+   "전용면적": {
+    "m2": 19.8,
+    "p": "6.0"
+   },
+   "floor": "고",
+   "floor_string": "고",
+   "building_floor": "15",
+   "title": "강남역 신축 오피스텔 주차 가능 즉시 입주",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "오피스텔",
+   "location": {
+    "lat": 37.496585,
+    "lng": 127.02558
+   },
+   "manage_cost": "120000",
+   "reg_date": "2026-10-08T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "local4": "",
+    "address2": "1317-3",
+    "localText": "서초구 서초동",
+    "fullText": "서울특별시 서초구 서초동"
+   },
+   "address1": "서울특별시 서초구 서초동"
+  },
+  "90000102": {
+   "item_id": 90000102,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 500,
+   "rent": 55,
+   "size_m2": 16.5,
+   "공급면적": {
+    "m2": 23.1,
+    "p": "7.0"
+   },
+   "전용면적": {
+    "m2": 16.5,
+    "p": "5.0"
+   },
+   "floor": "2",
+   "floor_string": "2",
+   "building_floor": "4",
+   "title": "채광 좋은 남향 원룸 관리비 저렴",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.500474,
+    "lng": 127.030115
+   },
+   "manage_cost": "50000",
+   "reg_date": "2026-10-07T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "local4": "",
+    "address2": "817-27",
+    "localText": "강남구 역삼동",
+    "fullText": "서울특별시 강남구 역삼동"
+   },
+   "address1": "서울특별시 강남구 역삼동"
+  },
+  "90000301": {
+   "item_id": 90000301,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 2000,
+   "rent": 60,
+   "size_m2": 26.4,
+   "공급면적": {
+    "m2": 36.96,
+    "p": "11.2"
+   },
+   "전용면적": {
+    "m2": 26.4,
+    "p": "8.0"
+   },
+   "floor": "1",
+   "floor_string": "1",
+   "building_floor": "4",
+   "title": "넓은 원룸 반려동물 협의 가능",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "빌라",
+   "location": {
+    "lat": 37.495229,
+    "lng": 127.024787
+   },
+   "manage_cost": "60000",
+   "reg_date": "2026-10-06T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "local4": "",
+    "address2": "1338-5",
+    "localText": "서초구 서초동",
+    "fullText": "서울특별시 서초구 서초동"
+   },
+   "address1": "서울특별시 서초구 서초동"
+  },
+  "90000103": {
+   "item_id": 90000103,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 68,
+   "size_m2": 21.5,
+   "공급면적": {
+    "m2": 30.1,
+    "p": "9.1"
+   },
+   "전용면적": {
+    "m2": 21.5,
+    "p": "6.5"
+   },
+   "floor": "4",
+   "floor_string": "4",
+   "building_floor": "5",
+   "title": "복층 원룸 수납 넉넉 역세권",
+   "room_type": "03",
+   "status": true,
+   "tags": [],
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.501559,
+    "lng": 127.023653
+   },
+   "manage_cost": "80000",
+   "reg_date": "2026-10-05T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "local4": "",
+    "address2": "1305-18",
+    "localText": "서초구 서초동",
+    "fullText": "서울특별시 서초구 서초동"
+   },
+   "address1": "서울특별시 서초구 서초동"
+  },
+  "90000202": {
+   "item_id": 90000202,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 3000,
+   "rent": 60,
+   "size_m2": 22.0,
+   "공급면적": {
+    "m2": 30.8,
+    "p": "9.3"
+   },
+   "전용면적": {
+    "m2": 22.0,
+    "p": "6.7"
+   },
+   "floor": "중",
+   "floor_string": "중",
+   "building_floor": "12",
+   "title": "강남대로 오피스텔 풀옵션 단기 협의",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "오피스텔",
+   "location": {
+    "lat": 37.502012,
+    "lng": 127.032383
+   },
+   "manage_cost": "130000",
+   "reg_date": "2026-10-04T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "local4": "",
+    "address2": "826-1",
+    "localText": "강남구 역삼동",
+    "fullText": "서울특별시 강남구 역삼동"
+   },
+   "address1": "서울특별시 강남구 역삼동"
+  },
+  "90000104": {
+   "item_id": 90000104,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 62,
+   "size_m2": 18.2,
+   "공급면적": {
+    "m2": 25.48,
+    "p": "7.7"
+   },
+   "전용면적": {
+    "m2": 18.2,
+    "p": "5.5"
+   },
+   "floor": "5",
+   "floor_string": "5",
+   "building_floor": "7",
+   "title": "신축급 원룸 엘리베이터 있음",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.49342,
+    "lng": 127.032156
+   },
+   "manage_cost": "70000",
+   "reg_date": "2026-10-03T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "local4": "",
+    "address2": "832-33",
+    "localText": "강남구 역삼동",
+    "fullText": "서울특별시 강남구 역삼동"
+   },
+   "address1": "서울특별시 강남구 역삼동"
+  },
+  "90000302": {
+   "item_id": 90000302,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 500,
+   "rent": 50,
+   "size_m2": 19.0,
+   "공급면적": {
+    "m2": 26.6,
+    "p": "8.0"
+   },
+   "전용면적": {
+    "m2": 19.0,
+    "p": "5.7"
+   },
+   "floor": "2",
+   "floor_string": "2",
+   "building_floor": "3",
+   "title": "조용한 골목 분리형 원룸",
+   "room_type": "02",
+   "status": true,
+   "tags": [],
+   "service_type": "빌라",
+   "location": {
+    "lat": 37.502916,
+    "lng": 127.021952
+   },
+   "manage_cost": "40000",
+   "reg_date": "2026-10-02T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "local4": "",
+    "address2": "1309-9",
+    "localText": "서초구 서초동",
+    "fullText": "서울특별시 서초구 서초동"
+   },
+   "address1": "서울특별시 서초구 서초동"
+  },
+  "90000105": {
+   "item_id": 90000105,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 300,
+   "rent": 58,
+   "size_m2": 17.3,
+   "공급면적": {
+    "m2": 24.22,
+    "p": "7.3"
+   },
+   "전용면적": {
+    "m2": 17.3,
+    "p": "5.2"
+   },
+   "floor": "3",
+   "floor_string": "3",
+   "building_floor": "4",
+   "title": "보증금 조절 가능 깔끔한 원룸",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.492697,
+    "lng": 127.022179
+   },
+   "manage_cost": "60000",
+   "reg_date": "2026-10-01T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "local4": "",
+    "address2": "1342-14",
+    "localText": "서초구 서초동",
+    "fullText": "서울특별시 서초구 서초동"
+   },
+   "address1": "서울특별시 서초구 서초동"
+  },
+  "90000203": {
+   "item_id": 90000203,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 69,
+   "size_m2": 20.6,
+   "공급면적": {
+    "m2": 28.84,
+    "p": "8.7"
+   },
+   "전용면적": {
+    "m2": 20.6,
+    "p": "6.2"
+   },
+   "floor": "저",
+   "floor_string": "저",
+   "building_floor": "20",
+   "title": "테헤란로 오피스텔 원룸 관리 잘됨",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "오피스텔",
+   "location": {
+    "lat": 37.492335,
+    "lng": 127.033857
+   },
+   "manage_cost": "110000",
+   "reg_date": "2026-09-30T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "local4": "",
+    "address2": "829-7",
+    "localText": "강남구 역삼동",
+    "fullText": "서울특별시 강남구 역삼동"
+   },
+   "address1": "서울특별시 강남구 역삼동"
+  },
+  "90000106": {
+   "item_id": 90000106,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 64,
+   "size_m2": 20.0,
+   "공급면적": {
+    "m2": 28.0,
+    "p": "8.5"
+   },
+   "전용면적": {
+    "m2": 20.0,
+    "p": "6.0"
+   },
+   "floor": "2",
+   "floor_string": "2",
+   "building_floor": "5",
+   "title": "주방 분리 원룸 세탁기 있음",
+   "room_type": "02",
+   "status": true,
+   "tags": [],
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.503911,
+    "lng": 127.03329
+   },
+   "manage_cost": "70000",
+   "reg_date": "2026-09-29T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "local4": "",
+    "address2": "814-40",
+    "localText": "강남구 역삼동",
+    "fullText": "서울특별시 강남구 역삼동"
+   },
+   "address1": "서울특별시 강남구 역삼동"
+  },
+  "90000303": {
+   "item_id": 90000303,
+   "sales_type": "월세",
+   "sales_title": "월세",
+   "deposit": 1000,
+   "rent": 57,
+   "size_m2": 24.8,
+   "공급면적": {
+    "m2": 34.72,
+    "p": "10.5"
+   },
+   "전용면적": {
+    "m2": 24.8,
+    "p": "7.5"
+   },
+   "floor": "3",
+   "floor_string": "3",
+   "building_floor": "4",
+   "title": "빌라 원룸 베란다 있음",
+   "room_type": "01",
+   "status": true,
+   "tags": [],
+   "service_type": "빌라",
+   "location": {
+    "lat": 37.491611,
+    "lng": 127.021385
+   },
+   "manage_cost": "50000",
+   "reg_date": "2026-09-28T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울특별시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "local4": "",
+    "address2": "1351-2",
+    "localText": "서초구 서초동",
+    "fullText": "서울특별시 서초구 서초동"
+   },
+   "address1": "서울특별시 서초구 서초동"
+  }
+ }
+}
