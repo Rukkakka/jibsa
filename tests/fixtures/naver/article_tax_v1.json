@@ -1,0 +1,26 @@
+{
+ "isSuccess": true,
+ "result": {
+  "articleInfo": {
+   "articleNumber": "1000000001",
+   "complexNumber": 100001,
+   "realEstateType": "A01"
+  },
+  "acquisitionTax": {
+   "acquisitionTax": 45000000,
+   "localTax": 4500000,
+   "ruralSpecialTax": 3000000
+  },
+  "propertyTax": {
+   "propertyTax": 2000000,
+   "localEducationTax": 400000,
+   "urbanAreaSegmentTax": 900000,
+   "complexAppraisedValueOfLandBaseDate": "2026-01-01"
+  },
+  "totalRealEstateTax": {
+   "totalRealEstateTax": 1000000,
+   "ruralSpecialTax": 200000,
+   "complexAppraisedValueOfLandBaseDate": "2026-01-01"
+  }
+ }
+}

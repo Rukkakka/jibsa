@@ -1,0 +1,81 @@
+{
+  "item": {
+    "id": 1000001,
+    "salesType": "월세",
+    "serviceType": "원룸",
+    "status": "open",
+    "title": "테스트 원룸 매물 1",
+    "price": {
+      "deposit": 300,
+      "rent": 40
+    },
+    "location": {
+      "lat": 37.49,
+      "lng": 127.013
+    },
+    "buildingId": null,
+    "address": {
+      "addressOrigin": {
+        "local1": "서울시",
+        "local2": "서초구",
+        "local3": "서초동",
+        "fullText": "서울시 서초구 서초동"
+      },
+      "jibunAddress": "서초구 서초동 100-1",
+      "pnu": null
+    },
+    "residence": {
+      "roomType": "오픈형원룸",
+      "bathroomCnt": "1",
+      "roomDirection": "S",
+      "directionCriterionType": "거실",
+      "residenceType": "단독주택",
+      "residenceTypeDescription": "단독주택",
+      "approveDate": "20000101",
+      "parking": true,
+      "totalParkingCnt": 15,
+      "householdCnt": 27,
+      "isElevator": false,
+      "sizeM2": 19.83,
+      "floor": "반지하",
+      "floorAll": "4",
+      "moveInAt": "2026-11-02",
+      "moveInDateExtra": "협의가능"
+    },
+    "manageCost": {
+      "amount": 10,
+      "include": [
+        {
+          "code": "0",
+          "name": "일반(공용) 관리비"
+        },
+        {
+          "code": "1",
+          "name": "수도"
+        }
+      ]
+    },
+    "options": [
+      {
+        "code": "0",
+        "name": "에어컨"
+      },
+      {
+        "code": "1",
+        "name": "냉장고"
+      },
+      {
+        "code": "2",
+        "name": "세탁기"
+      }
+    ]
+  },
+  "subways": [
+    {
+      "id": 32,
+      "name": "교대역",
+      "description": "2호선,3호선"
+    }
+  ],
+  "danji": null
+}

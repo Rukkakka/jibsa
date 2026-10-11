@@ -1,0 +1,76 @@
+{
+  "id": 5001,
+  "status": true,
+  "checkStatus": "COMPLETE",
+  "title": "가상 단기 오피스텔",
+  "address": "서울 강남구 역삼동 1-1",
+  "newAddress": "서울 강남구 가상로 1",
+  "pnu": "1168010100100010001",
+  "lat": 37.5001,
+  "lng": 127.0301,
+  "buildingType": "OFFICETEL",
+  "floor": "7",
+  "roomCount": 1,
+  "bathroomCount": 1,
+  "isDuplex": false,
+  "sizeM2": 24.0,
+  "hasElevator": true,
+  "parkingType": "AVAILABLE",
+  "parkingFee": "PAID",
+  "photos": [
+    {
+      "url": "https://example.com/p.jpg"
+    }
+  ],
+  "description": "가상 설명",
+  "weeklyRent": 400000,
+  "deposit": 300000,
+  "isWeeklyManageCostAbsent": false,
+  "weeklyManageCost": 50000,
+  "manageCostIncludes": {
+    "gas": true,
+    "water": true,
+    "electricity": false
+  },
+  "cleaningFee": 100000,
+  "cleaningFeeFree": false,
+  "refundPolicy": "STANDARD",
+  "minContractWeeks": 1,
+  "maxContractWeeks": 12,
+  "maxGuests": 2,
+  "discounts": [
+    {
+      "id": 1,
+      "discountType": "LONG_TERM",
+      "conditionWeeks": 4,
+      "conditionDays": null,
+      "discountRate": 10,
+      "discountAmount": null,
+      "description": null,
+      "isActive": true
+    }
+  ],
+  "itemOptions": [
+    {
+      "category": "BASIC",
+      "optionName": "AIR_CONDITIONER"
+    },
+    {
+      "category": "BASIC",
+      "optionName": "WIFI"
+    },
+    {
+      "category": "ADDITIONAL",
+      "optionName": "NEW_UNKNOWN"
+    }
+  ],
+  "nearbyStations": [
+    {
+      "id": 1,
+      "name": "가상역",
+      "description": "2호선"
+    }
+  ],
+  "createdAt": "2026-09-01T00:00:00.000Z",
+  "hostId": 1
+}

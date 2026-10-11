@@ -1,0 +1,29 @@
+{
+  "data": {
+    "getRegionByCoordinate": {
+      "name1": "서울특별시",
+      "name2": "강남구",
+      "name3": "역삼동",
+      "depth": 3,
+      "originalId": 6035,
+      "centerCoordinate": {
+        "lat": "37.500400",
+        "lon": "127.038700"
+      },
+      "id": "region-6035",
+      "parentRegion": {
+        "name1": "서울특별시",
+        "name2": "강남구",
+        "name3": "",
+        "depth": 2,
+        "originalId": 381,
+        "centerCoordinate": {
+          "lat": "37.517300",
+          "lon": "127.047400"
+        },
+        "id": "region-381",
+        "parentRegion": null
+      }
+    }
+  }
+}

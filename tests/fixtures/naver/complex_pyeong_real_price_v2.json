@@ -1,0 +1,43 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "list": [
+   {
+    "tradeDate": "2026-01-10",
+    "floor": 5,
+    "dealPrice": 1450000000,
+    "deposit": 0,
+    "monthlyRent": 0,
+    "isDelete": false,
+    "tradeCategory": "직거래",
+    "registrationDate": "2026-02-01",
+    "isRenew": false
+   },
+   {
+    "tradeDate": "2025-11-20",
+    "floor": 12,
+    "dealPrice": 1520000000,
+    "deposit": 0,
+    "monthlyRent": 0,
+    "isDelete": false,
+    "tradeCategory": "중개거래",
+    "registrationDate": "2025-12-15",
+    "isRenew": false
+   },
+   {
+    "tradeDate": "2025-08-03",
+    "floor": 3,
+    "dealPrice": 1400000000,
+    "deposit": 0,
+    "monthlyRent": 0,
+    "isDelete": false,
+    "tradeCategory": "중개거래",
+    "registrationDate": "2025-09-01",
+    "isRenew": false
+   }
+  ],
+  "hasNextPage": false
+ }
+}

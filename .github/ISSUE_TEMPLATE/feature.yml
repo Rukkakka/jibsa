@@ -1,0 +1,40 @@
+name: ✨ 기능
+description: 새 소스, 명령, 옵션, 엔드포인트 제안
+labels: ["feature"]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 무엇이 있어야 하나요?
+      description: |
+        원하는 소스, 명령, 옵션, 엔드포인트를 설명해 주세요. 새 엔드포인트라면
+        확인한 요청·응답 예시를 함께 적어 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 왜 필요한가요?
+      description: 지금 명령으로는 할 수 없는 일이 무엇인가요?
+    validations:
+      required: true
+
+  - type: textarea
+    id: usage
+    attributes:
+      label: 사용 예
+      description: 생기면 쓰고 싶은 명령과 기대하는 출력을 적어 주세요.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: conventions
+    attributes:
+      label: 규약
+      options:
+        - label: 새 엔드포인트·소스라면 references/provider-conventions.md 를 읽었다
+          required: false
+        - label: 출력이 바뀐다면 references/output-contract.md 를 읽었다
+          required: false

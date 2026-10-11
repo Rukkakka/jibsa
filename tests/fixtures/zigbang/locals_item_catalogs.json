@@ -1,0 +1,103 @@
+{
+  "localCode": "11680101",
+  "count": 3,
+  "list": [
+    {
+      "areaHoId": 900001,
+      "tranType": "rental",
+      "itemType": "self_ad",
+      "areaDanjiId": 9001,
+      "areaDanjiName": "가상아파트",
+      "danjiRoomTypeId": 8001,
+      "local2": "강남구",
+      "local3": "역삼동",
+      "isPriceRange": false,
+      "depositMin": 50000,
+      "rentMin": 200,
+      "roomTypeTitle": {
+        "m2": "110A",
+        "p": "33A"
+      },
+      "sizeContractM2": 110.0,
+      "sizeM2": 84.9,
+      "dong": "101동",
+      "floor": "9",
+      "itemTitle": "가상 월세 매물",
+      "itemCount": 1,
+      "itemIdList": [
+        {
+          "itemSource": "zigbang",
+          "itemId": 2000001
+        }
+      ]
+    },
+    {
+      "areaHoId": 900002,
+      "tranType": "trade",
+      "itemType": "self_ad",
+      "areaDanjiId": 9001,
+      "areaDanjiName": "가상아파트",
+      "danjiRoomTypeId": 8002,
+      "local2": "강남구",
+      "local3": "역삼동",
+      "isPriceRange": true,
+      "depositMin": 250000,
+      "rentMin": 0,
+      "roomTypeTitle": {
+        "m2": "80B",
+        "p": "24B"
+      },
+      "sizeContractM2": 80.0,
+      "sizeM2": 59.9,
+      "dong": "102동",
+      "floor": "고",
+      "itemTitle": "가상 매매 매물",
+      "itemCount": 2,
+      "itemIdList": [
+        {
+          "itemSource": "zigbang",
+          "itemId": 2000002
+        },
+        {
+          "itemSource": "zigbang",
+          "itemId": 2000003
+        }
+      ]
+    },
+    {
+      "areaHoId": 900003,
+      "tranType": "charter",
+      "itemType": "self_ad",
+      "areaDanjiId": 9002,
+      "areaDanjiName": "가상빌",
+      "danjiRoomTypeId": 8003,
+      "local2": "강남구",
+      "local3": "역삼동",
+      "isPriceRange": false,
+      "depositMin": 60000,
+      "rentMin": 0,
+      "roomTypeTitle": {
+        "m2": "70",
+        "p": "21"
+      },
+      "sizeContractM2": 70.0,
+      "sizeM2": 52.0,
+      "dong": "1동",
+      "floor": "저",
+      "itemTitle": "가상 외부 매물",
+      "itemCount": 1,
+      "itemIdList": [
+        {
+          "itemSource": "external",
+          "itemId": 3000001
+        }
+      ]
+    }
+  ],
+  "local1": "서울특별시",
+  "local2": "강남구",
+  "local3": "역삼동",
+  "step": "3",
+  "lat": 37.5,
+  "lng": 127.03
+}

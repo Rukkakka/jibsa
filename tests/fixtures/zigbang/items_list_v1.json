@@ -1,0 +1,79 @@
+{
+ "items": [
+  {
+   "item_id": 1000001,
+   "images_thumbnail": "https://example.com/items/1000001/1.jpg",
+   "sales_type": "월세",
+   "deposit": 300,
+   "rent": 40,
+   "size_m2": 19.83,
+   "공급면적": {
+    "m2": 19.83,
+    "p": "6.0"
+   },
+   "전용면적": {
+    "m2": 19.83,
+    "p": "6.0"
+   },
+   "floor": "반지하",
+   "building_floor": "4",
+   "title": "테스트 원룸 매물 1",
+   "room_type": "01",
+   "status": true,
+   "service_type": "원룸",
+   "location": {
+    "lat": 37.49,
+    "lng": 127.013
+   },
+   "manage_cost": "100000",
+   "reg_date": "2026-01-05T10:00:00+09:00",
+   "is_new": true,
+   "addressOrigin": {
+    "local1": "서울시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "fullText": "서울시 서초구 서초동",
+    "address2": "100-1"
+   },
+   "address1": "서울시 서초구 서초동"
+  },
+  {
+   "item_id": 1000002,
+   "images_thumbnail": "https://example.com/items/1000002/1.jpg",
+   "sales_type": "월세",
+   "deposit": 2000,
+   "rent": 100,
+   "size_m2": 50.0,
+   "공급면적": {
+    "m2": 50.0,
+    "p": "15.1"
+   },
+   "전용면적": {
+    "m2": 25.0,
+    "p": "7.6"
+   },
+   "floor": "10",
+   "building_floor": "15",
+   "title": "테스트 오피스텔 매물 1",
+   "room_type": "03",
+   "status": true,
+   "service_type": "오피스텔",
+   "location": {
+    "lat": 37.49,
+    "lng": 127.031
+   },
+   "manage_cost": "150000",
+   "reg_date": "2026-01-03T10:00:00+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "서울시",
+    "local2": "서초구",
+    "local3": "서초동",
+    "fullText": "서울시 서초구 서초동",
+    "address2": "200-2"
+   },
+   "address1": "서울시 서초구 서초동"
+  }
+ ],
+ "totalCount": 2
+}

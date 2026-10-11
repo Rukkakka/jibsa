@@ -1,0 +1,7 @@
+{
+  "list": [
+    {"id": 9001, "name": "가상아파트", "local1": "서울특별시", "local2": "강남구", "local3": "역삼동", "lat": 37.5001, "lng": 127.0301, "household": "1200세대", "distanceNum": 168, "distance": "168m"},
+    {"id": 9002, "name": "가상빈단지", "local1": "서울특별시", "local2": "강남구", "local3": "역삼동", "lat": 37.5011, "lng": 127.0311, "household": "50세대", "distanceNum": 420, "distance": "420m"},
+    {"id": 9003, "name": "가상먼단지", "local1": "서울특별시", "local2": "강남구", "local3": "역삼동", "lat": 37.5051, "lng": 127.0351, "household": "300세대", "distanceNum": 910, "distance": "910m"}
+  ]
+}

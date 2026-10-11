@@ -1,0 +1,12 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "legalDivisionNumber": "1168010300",
+  "legalDivisionName": "서울시 강남구 개포동",
+  "cityName": "서울시",
+  "divisionName": "강남구",
+  "sectorName": "개포동"
+ }
+}

@@ -1,0 +1,29 @@
+{
+  "isSuccess": true,
+  "detailCode": "success",
+  "message": "",
+  "result": {
+    "periodAverageTradeCount": 3,
+    "latestWeeklyTradeCount": 2,
+    "weeklyCounts": [
+      {
+        "yearMonth": "2026-09",
+        "weekOfMonth": 1,
+        "firstDayOfWeek": "2026-09-07",
+        "tradeCount": 4
+      },
+      {
+        "yearMonth": "2026-09",
+        "weekOfMonth": 2,
+        "firstDayOfWeek": "2026-09-14",
+        "tradeCount": 3
+      },
+      {
+        "yearMonth": "2026-09",
+        "weekOfMonth": 3,
+        "firstDayOfWeek": "2026-09-21",
+        "tradeCount": 2
+      }
+    ]
+  }
+}

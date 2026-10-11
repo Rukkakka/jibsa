@@ -1,0 +1,6 @@
+{
+  "isSuccess": true,
+  "result": [
+    {"code": "B000000001", "name": "가상초등학교", "operationType": "공립", "allocationType": "01", "studentsPerClassroom": 20.5, "studentsPerTeacher": 12.0, "distance": 300, "walkingMinute": 5, "coordinates": {"xCoordinate": 127.0, "yCoordinate": 37.5}}
+  ]
+}

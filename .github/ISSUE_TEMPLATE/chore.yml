@@ -1,0 +1,41 @@
+name: 🧹 잡무
+description: 의존성, 도구, 설정, 정리 — 동작 변화 없음
+labels: ["chore"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 종류
+      options:
+        - 의존성 업데이트·고정
+        - 도구·CI
+        - 설정
+        - 리팩터링·정리
+        - 기타
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 무엇을 해야 하나요?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 왜 지금 하나요?
+      description: |
+        그대로 두면 어떤 비용이 있나요? 보안 권고, 깨진 빌드, 단순한 정리
+        모두 괜찮은 이유입니다.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: 영향
+      options:
+        - label: CLI 출력 형식이나 명령·옵션이 바뀐다
+          required: false

@@ -1,0 +1,54 @@
+{
+  "data": {
+    "searchComplexes": {
+      "edges": [
+        {
+          "node": {
+            "originalId": "9000001",
+            "name": "테스트아파트",
+            "type": "APARTMENT",
+            "buildings": {
+              "edges": [
+                {
+                  "node": {
+                    "roadAddress": "서울특별시 강남구 테스트로 9",
+                    "jibunAddress": null
+                  }
+                },
+                {
+                  "node": {
+                    "roadAddress": "서울특별시 강남구 테스트로 9",
+                    "jibunAddress": "서울특별시 강남구 역삼동 900-1"
+                  }
+                }
+              ]
+            }
+          },
+          "cursor": "MA=="
+        },
+        {
+          "node": {
+            "originalId": "9000002",
+            "name": "테스트오피스텔",
+            "type": "OFFICETEL",
+            "buildings": {
+              "edges": [
+                {
+                  "node": {
+                    "roadAddress": "경기도 성남시 분당구 테스트로 2",
+                    "jibunAddress": null
+                  }
+                }
+              ]
+            }
+          },
+          "cursor": "MQ=="
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": "MQ=="
+      }
+    }
+  }
+}

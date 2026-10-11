@@ -1,0 +1,30 @@
+name: 📝 문서
+description: 문서에 빠졌거나, 틀렸거나, 이해하기 어려운 부분이 있을 때
+labels: ["docs"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: 어디인가요?
+      description: 파일, 섹션, 또는 docstring.
+      placeholder: "README.md — 요청 제한 표"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 무엇이 틀렸거나 빠졌나요?
+      description: |
+        문서가 지금 뭐라고 하는지, 그게 왜 틀렸거나 낡았거나 따라가기
+        어려운지 적어 주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 제안 문구
+      description: 선택 — 바뀌었으면 하는 문장을 적어 주세요.
+    validations:
+      required: false

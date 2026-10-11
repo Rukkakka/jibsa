@@ -1,0 +1,180 @@
+{
+  "data": {
+    "articles": [
+      {
+        "id": "article-2000103",
+        "originalId": "2000103",
+        "area": "23.1",
+        "supplyArea": null,
+        "floor": "3",
+        "topFloor": "5",
+        "isAmbiguousFloor": false,
+        "ambiguousFloor": null,
+        "buildingName": null,
+        "addressInfo": "테스트 지도 매물 2000103",
+        "status": "ON_GOING",
+        "isHide": false,
+        "invisibleInfos": null,
+        "writerTypeV2": "BROKER",
+        "salesTypeV3": {
+          "__typename": "OneRoomSalesTypeV2",
+          "type": "OPEN_ONE_ROOM"
+        },
+        "trades": [
+          {
+            "__typename": "BuyTrade",
+            "type": "BUY",
+            "preferred": true,
+            "price": 30000
+          },
+          {
+            "__typename": "MonthTrade",
+            "type": "MONTH",
+            "preferred": false,
+            "deposit": 500,
+            "monthlyPay": 60,
+            "description": null
+          }
+        ],
+        "region": {
+          "name": "서초동",
+          "id": "region-서초동",
+          "name2": "서초구",
+          "name3": "서초동"
+        },
+        "publicCoordinate": {
+          "lat": "37.497000",
+          "lon": "127.036000"
+        },
+        "subwayStations": [],
+        "images": []
+      },
+      {
+        "id": "article-2000101",
+        "originalId": "2000101",
+        "area": "23.1",
+        "supplyArea": null,
+        "floor": "3",
+        "topFloor": "5",
+        "isAmbiguousFloor": false,
+        "ambiguousFloor": null,
+        "buildingName": null,
+        "addressInfo": "테스트 지도 매물 2000101",
+        "status": "ON_GOING",
+        "isHide": false,
+        "invisibleInfos": null,
+        "writerTypeV2": "BROKER",
+        "salesTypeV3": {
+          "__typename": "OneRoomSalesTypeV2",
+          "type": "OPEN_ONE_ROOM"
+        },
+        "trades": [
+          {
+            "__typename": "MonthTrade",
+            "type": "MONTH",
+            "preferred": true,
+            "deposit": 1000,
+            "monthlyPay": 70,
+            "description": null
+          }
+        ],
+        "region": {
+          "name": "역삼동",
+          "id": "region-역삼동",
+          "name2": "강남구",
+          "name3": "역삼동"
+        },
+        "publicCoordinate": {
+          "lat": "37.501000",
+          "lon": "127.036000"
+        },
+        "subwayStations": [],
+        "images": []
+      },
+      {
+        "id": "article-2000102",
+        "originalId": "2000102",
+        "area": "23.1",
+        "supplyArea": null,
+        "floor": "3",
+        "topFloor": "5",
+        "isAmbiguousFloor": false,
+        "ambiguousFloor": null,
+        "buildingName": null,
+        "addressInfo": "테스트 지도 매물 2000102",
+        "status": "TRADE_COMPLETED",
+        "isHide": false,
+        "invisibleInfos": null,
+        "writerTypeV2": "BROKER",
+        "salesTypeV3": {
+          "__typename": "OneRoomSalesTypeV2",
+          "type": "OPEN_ONE_ROOM"
+        },
+        "trades": [
+          {
+            "__typename": "MonthTrade",
+            "type": "MONTH",
+            "preferred": true,
+            "deposit": 1000,
+            "monthlyPay": 70,
+            "description": null
+          }
+        ],
+        "region": {
+          "name": "역삼동",
+          "id": "region-역삼동",
+          "name2": "강남구",
+          "name3": "역삼동"
+        },
+        "publicCoordinate": {
+          "lat": "37.502000",
+          "lon": "127.036000"
+        },
+        "subwayStations": [],
+        "images": []
+      },
+      {
+        "id": "article-2000104",
+        "originalId": "2000104",
+        "area": "30.5",
+        "supplyArea": null,
+        "floor": "3",
+        "topFloor": "5",
+        "isAmbiguousFloor": false,
+        "ambiguousFloor": null,
+        "buildingName": null,
+        "addressInfo": "테스트 지도 매물 2000104",
+        "status": "ON_GOING",
+        "isHide": false,
+        "invisibleInfos": null,
+        "writerTypeV2": "BROKER",
+        "salesTypeV3": {
+          "__typename": "OneRoomSalesTypeV2",
+          "type": "OFFICETEL"
+        },
+        "trades": [
+          {
+            "__typename": "MonthTrade",
+            "type": "MONTH",
+            "preferred": true,
+            "deposit": 1000,
+            "monthlyPay": 70,
+            "description": null
+          }
+        ],
+        "region": {
+          "name": "역삼동",
+          "id": "region-역삼동",
+          "name2": "강남구",
+          "name3": "역삼동"
+        },
+        "publicCoordinate": {
+          "lat": "37.515000",
+          "lon": "127.036000"
+        },
+        "subwayStations": [],
+        "images": []
+      }
+    ]
+  }
+}

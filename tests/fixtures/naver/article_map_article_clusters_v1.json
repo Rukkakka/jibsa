@@ -1,0 +1,50 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "totalCount": 3,
+  "clusters": [
+   {
+    "clusterId": "17/111786/50791",
+    "coordinates": {
+     "xCoordinate": 127.03071346,
+     "yCoordinate": 37.49328067
+    },
+    "articleCount": 3
+   },
+   {
+    "clusterId": "17/111787/50789",
+    "coordinates": {
+     "xCoordinate": 127.03355525,
+     "yCoordinate": 37.49811221
+    },
+    "articleCount": 3
+   },
+   {
+    "clusterId": "17/111790/50791",
+    "coordinates": {
+     "xCoordinate": 127.0415115,
+     "yCoordinate": 37.49403428
+    },
+    "articleCount": 3
+   },
+   {
+    "clusterId": "17/111791/50787",
+    "coordinates": {
+     "xCoordinate": 127.04472197,
+     "yCoordinate": 37.50213042
+    },
+    "articleCount": 3
+   },
+   {
+    "clusterId": "17/111791/50786",
+    "coordinates": {
+     "xCoordinate": 127.04464155,
+     "yCoordinate": 37.50413825
+    },
+    "articleCount": 3
+   }
+  ]
+ }
+}

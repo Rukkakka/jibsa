@@ -1,0 +1,11 @@
+# Changelog
+
+jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이는 변경만 적고, 아직 릴리스하지 않은 변경은
+`Unreleased` 에 쌓는다. 번호 규칙과 쓰는 법은 [references/release.md](references/release.md) 에 있다.
+
+## Unreleased
+
+### 추가
+
+- 첫 릴리스: 직방·네이버·당근부동산의 현재 매물·실거래·단지 정보를 조회하는 CLI 와 `jibsa guide`
+- `jibsa --version` — 설치한 버전과 커밋을 출력

@@ -1,0 +1,55 @@
+{
+ "isSuccess": true,
+ "result": {
+  "priceInfo": {
+   "price": 1500000000,
+   "previousDeposit": 0,
+   "previousMonthlyRent": 0,
+   "loan": 0
+  },
+  "detailInfo": {
+   "facilityInfo": {
+    "life": [],
+    "security": [],
+    "etc": [],
+    "aircon": [],
+    "totalParkingCount": 400
+   },
+   "articleDetailInfo": {
+    "articleName": "테스트아파트",
+    "articleFeatureDescription": "테스트 매물 1",
+    "exposureStartDate": "2026-01-05",
+    "buildingPrincipalUse": "공동주택",
+    "coordinates": {
+     "xCoordinate": 127.075,
+     "yCoordinate": 37.495
+    }
+   },
+   "movingInInfo": {
+    "movingInNegotiation": true,
+    "movingInDate": "2027-01-02",
+    "movingInType": "EARLY"
+   },
+   "spaceInfo": {
+    "floorInfo": {
+     "targetFloor": "10",
+     "totalFloor": "20"
+    },
+    "roomCount": 3,
+    "bathRoomCount": 2,
+    "direction": "SS",
+    "directionStandard": "거실 기준"
+   },
+   "sizeInfo": {
+    "supplySpace": 112.4,
+    "exclusiveSpace": 84.9,
+    "pyeongArea": 34.0
+   }
+  },
+  "communalComplexInfo": {
+   "complexNumber": 100001,
+   "complexName": "테스트아파트",
+   "dongName": "101"
+  }
+ }
+}
