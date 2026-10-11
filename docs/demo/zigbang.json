@@ -1,5 +1,5 @@
 {
- "_comment": "README 데모용 가상 응답. 매물 번호·제목·가격·지번은 모두 지어낸 값이고, 역 이름·좌표만 공개 지역 정보다.",
+ "_comment": "README 데모용 가상 응답. 매물 번호·제목·가격·지번은 누가 봐도 가짜인 값(번호 1~12, \"[가상] 예시 …\", 지번 000-N)이고, 역 이름·좌표만 공개 지역 정보다.",
  "search": {
   "success": true,
   "code": "200",
@@ -65,37 +65,37 @@
  "pins": {
   "onerooms": [
    {
-    "id": 90000101,
+    "id": 1,
     "lat": 37.499027,
     "lng": 127.028755,
     "userNo": 0
    },
    {
-    "id": 90000102,
+    "id": 3,
     "lat": 37.500474,
     "lng": 127.030115,
     "userNo": 0
    },
    {
-    "id": 90000103,
+    "id": 5,
     "lat": 37.501559,
     "lng": 127.023653,
     "userNo": 0
    },
    {
-    "id": 90000104,
+    "id": 7,
     "lat": 37.49342,
     "lng": 127.032156,
     "userNo": 0
    },
    {
-    "id": 90000105,
+    "id": 9,
     "lat": 37.492697,
     "lng": 127.022179,
     "userNo": 0
    },
    {
-    "id": 90000106,
+    "id": 11,
     "lat": 37.503911,
     "lng": 127.03329,
     "userNo": 0
@@ -103,42 +103,42 @@
   ],
   "officetels": [
    {
-    "id": 90000201,
+    "id": 2,
     "lat": 37.496585,
     "lng": 127.02558,
     "userNo": 0,
-    "buildingId": 99001
+    "buildingId": 90002
    },
    {
-    "id": 90000202,
+    "id": 6,
     "lat": 37.502012,
     "lng": 127.032383,
     "userNo": 0,
-    "buildingId": 99002
+    "buildingId": 90006
    },
    {
-    "id": 90000203,
+    "id": 10,
     "lat": 37.492335,
     "lng": 127.033857,
     "userNo": 0,
-    "buildingId": 99003
+    "buildingId": 90010
    }
   ],
   "villas": [
    {
-    "id": 90000301,
+    "id": 4,
     "lat": 37.495229,
     "lng": 127.024787,
     "userNo": 0
    },
    {
-    "id": 90000302,
+    "id": 8,
     "lat": 37.502916,
     "lng": 127.021952,
     "userNo": 0
    },
    {
-    "id": 90000303,
+    "id": 12,
     "lat": 37.491611,
     "lng": 127.021385,
     "userNo": 0
@@ -146,8 +146,8 @@
   ]
  },
  "summaries": {
-  "90000101": {
-   "item_id": 90000101,
+  "1": {
+   "item_id": 1,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -164,7 +164,7 @@
    "floor": "3",
    "floor_string": "3",
    "building_floor": "5",
-   "title": "강남역 3분 풀옵션 분리형 원룸",
+   "title": "[가상] 예시 원룸 1",
    "room_type": "02",
    "status": true,
    "tags": [],
@@ -181,14 +181,14 @@
     "local2": "강남구",
     "local3": "역삼동",
     "local4": "",
-    "address2": "823-12",
+    "address2": "000-1",
     "localText": "강남구 역삼동",
     "fullText": "서울특별시 강남구 역삼동"
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "90000201": {
-   "item_id": 90000201,
+  "2": {
+   "item_id": 2,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -205,7 +205,7 @@
    "floor": "고",
    "floor_string": "고",
    "building_floor": "15",
-   "title": "강남역 신축 오피스텔 주차 가능 즉시 입주",
+   "title": "[가상] 예시 오피스텔 1",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -222,14 +222,14 @@
     "local2": "서초구",
     "local3": "서초동",
     "local4": "",
-    "address2": "1317-3",
+    "address2": "000-2",
     "localText": "서초구 서초동",
     "fullText": "서울특별시 서초구 서초동"
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "90000102": {
-   "item_id": 90000102,
+  "3": {
+   "item_id": 3,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 500,
@@ -246,7 +246,7 @@
    "floor": "2",
    "floor_string": "2",
    "building_floor": "4",
-   "title": "채광 좋은 남향 원룸 관리비 저렴",
+   "title": "[가상] 예시 원룸 2",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -263,14 +263,14 @@
     "local2": "강남구",
     "local3": "역삼동",
     "local4": "",
-    "address2": "817-27",
+    "address2": "000-3",
     "localText": "강남구 역삼동",
     "fullText": "서울특별시 강남구 역삼동"
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "90000301": {
-   "item_id": 90000301,
+  "4": {
+   "item_id": 4,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 2000,
@@ -287,7 +287,7 @@
    "floor": "1",
    "floor_string": "1",
    "building_floor": "4",
-   "title": "넓은 원룸 반려동물 협의 가능",
+   "title": "[가상] 예시 빌라 1",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -304,14 +304,14 @@
     "local2": "서초구",
     "local3": "서초동",
     "local4": "",
-    "address2": "1338-5",
+    "address2": "000-4",
     "localText": "서초구 서초동",
     "fullText": "서울특별시 서초구 서초동"
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "90000103": {
-   "item_id": 90000103,
+  "5": {
+   "item_id": 5,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -328,7 +328,7 @@
    "floor": "4",
    "floor_string": "4",
    "building_floor": "5",
-   "title": "복층 원룸 수납 넉넉 역세권",
+   "title": "[가상] 예시 원룸 3",
    "room_type": "03",
    "status": true,
    "tags": [],
@@ -345,14 +345,14 @@
     "local2": "서초구",
     "local3": "서초동",
     "local4": "",
-    "address2": "1305-18",
+    "address2": "000-5",
     "localText": "서초구 서초동",
     "fullText": "서울특별시 서초구 서초동"
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "90000202": {
-   "item_id": 90000202,
+  "6": {
+   "item_id": 6,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 3000,
@@ -369,7 +369,7 @@
    "floor": "중",
    "floor_string": "중",
    "building_floor": "12",
-   "title": "강남대로 오피스텔 풀옵션 단기 협의",
+   "title": "[가상] 예시 오피스텔 2",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -386,14 +386,14 @@
     "local2": "강남구",
     "local3": "역삼동",
     "local4": "",
-    "address2": "826-1",
+    "address2": "000-6",
     "localText": "강남구 역삼동",
     "fullText": "서울특별시 강남구 역삼동"
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "90000104": {
-   "item_id": 90000104,
+  "7": {
+   "item_id": 7,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -410,7 +410,7 @@
    "floor": "5",
    "floor_string": "5",
    "building_floor": "7",
-   "title": "신축급 원룸 엘리베이터 있음",
+   "title": "[가상] 예시 원룸 4",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -427,14 +427,14 @@
     "local2": "강남구",
     "local3": "역삼동",
     "local4": "",
-    "address2": "832-33",
+    "address2": "000-7",
     "localText": "강남구 역삼동",
     "fullText": "서울특별시 강남구 역삼동"
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "90000302": {
-   "item_id": 90000302,
+  "8": {
+   "item_id": 8,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 500,
@@ -451,7 +451,7 @@
    "floor": "2",
    "floor_string": "2",
    "building_floor": "3",
-   "title": "조용한 골목 분리형 원룸",
+   "title": "[가상] 예시 빌라 2",
    "room_type": "02",
    "status": true,
    "tags": [],
@@ -468,14 +468,14 @@
     "local2": "서초구",
     "local3": "서초동",
     "local4": "",
-    "address2": "1309-9",
+    "address2": "000-8",
     "localText": "서초구 서초동",
     "fullText": "서울특별시 서초구 서초동"
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "90000105": {
-   "item_id": 90000105,
+  "9": {
+   "item_id": 9,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 300,
@@ -492,7 +492,7 @@
    "floor": "3",
    "floor_string": "3",
    "building_floor": "4",
-   "title": "보증금 조절 가능 깔끔한 원룸",
+   "title": "[가상] 예시 원룸 5",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -509,14 +509,14 @@
     "local2": "서초구",
     "local3": "서초동",
     "local4": "",
-    "address2": "1342-14",
+    "address2": "000-9",
     "localText": "서초구 서초동",
     "fullText": "서울특별시 서초구 서초동"
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "90000203": {
-   "item_id": 90000203,
+  "10": {
+   "item_id": 10,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -533,7 +533,7 @@
    "floor": "저",
    "floor_string": "저",
    "building_floor": "20",
-   "title": "테헤란로 오피스텔 원룸 관리 잘됨",
+   "title": "[가상] 예시 오피스텔 3",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -550,14 +550,14 @@
     "local2": "강남구",
     "local3": "역삼동",
     "local4": "",
-    "address2": "829-7",
+    "address2": "000-10",
     "localText": "강남구 역삼동",
     "fullText": "서울특별시 강남구 역삼동"
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "90000106": {
-   "item_id": 90000106,
+  "11": {
+   "item_id": 11,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -574,7 +574,7 @@
    "floor": "2",
    "floor_string": "2",
    "building_floor": "5",
-   "title": "주방 분리 원룸 세탁기 있음",
+   "title": "[가상] 예시 원룸 6",
    "room_type": "02",
    "status": true,
    "tags": [],
@@ -591,14 +591,14 @@
     "local2": "강남구",
     "local3": "역삼동",
     "local4": "",
-    "address2": "814-40",
+    "address2": "000-11",
     "localText": "강남구 역삼동",
     "fullText": "서울특별시 강남구 역삼동"
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "90000303": {
-   "item_id": 90000303,
+  "12": {
+   "item_id": 12,
    "sales_type": "월세",
    "sales_title": "월세",
    "deposit": 1000,
@@ -615,7 +615,7 @@
    "floor": "3",
    "floor_string": "3",
    "building_floor": "4",
-   "title": "빌라 원룸 베란다 있음",
+   "title": "[가상] 예시 빌라 3",
    "room_type": "01",
    "status": true,
    "tags": [],
@@ -632,7 +632,7 @@
     "local2": "서초구",
     "local3": "서초동",
     "local4": "",
-    "address2": "1351-2",
+    "address2": "000-12",
     "localText": "서초구 서초동",
     "fullText": "서울특별시 서초구 서초동"
    },
