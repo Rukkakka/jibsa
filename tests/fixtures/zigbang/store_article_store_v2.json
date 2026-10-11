@@ -1,0 +1,47 @@
+{
+  "item": {
+    "section_type": "공실 아님",
+    "업종": "카페/커피",
+    "추천업종": "카페/커피",
+    "권리금액": 5000,
+    "임대구분": "개별호",
+    "interior": "있음",
+    "service_type": "상가",
+    "item_id": 4000001,
+    "images": [
+      "https://example.com/photo.jpg"
+    ],
+    "title": "가상 1층 카페",
+    "description": "가상 설명 010-0000-0000",
+    "sales_type": "임대",
+    "sales_title": "월세",
+    "매매금액": 0,
+    "보증금액": 3000,
+    "월세금액": 200,
+    "관리금액": 20,
+    "size_m2": 40.0,
+    "floor": "1층",
+    "floor_all": "5층",
+    "lat": 37.5001,
+    "lng": 127.0301,
+    "elevator": "있음",
+    "parking": "가능 - 자주식 2대",
+    "toilet": "내부(남녀구분)",
+    "난방종류": "개별냉난방",
+    "phone": "010-0000-0000",
+    "local1": "서울특별시",
+    "local2": "강남구",
+    "local3": "역삼동",
+    "status": "open"
+  },
+  "agent": {
+    "agentTitle": "가상공인중개사사무소"
+  },
+  "subways": [
+    {
+      "id": 1,
+      "name": "가상역",
+      "description": "2호선"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "name": "테스트아파트",
+  "type": "A01",
+  "address": {
+   "legalDivisionNumber": "1168010300",
+   "city": "서울시",
+   "division": "강남구",
+   "sector": "개포동",
+   "jibun": "100-1",
+   "roadName": "테스트로 1",
+   "zipCode": "00000"
+  },
+  "coordinates": {
+   "xCoordinate": 127.075,
+   "yCoordinate": 37.495
+  },
+  "totalHouseholdNumber": 300,
+  "dongCount": 3,
+  "constructionCompany": "테스트건설",
+  "buildingRatioInfo": {
+   "floorAreaRatio": 250,
+   "buildingCoverageRatio": 18
+  },
+  "useApprovalDate": "20000101",
+  "approvalElapsedYear": 27,
+  "parkingInfo": {
+   "totalParkingCount": 400,
+   "parkingCountPerHousehold": 1.33
+  },
+  "managementOfficeContact": "02-000-0004",
+  "highestDongFloor": 20,
+  "lowestDongFloor": 15
+ }
+}

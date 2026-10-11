@@ -1,0 +1,93 @@
+{
+  "data": {
+    "commuteFeed": {
+      "edges": [
+        {
+          "node": {
+            "durationMinutes": 2,
+            "transferCount": 0,
+            "routeWaypoints": [
+              {
+                "stationName": "테스트역",
+                "lineName": "테스트1호선"
+              },
+              {
+                "stationName": "가까운역",
+                "lineName": "테스트1호선"
+              }
+            ],
+            "station": {
+              "stationName": "가까운역",
+              "lineNumber": [
+                "테스트1호선"
+              ],
+              "coordinate": {
+                "lat": "37.510000",
+                "lon": "127.040000"
+              }
+            }
+          },
+          "cursor": "가까운역"
+        },
+        {
+          "node": {
+            "durationMinutes": 12,
+            "transferCount": 1,
+            "routeWaypoints": [
+              {
+                "stationName": "테스트역",
+                "lineName": "테스트1호선"
+              },
+              {
+                "stationName": "먼역",
+                "lineName": "테스트1호선"
+              }
+            ],
+            "station": {
+              "stationName": "먼역",
+              "lineNumber": [
+                "테스트1호선"
+              ],
+              "coordinate": {
+                "lat": "37.510000",
+                "lon": "127.040000"
+              }
+            }
+          },
+          "cursor": "먼역"
+        },
+        {
+          "node": {
+            "durationMinutes": 40,
+            "transferCount": 2,
+            "routeWaypoints": [
+              {
+                "stationName": "테스트역",
+                "lineName": "테스트1호선"
+              },
+              {
+                "stationName": "아주먼역",
+                "lineName": "테스트1호선"
+              }
+            ],
+            "station": {
+              "stationName": "아주먼역",
+              "lineNumber": [
+                "테스트1호선"
+              ],
+              "coordinate": {
+                "lat": "37.510000",
+                "lon": "127.040000"
+              }
+            }
+          },
+          "cursor": "아주먼역"
+        }
+      ],
+      "pageInfo": {
+        "endCursor": "아주먼역",
+        "hasNextPage": true
+      }
+    }
+  }
+}

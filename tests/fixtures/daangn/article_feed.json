@@ -1,0 +1,250 @@
+{
+  "data": {
+    "articleFeed": {
+      "edges": [
+        {
+          "node": {
+            "type": "ARTICLE",
+            "article": {
+              "originalId": "1000101",
+              "area": "33.0",
+              "floor": "2",
+              "buildingName": null,
+              "addressInfo": "테스트 원룸 매물 1",
+              "status": "ON_GOING",
+              "isHide": false,
+              "writerTypeV2": "BROKER",
+              "salesTypeV3": {
+                "type": "HOUSE"
+              },
+              "trades": [
+                {
+                  "__typename": "MonthTrade",
+                  "type": "MONTH",
+                  "preferred": true,
+                  "deposit": 500,
+                  "monthlyPay": 70
+                }
+              ],
+              "region": {
+                "name": "역삼동",
+                "id": "region-0",
+                "name2": "강남구",
+                "name3": "역삼동"
+              },
+              "publicCoordinate": {
+                "__typename": "Coordinate",
+                "lat": "37.503400",
+                "lon": "127.039700"
+              },
+              "invisibleInfos": null
+            }
+          },
+          "cursor": "cursor-0"
+        },
+        {
+          "node": {
+            "type": "ARTICLE",
+            "article": {
+              "originalId": "1000102",
+              "area": "84.5",
+              "floor": null,
+              "buildingName": "테스트아파트",
+              "addressInfo": "테스트 아파트 매매 1",
+              "status": "ON_GOING",
+              "isHide": false,
+              "writerTypeV2": "BROKER",
+              "salesTypeV3": {
+                "type": "APART"
+              },
+              "trades": [
+                {
+                  "__typename": "BuyTrade",
+                  "type": "BUY",
+                  "preferred": true,
+                  "price": 150000
+                }
+              ],
+              "region": {
+                "name": "역삼동",
+                "id": "region-1",
+                "name2": "강남구",
+                "name3": "역삼동"
+              },
+              "publicCoordinate": {
+                "__typename": "Coordinate",
+                "lat": "37.498400",
+                "lon": "127.044700"
+              },
+              "invisibleInfos": null
+            }
+          },
+          "cursor": "cursor-1"
+        },
+        {
+          "node": {
+            "type": "ARTICLE",
+            "article": {
+              "originalId": "1000103",
+              "area": "59.9",
+              "floor": "7",
+              "buildingName": "테스트아파트",
+              "addressInfo": "테스트 아파트 매매 2",
+              "status": "ON_GOING",
+              "isHide": false,
+              "writerTypeV2": "BROKER",
+              "salesTypeV3": {
+                "type": "APART"
+              },
+              "trades": [
+                {
+                  "__typename": "BuyTrade",
+                  "type": "BUY",
+                  "preferred": true,
+                  "price": 120000
+                }
+              ],
+              "region": {
+                "name": "역삼동",
+                "id": "region-2",
+                "name2": "강남구",
+                "name3": "역삼동"
+              },
+              "publicCoordinate": {
+                "__typename": "Coordinate",
+                "lat": "37.499400",
+                "lon": "127.046700"
+              },
+              "invisibleInfos": null
+            }
+          },
+          "cursor": "cursor-2"
+        },
+        {
+          "node": {
+            "type": "ARTICLE",
+            "article": {
+              "originalId": "1000104",
+              "area": "100.0",
+              "floor": "2",
+              "buildingName": null,
+              "addressInfo": "테스트 사무실 1",
+              "status": "ON_GOING",
+              "isHide": false,
+              "writerTypeV2": "BROKER",
+              "salesTypeV3": {
+                "type": "OFFICE"
+              },
+              "trades": [
+                {
+                  "__typename": "MonthTrade",
+                  "type": "MONTH",
+                  "preferred": true,
+                  "deposit": 3000,
+                  "monthlyPay": 250
+                }
+              ],
+              "region": {
+                "name": "역삼동",
+                "id": "region-3",
+                "name2": "강남구",
+                "name3": "역삼동"
+              },
+              "publicCoordinate": {
+                "__typename": "Coordinate",
+                "lat": "37.497400",
+                "lon": "127.035700"
+              },
+              "invisibleInfos": null
+            }
+          },
+          "cursor": "cursor-3"
+        },
+        {
+          "node": {
+            "type": "ARTICLE",
+            "article": {
+              "originalId": "1000105",
+              "area": "30.0",
+              "floor": "4",
+              "buildingName": null,
+              "addressInfo": "테스트 투룸 1",
+              "status": "ON_GOING",
+              "isHide": false,
+              "writerTypeV2": "BROKER",
+              "salesTypeV3": {
+                "type": "TWO_ROOM"
+              },
+              "trades": [
+                {
+                  "__typename": "MonthTrade",
+                  "type": "MONTH",
+                  "preferred": true,
+                  "deposit": 1500,
+                  "monthlyPay": 120
+                }
+              ],
+              "region": {
+                "name": "논현동",
+                "id": "region-4",
+                "name2": "강남구",
+                "name3": "논현동"
+              },
+              "publicCoordinate": {
+                "__typename": "Coordinate",
+                "lat": "37.509000",
+                "lon": "127.036000"
+              },
+              "invisibleInfos": null
+            }
+          },
+          "cursor": "cursor-4"
+        },
+        {
+          "node": {
+            "type": "ARTICLE",
+            "article": {
+              "originalId": "1000106",
+              "area": "90.0",
+              "floor": "5",
+              "buildingName": null,
+              "addressInfo": "테스트 사무실 2",
+              "status": "ON_GOING",
+              "isHide": false,
+              "writerTypeV2": "BROKER",
+              "salesTypeV3": {
+                "type": "OFFICE"
+              },
+              "trades": [
+                {
+                  "__typename": "MonthTrade",
+                  "type": "MONTH",
+                  "preferred": true,
+                  "deposit": 2500,
+                  "monthlyPay": 200
+                }
+              ],
+              "region": {
+                "name": "역삼동",
+                "id": "region-5",
+                "name2": "강남구",
+                "name3": "역삼동"
+              },
+              "publicCoordinate": {
+                "__typename": "Coordinate",
+                "lat": "37.505400",
+                "lon": "127.033700"
+              },
+              "invisibleInfos": null
+            }
+          },
+          "cursor": "cursor-5"
+        }
+      ],
+      "pageInfo": {
+        "endCursor": "cursor-5",
+        "hasNextPage": true
+      }
+    }
+  }
+}

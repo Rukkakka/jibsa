@@ -1,0 +1,174 @@
+{
+  "data": {
+    "complexByOriginalId": {
+      "complex": {
+        "id": "complex:9000001",
+        "buyTransactions": {
+          "edges": [
+            {
+              "node": {
+                "__typename": "TransactionBuy",
+                "originalId": "proptier:1",
+                "dealAmount": 120000,
+                "dealYear": 2026,
+                "dealMonth": 9,
+                "dealDay": 3,
+                "exclusiveUseArea": 59.9,
+                "floor": "7",
+                "registratedAt": null,
+                "dealCanceled": false,
+                "ownership": "REGISTERED_OWNER"
+              },
+              "cursor": "b1"
+            },
+            {
+              "node": {
+                "__typename": "TransactionBuy",
+                "originalId": "proptier:2",
+                "dealAmount": 118000,
+                "dealYear": 2026,
+                "dealMonth": 8,
+                "dealDay": 20,
+                "exclusiveUseArea": 59.9,
+                "floor": "3",
+                "registratedAt": null,
+                "dealCanceled": true,
+                "ownership": "REGISTERED_OWNER"
+              },
+              "cursor": "b2"
+            },
+            {
+              "node": {
+                "__typename": "TransactionBuy",
+                "originalId": "proptier:3",
+                "dealAmount": 150000,
+                "dealYear": 2026,
+                "dealMonth": 7,
+                "dealDay": 1,
+                "exclusiveUseArea": 84.1,
+                "floor": "12",
+                "registratedAt": "2026-08-01T00:00:00.000Z",
+                "dealCanceled": false,
+                "ownership": "REGISTERED_OWNER"
+              },
+              "cursor": "b3"
+            },
+            {
+              "node": {
+                "__typename": "TransactionBuy",
+                "originalId": "proptier:4",
+                "dealAmount": 90000,
+                "dealYear": 2026,
+                "dealMonth": 6,
+                "dealDay": 15,
+                "exclusiveUseArea": 84.9,
+                "floor": "-1",
+                "registratedAt": null,
+                "dealCanceled": false,
+                "ownership": "PRE_SALE_RIGHT"
+              },
+              "cursor": "b4"
+            }
+          ],
+          "pageInfo": {
+            "endCursor": "b4",
+            "hasNextPage": true
+          }
+        },
+        "borrowTransactions": {
+          "edges": [
+            {
+              "node": {
+                "__typename": "TransactionRent",
+                "originalId": "proptier:11",
+                "type": "MONTHLY",
+                "deposit": 5000,
+                "monthlyRent": 150,
+                "dealYear": 2026,
+                "dealMonth": 10,
+                "dealDay": 1,
+                "exclusiveUseArea": 59.9,
+                "floor": "4",
+                "contractType": "NEW",
+                "useRenewalOfContractRight": false
+              },
+              "cursor": "r11"
+            },
+            {
+              "node": {
+                "__typename": "TransactionRent",
+                "originalId": "proptier:12",
+                "type": "BORROW",
+                "deposit": 60000,
+                "monthlyRent": 0,
+                "dealYear": 2026,
+                "dealMonth": 9,
+                "dealDay": 25,
+                "exclusiveUseArea": 84.1,
+                "floor": "9",
+                "contractType": "NEW",
+                "useRenewalOfContractRight": false
+              },
+              "cursor": "r12"
+            },
+            {
+              "node": {
+                "__typename": "TransactionRent",
+                "originalId": "proptier:13",
+                "type": "BORROW",
+                "deposit": 55000,
+                "monthlyRent": 0,
+                "dealYear": 2026,
+                "dealMonth": 9,
+                "dealDay": 2,
+                "exclusiveUseArea": 84.9,
+                "floor": "2",
+                "contractType": "RENEWAL",
+                "useRenewalOfContractRight": false
+              },
+              "cursor": "r13"
+            },
+            {
+              "node": {
+                "__typename": "TransactionRent",
+                "originalId": "proptier:14",
+                "type": "MONTHLY",
+                "deposit": 10000,
+                "monthlyRent": 120,
+                "dealYear": 2026,
+                "dealMonth": 8,
+                "dealDay": 30,
+                "exclusiveUseArea": 59.9,
+                "floor": "6",
+                "contractType": "NEW",
+                "useRenewalOfContractRight": true
+              },
+              "cursor": "r14"
+            },
+            {
+              "node": {
+                "__typename": "TransactionRent",
+                "originalId": "proptier:15",
+                "type": "BORROW",
+                "deposit": 58000,
+                "monthlyRent": 0,
+                "dealYear": 2026,
+                "dealMonth": 8,
+                "dealDay": 11,
+                "exclusiveUseArea": 84.1,
+                "floor": "11",
+                "contractType": "NEW",
+                "useRenewalOfContractRight": true
+              },
+              "cursor": "r15"
+            }
+          ],
+          "pageInfo": {
+            "endCursor": "r15",
+            "hasNextPage": false
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "data": {
+    "searchComplexes": {
+      "edges": [
+        {
+          "node": {
+            "id": "UHJvcENvbXBsZXg6MTAwMDAwMDE=",
+            "originalId": "10000001",
+            "name": "테스트래미안",
+            "type": "APARTMENT",
+            "proptierDanji": {
+              "danjiAreaNm": "테스트래미안",
+              "totalTotHsehCnt": 1200,
+              "buildDate": "2005-10-01"
+            },
+            "livedReviews": {
+              "edges": [
+                {
+                  "node": {
+                    "id": "review-1",
+                    "content": "가상 후기 본문입니다"
+                  }
+                }
+              ]
+            },
+            "livedReviewSummary": {
+              "revealBody": "가상 후기 요약입니다"
+            },
+            "transactions": {
+              "edges": [
+                {
+                  "node": {
+                    "__typename": "TransactionBuy",
+                    "dealAmount": 250000,
+                    "dealCanceled": false,
+                    "exclusiveUseArea": 59.9
+                  }
+                },
+                {
+                  "node": {
+                    "__typename": "TransactionBuy",
+                    "dealAmount": 240000,
+                    "dealCanceled": true,
+                    "exclusiveUseArea": 59.9
+                  }
+                },
+                {
+                  "node": {
+                    "__typename": "TransactionBuy",
+                    "dealAmount": 310000,
+                    "dealCanceled": false,
+                    "exclusiveUseArea": 84.9
+                  }
+                },
+                {
+                  "node": {
+                    "__typename": "TransactionBuy",
+                    "dealAmount": 230000,
+                    "dealCanceled": false,
+                    "exclusiveUseArea": 59.9
+                  }
+                },
+                {
+                  "node": {
+                    "__typename": "TransactionBuy",
+                    "dealAmount": 300000,
+                    "dealCanceled": false,
+                    "exclusiveUseArea": 84.9
+                  }
+                }
+              ]
+            },
+            "liveArticleCount": {
+              "buy": 2,
+              "borrow": 1,
+              "month": 0
+            },
+            "subscribeV2": null,
+            "nearStation": true,
+            "isChopuma": false,
+            "communityFacilities": [
+              "GYM"
+            ],
+            "parkingConnection": true,
+            "__typename": "PropComplex"
+          }
+        },
+        {
+          "node": {
+            "id": "UHJvcENvbXBsZXg6MTAwMDAwMDI=",
+            "originalId": "10000002",
+            "name": "테스트오피스텔",
+            "type": "OFFICETEL",
+            "proptierDanji": {
+              "danjiAreaNm": "테스트오피스텔",
+              "totalTotHsehCnt": 300,
+              "buildDate": "2019-04-01"
+            },
+            "livedReviews": {
+              "edges": []
+            },
+            "livedReviewSummary": null,
+            "transactions": {
+              "edges": []
+            },
+            "liveArticleCount": {
+              "buy": 0,
+              "borrow": 0,
+              "month": 3
+            },
+            "subscribeV2": null,
+            "nearStation": false,
+            "isChopuma": null,
+            "communityFacilities": [],
+            "parkingConnection": null,
+            "__typename": "PropComplex"
+          }
+        }
+      ],
+      "pageInfo": {
+        "endCursor": "cursor-2",
+        "hasNextPage": true
+      }
+    }
+  }
+}

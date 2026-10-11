@@ -1,0 +1,41 @@
+{
+  "data": {
+    "articleMapPoints": [
+      {
+        "coordinate": {
+          "lat": "37.515000",
+          "lon": "127.036000"
+        },
+        "originalArticleId": "2000104"
+      },
+      {
+        "coordinate": {
+          "lat": "37.501000",
+          "lon": "127.036000"
+        },
+        "originalArticleId": "2000101"
+      },
+      {
+        "coordinate": {
+          "lat": "37.502000",
+          "lon": "127.036000"
+        },
+        "originalArticleId": "2000102"
+      },
+      {
+        "coordinate": {
+          "lat": "37.497000",
+          "lon": "127.036000"
+        },
+        "originalArticleId": "2000103"
+      },
+      {
+        "coordinate": {
+          "lat": "37.501000",
+          "lon": "127.036000"
+        },
+        "originalArticleId": "2000101"
+      }
+    ]
+  }
+}

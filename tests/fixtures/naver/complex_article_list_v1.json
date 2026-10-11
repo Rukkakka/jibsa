@@ -1,0 +1,203 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "seed": "00000000-0000-0000-0000-000000000001",
+  "lastInfo": [
+   1,
+   100.0,
+   "1000000003"
+  ],
+  "hasNextPage": false,
+  "totalCount": 3,
+  "list": [
+   {
+    "representativeArticleInfo": {
+     "complexName": "테스트아파트",
+     "complexNumber": 100001,
+     "articleNumber": "1000000001",
+     "articleName": "테스트아파트",
+     "dongName": "101",
+     "tradeType": "A1",
+     "realEstateType": "A01",
+     "spaceInfo": {
+      "supplySpace": 112.4,
+      "exclusiveSpace": 84.9,
+      "supplySpaceName": "84A"
+     },
+     "buildingInfo": {
+      "buildingConjunctionDateType": "CDY01",
+      "buildingConjunctionDate": "20000101",
+      "approvalElapsedYear": 27
+     },
+     "verificationInfo": {
+      "verificationType": "OWNER",
+      "exposureStartDate": "2026-01-05",
+      "articleConfirmDate": "2026-01-04"
+     },
+     "brokerInfo": {
+      "cpId": "NEONET",
+      "brokerageName": "가나공인중개사"
+     },
+     "articleDetail": {
+      "direction": "EE",
+      "articleFeatureDescription": "테스트 매물 1",
+      "floorInfo": "10/20",
+      "floorDetailInfo": {
+       "targetFloor": "10",
+       "totalFloor": "20"
+      }
+     },
+     "articleMedia": {
+      "imageCount": 0
+     },
+     "address": {
+      "city": "서울시",
+      "division": "강남구",
+      "sector": "개포동",
+      "coordinates": {
+       "xCoordinate": 127.075,
+       "yCoordinate": 37.495
+      }
+     },
+     "priceInfo": {
+      "dealPrice": 1500000000,
+      "warrantyPrice": 0,
+      "rentPrice": 0,
+      "managementFeeAmount": 300000,
+      "priceChangeStatus": 0
+     }
+    },
+    "duplicatedArticleInfo": {
+     "realtorCount": 1,
+     "directTradeCount": 0
+    }
+   },
+   {
+    "representativeArticleInfo": {
+     "complexName": "테스트아파트",
+     "complexNumber": 100001,
+     "articleNumber": "1000000002",
+     "articleName": "테스트아파트",
+     "dongName": "101",
+     "tradeType": "A1",
+     "realEstateType": "A01",
+     "spaceInfo": {
+      "supplySpace": 148.5,
+      "exclusiveSpace": 114.9,
+      "supplySpaceName": "114"
+     },
+     "buildingInfo": {
+      "buildingConjunctionDateType": "CDY01",
+      "buildingConjunctionDate": "20000101",
+      "approvalElapsedYear": 27
+     },
+     "verificationInfo": {
+      "verificationType": "OWNER",
+      "exposureStartDate": "2026-01-05",
+      "articleConfirmDate": "2026-01-04"
+     },
+     "brokerInfo": {
+      "cpId": "NEONET",
+      "brokerageName": "자차공인중개사"
+     },
+     "articleDetail": {
+      "direction": "EE",
+      "articleFeatureDescription": "테스트 매물 2",
+      "floorInfo": "10/20",
+      "floorDetailInfo": {
+       "targetFloor": "10",
+       "totalFloor": "20"
+      }
+     },
+     "articleMedia": {
+      "imageCount": 0
+     },
+     "address": {
+      "city": "서울시",
+      "division": "강남구",
+      "sector": "개포동",
+      "coordinates": {
+       "xCoordinate": 127.075,
+       "yCoordinate": 37.495
+      }
+     },
+     "priceInfo": {
+      "dealPrice": 1800000000,
+      "warrantyPrice": 0,
+      "rentPrice": 0,
+      "managementFeeAmount": 400000,
+      "priceChangeStatus": 0
+     }
+    },
+    "duplicatedArticleInfo": {
+     "realtorCount": 1,
+     "directTradeCount": 0
+    }
+   },
+   {
+    "representativeArticleInfo": {
+     "complexName": "테스트아파트",
+     "complexNumber": 100001,
+     "articleNumber": "1000000003",
+     "articleName": "테스트아파트",
+     "dongName": "101",
+     "tradeType": "A1",
+     "realEstateType": "A01",
+     "spaceInfo": {
+      "supplySpace": 112.8,
+      "exclusiveSpace": 84.7,
+      "supplySpaceName": "84B"
+     },
+     "buildingInfo": {
+      "buildingConjunctionDateType": "CDY01",
+      "buildingConjunctionDate": "20000101",
+      "approvalElapsedYear": 27
+     },
+     "verificationInfo": {
+      "verificationType": "OWNER",
+      "exposureStartDate": "2026-01-05",
+      "articleConfirmDate": "2026-01-04"
+     },
+     "brokerInfo": {
+      "cpId": "NEONET",
+      "brokerageName": "카타공인중개사사무소"
+     },
+     "articleDetail": {
+      "direction": "EE",
+      "articleFeatureDescription": "테스트 매물 3",
+      "floorInfo": "10/20",
+      "floorDetailInfo": {
+       "targetFloor": "10",
+       "totalFloor": "20"
+      }
+     },
+     "articleMedia": {
+      "imageCount": 0
+     },
+     "address": {
+      "city": "서울시",
+      "division": "강남구",
+      "sector": "개포동",
+      "coordinates": {
+       "xCoordinate": 127.075,
+       "yCoordinate": 37.495
+      }
+     },
+     "priceInfo": {
+      "dealPrice": 1650000000,
+      "warrantyPrice": 0,
+      "rentPrice": 0,
+      "managementFeeAmount": 300000,
+      "priceChangeStatus": 0
+     }
+    },
+    "duplicatedArticleInfo": {
+     "realtorCount": 1,
+     "directTradeCount": 0
+    }
+   }
+  ]
+ }
+}

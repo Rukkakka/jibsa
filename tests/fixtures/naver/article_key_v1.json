@@ -1,0 +1,18 @@
+{
+ "isSuccess": true,
+ "result": {
+  "key": {
+   "complexNumber": 100001,
+   "pyeongTypeNumber": 1,
+   "buildingNumber": 1
+  },
+  "type": {
+   "realEstateType": "A01",
+   "tradeType": "A1"
+  },
+  "address": {
+   "legalDivisionNumber": "1168010300",
+   "jibun": "100-1"
+  }
+ }
+}

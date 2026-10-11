@@ -1,0 +1,83 @@
+{
+ "agent": {
+  "agentTitle": "파하공인중개사사무소",
+  "agentAddress": "서울특별시 서초구 테스트로 1, 101호",
+  "agentPhone": "020000002",
+  "agentUserType": "대표공인중개사",
+  "agentName": "김철수"
+ },
+ "realtor": {
+  "officeTitle": "파하공인중개사사무소",
+  "officePhone": "020000002",
+  "officeRegNumber": "0000-00002",
+  "officeAddress": "서울특별시 서초구 테스트로 1, 101호",
+  "status": "ACTIVE"
+ },
+ "subways": [
+  {
+   "id": 32,
+   "name": "교대역",
+   "description": "2호선,3호선"
+  }
+ ],
+ "item": {
+  "itemId": 1000001,
+  "salesType": "월세",
+  "serviceType": "원룸",
+  "images": [
+   "https://example.com/items/1000001/1.jpg",
+   "https://example.com/items/1000001/2.jpg"
+  ],
+  "imageThumbnail": "https://example.com/items/1000001/1.jpg",
+  "price": {
+   "deposit": 300,
+   "rent": 40
+  },
+  "area": {
+   "전용면적M2": 19.83
+  },
+  "roomType": "오픈형원룸",
+  "title": "테스트 원룸 매물 1",
+  "description": "가상으로 만든 테스트 매물입니다.",
+  "status": "open",
+  "location": {
+   "lat": 37.49,
+   "lng": 127.013
+  },
+  "parkingAvailableText": "주차 불가능",
+  "elevator": false,
+  "roomDirection": "S",
+  "moveinDate": "즉시 입주 가능",
+  "bjdCode": "1165010800",
+  "floor": {
+   "allFloors": "4",
+   "floor": "반지하"
+  },
+  "options": [
+   "에어컨",
+   "냉장고",
+   "세탁기"
+  ],
+  "manageCost": {
+   "amount": 10,
+   "includes": [
+    "일반(공용) 관리비",
+    "수도"
+   ],
+   "notIncludes": [
+    "전기"
+   ]
+  },
+  "updatedAt": "2026-01-05 10:00:00",
+  "approveDate": "20000101",
+  "bathroomCount": "1",
+  "residenceType": "단독주택",
+  "addressOrigin": {
+   "local1": "서울시",
+   "local2": "서초구",
+   "local3": "서초동",
+   "fullText": "서울시 서초구 서초동"
+  },
+  "jibunAddress": "서초구 서초동 100-1"
+ }
+}

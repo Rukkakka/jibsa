@@ -1,0 +1,30 @@
+name: ✅ 작업
+description: 버그·기능·문서·잡무 어디에도 속하지 않는 계획된 작업
+labels: ["task"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 설명
+      description: 무엇을 해야 하나요?
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건
+      description: 끝났다는 걸 어떻게 알 수 있나요?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 맥락
+      description: 관련 이슈, PR, 링크. 선택.
+    validations:
+      required: false

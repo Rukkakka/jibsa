@@ -1,0 +1,20 @@
+{
+  "isSuccess": true,
+  "detailCode": "success",
+  "message": "",
+  "result": {
+    "busList": [
+      {"typeName": "간선", "typeColor": "#386de8", "list": ["100", "200"]},
+      {"typeName": "마을", "typeColor": "#87C700", "list": ["가상01"]}
+    ],
+    "subwayList": [
+      {"stationName": "가상역", "typeList": [
+        {"id": 1, "name": "1호선", "color": "#000000", "walkingDistance": 500, "walkingDuration": 8},
+        {"id": 2, "name": "2호선", "color": "#000000", "walkingDistance": 420, "walkingDuration": 7}
+      ]},
+      {"stationName": "테스트역", "typeList": [
+        {"id": 3, "name": "3호선", "color": "#000000", "walkingDistance": 900, "walkingDuration": 14}
+      ]}
+    ]
+  }
+}

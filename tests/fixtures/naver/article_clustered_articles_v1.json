@@ -1,0 +1,206 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "seed": "00000000-0000-0000-0000-000000000002",
+  "lastInfo": [
+   1,
+   100.0,
+   "1000000013"
+  ],
+  "hasNextPage": true,
+  "totalCount": 3,
+  "list": [
+   {
+    "representativeArticleInfo": {
+     "complexName": "테스트오피스텔",
+     "complexNumber": 100002,
+     "articleNumber": "1000000011",
+     "articleName": "테스트오피스텔",
+     "dongName": "1",
+     "tradeType": "B2",
+     "realEstateType": "A02",
+     "spaceInfo": {
+      "supplySpace": 84.0,
+      "exclusiveSpace": 55.0,
+      "supplySpaceName": "84A-1"
+     },
+     "buildingInfo": {
+      "buildingConjunctionDateType": "CDY01",
+      "buildingConjunctionDate": "20200101",
+      "approvalElapsedYear": 6
+     },
+     "verificationInfo": {
+      "verificationType": "S_VR",
+      "exposureStartDate": "2026-01-05",
+      "articleConfirmDate": "2026-01-04"
+     },
+     "brokerInfo": {
+      "cpId": "NEONET",
+      "brokerageName": "다라공인중개사사무소"
+     },
+     "articleDetail": {
+      "direction": "EE",
+      "articleFeatureDescription": "테스트 오피스텔 매물 1",
+      "floorInfo": "10/20",
+      "floorDetailInfo": {
+       "targetFloor": "10",
+       "totalFloor": "20"
+      }
+     },
+     "articleMedia": {
+      "imageUrl": "https://example.com/articles/1000000011.jpg",
+      "imageCount": 1
+     },
+     "address": {
+      "city": "서울시",
+      "division": "강남구",
+      "sector": "역삼동",
+      "coordinates": {
+       "xCoordinate": 127.0305,
+       "yCoordinate": 37.4928
+      }
+     },
+     "priceInfo": {
+      "dealPrice": 0,
+      "warrantyPrice": 50000000,
+      "rentPrice": 2000000,
+      "managementFeeAmount": 0,
+      "priceChangeStatus": 0
+     }
+    },
+    "duplicatedArticleInfo": {
+     "realtorCount": 1,
+     "directTradeCount": 0
+    }
+   },
+   {
+    "representativeArticleInfo": {
+     "complexName": "테스트오피스텔",
+     "complexNumber": 100002,
+     "articleNumber": "1000000012",
+     "articleName": "테스트오피스텔",
+     "dongName": "1",
+     "tradeType": "B2",
+     "realEstateType": "A02",
+     "spaceInfo": {
+      "supplySpace": 120.0,
+      "exclusiveSpace": 80.0,
+      "supplySpaceName": "120B-1"
+     },
+     "buildingInfo": {
+      "buildingConjunctionDateType": "CDY01",
+      "buildingConjunctionDate": "20200101",
+      "approvalElapsedYear": 6
+     },
+     "verificationInfo": {
+      "verificationType": "S_VR",
+      "exposureStartDate": "2026-01-05",
+      "articleConfirmDate": "2026-01-04"
+     },
+     "brokerInfo": {
+      "cpId": "NEONET",
+      "brokerageName": "다라공인중개사사무소"
+     },
+     "articleDetail": {
+      "direction": "EE",
+      "articleFeatureDescription": "테스트 오피스텔 매물 2",
+      "floorInfo": "10/20",
+      "floorDetailInfo": {
+       "targetFloor": "10",
+       "totalFloor": "20"
+      }
+     },
+     "articleMedia": {
+      "imageUrl": "https://example.com/articles/1000000012.jpg",
+      "imageCount": 1
+     },
+     "address": {
+      "city": "서울시",
+      "division": "강남구",
+      "sector": "역삼동",
+      "coordinates": {
+       "xCoordinate": 127.0305,
+       "yCoordinate": 37.4928
+      }
+     },
+     "priceInfo": {
+      "dealPrice": 0,
+      "warrantyPrice": 100000000,
+      "rentPrice": 3000000,
+      "managementFeeAmount": 0,
+      "priceChangeStatus": 0
+     }
+    },
+    "duplicatedArticleInfo": {
+     "realtorCount": 1,
+     "directTradeCount": 0
+    }
+   },
+   {
+    "representativeArticleInfo": {
+     "complexName": "테스트오피스텔",
+     "complexNumber": 100002,
+     "articleNumber": "1000000013",
+     "articleName": "테스트오피스텔",
+     "dongName": "1",
+     "tradeType": "B2",
+     "realEstateType": "A02",
+     "spaceInfo": {
+      "supplySpace": 84.0,
+      "exclusiveSpace": 55.0,
+      "supplySpaceName": "84A-2"
+     },
+     "buildingInfo": {
+      "buildingConjunctionDateType": "CDY01",
+      "buildingConjunctionDate": "20200101",
+      "approvalElapsedYear": 6
+     },
+     "verificationInfo": {
+      "verificationType": "S_VR",
+      "exposureStartDate": "2026-01-05",
+      "articleConfirmDate": "2026-01-04"
+     },
+     "brokerInfo": {
+      "cpId": "NEONET",
+      "brokerageName": "다라공인중개사사무소"
+     },
+     "articleDetail": {
+      "direction": "EE",
+      "articleFeatureDescription": "테스트 오피스텔 매물 3",
+      "floorInfo": "10/20",
+      "floorDetailInfo": {
+       "targetFloor": "10",
+       "totalFloor": "20"
+      }
+     },
+     "articleMedia": {
+      "imageUrl": "https://example.com/articles/1000000013.jpg",
+      "imageCount": 1
+     },
+     "address": {
+      "city": "서울시",
+      "division": "강남구",
+      "sector": "역삼동",
+      "coordinates": {
+       "xCoordinate": 127.0305,
+       "yCoordinate": 37.4928
+      }
+     },
+     "priceInfo": {
+      "dealPrice": 0,
+      "warrantyPrice": 30000000,
+      "rentPrice": 1000000,
+      "managementFeeAmount": 0,
+      "priceChangeStatus": 0
+     }
+    },
+    "duplicatedArticleInfo": {
+     "realtorCount": 1,
+     "directTradeCount": 0
+    }
+   }
+  ]
+ }
+}

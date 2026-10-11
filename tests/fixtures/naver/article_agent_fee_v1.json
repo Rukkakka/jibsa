@@ -1,0 +1,11 @@
+{
+ "isSuccess": true,
+ "result": {
+  "fee": 10500000,
+  "feeRatio": {
+   "min": 0.7,
+   "max": 0.7
+  },
+  "isIndividualCheckRequired": false
+ }
+}

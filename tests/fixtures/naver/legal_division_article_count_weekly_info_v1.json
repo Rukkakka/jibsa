@@ -1,0 +1,32 @@
+{
+  "isSuccess": true,
+  "detailCode": "success",
+  "message": "",
+  "result": {
+    "periodAverageCount": 110,
+    "minWeeklyCount": 100,
+    "maxWeeklyCount": 120,
+    "latestWeeklyCount": 120,
+    "countChangeRate": 20.0,
+    "weeklyCounts": [
+      {
+        "yearMonth": "2026-09",
+        "weekOfMonth": 1,
+        "firstDayOfWeek": "2026-09-07",
+        "averageCount": 100
+      },
+      {
+        "yearMonth": "2026-09",
+        "weekOfMonth": 2,
+        "firstDayOfWeek": "2026-09-14",
+        "averageCount": 110
+      },
+      {
+        "yearMonth": "2026-09",
+        "weekOfMonth": 3,
+        "firstDayOfWeek": "2026-09-21",
+        "averageCount": 120
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "data": {
+    "nearestCommuteStation": {
+      "stationName": "테스트역",
+      "lineNumber": [
+        "테스트1호선"
+      ],
+      "walkingMinutesToStation": 3,
+      "coordinate": {
+        "lat": "37.500000",
+        "lon": "127.030000"
+      }
+    }
+  }
+}

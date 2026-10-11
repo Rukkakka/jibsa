@@ -1,0 +1,37 @@
+{
+  "item": {
+    "itemSource": "zigbang",
+    "itemId": 1000001,
+    "areaDanjiId": 9001,
+    "areaDanjiName": "가상아파트",
+    "areaDanjiDivision": "입주2년후",
+    "areaBuildingId": 9101,
+    "areaBuildingName": "101동",
+    "areaHoId": 9201,
+    "itemType": "self_ad",
+    "realType": "아파트",
+    "approvalDate": "20151130",
+    "tranType": "rental",
+    "deposit": 5000,
+    "rent": 100,
+    "moveinDate": "즉시입주가능",
+    "floor": "중",
+    "buildingFloor": 25,
+    "direction": "s",
+    "directionBase": "거실기준",
+    "roomCount": 3,
+    "bathroomCount": 2,
+    "sizeContractM2": 110.0,
+    "sizeM2": 84.9,
+    "itemTitle": "가상 매물 제목",
+    "manageCost": {
+      "type": "etc",
+      "etcManageCost": {
+        "monthlyCost": 250000,
+        "includeItems": ["일반(공용) 관리비", "수도"],
+        "excludeItems": ["전기", "가스"],
+        "periodBasis": "최근 3개월 관리비 평균"
+      }
+    }
+  }
+}
