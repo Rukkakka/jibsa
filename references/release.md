@@ -80,6 +80,24 @@
    git push origin v0.2.0
    ```
 
-5. (선택) GitHub 에서 그 태그로 Release 를 만들고 본문에 CHANGELOG 의 해당 절을 붙인다.
+5. 그 태그로 GitHub Release 를 만든다. 본문은 CHANGELOG 의 해당 절이고, 저장소 첫 화면의 Releases 에 버전과
+   변경 내용이 보인다.
+
+   ```
+   awk '/^## 0\.2\.0/{f=1; next} /^## /{if (f) exit} f' CHANGELOG.md > /tmp/notes.md
+   gh release create v0.2.0 --verify-tag --title v0.2.0 --notes-file /tmp/notes.md
+   ```
+
+   `--verify-tag` 는 push 한 태그가 없으면 멈춘다. 빼면 `gh` 가 기본 브랜치 끝에 태그를 새로 만든다.
+6. GitHub 주소로 새로 설치해 버전을 확인한다. 쓰던 설치본을 건드리지 않게 임시 가상환경에 설치하고, 실제 조회도
+   한 번 해 본다.
+
+   ```
+   python3 -m venv /tmp/jibsa-check
+   /tmp/jibsa-check/bin/pip install -q git+https://github.com/Rukkakka/jibsa
+   /tmp/jibsa-check/bin/jibsa --version   # jibsa 0.2.0 (커밋 <머지 커밋>)
+   /tmp/jibsa-check/bin/jibsa daangn search listings 역삼동 --limit 1
+   rm -rf /tmp/jibsa-check
+   ```
 
 태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리킨다.
