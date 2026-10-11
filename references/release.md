@@ -1,6 +1,6 @@
 # Release
 
-버전 번호를 정하는 규칙과 릴리스 절차. 변경이 `main` 에 들어가기까지의 절차는 [deploy.md](deploy.md) 를 본다.
+버전 번호를 정하는 규칙과 릴리스 절차. 변경이 `main` 에 들어가기까지의 절차는 [workflow.md](workflow.md) 를 본다.
 
 ## 버전은 `pyproject.toml` 한 곳에
 
@@ -66,7 +66,7 @@
 변경이 어느 정도 모이면 릴리스한다. 정해진 주기는 없다. 사용자는 `upgrade` 할 때 `main` 을 바로 받으므로,
 릴리스는 급한 수정을 내보내는 일이 아니라 "이 커밋이 몇 버전"인지 이름을 붙이는 일이다.
 
-1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([deploy.md](deploy.md)).
+1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([workflow.md](workflow.md)).
 2. 한 커밋으로 아래 두 가지를 바꾼다.
    - `pyproject.toml` 의 `version` 을 올린다. `Unreleased` 에 `수정` 만 있으면 패치, 다른 분류가 하나라도 있으면
      작은 자리 (1.0 이후 `⚠️ 호환 깨짐` 은 앞자리).

@@ -1,6 +1,6 @@
 # 공통 개발 환경
 
-[개발 규약](../AGENTS.md) · [코드 형식](code-style.md) · [배포 절차](deploy.md)
+[개발 규약](../AGENTS.md) · [코드 형식](code-style.md) · [작업 절차](workflow.md)
 
 ## 설치
 
