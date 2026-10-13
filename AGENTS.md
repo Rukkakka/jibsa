@@ -66,6 +66,7 @@ README는 제작 목적·설치·LLM 연결 방법·문서 링크를 담는다. 
 | 여러 소스에 공통인 개발 규약 | `references/` 바로 아래 문서 |
 | 사용자(에이전트 포함)에게 보이는 변경 | `CHANGELOG.md` 의 `Unreleased` ([쓰는 법](references/release.md#changelog-쓰는-법)) |
 | README 데모에 나오는 명령·출력 (`jibsa --version`, `zigbang search listings room`) | `docs/demo/demo.gif` — `vhs docs/demo/demo.tape` 로 다시 녹화 |
+| README 맨 위 Claude Code 데모에 나오는 것 (`jibsa guide`, 직방 원룸 검색 출력) | `docs/demo/claude.gif` — `vhs docs/demo/claude.tape` 로 다시 녹화한 뒤 `python3 docs/demo/hide_plan.py docs/demo/claude.gif` |
 
 한 소스에만 해당하는 규칙·예외는 공통 문서에 적지 않고 그 소스 문서에 적는다. 명령의 인자·기본값·조회 한도·반환값·오류·주의사항은 해당 명령 절에서 설명한다. 요약 표는 해당 절과 일치시키고 다른 명령 절에 설명을 복사하지 않는다. 공통 규칙은 복사하지 않고 링크로 연결한다.
 

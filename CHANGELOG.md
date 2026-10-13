@@ -5,6 +5,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+### 수정
+
+- README(PyPI 프로젝트 페이지 포함) 맨 위에 Claude Code 가 jibsa 로 강남역 원룸을 찾는 데모를 두고, 설치 데모를 PyPI 설치(`uv tool install jibsa`)로 바꿈. 0.2.0 의 PyPI 페이지에는 Claude 데모가 없고 설치 데모가 GitHub 주소 설치였다 (#42)
+
 ## 0.2.0 — 2026-10-13
 
 ### 추가

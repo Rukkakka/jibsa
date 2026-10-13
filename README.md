@@ -10,16 +10,9 @@ Korean real estate CLI for LLM agents: search current listings and real transact
 
 직방·네이버 부동산·당근부동산의 **현재 거래 가능한 매물**을 조회하는 CLI. Claude, ChatGPT 같은 LLM 에이전트가 집을 찾을 때 셸로 호출하는 도구로 쓰려고 만들었다. 무엇을 원하는지는 사용자와 LLM 이 정하고, 여러 사이트를 돌며 조건에 맞는 매물을 확인해 오는 심부름은 집사가 맡는다.
 
-![uv 로 jibsa 를 설치하고 직방에서 강남역 근처 월세 원룸을 조회하는 터미널 데모. 조회 결과의 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/demo.gif)
+![Claude Code 가 jibsa guide 를 읽고 직방에서 강남역 근처 월세 원룸을 조회해 표로 정리하는 터미널 데모. 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/claude.gif)
 
-**조회 결과의 매물은 데모용 가상 데이터다.** 실제 정보는 직방의 강남역 검색 결과(역 번호·노선·좌표)와 매물 위치의 시·구·동 이름뿐이고, 나머지는 지어낸 값이다.
-
-- 매물 번호는 실제 직방에 없는 `99990001`~`99990012` 이고, 오피스텔 건물 번호도 그 매물 번호와 같다. 제목은 `[가상] 예시 원룸 1`, 지번은 `000-1` 처럼 붙였다.
-- 가격·관리비(만원)·층·면적(㎡)은 매물 번호 뒤 네 자리 수와 같다 (`99990001` 은 보증금 1만원·월세 1만원·1층·1㎡, 평으로는 0.3평).
-- 매물 위치는 강남역 반경 1km 안에서 고른 지점이고, 번호 순으로 역에서 0.07km 씩 멀어진다 (0.15~0.92km).
-- 매물 번호와 오피스텔 건물 번호가 실제 직방에 없다는 것은 2026-10-12 에 실제 API 로 확인했다.
-
-설치 장면은 실제 설치 화면이다 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/demo.tape), [가상 응답](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/zigbang.json)).
+Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾아줘" 라고 시킨 실제 화면이다. Claude 가 `jibsa guide` 를 읽고 명령을 골라 조회한 뒤 결과를 표로 정리한다. **매물은 데모용 가상 데이터다** ([무엇이 실제이고 무엇이 가상인지](https://github.com/Rukkakka/jibsa#데모-영상의-가상-데이터)). 에이전트에 연결하는 방법은 [LLM 에이전트에 연결하기](https://github.com/Rukkakka/jibsa#llm-에이전트에-연결하기)에 있다.
 
 > 비공식 API 를 쓴다. 스펙이 예고 없이 바뀔 수 있고, 자동수집은 각 서비스 약관과 상충할 소지가 있으니 개인 조회 용도로만 쓴다.
 
@@ -43,6 +36,10 @@ LLM이 검색 결과만으로 집을 찾으면 이미 내려간 매물을 소개
 ## 설치
 
 macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른 곳은 나눠 적었다. Windows 명령은 PowerShell 기준이고 (명령 프롬프트 cmd 는 아님), WSL 안에서 쓴다면 Linux 를 따른다.
+
+![uv 로 jibsa 를 설치하고 직방에서 강남역 근처 월세 원룸을 직접 조회하는 터미널 데모. 조회 결과의 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/demo.gif)
+
+uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설치 화면이고, **조회 결과의 매물은 데모용 가상 데이터다** ([무엇이 실제이고 무엇이 가상인지](https://github.com/Rukkakka/jibsa#데모-영상의-가상-데이터)).
 
 ### 1. 준비물
 
@@ -200,11 +197,18 @@ GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그
 집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.
 ```
 
-아래는 이 한 줄을 적어 둔 폴더에서 Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾아줘" 라고 시킨 실제 화면이다. Claude 가 `jibsa guide` 를 읽고 명령을 골라 조회한 뒤 결과를 표로 정리한다.
+[맨 위 영상](https://github.com/Rukkakka/jibsa#jibsa-집사)이 이 한 줄을 적어 둔 폴더에서 Claude Code 에 매물을 찾게 한 장면이다. 지침 파일의 두 번째 줄("이 폴더의 jibsa 는 데모용 가상 매물을 돌려준다")은 데모용이다.
 
-![Claude Code 가 jibsa guide 를 읽고 직방에서 강남역 근처 월세 원룸을 조회해 표로 정리하는 터미널 데모. 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/claude.gif)
+## 데모 영상의 가상 데이터
 
-**매물은 위 데모와 같은 가상 데이터다.** Claude 의 답은 실제 Claude Code 가 쓴 것이고, Claude 가 부른 `jibsa` 만 직방 응답을 가상 매물로 바꿔 돌려준다. 지침 파일의 두 번째 줄("이 폴더의 jibsa 는 데모용 가상 매물을 돌려준다")은 데모용이다 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/claude.tape)).
+두 영상의 매물은 모두 데모용 가상 데이터다. 녹화할 때 jibsa 는 직방 응답만 [가상 응답](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/zigbang.json)으로 바꾸고 그 밖의 요청은 막는다. 실제 정보는 직방의 강남역 검색 결과(역 번호·노선·좌표)와 매물 위치의 시·구·동 이름뿐이고, 나머지는 지어낸 값이다.
+
+- 매물 번호는 실제 직방에 없는 `99990001`~`99990012` 이고, 오피스텔 건물 번호도 그 매물 번호와 같다. 제목은 `[가상] 예시 원룸 1`, 지번은 `000-1` 처럼 붙였다.
+- 가격·관리비(만원)·층·면적(㎡)은 매물 번호 뒤 네 자리 수와 같다 (`99990001` 은 보증금 1만원·월세 1만원·1층·1㎡, 평으로는 0.3평).
+- 매물 위치는 강남역 반경 1km 안에서 고른 지점이고, 번호 순으로 역에서 0.07km 씩 멀어진다 (0.15~0.92km).
+- 매물 번호와 오피스텔 건물 번호가 실제 직방에 없다는 것은 2026-10-12 에 실제 API 로 확인했다.
+
+설치 장면은 실제 PyPI 설치 화면이다 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/demo.tape)). Claude 의 답은 실제 Claude Code 가 쓴 것이고 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/claude.tape)), 배너의 요금제 글자는 녹화한 계정 정보라 가렸다.
 
 ## 사용 문서
 
