@@ -9,6 +9,29 @@ description = '네이버·직방·당근 부동산 매물을 조회하는 LLM �
 readme = 'README.md'
 license = 'MIT'
 requires-python = '>=3.11'
+keywords = [
+    'real-estate',
+    'korea',
+    'zigbang',
+    'naver',
+    'daangn',
+    'cli',
+    'llm',
+    'ai-agent',
+    '부동산',
+    '직방',
+    '네이버 부동산',
+    '당근부동산',
+]
+classifiers = [
+    'Development Status :: 3 - Alpha',
+    'Environment :: Console',
+    'Intended Audience :: End Users/Desktop',
+    'Natural Language :: Korean',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python :: 3 :: Only',
+    'Topic :: Utilities',
+]
 dependencies = [
     'pydantic>=2.13,<3',
     'httpx>=0.28,<0.29',
@@ -23,6 +46,12 @@ dev = [
     'ruff>=0.17,<0.18',
     'mypy>=2.4,<3',
 ]
+
+[project.urls]
+Homepage = 'https://github.com/Rukkakka/jibsa'
+Documentation = 'https://github.com/Rukkakka/jibsa/tree/main/docs'
+Changelog = 'https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md'
+Issues = 'https://github.com/Rukkakka/jibsa/issues'
 
 [project.scripts]
 jibsa = 'jibsa.cli.app:main'

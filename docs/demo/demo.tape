@@ -15,7 +15,7 @@ Set Shell zsh
 Set FontFamily "D2Coding"
 Set FontSize 17
 Set Width 1200
-Set Height 920
+Set Height 880
 Set Padding 24
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 45ms
@@ -26,9 +26,10 @@ Env LANG "en_US.UTF-8"
 Hide
 Type `export DEMO="$PWD/docs/demo" T="$(mktemp -d)"` Enter
 Type `export UV_TOOL_DIR="$T/tools" UV_TOOL_BIN_DIR="$T/bin" UV_CACHE_DIR="$T/cache" JIBSA_STATE_DIR="$T/state" PATH="$T/bin:$PATH" PROMPT='$ '` Enter
-# Ctrl+X 1 → 강남역, Ctrl+X 2 → 월세, Ctrl+X 3 → 가상 데이터 안내
+# Ctrl+X 1 → 강남역, Ctrl+X 2 → 월세, Ctrl+X 3 → 아래 매물은 데모용 가상 데이터입니다
+# 무엇이 실제 정보이고 무엇이 지어낸 값인지는 README 의 데모 설명에만 적는다
 Type `bindkey -s '^X1' $'\uac15\ub0a8\uc5ed' && bindkey -s '^X2' $'\uc6d4\uc138'` Enter
-Type `bindkey -s '^X3' $'\uc544\ub798 \ub9e4\ubb3c\uc740 \ub370\ubaa8\uc6a9 \uac00\uc0c1 \ub370\uc774\ud130\uc785\ub2c8\ub2e4 (\ubc88\ud638\u00b7\uc81c\ubaa9\u00b7\uac00\uaca9\u00b7\uc8fc\uc18c \ubaa8\ub450 \uc9c0\uc5b4\ub0b8 \uac12)'` Enter
+Type `bindkey -s '^X3' $'\uc544\ub798 \ub9e4\ubb3c\uc740 \ub370\ubaa8\uc6a9 \uac00\uc0c1 \ub370\uc774\ud130\uc785\ub2c8\ub2e4'` Enter
 # 조회 전 '# …' 안내 줄을 칠 수 있게 프롬프트의 # 를 주석으로 받는다
 Type `setopt interactive_comments` Enter
 Type `jibsa() { "$UV_TOOL_DIR/jibsa/bin/python" "$DEMO/fake_jibsa.py" "$@"; }` Enter
