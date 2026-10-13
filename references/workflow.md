@@ -75,3 +75,7 @@ PR 템플릿의 `변경 종류` 도 같은 다섯 이름을 쓴다. PR 이 닫�
 - diff 와 새 픽스처에 토큰, 쿠키, 중개사 이름·전화번호 같은 개인정보가 없고, 픽스처의 매물·단지는 가상 데이터다.
 - 의존성을 바꿨다면 `pyproject.toml` 에 반영했고, 범위는 기존 항목처럼 상한을 둔다
   (`'httpx>=0.28,<0.29'`).
+
+PR 을 열면 [CI](../.github/workflows/ci.yml) 가 `ruff check`·`mypy`·전체 `pytest`(Ubuntu·macOS·Windows ×
+Python 3.11·3.14)·설치본 확인(`jibsa --version`, `jibsa guide` 와 `docs/llm.md` 비교)·`docs/llm.md` 200줄 검사를 돌린다.
+CI 가 통과해야 머지한다.

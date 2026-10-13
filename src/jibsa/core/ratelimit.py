@@ -185,7 +185,14 @@ class RateLimiter:
         """
         try:
             state = _clean_state(json.loads(self.path.read_text(encoding='utf-8')))
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError as exc:
+            # 경로 중간이 파일이면 macOS·Linux 는 NotADirectoryError 를 내지만 Windows 는 FileNotFoundError 를 내서 아직 기록이
+            # 없는 것과 구분되지 않는다. 그 경로에는 상태를 쓸 수 없으니 같은 상태 디렉터리 오류로 본다
+            # (2026-10-13 CI windows-latest: 상태 디렉터리 자리에 파일이 있어도 limits 가 빈 상태로 exit 0)
+            if any(parent.is_file() for parent in self.path.parents):
+                raise StateDirError(state_dir(), exc) from exc
+            return {}
+        except ValueError:
             return {}
         except OSError as exc:
             raise StateDirError(state_dir(), exc) from exc
