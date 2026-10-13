@@ -28,6 +28,7 @@ from jibsa.core.errors import (
     UnsupportedRegionError,
 )
 from jibsa.core.geo import DEFAULT_RADIUS_KM
+from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.korean import quoted
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -119,7 +120,7 @@ from jibsa.providers.naver.service.region import (
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.service.common import ZigbangRegion
 from jibsa.providers.zigbang.service.region import (
-    geocoding_blocked,
+    geocoding_failed,
     resolve_region_with_notes,
 )
 
@@ -130,6 +131,9 @@ logger = logging.getLogger(__name__)
 
 
 SOURCE: str = 'daangn'
+# 직방 지역 검색이 이렇게 실패하면 네이버로 넘긴다: 요청 제한과 세 소스 공통 범위(서버 오류·네트워크·응답 형식).
+# 직방이 찾지 못한 이름(REGION_NOT_FOUND)은 넘기지 않는다
+GEOCODE_FALLBACK_ERRORS: tuple[type[Exception], ...] = (RateLimitedError, *OPTIONAL_LOOKUP_BASE_ERRORS)
 
 app = typer.Typer(
     help=(
@@ -270,7 +274,8 @@ def _listing_conditions(
 
 def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tuple[ZigbangRegion, list[str], str]:
     """지역·역 이름을 좌표로 바꾼다. 당근 역·주소 검색(`find_place`)을 먼저 쓰고, 당근이 확실히 찾지 못한
-    이름(동·구, 대학교 같은 장소)은 직방 지역 검색으로, 직방이 막혔을 때만 네이버 검색창 자동완성으로 찾는다.
+    이름(동·구, 대학교 같은 장소)은 직방 지역 검색으로, 직방이 막히거나 실패했을 때(서버 오류·네트워크·응답 형식)만
+    네이버 검색창 자동완성으로 찾는다.
     부르는 쪽이 역 검색을 이미 했으면(`check_station=False`) 같은 요청을 다시 보내지 않고 주소 검색(`find_address`)만 한다.
     클라이언트를 받지 않고 직접 여는 것은 `_center`(developments·preschools)가 클라이언트를 열기 전에 부르기 때문이다.
     요청 수는 같다.
@@ -286,7 +291,8 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
     Raises:
         RegionAmbiguousError: 당근 주소 검색에서 주소가 여러 시·군·구에 맞을 때 (`find_place`).
         RegionNotFoundError: 직방이 찾지 못했을 때.
-        RateLimitedError: 직방이 막혔는데 네이버도 막혔거나 찾지 못했을 때 (`source` 는 zigbang, `geocoding_blocked`).
+        RateLimitedError: 직방이 막혔는데 네이버도 막혔거나 실패했거나 찾지 못했을 때 (`source` 는 zigbang, `geocoding_failed`).
+        JibsaError: 직방이 그 밖의 이유로 실패했는데 네이버로도 찾지 못했을 때 (UPSTREAM_ERROR, `source` 는 zigbang).
     """
     try:
         with DaangnClient() as client:
@@ -302,16 +308,18 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
         with ZigbangClient() as client:
             region, notes = resolve_region_with_notes(client, name, radius_km=radius_km)
             return region, notes, '직방'
-    except RateLimitedError as exc:
-        zigbang_blocked = exc
+    except GEOCODE_FALLBACK_ERRORS as exc:
+        zigbang_error: Exception = exc
+        logger.warning('zigbang region search for %r failed (%s); falling back to naver', name, exc)
     try:
         with NaverClient() as geocoder:
             found, notes = resolve_naver_region(geocoder, name, radius_km)
-    except RateLimitedError:
-        raise geocoding_blocked(zigbang_blocked, naver_blocked=True) from None
-    except RegionNotFoundError:
-        raise geocoding_blocked(zigbang_blocked, naver_blocked=False) from None
-    notes = [f"직방이 요청 제한으로 막혀 있어 '{name}' 위치를 네이버 지역 검색으로 찾았습니다", *notes]
+    except GEOCODE_FALLBACK_ERRORS as exc:
+        raise geocoding_failed(zigbang_error, exc) from None
+    except RegionNotFoundError as exc:
+        raise geocoding_failed(zigbang_error, exc) from None
+    reason = '요청 제한으로 막혀 있어' if isinstance(zigbang_error, RateLimitedError) else '지역 검색이 실패해'
+    notes = [f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다", *notes]
     # 직방 검색 중심과 필드가 같다
     return ZigbangRegion(**found.model_dump()), notes, '네이버'
 
