@@ -758,7 +758,12 @@ def _jibun_address(
     key: NaverArticleKeyModel,
     coordinates: NaverCoordinatesModel | None,
 ) -> str | None:
-    """좌표로 얻은 법정동 이름과 article/key 의 지번을 합친 주소. 좌표가 없거나 법정동 조회가 실패하면 None."""
+    """좌표로 얻은 법정동 이름과 article/key 의 지번을 합친 주소. 좌표가 없거나 법정동 조회가 실패하면 None.
+
+    article/key 에는 법정동 코드만 있고 이름이 없어 좌표로 이름을 찾는다. 좌표로 찾은 동이 article/key 의 동과 달라
+    옆 동 이름에 지번이 붙는 일은 실측으로 없었다 (2026-10-12 실측: 서울 중구 회현동·예장동·남학동, 종로구 운니동·낙원동·
+    경운동 등 원룸·빌라·단독·다가구 20건 모두 두 법정동 코드가 같음). 2026-10-12 리뷰 오탐 확인
+    """
     if coordinates is None:
         return None
     division = result_or_none(lambda: client.run_request_legal_division_search_by_coordinate_v1(

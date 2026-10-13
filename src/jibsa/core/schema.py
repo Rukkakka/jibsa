@@ -33,6 +33,9 @@ def is_request_validation_error(exc: ValidationError) -> bool:
     응답 값으로 요청 모델을 만들다 난 오류도 여기서는 입력 오류로 보인다. 이 구분을 여기서 바꾸지 않고, 응답 값이
     실제로 형식에서 벗어나는 곳만 그 자리에서 다른 에러로 바꾼다 (네이버 클러스터 ID·매물 유형). 실측으로 벗어나지
     않는 값은 막지 않고 그 자리에 근거를 적는다 (당근 `resolve_regions` 의 name1, 2026-10-11 리뷰 확인).
+    service 경계 한 곳에서 바꾸지 않는 것은, 같은 요청 모델에 사용자 입력과 응답 값이 함께 들어가 오류만 보고는 어느
+    쪽 값인지 알 수 없고 그 값을 넣는 자리만 알기 때문이다 (2026-10-12 리뷰에서 한 곳으로 모으자는 제안을 검토하고 유지).
+    새 엔드포인트의 규칙은 references/provider-conventions.md '요청·응답 모델' 에 있다.
     """
     stack: list[type[BaseModel]] = [RequestModel]
     while stack:

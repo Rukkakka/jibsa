@@ -163,6 +163,10 @@ def run_request_items_onerooms_v1(
   (예: 직방 `salesTypes[0]=전세&salesTypes[1]=월세`).
 - 서버가 거절할 조합은 요청 모델의 `@field_validator` 로 미리 막는다 (예: 원룸 + 매매,
   `items/list` 15개 초과). CLI 에서 `ValidationError` 는 `INVALID_ARGUMENT` (exit 2) 가 된다.
+- 응답 값(다음 페이지 커서·클러스터 ID·매물 유형 코드 등)으로 요청 모델을 만들 때도 검증 오류는 `INVALID_ARGUMENT`
+  로 나가 "입력을 고치라" 고 잘못 안내된다. 그 값이 형식에서 벗어날 수 있으면 요청 모델을 만들기 전에 그 자리에서
+  막아 알맞은 에러로 바꾼다 (네이버 클러스터 ID, 매물 유형 `KNOWN_REAL_ESTATE_TYPES`). 실측으로 벗어나지 않는 값은
+  막지 않고 그 자리에 근거를 적는다. 한 곳에서 가리지 않는 이유는 `core.schema.is_request_validation_error` 에 있다.
 
 ## Service 함수
 
