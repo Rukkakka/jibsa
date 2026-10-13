@@ -151,9 +151,9 @@ def read_guide() -> str:
 def version_text() -> str:
     """`jibsa --version` 이 쓰는 한 줄 (`jibsa 0.2.0 (커밋 a1b2c3d)`).
 
-    버전은 pyproject.toml 에만 적고 설치 메타데이터에서 읽는다. 사용자는 `main` 을 git 주소로 설치해 릴리스 사이의
-    커밋도 버전이 같으므로, pip·uv 가 남긴 `direct_url.json`(PEP 610)의 커밋을 붙인다. 편집 가능 설치는 저장소
-    코드를 그대로 따라가 버전만으로는 어느 코드인지 알 수 없어 `(개발 설치)` 를 붙인다.
+    버전은 pyproject.toml 에만 적고 설치 메타데이터에서 읽는다. `main` 을 git 주소로 설치하면 릴리스 사이의 커밋도
+    버전이 같으므로, pip·uv 가 남긴 `direct_url.json`(PEP 610)의 커밋을 붙인다. PyPI 설치는 버전만 쓴다. 편집 가능
+    설치는 저장소 코드를 그대로 따라가 버전만으로는 어느 코드인지 알 수 없어 `(개발 설치)` 를 붙인다.
     """
     dist = distribution('jibsa')
     text = f'jibsa {dist.version}'

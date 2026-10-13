@@ -47,7 +47,7 @@ macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른
 ### 1. 준비물
 
 - **Python 3.11 이상** — 아래 A(uv)로 설치하면 없어도 된다. uv 가 알아서 받아 쓴다
-- **git** — GitHub 저장소에서 바로 설치하므로 필요하다
+- **git** — PyPI 로 설치하면 필요 없다. 아직 릴리스하지 않은 최신 수정을 GitHub 에서 받을 때만 쓴다
 - 로그인·API 키는 필요 없다
 
 | 운영체제 | Python 버전 확인 | Python 설치 | git 설치 |
@@ -80,11 +80,11 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 그다음은 모든 운영체제에서 같다.
 
 ```bash
-uv tool install git+https://github.com/Rukkakka/jibsa
+uv tool install jibsa
 uv tool update-shell     # ~/.local/bin 을 PATH 에 추가 (처음 한 번). 새 터미널을 연다
 ```
 
-uv 는 Python 3.11 이 없으면 알아서 받아 쓴다.
+uv 는 Python 3.11 이 없으면 알아서 받아 쓴다. 설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 처럼 `uvx` 로 부른다.
 
 **B. pipx**
 
@@ -107,8 +107,8 @@ py -m pipx ensurepath
 그다음은 모든 운영체제에서 같다.
 
 ```bash
-pipx install git+https://github.com/Rukkakka/jibsa
-# 기본 Python 이 3.11 미만이면: pipx install --python python3.11 git+https://github.com/Rukkakka/jibsa
+pipx install jibsa
+# 기본 Python 이 3.11 미만이면: pipx install --python python3.11 jibsa
 ```
 
 **C. pip + 가상환경**
@@ -116,7 +116,7 @@ pipx install git+https://github.com/Rukkakka/jibsa
 ```bash
 # macOS·Linux
 python3 -m venv ~/.venvs/jibsa        # python3 가 3.11 미만이면 python3.11 처럼 버전을 붙인다
-~/.venvs/jibsa/bin/pip install git+https://github.com/Rukkakka/jibsa
+~/.venvs/jibsa/bin/pip install jibsa
 
 # 매번 경로를 치지 않으려면 PATH 에 링크
 mkdir -p ~/.local/bin && ln -s ~/.venvs/jibsa/bin/jibsa ~/.local/bin/jibsa
@@ -125,7 +125,7 @@ mkdir -p ~/.local/bin && ln -s ~/.venvs/jibsa/bin/jibsa ~/.local/bin/jibsa
 ```powershell
 # Windows (PowerShell) — bin 대신 Scripts 폴더를 쓴다
 py -m venv $HOME\.venvs\jibsa
-& "$HOME\.venvs\jibsa\Scripts\pip.exe" install git+https://github.com/Rukkakka/jibsa
+& "$HOME\.venvs\jibsa\Scripts\pip.exe" install jibsa
 
 & "$HOME\.venvs\jibsa\Scripts\jibsa.exe" --help    # 실행할 때도 전체 경로로 부른다
 ```
@@ -136,7 +136,9 @@ Windows 는 링크를 만들려면 관리자 권한이 필요하다. `jibsa` 만
 
 **저장소를 이미 받아 두었다면** URL 대신 경로를 넘긴다: `uv tool install .` / `pipx install .` / `pip install .`
 
-**특정 버전을 설치하려면** 주소 끝에 태그를 붙인다: `uv tool install git+https://github.com/Rukkakka/jibsa@v0.1.0`. uv·pipx 는 태그로 설치하면 `upgrade` 해도 그 버전에 머무니, 최신으로 돌아가려면 태그 없이 다시 설치한다. 버전마다 바뀐 점은 [변경 기록](https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md)에 있다.
+**특정 버전을 설치하려면** 버전을 붙인다: `uv tool install jibsa==0.2.0` (pipx·pip 도 `jibsa==0.2.0`). 버전을 붙여 설치하면 `upgrade` 해도 그 버전에 머무니, 최신으로 돌아가려면 버전 없이 다시 설치한다 (이미 설치돼 있다고 하면 `--force` 를 붙인다).
+
+**아직 릴리스하지 않은 최신 수정을 받으려면** PyPI 대신 GitHub 주소로 설치한다: `uv tool install git+https://github.com/Rukkakka/jibsa` (pipx·pip 도 같은 주소). 이렇게 설치하면 `upgrade` 할 때 `main` 의 최신 커밋을 받고, `jibsa --version` 이 설치한 커밋을 함께 보여 준다. 버전마다 바뀐 점은 [변경 기록](https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md)에 있다.
 
 ### 3. 설치 확인
 
@@ -144,7 +146,7 @@ Windows 는 링크를 만들려면 관리자 권한이 필요하다. `jibsa` 만
 
 ```bash
 jibsa --help             # 명령 목록이 나오면 성공
-jibsa --version          # 설치한 버전과 커밋 (텍스트)
+jibsa --version          # 설치한 버전, GitHub 주소로 설치했으면 커밋도 (텍스트)
 jibsa limits             # 요청 제한 상태 JSON. 네트워크 요청은 보내지 않는다
 jibsa guide              # LLM 에이전트용 사용 가이드 (텍스트)
 jibsa zigbang search listings room 역삼동 --trade 월세 --limit 3   # 실제 조회 한 번
@@ -178,8 +180,10 @@ macOS·Linux 는 따로 할 것이 없다. Windows 는 두 가지를 챙긴다.
 |---|---|---|
 | uv | `uv tool upgrade jibsa` | `uv tool uninstall jibsa` |
 | pipx | `pipx upgrade jibsa` | `pipx uninstall jibsa` |
-| pip (macOS·Linux) | `~/.venvs/jibsa/bin/pip install -U --force-reinstall git+https://github.com/Rukkakka/jibsa` | `rm -rf ~/.venvs/jibsa ~/.local/bin/jibsa` |
-| pip (Windows) | `& "$HOME\.venvs\jibsa\Scripts\pip.exe" install -U --force-reinstall git+https://github.com/Rukkakka/jibsa` | `Remove-Item -Recurse -Force $HOME\.venvs\jibsa` |
+| pip (macOS·Linux) | `~/.venvs/jibsa/bin/pip install -U jibsa` | `rm -rf ~/.venvs/jibsa ~/.local/bin/jibsa` |
+| pip (Windows) | `& "$HOME\.venvs\jibsa\Scripts\pip.exe" install -U jibsa` | `Remove-Item -Recurse -Force $HOME\.venvs\jibsa` |
+
+GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그대로 받고, pip 은 `pip install -U --force-reinstall git+https://github.com/Rukkakka/jibsa` 로 받는다.
 
 요청 제한 상태 파일은 삭제해도 남으니 완전히 지우려면 그 디렉터리도 삭제한다. `JIBSA_STATE_DIR` 로 위치를 바꿨다면 그 디렉터리다.
 
