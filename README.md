@@ -10,7 +10,7 @@ Korean real estate CLI for LLM agents: search current listings and real transact
 
 직방·네이버 부동산·당근부동산의 **현재 거래 가능한 매물**을 조회하는 CLI. Claude, ChatGPT 같은 LLM 에이전트가 집을 찾을 때 셸로 호출하는 도구로 쓰려고 만들었다. 무엇을 원하는지는 사용자와 LLM 이 정하고, 여러 사이트를 돌며 조건에 맞는 매물을 확인해 오는 심부름은 집사가 맡는다.
 
-![uv 로 jibsa 를 설치하고 직방에서 강남역 근처 월세 원룸을 조회하는 터미널 데모. 조회 결과의 매물은 데모용 가상 데이터다](docs/demo/demo.gif)
+![uv 로 jibsa 를 설치하고 직방에서 강남역 근처 월세 원룸을 조회하는 터미널 데모. 조회 결과의 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/demo.gif)
 
 **조회 결과의 매물은 데모용 가상 데이터다.** 실제 정보는 직방의 강남역 검색 결과(역 번호·노선·좌표)와 매물 위치의 시·구·동 이름뿐이고, 나머지는 지어낸 값이다.
 
@@ -19,11 +19,11 @@ Korean real estate CLI for LLM agents: search current listings and real transact
 - 매물 위치는 강남역 반경 1km 안에서 고른 지점이고, 번호 순으로 역에서 0.07km 씩 멀어진다 (0.15~0.92km).
 - 매물 번호와 오피스텔 건물 번호가 실제 직방에 없다는 것은 2026-10-12 에 실제 API 로 확인했다.
 
-설치 장면은 실제 설치 화면이다 ([녹화 대본](docs/demo/demo.tape), [가상 응답](docs/demo/zigbang.json)).
+설치 장면은 실제 설치 화면이다 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/demo.tape), [가상 응답](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/zigbang.json)).
 
 > 비공식 API 를 쓴다. 스펙이 예고 없이 바뀔 수 있고, 자동수집은 각 서비스 약관과 상충할 소지가 있으니 개인 조회 용도로만 쓴다.
 
-명령별 인자·옵션·사용 예시는 아래 [사용 문서](#사용-문서)에 있다.
+명령별 인자·옵션·사용 예시는 아래 [사용 문서](https://github.com/Rukkakka/jibsa#사용-문서)에 있다.
 
 ## 왜 만들었나
 
@@ -136,7 +136,7 @@ Windows 는 링크를 만들려면 관리자 권한이 필요하다. `jibsa` 만
 
 **저장소를 이미 받아 두었다면** URL 대신 경로를 넘긴다: `uv tool install .` / `pipx install .` / `pip install .`
 
-**특정 버전을 설치하려면** 주소 끝에 태그를 붙인다: `uv tool install git+https://github.com/Rukkakka/jibsa@v0.1.0`. uv·pipx 는 태그로 설치하면 `upgrade` 해도 그 버전에 머무니, 최신으로 돌아가려면 태그 없이 다시 설치한다. 버전마다 바뀐 점은 [변경 기록](CHANGELOG.md)에 있다.
+**특정 버전을 설치하려면** 주소 끝에 태그를 붙인다: `uv tool install git+https://github.com/Rukkakka/jibsa@v0.1.0`. uv·pipx 는 태그로 설치하면 `upgrade` 해도 그 버전에 머무니, 최신으로 돌아가려면 태그 없이 다시 설치한다. 버전마다 바뀐 점은 [변경 기록](https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md)에 있다.
 
 ### 3. 설치 확인
 
@@ -190,7 +190,7 @@ macOS·Linux 는 따로 할 것이 없다. Windows 는 두 가지를 챙긴다.
 
 ## LLM 에이전트에 연결하기
 
-에이전트에게는 사용 문서 전체 대신 [LLM 사용 가이드](docs/llm.md) 하나만 먼저 읽게 한다. 명령 고르는 법, 출력 읽는 법, 에러 대응을 짧게 모아 두었고 나머지는 필요한 절만 찾아 읽게 링크했다. 설치본에 들어 있어 `jibsa guide` 로 바로 출력된다 (설치한 버전과 내용이 맞고 네트워크도 쓰지 않는다). 에이전트 지침 파일(`CLAUDE.md`, `AGENTS.md` 등)에 이렇게 적어 두면 된다.
+에이전트에게는 사용 문서 전체 대신 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md) 하나만 먼저 읽게 한다. 명령 고르는 법, 출력 읽는 법, 에러 대응을 짧게 모아 두었고 나머지는 필요한 절만 찾아 읽게 링크했다. 설치본에 들어 있어 `jibsa guide` 로 바로 출력된다 (설치한 버전과 내용이 맞고 네트워크도 쓰지 않는다). 에이전트 지침 파일(`CLAUDE.md`, `AGENTS.md` 등)에 이렇게 적어 두면 된다.
 
 ```text
 집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.
@@ -200,20 +200,20 @@ macOS·Linux 는 따로 할 것이 없다. Windows 는 두 가지를 챙긴다.
 
 통합 검색(`jibsa search`)은 아직 없고 추가할 예정이다.
 
-- [LLM 사용 가이드](docs/llm.md): 에이전트용 요약. 처음 읽을 문서
-- [공통 사용 규칙](docs/common.md): JSON 출력, 금액·누락값, 오류 대응, 요청 제한과 `limits`
-- [당근 CLI 사용법](docs/daangn.md)
-- [네이버 CLI 사용법](docs/naver.md)
-- [직방 CLI 사용법](docs/zigbang.md)
-- [변경 기록](CHANGELOG.md): 버전별로 바뀐 점
+- [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md): 에이전트용 요약. 처음 읽을 문서
+- [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md): JSON 출력, 금액·누락값, 오류 대응, 요청 제한과 `limits`
+- [당근 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md)
+- [네이버 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md)
+- [직방 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)
+- [변경 기록](https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md): 버전별로 바뀐 점
 
 ## 개발 문서
 
-- [공통 개발 규약](AGENTS.md) · [개발 환경](references/development.md) · [버전·릴리스](references/release.md)
-- [당근 개발 가이드](references/providers/daangn.md)
-- [네이버 개발 가이드](references/providers/naver.md)
-- [직방 개발 가이드](references/providers/zigbang.md)
+- [공통 개발 규약](https://github.com/Rukkakka/jibsa/blob/main/AGENTS.md) · [개발 환경](https://github.com/Rukkakka/jibsa/blob/main/references/development.md) · [버전·릴리스](https://github.com/Rukkakka/jibsa/blob/main/references/release.md)
+- [당근 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/daangn.md)
+- [네이버 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/naver.md)
+- [직방 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/zigbang.md)
 
 ## 라이선스
 
-[MIT](LICENSE)
+[MIT](https://github.com/Rukkakka/jibsa/blob/main/LICENSE)
