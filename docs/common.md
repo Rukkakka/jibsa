@@ -43,7 +43,7 @@
 | `price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon` | 거래에 해당하는 매매가·보증금·월세·관리비(만원) |
 | `area_m2`, `area_pyeong` | 전용면적 ㎡·평 |
 | `floor`, `building_floor` | 해당 층·전체 층수. 지하는 반지하·지하1 등으로 표시 |
-| `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름 |
+| `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 반경 안·밖은 출력한 `distance_km`(km, 소수 둘째 자리)로 가르고 `total_in_radius`·반경 밖 안내도 같은 기준이다. 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
 | `registered_at`, `approved_at` | 등록일·사용승인일. 소스가 알려 주지 않으면 `null` |
 | 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `elevator`, `options` 등 |
 | 상세 관리비·교통 | `manage_cost_includes`, `nearby_subways` 등. 소스별 추가 필드는 해당 문서 참고 |

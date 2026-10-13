@@ -19,7 +19,10 @@ from jibsa.core.errors import (
     JibsaError,
     ListingUnavailableError,
 )
-from jibsa.core.geo import haversine_km
+from jibsa.core.geo import (
+    haversine_km,
+    within_radius,
+)
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
@@ -739,7 +742,7 @@ def _search_result(
             notes=notes
             + limit_notes(in_boundary, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True),
         )
-    in_radius = sum(1 for _, distance in pins.values() if distance <= radius_km)
+    in_radius = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km,

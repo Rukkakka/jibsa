@@ -26,6 +26,7 @@ from jibsa.core.errors import (
 from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
+    within_radius,
 )
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
@@ -605,7 +606,7 @@ def search_stay_listings(
         in_radius = len(pins)
         scope_notes = limit_notes(in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STAY_NARROW)
     else:
-        in_radius = sum(1 for distance in pins.values() if distance <= radius_km)
+        in_radius = sum(1 for distance in pins.values() if within_radius(distance, radius_km))
         scope_notes = limit_notes(in_radius, len(listings), limit, narrow=STAY_NARROW, radius=True) + beyond_radius_notes(listings, radius_km)
     return ZigbangStaySearchResult(
         region=region,
