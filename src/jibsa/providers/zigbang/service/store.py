@@ -46,6 +46,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangRegion,
     drop_unused_scope,
     in_range,
+    sent_or_none,
     unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.region import (
@@ -557,10 +558,10 @@ def store_detail_to_listing(response: ZigbangStoreArticleStoreV2ResponseModel) -
         lng=item.lng,
         parking=item.parking,
         elevator=elevator,
-        nearby_subways=[
+        nearby_subways=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
-        ],
+        ]),
         business=item.business,
         key_money_manwon=item.key_money,
         recommended_business=item.recommended_business,

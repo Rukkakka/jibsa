@@ -288,6 +288,15 @@ def school_label(name: str | None, *details: str | None) -> str | None:
     return f"{name} ({', '.join(shown)})" if shown else name
 
 
+def sent_or_none(model: BaseModel, field: str, values: list[str]) -> list[str] | None:
+    """응답에 `field` 키가 왔으면 `values`, 키가 빠졌으면 모름(None).
+
+    응답 모델은 빠진 목록을 [] 로 채워서 그대로 내보내면 모름이 '없음' 이 된다 (값이 없을 때: 모름 → null, 비어 있음 → []).
+    2026-10-12 실측: 새 주거 상세 18건(원룸·빌라·오피스텔·아파트) 모두 options·subways·manageCost.includes 키가 왔다.
+    """
+    return values if field in model.model_fields_set else None
+
+
 @contextmanager
 def unavailable_on_404(listing_id: int | str) -> Iterator[None]:
     """상세 요청의 404 를 만료 매물(`ListingUnavailableError`)로 바꾼다. 그 밖의 HTTP 오류는 그대로 낸다."""

@@ -66,6 +66,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangBoundary,
     ZigbangRegion,
     drop_unused_scope,
+    sent_or_none,
     unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.region import (
@@ -406,7 +407,7 @@ def stay_summary_to_listing(
         weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
         room_count=summary.room_count,
         bathroom_count=summary.bathroom_count,
-        discounts=stay_discounts(summary.discounts),
+        discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts)),
     )
 
 
@@ -790,19 +791,22 @@ def stay_detail_to_listing(
         bathroom_count=detail.bathroom_count,
         parking=stay_parking(detail),
         elevator=detail.has_elevator,
-        options=[STAY_OPTION_LABELS.get(option.option_name, option.option_name) for option in detail.item_options],
+        options=sent_or_none(
+            detail, 'item_options',
+            [STAY_OPTION_LABELS.get(option.option_name, option.option_name) for option in detail.item_options],
+        ),
         manage_cost_includes=None if includes is None else [
             {'gas': '가스', 'water': '수도', 'electricity': '전기'}.get(key, key)
             for key, included in includes.items() if included
         ],
-        nearby_subways=[
+        nearby_subways=sent_or_none(detail, 'nearby_stations', [
             f'{station.name} ({station.description})' if station.description else station.name
             for station in detail.nearby_stations
-        ],
+        ]),
         weekly_rent_manwon=won_to_manwon(detail.weekly_rent),
         weekly_manage_cost_manwon=manage_cost,
         cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon(detail.cleaning_fee),
-        discounts=stay_discounts(detail.discounts),
+        discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts)),
         min_contract_weeks=detail.min_contract_weeks,
         max_contract_weeks=detail.max_contract_weeks,
         max_guests=detail.max_guests,
