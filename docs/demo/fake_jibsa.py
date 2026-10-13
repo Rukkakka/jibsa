@@ -1,6 +1,6 @@
 """README 데모 녹화용 jibsa. CLI 는 그대로 돌리고 직방 응답만 `zigbang.json` 의 가상 매물로 바꿔 준다.
 
-`demo.tape` 가 설치한 jibsa 의 Python 으로 이 파일을 실행한다 (`jibsa --version` 이 설치한 커밋을 보여 주도록).
+`demo.tape` 가 설치한 jibsa 의 Python 으로 이 파일을 실행한다 (`jibsa --version` 이 설치한 버전을 보여 주도록).
 데모 명령(`zigbang search listings room 강남역`)이 보내는 요청만 흉내 내고, 그 밖의 요청은 404 로 끝낸다.
 """
 
