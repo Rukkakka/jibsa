@@ -6,10 +6,7 @@ from datetime import (
     timezone,
 )
 
-from httpx import (
-    HTTPStatusError,
-    Response,
-)
+from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -871,7 +868,9 @@ def _calculate_stay_price(
     except HTTPStatusError as exc:
         if exc.response.status_code != 400:
             raise
-        reason = _stay_price_error(exc.response)
+        # 400 본문은 늘 객체이고 message 는 문자열 또는 형식 오류 배열이다 (2026-10-11 실측 6종)
+        message = (_stay_400_body(exc) or {}).get('message')
+        reason = message if isinstance(message, str) else None
         weeks = f'{detail.min_contract_weeks or "?"}~{detail.max_contract_weeks or "?"}주'
         raise JibsaError(
             code='INVALID_ARGUMENT',
@@ -886,18 +885,24 @@ StayResponse = TypeVar('StayResponse')
 StayParameter = TypeVar('StayParameter')
 
 
+def _stay_400_body(exc: HTTPStatusError) -> dict[str, Any] | None:
+    """단기임대 API 가 400 으로 준 본문 객체 (`error` 코드·`message`). 400 이 아니거나 JSON 객체가 아니면 None."""
+    if exc.response.status_code != 400:
+        return None
+    try:
+        body = exc.response.json()
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
 def _stay_search_call(call: Callable[[StayParameter], StayResponse], parameter: StayParameter) -> StayResponse:
     """단기임대 검색 API 를 부르고, 기간이 허용 범위 밖이라는 400 은 입력 오류(INVALID_ARGUMENT)로 바꾼다."""
     try:
         return call(parameter)
     except HTTPStatusError as exc:
-        if exc.response.status_code != 400:
-            raise
-        try:
-            body = exc.response.json()
-        except ValueError:
-            raise exc from None
-        if not isinstance(body, dict) or body.get('error') not in STAY_PERIOD_ERRORS:
+        body = _stay_400_body(exc)
+        if body is None or body.get('error') not in STAY_PERIOD_ERRORS:
             raise
         raise JibsaError(
             code='INVALID_ARGUMENT',
@@ -923,24 +928,10 @@ def _stay_region_search(
     try:
         return _stay_search_call(client.run_request_guest_items_search, context).item_ids
     except HTTPStatusError as exc:
-        if exc.response.status_code != 400:
-            raise
-        try:
-            body = exc.response.json()
-        except ValueError:
-            raise exc from None
-        if not isinstance(body, dict) or body.get('error') != 'REGION_NOT_FOUND':
+        body = _stay_400_body(exc)
+        if body is None or body.get('error') != 'REGION_NOT_FOUND':
             raise
         raise RegionNotFoundError(name, hint='--radius 로 반경 검색하세요') from None
-
-
-def _stay_price_error(response: Response) -> str | None:
-    # 400 본문은 늘 객체이고 message 는 문자열 또는 형식 오류 배열이다 (2026-10-11 실측 6종)
-    try:
-        message = response.json().get('message')
-    except ValueError:
-        return None
-    return message if isinstance(message, str) else None
 
 
 def _stay_available(
