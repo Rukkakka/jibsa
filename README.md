@@ -1,5 +1,8 @@
 # jibsa (집사)
 
+직방·네이버 부동산·당근부동산의 원룸·오피스텔·빌라·아파트·상가 매물과 실거래가를 조회하는 LLM 에이전트용 CLI.
+Korean real estate CLI for LLM agents: search current listings and real transaction prices on Zigbang, Naver Real Estate and Daangn.
+
 > **집사**: 주인 곁에서 궂은일을 대신 맡아 주는 사람.
 > **집 + 사(다)**: 집을 구하는 일.
 >
