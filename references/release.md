@@ -7,11 +7,13 @@
 버전은 `pyproject.toml` 의 `version` 에만 적는다. `jibsa --version` 은 설치 메타데이터에서 읽으므로
 (`cli/app.py` 의 `version_text()`) 코드나 문서에 버전 문자열을 복사하지 않는다.
 
-사용자는 `git+https://github.com/Rukkakka/jibsa` 로 `main` 의 최신 커밋을 설치한다. 그래서 릴리스 사이의 커밋은
-버전이 같고, `jibsa --version` 이 설치한 커밋을 함께 보여 준다.
+사용자는 PyPI 에서 릴리스한 버전을 설치하거나(`uv tool install jibsa`, 기본), `git+https://github.com/Rukkakka/jibsa`
+로 `main` 의 최신 커밋을 설치한다. git 주소 설치는 릴리스 사이의 커밋도 버전이 같아 `jibsa --version` 이 설치한
+커밋을 함께 보여 준다.
 
 | 설치 방법 | `jibsa --version` |
 | --- | --- |
+| PyPI (`uv tool install jibsa`, `pipx install jibsa`, `pip install jibsa`) | `jibsa 0.2.0` |
 | git 주소 (`uv tool install git+...`, `pipx`, `pip`) | `jibsa 0.2.0 (커밋 a1b2c3d)` |
 | 편집 가능 설치 (`pip install -e .`) | `jibsa 0.2.0 (개발 설치)` |
 | 로컬 경로 (`uv tool install .`) | `jibsa 0.2.0` |
@@ -63,8 +65,9 @@
 
 ## 릴리스 절차
 
-변경이 어느 정도 모이면 릴리스한다. 정해진 주기는 없다. 사용자는 `upgrade` 할 때 `main` 을 바로 받으므로,
-릴리스는 급한 수정을 내보내는 일이 아니라 "이 커밋이 몇 버전"인지 이름을 붙이는 일이다.
+변경이 어느 정도 모이면 릴리스한다. 정해진 주기는 없다. 다만 PyPI 로 설치한 사용자는 릴리스해야 수정을 받으므로,
+사이트 API 변경 대응처럼 조회가 깨진 것을 고친 수정은 머지 뒤 바로 패치를 릴리스한다. git 주소로 설치한 사용자는
+`upgrade` 할 때 `main` 을 바로 받는다.
 
 1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([workflow.md](workflow.md)).
 2. 한 커밋으로 아래 두 가지를 바꾼다.
@@ -80,24 +83,28 @@
    git push origin v0.2.0
    ```
 
-5. 그 태그로 GitHub Release 를 만든다. 본문은 CHANGELOG 의 해당 절이고, 저장소 첫 화면의 Releases 에 버전과
-   변경 내용이 보인다.
+5. 태그 push 가 [Release 워크플로](../.github/workflows/release.yml)를 돌린다. 끝까지 통과했는지 Actions 에서 본다.
+   1. 태그 확인 — 태그 커밋이 `main` 에 있는지, 태그가 `pyproject.toml` 버전과 같은지, CHANGELOG 에 그 버전 절이 있는지
+   2. CI — [ci.yml](../.github/workflows/ci.yml) 전체. 설치본 확인이 sdist·wheel 을 빌드하고 `twine check`·설치 확인을 한다
+   3. PyPI — 2 에서 빌드한 파일을 신뢰 게시(Trusted Publishing)로 올린다. API 토큰은 없다
+   4. GitHub Release — 본문은 CHANGELOG 의 그 버전 절, 빌드한 파일을 첨부한다
 
-   ```
-   awk '/^## 0\.2\.0/{f=1; next} /^## /{if (f) exit} f' CHANGELOG.md > /tmp/notes.md
-   gh release create v0.2.0 --verify-tag --title v0.2.0 --notes-file /tmp/notes.md
-   ```
-
-   `--verify-tag` 는 push 한 태그가 없으면 멈춘다. 빼면 `gh` 가 기본 브랜치 끝에 태그를 새로 만든다.
-6. GitHub 주소로 새로 설치해 버전을 확인한다. 쓰던 설치본을 건드리지 않게 임시 가상환경에 설치하고, 실제 조회도
-   한 번 해 본다.
+   태그 확인이나 CI 가 실패하면 아무것도 올라가지 않는다. 고친 커밋을 머지하고 태그를 지운 뒤
+   (`git push origin :refs/tags/v0.2.0 && git tag -d v0.2.0`) 새 `main` 커밋에 다시 단다. PyPI 단계만 실패했으면
+   (pypi.org 게시자 설정 등) 원인을 고치고 그 실행의 실패한 잡을 다시 돌린다.
+6. PyPI 에서 새로 설치해 버전을 확인한다. 쓰던 설치본을 건드리지 않게 임시 가상환경에 설치하고, 실제 조회도 한 번
+   해 본다. 올린 직후에는 PyPI 색인에 늦게 보일 수 있다.
 
    ```
    python3 -m venv /tmp/jibsa-check
-   /tmp/jibsa-check/bin/pip install -q git+https://github.com/Rukkakka/jibsa
-   /tmp/jibsa-check/bin/jibsa --version   # jibsa 0.2.0 (커밋 <머지 커밋>)
+   /tmp/jibsa-check/bin/pip install -q jibsa==0.2.0
+   /tmp/jibsa-check/bin/jibsa --version   # jibsa 0.2.0
    /tmp/jibsa-check/bin/jibsa daangn search listings 역삼동 --limit 1
    rm -rf /tmp/jibsa-check
    ```
 
-태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리킨다.
+태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리키고,
+Release 워크플로가 거절한다.
+
+PyPI 에 한 번 올린 버전은 지우거나 같은 번호로 다시 올릴 수 없다. 잘못 올렸으면 pypi.org 에서 그 버전을 yank 하고
+고친 패치를 릴리스한다.

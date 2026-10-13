@@ -1,0 +1,82 @@
+# v* 태그를 push 하면 PyPI 와 GitHub Release 로 배포한다 (references/release.md '릴리스 절차').
+# PyPI 는 API 토큰 없이 신뢰 게시(Trusted Publishing)로 올린다. pypi.org 의 게시자 설정은 프로젝트 jibsa,
+# 저장소 Rukkakka/jibsa, 워크플로 release.yml, 환경 pypi 이고 GitHub 환경 pypi 는 v* 태그에서만 배포를 받는다.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: 태그 확인
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 태그 커밋이 main 에 있는지 보려고 main 기록까지 받는다
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: 태그가 main 에 있고 pyproject.toml 버전·CHANGELOG 절과 맞는지
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME 이 main 에 없는 커밋을 가리킵니다. 태그는 머지 뒤 main 에만 단다"
+            exit 1
+          fi
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그 $GITHUB_REF_NAME 와 pyproject.toml 버전 $version 이 다릅니다"
+            exit 1
+          fi
+          if ! grep -q "^## $version — " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 에 '## $version — 날짜' 절이 없습니다"
+            exit 1
+          fi
+
+  ci:
+    name: CI
+    needs: tag
+    uses: ./.github/workflows/ci.yml
+
+  pypi:
+    name: PyPI 에 올리기
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/jibsa/
+    permissions:
+      # 신뢰 게시의 OIDC 토큰
+      id-token: write
+    steps:
+      # CI 의 설치본 확인이 빌드·확인한 파일을 그대로 올린다
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub Release
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: CHANGELOG 의 그 버전 절로 Release 만들기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v head="## $version " 'index($0, head) == 1 {f=1; next} /^## /{if (f) exit} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" dist/*

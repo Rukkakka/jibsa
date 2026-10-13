@@ -1,4 +1,5 @@
-# PR 과 main push 마다 린트·타입 검사·전체 pytest·설치본을 확인한다.
+# PR 과 main push 마다 린트·타입 검사·전체 pytest·설치본을 확인한다. 배포(release.yml)도 이 워크플로를 불러 같은 검사를
+# 통과한 빌드만 올린다. 잡 이름은 main 보호 규칙의 필수 검사라 바꾸면 보호 규칙도 같이 고친다.
 # 테스트는 가짜 응답만 쓰고 실제 API 는 부르지 않는다 (references/development.md '검증과 테스트').
 name: CI
 
@@ -6,6 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -67,8 +69,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
-      - run: pip install build
-      - run: python -m build --wheel
+      - run: pip install build twine
+      - run: python -m build
+      # README 가 PyPI 프로젝트 페이지에서 렌더링되는지 (상대 링크는 잡지 못한다)
+      - run: twine check --strict dist/*
       # 편집 가능 설치와 달리 docs/llm.md 를 패키지 안 사본으로 읽으므로 그 사본이 빠지거나 다르면 여기서 드러난다
       - name: 새 가상환경에 설치해 실행
         run: |
@@ -77,3 +81,7 @@ jobs:
           "$RUNNER_TEMP/jibsa-check/bin/jibsa" --version
           "$RUNNER_TEMP/jibsa-check/bin/jibsa" guide > "$RUNNER_TEMP/guide.md"
           diff "$RUNNER_TEMP/guide.md" docs/llm.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
