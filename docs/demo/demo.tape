@@ -1,7 +1,7 @@
 # README 데모 녹화 대본 (VHS, https://github.com/charmbracelet/vhs).
 # 저장소 루트에서 `vhs docs/demo/demo.tape` 로 다시 찍는다. uv·jq 가 필요하다.
 #
-# 설치 장면은 GitHub 에서 진짜로 설치한다 (임시 폴더에 설치해 쓰던 jibsa 는 건드리지 않는다).
+# 설치 장면은 PyPI 에서 진짜로 설치한다 (임시 폴더에 설치해 쓰던 jibsa 는 건드리지 않는다).
 # 조회 장면의 `jibsa` 는 설치한 jibsa 를 fake_jibsa.py 로 실행해 직방 응답만 가상 매물(zigbang.json)로 바꾼다.
 # VHS 의 Type 은 한글을 입력하지 못해, 한글 단어는 숨긴 준비에서 zsh 단축키(Ctrl+X 숫자)에 묶어 두고 그 키로 넣는다.
 # 한글 고정폭 글꼴 D2Coding 이 필요하다 (`brew install --cask font-d2coding`).
@@ -37,7 +37,7 @@ Type "clear" Enter
 Sleep 500ms
 Show
 
-Type "uv tool install git+https://github.com/Rukkakka/jibsa"
+Type "uv tool install jibsa"
 Sleep 600ms
 Enter
 Wait+Screen /Installed 1 executable/

@@ -200,6 +200,12 @@ GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그
 집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.
 ```
 
+아래는 이 한 줄을 적어 둔 폴더에서 Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾아줘" 라고 시킨 실제 화면이다. Claude 가 `jibsa guide` 를 읽고 명령을 골라 조회한 뒤 결과를 표로 정리한다.
+
+![Claude Code 가 jibsa guide 를 읽고 직방에서 강남역 근처 월세 원룸을 조회해 표로 정리하는 터미널 데모. 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/claude.gif)
+
+**매물은 위 데모와 같은 가상 데이터다.** Claude 의 답은 실제 Claude Code 가 쓴 것이고, Claude 가 부른 `jibsa` 만 직방 응답을 가상 매물로 바꿔 돌려준다. 지침 파일의 두 번째 줄("이 폴더의 jibsa 는 데모용 가상 매물을 돌려준다")은 데모용이다 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/claude.tape)).
+
 ## 사용 문서
 
 통합 검색(`jibsa search`)은 아직 없고 추가할 예정이다.
