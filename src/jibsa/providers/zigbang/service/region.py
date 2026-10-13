@@ -2,7 +2,10 @@
 
 import re
 
-from jibsa.core.errors import RegionNotFoundError
+from jibsa.core.errors import (
+    JibsaError,
+    RegionNotFoundError,
+)
 from jibsa.core.geo import (
     encode_geohash,
     geohashes_covering,
@@ -284,20 +287,36 @@ def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -
     )
 
 
-def geocoding_blocked(exc: RateLimitedError, *, naver_blocked: bool) -> RateLimitedError:
-    """당근 단독 명령이 역·장소 이름의 좌표를 찾지 못한 직방 요청 제한 에러에 맞는 안내를 단다.
+def geocoding_failed(zigbang_error: Exception, naver_error: Exception) -> JibsaError:
+    """당근 단독 명령이 역·장소 이름의 좌표를 직방·네이버 어디서도 찾지 못했을 때의 에러.
 
-    당근 명령은 동이 아닌 이름을 직방 지역 검색으로 찾고, 직방이 막히면 네이버로 다시 찾는다.
-    네이버도 막혔거나(`naver_blocked`) 네이버가 못 찾는 이름(대학교 등)일 때 쓴다. 당근 동 이름 검색과
-    좌표 검색은 직방·네이버를 거치지 않아 지금도 된다. 막힌 소스가 직방임을 `source` 로 알린다.
+    당근 명령은 동이 아닌 이름을 직방 지역 검색으로 찾고, 직방이 막히거나 실패하면(서버 오류·네트워크·응답 형식)
+    네이버로 다시 찾는다. 네이버도 막혔거나 실패했거나 못 찾는 이름(대학교 등)일 때 쓴다. 당근 동 이름 검색과
+    좌표 검색은 직방·네이버를 거치지 않아 지금도 된다. 실패한 소스가 직방임을 `source` 로 알린다. 직방 요청 제한은
+    그 에러(RATE_LIMITED, 남은 시간)를 그대로 쓰고, 그 밖의 실패는 UPSTREAM_ERROR 로 바꾼다. 그대로 올리면 명령의
+    소스(daangn)로 보고돼 에이전트가 멀쩡한 당근을 버린다.
     """
-    reason = '네이버도 막혀 있습니다' if naver_blocked else '네이버 지역 검색으로는 찾지 못했습니다'
-    exc.hint = (
-        f'역·장소 이름은 직방 지역 검색으로 위치를 찾는데 직방이 막혀 있고, {reason}. '
+    if isinstance(naver_error, RateLimitedError):
+        reason = '네이버도 막혀 있습니다'
+    elif isinstance(naver_error, RegionNotFoundError):
+        reason = '네이버 지역 검색으로는 찾지 못했습니다'
+    else:
+        reason = '네이버 지역 검색도 실패했습니다'
+    blocked = isinstance(zigbang_error, RateLimitedError)
+    hint = (
+        f"역·장소 이름은 직방 지역 검색으로 위치를 찾는데 직방이 {'막혀 있고' if blocked else '실패했고'}, {reason}. "
         '당근 동 이름(예: 역삼동)으로 찾거나 --lat/--lng 로 좌표를 직접 주세요'
     )
-    exc.details['source'] = 'zigbang'
-    return exc
+    if isinstance(zigbang_error, RateLimitedError):
+        zigbang_error.hint = hint
+        zigbang_error.details['source'] = 'zigbang'
+        return zigbang_error
+    return JibsaError(
+        code='UPSTREAM_ERROR',
+        message=f'직방 지역 검색이 실패했습니다 ({type(zigbang_error).__name__}: {zigbang_error})',
+        hint=hint,
+        details={'source': 'zigbang'},
+    )
 
 
 def to_int(value: str | None) -> int | None:

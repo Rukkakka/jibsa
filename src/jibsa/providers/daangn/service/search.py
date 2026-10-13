@@ -15,7 +15,10 @@ from jibsa.core.errors import (
     JibsaError,
     UnsupportedRegionError,
 )
-from jibsa.core.geo import haversine_km
+from jibsa.core.geo import (
+    haversine_km,
+    within_radius,
+)
 from jibsa.core.korean import (
     ADMIN_DONG_NUMBER,
     legal_dong_hint,
@@ -953,9 +956,8 @@ def search_area(
         '지도 매물',
     )
     nearest = _nearest_points(points, lat, lng)
-    # 매물의 distance_km 처럼 소수 둘째 자리로 반올림해 센다. 반경 밖 안내(beyond_radius_notes)가 그 값으로 세서, 정확한
-    # 거리로 세면 0.104km(표시 0.1km) 매물이 한쪽에서만 반경 안이 된다 (2026-10-11 실측: 반경 0.1km 19건 vs 안내 21건)
-    total_in_radius = sum(1 for _, distance in nearest if round(distance, 2) <= radius_km)
+    # 반경 밖 안내(beyond_radius_notes)와 같은 기준(표시 거리)으로 센다
+    total_in_radius = sum(1 for _, distance in nearest if within_radius(distance, radius_km))
 
     center = (lat, lng)
     matched: list[tuple[DaangnArticleModel, DaangnTradeModel]] = []

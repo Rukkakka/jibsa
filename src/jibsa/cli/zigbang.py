@@ -56,6 +56,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangBoundary,
     ZigbangRegion,
     ZigbangRoomConditions,
+    room_filter_of,
 )
 from jibsa.providers.zigbang.service.complex import (
     get_complex,
@@ -218,6 +219,72 @@ def _require_center(query: str | None, lat: float | None, lng: float | None) -> 
         raise typer.BadParameter('지역 이름 또는 --lat/--lng 를 주세요', param_hint='QUERY')
 
 
+def _room_conditions(
+    *,
+    deposit_min: int | None,
+    deposit_max: int | None,
+    rent_min: int | None,
+    rent_max: int | None,
+    price_min: int | None,
+    price_max: int | None,
+    room: list[str] | None,
+    manage_cost_min: int | None,
+    manage_cost_max: int | None,
+    no_manage_cost: bool,
+    area_min: float | None,
+    area_max: float | None,
+    area_pyeong_min: float | None,
+    area_pyeong_max: float | None,
+    floor: list[str] | None,
+    bathroom: int | None,
+    option: list[str] | None,
+    condition: list[str] | None,
+    without_random: bool,
+) -> ZigbangRoomConditions:
+    """room 과 --complex 가 같이 받는 가격·방·건물 조건을 조회 전에 검사해 조건 모델로 만든다. 거래 유형은 비워 둔다.
+
+    두 명령이 같은 조건을 같은 검사로 받도록 범위(`validate_ranges`)·관리비 없음과 관리비 범위 함께 쓰기·목록 값(`split_csv`)을
+    여기 한 곳에서 본다. 인자에 기본값이 없어 한쪽 명령에서 조건을 빠뜨리면 mypy 가 잡는다. 거래 유형은 명령마다 고르는
+    방식이 달라(아파트 단지는 단기임대 제외) 부르는 쪽이 `model_copy(update={'trade_types': ...})` 로 넣는다.
+    조건 모델 검증 오류가 입력 오류(INVALID_ARGUMENT)로 나가도록 `handle_errors` 안에서 부른다.
+
+    Raises:
+        typer.BadParameter: 범위가 거꾸로이거나 유한하지 않을 때, --no-manage-cost 와 관리비 범위를 함께 줬을 때,
+            목록 값이 허용 밖일 때.
+    """
+    validate_ranges(
+        ('deposit', deposit_min, deposit_max),
+        ('rent', rent_min, rent_max),
+        ('price', price_min, price_max),
+        ('manage-cost', manage_cost_min, manage_cost_max),
+        ('area', area_min, area_max),
+        ('area-pyeong', area_pyeong_min, area_pyeong_max),
+    )
+    if no_manage_cost and (manage_cost_min is not None or manage_cost_max is not None):
+        raise typer.BadParameter('--no-manage-cost 는 관리비 범위와 함께 쓸 수 없습니다', param_hint='--no-manage-cost')
+    return ZigbangRoomConditions(
+        deposit_min=deposit_min,
+        deposit_max=deposit_max,
+        rent_min=rent_min,
+        rent_max=rent_max,
+        price_min=price_min,
+        price_max=price_max,
+        room_types=split_csv(room, ROOM_TYPES, '--room'),
+        manage_cost_min=manage_cost_min,
+        manage_cost_max=manage_cost_max,
+        no_manage_cost=no_manage_cost,
+        area_min_m2=area_min,
+        area_max_m2=area_max,
+        area_min_pyeong=area_pyeong_min,
+        area_max_pyeong=area_pyeong_max,
+        floors=split_csv(floor, FLOOR_FILTERS, '--floor'),
+        bathroom_count=bathroom,
+        options=split_csv(option, OPTION_FILTERS, '--option'),
+        extra_conditions=split_csv(condition, CONDITIONS, '--condition'),
+        without_random=without_random,
+    )
+
+
 search_app = typer.Typer(
     help=(
         '직방 장소 후보(locations)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), 상가·사무실(store), 단기임대 서비스(stay). '
@@ -334,16 +401,28 @@ def search_room_command(
     """
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
-    validate_ranges(
-        ('deposit', deposit_min, deposit_max),
-        ('rent', rent_min, rent_max),
-        ('price', price_min, price_max),
-        ('manage-cost', manage_cost_min, manage_cost_max),
-        ('area', area_min, area_max),
-        ('area-pyeong', area_pyeong_min, area_pyeong_max),
-    )
-    if no_manage_cost and (manage_cost_min is not None or manage_cost_max is not None):
-        raise typer.BadParameter('--no-manage-cost 는 관리비 범위와 함께 쓸 수 없습니다', param_hint='--no-manage-cost')
+    with handle_errors(SOURCE):
+        conditions = _room_conditions(
+            deposit_min=deposit_min,
+            deposit_max=deposit_max,
+            rent_min=rent_min,
+            rent_max=rent_max,
+            price_min=price_min,
+            price_max=price_max,
+            room=room,
+            manage_cost_min=manage_cost_min,
+            manage_cost_max=manage_cost_max,
+            no_manage_cost=no_manage_cost,
+            area_min=area_min,
+            area_max=area_max,
+            area_pyeong_min=area_pyeong_min,
+            area_pyeong_max=area_pyeong_max,
+            floor=floor,
+            bathroom=bathroom,
+            option=option,
+            condition=condition,
+            without_random=without_random,
+        )
     property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
     if without_random:
         with handle_errors(SOURCE):
@@ -354,10 +433,7 @@ def search_room_command(
         price=price_min is not None or price_max is not None,
         deposit=deposit_min is not None or deposit_max is not None,
     )
-    room_types = split_csv(room, ROOM_TYPES, '--room')
-    floors = split_csv(floor, FLOOR_FILTERS, '--floor')
-    options = split_csv(option, OPTION_FILTERS, '--option')
-    extra_conditions = split_csv(condition, CONDITIONS, '--condition')
+    conditions = conditions.model_copy(update={'trade_types': trade_types})
     skipped_types = unsearchable_types(property_types, trade_types)
     if skipped_types:
         trade_notes.append(unsearchable_note(skipped_types))
@@ -365,28 +441,6 @@ def search_room_command(
         trade_notes.append(STAY_SERVICE_NOTE)
 
     with handle_errors(SOURCE), ZigbangClient() as client:
-        conditions = ZigbangRoomConditions(
-            trade_types=trade_types,
-            deposit_min=deposit_min,
-            deposit_max=deposit_max,
-            rent_min=rent_min,
-            rent_max=rent_max,
-            price_min=price_min,
-            price_max=price_max,
-            room_types=room_types,
-            manage_cost_min=manage_cost_min,
-            manage_cost_max=manage_cost_max,
-            no_manage_cost=no_manage_cost,
-            area_min_m2=area_min,
-            area_max_m2=area_max,
-            area_min_pyeong=area_pyeong_min,
-            area_max_pyeong=area_pyeong_max,
-            floors=floors,
-            bathroom_count=bathroom,
-            options=options,
-            extra_conditions=extra_conditions,
-            without_random=without_random,
-        )
         region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, GEOHASH_PRECISION)
         result = search_listings(
             client,
@@ -537,7 +591,7 @@ def complex_listings_command(
     ] = None,
     pyeong: Annotated[
         list[int] | None,
-        typer.Option('--pyeong', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복 가능 (OR)')
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복 가능 (OR)')
     ] = None,
     limit: Annotated[int | None, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수. 기본 아파트 20, 오피스텔 15')] = None,
     deposit_min: DepositMinOption = None,
@@ -598,23 +652,31 @@ def complex_listings_command(
     _require_complex_id(complex_id, param_hint='--complex')
     if limit is None:
         limit = 15 if complex_id.strip().startswith('officetel-') else 20
-    room_types = split_csv(room, ROOM_TYPES, '--room')
-    floors = split_csv(floor, FLOOR_FILTERS, '--floor')
-    options = split_csv(option, OPTION_FILTERS, '--option')
-    extra_conditions = split_csv(condition, CONDITIONS, '--condition')
-    if no_manage_cost and (manage_cost_min is not None or manage_cost_max is not None):
-        raise typer.BadParameter('--no-manage-cost 는 관리비 범위와 함께 쓸 수 없습니다', param_hint='--no-manage-cost')
-    validate_ranges(
-        ('deposit', deposit_min, deposit_max),
-        ('rent', rent_min, rent_max),
-        ('price', price_min, price_max),
-        ('manage-cost', manage_cost_min, manage_cost_max),
-        ('area', area_min, area_max),
-        ('area-pyeong', area_pyeong_min, area_pyeong_max),
-    )
-    has_building_filters = (
-        any(value is not None for value in (manage_cost_min, manage_cost_max, area_min, area_max, area_pyeong_min, area_pyeong_max, bathroom))
-        or no_manage_cost or room_types or floors or options or extra_conditions
+    with handle_errors(SOURCE):
+        conditions = _room_conditions(
+            deposit_min=deposit_min,
+            deposit_max=deposit_max,
+            rent_min=rent_min,
+            rent_max=rent_max,
+            price_min=price_min,
+            price_max=price_max,
+            room=room,
+            manage_cost_min=manage_cost_min,
+            manage_cost_max=manage_cost_max,
+            no_manage_cost=no_manage_cost,
+            area_min=area_min,
+            area_max=area_max,
+            area_pyeong_min=area_pyeong_min,
+            area_pyeong_max=area_pyeong_max,
+            floor=floor,
+            bathroom=bathroom,
+            option=option,
+            condition=condition,
+            without_random=without_random,
+        )
+    # 무작위 섞기 해제는 따로 막는다 (list_complex_listings)
+    has_building_filters = bool(conditions.room_types) or any(
+        value is not None and value != [] for value in room_filter_of(conditions).values()
     )
     if complex_id.strip().startswith('apt-') and has_building_filters:
         raise typer.BadParameter('관리비·방 구조·면적·층·욕실·옵션·시설 조건은 officetel-... 건물 ID 에만 사용할 수 있습니다')
@@ -641,32 +703,10 @@ def complex_listings_command(
     )
     trade_notes = apt_trade_notes + trade_notes
     with handle_errors(SOURCE), ZigbangClient() as client:
-        conditions = ZigbangRoomConditions(
-            trade_types=trade_types,
-            deposit_min=deposit_min,
-            deposit_max=deposit_max,
-            rent_min=rent_min,
-            rent_max=rent_max,
-            price_min=price_min,
-            price_max=price_max,
-            room_types=room_types,
-            manage_cost_min=manage_cost_min,
-            manage_cost_max=manage_cost_max,
-            no_manage_cost=no_manage_cost,
-            area_min_m2=area_min,
-            area_max_m2=area_max,
-            area_min_pyeong=area_pyeong_min,
-            area_max_pyeong=area_pyeong_max,
-            floors=floors,
-            bathroom_count=bathroom,
-            options=options,
-            extra_conditions=extra_conditions,
-            without_random=without_random,
-        )
         result = list_complex_listings(
             client,
             complex_id.strip(),
-            conditions=conditions,
+            conditions=conditions.model_copy(update={'trade_types': trade_types}),
             pyeong_ids=pyeong,
             limit=limit,
         )
@@ -728,6 +768,10 @@ def store_command(
     # validate_ranges(min > max 만 거절) 대신 유한한지만 보고 범위는 아래 검사 하나로 본다
     require_finite('--area-min', area_min)
     require_finite('--area-max', area_max)
+    # 상한이 '미만' 이라 0 은 맞는 매물이 없다. 요청 모델(gt=0)이 지역 검색·경계 요청을 보낸 뒤 영어 메시지로 막던 것을
+    # 요청 전에 막는다 (2026-10-12 실측: --area-max 0 이 요청 3회 뒤 'Input should be greater than 0')
+    if area_max is not None and area_max <= 0:
+        raise typer.BadParameter('--area-max 는 0 보다 커야 합니다 (상한은 미만 조건)', param_hint='--area-max')
     if area_min is not None and area_max is not None and area_min >= area_max:
         raise typer.BadParameter('--area-max 는 --area-min 보다 커야 합니다', param_hint='--area-max')
     with handle_errors(SOURCE):

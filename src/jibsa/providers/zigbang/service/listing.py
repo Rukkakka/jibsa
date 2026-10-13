@@ -19,7 +19,10 @@ from jibsa.core.errors import (
     JibsaError,
     ListingUnavailableError,
 )
-from jibsa.core.geo import haversine_km
+from jibsa.core.geo import (
+    haversine_km,
+    within_radius,
+)
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
@@ -74,6 +77,7 @@ from jibsa.providers.zigbang.service.common import (
     officetel_complex_id,
     room_filter_of,
     school_label,
+    sent_or_none,
     summary_to_listing,
     trade_type_of,
     tradeable_summaries,
@@ -309,12 +313,12 @@ def detail_to_listing(
         approved_at=normalize_date(residence.approved_at),
         parking=parking,
         elevator=residence.elevator,
-        options=[option.name for option in item.options if option.name],
-        manage_cost_includes=[entry.name for entry in manage.includes if entry.name] if manage else None,
-        nearby_subways=[
+        options=sent_or_none(item, 'options', [option.name for option in item.options if option.name]),
+        manage_cost_includes=sent_or_none(manage, 'includes', [entry.name for entry in manage.includes if entry.name]) if manage else None,
+        nearby_subways=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
-        ],
+        ]),
         # 표시 문구를 정규화하지 않는다. 코드는 원룸·빌라가 대부분 '그외'라 문구가 더 정확하다 (2026-10-10 실측).
         # 원본 문구 끝에 공백이 붙어 오기도 해('주택   ') 앞뒤 공백만 뗀다
         residence_type=(residence.residence_description or residence.residence_type or '').strip() or None,
@@ -739,7 +743,7 @@ def _search_result(
             notes=notes
             + limit_notes(in_boundary, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True),
         )
-    in_radius = sum(1 for _, distance in pins.values() if distance <= radius_km)
+    in_radius = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km,

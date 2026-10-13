@@ -6,10 +6,7 @@ from datetime import (
     timezone,
 )
 
-from httpx import (
-    HTTPStatusError,
-    Response,
-)
+from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -26,6 +23,7 @@ from jibsa.core.errors import (
 from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
+    within_radius,
 )
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
@@ -65,6 +63,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangBoundary,
     ZigbangRegion,
     drop_unused_scope,
+    sent_or_none,
     unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.region import (
@@ -405,7 +404,7 @@ def stay_summary_to_listing(
         weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
         room_count=summary.room_count,
         bathroom_count=summary.bathroom_count,
-        discounts=stay_discounts(summary.discounts),
+        discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts)),
     )
 
 
@@ -605,7 +604,7 @@ def search_stay_listings(
         in_radius = len(pins)
         scope_notes = limit_notes(in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STAY_NARROW)
     else:
-        in_radius = sum(1 for distance in pins.values() if distance <= radius_km)
+        in_radius = sum(1 for distance in pins.values() if within_radius(distance, radius_km))
         scope_notes = limit_notes(in_radius, len(listings), limit, narrow=STAY_NARROW, radius=True) + beyond_radius_notes(listings, radius_km)
     return ZigbangStaySearchResult(
         region=region,
@@ -789,19 +788,22 @@ def stay_detail_to_listing(
         bathroom_count=detail.bathroom_count,
         parking=stay_parking(detail),
         elevator=detail.has_elevator,
-        options=[STAY_OPTION_LABELS.get(option.option_name, option.option_name) for option in detail.item_options],
+        options=sent_or_none(
+            detail, 'item_options',
+            [STAY_OPTION_LABELS.get(option.option_name, option.option_name) for option in detail.item_options],
+        ),
         manage_cost_includes=None if includes is None else [
             {'gas': '가스', 'water': '수도', 'electricity': '전기'}.get(key, key)
             for key, included in includes.items() if included
         ],
-        nearby_subways=[
+        nearby_subways=sent_or_none(detail, 'nearby_stations', [
             f'{station.name} ({station.description})' if station.description else station.name
             for station in detail.nearby_stations
-        ],
+        ]),
         weekly_rent_manwon=won_to_manwon(detail.weekly_rent),
         weekly_manage_cost_manwon=manage_cost,
         cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon(detail.cleaning_fee),
-        discounts=stay_discounts(detail.discounts),
+        discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts)),
         min_contract_weeks=detail.min_contract_weeks,
         max_contract_weeks=detail.max_contract_weeks,
         max_guests=detail.max_guests,
@@ -866,7 +868,9 @@ def _calculate_stay_price(
     except HTTPStatusError as exc:
         if exc.response.status_code != 400:
             raise
-        reason = _stay_price_error(exc.response)
+        # 400 본문은 늘 객체이고 message 는 문자열 또는 형식 오류 배열이다 (2026-10-11 실측 6종)
+        message = (_stay_400_body(exc) or {}).get('message')
+        reason = message if isinstance(message, str) else None
         weeks = f'{detail.min_contract_weeks or "?"}~{detail.max_contract_weeks or "?"}주'
         raise JibsaError(
             code='INVALID_ARGUMENT',
@@ -881,18 +885,24 @@ StayResponse = TypeVar('StayResponse')
 StayParameter = TypeVar('StayParameter')
 
 
+def _stay_400_body(exc: HTTPStatusError) -> dict[str, Any] | None:
+    """단기임대 API 가 400 으로 준 본문 객체 (`error` 코드·`message`). 400 이 아니거나 JSON 객체가 아니면 None."""
+    if exc.response.status_code != 400:
+        return None
+    try:
+        body = exc.response.json()
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
 def _stay_search_call(call: Callable[[StayParameter], StayResponse], parameter: StayParameter) -> StayResponse:
     """단기임대 검색 API 를 부르고, 기간이 허용 범위 밖이라는 400 은 입력 오류(INVALID_ARGUMENT)로 바꾼다."""
     try:
         return call(parameter)
     except HTTPStatusError as exc:
-        if exc.response.status_code != 400:
-            raise
-        try:
-            body = exc.response.json()
-        except ValueError:
-            raise exc from None
-        if not isinstance(body, dict) or body.get('error') not in STAY_PERIOD_ERRORS:
+        body = _stay_400_body(exc)
+        if body is None or body.get('error') not in STAY_PERIOD_ERRORS:
             raise
         raise JibsaError(
             code='INVALID_ARGUMENT',
@@ -918,24 +928,10 @@ def _stay_region_search(
     try:
         return _stay_search_call(client.run_request_guest_items_search, context).item_ids
     except HTTPStatusError as exc:
-        if exc.response.status_code != 400:
-            raise
-        try:
-            body = exc.response.json()
-        except ValueError:
-            raise exc from None
-        if not isinstance(body, dict) or body.get('error') != 'REGION_NOT_FOUND':
+        body = _stay_400_body(exc)
+        if body is None or body.get('error') != 'REGION_NOT_FOUND':
             raise
         raise RegionNotFoundError(name, hint='--radius 로 반경 검색하세요') from None
-
-
-def _stay_price_error(response: Response) -> str | None:
-    # 400 본문은 늘 객체이고 message 는 문자열 또는 형식 오류 배열이다 (2026-10-11 실측 6종)
-    try:
-        message = response.json().get('message')
-    except ValueError:
-        return None
-    return message if isinstance(message, str) else None
 
 
 def _stay_available(

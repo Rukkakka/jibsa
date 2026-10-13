@@ -142,12 +142,14 @@ def handle_errors(source: str) -> Iterator[None]:
             404: 'NOT_FOUND',
             429: 'RATE_LIMITED',
         }.get(status, 'UPSTREAM_ERROR')
+        # 요청 제한이 켜져 있으면(CLI 는 늘) 429 는 응답 훅이 쿨다운을 걸고 RateLimitedError 로 바꿔 여기 오지 않는다.
+        # 제한을 끈 정책(RateLimitPolicy(enabled=False))만 여기 오고, 그때는 쿨다운을 걸지 않으므로 막아 두었다고 하지 않는다
         hint = {
             404: 'ID 가 맞는지, 매물이 내려가지 않았는지 확인하세요',
             429: (
-                '네이버 봇 차단입니다. 쿨다운(기본 15분) 동안 네이버 요청을 막아 두었으니 그사이 다른 소스를 쓰세요'
+                '네이버 봇 차단입니다. 몇 분 기다리고, 그사이 다른 소스를 쓰세요'
                 if source == 'naver'
-                else '요청이 너무 잦습니다. 쿨다운 동안 이 소스 요청을 막아 두었습니다. 잠시 후 다시 시도하세요'
+                else '요청이 너무 잦습니다. 잠시 후 다시 시도하세요'
             ),
         }.get(status, '비공식 API 라 스펙이 바뀌었을 수 있습니다')
         emit_error(code, str(exc), hint, source=source, status=status)

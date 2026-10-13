@@ -15,6 +15,8 @@ from pydantic import (
     model_serializer,
 )
 
+from jibsa.core.geo import within_radius
+
 from typing import (
     Annotated,
     Any,
@@ -236,13 +238,12 @@ def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, comp
             "반경 안 매물이 N건뿐" 이라고 단정하지 않는다. 받지 않은 칸·페이지에 반경 안 매물이 더 있을 수 있다
             (네이버 강남역 반경 0.3km 120건: '116건뿐' 이라 했지만 목화밀라트만 9건이 더 있었다, 2026-10-10).
     """
-    beyond = [
-        listing.distance_km for listing in listings
-        if listing.distance_km is not None and listing.distance_km > radius_km
-    ]
+    distances = [listing.distance_km for listing in listings if listing.distance_km is not None]
+    beyond = [distance for distance in distances if not within_radius(distance, radius_km)]
     if not beyond:
         return []
-    inside = len(listings) - len(beyond)
+    # 거리를 모르는 매물(distance_km=None)은 반경 안으로 세지 않는다
+    inside = len(distances) - len(beyond)
     # 소수 한 자리로 깎으면 반경 0.1km 밖의 0.13km 가 '최대 0.1km' 로 보여 반경 안처럼 읽힌다
     farthest = f'{round(max(beyond), 2):g}km'
     if not complete:

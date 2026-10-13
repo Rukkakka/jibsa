@@ -14,7 +14,10 @@ from jibsa.core.errors import (
     JibsaError,
     ListingUnavailableError,
 )
-from jibsa.core.geo import haversine_km
+from jibsa.core.geo import (
+    haversine_km,
+    within_radius,
+)
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
@@ -43,6 +46,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangRegion,
     drop_unused_scope,
     in_range,
+    sent_or_none,
     unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.region import (
@@ -488,13 +492,13 @@ def search_store_listings(
         in_radius = len(pins)
         notes = limit_notes(in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STORE_NARROW)
     else:
-        in_radius = sum(1 for distance, _, _ in pins.values() if distance <= radius_km)
+        in_radius = sum(1 for distance, _, _ in pins.values() if within_radius(distance, radius_km))
         notes = limit_notes(in_radius, len(listings), limit, narrow=STORE_NARROW, radius=True) + beyond_radius_notes(listings, radius_km)
     inspected_in_radius = sum(
-        1 for item_id in inspected if boundary is not None or pins[item_id][0] <= radius_km
+        1 for item_id in inspected if boundary is not None or within_radius(pins[item_id][0], radius_km)
     )
     matched_in_radius = sum(
-        1 for item_id in matched if boundary is not None or pins[item_id][0] <= radius_km
+        1 for item_id in matched if boundary is not None or within_radius(pins[item_id][0], radius_km)
     )
     if filter_price:
         notes = [] if boundary is not None else beyond_radius_notes(listings, radius_km)
@@ -554,10 +558,10 @@ def store_detail_to_listing(response: ZigbangStoreArticleStoreV2ResponseModel) -
         lng=item.lng,
         parking=item.parking,
         elevator=elevator,
-        nearby_subways=[
+        nearby_subways=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
-        ],
+        ]),
         business=item.business,
         key_money_manwon=item.key_money,
         recommended_business=item.recommended_business,

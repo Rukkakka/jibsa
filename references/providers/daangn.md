@@ -39,7 +39,7 @@
 ### 매물 목록 경로
 
 - 지도 피드(동 단위)는 동 ID 로 걸러도 주변 동 매물을 섞어 준다. 빼지 않고 `neighbor_notes` 로 알리며, 시·도(`name1`)가 빠진 주변 동 매물은 지역 검색으로 채운다 (`with_sido`, 동마다 1회).
-- 좌표 반경 검색(`search_area`)은 웹 지도처럼 `articleMapPoints` 로 좌표 범위의 핀(ID·좌표)을 받아 가까운 순으로 정렬하고, `articlesByOriginalArticleIds` 로 20개씩 카드를 받는다. `jibsa daangn search listings` 에 역·장소 이름을 주면(또는 이름 + `--radius`) CLI 가 직방 지역 검색으로 좌표를 찾아 `search_area` 를 부른다. 좌표 → 동은 `getRegionByCoordinate`. GraphQL 좌표는 문자열로 보내야 한다. 카드에는 시·도가 없어 검색 중심과 같은 구의 동은 중심의 시·도로, 나머지는 `with_sido` 로 채운다.
+- 좌표 반경 검색(`search_area`)은 웹 지도처럼 `articleMapPoints` 로 좌표 범위의 핀(ID·좌표)을 받아 가까운 순으로 정렬하고, `articlesByOriginalArticleIds` 로 20개씩 카드를 받는다. `jibsa daangn search listings` 에 역·장소 이름을 주면(또는 이름 + `--radius`) CLI 가 당근 역·주소 검색으로, 못 찾으면 직방 지역 검색으로 좌표를 찾아 (`_geocode`, 아래 '위치 찾기') `search_area` 를 부른다. 좌표 → 동은 `getRegionByCoordinate`. GraphQL 좌표는 문자열로 보내야 한다. 카드에는 시·도가 없어 검색 중심과 같은 구의 동은 중심의 시·도로, 나머지는 `with_sido` 로 채운다.
 - 역 이름의 `search listings` 는 역 주변 목록(`subwayStationArticleConnection`, 페이지 넘김 쿼리)을 쓰며 카드에 상태·거래 조건·역별 도보 시간이 다 있어 카드를 다시 받지 않는다.
 - `search listings --city` 는 역 좌표의 동(`getRegionByCoordinate`, 역마다 1회)으로 그 시·도·구의 역을 고른다 (`_station_in_city`).
 - 출퇴근 검색(`search_commute`)은 `nearestCommuteStation` → `commuteFeed` → 역마다 `commuteStationArticleConnection` 으로 매물을 모은다. 역별 매물은 `articlesByOriginalArticleIds` 카드와 필드·값이 같아 (2026-10-11 실측: 역삼역·합정역 20건씩 모양·값 모두 같음) 역 주변 목록처럼 카드를 다시 받지 않는다. 역별 매물은 페이지 넘김 쿼리(`CommuteStationDetailPaginationQuery`)라 `after` 로 100건씩 이어 받는다 (첫 페이지는 기존 `CommuteStationDetailQuery` 와 결과가 같다, 2026-10-10 실측).
@@ -48,7 +48,7 @@
 
 - 역·장소 이름 → 좌표(`find_place`)는 당근 역 검색(`searchSubwayStationPois`, 이름이 같은 역만)과 주소 검색 (`find_address`: `searchAddress` → `geocodeAddress`) 순서다. `search listings` 처럼 역 검색을 먼저 한 곳은 `_geocode(..., check_station=False)` 로 주소 검색만 해 같은 역 검색을 되풀이하지 않고, 역 주변 목록만 실패했으면 이미 찾은 역 좌표를 반경 중심으로 쓴다.
 - 주소 검색은 비슷한 이름을 먼저 주기도 해서 (연세대학교 → 아산 '연세대학교 연세유업', 63빌딩 → 'PA63빌딩', 테헤란로 15 → 테헤란로2길 15) 검색어 끝이 도로명(`…로/길 번호`)·지번(`…동/가/리/읍/면 번지`)이면 번호까지 같고 앞에 붙인 시·구도 들어 있는 결과만, 아니면 지번 주소 끝 건물 이름이 같은 결과만 쓴다 (`_address_matches`). 숫자가 든 건물 이름(래미안3차)은 주소로 보지 않는다. 맞는 결과가 여러 시·군·구에 있으면 (중앙로 1 은 10곳 넘음) `RegionAmbiguousError` 를 내고 `_geocode` 도 직방으로 넘기지 않는다. 직방은 주소·건물 이름을 찾지 못해(2026-10-10 실측: 테헤란로 152·63빌딩 모두 못 찾음) 넘기면 '찾지 못했다' 로 바뀌기 때문이다. 이름이 정확히 같은 다른 건물은 막지 못한다 (63빌딩 → 인천 학익동 '63빌딩'. 여의도 63빌딩은 그 이름으로 검색되지 않는다).
-- 나머지는 CLI 의 `_geocode` 가 직방 → 네이버로 넘긴다. 네이버도 막혔거나 찾지 못하면 `zigbang.service.geocoding_blocked` (`source: zigbang`, 당근 동 이름·`--lat/--lng` 힌트) 에러를 낸다.
+- 나머지는 CLI 의 `_geocode` 가 직방 → 네이버로 넘긴다. 직방이 요청 제한이나 서버 오류·네트워크·응답 형식 오류(`GEOCODE_FALLBACK_ERRORS`)로 실패하면 네이버로 넘기고, 직방이 찾지 못한 이름(`REGION_NOT_FOUND`)은 넘기지 않는다. 네이버도 막혔거나 실패했거나 찾지 못하면 `zigbang.service.geocoding_failed` (`source: zigbang`, 당근 동 이름·`--lat/--lng` 힌트) 에러를 낸다. 직방 요청 제한은 그 `RATE_LIMITED` 를, 그 밖의 실패는 `UPSTREAM_ERROR` 를 낸다. 그대로 올리면 `source: daangn` 으로 보고돼 에이전트가 멀쩡한 당근을 버린다 (2026-10-12 리뷰).
 - 역 검색 결과에는 주소가 없고 노선·좌표만 와서 같은 이름의 역(양평: 경의중앙선·서울5호선)은 첫 역을 쓰고 다른 역을 노선과 함께 `notes` 로 알린다 (`same_station_notes`).
 - `--city`·주소 검색 앞의 시·구는 주소 단어의 앞부분으로 맞춘다 (`place_in`. '강남' 은 강남구에 맞고 '남구' 는 강남구, '동구' 는 성동구에 맞지 않는다).
 
