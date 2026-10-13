@@ -688,7 +688,7 @@ def region_real_price_command(
 def commute_command(
     workplace: Annotated[
         str | None,
-        typer.Argument(help='회사 위치 (역·장소·동 이름, 직방 지역 검색으로 좌표를 찾는다). --lat/--lng 를 주면 생략')
+        typer.Argument(help='회사 위치 (역·장소·동 이름, 당근 역·주소 검색으로, 못 찾으면 직방 지역 검색으로 좌표를 찾는다). --lat/--lng 를 주면 생략')
     ] = None,
     lat: Annotated[float | None, typer.Option(help='회사 위도 (이름 대신)')] = None,
     lng: Annotated[float | None, typer.Option(help='회사 경도 (이름 대신)')] = None,
