@@ -1,5 +1,6 @@
 # README 'LLM 에이전트에 연결하기' 데모 녹화 대본 (VHS, https://github.com/charmbracelet/vhs).
-# 저장소 루트에서 `vhs docs/demo/claude.tape` 로 다시 찍는다. uv·Claude Code(`claude`, 로그인)가 필요하다.
+# 저장소 루트에서 `vhs docs/demo/claude.tape` 로 다시 찍고, `python3 docs/demo/hide_plan.py docs/demo/claude.gif` 로
+# 배너의 요금제 글자(녹화한 계정의 요금제)를 덮는다. uv·Claude Code(`claude`, 로그인)·ffmpeg 가 필요하다.
 #
 # 실제 Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾아줘" 라고 시킨다. 작업 폴더(/tmp/jibsa-demo)에는
 # README 가 권하는 지침 한 줄과 데모용 한 줄(claude-instructions.md → CLAUDE.md), jibsa 만 허용하는 권한과 녹화가 길어지지
