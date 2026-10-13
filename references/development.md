@@ -69,7 +69,7 @@ Windows 는 `.venv\Scripts\ruff`, `.venv\Scripts\mypy` 로 부른다.
 
 Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
 
-- **전체 `pytest` 는 실행 전에 사용자에게 묻는다.**
+- **전체 `pytest` 는 실행 전에 사용자에게 묻는다.** PR 에서는 [CI](../.github/workflows/ci.yml) 가 전체를 돌린다.
 - 평소에는 바꾼 함수를 직접 검사하는 테스트 몇 개만 `tests/test_x.py::test_name` 으로 골라 한 번 실행한다. 파일 전체, 넓은 `-k` 키워드, 바꾼 함수를 부르는 테스트를 모두 모아 돌리는 것도 하지 않는다. 실패하면 그 테스트만 다시 돌린다.
 - 문구·문서·이름 변경처럼 깨질 위험이 없으면 바꾼 부분의 테스트도 돌리지 않는다.
 
