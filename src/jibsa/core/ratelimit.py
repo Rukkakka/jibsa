@@ -265,7 +265,9 @@ class RateLimiter:
             time.sleep(delay)
 
     async def aacquire(self) -> None:
-        delay = self.reserve()
+        # reserve() 는 상태 파일 잠금(flock)을 기다린다. 다른 jibsa 프로세스가 잠금을 잡고 있을 때 이벤트 루프가 멈추지
+        # 않도록 스레드에서 부른다
+        delay = await asyncio.to_thread(self.reserve)
         if delay > 0:
             await asyncio.sleep(delay)
 
@@ -337,6 +339,8 @@ class RateLimiter:
             await self.aacquire()
 
         async def on_response(response: Response) -> None:
-            self.on_rate_limited(response)
+            # 429 면 block() 이 상태 파일 잠금을 기다리므로 aacquire 처럼 스레드에서 부른다
+            if response.status_code == 429:
+                await asyncio.to_thread(self.on_rate_limited, response)
 
         return {'request': [on_request], 'response': [on_response]}
