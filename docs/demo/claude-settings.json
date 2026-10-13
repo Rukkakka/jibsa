@@ -1,0 +1,6 @@
+{
+  "effortLevel": "medium",
+  "permissions": {
+    "allow": ["Bash(jibsa:*)"]
+  }
+}
