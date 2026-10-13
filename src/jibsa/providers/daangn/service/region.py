@@ -68,6 +68,10 @@ ADDRESS_SEARCH_SIZE: int = 10
 
 # 지역 검색(regions/keyword)이 한 번에 주는 최대 후보 수 (2026-10-11 실측: 창원시·서울 100건에서 잘림)
 REGION_KEYWORD_MAX_RESULTS: int = 100
+# 시·도 줄임말 표(SIDO_OFFICIAL_NAMES)에 있지만 그 자체로 시 이름인 것. 광주광역시가 전남광주통합특별시로 합쳐진 뒤
+# '광주시' 는 경기도 광주시뿐이라 `place_in` 이 시·도로 넓히지 않는다 (2026-10-12 실측: '송정동 --city 광주시' 가
+# 경기도 광주시 송정동과 전남광주통합특별시 광산구 송정동 두 곳에 맞아 '--city 로 지정하세요' 라고 안내했다)
+CITY_NAMES_NOT_SIDO: frozenset[str] = frozenset({'광주시'})
 
 
 def search_locations(client: DaangnClient, keyword: str) -> list[DaangnLocationModel]:
@@ -95,8 +99,10 @@ def place_in(place: str, *texts: str | None) -> bool:
     (2026-10-11 실측: 글자가 들어 있는지만 보면 '송정동 --city 동구' 가 대구 동구가 아닌 서울 성동구 송정동을 골랐다).
     당근은 시·도를 정식 명칭으로만 써서, 줄임말·옛 이름('서울시'·'강원도'·'전라남도')은 정식 명칭으로도 찾는다
     (2026-10-10 실측: '서울시' 는 '서울특별시' 에 들어 있지 않아 --city 와 주소 검색이 못 찾았다).
+    시 이름이기도 한 줄임말(`CITY_NAMES_NOT_SIDO`, '광주시')은 정식 명칭으로 넓히지 않는다.
     """
-    prefixes = (place, SIDO_OFFICIAL_NAMES.get(place, place))
+    official = place if place in CITY_NAMES_NOT_SIDO else SIDO_OFFICIAL_NAMES.get(place, place)
+    prefixes = (place, official)
     return any(word.startswith(prefixes) for text in texts if text for word in text.split())
 
 
@@ -146,7 +152,8 @@ def resolve_regions(
         others = ', '.join(join_address(location.name1, location.name2, location.name3) or query for location in exact[1:4])
         notes.append(
             f"{quoted(query, '과/와')} 같은 이름의 지역이 여러 곳이라 {selected} 기준으로 조회했습니다 "
-            f'(다른 곳: {others}). --city 로 시·도나 구를 지정하세요'
+            f'(다른 곳: {others}). '
+            + (f"--city '{city}' 에도 여러 곳이 맞으니 구 이름으로 좁히세요" if city else '--city 로 시·도나 구를 지정하세요')
         )
     elif notes is not None:
         # 당근은 리를 상위 읍·면으로 준다. 원본에 리 이름이 없고 이름이 비슷한 동도 섞여 와서, 리가 있을 수 있는
@@ -732,6 +739,6 @@ def resolve_realsale_region(
         others = ', '.join(option.name for option in options[1:4])
         notes.append(
             f"{quoted(query, '과/와')} 같은 이름이 여러 곳에 있어 {options[0].name} 기준으로 조회했습니다 (다른 곳: {others}). "
-            "다른 지역이면 --city 로 시·도나 구를 주세요"
+            + (f"--city '{city}' 에도 여러 곳이 맞으니 구 이름으로 좁히세요" if city else '다른 지역이면 --city 로 시·도나 구를 주세요')
         )
     return options[0], notes
