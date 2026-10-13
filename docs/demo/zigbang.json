@@ -1,5 +1,5 @@
 {
- "_comment": "README 데모용 가상 응답. 매물 번호·제목·가격·지번은 누가 봐도 가짜인 값(번호 1~12, \"[가상] 예시 …\", 지번 000-N)이고, 역 이름·좌표만 공개 지역 정보다.",
+ "_comment": "README 데모 녹화용 가상 응답 (fake_jibsa.py 가 읽는다). 무엇이 실제 정보이고 무엇이 지어낸 값인지는 README 의 데모 설명에 적는다.",
  "search": {
   "success": true,
   "code": "200",
@@ -65,115 +65,115 @@
  "pins": {
   "onerooms": [
    {
-    "id": 1,
-    "lat": 37.499027,
-    "lng": 127.028755,
+    "id": 99990001,
+    "lat": 37.49898,
+    "lng": 127.028706,
     "userNo": 0
    },
    {
-    "id": 3,
-    "lat": 37.500474,
-    "lng": 127.030115,
+    "id": 99990003,
+    "lat": 37.499997,
+    "lng": 127.029645,
     "userNo": 0
    },
    {
-    "id": 5,
-    "lat": 37.501559,
-    "lng": 127.023653,
+    "id": 99990005,
+    "lat": 37.500859,
+    "lng": 127.024421,
     "userNo": 0
    },
    {
-    "id": 7,
-    "lat": 37.49342,
-    "lng": 127.032156,
+    "id": 99990007,
+    "lat": 37.493931,
+    "lng": 127.031644,
     "userNo": 0
    },
    {
-    "id": 9,
-    "lat": 37.492697,
-    "lng": 127.022179,
+    "id": 99990009,
+    "lat": 37.493012,
+    "lng": 127.022506,
     "userNo": 0
    },
    {
-    "id": 11,
-    "lat": 37.503911,
-    "lng": 127.03329,
+    "id": 99990011,
+    "lat": 37.49221,
+    "lng": 127.033996,
     "userNo": 0
    }
   ],
   "officetels": [
    {
-    "id": 2,
-    "lat": 37.496585,
-    "lng": 127.02558,
+    "id": 99990002,
+    "lat": 37.496671,
+    "lng": 127.02571,
     "userNo": 0,
-    "buildingId": 90002
+    "buildingId": 99990002
    },
    {
-    "id": 6,
-    "lat": 37.502012,
-    "lng": 127.032383,
+    "id": 99990006,
+    "lat": 37.501238,
+    "lng": 127.031477,
     "userNo": 0,
-    "buildingId": 90006
+    "buildingId": 99990006
    },
    {
-    "id": 10,
-    "lat": 37.492335,
-    "lng": 127.033857,
+    "id": 99990010,
+    "lat": 37.503544,
+    "lng": 127.032942,
     "userNo": 0,
-    "buildingId": 90010
+    "buildingId": 99990010
    }
   ],
   "villas": [
    {
-    "id": 4,
-    "lat": 37.495229,
-    "lng": 127.024787,
+    "id": 99990004,
+    "lat": 37.495449,
+    "lng": 127.025017,
     "userNo": 0
    },
    {
-    "id": 8,
-    "lat": 37.502916,
-    "lng": 127.021952,
+    "id": 99990008,
+    "lat": 37.502211,
+    "lng": 127.022755,
     "userNo": 0
    },
    {
-    "id": 12,
-    "lat": 37.491611,
-    "lng": 127.021385,
+    "id": 99990012,
+    "lat": 37.491423,
+    "lng": 127.0212,
     "userNo": 0
    }
   ]
  },
  "summaries": {
-  "1": {
-   "item_id": 1,
+  "99990001": {
+   "item_id": 99990001,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 65,
-   "size_m2": 23.1,
+   "deposit": 1,
+   "rent": 1,
+   "size_m2": 1.0,
    "공급면적": {
-    "m2": 32.34,
-    "p": "9.8"
+    "m2": 1.0,
+    "p": "0.3"
    },
    "전용면적": {
-    "m2": 23.1,
-    "p": "7.0"
+    "m2": 1.0,
+    "p": "0.3"
    },
-   "floor": "3",
-   "floor_string": "3",
-   "building_floor": "5",
+   "floor": "1",
+   "floor_string": "1",
+   "building_floor": "1",
    "title": "[가상] 예시 원룸 1",
    "room_type": "02",
    "status": true,
    "tags": [],
    "service_type": "원룸",
    "location": {
-    "lat": 37.499027,
-    "lng": 127.028755
+    "lat": 37.49898,
+    "lng": 127.028706
    },
-   "manage_cost": "70000",
+   "manage_cost": "10000",
    "reg_date": "2026-10-09T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -187,34 +187,34 @@
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "2": {
-   "item_id": 2,
+  "99990002": {
+   "item_id": 99990002,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 70,
-   "size_m2": 19.8,
+   "deposit": 2,
+   "rent": 2,
+   "size_m2": 2.0,
    "공급면적": {
-    "m2": 27.72,
-    "p": "8.4"
+    "m2": 2.0,
+    "p": "0.6"
    },
    "전용면적": {
-    "m2": 19.8,
-    "p": "6.0"
+    "m2": 2.0,
+    "p": "0.6"
    },
-   "floor": "고",
-   "floor_string": "고",
-   "building_floor": "15",
+   "floor": "2",
+   "floor_string": "2",
+   "building_floor": "2",
    "title": "[가상] 예시 오피스텔 1",
    "room_type": "01",
    "status": true,
    "tags": [],
    "service_type": "오피스텔",
    "location": {
-    "lat": 37.496585,
-    "lng": 127.02558
+    "lat": 37.496671,
+    "lng": 127.02571
    },
-   "manage_cost": "120000",
+   "manage_cost": "20000",
    "reg_date": "2026-10-08T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -228,34 +228,34 @@
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "3": {
-   "item_id": 3,
+  "99990003": {
+   "item_id": 99990003,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 500,
-   "rent": 55,
-   "size_m2": 16.5,
+   "deposit": 3,
+   "rent": 3,
+   "size_m2": 3.0,
    "공급면적": {
-    "m2": 23.1,
-    "p": "7.0"
+    "m2": 3.0,
+    "p": "0.9"
    },
    "전용면적": {
-    "m2": 16.5,
-    "p": "5.0"
+    "m2": 3.0,
+    "p": "0.9"
    },
-   "floor": "2",
-   "floor_string": "2",
-   "building_floor": "4",
+   "floor": "3",
+   "floor_string": "3",
+   "building_floor": "3",
    "title": "[가상] 예시 원룸 2",
    "room_type": "01",
    "status": true,
    "tags": [],
    "service_type": "원룸",
    "location": {
-    "lat": 37.500474,
-    "lng": 127.030115
+    "lat": 37.499997,
+    "lng": 127.029645
    },
-   "manage_cost": "50000",
+   "manage_cost": "30000",
    "reg_date": "2026-10-07T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -269,34 +269,34 @@
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "4": {
-   "item_id": 4,
+  "99990004": {
+   "item_id": 99990004,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 2000,
-   "rent": 60,
-   "size_m2": 26.4,
+   "deposit": 4,
+   "rent": 4,
+   "size_m2": 4.0,
    "공급면적": {
-    "m2": 36.96,
-    "p": "11.2"
+    "m2": 4.0,
+    "p": "1.2"
    },
    "전용면적": {
-    "m2": 26.4,
-    "p": "8.0"
+    "m2": 4.0,
+    "p": "1.2"
    },
-   "floor": "1",
-   "floor_string": "1",
+   "floor": "4",
+   "floor_string": "4",
    "building_floor": "4",
    "title": "[가상] 예시 빌라 1",
-   "room_type": "01",
+   "room_type": "04",
    "status": true,
    "tags": [],
    "service_type": "빌라",
    "location": {
-    "lat": 37.495229,
-    "lng": 127.024787
+    "lat": 37.495449,
+    "lng": 127.025017
    },
-   "manage_cost": "60000",
+   "manage_cost": "40000",
    "reg_date": "2026-10-06T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -310,23 +310,23 @@
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "5": {
-   "item_id": 5,
+  "99990005": {
+   "item_id": 99990005,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 68,
-   "size_m2": 21.5,
+   "deposit": 5,
+   "rent": 5,
+   "size_m2": 5.0,
    "공급면적": {
-    "m2": 30.1,
-    "p": "9.1"
+    "m2": 5.0,
+    "p": "1.5"
    },
    "전용면적": {
-    "m2": 21.5,
-    "p": "6.5"
+    "m2": 5.0,
+    "p": "1.5"
    },
-   "floor": "4",
-   "floor_string": "4",
+   "floor": "5",
+   "floor_string": "5",
    "building_floor": "5",
    "title": "[가상] 예시 원룸 3",
    "room_type": "03",
@@ -334,10 +334,10 @@
    "tags": [],
    "service_type": "원룸",
    "location": {
-    "lat": 37.501559,
-    "lng": 127.023653
+    "lat": 37.500859,
+    "lng": 127.024421
    },
-   "manage_cost": "80000",
+   "manage_cost": "50000",
    "reg_date": "2026-10-05T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -351,34 +351,34 @@
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "6": {
-   "item_id": 6,
+  "99990006": {
+   "item_id": 99990006,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 3000,
-   "rent": 60,
-   "size_m2": 22.0,
+   "deposit": 6,
+   "rent": 6,
+   "size_m2": 6.0,
    "공급면적": {
-    "m2": 30.8,
-    "p": "9.3"
+    "m2": 6.0,
+    "p": "1.8"
    },
    "전용면적": {
-    "m2": 22.0,
-    "p": "6.7"
+    "m2": 6.0,
+    "p": "1.8"
    },
-   "floor": "중",
-   "floor_string": "중",
-   "building_floor": "12",
+   "floor": "6",
+   "floor_string": "6",
+   "building_floor": "6",
    "title": "[가상] 예시 오피스텔 2",
    "room_type": "01",
    "status": true,
    "tags": [],
    "service_type": "오피스텔",
    "location": {
-    "lat": 37.502012,
-    "lng": 127.032383
+    "lat": 37.501238,
+    "lng": 127.031477
    },
-   "manage_cost": "130000",
+   "manage_cost": "60000",
    "reg_date": "2026-10-04T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -392,23 +392,23 @@
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "7": {
-   "item_id": 7,
+  "99990007": {
+   "item_id": 99990007,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 62,
-   "size_m2": 18.2,
+   "deposit": 7,
+   "rent": 7,
+   "size_m2": 7.0,
    "공급면적": {
-    "m2": 25.48,
-    "p": "7.7"
+    "m2": 7.0,
+    "p": "2.1"
    },
    "전용면적": {
-    "m2": 18.2,
-    "p": "5.5"
+    "m2": 7.0,
+    "p": "2.1"
    },
-   "floor": "5",
-   "floor_string": "5",
+   "floor": "7",
+   "floor_string": "7",
    "building_floor": "7",
    "title": "[가상] 예시 원룸 4",
    "room_type": "01",
@@ -416,8 +416,8 @@
    "tags": [],
    "service_type": "원룸",
    "location": {
-    "lat": 37.49342,
-    "lng": 127.032156
+    "lat": 37.493931,
+    "lng": 127.031644
    },
    "manage_cost": "70000",
    "reg_date": "2026-10-03T10:00:00+09:00",
@@ -433,34 +433,34 @@
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "8": {
-   "item_id": 8,
+  "99990008": {
+   "item_id": 99990008,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 500,
-   "rent": 50,
-   "size_m2": 19.0,
+   "deposit": 8,
+   "rent": 8,
+   "size_m2": 8.0,
    "공급면적": {
-    "m2": 26.6,
-    "p": "8.0"
+    "m2": 8.0,
+    "p": "2.4"
    },
    "전용면적": {
-    "m2": 19.0,
-    "p": "5.7"
+    "m2": 8.0,
+    "p": "2.4"
    },
-   "floor": "2",
-   "floor_string": "2",
-   "building_floor": "3",
+   "floor": "8",
+   "floor_string": "8",
+   "building_floor": "8",
    "title": "[가상] 예시 빌라 2",
-   "room_type": "02",
+   "room_type": "04",
    "status": true,
    "tags": [],
    "service_type": "빌라",
    "location": {
-    "lat": 37.502916,
-    "lng": 127.021952
+    "lat": 37.502211,
+    "lng": 127.022755
    },
-   "manage_cost": "40000",
+   "manage_cost": "80000",
    "reg_date": "2026-10-02T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -474,34 +474,34 @@
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "9": {
-   "item_id": 9,
+  "99990009": {
+   "item_id": 99990009,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 300,
-   "rent": 58,
-   "size_m2": 17.3,
+   "deposit": 9,
+   "rent": 9,
+   "size_m2": 9.0,
    "공급면적": {
-    "m2": 24.22,
-    "p": "7.3"
+    "m2": 9.0,
+    "p": "2.7"
    },
    "전용면적": {
-    "m2": 17.3,
-    "p": "5.2"
+    "m2": 9.0,
+    "p": "2.7"
    },
-   "floor": "3",
-   "floor_string": "3",
-   "building_floor": "4",
+   "floor": "9",
+   "floor_string": "9",
+   "building_floor": "9",
    "title": "[가상] 예시 원룸 5",
    "room_type": "01",
    "status": true,
    "tags": [],
    "service_type": "원룸",
    "location": {
-    "lat": 37.492697,
-    "lng": 127.022179
+    "lat": 37.493012,
+    "lng": 127.022506
    },
-   "manage_cost": "60000",
+   "manage_cost": "90000",
    "reg_date": "2026-10-01T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -515,34 +515,34 @@
    },
    "address1": "서울특별시 서초구 서초동"
   },
-  "10": {
-   "item_id": 10,
+  "99990010": {
+   "item_id": 99990010,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 69,
-   "size_m2": 20.6,
+   "deposit": 10,
+   "rent": 10,
+   "size_m2": 10.0,
    "공급면적": {
-    "m2": 28.84,
-    "p": "8.7"
+    "m2": 10.0,
+    "p": "3.0"
    },
    "전용면적": {
-    "m2": 20.6,
-    "p": "6.2"
+    "m2": 10.0,
+    "p": "3.0"
    },
-   "floor": "저",
-   "floor_string": "저",
-   "building_floor": "20",
+   "floor": "10",
+   "floor_string": "10",
+   "building_floor": "10",
    "title": "[가상] 예시 오피스텔 3",
    "room_type": "01",
    "status": true,
    "tags": [],
    "service_type": "오피스텔",
    "location": {
-    "lat": 37.492335,
-    "lng": 127.033857
+    "lat": 37.503544,
+    "lng": 127.032942
    },
-   "manage_cost": "110000",
+   "manage_cost": "100000",
    "reg_date": "2026-09-30T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -556,34 +556,34 @@
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "11": {
-   "item_id": 11,
+  "99990011": {
+   "item_id": 99990011,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 64,
-   "size_m2": 20.0,
+   "deposit": 11,
+   "rent": 11,
+   "size_m2": 11.0,
    "공급면적": {
-    "m2": 28.0,
-    "p": "8.5"
+    "m2": 11.0,
+    "p": "3.3"
    },
    "전용면적": {
-    "m2": 20.0,
-    "p": "6.0"
+    "m2": 11.0,
+    "p": "3.3"
    },
-   "floor": "2",
-   "floor_string": "2",
-   "building_floor": "5",
+   "floor": "11",
+   "floor_string": "11",
+   "building_floor": "11",
    "title": "[가상] 예시 원룸 6",
    "room_type": "02",
    "status": true,
    "tags": [],
    "service_type": "원룸",
    "location": {
-    "lat": 37.503911,
-    "lng": 127.03329
+    "lat": 37.49221,
+    "lng": 127.033996
    },
-   "manage_cost": "70000",
+   "manage_cost": "110000",
    "reg_date": "2026-09-29T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
@@ -597,34 +597,34 @@
    },
    "address1": "서울특별시 강남구 역삼동"
   },
-  "12": {
-   "item_id": 12,
+  "99990012": {
+   "item_id": 99990012,
    "sales_type": "월세",
    "sales_title": "월세",
-   "deposit": 1000,
-   "rent": 57,
-   "size_m2": 24.8,
+   "deposit": 12,
+   "rent": 12,
+   "size_m2": 12.0,
    "공급면적": {
-    "m2": 34.72,
-    "p": "10.5"
+    "m2": 12.0,
+    "p": "3.6"
    },
    "전용면적": {
-    "m2": 24.8,
-    "p": "7.5"
+    "m2": 12.0,
+    "p": "3.6"
    },
-   "floor": "3",
-   "floor_string": "3",
-   "building_floor": "4",
+   "floor": "12",
+   "floor_string": "12",
+   "building_floor": "12",
    "title": "[가상] 예시 빌라 3",
-   "room_type": "01",
+   "room_type": "04",
    "status": true,
    "tags": [],
    "service_type": "빌라",
    "location": {
-    "lat": 37.491611,
-    "lng": 127.021385
+    "lat": 37.491423,
+    "lng": 127.0212
    },
-   "manage_cost": "50000",
+   "manage_cost": "120000",
    "reg_date": "2026-09-28T10:00:00+09:00",
    "is_new": false,
    "addressOrigin": {
