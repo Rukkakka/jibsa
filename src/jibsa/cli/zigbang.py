@@ -537,7 +537,7 @@ def complex_listings_command(
     ] = None,
     pyeong: Annotated[
         list[int] | None,
-        typer.Option('--pyeong', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복 가능 (OR)')
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복 가능 (OR)')
     ] = None,
     limit: Annotated[int | None, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수. 기본 아파트 20, 오피스텔 15')] = None,
     deposit_min: DepositMinOption = None,

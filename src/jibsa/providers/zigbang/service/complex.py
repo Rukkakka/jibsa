@@ -27,7 +27,10 @@ from jibsa.providers.zigbang.api.request.complex import (
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
+from jibsa.providers.zigbang.api.response.common import (
+    ZigbangDanjisItemCatalogsResponseModel,
+    ZigbangSearchItemModel,
+)
 from jibsa.providers.zigbang.api.response.complex import (
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
@@ -507,6 +510,8 @@ def list_complex_listings(
                 limit=page_size,
             )
         )
+        if offset == 0:
+            _check_pyeong_ids(complex_id, response, pyeong_ids)
         total = response.total_count
         inspected += len(response.catalogs)
         for catalog in response.catalogs:
@@ -525,6 +530,26 @@ def list_complex_listings(
         listings=listings,
         notes=apt_pagination_notes(total, len(listings), limit, inspected),
     )
+
+
+def _check_pyeong_ids(complex_id: str, response: ZigbangDanjisItemCatalogsResponseModel, pyeong_ids: list[int] | None) -> None:
+    """단지에 없는 평형이면 0건 대신 에러로 알린다. 단지 매물 목록은 없는 평형에도 빈 성공을 준다.
+
+    평형 조건을 줘도 응답의 평형 목록(danjiRoomTypes)은 단지 전체라 첫 페이지로 확인한다 (2026-10-12 실측:
+    apt-68579 에 평형 999 를 주면 0건과 평형 30개, 조건 없이도 같은 30개). 평형 목록이 비어 오면(평형이 아직 없는
+    단지) 확인하지 않는다.
+
+    Raises:
+        JibsaError: 단지에 없는 평형 (INVALID_ARGUMENT).
+    """
+    known = {room_type.id for room_type in response.room_types}
+    unknown = [pyeong_id for pyeong_id in pyeong_ids or [] if pyeong_id not in known]
+    if known and unknown:
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f"{complex_id} 단지에 없는 평형 ID 입니다: {', '.join(map(str, unknown))}",
+            hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
+        )
 
 
 def _list_officetel_building_listings(
