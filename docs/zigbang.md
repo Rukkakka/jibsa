@@ -215,7 +215,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 **오류와 대응**
 
-임대·매매 가격 조건 충돌, 면적 상한 이하 하한 등 잘못된 범위는 `INVALID_ARGUMENT`.
+임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`.
 
 **주의사항**
 

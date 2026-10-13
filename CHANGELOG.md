@@ -13,6 +13,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `search listings --complex apt-…` 에 단지에 없는 평형 ID 를 주면 0건으로 끝나던 문제. `INVALID_ARGUMENT` 로 알리고, 1 미만 평형 ID 는 조회 전에 막는다 (#16)
 - 반경 검색의 `total_in_radius` 와 "반경 안 N건뿐" 안내의 건수가 반경 경계 근처 매물 때문에 어긋나던 문제 (직방 room·store·stay). 둘 다 출력한 `distance_km` 로 센다 (#17)
 - 반경 밖 매물 안내가 거리를 모르는 매물(`distance_km: null`)을 반경 안으로 세던 문제 (#17)
+- 직방 `search listings store --area-max 0` 이 요청을 보낸 뒤 영어 오류로 끝나던 문제. 조회 전에 `INVALID_ARGUMENT` 로 막는다 (#18)
 
 ## 0.1.0 — 2026-10-11
 

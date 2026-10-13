@@ -728,6 +728,10 @@ def store_command(
     # validate_ranges(min > max 만 거절) 대신 유한한지만 보고 범위는 아래 검사 하나로 본다
     require_finite('--area-min', area_min)
     require_finite('--area-max', area_max)
+    # 상한이 '미만' 이라 0 은 맞는 매물이 없다. 요청 모델(gt=0)이 지역 검색·경계 요청을 보낸 뒤 영어 메시지로 막던 것을
+    # 요청 전에 막는다 (2026-10-12 실측: --area-max 0 이 요청 3회 뒤 'Input should be greater than 0')
+    if area_max is not None and area_max <= 0:
+        raise typer.BadParameter('--area-max 는 0 보다 커야 합니다 (상한은 미만 조건)', param_hint='--area-max')
     if area_min is not None and area_max is not None and area_min >= area_max:
         raise typer.BadParameter('--area-max 는 --area-min 보다 커야 합니다', param_hint='--area-max')
     with handle_errors(SOURCE):
