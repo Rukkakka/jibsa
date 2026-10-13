@@ -5,6 +5,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-13
+
 ### 추가
 
 - PyPI 에서 설치할 수 있다: `uv tool install jibsa`, `pipx install jibsa`, `pip install jibsa`, 설치 없이 `uvx jibsa`. `jibsa==0.2.0` 처럼 버전도 고를 수 있다 (#33)
