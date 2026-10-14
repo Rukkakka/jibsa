@@ -4,8 +4,6 @@ from httpx import (
     AsyncClient,
     Client,
     HTTPStatusError,
-    TimeoutException,
-    TransportError,
 )
 from pydantic import BaseModel
 from tenacity import (
@@ -15,6 +13,7 @@ from tenacity import (
 )
 
 from jibsa.core.http import (
+    RETRYABLE_TRANSPORT_ERRORS,
     BaseHTTPClient,
     create_base_url,
     log_retry_before_sleep,
@@ -178,14 +177,14 @@ _R = TypeVar('_R', bound=BaseModel)
 
 
 def should_retry_naver(exc: BaseException) -> bool:
-    """5xx 와 timeout/transport 오류만 재시도한다.
+    """5xx 와 다시 보내면 나을 수 있는 전송 오류(`RETRYABLE_TRANSPORT_ERRORS`)만 재시도한다.
 
     네이버의 429(`TOO_MANY_REQUESTS`)는 짧은 rate limit 이 아니라 수 분 이상
     이어지는 봇 차단이라, 1초 뒤 재시도는 차단을 연장할 뿐이다.
     """
     if isinstance(exc, HTTPStatusError):
         return exc.response.status_code >= 500
-    return isinstance(exc, (TimeoutException, TransportError))
+    return isinstance(exc, RETRYABLE_TRANSPORT_ERRORS)
 
 
 naver_retry = retry(

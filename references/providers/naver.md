@@ -28,7 +28,7 @@
  (`NaverResponseModel[T]`). service 는 `unwrap()` 으로 `result` 를 꺼내고, 실패면 `JibsaError`
  (`NOT_FOUND` / `UPSTREAM_ERROR`)를 던진다. 실패 봉투는 HTTP 상태와 별도로 검사한다. 금액은 원 단위라
  `won_to_manwon`을 거친다. 가장 차단이 잦은 소스라 요청 수를 늘리는 변경(매물마다 추가 조회 등)은 피한다.
- 429 는 봇 차단이라 일반 재시도 대상이 아니다. `should_retry_naver`는 5xx·timeout·transport만 재시도한다.
+ 429 는 봇 차단이라 일반 재시도 대상이 아니다. `should_retry_naver`는 5xx 와 `RETRYABLE_TRANSPORT_ERRORS`(timeout·연결 실패 등)만 재시도한다.
 
 빌라 단지(A05·A06·A07)인지는 명령 맨 앞에서 한 번에 정하지 않고, 아파트 쪽 응답이 비었을 때 그 자리에서 정한다 (`villa_by_complex_response` docstring). 맨 앞에서 정하면 단지 종류를 모를 때마다(대부분 아파트) 요청이 1회 늘기 때문이다. 판별이 여러 곳에 흩어진 것은 이 때문이며, 한 번 빌라로 정해지면 빌라 엔드포인트의 실패 응답은 0건이 아니라 에러로 낸다. 빌라 단지에 거래·동이 없을 때 빌라 엔드포인트는 실패가 아니라 빈 목록을 주고(서진빌라 724112 월세 실거래 0건), 아파트 동 목록(`complex/buildingList`)도 빌라 단지에 `result=null` 이 아니라 빈 목록을 준다 (2026-10-10 실측).
 
