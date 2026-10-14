@@ -672,6 +672,9 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         ),
         move_in=move_in,
         parking=parking,
+        # 엘리베이터는 중개사가 고르는 기타시설(etc) 항목 하나라 없으면 고르지 않은 것인지 없는 것인지 모른다. 그래서 False 를
+        # 내지 않는다 (2026-10-14 실측: 신림동 원룸 상세 3건 중 1건이 시설 13개를 골랐지만 ELEVATOR 는 없었고, 다른 1건은
+        # 보안시설을 비워 두었다. 엘리베이터 없음을 따로 알리는 필드는 없다)
         elevator=True if 'ELEVATOR' in facility_codes else None,
         options=[
             FACILITY_LABELS.get(code, code)

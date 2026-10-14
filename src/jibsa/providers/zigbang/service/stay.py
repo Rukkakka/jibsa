@@ -746,6 +746,9 @@ def _stay_sort_key(
 ) -> tuple[bool, float, int] | None:
     """가격순·최신순 정렬 키 (모르는 값은 뒤로). 거리순이면 None."""
     if sort == 'price':
+        # 관리비가 없는 매물은 요약(by-ids)이 null 이 아니라 0 을 주어 뒤로 밀리지 않는다. 상세는 null 과
+        # isWeeklyManageCostAbsent 로 주어 `stay_detail_to_listing` 이 0.0 으로 맞춘다 (2026-10-14 실측: 강남구 가격순 40건 중
+        # 0 이 3건·null 0건, 그중 1669 의 상세는 weeklyManageCost null·isWeeklyManageCostAbsent true)
         known = summary.weekly_rent is not None and summary.weekly_manage_cost is not None
         price = (summary.weekly_rent or 0) + (summary.weekly_manage_cost or 0)
         return (not known, price, summary.id)

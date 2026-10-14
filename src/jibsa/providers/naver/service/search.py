@@ -754,7 +754,9 @@ def _search_clusters(
             return unwrap(client.run_request_article_clustered_articles_v1(payload), '클러스터 매물')
 
         before = scan.page_requests
-        # 처음 보는 매물이 없는 페이지는 커서가 진행되지 않는 것으로 보고 다음 클러스터로 넘어간다
+        # 처음 보는 매물이 없는 페이지는 커서가 진행되지 않는 것으로 보고 다음 클러스터로 넘어간다. `seen` 을 클러스터끼리
+        # 같이 써도 다른 칸의 매물 때문에 멈추지 않는다. 클러스터 ID 가 지도 타일('{zoom}/{x}/{y}')이라 매물은 한 칸에만
+        # 온다 (2026-10-14 실측: 오산역 원룸 클러스터 19개 53건, 강남역 1개 칸 4쪽 100건 모두 칸·쪽 사이 중복 0건)
         scan_pages(scan, fetch, keep, page_size=CLUSTER_PAGE_SIZE, max_pages=MAX_PAGES_PER_CLUSTER)
         if scan.page_requests > before:
             opened_clusters += 1
