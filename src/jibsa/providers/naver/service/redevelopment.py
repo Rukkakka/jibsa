@@ -38,8 +38,6 @@ from jibsa.providers.naver.api.response.redevelopment import (
 )
 from jibsa.providers.naver.service.common import (
     COMPLEX_SORT_TYPE_BY_NAME,
-    EXCLUDED_REASON,
-    RADIUS_EXCLUDED_REASON,
     TRADE_CODE_BY_NAME,
     NaverListingsResult,
     NaverTradeConditions,
@@ -273,10 +271,11 @@ def list_redevelopment_areas(
             f"고른 거래 유형({', '.join(trade_types or [])}) 매물이 확인되지 않은 구역 {len(no_trade)}곳을 뺐습니다. "
             '네이버가 구역 목록을 거래 유형으로 거르지 않아 받은 매물 수로 걸렀습니다'
         )
+    # 구역은 거래 유형 코드가 없어 --trade 가 없으면 중복(과 반경 밖)만 뺀다
     if legal_division_code is not None:
-        reason = '고른 거래 유형 매물이 없는' if trade_types else EXCLUDED_REASON
+        reason = '고른 거래 유형 매물이 없는' if trade_types else '중복된'
     else:
-        reason = '검색 범위(반경) 밖이거나 고른 거래 유형 매물이 없는' if trade_types else RADIUS_EXCLUDED_REASON
+        reason = '검색 범위(반경) 밖이거나 고른 거래 유형 매물이 없는' if trade_types else '중복이거나 검색 범위(반경) 밖의'
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, subject='구역', truncated=scan.truncated, excluded_reason=reason,
     )

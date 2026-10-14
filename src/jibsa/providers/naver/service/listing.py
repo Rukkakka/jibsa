@@ -168,7 +168,7 @@ FACILITY_LABELS: dict[str, str] = {
     'CENTRAL': '중앙냉방',
 }
 COMPLEX_PAGE_SIZE: int = 30
-# 단지 매물 목록 요청 상한 (빌라 단지로 다시 묻는 1회 포함). limit 건까지만 받고, 받은 뒤 중복·거래 불가로
+# 단지 매물 목록 요청 상한 (빌라 단지로 다시 묻는 1회 포함). limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로
 # 빠져도 그만큼 다시 받지 않는다
 MAX_COMPLEX_ARTICLE_PAGE_REQUESTS: int = 5
 

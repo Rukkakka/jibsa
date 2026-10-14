@@ -169,7 +169,7 @@ MAX_CLUSTER_PAGE_REQUESTS: int = 24
 BOUNDED_PAGE_SIZE: int = 30
 MAX_BOUNDED_PAGE_REQUESTS: int = 10
 # 동 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
-# limit 건까지만 받고, 받은 뒤 중복·거래 불가로 빠져도 그만큼 다시 받지 않는다
+# limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로 빠져도 그만큼 다시 받지 않는다
 LEGAL_DIVISION_PAGE_SIZE: int = 30
 MAX_LEGAL_DIVISION_PAGE_REQUESTS: int = 5
 # 지역 단지 목록(naver complexes). 페이지는 30곳(사이트 COMPLEX_PAGINATION_SIZE), 요청은 이 횟수에서 멈춘다
