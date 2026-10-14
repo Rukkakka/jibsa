@@ -183,6 +183,10 @@ def handle_errors(source: str) -> Iterator[None]:
     except (ClickException, typer.Exit):
         # 사용법 오류와 정상 종료는 jibsa.cli.app.run 이 처리한다
         raise
+    except BrokenPipeError:
+        # 출력을 받는 쪽(`| head` 등)이 먼저 닫았다. jibsa 오류가 아니라 INTERNAL_ERROR 로 내지 않는다. Typer 가 EPIPE 를
+        # 받아 stdout 을 감싸고 exit 1 로 끝낸다 (잡으면 에러 JSON 과 'Exception ignored ... BrokenPipeError' 가 함께 나왔다)
+        raise
     except Exception as exc:
         emit_error(
             'INTERNAL_ERROR',
