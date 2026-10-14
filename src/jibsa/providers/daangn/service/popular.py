@@ -28,6 +28,10 @@ from jibsa.providers.daangn.service.region import with_center_sido
 from typing import Annotated
 
 
+# 순위가 매겨진 매물은 구마다 100건쯤이라 그보다 많이 요청해도 더 받지 못한다
+POPULAR_MAX_LIMIT: int = 100
+
+
 class DaangnRankedListing(Listing):
     """조회수 순위 매물."""
 
@@ -97,6 +101,11 @@ def list_popular_listings(
             f'순위는 {region.name2} 전체 조회수 기준입니다' if region.name2
             else f'구가 없는 지역이라 순위는 {region.name3} 안 조회수 기준입니다'
         ]
-        + listing_budget_notes(limit, len(articles), len(listings), has_more=False)
+        # 서버가 순위를 limit 건에서 잘라 주므로 limit 건을 다 받았으면 뒤 순위가 남아 있다 (2026-10-14 실측: 역삼동
+        # --limit 30 에서 30건을 받고 1건을 빼자 '더 조회할 매물이 없습니다' 라고 했다)
+        + listing_budget_notes(
+            limit, len(articles), len(listings),
+            has_more=len(articles) >= limit and limit < POPULAR_MAX_LIMIT,
+        )
         + complex_building_notes(shown),
     )
