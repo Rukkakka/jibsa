@@ -6,7 +6,7 @@ import time
 from collections.abc import (
     Awaitable,
     Callable,
-    Iterator,
+    Generator,
 )
 from contextlib import contextmanager
 from math import isfinite
@@ -242,7 +242,7 @@ class RateLimiter:
         return state
 
     @contextmanager
-    def _locked_state(self) -> Iterator[dict[str, Any]]:
+    def _locked_state(self) -> Generator[dict[str, Any], None, None]:
         path = self.path
         try:
             path.parent.mkdir(parents=True, exist_ok=True)

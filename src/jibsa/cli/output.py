@@ -1,6 +1,6 @@
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from math import isfinite
 
@@ -112,7 +112,7 @@ def _usage_hint() -> str:
 
 
 @contextmanager
-def handle_errors(source: str) -> Iterator[None]:
+def handle_errors(source: str) -> Generator[None, None, None]:
     """예외를 `{"error": {...}}` JSON 으로 stderr 에 쓰고 exit code 1 (입력 검증 실패는 2) 로 끝낸다.
 
     LLM 이 실패 원인을 읽고 다음 행동(재시도, 조건 수정)을 고를 수 있도록
