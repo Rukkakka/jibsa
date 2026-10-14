@@ -272,7 +272,11 @@ def infer_trade_types(
             (deposit, 'deposit_manwon', '--deposit-min/--deposit-max'),
         ):
             if given and all(field in NOT_APPLICABLE_PRICE_FIELDS.get(trade, frozenset()) for trade in trade_types):
-                applicable = [trade for trade, fields in NOT_APPLICABLE_PRICE_FIELDS.items() if field not in fields]
+                # 이 검색이 다루지 않는 거래 유형은 권하지 않는다 (직방 아파트에 '단기임대에만 쓰세요' 라고 하던 문제)
+                applicable = [
+                    trade for trade, fields in NOT_APPLICABLE_PRICE_FIELDS.items()
+                    if field not in fields and (allowed is None or trade in allowed)
+                ]
                 raise typer.BadParameter(
                     f"--trade {','.join(trade_types)} 에는 해당 금액이 없어 {option} 를 적용할 수 없습니다. "
                     f"이 조건은 {'·'.join(applicable)} 거래에만 쓰세요",
