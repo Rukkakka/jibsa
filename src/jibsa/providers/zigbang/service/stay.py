@@ -599,13 +599,21 @@ def search_stay_listings(
         else:
             in_radius = len(listings)
         listings = listings[:limit]
-        scope_notes = limit_notes(in_radius, len(listings), limit, order=order, narrow=STAY_NARROW, radius=radius_cut)
+        scope_notes = limit_notes(
+            in_radius, len(listings), limit, order=order, narrow=STAY_NARROW, radius=radius_cut,
+            inspected=len(candidate_ids),
+        )
     elif boundary is not None:
         in_radius = len(pins)
-        scope_notes = limit_notes(in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STAY_NARROW)
+        scope_notes = limit_notes(
+            in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STAY_NARROW,
+            inspected=len(candidate_ids),
+        )
     else:
         in_radius = sum(1 for distance in pins.values() if within_radius(distance, radius_km))
-        scope_notes = limit_notes(in_radius, len(listings), limit, narrow=STAY_NARROW, radius=True) + beyond_radius_notes(listings, radius_km)
+        scope_notes = limit_notes(
+            in_radius, len(listings), limit, narrow=STAY_NARROW, radius=True, inspected=len(candidate_ids),
+        ) + beyond_radius_notes(listings, radius_km)
     return ZigbangStaySearchResult(
         region=region,
         radius_km=None if boundary or address_scope else radius_km,

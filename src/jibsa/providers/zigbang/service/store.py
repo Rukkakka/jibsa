@@ -490,10 +490,15 @@ def search_store_listings(
     listings = listings[:limit]
     if boundary is not None:
         in_radius = len(pins)
-        notes = limit_notes(in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STORE_NARROW)
+        notes = limit_notes(
+            in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STORE_NARROW,
+            inspected=len(inspected),
+        )
     else:
         in_radius = sum(1 for distance, _, _ in pins.values() if within_radius(distance, radius_km))
-        notes = limit_notes(in_radius, len(listings), limit, narrow=STORE_NARROW, radius=True) + beyond_radius_notes(listings, radius_km)
+        notes = limit_notes(
+            in_radius, len(listings), limit, narrow=STORE_NARROW, radius=True, inspected=len(inspected),
+        ) + beyond_radius_notes(listings, radius_km)
     inspected_in_radius = sum(
         1 for item_id in inspected if boundary is not None or within_radius(pins[item_id][0], radius_km)
     )
