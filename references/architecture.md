@@ -52,7 +52,7 @@ jibsa 프로세스가 하나의 상태 파일을 공유**한다. LLM 이 명령�
 - 상태 파일: `<state_dir>/ratelimit/<source>.json`. `state_dir` 은
   `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`.
 - `RateLimiter.reserve()` 가 `flock` 잠금 안에서 다음 슬롯을 예약하고, 실제 대기(`sleep`)는
-  잠금 밖에서 한다. Windows 는 `fcntl` 이 없어 잠금 없이 동작한다.
+  잠금 밖에서 한다. Windows 는 `fcntl` 이 없어 `msvcrt.locking` 으로 같은 잠금을 건다.
 - 슬롯까지 `max_wait`(60초)보다 오래 기다려야 하면 기다리지 않고
   `RateLimitedError(reason='budget')`.
 - 429 응답을 받으면 `on_rate_limited` 가 쿨다운을 걸고 곧바로

@@ -77,7 +77,10 @@ from jibsa.providers.daangn.service.neighborhood import (
     LIFESTYLE_INDICATORS,
     recommend_neighborhoods,
 )
-from jibsa.providers.daangn.service.popular import list_popular_listings
+from jibsa.providers.daangn.service.popular import (
+    POPULAR_MAX_LIMIT,
+    list_popular_listings,
+)
 from jibsa.providers.daangn.service.real_price import (
     PRICE_CHART_TRADE_BY_TRADE_TYPE,
     REAL_PRICE_MAX_LIMIT,
@@ -1121,7 +1124,7 @@ def popular_listings_command(
         list[str] | None,
         typer.Option('--type', '-t', help=f"{', '.join(PROPERTY_TYPES)}. 반복하거나 쉼표로 구분. 기본 전체")
     ] = None,
-    limit: Annotated[int, typer.Option(min=1, max=100, help='조회할 매물 수 (제외 전)')] = 20,
+    limit: Annotated[int, typer.Option(min=1, max=POPULAR_MAX_LIMIT, help='조회할 매물 수 (제외 전)')] = 20,
     pretty: PrettyOption = None,
 ) -> None:
     """구 전체에서 조회수 많은 매물 순위 (순위가 매겨진 매물은 100건쯤). 요청 2회.

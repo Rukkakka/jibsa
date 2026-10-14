@@ -1,6 +1,6 @@
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from math import isfinite
 
@@ -79,12 +79,19 @@ def emit(
     typer.echo(_dumps(payload, pretty))
 
 
-def emit_error(code: str, message: str, hint: str | None = None, **extra: Any) -> None:
-    """`{"error": {...}}` 를 stderr 에 쓴다. 터미널이면 들여쓰기, 아니면 한 줄."""
+def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
+    """`{"error": {...}}` 를 stderr 에 쓴다. 터미널이면 들여쓰기, 아니면 한 줄.
+
+    `code`·`message`·`hint` 는 위치 인자로만 받아, `JibsaError.details` 에 같은 이름의 키가 있어도 인자가 겹쳐
+    (TypeError) 에러 JSON 대신 traceback 으로 끝나지 않는다. 겹친 키는 앞의 세 값을 덮어쓰지 않는다.
+    """
     error: dict[str, Any] = {'code': code, 'message': message}
     if hint:
         error['hint'] = hint
-    error.update({key: value for key, value in extra.items() if value is not None})
+    error.update({
+        key: value for key, value in extra.items()
+        if value is not None and key not in ('code', 'message', 'hint')
+    })
     # 들여쓰기는 stdout 이 아니라 에러를 쓰는 stderr 가 터미널인지로 정한다 (`jibsa ... | jq` 도 에러는 터미널에 보인다)
     typer.echo(_dumps({'error': error}, sys.stderr.isatty()), err=True)
 
@@ -105,7 +112,7 @@ def _usage_hint() -> str:
 
 
 @contextmanager
-def handle_errors(source: str) -> Iterator[None]:
+def handle_errors(source: str) -> Generator[None, None, None]:
     """예외를 `{"error": {...}}` JSON 으로 stderr 에 쓰고 exit code 1 (입력 검증 실패는 2) 로 끝낸다.
 
     LLM 이 실패 원인을 읽고 다음 행동(재시도, 조건 수정)을 고를 수 있도록
@@ -175,6 +182,10 @@ def handle_errors(source: str) -> Iterator[None]:
         raise typer.Exit(code=1)
     except (ClickException, typer.Exit):
         # 사용법 오류와 정상 종료는 jibsa.cli.app.run 이 처리한다
+        raise
+    except BrokenPipeError:
+        # 출력을 받는 쪽(`| head` 등)이 먼저 닫았다. jibsa 오류가 아니라 INTERNAL_ERROR 로 내지 않는다. Typer 가 EPIPE 를
+        # 받아 stdout 을 감싸고 exit 1 로 끝낸다 (잡으면 에러 JSON 과 'Exception ignored ... BrokenPipeError' 가 함께 나왔다)
         raise
     except Exception as exc:
         emit_error(
@@ -272,7 +283,11 @@ def infer_trade_types(
             (deposit, 'deposit_manwon', '--deposit-min/--deposit-max'),
         ):
             if given and all(field in NOT_APPLICABLE_PRICE_FIELDS.get(trade, frozenset()) for trade in trade_types):
-                applicable = [trade for trade, fields in NOT_APPLICABLE_PRICE_FIELDS.items() if field not in fields]
+                # 이 검색이 다루지 않는 거래 유형은 권하지 않는다 (직방 아파트에 '단기임대에만 쓰세요' 라고 하던 문제)
+                applicable = [
+                    trade for trade, fields in NOT_APPLICABLE_PRICE_FIELDS.items()
+                    if field not in fields and (allowed is None or trade in allowed)
+                ]
                 raise typer.BadParameter(
                     f"--trade {','.join(trade_types)} 에는 해당 금액이 없어 {option} 를 적용할 수 없습니다. "
                     f"이 조건은 {'·'.join(applicable)} 거래에만 쓰세요",

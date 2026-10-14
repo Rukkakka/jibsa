@@ -680,9 +680,11 @@ def listing_keeper(
 
 # `pagination_notes` 의 제외 사유. 반경 밖은 사각형으로 받아 반경으로 거르는 검색(정렬 매물·단지·재개발 구역)에만 있다.
 # 동 전체·단지·재개발 매물은 반경 없이 받고, 가까운순(지도 칸)은 반경 밖도 빼지 않고 `beyond_radius_notes` 로 알린다.
-# 그런 검색에 '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다
-EXCLUDED_REASON: str = '중복·거래 불가의'
-RADIUS_EXCLUDED_REASON: str = '중복·거래 불가 또는 검색 범위(반경) 밖의'
+# 그런 검색에 '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다.
+# 목록 응답에는 매물 상태·노출 여부 필드가 없어 거래 불가로 빼는 매물은 없다. 빼는 것은 번호가 같은 중복과 모르는 거래 유형
+# 코드(`article_info_to_listing`)뿐이다 (2026-10-14 실측: 역삼동 동 전체 목록 20건의 모든 키에 상태 필드 없음)
+EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형인'
+RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의'
 
 
 def pagination_notes(

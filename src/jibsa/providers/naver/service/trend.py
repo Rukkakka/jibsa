@@ -242,6 +242,8 @@ def get_district_trend(
             weekly=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.average_count) for point in counts.weekly_counts],
         ),
         price_per_pyeong=None if prices is None else NaverPriceTrend(
+            # 주간 목록 3종은 모두 오래된 주부터 온다. 매물 수·거래 건수의 서버 최신값(latest...)도 마지막 주와 같다
+            # (2026-10-14 실측: 역삼동 52주 3종 모두 오름차순, latestWeeklyCount = 마지막 주 averageCount)
             latest_manwon=price_weekly[-1].price_per_pyeong_manwon if price_weekly else None,
             weekly=price_weekly,
         ),

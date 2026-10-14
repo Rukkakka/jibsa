@@ -169,7 +169,7 @@ MAX_CLUSTER_PAGE_REQUESTS: int = 24
 BOUNDED_PAGE_SIZE: int = 30
 MAX_BOUNDED_PAGE_REQUESTS: int = 10
 # 동 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
-# limit 건까지만 받고, 받은 뒤 중복·거래 불가로 빠져도 그만큼 다시 받지 않는다
+# limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로 빠져도 그만큼 다시 받지 않는다
 LEGAL_DIVISION_PAGE_SIZE: int = 30
 MAX_LEGAL_DIVISION_PAGE_REQUESTS: int = 5
 # 지역 단지 목록(naver complexes). 페이지는 30곳(사이트 COMPLEX_PAGINATION_SIZE), 요청은 이 횟수에서 멈춘다
@@ -754,7 +754,9 @@ def _search_clusters(
             return unwrap(client.run_request_article_clustered_articles_v1(payload), '클러스터 매물')
 
         before = scan.page_requests
-        # 처음 보는 매물이 없는 페이지는 커서가 진행되지 않는 것으로 보고 다음 클러스터로 넘어간다
+        # 처음 보는 매물이 없는 페이지는 커서가 진행되지 않는 것으로 보고 다음 클러스터로 넘어간다. `seen` 을 클러스터끼리
+        # 같이 써도 다른 칸의 매물 때문에 멈추지 않는다. 클러스터 ID 가 지도 타일('{zoom}/{x}/{y}')이라 매물은 한 칸에만
+        # 온다 (2026-10-14 실측: 오산역 원룸 클러스터 19개 53건, 강남역 1개 칸 4쪽 100건 모두 칸·쪽 사이 중복 0건)
         scan_pages(scan, fetch, keep, page_size=CLUSTER_PAGE_SIZE, max_pages=MAX_PAGES_PER_CLUSTER)
         if scan.page_requests > before:
             opened_clusters += 1

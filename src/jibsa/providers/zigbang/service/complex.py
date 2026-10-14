@@ -76,6 +76,8 @@ def danji_schools(response: ZigbangDanjisSchoolsResponseModel) -> list[str]:
     labels: list[str | None] = []
     if response.elementary:
         labels += [school_label(school.name, '배정', school.distance) for school in response.elementary.schools]
+    # 중·고교는 거리순으로 와서 정렬하지 않고 앞에서 자른다. 매물 학군(`building_schools`)은 거리 숫자를 받아 정렬한다
+    # (2026-10-14 실측: 단지 6곳(apt-38487·946·33293·2873·2942·4567) 중학교 9~17곳·고등학교 21~26곳 모두 거리 오름차순)
     for level in (response.middle, response.high):
         if level:
             labels += [

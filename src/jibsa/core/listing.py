@@ -196,6 +196,7 @@ def limit_notes(
     basis: str = '',
     narrow: str = '거래 유형·매물 유형·가격 조건',
     radius: bool = False,
+    inspected: int | None = None,
 ) -> list[str]:
     """조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려줄 때의 안내.
 
@@ -212,8 +213,11 @@ def limit_notes(
         narrow: 좁히라고 권할 조건. 그 명령에 있는 옵션만 적는다 (예: 상가 '업종·가격 조건').
         radius: 반경 검색이면 True. 역·좌표로 이미 좁게 찾았으니 역 이름 대신 `--radius` 를 줄이라고 권한다
             (동 경계·시군구 검색에 권하는 '역 이름처럼 더 좁은 지역' 을 강남역 검색에도 붙이던 문제).
+        inspected: 요약을 받아 확인한 매물 수 (조회 예산). 주면 `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
+            받은 뒤 거래 불가로 뺀 매물만큼 다시 채우지 않으므로, 1건만 빠져도 `returned < limit` 이 되어 안내가
+            사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
     """
-    if returned < limit:
+    if (returned if inspected is None else inspected) < limit:
         return []
     if total is None or total <= returned:
         return []

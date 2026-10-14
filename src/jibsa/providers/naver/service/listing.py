@@ -168,7 +168,7 @@ FACILITY_LABELS: dict[str, str] = {
     'CENTRAL': '중앙냉방',
 }
 COMPLEX_PAGE_SIZE: int = 30
-# 단지 매물 목록 요청 상한 (빌라 단지로 다시 묻는 1회 포함). limit 건까지만 받고, 받은 뒤 중복·거래 불가로
+# 단지 매물 목록 요청 상한 (빌라 단지로 다시 묻는 1회 포함). limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로
 # 빠져도 그만큼 다시 받지 않는다
 MAX_COMPLEX_ARTICLE_PAGE_REQUESTS: int = 5
 
@@ -672,6 +672,9 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         ),
         move_in=move_in,
         parking=parking,
+        # 엘리베이터는 중개사가 고르는 기타시설(etc) 항목 하나라 없으면 고르지 않은 것인지 없는 것인지 모른다. 그래서 False 를
+        # 내지 않는다 (2026-10-14 실측: 신림동 원룸 상세 3건 중 1건이 시설 13개를 골랐지만 ELEVATOR 는 없었고, 다른 1건은
+        # 보안시설을 비워 두었다. 엘리베이터 없음을 따로 알리는 필드는 없다)
         elevator=True if 'ELEVATOR' in facility_codes else None,
         options=[
             FACILITY_LABELS.get(code, code)

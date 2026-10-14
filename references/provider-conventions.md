@@ -136,7 +136,7 @@ def run_request_items_onerooms_v1(
     return ZigbangItemsOneroomsV1ResponseModel.model_validate(response.json())
 ```
 
-- **재시도.** 조회 전용이면 POST 라도 `should_retry_idempotent` (5xx/429 + timeout/transport).
+- **재시도.** 조회 전용이면 POST 라도 `should_retry_idempotent` (5xx/429 + 다시 보내면 나을 수 있는 전송 오류 `RETRYABLE_TRANSPORT_ERRORS`).
   상태를 바꾸는 호출이 생기면 `should_retry_non_idempotent`. jibsa 에는 현재 조회만 있다.
   네이버는 예외다 ([네이버 개발 가이드](providers/naver.md)).
 - **`raise_for_status`** 는 httpx 메서드가 아니라 `core.http.raise_for_status` 를 쓴다. 비공식 API 는

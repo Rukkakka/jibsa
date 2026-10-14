@@ -27,6 +27,8 @@ from httpx import (
     Client,
     HTTPError,
     HTTPStatusError,
+    NetworkError,
+    RemoteProtocolError,
     Response,
     TimeoutException,
     TransportError,
@@ -64,6 +66,10 @@ DEFAULT_USER_AGENT: str = (
 # ValueError 는 jibsa 자체의 값 변환 실패도 잡지만, 응답 문자열을 숫자·날짜로 바꾸다 나는 실패도 형식 변경이라 가르지
 # 않는다 (handle_errors 가 ValueError 를 PARSE_ERROR 로 보는 것과 같다)
 OPTIONAL_LOOKUP_BASE_ERRORS: tuple[type[Exception], ...] = (HTTPError, ValueError)
+# 다시 보내면 나을 수 있는 전송 오류: 시간 초과, 연결·읽기·쓰기 실패, 서버가 응답 중 끊음. 프록시 거절(ProxyError)·
+# 지원하지 않는 URL(UnsupportedProtocol)·요청 형식 오류(LocalProtocolError)처럼 다시 보내도 같은 TransportError 는 빼서
+# 재시도 대기와 요청 제한 슬롯을 쓰지 않는다 (2026-10-14 확인: CONNECT 를 403 으로 거절하는 프록시에 3번 시도)
+RETRYABLE_TRANSPORT_ERRORS: tuple[type[TransportError], ...] = (TimeoutException, NetworkError, RemoteProtocolError)
 
 BODY_PREVIEW_LIMIT: int = 2048
 RETRY_BODY_PREVIEW_LIMIT: int = 200
@@ -216,7 +222,7 @@ def should_retry_idempotent(exc: BaseException) -> bool:
     if isinstance(exc, HTTPStatusError):
         code = exc.response.status_code
         return code >= 500 or code == 429
-    return isinstance(exc, (TimeoutException, TransportError))
+    return isinstance(exc, RETRYABLE_TRANSPORT_ERRORS)
 
 
 def should_retry_non_idempotent(exc: BaseException) -> bool:

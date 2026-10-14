@@ -590,7 +590,9 @@ def search_listings(
     listings.sort(key=by_distance)
     listings = listings[:limit]
     notes = scan.notes + excluded_notes(limit, len(ids), len(listings))
-    return _search_result(region, listings, scan.pins, notes, limit=limit, radius_km=radius_km, boundary=boundary)
+    return _search_result(
+        region, listings, scan.pins, notes, limit=limit, inspected=len(ids), radius_km=radius_km, boundary=boundary,
+    )
 
 
 def _type_query(
@@ -728,10 +730,11 @@ def _search_result(
     notes: list[str],
     *,
     limit: int,
+    inspected: int,
     radius_km: float,
     boundary: ZigbangBoundary | None,
 ) -> ZigbangSearchResult:
-    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다."""
+    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다. `inspected` 는 요약을 받은 핀 수다."""
     if boundary is not None:
         in_boundary = len(pins)
         return ZigbangSearchResult(
@@ -741,7 +744,10 @@ def _search_result(
             returned=len(listings),
             listings=listings,
             notes=notes
-            + limit_notes(in_boundary, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True),
+            + limit_notes(
+                in_boundary, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
+                inspected=inspected,
+            ),
         )
     in_radius = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
     return ZigbangSearchResult(
@@ -752,7 +758,7 @@ def _search_result(
         listings=listings,
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다
         notes=notes
-        + limit_notes(in_radius, len(listings), limit, approximate=True, radius=True)
+        + limit_notes(in_radius, len(listings), limit, approximate=True, radius=True, inspected=inspected)
         + beyond_radius_notes(listings, radius_km),
     )
 

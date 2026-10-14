@@ -1,7 +1,7 @@
 """직방 service 공통: 여러 모듈이 쓰는 결과 모델·URL·안내 문구·상수."""
 
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from httpx import HTTPStatusError
@@ -298,7 +298,7 @@ def sent_or_none(model: BaseModel, field: str, values: list[str]) -> list[str] |
 
 
 @contextmanager
-def unavailable_on_404(listing_id: int | str) -> Iterator[None]:
+def unavailable_on_404(listing_id: int | str) -> Generator[None, None, None]:
     """상세 요청의 404 를 만료 매물(`ListingUnavailableError`)로 바꾼다. 그 밖의 HTTP 오류는 그대로 낸다."""
     try:
         yield

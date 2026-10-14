@@ -403,7 +403,11 @@ class NaverLegalDivisionModel(ResponseModel):
 
 
 class NaverFacilityInfoModel(ResponseModel):
-    """시설."""
+    """시설.
+
+    생활·보안·기타·냉방 시설 목록은 고른 것이 없으면 null 이 아니라 빈 목록으로 온다 (2026-10-14 실측: 신림동 원룸 상세
+    `"security": []`). 그래서 목록 필드는 None 을 받지 않는다.
+    """
 
     life: Annotated[
         list[str],

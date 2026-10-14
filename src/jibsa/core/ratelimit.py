@@ -1,11 +1,12 @@
 import asyncio
 import json
 import os
+import sys
 import time
 from collections.abc import (
     Awaitable,
     Callable,
-    Iterator,
+    Generator,
 )
 from contextlib import contextmanager
 from math import isfinite
@@ -24,18 +25,23 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 
 from typing import (
+    IO,
     Annotated,
     Any,
 )
 
 
-try:
+if sys.platform == 'win32':
+    import msvcrt
+else:
     import fcntl
-except ImportError:  # Windows: 잠금 없이 동작한다 (동시 실행 시 간격이 어긋날 수 있음)
-    fcntl = None  # type: ignore[assignment]
 
 
 WINDOW_SECONDS: float = 60.0
+# Windows 는 다른 프로세스가 상태 파일을 읽는 동안(잠그지 않고 읽는 `limits`) 바꿔치기를 PermissionError 로 거절한다.
+# 읽기는 금방 끝나므로 잠깐 기다려 다시 바꾼다
+REPLACE_ATTEMPTS: int = 5
+REPLACE_RETRY_SECONDS: float = 0.05
 
 
 class RateLimitedError(JibsaError):
@@ -158,11 +164,42 @@ def state_dir() -> Path:
     return base / 'jibsa'
 
 
+def _lock_file(file: IO[str]) -> None:
+    """상태 파일 잠금을 잡는다. 다른 프로세스가 잡고 있으면 풀릴 때까지 기다린다."""
+    if sys.platform == 'win32':
+        # Windows 에는 fcntl 이 없다. 잠금 파일 첫 바이트를 잠그고, 실패하면 1초 간격으로 10번 다시 시도한 뒤 OSError 를 낸다.
+        # 잠금은 슬롯을 예약하는 짧은 순간만 잡으므로 그 안에 풀린다
+        file.seek(0)
+        msvcrt.locking(file.fileno(), msvcrt.LK_LOCK, 1)
+    else:
+        fcntl.flock(file, fcntl.LOCK_EX)
+
+
+def _unlock_file(file: IO[str]) -> None:
+    if sys.platform == 'win32':
+        file.seek(0)
+        msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(file, fcntl.LOCK_UN)
+
+
+def _replace(tmp: Path, path: Path) -> None:
+    """임시 파일로 상태 파일을 바꿔치기한다. Windows 에서 다른 프로세스가 읽는 중이라 거절되면 잠깐 뒤 다시 한다."""
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_RETRY_SECONDS)
+
+
 class RateLimiter:
     """파일 기반 요청 제한기. 프로세스가 달라도 같은 소스는 같은 파일을 공유한다.
 
     상태 파일(`<state_dir>/ratelimit/<source>.json`)에 최근 요청 슬롯과 쿨다운
-    종료 시각을 기록하고, 읽고 쓰는 동안 `flock` 으로 잠근다. 잠금은 슬롯을
+    종료 시각을 기록하고, 읽고 쓰는 동안 `flock`(Windows 는 `msvcrt.locking`)으로 잠근다. 잠금은 슬롯을
     예약하는 짧은 순간만 잡고, 실제 대기는 잠금 밖에서 한다.
 
     Args:
@@ -205,7 +242,7 @@ class RateLimiter:
         return state
 
     @contextmanager
-    def _locked_state(self) -> Iterator[dict[str, Any]]:
+    def _locked_state(self) -> Generator[dict[str, Any], None, None]:
         path = self.path
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -213,24 +250,22 @@ class RateLimiter:
         except OSError as exc:
             raise StateDirError(state_dir(), exc) from exc
         with lock:
-            if fcntl is not None:
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX)
-                except OSError as exc:
-                    # 잠금을 지원하지 않는 파일 시스템(NFS·SMB 의 ENOLCK 등)도 모든 소스에서 같이 실패한다
-                    raise StateDirError(state_dir(), exc) from exc
+            try:
+                _lock_file(lock)
+            except OSError as exc:
+                # 잠금을 지원하지 않는 파일 시스템(NFS·SMB 의 ENOLCK 등)도 모든 소스에서 같이 실패한다
+                raise StateDirError(state_dir(), exc) from exc
             try:
                 state = self._read_state()
                 yield state
                 tmp = path.with_suffix('.tmp')
                 try:
                     tmp.write_text(json.dumps(state), encoding='utf-8')
-                    tmp.replace(path)
+                    _replace(tmp, path)
                 except OSError as exc:
                     raise StateDirError(state_dir(), exc) from exc
             finally:
-                if fcntl is not None:
-                    fcntl.flock(lock, fcntl.LOCK_UN)
+                _unlock_file(lock)
 
     def reserve(self) -> float:
         """다음 요청 슬롯을 예약하고 그때까지 기다릴 초를 돌려준다.
