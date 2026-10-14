@@ -79,12 +79,19 @@ def emit(
     typer.echo(_dumps(payload, pretty))
 
 
-def emit_error(code: str, message: str, hint: str | None = None, **extra: Any) -> None:
-    """`{"error": {...}}` 를 stderr 에 쓴다. 터미널이면 들여쓰기, 아니면 한 줄."""
+def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
+    """`{"error": {...}}` 를 stderr 에 쓴다. 터미널이면 들여쓰기, 아니면 한 줄.
+
+    `code`·`message`·`hint` 는 위치 인자로만 받아, `JibsaError.details` 에 같은 이름의 키가 있어도 인자가 겹쳐
+    (TypeError) 에러 JSON 대신 traceback 으로 끝나지 않는다. 겹친 키는 앞의 세 값을 덮어쓰지 않는다.
+    """
     error: dict[str, Any] = {'code': code, 'message': message}
     if hint:
         error['hint'] = hint
-    error.update({key: value for key, value in extra.items() if value is not None})
+    error.update({
+        key: value for key, value in extra.items()
+        if value is not None and key not in ('code', 'message', 'hint')
+    })
     # 들여쓰기는 stdout 이 아니라 에러를 쓰는 stderr 가 터미널인지로 정한다 (`jibsa ... | jq` 도 에러는 터미널에 보인다)
     typer.echo(_dumps({'error': error}, sys.stderr.isatty()), err=True)
 
