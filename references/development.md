@@ -26,7 +26,7 @@ py -m venv .venv                       # 또는 uv venv --python 3.11
 .venv\Scripts\jibsa --help             # .venv\Scripts\Activate.ps1 후에는 jibsa 만 쳐도 된다
 ```
 
-Windows 는 [README 의 Windows 주의사항](../README.md#4-windows-에서-쓸-때)(UTF-8 출력 설정, 동시 실행 금지)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
+Windows 는 [README 의 Windows 주의사항](../README.md#4-windows-에서-쓸-때)(UTF-8 출력 설정)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
 
 ## 코드 검사
 

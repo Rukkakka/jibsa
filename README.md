@@ -161,15 +161,13 @@ jibsa zigbang search listings room 역삼동 --trade 월세 --limit 3   # 실제
 
 ### 4. Windows 에서 쓸 때
 
-macOS·Linux 는 따로 할 것이 없다. Windows 는 두 가지를 챙긴다.
+macOS·Linux 는 따로 할 것이 없다. Windows 는 UTF-8 출력 설정을 처음 한 번 챙긴다.
 
-- **UTF-8 출력 설정 (처음 한 번)** — Windows 의 Python 은 출력 인코딩이 기본으로 UTF-8 이 아니다 (한국어 Windows 는 cp949). LLM 에이전트가 jibsa 를 부르면 출력이 파이프로 넘어가는데, 이때 한글이 깨지거나 cp949 에 없는 문자(이모지 등)에서 오류가 날 수 있다. 아래처럼 사용자 환경 변수를 설정하고 새 터미널을 연다.
+- **UTF-8 출력 설정** — Windows 의 Python 은 출력 인코딩이 기본으로 UTF-8 이 아니다 (한국어 Windows 는 cp949). LLM 에이전트가 jibsa 를 부르면 출력이 파이프로 넘어가는데, 이때 한글이 깨지거나 cp949 에 없는 문자(이모지 등)에서 오류가 날 수 있다. 아래처럼 사용자 환경 변수를 설정하고 새 터미널을 연다.
 
   ```powershell
   setx PYTHONUTF8 1
   ```
-
-- **한 번에 하나씩 실행** — 요청 제한 상태 파일을 잠그는 기능(`fcntl`)이 Windows 에는 없다. jibsa 를 여러 개 동시에 실행하면 요청 간격이 어긋나 사이트에서 차단될 수 있으니 (특히 네이버) 명령은 하나씩 차례로 실행한다. WSL 에서는 Linux 처럼 잠금이 동작한다.
 
 ### 5. 업데이트 · 삭제
 
