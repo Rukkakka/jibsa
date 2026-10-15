@@ -27,8 +27,13 @@ from typing import (
 
 SQUARE_METERS_PER_PYEONG: float = 3.305785
 KST: timezone = timezone(timedelta(hours=9), 'KST')
-# 구분자가 없으면 8자리만 받는다. 월·일을 한 자리로도 받으면 연월('202411')이 2024-01-01 로 읽힌다
-DATE_DIGITS_PATTERN: re.Pattern[str] = re.compile(r'^(\d{4})(?:(\d{2})(\d{2})|[-./](\d{1,2})[-./](\d{1,2}))\.?$')
+# 구분자가 없으면 8자리만 받는다. 월·일을 한 자리로도 받으면 연월('202411')이 2024-01-01 로 읽힌다.
+# '년 월 일' 은 직방 사용승인일에 섞여 온다 ('1984년 10월 26일', '일' 이 빠진 '2011년 7월 1', 2026-10-15 실측)
+DATE_DIGITS_PATTERN: re.Pattern[str] = re.compile(
+    r'^(\d{4})(?:(\d{2})(\d{2})|[-./](\d{1,2})[-./](\d{1,2})|년\s*(\d{1,2})월\s*(\d{1,2})일?)\.?$'
+)
+# 네이버 매물의 지하층 표기 ('B1' = 지하 1층)
+BASEMENT_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^B(\d+)$')
 
 # 거래 유형별로 원래 존재하지 않는 가격 필드. 출력에서 키째 뺀다.
 NOT_APPLICABLE_PRICE_FIELDS: dict[str, frozenset[str]] = {
@@ -135,13 +140,16 @@ def join_address(*parts: str | None) -> str | None:
 
 
 def normalize_floor(floor: str | None) -> str | None:
-    """숫자로 온 지하층을 직방 표기에 맞춘다 ('0.5' → '반지하', '-1' → '지하1').
+    """숫자·B 로 온 지하층을 직방 표기에 맞춘다 ('0.5' → '반지하', '-1'·'B1' → '지하1').
 
-    당근은 반지하를 0.5, 지하를 음수로, 네이버는 지하를 음수로 준다. 직방은 처음부터
+    당근은 반지하를 0.5, 지하를 음수로, 네이버는 지하를 음수나 'B1' 로 준다. 직방은 처음부터
     '반지하' 로 준다. 그 밖의 값('3', '저', '옥탑방' ...)은 그대로 둔다.
     """
     if floor is None:
         return None
+    basement = BASEMENT_FLOOR_PATTERN.match(floor)
+    if basement is not None:
+        return f'지하{int(basement.group(1))}'
     try:
         number = float(floor)
     except ValueError:
@@ -156,7 +164,7 @@ def normalize_floor(floor: str | None) -> str | None:
 def normalize_date(value: str | None) -> str | None:
     """날짜를 한국 날짜 기준 `YYYY-MM-DD` 로 맞춘다.
 
-    `20100706`, `2018.04.27`, `1995-10-26 ` 같은 날짜와, 시각이 붙은 일시도 받는다.
+    `20100706`, `2018.04.27`, `1995-10-26 `, `1991년 6월 5일` 같은 날짜와, 시각이 붙은 일시도 받는다.
     일시는 시각을 버리고 날짜만 남긴다 (네이버가 날짜만 주므로 소스끼리 맞춘다).
     시간대가 없으면 한국 시간으로 보고, UTC(`...Z`)는 한국 시간으로 바꾼 뒤 날짜를
     뽑는다 (UTC 15시 이후는 한국 날짜로 다음 날). 읽을 수 없으면 앞뒤 공백만 지운

@@ -57,6 +57,9 @@ def test_normalize_date_drops_time_in_kst() -> None:
     # UTC 15시 이후는 한국 날짜로 다음 날
     assert normalize_date('2026-10-06T16:30:00.000Z') == '2026-10-07'
     assert normalize_date('2026-09-29') == '2026-09-29'
+    # 직방 사용승인일은 '년 월 일' 로도 오고, '일' 이 빠지기도 한다
+    assert normalize_date('1984년 10월 26일') == '1984-10-26'
+    assert normalize_date('2011년 7월 1') == '2011-07-01'
     assert normalize_date('어제') == '어제'
     # 연월만 있는 값은 날짜로 지어내지 않는다 (예전 정규식은 '202411' 을 2024-01-01 로 읽었다)
     assert normalize_date('202411') == '202411'
