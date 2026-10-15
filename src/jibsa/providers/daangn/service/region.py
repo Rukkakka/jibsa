@@ -147,15 +147,7 @@ def resolve_regions(
         name3=primary.name3 or primary.name,
         region_id=primary.id,
     )
-    if len(exact) > 1 and notes is not None:
-        selected = join_address(primary.name1, primary.name2, primary.name3)
-        others = ', '.join(join_address(location.name1, location.name2, location.name3) or query for location in exact[1:4])
-        notes.append(
-            f"{quoted(query, '과/와')} 같은 이름의 지역이 여러 곳이라 {selected} 기준으로 조회했습니다 "
-            f'(다른 곳: {others}). '
-            + (f"--city '{city}' 에도 여러 곳이 맞으니 구 이름으로 좁히세요" if city else '--city 로 시·도나 구를 지정하세요')
-        )
-    elif notes is not None:
+    if notes is not None:
         # 당근은 리를 상위 읍·면으로 준다. 원본에 리 이름이 없고 이름이 비슷한 동도 섞여 와서, 리가 있을 수 있는
         # 읍·면 후보만 같은 이름의 리로 센다 (2026-10-10 실측: '오리' 는 퇴촌면·장안읍 등 읍·면 7곳과 여수 오림동)
         same_ri = [

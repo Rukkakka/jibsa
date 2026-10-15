@@ -239,7 +239,7 @@ def _search_sorted(
         )
     notes += filter_notes
     notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated, excluded_reason=RADIUS_EXCLUDED_REASON)
-    return NaverListingsResult(total_count=total, returned=len(result), listings=result, notes=notes)
+    return NaverListingsResult(total=total, returned=len(result), listings=result, notes=notes)
 
 
 class NaverAreaComplex(BaseModel):
@@ -306,7 +306,7 @@ class NaverAreaComplexesResult(BaseModel):
         extra='forbid',
     )
 
-    total_count: Annotated[
+    total: Annotated[
         int,
         Field(description='서버 집계 단지 수 (동이면 동 안, 반경이면 반경을 감싸는 사각형 안. limit 적용 전)')
     ]
@@ -439,7 +439,7 @@ def list_area_complexes(
         total, len(result), limit, inspected, subject='단지', truncated=truncated,
         excluded_reason=EXCLUDED_REASON if legal_division_code is not None else RADIUS_EXCLUDED_REASON,
     )
-    return NaverAreaComplexesResult(total_count=total, returned=len(result), complexes=result, notes=notes)
+    return NaverAreaComplexesResult(total=total, returned=len(result), complexes=result, notes=notes)
 
 
 def _search_legal_division(
@@ -454,7 +454,7 @@ def _search_legal_division(
 ) -> NaverListingsResult:
     """법정동 하나의 매물을 네이버 정렬 순서 그대로 모은다 (legalDivisionArticleList, 30건에 1회).
 
-    반경 검색과 달리 동 경계 안 매물만 오고 `total_count` 가 정확하다 (역삼동 4,401건 / 같은 중심 1km 사각형
+    반경 검색과 달리 동 경계 안 매물만 오고 전체 수(`total`)도 정확하다 (역삼동 4,401건 / 같은 중심 1km 사각형
     7,803건, 2026-10-09). 거리(`distance_km`)는 `lat`/`lng`(동 중심)에서 잰 값이다.
     """
     dong_filter = filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': 'EUP'})
@@ -482,7 +482,7 @@ def _search_legal_division(
         )
     notes += filter_notes
     notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated)
-    return NaverListingsResult(total_count=total, returned=len(result), listings=result, notes=notes)
+    return NaverListingsResult(total=total, returned=len(result), listings=result, notes=notes)
 
 
 class NaverListingConditions(NaverTradeConditions):
@@ -777,7 +777,7 @@ def _search_clusters(
     # 반경 밖 매물도 할당량에 세므로, 할당량을 다 쓰고 멈췄으면 열지 않은 칸·페이지에 반경 안 매물이 남았을 수 있다
     notes += beyond_radius_notes(result, radius_km, complete=not truncated and inspected < limit)
     return NaverListingsResult(
-        total_count=clusters.total_count,
+        total=clusters.total_count,
         returned=len(result),
         listings=result,
         notes=notes,

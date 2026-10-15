@@ -125,7 +125,7 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내
-WHOLE_DONG_NOTE: str = '동 이름이라 반경 대신 {name} 경계 안을 찾았습니다. 위치 기준으로 찾으려면 --radius 를 주세요'
+WHOLE_DONG_NOTE: str = '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)'
 # 지역 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
 # 다른 소스 표현이다 (직방 --room 오픈형원룸·--condition 즉시입주·--bathroom 1, 당근 --option 주차가능·--room-count 2개).
 # '2개'·'3개' 는 욕실 수 값과 겹치지만 거절되는 곳은 --room 이 흔해 방 수로 안내한다. 네이버는 반지하를 따로 두지 않고
@@ -396,7 +396,6 @@ def _search_complex_listings(
         emit(
             {'complex_number': complex_number, **result.model_dump(mode='json')},
             pretty,
-            notice=True,
             notes=trade_notes + notes + result.notes,
         )
 
@@ -416,7 +415,6 @@ def _search_redevelopment_listings(
         emit(
             {'redevelopment_number': area_number, **result.model_dump(mode='json')},
             pretty,
-            notice=True,
             notes=trade_notes + result.notes,
         )
 
@@ -680,7 +678,7 @@ def listing_command(
     if NUMBER_PATTERN.fullmatch(item_id) is None:
         raise typer.BadParameter('매물 ID 는 숫자입니다 (search listings 결과의 id)', param_hint='ITEM_ID')
     with handle_errors(SOURCE), NaverClient() as client:
-        emit(get_listing(client, item_id), pretty, notice=True)
+        emit(get_listing(client, item_id), pretty)
 
 
 def _listing_conditions(
@@ -886,7 +884,7 @@ def search_command(
 ) -> None:
     """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을 가까운 순으로, 동 이름은 그 동 전체를 랭킹순으로 찾는다.
 
-    결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 total_count 가 정확하다. radius_km 가 있으면
+    결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
     그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소가 여러 곳이면 REGION_AMBIGUOUS 로 멈추니 시·구를 붙여 다시 검색한다.
     결과의 title 에 단지명이 들어 있다.
 
@@ -976,6 +974,5 @@ def search_command(
                 **result.model_dump(mode='json'),
             },
             pretty,
-            notice=True,
             notes=trade_notes + notes + result.notes,
         )

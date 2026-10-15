@@ -79,9 +79,9 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 def within_radius(distance_km: float, radius_km: float) -> bool:
     """매물이 반경 안인지. 출력의 `distance_km` 처럼 소수 둘째 자리로 반올림한 거리로 본다.
 
-    반경 안 매물 수(`total_in_radius`)와 반경 밖 안내(`beyond_radius_notes`)가 같은 기준으로 세게 한다. 정확한 거리로
+    반경 안 매물 수(`total`)와 반경 밖 안내(`beyond_radius_notes`)가 같은 기준으로 세게 한다. 정확한 거리로
     세면 0.304km(표시 0.3km) 매물이 한쪽에서만 반경 안이 된다 (2026-10-11 당근 실측: 반경 0.1km 19건 vs 안내 21건,
-    2026-10-12 직방 실측: 37.5009,127.0367 반경 0.3km total_in_radius 14건 vs 안내 16건).
+    2026-10-12 직방 실측: 37.5009,127.0367 반경 0.3km total 14건 vs 안내 16건).
     """
     return round(distance_km, 2) <= radius_km
 

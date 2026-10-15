@@ -130,7 +130,7 @@ class NaverRedevelopmentAreasResult(BaseModel):
         extra='forbid',
     )
 
-    total_count: Annotated[
+    total: Annotated[
         int,
         Field(description='서버 집계 구역 수 (동이면 동 안, 반경이면 반경을 감싸는 지도 범위 안. limit 적용 전)')
     ]
@@ -279,7 +279,7 @@ def list_redevelopment_areas(
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, subject='구역', truncated=scan.truncated, excluded_reason=reason,
     )
-    return NaverRedevelopmentAreasResult(total_count=scan.total, returned=len(result), areas=result, notes=notes)
+    return NaverRedevelopmentAreasResult(total=scan.total, returned=len(result), areas=result, notes=notes)
 
 
 def list_redevelopment_articles(
@@ -336,7 +336,7 @@ def list_redevelopment_articles(
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
     notes += pagination_notes(scan.total, len(result), limit, scan.received, truncated=scan.truncated)
-    return NaverListingsResult(total_count=scan.total, returned=len(result), listings=result, notes=notes)
+    return NaverListingsResult(total=scan.total, returned=len(result), listings=result, notes=notes)
 
 
 class NaverRedevelopmentDetail(BaseModel):

@@ -688,16 +688,16 @@ def listing_budget_notes(
     notes: list[str] = []
     excluded = inspected - returned if eligible is None else inspected - eligible + min(eligible, limit) - returned
     if excluded > 0 and returned < limit:
-        head = f'{inspected}건을 조회했지만 중복·거래 불가 또는 검색 조건에 맞지 않는 매물을 제외해 {returned}건을 반환했습니다'
-        notes.append(f'{head}. 제외된 수만큼 추가 조회하지 않았습니다' if has_more else f'{head}. 더 조회할 매물이 없습니다')
+        head = f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다'
+        notes.append(f'{head} (뺀 만큼 다시 채우지 않음)' if has_more else f'{head} (더 받을 매물 없음)')
     elif returned < limit and not has_more:
-        notes.append(f'최대 {limit}건을 요청했지만 조회한 결과는 {returned}건입니다. 요청한 조회 범위에서 검색을 마쳤습니다')
+        notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if not narrowable:
         return notes
     if has_more and limit >= LISTING_MAX_LIMIT:
-        notes.append(f'--limit의 최대값은 {LISTING_MAX_LIMIT}입니다. 더 구체적인 결과를 보려면 지원되는 필터로 검색 범위를 좁혀 주세요')
+        notes.append(f'--limit 의 최대값은 {LISTING_MAX_LIMIT}입니다. 더 보려면 조건을 좁히세요')
     elif has_more and inspected >= limit:
-        notes.append('--limit을 늘리거나 지원되는 필터로 검색 범위를 좁혀 주세요')
+        notes.append('더 보려면 --limit 을 늘리거나 조건을 좁히세요')
     return notes
 
 

@@ -6,6 +6,8 @@ from pydantic import Field
 from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
     ListingDetail,
+    move_in_label,
+    parking_label,
     won_to_manwon,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -255,17 +257,15 @@ def detail_to_listing(
     parking = None
     if option_values.get('PARKING') == 'YES' or (article.available_total_parking_spots or 0) > 0:
         spots = article.available_total_parking_spots
-        parking = f'가능 ({spots}대)' if spots else '가능'
+        parking = parking_label(True, f'{spots}대' if spots else None)
     elif option_values.get('PARKING') == 'NO':
-        parking = '불가'
+        parking = parking_label(False)
 
     elevator = None
     if option_values.get('ELEVATOR') in ('YES', 'NO'):
         elevator = option_values['ELEVATOR'] == 'YES'
 
-    move_in = article.move_in_date
-    if move_in and article.move_in_date_negotiable:
-        move_in = f'{move_in} (협의 가능)'
+    move_in = move_in_label(article.move_in_date, negotiable=bool(article.move_in_date_negotiable))
 
     manage_cost_includes, manage_cost_excludes = _manage_cost_items(article)
     direct_deal = article.writer_type is not None and article.writer_type != 'BROKER'

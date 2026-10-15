@@ -124,14 +124,13 @@ def test_success_exit_zero_and_json_stdout(capsys: pytest.CaptureFixture[str]) -
     assert captured.err == ''
 
 
-def test_listing_output_starts_with_notice(capsys: pytest.CaptureFixture[str]) -> None:
+def test_listing_output_hides_coordinates(capsys: pytest.CaptureFixture[str]) -> None:
     from jibsa.cli.output import emit
-    from jibsa.core.listing import NOTICE, Listing
+    from jibsa.core.listing import Listing
 
     listing = Listing(source='zigbang', id='1', url='https://example.com/1', trade_type='월세', property_type='원룸', lat=37.0, lng=127.0)
-    emit({'listings': [listing.model_dump(mode='json', exclude_none=True)]}, pretty=False, notice=True)
+    emit({'listings': [listing.model_dump(mode='json', exclude_none=True)]}, pretty=False)
     payload = json.loads(capsys.readouterr().out)
-    assert list(payload)[0] == 'notice' and payload['notice'] == NOTICE
     assert 'lat' not in payload['listings'][0]
 
 
@@ -152,13 +151,13 @@ def test_one_coordinate_alone_is_rejected(
     assert error['message'] == '--lat 과 --lng 는 함께 주어야 합니다'
 
 
-def test_notes_sit_under_notice_and_vanish_when_empty(capsys: pytest.CaptureFixture[str]) -> None:
+def test_notes_come_first_and_vanish_when_empty(capsys: pytest.CaptureFixture[str]) -> None:
     from jibsa.cli.output import emit
 
-    emit({'returned': 0}, pretty=False, notice=True, notes=['안내'])
-    assert list(json.loads(capsys.readouterr().out)) == ['notice', 'notes', 'returned']
-    emit({'returned': 0}, pretty=False, notice=True, notes=[])
-    assert list(json.loads(capsys.readouterr().out)) == ['notice', 'returned']
+    emit({'returned': 0}, pretty=False, notes=['안내'])
+    assert list(json.loads(capsys.readouterr().out)) == ['notes', 'returned']
+    emit({'returned': 0}, pretty=False, notes=[])
+    assert list(json.loads(capsys.readouterr().out)) == ['returned']
 
 
 def fake_upstream(monkeypatch: pytest.MonkeyPatch, response: httpx.Response) -> None:

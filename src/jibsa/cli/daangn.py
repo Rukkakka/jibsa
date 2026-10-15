@@ -447,7 +447,7 @@ def _search_not_dong(
             station_notes.append(f'당근 {station.name} 주변 매물 목록 조회가 실패해 역 위치 반경으로 찾았습니다')
             logger.warning('daangn station listings failed (%s); searching by radius', exc)
         else:
-            emit(station_result, pretty, notice=True, notes=common_notes + [
+            emit(station_result, pretty, notes=common_notes + [
                 f"{quoted(dong, '은/는')} 당근 역 주변 매물 목록으로 찾았습니다 (walk_minutes 는 역까지 도보 분). "
                 '역에서 반경으로 찾으려면 --radius 를 주세요'
             ] + station_notes + station_result.notes)
@@ -550,7 +550,7 @@ def search_command(
             area_result = search_area(client, center_lat, center_lng, radius_km=radius_km, conditions=conditions, limit=limit)
         except FeedQueryRejectedError:
             raise map_query_rejected_error() from None
-        emit(area_result, pretty, notice=True, notes=common_notes + place_notes + area_result.notes)
+        emit(area_result, pretty, notes=common_notes + place_notes + area_result.notes)
 
     with handle_errors(SOURCE), DaangnClient() as client:
         conditions, common_notes = _listing_conditions(
@@ -564,7 +564,7 @@ def search_command(
         if complex_id is not None:
             # 단지 하나의 현재 매물 (당근 단지 화면 순이라 거리가 없다)
             complex_result = list_complex_listings(client, complex_id, conditions=conditions, limit=limit)
-            emit(complex_result, pretty, notice=True, notes=common_notes + complex_result.notes)
+            emit(complex_result, pretty, notes=common_notes + complex_result.notes)
             return
         if lat is not None and lng is not None:
             emit_area(lat, lng, [])
@@ -593,7 +593,6 @@ def search_command(
         emit(
             result,
             pretty,
-            notice=True,
             notes=common_notes + place_notes + result.notes,
         )
 
@@ -615,7 +614,7 @@ def item_command(
     if len(trade_type) > 1:
         raise typer.BadParameter('거래 조건은 하나만 받습니다 (매매, 전세, 월세, 단기임대 중 하나)', param_hint='--trade')
     with handle_errors(SOURCE), DaangnClient() as client:
-        emit(get_listing(client, item_id, trade_type[0] if trade_type else None), pretty, notice=True)
+        emit(get_listing(client, item_id, trade_type[0] if trade_type else None), pretty)
 
 
 @app.command('complex')
@@ -789,7 +788,7 @@ def commute_command(
                 message='당근 출퇴근 API 가 바뀌어(웹 쿼리 해시 거절) 출퇴근 검색을 할 수 없습니다',
                 hint='jibsa daangn search listings <역 이름> --radius 1 로 역 주변을 찾으세요. jibsa 업데이트가 필요합니다',
             ) from None
-        emit(result, pretty, notice=True, notes=notes + result.notes)
+        emit(result, pretty, notes=notes + result.notes)
 
 
 @app.command('region-reviews')
@@ -1159,6 +1158,5 @@ def popular_listings_command(
         emit(
             result,
             pretty,
-            notice=True,
             notes=place_notes + property_type_notes(property_types) + result.notes,
         )

@@ -32,6 +32,10 @@ KST: timezone = timezone(timedelta(hours=9), 'KST')
 DATE_DIGITS_PATTERN: re.Pattern[str] = re.compile(
     r'^(\d{4})(?:(\d{2})(\d{2})|[-./](\d{1,2})[-./](\d{1,2})|년\s*(\d{1,2})월\s*(\d{1,2})일?)\.?$'
 )
+# 입주 가능일 문구 끝의 괄호 설명 ('2026.10.15 이후 입주 가능 (입주협의)')
+MOVE_IN_PAREN_PATTERN: re.Pattern[str] = re.compile(r'^(.*?)\s*\(([^()]*)\)$')
+ISO_DATE_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+MOVE_IN_NOW: str = '즉시입주'
 # 네이버 매물의 지하층 표기 ('B1' = 지하 1층)
 BASEMENT_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^B(\d+)$')
 
@@ -84,8 +88,6 @@ SIDO_OFFICIAL_NAMES: dict[str, str] = {
     '제주': '제주특별자치도',
     '제주도': '제주특별자치도',
 }
-
-NOTICE: str = '매물 확인·사진·문의·계약은 각 url 의 원 사이트에서 하세요. jibsa 는 탐색용입니다.'
 
 Source = Literal['naver', 'zigbang', 'daangn']
 TradeType = Literal['매매', '전세', '월세', '단기임대']
@@ -189,6 +191,43 @@ def normalize_date(value: str | None) -> str | None:
     return moment.astimezone(KST).date().isoformat()
 
 
+def move_in_label(value: str | None, *, negotiable: bool = False) -> str | None:
+    """입주 가능일을 세 소스가 같은 꼴로 쓴다: 날짜는 `YYYY-MM-DD`, 날짜 없이 바로면 `즉시입주`, 협의 가능하면
+    뒤에 ` (협의 가능)`.
+
+    직방 옛 상세 API 의 문장('즉시 입주 가능 (협의 가능)', '2026.10.15 이후 입주 가능 (입주협의)')도 받는다. 괄호 안이
+    협의·즉시입주가 아닌 다른 설명이면 뒤에 그대로 붙이고, 날짜를 읽지 못하면 원래 문구를 그대로 둔다 (정보를 버리지 않는다).
+    """
+    if value is None or not value.strip():
+        return None
+    text = value.strip()
+    match = MOVE_IN_PAREN_PATTERN.match(text)
+    head, extra = (match.group(1).strip(), match.group(2).strip()) if match else (text, '')
+    if '협의' in extra:
+        negotiable, extra = True, ''
+    elif extra.replace(' ', '') == MOVE_IN_NOW:
+        extra = ''
+    head = head.replace('이후 입주 가능', '').strip()
+    if '즉시' in head:
+        label = MOVE_IN_NOW
+    else:
+        date = normalize_date(head)
+        if date is None or not ISO_DATE_PATTERN.match(date):
+            return text
+        label = date
+    if extra:
+        label += f' ({extra})'
+    return label + (' (협의 가능)' if negotiable else '')
+
+
+def parking_label(available: bool | None, detail: str | None = None) -> str | None:
+    """주차를 세 소스가 같은 꼴로 쓴다: `가능`·`불가`, 대수가 있으면 괄호로 붙인다 (`가능 (총 4대)`). 가능 여부를 모르면 대수만."""
+    status = None if available is None else '가능' if available else '불가'
+    if status and detail:
+        return f'{status} ({detail})'
+    return status or detail
+
+
 def by_distance(listing: 'Listing') -> tuple[bool, float]:
     """가까운 순 정렬 키. 거리를 모르는 매물은 가장 가깝다고 내보내지 않도록 맨 뒤로 보낸다."""
     return listing.distance_km is None, listing.distance_km or 0
@@ -202,7 +241,7 @@ def limit_notes(
     order: str = '검색 중심에서 가까운',
     approximate: bool = False,
     basis: str = '',
-    narrow: str = '거래 유형·매물 유형·가격 조건',
+    narrow: str = '조건',
     radius: bool = False,
     inspected: int | None = None,
 ) -> list[str]:
@@ -219,8 +258,8 @@ def limit_notes(
         approximate: `total` 이 근사값이면 True ('약 N건').
         basis: `total` 이 어떤 조건까지 적용한 수인지 덧붙일 말 (예: '가격 조건 적용 전').
         narrow: 좁히라고 권할 조건. 그 명령에 있는 옵션만 적는다 (예: 상가 '업종·가격 조건').
-        radius: 반경 검색이면 True. 역·좌표로 이미 좁게 찾았으니 역 이름 대신 `--radius` 를 줄이라고 권한다
-            (동 경계·시군구 검색에 권하는 '역 이름처럼 더 좁은 지역' 을 강남역 검색에도 붙이던 문제).
+        radius: 반경 검색이면 True. 역·좌표로 이미 좁게 찾았으니 지역 대신 반경을 좁히라고 권한다
+            (동 경계·시군구 검색에 권하는 '더 좁은 지역' 을 강남역 검색에도 붙이던 문제).
         inspected: 요약을 받아 확인한 매물 수 (조회 예산). 주면 `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
             받은 뒤 거래 불가로 뺀 매물만큼 다시 채우지 않으므로, 1건만 빠져도 `returned < limit` 이 되어 안내가
             사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
@@ -229,13 +268,10 @@ def limit_notes(
         return []
     if total is None or total <= returned:
         return []
-    lead = f"조건에 맞는 매물이 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '') + '이라'
-    area = '--radius 를 줄여' if radius else '역 이름처럼 더 좁은 지역으로'
+    lead = f"조건에 맞는 매물 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
+    area = '반경' if radius else '지역'
     # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-    return [
-        f'{lead} {order} {returned}건만 보여 줍니다. '
-        f'--limit 을 늘리거나, {narrow}을 좁히거나, {area} 다시 검색하세요'
-    ]
+    return [f'{lead} 중 {order} {returned}건입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요']
 
 
 def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, complete: bool = True) -> list[str]:
@@ -442,9 +478,9 @@ class ListingDetail(Listing):
 
     사진, 본문, 중개사 연락처, 도로명 주소, 조회수는 담지 않는다.
 
-    `move_in`·`parking`·`nearby_subways` 는 중개사·작성자가 입력한 문구를 소스 표기대로
-    옮긴 값이라 소스마다 형식이 다르다 ('주차 불가능' / '불가', '2026.10.28 이후 입주 가능' /
-    '2026-10-07'). 사람이 쓴 문장이라 한 형식으로 바꿀 수 없어 정규화하지 않는다.
+    `move_in`·`parking` 은 세 소스가 같은 꼴이다 (`move_in_label`·`parking_label`: '2026-10-24', '즉시입주',
+    '2026-11 초순', 뒤에 ' (협의 가능)' / '가능', '불가', '가능 (총 4대)'). `nearby_subways` 는 소스 표기대로라
+    괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
 
     Args:
         room_count: 방 수. Defaults to None.
@@ -472,11 +508,11 @@ class ListingDetail(Listing):
     ] = None
     move_in: Annotated[
         str | None,
-        Field(description='입주 가능일. 소스 표기 그대로라 형식이 소스마다 다르다')
+        Field(description="입주 가능일 ('2026-10-24', '즉시입주', '2026-11 초순', 협의 가능하면 뒤에 ' (협의 가능)')")
     ] = None
     parking: Annotated[
         str | None,
-        Field(description='주차 가능 여부·대수. 소스 표기 그대로라 형식이 소스마다 다르다')
+        Field(description="주차 ('가능', '불가', 대수가 있으면 '가능 (총 4대)'. 가능 여부를 모르면 대수만)")
     ] = None
     elevator: Annotated[
         bool | None,

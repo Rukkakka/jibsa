@@ -77,7 +77,7 @@ class DaangnDevelopmentsResult(BaseModel):
         float,
         Field(description='검색 반경 (km)')
     ]
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경 안 사업 수 (limit 적용 전)')
     ]
@@ -151,7 +151,7 @@ def list_developments(
         notes.append(f'당근 웹 지도가 숨기는 사업(진행 코드 E01) {hidden}건은 뺐습니다')
     return DaangnDevelopmentsResult(
         radius_km=radius_km,
-        total_in_radius=len(found),
+        total=len(found),
         returned=min(len(found), limit),
         developments=found[:limit],
         notes=notes,

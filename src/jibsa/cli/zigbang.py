@@ -228,7 +228,7 @@ def _scope(
     if split_note:
         notes.append(split_note)
     if boundary is not None:
-        notes.append(f'동 이름이라 반경 대신 {boundary.name} 경계 안을 찾았습니다. 위치 기준으로 찾으려면 --radius 를 주세요')
+        notes.append(f'{boundary.name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
     return region, notes, boundary, radius_km
 
 
@@ -472,7 +472,7 @@ def search_room_command(
             boundary=boundary,
             subway_id=region.subway_id,
         )
-        emit(result, pretty, notice=True, notes=trade_notes + notes + result.notes)
+        emit(result, pretty, notes=trade_notes + notes + result.notes)
 
 
 @listings_app.command('apt')
@@ -563,12 +563,12 @@ def search_apt_command(
                 notes = [f"{quoted(query or '', '은/는')} 동·구가 아니라 그 위치에서 반경 {DEFAULT_RADIUS_KM:g}km 안 아파트를 찾았습니다"]
             else:
                 result = search_apt_listings(client, district, conditions=conditions, limit=limit, extra_regions=extra)
-                emit(result, pretty, notice=True, notes=trade_notes + notes + result.notes)
+                emit(result, pretty, notes=trade_notes + notes + result.notes)
                 return
         radius_km = radius or DEFAULT_RADIUS_KM
         region, region_notes = _region(client, query, lat, lng, radius_km, items)
         near = search_apt_listings_near(client, region, conditions=conditions, radius_km=radius_km, limit=limit)
-        emit(near, pretty, notice=True, notes=trade_notes + region_notes + notes + near.notes)
+        emit(near, pretty, notes=trade_notes + region_notes + notes + near.notes)
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:
@@ -730,7 +730,7 @@ def complex_listings_command(
             pyeong_ids=pyeong,
             limit=limit,
         )
-        emit(result, pretty, notice=True, notes=trade_notes + result.notes)
+        emit(result, pretty, notes=trade_notes + result.notes)
 
 
 @listings_app.command('store')
@@ -832,7 +832,7 @@ def store_command(
             boundary=boundary,
             limit=limit,
         )
-        emit(result, pretty, notice=True, notes=price_notes + notes + result.notes)
+        emit(result, pretty, notes=price_notes + notes + result.notes)
 
 
 @listings_app.command('stay')
@@ -991,7 +991,7 @@ def stay_command(
             result = search_stay_listings(
                 client, region, conditions=conditions, sort=stay_sort, radius_km=radius_km, limit=limit, boundary=boundary,
             )
-        emit(result, pretty, notice=True, notes=notes + result.notes)
+        emit(result, pretty, notes=notes + result.notes)
 
 
 @app.command('real-price')
@@ -1061,5 +1061,4 @@ def listing_command(
         emit(
             get_any_listing(client, item_id, check_in=check_in, check_out=check_out, pet=pet),
             pretty,
-            notice=True,
         )

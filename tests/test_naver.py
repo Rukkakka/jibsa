@@ -591,9 +591,9 @@ def test_complex_listing_budget_preserves_cursor_without_refilling() -> None:
     assert len(requests) == 4
     assert all(json.loads(request.content)['size'] == 30 for request in requests)
     assert result.returned == 114
-    assert any('추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
     assert any('최대값은 120' in note for note in result.notes)
-    assert not any('--limit을 늘리' in note for note in result.notes)
+    assert not any('--limit 을 늘리' in note for note in result.notes)
 
 
 def test_whole_dong_budget_carries_seed_and_cursor() -> None:
@@ -625,7 +625,7 @@ def test_whole_dong_stops_when_cursor_stalls() -> None:
         result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == 2
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
-    assert any('추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
 
 
 def _short_page_client(requests: list[httpx.Request], path: str, make_page) -> NaverClient:

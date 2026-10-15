@@ -9,7 +9,9 @@ from jibsa.core.listing import (
     ListingDetail,
     join_address,
     m2_to_pyeong,
+    move_in_label,
     normalize_date,
+    parking_label,
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -464,7 +466,7 @@ def list_complex_articles(
     result = list(listings.values())[:limit]
     notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated)
     return NaverListingsResult(
-        total_count=total,
+        total=total,
         returned=len(result),
         listings=result,
         notes=notes,
@@ -496,14 +498,10 @@ def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
     date = moving.moving_in_date
     label: str | None
     if code in MOVING_IN_PERIOD_LABELS and date:
-        label = f'{date[:7]} {MOVING_IN_PERIOD_LABELS[code]}'
-    elif code in MOVING_IN_LABELS:
-        label = MOVING_IN_LABELS[code]
-    else:
-        label = date
-    if label and moving.moving_in_negotiation:
-        label = f'{label} (협의 가능)'
-    return label
+        month = (normalize_date(date) or date)[:7]
+        label = f'{month} {MOVING_IN_PERIOD_LABELS[code]}'
+        return f'{label} (협의 가능)' if moving.moving_in_negotiation else label
+    return move_in_label(MOVING_IN_LABELS.get(code or '', date), negotiable=bool(moving.moving_in_negotiation))
 
 
 def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | None, list[str] | None]:
@@ -535,7 +533,7 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
 
 
 def _parking_label(facility: NaverFacilityInfoModel | None, in_complex: bool) -> str | None:
-    """주차 가능 여부와 총 주차 대수를 문구로 만든다 ('주차 불가 (총 4대)', '단지 전체 398대').
+    """주차 가능 여부와 총 주차 대수를 문구로 만든다 ('불가 (총 4대)', '단지 전체 398대').
 
     대수가 있어도 이 매물은 주차 불가일 수 있어(원룸 총 6대·불가, 2026-10-10) 가능 여부를 앞에 붙인다.
     단지가 없는 원룸·빌라에는 '단지 전체' 를 붙이지 않는다. 0대는 모름이 아니라 0대다.
@@ -544,10 +542,7 @@ def _parking_label(facility: NaverFacilityInfoModel | None, in_complex: bool) ->
         return None
     count = facility.total_parking_count
     count_text = None if count is None else f'{"단지 전체" if in_complex else "총"} {count}대'
-    if facility.is_parking_possible is None:
-        return count_text
-    status = '주차 가능' if facility.is_parking_possible else '주차 불가'
-    return f'{status} ({count_text})' if count_text else status
+    return parking_label(facility.is_parking_possible, count_text)
 
 
 def _complex_approved_at(client: NaverClient, complex_number: int | None, key: NaverArticleKeyModel) -> str | None:

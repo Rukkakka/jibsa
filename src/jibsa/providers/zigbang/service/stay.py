@@ -332,7 +332,7 @@ class ZigbangStaySearchResult(BaseModel):
         str | None,
         Field(description='반경 대신 찾은 동·구 등 지역 이름. 반경으로 찾았으면 키가 없다')
     ] = None
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경(동 경계로 찾았으면 경계) 안 조건에 맞는 매물 수 (limit 적용 전)')
     ]
@@ -621,7 +621,7 @@ def search_stay_listings(
             (region.local3 if is_ri_code(region.legal_division_code) and region.local3 else region.name) if address_scope
             else boundary.name if boundary else None
         ),
-        total_in_radius=in_radius,
+        total=in_radius,
         returned=len(listings),
         listings=listings,
         notes=[STAY_APP_NOTE] + scope_notes,

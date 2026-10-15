@@ -31,7 +31,9 @@ from jibsa.core.listing import (
     join_address,
     limit_notes,
     m2_to_pyeong,
+    move_in_label,
     normalize_date,
+    parking_label,
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -109,11 +111,10 @@ APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2'})
 ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
 # 대부분 방 1개다 (2026-10-10 실측: 역삼동 32건 중 단지별 6건 상세에서 5건이 방 1개)
-APT_ONE_ROOM_NOTE: str = (
-    '방 1개짜리 아파트는 직방 아파트 목록에만 있어 여기서는 찾지 않았습니다. '
-    'jibsa zigbang search listings apt <동·구 이름> --supply-area-max 50 으로 찾고 방 개수는 listing 의 room_count 로 확인하세요'
-)
+APT_ONE_ROOM_NOTE: str = '방 1개짜리 아파트는 여기서 찾지 않습니다 (search listings apt --supply-area-max 50 으로 찾는다)'
 GEOHASH_PRECISION: int = 5
+# 기존 상세(/v3/items)의 주차 문장과 가능 여부
+LEGACY_PARKING_AVAILABLE: dict[str, bool] = {'주차 가능': True, '주차 불가능': False, '주차 불가': False}
 DIRECTION_LABELS: dict[str, str] = {
     'N': '북향',
     'S': '남향',
@@ -145,7 +146,7 @@ class ZigbangSearchResult(BaseModel):
         str | None,
         Field(description='반경 대신 경계 안을 찾은 동 이름. 반경으로 찾았으면 키가 없다')
     ] = None
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경(동 경계로 찾았으면 경계) 안 매물 수 근사값 (limit 적용 전, 방 구조·유형으로 거르기 전). 반경 밖 매물은 세지 않아 반경 밖 매물로 채운 returned 보다 작을 수 있다')
     ]
@@ -273,15 +274,16 @@ def detail_to_listing(
         address = f'{origin.local1} {item.address.jibun}'
     move_in: str | None
     if residence.move_in_at is not None:
-        move_in = f"{residence.move_in_at.replace('-', '.')} 이후 입주 가능"
-        if residence.move_in_extra:
-            move_in += f' ({residence.move_in_extra})'
+        extra = residence.move_in_extra
+        move_in = move_in_label(f'{residence.move_in_at} ({extra})' if extra else residence.move_in_at)
     else:
-        # null을 즉시 입주로 추측하지 않고 기존 상세의 설명을 쓴다
-        move_in = legacy.movein_date if legacy else None
-    parking = None if residence.parking is None else '주차 가능' if residence.parking else '주차 불가능'
-    if legacy is not None and legacy.parking_available_text is not None:
-        parking = legacy.parking_available_text
+        # null을 즉시 입주로 추측하지 않고 기존 상세의 문장('즉시 입주 가능 (협의 가능)')을 같은 꼴로 바꿔 쓴다
+        move_in = move_in_label(legacy.movein_date) if legacy else None
+    parking = parking_label(residence.parking)
+    if parking is None and legacy is not None and legacy.parking_available_text is not None:
+        # 기존 상세는 '주차 가능'·'주차 불가능' 문장으로 준다 (2026-10-15 실측 6건). 다른 문장이면 그대로 둔다
+        text = legacy.parking_available_text
+        parking = parking_label(LEGACY_PARKING_AVAILABLE.get(text)) or text
 
     url = (
         apt_item_url(item.id) if item.service_type == '아파트'
@@ -367,8 +369,8 @@ def get_coalition_listing(client: ZigbangClient, item_id: int) -> ZigbangListing
         building_floor=str(apt.building_floor) if apt.building_floor is not None else None,
         address=apt.old_address or None,
         direction=DIRECTION_LABELS.get((apt.direction or '').upper(), apt.direction),
-        move_in=apt.movein_date,
-        parking=f'세대당 주차 대수 {apt.parking_count_by_household:g}대' if apt.parking_count_by_household is not None else None,
+        move_in=move_in_label(apt.movein_date),
+        parking=parking_label(None, f'세대당 {apt.parking_count_by_household:g}대') if apt.parking_count_by_household is not None else None,
     )
     return apply_apt_detail(detail, apt)
 
@@ -740,7 +742,7 @@ def _search_result(
         return ZigbangSearchResult(
             region=region,
             boundary=boundary.name,
-            total_in_radius=in_boundary,
+            total=in_boundary,
             returned=len(listings),
             listings=listings,
             notes=notes
@@ -753,7 +755,7 @@ def _search_result(
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km,
-        total_in_radius=in_radius,
+        total=in_radius,
         returned=len(listings),
         listings=listings,
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다

@@ -94,16 +94,12 @@ logger = logging.getLogger(__name__)
 # 당근 매물 종류는 작성자가 고른 하나뿐이라 같은 오피스텔 건물의 방 1개도 원룸·오피스텔로 갈린다
 # (2026-10-10 실측: 엘리젠트 단지 매물 3건 중 1건만 원룸, 2건은 오피스텔로 올라 있었다)
 ONE_ROOM_NOTE: str = (
-    '-t 원룸은 작성자가 원룸으로 올린 매물만 찾습니다. 아파트·오피스텔·주택으로 올린 방 1개 매물은 빠지고, '
-    '원룸으로 올렸어도 방이 2개인 매물이 있습니다. 정확한 방 수는 listing 의 room_count 로 확인하세요'
+    '-t 원룸은 작성자가 원룸으로 올린 매물만이라 방 1개 아파트·주택은 빠지고 방 2개 매물이 섞일 수 있습니다 '
+    '(방 수는 listing 의 room_type)'
 )
-ONE_ROOM_OFFICETEL_NOTE: str = (
-    '오피스텔 건물의 원룸도 작성자가 오피스텔로 올렸으면 -t 원룸에 나오지 않습니다. '
-    '함께 보려면 -t 원룸,오피스텔 로 찾으세요'
-)
+ONE_ROOM_OFFICETEL_NOTE: str = '원룸형 오피스텔도 보려면 -t 원룸,오피스텔'
 OFFICETEL_NOTE: str = (
-    '-t 오피스텔은 작성자가 오피스텔로 올린 매물만 찾습니다. 오피스텔 건물이라도 원룸으로 올린 매물은 빠지니 '
-    '함께 보려면 -t 원룸,오피스텔 로 찾으세요'
+    '-t 오피스텔은 작성자가 오피스텔로 올린 매물만이라 원룸으로 올린 오피스텔은 빠집니다 (함께 보려면 -t 원룸,오피스텔)'
 )
 # 투룸(TWO_ROOM)으로 찾을 때 붙이는 안내
 TWO_ROOM_NOTE: str = (
@@ -143,7 +139,7 @@ class DaangnSearchResult(BaseModel):
         list[DaangnRegion],
         Field(description='실제로 매물을 조회한 동 (확장 포함). 한도를 다 써서 못 본 동과 지도 페이지가 없는 동은 notes 로 알린다')
     ]
-    total_in_regions: Annotated[
+    total: Annotated[
         int | None,
         Field(description=(
             '조회한 동들의 매물 수 합 (당근 집계). 조건이 있으면 조건에 맞는 수, 없으면 동 전체 수다. '
@@ -186,7 +182,7 @@ class DaangnAreaSearchResult(BaseModel):
         float,
         Field(description='검색 반경 (km)')
     ]
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경 안에서 조건(당근 서버에서 건 것)에 맞는 매물 수 (limit 적용 전)')
     ]
@@ -344,19 +340,15 @@ def total_notes(
     """
     if total is None:
         return []
-    what = '조건에 맞는 매물 수' if filtered else '전체 매물 수'
-    head = f'{what} {total}건은 당근이 집계한 값으로, 당근이 함께 주는 주변 동 매물까지 셉니다(동마다 1000 에서 잘림)'
-    if region_count > 1:
-        head += '. 여러 동의 합이라 겹치는 매물이 두 번 세어졌을 수 있습니다'
+    what = '조건에 맞는 매물을 ' if filtered else ''
+    overlap = ', 여러 동이라 겹칠 수 있음' if region_count > 1 else ''
+    head = f'total {total}건은 {what}주변 동 매물까지 센 당근 집계입니다 (동마다 1000에서 잘림{overlap})'
     if filtered == 'client':
-        return [
-            f'{head}. 조건을 적용한 건 받아 온 최근 매물 {fetched}건(동마다 최대 20건)뿐입니다. '
-            '조건에 맞는 매물이 더 있을 수 있으니 url 의 원 사이트에서 확인하세요'
-        ]
+        return [f'{head}. 조건은 받아 온 최근 {fetched}건(동마다 최대 20건)에만 걸었으니 더 있을 수 있습니다']
     if complete:
-        return [f'{head}. 이 매물 {fetched}건을 모두 받았습니다']
+        return [f'{head}. {fetched}건을 모두 받았습니다']
     per_region = FEED_PAGE_SIZE if map_only else FEED_PAGE_SIZE * MAX_FEED_PAGES
-    return [f'{head}. 그중 최근 매물 {fetched}건(동마다 최대 {per_region}건)을 받았습니다']
+    return [f'{head}. 그중 최근 {fetched}건을 받았습니다 (동마다 최대 {per_region}건)']
 
 
 def skipped_region_notes(
@@ -659,13 +651,13 @@ def search_listings(
 
     listings, shown, dongs = _matched_listings(client, scan.matched[:limit], sido_cache)
 
-    total_in_regions = sum(count for count in counts if count is not None) if counts and None not in counts else None
+    total = sum(count for count in counts if count is not None) if counts and None not in counts else None
     filtered: Literal['server', 'client'] | None = None
     if has_conditions:
         filtered = 'server' if scan.use_feed else 'client'
     return DaangnSearchResult(
         regions=searched,
-        total_in_regions=total_in_regions,
+        total=total,
         fetched=scan.fetched,
         returned=len(listings),
         listings=listings,
@@ -678,7 +670,7 @@ def search_listings(
                 query=query if regions and regions[0].name3 in missing else None,
             )
             + total_notes(
-                total_in_regions, scan.fetched, filtered, complete=complete, region_count=len(counts), map_only=not scan.use_feed,
+                total, scan.fetched, filtered, complete=complete, region_count=len(counts), map_only=not scan.use_feed,
             )
             + count_notes
             + truncation_notes(len(scan.matched), limit)
@@ -957,7 +949,7 @@ def search_area(
     )
     nearest = _nearest_points(points, lat, lng)
     # 반경 밖 안내(beyond_radius_notes)와 같은 기준(표시 거리)으로 센다
-    total_in_radius = sum(1 for _, distance in nearest if within_radius(distance, radius_km))
+    total = sum(1 for _, distance in nearest if within_radius(distance, radius_km))
 
     center = (lat, lng)
     matched: list[tuple[DaangnArticleModel, DaangnTradeModel]] = []
@@ -1007,7 +999,7 @@ def search_area(
     return DaangnAreaSearchResult(
         region=region,
         radius_km=radius_km,
-        total_in_radius=total_in_radius,
+        total=total,
         returned=len(listings),
         listings=listings,
         notes=(
@@ -1018,7 +1010,7 @@ def search_area(
             + beyond_radius_notes(listings, radius_km)
             # 핀은 가까운 순이라 반경 안 핀이 앞에 온다. 사각형 모서리(반경 밖) 핀은 limit 을 늘려도 반경 밖 매물만 더
             # 나오므로 '더 있음' 으로 세지 않는다 (2026-10-11 실측: 반경 0.1km 핀 29개 중 반경 안 19개, limit 25 → 120 이 반경 밖 4건만 더)
-            + listing_budget_notes(limit, inspected, len(listings), has_more=total_in_radius > inspected, eligible=len(matched))
+            + listing_budget_notes(limit, inspected, len(listings), has_more=total > inspected, eligible=len(matched))
             + trade_unselected_notes(unselected)
             + complex_building_notes(shown)
         ),

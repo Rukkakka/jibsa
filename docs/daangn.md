@@ -536,7 +536,7 @@ jibsa daangn development 1003045
 
 **반환값**
 
-`developments` 는 `radius_km`, `total_in_radius`, `returned`, `developments[]`(`id`, `name`, `category`, `status` 예정·진행, `distance_km`). `development` 는 사업 종류·단계·기간·면적·규모·시행자·시공사·계획 세대수·건폐율·용적률·최고 층수와 단계별 날짜(`dates`)다.
+`developments` 는 `radius_km`, `total`, `returned`, `developments[]`(`id`, `name`, `category`, `status` 예정·진행, `distance_km`). `development` 는 사업 종류·단계·기간·면적·규모·시행자·시공사·계획 세대수·건폐율·용적률·최고 층수와 단계별 날짜(`dates`)다.
 
 **오류와 대응**
 
@@ -568,7 +568,7 @@ jibsa daangn preschool 37033
 
 **반환값**
 
-`preschools` 는 `radius_km`, `total_in_radius`, `returned`, `preschools[]`(`id`, `name`, `type`, `distance_km`). `preschool` 은 주소, 구·동, 운영 시간, 설립 유형(국공립·민간·직장 등), 설립·개원일, 관할 기관, 원아·반·교사 수, 통학버스다.
+`preschools` 는 `radius_km`, `total`, `returned`, `preschools[]`(`id`, `name`, `type`, `distance_km`). `preschool` 은 주소, 구·동, 운영 시간, 설립 유형(국공립·민간·직장 등), 설립·개원일, 관할 기관, 원아·반·교사 수, 통학버스다.
 
 **오류와 대응**
 
@@ -742,7 +742,7 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 | `returned` | 실제 반환 개수. 통근은 역 사이 중복을 포함한 역별 합계 |
 | 통근 `unique_returned` | 역 사이 중복을 제거한 서로 다른 매물 수 |
 | 통근 `stations[]` | `station_name`, `subway_minutes`, `transfers`, `inspected`, `returned`, `listings`로 구성한 역별 결과 |
-| `total_in_regions` / `total_in_radius` | 동 검색 / 반경 검색의 집계. 후처리 결과 수와 다를 수 있음 |
+| `total` | 동 검색은 조회한 동들의, 반경 검색은 반경 안의 집계. 후처리 결과 수와 다를 수 있음 |
 | `trade_type`, `other_trades` | 표시한 거래 유형과 같은 매물의 다른 거래 조건 |
 | `has_more` | 해당 목록에 더 조회할 결과가 있는지 |
 | `notes` | 조회 범위·제한·중복 이름·부족한 결과·정렬 안내 |
