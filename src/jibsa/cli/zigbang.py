@@ -119,6 +119,26 @@ STAY_SERVICE_NOTE: str = (
     '단기임대 서비스는 매물이 달라 jibsa zigbang search listings stay 로 찾습니다'
 )
 STAY_STRUCTURES: tuple[str, ...] = ('복층', '단층')
+# room·--complex 의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
+# 다른 소스 표현이다 (당근 --option 반려동물가능·대출가능, --structure 오픈형, --room-count 2개, 네이버 --move-in 바로입주)
+ROOM_USAGE_BY_VALUE: dict[str, str] = {
+    **{value: f'--room {value}' for value in ROOM_TYPES},
+    **{value: f'--floor {value}' for value in FLOOR_FILTERS},
+    **{value: f'--option {value}' for value in OPTION_FILTERS},
+    **{value: f'--condition {value}' for value in CONDITIONS},
+    '반려동물가능': '--condition 반려동물',
+    '대출가능': '--condition 전세대출',
+    '주차가능': '--condition 주차',
+    '바로입주': '--condition 즉시입주',
+    '옥탑': '--floor 옥탑방',
+    '복층': '--room 복층형원룸',
+    '오픈형': '--room 오픈형원룸',
+    '분리형': '--room 분리형원룸',
+    '원룸': '-t 원룸',
+    '2개': '--room 투룸',
+    '3개': '--room 쓰리룸',
+    '4개이상': '--room 포룸이상',
+}
 
 app = typer.Typer(
     help=(
@@ -269,7 +289,7 @@ def _room_conditions(
         rent_max=rent_max,
         price_min=price_min,
         price_max=price_max,
-        room_types=split_csv(room, ROOM_TYPES, '--room'),
+        room_types=split_csv(room, ROOM_TYPES, '--room', ROOM_USAGE_BY_VALUE),
         manage_cost_min=manage_cost_min,
         manage_cost_max=manage_cost_max,
         no_manage_cost=no_manage_cost,
@@ -277,10 +297,10 @@ def _room_conditions(
         area_max_m2=area_max,
         area_min_pyeong=area_pyeong_min,
         area_max_pyeong=area_pyeong_max,
-        floors=split_csv(floor, FLOOR_FILTERS, '--floor'),
+        floors=split_csv(floor, FLOOR_FILTERS, '--floor', ROOM_USAGE_BY_VALUE),
         bathroom_count=bathroom,
-        options=split_csv(option, OPTION_FILTERS, '--option'),
-        extra_conditions=split_csv(condition, CONDITIONS, '--condition'),
+        options=split_csv(option, OPTION_FILTERS, '--option', ROOM_USAGE_BY_VALUE),
+        extra_conditions=split_csv(condition, CONDITIONS, '--condition', ROOM_USAGE_BY_VALUE),
         without_random=without_random,
     )
 

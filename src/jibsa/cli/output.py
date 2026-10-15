@@ -1,6 +1,9 @@
 import json
 import sys
-from collections.abc import Generator
+from collections.abc import (
+    Generator,
+    Mapping,
+)
 from contextlib import contextmanager
 from math import isfinite
 
@@ -197,8 +200,18 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         raise typer.Exit(code=1)
 
 
-def split_csv(values: list[str] | None, allowed: tuple[ChoiceT, ...], option: str) -> list[ChoiceT]:
-    """`-t 원룸 -t 빌라` 와 `-t 원룸,빌라` 를 모두 받아 검증된 목록으로 만든다. 값의 타입은 `allowed` 를 따른다."""
+def split_csv(
+    values: list[str] | None,
+    allowed: tuple[ChoiceT, ...],
+    option: str,
+    usage_by_value: Mapping[str, str] | None = None,
+) -> list[ChoiceT]:
+    """`-t 원룸 -t 빌라` 와 `-t 원룸,빌라` 를 모두 받아 검증된 목록으로 만든다. 값의 타입은 `allowed` 를 따른다.
+
+    `usage_by_value` 는 이 옵션에 없는 값을 이 명령에서 주는 법이다 (`{'반려동물가능': '--condition 반려동물'}`).
+    같은 조건이 소스마다 옵션·값이 달라 다른 소스 명령을 옮겨 쓰다 틀리기 쉬워, 맞는 옵션을 에러 힌트로 알린다.
+    값을 바꿔 받지는 않는다.
+    """
     result: list[ChoiceT] = []
     for value in values or []:
         for part in value.split(','):
@@ -206,10 +219,11 @@ def split_csv(values: list[str] | None, allowed: tuple[ChoiceT, ...], option: st
             if not part:
                 continue
             if part not in allowed:
-                raise typer.BadParameter(
-                    f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}",
-                    param_hint=option,
-                )
+                message = f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}"
+                usage = (usage_by_value or {}).get(part)
+                if usage:
+                    raise HintedBadParameter(message, option, f'이 명령에서는 이렇게 주세요: {usage}')
+                raise typer.BadParameter(message, param_hint=option)
             if part not in result:
                 result.append(part)
     return result
@@ -319,6 +333,14 @@ class HintedUsageError(UsageError):
 
     def __init__(self, message: str, hint: str) -> None:
         super().__init__(message)
+        self.hint = hint
+
+
+class HintedBadParameter(typer.BadParameter):
+    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다."""
+
+    def __init__(self, message: str, option: str, hint: str) -> None:
+        super().__init__(message, param_hint=option)
         self.hint = hint
 
 

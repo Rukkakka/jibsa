@@ -126,6 +126,32 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내
 WHOLE_DONG_NOTE: str = '동 이름이라 반경 대신 {name} 경계 안을 찾았습니다. 위치 기준으로 찾으려면 --radius 를 주세요'
+# 지역 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
+# 다른 소스 표현이다 (직방 --room 오픈형원룸·--condition 즉시입주·--bathroom 1, 당근 --option 주차가능·--room-count 2개).
+# '2개'·'3개' 는 욕실 수 값과 겹치지만 거절되는 곳은 --room 이 흔해 방 수로 안내한다. 네이버는 반지하를 따로 두지 않고
+# 지하층(B1)으로 준다
+LISTING_USAGE_BY_VALUE: dict[str, str] = {
+    **{value: f'--room {value}' for value in ROOM_COUNT_CODE_BY_NAME},
+    **{value: f'--floor {value}' for value in FLOOR_CODE_BY_NAME},
+    **{value: f'--direction {value}' for value in DIRECTION_FILTER_CODE_BY_NAME},
+    **{value: f'--bathroom {value}' for value in BATHROOM_CODE_BY_NAME},
+    **{value: f'--facility {value}' for value in FACILITY_CODE_BY_NAME},
+    **{value: f'--one-room-shape {value}' for value in ONE_ROOM_SHAPE_CODE_BY_NAME},
+    **{value: f'--move-in {value}' for value in MOVE_IN_CODE_BY_NAME},
+    **{value: f'--parking {value}' for value in PARKING_CODE_BY_NAME},
+    '주차가능': '--facility 주차',
+    '복층형원룸': '--facility 복층',
+    '오픈형원룸': '--one-room-shape 오픈형',
+    '분리형원룸': '--one-room-shape 분리형',
+    '즉시입주': '--move-in 바로입주',
+    '반지하': '--floor 지하층',
+    '2개': '--room 투룸',
+    '3개': '--room 쓰리룸',
+    '4개이상': '--room 포룸이상',
+    '1': '--bathroom 1개',
+    '2': '--bathroom 2개',
+    '3': '--bathroom 3개,4개이상',
+}
 
 
 def _check_choice(value: object, allowed: Iterable[object], option: str) -> None:
@@ -698,14 +724,14 @@ def _listing_conditions(
     """
     property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
     trade_types, trade_notes = _price_trade_types(trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max)
-    room_types = split_csv(room, tuple(ROOM_COUNT_CODE_BY_NAME), '--room')
-    floors = split_csv(floor, tuple(FLOOR_CODE_BY_NAME), '--floor')
-    directions = split_csv(direction, tuple(DIRECTION_FILTER_CODE_BY_NAME), '--direction')
-    bathrooms = split_csv(bathroom, tuple(BATHROOM_CODE_BY_NAME), '--bathroom')
-    facilities = split_csv(facility, tuple(FACILITY_CODE_BY_NAME), '--facility')
-    one_room_shapes = split_csv(one_room_shape, tuple(ONE_ROOM_SHAPE_CODE_BY_NAME), '--one-room-shape')
-    move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in')
-    parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking')
+    room_types = split_csv(room, tuple(ROOM_COUNT_CODE_BY_NAME), '--room', LISTING_USAGE_BY_VALUE)
+    floors = split_csv(floor, tuple(FLOOR_CODE_BY_NAME), '--floor', LISTING_USAGE_BY_VALUE)
+    directions = split_csv(direction, tuple(DIRECTION_FILTER_CODE_BY_NAME), '--direction', LISTING_USAGE_BY_VALUE)
+    bathrooms = split_csv(bathroom, tuple(BATHROOM_CODE_BY_NAME), '--bathroom', LISTING_USAGE_BY_VALUE)
+    facilities = split_csv(facility, tuple(FACILITY_CODE_BY_NAME), '--facility', LISTING_USAGE_BY_VALUE)
+    one_room_shapes = split_csv(one_room_shape, tuple(ONE_ROOM_SHAPE_CODE_BY_NAME), '--one-room-shape', LISTING_USAGE_BY_VALUE)
+    move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in', LISTING_USAGE_BY_VALUE)
+    parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking', LISTING_USAGE_BY_VALUE)
     entrances = split_csv(entrance, tuple(ENTRANCE_CODE_BY_NAME), '--entrance')
     _check_choice(area_basis, AREA_BASES, '--area-basis')
     if sort is not None:

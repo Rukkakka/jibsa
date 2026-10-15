@@ -190,6 +190,26 @@ ExtraOption = Annotated[
     typer.Option('--option', help=f"기타 조건: {', '.join(OPTION_FILTER_BY_LABEL)}. 반복하거나 쉼표로 구분"),
 ]
 MoveInNowOption = Annotated[bool, typer.Option('--move-in-now', help='즉시 입주 가능한 매물만')]
+# 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
+# 다른 소스 표현이다 (직방 --condition 반려동물·전세대출·주차·즉시입주, --room 오픈형원룸·투룸, --floor 옥탑방)
+LISTING_USAGE_BY_VALUE: dict[str, str] = {
+    **{value: f'--floor {value}' for value in FLOOR_FILTER_BY_LABEL},
+    **{value: f'--room-count {value}' for value in ROOM_COUNT_FILTER_BY_LABEL},
+    **{value: f'--structure {value}' for value in STRUCTURE_FILTER_BY_LABEL},
+    **{value: f'--option {value}' for value in OPTION_FILTER_BY_LABEL},
+    '반려동물': '--option 반려동물가능',
+    '전세대출': '--option 대출가능',
+    '주차': '--option 주차가능',
+    '옥탑방': '--option 옥탑',
+    '복층형원룸': '--option 복층',
+    '오픈형원룸': '--structure 오픈형',
+    '분리형원룸': '--structure 분리형',
+    '투룸': '--room-count 2개',
+    '쓰리룸': '--room-count 3개',
+    '포룸이상': '--room-count 4개이상',
+    '즉시입주': '--move-in-now',
+    '바로입주': '--move-in-now',
+}
 # 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
 HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 아파트 만 줄 때)')]
 HouseholdMaxOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 상한 (-t 아파트 만 줄 때)')]
@@ -261,12 +281,12 @@ def _listing_conditions(
         rent_includes_manage_cost=with_manage_cost,
         area_min=area_min,
         area_max=area_max,
-        floors=split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor'),
-        room_counts=split_csv(room_count, tuple(ROOM_COUNT_FILTER_BY_LABEL), '--room-count'),
-        structures=split_csv(structure, tuple(STRUCTURE_FILTER_BY_LABEL), '--structure'),
+        floors=split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor', LISTING_USAGE_BY_VALUE),
+        room_counts=split_csv(room_count, tuple(ROOM_COUNT_FILTER_BY_LABEL), '--room-count', LISTING_USAGE_BY_VALUE),
+        structures=split_csv(structure, tuple(STRUCTURE_FILTER_BY_LABEL), '--structure', LISTING_USAGE_BY_VALUE),
         building_approval=approvals[0] if approvals else None,
         deal=deals[0] if deals else None,
-        options=split_csv(option, tuple(OPTION_FILTER_BY_LABEL), '--option'),
+        options=split_csv(option, tuple(OPTION_FILTER_BY_LABEL), '--option', LISTING_USAGE_BY_VALUE),
         move_in_now=move_in_now,
         household_min=household_min,
         household_max=household_max,

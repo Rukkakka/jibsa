@@ -105,7 +105,7 @@
 
 | code | 할 일 |
 | --- | --- |
-| `INVALID_ARGUMENT` | `message` 를 읽고 `--help` 로 옵션을 고친다. 같은 명령을 그대로 다시 부르지 않는다 |
+| `INVALID_ARGUMENT` | `hint` 에 이 명령에서 쓰는 옵션이 있으면 그대로 고친다 (다른 소스의 옵션 이름·값을 옮겨 쓴 경우). 없으면 `message` 를 읽고 `--help` 로 고친다. 같은 명령을 그대로 다시 부르지 않는다 |
 | `REGION_NOT_FOUND` | 더 구체적인 이름(구 + 동)이나 좌표로 다시 찾는다 |
 | `REGION_AMBIGUOUS` | `candidates` 에서 골라 시·구를 붙이거나 `--city` 를 준다 |
 | `REGION_NOT_SUPPORTED` | 다른 소스로 찾는다 |

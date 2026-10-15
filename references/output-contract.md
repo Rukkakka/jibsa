@@ -46,8 +46,10 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 - 쓰이는 코드: `INVALID_ARGUMENT`, `REGION_NOT_FOUND`, `REGION_AMBIGUOUS`, `REGION_NOT_SUPPORTED`, `LISTING_UNAVAILABLE`,
   `NOT_FOUND`, `RATE_LIMITED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `INTERNAL_ERROR`, `INTERRUPTED`, `CLI_ERROR`. 새 코드를 만들면
   공통 사용 문서의 exit code 표와 오류 대응에 추가한다.
-- 입력 검증 실패는 항상 exit 2. 사용자 정의 hint 가 필요한 사용법 오류는 `HintedUsageError` 를 쓴다
-  (예: `require_korea`).
+- 입력 검증 실패는 항상 exit 2. 사용자 정의 hint 가 필요한 사용법 오류는 `HintedUsageError` 를, 옵션 값 오류는
+  `HintedBadParameter` 를 쓴다 (예: `require_korea`, `split_csv` 의 `usage_by_value`). 목록 옵션에 없는 값이 그 명령의
+  다른 옵션이나 다른 소스 표현이면(직방 `--option 반려동물가능`) `usage_by_value` 로 맞는 옵션을 hint 에 싣는다. 값을 바꿔
+  받지는 않는다 (뜻이 조금 다른 조건을 멋대로 옮기지 않는다).
 - 요청 모델 검증 실패의 message 는 검증 함수가 던진 문구 그대로다 (pydantic 이 붙이는 `Value error, ` 를 뗀다).
   hint 는 사용법 오류와 같은 `'<명령> --help' 로 사용법을 확인하세요` 다.
 - `--trade` 와 맞지 않는 가격 조건(전세 + 월세 상한 등)은 `infer_trade_types` 가 사용법 오류로 막는다. 세 소스 모두
