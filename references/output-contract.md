@@ -8,6 +8,8 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 
 아래 JSON 계약은 조회 결과와 에러에 적용한다. `--help`·자동완성·`guide`(LLM 가이드 `docs/llm.md`)·`--version`은 CLI 텍스트를 출력하고, `--verbose`는 stderr에 진행 로그를 추가한다.
 
+`--help` 는 stdout 이 터미널이면 Rich 표로, 아니면(파이프·LLM 셸) 줄글로 쓴다 (`use_plain_help`). Rich 는 터미널이 아니면 폭을 80칸으로 잡아 옵션 설명을 `…` 로 자르고 공백이 출력의 대부분이라, 셸로 부르는 에이전트에게는 줄바꿈만 있는 텍스트가 맞다. 도움말 문구(docstring)는 두 모양 모두에서 줄바꿈대로 나오니 예시 명령은 한 줄에 하나씩 쓴다.
+
 - **결과는 stdout 에 JSON 하나.** `emit()` 으로만 쓴다. `print` 나 로그를 stdout 에 쓰지 않는다.
 - **에러는 stderr 에 `{"error": {...}}` JSON 하나.** `emit_error()` 로만 쓴다. 사용법 오류
   (없는 옵션, 잘못된 값, 인자 누락)도 마찬가지다. 이를 위해 `run()` 이 Typer 를

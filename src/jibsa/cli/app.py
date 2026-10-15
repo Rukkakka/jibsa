@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 import sys
@@ -8,10 +9,19 @@ from importlib.resources import files
 from pathlib import Path
 
 import typer
-from typer._click.exceptions import (  # Typer 0.27 은 Click 을 내부에 포함한다. 비공개 경로라 Typer 업그레이드 시 확인 필요.
+from typer._click import (  # Typer 0.27 은 Click 을 내부에 포함한다. 비공개 경로라 Typer 업그레이드 시 확인 필요.
+    Command,
+    Context,
+    HelpFormatter,
+)
+from typer._click.exceptions import (
     ClickException,
     NoArgsIsHelpError,
     UsageError,
+)
+from typer.core import (
+    TyperCommand,
+    TyperGroup,
 )
 
 from jibsa.cli import (
@@ -42,6 +52,8 @@ GUIDE_FILE: str = 'llm.md'
 GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
 # `git log --oneline` 과 같은 짧은 커밋 해시 길이
 SHORT_COMMIT_LENGTH: int = 7
+# 터미널이 아닐 때 도움말 폭. 옵션 설명이 줄바꿈 없이 한 줄에 들어가게 넉넉히 잡는다
+PLAIN_HELP_WIDTH: int = 1000
 
 app = typer.Typer(
     name='jibsa',
@@ -166,19 +178,61 @@ def version_text() -> str:
     return text
 
 
+class PlainHelpFormatter(HelpFormatter):
+    """터미널이 아닐 때 쓰는 Click 도움말 형식. 폭을 넓게 잡고 설명은 docstring 의 줄바꿈대로 쓴다.
+
+    Click 기본 형식은 설명 문단의 줄을 이어 붙여 예시 명령 여러 개가 한 줄로 붙는다. Rich 도움말(터미널)처럼
+    줄바꿈을 그대로 둔다.
+    """
+
+    def __init__(self, indent_increment: int = 2, width: int | None = None, max_width: int | None = None) -> None:
+        super().__init__(indent_increment, width=PLAIN_HELP_WIDTH, max_width=PLAIN_HELP_WIDTH)
+
+    def write_text(self, text: str) -> None:
+        indent = ' ' * self.current_indent
+        for line in text.splitlines():
+            self.write(f'{indent}{line}\n' if line.strip() else '\n')
+
+
+class PlainHelpContext(Context):
+    formatter_class = PlainHelpFormatter
+
+
+def use_plain_help(command: Command) -> None:
+    """도움말을 Rich 표 대신 Click 줄글로 쓰게 명령 트리 전체를 바꾼다. stdout 이 터미널이 아닐 때 쓴다.
+
+    Rich 는 터미널이 아니면 폭을 80칸으로 잡아 옵션 설명을 '…' 로 자르고, 테두리·줄 맞춤 공백이 출력의 대부분이다
+    (2026-10-15 실측: `zigbang search listings room --help` 9.7KB 중 공백 74%, 잘린 곳 8). 셸로 부르는 LLM 은 늘
+    이 경우다. 명령 목록의 설명은 Click 기본이 첫 문장에서 자르므로 Rich 처럼 첫 문단 전체를 쓴다.
+    """
+    if isinstance(command, TyperCommand | TyperGroup):
+        command.rich_markup_mode = None
+    command.context_class = PlainHelpContext
+    if command.short_help is None and command.help:
+        first_paragraph = inspect.cleandoc(command.help).partition('\f')[0].split('\n\n')[0]
+        command.short_help = ' '.join(first_paragraph.split())
+    if isinstance(command, TyperGroup):
+        for subcommand in command.commands.values():
+            use_plain_help(subcommand)
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """CLI 를 실행하고 exit code 를 돌려준다.
 
     Typer 를 standalone 모드 없이 돌려 사용법 오류도 `{"error": {...}}` JSON 으로
     stderr 에 쓴다 (exit 2). 그래서 stdout 은 결과 JSON, stderr 는 에러 JSON 이라는
     규칙에 예외가 없다. 인자 없이 실행하면 `--help` 처럼 도움말을 stdout 에 쓴다.
+    stdout 이 터미널이 아니면 도움말을 Rich 표 대신 줄글로 쓴다 (`use_plain_help`).
     Ctrl+C 로 끊기면 INTERRUPTED 에러 JSON 을 쓰고 130 으로 끝난다.
     """
     # macOS 에서 복사한 한글은 자모가 나뉜 NFD 로 올 수 있다. 직방·당근 검색은 NFD 를 다른 글자로 봐 0건을 준다
     # (2026-10-11 실측: NFD '역삼동' 이 직방·당근 REGION_NOT_FOUND, 네이버만 정상). 화면에는 같아 보여 원인을 알 수 없다
     args = [unicodedata.normalize('NFC', arg) for arg in (sys.argv[1:] if argv is None else argv)]
+    cli = typer.main.get_command(app)
+    if not sys.stdout.isatty():
+        use_plain_help(cli)
     try:
-        result = app(args=args, prog_name='jibsa', standalone_mode=False)
+        result = cli.main(args=args, prog_name='jibsa', standalone_mode=False)
     except NoArgsIsHelpError as exc:
         typer.echo(exc.format_message())
         return 0
