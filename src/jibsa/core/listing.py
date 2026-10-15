@@ -21,6 +21,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    TypeVar,
     overload,
 )
 
@@ -534,3 +535,14 @@ class ListingDetail(Listing):
     def not_applicable_fields(self) -> frozenset[str]:
         # 상세 조회에는 검색 중심점이 없어 거리가 해당 없다.
         return super().not_applicable_fields() | {'distance_km'}
+
+
+ListingT = TypeVar('ListingT', bound=Listing)
+
+
+def listing_as(model: type[ListingT], listing: Listing, **extra: Any) -> ListingT:
+    """`listing` 을 필드를 더한 하위 모델(역 도보 시간·통근 시간·순위·상세·건물 용도)로 옮긴다.
+
+    `model_dump()` 는 출력에서 빼는 필드(`lat`·`lng` 처럼 `exclude=True`)를 버리므로 쓰지 않고 필드 값을 그대로 옮긴다.
+    """
+    return model(**{name: getattr(listing, name) for name in type(listing).model_fields}, **extra)

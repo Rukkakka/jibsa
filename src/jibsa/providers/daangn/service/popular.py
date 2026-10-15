@@ -6,7 +6,10 @@ from pydantic import (
     Field,
 )
 
-from jibsa.core.listing import Listing
+from jibsa.core.listing import (
+    Listing,
+    listing_as,
+)
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.popular import (
     DaangnGetViewRankingArticlesRequestPayloadModel,
@@ -19,7 +22,6 @@ from jibsa.providers.daangn.service.common import (
     complex_building_notes,
     is_available,
     label_codes,
-    listing_as,
     listing_budget_notes,
     unwrap_graphql,
 )

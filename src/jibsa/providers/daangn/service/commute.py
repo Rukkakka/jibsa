@@ -7,7 +7,10 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import Listing
+from jibsa.core.listing import (
+    Listing,
+    listing_as,
+)
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import (
     DaangnCoordinateInputModel,
@@ -29,7 +32,6 @@ from jibsa.providers.daangn.service.common import (
     article_to_listing,
     complex_building_notes,
     is_available,
-    listing_as,
     listing_budget_notes,
     trade_of,
     trade_unselected_notes,

@@ -30,6 +30,7 @@ from jibsa.core.listing import (
     by_distance,
     join_address,
     limit_notes,
+    listing_as,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
@@ -113,6 +114,8 @@ ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '�
 # 대부분 방 1개다 (2026-10-10 실측: 역삼동 32건 중 단지별 6건 상세에서 5건이 방 1개)
 APT_ONE_ROOM_NOTE: str = '방 1개짜리 아파트는 여기서 찾지 않습니다 (search listings apt --supply-area-max 50 으로 찾는다)'
 GEOHASH_PRECISION: int = 5
+# --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
+DETAILS_MAX: int = 30
 # 기존 상세(/v3/items)의 주차 문장과 가능 여부
 LEGACY_PARKING_AVAILABLE: dict[str, bool] = {'주차 가능': True, '주차 불가능': False, '주차 불가': False}
 DIRECTION_LABELS: dict[str, str] = {
@@ -168,6 +171,15 @@ class ZigbangSearchResult(BaseModel):
     def drop_unused_scope(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         # 반경과 동 경계 중 쓰지 않은 쪽은 해당 없다
         return drop_unused_scope(handler(self))
+
+
+class ZigbangDetailedListing(ZigbangListing):
+    """`--details` 로 매물 상세를 1회 더 받아 건물 용도를 붙인 원룸·오피스텔·빌라 매물."""
+
+    residence_type: Annotated[
+        str | None,
+        Field(description='건축물 용도 (예: 다가구, 다세대, 근린생활시설). 근린생활시설이면 전입신고·전세대출이 막힐 수 있다. 모르면 null')
+    ] = None
 
 
 class ZigbangListingDetail(ListingDetail):
@@ -333,6 +345,41 @@ def detail_to_listing(
     if item.service_type != '아파트':
         return detail
     return apply_apt_detail(detail, apt)
+
+
+def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> ZigbangSearchResult:
+    """목록 매물마다 상세(`/items/{id}/detail`)를 1회씩 받아 건물 용도(`residence_type`)를 붙인다 (`--details`).
+
+    목록 API 는 건물 용도를 주지 않는다 (2026-10-15 실측: `items/list` 요약에 용도 필드 없음). 근린생활시설·고시원처럼
+    전입신고가 막힐 수 있는 매물을 상세를 하나씩 열지 않고 고르게 한다. 앞 `DETAILS_MAX` 건만 보고, 상세에서 거래가
+    끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
+    """
+    listings: list[Listing] = []
+    gone = 0
+    for index, listing in enumerate(result.listings):
+        if index >= DETAILS_MAX or not isinstance(listing, ZigbangListing):
+            listings.append(listing)
+            continue
+        try:
+            with unavailable_on_404(listing.id):
+                item = client.run_request_items_detail_v1(
+                    ZigbangItemsDetailV1RequestParameterModel(item_id=int(listing.id))
+                ).item
+        except ListingUnavailableError:
+            gone += 1
+            continue
+        if item.status != 'open':
+            gone += 1
+            continue
+        residence = item.residence
+        building_use = (residence.residence_description or residence.residence_type or '').strip() or None
+        listings.append(listing_as(ZigbangDetailedListing, listing, residence_type=building_use))
+    notes = []
+    if gone:
+        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다')
+    if len(result.listings) > DETAILS_MAX:
+        notes.append(f'건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
+    return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})
 
 
 def get_coalition_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:

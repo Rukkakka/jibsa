@@ -27,6 +27,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     Listing,
     beyond_radius_notes,
+    listing_as,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -65,7 +66,6 @@ from jibsa.providers.daangn.service.common import (
     article_to_listing,
     complex_building_notes,
     is_available,
-    listing_as,
     listing_budget_notes,
     partial_failure_note,
     trade_of,
@@ -95,7 +95,7 @@ logger = logging.getLogger(__name__)
 # (2026-10-10 실측: 엘리젠트 단지 매물 3건 중 1건만 원룸, 2건은 오피스텔로 올라 있었다)
 ONE_ROOM_NOTE: str = (
     '-t 원룸은 작성자가 원룸으로 올린 매물만이라 방 1개 아파트·주택은 빠지고 방 2개 매물이 섞일 수 있습니다 '
-    '(방 수는 listing 의 room_type)'
+    '(방 수는 --details 나 listing 의 room_type)'
 )
 ONE_ROOM_OFFICETEL_NOTE: str = '원룸형 오피스텔도 보려면 -t 원룸,오피스텔'
 OFFICETEL_NOTE: str = (

@@ -6,6 +6,8 @@ from pydantic import Field
 from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
     ListingDetail,
+    ListingT,
+    listing_as,
     move_in_label,
     parking_label,
     won_to_manwon,
@@ -26,7 +28,6 @@ from jibsa.providers.daangn.service.common import (
     TRADE_TYPE_BY_TRADE,
     article_to_listing,
     is_available,
-    listing_as,
     station_name,
     trades_preferred_first,
 )
@@ -34,6 +35,8 @@ from jibsa.providers.daangn.service.common import (
 from typing import Annotated
 
 
+# --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
+DETAILS_MAX: int = 30
 OPTION_LABELS: dict[str, str] = {
     'PARKING': '주차',
     'WASHER': '세탁기',
@@ -323,3 +326,38 @@ def get_listing(
             raise ListingUnavailableError('daangn', original_id) from None
         raise
     return detail_to_listing(response, trade_type)
+
+
+def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list[ListingT], list[str]]:
+    """목록 매물마다 상세를 1회씩 받아 목록에 없는 관리비·등록일·번지 주소·사용승인일·방 구조를 채운다 (`--details`).
+
+    당근 목록은 관리비·등록일·번지를 주지 않아 `null` 이고, 방 구조도 원룸만 붙는다. 앞 `DETAILS_MAX` 건만 보고, 상세에서
+    거래가 끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
+
+    Returns:
+        (채운 매물, 안내).
+    """
+    kept: list[ListingT] = []
+    gone = 0
+    for index, listing in enumerate(listings):
+        if index >= DETAILS_MAX:
+            kept.append(listing)
+            continue
+        try:
+            detail = get_listing(client, int(listing.id), listing.trade_type)
+        except ListingUnavailableError:
+            gone += 1
+            continue
+        kept.append(listing.model_copy(update={
+            'manage_cost_manwon': detail.manage_cost_manwon,
+            'registered_at': detail.registered_at,
+            'address': detail.address,
+            'approved_at': detail.approved_at,
+            'room_type': detail.room_type,
+        }))
+    notes = []
+    if gone:
+        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다')
+    if len(listings) > DETAILS_MAX:
+        notes.append(f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
+    return kept, notes

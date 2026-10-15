@@ -96,6 +96,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 | `--option` | 옵션: 에어컨, 냉장고, 세탁기, 가스레인지, 인덕션, 전자레인지, 책상, 책장, 침대, 옷장, 신발장, 싱크대. 반복하거나 쉼표로 구분 (AND, 모두 갖춘 매물) | 미지정 |
 | `--condition` | 기타 조건: 즉시입주, 남향, 엘리베이터, 주차, CCTV, 반려동물, 전세대출, 전기차충전. 반복하거나 쉼표로 구분 (AND) | 미지정 |
 | `--without-random` | 오피스텔 서버의 무작위 섞기 해제. 검색 결과는 거리순 유지 | 꺼짐 |
+| `--details` | 매물마다 상세를 1회씩 더 받아 건물 용도(`residence_type`)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건) | 꺼짐 |
 
 **사용 예시**
 
@@ -105,7 +106,7 @@ jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-
 
 **반환값**
 
-`region`, `boundary` 또는 `radius_km`, `total_in_radius`, `returned`, `listings`를 준다.
+`region`, `boundary` 또는 `radius_km`, `total`, `returned`, `listings`를 준다. `--details` 를 주면 매물마다 `residence_type`(건축물 용도, 예: `다가구`, `근린생활시설`, `고시원`)이 붙는다. 목록 API 는 용도를 주지 않아 상세를 1회씩 더 부르고, 그 사이 거래가 끝난 매물은 빼고 `notes` 로 알린다.
 
 **오류와 대응**
 

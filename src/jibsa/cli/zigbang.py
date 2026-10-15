@@ -68,8 +68,10 @@ from jibsa.providers.zigbang.service.detail import (
     get_any_listing,
 )
 from jibsa.providers.zigbang.service.listing import (
+    DETAILS_MAX,
     GEOHASH_PRECISION,
     PROPERTY_TYPES,
+    attach_building_use,
     check_without_random,
     search_listings,
     unsearchable_note,
@@ -407,6 +409,13 @@ def search_room_command(
     without_random: Annotated[
         bool, typer.Option('--without-random', help='오피스텔 서버의 무작위 섞기 해제. 검색 결과는 거리순 유지'),
     ] = False,
+    details: Annotated[
+        bool,
+        typer.Option(
+            '--details',
+            help=f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건)',
+        ),
+    ] = False,
     pretty: PrettyOption = None,
 ) -> None:
     """원룸·오피스텔·빌라를 검색 중심에서 가까운 순으로 조회한다. 모든 조건은 직방 서버에서 거른다.
@@ -418,6 +427,7 @@ def search_room_command(
     예: jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70
         jibsa zigbang search listings room 역삼동 -t 빌라,오피스텔 --room 투룸 --trade 전세 --condition 전세대출,엘리베이터
         jibsa zigbang search listings room 신림역 --floor 지상 --option 에어컨,세탁기 --manage-cost-max 10
+        jibsa zigbang search listings room 성수동 -t 원룸 --trade 월세 --limit 10 --details
     """
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
@@ -472,6 +482,8 @@ def search_room_command(
             boundary=boundary,
             subway_id=region.subway_id,
         )
+        if details:
+            result = attach_building_use(client, result)
         emit(result, pretty, notes=trade_notes + notes + result.notes)
 
 
