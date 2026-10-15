@@ -63,10 +63,14 @@ exclude = ['docs/demo']
 [tool.hatch.build.targets.wheel]
 packages = ['src/jibsa']
 
-# `jibsa guide` 가 출력하는 LLM 가이드. 문서는 docs/llm.md 하나만 두고 설치본에는 패키지 안으로 복사한다
-# (편집 가능 설치에는 복사되지 않아 cli/app.py 가 저장소의 docs/llm.md 를 읽는다).
+# `jibsa guide` 가 출력하는 LLM 가이드와 소스별 사용 문서 (`jibsa guide zigbang`). 문서는 docs/ 에만 두고 설치본에는
+# 패키지 안으로 복사한다 (편집 가능 설치에는 복사되지 않아 cli/app.py 가 저장소의 docs/ 를 읽는다).
 [tool.hatch.build.targets.wheel.force-include]
 'docs/llm.md' = 'jibsa/llm.md'
+'docs/common.md' = 'jibsa/common.md'
+'docs/zigbang.md' = 'jibsa/zigbang.md'
+'docs/naver.md' = 'jibsa/naver.md'
+'docs/daangn.md' = 'jibsa/daangn.md'
 
 [tool.pytest.ini_options]
 testpaths = ['tests']

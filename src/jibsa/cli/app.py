@@ -1,6 +1,7 @@
 import inspect
 import json
 import logging
+import re
 import sys
 import unicodedata
 from collections.abc import Sequence
@@ -49,6 +50,15 @@ INTERRUPTED_EXIT_CODE: int = 130
 INTERRUPTED_HINT: str = '호출한 쪽이 실행을 끊었습니다. 결과가 필요하면 같은 명령을 다시 실행하세요'
 # 설치본에는 pyproject.toml 의 force-include 로 패키지 안에, 편집 가능 설치에는 저장소 docs/ 에만 있다
 GUIDE_FILE: str = 'llm.md'
+# `jibsa guide <주제>` 로 읽는 사용 문서
+GUIDE_TOPICS: dict[str, str] = {
+    'common': 'common.md',
+    'zigbang': 'zigbang.md',
+    'naver': 'naver.md',
+    'daangn': 'daangn.md',
+}
+HEADING_PATTERN: re.Pattern[str] = re.compile(r'^(#{2,4})\s+(.*)$')
+BACKTICK_PATTERN: re.Pattern[str] = re.compile(r'`([^`]+)`')
 GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
 # `git log --oneline` 과 같은 짧은 커밋 해시 길이
 SHORT_COMMIT_LENGTH: int = 7
@@ -129,35 +139,94 @@ def limits_command(
 
 
 @app.command('guide')
-def guide_command() -> None:
+def guide_command(
+    topic: Annotated[
+        str | None,
+        typer.Argument(help=f"사용 문서: {', '.join(GUIDE_TOPICS)}. 없으면 LLM 가이드")
+    ] = None,
+    section: Annotated[
+        str | None,
+        typer.Argument(help="절 제목에 든 글자 (예: 'search listings', 'listing', '출력 읽기'). 주면 그 절만 쓴다")
+    ] = None,
+) -> None:
     """LLM 에이전트용 사용 가이드를 출력한다 (명령 고르기, 출력 읽기, 에러 대응).
 
+    소스 이름을 주면 그 소스의 사용 문서(옵션 표·반환값·주의사항)를, 절 이름까지 주면 그 절만 쓴다. 설치한 버전과
+    내용이 맞고, 소스 문서는 가이드의 5배쯤 길어 필요한 절만 읽는다.
     `--help` 처럼 JSON 이 아닌 마크다운 텍스트를 stdout 에 쓴다. 네트워크 요청은 보내지 않는다.
+
+    예: jibsa guide
+        jibsa guide daangn 'search listings'
+        jibsa guide zigbang listing
     """
-    # 파일이 없는 깨진 설치도 에러 JSON 으로 낸다
+    if topic is not None and topic not in GUIDE_TOPICS:
+        raise typer.BadParameter(
+            f"허용되지 않는 값입니다: '{topic}'. 가능한 값: {', '.join(GUIDE_TOPICS)}", param_hint='TOPIC',
+        )
+    # 파일이 없는 깨진 설치와 없는 절도 에러 JSON 으로 낸다
     with handle_errors('guide'):
-        typer.echo(read_guide(), nl=False)
+        text = read_guide(GUIDE_TOPICS[topic] if topic else GUIDE_FILE)
+        if section:
+            text = guide_section(text, section, topic or 'llm')
+        typer.echo(text, nl=False)
 
 
-def read_guide() -> str:
-    """패키지에 들어 있는 가이드를, 없으면(편집 가능 설치) 저장소의 `docs/llm.md` 를 읽는다.
+def read_guide(name: str = GUIDE_FILE) -> str:
+    """패키지에 들어 있는 문서를, 없으면(편집 가능 설치) 저장소의 `docs/<name>` 을 읽는다.
 
     Raises:
         JibsaError: 둘 다 없을 때 (`INTERNAL_ERROR`, 설치가 깨짐).
     """
-    packaged = files('jibsa').joinpath(GUIDE_FILE)
+    packaged = files('jibsa').joinpath(name)
     if packaged.is_file():
         return packaged.read_text(encoding='utf-8')
     # src/jibsa/cli/app.py → 저장소 루트
-    in_repo = Path(__file__).resolve().parents[3] / 'docs' / GUIDE_FILE
+    in_repo = Path(__file__).resolve().parents[3] / 'docs' / name
     if in_repo.is_file():
         return in_repo.read_text(encoding='utf-8')
     # 일반 내부 오류 힌트(다른 소스를 쓰라는 안내)는 여기에 맞지 않는다
     raise JibsaError(
         code='INTERNAL_ERROR',
-        message=f'설치된 jibsa 에 LLM 가이드 파일({GUIDE_FILE})이 없습니다',
+        message=f'설치된 jibsa 에 문서 파일({name})이 없습니다',
         hint=f'README 의 설치 방법대로 jibsa 를 다시 설치하세요. 같은 내용은 {GUIDE_URL} 에서도 볼 수 있습니다',
     )
+
+
+def guide_section(text: str, query: str, topic: str) -> str:
+    """문서에서 제목에 `query` 가 든 절(그 아래 하위 절 포함)만 이어 붙인다. 대소문자·백틱은 가리지 않는다.
+
+    제목의 백틱 안 명령 이름과 똑같은 절이 있으면 그 절만 고른다 (`listing` 이 `search listings room` 까지 고르지 않게).
+
+    Raises:
+        JibsaError: 맞는 절이 없을 때 (`NOT_FOUND`, 힌트에 큰 절 제목).
+    """
+    def plain(value: str) -> str:
+        return value.replace('`', '').casefold().strip()
+
+    lines = text.splitlines(keepends=True)
+    headings = [
+        (index, len(match.group(1)), match.group(2).strip())
+        for index, line in enumerate(lines)
+        if (match := HEADING_PATTERN.match(line.rstrip('\n')))
+    ]
+    exact = {index for index, _, title in headings if plain(query) in (plain(code) for code in BACKTICK_PATTERN.findall(title))}
+    picked: list[str] = []
+    covered_until = -1
+    for position, (index, level, title) in enumerate(headings):
+        matched = index in exact if exact else plain(query) in plain(title)
+        if index < covered_until or not matched:
+            continue
+        end = next((later for later, later_level, _ in headings[position + 1:] if later_level <= level), len(lines))
+        picked.append(''.join(lines[index:end]).rstrip('\n') + '\n')
+        covered_until = end
+    if not picked:
+        titles = [title.replace('`', '') for _, level, title in headings if level == 2]
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f"{topic} 문서에서 찾지 못한 절 제목: '{query}'",
+            hint=f"절 제목: {' / '.join(titles)}",
+        )
+    return '\n'.join(picked)
 
 
 def version_text() -> str:

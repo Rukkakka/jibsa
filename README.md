@@ -146,6 +146,7 @@ jibsa --help             # 명령 목록이 나오면 성공
 jibsa --version          # 설치한 버전, GitHub 주소로 설치했으면 커밋도 (텍스트)
 jibsa limits             # 요청 제한 상태 JSON. 네트워크 요청은 보내지 않는다
 jibsa guide              # LLM 에이전트용 사용 가이드 (텍스트)
+jibsa guide daangn 'search listings'   # 소스 문서의 한 절 (텍스트, 네트워크 없음)
 jibsa zigbang search listings room 역삼동 --trade 월세 --limit 3   # 실제 조회 한 번
 ```
 
@@ -189,7 +190,7 @@ GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그
 
 ## LLM 에이전트에 연결하기
 
-에이전트에게는 사용 문서 전체 대신 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md) 하나만 먼저 읽게 한다. 명령 고르는 법, 출력 읽는 법, 에러 대응을 짧게 모아 두었고 나머지는 필요한 절만 찾아 읽게 링크했다. 설치본에 들어 있어 `jibsa guide` 로 바로 출력된다 (설치한 버전과 내용이 맞고 네트워크도 쓰지 않는다). 에이전트 지침 파일(`CLAUDE.md`, `AGENTS.md` 등)에 이렇게 적어 두면 된다.
+에이전트에게는 사용 문서 전체 대신 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md) 하나만 먼저 읽게 한다. 명령 고르는 법, 출력 읽는 법, 에러 대응을 짧게 모아 두었고 나머지는 필요한 절만 찾아 읽게 링크했다 (소스 문서도 설치본에 들어 있어 `jibsa guide <소스> <명령>` 으로 그 절만 읽는다). 설치본에 들어 있어 `jibsa guide` 로 바로 출력된다 (설치한 버전과 내용이 맞고 네트워크도 쓰지 않는다). 에이전트 지침 파일(`CLAUDE.md`, `AGENTS.md` 등)에 이렇게 적어 두면 된다.
 
 ```text
 집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.
