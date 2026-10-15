@@ -8,7 +8,7 @@ Korean real estate CLI for LLM agents: search current listings and real transact
 >
 > 집 구하는 수고를 대신 맡아 주는 집사라는 뜻으로 지은 이름이다.
 
-직방·네이버 부동산·당근부동산의 **현재 거래 가능한 매물**을 조회하는 CLI. Claude, ChatGPT 같은 LLM 에이전트가 집을 찾을 때 셸로 호출하는 도구로 쓰려고 만들었다. 무엇을 원하는지는 사용자와 LLM 이 정하고, 여러 사이트를 돌며 조건에 맞는 매물을 확인해 오는 심부름은 집사가 맡는다.
+Claude, ChatGPT 같은 LLM 에이전트가 집을 찾을 때 셸로 부르는 도구다. 무엇을 원하는지는 사용자와 LLM 이 정하고, 여러 사이트를 돌며 **지금 거래할 수 있는 매물**을 확인해 오는 심부름은 집사가 맡는다.
 
 ![Claude Code 가 jibsa guide 를 읽고 직방에서 강남역 근처 월세 원룸을 조회해 표로 정리하는 터미널 데모. 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/claude.gif)
 
@@ -16,11 +16,18 @@ Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾
 
 > 비공식 API 를 쓴다. 스펙이 예고 없이 바뀔 수 있고, 자동수집은 각 서비스 약관과 상충할 소지가 있으니 개인 조회 용도로만 쓴다.
 
-명령별 인자·옵션·사용 예시는 아래 [사용 문서](https://github.com/Rukkakka/jibsa#사용-문서)에 있다.
-
 ## 왜 만들었나
 
 LLM이 검색 결과만으로 집을 찾으면 이미 내려간 매물을 소개하거나, API를 추측해서 호출하다 차단되거나, 원과 만원을 혼동할 수 있다. 집사는 소스별 조회 절차와 요청 제한을 지키고, 현재 거래 가능한 매물을 공통 JSON 형식과 만원 단위로 돌려준다. 확인·사진·문의·계약은 결과의 `url`에서 한다.
+
+## 할 수 있는 것
+
+- **매물 찾기** — 원룸·오피스텔·빌라·아파트·상가를 동·역 이름이나 좌표로 찾는다 (직방·네이버·당근). 주 단위 단기임대도 찾는다 (직방)
+- **매물 상세** — 관리비·옵션·입주일·주차·건물 용도처럼 계약 전에 볼 정보를 준다. 사진·연락처는 원 사이트 링크로 안내한다
+- **단지와 가격** — 단지 정보, 실거래가, 기관 시세, 월별·주별 가격 흐름
+- **동네 고르기** — 회사까지 지하철 통근 기준으로 매물 찾기, 학교 배정, 동네 후기·개발 호재·어린이집 (당근)
+
+세 사이트를 한 번에 찾는 통합 검색은 아직 없어서 사이트마다 따로 부른다. 명령별 인자·옵션·예시는 아래 [사용 문서](https://github.com/Rukkakka/jibsa#사용-문서)에 있다.
 
 ## 원칙: 로그인 없는 기능만
 
@@ -146,7 +153,6 @@ jibsa --help             # 명령 목록이 나오면 성공
 jibsa --version          # 설치한 버전, GitHub 주소로 설치했으면 커밋도 (텍스트)
 jibsa limits             # 요청 제한 상태 JSON. 네트워크 요청은 보내지 않는다
 jibsa guide              # LLM 에이전트용 사용 가이드 (텍스트)
-jibsa guide daangn 'search listings'   # 소스 문서의 한 절 (텍스트, 네트워크 없음)
 jibsa zigbang search listings room 역삼동 --trade 월세 --limit 3   # 실제 조회 한 번
 ```
 
@@ -190,7 +196,7 @@ GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그
 
 ## LLM 에이전트에 연결하기
 
-에이전트에게는 사용 문서 전체 대신 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md) 하나만 먼저 읽게 한다. 명령 고르는 법, 출력 읽는 법, 에러 대응을 짧게 모아 두었고 나머지는 필요한 절만 찾아 읽게 링크했다 (소스 문서도 설치본에 들어 있어 `jibsa guide <소스> <명령>` 으로 그 절만 읽는다). 설치본에 들어 있어 `jibsa guide` 로 바로 출력된다 (설치한 버전과 내용이 맞고 네트워크도 쓰지 않는다). 에이전트 지침 파일(`CLAUDE.md`, `AGENTS.md` 등)에 이렇게 적어 두면 된다.
+에이전트에게는 사용 문서 전체 대신 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md) 하나만 먼저 읽게 한다. 명령 고르는 법, 출력 읽는 법, 에러 대응을 짧게 모은 문서로, 설치본에 들어 있어 `jibsa guide` 로 바로 출력된다 (설치한 버전과 내용이 같고 네트워크를 쓰지 않는다). 더 자세한 설명이 필요하면 에이전트가 `jibsa guide zigbang listing` 처럼 사이트별 문서에서 필요한 절만 골라 읽는다. 에이전트 지침 파일(`CLAUDE.md`, `AGENTS.md` 등)에 이렇게 적어 두면 된다.
 
 ```text
 집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.
@@ -200,18 +206,11 @@ GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그
 
 ## 데모 영상의 가상 데이터
 
-두 영상의 매물은 모두 데모용 가상 데이터다. 녹화할 때 jibsa 는 직방 응답만 [가상 응답](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/zigbang.json)으로 바꾸고 그 밖의 요청은 막는다. 실제 정보는 직방의 강남역 검색 결과(역 번호·노선·좌표)와 매물 위치의 시·구·동 이름뿐이고, 나머지는 지어낸 값이다.
+두 영상의 매물은 모두 데모용 가상 데이터다. 녹화할 때 jibsa 는 직방 응답만 [가상 응답](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/zigbang.json)으로 바꾸고 그 밖의 요청은 막는다. 가상 매물은 한눈에 가짜로 보이게 만들었다. 제목은 `[가상] 예시 원룸 1`, 지번은 `000-1`, 매물 번호는 실제 직방에 없는 `99990001`~`99990012` 이고, 금액·층·면적은 매물 번호 끝자리와 같다 (`99990001` 은 보증금·월세 1만원, 1층, 1㎡). 실제 정보는 강남역 위치와 동 이름뿐이다.
 
-- 매물 번호는 실제 직방에 없는 `99990001`~`99990012` 이고, 오피스텔 건물 번호도 그 매물 번호와 같다. 제목은 `[가상] 예시 원룸 1`, 지번은 `000-1` 처럼 붙였다.
-- 가격·관리비(만원)·층·면적(㎡)은 매물 번호 뒤 네 자리 수와 같다 (`99990001` 은 보증금 1만원·월세 1만원·1층·1㎡, 평으로는 0.3평).
-- 매물 위치는 강남역 반경 1km 안에서 고른 지점이고, 번호 순으로 역에서 0.07km 씩 멀어진다 (0.15~0.92km).
-- 매물 번호와 오피스텔 건물 번호가 실제 직방에 없다는 것은 2026-10-12 에 실제 API 로 확인했다.
-
-설치 장면은 실제 PyPI 설치 화면이다 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/demo.tape)). Claude 의 답은 실제 Claude Code 가 쓴 것이고 ([녹화 대본](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/claude.tape)), 배너의 요금제 글자는 녹화한 계정 정보라 가렸다.
+설치 장면은 실제 PyPI 설치 화면이고, Claude 의 답은 실제 Claude Code 가 쓴 것이다 (녹화 대본: [설치](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/demo.tape) · [Claude](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/claude.tape)). 배너의 요금제 글자는 녹화한 계정 정보라 가렸다.
 
 ## 사용 문서
-
-통합 검색(`jibsa search`)은 아직 없고 추가할 예정이다.
 
 - [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md): 에이전트용 요약. 처음 읽을 문서
 - [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md): JSON 출력, 금액·누락값, 오류 대응, 요청 제한과 `limits`
