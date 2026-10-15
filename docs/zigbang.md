@@ -109,7 +109,7 @@ jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-
 
 **오류와 대응**
 
-옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다.
+옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다. 같은 이름의 동·구가 여러 곳이면(신사동 → 은평구·강남구) 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다. 직방은 전체 주소(`서울특별시 강남구 신사동`)로는 동을 찾지 못하니 `강남구 신사동` 처럼 구 이름을 앞에 붙여 다시 찾는다. 같은 이름의 역(양평역)은 첫 역으로 찾고 다른 역을 `notes` 로 알린다. 목록 옵션에 없는 값이 이 명령의 다른 옵션이나 다른 소스 표현이면(`--option 반려동물가능`) 에러 `hint` 가 맞는 옵션(`--condition 반려동물`)을 알려 준다.
 
 **주의사항**
 
@@ -162,7 +162,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20
 
 **오류와 대응**
 
-지원하지 않는 필터·면적 범위 위반은 `INVALID_ARGUMENT`. 반경 요청 예산 소진은 `notes`로 알린다.
+지원하지 않는 필터·면적 범위 위반은 `INVALID_ARGUMENT`. 반경 요청 예산 소진은 `notes`로 알린다. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
 
 **주의사항**
 
@@ -215,7 +215,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 **오류와 대응**
 
-임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`.
+임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
 
 **주의사항**
 
@@ -268,7 +268,7 @@ jibsa zigbang search listings stay 강남역 --weekly-rent-max 50 --building 오
 
 **오류와 대응**
 
-날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`.
+날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
 
 **주의사항**
 

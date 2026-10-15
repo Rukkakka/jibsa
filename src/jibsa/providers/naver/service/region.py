@@ -1,5 +1,7 @@
 """지역·역·단지 이름과 좌표 해석, 시·도·시·군·구 목록 (regions, 모든 검색의 지역 해석)."""
 
+import re
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -88,6 +90,14 @@ class NaverRegion(BaseModel):
     legal_division_code: Annotated[
         str | None,
         Field(description='법정동코드 (10자리, 역은 null)')
+    ] = None
+    ga_base: Annotated[
+        str | None,
+        Field(exclude=True, description="'○가' 로 나뉜 동의 앞 이름 ('성수동' 으로 성수동1가를 찾았을 때). 아니면 None")
+    ] = None
+    ga_note: Annotated[
+        str | None,
+        Field(exclude=True, description='그 한 곳만 찾았다는 안내 (_ga_dong_note). 동들을 합쳐 찾으면 부르는 쪽이 뺀다')
     ] = None
 
 
@@ -312,6 +322,50 @@ def _search_address(client: NaverClient, query: str) -> tuple[list[NaverAddressM
     return items, max(block.total_count, len(items)) if items else 0
 
 
+def _ga_dong_note(query: str, name: str, dong: str | None) -> str | None:
+    """'○가' 로 나뉜 동의 한 곳만 찾았다는 안내 ('성수동' → 성수동1가). 그런 동이 아니면 None.
+
+    주소 검색은 '성수동' 에 성수동1가 한 곳만 주고 2가가 있다는 것은 알리지 않는다 (2026-10-15 실측). 직방은 '○가' 동을
+    합쳐 찾지만 네이버 동 경계 검색은 동 하나만 받아 안내만 붙인다.
+    """
+    if not dong or not dong.startswith(name) or not dong.endswith('가') or not dong[len(name):-1].isdigit():
+        return None
+    other = f'{name}2가' if dong == f'{name}1가' else f'{name}1가'
+    # '○가' 로 끝나 조사는 받침 없는 꼴(만·처럼)로 고정한다
+    return (
+        f"{quoted(query, '은/는')} {dong}·{other} 처럼 '○가' 로 나뉜 동이라 {dong}만 찾았습니다. "
+        f"다른 곳도 보려면 '{other}' 처럼 각각 검색하세요"
+    )
+
+
+def ga_dong_regions(client: NaverClient, region: NaverRegion) -> list[NaverRegion]:
+    """'○가' 로 나뉜 동(성수동 → 성수동1가·성수동2가)을 모두 준다. 같은 시·구의 하위 지역 목록 1회로 찾는다.
+
+    동 경계 매물 목록(legalDivisionArticleList)은 법정동 코드를 하나만 받아(2026-10-15 실측: 둘이면 400) 동마다 따로
+    찾아 합친다. `region` 이 '○가' 로 찾은 동이 아니거나 형제 동이 없으면 `[region]` 이다.
+    """
+    code = region.legal_division_code
+    if region.ga_base is None or code is None:
+        return [region]
+    pattern = re.compile(rf'{re.escape(region.ga_base)}(\d+)가')
+    found: list[tuple[int, NaverRegion]] = []
+    for item in _sub_regions(client, 'GUN', code[:5] + '00000'):
+        name = _last_word(item.legal_division_name or '')
+        match = pattern.fullmatch(name)
+        if match is None or item.coordinates is None:
+            continue
+        lat, lng = _lat_lng(item.coordinates)
+        found.append((int(match.group(1)), NaverRegion(
+            name=name,
+            address=normalize_address(item.legal_division_name),
+            lat=lat,
+            lng=lng,
+            legal_division_code=item.legal_division_number,
+        )))
+    regions = [dong for _, dong in sorted(found, key=lambda entry: entry[0])]
+    return regions if len(regions) > 1 else [region]
+
+
 def _find_address(
     client: NaverClient,
     query: str,
@@ -345,6 +399,10 @@ def _find_address(
             )
     full_address = item.full_address or query
     notes: list[str] = []
+    ga_note = _ga_dong_note(query, words[-1], elements.dongmyun) if is_dong_code(code) and not elements.ri else None
+    if ga_note:
+        notes.append(ga_note)
+    ga_base = words[-1] if ga_note else None
     if (item.item_level or 0) >= ADDRESS_LOT_ITEM_LEVEL or elements.jibun or elements.build_number:
         kind, name = '주소', full_address
     elif is_dong_code(code) and not elements.ri:
@@ -373,7 +431,9 @@ def _find_address(
                 f"'{query}': {_wide_region_unit(code)} 단위의 넓은 지역이라 중심({full_address})에서 "
                 f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요'
             )
-    region = NaverRegion(name=name, address=full_address, lat=item.y, lng=item.x, legal_division_code=code)
+    region = NaverRegion(
+        name=name, address=full_address, lat=item.y, lng=item.x, legal_division_code=code, ga_base=ga_base, ga_note=ga_note,
+    )
     return region, kind, notes
 
 
@@ -673,17 +733,17 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
     # 시·군·구를 먼저 본다 (하위 지역이 있는 쪽)
     exact.sort(key=lambda item: item.legal_division_level_type != 'GUN')
     best = exact[0]
-    notes = []
-    others = [
-        item.legal_division_name for item in exact[1:]
+    same = [
+        item.legal_division_name or item.legal_division_number for item in exact
         if item.legal_division_level_type == best.legal_division_level_type
     ]
-    if others:
-        listed = ', '.join(others[:MAX_CANDIDATE_NOTES])
-        notes.append(
-            f"'{query}': 같은 이름이 여러 곳에 있어 첫 번째인 {best.legal_division_name} 의 하위 지역입니다. "
-            f"다른 곳이면 시·도 이름을 붙여 주세요 (예: '{others[0]}'). 다른 곳: {listed}"
+    if len(same) > 1:
+        # 첫 곳으로 고르면 다른 곳의 동 목록이 나온다. search listings 처럼 후보를 알리고 멈춘다 (2026-10-15)
+        candidates = [normalize_address(name) or name for name in same[:MAX_CANDIDATE_NOTES]]
+        raise RegionAmbiguousError(
+            query, candidates, len(same), hint=f"시·도 이름을 붙여 다시 주세요 (예: '{candidates[0]}')",
         )
+    notes = []
     if best.legal_division_level_type != 'GUN':
         raise JibsaError(
             code='NOT_FOUND',

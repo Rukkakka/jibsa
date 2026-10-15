@@ -59,7 +59,8 @@ def make_client(requests: list[httpx.Request] | None = None) -> DaangnClient:
             query_id = json.loads(request.content)['extensions']['persistedQuery']['sha256Hash']
             return httpx.Response(200, json=articles_count() if query_id == DaangnClient.articles_count_query_id else article_feed())
         if request.url.path.startswith('/map/'):
-            return httpx.Response(200, text=html('map'))
+            # 픽스처 지역 검색의 용인시 처인구 역삼동은 행정동이라 실제 당근도 지도가 404 다
+            return httpx.Response(404 if '처인구' in request.url.path else 200, text=html('map'))
         return httpx.Response(200, text=html('articles'))
 
     client = DaangnClient()
@@ -194,21 +195,28 @@ def test_count_does_not_swallow_rate_limit() -> None:
 
 
 def _regions_client(locations: list[dict]) -> DaangnClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        # 같은 이름 동이 여럿이면 지도가 있는지(법정동인지) 본다. 여기 후보는 모두 지도가 있다
+        if request.url.path.startswith('/map/'):
+            return httpx.Response(200, text=html('map'))
+        return httpx.Response(200, json={'locations': locations})
+
     client = DaangnClient()
-    client.__dict__['_client'] = httpx.Client(
-        base_url=client.base_url,
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={'locations': locations})),
-    )
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     return client
 
 
-# --city 를 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아 엉뚱한 동을 고른다
+# --city 를 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아 엉뚱한 동을 고른다.
+# '서울시' 는 서울의 송정동 두 곳에 맞아 첫 곳을 고르지 않고 멈춘다
 @pytest.mark.parametrize(
     ('city', 'expected'),
-    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', '서울특별시'), ('남구', None)],
+    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', 'REGION_AMBIGUOUS'), ('남구', None)],
 )
 def test_city_matches_start_of_district_name(city: str, expected: str | None) -> None:
-    from jibsa.core.errors import RegionNotFoundError
+    from jibsa.core.errors import (
+        RegionAmbiguousError,
+        RegionNotFoundError,
+    )
 
     locations = [
         {'id': 1, 'name1': '서울특별시', 'name2': '성동구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
@@ -219,6 +227,11 @@ def test_city_matches_start_of_district_name(city: str, expected: str | None) ->
         if expected is None:
             with pytest.raises(RegionNotFoundError):
                 resolve_regions(client, '송정동', city=city)
+            return
+        if expected == 'REGION_AMBIGUOUS':
+            with pytest.raises(RegionAmbiguousError) as error:
+                resolve_regions(client, '송정동', city=city)
+            assert error.value.details['candidates'] == ['서울특별시 성동구 송정동', '서울특별시 강남구 송정동']
             return
         [region] = resolve_regions(client, '송정동', city=city)
     assert region.name1 == expected
@@ -351,13 +364,12 @@ def test_missing_map_page_among_expanded_dongs_is_skipped() -> None:
 
 
 def test_search_listings_notes_neighbor_dongs() -> None:
-    # 픽스처의 역삼동 피드에는 논현동·도곡동 매물이 섞여 있다. 빼지 않고 알린다.
+    # 픽스처의 역삼동 피드에는 논현동·도곡동 매물이 섞여 있다. 빼지 않고 in_regions 로 표시하고 알린다.
     with make_client() as client:
         result = search_listings(client, resolve_regions(client, '역삼동'))
     assert {listing.address for listing in result.listings} >= {'서울특별시 강남구 논현동', '서울특별시 강남구 역삼동'}
-    assert result.notes[-1] == (
-        '당근은 조회한 동(역삼동) 주변 동네 매물도 함께 줍니다. 20건 중 10건은 다른 동(논현동, 도곡동) 매물이니 address 로 위치를 확인하세요'
-    )
+    assert all(listing.in_regions == listing.address.endswith('역삼동') for listing in result.listings)
+    assert result.notes[-1] == '20건 중 10건은 당근이 섞어 준 주변 동(논현동, 도곡동) 매물입니다 (in_regions: false)'
 
 
 def _rate_limited(_) -> None:

@@ -4,6 +4,7 @@ import re
 
 from jibsa.core.errors import (
     JibsaError,
+    RegionAmbiguousError,
     RegionNotFoundError,
 )
 from jibsa.core.geo import (
@@ -62,8 +63,8 @@ def _retry_hint(address: str, name: str) -> str:
     다른 결과를 먼저 주므로, 다른 후보의 시·군·구를 앞에 붙인 검색어를 예로 든다 ('강남구 신사동')."""
     district = next((word for word in reversed(address.split()) if word[-1] in '시군구'), None)
     if district is None:
-        return '다른 곳이면 구 이름을 앞에 붙여 다시 검색하세요'
-    return f"다른 곳이면 '{district} {name}' 처럼 구 이름을 앞에 붙여 다시 검색하세요"
+        return '구 이름을 앞에 붙여 다시 검색하세요'
+    return f"'{district} {name}' 처럼 구 이름을 앞에 붙여 다시 검색하세요"
 
 
 def region_notes(
@@ -71,19 +72,28 @@ def region_notes(
     items: list[ZigbangSearchItemModel],
     best: ZigbangSearchItemModel,
 ) -> list[str]:
-    """고른 지역이 모호할 때 결과에 붙일 안내.
+    """고른 지역이 모호할 때 결과에 붙일 안내. 같은 이름의 지역(동·구)이 여러 곳이면 고르지 않고 멈춘다.
 
     같은 이름·같은 종류 결과가 여러 곳이면 (신사동, 양평역, 종로1가) 후보를 알린다. 이름이 비슷하기만 한
     결과(세종 → 세종동·세종로)나 종류가 다른 결과(신사동 → 신사역)는 세지 않는다. 넓은 지역 안내는 반경으로
     찾을 때만 맞아 `wide_area_note` 로 따로 붙인다.
+
+    지역은 첫 곳으로 찾으면 소스마다 다른 곳을 찾는다 (2026-10-15 실측: 신사동은 직방 첫 곳이 은평구, 당근은 강남구,
+    네이버는 REGION_AMBIGUOUS). 그래서 네이버처럼 후보를 알리고 멈춘다. 역은 네이버·당근처럼 첫 역으로 찾고 안내한다.
+    전체 주소('서울특별시 강남구 신사동')는 직방이 학교만 찾아 주므로 구 이름을 붙인 검색어를 권한다.
+
+    Raises:
+        RegionAmbiguousError: 같은 이름의 지역(동·구)이 여러 곳일 때.
     """
     same = [item for item in items if item.type == best.type and item.name == best.name]
     addresses = list(dict.fromkeys(item.description for item in same if item.description))
     if len(addresses) < 2:
         return []
+    if best.type == 'address':
+        raise RegionAmbiguousError(query, addresses, len(addresses), hint=_retry_hint(addresses[0], best.name))
     return [
         f"{quoted(query, '은/는')} 여러 곳에 있습니다 ({', '.join(addresses)}). "
-        f'첫 번째인 {addresses[0]} 기준으로 검색했습니다. {_retry_hint(addresses[1], best.name)}'
+        f'첫 번째인 {addresses[0]} 기준으로 검색했습니다. 다른 곳이면 {_retry_hint(addresses[1], best.name)}'
     ]
 
 
@@ -117,6 +127,7 @@ def resolve_region_with_notes(
 
     Raises:
         RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
+        RegionAmbiguousError: 같은 이름의 지역(동·구)이 여러 곳일 때 (`region_notes`).
     """
     region, notes, split_note, _ = resolve_region_scope(client, query, items=items)
     wide_note = wide_area_note(query, region, radius_km)
@@ -180,6 +191,7 @@ def resolve_region_scope(
 
     Raises:
         RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
+        RegionAmbiguousError: 같은 이름의 지역(동·구)이 여러 곳일 때 (`region_notes`).
     """
     items = search_regions(client, query) if items is None else items
     if not items:

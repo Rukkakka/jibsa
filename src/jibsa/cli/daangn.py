@@ -579,7 +579,7 @@ def search_command(
             return
         try:
             place_notes: list[str] = []
-            regions = resolve_regions(client, dong, city=city, notes=place_notes, station_hint=True)
+            regions = resolve_regions(client, dong, city=city, notes=place_notes, station_hint=True, merge_ga=True)
         except (RegionNotFoundError, UnsupportedRegionError) as not_dong:
             # 당근 동이 아닌 이름은 역이면 당근 역 주변 목록으로, 아니면(장소 이름) 그 위치의 반경으로 찾는다.
             # '리'로 끝나는 역 이름(미아사거리·굽은다리)도 리 단위 에러(ri_region_error) 대신 여기로 온다.
@@ -589,7 +589,9 @@ def search_command(
                 radius_km=radius_km, common_notes=common_notes, pretty=pretty, emit_area=emit_area,
             )
             return
-        result = search_listings(client, regions, query=dong, expand=expand, conditions=conditions, limit=limit)
+        result = search_listings(
+            client, regions, query=dong, expand=expand, conditions=conditions, limit=limit, split_budget=len(regions) > 1,
+        )
         emit(
             result,
             pretty,

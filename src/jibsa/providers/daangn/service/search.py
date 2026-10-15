@@ -128,6 +128,15 @@ FEED_FALLBACK_PLAIN_NOTE: str = (
 DONG_SUFFIX_PATTERN: re.Pattern[str] = re.compile(rf'({ADMIN_DONG_NUMBER}|본)?동$')
 
 
+class DaangnDongListing(Listing):
+    """동 이름 검색 매물. 당근은 조회한 동의 주변 동 매물을 섞어 주므로(`neighbor_notes`) 동 안 매물인지 표시한다."""
+
+    in_regions: Annotated[
+        bool | None,
+        Field(description='조회한 동(regions) 안 매물이면 true, 당근이 섞어 준 주변 동 매물이면 false. 매물의 동을 모르면 null')
+    ] = None
+
+
 class DaangnSearchResult(BaseModel):
     """동 단위 매물 검색 결과."""
 
@@ -158,8 +167,8 @@ class DaangnSearchResult(BaseModel):
         Field(description='필터 후 반환한 매물 수')
     ]
     listings: Annotated[
-        list[Listing],
-        Field(description='동별 피드 순서(최근 게시 순) 매물. 주변 동 매물이 섞일 수 있다')
+        list[DaangnDongListing],
+        Field(description='동별 피드 순서(최근 게시 순) 매물. 주변 동 매물이 섞여 오고 in_regions 로 구분한다')
     ]
     notes: Annotated[
         list[str],
@@ -398,10 +407,7 @@ def neighbor_notes(regions: list[DaangnRegion], dongs: list[str | None]) -> list
     if not others:
         return []
     names = ', '.join(dict.fromkeys(others))
-    return [
-        f"당근은 조회한 동({', '.join(requested)}) 주변 동네 매물도 함께 줍니다. "
-        f'{len(dongs)}건 중 {len(others)}건은 다른 동({names}) 매물이니 address 로 위치를 확인하세요'
-    ]
+    return [f'{len(dongs)}건 중 {len(others)}건은 당근이 섞어 준 주변 동({names}) 매물입니다 (in_regions: false)']
 
 
 def _server_only_conditions(property_filter: DaangnPropertyFilterModel) -> list[str]:
@@ -542,6 +548,7 @@ def search_listings(
     limit: int = 20,
     query: str | None = None,
     expand: int = 0,
+    split_budget: bool = False,
 ) -> DaangnSearchResult:
     """동마다 최근 매물을 조건으로 걸러 받아 `Listing` 으로 바꾼다.
 
@@ -561,6 +568,9 @@ def search_listings(
 
     피드에는 주변 동네 매물이 섞여 오는데, 가까운 매물이라 빼지 않고 `notes` 로 알린다.
     시·도가 빠진 매물은 돌려줄 매물에 한해 당근 지역 검색으로 채운다 (동마다 1회).
+
+    `split_budget` 이면 '○가' 동(성수동1가·2가)처럼 나란히 찾는 동들이 `limit` 을 남은 동 수로 나눠 쓴다. 앞 동이
+    예산을 다 써서 뒤 동을 못 보는 일을 막으려고, 지도 첫 페이지 20건도 그 몫까지만 쓴다.
 
     `expand` 를 주면 첫 동의 피드를 받은 뒤 주변 동을 그만큼 더 조회한다 (`expand_regions`).
     결과의 `regions` 에는 실제로 조회한 동만 들어간다. 앞 동에서 `limit` 를 다 써서 못 본 동과
@@ -630,7 +640,9 @@ def search_listings(
                 search_center = (coordinate.lat, coordinate.lon)
         center = search_center
 
-        more = _read_feed(client, scan, region, page, center, count, has_conditions=has_conditions)
+        if split_budget:
+            scan.limit = scan.fetched + (limit - scan.fetched) // (len(regions) - index + 1)
+        more = _read_feed(client, scan, region, page, center, count, has_conditions=has_conditions, cap_map_page=split_budget)
         # 필터 API 를 쓸 수 없어 조건 없는 지도 페이지만 봤으면 조건에 맞는 매물을 다 봤는지 알 수 없다
         if (count is None or scan.fetched < sum(value or 0 for value in counts)) or more or index < len(regions):
             complete = False
@@ -650,6 +662,11 @@ def search_listings(
         raise no_map_page_error(', '.join(missing), query)
 
     listings, shown, dongs = _matched_listings(client, scan.matched[:limit], sido_cache)
+    requested = {region.name3 for region in searched}
+    dong_listings = [
+        listing_as(DaangnDongListing, listing, in_regions=None if dong is None else dong in requested)
+        for listing, dong in zip(listings, dongs, strict=True)
+    ]
 
     total = sum(count for count in counts if count is not None) if counts and None not in counts else None
     filtered: Literal['server', 'client'] | None = None
@@ -659,8 +676,8 @@ def search_listings(
         regions=searched,
         total=total,
         fetched=scan.fetched,
-        returned=len(listings),
-        listings=listings,
+        returned=len(dong_listings),
+        listings=dong_listings,
         notes=(
             scan.fallback_notes
             + expand_notes
@@ -709,13 +726,18 @@ def _read_feed(
     count: int | None,
     *,
     has_conditions: bool,
+    cap_map_page: bool = False,
 ) -> bool:
-    """동 하나의 매물을 조회 예산·페이지 상한까지 받는다. 받을 페이지가 더 남았으면 True."""
+    """동 하나의 매물을 조회 예산·페이지 상한까지 받는다. 받을 페이지가 더 남았으면 True.
+
+    `cap_map_page` 면 지도 첫 페이지도 남은 예산(`scan.limit`)까지만 쓴다 (`search_listings` 의 `split_budget`).
+    """
     if has_conditions and scan.use_feed:
         # 지도 페이지의 첫 20건은 조건 없는 피드라 쓰지 않고 첫 페이지부터 받는다
         pages, cursor, more = 0, None, True
     else:
-        scan.take(page.articles, center, server=False)
+        articles = page.articles[:max(0, scan.limit - scan.fetched)] if cap_map_page else page.articles
+        scan.take(articles, center, server=False)
         pages, cursor, more = 1, page.end_cursor, bool(page.has_next_page and page.end_cursor)
     if count == 0:
         # 조건에 맞는 매물이 없으면 받을 것도 남은 것도 없다. 피드를 끝까지 본 것으로 친다

@@ -54,6 +54,7 @@ from jibsa.providers.naver.service.redevelopment import (
 )
 from jibsa.providers.naver.service.region import (
     NaverRegion,
+    ga_dong_regions,
     legal_division_code_at,
     list_regions,
     resolve_complex_number,
@@ -221,6 +222,13 @@ def _resolve_location(
 def _whole_dong(region: NaverRegion, kind: str, radius: float | None) -> bool:
     """동 이름으로 찾았고 반경을 주지 않았으면 반경 대신 동 경계 안 전체를 찾는다 (법정동 코드가 있을 때만)."""
     return kind == '동' and radius is None and region.legal_division_code is not None
+
+
+def _merged_region(region: NaverRegion, dongs: list[NaverRegion]) -> NaverRegion:
+    """합쳐 찾은 '○가' 동들을 직방처럼 한 지역으로 보인다 (이름 '성수동1가·성수동2가', 중심은 처음 찾은 동, 코드 없음)."""
+    names = '·'.join(dong.name for dong in dongs)
+    parent = (region.address or '').rsplit(' ', 1)[0]
+    return NaverRegion(name=names, address=f'{parent} {names}'.strip(), lat=region.lat, lng=region.lng)
 
 
 def _search_scope(region: NaverRegion, whole_dong: bool, radius: float | None) -> dict[str, object]:
@@ -952,6 +960,13 @@ def search_command(
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
         # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
         whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
+        dongs = [region]
+        if whole_dong and region.ga_base is not None:
+            # '○가' 로 나뉜 동(성수동)은 직방처럼 모두 찾아 합친다. 한 곳만 찾았다는 안내는 뺀다
+            dongs = ga_dong_regions(client, region)
+            if len(dongs) > 1 and region.ga_note in notes:
+                notes.remove(region.ga_note)
+                region = _merged_region(region, dongs)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 
@@ -962,7 +977,7 @@ def search_command(
             conditions=conditions,
             radius_km=radius or DEFAULT_RADIUS_KM,
             sort=sort or ('랭킹순' if whole_dong else '가까운순'),
-            legal_division_code=region.legal_division_code if whole_dong else None,
+            legal_division_codes=[dong.legal_division_code for dong in dongs if dong.legal_division_code] if whole_dong else None,
             limit=limit,
         )
         # 직방처럼 어디를 얼마나 찾았는지 함께 준다. 서비스는 좌표만 받아
