@@ -73,7 +73,7 @@ jobs:
       - run: python -m build
       # README 가 PyPI 프로젝트 페이지에서 렌더링되는지 (상대 링크는 잡지 못한다)
       - run: twine check --strict dist/*
-      # 편집 가능 설치와 달리 docs/llm.md 를 패키지 안 사본으로 읽으므로 그 사본이 빠지거나 다르면 여기서 드러난다
+      # 편집 가능 설치와 달리 docs/llm.md·소스 문서를 패키지 안 사본으로 읽으므로 사본이 빠지거나 다르면 여기서 드러난다
       - name: 새 가상환경에 설치해 실행
         run: |
           python -m venv "$RUNNER_TEMP/jibsa-check"
@@ -81,6 +81,10 @@ jobs:
           "$RUNNER_TEMP/jibsa-check/bin/jibsa" --version
           "$RUNNER_TEMP/jibsa-check/bin/jibsa" guide > "$RUNNER_TEMP/guide.md"
           diff "$RUNNER_TEMP/guide.md" docs/llm.md
+          for topic in common zigbang naver daangn; do
+            "$RUNNER_TEMP/jibsa-check/bin/jibsa" guide "$topic" > "$RUNNER_TEMP/$topic.md"
+            diff "$RUNNER_TEMP/$topic.md" "docs/$topic.md"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: dist
