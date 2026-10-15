@@ -591,9 +591,9 @@ def test_complex_listing_budget_preserves_cursor_without_refilling() -> None:
     assert len(requests) == 4
     assert all(json.loads(request.content)['size'] == 30 for request in requests)
     assert result.returned == 114
-    assert any('추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
     assert any('최대값은 120' in note for note in result.notes)
-    assert not any('--limit을 늘리' in note for note in result.notes)
+    assert not any('--limit 을 늘리' in note for note in result.notes)
 
 
 def test_whole_dong_budget_carries_seed_and_cursor() -> None:
@@ -612,7 +612,7 @@ def test_whole_dong_budget_carries_seed_and_cursor() -> None:
     client = NaverClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
-        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
     assert len(requests) == 4
     assert result.returned == 120
 
@@ -622,10 +622,10 @@ def test_whole_dong_stops_when_cursor_stalls() -> None:
     stuck = _complex_article_page(['1000000001', '1000000002'], has_next=True)
     requests: list[httpx.Request] = []
     with make_path_client(requests, {'/article/legalDivisionArticleList': stuck}) as client:
-        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
     assert len(requests) == 2
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
-    assert any('추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
 
 
 def _short_page_client(requests: list[httpx.Request], path: str, make_page) -> NaverClient:
@@ -652,7 +652,7 @@ def test_whole_dong_stops_at_request_cap() -> None:
 
     requests: list[httpx.Request] = []
     with _short_page_client(requests, '/article/legalDivisionArticleList', _short_article_page) as client:
-        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
     assert len(requests) == MAX_LEGAL_DIVISION_PAGE_REQUESTS
     assert result.returned == 5 * MAX_LEGAL_DIVISION_PAGE_REQUESTS
     assert any(f'{5 * MAX_LEGAL_DIVISION_PAGE_REQUESTS}건까지만' in note for note in result.notes)

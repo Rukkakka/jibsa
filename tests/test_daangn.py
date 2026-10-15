@@ -59,7 +59,8 @@ def make_client(requests: list[httpx.Request] | None = None) -> DaangnClient:
             query_id = json.loads(request.content)['extensions']['persistedQuery']['sha256Hash']
             return httpx.Response(200, json=articles_count() if query_id == DaangnClient.articles_count_query_id else article_feed())
         if request.url.path.startswith('/map/'):
-            return httpx.Response(200, text=html('map'))
+            # 픽스처 지역 검색의 용인시 처인구 역삼동은 행정동이라 실제 당근도 지도가 404 다
+            return httpx.Response(404 if '처인구' in request.url.path else 200, text=html('map'))
         return httpx.Response(200, text=html('articles'))
 
     client = DaangnClient()
@@ -134,12 +135,12 @@ def test_search_listings_filters_on_server() -> None:
     # 조건에 맞는 매물(150건)이 많아, limit 이 찰 때까지 다음 페이지를 커서로 이어 받는다 (동마다 최대 3페이지)
     assert [body['variables'].get('after') for body in _feed_payloads(requests)] == [None]
     assert result.fetched == 6
-    assert result.total_in_regions == 150
+    assert result.total == 150
     assert {listing.id for listing in result.listings} == {'1000101'}
     assert result.listings[0].trade_type == '월세'
     assert result.notes[0] == (
-        '조건에 맞는 매물 수 150건은 당근이 집계한 값으로, 당근이 함께 주는 주변 동 매물까지 셉니다(동마다 1000 에서 잘림). '
-        '그중 최근 매물 6건(동마다 최대 120건)을 받았습니다'
+        'total 150건은 조건에 맞는 매물을 주변 동 매물까지 센 당근 집계입니다 (동마다 1000에서 잘림). '
+        '그중 최근 6건을 받았습니다 (동마다 최대 120건)'
     )
 
 
@@ -164,15 +165,15 @@ def test_search_listings_does_not_refill_when_few_match() -> None:
     payloads: list = []
     result = search_listings(_paged_stub_client(30, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
     assert [payload.after for payload in payloads] == [None]
-    assert result.total_in_regions == 30
+    assert result.total == 30
     assert payloads[0].first == 1
-    assert '검색 조건에 맞지 않는 매물을 제외해' not in ' '.join(result.notes)  # 반환 제한으로 잘린 정상 매물이다.
+    assert '조건 불일치를 빼고' not in ' '.join(result.notes)  # 반환 제한으로 잘린 정상 매물이다.
 
     # 100건이 넘으면 지금처럼 limit 이 차면 멈춘다
     payloads = []
     result = search_listings(_paged_stub_client(101, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
     assert len(payloads) == 1
-    assert result.notes[0].endswith('그중 최근 매물 6건(동마다 최대 120건)을 받았습니다')
+    assert result.notes[0].endswith('그중 최근 6건을 받았습니다 (동마다 최대 120건)')
 
 
 def test_search_listings_continues_when_count_fails() -> None:
@@ -181,7 +182,7 @@ def test_search_listings_continues_when_count_fails() -> None:
     result = search_listings(_paged_stub_client(None, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
     assert len(payloads) == 1
     assert result.listings
-    assert result.total_in_regions is None
+    assert result.total is None
 
 
 def test_count_does_not_swallow_rate_limit() -> None:
@@ -194,21 +195,28 @@ def test_count_does_not_swallow_rate_limit() -> None:
 
 
 def _regions_client(locations: list[dict]) -> DaangnClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        # 같은 이름 동이 여럿이면 지도가 있는지(법정동인지) 본다. 여기 후보는 모두 지도가 있다
+        if request.url.path.startswith('/map/'):
+            return httpx.Response(200, text=html('map'))
+        return httpx.Response(200, json={'locations': locations})
+
     client = DaangnClient()
-    client.__dict__['_client'] = httpx.Client(
-        base_url=client.base_url,
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={'locations': locations})),
-    )
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     return client
 
 
-# --city 를 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아 엉뚱한 동을 고른다
+# --city 를 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아 엉뚱한 동을 고른다.
+# '서울시' 는 서울의 송정동 두 곳에 맞아 첫 곳을 고르지 않고 멈춘다
 @pytest.mark.parametrize(
     ('city', 'expected'),
-    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', '서울특별시'), ('남구', None)],
+    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', 'REGION_AMBIGUOUS'), ('남구', None)],
 )
 def test_city_matches_start_of_district_name(city: str, expected: str | None) -> None:
-    from jibsa.core.errors import RegionNotFoundError
+    from jibsa.core.errors import (
+        RegionAmbiguousError,
+        RegionNotFoundError,
+    )
 
     locations = [
         {'id': 1, 'name1': '서울특별시', 'name2': '성동구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
@@ -219,6 +227,11 @@ def test_city_matches_start_of_district_name(city: str, expected: str | None) ->
         if expected is None:
             with pytest.raises(RegionNotFoundError):
                 resolve_regions(client, '송정동', city=city)
+            return
+        if expected == 'REGION_AMBIGUOUS':
+            with pytest.raises(RegionAmbiguousError) as error:
+                resolve_regions(client, '송정동', city=city)
+            assert error.value.details['candidates'] == ['서울특별시 성동구 송정동', '서울특별시 강남구 송정동']
             return
         [region] = resolve_regions(client, '송정동', city=city)
     assert region.name1 == expected
@@ -351,13 +364,12 @@ def test_missing_map_page_among_expanded_dongs_is_skipped() -> None:
 
 
 def test_search_listings_notes_neighbor_dongs() -> None:
-    # 픽스처의 역삼동 피드에는 논현동·도곡동 매물이 섞여 있다. 빼지 않고 알린다.
+    # 픽스처의 역삼동 피드에는 논현동·도곡동 매물이 섞여 있다. 빼지 않고 in_regions 로 표시하고 알린다.
     with make_client() as client:
         result = search_listings(client, resolve_regions(client, '역삼동'))
     assert {listing.address for listing in result.listings} >= {'서울특별시 강남구 논현동', '서울특별시 강남구 역삼동'}
-    assert result.notes[-1] == (
-        '당근은 조회한 동(역삼동) 주변 동네 매물도 함께 줍니다. 20건 중 10건은 다른 동(논현동, 도곡동) 매물이니 address 로 위치를 확인하세요'
-    )
+    assert all(listing.in_regions == listing.address.endswith('역삼동') for listing in result.listings)
+    assert result.notes[-1] == '20건 중 10건은 당근이 섞어 준 주변 동(논현동, 도곡동) 매물입니다 (in_regions: false)'
 
 
 def _rate_limited(_) -> None:
@@ -549,7 +561,7 @@ def test_rejected_feed_query_falls_back_to_map_page() -> None:
     assert result.listings
     assert all(listing.trade_type == '월세' and listing.rent_manwon <= 100 for listing in result.listings)
     assert result.notes[0].startswith('당근 필터 API 를 쓸 수 없어')
-    assert '조건을 적용한 건 받아 온 최근 매물 20건(동마다 최대 20건)뿐' in result.notes[1]
+    assert '조건은 받아 온 최근 20건(동마다 최대 20건)에만 걸었으니' in result.notes[1]
 
 
 def test_rejected_feed_query_without_conditions_notes() -> None:
@@ -560,8 +572,8 @@ def test_rejected_feed_query_without_conditions_notes() -> None:
     result = search_listings(client, [_yeoksam()], limit=120)
     assert result.fetched == 20
     assert result.notes[0].startswith('당근 매물 피드 API 를 쓸 수 없어') and '조건을 적용' not in result.notes[0]
-    assert result.notes[1].endswith('그중 최근 매물 20건(동마다 최대 20건)을 받았습니다')
-    assert not any('검색을 마쳤습니다' in note or '--limit' in note for note in result.notes)
+    assert result.notes[1].endswith('그중 최근 20건을 받았습니다 (동마다 최대 20건)')
+    assert not any('전부입니다' in note or '--limit' in note for note in result.notes)
 
 
 def test_rejected_feed_query_with_server_only_condition_is_an_error() -> None:
@@ -665,7 +677,7 @@ def test_search_area_fetches_only_enough_card_chunks(missing_cards: bool) -> Non
     assert len(card_requests) == 2 and CARD_CHUNK_SIZE == 20
     assert result.returned == (20 if missing_cards else 25)
     assert [len(json.loads(request.content)['variables']['originalArticleIds']) for request in card_requests] == [20, 5]
-    assert '--limit을 늘리거나' in result.notes[-1]
+    assert '--limit 을 늘리거나' in result.notes[-1]
 
 
 def test_search_area_notes_truncated_pins() -> None:
@@ -929,7 +941,7 @@ def test_dong_budget_does_not_refill_expired_articles() -> None:
     result = search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=20)
     assert len(payloads) == 1 and payloads[0].first == 20
     assert result.fetched == 20 and result.returned == 15
-    assert any('추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
 
 
 @pytest.mark.parametrize(('limit', 'total', 'expected_sizes'), [
@@ -1089,7 +1101,7 @@ def test_search_station_counts_received_cards_and_keeps_walk_minutes() -> None:
     assert sent[0]['subwayStationPoiId'] == '91' and sent[0]['propertyFilter']['tradeTypes'] == ['MONTH']
     assert [(listing.id, listing.walk_minutes) for listing in result.listings] == [('2000101', 3), ('2000103', 6)]
     assert result.has_more is True
-    assert any('제외된 수만큼 추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
 
 
 def test_search_commute_pages_station_listings_up_to_limit() -> None:

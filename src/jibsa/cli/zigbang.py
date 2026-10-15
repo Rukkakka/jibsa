@@ -68,8 +68,10 @@ from jibsa.providers.zigbang.service.detail import (
     get_any_listing,
 )
 from jibsa.providers.zigbang.service.listing import (
+    DETAILS_MAX,
     GEOHASH_PRECISION,
     PROPERTY_TYPES,
+    attach_building_use,
     check_without_random,
     search_listings,
     unsearchable_note,
@@ -119,6 +121,26 @@ STAY_SERVICE_NOTE: str = (
     '단기임대 서비스는 매물이 달라 jibsa zigbang search listings stay 로 찾습니다'
 )
 STAY_STRUCTURES: tuple[str, ...] = ('복층', '단층')
+# room·--complex 의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
+# 다른 소스 표현이다 (당근 --option 반려동물가능·대출가능, --structure 오픈형, --room-count 2개, 네이버 --move-in 바로입주)
+ROOM_USAGE_BY_VALUE: dict[str, str] = {
+    **{value: f'--room {value}' for value in ROOM_TYPES},
+    **{value: f'--floor {value}' for value in FLOOR_FILTERS},
+    **{value: f'--option {value}' for value in OPTION_FILTERS},
+    **{value: f'--condition {value}' for value in CONDITIONS},
+    '반려동물가능': '--condition 반려동물',
+    '대출가능': '--condition 전세대출',
+    '주차가능': '--condition 주차',
+    '바로입주': '--condition 즉시입주',
+    '옥탑': '--floor 옥탑방',
+    '복층': '--room 복층형원룸',
+    '오픈형': '--room 오픈형원룸',
+    '분리형': '--room 분리형원룸',
+    '원룸': '-t 원룸',
+    '2개': '--room 투룸',
+    '3개': '--room 쓰리룸',
+    '4개이상': '--room 포룸이상',
+}
 
 app = typer.Typer(
     help=(
@@ -208,7 +230,7 @@ def _scope(
     if split_note:
         notes.append(split_note)
     if boundary is not None:
-        notes.append(f'동 이름이라 반경 대신 {boundary.name} 경계 안을 찾았습니다. 위치 기준으로 찾으려면 --radius 를 주세요')
+        notes.append(f'{boundary.name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
     return region, notes, boundary, radius_km
 
 
@@ -269,7 +291,7 @@ def _room_conditions(
         rent_max=rent_max,
         price_min=price_min,
         price_max=price_max,
-        room_types=split_csv(room, ROOM_TYPES, '--room'),
+        room_types=split_csv(room, ROOM_TYPES, '--room', ROOM_USAGE_BY_VALUE),
         manage_cost_min=manage_cost_min,
         manage_cost_max=manage_cost_max,
         no_manage_cost=no_manage_cost,
@@ -277,10 +299,10 @@ def _room_conditions(
         area_max_m2=area_max,
         area_min_pyeong=area_pyeong_min,
         area_max_pyeong=area_pyeong_max,
-        floors=split_csv(floor, FLOOR_FILTERS, '--floor'),
+        floors=split_csv(floor, FLOOR_FILTERS, '--floor', ROOM_USAGE_BY_VALUE),
         bathroom_count=bathroom,
-        options=split_csv(option, OPTION_FILTERS, '--option'),
-        extra_conditions=split_csv(condition, CONDITIONS, '--condition'),
+        options=split_csv(option, OPTION_FILTERS, '--option', ROOM_USAGE_BY_VALUE),
+        extra_conditions=split_csv(condition, CONDITIONS, '--condition', ROOM_USAGE_BY_VALUE),
         without_random=without_random,
     )
 
@@ -387,6 +409,13 @@ def search_room_command(
     without_random: Annotated[
         bool, typer.Option('--without-random', help='오피스텔 서버의 무작위 섞기 해제. 검색 결과는 거리순 유지'),
     ] = False,
+    details: Annotated[
+        bool,
+        typer.Option(
+            '--details',
+            help=f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건)',
+        ),
+    ] = False,
     pretty: PrettyOption = None,
 ) -> None:
     """원룸·오피스텔·빌라를 검색 중심에서 가까운 순으로 조회한다. 모든 조건은 직방 서버에서 거른다.
@@ -398,6 +427,7 @@ def search_room_command(
     예: jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70
         jibsa zigbang search listings room 역삼동 -t 빌라,오피스텔 --room 투룸 --trade 전세 --condition 전세대출,엘리베이터
         jibsa zigbang search listings room 신림역 --floor 지상 --option 에어컨,세탁기 --manage-cost-max 10
+        jibsa zigbang search listings room 성수동 -t 원룸 --trade 월세 --limit 10 --details
     """
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
@@ -452,7 +482,9 @@ def search_room_command(
             boundary=boundary,
             subway_id=region.subway_id,
         )
-        emit(result, pretty, notice=True, notes=trade_notes + notes + result.notes)
+        if details:
+            result = attach_building_use(client, result)
+        emit(result, pretty, notes=trade_notes + notes + result.notes)
 
 
 @listings_app.command('apt')
@@ -543,12 +575,12 @@ def search_apt_command(
                 notes = [f"{quoted(query or '', '은/는')} 동·구가 아니라 그 위치에서 반경 {DEFAULT_RADIUS_KM:g}km 안 아파트를 찾았습니다"]
             else:
                 result = search_apt_listings(client, district, conditions=conditions, limit=limit, extra_regions=extra)
-                emit(result, pretty, notice=True, notes=trade_notes + notes + result.notes)
+                emit(result, pretty, notes=trade_notes + notes + result.notes)
                 return
         radius_km = radius or DEFAULT_RADIUS_KM
         region, region_notes = _region(client, query, lat, lng, radius_km, items)
         near = search_apt_listings_near(client, region, conditions=conditions, radius_km=radius_km, limit=limit)
-        emit(near, pretty, notice=True, notes=trade_notes + region_notes + notes + near.notes)
+        emit(near, pretty, notes=trade_notes + region_notes + notes + near.notes)
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:
@@ -710,7 +742,7 @@ def complex_listings_command(
             pyeong_ids=pyeong,
             limit=limit,
         )
-        emit(result, pretty, notice=True, notes=trade_notes + result.notes)
+        emit(result, pretty, notes=trade_notes + result.notes)
 
 
 @listings_app.command('store')
@@ -812,7 +844,7 @@ def store_command(
             boundary=boundary,
             limit=limit,
         )
-        emit(result, pretty, notice=True, notes=price_notes + notes + result.notes)
+        emit(result, pretty, notes=price_notes + notes + result.notes)
 
 
 @listings_app.command('stay')
@@ -971,7 +1003,7 @@ def stay_command(
             result = search_stay_listings(
                 client, region, conditions=conditions, sort=stay_sort, radius_km=radius_km, limit=limit, boundary=boundary,
             )
-        emit(result, pretty, notice=True, notes=notes + result.notes)
+        emit(result, pretty, notes=notes + result.notes)
 
 
 @app.command('real-price')
@@ -1041,5 +1073,4 @@ def listing_command(
         emit(
             get_any_listing(client, item_id, check_in=check_in, check_out=check_out, pet=pet),
             pretty,
-            notice=True,
         )

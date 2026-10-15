@@ -274,7 +274,7 @@ class ZigbangComplexListingsResult(BaseModel):
         str,
         Field(description='조회한 단지 ID')
     ]
-    total_count: Annotated[
+    total: Annotated[
         int,
         Field(description='조건에 맞는 매물 수 (limit 적용 전)')
     ]
@@ -489,7 +489,7 @@ def list_complex_listings(
     if trade_types and not tran_types:
         # 아파트에는 단기임대가 없다 (CLI 가 먼저 막는다). 조건을 비워 보내면 전체가 오므로 조회하지 않는다.
         # 없는 단지가 0건 성공으로 보이지 않도록 단지를 확인한 뒤에 돌려준다
-        return ZigbangComplexListingsResult(complex_id=complex_id, total_count=0, returned=0, listings=[])
+        return ZigbangComplexListingsResult(complex_id=complex_id, total=0, returned=0, listings=[])
     listings: list[Listing] = []
     total = 0
     offset = 0
@@ -527,7 +527,7 @@ def list_complex_listings(
     listings = listings[:limit]
     return ZigbangComplexListingsResult(
         complex_id=complex_id,
-        total_count=total,
+        total=total,
         returned=len(listings),
         listings=listings,
         notes=apt_pagination_notes(total, len(listings), limit, inspected),
@@ -593,7 +593,7 @@ def _list_officetel_building_listings(
     total = len(ids)
     return ZigbangComplexListingsResult(
         complex_id=complex_id,
-        total_count=total,
+        total=total,
         returned=len(listings),
         listings=listings,
         notes=excluded_notes(limit, len(scanned), len(listings)) + complex_limit_notes(total, len(listings), limit),

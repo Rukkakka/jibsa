@@ -27,6 +27,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     Listing,
     beyond_radius_notes,
+    listing_as,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -65,7 +66,6 @@ from jibsa.providers.daangn.service.common import (
     article_to_listing,
     complex_building_notes,
     is_available,
-    listing_as,
     listing_budget_notes,
     partial_failure_note,
     trade_of,
@@ -94,16 +94,12 @@ logger = logging.getLogger(__name__)
 # 당근 매물 종류는 작성자가 고른 하나뿐이라 같은 오피스텔 건물의 방 1개도 원룸·오피스텔로 갈린다
 # (2026-10-10 실측: 엘리젠트 단지 매물 3건 중 1건만 원룸, 2건은 오피스텔로 올라 있었다)
 ONE_ROOM_NOTE: str = (
-    '-t 원룸은 작성자가 원룸으로 올린 매물만 찾습니다. 아파트·오피스텔·주택으로 올린 방 1개 매물은 빠지고, '
-    '원룸으로 올렸어도 방이 2개인 매물이 있습니다. 정확한 방 수는 listing 의 room_count 로 확인하세요'
+    '-t 원룸은 작성자가 원룸으로 올린 매물만이라 방 1개 아파트·주택은 빠지고 방 2개 매물이 섞일 수 있습니다 '
+    '(방 수는 --details 나 listing 의 room_type)'
 )
-ONE_ROOM_OFFICETEL_NOTE: str = (
-    '오피스텔 건물의 원룸도 작성자가 오피스텔로 올렸으면 -t 원룸에 나오지 않습니다. '
-    '함께 보려면 -t 원룸,오피스텔 로 찾으세요'
-)
+ONE_ROOM_OFFICETEL_NOTE: str = '원룸형 오피스텔도 보려면 -t 원룸,오피스텔'
 OFFICETEL_NOTE: str = (
-    '-t 오피스텔은 작성자가 오피스텔로 올린 매물만 찾습니다. 오피스텔 건물이라도 원룸으로 올린 매물은 빠지니 '
-    '함께 보려면 -t 원룸,오피스텔 로 찾으세요'
+    '-t 오피스텔은 작성자가 오피스텔로 올린 매물만이라 원룸으로 올린 오피스텔은 빠집니다 (함께 보려면 -t 원룸,오피스텔)'
 )
 # 투룸(TWO_ROOM)으로 찾을 때 붙이는 안내
 TWO_ROOM_NOTE: str = (
@@ -132,6 +128,15 @@ FEED_FALLBACK_PLAIN_NOTE: str = (
 DONG_SUFFIX_PATTERN: re.Pattern[str] = re.compile(rf'({ADMIN_DONG_NUMBER}|본)?동$')
 
 
+class DaangnDongListing(Listing):
+    """동 이름 검색 매물. 당근은 조회한 동의 주변 동 매물을 섞어 주므로(`neighbor_notes`) 동 안 매물인지 표시한다."""
+
+    in_regions: Annotated[
+        bool | None,
+        Field(description='조회한 동(regions) 안 매물이면 true, 당근이 섞어 준 주변 동 매물이면 false. 매물의 동을 모르면 null')
+    ] = None
+
+
 class DaangnSearchResult(BaseModel):
     """동 단위 매물 검색 결과."""
 
@@ -143,7 +148,7 @@ class DaangnSearchResult(BaseModel):
         list[DaangnRegion],
         Field(description='실제로 매물을 조회한 동 (확장 포함). 한도를 다 써서 못 본 동과 지도 페이지가 없는 동은 notes 로 알린다')
     ]
-    total_in_regions: Annotated[
+    total: Annotated[
         int | None,
         Field(description=(
             '조회한 동들의 매물 수 합 (당근 집계). 조건이 있으면 조건에 맞는 수, 없으면 동 전체 수다. '
@@ -162,8 +167,8 @@ class DaangnSearchResult(BaseModel):
         Field(description='필터 후 반환한 매물 수')
     ]
     listings: Annotated[
-        list[Listing],
-        Field(description='동별 피드 순서(최근 게시 순) 매물. 주변 동 매물이 섞일 수 있다')
+        list[DaangnDongListing],
+        Field(description='동별 피드 순서(최근 게시 순) 매물. 주변 동 매물이 섞여 오고 in_regions 로 구분한다')
     ]
     notes: Annotated[
         list[str],
@@ -186,7 +191,7 @@ class DaangnAreaSearchResult(BaseModel):
         float,
         Field(description='검색 반경 (km)')
     ]
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경 안에서 조건(당근 서버에서 건 것)에 맞는 매물 수 (limit 적용 전)')
     ]
@@ -344,19 +349,15 @@ def total_notes(
     """
     if total is None:
         return []
-    what = '조건에 맞는 매물 수' if filtered else '전체 매물 수'
-    head = f'{what} {total}건은 당근이 집계한 값으로, 당근이 함께 주는 주변 동 매물까지 셉니다(동마다 1000 에서 잘림)'
-    if region_count > 1:
-        head += '. 여러 동의 합이라 겹치는 매물이 두 번 세어졌을 수 있습니다'
+    what = '조건에 맞는 매물을 ' if filtered else ''
+    overlap = ', 여러 동이라 겹칠 수 있음' if region_count > 1 else ''
+    head = f'total {total}건은 {what}주변 동 매물까지 센 당근 집계입니다 (동마다 1000에서 잘림{overlap})'
     if filtered == 'client':
-        return [
-            f'{head}. 조건을 적용한 건 받아 온 최근 매물 {fetched}건(동마다 최대 20건)뿐입니다. '
-            '조건에 맞는 매물이 더 있을 수 있으니 url 의 원 사이트에서 확인하세요'
-        ]
+        return [f'{head}. 조건은 받아 온 최근 {fetched}건(동마다 최대 20건)에만 걸었으니 더 있을 수 있습니다']
     if complete:
-        return [f'{head}. 이 매물 {fetched}건을 모두 받았습니다']
+        return [f'{head}. {fetched}건을 모두 받았습니다']
     per_region = FEED_PAGE_SIZE if map_only else FEED_PAGE_SIZE * MAX_FEED_PAGES
-    return [f'{head}. 그중 최근 매물 {fetched}건(동마다 최대 {per_region}건)을 받았습니다']
+    return [f'{head}. 그중 최근 {fetched}건을 받았습니다 (동마다 최대 {per_region}건)']
 
 
 def skipped_region_notes(
@@ -406,10 +407,7 @@ def neighbor_notes(regions: list[DaangnRegion], dongs: list[str | None]) -> list
     if not others:
         return []
     names = ', '.join(dict.fromkeys(others))
-    return [
-        f"당근은 조회한 동({', '.join(requested)}) 주변 동네 매물도 함께 줍니다. "
-        f'{len(dongs)}건 중 {len(others)}건은 다른 동({names}) 매물이니 address 로 위치를 확인하세요'
-    ]
+    return [f'{len(dongs)}건 중 {len(others)}건은 당근이 섞어 준 주변 동({names}) 매물입니다 (in_regions: false)']
 
 
 def _server_only_conditions(property_filter: DaangnPropertyFilterModel) -> list[str]:
@@ -550,6 +548,7 @@ def search_listings(
     limit: int = 20,
     query: str | None = None,
     expand: int = 0,
+    split_budget: bool = False,
 ) -> DaangnSearchResult:
     """동마다 최근 매물을 조건으로 걸러 받아 `Listing` 으로 바꾼다.
 
@@ -569,6 +568,9 @@ def search_listings(
 
     피드에는 주변 동네 매물이 섞여 오는데, 가까운 매물이라 빼지 않고 `notes` 로 알린다.
     시·도가 빠진 매물은 돌려줄 매물에 한해 당근 지역 검색으로 채운다 (동마다 1회).
+
+    `split_budget` 이면 '○가' 동(성수동1가·2가)처럼 나란히 찾는 동들이 `limit` 을 남은 동 수로 나눠 쓴다. 앞 동이
+    예산을 다 써서 뒤 동을 못 보는 일을 막으려고, 지도 첫 페이지 20건도 그 몫까지만 쓴다.
 
     `expand` 를 주면 첫 동의 피드를 받은 뒤 주변 동을 그만큼 더 조회한다 (`expand_regions`).
     결과의 `regions` 에는 실제로 조회한 동만 들어간다. 앞 동에서 `limit` 를 다 써서 못 본 동과
@@ -638,7 +640,9 @@ def search_listings(
                 search_center = (coordinate.lat, coordinate.lon)
         center = search_center
 
-        more = _read_feed(client, scan, region, page, center, count, has_conditions=has_conditions)
+        if split_budget:
+            scan.limit = scan.fetched + (limit - scan.fetched) // (len(regions) - index + 1)
+        more = _read_feed(client, scan, region, page, center, count, has_conditions=has_conditions, cap_map_page=split_budget)
         # 필터 API 를 쓸 수 없어 조건 없는 지도 페이지만 봤으면 조건에 맞는 매물을 다 봤는지 알 수 없다
         if (count is None or scan.fetched < sum(value or 0 for value in counts)) or more or index < len(regions):
             complete = False
@@ -658,17 +662,22 @@ def search_listings(
         raise no_map_page_error(', '.join(missing), query)
 
     listings, shown, dongs = _matched_listings(client, scan.matched[:limit], sido_cache)
+    requested = {region.name3 for region in searched}
+    dong_listings = [
+        listing_as(DaangnDongListing, listing, in_regions=None if dong is None else dong in requested)
+        for listing, dong in zip(listings, dongs, strict=True)
+    ]
 
-    total_in_regions = sum(count for count in counts if count is not None) if counts and None not in counts else None
+    total = sum(count for count in counts if count is not None) if counts and None not in counts else None
     filtered: Literal['server', 'client'] | None = None
     if has_conditions:
         filtered = 'server' if scan.use_feed else 'client'
     return DaangnSearchResult(
         regions=searched,
-        total_in_regions=total_in_regions,
+        total=total,
         fetched=scan.fetched,
-        returned=len(listings),
-        listings=listings,
+        returned=len(dong_listings),
+        listings=dong_listings,
         notes=(
             scan.fallback_notes
             + expand_notes
@@ -678,7 +687,7 @@ def search_listings(
                 query=query if regions and regions[0].name3 in missing else None,
             )
             + total_notes(
-                total_in_regions, scan.fetched, filtered, complete=complete, region_count=len(counts), map_only=not scan.use_feed,
+                total, scan.fetched, filtered, complete=complete, region_count=len(counts), map_only=not scan.use_feed,
             )
             + count_notes
             + truncation_notes(len(scan.matched), limit)
@@ -717,13 +726,18 @@ def _read_feed(
     count: int | None,
     *,
     has_conditions: bool,
+    cap_map_page: bool = False,
 ) -> bool:
-    """동 하나의 매물을 조회 예산·페이지 상한까지 받는다. 받을 페이지가 더 남았으면 True."""
+    """동 하나의 매물을 조회 예산·페이지 상한까지 받는다. 받을 페이지가 더 남았으면 True.
+
+    `cap_map_page` 면 지도 첫 페이지도 남은 예산(`scan.limit`)까지만 쓴다 (`search_listings` 의 `split_budget`).
+    """
     if has_conditions and scan.use_feed:
         # 지도 페이지의 첫 20건은 조건 없는 피드라 쓰지 않고 첫 페이지부터 받는다
         pages, cursor, more = 0, None, True
     else:
-        scan.take(page.articles, center, server=False)
+        articles = page.articles[:max(0, scan.limit - scan.fetched)] if cap_map_page else page.articles
+        scan.take(articles, center, server=False)
         pages, cursor, more = 1, page.end_cursor, bool(page.has_next_page and page.end_cursor)
     if count == 0:
         # 조건에 맞는 매물이 없으면 받을 것도 남은 것도 없다. 피드를 끝까지 본 것으로 친다
@@ -957,7 +971,7 @@ def search_area(
     )
     nearest = _nearest_points(points, lat, lng)
     # 반경 밖 안내(beyond_radius_notes)와 같은 기준(표시 거리)으로 센다
-    total_in_radius = sum(1 for _, distance in nearest if within_radius(distance, radius_km))
+    total = sum(1 for _, distance in nearest if within_radius(distance, radius_km))
 
     center = (lat, lng)
     matched: list[tuple[DaangnArticleModel, DaangnTradeModel]] = []
@@ -1007,7 +1021,7 @@ def search_area(
     return DaangnAreaSearchResult(
         region=region,
         radius_km=radius_km,
-        total_in_radius=total_in_radius,
+        total=total,
         returned=len(listings),
         listings=listings,
         notes=(
@@ -1018,7 +1032,7 @@ def search_area(
             + beyond_radius_notes(listings, radius_km)
             # 핀은 가까운 순이라 반경 안 핀이 앞에 온다. 사각형 모서리(반경 밖) 핀은 limit 을 늘려도 반경 밖 매물만 더
             # 나오므로 '더 있음' 으로 세지 않는다 (2026-10-11 실측: 반경 0.1km 핀 29개 중 반경 안 19개, limit 25 → 120 이 반경 밖 4건만 더)
-            + listing_budget_notes(limit, inspected, len(listings), has_more=total_in_radius > inspected, eligible=len(matched))
+            + listing_budget_notes(limit, inspected, len(listings), has_more=total > inspected, eligible=len(matched))
             + trade_unselected_notes(unselected)
             + complex_building_notes(shown)
         ),

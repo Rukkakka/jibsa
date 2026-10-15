@@ -585,10 +585,7 @@ def excluded_notes(limit: int, inspected: int, returned: int) -> list[str]:
     """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다."""
     if returned >= limit or inspected <= returned:
         return []
-    return [
-        f'가까운 매물 {inspected}건을 확인했지만 거래 불가이거나 지원하지 않는 거래 종류인 매물을 제외해 '
-        f'{returned}건을 반환했습니다. 제외된 수만큼 추가 조회하지 않았습니다'
-    ]
+    return [f'가까운 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)']
 
 
 def apt_pagination_notes(
@@ -610,14 +607,11 @@ def apt_pagination_notes(
     notes: list[str] = []
     if returned < limit:
         if inspected > returned:
-            notes.append(
-                f'최대 {limit}건을 요청했지만, 중복·거래 불가 또는 검색 조건에 맞지 않는 매물을 제외해 '
-                f'{returned}건을 반환했습니다. 제외된 수만큼 추가 조회하지 않았습니다'
-            )
+            notes.append(f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)')
         else:
-            notes.append(f'최대 {limit}건을 요청했지만 조회한 결과는 {returned}건입니다. 요청한 조회 범위에서 검색을 마쳤습니다')
+            notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if limit >= MAX_LIST_LIMIT and (inspected >= limit or total > returned or has_more):
-        notes.append(f'--limit의 최대값은 {MAX_LIST_LIMIT}입니다. 더 구체적인 결과를 보려면 거래 유형·가격·지역 등 지원되는 필터로 검색 범위를 좁혀 주세요')
+        notes.append(f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요')
     elif suggest_limit and inspected >= limit and (total > returned or has_more):
-        notes.append(f'조회 예산 {limit}건 중 {returned}건을 반환했습니다. --limit을 늘리거나 지원되는 필터로 검색 범위를 좁혀 주세요')
+        notes.append('매물이 더 있습니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요')
     return notes

@@ -163,6 +163,7 @@ def resolve_apt_region(
     Raises:
         RegionNotFoundError: 법정동코드가 있는 지역 결과가 없거나(역 이름만 준 경우 등) 시·도일 때. 직방 지역 목록은
             시·도 코드에 늘 0건이라(`local_code_of`) CLI 가 반경 검색으로 넘긴다.
+        RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때 (`region_notes`).
     """
     items = search_regions(client, query) if items is None else items
     best = best_region_item(query, items, require_code=True)

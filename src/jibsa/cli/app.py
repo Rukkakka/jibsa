@@ -1,5 +1,7 @@
+import inspect
 import json
 import logging
+import re
 import sys
 import unicodedata
 from collections.abc import Sequence
@@ -8,10 +10,19 @@ from importlib.resources import files
 from pathlib import Path
 
 import typer
-from typer._click.exceptions import (  # Typer 0.27 은 Click 을 내부에 포함한다. 비공개 경로라 Typer 업그레이드 시 확인 필요.
+from typer._click import (  # Typer 0.27 은 Click 을 내부에 포함한다. 비공개 경로라 Typer 업그레이드 시 확인 필요.
+    Command,
+    Context,
+    HelpFormatter,
+)
+from typer._click.exceptions import (
     ClickException,
     NoArgsIsHelpError,
     UsageError,
+)
+from typer.core import (
+    TyperCommand,
+    TyperGroup,
 )
 
 from jibsa.cli import (
@@ -39,9 +50,20 @@ INTERRUPTED_EXIT_CODE: int = 130
 INTERRUPTED_HINT: str = '호출한 쪽이 실행을 끊었습니다. 결과가 필요하면 같은 명령을 다시 실행하세요'
 # 설치본에는 pyproject.toml 의 force-include 로 패키지 안에, 편집 가능 설치에는 저장소 docs/ 에만 있다
 GUIDE_FILE: str = 'llm.md'
+# `jibsa guide <주제>` 로 읽는 사용 문서
+GUIDE_TOPICS: dict[str, str] = {
+    'common': 'common.md',
+    'zigbang': 'zigbang.md',
+    'naver': 'naver.md',
+    'daangn': 'daangn.md',
+}
+HEADING_PATTERN: re.Pattern[str] = re.compile(r'^(#{2,4})\s+(.*)$')
+BACKTICK_PATTERN: re.Pattern[str] = re.compile(r'`([^`]+)`')
 GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
 # `git log --oneline` 과 같은 짧은 커밋 해시 길이
 SHORT_COMMIT_LENGTH: int = 7
+# 터미널이 아닐 때 도움말 폭. 옵션 설명이 줄바꿈 없이 한 줄에 들어가게 넉넉히 잡는다
+PLAIN_HELP_WIDTH: int = 1000
 
 app = typer.Typer(
     name='jibsa',
@@ -117,35 +139,94 @@ def limits_command(
 
 
 @app.command('guide')
-def guide_command() -> None:
+def guide_command(
+    topic: Annotated[
+        str | None,
+        typer.Argument(help=f"사용 문서: {', '.join(GUIDE_TOPICS)}. 없으면 LLM 가이드")
+    ] = None,
+    section: Annotated[
+        str | None,
+        typer.Argument(help="절 제목에 든 글자 (예: 'search listings', 'listing', '출력 읽기'). 주면 그 절만 쓴다")
+    ] = None,
+) -> None:
     """LLM 에이전트용 사용 가이드를 출력한다 (명령 고르기, 출력 읽기, 에러 대응).
 
+    소스 이름을 주면 그 소스의 사용 문서(옵션 표·반환값·주의사항)를, 절 이름까지 주면 그 절만 쓴다. 설치한 버전과
+    내용이 맞고, 소스 문서는 가이드의 5배쯤 길어 필요한 절만 읽는다.
     `--help` 처럼 JSON 이 아닌 마크다운 텍스트를 stdout 에 쓴다. 네트워크 요청은 보내지 않는다.
+
+    예: jibsa guide
+        jibsa guide daangn 'search listings'
+        jibsa guide zigbang listing
     """
-    # 파일이 없는 깨진 설치도 에러 JSON 으로 낸다
+    if topic is not None and topic not in GUIDE_TOPICS:
+        raise typer.BadParameter(
+            f"허용되지 않는 값입니다: '{topic}'. 가능한 값: {', '.join(GUIDE_TOPICS)}", param_hint='TOPIC',
+        )
+    # 파일이 없는 깨진 설치와 없는 절도 에러 JSON 으로 낸다
     with handle_errors('guide'):
-        typer.echo(read_guide(), nl=False)
+        text = read_guide(GUIDE_TOPICS[topic] if topic else GUIDE_FILE)
+        if section:
+            text = guide_section(text, section, topic or 'llm')
+        typer.echo(text, nl=False)
 
 
-def read_guide() -> str:
-    """패키지에 들어 있는 가이드를, 없으면(편집 가능 설치) 저장소의 `docs/llm.md` 를 읽는다.
+def read_guide(name: str = GUIDE_FILE) -> str:
+    """패키지에 들어 있는 문서를, 없으면(편집 가능 설치) 저장소의 `docs/<name>` 을 읽는다.
 
     Raises:
         JibsaError: 둘 다 없을 때 (`INTERNAL_ERROR`, 설치가 깨짐).
     """
-    packaged = files('jibsa').joinpath(GUIDE_FILE)
+    packaged = files('jibsa').joinpath(name)
     if packaged.is_file():
         return packaged.read_text(encoding='utf-8')
     # src/jibsa/cli/app.py → 저장소 루트
-    in_repo = Path(__file__).resolve().parents[3] / 'docs' / GUIDE_FILE
+    in_repo = Path(__file__).resolve().parents[3] / 'docs' / name
     if in_repo.is_file():
         return in_repo.read_text(encoding='utf-8')
     # 일반 내부 오류 힌트(다른 소스를 쓰라는 안내)는 여기에 맞지 않는다
     raise JibsaError(
         code='INTERNAL_ERROR',
-        message=f'설치된 jibsa 에 LLM 가이드 파일({GUIDE_FILE})이 없습니다',
+        message=f'설치된 jibsa 에 문서 파일({name})이 없습니다',
         hint=f'README 의 설치 방법대로 jibsa 를 다시 설치하세요. 같은 내용은 {GUIDE_URL} 에서도 볼 수 있습니다',
     )
+
+
+def guide_section(text: str, query: str, topic: str) -> str:
+    """문서에서 제목에 `query` 가 든 절(그 아래 하위 절 포함)만 이어 붙인다. 대소문자·백틱은 가리지 않는다.
+
+    제목의 백틱 안 명령 이름과 똑같은 절이 있으면 그 절만 고른다 (`listing` 이 `search listings room` 까지 고르지 않게).
+
+    Raises:
+        JibsaError: 맞는 절이 없을 때 (`NOT_FOUND`, 힌트에 큰 절 제목).
+    """
+    def plain(value: str) -> str:
+        return value.replace('`', '').casefold().strip()
+
+    lines = text.splitlines(keepends=True)
+    headings = [
+        (index, len(match.group(1)), match.group(2).strip())
+        for index, line in enumerate(lines)
+        if (match := HEADING_PATTERN.match(line.rstrip('\n')))
+    ]
+    exact = {index for index, _, title in headings if plain(query) in (plain(code) for code in BACKTICK_PATTERN.findall(title))}
+    picked: list[str] = []
+    covered_until = -1
+    for position, (index, level, title) in enumerate(headings):
+        matched = index in exact if exact else plain(query) in plain(title)
+        if index < covered_until or not matched:
+            continue
+        end = next((later for later, later_level, _ in headings[position + 1:] if later_level <= level), len(lines))
+        picked.append(''.join(lines[index:end]).rstrip('\n') + '\n')
+        covered_until = end
+    if not picked:
+        titles = [title.replace('`', '') for _, level, title in headings if level == 2]
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f"{topic} 문서에서 찾지 못한 절 제목: '{query}'",
+            hint=f"절 제목: {' / '.join(titles)}",
+        )
+    return '\n'.join(picked)
 
 
 def version_text() -> str:
@@ -166,19 +247,61 @@ def version_text() -> str:
     return text
 
 
+class PlainHelpFormatter(HelpFormatter):
+    """터미널이 아닐 때 쓰는 Click 도움말 형식. 폭을 넓게 잡고 설명은 docstring 의 줄바꿈대로 쓴다.
+
+    Click 기본 형식은 설명 문단의 줄을 이어 붙여 예시 명령 여러 개가 한 줄로 붙는다. Rich 도움말(터미널)처럼
+    줄바꿈을 그대로 둔다.
+    """
+
+    def __init__(self, indent_increment: int = 2, width: int | None = None, max_width: int | None = None) -> None:
+        super().__init__(indent_increment, width=PLAIN_HELP_WIDTH, max_width=PLAIN_HELP_WIDTH)
+
+    def write_text(self, text: str) -> None:
+        indent = ' ' * self.current_indent
+        for line in text.splitlines():
+            self.write(f'{indent}{line}\n' if line.strip() else '\n')
+
+
+class PlainHelpContext(Context):
+    formatter_class = PlainHelpFormatter
+
+
+def use_plain_help(command: Command) -> None:
+    """도움말을 Rich 표 대신 Click 줄글로 쓰게 명령 트리 전체를 바꾼다. stdout 이 터미널이 아닐 때 쓴다.
+
+    Rich 는 터미널이 아니면 폭을 80칸으로 잡아 옵션 설명을 '…' 로 자르고, 테두리·줄 맞춤 공백이 출력의 대부분이다
+    (2026-10-15 실측: `zigbang search listings room --help` 9.7KB 중 공백 74%, 잘린 곳 8). 셸로 부르는 LLM 은 늘
+    이 경우다. 명령 목록의 설명은 Click 기본이 첫 문장에서 자르므로 Rich 처럼 첫 문단 전체를 쓴다.
+    """
+    if isinstance(command, TyperCommand | TyperGroup):
+        command.rich_markup_mode = None
+    command.context_class = PlainHelpContext
+    if command.short_help is None and command.help:
+        first_paragraph = inspect.cleandoc(command.help).partition('\f')[0].split('\n\n')[0]
+        command.short_help = ' '.join(first_paragraph.split())
+    if isinstance(command, TyperGroup):
+        for subcommand in command.commands.values():
+            use_plain_help(subcommand)
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     """CLI 를 실행하고 exit code 를 돌려준다.
 
     Typer 를 standalone 모드 없이 돌려 사용법 오류도 `{"error": {...}}` JSON 으로
     stderr 에 쓴다 (exit 2). 그래서 stdout 은 결과 JSON, stderr 는 에러 JSON 이라는
     규칙에 예외가 없다. 인자 없이 실행하면 `--help` 처럼 도움말을 stdout 에 쓴다.
+    stdout 이 터미널이 아니면 도움말을 Rich 표 대신 줄글로 쓴다 (`use_plain_help`).
     Ctrl+C 로 끊기면 INTERRUPTED 에러 JSON 을 쓰고 130 으로 끝난다.
     """
     # macOS 에서 복사한 한글은 자모가 나뉜 NFD 로 올 수 있다. 직방·당근 검색은 NFD 를 다른 글자로 봐 0건을 준다
     # (2026-10-11 실측: NFD '역삼동' 이 직방·당근 REGION_NOT_FOUND, 네이버만 정상). 화면에는 같아 보여 원인을 알 수 없다
     args = [unicodedata.normalize('NFC', arg) for arg in (sys.argv[1:] if argv is None else argv)]
+    cli = typer.main.get_command(app)
+    if not sys.stdout.isatty():
+        use_plain_help(cli)
     try:
-        result = app(args=args, prog_name='jibsa', standalone_mode=False)
+        result = cli.main(args=args, prog_name='jibsa', standalone_mode=False)
     except NoArgsIsHelpError as exc:
         typer.echo(exc.format_message())
         return 0

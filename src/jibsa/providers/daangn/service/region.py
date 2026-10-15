@@ -4,6 +4,7 @@ import logging
 import re
 from collections.abc import Callable
 
+from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -32,7 +33,10 @@ from jibsa.providers.daangn.api.request.region import (
     DaangnSearchAddressRequestPayloadModel,
     DaangnSearchSubwayStationPoisRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.search import DaangnBoundsLocationFilterModel
+from jibsa.providers.daangn.api.request.search import (
+    DaangnBoundsLocationFilterModel,
+    DaangnMapRequestParameterModel,
+)
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
     DaangnCommuteArticleEdgeModel,
@@ -68,6 +72,8 @@ ADDRESS_SEARCH_SIZE: int = 10
 
 # 지역 검색(regions/keyword)이 한 번에 주는 최대 후보 수 (2026-10-11 실측: 창원시·서울 100건에서 잘림)
 REGION_KEYWORD_MAX_RESULTS: int = 100
+# 같은 이름 지역으로 멈출 때 보여 줄 후보 수 (네이버와 같다). 나머지는 전체 수(candidate_count)로만 알린다 (중앙동 58곳)
+AMBIGUOUS_CANDIDATES_SHOWN: int = 5
 # 시·도 줄임말 표(SIDO_OFFICIAL_NAMES)에 있지만 그 자체로 시 이름인 것. 광주광역시가 전남광주통합특별시로 합쳐진 뒤
 # '광주시' 는 경기도 광주시뿐이라 `place_in` 이 시·도로 넓히지 않는다 (2026-10-12 실측: '송정동 --city 광주시' 가
 # 경기도 광주시 송정동과 전남광주통합특별시 광산구 송정동 두 곳에 맞아 '--city 로 지정하세요' 라고 안내했다)
@@ -113,17 +119,22 @@ def resolve_regions(
     city: str | None = None,
     notes: list[str] | None = None,
     station_hint: bool = False,
+    merge_ga: bool = False,
 ) -> list[DaangnRegion]:
     """지역명을 조회할 동으로 바꾼다.
 
     동 이름과 정확히 같은 후보를 우선하고, `city` 가 있으면 시/도·구 이름이
     그 이름으로 시작하는 후보만 남긴다 (시·도 줄임말 포함, `place_in`). 주변 동 확장은
-    첫 동의 피드를 봐야 해서 `search_listings(expand=...)` 가 한다. `notes` 를 주면 같은 이름이
-    여러 곳일 때와 조회한 동이 검색어와 다를 때(`region_notes`)의 안내를 붙인다.
+    첫 동의 피드를 봐야 해서 `search_listings(expand=...)` 가 한다. `notes` 를 주면 조회한 동이
+    검색어와 다를 때(`region_notes`)의 안내를 붙인다.
+
+    같은 이름의 동이 여러 곳이면 고르지 않고 멈춘다. 첫 곳으로 찾으면 소스마다 다른 곳을 찾는다
+    (2026-10-15 실측: 신사동은 당근 첫 곳이 강남구, 직방은 은평구, 네이버는 REGION_AMBIGUOUS).
 
     Raises:
         UnsupportedRegionError: 후보가 없고 '리' 단위 이름일 때.
         RegionNotFoundError: 그 밖에 후보가 없을 때.
+        RegionAmbiguousError: 같은 이름의 동이 여러 곳일 때.
     """
     candidates = search_locations(client, query)
     if city:
@@ -137,6 +148,22 @@ def resolve_regions(
             hint="동·읍·면 이름(예: '역삼동')으로 다시 검색하세요. 'jibsa daangn search locations <이름>' 으로 후보를 확인할 수 있습니다",
         )
     exact = list({location.id: location for location in candidates if location.name3 == query}.values())
+    if len(exact) > 1:
+        exact = _dongs_with_map(client, exact) or exact[:1]
+    if len(exact) > 1:
+        raise RegionAmbiguousError(
+            query,
+            [
+                join_address(location.name1, location.name2, location.name3) or query
+                for location in exact[:AMBIGUOUS_CANDIDATES_SHOWN]
+            ],
+            len(exact),
+            hint=_narrow_city_hint(city, exact[0].name2 or exact[0].name1 or ''),
+        )
+    if merge_ga and not exact:
+        siblings = _ga_dong_siblings(query, candidates)
+        if len(siblings) > 1:
+            return siblings
     primary = exact[0] if exact else candidates[0]
     # name1 이 비면 지도 요청 모델(min_length=1)이 입력 오류(INVALID_ARGUMENT)로 내지만, 비어 오는 일이 없어 막지 않는다
     # (2026-10-11 실측: 이름 12개로 받은 후보 154곳, 시·도 16곳 모두 name1 있음. name2 는 구가 없는 세종만 빈 문자열이고
@@ -147,15 +174,7 @@ def resolve_regions(
         name3=primary.name3 or primary.name,
         region_id=primary.id,
     )
-    if len(exact) > 1 and notes is not None:
-        selected = join_address(primary.name1, primary.name2, primary.name3)
-        others = ', '.join(join_address(location.name1, location.name2, location.name3) or query for location in exact[1:4])
-        notes.append(
-            f"{quoted(query, '과/와')} 같은 이름의 지역이 여러 곳이라 {selected} 기준으로 조회했습니다 "
-            f'(다른 곳: {others}). '
-            + (f"--city '{city}' 에도 여러 곳이 맞으니 구 이름으로 좁히세요" if city else '--city 로 시·도나 구를 지정하세요')
-        )
-    elif notes is not None:
+    if notes is not None:
         # 당근은 리를 상위 읍·면으로 준다. 원본에 리 이름이 없고 이름이 비슷한 동도 섞여 와서, 리가 있을 수 있는
         # 읍·면 후보만 같은 이름의 리로 센다 (2026-10-10 실측: '오리' 는 퇴촌면·장안읍 등 읍·면 7곳과 여수 오림동)
         same_ri = [
@@ -165,6 +184,56 @@ def resolve_regions(
         ]
         notes += region_notes(query, region, same_ri=same_ri, station_hint=station_hint)
     return [region]
+
+
+def _ga_dong_siblings(query: str, candidates: list[DaangnLocationModel]) -> list[DaangnRegion]:
+    """'○가' 로 나뉜 동(성수동 → 성수동1가·성수동2가)을 '가' 번호 순으로 준다. 첫 후보와 같은 시·구만 센다.
+
+    당근 지역 검색은 '성수동' 에 두 동을 함께 주는데 예전에는 첫 후보(성수동2가)만 찾아 1가 매물이 빠졌다 (2026-10-15
+    실측). 직방·네이버처럼 모두 찾는다 (`search_listings` 의 `split_budget`).
+    """
+    pattern = re.compile(rf'{re.escape(query.split()[-1])}(\d+)가')
+    found: dict[int, tuple[int, DaangnLocationModel]] = {}
+    for location in candidates:
+        match = pattern.fullmatch(location.name3 or '')
+        if match is not None:
+            found.setdefault(location.id, (int(match.group(1)), location))
+    if not found:
+        return []
+    ordered = sorted(found.values(), key=lambda entry: entry[0])
+    parent = (ordered[0][1].name1, ordered[0][1].name2)
+    return [
+        DaangnRegion(name1=location.name1 or '', name2=location.name2 or '', name3=location.name3 or '', region_id=location.id)
+        for _, location in ordered
+        if (location.name1, location.name2) == parent
+    ]
+
+
+def _dongs_with_map(client: DaangnClient, locations: list[DaangnLocationModel]) -> list[DaangnLocationModel]:
+    """같은 이름 동 후보 중 당근 매물 지도가 있는 곳(법정동)만 남긴다. 앞 `AMBIGUOUS_CANDIDATES_SHOWN` 곳만 지도를 1회씩 본다.
+
+    당근 지역 검색은 행정동도 같은 이름 후보로 주는데(역삼동 → 강남구 역삼동, 용인시 처인구 역삼동) 매물 지도는 법정동만
+    있어 행정동 지도는 404 다 (2026-10-15 실측: 처인구 역삼동·관악구 신사동). 직방·네이버는 역삼동을 한 곳으로 보니, 지도가
+    있는 곳만 세어야 소스끼리 같은 이름을 같게 센다. 404 가 아닌 오류로 확인하지 못한 후보와 보지 않은 뒤쪽 후보는 남긴다.
+    """
+    kept: list[DaangnLocationModel] = []
+    for location in locations[:AMBIGUOUS_CANDIDATES_SHOWN]:
+        try:
+            client.run_request_map(DaangnMapRequestParameterModel(
+                name1=location.name1 or '', name2=location.name2 or '', name3=location.name3 or location.name,
+            ))
+        except HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                continue
+        kept.append(location)
+    return kept + locations[AMBIGUOUS_CANDIDATES_SHOWN:]
+
+
+def _narrow_city_hint(city: str | None, example: str) -> str:
+    """같은 이름 지역으로 멈출 때 다시 묻는 법. `example` 은 첫 후보의 구(동일 때)나 시·도(구일 때)다."""
+    if city:
+        return f"--city '{city}' 에도 여러 곳이 맞습니다. 구 이름으로 좁히세요 (예: --city {example})"
+    return f'--city 로 시·도나 구를 지정하세요 (예: --city {example})'
 
 
 def region_notes(
@@ -660,7 +729,7 @@ def resolve_realsale_region(
     """지역 실거래를 볼 동 또는 구를 고른다.
 
     동 이름과 같은 후보가 있으면 그 동, 아니면 시/군/구 이름과 같은 구를 쓴다. 같은 이름이 여러 곳이면
-    첫 곳으로 조회하고 `notes` 로 다른 후보와 `--city` 를 알린다.
+    고르지 않고 후보와 `--city` 를 알리며 멈춘다 (`resolve_regions` 와 같다).
 
     세종(세종·세종시·세종특별자치시)은 시·군·구가 없어 예전에는 첫 동(조치원읍)으로 대신 찾았다. 세종 시·도 ID 로 부르면
     실거래는 세종 전체가 오지만 단지 목록은 0건이고 구 후기 페이지도 없다 (2026-10-11 실측: ID 1241 실거래 50건이 도담동·
@@ -668,6 +737,7 @@ def resolve_realsale_region(
 
     Raises:
         RegionNotFoundError: 후보가 없을 때.
+        RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때.
         JibsaError: 구가 있는 시('수원시')나 세종 전체를 받을 수 없을 때 REGION_AMBIGUOUS.
     """
     if SIDO_OFFICIAL_NAMES.get(query, query) == '세종특별자치시':
@@ -684,6 +754,8 @@ def resolve_realsale_region(
     # regions/keyword 는 같은 id 를 두 번 주지 않아 중복을 빼지 않는다. 같은 이름 후보는 서로 다른 지역이다
     # (2026-10-11 실측: 역삼동 2곳·신사동 3곳·중앙동 58곳·송정동 14곳·오리 8곳 모두 id 중복 없음)
     dongs = [location for location in candidates if location.name3 == query]
+    if len(dongs) > 1:
+        dongs = _dongs_with_map(client, dongs) or dongs[:1]
     if dongs:
         options = [
             (DaangnRealsaleRegion(
@@ -736,9 +808,12 @@ def resolve_realsale_region(
         )]
         notes.append(f"{quoted(query, '과/와')} 이름이 같은 동·구가 없어 {options[0].name} 기준으로 조회했습니다")
     elif len(options) > 1:
-        others = ', '.join(option.name for option in options[1:4])
-        notes.append(
-            f"{quoted(query, '과/와')} 같은 이름이 여러 곳에 있어 {options[0].name} 기준으로 조회했습니다 (다른 곳: {others}). "
-            + (f"--city '{city}' 에도 여러 곳이 맞으니 구 이름으로 좁히세요" if city else '다른 지역이면 --city 로 시·도나 구를 주세요')
+        # 첫 곳으로 찾으면 다른 소스와 다른 곳을 찾는다 (resolve_regions 와 같은 이유). 구는 시·도로 좁힌다 (중구 → --city 서울)
+        top = options[0]
+        raise RegionAmbiguousError(
+            query,
+            [option.name for option in options[:AMBIGUOUS_CANDIDATES_SHOWN]],
+            len(options),
+            hint=_narrow_city_hint(city, top.name2 if top.level == '동' else top.name1),
         )
     return options[0], notes

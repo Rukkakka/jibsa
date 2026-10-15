@@ -96,6 +96,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 | `--option` | 옵션: 에어컨, 냉장고, 세탁기, 가스레인지, 인덕션, 전자레인지, 책상, 책장, 침대, 옷장, 신발장, 싱크대. 반복하거나 쉼표로 구분 (AND, 모두 갖춘 매물) | 미지정 |
 | `--condition` | 기타 조건: 즉시입주, 남향, 엘리베이터, 주차, CCTV, 반려동물, 전세대출, 전기차충전. 반복하거나 쉼표로 구분 (AND) | 미지정 |
 | `--without-random` | 오피스텔 서버의 무작위 섞기 해제. 검색 결과는 거리순 유지 | 꺼짐 |
+| `--details` | 매물마다 상세를 1회씩 더 받아 건물 용도(`residence_type`)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건) | 꺼짐 |
 
 **사용 예시**
 
@@ -105,15 +106,15 @@ jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-
 
 **반환값**
 
-`region`, `boundary` 또는 `radius_km`, `total_in_radius`, `returned`, `listings`를 준다.
+`region`, `boundary` 또는 `radius_km`, `total`, `returned`, `listings`를 준다. `--details` 를 주면 매물마다 `residence_type`(건축물 용도, 예: `다가구`, `근린생활시설`, `고시원`)이 붙는다. 목록 API 는 용도를 주지 않아 상세를 1회씩 더 부르고, 그 사이 거래가 끝난 매물은 빼고 `notes` 로 알린다.
 
 **오류와 대응**
 
-옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다.
+옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다. 같은 이름의 동·구가 여러 곳이면(신사동 → 은평구·강남구) 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다. 직방은 전체 주소(`서울특별시 강남구 신사동`)로는 동을 찾지 못하니 `강남구 신사동` 처럼 구 이름을 앞에 붙여 다시 찾는다. 같은 이름의 역(양평역)은 첫 역으로 찾고 다른 역을 `notes` 로 알린다. 목록 옵션에 없는 값이 이 명령의 다른 옵션이나 다른 소스 표현이면(`--option 반려동물가능`) 에러 `hint` 가 맞는 옵션(`--condition 반려동물`)을 알려 준다.
 
 **주의사항**
 
-동 이름에 `--radius`·좌표를 주지 않으면 반경 원 대신 직방이 주는 그 동의 경계선 안 매물만 찾는다 (경계 요청 1회 추가). 옆 동 매물이 섞이거나 동 가장자리 매물이 빠지지 않는다. 결과에 `radius_km` 대신 `boundary`(동 이름)가 있고 `total_in_radius` 는 경계 안 수다. 구·시 이름은 너무 넓어 중심 반경으로 찾고 좁히라고 안내한다. 큰 읍·면처럼 경계가 반경 5km 원보다 넓으면(홍천 내면 등) 경계 대신 중심 반경으로 찾고 `notes` 로 알린다 (요청이 수백 번 나가지 않도록).
+동 이름에 `--radius`·좌표를 주지 않으면 반경 원 대신 직방이 주는 그 동의 경계선 안 매물만 찾는다 (경계 요청 1회 추가). 옆 동 매물이 섞이거나 동 가장자리 매물이 빠지지 않는다. 결과에 `radius_km` 대신 `boundary`(동 이름)가 있고 `total` 은 경계 안 수다. 구·시 이름은 너무 넓어 중심 반경으로 찾고 좁히라고 안내한다. 큰 읍·면처럼 경계가 반경 5km 원보다 넓으면(홍천 내면 등) 경계 대신 중심 반경으로 찾고 `notes` 로 알린다 (요청이 수백 번 나가지 않도록).
 
 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동 → 성수동1가·성수동2가, 문래동 → 1가~6가)은 그 동들의 경계를 합쳐 모두 찾는다 (동마다 경계 요청 1회 추가). `boundary` 와 `region.name`·`region.address` 의 동은 `"성수동1가·성수동2가"` 처럼 합친 동 이름이고, 가까운 순은 합친 범위의 가운데에서 잰다. 같은 이름의 동도 따로 있으면(당산동과 당산동1가~6가) 그 동만 찾고 빠진 `○가` 동을 `notes` 로 알린다. `--radius` 를 주면 첫 `○가` 동을 중심으로 찾고 그렇다고 알린다.
 
@@ -162,7 +163,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20
 
 **오류와 대응**
 
-지원하지 않는 필터·면적 범위 위반은 `INVALID_ARGUMENT`. 반경 요청 예산 소진은 `notes`로 알린다.
+지원하지 않는 필터·면적 범위 위반은 `INVALID_ARGUMENT`. 반경 요청 예산 소진은 `notes`로 알린다. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
 
 **주의사항**
 
@@ -211,11 +212,11 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 **반환값**
 
-`total_in_radius`, `returned`, `listings`; 가격 조건 사용 시 `inspected_in_radius`, `price_matched_in_radius`도 준다.
+`total`, `returned`, `listings`; 가격 조건 사용 시 `inspected_in_radius`, `price_matched_in_radius`도 준다.
 
 **오류와 대응**
 
-임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`.
+임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
 
 **주의사항**
 
@@ -223,7 +224,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 가격 조건(`--deposit-*`, `--rent-*`, `--price-*`, `--manage-cost-*`, `--key-money-*`)은 모두 만원이고 하한·상한을 포함하며, 조합하면 모든 조건을 만족해야 한다. 보증금·월세·권리금 조건은 임대, 매매가 조건은 매매로 자동 좁히며, 서로 섞거나 `--trade` 와 충돌하면 `INVALID_ARGUMENT` 이다. 월세 조건은 월세 매물에만 적용하고 관리비 조건은 임대·매매 모두에 쓸 수 있다. `--area-max`는 지정 면적 미만이다.
 
-가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 가까운 후보부터 일정 수까지만 확인한다. 조건을 건 금액이 `null` 이면 제외한다. `total_in_radius` 는 가격 적용 전 지도 후보 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 반경 밖 결과는 이 집계에 넣지 않는다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000` (2026-10-10 실측 15건. 무권리 `--key-money-max 0` 까지 걸면 역삼동·역삼역 모두 가까운 75건 안에 없어 0건이었다)
+가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 가까운 후보부터 일정 수까지만 확인한다. 조건을 건 금액이 `null` 이면 제외한다. `total` 은 가격 적용 전 지도 후보 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 반경 밖 결과는 이 집계에 넣지 않는다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000` (2026-10-10 실측 15건. 무권리 `--key-money-max 0` 까지 걸면 역삼동·역삼역 모두 가까운 75건 안에 없어 0건이었다)
 
 상세는 결과의 `store-…` ID를 그대로 `listing`에 넘긴다.
 
@@ -268,13 +269,13 @@ jibsa zigbang search listings stay 강남역 --weekly-rent-max 50 --building 오
 
 **오류와 대응**
 
-날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`.
+날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
 
 **주의사항**
 
 월세가 아닌 주 단위 임대 서비스다. 금액 필드는 `weekly_rent_manwon`·`weekly_manage_cost_manwon`이며 매물 페이지는 직방 앱에서 열린다. `search listings room --trade 단기임대`(중개사가 올린 원룸·빌라 매물)와는 매물이 다르다.
 
-동·구 등 지역 이름에 `--radius` 를 주지 않으면 그 지역 전체를 찾는다. 결과의 `boundary` 는 지역 이름이고 `total_in_radius` 는 지역 안 매물 수다. 역·학교 이름이나 `--radius` 를 주면 반경 안만, 좌표만 주면 지도에서 가까운 순으로 찾는다. 넓은 지역은 요청이 많아 느릴 수 있다. 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)은 그 동들을 지역 전체로 모두 찾아 합친다 (동마다 검색 요청 1회 추가, `boundary` 와 `region.name`·`region.address` 의 동은 `"성수동1가·성수동2가"`). 같은 이름의 동이 따로 있거나(당산동) `--radius` 를 주면 한 동을 기준으로 찾고 빠진 `○가` 동을 `notes` 로 알린다. 구가 있는 시(성남시)는 그 구들을 모두 지역 전체로 찾아 합친다 (구마다 검색 요청 1회 추가, `boundary`·`region.name` 은 `"성남시 분당구·수정구·중원구"`). 리(양근리)는 직방 지역 검색이 상위 읍·면(양평읍) 전체를 찾아 `boundary` 가 읍·면 이름이고 `notes` 로 알린다. 리 주변만 보려면 `--radius` 를 준다. 세종의 동(반곡동)은 직방 단기임대 지역 검색이 찾지 못해, 원룸 검색처럼 그 동 경계(넓으면 중심 반경) 안을 지도로 찾고 `notes` 로 알린다.
+동·구 등 지역 이름에 `--radius` 를 주지 않으면 그 지역 전체를 찾는다. 결과의 `boundary` 는 지역 이름이고 `total` 은 지역 안 매물 수다. 역·학교 이름이나 `--radius` 를 주면 반경 안만, 좌표만 주면 지도에서 가까운 순으로 찾는다. 넓은 지역은 요청이 많아 느릴 수 있다. 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)은 그 동들을 지역 전체로 모두 찾아 합친다 (동마다 검색 요청 1회 추가, `boundary` 와 `region.name`·`region.address` 의 동은 `"성수동1가·성수동2가"`). 같은 이름의 동이 따로 있거나(당산동) `--radius` 를 주면 한 동을 기준으로 찾고 빠진 `○가` 동을 `notes` 로 알린다. 구가 있는 시(성남시)는 그 구들을 모두 지역 전체로 찾아 합친다 (구마다 검색 요청 1회 추가, `boundary`·`region.name` 은 `"성남시 분당구·수정구·중원구"`). 리(양근리)는 직방 지역 검색이 상위 읍·면(양평읍) 전체를 찾아 `boundary` 가 읍·면 이름이고 `notes` 로 알린다. 리 주변만 보려면 `--radius` 를 준다. 세종의 동(반곡동)은 직방 단기임대 지역 검색이 찾지 못해, 원룸 검색처럼 그 동 경계(넓으면 중심 반경) 안을 지도로 찾고 `notes` 로 알린다.
 
 가격·옵션·입주/퇴거일 조건은 서버에서 거르고, 고른 순서로 정렬한 뒤 `--limit` 를 적용한다. 정렬은 `distance`(거리), `price`(주당 임대료+관리비 합계), `newest`(등록 시각)이고 그 값이 없으면 뒤로 보낸다. 가격순은 할인·청소비·보증금을 넣지 않는다.
 
@@ -477,7 +478,7 @@ jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29 --pe
 
 ## 출력 읽기
 
-아래는 실제 매물을 포함하지 않은 **주요 필드 발췌 예시**다. 전체 응답에는 다른 매물 필드와 `notice` 등이 추가된다.
+아래는 실제 매물을 포함하지 않은 **주요 필드 발췌 예시**다. 전체 응답에는 다른 매물 필드와 `notes` 등이 추가된다.
 
 ```json
 {

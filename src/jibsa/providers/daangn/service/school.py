@@ -312,7 +312,7 @@ class DaangnPreschoolsResult(BaseModel):
         float,
         Field(description='검색 반경 (km)')
     ]
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경 안 시설 수 (limit 적용 전)')
     ]
@@ -382,7 +382,7 @@ def list_preschools(
         )
     return DaangnPreschoolsResult(
         radius_km=radius_km,
-        total_in_radius=len(found),
+        total=len(found),
         returned=min(len(found), limit),
         preschools=found[:limit],
         notes=notes,

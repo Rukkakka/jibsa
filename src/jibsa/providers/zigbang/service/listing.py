@@ -30,8 +30,11 @@ from jibsa.core.listing import (
     by_distance,
     join_address,
     limit_notes,
+    listing_as,
     m2_to_pyeong,
+    move_in_label,
     normalize_date,
+    parking_label,
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -109,11 +112,12 @@ APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2'})
 ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
 # 대부분 방 1개다 (2026-10-10 실측: 역삼동 32건 중 단지별 6건 상세에서 5건이 방 1개)
-APT_ONE_ROOM_NOTE: str = (
-    '방 1개짜리 아파트는 직방 아파트 목록에만 있어 여기서는 찾지 않았습니다. '
-    'jibsa zigbang search listings apt <동·구 이름> --supply-area-max 50 으로 찾고 방 개수는 listing 의 room_count 로 확인하세요'
-)
+APT_ONE_ROOM_NOTE: str = '방 1개짜리 아파트는 여기서 찾지 않습니다 (search listings apt --supply-area-max 50 으로 찾는다)'
 GEOHASH_PRECISION: int = 5
+# --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
+DETAILS_MAX: int = 30
+# 기존 상세(/v3/items)의 주차 문장과 가능 여부
+LEGACY_PARKING_AVAILABLE: dict[str, bool] = {'주차 가능': True, '주차 불가능': False, '주차 불가': False}
 DIRECTION_LABELS: dict[str, str] = {
     'N': '북향',
     'S': '남향',
@@ -145,7 +149,7 @@ class ZigbangSearchResult(BaseModel):
         str | None,
         Field(description='반경 대신 경계 안을 찾은 동 이름. 반경으로 찾았으면 키가 없다')
     ] = None
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경(동 경계로 찾았으면 경계) 안 매물 수 근사값 (limit 적용 전, 방 구조·유형으로 거르기 전). 반경 밖 매물은 세지 않아 반경 밖 매물로 채운 returned 보다 작을 수 있다')
     ]
@@ -167,6 +171,15 @@ class ZigbangSearchResult(BaseModel):
     def drop_unused_scope(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         # 반경과 동 경계 중 쓰지 않은 쪽은 해당 없다
         return drop_unused_scope(handler(self))
+
+
+class ZigbangDetailedListing(ZigbangListing):
+    """`--details` 로 매물 상세를 1회 더 받아 건물 용도를 붙인 원룸·오피스텔·빌라 매물."""
+
+    residence_type: Annotated[
+        str | None,
+        Field(description='건축물 용도 (예: 다가구, 다세대, 근린생활시설). 근린생활시설이면 전입신고·전세대출이 막힐 수 있다. 모르면 null')
+    ] = None
 
 
 class ZigbangListingDetail(ListingDetail):
@@ -273,15 +286,16 @@ def detail_to_listing(
         address = f'{origin.local1} {item.address.jibun}'
     move_in: str | None
     if residence.move_in_at is not None:
-        move_in = f"{residence.move_in_at.replace('-', '.')} 이후 입주 가능"
-        if residence.move_in_extra:
-            move_in += f' ({residence.move_in_extra})'
+        extra = residence.move_in_extra
+        move_in = move_in_label(f'{residence.move_in_at} ({extra})' if extra else residence.move_in_at)
     else:
-        # null을 즉시 입주로 추측하지 않고 기존 상세의 설명을 쓴다
-        move_in = legacy.movein_date if legacy else None
-    parking = None if residence.parking is None else '주차 가능' if residence.parking else '주차 불가능'
-    if legacy is not None and legacy.parking_available_text is not None:
-        parking = legacy.parking_available_text
+        # null을 즉시 입주로 추측하지 않고 기존 상세의 문장('즉시 입주 가능 (협의 가능)')을 같은 꼴로 바꿔 쓴다
+        move_in = move_in_label(legacy.movein_date) if legacy else None
+    parking = parking_label(residence.parking)
+    if parking is None and legacy is not None and legacy.parking_available_text is not None:
+        # 기존 상세는 '주차 가능'·'주차 불가능' 문장으로 준다 (2026-10-15 실측 6건). 다른 문장이면 그대로 둔다
+        text = legacy.parking_available_text
+        parking = parking_label(LEGACY_PARKING_AVAILABLE.get(text)) or text
 
     url = (
         apt_item_url(item.id) if item.service_type == '아파트'
@@ -333,6 +347,41 @@ def detail_to_listing(
     return apply_apt_detail(detail, apt)
 
 
+def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> ZigbangSearchResult:
+    """목록 매물마다 상세(`/items/{id}/detail`)를 1회씩 받아 건물 용도(`residence_type`)를 붙인다 (`--details`).
+
+    목록 API 는 건물 용도를 주지 않는다 (2026-10-15 실측: `items/list` 요약에 용도 필드 없음). 근린생활시설·고시원처럼
+    전입신고가 막힐 수 있는 매물을 상세를 하나씩 열지 않고 고르게 한다. 앞 `DETAILS_MAX` 건만 보고, 상세에서 거래가
+    끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
+    """
+    listings: list[Listing] = []
+    gone = 0
+    for index, listing in enumerate(result.listings):
+        if index >= DETAILS_MAX or not isinstance(listing, ZigbangListing):
+            listings.append(listing)
+            continue
+        try:
+            with unavailable_on_404(listing.id):
+                item = client.run_request_items_detail_v1(
+                    ZigbangItemsDetailV1RequestParameterModel(item_id=int(listing.id))
+                ).item
+        except ListingUnavailableError:
+            gone += 1
+            continue
+        if item.status != 'open':
+            gone += 1
+            continue
+        residence = item.residence
+        building_use = (residence.residence_description or residence.residence_type or '').strip() or None
+        listings.append(listing_as(ZigbangDetailedListing, listing, residence_type=building_use))
+    notes = []
+    if gone:
+        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다')
+    if len(result.listings) > DETAILS_MAX:
+        notes.append(f'건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
+    return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})
+
+
 def get_coalition_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:
     """아파트 제휴(호갱노노 집주인) 매물 하나의 상세를 조회한다 (1회 호출).
 
@@ -367,8 +416,8 @@ def get_coalition_listing(client: ZigbangClient, item_id: int) -> ZigbangListing
         building_floor=str(apt.building_floor) if apt.building_floor is not None else None,
         address=apt.old_address or None,
         direction=DIRECTION_LABELS.get((apt.direction or '').upper(), apt.direction),
-        move_in=apt.movein_date,
-        parking=f'세대당 주차 대수 {apt.parking_count_by_household:g}대' if apt.parking_count_by_household is not None else None,
+        move_in=move_in_label(apt.movein_date),
+        parking=parking_label(None, f'세대당 {apt.parking_count_by_household:g}대') if apt.parking_count_by_household is not None else None,
     )
     return apply_apt_detail(detail, apt)
 
@@ -740,7 +789,7 @@ def _search_result(
         return ZigbangSearchResult(
             region=region,
             boundary=boundary.name,
-            total_in_radius=in_boundary,
+            total=in_boundary,
             returned=len(listings),
             listings=listings,
             notes=notes
@@ -753,7 +802,7 @@ def _search_result(
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km,
-        total_in_radius=in_radius,
+        total=in_radius,
         returned=len(listings),
         listings=listings,
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다

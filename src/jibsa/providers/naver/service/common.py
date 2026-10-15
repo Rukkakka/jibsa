@@ -229,7 +229,7 @@ class NaverListingsResult(BaseModel):
         extra='forbid',
     )
 
-    total_count: Annotated[
+    total: Annotated[
         int,
         Field(description='서버 집계 매물 수. search 는 반경을 감싸는 사각형 안, 동 경계로 찾았으면 동 안 정확한 수 (조건 적용 후, limit 적용 전)')
     ]
@@ -711,26 +711,16 @@ def pagination_notes(
     excluded = min(inspected, limit) - returned
     if returned < limit and excluded > 0:
         notes.append(
-            f"최대 {limit}건을 요청했지만, {excluded_reason} {subject}{particle(subject, '을/를')} 제외해 "
-            f'{returned}건을 반환했습니다. 제외된 수만큼 추가 조회하지 않았습니다'
+            f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)"
         )
     elif returned < limit and not truncated:
-        notes.append(
-            f'최대 {limit}건을 요청했지만 조회한 결과는 {returned}건입니다. '
-            '요청한 조회 범위에서 검색을 마쳤습니다'
-        )
+        notes.append(f"조건에 맞는 {subject}{particle(subject, '은/는')} 이 {returned}건이 전부입니다")
     if truncated:
         return notes
     if limit >= MAX_LIST_LIMIT and (total > returned or inspected >= limit):
-        notes.append(
-            f'--limit의 최대값은 {MAX_LIST_LIMIT}입니다. 더 구체적인 결과를 보려면 '
-            '거래 유형·가격·지역 등 지원되는 필터로 검색 범위를 좁혀 주세요'
-        )
+        notes.append(f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요')
     elif returned >= limit and total > returned:
-        notes.append(
-            f'전체 집계 {total}건 중 {returned}건만 보여 줍니다. '
-            '--limit을 늘리거나 지원되는 필터로 검색 범위를 좁혀 주세요'
-        )
+        notes.append(f'전체 {total}건 중 {returned}건입니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요')
     return notes
 
 

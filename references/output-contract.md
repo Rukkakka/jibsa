@@ -8,6 +8,8 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 
 아래 JSON 계약은 조회 결과와 에러에 적용한다. `--help`·자동완성·`guide`(LLM 가이드 `docs/llm.md`)·`--version`은 CLI 텍스트를 출력하고, `--verbose`는 stderr에 진행 로그를 추가한다.
 
+`--help` 는 stdout 이 터미널이면 Rich 표로, 아니면(파이프·LLM 셸) 줄글로 쓴다 (`use_plain_help`). Rich 는 터미널이 아니면 폭을 80칸으로 잡아 옵션 설명을 `…` 로 자르고 공백이 출력의 대부분이라, 셸로 부르는 에이전트에게는 줄바꿈만 있는 텍스트가 맞다. 도움말 문구(docstring)는 두 모양 모두에서 줄바꿈대로 나오니 예시 명령은 한 줄에 하나씩 쓴다.
+
 - **결과는 stdout 에 JSON 하나.** `emit()` 으로만 쓴다. `print` 나 로그를 stdout 에 쓰지 않는다.
 - **에러는 stderr 에 `{"error": {...}}` JSON 하나.** `emit_error()` 로만 쓴다. 사용법 오류
   (없는 옵션, 잘못된 값, 인자 누락)도 마찬가지다. 이를 위해 `run()` 이 Typer 를
@@ -44,8 +46,10 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 - 쓰이는 코드: `INVALID_ARGUMENT`, `REGION_NOT_FOUND`, `REGION_AMBIGUOUS`, `REGION_NOT_SUPPORTED`, `LISTING_UNAVAILABLE`,
   `NOT_FOUND`, `RATE_LIMITED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `INTERNAL_ERROR`, `INTERRUPTED`, `CLI_ERROR`. 새 코드를 만들면
   공통 사용 문서의 exit code 표와 오류 대응에 추가한다.
-- 입력 검증 실패는 항상 exit 2. 사용자 정의 hint 가 필요한 사용법 오류는 `HintedUsageError` 를 쓴다
-  (예: `require_korea`).
+- 입력 검증 실패는 항상 exit 2. 사용자 정의 hint 가 필요한 사용법 오류는 `HintedUsageError` 를, 옵션 값 오류는
+  `HintedBadParameter` 를 쓴다 (예: `require_korea`, `split_csv` 의 `usage_by_value`). 목록 옵션에 없는 값이 그 명령의
+  다른 옵션이나 다른 소스 표현이면(직방 `--option 반려동물가능`) `usage_by_value` 로 맞는 옵션을 hint 에 싣는다. 값을 바꿔
+  받지는 않는다 (뜻이 조금 다른 조건을 멋대로 옮기지 않는다).
 - 요청 모델 검증 실패의 message 는 검증 함수가 던진 문구 그대로다 (pydantic 이 붙이는 `Value error, ` 를 뗀다).
   hint 는 사용법 오류와 같은 `'<명령> --help' 로 사용법을 확인하세요` 다.
 - `--trade` 와 맞지 않는 가격 조건(전세 + 월세 상한 등)은 `infer_trade_types` 가 사용법 오류로 막는다. 세 소스 모두
@@ -56,9 +60,9 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 
 ## 매물 출력
 
-- 매물을 내보내는 명령은 `emit(..., notice=True)` 로 맨 앞에 `notice`(원 사이트에서 확인하라는 안내)를
-  붙인다. 모호하거나 넓은 지역 안내, 당근이 다른 지역으로 조회한 안내(`region_notes`), 거래 유형을 좁힌 안내(`infer_trade_types`), 조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려준다는 안내(`core.listing.limit_notes`)는 `notes` 로 그 아래에 붙이고, 없으면 키를 뺀다.
-- 리스트를 그대로 내보내면 `notice` 를 붙이기 위해 `{"items": [...]}` 로 감싼다.
+- 모호하거나 넓은 지역 안내, 당근이 다른 지역으로 조회한 안내(`region_notes`), 거래 유형을 좁힌 안내(`infer_trade_types`), 조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려준다는 안내(`core.listing.limit_notes`)는 `emit(..., notes=...)` 로 맨 앞 `notes` 에 붙이고, 없으면 키를 뺀다. 안내는 짧게 쓴다 (매번 나오는 안내는 출력 토큰을 늘린다). 예전의 `notice`(원 사이트에서 확인하라는 같은 문장)는 매 응답 토큰만 늘려 뺐다. 그 안내는 `docs/llm.md` 에 있다.
+- 리스트를 그대로 내보내면 `notes` 를 붙이기 위해 `{"items": [...]}` 로 감싼다.
+- 좌표(`lat`·`lng`)는 `emit` 이 소수 일곱째 자리로 반올림한다 (원본의 부동소수점 찌꺼기 `127.04934499999999` 를 지운다).
 
 ### 값이 없을 때
 

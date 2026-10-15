@@ -1,6 +1,9 @@
 import json
 import sys
-from collections.abc import Generator
+from collections.abc import (
+    Generator,
+    Mapping,
+)
 from contextlib import contextmanager
 from math import isfinite
 
@@ -21,10 +24,7 @@ from typer._click.globals import get_current_context
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
-from jibsa.core.listing import (
-    NOT_APPLICABLE_PRICE_FIELDS,
-    NOTICE,
-)
+from jibsa.core.listing import NOT_APPLICABLE_PRICE_FIELDS
 from jibsa.core.schema import is_request_validation_error
 
 from typing import (
@@ -34,6 +34,8 @@ from typing import (
 )
 
 
+# 출력 좌표의 소수 자리. 일곱째 자리가 약 1cm 라 원본 정밀도를 잃지 않는다
+COORDINATE_DECIMALS: int = 7
 ChoiceT = TypeVar('ChoiceT', bound=str)
 TradeT = TypeVar('TradeT', bound=str)
 
@@ -49,19 +51,28 @@ def _dumps(data: Any, pretty: bool | None) -> str:
     )
 
 
+def _round_coordinates(value: Any) -> Any:
+    """`lat`·`lng` 값을 소수 일곱째 자리(약 1cm)로 반올림한다. 원본 좌표의 부동소수점 찌꺼기(127.04934499999999)를 지운다."""
+    if isinstance(value, dict):
+        return {
+            key: round(item, COORDINATE_DECIMALS) if key in ('lat', 'lng') and isinstance(item, float)
+            else _round_coordinates(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_round_coordinates(item) for item in value]
+    return value
+
+
 def emit(
     data: BaseModel | list[BaseModel] | dict[str, Any],
     pretty: bool | None = None,
-    notice: bool = False,
     notes: list[str] | None = None,
 ) -> None:
     """결과를 JSON 으로 stdout 에 쓴다.
 
     값을 모르는 필드는 `null` 로 남기고, 매물에 해당 없는 필드는 `Listing` 이
-    키째 뺀다 (`Listing.not_applicable_fields`).
-
-    `notice` 가 True 면 맨 앞에 "확인·문의·계약은 원 사이트에서" 안내를 붙인다.
-    매물을 내보내는 명령은 모두 켠다. `notes` 가 있으면 그 바로 아래에 붙이고,
+    키째 뺀다 (`Listing.not_applicable_fields`). `notes` 가 있으면 맨 앞에 붙이고,
     없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등).
     """
     if isinstance(data, BaseModel):
@@ -70,13 +81,11 @@ def emit(
         payload = [item.model_dump(mode='json') for item in data]
     else:
         payload = data
-    if not isinstance(payload, dict) and (notice or notes):
+    if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if notes:
         payload = {'notes': notes, **payload}
-    if notice:
-        payload = {'notice': NOTICE, **payload}
-    typer.echo(_dumps(payload, pretty))
+    typer.echo(_dumps(_round_coordinates(payload), pretty))
 
 
 def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
@@ -197,8 +206,18 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         raise typer.Exit(code=1)
 
 
-def split_csv(values: list[str] | None, allowed: tuple[ChoiceT, ...], option: str) -> list[ChoiceT]:
-    """`-t 원룸 -t 빌라` 와 `-t 원룸,빌라` 를 모두 받아 검증된 목록으로 만든다. 값의 타입은 `allowed` 를 따른다."""
+def split_csv(
+    values: list[str] | None,
+    allowed: tuple[ChoiceT, ...],
+    option: str,
+    usage_by_value: Mapping[str, str] | None = None,
+) -> list[ChoiceT]:
+    """`-t 원룸 -t 빌라` 와 `-t 원룸,빌라` 를 모두 받아 검증된 목록으로 만든다. 값의 타입은 `allowed` 를 따른다.
+
+    `usage_by_value` 는 이 옵션에 없는 값을 이 명령에서 주는 법이다 (`{'반려동물가능': '--condition 반려동물'}`).
+    같은 조건이 소스마다 옵션·값이 달라 다른 소스 명령을 옮겨 쓰다 틀리기 쉬워, 맞는 옵션을 에러 힌트로 알린다.
+    값을 바꿔 받지는 않는다.
+    """
     result: list[ChoiceT] = []
     for value in values or []:
         for part in value.split(','):
@@ -206,10 +225,11 @@ def split_csv(values: list[str] | None, allowed: tuple[ChoiceT, ...], option: st
             if not part:
                 continue
             if part not in allowed:
-                raise typer.BadParameter(
-                    f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}",
-                    param_hint=option,
-                )
+                message = f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}"
+                usage = (usage_by_value or {}).get(part)
+                if usage:
+                    raise HintedBadParameter(message, option, f'이 명령에서는 이렇게 주세요: {usage}')
+                raise typer.BadParameter(message, param_hint=option)
             if part not in result:
                 result.append(part)
     return result
@@ -319,6 +339,14 @@ class HintedUsageError(UsageError):
 
     def __init__(self, message: str, hint: str) -> None:
         super().__init__(message)
+        self.hint = hint
+
+
+class HintedBadParameter(typer.BadParameter):
+    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다."""
+
+    def __init__(self, message: str, option: str, hint: str) -> None:
+        super().__init__(message, param_hint=option)
         self.hint = hint
 
 

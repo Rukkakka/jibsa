@@ -57,6 +57,9 @@ def test_normalize_date_drops_time_in_kst() -> None:
     # UTC 15시 이후는 한국 날짜로 다음 날
     assert normalize_date('2026-10-06T16:30:00.000Z') == '2026-10-07'
     assert normalize_date('2026-09-29') == '2026-09-29'
+    # 직방 사용승인일은 '년 월 일' 로도 오고, '일' 이 빠지기도 한다
+    assert normalize_date('1984년 10월 26일') == '1984-10-26'
+    assert normalize_date('2011년 7월 1') == '2011-07-01'
     assert normalize_date('어제') == '어제'
     # 연월만 있는 값은 날짜로 지어내지 않는다 (예전 정규식은 '202411' 을 2024-01-01 로 읽었다)
     assert normalize_date('202411') == '202411'
@@ -72,16 +75,16 @@ def test_limit_notes_only_when_more_than_returned() -> None:
     assert limit_notes(10, 10, 10) == []
 
     [note] = limit_notes(1576, 10, 10, approximate=True, basis='가격 조건 적용 전')
-    assert note.startswith('조건에 맞는 매물이 약 1576건(가격 조건 적용 전)이라 검색 중심에서 가까운 10건만 보여 줍니다. ')
+    assert note.startswith('조건에 맞는 매물 약 1576건(가격 조건 적용 전) 중 검색 중심에서 가까운 10건입니다. ')
     # 통합 검색이 다른 안내와 마침표로 이어 붙이므로 끝에 마침표가 없다
     assert not note.endswith('.')
 
     [note] = limit_notes(15, 10, 10, order='최근 게시된')
-    assert note.startswith('조건에 맞는 매물이 15건이라 최근 게시된 10건만 보여 줍니다')
+    assert note.startswith('조건에 맞는 매물 15건 중 최근 게시된 10건입니다')
 
     # 확인한 수(inspected)가 limit 에 닿았으면 받은 뒤 뺀 매물이 있어도 안내한다 (뺀 만큼 다시 채우지 않는다)
     [note] = limit_notes(660, 14, 15, approximate=True, inspected=15)
-    assert note.startswith('조건에 맞는 매물이 약 660건이라 검색 중심에서 가까운 14건만 보여 줍니다')
+    assert note.startswith('조건에 맞는 매물 약 660건 중 검색 중심에서 가까운 14건입니다')
     assert limit_notes(660, 5, 15, inspected=5) == []
 
 

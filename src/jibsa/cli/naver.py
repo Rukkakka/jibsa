@@ -54,6 +54,7 @@ from jibsa.providers.naver.service.redevelopment import (
 )
 from jibsa.providers.naver.service.region import (
     NaverRegion,
+    ga_dong_regions,
     legal_division_code_at,
     list_regions,
     resolve_complex_number,
@@ -125,7 +126,33 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내
-WHOLE_DONG_NOTE: str = '동 이름이라 반경 대신 {name} 경계 안을 찾았습니다. 위치 기준으로 찾으려면 --radius 를 주세요'
+WHOLE_DONG_NOTE: str = '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)'
+# 지역 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
+# 다른 소스 표현이다 (직방 --room 오픈형원룸·--condition 즉시입주·--bathroom 1, 당근 --option 주차가능·--room-count 2개).
+# '2개'·'3개' 는 욕실 수 값과 겹치지만 거절되는 곳은 --room 이 흔해 방 수로 안내한다. 네이버는 반지하를 따로 두지 않고
+# 지하층(B1)으로 준다
+LISTING_USAGE_BY_VALUE: dict[str, str] = {
+    **{value: f'--room {value}' for value in ROOM_COUNT_CODE_BY_NAME},
+    **{value: f'--floor {value}' for value in FLOOR_CODE_BY_NAME},
+    **{value: f'--direction {value}' for value in DIRECTION_FILTER_CODE_BY_NAME},
+    **{value: f'--bathroom {value}' for value in BATHROOM_CODE_BY_NAME},
+    **{value: f'--facility {value}' for value in FACILITY_CODE_BY_NAME},
+    **{value: f'--one-room-shape {value}' for value in ONE_ROOM_SHAPE_CODE_BY_NAME},
+    **{value: f'--move-in {value}' for value in MOVE_IN_CODE_BY_NAME},
+    **{value: f'--parking {value}' for value in PARKING_CODE_BY_NAME},
+    '주차가능': '--facility 주차',
+    '복층형원룸': '--facility 복층',
+    '오픈형원룸': '--one-room-shape 오픈형',
+    '분리형원룸': '--one-room-shape 분리형',
+    '즉시입주': '--move-in 바로입주',
+    '반지하': '--floor 지하층',
+    '2개': '--room 투룸',
+    '3개': '--room 쓰리룸',
+    '4개이상': '--room 포룸이상',
+    '1': '--bathroom 1개',
+    '2': '--bathroom 2개',
+    '3': '--bathroom 3개,4개이상',
+}
 
 
 def _check_choice(value: object, allowed: Iterable[object], option: str) -> None:
@@ -195,6 +222,13 @@ def _resolve_location(
 def _whole_dong(region: NaverRegion, kind: str, radius: float | None) -> bool:
     """동 이름으로 찾았고 반경을 주지 않았으면 반경 대신 동 경계 안 전체를 찾는다 (법정동 코드가 있을 때만)."""
     return kind == '동' and radius is None and region.legal_division_code is not None
+
+
+def _merged_region(region: NaverRegion, dongs: list[NaverRegion]) -> NaverRegion:
+    """합쳐 찾은 '○가' 동들을 직방처럼 한 지역으로 보인다 (이름 '성수동1가·성수동2가', 중심은 처음 찾은 동, 코드 없음)."""
+    names = '·'.join(dong.name for dong in dongs)
+    parent = (region.address or '').rsplit(' ', 1)[0]
+    return NaverRegion(name=names, address=f'{parent} {names}'.strip(), lat=region.lat, lng=region.lng)
 
 
 def _search_scope(region: NaverRegion, whole_dong: bool, radius: float | None) -> dict[str, object]:
@@ -370,7 +404,6 @@ def _search_complex_listings(
         emit(
             {'complex_number': complex_number, **result.model_dump(mode='json')},
             pretty,
-            notice=True,
             notes=trade_notes + notes + result.notes,
         )
 
@@ -390,7 +423,6 @@ def _search_redevelopment_listings(
         emit(
             {'redevelopment_number': area_number, **result.model_dump(mode='json')},
             pretty,
-            notice=True,
             notes=trade_notes + result.notes,
         )
 
@@ -654,7 +686,7 @@ def listing_command(
     if NUMBER_PATTERN.fullmatch(item_id) is None:
         raise typer.BadParameter('매물 ID 는 숫자입니다 (search listings 결과의 id)', param_hint='ITEM_ID')
     with handle_errors(SOURCE), NaverClient() as client:
-        emit(get_listing(client, item_id), pretty, notice=True)
+        emit(get_listing(client, item_id), pretty)
 
 
 def _listing_conditions(
@@ -698,14 +730,14 @@ def _listing_conditions(
     """
     property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
     trade_types, trade_notes = _price_trade_types(trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max)
-    room_types = split_csv(room, tuple(ROOM_COUNT_CODE_BY_NAME), '--room')
-    floors = split_csv(floor, tuple(FLOOR_CODE_BY_NAME), '--floor')
-    directions = split_csv(direction, tuple(DIRECTION_FILTER_CODE_BY_NAME), '--direction')
-    bathrooms = split_csv(bathroom, tuple(BATHROOM_CODE_BY_NAME), '--bathroom')
-    facilities = split_csv(facility, tuple(FACILITY_CODE_BY_NAME), '--facility')
-    one_room_shapes = split_csv(one_room_shape, tuple(ONE_ROOM_SHAPE_CODE_BY_NAME), '--one-room-shape')
-    move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in')
-    parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking')
+    room_types = split_csv(room, tuple(ROOM_COUNT_CODE_BY_NAME), '--room', LISTING_USAGE_BY_VALUE)
+    floors = split_csv(floor, tuple(FLOOR_CODE_BY_NAME), '--floor', LISTING_USAGE_BY_VALUE)
+    directions = split_csv(direction, tuple(DIRECTION_FILTER_CODE_BY_NAME), '--direction', LISTING_USAGE_BY_VALUE)
+    bathrooms = split_csv(bathroom, tuple(BATHROOM_CODE_BY_NAME), '--bathroom', LISTING_USAGE_BY_VALUE)
+    facilities = split_csv(facility, tuple(FACILITY_CODE_BY_NAME), '--facility', LISTING_USAGE_BY_VALUE)
+    one_room_shapes = split_csv(one_room_shape, tuple(ONE_ROOM_SHAPE_CODE_BY_NAME), '--one-room-shape', LISTING_USAGE_BY_VALUE)
+    move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in', LISTING_USAGE_BY_VALUE)
+    parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking', LISTING_USAGE_BY_VALUE)
     entrances = split_csv(entrance, tuple(ENTRANCE_CODE_BY_NAME), '--entrance')
     _check_choice(area_basis, AREA_BASES, '--area-basis')
     if sort is not None:
@@ -860,7 +892,7 @@ def search_command(
 ) -> None:
     """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을 가까운 순으로, 동 이름은 그 동 전체를 랭킹순으로 찾는다.
 
-    결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 total_count 가 정확하다. radius_km 가 있으면
+    결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
     그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소가 여러 곳이면 REGION_AMBIGUOUS 로 멈추니 시·구를 붙여 다시 검색한다.
     결과의 title 에 단지명이 들어 있다.
 
@@ -928,6 +960,13 @@ def search_command(
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
         # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
         whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
+        dongs = [region]
+        if whole_dong and region.ga_base is not None:
+            # '○가' 로 나뉜 동(성수동)은 직방처럼 모두 찾아 합친다. 한 곳만 찾았다는 안내는 뺀다
+            dongs = ga_dong_regions(client, region)
+            if len(dongs) > 1 and region.ga_note in notes:
+                notes.remove(region.ga_note)
+                region = _merged_region(region, dongs)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 
@@ -938,7 +977,7 @@ def search_command(
             conditions=conditions,
             radius_km=radius or DEFAULT_RADIUS_KM,
             sort=sort or ('랭킹순' if whole_dong else '가까운순'),
-            legal_division_code=region.legal_division_code if whole_dong else None,
+            legal_division_codes=[dong.legal_division_code for dong in dongs if dong.legal_division_code] if whole_dong else None,
             limit=limit,
         )
         # 직방처럼 어디를 얼마나 찾았는지 함께 준다. 서비스는 좌표만 받아
@@ -950,6 +989,5 @@ def search_command(
                 **result.model_dump(mode='json'),
             },
             pretty,
-            notice=True,
             notes=trade_notes + notes + result.notes,
         )

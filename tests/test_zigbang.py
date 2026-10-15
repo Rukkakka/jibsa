@@ -227,7 +227,7 @@ def test_search_listings_does_not_refill_excluded() -> None:
     _, result = _search_with_fixtures(requested_batches, radius_km=5, limit=2, conditions=ZigbangRoomConditions(trade_types=['전세']))
     assert sum(len(batch) for batch in requested_batches) == 2
     assert result.returned < 2
-    assert any('제외된 수만큼 추가 조회하지 않았습니다' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
 
 
 def test_closed_items_are_excluded() -> None:
@@ -536,7 +536,7 @@ def test_store_price_filter_inclusive_and_unknown(field: str, wire: str, amount:
     assert [item.id for item in result.listings] == expected
     assert payloads[0]['sales_type'] == ('매매' if field == 'price' else '전체' if field == 'manage_cost' else '임대')
     data = result.model_dump()
-    assert data['total_in_radius'] == 5
+    assert data['total'] == 5
     assert data['inspected_in_radius'] == 5
     assert data['price_matched_in_radius'] == len(expected)
 
@@ -605,7 +605,7 @@ def test_apt_supply_area_region_does_not_refill_filtered_results() -> None:
         ), conditions=ZigbangAptConditions(supply_area_min_m2=80, supply_area_max_m2=110, area_max_m2=60), limit=1)
     assert offsets == [0]
     assert result.listings == []
-    assert any('제외된 수만큼 추가' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
     # 받아 온 것 안에서만 걸러 적게 나오니, 서버에서 거르는 공급면적 조건을 안내한다
     assert any('받아 온 1건에서만' in note and '--supply-area-min' in note for note in result.notes)
     assert result.total == 21
@@ -667,7 +667,7 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
         ), conditions=ZigbangAptConditions(area_max_m2=0), limit=limit)
     assert calls == [(offset, 20) for offset in range(0, limit, 20)]
     assert result.returned == 0
-    assert any('제외된 수만큼 추가' in note for note in result.notes)
+    assert any('다시 채우지 않음' in note for note in result.notes)
     if limit == 120:
         assert any('최대값은 120' in note for note in result.notes)
 

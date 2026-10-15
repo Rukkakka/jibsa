@@ -27,6 +27,7 @@ from jibsa.core.listing import (
     join_address,
     limit_notes,
     m2_to_pyeong,
+    parking_label,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -86,6 +87,8 @@ STORE_GEOHASH_PRECISION: int = 6
 STORE_LIST_BATCH_SIZE: int = 50
 STORE_VACANT_SECTION: str = '이 지역 비어있는 상가'
 STORE_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^(지하)?\s*(\d+)\s*층$')
+# 상가 주차 문구 앞의 가능 여부 ('가능 - 자주식 6대')
+STORE_PARKING_AVAILABLE: dict[str, bool] = {'가능': True, '불가': False, '불가능': False}
 
 
 # 상가 응답에 방·욕실·방향·입주·옵션 정보가 아예 없어(2026-10-10 실측: 상세 원본 키 35개, 상세 12건·목록 10건 모두 비어 있음)
@@ -171,7 +174,7 @@ class ZigbangStoreSearchResult(BaseModel):
         str | None,
         Field(description='반경 대신 경계 안을 찾은 동 이름. 반경으로 찾았으면 키가 없다')
     ] = None
-    total_in_radius: Annotated[
+    total: Annotated[
         int,
         Field(description='반경(또는 동 경계) 안 지도 후보 수. 가격 필터 적용 전')
     ]
@@ -218,6 +221,15 @@ def store_floor(floor: str | None) -> str | None:
         return floor
     basement, number = match.groups()
     return f'지하{number}' if basement else number
+
+
+def store_parking(text: str | None) -> str | None:
+    """상가 주차 문구('가능 - 자주식 6대')를 매물 공통 꼴('가능 (자주식 6대)')로 맞춘다. 다른 문구는 그대로 둔다."""
+    if not text:
+        return None
+    status, _, detail = text.partition(' - ')
+    available = STORE_PARKING_AVAILABLE.get(status.strip())
+    return text if available is None else parking_label(available, detail.strip() or None)
 
 
 def store_trade(summary: ZigbangStoreSummaryModel) -> TradeType:
@@ -508,10 +520,10 @@ def search_store_listings(
     if filter_price:
         notes = [] if boundary is not None else beyond_radius_notes(listings, radius_km)
         notes.append(
-            f'가격 조건은 요약을 받은 뒤 거릅니다. total_in_radius({in_radius}건)은 가격 적용 전 지도 후보 수이고, '
+            f'가격 조건은 요약을 받은 뒤 거릅니다. total({in_radius}건)은 가격 적용 전 지도 후보 수이고, '
             f'그중 {inspected_in_radius}건의 요약을 요청해 거래 가능하고 가격 조건에 맞는 {matched_in_radius}건을 확인했습니다'
         )
-        # 위 문장의 total_in_radius·확인 수와 같은 기준(반경·경계 안)으로 센다. 지도 칸 전체 핀에는 반경 밖도 있다
+        # 위 문장의 total·확인 수와 같은 기준(반경·경계 안)으로 센다. 지도 칸 전체 핀에는 반경 밖도 있다
         if inspected_in_radius < in_radius:
             reason = '결과 개수 제한' if len(listings) >= limit else '후보 조회 상한'
             notes.append(
@@ -529,7 +541,7 @@ def search_store_listings(
         region=region,
         radius_km=None if boundary else radius_km,
         boundary=boundary.name if boundary else None,
-        total_in_radius=in_radius,
+        total=in_radius,
         inspected_in_radius=inspected_in_radius if filter_price else None,
         price_matched_in_radius=matched_in_radius if filter_price else None,
         returned=len(listings),
@@ -561,7 +573,7 @@ def store_detail_to_listing(response: ZigbangStoreArticleStoreV2ResponseModel) -
         address=join_address(item.local1, item.local2, item.local3),
         lat=item.lat,
         lng=item.lng,
-        parking=item.parking,
+        parking=store_parking(item.parking),
         elevator=elevator,
         nearby_subways=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
