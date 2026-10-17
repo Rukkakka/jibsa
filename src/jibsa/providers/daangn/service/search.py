@@ -641,7 +641,9 @@ def search_listings(
         center = search_center
 
         if split_budget:
-            scan.limit = scan.fetched + (limit - scan.fetched) // (len(regions) - index + 1)
+            # 몫은 1건 이상이다. 내림 몫이 0 이면 동이 limit 보다 많을 때 앞 동이 요청만 하고 매물을 못 받는다 (성수동 --limit 1
+            # 이 1가는 건너뛰고 2가만 받았다). 예산을 다 쓰면 뒤쪽 동은 찾지 않고 skipped_region_notes 가 알린다
+            scan.limit = scan.fetched + max(1, (limit - scan.fetched) // (len(regions) - index + 1))
         more = _read_feed(client, scan, region, page, center, count, has_conditions=has_conditions, cap_map_page=split_budget)
         # 필터 API 를 쓸 수 없어 조건 없는 지도 페이지만 봤으면 조건에 맞는 매물을 다 봤는지 알 수 없다
         if (count is None or scan.fetched < sum(value or 0 for value in counts)) or more or index < len(regions):
