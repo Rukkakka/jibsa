@@ -1,5 +1,8 @@
 """세 소스의 모든 CLI 명령을 실제로 불러 비공식 API 가 깨졌는지 본다 (매일 새벽 `.github/workflows/api-monitor.yml`).
 
+매일 실행은 `DAILY_GROUPS`(직방·당근)만 돈다. 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고, 필요할 때 로컬에서
+`run naver` 로 돌린다.
+
 명령마다 셋으로 나눈다 (references/development.md '매일 API 감시').
 
 - 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음
@@ -181,6 +184,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('인기 매물 역삼동', ('daangn', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
     ),
 }
+
+# 매일 실행(워크플로 matrix)이 도는 소스. matrix 와 같게 둔다. 네이버는 GitHub 러너에서 응답을 받지 못해 로컬에서만 돌린다
+DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn')
 
 OK: str = 'ok'
 BROKEN: str = 'broken'
@@ -418,13 +424,13 @@ def report(paths: list[str], *, issues: bool, dry_run: bool) -> int:
             continue
         result = json.loads(Path(path).read_text(encoding='utf-8'))
         found[result['group']] = result
-    # 결과 파일이 없는 소스는 조회 잡이 감시 코드나 설치에서 실패한 것이다
+    # 매일 도는 소스 중 결과 파일이 없는 것은 조회 잡이 감시 코드나 설치에서 실패한 것이다. 로컬에서 돌린 다른 소스 결과도 함께 싣는다
     results = [
         found.get(group) or {
             'group': group, 'status': BROKEN,
             'steps': [{'label': '조회 잡', 'command': '-', 'status': BROKEN, 'detail': '결과 파일 없음 (조회 잡 실패)'}],
         }
-        for group in GROUPS
+        for group in [*DAILY_GROUPS, *(group for group in found if group not in DAILY_GROUPS)]
     ]
     text = f'## API 감시 {datetime.date.today()}\n\n{_table(results)}\n'
     print(text)
