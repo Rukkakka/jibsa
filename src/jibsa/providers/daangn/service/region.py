@@ -4,7 +4,10 @@ import logging
 import re
 from collections.abc import Callable
 
-from httpx import HTTPStatusError
+from httpx import (
+    HTTPStatusError,
+    TransportError,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -23,6 +26,7 @@ from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
     join_address,
 )
+from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import DaangnCoordinateInputModel
 from jibsa.providers.daangn.api.request.region import (
@@ -149,7 +153,7 @@ def resolve_regions(
         )
     exact = list({location.id: location for location in candidates if location.name3 == query}.values())
     if len(exact) > 1:
-        exact = _dongs_with_map(client, exact) or exact[:1]
+        exact = _dongs_with_map(client, exact, notes) or exact[:1]
     if len(exact) > 1:
         raise RegionAmbiguousError(
             query,
@@ -209,12 +213,23 @@ def _ga_dong_siblings(query: str, candidates: list[DaangnLocationModel]) -> list
     ]
 
 
-def _dongs_with_map(client: DaangnClient, locations: list[DaangnLocationModel]) -> list[DaangnLocationModel]:
+def _dongs_with_map(
+    client: DaangnClient,
+    locations: list[DaangnLocationModel],
+    notes: list[str] | None = None,
+) -> list[DaangnLocationModel]:
     """같은 이름 동 후보 중 당근 매물 지도가 있는 곳(법정동)만 남긴다. 앞 `AMBIGUOUS_CANDIDATES_SHOWN` 곳만 지도를 1회씩 본다.
 
     당근 지역 검색은 행정동도 같은 이름 후보로 주는데(역삼동 → 강남구 역삼동, 용인시 처인구 역삼동) 매물 지도는 법정동만
     있어 행정동 지도는 404 다 (2026-10-15 실측: 처인구 역삼동·관악구 신사동). 직방·네이버는 역삼동을 한 곳으로 보니, 지도가
-    있는 곳만 세어야 소스끼리 같은 이름을 같게 센다. 404 가 아닌 오류로 확인하지 못한 후보와 보지 않은 뒤쪽 후보는 남긴다.
+    있는 곳만 세어야 소스끼리 같은 이름을 같게 센다. 404 가 아닌 오류(서버 오류·페이지 구조가 바뀌어 읽지 못함)로 확인하지
+    못한 후보는 남기고 `notes` 로 알리며, 보지 않은 뒤쪽 후보도 남긴다. 실거래·단지 목록·후기는 지도 페이지를 쓰지 않아, 이 확인이
+    실패했다고 명령까지 실패하면 안 된다. 요청 제한과 연결 실패·시간 초과는 다음 요청도 같은 이유로 실패해 바로 올린다.
+    남기면 같은 이름 후보로 멈춰(REGION_AMBIGUOUS) 원인이 가려지고, 응답 없는 서버를 후보마다 재시도하며 기다린다.
+
+    Raises:
+        RateLimitedError: 지도 페이지 차례에 요청 제한에 걸렸을 때.
+        TransportError: 재시도 뒤에도 연결 실패·시간 초과일 때.
     """
     kept: list[DaangnLocationModel] = []
     for location in locations[:AMBIGUOUS_CANDIDATES_SHOWN]:
@@ -222,9 +237,15 @@ def _dongs_with_map(client: DaangnClient, locations: list[DaangnLocationModel]) 
             client.run_request_map(DaangnMapRequestParameterModel(
                 name1=location.name1 or '', name2=location.name2 or '', name3=location.name3 or location.name,
             ))
-        except HTTPStatusError as exc:
-            if exc.response.status_code == 404:
+        except (RateLimitedError, TransportError):
+            raise
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            if isinstance(exc, HTTPStatusError) and exc.response.status_code == 404:
                 continue
+            name = join_address(location.name1, location.name2, location.name3) or location.name
+            logger.warning('daangn map page check for %r failed (%s); keeping the candidate', name, exc)
+            if notes is not None:
+                notes.append(partial_failure_note(exc, '매물 지도', f'{name}에 매물 지도가 있는지 확인한 결과를'))
         kept.append(location)
     return kept + locations[AMBIGUOUS_CANDIDATES_SHOWN:]
 
@@ -753,9 +774,10 @@ def resolve_realsale_region(
 
     # regions/keyword 는 같은 id 를 두 번 주지 않아 중복을 빼지 않는다. 같은 이름 후보는 서로 다른 지역이다
     # (2026-10-11 실측: 역삼동 2곳·신사동 3곳·중앙동 58곳·송정동 14곳·오리 8곳 모두 id 중복 없음)
+    notes: list[str] = []
     dongs = [location for location in candidates if location.name3 == query]
     if len(dongs) > 1:
-        dongs = _dongs_with_map(client, dongs) or dongs[:1]
+        dongs = _dongs_with_map(client, dongs, notes) or dongs[:1]
     if dongs:
         options = [
             (DaangnRealsaleRegion(
@@ -782,7 +804,6 @@ def resolve_realsale_region(
                 ))
         options = list(gus.values())
 
-    notes = []
     if not options:
         # 구가 있는 시('수원시')는 이름이 같은 구가 없고 '수원시 팔달구' 처럼 시 이름이 붙은 구만 온다. 동 하나로 대신 찾으면
         # 시를 물었는데 동 하나의 결과가 나와(2026-10-11 실측: 수원시 → 인계동) 구를 골라 다시 묻게 한다
