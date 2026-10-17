@@ -725,7 +725,8 @@ def _collect_pins(
                 if outside_boundary(boundary, pin.lat, pin.lng):
                     continue
                 distance = haversine_km(region.lat, region.lng, pin.lat, pin.lng)
-                if subway_id is not None and distance > radius_km:
+                # 반경 안은 출력 거리처럼 반올림해 본다 (within_radius). 동·좌표 검색의 total 과 같은 기준이다
+                if subway_id is not None and not within_radius(distance, radius_km):
                     continue
                 known = scan.pins.get(pin.id)
                 if known is not None and known[0].building_id and not pin.building_id:
