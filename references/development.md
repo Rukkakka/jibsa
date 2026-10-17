@@ -83,8 +83,9 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
 ## 매일 API 감시
 
 비공식 API 는 사이트가 응답을 바꾸면 조용히 깨진다 (당근 웹 개편으로 SSR 페이지를 못 읽은 #70 처럼). 사용자보다 먼저 알려고
-[API 감시 워크플로](../.github/workflows/api-monitor.yml)가 한국 시간 매일 04:17 에 세 소스의 모든 CLI 명령을 실제로 부른다
-([scripts/monitor/api_check.py](../scripts/monitor/api_check.py)). CI 는 여전히 실제 API 를 부르지 않는다.
+[API 감시 워크플로](../.github/workflows/api-monitor.yml)가 한국 시간 매일 04:17 에 직방·당근의 모든 CLI 명령을 실제로 부른다
+([scripts/monitor/api_check.py](../scripts/monitor/api_check.py)). 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고(`DAILY_GROUPS`),
+감시 목록에는 남겨 필요할 때 로컬에서 돌린다. CI 는 여전히 실제 API 를 부르지 않는다.
 
 - **무엇을 부르나:** 사이트에 요청하는 명령 모두 (`limits`·`guide` 만 뺀다). 매물 검색은 찾는 방식(동 이름 경계·역 반경·좌표 반경·단지·재개발
   구역)마다 쓰는 API 가 달라 방식별로 부르고, 상세 명령은 앞 결과의 번호(매물 ID·단지 번호·평형·학교 코드·사업·시설 번호)를 이어 받는다.
@@ -105,7 +106,7 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
   `tests/test_cli.py::test_every_source_command_is_in_api_monitor` 가 CLI 명령 목록과 대조해 명령을 빠뜨리면 실패한다.
 - **수동 실행:** Actions 의 "API 감시" → Run workflow, 또는 `gh workflow run api-monitor.yml`. 로컬에서는
   `.venv/bin/python scripts/monitor/api_check.py run zigbang --out result.json` 처럼 소스 하나를 돌린다. 요청이 수십 번 나가니 필요할 때만
-  돌리고, 네이버는 요청 제한이 가장 엄격해 로컬에서는 되도록 돌리지 않는다. 이슈 처리는 `report result.json --issues --dry-run` 으로 보낼
+  돌린다. 네이버는 매일 실행에 없어 로컬 `run naver` 로만 본다. 이슈 처리는 `report result.json --issues --dry-run` 으로 보낼
   `gh` 명령만 본다.
 - 감시 파일(`scripts/monitor/`, 워크플로)을 고친 PR 에서도 한 번 돌고, 이슈는 건드리지 않는다. 고장이면 그 PR 의 검사가 실패한다 (필수 검사는
   아니다).
