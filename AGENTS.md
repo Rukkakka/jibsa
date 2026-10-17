@@ -2,8 +2,9 @@
 
 직방·네이버 부동산·당근부동산의 **현재 거래 가능한 매물**을 조회하는 CLI (`jibsa`).
 LLM 에이전트가 셸로 호출하는 도구라, 출력 형식과 에러 형식이 곧 API 다.
-모든 코드는 `src/jibsa/` 아래에 있다.
+CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 개발 문서(구현 규약·소스별 개발 가이드)는 `references/`, 사용자 문서(CLI 사용법)는 `docs/`에 있다.
+매일 새벽 세 소스의 모든 CLI 명령을 실제로 불러 보는 감시는 `scripts/monitor/` 와 `.github/workflows/api-monitor.yml` 이다 ([매일 API 감시](references/development.md#매일-api-감시)).
 
 ## 구조
 
@@ -34,6 +35,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 - **사진·중개사 연락처·본문(매물 설명)·매물 좌표는 출력하지 않는다.** 위치 검색의 지역 후보 좌표는 제공할 수 있다. 확인·문의는 `url` 의 원 사이트에서.
 - **모든 HTTP 요청은 요청 제한 훅을 거친다.** 새 클라이언트도 `rate_limit_hooks()` 를 `event_hooks` 로 넘긴다.
 - **검증은 실제 API 로, 테스트는 최소로.** 코드를 바꾸면 CLI 직접 조회 같은 실제 API 호출로 확인한다 (요청은 최소로). 테스트는 아주 드문 엣지케이스나 틀어지면 안 되는 핵심 동작일 때만 추가한다. 전체 `pytest` 는 먼저 묻고, 평소에는 바꾼 부분 테스트 몇 개만 이름으로 골라 한 번 돌린다. ([검증과 테스트](references/development.md#검증과-테스트))
+- **명령을 추가·삭제하면 매일 API 감시 목록도 고친다.** `scripts/monitor/api_check.py` 의 `GROUPS` 에 넣고, 매물을 찾는 새 방식(동 이름·역·반경·단지처럼 다른 API 를 쓰는 경로)을 넣었으면 그 방식도 넣는다. 명령을 빠뜨리면 `test_every_source_command_is_in_api_monitor` 가 실패한다. ([매일 API 감시](references/development.md#매일-api-감시))
 
 ## 문서 지도
 
@@ -61,6 +63,7 @@ README는 제작 목적·설치·LLM 연결 방법·문서 링크를 담는다. 
 | --- | --- |
 | 한 소스의 명령·옵션·반환 필드·조회 한도 | `docs/<source>.md` |
 | 명령 추가·삭제, 에이전트가 틀리기 쉬운 해석 규칙(단위·누락값·ID·원룸의 뜻 등)·에러 대응 | `docs/llm.md` |
+| 명령 추가·삭제, 매물을 찾는 새 방식(다른 API 를 쓰는 경로) | `scripts/monitor/api_check.py` 의 `GROUPS` (매일 API 감시 목록) |
 | 공통 사용법(출력·에러 대응)·요청 제한 정책 | `docs/common.md` |
 | 한 소스의 구현·예외 | `references/providers/<source>.md` |
 | 여러 소스에 공통인 개발 규약 | `references/` 바로 아래 문서 |
