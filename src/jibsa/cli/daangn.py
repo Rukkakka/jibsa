@@ -51,6 +51,7 @@ from jibsa.providers.daangn.service.common import (
     TRADE_TYPES,
     DaangnListingConditions,
     FeedQueryRejectedError,
+    partial_failure_note,
 )
 from jibsa.providers.daangn.service.commute import search_commute
 from jibsa.providers.daangn.service.compare import (
@@ -328,6 +329,8 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
         RateLimitedError: 직방이 막혔는데 네이버도 막혔거나 실패했거나 찾지 못했을 때 (`source` 는 zigbang, `geocoding_failed`).
         JibsaError: 직방이 그 밖의 이유로 실패했는데 네이버로도 찾지 못했을 때 (UPSTREAM_ERROR, `source` 는 zigbang).
     """
+    # 당근이 실패해 넘어갈 때만 이유를 알린다. 찾지 못해 넘어가는 것은 실패가 아니다
+    daangn_notes: list[str] = []
     try:
         with DaangnClient() as client:
             place = find_place(client, name) if check_station else find_address(client, name)
@@ -335,13 +338,14 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
         raise
     except OPTIONAL_LOOKUP_ERRORS as exc:
         place = None
+        daangn_notes.append(partial_failure_note(exc, '위치 찾기', f"'{name}' 위치를"))
         logger.warning('daangn place search for %r failed (%s); falling back to zigbang', name, exc)
     if place is not None:
         return ZigbangRegion(name=place.name, address=place.name, lat=place.lat, lng=place.lng), place.notes, '당근'
     try:
         with ZigbangClient() as client:
             region, notes = resolve_region_with_notes(client, name, radius_km=radius_km)
-            return region, notes, '직방'
+            return region, daangn_notes + notes, '직방'
     except GEOCODE_FALLBACK_ERRORS as exc:
         zigbang_error: Exception = exc
         logger.warning('zigbang region search for %r failed (%s); falling back to naver', name, exc)
@@ -353,7 +357,7 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
     except RegionNotFoundError as exc:
         raise geocoding_failed(zigbang_error, exc) from None
     reason = '요청 제한으로 막혀 있어' if isinstance(zigbang_error, RateLimitedError) else '지역 검색이 실패해'
-    notes = [f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다", *notes]
+    notes = [*daangn_notes, f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다", *notes]
     # 직방 검색 중심과 필드가 같다
     return ZigbangRegion(**found.model_dump()), notes, '네이버'
 
@@ -437,7 +441,10 @@ def _search_not_dong(
         if city is not None:
             raise
         station = None
-        station_notes.append(f"당근 역 검색이 실패해 {quoted(dong, '이/가')} 역인지 확인하지 못하고 위치 반경으로 찾았습니다")
+        station_notes.append(
+            f"{quoted(dong, '이/가')} 역인지 확인하지 못하고 위치 반경으로 찾았습니다. "
+            + partial_failure_note(exc, '역 검색', '역 후보를')
+        )
         logger.warning('daangn station search failed (%s); searching by radius', exc)
     if station is None and city is not None:
         raise RegionNotFoundError(
@@ -455,7 +462,10 @@ def _search_not_dong(
         except RateLimitedError:
             raise
         except OPTIONAL_LOOKUP_ERRORS as exc:
-            station_notes.append(f'당근 {station.name} 주변 매물 목록 조회가 실패해 역 위치 반경으로 찾았습니다')
+            station_notes.append(
+                f'{station.name} 주변 매물 목록 대신 역 위치 반경으로 찾았습니다. '
+                + partial_failure_note(exc, '역 주변 매물', '역 주변 매물 목록을')
+            )
             logger.warning('daangn station listings failed (%s); searching by radius', exc)
         else:
             emit_listings(station_result, common_notes + [
