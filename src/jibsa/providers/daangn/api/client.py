@@ -169,7 +169,7 @@ daangn_retry = retry(
 class DaangnClient(BaseHTTPClient):
     """당근부동산 (realty.daangn.com) 비공식 클라이언트.
 
-    동 정보·상세는 SSR HTML 에 박힌 `window.RELAY_STORE` 를 파싱한다. 조건을 건 매물
+    동 정보·상세는 SSR HTML 에 박힌 라우터 상태의 Relay 스토어를 파싱한다. 조건을 건 매물
     목록과 다음 페이지는 웹이 쓰는 GraphQL(`realty.kr.karrotmarket.com/graphql`)의
     `articleFeed` 로, 조건에 맞는 매물 수는 `articlesCount` 로 받는다. 좌표 범위 검색은
     웹 지도처럼 `articleMapPoints` 로 핀(ID·좌표)을 받고 `articlesByOriginalArticleIds` 로
@@ -443,7 +443,7 @@ class DaangnClient(BaseHTTPClient):
         """Fetch a dong's listing feed via `GET /map/{name1}/{name2}/{name3}`.
 
         Same retry behaviour as `run_request_regions_keyword_v1`. HTML 의
-        `RELAY_STORE` 를 파싱하며, SSR 이 담아 주는 첫 페이지(최근 20건)만 얻는다.
+        Relay 스토어를 파싱하며, SSR 이 담아 주는 첫 페이지(최근 20건)만 얻는다.
 
         Args:
             parameter: `name1`, `name2`, `name3` (시도/구/동).

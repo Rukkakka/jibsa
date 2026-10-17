@@ -767,11 +767,11 @@ def test_same_name_station_is_noted_and_city_picks_it() -> None:
 
 def test_parse_missing_complex_page_returns_none() -> None:
     # 없는 단지 페이지(404)도 스토어는 있고 결과의 complex 가 null 이다
-    store = {
-        'client:root': {'complexByOriginalId(originalId:"1")': {'__ref': 'out'}},
-        'out': {'__typename': 'ComplexByOriginalIdOutput', 'complex': None},
-    }
-    page = f'<script>window.RELAY_STORE = {json.dumps(json.dumps(store))};</script>'
+    page = (
+        '<script>$_TSR.router=($R=>$R[0]={dehydratedData:$R[1]={relayRecords:$R[2]={'
+        '"client:root":$R[3]={"complexByOriginalId(originalId:\\"1\\")":$R[4]={__ref:"out"}},'
+        'out:$R[5]={__typename:"ComplexByOriginalIdOutput",complex:null}}}})($R["tsr"])</script>'
+    )
     assert parse_complexes_html(page).complex is None
 
 

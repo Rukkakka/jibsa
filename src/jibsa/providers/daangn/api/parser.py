@@ -110,7 +110,7 @@ def parse_articles_html(html: str, original_id: int) -> DaangnArticlesResponseMo
     # 없는 매물·거래 끝난 매물은 404 라 `get_listing` 이 ListingUnavailableError 로 바꾼다. 200 은 올라온 매물에만
     # 와서, 200 인데 매물이 없으면 구조가 바뀐 것으로 본다 (2026-10-10 실측: 매물 ID 17개)
     if record is None:
-        raise RelayRecordNotFoundError(f'article {original_id} not found in RELAY_STORE')
+        raise RelayRecordNotFoundError(f'article {original_id} not found in relay records')
 
     title = next(
         (node.get('name') for node in extract_json_ld(html) if node.get('@type') == 'Product'),

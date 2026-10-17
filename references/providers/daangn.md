@@ -31,7 +31,7 @@
 
 ### 응답 형식과 요청 규칙
 
-- 동 정보·상세는 SSR HTML 의 `window.RELAY_STORE`(JS 문자열로 이스케이프된 Relay 정규화 스토어)를 `relay.py` 가 꺼내 `__ref`/`__refs` 를 펼치고, `parser.py` 가 응답 모델로 만든다. 상세의 일부 값은 JSON-LD 에서 읽는다. 스토어가 없으면 `RelayStoreNotFoundError` (CLI 에서 `PARSE_ERROR`).
+- 동 정보·상세는 SSR HTML 에 seroval JS 식으로 심긴 라우터 상태(`$_TSR.router=($R=>$R[0]={...})`)의 `dehydratedData.relayRecords`(Relay 정규화 스토어)를 `relay.py` 가 꺼내 `__ref`/`__refs` 를 펼치고, `parser.py` 가 응답 모델로 만든다. 상세의 일부 값은 JSON-LD 에서 읽는다. 스토어가 없으면 `RelayStoreNotFoundError` (CLI 에서 `PARSE_ERROR`).
 - 조건을 건 매물 목록과 다음 페이지는 웹이 쓰는 GraphQL `articleFeed` (persisted query 만 받음)로 받는다. 실패도 HTTP 200 의 `errors` 로 와서 service 의 `unwrap_feed()` 가 판정한다. 해시가 거절되면 지도 페이지 20건에 조건을 직접 거는 방식으로 돌아간다.
 - 지역 해석만 `www.daangn.com` 의 JSON API 를 쓴다.
 - 입력 타입이 틀리면 "알 수 없는 오류" 가 와서 preschoolByNo·getViewRankingArticles 는 숫자, trendingComplexes 의 regionId 는 문자열로 보낸다 (2026-10-10 실측).
@@ -135,4 +135,4 @@ GraphQL의 HTTP 200도 `errors`를 검사한다. persisted-query 거절과 그 �
 
 ## API 변경 시 점검
 
-해시와 GraphQL 헤더는 client, 변수·필터 코드와 좌표 문자열 직렬화는 request, 연결·커서·거래 필드는 response에서 확인한다. SSR 변경은 relay → parser → 응답 모델 순으로 추적한다. `window.RELAY_STORE`의 이스케이프와 `__ref`/`__refs`를 별도로 확인한다. 원본 본문·사진·연락처가 출력 모델로 새지 않도록 최종 service 모델도 검토한다.
+해시와 GraphQL 헤더는 client, 변수·필터 코드와 좌표 문자열 직렬화는 request, 연결·커서·거래 필드는 response에서 확인한다. SSR 변경은 relay → parser → 응답 모델 순으로 추적한다. 라우터 상태의 seroval 문법(`$R[n]=` 등록·`$R[n]` 참조, `!0`·`!1`, 문자열 이스케이프)과 `__ref`/`__refs`를 별도로 확인한다 (2026-10-17 웹 배포 전에는 `window.RELAY_STORE = "..."` 였다). 원본 본문·사진·연락처가 출력 모델로 새지 않도록 최종 service 모델도 검토한다.

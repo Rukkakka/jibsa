@@ -18,7 +18,7 @@ from typing import Annotated
 
 
 # ---------------------------------------------------------------------------
-# GET realty.daangn.com/complexes/{originalId} (RELAY_STORE)
+# GET realty.daangn.com/complexes/{originalId} (SSR Relay 스토어)
 # ---------------------------------------------------------------------------
 
 class DaangnPyInfoModel(ResponseModel):

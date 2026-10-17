@@ -15,7 +15,7 @@ from typing import (
 
 
 # ---------------------------------------------------------------------------
-# 동네 후기 — GET /map/{name1}/{name2}/reviews (RELAY_STORE), regionByOriginalRegionId,
+# 동네 후기 — GET /map/{name1}/{name2}/reviews (SSR Relay 스토어), regionByOriginalRegionId,
 # livedReviewsByRegion. 후기 본문·요약 글은 읽지 않는다 (개수만 쓰고 원 사이트로 안내한다).
 # ---------------------------------------------------------------------------
 
