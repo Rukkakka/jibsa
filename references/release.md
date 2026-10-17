@@ -92,16 +92,10 @@
    태그 확인이나 CI 가 실패하면 아무것도 올라가지 않는다. 고친 커밋을 머지하고 태그를 지운 뒤
    (`git push origin :refs/tags/v0.2.0 && git tag -d v0.2.0`) 새 `main` 커밋에 다시 단다. PyPI 단계만 실패했으면
    (pypi.org 게시자 설정 등) 원인을 고치고 그 실행의 실패한 잡을 다시 돌린다.
-6. PyPI 에서 새로 설치해 버전을 확인한다. 쓰던 설치본을 건드리지 않게 임시 가상환경에 설치하고, 실제 조회도 한 번
-   해 본다. 올린 직후에는 PyPI 색인에 늦게 보일 수 있다.
 
-   ```
-   python3 -m venv /tmp/jibsa-check
-   /tmp/jibsa-check/bin/pip install -q jibsa==0.2.0
-   /tmp/jibsa-check/bin/jibsa --version   # jibsa 0.2.0
-   /tmp/jibsa-check/bin/jibsa daangn search listings 역삼동 --limit 1
-   rm -rf /tmp/jibsa-check
-   ```
+   Release 워크플로가 끝까지 통과하면 릴리스는 끝난다. PyPI 에서 다시 설치해 보지 않는다. 올라간 파일은 CI 의 설치본
+   확인이 새 가상환경에 설치해 돌려 본 바로 그 파일이고, 실제 API 로 도는지는 [매일 API 감시](development.md#매일-api-감시)가
+   `main` 으로 본다.
 
 태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리키고,
 Release 워크플로가 거절한다.
