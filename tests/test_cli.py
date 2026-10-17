@@ -1,9 +1,16 @@
+import importlib.util
 import json
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
+import typer
 
-from jibsa.cli.app import run
+from jibsa.cli.app import (
+    app,
+    run,
+)
 
 
 def stderr_error(capsys: pytest.CaptureFixture[str]) -> dict:
@@ -280,3 +287,33 @@ def test_daangn_geocode_falls_back_to_naver_when_zigbang_blocked(monkeypatch: py
     assert '당근 동 이름' in exc.value.hint and '어느 소스로도' not in exc.value.hint
 
 
+# --- 매일 API 감시 ---
+
+def test_every_source_command_is_in_api_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 비공식 API 는 언제 바뀔지 몰라 매일 새벽 소스 명령을 모두 실제로 불러 본다 (scripts/monitor/api_check.py).
+    # 새 명령을 만들고 감시 목록에 넣지 않으면 그 명령은 깨져도 모른다
+    path = Path(__file__).resolve().parents[1] / 'scripts' / 'monitor' / 'api_check.py'
+    spec = importlib.util.spec_from_file_location('api_check', path)
+    assert spec is not None and spec.loader is not None
+    monitor = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, 'api_check', monitor)  # dataclass 가 자기 모듈을 찾는다
+    spec.loader.exec_module(monitor)
+
+    leaves: set[tuple[str, ...]] = set()
+    groups: set[tuple[str, ...]] = set()
+
+    def walk(command: object, path: tuple[str, ...]) -> None:
+        commands = getattr(command, 'commands', None)
+        if not commands:
+            leaves.add(path)
+            return
+        groups.add(path)
+        for name, sub in commands.items():
+            walk(sub, (*path, name))
+
+    walk(typer.main.get_command(app), ())
+    source_commands = {leaf for leaf in leaves if leaf[0] in ('zigbang', 'naver', 'daangn')}
+    monitored = {step.command for steps in monitor.GROUPS.values() for step in steps}
+    assert source_commands - monitored == set()
+    # 그룹 옵션으로 부르는 경로(search listings --complex)도 있어 그룹까지는 받는다. 그 밖은 없는 명령(오타)이다
+    assert monitored - source_commands - groups == set()

@@ -1,0 +1,87 @@
+# 매일 새벽 직방·당근의 모든 CLI 명령을 실제로 불러 비공식 API 가 깨졌는지 본다 (scripts/monitor/api_check.py,
+# references/development.md '매일 API 감시'). 고장이면 api-broken 이슈를 열고(열려 있으면 댓글) 실행을 실패로 끝내 GitHub 이 메일로 알린다.
+# 요청 제한·서버 오류는 고장이 아니라 '확인 못 함'이고, 같은 소스가 사흘 연속 그러면 api-blocked 이슈로 알린다.
+# 감시 파일을 고친 PR 에서도 돌지만 이슈는 건드리지 않는다. CI(ci.yml)는 여전히 실제 API 를 부르지 않는다.
+# 잡 이름은 main 보호 규칙의 필수 검사가 아니다 (막힌 날에도 PR 을 머지할 수 있게).
+name: API 감시
+
+on:
+  schedule:
+    # 한국 시간 매일 04:17. 정각은 예약 실행이 몰려 늦거나 빠진다
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/monitor/**'
+      - '.github/workflows/api-monitor.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-monitor-${{ github.ref }}
+
+jobs:
+  check:
+    name: 조회 (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # 러너마다 IP 와 요청 제한 상태가 따로라 한 소스가 막혀도 다른 소스 검사는 그대로 된다. api_check.py 의 DAILY_GROUPS 와 같게 둔다.
+        # 네이버는 GitHub 러너에서 응답을 받지 못해 빼고 로컬에서 돌린다
+        group: [zigbang, daangn]
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # PyPI 릴리스가 아니라 이 커밋의 코드를 본다
+      - run: pip install .
+      - run: python scripts/monitor/api_check.py run ${{ matrix.group }} --out result-${{ matrix.group }}.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: result-${{ matrix.group }}
+          path: result-${{ matrix.group }}.json
+          retention-days: 7
+
+  report:
+    name: 결과 정리
+    needs: check
+    # 조회 잡이 실패해도 정리한다 (결과 파일이 없는 소스는 고장으로 본다)
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      # 앞선 실행의 결과 파일을 내려받아 연속 확인 못 함을 센다
+      actions: read
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v8
+        # 조회 잡이 모두 실패해 결과 파일이 하나도 없어도 정리 단계는 돈다
+        continue-on-error: true
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: true
+      - name: 표 남기기·이슈 고치기
+        run: python scripts/monitor/api_check.py report results/result-*.json ${{ github.event_name != 'pull_request' && '--issues' || '' }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: report
+          path: report.json
+          retention-days: 7
