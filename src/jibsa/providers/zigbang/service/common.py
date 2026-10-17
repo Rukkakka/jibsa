@@ -482,13 +482,6 @@ class ZigbangAptListing(Listing):
     ] = None
 
 
-def in_range(value: float | None, minimum: float | None, maximum: float | None) -> bool:
-    """범위 조건에 맞는지. 조건이 있는데 값을 모르면 맞지 않는다고 본다 (서버가 받지 않아 받은 뒤 거르는 조건에 쓴다)."""
-    if minimum is None and maximum is None:
-        return True
-    return value is not None and (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
-
-
 def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> ZigbangAptListing | None:
     """카탈로그 한 건을 `ZigbangAptListing` 으로 바꾼다. 상세를 볼 수 있는 매물 ID 가 없으면 None.
 
@@ -581,11 +574,15 @@ def fetch_danji(client: ZigbangClient, complex_id: str, danji_id: int) -> Zigban
         raise
 
 
-def excluded_notes(limit: int, inspected: int, returned: int) -> list[str]:
-    """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다."""
+def excluded_notes(limit: int, inspected: int, returned: int, *, order: str = '가까운') -> list[str]:
+    """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다.
+
+    Args:
+        order: 요약을 받은 매물을 고른 기준. 거리순이 아닌 건물 매물 목록은 '직방 목록 순서로 앞의'.
+    """
     if returned >= limit or inspected <= returned:
         return []
-    return [f'가까운 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)']
+    return [f'{order} 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)']
 
 
 def apt_pagination_notes(
@@ -599,6 +596,8 @@ def apt_pagination_notes(
 ) -> list[str]:
     """실제로 받은 원본 매물 수를 조회 예산으로 세고 추가 조회 없이 안내한다.
 
+    `has_more` 는 조회하지 않고 남긴 곳이 있다는 뜻이다 (반경 검색이 단지 상한에서 멈춤). 그러면 '이 N건이 전부' 라고 하지
+    않는다 (2026-10-17 리뷰: 반경 안 단지 204곳 중 30곳만 훑은 결과에 '전부입니다' 와 '30곳만 조회' 가 함께 나갔다).
     `suggest_limit` 이 False 면 --limit 을 늘리라는 안내를 뺀다. 늘려도 못 찾는 경우(반경 면적 검색의 단지 상한)에 쓴다.
     당근 `listing_budget_notes`·네이버의 같은 역할 함수와 문구는 비슷하지만 공통 헬퍼로 합치지 않는다. 제외 수를 세는
     방식(직방 받은 수 − 반환 수, 네이버 min(받은 수, limit) − 반환 수, 당근 eligible)과 더 받을 매물 판단(당근 has_more,
@@ -608,7 +607,7 @@ def apt_pagination_notes(
     if returned < limit:
         if inspected > returned:
             notes.append(f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)')
-        else:
+        elif not has_more:
             notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if limit >= MAX_LIST_LIMIT and (inspected >= limit or total > returned or has_more):
         notes.append(f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요')

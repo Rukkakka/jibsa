@@ -16,7 +16,7 @@ from typing import Annotated
 
 
 # ---------------------------------------------------------------------------
-# RELAY_STORE records (map / articles pages)
+# SSR Relay store records (map / articles pages)
 # ---------------------------------------------------------------------------
 
 class DaangnMapResponseModel(ResponseModel):

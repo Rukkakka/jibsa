@@ -564,7 +564,7 @@ def search_stay_listings(
     # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받아도 버리므로 미리 뺀다 (2026-10-10 실측: 강남역 1km 핀 130개 중
     # 반경 안 57개, by-ids 3회 → 1회)
     if radius_cut:
-        pins = {item_id: distance for item_id, distance in pins.items() if distance <= radius_km}
+        pins = {item_id: distance for item_id, distance in pins.items() if within_radius(distance, radius_km)}
     nearest = [item_id for item_id, _ in sorted(pins.items(), key=lambda entry: entry[1])[:limit]]
     # 지역 전체 가격순·최신순은 검색 API 가 같은 기준(주당 임대료+관리비, 등록 시각)으로 정렬해 준다 (2026-10-11 실측:
     # 강남구·마포구 343건, 날짜·방 수·가격 조건을 줘도 역전 0건). 지역마다 앞 limit 개만 요약을 받아 아래에서 합쳐 정렬하고 자른다
@@ -726,7 +726,7 @@ def _stay_summaries(
                 distance = haversine_km(region.lat, region.lng, summary.lat, summary.lng)
                 if outside_boundary(boundary, summary.lat, summary.lng):
                     continue
-            if radius_cut and (distance is None or distance > radius_km):
+            if radius_cut and (distance is None or not within_radius(distance, radius_km)):
                 continue
             if boundary is not None and summary.id not in pins:
                 if summary.lat is None or summary.lng is None:
@@ -753,7 +753,9 @@ def _stay_sort_key(
         price = (summary.weekly_rent or 0) + (summary.weekly_manage_cost or 0)
         return (not known, price, summary.id)
     if sort == 'newest':
-        # 출력 날짜는 일 단위라 원 응답의 등록 시각으로 정렬한다.
+        # 출력 날짜는 일 단위라 원 응답의 등록 시각으로 정렬한다. 시간대 없는 값을 UTC 로 보는 것은 출력(normalize_date 는
+        # 한국 시간으로 봄)과 다르지만 실제 응답은 늘 'Z' 를 붙여 와 두 곳이 같은 시각으로 읽는다 (2026-10-17 리뷰 오탐 확인.
+        # 실측: 강남구 최신순 by-ids 5건 모두 '2026-10-15T00:42:20.000Z' 꼴)
         try:
             moment = datetime.fromisoformat((summary.reviewed_at or '').replace('Z', '+00:00'))
             if moment.tzinfo is None:

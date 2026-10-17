@@ -24,6 +24,7 @@ from jibsa.core.listing import (
     TradeType,
     beyond_radius_notes,
     by_distance,
+    in_range,
     join_address,
     limit_notes,
     m2_to_pyeong,
@@ -46,7 +47,6 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangBoundary,
     ZigbangRegion,
     drop_unused_scope,
-    in_range,
     sent_or_none,
     unavailable_on_404,
 )

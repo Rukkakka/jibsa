@@ -964,9 +964,19 @@ def search_command(
         if whole_dong and region.ga_base is not None:
             # '○가' 로 나뉜 동(성수동)은 직방처럼 모두 찾아 합친다. 한 곳만 찾았다는 안내는 뺀다
             dongs = ga_dong_regions(client, region)
-            if len(dongs) > 1 and region.ga_note in notes:
+            # 동마다 --limit 을 나눠 쓰므로 동이 limit 보다 많으면 몫이 0 인 동이 생긴다. 직방 아파트처럼 뒤쪽 동은 찾지 않고
+            # 알린다 (예전에는 첫 동의 몫부터 0 이라 성수동 --limit 1 이 요청 없이 '0건이 전부' 를 냈다)
+            skipped = dongs[limit:]
+            dongs = dongs[:limit]
+            if len(dongs) + len(skipped) > 1 and region.ga_note in notes:
                 notes.remove(region.ga_note)
                 region = _merged_region(region, dongs)
+            if skipped:
+                notes.append(
+                    f"--limit({limit})이 함께 찾을 동 수({len(dongs) + len(skipped)})보다 작아 "
+                    f"{'·'.join(dong.name for dong in skipped)}는 찾지 않았습니다. "
+                    f'모두 찾으려면 --limit 을 {len(dongs) + len(skipped)} 이상으로 주세요'
+                )
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 

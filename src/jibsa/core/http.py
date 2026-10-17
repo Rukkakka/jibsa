@@ -389,6 +389,11 @@ class BaseHTTPClient(BaseModel, ABC):
         ...
 
     def close(self) -> None:
+        """
+        Close the sync client only: an async client cannot be closed from
+        sync code. If ``arun_request_*`` was used, close with ``aclose()`` or
+        ``async with`` instead (a plain ``with`` leaves the async pool open).
+        """
         client: Client | None = self.__dict__.pop('_client', None)
         if client is not None:
             client.close()
