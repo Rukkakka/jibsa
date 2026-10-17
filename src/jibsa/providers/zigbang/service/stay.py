@@ -753,7 +753,9 @@ def _stay_sort_key(
         price = (summary.weekly_rent or 0) + (summary.weekly_manage_cost or 0)
         return (not known, price, summary.id)
     if sort == 'newest':
-        # 출력 날짜는 일 단위라 원 응답의 등록 시각으로 정렬한다.
+        # 출력 날짜는 일 단위라 원 응답의 등록 시각으로 정렬한다. 시간대 없는 값을 UTC 로 보는 것은 출력(normalize_date 는
+        # 한국 시간으로 봄)과 다르지만 실제 응답은 늘 'Z' 를 붙여 와 두 곳이 같은 시각으로 읽는다 (2026-10-17 리뷰 오탐 확인.
+        # 실측: 강남구 최신순 by-ids 5건 모두 '2026-10-15T00:42:20.000Z' 꼴)
         try:
             moment = datetime.fromisoformat((summary.reviewed_at or '').replace('Z', '+00:00'))
             if moment.tzinfo is None:
