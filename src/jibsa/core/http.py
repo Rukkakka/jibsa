@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_USER_AGENT: str = (
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'
 )
 
 # 덤 조회(부가 정보·주소 다듬기 등)가 실패해도 주된 결과는 돌려줄 때 세 소스가 공통으로 잡는 실패: 재시도 뒤에도 남은
