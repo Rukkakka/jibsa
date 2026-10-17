@@ -20,6 +20,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     Listing,
     TradeType,
+    in_range,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -41,7 +42,6 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangRegion,
     apt_pagination_notes,
     catalog_to_listing,
-    in_range,
     region_from_search_item,
 )
 from jibsa.providers.zigbang.service.region import (

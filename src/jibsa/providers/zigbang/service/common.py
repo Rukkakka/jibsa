@@ -482,13 +482,6 @@ class ZigbangAptListing(Listing):
     ] = None
 
 
-def in_range(value: float | None, minimum: float | None, maximum: float | None) -> bool:
-    """범위 조건에 맞는지. 조건이 있는데 값을 모르면 맞지 않는다고 본다 (서버가 받지 않아 받은 뒤 거르는 조건에 쓴다)."""
-    if minimum is None and maximum is None:
-        return True
-    return value is not None and (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
-
-
 def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> ZigbangAptListing | None:
     """카탈로그 한 건을 `ZigbangAptListing` 으로 바꾼다. 상세를 볼 수 있는 매물 ID 가 없으면 None.
 

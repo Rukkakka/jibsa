@@ -229,6 +229,16 @@ def parking_label(available: bool | None, detail: str | None = None) -> str | No
     return status or detail
 
 
+def in_range(value: float | None, minimum: float | None, maximum: float | None) -> bool:
+    """범위 조건에 맞는지. 조건이 있는데 값을 모르면 맞지 않는다고 본다 (서버가 받지 않아 받은 뒤 거르는 조건에 쓴다).
+
+    직방(면적·공급면적·상가 조건)과 당근(필터 API 대체 조회의 가격·면적)이 같은 규칙으로 거르게 한 곳에 둔다.
+    """
+    if minimum is None and maximum is None:
+        return True
+    return value is not None and (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
+
+
 def by_distance(listing: 'Listing') -> tuple[bool, float]:
     """가까운 순 정렬 키. 거리를 모르는 매물은 가장 가깝다고 내보내지 않도록 맨 뒤로 보낸다."""
     return listing.distance_km is None, listing.distance_km or 0

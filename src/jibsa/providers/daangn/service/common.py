@@ -17,6 +17,7 @@ from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     Listing,
+    in_range,
     join_address,
     m2_to_pyeong,
     normalize_date,
@@ -329,14 +330,6 @@ def article_to_listing(
     )
 
 
-def _within(value: float | None, bounds: tuple[float | None, float | None]) -> bool:
-    """값이 범위 안인지. 모르는 값은 조건이 없을 때만 통과시킨다."""
-    low, high = bounds
-    if value is None:
-        return low is None and high is None
-    return (low is None or value >= low) and (high is None or value <= high)
-
-
 def _matches(
     listing: Listing,
     property_types: list[str] | None,
@@ -351,13 +344,13 @@ def _matches(
     if trade_types and listing.trade_type not in trade_types:
         return False
     if listing.deposit_manwon is not None or listing.trade_type != '매매':
-        if not _within(listing.deposit_manwon, deposit):
+        if not in_range(listing.deposit_manwon, *deposit):
             return False
-    if listing.trade_type in ('월세', '단기임대') and not _within(listing.rent_manwon, rent):
+    if listing.trade_type in ('월세', '단기임대') and not in_range(listing.rent_manwon, *rent):
         return False
-    if listing.trade_type == '매매' and not _within(listing.price_manwon, price):
+    if listing.trade_type == '매매' and not in_range(listing.price_manwon, *price):
         return False
-    return _within(listing.area_m2, area)
+    return in_range(listing.area_m2, *area)
 
 
 def _matching_trade(
