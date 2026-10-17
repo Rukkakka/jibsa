@@ -6,8 +6,9 @@
 명령마다 셋으로 나눈다 (references/development.md '매일 API 감시').
 
 - 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음
-- 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았다는 안내
-  ('jibsa 를 업데이트하세요'). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서, 비어 있으면 사이트가 바뀐 것으로 본다
+- 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
+  깨졌다는 안내(당근 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
+  비어 있으면 사이트가 바뀐 것으로 본다
 - 확인 못 함: 요청 제한·네트워크 오류·서버 5xx·방금 내려간 매물·시간 초과, 앞 명령이 넘길 번호를 주지 않아 건너뛴 명령.
   사이트가 바뀐 것인지 알 수 없다
 
@@ -194,8 +195,6 @@ UNKNOWN: str = 'unknown'
 STATUS_LABELS: dict[str, str] = {OK: '✅ 정상', BROKEN: '❌ 고장', UNKNOWN: '⚠️ 확인 못 함'}
 # 사이트가 바뀐 것인지 알 수 없는 에러. 그 밖의 에러 코드(PARSE_ERROR, INTERNAL_ERROR, NOT_FOUND, REGION_NOT_FOUND 등)는 고장이다
 UNKNOWN_CODES: frozenset[str] = frozenset({'RATE_LIMITED', 'NETWORK_ERROR', 'LISTING_UNAVAILABLE'})
-# 웹 쿼리가 바뀌어 예전 방식으로 돌았다는 안내 (당근 FEED_FALLBACK_NOTE). 결과는 나오지만 고쳐야 한다
-DEGRADED_MARKER: str = 'jibsa 를 업데이트하세요'
 
 BROKEN_LABEL: str = 'api-broken'
 BLOCKED_LABEL: str = 'api-blocked'
@@ -279,6 +278,15 @@ def _run_step(step: Step, values: dict[str, str]) -> tuple[str, str, dict[str, A
 
 
 def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str, dict[str, Any] | None]:
+    # 결과는 나오지만 고쳐야 한다는 안내. 웹 쿼리가 바뀌어 예전 방식으로 돌았거나(당근 FEED_FALLBACK_NOTE), 덤 조회·대체 경로
+    # (단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했다(당근 partial_failure_note).
+    # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
+    # 만든다) 여기서 가져온다
+    from jibsa.providers.daangn.service.common import (
+        UPDATE_MAYBE_NEEDED,
+        UPDATE_NEEDED,
+    )
+
     if done.returncode == 0:
         try:
             data = json.loads(done.stdout)
@@ -286,9 +294,12 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
             return BROKEN, 'stdout 이 JSON 이 아님', None
         if not isinstance(data, dict):
             return BROKEN, 'stdout 이 JSON 객체가 아님', None
-        degraded = [note for note in data.get('notes') or [] if isinstance(note, str) and DEGRADED_MARKER in note]
+        degraded = [
+            note for note in data.get('notes') or []
+            if isinstance(note, str) and (UPDATE_NEEDED in note or UPDATE_MAYBE_NEEDED in note)
+        ]
         if degraded:
-            return BROKEN, f'대체 경로로 돌았음: {degraded[0][:200]}', data
+            return BROKEN, f'대체 경로로 돌았거나 일부를 받지 못함: {degraded[0][:200]}', data
         value = _value(data, step.expect)
         if not _present(value):
             return BROKEN, f'{step.expect} 칸이 비어 있음', data

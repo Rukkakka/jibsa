@@ -60,6 +60,7 @@ from jibsa.providers.daangn.api.response.search import (
 )
 from jibsa.providers.daangn.service.common import (
     OPTIONAL_LOOKUP_ERRORS,
+    UPDATE_NEEDED,
     DaangnListingConditions,
     DaangnRegion,
     FeedQueryRejectedError,
@@ -115,12 +116,12 @@ CARD_CHUNK_SIZE: int = 20
 PIN_LIMIT: int = 10000
 FEED_FALLBACK_NOTE: str = (
     '당근 필터 API 를 쓸 수 없어(웹 쿼리가 바뀜) 예전 방식으로 동마다 최근 20건만 받아 조건을 적용했습니다. '
-    '조건에 맞는 매물이 더 있을 수 있으니 jibsa 를 업데이트하세요'
+    f'조건에 맞는 매물이 더 있을 수 있어 {UPDATE_NEEDED}'
 )
 # 조건 없이 찾다가 다음 페이지 피드가 거절됐을 때. 건 조건이 없어 '조건을 적용했다' 고 하지 않는다
 FEED_FALLBACK_PLAIN_NOTE: str = (
     '당근 매물 피드 API 를 쓸 수 없어(웹 쿼리가 바뀜) 예전 방식으로 동마다 최근 20건만 받았습니다. '
-    '매물이 더 있을 수 있으니 jibsa 를 업데이트하세요'
+    f'매물이 더 있을 수 있어 {UPDATE_NEEDED}'
 )
 # 행정동·법정동 이름 끝 ('역삼1동', '화곡제1동', '상계3.4동', '화곡본동', '역삼동'). 떼고 남은 이름이 같으면 같은 동네다.
 # 점 번호를 빼면 '상계3.4동' 이 '상계3.' 이 되어 같은 구로 채울 때 상계동과 다른 동으로 골랐다 (2026-10-11 실측: 노원구
