@@ -12,7 +12,7 @@ Claude, ChatGPT 같은 LLM 에이전트가 집을 찾을 때 셸로 부르는 �
 
 ![Claude Code 가 jibsa guide 를 읽고 직방에서 강남역 근처 월세 원룸을 조회해 표로 정리하는 터미널 데모. 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/claude.gif)
 
-Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾아줘" 라고 시킨 실제 화면이다. Claude 가 `jibsa guide` 를 읽고 명령을 골라 조회한 뒤 결과를 표로 정리한다. **매물은 데모용 가상 데이터다** ([무엇이 실제이고 무엇이 가상인지](https://github.com/Rukkakka/jibsa#데모-영상의-가상-데이터)). 에이전트에 연결하는 방법은 [LLM 에이전트에 연결하기](https://github.com/Rukkakka/jibsa#llm-에이전트에-연결하기)에 있다.
+Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾아줘" 라고 시킨 실제 화면이다. Claude 가 `jibsa guide` 를 읽고 명령을 골라 조회한 뒤 결과를 표로 정리한다. **매물은 데모용 가상 데이터다.** 에이전트에 연결하는 방법은 [LLM 에이전트에 연결하기](https://github.com/Rukkakka/jibsa#llm-에이전트에-연결하기)에 있다.
 
 > 비공식 API 를 쓴다. 스펙이 예고 없이 바뀔 수 있고, 자동수집은 각 서비스 약관과 상충할 소지가 있으니 개인 조회 용도로만 쓴다.
 
@@ -46,7 +46,7 @@ macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른
 
 ![uv 로 jibsa 를 설치하고 직방에서 강남역 근처 월세 원룸을 직접 조회하는 터미널 데모. 조회 결과의 매물은 데모용 가상 데이터다](https://raw.githubusercontent.com/Rukkakka/jibsa/main/docs/demo/demo.gif)
 
-uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설치 화면이고, **조회 결과의 매물은 데모용 가상 데이터다** ([무엇이 실제이고 무엇이 가상인지](https://github.com/Rukkakka/jibsa#데모-영상의-가상-데이터)).
+uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설치 화면이고, **조회 결과의 매물은 데모용 가상 데이터다.**
 
 ### 1. 준비물
 
@@ -203,12 +203,6 @@ GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그
 ```
 
 [맨 위 영상](https://github.com/Rukkakka/jibsa#jibsa-집사)이 이 한 줄을 적어 둔 폴더에서 Claude Code 에 매물을 찾게 한 장면이다. 지침 파일의 두 번째 줄("이 폴더의 jibsa 는 데모용 가상 매물을 돌려준다")은 데모용이다.
-
-## 데모 영상의 가상 데이터
-
-두 영상의 매물은 모두 데모용 가상 데이터다. 녹화할 때 jibsa 는 직방 응답만 [가상 응답](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/zigbang.json)으로 바꾸고 그 밖의 요청은 막는다. 가상 매물은 한눈에 가짜로 보이게 만들었다. 제목은 `[가상] 예시 원룸 1`, 지번은 `000-1`, 매물 번호는 실제 직방에 없는 `99990001`~`99990012` 이고, 금액·층·면적은 매물 번호 끝자리와 같다 (`99990001` 은 보증금·월세 1만원, 1층, 1㎡). 실제 정보는 강남역 위치와 동 이름뿐이다.
-
-설치 장면은 실제 PyPI 설치 화면이고, Claude 의 답은 실제 Claude Code 가 쓴 것이다 (녹화 대본: [설치](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/demo.tape) · [Claude](https://github.com/Rukkakka/jibsa/blob/main/docs/demo/claude.tape)). 배너의 요금제 글자는 녹화한 계정 정보라 가렸다.
 
 ## 사용 문서
 
