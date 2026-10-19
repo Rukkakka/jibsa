@@ -415,6 +415,8 @@ def list_complex_articles(
         # 경우라 따로 알리지 않는다
         if last_info is not None and not isinstance(last_info, list):
             return None
+        # 다음 쪽이 있는 동안의 lastInfo 는 빈 리스트로 오지 않아, 비었으면 첫 쪽이다 (2026-10-19 실측: 헬리오시티 단지 번호로
+        # 랭킹순 4쪽·최신순 월세 4쪽 모두 값이 든 리스트). 2026-10-19 리뷰 오탐 확인
         first = not last_info
         payload = NaverComplexArticleListV1RequestPayloadModel(
             complex_number=complex_number,

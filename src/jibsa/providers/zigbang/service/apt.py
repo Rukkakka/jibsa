@@ -518,6 +518,9 @@ def search_apt_listings_near(
                 room_type.id for room_type in probe.room_types
                 if _pyeong_supply_matches(room_type, conditions.supply_area_min_m2, conditions.supply_area_max_m2)
             ]
+            # 평형 목록은 매물 유무와 상관없이 단지의 모든 평형이 와 빈 채로 오지 않는다. 고른 평형이 없으면 조건에 맞는 평형이
+            # 없는 것이다 (2026-10-18 실측: 강남역 1km 단지 53곳 중 앞 10곳 모두 평형 2~10개, 매물 0건 단지도 같음).
+            # 2026-10-18 리뷰 오탐 확인
             if not room_type_ids:
                 continue
         offset = 0
