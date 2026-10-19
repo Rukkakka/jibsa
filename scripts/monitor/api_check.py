@@ -160,7 +160,14 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('complex', 'complexes', 'complex_id'),),
         ),
         Step('단지', ('daangn', 'complex'), ('{complex}',), 'name'),
+        # 단지 매물은 지도 피드가 아니라 단지 화면 쿼리(ComplexArticleListPanelQuery)로 받는다
+        Step(
+            '단지 매물', DAANGN_LISTINGS, ('--complex', '{complex}', '--limit', '2'), 'listings',
+            (Capture('complex_article', 'listings', 'id'),),
+        ),
         Step('단지 실거래가', ('daangn', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
+        # 매물 번호로 건물 실거래를 받는 쿼리(articleByOriginalArticleId). 동 매물은 사무실·빌라라 거래가 없을 수 있어 단지 매물로 본다
+        Step('매물 건물 실거래가', ('daangn', 'real-price'), ('--item', '{complex_article}', '--limit', '3'), 'transactions'),
         Step('단지 시세 추이', ('daangn', 'price-trend'), ('{complex}',), 'points'),
         Step(
             '같은 동 단지', ('daangn', 'nearby-complexes'), ('{complex}', '--limit', '2'), 'complexes',
@@ -169,6 +176,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단지 비교', ('daangn', 'compare'), ('{complex}', '{neighbor}'), 'complexes'),
         Step('학교 역삼초등학교', ('daangn', 'school'), ('역삼초등학교',), 'complexes'),
         Step('동 실거래 역삼동', ('daangn', 'region-real-price'), ('역삼동', '--limit', '3'), 'transactions'),
+        # 신고가는 다른 쿼리(realsaleNewHighFeed)다. 동 하나는 신고가가 없을 수 있어 구로 본다
+        Step('신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--limit', '3'), 'transactions'),
         Step('동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes'),
         Step(
             '개발 호재 한남동', ('daangn', 'developments'), ('한남동', '--limit', '2'), 'developments',
