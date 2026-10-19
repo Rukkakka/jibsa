@@ -735,12 +735,13 @@ def _read_feed(
 
     `cap_map_page` 면 지도 첫 페이지도 남은 예산(`scan.limit`)까지만 쓴다 (`search_listings` 의 `split_budget`).
     """
+    # 필터 API 가 거절돼 지도 페이지로 돌아갈 때도 이 몫만 쓴다. 아니면 앞 동이 20건을 다 써 뒤 동(성수동2가)을 못 본다
+    map_articles = page.articles[:max(0, scan.limit - scan.fetched)] if cap_map_page else page.articles
     if has_conditions and scan.use_feed:
         # 지도 페이지의 첫 20건은 조건 없는 피드라 쓰지 않고 첫 페이지부터 받는다
         pages, cursor, more = 0, None, True
     else:
-        articles = page.articles[:max(0, scan.limit - scan.fetched)] if cap_map_page else page.articles
-        scan.take(articles, center, server=False)
+        scan.take(map_articles, center, server=False)
         pages, cursor, more = 1, page.end_cursor, bool(page.has_next_page and page.end_cursor)
     if count == 0:
         # 조건에 맞는 매물이 없으면 받을 것도 남은 것도 없다. 피드를 끝까지 본 것으로 친다
@@ -767,7 +768,7 @@ def _read_feed(
             scan.use_feed = False
             scan.fallback_notes = [FEED_FALLBACK_NOTE if has_conditions else FEED_FALLBACK_PLAIN_NOTE]
             if pages == 0:
-                scan.take(page.articles, center, server=False)
+                scan.take(map_articles, center, server=False)
             break
         pages += 1
         articles = [edge.node.article for edge in feed.edges if edge.node and edge.node.article]

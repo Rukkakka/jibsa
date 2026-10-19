@@ -376,7 +376,8 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
         listings.append(listing_as(ZigbangDetailedListing, listing, residence_type=building_use))
     notes = []
     if gone:
-        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다')
+        # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
+        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)')
     if len(result.listings) > DETAILS_MAX:
         notes.append(f'건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})

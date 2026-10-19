@@ -12,7 +12,9 @@ from typing import Any
 # Relay 정규화 스토어는 그 안의 `dehydratedData.relayRecords` 다 (2026-10-17 실측: 지도·상세·단지·동네 후기 페이지 모두.
 # 그 전에는 JS 문자열로 이스케이프한 JSON `window.RELAY_STORE = "..."` 였다)
 TSR_ROUTER_MARKER: str = '$_TSR.router=($R=>'
-# seroval 이 데이터에 쓰는 문법만 읽는다: 문자열, `$R[n]=` 등록과 `$R[n]` 참조, 숫자, `!0`·`!1`(참·거짓), 이름(null 등), 기호
+# seroval 이 데이터에 쓰는 문법만 읽는다: 문자열, `$R[n]=` 등록과 `$R[n]` 참조, 숫자, `!0`·`!1`(참·거짓), 이름(null 등), 기호.
+# 무한·NaN 을 쓰는 `1/0`·`0/0` 은 읽지 않는다. 라우터 상태에 그런 값이 오지 않는다 (2026-10-18 실측: 역삼동 지도 페이지
+# 라우터 상태에 `1/0`·`0/0`·`new` 모두 없음). 2026-10-18 리뷰 오탐 확인
 SEROVAL_TOKEN_PATTERN: re.Pattern[str] = re.compile(
     r'\s*(?:'
     r'(?P<string>"[^"\\]*(?:\\.[^"\\]*)*")'
@@ -175,7 +177,9 @@ def _js_string(raw: str) -> str:
         return raw
     text = JS_ESCAPE_PATTERN.sub(_js_escape, raw)
     if any('\ud800' <= char <= '\udfff' for char in text):
-        # 서로게이트 쌍으로 이스케이프한 글자(`😀` 같은 이모지)를 한 글자로 합친다
+        # 서로게이트 쌍으로 이스케이프한 글자(`😀` 같은 이모지)를 한 글자로 합친다. 짝 없는 서로게이트면 decode 가 실패하지만,
+        # seroval 은 한글 같은 글자를 `\u` 로 이스케이프하지 않고 글자 그대로 실어 그런 이스케이프가 오지 않는다 (2026-10-18 실측:
+        # 역삼동 지도 페이지 라우터 상태에 `\u` 이스케이프 0개). 2026-10-18 리뷰 오탐 확인
         text = text.encode('utf-16', 'surrogatepass').decode('utf-16')
     return text
 

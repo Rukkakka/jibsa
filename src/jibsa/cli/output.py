@@ -43,6 +43,8 @@ TradeT = TypeVar('TradeT', bound=str)
 def _dumps(data: Any, pretty: bool | None) -> str:
     if pretty is None:
         pretty = sys.stdout.isatty()
+    # allow_nan 을 끄지 않는다. 끄면 NaN 하나에 출력 전체가 실패하는데, 당근 숫자 문자열(_to_float)·seroval 상수로 NaN 이
+    # 들어온 적이 없다 (2026-10-18 실측: 역삼동 지도 페이지에 NaN·Infinity 0개). 2026-10-18 리뷰 오탐 확인
     return json.dumps(
         data,
         ensure_ascii=False,

@@ -769,7 +769,10 @@ def _search_clusters(
         before = scan.page_requests
         # 처음 보는 매물이 없는 페이지는 커서가 진행되지 않는 것으로 보고 다음 클러스터로 넘어간다. `seen` 을 클러스터끼리
         # 같이 써도 다른 칸의 매물 때문에 멈추지 않는다. 클러스터 ID 가 지도 타일('{zoom}/{x}/{y}')이라 매물은 한 칸에만
-        # 온다 (2026-10-14 실측: 오산역 원룸 클러스터 19개 53건, 강남역 1개 칸 4쪽 100건 모두 칸·쪽 사이 중복 0건)
+        # 온다 (2026-10-14 실측: 오산역 원룸 클러스터 19개 53건, 강남역 1개 칸 4쪽 100건 모두 칸·쪽 사이 중복 0건).
+        # 칸마다 쪽 상한(MAX_PAGES_PER_CLUSTER)에 걸려 멈춰도 truncated 를 켜지 않는다. 다음 쪽이 남은 동안 쪽은 요청한 만큼 꽉
+        # 차서 와, --limit 최대 120건은 30건짜리 4쪽이면 차 5쪽째를 부르지 않는다 (2026-10-19 실측: 강남역 --limit 120,
+        # 신림역 원룸·빌라 월세 --limit 120 에서 다음 쪽이 남은 쪽 8개 모두 꽉 참). 2026-10-19 리뷰 오탐 확인
         scan_pages(scan, fetch, keep, page_size=CLUSTER_PAGE_SIZE, max_pages=MAX_PAGES_PER_CLUSTER)
         if scan.page_requests > before:
             opened_clusters += 1

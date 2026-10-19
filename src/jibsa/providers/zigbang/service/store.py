@@ -468,6 +468,8 @@ def search_store_listings(
                 if outside_boundary(boundary, location.lat, location.lng):
                     continue
                 distance = haversine_km(region.lat, region.lng, location.lat, location.lng)
+                # 공실 묶음은 업종 조건을 걸 때만 찬다. 업종 조건이 없으면 비어 와서 안내 없이 빼는 매물이 없다 (2026-10-18 실측:
+                # 성수역 0.3km 업종 조건 없이 일반 묶음 393건, 공실 묶음 0건). 2026-10-18 리뷰 오탐 확인
                 if section.title == STORE_VACANT_SECTION:
                     if boundary is not None or distance <= radius_km:
                         vacant.add(location.item_id)

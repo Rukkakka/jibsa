@@ -258,6 +258,8 @@ def detail_to_listing(
     option_values = {option.name: option.value for option in article.options}
 
     parking = None
+    # 주차 대수를 먼저 봐도 작성자가 불가(NO)로 올린 매물을 가능으로 바꾸지 않는다. 불가인데 대수가 있는 매물은 보지 못했다
+    # (2026-10-18 실측: 역삼동 상세 12건 중 YES 11건(대수 있음 9건), NO 1건(대수 없음)). 2026-10-18 리뷰 오탐 확인
     if option_values.get('PARKING') == 'YES' or (article.available_total_parking_spots or 0) > 0:
         spots = article.available_total_parking_spots
         parking = parking_label(True, f'{spots}대' if spots else None)
@@ -357,7 +359,8 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
         }))
     notes = []
     if gone:
-        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다')
+        # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
+        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)')
     if len(listings) > DETAILS_MAX:
         notes.append(f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
     return kept, notes

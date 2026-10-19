@@ -140,6 +140,9 @@ def resolve_regions(
         RegionNotFoundError: 그 밖에 후보가 없을 때.
         RegionAmbiguousError: 같은 이름의 동이 여러 곳일 때.
     """
+    # 앞뒤 공백이 남으면 동 이름과 정확히 같은 후보가 없어 같은 이름 동 검사를 건너뛰고 첫 후보를 고른다
+    # (2026-10-18 실측: '신사동 ' 은 REGION_AMBIGUOUS 없이 강남구 신사동으로 조회했다)
+    query = query.strip()
     candidates = search_locations(client, query)
     if city:
         candidates = [location for location in candidates if place_in(city, location.name1, location.name2)]
