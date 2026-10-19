@@ -73,6 +73,9 @@ class Step:
 
 # 명령 하나가 요청 제한 대기(최대 60초)를 몇 번 거쳐도 끝날 시간
 COMMAND_TIMEOUT_SECONDS: int = 300
+# 결과·표·이슈에 쓰는 날짜의 시간대. 러너는 UTC 라 한국 04:17 실행이 전날 날짜로 찍혔다 (2026-10-18 실행이 2026-10-17).
+# 정리 잡에는 jibsa 가 없어 jibsa 의 kst_today 를 가져오지 않는다
+KST: datetime.timezone = datetime.timezone(datetime.timedelta(hours=9), 'KST')
 
 ROOM: tuple[str, ...] = ('zigbang', 'search', 'listings', 'room')
 APT: tuple[str, ...] = ('zigbang', 'search', 'listings', 'apt')
@@ -312,6 +315,11 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
     return (UNKNOWN if _is_unknown(error) else BROKEN), f'{detail}: {message[:200]}', None
 
 
+def _today() -> datetime.date:
+    """한국 날짜 (`KST`)."""
+    return datetime.datetime.now(KST).date()
+
+
 def run_group(name: str) -> dict[str, Any]:
     """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함)."""
     values: dict[str, str] = {}
@@ -331,7 +339,7 @@ def run_group(name: str) -> dict[str, Any]:
             if found is not None:
                 values.setdefault(capture.name, found)
         steps.append({'label': step.label, 'command': line, 'status': status, 'detail': detail})
-    return {'group': name, 'date': datetime.date.today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}
+    return {'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}
 
 
 def _overall(statuses: list[str]) -> str:
@@ -402,14 +410,14 @@ def _update_issues(results: list[dict[str, Any]], dry_run: bool) -> None:
 
     number = _open_issue(BROKEN_LABEL)
     if broken:
-        body = f"{datetime.date.today()} 감시에서 고장: {', '.join(broken)}{link}\n\n{table}"
+        body = f"{_today()} 감시에서 고장: {', '.join(broken)}{link}\n\n{table}"
         if number is None:
             _gh('issue', 'create', '--label', BROKEN_LABEL, '--title', f"API 감시: 고장 ({', '.join(broken)})", '--body', body,
                 write=True, dry_run=dry_run)
         else:
             _gh('issue', 'comment', str(number), '--body', body, write=True, dry_run=dry_run)
     elif number is not None and all(status == OK for status in statuses.values()):
-        _gh('issue', 'close', str(number), '--comment', f'{datetime.date.today()} 감시에서 모두 정상이다{link}', write=True, dry_run=dry_run)
+        _gh('issue', 'close', str(number), '--comment', f'{_today()} 감시에서 모두 정상이다{link}', write=True, dry_run=dry_run)
 
     previous = [{result['group']: result['status'] for result in report['results']} for report in _previous_reports(BLOCKED_STREAK - 1)]
     streak = [
@@ -423,7 +431,7 @@ def _update_issues(results: list[dict[str, Any]], dry_run: bool) -> None:
         _gh('issue', 'create', '--label', BLOCKED_LABEL, '--title', f"API 감시: {BLOCKED_STREAK}일째 확인 못 함 ({', '.join(streak)})",
             '--body', body, write=True, dry_run=dry_run)
     elif number is not None and UNKNOWN not in statuses.values():
-        _gh('issue', 'close', str(number), '--comment', f'{datetime.date.today()} 감시에서 확인 못 함이 없다{link}', write=True, dry_run=dry_run)
+        _gh('issue', 'close', str(number), '--comment', f'{_today()} 감시에서 확인 못 함이 없다{link}', write=True, dry_run=dry_run)
 
 
 def report(paths: list[str], *, issues: bool, dry_run: bool) -> int:
@@ -443,7 +451,7 @@ def report(paths: list[str], *, issues: bool, dry_run: bool) -> int:
         }
         for group in [*DAILY_GROUPS, *(group for group in found if group not in DAILY_GROUPS)]
     ]
-    text = f'## API 감시 {datetime.date.today()}\n\n{_table(results)}\n'
+    text = f'## API 감시 {_today()}\n\n{_table(results)}\n'
     print(text)
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
