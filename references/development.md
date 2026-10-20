@@ -4,7 +4,7 @@
 
 ## 설치
 
-코드를 고치려면 저장소를 받아 편집 가능 모드로 설치한다. 고친 코드가 바로 반영된다. Python·git 설치는 [README 준비물](../README.md#1-준비물)을 따른다.
+코드를 고치려면 저장소를 받아 편집 가능 모드로 설치한다. 고친 코드가 바로 반영된다. Python·git 설치는 [설치 문서의 준비물](../docs/install.md#1-준비물)을 따른다.
 
 ```bash
 # macOS·Linux
@@ -26,7 +26,7 @@ py -m venv .venv                       # 또는 uv venv --python 3.11
 .venv\Scripts\jibsa --help             # .venv\Scripts\Activate.ps1 후에는 jibsa 만 쳐도 된다
 ```
 
-Windows 는 [README 의 Windows 주의사항](../README.md#4-windows-에서-쓸-때)(UTF-8 출력 설정)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
+Windows 는 [README 의 Windows 에서 쓸 때](../README.md#windows-에서-쓸-때)(UTF-8 출력 설정)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
 
 ## 코드 검사
 
@@ -97,7 +97,7 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
   | --- | --- |
   | 정상 | exit 0, 그 명령에 정한 칸(`Step.expect`)에 값이 있음 |
   | 고장 | `PARSE_ERROR`·`INTERNAL_ERROR`·`NOT_FOUND`·`REGION_NOT_FOUND`·4xx 이거나 상태 없는 `UPSTREAM_ERROR`(웹 쿼리 해시 거절 등) 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, `notes` 의 "jibsa 업데이트가 필요합니다"·"jibsa 업데이트가 필요할 수 있습니다"(당근 필터 API 대신 예전 방식으로 돎, 단지 후보·매물 수·역 검색 같은 덤 조회·대체 경로가 깨져 그 값만 빠짐. 당근 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 를 감시가 그대로 가져다 쓴다), 결과 파일 없음(조회 잡 실패) |
-  | 확인 못 함 | `RATE_LIMITED`, `NETWORK_ERROR`, 5xx `UPSTREAM_ERROR`, `LISTING_UNAVAILABLE`(검색 직후 내려간 매물), 5분 안에 끝나지 않음, 앞 명령이 번호를 주지 않아 건너뛴 상세 |
+  | 확인 못 함 | `RATE_LIMITED`, `NETWORK_ERROR`, 5xx `UPSTREAM_ERROR`, `LISTING_UNAVAILABLE`(검색 직후 내려간 매물), 5분 안에 끝나지 않음, 앞 명령이 번호를 주지 않아 건너뛴 상세, 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`, 당근 인기 단지)이 비어 있음 |
 
 - **알림:** 고장이면 `api-broken` 이슈를 열고(열려 있으면 댓글) 실행이 실패로 끝나 GitHub 이 메일로 알린다. 모든 소스가 정상이면 그
   이슈를 닫는다. 같은 소스가 사흘 연속 확인 못 함이면 `api-blocked` 이슈를 열고, 확인 못 함이 없어지면 닫는다. 막힘이 이어지면 그 소스를
