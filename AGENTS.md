@@ -55,7 +55,10 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 
 ## 문서 갱신
 
-README는 제작 목적·설치·LLM 연결 방법·문서 링크를 담는다. 사용자 문서는 `docs/`, 개발 문서는 `references/`에 둔다. CLI 문서는 LLM 에이전트에게 주는 사용 규칙이기도 하다.
+README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예시 하나)·설치 요약·LLM 연결 방법·설정(환경 변수)·제작 목적과 원칙·문서 링크·기여 안내를 담는다.
+자세한 설치(준비물·PATH·운영체제별 명령·업데이트·삭제)는 `docs/install.md` 에 두고 README 에서 링크한다. README 는 PyPI 프로젝트
+페이지로도 쓰여 상대 링크와 heading 앵커가 깨지므로, README 안의 링크는 같은 문서를 가리키는 것까지 GitHub 전체 주소로 적는다.
+사용자 문서는 `docs/`, 개발 문서는 `references/`에 둔다. CLI 문서는 LLM 에이전트에게 주는 사용 규칙이기도 하다.
 
 `docs/llm.md` 는 에이전트가 가장 먼저 읽는 요약이고 `jibsa guide` 가 그대로 출력한다. 소스 문서(`docs/common.md`·`zigbang.md`·`naver.md`·`daangn.md`)는 `jibsa guide <소스> [절 이름]` 으로 출력한다 (모두 설치본에는 패키지 안으로 복사된다). 그래서 절 제목에 명령 이름을 백틱으로 쓴다 (`jibsa guide zigbang listing` 이 그 절을 고른다). 짧게 유지하고 (200줄 이하), 링크는 설치본에서도 열리게 GitHub 전체 주소로 쓴다. 옵션 표·실측 근거는 넣지 않고 명령 고르기·출력 읽기·틀리기 쉬운 점·에러 대응만 적은 뒤 자세한 절로 링크한다.
 
@@ -65,11 +68,13 @@ README는 제작 목적·설치·LLM 연결 방법·문서 링크를 담는다. 
 | 명령 추가·삭제, 에이전트가 틀리기 쉬운 해석 규칙(단위·누락값·ID·원룸의 뜻 등)·에러 대응 | `docs/llm.md` |
 | 명령 추가·삭제, 매물을 찾는 새 방식(다른 API 를 쓰는 경로) | `scripts/monitor/api_check.py` 의 `GROUPS` (매일 API 감시 목록) |
 | 공통 사용법(출력·에러 대응)·요청 제한 정책 | `docs/common.md` |
+| 설치·업데이트·삭제 방법, 준비물·PATH | `docs/install.md` (README 설치 절의 요약 표도 맞춘다) |
 | 한 소스의 구현·예외 | `references/providers/<source>.md` |
 | 여러 소스에 공통인 개발 규약 | `references/` 바로 아래 문서 |
 | 사용자(에이전트 포함)에게 보이는 변경 | `CHANGELOG.md` 의 `Unreleased` ([쓰는 법](references/release.md#changelog-쓰는-법)) |
-| README 데모에 나오는 명령·출력 (`jibsa --version`, `zigbang search listings room`) | `docs/demo/demo.gif` — `vhs scripts/demo/demo.tape` 로 다시 녹화 |
+| README 데모·빠른 시작 예시에 나오는 명령·출력 (`jibsa --version`, `zigbang search listings room`) | `docs/demo/demo.gif` — `vhs scripts/demo/demo.tape` 로 다시 녹화. README 빠른 시작의 JSON 도 같은 가상 매물로 다시 뽑는다 (`scripts/demo/fake_jibsa.py`) |
 | README 맨 위 Claude Code 데모에 나오는 것 (`jibsa guide`, 직방 원룸 검색 출력) | `docs/demo/claude.gif` — `scripts/demo/claude.tape` 머리말의 깨끗한 환경(`env -i …`)으로 `vhs scripts/demo/claude.tape` 를 돌려 다시 녹화한 뒤 `python3 scripts/demo/hide_plan.py docs/demo/claude.gif` |
+| README 맨 위 로고 (이름·색·모양) | `docs/logo.svg` — 글자를 외곽선으로 바꾼 파일이라 직접 고치지 않고 `scripts/logo/build_logo.py` 를 고쳐 다시 만든다 |
 
 한 소스에만 해당하는 규칙·예외는 공통 문서에 적지 않고 그 소스 문서에 적는다. 명령의 인자·기본값·조회 한도·반환값·오류·주의사항은 해당 명령 절에서 설명한다. 요약 표는 해당 절과 일치시키고 다른 명령 절에 설명을 복사하지 않는다. 공통 규칙은 복사하지 않고 링크로 연결한다.
 

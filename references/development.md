@@ -4,7 +4,7 @@
 
 ## 설치
 
-코드를 고치려면 저장소를 받아 편집 가능 모드로 설치한다. 고친 코드가 바로 반영된다. Python·git 설치는 [README 준비물](../README.md#1-준비물)을 따른다.
+코드를 고치려면 저장소를 받아 편집 가능 모드로 설치한다. 고친 코드가 바로 반영된다. Python·git 설치는 [설치 문서의 준비물](../docs/install.md#1-준비물)을 따른다.
 
 ```bash
 # macOS·Linux
@@ -26,7 +26,7 @@ py -m venv .venv                       # 또는 uv venv --python 3.11
 .venv\Scripts\jibsa --help             # .venv\Scripts\Activate.ps1 후에는 jibsa 만 쳐도 된다
 ```
 
-Windows 는 [README 의 Windows 주의사항](../README.md#4-windows-에서-쓸-때)(UTF-8 출력 설정)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
+Windows 는 [README 의 Windows 에서 쓸 때](../README.md#windows-에서-쓸-때)(UTF-8 출력 설정)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
 
 ## 코드 검사
 

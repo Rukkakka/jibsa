@@ -56,9 +56,9 @@ Issues = 'https://github.com/Rukkakka/jibsa/issues'
 [project.scripts]
 jibsa = 'jibsa.cli.app:main'
 
-# sdist 에는 빌드·테스트에 쓰는 파일만. README 데모(GIF·녹화 대본)는 PyPI 페이지가 GitHub 주소로 보여 준다
+# sdist 에는 빌드·테스트에 쓰는 파일만. README 그림(데모 GIF·로고)과 그 제작 도구는 PyPI 페이지가 GitHub 주소로 보여 준다
 [tool.hatch.build.targets.sdist]
-exclude = ['docs/demo', 'scripts/demo']
+exclude = ['docs/demo', 'docs/logo.svg', 'scripts/demo', 'scripts/logo']
 
 [tool.hatch.build.targets.wheel]
 packages = ['src/jibsa']
