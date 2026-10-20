@@ -9,8 +9,8 @@
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
   깨졌다는 안내(당근 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
   비어 있으면 사이트가 바뀐 것으로 본다
-- 확인 못 함: 요청 제한·네트워크 오류·서버 5xx·방금 내려간 매물·시간 초과, 앞 명령이 넘길 번호를 주지 않아 건너뛴 명령.
-  사이트가 바뀐 것인지 알 수 없다
+- 확인 못 함: 요청 제한·네트워크 오류·서버 5xx·방금 내려간 매물·시간 초과, 앞 명령이 넘길 번호를 주지 않아 건너뛴 명령,
+  사이트가 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`)이 빔. 사이트가 바뀐 것인지 알 수 없다
 
     python scripts/monitor/api_check.py run zigbang --out result-zigbang.json
     python scripts/monitor/api_check.py report result-*.json [--issues] [--dry-run]
@@ -62,6 +62,8 @@ class Step:
         args: 인자. `{name}` 은 앞 명령의 `Capture` 값으로 채운다.
         expect: 값이 있어야 정상인 칸. 점으로 이어 안쪽 칸을 가리킨다 (`listing_count.weekly`).
         captures: 이 결과에서 뒤 명령에 넘길 값.
+        may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다
+            (당근 인기 단지).
     """
 
     label: str
@@ -69,6 +71,7 @@ class Step:
     args: tuple[str, ...]
     expect: str
     captures: tuple[Capture, ...] = ()
+    may_be_empty: bool = False
 
 
 # 명령 하나가 요청 제한 대기(최대 60초)를 몇 번 거쳐도 끝날 시간
@@ -193,7 +196,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '좋은 동네 서울', ('daangn', 'good-neighborhoods'), ('--lifestyle', '직장인자취', '--region', '서울', '--limit', '3'),
             'neighborhoods',
         ),
-        Step('인기 단지 역삼동', ('daangn', 'trending-complexes'), ('역삼동',), 'complexes'),
+        # 인기 단지는 같은 동에도 빈 목록을 줄 때가 있다 (역삼동 2026-10-11 4곳, 2026-10-20 아침 0곳, 같은 날 낮 12곳)
+        Step('인기 단지 역삼동', ('daangn', 'trending-complexes'), ('역삼동',), 'complexes', may_be_empty=True),
         Step('인기 매물 역삼동', ('daangn', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
     ),
 }
@@ -314,6 +318,9 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
             return BROKEN, f'대체 경로로 돌았거나 일부를 받지 못함: {degraded[0][:200]}', data
         value = _value(data, step.expect)
         if not _present(value):
+            # 하루 비었다고 고장으로 보지 않는다. 계속 비면 사흘 연속 확인 못 함(api-blocked)으로 알린다
+            if step.may_be_empty:
+                return UNKNOWN, f'{step.expect} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data
             return BROKEN, f'{step.expect} 칸이 비어 있음', data
         return OK, f'{len(value)}건' if isinstance(value, list) else f'{step.expect} 있음', data
     error = _error(done.stderr)
