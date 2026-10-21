@@ -4,7 +4,7 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'jibsa'
-version = '0.5.0'
+version = '0.5.1'
 description = '네이버·직방·당근 부동산 매물을 조회하는 LLM 친화 CLI'
 readme = 'README.md'
 license = 'MIT'
