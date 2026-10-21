@@ -11,7 +11,7 @@
 - `--limit` 은 들여다볼 개수다. 중복·거래 불가로 뺀 만큼 다시 채우지 않아 `returned` 가 더 적을 수 있다. 처음에는 작게 잡는다 (요청과 출력 토큰이 모두 준다).
 - 매물 목록의 `has_more` 가 `true` 면 더 있다. `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 다음 매물을 받는다 (`--limit`·`--fields` 는 바꿔도 된다). `next` 는 10자 번호이고 같은 컴퓨터에서 하루 동안 쓴다. 조건이 다르면 에러 `message` 에 다른 옵션이 나온다. `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 는 직방 `room`·`apt`(동·구), 네이버·당근 `search listings`(단지 매물 제외)에 있다.
 - 한 번에 매물 50건 이하로 본다. 목록 매물은 1건에 JSON 약 450자라 100건이면 출력이 4만 자를 넘어, 셸 출력을 잘라 보여 주는 에이전트는 뒤쪽 매물을 못 본다. 더 필요하면 `next` 로 이어 받거나 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다. `search commute` 는 역마다 `--limit` 건(최대 10곳)이라 역당 5건 안팎으로 시작한다.
-- 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address` 처럼 필요한 필드만 받는다. 매물 출력이 40%쯤 준다. `id` 와 당근 `in_regions` 는 늘 나오고, 사용자에게 안내할 `url` 은 고르거나 `listing` 으로 본다. 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`)에 있다.
+- 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다. 매물 출력이 40%쯤 준다. `id` 와 당근 `in_regions` 는 늘 나온다. 사용자에게 매물을 안내하려면 링크가 필요하니 `url` 은 빼지 않는다. 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`)에 있다.
 - 층은 `floor`(`"3"`·`"지하1"`·`"반지하"`·`"중층"` 등)와 숫자 `floor_number`(지하는 음수, 반지하·저층처럼 모르면 `null`)로 온다.
 - 사진·매물 설명 본문·중개사 연락처·매물 좌표는 주지 않는다. 확인·문의·계약은 결과의 `url` 로 사용자에게 안내한다.
 - ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 ID 는 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 같은 집이 여러 소스에 올라와도 합쳐 주지 않는다.
