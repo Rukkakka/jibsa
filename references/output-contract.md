@@ -83,6 +83,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 
 - 금액 필드는 전부 **만원**이고 이름이 `_manwon` 으로 끝난다. 네이버는 원 단위라 `won_to_manwon`.
 - 면적은 `area_m2` + `area_pyeong`, 날짜는 한국 날짜 `YYYY-MM-DD` (`normalize_date`).
+- 층(`floor`)은 `normalize_floor` 로 표기를 맞춘다 (지하 `지하1`, 반지하, 저·중·고 → 저층·중층·고층). `Listing` 출력에는 `floor` 바로 뒤에 숫자 `floor_number` 가 붙는다 (지하는 음수, 몇 층인지 모르면 `null`).
 - 주소의 시·도는 정식 명칭(`서울특별시`, `강원특별자치도`)으로 맞춘다. `Listing.address` 는 검증기가
   `normalize_address` 를 거치므로 provider 가 따로 부르지 않아도 된다. 단지 정보처럼 `Listing` 밖의 주소는 직접 부른다.
 

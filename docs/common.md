@@ -42,7 +42,7 @@
 | `trade_type`, `property_type`, `room_type`, `title` | 거래·매물 유형·방 구조·제목 |
 | `price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon` | 거래에 해당하는 매매가·보증금·월세·관리비(만원) |
 | `area_m2`, `area_pyeong` | 전용면적 ㎡·평 |
-| `floor`, `building_floor` | 해당 층·전체 층수. 지하는 반지하·지하1 등으로 표시 |
+| `floor`, `floor_number`, `building_floor` | 해당 층·그 층의 숫자·전체 층수. `floor` 는 `"3"`·`"지하1"`·`"반지하"`·`"저층"`·`"중층"`·`"고층"`·`"옥탑"` 처럼 오고, `floor_number` 는 지상 양수·지하 음수다 (`"지하1"` → `-1`). 반지하·저층처럼 몇 층인지 모르면 `floor_number` 는 `null` |
 | `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 반경 안·밖은 출력한 `distance_km`(km, 소수 둘째 자리)로 가르고 `total`·반경 밖 안내도 같은 기준이다. 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
 | `registered_at`, `approved_at` | 등록일·사용승인일 (`YYYY-MM-DD`). 소스가 알려 주지 않으면 `null` |
 | 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `elevator`, `options` 등 |
@@ -68,6 +68,8 @@
       "deposit_manwon": 1000,
       "rent_manwon": 70,
       "manage_cost_manwon": null,
+      "floor": "반지하",
+      "floor_number": null,
       "building_floor": "5"
     }
   ]

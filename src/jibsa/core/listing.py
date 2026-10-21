@@ -39,6 +39,7 @@ ISO_DATE_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 MOVE_IN_NOW: str = '즉시입주'
 # 네이버 매물의 지하층 표기 ('B1' = 지하 1층)
 BASEMENT_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^B(\d+)$')
+RELATIVE_FLOOR_LABELS: dict[str, str] = {'저': '저층', '중': '중층', '고': '고층'}
 
 # 거래 유형별로 원래 존재하지 않는 가격 필드. 출력에서 키째 뺀다.
 NOT_APPLICABLE_PRICE_FIELDS: dict[str, frozenset[str]] = {
@@ -143,13 +144,16 @@ def join_address(*parts: str | None) -> str | None:
 
 
 def normalize_floor(floor: str | None) -> str | None:
-    """숫자·B 로 온 지하층을 직방 표기에 맞춘다 ('0.5' → '반지하', '-1'·'B1' → '지하1').
+    """숫자·B 로 온 지하층을 직방 표기에 맞추고 ('0.5' → '반지하', '-1'·'B1' → '지하1'), 저·중·고를 저층·중층·고층으로 맞춘다.
 
     당근은 반지하를 0.5, 지하를 음수로, 네이버는 지하를 음수나 'B1' 로 준다. 직방은 처음부터
-    '반지하' 로 준다. 그 밖의 값('3', '저', '옥탑방' ...)은 그대로 둔다.
+    '반지하' 로 준다. 층을 숫자 대신 밝힌 매물은 직방·네이버가 '저'·'중'·'고', 당근이 '저층'·'중층'·'고층' 으로 준다
+    (2026-10-20 실측: 강남역·역삼동 목록). 그 밖의 값('3', '옥탑방' ...)은 그대로 둔다.
     """
     if floor is None:
         return None
+    if floor in RELATIVE_FLOOR_LABELS:
+        return RELATIVE_FLOOR_LABELS[floor]
     basement = BASEMENT_FLOOR_PATTERN.match(floor)
     if basement is not None:
         return f'지하{int(basement.group(1))}'
@@ -162,6 +166,33 @@ def normalize_floor(floor: str | None) -> str | None:
     if number < 0 and number.is_integer():
         return f'지하{int(-number)}'
     return floor
+
+
+def floor_number(floor: str | None) -> int | None:
+    """정규화한 층(`normalize_floor`)의 숫자. 지상은 양수, 지하는 음수다 ('3' → 3, '지하1' → -1).
+
+    반지하·저층·옥탑처럼 몇 층인지 모르는 표기는 None (모름)이다. 층으로 거르거나 정렬할 때 쓴다.
+    """
+    if floor is None:
+        return None
+    # isdigit 은 int() 가 못 읽는 위첨자('²')도 받아 직렬화 중에 ValueError 가 난다. isdecimal 은 int() 가 읽는 숫자만 받는다
+    if floor.isdecimal():
+        return int(floor)
+    if floor.startswith('지하') and floor[2:].isdecimal():
+        return -int(floor[2:])
+    return None
+
+
+def insert_after(data: dict[str, Any], anchor: str, key: str, value: Any) -> dict[str, Any]:
+    """`anchor` 키 바로 뒤에 `key` 를 넣은 새 dict. `anchor` 가 없으면 맨 뒤에 넣는다 (출력 JSON 의 키 순서를 맞출 때)."""
+    if anchor not in data:
+        return {**data, key: value}
+    result: dict[str, Any] = {}
+    for name, item in data.items():
+        result[name] = item
+        if name == anchor:
+            result[key] = value
+    return result
 
 
 def normalize_date(value: str | None) -> str | None:
@@ -424,7 +455,7 @@ class Listing(BaseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description="해당 층 (예 '3', '반지하', '지하1', '옥탑')")
+        Field(description="해당 층 (예 '3', '반지하', '지하1', '옥탑', '중층'). 출력에는 숫자 floor_number 가 뒤에 붙는다")
     ] = None
     building_floor: Annotated[
         str | None,
@@ -481,7 +512,8 @@ class Listing(BaseModel):
         data: dict[str, Any] = handler(self)
         for field in self.not_applicable_fields():
             data.pop(field, None)
-        return data
+        # 층이 '3'·'지하1'·'중층' 처럼 섞여 와 층으로 거르거나 정렬하기 어려워 숫자를 floor 바로 뒤에 붙인다
+        return insert_after(data, 'floor', 'floor_number', floor_number(self.floor))
 
 
 class ListingDetail(Listing):

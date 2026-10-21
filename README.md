@@ -94,6 +94,7 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
       "area_m2": 1.0,
       "area_pyeong": 0.3,
       "floor": "1",
+      "floor_number": 1,
       "building_floor": "1",
       "address": "서울특별시 강남구 역삼동 000-1",
       "distance_km": 0.15,
