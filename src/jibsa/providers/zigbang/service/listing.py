@@ -157,6 +157,14 @@ class ZigbangSearchResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='반경(동 경계) 안에 아직 받지 않은 매물이 있는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
+    ] = False
+    next_position: Annotated[
+        dict[str, Any] | None,
+        Field(exclude=True, description='이어 받을 위치 ({"offset": 앞서 받은 핀 수}). 더 없으면 None')
+    ] = None
     listings: Annotated[
         # 오피스텔의 complex_id 까지 내보낸다 (SerializeAsAny 가 없으면 공통 Listing 필드만 나간다)
         list[SerializeAsAny[Listing]],
@@ -577,6 +585,7 @@ def search_listings(
     limit: int = 20,
     boundary: ZigbangBoundary | None = None,
     subway_id: int | None = None,
+    offset: int = 0,
 ) -> ZigbangSearchResult:
     """중심점 반경 안의 매물을 가까운 순으로 `limit` 건 조회한다.
 
@@ -599,6 +608,9 @@ def search_listings(
     `subway_id` 를 명시하면 지도 칸 대신 역 반경 전용 API 를 유형별 1회 조회하고 반경 밖은 제외한다.
     주지 않으면(좌표·동·구 검색) 지도 칸으로 찾는다.
     `conditions.without_random` 은 오피스텔 요청의 서버 셔플만 끄며, 최종 결과는 거리순이다.
+
+    `offset` 은 이어 받기(`--next`)에서 앞서 받은 핀 수다. 핀은 다시 받아 가까운 순으로 세운 뒤 그다음부터 요약을 받는다.
+    핀 요청은 지도 칸 수만큼이라 적고, 요약은 15개에 1회라 앞서 받은 매물의 요약을 다시 받지 않는다.
 
     직방 카테고리별 방 구조: 원룸 = 오픈형·분리형·복층형 원룸 (원룸형 오피스텔 포함), 빌라 = 투룸·
     쓰리룸·포룸이상 (원룸형 구조만 주면 빌라는 조회하지 않는다), 오피스텔 = 원룸형·투룸·쓰리룸 이상.
@@ -624,8 +636,10 @@ def search_listings(
         geohashes=geohashes, subway_id=subway_id, radius_km=radius_km, boundary=boundary,
     )
 
-    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
-    nearest = sorted(scan.pins.values(), key=lambda entry: entry[1])[:limit]
+    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다. 거리가 같으면 매물 번호 순으로 세워 이어 받기
+    # (offset)의 경계가 서버 순서에 흔들리지 않게 한다 (2026-10-21 실측: 강남역 0.5km 오피스텔 핀 543개 중 같은 건물이라 거리가
+    # 같은 묶음 101개, 큰 것은 36개)
+    nearest = sorted(scan.pins.values(), key=lambda entry: (entry[1], entry[0].id))[offset:offset + limit]
     distance_by_id = {pin.id: distance for pin, distance in nearest}
     building_by_id = {pin.id: pin.building_id for pin, _ in nearest}
     ids = [pin.id for pin, _ in nearest]
@@ -643,6 +657,7 @@ def search_listings(
     notes = scan.notes + excluded_notes(limit, len(ids), len(listings))
     return _search_result(
         region, listings, scan.pins, notes, limit=limit, inspected=len(ids), radius_km=radius_km, boundary=boundary,
+        offset=offset,
     )
 
 
@@ -783,33 +798,50 @@ def _search_result(
     inspected: int,
     radius_km: float,
     boundary: ZigbangBoundary | None,
+    offset: int = 0,
 ) -> ZigbangSearchResult:
-    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다. `inspected` 는 요약을 받은 핀 수다."""
+    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다. `inspected` 는 요약을 받은 핀 수다.
+
+    범위(동 경계·반경) 안에 아직 요약을 받지 않은 핀이 남았으면 이어 받을 위치를 붙인다. 반경 밖 핀은 반경 안이
+    모자랄 때 채우는 것이라 남은 매물로 세지 않는다 (당근 반경 검색과 같다).
+    """
     if boundary is not None:
-        in_boundary = len(pins)
+        in_scope = len(pins)
+    else:
+        in_scope = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
+    received = offset + inspected
+    has_more = inspected > 0 and received < in_scope
+    next_position = {'offset': received} if has_more else None
+    if boundary is not None:
         return ZigbangSearchResult(
             region=region,
             boundary=boundary.name,
-            total=in_boundary,
+            total=in_scope,
             returned=len(listings),
             listings=listings,
             notes=notes
             + limit_notes(
-                in_boundary, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
-                inspected=inspected,
+                in_scope, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
+                inspected=inspected, offset=offset, resumable=has_more,
             ),
+            has_more=has_more,
+            next_position=next_position,
         )
-    in_radius = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km,
-        total=in_radius,
+        total=in_scope,
         returned=len(listings),
         listings=listings,
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다
         notes=notes
-        + limit_notes(in_radius, len(listings), limit, approximate=True, radius=True, inspected=inspected)
-        + beyond_radius_notes(listings, radius_km),
+        + limit_notes(
+            in_scope, len(listings), limit, approximate=True, radius=True, inspected=inspected, offset=offset,
+            resumable=has_more,
+        )
+        + beyond_radius_notes(listings, radius_km, resumed=offset > 0),
+        has_more=has_more,
+        next_position=next_position,
     )
 
 

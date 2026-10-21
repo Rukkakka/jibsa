@@ -38,7 +38,7 @@ class Capture:
 
     Args:
         name: 뒤 명령 인자의 `{name}` 에 채울 이름. 이미 담긴 이름이면 덮어쓰지 않는다.
-        items: 결과의 목록 칸 (예: `listings`).
+        items: 결과의 목록 칸 (예: `listings`). 비우면 결과 맨 위 칸에서 꺼낸다 (이어 받기 표 `next`).
         field: 항목에서 꺼낼 칸 (예: `id`). 숫자면 문자열로 바꾼다.
         prefix: 이 글자로 시작하는 값만 (직방 단지 ID 의 `apt-`·`officetel-`).
         largest: 주면 이 칸이 가장 큰 항목에서 꺼낸다 (거래가 있을 평형을 고르려고 세대수가 가장 많은 평형).
@@ -89,11 +89,17 @@ DAANGN_LISTINGS: tuple[str, ...] = ('daangn', 'search', 'listings')
 
 # 러너 하나가 소스 하나를 돈다. 러너마다 IP 와 요청 제한 상태가 따로라 한 소스가 막혀도 다른 소스 검사는 그대로 된다.
 # 매물 검색은 찾는 방식(동 이름 경계·역 반경·좌표 반경·단지)마다 쓰는 API 가 달라 방식별로 부른다. --limit 은 작게 준다
-# (감시는 결과가 있는지만 보고, 네이버는 요청 제한이 가장 엄격하다)
+# (감시는 결과가 있는지만 보고, 네이버는 요청 제한이 가장 엄격하다). 이어 받기(--next)는 첫 결과에서 쓰지 않는 서버 커서·offset
+# (직방 아파트 offset, 당근 피드·역 목록 after, 네이버 seed·lastInfo)을 보내 사이트가 바꾸면 따로 깨질 수 있어, 그 방식마다 앞 결과의
+# next 로 한 번 더 부른다. 인자는 앞 명령과 같아야 한다 (다른 지역·조건의 next 는 INVALID_ARGUMENT)
 GROUPS: dict[str, tuple[Step, ...]] = {
     'zigbang': (
         Step('지역 찾기 역삼동', ('zigbang', 'search', 'locations'), ('역삼동',), 'results'),
-        Step('원룸 동 경계 역삼동', ROOM, ('역삼동', '--limit', '2'), 'listings', (Capture('room', 'listings', 'id'),)),
+        Step(
+            '원룸 동 경계 역삼동', ROOM, ('역삼동', '--limit', '2'), 'listings',
+            (Capture('room', 'listings', 'id'), Capture('room_next', '', 'next')),
+        ),
+        Step('원룸 이어 받기 역삼동', ROOM, ('역삼동', '--limit', '2', '--next', '{room_next}'), 'listings'),
         Step('원룸 상세', ZIGBANG_LISTING, ('{room}',), 'id'),
         # 오피스텔 건물은 매물이 있는 건물이어야 해서 매물 목록에서 고른다
         Step(
@@ -102,8 +108,12 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step(
             '아파트 동 목록 역삼동', APT, ('역삼동', '--limit', '2'), 'listings',
-            (Capture('apt', 'listings', 'complex_id', prefix='apt-'), Capture('apt_listing', 'listings', 'id')),
+            (
+                Capture('apt', 'listings', 'complex_id', prefix='apt-'), Capture('apt_listing', 'listings', 'id'),
+                Capture('apt_next', '', 'next'),
+            ),
         ),
+        Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         Step('아파트 역 반경 강남역', APT, ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
         Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name'),
@@ -126,9 +136,15 @@ GROUPS: dict[str, tuple[Step, ...]] = {
     'naver': (
         Step('하위 지역 강남구', ('naver', 'regions'), ('강남구',), 'regions'),
         Step('동네 추이 역삼동', ('naver', 'trend'), ('역삼동',), 'listing_count.weekly'),
-        Step('매물 동 전체 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2'), 'listings', (Capture('article', 'listings', 'id'),)),
+        Step(
+            '매물 동 전체 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2'), 'listings',
+            (Capture('article', 'listings', 'id'), Capture('dong_next', '', 'next')),
+        ),
+        Step('매물 동 전체 이어 받기 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2', '--next', '{dong_next}'), 'listings'),
         Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id'),
-        Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings'),
+        Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('near_next', '', 'next'),)),
+        # 가까운순은 지도 칸 번호와 그 칸의 커서로 이어 받는다
+        Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),
         Step(
             '단지 목록 역삼동', ('naver', 'search', 'complexes'), ('역삼동', '--sort', '세대수순', '--limit', '1'), 'complexes',
             (Capture('complex', 'complexes', 'complex_number'),),
@@ -151,11 +167,27 @@ GROUPS: dict[str, tuple[Step, ...]] = {
     'daangn': (
         Step('지역 찾기 역삼동', ('daangn', 'search', 'locations'), ('역삼동',), 'results'),
         # 지도 페이지(SSR)를 읽는 경로. 역삼동은 같은 이름 후보가 둘이라 후보마다 지도 페이지를 확인하는 경로도 지난다
-        Step('매물 동 역삼동', DAANGN_LISTINGS, ('역삼동', '--limit', '2'), 'listings', (Capture('article', 'listings', 'id'),)),
+        Step(
+            '매물 동 역삼동', DAANGN_LISTINGS, ('역삼동', '--limit', '2'), 'listings',
+            (Capture('article', 'listings', 'id'), Capture('map_next', '', 'next')),
+        ),
+        # 조건이 없으면 지도 페이지(SSR)의 커서로 피드를 이어 받는다
+        Step('매물 동 이어 받기 역삼동', DAANGN_LISTINGS, ('역삼동', '--limit', '2', '--next', '{map_next}'), 'listings'),
+        # 여러 동('○가')은 동 피드를 커서에 담긴 시각 순으로 합친다. 커서 형식이 바뀌면 next 가 없어 이어 받기가 '확인 못 함' 이 된다
+        Step('매물 여러 동 성수동', DAANGN_LISTINGS, ('성수동', '--limit', '2'), 'listings', (Capture('ga_next', '', 'next'),)),
+        Step('매물 여러 동 이어 받기 성수동', DAANGN_LISTINGS, ('성수동', '--limit', '2', '--next', '{ga_next}'), 'listings'),
         Step('매물 상세', ('daangn', 'listing'), ('{article}',), 'id'),
         # 조건이 있으면 지도 페이지 대신 필터 API(articleFeed·articlesCount)로 받는다
-        Step('매물 동 조건 역삼동 월세', DAANGN_LISTINGS, ('역삼동', '--trade', '월세', '--limit', '2'), 'listings'),
-        Step('매물 역 강남역', DAANGN_LISTINGS, ('강남역', '--limit', '2'), 'listings'),
+        Step(
+            '매물 동 조건 역삼동 월세', DAANGN_LISTINGS, ('역삼동', '--trade', '월세', '--limit', '2'), 'listings',
+            (Capture('feed_next', '', 'next'),),
+        ),
+        Step(
+            '매물 동 조건 이어 받기 역삼동 월세', DAANGN_LISTINGS, ('역삼동', '--trade', '월세', '--limit', '2', '--next', '{feed_next}'),
+            'listings',
+        ),
+        Step('매물 역 강남역', DAANGN_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('station_next', '', 'next'),)),
+        Step('매물 역 이어 받기 강남역', DAANGN_LISTINGS, ('강남역', '--limit', '2', '--next', '{station_next}'), 'listings'),
         Step('매물 반경 강남역', DAANGN_LISTINGS, ('강남역', '--radius', '0.5', '--limit', '2'), 'listings'),
         Step('출퇴근 강남역', ('daangn', 'search', 'commute'), ('강남역', '--limit', '2'), 'stations'),
         Step(
@@ -255,6 +287,9 @@ def _present(value: Any) -> bool:
 
 
 def _capture(data: dict[str, Any], capture: Capture) -> str | None:
+    if not capture.items:
+        value = data.get(capture.field)
+        return str(value) if _present(value) else None
     items = data.get(capture.items)
     if not isinstance(items, list):
         return None

@@ -33,6 +33,8 @@
 
 - 동 정보·상세는 SSR HTML 에 seroval JS 식으로 심긴 라우터 상태(`$_TSR.router=($R=>$R[0]={...})`)의 `dehydratedData.relayRecords`(Relay 정규화 스토어)를 `relay.py` 가 꺼내 `__ref`/`__refs` 를 펼치고, `parser.py` 가 응답 모델로 만든다. 상세의 일부 값은 JSON-LD 에서 읽는다. 스토어가 없으면 `RelayStoreNotFoundError` (CLI 에서 `PARSE_ERROR`).
 - 조건을 건 매물 목록과 다음 페이지는 웹이 쓰는 GraphQL `articleFeed` (persisted query 만 받음)로 받는다. 실패도 HTTP 200 의 `errors` 로 와서 service 의 `unwrap_feed()` 가 판정한다. 해시가 거절되면 지도 페이지 20건에 조건을 직접 거는 방식으로 돌아간다.
+- 조건 없는 동 검색은 지도 페이지 첫 20건을 피드 첫 페이지로 쓰고, 다 쓰지 못하면 마지막으로 쓴 매물의 edge 커서로 `articleFeed` 를 이어 받는다. 스토어의 edge 마다 `cursor` 가 있고(`parser._feed_articles`), 끝 커서(`pageInfo.endCursor`)로 이으면 쓰지 않은 지도 페이지 매물이 `--next` 에서 빠진다. GraphQL 피드의 edge 에도 `cursor` 가 온다.
+- 여러 동(`○가`·`--expand`)은 동 피드를 커서에 담긴 정렬 시각 순으로 합친다 (`search_listings`, `_cursor_time`). 커서는 base64 로 감싼 `정렬 시각|순번|0` 이고 매물 정보에는 시각이 없다. 피드는 이 시각의 최근 순이고 같은 매물은 어느 동 피드에서나 시각이 같다 (2026-10-21 실측: 성수동1가·2가 조건 없는 피드·원룸 월세 피드 60건씩). 예전처럼 동마다 `--limit` 을 나눠 받으면 동마다 다른 시각까지 내려가, 한 동 피드로 보여 준 매물이 다른 동 피드에서 `--next` 에 다시 나왔다 (충무로 1가~5가 2쪽 7건 중 2건). 합치려고 미리 받아 두고 쓰지 않은 매물은 할당량에 세지 않고, 다음 페이지에서 그 동의 마지막으로 쓴 매물 다음부터 다시 받는다. 같은 시각의 같은 매물이 페이지 경계에 걸리면 `last_ids` 로 뺀다. 커서 시각을 못 읽으면(형식 변경) 동 순서로 쓰고 `next` 를 주지 않으며 `[실패]` 로 알린다. 매일 API 감시의 성수동 이어 받기가 이때 '확인 못 함' 이 된다.
 - 지역 해석만 `www.daangn.com` 의 JSON API 를 쓴다.
 - 입력 타입이 틀리면 "알 수 없는 오류" 가 와서 preschoolByNo·getViewRankingArticles 는 숫자, trendingComplexes 의 regionId 는 문자열로 보낸다 (2026-10-10 실측).
 

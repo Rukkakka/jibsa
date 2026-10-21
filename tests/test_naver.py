@@ -24,6 +24,7 @@ from jibsa.providers.naver.service.real_price import get_real_prices
 from jibsa.providers.naver.service.region import legal_division_code_at
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
+    MAX_CLUSTER_PAGE_REQUESTS,
     ONE_ROOM_SHAPE_NOTE,
     NaverListingConditions,
     search_area,
@@ -216,6 +217,49 @@ def test_search_area_moves_on_from_sparse_cluster() -> None:
     # 픽스처의 지도 칸 5개에 3건씩이라 칸을 모두 열어 15건을 받는다
     assert sum(request.url.path.endswith('/clusteredArticles') for request in requests) == 5
     assert len(result.listings) == 15
+
+
+def test_cluster_resume_neither_skips_nor_reuses_cursor() -> None:
+    # 실제 API 로 만들 수 없는 두 경계. 요청 상한에 닿는 순간 칸이 끝나면 열지 못한 다음 칸부터 이어 받고,
+    # 이어 받을 칸이 없어져 칸 순서로 이어 가면 그 자리의 다른 칸에 옛 칸의 커서를 넘기지 않는다
+    clusters = [
+        {
+            'clusterId': f'17/{111700 + index}/50700',
+            'coordinates': {'xCoordinate': 127.0305, 'yCoordinate': 37.4928 + index * 0.0001},
+            'articleCount': 1,
+        }
+        for index in range(MAX_CLUSTER_PAGE_REQUESTS + 2)
+    ]
+    sent: list[dict] = []
+
+    def run(shown: list[dict], start: dict | None) -> dict | None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = load(ROUTES[request.url.path])
+            if request.url.path.endswith('/articleClusters'):
+                body['result']['clusters'] = shown
+            else:
+                payload = json.loads(request.content)
+                sent.append(payload)
+                body['result']['hasNextPage'] = False
+                body['result']['list'] = body['result']['list'][:1]
+                body['result']['list'][0]['representativeArticleInfo']['articleNumber'] = payload['clusterId'].replace('/', '')
+            return httpx.Response(200, json=body)
+
+        client = NaverClient()
+        client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+        with client:
+            return search_area(client, 37.4928, 127.0305, radius_km=1.0, limit=120, start=start).next_position
+
+    # 칸마다 1쪽이라 상한만큼 칸을 열고, 상한에 막힌 다음 칸이 이어 받을 칸이다
+    position = run(clusters, None)
+    assert len(sent) == MAX_CLUSTER_PAGE_REQUESTS
+    assert position is not None and position['index'] == MAX_CLUSTER_PAGE_REQUESTS
+
+    sent.clear()
+    run(clusters[:2] + clusters[3:], {'cluster': '17/999999/50700', 'index': 2, 'seed': 'old', 'last_info': [1, 2.0, 'x']})
+    assert sent[0]['clusterId'] == clusters[3]['clusterId']
+    paging = sent[0]['articlePagingRequest']
+    assert paging.get('seed') is None and paging.get('lastInfo') is None
 
 
 def test_search_area_puts_unknown_distance_last() -> None:

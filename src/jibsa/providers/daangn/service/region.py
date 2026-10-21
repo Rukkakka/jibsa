@@ -198,7 +198,7 @@ def _ga_dong_siblings(query: str, candidates: list[DaangnLocationModel]) -> list
     """'○가' 로 나뉜 동(성수동 → 성수동1가·성수동2가)을 '가' 번호 순으로 준다. 첫 후보와 같은 시·구만 센다.
 
     당근 지역 검색은 '성수동' 에 두 동을 함께 주는데 예전에는 첫 후보(성수동2가)만 찾아 1가 매물이 빠졌다 (2026-10-15
-    실측). 직방·네이버처럼 모두 찾는다 (`search_listings` 의 `split_budget`).
+    실측). 직방·네이버처럼 모두 찾는다 (`search_listings` 가 동 피드를 시각 순으로 합친다).
     """
     pattern = re.compile(rf'{re.escape(query.split()[-1])}(\d+)가')
     found: dict[int, tuple[int, DaangnLocationModel]] = {}
@@ -436,7 +436,9 @@ STATION_PAGE_SIZE: int = 100
 def station_article_edges(
     fetch: Callable[[int, str | None], DaangnCommuteStationArticleConnectionModel],
     limit: int,
-) -> tuple[list[DaangnCommuteArticleEdgeModel], bool]:
+    *,
+    after: str | None = None,
+) -> tuple[list[DaangnCommuteArticleEdgeModel], bool, str | None]:
     """역 주변 매물을 `STATION_PAGE_SIZE` 건씩 `limit` 건까지 이어 받는다. 역 주변 목록과 출퇴근 역별 매물이 함께 쓴다.
 
     받은 수로 예산을 세고 뺄 매물을 채우지 않는다. limit 최대 120 이라 요청 2번 안에 끝나 커서 반복 검사를 두지 않는다.
@@ -444,22 +446,22 @@ def station_article_edges(
     Args:
         fetch: (받을 수, 커서) → 한 페이지.
         limit: 최대 매물 수.
+        after: 이어 받기(`--next`)에서 시작할 커서. 없으면 처음부터.
 
     Returns:
-        (받은 edge, 서버에 더 있는지).
+        (받은 edge, 서버에 더 있는지, 다음 페이지 커서).
     """
     edges: list[DaangnCommuteArticleEdgeModel] = []
-    after: str | None = None
     has_more = False
     while len(edges) < limit:
         connection = fetch(min(STATION_PAGE_SIZE, limit - len(edges)), after)
         edges += connection.edges
         page_info = connection.page_info
         has_more = bool(page_info and page_info.has_next_page and page_info.end_cursor)
+        after = page_info.end_cursor if page_info else None
         if not connection.edges or not has_more:
             break
-        after = page_info.end_cursor if page_info else None
-    return edges, has_more
+    return edges, has_more, after
 
 
 class DaangnStation(BaseModel):

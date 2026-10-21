@@ -50,7 +50,8 @@ pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩
 jibsa 프로세스가 하나의 상태 파일을 공유**한다. LLM 이 명령을 연달아 실행해도 간격이 지켜진다.
 
 - 상태 파일: `<state_dir>/ratelimit/<source>.json`. `state_dir` 은
-  `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`.
+  `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`. 같은 폴더의 `next/` 에는 매물 검색
+  이어 받기 표(`jibsa.cli.paging`)를 하루 동안 둔다.
 - `RateLimiter.reserve()` 가 `flock` 잠금 안에서 다음 슬롯을 예약하고, 실제 대기(`sleep`)는
   잠금 밖에서 한다. Windows 는 `fcntl` 이 없어 `msvcrt.locking` 으로 같은 잠금을 건다.
 - 슬롯까지 `max_wait`(60초)보다 오래 기다려야 하면 기다리지 않고

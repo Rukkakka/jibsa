@@ -238,6 +238,14 @@ class NaverListingsResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='네이버 목록에 아직 받지 않은 매물이 남았는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
+    ] = False
+    next_position: Annotated[
+        dict[str, Any] | None,
+        Field(exclude=True, description='이어 받을 위치 (목록 커서 seed·last_info 와 지도 칸·동 번호). 더 없으면 None')
+    ] = None
     listings: Annotated[
         list[Listing],
         Field(description='매물')
@@ -608,6 +616,27 @@ class PageScan(BaseModel):
         set[Any],
         Field(description='이미 받은 항목 번호. 처음 보는 항목이 없는 페이지면 커서가 멈춘 것으로 본다')
     ] = Field(default_factory=set)
+    cursor: Annotated[
+        tuple[str | None, Any] | None,
+        Field(description=(
+            '마지막으로 훑은 목록에서 다음 페이지를 받을 (seed, lastInfo). 다음 페이지가 없거나 커서가 멈췄으면 None. '
+            '이어 받기(--next)에 쓴다'
+        ))
+    ] = None
+
+
+def resume_cursor(position: dict[str, Any] | None) -> tuple[str | None, Any] | None:
+    """이어 받기 위치에 담긴 (seed, lastInfo). 목록 처음부터면 None."""
+    if not position or position.get('seed') is None and position.get('last_info') is None:
+        return None
+    return position.get('seed'), position.get('last_info')
+
+
+def cursor_position(cursor: tuple[str | None, Any] | None) -> dict[str, Any]:
+    """`resume_cursor` 가 되읽을 수 있게 (seed, lastInfo) 를 이어 받기 위치로 담는다."""
+    if cursor is None:
+        return {}
+    return {'seed': cursor[0], 'last_info': cursor[1]}
 
 
 _Page = NaverArticlePageModel | NaverComplexListPageModel | NaverRedevelopmentAreaPageModel
@@ -620,6 +649,7 @@ def scan_pages(
     *,
     page_size: int,
     max_pages: int | None = None,
+    start: tuple[str | None, Any] | None = None,
 ) -> None:
     """`fetch(size, seed, last_info)` 로 페이지를 차례로 받아 항목마다 `keep(item)` 을 부른다.
 
@@ -629,12 +659,16 @@ def scan_pages(
     `scan.max_requests` 에 닿으면 `scan.truncated` 를 켠다. 다음 요청에는 앞 페이지의 seed·lastInfo 를 넘긴다
     (seed 가 빠지면 랭킹순이 페이지마다 다시 섞인다).
 
+    멈출 때 다음 페이지를 받을 커서를 `scan.cursor` 에 남긴다 (다음 페이지가 없으면 None). 다음 호출에서 `start` 로
+    주면 그 페이지부터 받는다 (이어 받기). 네이버 커서는 마지막 항목의 정렬 값이라 페이지 크기가 달라도 이어진다.
+
     Args:
         keep: 항목을 걸러 담고 그 항목의 번호를 돌려준다 (모르면 None).
         max_pages: 이번 호출에서 받을 페이지 상한 (가까운순의 클러스터 하나). 없으면 요청 상한까지.
+        start: 이어 받을 (seed, lastInfo). 없으면 첫 페이지부터.
     """
-    seed: str | None = None
-    last_info: Any = None
+    seed, last_info = start if start is not None else (None, None)
+    scan.cursor = start
     pages = 0
     while max_pages is None or pages < max_pages:
         if scan.received >= scan.limit:
@@ -646,16 +680,19 @@ def scan_pages(
         pages += 1
         page = fetch(min(page_size, scan.limit - scan.received), seed, last_info)
         if page is None:
+            scan.cursor = None
             return
         scan.received += len(page.items)
         scan.total = page.total_count
         new_ids = {keep(item) for item in page.items} - {None} - scan.seen
         scan.seen |= new_ids
         if not page.has_next_page or not new_ids:
+            scan.cursor = None
             return
         # seed 는 첫 응답 값이 마지막 페이지까지 그대로 오고 null 로 온 적이 없어 응답 값을 그대로 넘긴다
         # (단지 매물·동 전체·최신순·가까운순·재개발 구역·단지 목록 6종 22쪽, 2026-10-10 확인)
         seed, last_info = page.seed, page.last_info
+        scan.cursor = (seed, last_info)
 
 
 def listing_keeper(
@@ -697,6 +734,8 @@ def pagination_notes(
     subject: str = '매물',
     truncated: bool = False,
     excluded_reason: str = EXCLUDED_REASON,
+    resumable: bool = False,
+    resumed: bool = False,
     scope: str = '',
 ) -> list[str]:
     """조회 예산과 실제 제외 결과에 맞춰 추가 조회 없이 안내한다.
@@ -708,6 +747,8 @@ def pagination_notes(
     Args:
         excluded_reason: 제외 안내에서 `subject` 앞에 붙는 제외 사유 (관형어). 반경으로 거르는 검색은
             `RADIUS_EXCLUDED_REASON`.
+        resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
+        resumed: 이어 받기(`--next`)로 받은 결과면 True. 앞 결과에서 받은 매물이 있어 '전부' 대신 '남은 매물' 이라 한다.
         scope: '전부' 가 어느 범위인지 앞에 붙일 말 (예: '반경 1km 안팎에서 '). 반경을 넓히면 더 나오는데 '전부' 만 쓰면
             찾은 범위의 전부인지 알 수 없다 (2026-10-20 LLM 사용 시험: 1km '26건이 전부' 뒤 2km 85건).
     """
@@ -718,9 +759,13 @@ def pagination_notes(
             '제외', f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)",
         ))
     elif returned < limit and not truncated:
-        what = scope + f'조건에 맞는 {subject}'
+        what = scope + (f'남은 {subject}' if resumed else f'조건에 맞는 {subject}')
         notes.append(f"{what}{particle(subject, '은/는')} 이 {returned}건이 전부입니다")
-    if truncated:
+    if resumable:
+        notes.append(note('일부', f'전체 {total}건 중 일부입니다. 이어 보려면 결과의 next 를 --next 로 주세요'))
+        return notes
+    # 이어 받은 결과의 returned 는 이번 몫이라 전체 수와 견주면 앞 결과에서 받은 매물을 빼먹는다
+    if truncated or resumed:
         return notes
     if limit >= MAX_LIST_LIMIT and (total > returned or inspected >= limit):
         notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))

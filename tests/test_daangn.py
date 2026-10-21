@@ -1,3 +1,4 @@
+import base64
 import gzip
 import json
 from pathlib import Path
@@ -134,13 +135,14 @@ def test_search_listings_filters_on_server() -> None:
     }
     # 조건에 맞는 매물(150건)이 많아, limit 이 찰 때까지 다음 페이지를 커서로 이어 받는다 (동마다 최대 3페이지)
     assert [body['variables'].get('after') for body in _feed_payloads(requests)] == [None]
-    assert result.fetched == 6
+    # 픽스처 피드는 요청한 수와 상관없이 6건을 주지만 쓰는 건 limit 건까지다. 남은 매물은 다음 페이지에서 다시 받는다
+    assert result.fetched == 3
     assert result.total == 150
     assert {listing.id for listing in result.listings} == {'1000101'}
     assert result.listings[0].trade_type == '월세'
     assert result.notes[0] == (
         'total 150건은 조건에 맞는 매물을 주변 동 매물까지 센 당근 집계입니다 (동마다 1000에서 잘림). '
-        '그중 최근 6건을 받았습니다 (동마다 최대 120건)'
+        '그중 최근 3건을 받았습니다 (동마다 최대 120건)'
     )
 
 
@@ -173,7 +175,7 @@ def test_search_listings_does_not_refill_when_few_match() -> None:
     payloads = []
     result = search_listings(_paged_stub_client(101, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
     assert len(payloads) == 1
-    assert result.notes[0].endswith('그중 최근 6건을 받았습니다 (동마다 최대 120건)')
+    assert result.notes[0].endswith('그중 최근 1건을 받았습니다 (동마다 최대 120건)')
 
 
 def test_search_listings_continues_when_count_fails() -> None:
@@ -350,6 +352,59 @@ def _region(name3: str):
 def _not_found(_) -> None:
     request = httpx.Request('GET', 'https://realty.daangn.com/map/x')
     raise httpx.HTTPStatusError('404', request=request, response=httpx.Response(404, request=request))
+
+
+@pytest.mark.parametrize('timed', [True, False])
+def test_dong_feeds_are_merged_by_time_across_pages(timed: bool) -> None:
+    # 당근은 동마다 주변 동 매물을 섞어 줘 같은 매물이 두 동 피드에 같은 시각으로 온다. 동 피드를 시각 순으로 합쳐야 다음
+    # 페이지에 앞 매물이 다시 나오지 않는다. 커서의 시각을 못 읽으면(형식 변경) 동 순서로 주고 next 를 주지 않는다
+    from types import SimpleNamespace
+
+    from jibsa.providers.daangn.api.response.search import (
+        DaangnArticleFeedResponseModel,
+    )
+    from jibsa.providers.daangn.service.common import DaangnRegion
+
+    base = parse_map_html(html('map'), '역삼동')
+    x1, x2, y1, y2, shared = base.articles[:5]
+    feeds = {1: [(x1, '12'), (shared, '10'), (x2, '08')], 2: [(y1, '11'), (shared, '10'), (y2, '09')]}
+    cursors = {
+        region_id: [
+            base64.b64encode(f'2026-10-21T{at}:00:00.000Z|{position}|0'.encode()).decode() if timed else f'cursor-{at}'
+            for position, (_, at) in enumerate(rows)
+        ]
+        for region_id, rows in feeds.items()
+    }
+    region_ids = {'역삼동': 1, '논현동': 2}
+
+    def map_page(parameter):
+        # 지도 페이지는 피드 첫 2건이다 (실제는 20건)
+        region_id = region_ids[parameter.name3]
+        return base.model_copy(update={
+            'articles': [article for article, _ in feeds[region_id][:2]], 'cursors': cursors[region_id][:2],
+            'end_cursor': cursors[region_id][1], 'has_next_page': True,
+        })
+
+    def feed(payload):
+        region_id = payload.input.location_filter.original_region_id
+        start = cursors[region_id].index(payload.after) + 1
+        rows = list(zip(feeds[region_id], cursors[region_id], strict=True))[start:start + payload.first]
+        edges = [{'node': {'type': 'ARTICLE', 'article': article.model_dump(by_alias=True)}, 'cursor': cursor} for (article, _), cursor in rows]
+        page_info = {'endCursor': rows[-1][1] if rows else None, 'hasNextPage': start + len(rows) < len(feeds[region_id])}
+        return DaangnArticleFeedResponseModel.model_validate({'data': {'articleFeed': {'edges': edges, 'pageInfo': page_info}}})
+
+    client = SimpleNamespace(run_request_map=map_page, run_request_article_feed=feed)
+    regions = [DaangnRegion(name1='서울특별시', name2='강남구', name3=name, region_id=region_id) for name, region_id in region_ids.items()]
+    first = search_listings(client, regions, limit=3)
+    if not timed:
+        assert first.next_position is None
+        assert first.notes[0].startswith('[실패] 당근 피드의 시각을 읽지 못해')
+        return
+    assert [listing.id for listing in first.listings] == [x1.original_id, y1.original_id, shared.original_id]
+    # 논현동 피드의 같은 매물(같은 시각)은 다시 내지 않고, 두 동의 남은 매물을 시각 순으로 잇는다
+    second = search_listings(client, regions, limit=3, resume=first.next_position)
+    assert [listing.id for listing in second.listings] == [y2.original_id, x2.original_id]
+    assert not second.has_more
 
 
 def test_missing_map_page_among_expanded_dongs_is_skipped() -> None:
@@ -677,7 +732,7 @@ def test_search_area_fetches_only_enough_card_chunks(missing_cards: bool) -> Non
     assert len(card_requests) == 2 and CARD_CHUNK_SIZE == 20
     assert result.returned == (20 if missing_cards else 25)
     assert [len(json.loads(request.content)['variables']['originalArticleIds']) for request in card_requests] == [20, 5]
-    assert '--limit 을 늘리거나' in result.notes[-1]
+    assert '이어 보려면 결과의 next' in result.notes[-1]
 
 
 def test_search_area_notes_truncated_pins() -> None:

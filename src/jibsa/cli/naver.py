@@ -22,6 +22,11 @@ from jibsa.cli.output import (
     split_csv,
     validate_ranges,
 )
+from jibsa.cli.paging import (
+    NextOption,
+    decode_next,
+    encode_next,
+)
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
 from jibsa.core.korean import is_ri_code
@@ -920,6 +925,7 @@ def search_command(
             help=f"정렬: {', '.join(SORT_TYPE_BY_NAME)}. 기본은 가까운순, 동 전체 검색이면 랭킹순. 가까운순 말고는 네이버 정렬 그대로 준다 (distance_km 순이 아님). 동 이름에 가까운순을 주면 동 중심 반경으로 찾는다",
         )
     ] = None,
+    next_: NextOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을 가까운 순으로, 동 이름은 그 동 전체를 랭킹순으로 찾는다.
@@ -936,7 +942,11 @@ def search_command(
     address 는 동까지다 (네이버 목록이 번지를 주지 않음). 번지까지 있는 주소는 listing 에서.
 
     예: jibsa naver search listings 역삼동 -t 오피스텔 --trade 월세 --deposit-max 3000 --rent-max 150
+
+    결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다. 이어 받을 때는 지역을 다시 찾지 않아 네이버 요청이 준다.
+    단지·재개발 구역 매물(--complex·--redevelopment)은 이어 받지 않는다.
     """
+    position = decode_next(next_)
     # 단지·재개발 구역 매물 목록이 받지 않는 지역 검색 조건 (기본값이면 주지 않은 것으로 None)
     area_options = {
         '--lat': lat, '--lng': lng, '--radius': radius,
@@ -989,6 +999,21 @@ def search_command(
 
     # 지역 이름을 찾는 요청과 매물 요청이 같은 클라이언트를 쓴다
     with handle_errors(SOURCE), NaverClient() as client:
+        if position is not None:
+            # 앞 결과가 찾은 지역·동·정렬로 바로 이어 받는다. 지역을 찾는 요청과 그 안내는 첫 결과에만 있다
+            target = position['target']
+            resumed_region = NaverRegion.model_validate(target['region'])
+            result = search_area(
+                client, resumed_region.lat, resumed_region.lng, conditions=conditions, radius_km=radius or DEFAULT_RADIUS_KM,
+                sort=target['sort'], legal_division_codes=target['codes'], limit=limit, start=position,
+            )
+            emit(
+                {'region': target['region'], **target['scope'], **result.model_dump(mode='json')},
+                pretty,
+                notes=trade_notes + result.notes,
+                next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
+            )
+            return
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
         # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
         whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
@@ -1013,24 +1038,30 @@ def search_command(
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 
+        search_sort = sort or ('랭킹순' if whole_dong else '가까운순')
+        codes = [dong.legal_division_code for dong in dongs if dong.legal_division_code] if whole_dong else None
         result = search_area(
             client,
             region.lat,
             region.lng,
             conditions=conditions,
             radius_km=radius or DEFAULT_RADIUS_KM,
-            sort=sort or ('랭킹순' if whole_dong else '가까운순'),
-            legal_division_codes=[dong.legal_division_code for dong in dongs if dong.legal_division_code] if whole_dong else None,
+            sort=search_sort,
+            legal_division_codes=codes,
             limit=limit,
         )
         # 직방처럼 어디를 얼마나 찾았는지 함께 준다. 서비스는 좌표만 받아
         # 지역을 모르므로(단지 매물 목록과 결과 모델을 같이 쓴다) 지역을 아는 여기서 붙인다
+        scope = _search_scope(region, whole_dong, radius)
+        # 이어 받기 표에는 찾은 지역·동·정렬을 담아 다음에 지역을 다시 찾지 않는다
+        target = {'region': region.model_dump(mode='json'), 'scope': scope, 'sort': search_sort, 'codes': codes}
         emit(
             {
                 'region': region.model_dump(mode='json'),
-                **_search_scope(region, whole_dong, radius),
+                **scope,
                 **result.model_dump(mode='json'),
             },
             pretty,
             notes=trade_notes + notes + result.notes,
+            next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
         )

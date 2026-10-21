@@ -594,6 +594,8 @@ def apt_pagination_notes(
     *,
     has_more: bool = False,
     suggest_limit: bool = True,
+    resumable: bool = False,
+    resumed: bool = False,
 ) -> list[str]:
     """실제로 받은 원본 매물 수를 조회 예산으로 세고 추가 조회 없이 안내한다.
 
@@ -603,14 +605,17 @@ def apt_pagination_notes(
     당근 `listing_budget_notes`·네이버의 같은 역할 함수와 문구는 비슷하지만 공통 헬퍼로 합치지 않는다. 제외 수를 세는
     방식(직방 받은 수 − 반환 수, 네이버 min(받은 수, limit) − 반환 수, 당근 eligible)과 더 받을 매물 판단(당근 has_more,
     네이버 truncated)이 소스마다 달라 합치면 그 옵션을 모두 받는 함수가 된다.
+    `resumable` 이면 결과의 `next` 로 이어 받으라고 권하고, `resumed`(이어 받은 결과)면 '전부' 대신 '남은 매물' 이라 한다.
     """
     notes: list[str] = []
     if returned < limit:
         if inspected > returned:
             notes.append(note('제외', f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)'))
         elif not has_more:
-            notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
-    if limit >= MAX_LIST_LIMIT and (inspected >= limit or total > returned or has_more):
+            notes.append(f"{'남은' if resumed else '조건에 맞는'} 매물은 이 {returned}건이 전부입니다")
+    if resumable:
+        notes.append(note('일부', '매물이 더 있습니다. 이어 보려면 결과의 next 를 --next 로 주세요'))
+    elif limit >= MAX_LIST_LIMIT and (inspected >= limit or total > returned or has_more):
         notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))
     elif suggest_limit and inspected >= limit and (total > returned or has_more):
         notes.append(note('일부', '매물이 더 있습니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요'))

@@ -190,6 +190,10 @@ class ZigbangStoreSearchResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='범위(반경·동 경계) 안에 더 있는지: 요약을 받지 않은 후보가 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
+    ] = False
     listings: Annotated[
         list[ZigbangStoreListing],
         Field(description='가까운 순 매물')
@@ -501,6 +505,9 @@ def search_store_listings(
             listings.append(listing)
 
     listings.sort(key=by_distance)
+    # --limit 에 맞춰 잘라 낸 매물. 후보 요약을 다 받았어도 범위 안 매물이 잘렸으면 더 있다 (2026-10-21 실측: 성수역 반경
+    # 0.2km 범위 안 35건을 한 묶음에 다 받고 3건만 주며 has_more false 였다)
+    cut = listings[limit:]
     listings = listings[:limit]
     if boundary is not None:
         in_radius = len(pins)
@@ -518,6 +525,9 @@ def search_store_listings(
     )
     matched_in_radius = sum(
         1 for item_id in matched if boundary is not None or within_radius(pins[item_id][0], radius_km)
+    )
+    has_more = inspected_in_radius < in_radius or any(
+        boundary is not None or within_radius(listing.distance_km or 0, radius_km) for listing in cut
     )
     if filter_price:
         notes = [] if boundary is not None else beyond_radius_notes(listings, radius_km)
@@ -547,6 +557,7 @@ def search_store_listings(
         inspected_in_radius=inspected_in_radius if filter_price else None,
         price_matched_in_radius=matched_in_radius if filter_price else None,
         returned=len(listings),
+        has_more=has_more,
         listings=listings,
         notes=notes,
     )

@@ -308,6 +308,8 @@ def limit_notes(
     narrow: str = '조건',
     radius: bool = False,
     inspected: int | None = None,
+    offset: int = 0,
+    resumable: bool = False,
 ) -> list[str]:
     """조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려줄 때의 안내.
 
@@ -327,18 +329,25 @@ def limit_notes(
         inspected: 요약을 받아 확인한 매물 수 (조회 예산). 주면 `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
             받은 뒤 거래 불가로 뺀 매물만큼 다시 채우지 않으므로, 1건만 빠져도 `returned < limit` 이 되어 안내가
             사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
+        offset: 이어 받은 검색(`--next`)에서 앞서 받은 매물 수. 몇 번째부터인지 알린다.
+        resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
     """
     if (returned if inspected is None else inspected) < limit:
         return []
-    if total is None or total <= returned:
+    if total is None or total <= offset + returned:
         return []
     lead = f"조건에 맞는 매물 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
+    picked = f'{order} {offset + 1}번째부터 {returned}건' if offset else f'{order} {returned}건'
     area = '반경' if radius else '지역'
     # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-    return [note('일부', f'{lead} 중 {order} {returned}건입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요')]
+    if resumable:
+        return [note('일부', f'{lead} 중 {picked}입니다. 이어 보려면 결과의 next 를 --next 로 주세요')]
+    return [note('일부', f'{lead} 중 {picked}입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요')]
 
 
-def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, complete: bool = True) -> list[str]:
+def beyond_radius_notes(
+    listings: Sequence['Listing'], radius_km: float, *, complete: bool = True, resumed: bool = False,
+) -> list[str]:
     """반경 안 매물이 모자라 반경 밖 매물까지 함께 돌려줄 때의 안내.
 
     반경 검색은 반경을 덮는 지도 칸 단위로 받아 오므로 반경 밖 매물도 받는다. 반경 안 매물이
@@ -349,6 +358,8 @@ def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, comp
         complete: 반경을 덮는 칸을 끝까지 받았는지. 조회 한도(`limit`·요청 상한)에 닿아 멈췄으면 False 로 주어
             "반경 안 매물이 N건뿐" 이라고 단정하지 않는다. 받지 않은 칸·페이지에 반경 안 매물이 더 있을 수 있다
             (네이버 강남역 반경 0.3km 120건: '116건뿐' 이라 했지만 목화밀라트만 9건이 더 있었다, 2026-10-10).
+        resumed: 이어 받기(`--next`)로 받은 결과면 True. 반경 안 매물 수는 이번 결과만 센 것이라 '남은' 매물이라 한다
+            (앞 결과에서 받은 반경 안 매물은 세지 않는다).
     """
     distances = [listing.distance_km for listing in listings if listing.distance_km is not None]
     beyond = [distance for distance in distances if not within_radius(distance, radius_km)]
@@ -369,12 +380,13 @@ def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, comp
             f'받은 매물 중 반경 {radius_km:g}km 안은 {inside}건이라 {found}도 함께'
         )
         return [note('범위', f'{head} 보여 줍니다. 조회 한도에 닿아 멈췄으므로 반경 안 매물이 더 있을 수 있습니다')]
+    remaining = '남은 매물 중 ' if resumed else ''
     if inside == 0:
         return [note(
-            '범위', f'반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 {found}을 보여 줍니다. {partial}',
+            '범위', f'{remaining}반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 {found}을 보여 줍니다. {partial}',
         )]
     return [note(
-        '범위', f'반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 {found}도 함께 보여 줍니다. {partial}',
+        '범위', f'{remaining}반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 {found}도 함께 보여 줍니다. {partial}',
     )]
 
 

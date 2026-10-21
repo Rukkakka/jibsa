@@ -19,6 +19,11 @@ from jibsa.cli.output import (
     split_csv,
     validate_ranges,
 )
+from jibsa.cli.paging import (
+    NextOption,
+    decode_next,
+    encode_next,
+)
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.geo import (
     DEFAULT_RADIUS_KM,
@@ -43,6 +48,7 @@ from jibsa.providers.zigbang.service.apt import (
     APT_NEAR_MAX_RADIUS_KM,
     APT_TRADE_TYPES,
     ZigbangAptConditions,
+    apt_resume_changed_error,
     merged_dong_region,
     merged_gu_region,
     resolve_apt_region,
@@ -463,6 +469,7 @@ def search_room_command(
             help=f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건)',
         ),
     ] = False,
+    next_: NextOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """원룸·오피스텔·빌라를 검색 중심에서 가까운 순으로 조회한다. 모든 조건은 직방 서버에서 거른다.
@@ -475,9 +482,11 @@ def search_room_command(
         jibsa zigbang search listings room 역삼동 -t 빌라,오피스텔 --room 투룸 --trade 전세 --condition 전세대출,엘리베이터
         jibsa zigbang search listings room 신림역 --floor 지상 --option 에어컨,세탁기 --manage-cost-max 10
         jibsa zigbang search listings room 성수동 -t 원룸 --trade 월세 --limit 10 --details
+        jibsa zigbang search listings room 성수동 -t 원룸 --trade 월세 --limit 10 --next <앞 결과의 next>
     """
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
+    position = decode_next(next_)
     with handle_errors(SOURCE):
         conditions = _room_conditions(
             deposit_min=deposit_min,
@@ -528,10 +537,11 @@ def search_room_command(
             limit=limit,
             boundary=boundary,
             subway_id=region.subway_id,
+            offset=int(position.get('offset', 0)) if position else 0,
         )
         if details:
             result = attach_building_use(client, result)
-        emit(result, pretty, notes=trade_notes + notes + result.notes)
+        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position))
 
 
 @listings_app.command('apt')
@@ -569,6 +579,7 @@ def search_apt_command(
     supply_area_max: Annotated[
         float | None, typer.Option(min=0, help='공급면적 상한 (㎡). 동·구는 서버에서, 반경 검색은 받은 뒤 거른다'),
     ] = None,
+    next_: NextOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """아파트 매물. 동·구 이름이면 그 동·구 전체(직방 목록 순, 거리 없음), 역 이름·좌표·--radius 면 반경 검색.
@@ -580,7 +591,10 @@ def search_apt_command(
         jibsa zigbang search listings apt 역삼동 --trade 전세 --area-min 59
         jibsa zigbang search listings apt 강남역 --radius 1 --trade 전세
         jibsa zigbang search listings apt 역삼동 --supply-area-min 80 --supply-area-max 110
+
+    동·구 검색 결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다 (반경 검색은 이어 받지 않는다).
     """
+    position = decode_next(next_)
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
     validate_ranges(
@@ -619,10 +633,15 @@ def search_apt_command(
             try:
                 district, notes, extra = resolve_apt_region(client, query or '', items=items)
             except RegionNotFoundError:
+                if position is not None:
+                    # 반경 검색은 이어 받지 않는다. 토큰을 버리고 첫 페이지를 주면 앞 결과와 겹친다
+                    raise apt_resume_changed_error() from None
                 notes = [f"{quoted(query or '', '은/는')} 동·구가 아니라 그 위치에서 반경 {DEFAULT_RADIUS_KM:g}km 안 아파트를 찾았습니다"]
             else:
-                result = search_apt_listings(client, district, conditions=conditions, limit=limit, extra_regions=extra)
-                emit(result, pretty, notes=trade_notes + notes + result.notes)
+                result = search_apt_listings(
+                    client, district, conditions=conditions, limit=limit, extra_regions=extra, start=position,
+                )
+                emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position))
                 return
         radius_km = radius or DEFAULT_RADIUS_KM
         region, region_notes = _region(client, query, lat, lng, radius_km, items)

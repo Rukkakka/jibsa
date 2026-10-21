@@ -282,6 +282,10 @@ class ZigbangComplexListingsResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='단지 목록에 아직 받지 않은 매물이 남았는지 (이어 받기는 없다. --limit·조건으로)')
+    ] = False
     listings: Annotated[
         # 아파트는 ZigbangAptListing 이라 서브클래스 필드(complex_id 등)까지 내보낸다
         list[SerializeAsAny[Listing]],
@@ -531,6 +535,7 @@ def list_complex_listings(
         complex_id=complex_id,
         total=total,
         returned=len(listings),
+        has_more=offset < total,
         listings=listings,
         notes=apt_pagination_notes(total, len(listings), limit, inspected),
     )
@@ -597,6 +602,7 @@ def _list_officetel_building_listings(
         complex_id=complex_id,
         total=total,
         returned=len(listings),
+        has_more=len(scanned) < total,
         listings=listings,
         notes=(
             excluded_notes(limit, len(scanned), len(listings), order='직방 목록 순서로 앞의')

@@ -22,6 +22,11 @@ from jibsa.cli.output import (
     split_csv,
     validate_ranges,
 )
+from jibsa.cli.paging import (
+    NextOption,
+    decode_next,
+    encode_next,
+)
 from jibsa.core.errors import (
     JibsaError,
     RegionAmbiguousError,
@@ -54,6 +59,7 @@ from jibsa.providers.daangn.service.common import (
     STRUCTURE_FILTER_BY_LABEL,
     TRADE_TYPES,
     DaangnListingConditions,
+    DaangnRegion,
     FeedQueryRejectedError,
     partial_failure_note,
 )
@@ -103,6 +109,7 @@ from jibsa.providers.daangn.service.real_price import (
     get_region_real_prices,
 )
 from jibsa.providers.daangn.service.region import (
+    DaangnStation,
     find_address,
     find_place,
     find_station,
@@ -141,12 +148,17 @@ from jibsa.providers.zigbang.service.region import (
     resolve_region_with_notes,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 logger = logging.getLogger(__name__)
 # --details 를 붙일 수 있는 매물 검색 결과 (동·반경·역·단지)
 ListingsResult = DaangnSearchResult | DaangnAreaSearchResult | DaangnStationSearchResult | DaangnComplexListingsResult
+# 결과를 내보낸다: (결과, 안내, 이어 받기 표에 함께 담을 검색 방식과 찾은 위치. 이어 받지 않으면 None)
+EmitListings = Callable[[ListingsResult, list[str], dict[str, Any] | None], None]
 
 
 SOURCE: str = 'daangn'
@@ -455,7 +467,7 @@ def _search_not_dong(
     limit: int,
     radius_km: float,
     common_notes: list[str],
-    emit_listings: Callable[[ListingsResult, list[str]], None],
+    emit_listings: EmitListings,
     emit_area: Callable[[float, float, list[str]], None],
 ) -> None:
     """당근 동이 아닌 이름: 역이면 당근 역 주변 목록으로, 아니면(장소 이름) 그 위치의 반경으로 찾아 내보낸다.
@@ -518,7 +530,7 @@ def _search_not_dong(
                 '범위',
                 f"{quoted(dong, '은/는')} 당근 역 주변 매물 목록으로 찾았습니다 (walk_minutes 는 역까지 도보 분). "
                 '역에서 반경으로 찾으려면 --radius 를 주세요',
-            )] + station_notes + station_result.notes)
+            )] + station_notes + station_result.notes, _station_resume(station))
             return
         # 역은 찾았으니 위치를 다시 찾지 않고 역 위치를 중심으로 쓴다
         emit_area(station.lat, station.lng, station_notes + [note(
@@ -537,6 +549,11 @@ def _search_not_dong(
         f"당근에 {quoted(dong, '이라는/라는')} 동이 없어 {finder} 지역 검색으로 찾은 위치({center.address or center.name})에서 "
         f'반경 {radius_km:g}km 안을 찾았습니다',
     )])
+
+
+def _station_resume(station: DaangnStation) -> dict[str, Any]:
+    """역 주변 목록을 이어 받을 때 역을 다시 찾지 않도록 이어 받기 표에 담을 역 (역 ID 는 출력에서 빠져 따로 담는다)."""
+    return {'m': 'station', 'station': {**station.model_dump(), 'station_id': station.station_id}}
 
 
 @search_app.command('listings')
@@ -593,6 +610,7 @@ def search_command(
             help=f'매물마다 상세를 1회씩 더 받아 목록에 없는 관리비·등록일·번지 주소·사용승인일·방 구조를 채운다. 요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건)',
         ),
     ] = False,
+    next_: NextOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """동의 최근 매물, 또는 한 위치의 반경 안 매물을 조회한다. 조건은 당근 서버에서 건다.
@@ -605,7 +623,10 @@ def search_command(
     예: jibsa daangn search listings 역삼동 --city 강남구 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70 --option 반려동물가능
     예: jibsa daangn search listings 역삼역 --radius 0.5 -t 원룸 --trade 월세 --option 반려동물가능
     예: jibsa daangn search listings 성수동 -t 원룸 --trade 월세 --limit 10 --details
+
+    결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않는다.
     """
+    position = decode_next(next_)
     require_finite('--radius', radius)
     require_finite('--parking-min', parking_min)
     validate_ranges(
@@ -623,21 +644,47 @@ def search_command(
         raise typer.BadParameter('--city 와 --expand 는 동 단위로 찾을 때(--lat/--lng·--radius 없이)만 씁니다', param_hint='--city / --expand')
     radius_km = radius if radius is not None else DEFAULT_RADIUS_KM
 
-    def emit_listings(result: ListingsResult, notes: list[str]) -> None:
+    def emit_listings(result: ListingsResult, notes: list[str], resume: dict[str, Any] | None) -> None:
+        # 서비스가 준 다음 위치에 검색 방식·찾은 위치를 더해 이어 받기 표를 만든다 (단지 매물은 이어 받지 않는다)
+        next_position = getattr(result, 'next_position', None)
+        next_token = encode_next({**resume, **next_position}) if resume is not None and next_position else None
         if details:
             # 결과마다 매물 모델이 달라(동·역·단지) 공통 Listing 으로 넘긴다. 하위 모델은 그대로 남는다
             found: list[Listing] = list(result.listings)
             listings, detail_notes = attach_details(client, found)
             result = result.model_copy(update={'listings': listings, 'returned': len(listings)})
             notes = notes + detail_notes
-        emit(result, pretty, notes=notes)
+        emit(result, pretty, notes=notes, next_token=next_token)
 
-    def emit_area(center_lat: float, center_lng: float, place_notes: list[str]) -> None:
+    def emit_area(
+        center_lat: float, center_lng: float, place_notes: list[str], offset: int = 0, region: DaangnRegion | None = None,
+    ) -> None:
         try:
-            area_result = search_area(client, center_lat, center_lng, radius_km=radius_km, conditions=conditions, limit=limit)
+            area_result = search_area(
+                client, center_lat, center_lng, radius_km=radius_km, conditions=conditions, limit=limit, offset=offset,
+                region=region,
+            )
         except FeedQueryRejectedError:
             raise map_query_rejected_error() from None
-        emit_listings(area_result, common_notes + place_notes + area_result.notes)
+        emit_listings(area_result, common_notes + place_notes + area_result.notes, {'m': 'area', 'lat': center_lat, 'lng': center_lng})
+
+    def resume_search(position: dict[str, Any]) -> None:
+        # 앞 결과가 찾은 위치(반경 중심·역·동)로 바로 이어 받는다. 지역을 다시 찾는 요청과 그 안내는 첫 결과에만 있다
+        mode = position['m']
+        # 앞 결과가 찾은 동은 다시 찾지 않는다 (요청을 아낀다). 못 찾았으면(None) 다시 찾아 본다
+        region = DaangnRegion.model_validate(position['region']) if position.get('region') else None
+        if mode == 'area':
+            emit_area(float(position['lat']), float(position['lng']), [], offset=int(position['offset']), region=region)
+        elif mode == 'station':
+            station = DaangnStation.model_validate(position['station'])
+            station_result = search_station(
+                client, station, conditions=conditions, limit=limit, after=str(position['after']), region=region,
+            )
+            emit_listings(station_result, common_notes + station_result.notes, _station_resume(station))
+        else:
+            regions = [DaangnRegion.model_validate(item) for item in position['regions']]
+            dong_result = search_listings(client, regions, query=dong, conditions=conditions, limit=limit, resume=position)
+            emit_listings(dong_result, common_notes + dong_result.notes, {'m': 'dong'})
 
     with handle_errors(SOURCE), DaangnClient() as client:
         conditions, common_notes = _listing_conditions(
@@ -648,10 +695,13 @@ def search_command(
             structure=structure, approval=approval, deal=deal, option=option, move_in_now=move_in_now,
             household_min=household_min, household_max=household_max, parking_min=parking_min,
         )
+        if position is not None:
+            resume_search(position)
+            return
         if complex_id is not None:
             # 단지 하나의 현재 매물 (당근 단지 화면 순이라 거리가 없다)
             complex_result = list_complex_listings(client, complex_id, conditions=conditions, limit=limit)
-            emit_listings(complex_result, common_notes + complex_result.notes)
+            emit_listings(complex_result, common_notes + complex_result.notes, None)
             return
         if lat is not None and lng is not None:
             emit_area(lat, lng, [])
@@ -676,10 +726,8 @@ def search_command(
                 radius_km=radius_km, common_notes=common_notes, emit_listings=emit_listings, emit_area=emit_area,
             )
             return
-        result = search_listings(
-            client, regions, query=dong, expand=expand, conditions=conditions, limit=limit, split_budget=len(regions) > 1,
-        )
-        emit_listings(result, common_notes + place_notes + result.notes)
+        result = search_listings(client, regions, query=dong, expand=expand, conditions=conditions, limit=limit)
+        emit_listings(result, common_notes + place_notes + result.notes, {'m': 'dong'})
 
 
 @app.command('listing')

@@ -138,7 +138,7 @@ Windows 는 UTF-8 출력 설정(`setx PYTHONUTF8 1`)을 처음 한 번 챙긴다
 
 GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그대로 받고, pip 은 `pip install -U --force-reinstall git+https://github.com/Rukkakka/jibsa` 로 받는다.
 
-요청 제한 상태 파일은 삭제해도 남으니 완전히 지우려면 그 디렉터리도 삭제한다. `JIBSA_STATE_DIR` 로 위치를 바꿨다면 그 디렉터리다 ([설정](../README.md#설정)).
+요청 제한 상태 파일과 매물 검색 이어 받기 표(`next`)는 삭제해도 남으니 완전히 지우려면 그 디렉터리도 삭제한다. `JIBSA_STATE_DIR` 로 위치를 바꿨다면 그 디렉터리다 ([설정](../README.md#설정)).
 
 | 운영체제 | 상태 파일 위치 | 삭제 |
 |---|---|---|

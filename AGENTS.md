@@ -10,7 +10,7 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 
 | 경로 | 내용 |
 | --- | --- |
-| `cli/` | Typer 명령 (`limits`, `guide`, `zigbang`/`naver`/`daangn` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`) |
+| `cli/` | Typer 명령 (`limits`, `guide`, `zigbang`/`naver`/`daangn` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`), 매물 검색 이어 받기 표 (`paging.py`) |
 | `core/http.py` | `BaseHTTPClient` — httpx 클라이언트 수명주기, 재시도 술어, `raise_for_status` |
 | `core/ratelimit.py` | 프로세스 간 공유 요청 제한 (`RateLimiter`, `RateLimitedError`) |
 | `core/listing.py` | 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 날짜, 주소) |

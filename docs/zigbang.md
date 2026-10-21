@@ -97,20 +97,22 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 | `--condition` | 기타 조건: 즉시입주, 남향, 엘리베이터, 주차, CCTV, 반려동물, 전세대출, 전기차충전. 반복하거나 쉼표로 구분 (AND) | 미지정 |
 | `--without-random` | 오피스텔 서버의 무작위 섞기 해제. 검색 결과는 거리순 유지 | 꺼짐 |
 | `--details` | 매물마다 상세를 1회씩 더 받아 건물 용도(`residence_type`)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건) | 꺼짐 |
+| `--next` | 앞 결과의 `next` 값. 지역·조건을 그대로 두고 주면 받은 매물 다음부터 이어 받는다 (`--limit` 은 바꿀 수 있다) | 미지정 |
 
 **사용 예시**
 
 ```bash
 jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70
+jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70 --next <앞 결과의 next>
 ```
 
 **반환값**
 
-`region`, `boundary` 또는 `radius_km`, `total`, `returned`, `listings`를 준다. `--details` 를 주면 매물마다 `residence_type`(건축물 용도, 예: `다가구`, `근린생활시설`, `고시원`)이 붙는다. 목록 API 는 용도를 주지 않아 상세를 1회씩 더 부르고, 그 사이 거래가 끝난 매물은 빼고 `notes` 로 알린다.
+`region`, `boundary` 또는 `radius_km`, `total`, `returned`, `has_more`, `next`(더 있을 때만), `listings`를 준다. `next` 를 같은 지역·조건에 `--next` 로 주면 가까운 순으로 앞 결과 다음 매물부터 받는다 (지도 핀은 다시 받고 요약은 새 매물 것만 받는다). 반경 밖 매물은 반경 안이 모자랄 때 채우는 것이라 `has_more` 로 세지 않는다. `--details` 를 주면 매물마다 `residence_type`(건축물 용도, 예: `다가구`, `근린생활시설`, `고시원`)이 붙는다. 목록 API 는 용도를 주지 않아 상세를 1회씩 더 부르고, 그 사이 거래가 끝난 매물은 빼고 `notes` 로 알린다.
 
 **오류와 대응**
 
-옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다. 같은 이름의 동·구가 여러 곳이면(신사동 → 은평구·강남구) 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다. 직방은 전체 주소(`서울특별시 강남구 신사동`)로는 동을 찾지 못하니 `강남구 신사동` 처럼 구 이름을 앞에 붙여 다시 찾는다. 같은 이름의 역(양평역)은 첫 역으로 찾고 다른 역을 `notes` 로 알린다. 목록 옵션에 없는 값이나 다른 소스의 옵션을 옮겨 쓰면(`--option 반려동물가능`, `--facility 엘리베이터`, `--bathroom 1개`) 에러 `hint` 가 맞는 옵션(`--condition 반려동물`, `--condition 엘리베이터`, `--bathroom 1`)이나 직방에 그 조건이 없다는 것(`--deal`, `--sort`)을 알려 준다.
+옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다. 같은 이름의 동·구가 여러 곳이면(신사동 → 은평구·강남구) 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다. 직방은 전체 주소(`서울특별시 강남구 신사동`)로는 동을 찾지 못하니 `강남구 신사동` 처럼 구 이름을 앞에 붙여 다시 찾는다. 같은 이름의 역(양평역)은 첫 역으로 찾고 다른 역을 `notes` 로 알린다. 목록 옵션에 없는 값이나 다른 소스의 옵션을 옮겨 쓰면(`--option 반려동물가능`, `--facility 엘리베이터`, `--bathroom 1개`) 에러 `hint` 가 맞는 옵션(`--condition 반려동물`, `--condition 엘리베이터`, `--bathroom 1`)이나 직방에 그 조건이 없다는 것(`--deal`, `--sort`)을 알려 준다. `--next` 가 다른 지역·조건의 값이면 `INVALID_ARGUMENT` 다.
 
 **주의사항**
 
@@ -155,11 +157,14 @@ jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-
 
 ```bash
 jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20
+jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <앞 결과의 next>
 ```
+
+`--next` 는 앞 결과의 `next` 값이다. 동·구 검색(반경이 아닌 지역 모드)만 이어 받는다. 이어 받을 때 지역을 다시 찾는데, 그사이 직방 지역 검색이 다른 동·구를 주면 처음부터 다시 주지 않고 `INVALID_ARGUMENT` 로 멈추니 `--next` 없이 다시 찾는다.
 
 **반환값**
 
-지역 모드는 지역 집계, 반경 모드는 조회 단지 집계와 `listings`를 준다. 같은 호의 매물은 `listing_count`로 묶음을 설명한다.
+지역 모드는 지역 집계, 반경 모드는 조회 단지 집계와 `listings`를 준다. 같은 호의 매물은 `listing_count`로 묶음을 설명한다. 두 모드 모두 `has_more`(받지 않은 매물·단지가 남았는지)를 주고, 지역 모드는 더 있으면 `next` 도 준다. 같은 지역·조건에 `--next` 로 주면 동·구마다 직방 목록 순서로 앞 결과 다음부터 받는다.
 
 **오류와 대응**
 

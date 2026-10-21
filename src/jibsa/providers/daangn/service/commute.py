@@ -411,7 +411,7 @@ def _station_articles(
                 '역 주변 매물',
             )
 
-        edges, has_more = station_article_edges(fetch, limit)
+        edges, has_more, _ = station_article_edges(fetch, limit)
         inspected_by_station[station[0]] = len(edges)
         has_more_by_station[station[0]] = has_more
         seen: set[str] = set()

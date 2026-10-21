@@ -666,6 +666,7 @@ def listing_budget_notes(
     has_more: bool,
     eligible: int | None = None,
     narrowable: bool = True,
+    resumable: bool = False,
 ) -> list[str]:
     """조회한 원본은 제외 여부와 무관하게 예산에 포함한다.
 
@@ -675,6 +676,7 @@ def listing_budget_notes(
     Args:
         narrowable: `--limit`·필터로 더 받을 수 있는지. 피드를 쓸 수 없어 동마다 지도 페이지 20건만 받을 때는
             limit 을 늘리거나 필터를 걸어도 그 20건 안이라 False 로 주어 그 안내를 붙이지 않는다.
+        resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
     """
     notes: list[str] = []
     excluded = inspected - returned if eligible is None else inspected - eligible + min(eligible, limit) - returned
@@ -685,7 +687,9 @@ def listing_budget_notes(
         notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if not narrowable:
         return notes
-    if has_more and limit >= LISTING_MAX_LIMIT:
+    if has_more and resumable:
+        notes.append(note('일부', '더 있습니다. 이어 보려면 결과의 next 를 --next 로 주세요'))
+    elif has_more and limit >= LISTING_MAX_LIMIT:
         notes.append(note('일부', f'--limit 의 최대값은 {LISTING_MAX_LIMIT}입니다. 더 보려면 조건을 좁히세요'))
     elif has_more and inspected >= limit:
         notes.append(note('일부', '더 보려면 --limit 을 늘리거나 조건을 좁히세요'))

@@ -26,6 +26,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    insert_after,
     note,
     tagged_notes,
 )
@@ -75,12 +76,14 @@ def emit(
     data: BaseModel | list[BaseModel] | dict[str, Any],
     pretty: bool | None = None,
     notes: list[str] | None = None,
+    next_token: str | None = None,
 ) -> None:
     """결과를 JSON 으로 stdout 에 쓴다.
 
     값을 모르는 필드는 `null` 로 남기고, 매물에 해당 없는 필드는 `Listing` 이
     키째 뺀다 (`Listing.not_applicable_fields`). `notes` 가 있으면 맨 앞에 붙이고,
-    없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등).
+    없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등). `next_token`(이어 받기 표, `jibsa.cli.paging`)이 있으면
+    `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -90,6 +93,8 @@ def emit(
         payload = data
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
+    if next_token is not None and isinstance(payload, dict):
+        payload = insert_after(payload, 'has_more', 'next', next_token)
     if notes:
         payload = {'notes': tagged_notes(notes), **payload}
     typer.echo(_dumps(_round_coordinates(payload), pretty))
