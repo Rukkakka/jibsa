@@ -72,8 +72,8 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 | 한 소스의 구현·예외 | `references/providers/<source>.md` |
 | 여러 소스에 공통인 개발 규약 | `references/` 바로 아래 문서 |
 | 사용자(에이전트 포함)에게 보이는 변경 | `CHANGELOG.md` 의 `Unreleased` ([쓰는 법](references/release.md#changelog-쓰는-법)) |
-| README 데모·빠른 시작 예시에 나오는 명령·출력 (`jibsa --version`, `zigbang search listings room`) | `docs/demo/demo.gif` — `vhs scripts/demo/demo.tape` 로 다시 녹화. README 빠른 시작의 JSON 도 같은 가상 매물로 다시 뽑는다 (`scripts/demo/fake_jibsa.py`) |
-| README 맨 위 Claude Code 데모에 나오는 것 (`jibsa guide`, 직방 원룸 검색 출력) | `docs/demo/claude.gif` — `scripts/demo/claude.tape` 머리말의 깨끗한 환경(`env -i …`)으로 `vhs scripts/demo/claude.tape` 를 돌려 다시 녹화한 뒤 `python3 scripts/demo/hide_plan.py docs/demo/claude.gif` |
+| README 데모·빠른 시작 예시에 나오는 명령·출력 (`jibsa --version`, `zigbang search listings room`) | `docs/demo/demo.gif` — 그 변경이 PyPI 에 올라간 뒤([릴리스 절차](references/release.md#릴리스-절차) 6) `vhs scripts/demo/demo.tape` 로 다시 녹화 (대본이 PyPI 설치본을 쓴다). README 빠른 시작의 JSON 은 바로 같은 가상 매물로 다시 뽑는다 (`scripts/demo/fake_jibsa.py`) |
+| README 맨 위 Claude Code 데모에 나오는 것 (`jibsa guide`, 직방 원룸 검색 출력) | `docs/demo/claude.gif` — 그 변경이 PyPI 에 올라간 뒤 `scripts/demo/claude.tape` 머리말의 깨끗한 환경(`env -i …`)으로 `vhs scripts/demo/claude.tape` 를 돌려 다시 녹화한 뒤 `python3 scripts/demo/hide_plan.py docs/demo/claude.gif` |
 | README 맨 위 로고 (이름·색·모양) | `docs/logo.svg` — 글자를 외곽선으로 바꾼 파일이라 직접 고치지 않고 `scripts/logo/build_logo.py` 를 고쳐 다시 만든다 |
 
 한 소스에만 해당하는 규칙·예외는 공통 문서에 적지 않고 그 소스 문서에 적는다. 명령의 인자·기본값·조회 한도·반환값·오류·주의사항은 해당 명령 절에서 설명한다. 요약 표는 해당 절과 일치시키고 다른 명령 절에 설명을 복사하지 않는다. 공통 규칙은 복사하지 않고 링크로 연결한다.

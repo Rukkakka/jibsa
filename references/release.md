@@ -97,6 +97,10 @@
    확인이 새 가상환경에 설치해 돌려 본 바로 그 파일이고, 실제 API 로 도는지는 [매일 API 감시](development.md#매일-api-감시)가
    `main` 으로 본다.
 
+6. README 데모에 나오는 출력(`jibsa --version`·`jibsa guide`·직방 `search listings room`)이 이 버전에서 바뀌었으면, PyPI 에
+   올라간 뒤 별도 PR 로 `docs/demo/demo.gif`·`claude.gif` 를 다시 녹화한다 ([문서 갱신](../AGENTS.md#문서-갱신)). 녹화 대본이
+   PyPI 에서 설치한 jibsa 를 써서, 올리기 전에 찍으면 이전 버전의 출력이 녹화된다.
+
 태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리키고,
 Release 워크플로가 거절한다.
 
