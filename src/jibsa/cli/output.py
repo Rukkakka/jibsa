@@ -89,7 +89,7 @@ def check_fields(values: list[str] | None) -> list[str] | None:
         raise HintedBadParameter(
             f"매물에 없는 필드입니다: {', '.join(unknown)}",
             '--fields',
-            '결과 JSON 의 매물 키 이름을 그대로 쓰세요 (예: --fields id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address)',
+            '결과 JSON 의 매물 키 이름을 그대로 쓰세요 (예: --fields id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url)',
         )
     return fields
 
