@@ -1,6 +1,6 @@
 # jibsa LLM 사용 가이드
 
-셸로 `jibsa` 를 불러 집을 찾는 LLM 에이전트용 요약이다. `jibsa guide` 가 이 문서를 그대로 출력한다. 이 문서 하나로 시작하고, 옵션 세부는 `jibsa <소스> <명령> --help`, 더 깊은 설명은 `jibsa guide <소스> <명령>` 으로 그 명령 절만 골라 읽는다 (사용 문서 전체는 이 문서의 10배가 넘는다).
+셸로 `jibsa` 를 불러 집을 찾는 LLM 에이전트용 요약이다. `jibsa guide` 가 이 문서를 그대로 출력한다. 이 문서 하나로 시작하고, 옵션 세부는 `jibsa <소스> <명령> --help`, 더 깊은 설명은 `jibsa guide <소스> <명령>` 으로 그 명령 절만 골라 읽는다 (사용 문서 전체는 이 문서의 10배가 넘는다. `jibsa guide <소스>` 는 절 목록만 준다).
 
 ## 꼭 지킬 규칙
 
@@ -121,7 +121,7 @@
 
 ## 더 읽을 곳
 
-필요한 절만 읽는다. 설치본에도 들어 있어 `jibsa guide <소스> [절 이름]` 으로 네트워크 없이 읽는다 (설치한 버전과 같다). 예: `jibsa guide daangn 'search listings'`, `jibsa guide zigbang listing`, `jibsa guide common`.
+필요한 절만 읽는다. 설치본에도 들어 있어 네트워크 없이 읽는다 (설치한 버전과 같다). `jibsa guide <소스>` 는 절 목록만, `jibsa guide <소스> <절 이름>` 은 그 절만 쓴다. 예: `jibsa guide daangn 'search listings'`, `jibsa guide zigbang listing`, `jibsa guide common '에러 대응'`.
 
 - [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) — 출력 규칙, 공통 매물 필드, 요청 제한 정책
 - [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md) · [네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md) · [당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) — 명령별 옵션 표·반환값·주의사항, 소스별 반환 필드
