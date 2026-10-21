@@ -22,7 +22,7 @@ def stderr_error(capsys: pytest.CaptureFixture[str]) -> dict:
 @pytest.mark.parametrize(
     'argv',
     [
-        ['zigbang', 'search', 'listings', 'room', '역삼동', '-t', '상가'],  # split_csv 의 BadParameter
+        ['zigbang', 'search', 'listings', 'room', '역삼동', '-t', '공장'],  # split_csv 의 BadParameter (힌트 표에 없는 값)
         ['naver', 'search', 'listings', '역삼동', '--foo'],  # 없는 옵션
         ['nope'],                                         # 없는 명령
         ['zigbang', 'listing'],                              # 필수 인자 누락

@@ -13,6 +13,7 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    UsageHints,
     emit,
     handle_errors,
     infer_trade_types,
@@ -202,25 +203,65 @@ ExtraOption = Annotated[
     typer.Option('--option', help=f"기타 조건: {', '.join(OPTION_FILTER_BY_LABEL)}. 반복하거나 쉼표로 구분"),
 ]
 MoveInNowOption = Annotated[bool, typer.Option('--move-in-now', help='즉시 입주 가능한 매물만')]
-# 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
-# 다른 소스 표현이다 (직방 --condition 반려동물·전세대출·주차·즉시입주, --room 오픈형원룸·투룸, --floor 옥탑방)
-LISTING_USAGE_BY_VALUE: dict[str, str] = {
-    **{value: f'--floor {value}' for value in FLOOR_FILTER_BY_LABEL},
-    **{value: f'--room-count {value}' for value in ROOM_COUNT_FILTER_BY_LABEL},
-    **{value: f'--structure {value}' for value in STRUCTURE_FILTER_BY_LABEL},
-    **{value: f'--option {value}' for value in OPTION_FILTER_BY_LABEL},
-    '반려동물': '--option 반려동물가능',
-    '전세대출': '--option 대출가능',
-    '주차': '--option 주차가능',
-    '옥탑방': '--option 옥탑',
-    '복층형원룸': '--option 복층',
-    '오픈형원룸': '--structure 오픈형',
-    '분리형원룸': '--structure 분리형',
-    '투룸': '--room-count 2개',
-    '쓰리룸': '--room-count 3개',
-    '포룸이상': '--room-count 4개이상',
-    '즉시입주': '--move-in-now',
-    '바로입주': '--move-in-now',
+NO_APPLIANCE_FILTER: str = '당근에는 가전·가구 옵션 조건이 없습니다'
+NO_DIRECTION_FILTER: str = '당근에는 방향 조건이 없습니다'
+NO_BATHROOM_FILTER: str = '당근에는 욕실 수 조건이 없습니다'
+AREA_IN_M2: str = '당근 면적은 ㎡ 로 주세요: --area-min·--area-max (1평 = 3.3058㎡)'
+MANAGE_COST_WITH_RENT: str = '당근은 관리비만 따로 거르지 않습니다. 월세와 관리비 합으로 거르려면 --rent-max 와 --with-manage-cost'
+# 매물 검색에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
+# 표현이다 (직방 --condition 반려동물·전세대출·주차·즉시입주, --room 오픈형원룸·투룸, --floor 옥탑방, 네이버 --facility)
+LISTING_HINTS: UsageHints = UsageHints(
+    by_value={
+        **{value: f'--floor {value}' for value in FLOOR_FILTER_BY_LABEL},
+        **{value: f'--room-count {value}' for value in ROOM_COUNT_FILTER_BY_LABEL},
+        **{value: f'--structure {value}' for value in STRUCTURE_FILTER_BY_LABEL},
+        **{value: f'--option {value}' for value in OPTION_FILTER_BY_LABEL},
+        **dict.fromkeys(
+            ('에어컨', '냉장고', '세탁기', '가스레인지', '인덕션', '전자레인지', '책상', '책장', '침대', '옷장', '신발장', '싱크대', '풀옵션'),
+            NO_APPLIANCE_FILTER,
+        ),
+        '반려동물': '--option 반려동물가능',
+        '전세대출': '--option 대출가능',
+        '주차': '--option 주차가능',
+        '옥탑방': '--option 옥탑',
+        '복층형원룸': '--option 복층',
+        '오픈형원룸': '--structure 오픈형',
+        '분리형원룸': '--structure 분리형',
+        '원룸': '-t 원룸',
+        '투룸': '--room-count 2개',
+        '쓰리룸': '--room-count 3개',
+        '포룸이상': '--room-count 4개이상',
+        '즉시입주': '--move-in-now',
+        '바로입주': '--move-in-now',
+        '지하층': '--floor 반지하',
+        '지상': '--floor 1층,2~5층,6~9층,10층이상',
+    },
+    by_option_value={
+        '--type': {
+            '빌라': '당근에는 빌라 분류가 없습니다. 작성자가 방 수로 고른 -t 원룸,투룸 으로 찾으세요 (투룸은 투룸 이상)',
+            '쓰리룸': '-t 투룸 (투룸 이상)',
+            '단독·다가구': '-t 주택',
+        },
+    },
+    by_option={
+        '--condition': '--option',
+        '--facility': '--option',
+        '--room': '--room-count 2개 (방 1개는 -t 원룸)',
+        '--one-room-shape': '--structure 오픈형',
+        '--move-in': '--move-in-now',
+        '--bathroom': NO_BATHROOM_FILTER,
+        '--direction': NO_DIRECTION_FILTER,
+        '--sort': '당근 동 검색은 최근 게시 순, 역·반경 검색은 가까운 순으로만 줍니다',
+        '--area-pyeong-min': AREA_IN_M2,
+        '--area-pyeong-max': AREA_IN_M2,
+        '--manage-cost-min': MANAGE_COST_WITH_RENT,
+        '--manage-cost-max': MANAGE_COST_WITH_RENT,
+    },
+)
+# 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run). 통근 검색도 매물 조건을 같이 받는다
+USAGE_HINTS: dict[str, UsageHints] = {
+    'jibsa daangn search listings': LISTING_HINTS,
+    'jibsa daangn search commute': LISTING_HINTS,
 }
 # 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
 HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 아파트 만 줄 때)')]
@@ -270,7 +311,7 @@ def _listing_conditions(
     Raises:
         typer.BadParameter: 모르는 라벨이거나 사용승인일·거래 방식을 둘 이상 줬을 때.
     """
-    property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
+    property_types = split_csv(property_type, PROPERTY_TYPES, '--type', LISTING_HINTS)
     trade_types, trade_notes = infer_trade_types(
         split_csv(trade, TRADE_TYPES, '--trade'),
         rent=rent_min is not None or rent_max is not None,
@@ -293,12 +334,12 @@ def _listing_conditions(
         rent_includes_manage_cost=with_manage_cost,
         area_min=area_min,
         area_max=area_max,
-        floors=split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor', LISTING_USAGE_BY_VALUE),
-        room_counts=split_csv(room_count, tuple(ROOM_COUNT_FILTER_BY_LABEL), '--room-count', LISTING_USAGE_BY_VALUE),
-        structures=split_csv(structure, tuple(STRUCTURE_FILTER_BY_LABEL), '--structure', LISTING_USAGE_BY_VALUE),
+        floors=split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor', LISTING_HINTS),
+        room_counts=split_csv(room_count, tuple(ROOM_COUNT_FILTER_BY_LABEL), '--room-count', LISTING_HINTS),
+        structures=split_csv(structure, tuple(STRUCTURE_FILTER_BY_LABEL), '--structure', LISTING_HINTS),
         building_approval=approvals[0] if approvals else None,
         deal=deals[0] if deals else None,
-        options=split_csv(option, tuple(OPTION_FILTER_BY_LABEL), '--option', LISTING_USAGE_BY_VALUE),
+        options=split_csv(option, tuple(OPTION_FILTER_BY_LABEL), '--option', LISTING_HINTS),
         move_in_now=move_in_now,
         household_min=household_min,
         household_max=household_max,

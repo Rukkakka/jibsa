@@ -29,6 +29,7 @@ from jibsa.core.schema import is_request_validation_error
 
 from typing import (
     Any,
+    NamedTuple,
     TypeVar,
     cast,
 )
@@ -210,17 +211,56 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         raise typer.Exit(code=1)
 
 
+class UsageHints(NamedTuple):
+    """다른 소스의 옵션·값을 옮겨 써 틀린 사용법에, 이 명령에서 주는 법을 알리는 표. 값을 바꿔 받지는 않는다.
+
+    같은 조건이 소스마다 옵션·값이 달라(직방 `--condition 반려동물`, 당근 `--option 반려동물가능`) 다른 소스 명령을
+    옮겨 쓰다 틀리기 쉽다. 목록 옵션의 틀린 값은 `split_csv` 가, 없는 옵션·숫자로 못 바꾸는 값은 `jibsa.cli.app.run` 이
+    이 표로 찾는다. 안내는 옵션(`--condition 반려동물`), 다른 명령(`jibsa zigbang search listings apt`), 그 조건이
+    이 명령에 없다는 문장 중 하나다. 뜻이 조금 다른 조건(네이버 `탑층` 과 직방 `옥탑방`)은 넣지 않는다.
+
+    Attributes:
+        by_value: 옵션과 상관없이 값만으로 정해지는 안내 (`'반려동물가능': '--condition 반려동물'`). 이 명령 옵션의 값도
+            넣어, 없는 옵션에 준 값(`--facility 엘리베이터`)을 맞는 옵션으로 안내한다.
+        by_option_value: 옵션마다 뜻이 다른 값 (`'--room': {'2': '--room 투룸'}`). `by_value` 보다 먼저 본다.
+        by_option: 이 명령에 없는 옵션의 안내 (`'--move-in-now': '--condition 즉시입주'`). 값으로 못 정할 때 쓴다.
+    """
+
+    by_value: Mapping[str, str] = {}
+    by_option_value: Mapping[str, Mapping[str, str]] = {}
+    by_option: Mapping[str, str] = {}
+
+    def hint(self, option: str, value: str | None) -> str | None:
+        """`option` 에 `value`(쉼표로 여럿)를 줘 틀렸을 때의 힌트. 표에 없으면 None."""
+        option_values = self.by_option_value.get(option, {})
+        parts = [part.strip() for part in (value or '').split(',') if part.strip()]
+        usages = list(dict.fromkeys(
+            usage for part in parts if (usage := option_values.get(part) or self.by_value.get(part))
+        ))
+        if not usages and option in self.by_option:
+            usages = [self.by_option[option]]
+        if not usages:
+            return None
+        if all(usage.startswith('-') for usage in usages):
+            # 여러 값이 각각 다른 옵션이면 이어 붙여 그대로 쓸 수 있는 옵션 줄로 준다
+            return f"이 명령에서는 이렇게 주세요: {' '.join(usages)}"
+        return ' / '.join(
+            f'이 명령에서는 이렇게 주세요: {usage}' if usage.startswith('-')
+            else f'{usage} 로 찾으세요' if usage.startswith('jibsa ')
+            else usage
+            for usage in usages
+        )
+
+
 def split_csv(
     values: list[str] | None,
     allowed: tuple[ChoiceT, ...],
     option: str,
-    usage_by_value: Mapping[str, str] | None = None,
+    hints: UsageHints | None = None,
 ) -> list[ChoiceT]:
     """`-t 원룸 -t 빌라` 와 `-t 원룸,빌라` 를 모두 받아 검증된 목록으로 만든다. 값의 타입은 `allowed` 를 따른다.
 
-    `usage_by_value` 는 이 옵션에 없는 값을 이 명령에서 주는 법이다 (`{'반려동물가능': '--condition 반려동물'}`).
-    같은 조건이 소스마다 옵션·값이 달라 다른 소스 명령을 옮겨 쓰다 틀리기 쉬워, 맞는 옵션을 에러 힌트로 알린다.
-    값을 바꿔 받지는 않는다.
+    허용 밖의 값이 `hints` 에 있으면 이 명령에서 주는 법을 에러 힌트로 알린다 (`UsageHints`). 값을 바꿔 받지는 않는다.
     """
     result: list[ChoiceT] = []
     for value in values or []:
@@ -230,9 +270,10 @@ def split_csv(
                 continue
             if part not in allowed:
                 message = f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}"
-                usage = (usage_by_value or {}).get(part)
-                if usage:
-                    raise HintedBadParameter(message, option, f'이 명령에서는 이렇게 주세요: {usage}')
+                # 틀린 값 하나만 본다. 쉼표로 함께 준 맞는 값까지 다른 옵션으로 안내하지 않게
+                hint = hints.hint(option, part) if hints else None
+                if hint:
+                    raise HintedBadParameter(message, option, hint)
                 raise typer.BadParameter(message, param_hint=option)
             if part not in result:
                 result.append(part)

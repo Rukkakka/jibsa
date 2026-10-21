@@ -10,6 +10,7 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    UsageHints,
     emit,
     handle_errors,
     infer_trade_types,
@@ -121,25 +122,68 @@ STAY_SERVICE_NOTE: str = (
     '단기임대 서비스는 매물이 달라 jibsa zigbang search listings stay 로 찾습니다'
 )
 STAY_STRUCTURES: tuple[str, ...] = ('복층', '단층')
-# room·--complex 의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
-# 다른 소스 표현이다 (당근 --option 반려동물가능·대출가능, --structure 오픈형, --room-count 2개, 네이버 --move-in 바로입주)
-ROOM_USAGE_BY_VALUE: dict[str, str] = {
-    **{value: f'--room {value}' for value in ROOM_TYPES},
-    **{value: f'--floor {value}' for value in FLOOR_FILTERS},
-    **{value: f'--option {value}' for value in OPTION_FILTERS},
-    **{value: f'--condition {value}' for value in CONDITIONS},
-    '반려동물가능': '--condition 반려동물',
-    '대출가능': '--condition 전세대출',
-    '주차가능': '--condition 주차',
-    '바로입주': '--condition 즉시입주',
-    '옥탑': '--floor 옥탑방',
-    '복층': '--room 복층형원룸',
-    '오픈형': '--room 오픈형원룸',
-    '분리형': '--room 분리형원룸',
-    '원룸': '-t 원룸',
-    '2개': '--room 투룸',
-    '3개': '--room 쓰리룸',
-    '4개이상': '--room 포룸이상',
+# room·--complex 에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
+# 표현이다 (당근 --option 반려동물가능·대출가능, --structure 오픈형, --room-count 2개, 네이버 --move-in 바로입주·--facility)
+ROOM_HINTS: UsageHints = UsageHints(
+    by_value={
+        **{value: f'--room {value}' for value in ROOM_TYPES},
+        **{value: f'--floor {value}' for value in FLOOR_FILTERS},
+        **{value: f'--option {value}' for value in OPTION_FILTERS},
+        **{value: f'--condition {value}' for value in CONDITIONS},
+        '반려동물가능': '--condition 반려동물',
+        '대출가능': '--condition 전세대출',
+        '주차가능': '--condition 주차',
+        '바로입주': '--condition 즉시입주',
+        '옥탑': '--floor 옥탑방',
+        '지하층': '--floor 반지하',
+        '복층': '--room 복층형원룸',
+        '오픈형': '--room 오픈형원룸',
+        '분리형': '--room 분리형원룸',
+        '원룸': '-t 원룸',
+        '2개': '--room 투룸',
+        '3개': '--room 쓰리룸',
+        '4개이상': '--room 포룸이상',
+    },
+    by_option_value={
+        # 네이버 --bathroom 은 '1개', 직방은 숫자다. '2개' 가 방 수(--room 투룸)로 가지 않게 이 옵션에서 먼저 본다
+        '--bathroom': {'1개': '--bathroom 1', '2개': '--bathroom 2', '3개': '--bathroom 3', '4개이상': '--bathroom 3'},
+        '--type': {
+            '투룸': '--room 투룸',
+            '쓰리룸': '--room 쓰리룸',
+            '아파트': 'jibsa zigbang search listings apt',
+            '상가': 'jibsa zigbang search listings store',
+            '사무실': 'jibsa zigbang search listings store',
+        },
+    },
+    by_option={
+        '--facility': '--option (가전·가구) 이나 --condition (엘리베이터·주차 등)',
+        '--room-count': '--room 투룸',
+        '--structure': '--room 오픈형원룸',
+        '--one-room-shape': '--room 오픈형원룸',
+        '--move-in': '--condition 즉시입주',
+        '--move-in-now': '--condition 즉시입주',
+        '--direction': '--condition 남향 (직방은 남향만 거른다)',
+        '--city': "직방에는 --city 가 없습니다. 지역 이름 앞에 구 이름을 붙이세요 (예: '강남구 신사동')",
+        '--deal': '직방에는 직거래 조건이 없습니다. 직거래는 jibsa daangn search listings --deal 직거래 로 찾으세요',
+        '--sort': '직방 room 은 검색 중심에서 가까운 순으로만 줍니다',
+        '--with-manage-cost': '직방은 월세와 관리비를 따로 거릅니다: --rent-max 와 --manage-cost-max',
+        '--expand': '주변까지 보려면 --radius 로 반경을 넓히세요 (최대 5km)',
+    },
+)
+APT_HINTS: UsageHints = UsageHints(
+    by_option={
+        '--type': '아파트만 찾는 명령이라 -t 없이 부르세요. 원룸·오피스텔·빌라는 jibsa zigbang search listings room',
+        '-t': '아파트만 찾는 명령이라 -t 없이 부르세요. 원룸·오피스텔·빌라는 jibsa zigbang search listings room',
+        '--pyeong': '평형은 단지 매물에서 고릅니다: jibsa zigbang search listings --complex <apt-ID> --pyeong <평형 ID>',
+        '--area-pyeong-min': '면적은 ㎡ 로 주세요: --area-min (전용) 이나 --supply-area-min (공급), 1평 = 3.3058㎡',
+        '--area-pyeong-max': '면적은 ㎡ 로 주세요: --area-max (전용) 이나 --supply-area-max (공급), 1평 = 3.3058㎡',
+    },
+)
+# 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run)
+USAGE_HINTS: dict[str, UsageHints] = {
+    'jibsa zigbang search listings room': ROOM_HINTS,
+    'jibsa zigbang search listings': ROOM_HINTS,
+    'jibsa zigbang search listings apt': APT_HINTS,
 }
 
 app = typer.Typer(
@@ -291,7 +335,7 @@ def _room_conditions(
         rent_max=rent_max,
         price_min=price_min,
         price_max=price_max,
-        room_types=split_csv(room, ROOM_TYPES, '--room', ROOM_USAGE_BY_VALUE),
+        room_types=split_csv(room, ROOM_TYPES, '--room', ROOM_HINTS),
         manage_cost_min=manage_cost_min,
         manage_cost_max=manage_cost_max,
         no_manage_cost=no_manage_cost,
@@ -299,10 +343,10 @@ def _room_conditions(
         area_max_m2=area_max,
         area_min_pyeong=area_pyeong_min,
         area_max_pyeong=area_pyeong_max,
-        floors=split_csv(floor, FLOOR_FILTERS, '--floor', ROOM_USAGE_BY_VALUE),
+        floors=split_csv(floor, FLOOR_FILTERS, '--floor', ROOM_HINTS),
         bathroom_count=bathroom,
-        options=split_csv(option, OPTION_FILTERS, '--option', ROOM_USAGE_BY_VALUE),
-        extra_conditions=split_csv(condition, CONDITIONS, '--condition', ROOM_USAGE_BY_VALUE),
+        options=split_csv(option, OPTION_FILTERS, '--option', ROOM_HINTS),
+        extra_conditions=split_csv(condition, CONDITIONS, '--condition', ROOM_HINTS),
         without_random=without_random,
     )
 
@@ -453,7 +497,7 @@ def search_room_command(
             condition=condition,
             without_random=without_random,
         )
-    property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
+    property_types = split_csv(property_type, PROPERTY_TYPES, '--type', ROOM_HINTS)
     if without_random:
         with handle_errors(SOURCE):
             check_without_random(property_types or list(PROPERTY_TYPES))

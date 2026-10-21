@@ -47,8 +47,10 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   `NOT_FOUND`, `RATE_LIMITED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `INTERNAL_ERROR`, `INTERRUPTED`, `CLI_ERROR`. 새 코드를 만들면
   공통 사용 문서의 exit code 표와 오류 대응에 추가한다.
 - 입력 검증 실패는 항상 exit 2. 사용자 정의 hint 가 필요한 사용법 오류는 `HintedUsageError` 를, 옵션 값 오류는
-  `HintedBadParameter` 를 쓴다 (예: `require_korea`, `split_csv` 의 `usage_by_value`). 목록 옵션에 없는 값이 그 명령의
-  다른 옵션이나 다른 소스 표현이면(직방 `--option 반려동물가능`) `usage_by_value` 로 맞는 옵션을 hint 에 싣는다. 값을 바꿔
+  `HintedBadParameter` 를 쓴다 (예: `require_korea`, `split_csv`). 다른 소스의 옵션·값을 옮겨 쓴 오류(직방 `--option
+  반려동물가능`, 직방에 네이버 `--facility`)는 명령마다 둔 `UsageHints` 표로 이 명령에서 주는 법을 hint 에 싣는다. 목록 옵션의
+  틀린 값은 `split_csv` 가, 없는 옵션과 숫자로 못 바꾸는 값은 `run()` 이 찾는다. 표에 없는 옵션이 다른 소스 매물 검색에
+  있으면 그 명령을 알린다. 표는 각 소스 CLI 의 `USAGE_HINTS` 에 명령 경로(`jibsa naver search listings`)로 등록한다. 값을 바꿔
   받지는 않는다 (뜻이 조금 다른 조건을 멋대로 옮기지 않는다).
 - 요청 모델 검증 실패의 message 는 검증 함수가 던진 문구 그대로다 (pydantic 이 붙이는 `Value error, ` 를 뗀다).
   hint 는 사용법 오류와 같은 `'<명령> --help' 로 사용법을 확인하세요` 다.

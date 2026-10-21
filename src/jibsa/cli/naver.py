@@ -13,6 +13,7 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    UsageHints,
     emit,
     handle_errors,
     infer_trade_types,
@@ -127,32 +128,58 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내
 WHOLE_DONG_NOTE: str = '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)'
-# 지역 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
-# 다른 소스 표현이다 (직방 --room 오픈형원룸·--condition 즉시입주·--bathroom 1, 당근 --option 주차가능·--room-count 2개).
-# '2개'·'3개' 는 욕실 수 값과 겹치지만 거절되는 곳은 --room 이 흔해 방 수로 안내한다. 네이버는 반지하를 따로 두지 않고
-# 지하층(B1)으로 준다
-LISTING_USAGE_BY_VALUE: dict[str, str] = {
-    **{value: f'--room {value}' for value in ROOM_COUNT_CODE_BY_NAME},
-    **{value: f'--floor {value}' for value in FLOOR_CODE_BY_NAME},
-    **{value: f'--direction {value}' for value in DIRECTION_FILTER_CODE_BY_NAME},
-    **{value: f'--bathroom {value}' for value in BATHROOM_CODE_BY_NAME},
-    **{value: f'--facility {value}' for value in FACILITY_CODE_BY_NAME},
-    **{value: f'--one-room-shape {value}' for value in ONE_ROOM_SHAPE_CODE_BY_NAME},
-    **{value: f'--move-in {value}' for value in MOVE_IN_CODE_BY_NAME},
-    **{value: f'--parking {value}' for value in PARKING_CODE_BY_NAME},
-    '주차가능': '--facility 주차',
-    '복층형원룸': '--facility 복층',
-    '오픈형원룸': '--one-room-shape 오픈형',
-    '분리형원룸': '--one-room-shape 분리형',
-    '즉시입주': '--move-in 바로입주',
-    '반지하': '--floor 지하층',
-    '2개': '--room 투룸',
-    '3개': '--room 쓰리룸',
-    '4개이상': '--room 포룸이상',
-    '1': '--bathroom 1개',
-    '2': '--bathroom 2개',
-    '3': '--bathroom 3개,4개이상',
-}
+NO_PET_FILTER: str = '네이버에는 반려동물 조건이 없습니다 (직방 --condition 반려동물, 당근 --option 반려동물가능)'
+AREA_IN_M2: str = '네이버 면적은 ㎡ 로 주세요: --area-min·--area-max (1평 = 3.3058㎡)'
+# 지역 매물 검색에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
+# 표현이다 (직방 --room 오픈형원룸·--condition 즉시입주, 당근 --option 주차가능·--room-count 2개). '2개'·'3개' 는 욕실 수
+# 값과 겹치지만 거절되는 곳은 --room 이 흔해 방 수로 안내한다. 네이버는 반지하를 따로 두지 않고 지하층(B1)으로 준다
+LISTING_HINTS: UsageHints = UsageHints(
+    by_value={
+        **{value: f'--room {value}' for value in ROOM_COUNT_CODE_BY_NAME},
+        **{value: f'--floor {value}' for value in FLOOR_CODE_BY_NAME},
+        **{value: f'--direction {value}' for value in DIRECTION_FILTER_CODE_BY_NAME},
+        **{value: f'--bathroom {value}' for value in BATHROOM_CODE_BY_NAME},
+        **{value: f'--facility {value}' for value in FACILITY_CODE_BY_NAME},
+        **{value: f'--one-room-shape {value}' for value in ONE_ROOM_SHAPE_CODE_BY_NAME},
+        **{value: f'--move-in {value}' for value in MOVE_IN_CODE_BY_NAME},
+        **{value: f'--parking {value}' for value in PARKING_CODE_BY_NAME},
+        '주차가능': '--facility 주차',
+        '복층형원룸': '--facility 복층',
+        '오픈형원룸': '--one-room-shape 오픈형',
+        '분리형원룸': '--one-room-shape 분리형',
+        '즉시입주': '--move-in 바로입주',
+        '반지하': '--floor 지하층',
+        '지상': '--floor 1층,저층,중층,고층,탑층',
+        '2개': '--room 투룸',
+        '3개': '--room 쓰리룸',
+        '4개이상': '--room 포룸이상',
+        '반려동물': NO_PET_FILTER,
+        '반려동물가능': NO_PET_FILTER,
+        '주택': '-t 단독·다가구',
+    },
+    by_option_value={
+        # 숫자만 준 값은 옵션마다 뜻이 달라 그 옵션에서만 안내한다. 한 표에 두면 --room 2 에 --bathroom 2개 를 안내했다
+        '--room': {'1': '--room 원룸', '2': '--room 투룸', '3': '--room 쓰리룸', '4': '--room 포룸이상'},
+        # 직방 --bathroom 은 숫자(3 은 3개 이상)다
+        '--bathroom': {'1': '--bathroom 1개', '2': '--bathroom 2개', '3': '--bathroom 3개,4개이상'},
+    },
+    by_option={
+        '--condition': '--facility (시설) 이나 --move-in (입주) · --direction (방향)',
+        '--option': '--facility',
+        '--room-count': '--room 투룸',
+        '--structure': '--one-room-shape 오픈형',
+        '--move-in-now': '--move-in 바로입주',
+        '--city': "네이버에는 --city 가 없습니다. 지역 이름 앞에 시·구를 붙이세요 (예: '강남구 신사동')",
+        '--details': '네이버 목록에는 상세를 붙이지 않습니다. 고른 매물만 jibsa naver listing <id> 로 보세요',
+        '--expand': '주변까지 보려면 --radius 로 반경을 넓히세요 (최대 3km)',
+        '--with-manage-cost': '네이버는 월세와 관리비를 따로 거릅니다: --rent-max 와 --manage-cost-max',
+        '--deal': '네이버에는 직거래 조건이 없습니다. 직거래는 jibsa daangn search listings --deal 직거래 로 찾으세요',
+        '--area-pyeong-min': AREA_IN_M2,
+        '--area-pyeong-max': AREA_IN_M2,
+    },
+)
+# 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run)
+USAGE_HINTS: dict[str, UsageHints] = {'jibsa naver search listings': LISTING_HINTS}
 
 
 def _check_choice(value: object, allowed: Iterable[object], option: str) -> None:
@@ -728,16 +755,16 @@ def _listing_conditions(
     Raises:
         typer.BadParameter: 모르는 라벨이거나 범위가 거꾸로일 때.
     """
-    property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
+    property_types = split_csv(property_type, PROPERTY_TYPES, '--type', LISTING_HINTS)
     trade_types, trade_notes = _price_trade_types(trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max)
-    room_types = split_csv(room, tuple(ROOM_COUNT_CODE_BY_NAME), '--room', LISTING_USAGE_BY_VALUE)
-    floors = split_csv(floor, tuple(FLOOR_CODE_BY_NAME), '--floor', LISTING_USAGE_BY_VALUE)
-    directions = split_csv(direction, tuple(DIRECTION_FILTER_CODE_BY_NAME), '--direction', LISTING_USAGE_BY_VALUE)
-    bathrooms = split_csv(bathroom, tuple(BATHROOM_CODE_BY_NAME), '--bathroom', LISTING_USAGE_BY_VALUE)
-    facilities = split_csv(facility, tuple(FACILITY_CODE_BY_NAME), '--facility', LISTING_USAGE_BY_VALUE)
-    one_room_shapes = split_csv(one_room_shape, tuple(ONE_ROOM_SHAPE_CODE_BY_NAME), '--one-room-shape', LISTING_USAGE_BY_VALUE)
-    move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in', LISTING_USAGE_BY_VALUE)
-    parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking', LISTING_USAGE_BY_VALUE)
+    room_types = split_csv(room, tuple(ROOM_COUNT_CODE_BY_NAME), '--room', LISTING_HINTS)
+    floors = split_csv(floor, tuple(FLOOR_CODE_BY_NAME), '--floor', LISTING_HINTS)
+    directions = split_csv(direction, tuple(DIRECTION_FILTER_CODE_BY_NAME), '--direction', LISTING_HINTS)
+    bathrooms = split_csv(bathroom, tuple(BATHROOM_CODE_BY_NAME), '--bathroom', LISTING_HINTS)
+    facilities = split_csv(facility, tuple(FACILITY_CODE_BY_NAME), '--facility', LISTING_HINTS)
+    one_room_shapes = split_csv(one_room_shape, tuple(ONE_ROOM_SHAPE_CODE_BY_NAME), '--one-room-shape', LISTING_HINTS)
+    move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in', LISTING_HINTS)
+    parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking', LISTING_HINTS)
     entrances = split_csv(entrance, tuple(ENTRANCE_CODE_BY_NAME), '--entrance')
     _check_choice(area_basis, AREA_BASES, '--area-basis')
     if sort is not None:
