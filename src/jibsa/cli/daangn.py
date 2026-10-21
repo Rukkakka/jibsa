@@ -31,7 +31,10 @@ from jibsa.core.errors import (
 from jibsa.core.geo import DEFAULT_RADIUS_KM
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.korean import quoted
-from jibsa.core.listing import Listing
+from jibsa.core.listing import (
+    Listing,
+    note,
+)
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.service.common import (
@@ -379,7 +382,7 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
         raise
     except OPTIONAL_LOOKUP_ERRORS as exc:
         place = None
-        daangn_notes.append(partial_failure_note(exc, '위치 찾기', f"'{name}' 위치를"))
+        daangn_notes.append(note('실패', partial_failure_note(exc, '위치 찾기', f"'{name}' 위치를")))
         logger.warning('daangn place search for %r failed (%s); falling back to zigbang', name, exc)
     if place is not None:
         return ZigbangRegion(name=place.name, address=place.name, lat=place.lat, lng=place.lng), place.notes, '당근'
@@ -398,7 +401,7 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
     except RegionNotFoundError as exc:
         raise geocoding_failed(zigbang_error, exc) from None
     reason = '요청 제한으로 막혀 있어' if isinstance(zigbang_error, RateLimitedError) else '지역 검색이 실패해'
-    notes = [*daangn_notes, f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다", *notes]
+    notes = [*daangn_notes, note('실패', f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다"), *notes]
     # 직방 검색 중심과 필드가 같다
     return ZigbangRegion(**found.model_dump()), notes, '네이버'
 
@@ -482,10 +485,11 @@ def _search_not_dong(
         if city is not None:
             raise
         station = None
-        station_notes.append(
+        station_notes.append(note(
+            '실패',
             f"{quoted(dong, '이/가')} 역인지 확인하지 못하고 위치 반경으로 찾았습니다. "
-            + partial_failure_note(exc, '역 검색', '역 후보를')
-        )
+            + partial_failure_note(exc, '역 검색', '역 후보를'),
+        ))
         logger.warning('daangn station search failed (%s); searching by radius', exc)
     if station is None and city is not None:
         raise RegionNotFoundError(
@@ -503,32 +507,36 @@ def _search_not_dong(
         except RateLimitedError:
             raise
         except OPTIONAL_LOOKUP_ERRORS as exc:
-            station_notes.append(
+            station_notes.append(note(
+                '실패',
                 f'{station.name} 주변 매물 목록 대신 역 위치 반경으로 찾았습니다. '
-                + partial_failure_note(exc, '역 주변 매물', '역 주변 매물 목록을')
-            )
+                + partial_failure_note(exc, '역 주변 매물', '역 주변 매물 목록을'),
+            ))
             logger.warning('daangn station listings failed (%s); searching by radius', exc)
         else:
-            emit_listings(station_result, common_notes + [
+            emit_listings(station_result, common_notes + [note(
+                '범위',
                 f"{quoted(dong, '은/는')} 당근 역 주변 매물 목록으로 찾았습니다 (walk_minutes 는 역까지 도보 분). "
-                '역에서 반경으로 찾으려면 --radius 를 주세요'
-            ] + station_notes + station_result.notes)
+                '역에서 반경으로 찾으려면 --radius 를 주세요',
+            )] + station_notes + station_result.notes)
             return
         # 역은 찾았으니 위치를 다시 찾지 않고 역 위치를 중심으로 쓴다
-        emit_area(station.lat, station.lng, station_notes + [
+        emit_area(station.lat, station.lng, station_notes + [note(
+            '범위',
             f"당근에 {quoted(dong, '이라는/라는')} 동이 없어 당근 지역 검색으로 찾은 위치({station.name})에서 "
-            f'반경 {radius_km:g}km 안을 찾았습니다'
-        ])
+            f'반경 {radius_km:g}km 안을 찾았습니다',
+        )])
         return
     try:
         # 역 검색은 위에서 했으므로 위치 찾기에서 다시 하지 않는다
         center, geocode_notes, finder = _geocode(dong, radius_km, check_station=False)
     except RegionNotFoundError:
         raise not_dong from None
-    emit_area(center.lat, center.lng, station_notes + geocode_notes + [
+    emit_area(center.lat, center.lng, station_notes + geocode_notes + [note(
+        '범위',
         f"당근에 {quoted(dong, '이라는/라는')} 동이 없어 {finder} 지역 검색으로 찾은 위치({center.address or center.name})에서 "
-        f'반경 {radius_km:g}km 안을 찾았습니다'
-    ])
+        f'반경 {radius_km:g}km 안을 찾았습니다',
+    )])
 
 
 @search_app.command('listings')
@@ -545,7 +553,7 @@ def search_command(
         typer.Option(
             min=0.1,
             max=5.0,
-            help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 주면 동 이름도 그 위치 반경으로 찾는다. 반경 안 매물이 모자라면 반경 밖 가까운 매물도 나온다',
+            help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 주면 동 이름도 그 위치 반경으로 찾는다. 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다)',
         )
     ] = None,
     city: Annotated[
@@ -652,9 +660,9 @@ def search_command(
         assert dong is not None
         if by_area:
             center, geocode_notes, finder = _geocode(dong, radius_km)
-            emit_area(center.lat, center.lng, geocode_notes + [
-                f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다"
-            ])
+            emit_area(center.lat, center.lng, geocode_notes + [note(
+                '범위', f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다",
+            )])
             return
         try:
             place_notes: list[str] = []

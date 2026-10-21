@@ -369,7 +369,7 @@ def test_search_listings_notes_neighbor_dongs() -> None:
         result = search_listings(client, resolve_regions(client, '역삼동'))
     assert {listing.address for listing in result.listings} >= {'서울특별시 강남구 논현동', '서울특별시 강남구 역삼동'}
     assert all(listing.in_regions == listing.address.endswith('역삼동') for listing in result.listings)
-    assert result.notes[-1] == '20건 중 10건은 당근이 섞어 준 주변 동(논현동, 도곡동) 매물입니다 (in_regions: false)'
+    assert result.notes[-1] == '[범위] 20건 중 10건은 당근이 섞어 준 주변 동(논현동, 도곡동) 매물입니다 (in_regions: false)'
 
 
 def _rate_limited(_) -> None:
@@ -515,14 +515,14 @@ def test_server_filtered_feed_keeps_category_and_notes_unselected_trade() -> Non
     })
     result = search_listings(_stub_client(page, [officetel, unknown]), [_yeoksam()], conditions=DaangnListingConditions(property_types=['원룸'], rent_max=1000))
     assert [(listing.id, listing.property_type) for listing in result.listings] == [(officetel.original_id, '오피스텔')]
-    assert any(note.startswith('서버 필터를 통과한 매물 1건은') for note in result.notes)
+    assert any(note.startswith('[제외] 서버 필터를 통과한 매물 1건은') for note in result.notes)
 
     # 필터 API 를 못 써 조건 없는 지도 페이지로 대체 조회하면 유형을 직접 확인해 뺀다
     rejected = [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]
     fallback = page.model_copy(update={'articles': [officetel]})
     result = search_listings(_stub_client(fallback, [], errors=rejected), [_yeoksam()], conditions=DaangnListingConditions(property_types=['원룸']))
     assert result.listings == []
-    assert not any(note.startswith('서버 필터를 통과한') for note in result.notes)
+    assert not any(note.startswith('[제외] 서버 필터를 통과한') for note in result.notes)
 
 
 @pytest.mark.parametrize('sales_type,room_count,room_type', [
@@ -560,7 +560,7 @@ def test_rejected_feed_query_falls_back_to_map_page() -> None:
     assert result.fetched == 20
     assert result.listings
     assert all(listing.trade_type == '월세' and listing.rent_manwon <= 100 for listing in result.listings)
-    assert result.notes[0].startswith('당근 필터 API 를 쓸 수 없어')
+    assert result.notes[0].startswith('[실패] 당근 필터 API 를 쓸 수 없어')
     assert '조건은 받아 온 최근 20건(동마다 최대 20건)에만 걸었으니' in result.notes[1]
 
 
@@ -571,7 +571,7 @@ def test_rejected_feed_query_without_conditions_notes() -> None:
     client = _stub_client(page, [], errors=rejected)
     result = search_listings(client, [_yeoksam()], limit=120)
     assert result.fetched == 20
-    assert result.notes[0].startswith('당근 매물 피드 API 를 쓸 수 없어') and '조건을 적용' not in result.notes[0]
+    assert result.notes[0].startswith('[실패] 당근 매물 피드 API 를 쓸 수 없어') and '조건을 적용' not in result.notes[0]
     assert result.notes[1].endswith('그중 최근 20건을 받았습니다 (동마다 최대 20건)')
     assert not any('전부입니다' in note or '--limit' in note for note in result.notes)
 
@@ -690,7 +690,7 @@ def test_search_area_notes_truncated_pins() -> None:
     truncated = {'data': {'articleMapPoints': [point] * PIN_LIMIT}}
     with make_graphql_client({DaangnClient.article_map_points_query_id: truncated}) as client:
         result = search_area(client, 37.5, 127.036, radius_km=5.0)
-    assert result.notes[0].startswith(f'당근은 넓은 범위의 매물을 {PIN_LIMIT}건에서 잘라')
+    assert result.notes[0].startswith(f'[일부] 당근은 넓은 범위의 매물을 {PIN_LIMIT}건에서 잘라')
 
 
 def test_search_area_continues_without_region() -> None:

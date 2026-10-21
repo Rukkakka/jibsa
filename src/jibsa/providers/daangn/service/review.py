@@ -9,6 +9,7 @@ from pydantic import (
     Field,
 )
 
+from jibsa.core.listing import note
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.review import (
@@ -137,7 +138,7 @@ def get_region_reviews(
             raise
         except OPTIONAL_LOOKUP_ERRORS as exc:
             logger.warning('daangn region summary failed (%s); continuing without review count', exc)
-            notes.append(partial_failure_note(exc, '동네 요약', '동네 후기 수를'))
+            notes.append(note('실패', partial_failure_note(exc, '동네 요약', '동네 후기 수를')))
         else:
             if summary.lived_review_summary is not None:
                 review_count = summary.lived_review_summary.source_review_count

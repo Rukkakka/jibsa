@@ -18,6 +18,7 @@ from jibsa.core.korean import (
     legal_dong_hint,
     quoted,
 )
+from jibsa.core.listing import note
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.region import (
@@ -91,10 +92,11 @@ def region_notes(
         return []
     if best.type == 'address':
         raise RegionAmbiguousError(query, addresses, len(addresses), hint=_retry_hint(addresses[0], best.name))
-    return [
+    return [note(
+        '모호',
         f"{quoted(query, '은/는')} 여러 곳에 있습니다 ({', '.join(addresses)}). "
-        f'첫 번째인 {addresses[0]} 기준으로 검색했습니다. 다른 곳이면 {_retry_hint(addresses[1], best.name)}'
-    ]
+        f'첫 번째인 {addresses[0]} 기준으로 검색했습니다. 다른 곳이면 {_retry_hint(addresses[1], best.name)}',
+    )]
 
 
 def wide_area_note(query: str, region: ZigbangRegion, radius_km: float) -> str | None:
@@ -107,9 +109,10 @@ def wide_area_note(query: str, region: ZigbangRegion, radius_km: float) -> str |
     if region.search_type != 'address' or not words or words[-1][-1] not in '시도군구':
         return None
     unit = '시·도' if len(words) == 1 else '시·군·구'
-    return (
+    return note(
+        '범위',
         f"{quoted(query, '은/는')} {unit} 단위의 넓은 지역이라 중심({region.address})에서 "
-        f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요'
+        f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
     )
 
 
@@ -251,11 +254,14 @@ def ga_dong_note(query: str, siblings: list[ZigbangSearchItemModel], best: Zigba
 
     # '○가' 로 끝나 조사는 받침 없는 꼴(는·를·로)로 고정한다
     if best.name == _dong_name(query):
-        return (
+        return note(
+            '범위',
             f'이번 검색은 {best.name}만 찾았습니다. {span(others)}는 따로 있는 동이라 빠졌습니다. '
-            '함께 보려면 각각 검색하거나 --radius 로 위치 기준으로 찾으세요'
+            '함께 보려면 각각 검색하거나 --radius 로 위치 기준으로 찾으세요',
         )
-    return f"{quoted(query, '은/는')} {span(names)}로 나뉘어 있어 {best.name}를 기준으로 찾았습니다. 다른 곳도 보려면 각각 검색하세요"
+    return note(
+        '범위', f"{quoted(query, '은/는')} {span(names)}로 나뉘어 있어 {best.name}를 기준으로 찾았습니다. 다른 곳도 보려면 각각 검색하세요",
+    )
 
 
 def city_gu_items(
@@ -402,9 +408,10 @@ def wide_boundary_note(
     cells = len(geohashes_touching(boundary.polygons, precision))
     if cells <= len(geohashes_covering(region.lat, region.lng, MAX_RADIUS_KM, precision)):
         return None
-    return (
+    return note(
+        '범위',
         f'{boundary.name} 경계가 넓어(지도 칸 {cells}개) 경계 대신 중심에서 반경 {radius_km:g}km 안만 찾았습니다. '
-        '범위를 바꾸려면 --radius 를 주거나 역 이름으로 찾으세요'
+        '범위를 바꾸려면 --radius 를 주거나 역 이름으로 찾으세요',
     )
 
 

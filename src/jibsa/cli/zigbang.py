@@ -29,7 +29,10 @@ from jibsa.core.korean import (
     particle,
     quoted,
 )
-from jibsa.core.listing import normalize_address
+from jibsa.core.listing import (
+    normalize_address,
+    note,
+)
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.stay import (
     ZigbangGuestItemsFiltersRequestParameterModel,
@@ -227,7 +230,7 @@ ScopeRadiusOption = Annotated[
     typer.Option(
         min=0.1,
         max=MAX_RADIUS_KM,
-        help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 경계 안을 찾는다. 반경 안 매물이 모자라면 반경 밖 가까운 매물도 나온다',
+        help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 경계 안을 찾는다. 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다)',
     ),
 ]
 
@@ -274,7 +277,7 @@ def _scope(
     if split_note:
         notes.append(split_note)
     if boundary is not None:
-        notes.append(f'{boundary.name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
+        notes.append(note('범위', f'{boundary.name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)'))
     return region, notes, boundary, radius_km
 
 
@@ -768,7 +771,7 @@ def complex_listings_command(
                 '아파트 단지에는 단기임대가 없습니다. 단기임대는 오피스텔 건물(officetel-…)에만 있습니다',
                 param_hint='--trade',
             )
-        apt_trade_notes.append(f"아파트 단지에는 단기임대가 없어 {'·'.join(given_trades)}만 찾았습니다")
+        apt_trade_notes.append(note('거래', f"아파트 단지에는 단기임대가 없어 {'·'.join(given_trades)}만 찾았습니다"))
     trade_types, trade_notes = infer_trade_types(
         given_trades,
         rent=rent_min is not None or rent_max is not None,
@@ -860,7 +863,7 @@ def store_command(
         })
     price_notes = []
     if trade is None and effective_trade != '전체':
-        price_notes.append(f'가격 조건에 맞춰 거래 유형을 {effective_trade}로 좁혔습니다')
+        price_notes.append(note('거래', f'가격 조건에 맞춰 거래 유형을 {effective_trade}로 좁혔습니다'))
     businesses = split_csv(business, STORE_BUSINESS_NAMES, '--business')
     with handle_errors(SOURCE), ZigbangClient() as client:
         region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, STORE_GEOHASH_PRECISION)
@@ -993,12 +996,13 @@ def stay_command(
         if whole_address and is_ri_code(region.legal_division_code) and region.local3:
             # 직방 지역 결과에는 리가 없고 local3 이 그 위 읍·면이라 검색 API 가 읍·면 전체를 준다 (2026-10-11 실측: 양근리 →
             # 양평읍 창대리 매물)
-            notes.append(
+            notes.append(note(
+                '범위',
                 f"{quoted(region.name, '은/는')} 리 단위라 직방 단기임대 지역 검색이 상위 {region.local3} 전체를 찾았습니다. "
-                '리 주변만 보려면 --radius 를 주세요'
-            )
+                '리 주변만 보려면 --radius 를 주세요',
+            ))
         elif whole_address:
-            notes.append(f'반경 대신 {region.name} 지역 전체를 검색했습니다. 반경으로 찾으려면 --radius 를 주세요')
+            notes.append(note('범위', f'반경 대신 {region.name} 지역 전체를 검색했습니다. 반경으로 찾으려면 --radius 를 주세요'))
         boundary = dong_boundary(client, region) if lat is None and radius is None and not whole_address else None
         if boundary is not None and (wide_note := wide_boundary_note(region, boundary, STAY_GEOHASH_PRECISION, radius_km)):
             notes.append(wide_note)

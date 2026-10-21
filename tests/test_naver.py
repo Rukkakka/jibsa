@@ -183,7 +183,7 @@ def test_search_area_stops_at_page_request_cap(monkeypatch: pytest.MonkeyPatch) 
     with make_client(requests) as client:
         result = search_area(client, 37.4928, 127.0305, conditions=NaverListingConditions(trade_types=['월세']), radius_km=3.0, limit=90)
     assert sum(request.url.path.endswith('/clusteredArticles') for request in requests) == 2
-    assert result.notes[0].startswith('네이버 차단을 피하려고 검색 중심에서 가까운 지도 칸')
+    assert result.notes[0].startswith('[일부] 네이버 차단을 피하려고 검색 중심에서 가까운 지도 칸')
     assert 'notes' not in result.model_dump()
 
     # limit 을 채워 멈추면 상한에 걸린 게 아니라 안내가 없다

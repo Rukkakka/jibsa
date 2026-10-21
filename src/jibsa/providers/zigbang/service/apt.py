@@ -21,6 +21,7 @@ from jibsa.core.listing import (
     Listing,
     TradeType,
     in_range,
+    note,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -183,10 +184,11 @@ def resolve_apt_region(
     if is_ri_code(code):
         # 리는 읍·면 지역 목록으로 찾는다 (local_code_of). 지역 결과의 local3 이 그 읍·면이다 (2026-10-11 실측: 양근리 → 양평읍)
         town = best.source.local3 if best.source and best.source.local3 else '읍·면'
-        notes.append(
+        notes.append(note(
+            '범위',
             f"{quoted(query, '은/는')} 리 단위라 직방 아파트 목록이 받지 않아 상위 {town} 전체 매물을 찾았습니다. "
-            '리 주변만 보려면 --radius 로 반경 검색하세요'
-        )
+            '리 주변만 보려면 --radius 로 반경 검색하세요',
+        ))
     # 지역 결과는 모두 법정동코드가 있어 (2026-10-11 실측: '○가' 동 145건·그 밖의 지역 25건) 형제 동은 코드로 다시 거르지 않는다
     siblings = ga_dong_siblings(query, items, best)
     split = ga_dong_split(query, siblings, best)
@@ -384,29 +386,32 @@ def search_apt_listings(
         if others:
             names = list(dict.fromkeys(others))
             shown = '·'.join(names[:5]) + (f' 등 {len(names)}곳' if len(names) > 5 else '')
-            notes.append(
+            notes.append(note(
+                '범위',
                 f'{len(listings)}건 중 {len(others)}건은 다른 동({shown}) 단지 매물입니다. '
-                '직방 지역 목록은 동 안에 아파트가 적으면 이웃 동 단지도 함께 줍니다. address 로 위치를 확인하세요'
-            )
+                '직방 지역 목록은 동 안에 아파트가 적으면 이웃 동 단지도 함께 줍니다. address 로 위치를 확인하세요',
+            ))
     head: list[str] = []
     # 함께 찾는 지역은 '○가' 동이거나 구가 있는 시의 구다 (resolve_apt_region)
     unit = '동' if is_dong_code(regions[0].legal_division_code) else '구'
     if len(searched) > 1:
         # 작은 동은 직방 지역 목록이 이웃 동 단지를 대신 줘 동끼리 겹친다 (2026-10-10 실측: 문래동1가 목록은 모두
         # 대림동·영등포동 단지). 겹친 매물은 한 번만 내보내지만 total 은 동마다의 집계를 더한 값이다
-        head.append(
+        head.append(note(
+            '범위',
             f"{'·'.join(part.name for part in searched)}를 함께 찾았습니다 (--limit 예산을 {unit}마다 나눠 씁니다). "
             + (
                 'total 은 동마다 직방이 집계한 수를 더한 값이라 겹치는 매물이 두 번 세어졌을 수 있습니다'
                 if unit == '동' else 'total 은 구마다 직방이 집계한 수를 더한 값입니다'
-            )
-        )
+            ),
+        ))
         region = merged_dong_region(region, searched) if unit == '동' else merged_gu_region(region, searched)
     if skipped:
-        head.append(
+        head.append(note(
+            '일부',
             f"--limit({limit})이 함께 찾을 {unit} 수({len(regions)})보다 작아 {'·'.join(skipped)}는 찾지 않았습니다. "
-            f'모두 찾으려면 --limit 을 {len(regions)} 이상으로 주세요'
-        )
+            f'모두 찾으려면 --limit 을 {len(regions)} 이상으로 주세요',
+        ))
     notes = head + notes
     return ZigbangAptSearchResult(
         region=region,
@@ -566,11 +571,12 @@ def search_apt_listings_near(
     )
     unscanned = len(danjis) - scanned
     if unscanned > 0 and scanned >= max_complexes and inspected < limit:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'반경 안 아파트 단지 {len(danjis)}곳 중 가까운 {scanned}곳만 매물을 조회했습니다 (단지마다 요청이 들어 '
             f'{max_complexes}곳에서 멈춥니다). 더 보려면 반경을 줄이거나 거래 유형·가격 조건을 넓히거나, '
-            '--radius 없이 동 이름으로 jibsa zigbang search listings apt <동> 을 쓰면 동 전체를 빠짐없이 봅니다'
-        )
+            '--radius 없이 동 이름으로 jibsa zigbang search listings apt <동> 을 쓰면 동 전체를 빠짐없이 봅니다',
+        ))
     if conditions.area_min_m2 is not None or conditions.area_max_m2 is not None:
         notes.append('아파트 면적 조건은 직방이 받지 않아 받은 매물에서 거릅니다. total 은 면적으로 거르기 전 수입니다')
     if supply_filtered:
@@ -579,11 +585,12 @@ def search_apt_listings_near(
             'total 은 공급면적으로 거르기 전 수입니다'
         )
     if area_capped:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'반경 검색은 면적을 서버에서 거르지 못해 반경 안 단지 {len(danjis)}곳 중 가까운 {scanned}곳만 훑었습니다. '
             '특정 면적의 아파트를 빠짐없이 찾으려면 --radius 없이 동·구 이름과 --supply-area-min/--supply-area-max 로 '
-            '찾으세요 (동·구 검색은 공급면적을 서버에서 거릅니다. 공급면적은 대개 전용면적의 1.1~1.5배)'
-        )
+            '찾으세요 (동·구 검색은 공급면적을 서버에서 거릅니다. 공급면적은 대개 전용면적의 1.1~1.5배)',
+        ))
     return ZigbangAptNearSearchResult(
         region=region,
         radius_km=radius_km,

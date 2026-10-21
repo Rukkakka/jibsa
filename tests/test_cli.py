@@ -277,7 +277,7 @@ def test_daangn_geocode_falls_back_to_naver_when_zigbang_blocked(monkeypatch: py
     if naver == 'found':
         region, notes, finder = daangn_cli._geocode('역삼역', 1.0)
         assert (region.lat, region.lng, finder) == (37.5006, 127.0364, '네이버')
-        assert notes == ["직방이 요청 제한으로 막혀 있어 '역삼역' 위치를 네이버 지역 검색으로 찾았습니다"]
+        assert notes == ["[실패] 직방이 요청 제한으로 막혀 있어 '역삼역' 위치를 네이버 지역 검색으로 찾았습니다"]
         return
     # 네이버로도 못 찾으면 막힌 직방의 에러에, 지금 되는 방법(당근 동 이름, 좌표)을 안내한다
     with pytest.raises(RateLimitedError) as exc:

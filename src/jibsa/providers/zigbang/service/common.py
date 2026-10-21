@@ -24,6 +24,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     normalize_address,
     normalize_date,
+    note,
     won_to_manwon,
 )
 from jibsa.core.ratelimit import RateLimitedError
@@ -582,7 +583,7 @@ def excluded_notes(limit: int, inspected: int, returned: int, *, order: str = '�
     """
     if returned >= limit or inspected <= returned:
         return []
-    return [f'{order} 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)']
+    return [note('제외', f'{order} 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)')]
 
 
 def apt_pagination_notes(
@@ -606,11 +607,11 @@ def apt_pagination_notes(
     notes: list[str] = []
     if returned < limit:
         if inspected > returned:
-            notes.append(f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)')
+            notes.append(note('제외', f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)'))
         elif not has_more:
             notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if limit >= MAX_LIST_LIMIT and (inspected >= limit or total > returned or has_more):
-        notes.append(f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요')
+        notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))
     elif suggest_limit and inspected >= limit and (total > returned or has_more):
-        notes.append('매물이 더 있습니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요')
+        notes.append(note('일부', '매물이 더 있습니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요'))
     return notes

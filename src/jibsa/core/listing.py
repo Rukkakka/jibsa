@@ -22,6 +22,7 @@ from typing import (
     Any,
     Literal,
     TypeVar,
+    get_args,
     overload,
 )
 
@@ -270,6 +271,27 @@ def in_range(value: float | None, minimum: float | None, maximum: float | None) 
     return value is not None and (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
 
 
+# 결과 notes 의 종류. 안내 앞에 '[일부] ' 처럼 붙여 LLM 이 문장을 다 읽지 않고도 무엇을 알리는지 가른다 (docs/llm.md).
+# 일부: 더 받을 매물이 있다 / 범위: 찾은 범위가 요청과 다르다 / 제외: 받은 것 중 뺀 매물이 있다 / 모호: 이름이 여러 곳이라
+# 하나를 골랐다 / 거래: 거래 유형을 짐작해 좁혔다 / 실패: 덤 조회가 실패했거나 대체 경로로 찾았다 / 참고: 그 밖에 읽을 때 알 것
+NoteKind = Literal['일부', '범위', '제외', '모호', '거래', '실패', '참고']
+NOTE_KINDS: tuple[str, ...] = get_args(NoteKind)
+
+
+def note(kind: NoteKind, text: str) -> str:
+    """종류 태그를 붙인 안내 (`'[일부] 조건에 맞는 매물 ...'`). 태그 없이 둔 안내는 출력할 때 [참고] 가 붙는다 (`tagged_notes`)."""
+    return f'[{kind}] {text}'
+
+
+def tagged_notes(notes: list[str]) -> list[str]:
+    """출력할 안내마다 종류 태그를 붙인다. 이미 붙었으면 그대로, 없으면 [참고]. 같은 안내는 한 번만 남긴다."""
+    tagged = [
+        text if any(text.startswith(f'[{kind}] ') for kind in NOTE_KINDS) else note('참고', text)
+        for text in notes
+    ]
+    return list(dict.fromkeys(tagged))
+
+
 def by_distance(listing: 'Listing') -> tuple[bool, float]:
     """가까운 순 정렬 키. 거리를 모르는 매물은 가장 가깝다고 내보내지 않도록 맨 뒤로 보낸다."""
     return listing.distance_km is None, listing.distance_km or 0
@@ -313,7 +335,7 @@ def limit_notes(
     lead = f"조건에 맞는 매물 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
     area = '반경' if radius else '지역'
     # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-    return [f'{lead} 중 {order} {returned}건입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요']
+    return [note('일부', f'{lead} 중 {order} {returned}건입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요')]
 
 
 def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, complete: bool = True) -> list[str]:
@@ -336,22 +358,24 @@ def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, comp
     inside = len(distances) - len(beyond)
     # 소수 한 자리로 깎으면 반경 0.1km 밖의 0.13km 가 '최대 0.1km' 로 보여 반경 안처럼 읽힌다
     farthest = f'{round(max(beyond), 2):g}km'
+    # 반경을 덮는 범위(네이버·당근 사각형, 직방 지도 칸)에서 받은 것이라 모서리 쪽만 들어온다. '가까운 매물' 이라 하면 반경 밖을
+    # 빠짐없이 가까운 순으로 고른 줄 안다 (2026-10-20 LLM 사용 시험: 네이버 1km 에 1.43km 모서리 매물은 있고 정북쪽 1.26km 는 없었다)
+    found = f'반경을 덮어 받은 범위의 반경 밖 매물 {len(beyond)}건(최대 {farthest})'
+    partial = '반경 밖은 받은 범위의 일부라 더 보려면 --radius 를 늘리세요'
     if not complete:
-        found = (
-            f'받은 매물 중 반경 {radius_km:g}km 안 매물이 없어 반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})을'
+        head = (
+            f'받은 매물 중 반경 {radius_km:g}km 안 매물이 없어 {found}을'
             if inside == 0 else
-            f'받은 매물 중 반경 {radius_km:g}km 안은 {inside}건이라 반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})도 함께'
+            f'받은 매물 중 반경 {radius_km:g}km 안은 {inside}건이라 {found}도 함께'
         )
-        return [f'{found} 보여 줍니다. 조회 한도에 닿아 멈췄으므로 반경 안 매물이 더 있을 수 있습니다']
+        return [note('범위', f'{head} 보여 줍니다. 조회 한도에 닿아 멈췄으므로 반경 안 매물이 더 있을 수 있습니다')]
     if inside == 0:
-        return [
-            f'반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 '
-            f'반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})을 보여 줍니다'
-        ]
-    return [
-        f'반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 '
-        f'반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})도 함께 보여 줍니다'
-    ]
+        return [note(
+            '범위', f'반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 {found}을 보여 줍니다. {partial}',
+        )]
+    return [note(
+        '범위', f'반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 {found}도 함께 보여 줍니다. {partial}',
+    )]
 
 
 class Listing(BaseModel):

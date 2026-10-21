@@ -16,6 +16,7 @@ from jibsa.core.listing import (
     join_address,
     normalize_address,
     normalize_date,
+    note,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -131,10 +132,11 @@ FACILITY_CODE_BY_NAME: dict[str, NaverOptionType] = {
 # 구조 값이 없어 모두 빠지고 (역삼동 방 1개: 아파트 435건·오피스텔 2,074건 → 0건, 대치동 재건축 1,024건 → 0건),
 # 원룸·빌라·상가주택 등도 중개사가 구조를 입력하지 않은 매물은 빠진다 (역삼동 원룸 전세 35건 → 26건, 빠진 매물은
 # shape 가 null. 상가주택 73건 → 11건, 2026-10-10). 서버 필터라 다시 거르지 않고 줄 때마다 알린다
-ONE_ROOM_SHAPE_NOTE: str = (
+ONE_ROOM_SHAPE_NOTE: str = note(
+    '제외',
     '원룸 구조(오픈형·분리형)는 중개사가 구조를 입력한 매물만 걸립니다. 단지로 등록된 매물(아파트·오피스텔·단지형 빌라)은 '
     '구조 값이 없어 모두 빠지고, 다른 매물도 구조를 입력하지 않았으면 빠집니다. 빠짐없이 보려면 --one-room-shape 없이 '
-    '--room 원룸 으로 찾고 listing 의 room_type 으로 구조를 확인하세요'
+    '--room 원룸 으로 찾고 listing 의 room_type 으로 구조를 확인하세요',
 )
 MOVE_IN_CODE_BY_NAME: dict[str, NaverMoveInType] = {
     '바로입주': 'MVF01',
@@ -154,8 +156,8 @@ ENTRANCE_CODE_BY_NAME: dict[str, NaverEntranceType] = {
     '복도식': '20',
     '복합식': '30',
 }
-COMPLEX_FILTER_NOTE: str = (
-    '세대수·단지 주차·현관 구조는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다'
+COMPLEX_FILTER_NOTE: str = note(
+    '제외', '세대수·단지 주차·현관 구조는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다',
 )
 CLUSTER_PRECISION: int = 15
 CLUSTER_PAGE_SIZE: int = 30
@@ -233,12 +235,16 @@ def _search_sorted(
     result = list(listings.values())[:limit]
     notes: list[str] = []
     if truncated:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 정렬 순서로 {inspected}건까지만 훑었습니다. '
-            '반경 안 매물이 더 있을 수 있으니 반경을 줄이거나 조건을 좁혀 다시 검색하세요'
-        )
+            '반경 안 매물이 더 있을 수 있으니 반경을 줄이거나 조건을 좁혀 다시 검색하세요',
+        ))
     notes += filter_notes
-    notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated, excluded_reason=RADIUS_EXCLUDED_REASON)
+    notes += pagination_notes(
+        total, len(result), limit, inspected, truncated=truncated, excluded_reason=RADIUS_EXCLUDED_REASON,
+        scope=f'반경 {radius_km:g}km 안에서 ',
+    )
     return NaverListingsResult(total=total, returned=len(result), listings=result, notes=notes)
 
 
@@ -430,11 +436,12 @@ def list_area_complexes(
     result = list(complexes.values())[:limit]
     notes: list[str] = []
     if truncated:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 {inspected}곳까지만 훑었습니다. 단지가 더 있을 수 있으니 '
             + ('조건을 좁혀' if legal_division_code is not None else '반경을 줄이거나 조건을 좁혀')
-            + ' 다시 검색하세요'
-        )
+            + ' 다시 검색하세요',
+        ))
     notes += pagination_notes(
         total, len(result), limit, inspected, subject='단지', truncated=truncated,
         excluded_reason=EXCLUDED_REASON if legal_division_code is not None else RADIUS_EXCLUDED_REASON,
@@ -489,10 +496,11 @@ def _search_legal_division(
     result = list(listings.values())[:limit]
     notes: list[str] = []
     if truncated:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 동 전체에서 {inspected}건까지만 '
-            '훑었습니다. 조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요'
-        )
+            '훑었습니다. 조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요',
+        ))
     notes += filter_notes
     notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated)
     return NaverListingsResult(total=total, returned=len(result), listings=result, notes=notes)
@@ -782,14 +790,19 @@ def _search_clusters(
     notes: list[str] = []
     if truncated:
         # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 검색 중심에서 가까운 지도 칸 {opened_clusters}/{len(ordered)}개까지만 '
             f'훑었습니다 (클러스터 매물 요청 {MAX_CLUSTER_PAGE_REQUESTS}회). 조건에 맞는 매물이 더 있을 수 있으니 '
-            '조건을 넓히거나 반경을 줄여 다시 검색하세요'
-        )
+            '조건을 넓히거나 반경을 줄여 다시 검색하세요',
+        ))
     notes += filter_notes
     # 서버 집계는 반경을 감싸는 사각형 안의 수다. 가격·방 수 등 조건은 서버 필터라 이미 적용돼 있다
-    notes += pagination_notes(clusters.total_count, len(result), limit, inspected, truncated=truncated)
+    notes += pagination_notes(
+        clusters.total_count, len(result), limit, inspected, truncated=truncated,
+        # 반경을 감싼 사각형의 지도 칸을 받아 반경 밖 매물도 섞여 '안팎' 이다
+        scope=f'반경 {radius_km:g}km 안팎에서 ',
+    )
     # 반경 밖 매물도 할당량에 세므로, 할당량을 다 쓰고 멈췄으면 열지 않은 칸·페이지에 반경 안 매물이 남았을 수 있다
     notes += beyond_radius_notes(result, radius_km, complete=not truncated and inspected < limit)
     return NaverListingsResult(

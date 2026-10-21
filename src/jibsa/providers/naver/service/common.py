@@ -26,6 +26,7 @@ from jibsa.core.listing import (
     join_address,
     m2_to_pyeong,
     normalize_date,
+    note,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -696,6 +697,7 @@ def pagination_notes(
     subject: str = '매물',
     truncated: bool = False,
     excluded_reason: str = EXCLUDED_REASON,
+    scope: str = '',
 ) -> list[str]:
     """조회 예산과 실제 제외 결과에 맞춰 추가 조회 없이 안내한다.
 
@@ -706,21 +708,24 @@ def pagination_notes(
     Args:
         excluded_reason: 제외 안내에서 `subject` 앞에 붙는 제외 사유 (관형어). 반경으로 거르는 검색은
             `RADIUS_EXCLUDED_REASON`.
+        scope: '전부' 가 어느 범위인지 앞에 붙일 말 (예: '반경 1km 안팎에서 '). 반경을 넓히면 더 나오는데 '전부' 만 쓰면
+            찾은 범위의 전부인지 알 수 없다 (2026-10-20 LLM 사용 시험: 1km '26건이 전부' 뒤 2km 85건).
     """
     notes: list[str] = []
     excluded = min(inspected, limit) - returned
     if returned < limit and excluded > 0:
-        notes.append(
-            f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)"
-        )
+        notes.append(note(
+            '제외', f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)",
+        ))
     elif returned < limit and not truncated:
-        notes.append(f"조건에 맞는 {subject}{particle(subject, '은/는')} 이 {returned}건이 전부입니다")
+        what = scope + f'조건에 맞는 {subject}'
+        notes.append(f"{what}{particle(subject, '은/는')} 이 {returned}건이 전부입니다")
     if truncated:
         return notes
     if limit >= MAX_LIST_LIMIT and (total > returned or inspected >= limit):
-        notes.append(f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요')
+        notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))
     elif returned >= limit and total > returned:
-        notes.append(f'전체 {total}건 중 {returned}건입니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요')
+        notes.append(note('일부', f'전체 {total}건 중 {returned}건입니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요'))
     return notes
 
 

@@ -28,6 +28,7 @@ from jibsa.core.listing import (
     Listing,
     beyond_radius_notes,
     listing_as,
+    note,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -92,21 +93,6 @@ from typing import (
 
 
 logger = logging.getLogger(__name__)
-# 당근 매물 종류는 작성자가 고른 하나뿐이라 같은 오피스텔 건물의 방 1개도 원룸·오피스텔로 갈린다
-# (2026-10-10 실측: 엘리젠트 단지 매물 3건 중 1건만 원룸, 2건은 오피스텔로 올라 있었다)
-ONE_ROOM_NOTE: str = (
-    '-t 원룸은 작성자가 원룸으로 올린 매물만이라 방 1개 아파트·주택은 빠지고 방 2개 매물이 섞일 수 있습니다 '
-    '(방 수는 --details 나 listing 의 room_type)'
-)
-ONE_ROOM_OFFICETEL_NOTE: str = '원룸형 오피스텔도 보려면 -t 원룸,오피스텔'
-OFFICETEL_NOTE: str = (
-    '-t 오피스텔은 작성자가 오피스텔로 올린 매물만이라 원룸으로 올린 오피스텔은 빠집니다 (함께 보려면 -t 원룸,오피스텔)'
-)
-# 투룸(TWO_ROOM)으로 찾을 때 붙이는 안내
-TWO_ROOM_NOTE: str = (
-    '-t 투룸은 투룸 이상(쓰리룸·포룸이상 포함)을 함께 찾습니다. 방 구조는 매물의 room_type 으로 확인하고, '
-    'null 이면(당근 목록) item 의 room_count 로 확인하세요'
-)
 FEED_PAGE_SIZE: int = 20
 # 동마다 받는 피드 페이지 상한 (첫 페이지 포함). 동마다 최대 120건이다
 MAX_FEED_PAGES: int = 6
@@ -114,14 +100,16 @@ MAX_FEED_PAGES: int = 6
 CARD_CHUNK_SIZE: int = 20
 # 핀은 넓은 범위에서 이 개수로 잘린다 (2026-10 실측). 잘리면 어떤 핀이 빠졌는지 알 수 없다
 PIN_LIMIT: int = 10000
-FEED_FALLBACK_NOTE: str = (
+FEED_FALLBACK_NOTE: str = note(
+    '실패',
     '당근 필터 API 를 쓸 수 없어(웹 쿼리가 바뀜) 예전 방식으로 동마다 최근 20건만 받아 조건을 적용했습니다. '
-    f'조건에 맞는 매물이 더 있을 수 있어 {UPDATE_NEEDED}'
+    f'조건에 맞는 매물이 더 있을 수 있어 {UPDATE_NEEDED}',
 )
 # 조건 없이 찾다가 다음 페이지 피드가 거절됐을 때. 건 조건이 없어 '조건을 적용했다' 고 하지 않는다
-FEED_FALLBACK_PLAIN_NOTE: str = (
+FEED_FALLBACK_PLAIN_NOTE: str = note(
+    '실패',
     '당근 매물 피드 API 를 쓸 수 없어(웹 쿼리가 바뀜) 예전 방식으로 동마다 최근 20건만 받았습니다. '
-    f'매물이 더 있을 수 있어 {UPDATE_NEEDED}'
+    f'매물이 더 있을 수 있어 {UPDATE_NEEDED}',
 )
 # 행정동·법정동 이름 끝 ('역삼1동', '화곡제1동', '상계3.4동', '화곡본동', '역삼동'). 떼고 남은 이름이 같으면 같은 동네다.
 # 점 번호를 빼면 '상계3.4동' 이 '상계3.' 이 되어 같은 구로 채울 때 상계동과 다른 동으로 골랐다 (2026-10-11 실측: 노원구
@@ -302,7 +290,7 @@ def expand_regions(
             raise
         except OPTIONAL_LOOKUP_ERRORS as exc:
             logger.warning('daangn district dong list failed (%s); expanding with feed neighbors only', exc)
-            notes.append(partial_failure_note(exc, '같은 구 동 목록', '주변 동을 더'))
+            notes.append(note('실패', partial_failure_note(exc, '같은 구 동 목록', '주변 동을 더')))
     for location in locations:
         if len(chosen) >= count:
             break
@@ -318,10 +306,11 @@ def expand_regions(
 
     if filled:
         # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-        notes.append(
+        notes.append(note(
+            '범위',
             f'{primary.name3} 피드에 섞여 온 주변 동이 {len(chosen) - len(filled)}곳뿐이라 '
-            f"나머지는 같은 구의 다른 동({', '.join(filled)})으로 채웠습니다. 가까운 동이 아닐 수 있습니다"
-        )
+            f"나머지는 같은 구의 다른 동({', '.join(filled)})으로 채웠습니다. 가까운 동이 아닐 수 있습니다",
+        ))
     return chosen, notes
 
 
@@ -408,7 +397,7 @@ def neighbor_notes(regions: list[DaangnRegion], dongs: list[str | None]) -> list
     if not others:
         return []
     names = ', '.join(dict.fromkeys(others))
-    return [f'{len(dongs)}건 중 {len(others)}건은 당근이 섞어 준 주변 동({names}) 매물입니다 (in_regions: false)']
+    return [note('범위', f'{len(dongs)}건 중 {len(others)}건은 당근이 섞어 준 주변 동({names}) 매물입니다 (in_regions: false)')]
 
 
 def _server_only_conditions(property_filter: DaangnPropertyFilterModel) -> list[str]:
@@ -451,9 +440,9 @@ def count_listings(
         raise
     except OPTIONAL_LOOKUP_ERRORS as exc:
         logger.warning('daangn articlesCount failed (%s); continuing without count', exc)
-        note = partial_failure_note(exc, '매물 수', '조건에 맞는 전체 매물 수를')
-        if note not in notes:
-            notes.append(note)
+        failed = note('실패', partial_failure_note(exc, '매물 수', '조건에 맞는 전체 매물 수를'))
+        if failed not in notes:
+            notes.append(failed)
         return None
 
 
@@ -468,23 +457,17 @@ def feed_rejected_error(conditions: list[str]) -> JibsaError:
 
 def property_type_notes(property_types: list[str], structures: list[str] | None = None) -> list[str]:
     """매물 종류 조건의 한계를 알린다. 당근 종류는 작성자가 고른 것이라 건물·방 수와 어긋날 수 있다."""
+    # 원룸·오피스텔·투룸 종류의 한계(작성자가 고른 종류, 투룸은 투룸 이상)는 찾을 때마다 같은 안내라 docs/llm.md 로 옮겼다
     notes: list[str] = []
-    if '원룸' in property_types:
-        notes.append(ONE_ROOM_NOTE)
-        if '오피스텔' not in property_types:
-            notes.append(ONE_ROOM_OFFICETEL_NOTE)
-    elif '오피스텔' in property_types:
-        notes.append(OFFICETEL_NOTE)
-    if '투룸' in property_types:
-        notes.append(TWO_ROOM_NOTE)
     # 방 구조(subSalesTypes)를 주면 당근은 거의 원룸만 돌려준다 (2026-10-10 실측: 원룸·오피스텔 등 + 분리형 →
     # 동 20건 모두 원룸, 역 20건·통근 50건 중 단지 없는 오피스텔 1건씩만 섞임)
     others = [property_type for property_type in property_types if property_type != '원룸']
     if structures and others:
-        notes.append(
+        notes.append(note(
+            '제외',
             f"--structure 를 주면 당근은 거의 원룸만 돌려주어 함께 준 {', '.join(others)} 매물은 대부분 빠집니다. "
-            '다른 유형도 보려면 --structure 없이 따로 찾으세요'
-        )
+            '다른 유형도 보려면 --structure 없이 따로 찾으세요',
+        ))
     return notes
 
 
@@ -1018,10 +1001,11 @@ def search_area(
 
     notes: list[str] = []
     if len(points) >= PIN_LIMIT:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'당근은 넓은 범위의 매물을 {PIN_LIMIT}건에서 잘라 주어 가까운 매물이 빠졌을 수 있습니다. '
-            '--radius 를 줄이거나 유형·거래·가격 조건을 좁히세요'
-        )
+            '--radius 를 줄이거나 유형·거래·가격 조건을 좁히세요',
+        ))
     return DaangnAreaSearchResult(
         region=region,
         radius_km=radius_km,

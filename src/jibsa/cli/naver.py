@@ -25,7 +25,10 @@ from jibsa.cli.output import (
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
 from jibsa.core.korean import is_ri_code
-from jibsa.core.listing import normalize_address
+from jibsa.core.listing import (
+    normalize_address,
+    note,
+)
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.service.common import (
     AREA_BASES,
@@ -92,7 +95,9 @@ from typing import Annotated
 SOURCE: str = 'naver'
 TRADE_TYPES: tuple[str, ...] = tuple(TRADE_CODE_BY_NAME)
 # 지역 이름과 좌표를 함께 주면 좌표로 찾는다. 이름 주변을 찾았다고 오해하지 않게 알린다
-COORDINATES_OVER_QUERY_NOTE: str = "--lat/--lng 좌표를 검색 중심으로 썼습니다. '{query}' 는 위치를 찾는 데 쓰지 않고 region.name 에만 붙였습니다"
+COORDINATES_OVER_QUERY_NOTE: str = note(
+    '범위', "--lat/--lng 좌표를 검색 중심으로 썼습니다. '{query}' 는 위치를 찾는 데 쓰지 않고 region.name 에만 붙였습니다",
+)
 PROPERTY_TYPES: tuple[str, ...] = tuple(SEARCH_CODES_BY_PROPERTY)
 # str.isdigit·isalnum 은 '²'·한글도 통과시켜 int() 가 PARSE_ERROR 를 내거나 요청 모델의 영어 오류가 나온다
 NUMBER_PATTERN: re.Pattern[str] = re.compile(r'[0-9]+')
@@ -127,7 +132,7 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내
-WHOLE_DONG_NOTE: str = '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)'
+WHOLE_DONG_NOTE: str = note('범위', '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
 NO_PET_FILTER: str = '네이버에는 반려동물 조건이 없습니다 (직방 --condition 반려동물, 당근 --option 반려동물가능)'
 AREA_IN_M2: str = '네이버 면적은 ㎡ 로 주세요: --area-min·--area-max (1평 = 3.3058㎡)'
 # 지역 매물 검색에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
@@ -841,7 +846,7 @@ def search_command(
     ] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 안 매물이 모자라면 반경 밖 가까운 매물도 나온다. 동 이름으로 찾았을 때 주면 동 전체 대신 동 중심 반경으로 찾는다')
+        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다). 동 이름으로 찾았을 때 주면 동 전체 대신 동 중심 반경으로 찾는다')
     ] = None,
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     deposit_min: DepositMinOption = None,
@@ -999,11 +1004,12 @@ def search_command(
                 notes.remove(region.ga_note)
                 region = _merged_region(region, dongs)
             if skipped:
-                notes.append(
+                notes.append(note(
+                    '일부',
                     f"--limit({limit})이 함께 찾을 동 수({len(dongs) + len(skipped)})보다 작아 "
                     f"{'·'.join(dong.name for dong in skipped)}는 찾지 않았습니다. "
-                    f'모두 찾으려면 --limit 을 {len(dongs) + len(skipped)} 이상으로 주세요'
-                )
+                    f'모두 찾으려면 --limit 을 {len(dongs) + len(skipped)} 이상으로 주세요',
+                ))
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 

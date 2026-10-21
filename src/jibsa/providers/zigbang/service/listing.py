@@ -34,6 +34,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     move_in_label,
     normalize_date,
+    note,
     parking_label,
     won_to_manwon,
 )
@@ -112,7 +113,6 @@ APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2'})
 ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
 # 대부분 방 1개다 (2026-10-10 실측: 역삼동 32건 중 단지별 6건 상세에서 5건이 방 1개)
-APT_ONE_ROOM_NOTE: str = '방 1개짜리 아파트는 여기서 찾지 않습니다 (search listings apt --supply-area-max 50 으로 찾는다)'
 GEOHASH_PRECISION: int = 5
 # --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
 DETAILS_MAX: int = 30
@@ -377,7 +377,7 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
     notes = []
     if gone:
         # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
-        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)')
+        notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
     if len(result.listings) > DETAILS_MAX:
         notes.append(f'건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})
@@ -461,9 +461,10 @@ def unsearchable_types(property_types: Sequence[str], trade_types: Sequence[str]
 
 
 def unsearchable_note(types: list[str]) -> str:
-    return (
+    return note(
+        '거래',
         f"직방은 {'·'.join(types)} 매매를 다루지 않아 조회하지 않았습니다 (전세·월세·단기임대만). "
-        '매매는 빌라·오피스텔이나 다른 소스에서 찾으세요'
+        '매매는 빌라·오피스텔이나 다른 소스에서 찾으세요',
     )
 
 
@@ -660,10 +661,11 @@ def _type_query(
         # 직방 빌라 목록은 투룸 이상뿐이라 원룸형 구조만 주면 늘 0건이다 (2026-10-10 실측: 3개 동 빌라
         # 135건 모두 투룸 이상, 원룸형 조건 0건). 빌라 건물의 원룸은 직방이 원룸 목록에 둔다
         if '빌라' in requested_types:
-            notes.append(
+            notes.append(note(
+                '범위',
                 '직방 빌라 목록은 투룸 이상만 있어 --room 의 원룸형 조건으로는 조회하지 않았습니다. '
-                '빌라(다세대·다가구) 건물의 원룸은 -t 원룸으로 찾으세요'
-            )
+                '빌라(다세대·다가구) 건물의 원룸은 -t 원룸으로 찾으세요',
+            ))
         return None
     if property_type == '원룸':
         sales_types = [sales_type for sales_type in all_sales_types if sales_type != '매매']
@@ -674,13 +676,10 @@ def _type_query(
         type_rooms = [room for room in type_rooms or ONE_ROOM_STRUCTURES if room in ONE_ROOM_STRUCTURES]
         if not type_rooms:
             if '원룸' in requested_types:
-                notes.append('원룸은 방 하나짜리(오픈형·분리형·복층형)만 찾아 --room 의 투룸 이상 조건으로는 조회하지 않았습니다')
+                notes.append(note('범위', '원룸은 방 하나짜리(오픈형·분리형·복층형)만 찾아 --room 의 투룸 이상 조건으로는 조회하지 않았습니다'))
             return None
     type_filters = {**filters, 'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in type_rooms]}
-    if property_type == '원룸':
-        # 직접 원룸을 찾을 때만 알린다. 아파트에는 단기임대가 없어 단기임대만 찾으면 알리지 않는다
-        if '원룸' in requested_types and set(conditions.trade_types) != {'단기임대'}:
-            notes.append(APT_ONE_ROOM_NOTE)
+    # 방 1개짜리 아파트는 여기서 찾지 않는다는 안내는 원룸을 찾을 때마다 나와 docs/llm.md 로 옮겼다
     if property_type == '오피스텔' and conditions.without_random:
         type_filters['without_random'] = True
     return sales_types, type_filters

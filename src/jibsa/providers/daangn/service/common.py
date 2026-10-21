@@ -21,6 +21,7 @@ from jibsa.core.listing import (
     join_address,
     m2_to_pyeong,
     normalize_date,
+    note,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
@@ -648,13 +649,13 @@ def truncation_notes(
     """
     if received <= limit:
         return []
-    note = f'조회된 {subject} {received}{unit} 중 --limit {limit} 에 맞춰 {limit}{unit}만 보여드립니다'
+    text = f'조회된 {subject} {received}{unit} 중 --limit {limit} 에 맞춰 {limit}{unit}만 보여드립니다'
     steps = ([f'--limit 을 최대 {max_limit}까지 늘리'] if max_limit is not None and limit < max_limit else []) + (
         [f'{narrow} 로 좁히'] if narrow else []
     )
     if steps:
-        note += '. ' + '거나 '.join(steps) + '세요'
-    return [note]
+        text += '. ' + '거나 '.join(steps) + '세요'
+    return [note('일부', text)]
 
 
 def listing_budget_notes(
@@ -679,15 +680,15 @@ def listing_budget_notes(
     excluded = inspected - returned if eligible is None else inspected - eligible + min(eligible, limit) - returned
     if excluded > 0 and returned < limit:
         head = f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다'
-        notes.append(f'{head} (뺀 만큼 다시 채우지 않음)' if has_more else f'{head} (더 받을 매물 없음)')
+        notes.append(note('제외', f'{head} (뺀 만큼 다시 채우지 않음)' if has_more else f'{head} (더 받을 매물 없음)'))
     elif returned < limit and not has_more:
         notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if not narrowable:
         return notes
     if has_more and limit >= LISTING_MAX_LIMIT:
-        notes.append(f'--limit 의 최대값은 {LISTING_MAX_LIMIT}입니다. 더 보려면 조건을 좁히세요')
+        notes.append(note('일부', f'--limit 의 최대값은 {LISTING_MAX_LIMIT}입니다. 더 보려면 조건을 좁히세요'))
     elif has_more and inspected >= limit:
-        notes.append('더 보려면 --limit 을 늘리거나 조건을 좁히세요')
+        notes.append(note('일부', '더 보려면 --limit 을 늘리거나 조건을 좁히세요'))
     return notes
 
 
@@ -718,10 +719,11 @@ def trade_unselected_notes(count: int) -> list[str]:
     """
     if count <= 0:
         return []
-    return [
+    return [note(
+        '제외',
         f'서버 필터를 통과한 매물 {count}건은 응답의 거래 조건 중 검색한 거래 유형·금액에 맞는 것을 확인할 수 없어 '
-        '(금액이 빠졌거나 관리비 포함 금액처럼 목록만으로 계산할 수 없음) 제외했습니다. 제외된 수만큼 추가 조회하지 않았습니다'
-    ]
+        '(금액이 빠졌거나 관리비 포함 금액처럼 목록만으로 계산할 수 없음) 제외했습니다. 제외된 수만큼 추가 조회하지 않았습니다',
+    )]
 
 
 def complex_url(complex_id: str | int) -> str:

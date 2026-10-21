@@ -24,7 +24,11 @@ from typer._click.globals import get_current_context
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
-from jibsa.core.listing import NOT_APPLICABLE_PRICE_FIELDS
+from jibsa.core.listing import (
+    NOT_APPLICABLE_PRICE_FIELDS,
+    note,
+    tagged_notes,
+)
 from jibsa.core.schema import is_request_validation_error
 
 from typing import (
@@ -87,7 +91,7 @@ def emit(
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if notes:
-        payload = {'notes': notes, **payload}
+        payload = {'notes': tagged_notes(notes), **payload}
     typer.echo(_dumps(_round_coordinates(payload), pretty))
 
 
@@ -371,12 +375,13 @@ def infer_trade_types(
         return trade_types, []
     if allowed is not None:
         inferred = [trade for trade in inferred if trade in allowed]
-    note = (
+    narrowed = note(
+        '거래',
         f"--trade 를 주지 않아 가격 조건에 맞춰 {'·'.join(inferred)}만 검색했습니다. "
-        '다른 거래 유형도 보려면 --trade 로 지정하세요'
+        '다른 거래 유형도 보려면 --trade 로 지정하세요',
     )
     # 좁힌 값은 세 소스가 같이 쓰는 거래 유형 이름(매매·전세·월세·단기임대)이다
-    return cast(list[TradeT], inferred), [note]
+    return cast(list[TradeT], inferred), [narrowed]
 
 
 class HintedUsageError(UsageError):

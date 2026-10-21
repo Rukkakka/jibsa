@@ -8,6 +8,7 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    NOTE_KINDS,
     Listing,
     listing_as,
 )
@@ -241,8 +242,8 @@ def search_commute(
             inspected=inspected, returned=len(station_listings), listings=station_listings,
         ))
         notes += [
-            f'{name}: {note}'
-            for note in listing_budget_notes(limit, inspected, len(station_listings), has_more=found.has_more_by_station[name])
+            _station_note(name, text)
+            for text in listing_budget_notes(limit, inspected, len(station_listings), has_more=found.has_more_by_station[name])
         ]
     return DaangnCommuteResult(
         workplace_station=workplace,
@@ -259,6 +260,15 @@ def search_commute(
 
 # (역 이름, 지하철 시간, 환승)
 _Station = tuple[str, int, int | None]
+
+
+def _station_note(name: str, text: str) -> str:
+    """역 이름을 붙인 안내. 종류 태그가 있으면 태그 뒤에 넣는다 (앞에 붙이면 태그를 못 알아봐 [참고] 가 또 붙는다)."""
+    for kind in NOTE_KINDS:
+        tag = f'[{kind}] '
+        if text.startswith(tag):
+            return f'{tag}{name}: {text.removeprefix(tag)}'
+    return f'{name}: {text}'
 
 
 class _Reachable(NamedTuple):
