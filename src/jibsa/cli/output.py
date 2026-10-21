@@ -138,10 +138,12 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         raise typer.Exit(code=2 if exc.code == 'INVALID_ARGUMENT' else 1)
     except ValidationError as exc:
         if not is_request_validation_error(exc):
-            # 응답 모델 검증 실패는 소스 응답이 바뀐 것이다. 입력을 고쳐도 소용없다.
+            # 응답 모델 검증 실패는 소스 응답이 바뀐 것이다. 입력을 고쳐도 소용없다. 어느 필드인지 없으면 원인을 못 찾는다
             emit_error(
                 'PARSE_ERROR',
-                f'{exc.title} 검증 실패: ' + '; '.join(error['msg'] for error in exc.errors()),
+                f'{exc.title} 검증 실패: ' + '; '.join(
+                    f"{'.'.join(map(str, error['loc']))}: {error['msg']}" for error in exc.errors()
+                ),
                 '비공식 API 응답 형식이 바뀌었을 수 있습니다. 다른 소스를 쓰세요',
                 source=source,
             )

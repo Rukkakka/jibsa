@@ -202,8 +202,8 @@ class ZigbangListingDetail(ListingDetail):
         Field(description='공급면적 (㎡, 아파트만)')
     ] = None
     total_parking_count: Annotated[
-        int | None,
-        Field(description='총 주차 대수 (새 주거 상세만)')
+        int | float | None,
+        Field(description='총 주차 대수 (새 주거 상세만). 직방이 소수(0.4)로 주기도 해 그대로 준다')
     ] = None
     household_count: Annotated[
         int | None,
