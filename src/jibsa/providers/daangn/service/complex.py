@@ -17,6 +17,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     normalize_address,
     normalize_date,
+    note,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -421,7 +422,7 @@ def search_complexes(
         except OPTIONAL_LOOKUP_ERRORS as exc:
             logger.warning('daangn complex search failed after %d candidates (%s)', len(candidates), exc)
             received = f'단지 후보는 {len(candidates)}개까지만 받았습니다. ' if candidates else ''
-            notes.append(received + partial_failure_note(exc, '단지 검색', '나머지 단지 후보를' if candidates else '단지 후보를'))
+            notes.append(note('실패', received + partial_failure_note(exc, '단지 검색', '나머지 단지 후보를' if candidates else '단지 후보를')))
             # 더 있는지는 모르므로 아래의 '--limit 을 늘리라' 안내는 붙이지 않는다
             return candidates[:limit]
         nodes = [edge.node for edge in result.edges if edge.node]

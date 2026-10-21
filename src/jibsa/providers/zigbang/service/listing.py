@@ -34,6 +34,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     move_in_label,
     normalize_date,
+    note,
     parking_label,
     won_to_manwon,
 )
@@ -112,7 +113,6 @@ APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2'})
 ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
 # 대부분 방 1개다 (2026-10-10 실측: 역삼동 32건 중 단지별 6건 상세에서 5건이 방 1개)
-APT_ONE_ROOM_NOTE: str = '방 1개짜리 아파트는 여기서 찾지 않습니다 (search listings apt --supply-area-max 50 으로 찾는다)'
 GEOHASH_PRECISION: int = 5
 # --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
 DETAILS_MAX: int = 30
@@ -157,6 +157,14 @@ class ZigbangSearchResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='반경(동 경계) 안에 아직 받지 않은 매물이 있는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
+    ] = False
+    next_position: Annotated[
+        dict[str, Any] | None,
+        Field(exclude=True, description='이어 받을 위치 ({"offset": 앞서 받은 핀 수}). 더 없으면 None')
+    ] = None
     listings: Annotated[
         # 오피스텔의 complex_id 까지 내보낸다 (SerializeAsAny 가 없으면 공통 Listing 필드만 나간다)
         list[SerializeAsAny[Listing]],
@@ -202,8 +210,8 @@ class ZigbangListingDetail(ListingDetail):
         Field(description='공급면적 (㎡, 아파트만)')
     ] = None
     total_parking_count: Annotated[
-        int | None,
-        Field(description='총 주차 대수 (새 주거 상세만)')
+        int | float | None,
+        Field(description='총 주차 대수 (새 주거 상세만). 직방이 소수(0.4)로 주기도 해 그대로 준다')
     ] = None
     household_count: Annotated[
         int | None,
@@ -377,7 +385,7 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
     notes = []
     if gone:
         # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
-        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)')
+        notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
     if len(result.listings) > DETAILS_MAX:
         notes.append(f'건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})
@@ -461,9 +469,10 @@ def unsearchable_types(property_types: Sequence[str], trade_types: Sequence[str]
 
 
 def unsearchable_note(types: list[str]) -> str:
-    return (
+    return note(
+        '거래',
         f"직방은 {'·'.join(types)} 매매를 다루지 않아 조회하지 않았습니다 (전세·월세·단기임대만). "
-        '매매는 빌라·오피스텔이나 다른 소스에서 찾으세요'
+        '매매는 빌라·오피스텔이나 다른 소스에서 찾으세요',
     )
 
 
@@ -576,6 +585,7 @@ def search_listings(
     limit: int = 20,
     boundary: ZigbangBoundary | None = None,
     subway_id: int | None = None,
+    offset: int = 0,
 ) -> ZigbangSearchResult:
     """중심점 반경 안의 매물을 가까운 순으로 `limit` 건 조회한다.
 
@@ -598,6 +608,9 @@ def search_listings(
     `subway_id` 를 명시하면 지도 칸 대신 역 반경 전용 API 를 유형별 1회 조회하고 반경 밖은 제외한다.
     주지 않으면(좌표·동·구 검색) 지도 칸으로 찾는다.
     `conditions.without_random` 은 오피스텔 요청의 서버 셔플만 끄며, 최종 결과는 거리순이다.
+
+    `offset` 은 이어 받기(`--next`)에서 앞서 받은 핀 수다. 핀은 다시 받아 가까운 순으로 세운 뒤 그다음부터 요약을 받는다.
+    핀 요청은 지도 칸 수만큼이라 적고, 요약은 15개에 1회라 앞서 받은 매물의 요약을 다시 받지 않는다.
 
     직방 카테고리별 방 구조: 원룸 = 오픈형·분리형·복층형 원룸 (원룸형 오피스텔 포함), 빌라 = 투룸·
     쓰리룸·포룸이상 (원룸형 구조만 주면 빌라는 조회하지 않는다), 오피스텔 = 원룸형·투룸·쓰리룸 이상.
@@ -623,8 +636,10 @@ def search_listings(
         geohashes=geohashes, subway_id=subway_id, radius_km=radius_km, boundary=boundary,
     )
 
-    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
-    nearest = sorted(scan.pins.values(), key=lambda entry: entry[1])[:limit]
+    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다. 거리가 같으면 매물 번호 순으로 세워 이어 받기
+    # (offset)의 경계가 서버 순서에 흔들리지 않게 한다 (2026-10-21 실측: 강남역 0.5km 오피스텔 핀 543개 중 같은 건물이라 거리가
+    # 같은 묶음 101개, 큰 것은 36개)
+    nearest = sorted(scan.pins.values(), key=lambda entry: (entry[1], entry[0].id))[offset:offset + limit]
     distance_by_id = {pin.id: distance for pin, distance in nearest}
     building_by_id = {pin.id: pin.building_id for pin, _ in nearest}
     ids = [pin.id for pin, _ in nearest]
@@ -642,6 +657,7 @@ def search_listings(
     notes = scan.notes + excluded_notes(limit, len(ids), len(listings))
     return _search_result(
         region, listings, scan.pins, notes, limit=limit, inspected=len(ids), radius_km=radius_km, boundary=boundary,
+        offset=offset,
     )
 
 
@@ -660,10 +676,11 @@ def _type_query(
         # 직방 빌라 목록은 투룸 이상뿐이라 원룸형 구조만 주면 늘 0건이다 (2026-10-10 실측: 3개 동 빌라
         # 135건 모두 투룸 이상, 원룸형 조건 0건). 빌라 건물의 원룸은 직방이 원룸 목록에 둔다
         if '빌라' in requested_types:
-            notes.append(
+            notes.append(note(
+                '범위',
                 '직방 빌라 목록은 투룸 이상만 있어 --room 의 원룸형 조건으로는 조회하지 않았습니다. '
-                '빌라(다세대·다가구) 건물의 원룸은 -t 원룸으로 찾으세요'
-            )
+                '빌라(다세대·다가구) 건물의 원룸은 -t 원룸으로 찾으세요',
+            ))
         return None
     if property_type == '원룸':
         sales_types = [sales_type for sales_type in all_sales_types if sales_type != '매매']
@@ -674,13 +691,10 @@ def _type_query(
         type_rooms = [room for room in type_rooms or ONE_ROOM_STRUCTURES if room in ONE_ROOM_STRUCTURES]
         if not type_rooms:
             if '원룸' in requested_types:
-                notes.append('원룸은 방 하나짜리(오픈형·분리형·복층형)만 찾아 --room 의 투룸 이상 조건으로는 조회하지 않았습니다')
+                notes.append(note('범위', '원룸은 방 하나짜리(오픈형·분리형·복층형)만 찾아 --room 의 투룸 이상 조건으로는 조회하지 않았습니다'))
             return None
     type_filters = {**filters, 'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in type_rooms]}
-    if property_type == '원룸':
-        # 직접 원룸을 찾을 때만 알린다. 아파트에는 단기임대가 없어 단기임대만 찾으면 알리지 않는다
-        if '원룸' in requested_types and set(conditions.trade_types) != {'단기임대'}:
-            notes.append(APT_ONE_ROOM_NOTE)
+    # 방 1개짜리 아파트는 여기서 찾지 않는다는 안내는 원룸을 찾을 때마다 나와 docs/llm.md 로 옮겼다
     if property_type == '오피스텔' and conditions.without_random:
         type_filters['without_random'] = True
     return sales_types, type_filters
@@ -784,33 +798,50 @@ def _search_result(
     inspected: int,
     radius_km: float,
     boundary: ZigbangBoundary | None,
+    offset: int = 0,
 ) -> ZigbangSearchResult:
-    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다. `inspected` 는 요약을 받은 핀 수다."""
+    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다. `inspected` 는 요약을 받은 핀 수다.
+
+    범위(동 경계·반경) 안에 아직 요약을 받지 않은 핀이 남았으면 이어 받을 위치를 붙인다. 반경 밖 핀은 반경 안이
+    모자랄 때 채우는 것이라 남은 매물로 세지 않는다 (당근 반경 검색과 같다).
+    """
     if boundary is not None:
-        in_boundary = len(pins)
+        in_scope = len(pins)
+    else:
+        in_scope = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
+    received = offset + inspected
+    has_more = inspected > 0 and received < in_scope
+    next_position = {'offset': received} if has_more else None
+    if boundary is not None:
         return ZigbangSearchResult(
             region=region,
             boundary=boundary.name,
-            total=in_boundary,
+            total=in_scope,
             returned=len(listings),
             listings=listings,
             notes=notes
             + limit_notes(
-                in_boundary, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
-                inspected=inspected,
+                in_scope, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
+                inspected=inspected, offset=offset, resumable=has_more,
             ),
+            has_more=has_more,
+            next_position=next_position,
         )
-    in_radius = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km,
-        total=in_radius,
+        total=in_scope,
         returned=len(listings),
         listings=listings,
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다
         notes=notes
-        + limit_notes(in_radius, len(listings), limit, approximate=True, radius=True, inspected=inspected)
-        + beyond_radius_notes(listings, radius_km),
+        + limit_notes(
+            in_scope, len(listings), limit, approximate=True, radius=True, inspected=inspected, offset=offset,
+            resumable=has_more,
+        )
+        + beyond_radius_notes(listings, radius_km, resumed=offset > 0),
+        has_more=has_more,
+        next_position=next_position,
     )
 
 

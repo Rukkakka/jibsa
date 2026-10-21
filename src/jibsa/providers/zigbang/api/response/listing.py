@@ -444,8 +444,8 @@ class ZigbangItemsDetailV1ResidenceModel(ResponseModel):
         Field(description='주차 가능 여부')
     ] = None
     total_parking_count: Annotated[
-        int | None,
-        Field(description='총 주차 대수')
+        int | float | None,
+        Field(description='총 주차 대수. 소수로도 온다 (상가주택 매물 50785711 은 0.4, 2026-10-20)')
     ] = Field(default=None, alias='totalParkingCnt')
     household_count: Annotated[
         int | None,

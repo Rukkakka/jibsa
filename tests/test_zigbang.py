@@ -668,8 +668,11 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
     assert calls == [(offset, 20) for offset in range(0, limit, 20)]
     assert result.returned == 0
     assert any('다시 채우지 않음' in note for note in result.notes)
-    if limit == 120:
-        assert any('최대값은 120' in note for note in result.notes)
+    # 남은 매물은 --limit 을 늘리는 대신 next 로 이어 받는다
+    assert result.has_more and result.next_position == {
+        'codes': ['11680101'], 'offsets': [limit], 'done': [False], 'totals': [200],
+    }
+    assert any('이어 보려면 결과의 next' in note for note in result.notes)
 
 
 def test_apt_radius_carries_unused_budget_to_next_complex() -> None:

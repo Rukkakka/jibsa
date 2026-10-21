@@ -6,6 +6,7 @@ import typer
 from jibsa.cli.options import (
     DepositMaxOption,
     DepositMinOption,
+    FieldsOption,
     PrettyOption,
     PriceMaxOption,
     PriceMinOption,
@@ -13,6 +14,7 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    UsageHints,
     emit,
     handle_errors,
     infer_trade_types,
@@ -20,6 +22,11 @@ from jibsa.cli.output import (
     require_korea,
     split_csv,
     validate_ranges,
+)
+from jibsa.cli.paging import (
+    NextOption,
+    decode_next,
+    encode_next,
 )
 from jibsa.core.errors import (
     JibsaError,
@@ -30,7 +37,10 @@ from jibsa.core.errors import (
 from jibsa.core.geo import DEFAULT_RADIUS_KM
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.korean import quoted
-from jibsa.core.listing import Listing
+from jibsa.core.listing import (
+    Listing,
+    note,
+)
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.service.common import (
@@ -50,6 +60,7 @@ from jibsa.providers.daangn.service.common import (
     STRUCTURE_FILTER_BY_LABEL,
     TRADE_TYPES,
     DaangnListingConditions,
+    DaangnRegion,
     FeedQueryRejectedError,
     partial_failure_note,
 )
@@ -99,6 +110,7 @@ from jibsa.providers.daangn.service.real_price import (
     get_region_real_prices,
 )
 from jibsa.providers.daangn.service.region import (
+    DaangnStation,
     find_address,
     find_place,
     find_station,
@@ -137,12 +149,17 @@ from jibsa.providers.zigbang.service.region import (
     resolve_region_with_notes,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 logger = logging.getLogger(__name__)
 # --details 를 붙일 수 있는 매물 검색 결과 (동·반경·역·단지)
 ListingsResult = DaangnSearchResult | DaangnAreaSearchResult | DaangnStationSearchResult | DaangnComplexListingsResult
+# 결과를 내보낸다: (결과, 안내, 이어 받기 표에 함께 담을 검색 방식과 찾은 위치. 이어 받지 않으면 None)
+EmitListings = Callable[[ListingsResult, list[str], dict[str, Any] | None], None]
 
 
 SOURCE: str = 'daangn'
@@ -202,25 +219,65 @@ ExtraOption = Annotated[
     typer.Option('--option', help=f"기타 조건: {', '.join(OPTION_FILTER_BY_LABEL)}. 반복하거나 쉼표로 구분"),
 ]
 MoveInNowOption = Annotated[bool, typer.Option('--move-in-now', help='즉시 입주 가능한 매물만')]
-# 매물 검색의 목록 옵션에 없는 값을 이 명령에서 주는 법 (split_csv 의 에러 힌트). 이 명령의 다른 옵션 값과, 뜻이 같은
-# 다른 소스 표현이다 (직방 --condition 반려동물·전세대출·주차·즉시입주, --room 오픈형원룸·투룸, --floor 옥탑방)
-LISTING_USAGE_BY_VALUE: dict[str, str] = {
-    **{value: f'--floor {value}' for value in FLOOR_FILTER_BY_LABEL},
-    **{value: f'--room-count {value}' for value in ROOM_COUNT_FILTER_BY_LABEL},
-    **{value: f'--structure {value}' for value in STRUCTURE_FILTER_BY_LABEL},
-    **{value: f'--option {value}' for value in OPTION_FILTER_BY_LABEL},
-    '반려동물': '--option 반려동물가능',
-    '전세대출': '--option 대출가능',
-    '주차': '--option 주차가능',
-    '옥탑방': '--option 옥탑',
-    '복층형원룸': '--option 복층',
-    '오픈형원룸': '--structure 오픈형',
-    '분리형원룸': '--structure 분리형',
-    '투룸': '--room-count 2개',
-    '쓰리룸': '--room-count 3개',
-    '포룸이상': '--room-count 4개이상',
-    '즉시입주': '--move-in-now',
-    '바로입주': '--move-in-now',
+NO_APPLIANCE_FILTER: str = '당근에는 가전·가구 옵션 조건이 없습니다'
+NO_DIRECTION_FILTER: str = '당근에는 방향 조건이 없습니다'
+NO_BATHROOM_FILTER: str = '당근에는 욕실 수 조건이 없습니다'
+AREA_IN_M2: str = '당근 면적은 ㎡ 로 주세요: --area-min·--area-max (1평 = 3.3058㎡)'
+MANAGE_COST_WITH_RENT: str = '당근은 관리비만 따로 거르지 않습니다. 월세와 관리비 합으로 거르려면 --rent-max 와 --with-manage-cost'
+# 매물 검색에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
+# 표현이다 (직방 --condition 반려동물·전세대출·주차·즉시입주, --room 오픈형원룸·투룸, --floor 옥탑방, 네이버 --facility)
+LISTING_HINTS: UsageHints = UsageHints(
+    by_value={
+        **{value: f'--floor {value}' for value in FLOOR_FILTER_BY_LABEL},
+        **{value: f'--room-count {value}' for value in ROOM_COUNT_FILTER_BY_LABEL},
+        **{value: f'--structure {value}' for value in STRUCTURE_FILTER_BY_LABEL},
+        **{value: f'--option {value}' for value in OPTION_FILTER_BY_LABEL},
+        **dict.fromkeys(
+            ('에어컨', '냉장고', '세탁기', '가스레인지', '인덕션', '전자레인지', '책상', '책장', '침대', '옷장', '신발장', '싱크대', '풀옵션'),
+            NO_APPLIANCE_FILTER,
+        ),
+        '반려동물': '--option 반려동물가능',
+        '전세대출': '--option 대출가능',
+        '주차': '--option 주차가능',
+        '옥탑방': '--option 옥탑',
+        '복층형원룸': '--option 복층',
+        '오픈형원룸': '--structure 오픈형',
+        '분리형원룸': '--structure 분리형',
+        '원룸': '-t 원룸',
+        '투룸': '--room-count 2개',
+        '쓰리룸': '--room-count 3개',
+        '포룸이상': '--room-count 4개이상',
+        '즉시입주': '--move-in-now',
+        '바로입주': '--move-in-now',
+        '지하층': '--floor 반지하',
+        '지상': '--floor 1층,2~5층,6~9층,10층이상',
+    },
+    by_option_value={
+        '--type': {
+            '빌라': '당근에는 빌라 분류가 없습니다. 작성자가 방 수로 고른 -t 원룸,투룸 으로 찾으세요 (투룸은 투룸 이상)',
+            '쓰리룸': '-t 투룸 (투룸 이상)',
+            '단독·다가구': '-t 주택',
+        },
+    },
+    by_option={
+        '--condition': '--option',
+        '--facility': '--option',
+        '--room': '--room-count 2개 (방 1개는 -t 원룸)',
+        '--one-room-shape': '--structure 오픈형',
+        '--move-in': '--move-in-now',
+        '--bathroom': NO_BATHROOM_FILTER,
+        '--direction': NO_DIRECTION_FILTER,
+        '--sort': '당근 동 검색은 최근 게시 순, 역·반경 검색은 가까운 순으로만 줍니다',
+        '--area-pyeong-min': AREA_IN_M2,
+        '--area-pyeong-max': AREA_IN_M2,
+        '--manage-cost-min': MANAGE_COST_WITH_RENT,
+        '--manage-cost-max': MANAGE_COST_WITH_RENT,
+    },
+)
+# 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run). 통근 검색도 매물 조건을 같이 받는다
+USAGE_HINTS: dict[str, UsageHints] = {
+    'jibsa daangn search listings': LISTING_HINTS,
+    'jibsa daangn search commute': LISTING_HINTS,
 }
 # 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
 HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 아파트 만 줄 때)')]
@@ -270,7 +327,7 @@ def _listing_conditions(
     Raises:
         typer.BadParameter: 모르는 라벨이거나 사용승인일·거래 방식을 둘 이상 줬을 때.
     """
-    property_types = split_csv(property_type, PROPERTY_TYPES, '--type')
+    property_types = split_csv(property_type, PROPERTY_TYPES, '--type', LISTING_HINTS)
     trade_types, trade_notes = infer_trade_types(
         split_csv(trade, TRADE_TYPES, '--trade'),
         rent=rent_min is not None or rent_max is not None,
@@ -293,12 +350,12 @@ def _listing_conditions(
         rent_includes_manage_cost=with_manage_cost,
         area_min=area_min,
         area_max=area_max,
-        floors=split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor', LISTING_USAGE_BY_VALUE),
-        room_counts=split_csv(room_count, tuple(ROOM_COUNT_FILTER_BY_LABEL), '--room-count', LISTING_USAGE_BY_VALUE),
-        structures=split_csv(structure, tuple(STRUCTURE_FILTER_BY_LABEL), '--structure', LISTING_USAGE_BY_VALUE),
+        floors=split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor', LISTING_HINTS),
+        room_counts=split_csv(room_count, tuple(ROOM_COUNT_FILTER_BY_LABEL), '--room-count', LISTING_HINTS),
+        structures=split_csv(structure, tuple(STRUCTURE_FILTER_BY_LABEL), '--structure', LISTING_HINTS),
         building_approval=approvals[0] if approvals else None,
         deal=deals[0] if deals else None,
-        options=split_csv(option, tuple(OPTION_FILTER_BY_LABEL), '--option', LISTING_USAGE_BY_VALUE),
+        options=split_csv(option, tuple(OPTION_FILTER_BY_LABEL), '--option', LISTING_HINTS),
         move_in_now=move_in_now,
         household_min=household_min,
         household_max=household_max,
@@ -338,7 +395,7 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
         raise
     except OPTIONAL_LOOKUP_ERRORS as exc:
         place = None
-        daangn_notes.append(partial_failure_note(exc, '위치 찾기', f"'{name}' 위치를"))
+        daangn_notes.append(note('실패', partial_failure_note(exc, '위치 찾기', f"'{name}' 위치를")))
         logger.warning('daangn place search for %r failed (%s); falling back to zigbang', name, exc)
     if place is not None:
         return ZigbangRegion(name=place.name, address=place.name, lat=place.lat, lng=place.lng), place.notes, '당근'
@@ -357,7 +414,7 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
     except RegionNotFoundError as exc:
         raise geocoding_failed(zigbang_error, exc) from None
     reason = '요청 제한으로 막혀 있어' if isinstance(zigbang_error, RateLimitedError) else '지역 검색이 실패해'
-    notes = [*daangn_notes, f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다", *notes]
+    notes = [*daangn_notes, note('실패', f"직방이 {reason} '{name}' 위치를 네이버 지역 검색으로 찾았습니다"), *notes]
     # 직방 검색 중심과 필드가 같다
     return ZigbangRegion(**found.model_dump()), notes, '네이버'
 
@@ -411,7 +468,7 @@ def _search_not_dong(
     limit: int,
     radius_km: float,
     common_notes: list[str],
-    emit_listings: Callable[[ListingsResult, list[str]], None],
+    emit_listings: EmitListings,
     emit_area: Callable[[float, float, list[str]], None],
 ) -> None:
     """당근 동이 아닌 이름: 역이면 당근 역 주변 목록으로, 아니면(장소 이름) 그 위치의 반경으로 찾아 내보낸다.
@@ -441,10 +498,11 @@ def _search_not_dong(
         if city is not None:
             raise
         station = None
-        station_notes.append(
+        station_notes.append(note(
+            '실패',
             f"{quoted(dong, '이/가')} 역인지 확인하지 못하고 위치 반경으로 찾았습니다. "
-            + partial_failure_note(exc, '역 검색', '역 후보를')
-        )
+            + partial_failure_note(exc, '역 검색', '역 후보를'),
+        ))
         logger.warning('daangn station search failed (%s); searching by radius', exc)
     if station is None and city is not None:
         raise RegionNotFoundError(
@@ -462,32 +520,41 @@ def _search_not_dong(
         except RateLimitedError:
             raise
         except OPTIONAL_LOOKUP_ERRORS as exc:
-            station_notes.append(
+            station_notes.append(note(
+                '실패',
                 f'{station.name} 주변 매물 목록 대신 역 위치 반경으로 찾았습니다. '
-                + partial_failure_note(exc, '역 주변 매물', '역 주변 매물 목록을')
-            )
+                + partial_failure_note(exc, '역 주변 매물', '역 주변 매물 목록을'),
+            ))
             logger.warning('daangn station listings failed (%s); searching by radius', exc)
         else:
-            emit_listings(station_result, common_notes + [
+            emit_listings(station_result, common_notes + [note(
+                '범위',
                 f"{quoted(dong, '은/는')} 당근 역 주변 매물 목록으로 찾았습니다 (walk_minutes 는 역까지 도보 분). "
-                '역에서 반경으로 찾으려면 --radius 를 주세요'
-            ] + station_notes + station_result.notes)
+                '역에서 반경으로 찾으려면 --radius 를 주세요',
+            )] + station_notes + station_result.notes, _station_resume(station))
             return
         # 역은 찾았으니 위치를 다시 찾지 않고 역 위치를 중심으로 쓴다
-        emit_area(station.lat, station.lng, station_notes + [
+        emit_area(station.lat, station.lng, station_notes + [note(
+            '범위',
             f"당근에 {quoted(dong, '이라는/라는')} 동이 없어 당근 지역 검색으로 찾은 위치({station.name})에서 "
-            f'반경 {radius_km:g}km 안을 찾았습니다'
-        ])
+            f'반경 {radius_km:g}km 안을 찾았습니다',
+        )])
         return
     try:
         # 역 검색은 위에서 했으므로 위치 찾기에서 다시 하지 않는다
         center, geocode_notes, finder = _geocode(dong, radius_km, check_station=False)
     except RegionNotFoundError:
         raise not_dong from None
-    emit_area(center.lat, center.lng, station_notes + geocode_notes + [
+    emit_area(center.lat, center.lng, station_notes + geocode_notes + [note(
+        '범위',
         f"당근에 {quoted(dong, '이라는/라는')} 동이 없어 {finder} 지역 검색으로 찾은 위치({center.address or center.name})에서 "
-        f'반경 {radius_km:g}km 안을 찾았습니다'
-    ])
+        f'반경 {radius_km:g}km 안을 찾았습니다',
+    )])
+
+
+def _station_resume(station: DaangnStation) -> dict[str, Any]:
+    """역 주변 목록을 이어 받을 때 역을 다시 찾지 않도록 이어 받기 표에 담을 역 (역 ID 는 출력에서 빠져 따로 담는다)."""
+    return {'m': 'station', 'station': {**station.model_dump(), 'station_id': station.station_id}}
 
 
 @search_app.command('listings')
@@ -504,7 +571,7 @@ def search_command(
         typer.Option(
             min=0.1,
             max=5.0,
-            help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 주면 동 이름도 그 위치 반경으로 찾는다. 반경 안 매물이 모자라면 반경 밖 가까운 매물도 나온다',
+            help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 주면 동 이름도 그 위치 반경으로 찾는다. 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다)',
         )
     ] = None,
     city: Annotated[
@@ -544,6 +611,8 @@ def search_command(
             help=f'매물마다 상세를 1회씩 더 받아 목록에 없는 관리비·등록일·번지 주소·사용승인일·방 구조를 채운다. 요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건)',
         ),
     ] = False,
+    next_: NextOption = None,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """동의 최근 매물, 또는 한 위치의 반경 안 매물을 조회한다. 조건은 당근 서버에서 건다.
@@ -556,7 +625,10 @@ def search_command(
     예: jibsa daangn search listings 역삼동 --city 강남구 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70 --option 반려동물가능
     예: jibsa daangn search listings 역삼역 --radius 0.5 -t 원룸 --trade 월세 --option 반려동물가능
     예: jibsa daangn search listings 성수동 -t 원룸 --trade 월세 --limit 10 --details
+
+    결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않는다.
     """
+    position = decode_next(next_)
     require_finite('--radius', radius)
     require_finite('--parking-min', parking_min)
     validate_ranges(
@@ -574,21 +646,47 @@ def search_command(
         raise typer.BadParameter('--city 와 --expand 는 동 단위로 찾을 때(--lat/--lng·--radius 없이)만 씁니다', param_hint='--city / --expand')
     radius_km = radius if radius is not None else DEFAULT_RADIUS_KM
 
-    def emit_listings(result: ListingsResult, notes: list[str]) -> None:
+    def emit_listings(result: ListingsResult, notes: list[str], resume: dict[str, Any] | None) -> None:
+        # 서비스가 준 다음 위치에 검색 방식·찾은 위치를 더해 이어 받기 표를 만든다 (단지 매물은 이어 받지 않는다)
+        next_position = getattr(result, 'next_position', None)
+        next_token = encode_next({**resume, **next_position}) if resume is not None and next_position else None
         if details:
             # 결과마다 매물 모델이 달라(동·역·단지) 공통 Listing 으로 넘긴다. 하위 모델은 그대로 남는다
             found: list[Listing] = list(result.listings)
             listings, detail_notes = attach_details(client, found)
             result = result.model_copy(update={'listings': listings, 'returned': len(listings)})
             notes = notes + detail_notes
-        emit(result, pretty, notes=notes)
+        emit(result, pretty, notes=notes, next_token=next_token, fields=fields)
 
-    def emit_area(center_lat: float, center_lng: float, place_notes: list[str]) -> None:
+    def emit_area(
+        center_lat: float, center_lng: float, place_notes: list[str], offset: int = 0, region: DaangnRegion | None = None,
+    ) -> None:
         try:
-            area_result = search_area(client, center_lat, center_lng, radius_km=radius_km, conditions=conditions, limit=limit)
+            area_result = search_area(
+                client, center_lat, center_lng, radius_km=radius_km, conditions=conditions, limit=limit, offset=offset,
+                region=region,
+            )
         except FeedQueryRejectedError:
             raise map_query_rejected_error() from None
-        emit_listings(area_result, common_notes + place_notes + area_result.notes)
+        emit_listings(area_result, common_notes + place_notes + area_result.notes, {'m': 'area', 'lat': center_lat, 'lng': center_lng})
+
+    def resume_search(position: dict[str, Any]) -> None:
+        # 앞 결과가 찾은 위치(반경 중심·역·동)로 바로 이어 받는다. 지역을 다시 찾는 요청과 그 안내는 첫 결과에만 있다
+        mode = position['m']
+        # 앞 결과가 찾은 동은 다시 찾지 않는다 (요청을 아낀다). 못 찾았으면(None) 다시 찾아 본다
+        region = DaangnRegion.model_validate(position['region']) if position.get('region') else None
+        if mode == 'area':
+            emit_area(float(position['lat']), float(position['lng']), [], offset=int(position['offset']), region=region)
+        elif mode == 'station':
+            station = DaangnStation.model_validate(position['station'])
+            station_result = search_station(
+                client, station, conditions=conditions, limit=limit, after=str(position['after']), region=region,
+            )
+            emit_listings(station_result, common_notes + station_result.notes, _station_resume(station))
+        else:
+            regions = [DaangnRegion.model_validate(item) for item in position['regions']]
+            dong_result = search_listings(client, regions, query=dong, conditions=conditions, limit=limit, resume=position)
+            emit_listings(dong_result, common_notes + dong_result.notes, {'m': 'dong'})
 
     with handle_errors(SOURCE), DaangnClient() as client:
         conditions, common_notes = _listing_conditions(
@@ -599,10 +697,13 @@ def search_command(
             structure=structure, approval=approval, deal=deal, option=option, move_in_now=move_in_now,
             household_min=household_min, household_max=household_max, parking_min=parking_min,
         )
+        if position is not None:
+            resume_search(position)
+            return
         if complex_id is not None:
             # 단지 하나의 현재 매물 (당근 단지 화면 순이라 거리가 없다)
             complex_result = list_complex_listings(client, complex_id, conditions=conditions, limit=limit)
-            emit_listings(complex_result, common_notes + complex_result.notes)
+            emit_listings(complex_result, common_notes + complex_result.notes, None)
             return
         if lat is not None and lng is not None:
             emit_area(lat, lng, [])
@@ -611,9 +712,9 @@ def search_command(
         assert dong is not None
         if by_area:
             center, geocode_notes, finder = _geocode(dong, radius_km)
-            emit_area(center.lat, center.lng, geocode_notes + [
-                f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다"
-            ])
+            emit_area(center.lat, center.lng, geocode_notes + [note(
+                '범위', f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다",
+            )])
             return
         try:
             place_notes: list[str] = []
@@ -627,10 +728,8 @@ def search_command(
                 radius_km=radius_km, common_notes=common_notes, emit_listings=emit_listings, emit_area=emit_area,
             )
             return
-        result = search_listings(
-            client, regions, query=dong, expand=expand, conditions=conditions, limit=limit, split_budget=len(regions) > 1,
-        )
-        emit_listings(result, common_notes + place_notes + result.notes)
+        result = search_listings(client, regions, query=dong, expand=expand, conditions=conditions, limit=limit)
+        emit_listings(result, common_notes + place_notes + result.notes, {'m': 'dong'})
 
 
 @app.command('listing')
@@ -776,6 +875,7 @@ def commute_command(
     household_max: HouseholdMaxOption = None,
     parking_min: ParkingMinOption = None,
     limit: Annotated[int, typer.Option(min=1, max=COMMUTE_STATION_MAX_LIMIT, help='역당 최대 매물 수 (100건씩 페이지를 넘겨 받는다)')] = 20,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """회사까지 지하철로 갈 수 있는 역 주변 매물을 역별로 찾는다 (당근 웹 출퇴근 지도).
@@ -824,7 +924,7 @@ def commute_command(
                 message='당근 출퇴근 API 가 바뀌어(웹 쿼리 해시 거절) 출퇴근 검색을 할 수 없습니다',
                 hint='jibsa daangn search listings <역 이름> --radius 1 로 역 주변을 찾으세요. jibsa 업데이트가 필요합니다',
             ) from None
-        emit(result, pretty, notes=notes + result.notes)
+        emit(result, pretty, notes=notes + result.notes, fields=fields)
 
 
 @app.command('region-reviews')
@@ -1180,6 +1280,7 @@ def popular_listings_command(
         typer.Option('--type', '-t', help=f"{', '.join(PROPERTY_TYPES)}. 반복하거나 쉼표로 구분. 기본 전체")
     ] = None,
     limit: Annotated[int, typer.Option(min=1, max=POPULAR_MAX_LIMIT, help='조회할 매물 수 (제외 전)')] = 20,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """구 전체에서 조회수 많은 매물 순위 (순위가 매겨진 매물은 100건쯤). 요청 2회.
@@ -1195,4 +1296,5 @@ def popular_listings_command(
             result,
             pretty,
             notes=place_notes + property_type_notes(property_types) + result.notes,
+            fields=fields,
         )

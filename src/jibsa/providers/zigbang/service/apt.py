@@ -21,6 +21,7 @@ from jibsa.core.listing import (
     Listing,
     TradeType,
     in_range,
+    note,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -54,7 +55,10 @@ from jibsa.providers.zigbang.service.region import (
     search_regions,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 def merged_dong_region(
@@ -99,6 +103,15 @@ APT_TRADE_TYPES: tuple[TradeType, ...] = ('매매', '전세', '월세')
 LOCAL_CATALOG_PAGE_SIZE: int = 20
 
 
+def apt_resume_changed_error() -> JibsaError:
+    """이어 받기(`--next`) 표의 지역이 다시 찾은 지역과 다를 때. 처음부터 다시 주면 앞 결과와 겹치는데 알 수 없다."""
+    return JibsaError(
+        code='INVALID_ARGUMENT',
+        message='앞 결과 뒤로 직방 지역 검색 결과가 바뀌어 이어 받을 수 없습니다',
+        hint='--next 없이 같은 지역·조건으로 다시 검색하세요',
+    )
+
+
 class ZigbangAptSearchResult(BaseModel):
     """아파트 지역 매물 검색 결과."""
 
@@ -122,6 +135,16 @@ class ZigbangAptSearchResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='직방 목록에 아직 받지 않은 매물이 남았는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
+    ] = False
+    next_position: Annotated[
+        dict[str, Any] | None,
+        Field(exclude=True, description=(
+            '이어 받을 위치 (지역 코드 codes, 지역마다 받은 수 offsets·끝까지 받았는지 done·전체 수 totals). 더 없으면 None'
+        ))
+    ] = None
     listings: Annotated[
         list[ZigbangAptListing],
         Field(description='직방이 보여 주는 순서의 매물')
@@ -183,10 +206,11 @@ def resolve_apt_region(
     if is_ri_code(code):
         # 리는 읍·면 지역 목록으로 찾는다 (local_code_of). 지역 결과의 local3 이 그 읍·면이다 (2026-10-11 실측: 양근리 → 양평읍)
         town = best.source.local3 if best.source and best.source.local3 else '읍·면'
-        notes.append(
+        notes.append(note(
+            '범위',
             f"{quoted(query, '은/는')} 리 단위라 직방 아파트 목록이 받지 않아 상위 {town} 전체 매물을 찾았습니다. "
-            '리 주변만 보려면 --radius 로 반경 검색하세요'
-        )
+            '리 주변만 보려면 --radius 로 반경 검색하세요',
+        ))
     # 지역 결과는 모두 법정동코드가 있어 (2026-10-11 실측: '○가' 동 145건·그 밖의 지역 25건) 형제 동은 코드로 다시 거르지 않는다
     siblings = ga_dong_siblings(query, items, best)
     split = ga_dong_split(query, siblings, best)
@@ -290,6 +314,7 @@ def search_apt_listings(
     conditions: ZigbangAptConditions | None = None,
     limit: int = 20,
     extra_regions: list[ZigbangRegion] | None = None,
+    start: dict[str, Any] | None = None,
 ) -> ZigbangAptSearchResult:
     """지역(동·구) 안의 아파트 매물을 직방이 보여 주는 순서로 `limit` 건 조회한다.
 
@@ -299,6 +324,13 @@ def search_apt_listings(
     웹 아파트 지도의 지역 매물 목록과 같다. 반경 검색이 아니라 거리가 없다. 거래 유형·가격(만원) 조건은
     서버에서 거른다. 면적은 다른 유형과 같게 전용면적(㎡)으로 받는데, 직방 지역 목록은 공급면적 조건만
     받아 전용면적은 받은 뒤에 거른다. 공급면적은 supply_area_min/max_m2로 서버에 전달한다. 실제로 받은 원본 개수로 조회 예산을 계산하며 제외된 만큼 추가 조회하지 않는다.
+
+    `start` 는 이어 받기(`--next`) 위치다. 지역마다 앞서 받은 수(`offsets`)부터 직방 offset 으로 받고, 끝까지 받은 지역(`done`)은
+    건너뛴다. `totals` 는 지역마다 앞에서 받은 전체 수라 `total` 이 페이지마다 같다. 지역 목록은 같은 이름이면 같은 순서로
+    나온다 (resolve_apt_region).
+
+    Raises:
+        JibsaError: 이어 받기 표의 지역 코드(`codes`)가 다시 찾은 지역과 다를 때 (INVALID_ARGUMENT).
     """
     conditions = conditions or ZigbangAptConditions()
     _validate_apt_supply_area(conditions.supply_area_min_m2, conditions.supply_area_max_m2)
@@ -315,7 +347,15 @@ def search_apt_listings(
     totals = [0] * len(local_codes)
     offsets = [0] * len(local_codes)
     done = [False] * len(local_codes)
-    asked = [False] * len(local_codes)
+    if start is not None:
+        # 지역 수만 맞춰 보면 다른 동의 offset 으로 받거나, 처음부터 다시 줘도 알 수 없다
+        if start['codes'] != local_codes:
+            raise apt_resume_changed_error()
+        offsets = [int(value) for value in start['offsets']]
+        done = [bool(value) for value in start['done']]
+        totals = [int(value) for value in start['totals']]
+    # 앞 결과에서 받은 지역도 찾은 지역으로 친다 (못 찾은 지역 안내에 넣지 않게)
+    asked = [offset > 0 or finished for offset, finished in zip(offsets, done, strict=True)]
     inspected = 0
     seen: set[str] = set()
     filter_area = conditions.area_min_m2 is not None or conditions.area_max_m2 is not None
@@ -359,7 +399,10 @@ def search_apt_listings(
     # 결과·안내에는 실제로 부른 동만 넣는다
     searched = [part for part, was_asked in zip(regions, asked) if was_asked]
     skipped = [part.name for part, was_asked in zip(regions, asked) if not was_asked]
-    notes = apt_pagination_notes(total, len(listings), limit, inspected)
+    has_more = not all(done)
+    notes = apt_pagination_notes(
+        total, len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None,
+    )
     if filter_area:
         # 받은 원본(limit 건) 안에서만 거르므로 맞는 매물이 더 있어도 적게 나온다 (2026-10-09 실측: 대치동
         # 전용 150㎡ 이상이 20건 중 2건, 공급 190㎡ 이상 서버 조건으로는 20건 중 19건)
@@ -384,35 +427,40 @@ def search_apt_listings(
         if others:
             names = list(dict.fromkeys(others))
             shown = '·'.join(names[:5]) + (f' 등 {len(names)}곳' if len(names) > 5 else '')
-            notes.append(
+            notes.append(note(
+                '범위',
                 f'{len(listings)}건 중 {len(others)}건은 다른 동({shown}) 단지 매물입니다. '
-                '직방 지역 목록은 동 안에 아파트가 적으면 이웃 동 단지도 함께 줍니다. address 로 위치를 확인하세요'
-            )
+                '직방 지역 목록은 동 안에 아파트가 적으면 이웃 동 단지도 함께 줍니다. address 로 위치를 확인하세요',
+            ))
     head: list[str] = []
     # 함께 찾는 지역은 '○가' 동이거나 구가 있는 시의 구다 (resolve_apt_region)
     unit = '동' if is_dong_code(regions[0].legal_division_code) else '구'
     if len(searched) > 1:
         # 작은 동은 직방 지역 목록이 이웃 동 단지를 대신 줘 동끼리 겹친다 (2026-10-10 실측: 문래동1가 목록은 모두
         # 대림동·영등포동 단지). 겹친 매물은 한 번만 내보내지만 total 은 동마다의 집계를 더한 값이다
-        head.append(
+        head.append(note(
+            '범위',
             f"{'·'.join(part.name for part in searched)}를 함께 찾았습니다 (--limit 예산을 {unit}마다 나눠 씁니다). "
             + (
                 'total 은 동마다 직방이 집계한 수를 더한 값이라 겹치는 매물이 두 번 세어졌을 수 있습니다'
                 if unit == '동' else 'total 은 구마다 직방이 집계한 수를 더한 값입니다'
-            )
-        )
+            ),
+        ))
         region = merged_dong_region(region, searched) if unit == '동' else merged_gu_region(region, searched)
     if skipped:
-        head.append(
+        head.append(note(
+            '일부',
             f"--limit({limit})이 함께 찾을 {unit} 수({len(regions)})보다 작아 {'·'.join(skipped)}는 찾지 않았습니다. "
-            f'모두 찾으려면 --limit 을 {len(regions)} 이상으로 주세요'
-        )
+            f'모두 찾으려면 --limit 을 {len(regions)} 이상으로 주세요',
+        ))
     notes = head + notes
     return ZigbangAptSearchResult(
         region=region,
         local_code=','.join(code for code, was_asked in zip(local_codes, asked) if was_asked),
         total=total,
         returned=len(listings),
+        has_more=has_more,
+        next_position={'codes': local_codes, 'offsets': offsets, 'done': done, 'totals': totals} if has_more else None,
         listings=listings,
         notes=notes,
     )
@@ -457,6 +505,10 @@ class ZigbangAptNearSearchResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='훑지 않은 단지나 받지 않은 매물이 남았는지 (이어 받기는 없다. --limit·조건으로)')
+    ] = False
     listings: Annotated[
         list[ZigbangAptListing],
         Field(description='단지가 가까운 순의 매물. distance_km 는 단지까지 거리')
@@ -566,11 +618,12 @@ def search_apt_listings_near(
     )
     unscanned = len(danjis) - scanned
     if unscanned > 0 and scanned >= max_complexes and inspected < limit:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'반경 안 아파트 단지 {len(danjis)}곳 중 가까운 {scanned}곳만 매물을 조회했습니다 (단지마다 요청이 들어 '
             f'{max_complexes}곳에서 멈춥니다). 더 보려면 반경을 줄이거나 거래 유형·가격 조건을 넓히거나, '
-            '--radius 없이 동 이름으로 jibsa zigbang search listings apt <동> 을 쓰면 동 전체를 빠짐없이 봅니다'
-        )
+            '--radius 없이 동 이름으로 jibsa zigbang search listings apt <동> 을 쓰면 동 전체를 빠짐없이 봅니다',
+        ))
     if conditions.area_min_m2 is not None or conditions.area_max_m2 is not None:
         notes.append('아파트 면적 조건은 직방이 받지 않아 받은 매물에서 거릅니다. total 은 면적으로 거르기 전 수입니다')
     if supply_filtered:
@@ -579,11 +632,12 @@ def search_apt_listings_near(
             'total 은 공급면적으로 거르기 전 수입니다'
         )
     if area_capped:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'반경 검색은 면적을 서버에서 거르지 못해 반경 안 단지 {len(danjis)}곳 중 가까운 {scanned}곳만 훑었습니다. '
             '특정 면적의 아파트를 빠짐없이 찾으려면 --radius 없이 동·구 이름과 --supply-area-min/--supply-area-max 로 '
-            '찾으세요 (동·구 검색은 공급면적을 서버에서 거릅니다. 공급면적은 대개 전용면적의 1.1~1.5배)'
-        )
+            '찾으세요 (동·구 검색은 공급면적을 서버에서 거릅니다. 공급면적은 대개 전용면적의 1.1~1.5배)',
+        ))
     return ZigbangAptNearSearchResult(
         region=region,
         radius_km=radius_km,
@@ -591,6 +645,8 @@ def search_apt_listings_near(
         complexes_scanned=scanned,
         total=total,
         returned=len(listings),
+        # 훑지 않은 단지가 남았거나, 예산을 다 써 훑은 단지의 매물을 다 받지 못했다
+        has_more=len(danjis) > scanned or (inspected >= limit and total > len(listings)),
         listings=listings,
         notes=notes,
     )

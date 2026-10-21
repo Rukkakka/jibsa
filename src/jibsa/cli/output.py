@@ -24,11 +24,18 @@ from typer._click.globals import get_current_context
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
-from jibsa.core.listing import NOT_APPLICABLE_PRICE_FIELDS
+from jibsa.core.listing import (
+    NOT_APPLICABLE_PRICE_FIELDS,
+    insert_after,
+    listing_field_names,
+    note,
+    tagged_notes,
+)
 from jibsa.core.schema import is_request_validation_error
 
 from typing import (
     Any,
+    NamedTuple,
     TypeVar,
     cast,
 )
@@ -36,6 +43,8 @@ from typing import (
 
 # 출력 좌표의 소수 자리. 일곱째 자리가 약 1cm 라 원본 정밀도를 잃지 않는다
 COORDINATE_DECIMALS: int = 7
+# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시
+ALWAYS_FIELDS: frozenset[str] = frozenset({'id', 'in_regions'})
 ChoiceT = TypeVar('ChoiceT', bound=str)
 TradeT = TypeVar('TradeT', bound=str)
 
@@ -53,16 +62,50 @@ def _dumps(data: Any, pretty: bool | None) -> str:
     )
 
 
-def _round_coordinates(value: Any) -> Any:
-    """`lat`·`lng` 값을 소수 일곱째 자리(약 1cm)로 반올림한다. 원본 좌표의 부동소수점 찌꺼기(127.04934499999999)를 지운다."""
+def _tidy_numbers(value: Any) -> Any:
+    """숫자를 짧게 쓴다. `lat`·`lng` 는 소수 일곱째 자리(약 1cm)로 반올림해 부동소수점 찌꺼기(127.04934499999999)를
+    지우고, 소수점 아래가 없는 실수는 정수로 쓴다 (`1000.0` → `1000`). 매물마다 금액·면적에 붙는 `.0` 이 토큰만 쓴다.
+    """
     if isinstance(value, dict):
         return {
-            key: round(item, COORDINATE_DECIMALS) if key in ('lat', 'lng') and isinstance(item, float)
-            else _round_coordinates(item)
+            key: _tidy_numbers(round(item, COORDINATE_DECIMALS) if key in ('lat', 'lng') and isinstance(item, float) else item)
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [_round_coordinates(item) for item in value]
+        return [_tidy_numbers(item) for item in value]
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def check_fields(values: list[str] | None) -> list[str] | None:
+    """`--fields` 의 필드 이름을 검증한다 (Typer 옵션 콜백). 요청 전에 막아, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다."""
+    if not values:
+        return None
+    known = listing_field_names()
+    fields = list(dict.fromkeys(part.strip() for value in values for part in value.split(',') if part.strip()))
+    unknown = [field for field in fields if field not in known]
+    if unknown:
+        raise HintedBadParameter(
+            f"매물에 없는 필드입니다: {', '.join(unknown)}",
+            '--fields',
+            '결과 JSON 의 매물 키 이름을 그대로 쓰세요 (예: --fields id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address)',
+        )
+    return fields
+
+
+def _select_fields(value: Any, fields: frozenset[str]) -> Any:
+    """`listings` 목록(통근 검색은 역마다의 `listings`)의 매물에서 고른 필드만 남긴다. 결과 머리(total·notes 등)는 그대로."""
+    if isinstance(value, dict):
+        return {
+            key: [
+                {name: field for name, field in item.items() if name in fields} if isinstance(item, dict) else item
+                for item in sub
+            ] if key == 'listings' and isinstance(sub, list) else _select_fields(sub, fields)
+            for key, sub in value.items()
+        }
+    if isinstance(value, list):
+        return [_select_fields(item, fields) for item in value]
     return value
 
 
@@ -70,12 +113,16 @@ def emit(
     data: BaseModel | list[BaseModel] | dict[str, Any],
     pretty: bool | None = None,
     notes: list[str] | None = None,
+    next_token: str | None = None,
+    fields: list[str] | None = None,
 ) -> None:
     """결과를 JSON 으로 stdout 에 쓴다.
 
     값을 모르는 필드는 `null` 로 남기고, 매물에 해당 없는 필드는 `Listing` 이
     키째 뺀다 (`Listing.not_applicable_fields`). `notes` 가 있으면 맨 앞에 붙이고,
-    없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등).
+    없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등). `next_token`(이어 받기 표, `jibsa.cli.paging`)이 있으면
+    `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다. `fields`(`--fields`)를 주면 매물마다 그 필드와
+    늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -85,9 +132,13 @@ def emit(
         payload = data
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
+    if next_token is not None and isinstance(payload, dict):
+        payload = insert_after(payload, 'has_more', 'next', next_token)
     if notes:
-        payload = {'notes': notes, **payload}
-    typer.echo(_dumps(_round_coordinates(payload), pretty))
+        payload = {'notes': tagged_notes(notes), **payload}
+    if fields:
+        payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
+    typer.echo(_dumps(_tidy_numbers(payload), pretty))
 
 
 def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
@@ -138,10 +189,12 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         raise typer.Exit(code=2 if exc.code == 'INVALID_ARGUMENT' else 1)
     except ValidationError as exc:
         if not is_request_validation_error(exc):
-            # 응답 모델 검증 실패는 소스 응답이 바뀐 것이다. 입력을 고쳐도 소용없다.
+            # 응답 모델 검증 실패는 소스 응답이 바뀐 것이다. 입력을 고쳐도 소용없다. 어느 필드인지 없으면 원인을 못 찾는다
             emit_error(
                 'PARSE_ERROR',
-                f'{exc.title} 검증 실패: ' + '; '.join(error['msg'] for error in exc.errors()),
+                f'{exc.title} 검증 실패: ' + '; '.join(
+                    f"{'.'.join(map(str, error['loc']))}: {error['msg']}" for error in exc.errors()
+                ),
                 '비공식 API 응답 형식이 바뀌었을 수 있습니다. 다른 소스를 쓰세요',
                 source=source,
             )
@@ -208,17 +261,56 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         raise typer.Exit(code=1)
 
 
+class UsageHints(NamedTuple):
+    """다른 소스의 옵션·값을 옮겨 써 틀린 사용법에, 이 명령에서 주는 법을 알리는 표. 값을 바꿔 받지는 않는다.
+
+    같은 조건이 소스마다 옵션·값이 달라(직방 `--condition 반려동물`, 당근 `--option 반려동물가능`) 다른 소스 명령을
+    옮겨 쓰다 틀리기 쉽다. 목록 옵션의 틀린 값은 `split_csv` 가, 없는 옵션·숫자로 못 바꾸는 값은 `jibsa.cli.app.run` 이
+    이 표로 찾는다. 안내는 옵션(`--condition 반려동물`), 다른 명령(`jibsa zigbang search listings apt`), 그 조건이
+    이 명령에 없다는 문장 중 하나다. 뜻이 조금 다른 조건(네이버 `탑층` 과 직방 `옥탑방`)은 넣지 않는다.
+
+    Attributes:
+        by_value: 옵션과 상관없이 값만으로 정해지는 안내 (`'반려동물가능': '--condition 반려동물'`). 이 명령 옵션의 값도
+            넣어, 없는 옵션에 준 값(`--facility 엘리베이터`)을 맞는 옵션으로 안내한다.
+        by_option_value: 옵션마다 뜻이 다른 값 (`'--room': {'2': '--room 투룸'}`). `by_value` 보다 먼저 본다.
+        by_option: 이 명령에 없는 옵션의 안내 (`'--move-in-now': '--condition 즉시입주'`). 값으로 못 정할 때 쓴다.
+    """
+
+    by_value: Mapping[str, str] = {}
+    by_option_value: Mapping[str, Mapping[str, str]] = {}
+    by_option: Mapping[str, str] = {}
+
+    def hint(self, option: str, value: str | None) -> str | None:
+        """`option` 에 `value`(쉼표로 여럿)를 줘 틀렸을 때의 힌트. 표에 없으면 None."""
+        option_values = self.by_option_value.get(option, {})
+        parts = [part.strip() for part in (value or '').split(',') if part.strip()]
+        usages = list(dict.fromkeys(
+            usage for part in parts if (usage := option_values.get(part) or self.by_value.get(part))
+        ))
+        if not usages and option in self.by_option:
+            usages = [self.by_option[option]]
+        if not usages:
+            return None
+        if all(usage.startswith('-') for usage in usages):
+            # 여러 값이 각각 다른 옵션이면 이어 붙여 그대로 쓸 수 있는 옵션 줄로 준다
+            return f"이 명령에서는 이렇게 주세요: {' '.join(usages)}"
+        return ' / '.join(
+            f'이 명령에서는 이렇게 주세요: {usage}' if usage.startswith('-')
+            else f'{usage} 로 찾으세요' if usage.startswith('jibsa ')
+            else usage
+            for usage in usages
+        )
+
+
 def split_csv(
     values: list[str] | None,
     allowed: tuple[ChoiceT, ...],
     option: str,
-    usage_by_value: Mapping[str, str] | None = None,
+    hints: UsageHints | None = None,
 ) -> list[ChoiceT]:
     """`-t 원룸 -t 빌라` 와 `-t 원룸,빌라` 를 모두 받아 검증된 목록으로 만든다. 값의 타입은 `allowed` 를 따른다.
 
-    `usage_by_value` 는 이 옵션에 없는 값을 이 명령에서 주는 법이다 (`{'반려동물가능': '--condition 반려동물'}`).
-    같은 조건이 소스마다 옵션·값이 달라 다른 소스 명령을 옮겨 쓰다 틀리기 쉬워, 맞는 옵션을 에러 힌트로 알린다.
-    값을 바꿔 받지는 않는다.
+    허용 밖의 값이 `hints` 에 있으면 이 명령에서 주는 법을 에러 힌트로 알린다 (`UsageHints`). 값을 바꿔 받지는 않는다.
     """
     result: list[ChoiceT] = []
     for value in values or []:
@@ -228,9 +320,10 @@ def split_csv(
                 continue
             if part not in allowed:
                 message = f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}"
-                usage = (usage_by_value or {}).get(part)
-                if usage:
-                    raise HintedBadParameter(message, option, f'이 명령에서는 이렇게 주세요: {usage}')
+                # 틀린 값 하나만 본다. 쉼표로 함께 준 맞는 값까지 다른 옵션으로 안내하지 않게
+                hint = hints.hint(option, part) if hints else None
+                if hint:
+                    raise HintedBadParameter(message, option, hint)
                 raise typer.BadParameter(message, param_hint=option)
             if part not in result:
                 result.append(part)
@@ -328,12 +421,13 @@ def infer_trade_types(
         return trade_types, []
     if allowed is not None:
         inferred = [trade for trade in inferred if trade in allowed]
-    note = (
+    narrowed = note(
+        '거래',
         f"--trade 를 주지 않아 가격 조건에 맞춰 {'·'.join(inferred)}만 검색했습니다. "
-        '다른 거래 유형도 보려면 --trade 로 지정하세요'
+        '다른 거래 유형도 보려면 --trade 로 지정하세요',
     )
     # 좁힌 값은 세 소스가 같이 쓰는 거래 유형 이름(매매·전세·월세·단기임대)이다
-    return cast(list[TradeT], inferred), [note]
+    return cast(list[TradeT], inferred), [narrowed]
 
 
 class HintedUsageError(UsageError):

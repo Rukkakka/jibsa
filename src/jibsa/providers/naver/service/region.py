@@ -21,6 +21,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
     normalize_address,
+    note,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -119,9 +120,10 @@ def _other_candidates_note(query: str, chosen: str, others: list[tuple[str, floa
     """같은 이름이 여러 곳일 때 안내. 다른 곳은 좌표로 다시 찾게 한다 (구 이름을 붙인 검색어는 확인하지 않았다)."""
     # 받은 좌표를 그대로 쓴다. ':g' 는 유효숫자 6자리라 경도가 소수 셋째 자리(최대 약 44m 오차)로 잘린다
     retry = ', '.join(f'{label} --lat {lat} --lng {lng}' for label, lat, lng in others[:MAX_CANDIDATE_NOTES])
-    return (
+    return note(
+        '모호',
         f"'{query}': 같은 이름이 여러 곳에 있어 첫 번째인 {chosen} 기준으로 검색했습니다. "
-        f'다른 곳이면 좌표로 다시 검색하세요: {retry}'
+        f'다른 곳이면 좌표로 다시 검색하세요: {retry}',
     )
 
 
@@ -187,10 +189,11 @@ def _find_legal_division(
     # 단위는 GUN·EUP 만 온다. 서울·경기도 같은 시·도는 그 안의 구(GUN)로 오고, 리는 자동완성에 나오지 않는다
     # (검색어 16개, 2026-10-09 확인). 그래서 EUP 가 아니면 시·군·구로 본다.
     if radius_km is not None and best.legal_division_level_type not in (None, 'EUP'):
-        notes.append(
+        notes.append(note(
+            '범위',
             f"'{query}': {_wide_region_unit(best.legal_division_number)} 단위의 넓은 지역이라 중심({normalize_address(best.legal_division_name)})에서 "
-            f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요'
-        )
+            f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
+        ))
     lat, lng = _lat_lng(best.coordinates)
     region = NaverRegion(
         name=_last_word(best.legal_division_name),
@@ -252,7 +255,10 @@ def _complex_candidates_note(query: str, best: NaverAutocompleteComplexModel, it
     if not others:
         return None
     listed = ', '.join(f'{item.complex_name}({item.complex_number})' for item in others)
-    return f"'{query}': 이름이 비슷한 단지가 더 있어 {best.complex_name}({best.complex_number}) {particle(best.complex_name, '을/를')} 골랐습니다. 다른 단지: {listed}"
+    return note(
+        '모호',
+        f"'{query}': 이름이 비슷한 단지가 더 있어 {best.complex_name}({best.complex_number}) {particle(best.complex_name, '을/를')} 골랐습니다. 다른 단지: {listed}",
+    )
 
 
 def _pick_complex(query: str, items: list[NaverAutocompleteComplexModel]) -> NaverAutocompleteComplexModel:
@@ -268,7 +274,7 @@ def _find_complex(
     if not items:
         return None
     best = _pick_complex(query, items)
-    note = _complex_candidates_note(query, best, items)
+    candidates_note = _complex_candidates_note(query, best, items)
     lat, lng = _lat_lng(best.coordinates)
     region = NaverRegion(
         name=best.complex_name,
@@ -277,7 +283,7 @@ def _find_complex(
         lng=lng,
         legal_division_code=best.legal_division_number,
     )
-    return region, [note] if note else []
+    return region, [candidates_note] if candidates_note else []
 
 
 def resolve_region_with_notes(
@@ -332,9 +338,10 @@ def _ga_dong_note(query: str, name: str, dong: str | None) -> str | None:
         return None
     other = f'{name}2가' if dong == f'{name}1가' else f'{name}1가'
     # '○가' 로 끝나 조사는 받침 없는 꼴(만·처럼)로 고정한다
-    return (
+    return note(
+        '범위',
         f"{quoted(query, '은/는')} {dong}·{other} 처럼 '○가' 로 나뉜 동이라 {dong}만 찾았습니다. "
-        f"다른 곳도 보려면 '{other}' 처럼 각각 검색하세요"
+        f"다른 곳도 보려면 '{other}' 처럼 각각 검색하세요",
     )
 
 
@@ -412,25 +419,28 @@ def _find_address(
         # 서종면 모두 850건, 2026-10-09 확인). 그래서 동 경계 대신 반경이다. 리는 넓어(문호리 약 5×7km) 반경을 키우게 알린다
         kind, name = '지역', elements.ri
         if radius_km is not None:
-            notes.append(
+            notes.append(note(
+                '범위',
                 f"'{query}': 리 단위는 경계 검색을 지원하지 않아 중심({full_address})에서 반경 {radius_km:g}km 안만 "
-                '검색했습니다' + ('. 리 전체를 보려면 --radius 를 늘리세요 (최대 3km)' if radius_km < 3 else '')
-            )
+                '검색했습니다' + ('. 리 전체를 보려면 --radius 를 늘리세요 (최대 3km)' if radius_km < 3 else ''),
+            ))
     elif elements.dongmyun:
         # 행정동(역삼1동, 관악구 신사동)은 법정동 코드가 비어 있어 동 경계로 찾을 수 없다
         kind, name = '지역', elements.dongmyun
         if radius_km is not None:
-            notes.append(
+            notes.append(note(
+                '범위',
                 f"'{query}': 행정동이라 동 경계로 찾을 수 없어 중심({full_address})에서 반경 {radius_km:g}km 안만 "
-                '검색했습니다. 법정동 이름(예: 역삼1동 → 역삼동)으로 검색하면 동 전체를 찾습니다'
-            )
+                '검색했습니다. 법정동 이름(예: 역삼1동 → 역삼동)으로 검색하면 동 전체를 찾습니다',
+            ))
     else:
         kind, name = '지역', _last_word(full_address)
         if radius_km is not None:
-            notes.append(
+            notes.append(note(
+                '범위',
                 f"'{query}': {_wide_region_unit(code)} 단위의 넓은 지역이라 중심({full_address})에서 "
-                f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요'
-            )
+                f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
+            ))
     region = NaverRegion(
         name=name, address=full_address, lat=item.y, lng=item.x, legal_division_code=code, ga_base=ga_base, ga_note=ga_note,
     )
@@ -503,8 +513,8 @@ def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | 
             hint='단지 이름을 줄이거나(예: 래미안) 단지 번호(fin.land.naver.com/complexes/{번호})로 다시 조회하세요',
         )
     best = _pick_complex(name, items)
-    note = _complex_candidates_note(name, best, items)
-    return best.complex_number, complex_is_villa(best.type), [note] if note else []
+    candidates_note = _complex_candidates_note(name, best, items)
+    return best.complex_number, complex_is_villa(best.type), [candidates_note] if candidates_note else []
 
 
 def complex_is_villa(code: str | None) -> bool | None:

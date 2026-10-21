@@ -8,6 +8,7 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    NOTE_KINDS,
     Listing,
     listing_as,
 )
@@ -82,19 +83,23 @@ class DaangnCommuteStation(BaseModel):
 
 
 class DaangnCommuteListing(Listing):
-    """출퇴근 검색 매물. 회사까지 가는 역·시간을 붙인다. `distance_km` 는 회사까지의 직선거리다."""
+    """출퇴근 검색 매물. 회사까지 가는 역·시간을 붙인다. `distance_km` 는 회사까지의 직선거리다.
+
+    타는 역·지하철 시간·환승은 역마다 묶고 정렬하는 데 쓰고 출력하지 않는다. 출력에서는 매물이 들어 있는 역 묶음
+    (`DaangnCommuteStationListings`)에 한 번만 있다 (매물마다 되풀이하면 출력의 13%가 같은 값이었다).
+    """
 
     commute_station: Annotated[
         str,
-        Field(description='타는 역 (매물 주변 역)')
+        Field(exclude=True, description='타는 역 (매물 주변 역). 출력은 역 묶음의 station_name')
     ]
     subway_minutes: Annotated[
         int,
-        Field(description='타는 역에서 회사 역까지 지하철 시간 (분)')
+        Field(exclude=True, description='타는 역에서 회사 역까지 지하철 시간 (분). 출력은 역 묶음에')
     ]
     transfers: Annotated[
         int | None,
-        Field(description='환승 횟수')
+        Field(exclude=True, description='환승 횟수. 출력은 역 묶음에')
     ]
     walk_to_station_minutes: Annotated[
         int | None,
@@ -157,13 +162,9 @@ class DaangnCommuteResult(BaseModel):
     reachable_stations: Annotated[
         int,
         Field(description=(
-            '지하철 시간 상한 안에 갈 수 있는 역 수 (회사 역 0분 포함, searched_stations 와 같은 기준). '
+            '지하철 시간 상한 안에 갈 수 있는 역 수 (회사 역 0분 포함, stations 와 같은 기준). '
             '역 목록은 200곳까지만 받아, 더 있으면 notes 로 알린다'
         ))
-    ]
-    searched_stations: Annotated[
-        list[str],
-        Field(description='매물을 찾아본 역 (지하철 시간 짧은 순, 예: 교대역 (2분))')
     ]
     returned: Annotated[
         int,
@@ -233,6 +234,8 @@ def search_commute(
             '더 멀리 보려면 조건을 좁히거나 jibsa daangn search listings <역 이름> 으로 그 역 주변을 찾으세요'
         )
     groups: list[DaangnCommuteStationListings] = []
+    # 역마다 같은 안내('더 보려면 --limit 을 늘리거나…')가 역 수만큼 되풀이되지 않게 안내 문장마다 역을 모은다
+    station_notes: dict[str, list[str]] = {}
     for name, minutes, transfers in searched:
         station_listings = [listing for listing in listings if listing.commute_station == name]
         inspected = found.inspected_by_station[name]
@@ -240,15 +243,16 @@ def search_commute(
             station_name=name, subway_minutes=minutes, transfers=transfers,
             inspected=inspected, returned=len(station_listings), listings=station_listings,
         ))
-        notes += [
-            f'{name}: {note}'
-            for note in listing_budget_notes(limit, inspected, len(station_listings), has_more=found.has_more_by_station[name])
-        ]
+        for text in listing_budget_notes(limit, inspected, len(station_listings), has_more=found.has_more_by_station[name]):
+            station_notes.setdefault(text, []).append(name)
+    notes += [
+        _station_note(f'찾아본 {len(searched)}곳 모두' if len(names) == len(searched) > 1 else '·'.join(names), text)
+        for text, names in station_notes.items()
+    ]
     return DaangnCommuteResult(
         workplace_station=workplace,
         max_minutes=max_minutes,
         reachable_stations=len(stations),
-        searched_stations=[f'{name} ({minutes}분)' for name, minutes, _ in searched],
         returned=len(listings),
         unique_returned=len({listing.id for listing in listings}),
         stations=groups,
@@ -259,6 +263,15 @@ def search_commute(
 
 # (역 이름, 지하철 시간, 환승)
 _Station = tuple[str, int, int | None]
+
+
+def _station_note(name: str, text: str) -> str:
+    """역 이름을 붙인 안내. 종류 태그가 있으면 태그 뒤에 넣는다 (앞에 붙이면 태그를 못 알아봐 [참고] 가 또 붙는다)."""
+    for kind in NOTE_KINDS:
+        tag = f'[{kind}] '
+        if text.startswith(tag):
+            return f'{tag}{name}: {text.removeprefix(tag)}'
+    return f'{name}: {text}'
 
 
 class _Reachable(NamedTuple):
@@ -401,7 +414,7 @@ def _station_articles(
                 '역 주변 매물',
             )
 
-        edges, has_more = station_article_edges(fetch, limit)
+        edges, has_more, _ = station_article_edges(fetch, limit)
         inspected_by_station[station[0]] = len(edges)
         has_more_by_station[station[0]] = has_more
         seen: set[str] = set()

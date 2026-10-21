@@ -336,7 +336,10 @@ def list_redevelopment_articles(
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
     notes += pagination_notes(scan.total, len(result), limit, scan.received, truncated=scan.truncated)
-    return NaverListingsResult(total=scan.total, returned=len(result), listings=result, notes=notes)
+    # 재개발 구역 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다
+    return NaverListingsResult(
+        total=scan.total, returned=len(result), has_more=scan.cursor is not None, listings=result, notes=notes,
+    )
 
 
 class NaverRedevelopmentDetail(BaseModel):

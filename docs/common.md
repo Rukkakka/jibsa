@@ -5,6 +5,8 @@
 ## 출력 규칙
 
 - 결과는 stdout 에 JSON. 터미널이면 들여쓰기, 파이프면 한 줄 (`--pretty` / `--compact` 로 강제)
+- 소수점 아래가 없는 숫자는 정수로 쓴다 (`1000.0` 이 아니라 `1000`). 같은 필드도 값에 따라 `1000` 과 `24.2` 처럼 섞여 나온다
+- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 당근 `in_regions` 는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다
 - 매물 필드에 값이 없을 때는 의미에 따라 다르게 나타낸다
 
   | 상태 | 표현 | 예 |
@@ -13,6 +15,8 @@
   | 모름 (해당은 되지만 소스가 알려 주지 않음) | **`null`** | 당근 목록의 `manage_cost_manwon`·투룸 이상 `room_type`, 네이버 목록의 `room_type`, 네이버 상세에서 교통 정보가 없는 매물의 `nearby_subways`·`bus_routes`, 단지가 없는 매물의 `schools` |
   | 알려 줬는데 비어 있음 | `[]` | 옵션이 하나도 없는 매물의 `options` |
 - 지역이 모호하거나(같은 이름이 여러 곳) 너무 넓으면(시·도·구 단위), 또는 가격 조건으로 거래 유형을 좁혔으면 검색 결과 맨 앞에 `notes` 로 안내한다. 안내할 게 없으면 키가 없다
+- `notes` 의 안내는 앞에 종류가 붙는다: `[일부]` 더 받을 결과가 있다, `[범위]` 찾은 범위가 요청과 다르다(동 경계·반경 밖·주변 동·다른 지역), `[제외]` 받은 것 중 뺀 매물이 있다, `[모호]` 같은 이름이 여러 곳이라 하나를 골랐다, `[거래]` 거래 유형을 짐작해 좁혔다, `[실패]` 덤 조회가 실패했거나 대체 경로로 찾았다, `[참고]` 그 밖에 읽을 때 알 것
+- 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 `next` 도 준다. 같은 명령·지역·조건에 `--next <next>` 를 붙이면 받은 매물 다음부터 이어 받는다 (`--limit`·`--details`·`--fields` 는 바꿀 수 있다). `next` 는 10자 번호이고, 어디까지 받았는지는 상태 폴더(`~/.cache/jibsa/next/`, `JIBSA_STATE_DIR` 로 변경)에 하루 동안 남는다. 하루가 지났거나 다른 컴퓨터에서 받은 번호, 지역·조건이 다른 검색에 준 번호는 `INVALID_ARGUMENT` 로 막고, 조건이 다르면 `message` 에 어느 옵션이 다른지 적는다. `has_more` 가 `true` 인데 `next` 가 없으면 이어 받을 수 없는 검색이라 `--limit`·조건으로 찾는다
 - 가격 조건은 그 금액이 있는 거래에만 걸린다: 월세(`--rent-*`)는 월세·단기임대, 매매가(`--price-*`)는 매매, 보증금(`--deposit-*`)은 전세·월세·단기임대. `--trade` 를 줬는데 가격 조건이 걸릴 거래 유형이 하나도 없으면(전세 + `--rent-max`, 매매 + `--deposit-max`) 서버가 조건을 무시해 조건 없는 결과가 나오므로 `INVALID_ARGUMENT` 로 막는다. 일부만 겹치면(`--trade 전세,월세 --rent-max 50`) 해당 거래에만 걸고 나머지는 그대로 둔다
 - `--lat/--lng` 가 한국 밖이거나 둘 중 하나만 주면 `INVALID_ARGUMENT` 로 막는다
 - 숫자 범위(`--area-min/max` 등)의 하한이 상한보다 크거나, 숫자 옵션(범위·`--radius`)에 `inf`·`nan` 을 주면 세 소스 모두 요청 전에 `INVALID_ARGUMENT` 로 막는다
@@ -42,7 +46,7 @@
 | `trade_type`, `property_type`, `room_type`, `title` | 거래·매물 유형·방 구조·제목 |
 | `price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon` | 거래에 해당하는 매매가·보증금·월세·관리비(만원) |
 | `area_m2`, `area_pyeong` | 전용면적 ㎡·평 |
-| `floor`, `building_floor` | 해당 층·전체 층수. 지하는 반지하·지하1 등으로 표시 |
+| `floor`, `floor_number`, `building_floor` | 해당 층·그 층의 숫자·전체 층수. `floor` 는 `"3"`·`"지하1"`·`"반지하"`·`"저층"`·`"중층"`·`"고층"`·`"옥탑"` 처럼 오고, `floor_number` 는 지상 양수·지하 음수다 (`"지하1"` → `-1`). 반지하·저층처럼 몇 층인지 모르면 `floor_number` 는 `null` |
 | `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 반경 안·밖은 출력한 `distance_km`(km, 소수 둘째 자리)로 가르고 `total`·반경 밖 안내도 같은 기준이다. 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
 | `registered_at`, `approved_at` | 등록일·사용승인일 (`YYYY-MM-DD`). 소스가 알려 주지 않으면 `null` |
 | 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `elevator`, `options` 등 |
@@ -53,13 +57,16 @@
 
 ## JSON 응답 예시
 
-아래는 가상 ID·값으로 만든 **필드 발췌 예시**다. 전체 스키마가 아니며 실제 응답의 다른 필드·`notes`는 생략했다. 숫자 ID는 실제 조회에 사용하지 않는다.
+아래는 가상 ID·값으로 만든 **필드 발췌 예시**다. 전체 스키마가 아니며 실제 응답의 다른 필드는 생략했다. 숫자 ID·`next` 값은 실제 조회에 사용하지 않는다.
 
 ### 매물 목록
 
 ```json
 {
+  "notes": ["[일부] 조건에 맞는 매물 약 40건 중 검색 중심에서 가까운 1건입니다. 이어 보려면 결과의 next 를 --next 로 주세요"],
   "returned": 1,
+  "has_more": true,
+  "next": "0000000001",
   "listings": [
     {
       "source": "daangn",
@@ -68,13 +75,15 @@
       "deposit_manwon": 1000,
       "rent_manwon": 70,
       "manage_cost_manwon": null,
+      "floor": "반지하",
+      "floor_number": null,
       "building_floor": "5"
     }
   ]
 }
 ```
 
-관리비 `null`은 0이 아니다. 월세에 해당하지 않는 `price_manwon`은 키가 없다.
+관리비 `null`은 0이 아니다. 월세에 해당하지 않는 `price_manwon`은 키가 없다. 다음 매물은 같은 명령에 `--next 0000000001` 을 붙여 받는다.
 
 ### 매물 상세
 

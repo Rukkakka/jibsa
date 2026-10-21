@@ -30,6 +30,10 @@ class DaangnMapResponseModel(ResponseModel):
         list[DaangnArticleModel],
         Field(description='최근 매물 (SSR 첫 페이지)')
     ] = []
+    cursors: Annotated[
+        list[str | None],
+        Field(description='`articles` 와 같은 순서의 edge 커서. `articleFeed` 의 after 로 주면 그 매물 다음부터 받는다 (모르면 None)')
+    ] = []
     total_count: Annotated[
         int | None,
         Field(description='동 전체 매물 수 (서버가 1000 으로 자르는 것으로 보인다)')
@@ -67,6 +71,12 @@ class DaangnArticleFeedEdgeModel(ResponseModel):
     node: Annotated[
         DaangnArticleFeedCardModel | None,
         Field(description='카드')
+    ] = None
+    cursor: Annotated[
+        str | None,
+        Field(description=(
+            '이 카드 다음부터 받을 커서. base64 로 감싼 "정렬 시각|순번|0" 이고, 같은 매물은 어느 동 피드에서나 시각이 같다'
+        ))
     ] = None
 
 

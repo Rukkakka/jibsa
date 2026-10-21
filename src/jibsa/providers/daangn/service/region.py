@@ -25,6 +25,7 @@ from jibsa.core.korean import quoted
 from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
     join_address,
+    note,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -197,7 +198,7 @@ def _ga_dong_siblings(query: str, candidates: list[DaangnLocationModel]) -> list
     """'○가' 로 나뉜 동(성수동 → 성수동1가·성수동2가)을 '가' 번호 순으로 준다. 첫 후보와 같은 시·구만 센다.
 
     당근 지역 검색은 '성수동' 에 두 동을 함께 주는데 예전에는 첫 후보(성수동2가)만 찾아 1가 매물이 빠졌다 (2026-10-15
-    실측). 직방·네이버처럼 모두 찾는다 (`search_listings` 의 `split_budget`).
+    실측). 직방·네이버처럼 모두 찾는다 (`search_listings` 가 동 피드를 시각 순으로 합친다).
     """
     pattern = re.compile(rf'{re.escape(query.split()[-1])}(\d+)가')
     found: dict[int, tuple[int, DaangnLocationModel]] = {}
@@ -248,7 +249,7 @@ def _dongs_with_map(
             name = join_address(location.name1, location.name2, location.name3) or location.name
             logger.warning('daangn map page check for %r failed (%s); keeping the candidate', name, exc)
             if notes is not None:
-                notes.append(partial_failure_note(exc, '매물 지도', f'{name}에 매물 지도가 있는지 확인한 결과를'))
+                notes.append(note('실패', partial_failure_note(exc, '매물 지도', f'{name}에 매물 지도가 있는지 확인한 결과를')))
         kept.append(location)
     return kept + locations[AMBIGUOUS_CANDIDATES_SHOWN:]
 
@@ -288,14 +289,14 @@ def region_notes(
         )
     # 리는 읍·면 아래에만 있다. 동으로 찾았으면(청량리 → 청량리동) 리가 아니라 이름이 비슷한 동이다
     if query.endswith('리') and region.name3.endswith(('읍', '면')):
-        note = (
+        ri_note = (
             f"당근에는 리 단위 지역이 없어 상위 지역인 {place} 전체 매물로 조회했습니다 (검색어 '{query}'). "
             f'{query} 안의 매물만이 아닙니다'
         ) + elsewhere
         if station_hint:
-            note += f". 역을 찾았다면 '{query}역' 처럼 '역'을 붙여 다시 검색하세요"
-        return [note]
-    return [f"당근에서는 {place} 기준으로 조회했습니다 (검색어 '{query}')" + elsewhere]
+            ri_note += f". 역을 찾았다면 '{query}역' 처럼 '역'을 붙여 다시 검색하세요"
+        return [note('범위', ri_note)]
+    return [note('범위', f"당근에서는 {place} 기준으로 조회했습니다 (검색어 '{query}')" + elsewhere)]
 
 
 def with_sido(
@@ -406,7 +407,7 @@ def region_or_none(
     except OPTIONAL_LOOKUP_ERRORS as exc:
         logger.warning('daangn region of coordinate (%s, %s) not found (%s); continuing without region', lat, lng, exc)
         if notes is not None:
-            notes.append(partial_failure_note(exc, '좌표 지역', '검색 중심의 동 이름을'))
+            notes.append(note('실패', partial_failure_note(exc, '좌표 지역', '검색 중심의 동 이름을')))
         return None
 
 
@@ -435,7 +436,9 @@ STATION_PAGE_SIZE: int = 100
 def station_article_edges(
     fetch: Callable[[int, str | None], DaangnCommuteStationArticleConnectionModel],
     limit: int,
-) -> tuple[list[DaangnCommuteArticleEdgeModel], bool]:
+    *,
+    after: str | None = None,
+) -> tuple[list[DaangnCommuteArticleEdgeModel], bool, str | None]:
     """역 주변 매물을 `STATION_PAGE_SIZE` 건씩 `limit` 건까지 이어 받는다. 역 주변 목록과 출퇴근 역별 매물이 함께 쓴다.
 
     받은 수로 예산을 세고 뺄 매물을 채우지 않는다. limit 최대 120 이라 요청 2번 안에 끝나 커서 반복 검사를 두지 않는다.
@@ -443,22 +446,22 @@ def station_article_edges(
     Args:
         fetch: (받을 수, 커서) → 한 페이지.
         limit: 최대 매물 수.
+        after: 이어 받기(`--next`)에서 시작할 커서. 없으면 처음부터.
 
     Returns:
-        (받은 edge, 서버에 더 있는지).
+        (받은 edge, 서버에 더 있는지, 다음 페이지 커서).
     """
     edges: list[DaangnCommuteArticleEdgeModel] = []
-    after: str | None = None
     has_more = False
     while len(edges) < limit:
         connection = fetch(min(STATION_PAGE_SIZE, limit - len(edges)), after)
         edges += connection.edges
         page_info = connection.page_info
         has_more = bool(page_info and page_info.has_next_page and page_info.end_cursor)
+        after = page_info.end_cursor if page_info else None
         if not connection.edges or not has_more:
             break
-        after = page_info.end_cursor if page_info else None
-    return edges, has_more
+    return edges, has_more, after
 
 
 class DaangnStation(BaseModel):
@@ -518,10 +521,11 @@ def same_station_notes(station: DaangnStation, hint: str) -> list[str]:
     """같은 이름의 역이 여러 곳이라 첫 역으로 찾았을 때의 안내. `hint` 는 다른 역을 고르는 방법이다."""
     if not station.others:
         return []
-    return [
+    return [note(
+        '모호',
         f"{quoted(station.name, '이/가')} 여러 곳이라 {_station_label(station.lines, station.name)} 기준으로 찾았습니다 "
-        f"(다른 곳: {', '.join(station.others)}). {hint}"
-    ]
+        f"(다른 곳: {', '.join(station.others)}). {hint}",
+    )]
 
 
 def _station_in_city(
@@ -830,7 +834,7 @@ def resolve_realsale_region(
             name2=first.name2 or '',
             name3=first.name3 or first.name,
         )]
-        notes.append(f"{quoted(query, '과/와')} 이름이 같은 동·구가 없어 {options[0].name} 기준으로 조회했습니다")
+        notes.append(note('범위', f"{quoted(query, '과/와')} 이름이 같은 동·구가 없어 {options[0].name} 기준으로 조회했습니다"))
     elif len(options) > 1:
         # 첫 곳으로 찾으면 다른 소스와 다른 곳을 찾는다 (resolve_regions 와 같은 이유). 구는 시·도로 좁힌다 (중구 → --city 서울)
         top = options[0]

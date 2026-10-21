@@ -67,7 +67,7 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
 ```json
 {
   "notes": [
-    "조건에 맞는 매물 약 12건 중 검색 중심에서 가까운 1건입니다. 더 보려면 --limit 을 늘리거나 조건·반경을 좁히세요"
+    "[일부] 조건에 맞는 매물 약 12건 중 검색 중심에서 가까운 1건입니다. 이어 보려면 결과의 next 를 --next 로 주세요"
   ],
   "region": {
     "name": "강남역",
@@ -76,9 +76,11 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
     "lng": 127.027621,
     "legal_division_code": null
   },
-  "radius_km": 1.0,
+  "radius_km": 1,
   "total": 12,
   "returned": 1,
+  "has_more": true,
+  "next": "5f22170f83",
   "listings": [
     {
       "source": "zigbang",
@@ -88,12 +90,13 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
       "property_type": "원룸",
       "room_type": "분리형원룸",
       "title": "[가상] 예시 원룸 1",
-      "deposit_manwon": 1.0,
-      "rent_manwon": 1.0,
-      "manage_cost_manwon": 1.0,
-      "area_m2": 1.0,
+      "deposit_manwon": 1,
+      "rent_manwon": 1,
+      "manage_cost_manwon": 1,
+      "area_m2": 1,
       "area_pyeong": 0.3,
       "floor": "1",
+      "floor_number": 1,
       "building_floor": "1",
       "address": "서울특별시 강남구 역삼동 000-1",
       "distance_km": 0.15,
@@ -104,7 +107,7 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
 }
 ```
 
-이어서 `jibsa zigbang listing <id>` 로 관리비·옵션·입주일 같은 상세를 본다. 명령별 옵션과 반환 필드는 [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)·[네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md)·[당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) 사용법에 있다.
+더 보려면 같은 명령에 `--next <next 값>` 을 붙여 다음 매물을 이어 받고, `jibsa zigbang listing <id>` 로 관리비·옵션·입주일 같은 상세를 본다. 명령별 옵션과 반환 필드는 [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)·[네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md)·[당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) 사용법에 있다.
 
 ## 설치
 
@@ -141,7 +144,7 @@ jibsa limits      # 요청 제한 상태 JSON. 네트워크 요청은 보내지 
 
 | 환경 변수 | 하는 일 |
 | --- | --- |
-| `JIBSA_STATE_DIR` | 요청 제한 상태 파일을 둘 디렉터리. 기본은 `~/.cache/jibsa`. 기본 위치에 쓸 수 없는 환경(샌드박스 등)이면 쓸 수 있는 폴더로 바꾼다 |
+| `JIBSA_STATE_DIR` | 요청 제한 상태와 매물 검색 이어 받기 표를 둘 디렉터리. 기본은 `~/.cache/jibsa`. 기본 위치에 쓸 수 없는 환경(샌드박스 등)이면 쓸 수 있는 폴더로 바꾼다 |
 | `XDG_CACHE_HOME` | 설정해 두었으면 그 아래 `jibsa` 를 쓴다 (`JIBSA_STATE_DIR` 이 우선) |
 | `PYTHONUTF8` | Windows 에서 `1` 로 설정한다 (아래) |
 

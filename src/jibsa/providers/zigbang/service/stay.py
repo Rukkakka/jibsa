@@ -340,6 +340,10 @@ class ZigbangStaySearchResult(BaseModel):
         int,
         Field(description='반환한 매물 수')
     ]
+    has_more: Annotated[
+        bool,
+        Field(description='범위 안에 더 있는지: 요약을 받지 않은 후보가 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
+    ] = False
     listings: Annotated[
         list[ZigbangStayListing],
         Field(description='선택한 정렬 순서의 매물')
@@ -588,6 +592,8 @@ def search_stay_listings(
     else:
         listings.sort(key=lambda listing: sort_keys[listing.id])
     order = {'distance': '검색 중심에서 가까운', 'price': '주당 임대료·관리비 합계가 낮은', 'newest': '최근 등록된'}[sort]
+    # 요약을 받은 매물을 --limit 에 맞춰 잘랐는지. 후보를 다 봤어도 자른 만큼 더 있다 (마포구 거리순 199건 중 5건이 has_more false 였다)
+    truncated = False
     if context is not None or sort != 'distance':
         if radius_cut and sort == 'distance':
             # 거리순 이름 검색은 가까운 핀만 요약을 받아, 받지 않은 반경 안 핀도 센다
@@ -598,6 +604,7 @@ def search_stay_listings(
             in_radius = len(search_ids)
         else:
             in_radius = len(listings)
+        truncated = len(listings) > limit
         listings = listings[:limit]
         scope_notes = limit_notes(
             in_radius, len(listings), limit, order=order, narrow=STAY_NARROW, radius=radius_cut,
@@ -623,6 +630,7 @@ def search_stay_listings(
         ),
         total=in_radius,
         returned=len(listings),
+        has_more=truncated or len(candidate_ids) < in_radius,
         listings=listings,
         notes=[STAY_APP_NOTE] + scope_notes,
     )

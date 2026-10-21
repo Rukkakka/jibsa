@@ -22,6 +22,7 @@ from typing import (
     Any,
     Literal,
     TypeVar,
+    get_args,
     overload,
 )
 
@@ -39,6 +40,7 @@ ISO_DATE_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 MOVE_IN_NOW: str = '즉시입주'
 # 네이버 매물의 지하층 표기 ('B1' = 지하 1층)
 BASEMENT_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^B(\d+)$')
+RELATIVE_FLOOR_LABELS: dict[str, str] = {'저': '저층', '중': '중층', '고': '고층'}
 
 # 거래 유형별로 원래 존재하지 않는 가격 필드. 출력에서 키째 뺀다.
 NOT_APPLICABLE_PRICE_FIELDS: dict[str, frozenset[str]] = {
@@ -143,13 +145,16 @@ def join_address(*parts: str | None) -> str | None:
 
 
 def normalize_floor(floor: str | None) -> str | None:
-    """숫자·B 로 온 지하층을 직방 표기에 맞춘다 ('0.5' → '반지하', '-1'·'B1' → '지하1').
+    """숫자·B 로 온 지하층을 직방 표기에 맞추고 ('0.5' → '반지하', '-1'·'B1' → '지하1'), 저·중·고를 저층·중층·고층으로 맞춘다.
 
     당근은 반지하를 0.5, 지하를 음수로, 네이버는 지하를 음수나 'B1' 로 준다. 직방은 처음부터
-    '반지하' 로 준다. 그 밖의 값('3', '저', '옥탑방' ...)은 그대로 둔다.
+    '반지하' 로 준다. 층을 숫자 대신 밝힌 매물은 직방·네이버가 '저'·'중'·'고', 당근이 '저층'·'중층'·'고층' 으로 준다
+    (2026-10-20 실측: 강남역·역삼동 목록). 그 밖의 값('3', '옥탑방' ...)은 그대로 둔다.
     """
     if floor is None:
         return None
+    if floor in RELATIVE_FLOOR_LABELS:
+        return RELATIVE_FLOOR_LABELS[floor]
     basement = BASEMENT_FLOOR_PATTERN.match(floor)
     if basement is not None:
         return f'지하{int(basement.group(1))}'
@@ -162,6 +167,33 @@ def normalize_floor(floor: str | None) -> str | None:
     if number < 0 and number.is_integer():
         return f'지하{int(-number)}'
     return floor
+
+
+def floor_number(floor: str | None) -> int | None:
+    """정규화한 층(`normalize_floor`)의 숫자. 지상은 양수, 지하는 음수다 ('3' → 3, '지하1' → -1).
+
+    반지하·저층·옥탑처럼 몇 층인지 모르는 표기는 None (모름)이다. 층으로 거르거나 정렬할 때 쓴다.
+    """
+    if floor is None:
+        return None
+    # isdigit 은 int() 가 못 읽는 위첨자('²')도 받아 직렬화 중에 ValueError 가 난다. isdecimal 은 int() 가 읽는 숫자만 받는다
+    if floor.isdecimal():
+        return int(floor)
+    if floor.startswith('지하') and floor[2:].isdecimal():
+        return -int(floor[2:])
+    return None
+
+
+def insert_after(data: dict[str, Any], anchor: str, key: str, value: Any) -> dict[str, Any]:
+    """`anchor` 키 바로 뒤에 `key` 를 넣은 새 dict. `anchor` 가 없으면 맨 뒤에 넣는다 (출력 JSON 의 키 순서를 맞출 때)."""
+    if anchor not in data:
+        return {**data, key: value}
+    result: dict[str, Any] = {}
+    for name, item in data.items():
+        result[name] = item
+        if name == anchor:
+            result[key] = value
+    return result
 
 
 def normalize_date(value: str | None) -> str | None:
@@ -239,6 +271,27 @@ def in_range(value: float | None, minimum: float | None, maximum: float | None) 
     return value is not None and (minimum is None or value >= minimum) and (maximum is None or value <= maximum)
 
 
+# 결과 notes 의 종류. 안내 앞에 '[일부] ' 처럼 붙여 LLM 이 문장을 다 읽지 않고도 무엇을 알리는지 가른다 (docs/llm.md).
+# 일부: 더 받을 매물이 있다 / 범위: 찾은 범위가 요청과 다르다 / 제외: 받은 것 중 뺀 매물이 있다 / 모호: 이름이 여러 곳이라
+# 하나를 골랐다 / 거래: 거래 유형을 짐작해 좁혔다 / 실패: 덤 조회가 실패했거나 대체 경로로 찾았다 / 참고: 그 밖에 읽을 때 알 것
+NoteKind = Literal['일부', '범위', '제외', '모호', '거래', '실패', '참고']
+NOTE_KINDS: tuple[str, ...] = get_args(NoteKind)
+
+
+def note(kind: NoteKind, text: str) -> str:
+    """종류 태그를 붙인 안내 (`'[일부] 조건에 맞는 매물 ...'`). 태그 없이 둔 안내는 출력할 때 [참고] 가 붙는다 (`tagged_notes`)."""
+    return f'[{kind}] {text}'
+
+
+def tagged_notes(notes: list[str]) -> list[str]:
+    """출력할 안내마다 종류 태그를 붙인다. 이미 붙었으면 그대로, 없으면 [참고]. 같은 안내는 한 번만 남긴다."""
+    tagged = [
+        text if any(text.startswith(f'[{kind}] ') for kind in NOTE_KINDS) else note('참고', text)
+        for text in notes
+    ]
+    return list(dict.fromkeys(tagged))
+
+
 def by_distance(listing: 'Listing') -> tuple[bool, float]:
     """가까운 순 정렬 키. 거리를 모르는 매물은 가장 가깝다고 내보내지 않도록 맨 뒤로 보낸다."""
     return listing.distance_km is None, listing.distance_km or 0
@@ -255,6 +308,8 @@ def limit_notes(
     narrow: str = '조건',
     radius: bool = False,
     inspected: int | None = None,
+    offset: int = 0,
+    resumable: bool = False,
 ) -> list[str]:
     """조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려줄 때의 안내.
 
@@ -274,18 +329,25 @@ def limit_notes(
         inspected: 요약을 받아 확인한 매물 수 (조회 예산). 주면 `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
             받은 뒤 거래 불가로 뺀 매물만큼 다시 채우지 않으므로, 1건만 빠져도 `returned < limit` 이 되어 안내가
             사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
+        offset: 이어 받은 검색(`--next`)에서 앞서 받은 매물 수. 몇 번째부터인지 알린다.
+        resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
     """
     if (returned if inspected is None else inspected) < limit:
         return []
-    if total is None or total <= returned:
+    if total is None or total <= offset + returned:
         return []
     lead = f"조건에 맞는 매물 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
+    picked = f'{order} {offset + 1}번째부터 {returned}건' if offset else f'{order} {returned}건'
     area = '반경' if radius else '지역'
     # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-    return [f'{lead} 중 {order} {returned}건입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요']
+    if resumable:
+        return [note('일부', f'{lead} 중 {picked}입니다. 이어 보려면 결과의 next 를 --next 로 주세요')]
+    return [note('일부', f'{lead} 중 {picked}입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요')]
 
 
-def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, complete: bool = True) -> list[str]:
+def beyond_radius_notes(
+    listings: Sequence['Listing'], radius_km: float, *, complete: bool = True, resumed: bool = False,
+) -> list[str]:
     """반경 안 매물이 모자라 반경 밖 매물까지 함께 돌려줄 때의 안내.
 
     반경 검색은 반경을 덮는 지도 칸 단위로 받아 오므로 반경 밖 매물도 받는다. 반경 안 매물이
@@ -296,6 +358,8 @@ def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, comp
         complete: 반경을 덮는 칸을 끝까지 받았는지. 조회 한도(`limit`·요청 상한)에 닿아 멈췄으면 False 로 주어
             "반경 안 매물이 N건뿐" 이라고 단정하지 않는다. 받지 않은 칸·페이지에 반경 안 매물이 더 있을 수 있다
             (네이버 강남역 반경 0.3km 120건: '116건뿐' 이라 했지만 목화밀라트만 9건이 더 있었다, 2026-10-10).
+        resumed: 이어 받기(`--next`)로 받은 결과면 True. 반경 안 매물 수는 이번 결과만 센 것이라 '남은' 매물이라 한다
+            (앞 결과에서 받은 반경 안 매물은 세지 않는다).
     """
     distances = [listing.distance_km for listing in listings if listing.distance_km is not None]
     beyond = [distance for distance in distances if not within_radius(distance, radius_km)]
@@ -305,22 +369,25 @@ def beyond_radius_notes(listings: Sequence['Listing'], radius_km: float, *, comp
     inside = len(distances) - len(beyond)
     # 소수 한 자리로 깎으면 반경 0.1km 밖의 0.13km 가 '최대 0.1km' 로 보여 반경 안처럼 읽힌다
     farthest = f'{round(max(beyond), 2):g}km'
+    # 반경을 덮는 범위(네이버·당근 사각형, 직방 지도 칸)에서 받은 것이라 모서리 쪽만 들어온다. '가까운 매물' 이라 하면 반경 밖을
+    # 빠짐없이 가까운 순으로 고른 줄 안다 (2026-10-20 LLM 사용 시험: 네이버 1km 에 1.43km 모서리 매물은 있고 정북쪽 1.26km 는 없었다)
+    found = f'반경을 덮어 받은 범위의 반경 밖 매물 {len(beyond)}건(최대 {farthest})'
+    partial = '반경 밖은 받은 범위의 일부라 더 보려면 --radius 를 늘리세요'
     if not complete:
-        found = (
-            f'받은 매물 중 반경 {radius_km:g}km 안 매물이 없어 반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})을'
+        head = (
+            f'받은 매물 중 반경 {radius_km:g}km 안 매물이 없어 {found}을'
             if inside == 0 else
-            f'받은 매물 중 반경 {radius_km:g}km 안은 {inside}건이라 반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})도 함께'
+            f'받은 매물 중 반경 {radius_km:g}km 안은 {inside}건이라 {found}도 함께'
         )
-        return [f'{found} 보여 줍니다. 조회 한도에 닿아 멈췄으므로 반경 안 매물이 더 있을 수 있습니다']
+        return [note('범위', f'{head} 보여 줍니다. 조회 한도에 닿아 멈췄으므로 반경 안 매물이 더 있을 수 있습니다')]
+    remaining = '남은 매물 중 ' if resumed else ''
     if inside == 0:
-        return [
-            f'반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 '
-            f'반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})을 보여 줍니다'
-        ]
-    return [
-        f'반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 '
-        f'반경 밖 가까운 매물 {len(beyond)}건(최대 {farthest})도 함께 보여 줍니다'
-    ]
+        return [note(
+            '범위', f'{remaining}반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 {found}을 보여 줍니다. {partial}',
+        )]
+    return [note(
+        '범위', f'{remaining}반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 {found}도 함께 보여 줍니다. {partial}',
+    )]
 
 
 class Listing(BaseModel):
@@ -424,7 +491,7 @@ class Listing(BaseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description="해당 층 (예 '3', '반지하', '지하1', '옥탑')")
+        Field(description="해당 층 (예 '3', '반지하', '지하1', '옥탑', '중층'). 출력에는 숫자 floor_number 가 뒤에 붙는다")
     ] = None
     building_floor: Annotated[
         str | None,
@@ -481,7 +548,8 @@ class Listing(BaseModel):
         data: dict[str, Any] = handler(self)
         for field in self.not_applicable_fields():
             data.pop(field, None)
-        return data
+        # 층이 '3'·'지하1'·'중층' 처럼 섞여 와 층으로 거르거나 정렬하기 어려워 숫자를 floor 바로 뒤에 붙인다
+        return insert_after(data, 'floor', 'floor_number', floor_number(self.floor))
 
 
 class ListingDetail(Listing):
@@ -545,6 +613,20 @@ class ListingDetail(Listing):
     def not_applicable_fields(self) -> frozenset[str]:
         # 상세 조회에는 검색 중심점이 없어 거리가 해당 없다.
         return super().not_applicable_fields() | {'distance_km'}
+
+
+def listing_field_names() -> frozenset[str]:
+    """출력에 나올 수 있는 매물 필드 이름 (`Listing` 과 소스별 하위 모델·상세, `floor_number`). `--fields` 를 검증한다.
+
+    하위 모델은 소스 모듈을 불러온 뒤에야 보이므로 명령을 모두 등록한 뒤(옵션을 읽을 때) 부른다.
+    """
+    names = {'floor_number'}
+    models: list[type[Listing]] = [Listing]
+    while models:
+        model = models.pop()
+        names.update(name for name, field in model.model_fields.items() if not field.exclude)
+        models.extend(model.__subclasses__())
+    return frozenset(names)
 
 
 ListingT = TypeVar('ListingT', bound=Listing)

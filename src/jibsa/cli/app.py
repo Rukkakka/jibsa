@@ -16,8 +16,10 @@ from typer._click import (  # Typer 0.27 은 Click 을 내부에 포함한다. �
     HelpFormatter,
 )
 from typer._click.exceptions import (
+    BadParameter,
     ClickException,
     NoArgsIsHelpError,
+    NoSuchOption,
     UsageError,
 )
 from typer.core import (
@@ -31,6 +33,7 @@ from jibsa.cli import (
     zigbang,
 )
 from jibsa.cli.output import (
+    UsageHints,
     emit,
     emit_error,
     handle_errors,
@@ -64,6 +67,8 @@ GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
 SHORT_COMMIT_LENGTH: int = 7
 # 터미널이 아닐 때 도움말 폭. 옵션 설명이 줄바꿈 없이 한 줄에 들어가게 넉넉히 잡는다
 PLAIN_HELP_WIDTH: int = 1000
+# 다른 소스 표현을 옮겨 쓴 사용법 오류에 힌트를 주는 명령 (UsageHints)
+USAGE_HINTS: dict[str, UsageHints] = {**zigbang.USAGE_HINTS, **naver.USAGE_HINTS, **daangn.USAGE_HINTS}
 
 app = typer.Typer(
     name='jibsa',
@@ -148,14 +153,19 @@ def guide_command(
         str | None,
         typer.Argument(help="절 제목에 든 글자 (예: 'search listings', 'listing', '출력 읽기'). 주면 그 절만 쓴다")
     ] = None,
+    whole: Annotated[
+        bool,
+        typer.Option('--all', help='소스 문서를 절 목록 대신 통째로 쓴다'),
+    ] = False,
 ) -> None:
     """LLM 에이전트용 사용 가이드를 출력한다 (명령 고르기, 출력 읽기, 에러 대응).
 
-    소스 이름을 주면 그 소스의 사용 문서(옵션 표·반환값·주의사항)를, 절 이름까지 주면 그 절만 쓴다. 설치한 버전과
-    내용이 맞고, 소스 문서는 가이드의 5배쯤 길어 필요한 절만 읽는다.
-    `--help` 처럼 JSON 이 아닌 마크다운 텍스트를 stdout 에 쓴다. 네트워크 요청은 보내지 않는다.
+    소스 이름만 주면 그 소스 사용 문서(옵션 표·반환값·주의사항)의 절 목록을, 절 이름까지 주면 그 절만 쓴다.
+    소스 문서는 가이드의 3~5배라 통째로 쓰면 셸 출력이 잘려 필요한 절만 읽는다 (통째로는 --all). 설치한 버전과
+    내용이 맞다. `--help` 처럼 JSON 이 아닌 마크다운 텍스트를 stdout 에 쓴다. 네트워크 요청은 보내지 않는다.
 
     예: jibsa guide
+        jibsa guide daangn
         jibsa guide daangn 'search listings'
         jibsa guide zigbang listing
     """
@@ -168,6 +178,8 @@ def guide_command(
         text = read_guide(GUIDE_TOPICS[topic] if topic else GUIDE_FILE)
         if section:
             text = guide_section(text, section, topic or 'llm')
+        elif topic and not whole:
+            text = guide_contents(text, topic)
         typer.echo(text, nl=False)
 
 
@@ -189,6 +201,29 @@ def read_guide(name: str = GUIDE_FILE) -> str:
         code='INTERNAL_ERROR',
         message=f'설치된 jibsa 에 문서 파일({name})이 없습니다',
         hint=f'README 의 설치 방법대로 jibsa 를 다시 설치하세요. 같은 내용은 {GUIDE_URL} 에서도 볼 수 있습니다',
+    )
+
+
+def guide_contents(text: str, topic: str) -> str:
+    """소스 문서의 제목과 절 목록(`##`·`###`). 절 하나는 `guide_section` 으로 읽는다.
+
+    소스 문서를 통째로 쓰면 3만~4만 자라 셸 출력을 잘라 보여 주는 에이전트는 앞부분만 본다 (2026-10-20 실측: 직방
+    3.2만·네이버 2.7만·당근 3.9만 자).
+    """
+    lines = text.splitlines()
+    title = next((line for line in lines if line.startswith('# ')), f'# {topic}')
+    entries: list[str] = []
+    for line in lines:
+        match = HEADING_PATTERN.match(line)
+        if match and len(match.group(1)) <= 3:
+            entries.append(f"{'  ' * (len(match.group(1)) - 2)}- {match.group(2).strip()}")
+    commands = [code for line in lines if (match := HEADING_PATTERN.match(line)) for code in BACKTICK_PATTERN.findall(match.group(2))]
+    example = f"jibsa guide {topic} '{commands[0]}'" if commands else f"jibsa guide {topic} '<절 제목 일부>'"
+    return (
+        f'{title}\n\n'
+        f"문서 전체는 {len(text):,}자라 절 목록만 쓴다. 필요한 절만 `jibsa guide {topic} '<절 제목 일부>'` 로 읽는다 "
+        f'(예: `{example}`). 통째로는 `jibsa guide {topic} --all`.\n\n'
+        + '\n'.join(entries) + '\n'
     )
 
 
@@ -310,7 +345,9 @@ def run(argv: Sequence[str] | None = None) -> int:
         emit_error(
             'INVALID_ARGUMENT',
             exc.format_message(),
-            getattr(exc, 'hint', None) or f"'{command} --help' 로 사용법을 확인하세요",
+            getattr(exc, 'hint', None)
+            or foreign_usage_hint(exc, command, args, cli)
+            or f"'{command} --help' 로 사용법을 확인하세요",
             command=command,
         )
         return exc.exit_code
@@ -327,6 +364,55 @@ def run(argv: Sequence[str] | None = None) -> int:
         emit_error('INTERRUPTED', '인터럽트(Ctrl+C, SIGINT)로 중단되었습니다', INTERRUPTED_HINT)
         return result
     return result if isinstance(result, int) else 0
+
+
+def foreign_usage_hint(exc: UsageError, command: str, args: Sequence[str], cli: Command) -> str | None:
+    """없는 옵션이나 숫자로 못 바꾸는 값에, 이 명령에서 주는 법을 찾는다 (`UsageHints`). 목록 옵션의 틀린 값은 `split_csv` 가 본다.
+
+    다른 소스 명령을 옮겨 쓴 오류가 대부분이다 (직방에 네이버 `--facility`, 직방 `--bathroom` 에 네이버 값 `1개`).
+    표에 없는 옵션이면 그 옵션이 있는 다른 소스의 매물 검색 명령을 알려, 이 명령에는 그 조건이 없다는 것을 알게 한다.
+    """
+    hints = USAGE_HINTS.get(command)
+    if hints is None:
+        return None
+    if isinstance(exc, NoSuchOption):
+        names = [exc.option_name]
+    elif isinstance(exc, BadParameter) and exc.param is not None:
+        names = list(exc.param.opts)
+    else:
+        return None
+    long_name = next((name for name in names if name.startswith('--')), names[0])
+    hint = hints.hint(long_name, _option_value(args, names))
+    if hint or not isinstance(exc, NoSuchOption):
+        return hint
+    elsewhere = [path for path in USAGE_HINTS if path != command and _has_option(cli, path, long_name)]
+    # 하위 명령과 같은 옵션을 받는 그룹(직방 search listings --complex)은 하위 명령만 알린다
+    elsewhere = [path for path in elsewhere if not any(other.startswith(f'{path} ') for other in elsewhere)]
+    if not elsewhere:
+        return None
+    return f"{long_name} 옵션은 {', '.join(elsewhere)} 에 있습니다. 이 명령의 옵션은 '{command} --help' 로 확인하세요"
+
+
+def _option_value(args: Sequence[str], names: Sequence[str]) -> str | None:
+    """`args` 에서 옵션(`names` 중 하나)에 준 마지막 값. `--옵션=값` 과 `--옵션 값` 을 모두 본다. 값이 없으면 None."""
+    value = None
+    for index, arg in enumerate(args):
+        name, equals, inline = arg.partition('=')
+        if name not in names:
+            continue
+        if equals:
+            value = inline
+        elif index + 1 < len(args) and not args[index + 1].startswith('-'):
+            value = args[index + 1]
+    return value
+
+
+def _has_option(cli: Command, path: str, option: str) -> bool:
+    """`path`(`jibsa naver search listings`) 명령에 `option` 이 있는지."""
+    command: Command | None = cli
+    for name in path.split()[1:]:
+        command = command.commands.get(name) if isinstance(command, TyperGroup) else None
+    return command is not None and any(option in param.opts for param in command.params)
 
 
 def main() -> None:

@@ -23,10 +23,10 @@ def _article(store: RelayStore, record: dict[str, Any]) -> DaangnArticleModel:
     return DaangnArticleModel.model_validate(resolve(store, record))
 
 
-def _feed_articles(store: RelayStore) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """지도 패널 피드(`surface: MAP`)의 Article 레코드를 노출 순서대로 꺼낸다.
+def _feed_articles(store: RelayStore) -> tuple[list[tuple[dict[str, Any], str | None]], dict[str, Any] | None]:
+    """지도 패널 피드(`surface: MAP`)의 (Article 레코드, edge 커서) 를 노출 순서대로 꺼낸다.
 
-    피드 연결을 못 찾으면 스토어의 모든 Article 을 대신 돌려준다.
+    피드 연결을 못 찾으면 스토어의 모든 Article 을 커서 없이 대신 돌려준다.
     """
     root = store.get('client:root', {})
     connection_keys = [
@@ -40,18 +40,21 @@ def _feed_articles(store: RelayStore) -> tuple[list[dict[str, Any]], dict[str, A
         # null 인 카드는 없어 null 검사를 두지 않는다. 웹도 `e.node.article.region.name3` 를 검사 없이 읽는다
         # (2026-10-11 실측: SSR 5개 동 카드 200장·GraphQL 3개 동 180장 모두 article 이 객체였고 type 은 ARTICLE 만 왔다)
         connection = store.get(root[key].get('__ref', ''), {})
-        articles: list[dict[str, Any]] = []
+        articles: list[tuple[dict[str, Any], str | None]] = []
         for edge_ref in connection.get('edges', {}).get('__refs', []):
-            card = store.get(store.get(edge_ref, {}).get('node', {}).get('__ref', ''), {})
+            edge = store.get(edge_ref, {})
+            card = store.get(edge.get('node', {}).get('__ref', ''), {})
             article = store.get(card.get('article', {}).get('__ref', ''))
             if article is not None:
-                articles.append(article)
+                # edge 마다 커서가 있어 그 매물 다음부터 피드로 이어 받을 수 있다 (2026-10-20 실측: 역삼동 20개 edge 모두
+                # cursor 가 있고, 2번째 edge 커서로 받은 피드가 지도 페이지 3번째 매물부터 똑같이 이어졌다)
+                articles.append((article, edge.get('cursor')))
         # 피드가 비어 있으면(매물 0건) 스토어에도 Article 이 없어 아래 대체 결과도 빈 목록이다. 스토어의 Article 은
         # 피드 매물뿐이다 (2026-10-10 실측: 연평면 0건·0건, 역삼동 등 5곳은 피드 20건·Article 20건)
         if articles:
             page_info = store.get(connection.get('pageInfo', {}).get('__ref', ''))
             return articles, page_info
-    return records_of_type(store, 'Article'), None
+    return [(record, None) for record in records_of_type(store, 'Article')], None
 
 
 def parse_map_html(html: str, name3: str | None = None) -> DaangnMapResponseModel:
@@ -75,16 +78,19 @@ def parse_map_html(html: str, name3: str | None = None) -> DaangnMapResponseMode
 
     seen: set[str] = set()
     articles: list[DaangnArticleModel] = []
-    for record in records:
+    cursors: list[str | None] = []
+    for record, cursor in records:
         article = _article(store, record)
         if article.original_id not in seen:
             seen.add(article.original_id)
             articles.append(article)
+            cursors.append(cursor)
 
     total_count = root_field(store, 'articlesCount')
     return DaangnMapResponseModel(
         region=region,
         articles=articles,
+        cursors=cursors,
         total_count=total_count if isinstance(total_count, int) else None,
         has_next_page=page_info.get('hasNextPage') if page_info else None,
         end_cursor=page_info.get('endCursor') if page_info else None,

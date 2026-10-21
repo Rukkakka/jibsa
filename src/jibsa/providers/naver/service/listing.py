@@ -470,6 +470,8 @@ def list_complex_articles(
     return NaverListingsResult(
         total=total,
         returned=len(result),
+        # 단지 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다
+        has_more=scan.cursor is not None,
         listings=result,
         notes=notes,
     )
