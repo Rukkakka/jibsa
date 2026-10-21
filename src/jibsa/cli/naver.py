@@ -6,6 +6,7 @@ import typer
 from jibsa.cli.options import (
     DepositMaxOption,
     DepositMinOption,
+    FieldsOption,
     PrettyOption,
     PriceMaxOption,
     PriceMinOption,
@@ -419,6 +420,7 @@ def _search_complex_listings(
     sort: str,
     limit: int,
     pretty: bool | None,
+    fields: list[str] | None,
 ) -> None:
     """단지의 매물 목록 (기본 네이버 랭킹 순). 가격 조건은 네이버 서버 필터로 거른다.
 
@@ -442,6 +444,7 @@ def _search_complex_listings(
             {'complex_number': complex_number, **result.model_dump(mode='json')},
             pretty,
             notes=trade_notes + notes + result.notes,
+            fields=fields,
         )
 
 
@@ -453,6 +456,7 @@ def _search_redevelopment_listings(
     sort: str,
     limit: int,
     pretty: bool | None,
+    fields: list[str] | None,
 ) -> None:
     """재개발 구역 하나의 매물 목록 (기본 네이버 랭킹 순). 가격 조건은 네이버 서버 필터로 거른다."""
     with handle_errors(SOURCE), NaverClient() as client:
@@ -461,6 +465,7 @@ def _search_redevelopment_listings(
             {'redevelopment_number': area_number, **result.model_dump(mode='json')},
             pretty,
             notes=trade_notes + result.notes,
+            fields=fields,
         )
 
 
@@ -926,6 +931,7 @@ def search_command(
         )
     ] = None,
     next_: NextOption = None,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을 가까운 순으로, 동 이름은 그 동 전체를 랭킹순으로 찾는다.
@@ -970,7 +976,7 @@ def search_command(
             trade, sort or '랭킹순', deposit_min, deposit_max, rent_min, rent_max, price_min, price_max,
         )
         _search_redevelopment_listings(
-            redevelopment, conditions, trade_notes, sort=sort or '랭킹순', limit=limit, pretty=pretty,
+            redevelopment, conditions, trade_notes, sort=sort or '랭킹순', limit=limit, pretty=pretty, fields=fields,
         )
         return
     if complex_ is not None:
@@ -980,6 +986,7 @@ def search_command(
         )
         _search_complex_listings(
             complex_, conditions, trade_notes, pyeong=pyeong, dong=dong, sort=sort or '랭킹순', limit=limit, pretty=pretty,
+            fields=fields,
         )
         return
     if pyeong is not None or dong is not None:
@@ -1012,6 +1019,7 @@ def search_command(
                 pretty,
                 notes=trade_notes + result.notes,
                 next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
+                fields=fields,
             )
             return
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
@@ -1064,4 +1072,5 @@ def search_command(
             pretty,
             notes=trade_notes + notes + result.notes,
             next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
+            fields=fields,
         )

@@ -945,7 +945,7 @@ def test_commute_unknown_subway_time_is_not_zero() -> None:
     feed['data']['commuteFeed']['edges'][1]['node']['transferCount'] = None
     with commute_client(feed_body=feed) as client:
         result = search_commute(client, 37.5, 127.03)
-    assert '가까운역 (0분)' not in result.searched_stations
+    assert '가까운역' not in [station.station_name for station in result.stations]
     assert not any(item.commute_station == '가까운역' for item in result.listings)
     assert all(item.transfers is None for item in result.listings if item.commute_station == '먼역')
     assert any('지하철 시간을 모르는 역' in note for note in result.notes)

@@ -3,6 +3,7 @@ import typer
 from jibsa.cli.options import (
     DepositMaxOption,
     DepositMinOption,
+    FieldsOption,
     PrettyOption,
     PriceMaxOption,
     PriceMinOption,
@@ -470,6 +471,7 @@ def search_room_command(
         ),
     ] = False,
     next_: NextOption = None,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """원룸·오피스텔·빌라를 검색 중심에서 가까운 순으로 조회한다. 모든 조건은 직방 서버에서 거른다.
@@ -541,7 +543,7 @@ def search_room_command(
         )
         if details:
             result = attach_building_use(client, result)
-        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position))
+        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
 
 
 @listings_app.command('apt')
@@ -580,6 +582,7 @@ def search_apt_command(
         float | None, typer.Option(min=0, help='공급면적 상한 (㎡). 동·구는 서버에서, 반경 검색은 받은 뒤 거른다'),
     ] = None,
     next_: NextOption = None,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """아파트 매물. 동·구 이름이면 그 동·구 전체(직방 목록 순, 거리 없음), 역 이름·좌표·--radius 면 반경 검색.
@@ -641,12 +644,12 @@ def search_apt_command(
                 result = search_apt_listings(
                     client, district, conditions=conditions, limit=limit, extra_regions=extra, start=position,
                 )
-                emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position))
+                emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
                 return
         radius_km = radius or DEFAULT_RADIUS_KM
         region, region_notes = _region(client, query, lat, lng, radius_km, items)
         near = search_apt_listings_near(client, region, conditions=conditions, radius_km=radius_km, limit=limit)
-        emit(near, pretty, notes=trade_notes + region_notes + notes + near.notes)
+        emit(near, pretty, notes=trade_notes + region_notes + notes + near.notes, fields=fields)
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:
@@ -725,6 +728,7 @@ def complex_listings_command(
     without_random: Annotated[
         bool, typer.Option('--without-random', help='오피스텔 서버의 무작위 섞기 해제. 서버 목록 순으로 반환'),
     ] = False,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """단지 하나의 매물 목록 (직방 목록 순, 거리가 없다). 조건은 직방 서버에서 거른다.
@@ -808,7 +812,7 @@ def complex_listings_command(
             pyeong_ids=pyeong,
             limit=limit,
         )
-        emit(result, pretty, notes=trade_notes + result.notes)
+        emit(result, pretty, notes=trade_notes + result.notes, fields=fields)
 
 
 @listings_app.command('store')
@@ -845,6 +849,7 @@ def store_command(
     key_money_max: Annotated[int | None, typer.Option(min=0, help='권리금 상한 (만원, 포함)')] = None,
     radius: ScopeRadiusOption = None,
     limit: LimitOption = 15,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """상가·사무실을 검색 중심에서 가까운 순으로 조회한다. 가격은 요약을 받은 뒤 거른다. 모르는 금액은 제외한다.
@@ -910,7 +915,7 @@ def store_command(
             boundary=boundary,
             limit=limit,
         )
-        emit(result, pretty, notes=price_notes + notes + result.notes)
+        emit(result, pretty, notes=price_notes + notes + result.notes, fields=fields)
 
 
 @listings_app.command('stay')
@@ -955,6 +960,7 @@ def stay_command(
         typer.Option('--sort', help='distance 가까운 순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순'),
     ] = 'distance',
     limit: LimitOption = 15,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """직방 단기임대(주 단위 계약) 매물을 거리·가격·최근 등록 순으로 조회한다. 금액은 주당 만원.
@@ -1070,7 +1076,7 @@ def stay_command(
             result = search_stay_listings(
                 client, region, conditions=conditions, sort=stay_sort, radius_km=radius_km, limit=limit, boundary=boundary,
             )
-        emit(result, pretty, notes=notes + result.notes)
+        emit(result, pretty, notes=notes + result.notes, fields=fields)
 
 
 @app.command('real-price')

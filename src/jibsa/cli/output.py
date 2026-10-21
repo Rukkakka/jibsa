@@ -27,6 +27,7 @@ from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     insert_after,
+    listing_field_names,
     note,
     tagged_notes,
 )
@@ -42,6 +43,8 @@ from typing import (
 
 # 출력 좌표의 소수 자리. 일곱째 자리가 약 1cm 라 원본 정밀도를 잃지 않는다
 COORDINATE_DECIMALS: int = 7
+# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시
+ALWAYS_FIELDS: frozenset[str] = frozenset({'id', 'in_regions'})
 ChoiceT = TypeVar('ChoiceT', bound=str)
 TradeT = TypeVar('TradeT', bound=str)
 
@@ -59,16 +62,50 @@ def _dumps(data: Any, pretty: bool | None) -> str:
     )
 
 
-def _round_coordinates(value: Any) -> Any:
-    """`lat`·`lng` 값을 소수 일곱째 자리(약 1cm)로 반올림한다. 원본 좌표의 부동소수점 찌꺼기(127.04934499999999)를 지운다."""
+def _tidy_numbers(value: Any) -> Any:
+    """숫자를 짧게 쓴다. `lat`·`lng` 는 소수 일곱째 자리(약 1cm)로 반올림해 부동소수점 찌꺼기(127.04934499999999)를
+    지우고, 소수점 아래가 없는 실수는 정수로 쓴다 (`1000.0` → `1000`). 매물마다 금액·면적에 붙는 `.0` 이 토큰만 쓴다.
+    """
     if isinstance(value, dict):
         return {
-            key: round(item, COORDINATE_DECIMALS) if key in ('lat', 'lng') and isinstance(item, float)
-            else _round_coordinates(item)
+            key: _tidy_numbers(round(item, COORDINATE_DECIMALS) if key in ('lat', 'lng') and isinstance(item, float) else item)
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [_round_coordinates(item) for item in value]
+        return [_tidy_numbers(item) for item in value]
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def check_fields(values: list[str] | None) -> list[str] | None:
+    """`--fields` 의 필드 이름을 검증한다 (Typer 옵션 콜백). 요청 전에 막아, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다."""
+    if not values:
+        return None
+    known = listing_field_names()
+    fields = list(dict.fromkeys(part.strip() for value in values for part in value.split(',') if part.strip()))
+    unknown = [field for field in fields if field not in known]
+    if unknown:
+        raise HintedBadParameter(
+            f"매물에 없는 필드입니다: {', '.join(unknown)}",
+            '--fields',
+            '결과 JSON 의 매물 키 이름을 그대로 쓰세요 (예: --fields id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address)',
+        )
+    return fields
+
+
+def _select_fields(value: Any, fields: frozenset[str]) -> Any:
+    """`listings` 목록(통근 검색은 역마다의 `listings`)의 매물에서 고른 필드만 남긴다. 결과 머리(total·notes 등)는 그대로."""
+    if isinstance(value, dict):
+        return {
+            key: [
+                {name: field for name, field in item.items() if name in fields} if isinstance(item, dict) else item
+                for item in sub
+            ] if key == 'listings' and isinstance(sub, list) else _select_fields(sub, fields)
+            for key, sub in value.items()
+        }
+    if isinstance(value, list):
+        return [_select_fields(item, fields) for item in value]
     return value
 
 
@@ -77,13 +114,15 @@ def emit(
     pretty: bool | None = None,
     notes: list[str] | None = None,
     next_token: str | None = None,
+    fields: list[str] | None = None,
 ) -> None:
     """결과를 JSON 으로 stdout 에 쓴다.
 
     값을 모르는 필드는 `null` 로 남기고, 매물에 해당 없는 필드는 `Listing` 이
     키째 뺀다 (`Listing.not_applicable_fields`). `notes` 가 있으면 맨 앞에 붙이고,
     없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등). `next_token`(이어 받기 표, `jibsa.cli.paging`)이 있으면
-    `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다.
+    `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다. `fields`(`--fields`)를 주면 매물마다 그 필드와
+    늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -97,7 +136,9 @@ def emit(
         payload = insert_after(payload, 'has_more', 'next', next_token)
     if notes:
         payload = {'notes': tagged_notes(notes), **payload}
-    typer.echo(_dumps(_round_coordinates(payload), pretty))
+    if fields:
+        payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
+    typer.echo(_dumps(_tidy_numbers(payload), pretty))
 
 
 def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:

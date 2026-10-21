@@ -6,6 +6,7 @@ import typer
 from jibsa.cli.options import (
     DepositMaxOption,
     DepositMinOption,
+    FieldsOption,
     PrettyOption,
     PriceMaxOption,
     PriceMinOption,
@@ -611,6 +612,7 @@ def search_command(
         ),
     ] = False,
     next_: NextOption = None,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """동의 최근 매물, 또는 한 위치의 반경 안 매물을 조회한다. 조건은 당근 서버에서 건다.
@@ -654,7 +656,7 @@ def search_command(
             listings, detail_notes = attach_details(client, found)
             result = result.model_copy(update={'listings': listings, 'returned': len(listings)})
             notes = notes + detail_notes
-        emit(result, pretty, notes=notes, next_token=next_token)
+        emit(result, pretty, notes=notes, next_token=next_token, fields=fields)
 
     def emit_area(
         center_lat: float, center_lng: float, place_notes: list[str], offset: int = 0, region: DaangnRegion | None = None,
@@ -873,6 +875,7 @@ def commute_command(
     household_max: HouseholdMaxOption = None,
     parking_min: ParkingMinOption = None,
     limit: Annotated[int, typer.Option(min=1, max=COMMUTE_STATION_MAX_LIMIT, help='역당 최대 매물 수 (100건씩 페이지를 넘겨 받는다)')] = 20,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """회사까지 지하철로 갈 수 있는 역 주변 매물을 역별로 찾는다 (당근 웹 출퇴근 지도).
@@ -921,7 +924,7 @@ def commute_command(
                 message='당근 출퇴근 API 가 바뀌어(웹 쿼리 해시 거절) 출퇴근 검색을 할 수 없습니다',
                 hint='jibsa daangn search listings <역 이름> --radius 1 로 역 주변을 찾으세요. jibsa 업데이트가 필요합니다',
             ) from None
-        emit(result, pretty, notes=notes + result.notes)
+        emit(result, pretty, notes=notes + result.notes, fields=fields)
 
 
 @app.command('region-reviews')
@@ -1277,6 +1280,7 @@ def popular_listings_command(
         typer.Option('--type', '-t', help=f"{', '.join(PROPERTY_TYPES)}. 반복하거나 쉼표로 구분. 기본 전체")
     ] = None,
     limit: Annotated[int, typer.Option(min=1, max=POPULAR_MAX_LIMIT, help='조회할 매물 수 (제외 전)')] = 20,
+    fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """구 전체에서 조회수 많은 매물 순위 (순위가 매겨진 매물은 100건쯤). 요청 2회.
@@ -1292,4 +1296,5 @@ def popular_listings_command(
             result,
             pretty,
             notes=place_notes + property_type_notes(property_types) + result.notes,
+            fields=fields,
         )

@@ -31,7 +31,7 @@ from typing import (
 
 
 # 이어 받는 동안 바꿔도 되는 옵션 (명령 함수의 인자 이름). 나머지(지역·조건·정렬)가 다르면 다른 검색이다
-RESUMABLE_PARAMS: frozenset[str] = frozenset({'next_', 'limit', 'pretty', 'details'})
+RESUMABLE_PARAMS: frozenset[str] = frozenset({'next_', 'limit', 'pretty', 'details', 'fields'})
 # 표를 남겨 두는 시간. 에이전트는 보통 몇 분 안에 이어 받고, 오래된 소스 커서는 서버가 받지 않을 수 있다
 NEXT_TTL_SECONDS: int = 24 * 60 * 60
 # 번호 길이 (16진수). 하루 동안 쌓이는 표 수에서는 겹치지 않는다
@@ -169,7 +169,7 @@ def decode_next(token: str | None) -> dict[str, Any] | None:
         raise HintedBadParameter(
             '앞 검색과 지역·조건이 다릅니다: ' + '; '.join(differences),
             '--next',
-            'next 를 받은 검색과 지역·조건을 똑같이 주세요 (--limit·--details 는 바꿀 수 있습니다). '
+            'next 를 받은 검색과 지역·조건을 똑같이 주세요 (--limit·--details·--fields 는 바꿀 수 있습니다). '
             '새 조건으로 찾으려면 --next 를 빼세요',
         )
     return position

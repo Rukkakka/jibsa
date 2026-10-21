@@ -615,6 +615,20 @@ class ListingDetail(Listing):
         return super().not_applicable_fields() | {'distance_km'}
 
 
+def listing_field_names() -> frozenset[str]:
+    """출력에 나올 수 있는 매물 필드 이름 (`Listing` 과 소스별 하위 모델·상세, `floor_number`). `--fields` 를 검증한다.
+
+    하위 모델은 소스 모듈을 불러온 뒤에야 보이므로 명령을 모두 등록한 뒤(옵션을 읽을 때) 부른다.
+    """
+    names = {'floor_number'}
+    models: list[type[Listing]] = [Listing]
+    while models:
+        model = models.pop()
+        names.update(name for name, field in model.model_fields.items() if not field.exclude)
+        models.extend(model.__subclasses__())
+    return frozenset(names)
+
+
 ListingT = TypeVar('ListingT', bound=Listing)
 
 

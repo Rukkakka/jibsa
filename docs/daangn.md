@@ -476,7 +476,7 @@ jibsa daangn search commute 강남역 --max-minutes 20 -t 원룸 --trade 월세 
 
 **반환값**
 
-`workplace_station`, `max_minutes`, `reachable_stations`(회사 역 포함), `searched_stations`, `listings`, 역별 `stations[]`, `returned`, `unique_returned`를 준다. 매물은 지하철·도보·환승·예상 통근 시간을 포함한다.
+`workplace_station`, `max_minutes`, `reachable_stations`(회사 역 포함), `returned`, `unique_returned`, 역별 `stations[]`를 준다. 찾아본 역은 지하철 시간 짧은 순으로 모두 `stations[]` 에 있고(매물이 없는 역도), 역마다 지하철 시간·환승과 그 역 주변 매물(`listings`)이 묶여 있다. 매물에는 역까지 도보·예상 통근 시간이 붙는다. 같은 안내가 여러 역에 붙으면 `notes` 한 줄에 역을 모아 알린다 (모든 역이면 `찾아본 10곳 모두`).
 
 **오류와 대응**
 
@@ -830,10 +830,10 @@ jibsa daangn real-price --help
 
 ### 통근 매물 (`search commute`)
 
+타는 역과 그 역에서 회사 역까지 지하철 시간(분)·환승 횟수는 매물마다 붙지 않고 매물이 들어 있는 역 묶음(`stations[]` 의 `station_name`·`subway_minutes`·`transfers`)에 있다.
+
 | 필드 | 뜻 |
 |---|---|
-| `commute_station` | 타는 역 (매물 주변 역) |
-| `subway_minutes`, `transfers` | 타는 역에서 회사 역까지 지하철 시간(분), 환승 횟수 |
 | `walk_to_station_minutes` | 매물에서 타는 역까지 도보(분). 당근이 모르면 `null` |
 | `commute_minutes` | 예상 통근 시간 = 매물→역 도보 + 지하철 + 회사 역→회사 도보. 기다리는 시간은 넣지 않는다. 도보 시간을 모르면 `null` |
 
