@@ -83,7 +83,8 @@ from typing import (
 - 별칭을 쓰는 모델은 `populate_by_name=True` 인 `RequestModel`·`ResponseModel` 을 상속한다. 이 설정 없이
   `alias` 를 `Annotated` 안에 두면 검사기는 필드 이름을 받는다고 보는데 런타임은 별칭만 받아 서로 어긋난다.
 - `alias` 위치는 Pylance 에만 영향을 준다. mypy 의 `pydantic.mypy` 플러그인은 `populate_by_name=True` 를 보고
-  위치와 상관없이 필드 이름으로 생성자를 만든다. 그래서 `alias` 를 대입 위치에 둬도 CI(mypy·ruff)는 잡지 못한다.
+  위치와 상관없이 필드 이름으로 생성자를 만든다. mypy·ruff 가 잡지 못해 `tests/test_schema.py` 가 대입 위치의 `Field()` 에
+  `default_factory` 말고 다른 인자가 있는지와 별칭이 있는 모델이 필드 이름을 받는지를 검사한다.
 - 별칭은 `alias_generator` 로 자동 생성하지 않고 필드마다 적는다. 원본 응답의 키(`walkingDistance`)로
   코드를 검색할 수 있어야 하고, 자동 변환과 다른 이름(`roomCnt`, 한글 키, 직방의 `item_id` 같은 snake_case 키 등
   170여 개)이 많아 두 방식이 섞이며, 응답 모델은 `extra='allow'` 라 별칭을 빠뜨리면 에러 없이 `None` 이 되기 때문이다.
