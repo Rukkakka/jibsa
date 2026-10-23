@@ -15,8 +15,8 @@ class NaverEducationSchoolV1RequestParameterModel(RequestModel):
 
     school_code: Annotated[
         str,
-        Field(pattern=r'^[A-Za-z0-9]+$', description='학교 코드 (예: B100000747)')
-    ] = Field(alias='schoolCode')
+        Field(pattern=r'^[A-Za-z0-9]+$', description='학교 코드 (예: B100000747)', alias='schoolCode')
+    ]
 
 
 class NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel(RequestModel):
@@ -24,13 +24,13 @@ class NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel(RequestM
 
     complex_number: Annotated[
         int,
-        Field(gt=0, description='단지 번호')
-    ] = Field(alias='complexNumber')
+        Field(gt=0, description='단지 번호', alias='complexNumber')
+    ]
     school_code: Annotated[
         str,
-        Field(pattern=r'^[A-Za-z0-9]+$', description='학교 코드')
-    ] = Field(alias='schoolCode')
+        Field(pattern=r'^[A-Za-z0-9]+$', description='학교 코드', alias='schoolCode')
+    ]
     item_type: Annotated[
         Literal['complex', 'villa'],
-        Field(description='단지 종류 (사이트 ArticleSchoolItemType)')
-    ] = Field(default='complex', alias='itemType')
+        Field(description='단지 종류 (사이트 ArticleSchoolItemType)', alias='itemType')
+    ] = 'complex'

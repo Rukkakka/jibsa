@@ -75,12 +75,12 @@ class ZigbangStayDatesMixin(RequestModel):
 
     check_in_date: Annotated[
         str | None,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주 희망일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='checkInDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주 희망일 (YYYY-MM-DD)', alias='checkInDate')
+    ] = None
     check_out_date: Annotated[
         str | None,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD, 이용일에 센다)')
-    ] = Field(default=None, alias='checkOutDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD, 이용일에 센다)', alias='checkOutDate')
+    ] = None
     flexibility: Annotated[
         int | None,
         Field(ge=0, description='일정을 앞뒤로 며칠까지 유연하게 볼지')
@@ -108,56 +108,56 @@ class ZigbangGuestItemsFiltersRequestParameterModel(ZigbangStayDatesMixin):
 
     weekly_price_min: Annotated[
         int | None,
-        Field(ge=0, description='주당 요금 하한 (만원)')
-    ] = Field(default=None, alias='minWeeklyPrice')
+        Field(ge=0, description='주당 요금 하한 (만원)', alias='minWeeklyPrice')
+    ] = None
     weekly_price_max: Annotated[
         int | None,
-        Field(ge=0, description='주당 요금 상한 (만원)')
-    ] = Field(default=None, alias='maxWeeklyPrice')
+        Field(ge=0, description='주당 요금 상한 (만원)', alias='maxWeeklyPrice')
+    ] = None
     room_count: Annotated[
         int | None,
-        Field(ge=1, le=4, description='방 수. 1~3 은 정확히 그 수, 4 는 4개 이상')
-    ] = Field(default=None, alias='roomCount')
+        Field(ge=1, le=4, description='방 수. 1~3 은 정확히 그 수, 4 는 4개 이상', alias='roomCount')
+    ] = None
     building_types: Annotated[
         list[ZigbangStayBuildingType],
-        Field(description='방 종류 (OR)')
-    ] = Field(default=[], alias='buildingTypes')
+        Field(description='방 종류 (OR)', alias='buildingTypes')
+    ] = []
     size_min_m2: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 하한 (㎡)')
-    ] = Field(default=None, alias='minSizeM2')
+        Field(ge=0, description='전용면적 하한 (㎡)', alias='minSizeM2')
+    ] = None
     size_max_m2: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 상한 (㎡)')
-    ] = Field(default=None, alias='maxSizeM2')
+        Field(ge=0, description='전용면적 상한 (㎡)', alias='maxSizeM2')
+    ] = None
     discount_types: Annotated[
         list[ZigbangStayDiscountType],
-        Field(description='할인 (OR). LONG_TERM 장기 계약 할인, INSTANT 즉시 할인')
-    ] = Field(default=[], alias='discountTypes')
+        Field(description='할인 (OR). LONG_TERM 장기 계약 할인, INSTANT 즉시 할인', alias='discountTypes')
+    ] = []
     pet_allowed: Annotated[
         bool | None,
-        Field(description='반려동물 허용')
-    ] = Field(default=None, alias='petAllowed')
+        Field(description='반려동물 허용', alias='petAllowed')
+    ] = None
     is_duplex: Annotated[
         bool | None,
-        Field(description='복층 구조 (False 면 단층만)')
-    ] = Field(default=None, alias='isDuplex')
+        Field(description='복층 구조 (False 면 단층만)', alias='isDuplex')
+    ] = None
     options: Annotated[
         list[ZigbangStayOption],
         Field(description='옵션 (AND)')
     ] = []
     has_parking: Annotated[
         bool | None,
-        Field(description='주차 가능')
-    ] = Field(default=None, alias='hasParking')
+        Field(description='주차 가능', alias='hasParking')
+    ] = None
     has_elevator: Annotated[
         bool | None,
-        Field(description='엘리베이터')
-    ] = Field(default=None, alias='hasElevator')
+        Field(description='엘리베이터', alias='hasElevator')
+    ] = None
     floor_types: Annotated[
         list[ZigbangStayFloorType],
-        Field(description='층 (OR). BASEMENT 지하, FIRST 1층, ROOFTOP 옥탑')
-    ] = Field(default=[], alias='floorTypes')
+        Field(description='층 (OR). BASEMENT 지하, FIRST 1층, ROOFTOP 옥탑', alias='floorTypes')
+    ] = []
 
 
 class ZigbangGuestItemsMarkersRequestParameterModel(ZigbangGuestItemsFiltersRequestParameterModel):
@@ -225,8 +225,8 @@ class ZigbangGuestItemsByIdsRequestParameterModel(ZigbangStayDatesMixin):
 
     item_ids: Annotated[
         list[int],
-        Field(min_length=1, max_length=100, description='요약을 받을 매물 ID 목록 (같은 키 반복)')
-    ] = Field(alias='itemIds')
+        Field(min_length=1, max_length=100, description='요약을 받을 매물 ID 목록 (같은 키 반복)', alias='itemIds')
+    ]
 
 
 class ZigbangGuestItemsRequestParameterModel(RequestModel):
@@ -251,16 +251,16 @@ class ZigbangGuestItemsPriceCalculationRequestPayloadModel(RequestModel):
     ]
     check_in_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주일 (YYYY-MM-DD)')
-    ] = Field(alias='checkInDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주일 (YYYY-MM-DD)', alias='checkInDate')
+    ]
     check_out_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD, 이용일에 센다)')
-    ] = Field(alias='checkOutDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD, 이용일에 센다)', alias='checkOutDate')
+    ]
     has_pet: Annotated[
         bool,
-        Field(description='반려동물 동반 여부 (반려동물 청소비가 붙는다)')
-    ] = Field(default=False, alias='hasPet')
+        Field(description='반려동물 동반 여부 (반려동물 청소비가 붙는다)', alias='hasPet')
+    ] = False
 
     @model_validator(mode='after')
     def valid_dates(self) -> Self:

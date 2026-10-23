@@ -13,20 +13,20 @@ class NaverSchoolStudentModel(ResponseModel):
 
     base_date: Annotated[
         str | None,
-        Field(description='공시 기준일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='baseDate')
+        Field(description='공시 기준일 (YYYY-MM-DD)', alias='baseDate')
+    ] = None
     count_per_teacher: Annotated[
         float | None,
-        Field(description='교원 1인당 학생 수')
-    ] = Field(default=None, alias='countPerTeacher')
+        Field(description='교원 1인당 학생 수', alias='countPerTeacher')
+    ] = None
     count_per_classroom: Annotated[
         float | None,
-        Field(description='학급당 학생 수')
-    ] = Field(default=None, alias='countPerClassroom')
+        Field(description='학급당 학생 수', alias='countPerClassroom')
+    ] = None
     total_count: Annotated[
         int | None,
-        Field(description='전체 학생 수')
-    ] = Field(default=None, alias='totalCount')
+        Field(description='전체 학생 수', alias='totalCount')
+    ] = None
 
 
 class NaverRegionStudentModel(ResponseModel):
@@ -34,16 +34,16 @@ class NaverRegionStudentModel(ResponseModel):
 
     region_name: Annotated[
         str | None,
-        Field(description='지역 이름 (서울시, 강남구 ...)')
-    ] = Field(default=None, alias='regionName')
+        Field(description='지역 이름 (서울시, 강남구 ...)', alias='regionName')
+    ] = None
     count_per_teacher: Annotated[
         float | None,
-        Field(description='교원 1인당 학생 수')
-    ] = Field(default=None, alias='countPerTeacher')
+        Field(description='교원 1인당 학생 수', alias='countPerTeacher')
+    ] = None
     count_per_classroom: Annotated[
         float | None,
-        Field(description='학급당 학생 수')
-    ] = Field(default=None, alias='countPerClassroom')
+        Field(description='학급당 학생 수', alias='countPerClassroom')
+    ] = None
 
 
 class NaverSchoolDetailModel(ResponseModel):
@@ -51,8 +51,8 @@ class NaverSchoolDetailModel(ResponseModel):
 
     school_code: Annotated[
         str,
-        Field(description='학교 코드')
-    ] = Field(alias='schoolCode')
+        Field(description='학교 코드', alias='schoolCode')
+    ]
     name: Annotated[
         str | None,
         Field(description='학교 이름')
@@ -63,32 +63,32 @@ class NaverSchoolDetailModel(ResponseModel):
     ] = None
     office_of_education_in_charge: Annotated[
         str | None,
-        Field(description='관할 교육청')
-    ] = Field(default=None, alias='officeOfEducationInCharge')
+        Field(description='관할 교육청', alias='officeOfEducationInCharge')
+    ] = None
     operation_type: Annotated[
         str | None,
-        Field(description='운영 구분 (공립, 사립, 혁신 ...)')
-    ] = Field(default=None, alias='operationType')
+        Field(description='운영 구분 (공립, 사립, 혁신 ...)', alias='operationType')
+    ] = None
     establishment_type: Annotated[
         str | None,
-        Field(description='설립 형태 (단설, 병설 ...)')
-    ] = Field(default=None, alias='establishmentType')
+        Field(description='설립 형태 (단설, 병설 ...)', alias='establishmentType')
+    ] = None
     establishment_date: Annotated[
         str | None,
-        Field(description='개교일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='establishmentDate')
+        Field(description='개교일 (YYYY-MM-DD)', alias='establishmentDate')
+    ] = None
     student: Annotated[
         NaverSchoolStudentModel | None,
         Field(description='학생 공시')
     ] = None
     city_student: Annotated[
         NaverRegionStudentModel | None,
-        Field(description='시·도 평균')
-    ] = Field(default=None, alias='cityStudent')
+        Field(description='시·도 평균', alias='cityStudent')
+    ] = None
     division_student: Annotated[
         NaverRegionStudentModel | None,
-        Field(description='시·군·구 평균')
-    ] = Field(default=None, alias='divisionStudent')
+        Field(description='시·군·구 평균', alias='divisionStudent')
+    ] = None
 
 
 class NaverSchoolAllocationDongsModel(ResponseModel):
@@ -96,12 +96,12 @@ class NaverSchoolAllocationDongsModel(ResponseModel):
 
     is_all_building_assigned: Annotated[
         bool | None,
-        Field(description='단지 전체 동이 배정되는지')
-    ] = Field(default=None, alias='isAllBuildingAssigned')
+        Field(description='단지 전체 동이 배정되는지', alias='isAllBuildingAssigned')
+    ] = None
     converted_building_name_groups: Annotated[
         list[list[str]],
-        Field(description='배정되는 동 이름 묶음. 사이트는 묶음마다 첫~끝 동으로 보여 준다 (101~105동)')
-    ] = Field(default=[], alias='convertedBuildingNameGroups')
+        Field(description='배정되는 동 이름 묶음. 사이트는 묶음마다 첫~끝 동으로 보여 준다 (101~105동)', alias='convertedBuildingNameGroups')
+    ] = []
 
 
 class NaverEducationSchoolV1ResponseModel(NaverResponseModel[NaverSchoolDetailModel]):

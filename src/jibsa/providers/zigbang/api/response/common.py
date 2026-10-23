@@ -45,16 +45,16 @@ class ZigbangSearchSourceModel(ResponseModel):
     ] = None
     legal_division_code: Annotated[
         str | None,
-        Field(description='법정동코드 (10자리)')
-    ] = Field(default=None, alias='법정동코드')
+        Field(description='법정동코드 (10자리)', alias='법정동코드')
+    ] = None
     household: Annotated[
         int | None,
         Field(description='세대수 (단지 결과만)')
     ] = None
     approval_date: Annotated[
         str | None,
-        Field(description='사용승인일 (YYYYMMDD, 단지 결과만)')
-    ] = Field(default=None, alias='사용승인일')
+        Field(description='사용승인일 (YYYYMMDD, 단지 결과만)', alias='사용승인일')
+    ] = None
 
 
 class ZigbangSearchItemModel(ResponseModel):
@@ -86,8 +86,8 @@ class ZigbangSearchItemModel(ResponseModel):
     ] = None
     source: Annotated[
         ZigbangSearchSourceModel | None,
-        Field(description='원본 색인 문서')
-    ] = Field(default=None, alias='_source')
+        Field(description='원본 색인 문서', alias='_source')
+    ] = None
 
 
 class ZigbangItemPinModel(ResponseModel):
@@ -107,12 +107,12 @@ class ZigbangItemPinModel(ResponseModel):
     ]
     user_no: Annotated[
         int | None,
-        Field(description='등록한 중개사 회원번호')
-    ] = Field(default=None, alias='userNo')
+        Field(description='등록한 중개사 회원번호', alias='userNo')
+    ] = None
     building_id: Annotated[
         int | None,
-        Field(description='오피스텔 건물 ID (오피스텔 핀만). /items/officetels/{buildingId} 에 넘긴다')
-    ] = Field(default=None, alias='buildingId')
+        Field(description='오피스텔 건물 ID (오피스텔 핀만). /items/officetels/{buildingId} 에 넘긴다', alias='buildingId')
+    ] = None
 
 
 class ZigbangLatLngModel(ResponseModel):
@@ -166,8 +166,8 @@ class ZigbangAddressOriginModel(ResponseModel):
     ] = None
     full_text: Annotated[
         str | None,
-        Field(description='전체 주소 텍스트')
-    ] = Field(default=None, alias='fullText')
+        Field(description='전체 주소 텍스트', alias='fullText')
+    ] = None
 
 
 class ZigbangItemSummaryModel(ResponseModel):
@@ -199,12 +199,12 @@ class ZigbangItemSummaryModel(ResponseModel):
     ] = None
     exclusive_area: Annotated[
         ZigbangAreaModel | None,
-        Field(description='전용면적')
-    ] = Field(default=None, alias='전용면적')
+        Field(description='전용면적', alias='전용면적')
+    ] = None
     supply_area: Annotated[
         ZigbangAreaModel | None,
-        Field(description='공급면적')
-    ] = Field(default=None, alias='공급면적')
+        Field(description='공급면적', alias='공급면적')
+    ] = None
     floor: Annotated[
         str | None,
         Field(description="해당 층 (예 '2', '반지하', '옥탑방')")
@@ -235,8 +235,8 @@ class ZigbangItemSummaryModel(ResponseModel):
     ] = None
     address_origin: Annotated[
         ZigbangAddressOriginModel | None,
-        Field(description='행정 주소')
-    ] = Field(default=None, alias='addressOrigin')
+        Field(description='행정 주소', alias='addressOrigin')
+    ] = None
     address1: Annotated[
         str | None,
         Field(description='주소 (시 구 동)')
@@ -274,8 +274,8 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
     ] = []
     total_count: Annotated[
         int,
-        Field(description='반환된 매물 수')
-    ] = Field(default=0, alias='totalCount')
+        Field(description='반환된 매물 수', alias='totalCount')
+    ] = 0
 
 
 class ZigbangSubwayBriefModel(ResponseModel):
@@ -313,12 +313,12 @@ class ZigbangCatalogItemIdModel(ResponseModel):
 
     item_source: Annotated[
         str | None,
-        Field(description="매물 출처. 'zigbang' 이면 `/v3/items/{itemId}` 로 상세를 볼 수 있다")
-    ] = Field(default=None, alias='itemSource')
+        Field(description="매물 출처. 'zigbang' 이면 `/v3/items/{itemId}` 로 상세를 볼 수 있다", alias='itemSource')
+    ] = None
     item_id: Annotated[
         int,
-        Field(description='매물 ID')
-    ] = Field(alias='itemId')
+        Field(description='매물 ID', alias='itemId')
+    ]
 
 
 class ZigbangItemCatalogModel(ResponseModel):
@@ -326,24 +326,24 @@ class ZigbangItemCatalogModel(ResponseModel):
 
     area_ho_id: Annotated[
         int | None,
-        Field(description='호 ID')
-    ] = Field(default=None, alias='areaHoId')
+        Field(description='호 ID', alias='areaHoId')
+    ] = None
     tran_type: Annotated[
         str,
-        Field(description='거래 유형 (trade 매매, charter 전세, rental 월세)')
-    ] = Field(alias='tranType')
+        Field(description='거래 유형 (trade 매매, charter 전세, rental 월세)', alias='tranType')
+    ]
     item_type: Annotated[
         str | None,
-        Field(description='매물 종류 (self_ad ...)')
-    ] = Field(default=None, alias='itemType')
+        Field(description='매물 종류 (self_ad ...)', alias='itemType')
+    ] = None
     area_danji_id: Annotated[
         int | None,
-        Field(description='단지 ID')
-    ] = Field(default=None, alias='areaDanjiId')
+        Field(description='단지 ID', alias='areaDanjiId')
+    ] = None
     area_danji_name: Annotated[
         str | None,
-        Field(description='단지 이름')
-    ] = Field(default=None, alias='areaDanjiName')
+        Field(description='단지 이름', alias='areaDanjiName')
+    ] = None
     local2: Annotated[
         str | None,
         Field(description='시/군/구')
@@ -354,28 +354,28 @@ class ZigbangItemCatalogModel(ResponseModel):
     ] = None
     is_price_range: Annotated[
         bool | None,
-        Field(description='묶인 매물끼리 가격이 달라 가격이 최솟값인지')
-    ] = Field(default=None, alias='isPriceRange')
+        Field(description='묶인 매물끼리 가격이 달라 가격이 최솟값인지', alias='isPriceRange')
+    ] = None
     deposit_min: Annotated[
         int | None,
-        Field(description='매매가(매매) 또는 보증금·전세금 (만원). 가격이 범위면 최솟값')
-    ] = Field(default=None, alias='depositMin')
+        Field(description='매매가(매매) 또는 보증금·전세금 (만원). 가격이 범위면 최솟값', alias='depositMin')
+    ] = None
     rent_min: Annotated[
         int | None,
-        Field(description='월세 (만원). 매매·전세는 0')
-    ] = Field(default=None, alias='rentMin')
+        Field(description='월세 (만원). 매매·전세는 0', alias='rentMin')
+    ] = None
     room_type_title: Annotated[
         ZigbangRoomTypeTitleModel | None,
-        Field(description='평형 이름')
-    ] = Field(default=None, alias='roomTypeTitle')
+        Field(description='평형 이름', alias='roomTypeTitle')
+    ] = None
     size_contract_m2: Annotated[
         float | None,
-        Field(description='공급면적 (㎡)')
-    ] = Field(default=None, alias='sizeContractM2')
+        Field(description='공급면적 (㎡)', alias='sizeContractM2')
+    ] = None
     size_m2: Annotated[
         float | None,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='sizeM2')
+        Field(description='전용면적 (㎡)', alias='sizeM2')
+    ] = None
     dong: Annotated[
         str | None,
         Field(description='동 (예: 108동)')
@@ -386,16 +386,16 @@ class ZigbangItemCatalogModel(ResponseModel):
     ] = None
     item_title: Annotated[
         str | None,
-        Field(description='매물 제목')
-    ] = Field(default=None, alias='itemTitle')
+        Field(description='매물 제목', alias='itemTitle')
+    ] = None
     item_count: Annotated[
         int | None,
-        Field(description='묶인 매물 수')
-    ] = Field(default=None, alias='itemCount')
+        Field(description='묶인 매물 수', alias='itemCount')
+    ] = None
     item_id_list: Annotated[
         list[ZigbangCatalogItemIdModel],
-        Field(description='묶인 매물 ID')
-    ] = Field(default=[], alias='itemIdList')
+        Field(description='묶인 매물 ID', alias='itemIdList')
+    ] = []
 
 
 # ---------------------------------------------------------------------------
@@ -419,48 +419,48 @@ class ZigbangDanjisResponseModel(ResponseModel):
     ] = None
     jibun_address: Annotated[
         str | None,
-        Field(description='시/도를 뺀 지번 주소 (예: 강남구 개포동 660-1)')
-    ] = Field(default=None, alias='jibunAddress')
+        Field(description='시/도를 뺀 지번 주소 (예: 강남구 개포동 660-1)', alias='jibunAddress')
+    ] = None
     real_type: Annotated[
         str | None,
         Field(description='단지 유형 (아파트 ...)')
     ] = None
     approval_date: Annotated[
         str | None,
-        Field(description='사용승인일 (YYYYMMDD)')
-    ] = Field(default=None, alias='사용승인일')
+        Field(description='사용승인일 (YYYYMMDD)', alias='사용승인일')
+    ] = None
     households: Annotated[
         int | None,
-        Field(description='총 세대수')
-    ] = Field(default=None, alias='총세대수')
+        Field(description='총 세대수', alias='총세대수')
+    ] = None
     dong_count: Annotated[
         int | None,
-        Field(description='동 수')
-    ] = Field(default=None, alias='총동수')
+        Field(description='동 수', alias='총동수')
+    ] = None
     max_floor: Annotated[
         int | None,
-        Field(description='최고 층수')
-    ] = Field(default=None, alias='최고층수')
+        Field(description='최고 층수', alias='최고층수')
+    ] = None
     construction_company: Annotated[
         str | None,
-        Field(description='시공사')
-    ] = Field(default=None, alias='시공사')
+        Field(description='시공사', alias='시공사')
+    ] = None
     parking_per_household: Annotated[
         float | None,
-        Field(description='세대당 주차 대수')
-    ] = Field(default=None, alias='가구당주차대수')
+        Field(description='세대당 주차 대수', alias='가구당주차대수')
+    ] = None
     floor_area_ratio: Annotated[
         float | None,
-        Field(description='용적률 (%)')
-    ] = Field(default=None, alias='용적율')
+        Field(description='용적률 (%)', alias='용적율')
+    ] = None
     heating: Annotated[
         str | None,
-        Field(description='난방 방식 (지역난방, 개별난방 ...)')
-    ] = Field(default=None, alias='난방방식')
+        Field(description='난방 방식 (지역난방, 개별난방 ...)', alias='난방방식')
+    ] = None
     review_count: Annotated[
         int | None,
-        Field(description='거주 후기 수. 후기 본문(resident_review)은 내보내지 않는다')
-    ] = Field(default=None, alias='review_cnt')
+        Field(description='거주 후기 수. 후기 본문(resident_review)은 내보내지 않는다', alias='review_cnt')
+    ] = None
 
 
 # ---------------------------------------------------------------------------
@@ -476,8 +476,8 @@ class ZigbangDanjiRoomTypeModel(ResponseModel):
     ]
     room_type_title: Annotated[
         ZigbangRoomTypeTitleModel | None,
-        Field(description='평형 이름')
-    ] = Field(default=None, alias='roomTypeTitle')
+        Field(description='평형 이름', alias='roomTypeTitle')
+    ] = None
 
 
 class ZigbangDanjisItemCatalogsResponseModel(ResponseModel):
@@ -485,17 +485,17 @@ class ZigbangDanjisItemCatalogsResponseModel(ResponseModel):
 
     total_count: Annotated[
         int,
-        Field(description='조건에 맞는 카탈로그 수 (페이지 무관)')
-    ] = Field(default=0, alias='totalCount')
+        Field(description='조건에 맞는 카탈로그 수 (페이지 무관)', alias='totalCount')
+    ] = 0
     count_by_tran_type: Annotated[
         dict[str, int],
-        Field(description='거래 유형(trade·charter·rental)별 카탈로그 수. 거래 유형 조건을 반영한다')
-    ] = Field(default={}, alias='itemCountPerTranType')
+        Field(description='거래 유형(trade·charter·rental)별 카탈로그 수. 거래 유형 조건을 반영한다', alias='itemCountPerTranType')
+    ] = {}
     room_types: Annotated[
         list[ZigbangDanjiRoomTypeModel],
-        Field(description='단지의 평형 목록')
-    ] = Field(default=[], alias='danjiRoomTypes')
+        Field(description='단지의 평형 목록', alias='danjiRoomTypes')
+    ] = []
     catalogs: Annotated[
         list[ZigbangItemCatalogModel],
-        Field(description='이번 페이지의 카탈로그')
-    ] = Field(default=[], alias='list')
+        Field(description='이번 페이지의 카탈로그', alias='list')
+    ] = []

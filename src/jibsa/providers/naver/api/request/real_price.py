@@ -19,8 +19,8 @@ class NaverComplexPyeongRealPriceV2RequestParameterModel(NaverComplexPyeongReque
 
     trade_type: Annotated[
         NaverTradeType,
-        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)')
-    ] = Field(default='A1', alias='tradeType')
+        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)', alias='tradeType')
+    ] = 'A1'
     page: Annotated[
         int,
         Field(ge=0, description='페이지 (0부터)')
@@ -36,8 +36,8 @@ class NaverComplexVillaRealPricePageV1RequestParameterModel(NaverComplexPyeongRe
 
     trade_type: Annotated[
         NaverTradeType,
-        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)')
-    ] = Field(default='A1', alias='tradeType')
+        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)', alias='tradeType')
+    ] = 'A1'
     page: Annotated[
         int,
         Field(ge=0, description='페이지 (0부터)')
@@ -57,17 +57,17 @@ class NaverComplexPyeongRealPriceListV1RequestParameterModel(NaverComplexPyeongR
 
     real_estate_type: Annotated[
         NaverRealEstateType,
-        Field(description='단지 유형 코드. 서버가 요구하지만 결과에 영향이 없다')
-    ] = Field(default='A01', alias='realEstateType')
+        Field(description='단지 유형 코드. 서버가 요구하지만 결과에 영향이 없다', alias='realEstateType')
+    ] = 'A01'
     trade_type: Annotated[
         Literal['A1', 'B1', 'B2'],
-        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)')
-    ] = Field(alias='tradeType')
+        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)', alias='tradeType')
+    ]
     start_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='시작일 (YYYY-MM-DD)')
-    ] = Field(alias='startDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='시작일 (YYYY-MM-DD)', alias='startDate')
+    ]
     end_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='끝일 (YYYY-MM-DD)')
-    ] = Field(alias='endDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='끝일 (YYYY-MM-DD)', alias='endDate')
+    ]

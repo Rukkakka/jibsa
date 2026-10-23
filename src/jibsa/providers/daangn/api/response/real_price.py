@@ -25,12 +25,12 @@ class DaangnComplexTransactionsModel(ResponseModel):
 
     buy_transactions: Annotated[
         DaangnTransactionConnectionModel | None,
-        Field(description='매매')
-    ] = Field(default=None, alias='buyTransactions')
+        Field(description='매매', alias='buyTransactions')
+    ] = None
     borrow_transactions: Annotated[
         DaangnTransactionConnectionModel | None,
-        Field(description='전세·월세')
-    ] = Field(default=None, alias='borrowTransactions')
+        Field(description='전세·월세', alias='borrowTransactions')
+    ] = None
 
 
 class DaangnComplexByOriginalIdModel(ResponseModel):
@@ -47,8 +47,8 @@ class DaangnComplexByOriginalIdDataModel(ResponseModel):
 
     complex_by_original_id: Annotated[
         DaangnComplexByOriginalIdModel | None,
-        Field(description='단지 조회 결과')
-    ] = Field(default=None, alias='complexByOriginalId')
+        Field(description='단지 조회 결과', alias='complexByOriginalId')
+    ] = None
 
 
 class DaangnComplexByOriginalIdResponseModel(DaangnGraphQLResponseModel):
@@ -69,8 +69,8 @@ class DaangnArticleByOriginalArticleIdDataModel(ResponseModel):
 
     article_by_original_article_id: Annotated[
         DaangnComplexTransactionsModel | None,
-        Field(description='매물 (실거래 연결만 받는다). 없는 매물이면 null 과 recordNotFound 에러')
-    ] = Field(default=None, alias='articleByOriginalArticleId')
+        Field(description='매물 (실거래 연결만 받는다). 없는 매물이면 null 과 recordNotFound 에러', alias='articleByOriginalArticleId')
+    ] = None
 
 
 class DaangnArticleByOriginalArticleIdResponseModel(DaangnGraphQLResponseModel):
@@ -95,44 +95,44 @@ class DaangnRealsaleModel(ResponseModel):
     ] = None
     trade_type: Annotated[
         str | None,
-        Field(description='SALE(매매) / BORROW(전월세, 월세가 0 이면 전세)')
-    ] = Field(default=None, alias='tradeType')
+        Field(description='SALE(매매) / BORROW(전월세, 월세가 0 이면 전세)', alias='tradeType')
+    ] = None
     trade_price: Annotated[
         int | None,
-        Field(description='매매가 (만원). 전월세는 0')
-    ] = Field(default=None, alias='tradePrice')
+        Field(description='매매가 (만원). 전월세는 0', alias='tradePrice')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금 (만원). 매매는 0')
     ] = None
     month_rent_fee: Annotated[
         int | None,
-        Field(description='월세 (만원). 매매·전세는 0')
-    ] = Field(default=None, alias='monthRentFee')
+        Field(description='월세 (만원). 매매·전세는 0', alias='monthRentFee')
+    ] = None
     exclusive_area: Annotated[
         LooseFloat,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='exclusiveArea')
+        Field(description='전용면적 (㎡)', alias='exclusiveArea')
+    ] = None
     floor: Annotated[
         FloorText,
         Field(description='층 (숫자로 온다)')
     ] = None
     contact_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYYMMDD)')
-    ] = Field(default=None, alias='contactDate')
+        Field(description='계약일 (YYYYMMDD)', alias='contactDate')
+    ] = None
     cancel: Annotated[
         bool | None,
         Field(description='해제(취소)된 거래')
     ] = None
     transaction_type: Annotated[
         str | None,
-        Field(description='BROKERED(중개거래) / DIRECT(직거래). 매매만')
-    ] = Field(default=None, alias='transactionType')
+        Field(description='BROKERED(중개거래) / DIRECT(직거래). 매매만', alias='transactionType')
+    ] = None
     lease_contract_type: Annotated[
         str | None,
-        Field(description='NEW / RENEWAL (전월세만)')
-    ] = Field(default=None, alias='leaseContractType')
+        Field(description='NEW / RENEWAL (전월세만)', alias='leaseContractType')
+    ] = None
 
 
 class DaangnPriceInsightModel(ResponseModel):
@@ -140,16 +140,16 @@ class DaangnPriceInsightModel(ResponseModel):
 
     previous_max_price: Annotated[
         int | None,
-        Field(description='이전 최고가 (만원)')
-    ] = Field(default=None, alias='previousMaxPrice')
+        Field(description='이전 최고가 (만원)', alias='previousMaxPrice')
+    ] = None
     previous_max_contact_date: Annotated[
         str | None,
-        Field(description='이전 최고가 계약일 (YYYYMMDD)')
-    ] = Field(default=None, alias='previousMaxContactDate')
+        Field(description='이전 최고가 계약일 (YYYYMMDD)', alias='previousMaxContactDate')
+    ] = None
     is_new_high: Annotated[
         bool | None,
-        Field(description='신고가인지')
-    ] = Field(default=None, alias='isNewHigh')
+        Field(description='신고가인지', alias='isNewHigh')
+    ] = None
 
 
 class DaangnRealsaleFeedItemModel(ResponseModel):
@@ -161,8 +161,8 @@ class DaangnRealsaleFeedItemModel(ResponseModel):
     ] = None
     data_date: Annotated[
         str | None,
-        Field(description='공개일 (YYYYMMDD). 신고가 피드에는 없다')
-    ] = Field(default=None, alias='dataDate')
+        Field(description='공개일 (YYYYMMDD). 신고가 피드에는 없다', alias='dataDate')
+    ] = None
     danji: Annotated[
         DaangnRealsaleDanjiModel | None,
         Field(description='건물·단지')
@@ -173,12 +173,12 @@ class DaangnRealsaleFeedItemModel(ResponseModel):
     ] = None
     region_name: Annotated[
         str | None,
-        Field(description="동까지의 주소 (예: '서울 강남구 역삼동')")
-    ] = Field(default=None, alias='regionName')
+        Field(description="동까지의 주소 (예: '서울 강남구 역삼동')", alias='regionName')
+    ] = None
     price_insight: Annotated[
         DaangnPriceInsightModel | None,
-        Field(description='이전 최고가 비교 (매매)')
-    ] = Field(default=None, alias='priceInsight')
+        Field(description='이전 최고가 비교 (매매)', alias='priceInsight')
+    ] = None
 
 
 class DaangnRealsaleFeedEdgeModel(ResponseModel):
@@ -199,8 +199,8 @@ class DaangnRealsaleFeedModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnRealsaleFeedDataModel(ResponseModel):
@@ -208,8 +208,8 @@ class DaangnRealsaleFeedDataModel(ResponseModel):
 
     realsale_feed: Annotated[
         DaangnRealsaleFeedModel | None,
-        Field(description='최근 실거래')
-    ] = Field(default=None, alias='realsaleFeed')
+        Field(description='최근 실거래', alias='realsaleFeed')
+    ] = None
 
 
 class DaangnRealsaleFeedResponseModel(DaangnGraphQLResponseModel):
@@ -226,8 +226,8 @@ class DaangnRealsaleNewHighFeedDataModel(ResponseModel):
 
     realsale_new_high_feed: Annotated[
         DaangnRealsaleFeedModel | None,
-        Field(description='신고가 매매')
-    ] = Field(default=None, alias='realsaleNewHighFeed')
+        Field(description='신고가 매매', alias='realsaleNewHighFeed')
+    ] = None
 
 
 class DaangnRealsaleNewHighFeedResponseModel(DaangnGraphQLResponseModel):
@@ -248,16 +248,16 @@ class DaangnPriceChartPointModel(ResponseModel):
 
     year_month: Annotated[
         str,
-        Field(description="계약 연월 (YYYYMM, 예: '202608')")
-    ] = Field(alias='yearMonth')
+        Field(description="계약 연월 (YYYYMM, 예: '202608')", alias='yearMonth')
+    ]
     average_amount: Annotated[
         float | None,
-        Field(description='그 달 실거래 평균가 (원). 전세는 보증금')
-    ] = Field(default=None, alias='averageAmount')
+        Field(description='그 달 실거래 평균가 (원). 전세는 보증금', alias='averageAmount')
+    ] = None
     transaction_count: Annotated[
         int | None,
-        Field(description='그 달 거래 수')
-    ] = Field(default=None, alias='transactionCount')
+        Field(description='그 달 거래 수', alias='transactionCount')
+    ] = None
 
 
 class DaangnPriceChartModel(ResponseModel):
@@ -265,8 +265,8 @@ class DaangnPriceChartModel(ResponseModel):
 
     average_points: Annotated[
         list[DaangnPriceChartPointModel],
-        Field(description='월별 평균 (오래된 달부터)')
-    ] = Field(default=[], alias='averagePoints')
+        Field(description='월별 평균 (오래된 달부터)', alias='averagePoints')
+    ] = []
 
 
 class DaangnComplexPriceChartComplexModel(ResponseModel):
@@ -274,12 +274,12 @@ class DaangnComplexPriceChartComplexModel(ResponseModel):
 
     original_id: Annotated[
         str | None,
-        Field(description='숫자 단지 ID')
-    ] = Field(default=None, alias='originalId')
+        Field(description='숫자 단지 ID', alias='originalId')
+    ] = None
     price_chart: Annotated[
         DaangnPriceChartModel | None,
-        Field(description='시세 차트')
-    ] = Field(default=None, alias='priceChart')
+        Field(description='시세 차트', alias='priceChart')
+    ] = None
 
 
 class DaangnComplexPriceChartResultModel(ResponseModel):
@@ -296,8 +296,8 @@ class DaangnComplexPriceChartDataModel(ResponseModel):
 
     complex_by_original_id: Annotated[
         DaangnComplexPriceChartResultModel | None,
-        Field(description='단지 결과')
-    ] = Field(default=None, alias='complexByOriginalId')
+        Field(description='단지 결과', alias='complexByOriginalId')
+    ] = None
 
 
 class DaangnComplexPriceChartResponseModel(DaangnGraphQLResponseModel):

@@ -23,12 +23,12 @@ class ZigbangSearchV2RequestParameterModel(RequestModel):
     ]
     service_type: Annotated[
         ZigbangSearchServiceType,
-        Field(description='검색 대상 서비스. 아파트면 아파트 단지, 오피스텔이면 오피스텔 건물도 결과에 나온다')
-    ] = Field(default='원룸', alias='serviceType')
+        Field(description='검색 대상 서비스. 아파트면 아파트 단지, 오피스텔이면 오피스텔 건물도 결과에 나온다', alias='serviceType')
+    ] = '원룸'
     lease_yn: Annotated[
         Literal['Y', 'N'],
-        Field(description='단기임대 검색 여부')
-    ] = Field(default='N', alias='leaseYn')
+        Field(description='단기임대 검색 여부', alias='leaseYn')
+    ] = 'N'
 
 
 class ZigbangLocalPolygonV2RequestParameterModel(RequestModel):

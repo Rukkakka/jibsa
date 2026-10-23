@@ -24,24 +24,24 @@ class NaverRedevelopmentModel(ResponseModel):
     ] = None
     legal_division_address: Annotated[
         str | None,
-        Field(description='대표 법정동 (예: 서울시 용산구 한남동)')
-    ] = Field(default=None, alias='legalDivisionAddress')
+        Field(description='대표 법정동 (예: 서울시 용산구 한남동)', alias='legalDivisionAddress')
+    ] = None
     total_household_number: Annotated[
         int | None,
-        Field(description='계획 세대수')
-    ] = Field(default=None, alias='totalHouseholdNumber')
+        Field(description='계획 세대수', alias='totalHouseholdNumber')
+    ] = None
     construction_company: Annotated[
         str | None,
-        Field(description='시공사')
-    ] = Field(default=None, alias='constructionCompany')
+        Field(description='시공사', alias='constructionCompany')
+    ] = None
     building_ratio_info: Annotated[
         NaverBuildingRatioInfoModel | None,
-        Field(description='계획 용적률·건폐율')
-    ] = Field(default=None, alias='buildingRatioInfo')
+        Field(description='계획 용적률·건폐율', alias='buildingRatioInfo')
+    ] = None
     business_step: Annotated[
         str | None,
-        Field(description='사업 단계 (예: 이주및철거)')
-    ] = Field(default=None, alias='businessStep')
+        Field(description='사업 단계 (예: 이주및철거)', alias='businessStep')
+    ] = None
 
 
 class NaverRedevelopmentAreaPinModel(ResponseModel):
@@ -49,16 +49,16 @@ class NaverRedevelopmentAreaPinModel(ResponseModel):
 
     redevelopment_area_number: Annotated[
         int,
-        Field(description='구역 번호')
-    ] = Field(alias='redevelopmentAreaNumber')
+        Field(description='구역 번호', alias='redevelopmentAreaNumber')
+    ]
     coordinates: Annotated[
         NaverCoordinatesModel | None,
         Field(description='구역 대표 좌표')
     ] = None
     legal_division_name: Annotated[
         str | None,
-        Field(description='구역이 속한 법정동 (예: 서울시 용산구 이태원동)')
-    ] = Field(default=None, alias='legalDivisionName')
+        Field(description='구역이 속한 법정동 (예: 서울시 용산구 이태원동)', alias='legalDivisionName')
+    ] = None
 
 
 class NaverRedevelopmentAreaMarkersModel(ResponseModel):
@@ -66,8 +66,8 @@ class NaverRedevelopmentAreaMarkersModel(ResponseModel):
 
     total_count: Annotated[
         int,
-        Field(description='마커 수')
-    ] = Field(default=0, alias='totalCount')
+        Field(description='마커 수', alias='totalCount')
+    ] = 0
     pins: Annotated[
         list[NaverRedevelopmentAreaPinModel],
         Field(description='마커')

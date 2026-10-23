@@ -17,16 +17,16 @@ class ZigbangLocalsItemCatalogsResponseModel(ResponseModel):
 
     local_code: Annotated[
         str | None,
-        Field(description='조회한 지역 코드')
-    ] = Field(default=None, alias='localCode')
+        Field(description='조회한 지역 코드', alias='localCode')
+    ] = None
     count: Annotated[
         int,
         Field(description='조건에 맞는 카탈로그 수 (페이지 무관)')
     ] = 0
     catalogs: Annotated[
         list[ZigbangItemCatalogModel],
-        Field(description='이번 페이지의 카탈로그')
-    ] = Field(default=[], alias='list')
+        Field(description='이번 페이지의 카탈로그', alias='list')
+    ] = []
     local1: Annotated[
         str | None,
         Field(description='시/도')
@@ -82,8 +82,8 @@ class ZigbangNearbyDanjiModel(ResponseModel):
     ] = None
     distance_m: Annotated[
         int | None,
-        Field(description='중심에서 단지까지 거리 (m)')
-    ] = Field(default=None, alias='distanceNum')
+        Field(description='중심에서 단지까지 거리 (m)', alias='distanceNum')
+    ] = None
 
 
 class ZigbangNearbyDanjisResponseModel(ResponseModel):
@@ -91,5 +91,5 @@ class ZigbangNearbyDanjisResponseModel(ResponseModel):
 
     danjis: Annotated[
         list[ZigbangNearbyDanjiModel],
-        Field(description='가까운 순 단지')
-    ] = Field(default=[], alias='list')
+        Field(description='가까운 순 단지', alias='list')
+    ] = []

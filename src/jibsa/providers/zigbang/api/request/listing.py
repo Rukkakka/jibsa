@@ -85,8 +85,8 @@ class ZigbangItemCatalogsItemsRequestParameterModel(RequestModel):
     ]
     item_source: Annotated[
         Literal['zigbang', 'coalition'],
-        Field(description="매물 출처. 직방 매물은 'zigbang', 제휴 매물은 'coalition'. 서버가 필수로 요구한다")
-    ] = Field(default='zigbang', alias='itemSource')
+        Field(description="매물 출처. 직방 매물은 'zigbang', 제휴 매물은 'coalition'. 서버가 필수로 요구한다", alias='itemSource')
+    ] = 'zigbang'
 
 
 class ZigbangItemsSubwaysRequestParameterModel(ZigbangItemsFiltersRequestParameterModel):

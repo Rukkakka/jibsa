@@ -13,40 +13,40 @@ class NaverRealPriceModel(ResponseModel):
 
     trade_date: Annotated[
         str,
-        Field(description='계약일 (YYYY-MM-DD)')
-    ] = Field(alias='tradeDate')
+        Field(description='계약일 (YYYY-MM-DD)', alias='tradeDate')
+    ]
     floor: Annotated[
         int | None,
         Field(description='층')
     ] = None
     deal_price: Annotated[
         int | None,
-        Field(description='매매가 (원)')
-    ] = Field(default=None, alias='dealPrice')
+        Field(description='매매가 (원)', alias='dealPrice')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금 (원)')
     ] = None
     monthly_rent: Annotated[
         int | None,
-        Field(description='월세 (원)')
-    ] = Field(default=None, alias='monthlyRent')
+        Field(description='월세 (원)', alias='monthlyRent')
+    ] = None
     is_delete: Annotated[
         bool | None,
-        Field(description='해제(취소)된 거래 여부')
-    ] = Field(default=None, alias='isDelete')
+        Field(description='해제(취소)된 거래 여부', alias='isDelete')
+    ] = None
     trade_category: Annotated[
         str | None,
-        Field(description='중개거래 / 직거래')
-    ] = Field(default=None, alias='tradeCategory')
+        Field(description='중개거래 / 직거래', alias='tradeCategory')
+    ] = None
     registration_date: Annotated[
         str | None,
-        Field(description='신고일')
-    ] = Field(default=None, alias='registrationDate')
+        Field(description='신고일', alias='registrationDate')
+    ] = None
     is_renew: Annotated[
         bool | None,
-        Field(description='갱신 계약 여부 (전월세)')
-    ] = Field(default=None, alias='isRenew')
+        Field(description='갱신 계약 여부 (전월세)', alias='isRenew')
+    ] = None
 
 
 class NaverRealPriceListModel(ResponseModel):
@@ -54,12 +54,12 @@ class NaverRealPriceListModel(ResponseModel):
 
     items: Annotated[
         list[NaverRealPriceModel],
-        Field(description='최근 순 실거래')
-    ] = Field(default=[], alias='list')
+        Field(description='최근 순 실거래', alias='list')
+    ] = []
     has_next_page: Annotated[
         bool | None,
-        Field(description='다음 페이지 여부')
-    ] = Field(default=None, alias='hasNextPage')
+        Field(description='다음 페이지 여부', alias='hasNextPage')
+    ] = None
 
 
 class NaverVillaRealPriceModel(ResponseModel):
@@ -67,36 +67,36 @@ class NaverVillaRealPriceModel(ResponseModel):
 
     trade_date: Annotated[
         str,
-        Field(description='계약일 (YYYY-MM-DD)')
-    ] = Field(alias='tradeDate')
+        Field(description='계약일 (YYYY-MM-DD)', alias='tradeDate')
+    ]
     floor: Annotated[
         int | None,
         Field(description='층')
     ] = None
     deal_price: Annotated[
         int | None,
-        Field(description='매매가 (원). 전월세는 0')
-    ] = Field(default=None, alias='dealPrice')
+        Field(description='매매가 (원). 전월세는 0', alias='dealPrice')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금 (원)')
     ] = None
     monthly_rent: Annotated[
         int | None,
-        Field(description='월세 (원)')
-    ] = Field(default=None, alias='monthlyRent')
+        Field(description='월세 (원)', alias='monthlyRent')
+    ] = None
     is_canceled: Annotated[
         bool | None,
-        Field(description='해제(취소)된 거래 여부')
-    ] = Field(default=None, alias='isCanceled')
+        Field(description='해제(취소)된 거래 여부', alias='isCanceled')
+    ] = None
     trade_category: Annotated[
         str | None,
-        Field(description='중개거래 / 직거래')
-    ] = Field(default=None, alias='tradeCategory')
+        Field(description='중개거래 / 직거래', alias='tradeCategory')
+    ] = None
     is_renew_request_right: Annotated[
         bool | None,
-        Field(description='계약갱신요구권 사용 여부 (전월세)')
-    ] = Field(default=None, alias='isRenewRequestRight')
+        Field(description='계약갱신요구권 사용 여부 (전월세)', alias='isRenewRequestRight')
+    ] = None
 
 
 class NaverVillaRealPricePageModel(ResponseModel):
@@ -104,16 +104,16 @@ class NaverVillaRealPricePageModel(ResponseModel):
 
     total_count: Annotated[
         int | None,
-        Field(description='전체 거래 수')
-    ] = Field(default=None, alias='totalCount')
+        Field(description='전체 거래 수', alias='totalCount')
+    ] = None
     has_next_page: Annotated[
         bool | None,
-        Field(description='다음 페이지 여부')
-    ] = Field(default=None, alias='hasNextPage')
+        Field(description='다음 페이지 여부', alias='hasNextPage')
+    ] = None
     items: Annotated[
         list[NaverVillaRealPriceModel],
-        Field(description='최근 순 실거래')
-    ] = Field(default=[], alias='realPriceList')
+        Field(description='최근 순 실거래', alias='realPriceList')
+    ] = []
 
 
 class NaverComplexVillaRealPricePageV1ResponseModel(NaverResponseModel[NaverVillaRealPricePageModel]):

@@ -26,8 +26,8 @@ class DaangnRegionByOriginalRegionIdRequestPayloadModel(RequestModel):
 
     region_id: Annotated[
         int,
-        Field(gt=0, description='당근 지역 ID. 요약은 동에만 있다')
-    ] = Field(alias='regionId')
+        Field(gt=0, description='당근 지역 ID. 요약은 동에만 있다', alias='regionId')
+    ]
 
 
 class DaangnLivedReviewsByRegionRequestPayloadModel(RequestModel):
@@ -35,8 +35,8 @@ class DaangnLivedReviewsByRegionRequestPayloadModel(RequestModel):
 
     region_id: Annotated[
         int,
-        Field(gt=0, description='당근 지역 ID (동 또는 구)')
-    ] = Field(alias='regionId')
+        Field(gt=0, description='당근 지역 ID (동 또는 구)', alias='regionId')
+    ]
     first: Annotated[
         int,
         Field(ge=1, le=50, description='받을 후기 수. jibsa 는 후기가 있는지만 보므로 1')

@@ -15,8 +15,8 @@ class NaverLegalDivisionInfoListByLevelV1RequestParameterModel(RequestModel):
 
     region_level_type: Annotated[
         Literal['SI'],
-        Field(description='지역 단위. 시·도만 쓴다')
-    ] = Field(default='SI', alias='regionLevelType')
+        Field(description='지역 단위. 시·도만 쓴다', alias='regionLevelType')
+    ] = 'SI'
 
 
 class NaverLegalDivisionSubInfoListV1RequestParameterModel(RequestModel):
@@ -28,12 +28,12 @@ class NaverLegalDivisionSubInfoListV1RequestParameterModel(RequestModel):
 
     legal_division_level_type: Annotated[
         Literal['SI', 'GUN'],
-        Field(description='지역 단위 (SI 시·도, GUN 시·군·구)')
-    ] = Field(alias='legalDivisionLevelType')
+        Field(description='지역 단위 (SI 시·도, GUN 시·군·구)', alias='legalDivisionLevelType')
+    ]
     legal_division_number: Annotated[
         str,
-        Field(pattern=r'^\d{10}$', description='법정동 코드')
-    ] = Field(alias='legalDivisionNumber')
+        Field(pattern=r'^\d{10}$', description='법정동 코드', alias='legalDivisionNumber')
+    ]
 
 
 class NaverMapsSearchAddressV1RequestParameterModel(RequestModel):
@@ -48,8 +48,8 @@ class NaverMapsSearchAddressV1RequestParameterModel(RequestModel):
     ]
     show_match_level: Annotated[
         bool,
-        Field(description='결과에 matchLevel 을 붙인다 (사이트 기본값)')
-    ] = Field(default=True, alias='showMatchLevel')
+        Field(description='결과에 matchLevel 을 붙인다 (사이트 기본값)', alias='showMatchLevel')
+    ] = True
 
 
 class NaverSearchAutocompleteRequestParameterModel(RequestModel):

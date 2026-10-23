@@ -28,12 +28,12 @@ class ZigbangStayMarkerModel(ResponseModel):
     ]
     weekly_price: Annotated[
         int | None,
-        Field(description='주당 요금 (만원, 반올림)')
-    ] = Field(default=None, alias='weeklyPrice')
+        Field(description='주당 요금 (만원, 반올림)', alias='weeklyPrice')
+    ] = None
     has_discount: Annotated[
         bool | None,
-        Field(description='할인 여부')
-    ] = Field(default=None, alias='hasDiscount')
+        Field(description='할인 여부', alias='hasDiscount')
+    ] = None
 
 
 class ZigbangGuestItemsSearchResponseModel(ResponseModel):
@@ -41,15 +41,16 @@ class ZigbangGuestItemsSearchResponseModel(ResponseModel):
 
     item_ids: Annotated[
         list[int],
-        Field(description='조건에 맞는 단기임대 매물 ID')
-    ] = Field(alias='itemIds')
+        Field(description='조건에 맞는 단기임대 매물 ID', alias='itemIds')
+    ]
     total_count: Annotated[
         int,
-        Field(description=(
-            '서버 검색 결과 수. itemIds 를 자르지 않아 늘 itemIds 수와 같다 '
-            '(페이지 인자 없음. 2026-10-11 실측: 서울시 1,491·경기도 568건)'
-        ))
-    ] = Field(alias='totalCount')
+        Field(
+            description='서버 검색 결과 수. itemIds 를 자르지 않아 늘 itemIds 수와 같다 '
+            '(페이지 인자 없음. 2026-10-11 실측: 서울시 1,491·경기도 568건)',
+            alias='totalCount'
+        )
+    ]
 
 
 class ZigbangGuestItemsMarkersResponseModel(ResponseModel):
@@ -91,28 +92,28 @@ class ZigbangStayDiscountModel(ResponseModel):
 
     discount_type: Annotated[
         str,
-        Field(description='할인 종류 (LONG_TERM 장기 계약, INSTANT 즉시)')
-    ] = Field(alias='discountType')
+        Field(description='할인 종류 (LONG_TERM 장기 계약, INSTANT 즉시)', alias='discountType')
+    ]
     condition_weeks: Annotated[
         int | None,
-        Field(description='장기 할인이 붙는 최소 계약 주 수')
-    ] = Field(default=None, alias='conditionWeeks')
+        Field(description='장기 할인이 붙는 최소 계약 주 수', alias='conditionWeeks')
+    ] = None
     condition_days: Annotated[
         int | None,
-        Field(description='즉시 할인이 붙는 조건 일 수')
-    ] = Field(default=None, alias='conditionDays')
+        Field(description='즉시 할인이 붙는 조건 일 수', alias='conditionDays')
+    ] = None
     discount_rate: Annotated[
         float | None,
-        Field(description='할인율 (%)')
-    ] = Field(default=None, alias='discountRate')
+        Field(description='할인율 (%)', alias='discountRate')
+    ] = None
     discount_amount: Annotated[
         int | None,
-        Field(description='할인 금액 (원)')
-    ] = Field(default=None, alias='discountAmount')
+        Field(description='할인 금액 (원)', alias='discountAmount')
+    ] = None
     is_active: Annotated[
         bool | None,
-        Field(description='할인 적용 중 여부')
-    ] = Field(default=None, alias='isActive')
+        Field(description='할인 적용 중 여부', alias='isActive')
+    ] = None
 
 
 class ZigbangStayItemSummaryModel(ResponseModel):
@@ -132,32 +133,32 @@ class ZigbangStayItemSummaryModel(ResponseModel):
     ] = None
     thumbnail_url: Annotated[
         str | None,
-        Field(description='대표 이미지 URL')
-    ] = Field(default=None, alias='thumbnailUrl')
+        Field(description='대표 이미지 URL', alias='thumbnailUrl')
+    ] = None
     weekly_rent: Annotated[
         int | None,
-        Field(description='주당 임대료 (원)')
-    ] = Field(default=None, alias='weeklyRent')
+        Field(description='주당 임대료 (원)', alias='weeklyRent')
+    ] = None
     weekly_manage_cost: Annotated[
         int | None,
-        Field(description='주당 관리비 (원)')
-    ] = Field(default=None, alias='weeklyManageCost')
+        Field(description='주당 관리비 (원)', alias='weeklyManageCost')
+    ] = None
     building_type: Annotated[
         str | None,
-        Field(description='방 종류 (OFFICETEL, APARTMENT, VILLA ...)')
-    ] = Field(default=None, alias='buildingType')
+        Field(description='방 종류 (OFFICETEL, APARTMENT, VILLA ...)', alias='buildingType')
+    ] = None
     room_count: Annotated[
         int | None,
-        Field(description='방 수')
-    ] = Field(default=None, alias='roomCount')
+        Field(description='방 수', alias='roomCount')
+    ] = None
     bathroom_count: Annotated[
         int | None,
-        Field(description='욕실 수')
-    ] = Field(default=None, alias='bathroomCount')
+        Field(description='욕실 수', alias='bathroomCount')
+    ] = None
     size_m2: Annotated[
         float | None,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='sizeM2')
+        Field(description='전용면적 (㎡)', alias='sizeM2')
+    ] = None
     floor: Annotated[
         str | None,
         Field(description='해당 층')
@@ -176,8 +177,8 @@ class ZigbangStayItemSummaryModel(ResponseModel):
     ] = None
     reviewed_at: Annotated[
         str | None,
-        Field(description='검수 완료(노출 시작) 일시 (UTC ISO 8601)')
-    ] = Field(default=None, alias='reviewedAt')
+        Field(description='검수 완료(노출 시작) 일시 (UTC ISO 8601)', alias='reviewedAt')
+    ] = None
 
 
 class ZigbangGuestItemsByIdsResponseModel(ResponseModel):
@@ -198,8 +199,8 @@ class ZigbangStayOptionModel(ResponseModel):
     ] = None
     option_name: Annotated[
         str,
-        Field(description='옵션 코드 (AIR_CONDITIONER ...)')
-    ] = Field(alias='optionName')
+        Field(description='옵션 코드 (AIR_CONDITIONER ...)', alias='optionName')
+    ]
 
 
 class ZigbangStayStationModel(ResponseModel):
@@ -232,8 +233,8 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
     ] = None
     check_status: Annotated[
         str | None,
-        Field(description="검수 상태 ('COMPLETE' 이면 검수 완료)")
-    ] = Field(default=None, alias='checkStatus')
+        Field(description="검수 상태 ('COMPLETE' 이면 검수 완료)", alias='checkStatus')
+    ] = None
     title: Annotated[
         str | None,
         Field(description='매물 제목')
@@ -244,8 +245,8 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
     ] = None
     new_address: Annotated[
         str | None,
-        Field(description='도로명 주소')
-    ] = Field(default=None, alias='newAddress')
+        Field(description='도로명 주소', alias='newAddress')
+    ] = None
     lat: Annotated[
         float | None,
         Field(description='위도')
@@ -256,104 +257,104 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
     ] = None
     building_type: Annotated[
         str | None,
-        Field(description='방 종류 (OFFICETEL ...)')
-    ] = Field(default=None, alias='buildingType')
+        Field(description='방 종류 (OFFICETEL ...)', alias='buildingType')
+    ] = None
     floor: Annotated[
         str | None,
         Field(description='해당 층')
     ] = None
     room_count: Annotated[
         int | None,
-        Field(description='방 수')
-    ] = Field(default=None, alias='roomCount')
+        Field(description='방 수', alias='roomCount')
+    ] = None
     bathroom_count: Annotated[
         int | None,
-        Field(description='욕실 수')
-    ] = Field(default=None, alias='bathroomCount')
+        Field(description='욕실 수', alias='bathroomCount')
+    ] = None
     is_duplex: Annotated[
         bool | None,
-        Field(description='복층 여부')
-    ] = Field(default=None, alias='isDuplex')
+        Field(description='복층 여부', alias='isDuplex')
+    ] = None
     size_m2: Annotated[
         float | None,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='sizeM2')
+        Field(description='전용면적 (㎡)', alias='sizeM2')
+    ] = None
     has_elevator: Annotated[
         bool | None,
-        Field(description='엘리베이터 유무')
-    ] = Field(default=None, alias='hasElevator')
+        Field(description='엘리베이터 유무', alias='hasElevator')
+    ] = None
     parking_type: Annotated[
         str | None,
-        Field(description='주차 (AVAILABLE, UNAVAILABLE ...)')
-    ] = Field(default=None, alias='parkingType')
+        Field(description='주차 (AVAILABLE, UNAVAILABLE ...)', alias='parkingType')
+    ] = None
     parking_fee: Annotated[
         str | None,
-        Field(description='주차비 (PAID, FREE)')
-    ] = Field(default=None, alias='parkingFee')
+        Field(description='주차비 (PAID, FREE)', alias='parkingFee')
+    ] = None
     description: Annotated[
         str | None,
         Field(description='호스트가 쓴 상세 설명')
     ] = None
     weekly_rent: Annotated[
         int | None,
-        Field(description='주당 임대료 (원)')
-    ] = Field(default=None, alias='weeklyRent')
+        Field(description='주당 임대료 (원)', alias='weeklyRent')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금 (원)')
     ] = None
     is_weekly_manage_cost_absent: Annotated[
         bool | None,
-        Field(description='관리비 없음')
-    ] = Field(default=None, alias='isWeeklyManageCostAbsent')
+        Field(description='관리비 없음', alias='isWeeklyManageCostAbsent')
+    ] = None
     weekly_manage_cost: Annotated[
         int | None,
-        Field(description='주당 관리비 (원)')
-    ] = Field(default=None, alias='weeklyManageCost')
+        Field(description='주당 관리비 (원)', alias='weeklyManageCost')
+    ] = None
     manage_cost_includes: Annotated[
         dict[str, bool] | None,
-        Field(description='관리비 포함 여부 (gas, water, electricity)')
-    ] = Field(default=None, alias='manageCostIncludes')
+        Field(description='관리비 포함 여부 (gas, water, electricity)', alias='manageCostIncludes')
+    ] = None
     cleaning_fee: Annotated[
         int | None,
-        Field(description='청소비 (원)')
-    ] = Field(default=None, alias='cleaningFee')
+        Field(description='청소비 (원)', alias='cleaningFee')
+    ] = None
     cleaning_fee_free: Annotated[
         bool | None,
-        Field(description='청소비 무료')
-    ] = Field(default=None, alias='cleaningFeeFree')
+        Field(description='청소비 무료', alias='cleaningFeeFree')
+    ] = None
     refund_policy: Annotated[
         str | None,
-        Field(description='환불 정책 (FLEXIBLE, STANDARD, STRICT)')
-    ] = Field(default=None, alias='refundPolicy')
+        Field(description='환불 정책 (FLEXIBLE, STANDARD, STRICT)', alias='refundPolicy')
+    ] = None
     min_contract_weeks: Annotated[
         int | None,
-        Field(description='최소 계약 주 수')
-    ] = Field(default=None, alias='minContractWeeks')
+        Field(description='최소 계약 주 수', alias='minContractWeeks')
+    ] = None
     max_contract_weeks: Annotated[
         int | None,
-        Field(description='최대 계약 주 수')
-    ] = Field(default=None, alias='maxContractWeeks')
+        Field(description='최대 계약 주 수', alias='maxContractWeeks')
+    ] = None
     max_guests: Annotated[
         int | None,
-        Field(description='최대 인원')
-    ] = Field(default=None, alias='maxGuests')
+        Field(description='최대 인원', alias='maxGuests')
+    ] = None
     discounts: Annotated[
         list[ZigbangStayDiscountModel],
         Field(description='할인 조건')
     ] = []
     item_options: Annotated[
         list[ZigbangStayOptionModel],
-        Field(description='옵션')
-    ] = Field(default=[], alias='itemOptions')
+        Field(description='옵션', alias='itemOptions')
+    ] = []
     nearby_stations: Annotated[
         list[ZigbangStayStationModel],
-        Field(description='인근 역')
-    ] = Field(default=[], alias='nearbyStations')
+        Field(description='인근 역', alias='nearbyStations')
+    ] = []
     created_at: Annotated[
         str | None,
-        Field(description='등록 일시 (UTC ISO 8601)')
-    ] = Field(default=None, alias='createdAt')
+        Field(description='등록 일시 (UTC ISO 8601)', alias='createdAt')
+    ] = None
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +378,8 @@ class ZigbangStayPriceDiscountModel(ResponseModel):
     ] = None
     saved_amount: Annotated[
         int | None,
-        Field(description='할인 금액 (**원**)')
-    ] = Field(default=None, alias='savedAmount')
+        Field(description='할인 금액 (**원**)', alias='savedAmount')
+    ] = None
 
 
 class ZigbangGuestItemsPriceCalculationResponseModel(ResponseModel):
@@ -390,53 +391,53 @@ class ZigbangGuestItemsPriceCalculationResponseModel(ResponseModel):
 
     total_days: Annotated[
         int | None,
-        Field(description='계약 일수')
-    ] = Field(default=None, alias='totalDays')
+        Field(description='계약 일수', alias='totalDays')
+    ] = None
     weeks: Annotated[
         int | None,
         Field(description='계약 주 수 (일수를 7로 나눈 몫)')
     ] = None
     remaining_days: Annotated[
         int | None,
-        Field(description='주 단위로 나누고 남은 일수')
-    ] = Field(default=None, alias='remainingDays')
+        Field(description='주 단위로 나누고 남은 일수', alias='remainingDays')
+    ] = None
     total_rent: Annotated[
         int | None,
-        Field(description='기간 임대료 (원, 할인 전)')
-    ] = Field(default=None, alias='totalRent')
+        Field(description='기간 임대료 (원, 할인 전)', alias='totalRent')
+    ] = None
     total_manage_cost: Annotated[
         int | None,
-        Field(description='기간 관리비 (원)')
-    ] = Field(default=None, alias='totalManageCost')
+        Field(description='기간 관리비 (원)', alias='totalManageCost')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금 (원, 돌려받는 돈)')
     ] = None
     cleaning_fee: Annotated[
         int | None,
-        Field(description='청소비 (원)')
-    ] = Field(default=None, alias='cleaningFee')
+        Field(description='청소비 (원)', alias='cleaningFee')
+    ] = None
     pet_cleaning_fee: Annotated[
         int | None,
-        Field(description='반려동물 청소비 (원)')
-    ] = Field(default=None, alias='petCleaningFee')
+        Field(description='반려동물 청소비 (원)', alias='petCleaningFee')
+    ] = None
     discounts: Annotated[
         list[ZigbangStayPriceDiscountModel],
         Field(description='적용된 할인')
     ] = []
     total_discount_amount: Annotated[
         int | None,
-        Field(description='할인 합계 (원)')
-    ] = Field(default=None, alias='totalDiscountAmount')
+        Field(description='할인 합계 (원)', alias='totalDiscountAmount')
+    ] = None
     total_promotion_discount: Annotated[
         int | None,
-        Field(description='프로모션 할인 합계 (원)')
-    ] = Field(default=None, alias='totalPromotionDiscount')
+        Field(description='프로모션 할인 합계 (원)', alias='totalPromotionDiscount')
+    ] = None
     platform_fee: Annotated[
         int | None,
-        Field(description='직방 이용료 (원)')
-    ] = Field(default=None, alias='platformFee')
+        Field(description='직방 이용료 (원)', alias='platformFee')
+    ] = None
     total_guest_payment: Annotated[
         int | None,
-        Field(description='세입자가 내는 총액 (원, 보증금 포함)')
-    ] = Field(default=None, alias='totalGuestPayment')
+        Field(description='세입자가 내는 총액 (원, 보증금 포함)', alias='totalGuestPayment')
+    ] = None

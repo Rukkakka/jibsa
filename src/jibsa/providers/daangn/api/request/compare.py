@@ -14,8 +14,8 @@ class DaangnComplexCompareRequestPayloadModel(RequestModel):
 
     original_id: Annotated[
         str,
-        Field(min_length=1, description='숫자 단지 ID')
-    ] = Field(alias='originalId')
+        Field(min_length=1, description='숫자 단지 ID', alias='originalId')
+    ]
 
 
 class DaangnNearbyComplexesRequestPayloadModel(RequestModel):
@@ -27,8 +27,8 @@ class DaangnNearbyComplexesRequestPayloadModel(RequestModel):
     ] = 300
     region3_id: Annotated[
         int,
-        Field(gt=0, description='당근 동 ID')
-    ] = Field(alias='region3Id')
+        Field(gt=0, description='당근 동 ID', alias='region3Id')
+    ]
 
 
 class DaangnComplexesByOriginalComplexIdsRequestPayloadModel(RequestModel):
@@ -36,9 +36,9 @@ class DaangnComplexesByOriginalComplexIdsRequestPayloadModel(RequestModel):
 
     complex_ids: Annotated[
         list[str],
-        Field(min_length=1, description='숫자 단지 ID (255개도 한 번에 된다)')
-    ] = Field(alias='complexIds')
+        Field(min_length=1, description='숫자 단지 ID (255개도 한 번에 된다)', alias='complexIds')
+    ]
     sales_types: Annotated[
         list[DaangnSalesType],
-        Field(description='현재 매물 수를 셀 매물 종류. 빈 목록이면 전체')
-    ] = Field(default=[], alias='salesTypes')
+        Field(description='현재 매물 수를 셀 매물 종류. 빈 목록이면 전체', alias='salesTypes')
+    ] = []

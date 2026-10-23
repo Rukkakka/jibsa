@@ -24,8 +24,8 @@ class DaangnReviewComplexModel(ResponseModel):
 
     original_id: Annotated[
         str,
-        Field(description='숫자 단지 ID')
-    ] = Field(alias='originalId')
+        Field(description='숫자 단지 ID', alias='originalId')
+    ]
     name: Annotated[
         str,
         Field(description='단지 이름')
@@ -36,8 +36,8 @@ class DaangnReviewComplexModel(ResponseModel):
     ] = None
     lived_review_count: Annotated[
         int | None,
-        Field(description='거주 후기 수')
-    ] = Field(default=None, alias='livedReviewCount')
+        Field(description='거주 후기 수', alias='livedReviewCount')
+    ] = None
 
 
 class DaangnMapReviewsResponseModel(ResponseModel):
@@ -54,8 +54,8 @@ class DaangnLivedReviewSummaryModel(ResponseModel):
 
     source_review_count: Annotated[
         int | None,
-        Field(description='요약에 쓰인 후기 수')
-    ] = Field(default=None, alias='sourceReviewCount')
+        Field(description='요약에 쓰인 후기 수', alias='sourceReviewCount')
+    ] = None
 
 
 class DaangnRegionReviewSummaryModel(ResponseModel):
@@ -63,8 +63,8 @@ class DaangnRegionReviewSummaryModel(ResponseModel):
 
     lived_review_summary: Annotated[
         DaangnLivedReviewSummaryModel | None,
-        Field(description='동네 후기 요약. 구이거나 후기가 적으면 null')
-    ] = Field(default=None, alias='livedReviewSummary')
+        Field(description='동네 후기 요약. 구이거나 후기가 적으면 null', alias='livedReviewSummary')
+    ] = None
 
 
 class DaangnRegionByOriginalRegionIdDataModel(ResponseModel):
@@ -72,8 +72,8 @@ class DaangnRegionByOriginalRegionIdDataModel(ResponseModel):
 
     region_by_original_region_id: Annotated[
         DaangnRegionReviewSummaryModel | None,
-        Field(description='지역')
-    ] = Field(default=None, alias='regionByOriginalRegionId')
+        Field(description='지역', alias='regionByOriginalRegionId')
+    ] = None
 
 
 class DaangnRegionByOriginalRegionIdResponseModel(DaangnGraphQLResponseModel):
@@ -94,8 +94,8 @@ class DaangnLivedReviewsConnectionModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnLivedReviewsByRegionDataModel(ResponseModel):
@@ -103,8 +103,8 @@ class DaangnLivedReviewsByRegionDataModel(ResponseModel):
 
     lived_reviews_by_region: Annotated[
         DaangnLivedReviewsConnectionModel | None,
-        Field(description='동네 후기')
-    ] = Field(default=None, alias='livedReviewsByRegion')
+        Field(description='동네 후기', alias='livedReviewsByRegion')
+    ] = None
 
 
 class DaangnLivedReviewsByRegionResponseModel(DaangnGraphQLResponseModel):

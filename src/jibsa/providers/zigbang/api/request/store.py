@@ -24,12 +24,12 @@ class ZigbangStoreBusinessModel(RequestModel):
     ]
     businesses: Annotated[
         list[str],
-        Field(min_length=1, description='고른 업종 (예: 카페/커피)')
-    ] = Field(alias='업종')
+        Field(min_length=1, description='고른 업종 (예: 카페/커피)', alias='업종')
+    ]
     is_activated: Annotated[
         bool,
-        Field(description='조건 사용 여부. 웹은 늘 true 로 보낸다')
-    ] = Field(default=True, alias='isActivated')
+        Field(description='조건 사용 여부. 웹은 늘 true 로 보낸다', alias='isActivated')
+    ] = True
 
 
 class ZigbangStoreArticleStoresV2RequestPayloadModel(RequestModel):
@@ -64,16 +64,16 @@ class ZigbangStoreArticleStoresV2RequestPayloadModel(RequestModel):
     ] = False
     businesses: Annotated[
         list[ZigbangStoreBusinessModel],
-        Field(description='업종 조건. 비우면 전체')
-    ] = Field(default=[], alias='업종')
+        Field(description='업종 조건. 비우면 전체', alias='업종')
+    ] = []
     area_min_m2: Annotated[
         float | None,
-        Field(ge=0, description='면적 하한 (㎡, 이상)')
-    ] = Field(default=None, alias='면적_gteq')
+        Field(ge=0, description='면적 하한 (㎡, 이상)', alias='면적_gteq')
+    ] = None
     area_max_m2: Annotated[
         float | None,
-        Field(gt=0, description='면적 상한 (㎡, 미만)')
-    ] = Field(default=None, alias='면적_lt')
+        Field(gt=0, description='면적 상한 (㎡, 미만)', alias='면적_lt')
+    ] = None
 
 
 class ZigbangStoreArticleStoresListV2RequestPayloadModel(RequestModel):

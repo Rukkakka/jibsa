@@ -20,24 +20,24 @@ class NaverMarketPriceHistoryModel(ResponseModel):
     ] = None
     deal_prices: Annotated[
         dict[str, int | None],
-        Field(description='기준일별 매매 시세 평균')
-    ] = Field(default={}, alias='dealPrices')
+        Field(description='기준일별 매매 시세 평균', alias='dealPrices')
+    ] = {}
     deposit_prices: Annotated[
         dict[str, int | None],
-        Field(description='기준일별 전세 시세 평균')
-    ] = Field(default={}, alias='depositPrices')
+        Field(description='기준일별 전세 시세 평균', alias='depositPrices')
+    ] = {}
     deal_price_ranges: Annotated[
         dict[str, NaverPriceRangeModel | None],
-        Field(description='기준일별 매매 시세 범위')
-    ] = Field(default={}, alias='dealPriceRanges')
+        Field(description='기준일별 매매 시세 범위', alias='dealPriceRanges')
+    ] = {}
     deposit_price_ranges: Annotated[
         dict[str, NaverPriceRangeModel | None],
-        Field(description='기준일별 전세 시세 범위')
-    ] = Field(default={}, alias='depositPriceRanges')
+        Field(description='기준일별 전세 시세 범위', alias='depositPriceRanges')
+    ] = {}
     lease_per_deal_rates: Annotated[
         dict[str, NaverPriceRangeModel | None],
-        Field(description='기준일별 전세가율 범위 (%)')
-    ] = Field(default={}, alias='leasePerDealRates')
+        Field(description='기준일별 전세가율 범위 (%)', alias='leasePerDealRates')
+    ] = {}
 
 
 class NaverComplexMarketPriceListV1ResponseModel(NaverResponseModel[list[NaverMarketPriceHistoryModel]]):

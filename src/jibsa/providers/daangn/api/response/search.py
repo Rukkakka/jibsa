@@ -89,8 +89,8 @@ class DaangnArticleFeedModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnArticleFeedDataModel(ResponseModel):
@@ -98,8 +98,8 @@ class DaangnArticleFeedDataModel(ResponseModel):
 
     article_feed: Annotated[
         DaangnArticleFeedModel | None,
-        Field(description='매물 피드')
-    ] = Field(default=None, alias='articleFeed')
+        Field(description='매물 피드', alias='articleFeed')
+    ] = None
 
 
 class DaangnArticleFeedResponseModel(DaangnGraphQLResponseModel):
@@ -145,8 +145,8 @@ class DaangnArticlePointModel(ResponseModel):
 
     original_article_id: Annotated[
         str,
-        Field(description='숫자 매물 ID')
-    ] = Field(alias='originalArticleId')
+        Field(description='숫자 매물 ID', alias='originalArticleId')
+    ]
     coordinate: Annotated[
         DaangnCoordinateModel | None,
         Field(description='매물 좌표')
@@ -158,8 +158,8 @@ class DaangnArticleMapPointsDataModel(ResponseModel):
 
     article_map_points: Annotated[
         list[DaangnArticlePointModel] | None,
-        Field(description='좌표 범위 안 핀. 순서는 정해져 있지 않고, 넓은 범위는 10000 개에서 잘린다')
-    ] = Field(default=None, alias='articleMapPoints')
+        Field(description='좌표 범위 안 핀. 순서는 정해져 있지 않고, 넓은 범위는 10000 개에서 잘린다', alias='articleMapPoints')
+    ] = None
 
 
 class DaangnArticleMapPointsResponseModel(DaangnGraphQLResponseModel):
@@ -198,8 +198,8 @@ class DaangnSubwayStationArticleConnectionDataModel(ResponseModel):
 
     subway_station_article_connection: Annotated[
         DaangnCommuteStationArticleConnectionModel | None,
-        Field(description='역 주변 매물. 카드에 상태·거래 조건·역별 도보 시간이 다 있다')
-    ] = Field(default=None, alias='subwayStationArticleConnection')
+        Field(description='역 주변 매물. 카드에 상태·거래 조건·역별 도보 시간이 다 있다', alias='subwayStationArticleConnection')
+    ] = None
 
 
 class DaangnSubwayStationArticleConnectionResponseModel(DaangnGraphQLResponseModel):

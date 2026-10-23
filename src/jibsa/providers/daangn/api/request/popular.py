@@ -17,12 +17,12 @@ class DaangnGetViewRankingArticlesRequestPayloadModel(RequestModel):
 
     region_id: Annotated[
         int,
-        Field(gt=0, description='당근 지역 ID (동)')
-    ] = Field(alias='regionId')
+        Field(gt=0, description='당근 지역 ID (동)', alias='regionId')
+    ]
     sales_types: Annotated[
         list[DaangnSalesType],
-        Field(description='매물 종류. 빈 목록이면 전체')
-    ] = Field(default=[], alias='salesTypes')
+        Field(description='매물 종류. 빈 목록이면 전체', alias='salesTypes')
+    ] = []
     limit: Annotated[
         int,
         Field(ge=1, description='받을 매물 수 (웹은 30)')

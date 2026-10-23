@@ -20,24 +20,24 @@ class NaverComplexMaintenanceFeeModel(ResponseModel):
 
     year_month: Annotated[
         str | None,
-        Field(description='가장 최근 달 (YYYY-MM)')
-    ] = Field(default=None, alias='yearMonth')
+        Field(description='가장 최근 달 (YYYY-MM)', alias='yearMonth')
+    ] = None
     year_month_fee: Annotated[
         int | None,
-        Field(description='가장 최근 달 관리비')
-    ] = Field(default=None, alias='yearMonthFee')
+        Field(description='가장 최근 달 관리비', alias='yearMonthFee')
+    ] = None
     month_average_fee: Annotated[
         int | None,
-        Field(description='월평균 관리비')
-    ] = Field(default=None, alias='monthAverageFee')
+        Field(description='월평균 관리비', alias='monthAverageFee')
+    ] = None
     summer_average_fee: Annotated[
         int | None,
-        Field(description='여름 평균 관리비')
-    ] = Field(default=None, alias='summerAverageFee')
+        Field(description='여름 평균 관리비', alias='summerAverageFee')
+    ] = None
     winter_average_fee: Annotated[
         int | None,
-        Field(description='겨울 평균 관리비 (난방비 때문에 높다)')
-    ] = Field(default=None, alias='winterAverageFee')
+        Field(description='겨울 평균 관리비 (난방비 때문에 높다)', alias='winterAverageFee')
+    ] = None
 
 
 class NaverMarketPriceModel(ResponseModel):
@@ -49,24 +49,24 @@ class NaverMarketPriceModel(ResponseModel):
     ] = None
     base_date: Annotated[
         str | None,
-        Field(description='시세 기준일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='baseDate')
+        Field(description='시세 기준일 (YYYY-MM-DD)', alias='baseDate')
+    ] = None
     deal_price_range: Annotated[
         NaverPriceRangeModel | None,
-        Field(description='매매 시세 범위')
-    ] = Field(default=None, alias='dealPriceRange')
+        Field(description='매매 시세 범위', alias='dealPriceRange')
+    ] = None
     deal_average_price: Annotated[
         int | None,
-        Field(description='매매 시세 평균')
-    ] = Field(default=None, alias='dealAveragePrice')
+        Field(description='매매 시세 평균', alias='dealAveragePrice')
+    ] = None
     deposit_price_range: Annotated[
         NaverPriceRangeModel | None,
-        Field(description='전세 시세 범위')
-    ] = Field(default=None, alias='depositPriceRange')
+        Field(description='전세 시세 범위', alias='depositPriceRange')
+    ] = None
     lease_per_deal_rate: Annotated[
         NaverPriceRangeModel | None,
-        Field(description='전세가율 범위 (%)')
-    ] = Field(default=None, alias='leasePerDealRate')
+        Field(description='전세가율 범위 (%)', alias='leasePerDealRate')
+    ] = None
 
 
 class NaverRealPriceSummaryTradeModel(ResponseModel):
@@ -74,28 +74,28 @@ class NaverRealPriceSummaryTradeModel(ResponseModel):
 
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='tradeDate')
+        Field(description='계약일 (YYYY-MM-DD)', alias='tradeDate')
+    ] = None
     floor: Annotated[
         int | None,
         Field(description='층')
     ] = None
     deal_price: Annotated[
         int | None,
-        Field(description='매매가')
-    ] = Field(default=None, alias='dealPrice')
+        Field(description='매매가', alias='dealPrice')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금')
     ] = None
     is_delete: Annotated[
         bool | None,
-        Field(description='해제(취소)된 거래')
-    ] = Field(default=None, alias='isDelete')
+        Field(description='해제(취소)된 거래', alias='isDelete')
+    ] = None
     trade_category: Annotated[
         str | None,
-        Field(description='중개거래 / 직거래')
-    ] = Field(default=None, alias='tradeCategory')
+        Field(description='중개거래 / 직거래', alias='tradeCategory')
+    ] = None
 
 
 class NaverRealPriceSummaryModel(ResponseModel):
@@ -103,16 +103,16 @@ class NaverRealPriceSummaryModel(ResponseModel):
 
     min_price: Annotated[
         NaverRealPriceSummaryTradeModel | None,
-        Field(description='최저가 거래')
-    ] = Field(default=None, alias='minPrice')
+        Field(description='최저가 거래', alias='minPrice')
+    ] = None
     max_price: Annotated[
         NaverRealPriceSummaryTradeModel | None,
-        Field(description='최고가 거래')
-    ] = Field(default=None, alias='maxPrice')
+        Field(description='최고가 거래', alias='maxPrice')
+    ] = None
     avg_price: Annotated[
         int | None,
-        Field(description='평균가 (매매는 매매가, 전세는 보증금)')
-    ] = Field(default=None, alias='avgPrice')
+        Field(description='평균가 (매매는 매매가, 전세는 보증금)', alias='avgPrice')
+    ] = None
 
 
 class NaverReconstructionStepModel(ResponseModel):
@@ -120,12 +120,12 @@ class NaverReconstructionStepModel(ResponseModel):
 
     step_type: Annotated[
         str | None,
-        Field(description='단계 코드 (사이트 COMPLEX_RECONSTRUCTION_STEP: 01 기본계획수립 … 11 이전고지)')
-    ] = Field(default=None, alias='stepType')
+        Field(description='단계 코드 (사이트 COMPLEX_RECONSTRUCTION_STEP: 01 기본계획수립 … 11 이전고지)', alias='stepType')
+    ] = None
     implementation_date: Annotated[
         str | None,
-        Field(description='그 단계에 이른 날 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='implementationDate')
+        Field(description='그 단계에 이른 날 (YYYY-MM-DD)', alias='implementationDate')
+    ] = None
 
 
 class NaverComplexReconstructionModel(ResponseModel):
@@ -133,24 +133,24 @@ class NaverComplexReconstructionModel(ResponseModel):
 
     construction_company: Annotated[
         str | None,
-        Field(description='시공사 (선정된 곳)')
-    ] = Field(default=None, alias='constructionCompany')
+        Field(description='시공사 (선정된 곳)', alias='constructionCompany')
+    ] = None
     current_business_step: Annotated[
         NaverReconstructionStepModel | None,
-        Field(description='현재 단계')
-    ] = Field(default=None, alias='currentBusinessStep')
+        Field(description='현재 단계', alias='currentBusinessStep')
+    ] = None
     business_steps: Annotated[
         list[NaverReconstructionStepModel],
-        Field(description='단계 전체 (01~11 순서, 지나지 않은 단계는 날짜 없음)')
-    ] = Field(default=[], alias='businessSteps')
+        Field(description='단계 전체 (01~11 순서, 지나지 않은 단계는 날짜 없음)', alias='businessSteps')
+    ] = []
     household_count: Annotated[
         int | None,
-        Field(description='재건축 후 계획 세대수')
-    ] = Field(default=None, alias='householdCount')
+        Field(description='재건축 후 계획 세대수', alias='householdCount')
+    ] = None
     building_area_to_land_ratio: Annotated[
         float | None,
-        Field(description='재건축 계획 용적률 (%)')
-    ] = Field(default=None, alias='buildingAreaToLandRatio')
+        Field(description='재건축 계획 용적률 (%)', alias='buildingAreaToLandRatio')
+    ] = None
 
 
 class NaverDeclaredValueModel(ResponseModel):
@@ -158,16 +158,16 @@ class NaverDeclaredValueModel(ResponseModel):
 
     base_date: Annotated[
         str | None,
-        Field(description='기준일')
-    ] = Field(default=None, alias='baseDate')
+        Field(description='기준일', alias='baseDate')
+    ] = None
     min_price: Annotated[
         int | None,
-        Field(description='최저 공시가격 (원)')
-    ] = Field(default=None, alias='minPrice')
+        Field(description='최저 공시가격 (원)', alias='minPrice')
+    ] = None
     max_price: Annotated[
         int | None,
-        Field(description='최고 공시가격 (원)')
-    ] = Field(default=None, alias='maxPrice')
+        Field(description='최고 공시가격 (원)', alias='maxPrice')
+    ] = None
 
 
 class NaverHoldingTaxRangeModel(ResponseModel):
@@ -175,12 +175,12 @@ class NaverHoldingTaxRangeModel(ResponseModel):
 
     property_tax: Annotated[
         NaverPropertyTaxModel | None,
-        Field(description='재산세')
-    ] = Field(default=None, alias='propertyTax')
+        Field(description='재산세', alias='propertyTax')
+    ] = None
     total_real_estate_tax: Annotated[
         NaverTotalRealEstateTaxModel | None,
-        Field(description='종합부동산세')
-    ] = Field(default=None, alias='totalRealEstateTax')
+        Field(description='종합부동산세', alias='totalRealEstateTax')
+    ] = None
 
 
 class NaverHoldingTaxModel(ResponseModel):

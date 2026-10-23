@@ -23,28 +23,28 @@ class NaverLegalDivisionTrendRequestParameterModel(RequestModel):
 
     legal_division_number: Annotated[
         str,
-        Field(pattern=r'^\d{10}$', description='법정동 코드 (동·구)')
-    ] = Field(alias='legalDivisionNumber')
+        Field(pattern=r'^\d{10}$', description='법정동 코드 (동·구)', alias='legalDivisionNumber')
+    ]
     real_estate_type_code: Annotated[
         Literal['A01'],
-        Field(description='매물 유형. 아파트만 값이 있다')
-    ] = Field(default='A01', alias='realEstateTypeCode')
+        Field(description='매물 유형. 아파트만 값이 있다', alias='realEstateTypeCode')
+    ] = 'A01'
     trade_type: Annotated[
         Literal['A1', 'B1'],
-        Field(description='거래 유형 (A1 매매, B1 전세). 월세는 400')
-    ] = Field(default='A1', alias='tradeType')
+        Field(description='거래 유형 (A1 매매, B1 전세). 월세는 400', alias='tradeType')
+    ] = 'A1'
     offset: Annotated[
         NaverTrendOffset,
         Field(description='기간')
     ] = 'P-1Y'
     pyeong_range_lower: Annotated[
         int | None,
-        Field(ge=0, description='평형대 하한 (평). 사이트는 10평 단위 (10~20 … 50~60)')
-    ] = Field(default=None, alias='pyeongRangeLower')
+        Field(ge=0, description='평형대 하한 (평). 사이트는 10평 단위 (10~20 … 50~60)', alias='pyeongRangeLower')
+    ] = None
     pyeong_range_upper: Annotated[
         int | None,
-        Field(ge=0, description='평형대 상한 (평)')
-    ] = Field(default=None, alias='pyeongRangeUpper')
+        Field(ge=0, description='평형대 상한 (평)', alias='pyeongRangeUpper')
+    ] = None
 
 
 class NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel(NaverLegalDivisionTrendRequestParameterModel):

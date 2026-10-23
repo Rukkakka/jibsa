@@ -42,12 +42,12 @@ class DaangnArticleFeedInputModel(RequestModel):
 
     location_filter: Annotated[
         DaangnLocationFilterModel,
-        Field(description='지역 조건')
-    ] = Field(alias='locationFilter')
+        Field(description='지역 조건', alias='locationFilter')
+    ]
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)
     surface: Annotated[
         Literal['MAP'],
         Field(description='피드를 보여 주는 화면. 웹 지도 패널과 같은 MAP')
@@ -76,12 +76,12 @@ class DaangnArticlesCountInputModel(RequestModel):
 
     location_filter: Annotated[
         DaangnLocationFilterModel,
-        Field(description='지역 조건')
-    ] = Field(alias='locationFilter')
+        Field(description='지역 조건', alias='locationFilter')
+    ]
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건 (articleFeed 와 같다)')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건 (articleFeed 와 같다)', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)
 
 
 class DaangnArticlesCountRequestPayloadModel(RequestModel):
@@ -98,12 +98,12 @@ class DaangnBoundsLocationFilterModel(RequestModel):
 
     ne_coordinate: Annotated[
         DaangnCoordinateInputModel,
-        Field(description='북동 꼭짓점')
-    ] = Field(alias='neCoordinate')
+        Field(description='북동 꼭짓점', alias='neCoordinate')
+    ]
     sw_coordinate: Annotated[
         DaangnCoordinateInputModel,
-        Field(description='남서 꼭짓점')
-    ] = Field(alias='swCoordinate')
+        Field(description='남서 꼭짓점', alias='swCoordinate')
+    ]
 
 
 class DaangnArticleMapPointsInputModel(RequestModel):
@@ -111,12 +111,12 @@ class DaangnArticleMapPointsInputModel(RequestModel):
 
     location_filter: Annotated[
         DaangnBoundsLocationFilterModel,
-        Field(description='좌표 범위')
-    ] = Field(alias='locationFilter')
+        Field(description='좌표 범위', alias='locationFilter')
+    ]
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건 (articleFeed 와 같다)')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건 (articleFeed 와 같다)', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)
 
 
 class DaangnArticleMapPointsRequestPayloadModel(RequestModel):
@@ -133,8 +133,8 @@ class DaangnArticlesByOriginalArticleIdsRequestPayloadModel(RequestModel):
 
     original_article_ids: Annotated[
         list[str],
-        Field(min_length=1, max_length=20, description='숫자 매물 ID. 웹처럼 한 번에 20개까지')
-    ] = Field(alias='originalArticleIds')
+        Field(min_length=1, max_length=20, description='숫자 매물 ID. 웹처럼 한 번에 20개까지', alias='originalArticleIds')
+    ]
 
 
 class DaangnSubwayStationArticleConnectionRequestPayloadModel(RequestModel):
@@ -145,8 +145,8 @@ class DaangnSubwayStationArticleConnectionRequestPayloadModel(RequestModel):
 
     subway_station_poi_id: Annotated[
         str,
-        Field(min_length=1, description='역 ID (searchSubwayStationPois 의 id)')
-    ] = Field(alias='subwayStationPoiId')
+        Field(min_length=1, description='역 ID (searchSubwayStationPois 의 id)', alias='subwayStationPoiId')
+    ]
     first: Annotated[
         int,
         Field(ge=1, le=100, description='한 번에 받을 매물 수 (서버는 100 까지 준다)')
@@ -157,5 +157,5 @@ class DaangnSubwayStationArticleConnectionRequestPayloadModel(RequestModel):
     ] = None
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건 (articleFeed 와 같다)')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건 (articleFeed 와 같다)', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)
