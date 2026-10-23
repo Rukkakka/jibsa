@@ -76,13 +76,13 @@ from typing import (
 | 넣을 것 | 위치 | 이유 |
 | --- | --- | --- |
 | 제약 (`ge`, `gt`, `le`, `min_length`, `max_length`, `pattern`), `description`, `exclude`, `repr` | `Annotated` 안 `Field()` | 검사기가 알 필요가 없다. 대입 위치에 두면 필수 필드(`x: int = Field(gt=0)`)도 읽는 사람에게 기본값이 있는 것처럼 보인다 |
-| `alias` | `Annotated` 안 `Field()` | Pylance(pyright)가 읽으면 생성자 인자 이름이 별칭(camelCase)으로 바뀐다. 모델은 `populate_by_name=True` 라 코드에서 필드 이름(snake_case)으로 만든다 |
+| `alias` | `Annotated` 안 `Field()` | Pylance(pyright)가 읽으면 생성자 인자 이름이 별칭(camelCase)으로 바뀐다. 모델은 `validate_by_name=True` 라 코드에서 필드 이름(snake_case)으로 만든다 |
 | 기본값 | 대입 위치 `= value` | 검사기가 읽어야 선택 인자로 안다 |
 | `default_factory` | 대입 위치 `= Field(default_factory=...)` | 위와 같다. 모델 인스턴스처럼 호출해서 만들어야 하는 기본값에만 쓴다. 대입 위치에 `Field()` 가 남는 유일한 경우 |
 
-- 별칭을 쓰는 모델은 `populate_by_name=True` 인 `RequestModel`·`ResponseModel` 을 상속한다. 이 설정 없이
+- 별칭을 쓰는 모델은 `validate_by_name=True` 인 `RequestModel`·`ResponseModel` 을 상속한다. 이 설정 없이
   `alias` 를 `Annotated` 안에 두면 검사기는 필드 이름을 받는다고 보는데 런타임은 별칭만 받아 서로 어긋난다.
-- `alias` 위치는 Pylance 에만 영향을 준다. mypy 의 `pydantic.mypy` 플러그인은 `populate_by_name=True` 를 보고
+- `alias` 위치는 Pylance 에만 영향을 준다. mypy 의 `pydantic.mypy` 플러그인은 `validate_by_name=True` 를 보고
   위치와 상관없이 필드 이름으로 생성자를 만든다. mypy·ruff 가 잡지 못해 `tests/test_schema.py` 가 대입 위치의 `Field()` 에
   `default_factory` 말고 다른 인자가 있는지와 별칭이 있는 모델이 필드 이름을 받는지를 검사한다.
 - 별칭은 `alias_generator` 로 자동 생성하지 않고 필드마다 적는다. 원본 응답의 키(`walkingDistance`)로

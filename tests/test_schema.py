@@ -50,6 +50,6 @@ def test_aliased_models_accept_field_names() -> None:
         f'{model.__module__}.{model.__qualname__}'
         for model in all_models()
         if any(field.alias for field in model.model_fields.values())
-        and not (model.model_config.get('validate_by_name') or model.model_config.get('populate_by_name'))
+        and not model.model_config.get('validate_by_name')
     ]
     assert rejecting == []
