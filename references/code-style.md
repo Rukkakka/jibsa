@@ -67,19 +67,33 @@ from typing import (
 
 ## 4. Pydantic 선언
 
-pydantic v2 공식 문서가 권하는 방식을 따른다.
+필드 하나는 `Annotated` 안의 `Field()` 와 대입 위치의 기본값, 두 곳에 나눠 쓴다. pydantic 은 두 곳을
+모두 읽지만 정적 타입 검사기(mypy, Pylance)는 대입 위치만 읽고 그걸로 생성자(`__init__`) 시그니처를 만든다.
+그래서 무엇을 어디에 둘지는 "검사기가 이 값을 알아야 하는가" 로 정한다. pydantic 공식 문서는 두 형식을
+모두 지원하고, 별칭은 "타입 검사기가 별칭 대신 필드 이름을 쓰게 하려면 annotated pattern 을 쓰라" 고 안내한다
+([Fields](https://pydantic.dev/docs/validation/latest/concepts/fields/)). 아래는 이 프로젝트가 고른 규칙이다.
 
-- **제약**(`ge`, `gt`, `min_length`, `max_length`, `pattern`, `exclude`, `repr`, `description`)은
-  `Annotated[T, Field(...)]` 안에 둔다.
-- **`default`, `default_factory`, `alias` 는 `Annotated` 안의 `Field()` 에 넣지 않는다.** 정적 타입 검사기가
-  읽지 못한다. 대입 위치에 둔다.
-- 제약 없는 단순 기본값은 `= value`.
-- `Field(...)`(ellipsis)로 필수를 강조하지 않는다. 어노테이션만 있으면 필수다.
+| 넣을 것 | 위치 | 이유 |
+| --- | --- | --- |
+| 제약 (`ge`, `gt`, `le`, `min_length`, `max_length`, `pattern`), `description`, `exclude`, `repr` | `Annotated` 안 `Field()` | 검사기가 알 필요가 없다. 대입 위치에 두면 필수 필드(`x: int = Field(gt=0)`)도 읽는 사람에게 기본값이 있는 것처럼 보인다 |
+| `alias` | `Annotated` 안 `Field()` | Pylance(pyright)가 읽으면 생성자 인자 이름이 별칭(camelCase)으로 바뀐다. 모델은 `populate_by_name=True` 라 코드에서 필드 이름(snake_case)으로 만든다 |
+| 기본값 | 대입 위치 `= value` | 검사기가 읽어야 선택 인자로 안다 |
+| `default_factory` | 대입 위치 `= Field(default_factory=...)` | 위와 같다. 모델 인스턴스처럼 호출해서 만들어야 하는 기본값에만 쓴다. 대입 위치에 `Field()` 가 남는 유일한 경우 |
+
+- 별칭을 쓰는 모델은 `populate_by_name=True` 인 `RequestModel`·`ResponseModel` 을 상속한다. 이 설정 없이
+  `alias` 를 `Annotated` 안에 두면 검사기는 필드 이름을 받는다고 보는데 런타임은 별칭만 받아 서로 어긋난다.
+- `alias` 위치는 Pylance 에만 영향을 준다. mypy 의 `pydantic.mypy` 플러그인은 `populate_by_name=True` 를 보고
+  위치와 상관없이 필드 이름으로 생성자를 만든다. 그래서 `alias` 를 대입 위치에 둬도 CI(mypy·ruff)는 잡지 못한다.
+- 별칭은 `alias_generator` 로 자동 생성하지 않고 필드마다 적는다. 원본 응답의 키(`walkingDistance`)로
+  코드를 검색할 수 있어야 하고, 자동 변환과 다른 이름(`roomCnt`, 한글 키, 직방의 `item_id` 같은 snake_case 키 등
+  170여 개)이 많아 두 방식이 섞이며, 응답 모델은 `extra='allow'` 라 별칭을 빠뜨리면 에러 없이 `None` 이 되기 때문이다.
+- `Field(...)`(ellipsis)로 필수를 강조하지 않는다. 기본값이 없으면 필수다.
 - `X | None` 은 선택 필드가 아니다. **기본값이 있어야** 선택이다.
+- 목록·집합 기본값도 값으로 쓴다 (`= []`, `= set()`). pydantic 이 인스턴스마다 복사하므로 공유되지 않는다.
 - 필드 선언은 여러 줄로 쓰고, 모델 필드에는 `description` 을 단다 (CLI 출력 의미가 드러나도록).
 
 ```python
-# 제약 + 설명, 기본값은 대입 위치
+# 제약 + 기본값
 timeout: Annotated[
     int,
     Field(gt=0)
@@ -88,14 +102,26 @@ timeout: Annotated[
 # 제약 + 별칭 + 기본값
 deposit_max: Annotated[
     int | None,
-    Field(ge=0, description='보증금 상한 (만원)')
-] = Field(default=None, alias='depositMax')
+    Field(ge=0, description='보증금 상한 (만원)', alias='depositMax')
+] = None
 
-# 필수 필드
-source: Annotated[
-    Source,
-    Field(description='매물을 가져온 소스')
+# 필수 + 별칭: 대입이 없다
+bounding_box: Annotated[
+    NaverBoundingBoxModel,
+    Field(description='지도 뷰포트', alias='boundingBox')
 ]
+
+# 목록 기본값
+type_list: Annotated[
+    list[NaverTransportSubwayLineModel],
+    Field(description='노선', alias='typeList')
+] = []
+
+# 팩토리 기본값
+redevelopment_area_paging_request: Annotated[
+    NaverRedevelopmentAreaPagingRequestModel,
+    Field(description='페이지 요청 (정렬 포함)', alias='redevelopmentAreaPagingRequest')
+] = Field(default_factory=NaverRedevelopmentAreaPagingRequestModel)
 
 # 비밀 값
 token: Annotated[

@@ -152,13 +152,12 @@ def run_request_items_onerooms_v1(
 
 ## 요청·응답 모델
 
-- 요청 모델은 `core.schema.RequestModel` (`extra='forbid'`, `populate_by_name=True`),
-  응답 모델은 `ResponseModel` (`extra='allow'`) 을 상속한다. 비공식 API 가 예고 없이 필드를 더하므로
-  응답 모델은 모르는 필드를 버리지 않는다.
+- 요청 모델은 `core.schema.RequestModel` (`extra='forbid'`), 응답 모델은 `ResponseModel` (`extra='allow'`) 을
+  상속한다. 둘 다 `populate_by_name=True` 라 코드에서는 필드 이름으로 만든다. 비공식 API 가 예고 없이 필드를
+  더하므로 응답 모델은 모르는 필드를 버리지 않는다.
 - 응답 필드는 **소스가 빠뜨릴 수 있으면 `X | None = None`** 으로 둔다. 실제 응답에서 늘 오는 것을
   확인한 필드만 필수로 한다. 비공식 API 라 엄격한 필수 필드는 파싱 실패로 이어진다.
-- 와이어 이름이 다르면 `Field(alias='camelCase')`. 기본값·별칭은 대입 위치에, 제약·`description` 은
-  `Annotated` 안에 둔다 ([code-style.md](code-style.md#4-pydantic-선언)).
+- 와이어 이름이 다르면 `alias='camelCase'` 를 단다. 선언 위치는 [code-style.md](code-style.md#4-pydantic-선언) 를 따른다.
 - 서버가 요구하는 특이한 직렬화는 모델의 `@model_serializer` 로 처리한다
   (예: 직방 `salesTypes[0]=전세&salesTypes[1]=월세`).
 - 서버가 거절할 조합은 요청 모델의 `@field_validator` 로 미리 막는다 (예: 원룸 + 매매,
