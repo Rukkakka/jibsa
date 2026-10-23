@@ -22,16 +22,16 @@ class DaangnNearestCommuteStationModel(ResponseModel):
 
     station_name: Annotated[
         str,
-        Field(description="역 이름 ('역' 까지)")
-    ] = Field(alias='stationName')
+        Field(description="역 이름 ('역' 까지)", alias='stationName')
+    ]
     line_number: Annotated[
         list[str],
-        Field(description='노선')
-    ] = Field(default=[], alias='lineNumber')
+        Field(description='노선', alias='lineNumber')
+    ] = []
     walking_minutes_to_station: Annotated[
         int | None,
-        Field(description='회사에서 역까지 도보 (분)')
-    ] = Field(default=None, alias='walkingMinutesToStation')
+        Field(description='회사에서 역까지 도보 (분)', alias='walkingMinutesToStation')
+    ] = None
 
 
 class DaangnNearestCommuteStationDataModel(ResponseModel):
@@ -39,8 +39,8 @@ class DaangnNearestCommuteStationDataModel(ResponseModel):
 
     nearest_commute_station: Annotated[
         DaangnNearestCommuteStationModel | None,
-        Field(description='가장 가까운 역. 근처에 역이 없으면 null')
-    ] = Field(default=None, alias='nearestCommuteStation')
+        Field(description='가장 가까운 역. 근처에 역이 없으면 null', alias='nearestCommuteStation')
+    ] = None
 
 
 class DaangnNearestCommuteStationResponseModel(DaangnGraphQLResponseModel):
@@ -57,12 +57,12 @@ class DaangnCommuteStationModel(ResponseModel):
 
     station_name: Annotated[
         str,
-        Field(description="역 이름 ('역' 까지)")
-    ] = Field(alias='stationName')
+        Field(description="역 이름 ('역' 까지)", alias='stationName')
+    ]
     line_number: Annotated[
         list[str],
-        Field(description='노선')
-    ] = Field(default=[], alias='lineNumber')
+        Field(description='노선', alias='lineNumber')
+    ] = []
 
 
 class DaangnCommuteWaypointModel(ResponseModel):
@@ -70,12 +70,12 @@ class DaangnCommuteWaypointModel(ResponseModel):
 
     station_name: Annotated[
         str | None,
-        Field(description='역 이름')
-    ] = Field(default=None, alias='stationName')
+        Field(description='역 이름', alias='stationName')
+    ] = None
     line_name: Annotated[
         str | None,
-        Field(description='노선')
-    ] = Field(default=None, alias='lineName')
+        Field(description='노선', alias='lineName')
+    ] = None
 
 
 class DaangnCommuteReachableStationModel(ResponseModel):
@@ -83,16 +83,16 @@ class DaangnCommuteReachableStationModel(ResponseModel):
 
     duration_minutes: Annotated[
         int | None,
-        Field(description='회사 역까지 지하철 시간 (분)')
-    ] = Field(default=None, alias='durationMinutes')
+        Field(description='회사 역까지 지하철 시간 (분)', alias='durationMinutes')
+    ] = None
     transfer_count: Annotated[
         int | None,
-        Field(description='환승 횟수')
-    ] = Field(default=None, alias='transferCount')
+        Field(description='환승 횟수', alias='transferCount')
+    ] = None
     route_waypoints: Annotated[
         list[DaangnCommuteWaypointModel],
-        Field(description='경로')
-    ] = Field(default=[], alias='routeWaypoints')
+        Field(description='경로', alias='routeWaypoints')
+    ] = []
     station: Annotated[
         DaangnCommuteStationModel | None,
         Field(description='역')
@@ -117,8 +117,8 @@ class DaangnCommuteFeedModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnCommuteFeedDataModel(ResponseModel):
@@ -126,8 +126,8 @@ class DaangnCommuteFeedDataModel(ResponseModel):
 
     commute_feed: Annotated[
         DaangnCommuteFeedModel | None,
-        Field(description='갈 수 있는 역')
-    ] = Field(default=None, alias='commuteFeed')
+        Field(description='갈 수 있는 역', alias='commuteFeed')
+    ] = None
 
 
 class DaangnCommuteFeedResponseModel(DaangnGraphQLResponseModel):
@@ -144,8 +144,8 @@ class DaangnCommuteStationArticleConnectionDataModel(ResponseModel):
 
     commute_station_article_connection: Annotated[
         DaangnCommuteStationArticleConnectionModel | None,
-        Field(description='역 주변 매물')
-    ] = Field(default=None, alias='commuteStationArticleConnection')
+        Field(description='역 주변 매물', alias='commuteStationArticleConnection')
+    ] = None
 
 
 class DaangnCommuteStationArticleConnectionResponseModel(DaangnGraphQLResponseModel):

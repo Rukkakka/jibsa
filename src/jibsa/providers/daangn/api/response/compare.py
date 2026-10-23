@@ -30,8 +30,8 @@ class DaangnCompareTradeModel(ResponseModel):
     ] = None
     monthly_pay: Annotated[
         int | None,
-        Field(description='월세 (만원)')
-    ] = Field(default=None, alias='monthlyPay')
+        Field(description='월세 (만원)', alias='monthlyPay')
+    ] = None
 
 
 class DaangnCompareArticleModel(ResponseModel):
@@ -66,12 +66,12 @@ class DaangnCompareBuildingModel(ResponseModel):
 
     road_address: Annotated[
         str | None,
-        Field(description='도로명 주소')
-    ] = Field(default=None, alias='roadAddress')
+        Field(description='도로명 주소', alias='roadAddress')
+    ] = None
     jibun_address: Annotated[
         str | None,
-        Field(description='지번 주소')
-    ] = Field(default=None, alias='jibunAddress')
+        Field(description='지번 주소', alias='jibunAddress')
+    ] = None
 
 
 class DaangnCompareBuildingEdgeModel(ResponseModel):
@@ -97,12 +97,12 @@ class DaangnKaptCostModel(ResponseModel):
 
     year_month: Annotated[
         str | None,
-        Field(description='연월 (YYYYMM)')
-    ] = Field(default=None, alias='yearMonth')
+        Field(description='연월 (YYYYMM)', alias='yearMonth')
+    ] = None
     cost_per_square_meter: Annotated[
         int | None,
-        Field(description='㎡당 관리비 (원)')
-    ] = Field(default=None, alias='costPerSquareMeter')
+        Field(description='㎡당 관리비 (원)', alias='costPerSquareMeter')
+    ] = None
 
 
 class DaangnKaptModel(ResponseModel):
@@ -110,8 +110,8 @@ class DaangnKaptModel(ResponseModel):
 
     monthly_management_costs_per_square_meter: Annotated[
         list[DaangnKaptCostModel],
-        Field(description='최근 월별 ㎡당 관리비')
-    ] = Field(default=[], alias='monthlyManagementCostsPerSquareMeter')
+        Field(description='최근 월별 ㎡당 관리비', alias='monthlyManagementCostsPerSquareMeter')
+    ] = []
 
 
 class DaangnCompareSchoolModel(ResponseModel):
@@ -119,12 +119,12 @@ class DaangnCompareSchoolModel(ResponseModel):
 
     sch_nm: Annotated[
         str | None,
-        Field(description='학교 이름')
-    ] = Field(default=None, alias='schNm')
+        Field(description='학교 이름', alias='schNm')
+    ] = None
     sch_type: Annotated[
         str | None,
-        Field(description='ELEMENTARY ...')
-    ] = Field(default=None, alias='schType')
+        Field(description='ELEMENTARY ...', alias='schType')
+    ] = None
 
 
 class DaangnAssignedSchoolModel(ResponseModel):
@@ -136,8 +136,8 @@ class DaangnAssignedSchoolModel(ResponseModel):
     ] = None
     working_time: Annotated[
         int | None,
-        Field(description='도보 (분)')
-    ] = Field(default=None, alias='workingTime')
+        Field(description='도보 (분)', alias='workingTime')
+    ] = None
     school: Annotated[
         DaangnCompareSchoolModel | None,
         Field(description='학교')
@@ -147,19 +147,22 @@ class DaangnAssignedSchoolModel(ResponseModel):
 class DaangnCompareSubwayModel(ResponseModel):
     """주변 역 정보 한 줄. 같은 역이 거리(DISTANCE)·도보(WALKING) 두 줄로 온다."""
 
-    station_nm: Annotated[str | None, Field(description="역 이름 ('역' 없음)")] = Field(default=None, alias='stationNm')
+    station_nm: Annotated[
+        str | None,
+        Field(description="역 이름 ('역' 없음)", alias='stationNm')
+    ] = None
     simple_line_nm: Annotated[
         str | None,
-        Field(description='노선 (예: 2호선)')
-    ] = Field(default=None, alias='simpleLineNm')
+        Field(description='노선 (예: 2호선)', alias='simpleLineNm')
+    ] = None
     data_type: Annotated[
         str | None,
-        Field(description='DISTANCE(m) / WALKING(분)')
-    ] = Field(default=None, alias='dataType')
+        Field(description='DISTANCE(m) / WALKING(분)', alias='dataType')
+    ] = None
     data_value: Annotated[
         str | None,
-        Field(description='값 (문자열)')
-    ] = Field(default=None, alias='dataValue')
+        Field(description='값 (문자열)', alias='dataValue')
+    ] = None
 
 
 class DaangnKbPriceModel(ResponseModel):
@@ -167,44 +170,44 @@ class DaangnKbPriceModel(ResponseModel):
 
     sale_std_price: Annotated[
         int | None,
-        Field(description='매매 일반가')
-    ] = Field(default=None, alias='saleStdPrice')
+        Field(description='매매 일반가', alias='saleStdPrice')
+    ] = None
     sale_upper_limit: Annotated[
         int | None,
-        Field(description='매매 상위가')
-    ] = Field(default=None, alias='saleUpperLimit')
+        Field(description='매매 상위가', alias='saleUpperLimit')
+    ] = None
     sale_lower_limit: Annotated[
         int | None,
-        Field(description='매매 하위가')
-    ] = Field(default=None, alias='saleLowerLimit')
+        Field(description='매매 하위가', alias='saleLowerLimit')
+    ] = None
     lease_std_price: Annotated[
         int | None,
-        Field(description='전세 일반가')
-    ] = Field(default=None, alias='leaseStdPrice')
+        Field(description='전세 일반가', alias='leaseStdPrice')
+    ] = None
     lease_upper_limit: Annotated[
         int | None,
-        Field(description='전세 상위가')
-    ] = Field(default=None, alias='leaseUpperLimit')
+        Field(description='전세 상위가', alias='leaseUpperLimit')
+    ] = None
     lease_lower_limit: Annotated[
         int | None,
-        Field(description='전세 하위가')
-    ] = Field(default=None, alias='leaseLowerLimit')
+        Field(description='전세 하위가', alias='leaseLowerLimit')
+    ] = None
     monthly_deposit: Annotated[
         int | None,
-        Field(description='월세 보증금')
-    ] = Field(default=None, alias='monthlyDeposit')
+        Field(description='월세 보증금', alias='monthlyDeposit')
+    ] = None
     monthly_upper_limit: Annotated[
         int | None,
-        Field(description='월세 상위')
-    ] = Field(default=None, alias='monthlyUpperLimit')
+        Field(description='월세 상위', alias='monthlyUpperLimit')
+    ] = None
     monthly_lower_limit: Annotated[
         int | None,
-        Field(description='월세 하위')
-    ] = Field(default=None, alias='monthlyLowerLimit')
+        Field(description='월세 하위', alias='monthlyLowerLimit')
+    ] = None
     survey_base_date: Annotated[
         str | None,
-        Field(description='조사 기준일 (YYYYMMDD)')
-    ] = Field(default=None, alias='surveyBaseDate')
+        Field(description='조사 기준일 (YYYYMMDD)', alias='surveyBaseDate')
+    ] = None
 
 
 class DaangnKbPriceEdgeModel(ResponseModel):
@@ -230,20 +233,20 @@ class DaangnCompareRealsaleModel(ResponseModel):
 
     trade_price: Annotated[
         int | None,
-        Field(description='매매가')
-    ] = Field(default=None, alias='tradePrice')
+        Field(description='매매가', alias='tradePrice')
+    ] = None
     deposit: Annotated[
         int | None,
         Field(description='보증금')
     ] = None
     month_rent_fee: Annotated[
         int | None,
-        Field(description='월세 (0 이면 전세)')
-    ] = Field(default=None, alias='monthRentFee')
+        Field(description='월세 (0 이면 전세)', alias='monthRentFee')
+    ] = None
     contact_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYYMMDD)')
-    ] = Field(default=None, alias='contactDate')
+        Field(description='계약일 (YYYYMMDD)', alias='contactDate')
+    ] = None
     floor: Annotated[
         int | None,
         Field(description='층')
@@ -273,28 +276,28 @@ class DaangnComparePyInfoModel(ResponseModel):
 
     exclusive_area: Annotated[
         LooseFloat,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='exclusiveArea')
+        Field(description='전용면적 (㎡)', alias='exclusiveArea')
+    ] = None
     supply_area: Annotated[
         LooseFloat,
-        Field(description='공급면적 (㎡)')
-    ] = Field(default=None, alias='supplyArea')
+        Field(description='공급면적 (㎡)', alias='supplyArea')
+    ] = None
     ptp_tot_hseh_cnt: Annotated[
         int | None,
-        Field(description='세대수')
-    ] = Field(default=None, alias='ptpTotHsehCnt')
+        Field(description='세대수', alias='ptpTotHsehCnt')
+    ] = None
     kb_prices: Annotated[
         DaangnKbPriceConnectionModel | None,
-        Field(description='KB 시세')
-    ] = Field(default=None, alias='kbPrices')
+        Field(description='KB 시세', alias='kbPrices')
+    ] = None
     sale_realsale: Annotated[
         DaangnCompareRealsaleConnectionModel | None,
-        Field(description='최근 매매 실거래')
-    ] = Field(default=None, alias='saleRealsale')
+        Field(description='최근 매매 실거래', alias='saleRealsale')
+    ] = None
     borrow_realsale: Annotated[
         DaangnCompareRealsaleConnectionModel | None,
-        Field(description='최근 전월세 실거래')
-    ] = Field(default=None, alias='borrowRealsale')
+        Field(description='최근 전월세 실거래', alias='borrowRealsale')
+    ] = None
 
 
 class DaangnCompareAreaGroupModel(ResponseModel):
@@ -306,16 +309,16 @@ class DaangnCompareAreaGroupModel(ResponseModel):
     ] = None
     is_representative: Annotated[
         bool | None,
-        Field(description='대표 평형')
-    ] = Field(default=None, alias='isRepresentative')
+        Field(description='대표 평형', alias='isRepresentative')
+    ] = None
     total_cnt: Annotated[
         int | None,
-        Field(description='세대수')
-    ] = Field(default=None, alias='totalCnt')
+        Field(description='세대수', alias='totalCnt')
+    ] = None
     py_infos: Annotated[
         list[DaangnComparePyInfoModel],
-        Field(description='평형')
-    ] = Field(default=[], alias='pyInfos')
+        Field(description='평형', alias='pyInfos')
+    ] = []
 
 
 class DaangnCompareDanjiModel(ResponseModel):
@@ -323,40 +326,40 @@ class DaangnCompareDanjiModel(ResponseModel):
 
     build_date: Annotated[
         str | None,
-        Field(description='사용승인일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='buildDate')
+        Field(description='사용승인일 (YYYY-MM-DD)', alias='buildDate')
+    ] = None
     tot_dong_cnt: Annotated[
         int | None,
-        Field(description='동 수')
-    ] = Field(default=None, alias='totDongCnt')
+        Field(description='동 수', alias='totDongCnt')
+    ] = None
     total_tot_hseh_cnt: Annotated[
         int | None,
-        Field(description='세대수')
-    ] = Field(default=None, alias='totalTotHsehCnt')
+        Field(description='세대수', alias='totalTotHsehCnt')
+    ] = None
     hseh_parking_cnt: Annotated[
         LooseFloat,
-        Field(description='세대당 주차 대수')
-    ] = Field(default=None, alias='hsehParkingCnt')
+        Field(description='세대당 주차 대수', alias='hsehParkingCnt')
+    ] = None
     min_floor: Annotated[
         int | None,
-        Field(description='최저 층')
-    ] = Field(default=None, alias='minFloor')
+        Field(description='최저 층', alias='minFloor')
+    ] = None
     max_floor: Annotated[
         int | None,
-        Field(description='최고 층')
-    ] = Field(default=None, alias='maxFloor')
+        Field(description='최고 층', alias='maxFloor')
+    ] = None
     assigned_schools: Annotated[
         list[DaangnAssignedSchoolModel],
-        Field(description='배정 학교')
-    ] = Field(default=[], alias='assignedSchools')
+        Field(description='배정 학교', alias='assignedSchools')
+    ] = []
     subway_info: Annotated[
         list[DaangnCompareSubwayModel],
-        Field(description='주변 역')
-    ] = Field(default=[], alias='subwayInfo')
+        Field(description='주변 역', alias='subwayInfo')
+    ] = []
     exclusive_area_groups: Annotated[
         list[DaangnCompareAreaGroupModel],
-        Field(description='전용면적 묶음별 평형')
-    ] = Field(default=[], alias='exclusiveAreaGroups')
+        Field(description='전용면적 묶음별 평형', alias='exclusiveAreaGroups')
+    ] = []
 
 
 class DaangnCompareComplexModel(ResponseModel):
@@ -364,8 +367,8 @@ class DaangnCompareComplexModel(ResponseModel):
 
     original_id: Annotated[
         str,
-        Field(description='단지 ID')
-    ] = Field(alias='originalId')
+        Field(description='단지 ID', alias='originalId')
+    ]
     name: Annotated[
         str | None,
         Field(description='단지 이름')
@@ -376,16 +379,16 @@ class DaangnCompareComplexModel(ResponseModel):
     ] = None
     live_article_count: Annotated[
         DaangnLiveArticleCountModel | None,
-        Field(description='현재 매물 수')
-    ] = Field(default=None, alias='liveArticleCount')
+        Field(description='현재 매물 수', alias='liveArticleCount')
+    ] = None
     asking_articles: Annotated[
         DaangnCompareArticleConnectionModel | None,
-        Field(description='호가 매물 (아파트 매물 앞 30건)')
-    ] = Field(default=None, alias='askingArticles')
+        Field(description='호가 매물 (아파트 매물 앞 30건)', alias='askingArticles')
+    ] = None
     lived_review_count: Annotated[
         int | None,
-        Field(description='거주 후기 수')
-    ] = Field(default=None, alias='livedReviewCount')
+        Field(description='거주 후기 수', alias='livedReviewCount')
+    ] = None
     buildings: Annotated[
         DaangnCompareBuildingConnectionModel | None,
         Field(description='건물')
@@ -400,8 +403,8 @@ class DaangnCompareComplexModel(ResponseModel):
     ] = None
     proptier_danji: Annotated[
         DaangnCompareDanjiModel | None,
-        Field(description='단지 공공 정보')
-    ] = Field(default=None, alias='proptierDanji')
+        Field(description='단지 공공 정보', alias='proptierDanji')
+    ] = None
 
 
 class DaangnCompareOutputModel(ResponseModel):
@@ -418,8 +421,8 @@ class DaangnComplexCompareDataModel(ResponseModel):
 
     complex_by_original_id: Annotated[
         DaangnCompareOutputModel | None,
-        Field(description='단지')
-    ] = Field(default=None, alias='complexByOriginalId')
+        Field(description='단지', alias='complexByOriginalId')
+    ] = None
 
 
 class DaangnComplexCompareResponseModel(DaangnGraphQLResponseModel):
@@ -436,8 +439,8 @@ class DaangnNearbyComplexNodeModel(ResponseModel):
 
     original_id: Annotated[
         str,
-        Field(description='단지 ID')
-    ] = Field(alias='originalId')
+        Field(description='단지 ID', alias='originalId')
+    ]
     type: Annotated[
         str | None,
         Field(description='APARTMENT / OFFICETEL ...')
@@ -489,8 +492,8 @@ class DaangnComplexCardDanjiModel(ResponseModel):
 
     total_tot_hseh_cnt: Annotated[
         int | None,
-        Field(description='세대수')
-    ] = Field(default=None, alias='totalTotHsehCnt')
+        Field(description='세대수', alias='totalTotHsehCnt')
+    ] = None
 
 
 class DaangnComplexCardModel(ResponseModel):
@@ -498,8 +501,8 @@ class DaangnComplexCardModel(ResponseModel):
 
     original_id: Annotated[
         str,
-        Field(description='단지 ID')
-    ] = Field(alias='originalId')
+        Field(description='단지 ID', alias='originalId')
+    ]
     name: Annotated[
         str | None,
         Field(description='단지 이름')
@@ -510,12 +513,12 @@ class DaangnComplexCardModel(ResponseModel):
     ] = None
     proptier_danji: Annotated[
         DaangnComplexCardDanjiModel | None,
-        Field(description='공공 정보')
-    ] = Field(default=None, alias='proptierDanji')
+        Field(description='공공 정보', alias='proptierDanji')
+    ] = None
     live_article_count: Annotated[
         DaangnLiveArticleCountModel | None,
-        Field(description='현재 매물 수')
-    ] = Field(default=None, alias='liveArticleCount')
+        Field(description='현재 매물 수', alias='liveArticleCount')
+    ] = None
 
 
 class DaangnComplexesByOriginalComplexIdsDataModel(ResponseModel):
@@ -523,8 +526,8 @@ class DaangnComplexesByOriginalComplexIdsDataModel(ResponseModel):
 
     complexes_by_original_complex_ids: Annotated[
         list[DaangnComplexCardModel],
-        Field(description='단지 카드 (ID 255개도 한 번에 된다)')
-    ] = Field(default=[], alias='complexesByOriginalComplexIds')
+        Field(description='단지 카드 (ID 255개도 한 번에 된다)', alias='complexesByOriginalComplexIds')
+    ] = []
 
 
 class DaangnComplexesByOriginalComplexIdsResponseModel(DaangnGraphQLResponseModel):

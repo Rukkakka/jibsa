@@ -615,7 +615,7 @@ class PageScan(BaseModel):
     seen: Annotated[
         set[Any],
         Field(description='이미 받은 항목 번호. 처음 보는 항목이 없는 페이지면 커서가 멈춘 것으로 본다')
-    ] = Field(default_factory=set)
+    ] = set()
     cursor: Annotated[
         tuple[str | None, Any] | None,
         Field(description=(

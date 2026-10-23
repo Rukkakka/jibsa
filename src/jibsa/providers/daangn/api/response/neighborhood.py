@@ -35,8 +35,8 @@ class DaangnLivableRegionScopesDataModel(ResponseModel):
 
     livable_region_scopes: Annotated[
         list[DaangnLivableSidoModel],
-        Field(description='시·도 (17곳)')
-    ] = Field(default=[], alias='livableRegionScopes')
+        Field(description='시·도 (17곳)', alias='livableRegionScopes')
+    ] = []
 
 
 class DaangnLivableRegionScopesResponseModel(DaangnGraphQLResponseModel):
@@ -53,24 +53,24 @@ class DaangnRecommendedNeighborhoodModel(ResponseModel):
 
     sgg_nm: Annotated[
         str | None,
-        Field(description='시·군·구')
-    ] = Field(default=None, alias='sggNm')
+        Field(description='시·군·구', alias='sggNm')
+    ] = None
     emd_nm: Annotated[
         str | None,
-        Field(description='행정동')
-    ] = Field(default=None, alias='emdNm')
+        Field(description='행정동', alias='emdNm')
+    ] = None
     region_id: Annotated[
         str | None,
-        Field(description='당근 동 ID (법정동)')
-    ] = Field(default=None, alias='regionId')
+        Field(description='당근 동 ID (법정동)', alias='regionId')
+    ] = None
     rank: Annotated[
         int | None,
         Field(description='순위')
     ] = None
     one_line_description: Annotated[
         str | None,
-        Field(description='한 줄 설명')
-    ] = Field(default=None, alias='oneLineDescription')
+        Field(description='한 줄 설명', alias='oneLineDescription')
+    ] = None
 
 
 class DaangnRecommendNeighborhoodsDataModel(ResponseModel):
@@ -78,8 +78,8 @@ class DaangnRecommendNeighborhoodsDataModel(ResponseModel):
 
     recommend_neighborhoods: Annotated[
         list[DaangnRecommendedNeighborhoodModel],
-        Field(description='순위 순 추천 동')
-    ] = Field(default=[], alias='recommendNeighborhoods')
+        Field(description='순위 순 추천 동', alias='recommendNeighborhoods')
+    ] = []
 
 
 class DaangnRecommendNeighborhoodsResponseModel(DaangnGraphQLResponseModel):

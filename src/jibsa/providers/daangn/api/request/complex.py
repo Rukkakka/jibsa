@@ -65,8 +65,8 @@ class DaangnTrendingComplexesRequestPayloadModel(RequestModel):
     ] = 50
     region_id: Annotated[
         str,
-        Field(min_length=1, description='당근 지역 ID (동)')
-    ] = Field(alias='regionId')
+        Field(min_length=1, description='당근 지역 ID (동)', alias='regionId')
+    ]
 
 
 class DaangnComplexArticlesInputModel(RequestModel):
@@ -74,8 +74,8 @@ class DaangnComplexArticlesInputModel(RequestModel):
 
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건 (articleFeed 와 같다)')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건 (articleFeed 와 같다)', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)
 
 
 class DaangnComplexArticlesRequestPayloadModel(RequestModel):
@@ -86,8 +86,8 @@ class DaangnComplexArticlesRequestPayloadModel(RequestModel):
 
     complex_id: Annotated[
         str,
-        Field(min_length=1, description='숫자 단지 ID')
-    ] = Field(alias='complexId')
+        Field(min_length=1, description='숫자 단지 ID', alias='complexId')
+    ]
     first: Annotated[
         int,
         Field(ge=1, le=50, description='한 번에 받을 매물 수. 웹은 10')
@@ -112,12 +112,12 @@ class DaangnRegionComplexesInputModel(RequestModel):
 
     location_filter: Annotated[
         DaangnLocationFilterModel,
-        Field(description='지역 조건 (동 또는 구)')
-    ] = Field(alias='locationFilter')
+        Field(description='지역 조건 (동 또는 구)', alias='locationFilter')
+    ]
     property_filter: Annotated[
         DaangnComplexFilterModel,
-        Field(description='단지 조건')
-    ] = Field(default_factory=DaangnComplexFilterModel, alias='propertyFilter')
+        Field(description='단지 조건', alias='propertyFilter')
+    ] = Field(default_factory=DaangnComplexFilterModel)
     sort: Annotated[
         DaangnComplexSort,
         Field(description='정렬. 웹 기본은 세대수 많은 순')
@@ -144,9 +144,9 @@ class DaangnRegionComplexesRequestPayloadModel(RequestModel):
     ]
     trade_type: Annotated[
         DaangnComplexTradeType,
-        Field(description='단지마다 보여 줄 최근 실거래의 거래 유형. BORROW·MONTH 는 전월세가 섞여 온다')
-    ] = Field(default='BUY', alias='tradeType')
+        Field(description='단지마다 보여 줄 최근 실거래의 거래 유형. BORROW·MONTH 는 전월세가 섞여 온다', alias='tradeType')
+    ] = 'BUY'
     exclusive_use_area: Annotated[
         DaangnExclusiveUseAreaModel | None,
-        Field(description='최근 실거래의 전용면적 범위. 없으면 전체')
-    ] = Field(default=None, alias='exclusiveUseArea')
+        Field(description='최근 실거래의 전용면적 범위. 없으면 전체', alias='exclusiveUseArea')
+    ] = None

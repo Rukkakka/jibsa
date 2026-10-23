@@ -84,28 +84,28 @@ class ZigbangStoreSummaryModel(ResponseModel):
     ] = None
     business: Annotated[
         str | None,
-        Field(description='업종 (현재·직전 업종, 공실이면 기타)')
-    ] = Field(default=None, alias='업종')
+        Field(description='업종 (현재·직전 업종, 공실이면 기타)', alias='업종')
+    ] = None
     key_money: Annotated[
         int | None,
-        Field(description='권리금 (만원)')
-    ] = Field(default=None, alias='권리금액')
+        Field(description='권리금 (만원)', alias='권리금액')
+    ] = None
     sales_price: Annotated[
         int | None,
-        Field(description='매매가 (만원). 임대는 0')
-    ] = Field(default=None, alias='매매금액')
+        Field(description='매매가 (만원). 임대는 0', alias='매매금액')
+    ] = None
     deposit: Annotated[
         int | None,
-        Field(description='보증금 (만원)')
-    ] = Field(default=None, alias='보증금액')
+        Field(description='보증금 (만원)', alias='보증금액')
+    ] = None
     rent: Annotated[
         int | None,
-        Field(description='월세 (만원)')
-    ] = Field(default=None, alias='월세금액')
+        Field(description='월세 (만원)', alias='월세금액')
+    ] = None
     manage_cost: Annotated[
         int | None,
-        Field(description='월 관리비 (만원)')
-    ] = Field(default=None, alias='관리금액')
+        Field(description='월 관리비 (만원)', alias='관리금액')
+    ] = None
     size_m2: Annotated[
         float | None,
         Field(description='전용면적 (㎡)')
@@ -145,12 +145,12 @@ class ZigbangStoreDetailModel(ZigbangStoreSummaryModel):
     ] = None
     recommended_business: Annotated[
         str | None,
-        Field(description='추천 업종')
-    ] = Field(default=None, alias='추천업종')
+        Field(description='추천 업종', alias='추천업종')
+    ] = None
     lease_unit: Annotated[
         str | None,
-        Field(description='임대 구분 (예: 개별호, 통임대)')
-    ] = Field(default=None, alias='임대구분')
+        Field(description='임대 구분 (예: 개별호, 통임대)', alias='임대구분')
+    ] = None
     interior: Annotated[
         str | None,
         Field(description='인테리어 유무')
@@ -181,8 +181,8 @@ class ZigbangStoreDetailModel(ZigbangStoreSummaryModel):
     ] = None
     heating: Annotated[
         str | None,
-        Field(description='난방 종류')
-    ] = Field(default=None, alias='난방종류')
+        Field(description='난방 종류', alias='난방종류')
+    ] = None
     description: Annotated[
         str | None,
         Field(description='중개사가 쓴 상세 설명')

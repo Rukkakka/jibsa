@@ -71,16 +71,16 @@ class DaangnRegionModel(ResponseModel):
     ] = None
     original_id: Annotated[
         int | None,
-        Field(description='지역 ID')
-    ] = Field(default=None, alias='originalId')
+        Field(description='지역 ID', alias='originalId')
+    ] = None
     depth: Annotated[
         int | None,
         Field(description='행정 단계. 3 이면 동/읍/면 (좌표 → 지역 조회에만)')
     ] = None
     center_coordinate: Annotated[
         DaangnCoordinateModel | None,
-        Field(description='지역 중심 좌표')
-    ] = Field(default=None, alias='centerCoordinate')
+        Field(description='지역 중심 좌표', alias='centerCoordinate')
+    ] = None
 
 
 class DaangnSalesTypeModel(ResponseModel):
@@ -97,8 +97,8 @@ class DaangnTradeModel(ResponseModel):
 
     typename: Annotated[
         str | None,
-        Field(description='MonthTrade / BuyTrade / BorrowTrade / ShortTrade')
-    ] = Field(default=None, alias='__typename')
+        Field(description='MonthTrade / BuyTrade / BorrowTrade / ShortTrade', alias='__typename')
+    ] = None
     type: Annotated[
         str,
         Field(description='MONTH(월세), BUY(매매), BORROW(전세), SHORT(단기임대)')
@@ -113,8 +113,8 @@ class DaangnTradeModel(ResponseModel):
     ] = None
     monthly_pay: Annotated[
         int | None,
-        Field(description='월세 (만원)')
-    ] = Field(default=None, alias='monthlyPay')
+        Field(description='월세 (만원)', alias='monthlyPay')
+    ] = None
     price: Annotated[
         int | None,
         Field(description='매매가 (만원)')
@@ -130,12 +130,12 @@ class DaangnSubwayStationModel(ResponseModel):
 
     station_name: Annotated[
         str | None,
-        Field(description='역 이름')
-    ] = Field(default=None, alias='stationName')
+        Field(description='역 이름', alias='stationName')
+    ] = None
     line_number: Annotated[
         list[str],
-        Field(description='노선')
-    ] = Field(default=[], alias='lineNumber')
+        Field(description='노선', alias='lineNumber')
+    ] = []
 
 
 class DaangnNearBySubwayStationModel(ResponseModel):
@@ -147,8 +147,8 @@ class DaangnNearBySubwayStationModel(ResponseModel):
     ] = None
     duration_minutes: Annotated[
         int | None,
-        Field(description='도보 소요 시간 (분)')
-    ] = Field(default=None, alias='durationMinutes')
+        Field(description='도보 소요 시간 (분)', alias='durationMinutes')
+    ] = None
 
 
 class DaangnNearbySubwayStationEdgeModel(ResponseModel):
@@ -174,28 +174,28 @@ class DaangnBizProfileModel(ResponseModel):
 
     original_id: Annotated[
         str | None,
-        Field(description='비즈프로필 ID')
-    ] = Field(default=None, alias='originalId')
+        Field(description='비즈프로필 ID', alias='originalId')
+    ] = None
     name: Annotated[
         str | None,
         Field(description='중개사무소명')
     ] = None
     business_company_name: Annotated[
         str | None,
-        Field(description='사업자 상호 (상세 페이지에만)')
-    ] = Field(default=None, alias='businessCompanyName')
+        Field(description='사업자 상호 (상세 페이지에만)', alias='businessCompanyName')
+    ] = None
     license_owner_contact: Annotated[
         str | None,
-        Field(description='등록 중개사무소 연락처 (상세 페이지에만)')
-    ] = Field(default=None, alias='licenseOwnerContact')
+        Field(description='등록 중개사무소 연락처 (상세 페이지에만)', alias='licenseOwnerContact')
+    ] = None
     license_registration_number: Annotated[
         str | None,
-        Field(description='중개사무소 등록번호 (상세 페이지에만)')
-    ] = Field(default=None, alias='licenseRegistrationNumber')
+        Field(description='중개사무소 등록번호 (상세 페이지에만)', alias='licenseRegistrationNumber')
+    ] = None
     road_address: Annotated[
         str | None,
-        Field(description='사무소 도로명 주소 (상세 페이지에만)')
-    ] = Field(default=None, alias='roadAddress')
+        Field(description='사무소 도로명 주소 (상세 페이지에만)', alias='roadAddress')
+    ] = None
 
 
 class DaangnArticleOptionModel(ResponseModel):
@@ -225,16 +225,16 @@ class DaangnManageCostOptionModel(ResponseModel):
     ]
     pay_option: Annotated[
         str | None,
-        Field(description='FIXED / USED / NONE / NEED_TO_CHECK')
-    ] = Field(default=None, alias='payOption')
+        Field(description='FIXED / USED / NONE / NEED_TO_CHECK', alias='payOption')
+    ] = None
     fixed_cost: Annotated[
         LooseFloat,
-        Field(description='정액 금액 (만원, FIXED 일 때)')
-    ] = Field(default=None, alias='fixedCost')
+        Field(description='정액 금액 (만원, FIXED 일 때)', alias='fixedCost')
+    ] = None
     custom_option_name: Annotated[
         str | None,
-        Field(description='ETC 항목의 직접 입력 이름')
-    ] = Field(default=None, alias='customOptionName')
+        Field(description='ETC 항목의 직접 입력 이름', alias='customOptionName')
+    ] = None
 
 
 class DaangnBrokerCommissionModel(ResponseModel):
@@ -245,8 +245,8 @@ class DaangnBrokerCommissionModel(ResponseModel):
 
     trade_type: Annotated[
         str | None,
-        Field(description='MONTH / BORROW / BUY / SHORT')
-    ] = Field(default=None, alias='tradeType')
+        Field(description='MONTH / BORROW / BUY / SHORT', alias='tradeType')
+    ] = None
     commission: Annotated[
         LooseFloat,
         Field(description='중개보수 (원, 부가세 별도)')
@@ -266,8 +266,8 @@ class DaangnComplexRefModel(ResponseModel):
 
     original_id: Annotated[
         str | None,
-        Field(description='숫자 단지 ID. 단지 페이지 /complexes/{originalId}')
-    ] = Field(default=None, alias='originalId')
+        Field(description='숫자 단지 ID. 단지 페이지 /complexes/{originalId}', alias='originalId')
+    ] = None
     name: Annotated[
         str | None,
         Field(description='단지 이름')
@@ -287,64 +287,64 @@ class DaangnArticleModel(ResponseModel):
 
     original_id: Annotated[
         str,
-        Field(description='숫자 매물 ID. 상세 URL /articles/{originalId}')
-    ] = Field(alias='originalId')
+        Field(description='숫자 매물 ID. 상세 URL /articles/{originalId}', alias='originalId')
+    ]
     area: Annotated[
         LooseFloat,
         Field(description='전용면적 (㎡)')
     ] = None
     supply_area: Annotated[
         LooseFloat,
-        Field(description='공급면적 (㎡)')
-    ] = Field(default=None, alias='supplyArea')
+        Field(description='공급면적 (㎡)', alias='supplyArea')
+    ] = None
     floor: Annotated[
         FloorText,
         Field(description='해당 층')
     ] = None
     top_floor: Annotated[
         FloorText,
-        Field(description='건물 최고층')
-    ] = Field(default=None, alias='topFloor')
+        Field(description='건물 최고층', alias='topFloor')
+    ] = None
     is_ambiguous_floor: Annotated[
         bool | None,
-        Field(description='층을 숫자 대신 저층·중층·고층으로만 밝혔는지. 그러면 floor 가 비어 있다')
-    ] = Field(default=None, alias='isAmbiguousFloor')
+        Field(description='층을 숫자 대신 저층·중층·고층으로만 밝혔는지. 그러면 floor 가 비어 있다', alias='isAmbiguousFloor')
+    ] = None
     ambiguous_floor: Annotated[
         str | None,
-        Field(description='LOW(저층) / MIDDLE(중층) / HIGH(고층)')
-    ] = Field(default=None, alias='ambiguousFloor')
+        Field(description='LOW(저층) / MIDDLE(중층) / HIGH(고층)', alias='ambiguousFloor')
+    ] = None
     building_name: Annotated[
         str | None,
-        Field(description='건물/단지 이름')
-    ] = Field(default=None, alias='buildingName')
+        Field(description='건물/단지 이름', alias='buildingName')
+    ] = None
     address_info: Annotated[
         str | None,
-        Field(description='작성자가 쓴 한 줄 소개 (목록에서 제목처럼 쓰인다)')
-    ] = Field(default=None, alias='addressInfo')
+        Field(description='작성자가 쓴 한 줄 소개 (목록에서 제목처럼 쓰인다)', alias='addressInfo')
+    ] = None
     status: Annotated[
         str | None,
         Field(description='거래 상태. ON_GOING 만 거래 가능 (그 외 예약·거래완료 등)')
     ] = None
     is_hide: Annotated[
         bool | None,
-        Field(description='숨김 여부')
-    ] = Field(default=None, alias='isHide')
+        Field(description='숨김 여부', alias='isHide')
+    ] = None
     invisible_reason: Annotated[
         str | None,
-        Field(description='노출 제한 사유 (예: CHECK_DENY). 있으면 거래할 수 없는 매물')
-    ] = Field(default=None, alias='invisibleReason')
+        Field(description='노출 제한 사유 (예: CHECK_DENY). 있으면 거래할 수 없는 매물', alias='invisibleReason')
+    ] = None
     invisible_infos: Annotated[
         list[dict[str, Any]] | None,
-        Field(description='노출 제한 정보 (GraphQL 피드). 비어 있지 않으면 거래할 수 없는 매물')
-    ] = Field(default=None, alias='invisibleInfos')
+        Field(description='노출 제한 정보 (GraphQL 피드). 비어 있지 않으면 거래할 수 없는 매물', alias='invisibleInfos')
+    ] = None
     writer_type: Annotated[
         str | None,
-        Field(description='작성자 유형 (BROKER, LESSOR ...)')
-    ] = Field(default=None, alias='writerTypeV2')
+        Field(description='작성자 유형 (BROKER, LESSOR ...)', alias='writerTypeV2')
+    ] = None
     sales_type: Annotated[
         DaangnSalesTypeModel | None,
-        Field(description='매물 용도')
-    ] = Field(default=None, alias='salesTypeV3')
+        Field(description='매물 용도', alias='salesTypeV3')
+    ] = None
     trades: Annotated[
         list[DaangnTradeModel],
         Field(description='거래 조건 (여러 개일 수 있음)')
@@ -355,124 +355,124 @@ class DaangnArticleModel(ResponseModel):
     ] = None
     public_coordinate: Annotated[
         DaangnCoordinateModel | None,
-        Field(description='공개 좌표')
-    ] = Field(default=None, alias='publicCoordinate')
+        Field(description='공개 좌표', alias='publicCoordinate')
+    ] = None
     subway_stations: Annotated[
         list[DaangnNearBySubwayStationModel],
-        Field(description='인근 지하철역 (도보 시간 포함). 상세 페이지에서는 비어 있기도 하다')
-    ] = Field(default=[], alias='subwayStations')
+        Field(description='인근 지하철역 (도보 시간 포함). 상세 페이지에서는 비어 있기도 하다', alias='subwayStations')
+    ] = []
     nearby_subway_stations: Annotated[
         list[DaangnNearbySubwayStationEdgeModel],
-        Field(description='주변 지하철역 이름 (상세 페이지에만). subwayStations 가 비어도 채워져 있기도 하다')
-    ] = Field(default=[], alias='nearbySubwayStations')
+        Field(description='주변 지하철역 이름 (상세 페이지에만). subwayStations 가 비어도 채워져 있기도 하다', alias='nearbySubwayStations')
+    ] = []
     images: Annotated[
         list[DaangnImageModel],
         Field(description='사진')
     ] = []
     biz_profile: Annotated[
         DaangnBizProfileModel | None,
-        Field(description='중개사무소 비즈프로필')
-    ] = Field(default=None, alias='bizProfile')
+        Field(description='중개사무소 비즈프로필', alias='bizProfile')
+    ] = None
     content: Annotated[
         str | None,
         Field(description='본문 (상세 페이지에만)')
     ] = None
     public_address: Annotated[
         str | None,
-        Field(description='도로명 주소 (상세 페이지에만)')
-    ] = Field(default=None, alias='publicAddress')
+        Field(description='도로명 주소 (상세 페이지에만)', alias='publicAddress')
+    ] = None
     public_jibun_address: Annotated[
         str | None,
-        Field(description='지번 주소 (상세 페이지에만)')
-    ] = Field(default=None, alias='publicJibunAddress')
+        Field(description='지번 주소 (상세 페이지에만)', alias='publicJibunAddress')
+    ] = None
     room_count: Annotated[
         int | None,
-        Field(description='방 수')
-    ] = Field(default=None, alias='roomCnt')
+        Field(description='방 수', alias='roomCnt')
+    ] = None
     bathroom_count: Annotated[
         int | None,
-        Field(description='욕실 수')
-    ] = Field(default=None, alias='bathroomCnt')
+        Field(description='욕실 수', alias='bathroomCnt')
+    ] = None
     total_manage_cost: Annotated[
         LooseFloat,
-        Field(description='월 관리비 (만원)')
-    ] = Field(default=None, alias='totalManageCost')
+        Field(description='월 관리비 (만원)', alias='totalManageCost')
+    ] = None
     manage_cost_charge_type: Annotated[
         str | None,
-        Field(description='관리비 부과 방식 (FIXED, ETC, UNAVAILABLE). 중개사 매물에만 있고 직거래는 null')
-    ] = Field(default=None, alias='manageCostChargeType')
+        Field(description='관리비 부과 방식 (FIXED, ETC, UNAVAILABLE). 중개사 매물에만 있고 직거래는 null', alias='manageCostChargeType')
+    ] = None
     manage_cost_detail_is_disclosed: Annotated[
         bool | None,
-        Field(description='관리비 항목을 밝혔는지. False 면 항목 목록은 빈 껍데기다')
-    ] = Field(default=None, alias='manageCostDetailIsDisclosed')
+        Field(description='관리비 항목을 밝혔는지. False 면 항목 목록은 빈 껍데기다', alias='manageCostDetailIsDisclosed')
+    ] = None
     manage_cost_options: Annotated[
         list[DaangnManageCostOptionModel] | None,
-        Field(description='관리비 항목 (상세 페이지에만)')
-    ] = Field(default=None, alias='includeManageCostOptionV3')
+        Field(description='관리비 항목 (상세 페이지에만)', alias='includeManageCostOptionV3')
+    ] = None
     exclude_manage_cost_options: Annotated[
         list[str] | None,
-        Field(description='관리비에 포함되지 않는 항목 코드 (직거래 매물, 상세 페이지에만)')
-    ] = Field(default=None, alias='excludeManageCostOption')
+        Field(description='관리비에 포함되지 않는 항목 코드 (직거래 매물, 상세 페이지에만)', alias='excludeManageCostOption')
+    ] = None
     premium_money: Annotated[
         LooseFloat,
-        Field(description='권리금 (만원, 상가). 상세 페이지에만')
-    ] = Field(default=None, alias='premiumMoney')
+        Field(description='권리금 (만원, 상가). 상세 페이지에만', alias='premiumMoney')
+    ] = None
     premium_money_negotiable: Annotated[
         bool | None,
-        Field(description='권리금 협의 가능 여부. 협의 가능이면 권리금이 1만원처럼 자리만 채운 값이기도 하다')
-    ] = Field(default=None, alias='premiumMoneyNegotiable')
+        Field(description='권리금 협의 가능 여부. 협의 가능이면 권리금이 1만원처럼 자리만 채운 값이기도 하다', alias='premiumMoneyNegotiable')
+    ] = None
     broker_commissions: Annotated[
         list[DaangnBrokerCommissionModel] | None,
-        Field(description='거래 조건별 중개보수 (상세 페이지에만)')
-    ] = Field(default=None, alias='brokerCommissions')
+        Field(description='거래 조건별 중개보수 (상세 페이지에만)', alias='brokerCommissions')
+    ] = None
     watch_count: Annotated[
         int | None,
-        Field(description='관심(찜) 수')
-    ] = Field(default=None, alias='watchCount')
+        Field(description='관심(찜) 수', alias='watchCount')
+    ] = None
     complex: Annotated[
         DaangnComplexRefModel | None,
         Field(description='매물이 속한 단지. 단지가 없는 매물(원룸·빌라 등)은 null')
     ] = None
     move_in_date: Annotated[
         str | None,
-        Field(description='입주 가능일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='moveInDate')
+        Field(description='입주 가능일 (YYYY-MM-DD)', alias='moveInDate')
+    ] = None
     move_in_date_negotiable: Annotated[
         bool | None,
-        Field(description='입주일 협의 가능 여부')
-    ] = Field(default=None, alias='moveInDateNegotiable')
+        Field(description='입주일 협의 가능 여부', alias='moveInDateNegotiable')
+    ] = None
     building_approval_date: Annotated[
         str | None,
-        Field(description='사용승인일')
-    ] = Field(default=None, alias='buildingApprovalDate')
+        Field(description='사용승인일', alias='buildingApprovalDate')
+    ] = None
     building_orientation: Annotated[
         str | None,
-        Field(description='방향 (SOUTH_FACING ...)')
-    ] = Field(default=None, alias='buildingOrientation')
+        Field(description='방향 (SOUTH_FACING ...)', alias='buildingOrientation')
+    ] = None
     building_usage: Annotated[
         str | None,
-        Field(description='건축물 용도 코드')
-    ] = Field(default=None, alias='buildingUsage')
+        Field(description='건축물 용도 코드', alias='buildingUsage')
+    ] = None
     available_total_parking_spots: Annotated[
         int | None,
-        Field(description='주차 가능 대수')
-    ] = Field(default=None, alias='availableTotalParkingSpots')
+        Field(description='주차 가능 대수', alias='availableTotalParkingSpots')
+    ] = None
     options: Annotated[
         list[DaangnArticleOptionModel],
         Field(description='옵션 (상세 페이지에만)')
     ] = []
     published_at: Annotated[
         str | None,
-        Field(description='게시 일시 (UTC ISO 8601)')
-    ] = Field(default=None, alias='publishedAt')
+        Field(description='게시 일시 (UTC ISO 8601)', alias='publishedAt')
+    ] = None
     updated_at: Annotated[
         str | None,
-        Field(description='수정 일시 (UTC ISO 8601)')
-    ] = Field(default=None, alias='updatedAt')
+        Field(description='수정 일시 (UTC ISO 8601)', alias='updatedAt')
+    ] = None
     view_count: Annotated[
         int | None,
-        Field(description='조회수')
-    ] = Field(default=None, alias='viewCount')
+        Field(description='조회수', alias='viewCount')
+    ] = None
 
 
 # ---------------------------------------------------------------------------
@@ -506,12 +506,12 @@ class DaangnPageInfoModel(ResponseModel):
 
     end_cursor: Annotated[
         str | None,
-        Field(description='다음 페이지를 받을 커서')
-    ] = Field(default=None, alias='endCursor')
+        Field(description='다음 페이지를 받을 커서', alias='endCursor')
+    ] = None
     has_next_page: Annotated[
         bool | None,
-        Field(description='다음 페이지 존재 여부')
-    ] = Field(default=None, alias='hasNextPage')
+        Field(description='다음 페이지 존재 여부', alias='hasNextPage')
+    ] = None
 
 
 class DaangnLiveArticleCountModel(ResponseModel):
@@ -528,44 +528,44 @@ class DaangnTransactionModel(ResponseModel):
 
     typename: Annotated[
         str | None,
-        Field(description='TransactionBuy / TransactionRent')
-    ] = Field(default=None, alias='__typename')
+        Field(description='TransactionBuy / TransactionRent', alias='__typename')
+    ] = None
     original_id: Annotated[
         str | None,
-        Field(description='거래 ID')
-    ] = Field(default=None, alias='originalId')
+        Field(description='거래 ID', alias='originalId')
+    ] = None
     deal_year: Annotated[
         int | None,
-        Field(description='계약 연도')
-    ] = Field(default=None, alias='dealYear')
+        Field(description='계약 연도', alias='dealYear')
+    ] = None
     deal_month: Annotated[
         int | None,
-        Field(description='계약 월')
-    ] = Field(default=None, alias='dealMonth')
+        Field(description='계약 월', alias='dealMonth')
+    ] = None
     deal_day: Annotated[
         int | None,
-        Field(description='계약 일')
-    ] = Field(default=None, alias='dealDay')
+        Field(description='계약 일', alias='dealDay')
+    ] = None
     exclusive_use_area: Annotated[
         LooseFloat,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='exclusiveUseArea')
+        Field(description='전용면적 (㎡)', alias='exclusiveUseArea')
+    ] = None
     floor: Annotated[
         FloorText,
         Field(description='층')
     ] = None
     deal_amount: Annotated[
         int | None,
-        Field(description='매매가 (만원, 매매만)')
-    ] = Field(default=None, alias='dealAmount')
+        Field(description='매매가 (만원, 매매만)', alias='dealAmount')
+    ] = None
     deal_canceled: Annotated[
         bool | None,
-        Field(description='신고 뒤 해제(취소)된 거래 (매매만)')
-    ] = Field(default=None, alias='dealCanceled')
+        Field(description='신고 뒤 해제(취소)된 거래 (매매만)', alias='dealCanceled')
+    ] = None
     registrated_at: Annotated[
         str | None,
-        Field(description='등기일. 있으면 등기까지 마친 거래 (매매만)')
-    ] = Field(default=None, alias='registratedAt')
+        Field(description='등기일. 있으면 등기까지 마친 거래 (매매만)', alias='registratedAt')
+    ] = None
     ownership: Annotated[
         str | None,
         Field(description='REGISTERED_OWNER / PRE_SALE_RIGHT(분양권) / PRE_SALE_OWNER(입주권) (매매만)')
@@ -580,16 +580,16 @@ class DaangnTransactionModel(ResponseModel):
     ] = None
     monthly_rent: Annotated[
         int | None,
-        Field(description='월세 (만원, 전월세만)')
-    ] = Field(default=None, alias='monthlyRent')
+        Field(description='월세 (만원, 전월세만)', alias='monthlyRent')
+    ] = None
     contract_type: Annotated[
         str | None,
-        Field(description='NEW(신규) / RENEWAL(재계약) (전월세만)')
-    ] = Field(default=None, alias='contractType')
+        Field(description='NEW(신규) / RENEWAL(재계약) (전월세만)', alias='contractType')
+    ] = None
     use_renewal_of_contract_right: Annotated[
         bool | None,
-        Field(description='계약갱신요구권을 쓴 계약 (전월세만)')
-    ] = Field(default=None, alias='useRenewalOfContractRight')
+        Field(description='계약갱신요구권을 쓴 계약 (전월세만)', alias='useRenewalOfContractRight')
+    ] = None
 
 
 class DaangnTransactionEdgeModel(ResponseModel):
@@ -610,8 +610,8 @@ class DaangnTransactionConnectionModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnRealsaleDanjiModel(ResponseModel):
@@ -619,16 +619,16 @@ class DaangnRealsaleDanjiModel(ResponseModel):
 
     name: Annotated[
         str | None,
-        Field(description='건물·단지 이름')
-    ] = Field(default=None, alias='danjiAreaNm')
+        Field(description='건물·단지 이름', alias='danjiAreaNm')
+    ] = None
     households: Annotated[
         int | None,
-        Field(description='세대수')
-    ] = Field(default=None, alias='totalTotHsehCnt')
+        Field(description='세대수', alias='totalTotHsehCnt')
+    ] = None
     build_date: Annotated[
         str | None,
-        Field(description='사용승인일 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='buildDate')
+        Field(description='사용승인일 (YYYY-MM-DD)', alias='buildDate')
+    ] = None
 
 
 class DaangnCommuteArticleModel(ResponseModel):
@@ -658,8 +658,8 @@ class DaangnCommuteStationArticleConnectionModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnCompareRegionModel(ResponseModel):
@@ -710,8 +710,8 @@ class DaangnRegionComplexNodeModel(ResponseModel):
 
     original_id: Annotated[
         str,
-        Field(description='숫자 단지 ID')
-    ] = Field(alias='originalId')
+        Field(description='숫자 단지 ID', alias='originalId')
+    ]
     name: Annotated[
         str,
         Field(description='단지 이름')
@@ -722,8 +722,8 @@ class DaangnRegionComplexNodeModel(ResponseModel):
     ] = None
     danji: Annotated[
         DaangnRealsaleDanjiModel | None,
-        Field(description='세대수·사용승인일 (공공 데이터)')
-    ] = Field(default=None, alias='proptierDanji')
+        Field(description='세대수·사용승인일 (공공 데이터)', alias='proptierDanji')
+    ] = None
     transactions: Annotated[
         DaangnTransactionConnectionModel | None,
         Field(description=(
@@ -733,17 +733,17 @@ class DaangnRegionComplexNodeModel(ResponseModel):
     ] = None
     live_article_count: Annotated[
         DaangnTradeArticleCountModel | None,
-        Field(description='거래 유형별 현재 매물 수')
-    ] = Field(default=None, alias='liveArticleCount')
+        Field(description='거래 유형별 현재 매물 수', alias='liveArticleCount')
+    ] = None
     near_station: Annotated[
         bool | None,
-        Field(description='역 가까운 단지 (당근 기준)')
-    ] = Field(default=None, alias='nearStation')
+        Field(description='역 가까운 단지 (당근 기준)', alias='nearStation')
+    ] = None
     lived_reviews: Annotated[
         DaangnLivedReviewPreviewModel | None,
-        Field(description='거주 후기 미리보기')
-    ] = Field(default=None, alias='livedReviews')
+        Field(description='거주 후기 미리보기', alias='livedReviews')
+    ] = None
     lived_review_summary: Annotated[
         dict[str, Any] | None,
-        Field(description='당근이 후기로 만든 요약. 내보내지 않고 있는지만 본다')
-    ] = Field(default=None, alias='livedReviewSummary')
+        Field(description='당근이 후기로 만든 요약. 내보내지 않고 있는지만 본다', alias='livedReviewSummary')
+    ] = None

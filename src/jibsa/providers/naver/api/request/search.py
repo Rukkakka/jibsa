@@ -29,16 +29,16 @@ class NaverArticleMapArticleClustersV1RequestPayloadModel(RequestModel):
     ]
     bounding_box: Annotated[
         NaverBoundingBoxModel,
-        Field(description='지도 뷰포트')
-    ] = Field(alias='boundingBox')
+        Field(description='지도 뷰포트', alias='boundingBox')
+    ]
     precision: Annotated[
         int,
         Field(ge=10, le=18, description='클러스터 해상도. 클수록 클러스터가 작아진다')
     ] = 15
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
 
 
 class NaverArticlePagingRequestModel(RequestModel):
@@ -50,20 +50,20 @@ class NaverArticlePagingRequestModel(RequestModel):
     ] = 20
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
     article_sort_type: Annotated[
         NaverArticleSortType,
-        Field(description='정렬')
-    ] = Field(default='RANKING_DESC', alias='articleSortType')
+        Field(description='정렬', alias='articleSortType')
+    ] = 'RANKING_DESC'
     seed: Annotated[
         str | None,
         Field(description='서버가 첫 응답에 주는 정렬 seed')
     ] = None
     last_info: Annotated[
         Any,
-        Field(description='커서. 응답의 lastInfo 를 그대로 (리스트 또는 정수)')
-    ] = Field(default=None, alias='lastInfo')
+        Field(description='커서. 응답의 lastInfo 를 그대로 (리스트 또는 정수)', alias='lastInfo')
+    ] = None
 
 
 class NaverArticleBoundedArticlesV1RequestPayloadModel(RequestModel):
@@ -78,20 +78,20 @@ class NaverArticleBoundedArticlesV1RequestPayloadModel(RequestModel):
     ]
     bounding_box: Annotated[
         NaverBoundingBoxModel,
-        Field(description='지도 뷰포트')
-    ] = Field(alias='boundingBox')
+        Field(description='지도 뷰포트', alias='boundingBox')
+    ]
     precision: Annotated[
         int,
         Field(ge=10, le=18, description='지도 줌. 사이트는 매물 표시 최소 줌 이상에서만 부른다')
     ] = 16
     article_paging_request: Annotated[
         NaverArticlePagingRequestModel,
-        Field(description='페이지 요청 (정렬 포함)')
-    ] = Field(default_factory=NaverArticlePagingRequestModel, alias='articlePagingRequest')
+        Field(description='페이지 요청 (정렬 포함)', alias='articlePagingRequest')
+    ] = Field(default_factory=NaverArticlePagingRequestModel)
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
 
 
 class NaverArticleLegalDivisionArticleListV1RequestPayloadModel(RequestModel):
@@ -107,8 +107,8 @@ class NaverArticleLegalDivisionArticleListV1RequestPayloadModel(RequestModel):
     ]
     article_paging_request: Annotated[
         NaverArticlePagingRequestModel,
-        Field(description='페이지 요청 (정렬 포함, size 30 이하)')
-    ] = Field(default_factory=NaverArticlePagingRequestModel, alias='articlePagingRequest')
+        Field(description='페이지 요청 (정렬 포함, size 30 이하)', alias='articlePagingRequest')
+    ] = Field(default_factory=NaverArticlePagingRequestModel)
 
 
 class NaverComplexPagingRequestModel(RequestModel):
@@ -120,16 +120,16 @@ class NaverComplexPagingRequestModel(RequestModel):
     ] = 30
     complex_sort_type: Annotated[
         NaverComplexSortType,
-        Field(description='정렬')
-    ] = Field(default='POPULARITY_DESC', alias='complexSortType')
+        Field(description='정렬', alias='complexSortType')
+    ] = 'POPULARITY_DESC'
     seed: Annotated[
         str | None,
         Field(description='서버가 첫 응답에 주는 정렬 seed')
     ] = None
     last_info: Annotated[
         list[Any],
-        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로')
-    ] = Field(default=[], alias='lastInfo')
+        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로', alias='lastInfo')
+    ] = []
 
 
 class NaverComplexLegalDivisionComplexListV1RequestPayloadModel(RequestModel):
@@ -145,12 +145,12 @@ class NaverComplexLegalDivisionComplexListV1RequestPayloadModel(RequestModel):
     ]
     complex_paging_request: Annotated[
         NaverComplexPagingRequestModel,
-        Field(description='페이지 요청 (정렬 포함)')
-    ] = Field(default_factory=NaverComplexPagingRequestModel, alias='complexPagingRequest')
+        Field(description='페이지 요청 (정렬 포함)', alias='complexPagingRequest')
+    ] = Field(default_factory=NaverComplexPagingRequestModel)
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
 
 
 class NaverComplexBoundedComplexesV1RequestPayloadModel(RequestModel):
@@ -162,20 +162,20 @@ class NaverComplexBoundedComplexesV1RequestPayloadModel(RequestModel):
     ]
     bounding_box: Annotated[
         NaverBoundingBoxModel,
-        Field(description='지도 뷰포트')
-    ] = Field(alias='boundingBox')
+        Field(description='지도 뷰포트', alias='boundingBox')
+    ]
     precision: Annotated[
         int,
         Field(ge=10, le=18, description='지도 줌. 사이트는 단지 마커 최소 줌 이상에서만 부른다')
     ] = 16
     complex_paging_request: Annotated[
         NaverComplexPagingRequestModel,
-        Field(description='페이지 요청 (정렬 포함)')
-    ] = Field(default_factory=NaverComplexPagingRequestModel, alias='complexPagingRequest')
+        Field(description='페이지 요청 (정렬 포함)', alias='complexPagingRequest')
+    ] = Field(default_factory=NaverComplexPagingRequestModel)
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
 
 
 class NaverArticleClusteredArticlesV1RequestPayloadModel(RequestModel):
@@ -183,13 +183,13 @@ class NaverArticleClusteredArticlesV1RequestPayloadModel(RequestModel):
 
     cluster_id: Annotated[
         str,
-        Field(pattern=r'^\d+/\d+/\d+$', description='클러스터 ID ({zoom}/{x}/{y})')
-    ] = Field(alias='clusterId')
+        Field(pattern=r'^\d+/\d+/\d+$', description='클러스터 ID ({zoom}/{x}/{y})', alias='clusterId')
+    ]
     filter: Annotated[
         NaverArticleFilterModel,
         Field(description='articleClusters 와 같은 필터')
     ]
     article_paging_request: Annotated[
         NaverArticlePagingRequestModel,
-        Field(description='페이지 요청')
-    ] = Field(default_factory=NaverArticlePagingRequestModel, alias='articlePagingRequest')
+        Field(description='페이지 요청', alias='articlePagingRequest')
+    ] = Field(default_factory=NaverArticlePagingRequestModel)

@@ -25,12 +25,12 @@ class NaverTransportSubwayLineModel(ResponseModel):
     ] = None
     walking_distance: Annotated[
         int | None,
-        Field(description='도보 거리 (m)')
-    ] = Field(default=None, alias='walkingDistance')
+        Field(description='도보 거리 (m)', alias='walkingDistance')
+    ] = None
     walking_duration: Annotated[
         int | None,
-        Field(description='도보 시간 (분)')
-    ] = Field(default=None, alias='walkingDuration')
+        Field(description='도보 시간 (분)', alias='walkingDuration')
+    ] = None
 
 
 class NaverTransportSubwayModel(ResponseModel):
@@ -38,12 +38,12 @@ class NaverTransportSubwayModel(ResponseModel):
 
     station_name: Annotated[
         str | None,
-        Field(description='역 이름 (예: 대청역)')
-    ] = Field(default=None, alias='stationName')
+        Field(description='역 이름 (예: 대청역)', alias='stationName')
+    ] = None
     type_list: Annotated[
         list[NaverTransportSubwayLineModel],
-        Field(description='노선')
-    ] = Field(default=[], alias='typeList')
+        Field(description='노선', alias='typeList')
+    ] = []
 
 
 class NaverTransportBusModel(ResponseModel):
@@ -51,12 +51,12 @@ class NaverTransportBusModel(ResponseModel):
 
     type_name: Annotated[
         str | None,
-        Field(description='버스 종류 (간선, 지선, 마을, 광역, 직행좌석, 공항 ...)')
-    ] = Field(default=None, alias='typeName')
+        Field(description='버스 종류 (간선, 지선, 마을, 광역, 직행좌석, 공항 ...)', alias='typeName')
+    ] = None
     routes: Annotated[
         list[str],
-        Field(description='노선 번호')
-    ] = Field(default=[], alias='list')
+        Field(description='노선 번호', alias='list')
+    ] = []
 
 
 class NaverTransportModel(ResponseModel):
@@ -64,12 +64,12 @@ class NaverTransportModel(ResponseModel):
 
     subway_list: Annotated[
         list[NaverTransportSubwayModel],
-        Field(description='가까운 지하철역 (가까운 순)')
-    ] = Field(default=[], alias='subwayList')
+        Field(description='가까운 지하철역 (가까운 순)', alias='subwayList')
+    ] = []
     bus_list: Annotated[
         list[NaverTransportBusModel],
-        Field(description='버스 종류별 노선')
-    ] = Field(default=[], alias='busList')
+        Field(description='버스 종류별 노선', alias='busList')
+    ] = []
 
 
 class NaverAcquisitionTaxModel(ResponseModel):
@@ -77,16 +77,16 @@ class NaverAcquisitionTaxModel(ResponseModel):
 
     acquisition_tax: Annotated[
         int | None,
-        Field(description='취득세')
-    ] = Field(default=None, alias='acquisitionTax')
+        Field(description='취득세', alias='acquisitionTax')
+    ] = None
     local_tax: Annotated[
         int | None,
-        Field(description='지방교육세')
-    ] = Field(default=None, alias='localTax')
+        Field(description='지방교육세', alias='localTax')
+    ] = None
     rural_special_tax: Annotated[
         int | None,
-        Field(description='농어촌특별세')
-    ] = Field(default=None, alias='ruralSpecialTax')
+        Field(description='농어촌특별세', alias='ruralSpecialTax')
+    ] = None
 
 
 class NaverArticleTaxModel(ResponseModel):
@@ -94,16 +94,16 @@ class NaverArticleTaxModel(ResponseModel):
 
     acquisition_tax: Annotated[
         NaverAcquisitionTaxModel | None,
-        Field(description='취득세 (매매가 기준)')
-    ] = Field(default=None, alias='acquisitionTax')
+        Field(description='취득세 (매매가 기준)', alias='acquisitionTax')
+    ] = None
     property_tax: Annotated[
         NaverPropertyTaxModel | None,
-        Field(description='재산세 (공시가 기준, 연)')
-    ] = Field(default=None, alias='propertyTax')
+        Field(description='재산세 (공시가 기준, 연)', alias='propertyTax')
+    ] = None
     total_real_estate_tax: Annotated[
         NaverTotalRealEstateTaxModel | None,
-        Field(description='종합부동산세 (공시가 기준, 연)')
-    ] = Field(default=None, alias='totalRealEstateTax')
+        Field(description='종합부동산세 (공시가 기준, 연)', alias='totalRealEstateTax')
+    ] = None
 
 
 class NaverFeeRatioModel(ResponseModel):
@@ -128,12 +128,12 @@ class NaverArticleAgentFeeModel(ResponseModel):
     ] = None
     fee_ratio: Annotated[
         NaverFeeRatioModel | None,
-        Field(description='요율 (%)')
-    ] = Field(default=None, alias='feeRatio')
+        Field(description='요율 (%)', alias='feeRatio')
+    ] = None
     is_individual_check_required: Annotated[
         bool | None,
-        Field(description='중개사와 따로 협의해야 하는지 (요율이 정해지지 않은 고가 매물 등)')
-    ] = Field(default=None, alias='isIndividualCheckRequired')
+        Field(description='중개사와 따로 협의해야 하는지 (요율이 정해지지 않은 고가 매물 등)', alias='isIndividualCheckRequired')
+    ] = None
 
 
 class NaverArticleKeyIdsModel(ResponseModel):
@@ -141,16 +141,16 @@ class NaverArticleKeyIdsModel(ResponseModel):
 
     complex_number: Annotated[
         int | None,
-        Field(description='단지 번호')
-    ] = Field(default=None, alias='complexNumber')
+        Field(description='단지 번호', alias='complexNumber')
+    ] = None
     pyeong_type_number: Annotated[
         int | None,
-        Field(description='평형 번호')
-    ] = Field(default=None, alias='pyeongTypeNumber')
+        Field(description='평형 번호', alias='pyeongTypeNumber')
+    ] = None
     building_number: Annotated[
         int | None,
-        Field(description='건물 번호')
-    ] = Field(default=None, alias='buildingNumber')
+        Field(description='건물 번호', alias='buildingNumber')
+    ] = None
 
 
 class NaverArticleTypeModel(ResponseModel):
@@ -158,12 +158,12 @@ class NaverArticleTypeModel(ResponseModel):
 
     real_estate_type: Annotated[
         str,
-        Field(description='매물 유형 코드')
-    ] = Field(alias='realEstateType')
+        Field(description='매물 유형 코드', alias='realEstateType')
+    ]
     trade_type: Annotated[
         str,
-        Field(description='거래 유형 코드')
-    ] = Field(alias='tradeType')
+        Field(description='거래 유형 코드', alias='tradeType')
+    ]
 
 
 class NaverArticleKeyAddressModel(ResponseModel):
@@ -171,8 +171,8 @@ class NaverArticleKeyAddressModel(ResponseModel):
 
     legal_division_number: Annotated[
         str | None,
-        Field(description='법정동 코드')
-    ] = Field(default=None, alias='legalDivisionNumber')
+        Field(description='법정동 코드', alias='legalDivisionNumber')
+    ] = None
     jibun: Annotated[
         str | None,
         Field(description='지번 (예: 12-2)')
@@ -205,32 +205,32 @@ class NaverPriceInfoModel(ResponseModel):
     ] = None
     warranty_amount: Annotated[
         int | None,
-        Field(description='보증금·전세금 (원)')
-    ] = Field(default=None, alias='warrantyAmount')
+        Field(description='보증금·전세금 (원)', alias='warrantyAmount')
+    ] = None
     rent_amount: Annotated[
         int | None,
-        Field(description='월세 (원)')
-    ] = Field(default=None, alias='rentAmount')
+        Field(description='월세 (원)', alias='rentAmount')
+    ] = None
     monthly_rent: Annotated[
         int | None,
-        Field(description='월세 (원)')
-    ] = Field(default=None, alias='monthlyRent')
+        Field(description='월세 (원)', alias='monthlyRent')
+    ] = None
     loan: Annotated[
         int | None,
         Field(description='융자금 (원). 0 이면 loan_code 로 "없음"과 "입력 안 함"을 구분한다')
     ] = None
     previous_deposit: Annotated[
         int | None,
-        Field(description='기존 보증금 (원)')
-    ] = Field(default=None, alias='previousDeposit')
+        Field(description='기존 보증금 (원)', alias='previousDeposit')
+    ] = None
     previous_monthly_rent: Annotated[
         int | None,
-        Field(description='기존 월세 (원)')
-    ] = Field(default=None, alias='previousMonthlyRent')
+        Field(description='기존 월세 (원)', alias='previousMonthlyRent')
+    ] = None
     loan_code: Annotated[
         str | None,
-        Field(description="융자 구분. '0' 이면 융자 없음을 명시, '2' 는 융자 있음. 없으면 입력 안 함")
-    ] = Field(default=None, alias='loanCode')
+        Field(description="융자 구분. '0' 이면 융자 없음을 명시, '2' 는 융자 있음. 없으면 입력 안 함", alias='loanCode')
+    ] = None
 
 
 class NaverFloorInfoModel(ResponseModel):
@@ -238,12 +238,12 @@ class NaverFloorInfoModel(ResponseModel):
 
     target_floor: Annotated[
         str | None,
-        Field(description='해당 층 (저/중/고 로 가려질 수 있음)')
-    ] = Field(default=None, alias='targetFloor')
+        Field(description='해당 층 (저/중/고 로 가려질 수 있음)', alias='targetFloor')
+    ] = None
     total_floor: Annotated[
         str | None,
-        Field(description='전체 층')
-    ] = Field(default=None, alias='totalFloor')
+        Field(description='전체 층', alias='totalFloor')
+    ] = None
 
 
 class NaverSpaceInfoModel(ResponseModel):
@@ -251,16 +251,16 @@ class NaverSpaceInfoModel(ResponseModel):
 
     floor_info: Annotated[
         NaverFloorInfoModel | None,
-        Field(description='층')
-    ] = Field(default=None, alias='floorInfo')
+        Field(description='층', alias='floorInfo')
+    ] = None
     room_count: Annotated[
         int | None,
-        Field(description='방 수')
-    ] = Field(default=None, alias='roomCount')
+        Field(description='방 수', alias='roomCount')
+    ] = None
     bath_room_count: Annotated[
         int | None,
-        Field(description='욕실 수')
-    ] = Field(default=None, alias='bathRoomCount')
+        Field(description='욕실 수', alias='bathRoomCount')
+    ] = None
     duplex: Annotated[
         bool | None,
         Field(description='복층 여부')
@@ -271,8 +271,8 @@ class NaverSpaceInfoModel(ResponseModel):
     ] = None
     direction_standard: Annotated[
         str | None,
-        Field(description='방향 기준 (예: 거실 기준)')
-    ] = Field(default=None, alias='directionStandard')
+        Field(description='방향 기준 (예: 거실 기준)', alias='directionStandard')
+    ] = None
 
 
 class NaverSizeInfoModel(ResponseModel):
@@ -280,16 +280,16 @@ class NaverSizeInfoModel(ResponseModel):
 
     supply_space: Annotated[
         float | None,
-        Field(description='공급면적 (㎡). 오피스텔은 계약면적이 온다 (평형표 contractArea 와 같음)')
-    ] = Field(default=None, alias='supplySpace')
+        Field(description='공급면적 (㎡). 오피스텔은 계약면적이 온다 (평형표 contractArea 와 같음)', alias='supplySpace')
+    ] = None
     exclusive_space: Annotated[
         float | None,
-        Field(description='전용면적 (㎡)')
-    ] = Field(default=None, alias='exclusiveSpace')
+        Field(description='전용면적 (㎡)', alias='exclusiveSpace')
+    ] = None
     pyeong_area: Annotated[
         float | None,
-        Field(description='공급 평수')
-    ] = Field(default=None, alias='pyeongArea')
+        Field(description='공급 평수', alias='pyeongArea')
+    ] = None
 
 
 class NaverMovingInInfoModel(ResponseModel):
@@ -297,19 +297,20 @@ class NaverMovingInInfoModel(ResponseModel):
 
     moving_in_type: Annotated[
         str | None,
-        Field(description=(
-            "'MV001' 즉시입주(날짜 없음), 'MV004' 날짜 지정(movingInDate), 'EARLY'·'MID'·'LATE' 는 "
-            'movingInDate 달의 초·중·하순 (매물 65건 실측, 2026-10-10)'
-        ))
-    ] = Field(default=None, alias='movingInType')
+        Field(
+            description="'MV001' 즉시입주(날짜 없음), 'MV004' 날짜 지정(movingInDate), 'EARLY'·'MID'·'LATE' 는 "
+            'movingInDate 달의 초·중·하순 (매물 65건 실측, 2026-10-10)',
+            alias='movingInType'
+        )
+    ] = None
     moving_in_date: Annotated[
         str | None,
-        Field(description='입주 가능일')
-    ] = Field(default=None, alias='movingInDate')
+        Field(description='입주 가능일', alias='movingInDate')
+    ] = None
     moving_in_negotiation: Annotated[
         bool | None,
-        Field(description='협의 가능 여부')
-    ] = Field(default=None, alias='movingInNegotiation')
+        Field(description='협의 가능 여부', alias='movingInNegotiation')
+    ] = None
 
 
 class NaverArticleDetailInfoModel(ResponseModel):
@@ -317,24 +318,24 @@ class NaverArticleDetailInfoModel(ResponseModel):
 
     article_name: Annotated[
         str | None,
-        Field(description='매물 이름 (보통 단지명)')
-    ] = Field(default=None, alias='articleName')
+        Field(description='매물 이름 (보통 단지명)', alias='articleName')
+    ] = None
     article_feature_description: Annotated[
         str | None,
-        Field(description='한 줄 특징')
-    ] = Field(default=None, alias='articleFeatureDescription')
+        Field(description='한 줄 특징', alias='articleFeatureDescription')
+    ] = None
     article_description: Annotated[
         str | None,
-        Field(description='본문')
-    ] = Field(default=None, alias='articleDescription')
+        Field(description='본문', alias='articleDescription')
+    ] = None
     exposure_start_date: Annotated[
         str | None,
-        Field(description='노출 시작일')
-    ] = Field(default=None, alias='exposureStartDate')
+        Field(description='노출 시작일', alias='exposureStartDate')
+    ] = None
     building_principal_use: Annotated[
         str | None,
-        Field(description='건축물 주용도')
-    ] = Field(default=None, alias='buildingPrincipalUse')
+        Field(description='건축물 주용도', alias='buildingPrincipalUse')
+    ] = None
     coordinates: Annotated[
         NaverCoordinatesModel | None,
         Field(description='좌표')
@@ -346,24 +347,24 @@ class NaverDetailInfoModel(ResponseModel):
 
     facility_info: Annotated[
         NaverFacilityInfoModel | None,
-        Field(description='시설')
-    ] = Field(default=None, alias='facilityInfo')
+        Field(description='시설', alias='facilityInfo')
+    ] = None
     article_detail_info: Annotated[
         NaverArticleDetailInfoModel | None,
-        Field(description='본문 정보')
-    ] = Field(default=None, alias='articleDetailInfo')
+        Field(description='본문 정보', alias='articleDetailInfo')
+    ] = None
     moving_in_info: Annotated[
         NaverMovingInInfoModel | None,
-        Field(description='입주 가능일')
-    ] = Field(default=None, alias='movingInInfo')
+        Field(description='입주 가능일', alias='movingInInfo')
+    ] = None
     space_info: Annotated[
         NaverSpaceInfoModel | None,
-        Field(description='층·방·방향')
-    ] = Field(default=None, alias='spaceInfo')
+        Field(description='층·방·방향', alias='spaceInfo')
+    ] = None
     size_info: Annotated[
         NaverSizeInfoModel | None,
-        Field(description='면적')
-    ] = Field(default=None, alias='sizeInfo')
+        Field(description='면적', alias='sizeInfo')
+    ] = None
     shape: Annotated[
         str | None,
         Field(description=(
@@ -378,16 +379,16 @@ class NaverCommunalComplexInfoModel(ResponseModel):
 
     complex_number: Annotated[
         int | None,
-        Field(description='단지 번호')
-    ] = Field(default=None, alias='complexNumber')
+        Field(description='단지 번호', alias='complexNumber')
+    ] = None
     complex_name: Annotated[
         str | None,
-        Field(description='단지명')
-    ] = Field(default=None, alias='complexName')
+        Field(description='단지명', alias='complexName')
+    ] = None
     dong_name: Annotated[
         str | None,
-        Field(description='동')
-    ] = Field(default=None, alias='dongName')
+        Field(description='동', alias='dongName')
+    ] = None
 
 
 class NaverArticleBasicInfoModel(ResponseModel):
@@ -395,16 +396,16 @@ class NaverArticleBasicInfoModel(ResponseModel):
 
     price_info: Annotated[
         NaverPriceInfoModel | None,
-        Field(description='가격 (원)')
-    ] = Field(default=None, alias='priceInfo')
+        Field(description='가격 (원)', alias='priceInfo')
+    ] = None
     detail_info: Annotated[
         NaverDetailInfoModel | None,
-        Field(description='상세')
-    ] = Field(default=None, alias='detailInfo')
+        Field(description='상세', alias='detailInfo')
+    ] = None
     communal_complex_info: Annotated[
         NaverCommunalComplexInfoModel | None,
-        Field(description='소속 단지')
-    ] = Field(default=None, alias='communalComplexInfo')
+        Field(description='소속 단지', alias='communalComplexInfo')
+    ] = None
 
 
 class NaverAgentPhoneModel(ResponseModel):
@@ -421,20 +422,20 @@ class NaverArticleAgentModel(ResponseModel):
 
     brokerage_name: Annotated[
         str | None,
-        Field(description='중개사무소명')
-    ] = Field(default=None, alias='brokerageName')
+        Field(description='중개사무소명', alias='brokerageName')
+    ] = None
     broker_name: Annotated[
         str | None,
-        Field(description='대표 중개사')
-    ] = Field(default=None, alias='brokerName')
+        Field(description='대표 중개사', alias='brokerName')
+    ] = None
     address: Annotated[
         str | None,
         Field(description='사무소 주소')
     ] = None
     business_registration_number: Annotated[
         str | None,
-        Field(description='중개사무소 등록번호')
-    ] = Field(default=None, alias='businessRegistrationNumber')
+        Field(description='중개사무소 등록번호', alias='businessRegistrationNumber')
+    ] = None
     phone: Annotated[
         NaverAgentPhoneModel | None,
         Field(description='연락처')
@@ -450,11 +451,12 @@ class NaverEtcDetailModel(ResponseModel):
     ] = None
     category_list: Annotated[
         list[str] | None,
-        Field(description=(
-            "관리비에 포함된 항목 코드. '01' 공용, '11' 전기, '12' 수도, '13' 가스, '14' 난방, '15' 인터넷, "
-            "'16' TV, '99' 기타 (사이트 화면 대조, 2026-10-10). 중개사가 항목을 입력하지 않으면 키가 없다"
-        ))
-    ] = Field(default=None, alias='categoryList')
+        Field(
+            description="관리비에 포함된 항목 코드. '01' 공용, '11' 전기, '12' 수도, '13' 가스, '14' 난방, '15' 인터넷, "
+            "'16' TV, '99' 기타 (사이트 화면 대조, 2026-10-10). 중개사가 항목을 입력하지 않으면 키가 없다",
+            alias='categoryList'
+        )
+    ] = None
 
 
 class NaverFixDetailModel(ResponseModel):
@@ -466,8 +468,8 @@ class NaverFixDetailModel(ResponseModel):
     ] = None
     unit_type: Annotated[
         str | None,
-        Field(description="'01' 정액 (amount 가 관리비에 들어감), '02' 실비 (금액 없이 쓴 만큼 따로 냄, 사이트 표기 '실비')")
-    ] = Field(default=None, alias='unitType')
+        Field(description="'01' 정액 (amount 가 관리비에 들어감), '02' 실비 (금액 없이 쓴 만큼 따로 냄, 사이트 표기 '실비')", alias='unitType')
+    ] = None
     amount: Annotated[
         int | None,
         Field(description='정액 금액 (원). 실비 항목은 없다')
@@ -479,27 +481,29 @@ class NaverArticleMaintenanceFeeModel(ResponseModel):
 
     type_code: Annotated[
         str | None,
-        Field(description=(
-            "관리비 입력 방식 코드. '01' 항목별 금액 (fixDetailList, 사이트는 정액 항목을 더해 합계로 보여 준다), "
+        Field(
+            description="관리비 입력 방식 코드. '01' 항목별 금액 (fixDetailList, 사이트는 정액 항목을 더해 합계로 보여 준다), "
             "'02' 합계 금액 (etcDetail, 0원 포함), '03' 미확인 (uncheckDetail 로 사유가 오고 금액 키는 null), "
-            "'04' 정액 합계 금액 (fixNonDetailList)"
-        ))
-    ] = Field(default=None, alias='typeCode')
+            "'04' 정액 합계 금액 (fixNonDetailList)",
+            alias='typeCode'
+        )
+    ] = None
     etc_detail: Annotated[
         NaverEtcDetailModel | None,
-        Field(description='합계 금액·포함 항목')
-    ] = Field(default=None, alias='etcDetail')
+        Field(description='합계 금액·포함 항목', alias='etcDetail')
+    ] = None
     fix_detail_list: Annotated[
         list[NaverFixDetailModel] | None,
-        Field(description='항목별 금액 (typeCode 01). 원룸 2653883790: 공용 10만원 정액 + 전기~TV 실비 = 합계 10만원 (2026-10-10)')
-    ] = Field(default=None, alias='fixDetailList')
+        Field(description='항목별 금액 (typeCode 01). 원룸 2653883790: 공용 10만원 정액 + 전기~TV 실비 = 합계 10만원 (2026-10-10)', alias='fixDetailList')
+    ] = None
     fix_non_detail_list: Annotated[
         NaverEtcDetailModel | None,
-        Field(description=(
-            "정액 합계 금액·포함 항목 (typeCode '04'). 이름과 달리 리스트가 아니라 etcDetail 과 같은 모양이고, 금액은 목록의 "
-            "관리비와 같다 (신림동 원룸·빌라·오피스텔 7건, 2026-10-11: 2652339975 13만원 등)"
-        ))
-    ] = Field(default=None, alias='fixNonDetailList')
+        Field(
+            description="정액 합계 금액·포함 항목 (typeCode '04'). 이름과 달리 리스트가 아니라 etcDetail 과 같은 모양이고, 금액은 목록의 "
+            "관리비와 같다 (신림동 원룸·빌라·오피스텔 7건, 2026-10-11: 2652339975 13만원 등)",
+            alias='fixNonDetailList'
+        )
+    ] = None
 
 
 class NaverComplexVillaArticleListV1ResponseModel(NaverResponseModel[NaverArticlePageModel]):

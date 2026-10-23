@@ -25,8 +25,8 @@ class DaangnGetViewRankingArticlesDataModel(ResponseModel):
 
     get_view_ranking_articles: Annotated[
         DaangnViewRankingModel | None,
-        Field(description='조회수 순위')
-    ] = Field(default=None, alias='getViewRankingArticles')
+        Field(description='조회수 순위', alias='getViewRankingArticles')
+    ] = None
 
 
 class DaangnGetViewRankingArticlesResponseModel(DaangnGraphQLResponseModel):

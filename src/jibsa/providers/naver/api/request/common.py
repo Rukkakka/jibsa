@@ -72,8 +72,8 @@ class NaverComplexRequestParameterModel(RequestModel):
 
     complex_number: Annotated[
         int,
-        Field(gt=0, description='fin.land 단지 번호 (구 new.land 의 hscpNo 와 다름)')
-    ] = Field(alias='complexNumber')
+        Field(gt=0, description='fin.land 단지 번호 (구 new.land 의 hscpNo 와 다름)', alias='complexNumber')
+    ]
 
 
 class NaverComplexV1RequestParameterModel(NaverComplexRequestParameterModel):
@@ -105,8 +105,8 @@ class NaverComplexPyeongRequestParameterModel(NaverComplexRequestParameterModel)
 
     pyeong_type_number: Annotated[
         int,
-        Field(gt=0, description='평형 번호 (pyeongList 의 number)')
-    ] = Field(alias='pyeongTypeNumber')
+        Field(gt=0, description='평형 번호 (pyeongList 의 number)', alias='pyeongTypeNumber')
+    ]
 
 
 class NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(RequestModel):
@@ -127,28 +127,28 @@ class NaverPriceFilterModel(RequestModel):
 
     min_deal_price: Annotated[
         int | None,
-        Field(ge=0, description='매매가 하한 (원)')
-    ] = Field(default=None, alias='minDealPrice')
+        Field(ge=0, description='매매가 하한 (원)', alias='minDealPrice')
+    ] = None
     max_deal_price: Annotated[
         int | None,
-        Field(ge=0, description='매매가 상한 (원)')
-    ] = Field(default=None, alias='maxDealPrice')
+        Field(ge=0, description='매매가 상한 (원)', alias='maxDealPrice')
+    ] = None
     min_warranty_price: Annotated[
         int | None,
-        Field(ge=0, description='보증금·전세금 하한 (원)')
-    ] = Field(default=None, alias='minWarrantyPrice')
+        Field(ge=0, description='보증금·전세금 하한 (원)', alias='minWarrantyPrice')
+    ] = None
     max_warranty_price: Annotated[
         int | None,
-        Field(ge=0, description='보증금·전세금 상한 (원)')
-    ] = Field(default=None, alias='maxWarrantyPrice')
+        Field(ge=0, description='보증금·전세금 상한 (원)', alias='maxWarrantyPrice')
+    ] = None
     min_rent_price: Annotated[
         int | None,
-        Field(ge=0, description='월세 하한 (원)')
-    ] = Field(default=None, alias='minRentPrice')
+        Field(ge=0, description='월세 하한 (원)', alias='minRentPrice')
+    ] = None
     max_rent_price: Annotated[
         int | None,
-        Field(ge=0, description='월세 상한 (원)')
-    ] = Field(default=None, alias='maxRentPrice')
+        Field(ge=0, description='월세 상한 (원)', alias='maxRentPrice')
+    ] = None
 
 
 class NaverBoundingBoxModel(RequestModel):
@@ -195,105 +195,105 @@ class NaverArticleFilterModel(RequestModel):
 
     trade_types: Annotated[
         list[NaverTradeType],
-        Field(description='거래 유형')
-    ] = Field(default=['A1', 'B1', 'B2'], alias='tradeTypes')
+        Field(description='거래 유형', alias='tradeTypes')
+    ] = ['A1', 'B1', 'B2']
     real_estate_types: Annotated[
         list[NaverRealEstateType],
-        Field(description='매물 유형')
-    ] = Field(default=['A01', 'A02', 'A05', 'A06', 'A07', 'C02'], alias='realEstateTypes')
+        Field(description='매물 유형', alias='realEstateTypes')
+    ] = ['A01', 'A02', 'A05', 'A06', 'A07', 'C02']
     deal_price: Annotated[
         NaverRangeModel | None,
-        Field(description='매매가 범위 (원)')
-    ] = Field(default=None, alias='dealPrice')
+        Field(description='매매가 범위 (원)', alias='dealPrice')
+    ] = None
     warranty_price: Annotated[
         NaverRangeModel | None,
-        Field(description='보증금·전세금 범위 (원)')
-    ] = Field(default=None, alias='warrantyPrice')
+        Field(description='보증금·전세금 범위 (원)', alias='warrantyPrice')
+    ] = None
     rent_price: Annotated[
         NaverRangeModel | None,
-        Field(description='월세 범위 (원)')
-    ] = Field(default=None, alias='rentPrice')
+        Field(description='월세 범위 (원)', alias='rentPrice')
+    ] = None
     space: Annotated[
         NaverRangeModel | None,
         Field(description='면적 범위 (㎡). filters_exclusive_space 가 True 면 전용면적, 아니면 공급면적 기준')
     ] = None
     management_fee: Annotated[
         NaverRangeModel | None,
-        Field(description='관리비 범위 (원)')
-    ] = Field(default=None, alias='managementFee')
+        Field(description='관리비 범위 (원)', alias='managementFee')
+    ] = None
     household_number: Annotated[
         NaverRangeModel | None,
-        Field(description='단지 세대수 범위. 단지가 없는 매물(대부분의 빌라)은 빠진다')
-    ] = Field(default=None, alias='householdNumber')
+        Field(description='단지 세대수 범위. 단지가 없는 매물(대부분의 빌라)은 빠진다', alias='householdNumber')
+    ] = None
     approval_elapsed_year: Annotated[
         NaverRangeModel | None,
-        Field(description='사용승인 후 지난 햇수 범위')
-    ] = Field(default=None, alias='approvalElapsedYear')
+        Field(description='사용승인 후 지난 햇수 범위', alias='approvalElapsedYear')
+    ] = None
     loan_ratio_type: Annotated[
         NaverLoanRatioType | None,
-        Field(description='융자금 조건')
-    ] = Field(default=None, alias='loanRatioType')
+        Field(description='융자금 조건', alias='loanRatioType')
+    ] = None
     room_count: Annotated[
         list[NaverRoomCount],
-        Field(description='방 수. 비우면 제한 없음')
-    ] = Field(default=[], alias='roomCount')
+        Field(description='방 수. 비우면 제한 없음', alias='roomCount')
+    ] = []
     bath_room_count: Annotated[
         list[NaverRoomCount],
-        Field(description='욕실 수 (방 수와 같은 코드). 비우면 제한 없음')
-    ] = Field(default=[], alias='bathRoomCount')
+        Field(description='욕실 수 (방 수와 같은 코드). 비우면 제한 없음', alias='bathRoomCount')
+    ] = []
     option_types: Annotated[
         list[NaverOptionType],
-        Field(description='시설. 모두 갖춘 매물만')
-    ] = Field(default=[], alias='optionTypes')
+        Field(description='시설. 모두 갖춘 매물만', alias='optionTypes')
+    ] = []
     one_room_shape_types: Annotated[
         list[NaverOneRoomShape],
-        Field(description='원룸 구조')
-    ] = Field(default=[], alias='oneRoomShapeTypes')
+        Field(description='원룸 구조', alias='oneRoomShapeTypes')
+    ] = []
     move_in_types: Annotated[
         list[NaverMoveInType],
-        Field(description='입주 가능일')
-    ] = Field(default=[], alias='moveInTypes')
+        Field(description='입주 가능일', alias='moveInTypes')
+    ] = []
     filters_exclusive_space: Annotated[
         bool,
-        Field(description='space 를 전용면적 기준으로 비교')
-    ] = Field(default=False, alias='filtersExclusiveSpace')
+        Field(description='space 를 전용면적 기준으로 비교', alias='filtersExclusiveSpace')
+    ] = False
     floor_types: Annotated[
         list[NaverFloorType],
-        Field(description='층. 비우면 제한 없음')
-    ] = Field(default=[], alias='floorTypes')
+        Field(description='층. 비우면 제한 없음', alias='floorTypes')
+    ] = []
     direction_types: Annotated[
         list[NaverDirectionType],
-        Field(description='방향. 비우면 제한 없음')
-    ] = Field(default=[], alias='directionTypes')
+        Field(description='방향. 비우면 제한 없음', alias='directionTypes')
+    ] = []
     has_article_photo: Annotated[
         bool,
-        Field(description='사진 있는 매물만')
-    ] = Field(default=False, alias='hasArticlePhoto')
+        Field(description='사진 있는 매물만', alias='hasArticlePhoto')
+    ] = False
     is_authorized_by_owner: Annotated[
         bool,
-        Field(description='집주인 확인 매물만')
-    ] = Field(default=False, alias='isAuthorizedByOwner')
+        Field(description='집주인 확인 매물만', alias='isAuthorizedByOwner')
+    ] = False
     parking_types: Annotated[
         list[NaverParkingType],
-        Field(description='단지 주차 조건. 모두 해당하는 매물만')
-    ] = Field(default=[], alias='parkingTypes')
+        Field(description='단지 주차 조건. 모두 해당하는 매물만', alias='parkingTypes')
+    ] = []
     entrance_types: Annotated[
         list[NaverEntranceType],
-        Field(description='단지 현관 구조')
-    ] = Field(default=[], alias='entranceTypes')
+        Field(description='단지 현관 구조', alias='entranceTypes')
+    ] = []
     walking_minute_to_subway_station: Annotated[
         NaverRangeModel | None,
-        Field(description='지하철역까지 걸어서 걸리는 시간 범위 (분). 사이트는 min 0 으로 상한만 보낸다')
-    ] = Field(default=None, alias='walkingMinuteToSubwayStation')
+        Field(description='지하철역까지 걸어서 걸리는 시간 범위 (분). 사이트는 min 0 으로 상한만 보낸다', alias='walkingMinuteToSubwayStation')
+    ] = None
     has_article: Annotated[
         bool,
-        Field(description="매물 있는 단지만 (사이트 '매물 있는 단지만'). 단지 목록이 쓴다")
-    ] = Field(default=False, alias='hasArticle')
+        Field(description="매물 있는 단지만 (사이트 '매물 있는 단지만'). 단지 목록이 쓴다", alias='hasArticle')
+    ] = False
     legal_division_numbers: Annotated[
         list[str],
-        Field(description='법정동 코드. 비우면 동으로 거르지 않고 bounding_box 안 전체')
-    ] = Field(default=[], alias='legalDivisionNumbers')
+        Field(description='법정동 코드. 비우면 동으로 거르지 않고 bounding_box 안 전체', alias='legalDivisionNumbers')
+    ] = []
     legal_division_type: Annotated[
         Literal['EUP', 'SI', 'GU'],
-        Field(description='법정동 단위. EUP 이면 동/읍/면')
-    ] = Field(default='EUP', alias='legalDivisionType')
+        Field(description='법정동 단위. EUP 이면 동/읍/면', alias='legalDivisionType')
+    ] = 'EUP'

@@ -31,20 +31,20 @@ class NaverRedevelopmentAreaPagingRequestModel(RequestModel):
     ] = 30
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
     sort_type: Annotated[
         NaverRedevelopmentAreaSortType,
-        Field(description='정렬')
-    ] = Field(default='ARTICLE_COUNT_DESC', alias='sortType')
+        Field(description='정렬', alias='sortType')
+    ] = 'ARTICLE_COUNT_DESC'
     seed: Annotated[
         str | None,
         Field(description='서버가 첫 응답에 주는 정렬 seed')
     ] = None
     last_info: Annotated[
         list[Any],
-        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로')
-    ] = Field(default=[], alias='lastInfo')
+        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로', alias='lastInfo')
+    ] = []
 
 
 class NaverComplexRedevelopmentAreaListV1RequestPayloadModel(RequestModel):
@@ -60,20 +60,20 @@ class NaverComplexRedevelopmentAreaListV1RequestPayloadModel(RequestModel):
     ]
     bounding_box: Annotated[
         NaverBoundingBoxModel,
-        Field(description='지도 뷰포트')
-    ] = Field(alias='boundingBox')
+        Field(description='지도 뷰포트', alias='boundingBox')
+    ]
     precision: Annotated[
         int,
         Field(ge=13, le=18, description='지도 줌. 12 이하는 400')
     ] = 14
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
     redevelopment_area_paging_request: Annotated[
         NaverRedevelopmentAreaPagingRequestModel,
-        Field(description='페이지 요청 (정렬 포함)')
-    ] = Field(default_factory=NaverRedevelopmentAreaPagingRequestModel, alias='redevelopmentAreaPagingRequest')
+        Field(description='페이지 요청 (정렬 포함)', alias='redevelopmentAreaPagingRequest')
+    ] = Field(default_factory=NaverRedevelopmentAreaPagingRequestModel)
 
 
 class NaverComplexRedevelopmentAreaLegalDivisionListV1RequestPayloadModel(RequestModel):
@@ -88,12 +88,12 @@ class NaverComplexRedevelopmentAreaLegalDivisionListV1RequestPayloadModel(Reques
     ]
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
     redevelopment_area_paging_request: Annotated[
         NaverRedevelopmentAreaPagingRequestModel,
-        Field(description='페이지 요청 (정렬 포함)')
-    ] = Field(default_factory=NaverRedevelopmentAreaPagingRequestModel, alias='redevelopmentAreaPagingRequest')
+        Field(description='페이지 요청 (정렬 포함)', alias='redevelopmentAreaPagingRequest')
+    ] = Field(default_factory=NaverRedevelopmentAreaPagingRequestModel)
 
 
 class NaverComplexRedevelopmentAreaMarkersV1RequestPayloadModel(RequestModel):
@@ -105,16 +105,16 @@ class NaverComplexRedevelopmentAreaMarkersV1RequestPayloadModel(RequestModel):
     ]
     bounding_box: Annotated[
         NaverBoundingBoxModel,
-        Field(description='지도 뷰포트')
-    ] = Field(alias='boundingBox')
+        Field(description='지도 뷰포트', alias='boundingBox')
+    ]
     precision: Annotated[
         int,
         Field(ge=13, le=18, description='지도 줌. 목록과 같은 값을 줘야 같은 구역이 온다')
     ] = 14
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
 
 
 class NaverComplexRedevelopmentAreaArticleListV1RequestPayloadModel(NaverPriceFilterModel):
@@ -130,28 +130,28 @@ class NaverComplexRedevelopmentAreaArticleListV1RequestPayloadModel(NaverPriceFi
     ] = 30
     redevelopment_area_number: Annotated[
         int,
-        Field(gt=0, description='재개발 구역 번호 (redevelopmentArea/list 의 redevelopmentAreaNumber)')
-    ] = Field(alias='redevelopmentAreaNumber')
+        Field(gt=0, description='재개발 구역 번호 (redevelopmentArea/list 의 redevelopmentAreaNumber)', alias='redevelopmentAreaNumber')
+    ]
     trade_types: Annotated[
         list[NaverTradeType],
-        Field(description='거래 유형 필터. 비우면 전체')
-    ] = Field(default=[], alias='tradeTypes')
+        Field(description='거래 유형 필터. 비우면 전체', alias='tradeTypes')
+    ] = []
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
     article_sort_type: Annotated[
         NaverArticleSortType,
-        Field(description='정렬')
-    ] = Field(default='RANKING_DESC', alias='articleSortType')
+        Field(description='정렬', alias='articleSortType')
+    ] = 'RANKING_DESC'
     seed: Annotated[
         str | None,
         Field(description='첫 응답의 seed. 첫 요청은 빼고, 이후 그대로 넘긴다')
     ] = None
     last_info: Annotated[
         list[Any],
-        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로')
-    ] = Field(default=[], alias='lastInfo')
+        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로', alias='lastInfo')
+    ] = []
 
 
 class NaverComplexRedevelopmentV1RequestParameterModel(RequestModel):
@@ -159,8 +159,8 @@ class NaverComplexRedevelopmentV1RequestParameterModel(RequestModel):
 
     redevelopment_area_number: Annotated[
         int,
-        Field(gt=0, description='재개발 구역 번호')
-    ] = Field(alias='redevelopmentAreaNumber')
+        Field(gt=0, description='재개발 구역 번호', alias='redevelopmentAreaNumber')
+    ]
 
 
 class NaverComplexRedevelopmentAreaArticleStatsV1RequestParameterModel(NaverPriceFilterModel):
@@ -171,9 +171,9 @@ class NaverComplexRedevelopmentAreaArticleStatsV1RequestParameterModel(NaverPric
 
     redevelopment_area_number: Annotated[
         int,
-        Field(gt=0, description='재개발 구역 번호')
-    ] = Field(alias='redevelopmentAreaNumber')
+        Field(gt=0, description='재개발 구역 번호', alias='redevelopmentAreaNumber')
+    ]
     trade_types: Annotated[
         list[NaverTradeType],
-        Field(description='거래 유형 필터. 비우면 전체')
-    ] = Field(default=[], alias='tradeTypes[]')
+        Field(description='거래 유형 필터. 비우면 전체', alias='tradeTypes[]')
+    ] = []

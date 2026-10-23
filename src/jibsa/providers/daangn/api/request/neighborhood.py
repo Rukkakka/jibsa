@@ -13,8 +13,8 @@ class DaangnLivableRegionScopesRequestPayloadModel(RequestModel):
 
     base_year: Annotated[
         str,
-        Field(min_length=4, max_length=4, description='통계 기준 연도 (웹은 2025)')
-    ] = Field(alias='baseYear')
+        Field(min_length=4, max_length=4, description='통계 기준 연도 (웹은 2025)', alias='baseYear')
+    ]
 
 
 class DaangnNeighborhoodIndicatorModel(RequestModel):
@@ -30,8 +30,8 @@ class DaangnNeighborhoodIndicatorModel(RequestModel):
     ] = 3
     prefer_high: Annotated[
         bool,
-        Field(description='True 면 값이 클수록 좋다 (집값 저렴한 은 False)')
-    ] = Field(alias='preferHigh')
+        Field(description='True 면 값이 클수록 좋다 (집값 저렴한 은 False)', alias='preferHigh')
+    ]
 
 
 class DaangnRecommendNeighborhoodsInputModel(RequestModel):
@@ -43,12 +43,12 @@ class DaangnRecommendNeighborhoodsInputModel(RequestModel):
     ]
     base_year: Annotated[
         str,
-        Field(min_length=4, max_length=4, description='통계 기준 연도')
-    ] = Field(alias='baseYear')
+        Field(min_length=4, max_length=4, description='통계 기준 연도', alias='baseYear')
+    ]
     region_cd_prefixes: Annotated[
         list[str],
-        Field(description='시·도 또는 시·군·구 코드 (livableRegionScopes). 빈 목록이면 전국')
-    ] = Field(default=[], alias='regionCdPrefixes')
+        Field(description='시·도 또는 시·군·구 코드 (livableRegionScopes). 빈 목록이면 전국', alias='regionCdPrefixes')
+    ] = []
     limit: Annotated[
         int,
         Field(ge=1, description='받을 동 수 (웹은 5, 서버는 요청한 만큼 준다)')

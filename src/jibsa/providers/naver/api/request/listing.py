@@ -25,8 +25,8 @@ class NaverArticleRequestParameterModel(RequestModel):
 
     article_number: Annotated[
         str,
-        Field(pattern=r'^\d+$', description='매물 번호')
-    ] = Field(alias='articleNumber')
+        Field(pattern=r'^\d+$', description='매물 번호', alias='articleNumber')
+    ]
 
 
 class NaverArticleKeyV1RequestParameterModel(NaverArticleRequestParameterModel):
@@ -38,12 +38,12 @@ class NaverArticleBasicInfoV1RequestParameterModel(NaverArticleRequestParameterM
 
     real_estate_type: Annotated[
         NaverRealEstateType,
-        Field(description='매물 유형 코드')
-    ] = Field(alias='realEstateType')
+        Field(description='매물 유형 코드', alias='realEstateType')
+    ]
     trade_type: Annotated[
         NaverTradeType,
-        Field(description='거래 유형 코드')
-    ] = Field(alias='tradeType')
+        Field(description='거래 유형 코드', alias='tradeType')
+    ]
 
 
 class NaverArticleAgentV1RequestParameterModel(NaverArticleRequestParameterModel):
@@ -67,12 +67,12 @@ class NaverDataServiceTransportV1RequestParameterModel(RequestModel):
 
     item_type: Annotated[
         Literal['article', 'complex', 'villa'],
-        Field(description='대상 종류 (사이트 ITEM_TRANSPORT_TYPE: 매물, 단지, 빌라 단지)')
-    ] = Field(default='article', alias='itemType')
+        Field(description='대상 종류 (사이트 ITEM_TRANSPORT_TYPE: 매물, 단지, 빌라 단지)', alias='itemType')
+    ] = 'article'
     item_id: Annotated[
         int,
-        Field(gt=0, description='매물 번호 또는 단지 번호')
-    ] = Field(alias='itemId')
+        Field(gt=0, description='매물 번호 또는 단지 번호', alias='itemId')
+    ]
 
 
 class NaverEducationBuildingSchoolV1RequestParameterModel(RequestModel):
@@ -84,16 +84,16 @@ class NaverEducationBuildingSchoolV1RequestParameterModel(RequestModel):
 
     item_type: Annotated[
         Literal['complex', 'villa'],
-        Field(description='단지 종류 (사이트 ArticleSchoolItemType)')
-    ] = Field(alias='itemType')
+        Field(description='단지 종류 (사이트 ArticleSchoolItemType)', alias='itemType')
+    ]
     complex_number: Annotated[
         int,
-        Field(gt=0, description='단지 번호')
-    ] = Field(alias='complexNumber')
+        Field(gt=0, description='단지 번호', alias='complexNumber')
+    ]
     building_number: Annotated[
         int,
-        Field(gt=0, description='동 번호 (article/key 의 buildingNumber)')
-    ] = Field(alias='buildingNumber')
+        Field(gt=0, description='동 번호 (article/key 의 buildingNumber)', alias='buildingNumber')
+    ]
 
 
 class NaverComplexArticleListV1RequestPayloadModel(NaverPriceFilterModel):
@@ -111,28 +111,28 @@ class NaverComplexArticleListV1RequestPayloadModel(NaverPriceFilterModel):
     ] = 30
     complex_number: Annotated[
         int,
-        Field(gt=0, description='단지 번호. 서버가 문자열을 요구해 문자열로 직렬화한다')
-    ] = Field(alias='complexNumber')
+        Field(gt=0, description='단지 번호. 서버가 문자열을 요구해 문자열로 직렬화한다', alias='complexNumber')
+    ]
     trade_types: Annotated[
         list[NaverTradeType],
-        Field(description='거래 유형 필터. 비우면 전체')
-    ] = Field(default=[], alias='tradeTypes')
+        Field(description='거래 유형 필터. 비우면 전체', alias='tradeTypes')
+    ] = []
     pyeong_types: Annotated[
         list[int],
-        Field(description='평형 번호 필터. 비우면 전체')
-    ] = Field(default=[], alias='pyeongTypes')
+        Field(description='평형 번호 필터. 비우면 전체', alias='pyeongTypes')
+    ] = []
     dong_numbers: Annotated[
         list[str],
-        Field(description='동 번호 필터 (buildingList 의 number, 동 이름 아님). 비우면 전체')
-    ] = Field(default=[], alias='dongNumbers')
+        Field(description='동 번호 필터 (buildingList 의 number, 동 이름 아님). 비우면 전체', alias='dongNumbers')
+    ] = []
     user_channel_type: Annotated[
         Literal['PC'],
-        Field(description='고정값')
-    ] = Field(default='PC', alias='userChannelType')
+        Field(description='고정값', alias='userChannelType')
+    ] = 'PC'
     article_sort_type: Annotated[
         NaverArticleSortType,
-        Field(description='정렬 (RANKING_DESC 네이버 랭킹 기본). 가격순은 거래 유형마다 다른 금액(매매가·보증금)을 섞어 비교한다')
-    ] = Field(default='RANKING_DESC', alias='articleSortType')
+        Field(description='정렬 (RANKING_DESC 네이버 랭킹 기본). 가격순은 거래 유형마다 다른 금액(매매가·보증금)을 섞어 비교한다', alias='articleSortType')
+    ] = 'RANKING_DESC'
     seed: Annotated[
         str | None,
         Field(description='첫 응답의 seed. 첫 요청은 빼고, 이후 그대로 넘긴다. 빠지면 랭킹순이 페이지마다 다시 섞여 '
@@ -140,8 +140,8 @@ class NaverComplexArticleListV1RequestPayloadModel(NaverPriceFilterModel):
     ] = None
     last_info: Annotated[
         list[Any],
-        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로')
-    ] = Field(default=[], alias='lastInfo')
+        Field(description='커서. 첫 요청은 [], 이후 응답의 lastInfo 를 그대로', alias='lastInfo')
+    ] = []
 
     @field_serializer('complex_number')
     def serialize_complex_number(self, v: int) -> str:

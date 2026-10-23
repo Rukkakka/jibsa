@@ -13,20 +13,20 @@ class NaverWeeklyPointModel(ResponseModel):
 
     first_day_of_week: Annotated[
         str | None,
-        Field(description='그 주 첫날 (YYYY-MM-DD)')
-    ] = Field(default=None, alias='firstDayOfWeek')
+        Field(description='그 주 첫날 (YYYY-MM-DD)', alias='firstDayOfWeek')
+    ] = None
     average_count: Annotated[
         int | None,
-        Field(description='그 주 평균 매물 수')
-    ] = Field(default=None, alias='averageCount')
+        Field(description='그 주 평균 매물 수', alias='averageCount')
+    ] = None
     average_pyeong_price: Annotated[
         int | None,
-        Field(description='그 주 평균 평당 호가 (원)')
-    ] = Field(default=None, alias='averagePyeongPrice')
+        Field(description='그 주 평균 평당 호가 (원)', alias='averagePyeongPrice')
+    ] = None
     trade_count: Annotated[
         int | None,
-        Field(description='그 주 실거래 건수')
-    ] = Field(default=None, alias='tradeCount')
+        Field(description='그 주 실거래 건수', alias='tradeCount')
+    ] = None
 
 
 class NaverArticleCountWeeklyInfoModel(ResponseModel):
@@ -34,28 +34,28 @@ class NaverArticleCountWeeklyInfoModel(ResponseModel):
 
     period_average_count: Annotated[
         int | None,
-        Field(description='기간 평균 매물 수')
-    ] = Field(default=None, alias='periodAverageCount')
+        Field(description='기간 평균 매물 수', alias='periodAverageCount')
+    ] = None
     min_weekly_count: Annotated[
         int | None,
-        Field(description='기간 중 가장 적은 주')
-    ] = Field(default=None, alias='minWeeklyCount')
+        Field(description='기간 중 가장 적은 주', alias='minWeeklyCount')
+    ] = None
     max_weekly_count: Annotated[
         int | None,
-        Field(description='기간 중 가장 많은 주')
-    ] = Field(default=None, alias='maxWeeklyCount')
+        Field(description='기간 중 가장 많은 주', alias='maxWeeklyCount')
+    ] = None
     latest_weekly_count: Annotated[
         int | None,
-        Field(description='최근 주')
-    ] = Field(default=None, alias='latestWeeklyCount')
+        Field(description='최근 주', alias='latestWeeklyCount')
+    ] = None
     count_change_rate: Annotated[
         float | None,
-        Field(description='기간 첫 주 대비 최근 주 증감률 (%)')
-    ] = Field(default=None, alias='countChangeRate')
+        Field(description='기간 첫 주 대비 최근 주 증감률 (%)', alias='countChangeRate')
+    ] = None
     weekly_counts: Annotated[
         list[NaverWeeklyPointModel],
-        Field(description='주별 값')
-    ] = Field(default=[], alias='weeklyCounts')
+        Field(description='주별 값', alias='weeklyCounts')
+    ] = []
 
 
 class NaverRealTradeCountWeeklyModel(ResponseModel):
@@ -63,16 +63,16 @@ class NaverRealTradeCountWeeklyModel(ResponseModel):
 
     period_average_trade_count: Annotated[
         int | None,
-        Field(description='기간 평균 주간 거래 건수')
-    ] = Field(default=None, alias='periodAverageTradeCount')
+        Field(description='기간 평균 주간 거래 건수', alias='periodAverageTradeCount')
+    ] = None
     latest_weekly_trade_count: Annotated[
         int | None,
-        Field(description='최근 주 거래 건수')
-    ] = Field(default=None, alias='latestWeeklyTradeCount')
+        Field(description='최근 주 거래 건수', alias='latestWeeklyTradeCount')
+    ] = None
     weekly_counts: Annotated[
         list[NaverWeeklyPointModel],
-        Field(description='주별 값')
-    ] = Field(default=[], alias='weeklyCounts')
+        Field(description='주별 값', alias='weeklyCounts')
+    ] = []
 
 
 class NaverLegalDivisionArticleCountWeeklyInfoV1ResponseModel(NaverResponseModel[NaverArticleCountWeeklyInfoModel]):

@@ -21,24 +21,24 @@ class DaangnDevelopmentDistrictModel(ResponseModel):
 
     dev_busi_no: Annotated[
         int,
-        Field(description='사업 번호')
-    ] = Field(alias='devBusiNo')
+        Field(description='사업 번호', alias='devBusiNo')
+    ]
     dev_busi_nm: Annotated[
         str | None,
-        Field(description='사업 이름')
-    ] = Field(default=None, alias='devBusiNm')
+        Field(description='사업 이름', alias='devBusiNm')
+    ] = None
     category: Annotated[
         str | None,
         Field(description='ROAD / RAIL / HOUSING')
     ] = None
     busi_prgrs_cd: Annotated[
         str | None,
-        Field(description='진행 코드. S11 예정, S12 진행, E01 은 웹이 지도에서 숨긴다')
-    ] = Field(default=None, alias='busiPrgrsCd')
+        Field(description='진행 코드. S11 예정, S12 진행, E01 은 웹이 지도에서 숨긴다', alias='busiPrgrsCd')
+    ] = None
     center_coordinate: Annotated[
         DaangnCoordinateModel | None,
-        Field(description='사업 구역 중심')
-    ] = Field(default=None, alias='centerCoordinate')
+        Field(description='사업 구역 중심', alias='centerCoordinate')
+    ] = None
 
 
 class DaangnDevelopmentDistrictsDataModel(ResponseModel):
@@ -46,8 +46,8 @@ class DaangnDevelopmentDistrictsDataModel(ResponseModel):
 
     development_districts: Annotated[
         list[DaangnDevelopmentDistrictModel],
-        Field(description='좌표 범위 안의 개발 사업')
-    ] = Field(default=[], alias='developmentDistricts')
+        Field(description='좌표 범위 안의 개발 사업', alias='developmentDistricts')
+    ] = []
 
 
 class DaangnDevelopmentDistrictsResponseModel(DaangnGraphQLResponseModel):
@@ -64,100 +64,100 @@ class DaangnDevelopmentDetailModel(ResponseModel):
 
     dev_busi_nm: Annotated[
         str | None,
-        Field(description='사업 이름')
-    ] = Field(default=None, alias='devBusiNm')
+        Field(description='사업 이름', alias='devBusiNm')
+    ] = None
     dev_busi_sort: Annotated[
         str | None,
-        Field(description='사업 분류 (예: 정비사업)')
-    ] = Field(default=None, alias='devBusiSort')
+        Field(description='사업 분류 (예: 정비사업)', alias='devBusiSort')
+    ] = None
     dev_busi_type: Annotated[
         str | None,
-        Field(description='사업 종류 (예: 재건축)')
-    ] = Field(default=None, alias='devBusiType')
+        Field(description='사업 종류 (예: 재건축)', alias='devBusiType')
+    ] = None
     busi_prgrs: Annotated[
         str | None,
-        Field(description='진행 상태 (예: 사업진행)')
-    ] = Field(default=None, alias='busiPrgrs')
+        Field(description='진행 상태 (예: 사업진행)', alias='busiPrgrs')
+    ] = None
     busi_step: Annotated[
         str | None,
-        Field(description='사업 단계 (예: 착공및분양)')
-    ] = Field(default=None, alias='busiStep')
+        Field(description='사업 단계 (예: 착공및분양)', alias='busiStep')
+    ] = None
     busi_term: Annotated[
         str | None,
-        Field(description='사업 기간')
-    ] = Field(default=None, alias='busiTerm')
+        Field(description='사업 기간', alias='busiTerm')
+    ] = None
     busi_area: Annotated[
         LooseFloat,
-        Field(description='사업 면적 (㎡)')
-    ] = Field(default=None, alias='busiArea')
+        Field(description='사업 면적 (㎡)', alias='busiArea')
+    ] = None
     busi_size: Annotated[
         str | None,
-        Field(description='사업 규모 (예: 1,802명/721세대)')
-    ] = Field(default=None, alias='busiSize')
+        Field(description='사업 규모 (예: 1,802명/721세대)', alias='busiSize')
+    ] = None
     location: Annotated[
         str | None,
         Field(description='위치 (지번 일부)')
     ] = None
     developer_nm: Annotated[
         str | None,
-        Field(description='사업 시행자')
-    ] = Field(default=None, alias='developerNm')
+        Field(description='사업 시행자', alias='developerNm')
+    ] = None
     developer_type: Annotated[
         str | None,
-        Field(description='시행 방식 (예: 조합방식)')
-    ] = Field(default=None, alias='developerType')
+        Field(description='시행 방식 (예: 조합방식)', alias='developerType')
+    ] = None
     cstr_cp_nm: Annotated[
         str | None,
-        Field(description='시공사')
-    ] = Field(default=None, alias='cstrCpNm')
+        Field(description='시공사', alias='cstrCpNm')
+    ] = None
     plan_hseh_cnt: Annotated[
         int | None,
-        Field(description='계획 세대수')
-    ] = Field(default=None, alias='planHsehCnt')
+        Field(description='계획 세대수', alias='planHsehCnt')
+    ] = None
     building_coverage: Annotated[
         LooseFloat,
-        Field(description='건폐율 (%)')
-    ] = Field(default=None, alias='buildingCoverage')
+        Field(description='건폐율 (%)', alias='buildingCoverage')
+    ] = None
     floor_space_idx: Annotated[
         LooseFloat,
-        Field(description='용적률 (%)')
-    ] = Field(default=None, alias='floorSpaceIdx')
+        Field(description='용적률 (%)', alias='floorSpaceIdx')
+    ] = None
     basic_plan_floor_cnt: Annotated[
         str | None,
-        Field(description='계획 최고 층수')
-    ] = Field(default=None, alias='basicPlanFloorCnt')
+        Field(description='계획 최고 층수', alias='basicPlanFloorCnt')
+    ] = None
     target_y: Annotated[
         str | None,
-        Field(description='목표 연도')
-    ] = Field(default=None, alias='targetY')
+        Field(description='목표 연도', alias='targetY')
+    ] = None
     area_designation_date: Annotated[
         str | None,
-        Field(description='구역 지정일')
-    ] = Field(default=None, alias='areaDesignationDate')
+        Field(description='구역 지정일', alias='areaDesignationDate')
+    ] = None
     committee_apprv_date: Annotated[
         str | None,
-        Field(description='추진위원회 승인일')
-    ] = Field(default=None, alias='committeeApprvDate')
+        Field(description='추진위원회 승인일', alias='committeeApprvDate')
+    ] = None
     estbm_union_date: Annotated[
         str | None,
-        Field(description='조합 설립 인가일')
-    ] = Field(default=None, alias='estbmUnionDate')
+        Field(description='조합 설립 인가일', alias='estbmUnionDate')
+    ] = None
     dev_plan_aprv_date: Annotated[
         str | None,
-        Field(description='개발 계획 승인일')
-    ] = Field(default=None, alias='devPlanAprvDate')
+        Field(description='개발 계획 승인일', alias='devPlanAprvDate')
+    ] = None
     impl_plan_aprv_date: Annotated[
         str | None,
-        Field(description='실시 계획 승인일')
-    ] = Field(default=None, alias='implPlanAprvDate')
+        Field(description='실시 계획 승인일', alias='implPlanAprvDate')
+    ] = None
     proj_implmtt_date: Annotated[
         str | None,
-        Field(description='사업 시행 인가일')
-    ] = Field(default=None, alias='projImplmttDate')
+        Field(description='사업 시행 인가일', alias='projImplmttDate')
+    ] = None
     mngm_disps_date: Annotated[
         str | None,
-        Field(description='관리 처분 인가일')
-    ] = Field(default=None, alias='mngmDispsDate')
+        Field(description='관리 처분 인가일', alias='mngmDispsDate')
+    ] = None
 
 
 class DaangnDevelopmentByBusiNoDataModel(ResponseModel):
@@ -165,8 +165,8 @@ class DaangnDevelopmentByBusiNoDataModel(ResponseModel):
 
     development_by_busi_no: Annotated[
         DaangnDevelopmentDetailModel | None,
-        Field(description='사업 상세. 없는 번호면 null')
-    ] = Field(default=None, alias='developmentByBusiNo')
+        Field(description='사업 상세. 없는 번호면 null', alias='developmentByBusiNo')
+    ] = None
 
 
 class DaangnDevelopmentByBusiNoResponseModel(DaangnGraphQLResponseModel):

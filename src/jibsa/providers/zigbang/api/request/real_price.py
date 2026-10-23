@@ -26,8 +26,8 @@ class ZigbangDanjisRtPricesRequestParameterModel(RequestModel):
     ]
     deal_type: Annotated[
         ZigbangRtDealType,
-        Field(description="거래 유형 (sales 매매, rent 전세·월세, all 전체). 'trade'·'charter' 는 400 이다")
-    ] = Field(alias='dealType')
+        Field(description="거래 유형 (sales 매매, rent 전세·월세, all 전체). 'trade'·'charter' 는 400 이다", alias='dealType')
+    ]
     offset: Annotated[
         int,
         Field(ge=0, description='쪽 번호 (0부터)')

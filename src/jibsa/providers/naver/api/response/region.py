@@ -40,8 +40,8 @@ class NaverAddressElementsModel(ResponseModel):
     ] = None
     build_number: Annotated[
         str | None,
-        Field(description='도로명 건물번호')
-    ] = Field(default=None, alias='buildNumber')
+        Field(description='도로명 건물번호', alias='buildNumber')
+    ] = None
     bcode: Annotated[
         str | None,
         Field(description='법정동 코드. 행정동(역삼1동 등)은 빈 문자열')
@@ -53,12 +53,12 @@ class NaverAddressModel(ResponseModel):
 
     full_address: Annotated[
         str | None,
-        Field(description='전체 주소')
-    ] = Field(default=None, alias='fullAddress')
+        Field(description='전체 주소', alias='fullAddress')
+    ] = None
     item_level: Annotated[
         int | None,
-        Field(description='주소 단위. 5 시·도/시·군·구, 8 동·읍·면, 12 번지·건물')
-    ] = Field(default=None, alias='itemLevel')
+        Field(description='주소 단위. 5 시·도/시·군·구, 8 동·읍·면, 12 번지·건물', alias='itemLevel')
+    ] = None
     x: Annotated[
         float | None,
         Field(description='경도')
@@ -69,8 +69,8 @@ class NaverAddressModel(ResponseModel):
     ] = None
     address_elements: Annotated[
         NaverAddressElementsModel | None,
-        Field(description='주소 구성 요소')
-    ] = Field(default=None, alias='addressElements')
+        Field(description='주소 구성 요소', alias='addressElements')
+    ] = None
 
 
 class NaverAddressListModel(ResponseModel):
@@ -78,12 +78,12 @@ class NaverAddressListModel(ResponseModel):
 
     total_count: Annotated[
         int,
-        Field(description='전체 결과 수')
-    ] = Field(default=0, alias='totalCount')
+        Field(description='전체 결과 수', alias='totalCount')
+    ] = 0
     items: Annotated[
         list[NaverAddressModel],
-        Field(description='결과 (앞 페이지)')
-    ] = Field(default=[], alias='list')
+        Field(description='결과 (앞 페이지)', alias='list')
+    ] = []
 
 
 class NaverAddressSearchModel(ResponseModel):
@@ -95,12 +95,12 @@ class NaverAddressSearchModel(ResponseModel):
     ] = None
     jibun_address: Annotated[
         NaverAddressListModel | None,
-        Field(description='지번 주소 결과')
-    ] = Field(default=None, alias='jibunAddress')
+        Field(description='지번 주소 결과', alias='jibunAddress')
+    ] = None
     road_address: Annotated[
         NaverAddressListModel | None,
-        Field(description='도로명 주소 결과')
-    ] = Field(default=None, alias='roadAddress')
+        Field(description='도로명 주소 결과', alias='roadAddress')
+    ] = None
 
 
 class NaverLegalDivisionInfoModel(ResponseModel):
@@ -108,20 +108,20 @@ class NaverLegalDivisionInfoModel(ResponseModel):
 
     legal_division_number: Annotated[
         str,
-        Field(description='법정동 코드 (10자리)')
-    ] = Field(alias='legalDivisionNumber')
+        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
+    ]
     legal_division_name: Annotated[
         str | None,
-        Field(description='지역 이름 (하위 목록은 그 단위 이름만, 예: 개포동)')
-    ] = Field(default=None, alias='legalDivisionName')
+        Field(description='지역 이름 (하위 목록은 그 단위 이름만, 예: 개포동)', alias='legalDivisionName')
+    ] = None
     legal_division_level_type: Annotated[
         str | None,
-        Field(description='단위 (SI 시·도, GUN 시·군·구, EUP 읍·면·동)')
-    ] = Field(default=None, alias='legalDivisionLevelType')
+        Field(description='단위 (SI 시·도, GUN 시·군·구, EUP 읍·면·동)', alias='legalDivisionLevelType')
+    ] = None
     city_full_name: Annotated[
         str | None,
-        Field(description='시·도 정식 이름 (시·도 목록만, 예: 서울특별시)')
-    ] = Field(default=None, alias='cityFullName')
+        Field(description='시·도 정식 이름 (시·도 목록만, 예: 서울특별시)', alias='cityFullName')
+    ] = None
     coordinates: Annotated[
         NaverCoordinatesModel | None,
         Field(description='중심 좌표')
@@ -133,16 +133,16 @@ class NaverAutocompletePageModel(ResponseModel, Generic[T]):
 
     has_next_page: Annotated[
         bool | None,
-        Field(description='다음 페이지 여부')
-    ] = Field(default=None, alias='hasNextPage')
+        Field(description='다음 페이지 여부', alias='hasNextPage')
+    ] = None
     total_count: Annotated[
         int | None,
-        Field(description='전체 결과 수')
-    ] = Field(default=None, alias='totalCount')
+        Field(description='전체 결과 수', alias='totalCount')
+    ] = None
     items: Annotated[
         list[T],
-        Field(description='결과 목록')
-    ] = Field(default=[], alias='list')
+        Field(description='결과 목록', alias='list')
+    ] = []
 
 
 class NaverAutocompleteLegalDivisionModel(ResponseModel):
@@ -150,16 +150,16 @@ class NaverAutocompleteLegalDivisionModel(ResponseModel):
 
     legal_division_number: Annotated[
         str,
-        Field(description='법정동 코드 (10자리)')
-    ] = Field(alias='legalDivisionNumber')
+        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
+    ]
     legal_division_name: Annotated[
         str,
-        Field(description='전체 이름 (예: 서울시 강남구 역삼동). 마지막 단어가 그 지역 이름')
-    ] = Field(alias='legalDivisionName')
+        Field(description='전체 이름 (예: 서울시 강남구 역삼동). 마지막 단어가 그 지역 이름', alias='legalDivisionName')
+    ]
     legal_division_level_type: Annotated[
         str | None,
-        Field(description='단위. EUP 읍·면·동, GUN 시·군·구 (그 위 단위 값은 미확인)')
-    ] = Field(default=None, alias='legalDivisionLevelType')
+        Field(description='단위. EUP 읍·면·동, GUN 시·군·구 (그 위 단위 값은 미확인)', alias='legalDivisionLevelType')
+    ] = None
     coordinates: Annotated[
         NaverCoordinatesModel | None,
         Field(description='중심 좌표')
@@ -180,16 +180,16 @@ class NaverAutocompleteSubwayStationModel(ResponseModel):
 
     station_name: Annotated[
         str,
-        Field(description='역 이름 (예: 강남역)')
-    ] = Field(alias='stationName')
+        Field(description='역 이름 (예: 강남역)', alias='stationName')
+    ]
     coordinates: Annotated[
         NaverCoordinatesModel | None,
         Field(description='역 좌표')
     ] = None
     line_infos: Annotated[
         list[NaverSubwayLineModel],
-        Field(description='지나는 노선')
-    ] = Field(default=[], alias='lineInfos')
+        Field(description='지나는 노선', alias='lineInfos')
+    ] = []
 
 
 class NaverAutocompleteComplexModel(ResponseModel):
@@ -197,24 +197,24 @@ class NaverAutocompleteComplexModel(ResponseModel):
 
     complex_number: Annotated[
         int,
-        Field(description='단지 번호')
-    ] = Field(alias='complexNumber')
+        Field(description='단지 번호', alias='complexNumber')
+    ]
     complex_name: Annotated[
         str,
-        Field(description='단지 이름')
-    ] = Field(alias='complexName')
+        Field(description='단지 이름', alias='complexName')
+    ]
     type: Annotated[
         str | None,
         Field(description='매물 유형 코드 (A01 아파트 등)')
     ] = None
     legal_division_name: Annotated[
         str | None,
-        Field(description='단지가 있는 법정동 전체 이름')
-    ] = Field(default=None, alias='legalDivisionName')
+        Field(description='단지가 있는 법정동 전체 이름', alias='legalDivisionName')
+    ] = None
     legal_division_number: Annotated[
         str | None,
-        Field(description='법정동 코드 (10자리)')
-    ] = Field(default=None, alias='legalDivisionNumber')
+        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
+    ] = None
     coordinates: Annotated[
         NaverCoordinatesModel | None,
         Field(description='단지 좌표')

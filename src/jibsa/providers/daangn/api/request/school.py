@@ -20,12 +20,12 @@ class DaangnEducationMapPointsInputModel(RequestModel):
 
     sw_coordinate: Annotated[
         DaangnCoordinateInputModel,
-        Field(description='남서 꼭짓점')
-    ] = Field(alias='swCoordinate')
+        Field(description='남서 꼭짓점', alias='swCoordinate')
+    ]
     ne_coordinate: Annotated[
         DaangnCoordinateInputModel,
-        Field(description='북동 꼭짓점')
-    ] = Field(alias='neCoordinate')
+        Field(description='북동 꼭짓점', alias='neCoordinate')
+    ]
     types: Annotated[
         list[DaangnEducationType],
         Field(min_length=1, description='DAYCARE(어린이집) / KINDERGARTEN(유치원) / ELEMENTARY·MIDDLE·HIGH')
@@ -49,8 +49,8 @@ class DaangnPreschoolByNoRequestPayloadModel(RequestModel):
 
     pre_school_no: Annotated[
         int,
-        Field(gt=0, description="시설 번호 (educationMapPoints 의 id 에서 'pre_' 를 뗀 숫자)")
-    ] = Field(alias='preSchoolNo')
+        Field(gt=0, description="시설 번호 (educationMapPoints 의 id 에서 'pre_' 를 뗀 숫자)", alias='preSchoolNo')
+    ]
 
 
 class DaangnSearchSchoolsInputModel(RequestModel):
@@ -84,5 +84,5 @@ class DaangnSchoolByCodeRequestPayloadModel(RequestModel):
 
     sch_cd: Annotated[
         str,
-        Field(min_length=1, description='학교 코드 (searchSchools 의 schCd, 예: B100000775)')
-    ] = Field(alias='schCd')
+        Field(min_length=1, description='학교 코드 (searchSchools 의 schCd, 예: B100000775)', alias='schCd')
+    ]

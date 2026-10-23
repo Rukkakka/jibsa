@@ -503,11 +503,11 @@ class _FeedScan(BaseModel):
     matched: Annotated[
         list[tuple[DaangnArticleModel, DaangnTradeModel, tuple[float, float] | None]],
         Field(description='조건에 맞는 (매물, 고른 거래 조건, 거리를 잴 중심)')
-    ] = Field(default_factory=list)
+    ] = []
     seen: Annotated[
         set[str],
         Field(description='이미 받은 매물 번호')
-    ] = Field(default_factory=set)
+    ] = set()
     fetched: Annotated[
         int,
         Field(description='받은 원본 매물 수 (할당량을 쓴 만큼)')
@@ -523,7 +523,7 @@ class _FeedScan(BaseModel):
     fallback_notes: Annotated[
         list[str],
         Field(description='필터 API 대신 지도 페이지를 썼다는 안내')
-    ] = Field(default_factory=list)
+    ] = []
 
     def take(self, articles: list[DaangnArticleModel], center: tuple[float, float] | None, server: bool) -> None:
         """받은 매물을 걸러 조건에 맞는 매물을 `matched` 에 넣는다.
@@ -588,7 +588,7 @@ class _DongFeed(BaseModel):
     buffer: Annotated[
         list[_FeedItem],
         Field(description='받아 두고 아직 쓰지 않은 매물 (피드 순서 = 최근 순)')
-    ] = Field(default_factory=list)
+    ] = []
     map_buffered: Annotated[
         bool,
         Field(description='지도 페이지 첫 20건을 buffer 에 넣었는지')

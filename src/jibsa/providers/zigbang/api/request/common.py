@@ -55,88 +55,88 @@ class ZigbangItemsFiltersRequestParameterModel(RequestModel):
 
     sales_types: Annotated[
         list[ZigbangSalesType],
-        Field(description="거래 유형 필터. 비우면 단기임대를 포함한 전체. '월세' 는 단기임대를 빼고, '단기' 는 단기임대만")
-    ] = Field(default=[], alias='salesTypes')
+        Field(description="거래 유형 필터. 비우면 단기임대를 포함한 전체. '월세' 는 단기임대를 빼고, '단기' 는 단기임대만", alias='salesTypes')
+    ] = []
     deposit_min: Annotated[
         int | None,
-        Field(ge=0, description='보증금 하한 (만원)')
-    ] = Field(default=None, alias='depositMin')
+        Field(ge=0, description='보증금 하한 (만원)', alias='depositMin')
+    ] = None
     deposit_max: Annotated[
         int | None,
-        Field(ge=0, description='보증금 상한 (만원)')
-    ] = Field(default=None, alias='depositMax')
+        Field(ge=0, description='보증금 상한 (만원)', alias='depositMax')
+    ] = None
     rent_min: Annotated[
         int | None,
-        Field(ge=0, description='월세 하한 (만원)')
-    ] = Field(default=None, alias='rentMin')
+        Field(ge=0, description='월세 하한 (만원)', alias='rentMin')
+    ] = None
     rent_max: Annotated[
         int | None,
-        Field(ge=0, description='월세 상한 (만원)')
-    ] = Field(default=None, alias='rentMax')
+        Field(ge=0, description='월세 상한 (만원)', alias='rentMax')
+    ] = None
     sales_price_min: Annotated[
         int | None,
-        Field(ge=0, description='매매가 하한 (만원)')
-    ] = Field(default=None, alias='salesPriceMin')
+        Field(ge=0, description='매매가 하한 (만원)', alias='salesPriceMin')
+    ] = None
     sales_price_max: Annotated[
         int | None,
-        Field(ge=0, description='매매가 상한 (만원)')
-    ] = Field(default=None, alias='salesPriceMax')
+        Field(ge=0, description='매매가 상한 (만원)', alias='salesPriceMax')
+    ] = None
     manage_cost_min: Annotated[
         int | None,
-        Field(ge=0, description='관리비 하한 (만원)')
-    ] = Field(default=None, alias='manageCostMin')
+        Field(ge=0, description='관리비 하한 (만원)', alias='manageCostMin')
+    ] = None
     manage_cost_max: Annotated[
         int | None,
-        Field(ge=0, description='관리비 상한 (만원)')
-    ] = Field(default=None, alias='manageCostMax')
+        Field(ge=0, description='관리비 상한 (만원)', alias='manageCostMax')
+    ] = None
     no_manage_cost: Annotated[
         bool | None,
-        Field(description='관리비 없는 매물만. 관리비 범위 조건과 함께 보내지 않는다 (웹도 둘 중 하나만 보낸다)')
-    ] = Field(default=None, alias='isNoneManageCost')
+        Field(description='관리비 없는 매물만. 관리비 범위 조건과 함께 보내지 않는다 (웹도 둘 중 하나만 보낸다)', alias='isNoneManageCost')
+    ] = None
     room_types: Annotated[
         list[ZigbangRoomTypeFilter],
-        Field(description='방 구조 (OR)')
-    ] = Field(default=[], alias='roomType')
+        Field(description='방 구조 (OR)', alias='roomType')
+    ] = []
     size_min_m2: Annotated[
         float | None,
-        Field(ge=0, description='면적 하한 (㎡)')
-    ] = Field(default=None, alias='sizeMinM2')
+        Field(ge=0, description='면적 하한 (㎡)', alias='sizeMinM2')
+    ] = None
     size_max_m2: Annotated[
         float | None,
-        Field(ge=0, description='면적 상한 (㎡)')
-    ] = Field(default=None, alias='sizeMaxM2')
+        Field(ge=0, description='면적 상한 (㎡)', alias='sizeMaxM2')
+    ] = None
     size_min_pyeong: Annotated[
         float | None,
-        Field(ge=0, description='면적 하한 (평). 직방이 ㎡ 조건과 같은 기준으로 거르고, 함께 주면 둘 다 만족해야 한다')
-    ] = Field(default=None, alias='sizeMin')
+        Field(ge=0, description='면적 하한 (평). 직방이 ㎡ 조건과 같은 기준으로 거르고, 함께 주면 둘 다 만족해야 한다', alias='sizeMin')
+    ] = None
     size_max_pyeong: Annotated[
         float | None,
-        Field(ge=0, description='면적 상한 (평)')
-    ] = Field(default=None, alias='sizeMax')
+        Field(ge=0, description='면적 상한 (평)', alias='sizeMax')
+    ] = None
     floors: Annotated[
         list[ZigbangFloorFilter],
-        Field(description='층 (OR). 지상은 반지하·옥탑방을 뺀 층')
-    ] = Field(default=[], alias='floor')
+        Field(description='층 (OR). 지상은 반지하·옥탑방을 뺀 층', alias='floor')
+    ] = []
     bathroom_count: Annotated[
         int | None,
-        Field(ge=1, le=3, description='욕실 수. 1·2 는 정확히 그 수, 3 은 3개 이상')
-    ] = Field(default=None, alias='bathroomCount')
+        Field(ge=1, le=3, description='욕실 수. 1·2 는 정확히 그 수, 3 은 3개 이상', alias='bathroomCount')
+    ] = None
     options: Annotated[
         list[ZigbangOptionFilter],
         Field(description='옵션 (AND. 모두 갖춘 매물만)')
     ] = []
     immediate_move: Annotated[
         bool | None,
-        Field(description='즉시 입주 가능')
-    ] = Field(default=None, alias='isImmediateMove')
+        Field(description='즉시 입주 가능', alias='isImmediateMove')
+    ] = None
     south_facing: Annotated[
         bool | None,
-        Field(description='남향')
-    ] = Field(default=None, alias='isSouth')
+        Field(description='남향', alias='isSouth')
+    ] = None
     elevator: Annotated[
         bool | None,
-        Field(description='엘리베이터')
-    ] = Field(default=None, alias='isElevator')
+        Field(description='엘리베이터', alias='isElevator')
+    ] = None
     parking: Annotated[
         bool | None,
         Field(description='주차 가능')
@@ -151,12 +151,12 @@ class ZigbangItemsFiltersRequestParameterModel(RequestModel):
     ] = None
     loan_lease: Annotated[
         bool | None,
-        Field(description='전세자금대출 가능')
-    ] = Field(default=None, alias='loanLease')
+        Field(description='전세자금대출 가능', alias='loanLease')
+    ] = None
     ev_station: Annotated[
         bool | None,
-        Field(description='전기차 충전시설')
-    ] = Field(default=None, alias='evStation')
+        Field(description='전기차 충전시설', alias='evStation')
+    ] = None
 
     @model_validator(mode='after')
     def manage_cost_conditions_exclusive(self) -> Self:
@@ -180,8 +180,8 @@ class ZigbangOfficetelOrderMixin(RequestModel):
 
     without_random: Annotated[
         bool | None,
-        Field(description='서버의 무작위 섞기를 생략한다. 일정한 순서를 보장하지 않는다')
-    ] = Field(default=None, alias='withoutRandom')
+        Field(description='서버의 무작위 섞기를 생략한다. 일정한 순서를 보장하지 않는다', alias='withoutRandom')
+    ] = None
 
 
 class ZigbangItemsListV1RequestPayloadModel(RequestModel):
@@ -192,9 +192,10 @@ class ZigbangItemsListV1RequestPayloadModel(RequestModel):
         Field(
             min_length=1,
             max_length=15,
-            description='요약을 받을 매물 ID 목록. 서버가 15개 초과를 400 으로 거절한다'
+            description='요약을 받을 매물 ID 목록. 서버가 15개 초과를 400 으로 거절한다',
+            alias='itemIds'
         )
-    ] = Field(alias='itemIds')
+    ]
 
 
 class ZigbangDanjisRequestParameterModel(RequestModel):
@@ -219,36 +220,36 @@ class ZigbangDanjisItemCatalogsRequestParameterModel(RequestModel):
     ]
     tran_types: Annotated[
         list[ZigbangAptTranType],
-        Field(description='거래 유형 (trade 매매, charter 전세, rental 월세). 비우면 전체')
-    ] = Field(default=[], alias='tranTypeIn')
+        Field(description='거래 유형 (trade 매매, charter 전세, rental 월세). 비우면 전체', alias='tranTypeIn')
+    ] = []
     room_type_ids: Annotated[
         list[int],
-        Field(description='평형 ID (OR). 비우면 전체')
-    ] = Field(default=[], alias='danjiRoomTypeIds')
+        Field(description='평형 ID (OR). 비우면 전체', alias='danjiRoomTypeIds')
+    ] = []
     sales_price_min: Annotated[
         int | None,
-        Field(ge=0, description='매매가 하한 (만원)')
-    ] = Field(default=None, alias='minSalesDeposit')
+        Field(ge=0, description='매매가 하한 (만원)', alias='minSalesDeposit')
+    ] = None
     sales_price_max: Annotated[
         int | None,
-        Field(ge=0, description='매매가 상한 (만원)')
-    ] = Field(default=None, alias='maxSalesDeposit')
+        Field(ge=0, description='매매가 상한 (만원)', alias='maxSalesDeposit')
+    ] = None
     deposit_min: Annotated[
         int | None,
-        Field(ge=0, description='보증금·전세금 하한 (만원)')
-    ] = Field(default=None, alias='minRentDeposit')
+        Field(ge=0, description='보증금·전세금 하한 (만원)', alias='minRentDeposit')
+    ] = None
     deposit_max: Annotated[
         int | None,
-        Field(ge=0, description='보증금·전세금 상한 (만원)')
-    ] = Field(default=None, alias='maxRentDeposit')
+        Field(ge=0, description='보증금·전세금 상한 (만원)', alias='maxRentDeposit')
+    ] = None
     rent_min: Annotated[
         int | None,
-        Field(ge=0, description='월세 하한 (만원)')
-    ] = Field(default=None, alias='minRent')
+        Field(ge=0, description='월세 하한 (만원)', alias='minRent')
+    ] = None
     rent_max: Annotated[
         int | None,
-        Field(ge=0, description='월세 상한 (만원)')
-    ] = Field(default=None, alias='maxRent')
+        Field(ge=0, description='월세 상한 (만원)', alias='maxRent')
+    ] = None
     offset: Annotated[
         int,
         Field(ge=0, description='건너뛸 매물 수')

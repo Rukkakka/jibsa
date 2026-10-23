@@ -66,12 +66,12 @@ class DaangnAmountRangeModel(RequestModel):
 
     min_amount: Annotated[
         int | None,
-        Field(ge=0, description='하한 (만원)')
-    ] = Field(default=None, alias='minAmount')
+        Field(ge=0, description='하한 (만원)', alias='minAmount')
+    ] = None
     max_amount: Annotated[
         int | None,
-        Field(ge=0, description='상한 (만원)')
-    ] = Field(default=None, alias='maxAmount')
+        Field(ge=0, description='상한 (만원)', alias='maxAmount')
+    ] = None
 
     @model_validator(mode='after')
     def validate_range(self) -> Self:
@@ -88,80 +88,80 @@ class DaangnPropertyFilterModel(RequestModel):
 
     sales_types: Annotated[
         list[DaangnSalesType],
-        Field(description='매물 종류. 빈 목록이면 전체. ONE_ROOM 은 오픈형·분리형 원룸을 함께 찾는다')
-    ] = Field(default=[], alias='salesTypes')
+        Field(description='매물 종류. 빈 목록이면 전체. ONE_ROOM 은 오픈형·분리형 원룸을 함께 찾는다', alias='salesTypes')
+    ] = []
     trade_types: Annotated[
         list[DaangnTradeType] | None,
-        Field(min_length=1, description='거래 유형')
-    ] = Field(default=None, alias='tradeTypes')
+        Field(min_length=1, description='거래 유형', alias='tradeTypes')
+    ] = None
     deposit_pay: Annotated[
         DaangnAmountRangeModel | None,
-        Field(description='보증금·전세금 범위 (만원)')
-    ] = Field(default=None, alias='depositPay')
+        Field(description='보증금·전세금 범위 (만원)', alias='depositPay')
+    ] = None
     monthly_pay: Annotated[
         DaangnAmountRangeModel | None,
-        Field(description='월세 범위 (만원)')
-    ] = Field(default=None, alias='monthlyPay')
+        Field(description='월세 범위 (만원)', alias='monthlyPay')
+    ] = None
     price_pay: Annotated[
         DaangnAmountRangeModel | None,
-        Field(description='매매가 범위 (만원)')
-    ] = Field(default=None, alias='pricePay')
+        Field(description='매매가 범위 (만원)', alias='pricePay')
+    ] = None
     monthly_pay_includes_manage_cost: Annotated[
         bool | None,
-        Field(description='True 면 월세 범위를 월세 + 관리비로 비교한다')
-    ] = Field(default=None, alias='monthlyPayIncludesManageCost')
+        Field(description='True 면 월세 범위를 월세 + 관리비로 비교한다', alias='monthlyPayIncludesManageCost')
+    ] = None
     min_area: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 하한 (㎡)')
-    ] = Field(default=None, alias='minArea')
+        Field(ge=0, description='전용면적 하한 (㎡)', alias='minArea')
+    ] = None
     max_area: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 상한 (㎡)')
-    ] = Field(default=None, alias='maxArea')
+        Field(ge=0, description='전용면적 상한 (㎡)', alias='maxArea')
+    ] = None
     area_unit: Annotated[
         Literal['SQUARE_METER'] | None,
-        Field(description='면적 단위. 면적 조건이 있으면 자동으로 SQUARE_METER')
-    ] = Field(default=None, alias='areaUnit')
+        Field(description='면적 단위. 면적 조건이 있으면 자동으로 SQUARE_METER', alias='areaUnit')
+    ] = None
     floor: Annotated[
         list[DaangnFloor] | None,
         Field(min_length=1, description='층')
     ] = None
     room_counts: Annotated[
         list[DaangnRoomCount] | None,
-        Field(min_length=1, description='방 개수')
-    ] = Field(default=None, alias='roomCounts')
+        Field(min_length=1, description='방 개수', alias='roomCounts')
+    ] = None
     sub_sales_types: Annotated[
         list[DaangnSubSalesType] | None,
-        Field(min_length=1, description='원룸 방 구조 (오픈형·분리형)')
-    ] = Field(default=None, alias='subSalesTypes')
+        Field(min_length=1, description='원룸 방 구조 (오픈형·분리형)', alias='subSalesTypes')
+    ] = None
     building_approval_date: Annotated[
         list[DaangnBuildingApprovalDate] | None,
-        Field(min_length=1, max_length=1, description='사용승인일. 웹은 하나만 골라 목록으로 보낸다')
-    ] = Field(default=None, alias='buildingApprovalDate')
+        Field(min_length=1, max_length=1, description='사용승인일. 웹은 하나만 골라 목록으로 보낸다', alias='buildingApprovalDate')
+    ] = None
     deal_type: Annotated[
         DaangnDealType | None,
-        Field(description='거래 방식 (직거래·중개)')
-    ] = Field(default=None, alias='dealType')
+        Field(description='거래 방식 (직거래·중개)', alias='dealType')
+    ] = None
     options: Annotated[
         list[DaangnOption] | None,
         Field(min_length=1, description='기타 조건 (주차·반려동물·대출·엘리베이터·옥탑·복층)')
     ] = None
     move_in_now: Annotated[
         bool | None,
-        Field(description='True 면 즉시 입주 가능한 매물만')
-    ] = Field(default=None, alias='moveInNow')
+        Field(description='True 면 즉시 입주 가능한 매물만', alias='moveInNow')
+    ] = None
     min_household_count: Annotated[
         int | None,
-        Field(ge=0, description='단지 세대수 하한 (아파트만)')
-    ] = Field(default=None, alias='minHouseholdCount')
+        Field(ge=0, description='단지 세대수 하한 (아파트만)', alias='minHouseholdCount')
+    ] = None
     max_household_count: Annotated[
         int | None,
-        Field(ge=0, description='단지 세대수 상한 (아파트만)')
-    ] = Field(default=None, alias='maxHouseholdCount')
+        Field(ge=0, description='단지 세대수 상한 (아파트만)', alias='maxHouseholdCount')
+    ] = None
     min_parking_per_household: Annotated[
         float | None,
-        Field(ge=0, description='세대당 주차 대수 하한 (아파트만)')
-    ] = Field(default=None, alias='minParkingPerHousehold')
+        Field(ge=0, description='세대당 주차 대수 하한 (아파트만)', alias='minParkingPerHousehold')
+    ] = None
 
     @model_validator(mode='after')
     def validate_conditions(self) -> Self:
@@ -184,8 +184,8 @@ class DaangnLocationFilterModel(RequestModel):
 
     original_region_id: Annotated[
         int,
-        Field(gt=0, description='당근 지역 ID (동)')
-    ] = Field(alias='originalRegionId')
+        Field(gt=0, description='당근 지역 ID (동)', alias='originalRegionId')
+    ]
 
 
 class DaangnCoordinateInputModel(RequestModel):
@@ -224,48 +224,48 @@ class DaangnComplexFilterModel(RequestModel):
     ] = None
     trade_type: Annotated[
         list[DaangnComplexTradeType] | None,
-        Field(min_length=1, description='거래 유형')
-    ] = Field(default=None, alias='tradeType')
+        Field(min_length=1, description='거래 유형', alias='tradeType')
+    ] = None
     deposit: Annotated[
         DaangnAmountRangeModel | None,
         Field(description='보증금·전세금 범위 (만원)')
     ] = None
     monthly_pay: Annotated[
         DaangnAmountRangeModel | None,
-        Field(description='월세 범위 (만원)')
-    ] = Field(default=None, alias='monthlyPay')
+        Field(description='월세 범위 (만원)', alias='monthlyPay')
+    ] = None
     price: Annotated[
         DaangnAmountRangeModel | None,
         Field(description='매매가 범위 (만원)')
     ] = None
     building_approval_date: Annotated[
         list[DaangnBuildingApprovalDate] | None,
-        Field(min_length=1, max_length=1, description='사용승인일. 웹은 하나만 골라 목록으로 보낸다')
-    ] = Field(default=None, alias='buildingApprovalDate')
+        Field(min_length=1, max_length=1, description='사용승인일. 웹은 하나만 골라 목록으로 보낸다', alias='buildingApprovalDate')
+    ] = None
     min_area: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 하한 (㎡)')
-    ] = Field(default=None, alias='minArea')
+        Field(ge=0, description='전용면적 하한 (㎡)', alias='minArea')
+    ] = None
     max_area: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 상한 (㎡)')
-    ] = Field(default=None, alias='maxArea')
+        Field(ge=0, description='전용면적 상한 (㎡)', alias='maxArea')
+    ] = None
     area_unit: Annotated[
         Literal['SQUARE_METER'] | None,
-        Field(description='면적 단위. 면적 조건이 있으면 자동으로 SQUARE_METER')
-    ] = Field(default=None, alias='areaUnit')
+        Field(description='면적 단위. 면적 조건이 있으면 자동으로 SQUARE_METER', alias='areaUnit')
+    ] = None
     min_household_count: Annotated[
         int | None,
-        Field(ge=0, description='세대수 하한')
-    ] = Field(default=None, alias='minHouseholdCount')
+        Field(ge=0, description='세대수 하한', alias='minHouseholdCount')
+    ] = None
     max_household_count: Annotated[
         int | None,
-        Field(ge=0, description='세대수 상한')
-    ] = Field(default=None, alias='maxHouseholdCount')
+        Field(ge=0, description='세대수 상한', alias='maxHouseholdCount')
+    ] = None
     min_parking_per_household: Annotated[
         float | None,
-        Field(ge=0, description='세대당 주차 대수 하한')
-    ] = Field(default=None, alias='minParkingPerHousehold')
+        Field(ge=0, description='세대당 주차 대수 하한', alias='minParkingPerHousehold')
+    ] = None
 
     @model_validator(mode='after')
     def validate_area_unit(self) -> Self:

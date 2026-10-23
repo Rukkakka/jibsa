@@ -37,12 +37,12 @@ class DaangnCommuteFeedRequestPayloadModel(RequestModel):
     ] = None
     from_station_name: Annotated[
         str,
-        Field(min_length=1, description="출발(회사) 역 이름 ('역' 까지, 예: 강남역)")
-    ] = Field(alias='fromStationName')
+        Field(min_length=1, description="출발(회사) 역 이름 ('역' 까지, 예: 강남역)", alias='fromStationName')
+    ]
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건 (articleFeed 와 같다)')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건 (articleFeed 와 같다)', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)
 
 
 class DaangnCommuteStationArticleConnectionRequestPayloadModel(RequestModel):
@@ -61,9 +61,9 @@ class DaangnCommuteStationArticleConnectionRequestPayloadModel(RequestModel):
     ] = None
     station_name: Annotated[
         str,
-        Field(min_length=1, description="역 이름 ('역' 까지, 예: 신논현역)")
-    ] = Field(alias='stationName')
+        Field(min_length=1, description="역 이름 ('역' 까지, 예: 신논현역)", alias='stationName')
+    ]
     property_filter: Annotated[
         DaangnPropertyFilterModel,
-        Field(description='매물 조건 (articleFeed 와 같다)')
-    ] = Field(default_factory=DaangnPropertyFilterModel, alias='propertyFilter')
+        Field(description='매물 조건 (articleFeed 와 같다)', alias='propertyFilter')
+    ] = Field(default_factory=DaangnPropertyFilterModel)

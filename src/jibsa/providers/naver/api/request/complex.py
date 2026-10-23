@@ -24,12 +24,12 @@ class NaverComplexArticleStatsRequestParameterModel(NaverComplexRequestParameter
 
     pyeong_types: Annotated[
         list[int],
-        Field(description='평형 번호 필터. 비우면 전체')
-    ] = Field(default=[], alias='pyeongTypes[]')
+        Field(description='평형 번호 필터. 비우면 전체', alias='pyeongTypes[]')
+    ] = []
     dong_numbers: Annotated[
         list[str],
-        Field(description='동 번호 필터 (buildingList 의 number). 비우면 전체')
-    ] = Field(default=[], alias='dongNumbers[]')
+        Field(description='동 번호 필터 (buildingList 의 number). 비우면 전체', alias='dongNumbers[]')
+    ] = []
 
 
 class NaverComplexArticleStatsV1RequestParameterModel(NaverComplexArticleStatsRequestParameterModel):
@@ -57,12 +57,12 @@ class NaverComplexMarketPriceRecentV1RequestParameterModel(NaverComplexPyeongReq
 
     real_estate_type: Annotated[
         NaverRealEstateType,
-        Field(description='단지 유형 코드 (complex 의 type)')
-    ] = Field(alias='realEstateType')
+        Field(description='단지 유형 코드 (complex 의 type)', alias='realEstateType')
+    ]
     cp_list: Annotated[
         list[Literal['kab', 'kbstar', 'neonet']],
-        Field(description='시세 제공처. kab 한국부동산원, kbstar KB부동산, neonet 부동산뱅크')
-    ] = Field(default=['kab', 'kbstar', 'neonet'], alias='cpList[]')
+        Field(description='시세 제공처. kab 한국부동산원, kbstar KB부동산, neonet 부동산뱅크', alias='cpList[]')
+    ] = ['kab', 'kbstar', 'neonet']
 
 
 class NaverComplexPyeongRealPriceSummaryV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
@@ -70,12 +70,12 @@ class NaverComplexPyeongRealPriceSummaryV1RequestParameterModel(NaverComplexPyeo
 
     trade_type: Annotated[
         Literal['A1', 'B1', 'B2'],
-        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)')
-    ] = Field(alias='tradeType')
+        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)', alias='tradeType')
+    ]
     start_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='이 날짜 이후 거래만 (YYYY-MM-DD)')
-    ] = Field(alias='startDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='이 날짜 이후 거래만 (YYYY-MM-DD)', alias='startDate')
+    ]
 
 
 class NaverComplexDeclaredValuePyeongTypeV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
@@ -94,9 +94,9 @@ class NaverEducationComplexSchoolV1RequestParameterModel(RequestModel):
 
     complex_number: Annotated[
         int,
-        Field(gt=0, description='단지 번호')
-    ] = Field(alias='complexNumber')
+        Field(gt=0, description='단지 번호', alias='complexNumber')
+    ]
     item_type: Annotated[
         Literal['complex', 'villa'],
-        Field(description='단지 종류 (사이트 ArticleSchoolItemType)')
-    ] = Field(default='complex', alias='itemType')
+        Field(description='단지 종류 (사이트 ArticleSchoolItemType)', alias='itemType')
+    ] = 'complex'

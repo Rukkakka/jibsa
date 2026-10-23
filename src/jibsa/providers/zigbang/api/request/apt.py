@@ -36,40 +36,40 @@ class ZigbangLocalsItemCatalogsRequestParameterModel(RequestModel):
     ]
     tran_types: Annotated[
         list[ZigbangAptTranType],
-        Field(description='거래 유형 (trade 매매, charter 전세, rental 월세). 비우면 전체')
-    ] = Field(default=[], alias='tranTypeIn')
+        Field(description='거래 유형 (trade 매매, charter 전세, rental 월세). 비우면 전체', alias='tranTypeIn')
+    ] = []
     sales_price_min: Annotated[
         int | None,
-        Field(ge=0, description='매매가 하한 (만원)')
-    ] = Field(default=None, alias='minSalesDeposit')
+        Field(ge=0, description='매매가 하한 (만원)', alias='minSalesDeposit')
+    ] = None
     sales_price_max: Annotated[
         int | None,
-        Field(ge=0, description='매매가 상한 (만원)')
-    ] = Field(default=None, alias='maxSalesDeposit')
+        Field(ge=0, description='매매가 상한 (만원)', alias='maxSalesDeposit')
+    ] = None
     deposit_min: Annotated[
         int | None,
-        Field(ge=0, description='보증금·전세금 하한 (만원)')
-    ] = Field(default=None, alias='minRentDeposit')
+        Field(ge=0, description='보증금·전세금 하한 (만원)', alias='minRentDeposit')
+    ] = None
     deposit_max: Annotated[
         int | None,
-        Field(ge=0, description='보증금·전세금 상한 (만원)')
-    ] = Field(default=None, alias='maxRentDeposit')
+        Field(ge=0, description='보증금·전세금 상한 (만원)', alias='maxRentDeposit')
+    ] = None
     rent_min: Annotated[
         int | None,
-        Field(ge=0, description='월세 하한 (만원)')
-    ] = Field(default=None, alias='minRent')
+        Field(ge=0, description='월세 하한 (만원)', alias='minRent')
+    ] = None
     rent_max: Annotated[
         int | None,
-        Field(ge=0, description='월세 상한 (만원)')
-    ] = Field(default=None, alias='maxRent')
+        Field(ge=0, description='월세 상한 (만원)', alias='maxRent')
+    ] = None
     supply_area_min_m2: Annotated[
         float | None,
-        Field(ge=0, description='공급면적 하한 (㎡)')
-    ] = Field(default=None, alias='sizeContractM2Min')
+        Field(ge=0, description='공급면적 하한 (㎡)', alias='sizeContractM2Min')
+    ] = None
     supply_area_max_m2: Annotated[
         float | None,
-        Field(ge=0, description='공급면적 상한 (㎡)')
-    ] = Field(default=None, alias='sizeContractM2Max')
+        Field(ge=0, description='공급면적 상한 (㎡)', alias='sizeContractM2Max')
+    ] = None
     offset: Annotated[
         int,
         Field(ge=0, description='건너뛸 매물 수')

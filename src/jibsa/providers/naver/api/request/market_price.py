@@ -20,13 +20,13 @@ class NaverComplexMarketPriceListV1RequestParameterModel(NaverComplexPyeongReque
 
     start_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='시작일 (YYYY-MM-DD)')
-    ] = Field(alias='startDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='시작일 (YYYY-MM-DD)', alias='startDate')
+    ]
     end_date: Annotated[
         str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='끝일 (YYYY-MM-DD)')
-    ] = Field(alias='endDate')
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='끝일 (YYYY-MM-DD)', alias='endDate')
+    ]
     cp_list: Annotated[
         list[Literal['kab', 'kbstar', 'neonet']],
-        Field(description='시세 제공처. kab 한국부동산원, kbstar KB부동산, neonet 부동산뱅크')
-    ] = Field(default=['kab', 'kbstar', 'neonet'], alias='cpList[]')
+        Field(description='시세 제공처. kab 한국부동산원, kbstar KB부동산, neonet 부동산뱅크', alias='cpList[]')
+    ] = ['kab', 'kbstar', 'neonet']

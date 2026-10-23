@@ -18,16 +18,16 @@ class NaverClusterModel(ResponseModel):
 
     cluster_id: Annotated[
         str,
-        Field(description='클러스터 ID ({zoom}/{x}/{y})')
-    ] = Field(alias='clusterId')
+        Field(description='클러스터 ID ({zoom}/{x}/{y})', alias='clusterId')
+    ]
     coordinates: Annotated[
         NaverCoordinatesModel,
         Field(description='클러스터 중심')
     ]
     article_count: Annotated[
         int,
-        Field(description='클러스터 안 매물 수')
-    ] = Field(alias='articleCount')
+        Field(description='클러스터 안 매물 수', alias='articleCount')
+    ]
 
 
 class NaverClustersModel(ResponseModel):
@@ -35,8 +35,8 @@ class NaverClustersModel(ResponseModel):
 
     total_count: Annotated[
         int,
-        Field(description='뷰포트 안 전체 매물 수')
-    ] = Field(default=0, alias='totalCount')
+        Field(description='뷰포트 안 전체 매물 수', alias='totalCount')
+    ] = 0
     clusters: Annotated[
         list[NaverClusterModel],
         Field(description='클러스터')

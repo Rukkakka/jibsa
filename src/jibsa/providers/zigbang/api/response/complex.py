@@ -48,8 +48,8 @@ class ZigbangOfficetelBuildingModel(ResponseModel):
     ] = None
     item_count: Annotated[
         int | None,
-        Field(description='조건에 맞는 매물 수')
-    ] = Field(default=None, alias='itemCount')
+        Field(description='조건에 맞는 매물 수', alias='itemCount')
+    ] = None
 
 
 class ZigbangItemsOfficetelsBuildingV1ResponseModel(ResponseModel):
@@ -87,12 +87,12 @@ class ZigbangDanjiSchoolLevelModel(ResponseModel):
 
     zone_name: Annotated[
         str | None,
-        Field(description='통학구역(초등) 또는 학교군(중·고) 이름')
-    ] = Field(default=None, alias='zoneName')
+        Field(description='통학구역(초등) 또는 학교군(중·고) 이름', alias='zoneName')
+    ] = None
     schools: Annotated[
         list[ZigbangDanjiSchoolModel],
-        Field(description='통학구역·학교군 안의 학교 (가까운 순)')
-    ] = Field(default=[], alias='list')
+        Field(description='통학구역·학교군 안의 학교 (가까운 순)', alias='list')
+    ] = []
 
 
 class ZigbangDanjisSchoolsResponseModel(ResponseModel):

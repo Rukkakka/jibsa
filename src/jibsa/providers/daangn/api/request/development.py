@@ -20,12 +20,12 @@ class DaangnDevelopmentDistrictsInputModel(RequestModel):
 
     sw_coordinate: Annotated[
         DaangnCoordinateInputModel,
-        Field(description='남서 꼭짓점')
-    ] = Field(alias='swCoordinate')
+        Field(description='남서 꼭짓점', alias='swCoordinate')
+    ]
     ne_coordinate: Annotated[
         DaangnCoordinateInputModel,
-        Field(description='북동 꼭짓점')
-    ] = Field(alias='neCoordinate')
+        Field(description='북동 꼭짓점', alias='neCoordinate')
+    ]
     categories: Annotated[
         list[DaangnDevelopmentCategory],
         Field(min_length=1, description='ROAD(도로) / RAIL(철도) / HOUSING(정비사업)')
@@ -46,5 +46,5 @@ class DaangnDevelopmentByBusiNoRequestPayloadModel(RequestModel):
 
     dev_busi_no: Annotated[
         int,
-        Field(gt=0, description='사업 번호 (developmentDistricts 의 devBusiNo)')
-    ] = Field(alias='devBusiNo')
+        Field(gt=0, description='사업 번호 (developmentDistricts 의 devBusiNo)', alias='devBusiNo')
+    ]

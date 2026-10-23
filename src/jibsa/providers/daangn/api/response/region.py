@@ -42,12 +42,12 @@ class DaangnLocationModel(ResponseModel):
     ] = None
     name1_id: Annotated[
         int | None,
-        Field(description='시/도 ID. 구가 없는 세종 전체를 조회할 때 쓴다 (세종은 name2Id 가 0)')
-    ] = Field(default=None, alias='name1Id')
+        Field(description='시/도 ID. 구가 없는 세종 전체를 조회할 때 쓴다 (세종은 name2Id 가 0)', alias='name1Id')
+    ] = None
     name2_id: Annotated[
         int | None,
-        Field(description='시/군/구 ID. 같은 구의 동을 모을 때 쓴다')
-    ] = Field(default=None, alias='name2Id')
+        Field(description='시/군/구 ID. 같은 구의 동을 모을 때 쓴다', alias='name2Id')
+    ] = None
     depth: Annotated[
         int,
         Field(description='행정 단계. 3 이면 동/읍/면')
@@ -72,8 +72,8 @@ class DaangnGetRegionByCoordinateDataModel(ResponseModel):
 
     get_region_by_coordinate: Annotated[
         DaangnRegionModel | None,
-        Field(description='좌표가 속한 가장 작은 지역 (보통 동, depth 3). 바다 등이면 null')
-    ] = Field(default=None, alias='getRegionByCoordinate')
+        Field(description='좌표가 속한 가장 작은 지역 (보통 동, depth 3). 바다 등이면 null', alias='getRegionByCoordinate')
+    ] = None
 
 
 class DaangnGetRegionByCoordinateResponseModel(DaangnGraphQLResponseModel):
@@ -98,12 +98,12 @@ class DaangnSubwayStationPoiModel(ResponseModel):
     ]
     station_name: Annotated[
         str,
-        Field(description='역 이름')
-    ] = Field(alias='stationName')
+        Field(description='역 이름', alias='stationName')
+    ]
     line_names: Annotated[
         list[str],
-        Field(description='노선 (예: 서울2호선)')
-    ] = Field(default=[], alias='lineNames')
+        Field(description='노선 (예: 서울2호선)', alias='lineNames')
+    ] = []
     coordinate: Annotated[
         DaangnCoordinateModel | None,
         Field(description='역 좌표')
@@ -115,8 +115,8 @@ class DaangnSearchSubwayStationPoisDataModel(ResponseModel):
 
     search_subway_station_pois: Annotated[
         list[DaangnSubwayStationPoiModel],
-        Field(description='앞부분이 같은 역 (최대 50)')
-    ] = Field(default=[], alias='searchSubwayStationPois')
+        Field(description='앞부분이 같은 역 (최대 50)', alias='searchSubwayStationPois')
+    ] = []
 
 
 class DaangnSearchSubwayStationPoisResponseModel(DaangnGraphQLResponseModel):
@@ -133,12 +133,12 @@ class DaangnAddressModel(ResponseModel):
 
     region_address: Annotated[
         str | None,
-        Field(description='지번 주소 (건물 이름이 붙기도 한다)')
-    ] = Field(default=None, alias='regionAddress')
+        Field(description='지번 주소 (건물 이름이 붙기도 한다)', alias='regionAddress')
+    ] = None
     road_address: Annotated[
         str | None,
-        Field(description='도로명 주소 (괄호 안에 동·건물 이름)')
-    ] = Field(default=None, alias='roadAddress')
+        Field(description='도로명 주소 (괄호 안에 동·건물 이름)', alias='roadAddress')
+    ] = None
 
 
 class DaangnAddressEdgeModel(ResponseModel):
@@ -159,8 +159,8 @@ class DaangnSearchAddressModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnSearchAddressDataModel(ResponseModel):
@@ -168,8 +168,8 @@ class DaangnSearchAddressDataModel(ResponseModel):
 
     search_address: Annotated[
         DaangnSearchAddressModel | None,
-        Field(description='주소 검색 결과')
-    ] = Field(default=None, alias='searchAddress')
+        Field(description='주소 검색 결과', alias='searchAddress')
+    ] = None
 
 
 class DaangnSearchAddressResponseModel(DaangnGraphQLResponseModel):
@@ -195,8 +195,8 @@ class DaangnGeocodeAddressDataModel(ResponseModel):
 
     geocode_address: Annotated[
         DaangnGeocodedAddressModel | None,
-        Field(description='좌표. 주소가 아니면 null')
-    ] = Field(default=None, alias='geocodeAddress')
+        Field(description='좌표. 주소가 아니면 null', alias='geocodeAddress')
+    ] = None
 
 
 class DaangnGeocodeAddressResponseModel(DaangnGraphQLResponseModel):

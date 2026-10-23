@@ -39,8 +39,8 @@ class DaangnEducationMapPointsDataModel(ResponseModel):
 
     education_map_points: Annotated[
         list[DaangnEducationMapPointModel],
-        Field(description='좌표 범위 안의 시설 (500개에서 잘린다)')
-    ] = Field(default=[], alias='educationMapPoints')
+        Field(description='좌표 범위 안의 시설 (500개에서 잘린다)', alias='educationMapPoints')
+    ] = []
 
 
 class DaangnEducationMapPointsResponseModel(DaangnGraphQLResponseModel):
@@ -70,8 +70,8 @@ class DaangnPreschoolModel(ResponseModel):
 
     school_nm: Annotated[
         str | None,
-        Field(description='시설 이름')
-    ] = Field(default=None, alias='schoolNm')
+        Field(description='시설 이름', alias='schoolNm')
+    ] = None
     type: Annotated[
         str | None,
         Field(description='DAYCARE / KINDERGARTEN')
@@ -82,40 +82,40 @@ class DaangnPreschoolModel(ResponseModel):
     ] = None
     open_time: Annotated[
         str | None,
-        Field(description='운영 시간')
-    ] = Field(default=None, alias='openTime')
+        Field(description='운영 시간', alias='openTime')
+    ] = None
     estbshm_type: Annotated[
         str | None,
-        Field(description='설립 유형 (국공립·민간·직장 등)')
-    ] = Field(default=None, alias='estbshmType')
+        Field(description='설립 유형 (국공립·민간·직장 등)', alias='estbshmType')
+    ] = None
     estbshm_date: Annotated[
         str | None,
-        Field(description='설립일')
-    ] = Field(default=None, alias='estbshmDate')
+        Field(description='설립일', alias='estbshmDate')
+    ] = None
     open_date: Annotated[
         str | None,
-        Field(description='개원일')
-    ] = Field(default=None, alias='openDate')
+        Field(description='개원일', alias='openDate')
+    ] = None
     jrsdt_admnstrt: Annotated[
         str | None,
-        Field(description='관할 기관')
-    ] = Field(default=None, alias='jrsdtAdmnstrt')
+        Field(description='관할 기관', alias='jrsdtAdmnstrt')
+    ] = None
     child_cnt: Annotated[
         int | None,
-        Field(description='원아 수')
-    ] = Field(default=None, alias='childCnt')
+        Field(description='원아 수', alias='childCnt')
+    ] = None
     class_cnt: Annotated[
         int | None,
-        Field(description='반 수')
-    ] = Field(default=None, alias='classCnt')
+        Field(description='반 수', alias='classCnt')
+    ] = None
     teacher_cnt: Annotated[
         int | None,
-        Field(description='교사 수')
-    ] = Field(default=None, alias='teacherCnt')
+        Field(description='교사 수', alias='teacherCnt')
+    ] = None
     school_bus: Annotated[
         bool | None,
-        Field(description='통학버스 운영')
-    ] = Field(default=None, alias='schoolBus')
+        Field(description='통학버스 운영', alias='schoolBus')
+    ] = None
     region: Annotated[
         DaangnPreschoolRegionModel | None,
         Field(description='구·동')
@@ -127,8 +127,8 @@ class DaangnPreschoolByNoDataModel(ResponseModel):
 
     preschool_by_no: Annotated[
         DaangnPreschoolModel | None,
-        Field(description='시설 상세. 없는 번호면 null')
-    ] = Field(default=None, alias='preschoolByNo')
+        Field(description='시설 상세. 없는 번호면 null', alias='preschoolByNo')
+    ] = None
 
 
 class DaangnPreschoolByNoResponseModel(DaangnGraphQLResponseModel):
@@ -149,16 +149,16 @@ class DaangnSchoolSearchNodeModel(ResponseModel):
 
     sch_cd: Annotated[
         str,
-        Field(description='학교 코드')
-    ] = Field(alias='schCd')
+        Field(description='학교 코드', alias='schCd')
+    ]
     sch_nm: Annotated[
         str | None,
-        Field(description="학교 이름 (예: '서울역삼초등학교')")
-    ] = Field(default=None, alias='schNm')
+        Field(description="학교 이름 (예: '서울역삼초등학교')", alias='schNm')
+    ] = None
     sch_addr: Annotated[
         str | None,
-        Field(description='주소')
-    ] = Field(default=None, alias='schAddr')
+        Field(description='주소', alias='schAddr')
+    ] = None
 
 
 class DaangnSchoolSearchEdgeModel(ResponseModel):
@@ -179,8 +179,8 @@ class DaangnSchoolSearchModel(ResponseModel):
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
-        Field(description='페이지 정보')
-    ] = Field(default=None, alias='pageInfo')
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
 
 
 class DaangnSearchSchoolsDataModel(ResponseModel):
@@ -188,8 +188,8 @@ class DaangnSearchSchoolsDataModel(ResponseModel):
 
     search_schools: Annotated[
         DaangnSchoolSearchModel | None,
-        Field(description='학교 검색 결과')
-    ] = Field(default=None, alias='searchSchools')
+        Field(description='학교 검색 결과', alias='searchSchools')
+    ] = None
 
 
 class DaangnSearchSchoolsResponseModel(DaangnGraphQLResponseModel):
@@ -206,51 +206,52 @@ class DaangnSchoolDetailModel(ResponseModel):
 
     sch_cd: Annotated[
         str,
-        Field(description='학교 코드')
-    ] = Field(alias='schCd')
+        Field(description='학교 코드', alias='schCd')
+    ]
     sch_nm: Annotated[
         str | None,
-        Field(description='학교 이름')
-    ] = Field(default=None, alias='schNm')
+        Field(description='학교 이름', alias='schNm')
+    ] = None
     sch_type: Annotated[
         str | None,
-        Field(description='ELEMENTARY / MIDDLE / HIGH / ETC')
-    ] = Field(default=None, alias='schType')
+        Field(description='ELEMENTARY / MIDDLE / HIGH / ETC', alias='schType')
+    ] = None
     sch_addr: Annotated[
         str | None,
-        Field(description='주소')
-    ] = Field(default=None, alias='schAddr')
+        Field(description='주소', alias='schAddr')
+    ] = None
     fond_sch_cd: Annotated[
         str | None,
-        Field(description="설립 구분 (예: '공립', '사립')")
-    ] = Field(default=None, alias='fondSchCd')
+        Field(description="설립 구분 (예: '공립', '사립')", alias='fondSchCd')
+    ] = None
     coedu: Annotated[
         str | None,
         Field(description='MALE(남학교) / COED(남녀공학) / FEMALE(여학교)')
     ] = None
     tot_std_cnt: Annotated[
         int | None,
-        Field(description='전체 학생 수')
-    ] = Field(default=None, alias='totStdCnt')
+        Field(description='전체 학생 수', alias='totStdCnt')
+    ] = None
     cls_std_cnt: Annotated[
         float | None,
-        Field(description='학급당 학생 수')
-    ] = Field(default=None, alias='clsStdCnt')
+        Field(description='학급당 학생 수', alias='clsStdCnt')
+    ] = None
     tch_std_cnt: Annotated[
         float | None,
-        Field(description='교원 1인당 학생 수')
-    ] = Field(default=None, alias='tchStdCnt')
+        Field(description='교원 1인당 학생 수', alias='tchStdCnt')
+    ] = None
     student_std_date: Annotated[
         str | None,
-        Field(description="학생 수 기준 연도 (예: '2026')")
-    ] = Field(default=None, alias='studentStdDate')
+        Field(description="학생 수 기준 연도 (예: '2026')", alias='studentStdDate')
+    ] = None
     assigned_complexes: Annotated[
         list[DaangnRegionComplexNodeModel] | None,
-        Field(description=(
-            '배정 단지 (초등학교만. 중·고등학교는 학교군 배정이라 빈 목록). 지역 단지 목록과 같은 카드이고 '
-            '순서가 정해져 있지 않으며, 소규모 빌라형 단지도 섞인다. 최근 실거래는 매매다'
-        ))
-    ] = Field(default=None, alias='assignedComplexes')
+        Field(
+            description='배정 단지 (초등학교만. 중·고등학교는 학교군 배정이라 빈 목록). 지역 단지 목록과 같은 카드이고 '
+            '순서가 정해져 있지 않으며, 소규모 빌라형 단지도 섞인다. 최근 실거래는 매매다',
+            alias='assignedComplexes'
+        )
+    ] = None
 
 
 class DaangnSchoolByCodeDataModel(ResponseModel):
@@ -258,8 +259,8 @@ class DaangnSchoolByCodeDataModel(ResponseModel):
 
     school_by_code: Annotated[
         DaangnSchoolDetailModel | None,
-        Field(description='학교. 없는 코드면 null')
-    ] = Field(default=None, alias='schoolByCode')
+        Field(description='학교. 없는 코드면 null', alias='schoolByCode')
+    ] = None
 
 
 class DaangnSchoolByCodeResponseModel(DaangnGraphQLResponseModel):
