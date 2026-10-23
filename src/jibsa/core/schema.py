@@ -8,7 +8,7 @@ from pydantic import (
 class RequestModel(BaseModel):
     """Base request model with strict field validation."""
     model_config = ConfigDict(
-        populate_by_name=True,
+        validate_by_name=True,
         extra='forbid',
     )
 
@@ -19,7 +19,7 @@ class ResponseModel(BaseModel):
     비공식 API 는 예고 없이 필드를 추가하므로 모르는 필드는 버리지 않고 보존한다.
     """
     model_config = ConfigDict(
-        populate_by_name=True,
+        validate_by_name=True,
         extra='allow',
     )
 

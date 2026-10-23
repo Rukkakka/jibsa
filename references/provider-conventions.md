@@ -153,7 +153,7 @@ def run_request_items_onerooms_v1(
 ## 요청·응답 모델
 
 - 요청 모델은 `core.schema.RequestModel` (`extra='forbid'`), 응답 모델은 `ResponseModel` (`extra='allow'`) 을
-  상속한다. 둘 다 `populate_by_name=True` 라 코드에서는 필드 이름으로 만든다. 비공식 API 가 예고 없이 필드를
+  상속한다. 둘 다 `validate_by_name=True` 라 코드에서는 필드 이름으로 만든다. 비공식 API 가 예고 없이 필드를
   더하므로 응답 모델은 모르는 필드를 버리지 않는다.
 - 응답 필드는 **소스가 빠뜨릴 수 있으면 `X | None = None`** 으로 둔다. 실제 응답에서 늘 오는 것을
   확인한 필드만 필수로 한다. 비공식 API 라 엄격한 필수 필드는 파싱 실패로 이어진다.
