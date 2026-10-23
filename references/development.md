@@ -42,6 +42,7 @@ Windows 는 `.venv\Scripts\ruff`, `.venv\Scripts\mypy` 로 부른다.
 
 - `ruff format` 은 쓰지 않는다. 여러 줄로 쓰는 필드 선언([코드 형식 §4](code-style.md#4-pydantic-선언))을 한 줄로 합친다.
 - import 바로 위에 주석을 달면 ruff 가 그 앞에 빈 줄을 넣어 같은 그룹이 갈라진 것처럼 보인다. import 에 다는 주석은 줄 끝에 쓴다.
+- [코드 형식 §4](code-style.md#4-pydantic-선언) 의 별칭·기본값 위치는 ruff·mypy 가 잡지 못해 `tests/test_schema.py` 가 검사한다.
 - mypy 오류를 `# type: ignore` 로 덮지 않는다. 앞에서 이미 확인해 None 일 수 없는 값이면 `assert` 로 좁히고 왜 그런지 주석을 단다. 정말 필요할 때만 오류 코드를 붙여 쓴다 (`# type: ignore[assignment]`).
 
 ## 검증과 테스트

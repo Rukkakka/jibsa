@@ -5,6 +5,7 @@
 [development.md](development.md#검증과-테스트) 에 있다.
 
 §2 따옴표, §3 import 순서·절대 import, §5 타입 힌트는 ruff·mypy 가 검사한다 ([코드 검사](development.md#코드-검사)).
+§4 의 별칭·기본값 위치는 `tests/test_schema.py` 가 검사한다 (ruff·mypy 는 잡지 못한다).
 §3 의 "둘 이상이면 괄호로 여러 줄" 과 나머지 절은 도구가 잡지 못하니 직접 지킨다.
 
 ## 1. 언어
@@ -85,12 +86,13 @@ from typing import (
 - `alias` 위치는 Pylance 에만 영향을 준다. mypy 의 `pydantic.mypy` 플러그인은 `validate_by_name=True` 를 보고
   위치와 상관없이 필드 이름으로 생성자를 만든다. mypy·ruff 가 잡지 못해 `tests/test_schema.py` 가 대입 위치의 `Field()` 에
   `default_factory` 말고 다른 인자가 있는지와 별칭이 있는 모델이 필드 이름을 받는지를 검사한다.
-- 별칭은 `alias_generator` 로 자동 생성하지 않고 필드마다 적는다. 원본 응답의 키(`walkingDistance`)로
-  코드를 검색할 수 있어야 하고, 자동 변환과 다른 이름(`roomCnt`, 한글 키, 직방의 `item_id` 같은 snake_case 키 등
-  170여 개)이 많아 두 방식이 섞이며, 응답 모델은 `extra='allow'` 라 별칭을 빠뜨리면 에러 없이 `None` 이 되기 때문이다.
+- 별칭은 `alias_generator` 로 자동 생성하지 않고 필드마다 적는다. 원본 응답의 키(`walkingDistance`)로 코드를 검색할 수
+  있어야 하고, 자동 변환으로 나오지 않는 키(`roomCnt`, 한글 키, `__typename` 등 136개)가 많은데 응답 모델은
+  `extra='allow'` 라 별칭을 빠뜨리면 에러 없이 `None` 이 된다. 직방 상가 요청 본문(`item_ids`, `sales_type`)처럼
+  snake_case 로 보내야 하는 필드는 자동 변환이 보내는 이름까지 바꾼다.
 - `Field(...)`(ellipsis)로 필수를 강조하지 않는다. 기본값이 없으면 필수다.
 - `X | None` 은 선택 필드가 아니다. **기본값이 있어야** 선택이다.
-- 목록·집합 기본값도 값으로 쓴다 (`= []`, `= set()`). pydantic 이 인스턴스마다 복사하므로 공유되지 않는다.
+- 목록·집합·딕셔너리 기본값도 값으로 쓴다 (`= []`, `= set()`, `= {}`). pydantic 이 인스턴스마다 복사하므로 공유되지 않는다.
 - 필드 선언은 여러 줄로 쓰고, 모델 필드에는 `description` 을 단다 (CLI 출력 의미가 드러나도록).
 
 ```python
