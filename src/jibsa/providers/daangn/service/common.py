@@ -187,8 +187,8 @@ class DaangnRegion(BaseModel):
     ]
     name2: Annotated[
         str,
-        Field(description='시/군/구')
-    ]
+        Field(description='시/군/구. 세종처럼 없으면 빈 문자열이고 출력에서 키를 뺀다')
+    ] = ''
     name3: Annotated[
         str,
         Field(description='읍/면/동')
@@ -197,6 +197,14 @@ class DaangnRegion(BaseModel):
         int,
         Field(description='당근 지역 ID')
     ]
+
+    @model_serializer(mode='wrap')
+    def drop_missing_district(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # 세종은 시·군·구가 없어 당근이 name2 를 '' 로 준다 (해당 없음). 이어 받기 표에서 다시 읽을 때는 기본값 '' 로 돌아온다
+        if not self.name2:
+            data.pop('name2', None)
+        return data
 
 
 class FeedQueryRejectedError(JibsaError):

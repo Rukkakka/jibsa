@@ -4,10 +4,13 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
 )
 
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.listing import (
+    NOT_APPLICABLE_PRICE_FIELDS,
     normalize_address,
     normalize_date,
 )
@@ -34,7 +37,10 @@ from jibsa.providers.daangn.service.common import (
 )
 from jibsa.providers.daangn.service.region import search_locations
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 class DaangnPriceRange(BaseModel):
@@ -135,7 +141,7 @@ class DaangnKbRange(BaseModel):
 
 
 class DaangnCompareRecentTrade(BaseModel):
-    """평형 최근 실거래 하나 (만원)."""
+    """평형 최근 실거래 하나 (만원). 매매는 보증금·월세, 전월세는 매매가 키를 뺀다 (해당 없음)."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -161,6 +167,18 @@ class DaangnCompareRecentTrade(BaseModel):
         int | None,
         Field(description='월세 (전세면 0)')
     ] = None
+    sale: Annotated[
+        bool,
+        Field(exclude=True, description='매매 실거래인지 (전월세면 False). 해당 없는 금액 키를 고르는 데만 쓴다')
+    ]
+
+    @model_serializer(mode='wrap')
+    def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # 전세의 월세는 0 으로 주므로 전월세는 월세 기준으로 매매가만 뺀다
+        for field in NOT_APPLICABLE_PRICE_FIELDS['매매' if self.sale else '월세']:
+            data.pop(field, None)
+        return data
 
 
 class DaangnCompareAreaGroup(BaseModel):
@@ -346,8 +364,10 @@ def _subways(rows: list[DaangnCompareSubwayModel]) -> list[DaangnCompareSubway]:
     return list(merged.values())
 
 
-def _recent_trade(connections: list[DaangnCompareRealsaleConnectionModel | None]) -> DaangnCompareRecentTrade | None:
-    """평형들의 실거래 중 계약일이 가장 최근인 하나."""
+def _recent_trade(
+    connections: list[DaangnCompareRealsaleConnectionModel | None], *, sale: bool,
+) -> DaangnCompareRecentTrade | None:
+    """평형들의 실거래 중 계약일이 가장 최근인 하나. `sale` 은 매매 실거래(`saleRealsale`)인지."""
     trades = [
         edge.node for connection in connections if connection for edge in connection.edges
         if edge.node and edge.node.contact_date
@@ -363,6 +383,7 @@ def _recent_trade(connections: list[DaangnCompareRealsaleConnectionModel | None]
         price_manwon=latest.trade_price,
         deposit_manwon=latest.deposit if latest.trade_price is None else None,
         rent_manwon=latest.month_rent_fee if latest.trade_price is None else None,
+        sale=sale,
     )
 
 
@@ -385,8 +406,8 @@ def _area_group(group: DaangnCompareAreaGroupModel) -> DaangnCompareAreaGroup:
             low_manwon=kb.lease_lower_limit, mid_manwon=kb.lease_std_price, high_manwon=kb.lease_upper_limit,
         ) if kb and kb.lease_std_price else None,
         kb_survey_date=normalize_date(kb.survey_base_date) if kb else None,
-        recent_sale=_recent_trade([info.sale_realsale for info in group.py_infos]),
-        recent_rent=_recent_trade([info.borrow_realsale for info in group.py_infos]),
+        recent_sale=_recent_trade([info.sale_realsale for info in group.py_infos], sale=True),
+        recent_rent=_recent_trade([info.borrow_realsale for info in group.py_infos], sale=False),
     )
 
 

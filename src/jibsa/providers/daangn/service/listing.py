@@ -58,6 +58,9 @@ OPTION_LABELS: dict[str, str] = {
     # mortgageAvailable(가능/불가능)로 보여 주고, YES 매물 본문에는 '전세자금대출 가능' 이라고 적혀 있다.
     # 시설은 아니지만 YES 일 때 알려야 하는 항목. README 가 options 에 섞여 나온다고 안내한다
     'MORTGAGE': '대출 가능',
+    # MORTGAGE 처럼 시설이 아니라 YES 일 때 알릴 항목. 당근 웹 상세의 '전입신고 | 가능' 칸이다 (2026-10-24 실측: 4437264 가
+    # MOVE_IN_REGISTRATION=YES 이고 페이지에 '전입신고 가능'. 이름표가 없어 영어 코드 그대로 options 에 나갔다)
+    'MOVE_IN_REGISTRATION': '전입신고 가능',
 }
 DIRECTION_LABELS: dict[str, str] = {
     'SOUTH_FACING': '남향',
@@ -233,11 +236,16 @@ def detail_to_listing(
     """
     article = response.article
     if not is_available(article):
+        # 노출 제한은 `invisibleReason` 대신 `invisibleInfos` 로만 올 수 있어 그 종류(`__typename`)도 사유로 쓴다. 없으면 진행 중
+        # 매물이 왜 안 되는지 사유가 null 로 나갔다
+        restriction = next(
+            (str(info['__typename']) for info in article.invisible_infos or [] if info.get('__typename')), None,
+        )
         raise ListingUnavailableError(
             'daangn',
             article.original_id,
             status=article.status,
-            reason=article.invisible_reason or ('HIDDEN' if article.is_hide else None),
+            reason=article.invisible_reason or restriction or ('HIDDEN' if article.is_hide else None),
         )
     trades = trades_preferred_first(article)
     trade = trades[0] if trades else None

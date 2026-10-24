@@ -220,7 +220,7 @@ jibsa naver search listings --complex 개포자이 --trade 매매 --dong 104 --p
 
 **오류와 대응**
 
-지역·좌표·지원하지 않는 지역 필터와 `--complex` 동시 지정은 `INVALID_ARGUMENT`. 없는 단지·동은 `NOT_FOUND`이며, 동이면 그 단지의 동 이름을 `hint` 로 준다. `--pyeong` 을 주었는데 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다.
+지역·좌표·지원하지 않는 지역 필터와 `--complex` 동시 지정은 `INVALID_ARGUMENT`. 없는 단지·동은 `NOT_FOUND`이며, 동이면 그 단지의 동 이름을 `hint` 로 준다. 단지 번호로 찾았는데 0건이면 단지가 있는지 확인한다(요청 1~2회 추가). `--pyeong` 을 주었는데 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다.
 
 **주의사항**
 
@@ -451,7 +451,7 @@ jibsa naver redevelopment 9000001 --trade 매매
 
 **반환값**
 
-`redevelopment_number`, `name`, `legal_division`, `households`(계획 세대수), `business_step`(사업 단계), `construction_company`(시공사), `floor_area_ratio`·`building_coverage_ratio`(계획 용적률·건폐율, %), `article_counts`(거래 유형별 현재 매물 수), `sale_asking_range_manwon`, `jeonse_asking_range_manwon`, `url`.
+`redevelopment_number`, `name`, `legal_division`, `households`(계획 세대수), `business_step`(사업 단계), `construction_company`(시공사), `floor_area_ratio`·`building_coverage_ratio`(계획 용적률·건폐율, %), `article_counts`(거래 유형별 현재 매물 수. `--trade` 를 주면 그 거래 유형만 센다), `sale_asking_range_manwon`, `jeonse_asking_range_manwon`, `url`.
 
 **오류와 대응**
 

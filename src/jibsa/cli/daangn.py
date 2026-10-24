@@ -64,7 +64,10 @@ from jibsa.providers.daangn.service.common import (
     FeedQueryRejectedError,
     partial_failure_note,
 )
-from jibsa.providers.daangn.service.commute import search_commute
+from jibsa.providers.daangn.service.commute import (
+    COMMUTE_STATION_DEFAULT_LIMIT,
+    search_commute,
+)
 from jibsa.providers.daangn.service.compare import (
     NEARBY_COMPLEXES_MAX,
     compare_complexes,
@@ -189,7 +192,7 @@ PropertyTypeOption = Annotated[
 TradeOption = Annotated[list[str] | None, typer.Option('--trade', help='매매, 전세, 월세, 단기임대. 기본 전체')]
 WithManageCostOption = Annotated[
     bool,
-    typer.Option('--with-manage-cost', help='월세 범위를 월세 + 관리비로 비교 (당근 "관리비 포함")'),
+    typer.Option('--with-manage-cost', help='월세 범위를 월세 + 관리비로 비교 (당근 "관리비 포함"). --rent-min/--rent-max 와 함께'),
 ]
 AreaMinOption = Annotated[float | None, typer.Option(min=0, help='유형별 면적 하한 (㎡): 일반 매물 전용, 주택·건물·공장 연면적, 토지 대지면적')]
 AreaMaxOption = Annotated[float | None, typer.Option(min=0, help='유형별 면적 상한 (㎡): 일반 매물 전용, 주택·건물·공장 연면적, 토지 대지면적')]
@@ -325,8 +328,12 @@ def _listing_conditions(
     만들 때 ValidationError 가 나므로 `handle_errors` 안에서 부른다.
 
     Raises:
-        typer.BadParameter: 모르는 라벨이거나 사용승인일·거래 방식을 둘 이상 줬을 때.
+        typer.BadParameter: 모르는 라벨이거나 사용승인일·거래 방식을 둘 이상 줬을 때, 월세 범위 없이 --with-manage-cost 를 줬을 때.
     """
+    if with_manage_cost and rent_min is None and rent_max is None:
+        # 월세 범위의 비교 기준만 바꾸는 옵션이라 혼자서는 서버가 거르지 않는다 (2026-10-23 실측: 세종 반곡동 월세 122건이
+        # 옵션을 줘도 122건). 받아 두면 관리비까지 따져 거른 줄 안다
+        raise typer.BadParameter('월세 범위를 월세 + 관리비로 비교하는 옵션이라 --rent-min/--rent-max 와 함께 주세요', param_hint='--with-manage-cost')
     property_types = split_csv(property_type, PROPERTY_TYPES, '--type', LISTING_HINTS)
     trade_types, trade_notes = infer_trade_types(
         split_csv(trade, TRADE_TYPES, '--trade'),
@@ -445,7 +452,8 @@ def region_command(
         results = [
             {
                 'name1': location.name1,
-                'name2': location.name2,
+                # 세종은 시·군·구가 없어 '' 로 온다 (해당 없음이라 키를 뺀다, `DaangnRegion` 과 같다)
+                **({} if location.name2 == '' else {'name2': location.name2}),
                 'name3': location.name3,
                 'region_id': location.id,
             }
@@ -874,7 +882,7 @@ def commute_command(
     household_min: HouseholdMinOption = None,
     household_max: HouseholdMaxOption = None,
     parking_min: ParkingMinOption = None,
-    limit: Annotated[int, typer.Option(min=1, max=COMMUTE_STATION_MAX_LIMIT, help='역당 최대 매물 수 (100건씩 페이지를 넘겨 받는다)')] = 20,
+    limit: Annotated[int, typer.Option(min=1, max=COMMUTE_STATION_MAX_LIMIT, help='역당 최대 매물 수 (100건씩 페이지를 넘겨 받는다)')] = COMMUTE_STATION_DEFAULT_LIMIT,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -1042,7 +1050,8 @@ def school_command(
     limit: Annotated[int, typer.Option(min=1, max=COMPLEX_LIST_MAX_LIMIT, help='최대 단지 수')] = 120,
     pretty: PrettyOption = None,
 ) -> None:
-    """학교 정보와 그 학교에 배정되는 단지 (초등학교만, 세대수 많은 순). 요청 2회.
+    """학교 정보와 그 학교에 배정되는 단지 (초등학교만, 세대수 많은 순). 요청 2회, 이름이 '○○초등학교' 처럼 끝나면 3회
+    (--city 를 주면 최대 7회).
 
     예: jibsa daangn school 역삼초등학교 --city 강남구 -t 아파트 --household-min 100
     """

@@ -7,7 +7,10 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.geo import haversine_km
+from jibsa.core.geo import (
+    haversine_km,
+    within_radius,
+)
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.development import (
     DaangnDevelopmentByBusiNoRequestPayloadModel,
@@ -131,7 +134,8 @@ def list_developments(
         if coordinate is None or coordinate.lat is None or coordinate.lon is None:
             continue
         distance = haversine_km(lat, lng, coordinate.lat, coordinate.lon)
-        if distance > radius_km:
+        # 출력의 distance_km 처럼 반올림한 거리로 본다 (매물 반경 검색과 같다). 1.004km 를 '1.0km' 로 보이면서 1km 반경에서 빼지 않게
+        if not within_radius(distance, radius_km):
             continue
         if district.busi_prgrs_cd == HIDDEN_DEVELOPMENT_STATUS:
             hidden += 1

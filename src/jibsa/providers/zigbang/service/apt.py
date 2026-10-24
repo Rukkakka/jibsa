@@ -357,7 +357,9 @@ def search_apt_listings(
     # 앞 결과에서 받은 지역도 찾은 지역으로 친다 (못 찾은 지역 안내에 넣지 않게)
     asked = [offset > 0 or finished for offset, finished in zip(offsets, done, strict=True)]
     inspected = 0
-    seen: set[str] = set()
+    # 여러 동은 이웃 동 단지가 겹쳐 와서(문래동1가 목록이 대림동·영등포동 단지) 앞 결과에서 보여 준 매물도 이어 받기 표에 담아
+    # 다시 내보내지 않는다 (2026-10-23 실측: 문래동 --limit 30 을 세 번 이어 받자 쪽마다 9~11건이 앞 쪽과 겹쳤다)
+    seen: set[str] = set(start.get('seen', [])) if start is not None else set()
     filter_area = conditions.area_min_m2 is not None or conditions.area_max_m2 is not None
     while inspected < limit and not all(done):
         active = [index for index, finished in enumerate(done) if not finished]
@@ -461,7 +463,11 @@ def search_apt_listings(
         total=total,
         returned=len(listings),
         has_more=has_more,
-        next_position={'codes': local_codes, 'offsets': offsets, 'done': done, 'totals': totals} if has_more else None,
+        next_position={
+            'codes': local_codes, 'offsets': offsets, 'done': done, 'totals': totals,
+            # 동 하나는 offset 으로 이어 받아 겹치지 않으니 표를 키우지 않는다
+            **({'seen': sorted(seen)} if len(local_codes) > 1 else {}),
+        } if has_more else None,
         listings=listings,
         notes=notes,
     )

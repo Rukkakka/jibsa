@@ -396,10 +396,14 @@ def _find_address(
     elements = item.address_elements or NaverAddressElementsModel()
     code = elements.bcode or None
     words = query.split()
-    if is_dong_code(code) and not elements.ri and elements.dongmyun and words[-1] != elements.dongmyun:
+    dong = elements.dongmyun or ''
+    # 끝 단어가 동 이름 일부일 때만 다시 묻는다. 번지('신사동 535-1' → '신사동 신사동')나 '○가' 동의 앞부분('성수동' →
+    # '성수동1가', 그 이름은 한 곳뿐이라 여러 곳인지 알 수 없다)까지 다시 물어 요청만 1회 늘었다 (2026-10-23 리뷰)
+    partial = dong != words[-1] and dong.startswith(words[-1]) and re.fullmatch(rf'{re.escape(words[-1])}\d+가', dong) is None
+    if is_dong_code(code) and not elements.ri and partial:
         # 동 이름 일부는 주소 검색이 대표 한 곳만 준다 ('송정' 은 부산 해운대구 송정동 1곳, '송정동' 은 15곳.
         # '역삼'·'역삼동' 은 둘 다 강남구 역삼동 1곳, 2026-10-11). 그래서 동 이름 전체로 다시 물어 여러 곳이면 멈춘다
-        same, same_total = _search_address(client, ' '.join([*words[:-1], elements.dongmyun]))
+        same, same_total = _search_address(client, ' '.join([*words[:-1], dong]))
         if same_total > 1:
             raise RegionAmbiguousError(
                 query, [other.full_address for other in same[:MAX_CANDIDATE_NOTES] if other.full_address], same_total,

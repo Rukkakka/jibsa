@@ -479,6 +479,7 @@ def _search_legal_division(
 
     '○가' 로 나뉜 동(성수동1가·2가)은 코드를 여럿 받는다. 목록 API 가 코드를 하나만 받아(2026-10-15 실측: 둘이면 400)
     동마다 차례로 찾고, `limit` 은 남은 몫을 아직 찾지 않은 동 수로 나눠 쓴다 (앞 동이 적으면 뒤 동이 이어 쓴다).
+    뒤 동이 적어 몫이 남으면 매물이 남은 동을 한 바퀴 더 돌며 남은 몫을 다시 나눈다.
     코드는 `limit` 개 이하로 준다. 그래야 동마다 몫이 1건 이상이다 (많으면 CLI 가 뒤쪽 동을 빼고 알린다).
 
     `start` 는 이어 받기 위치다. `dongs` 는 동마다의 상태로 None 은 아직 안 받은 동, 커서(seed·last_info)는 그 커서부터
@@ -492,36 +493,40 @@ def _search_legal_division(
     # 겹친다 (2026-10-21 실측: 성수동 --limit 30 의 --next 가 앞 결과 30건 중 12건을 다시 냈다)
     states: list[dict[str, Any] | bool | None] = list(start['dongs']) if start else [None] * len(legal_division_codes)
     totals: list[int] = [int(value) for value in start['totals']] if start else [0] * len(legal_division_codes)
-    for index, code in enumerate(legal_division_codes):
-        if states[index] is False:
-            continue
-        if inspected >= limit:
-            break
-        # 몫은 1건 이상이다. 이어 받으며 --limit 을 동 수보다 작게 줘도 앞 동부터 받고, 못 받은 동은 상태를 그대로 남긴다
-        remaining = sum(1 for state in states[index:] if state is not False)
-        share = max(1, (limit - inspected) // remaining)
-        dong_filter = filter_.model_copy(update={'legal_division_numbers': [code], 'legal_division_type': 'EUP'})
-        scan = PageScan(limit=share, max_requests=MAX_LEGAL_DIVISION_PAGE_REQUESTS)
+    # 한 바퀴만 돌면 뒤 동이 몫을 다 못 쓸 때 남은 몫이 버려진다 (앞 동 100건·뒤 동 5건에 --limit 30 이면 15 + 5 = 20건만 받고
+    # '이 20건이 전부' 와 '[일부] next 로 이어 보세요' 가 함께 나갔다, 2026-10-23 리뷰). 몫이 남고 매물이 남은 동이 있으면 다시 돈다.
+    # 몫을 다 받은 동은 다음 바퀴에 남은 몫이 없으므로, 다시 도는 건 앞 바퀴에서 끝난 동이 생겼을 때뿐이다 (동 수 + 1 바퀴 이하)
+    while inspected < limit and not truncated and any(state is not False for state in states):
+        for index, code in enumerate(legal_division_codes):
+            if states[index] is False:
+                continue
+            if inspected >= limit:
+                break
+            # 몫은 1건 이상이다. 이어 받으며 --limit 을 동 수보다 작게 줘도 앞 동부터 받고, 못 받은 동은 상태를 그대로 남긴다
+            remaining = sum(1 for state in states[index:] if state is not False)
+            share = max(1, (limit - inspected) // remaining)
+            dong_filter = filter_.model_copy(update={'legal_division_numbers': [code], 'legal_division_type': 'EUP'})
+            scan = PageScan(limit=share, max_requests=MAX_LEGAL_DIVISION_PAGE_REQUESTS)
 
-        def fetch(size: int, seed: str | None, last_info: Any, dong_filter: NaverArticleFilterModel = dong_filter) -> NaverArticlePageModel:
-            paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
-            return unwrap(
-                client.run_request_article_legal_division_article_list_v1(
-                    NaverArticleLegalDivisionArticleListV1RequestPayloadModel(filter=dong_filter, article_paging_request=paging)
-                ),
-                '동 매물 목록',
+            def fetch(size: int, seed: str | None, last_info: Any, dong_filter: NaverArticleFilterModel = dong_filter) -> NaverArticlePageModel:
+                paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
+                return unwrap(
+                    client.run_request_article_legal_division_article_list_v1(
+                        NaverArticleLegalDivisionArticleListV1RequestPayloadModel(filter=dong_filter, article_paging_request=paging)
+                    ),
+                    '동 매물 목록',
+                )
+
+            state = states[index]
+            scan_pages(
+                scan, fetch, listing_keeper(listings, (lat, lng)), page_size=LEGAL_DIVISION_PAGE_SIZE,
+                start=resume_cursor(state) if isinstance(state, dict) else None,
             )
-
-        state = states[index]
-        scan_pages(
-            scan, fetch, listing_keeper(listings, (lat, lng)), page_size=LEGAL_DIVISION_PAGE_SIZE,
-            start=resume_cursor(state) if isinstance(state, dict) else None,
-        )
-        states[index] = cursor_position(scan.cursor) if scan.cursor is not None else False
-        if scan.page_requests:
-            totals[index] = scan.total
-        inspected += scan.received
-        truncated = truncated or scan.truncated
+            states[index] = cursor_position(scan.cursor) if scan.cursor is not None else False
+            if scan.page_requests:
+                totals[index] = scan.total
+            inspected += scan.received
+            truncated = truncated or scan.truncated
 
     total = sum(totals)
     next_position = {'dongs': states, 'totals': totals} if any(state is not False for state in states) else None

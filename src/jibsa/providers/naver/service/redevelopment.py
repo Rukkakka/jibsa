@@ -387,7 +387,7 @@ class NaverRedevelopmentDetail(BaseModel):
     ] = None
     article_counts: Annotated[
         dict[str, int],
-        Field(description='거래 유형별 현재 매물 수 (매매·전세·월세·단기임대)')
+        Field(description='거래 유형별 현재 매물 수 (매매·전세·월세·단기임대). 거래 유형을 고르면 그 유형만')
     ]
     sale_asking_range_manwon: Annotated[
         list[float | None] | None,
@@ -450,7 +450,10 @@ def get_redevelopment(
         construction_company=info.construction_company or None,
         floor_area_ratio=ratio.floor_area_ratio if ratio else None,
         building_coverage_ratio=ratio.building_coverage_ratio if ratio else None,
-        article_counts=trade_article_counts(counts),
+        # 서버가 고른 거래 유형만 세고 나머지를 0 으로 준다 (매매만 고르면 전세·월세 0). 세지 않은 유형은 0건이 아니라 해당 없음이다
+        article_counts={
+            name: count for name, count in trade_article_counts(counts).items() if not trade_types or name in trade_types
+        },
         sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price),
         jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price),
         url=redevelopment_url(area_number),

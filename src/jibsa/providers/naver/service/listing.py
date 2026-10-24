@@ -19,6 +19,7 @@ from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
+    NaverComplexVillaV1RequestParameterModel,
     NaverLegalDivisionSearchByCoordinateV1RequestParameterModel,
     NaverRealEstateType,
 )
@@ -75,6 +76,7 @@ from jibsa.providers.naver.service.common import (
     result_or_none,
     scan_pages,
     unwrap,
+    villa_by_complex_response,
     villa_fallback_found,
 )
 
@@ -124,6 +126,9 @@ MANAGE_COST_ITEM_LABELS: dict[str, str] = {
     '16': 'TV',
     '99': '기타',
 }
+# 시설 코드 이름. 네이버 웹 스크립트의 ARTICLE_FACILITY_*_TYPE 표와 대조했다 (2026-10-24: 사설경비·에어컨·가스오븐·소파가
+# 빠져 PRIVATE_SECURITY 같은 영어 코드가 options 에 그대로 나갔다). 이름은 다른 소스와 맞춰 줄였다 (인덕션레인지 → 인덕션).
+# ELEVATOR 는 options 가 아니라 elevator 로 낸다
 FACILITY_LABELS: dict[str, str] = {
     # 생활시설
     'BED': '침대',
@@ -144,6 +149,9 @@ FACILITY_LABELS: dict[str, str] = {
     'INDUCTION_RANGE': '인덕션',
     'MICROWAVE': '전자레인지',
     'OVEN': '오븐',
+    'GAS_OVEN': '가스오븐',
+    'AIRCON': '에어컨',
+    'SOFA': '소파',
     'TV': 'TV',
     'BIDET': '비데',
     'SHOWER_BOOTH': '샤워부스',
@@ -157,6 +165,7 @@ FACILITY_LABELS: dict[str, str] = {
     'CARD_KEY': '카드키',
     'DOOR_LOCK': '도어락',
     'ENTRANCE_SECURITY': '현관보안',
+    'PRIVATE_SECURITY': '사설경비',
     # 기타시설
     'FIRE_ALARM': '화재경보기',
     'TERRACE': '테라스',
@@ -386,9 +395,10 @@ def list_complex_articles(
     동 목록을 조회했으면 단지 종류를 이미 알아 다시 묻지 않는다). 요청은 `MAX_COMPLEX_ARTICLE_PAGE_REQUESTS` 회에서
     멈추고 `notes` 로 알린다. 처음 보는 매물이 없는 페이지가 오면 커서가 멈춘 것으로 보고 끝낸다.
     평형 번호를 주었는데 0건이면 평형 목록으로 번호를 확인한다 (1~2회 추가, 아파트로 정해지면 빌라 목록은 묻지 않는다).
+    단지 종류를 모른 채 0건이면 단지 정보로 단지가 있는지 확인한다 (1~2회 추가, `_raise_if_missing_complex`).
 
     Raises:
-        JibsaError: 평형 번호가 그 단지에 없으면 NOT_FOUND.
+        JibsaError: 평형 번호가 그 단지에 없거나, 단지 번호가 아파트·빌라 단지 어디에도 없으면 NOT_FOUND.
 
     Args:
         conditions: 거래 유형·가격 조건 (`NaverTradeConditions`). 서버 필터로 보내고 받은 뒤 다시 거르지 않는다.
@@ -458,6 +468,8 @@ def list_complex_articles(
         # 단지 종류를 알아 빌라로 다시 묻지 않았어도, 0건이면 평형 번호가 틀린 것인지 확인한다. 모르고 시작했으면
         # 첫 페이지가 빌 때 fetch 안에서 이미 확인했다
         check_pyeong_numbers(client, complex_number, pyeong_numbers, villa=villa)
+    elif not inspected and not known_at_start and not pyeong_numbers:
+        _raise_if_missing_complex(client, complex_number)
 
     notes: list[str] = []
     if truncated:
@@ -477,6 +489,17 @@ def list_complex_articles(
         listings=result,
         notes=notes,
     )
+
+
+def _raise_if_missing_complex(client: NaverClient, complex_number: int) -> None:
+    """단지 번호가 아파트·빌라 단지 어디에도 없으면 NOT_FOUND. 아파트 단지 정보를 먼저 묻고, 빈 결과면 빌라 단지 정보를 묻는다.
+
+    단지 매물 목록은 아파트·빌라 모두 없는 단지 번호에도 빈 성공 응답을 줘서, 매물이 없는 단지와 구분되지 않는다
+    (2026-10-23 실측: 빌라 목록이 99999999 와 아파트 단지 헬리오시티 111515 에 똑같이 `totalCount: 0`). 평형 번호를 주었으면
+    평형 목록 확인(`check_pyeong_numbers`)이 같은 일을 한다.
+    """
+    if villa_by_complex_response(client.run_request_complex_v1(NaverComplexV1RequestParameterModel(complex_number=complex_number))):
+        unwrap(client.run_request_complex_villa_v1(NaverComplexVillaV1RequestParameterModel(complex_number=complex_number)), '단지')
 
 
 def _loan_manwon(price: NaverPriceInfoModel | None) -> float | None:
