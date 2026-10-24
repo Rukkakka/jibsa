@@ -5,6 +5,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+## 0.6.0 — 2026-10-24
+
 ### ⚠️ 호환 깨짐
 
 - 당근 `--with-manage-cost` 를 월세 범위 없이 주면 `INVALID_ARGUMENT` (exit 2). 혼자서는 아무것도 거르지 않았다. `--rent-min`·`--rent-max` 와 함께 준다 (#133)
