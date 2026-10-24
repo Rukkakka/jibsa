@@ -14,6 +14,7 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    HintedBadParameter,
     UsageHints,
     emit,
     handle_errors,
@@ -21,6 +22,7 @@ from jibsa.cli.output import (
     require_finite,
     require_korea,
     split_csv,
+    split_ints,
     validate_ranges,
 )
 from jibsa.cli.paging import (
@@ -139,6 +141,14 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내
 WHOLE_DONG_NOTE: str = note('범위', '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
+# search listings 의 단지·재개발 모드가 받는 옵션. 받지 않는 옵션을 준 에러의 힌트에 쓴다 (`_reject_options`)
+MODE_ACCEPTED_OPTIONS: dict[str, str] = {
+    '--complex': (
+        '단지 모드는 거래 유형·평형(--pyeong)·동(--dong)·가격·정렬·--limit 만 받습니다. 면적으로 고르려면 '
+        'naver complex <단지> 결과의 pyeongs[] 에서 exclusive_m2 로 평형 번호(number)를 찾아 --pyeong 으로 주세요'
+    ),
+    '--redevelopment': '재개발 모드는 거래 유형·가격·정렬·--limit 만 받습니다',
+}
 NO_PET_FILTER: str = '네이버에는 반려동물 조건이 없습니다 (직방 --condition 반려동물, 당근 --option 반려동물가능)'
 AREA_IN_M2: str = '네이버 면적은 ㎡ 로 주세요: --area-min·--area-max (1평 = 3.3058㎡)'
 # 지역 매물 검색에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
@@ -220,10 +230,18 @@ def _price_trade_types(
 
 
 def _reject_options(mode: str, options: dict[str, object]) -> None:
-    """모드(--complex·--redevelopment)가 받지 않는 옵션을 주었으면 한꺼번에 알린다. 값이 None 이면 주지 않은 것이다."""
+    """모드(--complex·--redevelopment)가 받지 않는 옵션을 주었으면 한꺼번에 알린다. 값이 None 이면 주지 않은 것이다.
+
+    힌트에 그 모드가 받는 옵션을 적는다. `--help` 만 알리면 단지 매물을 면적(--area-min)으로 거르려던 에이전트가 평형
+    번호(--pyeong)로 고르는 법을 몰라 다시 틀렸다 (2026-10-24 에이전트 검증: 헬리오시티 84㎡ 매물).
+    """
     invalid = [name for name, value in options.items() if value is not None]
     if invalid:
-        raise typer.BadParameter(f"{mode}와 함께 사용할 수 없습니다: {', '.join(invalid)}", param_hint=mode)
+        raise HintedBadParameter(
+            f"{mode}와 함께 사용할 수 없습니다: {', '.join(invalid)}",
+            mode,
+            f"{MODE_ACCEPTED_OPTIONS[mode]}. 'jibsa naver search listings --help' 로 사용법을 확인하세요",
+        )
 
 
 def _require_location(query: str | None, lat: float | None, lng: float | None) -> None:
@@ -284,8 +302,8 @@ def complex_command(
         )
     ],
     pyeong: Annotated[
-        list[int] | None,
-        typer.Option('--pyeong', min=1, help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년 실거래 요약도 붙인다 (요청 4회 추가). 반복 가능')
+        list[str] | None,
+        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년 실거래 요약도 붙인다 (요청 4회 추가). 반복하거나 쉼표로 구분')
     ] = None,
     dong: Annotated[
         list[str] | None,
@@ -298,12 +316,13 @@ def complex_command(
     예: jibsa naver complex 개포자이 --pyeong 1   # 1번 평형 매물 수·호가·관리비·시세·실거래 요약
     """
     dong_names = _split_dongs(dong)
+    pyeong_numbers = split_ints(pyeong, '--pyeong')
     with handle_errors(SOURCE), NaverClient() as client:
         complex_number, villa, notes = _complex_number(client, complex_)
-        summary = get_complex(client, complex_number, pyeong_numbers=pyeong, dong_names=dong_names, villa=villa)
+        summary = get_complex(client, complex_number, pyeong_numbers=pyeong_numbers, dong_names=dong_names, villa=villa)
         scope: list[str] = []
-        if pyeong:
-            scope.append(f"{', '.join(map(str, dict.fromkeys(pyeong)))}번 평형")
+        if pyeong_numbers:
+            scope.append(f"{', '.join(map(str, pyeong_numbers))}번 평형")
         if dong_names:
             scope.append(', '.join(dong_label(key) for key in dict.fromkeys(map(dong_key, dong_names))))
         if scope:
@@ -445,6 +464,7 @@ def _search_complex_listings(
             pretty,
             notes=trade_notes + notes + result.notes,
             fields=fields,
+            fields_source=result,
         )
 
 
@@ -466,6 +486,7 @@ def _search_redevelopment_listings(
             pretty,
             notes=trade_notes + result.notes,
             fields=fields,
+            fields_source=result,
         )
 
 
@@ -579,9 +600,9 @@ def trend_command(
                 raise RegionNotFoundError(region.name, hint="동·구 이름(예: '역삼동')으로 다시 주세요")
             code, division = found[0], normalize_address(found[1])
         if ri:
-            notes.append(f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다")
+            notes.append(note('범위', f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다"))
         elif at_spot:
-            notes.append(f"'{region.name}' 자리의 법정동({division}) 추이입니다")
+            notes.append(note('범위', f"'{region.name}' 자리의 법정동({division}) 추이입니다"))
         trend = get_district_trend(client, code, trade_type=trade, period=period, pyeong_range=pyeong_range)
         emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes)
 
@@ -842,7 +863,7 @@ def search_command(
         int | None,
         typer.Option('--redevelopment', min=1, help='재개발 구역 번호 (search redevelopment 결과의 redevelopment_number). 그 구역 매물을 찾는다. 지역·좌표·--complex 와 함께 사용할 수 없다')
     ] = None,
-    pyeong: Annotated[list[int] | None, typer.Option('--pyeong', min=1, help='--complex 전용: 평형 ID (평수 아님). 반복 가능')] = None,
+    pyeong: Annotated[list[str] | None, typer.Option('--pyeong', metavar='<int>', help='--complex 전용: 평형 ID (평수 아님). 반복하거나 쉼표로 구분')] = None,
     dong: Annotated[list[str] | None, typer.Option('--dong', help='--complex 전용: 동 이름 (104 또는 104동). 반복하거나 쉼표로 구분')] = None,
     lat: Annotated[float | None, typer.Option(help='중심 위도')] = None,
     lng: Annotated[float | None, typer.Option(help='중심 경도')] = None,
@@ -985,7 +1006,8 @@ def search_command(
             trade, sort or '랭킹순', deposit_min, deposit_max, rent_min, rent_max, price_min, price_max,
         )
         _search_complex_listings(
-            complex_, conditions, trade_notes, pyeong=pyeong, dong=dong, sort=sort or '랭킹순', limit=limit, pretty=pretty,
+            complex_, conditions, trade_notes, pyeong=split_ints(pyeong, '--pyeong'), dong=dong, sort=sort or '랭킹순', limit=limit,
+            pretty=pretty,
             fields=fields,
         )
         return
@@ -1020,6 +1042,7 @@ def search_command(
                 notes=trade_notes + result.notes,
                 next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
                 fields=fields,
+                fields_source=result,
             )
             return
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
@@ -1073,4 +1096,5 @@ def search_command(
             notes=trade_notes + notes + result.notes,
             next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
             fields=fields,
+            fields_source=result,
         )

@@ -5,6 +5,7 @@ from collections.abc import (
     Mapping,
 )
 from contextlib import contextmanager
+from difflib import get_close_matches
 from math import isfinite
 
 import typer
@@ -26,6 +27,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    Listing,
     insert_after,
     listing_field_names,
     note,
@@ -43,6 +45,8 @@ from typing import (
 
 # 출력 좌표의 소수 자리. 일곱째 자리가 약 1cm 라 원본 정밀도를 잃지 않는다
 COORDINATE_DECIMALS: int = 7
+# 1억 (만원). 이만큼 이상 금액이 있으면 notes 에 억 환산 예시를 붙인다 (`manwon_note`)
+MANWON_PER_EOK: int = 10000
 # `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시
 ALWAYS_FIELDS: frozenset[str] = frozenset({'id', 'in_regions'})
 ChoiceT = TypeVar('ChoiceT', bound=str)
@@ -89,9 +93,90 @@ def check_fields(values: list[str] | None) -> list[str] | None:
         raise HintedBadParameter(
             f"매물에 없는 필드입니다: {', '.join(unknown)}",
             '--fields',
-            '결과 JSON 의 매물 키 이름을 그대로 쓰세요 (예: --fields id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url)',
+            '결과 JSON 의 매물 키 이름을 그대로 쓰세요 (예: --fields id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url). '
+            '결과 맨 위 키(notes·total·has_more·next 등)는 --fields 로 거르지 않습니다',
         )
     return fields
+
+
+def _listing_models(value: Any) -> set[type[Listing]]:
+    """결과에 든 매물 모델 (통근 검색은 역 묶음 안)."""
+    if isinstance(value, Listing):
+        return {type(value)}
+    if isinstance(value, BaseModel):
+        value = [getattr(value, name) for name in type(value).model_fields]
+    elif isinstance(value, Mapping):
+        value = list(value.values())
+    if isinstance(value, (list, tuple)):
+        return set().union(*(_listing_models(item) for item in value))
+    return set()
+
+
+def missing_fields_note(data: Any, fields: list[str]) -> str | None:
+    """`--fields` 로 고른 필드 중 이 결과의 매물 모델에 없는 것을 알리는 안내. 매물이 없으면 알 수 없어 None.
+
+    `check_fields` 는 모든 명령의 매물 필드로 보아, 다른 명령에만 있는 필드는 통과한 뒤 출력에서 조용히 빠진다 (2026-10-23
+    실측: 통근 검색을 맡긴 에이전트 2명 모두 당근 역 검색의 walk_minutes 를 골라 역까지 도보 시간 walk_to_station_minutes 를
+    받지 못했다). 한 명령도 모드(동·역·단지·--details)마다 매물 모델이 달라 요청 전에는 가릴 수 없어, 요청 뒤에 알린다.
+    """
+    models = _listing_models(data)
+    if not models:
+        return None
+    names = list(dict.fromkeys(
+        name
+        for model in sorted(models, key=lambda model: model.__name__)
+        for name, field in model.model_fields.items()
+        if not field.exclude
+    ))
+    if 'floor' in names:
+        names.insert(names.index('floor') + 1, 'floor_number')
+    missing = [field for field in fields if field not in names]
+    if not missing:
+        return None
+    # 목록만 주면 다시 부르지 않고 넘어가서 비슷한 이름을 앞에 둔다 (2026-10-23 에이전트 검증: walk_minutes 안내를 받은
+    # 에이전트가 walk_to_station_minutes 로 다시 부르지 않았다)
+    similar = [f'{field} 대신 {match[0]}' for field in missing if (match := get_close_matches(field, names, n=1, cutoff=0.6))]
+    return note(
+        '참고',
+        f"--fields 에서 이 명령의 매물에 없어 빠진 필드: {', '.join(missing)}"
+        + (f" ({', '.join(similar)})" if similar else '')
+        + f". 이 명령의 매물 필드: {', '.join(names)}",
+    )
+
+
+def manwon_text(value: int) -> str:
+    """만원 정수를 읽는 금액으로 쓴다 (`440000` → '44억 원', `119700` → '11억 9,700만 원', `1000` → '1,000만 원')."""
+    eok, man = divmod(value, MANWON_PER_EOK)
+    parts = ([f'{eok:,}억'] if eok else []) + ([f'{man:,}만'] if man else [])
+    return ' '.join(parts or ['0']) + ' 원'
+
+
+def _manwon_values(value: Any, key: str = '') -> Generator[int, None, None]:
+    """출력의 만원 금액 (키가 `_manwon` 으로 끝나는 값과 그 범위 목록). 소수점 아래가 있는 값은 예시로 쓰지 않아 뺀다."""
+    if isinstance(value, Mapping):
+        for name, item in value.items():
+            yield from _manwon_values(item, name)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _manwon_values(item, key)
+    elif key.endswith('_manwon') and isinstance(value, int | float) and not isinstance(value, bool) and float(value).is_integer():
+        yield int(value)
+
+
+def manwon_note(payload: Any) -> str | None:
+    """1억 이상 금액이 있으면 그 결과의 값으로 만든 억 환산 예시. 없으면 None.
+
+    가이드의 환산 규칙만으로는 큰 금액의 자리를 틀린다 (2026-10-24 에이전트 검증: sonnet 이 당근 실거래 440000 을
+    '4억 4,000만 원' 으로 28번 중 8번 옮겼다. 가이드 예시와 같은 숫자 119700 도 '1억 1,970만' 으로 적었고, 규칙 문구를
+    바꿔도 줄지 않았다). 숫자 바로 옆 notes 에 정답을 둔다 (같은 때 나란히 돌려 이 안내가 있으면 8번 중 0번, 끄면 8번 중
+    2번). 가장 큰 값과, 끝자리가 있는지가 다른 값(있으면) 하나를 든다.
+    """
+    values = sorted({value for value in _manwon_values(payload) if value >= MANWON_PER_EOK}, reverse=True)
+    if not values:
+        return None
+    round_eok = values[0] % MANWON_PER_EOK == 0
+    examples = [values[0], *[value for value in values[1:] if (value % MANWON_PER_EOK == 0) != round_eok][:1]]
+    return note('참고', '금액은 만원이다: ' + ', '.join(f'{value} = {manwon_text(value)}' for value in examples))
 
 
 def _select_fields(value: Any, fields: frozenset[str]) -> Any:
@@ -115,6 +200,7 @@ def emit(
     notes: list[str] | None = None,
     next_token: str | None = None,
     fields: list[str] | None = None,
+    fields_source: BaseModel | None = None,
 ) -> None:
     """결과를 JSON 으로 stdout 에 쓴다.
 
@@ -122,7 +208,8 @@ def emit(
     키째 뺀다 (`Listing.not_applicable_fields`). `notes` 가 있으면 맨 앞에 붙이고,
     없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등). `next_token`(이어 받기 표, `jibsa.cli.paging`)이 있으면
     `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다. `fields`(`--fields`)를 주면 매물마다 그 필드와
-    늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다.
+    늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 를 이미 dict 로 만들어 넘기면(네이버처럼 지역·범위를 앞에 붙이는 명령)
+    매물 모델을 알 수 없으니, 이 명령에 없는 필드를 알리는 안내(`missing_fields_note`)를 위해 원래 결과를 `fields_source` 로 준다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -130,14 +217,19 @@ def emit(
         payload = [item.model_dump(mode='json') for item in data]
     else:
         payload = data
+    if fields:
+        payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
+        if missing := missing_fields_note(data if fields_source is None else fields_source, fields):
+            notes = [*(notes or []), missing]
+    # 고른 필드만 남긴 뒤에 만든다 (예시 값이 출력에 있어야 한다)
+    if money := manwon_note(payload):
+        notes = [*(notes or []), money]
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if next_token is not None and isinstance(payload, dict):
         payload = insert_after(payload, 'has_more', 'next', next_token)
     if notes:
         payload = {'notes': tagged_notes(notes), **payload}
-    if fields:
-        payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
     typer.echo(_dumps(_tidy_numbers(payload), pretty))
 
 
@@ -328,6 +420,25 @@ def split_csv(
             if part not in result:
                 result.append(part)
     return result
+
+
+def split_ints(values: list[str] | None, option: str) -> list[int] | None:
+    """`--pyeong 7 --pyeong 8` 과 `--pyeong 7,8` 을 모두 받아 1 이상 정수 목록으로 만든다 (중복은 한 번). 없으면 None.
+
+    다른 목록 옵션(`split_csv`)처럼 쉼표를 받는다. 정수만 받으면 평형 13개(헬리오시티 84㎡)를 고르려던 에이전트가 쉼표로
+    줬다가 막히고, 셸 변수에 옵션을 묶다가 인자 하나로 넘겨 다시 틀렸다 (2026-10-24 에이전트 검증: 8명 중 4명).
+    """
+    result: list[int] = []
+    for value in values or []:
+        for part in value.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            if not (part.isascii() and part.isdigit()) or int(part) < 1:
+                raise typer.BadParameter(f"1 이상의 정수를 주세요: '{part}'", param_hint=option)
+            if int(part) not in result:
+                result.append(int(part))
+    return result or None
 
 
 def _number_text(value: float) -> str:

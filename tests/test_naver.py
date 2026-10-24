@@ -669,7 +669,8 @@ def test_whole_dong_stops_when_cursor_stalls() -> None:
         result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
     assert len(requests) == 2
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
-    assert any('다시 채우지 않음' in note for note in result.notes)
+    # 끝 문구(더 받을 매물이 남았는지)는 받은 수와 서버 수로 정해져 여기서는 보지 않는다
+    assert any(note.startswith('[제외]') for note in result.notes)
 
 
 def _short_page_client(requests: list[httpx.Request], path: str, make_page) -> NaverClient:

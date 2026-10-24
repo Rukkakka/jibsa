@@ -2,6 +2,7 @@ import inspect
 import json
 import logging
 import re
+import shlex
 import sys
 import unicodedata
 from collections.abc import Sequence
@@ -10,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 
 import typer
-from typer._click import (  # Typer 0.27 은 Click 을 내부에 포함한다. 비공개 경로라 Typer 업그레이드 시 확인 필요.
+from typer._click import (  # Typer 0.26 부터 Click 을 내부에 포함한다. 비공개 경로라 Typer 업그레이드 시 확인 필요.
     Command,
     Context,
     HelpFormatter,
@@ -62,6 +63,10 @@ GUIDE_TOPICS: dict[str, str] = {
 }
 HEADING_PATTERN: re.Pattern[str] = re.compile(r'^(#{2,4})\s+(.*)$')
 BACKTICK_PATTERN: re.Pattern[str] = re.compile(r'`([^`]+)`')
+# 안내 표가 없는 명령에 없는 옵션을 줬을 때 이 명령의 옵션을 알리는 소스 (`foreign_usage_hint`)
+SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn'})
+# 하위 명령 자리에 온 지역 이름을 알아본다 (`subcommand_hint`)
+HANGUL_PATTERN: re.Pattern[str] = re.compile(r'[가-힣]')
 GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
 # `git log --oneline` 과 같은 짧은 커밋 해시 길이
 SHORT_COMMIT_LENGTH: int = 7
@@ -149,8 +154,10 @@ def guide_command(
         str | None,
         typer.Argument(help=f"사용 문서: {', '.join(GUIDE_TOPICS)}. 없으면 LLM 가이드")
     ] = None,
+    # 따옴표 없이 준 여러 단어(`jibsa guide daangn search listings`)도 한 절 이름으로 잇는다. 하나만 받으면 Typer 가
+    # 'unexpected extra argument' 로 막았다 (2026-10-23 실측)
     section: Annotated[
-        str | None,
+        list[str] | None,
         typer.Argument(help="절 제목에 든 글자 (예: 'search listings', 'listing', '출력 읽기'). 주면 그 절만 쓴다")
     ] = None,
     whole: Annotated[
@@ -176,8 +183,9 @@ def guide_command(
     # 파일이 없는 깨진 설치와 없는 절도 에러 JSON 으로 낸다
     with handle_errors('guide'):
         text = read_guide(GUIDE_TOPICS[topic] if topic else GUIDE_FILE)
-        if section:
-            text = guide_section(text, section, topic or 'llm')
+        query = ' '.join(section or []).strip()
+        if query:
+            text = guide_section(text, query, topic or 'llm')
         elif topic and not whole:
             text = guide_contents(text, topic)
         typer.echo(text, nl=False)
@@ -341,12 +349,14 @@ def run(argv: Sequence[str] | None = None) -> int:
         typer.echo(exc.format_message())
         return 0
     except UsageError as exc:
-        command = exc.ctx.command_path if exc.ctx is not None else 'jibsa'
+        command = exc.ctx.command_path if exc.ctx is not None else _command_path_of(cli, args)
         emit_error(
             'INVALID_ARGUMENT',
             exc.format_message(),
             getattr(exc, 'hint', None)
+            or misplaced_option_hint(exc, command, args, cli)
             or foreign_usage_hint(exc, command, args, cli)
+            or subcommand_hint(exc)
             or f"'{command} --help' 로 사용법을 확인하세요",
             command=command,
         )
@@ -366,22 +376,67 @@ def run(argv: Sequence[str] | None = None) -> int:
     return result if isinstance(result, int) else 0
 
 
+def _command_path_of(cli: Command, args: Sequence[str]) -> str:
+    """문맥(ctx) 없이 온 사용법 오류의 명령 경로. 인자에서 하위 명령 이름을 따라 내려간다 (옵션은 건너뛴다).
+
+    Typer 에 든 Click 파서는 값이 빠진 옵션(`... --sort` 로 끝남)을 ctx 없이 던져, 에러가 `jibsa` 명령으로 `'jibsa --help'`
+    를 안내했다 (2026-10-24 에이전트 검증: `naver search listings --complex … --sort`).
+    """
+    path, command = ['jibsa'], cli
+    for arg in args:
+        if isinstance(command, TyperGroup) and arg in command.commands:
+            path.append(arg)
+            command = command.commands[arg]
+        elif not arg.startswith('-'):
+            break
+    return ' '.join(path)
+
+
+def misplaced_option_hint(exc: UsageError, command: str, args: Sequence[str], cli: Command) -> str | None:
+    """하위 명령의 옵션을 그 명령 이름보다 앞(`jibsa --compact daangn school …`)에 준 호출에, 명령 끝에 주라고 알린다.
+
+    가이드의 '--compact 를 붙인다' 를 읽은 에이전트가 맨 앞에 붙여 'jibsa --help' 만 안내받았다 (2026-10-24 에이전트 검증).
+    값을 받는 옵션이면 그 값도 빼고 명령 경로를 찾는다.
+    """
+    if not isinstance(exc, NoSuchOption):
+        return None
+    option = exc.option_name
+    index = args.index(option) if option in args else -1
+    for skip in (1, 2):
+        rest = [*args[:index], *args[index + skip:]] if index >= 0 else list(args)
+        path = _command_path_of(cli, rest)
+        target = _find_command(cli, path)
+        if path != command and target is not None and any(
+            option in param.opts or option in param.secondary_opts for param in target.params
+        ):
+            # 옵션 이름 뒤에 조사를 붙이지 않는다 (code-style 1절)
+            return f"{option} 옵션은 '{path}' 뒤에 준다 (예: {path} … {option}). '{path} --help' 로 사용법을 확인하세요"
+    return None
+
+
 def foreign_usage_hint(exc: UsageError, command: str, args: Sequence[str], cli: Command) -> str | None:
     """없는 옵션이나 숫자로 못 바꾸는 값에, 이 명령에서 주는 법을 찾는다 (`UsageHints`). 목록 옵션의 틀린 값은 `split_csv` 가 본다.
 
     다른 소스 명령을 옮겨 쓴 오류가 대부분이다 (직방에 네이버 `--facility`, 직방 `--bathroom` 에 네이버 값 `1개`).
-    표에 없는 옵션이면 그 옵션이 있는 다른 소스의 매물 검색 명령을 알려, 이 명령에는 그 조건이 없다는 것을 알게 한다.
+    표가 있는 매물 검색 명령에서 표에 없는 옵션이면 그 옵션이 있는 다른 매물 검색 명령을 알려, 이 명령에는 그 조건이 없다는
+    것을 알게 한다. 표가 있는 명령까지 명령 트리 전체로 넓히면 단기임대 `stay` 처럼 다른 상품의 명령을 알려 되돌렸다
+    (2026-10-24 리뷰: `room --parking` 이 `stay` 를 알렸다).
+
+    표가 없는 소스 명령(상세·단지·실거래 등)은 이 명령의 옵션을 알린다 (2026-10-23 에이전트 검증: 상세 `daangn listing` 에
+    검색의 `--fields` 를 붙여 5번 틀리고 --help 로 이 명령의 옵션을 본 뒤에야 뺐다). 그 옵션이 있는 다른 명령을 알리면
+    같은 일을 다른 이름으로 하는 옵션을 가렸다 (2026-10-24 실측: `naver real-price --limit` 에 search 명령 3개를 알렸지만
+    이 명령에서 거래 수를 정하는 옵션은 `--pages`·`--period` 다).
     """
     hints = USAGE_HINTS.get(command)
-    if hints is None:
-        return None
     if isinstance(exc, NoSuchOption):
         names = [exc.option_name]
-    elif isinstance(exc, BadParameter) and exc.param is not None:
+    elif isinstance(exc, BadParameter) and exc.param is not None and hints is not None:
         names = list(exc.param.opts)
     else:
         return None
     long_name = next((name for name in names if name.startswith('--')), names[0])
+    if hints is None:
+        return _own_options_hint(cli, command, long_name)
     hint = hints.hint(long_name, _option_value(args, names))
     if hint or not isinstance(exc, NoSuchOption):
         return hint
@@ -390,7 +445,56 @@ def foreign_usage_hint(exc: UsageError, command: str, args: Sequence[str], cli: 
     elsewhere = [path for path in elsewhere if not any(other.startswith(f'{path} ') for other in elsewhere)]
     if not elsewhere:
         return None
-    return f"{long_name} 옵션은 {', '.join(elsewhere)} 에 있습니다. 이 명령의 옵션은 '{command} --help' 로 확인하세요"
+    return f"{long_name} 옵션은 {', '.join(elsewhere)} 에 있습니다. '{command} --help' 로 사용법을 확인하세요"
+
+
+def _own_options_hint(cli: Command, command: str, option: str) -> str | None:
+    """안내 표가 없는 소스 명령에 없는 옵션을 줬을 때, 이 명령의 옵션을 알린다. 소스 밖 명령(guide·limits)과 루트는 None."""
+    source = command.split()[1:2]
+    found = _find_command(cli, command)
+    if not source or source[0] not in SOURCE_COMMANDS or found is None:
+        return None
+    options = [
+        next((name for name in param.opts if name.startswith('--')), param.opts[0])
+        for param in found.params
+        if param.param_type_name == 'option'
+    ]
+    return f"{command} 에는 {option} 옵션이 없습니다. 이 명령의 옵션: {', '.join(options)}. '{command} --help' 로 사용법을 확인하세요"
+
+
+def subcommand_hint(exc: UsageError) -> str | None:
+    """그룹에 없는 하위 명령에 그 그룹의 하위 명령을 알린다 (`jibsa zigbang search listings 역삼동`).
+
+    네이버·당근 `search listings` 는 지역을 바로 받아, 직방도 그렇게 부르다 유형(room·apt·store·stay)을 빼먹기 쉽다
+    (2026-10-23 실측: 'No such command' 에 --help 만 안내했다). 하위 명령이 모두 끝 명령이고 빠뜨린 자리에 한글(지역
+    이름)이 왔을 때만 예시를 붙인다. 하위 그룹이 섞인 곳(`jibsa naver`)은 첫 하위 명령이 그 이름을 받는다는 보장이 없다.
+    예시는 매물 검색(`listings`)이 있으면 그것으로 든다 (지역을 하위 명령 자리에 준 사람은 대개 매물을 찾는다). 한글·영숫자와
+    `.,·/-` 밖의 글자가 든 이름은 셸 따옴표로 감싸 그대로 붙여 넣어도 인자 하나가 되게 한다.
+    """
+    context = exc.ctx
+    # Click 은 이름을 repr 로 감싸(작은따옴표가 든 이름은 큰따옴표) 마침표를 붙이고, 비슷한 이름이 있으면 'Did you mean' 을 잇는다
+    match = re.match(r"No such command (['\"])(.*?)\1\.", exc.message)
+    if context is None or match is None or not isinstance(context.command, TyperGroup):
+        return None
+    group = context.command
+    commands = {name: group.get_command(context, name) for name in group.list_commands(context)}
+    names = [name for name, command in commands.items() if command is not None and not command.hidden]
+    if not names:
+        return None
+    word = match.group(2)
+    # 이름 뒤에 조사를 붙이지 않는다 (영어·숫자도 온다, code-style 1절)
+    hint = f"{context.command_path} 에 없는 하위 명령입니다. 하위 명령: {', '.join(names)}"
+    # 'Did you mean' 이 붙은 오타(`listings역삼동`)는 click 이 고칠 이름을 이미 알려 예시를 붙이지 않는다. click 이 비슷한
+    # 이름을 못 찾아도 명령 이름에 지역을 붙여 쓴 오타면 예시가 'room listings역삼동' 처럼 되어 붙이지 않는다 (명령 이름은
+    # 소문자라 'DMC역' 같은 지역 이름과 가른다)
+    glued = re.match(r'[a-z][a-z-]*', word)
+    typo = 'Did you mean' in exc.message or (glued is not None and glued.group() in {*names, *context.command_path.split()})
+    if HANGUL_PATTERN.search(word) and not typo and not any(isinstance(commands[name], TyperGroup) for name in names):
+        example = 'listings' if 'listings' in names else names[0]
+        shown = word if re.fullmatch(r'[\w.,·/-]+', word) else shlex.quote(word)
+        hint += f' (지역 이름이면 하위 명령 뒤에 준다. 예: {context.command_path} {example} {shown})'
+    # 다른 사용법 오류처럼 --help 안내로 끝낸다 (test_usage_errors_are_json_with_exit_2)
+    return f"{hint}. '{context.command_path} --help' 로 사용법을 확인하세요"
 
 
 def _option_value(args: Sequence[str], names: Sequence[str]) -> str | None:
@@ -407,11 +511,17 @@ def _option_value(args: Sequence[str], names: Sequence[str]) -> str | None:
     return value
 
 
-def _has_option(cli: Command, path: str, option: str) -> bool:
-    """`path`(`jibsa naver search listings`) 명령에 `option` 이 있는지."""
+def _find_command(cli: Command, path: str) -> Command | None:
+    """`path`(`jibsa naver search listings`) 의 명령. 없으면 None."""
     command: Command | None = cli
     for name in path.split()[1:]:
         command = command.commands.get(name) if isinstance(command, TyperGroup) else None
+    return command
+
+
+def _has_option(cli: Command, path: str, option: str) -> bool:
+    """`path`(`jibsa naver search listings`) 명령에 `option` 이 있는지."""
+    command = _find_command(cli, path)
     return command is not None and any(option in param.opts for param in command.params)
 
 

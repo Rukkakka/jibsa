@@ -654,9 +654,8 @@ def search_listings(
 
     listings.sort(key=by_distance)
     listings = listings[:limit]
-    notes = scan.notes + excluded_notes(limit, len(ids), len(listings))
     return _search_result(
-        region, listings, scan.pins, notes, limit=limit, inspected=len(ids), radius_km=radius_km, boundary=boundary,
+        region, listings, scan.pins, scan.notes, limit=limit, inspected=len(ids), radius_km=radius_km, boundary=boundary,
         offset=offset,
     )
 
@@ -812,6 +811,7 @@ def _search_result(
     received = offset + inspected
     has_more = inspected > 0 and received < in_scope
     next_position = {'offset': received} if has_more else None
+    notes = notes + excluded_notes(limit, inspected, len(listings), has_more=has_more)
     if boundary is not None:
         return ZigbangSearchResult(
             region=region,
@@ -822,7 +822,7 @@ def _search_result(
             notes=notes
             + limit_notes(
                 in_scope, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
-                inspected=inspected, offset=offset, resumable=has_more,
+                inspected=inspected, offset=offset, resumable=has_more, has_more=has_more,
             ),
             has_more=has_more,
             next_position=next_position,
@@ -837,7 +837,7 @@ def _search_result(
         notes=notes
         + limit_notes(
             in_scope, len(listings), limit, approximate=True, radius=True, inspected=inspected, offset=offset,
-            resumable=has_more,
+            resumable=has_more, has_more=has_more,
         )
         + beyond_radius_notes(listings, radius_km, resumed=offset > 0),
         has_more=has_more,

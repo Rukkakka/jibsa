@@ -7,8 +7,14 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.geo import haversine_km
-from jibsa.core.listing import normalize_address
+from jibsa.core.geo import (
+    haversine_km,
+    within_radius,
+)
+from jibsa.core.listing import (
+    normalize_address,
+    note,
+)
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.school import (
     DaangnEducationMapPointsInputModel,
@@ -46,6 +52,11 @@ SCHOOL_CANDIDATE_LIMIT: int = 50
 SCHOOL_SEARCH_MAX_PAGES: int = 3
 # 학교가 여럿일 때 안내에 보여 줄 다른 후보 수
 SCHOOL_OTHER_CANDIDATES: int = 3
+# 학교 종류 이름과 그 줄임. 당근 검색은 '○○초등학교' 로 '서울○○초등학교' 를 찾기도 못 찾기도 해서 줄임으로 한 번 더 찾는다
+# (2026-10-23 실측: '대치초등학교' 0건·'대치초' 서울대치초등학교, '도곡초등학교' 는 경기 광주·화순 도곡초등학교만이고
+# '도곡초' 에는 서울도곡초등학교도 나온다, '역삼초등학교' 는 서울역삼초등학교. 진선여자고·숙명여자중·단국대학교사범대학부속중
+# 처럼 줄인 이름은 시험한 학교 모두 원래 이름의 결과를 포함했다)
+SCHOOL_KIND_SHORT_NAMES: tuple[tuple[str, str], ...] = (('초등학교', '초'), ('중학교', '중'), ('고등학교', '고'))
 
 
 class DaangnSchool(BaseModel):
@@ -143,32 +154,42 @@ def resolve_school(
     """학교 이름으로 학교 하나를 고른다 (`searchSchools`).
 
     `city` 를 주면 주소에 그 이름으로 시작하는 단어가 있는 학교만 보며 (`place_in`), 후보를 `SCHOOL_SEARCH_MAX_PAGES` 페이지까지 넘겨
-    본다. 이름이 똑같은 학교를 먼저, 없으면 첫 후보를 고르고 다른 후보가 있으면 `notes` 로 알린다
+    본다. '○○초등학교' 처럼 종류 이름까지 주면 줄임('○○초')으로도 찾아 뒤에 합친다 (`SCHOOL_KIND_SHORT_NAMES`, 요청 1회, `city` 를
+    주면 최대 `SCHOOL_SEARCH_MAX_PAGES` 회 더).
+    이름이 똑같은 학교를 먼저, 없으면 첫 후보를 고르고 다른 후보가 있으면 `notes` 로 알린다
     ('역삼초등학교' 로 '서울역삼초등학교' 가 나온다).
 
     Raises:
         JibsaError: 학교를 찾지 못했을 때 (NOT_FOUND).
     """
+    queries = [name]
+    for kind, short in SCHOOL_KIND_SHORT_NAMES:
+        if name.endswith(kind) and len(name) > len(kind):
+            queries.append(name.removesuffix(kind) + short)
+            break
     candidates: list[DaangnSchoolSearchNodeModel] = []
-    cursor = None
     # 후보가 다 오지 않았으면 True ('N곳 이상')
     truncated = False
-    for _ in range(SCHOOL_SEARCH_MAX_PAGES if city else 1):
-        response = client.run_request_search_schools(
-            DaangnSearchSchoolsRequestPayloadModel(
-                first=SCHOOL_CANDIDATE_LIMIT,
-                after=cursor,
-                input=DaangnSearchSchoolsInputModel(name=name),
+    for query in queries:
+        cursor = None
+        has_next = False
+        for _ in range(SCHOOL_SEARCH_MAX_PAGES if city else 1):
+            response = client.run_request_search_schools(
+                DaangnSearchSchoolsRequestPayloadModel(
+                    first=SCHOOL_CANDIDATE_LIMIT,
+                    after=cursor,
+                    input=DaangnSearchSchoolsInputModel(name=query),
+                )
             )
-        )
-        found = unwrap_graphql(response, response.data.search_schools if response.data else None, '학교 검색')
-        seen = {school.sch_cd for school in candidates}
-        candidates += [edge.node for edge in found.edges if edge.node and edge.node.sch_cd not in seen]
-        page_info = found.page_info
-        truncated = bool(page_info and page_info.has_next_page and page_info.end_cursor)
-        if not truncated or page_info is None:
-            break
-        cursor = page_info.end_cursor
+            found = unwrap_graphql(response, response.data.search_schools if response.data else None, '학교 검색')
+            seen = {school.sch_cd for school in candidates}
+            candidates += [edge.node for edge in found.edges if edge.node and edge.node.sch_cd not in seen]
+            page_info = found.page_info
+            has_next = bool(page_info and page_info.has_next_page and page_info.end_cursor)
+            if not has_next or page_info is None:
+                break
+            cursor = page_info.end_cursor
+        truncated = truncated or has_next
     if city:
         # 학교 주소도 지역 검색처럼 통합 이름으로 와서 normalize_address 없이 비교한다 (2026-10-11 실측: 목포·순천·영암·
         # 광주 남구 학교 모두 '전남광주통합특별시 …'. --city 전남·전라남도·광주·전남광주통합특별시 모두 찾았다)
@@ -185,11 +206,12 @@ def resolve_school(
     if others:
         listed = ', '.join(f"{other.sch_nm}({other.sch_addr or '주소 모름'})" for other in others[:SCHOOL_OTHER_CANDIDATES])
         more = f' 외 {len(others) - SCHOOL_OTHER_CANDIDATES}곳' if len(others) > SCHOOL_OTHER_CANDIDATES else ''
-        notes.append(
+        notes.append(note(
+            '모호',
             f"'{name}' 검색으로 찾은 학교가 {len(candidates)}곳{' 이상' if truncated else ''}이라 "
             f"{school.sch_nm}({school.sch_addr or '주소 모름'})로 조회했습니다. "
-            f'다른 학교: {listed}{more}. --city 로 좁히세요'
-        )
+            f'다른 학교: {listed}{more}. --city 로 좁히세요',
+        ))
     return school, notes
 
 
@@ -202,7 +224,7 @@ def get_school(
     household_min: int | None = None,
     limit: int = 120,
 ) -> DaangnSchoolResult:
-    """학교 정보와 그 학교에 배정되는 단지를 받는다 (`searchSchools` → `schoolByCode`, 요청 2회).
+    """학교 정보와 그 학교에 배정되는 단지를 받는다 (`searchSchools` → `schoolByCode`, 요청 2회. 학교 찾기 요청 수는 `resolve_school`).
 
     배정 단지는 초등학교에만 있다 (중·고등학교는 학교군 배정). 당근은 순서 없이 소규모 빌라형 단지까지
     주므로, `complex_types`('아파트' 는 주상복합 포함)·`household_min` 으로 거르고 세대수 많은 순으로
@@ -236,12 +258,13 @@ def get_school(
     elif not detail.assigned_complexes:
         notes.append('당근에 이 학교의 배정 단지 정보가 없습니다')
     elif len(complexes) > limit:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'배정 단지 {len(complexes)}곳 중 세대수 많은 {limit}곳만 보여 줍니다. '
             + (f'최대 {COMPLEX_LIST_MAX_LIMIT}곳까지 표시할 수 있습니다. -t·--household-min 으로 좁히세요'
                if limit >= COMPLEX_LIST_MAX_LIMIT
-               else f'--limit 을 최대 {COMPLEX_LIST_MAX_LIMIT}까지 늘리거나 -t·--household-min 으로 좁히세요')
-        )
+               else f'--limit 을 최대 {COMPLEX_LIST_MAX_LIMIT}까지 늘리거나 -t·--household-min 으로 좁히세요'),
+        ))
     shown = complexes[:limit]
     return DaangnSchoolResult(
         school=DaangnSchool(
@@ -364,7 +387,8 @@ def list_preschools(
         if point.type not in PRESCHOOL_LABEL_BY_TYPE or coordinate is None or coordinate.lat is None or coordinate.lon is None:
             continue
         distance = haversine_km(lat, lng, coordinate.lat, coordinate.lon)
-        if distance > radius_km:
+        # 출력의 distance_km 처럼 반올림한 거리로 본다 (매물 반경 검색과 같다). 1.004km 를 '1.0km' 로 보이면서 1km 반경에서 빼지 않게
+        if not within_radius(distance, radius_km):
             continue
         found.append(DaangnPreschoolSummary(
             id=point.id.removeprefix(PRESCHOOL_ID_PREFIX),

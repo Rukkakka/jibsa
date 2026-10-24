@@ -136,15 +136,23 @@ def parse_complexes_html(html: str) -> DaangnComplexesResponseModel:
 
     Raises:
         RelayStoreNotFoundError: HTML 에 스토어가 없을 때.
+        RelayRecordNotFoundError: 루트 필드나 그 필드가 가리키는 단지 레코드가 없을 때.
     """
     store = extract_relay_store(html)
     output = root_field(store, 'complexByOriginalId')
-    output = store.get(output.get('__ref', ''), output) if isinstance(output, dict) else None
-    reference = output.get('complex') if output else None
+    # 루트 필드는 있는 단지(200)에도 없는 단지(404, `complex: null`)에도 온다 (2026-10-23 실측: 10697092·999999999).
+    # 없으면 구조가 바뀐 것이라, 빈 결과로 돌려 '없는 단지(NOT_FOUND)' 로 안내하지 않는다
+    if not isinstance(output, dict):
+        raise RelayRecordNotFoundError('complexByOriginalId not found in relay store')
+    output = store.get(output.get('__ref', ''), output)
+    reference = output.get('complex')
     if not reference:
         return DaangnComplexesResponseModel()
     # 단지 → proptierDanji → 면적 묶음 → 평형 까지 펼친다. 학교 도보 경로 같은 더 깊은 참조는 읽지 않는다
-    return DaangnComplexesResponseModel(complex=resolve(store, reference, depth=5))
+    complex_ = resolve(store, reference, depth=5)
+    if complex_ is None:
+        raise RelayRecordNotFoundError('complex record referenced by complexByOriginalId not found in relay store')
+    return DaangnComplexesResponseModel(complex=complex_)
 
 
 def parse_map_reviews_html(html: str) -> DaangnMapReviewsResponseModel:
@@ -152,10 +160,15 @@ def parse_map_reviews_html(html: str) -> DaangnMapReviewsResponseModel:
 
     Raises:
         RelayStoreNotFoundError: HTML 에 스토어가 없을 때.
+        RelayRecordNotFoundError: 스토어에 단지 목록(`complexes`) 연결이 없을 때.
     """
     store = extract_relay_store(html)
     connection = resolve(store, root_field(store, 'complexes'), depth=3)
     edges = connection.get('edges') if isinstance(connection, dict) else None
+    # 단지 목록은 후기 많은 단지가 없는 구에도 빈 edges 로 온다 (2026-10-23 실측: 강남구 20곳, 울릉군 0곳). 없거나 모양이
+    # 다르면 구조가 바뀐 것이라, 빈 목록으로 돌려 '이 지역에는 후기가 없다' 고 안내하지 않는다
+    if not isinstance(edges, list):
+        raise RelayRecordNotFoundError('complexes connection not found in relay store')
     return DaangnMapReviewsResponseModel(
-        complexes=[edge['node'] for edge in edges or [] if edge and edge.get('node')],
+        complexes=[edge['node'] for edge in edges if edge and edge.get('node')],
     )

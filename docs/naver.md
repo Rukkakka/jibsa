@@ -186,7 +186,7 @@ jibsa naver complex 개포자이 --pyeong 1
 
 **주의사항**
 
-`--pyeong`(평형 번호, 결과의 `pyeongs[].number`)은 반복, `--dong`(동 이름)은 반복 또는 쉼표로 지정한다. 주면 `article_counts` 와 호가 범위를 그 평형·동 매물만으로 세고 `notes` 로 알린다 (단지 정보와 `pyeongs` 는 그대로 단지 전체). 주지 않으면 단지 전체로 센다.
+`--pyeong`(평형 번호, 결과의 `pyeongs[].number`)과 `--dong`(동 이름)은 반복 또는 쉼표로 지정한다. 주면 `article_counts` 와 호가 범위를 그 평형·동 매물만으로 세고 `notes` 로 알린다 (단지 정보와 `pyeongs` 는 그대로 단지 전체). 주지 않으면 단지 전체로 센다.
 
 단지 번호는 `naver complex <단지 이름>`(네이버 단지 검색, 이름이 똑같은 단지 우선. 비슷한 후보는 `notes` 로 알린다), `fin.land.naver.com/complexes/{번호}`, 매물 상세(`listing`)에서 얻는다. 단지로 등록된 빌라(연립·다세대, 빌라 매물의 `complex_number`)도 `complex`·`search listings --complex`·`real-price` 로 볼 수 있다 (빌라 단지에는 동 수·건설사·방 수가 없다).
 
@@ -200,7 +200,7 @@ jibsa naver complex 개포자이 --pyeong 1
 | --- | --- |
 | `--complex` (필수) | 단지 이름 또는 번호 |
 | `--trade` | 매매, 전세, 월세, 단기임대 |
-| `--pyeong` | 평형 번호 (평형 ID, 평수 아님) (`complex` 결과의 `pyeongs[].number`) |
+| `--pyeong` | 평형 번호 (평형 ID, 평수 아님) (`complex` 결과의 `pyeongs[].number`). 반복하거나 쉼표로 구분 (`--pyeong 7,8,19`) |
 | `--dong` | 동 (`104`, `104동`). 요청이 1~2회 늘어난다 |
 | `--sort` | 랭킹순(기본), 가격낮은순, 가격높은순, 최신순, 면적좁은순, 면적넓은순 |
 | `--deposit-min` / `--deposit-max` | 보증금·전세금 |
@@ -220,7 +220,7 @@ jibsa naver search listings --complex 개포자이 --trade 매매 --dong 104 --p
 
 **오류와 대응**
 
-지역·좌표·지원하지 않는 지역 필터와 `--complex` 동시 지정은 `INVALID_ARGUMENT`. 없는 단지·동은 `NOT_FOUND`이며, 동이면 그 단지의 동 이름을 `hint` 로 준다. `--pyeong` 을 주었는데 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다.
+지역·좌표·지원하지 않는 지역 필터와 `--complex` 동시 지정은 `INVALID_ARGUMENT`. 없는 단지·동은 `NOT_FOUND`이며, 동이면 그 단지의 동 이름을 `hint` 로 준다. 단지 번호로 찾았는데 0건이면 단지가 있는지 확인한다(요청 1~2회 추가). `--pyeong` 을 주었는데 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다.
 
 **주의사항**
 
@@ -264,6 +264,8 @@ jibsa naver real-price 12345 --pyeong 2 --period 3년
 `--pages` 기본값은 1이다. 최대 10페이지, 페이지당 10건을 요청하며 거래가 끝나면 일찍 멈춘다. 단지 번호와 평형 ID는 `complex` 결과에서 확인한다.
 
 `--period` 는 아파트·오피스텔 단지면 요청 1회로 기간 안 거래를 모두 받는다. 거래가 많은 평형은 수백 건이 될 수 있다 (대단지 전세 5년 800건 이상). 빌라 단지는 네이버가 기간 조회를 주지 않아 페이지(100건씩, 최대 5페이지)를 받아 기간 시작일 전 거래를 뺀다. 그래도 다 받지 못하면 `notes` 로 알린다. 기간 안 거래가 없으면 `transactions` 가 `[]` 다.
+
+네이버는 같은 거래를 면적이 다른 평형 여러 곳에 함께 주기도 한다 (개포우성1,2차 전세: 84㎡ 평형과 127㎡ 평형에 같은 날·층·금액의 거래 3건). 거래마다 면적을 주지 않아 jibsa 가 가려낼 수 없으니, 평형별 시세를 말할 때는 당근 `real-price` 의 거래별 `area_m2` 로 확인한다.
 
 ## 6. `listing` — 매물 상세
 
@@ -451,7 +453,7 @@ jibsa naver redevelopment 9000001 --trade 매매
 
 **반환값**
 
-`redevelopment_number`, `name`, `legal_division`, `households`(계획 세대수), `business_step`(사업 단계), `construction_company`(시공사), `floor_area_ratio`·`building_coverage_ratio`(계획 용적률·건폐율, %), `article_counts`(거래 유형별 현재 매물 수), `sale_asking_range_manwon`, `jeonse_asking_range_manwon`, `url`.
+`redevelopment_number`, `name`, `legal_division`, `households`(계획 세대수), `business_step`(사업 단계), `construction_company`(시공사), `floor_area_ratio`·`building_coverage_ratio`(계획 용적률·건폐율, %), `article_counts`(거래 유형별 현재 매물 수. `--trade` 를 주면 그 거래 유형만 센다), `sale_asking_range_manwon`, `jeonse_asking_range_manwon`, `url`.
 
 **오류와 대응**
 
@@ -536,11 +538,13 @@ API 요청당 최대 30건이다. 명령 한 번 안에서 이전 응답의 `las
 ```json
 {
   "notes": [
-    "중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의 매물을 빼고 114건입니다 (뺀 만큼 다시 채우지 않음)",
-    "--limit 의 최대값은 120입니다. 더 보려면 조건·지역을 좁히세요"
+    "[제외] 중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의 매물을 빼고 114건입니다 (뺀 만큼 다시 채우지 않음)",
+    "[일부] --limit 의 최대값은 120입니다. 더 보려면 조건·지역을 좁히세요"
   ]
 }
 ```
+
+더 받을 매물이 남지 않았으면 제외 안내 끝이 `(더 받을 매물 없음)` 이다 (단지 목록은 `(더 받을 단지 없음)`).
 
 서버 집계 `total`에는 반경 밖·중복·출력에서 제외된 항목이 포함될 수 있으므로 `returned`와 차이가 난다. 새 검색은 목록·순서가 달라질 수 있다.
 

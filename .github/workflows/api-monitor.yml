@@ -53,8 +53,9 @@ jobs:
   report:
     name: 결과 정리
     needs: check
-    # 조회 잡이 실패해도 정리한다 (결과 파일이 없는 소스는 고장으로 본다)
-    if: always()
+    # 조회 잡이 실패해도 정리한다 (결과 파일이 없는 소스는 고장으로 본다). 실행을 취소했으면 결과 파일이 없어도 고장이 아니라
+    # 정리하지 않는다 (always() 면 취소한 실행도 고장 이슈를 열었다)
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -13,6 +13,7 @@ from pydantic import (
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     normalize_date,
+    note,
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -205,6 +206,9 @@ def get_real_prices(
         return _get_real_prices_in_period(
             client, complex_number, pyeong_number, trade_type=trade_type, period=period, today=today or kst_today(),
         )
+    # 네이버는 같은 거래를 면적이 다른 평형 여러 곳에 함께 주기도 하고 거래마다 면적은 주지 않아 가려낼 수 없다
+    # (2026-10-24 실측: 단지 65 전세 평형 1·2 응답에 2026-09-11 3층 19억 등 3건이 같이 있었다. 요청의 pyeongTypeNumber 는
+    # 1·2 로 달랐다. 당근 실거래로는 84.81㎡ 거래). docs/naver.md 가 당근 area_m2 로 확인하라고 안내한다
     transactions: list[NaverRealPrice] = []
     for page in range(pages):
         result = unwrap(
@@ -315,10 +319,11 @@ def _get_real_prices_in_period(
             trade_type=trade_type, size=VILLA_PERIOD_PAGE_SIZE, max_pages=MAX_VILLA_PERIOD_PAGES, since=since,
         )
         if truncated:
-            notes.append(
+            notes.append(note(
+                '일부',
                 f'빌라 단지 실거래를 {MAX_VILLA_PERIOD_PAGES * VILLA_PERIOD_PAGE_SIZE}건까지만 받았습니다. '
-                '기간 안 거래가 더 있을 수 있으니 --period 를 줄여 보세요'
-            )
+                '기간 안 거래가 더 있을 수 있으니 --period 를 줄여 보세요',
+            ))
     return NaverRealPriceResult(
         complex_number=complex_number,
         pyeong_number=pyeong_number,

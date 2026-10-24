@@ -52,6 +52,9 @@ from typing import (
 
 # 출퇴근 검색: 매물을 찾아볼 역 수(역마다 요청 1회)와 갈 수 있는 역 목록을 넘겨 보는 최대 페이지
 COMMUTE_MAX_STATIONS: int = 10
+# 역당 매물 수 기본값. 10곳 × 5건 = 50건으로 docs/llm.md 의 '한 번에 50건 이하' 에 맞는다. 매물 목록처럼 20 이면 셸 출력을
+# 잘라 보여 주는 에이전트가 뒤쪽 역을 못 본다 (2026-10-23 실측: 강남역 20분 원룸 월세 10역 186건·86,469자)
+COMMUTE_STATION_DEFAULT_LIMIT: int = 5
 # 역 목록은 50곳씩이다. 매물은 가까운 10곳만 찾으므로 넘는 역은 더 받지 않고 notes 로 알린다
 # (2026-10-11 실측: 강남역 60분 안 411곳 = 9쪽, 4쪽 마지막 역 35분)
 COMMUTE_FEED_MAX_PAGES: int = 4
@@ -195,7 +198,7 @@ def search_commute(
     *,
     max_minutes: int = 30,
     conditions: DaangnListingConditions | None = None,
-    limit: int = 20,
+    limit: int = COMMUTE_STATION_DEFAULT_LIMIT,
 ) -> DaangnCommuteResult:
     """회사 위치까지 지하철로 `max_minutes` 안에 갈 수 있는 역 주변 매물을 찾는다 (당근 웹 출퇴근 지도와 같다).
 

@@ -754,9 +754,14 @@ def pagination_notes(
     """
     notes: list[str] = []
     excluded = min(inspected, limit) - returned
+    # 이어 받을 수 있거나, 요청 상한에서 멈췄거나, 서버 수가 받은 수보다 많으면 더 받을 매물이 남았다. 이어 받은 결과의 total 은
+    # 앞 결과까지 센 수라 받은 수와 견주지 않는다 (next 가 없으면 남은 매물이 없다)
+    more = resumable or truncated or (not resumed and total > inspected)
     if returned < limit and excluded > 0:
         notes.append(note(
-            '제외', f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)",
+            '제외',
+            f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 "
+            + ('(뺀 만큼 다시 채우지 않음)' if more else f'(더 받을 {subject} 없음)'),
         ))
     elif returned < limit and not truncated:
         what = scope + (f'남은 {subject}' if resumed else f'조건에 맞는 {subject}')
@@ -767,9 +772,11 @@ def pagination_notes(
     # 이어 받은 결과의 returned 는 이번 몫이라 전체 수와 견주면 앞 결과에서 받은 매물을 빼먹는다
     if truncated or resumed:
         return notes
-    if limit >= MAX_LIST_LIMIT and (total > returned or inspected >= limit):
+    # 더 받을 것이 남았는지는 받은 수(inspected)로 본다. 돌려준 수와 견주면 다 받고 뺐을 뿐인데 '더 있다' 고 하거나, 1건만
+    # 빠져도 더 있다는 안내가 사라졌다 (2026-10-23 리뷰: 반경 단지 --limit 1 이 전체 89건에 '[제외] … 0건' 만 냈다)
+    if limit >= MAX_LIST_LIMIT and total > inspected:
         notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))
-    elif returned >= limit and total > returned:
+    elif inspected >= limit and total > inspected:
         notes.append(note('일부', f'전체 {total}건 중 {returned}건입니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요'))
     return notes
 
