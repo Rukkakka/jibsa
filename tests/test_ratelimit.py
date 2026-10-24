@@ -1,4 +1,5 @@
 import multiprocessing
+import threading
 import time
 
 import httpx
@@ -63,6 +64,18 @@ def test_cooldown_blocks_until_expiry() -> None:
         cooled.reserve()
     assert exc.value.reason == 'cooldown'
     assert 55 <= exc.value.retry_after <= 60
+
+
+def test_cooldown_set_while_waiting_stops_reserved_request() -> None:
+    # 슬롯을 기다리는 동안 다른 프로세스가 429 를 받으면, 미리 잡아 둔 슬롯의 요청도 보내지 않는다
+    first, second = limiter(min_interval=0.5, cooldown=60), limiter(min_interval=0.5, cooldown=60)
+    first.reserve()
+    blocker = threading.Timer(0.1, first.block)
+    blocker.start()
+    with pytest.raises(RateLimitedError) as exc:
+        second.acquire()
+    blocker.join()
+    assert exc.value.reason == 'cooldown'
 
 
 def test_retry_after_longer_than_cooldown_wins() -> None:

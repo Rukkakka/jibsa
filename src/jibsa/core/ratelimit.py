@@ -301,10 +301,21 @@ class RateLimiter:
             state['recent'] = recent
             return delay
 
+    def _raise_if_cooling_down(self) -> None:
+        """쿨다운 중이면 `RateLimitedError` 를 낸다.
+
+        `reserve` 는 슬롯을 잡을 때만 쿨다운을 본다. 슬롯을 기다리는 동안 다른 프로세스가 429 를 받아 쿨다운을 걸면,
+        미리 잡아 둔 슬롯(분당 상한이면 최대 `max_wait` 뒤)의 요청이 막힌 서버로 그대로 나갔다.
+        """
+        remaining = float(self._read_state().get('blocked_until', 0.0)) - time.time()
+        if remaining > 0:
+            raise RateLimitedError(self.source, remaining, 'cooldown')
+
     def acquire(self) -> None:
         delay = self.reserve()
         if delay > 0:
             time.sleep(delay)
+            self._raise_if_cooling_down()
 
     async def aacquire(self) -> None:
         # reserve() 는 상태 파일 잠금(flock)을 기다린다. 다른 jibsa 프로세스가 잠금을 잡고 있을 때 이벤트 루프가 멈추지
@@ -312,6 +323,7 @@ class RateLimiter:
         delay = await asyncio.to_thread(self.reserve)
         if delay > 0:
             await asyncio.sleep(delay)
+            self._raise_if_cooling_down()
 
     def block(self, retry_after: float | None = None) -> float:
         """429 를 받았을 때 쿨다운을 건다. 이미 더 긴 쿨다운이 있으면 유지한다.
