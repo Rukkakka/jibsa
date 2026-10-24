@@ -79,6 +79,8 @@ COMMAND_TIMEOUT_SECONDS: int = 300
 # 결과·표·이슈에 쓰는 날짜의 시간대. 러너는 UTC 라 한국 04:17 실행이 전날 날짜로 찍혔다 (2026-10-18 실행이 2026-10-17).
 # 정리 잡에는 jibsa 가 없어 jibsa 의 kst_today 를 가져오지 않는다
 KST: datetime.timezone = datetime.timezone(datetime.timedelta(hours=9), 'KST')
+# 단기임대 기간 비용(`listing --check-in/--check-out`)은 앞날 기간만 받아 실행하는 날로 정한다. 이만큼 뒤에 입주해 1주 머문다
+STAY_CHECK_IN_DAYS: int = 14
 
 ROOM: tuple[str, ...] = ('zigbang', 'search', 'listings', 'room')
 APT: tuple[str, ...] = ('zigbang', 'search', 'listings', 'apt')
@@ -116,8 +118,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         Step('아파트 역 반경 강남역', APT, ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
-        Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name'),
+        Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),
         Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),
+        # 평형별 실거래는 다른 API 다. 고른 평형에 거래가 없을 수 있어 거래 칸 대신 평형 칸을 본다. API 가 바뀌면 첫 응답의 평형
+        # 목록 확인(`_check_real_price_scope`)이 NOT_FOUND 를 내 고장으로 잡힌다
+        Step('아파트 평형 실거래가', ('zigbang', 'real-price'), ('{apt}', '--pyeong', '{apt_pyeong}', '--limit', '3'), 'pyeong_id'),
         Step('아파트 단지 매물', ZIGBANG_LISTINGS, ('--complex', '{apt}', '--limit', '2'), 'listings'),
         Step('오피스텔 건물', ('zigbang', 'complex'), ('{officetel}',), 'name'),
         Step('오피스텔 건물 매물', ZIGBANG_LISTINGS, ('--complex', '{officetel}', '--limit', '2'), 'listings'),
@@ -131,6 +136,10 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('stay', 'listings', 'id'),),
         ),
         Step('단기임대 상세', ZIGBANG_LISTING, ('{stay}',), 'id'),
+        # 기간 비용은 예약 가능 여부와 상관없이 온다 (예약된 기간이면 available false)
+        Step(
+            '단기임대 기간 비용', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'period_cost',
+        ),
         Step('단기임대 역 반경 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
     ),
     'naver': (
@@ -246,7 +255,7 @@ UNKNOWN_CODES: frozenset[str] = frozenset({'RATE_LIMITED', 'NETWORK_ERROR', 'LIS
 
 BROKEN_LABEL: str = 'api-broken'
 BLOCKED_LABEL: str = 'api-blocked'
-# 같은 소스가 이만큼 연속으로 확인 못 함이면 알린다 (오늘 포함)
+# 같은 소스가 이만큼 연속한 날 확인 못 함이면 알린다 (오늘 포함, 날마다 그날 마지막 실행으로 본다)
 BLOCKED_STREAK: int = 3
 WORKFLOW_FILE: str = 'api-monitor.yml'
 REPORT_ARTIFACT: str = 'report'
@@ -373,7 +382,8 @@ def _today() -> datetime.date:
 
 def run_group(name: str) -> dict[str, Any]:
     """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함)."""
-    values: dict[str, str] = {}
+    check_in = _today() + datetime.timedelta(days=STAY_CHECK_IN_DAYS)
+    values: dict[str, str] = {'check_in': check_in.isoformat(), 'check_out': (check_in + datetime.timedelta(days=6)).isoformat()}
     steps: list[dict[str, str]] = []
     for step in GROUPS[name]:
         line = ' '.join(step.command)
@@ -428,23 +438,36 @@ def _open_issue(label: str) -> int | None:
     return issues[0]['number'] if issues else None
 
 
-def _previous_reports(count: int) -> list[dict[str, Any]]:
-    """앞선 예약·수동 실행의 소스별 판정 (가까운 것부터). 결과 파일이 없는 실행(만료·실패)을 만나면 거기서 멈춘다."""
+def _previous_reports(days: int) -> list[dict[str, Any]]:
+    """어제부터 하루씩 거꾸로 `days` 일의 소스별 판정 (날마다 그날 마지막 예약·수동 실행 하나, 가까운 날부터).
+
+    실행 수로 세면 막힌 날 손으로 두 번 다시 돌려도 같은 날에 '사흘 연속' 이 되고, PR 실행이 많으면 목록에서 앞날이 밀려났다.
+    실행이 없거나 결과 파일이 없는 날(만료·실패)을 만나면 거기서 멈춘다.
+    """
     try:
-        runs = json.loads(_gh('run', 'list', '--workflow', WORKFLOW_FILE, '--status', 'completed', '--limit', '20', '--json', 'databaseId,event'))
+        runs = json.loads(_gh(
+            'run', 'list', '--workflow', WORKFLOW_FILE, '--status', 'completed', '--limit', '50',
+            '--json', 'databaseId,event,conclusion,createdAt',
+        ))
     except subprocess.CalledProcessError:
         # 워크플로가 아직 기본 브랜치에 없으면(첫 실행 전) 실행 목록을 묻지 못한다
         return []
     current = os.environ.get('GITHUB_RUN_ID')
-    reports: list[dict[str, Any]] = []
+    latest: dict[datetime.date, int] = {}
     for run in runs:
-        if len(reports) == count:
-            break
-        if run['event'] not in ('schedule', 'workflow_dispatch') or str(run['databaseId']) == current:
+        # 취소한 실행은 정리 잡이 돌지 않아 결과 파일이 없다
+        if run['event'] not in ('schedule', 'workflow_dispatch') or run['conclusion'] == 'cancelled' or str(run['databaseId']) == current:
             continue
+        # 목록은 최근 실행부터라 그날 처음 만난 실행이 그날 마지막 실행이다
+        latest.setdefault(datetime.datetime.fromisoformat(run['createdAt']).astimezone(KST).date(), run['databaseId'])
+    reports: list[dict[str, Any]] = []
+    for back in range(1, days + 1):
+        run_id = latest.get(_today() - datetime.timedelta(days=back))
+        if run_id is None:
+            break
         with tempfile.TemporaryDirectory() as folder:
             try:
-                _gh('run', 'download', str(run['databaseId']), '--name', REPORT_ARTIFACT, '--dir', folder)
+                _gh('run', 'download', str(run_id), '--name', REPORT_ARTIFACT, '--dir', folder)
             except subprocess.CalledProcessError:
                 break
             reports.append(json.loads((Path(folder) / 'report.json').read_text(encoding='utf-8')))

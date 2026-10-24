@@ -225,5 +225,8 @@ __marimo__/
 # 로컬 백업 (커밋하지 않음)
 .backup/
 
+# uv 잠금 파일. CI·문서는 pip 와 pyproject.toml 로 설치해 쓰지 않는다 (커밋하지 않음)
+uv.lock
+
 # Claude Code 개인 설정 (커밋하지 않음)
 .claude/settings.local.json

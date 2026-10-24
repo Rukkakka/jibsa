@@ -84,7 +84,8 @@
    ```
 
 5. 태그 push 가 [Release 워크플로](../.github/workflows/release.yml)를 돌린다. 끝까지 통과했는지 Actions 에서 본다.
-   1. 태그 확인 — 태그 커밋이 `main` 에 있는지, 태그가 `pyproject.toml` 버전과 같은지, CHANGELOG 에 그 버전 절이 있는지
+   1. 태그 확인 — 태그 커밋이 `main` 에 있는지, 태그가 `pyproject.toml` 버전과 같은지, CHANGELOG 에 그 버전 절이 있는지,
+      `Unreleased` 가 비어 있는지 (버전 올리기 PR 뒤에 머지된 변경이 이 버전에 섞이지 않게)
    2. CI — [ci.yml](../.github/workflows/ci.yml) 전체. 설치본 확인이 sdist·wheel 을 빌드하고 `twine check`·설치 확인을 한다
    3. PyPI — 2 에서 빌드한 파일을 신뢰 게시(Trusted Publishing)로 올린다. API 토큰은 없다
    4. GitHub Release — 본문은 CHANGELOG 의 그 버전 절, 빌드한 파일을 첨부한다

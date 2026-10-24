@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
-      - name: 태그가 main 에 있고 pyproject.toml 버전·CHANGELOG 절과 맞는지
+      - name: 태그가 main 에 있고 pyproject.toml 버전·CHANGELOG 절과 맞는지, 이 버전에 넣지 않은 변경이 없는지
         run: |
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::$GITHUB_REF_NAME 이 main 에 없는 커밋을 가리킵니다. 태그는 머지 뒤 main 에만 단다"
@@ -35,6 +35,11 @@ jobs:
           fi
           if ! grep -q "^## $version — " CHANGELOG.md; then
             echo "::error::CHANGELOG.md 에 '## $version — 날짜' 절이 없습니다"
+            exit 1
+          fi
+          # 버전 올리기 PR 뒤에 다른 PR 이 먼저 머지된 main 에 태그를 달면, 그 변경이 CHANGELOG 의 이 버전 절에 없이 함께 올라간다
+          if awk '/^## Unreleased/ { inside = 1; next } /^## / { inside = 0 } inside && NF' CHANGELOG.md | grep -q .; then
+            echo "::error::CHANGELOG.md 의 Unreleased 에 항목이 남아 있습니다. 버전 올리기 PR 의 머지 커밋에 태그를 다세요"
             exit 1
           fi
 

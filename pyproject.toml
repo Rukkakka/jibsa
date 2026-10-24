@@ -36,8 +36,9 @@ dependencies = [
     'pydantic>=2.13,<3',
     'httpx>=0.28,<0.29',
     'tenacity>=9.1,<10',
-    # cli 가 typer 에 내장된 click(typer._click)을 쓰는데 0.26 부터 들어 있다
-    'typer>=0.26,<1',
+    # cli 가 typer 에 내장된 click(typer._click)을 쓰는데 0.26 부터 들어 있다. 비공개 경로라 0.x 의 새 마이너 버전에서
+    # 옮겨질 수 있어, 새 버전은 확인한 뒤 상한을 올린다
+    'typer>=0.26,<0.28',
 ]
 
 [project.optional-dependencies]
@@ -64,7 +65,8 @@ exclude = ['docs/demo', 'docs/logo.svg', 'scripts/demo', 'scripts/logo']
 packages = ['src/jibsa']
 
 # `jibsa guide` 가 출력하는 LLM 가이드와 소스별 사용 문서 (`jibsa guide zigbang`). 문서는 docs/ 에만 두고 설치본에는
-# 패키지 안으로 복사한다 (편집 가능 설치에는 복사되지 않아 cli/app.py 가 저장소의 docs/ 를 읽는다).
+# 패키지 안으로 복사한다 (편집 가능 설치도 site-packages 에 사본을 두지만 패키지가 src/jibsa 를 가리켜 사본은 읽히지 않고,
+# cli/app.py 가 저장소의 docs/ 를 읽는다).
 [tool.hatch.build.targets.wheel.force-include]
 'docs/llm.md' = 'jibsa/llm.md'
 'docs/common.md' = 'jibsa/common.md'
