@@ -899,7 +899,12 @@ def region_complex_of(node: DaangnRegionComplexNodeModel, trade_type: str) -> Da
 
 
 def complex_list_notes(complexes: list[DaangnRegionComplex]) -> list[str]:
-    """단지 목록(지역 단지·학교 배정 단지) 공통 안내: 최근 실거래에 날짜가 없고, 후기는 있는지만 알린다."""
+    """단지 목록(지역 단지·학교 배정 단지) 공통 안내: 최근 실거래에 날짜가 없고, 후기는 있는지만 알린다.
+
+    매번 같은 안내지만 원룸 종류 안내처럼 docs/llm.md 로 옮기지 않는다. 가이드는 모든 세션이 읽어 이 명령을 쓰지 않는
+    세션까지 토큰을 쓰고, 여기서는 이 명령을 부를 때만 나온다 (2026-10-23 실측: `search complexes 대치동` 안내 두 개
+    162자 / 출력 21,471자, 0.8%).
+    """
     notes: list[str] = []
     if any(complex_.recent_trades for complex_ in complexes):
         notes.append('recent_trades 는 당근 단지 목록의 최근 실거래라 계약일·층이 없습니다. 날짜까지 보려면 real-price <complex_id> 를 쓰세요')

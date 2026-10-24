@@ -101,9 +101,14 @@ class ListingUnavailableError(JibsaError):
         reason: str | None = None
     ) -> None:
         detail = ', '.join(part for part in (status and f'status={status}', reason and f'reason={reason}') if part)
+        hint = '거래할 수 없는 매물입니다 (만료·거래완료·숨김·거래 조건 없음). 이 매물은 빼고 search 로 현재 매물을 다시 찾으세요'
+        if not detail:
+            # 상태값이 없으면 없는 ID 라서, 다른 소스에서 받은 ID 를 넣은 경우와 가릴 수 없다. 그대로 빼라고 하면 멀쩡한 후보를
+            # 버린다 (2026-10-23 실측: 직방 ID 를 naver·daangn listing 에, 네이버 ID 를 zigbang listing 에 주면 모두 이 에러)
+            hint = f'다른 소스에서 받은 ID 면 그 소스의 명령으로 부르세요 (ID 는 소스끼리 통하지 않습니다). 아니면 {hint}'
         super().__init__(
             code='LISTING_UNAVAILABLE',
             message=f'현재 거래할 수 없는 {source} 매물입니다: {listing_id}' + (f' ({detail})' if detail else ' (없거나 내려간 매물)'),
-            hint='거래할 수 없는 매물입니다 (만료·거래완료·숨김·거래 조건 없음). 이 매물은 빼고 search 로 현재 매물을 다시 찾으세요',
+            hint=hint,
             details={'listing_id': str(listing_id), 'listing_status': status, 'reason': reason},
         )

@@ -327,6 +327,8 @@ class NaverListingDetail(ListingDetail):
         float | None,
         Field(description='연 종합부동산세 합계 (만원, 종부세 + 농어촌특별세. 공시가 기준 네이버 계산. 매매만)')
     ] = None
+    # 상세 출력에서 가장 긴 필드지만 매물 하나에 한 번이라 줄이지 않는다. 통근을 따질 때 버스만 닿는 동네가 있다
+    # (2026-10-23 실측: 강남역 근처 원룸 상세 1,078자 중 381자, 약 120토큰)
     bus_routes: Annotated[
         dict[str, list[str]] | None,
         Field(description='주변 정류장의 버스 노선 (종류별, 예: {"간선": ["146", "341"]}). 조회 실패면 null')

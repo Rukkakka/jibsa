@@ -6,7 +6,7 @@
 
 - 결과는 stdout 에 JSON. 터미널이면 들여쓰기, 파이프면 한 줄 (`--pretty` / `--compact` 로 강제)
 - 소수점 아래가 없는 숫자는 정수로 쓴다 (`1000.0` 이 아니라 `1000`). 같은 필드도 값에 따라 `1000` 과 `24.2` 처럼 섞여 나온다
-- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 당근 `in_regions` 는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다
+- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 당근 `in_regions` 는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
 - 매물 필드에 값이 없을 때는 의미에 따라 다르게 나타낸다
 
   | 상태 | 표현 | 예 |
@@ -145,7 +145,7 @@
 | `REGION_AMBIGUOUS` | 같은 이름의 지역·주소 후보가 여러 곳 | `candidates`를 확인하고 시·구를 붙임 |
 | `REGION_NOT_SUPPORTED` | 소스가 해당 지역을 다루지 않음 | 다른 소스 또는 주변 지역 조회 |
 | `NOT_FOUND` | 단지·학교·평형·동 등 조회 대상 없음 | 이전 검색 결과의 ID와 후보 확인 |
-| `LISTING_UNAVAILABLE` | 삭제·만료·거래 완료·숨김 등 현재 거래 불가 | 해당 매물 제외 후 다시 검색 |
+| `LISTING_UNAVAILABLE` | 삭제·만료·거래 완료·숨김 등 현재 거래 불가 | 다른 소스에서 받은 ID 면 그 소스의 명령으로 부르고, 아니면 해당 매물 제외 후 다시 검색 |
 | `RATE_LIMITED` | 로컬 요청 예산 초과 또는 429 이후 쿨다운 | `retry_after_seconds`가 있으면 해당 시간만큼 대기. 없으면 `hint`와 `jibsa limits` 확인 |
 | `NETWORK_ERROR` | 연결·타임아웃 등 전송 실패 | 네트워크 상태 확인 후 재시도 |
 | `UPSTREAM_ERROR`, `PARSE_ERROR` | API 거절·응답 구조 변경·파싱 실패 | 힌트 확인, 다른 소스 사용 또는 버전 갱신 |

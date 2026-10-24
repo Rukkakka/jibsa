@@ -789,6 +789,8 @@ def real_price_command(
         int | None,
         typer.Option(min=1, help='전용면적 묶음 (complex 결과의 pyeongs[].area_group, 예: 84). 단지로 볼 때만. 기본 전체 평형')
     ] = None,
+    # 기본 120건(약 4~5천 토큰)이지만 낮추지 않는다. 에이전트는 대개 가이드의 '처음에는 작게' 를 따라 --limit 을 직접 준다
+    # (2026-10-23 에이전트 검증: 이 명령을 부른 sonnet 2명 모두 --limit 8 을 줬다. 기본값으로 부른 건 검증에서 뺀 haiku 뿐이다)
     limit: Annotated[int, typer.Option(min=1, max=REAL_PRICE_MAX_LIMIT, help='최대 거래 수')] = 120,
     pretty: PrettyOption = None,
 ) -> None:

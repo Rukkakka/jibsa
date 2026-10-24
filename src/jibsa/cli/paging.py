@@ -7,6 +7,11 @@
 표는 상태 폴더(요청 제한 상태와 같은 `state_dir()`)의 `next/<번호>.json` 에 두고 `next` 에는 짧은 번호만 준다.
 표를 값에 그대로 담으면 찾은 지역·소스 커서 때문에 500~600자가 되어, 에이전트가 다음 명령에 베껴 쓰는 데 토큰이
 들고 베끼다 틀리기 쉽다. 명령과 조건을 표에 담아 두어, 조건이 다른 검색에 주면 어느 옵션이 다른지 알린다.
+
+표에 조건이 있어도 `--next` 만 받아 조건을 채우지 않는다. 명령줄만 보고 무엇을 이어 받는지 알 수 있어야 하고(에이전트
+대화 기록·사용자 화면), 다시 적는 비용은 앞 명령 한 줄이다. 조건을 틀리게 적으면 다른 옵션을 `message` 에 적어 한 번에
+고친다 (2026-10-23 실측: 직방 room 조건 5개 명령 약 100자, 이어 받은 5건 출력 1,126자. `--deposit-max` 를 빠뜨리면
+'--deposit-max (앞: 1000, 지금: 없음)', 옵션 순서를 바꿔 적으면 그대로 이어 받는다).
 """
 import hashlib
 import json
@@ -51,10 +56,25 @@ NextOption = Annotated[
 ]
 
 
+def _option_values(value: Any) -> Any:
+    """목록 옵션 값을 `split_csv` 가 읽는 모양으로 맞춘다 (쉼표로 나누고 공백·빈 값·중복을 뺀 뒤 정렬한다).
+
+    `-t 원룸,오피스텔` 과 `-t 원룸 -t 오피스텔` 은 같은 조건인데 원문 그대로 비교하면 다르다며 막았다 (앞·지금 값이 똑같이
+    '원룸,오피스텔' 로 보여 무엇을 고칠지 알 수 없었다, 2026-10-23 리뷰). 목록 옵션(유형·거래·층·옵션·평형 등)은 모두
+    고른 값의 집합이라 순서만 바꿔 적은 `-t 오피스텔,원룸` 도 같은 검색으로 본다.
+    """
+    if not isinstance(value, (list, tuple)):
+        return value
+    parts: list[Any] = []
+    for item in value:
+        parts += [part.strip() for part in item.split(',')] if isinstance(item, str) else [item]
+    return sorted({part for part in parts if part != ''}, key=str)
+
+
 def _search() -> tuple[str, dict[str, Any]]:
     """지금 명령과 그 지역·조건. 값은 표에 저장했다 읽은 것과 같게(튜플은 목록으로) 맞춰 비교한다."""
     context = get_current_context()
-    params = {key: value for key, value in context.params.items() if key not in RESUMABLE_PARAMS}
+    params = {key: _option_values(value) for key, value in context.params.items() if key not in RESUMABLE_PARAMS}
     return context.command_path, json.loads(json.dumps(params, ensure_ascii=False, default=str))
 
 

@@ -325,7 +325,7 @@ ID 접두사·형식 위반은 `INVALID_ARGUMENT`, 없는 단지·건물은 `NOT
 | --- | --- | --- |
 | `--complex` | 단지 ID. search locations 결과의 complexes[].complex_id 나 search 결과의 complex_id (예: apt-68579, officetel-20227) | 필수 |
 | `--trade` | 거래 유형: 전세, 월세, 매매, 단기임대(오피스텔만). 반복하거나 쉼표로 구분. 기본 전체 | 미지정 |
-| `--pyeong` | 평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복 가능 (OR) 범위: 1~제한 없음. | 미지정 |
+| `--pyeong` | 평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복하거나 쉼표로 구분 (OR) 범위: 1~제한 없음. | 미지정 |
 | `--limit` | 아파트는 조회할 매물 수(제외 전), 오피스텔은 최대 결과 수. 범위: 1~120. | 아파트 20 / 오피스텔 15 |
 | `--deposit-min` | 보증금/전세금 하한 (만원) 범위: 0~제한 없음. | 미지정 |
 | `--deposit-max` | 보증금/전세금 상한 (만원) 범위: 0~제한 없음. | 미지정 |
@@ -363,7 +363,7 @@ jibsa zigbang search listings --complex apt-68579 --trade 전세 --pyeong 400085
 
 **주의사항**
 
-`apt-…` 또는 `officetel-…` ID를 받는다. 기본은 거래 유형 전체다. 공통 조건은 `--trade`, 가격(`--deposit-*`, `--rent-*`, `--price-*`)이다. `--pyeong`은 아파트 전용 평형 ID이며 반복 지정한 값은 OR다. 단지에 없는 평형 ID 를 주면 0건 대신 `INVALID_ARGUMENT` 이니 `complex` 결과의 `pyeongs[].id` 를 쓴다. 아파트에는 단기임대가 없어, 아파트 단지에 단기임대만 주면 입력 오류이고 다른 거래 유형과 함께 주면 단기임대를 빼고 찾은 뒤 `notes` 로 알린다.
+`apt-…` 또는 `officetel-…` ID를 받는다. 기본은 거래 유형 전체다. 공통 조건은 `--trade`, 가격(`--deposit-*`, `--rent-*`, `--price-*`)이다. `--pyeong`은 아파트 전용 평형 ID이며 반복하거나 쉼표로 준 값은 OR다. 단지에 없는 평형 ID 를 주면 0건 대신 `INVALID_ARGUMENT` 이니 `complex` 결과의 `pyeongs[].id` 를 쓴다. 아파트에는 단기임대가 없어, 아파트 단지에 단기임대만 주면 입력 오류이고 다른 거래 유형과 함께 주면 단기임대를 빼고 찾은 뒤 `notes` 로 알린다.
 
 오피스텔은 `search listings room` 과 같은 관리비·방 구조·면적(전용 ㎡·평)·층·욕실·옵션·시설 조건도 서버에서 적용한다. 이 조건이나 `--without-random`을 아파트 ID와 함께 쓰거나, `--no-manage-cost`와 관리비 범위를 함께 쓰면 `INVALID_ARGUMENT`다.
 
@@ -518,11 +518,11 @@ jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29 --pe
 ```bash
 jibsa zigbang --help
 jibsa zigbang search --help
+jibsa zigbang search listings --help
 jibsa zigbang search listings room --help
-jibsa zigbang search listings --complex --help
 ```
 
-유형별 옵션은 `room`·`apt`·`store`·`stay` 뒤에 지정한다. `search listings --complex <ID>` 모드와 유형별 하위 명령은 함께 사용할 수 없다. 기존 `items`·`item`·`search room|apt|store|stay` 별칭은 제공하지 않는다.
+`search listings --help` 는 `--complex` 모드 옵션을 보여 준다. 유형별 옵션은 `room`·`apt`·`store`·`stay` 뒤에 지정한다. `search listings --complex <ID>` 모드와 유형별 하위 명령은 함께 사용할 수 없다. 기존 `items`·`item`·`search room|apt|store|stay` 별칭은 제공하지 않는다.
 
 ## 소스별 반환 필드와 해석
 

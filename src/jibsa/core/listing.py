@@ -409,6 +409,12 @@ class Listing(BaseModel):
     - 해당 없음 (그 거래 유형에 원래 없는 항목, 예: 월세의 `price_manwon`): 키를 뺀다
     - 모름 (해당은 되지만 소스가 알려 주지 않은 항목): `null`
 
+    목록에서 소스가 늘 주지 않는 필드(직방·당근 `approved_at`, 당근 `manage_cost_manwon`·`registered_at`, 네이버
+    `room_type`)도 키를 빼지 않고 `null` 이다. 키를 빼면 해당 없음으로 읽혀 관리비 없는 매물로 셈한다 (`null` 이면 상세를
+    보라고 docs/llm.md 가 이른다). 결과 전체가 같은 값인 `source`·`trade_type` 도 소스를 섞어 비교할 때 매물 하나만 보고
+    읽도록 남긴다. 출력을 줄이는 길은 `--fields` 다 (2026-10-23 실측: 직방 room 30건 14,424자 → docs/llm.md 권장 9필드
+    7,540자, 48% 감소. 당근 목록에서 늘 null 인 세 필드는 매물 출력의 15%).
+
     Args:
         source: 매물을 가져온 소스.
         id: 소스 안에서의 매물 ID. 상세 명령에 그대로 넘긴다.
