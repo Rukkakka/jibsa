@@ -579,9 +579,9 @@ def trend_command(
                 raise RegionNotFoundError(region.name, hint="동·구 이름(예: '역삼동')으로 다시 주세요")
             code, division = found[0], normalize_address(found[1])
         if ri:
-            notes.append(f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다")
+            notes.append(note('범위', f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다"))
         elif at_spot:
-            notes.append(f"'{region.name}' 자리의 법정동({division}) 추이입니다")
+            notes.append(note('범위', f"'{region.name}' 자리의 법정동({division}) 추이입니다"))
         trend = get_district_trend(client, code, trade_type=trade, period=period, pyeong_range=pyeong_range)
         emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes)
 

@@ -575,19 +575,24 @@ def fetch_danji(client: ZigbangClient, complex_id: str, danji_id: int) -> Zigban
         raise
 
 
-def excluded_notes(limit: int, inspected: int, returned: int, *, order: str = '가까운') -> list[str]:
+def excluded_notes(limit: int, inspected: int, returned: int, *, order: str = '가까운', has_more: bool = True) -> list[str]:
     """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다.
 
     Args:
         order: 요약을 받은 매물을 고른 기준. 거리순이 아닌 건물 매물 목록은 '직방 목록 순서로 앞의'.
+        has_more: 결과의 `has_more`. 더 받을 매물이 없으면 다시 채우지 않는다는 말 대신 더 받을 매물이 없다고 한다 (당근
+            `listing_budget_notes` 와 같다).
     """
     if returned >= limit or inspected <= returned:
         return []
-    return [note('제외', f'{order} 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)')]
+    return [note(
+        '제외',
+        f'{order} 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 '
+        + ('(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'),
+    )]
 
 
 def apt_pagination_notes(
-    total: int,
     returned: int,
     limit: int,
     inspected: int,
@@ -599,8 +604,10 @@ def apt_pagination_notes(
 ) -> list[str]:
     """실제로 받은 원본 매물 수를 조회 예산으로 세고 추가 조회 없이 안내한다.
 
-    `has_more` 는 조회하지 않고 남긴 곳이 있다는 뜻이다 (반경 검색이 단지 상한에서 멈춤). 그러면 '이 N건이 전부' 라고 하지
+    `has_more` 는 같은 조건으로 더 받을 매물이 남았다는 뜻이다 (결과의 `has_more`). 그러면 '이 N건이 전부' 라고 하지
     않는다 (2026-10-17 리뷰: 반경 안 단지 204곳 중 30곳만 훑은 결과에 '전부입니다' 와 '30곳만 조회' 가 함께 나갔다).
+    더 있다는 안내도 이 값으로만 정한다. 서버 수(total)는 받은 뒤 뺀 매물까지 세어 돌려준 수와 견주면, 다 받고 일부를
+    뺐을 뿐인데도 '더 있다' 고 했다 (2026-10-23 리뷰: 단지 매물 3건 중 1건을 뺀 --limit 3 에 has_more false 와 '[일부]').
     `suggest_limit` 이 False 면 --limit 을 늘리라는 안내를 뺀다. 늘려도 못 찾는 경우(반경 면적 검색의 단지 상한)에 쓴다.
     당근 `listing_budget_notes`·네이버의 같은 역할 함수와 문구는 비슷하지만 공통 헬퍼로 합치지 않는다. 제외 수를 세는
     방식(직방 받은 수 − 반환 수, 네이버 min(받은 수, limit) − 반환 수, 당근 eligible)과 더 받을 매물 판단(당근 has_more,
@@ -610,13 +617,17 @@ def apt_pagination_notes(
     notes: list[str] = []
     if returned < limit:
         if inspected > returned:
-            notes.append(note('제외', f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 (뺀 만큼 다시 채우지 않음)'))
+            notes.append(note(
+                '제외',
+                f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다 '
+                + ('(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'),
+            ))
         elif not has_more:
             notes.append(f"{'남은' if resumed else '조건에 맞는'} 매물은 이 {returned}건이 전부입니다")
     if resumable:
         notes.append(note('일부', '매물이 더 있습니다. 이어 보려면 결과의 next 를 --next 로 주세요'))
-    elif limit >= MAX_LIST_LIMIT and (inspected >= limit or total > returned or has_more):
+    elif limit >= MAX_LIST_LIMIT and has_more:
         notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))
-    elif suggest_limit and inspected >= limit and (total > returned or has_more):
+    elif suggest_limit and inspected >= limit and has_more:
         notes.append(note('일부', '매물이 더 있습니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요'))
     return notes

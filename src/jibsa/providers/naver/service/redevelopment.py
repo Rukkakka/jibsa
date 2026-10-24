@@ -11,6 +11,7 @@ from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     Listing,
     normalize_address,
+    note,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -261,16 +262,18 @@ def list_redevelopment_areas(
     result = list(areas.values())[:limit]
     notes: list[str] = []
     if scan.truncated:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 {scan.received}곳까지만 훑었습니다. 구역이 더 있을 수 있으니 '
             + ('조건을 좁혀' if legal_division_code is not None else '반경을 줄이거나 조건을 좁혀')
-            + ' 다시 검색하세요'
-        )
+            + ' 다시 검색하세요',
+        ))
     if no_trade:
-        notes.append(
+        notes.append(note(
+            '제외',
             f"고른 거래 유형({', '.join(trade_types or [])}) 매물이 확인되지 않은 구역 {len(no_trade)}곳을 뺐습니다. "
-            '네이버가 구역 목록을 거래 유형으로 거르지 않아 받은 매물 수로 걸렀습니다'
-        )
+            '네이버가 구역 목록을 거래 유형으로 거르지 않아 받은 매물 수로 걸렀습니다',
+        ))
     # 구역은 거래 유형 코드가 없어 --trade 가 없으면 중복(과 반경 밖)만 뺀다
     if legal_division_code is not None:
         reason = '고른 거래 유형 매물이 없는' if trade_types else '중복된'
@@ -329,10 +332,11 @@ def list_redevelopment_articles(
     scan_pages(scan, fetch, listing_keeper(listings, None), page_size=REDEVELOPMENT_PAGE_SIZE)
     notes: list[str] = []
     if scan.truncated:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 재개발 구역 매물 목록을 {MAX_REDEVELOPMENT_ARTICLE_PAGE_REQUESTS}번까지만 받았습니다. '
-            '조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요'
-        )
+            '조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요',
+        ))
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
     notes += pagination_notes(scan.total, len(result), limit, scan.received, truncated=scan.truncated)

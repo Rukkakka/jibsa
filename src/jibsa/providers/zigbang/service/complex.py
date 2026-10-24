@@ -429,9 +429,9 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
 
 
 def complex_limit_notes(total: int, returned: int, limit: int, inspected: int) -> list[str]:
-    # 요약을 받은 핀 수(`inspected`)로 limit 에 닿았는지 본다. 받은 뒤 거래 불가로 뺀 만큼 다시 채우지 않아, `returned` 로
-    # 보면 1건만 빠져도 안내가 사라진다 (core.listing.limit_notes 의 inspected 와 같은 이유)
-    if inspected < limit or total <= returned:
+    # 요약을 받은 핀 수(`inspected`)로 limit 에 닿았는지와 남은 핀이 있는지 본다. 받은 뒤 거래 불가로 뺀 만큼 다시 채우지 않아,
+    # `returned` 로 보면 1건만 빠져도 안내가 사라지거나(limit) 핀을 다 받았는데 '더 있다' 고 한다(total)
+    if inspected < limit or total <= inspected:
         return []
     return [
         f'조건에 맞는 매물이 {total}건이라 직방 목록 순서로 앞의 {returned}건만 보여 줍니다. '
@@ -537,7 +537,7 @@ def list_complex_listings(
         returned=len(listings),
         has_more=offset < total,
         listings=listings,
-        notes=apt_pagination_notes(total, len(listings), limit, inspected),
+        notes=apt_pagination_notes(len(listings), limit, inspected, has_more=offset < total),
     )
 
 
@@ -605,7 +605,7 @@ def _list_officetel_building_listings(
         has_more=len(scanned) < total,
         listings=listings,
         notes=(
-            excluded_notes(limit, len(scanned), len(listings), order='직방 목록 순서로 앞의')
+            excluded_notes(limit, len(scanned), len(listings), order='직방 목록 순서로 앞의', has_more=len(scanned) < total)
             + complex_limit_notes(total, len(listings), limit, len(scanned))
         ),
     )

@@ -13,6 +13,7 @@ from pydantic import (
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     normalize_date,
+    note,
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -315,10 +316,11 @@ def _get_real_prices_in_period(
             trade_type=trade_type, size=VILLA_PERIOD_PAGE_SIZE, max_pages=MAX_VILLA_PERIOD_PAGES, since=since,
         )
         if truncated:
-            notes.append(
+            notes.append(note(
+                '일부',
                 f'빌라 단지 실거래를 {MAX_VILLA_PERIOD_PAGES * VILLA_PERIOD_PAGE_SIZE}건까지만 받았습니다. '
-                '기간 안 거래가 더 있을 수 있으니 --period 를 줄여 보세요'
-            )
+                '기간 안 거래가 더 있을 수 있으니 --period 를 줄여 보세요',
+            ))
     return NaverRealPriceResult(
         complex_number=complex_number,
         pyeong_number=pyeong_number,

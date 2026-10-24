@@ -310,6 +310,7 @@ def limit_notes(
     inspected: int | None = None,
     offset: int = 0,
     resumable: bool = False,
+    has_more: bool | None = None,
 ) -> list[str]:
     """조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려줄 때의 안내.
 
@@ -331,8 +332,11 @@ def limit_notes(
             사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
         offset: 이어 받은 검색(`--next`)에서 앞서 받은 매물 수. 몇 번째부터인지 알린다.
         resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
+        has_more: 결과의 `has_more`. False 면 안내하지 않는다. `total` 은 거래 불가로 빼기 전 수라 `returned` 와 견주면, 범위 안
+            매물을 다 받고 1건만 빠져도 '더 보려면 --limit 을 늘리라' 고 했다 (직방 동 경계 안 15건을 --limit 15 로 다 받고 1건이
+            빠진 경우, 2026-10-23 리뷰).
     """
-    if (returned if inspected is None else inspected) < limit:
+    if (returned if inspected is None else inspected) < limit or has_more is False:
         return []
     if total is None or total <= offset + returned:
         return []

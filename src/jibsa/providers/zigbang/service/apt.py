@@ -401,7 +401,7 @@ def search_apt_listings(
     skipped = [part.name for part, was_asked in zip(regions, asked) if not was_asked]
     has_more = not all(done)
     notes = apt_pagination_notes(
-        total, len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None,
+        len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None,
     )
     if filter_area:
         # 받은 원본(limit 건) 안에서만 거르므로 맞는 매물이 더 있어도 적게 나온다 (2026-10-09 실측: 대치동
@@ -412,7 +412,8 @@ def search_apt_listings(
                 '. 조건에 맞는 매물이 더 있을 수 있으니, 빠짐없이 찾으려면 직방이 서버에서 거르는 공급면적 조건'
                 '(--supply-area-min/--supply-area-max)으로 다시 찾으세요. 아파트 공급면적은 대개 전용면적의 1.1~1.5배'
                 '(중간 1.3배 안팎)이니 넉넉히 잡고 결과의 area_m2 로 전용면적을 확인하세요'
-                if len(listings) < limit else ''
+                # 동 목록을 끝까지 받았으면 거른 뒤 남은 것이 전부다
+                if len(listings) < limit and has_more else ''
             )
         )
     if is_dong_code(region.legal_division_code):
@@ -610,12 +611,14 @@ def search_apt_listings_near(
                 break
 
     listings = listings[:limit]
-    # 반경 안 단지를 다 훑고 예산도 남았으면 빠진 매물이 없어 알리지 않는다. 단지 상한에 걸리면 --limit 을 늘려도
-    # 못 찾아, --limit 안내 대신 서버가 공급면적을 거르는 동·구 검색을 권한다
-    area_capped = area_filtered and len(listings) < limit and (scanned < len(danjis) or inspected >= limit)
-    notes = apt_pagination_notes(
-        total, len(listings), limit, inspected, has_more=len(danjis) > scanned, suggest_limit=not area_capped,
-    )
+    # 훑지 않은 단지가 남았거나, 예산을 다 써 훑은 단지의 매물을 다 받지 못했다. 받은 수(inspected)로 본다. 돌려준 수와 견주면
+    # 다 받고 면적·중복으로 뺐을 뿐인데도 더 있다고 했다
+    has_more = len(danjis) > scanned or total > inspected
+    # 남은 매물이 없으면 빠진 매물이 없어 알리지 않는다. 단지 상한에 걸리면 --limit 을 늘려도 못 찾아, --limit 안내 대신
+    # 서버가 공급면적을 거르는 동·구 검색을 권한다. has_more 와 따로 정하면 단지 7곳을 다 훑고 매물 4건을 다 받은
+    # --limit 4 에 '7곳 중 가까운 7곳만 훑었습니다' 가 나갔다 (2026-10-24 실측: 선릉역·마포역 0.3km --area-min 100)
+    area_capped = area_filtered and len(listings) < limit and has_more
+    notes = apt_pagination_notes(len(listings), limit, inspected, has_more=has_more, suggest_limit=not area_capped)
     unscanned = len(danjis) - scanned
     if unscanned > 0 and scanned >= max_complexes and inspected < limit:
         notes.append(note(
@@ -634,8 +637,10 @@ def search_apt_listings_near(
     if area_capped:
         notes.append(note(
             '일부',
-            f'반경 검색은 면적을 서버에서 거르지 못해 반경 안 단지 {len(danjis)}곳 중 가까운 {scanned}곳만 훑었습니다. '
-            '특정 면적의 아파트를 빠짐없이 찾으려면 --radius 없이 동·구 이름과 --supply-area-min/--supply-area-max 로 '
+            '반경 검색은 면적을 서버에서 거르지 못해 '
+            + (f'반경 안 단지 {len(danjis)}곳 중 가까운 {scanned}곳만 훑었습니다. ' if scanned < len(danjis)
+               else f'반경 안 단지 {len(danjis)}곳의 매물을 --limit 만큼만 받아 걸렀습니다. ')
+            + '특정 면적의 아파트를 빠짐없이 찾으려면 --radius 없이 동·구 이름과 --supply-area-min/--supply-area-max 로 '
             '찾으세요 (동·구 검색은 공급면적을 서버에서 거릅니다. 공급면적은 대개 전용면적의 1.1~1.5배)',
         ))
     return ZigbangAptNearSearchResult(
@@ -645,8 +650,7 @@ def search_apt_listings_near(
         complexes_scanned=scanned,
         total=total,
         returned=len(listings),
-        # 훑지 않은 단지가 남았거나, 예산을 다 써 훑은 단지의 매물을 다 받지 못했다
-        has_more=len(danjis) > scanned or (inspected >= limit and total > len(listings)),
+        has_more=has_more,
         listings=listings,
         notes=notes,
     )

@@ -11,6 +11,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     move_in_label,
     normalize_date,
+    note,
     parking_label,
     won_to_manwon,
 )
@@ -460,10 +461,11 @@ def list_complex_articles(
 
     notes: list[str] = []
     if truncated:
-        notes.append(
+        notes.append(note(
+            '일부',
             f'네이버 차단을 피하려고 단지 매물 목록을 {MAX_COMPLEX_ARTICLE_PAGE_REQUESTS}번까지만 받았습니다. '
-            '조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요'
-        )
+            '조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요',
+        ))
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
     notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated)
