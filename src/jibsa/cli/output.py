@@ -45,6 +45,8 @@ from typing import (
 
 # 출력 좌표의 소수 자리. 일곱째 자리가 약 1cm 라 원본 정밀도를 잃지 않는다
 COORDINATE_DECIMALS: int = 7
+# 1억 (만원). 이만큼 이상 금액이 있으면 notes 에 억 환산 예시를 붙인다 (`manwon_note`)
+MANWON_PER_EOK: int = 10000
 # `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시
 ALWAYS_FIELDS: frozenset[str] = frozenset({'id', 'in_regions'})
 ChoiceT = TypeVar('ChoiceT', bound=str)
@@ -142,6 +144,41 @@ def missing_fields_note(data: Any, fields: list[str]) -> str | None:
     )
 
 
+def manwon_text(value: int) -> str:
+    """만원 정수를 읽는 금액으로 쓴다 (`440000` → '44억 원', `119700` → '11억 9,700만 원', `1000` → '1,000만 원')."""
+    eok, man = divmod(value, MANWON_PER_EOK)
+    parts = ([f'{eok:,}억'] if eok else []) + ([f'{man:,}만'] if man else [])
+    return ' '.join(parts or ['0']) + ' 원'
+
+
+def _manwon_values(value: Any, key: str = '') -> Generator[int, None, None]:
+    """출력의 만원 금액 (키가 `_manwon` 으로 끝나는 값과 그 범위 목록). 소수점 아래가 있는 값은 예시로 쓰지 않아 뺀다."""
+    if isinstance(value, Mapping):
+        for name, item in value.items():
+            yield from _manwon_values(item, name)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _manwon_values(item, key)
+    elif key.endswith('_manwon') and isinstance(value, int | float) and not isinstance(value, bool) and float(value).is_integer():
+        yield int(value)
+
+
+def manwon_note(payload: Any) -> str | None:
+    """1억 이상 금액이 있으면 그 결과의 값으로 만든 억 환산 예시. 없으면 None.
+
+    가이드의 환산 규칙만으로는 큰 금액의 자리를 틀린다 (2026-10-24 에이전트 검증: sonnet 이 당근 실거래 440000 을
+    '4억 4,000만 원' 으로 28번 중 8번 옮겼다. 가이드 예시와 같은 숫자 119700 도 '1억 1,970만' 으로 적었고, 규칙 문구를
+    바꿔도 줄지 않았다). 숫자 바로 옆 notes 에 정답을 둔다 (같은 때 나란히 돌려 이 안내가 있으면 8번 중 0번, 끄면 8번 중
+    2번). 가장 큰 값과, 끝자리가 있는지가 다른 값(있으면) 하나를 든다.
+    """
+    values = sorted({value for value in _manwon_values(payload) if value >= MANWON_PER_EOK}, reverse=True)
+    if not values:
+        return None
+    round_eok = values[0] % MANWON_PER_EOK == 0
+    examples = [values[0], *[value for value in values[1:] if (value % MANWON_PER_EOK == 0) != round_eok][:1]]
+    return note('참고', '금액은 만원이다: ' + ', '.join(f'{value} = {manwon_text(value)}' for value in examples))
+
+
 def _select_fields(value: Any, fields: frozenset[str]) -> Any:
     """`listings` 목록(통근 검색은 역마다의 `listings`)의 매물에서 고른 필드만 남긴다. 결과 머리(total·notes 등)는 그대로."""
     if isinstance(value, dict):
@@ -180,16 +217,19 @@ def emit(
         payload = [item.model_dump(mode='json') for item in data]
     else:
         payload = data
-    if fields and (missing := missing_fields_note(data if fields_source is None else fields_source, fields)):
-        notes = [*(notes or []), missing]
+    if fields:
+        payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
+        if missing := missing_fields_note(data if fields_source is None else fields_source, fields):
+            notes = [*(notes or []), missing]
+    # 고른 필드만 남긴 뒤에 만든다 (예시 값이 출력에 있어야 한다)
+    if money := manwon_note(payload):
+        notes = [*(notes or []), money]
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if next_token is not None and isinstance(payload, dict):
         payload = insert_after(payload, 'has_more', 'next', next_token)
     if notes:
         payload = {'notes': tagged_notes(notes), **payload}
-    if fields:
-        payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
     typer.echo(_dumps(_tidy_numbers(payload), pretty))
 
 

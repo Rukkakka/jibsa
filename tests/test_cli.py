@@ -167,6 +167,20 @@ def test_notes_come_first_and_vanish_when_empty(capsys: pytest.CaptureFixture[st
     assert list(json.loads(capsys.readouterr().out)) == ['returned']
 
 
+@pytest.mark.parametrize('value,text', [
+    (440000, '44억 원'),
+    (119700, '11억 9,700만 원'),
+    (10000, '1억 원'),
+    (1000, '1,000만 원'),
+    (1234567, '123억 4,567만 원'),
+])
+def test_manwon_text(value: int, text: str) -> None:
+    # notes 의 억 환산 예시가 틀리면 에이전트가 그 틀린 값을 그대로 옮긴다
+    from jibsa.cli.output import manwon_text
+
+    assert manwon_text(value) == text
+
+
 def fake_upstream(monkeypatch: pytest.MonkeyPatch, response: httpx.Response) -> None:
     """모든 실제 HTTP 전송을 `response` 로 바꾼다."""
     def handle_request(self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
