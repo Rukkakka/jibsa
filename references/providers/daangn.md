@@ -67,7 +67,7 @@
 ### 단지·실거래
 
 - 단지 정보(`get_complex`)는 단지 페이지(`/complexes/{id}`)의 스토어에서, 단지 이름 검색(`search_complexes`)은 GraphQL `searchComplexes` 로, 단지 매물 목록(`list_complex_listings`)은 `complexByOriginalId.complex.articles` 로, 단지 실거래가(`get_real_prices`)는 GraphQL `complexByOriginalId`, 매물 건물 실거래가(`get_listing_real_prices`)는 `articleByOriginalArticleId` 로 받는다. 둘 다 `_collect_transactions` 가 페이지를 넘긴다. 동·구의 최근 실거래·신고가(`get_region_real_prices`)는 `realsaleFeed`·`realsaleNewHighFeed` 로 받고, 동·구는 지역 검색 결과에서 고른다 (`resolve_realsale_region`). 세 실거래 모두 `_collect_pages` 하나가 페이지를 넘기고(한 페이지 받기와 거래 유형 고르기만 바꿔 끼운다), 전월세의 갱신 여부는 `_renewal` 이 정한다. 지역 실거래는 계약 종류 없이 오기도 해서 그때는 `null` 이다.
-- `trendingComplexes` 는 동에 따라 빈 목록이다 (대치동 3곳·역삼동 4곳, 자곡동·세종 새롬동·도담동 0곳, 기준은 모름). 빈 결과는 `notes` 로 알린다.
+- `trendingComplexes` 는 같은 동도 때에 따라 개수가 다르고 빈 목록도 온다. 이른 아침에 잦다 (2026-10-27 실측: 역삼동이 아침 6~8시 감시 7번 중 5번 0곳, 낮·저녁 10~22곳. 10-11 에 0곳이던 세종 새롬동·도담동도 저녁엔 6·7곳. 기준은 모름). 빈 결과는 `notes` 로 알리고, 매일 감시는 빈 목록도 정상으로 본다 (`Step.empty_ok`).
 
 ### 동네 정보 (후기·개발 호재·교육 시설·좋은 동네)
 

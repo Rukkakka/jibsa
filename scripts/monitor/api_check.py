@@ -5,7 +5,7 @@
 
 명령마다 셋으로 나눈다 (references/development.md '매일 API 감시').
 
-- 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음
+- 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`)은 비어도 정상
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
   깨졌다는 안내(당근 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
   비어 있으면 사이트가 바뀐 것으로 본다
@@ -62,8 +62,8 @@ class Step:
         args: 인자. `{name}` 은 앞 명령의 `Capture` 값으로 채운다.
         expect: 값이 있어야 정상인 칸. 점으로 이어 안쪽 칸을 가리킨다 (`listing_count.weekly`).
         captures: 이 결과에서 뒤 명령에 넘길 값.
-        may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다
-            (당근 인기 단지).
+        may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다.
+        empty_ok: 빈 목록도 사이트의 평소 답인 칸이면 True. 비어 있어도 정상이다 (당근 인기 단지는 이른 아침에 자주 빈다).
     """
 
     label: str
@@ -72,6 +72,7 @@ class Step:
     expect: str
     captures: tuple[Capture, ...] = ()
     may_be_empty: bool = False
+    empty_ok: bool = False
 
 
 # 명령 하나가 요청 제한 대기(최대 60초)를 몇 번 거쳐도 끝날 시간
@@ -238,7 +239,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             'neighborhoods',
         ),
         # 인기 단지는 같은 동에도 빈 목록을 줄 때가 있다 (역삼동 2026-10-11 4곳, 2026-10-20 아침 0곳, 같은 날 낮 12곳)
-        Step('인기 단지 역삼동', ('daangn', 'trending-complexes'), ('역삼동',), 'complexes', may_be_empty=True),
+        # 같은 동도 때에 따라 빈 목록이고 감시가 도는 아침에 잦다 (2026-10-27 실측: 아침 7번 중 5번 0곳, 낮·저녁 10~22곳).
+        # 확인 못 함으로 두면 사흘 연속 막힘으로 잘못 알린다 (#142). 쿼리 거절·응답 형식 변경은 그대로 고장이다
+        Step('인기 단지 역삼동', ('daangn', 'trending-complexes'), ('역삼동',), 'complexes', empty_ok=True),
         Step('인기 매물 역삼동', ('daangn', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
     ),
 }
@@ -362,6 +365,9 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
             return BROKEN, f'대체 경로로 돌았거나 일부를 받지 못함: {degraded[0][:200]}', data
         value = _value(data, step.expect)
         if not _present(value):
+            # 칸이 아예 없거나 목록이 아니면 응답 형식이 바뀐 것이라 empty_ok 여도 아래에서 고장으로 본다
+            if step.empty_ok and value == []:
+                return OK, '0건 (빈 목록도 정상인 칸)', data
             # 하루 비었다고 고장으로 보지 않는다. 계속 비면 사흘 연속 확인 못 함(api-blocked)으로 알린다
             if step.may_be_empty:
                 return UNKNOWN, f'{step.expect} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data

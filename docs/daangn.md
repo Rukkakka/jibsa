@@ -686,7 +686,7 @@ jibsa daangn trending-complexes 역삼동 --city 강남구
 
 **주의사항**
 
-당근이 동 주변 단지를 9곳쯤만 주어 `--limit` 이 없다. 사진은 주지 않는다. 인기 단지를 주지 않는 동(자곡동, 세종의 동 등)은 `returned: 0` 이고 `notes` 로 `search complexes` 를 쓰라고 알린다. 단지가 없다는 뜻은 아니다. 지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동이 여러 곳이면 고르지 않고 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다.
+당근이 한 번에 주는 단지(0~20여 곳)를 그대로 보여 `--limit` 이 없다. 사진은 주지 않는다. 같은 동도 때에 따라 개수가 다르고, 이른 아침에는 빈 목록이 잦다. 비면 `returned: 0` 이고 `notes` 로 낮에 다시 부르거나 `search complexes` 를 쓰라고 알린다. 단지가 없다는 뜻은 아니다. 지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동이 여러 곳이면 고르지 않고 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다.
 
 ## 19. `popular-listings` — 조회수 많은 매물
 

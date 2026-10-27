@@ -844,7 +844,7 @@ class DaangnTrendingComplexesResult(BaseModel):
 
 
 def list_trending_complexes(client: DaangnClient, region: DaangnRegion) -> DaangnTrendingComplexesResult:
-    """동 주변에서 요즘 많이 보는 단지 (`trendingComplexes`, 요청 1회). 서버가 9곳쯤만 준다.
+    """동 주변에서 요즘 많이 보는 단지 (`trendingComplexes`, 요청 1회). 개수는 때마다 다르다 (0~20여 곳).
 
     Raises:
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때.
@@ -875,10 +875,11 @@ def list_trending_complexes(client: DaangnClient, region: DaangnRegion) -> Daang
             representative_area_m2=info.exclusive_area if info else None,
             recent_sale_manwon=sale,
         ))
-    # 인기 단지를 주지 않는 동이 있다 (2026-10-11 실측: 대치동 3곳·역삼동 4곳, 자곡동·세종 새롬동·도담동은 빈 목록).
-    # 기준은 모르지만 근처에 단지가 없다는 뜻으로 읽히지 않게 알린다
+    # 같은 동도 때에 따라 빈 목록이다. 이른 아침에 잦다 (2026-10-27 실측: 역삼동이 아침 6~8시 7번 중 5번 0곳, 낮·저녁
+    # 10~22곳. 10-11 에 0곳이던 세종 새롬동·도담동도 저녁엔 6·7곳). 기준은 모르지만 근처에 단지가 없다는 뜻으로 읽히지 않게 알린다
     notes = [] if complexes else [
         f'당근이 {region.name3} 주변 인기 단지를 주지 않았습니다. 단지가 없다는 뜻은 아닙니다. '
+        '이 목록은 때에 따라 달라 이른 아침엔 자주 비고, 낮에 다시 부르면 나올 수 있습니다. '
         f'지역 단지 목록은 jibsa daangn search complexes {region.name3} 에서 봅니다'
     ]
     return DaangnTrendingComplexesResult(region=region, returned=len(complexes), complexes=complexes, notes=notes)
