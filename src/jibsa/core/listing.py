@@ -92,7 +92,7 @@ SIDO_OFFICIAL_NAMES: dict[str, str] = {
     '제주도': '제주특별자치도',
 }
 
-Source = Literal['naver', 'zigbang', 'daangn']
+Source = Literal['naver', 'zigbang', 'daangn', 'dabang']
 TradeType = Literal['매매', '전세', '월세', '단기임대']
 
 
@@ -276,6 +276,11 @@ def in_range(value: float | None, minimum: float | None, maximum: float | None) 
 # 하나를 골랐다 / 거래: 거래 유형을 짐작해 좁혔다 / 실패: 덤 조회가 실패했거나 대체 경로로 찾았다 / 참고: 그 밖에 읽을 때 알 것
 NoteKind = Literal['일부', '범위', '제외', '모호', '거래', '실패', '참고']
 NOTE_KINDS: tuple[str, ...] = get_args(NoteKind)
+# 결과는 냈지만 소스가 바뀌어 jibsa 를 고쳐야 한다는 `notes` 끝말. 매일 API 감시(scripts/monitor/api_check.py)가 이 말로
+# 고장을 찾으니 손으로 쓰지 않고 이 상수를 쓴다. 차단 페이지일 수도 있는 형식 오류·GraphQL 에러(당근)나 읽지 못한 글자(다방)처럼
+# 단정하지 못하면 MAYBE 를 쓰고, 감시는 주된 조회의 PARSE_ERROR·상태 없는 UPSTREAM_ERROR 처럼 둘 다 고장으로 센다
+UPDATE_NEEDED: str = 'jibsa 업데이트가 필요합니다'
+UPDATE_MAYBE_NEEDED: str = 'jibsa 업데이트가 필요할 수 있습니다'
 
 
 def note(kind: NoteKind, text: str) -> str:

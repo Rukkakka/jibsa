@@ -326,7 +326,7 @@ def test_every_source_command_is_in_api_monitor(monkeypatch: pytest.MonkeyPatch)
             walk(sub, (*path, name))
 
     walk(typer.main.get_command(app), ())
-    source_commands = {leaf for leaf in leaves if leaf[0] in ('zigbang', 'naver', 'daangn')}
+    source_commands = {leaf for leaf in leaves if leaf[0] in ('zigbang', 'naver', 'daangn', 'dabang')}
     monitored = {step.command for steps in monitor.GROUPS.values() for step in steps}
     assert source_commands - monitored == set()
     # 그룹 옵션으로 부르는 경로(search listings --complex)도 있어 그룹까지는 받는다. 그 밖은 없는 명령(오타)이다

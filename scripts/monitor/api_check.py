@@ -1,16 +1,17 @@
-"""세 소스의 모든 CLI 명령을 실제로 불러 비공식 API 가 깨졌는지 본다 (매일 새벽 `.github/workflows/api-monitor.yml`).
+"""소스마다 모든 CLI 명령을 실제로 불러 비공식 API 가 깨졌는지 본다 (매일 새벽 `.github/workflows/api-monitor.yml`).
 
-매일 실행은 `DAILY_GROUPS`(직방·당근)만 돈다. 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고, 필요할 때 로컬에서
+매일 실행은 `DAILY_GROUPS`(직방·당근·다방)만 돈다. 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고, 필요할 때 로컬에서
 `run naver` 로 돌린다.
 
 명령마다 셋으로 나눈다 (references/development.md '매일 API 감시').
 
 - 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`)은 비어도 정상
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
-  깨졌다는 안내(당근 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
+  깨졌다는 안내(`UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
   비어 있으면 사이트가 바뀐 것으로 본다
 - 확인 못 함: 요청 제한·네트워크 오류·서버 5xx·방금 내려간 매물·시간 초과, 앞 명령이 넘길 번호를 주지 않아 건너뛴 명령,
-  사이트가 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`)이 빔. 사이트가 바뀐 것인지 알 수 없다
+  사이트가 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`)이 빔, 덤 조회가 잠깐 실패해(업데이트 문구 없는 `[실패]`) 정한 칸이
+  빔. 사이트가 바뀐 것인지 알 수 없다
 
     python scripts/monitor/api_check.py run zigbang --out result-zigbang.json
     python scripts/monitor/api_check.py report result-*.json [--issues] [--dry-run]
@@ -42,6 +43,7 @@ class Capture:
         field: 항목에서 꺼낼 칸 (예: `id`). 숫자면 문자열로 바꾼다.
         prefix: 이 글자로 시작하는 값만 (직방 단지 ID 의 `apt-`·`officetel-`).
         largest: 주면 이 칸이 가장 큰 항목에서 꺼낸다 (거래가 있을 평형을 고르려고 세대수가 가장 많은 평형).
+        where: 주면 (칸, 값) 이 같은 항목만 본다 (단지 학교 중 중학교만).
     """
 
     name: str
@@ -49,6 +51,7 @@ class Capture:
     field: str
     prefix: str = ''
     largest: str = ''
+    where: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -62,7 +65,8 @@ class Step:
         args: 인자. `{name}` 은 앞 명령의 `Capture` 값으로 채운다.
         expect: 값이 있어야 정상인 칸. 점으로 이어 안쪽 칸을 가리킨다 (`listing_count.weekly`).
         captures: 이 결과에서 뒤 명령에 넘길 값.
-        may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다.
+        may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다
+            (다방 청약 일정).
         empty_ok: 빈 목록도 사이트의 평소 답인 칸이면 True. 비어 있어도 정상이다 (당근 인기 단지는 이른 아침에 자주 빈다).
     """
 
@@ -89,6 +93,7 @@ ZIGBANG_LISTINGS: tuple[str, ...] = ('zigbang', 'search', 'listings')
 ZIGBANG_LISTING: tuple[str, ...] = ('zigbang', 'listing')
 NAVER_LISTINGS: tuple[str, ...] = ('naver', 'search', 'listings')
 DAANGN_LISTINGS: tuple[str, ...] = ('daangn', 'search', 'listings')
+DABANG_LISTINGS: tuple[str, ...] = ('dabang', 'search', 'listings')
 
 # 러너 하나가 소스 하나를 돈다. 러너마다 IP 와 요청 제한 상태가 따로라 한 소스가 막혀도 다른 소스 검사는 그대로 된다.
 # 매물 검색은 찾는 방식(동 이름 경계·역 반경·좌표 반경·단지)마다 쓰는 API 가 달라 방식별로 부른다. --limit 은 작게 준다
@@ -244,10 +249,92 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('인기 단지 역삼동', ('daangn', 'trending-complexes'), ('역삼동',), 'complexes', empty_ok=True),
         Step('인기 매물 역삼동', ('daangn', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
     ),
+    'dabang': (
+        Step(
+            '장소 찾기 은마', ('dabang', 'search', 'locations'), ('은마',), 'complexes',
+            (Capture('complex', 'complexes', 'complex_id'),),
+        ),
+        # 찾는 방식마다 다른 목록 주소다: 동(region)·역(subway)·대학(univ)·좌표 반경(bbox)
+        Step(
+            '원룸 동 역삼동', DABANG_LISTINGS + ('room',), ('역삼동', '--limit', '2'), 'listings',
+            (Capture('room', 'listings', 'id'), Capture('room_next', '', 'next')),
+        ),
+        # 이어 받기는 쪽 번호와 쪽 안 위치(24건씩)로 다시 묻는다
+        Step('원룸 동 이어 받기 역삼동', DABANG_LISTINGS + ('room',), ('역삼동', '--limit', '2', '--next', '{room_next}'), 'listings'),
+        Step('원룸 상세', ('dabang', 'listing'), ('{room}',), 'id'),
+        Step('원룸 역 강남역', DABANG_LISTINGS + ('room',), ('강남역', '--limit', '2'), 'listings'),
+        Step('원룸 대학 홍익대학교', DABANG_LISTINGS + ('room',), ('홍익대학교', '--limit', '2'), 'listings'),
+        Step(
+            '원룸 좌표 반경 강남역', DABANG_LISTINGS + ('room',),
+            ('--lat', '37.4979', '--lng', '127.0276', '--radius', '0.5', '--limit', '2'), 'listings',
+        ),
+        # '○가' 로 나뉜 동은 동마다 목록을 받아 합친다
+        Step(
+            '빌라 여러 동 성수동', DABANG_LISTINGS + ('villa',), ('성수동', '--limit', '2'), 'listings',
+            (Capture('villa', 'listings', 'id'),),
+        ),
+        Step('오피스텔 역 강남역', DABANG_LISTINGS + ('officetel',), ('강남역', '--limit', '2'), 'listings'),
+        # 아파트는 동 검색이 없어 동 경계 파일(CDN)로 사각형을 만들어 받는다
+        # --limit 은 사각형에서 받은 수라 다른 동을 빼면 줄어든다 (2026-10-25 실측: 대치동은 24건 중 12건). 3건이면 모두 다른 동인
+        # 날(약 1/8)에 빈 목록이 되어 고장으로 잘못 알린다
+        Step('아파트 동 경계 대치동', DABANG_LISTINGS + ('apt',), ('대치동', '--limit', '10'), 'listings'),
+        # 다방 단지 매물은 적어(은마 3건, 2026-10-25) 단지 목록에서 매물이 가장 많은 단지로 단지 매물을 본다. --limit 은 받은
+        # 단지 수라 경계 사각형의 다른 동을 빼면 남는 곳이 적다 (5곳 중 대치동 2곳). 한 쪽이 24곳이라 10 이어도 요청은 1회다
+        Step(
+            '단지 목록 대치동', ('dabang', 'search', 'complexes'), ('대치동', '--limit', '10'), 'complexes',
+            (Capture('listed_complex', 'complexes', 'complex_id', largest='listing_count'),),
+        ),
+        # 최근 실거래 요약은 덤 조회라 실패해도 단지 정보가 나온다. 은마는 늘 거래가 있어 실패 안내 없이 비면 요약이 깨진 것이다
+        # 단지 목록도 찾는 방식마다 다른 주소다: 아파트 동은 위의 경계 사각형(bbox), 오피스텔 동은 region, 역은 subway
+        Step('오피스텔 단지 목록 역삼동', ('dabang', 'search', 'complexes'), ('역삼동', '-t', '오피스텔', '--limit', '2'), 'complexes'),
+        Step('단지 목록 역 강남역', ('dabang', 'search', 'complexes'), ('강남역', '--limit', '2'), 'complexes'),
+        Step(
+            '단지', ('dabang', 'complex'), ('{complex}',), 'recent_sale',
+            # 진학 인원이 모두 비어도 초등학교 코드를 고르지 않게 중학교만 본다 (단계가 틀리면 500 이라 확인 못 함으로 묻힌다)
+            (Capture('middle_school', 'schools', 'school_code', largest='special_high_entrants', where=('level', '중학교')),),
+        ),
+        # 학교 상세는 옛 방식(/api/3/education/{단계}/{코드}). 단계가 코드와 다르면 500 이라 단지의 중학교로 본다
+        Step('학교 상세 중학교', ('dabang', 'school'), ('{middle_school}', '--level', '중학교'), 'advancement'),
+        Step('단지 매물', DABANG_LISTINGS, ('--complex', '{listed_complex}', '--limit', '2'), 'listings'),
+        Step('단지 실거래가', ('dabang', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
+        # --listing 은 단지 없는 매물만 받는다. 원룸 목록에는 오피스텔이 섞여 빌라 목록의 매물을 쓴다
+        Step('매물 실거래가', ('dabang', 'real-price'), ('--listing', '{villa}', '--trade', '전월세', '--limit', '3'), 'transactions'),
+        Step('단지 시세 흐름', ('dabang', 'price-trend'), ('{complex}',), 'months'),
+        # 동네정보는 탭마다 다른 주소다 (요약 3종·수 4종). 기본은 모든 주제
+        Step('동네정보 역삼동', ('dabang', 'neighborhood'), ('역삼동',), 'safety'),
+        Step('인기 매물 역삼동', ('dabang', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
+        Step('매물 주변', ('dabang', 'nearby'), ('{room}',), 'stations'),
+        Step('단지 주변', ('dabang', 'nearby'), ('{complex}',), 'stations'),
+        # 역 둘레 평균 매물가는 원룸·투룸 지도 집계(markers)의 역 표시에 붙는다
+        Step('역 평균 매물가 강남역', ('dabang', 'station-prices'), ('강남역',), 'prices'),
+        # 분양은 시·군·구 경계 사각형에서 주소로 고른다. 동·역·좌표로 찾아도 같은 지도 범위 주소(sale-list/category/bbox)라
+        # 시 하나로 본다 (동 경계 파일은 아파트 동 경계에서 본다). 분양이 적은 구는 빈 날이 있어(2026-10-27 실측: 강남구 2곳,
+        # 송파구 0곳) 확인 못 함이 이어지면 막힘으로 잘못 알린다. 많은 곳(평택시 40곳)으로 본다. 경계 사각형에 이웃 시가 섞여
+        # (앞 5곳 중 2곳이 평택시 밖) 한 쪽(24곳)을 다 본다. 요청은 1회다
+        Step(
+            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '24'), 'sales',
+            (Capture('sale', 'sales', 'sale_id'),),
+        ),
+        Step('분양 상세', ('dabang', 'sale'), ('{sale}',), 'schedules'),
+        Step('청약 일정', ('dabang', 'sale-schedule'), ('--limit', '3'), 'schedules', may_be_empty=True),
+        Step('조회 순위 단지', ('dabang', 'trending-complexes'), ('--limit', '3'), 'rankings'),
+        Step('조회 순위 동', ('dabang', 'trending-complexes'), ('--unit', '동', '--limit', '3'), 'rankings'),
+        # 기본 기간 '이번주' 는 월요일 아침에 아직 집계가 없어 빈 목록이다 (2026-10-26 월 실측: 이번주 0곳, 지난주·이번달은 있음).
+        # 새벽 감시가 월요일마다 고장으로 잘못 알리지 않게 지난주로 본다
+        Step('거래 순위', ('dabang', 'trade-rankings'), ('--period', '지난주', '--limit', '3'), 'rankings'),
+        # 동 순위와 단지 순위는 다른 주소다
+        Step('구 안 동 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '평균가', '--limit', '3'), 'rankings'),
+        Step(
+            '구 안 단지 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '전세가율', '--unit', '단지', '--limit', '3'),
+            'rankings',
+        ),
+        # 학교·학원·인구·시설 순위는 동네정보 순위 주소(region-info/{주제}/ranking/{항목})다
+        Step('구 안 학원 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '학원수', '--limit', '3'), 'rankings'),
+    ),
 }
 
 # 매일 실행(워크플로 matrix)이 도는 소스. matrix 와 같게 둔다. 네이버는 GitHub 러너에서 응답을 받지 못해 로컬에서만 돌린다
-DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn')
+DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn', 'dabang')
 
 OK: str = 'ok'
 BROKEN: str = 'broken'
@@ -308,6 +395,7 @@ def _capture(data: dict[str, Any], capture: Capture) -> str | None:
     found = [
         item for item in items
         if isinstance(item, dict) and _present(item.get(capture.field)) and str(item[capture.field]).startswith(capture.prefix)
+        and (capture.where is None or item.get(capture.where[0]) == capture.where[1])
     ]
     if capture.largest:
         found.sort(key=lambda item: item[capture.largest] if isinstance(item.get(capture.largest), int | float) else -1, reverse=True)
@@ -345,7 +433,7 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
     # (단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했다(당근 partial_failure_note).
     # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
     # 만든다) 여기서 가져온다
-    from jibsa.providers.daangn.service.common import (
+    from jibsa.core.listing import (
         UPDATE_MAYBE_NEEDED,
         UPDATE_NEEDED,
     )
@@ -371,6 +459,11 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
             # 하루 비었다고 고장으로 보지 않는다. 계속 비면 사흘 연속 확인 못 함(api-blocked)으로 알린다
             if step.may_be_empty:
                 return UNKNOWN, f'{step.expect} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data
+            # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
+            # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약)
+            failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
+            if failed is not None:
+                return UNKNOWN, f'{step.expect} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data
             return BROKEN, f'{step.expect} 칸이 비어 있음', data
         return OK, f'{len(value)}건' if isinstance(value, list) else f'{step.expect} 있음', data
     error = _error(done.stderr)

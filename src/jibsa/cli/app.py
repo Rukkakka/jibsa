@@ -30,6 +30,7 @@ from typer.core import (
 
 from jibsa.cli import (
     daangn,
+    dabang,
     naver,
     zigbang,
 )
@@ -43,6 +44,7 @@ from jibsa.cli.output import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.ratelimit import state_dir
 from jibsa.providers.daangn.api.client import DaangnClient
+from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.zigbang.api.client import ZigbangClient
 
@@ -60,11 +62,12 @@ GUIDE_TOPICS: dict[str, str] = {
     'zigbang': 'zigbang.md',
     'naver': 'naver.md',
     'daangn': 'daangn.md',
+    'dabang': 'dabang.md',
 }
 HEADING_PATTERN: re.Pattern[str] = re.compile(r'^(#{2,4})\s+(.*)$')
 BACKTICK_PATTERN: re.Pattern[str] = re.compile(r'`([^`]+)`')
 # 안내 표가 없는 명령에 없는 옵션을 줬을 때 이 명령의 옵션을 알리는 소스 (`foreign_usage_hint`)
-SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn'})
+SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn', 'dabang'})
 # 하위 명령 자리에 온 지역 이름을 알아본다 (`subcommand_hint`)
 HANGUL_PATTERN: re.Pattern[str] = re.compile(r'[가-힣]')
 GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
@@ -73,12 +76,14 @@ SHORT_COMMIT_LENGTH: int = 7
 # 터미널이 아닐 때 도움말 폭. 옵션 설명이 줄바꿈 없이 한 줄에 들어가게 넉넉히 잡는다
 PLAIN_HELP_WIDTH: int = 1000
 # 다른 소스 표현을 옮겨 쓴 사용법 오류에 힌트를 주는 명령 (UsageHints)
-USAGE_HINTS: dict[str, UsageHints] = {**zigbang.USAGE_HINTS, **naver.USAGE_HINTS, **daangn.USAGE_HINTS}
+USAGE_HINTS: dict[str, UsageHints] = {
+    **zigbang.USAGE_HINTS, **naver.USAGE_HINTS, **daangn.USAGE_HINTS, **dabang.USAGE_HINTS,
+}
 
 app = typer.Typer(
     name='jibsa',
     help=(
-        '부동산 매물 조회 CLI (직방·네이버·당근). 결과는 JSON 으로 stdout 에, 에러는 '
+        '부동산 매물 조회 CLI (직방·네이버·당근·다방). 결과는 JSON 으로 stdout 에, 에러는 '
         '{"error": {...}} JSON 으로 stderr 에 쓴다. 금액은 모두 만원 단위. '
         'LLM 에이전트는 처음 쓰기 전에 `jibsa guide` 를 읽는다.'
     ),
@@ -88,6 +93,7 @@ app = typer.Typer(
 app.add_typer(zigbang.app, name='zigbang')
 app.add_typer(naver.app, name='naver')
 app.add_typer(daangn.app, name='daangn')
+app.add_typer(dabang.app, name='dabang')
 
 
 def show_version(value: bool) -> None:
@@ -118,7 +124,7 @@ def configure_logging(
 def limits_command(
     reset: Annotated[
         list[str] | None,
-        typer.Option('--reset', help='쿨다운·요청 기록을 지울 소스 (zigbang, naver, daangn). 반복하거나 쉼표로 구분')
+        typer.Option('--reset', help='쿨다운·요청 기록을 지울 소스 (zigbang, naver, daangn, dabang). 반복하거나 쉼표로 구분')
     ] = None,
     pretty: Annotated[
         bool | None,
@@ -133,6 +139,7 @@ def limits_command(
         'zigbang': ZigbangClient,
         'naver': NaverClient,
         'daangn': DaangnClient,
+        'dabang': DabangClient,
     }
     sources = split_csv(reset, tuple(clients), '--reset')
     # 상태 파일을 읽고 쓰므로 권한·디스크 오류도 에러 JSON 으로 낸다

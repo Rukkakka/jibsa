@@ -32,7 +32,7 @@ providers/<source>/
 
 1. **모듈 하나는 CLI 명령 묶음 하나를 맡는다.** 명령 이름만 알면 고칠 파일을 찾을 수 있게 한다. 그 기능의 결과 모델·변환
    함수·안내 문구는 같은 모듈에 둔다. 소스별 명령 ↔ 모듈 대응은 각 소스 개발 가이드의 '명령과 요청 흐름' 표에 있다
-   ([직방](providers/zigbang.md#명령과-요청-흐름)·[네이버](providers/naver.md#명령과-요청-흐름)·[당근](providers/daangn.md#명령과-요청-흐름)).
+   ([직방](providers/zigbang.md#명령과-요청-흐름)·[네이버](providers/naver.md#명령과-요청-흐름)·[당근](providers/daangn.md#명령과-요청-흐름)·[다방](providers/dabang.md#명령과-요청-흐름)).
 2. **두 모듈 이상이 쓰는 심볼은 `common` 에 둔다.** 한 모듈만 쓰면 그 모듈에 둔다.
 3. **import 는 `common` → `region` → 기능 모듈 → 분기 모듈 방향으로만 한다.** 기능 모듈끼리는 서로 가져다 쓰지 않는다.
    두 기능 모듈이 같이 쓰게 되면 그 심볼을 `common` 으로 옮긴다 (기준 2). 분기 모듈(직방 `detail`: `listing` 명령의 ID
@@ -64,13 +64,14 @@ providers/<source>/
 | 당근 | `/kr/api/v1/regions/keyword` | `/kr/api` | `regions_keyword_v1` |
 | 당근 | `/map/{name1}/{name2}/{name3}` (페이지) | — | `map` |
 | 당근 | `POST /graphql` 의 `articleFeed` (GraphQL) | — | `article_feed` |
+| 다방 | `/api/v5/loc/search` · `/api/3/new-room/detail` (버전이 `3` 이면 `v3`) | `/api` | `loc_search_v5` · `new_room_detail_v3` |
 
 GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. 루트 필드가 같은 오퍼레이션이 여럿이거나
 페이지 action id 와 겹치면 뜻이 드러나는 이름으로 구분한다. 당근의 전체 목록과 구분한 사례는
 [당근 개발 가이드](providers/daangn.md#action-id-목록)에 있다.
 
 `{Action}` 은 PascalCase (`items_onerooms_v1` → `ItemsOneroomsV1`), 접두어는 소스 이름(`Zigbang`,
-`Naver`, `Daangn`).
+`Naver`, `Daangn`, `Dabang`).
 
 | 심볼 | 패턴 | 예 |
 | --- | --- | --- |

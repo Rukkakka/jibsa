@@ -3,7 +3,7 @@
 jibsa 의 계층 구조와, 명령 하나가 실행될 때 요청이 흐르는 경로. 형식 규칙은
 [code-style.md](code-style.md), provider 모듈 작성 규칙은
 [provider-conventions.md](provider-conventions.md), 출력 형식은
-[output-contract.md](output-contract.md), 소스 고유 구현은 [직방](providers/zigbang.md)·[네이버](providers/naver.md)·[당근](providers/daangn.md)
+[output-contract.md](output-contract.md), 소스 고유 구현은 [직방](providers/zigbang.md)·[네이버](providers/naver.md)·[당근](providers/daangn.md)·[다방](providers/dabang.md)
 개발 가이드를 본다.
 
 ## 계층

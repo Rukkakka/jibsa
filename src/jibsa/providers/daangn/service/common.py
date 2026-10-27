@@ -16,6 +16,8 @@ from jibsa.core.geo import haversine_km
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    UPDATE_MAYBE_NEEDED,
+    UPDATE_NEEDED,
     Listing,
     in_range,
     join_address,
@@ -603,11 +605,6 @@ def unwrap_graphql(response: DaangnGraphQLResponseModel, value: T | None, what: 
 # - 상태 폴더 오류(StateDirError, JibsaError)도 잡히지만 다음 요청(직방 넘김 포함)이 같은 이유로 실패해 결국 그 에러와
 #   '다른 소스로 다시 시도하지 마세요' 힌트로 끝난다 (쓰기 막힌 폴더에서 daangn search listings 강남역 --radius 1)
 OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, JibsaError)
-# 결과는 냈지만 당근이 바뀌어 jibsa 를 고쳐야 한다는 `notes` 끝말. 매일 API 감시(scripts/monitor/api_check.py)가 이 말로
-# 고장을 찾으니 덤 조회·대체 경로의 안내는 손으로 쓰지 않고 이 상수를 쓴다. 차단 페이지일 수도 있는 형식 오류·GraphQL 에러는
-# 단정하지 못해 MAYBE 를 쓰고, 감시는 주된 조회의 PARSE_ERROR·상태 없는 UPSTREAM_ERROR 처럼 둘 다 고장으로 센다
-UPDATE_NEEDED: str = 'jibsa 업데이트가 필요합니다'
-UPDATE_MAYBE_NEEDED: str = 'jibsa 업데이트가 필요할 수 있습니다'
 
 
 def partial_failure_note(exc: Exception, what: str, missing: str) -> str:
