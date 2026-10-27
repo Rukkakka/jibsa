@@ -5,6 +5,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+## 0.7.0 — 2026-10-27
+
 ### 추가
 
 - 다방(`jibsa dabang`)을 네 번째 소스로 추가. 매물 찾기 `search listings room`(원룸·투룸)·`villa`(주택·빌라)·`officetel`·`apt` (동·역·대학 이름 또는 좌표, `--next` 이어 받기), 장소 후보 `search locations`, 단지 목록 `search complexes`, 단지 정보 `complex`(배정 초등학교와 가까운 중·고등학교의 학급당 학생 수·진학 인원 포함), 학교 상세 `school`(학교알리미 공시: 학급당·교원당 학생 수와 시·도 평균, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률), 단지 매물 `search listings --complex`, 실거래가 `real-price`(단지 없는 매물은 `--listing`), 시세 흐름 `price-trend`, 매물 상세 `listing`(매물번호도 받는다), 동네정보 `neighborhood`(매물 수·거래량·평균가·인구와 순위, 학교·편의·교통·안전 시설 수), 동 안 인기 매물 `popular-listings`, 매물·단지 둘레 역·버스·시설 `nearby`, 역 둘레 평균 매물가 `station-prices`, 분양 단지 `search sales`·`sale`·청약 일정 `sale-schedule`, 전국 조회·거래 순위 `trending-complexes`·`trade-rankings`, 시군구·시도·전국 안 동·단지 순위 `region-ranking`(부동산: 평균가·전세가율·신고가 단지 등, 동: 진학률·학원 수·인구 증감·편의·교통·안전 시설 수). 로그인 없이 다방 웹이 쓰는 API 를 부른다. 요청 제한은 0.5초 간격·분당 60회·429 뒤 5분이다 (`jibsa limits`) (#144)
