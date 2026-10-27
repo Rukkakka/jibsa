@@ -1528,7 +1528,7 @@ class DaangnClient(BaseHTTPClient):
             payload: 지역 ID (문자열), 받을 수.
 
         Returns:
-            DaangnTrendingComplexesResponseModel: 인기 순 단지 (9곳쯤).
+            DaangnTrendingComplexesResponseModel: 인기 순 단지 (때마다 0~20여 곳).
         """
         response = self._client.post(
             url=self.graphql_url,

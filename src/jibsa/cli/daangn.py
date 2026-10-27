@@ -1268,7 +1268,7 @@ def trending_complexes_command(
     ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """동 주변에서 요즘 많이 보는 단지 (서버가 9곳쯤 준다). 요청 2회.
+    """동 주변에서 요즘 많이 보는 단지 (개수는 때마다 다르고 이른 아침엔 자주 빈다). 요청 2회.
 
     예: jibsa daangn trending-complexes 역삼동 --city 강남구
     """

@@ -56,7 +56,7 @@ class DaangnSearchComplexesRequestPayloadModel(RequestModel):
 class DaangnTrendingComplexesRequestPayloadModel(RequestModel):
     """GraphQL `trendingComplexes` 쿼리 변수 (웹의 `HomeTrendingComplexSectionListQuery`, 요즘 많이 보는 단지).
 
-    지역 ID 는 문자열로 보내야 한다 (숫자면 "알 수 없는 오류"). 서버는 9곳쯤만 준다 (2026-10-10 실측).
+    지역 ID 는 문자열로 보내야 한다 (숫자면 "알 수 없는 오류"). 서버가 주는 수는 때마다 다르다 (2026-10-27 실측: 0~22곳).
     """
 
     first: Annotated[
