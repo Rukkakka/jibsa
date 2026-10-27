@@ -21,26 +21,29 @@
 
 | 하려는 일 | 명령 |
 | --- | --- |
-| 원룸·투룸·빌라·오피스텔 | `zigbang search listings room <동·역>` · `daangn search listings <동·역>` · `naver search listings <동·역> -t 원룸,빌라,오피스텔` |
-| 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` |
+| 원룸·투룸·빌라·오피스텔 | `zigbang search listings room <동·역>` · `daangn search listings <동·역>` · `naver search listings <동·역> -t 원룸,빌라,오피스텔` · `dabang search listings room <동·역>` (빌라 `villa`, 오피스텔 `officetel`) |
+| 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
 | 상가·사무실 / 주 단위 단기임대 | `zigbang search listings store <동·역>` / `zigbang search listings stay <지역> --check-in … --check-out …` |
 | 회사 통근 기준 | `daangn search commute <회사 역·장소> --max-minutes 30` |
 | 매물 하나 상세 | `<소스> listing <id>` |
-| 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` |
+| 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
-| 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`) |
-| 시세·가격 흐름 | `naver market-price <단지>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (월별 실거래 평균) |
-| 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름>` (배정 단지) |
+| 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`) |
+| 시세·가격 흐름 | `naver market-price <단지>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
+| 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름>` (배정 단지) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
 | 단지 비교 | `daangn compare <ID> <ID> …` (최대 5곳) · `daangn nearby-complexes <ID>` |
-| 동네 고르기 | `daangn good-neighborhoods --lifestyle …` · `region-reviews <동>` · `developments <장소>` · `preschools <장소>` · `trending-complexes <동>` · `popular-listings <동>` (모두 `daangn`) |
+| 동네 고르기 | `daangn good-neighborhoods --lifestyle …` · `region-reviews <동>` · `developments <장소>` · `preschools <장소>` · `trending-complexes <동>` · `popular-listings <동>` (모두 `daangn`) · 동 요약 숫자와 순위 `dabang neighborhood <동>` · `dabang popular-listings <동>` |
+| 역 둘레 시세·주변 | 역 둘레 평균 매물가(호가) `dabang station-prices <역>` · 매물·단지 둘레 역·버스·시설 `dabang nearby <ID>` |
+| 분양·청약 | `dabang search sales <동·구>` → `dabang sale <sale_id>` (일정·평형별 분양가) · 날짜별 전국 일정 `dabang sale-schedule --region 서울` |
+| 동네·단지 순위 | 구·시도·전국 안 `dabang region-ranking <범위> --by 평균가` (전세가율·갭가격은 `--unit 단지`, 신고가 단지는 `--by 최고가증감 --unit 단지`) · 학군·생활 동 순위 `--by 과학고진학률`·`대학교진학률`·`학원수 --kind 입시`·`인구증감`·`의료시설` 등 · 전국 `dabang trending-complexes` (조회) · `dabang trade-rankings` (거래) |
 | 구 안의 동 이름 | `naver regions <시·도 또는 시·군·구>` |
 
 ## 위치 입력
 
 - 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 나머지 5km).
-- 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
+- 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
 - 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`, 직방은 시·도까지 붙인 전체 주소는 못 찾는다). 당근은 `--city` 로도 좁힌다 (`광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다.
 - `성수동` 처럼 `○가` 로 나뉜 동은 1가·2가를 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다).
 
@@ -48,23 +51,25 @@
 
 다른 소스의 옵션을 옮겨 쓰면 에러 `hint` 가 이 명령의 옵션이나 이 소스에 그 조건이 없다는 것을 알려 준다.
 
-| 조건 | 직방 `room` | 네이버 | 당근 |
-| --- | --- | --- | --- |
-| 방 개수 | `--room 투룸` | `--room 투룸` | `--room-count 2개` |
-| 원룸 구조 | `--room 오픈형원룸` | `--one-room-shape 오픈형` | `--structure 오픈형` |
-| 엘리베이터·주차 | `--condition 엘리베이터,주차` | `--facility 엘리베이터,주차` | `--option 엘리베이터,주차가능` |
-| 반려동물 | `--condition 반려동물` | 없음 | `--option 반려동물가능` |
-| 즉시 입주 | `--condition 즉시입주` | `--move-in 바로입주` | `--move-in-now` |
-| 욕실 수 | `--bathroom 1` | `--bathroom 1개` | 없음 |
-| 반지하·지하 빼기 | `--floor 지상,옥탑방` (`지상` 만이면 옥탑방도 빠진다) | `--floor 1층,저층,중층,고층,탑층` | `--floor 1층,2~5층,6~9층,10층이상` |
+| 조건 | 직방 `room` | 네이버 | 당근 | 다방 |
+| --- | --- | --- | --- | --- |
+| 방 개수 | `--room 투룸` | `--room 투룸` | `--room-count 2개` | `--room 투룸` |
+| 원룸 구조 | `--room 오픈형원룸` | `--one-room-shape 오픈형` | `--structure 오픈형` | `--condition 분리형` 또는 `복층` |
+| 엘리베이터·주차 | `--condition 엘리베이터,주차` | `--facility 엘리베이터,주차` | `--option 엘리베이터,주차가능` | `--condition 엘리베이터,주차` |
+| 반려동물 | `--condition 반려동물` | 없음 | `--option 반려동물가능` | 없음 |
+| 즉시 입주 | `--condition 즉시입주` | `--move-in 바로입주` | `--move-in-now` | 없음 |
+| 욕실 수 | `--bathroom 1` | `--bathroom 1개` | 없음 | 없음 |
+| 면적 | `--area-min` (㎡) | `--area-min` (㎡) | `--area-min` (㎡) | `--area-pyeong-min` (평, 정수) |
+| 반지하·지하 빼기 | `--floor 지상,옥탑방` (`지상` 만이면 옥탑방도 빠진다) | `--floor 1층,저층,중층,고층,탑층` | `--floor 1층,2~5층,6~9층,10층이상` | `--floor 1층,2층이상,옥탑` |
 
-평형을 고르는 값도 소스마다 다르다: 직방 `pyeongs[].id` → `--pyeong`, 네이버 `pyeongs[].number` → `--pyeong` (둘 다 평수가 아니라 평형 ID), 당근 `pyeongs[].area_group` → `--area`.
+평형을 고르는 값도 소스마다 다르다: 직방 `pyeongs[].id` → `--pyeong`, 네이버 `pyeongs[].number` → `--pyeong`, 다방 `pyeongs[].space_seq` → `--pyeong` (셋 다 평수가 아니라 평형 ID), 당근 `pyeongs[].area_group` → `--area`.
 
 ### '원룸' 의 뜻
 
 - 직방: 방 하나짜리라 원룸형 오피스텔도 나온다 (`property_type: "오피스텔"`). 빌라는 투룸 이상만 있다. 방 1개짜리 아파트는 `search listings apt --supply-area-max 50` 으로 찾는다.
 - 네이버: `-t 원룸` 은 건물 분류라 방이 여럿인 매물도 섞인다. 방 하나만이면 `--room 원룸` 을 함께 준다. 목록의 `room_type` 은 `null` 이다.
 - 당근: 작성자가 고른 분류라 방 1개 오피스텔·아파트·주택은 빠지고 방 2개 매물이 섞일 수 있다 (오피스텔도 보려면 `-t 원룸,오피스텔`). `-t 투룸` 은 투룸 **이상**이다. 목록의 `room_type` 은 원룸에만 붙고 방 2개 매물에도 붙을 수 있다.
+- 다방: `room` 은 다방 '원룸·투룸' 목록이라 방 1~2개짜리 오피스텔·아파트도 나온다 (`property_type`). `villa` 는 방 하나짜리 빌라도 나오고 `property_type` 이 늘 `빌라` 다.
 - 방 수는 `listing` 상세의 `room_count` 로 본다. 이 안내는 결과 `notes` 에 다시 붙지 않는다.
 
 ### 직방
@@ -92,6 +97,18 @@
 - `search complexes` 의 가격 조건은 과거 실거래 기준이다 (그 가격의 현재 매물은 `search listings --complex`). `good-neighborhoods` 의 `dong` 은 행정동이라 매물은 법정동 이름으로 찾는다.
 - `watch_count` 는 관심 수다 (조회수가 아니다). 이름으로 위치를 찾을 때 직방·네이버에도 요청해 에러 `source` 가 그쪽일 수 있다.
 
+### 다방
+
+- 매물 검색은 유형별 하위 명령(`room`·`villa`·`officetel`·`apt`)이다. 결과는 **다방 목록 순**이라 거리순이 아니다 (역·좌표 검색은 `distance_km` 로 고른다).
+- 동·역·대학 이름을 받고 구·시 이름은 못 찾는다 (`REGION_NOT_SUPPORTED`). 역은 다방이 정한 역 반경(강남역 750m)이다. `apt` 는 동 검색이 없어 동 경계를 덮는 사각형에서 그 동 매물만 남겨 `returned` 가 적을 수 있다.
+- 아파트 매물 목록(`apt`·단지 매물·인기 매물, `room` 에 섞인 아파트)은 다방이 공급면적만 줘서 `area_m2` 가 `null` 이고 `supply_area_m2` 가 공급면적이다. 다른 소스의 전용면적과 견주려면 `listing` 의 `area_m2` 를 본다. `--area-pyeong-min` 도 아파트는 공급 평이다.
+- 단기임대는 따로 있는 거래가 아니라 월세 매물에 붙는 표시라 `trade_type: 월세` 에 `short_lease: true` 다. 보증금이 월세 한두 달치(95/95)면 단기 계약 가격일 수 있다. 단기임대 가능 매물만은 `--condition 단기임대`.
+- 목록의 `address` 는 찾은 동의 매물만 시·구까지다 (역·좌표 검색은 동 이름만). `listing` 은 `id` 대신 다방 화면의 매물번호(`listing_number`)도 받는다.
+- `real-price --listing` 은 그 건물이 아니라 그 동의 같은 건물 유형 거래다 (`basis`). `area_m2` 가 비슷한 거래만 견준다.
+- `region-ranking` 의 값은 항목에 맞는 키에만 있다 (평균가 `value_manwon`, 거래량·학원수 `count`, 전세가율·진학률 `percent`, 시세증감 `change_percent`). 시세증감·최고가증감의 `change_manwon` 은 오른 금액이지 현재가가 아니다 (새 최고가 = `prev_price_manwon + change_manwon`). `search sales` 는 다방이 지도 사각형만 받아 역·좌표 둘레는 반경을 덮는 사각형 전체다.
+- `school` 은 `--level` 이 학교 코드와 맞아야 한다 (`dabang complex` 의 `schools[].level` 을 그대로). 틀리면 다방이 서버 고장과 같은 500 을 줘서 `UPSTREAM_ERROR`(`status` 500)이니 코드·단계부터 다시 본다. 다방 학교 코드는 네이버 `school` 코드와 다르다.
+- `station-prices` 는 실거래가가 아니라 지금 올라온 원룸·투룸 매물의 평균(다방 '평균 매물가')이다. `neighborhood` 의 `rank` 는 1 이 가장 많거나 높고, 동 하나만 받는다 (`성수동` 은 `성수동1가` 처럼 고른다).
+
 ## 실거래·시세 읽기
 
 - 호가(현재 매물 가격), 실거래, 기관 시세는 서로 다르다. 섞어 말하지 않는다.
@@ -115,4 +132,4 @@
 
 ## 더 읽을 곳
 
-`jibsa guide <소스>` 는 절 목록, `jibsa guide <소스> <절 이름>` 은 그 절만 쓴다 (예: `jibsa guide daangn search listings`, `jibsa guide common 에러 대응`). 같은 문서: [공통](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md) · [네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md) · [당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md).
+`jibsa guide <소스>` 는 절 목록, `jibsa guide <소스> <절 이름>` 은 그 절만 쓴다 (예: `jibsa guide daangn search listings`, `jibsa guide common 에러 대응`). 같은 문서: [공통](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md) · [네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md) · [당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) · [다방](https://github.com/Rukkakka/jibsa/blob/main/docs/dabang.md).

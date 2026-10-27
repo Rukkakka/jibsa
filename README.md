@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  직방·네이버 부동산·당근부동산의 원룸·오피스텔·빌라·아파트·상가 매물과 실거래가를 조회하는 LLM 에이전트용 CLI.<br>
-  Korean real estate CLI for LLM agents: search current listings and real transaction prices on Zigbang, Naver Real Estate and Daangn.
+  직방·네이버 부동산·당근부동산·다방의 원룸·오피스텔·빌라·아파트·상가 매물과 실거래가를 조회하는 LLM 에이전트용 CLI.<br>
+  Korean real estate CLI for LLM agents: search current listings and real transaction prices on Zigbang, Naver Real Estate, Daangn and Dabang.
 </p>
 
 <p align="center">
@@ -37,12 +37,12 @@ Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾
 
 ## 기능
 
-- **매물 찾기** — 원룸·오피스텔·빌라·아파트·상가를 동·역 이름이나 좌표로 찾는다 (직방·네이버·당근). 주 단위 단기임대도 찾는다 (직방)
+- **매물 찾기** — 원룸·오피스텔·빌라·아파트·상가를 동·역 이름이나 좌표로 찾는다 (직방·네이버·당근·다방). 주 단위 단기임대도 찾는다 (직방)
 - **매물 상세** — 관리비·옵션·입주일·주차·건물 용도처럼 계약 전에 볼 정보를 준다. 사진·연락처는 원 사이트 링크로 안내한다
-- **단지와 가격** — 단지 정보, 실거래가, 기관 시세, 월별·주별 가격 흐름
-- **동네 고르기** — 회사까지 지하철 통근 기준으로 매물 찾기, 학교 배정, 동네 후기·개발 호재·어린이집 (당근)
+- **단지와 가격** — 단지 정보, 실거래가, 기관 시세, 월별·주별 가격 흐름, 동·단지 순위와 분양·청약 일정 (다방)
+- **동네 고르기** — 회사까지 지하철 통근 기준으로 매물 찾기, 학교 배정, 동네 후기·개발 호재·어린이집 (당근), 동네 인구·시설 수, 진학률·학원 수로 본 학군과 역 주변 평균 시세 (다방)
 
-세 사이트를 한 번에 찾는 통합 검색은 아직 없어서 사이트마다 따로 부른다 (`jibsa zigbang …`, `jibsa naver …`, `jibsa daangn …`). 하려는 일별 명령 표는 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md#무엇을-하려면)에 있다.
+네 사이트를 한 번에 찾는 통합 검색은 아직 없어서 사이트마다 따로 부른다 (`jibsa zigbang …`, `jibsa naver …`, `jibsa daangn …`, `jibsa dabang …`). 하려는 일별 명령 표는 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md#무엇을-하려면)에 있다.
 
 - **로그인·API 키·설정 파일이 없다.** 로그인하지 않은 사람이 사이트에서 볼 수 있는 정보만 조회한다 ([원칙](https://github.com/Rukkakka/jibsa#원칙-로그인-없는-기능만))
 - **금액은 전부 만원**(`*_manwon`)이다. 원 단위로 주는 네이버도 만원으로 바꿔 준다
@@ -107,7 +107,7 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
 }
 ```
 
-더 보려면 같은 명령에 `--next <next 값>` 을 붙여 다음 매물을 이어 받고, `jibsa zigbang listing <id>` 로 관리비·옵션·입주일 같은 상세를 본다. 명령별 옵션과 반환 필드는 [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)·[네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md)·[당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) 사용법에 있다.
+더 보려면 같은 명령에 `--next <next 값>` 을 붙여 다음 매물을 이어 받고, `jibsa zigbang listing <id>` 로 관리비·옵션·입주일 같은 상세를 본다. 명령별 옵션과 반환 필드는 [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)·[네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md)·[당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md)·[다방](https://github.com/Rukkakka/jibsa/blob/main/docs/dabang.md) 사용법에 있다.
 
 ## 설치
 
@@ -179,6 +179,7 @@ LLM이 검색 결과만으로 집을 찾으면 이미 내려간 매물을 소개
 - [설치](https://github.com/Rukkakka/jibsa/blob/main/docs/install.md): 준비물, 설치 방법 세 가지, PATH, 업데이트·삭제
 - [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md): JSON 출력, 금액·누락값, 오류 대응, 요청 제한과 `limits`
 - [당근 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md)
+- [다방 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/dabang.md)
 - [네이버 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md)
 - [직방 CLI 사용법](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)
 - [변경 기록](https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md): 버전별로 바뀐 점
@@ -187,6 +188,7 @@ LLM이 검색 결과만으로 집을 찾으면 이미 내려간 매물을 소개
 
 - [공통 개발 규약](https://github.com/Rukkakka/jibsa/blob/main/AGENTS.md) · [개발 환경](https://github.com/Rukkakka/jibsa/blob/main/references/development.md) · [버전·릴리스](https://github.com/Rukkakka/jibsa/blob/main/references/release.md)
 - [당근 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/daangn.md)
+- [다방 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/dabang.md)
 - [네이버 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/naver.md)
 - [직방 개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/references/providers/zigbang.md)
 

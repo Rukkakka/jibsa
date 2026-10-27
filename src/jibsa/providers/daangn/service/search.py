@@ -31,6 +31,7 @@ from jibsa.core.korean import (
     particle,
 )
 from jibsa.core.listing import (
+    UPDATE_NEEDED,
     Listing,
     beyond_radius_notes,
     listing_as,
@@ -67,7 +68,6 @@ from jibsa.providers.daangn.api.response.search import (
 )
 from jibsa.providers.daangn.service.common import (
     OPTIONAL_LOOKUP_ERRORS,
-    UPDATE_NEEDED,
     DaangnListingConditions,
     DaangnRegion,
     FeedQueryRejectedError,

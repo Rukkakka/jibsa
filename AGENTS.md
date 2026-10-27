@@ -1,16 +1,16 @@
 # AGENTS.md
 
-직방·네이버 부동산·당근부동산의 **현재 거래 가능한 매물**을 조회하는 CLI (`jibsa`).
+직방·네이버 부동산·당근부동산·다방의 **현재 거래 가능한 매물**을 조회하는 CLI (`jibsa`).
 LLM 에이전트가 셸로 호출하는 도구라, 출력 형식과 에러 형식이 곧 API 다.
 CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 개발 문서(구현 규약·소스별 개발 가이드)는 `references/`, 사용자 문서(CLI 사용법)는 `docs/`에 있다.
-매일 새벽 직방·당근의 모든 CLI 명령을 실제로 불러 보는 감시(네이버는 로컬에서)는 `scripts/monitor/` 와 `.github/workflows/api-monitor.yml` 이다 ([매일 API 감시](references/development.md#매일-api-감시)).
+매일 새벽 직방·당근·다방의 모든 CLI 명령을 실제로 불러 보는 감시(네이버는 로컬에서)는 `scripts/monitor/` 와 `.github/workflows/api-monitor.yml` 이다 ([매일 API 감시](references/development.md#매일-api-감시)).
 
 ## 구조
 
 | 경로 | 내용 |
 | --- | --- |
-| `cli/` | Typer 명령 (`limits`, `guide`, `zigbang`/`naver`/`daangn` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`), 매물 검색 이어 받기 표 (`paging.py`) |
+| `cli/` | Typer 명령 (`limits`, `guide`, `zigbang`/`naver`/`daangn`/`dabang` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`), 매물 검색 이어 받기 표 (`paging.py`) |
 | `core/http.py` | `BaseHTTPClient` — httpx 클라이언트 수명주기, 재시도 술어, `raise_for_status` |
 | `core/ratelimit.py` | 프로세스 간 공유 요청 제한 (`RateLimiter`, `RateLimitedError`) |
 | `core/listing.py` | 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 날짜, 주소) |
@@ -51,7 +51,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 
 소스별 개발 가이드 (`references/providers/`) — 그 소스에만 있는 구현·예외
 
-- [당근](references/providers/daangn.md) · [네이버](references/providers/naver.md) · [직방](references/providers/zigbang.md)
+- [당근](references/providers/daangn.md) · [네이버](references/providers/naver.md) · [직방](references/providers/zigbang.md) · [다방](references/providers/dabang.md)
 
 ## 문서 갱신
 
@@ -60,7 +60,7 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 페이지로도 쓰여 상대 링크와 heading 앵커가 깨지므로, README 안의 링크는 같은 문서를 가리키는 것까지 GitHub 전체 주소로 적는다.
 사용자 문서는 `docs/`, 개발 문서는 `references/`에 둔다. CLI 문서는 LLM 에이전트에게 주는 사용 규칙이기도 하다.
 
-`docs/llm.md` 는 에이전트가 가장 먼저 읽는 요약이고 `jibsa guide` 가 그대로 출력한다. 소스 문서(`docs/common.md`·`zigbang.md`·`naver.md`·`daangn.md`)는 `jibsa guide <소스> <절 이름>` 으로 그 절을 출력한다 (절 이름이 없으면 절 목록, `--all` 이면 통째로) (모두 설치본에는 패키지 안으로 복사된다). 그래서 절 제목에 명령 이름을 백틱으로 쓴다 (`jibsa guide zigbang listing` 이 그 절을 고른다). 짧게 유지하고 (200줄 이하), 링크는 설치본에서도 열리게 GitHub 전체 주소로 쓴다. 옵션 표·실측 근거는 넣지 않고 명령 고르기·출력 읽기·틀리기 쉬운 점·에러 대응만 적은 뒤 자세한 절로 링크한다 (같은 조건의 소스별 옵션 대조 표는 틀리기 쉬운 점이라 둔다).
+`docs/llm.md` 는 에이전트가 가장 먼저 읽는 요약이고 `jibsa guide` 가 그대로 출력한다. 소스 문서(`docs/common.md`·`zigbang.md`·`naver.md`·`daangn.md`·`dabang.md`)는 `jibsa guide <소스> <절 이름>` 으로 그 절을 출력한다 (절 이름이 없으면 절 목록, `--all` 이면 통째로) (모두 설치본에는 패키지 안으로 복사된다). 그래서 절 제목에 명령 이름을 백틱으로 쓴다 (`jibsa guide zigbang listing` 이 그 절을 고른다). 짧게 유지하고 (200줄 이하), 링크는 설치본에서도 열리게 GitHub 전체 주소로 쓴다. 옵션 표·실측 근거는 넣지 않고 명령 고르기·출력 읽기·틀리기 쉬운 점·에러 대응만 적은 뒤 자세한 절로 링크한다 (같은 조건의 소스별 옵션 대조 표는 틀리기 쉬운 점이라 둔다).
 
 | 바뀐 것 | 고칠 문서 |
 | --- | --- |

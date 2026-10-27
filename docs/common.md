@@ -20,7 +20,7 @@
 - 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 `next` 도 준다. 같은 명령·지역·조건에 `--next <next>` 를 붙이면 받은 매물 다음부터 이어 받는다 (`--limit`·`--details`·`--fields` 는 바꿀 수 있다). `next` 는 10자 번호이고, 어디까지 받았는지는 상태 폴더(`~/.cache/jibsa/next/`, `JIBSA_STATE_DIR` 로 변경)에 하루 동안 남는다. 하루가 지났거나 다른 컴퓨터에서 받은 번호, 지역·조건이 다른 검색에 준 번호는 `INVALID_ARGUMENT` 로 막고, 조건이 다르면 `message` 에 어느 옵션이 다른지 적는다. `has_more` 가 `true` 인데 `next` 가 없으면 이어 받을 수 없는 검색이라 `--limit`·조건으로 찾는다
 - 가격 조건은 그 금액이 있는 거래에만 걸린다: 월세(`--rent-*`)는 월세·단기임대, 매매가(`--price-*`)는 매매, 보증금(`--deposit-*`)은 전세·월세·단기임대. `--trade` 를 줬는데 가격 조건이 걸릴 거래 유형이 하나도 없으면(전세 + `--rent-max`, 매매 + `--deposit-max`) 서버가 조건을 무시해 조건 없는 결과가 나오므로 `INVALID_ARGUMENT` 로 막는다. 일부만 겹치면(`--trade 전세,월세 --rent-max 50`) 해당 거래에만 걸고 나머지는 그대로 둔다
 - `--lat/--lng` 가 한국 밖이거나 둘 중 하나만 주면 `INVALID_ARGUMENT` 로 막는다
-- 숫자 범위(`--area-min/max` 등)의 하한이 상한보다 크거나, 숫자 옵션(범위·`--radius`)에 `inf`·`nan` 을 주면 세 소스 모두 요청 전에 `INVALID_ARGUMENT` 로 막는다
+- 숫자 범위(`--area-min/max` 등)의 하한이 상한보다 크거나, 숫자 옵션(범위·`--radius`)에 `inf`·`nan` 을 주면 모든 소스가 요청 전에 `INVALID_ARGUMENT` 로 막는다
 - 에러는 **항상** stderr 에 `{"error": {"code", "message", "hint", ...}}` JSON 으로 쓴다. 사용법 오류(없는 옵션·잘못된 값·인자 누락)도 마찬가지
 - **금액은 소스와 무관하게 전부 만원 단위**로 정규화 (`price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon`). 네이버 원본은 원 단위라 환산한다
 
@@ -51,7 +51,7 @@
 | `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 반경 안·밖은 출력한 `distance_km`(km, 소수 둘째 자리)로 가르고 `total`·반경 밖 안내도 같은 기준이다. 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
 | `registered_at`, `approved_at` | 등록일·사용승인일 (`YYYY-MM-DD`). 소스가 알려 주지 않으면 `null` |
 | 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `elevator`, `options` 등 |
-| `move_in`, `parking` | 세 소스가 같은 꼴이다. 입주 가능일은 `"2026-10-24"`·`"즉시입주"`·`"2026-11 초순"`, 협의할 수 있으면 뒤에 `" (협의 가능)"`. 주차는 `"가능"`·`"불가"`, 대수가 있으면 `"가능 (총 4대)"` 처럼 괄호로 붙는다 |
+| `move_in`, `parking` | 모든 소스가 같은 꼴이다. 입주 가능일은 `"2026-10-24"`·`"즉시입주"`·`"2026-11 초순"`, 협의할 수 있으면 뒤에 `" (협의 가능)"`. 주차는 `"가능"`·`"불가"`, 대수가 있으면 `"가능 (총 4대)"` 처럼 괄호로 붙는다 |
 | 상세 관리비·교통 | `manage_cost_includes`, `nearby_subways` 등. 소스별 추가 필드는 해당 문서 참고 |
 
 입주·주차·역 설명에 작성자가 입력한 문구가 포함될 수 있다. 목록과 상세에서 제공하는 주소·필드는 다르며 상세에 거리처럼 해당하지 않는 키는 없다.
@@ -162,6 +162,7 @@
 | 직방 | 0.2초 | 120 | 2분 |
 | 당근 | 0.5초 | 60 | 5분 |
 | 네이버 | 1초 | 30 | 15분 |
+| 다방 | 0.5초 | 60 | 5분 |
 
 - 슬롯이 날 때까지 기다리되, 60초 넘게 기다려야 하면 기다리지 않고 `RATE_LIMITED` (`reason: budget`) 를 낸다
 - 429 를 받으면 쿨다운 동안 그 소스로 요청을 아예 보내지 않고 `RATE_LIMITED` (`reason: cooldown`, `retry_after_seconds`) 를 낸다. `Retry-After` 가 더 길면 그 값을 따른다
@@ -173,7 +174,7 @@ jibsa limits --compact
 jibsa limits --reset daangn
 ```
 
-`limits`는 네트워크 호출 없이 상태를 확인한다. `--reset`은 `zigbang`, `naver`, `daangn`을 반복 또는 쉼표로 받으며 선택한 소스의 로컬 상태를 초기화한다. 서버 차단을 해제하는 명령은 아니다.
+`limits`는 네트워크 호출 없이 상태를 확인한다. `--reset`은 `zigbang`, `naver`, `daangn`, `dabang`을 반복 또는 쉼표로 받으며 선택한 소스의 로컬 상태를 초기화한다. 서버 차단을 해제하는 명령은 아니다.
 
 | 반환 필드 | 의미 |
 | --- | --- |

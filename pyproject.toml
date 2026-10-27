@@ -5,7 +5,7 @@ build-backend = 'hatchling.build'
 [project]
 name = 'jibsa'
 version = '0.6.0'
-description = '네이버·직방·당근 부동산 매물을 조회하는 LLM 친화 CLI'
+description = '네이버·직방·당근·다방 부동산 매물을 조회하는 LLM 친화 CLI'
 readme = 'README.md'
 license = 'MIT'
 requires-python = '>=3.11'
@@ -15,6 +15,7 @@ keywords = [
     'zigbang',
     'naver',
     'daangn',
+    'dabang',
     'cli',
     'llm',
     'ai-agent',
@@ -22,6 +23,7 @@ keywords = [
     '직방',
     '네이버 부동산',
     '당근부동산',
+    '다방',
 ]
 classifiers = [
     'Development Status :: 3 - Alpha',
@@ -73,6 +75,7 @@ packages = ['src/jibsa']
 'docs/zigbang.md' = 'jibsa/zigbang.md'
 'docs/naver.md' = 'jibsa/naver.md'
 'docs/daangn.md' = 'jibsa/daangn.md'
+'docs/dabang.md' = 'jibsa/dabang.md'
 
 [tool.pytest.ini_options]
 testpaths = ['tests']

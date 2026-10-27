@@ -48,7 +48,7 @@ class RateLimitedError(JibsaError):
     """요청을 보내기 전에 로컬 제한으로 거절했을 때.
 
     Args:
-        source: 소스 이름 (naver, zigbang, daangn).
+        source: 소스 이름 (naver, zigbang, daangn, dabang).
         retry_after: 다시 시도할 수 있을 때까지 남은 초.
         reason: 'cooldown' (429 이후 대기 중) 또는 'budget' (분당 상한 초과).
     """
