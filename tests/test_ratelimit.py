@@ -1,6 +1,7 @@
 import multiprocessing
 import threading
 import time
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -20,12 +21,15 @@ def limiter(**policy: object) -> RateLimiter:
     return RateLimiter('test', RateLimitPolicy(**policy))
 
 
-def test_min_interval_spaces_reservations() -> None:
+def test_min_interval_spaces_reservations(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 기다릴 초는 '예약 시각 - 지금' 이라 예약마다 상태 파일을 잠그고 쓴 시간이 빠진다. 시계를 멈춰 느린 러너에서도
+    # 간격만 본다 (멈추지 않았을 때 CI 에서 세 번 예약에 0.09초가 걸려 셋째가 1.91초로 나왔다)
+    monkeypatch.setattr('jibsa.core.ratelimit.time', SimpleNamespace(time=lambda: 1000.0, sleep=time.sleep))
     first, second = limiter(min_interval=1.0), limiter(min_interval=1.0)
     # 다른 인스턴스(= 다른 프로세스)라도 같은 상태 파일을 공유한다
-    assert first.reserve() == pytest.approx(0, abs=0.05)
-    assert second.reserve() == pytest.approx(1.0, abs=0.05)
-    assert first.reserve() == pytest.approx(2.0, abs=0.05)
+    assert first.reserve() == 0
+    assert second.reserve() == 1.0
+    assert first.reserve() == 2.0
 
 
 def _reserve_many(count: int) -> None:
