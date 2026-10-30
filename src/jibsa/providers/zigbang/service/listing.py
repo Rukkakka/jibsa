@@ -365,8 +365,14 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
     listings: list[Listing] = []
     gone = 0
     for index, listing in enumerate(result.listings):
-        if index >= DETAILS_MAX or not isinstance(listing, ZigbangListing):
+        if not isinstance(listing, ZigbangListing):
             listings.append(listing)
+            continue
+        if index >= DETAILS_MAX:
+            # 상세를 받지 않은 매물도 건물 용도는 모름(null)으로 낸다. 원래 모델 그대로 두면 residence_type 키가 빠져
+            # 출력 규약상 해당 없음으로 읽힌다 (키 없음 = 해당 없음, null = 모름. 2026-10-28 실측: 역삼동 원룸 --limit 31
+            # --details 의 31번째가 null, 앞 30건은 용도가 붙음)
+            listings.append(listing_as(ZigbangDetailedListing, listing))
             continue
         try:
             with unavailable_on_404(listing.id):

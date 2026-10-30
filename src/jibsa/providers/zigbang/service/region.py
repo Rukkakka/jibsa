@@ -274,9 +274,16 @@ def city_gu_items(
     직방 지역 검색은 구가 있는 시를 시 대신 그 구들로 준다 (2026-10-11 실측: 성남시 → 분당구·수정구·중원구, 수원시 4곳,
     창원시 5곳, 고양·용인·부천시 3곳, 포항시 2곳). 시 코드(성남시 41130)의 아파트 목록은 0건이라 첫 구만 찾으면 나머지
     구 매물이 조용히 빠진다 (분당구 255건만 찾고 수정구 558건·중원구 116건이 빠짐). 아파트는 구마다 지역 목록을 받아 합친다.
+
+    '시' 를 떼고 쓴 이름('성남')도 같은 시로 본다. 직방은 '성남' 에도 그 시의 구들을 맨 앞에 주는데, '시' 가 붙은 이름만
+    합치면 첫 구만 찾고 다른 구가 빠졌다는 안내도 없었다 (2026-10-28 실측: 성남·안양·고양 모두 구들이 맨 앞이고 같은 이름의
+    동은 그 뒤, '성남' 아파트는 분당구 283건만 찾다가 '성남시' 처럼 세 구 1058건). 검색 중심이 '<이름>시 ○구' 가 아니면
+    (동 이름 등 다른 뜻) 그대로 [] 다.
     """
     city = _dong_name(query)
-    if not city.endswith('시') or not (best.name or '').startswith(f'{city} ') or not best.description:
+    if not city.endswith('시'):
+        city += '시'
+    if not (best.name or '').startswith(f'{city} ') or not best.description:
         return []
     parent = best.description.rsplit(' ', 1)[0]
     return [
