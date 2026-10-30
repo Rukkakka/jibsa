@@ -355,7 +355,17 @@ class DaangnArticleModel(ResponseModel):
     ] = None
     public_coordinate: Annotated[
         DaangnCoordinateModel | None,
-        Field(description='공개 좌표', alias='publicCoordinate')
+        Field(description='공개 좌표. 주소를 숨긴 매물(isHideAddress)은 실제 위치가 아니다', alias='publicCoordinate')
+    ] = None
+    is_hide_address: Annotated[
+        bool | None,
+        Field(
+            description=(
+                '작성자가 주소를 숨겼는지. 그러면 publicCoordinate 는 실제 위치에서 옮긴 좌표이고, 지도 핀(articleMapPoints)에 '
+                '없으며, 상세의 주소도 동까지만 온다. 목록·카드·상세 모두에 온다'
+            ),
+            alias='isHideAddress',
+        )
     ] = None
     subway_stations: Annotated[
         list[DaangnNearBySubwayStationModel],

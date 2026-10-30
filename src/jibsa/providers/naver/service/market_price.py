@@ -148,7 +148,7 @@ def get_market_price_history(
     # 없는 평형 번호면 기관별 항목 없이 빈 목록이 와서 여기서 NOT_FOUND 가 난다 (헬리오시티 111515 평형 999, 2026-10-11).
     # 날짜 없는 기관 항목(빈 dict)은 평형은 있고 그 기관 시세만 없는 것이라 평형을 다시 확인하지 않는다
     if not items:
-        check_pyeong_numbers(client, complex_number, [pyeong_number], villa=villa)
+        check_pyeong_numbers(client, complex_number, [pyeong_number], villa=villa, pyeong_required=True)
     providers: list[NaverMarketPriceSeries] = []
     for item in items:
         dates = sorted(set(item.deal_prices) | set(item.deposit_prices))

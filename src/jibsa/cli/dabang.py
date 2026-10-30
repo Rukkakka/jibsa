@@ -38,6 +38,7 @@ from jibsa.core.errors import (
     UnsupportedRegionError,
 )
 from jibsa.core.geo import DEFAULT_RADIUS_KM
+from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
     normalize_address,
@@ -933,24 +934,25 @@ def _sales_scope(client: DabangClient, query: str) -> tuple[DabangScope | None, 
         못하면 그 결과를 돌려 `resolve_places` 가 같은 요청을 또 보내지 않게 한다.
 
     Raises:
-        UnsupportedRegionError: '전국'·시·도 이름일 때 (분양은 시·군·구까지만 찾는다).
+        UnsupportedRegionError: '전국'·시·도 이름일 때 (분양은 시·군·구까지만 찾는다). 요청 없이 이름으로 막는다.
     """
     if not _is_scope_name(query):
         return None, None
     text = query.strip()
-    # 전국·시·도는 장소 검색 없이 시·도 목록으로 찾는다 ('서울시' 도 '시' 로 끝나지만 시·도다)
-    searched = None if text in NATIONAL_NAMES or state_name(text) is not None else search_locations(client, text)
+    # 전국·시·도는 시·도 목록을 묻기 전에 막는다 ('서울시' 도 '시' 로 끝나지만 시·도다). `resolve_scope` 는 이 두 경우에만
+    # 시·군·구가 아닌 범위를 주므로, 아래에서 받는 범위는 늘 시·군·구다
+    if text in NATIONAL_NAMES or state_name(text) is not None:
+        raise UnsupportedRegionError(
+            code='REGION_NOT_SUPPORTED',
+            message=f"분양은 시·도·전국 범위로 찾지 않습니다: '{text}'",
+            hint="시·군·구 이름(예: '강남구')이나 동·역 이름으로 찾으세요. 날짜별 전국 일정은 jibsa dabang sale-schedule",
+            skip_note=f"{text}{particle(text, '은/는')} 범위가 넓어 건너뛰었습니다",
+        )
+    searched = search_locations(client, text)
     try:
         scope = resolve_scope(client, query, searched=searched)
     except RegionNotFoundError:
         return None, searched
-    if scope.kind != 'district':
-        raise UnsupportedRegionError(
-            code='REGION_NOT_SUPPORTED',
-            message=f"분양은 시·도·전국 범위로 찾지 않습니다: '{query}'",
-            hint="시·군·구 이름(예: '강남구')이나 동·역 이름으로 찾으세요. 날짜별 전국 일정은 jibsa dabang sale-schedule",
-            skip_note=f'{query} 는 범위가 넓어 건너뛰었습니다',
-        )
     return scope, searched
 
 

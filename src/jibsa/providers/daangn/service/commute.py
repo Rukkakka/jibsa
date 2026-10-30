@@ -1,5 +1,7 @@
 """출퇴근 역 기준 매물 검색 (search commute)."""
 
+import math
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -9,7 +11,6 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NOTE_KINDS,
-    Listing,
     listing_as,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -29,9 +30,11 @@ from jibsa.providers.daangn.api.response.common import (
 from jibsa.providers.daangn.api.response.commute import DaangnNearestCommuteStationModel
 from jibsa.providers.daangn.service.common import (
     DaangnListingConditions,
+    DaangnNearbyListing,
     DaangnRegion,
     article_to_listing,
     complex_building_notes,
+    hidden_location_notes,
     is_available,
     listing_budget_notes,
     trade_of,
@@ -85,7 +88,7 @@ class DaangnCommuteStation(BaseModel):
     ] = None
 
 
-class DaangnCommuteListing(Listing):
+class DaangnCommuteListing(DaangnNearbyListing):
     """출퇴근 검색 매물. 회사까지 가는 역·시간을 붙인다. `distance_km` 는 회사까지의 직선거리다.
 
     타는 역·지하철 시간·환승은 역마다 묶고 정렬하는 데 쓰고 출력하지 않는다. 출력에서는 매물이 들어 있는 역 묶음
@@ -225,9 +228,10 @@ def search_commute(
 
     listings.sort(key=lambda listing: (
         listing.commute_minutes if listing.commute_minutes is not None else listing.subway_minutes + COMMUTE_UNKNOWN_WALK_MINUTES,
-        listing.distance_km or 0,
+        # 거리를 모르는 매물(주소를 숨긴 매물, null)은 같은 통근 시간 안에서 뒤로 보낸다. 0 으로 보면 가장 가까운 매물처럼 앞에 왔다
+        listing.distance_km if listing.distance_km is not None else math.inf,
     ))
-    notes = reach.notes + trade_unselected_notes(unselected) + complex_building_notes(shown)
+    notes = reach.notes + trade_unselected_notes(unselected) + complex_building_notes(shown) + hidden_location_notes(shown)
     if reach.unknown_times:
         notes.append('지하철 시간을 모르는 역은 --max-minutes 조건을 확인할 수 없어 제외했습니다')
     if len(stations) > len(searched):

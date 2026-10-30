@@ -300,9 +300,11 @@ class DabangSaleStep(BaseModel):
         str | None,
         Field(description='시작 (YYYY-MM-DD, 달만 알면 YYYY-MM)')
     ] = None
+    # 다방은 한 시점인 단계에만 끝을 주지 않는다. 하루짜리 청약은 끝이 시작과 같은 날로 온다 (2026-10-28 실측: 분양 3곳
+    # 모두 모집공고·당첨자발표·입주예정일만 끝이 없음). 끝이 해당 없는 단계라 null(모름) 대신 키를 뺀다
     end: Annotated[
         str | None,
-        Field(description='끝 (하루면 null)')
+        Field(exclude_if=lambda value: value is None, description='끝 (하루짜리는 시작과 같은 날. 모집공고·당첨자발표·입주예정일처럼 한 시점인 단계는 키 없음)')
     ] = None
 
 

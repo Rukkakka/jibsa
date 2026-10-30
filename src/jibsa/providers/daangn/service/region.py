@@ -23,6 +23,7 @@ from jibsa.core.errors import (
 from jibsa.core.geo import box_around
 from jibsa.core.korean import quoted
 from jibsa.core.listing import (
+    CITY_NAMES_NOT_SIDO,
     SIDO_OFFICIAL_NAMES,
     join_address,
     note,
@@ -79,10 +80,9 @@ ADDRESS_SEARCH_SIZE: int = 10
 REGION_KEYWORD_MAX_RESULTS: int = 100
 # 같은 이름 지역으로 멈출 때 보여 줄 후보 수 (네이버와 같다). 나머지는 전체 수(candidate_count)로만 알린다 (중앙동 58곳)
 AMBIGUOUS_CANDIDATES_SHOWN: int = 5
-# 시·도 줄임말 표(SIDO_OFFICIAL_NAMES)에 있지만 그 자체로 시 이름인 것. 광주광역시가 전남광주통합특별시로 합쳐진 뒤
-# '광주시' 는 경기도 광주시뿐이라 `place_in` 이 시·도로 넓히지 않는다 (2026-10-12 실측: '송정동 --city 광주시' 가
-# 경기도 광주시 송정동과 전남광주통합특별시 광산구 송정동 두 곳에 맞아 '--city 로 지정하세요' 라고 안내했다)
-CITY_NAMES_NOT_SIDO: frozenset[str] = frozenset({'광주시'})
+# 시·도 줄임말 표에 있지만 그 자체로 시 이름인 것(`CITY_NAMES_NOT_SIDO`, '광주시')은 `place_in` 이 시·도로 넓히지 않는다
+# (2026-10-12 실측: '송정동 --city 광주시' 가 경기도 광주시 송정동과 전남광주통합특별시 광산구 송정동 두 곳에 맞아
+# '--city 로 지정하세요' 라고 안내했다)
 
 
 def search_locations(client: DaangnClient, keyword: str) -> list[DaangnLocationModel]:
@@ -747,6 +747,44 @@ def _sejong_realsale_region(client: DaangnClient, query: str, whole: bool) -> tu
     )
 
 
+def _is_sido_name(name: str) -> bool:
+    """시·도 이름(정식 명칭·줄임말·옛 이름)인지. 시 이름이기도 한 줄임말(`CITY_NAMES_NOT_SIDO`, '광주시')은 시·도로 보지 않는다."""
+    return name not in CITY_NAMES_NOT_SIDO and (name in SIDO_OFFICIAL_NAMES or name in SIDO_OFFICIAL_NAMES.values())
+
+
+def _sido_region_error(query: str, candidates: list[DaangnLocationModel]) -> JibsaError:
+    """시·도 이름('서울')을 받았을 때 구 이름을 달라는 에러 (`resolve_realsale_region`). 지역 검색 후보 중 그 시·도의 구를 예로 든다.
+
+    당근에는 시·도의 구 목록을 주는 API 가 없고, 지역 검색은 이름이 든 동만 준다 (2026-10-30 실측: '충북' 은 청주시 서원구 동
+    2곳뿐, '광주' 는 36곳 중 30곳이 경기도 광주시, '서울' 은 100건에서 잘려 25개 구 중 23개). 그래서 후보는 구 목록 전체가
+    아니라 예이고, 전체 수를 모르므로 `candidate_count` 를 주지 않는다 (예전에는 '충북' 이 1이라 구가 하나뿐인 것처럼 읽혔다).
+    다른 시·도의 동('광주' 의 경기도 광주시)은 후보에서 빼고 따로 알린다.
+    예전에는 넣어서 '광주' 의 첫 예가 경기도 광주시였고, 같이 알린 '--city 광주' 로는 그곳을 찾을 수 없었다.
+    """
+    inside = [location for location in candidates if place_in(query, location.name1)]
+    gus = list(dict.fromkeys(location.name2 for location in inside if location.name2))
+    shown = gus[:AMBIGUOUS_CANDIDATES_SHOWN]
+    hint = (
+        f"구 이름으로 다시 주세요 (예: '{shown[0]}'. 지역 검색에 나온 구: {', '.join(shown)}{' 등' if len(gus) > len(shown) else ''})"
+        if shown else "구 이름(예: '강남구')으로 다시 주세요"
+    )
+    # '--city 서울 로' 처럼 값 뒤에 조사를 붙이면 받침에 따라 틀려('충북 로') 조사 없이 쓴다
+    hint += f'. 다른 시·도에도 있는 구 이름이면 --city 를 붙입니다 (예: --city {query})'
+    # 시·도 줄임말이 다른 시·도의 시 이름 앞부분이면('광주' ↔ 경기도 광주시) 그 시는 시 이름 그대로 찾는다
+    elsewhere = dict.fromkeys(
+        f'{location.name1} {location.name2}' for location in candidates
+        if location.name1 and not place_in(query, location.name1) and (location.name2 or '').startswith(query)
+    )
+    for name in elsewhere:
+        hint += f". {quoted(name, '은/는')} 다른 시·도라 시 이름 그대로 찾습니다 (예: '{name.split()[-1]}')"
+    return JibsaError(
+        code='REGION_AMBIGUOUS',
+        message=f"{quoted(query, '은/는')} 시·도 이름이라 시·도 전체로는 조회할 수 없습니다",
+        hint=hint,
+        details={'candidates': shown},
+    )
+
+
 def resolve_realsale_region(
     client: DaangnClient,
     query: str,
@@ -766,7 +804,7 @@ def resolve_realsale_region(
     Raises:
         RegionNotFoundError: 후보가 없을 때.
         RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때.
-        JibsaError: 구가 있는 시('수원시')나 세종 전체를 받을 수 없을 때 REGION_AMBIGUOUS.
+        JibsaError: 시·도('서울')나 구가 있는 시('수원시'), 세종 전체를 받을 수 없을 때 REGION_AMBIGUOUS.
     """
     if SIDO_OFFICIAL_NAMES.get(query, query) == '세종특별자치시':
         return _sejong_realsale_region(client, query, sejong_whole)
@@ -774,6 +812,8 @@ def resolve_realsale_region(
     if city:
         candidates = [location for location in candidates if place_in(city, location.name1, location.name2)]
     if not candidates:
+        if _is_sido_name(query):
+            raise _sido_region_error(query, [])
         raise RegionNotFoundError(
             query,
             hint="동 이름(예: '역삼동')이나 구 이름(예: '강남구')으로 다시 찾으세요. 같은 이름이 여러 곳이면 --city 로 좁힙니다",
@@ -812,6 +852,10 @@ def resolve_realsale_region(
         options = list(gus.values())
 
     if not options:
+        # 시·도('서울')도 이름이 같은 동·구가 없어 예전에는 아래 첫 동으로 대신 찾았다 (2026-10-28 실측: region-real-price 서울 →
+        # 종로구 부암동 기준 0건, '[범위]' 안내만). 수원시처럼 구를 골라 다시 묻게 한다. 이름이 같은 동·구가 있으면 그곳을 쓴다
+        if _is_sido_name(query):
+            raise _sido_region_error(query, candidates)
         # 구가 있는 시('수원시')는 이름이 같은 구가 없고 '수원시 팔달구' 처럼 시 이름이 붙은 구만 온다. 동 하나로 대신 찾으면
         # 시를 물었는데 동 하나의 결과가 나와(2026-10-11 실측: 수원시 → 인계동) 구를 골라 다시 묻게 한다
         city_gus = list(dict.fromkeys(

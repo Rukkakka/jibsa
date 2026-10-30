@@ -9,6 +9,7 @@ from jibsa.core.listing import (
     ListingT,
     listing_as,
     move_in_label,
+    note,
     parking_label,
     won_to_manwon,
 )
@@ -367,8 +368,10 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
         }))
     notes = []
     if gone:
-        # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
-        notes.append(f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)')
+        # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다. 받은 것 중 뺀 매물이라 [제외] 다
+        # (직방 attach_building_use 와 같다. 태그 없이 두면 emit 이 [참고] 를 붙였다)
+        notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
     if len(listings) > DETAILS_MAX:
-        notes.append(f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
+        # 직방의 같은 안내('건물 용도(--details)는 앞 N건에만')와 같은 [참고] 다
+        notes.append(note('참고', f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다'))
     return kept, notes

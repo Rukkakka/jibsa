@@ -224,7 +224,7 @@ def get_real_prices(
             '실거래가',
         )
         if page == 0 and not result.items:
-            if check_pyeong_numbers(client, complex_number, [pyeong_number]):
+            if check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True):
                 transactions, _ = _villa_real_prices(
                     client, complex_number, pyeong_number, trade_type=trade_type, size=REAL_PRICE_PAGE_SIZE, max_pages=pages,
                 )
@@ -313,7 +313,7 @@ def _get_real_prices_in_period(
     )
     transactions = [_real_price(item, trade_type) for item in items]
     notes: list[str] = []
-    if not transactions and check_pyeong_numbers(client, complex_number, [pyeong_number]):
+    if not transactions and check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True):
         transactions, truncated = _villa_real_prices(
             client, complex_number, pyeong_number,
             trade_type=trade_type, size=VILLA_PERIOD_PAGE_SIZE, max_pages=MAX_VILLA_PERIOD_PAGES, since=since,

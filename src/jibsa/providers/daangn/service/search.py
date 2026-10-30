@@ -69,10 +69,12 @@ from jibsa.providers.daangn.api.response.search import (
 from jibsa.providers.daangn.service.common import (
     OPTIONAL_LOOKUP_ERRORS,
     DaangnListingConditions,
+    DaangnNearbyListing,
     DaangnRegion,
     FeedQueryRejectedError,
     article_to_listing,
     complex_building_notes,
+    hidden_location_notes,
     is_available,
     listing_budget_notes,
     partial_failure_note,
@@ -130,7 +132,7 @@ UNORDERED_FEED_NOTE: str = note(
 DONG_SUFFIX_PATTERN: re.Pattern[str] = re.compile(rf'({ADMIN_DONG_NUMBER}|본)?동$')
 
 
-class DaangnDongListing(Listing):
+class DaangnDongListing(DaangnNearbyListing):
     """동 이름 검색 매물. 당근은 조회한 동의 주변 동 매물을 섞어 주므로(`neighbor_notes`) 동 안 매물인지 표시한다."""
 
     in_regions: Annotated[
@@ -854,11 +856,12 @@ def search_listings(
             + count_notes
             + listing_budget_notes(
                 limit, scan.fetched, len(listings), has_more=not complete, eligible=len(scan.matched), narrowable=scan.use_feed,
-                resumable=resumable,
+                resumable=resumable, resumed=resume is not None,
             )
             + trade_unselected_notes(scan.unselected)
             + neighbor_notes(searched, dongs)
             + complex_building_notes(shown)
+            + hidden_location_notes(shown)
         ),
     )
 
@@ -961,7 +964,7 @@ def _nearest_points(points: list[DaangnArticlePointModel], lat: float, lng: floa
     return sorted(nearest.items(), key=lambda entry: (entry[1], entry[0]))
 
 
-class DaangnStationListing(Listing):
+class DaangnStationListing(DaangnNearbyListing):
     """역 주변 매물. `distance_km` 는 역까지의 직선거리다."""
 
     walk_minutes: Annotated[
@@ -1085,9 +1088,12 @@ def search_station(
         ),
         listings=listings,
         notes=(
-            listing_budget_notes(limit, inspected, len(listings), has_more=has_more, resumable=bool(has_more and cursor))
+            listing_budget_notes(
+                limit, inspected, len(listings), has_more=has_more, resumable=bool(has_more and cursor), resumed=after is not None,
+            )
             + trade_unselected_notes(unselected)
             + complex_building_notes(shown)
+            + hidden_location_notes(shown)
         ),
     )
 
@@ -1214,8 +1220,11 @@ def search_area(
             # 나오므로 '더 있음' 으로 세지 않는다 (2026-10-11 실측: 반경 0.1km 핀 29개 중 반경 안 19개, limit 25 → 120 이 반경 밖 4건만 더)
             + listing_budget_notes(
                 limit, inspected, len(listings), has_more=has_more, eligible=len(matched), resumable=has_more,
+                resumed=offset > 0,
             )
             + trade_unselected_notes(unselected)
             + complex_building_notes(shown)
+            # 주소를 숨긴 매물은 지도 핀에 없어(2026-10-28 실측: 강남역 0.3km 핀 338개에 숨긴 6건 모두 없음) 지금은 오지 않는다
+            + hidden_location_notes(shown)
         ),
     )

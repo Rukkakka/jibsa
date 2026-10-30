@@ -284,6 +284,17 @@ def room_type_of(article: DaangnArticleModel) -> str | None:
     return ROOM_TYPE_BY_SALES_TYPE.get(sales_type or '')
 
 
+class DaangnNearbyListing(Listing):
+    """검색 중심(동 중심·역·반경 중심·회사)에서 거리를 재는 당근 매물. 거리를 모르면 키를 빼지 않고 null(모름)로 낸다.
+
+    공통 `Listing` 은 `distance_km` 가 None 이면 중심 없는 조회로 보고 키를 뺀다 (해당 없음). 중심이 있는데 매물 위치를
+    모르면(주소를 숨긴 매물, `article_to_listing`) 해당 없음이 아니라 모름이다.
+    """
+
+    def not_applicable_fields(self) -> frozenset[str]:
+        return super().not_applicable_fields() - {'distance_km'}
+
+
 def article_to_listing(
     article: DaangnArticleModel,
     center: tuple[float, float] | None = None,
@@ -294,13 +305,17 @@ def article_to_listing(
 
     `trade` 를 주지 않으면 대표(preferred) 조건을 쓴다. 금액은 원래 만원 단위다.
     제목은 목록과 상세가 같도록 작성자 소개(`addressInfo`) → 건물 이름 →
-    `fallback_title`(상세 페이지의 자동 요약) 순으로 고른다.
+    `fallback_title`(상세 페이지의 자동 요약) 순으로 고른다. `center` 를 주면 거리를 재고
+    `DaangnNearbyListing` 으로 준다 (거리를 모르면 null).
     """
     trade = trade or _preferred_trade(article)
     if trade is None:
         return None
 
-    coordinate = article.public_coordinate
+    # 주소를 숨긴 매물(isHideAddress)의 공개 좌표는 실제 위치가 아니어서 거리를 재지 않는다 (null, `hidden_location_notes`).
+    # 2026-10-28 실측: 강남역 역 주변 100건 중 숨긴 18건은 역까지 도보 1~6분인데 공개 좌표가 역에서 0.35~1.78km, 숨기지 않은
+    # 82건은 모두 0.21km 안 (출퇴근 역별 매물 100건도 같은 18:82). 숨긴 매물은 지도 핀에 없고 상세 주소도 동까지만 온다
+    coordinate = None if article.is_hide_address else article.public_coordinate
     lat = coordinate.lat if coordinate else None
     lng = coordinate.lon if coordinate else None
     distance = None
@@ -312,7 +327,8 @@ def article_to_listing(
     if address is None and region is not None:
         address = join_address(region.name1, region.name2, region.name3)
 
-    return Listing(
+    model = Listing if center is None else DaangnNearbyListing
+    return model(
         source='daangn',
         id=article.original_id,
         url=article_url(article.original_id),
@@ -672,6 +688,7 @@ def listing_budget_notes(
     eligible: int | None = None,
     narrowable: bool = True,
     resumable: bool = False,
+    resumed: bool = False,
 ) -> list[str]:
     """조회한 원본은 제외 여부와 무관하게 예산에 포함한다.
 
@@ -682,12 +699,20 @@ def listing_budget_notes(
         narrowable: `--limit`·필터로 더 받을 수 있는지. 피드를 쓸 수 없어 동마다 지도 페이지 20건만 받을 때는
             limit 을 늘리거나 필터를 걸어도 그 20건 안이라 False 로 주어 그 안내를 붙이지 않는다.
         resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
+        resumed: 이어 받기(`--next`)로 앞 결과 다음부터 받았으면 True. 이번 쪽만 센 수를 전부라고 하지 않는다.
     """
     notes: list[str] = []
     excluded = inspected - returned if eligible is None else inspected - eligible + min(eligible, limit) - returned
     if excluded > 0 and returned < limit:
         head = f'{inspected}건을 받아 중복·거래 불가·조건 불일치를 빼고 {returned}건입니다'
         notes.append(note('제외', f'{head} (뺀 만큼 다시 채우지 않음)' if has_more else f'{head} (더 받을 매물 없음)'))
+    elif returned < limit and not has_more and resumed:
+        # 이어 받은 마지막 쪽에서 '이 N건이 전부' 라고 하면 앞 결과의 매물을 빼고 센 말이 된다 (2026-10-28 실측: 사근동 원룸
+        # 월세 3쪽째 1건에 '이 1건이 전부입니다', 앞 두 쪽에서 6건을 받았다)
+        notes.append(
+            f'앞 결과에 이어 남은 매물 {returned}건을 받았고, 더 받을 매물은 없습니다'
+            if returned else '앞 결과 뒤로 더 받을 매물이 없습니다'
+        )
     elif returned < limit and not has_more:
         notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
     if not narrowable:
@@ -719,6 +744,18 @@ def complex_building_notes(articles: list[DaangnArticleModel]) -> list[str]:
         f'원룸·투룸으로 올렸지만 단지 건물에 있는 매물 {len(found)}건: {shown}. '
         'property_type 은 작성자가 고른 종류이고, 건물 종류는 이 안내와 listing 의 complex_type 으로 확인하세요'
     ]
+
+
+def hidden_location_notes(articles: list[DaangnArticleModel]) -> list[str]:
+    """주소를 숨긴 매물의 `distance_km` 가 null 인 이유를 알린다 (`article_to_listing`). 매물은 빼지 않는다."""
+    count = sum(1 for article in articles if article.is_hide_address)
+    if not count:
+        return []
+    return [note(
+        '참고',
+        f'distance_km 가 null 인 {count}건은 작성자가 주소를 숨긴 매물이라 당근이 실제 위치가 아닌 좌표를 주어 거리를 모릅니다 '
+        '(주소도 동까지만 공개)',
+    )]
 
 
 def trade_unselected_notes(count: int) -> list[str]:

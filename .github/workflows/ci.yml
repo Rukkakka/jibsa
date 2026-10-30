@@ -81,7 +81,7 @@ jobs:
           "$RUNNER_TEMP/jibsa-check/bin/jibsa" --version
           "$RUNNER_TEMP/jibsa-check/bin/jibsa" guide > "$RUNNER_TEMP/guide.md"
           diff "$RUNNER_TEMP/guide.md" docs/llm.md
-          for topic in common zigbang naver daangn; do
+          for topic in common zigbang naver daangn dabang; do
             "$RUNNER_TEMP/jibsa-check/bin/jibsa" guide "$topic" --all > "$RUNNER_TEMP/$topic.md"
             diff "$RUNNER_TEMP/$topic.md" "docs/$topic.md"
           done

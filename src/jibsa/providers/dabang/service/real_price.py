@@ -37,6 +37,7 @@ from jibsa.providers.dabang.api.response.real_price import (
 from jibsa.providers.dabang.service.common import (
     complex_not_found,
     complex_url,
+    error_message,
     fetch_complex,
     listing_url,
 )
@@ -229,18 +230,6 @@ def _month(value: str) -> str:
 BUILDING_VIEW_LABELS: dict[str, str] = {'DETACHED': '단독·다가구', 'MULTIPLEX': '다세대·연립', 'APARTMENT': '아파트', 'OFFICETEL': '오피스텔'}
 
 
-def _error_message(exc: HTTPStatusError) -> str | None:
-    """다방 400 본문의 사유 ("존재하지 않는 단지입니다." 등). 없거나 JSON 이 아니면 None."""
-    try:
-        body = exc.response.json()
-    except ValueError:
-        return None
-    if not isinstance(body, dict):
-        return None
-    message = body.get('msg')
-    return message if isinstance(message, str) else None
-
-
 def _complex_error(exc: HTTPStatusError, complex_id: str, space_seq: int) -> JibsaError | None:
     """단지 실거래·시세 흐름의 없는 단지·평형을 NOT_FOUND·INVALID_ARGUMENT 로 바꾼다 (아니면 None).
 
@@ -250,7 +239,7 @@ def _complex_error(exc: HTTPStatusError, complex_id: str, space_seq: int) -> Jib
     """
     if exc.response.status_code != 400:
         return None
-    message = _error_message(exc) or ''
+    message = error_message(exc) or ''
     if '평형' in message:
         return JibsaError(
             code='INVALID_ARGUMENT',

@@ -127,7 +127,7 @@ jibsa daangn search listings 역삼동 --city 강남구 -t 원룸 --trade 월세
 
 **반환값**
 
-동 검색은 `regions`, `total`(조건에 맞는 매물 수를 받지 못하면 `null`이고 이유를 `notes`로 알린다), `fetched`, `returned`, `has_more`, `next`, `listings`(매물마다 `in_regions`: 조회한 동 안이면 `true`, 당근이 섞어 준 주변 동이면 `false`, 동을 모르면 `null`); 반경 검색은 `region`(검색 중심의 동. 받지 못하면 `null`이고 이유를 `notes`로 알린다), `radius_km`, `total`, `returned`, `has_more`, `next`, `listings`; 역 주변 검색은 `region`(찾은 역의 이름·노선·좌표), `returned`, `has_more`, `next`, `listings`(매물마다 `walk_minutes`)다. `next` 는 더 받을 매물이 있을 때만 있다.
+동 검색은 `regions`, `total`(조건에 맞는 매물 수를 받지 못하면 `null`이고 이유를 `notes`로 알린다), `fetched`, `returned`, `has_more`, `next`, `listings`(매물마다 `in_regions`: 조회한 동 안이면 `true`, 당근이 섞어 준 주변 동이면 `false`, 동을 모르면 `null`); 반경 검색은 `region`(검색 중심의 동. 받지 못하면 `null`이고 이유를 `notes`로 알린다), `radius_km`, `total`, `returned`, `has_more`, `next`, `listings`; 역 주변 검색은 `region`(찾은 역의 이름·노선·좌표), `returned`, `has_more`, `next`, `listings`(매물마다 `walk_minutes`)다. `next` 는 더 받을 매물이 있을 때만 있다. 작성자가 주소를 숨긴 매물은 당근이 실제 위치가 아닌 좌표를 주어 `distance_km` 가 `null`(모름)이고 `notes` 로 알린다 (주소도 동까지만 온다).
 
 `next` 를 같은 지역·조건에 `--next` 로 주면 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않고 앞 결과가 찾은 곳(동 목록·역·반경 중심)에서 이어 간다. 동 검색은 동마다 당근 피드 커서를 남겨 이어 간다. 여러 동(`○가`·`--expand`)도 앞 페이지가 끝난 시각 다음부터 이어 받아, 두 동 피드에 함께 오는 매물이 다음 페이지에 다시 나오지 않는다. `regions`·`total`·`distance_km` 은 앞 페이지와 같은 기준으로 준다. 역 검색은 당근 역 목록 커서로, 반경 검색은 가까운 순 핀 목록의 다음 순서부터 받는다. 필터 API 를 쓸 수 없어 지도 페이지 20건만 본 결과(`[실패]` 안내)에는 `next` 가 없다.
 
@@ -215,7 +215,7 @@ jibsa daangn search complexes 역삼동 --city 강남구 -t 아파트 --sort 가
 
 **오류와 대응**
 
-거래 유형과 가격 옵션이 충돌하거나 한도를 넘으면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다.
+거래 유형과 가격 옵션이 충돌하거나 한도를 넘으면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다.
 
 **주의사항**
 
@@ -362,7 +362,7 @@ jibsa daangn region-real-price 강남구 --city 서울 --new-high
 
 **오류와 대응**
 
-전세·월세에 `--new-high` 또는 가격 정렬을 지정하면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다.
+전세·월세에 `--new-high` 또는 가격 정렬을 지정하면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다.
 
 **주의사항**
 
@@ -486,7 +486,7 @@ jibsa daangn search commute 강남역 --max-minutes 20 -t 원룸 --trade 월세 
 
 회사에서 가까운 역을 찾고 그 역까지 지하철로 갈 수 있는 역 주변의 매물을 예상 통근 시간 짧은 순으로 보여 준다. `--max-minutes`는 총 통근 시간이 아니라 역 사이 지하철 시간의 상한이다. 당근은 지하철 60분 안 역까지만 주어 60을 넘게 주면 60분까지의 역만 찾고 `notes`로 알린다. 갈 수 있는 역 목록은 200곳까지만 받아 `reachable_stations`는 그 안에서 센 수이고, 더 있으면 `notes`로 알린다. 가까운 역부터 최대 10곳을 조회하며 `--limit`은 전체가 아닌 역당 개수다. 기본 5건(10역이면 50건)·최대 120건을 받은 수로 세어 100건씩 다음 페이지를 이어 받고, 같은 역 안의 중복·거래 불가·조건 불일치는 제외해도 추가로 채우지 않는다. 여러 역에 걸친 같은 매물은 각 역에 유지한다. 결과는 `stations[]`로 묶이며 역마다 통근 시간이 짧은 순으로 정렬한다. `returned`는 역별 합계, `unique_returned`는 전체 서로 다른 매물 수다. `commute_minutes`는 도보+지하철+회사까지 도보이며 대기 시간은 포함하지 않는다. 매물→역 또는 회사 역→회사 도보 시간을 모르면 `commute_minutes`는 `null`이다. 지하철 시간을 모르는 역은 시간 상한을 확인할 수 없어 제외하고 안내한다. 환승 횟수를 모르면 `transfers`는 `null`이다.
 
-위치 이름은 당근 역·주소 검색으로 찾고, 못 찾으면 직방 지역 검색으로, 직방이 막히거나 실패하면 네이버로 찾는다. 매물의 `distance_km`는 회사까지 직선거리다. [통근 매물 필드](#통근-매물-search-commute)를 함께 확인한다.
+위치 이름은 당근 역·주소 검색으로 찾고, 못 찾으면 직방 지역 검색으로, 직방이 막히거나 실패하면 네이버로 찾는다. 매물의 `distance_km`는 회사까지 직선거리다. 주소를 숨긴 매물은 `null` 이고 같은 통근 시간 안에서 뒤에 온다. [통근 매물 필드](#통근-매물-search-commute)를 함께 확인한다.
 
 유형·방 구조·면적의 의미와 원룸 검색의 누락 가능성은 [검색 조건 주의사항](#2-search-listings--현재-매물-찾기)을 따른다.
 
@@ -512,7 +512,7 @@ jibsa daangn region-reviews 역삼동 --city 강남구 --top 10
 
 **오류와 대응**
 
-지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다. 구가 없는 지역은 가능한 조회 범위를 `notes`로 안내한다.
+지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다. 구가 없는 지역은 가능한 조회 범위를 `notes`로 안내한다.
 
 **주의사항**
 
