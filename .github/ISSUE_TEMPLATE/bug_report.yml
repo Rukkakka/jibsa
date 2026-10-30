@@ -14,10 +14,10 @@ body:
       label: 영역
       description: 어느 부분에서 문제가 생겼나요?
       options:
-        - 통합 검색 (jibsa search)
         - 직방 (jibsa zigbang)
         - 네이버 부동산 (jibsa naver)
         - 당근부동산 (jibsa daangn)
+        - 다방 (jibsa dabang)
         - 요청 제한 (jibsa limits, RATE_LIMITED)
         - CLI 출력·에러 형식
         - 기타 / 잘 모르겠음
@@ -37,7 +37,7 @@ body:
     attributes:
       label: 재현 방법
       description: 문제를 일으키는 가장 짧은 명령.
-      placeholder: "jibsa search 역삼동 -t 원룸 --trade 월세 --deposit-max 1000"
+      placeholder: "jibsa zigbang search listings room 역삼동 --trade 월세 --deposit-max 1000"
       render: shell
     validations:
       required: true
