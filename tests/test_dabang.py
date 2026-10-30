@@ -78,6 +78,8 @@ def test_empty_403_means_missing_id_only_when_the_id_is_in_the_path() -> None:
         return HTTPStatusError('', request=request, response=Response(status, content=body, request=request))
 
     assert is_missing_id(error(403)) and not is_missing_id(error(403), in_path=False)
-    assert is_missing_id(error(400), in_path=False)
+    # 400 은 사유가 '존재하지 않…' 일 때만 없는 ID 다. 요청 형식 오류의 400 은 다방이 바뀐 것이다 (2026-10-28 실측 본문)
+    assert is_missing_id(error(400, '{"msg":"존재하지 않는 분양정보입니다."}'.encode()), in_path=False)
+    assert not is_missing_id(error(400, '{"msg":"사용이 중지된 버전입니다."}'.encode()), in_path=False)
     # 본문이 있는 403 은 차단 페이지일 수 있다
     assert not is_missing_id(error(403, b'<html>blocked</html>'))

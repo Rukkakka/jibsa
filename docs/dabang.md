@@ -327,7 +327,7 @@ jibsa dabang search sales 강남구 --state 분양예정,접수중
 jibsa dabang search sales 강남역 --radius 3 -t 아파트
 ```
 
-단지마다 `sale_id`, `name`, `state`, `building_type`, `supply_type`, `address`, `household_count`, `price_kind`(분양가·보증금), `price_manwon`(다방 대표 가격, 없으면 `null`), `next_schedule`(다음 일정 글)을 준다. 다방 분양 목록은 지도 범위(사각형)만 받는다. 동·시군구는 경계를 덮는 사각형으로 받아 주소가 그 동·시군구인 단지만 남기고(경계 요청 1회 추가), 역·대학·좌표는 반경을 덮는 사각형 그대로다 (분양 칸에 좌표가 없어 반경 밖을 뺄 수 없다). 시·도·전국과 구가 있는 시(`성남시`)는 `REGION_NOT_SUPPORTED`, 여러 시·도에 있는 시·군·구 이름(`중구`)은 `REGION_AMBIGUOUS` 다 (`'서울 중구'` 처럼 시·도를 붙인다). 시·군·구 이름에 `--radius` 를 주면 `INVALID_ARGUMENT` 다 (시·군·구는 그 경계 안 전체를 찾는다). `광주시` 는 경기도 광주시이고 옛 광주광역시는 구 이름(`광산구`)으로 준다.
+단지마다 `sale_id`, `name`, `state`, `building_type`, `supply_type`, `address`, `household_count`, `price_kind`(분양가·보증금), `price_manwon`(다방 대표 가격, 없으면 `null`), `next_schedule`(다음 일정 글)을 준다. 다방 분양 목록은 지도 범위(사각형)만 받는다. 동·시군구는 경계를 덮는 사각형으로 받아 주소가 그 동·시군구인 단지만 남기고(경계 요청 1회 추가), 역·대학·좌표는 반경을 덮는 사각형 그대로다 (분양 칸에 좌표가 없어 반경 밖을 뺄 수 없다). 시·도·전국과 구가 있는 시(`성남시`)는 `REGION_NOT_SUPPORTED`, 여러 시·도에 있는 시·군·구 이름(`중구`)은 `REGION_AMBIGUOUS` 다 (`'서울 중구'` 처럼 시·도를 붙인다). 시·군·구 이름에 `--radius` 를 주면 `INVALID_ARGUMENT` 다 (시·군·구는 그 경계 안 전체를 찾는다). `광주시` 는 경기도 광주시이고 옛 광주광역시는 구 이름(`광산구`, `광주시 광산구`)으로 준다.
 
 ## 18. `sale` — 분양 단지 하나
 
@@ -335,7 +335,7 @@ jibsa dabang search sales 강남역 --radius 3 -t 아파트
 jibsa dabang sale 6a7a774cf962bc11cafe5cd6d0f1
 ```
 
-상태, 건물·공급 유형, 지번·도로명 주소, 총·분양 세대수, 동 수·층수, `builder`(시공사)·`developer`(시행사), `price_min_manwon`·`price_max_manwon`·`price_per_pyeong_manwon`, `move_in`(입주 예정 `YYYY-MM`), 규제 지역·분양가 상한제·전매 가능(모르면 `null`), `schedules`(모집공고·특별공급·1·2순위 청약·당첨자발표·계약기간·입주예정일의 `start`·`end`, 달만 알면 `YYYY-MM`), `pyeongs`(평형별 전용·공급 면적·세대수·분양가), `notice_url`(입주자 모집공고), `applyhome_url`(청약홈)을 준다. 상담 전화는 주지 않는다. 요청 1회.
+상태, 건물·공급 유형, 지번·도로명 주소, 총·분양 세대수, 동 수·층수, `builder`(시공사)·`developer`(시행사), `price_min_manwon`·`price_max_manwon`·`price_per_pyeong_manwon`, `move_in`(입주 예정 `YYYY-MM`), 규제 지역·분양가 상한제·전매 가능(모르면 `null`), `schedules`(모집공고·특별공급·1·2순위 청약·당첨자발표·계약기간·입주예정일의 `start`·`end`, 달만 알면 `YYYY-MM`. 하루짜리는 `end` 가 `start` 와 같고, 모집공고·당첨자발표·입주예정일처럼 한 시점인 단계는 `end` 키가 없다), `pyeongs`(평형별 전용·공급 면적·세대수·분양가), `notice_url`(입주자 모집공고), `applyhome_url`(청약홈)을 준다. 상담 전화는 주지 않는다. 요청 1회.
 
 ## 19. `sale-schedule` — 날짜별 청약 일정
 

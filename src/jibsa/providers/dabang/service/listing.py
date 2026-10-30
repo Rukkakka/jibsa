@@ -58,6 +58,7 @@ from jibsa.providers.dabang.service.common import (
     filters_of,
     floor_label,
     is_complex_type,
+    is_missing_id,
     listing_url,
     middle_place,
     premium_note,
@@ -274,6 +275,7 @@ def _fetch(
             break
         if total is None:
             total = result.total
+        # 광고는 첫 쪽에만 와서 쪽마다 더해도 같은 광고를 두 번 세지 않는다 (2026-10-28 실측: 역삼동 원룸 1~3쪽 광고 8·0·0건)
         premium += sum(len(group.room_list) for group in result.premium_list)
         rows = result.room_list[skip:]
         taken = rows[:budget - len(items)]
@@ -542,7 +544,7 @@ def resolve_listing_id(client: DabangClient, listing_ref: str) -> str:
     try:
         found = client.run_request_room_get_room_id_v3(DabangRoomGetRoomIdV3RequestParameterModel(seq=int(listing_ref)))
     except HTTPStatusError as exc:
-        if exc.response.status_code == 400:
+        if is_missing_id(exc, in_path=False):
             # 400 '존재하지 않는 방입니다.' 는 없는 번호라 사유를 넘기지 않는다. 사유가 있으면 다른 소스 ID 힌트가 빠진다
             # (2026-10-25 실측: 직방 ID 47123456 을 넣으면 이 응답)
             raise ListingUnavailableError(SOURCE, listing_ref) from None
@@ -565,7 +567,7 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
     try:
         response = client.run_request_new_room_detail_v3(DabangNewRoomDetailV3RequestParameterModel(room_id=room_id))
     except HTTPStatusError as exc:
-        if exc.response.status_code == 400:
+        if is_missing_id(exc, in_path=False):
             # 400 '존재하지 않는 매물입니다.' 도 없는 ID 라 사유를 넘기지 않는다 (`resolve_listing_id` 와 같다)
             raise ListingUnavailableError(SOURCE, listing_ref) from None
         raise

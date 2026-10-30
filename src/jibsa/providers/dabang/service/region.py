@@ -21,6 +21,7 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import (
+    CITY_NAMES_NOT_SIDO,
     SIDO_OFFICIAL_NAMES,
     normalize_address,
     note,
@@ -71,11 +72,16 @@ def search_locations(
     다방은 괄호가 든 검색어에 0건을 준다 ('연세대학교(원주캠퍼스)' 0건, '연세대학교 원주캠퍼스' 는 그 캠퍼스가 첫 후보,
     2026-10-25 실측). 결과에 나온 이름을 그대로 다시 넣어도 찾도록 괄호를 띄어 보낸다.
     """
-    parameter = DabangLocSearchV5RequestParameterModel(search_keyword=' '.join(re.sub(r'[()]', ' ', query).split()))
+    parameter = DabangLocSearchV5RequestParameterModel(search_keyword=_without_parens(query))
     if columns:
         parameter = parameter.model_copy(update={'column_list': columns})
     response = client.run_request_loc_search_v5(parameter)
     return response.result or DabangLocSearchResultModel()
+
+
+def _without_parens(text: str) -> str:
+    """괄호를 띄어 쓴 꼴 ('연세대학교(원주캠퍼스)' → '연세대학교 원주캠퍼스'). 다방은 괄호가 든 검색어에 0건을 준다."""
+    return ' '.join(re.sub(r'[()]', ' ', text).split())
 
 
 def legal_division_code(code: str) -> str:
@@ -111,10 +117,30 @@ def place_of_region(region: DabangLocRegionModel) -> DabangPlace:
     )
 
 
-def _matches_context(full_name: str | None, words: list[str]) -> bool:
-    """'강남구 신사동' 의 앞 낱말(시·도·구·시)이 후보의 전체 이름에 모두 들었는지. 시·도는 줄여 써도 된다 ('서울 신사동')."""
+def _matches_context(full_name: str | None, words: list[str], *, widen_city: bool = False) -> bool:
+    """'강남구 신사동' 의 앞 낱말(시·도·구·시)이 후보의 전체 이름에 모두 들었는지. 시·도는 줄여 써도 된다 ('서울 신사동').
+
+    시·도 넓히기는 `state_name` 으로 한다. '광주시' 를 시·도 표대로 전남광주통합특별시로 넓히면 '광주시 송정동' 이 경기도
+    광주시 송정동과 광산구 송정동 둘에 맞아 REGION_AMBIGUOUS 로 끝났다 (2026-10-28 실측). `widen_city` 면 '광주시' 도
+    시·도 표대로 넓힌다 (`_in_context`).
+    """
     parts = (full_name or '').split()
-    return all(word in parts or SIDO_OFFICIAL_NAMES.get(word) in parts for word in words)
+    return all(
+        word in parts or (SIDO_OFFICIAL_NAMES.get(word) if widen_city else state_name(word)) in parts for word in words
+    )
+
+
+def _in_context(regions: list[DabangLocRegionModel], words: list[str]) -> list[DabangLocRegionModel]:
+    """앞 낱말(`words`)에 맞는 동. '광주시' 는 경기도 광주시로 먼저 맞춰 보고, 맞는 동이 없을 때만 옛 광주광역시로 본다.
+
+    네이버 `regions` 와 같은 규칙이다 (한 단어 '광주시' 만 경기도 광주시, 경기도 광주시에 없는 구를 붙이면 전남광주통합특별시).
+    경기도 광주시로만 맞추면 '광주시 광산구 송정동' 이 REGION_NOT_FOUND, search sales '광주시 광산구' 가 REGION_NOT_SUPPORTED
+    로 끝났다 (2026-10-30 실측: 넓히면 광산구 송정동, 광산구 분양 8곳)
+    """
+    return (
+        [region for region in regions if _matches_context(region.full_name, words)]
+        or [region for region in regions if _matches_context(region.full_name, words, widen_city=True)]
+    )
 
 
 def _words(query: str, hint: str) -> list[str]:
@@ -147,12 +173,15 @@ def resolve_places(
     words = _words(text, REGION_HINT)
     last, context = words[-1], words[:-1]
     result = searched if searched is not None else search_locations(client, text)
-    regions = [region for region in result.region_list if _matches_context(region.full_name, context)]
+    regions = _in_context(result.region_list, context)
     exact = [region for region in regions if region.name == last]
     stations = [station for station in result.subway_list if station.name in (last, f'{last}역')]
-    # 이름이 똑같은 대학을 먼저 본다. '연세대' 는 연세대학교·연세대학교(원주캠퍼스)·연세대학교(국제캠퍼스)에 맞는다 (2026-10-25 실측)
+    # 이름이 똑같은 대학을 먼저 본다. '연세대' 는 연세대학교·연세대학교(원주캠퍼스)·연세대학교(국제캠퍼스)에 맞는다 (2026-10-25 실측).
+    # 띄어 쓴 캠퍼스 이름('연세대학교 원주캠퍼스')은 낱말 하나로는 맞지 않아 검색어 전체를 괄호 뺀 대학 이름과 견준다
+    # (2026-10-28 실측: 마지막 낱말 '원주캠퍼스' 로만 견줘 REGION_NOT_FOUND 였다)
+    spaced = _without_parens(text)
     universities = (
-        [univ for univ in result.univ_list if univ.name == last]
+        [univ for univ in result.univ_list if univ.name == last or _without_parens(univ.name) == spaced]
         or [univ for univ in result.univ_list if univ.name.startswith(last)]
     )
     notes: list[str] = []
@@ -240,15 +269,15 @@ def dongs_bbox(client: DabangClient, places: list[DabangPlace]) -> DabangBboxMod
 
 
 NATIONAL_NAMES: frozenset[str] = frozenset({'전국', '전체', '대한민국'})
-# 시·도 표(`SIDO_OFFICIAL_NAMES`)에 옛 광주광역시로 있지만 범위로는 시·군·구인 이름. 당근 `--city`·네이버 `regions` 처럼
-# 경기도 광주시로 본다 (옛 광주광역시는 '광주'·'전남광주'). 2026-10-26 실측: 시·도로 보면 region-ranking 광주시 가 안내 없이
-# 전남광주통합특별시 순위를 주고, search sales 광주시 는 시·도 범위라며 막혔다
-DISTRICT_NOT_STATE_NAMES: frozenset[str] = frozenset({'광주시'})
 
 
 def state_name(text: str) -> str | None:
-    """시·도 줄임말·정식 이름이면 정식 이름 ('충북'·'충청북도' → '충청북도'), 아니면 None. '광주시' 는 경기도 광주시라 None."""
-    if text in DISTRICT_NOT_STATE_NAMES:
+    """시·도 줄임말·정식 이름이면 정식 이름 ('충북'·'충청북도' → '충청북도'), 아니면 None. '광주시' 는 경기도 광주시라 None.
+
+    '광주시'(`CITY_NAMES_NOT_SIDO`)를 시·도로 보면 2026-10-26 실측에서 region-ranking 광주시 가 안내 없이
+    전남광주통합특별시 순위를 주고, search sales 광주시 는 시·도 범위라며 막혔다.
+    """
+    if text in CITY_NAMES_NOT_SIDO:
         return None
     return SIDO_OFFICIAL_NAMES.get(text) or (text if text in SIDO_OFFICIAL_NAMES.values() else None)
 
@@ -326,10 +355,12 @@ def resolve_scope(client: DabangClient, query: str, *, searched: DabangLocSearch
     if DISTRICT_PATTERN.fullmatch(last):
         # 시·군·구 이름마다 처음 나온 동 하나 ('중구' 는 서울·부산·대구·대전·울산, 2026-10-25 실측)
         districts: dict[str, tuple[DabangLocRegionModel, list[str], int]] = {}
-        for region in (searched if searched is not None else search_locations(client, text)).region_list:
+        named = [
+            region for region in (searched if searched is not None else search_locations(client, text)).region_list
+            if last in (region.full_name or '').split()[1:3]
+        ]
+        for region in _in_context(named, words):
             parts = (region.full_name or '').split()
-            if last not in parts[1:3] or not _matches_context(region.full_name, words):
-                continue
             index = parts.index(last)
             districts.setdefault(' '.join(parts[:index + 1]), (region, parts, index))
         if len(districts) > 1:
