@@ -19,6 +19,7 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import (
+    CITY_NAMES_NOT_SIDO,
     SIDO_OFFICIAL_NAMES,
     normalize_address,
     note,
@@ -94,7 +95,7 @@ class NaverRegion(BaseModel):
     ] = None
     ga_base: Annotated[
         str | None,
-        Field(exclude=True, description="'○가' 로 나뉜 동의 앞 이름 ('성수동' 으로 성수동1가를 찾았을 때). 아니면 None")
+        Field(exclude=True, description="'○가' 로 나뉜 동의 앞 이름 ('성수동'·'성수' 로 성수동1가를 찾았을 때 성수동). 아니면 None")
     ] = None
     ga_note: Annotated[
         str | None,
@@ -328,19 +329,29 @@ def _search_address(client: NaverClient, query: str) -> tuple[list[NaverAddressM
     return items, max(block.total_count, len(items)) if items else 0
 
 
-def _ga_dong_note(query: str, name: str, dong: str | None) -> str | None:
-    """'○가' 로 나뉜 동의 한 곳만 찾았다는 안내 ('성수동' → 성수동1가). 그런 동이 아니면 None.
+def _ga_dong_base(name: str, dong: str) -> str | None:
+    """찾은 동이 검색어 끝 단어 `name` 의 '○가' 동이면 '○가' 를 뗀 앞 이름 ('성수동'·'성수' → 성수동1가 의 성수동). 아니면 None.
+
+    주소 검색은 '동' 을 뺀 '성수' 에도 '성수동' 처럼 성수동1가 한 곳만 준다 (2026-10-28 실측). 검색어 바로 뒤에 숫자+'가' 가
+    올 때만 '○가' 동으로 보면 '성수' 는 사이에 '동' 이 껴 1가만 찾고 안내도 없었다 (2026-10-28 리뷰).
+    """
+    match = re.fullmatch(r'(.+?)\d+가', dong)
+    if match is None or match.group(1) not in (name, f'{name}동'):
+        return None
+    return match.group(1)
+
+
+def _ga_dong_note(label: str, base: str, dong: str) -> str:
+    """'○가' 로 나뉜 동의 한 곳만 찾았다는 안내 ('성수동' → 성수동1가). `label` 은 끝 단어를 앞 이름으로 바꾼 검색어다.
 
     주소 검색은 '성수동' 에 성수동1가 한 곳만 주고 2가가 있다는 것은 알리지 않는다 (2026-10-15 실측). 직방은 '○가' 동을
     합쳐 찾지만 네이버 동 경계 검색은 동 하나만 받아 안내만 붙인다.
     """
-    if not dong or not dong.startswith(name) or not dong.endswith('가') or not dong[len(name):-1].isdigit():
-        return None
-    other = f'{name}2가' if dong == f'{name}1가' else f'{name}1가'
+    other = f'{base}2가' if dong == f'{base}1가' else f'{base}1가'
     # '○가' 로 끝나 조사는 받침 없는 꼴(만·처럼)로 고정한다
     return note(
         '범위',
-        f"{quoted(query, '은/는')} {dong}·{other} 처럼 '○가' 로 나뉜 동이라 {dong}만 찾았습니다. "
+        f"{quoted(label, '은/는')} {dong}·{other} 처럼 '○가' 로 나뉜 동이라 {dong}만 찾았습니다. "
         f"다른 곳도 보려면 '{other}' 처럼 각각 검색하세요",
     )
 
@@ -380,7 +391,8 @@ def _find_address(
 ) -> tuple[NaverRegion, str, list[str]] | None:
     """사이트 검색창의 주소 검색. 번지·도로명이면 그 지점, 법정동이면 그 동, 시·군·구면 넓은 지역이다.
 
-    동 이름 일부('송정')로 찾은 동은 동 이름 전체로 1회 더 물어 같은 이름 동이 여러 곳인지 본다.
+    동 이름 일부('송정')로 찾은 동은 동 이름 전체로 1회 더 물어 같은 이름 동이 여러 곳인지 본다 ('○가' 동은 '성수' →
+    성수동처럼 앞 이름으로). '○가' 로 나뉜 동이면 `ga_base`·`ga_note` 를 채워 '성수'·'성수동' 을 똑같이 다룬다.
 
     Raises:
         RegionAmbiguousError: 같은 이름의 동·주소가 여러 곳일 때 (신사동 3곳, 중앙동 1 은 21곳, 송정 15곳).
@@ -397,23 +409,24 @@ def _find_address(
     code = elements.bcode or None
     words = query.split()
     dong = elements.dongmyun or ''
-    # 끝 단어가 동 이름 일부일 때만 다시 묻는다. 번지('신사동 535-1' → '신사동 신사동')나 '○가' 동의 앞부분('성수동' →
-    # '성수동1가', 그 이름은 한 곳뿐이라 여러 곳인지 알 수 없다)까지 다시 물어 요청만 1회 늘었다 (2026-10-23 리뷰)
-    partial = dong != words[-1] and dong.startswith(words[-1]) and re.fullmatch(rf'{re.escape(words[-1])}\d+가', dong) is None
-    if is_dong_code(code) and not elements.ri and partial:
+    ga_base = _ga_dong_base(words[-1], dong) if is_dong_code(code) and not elements.ri else None
+    # '○가' 동은 '○가' 를 뗀 앞 이름('성수' → 성수동)이 동 이름 전체다. 끝 단어가 그보다 짧을 때만 다시 묻는다. 번지('신사동
+    # 535-1' → '신사동 신사동')나 앞 이름 그대로('성수동')까지 다시 물어 요청만 1회 늘었고 (2026-10-23 리뷰), '성수' 를
+    # '성수동1가' 로 다시 물으면 그 한 곳만 와 앞 이름이 여러 곳인지 볼 수 없었다 (2026-10-28 리뷰)
+    full_name = ga_base or dong
+    if is_dong_code(code) and not elements.ri and dong.startswith(words[-1]) and full_name != words[-1]:
         # 동 이름 일부는 주소 검색이 대표 한 곳만 준다 ('송정' 은 부산 해운대구 송정동 1곳, '송정동' 은 15곳.
         # '역삼'·'역삼동' 은 둘 다 강남구 역삼동 1곳, 2026-10-11). 그래서 동 이름 전체로 다시 물어 여러 곳이면 멈춘다
-        same, same_total = _search_address(client, ' '.join([*words[:-1], dong]))
+        same, same_total = _search_address(client, ' '.join([*words[:-1], full_name]))
         if same_total > 1:
             raise RegionAmbiguousError(
                 query, [other.full_address for other in same[:MAX_CANDIDATE_NOTES] if other.full_address], same_total,
             )
     full_address = item.full_address or query
     notes: list[str] = []
-    ga_note = _ga_dong_note(query, words[-1], elements.dongmyun) if is_dong_code(code) and not elements.ri else None
+    ga_note = _ga_dong_note(' '.join([*words[:-1], ga_base]), ga_base, dong) if ga_base else None
     if ga_note:
         notes.append(ga_note)
-    ga_base = words[-1] if ga_note else None
     if (item.item_level or 0) >= ADDRESS_LOT_ITEM_LEVEL or elements.jibun or elements.build_number:
         kind, name = '주소', full_address
     elif is_dong_code(code) and not elements.ri:
@@ -476,7 +489,17 @@ def resolve_search_region(
         if found is None:
             return None
         region, notes = found
-        return region, '동' if is_dong_code(region.legal_division_code) else '지역', notes
+        if not is_dong_code(region.legal_division_code):
+            return region, '지역', notes
+        # 주소 검색이 못 찾은 '○가' 동의 앞 이름('부민')은 자동완성이 1가·2가·3가를 모두 주는데 첫 동만 찾고 안내도 없었다
+        # (2026-10-30 실측: 부민 → 부산 서구 부민동1가·2가·3가). `_find_address` 처럼 `ga_base` 를 채워 '○가' 동을 합친다.
+        # 이 경로만 채운다. 같은 자동완성을 쓰는 `resolve_region_with_notes` 는 다른 소스가 좌표만 빌려 써서 동을 합치지 않는다
+        words = query.split()
+        ga_base = _ga_dong_base(words[-1], region.name)
+        if ga_base is None:
+            return region, '동', notes
+        ga_note = _ga_dong_note(' '.join([*words[:-1], ga_base]), ga_base, region.name)
+        return region.model_copy(update={'ga_base': ga_base, 'ga_note': ga_note}), '동', [*notes, ga_note]
 
     def station(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
         found = _find_subway_station(client, query, radius_km)
@@ -559,9 +582,6 @@ REGION_LEVEL_LABELS: dict[str, str] = {'SI': '시·도', 'GUN': '시·군·구',
 # 있고, 그 아래에 광산구 등 광주의 구와 강진군 등 전남의 군 27곳이 있다 (2026-10-10). 시·도는 `SIDO_OFFICIAL_NAMES` 로
 # 찾고, 이 이름으로 찾았으면 옛 이름이라고 알린다
 FORMER_PROVINCE_NAMES: frozenset[str] = frozenset({'전라남도', '전남', '광주광역시', '광주'})
-# `SIDO_OFFICIAL_NAMES` 에서는 옛 광주광역시지만, 한 단어로 오면 경기도 광주시로 찾는 이름. 시·도를 붙인
-# '광주시 광산구' 는 경기도 광주시에 구가 없어 전남광주통합특별시로 본다
-CITY_NOT_PROVINCE_NAMES: frozenset[str] = frozenset({'광주시'})
 # 옛 이름이 다른 시·도의 시와 겹칠 때 덧붙이는 안내 (search listings '광주' 는 경기도 광주시와 겹쳐 REGION_AMBIGUOUS, 2026-10-10)
 FORMER_PROVINCE_NAME_HINTS: dict[str, str] = {
     '광주': "경기도 광주시는 '광주시' 로 찾으세요",
@@ -673,7 +693,9 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
     if query is None:
         return NaverRegionList(regions=[_region_entry(item, item.city_full_name) for item in provinces])
     query = query.strip()
-    province = None if query in CITY_NOT_PROVINCE_NAMES else _find_province(provinces, query)
+    # `SIDO_OFFICIAL_NAMES` 에서는 옛 광주광역시지만 한 단어로 오면 경기도 광주시로 찾는다 (`CITY_NAMES_NOT_SIDO`). 시·도를
+    # 붙인 '광주시 광산구' 는 경기도 광주시에 구가 없어 전남광주통합특별시로 본다
+    province = None if query in CITY_NAMES_NOT_SIDO else _find_province(provinces, query)
     if province is not None:
         name = province.city_full_name or province.legal_division_name
         # _find_province 가 둘 중 하나의 이름으로 찾았다

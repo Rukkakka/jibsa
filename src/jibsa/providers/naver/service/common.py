@@ -425,8 +425,17 @@ def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopm
     }
 
 
-def raise_missing_pyeongs(complex_number: int, pyeong_numbers: list[int] | None, pyeongs: list[NaverPyeongModel]) -> None:
+def raise_missing_pyeongs(
+    complex_number: int,
+    pyeong_numbers: list[int] | None,
+    pyeongs: list[NaverPyeongModel],
+    *,
+    no_pyeong_hint: str = '네이버에 평형 정보가 없는 단지입니다. --pyeong 없이 조회하세요',
+) -> None:
     """단지 평형 목록에 없는 평형 번호가 있으면 이 단지의 평형 번호를 알려 주며 멈춘다.
+
+    Args:
+        no_pyeong_hint: 평형 목록이 비었을 때의 hint. 기본값은 단지가 있다고 확인했고 `--pyeong` 을 뺄 수 있는 명령(complex)용.
 
     Raises:
         JibsaError: NOT_FOUND.
@@ -438,7 +447,7 @@ def raise_missing_pyeongs(complex_number: int, pyeong_numbers: list[int] | None,
         raise JibsaError(
             code='NOT_FOUND',
             message=f"단지 {complex_number} 에 없는 평형 번호입니다: {', '.join(map(str, missing))}",
-            hint=f'이 단지의 평형 번호(이름): {available}' if available else '네이버에 평형 정보가 없는 단지입니다. --pyeong 없이 조회하세요',
+            hint=f'이 단지의 평형 번호(이름): {available}' if available else no_pyeong_hint,
         )
 
 
@@ -458,7 +467,12 @@ def pyeong_list(client: NaverClient, complex_number: int, villa: bool) -> list[N
 
 
 def check_pyeong_numbers(
-    client: NaverClient, complex_number: int, pyeong_numbers: list[int], *, villa: bool | None = None,
+    client: NaverClient,
+    complex_number: int,
+    pyeong_numbers: list[int],
+    *,
+    villa: bool | None = None,
+    pyeong_required: bool = False,
 ) -> bool:
     """결과가 비었을 때 평형 번호가 단지에 있는지 확인하고, 빌라 단지인지 돌려준다 (1~2회 호출).
 
@@ -466,6 +480,10 @@ def check_pyeong_numbers(
     (헬리오시티 평형 999: 단지 매물·실거래·시세 모두 0건, 2026-10-10). 단지 종류를 모르면(None) 아파트 평형 목록을
     먼저 묻고, 비었을 때만 빌라 평형 목록을 묻는다. 아파트 평형 목록은 빌라 단지(가람아트빌 673573)와 없는 단지 번호
     (99999999)에 빈 목록을 준다 (2026-10-11). 단지 정보로 종류를 먼저 정하면 대부분인 아파트에서 1회가 더 든다.
+
+    Args:
+        pyeong_required: `--pyeong` 이 필수인 명령(real-price·market-price)인지. 평형 목록이 비었을 때 hint 가
+            '--pyeong 없이 조회하세요' 대신 단지를 확인하게 한다.
 
     Raises:
         JibsaError: 평형 목록에 없는 번호가 있으면 NOT_FOUND.
@@ -477,7 +495,17 @@ def check_pyeong_numbers(
             pyeongs = pyeong_list(client, complex_number, True)
     else:
         pyeongs = pyeong_list(client, complex_number, villa)
-    raise_missing_pyeongs(complex_number, pyeong_numbers, pyeongs)
+    # 없는 단지 번호도 아파트·빌라 평형 목록이 모두 빈 성공 응답이라(99999999, 2026-10-28 실측) 평형 정보가 없는 단지와
+    # 가르려면 단지 정보를 1~2회 더 물어야 한다. 요청을 늘리지 않고 두 경우를 함께 알린다. real-price·market-price 는
+    # --pyeong 이 필수라 '--pyeong 없이 조회하세요' 를 따를 수 없었다 (2026-10-28 리뷰)
+    action = (
+        f"'jibsa naver complex {complex_number}' 로 단지가 있는지와 평형 번호(pyeongs)를 확인하세요"
+        if pyeong_required else '--pyeong 없이 조회하세요'
+    )
+    raise_missing_pyeongs(
+        complex_number, pyeong_numbers, pyeongs,
+        no_pyeong_hint=f'없는 단지 번호이거나 네이버에 평형 정보가 없는 단지입니다. {action}',
+    )
     return villa
 
 
