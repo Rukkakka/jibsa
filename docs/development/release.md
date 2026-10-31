@@ -99,7 +99,7 @@
    `main` 으로 본다.
 
 6. README 데모에 나오는 출력(`jibsa --version`·`jibsa guide`·직방 `search listings room`)이 이 버전에서 바뀌었으면, PyPI 에
-   올라간 뒤 별도 PR 로 `docs/demo/demo.gif`·`claude.gif` 를 다시 녹화한다 ([문서 갱신](../../AGENTS.md#문서-갱신)). 녹화 대본이
+   올라간 뒤 별도 PR 로 `docs/demo/demo.gif`·`claude.gif` 를 다시 녹화한다 ([README 데모 다시 만들기](#readme-데모-다시-만들기)). 녹화 대본이
    PyPI 에서 설치한 jibsa 를 써서, 올리기 전에 찍으면 이전 버전의 출력이 녹화된다.
 
 태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리키고,
@@ -107,3 +107,13 @@ Release 워크플로가 거절한다.
 
 PyPI 에 한 번 올린 버전은 지우거나 같은 번호로 다시 올릴 수 없다. 잘못 올렸으면 pypi.org 에서 그 버전을 yank 하고
 고친 패치를 릴리스한다.
+
+## README 데모 다시 만들기
+
+README 의 데모 GIF 는 PyPI 에서 설치한 jibsa 로 녹화하므로, 그 버전이 PyPI 에 올라간 뒤([릴리스 절차](#릴리스-절차) 6) 다시 만든다.
+
+| 바뀐 것 | 다시 만드는 법 |
+| --- | --- |
+| `jibsa --version`, 직방 `search listings room` 출력 | `docs/demo/demo.gif` — `vhs scripts/demo/demo.tape` (대본이 PyPI 설치본을 쓴다) |
+| `jibsa guide`, 직방 원룸 검색 출력 (README 맨 위 Claude Code 데모) | `docs/demo/claude.gif` — `scripts/demo/claude.tape` 머리말의 깨끗한 환경(`env -i …`)으로 `vhs scripts/demo/claude.tape` 를 돌려 다시 녹화한 뒤 `python3 scripts/demo/hide_plan.py docs/demo/claude.gif` |
+| README 빠른 시작의 JSON 예시 | PyPI 를 기다리지 않고 바로 같은 가상 매물로 다시 뽑는다 (`scripts/demo/fake_jibsa.py`) |

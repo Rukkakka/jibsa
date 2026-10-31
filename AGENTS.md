@@ -25,6 +25,16 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 `api/response/` 모델 설명에 있다. 엔드포인트를 추가·수정하기 전에 먼저 읽고, 응답 형태는
 CLI 직접 조회나 원본 응답으로 확인한다.
 
+## 자주 쓰는 명령
+
+```bash
+.venv/bin/ruff check && .venv/bin/mypy       # 코드를 고쳤으면 둘 다 0건
+.venv/bin/pytest tests/test_x.py::test_name  # 바꾼 부분 테스트만 이름으로 (전체 pytest 는 먼저 묻는다)
+.venv/bin/jibsa <소스> <명령> ...             # 바뀐 동작은 실제 API 로 한 번 불러 확인
+```
+
+설치와 Windows 명령은 [개발 환경](docs/development/README.md)에 있다.
+
 ## 꼭 지킬 것
 
 - **로그인 없는 기능만.** 계정·쿠키·API 키를 받지 않고, 로그인이 필요한 API(관심 단지·매물, 내 집 인증 등)나 사용자 대신 보내는 기능(문의·예약·신고)은 넣지 않는다. 새 엔드포인트는 로그인 없이 호출되는지 먼저 확인한다. ([README 원칙](README.md#원칙-로그인-없는-기능만))
@@ -73,13 +83,15 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 | 한 소스의 구현·예외 | `docs/development/providers/<source>.md` |
 | 여러 소스에 공통인 개발 규약 | `docs/development/` 바로 아래 문서 |
 | 사용자(에이전트 포함)에게 보이는 변경 | `CHANGELOG.md` 의 `Unreleased` ([쓰는 법](docs/development/release.md#changelog-쓰는-법)) |
-| README 데모·빠른 시작 예시에 나오는 명령·출력 (`jibsa --version`, `zigbang search listings room`) | `docs/demo/demo.gif` — 그 변경이 PyPI 에 올라간 뒤([릴리스 절차](docs/development/release.md#릴리스-절차) 6) `vhs scripts/demo/demo.tape` 로 다시 녹화 (대본이 PyPI 설치본을 쓴다). README 빠른 시작의 JSON 은 바로 같은 가상 매물로 다시 뽑는다 (`scripts/demo/fake_jibsa.py`) |
-| README 맨 위 Claude Code 데모에 나오는 것 (`jibsa guide`, 직방 원룸 검색 출력) | `docs/demo/claude.gif` — 그 변경이 PyPI 에 올라간 뒤 `scripts/demo/claude.tape` 머리말의 깨끗한 환경(`env -i …`)으로 `vhs scripts/demo/claude.tape` 를 돌려 다시 녹화한 뒤 `python3 scripts/demo/hide_plan.py docs/demo/claude.gif` |
+| README 데모 GIF·빠른 시작 예시에 나오는 명령·출력 (`jibsa --version`, `jibsa guide`, 직방 원룸 검색) | GIF 는 그 변경이 PyPI 에 올라간 뒤 다시 녹화하고, 빠른 시작 JSON 은 바로 다시 뽑는다 ([README 데모 다시 만들기](docs/development/release.md#readme-데모-다시-만들기)) |
 | README 맨 위 로고 (이름·색·모양) | `docs/logo.svg` — 글자를 외곽선으로 바꾼 파일이라 직접 고치지 않고 `scripts/logo/build_logo.py` 를 고쳐 다시 만든다 |
 
 한 소스에만 해당하는 규칙·예외는 공통 문서에 적지 않고 그 소스 문서에 적는다. 명령의 인자·기본값·조회 한도·반환값·오류·주의사항은 해당 명령 절에서 설명한다. 요약 표는 해당 절과 일치시키고 다른 명령 절에 설명을 복사하지 않는다. 공통 규칙은 복사하지 않고 링크로 연결한다.
 
 ## 작업 절차
+
+**에이전트는 사용자가 시킬 때만 이슈·브랜치·커밋·PR 을 만든다.** 시키지 않았으면 지금 브랜치에서 파일만 고치고 멈춘다.
+[workflow.md](docs/development/workflow.md) 의 "파일을 고치기 전에 브랜치부터 딴다" 보다 이 규칙이 먼저다. 시켰을 때는 아래 절차를 따른다.
 
 커밋 전에 **[docs/development/workflow.md](docs/development/workflow.md)** 를 읽는다. 요약:
 **커밋 전에 `.github/ISSUE_TEMPLATE/` 템플릿으로 이슈를 연다.** `main` 에 직접 커밋하지 않고
