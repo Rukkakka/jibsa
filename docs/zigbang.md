@@ -1,6 +1,6 @@
 # 직방 CLI 사용법 (`jibsa zigbang`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](../references/providers/zigbang.md)
+[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/zigbang.md)
 
 > 금액은 **만원**, 면적은 **㎡**다. `search listings stay`는 월세 대신 **주당 요금**을 쓴다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 직방에만 있는 내용을 적는다.
 

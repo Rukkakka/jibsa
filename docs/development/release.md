@@ -35,7 +35,7 @@
 
 ## CHANGELOG 쓰는 법
 
-사용자(에이전트 포함)에게 보이는 변경은 **그 PR 에서** [CHANGELOG.md](../CHANGELOG.md) 의 `## Unreleased` 아래에
+사용자(에이전트 포함)에게 보이는 변경은 **그 PR 에서** [CHANGELOG.md](../../CHANGELOG.md) 의 `## Unreleased` 아래에
 적는다. 릴리스할 때 몰아서 쓰면 왜 바꿨는지 잊는다.
 
 - 분류는 `⚠️ 호환 깨짐` · `추가` · `변경` · `수정` 네 가지를 이 순서로 둔다. 항목이 없는 분류 제목은 쓰지 않는다.
@@ -83,10 +83,10 @@
    git push origin v0.2.0
    ```
 
-5. 태그 push 가 [Release 워크플로](../.github/workflows/release.yml)를 돌린다. 끝까지 통과했는지 Actions 에서 본다.
+5. 태그 push 가 [Release 워크플로](../../.github/workflows/release.yml)를 돌린다. 끝까지 통과했는지 Actions 에서 본다.
    1. 태그 확인 — 태그 커밋이 `main` 에 있는지, 태그가 `pyproject.toml` 버전과 같은지, CHANGELOG 에 그 버전 절이 있는지,
       `Unreleased` 가 비어 있는지 (버전 올리기 PR 뒤에 머지된 변경이 이 버전에 섞이지 않게)
-   2. CI — [ci.yml](../.github/workflows/ci.yml) 전체. 설치본 확인이 sdist·wheel 을 빌드하고 `twine check`·설치 확인을 한다
+   2. CI — [ci.yml](../../.github/workflows/ci.yml) 전체. 설치본 확인이 sdist·wheel 을 빌드하고 `twine check`·설치 확인을 한다
    3. PyPI — 2 에서 빌드한 파일을 신뢰 게시(Trusted Publishing)로 올린다. API 토큰은 없다
    4. GitHub Release — 본문은 CHANGELOG 의 그 버전 절, 빌드한 파일을 첨부한다
 
@@ -95,11 +95,11 @@
    (pypi.org 게시자 설정 등) 원인을 고치고 그 실행의 실패한 잡을 다시 돌린다.
 
    Release 워크플로가 끝까지 통과하면 릴리스는 끝난다. PyPI 에서 다시 설치해 보지 않는다. 올라간 파일은 CI 의 설치본
-   확인이 새 가상환경에 설치해 돌려 본 바로 그 파일이고, 실제 API 로 도는지는 [매일 API 감시](development.md#매일-api-감시)가
+   확인이 새 가상환경에 설치해 돌려 본 바로 그 파일이고, 실제 API 로 도는지는 [매일 API 감시](README.md#매일-api-감시)가
    `main` 으로 본다.
 
 6. README 데모에 나오는 출력(`jibsa --version`·`jibsa guide`·직방 `search listings room`)이 이 버전에서 바뀌었으면, PyPI 에
-   올라간 뒤 별도 PR 로 `docs/demo/demo.gif`·`claude.gif` 를 다시 녹화한다 ([문서 갱신](../AGENTS.md#문서-갱신)). 녹화 대본이
+   올라간 뒤 별도 PR 로 `docs/demo/demo.gif`·`claude.gif` 를 다시 녹화한다 ([문서 갱신](../../AGENTS.md#문서-갱신)). 녹화 대본이
    PyPI 에서 설치한 jibsa 를 써서, 올리기 전에 찍으면 이전 버전의 출력이 녹화된다.
 
 태그는 머지 뒤 `main` 에만 단다. 브랜치 커밋에 달면 squash·rebase 머지 때 `main` 에 없는 커밋을 가리키고,

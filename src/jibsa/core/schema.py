@@ -35,7 +35,7 @@ def is_request_validation_error(exc: ValidationError) -> bool:
     않는 값은 막지 않고 그 자리에 근거를 적는다 (당근 `resolve_regions` 의 name1, 2026-10-11 리뷰 확인).
     service 경계 한 곳에서 바꾸지 않는 것은, 같은 요청 모델에 사용자 입력과 응답 값이 함께 들어가 오류만 보고는 어느
     쪽 값인지 알 수 없고 그 값을 넣는 자리만 알기 때문이다 (2026-10-12 리뷰에서 한 곳으로 모으자는 제안을 검토하고 유지).
-    새 엔드포인트의 규칙은 references/provider-conventions.md '요청·응답 모델' 에 있다.
+    새 엔드포인트의 규칙은 docs/development/provider-conventions.md '요청·응답 모델' 에 있다.
     """
     stack: list[type[BaseModel]] = [RequestModel]
     while stack:

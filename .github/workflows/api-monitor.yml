@@ -1,5 +1,5 @@
 # 매일 새벽 직방·당근·다방의 모든 CLI 명령을 실제로 불러 비공식 API 가 깨졌는지 본다 (scripts/monitor/api_check.py,
-# references/development.md '매일 API 감시'). 고장이면 api-broken 이슈를 열고(열려 있으면 댓글) 실행을 실패로 끝내 GitHub 이 메일로 알린다.
+# docs/development/README.md '매일 API 감시'). 고장이면 api-broken 이슈를 열고(열려 있으면 댓글) 실행을 실패로 끝내 GitHub 이 메일로 알린다.
 # 요청 제한·서버 오류는 고장이 아니라 '확인 못 함'이고, 같은 소스가 사흘 연속 그러면 api-blocked 이슈로 알린다.
 # 감시 파일을 고친 PR 에서도 돌지만 이슈는 건드리지 않는다. CI(ci.yml)는 여전히 실제 API 를 부르지 않는다.
 # 잡 이름은 main 보호 규칙의 필수 검사가 아니다 (막힌 날에도 PR 을 머지할 수 있게).

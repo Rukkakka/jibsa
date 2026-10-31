@@ -312,7 +312,7 @@ def list_redevelopment_articles(
     # 57건 2쪽, 2026-10-10 확인. 봉천4-1-3·봉천14구역 랭킹·가격낮은·최신순 12쪽, 2026-10-11 재확인. 봉천14구역 37건 2쪽,
     # 마지막 쪽 [1, 120.35…, '2649066878'], 2026-10-11 코드 리뷰 뒤 재확인). 실제로 정수가 오지 않아 단지 매물
     # (list_complex_articles)처럼 정수 커서를 따로 막지 않는다. 정수가 오면 요청 모델 검증에 걸리지만 일부러 두는 것이다
-    # (references/providers/naver.md 의 페이지네이션 절)
+    # (docs/development/providers/naver.md 의 페이지네이션 절)
     def fetch(size: int, seed: str | None, last_info: Any) -> NaverArticlePageModel:
         return unwrap(
             client.run_request_complex_redevelopment_area_article_list_v1(

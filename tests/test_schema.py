@@ -24,7 +24,7 @@ def all_models() -> list[type[BaseModel]]:
     return found
 
 
-# --- pydantic 선언 (references/code-style.md 4절) ---
+# --- pydantic 선언 (docs/development/code-style.md 4절) ---
 
 def test_assignment_field_only_holds_default_factory() -> None:
     # 제약·설명·별칭은 Annotated 안, 단순 기본값은 `= 값` 이라 대입 위치의 Field() 에는 default_factory 만 남는다.

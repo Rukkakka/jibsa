@@ -250,7 +250,7 @@ def run_request_items_onerooms_v1(
    `api/client.py` 에 ClassVar + sync/async 메서드.
 3. 필요하면 [나누는 기준](#service-모듈을-나누는-기준)에 맞는 service 모듈에서 조합한다. 자주 쓰는 공개 진입점이면
    provider `__init__.py` 에 re-export 한다 (`service/__init__.py` 에는 하지 않는다).
-4. CLI 직접 조회로 실제 동작을 확인한다. 테스트는 [추가 기준](development.md#검증과-테스트)에 맞을 때만
+4. CLI 직접 조회로 실제 동작을 확인한다. 테스트는 [추가 기준](README.md#검증과-테스트)에 맞을 때만
    픽스처 + `httpx.MockTransport` 로 추가한다. 픽스처는 그 테스트가 읽을 때만
    `tests/fixtures/<source>/<action_id>.json` 으로 만든다. 실제 응답 구조를 본뜨되 값은 모두 가상으로 바꾸고
    (매물·단지 번호, 주소, 가격, 제목·본문, 사진 URL, 중개사 정보), 모델이 읽지 않는 필드는 뺀다.

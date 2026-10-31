@@ -64,21 +64,21 @@ PR 템플릿의 `변경 종류` 도 같은 다섯 이름을 쓴다. PR 이 닫�
 
 ## PR 을 열기 전에
 
-- [검증과 테스트](development.md#검증과-테스트) 원칙대로 확인했다. 가짜 응답으로만 확인했다면 그 이유를,
+- [검증과 테스트](README.md#검증과-테스트) 원칙대로 확인했다. 가짜 응답으로만 확인했다면 그 이유를,
   테스트를 추가했다면 드문 엣지케이스인지 핵심 동작인지 PR 에 적었다.
 - 명령·옵션·출력 필드·에러 코드·요청 제한 정책이 바뀌었다면 해당 `docs/<source>.md`·`docs/common.md`와
   [output-contract.md](output-contract.md) 를 고쳤다. 명령을 추가·삭제했거나 에이전트가 틀리기 쉬운 해석 규칙이 바뀌었다면
   `docs/llm.md` 도 고쳤다.
 - 명령을 추가·삭제했거나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 넣었다면 매일 API 감시 목록
-  (`scripts/monitor/api_check.py` 의 `GROUPS`)도 고쳤다 ([매일 API 감시](development.md#매일-api-감시)).
+  (`scripts/monitor/api_check.py` 의 `GROUPS`)도 고쳤다 ([매일 API 감시](README.md#매일-api-감시)).
 - 사용자(에이전트 포함)에게 보이는 변경이면 `CHANGELOG.md` 의 `Unreleased` 에 적었다
   ([CHANGELOG 쓰는 법](release.md#changelog-쓰는-법)).
-- 모듈을 추가·이름 변경·삭제했다면 해당 `references/providers/<source>.md`와 `AGENTS.md`의 관련 구조 설명을 고쳤다.
+- 모듈을 추가·이름 변경·삭제했다면 해당 `docs/development/providers/<source>.md`와 `AGENTS.md`의 관련 구조 설명을 고쳤다.
 - diff 와 새 픽스처에 토큰, 쿠키, 중개사 이름·전화번호 같은 개인정보가 없고, 픽스처의 매물·단지는 가상 데이터다.
 - 의존성을 바꿨다면 `pyproject.toml` 에 반영했고, 범위는 기존 항목처럼 상한을 둔다
   (`'httpx>=0.28,<0.29'`).
 
-PR 을 열면 [CI](../.github/workflows/ci.yml) 가 `ruff check`·`mypy`·전체 `pytest`(Ubuntu·macOS·Windows ×
+PR 을 열면 [CI](../../.github/workflows/ci.yml) 가 `ruff check`·`mypy`·전체 `pytest`(Ubuntu·macOS·Windows ×
 Python 3.11·3.14)·설치본 확인(`jibsa --version`, `jibsa guide` 와 `docs/llm.md` 비교)·`docs/llm.md` 200줄 검사를 돌린다.
-CI 가 통과해야 머지한다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
-부르는 [API 감시](development.md#매일-api-감시)도 한 번 돈다. 필수 검사는 아니라 막힌 날에도 머지할 수 있다.
+CI 가 통과해야 머지한다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
+부르는 [API 감시](README.md#매일-api-감시)도 한 번 돈다. 필수 검사는 아니라 막힌 날에도 머지할 수 있다.

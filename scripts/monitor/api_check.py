@@ -3,7 +3,7 @@
 매일 실행은 `DAILY_GROUPS`(직방·당근·다방)만 돈다. 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고, 필요할 때 로컬에서
 `run naver` 로 돌린다.
 
-명령마다 셋으로 나눈다 (references/development.md '매일 API 감시').
+명령마다 셋으로 나눈다 (docs/development/README.md '매일 API 감시').
 
 - 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`)은 비어도 정상
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가

@@ -1,7 +1,7 @@
 # Changelog
 
 jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이는 변경만 적고, 아직 릴리스하지 않은 변경은
-`Unreleased` 에 쌓는다. 번호 규칙과 쓰는 법은 [references/release.md](references/release.md) 에 있다.
+`Unreleased` 에 쌓는다. 번호 규칙과 쓰는 법은 [docs/development/release.md](docs/development/release.md) 에 있다.
 
 ## Unreleased
 

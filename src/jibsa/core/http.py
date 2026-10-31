@@ -228,7 +228,7 @@ def should_retry_idempotent(exc: BaseException) -> bool:
 def should_retry_non_idempotent(exc: BaseException) -> bool:
     """상태를 바꾸는 호출용 재시도 술어. 지금은 조회만 있어 쓰는 곳이 없지만 일부러 남겨 둔다.
 
-    재시도 규약(references/provider-conventions.md '재시도')이 상태를 바꾸는 호출에 이 술어를 쓰라고 정해 두었다.
+    재시도 규약(docs/development/provider-conventions.md '재시도')이 상태를 바꾸는 호출에 이 술어를 쓰라고 정해 두었다.
     timeout·transport 오류는 서버에 이미 닿았을 수 있어 다시 보내지 않는다.
     """
     if isinstance(exc, HTTPStatusError):
