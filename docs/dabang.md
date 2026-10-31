@@ -230,6 +230,8 @@ jibsa dabang real-price --listing 6abb32f72f9f803f9c6f3830 --trade 전월세
 
 `transactions[]` 는 최근 계약 순이고 거래마다 `trade_type`(매매·전세·월세), `trade_date`, `floor`, 금액, `cancelled`(해제된 거래), `direct`(직거래)를 준다. `total` 은 기간 안 거래 수다. `--pyeong` 을 안 주면 대표 평형으로 찾고 `notes` 로 알린다 (단지 상세 요청 1회 추가). 단지에 없는 평형 번호는 `INVALID_ARGUMENT`, 없는 단지는 `NOT_FOUND` 다.
 
+국토부 신고에 평형 타입이 없어 전용면적이 같은 평형끼리는 거래가 거의 모두 겹친다 (헬리오시티 84.98㎡ 평형 둘이 1년 32건 중 31건 같음). 거래가 있으면 `notes` 가 알린다. 평형 여러 개를 합칠 때는 같은 날·층·금액을 한 번만 센다.
+
 `--listing` 은 그 건물의 거래가 **아니라** 그 매물이 있는 동의 같은 건물 유형 거래다 (다방 매물 화면과 같다, `basis` 에 `"역삼동 단독·다가구"` 처럼 범위가 있다). 거래마다 `area_m2` 가 있으니 면적이 비슷한 거래만 견준다. 없는 매물이나 단지 매물(오피스텔·아파트) ID 는 `NOT_FOUND` 다 (단지 매물은 `listing` 결과의 `complex_id` 로 찾는다).
 
 ## 11. `price-trend` — 시세 흐름

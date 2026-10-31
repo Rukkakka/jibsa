@@ -12,6 +12,7 @@ from pydantic import (
 
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    SAME_AREA_PYEONG_TRADES_NOTE,
     normalize_date,
     note,
     won_to_manwon,
@@ -208,8 +209,10 @@ def get_real_prices(
         )
     # 네이버는 같은 거래를 면적이 다른 평형 여러 곳에 함께 주기도 하고 거래마다 면적은 주지 않아 가려낼 수 없다
     # (2026-10-24 실측: 단지 65 전세 평형 1·2 응답에 2026-09-11 3층 19억 등 3건이 같이 있었다. 요청의 pyeongTypeNumber 는
-    # 1·2 로 달랐다. 당근 실거래로는 84.81㎡ 거래). docs/naver.md 가 당근 area_m2 로 확인하라고 안내한다
+    # 1·2 로 달랐다. 당근 실거래로는 84.81㎡ 거래). docs/naver.md 가 당근 area_m2 로 확인하라고 안내하고, 전용면적이 같은
+    # 평형끼리는 거의 모두 겹쳐 결과에도 SAME_AREA_PYEONG_TRADES_NOTE 를 붙인다
     transactions: list[NaverRealPrice] = []
+    villa = False
     for page in range(pages):
         result = unwrap(
             client.run_request_complex_pyeong_real_price_v2(
@@ -225,6 +228,7 @@ def get_real_prices(
         )
         if page == 0 and not result.items:
             if check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True):
+                villa = True
                 transactions, _ = _villa_real_prices(
                     client, complex_number, pyeong_number, trade_type=trade_type, size=REAL_PRICE_PAGE_SIZE, max_pages=pages,
                 )
@@ -239,6 +243,7 @@ def get_real_prices(
         pyeong_number=pyeong_number,
         trade_type=trade_type,
         transactions=transactions,
+        notes=[SAME_AREA_PYEONG_TRADES_NOTE] if transactions and not villa else [],
     )
 
 
@@ -312,7 +317,7 @@ def _get_real_prices_in_period(
         '실거래가',
     )
     transactions = [_real_price(item, trade_type) for item in items]
-    notes: list[str] = []
+    notes: list[str] = [SAME_AREA_PYEONG_TRADES_NOTE] if transactions else []
     if not transactions and check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True):
         transactions, truncated = _villa_real_prices(
             client, complex_number, pyeong_number,
