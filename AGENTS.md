@@ -4,6 +4,7 @@
 LLM 에이전트가 셸로 호출하는 도구라, 출력 형식과 에러 형식이 곧 API 다.
 CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 사용자 문서(CLI 사용법)는 `docs/` 바로 아래, 개발 문서(구현 규약·소스별 개발 가이드)는 `docs/development/`에 있다.
+처음 기여하는 사람용 안내는 `CONTRIBUTING.md` 다.
 매일 새벽 직방·당근·다방의 모든 CLI 명령을 실제로 불러 보는 감시(네이버는 로컬에서)는 `scripts/monitor/` 와 `.github/workflows/api-monitor.yml` 이다 ([매일 API 감시](docs/development/README.md#매일-api-감시)).
 
 ## 구조

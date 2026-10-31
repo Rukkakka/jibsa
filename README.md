@@ -194,7 +194,8 @@ LLM이 검색 결과만으로 집을 찾으면 이미 내려간 매물을 소개
 
 ## 기여
 
-버그·기능 제안은 [이슈](https://github.com/Rukkakka/jibsa/issues/new/choose)로 열고, 코드를 고치기 전에 [개발 규약](https://github.com/Rukkakka/jibsa/blob/main/AGENTS.md)의 "꼭 지킬 것"(로그인 없는 기능만, 금액은 만원, 출력 규약 등)을 읽는다. 개발 환경 설치와 검사는 [개발 환경](https://github.com/Rukkakka/jibsa/blob/main/docs/development/README.md), 이슈 → 브랜치 → 커밋 → PR 절차는 [작업 절차](https://github.com/Rukkakka/jibsa/blob/main/docs/development/workflow.md)에 있다. 모든 변경은 PR 로 들어가고 CI(ruff·mypy·pytest·설치 확인)를 통과해야 한다.
+버그·기능 제안은 [이슈](https://github.com/Rukkakka/jibsa/issues/new/choose)로 연다.
+코드를 고치려면 [기여 안내](https://github.com/Rukkakka/jibsa/blob/main/CONTRIBUTING.md)를 먼저 읽는다.
 
 ## 라이선스
 
