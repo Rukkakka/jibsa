@@ -54,6 +54,12 @@ from typing import Annotated
 # SIGINT 로 끝난 프로세스의 관례적인 exit code (128 + 2). Typer 도 KeyboardInterrupt 를 이 값으로 바꾼다.
 INTERRUPTED_EXIT_CODE: int = 130
 INTERRUPTED_HINT: str = '호출한 쪽이 실행을 끊었습니다. 결과가 필요하면 같은 명령을 다시 실행하세요'
+# 인자 하나 안에 공백 뒤(또는 맨 앞)의 옵션 모양('--city', '-t')이 든 것. 주소의 '719-28' 같은 값은 걸리지 않는다
+JOINED_OPTION_PATTERN: re.Pattern[str] = re.compile(r'(?:^|\s)--?[A-Za-z][\w-]*')
+JOINED_OPTIONS_HINT: str = (
+    '셸 변수에 옵션 여러 개를 담아 넘기면 인자 하나가 됩니다 (zsh 는 따옴표 없는 $VAR 도 나누지 않는다). '
+    '옵션을 명령에 바로 쓰거나, zsh 는 ${=VAR}, bash 는 따옴표 없는 $VAR 로 넘기세요'
+)
 # 설치본에는 pyproject.toml 의 force-include 로 패키지 안에, 편집 가능 설치에는 저장소 docs/ 에만 있다
 GUIDE_FILE: str = 'llm.md'
 # `jibsa guide <주제>` 로 읽는 사용 문서
@@ -350,6 +356,14 @@ def run(argv: Sequence[str] | None = None) -> int:
     cli = typer.main.get_command(app)
     if not sys.stdout.isatty():
         use_plain_help(cli)
+    if (joined := joined_options_arg(args)) is not None:
+        emit_error(
+            'INVALID_ARGUMENT',
+            f"옵션이 든 인자가 하나로 넘어왔습니다: '{joined}'",
+            JOINED_OPTIONS_HINT,
+            command=_command_path_of(cli, args),
+        )
+        return 2
     try:
         result = cli.main(args=args, prog_name='jibsa', standalone_mode=False)
     except NoArgsIsHelpError as exc:
@@ -381,6 +395,20 @@ def run(argv: Sequence[str] | None = None) -> int:
         emit_error('INTERRUPTED', '인터럽트(Ctrl+C, SIGINT)로 중단되었습니다', INTERRUPTED_HINT)
         return result
     return result if isinstance(result, int) else 0
+
+
+def joined_options_arg(args: Sequence[str]) -> str | None:
+    """옵션 여러 개가 셸에서 나뉘지 않고 인자 하나로 온 것 (`'--complex 111515 --pyeong 8,9'`, `'대치동 --city 강남구'`).
+
+    그대로 넘기면 없는 옵션이나 없는 지역으로 끝나 '--help 를 보라' 같은 힌트만 받고, 지역 인자는 요청까지 보낸 뒤에야
+    실패한다. 2026-10-24 에이전트 검증 8명 중 4명, 2026-10-31 재검증 7건(zsh 에서 `P="--complex …"; jibsa … $P`)이
+    이렇게 틀려 요청 전에 막고 셸 문제라고 알린다. 공백이 없는 인자(`--fields id,title`)는 보지 않는다.
+    `guide` 의 절 이름은 문서 제목을 그대로 받아 옵션 모양이 들어간다 (`jibsa guide naver 'search listings --complex'`,
+    네 소스 문서에 그런 절이 있다. 2026-10-31 재검증에서 이 검사가 그 호출을 막았다).
+    """
+    if next((arg for arg in args if not arg.startswith('-')), None) == 'guide':
+        return None
+    return next((arg for arg in args if ' ' in arg.strip() and JOINED_OPTION_PATTERN.search(arg.strip())), None)
 
 
 def _command_path_of(cli: Command, args: Sequence[str]) -> str:

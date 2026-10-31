@@ -20,6 +20,7 @@
 - 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 `next` 도 준다. 같은 명령·지역·조건에 `--next <next>` 를 붙이면 받은 매물 다음부터 이어 받는다 (`--limit`·`--details`·`--fields` 는 바꿀 수 있다). `next` 는 10자 번호이고, 어디까지 받았는지는 상태 폴더(`~/.cache/jibsa/next/`, `JIBSA_STATE_DIR` 로 변경)에 하루 동안 남는다. 하루가 지났거나 다른 컴퓨터에서 받은 번호, 지역·조건이 다른 검색에 준 번호는 `INVALID_ARGUMENT` 로 막고, 조건이 다르면 `message` 에 어느 옵션이 다른지 적는다. `has_more` 가 `true` 인데 `next` 가 없으면 이어 받을 수 없는 검색이라 `--limit`·조건으로 찾는다
 - 가격 조건은 그 금액이 있는 거래에만 걸린다: 월세(`--rent-*`)는 월세·단기임대, 매매가(`--price-*`)는 매매, 보증금(`--deposit-*`)은 전세·월세·단기임대. `--trade` 를 줬는데 가격 조건이 걸릴 거래 유형이 하나도 없으면(전세 + `--rent-max`, 매매 + `--deposit-max`) 서버가 조건을 무시해 조건 없는 결과가 나오므로 `INVALID_ARGUMENT` 로 막는다. 일부만 겹치면(`--trade 전세,월세 --rent-max 50`) 해당 거래에만 걸고 나머지는 그대로 둔다
 - `--lat/--lng` 가 한국 밖이거나 둘 중 하나만 주면 `INVALID_ARGUMENT` 로 막는다
+- 인자 하나에 공백과 옵션이 함께 들면(`'--complex 111515 --pyeong 8,9'`, `'대치동 --city 강남구'`) 셸이 옵션을 나누지 않은 것이라 요청 전에 `INVALID_ARGUMENT` 로 막는다. 셸 변수에 옵션을 담아 넘길 때 생기며, zsh 는 따옴표 없는 `$VAR` 도 나누지 않는다. 옵션을 명령에 바로 쓰거나 zsh 는 `${=VAR}` 로 넘긴다. `guide` 의 절 이름(`'search listings --complex'`)은 막지 않는다
 - 숫자 범위(`--area-min/max` 등)의 하한이 상한보다 크거나, 숫자 옵션(범위·`--radius`)에 `inf`·`nan` 을 주면 모든 소스가 요청 전에 `INVALID_ARGUMENT` 로 막는다
 - 에러는 **항상** stderr 에 `{"error": {"code", "message", "hint", ...}}` JSON 으로 쓴다. 사용법 오류(없는 옵션·잘못된 값·인자 누락)도 마찬가지
 - **금액은 소스와 무관하게 전부 만원 단위**로 정규화 (`price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon`). 네이버 원본은 원 단위라 환산한다
