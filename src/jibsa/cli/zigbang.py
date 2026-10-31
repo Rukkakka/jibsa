@@ -962,6 +962,8 @@ def stay_command(
         float | None,
         typer.Option(min=0.1, max=MAX_RADIUS_KM, help='검색 반경 (km, 기본 1). 동·구 이름에 지역 전체, 역·학교·좌표는 반경 검색'),
     ] = None,
+    # 다른 명령의 --sort 와 달리 값이 영어지만 바꾸지 않는다 (바꾸면 호환 깨짐). 2026-10-31 에이전트 검증에서 이 명령을 쓴
+    # 2명 모두 --help 대로 --sort price 를 줬고, 한국어 값을 주면 에러 hint 가 distance·price·newest 를 알린다
     sort: Annotated[
         str,
         typer.Option('--sort', help='distance 가까운 순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순'),
