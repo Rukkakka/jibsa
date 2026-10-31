@@ -1,6 +1,6 @@
 # 공통 CLI 사용 규칙
 
-[설치](../README.md) · [LLM 가이드](llm.md) · [당근](daangn.md) · [네이버](naver.md) · [직방](zigbang.md)
+[설치](https://github.com/Rukkakka/jibsa/blob/main/README.md) · [LLM 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md) · [당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) · [네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md) · [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md)
 
 ## 출력 규칙
 

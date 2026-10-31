@@ -1,8 +1,8 @@
 # 당근 부동산 CLI 사용법 (`jibsa daangn`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/daangn.md)
+[설치](https://github.com/Rukkakka/jibsa/blob/main/README.md) · [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/development/providers/daangn.md)
 
-> 금액은 **만원**, 면적은 **㎡** (1평 = 3.3㎡)다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 당근에만 있는 내용을 적는다.
+> 금액은 **만원**, 면적은 **㎡** (1평 = 3.3㎡)다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md)에 있고, 이 문서는 당근에만 있는 내용을 적는다.
 
 ## 한눈에 보기
 
@@ -760,11 +760,11 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 | 추천 동 `region_id` | 당근 동 ID. 매물은 법정동 이름으로 `search listings` 에서 찾는다 |
 | `url` | 원 사이트에서 확인·문의 |
 
-공통으로 읽는 법은 [공통 사용 규칙](common.md#반환값을-읽을-때)에 있다.
+공통으로 읽는 법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#반환값을-읽을-때)에 있다.
 
 ## 요청 제한과 도움말
 
-요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](common.md#요청-제한과-limits)에 있다. 이름으로 위치를 찾는 명령은 직방(막히거나 실패하면 네이버) 요청도 쓰므로 요청 제한 에러의 `source` 가 직방·네이버일 수 있다. 직방과 네이버 모두 위치를 찾지 못하면 에러의 `source` 가 `zigbang` 이니 당근은 그대로 쓸 수 있다 (당근 동 이름이나 `--lat/--lng` 로 다시 찾는다). 웹 쿼리가 거절되면(`UPSTREAM_ERROR`) 출력된 힌트와 업데이트 안내를 따른다. 대체 경로가 없는 명령도 같은 코드로 끝난다.
+요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다. 이름으로 위치를 찾는 명령은 직방(막히거나 실패하면 네이버) 요청도 쓰므로 요청 제한 에러의 `source` 가 직방·네이버일 수 있다. 직방과 네이버 모두 위치를 찾지 못하면 에러의 `source` 가 `zigbang` 이니 당근은 그대로 쓸 수 있다 (당근 동 이름이나 `--lat/--lng` 로 다시 찾는다). 웹 쿼리가 거절되면(`UPSTREAM_ERROR`) 출력된 힌트와 업데이트 안내를 따른다. 대체 경로가 없는 명령도 같은 코드로 끝난다.
 
 ```bash
 jibsa daangn --help
@@ -774,7 +774,7 @@ jibsa daangn real-price --help
 
 ## 소스별 반환 필드와 해석
 
-[공통 사용 규칙](common.md#반환값을-읽을-때)과 함께 읽는다. 아래 필드는 조회 모드·유형에 따라 제공된다.
+[공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#반환값을-읽을-때)과 함께 읽는다. 아래 필드는 조회 모드·유형에 따라 제공된다.
 
 | 소스·조회 유형 | 필드 | 뜻 |
 | --- | --- | --- |

@@ -1,8 +1,8 @@
 # 네이버 CLI 사용법 (`jibsa naver`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/naver.md) · [매물 검색](#1-search-listings--매물-찾기) · [단지 검색](#2-search-complexes--지역-안-단지-목록)
+[설치](https://github.com/Rukkakka/jibsa/blob/main/README.md) · [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/development/providers/naver.md) · [매물 검색](#1-search-listings--매물-찾기) · [단지 검색](#2-search-complexes--지역-안-단지-목록)
 
-> 금액은 **만원**, 면적은 **㎡** (1평 = 3.3㎡)다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 네이버에만 있는 내용을 적는다.
+> 금액은 **만원**, 면적은 **㎡** (1평 = 3.3㎡)다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md)에 있고, 이 문서는 네이버에만 있는 내용을 적는다.
 
 ## 한눈에 보기
 
@@ -106,7 +106,7 @@ jibsa naver search listings 역삼동 -t 오피스텔 --trade 월세 --deposit-m
 
 > 목록형 옵션은 반복하거나 쉼표로 넣는다: `--trade 전세,월세`, `-t 아파트 -t 오피스텔`. `--loan`·`--area-basis`·`--sort`는 하나만 받으며, 여러 번 주면 마지막 값을 쓴다.
 
-옵션을 생략하면 가격·면적·층·시설 등의 조건은 적용하지 않는다. `--type` 기본값은 아파트·오피스텔·빌라·원룸·단독·다가구·전원주택·상가주택 전체다. `--trade`는 기본 전체이며 월세·매매가·보증금 조건만 주면 거래 유형을 자동으로 좁히고 `notes`로 안내한다. `--trade`와 맞지 않는 가격 조건은 [공통 규칙](common.md#출력-규칙)대로 입력 오류다. `--owner-verified`·`--photo-only`는 기본 꺼짐이다. 가격·면적·세대수·연식의 최솟값은 0이며, 하한이 상한보다 크면 입력 오류다.
+옵션을 생략하면 가격·면적·층·시설 등의 조건은 적용하지 않는다. `--type` 기본값은 아파트·오피스텔·빌라·원룸·단독·다가구·전원주택·상가주택 전체다. `--trade`는 기본 전체이며 월세·매매가·보증금 조건만 주면 거래 유형을 자동으로 좁히고 `notes`로 안내한다. `--trade`와 맞지 않는 가격 조건은 [공통 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#출력-규칙)대로 입력 오류다. `--owner-verified`·`--photo-only`는 기본 꺼짐이다. 가격·면적·세대수·연식의 최솟값은 0이며, 하한이 상한보다 크면 입력 오류다.
 
 - 조건은 모두 네이버 서버 필터로 보내 조건에 맞는 매물만 받는다.
 - 검색어는 네이버 주소 검색 → 검색창 자동완성(동 → 역 → 단지) 순으로 찾는다 ('역' 으로 끝나면 역을 먼저). 넷 다 없으면 `REGION_NOT_FOUND` 다.
@@ -550,7 +550,7 @@ API 요청당 최대 30건이다. 명령 한 번 안에서 이전 응답의 `las
 
 ## 출력 읽기
 
-공통으로 읽는 법은 [공통 사용 규칙](common.md#반환값을-읽을-때)에 있다. 아래는 실제 매물을 포함하지 않은 **주요 필드 발췌 예시**다. 전체 응답에는 매물의 다른 필드와 `notes` 등이 추가된다.
+공통으로 읽는 법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#반환값을-읽을-때)에 있다. 아래는 실제 매물을 포함하지 않은 **주요 필드 발췌 예시**다. 전체 응답에는 매물의 다른 필드와 `notes` 등이 추가된다.
 
 ```json
 {
@@ -584,7 +584,7 @@ API 요청당 최대 30건이다. 명령 한 번 안에서 이전 응답의 `las
 
 ## 요청 제한
 
-네이버는 세 소스 중 요청 제한이 가장 엄격하다. 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](common.md#요청-제한과-limits)에 있다. 지역명 해석과 상세의 교통·학교·세금 같은 부가 정보 요청도 이 제한에 포함된다.
+네이버는 세 소스 중 요청 제한이 가장 엄격하다. 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다. 지역명 해석과 상세의 교통·학교·세금 같은 부가 정보 요청도 이 제한에 포함된다.
 
 ## 도움말과 이전 명령
 
@@ -614,7 +614,7 @@ jibsa naver trend --help
 
 ## 소스별 반환 필드와 해석
 
-[공통 사용 규칙](common.md#반환값을-읽을-때)과 함께 읽는다. 아래 필드는 조회 모드·유형에 따라 제공된다.
+[공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#반환값을-읽을-때)과 함께 읽는다. 아래 필드는 조회 모드·유형에 따라 제공된다.
 
 | 소스·조회 유형 | 필드 | 뜻 |
 | --- | --- | --- |
