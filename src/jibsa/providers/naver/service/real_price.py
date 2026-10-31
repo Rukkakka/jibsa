@@ -15,6 +15,7 @@ from jibsa.core.listing import (
     normalize_date,
     note,
     won_to_manwon,
+    years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.real_price import (
@@ -32,7 +33,6 @@ from jibsa.providers.naver.service.common import (
     check_pyeong_numbers,
     kst_today,
     unwrap,
-    years_ago,
 )
 
 from typing import (

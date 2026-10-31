@@ -517,14 +517,6 @@ def kst_today() -> date:
     return datetime.now(KST).date()
 
 
-def years_ago(today: date, years: int) -> str:
-    """`years` 년 전 같은 날 (2월 29일이면 28일)."""
-    try:
-        return today.replace(year=today.year - years).isoformat()
-    except ValueError:
-        return today.replace(year=today.year - years, day=28).isoformat()
-
-
 def manwon_range(price_range: NaverPriceRangeModel | None, scale: bool = True) -> list[float | None] | None:
     """시세 범위(하한·상한)를 만원으로 (`won_to_manwon_range`). `scale` 이 False 면 비율(전세가율 %, 37~41)이라 그대로 둔다."""
     if price_range is None:

@@ -1,6 +1,7 @@
 import re
 from collections.abc import Sequence
 from datetime import (
+    date,
     datetime,
     timedelta,
     timezone,
@@ -198,6 +199,14 @@ def insert_after(data: dict[str, Any], anchor: str, key: str, value: Any) -> dic
         if name == anchor:
             result[key] = value
     return result
+
+
+def years_ago(today: date, years: int) -> str:
+    """`years` 년 전 같은 날 (2월 29일이면 28일). 실거래 기간(`--period`·`--years`)의 시작일이다."""
+    try:
+        return today.replace(year=today.year - years).isoformat()
+    except ValueError:
+        return today.replace(year=today.year - years, day=28).isoformat()
 
 
 def normalize_date(value: str | None) -> str | None:

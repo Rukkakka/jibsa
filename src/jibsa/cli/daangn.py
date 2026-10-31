@@ -1,5 +1,9 @@
 import logging
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Iterator,
+)
+from contextlib import contextmanager
 
 import typer
 
@@ -74,6 +78,7 @@ from jibsa.providers.daangn.service.compare import (
     list_nearby_complexes,
 )
 from jibsa.providers.daangn.service.complex import (
+    COMPLEX_CANDIDATE_LIMIT,
     COMPLEX_SORT_BY_LABEL,
     DaangnComplexConditions,
     DaangnComplexListingsResult,
@@ -277,10 +282,65 @@ LISTING_HINTS: UsageHints = UsageHints(
         '--manage-cost-max': MANAGE_COST_WITH_RENT,
     },
 )
+# 통근 검색은 역 주변 매물 목록이라 단지 세대수·주차대수 조건을 서버가 받지 않아 옵션을 두지 않는다 (2026-10-31 실측:
+# 강남역 10분 안 역들의 아파트 전세 19건이 --household-min 500 을 줘도 같았다). search listings 에서 옮겨 쓰면 반경 검색으로 안내한다
+COMPLEX_CONDITION_IN_COMMUTE: str = (
+    '통근 검색(역 주변 매물 목록)은 단지 세대수·주차대수 조건을 받지 않습니다. 이 조건은 '
+    'jibsa daangn search listings <역 이름> --radius 1 -t 아파트 --household-min … 처럼 역 반경 검색으로 찾으세요'
+)
+COMMUTE_HINTS: UsageHints = LISTING_HINTS._replace(by_option={
+    **LISTING_HINTS.by_option,
+    '--household-min': COMPLEX_CONDITION_IN_COMMUTE,
+    '--household-max': COMPLEX_CONDITION_IN_COMMUTE,
+    '--parking-min': COMPLEX_CONDITION_IN_COMMUTE,
+})
+
+
+@contextmanager
+def _complex_name_hint(client: DaangnClient, query: str) -> Iterator[None]:
+    """동·구를 받는 명령(지역 실거래·단지 목록·후기)에 단지 이름을 주어 지역을 못 찾았으면, 단지 ID 와 단지 명령을 힌트로 알린다.
+
+    전에는 '동·구 이름으로 다시 찾으라' 만 알려 에이전트가 단지 ID 를 찾는 데 호출을 한 번 더 썼다 (2026-10-31 재검증:
+    search complexes 헬리오시티 → REGION_NOT_FOUND → search locations 헬리오시티). 지역을 못 찾았을 때만 단지 후보를 3곳
+    묻는다 (요청 1회). 단지 검색이 실패하면 `search_complexes` 가 빈 목록을 주고 원래 힌트에 찾는 법만 붙인다.
+    """
+    try:
+        yield
+    except RegionNotFoundError as exc:
+        candidates = search_complexes(client, query, limit=3, notes=[])
+        key = query.replace(' ', '')
+        matched = [candidate for candidate in candidates if key in candidate.name.replace(' ', '')]
+        if not matched:
+            raise RegionNotFoundError(
+                query, hint=f"{(exc.hint or '').rstrip('.')}. 단지 이름이면 jibsa daangn search locations <단지 이름> 으로 단지 ID 를 찾으세요",
+            ) from None
+        found = ', '.join(f'{candidate.complex_id}({candidate.address or candidate.name})' for candidate in matched)
+        raise RegionNotFoundError(
+            query,
+            hint=(
+                f"{quoted(query, '은/는')} 동·구가 아니라 단지 이름입니다: {found}. 단지 정보는 jibsa daangn complex <ID>, "
+                '실거래는 real-price <ID>, 매물은 search listings --complex <ID> 로 찾으세요'
+            ),
+        ) from None
+
+
+def _manage_cost_filtered_note(how: str) -> str:
+    """--with-manage-cost 결과에 관리비가 null 인 매물이 있을 때의 안내. `how` 는 관리비 금액을 보는 법.
+
+    당근 서버가 월세+관리비로 걸렀지만 목록 카드에는 관리비가 없다 (docs/daangn.md). 2026-10-31 에이전트 검증: 관리비가 null 이라
+    '월세+관리비를 확인할 수 없다' 며 조건에 맞는 매물을 모두 뺐다. 문서에만 있던 내용이라 결과 옆에 둔다
+    """
+    return note(
+        '참고',
+        '--with-manage-cost 로 당근이 월세+관리비 기준으로 걸렀습니다. 목록에는 관리비가 없어 manage_cost_manwon 이 '
+        f'null 이어도 조건에는 맞습니다. 관리비 금액은 {how}',
+    )
+
+
 # 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run). 통근 검색도 매물 조건을 같이 받는다
 USAGE_HINTS: dict[str, UsageHints] = {
     'jibsa daangn search listings': LISTING_HINTS,
-    'jibsa daangn search commute': LISTING_HINTS,
+    'jibsa daangn search commute': COMMUTE_HINTS,
 }
 # 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
 HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 아파트 만 줄 때)')]
@@ -434,7 +494,7 @@ def region_command(
     ] = None,
     lat: LatOption = None,
     lng: LngOption = None,
-    limit: Annotated[int, typer.Option(min=1, max=COMPLEX_LIST_MAX_LIMIT, help='최대 단지 후보 수 (지역 후보에는 적용하지 않음)')] = 120,
+    limit: Annotated[int, typer.Option(min=1, max=COMPLEX_LIST_MAX_LIMIT, help='최대 단지 후보 수 (지역 후보에는 적용하지 않음). 이름이 맞는 단지가 앞에 온다')] = COMPLEX_CANDIDATE_LIMIT,
     pretty: PrettyOption = None,
 ) -> None:
     """지역명이나 좌표를 당근 지역(시도/구/동)으로 바꾼다. 이름으로 찾으면 그 이름의 단지 후보(complexes)도 준다."""
@@ -523,6 +583,16 @@ def _search_not_dong(
         ) from None
     if station is not None:
         station_notes += same_station_notes(station, '다른 역이면 --city 로 시·도나 구를 지정하세요')
+        if conditions.household_min is not None or conditions.household_max is not None or conditions.parking_min is not None:
+            # 역 주변 매물 목록은 단지 세대수·주차대수 조건을 받지 않는다 (2026-10-31 실측: 강남역 아파트 전세 5억 이하에
+            # --household-min 500·--parking-min 1.5 를 줘도 안 줘도 같은 4건이고 도시형·17세대 단지가 섞였다. 같은 조건의
+            # 역삼동 동 검색은 113건 → 9건). 카드에 세대수가 없어 받은 뒤 거를 수도 없으니, 이 조건을 받는 반경 검색으로 찾는다
+            emit_area(station.lat, station.lng, station_notes + [note(
+                '범위',
+                f'{station.name} 주변 매물 목록은 세대수·주차대수 조건을 받지 않아 역 위치에서 반경 {radius_km:g}km 안을 '
+                '찾았습니다 (역까지 도보 분 walk_minutes 대신 distance_km)',
+            )])
+            return
         try:
             station_result = search_station(client, station, conditions=conditions, limit=limit)
         except RateLimitedError:
@@ -664,6 +734,8 @@ def search_command(
             listings, detail_notes = attach_details(client, found)
             result = result.model_copy(update={'listings': listings, 'returned': len(listings)})
             notes = notes + detail_notes
+        elif with_manage_cost and any(listing.manage_cost_manwon is None for listing in result.listings):
+            notes = notes + [_manage_cost_filtered_note('--details 로 채웁니다 (매물당 요청 1회)')]
         emit(result, pretty, notes=notes, next_token=next_token, fields=fields)
 
     def emit_area(
@@ -792,9 +864,19 @@ def real_price_command(
     # 기본 120건(약 4~5천 토큰)이지만 낮추지 않는다. 에이전트는 대개 가이드의 '처음에는 작게' 를 따라 --limit 을 직접 준다
     # (2026-10-23 에이전트 검증: 이 명령을 부른 sonnet 2명 모두 --limit 8 을 줬다. 기본값으로 부른 건 검증에서 뺀 haiku 뿐이다)
     limit: Annotated[int, typer.Option(min=1, max=REAL_PRICE_MAX_LIMIT, help='최대 거래 수')] = 120,
+    years: Annotated[
+        int | None,
+        typer.Option(
+            min=1, max=30,
+            help='최근 몇 년 안 계약만 (오늘 기준). 당근은 기간을 받지 않아 최근 계약부터 넘기다 그 앞 거래가 나오면 멈춘다. 기본 기간 없음',
+        ),
+    ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 또는 매물 건물의 실거래가 (국토부 신고 기준, 최근 계약 순). cancelled: true 는 해제된 거래."""
+    """단지 또는 매물 건물의 실거래가 (국토부 신고 기준, 최근 계약 순). cancelled: true 는 해제된 거래.
+
+    예: jibsa daangn real-price 10667600 --area 84 --years 3 --limit 1200
+    """
     if (complex_id is None) == (item is None):
         raise typer.BadParameter('단지 ID 와 --item 중 하나만 주세요', param_hint='COMPLEX_ID / --item')
     if item is not None and area is not None:
@@ -805,11 +887,13 @@ def real_price_command(
     with handle_errors(SOURCE), DaangnClient() as client:
         result: DaangnRealPriceBaseResult
         if item is not None:
-            result = get_listing_real_prices(client, item, trade_type=trade_types[0], limit=limit)
+            result = get_listing_real_prices(client, item, trade_type=trade_types[0], limit=limit, years=years)
         else:
             # 위에서 단지 ID 와 --item 중 정확히 하나만 받았다
             assert complex_id is not None
-            result = get_real_prices(client, complex_id, trade_type=trade_types[0], area_group=area, limit=limit)
+            result = get_real_prices(
+                client, complex_id, trade_type=trade_types[0], area_group=area, limit=limit, years=years,
+            )
         emit(result, pretty, notes=result.notes)
 
 
@@ -838,7 +922,7 @@ def region_real_price_command(
     if sorts[0] == '가격' and trade_types[0] != '매매':
         # 당근이 전월세의 가격 순 정렬을 이유 없이 거절한다
         raise typer.BadParameter('가격 순 정렬은 매매만 됩니다', param_hint='--sort / --trade')
-    with handle_errors(SOURCE), DaangnClient() as client:
+    with handle_errors(SOURCE), DaangnClient() as client, _complex_name_hint(client, region):
         result = get_region_real_prices(
             client,
             region,
@@ -881,9 +965,6 @@ def commute_command(
     deal: DealOption = None,
     option: ExtraOption = None,
     move_in_now: MoveInNowOption = False,
-    household_min: HouseholdMinOption = None,
-    household_max: HouseholdMaxOption = None,
-    parking_min: ParkingMinOption = None,
     limit: Annotated[int, typer.Option(min=1, max=COMMUTE_STATION_MAX_LIMIT, help='역당 최대 매물 수 (100건씩 페이지를 넘겨 받는다)')] = COMMUTE_STATION_DEFAULT_LIMIT,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
@@ -895,11 +976,9 @@ def commute_command(
 
     예: jibsa daangn search commute 강남역 --max-minutes 20 -t 원룸 --trade 월세 --rent-max 70
     """
-    require_finite('--parking-min', parking_min)
     validate_ranges(
         ('deposit', deposit_min, deposit_max), ('rent', rent_min, rent_max),
         ('price', price_min, price_max), ('area', area_min, area_max),
-        ('household', household_min, household_max),
     )
     _require_one_place(workplace, lat, lng, 'WORKPLACE')
     with handle_errors(SOURCE), DaangnClient() as client:
@@ -909,7 +988,6 @@ def commute_command(
             price_min=price_min, price_max=price_max, with_manage_cost=with_manage_cost,
             area_min=area_min, area_max=area_max, floor=floor, room_count=room_count,
             structure=structure, approval=approval, deal=deal, option=option, move_in_now=move_in_now,
-            household_min=household_min, household_max=household_max, parking_min=parking_min,
         )
         if lat is None or lng is None:
             # _require_one_place 가 좌표가 없으면 이름을 요구했다
@@ -934,6 +1012,8 @@ def commute_command(
                 message='당근 출퇴근 API 가 바뀌어(웹 쿼리 해시 거절) 출퇴근 검색을 할 수 없습니다',
                 hint='jibsa daangn search listings <역 이름> --radius 1 로 역 주변을 찾으세요. jibsa 업데이트가 필요합니다',
             ) from None
+        if with_manage_cost and any(listing.manage_cost_manwon is None for listing in result.listings):
+            notes.append(_manage_cost_filtered_note('jibsa daangn listing <id> 로 봅니다'))
         emit(result, pretty, notes=notes + result.notes, fields=fields)
 
 
@@ -948,7 +1028,7 @@ def region_reviews_command(
     pretty: PrettyOption = None,
 ) -> None:
     """동네 거주 후기가 있는지·몇 개인지와 후기 많은 단지. 후기 내용은 url 의 원 사이트에서."""
-    with handle_errors(SOURCE), DaangnClient() as client:
+    with handle_errors(SOURCE), DaangnClient() as client, _complex_name_hint(client, region):
         result = get_region_reviews(client, region, city=city, top=top)
         emit(result, pretty, notes=result.notes)
 
@@ -1033,7 +1113,8 @@ def complexes_command(
             household_max=household_max,
             parking_min=parking_min,
         )
-        result = list_region_complexes(client, region, city=city, conditions=conditions, sort=sorts[0], limit=limit)
+        with _complex_name_hint(client, region):
+            result = list_region_complexes(client, region, city=city, conditions=conditions, sort=sorts[0], limit=limit)
         emit(result, pretty, notes=result.notes)
 
 
