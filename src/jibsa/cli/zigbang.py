@@ -111,7 +111,9 @@ from jibsa.providers.zigbang.service.stay import (
     STAY_FLOOR_TYPE_BY_LABEL,
     STAY_GEOHASH_PRECISION,
     STAY_OPTION_BY_LABEL,
+    STAY_WEEKLY_PRICE_NOTE,
     ZigbangStayConditions,
+    attach_stay_period_costs,
     check_stay_sort,
     search_stay_listings,
 )
@@ -468,7 +470,10 @@ def search_room_command(
         bool,
         typer.Option(
             '--details',
-            help=f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건)',
+            help=(
+                f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)와 사용승인일(approved_at)을 붙인다. '
+                f'요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건). 직방에는 연식 조건이 없어 연식은 이것으로 본다'
+            ),
         ),
     ] = False,
     next_: NextOption = None,
@@ -962,18 +967,30 @@ def stay_command(
         typer.Option('--sort', help='distance 가까운 순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순'),
     ] = 'distance',
     limit: LimitOption = 15,
+    details: Annotated[
+        bool,
+        typer.Option(
+            '--details',
+            help=(
+                f'--check-in/--check-out 과 함께: 앞 {DETAILS_MAX}건에 그 기간의 실제 비용(period_cost: 청소비·직방 이용료·장기 '
+                '할인 포함)을 붙인다. 매물당 요청 1회. --pet 이면 반려동물 청소비도 넣는다'
+            ),
+        ),
+    ] = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """직방 단기임대(주 단위 계약) 매물을 거리·가격·최근 등록 순으로 조회한다. 금액은 주당 만원.
 
     원룸·빌라의 '단기임대' 거래(search room --trade 단기임대)와 다른 별도 서비스다. 매물은 직방 앱에서만 열린다.
-    상세는 결과의 id(stay-123) 로 jibsa zigbang listing <id>.
+    상세는 결과의 id(stay-123) 로 jibsa zigbang listing <id>. 가격순은 주당 요금 기준이라, 기간 실제 비용은 --details 로 본다.
 
     예: jibsa zigbang search listings stay 강남역 --weekly-rent-max 50 --building 오피스텔 --option 세탁기,와이파이
-        jibsa zigbang search listings stay 역삼동 --check-in 2026-11-01 --check-out 2026-11-28 --rooms 1
+        jibsa zigbang search listings stay 역삼동 --check-in 2026-11-01 --check-out 2026-11-28 --rooms 1 --details
     """
     _require_center(query, lat, lng)
+    if details and (check_in is None or check_out is None):
+        raise typer.BadParameter('기간 비용을 계산할 날짜가 필요합니다. --check-in 과 --check-out 을 함께 주세요', param_hint='--details')
     require_finite('--radius', radius)
     validate_ranges(
         ('weekly-rent', weekly_rent_min, weekly_rent_max),
@@ -1078,6 +1095,10 @@ def stay_command(
             result = search_stay_listings(
                 client, region, conditions=conditions, sort=stay_sort, radius_km=radius_km, limit=limit, boundary=boundary,
             )
+        if details:
+            result = attach_stay_period_costs(client, result, conditions)
+        elif check_in is not None and result.listings:
+            notes.append(STAY_WEEKLY_PRICE_NOTE)
         emit(result, pretty, notes=notes + result.notes, fields=fields)
 
 

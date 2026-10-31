@@ -356,11 +356,12 @@ def detail_to_listing(
 
 
 def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> ZigbangSearchResult:
-    """목록 매물마다 상세(`/items/{id}/detail`)를 1회씩 받아 건물 용도(`residence_type`)를 붙인다 (`--details`).
+    """목록 매물마다 상세(`/items/{id}/detail`)를 1회씩 받아 건물 용도(`residence_type`)와 사용승인일을 붙인다 (`--details`).
 
-    목록 API 는 건물 용도를 주지 않는다 (2026-10-15 실측: `items/list` 요약에 용도 필드 없음). 근린생활시설·고시원처럼
-    전입신고가 막힐 수 있는 매물을 상세를 하나씩 열지 않고 고르게 한다. 앞 `DETAILS_MAX` 건만 보고, 상세에서 거래가
-    끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
+    목록 API 는 건물 용도·사용승인일을 주지 않는다 (2026-10-15 실측: `items/list` 요약에 용도 필드 없음). 근린생활시설·고시원처럼
+    전입신고가 막힐 수 있는 매물을 상세를 하나씩 열지 않고 고르게 한다. 사용승인일도 같은 상세에 있어 함께 채운다
+    (2026-10-31 에이전트 검증: 직방에는 연식 조건이 없어 '10년 이내' 를 확인하려고 상세를 8회씩 따로 불렀다).
+    앞 `DETAILS_MAX` 건만 보고, 상세에서 거래가 끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
     """
     listings: list[Listing] = []
     gone = 0
@@ -387,13 +388,14 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
             continue
         residence = item.residence
         building_use = (residence.residence_description or residence.residence_type or '').strip() or None
-        listings.append(listing_as(ZigbangDetailedListing, listing, residence_type=building_use))
+        approved = listing.model_copy(update={'approved_at': normalize_date(residence.approved_at) or listing.approved_at})
+        listings.append(listing_as(ZigbangDetailedListing, approved, residence_type=building_use))
     notes = []
     if gone:
         # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
         notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
     if len(result.listings) > DETAILS_MAX:
-        notes.append(f'건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
+        notes.append(f'건물 용도·사용승인일(--details)은 앞 {DETAILS_MAX}건에만 붙였습니다')
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})
 
 
