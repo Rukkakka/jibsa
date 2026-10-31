@@ -6,7 +6,7 @@
 
 - 결과는 stdout 에 JSON. 터미널이면 들여쓰기, 파이프면 한 줄 (`--pretty` / `--compact` 로 강제)
 - 소수점 아래가 없는 숫자는 정수로 쓴다 (`1000.0` 이 아니라 `1000`). 같은 필드도 값에 따라 `1000` 과 `24.2` 처럼 섞여 나온다
-- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 당근 `in_regions` 는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
+- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 `notes` 가 가리키는 필드(당근 `in_regions`, 네이버 중복 묶음의 `realtor_count`·`*_range_manwon`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
 - 매물 필드에 값이 없을 때는 의미에 따라 다르게 나타낸다
 
   | 상태 | 표현 | 예 |

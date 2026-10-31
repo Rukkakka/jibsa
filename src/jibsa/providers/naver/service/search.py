@@ -64,9 +64,11 @@ from jibsa.providers.naver.service.common import (
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
+    bounded_precision,
     bounding_box,
     complex_url,
     cursor_position,
+    group_sort_notes,
     listing_keeper,
     pagination_notes,
     price_sort_notes,
@@ -230,7 +232,9 @@ def _search_sorted(
         paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
         return unwrap(
             client.run_request_article_bounded_articles_v1(
-                NaverArticleBoundedArticlesV1RequestPayloadModel(filter=filter_, bounding_box=box, article_paging_request=paging)
+                NaverArticleBoundedArticlesV1RequestPayloadModel(
+                    filter=filter_, bounding_box=box, precision=bounded_precision(radius_km), article_paging_request=paging,
+                )
             ),
             '매물 목록',
         )
@@ -428,7 +432,8 @@ def list_area_complexes(
         else:
             response = client.run_request_complex_bounded_complexes_v1(
                 NaverComplexBoundedComplexesV1RequestPayloadModel(
-                    filter=filter_, bounding_box=bounding_box(lat, lng, radius_km), complex_paging_request=paging,
+                    filter=filter_, bounding_box=bounding_box(lat, lng, radius_km), precision=bounded_precision(radius_km),
+                    complex_paging_request=paging,
                 )
             )
         return unwrap(response, '단지 목록')
@@ -753,14 +758,17 @@ def search_area(
     # 동 전체·반경 정렬 모두 같은 서버 가격순이다
     filter_notes += price_sort_notes(sort_type, conditions.trade_types)
     if legal_division_codes:
-        return _search_legal_division(
+        result = _search_legal_division(
             client, lat, lng, legal_division_codes, filter_, sort_type or 'RANKING_DESC', filter_notes, limit, start,
         )
-    if sort_type is not None:
-        return _search_sorted(
+    elif sort_type is not None:
+        result = _search_sorted(
             client, lat, lng, radius_km, filter_, box, sort_type, filter_notes, limit, start,
         )
-    return _search_clusters(client, lat, lng, radius_km, filter_, box, filter_notes, limit, start)
+    else:
+        return _search_clusters(client, lat, lng, radius_km, filter_, box, filter_notes, limit, start)
+    # 결과의 안내 맨 뒤('이 N건이 전부입니다' 등) 앞에 둘 필요가 없어 끝에 붙인다
+    return result.model_copy(update={'notes': result.notes + group_sort_notes(sort_type, result.listings)})
 
 
 def _search_clusters(

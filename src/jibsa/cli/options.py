@@ -18,7 +18,8 @@ FieldsOption = Annotated[
         callback=check_fields,
         help=(
             '매물마다 낼 필드만 고른다 (출력이 준다). 결과의 매물 키 이름을 반복하거나 쉼표로 구분 '
-            '(예: id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url). id 와 당근 in_regions 는 늘 나온다. 기본 전체'
+            '(예: id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url). id 와 notes 가 가리키는 필드(당근 in_regions, '
+            '네이버 중복 묶음의 realtor_count·*_range_manwon)는 늘 나온다. 기본 전체'
         ),
     ),
 ]

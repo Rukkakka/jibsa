@@ -669,8 +669,38 @@ class NaverArticleInfoModel(ResponseModel):
     ] = None
 
 
+class NaverMinMaxPriceModel(ResponseModel):
+    """최저·최고 가격 (원)."""
+
+    min_price: Annotated[
+        float | None,
+        Field(description='최저 (원)', alias='minPrice')
+    ] = None
+    max_price: Annotated[
+        float | None,
+        Field(description='최고 (원)', alias='maxPrice')
+    ] = None
+
+
+class NaverRepresentativePriceInfoModel(ResponseModel):
+    """중복 묶음의 거래별 호가 범위 (원). 그 묶음의 거래가 아닌 가격은 0~0 으로 온다."""
+
+    deal_price: Annotated[
+        NaverMinMaxPriceModel | None,
+        Field(description='매매가 범위', alias='dealPrice')
+    ] = None
+    warranty_price: Annotated[
+        NaverMinMaxPriceModel | None,
+        Field(description='보증금·전세금 범위', alias='warrantyPrice')
+    ] = None
+    rent_price: Annotated[
+        NaverMinMaxPriceModel | None,
+        Field(description='월세 범위', alias='rentPrice')
+    ] = None
+
+
 class NaverDuplicatedArticleInfoModel(ResponseModel):
-    """같은 매물을 여러 중개사가 올린 묶음. 원본은 매우 커서 수만 남긴다."""
+    """같은 매물을 여러 중개사가 올린 묶음. 원본은 매우 커서(묶인 매물 전부) 수와 호가 범위만 남긴다."""
 
     realtor_count: Annotated[
         int | None,
@@ -679,6 +709,10 @@ class NaverDuplicatedArticleInfoModel(ResponseModel):
     direct_trade_count: Annotated[
         int | None,
         Field(description='직거래 수', alias='directTradeCount')
+    ] = None
+    representative_price_info: Annotated[
+        NaverRepresentativePriceInfoModel | None,
+        Field(description='묶음의 거래별 호가 범위. 네이버 가격순은 이 범위로 정렬한다', alias='representativePriceInfo')
     ] = None
 
 

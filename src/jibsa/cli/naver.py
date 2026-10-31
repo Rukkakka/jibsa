@@ -32,7 +32,10 @@ from jibsa.cli.paging import (
 )
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
-from jibsa.core.korean import is_ri_code
+from jibsa.core.korean import (
+    is_ri_code,
+    quoted,
+)
 from jibsa.core.listing import (
     normalize_address,
     note,
@@ -287,6 +290,21 @@ def _merged_region(region: NaverRegion, dongs: list[NaverRegion]) -> NaverRegion
     return NaverRegion(name=names, address=f'{parent} {names}'.strip(), lat=region.lat, lng=region.lng)
 
 
+def _radius_ga_note(region: NaverRegion, notes: list[str], radius: float | None) -> None:
+    """'○가' 로 나뉜 동(성수동 → 성수동1가)을 반경으로 찾았으면 '1가만 찾았다, 다른 곳은 각각 검색하라' 안내를 반경 안내로 바꾼다.
+
+    그 안내는 동 경계로 찾을 때의 말이다. 반경은 이웃한 2가도 덮어 각각 찾으라는 말이 틀린다 (2026-10-31 에이전트 검증:
+    '성수동 --radius 2' 재개발 구역 8곳에 성수동2가 구역 4곳이 들어 있는데 '성수동1가만 찾았습니다' 라고 안내했다).
+    """
+    if region.ga_note is None or region.ga_note not in notes or region.ga_base is None:
+        return
+    notes[notes.index(region.ga_note)] = note(
+        '범위',
+        f"{quoted(region.ga_base, '은/는')} '○가' 로 나뉜 동이라 {region.name} 중심에서 반경 {radius or DEFAULT_RADIUS_KM:g}km "
+        "안을 찾았습니다 (반경 안의 다른 '○가' 동도 들어 있습니다)",
+    )
+
+
 def _search_scope(region: NaverRegion, whole_dong: bool, radius: float | None) -> dict[str, object]:
     """어디를 찾았는지. 동 경계로 찾았으면 boundary(동 이름), 아니면 radius_km 다 (직방 search 와 같다)."""
     return {'boundary': region.name} if whole_dong else {'radius_km': radius or DEFAULT_RADIUS_KM}
@@ -377,6 +395,8 @@ def complexes_command(
         whole_dong = _whole_dong(region, kind, radius)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
+        else:
+            _radius_ga_note(region, notes, radius)
         result = list_area_complexes(
             client,
             region.lat,
@@ -530,6 +550,8 @@ def redevelopment_command(
         whole_dong = _whole_dong(region, kind, radius)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
+        else:
+            _radius_ga_note(region, notes, radius)
         result = list_redevelopment_areas(
             client,
             region.lat,
@@ -1048,6 +1070,8 @@ def search_command(
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
         # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
         whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
+        if not whole_dong:
+            _radius_ga_note(region, notes, radius)
         dongs = [region]
         if whole_dong and region.ga_base is not None:
             # '○가' 로 나뉜 동(성수동)은 직방처럼 모두 찾아 합친다. 한 곳만 찾았다는 안내는 뺀다
