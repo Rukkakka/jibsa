@@ -71,6 +71,7 @@ from jibsa.providers.dabang.service.complex import (
     search_complexes,
 )
 from jibsa.providers.dabang.service.listing import (
+    attach_details,
     get_listing,
     search_listings,
 )
@@ -168,7 +169,7 @@ LISTING_HINTS: UsageHints = UsageHints(
         '--option': '다방은 가전·가구 옵션으로 거르지 않습니다. 시설은 --condition 주차,엘리베이터',
         '--facility': '--condition 주차,엘리베이터',
         '--bathroom': '다방에는 욕실 수 조건이 없습니다',
-        '--details': '다방 상세는 jibsa dabang listing <id> 로 봅니다',
+        '--details': '다방 --details 는 search listings room·villa·officetel·apt 뒤에 줍니다. 단지 매물 상세는 jibsa dabang listing <id> 로 봅니다',
         '--sort': '다방 매물은 다방 목록 순으로만 줍니다',
         '--room-count': '--room 투룸',
         '--structure': '--condition 분리형 이나 --condition 복층',
@@ -231,7 +232,17 @@ RentIncludesManageOption = Annotated[
 ]
 AreaPyeongMinOption = Annotated[int | None, typer.Option(min=0, help='방 크기 하한 (평, 정수)')]
 AreaPyeongMaxOption = Annotated[int | None, typer.Option(min=0, help='방 크기 상한 (평, 정수)')]
-BuiltWithinOption = Annotated[int | None, typer.Option(min=0, help='사용승인 뒤 이 햇수 이내 건물만 (년)')]
+DetailsOption = Annotated[
+    bool,
+    typer.Option(
+        '--details',
+        help='매물마다 상세를 1회씩 더 받아 사용승인일(approved_at)과 건물 용도(residence_type)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건)',
+    ),
+]
+BuiltWithinOption = Annotated[
+    int | None,
+    typer.Option(min=0, help='사용승인 뒤 이 햇수 이내 건물만 (년). 다방은 연도로 세어 10 이면 10년 전 해의 1월 1일 이후 승인'),
+]
 FloorOption = Annotated[
     list[str] | None,
     typer.Option('--floor', help=f"층: {', '.join(FLOOR_FILTER_BY_LABEL)}. 반복하거나 쉼표로 구분 (OR). 기본 전체"),
@@ -306,6 +317,7 @@ def _search(
     households_max: int | None,
     limit: int,
     next_: str | None,
+    details: bool,
     fields: list[str] | None,
     pretty: bool | None,
 ) -> None:
@@ -369,6 +381,8 @@ def _search(
         next_position = result.next_position
         if next_position is not None:
             next_position = {**next_position, 'places': [_place_state(place) for place in places], 'place_notes': notes}
+        if details:
+            result = attach_details(client, result, built_within_years=built_within)
         emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(next_position), fields=fields)
 
 
@@ -456,6 +470,7 @@ def room_command(
     condition: Annotated[list[str] | None, _condition_option('room')] = None,
     limit: LimitOption = DEFAULT_LIST_LIMIT,
     next_: NextOption = None,
+    details: DetailsOption = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -471,7 +486,7 @@ def room_command(
         'room', query=query, lat=lat, lng=lng, radius=radius, trade=trade, deposit_min=deposit_min, deposit_max=deposit_max,
         rent_min=rent_min, rent_max=rent_max, price_min=None, price_max=None, rent_includes_manage_cost=rent_includes_manage_cost,
         area_pyeong_min=area_pyeong_min, area_pyeong_max=area_pyeong_max, built_within=built_within, floor=floor, room=room,
-        condition=condition, households_min=None, households_max=None, limit=limit, next_=next_, fields=fields, pretty=pretty,
+        condition=condition, households_min=None, households_max=None, limit=limit, next_=next_, details=details, fields=fields, pretty=pretty,
     )
 
 
@@ -497,6 +512,7 @@ def villa_command(
     condition: Annotated[list[str] | None, _condition_option('villa')] = None,
     limit: LimitOption = DEFAULT_LIST_LIMIT,
     next_: NextOption = None,
+    details: DetailsOption = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -509,7 +525,7 @@ def villa_command(
         rent_min=rent_min, rent_max=rent_max, price_min=price_min, price_max=price_max,
         rent_includes_manage_cost=rent_includes_manage_cost, area_pyeong_min=area_pyeong_min, area_pyeong_max=area_pyeong_max,
         built_within=built_within, floor=floor, room=room, condition=condition, households_min=None, households_max=None,
-        limit=limit, next_=next_, fields=fields, pretty=pretty,
+        limit=limit, next_=next_, details=details, fields=fields, pretty=pretty,
     )
 
 
@@ -534,6 +550,7 @@ def officetel_command(
     condition: Annotated[list[str] | None, _condition_option('officetel')] = None,
     limit: LimitOption = DEFAULT_LIST_LIMIT,
     next_: NextOption = None,
+    details: DetailsOption = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -546,7 +563,7 @@ def officetel_command(
         deposit_max=deposit_max, rent_min=rent_min, rent_max=rent_max, price_min=price_min, price_max=price_max,
         rent_includes_manage_cost=rent_includes_manage_cost, area_pyeong_min=area_pyeong_min, area_pyeong_max=area_pyeong_max,
         built_within=built_within, floor=None, room=room, condition=condition, households_min=None, households_max=None,
-        limit=limit, next_=next_, fields=fields, pretty=pretty,
+        limit=limit, next_=next_, details=details, fields=fields, pretty=pretty,
     )
 
 
@@ -573,6 +590,7 @@ def apt_command(
     households_max: Annotated[int | None, typer.Option(min=0, help='단지 세대수 상한')] = None,
     limit: LimitOption = DEFAULT_LIST_LIMIT,
     next_: NextOption = None,
+    details: DetailsOption = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -587,7 +605,7 @@ def apt_command(
         rent_min=rent_min, rent_max=rent_max, price_min=price_min, price_max=price_max,
         rent_includes_manage_cost=rent_includes_manage_cost, area_pyeong_min=area_pyeong_min, area_pyeong_max=area_pyeong_max,
         built_within=built_within, floor=None, room=room, condition=condition, households_min=households_min,
-        households_max=households_max, limit=limit, next_=next_, fields=fields, pretty=pretty,
+        households_max=households_max, limit=limit, next_=next_, details=details, fields=fields, pretty=pretty,
     )
 
 
