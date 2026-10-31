@@ -1,8 +1,8 @@
 # 다방 CLI 사용법 (`jibsa dabang`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/dabang.md)
+[설치](https://github.com/Rukkakka/jibsa/blob/main/README.md) · [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/development/providers/dabang.md)
 
-> 금액은 **만원**, 면적은 **㎡**다. 다만 매물 검색의 방 크기 조건은 다방이 **평(정수)** 으로만 받는다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 다방에만 있는 내용을 적는다.
+> 금액은 **만원**, 면적은 **㎡**다. 다만 매물 검색의 방 크기 조건은 다방이 **평(정수)** 으로만 받는다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md)에 있고, 이 문서는 다방에만 있는 내용을 적는다.
 
 ## 한눈에 보기
 
@@ -437,7 +437,7 @@ jibsa dabang region-ranking 서울 --by 학원수 --kind 입시 --limit 10
 
 매물 검색(`room`·`villa`·`officetel`·`apt`·`--complex`)의 `--limit` 은 기본 24·최대 120이다. 다방은 한 번에 24건씩 주므로 요청은 24건마다 1회다. 받은 원본 수로 조회 예산을 세고, 받은 뒤 뺀 매물(반경 밖·다른 동·광고)만큼 다시 채우지 않는다. `total`·`has_more` 는 다방이 센 값이라 `next` 로 끝까지 이어 받을 수 있다. `search complexes` 는 기본 24·최대 120이고 매물 검색처럼 받은 단지 수로 센다 (아파트 동 검색에서 뺀 다른 동 단지만큼 다시 채우지 않는다). `real-price` 는 기본 30·최대 200(50건마다 1회)이다.
 
-가격 조건만 주고 `--trade` 를 생략하면 그 금액이 있는 거래로 좁히고 `notes` 로 알린다 ([공통 규칙](common.md#출력-규칙)).
+가격 조건만 주고 `--trade` 를 생략하면 그 금액이 있는 거래로 좁히고 `notes` 로 알린다 ([공통 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#출력-규칙)).
 
 ## 출력 읽기
 

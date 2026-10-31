@@ -1,8 +1,8 @@
 # 직방 CLI 사용법 (`jibsa zigbang`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/zigbang.md)
+[설치](https://github.com/Rukkakka/jibsa/blob/main/README.md) · [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [개발 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/development/providers/zigbang.md)
 
-> 금액은 **만원**, 면적은 **㎡**다. `search listings stay`는 월세 대신 **주당 요금**을 쓴다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 직방에만 있는 내용을 적는다.
+> 금액은 **만원**, 면적은 **㎡**다. `search listings stay`는 월세 대신 **주당 요금**을 쓴다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md)에 있고, 이 문서는 직방에만 있는 내용을 적는다.
 
 ## 한눈에 보기
 
@@ -481,7 +481,7 @@ jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29 --pe
 
 `--limit`은 최종 출력 개수의 상한이며 API 요청 한 번의 크기를 뜻하지 않는다. 유형마다 조회 방식·서버 필터·후처리·요청 상한이 달라 결과가 부족할 수 있다. 일부 조회·범위 밖 결과·지원하지 않는 유형은 `notes`를 확인한다. CLI에 `--offset`·`--cursor`는 없다. 새 검색에서 같은 목록·순서를 보장하지 않는다.
 
-주거 매물의 거래 유형을 생략하고 월세·매매가·보증금 조건만 주면 거래 유형을 자동으로 좁힐 수 있고 `notes`로 알린다. `--trade`와 맞지 않는 가격 조건(전세 + `--rent-max` 등)은 [공통 규칙](common.md#출력-규칙)대로 입력 오류다. 월세와 단기임대는 별도 거래 유형이다.
+주거 매물의 거래 유형을 생략하고 월세·매매가·보증금 조건만 주면 거래 유형을 자동으로 좁힐 수 있고 `notes`로 알린다. `--trade`와 맞지 않는 가격 조건(전세 + `--rent-max` 등)은 [공통 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#출력-규칙)대로 입력 오류다. 월세와 단기임대는 별도 거래 유형이다.
 
 ## 출력 읽기
 
@@ -511,11 +511,11 @@ jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29 --pe
 | `notes` | 조회 범위·부족한 결과·정렬 등의 안내 |
 | `url` | 원 사이트에서 확인·문의 |
 
-집계 필드의 의미는 명령마다 다르다. 지도 후보 수나 서버 집계는 후처리한 실제 반환 수와 다를 수 있다. `search locations`은 검색 중심을 찾는 명령이라 지역 후보 좌표를 준다. 공통으로 읽는 법은 [공통 사용 규칙](common.md#반환값을-읽을-때)에 있다.
+집계 필드의 의미는 명령마다 다르다. 지도 후보 수나 서버 집계는 후처리한 실제 반환 수와 다를 수 있다. `search locations`은 검색 중심을 찾는 명령이라 지역 후보 좌표를 준다. 공통으로 읽는 법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#반환값을-읽을-때)에 있다.
 
 ## 요청 제한과 도움말
 
-요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](common.md#요청-제한과-limits)에 있다.
+요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다.
 
 ```bash
 jibsa zigbang --help
@@ -528,7 +528,7 @@ jibsa zigbang search listings room --help
 
 ## 소스별 반환 필드와 해석
 
-[공통 사용 규칙](common.md#반환값을-읽을-때)과 함께 읽는다. 아래 필드는 조회 모드·유형에 따라 제공된다.
+[공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#반환값을-읽을-때)과 함께 읽는다. 아래 필드는 조회 모드·유형에 따라 제공된다.
 
 | 소스·조회 유형 | 필드 | 뜻 |
 | --- | --- | --- |
