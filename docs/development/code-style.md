@@ -2,9 +2,9 @@
 
 `src/jibsa/**`, `tests/**`, 마크다운 문서에 적용하는 형식 규칙. provider 모듈 고유의 설계 규칙
 (action id 명명, 모델 배치, 재시도)은 [provider-conventions.md](provider-conventions.md), 검증·테스트 원칙은
-[development.md](development.md#검증과-테스트) 에 있다.
+[개발 환경](README.md#검증과-테스트) 에 있다.
 
-§2 따옴표, §3 import 순서·절대 import, §5 타입 힌트는 ruff·mypy 가 검사한다 ([코드 검사](development.md#코드-검사)).
+§2 따옴표, §3 import 순서·절대 import, §5 타입 힌트는 ruff·mypy 가 검사한다 ([코드 검사](README.md#코드-검사)).
 §4 의 별칭·기본값 위치는 `tests/test_schema.py` 가 검사한다 (ruff·mypy 는 잡지 못한다).
 §3 의 "둘 이상이면 괄호로 여러 줄" 과 나머지 절은 도구가 잡지 못하니 직접 지킨다.
 
@@ -177,7 +177,7 @@ async 변형은 `Async variant of ...` 한 줄로 쓴다. 비공개 헬퍼는 �
 
 ## 8. 테스트 코드
 
-언제 테스트를 추가하고 무엇을 돌리는지는 [검증과 테스트](development.md#검증과-테스트)에 있다. 여기는 테스트 코드의 형식만 다룬다.
+언제 테스트를 추가하고 무엇을 돌리는지는 [검증과 테스트](README.md#검증과-테스트)에 있다. 여기는 테스트 코드의 형식만 다룬다.
 
 - 파일은 `tests/test_<source>.py`, `test_<module>.py`. 섹션은 `# --- request models ---` 같은 구분 주석으로 나눈다. 테스트를 지워 비게 된 구분 주석은 함께 지운다.
 - 테스트 함수 이름은 동작을 영어 문장으로: `test_closed_items_are_excluded`.

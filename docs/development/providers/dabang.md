@@ -1,6 +1,6 @@
 # 다방 개발 가이드
 
-[CLI 사용법](../../docs/dabang.md) · [개발 환경·검증](../development.md) · [공통 아키텍처](../architecture.md) · [provider 작성 규약](../provider-conventions.md) · [출력 계약](../output-contract.md) · [코드 형식](../code-style.md)
+[CLI 사용법](../../dabang.md) · [개발 환경·검증](../README.md) · [공통 아키텍처](../architecture.md) · [provider 작성 규약](../provider-conventions.md) · [출력 계약](../output-contract.md) · [코드 형식](../code-style.md)
 
 공통 규약에 없는, 다방에만 있는 구현과 예외를 적는다. 엔드포인트와 필드의 뜻은 `api/client.py` docstring 과 `api/response/` 모델에 있다.
 

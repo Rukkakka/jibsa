@@ -1,4 +1,4 @@
-# v* 태그를 push 하면 PyPI 와 GitHub Release 로 배포한다 (references/release.md '릴리스 절차').
+# v* 태그를 push 하면 PyPI 와 GitHub Release 로 배포한다 (docs/development/release.md '릴리스 절차').
 # PyPI 는 API 토큰 없이 신뢰 게시(Trusted Publishing)로 올린다. pypi.org 의 게시자 설정은 프로젝트 jibsa,
 # 저장소 Rukkakka/jibsa, 워크플로 release.yml, 환경 pypi 이고 GitHub 환경 pypi 는 v* 태그에서만 배포를 받는다.
 name: Release

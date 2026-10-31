@@ -682,7 +682,7 @@ def scan_pages(
     """`fetch(size, seed, last_info)` 로 페이지를 차례로 받아 항목마다 `keep(item)` 을 부른다.
 
     할당량(`scan.limit`)은 받은 개수로 센다. 받은 뒤 `keep` 이 버린 항목은 센 채로 두어 다시 채우지 않는다
-    (references/output-contract.md 의 개수 상한). 할당량을 다 쓰거나, 다음 페이지가 없거나, 처음 보는 항목이
+    (docs/development/output-contract.md 의 개수 상한). 할당량을 다 쓰거나, 다음 페이지가 없거나, 처음 보는 항목이
     없는 페이지(커서가 멈춤)가 오거나, `fetch` 가 None 을 주면 멈춘다. 받을 게 남았는데 요청이
     `scan.max_requests` 에 닿으면 `scan.truncated` 를 켠다. 다음 요청에는 앞 페이지의 seed·lastInfo 를 넘긴다
     (seed 가 빠지면 랭킹순이 페이지마다 다시 섞인다).

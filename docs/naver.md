@@ -1,6 +1,6 @@
 # 네이버 CLI 사용법 (`jibsa naver`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](../references/providers/naver.md) · [매물 검색](#1-search-listings--매물-찾기) · [단지 검색](#2-search-complexes--지역-안-단지-목록)
+[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/naver.md) · [매물 검색](#1-search-listings--매물-찾기) · [단지 검색](#2-search-complexes--지역-안-단지-목록)
 
 > 금액은 **만원**, 면적은 **㎡** (1평 = 3.3㎡)다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 네이버에만 있는 내용을 적는다.
 

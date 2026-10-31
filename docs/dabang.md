@@ -1,6 +1,6 @@
 # 다방 CLI 사용법 (`jibsa dabang`)
 
-[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](../references/providers/dabang.md)
+[설치](../README.md) · [공통 사용 규칙](common.md) · [개발 가이드](development/providers/dabang.md)
 
 > 금액은 **만원**, 면적은 **㎡**다. 다만 매물 검색의 방 크기 조건은 다방이 **평(정수)** 으로만 받는다. 출력 형식·누락값·에러 대응·요청 제한 같은 공통 규칙은 [공통 사용 규칙](common.md)에 있고, 이 문서는 다방에만 있는 내용을 적는다.
 

@@ -39,7 +39,7 @@ RelayStore = dict[str, dict[str, Any]]
 
 
 # 두 예외는 api 층(소스 응답 그대로 옮기는 아래층)이라 JibsaError 가 아니라 ValueError 다. JibsaError 변환은 service 층에서
-# 하고(references/architecture.md), api/ 아래 어떤 모듈도 JibsaError 를 쓰지 않는다. CLI 는 ValueError 를 PARSE_ERROR 로 낸다
+# 하고(docs/development/architecture.md), api/ 아래 어떤 모듈도 JibsaError 를 쓰지 않는다. CLI 는 ValueError 를 PARSE_ERROR 로 낸다
 class RelayStoreNotFoundError(ValueError):
     """HTML 에 Relay 스토어(라우터 상태의 `dehydratedData.relayRecords`)가 없거나 읽을 수 없을 때. 페이지 구조가 바뀌었다는 신호다."""
 

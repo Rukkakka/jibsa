@@ -84,7 +84,7 @@ packages = ['src/jibsa']
 [tool.pytest.ini_options]
 testpaths = ['tests']
 
-# references/code-style.md 의 규칙 중 도구로 잡을 수 있는 것만 켠다. 줄 길이(E501)와 ruff format 은 쓰지 않는다
+# docs/development/code-style.md 의 규칙 중 도구로 잡을 수 있는 것만 켠다. 줄 길이(E501)와 ruff format 은 쓰지 않는다
 # (format 은 §4 의 여러 줄 필드 선언을 한 줄로 합친다).
 [tool.ruff]
 target-version = 'py311'

@@ -34,7 +34,7 @@ body:
     attributes:
       label: 규약
       options:
-        - label: 새 엔드포인트·소스라면 references/provider-conventions.md 를 읽었다
+        - label: 새 엔드포인트·소스라면 docs/development/provider-conventions.md 를 읽었다
           required: false
-        - label: 출력이 바뀐다면 references/output-contract.md 를 읽었다
+        - label: 출력이 바뀐다면 docs/development/output-contract.md 를 읽었다
           required: false
