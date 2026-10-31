@@ -5,6 +5,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+## 0.9.0 — 2026-10-31
+
 ### ⚠️ 호환 깨짐
 
 - 당근 `search commute` 의 `--household-min`·`--household-max`·`--parking-min` 을 뺌. 당근 역 주변 매물 목록이 이 조건을 받지 않아 주어도 걸리지 않았다. 단지 조건은 `search listings <역 이름> --radius 1 -t 아파트 --household-min …` 으로 찾는다 (#169)
