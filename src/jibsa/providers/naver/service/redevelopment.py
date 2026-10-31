@@ -44,6 +44,7 @@ from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
     PageScan,
     bounding_box,
+    group_sort_notes,
     listing_keeper,
     pagination_notes,
     price_filter_of,
@@ -339,6 +340,7 @@ def list_redevelopment_articles(
         ))
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
+    notes += group_sort_notes(sort_type, result)
     notes += pagination_notes(scan.total, len(result), limit, scan.received, truncated=scan.truncated)
     # 재개발 구역 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다
     return NaverListingsResult(

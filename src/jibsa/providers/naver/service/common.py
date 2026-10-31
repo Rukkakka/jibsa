@@ -11,6 +11,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializeAsAny,
 )
 
 from jibsa.core.errors import JibsaError
@@ -47,8 +48,10 @@ from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
     NaverComplexArticleCountModel,
     NaverComplexListPageModel,
+    NaverDuplicatedArticleInfoModel,
     NaverFacilityInfoModel,
     NaverListBuildingInfoModel,
+    NaverMinMaxPriceModel,
     NaverPriceRangeModel,
     NaverPyeongModel,
     NaverRedevelopmentAreaCountModel,
@@ -223,6 +226,64 @@ class NaverAssignedSchool(BaseModel):
     ] = None
 
 
+class NaverListing(Listing):
+    """네이버 목록 매물. 같은 집을 중개사 여럿이 올려 네이버가 한 매물로 묶었으면 묶음의 중개사 수와 호가 범위가 붙는다.
+
+    가격 필드(`price_manwon` 등)는 묶음을 대표하는 매물 하나의 호가다. 네이버 가격순은 묶음의 호가 범위로 정렬해
+    (가격높은순은 최고 호가) 대표 가격의 순서와 다를 수 있다. 2026-10-31 실측: 헬리오시티 84㎡ 매매 가격높은순 첫 매물이
+    대표 30억, 같은 집(204동 22층)을 중개사 50곳이 30억~33억에 올린 묶음이었다. 범위를 버리면 33억 호가가 어디에도 안 보여
+    에이전트 4명 모두 최고 호가를 32억으로 답했다.
+    """
+
+    realtor_count: Annotated[
+        int | None,
+        Field(description='같은 집을 올린 중개사 수 (네이버가 한 매물로 묶음). 묶음이 아니면 키가 없다')
+    ] = None
+    price_range_manwon: Annotated[
+        list[float | None] | None,
+        Field(description='묶음의 매매 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+    ] = None
+    deposit_range_manwon: Annotated[
+        list[float | None] | None,
+        Field(description='묶음의 보증금·전세금 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+    ] = None
+    rent_range_manwon: Annotated[
+        list[float | None] | None,
+        Field(description='묶음의 월세 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+    ] = None
+
+    def not_applicable_fields(self) -> frozenset[str]:
+        return super().not_applicable_fields() | {name for name in GROUP_FIELDS if getattr(self, name) is None}
+
+
+# 묶음이 아니거나 중개사마다 호가가 같으면 해당 없는(키를 빼는) 필드
+GROUP_FIELDS: tuple[str, ...] = ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon')
+
+
+def _group_range(price: NaverMinMaxPriceModel | None) -> list[float | None] | None:
+    """묶음의 호가 범위(원)를 만원으로. 중개사마다 같거나(최저 = 최고) 그 거래 가격이 아니면(0~0) None."""
+    if price is None or price.min_price == price.max_price:
+        return None
+    return won_to_manwon_range(price.min_price, price.max_price)
+
+
+def group_fields(group: NaverDuplicatedArticleInfoModel | None, trade_type: str) -> dict[str, Any]:
+    """중복 묶음의 중개사 수와 거래 유형에 맞는 호가 범위 (`NaverListing`). 중개사가 하나뿐이면 비운다."""
+    if group is None or not group.realtor_count or group.realtor_count < 2:
+        return {}
+    prices = group.representative_price_info
+    fields: dict[str, Any] = {'realtor_count': group.realtor_count}
+    if prices is None:
+        return fields
+    if trade_type == '매매':
+        fields['price_range_manwon'] = _group_range(prices.deal_price)
+    else:
+        fields['deposit_range_manwon'] = _group_range(prices.warranty_price)
+        if trade_type in ('월세', '단기임대'):
+            fields['rent_range_manwon'] = _group_range(prices.rent_price)
+    return fields
+
+
 class NaverListingsResult(BaseModel):
     """매물 목록 결과."""
 
@@ -247,7 +308,8 @@ class NaverListingsResult(BaseModel):
         Field(exclude=True, description='이어 받을 위치 (목록 커서 seed·last_info 와 지도 칸·동 번호). 더 없으면 None')
     ] = None
     listings: Annotated[
-        list[Listing],
+        # 중복 묶음 필드(NaverListing)까지 내보낸다 (SerializeAsAny 가 없으면 공통 Listing 필드만 나간다)
+        list[SerializeAsAny[Listing]],
         Field(description='매물')
     ]
     notes: Annotated[
@@ -344,8 +406,8 @@ def building_approved_at(
 def article_info_to_listing(
     item: NaverArticleListItemModel,
     center: tuple[float, float] | None = None,
-) -> Listing | None:
-    """목록 항목(대표 매물)을 공통 `Listing` 으로 바꾼다. 원 → 만원 환산.
+) -> NaverListing | None:
+    """목록 항목(대표 매물)을 `NaverListing` 으로 바꾼다. 원 → 만원 환산. 중복 묶음이면 중개사 수·호가 범위를 붙인다.
 
     모르는 거래 유형 코드면 None 이다. 어느 가격 필드가 맞는지 몰라 틀린 값을 내보내게 되므로
     목록에서 뺀다 (직방이 전세·월세·매매 밖의 매물을 빼는 것과 같다).
@@ -378,7 +440,7 @@ def article_info_to_listing(
 
     # 재개발(F01)처럼 건물 면적이 없는 매물은 전용면적을 0 으로 준다 (대지지분만 있음, 2026-10-10 확인). 모름으로 둔다
     exclusive = (info.space_info.exclusive_space or None) if info.space_info else None
-    return Listing(
+    return NaverListing(
         source='naver',
         id=info.article_number,
         url=article_url(info.article_number),
@@ -401,6 +463,7 @@ def article_info_to_listing(
         distance_km=distance,
         registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
         approved_at=building_approved_at(info.building_info),
+        **group_fields(item.duplicated_article_info, trade_type),
     )
 
 
@@ -515,14 +578,6 @@ def kst_today() -> date:
     `date.today()` 는 컴퓨터 시간대를 따라 GMT-12 에서는 하루 전 날짜가 됐다 (시세 since 2025-10-09, 한국 기준 2025-10-10, 2026-10-10).
     """
     return datetime.now(KST).date()
-
-
-def years_ago(today: date, years: int) -> str:
-    """`years` 년 전 같은 날 (2월 29일이면 28일)."""
-    try:
-        return today.replace(year=today.year - years).isoformat()
-    except ValueError:
-        return today.replace(year=today.year - years, day=28).isoformat()
 
 
 def manwon_range(price_range: NaverPriceRangeModel | None, scale: bool = True) -> list[float | None] | None:
@@ -835,6 +890,37 @@ def price_sort_notes(sort_type: str | None, trade_types: list[str] | None) -> li
     return []
 
 
+def group_sort_notes(sort_type: str | None, listings: list[Listing]) -> list[str]:
+    """가격순인데 중개사마다 호가가 다른 중복 묶음이 있으면, 이 결과의 묶음 끝 호가를 실제 값으로 알린다 (`NaverListing`).
+
+    네이버는 묶음의 호가 범위로 정렬해 가격높은순 첫 매물이 대표 30억(묶음 30억~33억) 뒤로 32억들이 온다. 가격 조건은 대표
+    호가로만 걸려 `--price-min 325000` 은 그 33억 호가를 찾지 못하고 '0건이 전부' 다 (2026-10-31 실측: 가격 30억~30억은 그
+    묶음이 나오고 33억~33억은 0건). 범위 필드와 '범위로 정렬한다' 는 안내만 두자 에이전트가 가격 조건 0건을 믿고 최고 호가를
+    32억으로 답해(재검증 sonnet 2회), 끝 호가 값과 가격 조건이 걸리는 방식을 숫자 옆에 적는다.
+    """
+    if sort_type not in ('PRICE_ASC', 'PRICE_DESC'):
+        return []
+    descending = sort_type == 'PRICE_DESC'
+    ends: list[tuple[float, NaverListing]] = []
+    for listing in listings:
+        if not isinstance(listing, NaverListing):
+            continue
+        bounds = listing.price_range_manwon or listing.deposit_range_manwon
+        if bounds and (end := bounds[1] if descending else bounds[0]) is not None:
+            ends.append((end, listing))
+    if not ends:
+        return []
+    end, pick = (max if descending else min)(ends, key=lambda pair: pair[0])
+    price = pick.price_manwon if pick.price_manwon is not None else pick.deposit_manwon
+    edge = '최고' if descending else '최저'
+    return [note(
+        '참고',
+        f'같은 집을 중개사 여럿이 올린 매물(realtor_count)의 가격은 대표 매물 호가이고, 네이버 가격순은 묶음의 {edge} 호가로 '
+        f'정렬합니다. 이 결과의 묶음 {edge} 호가는 {end:g}만원입니다 ({pick.id}: 대표 {price:g}만원). 가격 조건(--price-*·'
+        '--deposit-*·--rent-*)은 대표 호가로만 걸려 이런 묶음 안의 호가는 찾지 못합니다',
+    )]
+
+
 class NaverTradeConditions(RequestModel):
     """거래 유형·가격 조건 (단지·재개발 구역 매물 목록과 지도 검색 공통). 금액은 만원이고 원으로 바꿔 보낸다.
 
@@ -891,3 +977,20 @@ PERIOD_YEARS_BY_NAME: dict[str, int] = {'1년': 1, '3년': 3, '5년': 5}
 def bounding_box(lat: float, lng: float, radius_km: float) -> NaverBoundingBoxModel:
     south, north, west, east = box_around(lat, lng, radius_km)
     return NaverBoundingBoxModel(left=west, right=east, top=north, bottom=south)
+
+
+def bounded_precision(radius_km: float) -> int:
+    """정렬 목록(boundedArticles·boundedComplexes)에 보낼 지도 줌. 반경을 다 덮는 가장 높은 줌이다.
+
+    줌이 높을수록 사각형을 다 주지 않고 중심 근처만 준다. 모델 기본값 16 이면 반경 2km 부터 가장자리 매물이 빠져,
+    빠진 매물만 조건에 맞을 때 '0건이 전부' 라고 냈다 (2026-10-31 강남역 2km 아파트 전세 5억 이하 + 500세대 이상:
+    줌 16 0건, 가까운순 클러스터 6건). 같은 날 강남역 아파트 전세 4~5억의 반경 안 매물 수:
+    1.5km 줌 16·15 모두 10건, 2km 줌 16 21건·15 33건·14 33건, 3km 줌 15 60건·14 62건·13 62건.
+    단지 목록도 같다 (3km 아파트 단지 total 줌 16 242곳, 14 1,048곳). 줌을 더 낮추면 반경 밖 매물이 섞여 `--limit`
+    몫을 쓴다 (1km 줌 14 는 51건 중 22건이 반경 밖, 줌 16 과 반경 안 수가 같음). 재개발 구역 목록은 따로 14 를 쓴다.
+    """
+    if radius_km <= 1.5:
+        return 16
+    if radius_km <= 2:
+        return 15
+    return 14

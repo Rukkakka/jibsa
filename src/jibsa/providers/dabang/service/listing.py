@@ -1,5 +1,7 @@
 """매물 검색 (search listings room·villa·officetel·apt) 과 매물 상세 (listing)."""
 
+from datetime import datetime
+
 from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
@@ -18,17 +20,20 @@ from jibsa.core.geo import (
 )
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
+    KST,
     UPDATE_MAYBE_NEEDED,
     Listing,
     ListingDetail,
     TradeType,
     limit_notes,
+    listing_as,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
     note,
     parking_label,
     won_to_manwon,
+    years_ago,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
@@ -106,6 +111,17 @@ FIXED_FEE_TYPE: str = 'FIXED_FEE'
 # 에어컨 종류 옵션. 웹은 에어컨 목록(airConditionerTypeList)의 이름을 '에어컨' 없이 옵션에 섞어 보여 준다 (listing-request 청크)
 AIR_CONDITIONER_OPTIONS: frozenset[str] = frozenset({'벽걸이형', '스탠드형', '천장형'})
 ELEVATOR_BY_TEXT: dict[str, bool] = {'있음': True, '없음': False}
+# --details 로 상세를 붙이는 매물 수 (직방·당근과 같다). 한 건에 요청 1회
+DETAILS_MAX: int = 30
+
+
+class DabangDetailedListing(DabangListing):
+    """`--details` 로 매물 상세를 1회 더 받아 사용승인일(`approved_at`)을 채우고 건물 용도를 붙인 목록 매물."""
+
+    residence_type: Annotated[
+        str | None,
+        Field(description='건축물 용도 (단독주택, 공동주택, 근린생활시설 ...). 근린생활시설이면 전입신고·전세대출이 막힐 수 있다. 모르면 null')
+    ] = None
 
 
 class DabangListingDetail(ListingDetail):
@@ -371,6 +387,19 @@ def search_listings(
         notes.append(note('범위', f'{scope}을 찾았습니다 (반경으로 찾으려면 --radius)'))
     elif targets[0].search_type == 'region':
         notes.append(note('범위', '--limit 을 동마다 나눠 받았습니다 (한 동이 몫보다 덜 주면 남은 몫은 매물이 남은 다른 동이 받음)'))
+    if conditions.built_within_years is not None:
+        # 다방은 사용승인 날짜가 아니라 연도로 센다 (2026-10-31 실측: --built-within 2 에 2024-02-21 승인, 10 에 2016-02-03 승인
+        # 건물이 들어오고 그 앞 해 승인은 없었다). 목록에 사용승인일이 없어 다시 거를 수 없으니 실제 기준 날짜를 알린다.
+        # 날짜로 '10년 이내' 를 믿은 에이전트가 2016-10-17 승인 건물을 10년 이내로 추천했다. 연도 기준만 알리자 그 연도 기준을
+        # 사용자의 '10년 이내' 로 받아 2016-02 승인 건물을 추천해(2026-10-31 재검증), 오늘 기준 날짜와 함께 알린다
+        years = conditions.built_within_years
+        today = datetime.now(KST).date()
+        notes.append(note(
+            '참고',
+            f'다방은 사용승인 연도로 셉니다. --built-within {years} 결과에는 {today.year - years}-01-01 이후 승인이 모두 들어가, '
+            f'오늘 기준 {years}년 이내({years_ago(today, years)} 이후 승인)가 아닌 건물도 섞입니다. 날짜로 고르려면 --details 의 '
+            'approved_at 으로 확인하세요',
+        ))
 
     addresses = {part.gid: part.address for part in places if part.gid is not None and part.address}
     offsets = offsets or {}
@@ -620,3 +649,51 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         **_price_fields(room, trade_type),
     )
 
+
+
+def attach_details(
+    client: DabangClient,
+    result: DabangSearchResult,
+    *,
+    built_within_years: int | None = None,
+) -> DabangSearchResult:
+    """목록 앞 `DETAILS_MAX` 건에 상세(`get_listing`, 1회씩)의 사용승인일과 건물 용도를 붙인다 (`--details`).
+
+    목록 칸에는 사용승인일이 없어 `--built-within`(연도로 센다) 결과를 날짜로 따지려면 매물마다 상세를 열어야 했다
+    (2026-10-31 에이전트 검증: opus 두 번 모두 역삼동 원룸 17건의 상세를 하나씩 불렀다). 상세에서 내려간 매물은 뺀다
+    (만료 매물은 내보내지 않는다). 31번째부터는 사용승인일·건물 용도를 모름(null)으로 둔다.
+    `built_within_years` 를 주면 오늘 기준 그 햇수가 넘은 매물을 승인일과 함께 `notes` 로 짚는다 (빼지는 않는다. 서버 필터
+    결과라 다시 거르지 않는다). 연도 기준 안내만 보고 2016-02 승인 건물을 '10년 이내' 로 추천한 일이 있었다 (2026-10-31 재검증).
+    """
+    listings: list[Listing] = []
+    gone = 0
+    for index, listing in enumerate(result.listings):
+        if not isinstance(listing, DabangListing):
+            listings.append(listing)
+            continue
+        if index >= DETAILS_MAX:
+            listings.append(listing_as(DabangDetailedListing, listing))
+            continue
+        try:
+            detail = get_listing(client, listing.id)
+        except ListingUnavailableError:
+            gone += 1
+            continue
+        dated = listing.model_copy(update={'approved_at': detail.approved_at or listing.approved_at})
+        listings.append(listing_as(DabangDetailedListing, dated, residence_type=detail.residence_type))
+    notes = []
+    if gone:
+        # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
+        notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
+    if len(result.listings) > DETAILS_MAX:
+        notes.append(f'사용승인일·건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
+    if built_within_years is not None:
+        cutoff = years_ago(datetime.now(KST).date(), built_within_years)
+        older = [listing for listing in listings if listing.approved_at and listing.approved_at < cutoff]
+        if older:
+            notes.append(note(
+                '참고',
+                f'이 중 {len(older)}건은 오늘 기준 {built_within_years}년이 넘었습니다 ({cutoff} 전 승인): '
+                + ', '.join(f'{listing.id}({listing.approved_at})' for listing in older),
+            ))
+    return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})

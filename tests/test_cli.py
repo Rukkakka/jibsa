@@ -9,6 +9,7 @@ import typer
 
 from jibsa.cli.app import (
     app,
+    joined_options_arg,
     run,
 )
 
@@ -99,6 +100,25 @@ def test_daangn_invalid_filters_do_not_request_location(
     assert run(['daangn', *command, place, *options]) == 2
     assert stderr_error(capsys)['code'] == 'INVALID_ARGUMENT'
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    ('arg', 'joined'),
+    [
+        ('--complex 111515 --pyeong 8,9 --compact', True),  # zsh 에서 따옴표 없는 $P 로 넘긴 옵션 묶음
+        ('대치동 --city 강남구', True),                      # 지역 인자에 옵션이 붙음
+        ('-t 아파트', True),
+        ('역삼동 719-28', False),                           # 번지의 '-' 는 옵션이 아니다
+        ('강남구 신사동', False),
+        ('search listings', False),                         # guide 절 이름
+        ('--fields', False),
+    ],
+)
+def test_joined_options_are_caught_without_blocking_plain_values(arg: str, joined: bool) -> None:
+    # 셸이 나누지 않은 옵션 묶음은 요청 전에 막되, 공백이 든 보통 값은 막지 않는다 (막으면 명령이 아예 안 된다)
+    assert (joined_options_arg(['naver', 'search', 'listings', arg]) == arg) is joined
+    # guide 의 절 이름은 문서 제목('search listings --complex')이라 옵션 모양이어도 막지 않는다
+    assert joined_options_arg(['--verbose', 'guide', 'naver', arg]) is None
 
 
 def test_jibsa_invalid_argument_exits_2_with_own_hint(capsys: pytest.CaptureFixture[str]) -> None:

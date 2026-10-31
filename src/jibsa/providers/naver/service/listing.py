@@ -67,6 +67,7 @@ from jibsa.providers.naver.service.common import (
     building_approved_at,
     check_pyeong_numbers,
     dong_label,
+    group_sort_notes,
     known_floor,
     listing_keeper,
     pagination_notes,
@@ -482,6 +483,7 @@ def list_complex_articles(
         ))
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
+    notes += group_sort_notes(sort_type, result)
     notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated)
     return NaverListingsResult(
         total=total,

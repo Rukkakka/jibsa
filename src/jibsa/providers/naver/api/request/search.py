@@ -82,7 +82,7 @@ class NaverArticleBoundedArticlesV1RequestPayloadModel(RequestModel):
     ]
     precision: Annotated[
         int,
-        Field(ge=10, le=18, description='지도 줌. 사이트는 매물 표시 최소 줌 이상에서만 부른다')
+        Field(ge=10, le=18, description='지도 줌. 높을수록 중심 근처만 줘서 반경에 맞춰 고른다 (service.common.bounded_precision)')
     ] = 16
     article_paging_request: Annotated[
         NaverArticlePagingRequestModel,
@@ -166,7 +166,7 @@ class NaverComplexBoundedComplexesV1RequestPayloadModel(RequestModel):
     ]
     precision: Annotated[
         int,
-        Field(ge=10, le=18, description='지도 줌. 사이트는 단지 마커 최소 줌 이상에서만 부른다')
+        Field(ge=10, le=18, description='지도 줌. 높을수록 중심 근처만 줘서 반경에 맞춰 고른다 (service.common.bounded_precision)')
     ] = 16
     complex_paging_request: Annotated[
         NaverComplexPagingRequestModel,

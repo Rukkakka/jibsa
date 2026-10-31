@@ -47,8 +47,12 @@ from typing import (
 COORDINATE_DECIMALS: int = 7
 # 1억 (만원). 이만큼 이상 금액이 있으면 notes 에 억 환산 예시를 붙인다 (`manwon_note`)
 MANWON_PER_EOK: int = 10000
-# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시
-ALWAYS_FIELDS: frozenset[str] = frozenset({'id', 'in_regions'})
+# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시·네이버 중복 묶음
+# (중개사 수·호가 범위). 묶음 필드는 묶음 매물에만 있어 다른 매물에는 키가 없다. 2026-10-31 재검증: --fields price_manwon,…
+# 으로 고르자 묶음 범위(30억~33억)가 빠져 notes 가 가리키는 33억 호가를 보지 못하고 최고 호가를 32억으로 답했다
+ALWAYS_FIELDS: frozenset[str] = frozenset({
+    'id', 'in_regions', 'realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon',
+})
 ChoiceT = TypeVar('ChoiceT', bound=str)
 TradeT = TypeVar('TradeT', bound=str)
 

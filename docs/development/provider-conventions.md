@@ -201,6 +201,11 @@ def run_request_items_onerooms_v1(
 - 소스마다 다른 점(필드 이름, 일부 명령만 받는 조건)은 그 소스 개발 가이드에 적는다.
 - CLI 옵션 별칭 중 세 소스가 도움말까지 똑같이 쓰는 것(`PrettyOption`, 보증금·월세·매매가 하한·상한)은 `cli/options.py`
   에 둔다. 도움말이 다르면 각 소스 CLI 에 둔다.
+- 같은 뜻의 조건도 옵션 이름·값은 소스 필터를 따라 다르다 (세대수 `--household-min` 과 다방 아파트 `--households-min`, 연식
+  네이버 `--building-age-max 10`·당근 `--approval 10년이내`·다방 `--built-within 10`, 관리비 포함 월세 당근
+  `--with-manage-cost`·다방 `--rent-includes-manage-cost`). 맞추려고 별칭을 늘리지 않는다. 2026-10-31 에이전트 검증
+  (sonnet·opus, 이 조건들을 네 소스에 거는 부탁 6회)에서 모두 소스별 `--help` 를 먼저 읽고 이 이름으로 한 번도 틀리지
+  않았다. 다른 소스 이름을 옮겨 쓰면 Click 의 비슷한 옵션 제안이나 소스별 `UsageHints` 가 이 명령의 옵션을 알린다.
 
 ## 서버 필터와 클라이언트 후처리
 

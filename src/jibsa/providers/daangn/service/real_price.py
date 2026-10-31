@@ -22,6 +22,7 @@ from jibsa.core.listing import (
     normalize_date,
     normalize_floor,
     won_to_manwon,
+    years_ago,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import DaangnExclusiveUseAreaModel
@@ -167,8 +168,12 @@ class DaangnRealPriceBaseResult(BaseModel):
     ]
     has_more: Annotated[
         bool,
-        Field(description='더 오래된 거래가 더 있는지')
+        Field(description='더 오래된 거래가 더 있는지 (--years 를 줬으면 그 기간 안에서)')
     ]
+    since: Annotated[
+        str | None,
+        Field(description='--years 로 준 기간의 시작일 (YYYY-MM-DD, 이날부터 계약). 주지 않았으면 키가 없다')
+    ] = None
     transactions: Annotated[
         list[DaangnRealPrice],
         Field(description='최근 계약 순 실거래')
@@ -177,6 +182,13 @@ class DaangnRealPriceBaseResult(BaseModel):
         list[str],
         Field(exclude=True, description='전월세를 넘겨 본 범위, 거래가 없는 이유 안내. CLI 가 결과 위에 붙인다')
     ] = []
+
+    @model_serializer(mode='wrap')
+    def drop_unused_since(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.since is None:
+            data.pop('since', None)
+        return data
 
 
 class DaangnRealPriceResult(DaangnRealPriceBaseResult):
@@ -259,6 +271,8 @@ def _collect_pages(
     limit: int,
     *,
     more_note: str,
+    since: str | None = None,
+    date_of: Callable[[T], str | None] | None = None,
 ) -> tuple[list[T], bool, list[str]]:
     """실거래를 받은 순서(최근 순)대로 `limit` 건까지 모은다. 단지·매물 실거래와 지역 실거래가 함께 쓴다.
 
@@ -271,6 +285,9 @@ def _collect_pages(
         trade_type: 매매, 전세, 월세.
         limit: 최대 거래 수.
         more_note: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때의 안내 (당근 사이트 링크).
+        since: 이날(YYYY-MM-DD)보다 앞선 거래는 빼고, 그런 거래가 나온 페이지에서 멈춘다. 당근은 기간을 받지 않아
+            최근 계약 순으로 넘기다 멈춘다 (계약 순으로 오는 단지·매물 실거래만 준다). 날짜를 모르는 거래는 남긴다.
+        date_of: `since` 와 견줄 거래의 계약일.
 
     Returns:
         (거래, 더 있는지, 안내).
@@ -290,8 +307,16 @@ def _collect_pages(
             notes.append('실거래의 다음 페이지 커서가 반복되어 조회를 중단했습니다. 나머지는 당근에서 확인하세요')
             break
         scanned += len(nodes)
-        collected += [node for node in nodes if matches(node)]
+        kept = nodes
+        if since is not None and date_of is not None:
+            kept = [node for node in nodes if (day := date_of(node)) is None or day >= since]
+        collected += [node for node in kept if matches(node)]
         has_more = bool(page_info and page_info.has_next_page) or len(collected) > limit
+        if len(kept) < len(nodes):
+            # 최근 계약 순이라 기간보다 앞선 거래가 나오면 그 뒤도 모두 기간 밖이다. 3년치를 보려고 --limit 1200 으로 전부 받으면
+            # 2018년 거래까지 938건(약 5만 토큰)이 왔다 (2026-10-31 에이전트 검증, 헬리오시티 84㎡ 매매. 3년 안은 452건)
+            has_more = len(collected) > limit
+            break
         if len(collected) >= limit or not has_more or page_info is None:
             break
         if not nodes or not page_info.end_cursor:
@@ -322,6 +347,7 @@ def _collect_transactions(
     limit: int,
     *,
     more_note: str,
+    since: str | None = None,
 ) -> tuple[list[DaangnTransactionModel], bool, list[str]]:
     """단지·매물 실거래를 최근 계약 순으로 `limit` 건까지 모은다 (`_collect_pages`).
 
@@ -330,6 +356,7 @@ def _collect_transactions(
         trade_type: 매매, 전세, 월세.
         limit: 최대 거래 수.
         more_note: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때의 안내.
+        since: 이날(YYYY-MM-DD)부터의 계약만 받는다 (`--years`).
 
     Returns:
         (거래, 더 있는지, 안내).
@@ -349,6 +376,8 @@ def _collect_transactions(
         trade_type,
         limit,
         more_note=more_note,
+        since=since,
+        date_of=_trade_date,
     )
 
 
@@ -359,8 +388,12 @@ def get_real_prices(
     trade_type: str = '매매',
     area_group: int | None = None,
     limit: int = 120,
+    years: int | None = None,
+    today: date | None = None,
 ) -> DaangnRealPriceResult:
     """단지 실거래가를 최근 계약 순으로 `limit` 건까지 모은다 (`_collect_transactions`).
+
+    `years` 를 주면 그 햇수 전 오늘(한국 날짜)부터의 계약만 받고 그보다 앞선 거래가 나오면 멈춘다.
 
     Raises:
         JibsaError: 없는 단지면 NOT_FOUND, 그 밖의 GraphQL 에러면 UPSTREAM_ERROR.
@@ -386,9 +419,11 @@ def get_real_prices(
             raise complex_not_found(complex_id)
         return result.complex
 
+    since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     collected, has_more, notes = _collect_transactions(
         fetch, trade_type, limit,
         more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인해 주세요: {complex_url(complex_id)}',
+        since=since,
     )
     return DaangnRealPriceResult(
         complex_id=str(complex_id),
@@ -396,6 +431,7 @@ def get_real_prices(
         area_group=area_group,
         returned=len(collected),
         has_more=has_more,
+        since=since,
         transactions=[transaction_to_real_price(node, trade_type) for node in collected],
         url=complex_url(complex_id),
         notes=notes,
@@ -629,10 +665,12 @@ def get_listing_real_prices(
     *,
     trade_type: str = '매매',
     limit: int = 120,
+    years: int | None = None,
+    today: date | None = None,
 ) -> DaangnListingRealPriceResult:
     """매물이 있는 건물(단지)의 비슷한 면적 실거래가를 최근 계약 순으로 모은다 (`_collect_transactions`).
 
-    당근이 매물의 건물을 찾은 경우에만 거래가 온다. 오피스텔·아파트는 대개 있고 빌라·주택은 대부분
+    `years` 는 `get_real_prices` 와 같다. 당근이 매물의 건물을 찾은 경우에만 거래가 온다. 오피스텔·아파트는 대개 있고 빌라·주택은 대부분
     없어, 없으면 그 이유를 `notes` 로 알린다.
 
     Raises:
@@ -660,9 +698,11 @@ def get_listing_real_prices(
             '매물 실거래가',
         )
 
+    since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     collected, has_more, notes = _collect_transactions(
         fetch, trade_type, limit,
         more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인해 주세요: {article_url(original_id)}',
+        since=since,
     )
     if not collected:
         notes.append(
@@ -674,6 +714,7 @@ def get_listing_real_prices(
         trade_type=trade_type,
         returned=len(collected),
         has_more=has_more,
+        since=since,
         transactions=[transaction_to_real_price(node, trade_type) for node in collected],
         url=article_url(original_id),
         notes=notes,

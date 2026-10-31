@@ -15,6 +15,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
     NOT_APPLICABLE_PRICE_FIELDS,
+    SAME_AREA_PYEONG_TRADES_NOTE,
     UPDATE_MAYBE_NEEDED,
     TradeType,
     normalize_date,
@@ -357,7 +358,7 @@ def get_real_prices(
         has_more=collected.has_more,
         transactions=collected.prices,
         url=complex_url(complex_id),
-        notes=notes + _unknown_trade_note(collected.unknown),
+        notes=notes + ([SAME_AREA_PYEONG_TRADES_NOTE] if collected.prices else []) + _unknown_trade_note(collected.unknown),
     )
 
 

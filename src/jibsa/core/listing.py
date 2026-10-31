@@ -1,6 +1,7 @@
 import re
 from collections.abc import Sequence
 from datetime import (
+    date,
     datetime,
     timedelta,
     timezone,
@@ -200,6 +201,14 @@ def insert_after(data: dict[str, Any], anchor: str, key: str, value: Any) -> dic
     return result
 
 
+def years_ago(today: date, years: int) -> str:
+    """`years` 년 전 같은 날 (2월 29일이면 28일). 실거래 기간(`--period`·`--years`)의 시작일이다."""
+    try:
+        return today.replace(year=today.year - years).isoformat()
+    except ValueError:
+        return today.replace(year=today.year - years, day=28).isoformat()
+
+
 def normalize_date(value: str | None) -> str | None:
     """날짜를 한국 날짜 기준 `YYYY-MM-DD` 로 맞춘다.
 
@@ -290,6 +299,17 @@ UPDATE_MAYBE_NEEDED: str = 'jibsa 업데이트가 필요할 수 있습니다'
 def note(kind: NoteKind, text: str) -> str:
     """종류 태그를 붙인 안내 (`'[일부] 조건에 맞는 매물 ...'`). 태그 없이 둔 안내는 출력할 때 [참고] 가 붙는다 (`tagged_notes`)."""
     return f'[{kind}] {text}'
+
+
+# 평형 하나를 묻는 실거래(네이버·다방)는 국토부 신고에 평형 타입이 없어 전용면적이 같은 평형끼리 같은 거래를 준다.
+# 2026-10-31 실측: 헬리오시티 84㎡대 네이버 평형 5개(11·12·13·14·16)가 3년 매매 165건 안팎을 서로 164~166건씩 겹쳐 주어
+# 합치면 1,309건이 실제 329건이었고, 다방 84.98㎡ 평형 둘(168340·168341)도 1년 32건 중 31건이 같았다. 에이전트가 평형별로
+# 받아 더하면 몇 배로 세고, 평형 하나만 보면 그 타입 거래만 본 줄 안다 (docs 에만 적어 두었을 때 둘 다 일어났다)
+SAME_AREA_PYEONG_TRADES_NOTE: str = note(
+    '참고',
+    '국토부 신고에 평형 타입이 없어 전용면적이 같은 다른 평형에도 같은 거래가 들어 있습니다. 평형 여러 개의 거래를 합칠 때는 '
+    '같은 날·층·금액을 한 번만 세세요',
+)
 
 
 def tagged_notes(notes: list[str]) -> list[str]:

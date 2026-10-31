@@ -11,6 +11,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializeAsAny,
     SerializerFunctionWrapHandler,
     model_serializer,
 )
@@ -33,8 +34,10 @@ from jibsa.core.listing import (
     by_distance,
     join_address,
     limit_notes,
+    listing_as,
     m2_to_pyeong,
     normalize_date,
+    note,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -66,6 +69,7 @@ from jibsa.providers.zigbang.service.common import (
     sent_or_none,
     unavailable_on_404,
 )
+from jibsa.providers.zigbang.service.listing import DETAILS_MAX
 from jibsa.providers.zigbang.service.region import (
     outside_boundary,
     scope_geohashes,
@@ -260,6 +264,15 @@ class ZigbangStayPeriodCost(BaseModel):
     ] = None
 
 
+class ZigbangStayPricedListing(ZigbangStayListing):
+    """`--details` 로 기간 요금 계산을 1회 더 받아 기간 비용을 붙인 단기임대 매물."""
+
+    period_cost: Annotated[
+        ZigbangStayPeriodCost | None,
+        Field(description='입주·퇴거일의 기간 비용 (직방 요금 계산). 앞 30건 밖이거나 직방이 계산을 거절했으면 null')
+    ] = None
+
+
 class ZigbangStayListingDetail(ListingDetail):
     """상세 조회로 보강한 직방 단기임대 매물. 입주·퇴거일을 주면 `period_cost` 가 붙는다."""
 
@@ -345,7 +358,8 @@ class ZigbangStaySearchResult(BaseModel):
         Field(description='범위 안에 더 있는지: 요약을 받지 않은 후보가 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
     ] = False
     listings: Annotated[
-        list[ZigbangStayListing],
+        # --details 의 period_cost 까지 내보낸다 (SerializeAsAny 가 없으면 ZigbangStayListing 필드만 나간다)
+        list[SerializeAsAny[ZigbangStayListing]],
         Field(description='선택한 정렬 순서의 매물')
     ]
     notes: Annotated[
@@ -875,6 +889,65 @@ def get_stay_listing(
     price = _calculate_stay_price(client, detail, check_in, check_out, pet)
     available = _stay_available(client, detail, check_in, check_out)
     return listing.model_copy(update={'period_cost': stay_period_cost(price, check_in, check_out, available)})
+
+
+# 날짜를 준 검색의 금액·가격순이 기간 비용이 아니라는 안내. 2026-10-31 에이전트 검증: 강남역 4주 가격순 1위를 주당 32만 × 4 =
+# 128만으로 답했지만 청소비·이용료를 더한 실제 결제는 151만 2천이었고, 주당 요금 3위는 기간 비용으로 4위였다
+STAY_WEEKLY_PRICE_NOTE: str = note(
+    '참고',
+    '목록 금액과 가격순은 주당 임대료+관리비 기준이라 청소비·직방 이용료·장기 할인이 빠져 있습니다. 그 기간에 실제로 내는 돈은 '
+    '--details 로 앞 30건에 period_cost 를 붙여 보세요 (매물당 요청 1회)',
+)
+
+
+def attach_stay_period_costs(
+    client: ZigbangClient,
+    result: ZigbangStaySearchResult,
+    conditions: ZigbangStayConditions,
+) -> ZigbangStaySearchResult:
+    """날짜를 준 단기임대 검색의 앞 `DETAILS_MAX` 건에 기간 비용(`period_cost`)을 붙인다 (`--details`, 매물당 요금 계산 1회).
+
+    상세(`get_stay_listing`)와 같은 요금 계산이지만 상세·요약·예약 확인은 다시 받지 않는다. 검색이 같은 날짜로 지도를
+    걸렀으니 예약은 비어 있다고 보되, `--flexibility` 로 날짜를 넓혔으면 그 날짜가 비었는지 몰라 `available` 을 null 로 둔다.
+    `--pet`(반려동물 허용 매물만)을 줬으면 반려동물을 데려간다고 보고 반려동물 청소비를 넣는다. 정렬은 바꾸지 않는다.
+    직방이 계산을 거절한 매물(계약 기간 밖, 그사이 내려감)은 `period_cost` 를 null 로 두고 `notes` 로 알린다.
+    """
+    check_in, check_out = conditions.check_in, conditions.check_out
+    # CLI 가 --details 에 날짜를 요구한다
+    assert check_in is not None and check_out is not None
+    available = None if conditions.flexibility else True
+    listings: list[ZigbangStayListing] = []
+    rejected = 0
+    for index, listing in enumerate(result.listings):
+        if index >= DETAILS_MAX:
+            listings.append(listing_as(ZigbangStayPricedListing, listing))
+            continue
+        try:
+            price = client.run_request_guest_items_price_calculation(
+                ZigbangGuestItemsPriceCalculationRequestPayloadModel(
+                    item_id=int(listing.id.removeprefix('stay-')), check_in_date=check_in, check_out_date=check_out,
+                    has_pet=conditions.pet_allowed,
+                )
+            )
+        except HTTPStatusError as exc:
+            if exc.response.status_code not in (400, 404):
+                raise
+            rejected += 1
+            listings.append(listing_as(ZigbangStayPricedListing, listing))
+            continue
+        listings.append(listing_as(
+            ZigbangStayPricedListing, listing, period_cost=stay_period_cost(price, check_in, check_out, available),
+        ))
+    notes = [note(
+        '참고',
+        '정렬은 주당 임대료+관리비 기준 그대로입니다. 그 기간에 실제로 내는 돈은 period_cost.total_payment_manwon 에서 '
+        'deposit_manwon(돌려받는 보증금)을 뺀 값입니다',
+    )]
+    if rejected:
+        notes.append(note('실패', f'{rejected}건은 직방이 이 기간 요금 계산을 거절해 period_cost 가 null 입니다 (계약 기간 밖 등)'))
+    if len(result.listings) > DETAILS_MAX:
+        notes.append(f'기간 비용(--details)은 앞 {DETAILS_MAX}건에만 붙였습니다')
+    return result.model_copy(update={'listings': listings, 'notes': result.notes + notes})
 
 
 def _calculate_stay_price(

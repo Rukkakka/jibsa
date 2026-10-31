@@ -63,6 +63,7 @@
 - 단기임대(`stay-apis.zigbang.com`)는 지역 전체면 지역 검색(`guest/items/search`), 반경·동 경계면 지도(`guest/items/markers`)로 ID 를 모아 `guest/items/by-ids` 로 50건씩 요약을 받는다. `by-ids` 는 노출 중·검수 완료 매물만 돌려줘서(실측) 목록에서는 상태를 다시 보지 않는다. 예약 달력(`guest/items/{id}/calendar`)은 게스트 토큰으로 403 이다.
 - 단기임대 날짜는 `checkOutDate` 까지 이용일로 센다 (11-02~11-08 = 7일). 검색(`guest/items/search`·`markers`)은 7~84일만 받아 `STAY_SEARCH_MIN_DAYS`·`STAY_SEARCH_MAX_DAYS` 로 요청 전에 막고, 서버의 `MIN/MAX_DURATION_VIOLATION` 도 입력 오류로 바꾼다(`_stay_search_call`). 요금 계산은 매물 계약 범위(최소 1~8주)를 서버가 판단해 7~84일 검사를 하지 않는다.
 - 단기임대 지역 전체 검색은 경계 대신 `○가` 동마다 `guest/items/search` 를 불러 ID 를 합친다(`extra_regions`).
+- 목록 요약에는 주당 요금만 있고 기간 비용(청소비·이용료·할인)은 매물마다 요금 계산(`guest/items/{id}/price-calculation`)에만 있다. `search listings stay --details` 는 앞 `DETAILS_MAX` 건에 요금 계산만 1회씩 불러 `period_cost` 를 붙인다(`attach_stay_period_costs`). 상세(`listing stay-…`)처럼 상세·요약·예약 확인 지도를 다시 받지 않는다: 검색이 같은 날짜로 지도를 걸렀으니 `available` 은 true 로, `--flexibility` 면 null 로 둔다. 2026-10-31 실측: 강남역 4주 가격순 4건의 결제액(보증금 30만 포함)이 상세와 같은 181.2·265.5·288.3·286.9만이고, 3위와 4위가 기간 비용으로는 뒤바뀐다.
 - 단기임대 지역 검색은 세종의 동을 local1·local2 를 어떻게 줘도 400 `REGION_NOT_FOUND` 로 거절한다 (2026-10-11 실측: 반곡동을 세종특별자치시·세종시 × 세종·없음 조합 모두 400, 세종특별자치시 전체·양평읍·역삼동은 200). `_stay_region_search` 가 이를 `RegionNotFoundError` 로 바꾸고, CLI 가 room·store 와 같은 `_scope`(동 경계, 넓으면 반경)로 지도 칸을 다시 찾는다.
 - 단기임대 지역 전체 검색도 구가 있는 시는 구마다 검색 API 를 불러 합친다(`city_gu_regions`, 2026-10-11 실측: 성남시는 분당구 35건만 찾고 나머지 구가 빠졌다 → 세 구 43건). 리는 지역 결과의 local3 이 그 위 읍·면이라 읍·면 전체를 찾으므로(양근리 → 양평읍 창대리 매물) `boundary` 를 읍·면 이름으로 내고 `notes` 로 알린다 (`is_ri_code`).
 
