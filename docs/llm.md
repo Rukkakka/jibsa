@@ -4,16 +4,17 @@
 
 ## 꼭 지킬 규칙
 
+- 사용자가 소스(사이트)를 정하지 않았으면 매물 검색은 **직방·네이버·당근·다방 네 곳을 모두** 부른다. 소스마다 올라온 매물이 달라 한두 곳만 보면 빠진다. 같은 조건은 [소스마다 다른 점](#소스마다-다른-점) 표대로 소스마다 같은 뜻의 옵션으로 옮긴다. 답에는 찾은 소스와, 찾지 못한 소스와 그 이유(에러·0건·그 조건이 없음)를 적는다.
 - 결과는 stdout 에 JSON 하나, 에러는 stderr 에 `{"error": {"code", "message", "hint", ...}}`. exit 0 성공, 1 실행 에러, 2 입력 오류. 터미널(PTY)이라 JSON 이 들여쓰기로 나오면 명령 끝에 `--compact` 를 붙인다.
 - 금액은 소스와 상관없이 **만원**(`*_manwon`)이다. 사용자에게는 억·만 원으로 옮겨 쓴다 (만원 숫자를 그대로 옮겨 적으면 자리를 틀리기 쉽다): `1000` = 1,000만 원, `10000` = 1억 원, `119700` = 11억 9,700만 원, `210000` = 21억 원. 면적은 `area_m2`(전용)·`area_pyeong`.
 - **키 없음** = 그 거래에 해당 없음 (`--fields` 로 고르지 않은 필드는 빼고), **`null`** = 모름 (0·없음이 아니다), **`[]`** = 알려 줬는데 비어 있음. 관리비가 `null` 이면 월세와 더하지 말고 `listing` 상세를 본다.
 - `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물이 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패(사용자에게 알린다), `[참고]` 그 밖.
 - `--limit` 은 들여다볼 개수라 뺀 매물만큼 `returned` 가 적을 수 있다. 처음에는 작게 잡고, 한 번에 매물 50건 이하로 본다 (100건이면 4만 자가 넘어 잘린다). `search commute` 는 역마다 `--limit` 건(최대 10역)이라 역당 5건 이하로 시작한다.
 - 매물 목록의 `has_more` 가 `true` 이고 `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 이어 받는다 (`--limit`·`--fields` 는 바꿔도 된다, 하루 동안 쓴다). `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 가 없으면 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다.
-- 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않는다. `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`)에만 있고 상세 `listing` 에는 없다.
+- 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않고, 받은 글자 그대로 옮긴다 (ID 로 주소를 만들거나 경로를 고치지 않는다). `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`)에만 있고 상세 `listing` 에는 없다.
 - 층은 `floor`(`"3"`·`"반지하"`·`"중층"`)와 숫자 `floor_number`(지하는 음수, 모르면 `null`).
 - 사진·매물 설명·중개사 연락처·매물 좌표는 없다. 확인·문의·계약은 `url` 로 안내한다.
-- ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 여러 소스의 같은 집을 합쳐 주지 않는다.
+- ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 여러 소스의 같은 집을 합쳐 주지 않는다. 같은 집인지 가리려고 `listing` 을 여러 번 부르지 않고, 가격·면적·층이 같으면 '같은 집일 수 있다' 고만 알린다.
 - 명령은 동시에(병렬 호출·`&`) 부르지 않는다. 모든 jibsa 프로세스가 요청 간격을 함께 지켜 빨라지지 않는다. 후보 여러 개의 `listing` 은 셸 호출 한 번에 `;` 로 잇는다. 네이버가 가장 엄격하다 (분당 30회, 차단되면 15분).
 - `--verbose` 는 쓰지 않는다 (stderr 에 로그가 섞인다).
 
@@ -21,6 +22,7 @@
 
 | 하려는 일 | 명령 |
 | --- | --- |
+| 유형을 정하지 않은 집 | `zigbang search listings room`·`apt` · `naver search listings <동·역>` (`-t` 없이 주거용 전체) · `daangn search listings <동·역> -t 아파트,오피스텔,원룸,투룸,주택` · `dabang search listings room`·`villa`·`officetel`·`apt` |
 | 원룸·투룸·빌라·오피스텔 | `zigbang search listings room <동·역>` · `daangn search listings <동·역>` · `naver search listings <동·역> -t 원룸,빌라,오피스텔` · `dabang search listings room <동·역>` (빌라 `villa`, 오피스텔 `officetel`) |
 | 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
@@ -42,7 +44,7 @@
 
 ## 위치 입력
 
-- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 나머지 5km).
+- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 나머지 5km). 다만 역 이름은 당근이 역 주변 목록(도보 `walk_minutes`), 다방이 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다. 여러 소스를 견줄 때는 `--radius` 를 같은 값으로 준다.
 - 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
 - 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`, 직방은 시·도까지 붙인 전체 주소는 못 찾는다). 당근은 `--city` 로도 좁힌다 (`광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다.
 - `성수동` 처럼 `○가` 로 나뉜 동은 1가·2가를 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다).
@@ -53,13 +55,14 @@
 
 | 조건 | 직방 `room` | 네이버 | 당근 | 다방 |
 | --- | --- | --- | --- | --- |
-| 방 개수 | `--room 투룸` | `--room 투룸` | `--room-count 2개` | `--room 투룸` |
+| 방 2개 이상 | `--room 투룸,쓰리룸,포룸이상` | `--room 투룸,쓰리룸,포룸이상` | `--room-count 2개,3개,4개이상` | `villa`·`officetel`·`apt` 에 `--room 투룸,쓰리룸,포룸이상`, `room` 에 `--room 투룸` (`room` 은 투룸까지) |
 | 원룸 구조 | `--room 오픈형원룸` | `--one-room-shape 오픈형` | `--structure 오픈형` | `--condition 분리형` 또는 `복층` |
 | 엘리베이터·주차 | `--condition 엘리베이터,주차` | `--facility 엘리베이터,주차` | `--option 엘리베이터,주차가능` | `--condition 엘리베이터,주차` |
 | 반려동물 | `--condition 반려동물` | 없음 | `--option 반려동물가능` | 없음 |
 | 즉시 입주 | `--condition 즉시입주` | `--move-in 바로입주` | `--move-in-now` | 없음 |
 | 욕실 수 | `--bathroom 1` | `--bathroom 1개` | 없음 | 없음 |
-| 면적 | `--area-min` (㎡) | `--area-min` (㎡) | `--area-min` (㎡) | `--area-pyeong-min` (평, 정수) |
+| 면적 | `--area-min` (전용 ㎡) | `--area-min` (전용 ㎡, `--area-basis 공급` 이면 공급) | `--area-min` (전용 ㎡) | `--area-pyeong-min` (평, 정수. 아파트는 공급 평) |
+| 아파트 공급 ○평대 (예: 30평대) | `apt --supply-area-min 99 --supply-area-max 132` | `-t 아파트 --area-basis 공급 --area-min 99 --area-max 132` | 공급 조건이 없어 전용 ㎡ 로 옮긴다: 공급 ㎡ × 0.75 쯤 (전용 59㎡형 ≈ 공급 24~26평, 84㎡형 ≈ 32~35평이라 20평대에 84㎡ 는 넣지 않는다). 답에 기준을 적는다 | `apt --area-pyeong-min 30 --area-pyeong-max 39` |
 | 반지하·지하 빼기 | `--floor 지상,옥탑방` (`지상` 만이면 옥탑방도 빠진다) | `--floor 1층,저층,중층,고층,탑층` | `--floor 1층,2~5층,6~9층,10층이상` | `--floor 1층,2층이상,옥탑` |
 
 평형을 고르는 값도 소스마다 다르다: 직방 `pyeongs[].id` → `--pyeong`, 네이버 `pyeongs[].number` → `--pyeong`, 다방 `pyeongs[].space_seq` → `--pyeong` (셋 다 평수가 아니라 평형 ID), 당근 `pyeongs[].area_group` → `--area`.
