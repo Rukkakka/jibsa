@@ -111,10 +111,17 @@ def place_in(place: str, *texts: str | None) -> bool:
     당근은 시·도를 정식 명칭으로만 써서, 줄임말·옛 이름('서울시'·'강원도'·'전라남도')은 정식 명칭으로도 찾는다
     (2026-10-10 실측: '서울시' 는 '서울특별시' 에 들어 있지 않아 --city 와 주소 검색이 못 찾았다).
     시 이름이기도 한 줄임말(`CITY_NAMES_NOT_SIDO`, '광주시')은 정식 명칭으로 넓히지 않는다.
+    띄어 쓴 이름('성남시 분당구')은 마디마다 맞아야 한다 (2026-11-01 에이전트 검증: '정자동 --city 성남시 분당구' 가
+    당근 구 이름 '성남시 분당구' 와 같은데도 한 마디로 보고 맞는 곳이 없다며 REGION_NOT_FOUND 였다).
     """
-    official = place if place in CITY_NAMES_NOT_SIDO else SIDO_OFFICIAL_NAMES.get(place, place)
-    prefixes = (place, official)
-    return any(word.startswith(prefixes) for text in texts if text for word in text.split())
+    words = [word for text in texts if text for word in text.split()]
+
+    def matches(part: str) -> bool:
+        official = part if part in CITY_NAMES_NOT_SIDO else SIDO_OFFICIAL_NAMES.get(part, part)
+        return any(word.startswith((part, official)) for word in words)
+
+    parts = place.split()
+    return bool(parts) and all(matches(part) for part in parts)
 
 
 def resolve_regions(
