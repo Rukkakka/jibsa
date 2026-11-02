@@ -9,6 +9,7 @@ import typer
 
 from jibsa.cli.app import (
     app,
+    joined_name_args,
     joined_options_arg,
     run,
 )
@@ -119,6 +120,27 @@ def test_joined_options_are_caught_without_blocking_plain_values(arg: str, joine
     assert (joined_options_arg(['naver', 'search', 'listings', arg]) == arg) is joined
     # guide 의 절 이름은 문서 제목('search listings --complex')이라 옵션 모양이어도 막지 않는다
     assert joined_options_arg(['--verbose', 'guide', 'naver', arg]) is None
+
+
+@pytest.mark.parametrize(
+    ('argv', 'expected'),
+    [
+        (
+            ['zigbang', 'search', 'listings', 'apt', '송파구', '신천동', '--trade', '전세', '--compact'],
+            ['zigbang', 'search', 'listings', 'apt', '송파구 신천동', '--trade', '전세', '--compact'],
+        ),
+        (
+            ['naver', 'search', 'listings', '-t', '원룸', '역삼동', '--limit=5', '719-28'],
+            ['naver', 'search', 'listings', '-t', '원룸', '역삼동 719-28', '--limit=5'],
+        ),
+        # 옵션 값(-t 원룸)과 ID 인자는 잇지 않는다
+        (['daangn', 'search', 'listings', '-t', '원룸', '대치동'], None),
+        (['naver', 'listing', '111', '222'], None),
+    ],
+)
+def test_split_name_is_joined_but_option_values_and_ids_are_not(argv: list[str], expected: list[str] | None) -> None:
+    cli = typer.main.get_command(app)
+    assert joined_name_args(argv, cli) == (expected or argv)
 
 
 def test_jibsa_invalid_argument_exits_2_with_own_hint(capsys: pytest.CaptureFixture[str]) -> None:

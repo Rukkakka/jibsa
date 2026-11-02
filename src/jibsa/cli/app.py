@@ -26,6 +26,7 @@ from typer._click.exceptions import (
 from typer.core import (
     TyperCommand,
     TyperGroup,
+    TyperOption,
 )
 
 from jibsa.cli import (
@@ -74,6 +75,13 @@ HEADING_PATTERN: re.Pattern[str] = re.compile(r'^(#{2,4})\s+(.*)$')
 BACKTICK_PATTERN: re.Pattern[str] = re.compile(r'`([^`]+)`')
 # 안내 표가 없는 명령에 없는 옵션을 줬을 때 이 명령의 옵션을 알리는 소스 (`foreign_usage_hint`)
 SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn', 'dabang'})
+# 따옴표 없이 띄어 쓴 이름(`송파구 신천동`)을 하나로 잇는 위치 인자 (`joined_name_args`). 지역·장소·학교·단지 이름만 두고
+# ID 인자는 두지 않는다 (ID 두 개를 이어 찾지 않고 'unexpected extra argument' 로 알린다)
+NAME_ARGUMENTS: frozenset[str] = frozenset({
+    'query', 'dong', 'region', 'keyword', 'place', 'workplace', 'name', 'station', 'scope', 'complex_',
+})
+# Click 이 명령마다 붙이는 도움말 옵션 (명령의 params 에는 없다)
+HELP_OPTIONS: frozenset[str] = frozenset({'--help'})
 # 하위 명령 자리에 온 지역 이름을 알아본다 (`subcommand_hint`)
 HANGUL_PATTERN: re.Pattern[str] = re.compile(r'[가-힣]')
 GUIDE_URL: str = 'https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md'
@@ -364,6 +372,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             command=_command_path_of(cli, args),
         )
         return 2
+    args = joined_name_args(args, cli)
     try:
         result = cli.main(args=args, prog_name='jibsa', standalone_mode=False)
     except NoArgsIsHelpError as exc:
@@ -409,6 +418,61 @@ def joined_options_arg(args: Sequence[str]) -> str | None:
     if next((arg for arg in args if not arg.startswith('-')), None) == 'guide':
         return None
     return next((arg for arg in args if ' ' in arg.strip() and JOINED_OPTION_PATTERN.search(arg.strip())), None)
+
+
+def joined_name_args(args: Sequence[str], cli: Command) -> list[str]:
+    """이름 인자 하나만 받는 명령에 따옴표 없이 띄어 쓴 이름(`송파구 신천동`)을 인자 하나로 잇는다.
+
+    나뉜 채로 넘기면 Click 이 'unexpected extra argument (신천동)' 로 막고 '--help 를 보라' 만 알렸다. 에이전트가
+    `REGION_AMBIGUOUS` 힌트의 '송파구 신천동' 을 따옴표 없이 옮겨 한 번 더 불렀다 (2026-11-01 에이전트 검증). 옵션 값은
+    명령의 옵션 정의로 건너뛰고, 모르는 옵션이나 `--` 가 있으면 그대로 둬 Click 이 알리게 한다.
+    """
+    command, index = cli, 0
+    while isinstance(command, TyperGroup) and index < len(args):
+        arg = args[index]
+        if arg in command.commands:
+            command = command.commands[arg]
+            index += 1
+        elif arg.startswith('-') and (width := _option_width(command, arg)) is not None:
+            index += width
+        else:
+            return list(args)
+    arguments = [param for param in command.params if param.param_type_name == 'argument']
+    if isinstance(command, TyperGroup) or len(arguments) != 1 or arguments[0].name not in NAME_ARGUMENTS:
+        return list(args)
+    positions: list[int] = []
+    while index < len(args):
+        arg = args[index]
+        if arg.startswith('-') and len(arg) > 1:
+            width = _option_width(command, arg)
+            if width is None:
+                return list(args)
+            index += width
+        else:
+            positions.append(index)
+            index += 1
+    if len(positions) < 2:
+        return list(args)
+    joined = ' '.join(args[position] for position in positions)
+    return [
+        joined if position == positions[0] else arg
+        for position, arg in enumerate(args)
+        if position not in positions[1:]
+    ]
+
+
+def _option_width(command: Command, arg: str) -> int | None:
+    """옵션 인자 `arg` 가 값까지 차지하는 인자 수. 모르는 옵션이나 `--` 면 None."""
+    name, equals, _ = arg.partition('=')
+    for param in command.params:
+        if not isinstance(param, TyperOption):
+            continue
+        if name in (*param.opts, *param.secondary_opts):
+            return 1 if param.is_flag or param.count or equals else 1 + param.nargs
+        # 값을 붙여 쓴 짧은 옵션 (`-t원룸`)
+        if not name.startswith('--') and name[:2] in param.opts:
+            return 1
+    return 1 if name in HELP_OPTIONS else None
 
 
 def _command_path_of(cli: Command, args: Sequence[str]) -> str:
