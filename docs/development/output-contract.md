@@ -57,6 +57,9 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   있으면 그 명령을 알린다 (`foreign_usage_hint`). 표가 없는 소스 명령(상세·단지·실거래 등)에 없는 옵션이면 이 명령의 옵션을
   알리고 (그 옵션이 있는 다른 명령을 알리면 `real-price --limit` 처럼 같은 일을 하는 `--pages` 를 가렸다), 그룹에 없는 하위 명령이면 그 그룹의 하위 명령을 알린다 (`subcommand_hint`). 표는 각 소스 CLI 의 `USAGE_HINTS` 에 명령 경로(`jibsa naver search listings`)로 등록한다. 값을 바꿔
   받지는 않는다 (뜻이 조금 다른 조건을 멋대로 옮기지 않는다).
+- 지역·장소·학교·단지 이름을 위치 인자 하나로 받는 명령은 따옴표 없이 띄어 쓴 이름(`송파구 신천동`)을 `run()` 이 Click 에
+  넘기기 전에 한 인자로 잇는다 (`joined_name_args`). 새 명령의 이름 인자는 그 이름을 `NAME_ARGUMENTS` 에 넣는다. ID 인자는
+  넣지 않는다 (ID 두 개를 이어 찾지 않고 'unexpected extra argument' 로 알린다).
 - 요청 모델 검증 실패의 message 는 검증 함수가 던진 문구 그대로다 (pydantic 이 붙이는 `Value error, ` 를 뗀다).
   hint 는 사용법 오류와 같은 `'<명령> --help' 로 사용법을 확인하세요` 다.
 - `--trade` 와 맞지 않는 가격 조건(전세 + 월세 상한 등)은 `infer_trade_types` 가 사용법 오류로 막는다. 세 소스 모두

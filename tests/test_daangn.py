@@ -209,10 +209,10 @@ def _regions_client(locations: list[dict]) -> DaangnClient:
 
 
 # --city 를 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아 엉뚱한 동을 고른다.
-# '서울시' 는 서울의 송정동 두 곳에 맞아 첫 곳을 고르지 않고 멈춘다
+# '서울시' 는 서울의 송정동 두 곳에 맞아 첫 곳을 고르지 않고 멈춘다. 띄어 쓴 이름은 마디마다 맞아야 한다
 @pytest.mark.parametrize(
     ('city', 'expected'),
-    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', 'REGION_AMBIGUOUS'), ('남구', None)],
+    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', 'REGION_AMBIGUOUS'), ('남구', None), ('서울 성동구', '서울특별시')],
 )
 def test_city_matches_start_of_district_name(city: str, expected: str | None) -> None:
     from jibsa.core.errors import (
