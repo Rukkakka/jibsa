@@ -5,6 +5,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+### 추가
+
+- 설치 스크립트: Windows 는 PowerShell 에서 `irm https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.ps1 | iex`, macOS·Linux 는 `curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.sh | sh` 한 줄로 uv·jibsa 설치, PATH 등록, Windows 한글 출력 설정(`PYTHONUTF8=1`), Codex·Claude Code 지침 한 줄까지 한다. 다시 실행하면 최신 버전으로 올린다. Windows 에서 uv 를 설치한 창을 새로 열지 않으면 `uv`·`jibsa` 를 못 찾았고, PATH 가 바뀌기 전에 연 창에서 켠 Codex 도 jibsa 를 못 찾았다. Windows 스크립트는 지금 창에도 PATH 를 넣어 그 창에서 바로 쓸 수 있다 (#190)
+
 ## 0.10.0 — 2026-11-02
 
 ### 변경

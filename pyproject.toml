@@ -65,7 +65,7 @@ jibsa = 'jibsa.cli.app:main'
 
 # sdist 에는 빌드·테스트에 쓰는 파일만. README 그림(데모 GIF·로고)과 그 제작 도구는 PyPI 페이지가 GitHub 주소로 보여 준다
 [tool.hatch.build.targets.sdist]
-exclude = ['docs/demo', 'docs/logo.svg', 'scripts/demo', 'scripts/logo']
+exclude = ['docs/demo', 'docs/logo.svg', 'scripts/demo', 'scripts/install', 'scripts/logo']
 
 [tool.hatch.build.targets.wheel]
 packages = ['src/jibsa']

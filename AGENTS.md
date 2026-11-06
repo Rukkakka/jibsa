@@ -80,6 +80,7 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 | 명령 추가·삭제, 매물을 찾는 새 방식(다른 API 를 쓰는 경로) | `scripts/monitor/api_check.py` 의 `GROUPS` (매일 API 감시 목록) |
 | 공통 사용법(출력·에러 대응)·요청 제한 정책 | `docs/common.md` |
 | 설치·업데이트·삭제 방법, 준비물·PATH | `docs/install.md` (README 설치 절의 요약 표도 맞춘다) |
+| 설치 스크립트(`scripts/install/`)가 하는 일 | `docs/install.md` 의 한 줄 설치 절. 사용자가 main 의 파일을 바로 받아 실행하므로 머지하는 즉시 적용된다. 머지 전에 해당 운영체제에서 실제로 돌려 본다 |
 | 한 소스의 구현·예외 | `docs/development/providers/<source>.md` |
 | 여러 소스에 공통인 개발 규약 | `docs/development/` 바로 아래 문서 |
 | 사용자(에이전트 포함)에게 보이는 변경 | `CHANGELOG.md` 의 `Unreleased` ([쓰는 법](docs/development/release.md#changelog-쓰는-법)) |
