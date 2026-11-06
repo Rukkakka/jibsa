@@ -111,7 +111,21 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
 
 ## 설치
 
-Python 3.11 이상이 필요하고 (uv 로 설치하면 없어도 된다), macOS·Linux·Windows 에서 쓸 수 있다. 셋 중 하나만 하면 된다.
+**처음이면 설치 스크립트 한 줄로 끝난다.** uv(설치 도구)·jibsa 설치, PATH 등록, Windows 한글 출력 설정, Codex·Claude Code 지침 한 줄까지 한 번에 한다. 다시 실행하면 jibsa 를 최신 버전으로 올린다.
+
+```powershell
+# Windows: 시작 메뉴에서 PowerShell 을 열어 (cmd 아님) 붙여 넣는다. 끝나면 그 창에서 바로 쓸 수 있다
+irm https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.ps1 | iex
+```
+
+```bash
+# macOS·Linux: 터미널에 붙여 넣는다
+curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.sh | sh
+```
+
+스크립트가 하는 일과 설치 뒤 에이전트에서 쓸 때 주의할 점은 [설치 문서의 한 줄 설치](https://github.com/Rukkakka/jibsa/blob/main/docs/install.md#한-줄-설치)에 있다.
+
+직접 설치하려면 Python 3.11 이상이 필요하고 (uv 로 설치하면 없어도 된다), macOS·Linux·Windows 에서 쓸 수 있다. 셋 중 하나만 하면 된다.
 
 | 방법 | 설치 | 업데이트 |
 | --- | --- | --- |
@@ -136,7 +150,7 @@ jibsa limits      # 요청 제한 상태 JSON. 네트워크 요청은 보내지 
 집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.
 ```
 
-[맨 위 영상](https://github.com/Rukkakka/jibsa#readme)이 이 한 줄을 적어 둔 폴더에서 Claude Code 에 매물을 찾게 한 장면이다. 지침 파일의 두 번째 줄("이 폴더의 jibsa 는 데모용 가상 매물을 돌려준다")은 데모용이다.
+[설치 스크립트](https://github.com/Rukkakka/jibsa#설치)는 Codex(`~/.codex/AGENTS.md`)·Claude Code(`~/.claude/CLAUDE.md`)를 쓰고 있으면 이 줄을 넣어 준다. [맨 위 영상](https://github.com/Rukkakka/jibsa#readme)이 이 한 줄을 적어 둔 폴더에서 Claude Code 에 매물을 찾게 한 장면이다. 지침 파일의 두 번째 줄("이 폴더의 jibsa 는 데모용 가상 매물을 돌려준다")은 데모용이다.
 
 ## 설정
 
@@ -150,7 +164,7 @@ jibsa limits      # 요청 제한 상태 JSON. 네트워크 요청은 보내지 
 
 ### Windows 에서 쓸 때
 
-Windows 의 Python 은 출력 인코딩이 기본으로 UTF-8 이 아니다 (한국어 Windows 는 cp949). LLM 에이전트가 jibsa 를 부르면 출력이 파이프로 넘어가는데, 이때 한글이 깨지거나 cp949 에 없는 문자(이모지 등)에서 오류가 날 수 있다. 아래처럼 사용자 환경 변수를 설정하고 새 터미널을 연다. macOS·Linux 는 따로 할 것이 없다.
+Windows 의 Python 은 출력 인코딩이 기본으로 UTF-8 이 아니다 (한국어 Windows 는 cp949). LLM 에이전트가 jibsa 를 부르면 출력이 파이프로 넘어가는데, 이때 한글이 깨지거나 cp949 에 없는 문자(이모지 등)에서 오류가 날 수 있다. 아래처럼 사용자 환경 변수를 설정하고 새 터미널을 연다 ([설치 스크립트](https://github.com/Rukkakka/jibsa#설치)로 설치했으면 이미 되어 있다). macOS·Linux 는 따로 할 것이 없다.
 
 ```powershell
 setx PYTHONUTF8 1

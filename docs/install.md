@@ -2,10 +2,54 @@
 
 [README](../README.md) · [공통 사용 규칙](common.md) · [LLM 가이드](llm.md)
 
-> 한 줄 설치와 첫 조회는 [README 의 빠른 시작](../README.md#빠른-시작)에 있다. 이 문서는 준비물, 설치 방법 세 가지,
-> PATH 문제, 업데이트·삭제까지 자세히 적는다.
+> 첫 조회는 [README 의 빠른 시작](../README.md#빠른-시작)에 있다. 이 문서는 한 줄 설치(설치 스크립트)와, 직접 설치할 때의
+> 준비물·설치 방법 세 가지, PATH 문제, 업데이트·삭제까지 자세히 적는다.
 
 macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른 곳은 나눠 적었다. Windows 명령은 PowerShell 기준이고 (명령 프롬프트 cmd 는 아님), WSL 안에서 쓴다면 Linux 를 따른다.
+
+## 한 줄 설치
+
+처음 설치하는 사람은 이것만 하면 된다. 아래 1~4 절은 직접 설치하려는 사람용이다.
+
+**Windows**
+
+1. 시작 메뉴에서 `PowerShell` 을 검색해 **Windows PowerShell** 을 연다. 명령 프롬프트(cmd)가 아니다. 줄 앞에 `PS C:\Users\<이름>>` 이 보이면 맞다
+2. 아래 줄을 붙여 넣고 Enter 를 누른다
+
+   ```powershell
+   irm https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.ps1 | iex
+   ```
+
+3. 마지막에 `jibsa 0.10.0` 같은 버전과 `설치를 마쳤다` 가 나오면 끝이다. **그 창에서 바로** `jibsa` 를 쓸 수 있다
+
+설치 전에 열려 있던 다른 창은 PATH 가 예전 그대로라 `jibsa` 를 못 찾는다. 그 창은 닫고 새로 연다.
+
+**macOS·Linux**
+
+1. 터미널을 연다 (macOS 는 Spotlight 에서 `터미널` 을 찾는다)
+2. 아래 줄을 붙여 넣고 Enter 를 누른다
+
+   ```bash
+   curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.sh | sh
+   ```
+
+3. 버전과 `설치를 마쳤다` 가 나오면 끝이다. 새로 연 터미널부터 `jibsa` 가 잡힌다. 그 창에서 바로 쓰려면 스크립트가 마지막에 보여 주는 `export PATH=…` 줄을 실행한다
+
+**스크립트가 하는 일.** 몇 번을 다시 실행해도 되고, 다시 실행하면 jibsa 를 최신 버전으로 올린다.
+
+| 단계 | 하는 일 |
+|---|---|
+| uv | 없으면 설치한다. Python 이 없어도 uv 가 알아서 받는다 |
+| jibsa | `uv tool install --upgrade jibsa` |
+| PATH | jibsa 가 든 폴더(`~/.local/bin`, Windows 는 `C:\Users\<이름>\.local\bin`)를 사용자 PATH 에 넣는다. Windows 는 지금 창에도 넣는다 |
+| 한글 출력 | Windows 만. 사용자 환경 변수 `PYTHONUTF8=1` 을 설정한다 ([왜 필요한가](../README.md#windows-에서-쓸-때)) |
+| 에이전트 지침 | Codex(`~/.codex/AGENTS.md`)·Claude Code(`~/.claude/CLAUDE.md`) 설정 폴더가 있으면 [jibsa 사용 규칙 한 줄](../README.md#llm-에이전트에-연결하기)을 덧붙인다. 이미 있으면 건너뛴다 |
+
+**설치 뒤 에이전트에서 쓸 때**
+
+- 에이전트는 jibsa 를 설치한 **뒤에 연 창**에서 켠다. 예전 창에서 켠 에이전트는 예전 PATH 를 물려받아 `jibsa` 를 못 찾는다
+- 지침 한 줄이 없는 에이전트에 "jibsa 쓸 수 있어?" 라고만 물으면, 연결된 도구(MCP) 목록만 보고 없다고 답한다. jibsa 는 셸 명령이니 "셸에서 `jibsa guide` 를 실행해 읽고 …" 처럼 시킨다
+- Codex 는 기본 샌드박스가 인터넷과 작업 폴더 밖 접근을 막아, jibsa 를 못 찾거나 조회가 막힐 수 있다. Codex 안에서 `/permissions` 로 Full Access 를 고른다. 매번 고르지 않으려면 `~/.codex/config.toml` 에 `sandbox_mode = "danger-full-access"` 를 넣는다
 
 ## 1. 준비물
 
@@ -131,10 +175,13 @@ Windows 는 UTF-8 출력 설정(`setx PYTHONUTF8 1`)을 처음 한 번 챙긴다
 
 | 설치 방법 | 업데이트 | 삭제 |
 |---|---|---|
+| 설치 스크립트 | 스크립트를 다시 실행하거나 `uv tool upgrade jibsa` | `uv tool uninstall jibsa` |
 | uv | `uv tool upgrade jibsa` | `uv tool uninstall jibsa` |
 | pipx | `pipx upgrade jibsa` | `pipx uninstall jibsa` |
 | pip (macOS·Linux) | `~/.venvs/jibsa/bin/pip install -U jibsa` | `rm -rf ~/.venvs/jibsa ~/.local/bin/jibsa` |
 | pip (Windows) | `& "$HOME\.venvs\jibsa\Scripts\pip.exe" install -U jibsa` | `Remove-Item -Recurse -Force $HOME\.venvs\jibsa` |
+
+설치 스크립트가 넣은 PATH 항목, `PYTHONUTF8`, 에이전트 지침 파일의 jibsa 한 줄은 삭제해도 남는다. 쓰지 않으면 직접 지운다. uv 를 지우려면 [uv 삭제 안내](https://docs.astral.sh/uv/getting-started/installation/#uninstallation)를 따른다.
 
 GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그대로 받고, pip 은 `pip install -U --force-reinstall git+https://github.com/Rukkakka/jibsa` 로 받는다.
 
