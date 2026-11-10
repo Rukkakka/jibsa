@@ -11,8 +11,9 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 
 | 경로 | 내용 |
 | --- | --- |
-| `cli/` | Typer 명령 (`limits`, `guide`, `zigbang`/`naver`/`daangn`/`dabang` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`), 매물 검색 이어 받기 표 (`paging.py`) |
+| `cli/` | Typer 명령 (`limits`, `guide`, `install-browser`, `zigbang`/`naver`/`daangn`/`dabang` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`), 매물 검색 이어 받기 표 (`paging.py`) |
 | `core/http.py` | `BaseHTTPClient` — httpx 클라이언트 수명주기, 재시도 술어, `raise_for_status` |
+| `core/browser.py` | `BrowserTransport` — httpx 요청을 사이트 첫 화면을 연 Chromium(scrapling) 안의 fetch 로 보낸다. 쿠키 남기기, `jibsa install-browser` |
 | `core/ratelimit.py` | 프로세스 간 공유 요청 제한 (`RateLimiter`, `RateLimitedError`) |
 | `core/listing.py` | 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 날짜, 주소) |
 | `core/errors.py` | `JibsaError` 계열 — CLI 가 `{"error": {...}}` 로 내보내는 에러 |
@@ -39,12 +40,12 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 
 - **로그인 없는 기능만.** 계정·쿠키·API 키를 받지 않고, 로그인이 필요한 API(관심 단지·매물, 내 집 인증 등)나 사용자 대신 보내는 기능(문의·예약·신고)은 넣지 않는다. 새 엔드포인트는 로그인 없이 호출되는지 먼저 확인한다. ([README 원칙](README.md#원칙-로그인-없는-기능만))
 - **금액은 전부 만원.** 필드 이름에 단위를 붙인다 (`deposit_manwon`). 네이버는 원 단위라 `won_to_manwon` 으로 환산.
-- **조회 결과는 stdout JSON, 에러는 stderr JSON.** 도움말·자동완성·`guide`·`--version` 은 CLI 텍스트이며 `--verbose` 진행 로그는 stderr 로 나간다. 새 에러는 `JibsaError` 로 코드·힌트를 붙여 던진다.
+- **조회 결과는 stdout JSON, 에러는 stderr JSON.** 도움말·자동완성·`guide`·`--version` 은 CLI 텍스트이며 `--verbose` 진행 로그는 stderr 로 나간다. 새 에러는 `JibsaError` 로 코드·힌트를 붙여 던진다. 예외는 transport 안에서 나는 전송 오류(`CorsBlockedError`·`ProxyError`·`CertificateError`)로, 덤 조회가 삼키도록 httpx 예외로 두고 `handle_errors` 가 코드·힌트를 붙인다 ([출력 규약](docs/development/output-contract.md)).
 - **값이 없을 때:** 해당 없음 → 키 삭제, 모름 → `null`, 비어 있음 → `[]`.
 - **만료 매물은 내보내지 않는다.** 목록에서는 거르고, 상세에서는 `ListingUnavailableError`.
 - **서버가 거른 결과를 같은 조건으로 다시 거르지 않는다.** 소스의 카테고리를 건물 용도나 방 개수로 다시 해석하지 않는다. 직접 거르는 건 서버가 받지 않는 조건과 서버 필터 없는 대체 조회뿐이고, 거래 조건을 못 골라 뺀 매물은 사유를 `notes`로 알린다. ([서버 필터와 클라이언트 후처리](docs/development/provider-conventions.md#서버-필터와-클라이언트-후처리))
 - **사진·중개사 연락처·본문(매물 설명)·매물 좌표는 출력하지 않는다.** 위치 검색의 지역 후보 좌표는 제공할 수 있다. 확인·문의는 `url` 의 원 사이트에서.
-- **모든 HTTP 요청은 요청 제한 훅을 거친다.** 새 클라이언트도 `rate_limit_hooks()` 를 `event_hooks` 로 넘긴다.
+- **모든 HTTP 요청은 브라우저로 보내고 요청 제한 훅을 거친다.** 새 클라이언트도 `transport=self.browser_transport()` 와 `rate_limit_hooks()` 를 `event_hooks` 로 넘기고, `base_header` 에 UA·Origin·Referer 를 넣지 않는다. 첫 화면이 스스로 부르는 요청은 transport 가 `RateLimiter.record` 로 센다. ([브라우저 요청](docs/development/architecture.md#브라우저-요청))
 - **검증은 실제 API 로, 테스트는 최소로.** 코드를 바꾸면 CLI 직접 조회 같은 실제 API 호출로 확인한다 (요청은 최소로). 테스트는 아주 드문 엣지케이스나 틀어지면 안 되는 핵심 동작일 때만 추가한다. 전체 `pytest` 는 먼저 묻고, 평소에는 바꾼 부분 테스트 몇 개만 이름으로 골라 한 번 돌린다. ([검증과 테스트](docs/development/README.md#검증과-테스트))
 - **명령을 추가·삭제하면 매일 API 감시 목록도 고친다.** `scripts/monitor/api_check.py` 의 `GROUPS` 에 넣고, 매물을 찾는 새 방식(동 이름·역·반경·단지처럼 다른 API 를 쓰는 경로)을 넣었으면 그 방식도 넣는다. 명령을 빠뜨리면 `test_every_source_command_is_in_api_monitor` 가 실패한다. ([매일 API 감시](docs/development/README.md#매일-api-감시))
 
@@ -80,7 +81,7 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 | 명령 추가·삭제, 매물을 찾는 새 방식(다른 API 를 쓰는 경로) | `scripts/monitor/api_check.py` 의 `GROUPS` (매일 API 감시 목록) |
 | 공통 사용법(출력·에러 대응)·요청 제한 정책 | `docs/common.md` |
 | 설치·업데이트·삭제 방법, 준비물·PATH | `docs/install.md` (README 설치 절의 요약 표도 맞춘다) |
-| 설치 스크립트(`scripts/install/`)가 하는 일 | `docs/install.md` 의 한 줄 설치 절. 사용자가 main 의 파일을 바로 받아 실행하므로 머지하는 즉시 적용된다. 머지 전에 해당 운영체제에서 실제로 돌려 본다 |
+| 설치 스크립트(`scripts/install/`)가 하는 일 | `docs/install.md` 의 한 줄 설치 절. 사용자가 main 의 파일을 바로 받아 실행하므로 머지하는 즉시 적용된다. 머지 전에 CI 의 `브라우저 확인`이 세 운영체제에서 실제로 돌려 본다 |
 | 한 소스의 구현·예외 | `docs/development/providers/<source>.md` |
 | 여러 소스에 공통인 개발 규약 | `docs/development/` 바로 아래 문서 |
 | 사용자(에이전트 포함)에게 보이는 변경 | `CHANGELOG.md` 의 `Unreleased` ([쓰는 법](docs/development/release.md#changelog-쓰는-법)) |

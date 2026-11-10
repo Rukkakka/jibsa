@@ -10,6 +10,7 @@ from pydantic import (
     model_serializer,
 )
 
+from jibsa.core.browser import EntryOpenError
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
@@ -196,6 +197,10 @@ def get_school(client: DabangClient, school_code: str, level: SchoolLevel) -> Da
             DabangEducationV3RequestParameterModel(level=LEVEL_PATH_BY_LABEL[level], school_code=school_code)
         )
     except HTTPStatusError as exc:
+        # 첫 화면(다방 홈)의 5xx(`EntryStatusError`)는 학교 상세 응답이 아니다. 아래에서 읽으면 홈 장애를 '코드나 단계가
+        # 틀려도 500' 으로 안내했다 (2026-11-10 로컬 실측). 다른 명령처럼 HTTP 오류로 올린다
+        if isinstance(exc, EntryOpenError):
+            raise
         status = exc.response.status_code
         hint = (
             'complex 결과 schools[] 의 school_code 와 level 을 그대로 옮기세요 (jibsa dabang school <school_code> '

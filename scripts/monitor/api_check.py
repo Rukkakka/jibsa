@@ -9,7 +9,8 @@
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
   깨졌다는 안내(`UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
   비어 있으면 사이트가 바뀐 것으로 본다
-- 확인 못 함: 요청 제한·네트워크 오류·서버 5xx·방금 내려간 매물·시간 초과, 앞 명령이 넘길 번호를 주지 않아 건너뛴 명령,
+- 확인 못 함: 요청 제한·네트워크 오류·서버 5xx·첫 화면 차단(401·403·451)·방금 내려간 매물·시간 초과, 앞 명령이 넘길 번호를
+  주지 않아 건너뛴 명령,
   사이트가 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`)이 빔, 덤 조회가 잠깐 실패해(업데이트 문구 없는 `[실패]`) 정한 칸이
   빔. 사이트가 바뀐 것인지 알 수 없다
 
@@ -342,7 +343,9 @@ OK: str = 'ok'
 BROKEN: str = 'broken'
 UNKNOWN: str = 'unknown'
 STATUS_LABELS: dict[str, str] = {OK: '✅ 정상', BROKEN: '❌ 고장', UNKNOWN: '⚠️ 확인 못 함'}
-# 사이트가 바뀐 것인지 알 수 없는 에러. 그 밖의 에러 코드(PARSE_ERROR, INTERNAL_ERROR, NOT_FOUND, REGION_NOT_FOUND 등)는 고장이다
+# 사이트가 바뀐 것인지 알 수 없는 에러. 그 밖의 에러 코드(PARSE_ERROR, INTERNAL_ERROR, NOT_FOUND, REGION_NOT_FOUND 등)는 고장이다.
+# BROWSER_UNAVAILABLE 은 일부러 넣지 않는다. 조회 잡이 바로 앞 단계에서 install-browser 로 Chromium 을 받아 한 번 띄워 봤으므로,
+# 그 뒤 명령에서 못 띄우면 사이트가 아니라 jibsa(브라우저 쪽) 고장이고 사용자도 같이 막힌다 (2026-11-10 재검토)
 UNKNOWN_CODES: frozenset[str] = frozenset({'RATE_LIMITED', 'NETWORK_ERROR', 'LISTING_UNAVAILABLE'})
 
 BROKEN_LABEL: str = 'api-broken'
@@ -371,8 +374,13 @@ def _is_unknown(error: dict[str, Any]) -> bool:
     code = error.get('code')
     if code in UNKNOWN_CODES:
         return True
-    # 서버 5xx 는 사이트가 바뀐 것이 아니다. 4xx 와 상태 없는 UPSTREAM_ERROR(웹 쿼리 해시 거절 등)는 요청이 맞지 않게 된 것이라 고장이다
+    # 사이트 첫 화면이 접속을 막은 에러(`blocked: true`, 401·403·451)는 러너 IP·봇 차단이라 확인 못 함이다. 사흘 이어지면
+    # api-blocked 로 알린다. 당근이 직방으로 위치를 찾다 막힌 에러도 직방의 `blocked` 를 이어받는다. 첫 화면의 404 와 다른
+    # 출처로 넘어감은 첫 화면 주소·도메인이 바뀌었을 수 있어 고장이다
+    if error.get('blocked') is True:
+        return True
     status = error.get('status')
+    # 서버 5xx 는 사이트가 바뀐 것이 아니다. 4xx 와 상태 없는 UPSTREAM_ERROR(웹 쿼리 해시 거절 등)는 요청이 맞지 않게 된 것이라 고장이다
     return code == 'UPSTREAM_ERROR' and isinstance(status, int) and status >= 500
 
 
@@ -618,7 +626,9 @@ def report(paths: list[str], *, issues: bool, dry_run: bool) -> int:
             continue
         result = json.loads(Path(path).read_text(encoding='utf-8'))
         found[result['group']] = result
-    # 매일 도는 소스 중 결과 파일이 없는 것은 조회 잡이 감시 코드나 설치에서 실패한 것이다. 로컬에서 돌린 다른 소스 결과도 함께 싣는다
+    # 매일 도는 소스 중 결과 파일이 없는 것은 조회 잡이 감시 코드나 설치에서 실패한 것이다. 로컬에서 돌린 다른 소스 결과도 함께 싣는다.
+    # 설치 단계(pip install·install-deps·install-browser)의 실패도 일부러 고장으로 둔다. 사용자도 같은 단계에서 막히므로 알아야
+    # 하고, 하루짜리 일시 실패면 다음 날 실행이 모두 정상일 때 고장 이슈를 스스로 닫는다 (2026-11-10 재검토)
     results = [
         found.get(group) or {
             'group': group, 'status': BROKEN,

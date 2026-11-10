@@ -213,7 +213,7 @@ class NaverClient(BaseHTTPClient):
 
     Args:
         host: 호스트 (스킴 제외). Defaults to 'fin.land.naver.com'.
-        rate_limit: 요청 제한 정책. Defaults to 1초 간격·분당 30회·429 후 15분 쿨다운.
+        rate_limit: 요청 제한 정책. Defaults to 1초 간격·분당 60회·429 후 5분 쿨다운.
 
     Attributes:
         base_url: `url_schema` 와 `host` 로 만든 베이스 URL.
@@ -282,9 +282,19 @@ class NaverClient(BaseHTTPClient):
     source_name: ClassVar[str] = 'naver'
     default_rate_limit: ClassVar[dict[str, object]] = {
         'min_interval': 1.0,
-        'max_per_minute': 30,
-        'cooldown': 900,
+        # 첫 화면이 스스로 부르는 사이트 API(18~22건, 30분에 한 번, core/browser.py)와 우리 요청을 합친 수에 건다. 남긴 쿠키로만
+        # 보내는 명령은 우리 요청만 분당 60건(1초 간격의 최대)까지 나간다. 예전 상한은 30이었지만, 브라우저로 1분 창 60건을 10분
+        # 이어 보내도 429 가 없었다 (2026-11-09 실측, docs/development/providers/naver.md '브라우저 요청')
+        'max_per_minute': 60,
+        # 네이버는 429 에 Retry-After 를 주지 않아 차단이 얼마나 가는지 모른다 (예전 15분도 첫 코드의 초깃값이지 잰 값이 아니다).
+        # 쿨다운 뒤 첫 명령은 첫 화면을 연 지 30분 안이면 남긴 쿠키로 요청 1건만 보내 풀렸는지 본다. 30분이 지났으면 첫 화면부터
+        # 다시 여는데, 아직 막혀 있으면 문서가 429 라 그 1건에서 멈추고, API 만 막혀 있으면 첫 화면 요청(18~22건)이 나간다
+        'cooldown': 300,
     }
+
+    browser_entry_url: ClassVar[str] = 'https://fin.land.naver.com/'
+    # 네이버 브라우저 식별 쿠키 (400일). 첫 화면 JS 가 load 뒤에 심는다 (2026-11-09 실측)
+    browser_ready_cookie: ClassVar[str | None] = 'NNB'
 
     host: str = 'fin.land.naver.com'
 
@@ -297,23 +307,20 @@ class NaverClient(BaseHTTPClient):
 
     @property
     def base_header(self) -> dict[str, str]:
+        # 브라우저가 연 첫 화면에서 보내므로 UA·Origin·Referer·쿠키·언어는 브라우저가 붙인다 (`core/browser.py`)
         return {
             'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'ko,en-US;q=0.9,en;q=0.8',
-            'Origin': 'https://fin.land.naver.com',
-            'Referer': 'https://fin.land.naver.com/',
-            'User-Agent': self.user_agent,
         }
 
     @cached_property
     def _client(self) -> Client:
+        # 프록시는 브라우저가 쓴다. httpx 에 프록시를 넘기면 그 mount 가 transport 를 건너뛴다
         return Client(
             base_url=self.base_url,
             headers=self.base_header,
             event_hooks=self.rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.browser_transport()
         )
 
     @cached_property
@@ -322,9 +329,8 @@ class NaverClient(BaseHTTPClient):
             base_url=self.base_url,
             headers=self.base_header,
             event_hooks=self.async_rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.async_browser_transport()
         )
 
     def _get(self, endpoint: str, parameter: BaseModel, model: type[_R]) -> _R:

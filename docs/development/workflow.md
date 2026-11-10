@@ -76,12 +76,16 @@ PR 템플릿의 `변경 종류` 도 같은 다섯 이름을 쓴다. PR 이 닫�
 - 모듈을 추가·이름 변경·삭제했다면 해당 `docs/development/providers/<source>.md`와 `AGENTS.md`의 관련 구조 설명을 고쳤다.
 - diff 와 새 픽스처에 토큰, 쿠키, 중개사 이름·전화번호 같은 개인정보가 없고, 픽스처의 매물·단지는 가상 데이터다.
 - 의존성을 바꿨다면 `pyproject.toml` 에 반영했고, 범위는 기존 항목처럼 상한을 둔다
-  (`'httpx>=0.28,<0.29'`).
+  (`'httpx>=0.28,<0.29'`). 예외: scrapling `[fetchers]` 목록에서 옮겨 적은 항목은 scrapling 이 둔 하한만 그대로 따른다
+  (상한을 두면 scrapling 패치 버전이 하한을 올릴 때 설치가 깨진다. 이유는 `pyproject.toml` 주석).
 
 PR 을 열면 [CI](../../.github/workflows/ci.yml) 가 `ruff check`·`mypy`·전체 `pytest`(Ubuntu·macOS·Windows ×
-Python 3.11·3.14)·설치본 확인(`jibsa --version`, `jibsa guide` 와 `docs/llm.md` 비교)·`docs/llm.md` 200줄 검사를 돌린다.
+Python 3.11·3.12·3.13·3.14)·설치본 확인(`jibsa --version`, `jibsa guide` 와 `docs/llm.md` 비교)·`docs/llm.md` 200줄 검사를 돌린다.
 문서만 바꾼 PR(`docs/` 아래, 맨 위 `.md`, `LICENSE`, 이슈·PR 템플릿)은 `pytest` 를 건너뛴다. 머지 조건은 마지막 `CI 결과`
 검사 하나다 (앞 검사 중 실패·취소가 있으면 실패). PR 을 연 뒤 `main` 이 바뀌면 "Update branch" 로 최신 `main` 을 합쳐 CI 를
 다시 통과해야 머지할 수 있다. 머지 뒤 `main` 에서는 CI 를 다시 돌리지 않는다.
-릴리스 직전과 매주 월요일 새벽에는 모든 검사가 돈다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
+브라우저·설치에 관련된 파일(`src/jibsa/core/`, `src/jibsa/cli/app.py`, `scripts/install/`, `scripts/ci/`, `pyproject.toml`,
+`ci.yml`)을 고친 PR 은 `브라우저 확인`도 돈다. Ubuntu·macOS·Windows 에서 한 줄 설치 스크립트로 설치하고, 설치된 jibsa 로
+가짜 사이트를 열어 브라우저 요청·남긴 쿠키·막힌 응답(CORS 없는 429) 알아보기·Ctrl+C·프로세스 정리를 본다 (`scripts/ci/browser_check.py`, 실제 사이트에는 요청하지
+않는다). 릴리스 직전과 매주 월요일 새벽에는 모든 검사가 돈다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
 부르는 [API 감시](README.md#매일-api-감시)도 한 번 돈다. 필수 검사는 아니라 막힌 날에도 머지할 수 있다.

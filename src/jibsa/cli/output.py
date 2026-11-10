@@ -12,6 +12,7 @@ import typer
 from httpx import (
     HTTPError,
     HTTPStatusError,
+    ProxyError,
 )
 from pydantic import (
     BaseModel,
@@ -23,6 +24,13 @@ from typer._click.exceptions import (  # Typer 가 내장한 Click 의 예외. �
 )
 from typer._click.globals import get_current_context
 
+from jibsa.core.browser import (
+    CERT_HINT,
+    PROXY_HINT,
+    CertificateError,
+    CorsBlockedError,
+    EntryStatusError,
+)
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
@@ -319,7 +327,38 @@ def handle_errors(source: str) -> Generator[None, None, None]:
                 else '요청이 너무 잦습니다. 잠시 후 다시 시도하세요'
             ),
         }.get(status, '비공식 API 라 스펙이 바뀌었을 수 있습니다')
+        if isinstance(exc, EntryStatusError) and status >= 500:
+            # 사이트 첫 화면 문서의 5xx 는 API 스펙 변경이 아니라 사이트 장애다 (재시도한 뒤에도 같았다). 스펙 변경으로 안내하면
+            # 에이전트가 업데이트를 권했다 (2026-11-10 리뷰: 다방 홈 500 을 재현하니 '스펙이 바뀌었을 수 있다')
+            hint = '사이트 첫 화면이 서버 오류를 줬습니다. 사이트 장애일 수 있으니 잠시 뒤 한 번만 다시 부르고, 같으면 다른 소스를 쓰세요'
         emit_error(code, str(exc), hint, source=source, status=status)
+        raise typer.Exit(code=1)
+    except CorsBlockedError as exc:
+        # 사이트 CORS 설정이 바뀌어 응답을 읽지 못했다. 다시 불러도 같아 다른 소스로 돌린다
+        emit_error(
+            'UPSTREAM_ERROR',
+            f'{type(exc).__name__}: {exc}',
+            '사이트가 이 요청의 응답을 막았습니다. 비공식 API 가 바뀌었을 수 있으니 다른 소스를 쓰세요',
+            source=source,
+        )
+        raise typer.Exit(code=1)
+    except ProxyError as exc:
+        # 프록시 설정 문제는 다시 불러도 같아 설정을 가리킨다 (주소 해석 실패·지원하지 않는 프록시·프록시 연결 실패)
+        emit_error(
+            'NETWORK_ERROR',
+            f'{type(exc).__name__}: {exc}',
+            PROXY_HINT,
+            source=source,
+        )
+        raise typer.Exit(code=1)
+    except CertificateError as exc:
+        # 브라우저가 인증서를 믿지 못했다. 다시 불러도 같아 OS 에 인증서를 넣으라고 가리킨다 (첫 화면은 `_entry_error` 가 같은 hint)
+        emit_error(
+            'NETWORK_ERROR',
+            f'{type(exc).__name__}: {exc}',
+            CERT_HINT,
+            source=source,
+        )
         raise typer.Exit(code=1)
     except HTTPError as exc:
         emit_error(

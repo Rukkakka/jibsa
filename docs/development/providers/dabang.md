@@ -39,6 +39,18 @@
 - 모든 요청에 웹 axios 인스턴스가 붙이는 `csrf: token` 헤더를 붙인다. 토큰·쿠키는 없다.
 - 없는 주소·경로 값은 404 대신 **403 빈 응답** 이다 (아무 경로나 넣어도 같다). 요청 제한과 섞지 않는다. ID 가 경로에 들어가는 요청(단지 상세·주변 시설·학교)만 `is_missing_id` 로 빈 403 을 `NOT_FOUND` 로 본다. ID 가 쿼리로 가는 요청(분양 상세·교통·단지 실거래·매물 실거래·시군구 코드)은 없는 ID 에 400 이나 빈 결과를 줘서(2026-10-27 실측) 빈 403 이면 다방 주소가 바뀐 것으로 `UPSTREAM_ERROR` 다 (`in_path=False`).
 
+### 브라우저 요청 (2026-11-09 실측)
+
+공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 다방만의 값:
+
+- 첫 화면은 `https://www.dabangapp.com/`. 다방이 심는 쿠키는 분석·광고용(`_ga`·`wcs_bt`·`dable_uid` 등)뿐이고 API 는 쿠키 없이
+  응답해 기다릴 쿠키가 없다 (`browser_ready_cookie = None`). 첫 화면이 다방 API 를 XHR 로 11번 부른다. JS 파일(`/_next/static`)도
+  같은 호스트라 요청 제한에는 XHR·fetch 만 센다.
+- 403 이 없는 주소라 `browser_discard_statuses` 를 비운다 (403 에 쿠키를 버리지 않는다). API 가 쿠키를 보지 않아 막힌 403
+  이어도 쿠키를 버려서 풀릴 것이 없다. 다방이 방문자 쿠키(WAF 토큰 등)를 요구하기 시작하면 본문이 있는 403 만 버리게 바꾼다.
+- 동 경계 CDN(`geojson_host`)은 `Access-Control-Allow-Origin: *` 라 다른 출처 fetch 가 되지만, `csrf` 헤더를 붙이면 브라우저의
+  사전 확인(OPTIONS)이 403 이다. 그래서 동 경계 요청에서만 `csrf` 를 뺀다 (`_geojson_request`).
+
 ### 매물 목록 (`search listings`)
 
 - 다방 목록은 유형(`one-two`·`house-villa`·`officetel`·`apt`)마다 따로이고 필터 항목도 다르다. **필터 항목이 하나라도 빠지면 400** 으로 빠진 항목을 한국어로 알려 준다. 그래서 유형마다 요청 모델(`DabangOneTwoFiltersModel` 등)을 두고 주지 않은 항목을 '전체' 값(`{min: 0, max: 999999}`, 모든 목록 값)으로 채운다. `zoom`·`useMap=naver` 도 필수다 (`ZOOM_BY_SEARCH_TYPE`: 동 14, 역·대학 15, 지도 16).

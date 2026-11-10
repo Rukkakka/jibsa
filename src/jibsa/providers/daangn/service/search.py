@@ -1130,11 +1130,6 @@ def search_area(
     conditions = conditions or DaangnListingConditions()
     property_filter = conditions.property_filter
 
-    # 동 이름은 결과 표시와 시·도 채우기에만 쓰여, 못 찾아도 매물 검색은 할 수 있다. 못 찾은 이유는 notes 로
-    region_notes: list[str] = []
-    if region is None:
-        region = region_or_none(client, lat, lng, notes=region_notes)
-
     response = client.run_request_article_map_points(
         DaangnArticleMapPointsRequestPayloadModel(
             input=DaangnArticleMapPointsInputModel(
@@ -1148,6 +1143,14 @@ def search_area(
         response.data.article_map_points if response.data else None,
         '지도 매물',
     )
+
+    # 동 이름은 결과 표시와 시·도 채우기에만 쓰여, 못 찾아도 매물 검색은 할 수 있다. 못 찾은 이유는 notes 로. 본 조회 뒤에
+    # 묻는다. 먼저 물으면 이 덤 조회가 명령의 첫 요청이 되어, 첫 화면이 5xx·연결 거부면 재시도 3번 끝에 실패를 삼키고 본 조회가
+    # 다시 3번 띄웠다 (2026-11-10 리뷰: Chromium 6번·6.7초)
+    region_notes: list[str] = []
+    if region is None:
+        region = region_or_none(client, lat, lng, notes=region_notes)
+
     nearest = _nearest_points(points, lat, lng)
     # 반경 밖 안내(beyond_radius_notes)와 같은 기준(표시 거리)으로 센다
     total = sum(1 for _, distance in nearest if within_radius(distance, radius_km))

@@ -42,6 +42,7 @@ from jibsa.cli.output import (
     handle_errors,
     split_csv,
 )
+from jibsa.core.browser import install_chromium
 from jibsa.core.errors import JibsaError
 from jibsa.core.ratelimit import state_dir
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -167,6 +168,24 @@ def limits_command(
             },
             pretty,
         )
+
+
+@app.command('install-browser')
+def install_browser_command(
+    pretty: Annotated[
+        bool | None,
+        typer.Option('--pretty/--compact', help='JSON 들여쓰기'),
+    ] = None,
+) -> None:
+    """jibsa 가 사이트에 요청할 때 쓰는 Chromium 을 내려받고 실제로 한 번 띄워 본다.
+
+    jibsa 는 모든 요청을 사이트 첫 화면을 연 Chromium 으로 보낸다. 처음 한 번, 그리고 jibsa 를 업데이트한 뒤
+    실행한다 (이미 있으면 내려받지 않는다). 한 줄 설치 스크립트가 대신 실행한다. 결과(Chromium 버전·실행 파일 경로)는
+    JSON 으로 stdout 에 쓴다. 내려받기 진행은 터미널에서 실행했거나 `jibsa --verbose install-browser` 로 실행했을
+    때만 stderr 에 보인다 (--verbose 는 install-browser 앞에 붙는 전역 옵션이다).
+    """
+    with handle_errors('install-browser'):
+        emit(install_chromium(), pretty)
 
 
 @app.command('guide')

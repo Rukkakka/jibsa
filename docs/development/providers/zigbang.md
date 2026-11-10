@@ -25,6 +25,20 @@
 - `account.zigbang.com` 에서 익명 토큰을 받아야 한다. `ZigbangGuestAuth`(httpx `Auth`)가 첫 요청 때 토큰을 발급하고 401 이면 한 번 재발급한다 (2026-10-11 실측: 지금은 가짜 토큰·토큰 없이도 목록·요약·상세·단지·단기임대가 모두 정상 200 이라 토큰 오류가 빈 결과로 숨지 않는다). sync/async 클라이언트가 같은 `_auth` 인스턴스를 공유한다. `/v2/search` 는 토큰이 필요 없어 `auth=None` 으로 부른다.
 - `x-zigbang-platform: www` 헤더가 없으면 일부 상세가 404 를 준다.
 
+### 브라우저 요청 (2026-11-09 실측)
+
+공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 직방만의 값:
+
+- 첫 화면은 `https://www.zigbang.com/`. 첫 화면이 `apis.zigbang.com` 을 4번 부른다. API 는 모두 다른 출처라 원래 쿠키 없이 응답해
+  기다릴 쿠키가 없다.
+- 세 호스트 모두 `www.zigbang.com` 출처를 CORS 로 허용한다: `apis`·`stay-apis` 는 `*`, `account`(손님 토큰)는 `www.zigbang.com`
+  과 credentials. `Authorization`·`x-zigbang-platform`·`content-type` 헤더도 허용한다. 손님 토큰 발급도 브라우저 fetch 로 나간다.
+- 사전 요청 결과를 기억하라는 헤더(`Access-Control-Max-Age`)가 없어 주소가 다른 요청마다 CORS 사전 요청(OPTIONS)이 따라간다.
+  세지 않으면 서버로 가는 요청이 정책의 2배까지 됐다 (2026-11-10 실측: 검색 2건에 서버 4건, 기록 2건). 사전 요청도 요청 제한에
+  센다 (`count_preflight`).
+- `Access-Control-Expose-Headers` 가 없어 다른 출처 응답의 `Retry-After` 등이 페이지 JS 에 보이지 않는다. 브라우저 `response`
+  이벤트가 받은 전체 헤더로 채운다 (`_to_response`).
+
 ### 원룸·오피스텔·빌라 목록 (`room`)
 
 - 목록은 geohash 타일로 핀(ID·좌표)을 받고 → 가까운 순으로 정렬하고 → 가까운 `--limit` 개만 `items/list` 로 15개씩 요약을 받는 3단계다. 요약에서 뺀 매물은 다시 채우지 않는다.

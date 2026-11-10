@@ -63,11 +63,36 @@
 - 네이버 `real-price` 가 응답 구조 변경으로 `PARSE_ERROR` 를 내던 문제 (#31)
 ```
 
+## 새 Python 지원
+
+jibsa 가 보장하는 Python 은 CI 가 OS 마다 돌려 확인한 버전(지금 3.11~3.14)이다. `pyproject.toml` 의 `requires-python`
+에는 하한(`>=3.11`)만 두고 상한은 두지 않는다. 상한을 두면 새 Python 의 pip·pipx 는 상한이 없던 옛 버전(0.10.0)을 에러
+없이 받고, uv 는 [상한을 아예 보지 않아](https://docs.astral.sh/uv/concepts/resolution/) 막지도 못한다 (2026-11-10 실측:
+uv 0.13.7 은 Python 이 없는 컴퓨터에서 가장 새 3.15 를 받아 `<3.15` 인 버전을 설치). 대신 보장 범위를 문서에 적고, 한 줄 설치
+스크립트가 `uv tool install --python` 으로 그 범위의 Python 을 고른다 (uv 는 이 옵션은 지킨다).
+
+새 Python 이 나오면 한 PR 에서 함께 올려 패치로 배포한다. 출시 후보(rc)가 나오면 1번부터 시작한다.
+
+1. `.github/workflows/ci.yml` 의 pytest 매트릭스 `python` 에 새 버전을 더해 CI 를 통과시킨다.
+2. `pyproject.toml` `classifiers` 의 `Programming Language :: Python :: 3.x` 를 더한다.
+3. 설치 스크립트(`scripts/install/install.sh` 의 `PYTHON_RANGE`, `install.ps1` 의 `$PythonRange`) 상한을 올린다.
+4. README 배지·설치 절과 `docs/install.md` 의 보장 범위를 고치고 `CHANGELOG.md` 에 적는다. install.md 는 준비물의
+   범위(`3.11~3.14`)와 그 안의 `--python 3.14` 예시, 한 줄 설치 표의 `'>=3.11,<3.15'`·`3.11~3.14`, 2절의 `--python 3.14`
+   예시까지 고친다 (3번의 스크립트 범위와 같게).
+
+3.15 는 Linux 에서 의존성 orjson 의 wheel 이 glibc 2.39 이상(`manylinux_2_39`)만 있다 (2026-11-10 PyPI 확인). 그보다 오래된
+배포판(Ubuntu 22.04 등)은 소스 빌드가 필요하니, 3.15 를 올릴 때 이 점을 다시 확인한다.
+
 ## 릴리스 절차
 
 변경이 어느 정도 모이면 릴리스한다. 정해진 주기는 없다. 다만 PyPI 로 설치한 사용자는 릴리스해야 수정을 받으므로,
 사이트 API 변경 대응처럼 조회가 깨진 것을 고친 수정은 머지 뒤 바로 패치를 릴리스한다. git 주소로 설치한 사용자는
 `upgrade` 할 때 `main` 을 바로 받는다.
+
+GitHub 의 README·`docs/` 는 `main` 을 보여 주므로, 머지에서 릴리스까지는 문서에 나온 새 명령·옵션이 PyPI 판에 아직 없다
+(예: 새 명령을 PyPI 판에서 부르면 `INVALID_ARGUMENT`). 이 차이는 의도된 것이라 문서에 버전을 따로 적지 않는다. PyPI
+프로젝트 페이지의 README 는 릴리스 때 올린 판이라 그 버전과 맞다. 한 줄 설치 스크립트는 `main` 에서 바로 받으므로 새 명령이
+없는 PyPI 판도 다룬다 (예: `install-browser` 가 없으면 건너뛴다).
 
 1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([workflow.md](workflow.md)).
 2. 한 커밋으로 아래 두 가지를 바꾼다.

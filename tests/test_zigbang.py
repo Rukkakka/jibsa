@@ -155,7 +155,7 @@ def test_guest_token_refreshes_on_401() -> None:
             return httpx.Response(401)
         return httpx.Response(200, json=load('items_onerooms_v1'))
 
-    auth = ZigbangGuestAuth(token_url='https://account.zigbang.com/v2/unauth/token', user_agent='t', token='old')
+    auth = ZigbangGuestAuth(token_url='https://account.zigbang.com/v2/unauth/token', token='old')
     with httpx.Client(transport=httpx.MockTransport(handler), auth=auth) as http:
         response = http.get('https://apis.zigbang.com/house/property/v1/items/onerooms')
     assert response.status_code == 200

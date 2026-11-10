@@ -1,6 +1,7 @@
-# PR 마다 린트·타입 검사·전체 pytest·설치본을 확인한다. 배포(release.yml)도 이 워크플로를 불러 모든 검사를 통과한 빌드만
-# 올린다. 매주 월요일 새벽에도 모든 검사를 돌린다. 우리 코드가 그대로여도 의존성 새 버전과 GitHub 러너 이미지가 바뀌어
-# 깨질 수 있어서다 (실패하면 GitHub 이 메일로 알린다). main 보호 규칙의 필수 검사는 마지막 'CI 결과' 잡 하나다. 다른 잡 이름이나 pytest 매트릭스를 바꿔도
+# PR 마다 린트·타입 검사·전체 pytest·설치본을 확인하고, 브라우저·설치에 관련된 파일이 바뀌었으면 세 운영체제에서 한 줄 설치
+# 스크립트로 설치해 브라우저까지 확인한다 ('브라우저 확인'). 배포(release.yml)도 이 워크플로를 불러 모든 검사를 통과한 빌드만
+# 올린다. 매주 월요일 새벽에도 모든 검사를 돌린다. 우리 코드가 그대로여도 Chromium·의존성 새 버전과 GitHub 러너 이미지가
+# 바뀌어 깨질 수 있어서다 (실패하면 GitHub 이 메일로 알린다). main 보호 규칙의 필수 검사는 마지막 'CI 결과' 잡 하나다. 다른 잡 이름이나 pytest 매트릭스를 바꿔도
 # 보호 규칙은 그대로 둔다. 잡을 더하면 'CI 결과' 의 needs 에 넣는다.
 # 문서만 바뀐 PR 은 pytest 를 건너뛴다 ('바뀐 파일 분류'). 테스트는 문서를 읽지 않고, 문서는 린트(docs/llm.md 200줄)와
 # 설치본 확인(guide 사본·README 렌더링)이 본다. 건너뛴 매트릭스 잡은 OS·버전별 이름으로 결과를 남기지 않아, 그 이름들을 필수
@@ -32,6 +33,8 @@ jobs:
     outputs:
       # 문서가 아닌 파일이 바뀌었으면 'true'. pytest 를 돌릴지 정한다
       code: ${{ steps.classify.outputs.code }}
+      # 브라우저·설치에 관련된 파일이 바뀌었으면 'true'. 세 운영체제 브라우저 확인을 돌릴지 정한다
+      browser: ${{ steps.classify.outputs.browser }}
     steps:
       # PR 실행은 PR 을 최신 main 에 합친 커밋에서 돈다. 그 첫 부모(main)와 비교하려고 부모까지 받는다
       - uses: actions/checkout@v7
@@ -41,11 +44,15 @@ jobs:
         env:
           # 문서로 보는 파일: docs/ 아래 전부, 맨 위 .md(README·CHANGELOG·AGENTS 등), LICENSE, 이슈·PR 템플릿
           DOC_PATTERN: '^(docs/|[^/]+\.md$|LICENSE$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$)'
+          # 브라우저 확인을 돌릴 파일: 브라우저 계층(core/), install-browser 명령(cli/app.py), 설치 스크립트, 확인 스크립트,
+          # 의존성(patchright·scrapling 버전), 이 워크플로
+          BROWSER_PATTERN: '^(src/jibsa/core/|src/jibsa/cli/app\.py$|scripts/install/|scripts/ci/|pyproject\.toml$|\.github/workflows/ci\.yml$)'
         run: |
           # PR 이 아닌 실행(release.yml 이 부름, 매주, 수동)이나 합친 커밋이 아니면 모두 검사한다
           if [ "$GITHUB_EVENT_NAME" != pull_request ] || ! git rev-parse -q --verify HEAD^2 > /dev/null; then
             echo "PR 합친 커밋이 아니라 모두 검사합니다"
             echo code=true >> "$GITHUB_OUTPUT"
+            echo browser=true >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # --no-renames: 옮긴 파일의 옛 경로도 본다. 새 경로만 보면 src/ 에서 docs/ 로 옮긴 PR 이 문서만 바뀐 것이 된다
@@ -58,6 +65,12 @@ jobs:
           else
             echo "문서만 바뀌어 pytest 를 건너뜁니다"
             echo code=false >> "$GITHUB_OUTPUT"
+          fi
+          if printf '%s\n' "$changed" | grep -qE "$BROWSER_PATTERN"; then
+            echo browser=true >> "$GITHUB_OUTPUT"
+          else
+            echo "브라우저·설치 관련 파일이 바뀌지 않아 브라우저 확인을 건너뜁니다"
+            echo browser=false >> "$GITHUB_OUTPUT"
           fi
 
   lint:
@@ -91,8 +104,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # 지원하는 가장 낮은 버전과 최신 안정 버전
-        python: ['3.11', '3.14']
+        # 지원하는 모든 버전을 OS 마다 돌린다. greenlet·lxml·orjson·pydantic-core 는 OS·버전마다 따로 빌드된 파일로 설치돼
+        # 어느 조합만 설치가 깨질 수 있어서다 (2026-11-10 결정). 공개 저장소라 실행 시간은 무료이고 잡이 동시에 돌아 기다림은
+        # 가장 느린 잡(Windows 약 1분) 정도다. 새 Python 을 지원하면 여기에 더한다
+        python: ['3.11', '3.12', '3.13', '3.14']
     env:
       # README 의 Windows 설정(setx PYTHONUTF8 1)과 같게 한다. macOS·Linux 는 원래 UTF-8 이다
       PYTHONUTF8: '1'
@@ -135,11 +150,71 @@ jobs:
           name: dist
           path: dist/
 
+  # 사용자처럼 한 줄 설치 스크립트로 이 커밋의 코드를 설치하고(uv·jibsa·Chromium), 설치된 jibsa 로 가짜 사이트를 열어
+  # 브라우저 요청·남긴 쿠키·막힌 응답(CORS 없는 429) 알아보기·Ctrl+C·프로세스 정리를 확인한다 (scripts/ci/browser_check.py). pytest 는 Chromium 을 띄우지 않아
+  # 운영체제마다 달라지는 브라우저 쪽은 여기서만 본다. 실제 사이트에는 요청하지 않는다. 설치 스크립트는 사용자가 main 의 파일을
+  # 바로 받아 실행하므로 머지 전에 여기서 확인한다 (AGENTS.md '문서 갱신')
+  browser:
+    name: 브라우저 확인 (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.browser == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # 설치 스크립트가 사용자 환경 변수로 켜는 값이지만 다음 단계 프로세스에는 이어지지 않는다 (Windows 한글 출력용)
+      PYTHONUTF8: '1'
+      # PyPI 대신 이 커밋의 코드를 설치한다
+      JIBSA_INSTALL_SPEC: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: 설치 스크립트 실행 (macOS·Linux)
+        if: runner.os != 'Windows'
+        run: sh scripts/install/install.sh
+      # 사용자처럼 Windows PowerShell 5.1 에서 내용을 그대로 실행한다 (irm | iex). 5.1 은 BOM 없는 파일을 ANSI 로 읽어 UTF-8 로 읽는다.
+      # GitHub 은 powershell 단계 앞에 $ErrorActionPreference = 'stop' 을 붙이지만 사용자 창의 기본값은 Continue 라 되돌린다
+      # (Stop 이면 5.1 이 2>·*> 로 돌린 외부 명령의 stderr 줄을 예외로 바꿔, 사용자에게는 없는 실패가 CI 에만 날 수 있다).
+      # 스크립트는 실패하면 exit 대신 $LASTEXITCODE 를 1 로 남기고, GitHub 이 붙이는 exit $LASTEXITCODE 로 이 단계가 실패한다
+      - name: 설치 스크립트 실행 (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Invoke-Expression (Get-Content -Raw -Encoding UTF8 scripts/install/install.ps1)
+      # 스크립트가 넣은 PATH 는 다음 단계에 이어지지 않아 uv 로 jibsa 와 그 Python 의 위치를 찾는다. browser_check 를
+      # install-browser 보다 먼저 돌려, 설치 스크립트가 Chromium 을 받아 두었어야 통과하게 한다 (먼저 다시 받으면 스크립트의
+      # Chromium 단계가 건너뛰었거나 실패했어도 가려졌다, 2026-11-10 리뷰). install-browser 는 그 뒤 이미 있을 때 건너뛰는지 본다
+      - name: 설치된 jibsa 로 브라우저 확인 (macOS·Linux)
+        if: runner.os != 'Windows'
+        run: |
+          uv=$(command -v uv || echo "$HOME/.local/bin/uv")
+          jibsa="$("$uv" tool dir --bin)/jibsa"
+          "$jibsa" --version
+          "$("$uv" tool dir)/jibsa/bin/python" scripts/ci/browser_check.py
+          "$jibsa" install-browser
+      - name: 설치된 jibsa 로 브라우저 확인 (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $uv = (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Path
+          if (-not $uv) { $uv = Join-Path $HOME '.local\bin\uv.exe' }
+          $jibsa = Join-Path (& $uv tool dir --bin | Select-Object -Last 1).Trim() 'jibsa.exe'
+          $python = Join-Path (& $uv tool dir | Select-Object -Last 1).Trim() 'jibsa\Scripts\python.exe'
+          & $jibsa --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $python scripts/ci/browser_check.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $jibsa install-browser
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
   # main 보호 규칙의 필수 검사. 스스로는 검사하지 않고 위 잡들의 결과만 본다: 실패·취소가 하나라도 있으면 실패, 통과·건너뜀뿐이면
   # 통과. 앞 잡이 실패해도 돌도록 always() 를 쓴다 (없으면 이 잡이 건너뜀이 되어 통과로 쳐진다)
   result:
     name: CI 결과
-    needs: [changes, lint, test, package]
+    needs: [changes, lint, test, package, browser]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -147,7 +222,7 @@ jobs:
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "바뀐 파일 분류·린트·pytest·설치본: $RESULTS"
+          echo "바뀐 파일 분류·린트·pytest·설치본·브라우저 확인: $RESULTS"
           case " $RESULTS " in
             *' failure '*|*' cancelled '*) echo "::error::실패하거나 취소된 잡이 있습니다"; exit 1 ;;
           esac

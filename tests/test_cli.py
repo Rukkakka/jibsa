@@ -13,6 +13,7 @@ from jibsa.cli.app import (
     joined_options_arg,
     run,
 )
+from jibsa.core.browser import BrowserTransport
 
 
 def stderr_error(capsys: pytest.CaptureFixture[str]) -> dict:
@@ -224,12 +225,12 @@ def test_manwon_text(value: int, text: str) -> None:
 
 
 def fake_upstream(monkeypatch: pytest.MonkeyPatch, response: httpx.Response) -> None:
-    """모든 실제 HTTP 전송을 `response` 로 바꾼다."""
-    def handle_request(self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
+    """모든 실제 전송(브라우저 fetch)을 `response` 로 바꾼다. 브라우저를 띄우지 않는다."""
+    def handle_request(self: BrowserTransport, request: httpx.Request) -> httpx.Response:
         response.request = request
         return response
 
-    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', handle_request)
+    monkeypatch.setattr(BrowserTransport, 'handle_request', handle_request)
 
 
 def test_non_json_response_is_parse_error(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -313,6 +314,7 @@ def test_daangn_geocode_falls_back_to_naver_when_zigbang_blocked(monkeypatch: py
     import jibsa.cli.daangn as daangn_cli
     from jibsa.core.errors import RegionNotFoundError
     from jibsa.core.ratelimit import RateLimitedError
+    from jibsa.providers.daangn.api.client import DaangnClient
     from jibsa.providers.naver.service.region import NaverRegion
 
     # 실제 함수처럼 radius_km 는 키워드로만 받는다. 위치 인자로 부르면 TypeError 라 그 실수를 잡는다
@@ -331,13 +333,13 @@ def test_daangn_geocode_falls_back_to_naver_when_zigbang_blocked(monkeypatch: py
     monkeypatch.setattr(daangn_cli, 'resolve_region_with_notes', zigbang)
     monkeypatch.setattr(daangn_cli, 'resolve_naver_region', naver_region)
     if naver == 'found':
-        region, notes, finder = daangn_cli._geocode('역삼역', 1.0)
+        region, notes, finder = daangn_cli._geocode(DaangnClient(), '역삼역', 1.0)
         assert (region.lat, region.lng, finder) == (37.5006, 127.0364, '네이버')
         assert notes == ["[실패] 직방이 요청 제한으로 막혀 있어 '역삼역' 위치를 네이버 지역 검색으로 찾았습니다"]
         return
     # 네이버로도 못 찾으면 막힌 직방의 에러에, 지금 되는 방법(당근 동 이름, 좌표)을 안내한다
     with pytest.raises(RateLimitedError) as exc:
-        daangn_cli._geocode('서울대학교', 1.0)
+        daangn_cli._geocode(DaangnClient(), '서울대학교', 1.0)
     assert exc.value.details['source'] == 'zigbang'
     assert ('네이버도 막혀' if naver == 'blocked' else '네이버 지역 검색으로는 찾지 못했습니다') in exc.value.hint
     assert '당근 동 이름' in exc.value.hint and '어느 소스로도' not in exc.value.hint

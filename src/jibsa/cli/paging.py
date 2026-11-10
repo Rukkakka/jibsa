@@ -15,7 +15,6 @@
 """
 import hashlib
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -27,6 +26,7 @@ from jibsa.cli.output import HintedBadParameter
 from jibsa.core.ratelimit import (
     StateDirError,
     state_dir,
+    write_text_atomic,
 )
 
 from typing import (
@@ -136,13 +136,10 @@ def encode_next(position: dict[str, Any] | None) -> str | None:
     )
     token = hashlib.sha256(raw.encode()).hexdigest()[:TOKEN_LENGTH]
     directory = _directory()
-    path = directory / f'{token}.json'
-    tmp = directory / f'{token}.{os.getpid()}.tmp'
     try:
         directory.mkdir(parents=True, exist_ok=True)
         _prune(directory, time.time())
-        tmp.write_text(raw, encoding='utf-8')
-        tmp.replace(path)
+        write_text_atomic(directory / f'{token}.json', raw)
     except OSError as exc:
         raise StateDirError(state_dir(), exc) from exc
     return token

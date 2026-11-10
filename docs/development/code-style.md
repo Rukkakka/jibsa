@@ -183,4 +183,6 @@ async 변형은 `Async variant of ...` 한 줄로 쓴다. 비공개 헬퍼는 �
 - 테스트 함수 이름은 동작을 영어 문장으로: `test_closed_items_are_excluded`.
 - HTTP 는 `httpx.MockTransport` 로 가짜 응답. 이미 만든 client 에 끼울 때는
   `client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=...)`.
+  CLI 를 통째로 돌릴 때는 `BrowserTransport.handle_request` 를 바꿔 끼운다 (`tests/test_cli.py` 의 `fake_upstream`).
+  테스트는 브라우저를 띄우지 않는다. 띄우려 하면 `tests/conftest.py` 의 `no_real_browser` 가 실패시킨다 (CI 에는 Chromium 이 없다).
 - 서비스 조합은 `monkeypatch.setattr('jibsa.cli.naver.get_complex', fake)` 처럼 바꿔 끼운다.

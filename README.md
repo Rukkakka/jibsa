@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/jibsa/"><img src="https://img.shields.io/pypi/v/jibsa" alt="PyPI"></a>
-  <a href="https://pypi.org/project/jibsa/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+"></a>
+  <a href="https://pypi.org/project/jibsa/"><img src="https://img.shields.io/badge/python-3.11--3.14-blue" alt="Python 3.11–3.14"></a>
   <a href="https://github.com/Rukkakka/jibsa/actions/workflows/ci.yml"><img src="https://github.com/Rukkakka/jibsa/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/Rukkakka/jibsa/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
@@ -111,7 +111,7 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
 
 ## 설치
 
-**처음이면 설치 스크립트 한 줄로 끝난다.** uv(설치 도구)·jibsa 설치, PATH 등록, Windows 한글 출력 설정, Codex·Claude Code 지침 한 줄까지 한 번에 한다. 다시 실행하면 jibsa 를 최신 버전으로 올린다.
+**처음이면 설치 스크립트 한 줄로 끝난다.** uv(설치 도구)·jibsa 설치, PATH 등록, Windows 한글 출력 설정, jibsa 가 요청을 보낼 브라우저(Chromium) 받기, Codex·Claude Code 지침 한 줄까지 한 번에 한다. 다시 실행하면 jibsa 를 최신 버전으로 올린다.
 
 ```powershell
 # Windows: 시작 메뉴에서 PowerShell 을 열어 (cmd 아님) 붙여 넣는다. 끝나면 그 창에서 바로 쓸 수 있다
@@ -125,7 +125,7 @@ curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install
 
 스크립트가 하는 일과 설치 뒤 에이전트에서 쓸 때 주의할 점은 [설치 문서의 한 줄 설치](https://github.com/Rukkakka/jibsa/blob/main/docs/install.md#한-줄-설치)에 있다.
 
-직접 설치하려면 Python 3.11 이상이 필요하고 (uv 로 설치하면 없어도 된다), macOS·Linux·Windows 에서 쓸 수 있다. 셋 중 하나만 하면 된다.
+jibsa 는 현재 Python 3.11~3.14 만 보장한다 (CI 가 macOS·Linux·Windows 에서 확인한 버전, 3.15 는 확인 전). 직접 설치하려면 이 범위의 Python 이 필요하고 (uv 로 설치하면 없어도 된다. 다만 uv 는 Python 이 없으면 가장 새 버전을 받으니 `uv tool install --python 3.14 jibsa` 처럼 고른다), 셋 중 하나만 하면 된다.
 
 | 방법 | 설치 | 업데이트 |
 | --- | --- | --- |
@@ -134,11 +134,14 @@ curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install
 | pip + 가상환경 | `python3 -m venv ~/.venvs/jibsa && ~/.venvs/jibsa/bin/pip install jibsa` | `~/.venvs/jibsa/bin/pip install -U jibsa` |
 
 ```bash
-jibsa --help      # 명령 목록이 나오면 성공
-jibsa limits      # 요청 제한 상태 JSON. 네트워크 요청은 보내지 않는다
+jibsa install-browser   # 요청을 보낼 Chromium 을 받는다. 처음과 업데이트 뒤에 한 번 (설치 스크립트는 대신 한다)
+jibsa --help            # 명령 목록이 나오면 성공
+jibsa limits            # 요청 제한 상태 JSON. 네트워크 요청은 보내지 않는다
 ```
 
-설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 로 부른다. 아직 릴리스하지 않은 최신 수정은 `uv tool install git+https://github.com/Rukkakka/jibsa` 로 받는다.
+jibsa 는 사이트 화면을 실제로 연 Chromium 으로 요청해, 헤더·쿠키·TLS 가 일반 브라우저와 같다. Chromium 은 Windows·macOS·Ubuntu·Debian 계열 리눅스에서 돈다.
+
+설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 로 부른다. 실제 조회는 Chromium 이 있어야 해서 먼저 `uvx jibsa install-browser` 를 한 번 실행한다. 아직 릴리스하지 않은 최신 수정은 `uv tool install git+https://github.com/Rukkakka/jibsa` 로 받는다.
 
 **준비물(Python·git) 설치, Windows·PowerShell 명령, `command not found` 일 때 PATH 설정, 특정 버전 설치, 삭제**는 [설치 문서](https://github.com/Rukkakka/jibsa/blob/main/docs/install.md)에 있다. 버전마다 바뀐 점은 [변경 기록](https://github.com/Rukkakka/jibsa/blob/main/CHANGELOG.md)에 있다.
 
@@ -158,7 +161,7 @@ jibsa limits      # 요청 제한 상태 JSON. 네트워크 요청은 보내지 
 
 | 환경 변수 | 하는 일 |
 | --- | --- |
-| `JIBSA_STATE_DIR` | 요청 제한 상태와 매물 검색 이어 받기 표를 둘 디렉터리. 기본은 `~/.cache/jibsa`. 기본 위치에 쓸 수 없는 환경(샌드박스 등)이면 쓸 수 있는 폴더로 바꾼다 |
+| `JIBSA_STATE_DIR` | 요청 제한 상태, 매물 검색 이어 받기 표, 사이트가 브라우저에 심은 쿠키를 둘 디렉터리. 기본은 `~/.cache/jibsa`. 기본 위치에 쓸 수 없는 환경(샌드박스 등)이면 쓸 수 있는 폴더로 바꾼다 |
 | `XDG_CACHE_HOME` | 설정해 두었으면 그 아래 `jibsa` 를 쓴다 (`JIBSA_STATE_DIR` 이 우선) |
 | `PYTHONUTF8` | Windows 에서 `1` 로 설정한다 (아래) |
 

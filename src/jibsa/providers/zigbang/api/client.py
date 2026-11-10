@@ -142,7 +142,6 @@ class ZigbangGuestAuth(Auth):
 
     Args:
         token_url: 익명 토큰 발급 URL.
-        user_agent: 토큰 발급 요청에 쓸 `User-Agent`.
         token: 이미 가진 토큰. None 이면 첫 요청 때 발급한다. Defaults to None.
     """
 
@@ -151,20 +150,18 @@ class ZigbangGuestAuth(Auth):
     def __init__(
         self,
         token_url: str,
-        user_agent: str,
         token: str | None = None
     ) -> None:
         self._token_url = token_url
-        self._user_agent = user_agent
         self._token = token
 
     def _token_request(self) -> Request:
         return Request(
             method='POST',
             url=self._token_url,
+            # UA 는 브라우저가 붙인다 (`core/browser.py`)
             headers={
                 'Accept': 'application/json',
-                'User-Agent': self._user_agent,
             },
         )
 
@@ -266,6 +263,11 @@ class ZigbangClient(BaseHTTPClient):
         'cooldown': 120,
     }
 
+    browser_entry_url: ClassVar[str] = 'https://www.zigbang.com/'
+    # 직방 API 는 다른 출처(apis·stay-apis·account)라 원래 쿠키 없이 응답해 기다릴 쿠키가 없다. 세 호스트 모두
+    # www.zigbang.com 에서 부르는 것을 CORS 로 허용한다 (2026-11-09 실측: 첫 화면이 apis 를 4번 부른다)
+    browser_ready_cookie: ClassVar[str | None] = None
+
     host: str = 'apis.zigbang.com'
 
     account_host: str = 'account.zigbang.com'
@@ -285,6 +287,11 @@ class ZigbangClient(BaseHTTPClient):
         )
 
     @property
+    def browser_api_hosts(self) -> frozenset[str]:
+        # 첫 화면(www.zigbang.com)이 부르는 API 호스트. 세 호스트 모두 www.zigbang.com 출처를 CORS 로 허용한다
+        return frozenset({self.host, self.stay_host, self.account_host})
+
+    @property
     def stay_base_url(self) -> str:
         return create_base_url(
             schema=self.url_schema,
@@ -300,11 +307,9 @@ class ZigbangClient(BaseHTTPClient):
 
     @property
     def base_header(self) -> dict[str, str]:
+        # UA·Origin·Referer 는 브라우저가 연 첫 화면(www.zigbang.com) 기준으로 붙인다 (`core/browser.py`)
         return {
             'Accept': 'application/json',
-            'User-Agent': self.user_agent,
-            'Origin': 'https://www.zigbang.com',
-            'Referer': 'https://www.zigbang.com/',
             # 없으면 일부 매물(오피스텔 등) 상세가 "x-zigbang-platform 를 확인해 주세요" 404 를 준다.
             'x-zigbang-platform': 'www',
         }
@@ -314,20 +319,19 @@ class ZigbangClient(BaseHTTPClient):
         # sync/async 클라이언트가 같은 토큰을 공유한다.
         return ZigbangGuestAuth(
             token_url=self.token_url,
-            user_agent=self.user_agent,
             token=self.token
         )
 
     @cached_property
     def _client(self) -> Client:
+        # 프록시는 브라우저가 쓴다. httpx 에 프록시를 넘기면 그 mount 가 transport 를 건너뛴다
         return Client(
             base_url=self.base_url,
             headers=self.base_header,
             auth=self._auth,
             event_hooks=self.rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.browser_transport()
         )
 
     @cached_property
@@ -337,9 +341,8 @@ class ZigbangClient(BaseHTTPClient):
             headers=self.base_header,
             auth=self._auth,
             event_hooks=self.async_rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.async_browser_transport()
         )
 
     @zigbang_retry

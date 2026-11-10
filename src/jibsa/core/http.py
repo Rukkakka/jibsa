@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -40,6 +41,11 @@ from pydantic import (
 )
 from tenacity import RetryCallState
 
+from jibsa.core.browser import (
+    DISCARD_STATE_STATUSES,
+    AsyncBrowserTransport,
+    BrowserTransport,
+)
 from jibsa.core.ratelimit import (
     RateLimiter,
     RateLimitPolicy,
@@ -47,6 +53,7 @@ from jibsa.core.ratelimit import (
 
 from typing import (
     Annotated,
+    Any,
     ClassVar,
     Literal,
     TypeVar,
@@ -54,11 +61,6 @@ from typing import (
 
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_USER_AGENT: str = (
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'
-)
 
 # 덤 조회(부가 정보·주소 다듬기 등)가 실패해도 주된 결과는 돌려줄 때 세 소스가 공통으로 잡는 실패: 재시도 뒤에도 남은
 # HTTP 오류·timeout·연결 오류(HTTPError)와 응답 모양이 바뀐 경우(ValueError: JSON·UTF-8 해석 실패, pydantic
@@ -315,11 +317,15 @@ class BaseHTTPClient(BaseModel, ABC):
     `host` and build `_client` / `_async_client` with ``@cached_property``.
 
     Args:
-        url_schema: URL scheme used to build `base_url`. Defaults to 'https'.
-        verify: TLS certificate verification flag. Defaults to True.
-        proxy: Optional proxy URL. Defaults to None.
-        timeout: Request timeout in seconds. Defaults to 20.
-        user_agent: `User-Agent` header value. Defaults to a desktop Chrome UA.
+        url_schema: `base_url` 의 스킴. 요청은 https 첫 화면을 연 브라우저가 보내 http 요청은 브라우저가 혼합 콘텐츠로
+            막으므로 'https' 만 받는다. 서브클래스의 호스트 필드(`host` 등)를 바꾸면 `browser_api_hosts`·
+            `browser_no_cors_hosts` 는 따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 첫 화면 탭에서 보내는
+            호스트를 다른 출처로 바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다. Defaults to 'https'.
+        verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
+            내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
+        proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
+        timeout: 브라우저 요청 하나가 끝나야 하는 시간(초). httpx 처럼 연결·읽기 단계마다가 아니라 연결부터 본문 끝까지
+            전체다 (`core.browser._fetch_arguments`). Defaults to 20.
         rate_limit: 프로세스 간 공유 요청 제한 정책. None 이면 클래스의
             `default_rate_limit` 을 쓴다. Defaults to None.
 
@@ -329,16 +335,27 @@ class BaseHTTPClient(BaseModel, ABC):
         rate_limiter: `source_name` 과 정책으로 만든 `RateLimiter`. 서브클래스는
             `rate_limit_hooks()` / `async_rate_limit_hooks()` 를 httpx 클라이언트의
             `event_hooks` 로 넘긴다.
+        browser_entry_url: 브라우저가 처음 열 사이트 화면 (서브클래스가 지정). 서브클래스는
+            `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다.
+        browser_ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
+        browser_api_hosts: 첫 화면이 보낸 요청을 요청 제한에 셀 사이트 API 호스트. 비면 `browser_entry_url` 의 호스트.
+            호스트 필드에서 만드는 property 라, 호스트 필드를 바꿔도 맞는다 (서브클래스가 덮어쓴다).
+        browser_discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태.
+        browser_no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않아 그 호스트 주소의 빈 탭에서 보낼 호스트.
+            `browser_api_hosts` 처럼 호스트 필드에서 만드는 property 다.
     """
 
     source_name: ClassVar[str] = 'default'
     default_rate_limit: ClassVar[dict[str, object]] = {}
+    browser_entry_url: ClassVar[str] = ''
+    browser_ready_cookie: ClassVar[str | None] = None
+    browser_discard_statuses: ClassVar[frozenset[int]] = DISCARD_STATE_STATUSES
 
     model_config = ConfigDict(
         extra='forbid',
     )
 
-    url_schema: Literal['http', 'https'] = 'https'
+    url_schema: Literal['https'] = 'https'
 
     verify: bool = True
 
@@ -348,8 +365,6 @@ class BaseHTTPClient(BaseModel, ABC):
         int,
         Field(gt=0)
     ] = 20
-
-    user_agent: str = DEFAULT_USER_AGENT
 
     rate_limit: RateLimitPolicy | None = None
 
@@ -366,6 +381,31 @@ class BaseHTTPClient(BaseModel, ABC):
         # 일부러 둔다 (provider-conventions.md '요청 메서드'). 호출부 0건은 죽은 코드가 아니다. 2026-10-11 실측: 세 소스
         # arun_request_* 를 한 번씩 실제로 불러 모두 200 (직방 search_v2, 당근 livable_region_scopes, 네이버 시·도 목록)
         return self.rate_limiter.async_event_hooks()
+
+    @property
+    def browser_api_hosts(self) -> frozenset[str]:
+        # 호스트를 클래스 상수로 따로 적으면 호스트 필드를 바꿨을 때 어긋나 요청이 엉뚱한 탭에서 나간다 (2026-11-09 리뷰)
+        return frozenset()
+
+    @property
+    def browser_no_cors_hosts(self) -> frozenset[str]:
+        return frozenset()
+
+    def _browser_options(self) -> dict[str, Any]:
+        return {
+            'source': self.source_name, 'entry_url': self.browser_entry_url, 'ready_cookie': self.browser_ready_cookie,
+            'api_hosts': self.browser_api_hosts, 'discard_statuses': self.browser_discard_statuses,
+            'no_cors_hosts': self.browser_no_cors_hosts, 'rate_limiter': self.rate_limiter, 'proxy': self.proxy,
+            'verify': self.verify, 'timeout': self.timeout,
+        }
+
+    def browser_transport(self) -> BrowserTransport:
+        """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser.py`). 프록시도 브라우저가 쓴다."""
+        return BrowserTransport(**self._browser_options())
+
+    def async_browser_transport(self) -> AsyncBrowserTransport:
+        """`browser_transport()` 의 비동기판."""
+        return AsyncBrowserTransport(**self._browser_options())
 
     @property
     @abstractmethod
@@ -400,13 +440,13 @@ class BaseHTTPClient(BaseModel, ABC):
 
     async def aclose(self) -> None:
         """
-        Close the async client and, since a sync close is safe to call from
-        async code, the sync client too.
+        Close the async client and the sync client too. 동기 클라이언트의 브라우저는 브라우저 스레드가 앞의 일(첫 화면이면 최대
+        40초)을 마친 뒤 닫아(`core/browser.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
         """
         async_client: AsyncClient | None = self.__dict__.pop('_async_client', None)
         if async_client is not None:
             await async_client.aclose()
-        self.close()
+        await asyncio.to_thread(self.close)
 
     def __enter__(self: _T) -> _T:
         return self

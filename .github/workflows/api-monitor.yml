@@ -43,6 +43,10 @@ jobs:
           cache-dependency-path: pyproject.toml
       # PyPI 릴리스가 아니라 이 커밋의 코드를 본다
       - run: pip install .
+      # jibsa 는 모든 요청을 사이트 첫 화면을 연 Chromium 으로 보낸다 (core/browser.py). 러너는 비밀번호 없이 sudo 가 되어
+      # Chromium 이 쓰는 시스템 라이브러리도 깐다. install-browser 는 받은 Chromium 을 한 번 띄워 확인까지 한다
+      - run: sudo "$(command -v python)" -m patchright install-deps chromium
+      - run: python -m jibsa install-browser
       - run: python scripts/monitor/api_check.py run ${{ matrix.group }} --out result-${{ matrix.group }}.json
       - uses: actions/upload-artifact@v7
         with:
