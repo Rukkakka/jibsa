@@ -40,7 +40,7 @@ macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른
 | 단계 | 하는 일 |
 |---|---|
 | uv | 없으면 설치한다. Python 이 없어도 uv 가 알아서 받는다 |
-| jibsa | `uv tool install --upgrade jibsa` |
+| jibsa | `uv tool install --upgrade --python '>=3.11,<3.15' jibsa`. 보장 범위(3.11~3.14)의 Python 이 있으면 그것을 쓰고, 없으면 uv 가 그 범위에서 받는다 |
 | PATH | jibsa 가 든 폴더(`~/.local/bin`, Windows 는 `C:\Users\<이름>\.local\bin`)를 사용자 PATH 에 넣는다. Windows 는 지금 창에도 넣는다 |
 | 한글 출력 | Windows 만. 사용자 환경 변수 `PYTHONUTF8=1` 을 설정한다 ([왜 필요한가](../README.md#windows-에서-쓸-때)) |
 | 브라우저 | `jibsa install-browser` 로 jibsa 가 요청을 보낼 Chromium(내려받기 약 170MB, 풀면 약 400MB)을 받고 한 번 띄워 본다. 이미 있으면 건너뛴다. 리눅스에서 시스템 라이브러리가 없다고 멈추면 안내된 `sudo … install-deps chromium` 을 실행하고 스크립트를 다시 실행한다 |
@@ -54,7 +54,7 @@ macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른
 
 ## 1. 준비물
 
-- **Python 3.11 이상** — 아래 A(uv)로 설치하면 없어도 된다. uv 가 알아서 받아 쓴다
+- **Python 3.11~3.14** — jibsa 가 현재 보장하는 범위다 (CI 가 세 운영체제에서 확인한 버전, 3.15 는 확인 전). 아래 A(uv)로 설치하면 없어도 된다. uv 가 받아 쓰는데, Python 이 없으면 가장 새 버전을 받으니 `--python 3.14` 를 붙여 범위 안에서 고른다 (한 줄 설치 스크립트는 알아서 고른다)
 - **Chromium** — jibsa 는 모든 요청을 사이트 화면을 연 Chromium 으로 보낸다. 설치 스크립트가 받아 준다. 다른 방법으로 설치했으면 설치 뒤 `jibsa install-browser` 를 한 번 실행한다 (사용자 폴더에 받아 관리자 권한이 필요 없다). Windows·macOS·Ubuntu·Debian 계열 리눅스에서 돈다. Alpine 처럼 다른 C 라이브러리를 쓰는 배포판에서는 돌지 않는다. 리눅스에서 시스템 라이브러리가 없다고 하면 안내된 `sudo … -m patchright install-deps chromium` 을 한 번 실행한다
 - **git** — PyPI 로 설치하면 필요 없다. 아직 릴리스하지 않은 최신 수정을 GitHub 에서 받을 때만 쓴다
 - 로그인·API 키는 필요 없다
@@ -93,7 +93,7 @@ uv tool install jibsa
 uv tool update-shell     # ~/.local/bin 을 PATH 에 추가 (처음 한 번). 새 터미널을 연다
 ```
 
-uv 는 Python 3.11 이 없으면 알아서 받아 쓴다. 설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 처럼 `uvx` 로 부른다. 실제 조회는 Chromium 이 있어야 해서 먼저 `uvx jibsa install-browser` 를 한 번 실행한다 (에러 `hint` 의 `jibsa install-browser` 도 앞에 `uvx` 를 붙여 실행한다).
+uv 는 Python 3.11 이상이 없으면 알아서 받아 쓴다. 이때 가장 새 버전(보장 범위 밖일 수 있다)을 받으니 `uv tool install --python 3.14 jibsa` 처럼 고른다. 설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 처럼 `uvx` 로 부른다. 실제 조회는 Chromium 이 있어야 해서 먼저 `uvx jibsa install-browser` 를 한 번 실행한다 (에러 `hint` 의 `jibsa install-browser` 도 앞에 `uvx` 를 붙여 실행한다).
 
 **B. pipx**
 

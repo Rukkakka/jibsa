@@ -19,6 +19,10 @@ set -eu
 
 ISSUES='https://github.com/Rukkakka/jibsa/issues'
 AGENT_LINE='집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.'
+# jibsa 가 지금 보장하는 Python (CI 가 세 운영체제에서 확인한 범위). jibsa 는 requires-python 에 상한을 두지 않고, uv 는
+# 상한이 있어도 보지 않아 Python 이 없는 컴퓨터에서는 가장 새 Python(2026-11 기준 3.15)을 받아 설치했다. 그래서 여기서 범위를
+# 준다. 이미 이 범위의 Python 이 있으면 그것을 쓰고, 없으면 uv 가 범위 안에서 받는다 (docs/development/release.md '새 Python 지원')
+PYTHON_RANGE='>=3.11,<3.15'
 
 step() { printf '\n==> %s\n' "$1"; }
 
@@ -77,7 +81,7 @@ main() {
     fi
 
     step '2/5 jibsa 설치 (이미 있으면 최신 버전으로 올린다)'
-    "$uv" tool install --upgrade "${JIBSA_INSTALL_SPEC:-jibsa}" || fail 'jibsa 를 설치하지 못했다'
+    "$uv" tool install --upgrade --python "$PYTHON_RANGE" "${JIBSA_INSTALL_SPEC:-jibsa}" || fail 'jibsa 를 설치하지 못했다'
 
     step '3/5 PATH 등록'
     bin=$("$uv" tool dir --bin)

@@ -8,6 +8,9 @@ version = '0.10.0'
 description = '부동산 매물·실거래가를 조회하는 LLM 에이전트용 CLI (직방·네이버 부동산·당근부동산·다방)'
 readme = 'README.md'
 license = 'MIT'
+# 상한은 두지 않는다. 두면 새 Python 의 pip 는 상한이 없던 옛 버전을 에러 없이 받고, uv 는 상한을 아예 보지 않는다.
+# 보장하는 버전(CI 가 확인한 3.11~3.14)은 아래 classifiers 와 문서에 적고, 설치 스크립트가 그 범위의 Python 을 고른다
+# (docs/development/release.md '새 Python 지원')
 requires-python = '>=3.11'
 keywords = [
     'real-estate',
@@ -36,6 +39,10 @@ classifiers = [
     'Natural Language :: Korean',
     'Operating System :: OS Independent',
     'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
     'Topic :: Utilities',
 ]
 dependencies = [

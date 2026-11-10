@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/jibsa/"><img src="https://img.shields.io/pypi/v/jibsa" alt="PyPI"></a>
-  <a href="https://pypi.org/project/jibsa/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+"></a>
+  <a href="https://pypi.org/project/jibsa/"><img src="https://img.shields.io/badge/python-3.11--3.14-blue" alt="Python 3.11–3.14"></a>
   <a href="https://github.com/Rukkakka/jibsa/actions/workflows/ci.yml"><img src="https://github.com/Rukkakka/jibsa/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/Rukkakka/jibsa/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
@@ -125,7 +125,7 @@ curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install
 
 스크립트가 하는 일과 설치 뒤 에이전트에서 쓸 때 주의할 점은 [설치 문서의 한 줄 설치](https://github.com/Rukkakka/jibsa/blob/main/docs/install.md#한-줄-설치)에 있다.
 
-직접 설치하려면 Python 3.11 이상이 필요하고 (uv 로 설치하면 없어도 된다), macOS·Linux·Windows 에서 쓸 수 있다. 셋 중 하나만 하면 된다.
+jibsa 는 현재 Python 3.11~3.14 만 보장한다 (CI 가 macOS·Linux·Windows 에서 확인한 버전, 3.15 는 확인 전). 직접 설치하려면 이 범위의 Python 이 필요하고 (uv 로 설치하면 없어도 된다. 다만 uv 는 Python 이 없으면 가장 새 버전을 받으니 `uv tool install --python 3.14 jibsa` 처럼 고른다), 셋 중 하나만 하면 된다.
 
 | 방법 | 설치 | 업데이트 |
 | --- | --- | --- |

@@ -104,8 +104,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # 지원하는 가장 낮은 버전과 최신 안정 버전
-        python: ['3.11', '3.14']
+        # 지원하는 모든 버전을 OS 마다 돌린다. greenlet·lxml·orjson·pydantic-core 는 OS·버전마다 따로 빌드된 파일로 설치돼
+        # 어느 조합만 설치가 깨질 수 있어서다 (2026-11-10 결정). 공개 저장소라 실행 시간은 무료이고 잡이 동시에 돌아 기다림은
+        # 가장 느린 잡(Windows 약 1분) 정도다. 새 Python 을 지원하면 여기에 더한다
+        python: ['3.11', '3.12', '3.13', '3.14']
     env:
       # README 의 Windows 설정(setx PYTHONUTF8 1)과 같게 한다. macOS·Linux 는 원래 UTF-8 이다
       PYTHONUTF8: '1'

@@ -19,6 +19,9 @@
 & {
     $Issues = 'https://github.com/Rukkakka/jibsa/issues'
     $AgentLine = '집을 찾을 때는 jibsa CLI 를 쓴다. 처음 쓰기 전에 `jibsa guide` 를 실행해 읽고 그 규칙을 따른다.'
+    # jibsa 가 지금 보장하는 Python (CI 가 세 운영체제에서 확인한 범위). install.sh 의 PYTHON_RANGE 와 같다. uv 는
+    # requires-python 상한을 보지 않아, Python 이 없는 컴퓨터에서는 가장 새 Python 을 받아 설치했다
+    $PythonRange = '>=3.11,<3.15'
 
     function Write-Step([string]$Text) { Write-Host "`n==> $Text" -ForegroundColor Cyan }
 
@@ -104,7 +107,7 @@
         Write-Step '2/6 jibsa 설치 (이미 있으면 최신 버전으로 올린다)'
         $spec = $env:JIBSA_INSTALL_SPEC
         if (-not $spec) { $spec = 'jibsa' }
-        & $uv tool install --upgrade $spec
+        & $uv tool install --upgrade --python $PythonRange $spec
         if ($LASTEXITCODE -ne 0) {
             throw 'jibsa 를 설치하지 못했다. jibsa 를 쓰고 있는 창(에이전트 포함)이 있으면 닫고 다시 실행한다'
         }
