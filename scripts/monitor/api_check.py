@@ -264,9 +264,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('원룸 상세', ('dabang', 'listing'), ('{room}',), 'id'),
         Step('원룸 역 강남역', DABANG_LISTINGS + ('room',), ('강남역', '--limit', '2'), 'listings'),
         Step('원룸 대학 홍익대학교', DABANG_LISTINGS + ('room',), ('홍익대학교', '--limit', '2'), 'listings'),
+        # 반경을 덮는 사각형으로 받아 반경 밖을 빼고 다시 채우지 않아, --limit 2 는 둘 다 반경 밖인 날 0건이 되어 고장으로
+        # 잡혔다 (2026-11-03·11-10, #189·#193). 다방은 24건씩 주므로 5건으로 늘려도 요청은 1회다
         Step(
             '원룸 좌표 반경 강남역', DABANG_LISTINGS + ('room',),
-            ('--lat', '37.4979', '--lng', '127.0276', '--radius', '0.5', '--limit', '2'), 'listings',
+            ('--lat', '37.4979', '--lng', '127.0276', '--radius', '0.5', '--limit', '5'), 'listings',
         ),
         # '○가' 로 나뉜 동은 동마다 목록을 받아 합친다
         Step(
