@@ -45,6 +45,26 @@ dependencies = [
     # cli 가 typer 에 내장된 click(typer._click)을 쓰는데 0.26 부터 들어 있다. 비공개 경로라 0.x 의 새 마이너 버전에서
     # 옮겨질 수 있어, 새 버전은 확인한 뒤 상한을 올린다
     'typer>=0.26,<0.28',
+    # 모든 요청을 사이트 첫 화면을 연 위장 브라우저 안에서 보낸다 (core/browser.py). 0.x 라 새 마이너 버전은 확인한 뒤
+    # 상한을 올린다. Chromium 은 pip 로 오지 않아 'jibsa install-browser' 로 따로 받는다
+    'scrapling>=0.5,<0.6',
+    # scrapling[fetchers] 대신 그 목록에서 playwright 만 빼고 적는다. scrapling 0.5 는 patchright 만 쓰고 playwright 는
+    # import 하지 않는데, [fetchers] 로 받으면 playwright(설치 141MB)가 같이 깔린다 (2026-11-09 확인). curl_cffi 는
+    # StealthySession 을 import 할 때 불려 뺄 수 없다. scrapling 을 올리면 그 버전의 fetchers 목록과 import 를 다시 확인한다
+    # (매일 API 감시가 날마다 'pip install .' 로 새로 깔아, 0.5.x 가 import 를 바꿔도 다음 날 잡힌다).
+    # 이 항목들은 상한을 두지 않는다 (docs/development/workflow.md 의 상한 규칙의 예외). scrapling 0.5 의 fetchers 목록이
+    # 하한만 두어 그대로 옮겼다. 우리가 상한을 두면 scrapling 0.5.x 가 하한을 올릴 때 함께 설치할 수 없게 된다.
+    # scrapling 자체는 위에서 <0.6 으로 묶어, 새 마이너 버전의 목록은 올릴 때 확인한다
+    'curl_cffi>=0.16.1',
+    'browserforge>=1.2.4',
+    'apify-fingerprint-datapoints>=0.15.0',
+    'msgspec>=0.21.1',
+    'anyio>=4.14.0',
+    'protego>=0.6.2',
+    'click>=8.3.0',
+    # core/browser.py 가 직접 import 한다. 버전마다 맞는 Chromium 빌드가 달라 올리면 Chromium 을 다시 설치해야 하므로,
+    # 확인한 버전으로 묶는다
+    'patchright>=1.64,<1.65',
 ]
 
 [project.optional-dependencies]

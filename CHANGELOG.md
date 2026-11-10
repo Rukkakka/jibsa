@@ -5,9 +5,29 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+### ⚠️ 호환 깨짐
+
+- 모든 조회 명령이 요청을 사이트 화면을 실제로 연 Chromium 으로 보냄. 처음 한 번과 jibsa 를 업데이트한 뒤 `jibsa install-browser` 로 Chromium(내려받기 약 170MB, 풀면 약 400MB)을 받아야 하고, 없으면 `BROWSER_UNAVAILABLE` 로 멈춘다 (설치 스크립트는 대신 받는다). jibsa 패키지도 브라우저 드라이버(patchright) 등이 더해져 설치 크기가 약 200MB 늘어난다. Chromium 이 돌지 않는 환경(Alpine 리눅스 등)에서는 쓸 수 없다. 리눅스에서 시스템 라이브러리가 없다고 하면 안내된 `sudo … install-deps chromium` 을 한 번 실행한다 (#198)
+- 라이브러리로 쓸 때: client 의 `user_agent` 옵션을 뺌. UA 는 브라우저가 맡는다. 넘기면 검증 오류가 나니 지운다. `verify`·`proxy` 는 브라우저가 쓴다. `url_schema` 는 `'https'` 만 받는다 (https 첫 화면에서 보내는 http 요청은 브라우저가 막는다). client 마다 Chromium 을 하나씩 띄우므로 `with`·`close()`(비동기는 `aclose()`)로 닫는다. 닫지 않으면 프로세스가 끝날 때까지 Chromium 이 남는다. 비동기 client 로 동시에 보낸 요청도 차례로 나간다. `timeout` 은 httpx 처럼 연결·읽기 단계마다가 아니라 요청 하나의 연결부터 본문 끝까지 전체 시간이다 (#198)
+- TLS 인증서를 Chromium 이 검사해 `SSL_CERT_FILE`·`SSL_CERT_DIR` 환경 변수를 더 이상 보지 않는다. Chromium 은 내장 목록과 OS 에 설치된 인증서(Windows 인증서 저장소, macOS 키체인, Linux `~/.pki/nssdb`)를 믿으므로, 회사 인증서는 OS 에 설치한다. 인증서를 믿지 못하면 재시도 없이 `NETWORK_ERROR` 이고 `hint` 가 OS 에 설치하라고 안내한다 (#198)
+
 ### 추가
 
+- `jibsa install-browser`: 요청을 보낼 Chromium 을 받고(이미 있으면 건너뜀) 한 번 띄워 본 뒤 버전·경로를 JSON 으로 쓴다. 내려받기 진행은 터미널에서 실행했거나 `jibsa --verbose install-browser` 로 실행했을 때만 보이고, 내려받지 못하면 원인을 에러 JSON 의 `output` 에 싣는다. 설치 스크립트도 이 명령으로 Chromium 을 받는다 (#198)
+- 에러 코드 `BROWSER_UNAVAILABLE`(Chromium 이 없거나 띄우지 못함, 모든 소스가 같이 실패)·`BROWSER_INSTALL_FAILED`(Chromium 을 내려받지 못함) (#198)
+- 에러 JSON 의 `blocked: true`: 사이트 첫 화면이 접속을 막았을 때(401·403·451) 붙는다. 업데이트로 풀리지 않으니 다른 소스를 쓴다 (#198)
 - 설치 스크립트: Windows 는 PowerShell 에서 `irm https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.ps1 | iex`, macOS·Linux 는 `curl -LsSf https://raw.githubusercontent.com/Rukkakka/jibsa/main/scripts/install/install.sh | sh` 한 줄로 uv·jibsa 설치, PATH 등록, Windows 한글 출력 설정(`PYTHONUTF8=1`), Codex·Claude Code 지침 한 줄까지 한다. 다시 실행하면 최신 버전으로 올린다. Windows 에서 uv 를 설치한 창을 새로 열지 않으면 `uv`·`jibsa` 를 못 찾았고, PATH 가 바뀌기 전에 연 창에서 켠 Codex 도 jibsa 를 못 찾았다. Windows 스크립트는 지금 창에도 PATH 를 넣어 그 창에서 바로 쓸 수 있다 (#190)
+
+### 변경
+
+- 요청이 일반 Chrome 과 같은 헤더·쿠키·TLS 로 나감. 사이트가 브라우저 검사를 강화해도 버티려는 것이다. 사이트 첫 화면은 30분에 한 번 열고(그 명령은 2~3초 더 걸린다), 그 사이 명령은 사이트가 심은 쿠키(`<상태 폴더>/browser/`, 로그인 쿠키 아님)를 이어 써 0.3초쯤만 더 걸린다. 30분 뒤 첫 화면을 다시 열 때도 사이트가 심은 방문자 쿠키(만료 시각이 있는 것)는 이어 써, 30분마다 새 방문자로 보이지 않는다. 첫 화면이 스스로 부르는 사이트 요청과 브라우저가 보내는 CORS 사전 요청(OPTIONS, 직방·당근)도 요청 제한에 든다. 첫 화면 문서가 40초 안에 오지 않으면 다시 열지 않고 `NETWORK_ERROR`(사이트 밖 광고·분석 스크립트가 늦으면 10초만 기다리고 넘어간다), 차단 응답(401·403·451, `blocked: true`)이거나 그 밖의 4xx, 보안 확인 화면 같은 다른 주소로 넘어가면 `UPSTREAM_ERROR` 로 멈춘다. 첫 화면 문서가 서버 오류(5xx)면 재시도한 뒤 `UPSTREAM_ERROR` 이고 `hint` 가 사이트 장애이니 잠시 뒤 다시 부르라고 한다. Chromium 을 띄우지 못하면 재시도 없이 `BROWSER_UNAVAILABLE` 이다. 당근이 못 찾은 장소 이름을 직방으로 찾다가 직방 첫 화면이 막혀도 네이버로 넘어간다 (#198)
+- 프록시는 브라우저가 쓴다. `HTTPS_PROXY`·`ALL_PROXY`·`NO_PROXY` 환경 변수를 읽고, 없으면 OS 프록시 설정을 따른다. SOCKS 프록시(`socks5h://` 포함)도 쓸 수 있지만 아이디·비밀번호가 있는 SOCKS 프록시는 Chromium 이 지원하지 않는다. 프록시 주소가 잘못됐거나 쓸 수 없거나 프록시에 연결하지 못하면 재시도 없이 `NETWORK_ERROR` 이고 `hint` 가 프록시 설정을 가리킨다 (#198)
+- 네이버 요청 제한을 분당 30회 → 60회, 429 뒤 쿨다운 15분 → 5분으로 바꿈. 첫 화면을 열 때 네이버 페이지가 스스로 부르는 요청(약 20건)이 분당 상한에 들어 그만큼 늘렸다. 쿨다운 뒤에는 사이트 화면을 연 지 30분 안이면 요청 1건으로 풀렸는지 본다 (#198)
+
+### 수정
+
+- 당근에서 이름으로 위치를 찾는 명령(`search listings --radius`·`search commute`·`developments`·`preschools`)이 당근 요청 제한 중이면 직방·네이버로 위치를 찾느라 요청을 더 보낸 뒤 `RATE_LIMITED` 로 끝나고, 주소(`테헤란로 152`)는 `REGION_NOT_FOUND` 로 잘못 알리던 문제. 이제 바로 `source` 가 `daangn` 인 `RATE_LIMITED` 로 멈춘다 (#198)
+- 당근에서 이름으로 위치를 찾다 직방·네이버 모두 실패했을 때 에러가 원인과 상관없이 늘 `status` 없는 `UPSTREAM_ERROR` 이던 문제. 이제 직방이 실패한 원인대로 연결 실패는 `NETWORK_ERROR`, 서버 오류는 `status`, 첫 화면 차단은 `blocked: true` 를 알린다 (`source` 는 그대로 `zigbang`) (#198)
 
 ## 0.10.0 — 2026-11-02
 

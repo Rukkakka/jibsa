@@ -38,6 +38,21 @@
 - 지역 해석만 `www.daangn.com` 의 JSON API 를 쓴다.
 - 입력 타입이 틀리면 "알 수 없는 오류" 가 와서 preschoolByNo·getViewRankingArticles 는 숫자, trendingComplexes 의 regionId 는 문자열로 보낸다 (2026-10-10 실측).
 
+### 브라우저 요청 (2026-11-09 실측)
+
+공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 당근만의 값:
+
+- 첫 화면은 역삼동 지도 페이지(`/map/서울특별시/강남구/역삼동`). jibsa 가 주로 읽는 지도 페이지라 Referer 가 자연스럽다. 쿠키는
+  분석용(`_ga`·`_clck`)뿐이고 API 는 쿠키 없이 응답해 기다릴 쿠키가 없어, load 직후 빈 페이지로 떠난다. 그래서 첫 화면이 실제로
+  부르는 사이트 API 는 load 까지의 2건(GraphQL)뿐이다 (2026-11-10 실측: 홈도 load 까지 1건. 지도 페이지를 그대로 두면 2초에
+  37건, 10초에 94건으로 늘어, 예전에 적었던 '홈 55번·지도 22번'은 머문 시간에 따른 수였다).
+  한 동의 경로라 당근이 지도 주소 꼴을 바꾸면 첫 화면이 4xx 가 되어 모든 당근 명령이 `UPSTREAM_ERROR` 다. API 경로가 바뀔 때와
+  같아 매일 API 감시가 잡으면 `browser_entry_url` 을 고친다. 홈으로 다시 여는 경로는 두지 않는다 (평소에 타지 않는 경로라 깨져도
+  알 수 없다).
+- GraphQL(`realty.kr.karrotmarket.com`)은 `realty.daangn.com` 출처를 CORS 로 허용한다 (`content-type`·`x-realty-platform`,
+  credentials 포함). Origin 은 브라우저가 붙인다.
+- 지역 API(`www.daangn.com`)는 `Access-Control-Allow-Origin` 이 없어 `browser_no_cors_hosts` 로 그 주소의 빈 탭에서 보낸다.
+
 ### 매물 목록 경로
 
 - 지도 피드(동 단위)는 동 ID 로 걸러도 주변 동 매물을 섞어 준다. 빼지 않고 `neighbor_notes` 로 알리며, 시·도(`name1`)가 빠진 주변 동 매물은 지역 검색으로 채운다 (`with_sido`, 동마다 1회).
@@ -52,7 +67,7 @@
 
 - 역·장소 이름 → 좌표(`find_place`)는 당근 역 검색(`searchSubwayStationPois`, 이름이 같은 역만)과 주소 검색 (`find_address`: `searchAddress` → `geocodeAddress`) 순서다. `search listings` 처럼 역 검색을 먼저 한 곳은 `_geocode(..., check_station=False)` 로 주소 검색만 해 같은 역 검색을 되풀이하지 않고, 역 주변 목록만 실패했으면 이미 찾은 역 좌표를 반경 중심으로 쓴다.
 - 주소 검색은 비슷한 이름을 먼저 주기도 해서 (연세대학교 → 아산 '연세대학교 연세유업', 63빌딩 → 'PA63빌딩', 테헤란로 15 → 테헤란로2길 15) 검색어 끝이 도로명(`…로/길 번호`)·지번(`…동/가/리/읍/면 번지`)이면 번호까지 같고 앞에 붙인 시·구도 들어 있는 결과만, 아니면 지번 주소 끝 건물 이름이 같은 결과만 쓴다 (`_address_matches`). 숫자가 든 건물 이름(래미안3차)은 주소로 보지 않는다. 맞는 결과가 여러 시·군·구에 있으면 (중앙로 1 은 10곳 넘음) `RegionAmbiguousError` 를 내고 `_geocode` 도 직방으로 넘기지 않는다. 직방은 주소·건물 이름을 찾지 못해(2026-10-10 실측: 테헤란로 152·63빌딩 모두 못 찾음) 넘기면 '찾지 못했다' 로 바뀌기 때문이다. 이름이 정확히 같은 다른 건물은 막지 못한다 (63빌딩 → 인천 학익동 '63빌딩'. 여의도 63빌딩은 그 이름으로 검색되지 않는다).
-- 나머지는 CLI 의 `_geocode` 가 직방 → 네이버로 넘긴다. 직방이 요청 제한이나 서버 오류·네트워크·응답 형식 오류(`GEOCODE_FALLBACK_ERRORS`)로 실패하면 네이버로 넘기고, 직방이 찾지 못한 이름(`REGION_NOT_FOUND`)은 넘기지 않는다. 네이버도 막혔거나 실패했거나 찾지 못하면 `zigbang.service.geocoding_failed` (`source: zigbang`, 당근 동 이름·`--lat/--lng` 힌트) 에러를 낸다. 직방 요청 제한은 그 `RATE_LIMITED` 를, 그 밖의 실패는 `UPSTREAM_ERROR` 를 낸다. 그대로 올리면 `source: daangn` 으로 보고돼 에이전트가 멀쩡한 당근을 버린다 (2026-10-12 리뷰).
+- 나머지는 CLI 의 `_geocode` 가 직방 → 네이버로 넘긴다. 직방이 요청 제한이나 첫 화면 실패(차단·시간 초과·다른 출처로 넘어감)·서버 오류·네트워크·응답 형식 오류(`GEOCODE_FALLBACK_ERRORS`)로 실패하면 네이버로 넘기고, 직방이 찾지 못한 이름(`REGION_NOT_FOUND`)과 네이버도 같이 실패할 프록시·Chromium 문제(`SHARED_BROWSER_ERRORS`)는 넘기지 않는다. 네이버도 막혔거나 실패했거나 찾지 못하면 `zigbang.service.geocoding_failed` (`source: zigbang`, 당근 동 이름·`--lat/--lng` 힌트) 에러를 낸다. 직방 요청 제한은 그 `RATE_LIMITED` 를, 그 밖의 실패는 직방이 실패한 원인을 `code`(서버 오류·차단은 `UPSTREAM_ERROR`, 연결 실패는 `NETWORK_ERROR`)와 `status`·`blocked` 로 이어받아 낸다 (예전에는 늘 `status` 없는 `UPSTREAM_ERROR` 라 매일 감시가 직방 첫 화면 차단·서버 오류도 고장으로 셌다, 2026-11-10 리뷰). 그대로 올리면 `source: daangn` 으로 보고돼 에이전트가 멀쩡한 당근을 버린다 (2026-10-12 리뷰).
 - 역 검색 결과에는 주소가 없고 노선·좌표만 와서 같은 이름의 역(양평: 경의중앙선·서울5호선)은 첫 역을 쓰고 다른 역을 노선과 함께 `notes` 로 알린다 (`same_station_notes`).
 - `--city`·주소 검색 앞의 시·구는 주소 단어의 앞부분으로 맞춘다 (`place_in`. '강남' 은 강남구에 맞고 '남구' 는 강남구, '동구' 는 성동구에 맞지 않는다).
 
@@ -96,7 +111,7 @@ CLI는 위치 조회 전에 검색 조건을 검증해 잘못된 조합이 위�
 
 유형·거래·금액·면적을 직접 확인하는 곳은 필터 API(persisted query)가 거절돼 조건 없는 지도 페이지 20건으로 대체 조회할 때(`_FeedScan.take(..., server=False)`)뿐이다. 이때 판정할 값이 없는 매물은 통과시키지 않는다.
 
-GraphQL의 HTTP 200도 `errors`를 검사한다. persisted-query 거절과 그 밖의 upstream 실패를 구분하고, 동 검색의 SSR 대체 경로가 지원하는 조건만 허용한다. 거절은 `FeedQueryRejectedError`(`JibsaError`, `UPSTREAM_ERROR`)라 대체 경로가 있는 곳만 먼저 잡고, 나머지 명령은 그대로 `UPSTREAM_ERROR`와 업데이트 안내로 끝난다. 좌표 → 동(`region_or_none`)은 결과 표시와 시·도 채우기에만 쓰여 실패해도(요청 제한 포함) 받아 둔 매물을 돌려준다. 역 이름 검색은 역 검색·역 주변 목록이 실패하면 반경 검색으로 넘어가고 `notes`로 실패 이유(`partial_failure_note`)와 함께 알리지만, 요청 제한은 다음 경로도 당근에 요청해 같은 제한에 걸리므로 바로 올린다. 덤으로 받는 조회(이름 검색의 단지 후보, 동 후기 수, 조건에 맞는 매물 수, 반경 검색의 중심 동, 같은 이름 동의 지도 확인)가 실패하면 받은 결과는 그대로 돌려주고 `partial_failure_note` 로 이유(API 변경·요청 제한·서버 오류·응답 형식 변경)를 `notes` 에 붙인다. 이유마다 다음 행동(업데이트·기다리기·다시 시도)이 달라서다. 위치 찾기(`_geocode`)가 당근에서 실패해 직방으로 넘어갈 때도 같은 이유를 붙인다. 업데이트가 필요하다는 끝말은 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 상수로만 쓴다. 매일 API 감시가 이 상수를 가져와 `notes` 에서 고장을 찾기 때문이다. 덤 조회(시·도 채우기 `sido_of` 포함)와 대체 경로(`_geocode` 의 직방 넘김 등)가 잡는 실패는 `JibsaError`·`HTTPError`(요청 제한 포함)와, JSON 이 아닌 응답·응답 모델 검증 실패(`ValueError`)다 (`OPTIONAL_LOOKUP_ERRORS` = 세 소스 공통 `OPTIONAL_LOOKUP_BASE_ERRORS` 에 `JibsaError` 를 더한 것). 덤 조회 하나가 차단 페이지를 받았다고 모아 둔 매물을 버리지 않고, `partial_failure_note` 가 '응답 형식이 달라 업데이트가 필요할 수 있다' 고 알린다. 주된 결과를 받는 조회는 에러(형식 오류는 `PARSE_ERROR`)로 끝내고, 요청 제한은 다음 요청도 같은 제한에 걸릴 때 바로 올린다. 좌표 검색의 실패를 동 검색 성공처럼 출력하지 않는다. 거래 조건이 여럿이면 선택한 거래의 가격·중개보수를 같이 정규화한다. 상태뿐 아니라 숨김·노출 제한·거래 조건 존재도 검사한다. 목록·핀/카드·SSR 상세가 같은 노출 상태를 주지는 않는다 (2026-10-10 실측: 목록은 통과했지만 상세에 `ArticleInvisibleInfo_NotVerified` 가 있어 상세가 거절된 매물). 목록에서 매물마다 상세를 다시 부르지 않으므로 상세 수준의 거래 가능 여부를 목록 전체에 보장하지 못한다.
+GraphQL의 HTTP 200도 `errors`를 검사한다. persisted-query 거절과 그 밖의 upstream 실패를 구분하고, 동 검색의 SSR 대체 경로가 지원하는 조건만 허용한다. 거절은 `FeedQueryRejectedError`(`JibsaError`, `UPSTREAM_ERROR`)라 대체 경로가 있는 곳만 먼저 잡고, 나머지 명령은 그대로 `UPSTREAM_ERROR`와 업데이트 안내로 끝난다. 좌표 → 동(`region_or_none`)은 결과 표시와 시·도 채우기에만 쓰여 실패해도(요청 제한 포함) 받아 둔 매물을 돌려준다. 역 이름 검색은 역 검색·역 주변 목록이 실패하면 반경 검색으로 넘어가고 `notes`로 실패 이유(`partial_failure_note`)와 함께 알리지만, 요청 제한은 다음 경로도 당근에 요청해 같은 제한에 걸리므로 바로 올린다. 덤으로 받는 조회(이름 검색의 단지 후보, 동 후기 수, 조건에 맞는 매물 수, 반경 검색의 중심 동, 같은 이름 동의 지도 확인)가 실패하면 받은 결과는 그대로 돌려주고 `partial_failure_note` 로 이유(API 변경·요청 제한·서버 오류·응답 형식 변경)를 `notes` 에 붙인다. 이유마다 다음 행동(업데이트·기다리기·다시 시도)이 달라서다. 위치 찾기(`_geocode`)가 당근에서 실패해 직방으로 넘어갈 때도 같은 이유를 붙인다 (요청 제한은 본 조회도 당근이라 같은 제한에 걸리고, 인증서 오류는 회사망 HTTPS 검사처럼 다른 소스도 같이 실패해 넘기지 않고 바로 올린다, `DAANGN_NO_FALLBACK_ERRORS`). 업데이트가 필요하다는 끝말은 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 상수로만 쓴다. 매일 API 감시가 이 상수를 가져와 `notes` 에서 고장을 찾기 때문이다. 덤 조회(시·도 채우기 `sido_of` 포함)와 대체 경로(`_geocode` 의 직방 넘김 등)가 잡는 실패는 `JibsaError`·`HTTPError`(요청 제한 포함)와, JSON 이 아닌 응답·응답 모델 검증 실패(`ValueError`)다 (`OPTIONAL_LOOKUP_ERRORS` = 세 소스 공통 `OPTIONAL_LOOKUP_BASE_ERRORS` 에 `JibsaError` 를 더한 것). 다만 `_geocode` 는 그 전에 본 조회도 같은 이유로 끝날 당근의 실패(요청 제한·첫 화면 실패·인증서 오류·프록시·Chromium, `DAANGN_NO_FALLBACK_ERRORS`)를 먼저 올린다. 덤 조회 하나가 차단 페이지를 받았다고 모아 둔 매물을 버리지 않고, `partial_failure_note` 가 '응답 형식이 달라 업데이트가 필요할 수 있다' 고 알린다. 주된 결과를 받는 조회는 에러(형식 오류는 `PARSE_ERROR`)로 끝내고, 요청 제한은 다음 요청도 같은 제한에 걸릴 때 바로 올린다. 좌표 검색의 실패를 동 검색 성공처럼 출력하지 않는다. 거래 조건이 여럿이면 선택한 거래의 가격·중개보수를 같이 정규화한다. 상태뿐 아니라 숨김·노출 제한·거래 조건 존재도 검사한다. 목록·핀/카드·SSR 상세가 같은 노출 상태를 주지는 않는다 (2026-10-10 실측: 목록은 통과했지만 상세에 `ArticleInvisibleInfo_NotVerified` 가 있어 상세가 거절된 매물). 목록에서 매물마다 상세를 다시 부르지 않으므로 상세 수준의 거래 가능 여부를 목록 전체에 보장하지 못한다.
 
 ## Action id 목록
 

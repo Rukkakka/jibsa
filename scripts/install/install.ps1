@@ -7,10 +7,14 @@
 #   2. uv 로 jibsa 를 설치하거나 최신 버전으로 올린다
 #   3. jibsa 폴더를 사용자 PATH 에 등록하고, 지금 창에도 바로 넣는다
 #   4. PYTHONUTF8=1 을 설정한다 (에이전트가 부를 때 한글이 깨지지 않게)
-#   5. Codex·Claude Code 를 쓰고 있으면 지침 파일에 jibsa 사용 규칙 한 줄을 넣는다
+#   5. jibsa 가 사이트를 열 때 쓰는 Chromium 을 받는다 (jibsa install-browser, 이미 있으면 건너뛴다)
+#   6. Codex·Claude Code 를 쓰고 있으면 지침 파일에 jibsa 사용 규칙 한 줄을 넣는다
 #
 # main 브랜치의 이 파일을 사용자가 바로 받아 실행하므로, 머지하는 즉시 모든 사용자에게 적용된다.
 # irm | iex 는 사용자의 창 안에서 돌기 때문에 exit 를 쓰지 않고(창이 닫힌다), 설정도 블록 밖으로 새지 않게 한다.
+# JIBSA_INSTALL_SPEC 로 설치할 대상(기본 PyPI 의 jibsa)을 바꿀 수 있다. CI 가 PR 의 코드를 이 스크립트로 설치해 보려고 쓴다
+# (.github/workflows/ci.yml 의 '브라우저 확인'). 실패하면 exit 대신 $LASTEXITCODE 를 1 로 남긴다. CI 단계는 그 값으로 끝나
+# 실패가 드러나고(GitHub 이 단계 끝에 exit $LASTEXITCODE 를 붙인다), 끝난 뒤 설치된 jibsa 를 따로 실행해 확인한다.
 
 & {
     $Issues = 'https://github.com/Rukkakka/jibsa/issues'
@@ -86,7 +90,7 @@
     }
 
     try {
-        Write-Step '1/5 uv 확인'
+        Write-Step '1/6 uv 확인'
         $uv = Find-Uv
         if ($uv) {
             Write-Host "uv 가 이미 있다: $uv"
@@ -97,13 +101,15 @@
             if (-not $uv) { throw 'uv 설치가 끝나지 않았다. 위의 uv 설치 메시지를 확인한다' }
         }
 
-        Write-Step '2/5 jibsa 설치 (이미 있으면 최신 버전으로 올린다)'
-        & $uv tool install --upgrade jibsa
+        Write-Step '2/6 jibsa 설치 (이미 있으면 최신 버전으로 올린다)'
+        $spec = $env:JIBSA_INSTALL_SPEC
+        if (-not $spec) { $spec = 'jibsa' }
+        & $uv tool install --upgrade $spec
         if ($LASTEXITCODE -ne 0) {
             throw 'jibsa 를 설치하지 못했다. jibsa 를 쓰고 있는 창(에이전트 포함)이 있으면 닫고 다시 실행한다'
         }
 
-        Write-Step '3/5 PATH 등록'
+        Write-Step '3/6 PATH 등록'
         $bin = Invoke-Utf8 { & $uv tool dir --bin } | Select-Object -Last 1
         if ($bin) { $bin = $bin.Trim() }
         if (-not $bin -or -not (Test-Path (Join-Path $bin 'jibsa.exe'))) { $bin = Join-Path $HOME '.local\bin' }
@@ -118,13 +124,35 @@
             $env:Path = "$bin;$env:Path"
         }
 
-        Write-Step '4/5 한글 출력 설정 (PYTHONUTF8=1)'
+        Write-Step '4/6 한글 출력 설정 (PYTHONUTF8=1)'
         # .NET 으로 사용자 환경 변수를 바꾸면 Windows 에 변경을 알려, 새로 여는 창이 위 PATH 도 함께 받는다
         [Environment]::SetEnvironmentVariable('PYTHONUTF8', '1', 'User')
         $env:PYTHONUTF8 = '1'
         Write-Host '설정했다'
 
-        Write-Step '5/5 에이전트 지침'
+        Write-Step '5/6 브라우저(Chromium) 설치 (이미 있으면 건너뛴다)'
+        # 이 스크립트는 main 에서 바로 받지만 jibsa 는 PyPI 에서 온다. install-browser 가 없는 jibsa 면 건너뛴다.
+        # 한글 안내가 깨지지 않게 위에서 PYTHONUTF8 을 켠 뒤에 실행한다.
+        # 브라우저를 받지 못하면 에이전트 지침(6단계) 전에 멈춘다. 쓸 수 없는 도구를 지침에 넣지 않으려는 것이다. 고친 뒤 이
+        # 스크립트를 다시 실행하면 지침까지 넣으므로, 실패 안내도 install-browser 만이 아니라 스크립트를 다시 실행하라고 한다.
+        # exit 2 만 없는 명령(옛 jibsa)이다. 그 밖의 실패는 jibsa 가 뜨지도 않은 것이라(import 실패 등은 1) 건너뛰지 않고 멈춘다
+        & $jibsa install-browser --help *> $null
+        $browserHelp = $LASTEXITCODE
+        if ($browserHelp -eq 2) {
+            Write-Host '이 jibsa 버전은 브라우저를 쓰지 않아 건너뛴다'
+        } elseif ($browserHelp -ne 0) {
+            # 버린 에러를 보이려고 한 번 더 부른다
+            & $jibsa install-browser --help
+            throw "jibsa 를 실행하지 못했다 (exit $browserHelp). 위 에러를 해결한 뒤 이 설치 스크립트를 다시 실행한다"
+        } else {
+            # 결과 JSON 은 버리고, 내려받기 진행과 실패 안내(에러 JSON 의 hint)는 그대로 보인다
+            & $jibsa install-browser | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "브라우저(Chromium)를 설치하지 못했다. 위 에러의 hint 를 따른 뒤 이 설치 스크립트를 다시 실행한다 ('jibsa install-browser' 만 다시 하면 에이전트 지침 단계가 빠진다)"
+            }
+        }
+
+        Write-Step '6/6 에이전트 지침'
         $codexHome = $env:CODEX_HOME
         if (-not $codexHome) { $codexHome = Join-Path $HOME '.codex' }
         $claudeHome = Join-Path $HOME '.claude'
@@ -149,5 +177,8 @@
         Write-Host ''
         Write-Host "설치하지 못했다: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host "해결되지 않으면 이 화면을 캡처해 이슈로 알려 준다: $Issues"
+        # 창을 닫지 않고 실패를 남긴다. 남기지 않으면 PATH 등록처럼 외부 명령이 아닌 단계의 실패는 바로 앞 uv·jibsa 의 0 이
+        # 남아, CI 가 설치 실패를 통과로 봤다 (2026-11-10 리뷰)
+        $global:LASTEXITCODE = 1
     }
 }

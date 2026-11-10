@@ -40,6 +40,9 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 | pydantic `ValidationError` — 요청 모델(`RequestModel`) | `INVALID_ARGUMENT` | 2 |
 | pydantic `ValidationError` — 응답 모델·`Listing` (응답 형식 변경) | `PARSE_ERROR` | 1 |
 | `HTTPStatusError` 404 / 429 / 그 밖 | `NOT_FOUND` / `RATE_LIMITED` / `UPSTREAM_ERROR` | 1 |
+| `CorsBlockedError` (브라우저가 CORS 로 응답을 막음, `core/browser.py`) | `UPSTREAM_ERROR` (다른 소스를 가리키는 hint) | 1 |
+| httpx `ProxyError` (프록시 주소를 해석하지 못함·브라우저가 쓸 수 없는 프록시·프록시에 닿지 못함·프록시가 이 사이트를 거절함) | `NETWORK_ERROR` (프록시 설정을 가리키는 hint) | 1 |
+| `CertificateError` (브라우저가 우리 요청의 사이트 인증서를 믿지 못함, `core/browser.py`) | `NETWORK_ERROR` (인증서를 OS 에 설치하라는 hint) | 1 |
 | 그 밖의 `HTTPError` | `NETWORK_ERROR` | 1 |
 | `ValueError` (JSON 아닌 응답의 `JSONDecodeError`, `RelayStoreNotFoundError`·`RelayRecordNotFoundError`) | `PARSE_ERROR` | 1 |
 | 그 밖의 모든 예외 | `INTERNAL_ERROR` | 1 |
@@ -47,9 +50,15 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 | 그 밖의 Click `ClickException` (`run()` 에서, 파일 인자 오류 등. 지금은 나오지 않음) | `CLI_ERROR` | 예외의 `exit_code` |
 | `KeyboardInterrupt` (Typer 가 `Exit(130)` 으로 바꾼 것), Click `Abort` (`run()` 에서) | `INTERRUPTED` | 130 (`Abort` 는 1) |
 
+- `CorsBlockedError`·`ProxyError`·`CertificateError` 는 `JibsaError` 가 아니라 httpx 전송 오류(`TransportError`)다. transport
+  안에서 나는 전송 오류라 덤 조회(`OPTIONAL_LOOKUP_BASE_ERRORS` 의 `HTTPError`)가 삼켜야 주된 결과를 돌려줄 수 있어서다. 그래서
+  코드·hint 는 `handle_errors` 가 위 표대로 붙인다. 모두 재시도 술어의 `RETRYABLE_TRANSPORT_ERRORS` 에 들지 않아 재시도하지 않는다.
+  첫 화면이 열리지 않은 `EntryPageError` 는 `JibsaError` 라 `OPTIONAL_LOOKUP_BASE_ERRORS` 만 잡는 덤 조회는 삼키지 않는다.
+  `JibsaError` 까지 잡는 소스(당근 `OPTIONAL_LOOKUP_ERRORS`)는 삼켜 `notes` 에 남기지만, 다시 열지 않는 첫 화면 실패는
+  기억돼(`_failed_entries`) 같은 클라이언트의 본 요청도 같은 에러로 끝나 결과가 같다 ([브라우저 요청](architecture.md#브라우저-요청)).
 - 쓰이는 코드: `INVALID_ARGUMENT`, `REGION_NOT_FOUND`, `REGION_AMBIGUOUS`, `REGION_NOT_SUPPORTED`, `LISTING_UNAVAILABLE`,
-  `NOT_FOUND`, `RATE_LIMITED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `INTERNAL_ERROR`, `INTERRUPTED`, `CLI_ERROR`. 새 코드를 만들면
-  공통 사용 문서의 exit code 표와 오류 대응에 추가한다.
+  `NOT_FOUND`, `RATE_LIMITED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `BROWSER_UNAVAILABLE`, `BROWSER_INSTALL_FAILED`,
+  `INTERNAL_ERROR`, `INTERRUPTED`, `CLI_ERROR`. 새 코드를 만들면 공통 사용 문서의 exit code 표와 오류 대응에 추가한다.
 - 입력 검증 실패는 항상 exit 2. 사용자 정의 hint 가 필요한 사용법 오류는 `HintedUsageError` 를, 옵션 값 오류는
   `HintedBadParameter` 를 쓴다 (예: `require_korea`, `split_csv`). 다른 소스의 옵션·값을 옮겨 쓴 오류(직방 `--option
   반려동물가능`, 직방에 네이버 `--facility`)는 명령마다 둔 `UsageHints` 표로 이 명령에서 주는 법을 hint 에 싣는다. 목록 옵션의

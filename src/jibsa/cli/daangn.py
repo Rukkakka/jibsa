@@ -32,6 +32,12 @@ from jibsa.cli.paging import (
     decode_next,
     encode_next,
 )
+from jibsa.core.browser import (
+    SHARED_BROWSER_ERRORS,
+    CertificateError,
+    EntryOpenError,
+    EntryPageError,
+)
 from jibsa.core.errors import (
     JibsaError,
     RegionAmbiguousError,
@@ -171,9 +177,24 @@ EmitListings = Callable[[ListingsResult, list[str], dict[str, Any] | None], None
 
 
 SOURCE: str = 'daangn'
-# 직방 지역 검색이 이렇게 실패하면 네이버로 넘긴다: 요청 제한과 세 소스 공통 범위(서버 오류·네트워크·응답 형식).
-# 직방이 찾지 못한 이름(REGION_NOT_FOUND)은 넘기지 않는다
-GEOCODE_FALLBACK_ERRORS: tuple[type[Exception], ...] = (RateLimitedError, *OPTIONAL_LOOKUP_BASE_ERRORS)
+# 직방 지역 검색이 이렇게 실패하면 네이버로 넘긴다: 요청 제한, 사이트 첫 화면 실패(차단 응답·시간 초과·다른 출처로 넘어감,
+# jibsa 에러라 공통 범위에 없다)와 세 소스 공통 범위(서버 오류·네트워크·응답 형식). 직방이 찾지 못한 이름(REGION_NOT_FOUND)은
+# 넘기지 않는다
+GEOCODE_FALLBACK_ERRORS: tuple[type[Exception], ...] = (RateLimitedError, EntryPageError, *OPTIONAL_LOOKUP_BASE_ERRORS)
+# 당근 위치 찾기가 이렇게 실패하면 직방으로 넘기지 않고 바로 올린다: 당근 요청 제한(본 조회도 당근이라 같은 제한에 걸린다.
+# 넘기면 직방 Chromium 을 띄워 검색한 뒤 같은 RATE_LIMITED 로 끝났고, 주소는 직방이 찾지 못해 REGION_NOT_FOUND 로 바뀌었다.
+# 2026-11-10 리뷰), 주소가 여러 시·군·구에 맞음(직방은 주소를 찾지 못해 '찾지 못했다'로 바뀐다), 당근 브라우저가 첫 화면을 여는
+# 단계에서 실패함(시간 초과·차단 응답·연결 실패·5xx 등 `EntryOpenError`. 본 조회도 같은 클라이언트라 같은 단계부터 다시 해 같은
+# 이유로 끝난다), 모든 소스가 같이 실패하는 프록시·Chromium 문제. 넘기면 Chromium 을 소스마다 더(재시도까지 9번) 띄운 뒤 직방
+# 실패로 잘못 알렸다 (2026-11-10 리뷰), 우리 요청에서 처음 드러난 인증서 오류(`CertificateError`. 남긴 쿠키로 띄운 30분 동안은
+# 첫 화면을 서버에 묻지 않아 첫 화면 오류가 아니라 이것이 난다. 회사망 HTTPS 검사처럼 모든 사이트에 같이 나는 경우라 넘기면
+# 직방·네이버도 실패해 CERT_HINT 대신 '당근 동 이름이나 좌표를 주라'는 hint 로 끝났다. 2026-11-10 리뷰).
+# 사이트 하나만 막는 `ProxyError`(프록시가 그 사이트 연결만 거절)·`CorsBlockedError` 는 그대로 넘긴다. 위치 찾기와 본 조회가 같은
+# 당근 GraphQL 호스트로 가서 넘겨도 본 조회가 같은 에러와 맞는 hint(PROXY_HINT·UPSTREAM_ERROR)로 끝나고, 손해는 직방
+# Chromium 을 한 번 더 띄우는 것뿐이라서다. 인증서 오류처럼 안내가 틀어지지 않는다 (2026-11-10 재검토)
+DAANGN_NO_FALLBACK_ERRORS: tuple[type[Exception], ...] = (
+    RateLimitedError, RegionAmbiguousError, EntryOpenError, CertificateError, *SHARED_BROWSER_ERRORS,
+)
 
 app = typer.Typer(
     help=(
@@ -431,16 +452,19 @@ def _listing_conditions(
     return conditions, trade_notes + property_type_notes(property_types, conditions.structures)
 
 
-def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tuple[ZigbangRegion, list[str], str]:
+def _geocode(
+    client: DaangnClient, name: str, radius_km: float, *, check_station: bool = True
+) -> tuple[ZigbangRegion, list[str], str]:
     """지역·역 이름을 좌표로 바꾼다. 당근 역·주소 검색(`find_place`)을 먼저 쓰고, 당근이 확실히 찾지 못한
     이름(동·구, 대학교 같은 장소)은 직방 지역 검색으로, 직방이 막히거나 실패했을 때(서버 오류·네트워크·응답 형식)만
     네이버 검색창 자동완성으로 찾는다.
     부르는 쪽이 역 검색을 이미 했으면(`check_station=False`) 같은 요청을 다시 보내지 않고 주소 검색(`find_address`)만 한다.
-    클라이언트를 받지 않고 직접 여는 것은 `_center`(developments·preschools)가 클라이언트를 열기 전에 부르기 때문이다.
-    요청 수는 같다.
+    당근 검색은 본 조회의 클라이언트(`client`)로 한다. 클라이언트마다 Chromium 을 따로 띄우므로 따로 열면 명령마다 한 번 더 띄운다.
+    직방·네이버로 넘어갈 때는 그 소스의 클라이언트가 Chromium 을 하나씩 더 띄운다. 사이트마다 첫 화면(출처)과 쿠키가 달라
+    당근 브라우저를 같이 쓸 수 없어서다. 당근이 못 찾은 이름(대학교 등)일 때만 넘어가므로 그 명령만 느려진다.
 
-    당근 검색이 실패하면(요청 제한·쿼리 변경 포함) 직방으로 넘어간다. 네이버를 기본으로 쓰지 않는 것은
-    대학교를 못 찾고 요청 제한이 더 빡빡해서다 (2026-10-09 실측: 역·동은 두 곳이 같은 위치,
+    당근 검색이 실패하면(쿼리 변경 포함) 직방으로 넘어간다. 당근 요청 제한은 본 조회도 같은 제한에 걸려
+    넘기지 않는다 (`DAANGN_NO_FALLBACK_ERRORS`). 네이버를 기본으로 쓰지 않는 것은 대학교를 못 찾고 요청 제한이 더 빡빡해서다 (2026-10-09 실측: 역·동은 두 곳이 같은 위치,
     서울대학교·연세대학교는 네이버가 못 찾음). 주소가 여러 시·군·구에 맞으면 직방으로 넘기지 않고 에러를
     낸다. 직방은 주소를 찾지 못해 '찾지 못했다' 로 바뀌기 때문이다 (2026-10-10 실측: 테헤란로 152 도 못 찾음).
 
@@ -449,16 +473,20 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
 
     Raises:
         RegionAmbiguousError: 당근 주소 검색에서 주소가 여러 시·군·구에 맞을 때 (`find_place`).
+        EntryOpenError: 당근 브라우저가 첫 화면을 여는 단계에서 실패했을 때. 본 조회도 같아 직방으로 넘기지 않는다.
+        ProxyUnreachableError, BrowserUnavailableError: 프록시·Chromium 문제 (`SHARED_BROWSER_ERRORS`). 모든 소스가 같아
+            넘기지 않는다.
+        CertificateError: 당근 요청이 인증서 오류로 실패했을 때. 회사망 HTTPS 검사처럼 다른 소스도 같이 실패해 넘기지 않는다.
         RegionNotFoundError: 직방이 찾지 못했을 때.
-        RateLimitedError: 직방이 막혔는데 네이버도 막혔거나 실패했거나 찾지 못했을 때 (`source` 는 zigbang, `geocoding_failed`).
+        RateLimitedError: 당근이 요청 제한에 걸렸을 때(`source` 는 daangn. 본 조회도 같아 넘기지 않는다)나, 직방이 막혔는데
+            네이버도 막혔거나 실패했거나 찾지 못했을 때 (`source` 는 zigbang, `geocoding_failed`).
         JibsaError: 직방이 그 밖의 이유로 실패했는데 네이버로도 찾지 못했을 때 (UPSTREAM_ERROR, `source` 는 zigbang).
     """
     # 당근이 실패해 넘어갈 때만 이유를 알린다. 찾지 못해 넘어가는 것은 실패가 아니다
     daangn_notes: list[str] = []
     try:
-        with DaangnClient() as client:
-            place = find_place(client, name) if check_station else find_address(client, name)
-    except RegionAmbiguousError:
+        place = find_place(client, name) if check_station else find_address(client, name)
+    except DAANGN_NO_FALLBACK_ERRORS:
         raise
     except OPTIONAL_LOOKUP_ERRORS as exc:
         place = None
@@ -467,15 +495,22 @@ def _geocode(name: str, radius_km: float, *, check_station: bool = True) -> tupl
     if place is not None:
         return ZigbangRegion(name=place.name, address=place.name, lat=place.lat, lng=place.lng), place.notes, '당근'
     try:
-        with ZigbangClient() as client:
-            region, notes = resolve_region_with_notes(client, name, radius_km=radius_km)
+        with ZigbangClient() as zigbang:
+            region, notes = resolve_region_with_notes(zigbang, name, radius_km=radius_km)
             return region, daangn_notes + notes, '직방'
+    except SHARED_BROWSER_ERRORS:
+        # 직방 첫 화면 실패(EntryPageError)와 달리 네이버도 같은 이유로 실패한다
+        raise
     except GEOCODE_FALLBACK_ERRORS as exc:
         zigbang_error: Exception = exc
         logger.warning('zigbang region search for %r failed (%s); falling back to naver', name, exc)
     try:
         with NaverClient() as geocoder:
             found, notes = resolve_naver_region(geocoder, name, radius_km)
+    except SHARED_BROWSER_ERRORS:
+        # 직방이 요청 제한으로 브라우저를 띄우지 않고 넘어왔으면 프록시·Chromium 문제는 네이버에서 처음 드러난다. 직방 에러로
+        # 감싸면 프록시 hint 가 사라진다 (2026-11-10 리뷰)
+        raise
     except GEOCODE_FALLBACK_ERRORS as exc:
         raise geocoding_failed(zigbang_error, exc) from None
     except RegionNotFoundError as exc:
@@ -620,7 +655,7 @@ def _search_not_dong(
         return
     try:
         # 역 검색은 위에서 했으므로 위치 찾기에서 다시 하지 않는다
-        center, geocode_notes, finder = _geocode(dong, radius_km, check_station=False)
+        center, geocode_notes, finder = _geocode(client, dong, radius_km, check_station=False)
     except RegionNotFoundError:
         raise not_dong from None
     emit_area(center.lat, center.lng, station_notes + geocode_notes + [note(
@@ -791,7 +826,7 @@ def search_command(
         # _require_one_place 가 좌표가 없으면 동 이름을 요구했다
         assert dong is not None
         if by_area:
-            center, geocode_notes, finder = _geocode(dong, radius_km)
+            center, geocode_notes, finder = _geocode(client, dong, radius_km)
             emit_area(center.lat, center.lng, geocode_notes + [note(
                 '범위', f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다",
             )])
@@ -992,7 +1027,7 @@ def commute_command(
         if lat is None or lng is None:
             # _require_one_place 가 좌표가 없으면 이름을 요구했다
             assert workplace is not None
-            center, geocode_notes, finder = _geocode(workplace, DEFAULT_RADIUS_KM)
+            center, geocode_notes, finder = _geocode(client, workplace, DEFAULT_RADIUS_KM)
             lat, lng = center.lat, center.lng
             notes += geocode_notes + [
                 f"{quoted(workplace, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 회사 위치로 보았습니다"
@@ -1182,13 +1217,15 @@ def price_trend_command(
         emit(result, pretty, notes=result.notes)
 
 
-def _center(place: str | None, lat: float | None, lng: float | None, radius_km: float) -> tuple[float, float, list[str]]:
+def _center(
+    client: DaangnClient, place: str | None, lat: float | None, lng: float | None, radius_km: float
+) -> tuple[float, float, list[str]]:
     """지역·역·장소 이름 또는 좌표를 검색 중심으로 바꾼다 (`_geocode`). 이름이면 어디서 찾았는지 안내를 붙인다."""
     _require_one_place(place, lat, lng, 'PLACE')
     if lat is not None and lng is not None:
         return lat, lng, []
     assert place is not None
-    center, notes, finder = _geocode(place, radius_km)
+    center, notes, finder = _geocode(client, place, radius_km)
     return center.lat, center.lng, notes + [
         f"{quoted(place, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다"
     ]
@@ -1216,10 +1253,9 @@ def developments_command(
     """
     require_finite('--radius', radius)
     categories = split_csv(category, tuple(DEVELOPMENT_CATEGORY_BY_LABEL), '--category')
-    with handle_errors(SOURCE):
-        center_lat, center_lng, notes = _center(place, lat, lng, radius)
-        with DaangnClient() as client:
-            result = list_developments(client, center_lat, center_lng, radius_km=radius, categories=categories, limit=limit)
+    with handle_errors(SOURCE), DaangnClient() as client:
+        center_lat, center_lng, notes = _center(client, place, lat, lng, radius)
+        result = list_developments(client, center_lat, center_lng, radius_km=radius, categories=categories, limit=limit)
         emit(result, pretty, notes=notes + result.notes)
 
 
@@ -1258,10 +1294,9 @@ def preschools_command(
     """
     require_finite('--radius', radius)
     types = split_csv(preschool_type, tuple(PRESCHOOL_TYPE_BY_LABEL), '--type')
-    with handle_errors(SOURCE):
-        center_lat, center_lng, notes = _center(place, lat, lng, radius)
-        with DaangnClient() as client:
-            result = list_preschools(client, center_lat, center_lng, radius_km=radius, types=types, limit=limit)
+    with handle_errors(SOURCE), DaangnClient() as client:
+        center_lat, center_lng, notes = _center(client, place, lat, lng, radius)
+        result = list_preschools(client, center_lat, center_lng, radius_km=radius, types=types, limit=limit)
         emit(result, pretty, notes=notes + result.notes)
 
 

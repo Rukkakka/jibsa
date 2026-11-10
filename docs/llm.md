@@ -15,7 +15,7 @@
 - 층은 `floor`(`"3"`·`"반지하"`·`"중층"`)와 숫자 `floor_number`(지하는 음수, 모르면 `null`).
 - 사진·매물 설명·중개사 연락처·매물 좌표는 없다. 확인·문의·계약은 `url` 로 안내한다.
 - ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 여러 소스의 같은 집을 합쳐 주지 않는다. 같은 집인지 가리려고 `listing` 을 여러 번 부르지 않고, 가격·면적·층이 같으면 '같은 집일 수 있다' 고만 알린다.
-- 명령은 동시에(병렬 호출·`&`) 부르지 않는다. 모든 jibsa 프로세스가 요청 간격을 함께 지켜 빨라지지 않는다. 후보 여러 개의 `listing` 은 셸 호출 한 번에 `;` 로 잇는다. 네이버가 가장 엄격하다 (분당 30회, 차단되면 15분).
+- 명령은 동시에(병렬 호출·`&`) 부르지 않는다. 모든 jibsa 프로세스가 요청 간격을 함께 지켜 빨라지지 않는다. 후보 여러 개의 `listing` 은 셸 호출 한 번에 `;` 로 잇는다. 네이버가 가장 엄격하다 (요청 간격 1초, 분당 60회).
 - `--verbose` 는 쓰지 않는다 (stderr 에 로그가 섞인다).
 
 ## 무엇을 하려면
@@ -126,11 +126,12 @@
 | --- | --- |
 | `INVALID_ARGUMENT` | `hint` 의 옵션대로 고친다. 없으면 `message` 와 `--help` 를 본다 |
 | `REGION_NOT_FOUND` · `REGION_AMBIGUOUS` | 구 이름을 붙이거나 좌표·`--city` 로 다시 찾는다 (`REGION_AMBIGUOUS` 는 `candidates` 에서 고른다) |
-| `REGION_NOT_SUPPORTED` · `UPSTREAM_ERROR` · `PARSE_ERROR` | 다른 소스를 쓴다. 뒤의 둘은 사용자에게 `uv tool upgrade jibsa` 를 권한다 |
+| `REGION_NOT_SUPPORTED` · `UPSTREAM_ERROR` · `PARSE_ERROR` | 다른 소스를 쓴다. 뒤의 둘은 사용자에게 `uv tool upgrade jibsa` 를 권한다. 단 `hint` 가 사이트 장애(첫 화면 서버 오류)를 가리키면 업데이트를 권하지 않고 잠시 뒤 한 번만 다시 부르고, `blocked: true`(사이트가 접속을 막음)면 업데이트를 권하지 않고 다른 소스만 쓴다 |
 | `NOT_FOUND` | 단지·학교·평형 ID 나 이름을 같은 소스의 결과에서 그대로 옮겼는지 본다 |
 | `LISTING_UNAVAILABLE` | 매물 ID 를 같은 소스의 결과에서 옮겼는지 본다. 맞으면 내려간 매물이라 후보에서 뺀다 |
 | `RATE_LIMITED` | `retry_after_seconds` 만큼 기다리거나 다른 소스를 쓴다 (`jibsa limits` 로 상태 확인) |
-| `NETWORK_ERROR` | 잠시 뒤 한 번만 다시 부른다 |
+| `NETWORK_ERROR` | 잠시 뒤 한 번만 다시 부른다. `hint` 가 프록시·인증서 설정을 가리키면 다시 부르지 말고 사용자에게 알린다 |
+| `BROWSER_UNAVAILABLE` | 모든 소스가 같이 실패하니 다른 소스로 돌지 않는다. `hint` 의 명령(`jibsa install-browser`, 리눅스 라이브러리는 `sudo …`)을 사용자에게 알린다 |
 | `INTERNAL_ERROR` | 에러 JSON 을 `jibsa --version` 과 함께 사용자에게 그대로 보여 준다 |
 
 ## 더 읽을 곳

@@ -29,7 +29,7 @@
 | exit code | 뜻 | 출력 |
 |---|---|---|
 | 0 | 성공 (`--help`, 인자 없이 실행 포함) | stdout 에 결과 JSON (도움말·`jibsa guide`·`jibsa --version` 은 텍스트) |
-| 1 | 실행 중 에러 (`LISTING_UNAVAILABLE`, `NOT_FOUND`, `RATE_LIMITED`, `REGION_NOT_FOUND`, `REGION_AMBIGUOUS`, `REGION_NOT_SUPPORTED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `INTERNAL_ERROR`) | stderr 에 에러 JSON |
+| 1 | 실행 중 에러 (`LISTING_UNAVAILABLE`, `NOT_FOUND`, `RATE_LIMITED`, `REGION_NOT_FOUND`, `REGION_AMBIGUOUS`, `REGION_NOT_SUPPORTED`, `UPSTREAM_ERROR`, `NETWORK_ERROR`, `PARSE_ERROR`, `BROWSER_UNAVAILABLE`, `BROWSER_INSTALL_FAILED`, `INTERNAL_ERROR`) | stderr 에 에러 JSON |
 | 2 | 입력 오류 (`INVALID_ARGUMENT`) | stderr 에 에러 JSON |
 | 130 | 인터럽트로 중단 (`INTERRUPTED`, Ctrl+C·SIGINT) | stderr 에 에러 JSON |
 
@@ -150,8 +150,10 @@
 | `NOT_FOUND` | 단지·학교·평형·동 등 조회 대상 없음 | 이전 검색 결과의 ID와 후보 확인 |
 | `LISTING_UNAVAILABLE` | 삭제·만료·거래 완료·숨김 등 현재 거래 불가 | 다른 소스에서 받은 ID 면 그 소스의 명령으로 부르고, 아니면 해당 매물 제외 후 다시 검색 |
 | `RATE_LIMITED` | 로컬 요청 예산 초과 또는 429 이후 쿨다운 | `retry_after_seconds`가 있으면 해당 시간만큼 대기. 없으면 `hint`와 `jibsa limits` 확인 |
-| `NETWORK_ERROR` | 연결·타임아웃 등 전송 실패 | 네트워크 상태 확인 후 재시도 |
-| `UPSTREAM_ERROR`, `PARSE_ERROR` | API 거절·응답 구조 변경·파싱 실패 | 힌트 확인, 다른 소스 사용 또는 버전 갱신 |
+| `NETWORK_ERROR` | 연결·타임아웃 등 전송 실패. 사이트 첫 화면 문서가 40초 안에 오지 않은 경우, 프록시 설정 문제(`hint` 가 프록시 설정을 가리킨다), 브라우저가 사이트 인증서를 믿지 못한 경우(`hint` 가 인증서를 OS 에 설치하라고 안내한다)도 포함 | 네트워크 상태 확인 후 재시도. 프록시·인증서 문제면 다시 불러도 같으니 설정을 고친다 |
+| `UPSTREAM_ERROR`, `PARSE_ERROR` | API 거절·응답 구조 변경·파싱 실패. 사이트 첫 화면의 차단 응답(401·403·451 이면 `blocked: true`)이나 보안 확인 화면 같은 다른 주소로 넘어간 경우, 사이트가 응답을 브라우저에서 읽지 못하게 막은 경우(CORS), 첫 화면이 재시도 뒤에도 서버 오류(5xx)인 경우(`hint` 가 사이트 장애를 가리킨다)도 포함 | 힌트 확인, 다른 소스 사용 또는 버전 갱신. 사이트 장애면 버전 갱신 대신 잠시 뒤 다시, `blocked: true` 면 버전 갱신 대신 다른 소스 |
+| `BROWSER_UNAVAILABLE` | 요청을 보낼 Chromium 이 없거나(설치·업데이트 뒤 미설치), 리눅스에서 시스템 라이브러리가 없거나, jibsa 설치가 깨져 브라우저 드라이버를 실행하지 못하거나, 그 밖의 이유로 띄우지 못함(`message` 에 원인). 모든 소스가 같은 이유로 실패한다 | 다른 소스로 돌지 말고 `hint` 대로 `jibsa install-browser` (리눅스 라이브러리는 안내된 `sudo` 명령, 드라이버 실행 실패는 jibsa 재설치)를 사용자에게 안내 |
+| `BROWSER_INSTALL_FAILED` | `jibsa install-browser` 가 Chromium 을 내려받지 못함. 원인(네트워크·권한 등)은 에러의 `output` | 네트워크(회사망·프록시 차단 등)면 확인 후 다시 실행, 권한 오류(`PermissionError` 등)면 보안 프로그램 차단이나 깨진 설치라 jibsa 재설치를 사용자에게 안내 |
 | `INTERNAL_ERROR` | 처리하지 못한 실행 오류 | 에러 내용을 보존해 원인 확인 |
 | `INTERRUPTED` | Ctrl+C 등 호출 중단 | 필요하면 같은 명령을 다시 실행 |
 
@@ -163,11 +165,12 @@
 |---|---|---|---|
 | 직방 | 0.2초 | 120 | 2분 |
 | 당근 | 0.5초 | 60 | 5분 |
-| 네이버 | 1초 | 30 | 15분 |
+| 네이버 | 1초 | 60 | 5분 |
 | 다방 | 0.5초 | 60 | 5분 |
 
 - 슬롯이 날 때까지 기다리되, 60초 넘게 기다려야 하면 기다리지 않고 `RATE_LIMITED` (`reason: budget`) 를 낸다
 - 429 를 받으면 쿨다운 동안 그 소스로 요청을 아예 보내지 않고 `RATE_LIMITED` (`reason: cooldown`, `retry_after_seconds`) 를 낸다. `Retry-After` 가 더 길면 그 값을 따른다
+- jibsa 는 사이트 화면을 연 Chromium 으로 요청한다. 화면을 처음 열 때(30분에 한 번) 그 화면이 스스로 부르는 사이트 API 와, 브라우저가 다른 출처 API 에 보내는 CORS 사전 요청(OPTIONS, 직방·당근)도 요청 수에 든다. 사이트가 심은 쿠키는 `<상태 폴더>/browser/<source>.json` 에 남겨 다음 명령이 이어 쓴다 (로그인 쿠키가 아니다)
 - `jibsa limits` 로 상태를 보고, `jibsa limits --reset naver` 로 초기화한다
 
 ```bash
@@ -186,4 +189,4 @@ jibsa limits --reset daangn
 | `sources[].cooldown_remaining_seconds` | 남은 쿨다운 시간 |
 | `sources[].policy` | 간격·분당 상한·쿨다운·최대 대기·활성화 정책 |
 
-상태 파일 권한·디스크 오류도 stderr 에러 JSON으로 반환한다. 상태 폴더에 쓸 수 없으면(권한, 쓰기를 막은 샌드박스) 모든 소스가 `INTERNAL_ERROR` 로 실패하므로 다른 소스로 돌지 말고 `JIBSA_STATE_DIR` 로 쓸 수 있는 폴더를 지정한다. `--pretty` / `--compact`는 소스별 명령과 `limits`에서 동일하게 사용할 수 있다. 전역 `--verbose`는 진행 로그를 stderr에 추가하므로 에러 JSON만 파싱하는 호출에서는 사용하지 않는다.
+상태 파일 권한·디스크 오류도 stderr 에러 JSON으로 반환한다. 상태 폴더에 쓸 수 없으면(권한, 쓰기를 막은 샌드박스) 모든 소스가 `INTERNAL_ERROR` 로 실패하므로 다른 소스로 돌지 말고 `JIBSA_STATE_DIR` 로 쓸 수 있는 폴더를 지정한다. `--pretty` / `--compact`는 소스별 명령과 `limits`·`install-browser`에서 동일하게 사용할 수 있다. 전역 `--verbose`는 진행 로그를 stderr에 추가하므로 에러 JSON만 파싱하는 호출에서는 사용하지 않는다.

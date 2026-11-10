@@ -318,6 +318,15 @@ class DaangnClient(BaseHTTPClient):
         'cooldown': 300,
     }
 
+    # jibsa 가 주로 읽는 지도 페이지다 (Referer 가 자연스럽다). 기다릴 쿠키가 없어 load 직후 떠나므로 첫 화면이 부르는 사이트
+    # API 는 load 까지의 GraphQL 2건이다 (2026-11-10 실측: 홈도 1건. 페이지를 그대로 두면 10초에 94건이라, 예전에 적었던
+    # '홈 55·지도 22'는 머문 시간에 따른 수였다). 한 동의 경로라 당근이 지도 주소 꼴을 바꾸면 첫 화면이 4xx 가 되어 모든 당근
+    # 명령이 UPSTREAM_ERROR 로 끝난다. API 경로가 바뀔 때와 같아 매일 API 감시가 잡으면 이 주소를 고친다. 홈으로 다시 여는
+    # 경로는 두지 않는다 (평소에 타지 않는 경로라 깨져도 알 수 없다)
+    browser_entry_url: ClassVar[str] = 'https://realty.daangn.com/map/서울특별시/강남구/역삼동'
+    # 첫 화면에서 생기는 쿠키는 분석용(_ga·_clck)뿐이고 당근 API 는 쿠키 없이 응답해 기다릴 쿠키가 없다 (같은 날 실측)
+    browser_ready_cookie: ClassVar[str | None] = None
+
     host: str = 'realty.daangn.com'
 
     region_host: str = 'www.daangn.com'
@@ -346,11 +355,21 @@ class DaangnClient(BaseHTTPClient):
         ) + self.graphql_endpoint
 
     @property
+    def browser_api_hosts(self) -> frozenset[str]:
+        # 첫 화면(realty.daangn.com)이 스스로 부르는 GraphQL 도 요청 제한에 센다
+        return frozenset({self.host, self.graphql_host})
+
+    @property
+    def browser_no_cors_hosts(self) -> frozenset[str]:
+        # 지역 API 는 realty.daangn.com 에서 부르는 것을 CORS 로 허용하지 않는다 (Access-Control-Allow-Origin 이 없다, 2026-11-09
+        # 실측). 그 주소의 빈 탭에서 보낸다. GraphQL 은 realty.daangn.com 을 허용한다
+        return frozenset({self.region_host})
+
+    @property
     def graphql_header(self) -> dict[str, str]:
-        # 웹 클라이언트가 붙이는 헤더. 웹과 같은 요청으로 보이도록 맞춘다.
+        # 웹 클라이언트가 붙이는 헤더. Origin 은 브라우저가 붙인다 (첫 화면이 realty.daangn.com 이다)
         return {
             'Accept': 'application/json',
-            'Origin': create_base_url(schema=self.url_schema, host=self.host),
             'x-realty-platform': 'realty-web',
         }
 
@@ -362,22 +381,20 @@ class DaangnClient(BaseHTTPClient):
 
     @property
     def base_header(self) -> dict[str, str]:
+        # UA·Referer·쿠키·언어는 브라우저가 연 첫 화면 기준으로 붙인다 (`core/browser.py`)
         return {
             'Accept': 'text/html,application/json;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'ko,en-US;q=0.9,en;q=0.8',
-            'User-Agent': self.user_agent,
         }
 
     @cached_property
     def _client(self) -> Client:
+        # 리다이렉트는 브라우저 fetch 가 따라간다. 프록시는 브라우저가 쓴다 (httpx 에 넘기면 그 mount 가 transport 를 건너뛴다)
         return Client(
             base_url=self.base_url,
             headers=self.base_header,
-            follow_redirects=True,
             event_hooks=self.rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.browser_transport()
         )
 
     @cached_property
@@ -385,11 +402,9 @@ class DaangnClient(BaseHTTPClient):
         return AsyncClient(
             base_url=self.base_url,
             headers=self.base_header,
-            follow_redirects=True,
             event_hooks=self.async_rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.async_browser_transport()
         )
 
     def _map_path(self, parameter: DaangnMapRequestParameterModel) -> str:

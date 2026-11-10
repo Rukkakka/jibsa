@@ -4,6 +4,7 @@ from httpx import (
     AsyncClient,
     Client,
     HTTPStatusError,
+    Request,
 )
 from tenacity import (
     retry,
@@ -11,6 +12,7 @@ from tenacity import (
     stop_after_attempt,
 )
 
+from jibsa.core.browser import EntryOpenError
 from jibsa.core.http import (
     BaseHTTPClient,
     create_base_url,
@@ -129,9 +131,10 @@ def should_retry_education(exc: BaseException) -> bool:
     """학교 상세 재시도 술어. 500 만 빼고 `should_retry_idempotent` 와 같다.
 
     학교 상세는 단계와 코드가 맞지 않거나 없는 코드면 늘 500 이다 (2026-10-25 실측: 휘문중 S010000736 을 고등학교로, 없는
-    코드 S999999999 를 중학교로). 다시 보내도 같은 응답이라 요청 제한 몫과 대기만 쓴다.
+    코드 S999999999 를 중학교로). 다시 보내도 같은 응답이라 요청 제한 몫과 대기만 쓴다. 첫 화면(다방 홈)의 500
+    (`EntryStatusError`)은 학교 상세 응답이 아니라 사이트 장애라 다른 5xx 처럼 재시도한다.
     """
-    if isinstance(exc, HTTPStatusError) and exc.response.status_code == 500:
+    if isinstance(exc, HTTPStatusError) and exc.response.status_code == 500 and not isinstance(exc, EntryOpenError):
         return False
     return should_retry_idempotent(exc)
 
@@ -225,6 +228,14 @@ class DabangClient(BaseHTTPClient):
         'cooldown': 300,
     }
 
+    browser_entry_url: ClassVar[str] = 'https://www.dabangapp.com/'
+    # 다방 API 는 쿠키 없이도 응답하고, 첫 화면에서 다방이 심는 쿠키는 분석·광고용뿐이라 기다릴 쿠키가 없다 (2026-11-09 실측)
+    browser_ready_cookie: ClassVar[str | None] = None
+    # 다방은 없는 주소에 404 대신 403 빈 응답을 준다. 거부가 아니라 쿠키를 버리지 않는다. 다방 API 는 쿠키를 보지 않아(위 줄,
+    # 쿠키는 분석·광고용뿐) 정말 막힌 403 이어도 쿠키를 버려서 풀릴 것이 없다. 다방이 방문자 쿠키(WAF 토큰 등)를 요구하기
+    # 시작하면 그때 본문이 있는 403 만 버리게 바꾼다
+    browser_discard_statuses: ClassVar[frozenset[int]] = frozenset()
+
     host: str = 'www.dabangapp.com'
 
     geojson_host: str = 'd2pi55cyzoqmrc.cloudfront.net'
@@ -245,23 +256,22 @@ class DabangClient(BaseHTTPClient):
 
     @property
     def base_header(self) -> dict[str, str]:
+        # UA·Referer·쿠키·언어는 브라우저가 연 첫 화면 기준으로 붙인다 (`core/browser.py`)
         return {
             'Accept': 'application/json, text/plain, */*',
-            'User-Agent': self.user_agent,
-            'Referer': 'https://www.dabangapp.com/',
             # 웹의 axios 인스턴스가 모든 요청에 붙이는 헤더 (fetch 청크, 2026-10-25)
             'csrf': 'token',
         }
 
     @cached_property
     def _client(self) -> Client:
+        # 프록시는 브라우저가 쓴다. httpx 에 프록시를 넘기면 그 mount 가 transport 를 건너뛴다
         return Client(
             base_url=self.base_url,
             headers=self.base_header,
             event_hooks=self.rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.browser_transport()
         )
 
     @cached_property
@@ -270,10 +280,16 @@ class DabangClient(BaseHTTPClient):
             base_url=self.base_url,
             headers=self.base_header,
             event_hooks=self.async_rate_limit_hooks(),
-            verify=self.verify,
             timeout=self.timeout,
-            proxy=self.proxy
+            transport=self.async_browser_transport()
         )
+
+    def _geojson_request(self, client: Client | AsyncClient, code: str) -> Request:
+        request = client.build_request('GET', self.geojson_base_url + self.geojson_region_endpoint.format(code=code))
+        # 동 경계 CDN 은 csrf 헤더를 허용하지 않아, 다른 출처라 브라우저가 먼저 보내는 사전 확인(OPTIONS)이 403 이 된다
+        # (2026-11-09 실측). 웹도 이 파일에는 붙이지 않는다
+        del request.headers['csrf']
+        return request
 
     @dabang_retry
     def run_request_loc_search_v5(
@@ -332,9 +348,7 @@ class DabangClient(BaseHTTPClient):
         Returns:
             DabangGeojsonRegionResponseModel: 동 경계 (MultiPolygon).
         """
-        response = self._client.get(
-            url=self.geojson_base_url + self.geojson_region_endpoint.format(code=parameter.code)
-        )
+        response = self._client.send(self._geojson_request(self._client, parameter.code))
         raise_for_status(response=response)
         return DabangGeojsonRegionResponseModel.model_validate(response.json())
 
@@ -344,9 +358,7 @@ class DabangClient(BaseHTTPClient):
         parameter: DabangGeojsonRegionRequestParameterModel
     ) -> DabangGeojsonRegionResponseModel:
         """Async variant of `run_request_geojson_region` (`GET /geojson/region/{code}`)."""
-        response = await self._async_client.get(
-            url=self.geojson_base_url + self.geojson_region_endpoint.format(code=parameter.code)
-        )
+        response = await self._async_client.send(self._geojson_request(self._async_client, parameter.code))
         raise_for_status(response=response)
         return DabangGeojsonRegionResponseModel.model_validate(response.json())
 

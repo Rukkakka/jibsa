@@ -69,6 +69,11 @@
 사이트 API 변경 대응처럼 조회가 깨진 것을 고친 수정은 머지 뒤 바로 패치를 릴리스한다. git 주소로 설치한 사용자는
 `upgrade` 할 때 `main` 을 바로 받는다.
 
+GitHub 의 README·`docs/` 는 `main` 을 보여 주므로, 머지에서 릴리스까지는 문서에 나온 새 명령·옵션이 PyPI 판에 아직 없다
+(예: 새 명령을 PyPI 판에서 부르면 `INVALID_ARGUMENT`). 이 차이는 의도된 것이라 문서에 버전을 따로 적지 않는다. PyPI
+프로젝트 페이지의 README 는 릴리스 때 올린 판이라 그 버전과 맞다. 한 줄 설치 스크립트는 `main` 에서 바로 받으므로 새 명령이
+없는 PyPI 판도 다룬다 (예: `install-browser` 가 없으면 건너뛴다).
+
 1. 🧹 잡무 템플릿으로 이슈를 열고 `chore/release-0.2.0` 브랜치를 딴다 ([workflow.md](workflow.md)).
 2. 한 커밋으로 아래 두 가지를 바꾼다.
    - `pyproject.toml` 의 `version` 을 올린다. `Unreleased` 에 `수정` 만 있으면 패치, 다른 분류가 하나라도 있으면

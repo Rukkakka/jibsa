@@ -764,7 +764,7 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 
 ## 요청 제한과 도움말
 
-요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다. 이름으로 위치를 찾는 명령은 직방(막히거나 실패하면 네이버) 요청도 쓰므로 요청 제한 에러의 `source` 가 직방·네이버일 수 있다. 직방과 네이버 모두 위치를 찾지 못하면 에러의 `source` 가 `zigbang` 이니 당근은 그대로 쓸 수 있다 (당근 동 이름이나 `--lat/--lng` 로 다시 찾는다). 웹 쿼리가 거절되면(`UPSTREAM_ERROR`) 출력된 힌트와 업데이트 안내를 따른다. 대체 경로가 없는 명령도 같은 코드로 끝난다.
+요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다. 이름으로 위치를 찾는 명령은 직방(막히거나 실패하면 네이버) 요청도 쓰므로 요청 제한 에러의 `source` 가 `zigbang` 일 수 있다. 당근 위치 검색이 요청 제한에 걸리면 직방으로 넘기지 않고 바로 `source` 가 `daangn` 인 `RATE_LIMITED` 로 멈춘다 (본 조회도 당근이라 같은 제한에 걸린다). 직방과 네이버 모두 위치를 찾지 못하면 에러의 `source` 가 `zigbang` 이니 당근은 그대로 쓸 수 있다 (당근 동 이름이나 `--lat/--lng` 로 다시 찾는다). 이때 `code`·`status`·`blocked` 는 직방이 실패한 원인이다. 웹 쿼리가 거절되면(`UPSTREAM_ERROR`) 출력된 힌트와 업데이트 안내를 따른다. 대체 경로가 없는 명령도 같은 코드로 끝난다.
 
 ```bash
 jibsa daangn --help

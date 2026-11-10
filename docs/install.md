@@ -43,6 +43,7 @@ macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른
 | jibsa | `uv tool install --upgrade jibsa` |
 | PATH | jibsa 가 든 폴더(`~/.local/bin`, Windows 는 `C:\Users\<이름>\.local\bin`)를 사용자 PATH 에 넣는다. Windows 는 지금 창에도 넣는다 |
 | 한글 출력 | Windows 만. 사용자 환경 변수 `PYTHONUTF8=1` 을 설정한다 ([왜 필요한가](../README.md#windows-에서-쓸-때)) |
+| 브라우저 | `jibsa install-browser` 로 jibsa 가 요청을 보낼 Chromium(내려받기 약 170MB, 풀면 약 400MB)을 받고 한 번 띄워 본다. 이미 있으면 건너뛴다. 리눅스에서 시스템 라이브러리가 없다고 멈추면 안내된 `sudo … install-deps chromium` 을 실행하고 스크립트를 다시 실행한다 |
 | 에이전트 지침 | Codex(`~/.codex/AGENTS.md`)·Claude Code(`~/.claude/CLAUDE.md`) 설정 폴더가 있으면 [jibsa 사용 규칙 한 줄](../README.md#llm-에이전트에-연결하기)을 덧붙인다. 이미 있으면 건너뛴다 |
 
 **설치 뒤 에이전트에서 쓸 때**
@@ -54,6 +55,7 @@ macOS·Linux·Windows 에서 쓸 수 있다. 운영체제마다 명령이 다른
 ## 1. 준비물
 
 - **Python 3.11 이상** — 아래 A(uv)로 설치하면 없어도 된다. uv 가 알아서 받아 쓴다
+- **Chromium** — jibsa 는 모든 요청을 사이트 화면을 연 Chromium 으로 보낸다. 설치 스크립트가 받아 준다. 다른 방법으로 설치했으면 설치 뒤 `jibsa install-browser` 를 한 번 실행한다 (사용자 폴더에 받아 관리자 권한이 필요 없다). Windows·macOS·Ubuntu·Debian 계열 리눅스에서 돈다. Alpine 처럼 다른 C 라이브러리를 쓰는 배포판에서는 돌지 않는다. 리눅스에서 시스템 라이브러리가 없다고 하면 안내된 `sudo … -m patchright install-deps chromium` 을 한 번 실행한다
 - **git** — PyPI 로 설치하면 필요 없다. 아직 릴리스하지 않은 최신 수정을 GitHub 에서 받을 때만 쓴다
 - 로그인·API 키는 필요 없다
 
@@ -91,7 +93,7 @@ uv tool install jibsa
 uv tool update-shell     # ~/.local/bin 을 PATH 에 추가 (처음 한 번). 새 터미널을 연다
 ```
 
-uv 는 Python 3.11 이 없으면 알아서 받아 쓴다. 설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 처럼 `uvx` 로 부른다.
+uv 는 Python 3.11 이 없으면 알아서 받아 쓴다. 설치하지 않고 한 번 써 보려면 `uvx jibsa --help` 처럼 `uvx` 로 부른다. 실제 조회는 Chromium 이 있어야 해서 먼저 `uvx jibsa install-browser` 를 한 번 실행한다 (에러 `hint` 의 `jibsa install-browser` 도 앞에 `uvx` 를 붙여 실행한다).
 
 **B. pipx**
 
@@ -139,6 +141,8 @@ py -m venv $HOME\.venvs\jibsa
 
 Windows 는 링크를 만들려면 관리자 권한이 필요하다. `jibsa` 만 쳐서 쓰고 싶으면 A·B 가 간단하다.
 
+A·B·C 어느 쪽이든 설치한 뒤 `jibsa install-browser` 를 한 번 실행해 Chromium 을 받는다 (C 는 전체 경로로 부른다). 안 하면 조회 명령이 `BROWSER_UNAVAILABLE` 로 멈춘다.
+
 시스템 Python 에 `pip install` 하지 않는다 (macOS·최근 Linux 는 `externally-managed-environment` 로 막는다). Debian·Ubuntu 에서 `venv` 가 없다는 오류가 나면 `sudo apt install python3-venv` 를 먼저 한다.
 
 **저장소를 이미 받아 두었다면** URL 대신 경로를 넘긴다: `uv tool install .` / `pipx install .` / `pip install .`
@@ -154,10 +158,19 @@ Windows 는 링크를 만들려면 관리자 권한이 필요하다. `jibsa` 만
 ```bash
 jibsa --help             # 명령 목록이 나오면 성공
 jibsa --version          # 설치한 버전, GitHub 주소로 설치했으면 커밋도 (텍스트)
+jibsa install-browser    # Chromium 을 받고 띄워 본다. 버전 JSON 이 나오면 성공 (이미 있으면 받지 않는다)
 jibsa limits             # 요청 제한 상태 JSON. 네트워크 요청은 보내지 않는다
 jibsa guide              # LLM 에이전트용 사용 가이드 (텍스트)
 jibsa zigbang search listings room 역삼동 --trade 월세 --limit 3   # 실제 조회 한 번
 ```
+
+### `jibsa install-browser`
+
+jibsa 가 요청을 보낼 Chromium 을 받고(이미 있으면 건너뛴다) 한 번 띄워 본다. 처음 한 번과 jibsa 를 업데이트한 뒤 실행한다 (한 줄 설치 스크립트는 대신 한다).
+
+- 옵션은 `--pretty` / `--compact`(JSON 들여쓰기)뿐이다. 내려받기 진행은 터미널에서 실행했거나 `jibsa --verbose install-browser` 로 실행했을 때만 stderr 에 보인다. `--verbose` 는 명령 앞에 붙는 전역 옵션이라 `jibsa install-browser --verbose` 는 `INVALID_ARGUMENT` 다.
+- 성공하면 stdout 에 `{"browser": "chromium", "version": "<Chromium 버전>", "executable": "<Chromium 실행 파일 경로>"}` 를 쓴다.
+- 내려받지 못하면 `BROWSER_INSTALL_FAILED` 이고 원인(네트워크·권한 등)이 에러 JSON 의 `output` 에 있다. 받았는데 띄우지 못하면 `BROWSER_UNAVAILABLE` 이고 `hint` 의 명령(리눅스 시스템 라이브러리 설치 등)을 따른다. 에러 형식은 [에러 대응](common.md#에러-대응)에 있다.
 
 `jibsa: command not found` (Windows 는 `'jibsa' 용어가 ... 인식되지 않습니다`) 가 나오면 PATH 문제다. 먼저 새 터미널을 연다. 그래도 안 되면 `jibsa` 가 설치된 `~/.local/bin` (Windows 는 `C:\Users\<이름>\.local\bin`) 이 PATH 에 있는지 본다.
 
@@ -181,13 +194,23 @@ Windows 는 UTF-8 출력 설정(`setx PYTHONUTF8 1`)을 처음 한 번 챙긴다
 | pip (macOS·Linux) | `~/.venvs/jibsa/bin/pip install -U jibsa` | `rm -rf ~/.venvs/jibsa ~/.local/bin/jibsa` |
 | pip (Windows) | `& "$HOME\.venvs\jibsa\Scripts\pip.exe" install -U jibsa` | `Remove-Item -Recurse -Force $HOME\.venvs\jibsa` |
 
+업데이트한 뒤에는 `jibsa install-browser` 를 한 번 실행한다 (설치 스크립트로 올렸으면 스크립트가 한다). jibsa 가 쓰는 브라우저 도구가 올라가면 그에 맞는 Chromium 이 새로 필요하고, 없으면 조회 명령이 `BROWSER_UNAVAILABLE` 로 멈춘다.
+
 설치 스크립트가 넣은 PATH 항목, `PYTHONUTF8`, 에이전트 지침 파일의 jibsa 한 줄은 삭제해도 남는다. 쓰지 않으면 직접 지운다. uv 를 지우려면 [uv 삭제 안내](https://docs.astral.sh/uv/getting-started/installation/#uninstallation)를 따른다.
 
 GitHub 주소로 설치했다면 uv·pipx 의 `upgrade` 는 그 주소에서 그대로 받고, pip 은 `pip install -U --force-reinstall git+https://github.com/Rukkakka/jibsa` 로 받는다.
 
-요청 제한 상태 파일과 매물 검색 이어 받기 표(`next`)는 삭제해도 남으니 완전히 지우려면 그 디렉터리도 삭제한다. `JIBSA_STATE_DIR` 로 위치를 바꿨다면 그 디렉터리다 ([설정](../README.md#설정)).
+요청 제한 상태 파일, 매물 검색 이어 받기 표(`next`), 사이트가 브라우저에 심은 쿠키(`browser`)는 삭제해도 남으니 완전히 지우려면 그 디렉터리도 삭제한다. `JIBSA_STATE_DIR` 로 위치를 바꿨다면 그 디렉터리다 ([설정](../README.md#설정)).
 
 | 운영체제 | 상태 파일 위치 | 삭제 |
 |---|---|---|
 | macOS·Linux | `~/.cache/jibsa` (`XDG_CACHE_HOME` 을 설정했으면 `$XDG_CACHE_HOME/jibsa`) | `rm -rf ~/.cache/jibsa` |
 | Windows | `C:\Users\<이름>\.cache\jibsa` | `Remove-Item -Recurse -Force $HOME\.cache\jibsa` |
+
+Chromium 도 삭제해도 남는다 (약 400MB). 다른 프로그램(Playwright 등)이 같은 폴더를 쓰지 않는다면 지운다.
+
+| 운영체제 | Chromium 위치 | 삭제 |
+|---|---|---|
+| macOS | `~/Library/Caches/ms-playwright` | `rm -rf ~/Library/Caches/ms-playwright` |
+| Linux | `~/.cache/ms-playwright` | `rm -rf ~/.cache/ms-playwright` |
+| Windows | `C:\Users\<이름>\AppData\Local\ms-playwright` | `Remove-Item -Recurse -Force $env:LOCALAPPDATA\ms-playwright` |

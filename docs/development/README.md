@@ -12,6 +12,7 @@ git clone https://github.com/Rukkakka/jibsa && cd jibsa
 
 python3.11 -m venv .venv          # 또는 uv venv --python 3.11
 .venv/bin/pip install -e ".[dev]" # 또는 uv pip install -e ".[dev]"
+.venv/bin/jibsa install-browser   # 요청을 보낼 Chromium 을 받는다 (patchright 를 올린 뒤에도 다시)
 
 .venv/bin/jibsa --help            # source .venv/bin/activate 후에는 jibsa 만 쳐도 된다
 ```
@@ -22,9 +23,13 @@ git clone https://github.com/Rukkakka/jibsa; cd jibsa
 
 py -m venv .venv                       # 또는 uv venv --python 3.11
 .venv\Scripts\pip install -e ".[dev]"  # 또는 uv pip install -e ".[dev]"
+.venv\Scripts\jibsa install-browser    # 요청을 보낼 Chromium 을 받는다 (patchright 를 올린 뒤에도 다시)
 
 .venv\Scripts\jibsa --help             # .venv\Scripts\Activate.ps1 후에는 jibsa 만 쳐도 된다
 ```
+
+jibsa 는 모든 요청을 Chromium 으로 보낸다 ([브라우저 요청](architecture.md#브라우저-요청)). 리눅스에서 `install-browser` 가
+시스템 라이브러리가 없다고 하면 힌트의 `sudo … -m patchright install-deps chromium` 을 한 번 실행한다.
 
 Windows 는 [README 의 Windows 에서 쓸 때](../../README.md#windows-에서-쓸-때)(UTF-8 출력 설정)도 그대로 적용된다. `Activate.ps1` 이 실행 정책 때문에 막히면 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 를 한 번 실행한다.
 
@@ -51,7 +56,8 @@ Windows 는 `.venv\Scripts\ruff`, `.venv\Scripts\mypy` 로 부른다.
 
 - 코드를 바꾸면 CLI 직접 조회나 원본 응답 확인처럼 실제 API 호출로 동작을 확인하는 것이 기본이다. 가짜 응답(픽스처·`MockTransport`)으로만 확인했다고 하지 않는다. 실제 API 를 부르는 테스트(live 테스트)는 두지 않고 CLI 직접 조회로 확인한다. 매일 새벽 도는 [API 감시](#매일-api-감시)만 예외다 (pytest 가 아니라 따로 도는 워크플로다).
 - 실제 API 로 재현할 수 없는 상태(커서가 멈춘 응답 등)만 가짜 응답으로 확인하고 그 이유를 적는다.
-- 요청 수는 최소로 하고 요청 제한 훅을 거친다 (네이버는 차단 위험이 크다).
+- 요청 수는 최소로 하고 요청 제한 훅을 거친다 (네이버는 차단 위험이 크다). 첫 화면을 다시 열어 보려면
+  `<state_dir>/browser/<source>.json`(남긴 쿠키)을 지운다. 브라우저 준비 과정은 `-v` 로그의 `브라우저 준비` 줄에 나온다.
 - 문서·문구만 바꿨으면 링크·코드 선언·출력 필드 대응만 검토하고 pytest·실제 호출은 하지 않는다.
 
 ### 테스트 추가는 두 경우만
@@ -86,9 +92,11 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
 비공식 API 는 사이트가 응답을 바꾸면 조용히 깨진다 (당근 웹 개편으로 SSR 페이지를 못 읽은 #70 처럼). 사용자보다 먼저 알려고
 [API 감시 워크플로](../../.github/workflows/api-monitor.yml)가 한국 시간 매일 04:17 에 직방·당근·다방의 모든 CLI 명령을 실제로 부른다
 ([scripts/monitor/api_check.py](../../scripts/monitor/api_check.py)). 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고(`DAILY_GROUPS`),
-감시 목록에는 남겨 필요할 때 로컬에서 돌린다. CI 는 여전히 실제 API 를 부르지 않는다.
+감시 목록에는 남겨 필요할 때 로컬에서 돌린다. 러너 IP 차단이다: 2026-11-09 러너에서 `fin.land.naver.com` 은 curl(HTTP/1.1·2)·httpx·
+브라우저 fetch·첫 화면 열기가 모두 TLS 연결 뒤 응답 없이 끝났고 `www.naver.com` 은 200 이었다. CI 는 여전히 실제 API 를 부르지 않는다.
+감시 러너는 `pip install .` 뒤 Chromium 시스템 라이브러리와 Chromium 을 깐다 (`install-deps`, `jibsa install-browser`).
 
-- **무엇을 부르나:** 사이트에 요청하는 명령 모두 (`limits`·`guide` 만 뺀다). 매물 검색은 찾는 방식(동 이름 경계·역 반경·좌표 반경·단지·재개발
+- **무엇을 부르나:** 사이트에 요청하는 명령 모두 (`limits`·`guide`·`install-browser` 만 뺀다). 매물 검색은 찾는 방식(동 이름 경계·역 반경·좌표 반경·단지·재개발
   구역)마다 쓰는 API 가 달라 방식별로 부르고, 상세 명령은 앞 결과의 번호(매물 ID·단지 번호·평형·학교 코드·사업·시설 번호)를 이어 받는다.
   이어 받기(`--next`)는 첫 결과에서 쓰지 않는 서버 커서·offset(직방 아파트 offset, 당근 지도 페이지·피드·역 목록 커서, 네이버 seed·lastInfo·지도 칸)을
   보내 따로 깨질 수 있어, 그 방식마다 앞 결과의 `next` 로 같은 명령을 한 번 더 부른다 (`Capture` 의 `items` 를 비우면 결과 맨 위 칸을 꺼낸다).
@@ -99,8 +107,8 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
   | 판정 | 기준 |
   | --- | --- |
   | 정상 | exit 0, 그 명령에 정한 칸(`Step.expect`)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`, 당근 인기 단지는 이른 아침에 자주 빈다)은 빈 목록이어도 정상 |
-  | 고장 | `PARSE_ERROR`·`INTERNAL_ERROR`·`NOT_FOUND`·`REGION_NOT_FOUND`·4xx 이거나 상태 없는 `UPSTREAM_ERROR`(웹 쿼리 해시 거절 등) 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, `notes` 의 "jibsa 업데이트가 필요합니다"·"jibsa 업데이트가 필요할 수 있습니다"(당근 필터 API 대신 예전 방식으로 돎, 단지 후보·매물 수·역 검색 같은 덤 조회·대체 경로가 깨져 그 값만 빠짐. 다방 목록·실거래에서 가격·거래 유형을 읽지 못해 뺀 줄. `core/listing.py` 의 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 를 감시가 그대로 가져다 쓴다), 결과 파일 없음(조회 잡 실패) |
-  | 확인 못 함 | `RATE_LIMITED`, `NETWORK_ERROR`, 5xx `UPSTREAM_ERROR`, `LISTING_UNAVAILABLE`(검색 직후 내려간 매물), 5분 안에 끝나지 않음, 앞 명령이 번호를 주지 않아 건너뛴 상세, 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`, 다방 청약 일정)이 비어 있음, 덤 조회가 요청 제한·서버 오류·연결 실패로 실패해 정한 칸이 비고 업데이트 문구 없는 `[실패]` 안내가 있음(다방 단지 최근 실거래 요약) |
+  | 고장 | `PARSE_ERROR`·`INTERNAL_ERROR`·`NOT_FOUND`·`REGION_NOT_FOUND`·4xx 이거나 상태 없는 `UPSTREAM_ERROR`(웹 쿼리 해시 거절, 첫 화면의 404·다른 출처로 넘어감 등. 첫 화면의 401·403·451 차단은 확인 못 함) 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, `notes` 의 "jibsa 업데이트가 필요합니다"·"jibsa 업데이트가 필요할 수 있습니다"(당근 필터 API 대신 예전 방식으로 돎, 단지 후보·매물 수·역 검색 같은 덤 조회·대체 경로가 깨져 그 값만 빠짐. 다방 목록·실거래에서 가격·거래 유형을 읽지 못해 뺀 줄. `core/listing.py` 의 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 를 감시가 그대로 가져다 쓴다), 결과 파일 없음(조회 잡 실패) |
+  | 확인 못 함 | `RATE_LIMITED`, `NETWORK_ERROR`, 5xx `UPSTREAM_ERROR`, `blocked: true` 인 에러(사이트 첫 화면이 401·403·451 로 막음, 러너 IP·봇 차단. 당근이 직방으로 위치를 찾다 막힌 것 포함), `LISTING_UNAVAILABLE`(검색 직후 내려간 매물), 5분 안에 끝나지 않음, 앞 명령이 번호를 주지 않아 건너뛴 상세, 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`, 다방 청약 일정)이 비어 있음, 덤 조회가 요청 제한·서버 오류·연결 실패로 실패해 정한 칸이 비고 업데이트 문구 없는 `[실패]` 안내가 있음(다방 단지 최근 실거래 요약) |
 
 - **알림:** 고장이면 `api-broken` 이슈를 열고(열려 있으면 댓글) 실행이 실패로 끝나 GitHub 이 메일로 알린다. 모든 소스가 정상이면 그
   이슈를 닫는다. 같은 소스가 사흘 연속 확인 못 함이면 `api-blocked` 이슈를 열고, 확인 못 함이 없어지면 닫는다. 막힘이 이어지면 그 소스를

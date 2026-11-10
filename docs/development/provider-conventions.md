@@ -99,10 +99,23 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
   - `source_name: ClassVar[str]` — 요청 제한 상태 파일 이름. `Source` Literal 값과 같게.
   - `default_rate_limit: ClassVar[dict[str, object]]` — `RateLimitPolicy` 필드
   - `host: str` 필드와 `base_url` property (`create_base_url` 사용)
-  - `base_header` property — `User-Agent` 는 `self.user_agent`
+  - `base_header` property — 사이트 웹이 붙이는 헤더만. UA·Origin·Referer 는 브라우저가 붙인다
+  - 브라우저 설정 ([브라우저 요청](architecture.md#브라우저-요청)):
+    - `browser_entry_url` — 처음 열 사이트 화면. jibsa 는 load 뒤(`browser_ready_cookie` 가 있으면 그 쿠키를 다 받은 뒤)
+      바로 빈 페이지로 떠나므로, 그때까지 사이트 자체 API 를 덜 부르는 화면을 고른다. 페이지에 오래 머물 때의 수와 다르다
+      (당근 실측은 [당근 브라우저 요청](providers/daangn.md#브라우저-요청-2026-11-09-실측))
+    - `browser_ready_cookie` — 사이트 API 가 요구하거나 브라우저 식별인 쿠키. 없으면 None
+    - `browser_api_hosts` — 첫 화면이 부른 요청을 셀 사이트 API 호스트 (기본은 `browser_entry_url` 의 호스트)
+    - `browser_no_cors_hosts` — 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트
+    - 위 둘은 호스트 필드(`host`·`region_host` 등)에서 만드는 property 로 쓴다. 호스트를 상수로 따로 적으면 호스트 필드를
+      바꿨을 때 어긋나 요청이 엉뚱한 탭에서 나간다. 나머지는 ClassVar 다
+    - `browser_discard_statuses` — 소스가 403 을 거부가 아닌 뜻으로 쓰면 바꾼다 (다방은 없는 주소)
 - `_client` / `_async_client` 는 `@cached_property` 로 만들고 반드시
-  `event_hooks=self.rate_limit_hooks()` (async 는 `async_rate_limit_hooks()`), `verify`, `timeout`,
-  `proxy` 를 넘긴다.
+  `event_hooks=self.rate_limit_hooks()` (async 는 `async_rate_limit_hooks()`), `timeout`,
+  `transport=self.browser_transport()` (async 는 `async_browser_transport()`) 를 넘긴다. `proxy` 는 넘기지 않는다
+  (httpx 의 프록시 mount 가 transport 를 건너뛴다. 프록시는 브라우저가 쓴다).
+- 새 소스는 첫 화면을 실제로 열어 쿠키(이름·수명), 첫 화면이 부르는 사이트 API 수, 요청할 호스트들의 CORS
+  (`curl -X OPTIONS -H 'Origin: …'`)를 확인하고 그 결과를 소스 개발 가이드에 적는다.
 - 토큰 같은 비밀 값 필드는 `Field(repr=False)`.
 
 ## 요청 메서드
@@ -140,6 +153,8 @@ def run_request_items_onerooms_v1(
 - **재시도.** 조회 전용이면 POST 라도 `should_retry_idempotent` (5xx/429 + 다시 보내면 나을 수 있는 전송 오류 `RETRYABLE_TRANSPORT_ERRORS`).
   상태를 바꾸는 호출이 생기면 `should_retry_non_idempotent`. jibsa 에는 현재 조회만 있다.
   네이버는 예외다 ([네이버 개발 가이드](providers/naver.md)).
+- **상태 코드에 뜻을 붙일 때.** 재시도 술어나 service 가 특정 상태를 소스 고유 뜻으로 읽으면(다방 학교 상세의 500)
+  첫 화면 5xx(`EntryStatusError`)를 먼저 거른다 ([브라우저 요청](architecture.md#브라우저-요청)).
 - **`raise_for_status`** 는 httpx 메서드가 아니라 `core.http.raise_for_status` 를 쓴다. 비공식 API 는
   거절 사유를 본문에만 담으므로 본문을 잘라(민감 키는 가림) 예외 메시지에 붙인다.
 - **직렬화.** 쿼리는 `model_dump(by_alias=True, exclude_none=True)`, 본문은 `json=` 으로 같은 값을 넘긴다.

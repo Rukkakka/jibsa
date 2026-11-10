@@ -61,6 +61,15 @@ def test_per_minute_budget_refuses_long_waits() -> None:
     assert exc.value.details['retry_after_seconds'] >= 55
 
 
+def test_recorded_outside_requests_count_toward_budget() -> None:
+    # 브라우저 첫 화면이 스스로 부른 사이트 API 도 분당 상한에 든다 (core/browser.py)
+    budget = limiter(min_interval=0, max_per_minute=3, max_wait=5)
+    budget.record(3)
+    with pytest.raises(RateLimitedError) as exc:
+        budget.reserve()
+    assert exc.value.reason == 'budget'
+
+
 def test_cooldown_blocks_until_expiry() -> None:
     cooled = limiter(min_interval=0, cooldown=60)
     cooled.block()
