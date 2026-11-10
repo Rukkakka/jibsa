@@ -5,6 +5,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+## 0.11.0 — 2026-11-10
+
 ### ⚠️ 호환 깨짐
 
 - 모든 조회 명령이 요청을 사이트 화면을 실제로 연 Chromium 으로 보냄. 처음 한 번과 jibsa 를 업데이트한 뒤 `jibsa install-browser` 로 Chromium(내려받기 약 170MB, 풀면 약 400MB)을 받아야 하고, 없으면 `BROWSER_UNAVAILABLE` 로 멈춘다 (설치 스크립트는 대신 받는다). jibsa 패키지도 브라우저 드라이버(patchright) 등이 더해져 설치 크기가 약 200MB 늘어난다. Chromium 이 돌지 않는 환경(Alpine 리눅스 등)에서는 쓸 수 없다. 리눅스에서 시스템 라이브러리가 없다고 하면 안내된 `sudo … install-deps chromium` 을 한 번 실행한다 (#198)
