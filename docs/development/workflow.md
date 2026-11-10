@@ -80,5 +80,8 @@ PR 템플릿의 `변경 종류` 도 같은 다섯 이름을 쓴다. PR 이 닫�
 
 PR 을 열면 [CI](../../.github/workflows/ci.yml) 가 `ruff check`·`mypy`·전체 `pytest`(Ubuntu·macOS·Windows ×
 Python 3.11·3.14)·설치본 확인(`jibsa --version`, `jibsa guide` 와 `docs/llm.md` 비교)·`docs/llm.md` 200줄 검사를 돌린다.
-CI 가 통과해야 머지한다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
+문서만 바꾼 PR(`docs/` 아래, 맨 위 `.md`, `LICENSE`, 이슈·PR 템플릿)은 `pytest` 를 건너뛴다. 머지 조건은 마지막 `CI 결과`
+검사 하나다 (앞 검사 중 실패·취소가 있으면 실패). PR 을 연 뒤 `main` 이 바뀌면 "Update branch" 로 최신 `main` 을 합쳐 CI 를
+다시 통과해야 머지할 수 있다. 머지 뒤 `main` 에서는 CI 를 다시 돌리지 않는다.
+릴리스 직전과 매주 월요일 새벽에는 모든 검사가 돈다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
 부르는 [API 감시](README.md#매일-api-감시)도 한 번 돈다. 필수 검사는 아니라 막힌 날에도 머지할 수 있다.
