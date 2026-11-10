@@ -5,6 +5,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+### 수정
+
+- README 빠른 시작에 `jibsa install-browser` 가 빠져 있어 그대로 따라 하면 `BROWSER_UNAVAILABLE` 로 멈추던 문제. 설치 뒤 Chromium 을 받는 줄을 넣었다 (#203)
+
 ## 0.11.0 — 2026-11-10
 
 ### ⚠️ 호환 깨짐
