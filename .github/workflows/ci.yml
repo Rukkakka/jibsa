@@ -1,13 +1,22 @@
-# PR 과 main push 마다 린트·타입 검사·전체 pytest·설치본을 확인한다. 배포(release.yml)도 이 워크플로를 불러 같은 검사를
-# 통과한 빌드만 올린다. 잡 이름은 main 보호 규칙의 필수 검사라 바꾸면 보호 규칙도 같이 고친다.
+# PR 마다 린트·타입 검사·전체 pytest·설치본을 확인한다. 배포(release.yml)도 이 워크플로를 불러 모든 검사를 통과한 빌드만
+# 올린다. 매주 월요일 새벽에도 모든 검사를 돌린다. 우리 코드가 그대로여도 의존성 새 버전과 GitHub 러너 이미지가 바뀌어
+# 깨질 수 있어서다 (실패하면 GitHub 이 메일로 알린다). main 보호 규칙의 필수 검사는 마지막 'CI 결과' 잡 하나다. 다른 잡 이름이나 pytest 매트릭스를 바꿔도
+# 보호 규칙은 그대로 둔다. 잡을 더하면 'CI 결과' 의 needs 에 넣는다.
+# 문서만 바뀐 PR 은 pytest 를 건너뛴다 ('바뀐 파일 분류'). 테스트는 문서를 읽지 않고, 문서는 린트(docs/llm.md 200줄)와
+# 설치본 확인(guide 사본·README 렌더링)이 본다. 건너뛴 매트릭스 잡은 OS·버전별 이름으로 결과를 남기지 않아, 그 이름들을 필수
+# 검사로 두면 머지가 막힌다. 그래서 필수 검사를 'CI 결과' 하나로 둔다.
+# main push 에는 돌리지 않는다. main 보호 규칙이 PR 을 최신 main 으로 맞춰야 머지하게 해(required_status_checks.strict)
+# PR 에서 검사한 코드가 곧 main 에 들어가는 코드라서다. 그 규칙을 끄면 머지 뒤 검사가 없으니 이 트리거를 다시 넣는다.
 # 테스트는 가짜 응답만 쓰고 실제 API 는 부르지 않는다 (docs/development/README.md '검증과 테스트').
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_call:
+  schedule:
+    # 한국 시간 매주 월요일 03:23. 정각은 예약 실행이 몰려 늦거나 빠진다
+    - cron: '23 18 * * 0'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,6 +26,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: 바뀐 파일 분류
+    runs-on: ubuntu-latest
+    outputs:
+      # 문서가 아닌 파일이 바뀌었으면 'true'. pytest 를 돌릴지 정한다
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      # PR 실행은 PR 을 최신 main 에 합친 커밋에서 돈다. 그 첫 부모(main)와 비교하려고 부모까지 받는다
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: classify
+        env:
+          # 문서로 보는 파일: docs/ 아래 전부, 맨 위 .md(README·CHANGELOG·AGENTS 등), LICENSE, 이슈·PR 템플릿
+          DOC_PATTERN: '^(docs/|[^/]+\.md$|LICENSE$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$)'
+        run: |
+          # PR 이 아닌 실행(release.yml 이 부름, 매주, 수동)이나 합친 커밋이 아니면 모두 검사한다
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] || ! git rev-parse -q --verify HEAD^2 > /dev/null; then
+            echo "PR 합친 커밋이 아니라 모두 검사합니다"
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # --no-renames: 옮긴 파일의 옛 경로도 본다. 새 경로만 보면 src/ 에서 docs/ 로 옮긴 PR 이 문서만 바뀐 것이 된다
+          changed=$(git diff --no-renames --name-only HEAD^1 HEAD)
+          echo "바뀐 파일:"
+          echo "$changed"
+          others=$(printf '%s\n' "$changed" | grep -vE "$DOC_PATTERN" || true)
+          if [ -n "$others" ]; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo "문서만 바뀌어 pytest 를 건너뜁니다"
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: 린트·타입 검사
     runs-on: ubuntu-latest
@@ -41,6 +84,8 @@ jobs:
 
   test:
     name: pytest (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -89,3 +134,20 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  # main 보호 규칙의 필수 검사. 스스로는 검사하지 않고 위 잡들의 결과만 본다: 실패·취소가 하나라도 있으면 실패, 통과·건너뜀뿐이면
+  # 통과. 앞 잡이 실패해도 돌도록 always() 를 쓴다 (없으면 이 잡이 건너뜀이 되어 통과로 쳐진다)
+  result:
+    name: CI 결과
+    needs: [changes, lint, test, package]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 앞 잡 결과 확인
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "바뀐 파일 분류·린트·pytest·설치본: $RESULTS"
+          case " $RESULTS " in
+            *' failure '*|*' cancelled '*) echo "::error::실패하거나 취소된 잡이 있습니다"; exit 1 ;;
+          esac
