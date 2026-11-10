@@ -55,6 +55,7 @@ Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾
 
 ```bash
 uv tool install jibsa        # 또는 pipx install jibsa
+jibsa install-browser        # 요청을 보낼 Chromium 을 받는다 (처음 한 번)
 jibsa zigbang search listings room 강남역 --trade 월세 --rent-max 70 --limit 1
 ```
 
