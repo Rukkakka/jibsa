@@ -21,6 +21,7 @@ from jibsa.core.geo import (
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
+    NEXT_HINT,
     UPDATE_MAYBE_NEEDED,
     Listing,
     ListingDetail,
@@ -51,6 +52,7 @@ from jibsa.providers.dabang.api.response.listing import DabangNewRoomDetailRoomM
 from jibsa.providers.dabang.service.common import (
     CATEGORY_BY_KIND,
     LISTING_NUMBER_PATTERN,
+    MAX_LIST_LIMIT,
     MAX_LIST_PAGES,
     PAGE_SIZE,
     SOURCE,
@@ -497,19 +499,23 @@ def search_listings(
         total = None
         names = {part.code: part.name for part in places}
         skipped = '·'.join(names.get(key, key) for key in unasked)
-        notes.append(note('일부', f"--limit 이 동 수보다 작아 {skipped}{particle(skipped, '은/는')} 아직 찾지 않았습니다 (total 모름). 이어 보려면 결과의 next 를 --next 로 주세요"))
+        notes.append(note('일부', f"--limit 이 동 수보다 작아 {skipped}{particle(skipped, '은/는')} 아직 찾지 않았습니다 (total 모름). {NEXT_HINT}"))
+    # 더 받을 매물이 없으면 '다시 채우지 않음' 이라 하지 않는다. 그 말에 더 있는지 헷갈렸다 (2026-11-11 LLM 사용 시험: 반곡동
+    # 아파트 7건 중 다른 동 4건을 빼고 has_more false)
+    refill = '(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'
     if outside:
-        notes.append(note('제외', f'반경을 덮는 사각형에서 받은 매물 중 반경 {filter_radius:g}km 밖 {outside}건을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
+        notes.append(note('제외', f'반경을 덮는 사각형에서 받은 매물 중 반경 {filter_radius:g}km 밖 {outside}건을 뺐습니다 {refill}'))
     if other_dong:
-        notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 매물 중 다른 동 {other_dong}건을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
+        notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 매물 중 다른 동 {other_dong}건을 뺐습니다 {refill}'))
     if unreadable:
         notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
     if duplicate:
         notes.append(note('제외', f'다방 목록에 두 번 나온 매물 {duplicate}건은 한 번만 넣었습니다 (다시 채우지 않음)'))
     notes += premium_note(premium)
     notes += limit_notes(
-        total, len(collected), limit, order='다방 목록 순', approximate=approximate, inspected=received,
-        offset=sum(offsets.values()) + done_before, resumable=has_more, has_more=has_more, radius=radius_km is not None,
+        total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
+        order='다방 목록', approximate=approximate, inspected=received, offset=sum(offsets.values()) + done_before,
+        resumable=has_more, has_more=has_more,
     )
     region = place if len(places) == 1 else place.model_copy(update={'name': '·'.join(part.name for part in places)})
     return DabangSearchResult(

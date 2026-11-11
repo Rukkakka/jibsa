@@ -1284,7 +1284,7 @@ class DaangnClient(BaseHTTPClient):
             payload: 좌표 범위, 시설 종류.
 
         Returns:
-            DaangnEducationMapPointsResponseModel: 범위 안 시설 (500개에서 잘림).
+            DaangnEducationMapPointsResponseModel: 범위 안 시설 (500곳에서 잘림).
         """
         response = self._client.post(
             url=self.graphql_url,

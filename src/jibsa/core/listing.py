@@ -17,6 +17,7 @@ from pydantic import (
 )
 
 from jibsa.core.geo import within_radius
+from jibsa.core.korean import particle
 
 from typing import (
     Annotated,
@@ -294,11 +295,32 @@ NOTE_KINDS: tuple[str, ...] = get_args(NoteKind)
 # 단정하지 못하면 MAYBE 를 쓰고, 감시는 주된 조회의 PARSE_ERROR·상태 없는 UPSTREAM_ERROR 처럼 둘 다 고장으로 센다
 UPDATE_NEEDED: str = 'jibsa 업데이트가 필요합니다'
 UPDATE_MAYBE_NEEDED: str = 'jibsa 업데이트가 필요할 수 있습니다'
+# 이어 받을 수 있는 결과의 [일부] 안내 끝말. 예전 '결과의 next 를 --next 로 주세요' 는 --next 만 붙이라는 말로 읽혀,
+# 값 없이 붙인 호출이 "Option '--next' requires an argument." 로 막혔다 (2026-11-10)
+NEXT_HINT: str = '이어 보려면 같은 명령에 --next <결과의 next 값> 을 붙이세요'
 
 
 def note(kind: NoteKind, text: str) -> str:
     """종류 태그를 붙인 안내 (`'[일부] 조건에 맞는 매물 ...'`). 태그 없이 둔 안내는 출력할 때 [참고] 가 붙는다 (`tagged_notes`)."""
     return f'[{kind}] {text}'
+
+
+def more_hint(limit: int, max_limit: int, narrow: str) -> str:
+    """결과가 더 남았을 때 더 보는 법 (끝에 마침표 없음). `--limit` 이 이미 최대값이면 늘리라고 하지 않는다.
+
+    늘리면 옵션 검사에서 `INVALID_ARGUMENT` 로 막힌다. 소스마다 따로 쓰던 '--limit 의 최대값은 N입니다…' 를 여기 모은다.
+    따로 고치다 반경 검색 일부만 '반경' 으로 바뀌었다 (2026-11-10 리뷰·실측: 직방 아파트 강남역 --limit 120·네이버 반경
+    단지 강남역이 '조건·지역을 좁히세요', 직방 상가 강남역은 '…조건·반경을 좁히세요').
+
+    Args:
+        limit: 요청한 `--limit`.
+        max_limit: 그 명령의 `--limit` 최대값.
+        narrow: 좁히라고 권할 것. 그 명령에 있는 옵션만 적는다 (예: '조건·반경', '거래 유형·업종·가격 조건·지역').
+    """
+    target = f"{narrow}{particle(narrow, '을/를')}"
+    if limit >= max_limit:
+        return f'--limit 의 최대값은 {max_limit}입니다. 더 보려면 {target} 좁히세요'
+    return f'더 보려면 --limit 을 늘리거나 {target} 좁히세요'
 
 
 # 평형 하나를 묻는 실거래(네이버·다방)는 국토부 신고에 평형 타입이 없어 전용면적이 같은 평형끼리 같은 거래를 준다.
@@ -331,11 +353,11 @@ def limit_notes(
     returned: int,
     limit: int,
     *,
+    max_limit: int,
+    narrow: str,
     order: str = '검색 중심에서 가까운',
     approximate: bool = False,
     basis: str = '',
-    narrow: str = '조건',
-    radius: bool = False,
     inspected: int | None = None,
     offset: int = 0,
     resumable: bool = False,
@@ -350,12 +372,18 @@ def limit_notes(
         total: 조건에 맞는 매물 수 (모르면 None).
         returned: 돌려준 매물 수.
         limit: 요청한 최대 결과 수.
-        order: 돌려준 매물을 고른 기준 (예: '검색 중심에서 가까운', '최근 게시된').
+        max_limit: 그 명령의 `--limit` 최대값. 이미 최대값이면 늘리라고 하지 않는다. 늘리면 옵션 검사에서 막혀
+            `INVALID_ARGUMENT` 가 난다 (2026-11-10 실측: 직방 stay 서울시 --limit 120 1917건·store 역삼역 --limit 120
+            2580건에 '--limit 을 늘리거나'). 빠뜨리면 같은 문제가 다시 생기므로 기본값 없이 받는다.
+        narrow: 좁히라고 권할 것 전체 (`more_hint`). 그 명령에 있는 옵션만 적고, 동 경계·시군구 검색이면 '·지역', 역·좌표·
+            --radius 의 반경 검색이면 '·반경' 을 붙인다 (예: 상가 반경 검색 '거래 유형·업종·가격 조건·반경'). 반경 검색에 '지역'
+            을 권하면 강남역처럼 이미 좁게 찾은 검색에도 '더 좁은 지역' 이 붙고, 단지 하나의 매물처럼 좁힐 범위가 없는데 붙이면
+            다방 단지 매물이 '조건·지역을 좁히세요' 라고 했다 (2026-11-10 리뷰). 예전에는 '조건'·지역 기본값과 반경·범위 플래그로
+            받았는데, 빠뜨려도 조용히 '조건·지역' 이 나가 `max_limit` 처럼 기본값 없이 받는다 (`pagination_notes`·
+            `apt_pagination_notes` 와 같다, 2026-11-11 리뷰).
+        order: 돌려준 매물을 고른 기준. 뒤에 '순으로' 를 붙여 쓴다 (예: '검색 중심에서 가까운', '최근 게시된', '다방 목록').
         approximate: `total` 이 근사값이면 True ('약 N건').
         basis: `total` 이 어떤 조건까지 적용한 수인지 덧붙일 말 (예: '가격 조건 적용 전').
-        narrow: 좁히라고 권할 조건. 그 명령에 있는 옵션만 적는다 (예: 상가 '업종·가격 조건').
-        radius: 반경 검색이면 True. 역·좌표로 이미 좁게 찾았으니 지역 대신 반경을 좁히라고 권한다
-            (동 경계·시군구 검색에 권하는 '더 좁은 지역' 을 강남역 검색에도 붙이던 문제).
         inspected: 요약을 받아 확인한 매물 수 (조회 예산). 주면 `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
             받은 뒤 거래 불가로 뺀 매물만큼 다시 채우지 않으므로, 1건만 빠져도 `returned < limit` 이 되어 안내가
             사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
@@ -369,13 +397,20 @@ def limit_notes(
         return []
     if total is None or total <= offset + returned:
         return []
-    lead = f"조건에 맞는 매물 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
-    picked = f'{order} {offset + 1}번째부터 {returned}건' if offset else f'{order} {returned}건'
-    area = '반경' if radius else '지역'
+    # 전체 수를 먼저 말하고 그중 몇 건을 보여 주는지 잇는다. 예전 '약 41건 중 검색 중심에서 가까운 1건입니다' 는 무엇이
+    # 1건인지 바로 와닿지 않았다 (2026-11-10). 1건만 준 까닭으로 --limit 을 들지 않는다: 확인한 뒤 뺀 매물이 있으면
+    # '--limit 15 라 14건' 처럼 어긋나고, 이어 받을 수 있는 검색에서 next 대신 --limit 을 늘려 처음부터 다시 찾게 한다
+    found = f"조건에 맞는 매물이 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
+    start = f'{offset + 1}번째부터 ' if offset else ''
+    if returned:
+        shown = f"{found} 있고, 그중 {order} 순으로 {start}{returned}건{'을' if offset else '만'} 보여 줍니다"
+    else:
+        # 확인한 매물이 모두 빠지면(거래 불가 등) '0건만 보여 줍니다' 가 되어 따로 쓴다
+        shown = f'{found} 있지만, {order} 순으로 {start}확인한 매물이 모두 빠져 보여 줄 매물이 없습니다'
     # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
     if resumable:
-        return [note('일부', f'{lead} 중 {picked}입니다. 이어 보려면 결과의 next 를 --next 로 주세요')]
-    return [note('일부', f'{lead} 중 {picked}입니다. 더 보려면 --limit 을 늘리거나 {narrow}·{area}을 좁히세요')]
+        return [note('일부', f'{shown}. {NEXT_HINT}')]
+    return [note('일부', f'{shown}. {more_hint(limit, max_limit, narrow)}')]
 
 
 def beyond_radius_notes(

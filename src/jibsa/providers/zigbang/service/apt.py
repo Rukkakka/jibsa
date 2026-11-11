@@ -403,7 +403,7 @@ def search_apt_listings(
     skipped = [part.name for part, was_asked in zip(regions, asked) if not was_asked]
     has_more = not all(done)
     notes = apt_pagination_notes(
-        len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None,
+        len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None, narrow='조건·지역',
     )
     if filter_area:
         # 받은 원본(limit 건) 안에서만 거르므로 맞는 매물이 더 있어도 적게 나온다 (2026-10-09 실측: 대치동
@@ -419,9 +419,11 @@ def search_apt_listings(
             )
         )
     if is_dong_code(region.legal_division_code):
-        # 아파트가 적은 동은 직방 지역 목록이 이웃 동 단지를 대신 준다 (2026-10-10 실측: 문래동1가 목록 40건이 모두
-        # 대림동·영등포동). 서버가 준 결과라 빼지 않고 알린다. 목록의 local3 는 늘 와서(실측 22개 동 364건)
-        # 주소 마지막 단어가 곧 단지의 동이다
+        # 직방 지역 목록은 그 동 단지를 먼저 주고 이웃 동 단지를 이어서 주며, total 도 이웃 동까지 센다. 아파트가 적은 동은
+        # 처음부터 이웃 동이다 (2026-10-10 실측: 문래동1가 목록 40건이 모두 대림동·영등포동. 2026-11-11 실측: 대치동 전세
+        # total 391 에 1쪽 대치동 50건, 2쪽 개포동 41·도곡동 7·대치동 2, 3쪽부터 이웃 동만). 서버가 준 결과라 빼지 않고 알린다.
+        # 이웃 동이 대부분인 쪽부터는 이어 받아도 그 동 매물이 거의 없다고 알린다. 안 알리니 에이전트가 이웃 동만 나오는 쪽을
+        # 7번 더 받았다 (2026-11-11 LLM 사용 시험). 목록의 local3 는 늘 와서(실측 22개 동 364건) 주소 마지막 단어가 곧 단지의 동이다
         searched_names = {part.name for part in searched}
         others = [
             dong for listing in listings
@@ -433,7 +435,9 @@ def search_apt_listings(
             notes.append(note(
                 '범위',
                 f'{len(listings)}건 중 {len(others)}건은 다른 동({shown}) 단지 매물입니다. '
-                '직방 지역 목록은 동 안에 아파트가 적으면 이웃 동 단지도 함께 줍니다. address 로 위치를 확인하세요',
+                '직방 지역 목록은 그 동 단지 뒤에 이웃 동 단지를 이어서 주고, total 도 이웃 동까지 센 수입니다. '
+                + ('이웃 동이 대부분인 쪽부터는 이어 받아도 그 동 매물이 거의 없습니다. ' if len(others) * 2 > len(listings) else '')
+                + 'address 로 위치를 확인하세요',
             ))
     head: list[str] = []
     # 함께 찾는 지역은 '○가' 동이거나 구가 있는 시의 구다 (resolve_apt_region)
@@ -624,7 +628,9 @@ def search_apt_listings_near(
     # 서버가 공급면적을 거르는 동·구 검색을 권한다. has_more 와 따로 정하면 단지 7곳을 다 훑고 매물 4건을 다 받은
     # --limit 4 에 '7곳 중 가까운 7곳만 훑었습니다' 가 나갔다 (2026-10-24 실측: 선릉역·마포역 0.3km --area-min 100)
     area_capped = area_filtered and len(listings) < limit and has_more
-    notes = apt_pagination_notes(len(listings), limit, inspected, has_more=has_more, suggest_limit=not area_capped)
+    notes = apt_pagination_notes(
+        len(listings), limit, inspected, has_more=has_more, suggest_limit=not area_capped, narrow='조건·반경',
+    )
     unscanned = len(danjis) - scanned
     if unscanned > 0 and scanned >= max_complexes and inspected < limit:
         notes.append(note(

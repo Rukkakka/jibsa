@@ -40,6 +40,8 @@ class RegionNotFoundError(JibsaError):
             message=f"'{query}' 에 해당하는 지역을 찾지 못했습니다",
             hint=hint or "동 이름(예: '역삼동')이나 역 이름(예: '강남역')으로 다시 검색하거나 --lat/--lng 로 좌표를 직접 주세요",
         )
+        # 여러 지역을 함께 찾다 실패하면 어느 곳을 못 찾았는지 대체 경로 안내에 쓴다 (직방 단기임대)
+        self.query = query
 
 
 class RegionAmbiguousError(JibsaError):

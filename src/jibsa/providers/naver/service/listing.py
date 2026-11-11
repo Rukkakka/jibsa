@@ -484,7 +484,10 @@ def list_complex_articles(
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
     notes += group_sort_notes(sort_type, result)
-    notes += pagination_notes(total, len(result), limit, inspected, truncated=truncated)
+    # 단지 하나라 지역 대신 단지 매물의 조건만 좁히라고 한다 (직방·다방 단지 매물과 같다)
+    notes += pagination_notes(
+        total, len(result), limit, inspected, truncated=truncated, narrow='거래 유형·평형·동·가격 조건',
+    )
     return NaverListingsResult(
         total=total,
         returned=len(result),

@@ -39,7 +39,7 @@ class DaangnEducationMapPointsDataModel(ResponseModel):
 
     education_map_points: Annotated[
         list[DaangnEducationMapPointModel],
-        Field(description='좌표 범위 안의 시설 (500개에서 잘린다)', alias='educationMapPoints')
+        Field(description='좌표 범위 안의 시설 (500곳에서 잘린다)', alias='educationMapPoints')
     ] = []
 
 

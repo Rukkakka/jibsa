@@ -11,6 +11,7 @@ from jibsa.core.geo import (
     haversine_km,
     within_radius,
 )
+from jibsa.core.listing import note
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.development import (
     DaangnDevelopmentByBusiNoRequestPayloadModel,
@@ -152,7 +153,7 @@ def list_developments(
         len(found), limit, subject='개발 사업', max_limit=DEVELOPMENT_MAX_LIMIT, narrow='--category·--radius',
     )
     if hidden:
-        notes.append(f'당근 웹 지도가 숨기는 사업(진행 코드 E01) {hidden}건은 뺐습니다')
+        notes.append(note('제외', f'당근 웹 지도가 숨기는 사업(진행 코드 E01) {hidden}건은 뺐습니다'))
     return DaangnDevelopmentsResult(
         radius_km=radius_km,
         total=len(found),

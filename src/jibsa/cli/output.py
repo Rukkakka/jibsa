@@ -188,7 +188,7 @@ def manwon_note(payload: Any) -> str | None:
         return None
     round_eok = values[0] % MANWON_PER_EOK == 0
     examples = [values[0], *[value for value in values[1:] if (value % MANWON_PER_EOK == 0) != round_eok][:1]]
-    return note('참고', '금액은 만원이다: ' + ', '.join(f'{value} = {manwon_text(value)}' for value in examples))
+    return note('참고', '금액은 만원 단위입니다: ' + ', '.join(f'{value} = {manwon_text(value)}' for value in examples))
 
 
 def _select_fields(value: Any, fields: frozenset[str]) -> Any:

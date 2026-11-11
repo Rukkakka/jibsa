@@ -14,6 +14,7 @@ from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
 )
+from jibsa.core.listing import NEXT_HINT
 from jibsa.providers.zigbang.api.client import (
     ZigbangClient,
     ZigbangGuestAuth,
@@ -672,7 +673,7 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
     assert result.has_more and result.next_position == {
         'codes': ['11680101'], 'offsets': [limit], 'done': [False], 'totals': [200],
     }
-    assert any('이어 보려면 결과의 next' in note for note in result.notes)
+    assert any(NEXT_HINT in note for note in result.notes)
 
 
 def test_apt_radius_carries_unused_budget_to_next_complex() -> None:

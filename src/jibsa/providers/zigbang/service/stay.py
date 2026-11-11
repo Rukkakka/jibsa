@@ -36,6 +36,7 @@ from jibsa.core.listing import (
     limit_notes,
     listing_as,
     m2_to_pyeong,
+    normalize_address,
     normalize_date,
     note,
     won_to_manwon,
@@ -63,6 +64,7 @@ from jibsa.providers.zigbang.api.response.stay import (
     ZigbangStayItemSummaryModel,
 )
 from jibsa.providers.zigbang.service.common import (
+    MAX_LIST_LIMIT,
     ZigbangBoundary,
     ZigbangRegion,
     drop_unused_scope,
@@ -556,7 +558,7 @@ def search_stay_listings(
     찾아 `boundary` 를 읍·면 이름으로 낸다.
 
     Raises:
-        RegionNotFoundError: 검색 API 가 지역을 찾지 못했을 때 (세종의 동, `_stay_region_search`).
+        RegionNotFoundError: 검색 API 가 지역을 찾지 못했을 때 (2026-10 의 세종의 동, `_stay_region_search`).
     """
     check_stay_sort(sort)
     conditions = conditions or ZigbangStayConditions()
@@ -622,21 +624,22 @@ def search_stay_listings(
         listings = listings[:limit]
         has_more = truncated or len(candidate_ids) < in_radius
         scope_notes = limit_notes(
-            in_radius, len(listings), limit, order=order, narrow=STAY_NARROW, radius=radius_cut,
-            inspected=len(candidate_ids), has_more=has_more,
+            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'반경' if radius_cut else '지역'}",
+            order=order, inspected=len(candidate_ids), has_more=has_more,
         )
     elif boundary is not None:
         in_radius = len(pins)
         has_more = len(candidate_ids) < in_radius
         scope_notes = limit_notes(
-            in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STAY_NARROW,
-            inspected=len(candidate_ids), has_more=has_more,
+            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STAY_NARROW}·지역',
+            order=f'{boundary.name} 중심에서 가까운', inspected=len(candidate_ids), has_more=has_more,
         )
     else:
         in_radius = sum(1 for distance in pins.values() if within_radius(distance, radius_km))
         has_more = len(candidate_ids) < in_radius
         scope_notes = limit_notes(
-            in_radius, len(listings), limit, narrow=STAY_NARROW, radius=True, inspected=len(candidate_ids),
+            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STAY_NARROW}·반경',
+            inspected=len(candidate_ids),
             has_more=has_more,
         ) + beyond_radius_notes(listings, radius_km)
     return ZigbangStaySearchResult(
@@ -682,15 +685,32 @@ def _stay_search_ids(
     region: ZigbangRegion,
     extra_regions: list[ZigbangRegion],
 ) -> list[list[int]]:
-    """검색 API 로 지역(과 함께 찾을 지역)마다 매물 ID 를 받는다. 지역마다 응답 순서 그대로다."""
-    search_lists = [_stay_region_search(client, context, region.name)]
+    """검색 API 로 지역(과 함께 찾을 지역)마다 매물 ID 를 받는다. 지역마다 응답 순서 그대로다.
+
+    한 곳이라도 못 찾으면 그 자리에서 `RegionNotFoundError` 를 낸다. CLI 는 모든 지역을 지도로 다시 찾으므로 나머지 지역을
+    더 물어도 결과는 버려지고 요청만 늘며, 그 사이 다른 에러가 나면 지도 대체 경로를 막는다 (2026-11-10 리뷰). 에러의
+    이름은 그 요청에 보낸 지역(`_searched_area`)이다. 함께 찾는 지역이 있으면 `region` 은 합친 이름이라, 그 이름을 대면 한
+    곳만 못 찾아도 모두 못 찾은 것처럼 읽혔다 (2026-11-10 리뷰·실측: 성수동2가만 없는 동으로 바꿔 보내니 직방은 그 동에만
+    REGION_NOT_FOUND 를 줬는데 안내는 '성수동1가·성수동9가를 찾지 못해').
+    """
+    search_lists = [_stay_region_search(client, context, _searched_area(context) or region.name)]
     # '○가' 동·구가 있는 시의 구는 검색 중심과 같은 시·구에서만 오고 local1 이 늘 있어 (2026-10-11 실측: '○가' 동 13곳,
     # 성남시·수원시 구) model_copy 로 다시 검증하지 않는다
     for extra in extra_regions:
-        search_lists.append(_stay_region_search(client, context.model_copy(update={
-            'local1': extra.local1, 'local2': extra.local2, 'local3': extra.local3,
-        }), extra.name))
+        extra_context = context.model_copy(update={'local1': extra.local1, 'local2': extra.local2, 'local3': extra.local3})
+        search_lists.append(_stay_region_search(client, extra_context, _searched_area(extra_context) or extra.name))
     return search_lists
+
+
+def _searched_area(context: ZigbangGuestItemsSearchRequestParameterModel) -> str | None:
+    """검색 API 에 보낸 지역 (local1~3, 주소 검색이 아니면 None).
+
+    `normalize_address` 로 세종의 겹친 시 이름을 뺀다. 직방은 세종의 동을 local1 '세종특별자치시'·local2 '세종'·local3
+    '반곡동' 으로 줘서, 그대로 이으면(`join_address`) '세종특별자치시 세종 반곡동' 이 된다 (2026-11-10 리뷰·실측. 직방 지역
+    검색의 주소는 '세종특별자치시 반곡동'). 앞 조각으로 시작하는 조각을 빼던 것을 이 함수로 바꿨다 (2026-11-11 리뷰: local2 가
+    '세종시' 로 오면 빼지 못했다).
+    """
+    return normalize_address(join_address(context.local1, context.local2, context.local3))
 
 
 def _stay_pins(
@@ -896,7 +916,7 @@ def get_stay_listing(
 STAY_WEEKLY_PRICE_NOTE: str = note(
     '참고',
     '목록 금액과 가격순은 주당 임대료+관리비 기준이라 청소비·직방 이용료·장기 할인이 빠져 있습니다. 그 기간에 실제로 내는 돈은 '
-    '--details 로 앞 30건에 period_cost 를 붙여 보세요 (매물당 요청 1회)',
+    f'--details 로 앞 {DETAILS_MAX}건에 period_cost 를 붙여 보세요 (매물당 요청 1회)',
 )
 
 
@@ -1019,9 +1039,11 @@ def _stay_region_search(
 ) -> list[int]:
     """단기임대 검색 API 로 매물 ID 를 받는다. 지역을 찾지 못했다는 400 은 `RegionNotFoundError` 로 바꾼다.
 
-    세종의 동은 local1·local2 를 어떻게 줘도 REGION_NOT_FOUND 다 (2026-10-11 실측: 반곡동을 세종특별자치시·세종시 ×
-    세종·없음·세종시 조합 모두 400, 세종특별자치시 전체·양평읍·역삼동·치평동은 200). 소스 장애(UPSTREAM_ERROR)로 보이지
-    않게 바꾸고, CLI 가 지도 칸(동 경계·반경) 검색으로 다시 찾는다.
+    세종의 동은 local1·local2 를 어떻게 줘도 REGION_NOT_FOUND 였다 (2026-10-11 실측: 반곡동을 세종특별자치시·세종시 ×
+    세종·없음·세종시 조합 모두 400, 세종특별자치시 전체·양평읍·역삼동·치평동은 200). 2026-11-10 에는 반곡동·어진동·나성동
+    모두 local1=세종특별자치시·local2=세종 으로 200 이라 이 경로를 타지 않는다. 다시 막힐 수 있어 남겨 두며, 소스
+    장애(UPSTREAM_ERROR)로 보이지 않게 바꾸고 CLI 가 지도 칸(동 경계·반경) 검색으로 다시 찾는다. 이 경로를 타면 직방이
+    바뀐 것이라 CLI 의 대체 경로 안내에 업데이트 문구가 붙는다.
     """
     try:
         return _stay_search_call(client.run_request_guest_items_search, context).item_ids

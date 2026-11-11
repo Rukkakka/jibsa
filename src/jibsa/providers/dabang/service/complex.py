@@ -18,6 +18,7 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     limit_notes,
     m2_to_pyeong,
+    more_hint,
     normalize_address,
     normalize_date,
     note,
@@ -48,6 +49,7 @@ from jibsa.providers.dabang.api.response.complex import (
     DabangLatelyPriceModel,
 )
 from jibsa.providers.dabang.service.common import (
+    MAX_LIST_LIMIT,
     MAX_LIST_PAGES,
     PAGE_SIZE,
     ZOOM_BY_SEARCH_TYPE,
@@ -287,8 +289,29 @@ def search_complexes(
         notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 단지 중 다른 동 {other_dong}곳을 뺐습니다'))
     if duplicate:
         notes.append(note('제외', f'다방이 다음 쪽에 다시 준 단지 {duplicate}곳은 한 번만 넣었습니다 (다시 채우지 않음)'))
-    if has_more and received >= limit:
-        notes.append(note('일부', f'단지가 더 있습니다 (다방 목록 순 앞 {received}곳을 봤습니다). 더 보려면 --limit 을 늘리거나 더 좁은 동·역으로 찾으세요'))
+    if has_more and received >= limit and keep_gids is not None and other_dong:
+        # 동 검색은 동을 덮는 사각형의 다방 목록에서 그 동만 남겨, 늘려도 다른 동이 대부분이다. '지역을 좁히세요' 는 이미 동
+        # 하나라 따를 수 없었고 total 도 사각형 안 수였다 (2026-11-11 LLM 사용 시험: 반포동 --limit 60 에 반포동 6곳, total 348).
+        # 그 동 단지를 빠짐없이 주는 당근·네이버 동 단지 목록을 알린다
+        grow = (
+            '--limit 을 늘리면 더 보지만 다른 동이 대부분입니다. ' if limit < MAX_LIST_LIMIT
+            else f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. '
+        )
+        notes.append(note(
+            '일부',
+            f'단지가 더 있습니다 (동을 덮는 사각형의 다방 목록 순 앞 {received}곳 중 이 동 {len(complexes)}곳, total 은 사각형 안 수). '
+            + grow + '동 안 단지를 빠짐없이 보려면 jibsa daangn search complexes <동> 이나 jibsa naver search complexes <동> 으로 찾으세요',
+        ))
+    elif has_more and received >= limit:
+        # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 역삼동 --limit 120 에 '--limit 을 늘리거나')
+        notes.append(note(
+            '일부',
+            # 조건 옵션이 없어 범위만 권한다. 동은 지역을, 역·대학·좌표는 반경을 권한다. --radius 가 없어도 역은 다방이 정한 역
+            # 반경·대학은 대학 둘레라 더 좁은 지역이 없고 --radius 로 좁힌다 (limit_notes 의 radius 설명, 분양 search_sales 와 같다.
+            # 2026-11-11 리뷰·실측: 강남역 --limit 1 이 범위 '강남역 다방 역 반경' 에 '지역을 좁히세요')
+            f'단지가 더 있습니다 (다방 목록 순 앞 {received}곳을 봤습니다). '
+            + more_hint(limit, MAX_LIST_LIMIT, '반경' if radius_km is not None or place.kind != 'dong' else '지역'),
+        ))
     region = place if len(places) == 1 else place.model_copy(update={'name': '·'.join(part.name for part in places)})
     return DabangComplexListResult(
         region=region, scope=scope, total=total, returned=len(complexes), has_more=has_more, complexes=complexes, notes=notes,
@@ -821,7 +844,11 @@ def list_complex_listings(
     if duplicate:
         notes.append(note('제외', f'다방이 다음 쪽에 다시 준 매물 {duplicate}건은 한 번만 넣었습니다 (다시 채우지 않음)'))
     notes += premium_note(premium)
-    notes += limit_notes(total, len(listings), limit, order='다방 목록 순', inspected=received, has_more=has_more)
+    # 단지 하나라 지역·반경 대신 단지 매물의 조건만 좁히라고 한다
+    notes += limit_notes(
+        total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order='다방 목록', narrow='거래 유형·평형·가격 조건',
+        inspected=received, has_more=has_more,
+    )
     return DabangComplexListingsResult(
         complex_id=complex_id,
         name=result.complex.complex_name,

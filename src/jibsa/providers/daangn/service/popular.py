@@ -106,7 +106,7 @@ def list_popular_listings(
         # 서버가 순위를 limit 건에서 잘라 주므로 limit 건을 다 받았으면 뒤 순위가 남아 있다 (2026-10-14 실측: 역삼동
         # --limit 30 에서 30건을 받고 1건을 빼자 '더 조회할 매물이 없습니다' 라고 했다)
         + listing_budget_notes(
-            limit, len(articles), len(listings),
+            limit, len(articles), len(listings), max_limit=POPULAR_MAX_LIMIT,
             has_more=len(articles) >= limit and limit < POPULAR_MAX_LIMIT,
         )
         + complex_building_notes(shown),

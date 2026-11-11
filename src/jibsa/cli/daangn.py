@@ -317,13 +317,29 @@ COMMUTE_HINTS: UsageHints = LISTING_HINTS._replace(by_option={
 })
 
 
+
+def _found_by(finder: str) -> str:
+    """위치를 찾은 곳. 당근이 못 찾아 다른 소스 지역 검색으로 찾았으면 그 까닭을 붙인다.
+
+    '직방 지역 검색으로 찾은 위치' 만 쓰니, 직방을 부르지 않은 에이전트가 당근 결과에 왜 직방이 나오는지 몰랐다
+    (2026-11-11 LLM 사용 시험: daangn search listings 양근리 --radius 3).
+    """
+    return finder if finder == '당근' else f'당근이 찾지 못해 {finder}'
+
+
 @contextmanager
-def _complex_name_hint(client: DaangnClient, query: str) -> Iterator[None]:
+def _complex_name_hint(client: DaangnClient, query: str, *, station_alternative: str = '') -> Iterator[None]:
     """동·구를 받는 명령(지역 실거래·단지 목록·후기)에 단지 이름을 주어 지역을 못 찾았으면, 단지 ID 와 단지 명령을 힌트로 알린다.
 
     전에는 '동·구 이름으로 다시 찾으라' 만 알려 에이전트가 단지 ID 를 찾는 데 호출을 한 번 더 썼다 (2026-10-31 재검증:
     search complexes 헬리오시티 → REGION_NOT_FOUND → search locations 헬리오시티). 지역을 못 찾았을 때만 단지 후보를 3곳
     묻는다 (요청 1회). 단지 검색이 실패하면 `search_complexes` 가 빈 목록을 주고 원래 힌트에 찾는 법만 붙인다.
+
+    역 이름은 단지 이름이라고 하지 않고 역이라고 알린다. 이름에 역 이름이 들어간 단지(강남역우정에쉐르)가 있어 '강남역' 을
+    '단지 이름입니다' 라고 했다 (2026-11-11 LLM 사용 시험: search complexes 강남역). 그런 단지는 뒤에 덧붙인다.
+
+    Args:
+        station_alternative: 역 이름일 때 덧붙일 다른 방법 (단지 목록은 다방·네이버의 역 반경 단지 목록). 마침표 없이 준다.
     """
     try:
         yield
@@ -331,17 +347,21 @@ def _complex_name_hint(client: DaangnClient, query: str) -> Iterator[None]:
         candidates = search_complexes(client, query, limit=3, notes=[])
         key = query.replace(' ', '')
         matched = [candidate for candidate in candidates if key in candidate.name.replace(' ', '')]
+        found = ', '.join(f'{candidate.complex_id}({candidate.address or candidate.name})' for candidate in matched)
+        commands = '단지 정보는 jibsa daangn complex <ID>, 실거래는 real-price <ID>, 매물은 search listings --complex <ID> 로 찾으세요'
+        if key.endswith('역'):
+            hint = f"{quoted(query, '은/는')} 역 이름입니다. 이 명령은 동·구로만 찾으니 역이 있는 동 이름(예: 역삼동)으로 찾으세요"
+            if station_alternative:
+                hint += f'. {station_alternative}'
+            if matched:
+                hint += f". 이름에 {quoted(query, '이/가')} 들어간 단지: {found}. {commands}"
+            raise RegionNotFoundError(query, hint=hint) from None
         if not matched:
             raise RegionNotFoundError(
                 query, hint=f"{(exc.hint or '').rstrip('.')}. 단지 이름이면 jibsa daangn search locations <단지 이름> 으로 단지 ID 를 찾으세요",
             ) from None
-        found = ', '.join(f'{candidate.complex_id}({candidate.address or candidate.name})' for candidate in matched)
         raise RegionNotFoundError(
-            query,
-            hint=(
-                f"{quoted(query, '은/는')} 동·구가 아니라 단지 이름입니다: {found}. 단지 정보는 jibsa daangn complex <ID>, "
-                '실거래는 real-price <ID>, 매물은 search listings --complex <ID> 로 찾으세요'
-            ),
+            query, hint=f"{quoted(query, '은/는')} 동·구가 아니라 단지 이름입니다: {found}. {commands}",
         ) from None
 
 
@@ -739,7 +759,7 @@ def search_command(
     예: jibsa daangn search listings 역삼역 --radius 0.5 -t 원룸 --trade 월세 --option 반려동물가능
     예: jibsa daangn search listings 성수동 -t 원룸 --trade 월세 --limit 10 --details
 
-    결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않는다.
+    결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않는다.
     """
     position = decode_next(next_)
     require_finite('--radius', radius)
@@ -828,7 +848,11 @@ def search_command(
         if by_area:
             center, geocode_notes, finder = _geocode(client, dong, radius_km)
             emit_area(center.lat, center.lng, geocode_notes + [note(
-                '범위', f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다",
+                # 반경을 말하지 않으면 역 이름에 --radius 를 준 검색이 역 주변 목록이 아닌 반경 검색이 된 줄 몰라, walk_minutes 가
+                # 없다고 guide 와 어긋난다고 했다 (2026-11-11 LLM 사용 시험: 역삼역 --radius 1)
+                '범위',
+                f"{quoted(dong, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
+                f'반경 {radius_km:g}km 안을 찾았습니다',
             )])
             return
         try:
@@ -1030,7 +1054,7 @@ def commute_command(
             center, geocode_notes, finder = _geocode(client, workplace, DEFAULT_RADIUS_KM)
             lat, lng = center.lat, center.lng
             notes += geocode_notes + [
-                f"{quoted(workplace, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 회사 위치로 보았습니다"
+                f"{quoted(workplace, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 회사 위치로 보았습니다"
             ]
         try:
             result = search_commute(
@@ -1148,7 +1172,10 @@ def complexes_command(
             household_max=household_max,
             parking_min=parking_min,
         )
-        with _complex_name_hint(client, region):
+        with _complex_name_hint(
+            client, region,
+            station_alternative='역 근처 단지는 jibsa dabang search complexes <역 이름> 이나 jibsa naver search complexes <역 이름> 으로 찾으세요',
+        ):
             result = list_region_complexes(client, region, city=city, conditions=conditions, sort=sorts[0], limit=limit)
         emit(result, pretty, notes=result.notes)
 
@@ -1227,7 +1254,8 @@ def _center(
     assert place is not None
     center, notes, finder = _geocode(client, place, radius_km)
     return center.lat, center.lng, notes + [
-        f"{quoted(place, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 찾았습니다"
+        f"{quoted(place, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
+        f'반경 {radius_km:g}km 안을 찾았습니다'
     ]
 
 

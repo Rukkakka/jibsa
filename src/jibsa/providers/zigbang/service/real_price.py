@@ -18,6 +18,7 @@ from jibsa.core.listing import (
     TradeType,
     normalize_date,
     normalize_floor,
+    note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.real_price import (
@@ -282,24 +283,31 @@ def get_real_prices(
             break
     notes: list[str] = []
     if deal_type == 'rent' and has_next and len(transactions) < limit:
-        notes.append(
+        # 몇 건 중에서 골랐는지 설명이라 [참고] 다. 더 있다는 [일부] 는 아래 안내 하나 (2026-11-10 실측: 헬리오시티 월세
+        # --limit 1200 에 '최근 거래 1200건 중 월세만' [참고] 과 '직방에서 직접 확인' [일부])
+        notes.append(note(
+            '참고',
             f'직방은 전세·월세를 함께 줘서 최근 거래 {page * REAL_PRICE_PAGE_SIZE}건 중 {trade_type}만 골랐습니다. '
-            '더 오래된 거래는 보지 않았습니다'
-        )
+            '더 오래된 거래는 보지 않았습니다',
+        ))
     has_more = has_next or len(transactions) > limit
     filled = len(transactions) >= limit
     transactions = transactions[:limit]
     url = apt_danji_url(number)
     if not has_more:
-        notes.append('직방 API가 제공하는 마지막 실거래가 페이지까지 조회했습니다')
+        notes.append(note('참고', '직방이 주는 실거래를 끝까지 받았습니다'))
     elif filled and page < REAL_PRICE_MAX_PAGES:
-        # --limit 에서 멈췄으면 늘려서 더 받을 수 있다. 직방에서 직접 보라는 안내는 쪽 상한까지 보고도 남았을 때만 맞다
-        notes.append(
+        # --limit 에서 멈췄으면 늘려서 더 받을 수 있다. 직방에서 직접 보라는 안내는 쪽 상한까지 보고도 남았을 때만 맞다.
+        # 당근 `_collect_pages` 와 달리 `limit < REAL_PRICE_MAX_LIMIT` 는 보지 않는다. 직방은 요청한 수만큼만 줘서 --limit 1200
+        # 은 24쪽째에야 차 위 조건(page < 24)에서 이미 빠진다 (2026-11-11 리뷰·실측: 헬리오시티 apt-38487 매매 limit 10·50·100
+        # 이 10·50·100건, 전월세 limit 50 이 50건)
+        notes.append(note(
+            '일부',
             '더 조회할 실거래가가 있습니다. '
-            f'--limit 을 늘리면 (최대 {REAL_PRICE_MAX_LIMIT}건) 더 오래된 거래까지 받습니다'
-        )
+            f'--limit 을 늘리면 (최대 {REAL_PRICE_MAX_LIMIT}건) 더 오래된 거래까지 받습니다',
+        ))
     else:
-        notes.append(f'더 조회할 실거래가가 있습니다. 더 오래된 거래는 직방에서 직접 확인해 주세요: {url}')
+        notes.append(note('일부', f'더 조회할 실거래가가 있습니다. 더 오래된 거래는 직방에서 직접 확인하세요: {url}'))
     return ZigbangRealPriceResult(
         complex_id=complex_id,
         trade_type=trade_type,

@@ -179,6 +179,10 @@ def get_region_reviews(
 
     if review_count is not None and review_count >= REVIEW_SUMMARY_CAP:
         notes.append(f'동네 후기는 {REVIEW_SUMMARY_CAP}개 이상입니다 (당근이 {REVIEW_SUMMARY_CAP}개까지만 셉니다)')
+    if top_complexes and region.level == '동':
+        # 후기 많은 단지는 구의 후기 페이지에서 받아 구 전체 순위다. 알리지 않으니 동의 단지로 읽었다 (2026-11-11 LLM 사용
+        # 시험·실측: 잠실동·문정동·가락동 모두 헬리오시티·송파파크하비오푸르지오·파크리오)
+        notes.append(f'후기 많은 단지(top_complexes)는 {region.name2} 전체 기준이라 {region.name3} 밖 단지도 들어 있습니다')
     if has_reviews or top_complexes:
         notes.append(f'후기 내용은 당근 동네 후기 페이지({url})에서 확인하세요. 단지 후기는 daangn complex 의 url 에서 봅니다')
     else:

@@ -94,7 +94,7 @@ jibsa dabang search locations 은마
 | `--built-within` | 사용승인 뒤 이 햇수 이내 (년). 다방은 연도로 세어 10 이면 10년 전 해의 1월 1일 이후 승인 | 미지정 |
 | `--floor` | 층: 1층, 2층이상, 반지하, 옥탑. 반복하거나 쉼표로 구분 (OR) | 전체 |
 | `--room` | 방 개수: 원룸, 투룸. 반복하거나 쉼표로 구분 (OR) | 전체 |
-| `--condition` | 기타 조건: 주차, 엘리베이터, 단기임대, 분리형, 복층. 반복하거나 쉼표로 구분 (AND) | 미지정 |
+| `--condition` | 기타 조건: 주차, 엘리베이터, 단기임대, 분리형, 복층. 반복하거나 쉼표로 구분 (AND). 단기임대는 다방이 월세 매물에만 걸어, 주면 월세만 찾고 `notes` 로 알린다 (`--trade` 에 월세가 없으면 입력 오류) | 미지정 |
 | `--limit` | 받을 매물 수 (제외 전) 범위: 1~120. | 24 |
 | `--next` | 앞 결과의 `next`. 같은 지역·조건에 주면 받은 매물 다음부터 이어 받는다 | 미지정 |
 | `--details` | 매물마다 상세를 1회씩 더 받아 사용승인일(`approved_at`)과 건물 용도(`residence_type`)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건) | 꺼짐 |
@@ -167,7 +167,7 @@ jibsa dabang search complexes 강남역 -t 오피스텔
 
 **반환값**
 
-단지마다 `complex_id`, `name`, `complex_type`, `years`(입주 연차), `household_count`, `address`, `listing_count`·`rent_listing_count`·`lease_listing_count`·`sale_listing_count`(지금 올라온 매물 수), `recent_sale_manwon`·`recent_lease_manwon`(최근 실거래가, 다방이 고른 대표 평형)을 준다. 아파트 동 검색은 매물 검색처럼 동 경계를 덮는 사각형에서 그 동 단지만 남긴다. 아파트 대학 검색은 대학 중심 1km 반경을 덮는 사각형으로 찾고 `[범위]` 로 알린다. 다방이 다음 쪽에 같은 단지를 다시 주기도 해서 한 번만 넣고 `notes` 로 알린다 (다시 채우지 않는다).
+단지마다 `complex_id`, `name`, `complex_type`, `years`(입주 연차), `household_count`, `address`, `listing_count`·`rent_listing_count`·`lease_listing_count`·`sale_listing_count`(지금 올라온 매물 수), `recent_sale_manwon`·`recent_lease_manwon`(최근 실거래가, 다방이 고른 대표 평형)을 준다. 아파트 동 검색은 매물 검색처럼 동 경계를 덮는 사각형에서 그 동 단지만 남긴다. 그래서 `--limit` 을 늘려도 다른 동 단지가 대부분이고 `total` 도 사각형 안 수다 (반포동 `--limit 60` 에 반포동 6곳, `total` 348). 더 있으면 `notes` 가 동 안 단지를 빠짐없이 주는 당근·네이버 `search complexes <동>` 을 알린다. 아파트 대학 검색은 대학 중심 1km 반경을 덮는 사각형으로 찾고 `[범위]` 로 알린다. 다방이 다음 쪽에 같은 단지를 다시 주기도 해서 한 번만 넣고 `notes` 로 알린다 (다시 채우지 않는다).
 
 ## 7. `complex` — 단지 정보
 
