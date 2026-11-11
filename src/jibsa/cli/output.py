@@ -437,6 +437,19 @@ class UsageHints(NamedTuple):
         )
 
 
+class ChangedUsage(NamedTuple):
+    """예전 문서대로 부른 사용법 오류에 바뀐 사용법을 알리는 안내 (`jibsa.cli.app.changed_usage_hint`).
+
+    Attributes:
+        hint: 바뀐 사용법.
+        removed_options: 뺀 옵션. 주면 이 옵션을 줬을 때만 알리고, 새 사용법의 다른 오류(옵션 오타·인자 누락)는
+            원래 힌트에 맡긴다. 없앤 명령은 비워 둔다.
+    """
+
+    hint: str
+    removed_options: frozenset[str] = frozenset()
+
+
 def split_csv(
     values: list[str] | None,
     allowed: tuple[ChoiceT, ...],
@@ -593,9 +606,12 @@ class HintedUsageError(UsageError):
 
 
 class HintedBadParameter(typer.BadParameter):
-    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다."""
+    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다.
 
-    def __init__(self, message: str, option: str, hint: str) -> None:
+    `option` 이 None 이면 Click 이 오류 난 인자·옵션 이름('complex_id', '--complex')을 채운다 (`parser` 안에서 던질 때).
+    """
+
+    def __init__(self, message: str, option: str | None, hint: str) -> None:
         super().__init__(message, param_hint=option)
         self.hint = hint
 

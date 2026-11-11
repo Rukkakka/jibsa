@@ -43,10 +43,6 @@ from jibsa.providers.daangn.api.request.complex import (
     DaangnSearchComplexesRequestPayloadModel,
     DaangnTrendingComplexesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.development import (
-    DaangnDevelopmentByBusiNoRequestPayloadModel,
-    DaangnDevelopmentDistrictsRequestPayloadModel,
-)
 from jibsa.providers.daangn.api.request.listing import (
     DaangnArticlesRequestParameterModel,
 )
@@ -77,7 +73,7 @@ from jibsa.providers.daangn.api.request.review import (
     DaangnRegionByOriginalRegionIdRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.request.school import (
-    DaangnEducationMapPointsRequestPayloadModel,
+    DaangnComplexSchoolsRequestPayloadModel,
     DaangnPreschoolByNoRequestPayloadModel,
     DaangnSchoolByCodeRequestPayloadModel,
     DaangnSearchSchoolsRequestPayloadModel,
@@ -107,10 +103,6 @@ from jibsa.providers.daangn.api.response.complex import (
     DaangnSearchComplexesResponseModel,
     DaangnTrendingComplexesResponseModel,
 )
-from jibsa.providers.daangn.api.response.development import (
-    DaangnDevelopmentByBusiNoResponseModel,
-    DaangnDevelopmentDistrictsResponseModel,
-)
 from jibsa.providers.daangn.api.response.listing import DaangnArticlesResponseModel
 from jibsa.providers.daangn.api.response.neighborhood import (
     DaangnLivableRegionScopesResponseModel,
@@ -139,7 +131,7 @@ from jibsa.providers.daangn.api.response.review import (
     DaangnRegionByOriginalRegionIdResponseModel,
 )
 from jibsa.providers.daangn.api.response.school import (
-    DaangnEducationMapPointsResponseModel,
+    DaangnComplexSchoolsResponseModel,
     DaangnPreschoolByNoResponseModel,
     DaangnSchoolByCodeResponseModel,
     DaangnSearchSchoolsResponseModel,
@@ -185,7 +177,8 @@ class DaangnClient(BaseHTTPClient):
     실거래가와 같은 `complexByOriginalId` 라 `complex_articles` 로, 지역 단지 목록(웹 지도 단지 탭)도 루트 필드가
     이름 검색과 같은 `searchComplexes` 라 `region_complexes` 로 부른다. 학교 이름 검색은 `searchSchools`,
     학교 정보와 배정 단지는 `schoolByCode`. 단지 시세 차트도 루트 필드가 `complexByOriginalId` 라
-    `complex_price_chart` 로 부른다. 지역명 해석은 `www.daangn.com` 의 JSON API 를 쓴다.
+    `complex_price_chart` 로, 단지 근처 어린이집·유치원(웹 단지 화면의 학군)도 같은 이유로 `complex_schools` 로
+    부른다. 지역명 해석은 `www.daangn.com` 의 JSON API 를 쓴다.
     인증은 필요 없다. 모든 금액은 **만원** 단위다.
 
     action id 는 `/api/` 아래 경로면 세그먼트를 잇고 버전을 끝으로 옮기고
@@ -223,7 +216,8 @@ class DaangnClient(BaseHTTPClient):
     complexes_endpoint: ClassVar[str] = '/complexes/{original_id}'
     map_reviews_endpoint: ClassVar[str] = '/map/{name1}/{name2}/reviews'
     graphql_endpoint: ClassVar[str] = '/graphql'
-    # 아래 해시는 웹 번들(2026-10-v58)에서 꺼냈다. 주석은 웹의 쿼리 이름과 번들 파일
+    # 아래 해시는 웹 번들(2026-10-v58)에서 꺼냈다. 주석 끝에 2026-11-v58 을 적은 것은 그 번들에서 다시 꺼냈다.
+    # 주석은 웹의 쿼리 이름과 번들 파일
     # MapShell-*.js 의 RegionArticleListPanelPaginationQuery
     article_feed_query_id: ClassVar[str] = '530da3a4b31d9e972d6e4c28746b3870ddfaedbb6c2dbeb14f84a780811d95df'
     # MapView-*.js 의 MapFloatingControlsArticleCountQuery
@@ -238,15 +232,15 @@ class DaangnClient(BaseHTTPClient):
     get_region_by_coordinate_query_id: ClassVar[str] = '1c663788669807706f19ece384062e647238dc7c459298267c72234d6b6e381c'
     # fetchRegionResult-*.js 의 fetchComplexSearchResultQuery
     search_complexes_query_id: ClassVar[str] = 'd5c4d68d4e00b8d0e108ad0eff22975e957d4e10d707c3ddddbe8c3ced72a820'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 useTransactionComplexPagination_Query (단지 실거래가)
+    # ComplexTopicPanelQuery-*.js 의 useTransactionComplexPagination_Query (단지 실거래가, 2026-11-v58)
     complex_by_original_id_query_id: ClassVar[str] = '0759ba56316842fa18e7e3379d7c1c449ffa7591fbf22b6fcba6911a32535220'
     # ComplexArticleListPanel-*.js 의 ComplexArticleListPanelQuery (단지 매물 목록)
     complex_articles_query_id: ClassVar[str] = '0df6a807dedf33d8ab07ef486a9f1980a5652c41396eafc4237274913ab48f7a'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 useTransactionArticlePagination_Query (매물 실거래가)
+    # ComplexTopicPanelQuery-*.js 의 useTransactionArticlePagination_Query (매물 실거래가, 2026-11-v58)
     article_by_original_article_id_query_id: ClassVar[str] = (
         '92851d5818157db86f12ec367d39e8896eef0cd2c3ed6d9639c6aa7cad86c7d6'
     )
-    # ComplexReviewsPinnedReviewQuery-*.js 의 RealsaleFeedListQuery (지역 최근 실거래)
+    # RealsaleFeedListQuery-*.js 의 RealsaleFeedListQuery (지역 최근 실거래, 2026-11-v58)
     realsale_feed_query_id: ClassVar[str] = '6df5d0f33b925944272fdea4f75f0329ea18ad14f59294dd128865d895249e70'
     # MapShell-*.js 의 NewHighFeedListQuery (지역 신고가)
     realsale_new_high_feed_query_id: ClassVar[str] = '2569f5b4127eb1c87cc5239f14ffe581caace14f1e3a9bd4cc809aad2ec1e439'
@@ -262,14 +256,14 @@ class DaangnClient(BaseHTTPClient):
     region_by_original_region_id_query_id: ClassVar[str] = (
         'f40659715d8bb432fecfdab3a0093352f83abc491ad52b06fe5c52bb1eefd622'
     )
-    # index-*.js 의 RegionLivedReviewListPanelQuery (동네 후기 목록)
-    lived_reviews_by_region_query_id: ClassVar[str] = '13565a6be603cdb75e2590bbc8e977206e77fe41393c1aaad6fcfca04826667e'
+    # index-*.js 의 RegionLivedReviewListPanelQuery (동네 후기 목록, 2026-11-v58)
+    lived_reviews_by_region_query_id: ClassVar[str] = '304737ba85360e2cc892063d12508accde16434cbb05f2cece753686696b46f6'
     # ComplexListPanel-*.js 의 ComplexListPanelViewportQuery (지역 단지 목록)
     region_complexes_query_id: ClassVar[str] = 'cd05a28829852db94c3d797d2da1bd51a7e3e1415622a37ef916d23a89545b24'
     # MapShell-*.js 의 fetchSchoolSearchResultQuery (학교 이름 검색)
     search_schools_query_id: ClassVar[str] = '223034a6d57e1155443f5560d116dc09839be868c3cda4d95e2434c0304e9731'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 SchoolDetailQuery (학교 정보·배정 단지)
-    school_by_code_query_id: ClassVar[str] = 'd8e3a2545d518396bb6d55c1357d818f5e0e56c6bb0f876d3310305591e1b127'
+    # ComplexTopicPanelQuery-*.js 의 SchoolDetailQuery (학교 정보·배정 단지, 2026-11-v58)
+    school_by_code_query_id: ClassVar[str] = 'c7d4ef1929ade503520753cab10982d7de78950bd16da913fdffcd43d8aead25'
     # compare-*.js 의 ComplexComparePriceChartQuery (단지 시세 차트)
     complex_price_chart_query_id: ClassVar[str] = 'be9955e8766ef4de89bf208727497cd738bbf2eb1794fa91dc34bb3dc6f77c29'
     # index-*.js 의 fetchSubwayResultQuery (역 이름 검색)
@@ -284,19 +278,16 @@ class DaangnClient(BaseHTTPClient):
     subway_station_article_connection_query_id: ClassVar[str] = (
         '246140eaaca77d3bcc264e76bc4feb013fe9c0b10fc91b077ef9f235658b0d27'
     )
-    # MapView-*.js 의 DevelopmentDistrictOverlayQuery (지도 개발 호재)
-    development_districts_query_id: ClassVar[str] = '769ce6f0243d3fcd834fe934c3c9feee3292de566c8386c1ca3e4c3821a6292f'
-    # DevelopmentDetailPanel-*.js 의 DevelopmentDetailQuery (개발 사업 상세)
-    development_by_busi_no_query_id: ClassVar[str] = '0cc5e4bcd24d29f8cf548c242346524ce342c24c1723b344f6fc7663d015e779'
-    # MapView-*.js 의 EducationPoiLayerQuery (지도 교육 시설)
-    education_map_points_query_id: ClassVar[str] = '7d17204f3da26c974ad6fbd597cb843231968b53f5652441e32616c83ec92259'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 PreschoolDetailPanelQuery (어린이집·유치원 상세)
-    preschool_by_no_query_id: ClassVar[str] = 'de92e75df4d4bacddaf7518a3787850aa55b3d26b5302ce39b77a256efafb056'
+    # ComplexSchoolListPanel-*.js 의 ComplexSchoolListPanelQuery (단지 근처 학교·어린이집, 2026-11-v58)
+    complex_schools_query_id: ClassVar[str] = '94fe92d51a7ff59c79d2d17b050ab144c8eada7d40e933e69f660ef5a6ee4b20'
+    # ComplexTopicPanelQuery-*.js 의 PreschoolDetailPanelQuery (어린이집·유치원 상세, 2026-11-v58)
+    preschool_by_no_query_id: ClassVar[str] = '893707bfdc3578256c583daead160165736afc5b23579003885a7ba194f16738'
     # compare-*.js 의 ComplexCompareColumnQuery (단지 비교 칸)
     complex_compare_query_id: ClassVar[str] = '74b409fd6cc63f290120fe7ea8bca376653d37db0cf977a4227f1b2d5233ff0f'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 ComplexNearbySectionQuery (같은 동 단지)
+    # ComplexTopicPanelQuery-*.js 의 ComplexNearbySectionQuery (같은 동 단지, 2026-11-v58)
     nearby_complexes_query_id: ClassVar[str] = '0239b1a589cb97132006385870cdad55dc496c21977dc540a47b28099a0f8258'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 ComplexNearbySectionCardsQuery (단지 카드)
+    # ComplexReviewsPinnedReviewQuery-*.js(2026-10-v58) 의 ComplexNearbySectionCardsQuery (단지 카드). 11월 번들에는 없지만
+    # 해시는 아직 통한다 (2026-11-11 실측: nearby-complexes 10697092). 막히면 옮길 곳은 개발 가이드에 있다
     complexes_by_original_complex_ids_query_id: ClassVar[str] = (
         'ba9845cb97917b80c472433940ce4921fc4f0739562188ae394a06a5e367e8eb'
     )
@@ -304,7 +295,7 @@ class DaangnClient(BaseHTTPClient):
     livable_region_scopes_query_id: ClassVar[str] = '73def70680c51b8b8c9911015b14fe721bb7aaf1a689b1c496693d7bc2003ba7'
     # useH3ZoomConfig-*.js 의 GoodNeighborhoodResultQuery (좋은 동네 추천)
     recommend_neighborhoods_query_id: ClassVar[str] = '84e6cc44b469600a004aa2bc97aad9e972258212585ed52171d14919d2b3d238'
-    # ComplexReviewsPinnedReviewQuery-*.js 의 HomeTrendingComplexSectionListQuery (요즘 많이 보는 단지)
+    # ComplexTopicPanelQuery-*.js 의 HomeTrendingComplexSectionListQuery (요즘 많이 보는 단지, 2026-11-v58)
     trending_complexes_query_id: ClassVar[str] = '528cbae202c675d69f0cf92d39deb3b736439c130932f521b89bf85092cc5d78'
     # PopularArticleRankingPanel-*.js 의 PopularArticleRankingPanelQuery (조회수 많은 매물)
     get_view_ranking_articles_query_id: ClassVar[str] = (
@@ -1198,115 +1189,41 @@ class DaangnClient(BaseHTTPClient):
         return DaangnSubwayStationArticleConnectionResponseModel.model_validate(response.json())
 
     @daangn_retry
-    def run_request_development_districts(
+    def run_request_complex_schools(
         self,
-        payload: DaangnDevelopmentDistrictsRequestPayloadModel
-    ) -> DaangnDevelopmentDistrictsResponseModel:
-        """List development projects in a map range via `POST realty.kr.karrotmarket.com/graphql` (`developmentDistricts`).
+        payload: DaangnComplexSchoolsRequestPayloadModel
+    ) -> DaangnComplexSchoolsResponseModel:
+        """Fetch schools and preschools near a complex via `POST realty.kr.karrotmarket.com/graphql` (`complexByOriginalId`).
 
         Same retry behaviour as `run_request_article_feed`. 실패는 HTTP 200 의 `errors` 로 온다.
 
         Args:
-            payload: 좌표 범위, 분류.
+            payload: 숫자 단지 ID.
 
         Returns:
-            DaangnDevelopmentDistrictsResponseModel: 범위 안 개발 사업 (페이지 없음).
+            DaangnComplexSchoolsResponseModel: 단지 좌표와 근처 어린이집·유치원 (초·중·고도 오지만 읽지 않는다).
         """
         response = self._client.post(
             url=self.graphql_url,
             headers=self.graphql_header,
-            json=self._graphql_body(payload, self.development_districts_query_id)
+            json=self._graphql_body(payload, self.complex_schools_query_id)
         )
         raise_for_status(response=response)
-        return DaangnDevelopmentDistrictsResponseModel.model_validate(response.json())
+        return DaangnComplexSchoolsResponseModel.model_validate(response.json())
 
     @daangn_retry
-    async def arun_request_development_districts(
+    async def arun_request_complex_schools(
         self,
-        payload: DaangnDevelopmentDistrictsRequestPayloadModel
-    ) -> DaangnDevelopmentDistrictsResponseModel:
-        """Async variant of `run_request_development_districts`."""
+        payload: DaangnComplexSchoolsRequestPayloadModel
+    ) -> DaangnComplexSchoolsResponseModel:
+        """Async variant of `run_request_complex_schools`."""
         response = await self._async_client.post(
             url=self.graphql_url,
             headers=self.graphql_header,
-            json=self._graphql_body(payload, self.development_districts_query_id)
+            json=self._graphql_body(payload, self.complex_schools_query_id)
         )
         raise_for_status(response=response)
-        return DaangnDevelopmentDistrictsResponseModel.model_validate(response.json())
-
-    @daangn_retry
-    def run_request_development_by_busi_no(
-        self,
-        payload: DaangnDevelopmentByBusiNoRequestPayloadModel
-    ) -> DaangnDevelopmentByBusiNoResponseModel:
-        """Fetch one development project via `POST realty.kr.karrotmarket.com/graphql` (`developmentByBusiNo`).
-
-        Same retry behaviour as `run_request_article_feed`. 실패는 HTTP 200 의 `errors` 로 온다.
-
-        Args:
-            payload: 사업 번호.
-
-        Returns:
-            DaangnDevelopmentByBusiNoResponseModel: 사업 단계·규모·인가 날짜.
-        """
-        response = self._client.post(
-            url=self.graphql_url,
-            headers=self.graphql_header,
-            json=self._graphql_body(payload, self.development_by_busi_no_query_id)
-        )
-        raise_for_status(response=response)
-        return DaangnDevelopmentByBusiNoResponseModel.model_validate(response.json())
-
-    @daangn_retry
-    async def arun_request_development_by_busi_no(
-        self,
-        payload: DaangnDevelopmentByBusiNoRequestPayloadModel
-    ) -> DaangnDevelopmentByBusiNoResponseModel:
-        """Async variant of `run_request_development_by_busi_no`."""
-        response = await self._async_client.post(
-            url=self.graphql_url,
-            headers=self.graphql_header,
-            json=self._graphql_body(payload, self.development_by_busi_no_query_id)
-        )
-        raise_for_status(response=response)
-        return DaangnDevelopmentByBusiNoResponseModel.model_validate(response.json())
-
-    @daangn_retry
-    def run_request_education_map_points(
-        self,
-        payload: DaangnEducationMapPointsRequestPayloadModel
-    ) -> DaangnEducationMapPointsResponseModel:
-        """List schools and preschools in a map range via `POST realty.kr.karrotmarket.com/graphql` (`educationMapPoints`).
-
-        Same retry behaviour as `run_request_article_feed`. 실패는 HTTP 200 의 `errors` 로 온다.
-
-        Args:
-            payload: 좌표 범위, 시설 종류.
-
-        Returns:
-            DaangnEducationMapPointsResponseModel: 범위 안 시설 (500곳에서 잘림).
-        """
-        response = self._client.post(
-            url=self.graphql_url,
-            headers=self.graphql_header,
-            json=self._graphql_body(payload, self.education_map_points_query_id)
-        )
-        raise_for_status(response=response)
-        return DaangnEducationMapPointsResponseModel.model_validate(response.json())
-
-    @daangn_retry
-    async def arun_request_education_map_points(
-        self,
-        payload: DaangnEducationMapPointsRequestPayloadModel
-    ) -> DaangnEducationMapPointsResponseModel:
-        """Async variant of `run_request_education_map_points`."""
-        response = await self._async_client.post(
-            url=self.graphql_url,
-            headers=self.graphql_header,
-            json=self._graphql_body(payload, self.education_map_points_query_id)
-        )
-        raise_for_status(response=response)
-        return DaangnEducationMapPointsResponseModel.model_validate(response.json())
+        return DaangnComplexSchoolsResponseModel.model_validate(response.json())
 
     @daangn_retry
     def run_request_preschool_by_no(

@@ -8,16 +8,20 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 ### ⚠️ 호환 깨짐
 
 - 라이브러리로 쓸 때: `core.browser` 의 `BrowserTransport` 는 설정을 `BrowserOptions` 하나로 받고(모두 키워드), `AsyncBrowserTransport` 는 감쌀 `BrowserTransport` 하나를 받는다. `BrowserTransport('naver', url, ready_cookie='NNB')` 는 `BrowserTransport(BrowserOptions(source='naver', entry_url=url, ready_cookie='NNB'))` 로, `AsyncBrowserTransport('naver', url, ready_cookie='NNB')` 는 `AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))` 로 고친다. 소스 client 의 `browser_transport()`·`async_browser_transport()` 를 쓰면 고칠 것이 없다 (#216)
+- 당근 `preschools` 가 지역·역·좌표 반경 대신 단지 ID 하나를 받아 그 단지 근처 어린이집·유치원을 줌. 당근 웹이 범위 안 시설을 지도에 띄우던 기능을 없애고 단지 화면 학군의 유치원 탭으로 옮겼다. 목록과 순서는 그 탭과 같다 (이 단지 주민이 많이 다니는 곳 먼저, 같으면 가까운 곳 먼저). `PLACE`·`--lat`·`--lng`·`--radius`·`-t`·`--limit` 을 뺐고, 결과는 `complex_id`·`returned`·`preschools[]`(`id`·`name`·`distance_km` 단지에서·`resident_count` 이 단지 주민 중 다니는 수·`review_count`)·`url` 이다 (`radius_km`·`total`·`type` 은 없다). 당근은 단지에서 1km 안을 가까운 순으로 20곳까지만 줘, 20곳이면 `[일부]` 로 알린다. 단지 ID 는 `search complexes <동>` 으로 찾고, 어린이집·유치원 구분은 `preschool <id>` 로 본다. 지역·역 이름이나 뺀 옵션을 주면 `INVALID_ARGUMENT` 이고 `hint` 가 이 방법을 알린다 (#192)
+- 당근 `developments`·`development` 를 뺌. 당근 웹이 개발 호재 목록과 지도 표시를 없애 사업 번호를 얻을 곳이 없다. 재개발·재건축 구역은 네이버 `search redevelopment`·`redevelopment` 로 본다. 옛 명령을 부르면 `hint` 가 이 네이버 명령을 알린다 (#192)
 
 ### 변경
 
 - 라이브러리로 쓸 때: client 의 `timeout` 은 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한이다 (httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다). 예전에는 요청 하나의 연결부터 본문 끝까지 전체 시간이었다 (#217)
 - 라이브러리로 쓸 때: 1MB 보다 큰 응답 본문을 브라우저에서 1MB 씩 나눠 받아 빨라진다. jibsa 소스 응답은 1MB 보다 작아 CLI 에서는 달라지지 않는다 (#217)
+- 당근 단지 ID 를 받는 명령(`complex`·`real-price`·`price-trend`·`compare`·`nearby-complexes`·`search listings --complex`)에 단지·지역 이름처럼 숫자가 아닌 값을 주면 `is not a valid int range` 대신 `단지 ID 가 아닙니다` 로 알리고, `hint` 가 단지 ID 를 찾는 법(`search complexes`·`search locations`)을 알림 (#192)
 
 ### 수정
 
 - 응답 헤더를 받은 뒤 본문이 멈춘 4xx·5xx 응답을 시간 초과 대신 그 상태로 알림. 429 면 `Retry-After` 대로 요청 제한 쿨다운을 건다 (#217)
 - 라이브러리로 쓸 때: client 의 `timeout` 을 약 24.8일(2³¹−1ms)보다 크게 주면 기다리지 않고 바로 시간 초과가 나던 것을 고침. 그 값에서 자른다 (#217)
+- 당근 `region-reviews`·`school`·`preschool` 이 쓰는 웹 쿼리 해시를 당근 웹이 바꾼 해시로 갱신. 당근이 옛 해시를 막으면 이 명령들이 `UPSTREAM_ERROR` 로 실패했을 것이다 (#192)
 
 ## 0.12.0 — 2026-11-11
 

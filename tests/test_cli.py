@@ -79,6 +79,13 @@ def test_usage_errors_are_json_with_exit_2(
     assert error['hint'].endswith("--help' 로 사용법을 확인하세요")
 
 
+def test_removed_daangn_command_hint_names_naver_redevelopment(capsys: pytest.CaptureFixture[str]) -> None:
+    # 없앤 명령은 Typer 의 'No such command ...' 문구를 정규식으로 읽어 찾는다 (subcommand_hint 도 같은 정규식).
+    # Typer 를 올려 문구가 바뀌면 일반 --help 안내로 조용히 바뀌어 위 테스트로는 드러나지 않는다
+    assert run(['daangn', 'developments', '역삼역']) == 2
+    assert 'jibsa naver search redevelopment' in stderr_error(capsys)['hint']
+
+
 @pytest.mark.parametrize('command,place,options', [
     (['search', 'listings'], '역삼동', ['-t', '오피스텔', '--structure', '분리형']),
     (['search', 'listings'], '역삼동', ['-t', '원룸', '--household-min', '100']),

@@ -8,11 +8,11 @@
 
 | 명령 | 하는 일 | 무엇을 넣나 | 다음에 쓰는 곳 |
 | --- | --- | --- | --- |
-| `search locations` | 지역·단지 후보 찾기 | 동·단지 이름 또는 좌표 | search listings, complex, search listings --complex |
+| `search locations` | 지역·단지 후보 찾기 | 동·단지 이름 또는 좌표 | search listings, complex, search listings --complex, preschools |
 | `search listings` | 현재 매물 찾기 | 동·역·장소 또는 좌표 | listing |
 | `listing` | 매물 하나 상세 | 매물 ID | complex, real-price --item |
-| `search complexes` | 지역 안 단지 목록 | 동·구 이름 | complex, search listings --complex, real-price |
-| `complex` | 단지 하나 정보 | 단지 ID | search listings --complex, real-price, price-trend |
+| `search complexes` | 지역 안 단지 목록 | 동·구 이름 | complex, search listings --complex, real-price, preschools |
+| `complex` | 단지 하나 정보 | 단지 ID | search listings --complex, real-price, price-trend, preschools |
 | `search listings --complex` | 단지 안 현재 매물 | 단지 ID | listing |
 | `real-price` | 단지·건물 실거래가 | 단지 ID 또는 --item 매물 ID | — |
 | `region-real-price` | 동·구 실거래가·신고가 | 동·구 이름 | complex, real-price |
@@ -20,8 +20,7 @@
 | `school` | 학교·배정 단지 | 학교 이름 | complex, search listings --complex, real-price |
 | `search commute` | 회사까지 지하철 통근 매물 | 회사 역·장소·동 또는 좌표 | listing |
 | `region-reviews` | 지역 후기 수·후기 많은 단지 | 동·구 이름 | complex |
-| `developments` / `development` | 개발 호재 목록 / 사업 하나 상세 | 지역·역·장소 또는 좌표 / 사업 번호 | development |
-| `preschools` / `preschool` | 어린이집·유치원 목록 / 시설 하나 상세 | 지역·역·장소 또는 좌표 / 시설 번호 | preschool |
+| `preschools` / `preschool` | 단지 근처 어린이집·유치원 / 시설 하나 상세 | 단지 ID / 시설 번호 | preschool |
 | `compare` | 단지 최대 5곳 나란히 비교 | 단지 ID 여러 개 | complex, real-price |
 | `nearby-complexes` | 같은 동의 다른 단지 | 단지 ID | compare, complex |
 | `good-neighborhoods` | 라이프스타일별 살기 좋은 동 | 라이프스타일, 지역 | search listings |
@@ -38,12 +37,14 @@ search locations / search complexes / school ─▶ complex ─┬─▶ search 
 listing ─▶ real-price --item (단지가 없는 건물)
 trending-complexes / nearby-complexes ─▶ compare ─▶ complex · real-price
 good-neighborhoods ─▶ search listings <법정동 이름>
-developments ─▶ development · preschools ─▶ preschool
+search complexes / search locations ─▶ preschools <단지 ID> ─▶ preschool
 ```
 
 ## 옵션 읽는 법
 
 명령 뒤에 검색어 또는 ID를 넣고, 그 뒤에 옵션을 붙인다. 이름에 공백이 있으면 따옴표로 감싼다. 단지·매물 ID는 결과에서 받은 값을 그대로 사용한다. 아래의 숫자 ID는 문법 설명용 가상 값이다.
+
+단지 ID 를 받는 자리(`complex`·`real-price`·`price-trend`·`preschools`·`compare`·`nearby-complexes`·`search listings --complex`)에 단지·지역 이름처럼 숫자가 아닌 값을 주면 `INVALID_ARGUMENT` 이고, `hint` 가 단지 ID 를 찾는 법(`search complexes <동>`·`search locations <단지 이름>`)을 알린다.
 
 여러 값을 받는 옵션은 쉼표 또는 반복 지정으로 쓸 수 있다. 한 값만 받는 `--approval`·`--deal`·실거래가의 `--trade` 등은 하나만 지정한다. 지원 값은 각 표에 있다.
 
@@ -521,71 +522,35 @@ jibsa daangn region-reviews 역삼동 --city 강남구 --top 10
 
 `review_count` 는 동만 있다. 당근 동네 요약이 후기를 60개까지만 세어 `60` 이면 60개 이상이다 (`notes` 로 알린다). 구는 당근이 수를 주지 않아 `null` 이다. 동도 동네 요약을 받지 못하면 `null` 이고 이유를 `notes` 로 알린다 (후기가 있는지는 후기 목록으로 다시 본다). 지역 고르는 방식(`--city`)은 [`region-real-price`](#8-region-real-price--동구-실거래가신고가)와 같다.
 
-## 13. `developments` / `development` — 개발 호재
+## 13. `preschools` / `preschool` — 어린이집·유치원
 
-반경 안 도로·철도·정비사업과 사업 하나의 진행 단계를 확인한다.
-
-| 인자·옵션 | 설명·허용값 | 기본값 |
-| --- | --- | --- |
-| `PLACE` | 지역·역·장소 이름 (예: 역삼역, 강남구). --lat/--lng 를 주면 생략 | 미지정 |
-| `--lat` / `--lng` | 중심 좌표 (이름 대신) | 미지정 |
-| `--radius` | 검색 반경 (km) 범위: 0.1~5.0. | 1 |
-| `--category` | 도로, 철도, 정비사업. 반복하거나 쉼표로 구분 | 전체 |
-| `--limit` | 최대 사업 수 범위: 1~300. | 50 |
-| `DEVELOPMENT_ID` (`development`) | 사업 번호 (`developments` 결과의 `id`) | 필수 |
-
-**사용 예시**
-
-```bash
-jibsa daangn developments 역삼역 --radius 2 --category 정비사업
-jibsa daangn development 1003045
-```
-
-**반환값**
-
-`developments` 는 `radius_km`, `total`, `returned`, `developments[]`(`id`, `name`, `category`, `status` 예정·진행, `distance_km`). `development` 는 사업 종류·단계·기간·면적·규모·시행자·시공사·계획 세대수·건폐율·용적률·최고 층수와 단계별 날짜(`dates`)다.
-
-**오류와 대응**
-
-없는 사업 번호는 `NOT_FOUND`. 이름·좌표 처리는 `search listings` 와 같다.
-
-**주의사항**
-
-당근은 범위 안 사업을 모두 한 번에 준다 (페이지 없음). 당근 웹 지도가 숨기는 사업(진행 코드 E01)은 빼고 `notes` 로 수를 알린다. 계획 수치를 모르면 당근이 0을 주어 `null` 로 바꾼다. 사진은 주지 않는다.
-
-## 14. `preschools` / `preschool` — 어린이집·유치원
-
-반경 안 어린이집·유치원과 시설 하나의 운영 정보를 확인한다.
+단지 근처 어린이집·유치원과 시설 하나의 운영 정보를 확인한다.
 
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
-| `PLACE` | 지역·역·장소 이름. --lat/--lng 를 주면 생략 | 미지정 |
-| `--lat` / `--lng` | 중심 좌표 (이름 대신) | 미지정 |
-| `--radius` | 검색 반경 (km) 범위: 0.1~3.0. | 1 |
-| `--type` / `-t` | 어린이집, 유치원. 반복하거나 쉼표로 구분 | 전체 |
-| `--limit` | 최대 시설 수 범위: 1~200. | 30 |
+| `COMPLEX_ID` (`preschools`) | 단지 ID (`search complexes`·`search locations <단지 이름>` 결과, 아파트·오피스텔 매물의 `complex_id`) | 필수 |
 | `PRESCHOOL_ID` (`preschool`) | 시설 번호 (`preschools` 결과의 `id`) | 필수 |
 
 **사용 예시**
 
 ```bash
-jibsa daangn preschools 역삼역 -t 어린이집
+jibsa daangn preschools 10697092
 jibsa daangn preschool 37033
 ```
 
 **반환값**
 
-`preschools` 는 `radius_km`, `total`, `returned`, `preschools[]`(`id`, `name`, `type`, `distance_km`). `preschool` 은 주소, 구·동, 운영 시간, 설립 유형(국공립·민간·직장 등), 설립·개원일, 관할 기관, 원아·반·교사 수, 통학버스다.
+`preschools` 는 `complex_id`, `returned`, `preschools[]`(`id`, `name`, `distance_km` 단지에서 직선거리, `resident_count` 이 단지 주민 중 다니는 수, `review_count` 당근 설문 후기 수), `url`(당근 단지 페이지). `preschool` 은 어린이집·유치원 구분(`type`), 주소, 구·동, 운영 시간, 설립 유형(국공립·민간·직장 등), 설립·개원일, 관할 기관, 원아·반·교사 수, 통학버스다.
 
 **오류와 대응**
 
-없는 시설 번호는 `NOT_FOUND`. 이름·좌표 처리는 `search listings` 와 같다.
+단지 ID 가 아닌 값(지역·역 이름)이나 뺀 옵션(`-t`·`--radius`·`--lat`·`--lng`·`--limit`)을 주면 `INVALID_ARGUMENT` 이고 `hint` 가 단지 ID 를 찾는 법을 알린다. 없는 단지·시설 번호는 `NOT_FOUND`.
 
 **주의사항**
 
-전화번호·홈페이지는 주지 않는다 (학교 정보와 같다). 당근은 범위 안 시설을 500곳에서 자른다. 시설이 많은 주거지(목동역)는 3km 에서도 넘을 수 있고, 넘으면 가까운 시설이 빠졌을 수 있다고 `notes` 로 알린다 (`--radius` 를 줄인다). 초·중·고는 `school` 을 쓴다.
+당근 단지 화면 학군의 유치원 탭과 같은 목록·순서다. 이 단지 주민이 많이 다니는 곳이 먼저이고, 같으면 가까운 곳이 먼저다. 당근은 단지에서 1km 안의 시설을 가까운 순으로 20곳까지만 줘 `--limit` 이 없다. 20곳을 받으면 더 먼 시설이 있을 수 있어 `[일부]` 로 알린다 (2026-11-11 실측: 역삼동 단지는 1km 안 31곳 중 0.6km 안의 20곳, 양평 단지는 1km 안 11곳 모두). 출력 순서가 거리 순이 아니어서 잘린 것이 목록만으로는 보이지 않는다. 당근 웹에 위치·반경으로 찾는 기능이 없어 지역·역 이름으로는 찾지 않는다. 동네의 어린이집을 보려면 `search complexes <동>` 으로 단지를 찾아 관심 단지마다 부른다. 목록에는 어린이집·유치원 구분이 없어 `preschool` 로 본다. 당근에 근처 시설 정보가 없는 단지는 `returned: 0` 이고 `notes` 로 알린다. 전화번호·홈페이지는 주지 않는다 (학교 정보와 같다). 초·중·고는 `school` 을 쓴다.
 
-## 15. `compare` — 단지 나란히 비교
+## 14. `compare` — 단지 나란히 비교
 
 단지 여러 곳(최대 5)을 같은 항목으로 비교한다.
 
@@ -611,7 +576,7 @@ jibsa daangn compare 10697092 10699673 10697091
 
 단지마다 요청 1회다. `asking` 은 당근에 올라온 아파트 매물 앞 30건의 호가라 실제 거래가는 `area_groups` 의 실거래를 본다. 월세 0은 전세로 센다. 단기임대는 당근이 금액을 주지 않아 세지 않는다. 후기 요약 글은 주지 않는다 (후기 수만). `area_groups[].area_group` 은 `real-price`·`price-trend` 의 `--area` 에 넣는다.
 
-## 16. `nearby-complexes` — 같은 동 단지
+## 15. `nearby-complexes` — 같은 동 단지
 
 기준 단지와 같은 동의 다른 단지를 세대수 많은 순으로 본다.
 
@@ -638,7 +603,7 @@ jibsa daangn nearby-complexes 10697092 --limit 20
 
 요청 4회다 (단지 → 동 → 동의 단지 → 단지 카드). 같은 동 단지는 1200곳까지 한 번에 받고, 1200곳을 채우면 더 있을 수 있다고 `notes` 로 알린다. 가격 조건으로 단지를 고르려면 `search complexes` 를 쓴다.
 
-## 17. `good-neighborhoods` — 살기 좋은 동 추천
+## 16. `good-neighborhoods` — 살기 좋은 동 추천
 
 당근 웹의 좋은 동네 추천처럼 라이프스타일 지표로 동 순위를 본다.
 
@@ -666,7 +631,7 @@ jibsa daangn good-neighborhoods --lifestyle 직장인자취 --region 서울
 
 지표는 당근 웹의 라이프스타일 카드와 같다 (예: 직장인자취 = 1인 가구 많은·교통 편리한·외식하기 좋은). `dong` 은 행정동(예: 역삼1동)이라, 매물은 법정동 이름(역삼동)으로 `search listings` 에서 찾는다. 동네 후기 요약 글은 주지 않는다.
 
-## 18. `trending-complexes` — 요즘 많이 보는 단지
+## 17. `trending-complexes` — 요즘 많이 보는 단지
 
 동 주변에서 요즘 당근 사용자가 많이 보는 단지 순위를 본다.
 
@@ -689,7 +654,7 @@ jibsa daangn trending-complexes 역삼동 --city 강남구
 
 당근이 한 번에 주는 단지(0~20여 곳)를 그대로 보여 `--limit` 이 없다. 사진은 주지 않는다. 같은 동도 때에 따라 개수가 다르고, 이른 아침에는 빈 목록이 잦다. 비면 `returned: 0` 이고 `notes` 로 낮에 다시 부르거나 `search complexes` 를 쓰라고 알린다. 단지가 없다는 뜻은 아니다. 지역 미발견은 `REGION_NOT_FOUND`. 같은 이름의 동이 여러 곳이면 고르지 않고 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다.
 
-## 19. `popular-listings` — 조회수 많은 매물
+## 18. `popular-listings` — 조회수 많은 매물
 
 동이 속한 구에서 조회수 순위가 높은 현재 매물을 본다.
 
@@ -728,16 +693,14 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 | `price-trend --years` | 3 / 15년 |
 | `search locations` | 20 / 1200단지 후보 (지역 후보는 제한하지 않음) |
 | 역 주변 `search listings` | 20 / 120건 (요청당 100건) |
-| `developments` | 50 / 300사업 (반경 최대 5km) |
-| `preschools` | 30 / 200곳 (반경 최대 3km) |
 | `compare` | 단지 최대 5곳 |
 | `good-neighborhoods` | 10 / 50동 |
 | `popular-listings` | 20 / 100건 |
-| `listing`, `complex`, `development`, `preschool`, `trending-complexes` | `--limit` 없음 |
+| `listing`, `complex`, `preschools`, `preschool`, `trending-complexes` | `--limit` 없음 |
 
 여기의 최대값은 CLI 정책이다. 서버가 요청 한 번에 반환할 수 있는 최대 개수와 같다는 뜻은 아니다. 검색 경로마다 페이지·후처리·조회 범위가 달라 결과가 요청한 개수보다 적을 수 있다. 동·단지 매물은 요청당 20건씩 최대 6페이지를 조회한다.
 
-당근 목록 응답을 조회 한도 때문에 잘라내면 `notes`에 실제 조회된 개수와 표시 개수를 따로 안내한다. 예: “조회된 어린이집·유치원 205곳 중 --limit 200 에 맞춰 200곳만 보여 줍니다. -t·--radius 로 좁히세요.” 서버의 다음 페이지 표시가 없어도 초과 결과를 잘랐다면 안내하며, 중복·거래 불가·조건 불일치 제외 안내와 구분한다. 단지 후보·지역 단지·단지 매물은 남은 한도만큼만 요청해 서버가 더 주지 않으므로 이 안내 없이 `has_more`와 `--limit` 안내로만 알린다. 단지 후보·지역 단지·단지 매물이 다음 페이지가 있다면서 빈 페이지나 페이지 정보가 없는 응답을 주거나 커서가 없거나 되풀이되면 그때까지 받은 것만 주고 `[일부] 당근이 … 멈췄습니다` 로 알린다. 응답이 바뀐 것일 수 있어 jibsa 업데이트가 필요할 수 있다는 말이 붙는다 (`--limit` 을 늘려도 더 받지 못해 `--limit` 안내는 붙이지 않는다). 실거래·출퇴근 역 목록이 멈출 때는 각 명령 절에 적었다.
+당근 목록 응답을 조회 한도 때문에 잘라내면 `notes`에 실제 조회된 개수와 표시 개수를 따로 안내한다. 예: “조회된 단지 75곳 중 --limit 50 에 맞춰 50곳만 보여 줍니다. --limit 을 최대 1200까지 늘리세요.” (`nearby-complexes`) 서버의 다음 페이지 표시가 없어도 초과 결과를 잘랐다면 안내하며, 중복·거래 불가·조건 불일치 제외 안내와 구분한다. 단지 후보·지역 단지·단지 매물은 남은 한도만큼만 요청해 서버가 더 주지 않으므로 이 안내 없이 `has_more`와 `--limit` 안내로만 알린다. 단지 후보·지역 단지·단지 매물이 다음 페이지가 있다면서 빈 페이지나 페이지 정보가 없는 응답을 주거나 커서가 없거나 되풀이되면 그때까지 받은 것만 주고 `[일부] 당근이 … 멈췄습니다` 로 알린다. 응답이 바뀐 것일 수 있어 jibsa 업데이트가 필요할 수 있다는 말이 붙는다 (`--limit` 을 늘려도 더 받지 못해 `--limit` 안내는 붙이지 않는다). 실거래·출퇴근 역 목록이 멈출 때는 각 명령 절에 적었다.
 
 ## 출력 읽기
 
@@ -755,7 +718,7 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 | `notes` | 조회 범위·제한·중복 이름·부족한 결과·정렬 안내 |
 | 역 주변 `walk_minutes` | 매물에서 검색한 역까지 도보 분 (역 이름으로 찾은 `search listings`) |
 | 인기 매물·단지 `rank` | `popular-listings`·`trending-complexes` 의 순위 |
-| 개발 사업 `id` / 시설 `id` | `development` / `preschool` 에 전달 |
+| 어린이집·유치원 `id` (`preschools`) | `preschool` 에 전달 |
 | `area_groups[].area_group` (`compare`) | `real-price --area`·`price-trend --area`에 전달 |
 | 추천 동 `region_id` | 당근 동 ID. 매물은 법정동 이름으로 `search listings` 에서 찾는다 |
 | `url` | 원 사이트에서 확인·문의 |

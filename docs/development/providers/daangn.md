@@ -20,8 +20,7 @@
 | `school` | searchSchools → schoolByCode → 로컬 필터·세대수 정렬 | `school` |
 | `search commute` | nearestCommuteStation → commuteFeed → commuteStationArticleConnection → 카드 조회 | `commute` |
 | `region-reviews` | regionByOriginalRegionId·livedReviewsByRegion·map_reviews SSR | `review` |
-| `developments` / `development` | developmentDistricts / developmentByBusiNo | `development` |
-| `preschools` / `preschool` | educationMapPoints / preschoolByNo | `school` |
+| `preschools` / `preschool` | complex_schools (complexByOriginalId.complex.proptierDanji.nearbyPreschools) → 웹 순서 정렬 / preschoolByNo | `school` |
 | `compare` | complexByOriginalId 비교 칸 (complex_compare) × 단지 수 | `compare` |
 | `nearby-complexes` | complex_compare → regions/keyword → complexes(region3Id) → complexesByOriginalComplexIds | `compare` |
 | `good-neighborhoods` | livableRegionScopes → recommendNeighborhoods | `neighborhood` |
@@ -86,13 +85,15 @@
 
 - 단지 정보(`get_complex`)는 단지 페이지(`/complexes/{id}`)의 스토어에서, 단지 이름 검색(`search_complexes`)은 GraphQL `searchComplexes` 로, 단지 매물 목록(`list_complex_listings`)은 `complexByOriginalId.complex.articles` 로, 단지 실거래가(`get_real_prices`)는 GraphQL `complexByOriginalId`, 매물 건물 실거래가(`get_listing_real_prices`)는 `articleByOriginalArticleId` 로 받는다. 둘 다 `_collect_transactions` 가 페이지를 넘긴다. 동·구의 최근 실거래·신고가(`get_region_real_prices`)는 `realsaleFeed`·`realsaleNewHighFeed` 로 받고, 동·구는 지역 검색 결과에서 고른다 (`resolve_realsale_region`). 세 실거래 모두 `_collect_pages` 하나가 페이지를 넘기고(한 페이지 받기와 거래 유형 고르기만 바꿔 끼운다), 전월세의 갱신 여부는 `_renewal` 이 정한다. 단지·매물 실거래 연결은 기간 인자가 없고 최근 계약 순이라, `--years` 는 받은 뒤 계약일로 거르고 기간 앞 거래가 나온 페이지에서 멈춘다(`since`, 서버가 받지 않는 조건). 지역 실거래 피드는 공개일 순이라 이 멈춤을 쓰지 않는다. 지역 실거래는 계약 종류 없이 오기도 해서 그때는 `null` 이다.
 - `trendingComplexes` 는 같은 동도 때에 따라 개수가 다르고 빈 목록도 온다. 이른 아침에 잦다 (2026-10-27 실측: 역삼동이 아침 6~8시 감시 7번 중 5번 0곳, 낮·저녁 10~22곳. 10-11 에 0곳이던 세종 새롬동·도담동도 저녁엔 6·7곳. 기준은 모름). 빈 결과는 `notes` 로 알리고, 매일 감시는 빈 목록도 정상으로 본다 (`Step.empty_ok`).
+- `nearby-complexes` 의 단지 카드 쿼리(`ComplexNearbySectionCardsQuery`)는 웹 번들에서 사라졌지만 옛 해시를 그대로 둔다 (2026-11-10 번들 대조). 웹 단지 화면의 그 칸이 '같은 동 단지' 에서 추천 '○○와 함께 본 단지'(`ComplexNearbySectionRecQuery`, `complexDetailRecommendation`)로 바뀌었는데, 요청에 실험 그룹(`arm: 'D1'`)·정책 버전(`policyVersion`)·볼 때마다 새 `opportunityId` 가 붙고 `status` 가 `shown` 이 아니면 웹이 칸을 숨기는 실험 기능이라 따라가지 않았다. 같은 동 목록(`ComplexNearbySectionQuery`)은 단지 페이지의 검색 엔진용 본문이 아직 쓴다. 옛 카드 해시가 막히면 같은 카드(이름·유형·세대수·거래별 매물 수)를 주는 지도 단지 목록의 `ComplexListPanelMapPinsQuery`(`complexesByOriginalComplexIds`, 변수 `originalIds`·`tradeType: 'BUY'`)로 옮기거나, 추천이 정식이 되었는지 보고 정한다.
 
-### 동네 정보 (후기·개발 호재·교육 시설·좋은 동네)
+### 동네 정보 (후기·어린이집·좋은 동네)
 
 - 동네 후기(`get_region_reviews`)는 동 후기 수(`regionByOriginalRegionId`)·후기 유무(`livedReviewsByRegion`)와 구의 후기 페이지(`/map/{name1}/{name2}/reviews`) 스토어의 후기 많은 단지만 쓰고, 후기 본문·요약 글은 읽지 않는다.
 - 단지 페이지의 `complexByOriginalId` 와 구 후기 페이지의 `complexes` 루트 필드는 늘 온다 (없는 단지 404 페이지에도 `complex: null`, 후기 많은 단지가 없는 울릉군에도 빈 `edges`. 2026-10-23 실측). 200 페이지에 없으면 구조가 바뀐 것이라 빈 결과(NOT_FOUND·'후기가 없다') 대신 `RelayRecordNotFoundError`(`PARSE_ERROR`)를 낸다.
-- 개발 호재·교육 시설은 좌표 범위를 받는 지도 쿼리라 반경을 감싸는 사각형으로 받아 반경 밖을 뺀다. 개발 호재는 페이지 없이 모두 오고 웹이 숨기는 진행 코드 E01 은 뺀다. 교육 시설은 500곳에서 잘린다.
-- 어린이집 전화번호·홈페이지, 개발 사업·인기 단지 사진, 단지 비교·좋은 동네의 후기 요약 글은 읽지 않는다.
+- 단지 근처 어린이집·유치원(`list_preschools`)은 웹 단지 화면 학군의 '더 보기'(`ComplexSchoolListPanelQuery`, `complex_schools`)로 받는다. 당근은 단지에서 1km 안을 가까운 순으로 20곳까지 줘(`PRESCHOOL_SERVER_MAX`), 20곳이면 `[일부]` 로 알린다 (2026-11-11 실측: 예전 반경 쿼리 `educationMapPoints` 와 대조해 역삼래미안은 1km 안 31곳 중 20곳, 양평역한라비발디2단지는 1km 안 11곳 모두). 순서·거리는 웹(`ComplexSchoolSection`)을 따른다: 이 단지 주민 이용 수(`complexResidentCount`) 많은 순, 같으면 학군 정보 좌표(`proptierDanji.coordinate`, 없으면 단지 좌표)에서 시설까지 직선거리 가까운 순이다. 거리는 웹처럼 반올림 전 값으로 견주고 출력할 때만 반올림한다 (서버도 거리 순으로 주지만 기대지 않는다. 2026-11-11 실측). 후기 수는 웹(`surveyResult?.reviewCount ?? 0`)처럼 설문이 없거나 수를 몰라도 0개다 (2026-11-11 번들 대조). 목록에 어린이집·유치원 구분이 없어 `preschool`(`preschoolByNo`)로 본다.
+- 개발 호재(`developments`·`development`)와 위치·반경으로 찾던 `preschools` 는 당근 웹이 지도의 개발 구역·교육 시설 레이어 쿼리(`DevelopmentDistrictOverlayQuery`·`EducationPoiLayerQuery`)를 없애 뺐다 (2026-11-10 번들 대조: 지도 쿼리 14개에 없고, 같은 데이터를 주는 다른 쿼리도 없다). 개발 사업 상세(`DevelopmentDetailQuery`)는 웹에 남았지만 주소의 `dev_busi_no` 로만 열리고 사업 번호를 얻을 목록이 없어 함께 뺐다. 레이어 토글 로그 이름(`click_map_development_layer_toggle`·`click_map_education_layer_toggle`)만 남은 것은 기능이 남은 흔적이 아니다. 예전 문서대로 부른 `preschools` 의 뺀 옵션과 없앤 두 명령은 CLI 의 `CHANGED_USAGE` 가 사용법 오류 `hint` 로 새 사용법을 알린다. `preschools` 의 다른 사용법 오류(옵션 오타·인자 누락)에는 붙이지 않고, 지역·역 이름(띄어 써도)은 단지 ID 검사(`complex_id_value`)가 알린다. 옛 절 이름으로 부른 `jibsa guide daangn developments` 는 따로 알리지 않는다. `NOT_FOUND` 의 `hint` 에 절 목록이 나오고, 재개발·재건축은 `docs/llm.md` 의 `재개발` 행이 네이버 명령으로 보낸다.
+- 어린이집 전화번호·홈페이지·좌표(거리 계산에만 쓴다), 인기 단지 사진, 단지 비교·좋은 동네의 후기 요약 글은 읽거나 내보내지 않는다.
 - 좋은 동네 추천의 라이프스타일 지표(`LIFESTYLE_INDICATORS`)와 기준 연도는 웹 번들에서 옮겼다. 추천 지역(`livableRegionScopes`)은 통계 기준 연도의 시·도 이름이라 광주광역시(24)·전라남도(36)가 아직 따로다 (2026-10-10 실측). `--region` 의 시·도 줄임말·옛 이름·통합 이름은 시·도 앞부분과 시·군·구 이름('광주시' 는 경기도 광주시)을 먼저 본 뒤 정식 명칭으로 맞추고, 전남광주통합특별시('전남')는 두 곳을 모두 넣는다 (`_scope_sidos`). 구가 있는 시의 구는 추천 지역에 '수원시 장안구' 처럼 두 단어로 와서(2026-10-11 실측: 경기 20곳 등 37곳) 전체 이름·구 이름·시 이름(그 시의 구 모두)으로 맞춘다 (`_region_codes`). 옛 이름('광주'·'전라남도')이 한 곳만 찾는 건 추천 데이터가 둘을 나눠 주기 때문이고 `--city` 와 다른 건 의도다.
 
 ## 페이지네이션과 조건 처리
@@ -142,9 +143,7 @@ GraphQL의 HTTP 200도 `errors`를 검사한다. persisted-query 거절과 그 �
 | `POST /graphql` 의 `searchAddress` (GraphQL, 주소·건물 검색) | `search_address` |
 | `POST /graphql` 의 `geocodeAddress` (GraphQL, 주소 → 좌표) | `geocode_address` |
 | `POST /graphql` 의 `subwayStationArticleConnection` (GraphQL, 역 주변 매물) | `subway_station_article_connection` |
-| `POST /graphql` 의 `developmentDistricts` (GraphQL, 개발 호재) | `development_districts` |
-| `POST /graphql` 의 `developmentByBusiNo` (GraphQL, 개발 사업 상세) | `development_by_busi_no` |
-| `POST /graphql` 의 `educationMapPoints` (GraphQL, 교육 시설) | `education_map_points` |
+| `POST /graphql` 의 `complexByOriginalId.complex.proptierDanji` (GraphQL, 단지 근처 학교·어린이집. 루트가 complex_by_original_id 와 같아 구분) | `complex_schools` |
 | `POST /graphql` 의 `preschoolByNo` (GraphQL, 어린이집·유치원 상세) | `preschool_by_no` |
 | `POST /graphql` 의 `complexByOriginalId` (GraphQL, 단지 비교 칸. 루트가 complex_by_original_id 와 같아 구분) | `complex_compare` |
 | `POST /graphql` 의 `complexes` (GraphQL, 같은 동 단지. 페이지 `complexes` 와 겹쳐 구분) | `nearby_complexes` |

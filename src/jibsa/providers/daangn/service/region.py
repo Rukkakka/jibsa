@@ -56,6 +56,7 @@ from jibsa.providers.daangn.api.response.region import (
 from jibsa.providers.daangn.service.common import (
     OPTIONAL_LOOKUP_ERRORS,
     DaangnRegion,
+    coordinate_point,
     partial_failure_note,
     station_name,
     unwrap_graphql,
@@ -690,10 +691,10 @@ def find_address(client: DaangnClient, name: str) -> DaangnPlace | None:
         return None
     geocode_response = client.run_request_geocode_address(DaangnGeocodeAddressRequestPayloadModel(query=road))
     geocoded = unwrap_graphql(geocode_response, geocode_response.data.geocode_address if geocode_response.data else None, '주소 좌표')
-    point = geocoded.point
-    if point is None or point.lat is None or point.lon is None:
+    point = coordinate_point(geocoded.point)
+    if point is None:
         return None
-    return DaangnPlace(name=address.road_address or road, lat=point.lat, lng=point.lon)
+    return DaangnPlace(name=address.road_address or road, lat=point[0], lng=point[1])
 
 
 class DaangnRealsaleRegion(BaseModel):

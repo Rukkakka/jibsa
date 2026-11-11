@@ -44,6 +44,7 @@ from jibsa.providers.daangn.api.request.common import (
 )
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
+    DaangnCoordinateModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
     DaangnRegionComplexNodeModel,
@@ -729,13 +730,11 @@ def truncation_notes(
     subject: str = '매물',
     unit: str = '건',
     max_limit: int | None = None,
-    narrow: str | None = None,
 ) -> list[str]:
     """받은 유효 결과를 출력 한도로 자를 때 실제 개수와 다음에 할 일을 알린다.
 
-    `max_limit` 를 주면 `--limit` 이 최대값보다 작을 때 늘리라고, `narrow`(좁힐 옵션)를 주면 좁히라고 덧붙인다.
-    `--limit` 이 이미 최대값이면 늘리라는 안내는 옵션 검사에서 막히므로 붙이지 않는다 (2026-10-11 실측: preschools
-    강남역 --radius 3 --limit 200 에 205곳). 매물 목록(`listing_budget_notes`)처럼 `--limit` 안내를 따로 붙이는
+    `max_limit` 를 주면 `--limit` 이 최대값보다 작을 때 늘리라고 덧붙인다. `--limit` 이 이미 최대값이면 늘리라는
+    안내는 옵션 검사에서 막히므로 붙이지 않는다. 매물 목록(`listing_budget_notes`)처럼 `--limit` 안내를 따로 붙이는
     호출부는 `max_limit` 를 넘기지 않는다. 같은 말이 두 번 나온다 (2026-10-11 실측: daangn search listings 역삼동
     --limit 2 에 '검색 범위를 좁혀 주세요' 가 두 번). 실거래는 반대로 `max_limit` 를 넘기고, 이 안내가 나오면 따로
     붙이던 '--limit 을 늘리면' 안내를 빼서 [일부] 를 하나만 낸다 (`_collect_pages`).
@@ -743,11 +742,8 @@ def truncation_notes(
     if received <= limit:
         return []
     text = f'조회된 {subject} {received}{unit} 중 --limit {limit} 에 맞춰 {limit}{unit}만 보여 줍니다'
-    steps = ([f'--limit 을 최대 {max_limit}까지 늘리'] if max_limit is not None and limit < max_limit else []) + (
-        [f'{narrow} 로 좁히'] if narrow else []
-    )
-    if steps:
-        text += '. ' + '거나 '.join(steps) + '세요'
+    if max_limit is not None and limit < max_limit:
+        text += f'. --limit 을 최대 {max_limit}까지 늘리세요'
     return [note('일부', text)]
 
 
@@ -848,6 +844,13 @@ def trade_unselected_notes(count: int) -> list[str]:
         f'당근이 조건에 맞다고 준 매물 중 {count}건은 목록만으로 거래 유형·금액이 맞는지 알 수 없어 '
         '(금액이 없거나 관리비 포함 금액) 뺐습니다 (뺀 만큼 다시 채우지 않음)',
     )]
+
+
+def coordinate_point(coordinate: DaangnCoordinateModel | None) -> tuple[float, float] | None:
+    """좌표의 (위도, 경도). 좌표가 없거나 위도·경도 중 하나라도 없으면 None."""
+    if coordinate is None or coordinate.lat is None or coordinate.lon is None:
+        return None
+    return coordinate.lat, coordinate.lon
 
 
 def complex_url(complex_id: str | int) -> str:

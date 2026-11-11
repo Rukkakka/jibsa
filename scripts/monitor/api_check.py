@@ -230,13 +230,10 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 신고가는 다른 쿼리(realsaleNewHighFeed)다. 동 하나는 신고가가 없을 수 있어 구로 본다
         Step('신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--limit', '3'), 'transactions'),
         Step('동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes'),
+        # empty_ok 를 붙이지 않는다. {complex}(역삼래미안 10697092)는 20곳을 준다 (2026-11-11 실측). 비면 필드 이름이 바뀌어
+        # 빈 목록이 된 것일 가능성이 커 고장으로 본다
         Step(
-            '개발 호재 한남동', ('daangn', 'developments'), ('한남동', '--limit', '2'), 'developments',
-            (Capture('development', 'developments', 'id'),),
-        ),
-        Step('개발 사업', ('daangn', 'development'), ('{development}',), 'name'),
-        Step(
-            '어린이집 역삼역', ('daangn', 'preschools'), ('역삼역', '--limit', '2'), 'preschools',
+            '단지 근처 어린이집', ('daangn', 'preschools'), ('{complex}',), 'preschools',
             (Capture('preschool', 'preschools', 'id'),),
         ),
         Step('어린이집', ('daangn', 'preschool'), ('{preschool}',), 'name'),

@@ -4,40 +4,20 @@
 from pydantic import Field
 
 from jibsa.core.schema import RequestModel
-from jibsa.providers.daangn.api.request.common import DaangnCoordinateInputModel
 
-from typing import (
-    Annotated,
-    Literal,
-)
+from typing import Annotated
 
 
-DaangnEducationType = Literal['DAYCARE', 'KINDERGARTEN', 'ELEMENTARY', 'MIDDLE', 'HIGH']
+class DaangnComplexSchoolsRequestPayloadModel(RequestModel):
+    """GraphQL `complexByOriginalId { complex { proptierDanji { nearbyPreschools } } }` 쿼리 변수.
 
+    웹의 `ComplexSchoolListPanelQuery` (단지 화면 학군의 '더 보기', 근처 학교·어린이집). 루트 필드가 단지 실거래가와 같은
+    `complexByOriginalId` 라 action id 는 `complex_schools` 로 구분한다.
+    """
 
-class DaangnEducationMapPointsInputModel(RequestModel):
-    """`educationMapPoints` 의 `input`. 좌표 범위 안의 시설을 500곳까지 준다 (2026-10-10 실측, 페이지 없음)."""
-
-    sw_coordinate: Annotated[
-        DaangnCoordinateInputModel,
-        Field(description='남서 꼭짓점', alias='swCoordinate')
-    ]
-    ne_coordinate: Annotated[
-        DaangnCoordinateInputModel,
-        Field(description='북동 꼭짓점', alias='neCoordinate')
-    ]
-    types: Annotated[
-        list[DaangnEducationType],
-        Field(min_length=1, description='DAYCARE(어린이집) / KINDERGARTEN(유치원) / ELEMENTARY·MIDDLE·HIGH')
-    ]
-
-
-class DaangnEducationMapPointsRequestPayloadModel(RequestModel):
-    """GraphQL `educationMapPoints` 쿼리 변수 (웹의 `EducationPoiLayerQuery`, 지도 교육 시설)."""
-
-    input: Annotated[
-        DaangnEducationMapPointsInputModel,
-        Field(description='좌표 범위·시설 종류')
+    complex_id: Annotated[
+        str,
+        Field(min_length=1, description='숫자 단지 ID', alias='complexId')
     ]
 
 
@@ -49,7 +29,7 @@ class DaangnPreschoolByNoRequestPayloadModel(RequestModel):
 
     pre_school_no: Annotated[
         int,
-        Field(gt=0, description="시설 번호 (educationMapPoints 의 id 에서 'pre_' 를 뗀 숫자)", alias='preSchoolNo')
+        Field(gt=0, description='시설 번호 (단지 근처 어린이집 nearbyPreschools 의 preSchoolNo)', alias='preSchoolNo')
     ]
 
 

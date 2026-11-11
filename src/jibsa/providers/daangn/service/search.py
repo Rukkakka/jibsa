@@ -75,6 +75,7 @@ from jibsa.providers.daangn.service.common import (
     FeedQueryRejectedError,
     article_to_listing,
     complex_building_notes,
+    coordinate_point,
     hidden_location_notes,
     is_available,
     listing_budget_notes,
@@ -959,10 +960,10 @@ def _nearest_points(points: list[DaangnArticlePointModel], lat: float, lng: floa
     """
     nearest: dict[str, float] = {}
     for point in points:
-        coordinate = point.coordinate
-        if coordinate is None or coordinate.lat is None or coordinate.lon is None:
+        position = coordinate_point(point.coordinate)
+        if position is None:
             continue
-        nearest.setdefault(point.original_article_id, haversine_km(lat, lng, coordinate.lat, coordinate.lon))
+        nearest.setdefault(point.original_article_id, haversine_km(lat, lng, *position))
     return sorted(nearest.items(), key=lambda entry: (entry[1], entry[0]))
 
 

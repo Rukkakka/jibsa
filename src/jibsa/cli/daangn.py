@@ -18,6 +18,8 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    ChangedUsage,
+    HintedBadParameter,
     UsageHints,
     emit,
     handle_errors,
@@ -94,12 +96,6 @@ from jibsa.providers.daangn.service.complex import (
     list_trending_complexes,
     search_complexes,
 )
-from jibsa.providers.daangn.service.development import (
-    DEVELOPMENT_CATEGORY_BY_LABEL,
-    DEVELOPMENT_MAX_LIMIT,
-    get_development,
-    list_developments,
-)
 from jibsa.providers.daangn.service.listing import (
     DETAILS_MAX,
     attach_details,
@@ -137,8 +133,6 @@ from jibsa.providers.daangn.service.region import (
 from jibsa.providers.daangn.service.review import get_region_reviews
 from jibsa.providers.daangn.service.school import (
     COMPARE_MAX_COMPLEXES,
-    PRESCHOOL_MAX_LIMIT,
-    PRESCHOOL_TYPE_BY_LABEL,
     get_preschool,
     get_school,
     list_preschools,
@@ -383,10 +377,53 @@ USAGE_HINTS: dict[str, UsageHints] = {
     'jibsa daangn search listings': LISTING_HINTS,
     'jibsa daangn search commute': COMMUTE_HINTS,
 }
+# 단지 ID 자리에 단지·지역 이름처럼 숫자가 아닌 값이나 preschools 의 예전 사용법을 줬을 때 단지 ID 를 찾는 법.
+# 다음에 할 일을 알리는 힌트라 '--help 로 사용법을 확인하세요' 를 붙이지 않는다 (UsageHints·--fields·--next 힌트와 같다)
+COMPLEX_ID_HINT: str = (
+    "단지 ID 는 'jibsa daangn search complexes <동>' 이나 'jibsa daangn search locations <단지 이름>' 으로 찾습니다"
+)
+# 개발 호재 명령을 뺀 뒤 재개발·재건축 구역을 보는 곳
+REDEVELOPMENT_HINT: str = (
+    "당근 웹이 개발 호재를 없애 이 명령을 뺐습니다. 재개발·재건축 구역은 'jibsa naver search redevelopment <지역>' 으로 "
+    "찾고 'jibsa naver redevelopment <구역 번호>' 로 봅니다"
+)
+# 예전 문서(0.12.0 까지)대로 부른 사용법 오류에 바뀐 사용법을 알린다 (jibsa.cli.app.changed_usage_hint, #192). 없앤 명령은
+# 그룹 경로 뒤에 그 이름을 붙여 찾는다. preschools 는 뺀 옵션을 줬을 때만 알리고, 지역·역 이름(띄어 써도)은 단지 ID
+# 검사(`complex_id_value`)가 알린다
+CHANGED_USAGE: dict[str, ChangedUsage] = {
+    'jibsa daangn preschools': ChangedUsage(
+        f'이 명령은 지역·역 이름·반경 대신 단지 ID 하나만 받습니다 (예: jibsa daangn preschools 10697092). {COMPLEX_ID_HINT}',
+        removed_options=frozenset({'--lat', '--lng', '--radius', '--type', '-t', '--limit'}),
+    ),
+    'jibsa daangn developments': ChangedUsage(REDEVELOPMENT_HINT),
+    'jibsa daangn development': ChangedUsage(REDEVELOPMENT_HINT),
+}
 # 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
 HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 아파트 만 줄 때)')]
 HouseholdMaxOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 상한 (-t 아파트 만 줄 때)')]
 ParkingMinOption = Annotated[float | None, typer.Option(min=0, help='세대당 주차대수 하한 (-t 아파트 만 줄 때)')]
+
+
+def complex_id_value(value: str) -> int:
+    """단지 ID 인자·옵션의 값 검사 (`parser`). 숫자가 아니면(단지·지역 이름) 단지 ID 를 찾는 법을 힌트로 붙인다.
+
+    Click 정수 검사는 'not a valid int range' 와 --help 안내만 줘, 단지 이름을 준 에이전트가 단지 ID 를 찾는 법을 알 수
+    없었다 (2026-11-11 리뷰: complex·real-price 등 6곳). 다른 ID 인자의 Click 정수 검사처럼 int() 로 읽어 받는 꼴이 같다
+    (앞뒤 공백·CR 도 받는다). 자릿수는 막지 않는다. 당근은 단지 ID 를 문자열로 받아 19자리에도 단지를 찾지 못했다고
+    답하고 (2026-11-11 실측), 4300자가 넘는 숫자는 int() 가 ValueError 를 내 여기서 같은 힌트로 막힌다.
+
+    인자 이름은 Click 이 채운다 ('complex_id', '--complex'). 함수 이름은 터미널(Rich) --help 에 인자 형식
+    `<complex_id_value>` 로 보여 앞에 `_` 를 붙이지 않는다. 에이전트가 받는 파이프 --help 에는 인자 형식이 나오지 않아
+    `<int>` 로 보이게 할 ParamType 은 따로 두지 않는다.
+    """
+    try:
+        complex_id = int(value)
+    except ValueError:
+        complex_id = 0
+    if complex_id < 1:
+        # 값 뒤에 조사를 붙이지 않는다 (숫자·ID 도 온다, code-style 1절)
+        raise HintedBadParameter(f"단지 ID 가 아닙니다: '{value}'. 1 이상의 숫자 단지 ID 를 받습니다", None, COMPLEX_ID_HINT)
+    return complex_id
 
 
 def _require_one_place(name: str | None, lat: float | None, lng: float | None, param_hint: str) -> None:
@@ -696,7 +733,12 @@ def search_command(
         str | None,
         typer.Argument(help='동 이름 (예: 역삼동). 역 이름(예: 역삼역)이면 당근 역 주변 매물, 장소 이름이면 그 위치 반경으로 찾는다. --lat/--lng 를 주면 생략')
     ] = None,
-    complex_id: Annotated[int | None, typer.Option('--complex', min=1, help='단지 ID. 지역·좌표 대신 해당 단지의 현재 매물 조회')] = None,
+    complex_id: Annotated[
+        int | None,
+        typer.Option(
+            '--complex', parser=complex_id_value, metavar='<int>', help='단지 ID. 지역·좌표 대신 해당 단지의 현재 매물 조회'
+        )
+    ] = None,
     lat: LatOption = None,
     lng: LngOption = None,
     radius: Annotated[
@@ -895,7 +937,9 @@ def item_command(
 def complex_command(
     complex_id: Annotated[
         int,
-        typer.Argument(min=1, help='단지 ID (search locations <단지 이름> 의 complexes, 아파트·오피스텔 listing 의 complex_id)')
+        typer.Argument(
+            parser=complex_id_value, help='단지 ID (search locations <단지 이름> 의 complexes, 아파트·오피스텔 listing 의 complex_id)'
+        )
     ],
     pretty: PrettyOption = None,
 ) -> None:
@@ -909,7 +953,10 @@ def complex_command(
 def real_price_command(
     complex_id: Annotated[
         int | None,
-        typer.Argument(min=1, help='단지 ID (search locations <단지 이름> 의 complexes, 아파트·오피스텔 listing 의 complex_id). --item 을 주면 생략')
+        typer.Argument(
+            parser=complex_id_value,
+            help='단지 ID (search locations <단지 이름> 의 complexes, 아파트·오피스텔 listing 의 complex_id). --item 을 주면 생략',
+        )
     ] = None,
     item: Annotated[
         int | None,
@@ -1216,7 +1263,10 @@ def school_command(
 def price_trend_command(
     complex_id: Annotated[
         int,
-        typer.Argument(min=1, help='단지 ID (complexes·school·search locations <단지 이름> 결과, 아파트·오피스텔 listing 의 complex_id)')
+        typer.Argument(
+            parser=complex_id_value,
+            help='단지 ID (complexes·school·search locations <단지 이름> 결과, 아파트·오피스텔 listing 의 complex_id)',
+        )
     ],
     area: Annotated[
         int | None,
@@ -1244,88 +1294,26 @@ def price_trend_command(
         emit(result, pretty, notes=result.notes)
 
 
-def _center(
-    client: DaangnClient, place: str | None, lat: float | None, lng: float | None, radius_km: float
-) -> tuple[float, float, list[str]]:
-    """지역·역·장소 이름 또는 좌표를 검색 중심으로 바꾼다 (`_geocode`). 이름이면 어디서 찾았는지 안내를 붙인다."""
-    _require_one_place(place, lat, lng, 'PLACE')
-    if lat is not None and lng is not None:
-        return lat, lng, []
-    assert place is not None
-    center, notes, finder = _geocode(client, place, radius_km)
-    return center.lat, center.lng, notes + [
-        f"{quoted(place, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
-        f'반경 {radius_km:g}km 안을 찾았습니다'
-    ]
-
-
-@app.command('developments')
-def developments_command(
-    place: Annotated[
-        str | None,
-        typer.Argument(help='검색 중심 지역·역·장소 이름 (예: 역삼역, 강남구). --lat/--lng 를 주면 생략')
-    ] = None,
-    lat: LatOption = None,
-    lng: LngOption = None,
-    radius: Annotated[float, typer.Option(min=0.1, max=5.0, help='검색 반경 (km)')] = DEFAULT_RADIUS_KM,
-    category: Annotated[
-        list[str] | None,
-        typer.Option('--category', help=f"{', '.join(DEVELOPMENT_CATEGORY_BY_LABEL)}. 반복하거나 쉼표로 구분. 기본 전체")
-    ] = None,
-    limit: Annotated[int, typer.Option(min=1, max=DEVELOPMENT_MAX_LIMIT, help='최대 사업 수')] = 50,
-    pretty: PrettyOption = None,
-) -> None:
-    """반경 안 개발 호재(도로·철도·정비사업)를 가까운 순으로. 요청 1회 (이름이면 위치 찾기 요청이 더 든다).
-
-    예: jibsa daangn developments 역삼역 --radius 2 --category 정비사업
-    """
-    require_finite('--radius', radius)
-    categories = split_csv(category, tuple(DEVELOPMENT_CATEGORY_BY_LABEL), '--category')
-    with handle_errors(SOURCE), DaangnClient() as client:
-        center_lat, center_lng, notes = _center(client, place, lat, lng, radius)
-        result = list_developments(client, center_lat, center_lng, radius_km=radius, categories=categories, limit=limit)
-        emit(result, pretty, notes=notes + result.notes)
-
-
-@app.command('development')
-def development_command(
-    development_id: Annotated[int, typer.Argument(min=1, help='사업 번호 (developments 결과의 id)')],
-    pretty: PrettyOption = None,
-) -> None:
-    """개발 사업 하나의 종류·단계·규모·시공사·인가 날짜. 요청 1회.
-
-    예: jibsa daangn development 1003444
-    """
-    with handle_errors(SOURCE), DaangnClient() as client:
-        emit(get_development(client, development_id), pretty)
-
-
 @app.command('preschools')
 def preschools_command(
-    place: Annotated[
-        str | None,
-        typer.Argument(help='검색 중심 지역·역·장소 이름 (예: 역삼역). --lat/--lng 를 주면 생략')
-    ] = None,
-    lat: LatOption = None,
-    lng: LngOption = None,
-    radius: Annotated[float, typer.Option(min=0.1, max=3.0, help='검색 반경 (km)')] = DEFAULT_RADIUS_KM,
-    preschool_type: Annotated[
-        list[str] | None,
-        typer.Option('--type', '-t', help=f"{', '.join(PRESCHOOL_TYPE_BY_LABEL)}. 반복하거나 쉼표로 구분. 기본 전체")
-    ] = None,
-    limit: Annotated[int, typer.Option(min=1, max=PRESCHOOL_MAX_LIMIT, help='최대 시설 수')] = 30,
+    complex_id: Annotated[
+        int,
+        typer.Argument(
+            parser=complex_id_value,
+            help='단지 ID (search complexes·search locations <단지 이름> 결과, 아파트·오피스텔 listing 의 complex_id)',
+        )
+    ],
     pretty: PrettyOption = None,
 ) -> None:
-    """반경 안 어린이집·유치원을 가까운 순으로. 요청 1회 (이름이면 위치 찾기 요청이 더 든다).
+    """단지 근처 어린이집·유치원 (당근 단지 화면 학군의 유치원 탭과 같은 목록·순서). 요청 1회.
 
-    예: jibsa daangn preschools 역삼역 -t 어린이집
+    지역·역 이름이나 반경으로는 찾지 않는다. 어린이집·유치원 구분과 운영 정보는 preschool 로 본다.
+
+    예: jibsa daangn preschools 10697092
     """
-    require_finite('--radius', radius)
-    types = split_csv(preschool_type, tuple(PRESCHOOL_TYPE_BY_LABEL), '--type')
     with handle_errors(SOURCE), DaangnClient() as client:
-        center_lat, center_lng, notes = _center(client, place, lat, lng, radius)
-        result = list_preschools(client, center_lat, center_lng, radius_km=radius, types=types, limit=limit)
-        emit(result, pretty, notes=notes + result.notes)
+        result = list_preschools(client, complex_id)
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('preschool')
@@ -1345,7 +1333,10 @@ def preschool_command(
 def compare_command(
     complex_ids: Annotated[
         list[int],
-        typer.Argument(min=1, help=f'단지 ID 여러 개 (최대 {COMPARE_MAX_COMPLEXES}개, search locations·search complexes·complex 결과)')
+        typer.Argument(
+            parser=complex_id_value,
+            help=f'단지 ID 여러 개 (최대 {COMPARE_MAX_COMPLEXES}개, search locations·search complexes·complex 결과)',
+        )
     ],
     pretty: PrettyOption = None,
 ) -> None:
@@ -1362,7 +1353,7 @@ def compare_command(
 
 @app.command('nearby-complexes')
 def nearby_complexes_command(
-    complex_id: Annotated[int, typer.Argument(min=1, help='기준 단지 ID')],
+    complex_id: Annotated[int, typer.Argument(parser=complex_id_value, help='기준 단지 ID')],
     limit: Annotated[int, typer.Option(min=1, max=NEARBY_COMPLEXES_MAX, help='최대 단지 수')] = 50,
     pretty: PrettyOption = None,
 ) -> None:

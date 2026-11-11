@@ -36,6 +36,7 @@ from jibsa.cli import (
     zigbang,
 )
 from jibsa.cli.output import (
+    ChangedUsage,
     UsageHints,
     emit,
     emit_error,
@@ -79,7 +80,7 @@ SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn', 'daba
 # 따옴표 없이 띄어 쓴 이름(`송파구 신천동`)을 하나로 잇는 위치 인자 (`joined_name_args`). 지역·장소·학교·단지 이름만 두고
 # ID 인자는 두지 않는다 (ID 두 개를 이어 찾지 않고 'unexpected extra argument' 로 알린다)
 NAME_ARGUMENTS: frozenset[str] = frozenset({
-    'query', 'dong', 'region', 'keyword', 'place', 'workplace', 'name', 'station', 'scope', 'complex_',
+    'query', 'dong', 'region', 'keyword', 'workplace', 'name', 'station', 'scope', 'complex_',
 })
 # Click 이 명령마다 붙이는 도움말 옵션 (명령의 params 에는 없다)
 HELP_OPTIONS: frozenset[str] = frozenset({'--help'})
@@ -94,6 +95,11 @@ PLAIN_HELP_WIDTH: int = 1000
 USAGE_HINTS: dict[str, UsageHints] = {
     **zigbang.USAGE_HINTS, **naver.USAGE_HINTS, **daangn.USAGE_HINTS, **dabang.USAGE_HINTS,
 }
+# 예전 문서대로 부른 명령에 바뀐 사용법을 알린다 (`changed_usage_hint`)
+CHANGED_USAGE: dict[str, ChangedUsage] = {**daangn.CHANGED_USAGE}
+# Click 은 없는 하위 명령 이름을 repr 로 감싸(작은따옴표가 든 이름은 큰따옴표) 마침표를 붙이고, 비슷한 이름이 있으면
+# 'Did you mean' 을 잇는다
+NO_SUCH_COMMAND_PATTERN: re.Pattern[str] = re.compile(r"No such command (['\"])(.*?)\1\.")
 
 app = typer.Typer(
     name='jibsa',
@@ -404,6 +410,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             exc.format_message(),
             getattr(exc, 'hint', None)
             or misplaced_option_hint(exc, command, args, cli)
+            or changed_usage_hint(exc, command)
             or foreign_usage_hint(exc, command, args, cli)
             or subcommand_hint(exc)
             or f"'{command} --help' 로 사용법을 확인하세요",
@@ -580,6 +587,27 @@ def _own_options_hint(cli: Command, command: str, option: str) -> str | None:
     return f"{command} 에는 {option} 옵션이 없습니다. 이 명령의 옵션: {', '.join(options)}. '{command} --help' 로 사용법을 확인하세요"
 
 
+def changed_usage_hint(exc: UsageError, command: str) -> str | None:
+    """예전 문서대로 부른 명령(인자·옵션이 바뀌었거나 없앤 명령)에 바뀐 사용법을 알린다 (`CHANGED_USAGE`).
+
+    당근 `preschools` 가 지역·역·반경 대신 단지 ID 를 받게 바뀌어, 예전 문서의 `preschools 역삼역 -t 어린이집` 은
+    'No such option: -t' 와 이 명령의 옵션(--pretty)만 안내받았다. 없앤 `developments` 는 당근 하위 명령 목록만 받아
+    네이버 재개발 명령으로 가는 길을 알 수 없었다 (2026-11-11 리뷰). 없앤 명령은 그룹 경로 뒤에 그 이름을 붙여 찾는다.
+
+    옵션을 뺀 명령은 뺀 옵션을 줬을 때만 알린다. 모든 사용법 오류에 붙이면 새 사용법의 옵션 오타
+    (`preschools 10697092 --prety`)·인자 누락까지 예전 사용법 탓으로 알렸다 (2026-11-11 리뷰). 예전처럼 준 이름은
+    (띄어 써도 첫 단어에서) 인자 값 검사가 먼저 막아 여기까지 오지 않는다.
+    """
+    match = NO_SUCH_COMMAND_PATTERN.match(exc.message)
+    usage = CHANGED_USAGE.get(f'{command} {match.group(2)}' if match else command)
+    if usage is None:
+        return None
+    if usage.removed_options and not (isinstance(exc, NoSuchOption) and exc.option_name in usage.removed_options):
+        return None
+    # 다른 사용법 오류처럼 --help 안내로 끝낸다 (test_usage_errors_are_json_with_exit_2)
+    return f"{usage.hint}. '{command} --help' 로 사용법을 확인하세요"
+
+
 def subcommand_hint(exc: UsageError) -> str | None:
     """그룹에 없는 하위 명령에 그 그룹의 하위 명령을 알린다 (`jibsa zigbang search listings 역삼동`).
 
@@ -590,8 +618,7 @@ def subcommand_hint(exc: UsageError) -> str | None:
     `.,·/-` 밖의 글자가 든 이름은 셸 따옴표로 감싸 그대로 붙여 넣어도 인자 하나가 되게 한다.
     """
     context = exc.ctx
-    # Click 은 이름을 repr 로 감싸(작은따옴표가 든 이름은 큰따옴표) 마침표를 붙이고, 비슷한 이름이 있으면 'Did you mean' 을 잇는다
-    match = re.match(r"No such command (['\"])(.*?)\1\.", exc.message)
+    match = NO_SUCH_COMMAND_PATTERN.match(exc.message)
     if context is None or match is None or not isinstance(context.command, TyperGroup):
         return None
     group = context.command
