@@ -10,12 +10,12 @@
 - **키 없음** = 그 거래에 해당 없음 (`--fields` 로 고르지 않은 필드는 빼고), **`null`** = 모름 (0·없음이 아니다), **`[]`** = 알려 줬는데 비어 있음. 관리비가 `null` 이면 월세와 더하지 말고 `listing` 상세를 본다.
 - `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물이 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패 또는 대체 경로로 찾음(사용자에게 알린다), `[참고]` 그 밖.
 - `--limit` 은 들여다볼 개수라 뺀 매물만큼 `returned` 가 적을 수 있다. 처음에는 작게 잡고, 한 번에 매물 50건 이하로 본다 (100건이면 4만 자가 넘어 잘린다). `search commute` 는 역마다 `--limit` 건(최대 10역)이라 역당 5건 이하로 시작한다.
-- 매물 목록의 `has_more` 가 `true` 이고 `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 이어 받는다 (`--limit`·`--fields` 는 바꿔도 된다, 하루 동안 쓴다). `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 가 없으면 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다.
+- 매물 목록의 `has_more` 가 `true` 이고 `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 이어 받는다 (`--limit`·`--fields` 는 바꿔도 된다, 하루 동안 쓴다). `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 가 없으면 `notes` 대로 `--limit` 을 늘리거나(최대값 전까지) 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다.
 - 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않고, 받은 글자 그대로 옮긴다 (ID 로 주소를 만들거나 경로를 고치지 않는다). `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`)에만 있고 상세 `listing` 에는 없다.
 - 층은 `floor`(`"3"`·`"반지하"`·`"중층"`)와 숫자 `floor_number`(지하는 음수, 모르면 `null`).
 - 사진·매물 설명·중개사 연락처·매물 좌표는 없다. 확인·문의·계약은 `url` 로 안내한다.
-- ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 여러 소스의 같은 집을 합쳐 주지 않는다. 같은 집인지 가리려고 `listing` 을 여러 번 부르지 않고, 가격·면적·층이 같으면 '같은 집일 수 있다' 고만 알린다.
-- 명령은 동시에(병렬 호출·`&`) 부르지 않는다. 모든 jibsa 프로세스가 요청 간격을 함께 지켜 빨라지지 않는다. 후보 여러 개의 `listing` 은 셸 호출 한 번에 `;` 로 잇는다. 네이버가 가장 엄격하다 (요청 간격 1초, 분당 60회).
+- ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 여러 소스의 같은 집을 합쳐 주지 않는다. 같은 집인지 가리려고 `listing` 을 여러 번 부르지 않고, 가격·면적·층이 같으면 '같은 집일 수 있다' 고만 알린다 (사용자가 상세 비교를 원하면 그 후보만 `listing` 으로 본다).
+- 명령은 동시에(병렬 호출·`&`) 부르지 않는다. 모든 jibsa 프로세스가 요청 간격을 함께 지켜 빨라지지 않는다. 후보 여러 개의 `listing` 은 셸 호출 한 번에 `;` 로 잇는다. 요청 간격은 네이버 1초, 당근·다방 0.5초, 직방 0.2초다 (분당 상한은 직방 120, 나머지 60).
 - `--verbose` 는 쓰지 않는다 (stderr 에 로그가 섞인다).
 
 ## 무엇을 하려면
@@ -94,7 +94,7 @@
 
 ### 당근
 
-- 동 이름 검색은 최근 게시 순이고 주변 동 매물이 섞인다 (`in_regions: false`, 빼지 않는다). 여러 동을 찾으면(`--expand`·`○가` 동) 같은 매물이 겹쳐 `returned` 가 꽤 적을 수 있다.
+- 동 이름 검색은 최근 게시 순이고 주변 동 매물이 섞인다 (`in_regions: false`. jibsa 가 빼지 않으니 동 안 매물만 필요하면 `in_regions` 로 가린다). 여러 동을 찾으면(`--expand`·`○가` 동) 같은 매물이 겹쳐 `returned` 가 꽤 적을 수 있다.
 - 목록에는 관리비·등록일·번지가 없다 (`null`). 필요하면 `--details` 로 상세를 붙인다 (매물마다 요청 1회 더).
 - 역 이름 검색(`--radius` 없이)은 매물마다 역까지 도보 `walk_minutes` 를, `search commute` 는 `walk_to_station_minutes` 와 예상 통근 `commute_minutes` 를 준다. `--max-minutes` 는 총 통근 시간이 아니라 역 사이 지하철 시간 상한이다 (60분까지).
 - 거래 조건이 여럿인 매물은 `trade_type` 과 `other_trades` 로 온다. 그 조건의 상세는 `listing <id> --trade <trade_type>`.
@@ -137,4 +137,4 @@
 
 ## 더 읽을 곳
 
-`jibsa guide <소스>` 는 절 목록, `jibsa guide <소스> <절 이름>` 은 그 절만 쓴다 (예: `jibsa guide daangn search listings`, `jibsa guide common 에러 대응`). 같은 문서: [공통](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md) · [네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md) · [당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) · [다방](https://github.com/Rukkakka/jibsa/blob/main/docs/dabang.md).
+`jibsa guide <소스>` 는 절 목록, `jibsa guide <소스> <절 이름>` 은 그 절만 쓴다 (예: `jibsa guide daangn search listings`, `jibsa guide common 에러 대응`). 같은 문서: [공통](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md) · [직방](https://github.com/Rukkakka/jibsa/blob/main/docs/zigbang.md) · [네이버](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md) · [당근](https://github.com/Rukkakka/jibsa/blob/main/docs/daangn.md) · [다방](https://github.com/Rukkakka/jibsa/blob/main/docs/dabang.md)

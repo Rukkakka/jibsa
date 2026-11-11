@@ -509,7 +509,7 @@ jibsa daangn region-reviews 역삼동 --city 강남구 --top 10
 
 **반환값**
 
-`region`, `has_reviews`, `review_count`, `top_complexes`, `url`을 준다. 후기 본문과 요약은 없다.
+`region`, `has_reviews`, `review_count`, `top_complexes`, `url`을 준다. 후기 본문과 요약은 없다. `top_complexes` 는 구의 후기 페이지에서 받아 동으로 찾아도 구 전체에서 후기가 많은 단지이고 `notes` 로 알린다 (잠실동·문정동·가락동 모두 같은 목록).
 
 **오류와 대응**
 

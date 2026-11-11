@@ -500,10 +500,13 @@ def search_listings(
         names = {part.code: part.name for part in places}
         skipped = '·'.join(names.get(key, key) for key in unasked)
         notes.append(note('일부', f"--limit 이 동 수보다 작아 {skipped}{particle(skipped, '은/는')} 아직 찾지 않았습니다 (total 모름). {NEXT_HINT}"))
+    # 더 받을 매물이 없으면 '다시 채우지 않음' 이라 하지 않는다. 그 말에 더 있는지 헷갈렸다 (2026-11-11 LLM 사용 시험: 반곡동
+    # 아파트 7건 중 다른 동 4건을 빼고 has_more false)
+    refill = '(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'
     if outside:
-        notes.append(note('제외', f'반경을 덮는 사각형에서 받은 매물 중 반경 {filter_radius:g}km 밖 {outside}건을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
+        notes.append(note('제외', f'반경을 덮는 사각형에서 받은 매물 중 반경 {filter_radius:g}km 밖 {outside}건을 뺐습니다 {refill}'))
     if other_dong:
-        notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 매물 중 다른 동 {other_dong}건을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
+        notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 매물 중 다른 동 {other_dong}건을 뺐습니다 {refill}'))
     if unreadable:
         notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
     if duplicate:

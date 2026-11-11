@@ -317,6 +317,16 @@ COMMUTE_HINTS: UsageHints = LISTING_HINTS._replace(by_option={
 })
 
 
+
+def _found_by(finder: str) -> str:
+    """위치를 찾은 곳. 당근이 못 찾아 다른 소스 지역 검색으로 찾았으면 그 까닭을 붙인다.
+
+    '직방 지역 검색으로 찾은 위치' 만 쓰니, 직방을 부르지 않은 에이전트가 당근 결과에 왜 직방이 나오는지 몰랐다
+    (2026-11-11 LLM 사용 시험: daangn search listings 양근리 --radius 3).
+    """
+    return finder if finder == '당근' else f'당근이 찾지 못해 {finder}'
+
+
 @contextmanager
 def _complex_name_hint(client: DaangnClient, query: str, *, station_alternative: str = '') -> Iterator[None]:
     """동·구를 받는 명령(지역 실거래·단지 목록·후기)에 단지 이름을 주어 지역을 못 찾았으면, 단지 ID 와 단지 명령을 힌트로 알린다.
@@ -841,7 +851,7 @@ def search_command(
                 # 반경을 말하지 않으면 역 이름에 --radius 를 준 검색이 역 주변 목록이 아닌 반경 검색이 된 줄 몰라, walk_minutes 가
                 # 없다고 guide 와 어긋난다고 했다 (2026-11-11 LLM 사용 시험: 역삼역 --radius 1)
                 '범위',
-                f"{quoted(dong, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
+                f"{quoted(dong, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
                 f'반경 {radius_km:g}km 안을 찾았습니다',
             )])
             return
@@ -1044,7 +1054,7 @@ def commute_command(
             center, geocode_notes, finder = _geocode(client, workplace, DEFAULT_RADIUS_KM)
             lat, lng = center.lat, center.lng
             notes += geocode_notes + [
-                f"{quoted(workplace, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 회사 위치로 보았습니다"
+                f"{quoted(workplace, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 회사 위치로 보았습니다"
             ]
         try:
             result = search_commute(
@@ -1244,7 +1254,7 @@ def _center(
     assert place is not None
     center, notes, finder = _geocode(client, place, radius_km)
     return center.lat, center.lng, notes + [
-        f"{quoted(place, '은/는')} {finder} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
+        f"{quoted(place, '은/는')} {_found_by(finder)} 지역 검색으로 찾은 위치({center.address or center.name})를 중심으로 "
         f'반경 {radius_km:g}km 안을 찾았습니다'
     ]
 

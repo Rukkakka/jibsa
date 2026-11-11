@@ -289,7 +289,20 @@ def search_complexes(
         notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 단지 중 다른 동 {other_dong}곳을 뺐습니다'))
     if duplicate:
         notes.append(note('제외', f'다방이 다음 쪽에 다시 준 단지 {duplicate}곳은 한 번만 넣었습니다 (다시 채우지 않음)'))
-    if has_more and received >= limit:
+    if has_more and received >= limit and keep_gids is not None and other_dong:
+        # 동 검색은 동을 덮는 사각형의 다방 목록에서 그 동만 남겨, 늘려도 다른 동이 대부분이다. '지역을 좁히세요' 는 이미 동
+        # 하나라 따를 수 없었고 total 도 사각형 안 수였다 (2026-11-11 LLM 사용 시험: 반포동 --limit 60 에 반포동 6곳, total 348).
+        # 그 동 단지를 빠짐없이 주는 당근·네이버 동 단지 목록을 알린다
+        grow = (
+            '--limit 을 늘리면 더 보지만 다른 동이 대부분입니다. ' if limit < MAX_LIST_LIMIT
+            else f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. '
+        )
+        notes.append(note(
+            '일부',
+            f'단지가 더 있습니다 (동을 덮는 사각형의 다방 목록 순 앞 {received}곳 중 이 동 {len(complexes)}곳, total 은 사각형 안 수). '
+            + grow + '동 안 단지를 빠짐없이 보려면 jibsa daangn search complexes <동> 이나 jibsa naver search complexes <동> 으로 찾으세요',
+        ))
+    elif has_more and received >= limit:
         # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 역삼동 --limit 120 에 '--limit 을 늘리거나')
         notes.append(note(
             '일부',

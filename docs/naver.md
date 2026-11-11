@@ -584,7 +584,7 @@ API 요청당 최대 30건이다. 명령 한 번 안에서 이전 응답의 `las
 
 ## 요청 제한
 
-네이버는 세 소스 중 요청 제한이 가장 엄격하다. 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다. 지역명 해석과 상세의 교통·학교·세금 같은 부가 정보 요청도 이 제한에 포함된다.
+네이버는 요청 간격이 1초로 소스 중 가장 길다 (분당 상한 60 은 당근·다방과 같다). 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다. 지역명 해석과 상세의 교통·학교·세금 같은 부가 정보 요청도 이 제한에 포함된다.
 
 ## 도움말과 이전 명령
 
