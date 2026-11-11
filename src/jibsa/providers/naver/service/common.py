@@ -808,6 +808,8 @@ def listing_keeper(
 # 코드(`article_info_to_listing`)뿐이다 (2026-10-14 실측: 역삼동 동 전체 목록 20건의 모든 키에 상태 필드 없음)
 EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형인'
 RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의'
+# 반경 검색의 서버 집계(total)가 센 범위. 반경 원이 아니라 그 원을 감싼 사각형 안이라 반경 안 수보다 크다
+RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
 
 
 def pagination_notes(
@@ -822,6 +824,7 @@ def pagination_notes(
     resumable: bool = False,
     resumed: bool = False,
     scope: str = '',
+    total_basis: str = '',
     narrow: str,
 ) -> list[str]:
     """조회 예산과 실제 제외 결과에 맞춰 추가 조회 없이 안내한다.
@@ -837,6 +840,9 @@ def pagination_notes(
         resumed: 이어 받기(`--next`)로 받은 결과면 True. 앞 결과에서 받은 매물이 있어 '전부' 대신 '남은 매물' 이라 한다.
         scope: '전부' 가 어느 범위인지 앞에 붙일 말 (예: '반경 1km 안팎에서 '). 반경을 넓히면 더 나오는데 '전부' 만 쓰면
             찾은 범위의 전부인지 알 수 없다 (2026-10-20 LLM 사용 시험: 1km '26건이 전부' 뒤 2km 85건).
+        total_basis: `total` 이 정확한 범위의 수가 아니면 그 범위 (반경 검색은 `RADIUS_TOTAL_BASIS`). 주면 '약 N건(범위)' 으로
+            쓴다. 반경 검색에 '조건에 맞는 매물이 1197건' 이라고 하면 사각형 모서리까지 센 수를 반경 안의 수로 읽는다
+            (2026-11-11 LLM 사용 시험: 합정역 1km 상가).
         narrow: 더 남았을 때 좁히라고 권할 것 (`more_hint`). 동·구 검색은 '조건·지역', 반경 검색은 '조건·반경', 단지·재개발
             구역 하나의 매물은 좁힐 지역이 없어 그 매물의 조건만 준다 (2026-11-10 리뷰·실측: 헬리오시티 111515 2,257건
             --limit 120 에 '조건·지역을 좁히세요'). 기본값을 두지 않는다. 두었더니 재개발 구역 반경 검색이 값을 빠뜨려
@@ -861,7 +867,9 @@ def pagination_notes(
     # 다른 소스의 [일부](`limit_notes`)처럼 전체 수를 먼저 말하고 그중 몇 건을 보여 주는지 잇는다. 네이버만 '전체 38건 중
     # 일부입니다' 라 몇 건을 보여 주는지 없었고, --limit 이 최대값이면 수 없이 '--limit 의 최대값은 …' 만 나갔다 (2026-11-11
     # LLM 사용 시험: 역삼역 원룸·강남역 단지)
-    found = f"조건에 맞는 {subject}{particle(subject, '이/가')} {total}{unit}"
+    found = f"조건에 맞는 {subject}{particle(subject, '이/가')} {'약 ' if total_basis else ''}{total}{unit}" + (
+        f'({total_basis})' if total_basis else ''
+    )
     if not returned:
         shown = f"{found} 있지만, 확인한 {subject}{particle(subject, '이/가')} 모두 빠져 보여 줄 {subject}{particle(subject, '이/가')} 없습니다"
     else:

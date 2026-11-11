@@ -39,6 +39,7 @@ from jibsa.providers.naver.api.response.redevelopment import (
 )
 from jibsa.providers.naver.service.common import (
     COMPLEX_SORT_TYPE_BY_NAME,
+    RADIUS_TOTAL_BASIS,
     TRADE_CODE_BY_NAME,
     NaverListingsResult,
     NaverTradeConditions,
@@ -282,6 +283,7 @@ def list_redevelopment_areas(
         reason = '검색 범위(반경) 밖이거나 고른 거래 유형 매물이 없는' if trade_types else '중복이거나 검색 범위(반경) 밖의'
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, subject='구역', truncated=scan.truncated, excluded_reason=reason,
+        total_basis='' if legal_division_code is not None else RADIUS_TOTAL_BASIS,
         narrow='조건·지역' if legal_division_code is not None else '조건·반경',
     )
     return NaverRedevelopmentAreasResult(total=scan.total, returned=len(result), areas=result, notes=notes)
