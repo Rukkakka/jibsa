@@ -858,18 +858,24 @@ def pagination_notes(
     elif returned < limit and not truncated:
         what = scope + (f'남은 {subject}' if resumed else f'조건에 맞는 {subject}')
         notes.append(f"{what}{particle(subject, '은/는')} 이 {returned}{unit}이 전부입니다")
+    # 다른 소스의 [일부](`limit_notes`)처럼 전체 수를 먼저 말하고 그중 몇 건을 보여 주는지 잇는다. 네이버만 '전체 38건 중
+    # 일부입니다' 라 몇 건을 보여 주는지 없었고, --limit 이 최대값이면 수 없이 '--limit 의 최대값은 …' 만 나갔다 (2026-11-11
+    # LLM 사용 시험: 역삼역 원룸·강남역 단지)
+    found = f"조건에 맞는 {subject}{particle(subject, '이/가')} {total}{unit}"
+    if not returned:
+        shown = f"{found} 있지만, 확인한 {subject}{particle(subject, '이/가')} 모두 빠져 보여 줄 {subject}{particle(subject, '이/가')} 없습니다"
+    else:
+        shown = f"{found} 있고, {'이어서' if resumed else '그중'} {returned}{unit}{'을' if resumed else '만'} 보여 줍니다"
     if resumable:
-        notes.append(note('일부', f'전체 {total}{unit} 중 일부입니다. {NEXT_HINT}'))
+        notes.append(note('일부', f'{shown}. {NEXT_HINT}'))
         return notes
     # 이어 받은 결과의 returned 는 이번 몫이라 전체 수와 견주면 앞 결과에서 받은 매물을 빼먹는다
     if truncated or resumed:
         return notes
     # 더 받을 것이 남았는지는 받은 수(inspected)로 본다. 돌려준 수와 견주면 다 받고 뺐을 뿐인데 '더 있다' 고 하거나, 1건만
     # 빠져도 더 있다는 안내가 사라졌다 (2026-10-23 리뷰: 반경 단지 --limit 1 이 전체 89건에 '[제외] … 0건' 만 냈다)
-    if limit >= MAX_LIST_LIMIT and total > inspected:
-        notes.append(note('일부', more_hint(limit, MAX_LIST_LIMIT, narrow)))
-    elif inspected >= limit and total > inspected:
-        notes.append(note('일부', f'전체 {total}{unit} 중 {returned}{unit}입니다. {more_hint(limit, MAX_LIST_LIMIT, narrow)}'))
+    if total > inspected and (limit >= MAX_LIST_LIMIT or inspected >= limit):
+        notes.append(note('일부', f'{shown}. {more_hint(limit, MAX_LIST_LIMIT, narrow)}'))
     return notes
 
 

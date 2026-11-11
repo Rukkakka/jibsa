@@ -485,7 +485,8 @@ def search_store_listings(
                     continue
                 pins[location.item_id] = (distance, location.lat, location.lng)
 
-    nearest = sorted(pins.items(), key=lambda entry: entry[1][0])[:max(limit * SCAN_FACTOR, MIN_SCAN_PINS)]
+    scan_cap = max(limit * SCAN_FACTOR, MIN_SCAN_PINS)
+    nearest = sorted(pins.items(), key=lambda entry: entry[1][0])[:scan_cap]
     listings: list[ZigbangStoreListing] = []
     inspected: set[int] = set()
     matched: set[int] = set()
@@ -557,7 +558,10 @@ def search_store_listings(
             notes.append(note(
                 '일부',
                 f"{'후보 조회 상한' if capped else '결과 개수 제한'}으로 가까운 후보 {len(inspected)}건만 조회했습니다 "
-                f'(조회 상한 {len(nearest)}건, 미확인 후보 {in_radius - inspected_in_radius}건). 전체 가격 조건 일치 수는 모릅니다. {hint}',
+                # 상한이 --limit 에 비례한다는 말이 없으면 '--limit 을 늘리라' 와 따로 정해진 상한으로 읽혀 늘리지 않았다
+                # (2026-11-11 LLM 사용 시험: 성수역 --rent-max 50 --limit 20 의 '조회 상한 100건' 에 --limit 대신 반경만 좁힘)
+                f'(조회 상한은 --limit 의 {SCAN_FACTOR}배·최소 {MIN_SCAN_PINS}건이라 {scan_cap}건, '
+                f'미확인 후보 {in_radius - inspected_in_radius}건). 전체 가격 조건 일치 수는 모릅니다. {hint}',
             ))
         elif has_more:
             # matched 에는 반경 밖 매물도 있어 그 수로 보면, --limit 에 잘린 것이 반경 밖뿐이라 has_more 가 false 인데도 '더 있다' 고

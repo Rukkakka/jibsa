@@ -245,7 +245,9 @@ def search_commute(
             '범위',
             f'지하철 {max_minutes}분 안에 갈 수 있는 역 {len(stations)}곳{" 이상" if reach.truncated else ""} 중 '
             f'가까운 {len(searched)}곳 주변만 찾았습니다. '
-            '더 멀리 보려면 조건을 좁히거나 jibsa daangn search listings <역 이름> 으로 그 역 주변을 찾으세요',
+            # 찾는 역은 조건과 상관없이 지하철 시간 짧은 COMMUTE_MAX_STATIONS 곳이라 '조건을 좁히거나' 는 따라 해도 더 먼 역이
+            # 나오지 않는다 (2026-11-11 리뷰)
+            '더 먼 역은 jibsa daangn search listings <역 이름> 으로 그 역 주변을 따로 찾으세요',
         ))
     groups: list[DaangnCommuteStationListings] = []
     # 역마다 같은 안내('더 보려면 --limit 을 늘리거나…')가 역 수만큼 되풀이되지 않게 안내 문장마다 역을 모은다

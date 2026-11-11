@@ -11,7 +11,6 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
-    more_hint,
     normalize_address,
     note,
 )
@@ -763,7 +762,12 @@ def get_region_ranking(
         # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 서울 단지 평균가 --limit 100 11135곳에 '--limit 을
         # 늘리세요'). 시·도·전국은 범위를 좁히라고 하고, 더 좁힐 수 없는 시·군·구는 --order 로 반대쪽 끝을 보라고 한다
         if scope.kind != 'district':
-            more = more_hint(limit, REGION_RANKING_MAX_LIMIT, '범위')
+            # '범위' 만 쓰면 무엇을 좁히라는지(반경·--limit 으로도 읽힌다) 알 수 없어 줄 범위를 예로 든다 (2026-11-11 리뷰)
+            into = '시·군·구(예: 강남구)로' if scope.kind == 'state' else '시·도(예: 서울)나 시·군·구로'
+            more = (
+                f'--limit 의 최대값은 {REGION_RANKING_MAX_LIMIT}입니다. 더 보려면 범위를 {into} 좁히세요'
+                if limit >= REGION_RANKING_MAX_LIMIT else f'더 보려면 --limit 을 늘리거나 범위를 {into} 좁히세요'
+            )
         elif limit < REGION_RANKING_MAX_LIMIT:
             more = '더 보려면 --limit 을 늘리세요'
         else:

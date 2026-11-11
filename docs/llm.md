@@ -26,12 +26,13 @@
 | 원룸·투룸·빌라·오피스텔 | `zigbang search listings room <동·역>` · `daangn search listings <동·역>` · `naver search listings <동·역> -t 원룸,빌라,오피스텔` · `dabang search listings room <동·역>` (빌라 `villa`, 오피스텔 `officetel`) |
 | 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
-| 상가·사무실 / 주 단위 단기임대 | `zigbang search listings store <동·역>` / `zigbang search listings stay <지역> --check-in … --check-out …` |
+| 상가·사무실 | `zigbang search listings store <동·역>` · `naver search listings <동·역> -t 상가,사무실` · `daangn search listings <동·역> -t 상가,사무실` (다방은 상가가 없다) |
+| 주 단위 단기임대 | `zigbang search listings stay <지역> --check-in … --check-out …` |
 | 회사 통근 기준 | `daangn search commute <회사 역·장소> --max-minutes 30` |
 | 매물 하나 상세 | `<소스> listing <id>` |
 | 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
-| 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`) |
+| 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`) |
 | 시세·가격 흐름 | `naver market-price <단지>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
 | 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름>` (배정 단지) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
@@ -44,7 +45,7 @@
 
 ## 위치 입력
 
-- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 나머지 5km). 다만 역 이름은 당근이 역 주변 목록(도보 `walk_minutes`), 다방이 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다. 여러 소스를 견줄 때는 `--radius` 를 같은 값으로 준다.
+- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 나머지 5km). 다만 역 이름은 당근이 역 주변 목록(도보 `walk_minutes`), 다방이 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다. 여러 소스를 견줄 때는 `--radius` 를 같은 값으로 준다 (당근은 그러면 역 주변 목록 대신 반경 검색이라 `walk_minutes` 대신 `distance_km` 가 온다).
 - 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
 - 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`, 직방은 시·도까지 붙인 전체 주소는 못 찾는다). 당근은 `--city` 로도 좁힌다 (`광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다.
 - `성수동` 처럼 `○가` 로 나뉜 동은 1가·2가를 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다).
@@ -95,7 +96,7 @@
 
 - 동 이름 검색은 최근 게시 순이고 주변 동 매물이 섞인다 (`in_regions: false`, 빼지 않는다). 여러 동을 찾으면(`--expand`·`○가` 동) 같은 매물이 겹쳐 `returned` 가 꽤 적을 수 있다.
 - 목록에는 관리비·등록일·번지가 없다 (`null`). 필요하면 `--details` 로 상세를 붙인다 (매물마다 요청 1회 더).
-- 역 이름 검색은 매물마다 역까지 도보 `walk_minutes` 를, `search commute` 는 `walk_to_station_minutes` 와 예상 통근 `commute_minutes` 를 준다. `--max-minutes` 는 총 통근 시간이 아니라 역 사이 지하철 시간 상한이다 (60분까지).
+- 역 이름 검색(`--radius` 없이)은 매물마다 역까지 도보 `walk_minutes` 를, `search commute` 는 `walk_to_station_minutes` 와 예상 통근 `commute_minutes` 를 준다. `--max-minutes` 는 총 통근 시간이 아니라 역 사이 지하철 시간 상한이다 (60분까지).
 - 거래 조건이 여럿인 매물은 `trade_type` 과 `other_trades` 로 온다. 그 조건의 상세는 `listing <id> --trade <trade_type>`.
 - `search complexes` 의 가격 조건은 과거 실거래 기준이다 (그 가격의 현재 매물은 `search listings --complex`). `good-neighborhoods` 의 `dong` 은 행정동이라 매물은 법정동 이름으로 찾는다.
 - `watch_count` 는 관심 수다 (조회수가 아니다). 이름으로 위치를 찾을 때 직방·네이버에도 요청해 에러 `source` 가 그쪽일 수 있다.

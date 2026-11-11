@@ -274,7 +274,8 @@ def _collect_pages(
     trade_type: str,
     limit: int,
     *,
-    more_note: str,
+    url: str,
+    remaining: str = '더 오래된 거래가 남아 있습니다',
     since: str | None = None,
     date_of: Callable[[T], str | None] | None = None,
 ) -> tuple[list[T], bool, list[str]]:
@@ -288,7 +289,9 @@ def _collect_pages(
         matches: 검색한 거래 유형의 거래인지.
         trade_type: 매매, 전세, 월세.
         limit: 최대 거래 수.
-        more_note: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때의 안내 (당근 사이트 링크).
+        url: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때 확인하라고 안내할 당근 페이지.
+        remaining: 그 안내의 앞말 (예: '더 오래된 거래가 남아 있습니다'). `since` 의 기간 시작일에 닿기 전에 멈췄으면 쓰지
+            않고 받지 못한 기간을 알린다.
         since: 이날(YYYY-MM-DD)보다 앞선 거래는 빼고, 그런 거래가 나온 페이지에서 멈춘다. 당근은 기간을 받지 않아
             최근 계약 순으로 넘기다 멈춘다 (계약 순으로 오는 단지·매물 실거래만 준다). 날짜를 모르는 거래는 남긴다.
         date_of: `since` 와 견줄 거래의 계약일.
@@ -302,6 +305,9 @@ def _collect_pages(
     has_more = False
     # 마지막으로 받은 쪽에서 서버가 다음 쪽이 있다고 했는지. 기간(since) 밖에서 멈췄으면 남은 거래는 찾는 거래가 아니라 False
     server_more = False
+    # 기간(since) 시작일 앞의 거래가 나와 멈췄는지, 마지막으로 센 쪽의 가장 오래된 계약일 (기간을 다 받지 못했을 때 알린다)
+    reached_since = False
+    oldest: str | None = None
     scanned = 0
     pages = 0
     notes: list[str] = []
@@ -323,6 +329,8 @@ def _collect_pages(
             notes.append(note('참고', cursor_stopped_note('실거래', f'{scanned}건')))
             break
         scanned += len(nodes)
+        if date_of is not None and nodes:
+            oldest = date_of(nodes[-1]) or oldest
         kept = nodes
         if since is not None and date_of is not None:
             kept = [node for node in nodes if (day := date_of(node)) is None or day >= since]
@@ -333,6 +341,7 @@ def _collect_pages(
             # 2018년 거래까지 938건(약 5만 토큰)이 왔다 (2026-10-31 에이전트 검증, 헬리오시티 84㎡ 매매. 3년 안은 452건)
             has_more = len(collected) > limit
             server_more = False
+            reached_since = True
             break
         if len(collected) >= limit or not has_more or page_info is None:
             break
@@ -347,6 +356,17 @@ def _collect_pages(
         # 실측: 헬리오시티 월세 --limit 1200 에 이 안내의 '더 오래된 거래는 당근 사이트에서 확인하세요' 와 [일부] 의 '당근에서
         # 직접 확인하세요: URL' 이 함께 나왔다. 커서가 멈추면 멈춤 안내의 '나머지는 당근에서 확인하세요' 까지 세 번이었다)
         notes.append(note('참고', f'최근 전월세 실거래 {scanned}건 중 {trade_type} {len(collected)}건입니다'))
+    site = f'당근에서 직접 확인하세요: {url}'
+    if since is not None and not reached_since:
+        # 기간 시작일에 닿기 전에 멈췄으면(24쪽 상한·--limit 최대값·쪽 멈춤) 남은 거래는 기간 안이다. '더 오래된 거래가 남아
+        # 있습니다' 는 기간보다 오래된 거래로 읽혀, 에이전트가 2026-01-10 까지 받은 결과를 '최근 1년' 이라고 전했다 (2026-11-11
+        # LLM 사용 시험: 헬리오시티 10667600 월세 --years 1 --limit 1200 은 2026-01-10 까지 756건)
+        more_note = (
+            f'요청한 기간({since}부터) 중 {oldest} 이전 거래는 받지 못했습니다. {site}' if oldest
+            else f'요청한 기간({since}부터)의 거래를 다 받지 못했습니다. {site}'
+        )
+    else:
+        more_note = f'{remaining}. {site}'
     # 받은 거래를 --limit 으로 잘랐으면 이 안내가 '더 있다' 와 '--limit 을 늘리라' 를 함께 말한다. 그때 아래 '--limit 을 늘리면'
     # 안내를 또 붙이면 [일부] 가 둘이 된다 (2026-11-10 실측: 헬리오시티 월세 --limit 3 에 '32건 중 3건만' 과 '거래가 더 남아 있습니다')
     truncated = truncation_notes(len(collected), limit, subject='실거래', max_limit=REAL_PRICE_MAX_LIMIT)
@@ -379,7 +399,7 @@ def _collect_transactions(
     trade_type: str,
     limit: int,
     *,
-    more_note: str,
+    url: str,
     since: str | None = None,
 ) -> tuple[list[DaangnTransactionModel], bool, list[str]]:
     """단지·매물 실거래를 최근 계약 순으로 `limit` 건까지 모은다 (`_collect_pages`).
@@ -388,7 +408,7 @@ def _collect_transactions(
         fetch: (받을 수, 커서) → 단지·매물의 실거래 연결. 매매면 매매 연결의, 아니면 전월세 연결의 크기·커서다.
         trade_type: 매매, 전세, 월세.
         limit: 최대 거래 수.
-        more_note: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때의 안내.
+        url: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때 확인하라고 안내할 당근 페이지.
         since: 이날(YYYY-MM-DD)부터의 계약만 받는다 (`--years`).
 
     Returns:
@@ -408,7 +428,7 @@ def _collect_transactions(
         lambda node: buy or node.type == RENT_TYPE_BY_TRADE_TYPE[trade_type],
         trade_type,
         limit,
-        more_note=more_note,
+        url=url,
         since=since,
         date_of=_trade_date,
     )
@@ -455,7 +475,7 @@ def get_real_prices(
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     collected, has_more, notes = _collect_transactions(
         fetch, trade_type, limit,
-        more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인하세요: {complex_url(complex_id)}',
+        url=complex_url(complex_id),
         since=since,
     )
     return DaangnRealPriceResult(
@@ -734,7 +754,7 @@ def get_listing_real_prices(
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     collected, has_more, notes = _collect_transactions(
         fetch, trade_type, limit,
-        more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인하세요: {article_url(original_id)}',
+        url=article_url(original_id),
         since=since,
     )
     # 거래가 더 남았으면(페이지가 멈췄거나 전월세 1200건 안에 그 유형이 없음) 없다고 단정하지 않는다. 남았다는 [일부] 와
@@ -1003,7 +1023,7 @@ def get_region_real_prices(
 
     collected, has_more, page_notes = _collect_pages(
         page, lambda item: _realsale_matches(item, trade_type), trade_type, limit,
-        more_note='추가 거래가 남아 있습니다. 당근에서 직접 확인하세요: https://realty.daangn.com/',
+        url='https://realty.daangn.com/', remaining='추가 거래가 남아 있습니다',
     )
     notes += page_notes
     return DaangnRegionRealPriceResult(

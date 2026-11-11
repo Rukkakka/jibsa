@@ -215,7 +215,7 @@ jibsa daangn search complexes 역삼동 --city 강남구 -t 아파트 --sort 가
 
 **오류와 대응**
 
-거래 유형과 가격 옵션이 충돌하거나 한도를 넘으면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 단지 이름(헬리오시티)을 주면 `REGION_NOT_FOUND` 의 `hint` 가 그 이름의 단지 ID·주소와 단지 명령(`complex`·`real-price`·`search listings --complex`)을 알린다 (단지 후보 요청 1회). 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다.
+거래 유형과 가격 옵션이 충돌하거나 한도를 넘으면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 단지 이름(헬리오시티)을 주면 `REGION_NOT_FOUND` 의 `hint` 가 그 이름의 단지 ID·주소와 단지 명령(`complex`·`real-price`·`search listings --complex`)을 알린다 (단지 후보 요청 1회). 역 이름(강남역)을 주면 단지가 아니라 역이라고 알리고, 역이 있는 동 이름이나 다방·네이버 `search complexes <역 이름>` 으로 찾으라고 한다. 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다.
 
 **주의사항**
 
@@ -337,7 +337,7 @@ jibsa daangn real-price --item 100002 --trade 월세
 
 최근 계약 순이다. 전세·월세는 최근 전월세 1200건 안에서 선택한 유형을 골라 결과가 부족할 수 있다. `--item`의 빈 결과는 그 건물의 거래가 없다는 확정이 아니라 당근이 해당 건물 실거래를 제공하지 않는 경우도 있다. `cancelled: true`는 해제된 거래로 시세·평균 계산에서 제외한다.
 
-기간으로 보려면 `--years` 를 준다. 당근은 기간을 받지 않아 `--limit` 만 크게 주면 기간 밖 오래된 거래까지 모두 온다 (헬리오시티 84㎡ 매매 `--limit 1200` 은 2018년까지 938건, `--years 3` 은 468건에서 멈춘다). `--years` 는 최근 계약부터 넘기다 그 앞 거래가 나온 페이지에서 멈추고, `--limit` 도 함께 적용된다. 기본 120건·최대 1200건이다. 서버에 50건씩 요청하며 커서로 최대 24페이지를 조회한다. 추가 거래가 남으면(`--years` 면 그 기간 안에서) `has_more: true`다. `--limit`에서 멈췄으면 `notes`에서 `--limit`을 늘리라고 안내하고, 24페이지까지 보고도 남았거나 `--limit` 이 이미 1200이면 당근 사이트 확인을 안내한다. 당근이 다음 페이지가 있다면서 이어 받을 페이지를 주지 않으면 그때까지 받은 거래만 주고 `[참고] 당근이 … 멈췄습니다` 와 당근 사이트 확인(`[일부]`)을 함께 안내한다. 응답이 바뀐 것일 수 있어 jibsa 업데이트가 필요할 수 있다는 말이 붙는다.
+기간으로 보려면 `--years` 를 준다. 당근은 기간을 받지 않아 `--limit` 만 크게 주면 기간 밖 오래된 거래까지 모두 온다 (헬리오시티 84㎡ 매매 `--limit 1200` 은 2018년까지 938건, `--years 3` 은 468건에서 멈춘다). `--years` 는 최근 계약부터 넘기다 그 앞 거래가 나온 페이지에서 멈추고, `--limit` 도 함께 적용된다. 기본 120건·최대 1200건이다. 서버에 50건씩 요청하며 커서로 최대 24페이지를 조회한다. 추가 거래가 남으면(`--years` 면 그 기간 안에서) `has_more: true`다. `--limit`에서 멈췄으면 `notes`에서 `--limit`을 늘리라고 안내하고, 24페이지까지 보고도 남았거나 `--limit` 이 이미 1200이면 당근 사이트 확인을 안내한다. `--years` 를 줬는데 기간 시작일에 닿기 전에 멈췄으면 이 안내가 `요청한 기간(…부터) 중 YYYY-MM-DD 이전 거래는 받지 못했습니다` 로 어디까지 받았는지 알린다 (헬리오시티 월세 `--years 1` 은 최근 전월세 1200건이 2026-01-10 까지라 그 앞 두 달을 받지 못한다). 당근이 다음 페이지가 있다면서 이어 받을 페이지를 주지 않으면 그때까지 받은 거래만 주고 `[참고] 당근이 … 멈췄습니다` 와 당근 사이트 확인(`[일부]`)을 함께 안내한다. 응답이 바뀐 것일 수 있어 jibsa 업데이트가 필요할 수 있다는 말이 붙는다.
 
 ## 8. `region-real-price` — 동·구 실거래가·신고가
 
@@ -364,7 +364,7 @@ jibsa daangn region-real-price 강남구 --city 서울 --new-high
 
 **오류와 대응**
 
-전세·월세에 `--new-high` 또는 가격 정렬을 지정하면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 단지 이름(헬리오시티)을 주면 `REGION_NOT_FOUND` 의 `hint` 가 그 이름의 단지 ID·주소와 단지 명령(`complex`·`real-price`·`search listings --complex`)을 알린다 (단지 후보 요청 1회). 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다.
+전세·월세에 `--new-high` 또는 가격 정렬을 지정하면 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 단지 이름(헬리오시티)을 주면 `REGION_NOT_FOUND` 의 `hint` 가 그 이름의 단지 ID·주소와 단지 명령(`complex`·`real-price`·`search listings --complex`)을 알린다 (단지 후보 요청 1회). 역 이름(강남역)을 주면 단지가 아니라 역이라고 알리고 역이 있는 동 이름으로 찾으라고 한다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다.
 
 **주의사항**
 
@@ -513,7 +513,7 @@ jibsa daangn region-reviews 역삼동 --city 강남구 --top 10
 
 **오류와 대응**
 
-지역 미발견은 `REGION_NOT_FOUND`. 단지 이름(헬리오시티)을 주면 `REGION_NOT_FOUND` 의 `hint` 가 그 이름의 단지 ID·주소와 단지 명령(`complex`·`real-price`·`search listings --complex`)을 알린다 (단지 후보 요청 1회). 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다. 구가 없는 지역은 가능한 조회 범위를 `notes`로 안내한다.
+지역 미발견은 `REGION_NOT_FOUND`. 단지 이름(헬리오시티)을 주면 `REGION_NOT_FOUND` 의 `hint` 가 그 이름의 단지 ID·주소와 단지 명령(`complex`·`real-price`·`search listings --complex`)을 알린다 (단지 후보 요청 1회). 역 이름(강남역)을 주면 단지가 아니라 역이라고 알리고 역이 있는 동 이름으로 찾으라고 한다. 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 로 후보를 알리니 `--city` 로 좁힌다. 구가 있는 시 이름(수원시)만 주면 시 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 구 후보(`candidates`, 예: `수원시 장안구`)를 알리니 그중 하나로 다시 찾는다. 시·도 이름(서울·경기도)만 주어도 시·도 전체는 조회할 수 없어 `REGION_AMBIGUOUS` 로 그 시·도의 구 예(`candidates`, 지역 검색에 나온 일부라 `candidate_count` 는 없다)를 알린다. 구가 없는 세종(`세종`·`세종시`)도 시 전체로는 조회할 수 없어 `REGION_AMBIGUOUS` 로 세종의 동 후보를 알린다. 구가 없는 지역은 가능한 조회 범위를 `notes`로 안내한다.
 
 **주의사항**
 

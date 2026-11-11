@@ -229,7 +229,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 가격 조건(`--deposit-*`, `--rent-*`, `--price-*`, `--manage-cost-*`, `--key-money-*`)은 모두 만원이고 하한·상한을 포함하며, 조합하면 모든 조건을 만족해야 한다. 보증금·월세·권리금 조건은 임대, 매매가 조건은 매매로 자동 좁히며, 서로 섞거나 `--trade` 와 충돌하면 `INVALID_ARGUMENT` 이다. 월세 조건은 월세 매물에만 적용하고 관리비 조건은 임대·매매 모두에 쓸 수 있다. `--area-max`는 지정 면적 미만이다.
 
-가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 가까운 후보부터 일정 수까지만 확인한다. 조건을 건 금액이 `null` 이면 제외한다. `total` 은 가격 적용 전 지도 후보 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 반경 밖 결과는 이 집계에 넣지 않는다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000` (2026-10-10 실측 15건. 무권리 `--key-money-max 0` 까지 걸면 역삼동·역삼역 모두 가까운 75건 안에 없어 0건이었다)
+가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 가까운 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. `total` 은 가격 적용 전 지도 후보 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 반경 밖 결과는 이 집계에 넣지 않는다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000` (2026-10-10 실측 15건. 무권리 `--key-money-max 0` 까지 걸면 역삼동·역삼역 모두 가까운 75건 안에 없어 0건이었다)
 
 상세는 결과의 `store-…` ID를 그대로 `listing`에 넘긴다.
 
