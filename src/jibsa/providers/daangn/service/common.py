@@ -789,7 +789,8 @@ def listing_budget_notes(
             if returned else '앞 결과 뒤로 더 받을 매물이 없습니다'
         )
     elif returned < limit and not has_more:
-        notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다')
+        # 0건이면 '이 0건이 전부입니다' 대신 없다고 한다 (2026-11-11 LLM 사용 시험: 출퇴근 '판교역: … 이 0건이 전부입니다')
+        notes.append(f'조건에 맞는 매물은 이 {returned}건이 전부입니다' if returned else '조건에 맞는 매물이 없습니다')
     if not narrowable:
         return notes
     if has_more and resumable:

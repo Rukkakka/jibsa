@@ -626,6 +626,14 @@ def trend_command(
         elif at_spot:
             notes.append(note('범위', f"'{region.name}' 자리의 법정동({division}) 추이입니다"))
         trend = get_district_trend(client, code, trade_type=trade, period=period, pyeong_range=pyeong_range)
+        if trend.trade_count is not None:
+            # 거래는 계약 주에 세어지는데 신고가 계약 뒤 30일 안이라 최근 주일수록 덜 모였다. 안내가 없으면 줄어드는 끝을
+            # 거래가 줄었다고 전했다 (2026-11-11 LLM 사용 시험·실측: 마포구 6개월 주간 거래 19·13·6·0, latest 0)
+            notes.append(note(
+                '참고',
+                '실거래는 계약 뒤 30일 안에 신고해 최근 4주쯤의 trade_count 는 신고가 덜 모여 적게 나옵니다 '
+                '(마지막 주 0건도 거래가 없었다는 뜻이 아닐 수 있습니다). 거래 흐름은 한 달 넘게 지난 주로 보세요',
+            ))
         emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes)
 
 

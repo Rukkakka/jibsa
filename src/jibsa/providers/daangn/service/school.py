@@ -397,8 +397,11 @@ def list_preschools(
             distance_km=round(distance, 2),
         ))
     found.sort(key=lambda preschool: preschool.distance_km)
+    # -t 로 고른 유형만 받았으면 그 이름으로 센다. 늘 '어린이집·유치원' 이라고 하면 -t 어린이집 결과의 수가 거르기 전 수로
+    # 읽혔다 (2026-11-11 LLM 사용 시험: 대치역 -t 어린이집 '조회된 어린이집·유치원 20곳 중')
+    subject = '·'.join(dict.fromkeys(types)) if types else '어린이집·유치원'
     notes = truncation_notes(
-        len(found), limit, subject='어린이집·유치원', unit='곳', max_limit=PRESCHOOL_MAX_LIMIT, narrow='-t·--radius',
+        len(found), limit, subject=subject, unit='곳', max_limit=PRESCHOOL_MAX_LIMIT, narrow='-t·--radius',
     )
     if len(points) >= EDUCATION_POINT_LIMIT:
         notes.append(note(

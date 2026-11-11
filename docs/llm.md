@@ -27,13 +27,13 @@
 | 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
 | 상가·사무실 | `zigbang search listings store <동·역>` · `naver search listings <동·역> -t 상가,사무실` · `daangn search listings <동·역> -t 상가,사무실` (다방은 상가가 없다) |
-| 주 단위 단기임대 | `zigbang search listings stay <지역> --check-in … --check-out …` |
-| 회사 통근 기준 | `daangn search commute <회사 역·장소> --max-minutes 30` |
+| 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 월세 매물의 `short_lease` 로만 표시) |
+| 회사 통근 기준 | `daangn search commute <회사 역·장소> --max-minutes 30` (통근 시간 조건은 당근만 있다. 다른 소스는 결과의 역 이름으로 그 역 주변을 찾는다) |
 | 매물 하나 상세 | `<소스> listing <id>` |
 | 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
 | 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`) |
-| 시세·가격 흐름 | `naver market-price <단지>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
+| 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
 | 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름>` (배정 단지) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
 | 단지 비교 | `daangn compare <ID> <ID> …` (최대 5곳) · `daangn nearby-complexes <ID>` |
@@ -48,7 +48,7 @@
 - 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 나머지 5km). 다만 역 이름은 당근이 역 주변 목록(도보 `walk_minutes`), 다방이 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다. 여러 소스를 견줄 때는 `--radius` 를 같은 값으로 준다 (당근은 그러면 역 주변 목록 대신 반경 검색이라 `walk_minutes` 대신 `distance_km` 가 온다).
 - 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
 - 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`, 직방은 시·도까지 붙인 전체 주소는 못 찾는다). 당근은 `--city` 로도 좁힌다 (`광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다.
-- `성수동` 처럼 `○가` 로 나뉜 동은 1가·2가를 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다).
+- 매물 검색은 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다). 네이버 재개발 구역 검색처럼 첫 동만 찾는 명령은 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다.
 
 ## 소스마다 다른 점
 
@@ -89,7 +89,7 @@
 
 - `search listings` 는 지역, `--complex <이름|번호>`, `--redevelopment <구역 번호>` 세 모드다. 단지 모드는 거래 유형·평형·동·가격·정렬·`--limit` 만, 재개발 모드는 거래 유형·가격·정렬·`--limit` 만 받는다.
 - 가격순 정렬은 매매가와 보증금을 섞어 세운다. 가격을 비교할 때는 `--trade` 를 하나만 준다.
-- `trend --pyeong-range 30` 은 30~40평 범위다 (평형 번호가 아니다).
+- `trend --pyeong-range 30` 은 30~40평 범위다 (평형 번호가 아니다). 최근 4주쯤의 `trade_count` 는 신고가 덜 모여 적으니 거래가 줄었다고 읽지 않는다.
 - 매매 상세에는 세금·중개보수 추정치가 붙고, `loan_manwon` 이 양수면 융자가 있다.
 
 ### 당근

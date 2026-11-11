@@ -863,7 +863,11 @@ def pagination_notes(
         ))
     elif returned < limit and not truncated:
         what = scope + (f'남은 {subject}' if resumed else f'조건에 맞는 {subject}')
-        notes.append(f"{what}{particle(subject, '은/는')} 이 {returned}{unit}이 전부입니다")
+        # 0건이면 '이 0건이 전부입니다' 대신 없다고 한다 (2026-11-11 LLM 사용 시험: 수완동 아파트 전세 3억 이하)
+        notes.append(
+            f"{what}{particle(subject, '은/는')} 이 {returned}{unit}이 전부입니다" if returned
+            else f"{what}{particle(subject, '이/가')} 없습니다"
+        )
     # 다른 소스의 [일부](`limit_notes`)처럼 전체 수를 먼저 말하고 그중 몇 건을 보여 주는지 잇는다. 네이버만 '전체 38건 중
     # 일부입니다' 라 몇 건을 보여 주는지 없었고, --limit 이 최대값이면 수 없이 '--limit 의 최대값은 …' 만 나갔다 (2026-11-11
     # LLM 사용 시험: 역삼역 원룸·강남역 단지)

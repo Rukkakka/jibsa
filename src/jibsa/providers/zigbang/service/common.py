@@ -629,7 +629,9 @@ def apt_pagination_notes(
                 + ('(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'),
             ))
         elif not has_more:
-            notes.append(f"{'남은' if resumed else '조건에 맞는'} 매물은 이 {returned}건이 전부입니다")
+            # 0건이면 '이 0건이 전부입니다' 대신 없다고 한다 (2026-11-11 LLM 사용 시험: 네이버·당근·직방이 같은 꼴로 냈다)
+            what = '남은' if resumed else '조건에 맞는'
+            notes.append(f'{what} 매물은 이 {returned}건이 전부입니다' if returned else f'{what} 매물이 없습니다')
     if resumable:
         notes.append(note('일부', f'매물이 더 있습니다. {NEXT_HINT}'))
     elif limit >= MAX_LIST_LIMIT and has_more:
