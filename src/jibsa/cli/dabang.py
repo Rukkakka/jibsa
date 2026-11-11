@@ -42,6 +42,7 @@ from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
     normalize_address,
+    note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
@@ -333,16 +334,40 @@ def _search(
         ('area-pyeong', area_pyeong_min, area_pyeong_max),
         ('households', households_min, households_max),
     )
+    given_trades = split_csv(trade, TRADE_TYPES_BY_KIND[kind], '--trade', LISTING_HINTS)
+    conditions_ = split_csv(condition, CONDITIONS_BY_KIND[kind], '--condition', LISTING_HINTS)
+    short_lease_notes: list[str] = []
+    if conditions_ and '단기임대' in conditions_:
+        # 다방 단기임대는 월세 매물에 붙는 표시라 서버가 이 조건을 월세에만 건다. 거래 유형을 주지 않으면 전세가 그대로 섞여
+        # 왔다 (2026-11-11 LLM 사용 시험·실측: 정자동 room --condition 단기임대 10건 중 전세 7건). 거르는 것은 서버라 월세만
+        # 묻고 알린다. 월세로 정한 뒤 가격 조건을 견주므로 매매가 조건과 함께 주면 infer_trade_types 가 입력 오류로 막는다
+        if given_trades and '월세' not in given_trades:
+            raise typer.BadParameter(
+                f"--trade {','.join(given_trades)} 에는 단기임대 매물이 없습니다. "
+                '다방 단기임대는 월세 매물에 붙는 표시라 --trade 월세 와 함께 쓰세요',
+                param_hint='--condition',
+            )
+        if not given_trades and (price_min is not None or price_max is not None):
+            # 월세로 정한 뒤 infer_trade_types 에 맡기면 주지 않은 '--trade 월세 에는 해당 금액이 없어' 로 막혀 까닭을 알 수 없다
+            raise typer.BadParameter(
+                '다방 단기임대는 월세 매물이라 매매가 조건(--price-min/--price-max)과 함께 쓸 수 없습니다',
+                param_hint='--condition',
+            )
+        if given_trades != ['월세']:
+            given_trades = ['월세']
+            short_lease_notes.append(note(
+                '거래', '--condition 단기임대 는 다방이 월세 매물에만 걸어 월세만 검색했습니다 (전세·매매는 단기임대로 거를 수 없습니다)',
+            ))
     trade_types, trade_notes = infer_trade_types(
-        split_csv(trade, TRADE_TYPES_BY_KIND[kind], '--trade', LISTING_HINTS),
+        given_trades,
         rent=rent_min is not None or rent_max is not None,
         price=price_min is not None or price_max is not None,
         deposit=deposit_min is not None or deposit_max is not None,
         allowed=TRADE_TYPES_BY_KIND[kind],
     )
+    trade_notes = short_lease_notes + trade_notes
     floors = split_csv(floor, tuple(FLOOR_FILTER_BY_LABEL), '--floor', LISTING_HINTS)
     rooms = split_csv(room, ROOM_LABELS_BY_KIND[kind], '--room', LISTING_HINTS)
-    conditions_ = split_csv(condition, CONDITIONS_BY_KIND[kind], '--condition', LISTING_HINTS)
     with handle_errors(SOURCE), DabangClient() as client:
         conditions = DabangListingConditions(
             trade_types=trade_types,

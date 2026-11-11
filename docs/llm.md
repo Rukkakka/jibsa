@@ -27,7 +27,7 @@
 | 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
 | 상가·사무실 | `zigbang search listings store <동·역>` · `naver search listings <동·역> -t 상가,사무실` · `daangn search listings <동·역> -t 상가,사무실` (다방은 상가가 없다) |
-| 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 월세 매물의 `short_lease` 로만 표시) |
+| 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 `search listings room`·`villa`·`officetel`·`apt` 에 `--condition 단기임대`) |
 | 회사 통근 기준 | `daangn search commute <회사 역·장소> --max-minutes 30` (통근 시간 조건은 당근만 있다. 다른 소스는 결과의 역 이름으로 그 역 주변을 찾는다) |
 | 매물 하나 상세 | `<소스> listing <id>` |
 | 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
