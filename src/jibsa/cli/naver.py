@@ -992,7 +992,7 @@ def search_command(
 
     예: jibsa naver search listings 역삼동 -t 오피스텔 --trade 월세 --deposit-max 3000 --rent-max 150
 
-    결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다. 이어 받을 때는 지역을 다시 찾지 않아 네이버 요청이 준다.
+    결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다. 이어 받을 때는 지역을 다시 찾지 않아 네이버 요청이 준다.
     단지·재개발 구역 매물(--complex·--redevelopment)은 이어 받지 않는다.
     """
     position = decode_next(next_)

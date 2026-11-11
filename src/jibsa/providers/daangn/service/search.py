@@ -67,6 +67,7 @@ from jibsa.providers.daangn.api.response.search import (
     DaangnMapResponseModel,
 )
 from jibsa.providers.daangn.service.common import (
+    LISTING_MAX_LIMIT,
     OPTIONAL_LOOKUP_ERRORS,
     DaangnListingConditions,
     DaangnNearbyListing,
@@ -855,7 +856,8 @@ def search_listings(
             )
             + count_notes
             + listing_budget_notes(
-                limit, scan.fetched, len(listings), has_more=not complete, eligible=len(scan.matched), narrowable=scan.use_feed,
+                limit, scan.fetched, len(listings), max_limit=LISTING_MAX_LIMIT, has_more=not complete, eligible=len(scan.matched),
+                narrowable=scan.use_feed,
                 resumable=resumable, resumed=resume is not None,
             )
             + trade_unselected_notes(scan.unselected)
@@ -1089,7 +1091,8 @@ def search_station(
         listings=listings,
         notes=(
             listing_budget_notes(
-                limit, inspected, len(listings), has_more=has_more, resumable=bool(has_more and cursor), resumed=after is not None,
+                limit, inspected, len(listings), max_limit=LISTING_MAX_LIMIT, has_more=has_more,
+                resumable=bool(has_more and cursor), resumed=after is not None,
             )
             + trade_unselected_notes(unselected)
             + complex_building_notes(shown)
@@ -1222,7 +1225,8 @@ def search_area(
             # 핀은 가까운 순이라 반경 안 핀이 앞에 온다. 사각형 모서리(반경 밖) 핀은 limit 을 늘려도 반경 밖 매물만 더
             # 나오므로 '더 있음' 으로 세지 않는다 (2026-10-11 실측: 반경 0.1km 핀 29개 중 반경 안 19개, limit 25 → 120 이 반경 밖 4건만 더)
             + listing_budget_notes(
-                limit, inspected, len(listings), has_more=has_more, eligible=len(matched), resumable=has_more,
+                limit, inspected, len(listings), max_limit=LISTING_MAX_LIMIT, has_more=has_more, eligible=len(matched),
+                resumable=has_more,
                 resumed=offset > 0,
             )
             + trade_unselected_notes(unselected)

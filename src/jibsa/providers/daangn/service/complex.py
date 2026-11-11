@@ -15,6 +15,7 @@ from jibsa.core.listing import (
     Listing,
     join_address,
     m2_to_pyeong,
+    more_hint,
     normalize_address,
     normalize_date,
     note,
@@ -53,6 +54,7 @@ from jibsa.providers.daangn.service.common import (
     COMPLEX_LIST_MAX_LIMIT,
     COMPLEX_TYPE_FILTER_BY_LABEL,
     COMPLEX_TYPE_LABELS,
+    LISTING_MAX_LIMIT,
     OPTIONAL_LOOKUP_ERRORS,
     DaangnListingConditions,
     DaangnRegion,
@@ -63,11 +65,14 @@ from jibsa.providers.daangn.service.common import (
     complex_list_notes,
     complex_not_found,
     complex_url,
+    cursor_stopped_note,
     is_available,
     label_codes,
     listing_budget_notes,
+    next_cursor,
     partial_failure_note,
     region_complex_of,
+    stalled_page,
     station_name,
     trade_of,
     trade_unselected_notes,
@@ -411,6 +416,7 @@ def search_complexes(
     after = None
     inspected = 0
     has_more = False
+    stopped = False
     while inspected < limit:
         try:
             response = client.run_request_search_complexes(
@@ -423,10 +429,13 @@ def search_complexes(
             result = unwrap_graphql(response, response.data.search_complexes if response.data else None, '단지 검색')
         except OPTIONAL_LOOKUP_ERRORS as exc:
             logger.warning('daangn complex search failed after %d candidates (%s)', len(candidates), exc)
-            received = f'단지 후보는 {len(candidates)}개까지만 받았습니다. ' if candidates else ''
+            received = f'단지 후보는 {len(candidates)}곳까지만 받았습니다. ' if candidates else ''
             notes.append(note('실패', received + partial_failure_note(exc, '단지 검색', '나머지 단지 후보를' if candidates else '단지 후보를')))
             # 더 있는지는 모르므로 아래의 '--limit 을 늘리라' 안내는 붙이지 않는다
             return candidates[:limit]
+        if stalled_page(result.page_info, after):
+            stopped = True
+            break
         nodes = [edge.node for edge in result.edges if edge.node]
         inspected += len(nodes)
         for node in nodes:
@@ -436,19 +445,25 @@ def search_complexes(
         page = result.page_info
         # 서버가 first 보다 많이 주면 자른 만큼을 '더 있음' 으로 센다 (COMPLEX_PAGE_SIZE 주석)
         has_more = bool(page and page.has_next_page) or len(candidates) > limit
-        if not has_more or not nodes or inspected >= limit:
+        if not has_more or inspected >= limit:
             break
-        if page is None or not page.end_cursor or page.end_cursor == after:
-            notes.append('단지 후보의 다음 페이지 커서를 받지 못해 조회를 중단했습니다')
+        # 다음 페이지가 있다면서 빈 쪽을 주거나 커서가 없거나 되풀이되면 멈춘다 (next_cursor). --limit 에 닿은 것이 아니라
+        # --limit 을 늘려도 더 받지 못하니, 아래의 '--limit 을 늘리면' 안내 대신 멈췄다고 알린다
+        cursor = next_cursor(page, after, received=len(nodes))
+        if cursor is None:
+            stopped = True
             break
-        after = page.end_cursor
-    if has_more:
+        after = cursor
+    if stopped:
+        notes.append(note('일부', cursor_stopped_note('단지 후보', f'{len(candidates)}곳') + '. 더 구체적인 단지 이름으로 검색하세요'))
+    elif has_more:
         if limit >= COMPLEX_LIST_MAX_LIMIT:
-            notes.append(f'단지 후보는 최대 {COMPLEX_LIST_MAX_LIMIT}개까지 조회할 수 있습니다. 단지 이름을 더 구체적으로 입력해 주세요')
+            notes.append(note('일부', f'단지 후보는 최대 {COMPLEX_LIST_MAX_LIMIT}곳까지 조회할 수 있습니다. 더 구체적인 단지 이름으로 검색하세요'))
         else:
-            notes.append(
-                f'단지 후보가 더 있습니다. --limit 을 늘리면 최대 {COMPLEX_LIST_MAX_LIMIT}개까지 조회할 수 있습니다 (현재 {limit}개 한도)'
-            )
+            notes.append(note(
+                '일부',
+                f'단지 후보가 더 있습니다. --limit 을 늘리면 최대 {COMPLEX_LIST_MAX_LIMIT}곳까지 조회할 수 있습니다 (현재 {limit}곳 한도)',
+            ))
     return candidates[:limit]
 
 
@@ -610,6 +625,7 @@ def list_region_complexes(
     after: str | None = None
     inspected = 0
     has_more = False
+    stopped = False
     while inspected < limit:
         response = client.run_request_region_complexes(
             DaangnRegionComplexesRequestPayloadModel(
@@ -625,37 +641,40 @@ def list_region_complexes(
             )
         )
         connection = unwrap_graphql(response, response.data.search_complexes if response.data else None, '지역 단지 목록')
+        if stalled_page(connection.page_info, after):
+            stopped = True
+            break
         inspected += len(connection.edges)
-        for edge in connection.edges:
-            if edge.node is None:
-                continue
-            complex_ = region_complex_of(edge.node, trade_type)
+        nodes = [edge.node for edge in connection.edges if edge.node]
+        for node in nodes:
+            complex_ = region_complex_of(node, trade_type)
             if complex_.complex_id not in seen:
                 seen.add(complex_.complex_id)
                 complexes.append(complex_)
         page_info = connection.page_info
         has_more = bool(page_info and page_info.has_next_page)
-        if inspected >= limit or not has_more or not connection.edges:
+        if inspected >= limit or not has_more:
             break
-        cursor = page_info.end_cursor if page_info else None
-        if not cursor or cursor == after:
-            notes.append('단지 목록의 다음 페이지 커서가 없거나 반복되어 조회를 중단했습니다. 지원되는 필터로 범위를 좁혀 주세요')
+        # 다음 페이지가 있다면서 빈 쪽을 주거나 커서가 없거나 되풀이되면 멈춘다 (next_cursor). --limit 에 닿은 것이 아니라
+        # --limit 을 늘려도 더 받지 못하니, 아래의 --limit 안내 대신 멈췄다고 알린다
+        cursor = next_cursor(page_info, after, received=len(nodes))
+        if cursor is None:
+            stopped = True
             break
         after = cursor
     # 서버가 first 보다 많이 주면 자른 만큼을 '더 있음' 으로 센다 (COMPLEX_PAGE_SIZE 주석)
     has_more = has_more or len(complexes) > limit
     complexes = complexes[:limit]
-    if has_more:
-        if limit >= COMPLEX_LIST_MAX_LIMIT:
-            notes.append(
-                f'--limit의 최대값은 {COMPLEX_LIST_MAX_LIMIT}입니다. 더 많은 단지가 있어 일부만 보여 줍니다. '
-                '지역·단지 유형·세대수·가격 등 지원되는 필터로 검색 범위를 좁혀 주세요'
-            )
-        elif inspected >= limit:
-            notes.append(
-                f'최대 {limit}개 단지를 조회했습니다. 더 보려면 --limit을 최대 {COMPLEX_LIST_MAX_LIMIT}까지 늘리거나 '
-                '지원되는 필터로 검색 범위를 좁혀 주세요'
-            )
+    if stopped:
+        notes.append(note('일부', cursor_stopped_note('단지 목록', f'{len(complexes)}곳') + '. 지원되는 필터로 범위를 좁히세요'))
+    elif has_more:
+        # 멈추지 않고 더 남았으면 --limit 에 닿은 것이다 (루프는 inspected >= limit 일 때만 has_more 를 남기고 끝난다).
+        # 같은 단지가 두 번 오면 한 번만 넣어 limit 보다 적을 수 있어, 숫자는 보여 준 수로 쓴다
+        notes.append(note(
+            '일부',
+            f'단지가 더 있어 앞 {len(complexes)}곳만 보여 줍니다. '
+            + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, '지역·단지 유형·세대수·가격 조건'),
+        ))
 
     if sort.startswith('입주'):
         notes.append(MOVE_IN_SORT_NOTE)
@@ -732,7 +751,11 @@ def list_complex_listings(
     after = None
     inspected = 0
     seen: set[str] = set()
+    # 받은 서로 다른 매물 (거래 불가도 센다). 멈춤 안내의 수다. inspected 는 edge 누계라 같은 쪽이 되풀이되면 두 번 센다
+    # (2026-11-10 리뷰. 출퇴근 역 목록도 이름으로 센다)
+    received_ids: set[str] = set()
     has_more = False
+    stopped = False
     for _ in range(COMPLEX_LISTINGS_MAX_PAGES):
         response = client.run_request_complex_articles(
             DaangnComplexArticlesRequestPayloadModel(
@@ -748,10 +771,15 @@ def list_complex_listings(
         if result.complex is None:
             raise complex_not_found(complex_id)
         connection = result.complex.articles
+        # 단지의 매물 목록(articles) 자체가 null 이어도 페이지 정보가 없는 것이라 앞 쪽이 다음이 있다고 했으면 멈춘다 (stalled_page)
+        if stalled_page(connection.page_info if connection else None, after):
+            stopped = True
+            break
         inspected += len(connection.edges) if connection else 0
-        for edge in connection.edges if connection else []:
-            article = edge.node
-            if article is None or article.original_id in seen or not is_available(article):
+        articles = [edge.node for edge in connection.edges if edge.node] if connection else []
+        received_ids.update(article.original_id for article in articles)
+        for article in articles:
+            if article.original_id in seen or not is_available(article):
                 continue
             seen.add(article.original_id)
             trade = trade_of(article, None, conditions)
@@ -762,9 +790,20 @@ def list_complex_listings(
         page_info = connection.page_info if connection else None
         # 서버가 first 보다 많이 주면 자른 만큼을 '더 있음' 으로 센다 (COMPLEX_PAGE_SIZE 주석)
         has_more = bool(page_info and page_info.has_next_page) or len(matched) > limit
-        if inspected >= limit or not has_more or page_info is None or not page_info.end_cursor:
+        if inspected >= limit or not has_more or page_info is None:
             break
-        after = page_info.end_cursor
+        # 다음 페이지가 있다면서 빈 쪽을 주거나 커서가 없거나 되풀이되면 멈춘다 (next_cursor). --limit 을 늘려도 더 받지 못하니
+        # 아래의 --limit 안내 대신 멈췄다고 알린다 (2026-11-10 리뷰: 같은 커서를 되풀이하면 같은 쪽을 6번 받고 '--limit 의
+        # 최대값은 120입니다' 라고 했고, 커서가 비면 안내 없이 has_more 만 true 였다). 마지막 허용 쪽(6쪽)에서도 본다. 다음이
+        # 있다면서 커서를 주지 않는 것은 몇 쪽째든 응답이 바뀐 것이라 멈춤 안내(업데이트 문구)가 맞다. 실제로는 서버가 first 만큼
+        # 주어(COMPLEX_PAGE_SIZE 주석) 6쪽째에 inspected 가 --limit 최대 120 에 닿아 위에서 먼저 끝난다 (2026-11-10 리뷰가 6쪽째
+        # 멈춤이 --limit 안내를 가린다고 했으나 오탐. 실측: 헬리오시티 10667600 1쪽 20건·hasNextPage true, 쪽 상한만 1로 낮춰
+        # 커서를 지우면 멈춤 안내와 단지 페이지 안내, 그대로면 --limit 안내)
+        cursor = next_cursor(page_info, after, received=len(articles))
+        if cursor is None:
+            stopped = True
+            break
+        after = cursor
 
     # 카드에는 시·도가 없어 단지가 있는 동을 지역 검색으로 한 번 채운다 (with_sido)
     sido_cache: dict[tuple[str, str], str | None] = {}
@@ -781,7 +820,14 @@ def list_complex_listings(
         has_more=has_more,
         listings=listings,
         url=complex_url(complex_id),
-        notes=listing_budget_notes(limit, inspected, len(listings), has_more=has_more, eligible=len(matched))
+        notes=listing_budget_notes(
+            limit, inspected, len(listings), max_limit=LISTING_MAX_LIMIT, has_more=has_more, eligible=len(matched),
+            narrowable=not stopped,
+        )
+            + (
+                [note('일부', cursor_stopped_note('단지 매물', f'{len(received_ids)}건') + '. 나머지는 url 의 단지 페이지에서 확인하세요')]
+                if stopped else []
+            )
             + trade_unselected_notes(unselected)
             + complex_building_notes(shown),
     )

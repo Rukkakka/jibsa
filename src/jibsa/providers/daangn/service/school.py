@@ -12,6 +12,7 @@ from jibsa.core.geo import (
     within_radius,
 )
 from jibsa.core.listing import (
+    more_hint,
     normalize_address,
     note,
 )
@@ -261,9 +262,7 @@ def get_school(
         notes.append(note(
             '일부',
             f'배정 단지 {len(complexes)}곳 중 세대수 많은 {limit}곳만 보여 줍니다. '
-            + (f'최대 {COMPLEX_LIST_MAX_LIMIT}곳까지 표시할 수 있습니다. -t·--household-min 으로 좁히세요'
-               if limit >= COMPLEX_LIST_MAX_LIMIT
-               else f'--limit 을 최대 {COMPLEX_LIST_MAX_LIMIT}까지 늘리거나 -t·--household-min 으로 좁히세요'),
+            + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, '단지 유형(-t)·세대수(--household-min) 조건'),
         ))
     shown = complexes[:limit]
     return DaangnSchoolResult(
@@ -292,7 +291,8 @@ PRESCHOOL_TYPE_BY_LABEL: dict[str, DaangnEducationType] = {
     '유치원': 'KINDERGARTEN',
 }
 PRESCHOOL_LABEL_BY_TYPE: dict[str, str] = {code: label for label, code in PRESCHOOL_TYPE_BY_LABEL.items()}
-# 지도 교육 시설은 범위 안 500개에서 잘린다 (2026-10-10 실측: 강남 반경 5km 부터 500개)
+# 지도 교육 시설은 범위 안 500곳에서 잘린다 (2026-10-10 실측: 강남 반경 5km 부터 500곳. 2026-11-10 실측: 목동역 3km 도
+# 500곳, 강남역·노원역 3km 는 그보다 적었다)
 EDUCATION_POINT_LIMIT: int = 500
 PRESCHOOL_ID_PREFIX: str = 'pre_'
 # preschools 의 --limit 최대값. CLI 옵션의 max 와 잘렸을 때의 안내가 함께 쓴다
@@ -364,7 +364,7 @@ def list_preschools(
 ) -> DaangnPreschoolsResult:
     """좌표 반경 안의 어린이집·유치원을 가까운 순으로 `limit` 건 준다 (`educationMapPoints`, 요청 1회).
 
-    서버는 좌표 범위 안의 시설을 500개에서 자른다 (페이지 없음). 500개를 받으면 가까운 시설이 빠졌을 수 있어 알린다.
+    서버는 좌표 범위 안의 시설을 500곳에서 자른다 (페이지 없음). 500곳을 받으면 가까운 시설이 빠졌을 수 있어 알린다.
 
     Raises:
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때 (웹이 쿼리를 바꿈).
@@ -401,9 +401,9 @@ def list_preschools(
         len(found), limit, subject='어린이집·유치원', unit='곳', max_limit=PRESCHOOL_MAX_LIMIT, narrow='-t·--radius',
     )
     if len(points) >= EDUCATION_POINT_LIMIT:
-        notes.append(
-            f'당근은 넓은 범위의 시설을 {EDUCATION_POINT_LIMIT}개에서 잘라 주어 가까운 시설이 빠졌을 수 있습니다. --radius 를 줄이세요'
-        )
+        notes.append(note(
+            '일부', f'당근은 넓은 범위의 시설을 {EDUCATION_POINT_LIMIT}곳에서 잘라 주어 가까운 시설이 빠졌을 수 있습니다. --radius 를 줄이세요',
+        ))
     return DaangnPreschoolsResult(
         radius_km=radius_km,
         total=len(found),

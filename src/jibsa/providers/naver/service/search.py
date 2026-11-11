@@ -258,6 +258,7 @@ def _search_sorted(
     notes += pagination_notes(
         total, len(result), limit, inspected, truncated=truncated, excluded_reason=RADIUS_EXCLUDED_REASON,
         resumable=next_position is not None, resumed=start is not None, scope=f'반경 {radius_km:g}km 안에서 ',
+        narrow='조건·반경',
     )
     return NaverListingsResult(
         total=total, returned=len(result), has_more=next_position is not None, next_position=next_position,
@@ -463,6 +464,7 @@ def list_area_complexes(
     notes += pagination_notes(
         total, len(result), limit, inspected, subject='단지', truncated=truncated,
         excluded_reason=EXCLUDED_REASON if legal_division_code is not None else RADIUS_EXCLUDED_REASON,
+        narrow='조건·지역' if legal_division_code is not None else '조건·반경',
     )
     return NaverAreaComplexesResult(total=total, returned=len(result), complexes=result, notes=notes)
 
@@ -548,7 +550,7 @@ def _search_legal_division(
     notes += filter_notes
     notes += pagination_notes(
         total, len(result), limit, inspected, truncated=truncated,
-        resumable=next_position is not None, resumed=start is not None,
+        resumable=next_position is not None, resumed=start is not None, narrow='조건·지역',
     )
     return NaverListingsResult(
         total=total, returned=len(result), has_more=next_position is not None, next_position=next_position,
@@ -898,6 +900,7 @@ def _search_clusters(
         resumable=next_position is not None, resumed=start is not None,
         # 반경을 감싼 사각형의 지도 칸을 받아 반경 밖 매물도 섞여 '안팎' 이다
         scope=f'반경 {radius_km:g}km 안팎에서 ',
+        narrow='조건·반경',
     )
     # 반경 밖 매물도 할당량에 세므로, 할당량을 다 쓰고 멈췄으면 열지 않은 칸·페이지에 반경 안 매물이 남았을 수 있다
     notes += beyond_radius_notes(result, radius_km, complete=next_position is None, resumed=start is not None)

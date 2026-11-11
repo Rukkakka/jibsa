@@ -21,6 +21,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     normalize_floor,
+    note,
     won_to_manwon,
     years_ago,
 )
@@ -50,6 +51,9 @@ from jibsa.providers.daangn.service.common import (
     article_url,
     complex_not_found,
     complex_url,
+    cursor_stopped_note,
+    next_cursor,
+    stalled_page,
     truncation_notes,
     unwrap_graphql,
 )
@@ -296,48 +300,77 @@ def _collect_pages(
     collected: list[T] = []
     after = None
     has_more = False
+    # 마지막으로 받은 쪽에서 서버가 다음 쪽이 있다고 했는지. 기간(since) 밖에서 멈췄으면 남은 거래는 찾는 거래가 아니라 False
+    server_more = False
     scanned = 0
     pages = 0
     notes: list[str] = []
     for pages in range(1, REAL_PRICE_MAX_PAGES + 1):
         size = min(REAL_PRICE_PAGE_SIZE, limit - len(collected)) if buy else REAL_PRICE_PAGE_SIZE
         nodes, page_info = fetch(size, after)
-        if after is not None and page_info and page_info.end_cursor == after:
+        server_more = bool(page_info and page_info.has_next_page)
+        # 커서가 되풀이되거나 페이지 정보가 없으면(stalled_page) 그 쪽을 세기 전에 멈춘다. 거래에는 ID 가 없어 단지 목록처럼 같은 쪽을 걸러 낼 수 없다. 아래
+        # next_cursor 도 되풀이를 보지만 그때는 이미 그 쪽을 센 뒤라 여기서 먼저 본다 (2026-11-10 리뷰가 두 검사가 겹친다고
+        # 했으나, 실제 응답의 커서만 되풀이되게 바꿔 보니 늘 이 검사에서 걸려 거래 수에 다시 더해지지 않았다. next_cursor 는
+        # 단지 후보·지역 단지와 함께 쓰는 도우미라 되풀이 검사를 빼지 않는다).
+        # 멈춘 까닭은 [참고] 이고, 더 있다는 [일부] 는 함수 끝의 안내 하나에만 붙인다 (아래 멈춤 안내도 같다).
+        # 서버가 다음 쪽이 없다고 했으면 되풀이로 보지 않고 마지막 쪽으로 받는다. 보면 끝난 목록을 '다음 페이지가 있다고 하면서'
+        # 멈췄다고 하고 has_more 를 true 로 냈으며 마지막 쪽 거래도 뺐다 (2026-11-10 리뷰·실측: 역삼IPARK 10699288 매매 474건의
+        # 마지막 10쪽 커서만 요청 커서로 바꾸니 450건·has_more true. 실제 응답은 50건씩·79건씩 모두 마지막 쪽이 hasNextPage
+        # false 에 새 커서였고, 끝 뒤를 요청하면 edges 0·endCursor null 이었다)
+        if stalled_page(page_info, after):
             has_more = True
-            notes.append('실거래의 다음 페이지 커서가 반복되어 조회를 중단했습니다. 나머지는 당근에서 확인하세요')
+            notes.append(note('참고', cursor_stopped_note('실거래', f'{scanned}건')))
             break
         scanned += len(nodes)
         kept = nodes
         if since is not None and date_of is not None:
             kept = [node for node in nodes if (day := date_of(node)) is None or day >= since]
         collected += [node for node in kept if matches(node)]
-        has_more = bool(page_info and page_info.has_next_page) or len(collected) > limit
+        has_more = server_more or len(collected) > limit
         if len(kept) < len(nodes):
             # 최근 계약 순이라 기간보다 앞선 거래가 나오면 그 뒤도 모두 기간 밖이다. 3년치를 보려고 --limit 1200 으로 전부 받으면
             # 2018년 거래까지 938건(약 5만 토큰)이 왔다 (2026-10-31 에이전트 검증, 헬리오시티 84㎡ 매매. 3년 안은 452건)
             has_more = len(collected) > limit
+            server_more = False
             break
         if len(collected) >= limit or not has_more or page_info is None:
             break
-        if not nodes or not page_info.end_cursor:
-            notes.append('실거래의 다음 페이지가 비어 있거나 커서가 없어 조회를 중단했습니다. 나머지는 당근에서 확인하세요')
+        cursor = next_cursor(page_info, after, received=len(nodes))
+        if cursor is None:
+            notes.append(note('참고', cursor_stopped_note('실거래', f'{scanned}건')))
             break
-        after = page_info.end_cursor
+        after = cursor
 
     if not buy and has_more and len(collected) < limit:
-        notes.append(
-            f'최근 전월세 실거래 {scanned}건 중 {trade_type} {len(collected)}건입니다. '
-            '더 오래된 거래는 당근 사이트에서 확인하세요'
-        )
-    notes += truncation_notes(len(collected), limit, subject='실거래')
-    if has_more and len(collected) >= limit and pages < REAL_PRICE_MAX_PAGES:
-        # --limit 에서 멈췄으면 늘려서 더 받을 수 있다. 사이트에서 보라는 안내는 페이지 상한까지 보고도 남았을 때만 맞다
-        # (2026-10-11 실측: 헬리오시티 --limit 3 에도 '당근에서 직접 확인' 이 붙었다)
-        notes.append(
-            f'거래가 더 남아 있습니다. --limit 을 늘리면 (최대 {REAL_PRICE_MAX_LIMIT}건) 더 받습니다'
-        )
+        # 몇 건 중에서 골랐는지 설명이라 [참고] 다. 당근 사이트로 가라는 말은 아래 [일부] 안내 하나에만 둔다 (2026-11-10 리뷰·
+        # 실측: 헬리오시티 월세 --limit 1200 에 이 안내의 '더 오래된 거래는 당근 사이트에서 확인하세요' 와 [일부] 의 '당근에서
+        # 직접 확인하세요: URL' 이 함께 나왔다. 커서가 멈추면 멈춤 안내의 '나머지는 당근에서 확인하세요' 까지 세 번이었다)
+        notes.append(note('참고', f'최근 전월세 실거래 {scanned}건 중 {trade_type} {len(collected)}건입니다'))
+    # 받은 거래를 --limit 으로 잘랐으면 이 안내가 '더 있다' 와 '--limit 을 늘리라' 를 함께 말한다. 그때 아래 '--limit 을 늘리면'
+    # 안내를 또 붙이면 [일부] 가 둘이 된다 (2026-11-10 실측: 헬리오시티 월세 --limit 3 에 '32건 중 3건만' 과 '거래가 더 남아 있습니다')
+    truncated = truncation_notes(len(collected), limit, subject='실거래', max_limit=REAL_PRICE_MAX_LIMIT)
+    notes += truncated
+    # 아래 두 분기의 조건을 '늘릴 수 있는지' 하나로 모으지 않는다. 잘랐으면 `truncation_notes` 가 이미 --limit 을 늘리라고 해서
+    # 사이트 안내를 덧붙일지만 정하고, 안 잘랐으면 늘리라는 안내와 사이트 안내 중 하나를 고른다. 묻는 것이 달라 조건도 다르다.
+    # `server_more` 는 서버가 다음 쪽이 있다고 했는지만 담아(기간 밖에서 멈추면 False) 24쪽 뒤에 남았는지 보는 데 쓰고,
+    # `has_more` 는 --limit 을 넘겨 받았거나 쪽이 멈춘 것도 더 있다고 본다 (2026-11-11 리뷰·실측: 헬리오시티 10667600 매매
+    # --limit 3 은 '--limit 을 늘리면', 월세 --limit 3 은 '35건 중 3건만 … 늘리세요' 로 둘 다 맞았다)
+    if truncated:
+        # 잘랐어도 24쪽까지 보고 서버에 거래가 남았거나 --limit 이 이미 최대값이면, --limit 을 늘려도 받지 못하는 거래가 남아
+        # 사이트 안내도 붙인다 (2026-11-10 리뷰·실측: 헬리오시티 월세는 23쪽까지 727건·24쪽 755건이라 --limit 728~754 가
+        # 24쪽째에서 잘린다. 늘리라는 안내만 따르면 24쪽을 다시 받고 27건을 더 받은 뒤에야 사이트 안내를 봤다)
+        if (pages >= REAL_PRICE_MAX_PAGES and server_more) or limit >= REAL_PRICE_MAX_LIMIT:
+            notes.append(note('일부', more_note))
     elif has_more:
-        notes.append(more_note)
+        if len(collected) >= limit and pages < REAL_PRICE_MAX_PAGES and limit < REAL_PRICE_MAX_LIMIT:
+            # --limit 에서 멈췄으면 늘려서 더 받을 수 있다. 사이트에서 보라는 안내는 페이지 상한까지 보고도 남았거나 --limit 이
+            # 이미 최대값일 때만 맞다 (2026-10-11 실측: 헬리오시티 --limit 3 에도 '당근에서 직접 확인' 이 붙었다). 최대값이면
+            # 늘리라고 하지 않는다. 서버가 요청보다 많이 주면 24쪽 전에 1200건이 차서, 늘리면 INVALID_ARGUMENT 인데 늘리라고
+            # 했다 (2026-11-11 리뷰. 요청한 만큼 주면 1200건은 24쪽째라 아래 사이트 안내로 간다)
+            notes.append(note('일부', f'거래가 더 남아 있습니다. --limit 을 늘리면 (최대 {REAL_PRICE_MAX_LIMIT}건) 더 받습니다'))
+        else:
+            notes.append(note('일부', more_note))
     return collected[:limit], has_more, notes
 
 
@@ -422,7 +455,7 @@ def get_real_prices(
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     collected, has_more, notes = _collect_transactions(
         fetch, trade_type, limit,
-        more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인해 주세요: {complex_url(complex_id)}',
+        more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인하세요: {complex_url(complex_id)}',
         since=since,
     )
     return DaangnRealPriceResult(
@@ -701,10 +734,13 @@ def get_listing_real_prices(
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     collected, has_more, notes = _collect_transactions(
         fetch, trade_type, limit,
-        more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인해 주세요: {article_url(original_id)}',
+        more_note=f'더 오래된 거래가 남아 있습니다. 당근에서 직접 확인하세요: {article_url(original_id)}',
         since=since,
     )
-    if not collected:
+    # 거래가 더 남았으면(페이지가 멈췄거나 전월세 1200건 안에 그 유형이 없음) 없다고 단정하지 않는다. 남았다는 [일부] 와
+    # '최근 전월세 실거래 N건 중 전세 0건' [참고] 가 이미 알리는데, 같은 결과에 '없습니다' 가 붙으면 에이전트가 없다고 전한다
+    # (2026-11-11 리뷰)
+    if not collected and not has_more:
         notes.append(
             f'이 매물 건물의 {trade_type} 실거래가 없습니다. 당근이 매물의 건물을 찾은 경우(오피스텔·아파트 등)에만 '
             '나오며 빌라·주택은 대부분 없습니다. 주변 시세는 daangn search listings 의 비슷한 매물로 비교하세요'
@@ -967,7 +1003,7 @@ def get_region_real_prices(
 
     collected, has_more, page_notes = _collect_pages(
         page, lambda item: _realsale_matches(item, trade_type), trade_type, limit,
-        more_note='추가 거래가 남아 있습니다. 당근에서 직접 확인해 주세요: https://realty.daangn.com/',
+        more_note='추가 거래가 남아 있습니다. 당근에서 직접 확인하세요: https://realty.daangn.com/',
     )
     notes += page_notes
     return DaangnRegionRealPriceResult(

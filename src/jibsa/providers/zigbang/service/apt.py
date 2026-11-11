@@ -403,7 +403,7 @@ def search_apt_listings(
     skipped = [part.name for part, was_asked in zip(regions, asked) if not was_asked]
     has_more = not all(done)
     notes = apt_pagination_notes(
-        len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None,
+        len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None, narrow='조건·지역',
     )
     if filter_area:
         # 받은 원본(limit 건) 안에서만 거르므로 맞는 매물이 더 있어도 적게 나온다 (2026-10-09 실측: 대치동
@@ -624,7 +624,9 @@ def search_apt_listings_near(
     # 서버가 공급면적을 거르는 동·구 검색을 권한다. has_more 와 따로 정하면 단지 7곳을 다 훑고 매물 4건을 다 받은
     # --limit 4 에 '7곳 중 가까운 7곳만 훑었습니다' 가 나갔다 (2026-10-24 실측: 선릉역·마포역 0.3km --area-min 100)
     area_capped = area_filtered and len(listings) < limit and has_more
-    notes = apt_pagination_notes(len(listings), limit, inspected, has_more=has_more, suggest_limit=not area_capped)
+    notes = apt_pagination_notes(
+        len(listings), limit, inspected, has_more=has_more, suggest_limit=not area_capped, narrow='조건·반경',
+    )
     unscanned = len(danjis) - scanned
     if unscanned > 0 and scanned >= max_complexes and inspected < limit:
         notes.append(note(

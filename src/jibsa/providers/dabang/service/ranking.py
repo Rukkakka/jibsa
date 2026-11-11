@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    more_hint,
     normalize_address,
     note,
 )
@@ -759,7 +760,15 @@ def get_region_ranking(
     if has_more:
         among = f' {total}곳 중' if total is not None else ''
         label = f'{metric_label}({shown_kind})' if shown_kind else metric_label
-        notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. 더 보려면 --limit 을 늘리세요'))
+        # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 서울 단지 평균가 --limit 100 11135곳에 '--limit 을
+        # 늘리세요'). 시·도·전국은 범위를 좁히라고 하고, 더 좁힐 수 없는 시·군·구는 --order 로 반대쪽 끝을 보라고 한다
+        if scope.kind != 'district':
+            more = more_hint(limit, REGION_RANKING_MAX_LIMIT, '범위')
+        elif limit < REGION_RANKING_MAX_LIMIT:
+            more = '더 보려면 --limit 을 늘리세요'
+        else:
+            more = f'--limit 의 최대값은 {REGION_RANKING_MAX_LIMIT}입니다. 반대쪽 끝은 --order 를 바꿔 보세요'
+        notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. {more}'))
     # 학원수·진학률 순위는 상위 지역을 시·도까지만 준다 (2026-10-25 실측: 전국 외국어 학원 1위 '신사동' area '서울')
     if scope.kind != 'district' and any(entry.area and ' ' not in entry.area for entry in entries):
         notes.append(note('참고', 'area 가 시·도까지만 와서 같은 이름의 동은 어느 시·군·구인지 알 수 없습니다. 범위를 시·군·구로 주면 그 안의 동만 나옵니다'))

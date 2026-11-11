@@ -548,5 +548,10 @@ def get_popular_listings(
     notes: list[str] = []
     if unreadable:
         notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
-    notes += limit_notes(total, len(listings), limit, order='선호도 높은', inspected=received, has_more=has_more)
+    # 동 하나(single_dong)의 순위라 좁힐 지역이 없어 이 명령의 -t·--trade 만 권한다 (2026-11-10 리뷰·실측: 역삼동 --limit 100
+    # 600건에 '조건·지역을 좁히세요')
+    notes += limit_notes(
+        total, len(listings), limit, max_limit=POPULAR_MAX_LIMIT, order='선호도 높은', narrow='매물 유형·거래 유형 조건',
+        inspected=received, has_more=has_more,
+    )
     return DabangPopularResult(region=place, total=total, returned=len(listings), has_more=has_more, listings=listings, notes=notes)

@@ -16,7 +16,7 @@ DaangnEducationType = Literal['DAYCARE', 'KINDERGARTEN', 'ELEMENTARY', 'MIDDLE',
 
 
 class DaangnEducationMapPointsInputModel(RequestModel):
-    """`educationMapPoints` 의 `input`. 좌표 범위 안의 시설을 500개까지 준다 (2026-10-10 실측, 페이지 없음)."""
+    """`educationMapPoints` 의 `input`. 좌표 범위 안의 시설을 500곳까지 준다 (2026-10-10 실측, 페이지 없음)."""
 
     sw_coordinate: Annotated[
         DaangnCoordinateInputModel,

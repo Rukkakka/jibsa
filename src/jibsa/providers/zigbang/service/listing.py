@@ -64,6 +64,7 @@ from jibsa.providers.zigbang.api.response.listing import (
     ZigbangItemsResponseModel,
 )
 from jibsa.providers.zigbang.service.common import (
+    MAX_LIST_LIMIT,
     NEAREST_SCHOOLS,
     ROOM_TYPE_FILTER_BY_LABEL,
     SALES_TYPE_BY_TRADE,
@@ -829,8 +830,8 @@ def _search_result(
             listings=listings,
             notes=notes
             + limit_notes(
-                in_scope, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', approximate=True,
-                inspected=inspected, offset=offset, resumable=has_more, has_more=has_more,
+                in_scope, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow='조건·지역', order=f'{boundary.name} 중심에서 가까운',
+                approximate=True, inspected=inspected, offset=offset, resumable=has_more, has_more=has_more,
             ),
             has_more=has_more,
             next_position=next_position,
@@ -844,8 +845,8 @@ def _search_result(
         # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다
         notes=notes
         + limit_notes(
-            in_scope, len(listings), limit, approximate=True, radius=True, inspected=inspected, offset=offset,
-            resumable=has_more, has_more=has_more,
+            in_scope, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow='조건·반경', approximate=True, inspected=inspected,
+            offset=offset, resumable=has_more, has_more=has_more,
         )
         + beyond_radius_notes(listings, radius_km, resumed=offset > 0),
         has_more=has_more,

@@ -67,24 +67,35 @@ def test_normalize_date_drops_time_in_kst() -> None:
 
 
 def test_limit_notes_only_when_more_than_returned() -> None:
-    from jibsa.core.listing import limit_notes
+    from jibsa.core.listing import NEXT_HINT, limit_notes
 
     # limit 을 다 못 채웠거나, 전체 수를 모르거나, 더 없으면 안내가 없다
-    assert limit_notes(100, 5, 10) == []
-    assert limit_notes(None, 10, 10) == []
-    assert limit_notes(10, 10, 10) == []
+    assert limit_notes(100, 5, 10, max_limit=120, narrow='조건·지역') == []
+    assert limit_notes(None, 10, 10, max_limit=120, narrow='조건·지역') == []
+    assert limit_notes(10, 10, 10, max_limit=120, narrow='조건·지역') == []
 
-    [note] = limit_notes(1576, 10, 10, approximate=True, basis='가격 조건 적용 전')
-    assert note.startswith('[일부] 조건에 맞는 매물 약 1576건(가격 조건 적용 전) 중 검색 중심에서 가까운 10건입니다. ')
+    [note] = limit_notes(1576, 10, 10, max_limit=120, narrow='조건·지역', approximate=True, basis='가격 조건 적용 전')
+    assert note.startswith('[일부] 조건에 맞는 매물이 약 1576건(가격 조건 적용 전) 있고, 그중 검색 중심에서 가까운 순으로 10건만 보여 줍니다. ')
     # 통합 검색이 다른 안내와 마침표로 이어 붙이므로 끝에 마침표가 없다
     assert not note.endswith('.')
 
-    [note] = limit_notes(15, 10, 10, order='최근 게시된')
-    assert note.startswith('[일부] 조건에 맞는 매물 15건 중 최근 게시된 10건입니다')
+    [note] = limit_notes(15, 10, 10, max_limit=120, narrow='조건·지역', order='최근 게시된')
+    assert note.startswith('[일부] 조건에 맞는 매물이 15건 있고, 그중 최근 게시된 순으로 10건만 보여 줍니다')
 
     # 확인한 수(inspected)가 limit 에 닿았으면 받은 뒤 뺀 매물이 있어도 안내한다 (뺀 만큼 다시 채우지 않는다)
-    [note] = limit_notes(660, 14, 15, approximate=True, inspected=15)
-    assert note.startswith('[일부] 조건에 맞는 매물 약 660건 중 검색 중심에서 가까운 14건입니다')
-    assert limit_notes(660, 5, 15, inspected=5) == []
+    [note] = limit_notes(660, 14, 15, max_limit=120, narrow='조건·지역', approximate=True, inspected=15)
+    assert note.startswith('[일부] 조건에 맞는 매물이 약 660건 있고, 그중 검색 중심에서 가까운 순으로 14건만 보여 줍니다')
+    assert limit_notes(660, 5, 15, max_limit=120, narrow='조건·지역', inspected=5) == []
+
+    # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (늘리면 INVALID_ARGUMENT)
+    [note] = limit_notes(1917, 120, 120, max_limit=120, narrow='조건·지역')
+    assert note.endswith('--limit 의 최대값은 120입니다. 더 보려면 조건·지역을 좁히세요')
+
+    # 확인한 매물이 모두 빠지면 '0건만 보여 줍니다' 대신 보여 줄 매물이 없다고 한다
+    [note] = limit_notes(41, 0, 1, max_limit=120, narrow='조건·지역', approximate=True, inspected=1, resumable=True)
+    assert note == (
+        '[일부] 조건에 맞는 매물이 약 41건 있지만, 검색 중심에서 가까운 순으로 확인한 매물이 모두 빠져 보여 줄 매물이 없습니다. '
+        + NEXT_HINT
+    )
 
 

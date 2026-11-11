@@ -739,7 +739,7 @@ def search_command(
     예: jibsa daangn search listings 역삼역 --radius 0.5 -t 원룸 --trade 월세 --option 반려동물가능
     예: jibsa daangn search listings 성수동 -t 원룸 --trade 월세 --limit 10 --details
 
-    결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않는다.
+    결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다. 이어 받을 때는 지역·역을 다시 찾지 않는다.
     """
     position = decode_next(next_)
     require_finite('--radius', radius)

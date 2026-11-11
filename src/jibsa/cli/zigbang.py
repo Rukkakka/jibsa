@@ -37,6 +37,7 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import (
+    UPDATE_MAYBE_NEEDED,
     normalize_address,
     note,
 )
@@ -601,7 +602,7 @@ def search_apt_command(
         jibsa zigbang search listings apt 강남역 --radius 1 --trade 전세
         jibsa zigbang search listings apt 역삼동 --supply-area-min 80 --supply-area-max 110
 
-    동·구 검색 결과에 next 가 있으면 같은 지역·조건에 --next 로 주어 이어 받는다 (반경 검색은 이어 받지 않는다).
+    동·구 검색 결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다 (반경 검색은 이어 받지 않는다).
     """
     position = decode_next(next_)
     _require_center(query, lat, lng)
@@ -1086,14 +1087,22 @@ def stay_command(
                 extra_regions=extra,
                 boundary=boundary,
             )
-        except RegionNotFoundError:
+        except RegionNotFoundError as exc:
             if not whole_address:
                 raise
-            # 세종의 동은 단기임대 지역 검색이 찾지 못한다 (_stay_region_search). room·store 처럼 동 경계(넓거나 없으면 반경)
-            # 안 지도 칸으로 다시 찾는다
-            missing = region.address or region.name
+            # 단기임대 지역 검색이 동을 찾지 못하면(2026-10 의 세종의 동, _stay_region_search) room·store 처럼 동 경계(넓거나
+            # 없으면 반경) 안 지도 칸으로 다시 찾는다. 함께 찾는 동·구 중 처음 못 찾은 곳을 댄다 (_stay_search_ids)
+            missing = exc.query
             region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, STAY_GEOHASH_PRECISION, items=items)
-            notes.insert(0, f"직방 단기임대 지역 검색이 {missing}{particle(missing, '을/를')} 찾지 못해 지역 전체 대신 지도로 찾았습니다")
+            # 대체 경로로 찾았으니 [실패] 다 (docs/common.md 의 태그 정의, 직방→네이버 위치 대체와 같다). 지금은 매물이 없는 곳까지
+            # 지역 검색이 찾아 이 경로를 타면 직방이 바뀐 것이라 업데이트 문구를 붙인다. 매일 API 감시는 업데이트 문구 없는 [실패]
+            # 를 잠깐 실패한 덤 조회로 보아, 대체 경로도 0건이면 고장 대신 확인 못 함으로 넘겼다 (2026-11-10 리뷰·실측: 세종
+            # 반곡동·나성동, 매물 0건인 인제군 서화면·울릉군 울릉읍, 양근리·애월읍 모두 지역 검색이 찾았다)
+            notes.insert(0, note(
+                '실패',
+                f"직방 단기임대 지역 검색이 {missing}{particle(missing, '을/를')} 찾지 못해 지역 전체 대신 지도로 찾았습니다. "
+                f'직방 지역 검색이 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}',
+            ))
             result = search_stay_listings(
                 client, region, conditions=conditions, sort=stay_sort, radius_km=radius_km, limit=limit, boundary=boundary,
             )

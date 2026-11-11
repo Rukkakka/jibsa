@@ -6,6 +6,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+from jibsa.core.listing import (
+    NEXT_HINT,
+    UPDATE_MAYBE_NEEDED,
+)
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.parser import (
     parse_articles_html,
@@ -19,6 +23,7 @@ from jibsa.providers.daangn.service.common import (
 )
 from jibsa.providers.daangn.service.commute import search_commute
 from jibsa.providers.daangn.service.complex import (
+    list_complex_listings,
     list_region_complexes,
     search_complexes,
 )
@@ -570,14 +575,14 @@ def test_server_filtered_feed_keeps_category_and_notes_unselected_trade() -> Non
     })
     result = search_listings(_stub_client(page, [officetel, unknown]), [_yeoksam()], conditions=DaangnListingConditions(property_types=['원룸'], rent_max=1000))
     assert [(listing.id, listing.property_type) for listing in result.listings] == [(officetel.original_id, '오피스텔')]
-    assert any(note.startswith('[제외] 서버 필터를 통과한 매물 1건은') for note in result.notes)
+    assert any(note.startswith('[제외] 당근이 조건에 맞다고 준 매물 중 1건은') for note in result.notes)
 
     # 필터 API 를 못 써 조건 없는 지도 페이지로 대체 조회하면 유형을 직접 확인해 뺀다
     rejected = [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]
     fallback = page.model_copy(update={'articles': [officetel]})
     result = search_listings(_stub_client(fallback, [], errors=rejected), [_yeoksam()], conditions=DaangnListingConditions(property_types=['원룸']))
     assert result.listings == []
-    assert not any(note.startswith('[제외] 서버 필터를 통과한') for note in result.notes)
+    assert not any(note.startswith('[제외] 당근이 조건에 맞다고 준') for note in result.notes)
 
 
 @pytest.mark.parametrize('sales_type,room_count,room_type', [
@@ -732,7 +737,7 @@ def test_search_area_fetches_only_enough_card_chunks(missing_cards: bool) -> Non
     assert len(card_requests) == 2 and CARD_CHUNK_SIZE == 20
     assert result.returned == (20 if missing_cards else 25)
     assert [len(json.loads(request.content)['variables']['originalArticleIds']) for request in card_requests] == [20, 5]
-    assert '이어 보려면 결과의 next' in result.notes[-1]
+    assert NEXT_HINT in result.notes[-1]
 
 
 def test_search_area_notes_truncated_pins() -> None:
@@ -879,7 +884,51 @@ def test_real_prices_do_not_repeat_broken_pages(cursor: str | None, requests_cou
     assert len(requests) == requests_count
     assert result.returned == 3
     assert result.has_more
-    assert any('커서' in note for note in result.notes)
+    # 멈춘 까닭은 업데이트 문구와 함께 알리고, 당근 사이트로 가라는 말은 [일부] 한 줄에만 둔다
+    assert any('멈췄습니다' in note and UPDATE_MAYBE_NEEDED in note for note in result.notes)
+    assert sum('당근' in note and '확인' in note for note in result.notes) == 1
+
+
+def test_real_prices_last_page_echoing_cursor_is_the_end() -> None:
+    # 다음 페이지가 없다는 마지막 쪽이면 커서가 요청 커서와 같아도 되풀이로 보지 않는다. 실제 당근은 늘 새 커서나 null 을
+    # 주어 실제 API 로는 이 상태를 만들 수 없다 (_collect_pages 주석)
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = fixture('complex_by_original_id')
+        first = json.loads(request.content)['variables'].get('borrowAfter') is None
+        body['data']['complexByOriginalId']['complex']['borrowTransactions']['pageInfo'] = {
+            'hasNextPage': first, 'endCursor': 'c1',
+        }
+        return httpx.Response(200, json=body)
+
+    with DaangnClient() as client:
+        client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+        result = get_real_prices(client, 9000001, trade_type='전세', limit=120)
+    assert result.returned == 6
+    assert result.has_more is False
+    assert not any('멈췄습니다' in note for note in result.notes)
+
+
+def test_real_prices_null_page_info_after_next_page_stops_with_notice() -> None:
+    # 다음이 있다던 쪽 뒤에 pageInfo 가 null 이면 목록 끝이 아니라 응답이 바뀐 것이다. 조용히 끝내면 받은 일부를 전부처럼
+    # 내고 매일 API 감시도 정상으로 센다 (stalled_page. 실제 API 로는 응답을 바꿔야만 만들 수 있다)
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        variables = json.loads(request.content)['variables']
+        requests.append(variables)
+        body = fixture('complex_by_original_id')
+        body['data']['complexByOriginalId']['complex']['borrowTransactions']['pageInfo'] = (
+            None if variables.get('borrowAfter') else {'hasNextPage': True, 'endCursor': 'c1'}
+        )
+        return httpx.Response(200, json=body)
+
+    with DaangnClient() as client:
+        client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+        result = get_real_prices(client, 9000001, trade_type='전세', limit=120)
+    assert [variables.get('borrowAfter') for variables in requests] == [None, 'c1']
+    assert result.returned == 3
+    assert result.has_more is True
+    assert any('멈췄습니다' in note and UPDATE_MAYBE_NEEDED in note for note in result.notes)
 
 
 # --- 출퇴근 검색 (nearestCommuteStation → commuteFeed → commuteStationArticleConnection) ----
@@ -1120,6 +1169,61 @@ def test_complex_candidates_follow_cursor_and_notice_limit(limit: int) -> None:
     assert [request.get('after', '0') for request in requests] == [str(offset) for offset in range(0, limit, 50)]
     assert all(request['first'] <= 50 for request in requests)
     assert notes and '1200' in notes[-1]
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_complex_candidates_stalled_page_does_not_suggest_limit(empty: bool) -> None:
+    # 커서가 되풀이되거나 다음 페이지가 있다면서 빈 페이지를 주어 멈춘 것은 --limit 에 닿은 것이 아니라,
+    # --limit 을 늘리라는 안내를 붙이면 틀린 말이 된다. 응답이 바뀐 것일 수 있어 매일 API 감시가 고장으로 세도록
+    # 업데이트 문구를 넣는다
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads((FIXTURES / 'search_complexes.json').read_text(encoding='utf-8'))
+        connection = body['data']['searchComplexes']
+        if empty:
+            connection['edges'] = []
+        connection['pageInfo'] = {'hasNextPage': True, 'endCursor': 'same'}
+        return httpx.Response(200, json=body)
+
+    notes: list[str] = []
+    with DaangnClient() as client:
+        client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+        search_complexes(client, '테스트', limit=100, notes=notes)
+    assert len(notes) == 1
+    assert notes[0].startswith('[일부] 당근이 단지 후보 다음 페이지가 있다고 하면서 이어 받을 페이지를 주지 않아')
+    assert UPDATE_MAYBE_NEEDED in notes[0]
+    assert '--limit' not in notes[0]
+
+
+def test_complex_listings_null_articles_after_next_page_stops_with_notice() -> None:
+    # 다음이 있다던 단지 매물의 다음 응답에 articles 가 null 이면 목록 끝이 아니라 응답이 바뀐 것이다 (stalled_page.
+    # 2026-11-11 실측: 헬리오시티 10667600 의 2쪽만 articles null 로 바꾸니 고치기 전에는 안내 없이 끝났다)
+    cards = fixture('articles_by_original_article_ids')['data']['articles']
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == 'www.daangn.com':
+            # 카드에 시·도가 없는 동은 지역 검색으로 채운다
+            return httpx.Response(200, json=regions())
+        body = json.loads(request.content)
+        if body['extensions']['persistedQuery']['sha256Hash'] != DaangnClient.complex_articles_query_id:
+            return httpx.Response(200, json=fixture('get_region_by_coordinate'))
+        sent.append(body['variables'])
+        articles = None if body['variables'].get('after') else {
+            'edges': [{'node': card} for card in cards],
+            'pageInfo': {'hasNextPage': True, 'endCursor': 'c1'},
+        }
+        return httpx.Response(200, json={'data': {'complexByOriginalId': {'complex': {'articles': articles}}}})
+
+    with DaangnClient() as client:
+        client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+        result = list_complex_listings(client, 9000001, limit=40)
+    assert [variables.get('after') for variables in sent] == [None, 'c1']
+    assert result.has_more is True
+    assert any(
+        note.startswith(f'[일부] 당근이 단지 매물 다음 페이지가 있다고 하면서 이어 받을 페이지를 주지 않아 {len(cards)}건에서 멈췄습니다')
+        and UPDATE_MAYBE_NEEDED in note
+        for note in result.notes
+    )
 
 
 def test_search_station_counts_received_cards_and_keeps_walk_minutes() -> None:

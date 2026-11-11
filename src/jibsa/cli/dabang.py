@@ -118,6 +118,7 @@ from jibsa.providers.dabang.service.region import (
 )
 from jibsa.providers.dabang.service.sale import (
     SALE_BUILDING_TYPE_BY_LABEL,
+    SALE_SCHEDULE_MAX_LIMIT,
     SALE_STATE_BY_LABEL,
     SALE_SUPPLY_BY_LABEL,
     get_sale,
@@ -1066,7 +1067,7 @@ def sale_schedule_command(
     region: Annotated[
         str | None, typer.Option('--region', help='시·도 (예: 서울, 경기, 충청북도). 일정 글의 시·도로 jibsa 가 거른다'),
     ] = None,
-    limit: Annotated[int, typer.Option(min=1, max=300, help='최대 일정 수')] = 50,
+    limit: Annotated[int, typer.Option(min=1, max=SALE_SCHEDULE_MAX_LIMIT, help='최대 일정 수')] = 50,
     pretty: PrettyOption = None,
 ) -> None:
     """날짜별 전국 청약 일정 (청약 접수·특별공급·당첨자발표 등, 요청 1회).

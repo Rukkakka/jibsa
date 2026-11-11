@@ -18,6 +18,7 @@ from jibsa.core.geo import (
     box_around,
 )
 from jibsa.core.listing import (
+    more_hint,
     normalize_address,
     note,
 )
@@ -37,6 +38,7 @@ from jibsa.providers.dabang.api.request.sale import (
 )
 from jibsa.providers.dabang.api.response.sale import DabangSaleItemModel
 from jibsa.providers.dabang.service.common import (
+    MAX_LIST_LIMIT,
     MAX_LIST_PAGES,
     PAGE_SIZE,
     DabangPlace,
@@ -78,6 +80,8 @@ SALE_SUPPLY_BY_LABEL: dict[str, DabangSaleSupplyType] = {
 # 분양 일정 날짜 꼴: '26.09.07' (날), '26.08월' (달)
 SALE_DAY_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})\.(\d{1,2})$')
 SALE_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})월$')
+# sale-schedule 의 --limit 최대값. CLI 옵션의 max 와 더 보는 법 안내가 함께 쓴다
+SALE_SCHEDULE_MAX_LIMIT: int = 300
 # 청약 일정 글: '[청약접수] 인천 인천계양 A17블록 … (~10/27)'
 SCHEDULE_REGION_PATTERN: re.Pattern[str] = re.compile(r'^(?:\[[^\]]+\]\s*)+(\S+)')
 
@@ -281,7 +285,13 @@ def search_sales(
         notes.append(note('제외', f'경계를 덮는 사각형에서 받은 단지 중 주소가 다른 {outside}곳을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
     if has_more and received >= limit:
         among = f' 약 {total}곳 중' if total is not None else ''
-        notes.append(note('일부', f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다. 더 보려면 --limit 을 늘리세요'))
+        # --limit 이 이미 최대값이면 늘리라고 하지 않고 좁힐 조건을 권한다 (2026-11-10 리뷰: --limit 120 에도 '--limit 을 늘리세요' 뿐)
+        notes.append(note(
+            '일부',
+            f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다. '
+            # 역·대학·좌표(place)는 반경 사각형이라 반경을, 동·시군구는 지역을 좁히라고 한다
+            + more_hint(limit, MAX_LIST_LIMIT, f"건물 유형·분양 상태·공급 유형 조건·{'반경' if place is not None else '지역'}"),
+        ))
     return DabangSaleListResult(scope=scope_name, total=total, returned=len(sales), has_more=has_more, sales=sales, notes=notes)
 
 
@@ -619,7 +629,12 @@ def get_sale_schedule(
     if unknown:
         notes.append(note('제외', f'일정 글에 시·도가 없어 지역을 모르는 {unknown}건을 뺐습니다 (--region 없이 부르면 나옵니다)'))
     if len(items) > limit:
-        notes.append(note('일부', f'일정 {len(items)}건 중 앞 {limit}건입니다. 더 보려면 --limit 을 늘리거나 --days 를 줄이세요'))
+        # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰)
+        notes.append(note(
+            '일부',
+            f'일정 {len(items)}건 중 앞 {limit}건입니다. '
+            + more_hint(limit, SALE_SCHEDULE_MAX_LIMIT, '기간(--days)·지역(--region) 조건'),
+        ))
     return DabangSaleSchedule(
         from_date=start.isoformat(), to_date=end.isoformat(), total=total, returned=min(len(items), limit),
         schedules=items[:limit], notes=notes,

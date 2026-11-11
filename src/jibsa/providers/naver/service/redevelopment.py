@@ -282,6 +282,7 @@ def list_redevelopment_areas(
         reason = '검색 범위(반경) 밖이거나 고른 거래 유형 매물이 없는' if trade_types else '중복이거나 검색 범위(반경) 밖의'
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, subject='구역', truncated=scan.truncated, excluded_reason=reason,
+        narrow='조건·지역' if legal_division_code is not None else '조건·반경',
     )
     return NaverRedevelopmentAreasResult(total=scan.total, returned=len(result), areas=result, notes=notes)
 
@@ -341,7 +342,10 @@ def list_redevelopment_articles(
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
     notes += group_sort_notes(sort_type, result)
-    notes += pagination_notes(scan.total, len(result), limit, scan.received, truncated=scan.truncated)
+    # 구역 하나라 지역 대신 구역 매물의 조건만 좁히라고 한다 (단지 매물과 같다)
+    notes += pagination_notes(
+        scan.total, len(result), limit, scan.received, truncated=scan.truncated, narrow='거래 유형·가격 조건',
+    )
     # 재개발 구역 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다
     return NaverListingsResult(
         total=scan.total, returned=len(result), has_more=scan.cursor is not None, listings=result, notes=notes,

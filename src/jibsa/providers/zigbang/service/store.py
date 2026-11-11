@@ -28,6 +28,8 @@ from jibsa.core.listing import (
     join_address,
     limit_notes,
     m2_to_pyeong,
+    more_hint,
+    note,
     parking_label,
 )
 from jibsa.core.schema import RequestModel
@@ -44,6 +46,7 @@ from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.common import (
+    MAX_LIST_LIMIT,
     ZigbangBoundary,
     ZigbangRegion,
     drop_unused_scope,
@@ -68,6 +71,8 @@ MIN_SCAN_PINS: int = 60
 STORE_TRADE_TYPES: tuple[ZigbangStoreSalesType, ...] = ('임대', '매매')
 # 결과가 limit 보다 많을 때 좁히라고 권할 조건. 상가에는 매물 유형 옵션이 없다
 STORE_NARROW: str = '거래 유형·업종·가격 조건'
+# 그중 서버가 거르는 조건. 가격 조건은 받은 뒤 거르므로 후보 조회 상한에 걸렸을 때는 이것만 권한다
+STORE_SERVER_NARROW: str = '거래 유형·업종'
 # 웹 상가 업종 필터의 대분류와 업종. 대분류 이름을 주면 그 안의 업종 전체다 (웹의 '전체').
 STORE_BUSINESSES_BY_CATEGORY: dict[str, tuple[str, ...]] = {
     '휴게음식점': ('베이커리', '카페/커피', '패스트푸드/피자', '분식', '치킨/닭요리'),
@@ -522,14 +527,15 @@ def search_store_listings(
     has_more = inspected_in_radius < in_radius or any(
         boundary is not None or within_radius(listing.distance_km or 0, radius_km) for listing in cut
     )
+    area = '지역' if boundary is not None else '반경'
     if boundary is not None:
         notes = limit_notes(
-            in_radius, len(listings), limit, order=f'{boundary.name} 중심에서 가까운', narrow=STORE_NARROW,
-            inspected=len(inspected), has_more=has_more,
+            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}',
+            order=f'{boundary.name} 중심에서 가까운', inspected=len(inspected), has_more=has_more,
         )
     else:
         notes = limit_notes(
-            in_radius, len(listings), limit, narrow=STORE_NARROW, radius=True, inspected=len(inspected),
+            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}', inspected=len(inspected),
             has_more=has_more,
         ) + beyond_radius_notes(listings, radius_km)
     if filter_price:
@@ -539,15 +545,28 @@ def search_store_listings(
             f'그중 {inspected_in_radius}건의 요약을 요청해 거래 가능하고 가격 조건에 맞는 {matched_in_radius}건을 확인했습니다'
         )
         # 위 문장의 total·확인 수와 같은 기준(반경·경계 안)으로 센다. 지도 칸 전체 핀에는 반경 밖도 있다
+        # 가격 조건이 있으면 위에서 limit_notes 의 [일부] 를 지우므로, 더 있다는 안내와 다음 할 일을 여기서 붙인다. 후보 조회
+        # 상한도 --limit 에 비례해(SCAN_FACTOR) --limit 을 늘리면 더 확인한다 (2026-11-10 리뷰·실측: 성수역 0.2km --rent-max
+        # 1000 --limit 5 는 34건 중 5건, 0.8km --limit 120 은 '150건만 조회했습니다' 에서 끝나 다음 할 일이 없었다)
+        # 후보 조회 상한에서 멈췄으면 가격 조건은 권하지 않는다. 가격은 가까운 후보를 상한까지 고른 뒤 거르므로, 좁혀도 같은
+        # 후보만 다시 보고 일치 수만 준다. 미확인 후보에 닿는 건 --limit(상한이 비례)과 서버가 거르는 조건·범위다 (2026-11-11
+        # 리뷰·실측: 성수역 0.8km --limit 5 를 --rent-max 50 에서 30 으로 좁혀도 같은 60건만 보고 242건이 미확인)
+        capped = inspected_in_radius < in_radius and len(listings) < limit
+        hint = more_hint(limit, MAX_LIST_LIMIT, f'{STORE_SERVER_NARROW if capped else STORE_NARROW}·{area}')
         if inspected_in_radius < in_radius:
-            reason = '결과 개수 제한' if len(listings) >= limit else '후보 조회 상한'
-            notes.append(
-                f'{reason}으로 가까운 후보 {len(inspected)}건만 조회했습니다 (조회 상한 {len(nearest)}건, '
-                f'미확인 후보 {in_radius - inspected_in_radius}건). 전체 가격 조건 일치 수는 모릅니다'
-            )
-        elif len(matched) > len(listings):
-            notes.append(f'확인한 가격 조건 일치 매물 중 가까운 {len(listings)}건만 보여 줍니다')
+            notes.append(note(
+                '일부',
+                f"{'후보 조회 상한' if capped else '결과 개수 제한'}으로 가까운 후보 {len(inspected)}건만 조회했습니다 "
+                f'(조회 상한 {len(nearest)}건, 미확인 후보 {in_radius - inspected_in_radius}건). 전체 가격 조건 일치 수는 모릅니다. {hint}',
+            ))
+        elif has_more:
+            # matched 에는 반경 밖 매물도 있어 그 수로 보면, --limit 에 잘린 것이 반경 밖뿐이라 has_more 가 false 인데도 '더 있다' 고
+            # 했다 (2026-11-10 리뷰). 위 분기가 아니면 has_more 는 반경 안 매물이 --limit 에 잘렸다는 뜻이다
+            notes.append(note('일부', f'확인한 가격 조건 일치 매물 중 가까운 {len(listings)}건만 보여 줍니다. {hint}'))
     if business_conditions and vacant:
+        # [제외] 가 아니라 [참고] 다. 공실은 업종 조건에 맞는 매물을 뺀 것이 아니라 직방이 업종과 무관하게 따로 주는 묶음이다
+        # (2026-11-10 리뷰가 [제외] 라고 했으나 오탐. 실측: 성수역 0.5km --business 카페/커피 는 카페 5건과 '이 지역 비어있는
+        # 상가' 23건. 업종 조건 없이 찾는 법은 안내에 있다)
         notes.append(
             f"업종 조건과 별개로 {'경계' if boundary else '반경'} 안에 비어 있는 상가가 {len(vacant)}건 있습니다. "
             '공실도 보려면 --business 없이 다시 검색하세요'

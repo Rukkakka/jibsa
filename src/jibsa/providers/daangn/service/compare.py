@@ -13,6 +13,7 @@ from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     normalize_address,
     normalize_date,
+    note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.compare import (
@@ -553,11 +554,15 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
         DaangnNearbyComplexesRequestPayloadModel(region3_id=region.region_id, first=NEARBY_COMPLEXES_MAX)
     )
     nodes = unwrap_graphql(response, response.data.complexes if response.data else None, '같은 동 단지')
+    # 더 있을 수 있다는 안내라 [일부] 다. 지금은 가장 큰 동도 상한에 닿지 않지만 (2026-11-10 실측: 화곡동 705곳) 동이 커지면
+    # 나온다 (2026-11-10 리뷰: 태그가 없어 [참고] 로 나갈 뻔했다). 동 이름 뒤 '로도' 는 '화곡동 로도' 처럼 틀려 '명령으로'
+    # 로 조사를 고정한다 (particle 은 ㄹ 받침 예외로 '으로/로' 를 받지 않는다)
     capped_notes = (
-        [
+        [note(
+            '일부',
             f'당근에서 같은 동 단지를 {NEARBY_COMPLEXES_MAX}곳까지만 받아 더 있을 수 있습니다. '
-            f'jibsa daangn search complexes {region.name3} 로도 찾아보세요'
-        ]
+            f'나머지는 jibsa daangn search complexes {region.name3} 명령으로 찾아보세요',
+        )]
         if len(nodes.edges) >= NEARBY_COMPLEXES_MAX else []
     )
     ids = [edge.node.original_id for edge in nodes.edges if edge.node and edge.node.original_id != str(complex_id)]

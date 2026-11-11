@@ -12,6 +12,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NOTE_KINDS,
     listing_as,
+    note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import (
@@ -29,14 +30,18 @@ from jibsa.providers.daangn.api.response.common import (
 )
 from jibsa.providers.daangn.api.response.commute import DaangnNearestCommuteStationModel
 from jibsa.providers.daangn.service.common import (
+    COMMUTE_STATION_MAX_LIMIT,
     DaangnListingConditions,
     DaangnNearbyListing,
     DaangnRegion,
     article_to_listing,
     complex_building_notes,
+    cursor_stopped_note,
     hidden_location_notes,
     is_available,
     listing_budget_notes,
+    next_cursor,
+    stalled_page,
     trade_of,
     trade_unselected_notes,
     unwrap_graphql,
@@ -233,13 +238,15 @@ def search_commute(
     ))
     notes = reach.notes + trade_unselected_notes(unselected) + complex_building_notes(shown) + hidden_location_notes(shown)
     if reach.unknown_times:
-        notes.append('지하철 시간을 모르는 역은 --max-minutes 조건을 확인할 수 없어 제외했습니다')
+        # 받은 매물을 뺀 것이 아니라 찾을 역을 줄인 것이라 [제외] 가 아니라 [범위] 다 (아래 역 수 안내와 같다)
+        notes.append(note('범위', '지하철 시간을 모르는 역은 --max-minutes 조건을 확인할 수 없어 제외했습니다'))
     if len(stations) > len(searched):
-        notes.append(
+        notes.append(note(
+            '범위',
             f'지하철 {max_minutes}분 안에 갈 수 있는 역 {len(stations)}곳{" 이상" if reach.truncated else ""} 중 '
             f'가까운 {len(searched)}곳 주변만 찾았습니다. '
-            '더 멀리 보려면 조건을 좁히거나 jibsa daangn search listings <역 이름> 으로 그 역 주변을 찾으세요'
-        )
+            '더 멀리 보려면 조건을 좁히거나 jibsa daangn search listings <역 이름> 으로 그 역 주변을 찾으세요',
+        ))
     groups: list[DaangnCommuteStationListings] = []
     # 역마다 같은 안내('더 보려면 --limit 을 늘리거나…')가 역 수만큼 되풀이되지 않게 안내 문장마다 역을 모은다
     station_notes: dict[str, list[str]] = {}
@@ -250,7 +257,9 @@ def search_commute(
             station_name=name, subway_minutes=minutes, transfers=transfers,
             inspected=inspected, returned=len(station_listings), listings=station_listings,
         ))
-        for text in listing_budget_notes(limit, inspected, len(station_listings), has_more=found.has_more_by_station[name]):
+        for text in listing_budget_notes(
+            limit, inspected, len(station_listings), max_limit=COMMUTE_STATION_MAX_LIMIT, has_more=found.has_more_by_station[name],
+        ):
             station_notes.setdefault(text, []).append(name)
     notes += [
         _station_note(f'찾아본 {len(searched)}곳 모두' if len(names) == len(searched) > 1 else '·'.join(names), text)
@@ -288,7 +297,7 @@ class _Reachable(NamedTuple):
     notes: list[str]
     # 지하철 시간을 모르는 역이 있었는지
     unknown_times: bool
-    # 역 목록을 COMMUTE_FEED_MAX_PAGES 쪽까지 받고도 시간 상한 안 역이 남았는지
+    # 역 목록을 다 받지 못하고(COMMUTE_FEED_MAX_PAGES 쪽 상한·커서 멈춤) 시간 상한 안 역이 남았는지
     truncated: bool
 
 
@@ -344,8 +353,10 @@ def _reachable_stations(
     stations: list[tuple[str, int, int | None]] = [(nearest.station_name, 0, 0)]
     feed_notes: list[str] = []
     unknown_station_times = False
-    # 역 목록을 COMMUTE_FEED_MAX_PAGES 쪽까지 받고도 시간 상한 안 역이 남았는지
-    feed_truncated = False
+    # 당근이 다음이 있다면서 이어 받을 쪽을 주지 않아 멈췄는지 (stalled_page·next_cursor)
+    stopped = False
+    # COMMUTE_FEED_MAX_PAGES 쪽을 다 받고도 시간 상한 안 역이 남았는지
+    capped = False
     after = None
     for _ in range(COMMUTE_FEED_MAX_PAGES):
         feed_response = client.run_request_commute_feed(
@@ -356,6 +367,11 @@ def _reachable_stations(
             )
         )
         feed = unwrap_graphql(feed_response, feed_response.data.commute_feed if feed_response.data else None, '출퇴근 역')
+        page_info = feed.page_info
+        # 되풀이된 쪽·페이지 정보가 없는 쪽은 역을 넣기 전에 멈춘다 (stalled_page)
+        if stalled_page(page_info, after):
+            stopped = True
+            break
         reachable = [edge.node for edge in feed.edges if edge.node and edge.node.station]
         unknown_station_times |= any(node.duration_minutes is None for node in reachable)
         stations += [
@@ -363,34 +379,54 @@ def _reachable_stations(
             for node in reachable
             if node.station and node.duration_minutes is not None and node.duration_minutes <= max_minutes
         ]
-        page_info = feed.page_info
+        # 다음이 있다면서 쓸 역이 없는 쪽은 목록 끝이 아니라 비정상이라 조용히 끝내지 않고 아래 next_cursor 로 멈춤을 알린다
+        # (2026-11-10 리뷰. 목록 끝은 늘 역과 함께 hasNextPage=False 로 온다: next_cursor)
         if (
-            not reachable
-            or (reachable[-1].duration_minutes is not None and reachable[-1].duration_minutes > max_minutes)
+            (reachable and reachable[-1].duration_minutes is not None and reachable[-1].duration_minutes > max_minutes)
             or page_info is None
             or not page_info.has_next_page
         ):
             break
-        if not page_info.end_cursor or page_info.end_cursor == after:
-            feed_notes.append('출퇴근 역의 다음 페이지 커서가 없거나 반복되어 조회를 중단했습니다')
+        cursor = next_cursor(page_info, after, received=len(reachable))
+        if cursor is None:
+            stopped = True
             break
-        after = page_info.end_cursor
+        after = cursor
     else:
-        feed_truncated = True
-        feed_notes.append(
-            f'출퇴근 역 목록을 {COMMUTE_FEED_MAX_PAGES}쪽까지만 받아 지하철 '
-            f'{min(max_minutes, COMMUTE_SERVER_MAX_MINUTES)}분 안 역이 더 있습니다. reachable_stations 는 받은 역까지만 센 수입니다'
-        )
-    if max_minutes > COMMUTE_SERVER_MAX_MINUTES:
-        feed_notes.append(
-            f'당근 출퇴근 지도는 지하철 {COMMUTE_SERVER_MAX_MINUTES}분 안 역까지만 줍니다. '
-            f'--max-minutes {max_minutes} 이어도 {COMMUTE_SERVER_MAX_MINUTES}분까지의 역만 찾았습니다'
-        )
+        capped = True
 
-    # 같은 역이 여러 경로로 오면 지하철 시간이 가장 짧은 경로를 쓴다.
+    # 같은 역이 여러 경로로 오면 지하철 시간이 가장 짧은 경로를 쓴다. 아래 안내의 역 수도 이 수라 reachable_stations 와 같다
+    # (2026-11-10 리뷰·실측: 이름으로 세지 않으면 서울역 60분 2쪽에 1쪽을 되풀이하니 '101곳에서 멈췄습니다' 와 reachable_stations 51)
     stations = list({station[0]: station for station in sorted(stations, key=lambda station: -station[1])}.values())
     stations.sort(key=lambda station: station[1])
-    return _Reachable(stations, feed_notes, unknown_station_times, feed_truncated)
+    if stopped or capped:
+        if stopped:
+            head = cursor_stopped_note('출퇴근 역 목록', f'{len(stations)}곳')
+        else:
+            head = (
+                f'출퇴근 역 목록을 {COMMUTE_FEED_MAX_PAGES}쪽까지만 받아 지하철 '
+                f'{min(max_minutes, COMMUTE_SERVER_MAX_MINUTES)}분 안 역이 더 있습니다'
+            )
+        # 역 목록은 지하철 시간 순이라, 회사 역을 넣어 가까운 COMMUTE_MAX_STATIONS 곳을 받은 뒤 잘리거나 멈추면 찾는 역·매물은
+        # 같고 reachable_stations 수만 덜 센다. 그래서 그때는 [일부] 가 아니라 [참고] 이고, 역 수 안내([범위])에 '이상' 을 붙인다
+        # (2026-11-10 실측: 서울역 60분 4쪽 201곳 이상 중 가까운 10곳). 그보다 적게 받으면 찾을 역이 줄어 [일부] 다
+        # (2026-11-10 리뷰·실측: 서울역 60분 1쪽의 역만 비우면 회사 역 한 곳만 찾았는데 [참고] 였다). 쪽 상한에 닿은 때도 같은
+        # 수로 고른다. 4쪽이 모두 시간 상한 안이어도 같은 역이 여러 경로로 오면 서로 다른 역이 10곳이 안 될 수 있다
+        # (2026-11-11 리뷰. 실제로는 서울역 60분 4쪽에 201곳 이상이었다)
+        if len(stations) >= COMMUTE_MAX_STATIONS:
+            feed_notes.append(note('참고', f'{head}. reachable_stations 는 받은 역까지만 센 수입니다'))
+        else:
+            feed_notes.append(note(
+                '일부',
+                f'{head}. 받은 역 주변만 찾았습니다. 다른 역은 jibsa daangn search listings <역 이름> 으로 찾으세요',
+            ))
+    if max_minutes > COMMUTE_SERVER_MAX_MINUTES:
+        feed_notes.append(note(
+            '범위',
+            f'당근 출퇴근 지도는 지하철 {COMMUTE_SERVER_MAX_MINUTES}분 안 역까지만 줍니다. '
+            f'--max-minutes {max_minutes} 이어도 {COMMUTE_SERVER_MAX_MINUTES}분까지의 역만 찾았습니다',
+        ))
+    return _Reachable(stations, feed_notes, unknown_station_times, stopped or capped)
 
 
 def _station_articles(

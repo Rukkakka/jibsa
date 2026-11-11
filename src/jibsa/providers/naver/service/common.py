@@ -23,9 +23,11 @@ from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
+    NEXT_HINT,
     Listing,
     join_address,
     m2_to_pyeong,
+    more_hint,
     normalize_date,
     note,
     won_to_manwon,
@@ -820,6 +822,7 @@ def pagination_notes(
     resumable: bool = False,
     resumed: bool = False,
     scope: str = '',
+    narrow: str,
 ) -> list[str]:
     """조회 예산과 실제 제외 결과에 맞춰 추가 조회 없이 안내한다.
 
@@ -834,23 +837,29 @@ def pagination_notes(
         resumed: 이어 받기(`--next`)로 받은 결과면 True. 앞 결과에서 받은 매물이 있어 '전부' 대신 '남은 매물' 이라 한다.
         scope: '전부' 가 어느 범위인지 앞에 붙일 말 (예: '반경 1km 안팎에서 '). 반경을 넓히면 더 나오는데 '전부' 만 쓰면
             찾은 범위의 전부인지 알 수 없다 (2026-10-20 LLM 사용 시험: 1km '26건이 전부' 뒤 2km 85건).
+        narrow: 더 남았을 때 좁히라고 권할 것 (`more_hint`). 동·구 검색은 '조건·지역', 반경 검색은 '조건·반경', 단지·재개발
+            구역 하나의 매물은 좁힐 지역이 없어 그 매물의 조건만 준다 (2026-11-10 리뷰·실측: 헬리오시티 111515 2,257건
+            --limit 120 에 '조건·지역을 좁히세요'). 기본값을 두지 않는다. 두었더니 재개발 구역 반경 검색이 값을 빠뜨려
+            '조건·지역' 이 나갔다 (2026-11-10 리뷰).
     """
     notes: list[str] = []
     excluded = min(inspected, limit) - returned
+    # 단지·구역은 다른 소스처럼 '곳' 으로 센다 (2026-11-10 리뷰: 재개발 구역이 '전체 45건 중 2건입니다')
+    unit = '곳' if subject in ('단지', '구역') else '건'
     # 이어 받을 수 있거나, 요청 상한에서 멈췄거나, 서버 수가 받은 수보다 많으면 더 받을 매물이 남았다. 이어 받은 결과의 total 은
     # 앞 결과까지 센 수라 받은 수와 견주지 않는다 (next 가 없으면 남은 매물이 없다)
     more = resumable or truncated or (not resumed and total > inspected)
     if returned < limit and excluded > 0:
         notes.append(note(
             '제외',
-            f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}건입니다 "
+            f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}{unit}입니다 "
             + ('(뺀 만큼 다시 채우지 않음)' if more else f'(더 받을 {subject} 없음)'),
         ))
     elif returned < limit and not truncated:
         what = scope + (f'남은 {subject}' if resumed else f'조건에 맞는 {subject}')
-        notes.append(f"{what}{particle(subject, '은/는')} 이 {returned}건이 전부입니다")
+        notes.append(f"{what}{particle(subject, '은/는')} 이 {returned}{unit}이 전부입니다")
     if resumable:
-        notes.append(note('일부', f'전체 {total}건 중 일부입니다. 이어 보려면 결과의 next 를 --next 로 주세요'))
+        notes.append(note('일부', f'전체 {total}{unit} 중 일부입니다. {NEXT_HINT}'))
         return notes
     # 이어 받은 결과의 returned 는 이번 몫이라 전체 수와 견주면 앞 결과에서 받은 매물을 빼먹는다
     if truncated or resumed:
@@ -858,9 +867,9 @@ def pagination_notes(
     # 더 받을 것이 남았는지는 받은 수(inspected)로 본다. 돌려준 수와 견주면 다 받고 뺐을 뿐인데 '더 있다' 고 하거나, 1건만
     # 빠져도 더 있다는 안내가 사라졌다 (2026-10-23 리뷰: 반경 단지 --limit 1 이 전체 89건에 '[제외] … 0건' 만 냈다)
     if limit >= MAX_LIST_LIMIT and total > inspected:
-        notes.append(note('일부', f'--limit 의 최대값은 {MAX_LIST_LIMIT}입니다. 더 보려면 조건·지역을 좁히세요'))
+        notes.append(note('일부', more_hint(limit, MAX_LIST_LIMIT, narrow)))
     elif inspected >= limit and total > inspected:
-        notes.append(note('일부', f'전체 {total}건 중 {returned}건입니다. 더 보려면 --limit 을 늘리거나 조건을 좁히세요'))
+        notes.append(note('일부', f'전체 {total}{unit} 중 {returned}{unit}입니다. {more_hint(limit, MAX_LIST_LIMIT, narrow)}'))
     return notes
 
 
