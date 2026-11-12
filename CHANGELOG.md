@@ -5,6 +5,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ## Unreleased
 
+### ⚠️ 호환 깨짐
+
+- 라이브러리로 쓸 때: `core.browser` 의 `BrowserTransport` 는 설정을 `BrowserOptions` 하나로 받고(모두 키워드), `AsyncBrowserTransport` 는 감쌀 `BrowserTransport` 하나를 받는다. `BrowserTransport('naver', url, ready_cookie='NNB')` 는 `BrowserTransport(BrowserOptions(source='naver', entry_url=url, ready_cookie='NNB'))` 로, `AsyncBrowserTransport('naver', url, ready_cookie='NNB')` 는 `AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))` 로 고친다. 소스 client 의 `browser_transport()`·`async_browser_transport()` 를 쓰면 고칠 것이 없다 (#216)
+
 ## 0.12.0 — 2026-11-11
 
 ### 변경

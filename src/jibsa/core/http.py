@@ -44,6 +44,7 @@ from tenacity import RetryCallState
 from jibsa.core.browser import (
     DISCARD_STATE_STATUSES,
     AsyncBrowserTransport,
+    BrowserOptions,
     BrowserTransport,
 )
 from jibsa.core.ratelimit import (
@@ -53,7 +54,6 @@ from jibsa.core.ratelimit import (
 
 from typing import (
     Annotated,
-    Any,
     ClassVar,
     Literal,
     TypeVar,
@@ -391,21 +391,21 @@ class BaseHTTPClient(BaseModel, ABC):
     def browser_no_cors_hosts(self) -> frozenset[str]:
         return frozenset()
 
-    def _browser_options(self) -> dict[str, Any]:
-        return {
-            'source': self.source_name, 'entry_url': self.browser_entry_url, 'ready_cookie': self.browser_ready_cookie,
-            'api_hosts': self.browser_api_hosts, 'discard_statuses': self.browser_discard_statuses,
-            'no_cors_hosts': self.browser_no_cors_hosts, 'rate_limiter': self.rate_limiter, 'proxy': self.proxy,
-            'verify': self.verify, 'timeout': self.timeout,
-        }
+    def _browser_options(self) -> BrowserOptions:
+        return BrowserOptions(
+            source=self.source_name, entry_url=self.browser_entry_url, ready_cookie=self.browser_ready_cookie,
+            api_hosts=self.browser_api_hosts, discard_statuses=self.browser_discard_statuses,
+            no_cors_hosts=self.browser_no_cors_hosts, rate_limiter=self.rate_limiter, proxy=self.proxy,
+            verify=self.verify, timeout=self.timeout,
+        )
 
     def browser_transport(self) -> BrowserTransport:
         """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser.py`). 프록시도 브라우저가 쓴다."""
-        return BrowserTransport(**self._browser_options())
+        return BrowserTransport(self._browser_options())
 
     def async_browser_transport(self) -> AsyncBrowserTransport:
         """`browser_transport()` 의 비동기판."""
-        return AsyncBrowserTransport(**self._browser_options())
+        return AsyncBrowserTransport(BrowserTransport(self._browser_options()))
 
     @property
     @abstractmethod

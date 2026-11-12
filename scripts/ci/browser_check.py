@@ -55,6 +55,7 @@ from scrapling.engines._browsers import _base as scrapling_base  # noqa: E402
 
 from jibsa.core.browser import (  # noqa: E402
     AsyncBrowserTransport,
+    BrowserOptions,
     BrowserTransport,
 )
 from jibsa.core.ratelimit import (  # noqa: E402
@@ -199,7 +200,8 @@ class CorsApiHandler(QuietHandler):
 
 
 def client(source: str, entry_url: str) -> Client:
-    return Client(transport=BrowserTransport(source, entry_url, ready_cookie=READY_COOKIE), timeout=20)
+    options = BrowserOptions(source=source, entry_url=entry_url, ready_cookie=READY_COOKIE)
+    return Client(transport=BrowserTransport(options), timeout=20)
 
 
 def check_requests(entry: Site) -> None:
@@ -220,7 +222,8 @@ def check_requests(entry: Site) -> None:
 
 def check_async_requests(entry: Site) -> None:
     async def run() -> tuple[Response, Response]:
-        transport = AsyncBrowserTransport('browser-check-async', entry.url, ready_cookie=READY_COOKIE)
+        options = BrowserOptions(source='browser-check-async', entry_url=entry.url, ready_cookie=READY_COOKIE)
+        transport = AsyncBrowserTransport(BrowserTransport(options))
         async with AsyncClient(transport=transport, timeout=20) as checker:
             return (
                 await checker.get(f'{entry.url}api/data'),
@@ -274,9 +277,10 @@ def check_request_counts() -> None:
     entry = Site(type('CountingEntry', (CountingEntryHandler,), {'api_url': api.url}))
     hosts = frozenset({urlsplit(entry.url).netloc, urlsplit(api.url).netloc})
     limiter = RateLimiter('browser-check-count', RateLimitPolicy(min_interval=0, max_per_minute=1000))
-    transport = BrowserTransport(
-        'browser-check-count', entry.url, ready_cookie=READY_COOKIE, api_hosts=hosts, rate_limiter=limiter,
-    )
+    transport = BrowserTransport(BrowserOptions(
+        source='browser-check-count', entry_url=entry.url, ready_cookie=READY_COOKIE, api_hosts=hosts,
+        rate_limiter=limiter,
+    ))
     # 실제 클라이언트처럼 우리 요청은 httpx 훅이 센다 (`BaseHTTPClient.rate_limit_hooks`)
     with allow_local_network(), Client(transport=transport, timeout=20, event_hooks=limiter.event_hooks()) as counted:
         ours = counted.get(f'{api.url}api/ours', headers={PREFLIGHT_HEADER: '1'})

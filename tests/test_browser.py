@@ -7,8 +7,8 @@ from httpx import (
 )
 
 from jibsa.core.browser import (
-    DISCARD_STATE_STATUSES,
     REFRESH_SECONDS,
+    BrowserOptions,
     CertificateError,
     CorsBlockedError,
     EntryPageError,
@@ -76,10 +76,10 @@ def test_entry_429_cooldown_follows_retry_after() -> None:
     # 첫 화면 API 의 429 도 우리 요청의 429 처럼 정책 값과 Retry-After 중 긴 쪽으로 쉰다. 정책 값만 쓰면 서버가 600초
     # 쉬라고 한 사이트에 120초 뒤 다시 보냈다. 사이트 밖(광고) 응답의 Retry-After 로는 늘리지 않는다
     limiter = RateLimiter('zigbang', RateLimitPolicy(cooldown=120))
-    state = _BrowserState(
-        'zigbang', 'https://www.zigbang.com/', None, frozenset({'apis.zigbang.com'}), DISCARD_STATE_STATUSES,
-        frozenset(), limiter, None, True,
-    )
+    state = _BrowserState(BrowserOptions(
+        source='zigbang', entry_url='https://www.zigbang.com/', api_hosts=frozenset({'apis.zigbang.com'}),
+        rate_limiter=limiter,
+    ))
     state.page_url = 'https://www.zigbang.com/'
     state.on_entry_rate_limited('https://ad.doubleclick.net/pixel', '3600', main_document=False)
     state.on_entry_rate_limited('https://apis.zigbang.com/v2/app/notice', '600', main_document=False)
@@ -89,7 +89,7 @@ def test_entry_429_cooldown_follows_retry_after() -> None:
 
 
 def test_entry_server_error_keeps_saved_visitor_cookies() -> None:
-    state = _BrowserState('naver', ENTRY, 'NNB', frozenset(), DISCARD_STATE_STATUSES, frozenset(), None, None, True)
+    state = _BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB'))
     state.page_url = ENTRY
     # 5xx 는 사이트 장애라 그 첫 화면의 쿠키로 덮지도, 다시 넣은 방문자 쿠키를 버리지도 않는다 (버리면 재시도가 새 NNB 를 받았다)
     assert not state.keeps_entry_cookies(503)
