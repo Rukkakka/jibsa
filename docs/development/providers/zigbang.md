@@ -22,8 +22,12 @@
 
 ### 인증·헤더
 
-- `account.zigbang.com` 에서 익명 토큰을 받아야 한다. `ZigbangGuestAuth`(httpx `Auth`)가 첫 요청 때 토큰을 발급하고 401 이면 한 번 재발급한다 (2026-10-11 실측: 지금은 가짜 토큰·토큰 없이도 목록·요약·상세·단지·단기임대가 모두 정상 200 이라 토큰 오류가 빈 결과로 숨지 않는다). sync/async 클라이언트가 같은 `_auth` 인스턴스를 공유한다. `/v2/search` 는 토큰이 필요 없어 `auth=None` 으로 부른다.
-- `x-zigbang-platform: www` 헤더가 없으면 일부 상세가 404 를 준다.
+- 토큰 없이 부른다. 로그인하지 않은 웹은 목록·상세 API 에 `Authorization` 을 붙이지 않고 손님 토큰(`account.zigbang.com/v2/unauth/token`)도 받지 않는다 (2026-11-12 웹 화면 8개 요청 137건 실측. 손님 토큰은 휴대폰 인증에서만 쓴다). 예전에는 첫 요청 때 손님 토큰을 받아 모든 요청에 붙였는데(`ZigbangGuestAuth`), 2026-10-11 에도 토큰 없이 모두 200 이었고 같은 날 토큰 없이 매일 API 감시 22개 명령이 모두 정상이라 뺐다.
+- 헤더는 웹 axios 인스턴스가 API 묶음마다 붙이는 것과 같다 (2026-11-12 실측·번들). 모든 요청에 `Accept: application/json, text/plain, */*`(`base_header`)를 붙이고, 묶음마다 더 붙인다:
+  - 옛 API(`/v2/search`·`/v2/local/polygon`): 더 붙이지 않는다 (웹의 옛 `APIS` 클래스).
+  - 주거·상가(`/house/property`·`/v3/items`·`/v2/store`): `x-zigbang-platform: www` (`PLATFORM_HEADERS`). 없으면 일부 상세가 404 를 준다.
+  - 아파트(`/apt`): 위에 `sdk-version: 0.128.0` (`APT_HEADERS`). 단기임대(`stay-apis`): 위에 `sdk-version: zigbang-stay-sdk:0.11.0` (`STAY_HEADERS`). SDK 버전이라 직방 웹이 새로 배포되면 바뀐다. 서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 명령 감시로는 알 수 없어, 매일 API 감시가 첫 화면이 불러오는 `_app` 번들의 SDK 설정(`requestHeaders`)과 대조해 다르면 고장으로 알린다 (`check_zigbang_sdk_versions`). 첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아 jibsa 브라우저로 받는다.
+  - 웹 SDK 는 Sentry trace ID 로 만든 `x-transaction-id` 를 일부 호출에 붙이지만 (번들, 실측 137건에는 없었다) 요청마다 바뀌는 값이라 넣지 않는다.
 
 ### 브라우저 요청 (2026-11-09 실측)
 
@@ -31,8 +35,8 @@
 
 - 첫 화면은 `https://www.zigbang.com/`. 첫 화면이 `apis.zigbang.com` 을 4번 부른다. API 는 모두 다른 출처라 원래 쿠키 없이 응답해
   기다릴 쿠키가 없다.
-- 세 호스트 모두 `www.zigbang.com` 출처를 CORS 로 허용한다: `apis`·`stay-apis` 는 `*`, `account`(손님 토큰)는 `www.zigbang.com`
-  과 credentials. `Authorization`·`x-zigbang-platform`·`content-type` 헤더도 허용한다. 손님 토큰 발급도 브라우저 fetch 로 나간다.
+- `apis`·`stay-apis` 모두 `www.zigbang.com` 출처를 CORS 로 허용한다(`*`). `x-zigbang-platform`·`sdk-version`·`content-type`
+  헤더도 허용한다.
 - 사전 요청 결과를 기억하라는 헤더(`Access-Control-Max-Age`)가 없어 주소가 다른 요청마다 CORS 사전 요청(OPTIONS)이 따라간다.
   세지 않으면 서버로 가는 요청이 정책의 2배까지 됐다 (2026-11-10 실측: 검색 2건에 서버 4건, 기록 2건). 사전 요청도 요청 제한에
   센다 (`count_preflight`).
@@ -74,7 +78,7 @@
 
 ### 단기임대 (`stay`)
 
-- 단기임대(`stay-apis.zigbang.com`)는 지역 전체면 지역 검색(`guest/items/search`), 반경·동 경계면 지도(`guest/items/markers`)로 ID 를 모아 `guest/items/by-ids` 로 50건씩 요약을 받는다. `by-ids` 는 노출 중·검수 완료 매물만 돌려줘서(실측) 목록에서는 상태를 다시 보지 않는다. 예약 달력(`guest/items/{id}/calendar`)은 게스트 토큰으로 403 이다.
+- 단기임대(`stay-apis.zigbang.com`)는 지역 전체면 지역 검색(`guest/items/search`), 반경·동 경계면 지도(`guest/items/markers`)로 ID 를 모아 `guest/items/by-ids` 로 50건씩 요약을 받는다. `by-ids` 는 노출 중·검수 완료 매물만 돌려줘서(실측) 목록에서는 상태를 다시 보지 않는다. 예약 달력(`guest/items/{id}/calendar`)은 손님 토큰을 붙여도 403 이었다 (로그인이 필요해 쓰지 않는다).
 - 단기임대 날짜는 `checkOutDate` 까지 이용일로 센다 (11-02~11-08 = 7일). 검색(`guest/items/search`·`markers`)은 7~84일만 받아 `STAY_SEARCH_MIN_DAYS`·`STAY_SEARCH_MAX_DAYS` 로 요청 전에 막고, 서버의 `MIN/MAX_DURATION_VIOLATION` 도 입력 오류로 바꾼다(`_stay_search_call`). 요금 계산은 매물 계약 범위(최소 1~8주)를 서버가 판단해 7~84일 검사를 하지 않는다.
 - 단기임대 지역 전체 검색은 경계 대신 `○가` 동마다 `guest/items/search` 를 불러 ID 를 합친다(`extra_regions`).
 - 목록 요약에는 주당 요금만 있고 기간 비용(청소비·이용료·할인)은 매물마다 요금 계산(`guest/items/{id}/price-calculation`)에만 있다. `search listings stay --details` 는 앞 `DETAILS_MAX` 건에 요금 계산만 1회씩 불러 `period_cost` 를 붙인다(`attach_stay_period_costs`). 상세(`listing stay-…`)처럼 상세·요약·예약 확인 지도를 다시 받지 않는다: 검색이 같은 날짜로 지도를 걸렀으니 `available` 은 true 로, `--flexibility` 면 null 로 둔다. 2026-10-31 실측: 강남역 4주 가격순 4건의 결제액(보증금 30만 포함)이 상세와 같은 181.2·265.5·288.3·286.9만이고, 3위와 4위가 기간 비용으로는 뒤바뀐다.
@@ -126,4 +130,8 @@
 
 ## API 변경 시 점검
 
-익명 인증은 client의 `ZigbangGuestAuth`, 호스트·플랫폼 헤더·재시도는 client, 유형별 필터 직렬화는 request, catalog·핀·요약·상세는 response를 확인한다. service의 상세 보완 호출과 만료 판정, 제휴 매물의 누락값을 함께 확인한다. 토큰 발급 HTTP도 공통 요청 제한 훅을 유지한다.
+호스트·API 묶음별 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)·재시도는 client, 유형별 필터 직렬화는 request, catalog·핀·요약·상세는 response를 확인한다. service의 상세 보완 호출과 만료 판정, 제휴 매물의 누락값을 함께 확인한다. 웹을 다시 배포하면 `sdk-version` 값이 바뀌어 매일 API 감시가 고장으로 알리니, 감시 내용의 웹 값으로 맞춘다.
+
+## 웹과 다른 점
+
+아직 웹과 대조하지 않았다. 대조 뒤 의도한 차이를 여기에 적는다 (2026-11-12).

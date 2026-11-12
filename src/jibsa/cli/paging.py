@@ -12,6 +12,10 @@
 대화 기록·사용자 화면), 다시 적는 비용은 앞 명령 한 줄이다. 조건을 틀리게 적으면 다른 옵션을 `message` 에 적어 한 번에
 고친다 (2026-10-23 실측: 직방 room 조건 5개 명령 약 100자, 이어 받은 5건 출력 1,126자. `--deposit-max` 를 빠뜨리면
 '--deposit-max (앞: 1000, 지금: 없음)', 옵션 순서를 바꿔 적으면 그대로 이어 받는다).
+
+표에는 만든 jibsa 버전(`jibsa --version` 한 줄)도 담아, 버전이 다른 jibsa 에 주면 처음부터 다시 찾게 한다. 업데이트로 옵션이
+없어지거나 위치의 꼴이 바뀌면 옛 표의 조건·위치를 지금 명령이 읽지 못한다. 개발 설치는 코드를 고쳐도 버전 줄이 같아 코드
+지문을 붙여 가른다 (`build_text`).
 """
 import hashlib
 import json
@@ -50,7 +54,7 @@ NextOption = Annotated[
         '--next',
         help=(
             '앞 결과의 next 값. 지역·조건을 그대로 두고 주면 받은 매물 다음부터 이어 받는다 (--limit 은 바꿀 수 있다). '
-            '같은 컴퓨터에서 하루 동안 쓸 수 있다'
+            '같은 컴퓨터·같은 jibsa 버전에서 하루 동안 쓸 수 있다'
         ),
     ),
 ]
@@ -119,6 +123,15 @@ def _prune(directory: Path, now: float) -> None:
             pass
 
 
+def _version() -> str:
+    """표를 만든·읽는 jibsa (`jibsa --version` 한 줄, 개발 설치는 코드 지문까지. `build_text`). git 주소 설치는 커밋까지 붙어
+    릴리스 사이의 코드도 가른다."""
+    # app 이 소스 명령 모듈을 거쳐 이 모듈을 불러, 순환 import 를 피하려고 여기서 가져온다
+    from jibsa.cli.app import build_text
+
+    return build_text()
+
+
 def encode_next(position: dict[str, Any] | None) -> str | None:
     """서비스가 준 다음 위치를 표로 저장하고 그 번호를 `next` 로 돌려준다. 더 받을 게 없으면(None) None.
 
@@ -131,7 +144,7 @@ def encode_next(position: dict[str, Any] | None) -> str | None:
         return None
     command, params = _search()
     raw = json.dumps(
-        {'command': command, 'params': params, 'position': position},
+        {'command': command, 'params': params, 'position': position, 'jibsa': _version()},
         ensure_ascii=False, sort_keys=True, separators=(',', ':'),
     )
     token = hashlib.sha256(raw.encode()).hexdigest()[:TOKEN_LENGTH]
@@ -151,8 +164,8 @@ def decode_next(token: str | None) -> dict[str, Any] | None:
     명령의 오류 처리(`handle_errors`) 밖에서 부르므로 사용법 오류로만 끝낸다.
 
     Raises:
-        HintedBadParameter: 번호 꼴이 아니거나, 표가 없거나(하루 지남·다른 컴퓨터) 읽을 수 없거나, 명령·지역·조건이
-            표를 받은 검색과 다를 때.
+        HintedBadParameter: 번호 꼴이 아니거나, 표가 없거나(하루 지남·다른 컴퓨터) 읽을 수 없거나, 표를 만든 jibsa 버전이
+            다르거나, 명령·지역·조건이 표를 받은 검색과 다를 때.
     """
     if token is None:
         return None
@@ -164,6 +177,7 @@ def decode_next(token: str | None) -> dict[str, Any] | None:
             raise FileNotFoundError(path)
         record = json.loads(path.read_text(encoding='utf-8'))
         command, params, position = record['command'], record['params'], record['position']
+        made_by = record.get('jibsa')
         if not isinstance(params, dict) or not isinstance(position, dict):
             raise TypeError('표 형식이 다릅니다')
     except FileNotFoundError:
@@ -176,6 +190,16 @@ def decode_next(token: str | None) -> dict[str, Any] | None:
         raise HintedBadParameter(
             f'이 next 의 이어 받기 표를 읽지 못했습니다 ({type(exc).__name__}: {exc})', '--next', RESTART_HINT,
         ) from None
+    running = _version()
+    if made_by != running:
+        # 업데이트 전의 표는 조건 비교가 없어진 옵션을 '다르다' 고 들어 따를 수 없는 안내가 되거나, 조건이 같으면 바뀐 꼴의
+        # 위치를 소스가 읽지 못한다 (2026-11-12 리뷰 실측: 0.12.0 의 당근 동 검색 next 는 '지역·조건이 다릅니다: region (앞:
+        # 없음, 지금: 역삼동); dong (앞: 역삼동, 지금: 없음); expand (앞: 0, 지금: 없음)' 이었다)
+        raise HintedBadParameter(
+            f"다른 버전의 jibsa 가 만든 next 입니다 (만든 버전: {made_by or '이전 jibsa'}, 지금: {running})",
+            '--next',
+            RESTART_HINT,
+        )
     current_command, current_params = _search()
     if command != current_command:
         raise HintedBadParameter(

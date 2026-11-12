@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import json
 import sys
@@ -42,20 +43,26 @@ def stderr_error(capsys: pytest.CaptureFixture[str]) -> dict:
         ['naver', 'market-price', '100001', '--pyeong', '1', '--period', '10년'],
         ['daangn', 'search', 'listings'],                                        # 동 이름도 좌표도 없음
         ['daangn', 'search', 'listings', '역삼동', '--lat', '37.5', '--lng', '127.0'],  # 동 이름과 좌표를 함께
-        ['daangn', 'search', 'listings', '--lat', '37.5', '--lng', '127.0', '--expand', '2'],  # 동 이름 전용 옵션
-        ['daangn', 'search', 'listings', '역삼동', '--radius', '2', '--expand', '1'],  # 반경 검색에 동 단위 전용 옵션
+        ['daangn', 'search', 'listings', '역삼동', '--station', '역삼역'],  # 위치 입력은 하나만
+        ['daangn', 'search', 'listings', '--station', '역삼역', '--zoom', '14'],  # 줌은 지도 범위 검색만
         ['daangn', 'search', 'locations'],                                        # 동 이름도 좌표도 없음
         ['daangn', 'real-price'],                                    # 단지 ID 도 --item 도 없음
         ['daangn', 'real-price', '100', '--item', '200'],            # 단지 ID 와 --item 을 함께
         ['daangn', 'real-price', '--item', '200', '--area', '84'],   # --area 는 단지로 볼 때만
         ['daangn', 'region-real-price', '강남구', '--new-high', '--trade', '전세'],  # 신고가는 매매만
-        ['daangn', 'region-real-price', '강남구', '--trade', '월세', '--sort', '가격'],  # 가격 순은 매매만
+        ['daangn', 'region-real-price', '강남구', '--trade', '월세', '--sort', '가격'],  # 없앤 --sort 는 바뀐 사용법 안내 (CHANGED_USAGE)
         ['daangn', 'search', 'commute'],                                       # 회사 위치도 좌표도 없음
         ['daangn', 'search', 'listings', '역삼동', '--deposit-min', '2000', '--deposit-max', '1000'],
         ['daangn', 'search', 'listings', '--complex', '100', '--rent-min', '80', '--rent-max', '60'],
-        ['daangn', 'search', 'commute', '강남역', '--area-min', '30', '--area-max', '20'],
+        ['daangn', 'search', 'commute', '역삼동', '--area-min', '30', '--area-max', '20'],
         ['daangn', 'search', 'complexes', '역삼동', '--household-min', '500', '--household-max', '100'],
         ['daangn', 'search', 'listings', '역삼동', '--area-min', 'nan'],
+        ['daangn', 'search', 'listings', '--address', '테헤란로 152', '--station', '역삼역'],  # 주소도 위치 입력 하나
+        ['daangn', 'search', 'complexes', '역삼동', '--lat', '37.5', '--lng', '127.0'],  # 지역 이름과 좌표를 함께
+        ['daangn', 'search', 'complexes', '역삼동', '--zoom', '14'],                     # 줌은 좌표 범위만
+        ['daangn', 'real-price', '100', '--month', '2026-8'],                       # 계약 연월은 YYYY-MM
+        ['daangn', 'real-price', '100', '--month', '2026-08', '--years', '1'],       # 한 달과 기간을 함께
+        ['daangn', 'real-price', '--item', '200', '--month', '2026-08'],              # 매물 건물 실거래는 달을 받지 않는다
         ['naver', 'trend', '역삼동', '--trade', '월세'],                        # 네이버가 월세 추이를 주지 않는다
         ['naver', 'trend', '역삼동', '--pyeong-range', '35'],                   # 평형대는 10평 단위
         ['naver', 'search', 'listings', '한남동', '--redevelopment', '9000001'],  # 구역과 지역을 함께
@@ -79,11 +86,18 @@ def test_usage_errors_are_json_with_exit_2(
     assert error['hint'].endswith("--help' 로 사용법을 확인하세요")
 
 
+def test_removed_daangn_command_hint_names_naver_redevelopment(capsys: pytest.CaptureFixture[str]) -> None:
+    # 없앤 명령은 Typer 의 'No such command ...' 문구를 정규식으로 읽어 찾는다 (subcommand_hint 도 같은 정규식).
+    # Typer 를 올려 문구가 바뀌면 일반 --help 안내로 조용히 바뀌어 위 테스트로는 드러나지 않는다
+    assert run(['daangn', 'developments', '역삼역']) == 2
+    assert 'jibsa naver search redevelopment' in stderr_error(capsys)['hint']
+
+
 @pytest.mark.parametrize('command,place,options', [
     (['search', 'listings'], '역삼동', ['-t', '오피스텔', '--structure', '분리형']),
     (['search', 'listings'], '역삼동', ['-t', '원룸', '--household-min', '100']),
-    (['search', 'commute'], '강남역', ['-t', '오피스텔', '--structure', '분리형']),
-    (['search', 'commute'], '강남역', ['--floor', '잘못된층']),
+    (['search', 'commute'], '역삼동', ['-t', '오피스텔', '--structure', '분리형']),
+    (['search', 'commute'], '역삼동', ['--floor', '잘못된층']),
 ])
 def test_daangn_invalid_filters_do_not_request_location(
     command: list[str],
@@ -108,7 +122,7 @@ def test_daangn_invalid_filters_do_not_request_location(
     ('arg', 'joined'),
     [
         ('--complex 111515 --pyeong 8,9 --compact', True),  # zsh 에서 따옴표 없는 $P 로 넘긴 옵션 묶음
-        ('대치동 --city 강남구', True),                      # 지역 인자에 옵션이 붙음
+        ('대치동 --limit 5', True),                         # 지역 인자에 옵션이 붙음
         ('-t 아파트', True),
         ('역삼동 719-28', False),                           # 번지의 '-' 는 옵션이 아니다
         ('강남구 신사동', False),
@@ -134,6 +148,17 @@ def test_joined_options_are_caught_without_blocking_plain_values(arg: str, joine
             ['naver', 'search', 'listings', '-t', '원룸', '역삼동', '--limit=5', '719-28'],
             ['naver', 'search', 'listings', '-t', '원룸', '역삼동 719-28', '--limit=5'],
         ),
+        # 지역 인자와 함께 줄 수 없는 이름 옵션은 값 바로 뒤 낱말을 그 값에 잇는다
+        (
+            ['daangn', 'search', 'listings', '--address', '테헤란로', '152', '-t', '원룸'],
+            ['daangn', 'search', 'listings', '--address', '테헤란로 152', '-t', '원룸'],
+        ),
+        # 역은 노선 이름 뒤 낱말만 잇는다. '역' 없이 쓴 역 뒤의 동 이름은 지역 인자로 남아 요청 전에 막힌다
+        (
+            ['daangn', 'search', 'listings', '--station', '서울5호선', '양평역', '--limit', '1'],
+            ['daangn', 'search', 'listings', '--station', '서울5호선 양평역', '--limit', '1'],
+        ),
+        (['daangn', 'search', 'listings', '--station', '강남', '역삼동'], None),
         # 옵션 값(-t 원룸)과 ID 인자는 잇지 않는다
         (['daangn', 'search', 'listings', '-t', '원룸', '대치동'], None),
         (['naver', 'listing', '111', '222'], None),
@@ -300,7 +325,7 @@ def test_daangn_coordinate_search_with_rejected_map_query_is_upstream_error(
     def rejected(*args, **kwargs):
         raise FeedQueryRejectedError('PERSISTED_QUERY_NOT_IN_LIST')
 
-    monkeypatch.setattr(daangn_cli, 'search_area', rejected)
+    monkeypatch.setattr(daangn_cli, 'search_map_area', rejected)
     monkeypatch.setattr(daangn_cli, 'region_by_coordinate', rejected)
     for argv in (['daangn', 'search', 'listings', '--lat', '37.5', '--lng', '127.0'], ['daangn', 'search', 'locations', '--lat', '37.5', '--lng', '127.0']):
         assert run(argv) == 1
@@ -309,40 +334,28 @@ def test_daangn_coordinate_search_with_rejected_map_query_is_upstream_error(
         assert '동 이름으로' in error['hint']
 
 
-@pytest.mark.parametrize('naver', ['found', 'not-found', 'blocked'])
-def test_daangn_geocode_falls_back_to_naver_when_zigbang_blocked(monkeypatch: pytest.MonkeyPatch, naver: str) -> None:
-    import jibsa.cli.daangn as daangn_cli
-    from jibsa.core.errors import RegionNotFoundError
-    from jibsa.core.ratelimit import RateLimitedError
-    from jibsa.providers.daangn.api.client import DaangnClient
-    from jibsa.providers.naver.service.region import NaverRegion
-
-    # 실제 함수처럼 radius_km 는 키워드로만 받는다. 위치 인자로 부르면 TypeError 라 그 실수를 잡는다
-    def zigbang(client, name, *, radius_km):
-        raise RateLimitedError('zigbang', 120, 'cooldown')
-
-    def naver_region(client, name, radius_km):
-        if naver == 'blocked':
-            raise RateLimitedError('naver', 900, 'cooldown')
-        if naver == 'not-found':
-            raise RegionNotFoundError(name)
-        return NaverRegion(name='역삼역', lat=37.5006, lng=127.0364), []
-
-    # 당근 역·주소 검색이 확실히 찾지 못한 이름이라 직방으로 넘어간다
-    monkeypatch.setattr(daangn_cli, 'find_place', lambda client, name: None)
-    monkeypatch.setattr(daangn_cli, 'resolve_region_with_notes', zigbang)
-    monkeypatch.setattr(daangn_cli, 'resolve_naver_region', naver_region)
-    if naver == 'found':
-        region, notes, finder = daangn_cli._geocode(DaangnClient(), '역삼역', 1.0)
-        assert (region.lat, region.lng, finder) == (37.5006, 127.0364, '네이버')
-        assert notes == ["[실패] 직방이 요청 제한으로 막혀 있어 '역삼역' 위치를 네이버 지역 검색으로 찾았습니다"]
-        return
-    # 네이버로도 못 찾으면 막힌 직방의 에러에, 지금 되는 방법(당근 동 이름, 좌표)을 안내한다
-    with pytest.raises(RateLimitedError) as exc:
-        daangn_cli._geocode(DaangnClient(), '서울대학교', 1.0)
-    assert exc.value.details['source'] == 'zigbang'
-    assert ('네이버도 막혀' if naver == 'blocked' else '네이버 지역 검색으로는 찾지 못했습니다') in exc.value.hint
-    assert '당근 동 이름' in exc.value.hint and '어느 소스로도' not in exc.value.hint
+def test_sources_do_not_import_each_other() -> None:
+    # 소스끼리 부르지 않는다 (AGENTS.md). 예전에는 당근 위치 찾기가 직방·네이버를 불러, 당근 웹과 다른 결과를 내고 직방 요청
+    # 제한이 당근 명령을 막았다 (#215). 소스 목록을 모두 아는 곳은 cli/app.py 뿐이다
+    root = Path(__file__).resolve().parents[1] / 'src' / 'jibsa'
+    sources = ('zigbang', 'naver', 'daangn', 'dabang')
+    found: list[str] = []
+    for source in sources:
+        others = {other for other in sources if other != source}
+        for path in [*(root / 'providers' / source).rglob('*.py'), root / 'cli' / f'{source}.py']:
+            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    # `from jibsa.cli import zigbang` 처럼 패키지에서 소스 모듈을 가져오는 꼴도 본다
+                    modules = [node.module, *(f'{node.module}.{alias.name}' for alias in node.names)]
+                else:
+                    continue
+                for module in modules:
+                    parts = module.split('.')
+                    if parts[:1] == ['jibsa'] and len(parts) > 2 and parts[1] in ('providers', 'cli') and parts[2] in others:
+                        found.append(f'{path.relative_to(root)}: {module}')
+    assert found == []
 
 
 # --- 매일 API 감시 ---

@@ -8,21 +8,8 @@ from typing import Annotated
 
 
 # ---------------------------------------------------------------------------
-# POST account.zigbang.com/v2/unauth/token
+# 여러 엔드포인트가 같이 쓰는 중첩 모델 (검색 결과·지도 핀·좌표)
 # ---------------------------------------------------------------------------
-
-class ZigbangUnauthTokenV2ResponseModel(ResponseModel):
-    """익명(게스트) 토큰 발급 응답."""
-
-    result: Annotated[
-        bool,
-        Field(description='발급 성공 여부')
-    ]
-    token: Annotated[
-        str,
-        Field(repr=False, description='apis.zigbang.com 호출에 Bearer 로 붙이는 UUID 토큰')
-    ]
-
 
 class ZigbangSearchSourceModel(ResponseModel):
     """검색 결과의 원본 색인 문서. 결과 type 에 따라 채워지는 필드가 다르다."""
@@ -265,7 +252,7 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
     `items` (snake_case) 와 `itemSummaries` (camelCase) 가 같은 매물을 다른
     모양으로 담는다. 정규화에는 필드가 더 많은 `items` 를 쓴다. 토큰이
     잘못되거나 없어도 같은 결과가 200 으로 온다 (2026-10-11 실측: 가짜 토큰·토큰 없음 모두
-    정상 요약. 상세·`/v3/items`·단지·단기임대 검색도 같다). 그래서 토큰 오류가 빈 결과로 숨지 않는다.
+    정상 요약. 상세·`/v3/items`·단지·단기임대 검색도 같다). jibsa 는 로그인하지 않은 웹처럼 토큰 없이 부른다.
     """
 
     items: Annotated[

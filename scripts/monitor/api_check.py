@@ -18,16 +18,21 @@
     python scripts/monitor/api_check.py report result-*.json [--issues] [--dry-run]
 
 새 CLI 명령이나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 만들면 GROUPS 에 넣는다. tests/test_cli.py 가 CLI 명령 목록과 대조한다.
+
+명령 말고 따로 보는 것(`EXTRA_CHECKS`): 직방 웹이 API 에 붙이는 SDK 버전이 jibsa 값과 같은지. 서버가 옛 값도 받아 명령은
+정상으로 돌아 명령 감시로는 알 수 없다.
 """
 
 import argparse
 import datetime
 import json
 import os
+import re
 import string
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,7 +73,8 @@ class Step:
         captures: 이 결과에서 뒤 명령에 넘길 값.
         may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다
             (다방 청약 일정).
-        empty_ok: 빈 목록도 사이트의 평소 답인 칸이면 True. 비어 있어도 정상이다 (당근 인기 단지는 이른 아침에 자주 빈다).
+        empty_ok: 빈 목록도 사이트의 평소 답인 칸이면 True. 비어 있어도 정상이다 (당근 인기 급상승 단지. 동으로 부를 때 이른
+            아침에 자주 비었다).
     """
 
     label: str
@@ -99,8 +105,8 @@ DABANG_LISTINGS: tuple[str, ...] = ('dabang', 'search', 'listings')
 # 러너 하나가 소스 하나를 돈다. 러너마다 IP 와 요청 제한 상태가 따로라 한 소스가 막혀도 다른 소스 검사는 그대로 된다.
 # 매물 검색은 찾는 방식(동 이름 경계·역 반경·좌표 반경·단지)마다 쓰는 API 가 달라 방식별로 부른다. --limit 은 작게 준다
 # (감시는 결과가 있는지만 보고, 네이버는 요청 제한이 가장 엄격하다). 이어 받기(--next)는 첫 결과에서 쓰지 않는 서버 커서·offset
-# (직방 아파트 offset, 당근 피드·역 목록 after, 네이버 seed·lastInfo)을 보내 사이트가 바꾸면 따로 깨질 수 있어, 그 방식마다 앞 결과의
-# next 로 한 번 더 부른다. 인자는 앞 명령과 같아야 한다 (다른 지역·조건의 next 는 INVALID_ARGUMENT)
+# (직방 아파트 offset, 당근 동·지도 범위·역·대학 목록 after, 네이버 seed·lastInfo)을 보내 사이트가 바꾸면 따로 깨질 수 있어,
+# 그 방식마다 앞 결과의 next 로 한 번 더 부른다. 인자는 앞 명령과 같아야 한다 (다른 지역·조건의 next 는 INVALID_ARGUMENT)
 GROUPS: dict[str, tuple[Step, ...]] = {
     'zigbang': (
         Step('지역 찾기 역삼동', ('zigbang', 'search', 'locations'), ('역삼동',), 'results'),
@@ -181,42 +187,66 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('재개발 구역 매물', NAVER_LISTINGS, ('--redevelopment', '{redevelopment}', '--limit', '2'), 'listings'),
     ),
     'daangn': (
+        # 웹 지도 검색창처럼 지역(searchRegion)·역·대학·학교·단지 검색을 한꺼번에 부른다
         Step('지역 찾기 역삼동', ('daangn', 'search', 'locations'), ('역삼동',), 'results'),
-        # 지도 페이지(SSR)를 읽는 경로. 역삼동은 같은 이름 후보가 둘이라 후보마다 지도 페이지를 확인하는 경로도 지난다
+        # 지역은 웹 지역 검색(searchRegion)으로 찾고, 동 매물은 웹 지도에서 동을 누른 목록(articleByClusterId)과 동 거품 수
+        # (articleClusters)로 받는다. 이어 받기는 그 목록의 커서다
         Step(
             '매물 동 역삼동', DAANGN_LISTINGS, ('역삼동', '--limit', '2'), 'listings',
-            (Capture('article', 'listings', 'id'), Capture('map_next', '', 'next')),
+            (Capture('article', 'listings', 'id'), Capture('dong_next', '', 'next')),
         ),
-        # 조건이 없으면 지도 페이지(SSR)의 커서로 피드를 이어 받는다
-        Step('매물 동 이어 받기 역삼동', DAANGN_LISTINGS, ('역삼동', '--limit', '2', '--next', '{map_next}'), 'listings'),
-        # 여러 동('○가')은 동 피드를 커서에 담긴 시각 순으로 합친다. 커서 형식이 바뀌면 next 가 없어 이어 받기가 '확인 못 함' 이 된다
-        Step('매물 여러 동 성수동', DAANGN_LISTINGS, ('성수동', '--limit', '2'), 'listings', (Capture('ga_next', '', 'next'),)),
-        Step('매물 여러 동 이어 받기 성수동', DAANGN_LISTINGS, ('성수동', '--limit', '2', '--next', '{ga_next}'), 'listings'),
+        Step('매물 동 이어 받기 역삼동', DAANGN_LISTINGS, ('역삼동', '--limit', '2', '--next', '{dong_next}'), 'listings'),
         Step('매물 상세', ('daangn', 'listing'), ('{article}',), 'id'),
-        # 조건이 있으면 지도 페이지 대신 필터 API(articleFeed·articlesCount)로 받는다
+        # 조건(propertyFilter)을 건 같은 목록. 서버가 조건을 받는지 본다
         Step(
             '매물 동 조건 역삼동 월세', DAANGN_LISTINGS, ('역삼동', '--trade', '월세', '--limit', '2'), 'listings',
-            (Capture('feed_next', '', 'next'),),
+            (Capture('dong_trade_next', '', 'next'),),
         ),
         Step(
-            '매물 동 조건 이어 받기 역삼동 월세', DAANGN_LISTINGS, ('역삼동', '--trade', '월세', '--limit', '2', '--next', '{feed_next}'),
-            'listings',
+            '매물 동 조건 이어 받기 역삼동 월세', DAANGN_LISTINGS,
+            ('역삼동', '--trade', '월세', '--limit', '2', '--next', '{dong_trade_next}'), 'listings',
         ),
-        Step('매물 역 강남역', DAANGN_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('station_next', '', 'next'),)),
-        Step('매물 역 이어 받기 강남역', DAANGN_LISTINGS, ('강남역', '--limit', '2', '--next', '{station_next}'), 'listings'),
-        Step('매물 반경 강남역', DAANGN_LISTINGS, ('강남역', '--radius', '0.5', '--limit', '2'), 'listings'),
-        Step('출퇴근 강남역', ('daangn', 'search', 'commute'), ('강남역', '--limit', '2'), 'stations'),
+        Step(
+            '매물 역 강남역', DAANGN_LISTINGS, ('--station', '강남역', '--limit', '2'), 'listings',
+            (Capture('station_next', '', 'next'),),
+        ),
+        Step('매물 역 이어 받기 강남역', DAANGN_LISTINGS, ('--station', '강남역', '--limit', '2', '--next', '{station_next}'), 'listings'),
+        # 구 이름과 좌표는 웹 지도 화면 범위로 articleFeed·articlesCount 를 부른다 (구는 searchRegion 의 구 중심)
+        Step('매물 구 강남구', DAANGN_LISTINGS, ('강남구', '--limit', '2'), 'listings', (Capture('area_next', '', 'next'),)),
+        Step('매물 구 이어 받기 강남구', DAANGN_LISTINGS, ('강남구', '--limit', '2', '--next', '{area_next}'), 'listings'),
+        Step('매물 좌표 역삼동', DAANGN_LISTINGS, ('--lat', '37.5004', '--lng', '127.0387', '--limit', '2'), 'listings'),
+        # 도로명 주소는 웹 검색창 주소 모드(searchAddress → unitByAddress)로 좌표를 받아 같은 지도 범위 목록을 부른다
+        Step('매물 주소 테헤란로 152', DAANGN_LISTINGS, ('--address', '테헤란로 152', '--limit', '2'), 'listings'),
+        # 대학은 웹 대학 검색(searchSchoolPois)으로 찾고 대학 페이지 목록(universityArticleConnection)을 받는다. 이어 받기는 그
+        # 목록의 커서다
+        Step(
+            '매물 대학 연세대', DAANGN_LISTINGS, ('--university', '연세대학교 신촌캠퍼스', '--limit', '2'), 'listings',
+            (Capture('university_next', '', 'next'),),
+        ),
+        Step(
+            '매물 대학 이어 받기 연세대', DAANGN_LISTINGS,
+            ('--university', '연세대학교 신촌캠퍼스', '--limit', '2', '--next', '{university_next}'), 'listings',
+        ),
+        Step('출퇴근 강남역', ('daangn', 'search', 'commute'), ('--station', '강남역', '--limit', '2'), 'stations'),
         Step(
             '단지 목록 역삼동', ('daangn', 'search', 'complexes'), ('역삼동', '--limit', '2'), 'complexes',
             (Capture('complex', 'complexes', 'complex_id'),),
         ),
-        Step('단지', ('daangn', 'complex'), ('{complex}',), 'name'),
+        # 좌표는 동 클러스터 목록이 아니라 웹 지도 단지 탭의 '이 영역 단지' 쿼리(searchComplexes 지도 범위)다
+        Step('단지 목록 좌표 역삼동', ('daangn', 'search', 'complexes'), ('--lat', '37.5006', '--lng', '127.0366', '--limit', '2'), 'complexes'),
+        # 아파트형 단지는 평형이 공급 평 묶음이다. 세대수가 가장 많은 평형을 실거래 평형 거르기(ptpCds)에 넘긴다
+        Step(
+            '단지', ('daangn', 'complex'), ('{complex}',), 'name',
+            (Capture('daangn_pyeong', 'pyeongs', 'pyeong', largest='household_count'),),
+        ),
         # 단지 매물은 지도 피드가 아니라 단지 화면 쿼리(ComplexArticleListPanelQuery)로 받는다
         Step(
             '단지 매물', DAANGN_LISTINGS, ('--complex', '{complex}', '--limit', '2'), 'listings',
             (Capture('complex_article', 'listings', 'id'),),
         ),
         Step('단지 실거래가', ('daangn', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
+        # --pyeong 은 단지 비교 칸으로 평형 타입 코드를 받아 실거래를 거른다 (웹 단지 화면 실거래와 같은 ptpCds)
+        Step('단지 실거래가 평형', ('daangn', 'real-price'), ('{complex}', '--pyeong', '{daangn_pyeong}', '--limit', '3'), 'transactions'),
         # 매물 번호로 건물 실거래를 받는 쿼리(articleByOriginalArticleId). 동 매물은 사무실·빌라라 거래가 없을 수 있어 단지 매물로 본다
         Step('매물 건물 실거래가', ('daangn', 'real-price'), ('--item', '{complex_article}', '--limit', '3'), 'transactions'),
         Step('단지 시세 추이', ('daangn', 'price-trend'), ('{complex}',), 'points'),
@@ -227,27 +257,28 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단지 비교', ('daangn', 'compare'), ('{complex}', '{neighbor}'), 'complexes'),
         Step('학교 역삼초등학교', ('daangn', 'school'), ('역삼초등학교',), 'complexes'),
         Step('동 실거래 역삼동', ('daangn', 'region-real-price'), ('역삼동', '--limit', '3'), 'transactions'),
-        # 신고가는 다른 쿼리(realsaleNewHighFeed)다. 동 하나는 신고가가 없을 수 있어 구로 본다
-        Step('신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--limit', '3'), 'transactions'),
-        Step('동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes'),
+        # 신고가는 다른 쿼리(realsaleNewHighFeed)다. 기본(웹처럼 최근 공개일 하루치)은 구도 비는 날이 있어 이전 공개일까지 본다
         Step(
-            '개발 호재 한남동', ('daangn', 'developments'), ('한남동', '--limit', '2'), 'developments',
-            (Capture('development', 'developments', 'id'),),
+            '신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--previous-days', '--limit', '3'),
+            'transactions',
         ),
-        Step('개발 사업', ('daangn', 'development'), ('{development}',), 'name'),
+        Step('동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes'),
+        # empty_ok 를 붙이지 않는다. {complex}(역삼래미안 10697092)는 20곳을 준다 (2026-11-11 실측). 비면 필드 이름이 바뀌어
+        # 빈 목록이 된 것일 가능성이 커 고장으로 본다
         Step(
-            '어린이집 역삼역', ('daangn', 'preschools'), ('역삼역', '--limit', '2'), 'preschools',
+            '단지 근처 어린이집', ('daangn', 'preschools'), ('{complex}',), 'preschools',
             (Capture('preschool', 'preschools', 'id'),),
         ),
         Step('어린이집', ('daangn', 'preschool'), ('{preschool}',), 'name'),
         Step(
-            '좋은 동네 서울', ('daangn', 'good-neighborhoods'), ('--lifestyle', '직장인자취', '--region', '서울', '--limit', '3'),
+            '좋은 동네 서울', ('daangn', 'good-neighborhoods'), ('--lifestyle', '직장인자취', '--region', '서울'),
             'neighborhoods',
         ),
-        # 인기 단지는 같은 동에도 빈 목록을 줄 때가 있다 (역삼동 2026-10-11 4곳, 2026-10-20 아침 0곳, 같은 날 낮 12곳)
-        # 같은 동도 때에 따라 빈 목록이고 감시가 도는 아침에 잦다 (2026-10-27 실측: 아침 7번 중 5번 0곳, 낮·저녁 10~22곳).
-        # 확인 못 함으로 두면 사흘 연속 막힘으로 잘못 알린다 (#142). 쿼리 거절·응답 형식 변경은 그대로 고장이다
-        Step('인기 단지 역삼동', ('daangn', 'trending-complexes'), ('역삼동',), 'complexes', empty_ok=True),
+        # 인기 급상승 단지는 웹처럼 시·도·구로만 부르고 동은 받지 않는다 (`trending_region_of`). 빈 목록도 정상으로 보는 것은
+        # 예전에 동으로 부를 때 같은 동도 때에 따라 비었고 감시가 도는 아침에 잦았기 때문이다 (역삼동 2026-10-20 아침 0곳·같은
+        # 날 낮 12곳, 2026-10-27 실측: 아침 7번 중 5번 0곳, 낮·저녁 10~22곳). 서울로 부른 아침 감시 결과는 아직 없어 그대로
+        # 둔다. 확인 못 함으로 두면 사흘 연속 막힘으로 잘못 알린다 (#142). 쿼리 거절·응답 형식 변경은 그대로 고장이다
+        Step('인기 급상승 단지 서울', ('daangn', 'trending-complexes'), ('서울',), 'complexes', empty_ok=True),
         Step('인기 매물 역삼동', ('daangn', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
     ),
     'dabang': (
@@ -338,6 +369,10 @@ GROUPS: dict[str, tuple[Step, ...]] = {
 
 # 매일 실행(워크플로 matrix)이 도는 소스. matrix 와 같게 둔다. 네이버는 GitHub 러너에서 응답을 받지 못해 로컬에서만 돌린다
 DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn', 'dabang')
+# 직방 첫 화면이 바로 불러오는 _app 번들. 웹 SDK 설정(`requestHeaders = {"sdk-version": ...}`)이 여기 있다 (2026-11-12 실측: 9개 중
+# 아파트 0.128.0 과 단기임대 zigbang-stay-sdk:0.11.0 이 든 2개)
+ZIGBANG_APP_CHUNK: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/chunks/pages/_app-[^"]+\.js)"')
+ZIGBANG_SDK_VERSION: re.Pattern[str] = re.compile(r'"sdk-version":"([^"]+)"')
 
 OK: str = 'ok'
 BROKEN: str = 'broken'
@@ -375,8 +410,7 @@ def _is_unknown(error: dict[str, Any]) -> bool:
     if code in UNKNOWN_CODES:
         return True
     # 사이트 첫 화면이 접속을 막은 에러(`blocked: true`, 401·403·451)는 러너 IP·봇 차단이라 확인 못 함이다. 사흘 이어지면
-    # api-blocked 로 알린다. 당근이 직방으로 위치를 찾다 막힌 에러도 직방의 `blocked` 를 이어받는다. 첫 화면의 404 와 다른
-    # 출처로 넘어감은 첫 화면 주소·도메인이 바뀌었을 수 있어 고장이다
+    # api-blocked 로 알린다. 첫 화면의 404 와 다른 출처로 넘어감은 첫 화면 주소·도메인이 바뀌었을 수 있어 고장이다
     if error.get('blocked') is True:
         return True
     status = error.get('status')
@@ -439,8 +473,9 @@ def _run_step(step: Step, values: dict[str, str]) -> tuple[str, str, dict[str, A
 
 
 def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str, dict[str, Any] | None]:
-    # 결과는 나오지만 고쳐야 한다는 안내. 웹 쿼리가 바뀌어 예전 방식으로 돌았거나(당근 FEED_FALLBACK_NOTE), 덤 조회·대체 경로
-    # (단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했다(당근 partial_failure_note).
+    # 결과는 나오지만 고쳐야 한다는 안내. 지역 검색이 바뀌었을 수 있어 대체 경로로 찾았거나(직방 단기임대가 지역 대신 지도로),
+    # 덤 조회(단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했거나(당근
+    # partial_failure_note, 다방 단지 최근 실거래 요약), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
     # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
     # 만든다) 여기서 가져온다
     from jibsa.core.listing import (
@@ -489,6 +524,78 @@ def _today() -> datetime.date:
     return datetime.datetime.now(KST).date()
 
 
+def check_zigbang_sdk_versions() -> dict[str, str]:
+    """직방 웹이 아파트·단기임대 API 에 붙이는 `sdk-version` 이 jibsa 값(`APT_HEADERS`·`STAY_HEADERS`)과 같은지 본다.
+
+    서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 값이 낡아도 명령 감시는 정상이다. 그래도
+    헤더는 사이트 웹이 실제로 붙이는 값이어야 해서, 직방 웹이 새로 배포해 버전이 바뀌면 고장으로 알려 값을 갱신하게 한다.
+    첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아(같은 날 실측) jibsa 브라우저로 받는다. 번들(s.zigbang.com)은 CORS 를
+    모두 허용해 같은 탭에서 받는다. 요청 제한 훅을 거쳐 첫 화면 1건과 번들 9건쯤이 나간다.
+
+    직방 명령 뒤에 돌아(`EXTRA_CHECKS`) 브라우저는 그 명령들이 남긴 쿠키로 빈 페이지를 띄우고 첫 화면을 다시 열지 않는다. 그래서
+    첫 화면 HTML 은 여기서 받는 1건뿐이다 (2026-11-12 리뷰 오탐에 실측: `zigbang search locations` 바로 뒤 이 검사의 브라우저 준비가
+    '남긴 쿠키' 였고 www.zigbang.com 요청은 1건). 남긴 쿠키를 쓸 수 없을 때(첫 화면을 연 지 30분이 넘음 등)만 브라우저가 첫 화면을
+    연 뒤 한 번 더 받는다.
+    """
+    import httpx
+
+    from jibsa.core.browser import NAVIGATION_EXTENSION
+    from jibsa.core.errors import JibsaError
+    from jibsa.providers.zigbang.api.client import (
+        APT_HEADERS,
+        STAY_HEADERS,
+        ZigbangClient,
+    )
+
+    step = {'label': '직방 웹 SDK 버전 (아파트·단기임대 헤더)', 'command': 'sdk-version'}
+    ours = [APT_HEADERS['sdk-version'], STAY_HEADERS['sdk-version']]
+    print('::group::직방 웹 SDK 버전', flush=True)
+    zigbang = ZigbangClient()
+    web: set[str] = set()
+    try:
+        with httpx.Client(
+            transport=zigbang.browser_transport(), event_hooks=zigbang.rate_limit_hooks(), timeout=zigbang.timeout,
+        ) as client:
+            home = client.get(zigbang.browser_entry_url, extensions={NAVIGATION_EXTENSION: True})
+            home.raise_for_status()
+            chunks = sorted(set(ZIGBANG_APP_CHUNK.findall(home.text)))
+            for url in chunks:
+                chunk = client.get(url)
+                chunk.raise_for_status()
+                web |= set(ZIGBANG_SDK_VERSION.findall(chunk.text))
+    # 요청 제한·네트워크·첫 화면 차단 등(httpx·jibsa 에러)은 사이트가 바뀐 것인지 알 수 없다
+    except (httpx.HTTPError, JibsaError) as exc:
+        print(f'{type(exc).__name__}: {exc}')
+        print('::endgroup::', flush=True)
+        return {**step, 'status': UNKNOWN, 'detail': f'번들을 받지 못함: {type(exc).__name__}: {str(exc)[:150]}'}
+    # 그 밖의 예외는 이 검사 코드가 틀린 것이라 확인 못 함으로 숨기지 않고 고장으로 알린다. 올리지 않는 것은 올리면 결과 파일을
+    # 못 써 앞 명령 결과까지 잃기 때문이다
+    except Exception as exc:
+        print(f'{type(exc).__name__}: {exc}')
+        print('::endgroup::', flush=True)
+        return {**step, 'status': BROKEN, 'detail': f'SDK 버전 검사 코드 오류: {type(exc).__name__}: {str(exc)[:150]}'}
+    print(f'_app 번들 {len(chunks)}개, sdk-version {sorted(web)}')
+    print('::endgroup::', flush=True)
+    if not web:
+        return {**step, 'status': BROKEN, 'detail': '첫 화면 _app 번들에서 sdk-version 을 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
+    missing = [value for value in ours if value not in web]
+    if missing:
+        return {
+            **step, 'status': BROKEN,
+            'detail': (
+                f"직방 웹 SDK 버전이 바뀜: 웹 번들에 jibsa 값({', '.join(missing)})이 없음 (웹: {', '.join(sorted(web))}). "
+                'zigbang api/client.py 의 APT_HEADERS·STAY_HEADERS 를 갱신'
+            ),
+        }
+    return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(ours)})"}
+
+
+# 소스마다 명령 뒤에 돌리는 따로 보는 것. 명령 뒤라 이 요청이 막혀도 명령 감시에는 영향이 없다
+EXTRA_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
+    'zigbang': (check_zigbang_sdk_versions,),
+}
+
+
 def run_group(name: str) -> dict[str, Any]:
     """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함)."""
     check_in = _today() + datetime.timedelta(days=STAY_CHECK_IN_DAYS)
@@ -509,6 +616,7 @@ def run_group(name: str) -> dict[str, Any]:
             if found is not None:
                 values.setdefault(capture.name, found)
         steps.append({'label': step.label, 'command': line, 'status': status, 'detail': detail})
+    steps += [check() for check in EXTRA_CHECKS.get(name, ())]
     return {'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}
 
 

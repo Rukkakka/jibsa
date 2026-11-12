@@ -7,6 +7,8 @@ from jibsa.providers.daangn.api.response.common import (
     DaangnCompareRegionModel,
     DaangnGraphQLResponseModel,
     DaangnLiveArticleCountModel,
+    DaangnRegionModel,
+    DaangnTradeArticleCountModel,
     LooseFloat,
 )
 
@@ -20,6 +22,10 @@ from typing import Annotated
 class DaangnCompareTradeModel(ResponseModel):
     """호가 매물의 거래 조건 (금액만)."""
 
+    typename: Annotated[
+        str | None,
+        Field(description='BuyTrade / BorrowTrade / MonthTrade / ShortTrade', alias='__typename')
+    ] = None
     price: Annotated[
         int | None,
         Field(description='매매가 (만원)')
@@ -274,6 +280,14 @@ class DaangnCompareRealsaleConnectionModel(ResponseModel):
 class DaangnComparePyInfoModel(ResponseModel):
     """평형 하나와 시세·실거래."""
 
+    ptp_cd: Annotated[
+        int | None,
+        Field(description='평형 타입 코드 (실거래·시세의 ptpCds 로 보낸다)', alias='ptpCd')
+    ] = None
+    ptp: Annotated[
+        str | None,
+        Field(description="평형 타입 이름 (예: 'A')")
+    ] = None
     exclusive_area: Annotated[
         LooseFloat,
         Field(description='전용면적 (㎡)', alias='exclusiveArea')
@@ -301,11 +315,11 @@ class DaangnComparePyInfoModel(ResponseModel):
 
 
 class DaangnCompareAreaGroupModel(ResponseModel):
-    """전용면적 묶음 (예: 59)."""
+    """평형 묶음. 전용면적 묶음(예: 59㎡)이나 공급 평 묶음(예: 24평)이다."""
 
     label: Annotated[
         int | None,
-        Field(description='전용면적 묶음 (㎡ 정수)')
+        Field(description='묶음 이름 (전용면적 묶음은 ㎡ 정수, 공급 평 묶음은 평 정수)')
     ] = None
     is_representative: Annotated[
         bool | None,
@@ -360,11 +374,19 @@ class DaangnCompareDanjiModel(ResponseModel):
         list[DaangnCompareAreaGroupModel],
         Field(description='전용면적 묶음별 평형', alias='exclusiveAreaGroups')
     ] = []
+    supply_pyeong_area_groups: Annotated[
+        list[DaangnCompareAreaGroupModel],
+        Field(description='공급 평 묶음별 평형 (아파트형 단지)', alias='supplyPyeongAreaGroups')
+    ] = []
 
 
 class DaangnCompareComplexModel(ResponseModel):
     """비교 칸의 단지. 후기 요약 글(`livedReviewSummary`)은 읽지 않는다."""
 
+    id: Annotated[
+        str | None,
+        Field(description='Relay 노드 ID (시세 그래프 쿼리의 node(id:) 에 넣는다)')
+    ] = None
     original_id: Annotated[
         str,
         Field(description='단지 ID', alias='originalId')
@@ -516,8 +538,8 @@ class DaangnComplexCardModel(ResponseModel):
         Field(description='공공 정보', alias='proptierDanji')
     ] = None
     live_article_count: Annotated[
-        DaangnLiveArticleCountModel | None,
-        Field(description='현재 매물 수', alias='liveArticleCount')
+        DaangnTradeArticleCountModel | None,
+        Field(description='거래 유형별 현재 매물 수 (지도 단지 카드에는 total 이 없다)', alias='liveArticleCount')
     ] = None
 
 
@@ -531,9 +553,53 @@ class DaangnComplexesByOriginalComplexIdsDataModel(ResponseModel):
 
 
 class DaangnComplexesByOriginalComplexIdsResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `complexesByOriginalComplexIds` 응답 (웹의 `ComplexNearbySectionCardsQuery`)."""
+    """GraphQL `complexesByOriginalComplexIds` 응답 (웹의 `ComplexListPanelMapPinsQuery`)."""
 
     data: Annotated[
         DaangnComplexesByOriginalComplexIdsDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
+class DaangnComplexRegionComplexModel(ResponseModel):
+    """단지 페이지의 단지 (유형·지역만 읽는다)."""
+
+    original_id: Annotated[
+        str,
+        Field(description='단지 ID', alias='originalId')
+    ]
+    type: Annotated[
+        str | None,
+        Field(description='APARTMENT / OFFICETEL / ETC ...')
+    ] = None
+    region: Annotated[
+        DaangnRegionModel | None,
+        Field(description='단지가 있는 동 (originalId·depth 3)')
+    ] = None
+
+
+class DaangnComplexRegionOutputModel(ResponseModel):
+    """`complexByOriginalId` 결과. 없는 단지면 complex 가 null 이다."""
+
+    complex: Annotated[
+        DaangnComplexRegionComplexModel | None,
+        Field(description='단지')
+    ] = None
+
+
+class DaangnComplexRegionDataModel(ResponseModel):
+    """GraphQL `data`."""
+
+    complex_by_original_id: Annotated[
+        DaangnComplexRegionOutputModel | None,
+        Field(description='단지', alias='complexByOriginalId')
+    ] = None
+
+
+class DaangnComplexRegionResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `complexByOriginalId` 응답 (웹의 `ComplexIdSeoQuery`)."""
+
+    data: Annotated[
+        DaangnComplexRegionDataModel | None,
         Field(description='결과')
     ] = None

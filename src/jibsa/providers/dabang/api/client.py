@@ -148,8 +148,8 @@ dabang_education_retry = retry(
 )
 """학교 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
 
-# 새 방식(`/api/v5/`) 요청에 웹이 붙이는 헤더 (fetch 청크 `requestHeaders`, 2026-10-25). 옛 방식(`/api/3/`)은 헤더 대신
-# 쿼리에 버전을 붙인다 (`DabangV3RequestParameterModel`)
+# 새 방식(`/api/v5/`) 요청에 웹이 붙이는 헤더 (fetch 청크 `requestHeaders`, 2026-10-25. 2026-11-12 실측도 같다). 웹은 v5 용
+# axios 인스턴스만 이 헤더를 더 붙인다. 옛 방식(`/api/3/`)은 헤더 대신 쿼리에 버전을 붙인다 (`DabangV3RequestParameterModel`)
 V5_HEADERS: dict[str, str] = {
     'D-Api-Version': '5.0.0',
     'D-App-Version': '1',
@@ -256,11 +256,15 @@ class DabangClient(BaseHTTPClient):
 
     @property
     def base_header(self) -> dict[str, str]:
+        # 웹의 axios 인스턴스(v5·v3 둘 다)가 모든 요청에 붙이는 기본 헤더 (fetch 청크 2026-10-25, 2026-11-12 웹 화면 8개 요청
+        # 109건 실측). 번들의 Content-Type 은 axios 가 본문 없는 GET 에서 지워 넣지 않는다 (본문이 있으면 httpx 가 붙인다).
         # UA·Referer·쿠키·언어는 브라우저가 연 첫 화면 기준으로 붙인다 (`core/browser.py`)
         return {
             'Accept': 'application/json, text/plain, */*',
-            # 웹의 axios 인스턴스가 모든 요청에 붙이는 헤더 (fetch 청크, 2026-10-25)
             'csrf': 'token',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Expires': '-1',
         }
 
     @cached_property
@@ -286,9 +290,12 @@ class DabangClient(BaseHTTPClient):
 
     def _geojson_request(self, client: Client | AsyncClient, code: str) -> Request:
         request = client.build_request('GET', self.geojson_base_url + self.geojson_region_endpoint.format(code=code))
-        # 동 경계 CDN 은 csrf 헤더를 허용하지 않아, 다른 출처라 브라우저가 먼저 보내는 사전 확인(OPTIONS)이 403 이 된다
-        # (2026-11-09 실측). 웹도 이 파일에는 붙이지 않는다
-        del request.headers['csrf']
+        # 웹은 이 파일을 axios 가 아니라 `fetch(url)` 로 받아 헤더를 하나도 붙이지 않는다 (2026-11-12 실측, Accept 는 fetch 기본값
+        # `*/*`). 그래서 기본 헤더를 모두 지운다. 동 경계 CDN 은 csrf 헤더를 허용하지 않아, 다른 출처라 브라우저가 먼저 보내는
+        # 사전 확인(OPTIONS)이 403 이 된다 (2026-11-09 실측)
+        for name in self.base_header:
+            # 클라이언트를 다른 헤더로 만들었으면 없는 헤더도 있어 del 은 KeyError 로 끝난다 (2026-11-12 리뷰)
+            request.headers.pop(name, None)
         return request
 
     @dabang_retry

@@ -1,5 +1,7 @@
 """학교·어린이집 (school, preschools, preschool)."""
 
+import re
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -7,10 +9,8 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.geo import (
-    haversine_km,
-    within_radius,
-)
+from jibsa.core.geo import haversine_km
+from jibsa.core.korean import quoted
 from jibsa.core.listing import (
     more_hint,
     normalize_address,
@@ -18,9 +18,7 @@ from jibsa.core.listing import (
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.school import (
-    DaangnEducationMapPointsInputModel,
-    DaangnEducationMapPointsRequestPayloadModel,
-    DaangnEducationType,
+    DaangnComplexSchoolsRequestPayloadModel,
     DaangnPreschoolByNoRequestPayloadModel,
     DaangnSchoolByCodeRequestPayloadModel,
     DaangnSearchSchoolsInputModel,
@@ -32,13 +30,12 @@ from jibsa.providers.daangn.service.common import (
     COMPLEX_TYPE_FILTER_BY_LABEL,
     DaangnRegionComplex,
     complex_list_notes,
+    complex_not_found,
+    complex_url,
+    coordinate_point,
+    js_round,
     region_complex_of,
-    truncation_notes,
     unwrap_graphql,
-)
-from jibsa.providers.daangn.service.region import (
-    bounds_around,
-    place_in,
 )
 
 from typing import Annotated
@@ -47,12 +44,13 @@ from typing import Annotated
 # 학교 (당근 웹 표기)
 SCHOOL_TYPE_LABELS: dict[str, str] = {'ELEMENTARY': '초등학교', 'MIDDLE': '중학교', 'HIGH': '고등학교', 'ETC': '기타'}
 COEDU_LABELS: dict[str, str] = {'MALE': '남학교', 'COED': '남녀공학', 'FEMALE': '여학교'}
-# 학교 이름 검색: 한 번에 받는 후보 수와, --city 로 좁힐 때 넘겨 보는 최대 페이지
-# ('중앙초등학교' 는 전국에 86곳이다)
+# 학교 이름 검색이 한 번에 받는 후보 수. 웹 검색창은 4곳씩 넘기지만 한 번에 더 받는다 ('중앙초등학교' 는 전국에 86곳이다)
 SCHOOL_CANDIDATE_LIMIT: int = 50
-SCHOOL_SEARCH_MAX_PAGES: int = 3
-# 학교가 여럿일 때 안내에 보여 줄 다른 후보 수
-SCHOOL_OTHER_CANDIDATES: int = 3
+# 학교 코드 (당근·학교알리미, 2026-11-12 실측: 52곳 모두 지역 글자 하나 + 숫자 9자리, 예: B100000749). 소문자로 줘도 코드로
+# 보고 대문자로 바꾼다
+SCHOOL_CODE_PATTERN: re.Pattern[str] = re.compile(r'[A-Za-z]\d{9}')
+# 학교가 여럿일 때 에러에 실을 후보 수
+SCHOOL_AMBIGUOUS_SHOWN: int = 10
 # 학교 종류 이름과 그 줄임. 당근 검색은 '○○초등학교' 로 '서울○○초등학교' 를 찾기도 못 찾기도 해서 줄임으로 한 번 더 찾는다
 # (2026-10-23 실측: '대치초등학교' 0건·'대치초' 서울대치초등학교, '도곡초등학교' 는 경기 광주·화순 도곡초등학교만이고
 # '도곡초' 에는 서울도곡초등학교도 나온다, '역삼초등학교' 는 서울역삼초등학교. 진선여자고·숙명여자중·단국대학교사범대학부속중
@@ -130,7 +128,7 @@ class DaangnSchoolResult(BaseModel):
     ]
     complexes: Annotated[
         list[DaangnRegionComplex],
-        Field(description='배정 단지 (세대수 많은 순). recent_trades 는 매매다')
+        Field(description='배정 단지 (당근 웹 학교 화면과 같은 순서). recent_trades 는 최근 매매 1건이다')
     ]
     url: Annotated[
         str,
@@ -138,7 +136,7 @@ class DaangnSchoolResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='학교를 고른 방법, 배정 단지 안내. CLI 가 결과 위에 붙인다')
+        Field(exclude=True, description='배정 단지 안내 (중·고등학교, 정보 없음, 조건·limit 으로 줄임). CLI 가 결과 위에 붙인다')
     ] = []
 
 
@@ -146,23 +144,49 @@ def school_url(school_code: str) -> str:
     return f'https://realty.daangn.com/schools/{school_code}'
 
 
-def resolve_school(
-    client: DaangnClient,
-    name: str,
-    *,
-    city: str | None = None,
-) -> tuple[DaangnSchoolSearchNodeModel, list[str]]:
-    """학교 이름으로 학교 하나를 고른다 (`searchSchools`).
+def _searchable(nodes: list[DaangnSchoolSearchNodeModel]) -> list[DaangnSchoolSearchNodeModel]:
+    """좌표가 있는 학교만. 당근 웹 검색창도 좌표 없는 학교를 뺀다 (2026-11-12 실측: '중앙초등학교' 50곳 중 1곳)."""
+    return [node for node in nodes if coordinate_point(node.coordinate) is not None]
 
-    `city` 를 주면 주소에 그 이름으로 시작하는 단어가 있는 학교만 보며 (`place_in`), 후보를 `SCHOOL_SEARCH_MAX_PAGES` 페이지까지 넘겨
-    본다. '○○초등학교' 처럼 종류 이름까지 주면 줄임('○○초')으로도 찾아 뒤에 합친다 (`SCHOOL_KIND_SHORT_NAMES`, 요청 1회, `city` 를
-    주면 최대 `SCHOOL_SEARCH_MAX_PAGES` 회 더).
-    이름이 똑같은 학교를 먼저, 없으면 첫 후보를 고르고 다른 후보가 있으면 `notes` 로 알린다
-    ('역삼초등학교' 로 '서울역삼초등학교' 가 나온다).
+
+def search_school_candidates(client: DaangnClient, name: str) -> tuple[list[DaangnSchoolSearchNodeModel], bool]:
+    """이름이 들어간 초·중·고 후보 (`searchSchools`, 요청 1회). 웹 지도 검색창의 학교 칸이다.
+
+    다음 쪽은 받지 않는다. 당근은 이름이 그대로 같은 학교를 맨 앞에 주어, 이름으로 학교를 고르는 `resolve_school` 에는 첫 쪽으로
+    충분하다 (2026-11-12 실측: '중앙초등학교' 86곳 중 같은 이름 6곳이 1~6번째, '동산초등학교' 7곳·'신흥초등학교' 3곳·
+    '중앙중학교' 2곳도 맨 앞. 다음 쪽을 받아야 한다는 2026-11-12 리뷰 지적은 오탐). 잘렸는지는 두 번째 값으로 알린다.
+
+    Returns:
+        (좌표가 있는 후보, 서버에 후보가 더 있는지). 후보는 첫 `SCHOOL_CANDIDATE_LIMIT` 곳까지다.
+    """
+    response = client.run_request_search_schools(
+        DaangnSearchSchoolsRequestPayloadModel(first=SCHOOL_CANDIDATE_LIMIT, input=DaangnSearchSchoolsInputModel(name=name))
+    )
+    found = unwrap_graphql(response, response.data.search_schools if response.data else None, '학교 검색')
+    has_more = bool(found.page_info and found.page_info.has_next_page)
+    return _searchable([edge.node for edge in found.edges if edge.node]), has_more
+
+
+def resolve_school(client: DaangnClient, name: str) -> str:
+    """학교 이름이나 학교 코드로 학교 코드 하나를 고른다 (`searchSchools`, 요청 1~2회. 코드면 요청 없음).
+
+    당근 웹 검색창처럼 이름이 들어간 학교를 한 번 찾고, 좌표 없는 학교는 뺀다. 웹은 후보를 보여 주고 사람이 고르므로 jibsa 도
+    여럿이면 고르지 않고 후보(이름·주소·학교 코드)를 알린다. 예전에는 첫 후보를 저절로 골라 엉뚱한 지역 학교로 답할 수 있었고
+    `--city` 로 주소를 걸렀다 (#215). 이름이 그대로 같은 학교가 하나뿐이면 그 학교다.
+
+    '○○초등학교' 처럼 종류 이름까지 주면 줄임('○○초')으로도 한 번 더 찾아 합친다 (`SCHOOL_KIND_SHORT_NAMES`). 당근 웹에는 없는
+    jibsa 개선이다. 당근 검색은 '대치초등학교' 로 서울대치초등학교를 못 찾고(웹도 0건) '대치초' 로는 찾는다 (2026-11-12 실측,
+    #133. 2026-11-12 사용자 결정으로 남김). 첫 검색에 이름이 그대로 같은 학교가 하나면 더 찾지 않는다. 줄임 검색이 더 찾는 학교
+    중 이름이 그대로 같은 학교는 첫 검색에도 나와 답이 같고, 요청만 하나 더 쓴다 (2026-11-12 리뷰). 같은 이름 학교가 여럿이면
+    후보를 알리므로 줄임 검색까지 해 후보에 넣는다. 첫 검색만 보면 '도곡초등학교' 의 후보가 경기 광주·화순 두 곳뿐이고
+    서울도곡초등학교가 빠졌다 (2026-11-13 리뷰·실측).
 
     Raises:
-        JibsaError: 학교를 찾지 못했을 때 (NOT_FOUND).
+        JibsaError: 학교를 찾지 못했을 때 (NOT_FOUND), 여럿일 때 (REGION_AMBIGUOUS. 지역 후보와 같은 코드라 에이전트가 같은 방법으로
+            고르고, `candidates` 에는 학교마다 이름·주소·학교 코드가 있다).
     """
+    if SCHOOL_CODE_PATTERN.fullmatch(name):
+        return name.upper()
     queries = [name]
     for kind, short in SCHOOL_KIND_SHORT_NAMES:
         if name.endswith(kind) and len(name) > len(kind):
@@ -172,72 +196,67 @@ def resolve_school(
     # 후보가 다 오지 않았으면 True ('N곳 이상')
     truncated = False
     for query in queries:
-        cursor = None
-        has_next = False
-        for _ in range(SCHOOL_SEARCH_MAX_PAGES if city else 1):
-            response = client.run_request_search_schools(
-                DaangnSearchSchoolsRequestPayloadModel(
-                    first=SCHOOL_CANDIDATE_LIMIT,
-                    after=cursor,
-                    input=DaangnSearchSchoolsInputModel(name=query),
-                )
-            )
-            found = unwrap_graphql(response, response.data.search_schools if response.data else None, '학교 검색')
-            seen = {school.sch_cd for school in candidates}
-            candidates += [edge.node for edge in found.edges if edge.node and edge.node.sch_cd not in seen]
-            page_info = found.page_info
-            has_next = bool(page_info and page_info.has_next_page and page_info.end_cursor)
-            if not has_next or page_info is None:
-                break
-            cursor = page_info.end_cursor
-        truncated = truncated or has_next
-    if city:
-        # 학교 주소도 지역 검색처럼 통합 이름으로 와서 normalize_address 없이 비교한다 (2026-10-11 실측: 목포·순천·영암·
-        # 광주 남구 학교 모두 '전남광주통합특별시 …'. --city 전남·전라남도·광주·전남광주통합특별시 모두 찾았다)
-        candidates = [school for school in candidates if place_in(city, school.sch_addr)]
+        found, has_more = search_school_candidates(client, query)
+        seen = {school.sch_cd for school in candidates}
+        candidates += [school for school in found if school.sch_cd not in seen]
+        truncated = truncated or has_more
+        # 이름이 같은 학교가 하나면 그 학교라 줄인 이름으로 더 찾지 않는다. 여럿이면 후보 목록이 되므로 줄인 이름으로만 나오는
+        # 학교('서울도곡초등학교')까지 넣는다 (2026-11-13 리뷰: 여럿일 때도 멈춰 후보에서 빠졌다)
+        if sum(school.sch_nm == name for school in candidates) == 1:
+            break
     if not candidates:
         raise JibsaError(
             code='NOT_FOUND',
-            message=f"당근에서 '{name}' 학교를 찾지 못했습니다" + (f" (--city '{city}')" if city else ''),
-            hint="학교 이름을 줄여(예: '역삼초') 다시 찾거나 --city 를 빼 보세요",
+            message=f"당근에서 '{name}' 학교를 찾지 못했습니다",
+            hint="당근 학교 이름은 '서울대치초등학교' 처럼 시·도가 붙기도 합니다. '대치초' 처럼 줄이거나 시·도를 붙여 다시 찾으세요",
         )
-    school = next((school for school in candidates if school.sch_nm == name), candidates[0])
-    notes: list[str] = []
-    others = [school_ for school_ in candidates if school_ is not school]
-    if others:
-        listed = ', '.join(f"{other.sch_nm}({other.sch_addr or '주소 모름'})" for other in others[:SCHOOL_OTHER_CANDIDATES])
-        more = f' 외 {len(others) - SCHOOL_OTHER_CANDIDATES}곳' if len(others) > SCHOOL_OTHER_CANDIDATES else ''
-        notes.append(note(
-            '모호',
-            f"'{name}' 검색으로 찾은 학교가 {len(candidates)}곳{' 이상' if truncated else ''}이라 "
-            f"{school.sch_nm}({school.sch_addr or '주소 모름'})로 조회했습니다. "
-            f'다른 학교: {listed}{more}. --city 로 좁히세요',
-        ))
-    return school, notes
+    exact = [school for school in candidates if school.sch_nm == name]
+    if len(candidates) == 1 or len(exact) == 1:
+        return (exact or candidates)[0].sch_cd
+    shown = [
+        {'name': school.sch_nm, 'address': school.sch_addr, 'school_code': school.sch_cd}
+        for school in candidates[:SCHOOL_AMBIGUOUS_SHOWN]
+    ]
+    count = f"{len(candidates)}곳{' 이상' if truncated else ''}"
+    raise JibsaError(
+        code='REGION_AMBIGUOUS',
+        message=f"{quoted(name, '이/가')} 들어간 학교가 {count}이라 고르지 않았습니다",
+        hint=f"candidates 의 school_code 로 다시 부르세요 (예: jibsa daangn school {shown[0]['school_code']})",
+        # 다 받지 못했으면 전체 수를 모른다 (모름 → null)
+        details={'candidates': shown, 'candidate_count': None if truncated else len(candidates)},
+    )
 
 
 def get_school(
     client: DaangnClient,
     name: str,
     *,
-    city: str | None = None,
     complex_types: list[str] | None = None,
     household_min: int | None = None,
     limit: int = 120,
 ) -> DaangnSchoolResult:
     """학교 정보와 그 학교에 배정되는 단지를 받는다 (`searchSchools` → `schoolByCode`, 요청 2회. 학교 찾기 요청 수는 `resolve_school`).
 
-    배정 단지는 초등학교에만 있다 (중·고등학교는 학교군 배정). 당근은 순서 없이 소규모 빌라형 단지까지
-    주므로, `complex_types`('아파트' 는 주상복합 포함)·`household_min` 으로 거르고 세대수 많은 순으로
-    `limit` 곳을 돌려준다. 단지 카드는 지역 단지 목록과 같다 (`region_complex_of`, 최근 실거래는 매매).
+    배정 단지는 초등학교에만 있다 (중·고등학교는 학교군 배정). 당근 웹 학교 화면(SchoolDetail)처럼 서버가 준 순서 그대로
+    보여 주고, 단지마다 최근 매매 실거래는 취소되지 않은 첫 1건이다 (ComplexListItem). 예전에는 세대수 많은 순으로 다시 세우고
+    3건을 붙였다 (#215, 2026-11-12 실측: 대치초 15곳에서 래미안대치팰리스가 웹은 맨 뒤, jibsa 는 맨 앞). `complex_types`
+    ('아파트' 는 주상복합 포함)·`household_min`·`limit` 은 서버가 받지 않는 조건이라 그 순서에서 거르고 자른다.
 
     Raises:
-        JibsaError: 학교를 찾지 못했을 때 (NOT_FOUND), GraphQL 에러 (UPSTREAM_ERROR).
+        JibsaError: 학교를 찾지 못했을 때 (NOT_FOUND), 여럿일 때 (REGION_AMBIGUOUS), GraphQL 에러 (UPSTREAM_ERROR).
         FeedQueryRejectedError: 웹이 학교 쿼리를 바꿨을 때.
     """
-    found, notes = resolve_school(client, name, city=city)
-    response = client.run_request_school_by_code(DaangnSchoolByCodeRequestPayloadModel(sch_cd=found.sch_cd))
+    school_code = resolve_school(client, name)
+    response = client.run_request_school_by_code(DaangnSchoolByCodeRequestPayloadModel(sch_cd=school_code))
+    if response.data is not None and response.data.school_by_code is None and not response.errors:
+        # 없는 학교 코드는 HTTP 200 에 schoolByCode: null 이다 (2026-11-12 실측: B199999999)
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f'당근에 없는 학교 코드입니다: {school_code}',
+            hint='학교 이름으로 찾거나 jibsa daangn search locations <학교 이름> 의 schools 에서 school_code 를 확인하세요',
+        )
     detail = unwrap_graphql(response, response.data.school_by_code if response.data else None, '학교 정보')
+    notes: list[str] = []
 
     types: set[str] = set()
     for label in complex_types or []:
@@ -249,19 +268,22 @@ def get_school(
         if (not types or node.type in types)
         and (household_min is None or (node.danji is not None and (node.danji.households or 0) >= household_min))
     ]
-    complexes = sorted(
-        (region_complex_of(node, '매매') for node in nodes),
-        key=lambda complex_: -(complex_.households or 0),
-    )
+    complexes = [region_complex_of(node, '매매', max_trades=1) for node in nodes]
 
     if detail.sch_type != 'ELEMENTARY':
         notes.append('배정 단지는 초등학교에만 있습니다. 중·고등학교는 학교군으로 배정돼 단지 목록이 없습니다')
     elif not detail.assigned_complexes:
         notes.append('당근에 이 학교의 배정 단지 정보가 없습니다')
+    elif not complexes:
+        # 안내가 없으면 배정 단지가 없는 학교와 구별되지 않았다 (2026-11-12 리뷰)
+        notes.append(note(
+            '참고',
+            f'배정 단지 {len(detail.assigned_complexes)}곳 중 단지 유형(-t)·세대수(--household-min) 조건에 맞는 곳이 없습니다',
+        ))
     elif len(complexes) > limit:
         notes.append(note(
             '일부',
-            f'배정 단지 {len(complexes)}곳 중 세대수 많은 {limit}곳만 보여 줍니다. '
+            f'배정 단지 {len(complexes)}곳 중 당근 순서로 앞 {limit}곳만 보여 줍니다. '
             + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, '단지 유형(-t)·세대수(--household-min) 조건'),
         ))
     shown = complexes[:limit]
@@ -286,21 +308,19 @@ def get_school(
     )
 
 
-PRESCHOOL_TYPE_BY_LABEL: dict[str, DaangnEducationType] = {
-    '어린이집': 'DAYCARE',
-    '유치원': 'KINDERGARTEN',
-}
-PRESCHOOL_LABEL_BY_TYPE: dict[str, str] = {code: label for label, code in PRESCHOOL_TYPE_BY_LABEL.items()}
-# 지도 교육 시설은 범위 안 500곳에서 잘린다 (2026-10-10 실측: 강남 반경 5km 부터 500곳. 2026-11-10 실측: 목동역 3km 도
-# 500곳, 강남역·노원역 3km 는 그보다 적었다)
-EDUCATION_POINT_LIMIT: int = 500
-PRESCHOOL_ID_PREFIX: str = 'pre_'
-# preschools 의 --limit 최대값. CLI 옵션의 max 와 잘렸을 때의 안내가 함께 쓴다
-PRESCHOOL_MAX_LIMIT: int = 200
+# 어린이집·유치원 종류 (당근 표기). 상세(preschoolByNo)에만 온다
+PRESCHOOL_LABEL_BY_TYPE: dict[str, str] = {'DAYCARE': '어린이집', 'KINDERGARTEN': '유치원'}
+# 당근이 단지 근처 어린이집·유치원을 주는 범위: 단지에서 1km 안을 가까운 순으로 20곳까지 (2026-11-11 실측, 예전 반경 쿼리
+# educationMapPoints 와 대조: 역삼래미안 10697092 는 1km 안 31곳 중 0.6km 안의 20곳, 양평역한라비발디2단지 20839190 은
+# 1km 안 11곳 모두이고 1.23km 부터 빠짐)
+PRESCHOOL_SERVER_RADIUS_KM: float = 1.0
+PRESCHOOL_SERVER_MAX: int = 20
+# 당근 웹 거리 계산(services2 하버사인)의 지구 반지름 (km)
+WEB_EARTH_RADIUS_KM: float = 6371.0
 
 
 class DaangnPreschoolSummary(BaseModel):
-    """어린이집·유치원 하나 (목록)."""
+    """단지 근처 어린이집·유치원 하나 (목록). 어린이집·유치원 구분은 목록에 없어 preschool 상세에서 본다."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -314,104 +334,116 @@ class DaangnPreschoolSummary(BaseModel):
         str | None,
         Field(description='시설 이름')
     ] = None
-    type: Annotated[
-        str | None,
-        Field(description='어린이집 / 유치원')
-    ] = None
     distance_km: Annotated[
-        float,
-        Field(description='검색 중심에서 거리 (km)')
+        float | None,
+        Field(description='단지에서 직선거리 (km). 단지나 시설 좌표가 없으면 null')
+    ] = None
+    resident_count: Annotated[
+        int | None,
+        Field(description='이 단지 주민 중 다니는 수 (당근 집계)')
+    ] = None
+    review_count: Annotated[
+        int,
+        Field(description='당근 설문 후기 수')
     ]
 
 
 class DaangnPreschoolsResult(BaseModel):
-    """반경 안 어린이집·유치원 목록."""
+    """단지 근처 어린이집·유치원 목록 (당근 단지 화면 학군의 유치원 탭)."""
 
     model_config = ConfigDict(
         extra='forbid',
     )
 
-    radius_km: Annotated[
-        float,
-        Field(description='검색 반경 (km)')
-    ]
-    total: Annotated[
-        int,
-        Field(description='반경 안 시설 수 (limit 적용 전)')
+    complex_id: Annotated[
+        str,
+        Field(description='단지 ID')
     ]
     returned: Annotated[
         int,
-        Field(description='반환한 시설 수')
+        Field(description='반환한 시설 수. 당근은 단지에서 1km 안을 가까운 순으로 20곳까지 준다')
     ]
     preschools: Annotated[
-        list[DaangnPreschoolSummary],
-        Field(description='가까운 순 시설')
+        list[DaangnPreschoolSummary] | None,
+        Field(description='이 단지 주민이 많이 다니는 순, 같으면 가까운 순 시설. 당근이 근처 시설 정보를 주지 않으면 null (모름)')
+    ]
+    url: Annotated[
+        str,
+        Field(description='당근 단지 페이지 (학군에 같은 목록이 있다)')
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='조회 한도 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='정보 없음·빈 결과·20곳 한도 안내. CLI 가 결과 위에 붙인다')
     ] = []
 
 
-def list_preschools(
-    client: DaangnClient,
-    lat: float,
-    lng: float,
-    *,
-    radius_km: float = 1.0,
-    types: list[str] | None = None,
-    limit: int = 30,
-) -> DaangnPreschoolsResult:
-    """좌표 반경 안의 어린이집·유치원을 가까운 순으로 `limit` 건 준다 (`educationMapPoints`, 요청 1회).
+def _web_distance_m(origin: tuple[float, float], target: tuple[float, float]) -> int:
+    """당근 웹(services2 의 하버사인, 반지름 6371km)과 같은 미터 거리를 JS `Math.round` 처럼 반올림한 정수.
 
-    서버는 좌표 범위 안의 시설을 500곳에서 자른다 (페이지 없음). 500곳을 받으면 가까운 시설이 빠졌을 수 있어 알린다.
+    공통 `haversine_km` 의 기본 반지름(6371.0088km)으로는 미터 경계에서 어린이집 순서가 웹과 어긋날 수 있어 웹 반지름을 준다.
+    """
+    return js_round(haversine_km(*origin, *target, radius_km=WEB_EARTH_RADIUS_KM) * 1000)
+
+
+def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsResult:
+    """단지 근처 어린이집·유치원을 당근 단지 화면(학군 → 유치원 탭)과 같은 목록·순서로 준다 (`complexByOriginalId`, 요청 1회).
+
+    당근 웹은 범위 안 시설을 지도에 띄우던 쿼리(`EducationPoiLayerQuery`)를 없애고 단지마다 근처 시설 목록만 준다
+    (2026-11-10 번들 대조). 당근은 단지에서 1km 안을 가까운 순으로 20곳까지 주고(`PRESCHOOL_SERVER_MAX`), 20곳을 받으면
+    더 있을 수 있어 [일부] 로 알린다. 출력 순서가 거리 순이 아니라 잘린 것이 결과만으로는 보이지 않는다. 순서는 웹처럼 이 단지 주민이 많이 다니는 곳 먼저, 같으면 가까운 곳 먼저다. 거리도 웹처럼 학군 정보의 단지 좌표(없으면
+    단지 좌표)에서 시설까지 직선거리다. 어린이집·유치원 구분은 오지 않는다.
 
     Raises:
+        JibsaError: 없는 단지 (NOT_FOUND), 그 밖의 GraphQL 에러 (UPSTREAM_ERROR).
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때 (웹이 쿼리를 바꿈).
-        JibsaError: 그 밖의 GraphQL 에러 (UPSTREAM_ERROR).
     """
-    bounds = bounds_around(lat, lng, radius_km)
-    response = client.run_request_education_map_points(
-        DaangnEducationMapPointsRequestPayloadModel(
-            input=DaangnEducationMapPointsInputModel(
-                sw_coordinate=bounds.sw_coordinate,
-                ne_coordinate=bounds.ne_coordinate,
-                types=[PRESCHOOL_TYPE_BY_LABEL[label] for label in types or PRESCHOOL_TYPE_BY_LABEL],
-            )
-        )
+    response = client.run_request_complex_schools(DaangnComplexSchoolsRequestPayloadModel(complex_id=str(complex_id)))
+    result = unwrap_graphql(
+        response, response.data.complex_by_original_id if response.data else None, '단지 근처 어린이집·유치원'
     )
-    points = unwrap_graphql(response, response.data.education_map_points if response.data else None, '어린이집·유치원')
-    found: list[DaangnPreschoolSummary] = []
-    for point in points:
-        coordinate = point.coordinate
-        if point.type not in PRESCHOOL_LABEL_BY_TYPE or coordinate is None or coordinate.lat is None or coordinate.lon is None:
-            continue
-        distance = haversine_km(lat, lng, coordinate.lat, coordinate.lon)
-        # 출력의 distance_km 처럼 반올림한 거리로 본다 (매물 반경 검색과 같다). 1.004km 를 '1.0km' 로 보이면서 1km 반경에서 빼지 않게
-        if not within_radius(distance, radius_km):
-            continue
-        found.append(DaangnPreschoolSummary(
-            id=point.id.removeprefix(PRESCHOOL_ID_PREFIX),
-            name=point.name,
-            type=PRESCHOOL_LABEL_BY_TYPE[point.type],
-            distance_km=round(distance, 2),
-        ))
-    found.sort(key=lambda preschool: preschool.distance_km)
-    # -t 로 고른 유형만 받았으면 그 이름으로 센다. 늘 '어린이집·유치원' 이라고 하면 -t 어린이집 결과의 수가 거르기 전 수로
-    # 읽혔다 (2026-11-11 LLM 사용 시험: 대치역 -t 어린이집 '조회된 어린이집·유치원 20곳 중')
-    subject = '·'.join(dict.fromkeys(types)) if types else '어린이집·유치원'
-    notes = truncation_notes(
-        len(found), limit, subject=subject, unit='곳', max_limit=PRESCHOOL_MAX_LIMIT, narrow='-t·--radius',
-    )
-    if len(points) >= EDUCATION_POINT_LIMIT:
+    if result.complex is None:
+        raise complex_not_found(complex_id)
+    danji = result.complex.proptier_danji
+    origin = (coordinate_point(danji.coordinate) if danji else None) or coordinate_point(result.complex.coordinate)
+    # 학군 정보(proptierDanji)나 근처 시설 목록이 null 이면 모름이다. 웹(ComplexSchoolSection `nearbyPreschools??[]`)은 빈 목록과
+    # 똑같이 유치원 탭을 비우지만, 출력은 complex·compare 의 학교처럼 모름(null)과 빈 목록([])을 나눈다
+    nearby = danji.nearby_preschools if danji else None
+    # (웹이 견주는 미터 정수 거리, 시설). 출력의 distance_km 는 그 거리를 km 소수 둘째 자리로 반올림해 순서와 어긋나지 않는다
+    rows: list[tuple[int | None, DaangnPreschoolSummary]] = []
+    for preschool in nearby or []:
+        target = coordinate_point(preschool.coordinate)
+        meters = _web_distance_m(origin, target) if origin and target else None
+        rows.append((meters, DaangnPreschoolSummary(
+            id=str(preschool.pre_school_no),
+            name=preschool.school_nm,
+            distance_km=None if meters is None else round(meters / 1000, 2),
+            resident_count=preschool.complex_resident_count,
+            # 당근은 설문 응답이 없는 시설의 surveyResult 를 null 로 준다 (2026-11-11 실측: 역삼래미안 20곳 중 17곳 null, 나머지
+            # 3곳 reviewCount 1). 그래서 0 은 모름이 아니라 후기 없음이고, 웹도 `surveyResult?.reviewCount ?? 0` 으로 0개로
+            # 보인다 (번들 ComplexSchoolSection 대조). 설문이 있는데 reviewCount 만 null 인 응답은 보지 못했다
+            review_count=(preschool.survey_result.review_count if preschool.survey_result else None) or 0,
+        )))
+    # 웹 순서: 이 단지 주민이 많이 다니는 곳 먼저, 같으면 가까운 곳 먼저 (거리를 모르면 뒤로). 웹(ComplexSchoolSection)은 미터로
+    # 반올림한 정수 거리로 견주고 같으면 서버 순서를 지킨다 (sort 는 안정 정렬이다). 예전 주석의 '반올림 전 거리' 는 틀렸다
+    # (2026-11-12 번들 대조). 당근 서버도 거리 순으로 주지만 (2026-11-11 실측: 역삼래미안 20곳) 그 순서에 기대지 않는다
+    rows.sort(key=lambda row: (-(row[1].resident_count or 0), row[0] is None, row[0] or 0))
+    preschools = [summary for _, summary in rows]
+    notes: list[str] = []
+    if nearby is None:
+        notes.append(note('참고', '당근이 이 단지 근처 어린이집·유치원 정보를 주지 않았습니다. 시설이 없다는 뜻은 아닙니다'))
+    elif not preschools:
+        notes.append(note('참고', f'당근에 이 단지에서 {PRESCHOOL_SERVER_RADIUS_KM:g}km 안 어린이집·유치원이 없습니다'))
+    elif len(preschools) >= PRESCHOOL_SERVER_MAX:
         notes.append(note(
-            '일부', f'당근은 넓은 범위의 시설을 {EDUCATION_POINT_LIMIT}곳에서 잘라 주어 가까운 시설이 빠졌을 수 있습니다. --radius 를 줄이세요',
+            '일부',
+            f'당근은 단지에서 {PRESCHOOL_SERVER_RADIUS_KM:g}km 안의 어린이집·유치원을 가까운 순으로 {PRESCHOOL_SERVER_MAX}곳까지만 '
+            '줍니다. 더 먼 시설은 당근에 목록이 없습니다',
         ))
     return DaangnPreschoolsResult(
-        radius_km=radius_km,
-        total=len(found),
-        returned=min(len(found), limit),
-        preschools=found[:limit],
+        complex_id=str(complex_id),
+        returned=len(preschools),
+        preschools=preschools if nearby is not None else None,
+        url=complex_url(complex_id),
         notes=notes,
     )
 
@@ -460,13 +492,13 @@ class DaangnPreschool(BaseModel):
         str | None,
         Field(description='관할 기관')
     ] = None
-    children: Annotated[
+    capacity: Annotated[
         int | None,
-        Field(description='원아 수')
+        Field(description='정원 (명). 지금 다니는 원아 수가 아니다')
     ] = None
     classes: Annotated[
         int | None,
-        Field(description='반 수')
+        Field(description='학급 수')
     ] = None
     teachers: Annotated[
         int | None,
@@ -476,6 +508,10 @@ class DaangnPreschool(BaseModel):
         bool | None,
         Field(description='통학버스 운영')
     ] = None
+    survey_responses: Annotated[
+        int,
+        Field(description="당근 학부모 설문 응답 수 (웹 어린이집 화면의 '후기 N'). 설문이 없으면 0")
+    ] = 0
 
 
 def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:
@@ -491,7 +527,7 @@ def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:
         raise JibsaError(
             code='NOT_FOUND',
             message=f'당근 어린이집·유치원을 찾지 못했습니다: {preschool_id}',
-            hint="시설 번호는 'jibsa daangn preschools <지역·역>' 결과의 id 에서 얻습니다",
+            hint="시설 번호는 'jibsa daangn preschools <단지 ID>' 결과의 id 에서 얻습니다",
         )
     preschool = unwrap_graphql(response, found, '어린이집·유치원')
     region = preschool.region
@@ -507,11 +543,15 @@ def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:
         established_at=preschool.estbshm_date,
         opened_at=preschool.open_date,
         authority=preschool.jrsdt_admnstrt,
-        children=preschool.child_cnt,
+        # 당근 웹은 childCnt 를 '정원' 으로 보여 준다 (PreschoolDetailPanel). 예전 이름 children 은 다니는 원아 수로 읽혔다 (#215)
+        capacity=preschool.child_cnt,
         classes=preschool.class_cnt,
         teachers=preschool.teacher_cnt,
         school_bus=preschool.school_bus,
+        # 웹 상세(`Mu`)는 `surveyResult?.responseCount ?? 0` 이라 설문이 없어도 0 이다 (목록의 review_count 와 같다)
+        survey_responses=(preschool.survey_result.response_count if preschool.survey_result else None) or 0,
     )
 
 
-COMPARE_MAX_COMPLEXES: int = 5
+# 단지 비교에 넣는 단지 수 상한. 당근 웹 비교 화면이 10곳까지다 ('최대 10개까지 비교할 수 있어요', 예전에는 5)
+COMPARE_MAX_COMPLEXES: int = 10

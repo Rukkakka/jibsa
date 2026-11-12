@@ -35,6 +35,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    SHARED_TRADE_TYPES,
     Listing,
     insert_after,
     listing_field_names,
@@ -55,11 +56,11 @@ from typing import (
 COORDINATE_DECIMALS: int = 7
 # 1억 (만원). 이만큼 이상 금액이 있으면 notes 에 억 환산 예시를 붙인다 (`manwon_note`)
 MANWON_PER_EOK: int = 10000
-# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 당근 주변 동 표시·네이버 중복 묶음
-# (중개사 수·호가 범위). 묶음 필드는 묶음 매물에만 있어 다른 매물에는 키가 없다. 2026-10-31 재검증: --fields price_manwon,…
+# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 네이버 중복 묶음
+# (중개사 수·호가 범위). 당근 주변 동 표시(in_regions)는 동 검색이 그 동 매물만 주게 되어 없앴다 (#215). 묶음 필드는 묶음 매물에만 있어 다른 매물에는 키가 없다. 2026-10-31 재검증: --fields price_manwon,…
 # 으로 고르자 묶음 범위(30억~33억)가 빠져 notes 가 가리키는 33억 호가를 보지 못하고 최고 호가를 32억으로 답했다
 ALWAYS_FIELDS: frozenset[str] = frozenset({
-    'id', 'in_regions', 'realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon',
+    'id', 'realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon',
 })
 ChoiceT = TypeVar('ChoiceT', bound=str)
 TradeT = TypeVar('TradeT', bound=str)
@@ -191,6 +192,39 @@ def manwon_note(payload: Any) -> str | None:
     return note('참고', '금액은 만원 단위입니다: ' + ', '.join(f'{value} = {manwon_text(value)}' for value in examples))
 
 
+def _field_values(value: Any, field: str) -> Generator[Any, None, None]:
+    """출력에서 키가 `field` 인 값 (매물 목록·상세, 통근 검색은 역 묶음 안)."""
+    if isinstance(value, Mapping):
+        for name, item in value.items():
+            if name == field:
+                yield item
+            else:
+                yield from _field_values(item, field)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _field_values(item, field)
+
+
+def yearly_rent_note(payload: Any) -> str | None:
+    """연세(`yearly_rent_manwon`, 당근 제주 매물)가 있으면 그 결과의 값으로 연세를 읽는 법을 알리는 안내. 없으면 None.
+
+    연세는 1년치 월세를 한 번에 내는 제주 거래라 만원 숫자만 보면 월세로 읽어 열두 배로 셈하기 쉽다. 억 환산 안내
+    (`manwon_note`)처럼 숫자 옆 notes 에 결과의 실제 값으로 정답을 둔다. `--fields` 로 고른 뒤의 값으로 만든다.
+    """
+    value = next(
+        (
+            int(item) for item in _field_values(payload, 'yearly_rent_manwon')
+            if isinstance(item, int | float) and not isinstance(item, bool) and item > 0 and float(item).is_integer()
+        ),
+        None,
+    )
+    if value is None:
+        return None
+    return note(
+        '참고', f'연세는 1년치 월세를 한 번에 내는 제주 거래입니다: yearly_rent_manwon {value} = 1년에 {manwon_text(value)} (월세 아님)',
+    )
+
+
 def _select_fields(value: Any, fields: frozenset[str]) -> Any:
     """`listings` 목록(통근 검색은 역마다의 `listings`)의 매물에서 고른 필드만 남긴다. 결과 머리(total·notes 등)는 그대로."""
     if isinstance(value, dict):
@@ -222,6 +256,8 @@ def emit(
     `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다. `fields`(`--fields`)를 주면 매물마다 그 필드와
     늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 를 이미 dict 로 만들어 넘기면(네이버처럼 지역·범위를 앞에 붙이는 명령)
     매물 모델을 알 수 없으니, 이 명령에 없는 필드를 알리는 안내(`missing_fields_note`)를 위해 원래 결과를 `fields_source` 로 준다.
+    출력에 연세(`yearly_rent_manwon`)나 1억 이상 금액이 있으면 그 값으로 만든 읽는 법(`yearly_rent_note`·`manwon_note`)을
+    `notes` 끝에 붙인다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -234,6 +270,8 @@ def emit(
         if missing := missing_fields_note(data if fields_source is None else fields_source, fields):
             notes = [*(notes or []), missing]
     # 고른 필드만 남긴 뒤에 만든다 (예시 값이 출력에 있어야 한다)
+    if yearly := yearly_rent_note(payload):
+        notes = [*(notes or []), yearly]
     if money := manwon_note(payload):
         notes = [*(notes or []), money]
     if not isinstance(payload, dict) and notes:
@@ -437,6 +475,19 @@ class UsageHints(NamedTuple):
         )
 
 
+class ChangedUsage(NamedTuple):
+    """예전 문서대로 부른 사용법 오류에 바뀐 사용법을 알리는 안내 (`jibsa.cli.app.changed_usage_hint`).
+
+    Attributes:
+        hint: 바뀐 사용법.
+        removed_options: 뺀 옵션. 주면 이 옵션을 줬을 때만 알리고, 새 사용법의 다른 오류(옵션 오타·인자 누락)는
+            원래 힌트에 맡긴다. 없앤 명령은 비워 둔다.
+    """
+
+    hint: str
+    removed_options: frozenset[str] = frozenset()
+
+
 def split_csv(
     values: list[str] | None,
     allowed: tuple[ChoiceT, ...],
@@ -518,6 +569,7 @@ def infer_trade_types(
     rent: bool = False,
     price: bool = False,
     deposit: bool = False,
+    yearly: bool = False,
     allowed: tuple[str, ...] | None = None,
 ) -> tuple[list[TradeT], list[str]]:
     """`--trade` 없이 월세·매매가 조건만 주면 그 조건이 뜻하는 거래 유형으로 좁힌다.
@@ -536,8 +588,11 @@ def infer_trade_types(
         rent: 월세 조건(하한·상한)을 줬는지.
         price: 매매가 조건을 줬는지.
         deposit: 보증금 조건을 줬는지.
+        yearly: 연세 조건을 줬는지 (당근만 있다). `--trade` 를 준 검사에만 쓰고 짐작에는 쓰지 않는다 (당근은 `--trade` 가
+            없으면 짐작하지 않는다).
         allowed: 이 검색이 다루는 거래 유형. 주면 좁힌 결과와 안내에서 그 밖의 유형을 뺀다 (직방 아파트에는
-            단기임대가 없다).
+            단기임대가 없다). 주지 않으면 안내에는 네 소스 공통 유형(`SHARED_TRADE_TYPES`)만 쓴다. 연세는 당근에만 있어
+            다른 소스에 '연세 거래에만 쓰세요' 라고 하지 않는다.
 
     Returns:
         tuple[list[str], list[str]]: 검색할 거래 유형과, 좁혔으면 결과에 붙일 안내.
@@ -548,6 +603,7 @@ def infer_trade_types(
     if trade_types:
         for given, field, option in (
             (rent, 'rent_manwon', '--rent-min/--rent-max'),
+            (yearly, 'yearly_rent_manwon', '--yearly-rent-min/--yearly-rent-max'),
             (price, 'price_manwon', '--price-min/--price-max'),
             (deposit, 'deposit_manwon', '--deposit-min/--deposit-max'),
         ):
@@ -555,7 +611,7 @@ def infer_trade_types(
                 # 이 검색이 다루지 않는 거래 유형은 권하지 않는다 (직방 아파트에 '단기임대에만 쓰세요' 라고 하던 문제)
                 applicable = [
                     trade for trade, fields in NOT_APPLICABLE_PRICE_FIELDS.items()
-                    if field not in fields and (allowed is None or trade in allowed)
+                    if field not in fields and trade in (SHARED_TRADE_TYPES if allowed is None else allowed)
                 ]
                 raise typer.BadParameter(
                     f"--trade {','.join(trade_types)} 에는 해당 금액이 없어 {option} 를 적용할 수 없습니다. "
@@ -593,9 +649,12 @@ class HintedUsageError(UsageError):
 
 
 class HintedBadParameter(typer.BadParameter):
-    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다."""
+    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다.
 
-    def __init__(self, message: str, option: str, hint: str) -> None:
+    `option` 이 None 이면 Click 이 오류 난 인자·옵션 이름('complex_id', '--complex')을 채운다 (`parser` 안에서 던질 때).
+    """
+
+    def __init__(self, message: str, option: str | None, hint: str) -> None:
         super().__init__(message, param_hint=option)
         self.hint = hint
 

@@ -7,6 +7,7 @@ from httpx import (
 )
 
 from jibsa.core.browser import (
+    NAVIGATION_EXTENSION,
     REFRESH_SECONDS,
     BrowserOptions,
     CertificateError,
@@ -15,6 +16,7 @@ from jibsa.core.browser import (
     _BlockedResponses,
     _BrowserState,
     _FailedFetch,
+    _fetch_arguments,
     _proxy_settings,
     _to_response,
     returning_cookies,
@@ -171,6 +173,22 @@ def test_cors_failure_waits_for_blocked_status_event() -> None:
     blocked._on_response({'requestId': '1', 'statusCode': 429, 'headers': {'Retry-After': '60'}})
     assert blocked.settled(url)
     assert blocked.pop(url) == _FailedFetch('net::ERR_FAILED', 'MissingAllowOriginHeader', (429, {'Retry-After': '60'}), False)
+
+
+# --- request headers --------------------------------------------------------
+
+def test_navigation_headers_only_on_page_requests() -> None:
+    # 크롬이 페이지를 열 때 붙이는 헤더는 페이지 HTML 요청에만 붙는다. API 요청(당근 GraphQL)에 붙으면 웹의 fetch 와 달라진다
+    navigation = {'accept': 'text/html,application/xhtml+xml', 'upgrade-insecure-requests': '1'}
+    page = Request('GET', 'https://realty.daangn.com/articles/1', headers={'accept': '*/*'}, extensions={NAVIGATION_EXTENSION: True})
+    api = Request('POST', 'https://realty.kr.karrotmarket.com/graphql', headers={'x-realty-platform': 'realty-web'}, json={})
+
+    page_headers = _fetch_arguments(page, 20, navigation)[0]['headers']
+    api_headers = _fetch_arguments(api, 20, navigation)[0]['headers']
+
+    assert (page_headers['accept'], page_headers['upgrade-insecure-requests']) == ('text/html,application/xhtml+xml', '1')
+    assert 'upgrade-insecure-requests' not in api_headers
+    assert api_headers['x-realty-platform'] == 'realty-web'
 
 
 # --- response headers -------------------------------------------------------

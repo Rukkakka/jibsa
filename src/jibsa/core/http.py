@@ -95,19 +95,6 @@ def create_base_url(schema: Literal['https', 'http'], host: str) -> str:
     return f'{schema}://{host}'
 
 
-def bearer_authorization(token: str) -> str:
-    """Render `token` as an `Authorization` header value.
-
-    Accepts either the bare token or one already carrying the `Bearer ` prefix,
-    so a caller copying the header value verbatim does not end up sending
-    `Bearer Bearer ...`.
-    """
-    token = token.strip()
-    if token.startswith('Bearer '):
-        return token
-    return f'Bearer {token}'
-
-
 def _redact_json(value: object) -> object:
     if isinstance(value, dict):
         return {
@@ -318,9 +305,9 @@ class BaseHTTPClient(BaseModel, ABC):
 
     Args:
         url_schema: `base_url` 의 스킴. 요청은 https 첫 화면을 연 브라우저가 보내 http 요청은 브라우저가 혼합 콘텐츠로
-            막으므로 'https' 만 받는다. 서브클래스의 호스트 필드(`host` 등)를 바꾸면 `browser_api_hosts`·
-            `browser_no_cors_hosts` 는 따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 첫 화면 탭에서 보내는
-            호스트를 다른 출처로 바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다. Defaults to 'https'.
+            막으므로 'https' 만 받는다. 서브클래스의 호스트 필드(`host` 등)를 바꾸면 `browser_api_hosts` 는
+            따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 요청은 첫 화면 탭에서 보내므로 호스트를 다른 출처로
+            바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다. Defaults to 'https'.
         verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
             내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
         proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
@@ -341,8 +328,6 @@ class BaseHTTPClient(BaseModel, ABC):
         browser_api_hosts: 첫 화면이 보낸 요청을 요청 제한에 셀 사이트 API 호스트. 비면 `browser_entry_url` 의 호스트.
             호스트 필드에서 만드는 property 라, 호스트 필드를 바꿔도 맞는다 (서브클래스가 덮어쓴다).
         browser_discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태.
-        browser_no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않아 그 호스트 주소의 빈 탭에서 보낼 호스트.
-            `browser_api_hosts` 처럼 호스트 필드에서 만드는 property 다.
     """
 
     source_name: ClassVar[str] = 'default'
@@ -384,19 +369,16 @@ class BaseHTTPClient(BaseModel, ABC):
 
     @property
     def browser_api_hosts(self) -> frozenset[str]:
-        # 호스트를 클래스 상수로 따로 적으면 호스트 필드를 바꿨을 때 어긋나 요청이 엉뚱한 탭에서 나간다 (2026-11-09 리뷰)
-        return frozenset()
-
-    @property
-    def browser_no_cors_hosts(self) -> frozenset[str]:
+        # 비면 첫 화면 호스트를 쓴다 (`BrowserOptions`). 서브클래스는 호스트 필드에서 만든다. 클래스 상수로 따로 적으면 호스트
+        # 필드를 바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은
+        # 그 호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`)
         return frozenset()
 
     def _browser_options(self) -> BrowserOptions:
         return BrowserOptions(
             source=self.source_name, entry_url=self.browser_entry_url, ready_cookie=self.browser_ready_cookie,
             api_hosts=self.browser_api_hosts, discard_statuses=self.browser_discard_statuses,
-            no_cors_hosts=self.browser_no_cors_hosts, rate_limiter=self.rate_limiter, proxy=self.proxy,
-            verify=self.verify, timeout=self.timeout,
+            rate_limiter=self.rate_limiter, proxy=self.proxy, verify=self.verify, timeout=self.timeout,
         )
 
     def browser_transport(self) -> BrowserTransport:

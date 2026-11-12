@@ -19,6 +19,12 @@ cli/                 Typer 명령. 인자 검증 → service 호출 → emit / h
 
 각 계층은 아래 계층만 안다. 새 소스를 추가하면 `cli/app.py` 의 `limits` 명령 client 목록도 함께 고친다.
 
+소스끼리는 서로 모른다. `providers/<source>/` 와 `cli/<source>.py` 는 다른 소스의 provider·CLI 코드를 import 하지 않고, 공통
+코드(`core/`, `cli/output.py` 등)만 쓴다. 한 소스가 못 찾은 이름을 다른 소스로 대신 찾으면 그 소스 웹과 다른 결과가 나오고,
+한 소스의 요청 제한·장애가 다른 소스 명령으로 번진다. 예전에는 당근이 못 찾은 이름의 좌표를 직방(막히면 네이버)으로 찾았다
+(#215 에서 뺌). 다른 소스가 필요하면 에러 `hint` 에 그 명령을 글로만 알린다 (`jibsa naver search redevelopment …`). 소스 목록을
+모두 아는 곳은 `cli/app.py`(명령 등록, `limits`)뿐이다. `tests/test_cli.py` 의 `test_sources_do_not_import_each_other` 가 막는다.
+
 - **client** 는 HTTP 호출과 응답 검증만 한다. 응답을 `<Source>{Action}ResponseModel`
   로 검증해 돌려줄 뿐, 만원 환산이나 만료 판정 같은 해석은 하지 않는다.
 - **service** 는 client 메서드를 조합해 검색·상세 흐름을 만들고, 소스 응답을
@@ -41,7 +47,7 @@ pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩
   (Chromium 은 인증서 파일을 받지 않고 내장 목록과 OS 에 설치된 인증서를 믿는다). `timeout` 은 응답 헤더가 올 때까지(연결 포함)와
   본문 조각 사이 간격의 제한이다. httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`).
 - 브라우저 설정: ClassVar `browser_entry_url`(처음 열 화면)·`browser_ready_cookie`·`browser_discard_statuses` 와, 호스트
-  필드에서 만드는 property `browser_api_hosts`·`browser_no_cors_hosts` (호스트 필드를 바꿔도 어긋나지 않게). 서브클래스는
+  필드에서 만드는 property `browser_api_hosts` (호스트 필드를 바꿔도 어긋나지 않게). 서브클래스는
   `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다
   ([브라우저 요청](#브라우저-요청)).
 - 서브클래스는 `_client` / `_async_client` 를 `@cached_property` 로 만든다. `close()` 가
@@ -109,12 +115,22 @@ client.get(...) → 요청 제한 훅 → BrowserTransport.handle_request
 client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브라우저를 닫는다
 ```
 
-- 헤더: UA·Origin·Referer·쿠키·Accept-Language·`sec-*` 는 브라우저가 연 페이지 기준으로 붙인다. client 의
-  `base_header` 에는 사이트 웹이 붙이는 헤더(Accept·`x-zigbang-platform` 등)만 둔다.
+- 헤더: 사이트 웹이 실제로 보내는 것과 같게 한다 (2026-11-12 네 소스 실측). 두 가지로 나뉜다.
+  - 크롬이 붙이는 헤더는 크롬 값을 쓴다. UA·Origin·Referer·쿠키·Accept-Language·`sec-*` 는 fetch 에 넘기지 않아 브라우저가
+    연 페이지 기준으로 붙인다. 웹에서 페이지 열기인 요청(당근 상세 HTML 등)은 `extensions={NAVIGATION_EXTENSION: True}` 를
+    달면, 크롬이 페이지를 열 때 붙이는 `accept`·`upgrade-insecure-requests` 를 붙인다. 이 값은 크롬 버전마다 달라 고정하지 않고
+    브라우저를 띄울 때마다 빈 페이지 띄우기(`_fulfill_blank`)에서 읽는다. `sec-fetch-*` 는 fetch 가 바꿀 수 없어 `cors` 로 나간다.
+  - 사이트 웹 코드(axios·ky 등)가 붙이는 헤더는 provider 에 하드코딩한다. client 의 `base_header` 는 모든 요청에 붙는 헤더만
+    두고, API 묶음마다 다른 헤더(다방 `V5_HEADERS`, 직방 `APT_HEADERS`, 당근 `graphql_header`)는 요청마다 `headers=` 로 붙인다.
+    웹이 붙이지 않는 헤더는 넣지 않는다. 묶음마다 헤더가 다르고(다방 v5 만 `d-*`, 직방 `/apt` 만 `sdk-version`) 요청·페이지마다
+    바뀌는 값(네이버 `sentry-trace`·`x-attest`)도 섞여, 첫 화면에서 자동으로 배워 쓰지 않는다. 헤더를 넣거나 고칠 때는 웹이 그
+    API 에 실제로 붙이는지 실측(CDP `Network.requestWillBeSent`)이나 번들로 확인하고 날짜를 남긴다. 요청마다 바뀌는 웹 헤더는
+    값 규칙을 따로 정하기 전에는 넣지 않는다.
 - 쿠키: fetch 의 기본값(`same-origin`)이라 같은 출처에만 실린다. `include` 로 두면 `Access-Control-Allow-Origin: *`
   인 다른 출처 응답을 브라우저가 거절한다.
-- CORS: 첫 화면 출처에서 부르는 것을 허용하지 않는 호스트(`browser_no_cors_hosts`)는 그 호스트 주소의 빈 탭(서버에
-  묻지 않고 브라우저 안에서 띄운다)에서 보낸다.
+- CORS: 모든 요청을 첫 화면 탭에서 보내므로 사이트 API 는 첫 화면 출처의 CORS 를 허용해야 한다. 예전에는 허용하지 않는
+  호스트를 그 주소의 빈 탭에서 보내는 '출처 탭' 장치가 있었지만, 쓰던 당근 옛 지역 API 를 #215 에서 빼 쓰는 소스가 없어
+  지웠다. 다시 필요하면 git 기록(커밋 8a3930a)에서 되살린다.
 - route 는 빈 탭 띄우기에만 잠깐 쓰고 탭을 다 띄운 뒤 걷는다. route 가 하나라도 걸려 있으면 patchright 가 CORS 사전
   요청(OPTIONS)을 서버에 보내지 않고 브라우저 안에서 허용으로 답해 실제 Chrome 과 달라진다. 그래서 첫 화면의 정적 파일은
   route 가 아니라 CDP Fetch(리소스 종류 패턴)로 막고, 페이지 요청은 route 가 아니라 `request` 이벤트로 센다. route 로 막을
@@ -145,9 +161,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
 - 큰 본문: 1MB(`BODY_CHUNK_BYTES`)보다 큰 응답 본문은 브라우저 안에 두었다가 1MB 씩 나눠 파이썬으로 옮긴다 (`_read_body`).
   patchright 의 evaluate 결과는 클수록 넘기는 시간이 훨씬 빨리 늘어, 97MB 를 한 번에 넘기면 44초, 1MB 씩이면 2초쯤 걸렸다.
   jibsa 소스 응답은 1MB 미만이라 이 경로와 본문 조각 사이 시간 초과는 CI 의 `브라우저 확인`에서만 돈다.
-- 남긴 쿠키 버리기: 우리 요청이 `browser_discard_statuses`(기본 403)를 받으면 버려 다음 명령이 첫 화면부터 연다. 출처
-  탭(`browser_no_cors_hosts`)에서 받은 403 도 버린다. 쿠키 파일이 소스마다 하나이고 그 요청에도 같은 사이트 쿠키가 실린다
-  (당근 `_ga` 는 `.daangn.com`).
+- 남긴 쿠키 버리기: 우리 요청이 `browser_discard_statuses`(기본 403)를 받으면 버려 다음 명령이 첫 화면부터 연다.
   429 는 요청량·IP 차단이라 버리지 않는다 (쿨다운 뒤 첫 화면을 연 지 30분 안이면 요청 1건으로 풀렸는지 본다). 첫 화면이 제대로 열리지 않으면 멈춘다:
   문서나 첫 화면의 사이트 API 가 429 면 쿨다운(`RateLimitedError`, 첫 화면 호스트가 `browser_api_hosts` 에 없어도)이고 같은
   이유로 쿠키는 남긴다 (`browser_ready_cookie` 를 못 받았으면 다음 명령이 쓰지 않고 다시 연다). 그 밖에는 그 첫 화면의 쿠키를
@@ -173,12 +187,9 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   재시도하지 않는 실패(위 둘과 차단 응답, Chromium 을 못 띄움)는 소스·`proxy`(주지 않았으면 환경 변수 프록시)·`verify` 별로
   60초 동안 기억해, 실패를 삼킨 덤 조회 뒤의 요청이나 새로 만든 같은 설정의 클라이언트가 첫 화면을 다시 열지 않고 같은 에러를
   바로 낸다. 환경 변수가 없을 때 Chromium 이 보는 OS 프록시 설정을 바꾼 것은 알 수 없어 60초가 지나야 다시 연다. `EntryPageError` 는
-  전송 오류가 아닌 jibsa 에러라 덤 조회가 삼키지 않는다. 다른 소스로 넘기는 곳(당근 `_geocode`)은 따로 잡는다. 다만 어느 소스로
-  보내도 같이 실패하는 프록시 오류(`ProxyUnreachableError`: 설정 오류·프록시에 닿지 못함)와 `BROWSER_UNAVAILABLE`
-  (`SHARED_BROWSER_ERRORS`), 본 조회도 같은 클라이언트로 하는 당근 자신의 첫 화면 단계 실패(`EntryOpenError`)는 넘기지 않고 바로
-  올린다 (넘기면 Chromium 을 재시도까지 9번 더 띄운 뒤 엉뚱한 소스의 실패로 알렸다). 프록시가 한 사이트로의 연결만 거절한 것
-  (`net::ERR_TUNNEL_CONNECTION_FAILED`)은 다른 소스가 닿을 수 있어 공통으로 보지 않는다. 첫 화면에서 났으면 `EntryPageError`
-  (`NETWORK_ERROR`, 프록시 hint), 우리 요청에서 났으면 `ProxyError` 다.
+  전송 오류가 아닌 jibsa 에러라 덤 조회가 삼키지 않는다. 프록시 오류(설정 오류·프록시에 닿지 못함)는 `ProxyError` 다.
+  프록시가 한 사이트로의 연결만 거절한 것(`net::ERR_TUNNEL_CONNECTION_FAILED`)은 첫 화면에서 났으면 `EntryPageError`
+  (`NETWORK_ERROR`, 프록시 hint), 우리 요청에서 났으면 메시지로 가른 `ProxyError` 다.
 - 우리 요청 중 탭·브라우저가 닫히는 등 patchright 에러가 나면 브라우저를 닫고 `ConnectError` 로 재시도한다. 재시도는 남긴
   쿠키로 다시 띄운다 (닫힌 탭을 다시 쓰면 같은 에러만 난다).
 - 클라이언트를 닫아야(`with`·`close()`) 브라우저 스레드와 Chromium 이 끝나고 쿠키가 남는다. 닫지 않으면 프로세스가 끝날
@@ -186,9 +197,8 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   는 동기 클라이언트도 다른 스레드에서 닫아 이벤트 루프를 막지 않는다. 여러 스레드가 같이 쓰다 한 스레드가 닫으면 그 뒤
   요청은 httpx 처럼 `RuntimeError` 다. 쿠키 파일은 다른 jibsa 프로세스가 그사이 지웠거나 첫 화면을 더 늦게 새로 열었으면
   남기지도 지우지도 않는다 (`_BrowserState.finish`·`discard_saved`).
-- 클라이언트마다 Chromium 을 따로 띄운다. 한 명령에서 같은 소스를 여러 번 부르면 클라이언트 하나를 넘겨 쓴다 (당근
-  `_geocode` 는 본 조회의 클라이언트를 받는다). 다른 소스는 첫 화면(출처)과 쿠키가 달라 같이 쓰지 않는다. 그래서 당근
-  `_geocode` 가 직방·네이버로 넘어가면 Chromium 이 하나씩 더 뜬다 (당근이 못 찾은 장소 이름일 때만).
+- 클라이언트마다 Chromium 을 따로 띄운다. 한 명령에서 같은 소스를 여러 번 부르면 클라이언트 하나를 넘겨 쓴다 (당근 위치
+  찾기는 본 조회의 클라이언트로 한다). 소스끼리는 부르지 않아([계층](#계층)) 한 명령이 다른 소스의 Chromium 을 띄우지 않는다.
 - 첫 화면에서 받지 않는 것: 이미지·폰트·미디어·스타일과 지도 타일. 쿠키는 그대로 생긴다. 사이트 자체 API 는
   막지 않는다 (네이버는 막으면 `NNB` 등이 생기지 않았다).
 - Chromium 은 `jibsa install-browser` 가 받는다 (`install_chromium`). 내려받기 진행은 stderr 가 터미널이거나
@@ -201,7 +211,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   동시에 보낸 요청도 차례로 나간다. 기다리다 취소되면 Ctrl+C 처럼 하던 일을 기다리지 않는다). 따로 스레드를 두는 것은
   patchright 동기 API 가 asyncio 이벤트 루프 안에서 불리지 못하고, 부를 때마다 자기 asyncio 루프를 그 스레드의 '도는 루프'로
   남기며, 한 번 띄운 브라우저는 띄운 스레드에서만 다룰 수 있기 때문이다. 부른 스레드에는 아무것도 남지 않아 CLI 메인 스레드·asyncio 루프 안(Jupyter)·여러 작업 스레드 어디서 같은
-  클라이언트를 불러도 되고, 한 명령에서 여러 소스의 브라우저(당근 `_geocode` 의 직방·네이버)를 띄워도 된다. 예전에는 CLI 메인
+  클라이언트를 불러도 되고, 한 프로세스에서 여러 소스의 브라우저를 띄워도 된다. 예전에는 CLI 메인
   스레드에서 바로 부르고 남은 루프를 asyncio 비공개 함수(`_set_running_loop`)로 걷어 냈는데, 그 때문에 메인 스레드에서 띄운
   클라이언트를 다른 스레드나 루프 안에서 쓰거나 닫으면 `RuntimeError` 였다 (2026-11-10 리뷰로 바꿈). 스레드를 오가는 비용은
   호출당 약 40µs 다 (같은 날 실측).
@@ -218,6 +228,6 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   대신 OS 설정을 보기 때문이다. 환경 변수가 없으면 Chromium 이 OS 프록시 설정을 쓴다. `NO_PROXY=*` 는 httpx 처럼
   프록시를 아예 쓰지 않는다는 뜻이라 `--no-proxy-server` 로 OS 프록시도 건너뛴다. Chromium 은 http·https·socks4·socks5
   만 받아 `socks5h`·`socks4a` 는 socks5·socks4 로 바꿔 넘기고(Chromium 의 SOCKS 는 프록시가 이름을 푼다), 해석할 수
-  없는 주소·쓸 수 없는 스킴·아이디·비밀번호가 있는 SOCKS 프록시는 `ProxyUnreachableError`(`ProxyError`)로 멈춘다. CLI 는
+  없는 주소·쓸 수 없는 스킴·아이디·비밀번호가 있는 SOCKS 프록시는 `ProxyError` 로 멈춘다. CLI 는
   `ProxyError` 를 프록시 설정을 가리키는 hint(`PROXY_HINT`: 환경 변수, 없으면 OS 프록시 설정, 바로 연결하려면
   `NO_PROXY=*`)와 함께 `NETWORK_ERROR` 로 낸다.

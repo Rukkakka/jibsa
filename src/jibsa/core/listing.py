@@ -44,12 +44,14 @@ MOVE_IN_NOW: str = '즉시입주'
 BASEMENT_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^B(\d+)$')
 RELATIVE_FLOOR_LABELS: dict[str, str] = {'저': '저층', '중': '중층', '고': '고층'}
 
-# 거래 유형별로 원래 존재하지 않는 가격 필드. 출력에서 키째 뺀다.
+# 거래 유형별로 원래 존재하지 않는 가격 필드. 출력에서 키째 뺀다. 연세(당근 제주)만 1년치 월세 `yearly_rent_manwon` 이 있고
+# 월세 `rent_manwon` 은 없다 (연세를 월세로 나눈 값은 당근 웹에도 없다)
 NOT_APPLICABLE_PRICE_FIELDS: dict[str, frozenset[str]] = {
-    '매매': frozenset({'deposit_manwon', 'rent_manwon'}),
-    '전세': frozenset({'price_manwon', 'rent_manwon'}),
-    '월세': frozenset({'price_manwon'}),
-    '단기임대': frozenset({'price_manwon'}),
+    '매매': frozenset({'deposit_manwon', 'rent_manwon', 'yearly_rent_manwon'}),
+    '전세': frozenset({'price_manwon', 'rent_manwon', 'yearly_rent_manwon'}),
+    '월세': frozenset({'price_manwon', 'yearly_rent_manwon'}),
+    '단기임대': frozenset({'price_manwon', 'yearly_rent_manwon'}),
+    '연세': frozenset({'price_manwon', 'rent_manwon'}),
 }
 
 # 시·도 줄임말 → 정식 명칭. 직방·네이버는 '서울시'·'강원도'·'제주도' 처럼 줄이거나 옛 이름을 쓰고
@@ -99,7 +101,12 @@ SIDO_OFFICIAL_NAMES: dict[str, str] = {
 CITY_NAMES_NOT_SIDO: frozenset[str] = frozenset({'광주시'})
 
 Source = Literal['naver', 'zigbang', 'daangn', 'dabang']
-TradeType = Literal['매매', '전세', '월세', '단기임대']
+# 연세는 1년치 월세를 한 번에 내는 제주 거래로, 당근만 준다 (YearTrade)
+TradeType = Literal['매매', '전세', '월세', '단기임대', '연세']
+# 네 소스가 함께 쓰는 거래 유형. 연세가 없는 소스의 거래 유형 안내(`infer_trade_types`)에 연세를 섞지 않는다
+SHARED_TRADE_TYPES: tuple[TradeType, ...] = ('매매', '전세', '월세', '단기임대')
+# 예약 상태를 알려 주는 소스(당근)의 거래 상태. 거래완료는 내보내지 않는다 (만료 매물)
+ListingStatus = Literal['판매중', '예약중']
 
 
 def m2_to_pyeong(m2: float | None) -> float | None:
@@ -484,6 +491,8 @@ class Listing(BaseModel):
         id: 소스 안에서의 매물 ID. 상세 명령에 그대로 넘긴다.
         url: 원 사이트 매물 페이지 URL.
         trade_type: 거래 유형.
+        status: 거래 상태 ('판매중', '예약중'). 예약 상태를 알려 주는 소스(당근)만 채운다. 그 밖의 소스는 해당 없음이라
+            출력에서 키를 뺀다. Defaults to None.
         property_type: 매물 유형 (원룸, 오피스텔, 빌라, 아파트 ...).
         room_type: 방 구조 (오픈형원룸 ... 포룸이상). 소스가 알려줄 때만.
             Defaults to None.
@@ -491,6 +500,8 @@ class Listing(BaseModel):
         price_manwon: 매매가(만원). Defaults to None.
         deposit_manwon: 보증금 또는 전세금(만원). Defaults to None.
         rent_manwon: 월세(만원). Defaults to None.
+        yearly_rent_manwon: 연세(만원). 1년치 월세를 한 번에 내는 제주 거래(당근 연세)에만 있다.
+            Defaults to None.
         manage_cost_manwon: 월 관리비(만원). Defaults to None.
         area_m2: 전용면적(㎡). Defaults to None.
         area_pyeong: 전용면적(평). Defaults to None.
@@ -527,6 +538,10 @@ class Listing(BaseModel):
         TradeType,
         Field(description='거래 유형')
     ]
+    status: Annotated[
+        ListingStatus | None,
+        Field(description='거래 상태 (판매중, 예약중). 예약중은 계약이 깨질 수 있어 내보낸다. 예약 상태가 없는 소스는 키를 뺀다')
+    ] = None
     property_type: Annotated[
         str,
         Field(description='매물 유형 (원룸, 오피스텔, 빌라, 아파트 ...)')
@@ -550,6 +565,10 @@ class Listing(BaseModel):
     rent_manwon: Annotated[
         float | None,
         Field(description='월세 (만원)')
+    ] = None
+    yearly_rent_manwon: Annotated[
+        float | None,
+        Field(description='연세 (만원, 1년치를 한 번에 낸다. 월세 아님). 제주 연세 거래(당근)에만 있고 그 밖에는 키가 없다')
     ] = None
     manage_cost_manwon: Annotated[
         float | None,
@@ -610,11 +629,13 @@ class Listing(BaseModel):
         """이 매물에 원래 존재하지 않는 필드. 출력에서 키째 뺀다.
 
         거래 유형에 없는 가격 필드와, 검색 중심점 없이 조회해 거리가 없는
-        경우(단지 매물 목록 등)의 `distance_km` 이다.
+        경우(단지 매물 목록 등)의 `distance_km`, 예약 상태를 알려 주지 않는 소스의 `status` 다.
         """
         fields = NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type, frozenset())
         if self.distance_km is None:
             fields = fields | {'distance_km'}
+        if self.status is None:
+            fields = fields | {'status'}
         return fields
 
     @model_serializer(mode='wrap')

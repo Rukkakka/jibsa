@@ -1,3 +1,4 @@
+import hashlib
 import inspect
 import json
 import logging
@@ -6,7 +7,11 @@ import shlex
 import sys
 import unicodedata
 from collections.abc import Sequence
-from importlib.metadata import distribution
+from functools import cache
+from importlib.metadata import (
+    PackageNotFoundError,
+    distribution,
+)
 from importlib.resources import files
 from pathlib import Path
 
@@ -36,6 +41,7 @@ from jibsa.cli import (
     zigbang,
 )
 from jibsa.cli.output import (
+    ChangedUsage,
     UsageHints,
     emit,
     emit_error,
@@ -56,7 +62,7 @@ from typing import Annotated
 # SIGINT 로 끝난 프로세스의 관례적인 exit code (128 + 2). Typer 도 KeyboardInterrupt 를 이 값으로 바꾼다.
 INTERRUPTED_EXIT_CODE: int = 130
 INTERRUPTED_HINT: str = '호출한 쪽이 실행을 끊었습니다. 결과가 필요하면 같은 명령을 다시 실행하세요'
-# 인자 하나 안에 공백 뒤(또는 맨 앞)의 옵션 모양('--city', '-t')이 든 것. 주소의 '719-28' 같은 값은 걸리지 않는다
+# 인자 하나 안에 공백 뒤(또는 맨 앞)의 옵션 모양('--limit', '-t')이 든 것. 주소의 '719-28' 같은 값은 걸리지 않는다
 JOINED_OPTION_PATTERN: re.Pattern[str] = re.compile(r'(?:^|\s)--?[A-Za-z][\w-]*')
 JOINED_OPTIONS_HINT: str = (
     '셸 변수에 옵션 여러 개를 담아 넘기면 인자 하나가 됩니다 (zsh 는 따옴표 없는 $VAR 도 나누지 않는다). '
@@ -79,8 +85,20 @@ SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn', 'daba
 # 따옴표 없이 띄어 쓴 이름(`송파구 신천동`)을 하나로 잇는 위치 인자 (`joined_name_args`). 지역·장소·학교·단지 이름만 두고
 # ID 인자는 두지 않는다 (ID 두 개를 이어 찾지 않고 'unexpected extra argument' 로 알린다)
 NAME_ARGUMENTS: frozenset[str] = frozenset({
-    'query', 'dong', 'region', 'keyword', 'place', 'workplace', 'name', 'station', 'scope', 'complex_',
+    'query', 'dong', 'region', 'keyword', 'workplace', 'name', 'station', 'scope', 'complex_',
 })
+# 따옴표 없이 띄어 쓴 값('--address 테헤란로 152')의 뒤 낱말을 그 값에 잇는 옵션 (명령 함수의 인자 이름). 지역 이름 위치 인자와
+# 함께 줄 수 없는 옵션만 둔다 (당근 search listings·search commute). 뒤 낱말을 위치 인자로 보면 둘을 함께 준 것이 되어 막혔다
+# (2026-11-12 리뷰·실측: '--address 테헤란로 152' 가 주소 '테헤란로' 와 지역 '152' 로 나뉘어 '함께 줄 수 없습니다')
+NAME_OPTIONS: frozenset[str] = frozenset({'station', 'university', 'address'})
+# 당근 노선 이름 ('서울2호선'·'신분당선'·'공항철도'·'용인경전철'·'GTX-A', 2026-11-13 역 검색 실측 37개 노선이 모두 맞는다)
+LINE_NAME_PATTERN: re.Pattern[str] = re.compile(r'GTX-[A-Z]|\S+(?:선|철도|전철)')
+# 이름 옵션 가운데 뒤 낱말을 이을 앞 낱말의 모양을 아는 것. 역 이름 값은 노선 이름 뒤에 역 이름 하나가 와서('서울5호선 양평역',
+# '경의중앙선·서울5호선 양평', 당근 `find_station`), 지금까지 이은 마지막 낱말이 노선 이름일 때만 다음 낱말을 잇는다. 이으면
+# '--station 강남역 역삼동' 이 역 '강남역 역삼동' 을 한 번 찾은 뒤 없는 역이라고 했다 (2026-11-12 리뷰). 예전에는 '역' 으로 끝나는지만
+# 봐 '역' 없이 쓴 '--station 강남 역삼동' 은 그대로 이었다 (2026-11-13 리뷰). 잇지 않으면 지역 이름과 함께 준 것이라 요청 전에
+# '함께 줄 수 없습니다' 로 막힌다
+NAME_OPTION_PREFIX_WORDS: dict[str, re.Pattern[str]] = {'station': LINE_NAME_PATTERN}
 # Click 이 명령마다 붙이는 도움말 옵션 (명령의 params 에는 없다)
 HELP_OPTIONS: frozenset[str] = frozenset({'--help'})
 # 하위 명령 자리에 온 지역 이름을 알아본다 (`subcommand_hint`)
@@ -94,6 +112,11 @@ PLAIN_HELP_WIDTH: int = 1000
 USAGE_HINTS: dict[str, UsageHints] = {
     **zigbang.USAGE_HINTS, **naver.USAGE_HINTS, **daangn.USAGE_HINTS, **dabang.USAGE_HINTS,
 }
+# 예전 문서대로 부른 명령에 바뀐 사용법을 알린다 (`changed_usage_hint`)
+CHANGED_USAGE: dict[str, ChangedUsage] = {**daangn.CHANGED_USAGE}
+# Click 은 없는 하위 명령 이름을 repr 로 감싸(작은따옴표가 든 이름은 큰따옴표) 마침표를 붙이고, 비슷한 이름이 있으면
+# 'Did you mean' 을 잇는다
+NO_SUCH_COMMAND_PATTERN: re.Pattern[str] = re.compile(r"No such command (['\"])(.*?)\1\.")
 
 app = typer.Typer(
     name='jibsa',
@@ -115,7 +138,7 @@ def show_version(value: bool) -> None:
     """`--version` 이 주어지면 버전 한 줄을 stdout 에 쓰고 명령을 실행하지 않고 끝낸다."""
     if not value:
         return
-    # 메타데이터가 없는 깨진 설치도 에러 JSON 으로 낸다
+    # 설치 정보가 없거나 설치 출처 파일이 깨져도 버전 줄을 쓴다 (`_install`). 그 밖에 메타데이터를 읽다 난 오류는 에러 JSON 으로 낸다
     with handle_errors('version'):
         typer.echo(version_text())
     raise typer.Exit()
@@ -313,21 +336,58 @@ def guide_section(text: str, query: str, topic: str) -> str:
 
 
 def version_text() -> str:
-    """`jibsa --version` 이 쓰는 한 줄 (`jibsa 0.2.0 (커밋 a1b2c3d)`).
+    """`jibsa --version` 이 쓰는 한 줄 (`jibsa 0.2.0 (커밋 a1b2c3d)`). 이어 받기 표(`paging`)도 이 줄로 만든 버전을 담는다 (`build_text`).
 
     버전은 pyproject.toml 에만 적고 설치 메타데이터에서 읽는다. `main` 을 git 주소로 설치하면 릴리스 사이의 커밋도
     버전이 같으므로, pip·uv 가 남긴 `direct_url.json`(PEP 610)의 커밋을 붙인다. PyPI 설치는 버전만 쓴다. 편집 가능
-    설치는 저장소 코드를 그대로 따라가 버전만으로는 어느 코드인지 알 수 없어 `(개발 설치)` 를 붙인다.
+    설치는 저장소 코드를 그대로 따라가 버전만으로는 어느 코드인지 알 수 없어 `(개발 설치)` 를 붙인다. 설치하지 않은
+    소스 폴더를 바로 돌리면(`PYTHONPATH=src python -m jibsa`) 메타데이터가 없어 `(설치 정보 없음)`, `direct_url.json` 을
+    읽지 못하면 `(설치 출처 모름)` 이다. 이어 받기 표가 한 명령에서 만들고 읽으며 두 번 부르므로 한 번만 읽는다 (`_install`).
     """
-    dist = distribution('jibsa')
+    return _install()[0]
+
+
+@cache
+def _install() -> tuple[str, bool]:
+    """(`version_text` 한 줄, 그 줄이 코드를 가르지 못하는지). 개발 설치·설치 정보 없음·설치 출처 모름은 코드가 바뀌어도 줄이 같다."""
+    try:
+        dist = distribution('jibsa')
+    except PackageNotFoundError:
+        # 예전에는 그대로 올라가, 매물을 다 받은 뒤 next 를 만들다 INTERNAL_ERROR 로 끝났다 (2026-11-12 리뷰)
+        return 'jibsa (설치 정보 없음)', True
     text = f'jibsa {dist.version}'
-    origin = json.loads(dist.read_text('direct_url.json') or '{}')
-    commit = origin.get('vcs_info', {}).get('commit_id')
+    try:
+        origin = json.loads(dist.read_text('direct_url.json') or '{}')
+        commit = origin.get('vcs_info', {}).get('commit_id')
+        editable = origin.get('dir_info', {}).get('editable')
+    except (ValueError, AttributeError):
+        # 쓰다 끊기거나 꼴이 다른 설치 출처 파일(PEP 610). 설치 정보 없음처럼 버전 줄을 주고 코드 지문으로 가른다. 예전에는
+        # 그대로 올라가 매물을 다 받은 뒤 next 를 만들다 PARSE_ERROR 로 끝났고, --next 는 traceback 을 냈다 (2026-11-12 리뷰)
+        return f'{text} (설치 출처 모름)', True
     if commit:
-        return f'{text} (커밋 {commit[:SHORT_COMMIT_LENGTH]})'
-    if origin.get('dir_info', {}).get('editable'):
-        return f'{text} (개발 설치)'
-    return text
+        return f'{text} (커밋 {commit[:SHORT_COMMIT_LENGTH]})', False
+    if editable:
+        return f'{text} (개발 설치)', True
+    return text, False
+
+
+@cache
+def build_text() -> str:
+    """이어 받기 표(`paging`)가 만든 jibsa 를 가르는 값. 버전 한 줄(`version_text`)이 코드를 가르지 못하면 코드 지문을 붙인다.
+
+    개발 설치·설치 정보 없음·설치 출처 모름은 코드를 고쳐도 버전 줄이 같아, 고치기 전에 만든 표가 버전 확인을 지나 바뀐 꼴의 위치를 읽다
+    엉뚱한 조건 오류나 KeyError 로 끝날 수 있었다 (2026-11-12 리뷰). 지문은 패키지 `.py` 파일 경로와 내용의 해시다. `jibsa --version`
+    에는 붙이지 않는다.
+    """
+    text, tracks_source = _install()
+    if not tracks_source:
+        return text
+    package = Path(__file__).resolve().parent.parent
+    digest = hashlib.sha256()
+    for path in sorted(package.rglob('*.py')):
+        digest.update(path.relative_to(package).as_posix().encode())
+        digest.update(path.read_bytes())
+    return f'{text} 코드 {digest.hexdigest()[:SHORT_COMMIT_LENGTH]}'
 
 
 class PlainHelpFormatter(HelpFormatter):
@@ -404,6 +464,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             exc.format_message(),
             getattr(exc, 'hint', None)
             or misplaced_option_hint(exc, command, args, cli)
+            or changed_usage_hint(exc, command)
             or foreign_usage_hint(exc, command, args, cli)
             or subcommand_hint(exc)
             or f"'{command} --help' 로 사용법을 확인하세요",
@@ -426,7 +487,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
 
 def joined_options_arg(args: Sequence[str]) -> str | None:
-    """옵션 여러 개가 셸에서 나뉘지 않고 인자 하나로 온 것 (`'--complex 111515 --pyeong 8,9'`, `'대치동 --city 강남구'`).
+    """옵션 여러 개가 셸에서 나뉘지 않고 인자 하나로 온 것 (`'--complex 111515 --pyeong 8,9'`, `'대치동 --limit 5'`).
 
     그대로 넘기면 없는 옵션이나 없는 지역으로 끝나 '--help 를 보라' 같은 힌트만 받고, 지역 인자는 요청까지 보낸 뒤에야
     실패한다. 2026-10-24 에이전트 검증 8명 중 4명, 2026-10-31 재검증 7건(zsh 에서 `P="--complex …"; jibsa … $P`)이
@@ -444,7 +505,10 @@ def joined_name_args(args: Sequence[str], cli: Command) -> list[str]:
 
     나뉜 채로 넘기면 Click 이 'unexpected extra argument (신천동)' 로 막고 '--help 를 보라' 만 알렸다. 에이전트가
     `REGION_AMBIGUOUS` 힌트의 '송파구 신천동' 을 따옴표 없이 옮겨 한 번 더 불렀다 (2026-11-01 에이전트 검증). 옵션 값은
-    명령의 옵션 정의로 건너뛰고, 모르는 옵션이나 `--` 가 있으면 그대로 둬 Click 이 알리게 한다.
+    명령의 옵션 정의로 건너뛰고, 모르는 옵션이나 `--` 가 있으면 그대로 둬 Click 이 알리게 한다. 이름 옵션(`NAME_OPTIONS`)의 값
+    바로 뒤에 붙은 낱말은 위치 인자가 아니라 그 값으로 잇는다 (`--address 테헤란로 152`). 뒤 낱말을 이을 앞 낱말의 모양을 아는
+    옵션은 마지막 낱말이 그 모양일 때만 잇는다 (`NAME_OPTION_PREFIX_WORDS`: `--station 서울5호선 양평역` 은 노선 뒤라 잇고
+    `--station 강남 역삼동`·`--station 강남역 역삼동` 의 역삼동은 위치 인자).
     """
     command, index = cli, 0
     while isinstance(command, TyperGroup) and index < len(args):
@@ -459,25 +523,48 @@ def joined_name_args(args: Sequence[str], cli: Command) -> list[str]:
     arguments = [param for param in command.params if param.param_type_name == 'argument']
     if isinstance(command, TyperGroup) or len(arguments) != 1 or arguments[0].name not in NAME_ARGUMENTS:
         return list(args)
+    # 같은 이름으로 이을 인자 묶음. 첫 자리에 이어 붙인 값을 두고 나머지 자리는 뺀다
+    groups: list[list[int]] = []
     positions: list[int] = []
+    # 바로 앞이 이름 옵션 값이면 그 값의 묶음 (뒤 낱말을 잇는다)과 뒤 낱말을 이을 앞 낱말의 모양
+    option_group: list[int] | None = None
+    prefix: re.Pattern[str] | None = None
     while index < len(args):
         arg = args[index]
         if arg.startswith('-') and len(arg) > 1:
             width = _option_width(command, arg)
             if width is None:
                 return list(args)
+            option_group = None
+            name = _option_name(command, arg)
+            if name in NAME_OPTIONS and index + width - 1 < len(args):
+                option_group = [index + width - 1]
+                groups.append(option_group)
+                prefix = NAME_OPTION_PREFIX_WORDS.get(name)
             index += width
         else:
-            positions.append(index)
+            (option_group if option_group is not None else positions).append(index)
             index += 1
-    if len(positions) < 2:
+        if option_group is not None and prefix is not None and not all(
+            prefix.fullmatch(part) for part in args[option_group[-1]].split('·')
+        ):
+            option_group = None
+    groups.append(positions)
+    groups = [group for group in groups if len(group) > 1]
+    if not groups:
         return list(args)
-    joined = ' '.join(args[position] for position in positions)
-    return [
-        joined if position == positions[0] else arg
-        for position, arg in enumerate(args)
-        if position not in positions[1:]
-    ]
+    joined = {group[0]: ' '.join(args[position] for position in group) for group in groups}
+    dropped = {position for group in groups for position in group[1:]}
+    return [joined.get(position, arg) for position, arg in enumerate(args) if position not in dropped]
+
+
+def _option_name(command: Command, arg: str) -> str | None:
+    """옵션 인자 `arg`(`--address`, `--address=테헤란로`)의 명령 함수 인자 이름. 모르는 옵션이면 None."""
+    name = arg.partition('=')[0]
+    return next(
+        (param.name for param in command.params if isinstance(param, TyperOption) and name in (*param.opts, *param.secondary_opts)),
+        None,
+    )
 
 
 def _option_width(command: Command, arg: str) -> int | None:
@@ -580,6 +667,27 @@ def _own_options_hint(cli: Command, command: str, option: str) -> str | None:
     return f"{command} 에는 {option} 옵션이 없습니다. 이 명령의 옵션: {', '.join(options)}. '{command} --help' 로 사용법을 확인하세요"
 
 
+def changed_usage_hint(exc: UsageError, command: str) -> str | None:
+    """예전 문서대로 부른 명령(인자·옵션이 바뀌었거나 없앤 명령)에 바뀐 사용법을 알린다 (`CHANGED_USAGE`).
+
+    당근 `preschools` 가 지역·역·반경 대신 단지 ID 를 받게 바뀌어, 예전 문서의 `preschools 역삼역 -t 어린이집` 은
+    'No such option: -t' 와 이 명령의 옵션(--pretty)만 안내받았다. 없앤 `developments` 는 당근 하위 명령 목록만 받아
+    네이버 재개발 명령으로 가는 길을 알 수 없었다 (2026-11-11 리뷰). 없앤 명령은 그룹 경로 뒤에 그 이름을 붙여 찾는다.
+
+    옵션을 뺀 명령은 뺀 옵션을 줬을 때만 알린다. 모든 사용법 오류에 붙이면 새 사용법의 옵션 오타
+    (`preschools 10697092 --prety`)·인자 누락까지 예전 사용법 탓으로 알렸다 (2026-11-11 리뷰). 예전처럼 준 이름은
+    (띄어 써도 첫 단어에서) 인자 값 검사가 먼저 막아 여기까지 오지 않는다.
+    """
+    match = NO_SUCH_COMMAND_PATTERN.match(exc.message)
+    usage = CHANGED_USAGE.get(f'{command} {match.group(2)}' if match else command)
+    if usage is None:
+        return None
+    if usage.removed_options and not (isinstance(exc, NoSuchOption) and exc.option_name in usage.removed_options):
+        return None
+    # 다른 사용법 오류처럼 --help 안내로 끝낸다 (test_usage_errors_are_json_with_exit_2)
+    return f"{usage.hint}. '{command} --help' 로 사용법을 확인하세요"
+
+
 def subcommand_hint(exc: UsageError) -> str | None:
     """그룹에 없는 하위 명령에 그 그룹의 하위 명령을 알린다 (`jibsa zigbang search listings 역삼동`).
 
@@ -590,8 +698,7 @@ def subcommand_hint(exc: UsageError) -> str | None:
     `.,·/-` 밖의 글자가 든 이름은 셸 따옴표로 감싸 그대로 붙여 넣어도 인자 하나가 되게 한다.
     """
     context = exc.ctx
-    # Click 은 이름을 repr 로 감싸(작은따옴표가 든 이름은 큰따옴표) 마침표를 붙이고, 비슷한 이름이 있으면 'Did you mean' 을 잇는다
-    match = re.match(r"No such command (['\"])(.*?)\1\.", exc.message)
+    match = NO_SUCH_COMMAND_PATTERN.match(exc.message)
     if context is None or match is None or not isinstance(context.command, TyperGroup):
         return None
     group = context.command

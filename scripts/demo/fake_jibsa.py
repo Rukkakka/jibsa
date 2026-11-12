@@ -21,8 +21,6 @@ DETAIL_PATH = re.compile(r'/house/property/v1/items/(\d+)/detail')
 
 def handler(request: httpx.Request) -> httpx.Response:
     path = request.url.path
-    if request.url.host == 'account.zigbang.com':
-        return httpx.Response(201, json=FAKE['token'])
     if path == '/v2/search':
         return httpx.Response(200, json=FAKE['search'])
     if path == '/house/property/v1/items/list':

@@ -1,4 +1,4 @@
-"""응답 모델: 매물 검색 조건과 동·반경·역 주변 매물 검색 (search listings)."""
+"""응답 모델: 매물 검색 조건과 동·지도 범위·역·대학 주변 매물 검색 (search listings)."""
 
 from pydantic import Field
 
@@ -6,46 +6,11 @@ from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
     DaangnCommuteStationArticleConnectionModel,
-    DaangnCoordinateModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
-    DaangnRegionModel,
 )
 
 from typing import Annotated
-
-
-# ---------------------------------------------------------------------------
-# SSR Relay store records (map / articles pages)
-# ---------------------------------------------------------------------------
-
-class DaangnMapResponseModel(ResponseModel):
-    """지도 페이지에서 추출한 동 단위 매물 피드 (최대 20건)."""
-
-    region: Annotated[
-        DaangnRegionModel | None,
-        Field(description='조회한 동')
-    ] = None
-    articles: Annotated[
-        list[DaangnArticleModel],
-        Field(description='최근 매물 (SSR 첫 페이지)')
-    ] = []
-    cursors: Annotated[
-        list[str | None],
-        Field(description='`articles` 와 같은 순서의 edge 커서. `articleFeed` 의 after 로 주면 그 매물 다음부터 받는다 (모르면 None)')
-    ] = []
-    total_count: Annotated[
-        int | None,
-        Field(description='동 전체 매물 수 (서버가 1000 으로 자르는 것으로 보인다)')
-    ] = None
-    has_next_page: Annotated[
-        bool | None,
-        Field(description='다음 페이지 존재 여부')
-    ] = None
-    end_cursor: Annotated[
-        str | None,
-        Field(description='첫 페이지의 pageInfo.endCursor. GraphQL `articleFeed` 의 after 로 다음 페이지를 받는다')
-    ] = None
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +18,11 @@ class DaangnMapResponseModel(ResponseModel):
 # ---------------------------------------------------------------------------
 
 class DaangnArticleFeedCardModel(ResponseModel):
-    """피드 카드 한 장. 실제로는 늘 매물 카드(ARTICLE)에 매물이 있다 (`parser._feed_articles` 주석 참고)."""
+    """피드 카드 한 장. 실제로는 늘 매물 카드(ARTICLE)에 매물이 있다.
+
+    광고 카드처럼 article 이 null 인 카드는 보지 못했고 웹도 `e.node.article.region.name3` 를 검사 없이 읽는다 (2026-10-11
+    실측: SSR 5개 동 카드 200장·GraphQL 3개 동 180장 모두 article 이 객체였고 type 은 ARTICLE 만 왔다).
+    """
 
     type: Annotated[
         str | None,
@@ -120,10 +89,7 @@ class DaangnArticlesCountDataModel(ResponseModel):
 
     count: Annotated[
         int | None,
-        Field(description=(
-            '조건에 맞는 매물 수. 동으로 찾으면 articleFeed 가 섞어 주는 주변 동 매물까지 센 수로, '
-            'articleFeed 를 끝까지 넘긴 매물 수와 같다. 1000 에서 잘린다'
-        ))
+        Field(description="지도 화면의 좌표 범위에서 조건에 맞는 매물 수 (웹 지도의 '매물 N개'). 1000 에서 잘린다 (웹은 '999+')")
     ] = None
 
 
@@ -137,61 +103,69 @@ class DaangnArticlesCountResponseModel(DaangnGraphQLResponseModel):
 
 
 # ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — articleMapPoints
+# POST realty.kr.karrotmarket.com/graphql — articleByClusterId (지도 동 클러스터 매물 목록)
 # ---------------------------------------------------------------------------
 
-class DaangnArticlePointModel(ResponseModel):
-    """지도 핀 하나. 매물 ID 와 좌표만 있다."""
+class DaangnArticleByClusterIdDataModel(ResponseModel):
+    """GraphQL `data`. 동 피드와 같은 연결 타입(ArticleFeedConnection)이다."""
 
-    original_article_id: Annotated[
-        str,
-        Field(description='숫자 매물 ID', alias='originalArticleId')
-    ]
-    coordinate: Annotated[
-        DaangnCoordinateModel | None,
-        Field(description='매물 좌표')
+    article_by_cluster_id: Annotated[
+        DaangnArticleFeedModel | None,
+        Field(description='동 클러스터 매물', alias='articleByClusterId')
     ] = None
 
 
-class DaangnArticleMapPointsDataModel(ResponseModel):
+class DaangnArticleByClusterIdResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `articleByClusterId` 응답."""
+
+    data: Annotated[
+        DaangnArticleByClusterIdDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# POST realty.kr.karrotmarket.com/graphql — articleClusters (지도 지역 거품의 매물 수)
+# ---------------------------------------------------------------------------
+
+class DaangnArticleClusterModel(ResponseModel):
+    """지도 지역 거품 하나."""
+
+    original_id: Annotated[
+        str,
+        Field(description="클러스터 ID ('REGION:<동 ID>')", alias='originalId')
+    ]
+    name: Annotated[
+        str | None,
+        Field(description='지역 이름')
+    ] = None
+    count: Annotated[
+        int | None,
+        Field(description='조건에 맞는 매물 수 (웹 거품의 "매물 N개")')
+    ] = None
+
+
+class DaangnArticleClustersDataModel(ResponseModel):
     """GraphQL `data`."""
 
-    article_map_points: Annotated[
-        list[DaangnArticlePointModel] | None,
-        Field(description='좌표 범위 안 핀. 순서는 정해져 있지 않고, 넓은 범위는 10000 개에서 잘린다', alias='articleMapPoints')
-    ] = None
+    article_clusters: Annotated[
+        list[DaangnArticleClusterModel],
+        Field(description='범위 안 지역 거품', alias='articleClusters')
+    ] = []
 
 
-class DaangnArticleMapPointsResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `articleMapPoints` 응답."""
+class DaangnArticleClustersResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `articleClusters` 응답."""
 
     data: Annotated[
-        DaangnArticleMapPointsDataModel | None,
+        DaangnArticleClustersDataModel | None,
         Field(description='결과')
     ] = None
 
 
 # ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — articlesByOriginalArticleIds
+# POST realty.kr.karrotmarket.com/graphql — subwayStationArticleConnection / universityArticleConnection (역·대학 주변 매물)
 # ---------------------------------------------------------------------------
-
-class DaangnArticlesByOriginalArticleIdsDataModel(ResponseModel):
-    """GraphQL `data`. 웹 쿼리가 루트 필드에 `articles` 별칭을 붙인다."""
-
-    articles: Annotated[
-        list[DaangnArticleModel] | None,
-        Field(description='매물 카드 (articleFeed 카드와 같은 필드). 지역에 시·도(name1)와 지역 ID 가 없다')
-    ] = None
-
-
-class DaangnArticlesByOriginalArticleIdsResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `articlesByOriginalArticleIds` 응답."""
-
-    data: Annotated[
-        DaangnArticlesByOriginalArticleIdsDataModel | None,
-        Field(description='결과')
-    ] = None
-
 
 class DaangnSubwayStationArticleConnectionDataModel(ResponseModel):
     """GraphQL `data`. 출퇴근 역 매물과 같은 연결 타입(CommuteArticleConnection)이다."""
@@ -207,5 +181,23 @@ class DaangnSubwayStationArticleConnectionResponseModel(DaangnGraphQLResponseMod
 
     data: Annotated[
         DaangnSubwayStationArticleConnectionDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
+class DaangnUniversityArticleConnectionDataModel(ResponseModel):
+    """GraphQL `data`. 역 주변 매물과 같은 연결 타입(CommuteArticleConnection)이다 (2026-11-11 실측)."""
+
+    university_article_connection: Annotated[
+        DaangnCommuteStationArticleConnectionModel | None,
+        Field(description='대학 주변 매물. 카드에 상태·거래 조건이 다 있다', alias='universityArticleConnection')
+    ] = None
+
+
+class DaangnUniversityArticleConnectionResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `universityArticleConnection` 응답."""
+
+    data: Annotated[
+        DaangnUniversityArticleConnectionDataModel | None,
         Field(description='결과')
     ] = None

@@ -49,42 +49,6 @@ class DaangnMapReviewsResponseModel(ResponseModel):
     ] = []
 
 
-class DaangnLivedReviewSummaryModel(ResponseModel):
-    """동네 후기 요약. `overall`·`highlights` 같은 요약 글도 오지만 읽지 않는다."""
-
-    source_review_count: Annotated[
-        int | None,
-        Field(description='요약에 쓰인 후기 수', alias='sourceReviewCount')
-    ] = None
-
-
-class DaangnRegionReviewSummaryModel(ResponseModel):
-    """`regionByOriginalRegionId` 결과."""
-
-    lived_review_summary: Annotated[
-        DaangnLivedReviewSummaryModel | None,
-        Field(description='동네 후기 요약. 구이거나 후기가 적으면 null', alias='livedReviewSummary')
-    ] = None
-
-
-class DaangnRegionByOriginalRegionIdDataModel(ResponseModel):
-    """GraphQL `data`."""
-
-    region_by_original_region_id: Annotated[
-        DaangnRegionReviewSummaryModel | None,
-        Field(description='지역', alias='regionByOriginalRegionId')
-    ] = None
-
-
-class DaangnRegionByOriginalRegionIdResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `regionByOriginalRegionId` (동네 후기 요약) 응답."""
-
-    data: Annotated[
-        DaangnRegionByOriginalRegionIdDataModel | None,
-        Field(description='결과')
-    ] = None
-
-
 class DaangnLivedReviewsConnectionModel(ResponseModel):
     """동네 후기 연결. 본문은 읽지 않고 있는지만 본다."""
 
@@ -98,12 +62,25 @@ class DaangnLivedReviewsConnectionModel(ResponseModel):
     ] = None
 
 
+class DaangnReviewRegionModel(ResponseModel):
+    """후기 목록 쿼리에 함께 오는 지역 (`reviewRegion: regionByOriginalRegionId`)."""
+
+    lived_review_count: Annotated[
+        int | None,
+        Field(description='지역의 동네 후기 수 (웹 모바일 후기 화면의 "후기 N개 더 보기")', alias='livedReviewCount')
+    ] = None
+
+
 class DaangnLivedReviewsByRegionDataModel(ResponseModel):
     """GraphQL `data`."""
 
     lived_reviews_by_region: Annotated[
         DaangnLivedReviewsConnectionModel | None,
         Field(description='동네 후기', alias='livedReviewsByRegion')
+    ] = None
+    review_region: Annotated[
+        DaangnReviewRegionModel | None,
+        Field(description='후기 수를 담은 지역', alias='reviewRegion')
     ] = None
 
 

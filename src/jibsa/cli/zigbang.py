@@ -1094,7 +1094,7 @@ def stay_command(
             # 없으면 반경) 안 지도 칸으로 다시 찾는다. 함께 찾는 동·구 중 처음 못 찾은 곳을 댄다 (_stay_search_ids)
             missing = exc.query
             region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, STAY_GEOHASH_PRECISION, items=items)
-            # 대체 경로로 찾았으니 [실패] 다 (docs/common.md 의 태그 정의, 직방→네이버 위치 대체와 같다). 지금은 매물이 없는 곳까지
+            # 대체 경로로 찾았으니 [실패] 다 (docs/common.md 의 태그 정의). 지금은 매물이 없는 곳까지
             # 지역 검색이 찾아 이 경로를 타면 직방이 바뀐 것이라 업데이트 문구를 붙인다. 매일 API 감시는 업데이트 문구 없는 [실패]
             # 를 잠깐 실패한 덤 조회로 보아, 대체 경로도 0건이면 고장 대신 확인 못 함으로 넘겼다 (2026-11-10 리뷰·실측: 세종
             # 반곡동·나성동, 매물 0건인 인제군 서화면·울릉군 울릉읍, 양근리·애월읍 모두 지역 검색이 찾았다)

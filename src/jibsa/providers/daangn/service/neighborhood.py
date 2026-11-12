@@ -10,7 +10,10 @@ from jibsa.core.errors import (
     RegionAmbiguousError,
     RegionNotFoundError,
 )
-from jibsa.core.listing import SIDO_OFFICIAL_NAMES
+from jibsa.core.listing import (
+    SIDO_OFFICIAL_NAMES,
+    note,
+)
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.neighborhood import (
     DaangnLivableRegionScopesRequestPayloadModel,
@@ -26,6 +29,10 @@ from typing import Annotated
 
 # 웹이 쓰는 통계 기준 연도
 NEIGHBORHOOD_BASE_YEAR: str = '2025'
+# 당근 웹 좋은 동네 추천이 늘 받는 동 수 (useH3ZoomConfig `Ue` 의 limit: 5)
+NEIGHBORHOOD_LIMIT: int = 5
+# 지역을 주지 않았을 때. 웹 지역 고르기의 첫 줄이 '서울 · 전체' 다 (MapShell `kl`, 전국은 고를 수 없다)
+NEIGHBORHOOD_DEFAULT_REGION: str = '서울'
 # 웹의 라이프스타일 카드 (라벨 → 지표 코드, 지표 이름, 클수록 좋은지). 2026-10 웹 번들 기준
 LIFESTYLE_INDICATORS: dict[str, list[tuple[str, str, bool]]] = {
     '직장인자취': [('C004', '1인 가구 많은', True), ('E007', '교통 편리한', True), ('E006', '외식하기 좋은', True)],
@@ -75,12 +82,12 @@ class DaangnNeighborhoodsResult(BaseModel):
 
     lifestyle: Annotated[str, Field(description='라이프스타일')]
     indicators: Annotated[list[str], Field(description='쓴 지표')]
-    regions: Annotated[list[str], Field(description='찾은 지역 (비어 있으면 전국)')]
+    regions: Annotated[list[str], Field(description='찾은 지역. --region 을 주지 않으면 당근 웹 첫 화면처럼 서울 (전국 순위는 없다)')]
     returned: Annotated[int, Field(description='반환한 동 수')]
     neighborhoods: Annotated[list[DaangnNeighborhood], Field(description='순위 순 동')]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='동 이름 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='기본 지역([범위], --region 을 주지 않았을 때)·동 이름 안내. CLI 가 notes 로 붙인다')
     ] = []
 
 
@@ -90,7 +97,7 @@ def _scope_sidos(scopes: list[DaangnLivableSidoModel], name: str) -> list[Daangn
     추천 지역은 통계 기준 연도의 시·도 이름이라 광주광역시·전라남도가 아직 따로다 (2026-10-10 실측: 코드 24·36).
     그래서 양쪽을 `SIDO_OFFICIAL_NAMES` 로 바꿔 비교하고, 전남광주통합특별시('전남')는 두 곳 모두 맞다.
     옛 이름('광주'·'광주광역시'·'전라남도')은 앞부분이 같은 시·도가 있어 그 한 곳만 찾는다. 추천 데이터가 둘을 나눠
-    주니 사용자가 쓴 옛 지역으로 좁히는 것이다. 주소가 통합 이름뿐이라 둘을 가를 수 없는 `--city`(`place_in`)와
+    주니 사용자가 쓴 옛 지역으로 좁히는 것이다. 주소가 통합 이름뿐이라 둘을 가를 수 없는 지역 이름 해석(`place_in`)과
     다른 건 의도다 (2026-10-11 실측: '전남' → 광주광역시·전라남도, '전라남도'·'광주' → 그 한 곳. 결과 `regions` 에 찾은 곳이 나온다).
     """
     prefixed = [sido for sido in scopes if sido.name.startswith(name)]
@@ -103,8 +110,10 @@ def _scope_sidos(scopes: list[DaangnLivableSidoModel], name: str) -> list[Daangn
 def _region_codes(client: DaangnClient, names: list[str]) -> list[tuple[str, str]]:
     """지역 이름을 추천 지역 코드로 바꾼다 ('서울' → 11, '강남구' → 11230, '서울 중구'). (코드, 이름) 목록.
 
-    여러 시·도에 있는 시·군·구 이름(중구·서구 등)은 시·도를 앞에 붙여야 한다. 시·도는 다른 명령의 `--city` 처럼
-    줄임말·옛 이름('서울시'·'충북')과 전남광주통합특별시도 받는다 (`_scope_sidos`).
+    `names` 는 비지 않는다 (지역을 주지 않으면 `recommend_neighborhoods` 가 서울로 부른다).
+
+    여러 시·도에 있는 시·군·구 이름(중구·서구 등)은 시·도를 앞에 붙여야 한다. 시·도는 줄임말·옛 이름('서울시'·'충북')과
+    전남광주통합특별시도 받는다 (`_scope_sidos`).
 
     구가 있는 시의 구는 추천 지역에 '성남시 분당구' 처럼 두 단어로 온다 (2026-10-11 실측: 경기 20곳·충북 4곳·충남 2곳·
     전북 2곳·경북 2곳·경남 5곳). 그래서 '성남시 분당구' 전체, 구 이름('분당구'), 시 이름('성남시' → 그 시의 구 모두)으로
@@ -113,8 +122,6 @@ def _region_codes(client: DaangnClient, names: list[str]) -> list[tuple[str, str
     Raises:
         JibsaError: 이름이 여러 곳이면 REGION_AMBIGUOUS, 없으면 REGION_NOT_FOUND.
     """
-    if not names:
-        return []
     response = client.run_request_livable_region_scopes(
         DaangnLivableRegionScopesRequestPayloadModel(base_year=NEIGHBORHOOD_BASE_YEAR)
     )
@@ -160,18 +167,19 @@ def recommend_neighborhoods(
     lifestyle: str,
     *,
     regions: list[str] | None = None,
-    limit: int = 10,
 ) -> DaangnNeighborhoodsResult:
-    """라이프스타일 지표로 살기 좋은 동을 순위대로 추천한다 (`recommendNeighborhoods`, 지역을 주면 요청 2회).
+    """라이프스타일 지표로 살기 좋은 동을 순위대로 추천한다 (`recommendNeighborhoods`, 요청 2회).
 
-    당근 웹의 좋은 동네 추천과 같다. 동 상세(후기 요약 글)는 jibsa 원칙대로 읽지 않는다.
+    당근 웹의 좋은 동네 추천과 같다. 웹(useH3ZoomConfig `Ue`)은 늘 5곳(`limit: 5`)을 받고, 지역을 하나 이상 골라야 하며 첫
+    화면은 '서울 · 전체' 다 (전국은 고를 수 없다). 그래서 지역을 주지 않으면 서울로 찾고 `notes` 로 알린다. 예전에는 기본 10곳
+    (최대 50)·지역 없으면 전국이었다 (#215, 2026-11-12 번들 대조). 동 상세(후기 요약 글)는 jibsa 원칙대로 읽지 않는다.
 
     Raises:
         JibsaError: 지역 이름이 여러 곳 (REGION_AMBIGUOUS), 없음 (REGION_NOT_FOUND), GraphQL 에러 (UPSTREAM_ERROR).
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때.
     """
     indicators = LIFESTYLE_INDICATORS[lifestyle]
-    codes = _region_codes(client, regions or [])
+    codes = _region_codes(client, regions or [NEIGHBORHOOD_DEFAULT_REGION])
     response = client.run_request_recommend_neighborhoods(
         DaangnRecommendNeighborhoodsRequestPayloadModel(
             input=DaangnRecommendNeighborhoodsInputModel(
@@ -181,7 +189,7 @@ def recommend_neighborhoods(
                 ],
                 base_year=NEIGHBORHOOD_BASE_YEAR,
                 region_cd_prefixes=[code for code, _ in codes],
-                limit=limit,
+                limit=NEIGHBORHOOD_LIMIT,
             )
         )
     )
@@ -194,7 +202,7 @@ def recommend_neighborhoods(
             region_id=int(item.region_id) if item.region_id and item.region_id.isdigit() else None,
             description=item.one_line_description,
         )
-        for item in found[:limit]
+        for item in found[:NEIGHBORHOOD_LIMIT]
     ]
     return DaangnNeighborhoodsResult(
         lifestyle=lifestyle,
@@ -202,5 +210,11 @@ def recommend_neighborhoods(
         regions=[label for _, label in codes],
         returned=len(neighborhoods),
         neighborhoods=neighborhoods,
-        notes=['dong 은 행정동(예: 역삼1동)입니다. 매물은 법정동 이름(예: 역삼동)으로 search listings 에서 찾으세요'],
+        notes=(
+            [] if regions else [note(
+                '범위',
+                f'--region 을 주지 않아 당근 웹 첫 화면처럼 {NEIGHBORHOOD_DEFAULT_REGION}에서 찾았습니다. 당근 웹에는 전국 순위가 없습니다. '
+                '다른 곳은 --region 으로 주세요 (여러 곳도 된다)',
+            )]
+        ) + ['dong 은 행정동(예: 역삼1동)입니다. 매물은 법정동 이름(예: 역삼동)으로 search listings 에서 찾으세요'],
     )

@@ -1,0 +1,57 @@
+{
+ "data": {
+  "searchRegion": {
+   "edges": [
+    {
+     "node": {
+      "id": "MS4p8m7VLhV53DN",
+      "name": "역삼동",
+      "name1": "서울특별시",
+      "name2": "강남구",
+      "name3": "역삼동",
+      "centerCoordinate": {
+       "lat": "37.50039180874134",
+       "lon": "127.03868458089394"
+      },
+      "mapViewDefaultZoomLevel": 5,
+      "originalId": 6035,
+      "depth": 3,
+      "parentRegion": {
+       "id": "5dVWFu8pCiKxTJ",
+       "name": "강남구",
+       "name1": "서울특별시",
+       "name2": "강남구",
+       "name3": "",
+       "centerCoordinate": {
+        "lat": "37.517339",
+        "lon": "127.047373"
+       },
+       "mapViewDefaultZoomLevel": 7,
+       "originalId": 381,
+       "depth": 2,
+       "parentRegion": {
+        "id": "EnM3AsRstUQ",
+        "name": "서울특별시",
+        "name1": "서울특별시",
+        "name2": "",
+        "name3": "",
+        "centerCoordinate": {
+         "lat": "37.566419",
+         "lon": "126.977874"
+        },
+        "mapViewDefaultZoomLevel": 9,
+        "originalId": 1,
+        "depth": 1
+       }
+      }
+     },
+     "cursor": "HWGw"
+    }
+   ],
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "HWGw"
+   }
+  }
+ }
+}

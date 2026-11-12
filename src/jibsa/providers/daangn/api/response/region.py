@@ -1,4 +1,4 @@
-"""응답 모델: 동네·역·주소·좌표 해석과 실거래 지역 (search locations, 모든 검색의 지역 해석)."""
+"""응답 모델: 지역·역·대학·좌표 해석과 실거래 지역 (search locations, 모든 검색의 지역 해석)."""
 
 from pydantic import Field
 
@@ -11,56 +11,6 @@ from jibsa.providers.daangn.api.response.common import (
 )
 
 from typing import Annotated
-
-
-# ---------------------------------------------------------------------------
-# GET www.daangn.com/kr/api/v1/regions/keyword
-# ---------------------------------------------------------------------------
-
-class DaangnLocationModel(ResponseModel):
-    """당근 지역 한 건."""
-
-    id: Annotated[
-        int,
-        Field(description='지역 ID')
-    ]
-    name: Annotated[
-        str,
-        Field(description='지역 이름')
-    ]
-    name1: Annotated[
-        str | None,
-        Field(description='시/도')
-    ] = None
-    name2: Annotated[
-        str | None,
-        Field(description='시/군/구')
-    ] = None
-    name3: Annotated[
-        str | None,
-        Field(description='읍/면/동')
-    ] = None
-    name1_id: Annotated[
-        int | None,
-        Field(description='시/도 ID. 구가 없는 세종 전체를 조회할 때 쓴다 (세종은 name2Id 가 0)', alias='name1Id')
-    ] = None
-    name2_id: Annotated[
-        int | None,
-        Field(description='시/군/구 ID. 같은 구의 동을 모을 때 쓴다', alias='name2Id')
-    ] = None
-    depth: Annotated[
-        int,
-        Field(description='행정 단계. 3 이면 동/읍/면')
-    ]
-
-
-class DaangnRegionsKeywordV1ResponseModel(ResponseModel):
-    """지역명 검색 응답."""
-
-    locations: Annotated[
-        list[DaangnLocationModel],
-        Field(description='후보 지역. 동명이 여러 지역에 있으면 여러 개')
-    ] = []
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +36,129 @@ class DaangnGetRegionByCoordinateResponseModel(DaangnGraphQLResponseModel):
 
 
 # ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — 역·주소 검색, 역 주변 매물
+# POST realty.kr.karrotmarket.com/graphql — 지도 검색창의 지역·대학 검색 (searchRegion, searchSchoolPois)
+# ---------------------------------------------------------------------------
+
+class DaangnSearchRegionNodeModel(DaangnRegionModel):
+    """지역 검색 결과 하나. 법정동(depth 3)·구(2)·시·도(1)다.
+
+    구가 있는 시의 구는 name2 에 시 이름이 붙는다 ('수원시 권선구'). 시 자체('수원시')는 따로 오지 않는다. 구가 없는 세종의
+    동은 name2 가 '' 이고 parentRegion 이 null 이다 (2026-11-11 실측).
+    """
+
+    name: Annotated[
+        str,
+        Field(description='지역 이름 (동은 동 이름, 구는 name2, 시·도는 name1)')
+    ]
+    map_view_default_zoom_level: Annotated[
+        int | None,
+        Field(description='웹 지도가 이 지역을 열 때의 레벨. 줌은 19 에서 이 값을 뺀다 (동 5 → 14, 구 7 → 12, 시·도 9 → 10)', alias='mapViewDefaultZoomLevel')
+    ] = None
+
+
+class DaangnSearchRegionEdgeModel(ResponseModel):
+    """지역 연결의 edge."""
+
+    node: Annotated[
+        DaangnSearchRegionNodeModel | None,
+        Field(description='지역')
+    ] = None
+
+
+class DaangnSearchRegionConnectionModel(ResponseModel):
+    """지역 연결."""
+
+    edges: Annotated[
+        list[DaangnSearchRegionEdgeModel],
+        Field(description='지역 (시·도 → 구 → 동, 각각 가나다순)')
+    ] = []
+    page_info: Annotated[
+        DaangnPageInfoModel | None,
+        Field(description='페이지 정보', alias='pageInfo')
+    ] = None
+
+
+class DaangnSearchRegionDataModel(ResponseModel):
+    """GraphQL `data`."""
+
+    search_region: Annotated[
+        DaangnSearchRegionConnectionModel | None,
+        Field(description='지역 검색 결과', alias='searchRegion')
+    ] = None
+
+
+class DaangnSearchRegionResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `searchRegion` 응답."""
+
+    data: Annotated[
+        DaangnSearchRegionDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
+class DaangnSchoolPoiModel(ResponseModel):
+    """대학 검색 결과 하나 (캠퍼스 하나)."""
+
+    id: Annotated[
+        str,
+        Field(description='대학 ID (universityArticleConnection 의 schoolPoiId 로 넘긴다)')
+    ]
+    name: Annotated[
+        str,
+        Field(description='대학 이름. 캠퍼스가 여럿이면 모두 같다 (예: 연세대학교)')
+    ]
+    full_name: Annotated[
+        str | None,
+        Field(description='캠퍼스까지 붙인 이름 (예: 연세대학교 신촌캠퍼스). 캠퍼스가 하나뿐이면 null 이기도 하다', alias='fullName')
+    ] = None
+    jibun_address: Annotated[
+        str | None,
+        Field(description='지번 주소', alias='jibunAddress')
+    ] = None
+    coordinate: Annotated[
+        DaangnCoordinateModel | None,
+        Field(description='대학 좌표')
+    ] = None
+
+
+class DaangnSchoolPoiEdgeModel(ResponseModel):
+    """대학 연결의 edge."""
+
+    node: Annotated[
+        DaangnSchoolPoiModel | None,
+        Field(description='대학')
+    ] = None
+
+
+class DaangnSchoolPoiConnectionModel(ResponseModel):
+    """대학 연결."""
+
+    edges: Annotated[
+        list[DaangnSchoolPoiEdgeModel],
+        Field(description='대학')
+    ] = []
+
+
+class DaangnSearchSchoolPoisDataModel(ResponseModel):
+    """GraphQL `data`."""
+
+    search_school_pois: Annotated[
+        DaangnSchoolPoiConnectionModel | None,
+        Field(description='대학 검색 결과', alias='searchSchoolPois')
+    ] = None
+
+
+class DaangnSearchSchoolPoisResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `searchSchoolPois` 응답."""
+
+    data: Annotated[
+        DaangnSearchSchoolPoisDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# POST realty.kr.karrotmarket.com/graphql — 역 검색
 # ---------------------------------------------------------------------------
 
 class DaangnSubwayStationPoiModel(ResponseModel):
@@ -128,16 +200,28 @@ class DaangnSearchSubwayStationPoisResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
+# ---------------------------------------------------------------------------
+# POST realty.kr.karrotmarket.com/graphql — 주소 검색 (searchAddress) 과 주소 → 좌표 (unitByAddress)
+# ---------------------------------------------------------------------------
+
 class DaangnAddressModel(ResponseModel):
-    """주소 검색 결과 하나."""
+    """도로명 주소 검색 결과 하나 (웹 검색창 주소 칸의 한 줄: 도로명 주소, 아래에 지번 주소)."""
 
     region_address: Annotated[
         str | None,
-        Field(description='지번 주소 (건물 이름이 붙기도 한다)', alias='regionAddress')
+        Field(description="지번 주소 (예: '서울특별시 강남구 역삼동 737 강남파이낸스센터')", alias='regionAddress')
     ] = None
     road_address: Annotated[
         str | None,
-        Field(description='도로명 주소 (괄호 안에 동·건물 이름)', alias='roadAddress')
+        Field(description="도로명 주소 (예: '서울특별시 강남구 테헤란로 152 (역삼동)')", alias='roadAddress')
+    ] = None
+    original_road_address: Annotated[
+        str | None,
+        Field(description='원본 도로명 주소. unitByAddress 에 그대로 보낸다', alias='originalRoadAddress')
+    ] = None
+    bd_mgt_sn: Annotated[
+        str | None,
+        Field(description='건물 관리 번호. unitByAddress 에 그대로 보낸다', alias='bdMgtSn')
     ] = None
 
 
@@ -150,12 +234,12 @@ class DaangnAddressEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchAddressModel(ResponseModel):
+class DaangnAddressConnectionModel(ResponseModel):
     """주소 연결."""
 
     edges: Annotated[
         list[DaangnAddressEdgeModel],
-        Field(description='주소')
+        Field(description='주소 후보')
     ] = []
     page_info: Annotated[
         DaangnPageInfoModel | None,
@@ -167,13 +251,13 @@ class DaangnSearchAddressDataModel(ResponseModel):
     """GraphQL `data`."""
 
     search_address: Annotated[
-        DaangnSearchAddressModel | None,
+        DaangnAddressConnectionModel | None,
         Field(description='주소 검색 결과', alias='searchAddress')
     ] = None
 
 
 class DaangnSearchAddressResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `searchAddress` 응답."""
+    """GraphQL `searchAddress` 응답 (웹 `fetchAddressResultQuery`)."""
 
     data: Annotated[
         DaangnSearchAddressDataModel | None,
@@ -181,28 +265,70 @@ class DaangnSearchAddressResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnGeocodedAddressModel(ResponseModel):
-    """주소 → 좌표 결과."""
+class DaangnUnitPlaceModel(ResponseModel):
+    """주소에 있는 단지(`PropComplex`) 또는 건물(`PropBuilding`). 단지는 `name`, 건물은 `buildingName` 으로 온다."""
 
-    point: Annotated[
+    id: Annotated[
+        str | None,
+        Field(description='Relay 노드 ID')
+    ] = None
+    original_id: Annotated[
+        str | None,
+        Field(description='숫자 ID (단지면 단지 ID)', alias='originalId')
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='단지 이름 (단지만)')
+    ] = None
+    building_name: Annotated[
+        str | None,
+        Field(description='건물 이름 (건물만)', alias='buildingName')
+    ] = None
+    coordinate: Annotated[
         DaangnCoordinateModel | None,
         Field(description='좌표')
     ] = None
 
 
-class DaangnGeocodeAddressDataModel(ResponseModel):
-    """GraphQL `data`."""
+class DaangnUnitModel(ResponseModel):
+    """주소의 위치. 웹은 `location`, 없으면 단지·건물 좌표를 쓴다 (MapShell `_s`)."""
 
-    geocode_address: Annotated[
-        DaangnGeocodedAddressModel | None,
-        Field(description='좌표. 주소가 아니면 null', alias='geocodeAddress')
+    location: Annotated[
+        DaangnCoordinateModel | None,
+        Field(description='주소 좌표')
+    ] = None
+    complex: Annotated[
+        DaangnUnitPlaceModel | None,
+        Field(description='그 주소의 당근 단지. 없으면 null')
+    ] = None
+    building: Annotated[
+        DaangnUnitPlaceModel | None,
+        Field(description='그 주소의 건물. 없으면 null')
     ] = None
 
 
-class DaangnGeocodeAddressResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `geocodeAddress` 응답."""
+class DaangnUnitByAddressOutputModel(ResponseModel):
+    """`unitByAddress` 결과. 주소를 못 찾으면 `unit` 이 null 이다."""
+
+    unit: Annotated[
+        DaangnUnitModel | None,
+        Field(description='주소의 위치')
+    ] = None
+
+
+class DaangnUnitByAddressDataModel(ResponseModel):
+    """GraphQL `data`."""
+
+    unit_by_address: Annotated[
+        DaangnUnitByAddressOutputModel | None,
+        Field(description='주소 → 위치 결과', alias='unitByAddress')
+    ] = None
+
+
+class DaangnUnitByAddressResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `unitByAddress` 응답 (웹 `getPlaceByJusoAddressQuery`)."""
 
     data: Annotated[
-        DaangnGeocodeAddressDataModel | None,
+        DaangnUnitByAddressDataModel | None,
         Field(description='결과')
     ] = None

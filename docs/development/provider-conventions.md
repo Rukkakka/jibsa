@@ -61,8 +61,7 @@ providers/<source>/
 | 직방 | `/v3/items/{itemId}` | — | `items_v3` |
 | 네이버 | `/front-api/v1/complex/pyeongList` | `/front-api` | `complex_pyeong_list_v1` |
 | 네이버 | `/front-api/v1/complex/v2/pyeong/realPrice` (경로 가운데 버전이 또 있으면 그 버전) | `/front-api` | `complex_pyeong_real_price_v2` |
-| 당근 | `/kr/api/v1/regions/keyword` | `/kr/api` | `regions_keyword_v1` |
-| 당근 | `/map/{name1}/{name2}/{name3}` (페이지) | — | `map` |
+| 당근 | `/map/{name1}/{name2}/reviews` (페이지) | — | `map_reviews` |
 | 당근 | `POST /graphql` 의 `articleFeed` (GraphQL) | — | `article_feed` |
 | 다방 | `/api/v5/loc/search` · `/api/3/new-room/detail` (버전이 `3` 이면 `v3`) | `/api` | `loc_search_v5` · `new_room_detail_v3` |
 
@@ -99,16 +98,19 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
   - `source_name: ClassVar[str]` — 요청 제한 상태 파일 이름. `Source` Literal 값과 같게.
   - `default_rate_limit: ClassVar[dict[str, object]]` — `RateLimitPolicy` 필드
   - `host: str` 필드와 `base_url` property (`create_base_url` 사용)
-  - `base_header` property — 사이트 웹이 붙이는 헤더만. UA·Origin·Referer 는 브라우저가 붙인다
+  - `base_header` property — 사이트 웹 코드가 모든 요청에 붙이는 헤더만 (실측 날짜와 함께). API 묶음마다 다른 헤더는
+    요청마다 `headers=` 로 붙이고, 웹이 붙이지 않는 헤더는 넣지 않는다. UA·Origin·Referer 는 브라우저가 붙인다
+    ([브라우저 요청](architecture.md#브라우저-요청)의 헤더)
   - 브라우저 설정 ([브라우저 요청](architecture.md#브라우저-요청)):
     - `browser_entry_url` — 처음 열 사이트 화면. jibsa 는 load 뒤(`browser_ready_cookie` 가 있으면 그 쿠키를 다 받은 뒤)
       바로 빈 페이지로 떠나므로, 그때까지 사이트 자체 API 를 덜 부르는 화면을 고른다. 페이지에 오래 머물 때의 수와 다르다
       (당근 실측은 [당근 브라우저 요청](providers/daangn.md#브라우저-요청-2026-11-09-실측))
     - `browser_ready_cookie` — 사이트 API 가 요구하거나 브라우저 식별인 쿠키. 없으면 None
-    - `browser_api_hosts` — 첫 화면이 부른 요청을 셀 사이트 API 호스트 (기본은 `browser_entry_url` 의 호스트)
-    - `browser_no_cors_hosts` — 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트
-    - 위 둘은 호스트 필드(`host`·`region_host` 등)에서 만드는 property 로 쓴다. 호스트를 상수로 따로 적으면 호스트 필드를
-      바꿨을 때 어긋나 요청이 엉뚱한 탭에서 나간다. 나머지는 ClassVar 다
+    - `browser_api_hosts` — 첫 화면이 부른 요청을 셀 사이트 API 호스트 (기본은 `browser_entry_url` 의 호스트). 요청은 모두
+      첫 화면 탭에서 보내므로 사이트 API 가 첫 화면 출처의 CORS 를 허용해야 한다
+    - 이것은 호스트 필드(`host`·`graphql_host` 등)에서 만드는 property 로 쓴다. 호스트를 상수로 따로 적으면 호스트 필드를
+      바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은 그
+      호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`). 나머지는 ClassVar 다
     - `browser_discard_statuses` — 소스가 403 을 거부가 아닌 뜻으로 쓰면 바꾼다 (다방은 없는 주소)
 - `_client` / `_async_client` 는 `@cached_property` 로 만들고 반드시
   `event_hooks=self.rate_limit_hooks()` (async 는 `async_rate_limit_hooks()`), `timeout`,
@@ -221,6 +223,66 @@ def run_request_items_onerooms_v1(
   `--with-manage-cost`·다방 `--rent-includes-manage-cost`). 맞추려고 별칭을 늘리지 않는다. 2026-10-31 에이전트 검증
   (sonnet·opus, 이 조건들을 네 소스에 거는 부탁 6회)에서 모두 소스별 `--help` 를 먼저 읽고 이 이름으로 한 번도 틀리지
   않았다. 다른 소스 이름을 옮겨 쓰면 Click 의 비슷한 옵션 제안이나 소스별 `UsageHints` 가 이 명령의 옵션을 알린다.
+
+## 웹 화면과의 대응
+
+jibsa 는 사이트를 대체하는 도구가 아니라, 사이트가 로그인 없이 보여 주는 것을 에이전트가 JSON 으로 그대로 받게 하는 창이다
+([README 원칙](../../README.md#원칙-사이트가-보여-주는-대로)). 그래서 모든 provider 는 아래 원칙을 따른다.
+
+> **사이트가 보여 주는 사실과 어긋나지 않게 한다.** 결과의 매물·가격·순서·수는 그 사이트 웹에서도 같은 조건으로 볼 수 있는
+> 것이어야 한다. 그래서 웹에 없는 결과를 만드는 일(다른 API 로 대신 찾기, 받은 결과를 다시 거르거나 합치거나 다시 세우기,
+> 후보 중 하나를 임의로 고르기)은 하지 않는다. 그 안에서는 웹보다 편하게 만들어도 된다. 한 번에 더 받기, 탭을 한 번에 보기,
+> 웹에 없는 조건으로 좁히기, 웹 UI 에 없지만 서버가 받는 조합을 쓰기는 모두 된다. 웹의 화면 구조·페이지 크기·클릭 순서를
+> 그대로 따를 필요는 없다. 웹과 다르게 한 곳은 그 소스 개발 가이드의 "웹과 다른 점" 절에 무엇이 어떻게 다른지와 왜 그래도
+> 사실이 어긋나지 않는지를 적는다.
+
+판정 기준은 "웹과 같은가" 가 아니라 **"이 결과를 사이트에서도 얻을 수 있는가"** 다. 웹 화면을 그대로 베끼는 것이 목표가
+아니고, 사이트에서 손으로 하면 닿는 결과 안에서는 개선해도 된다.
+
+| 상황 | 판정 | 예 |
+| --- | --- | --- |
+| 웹에 있는데 jibsa 에 없는 기능 | 괜찮다. 넣을지는 따로 고른다 | 당근 추천 '함께 본 단지', 후기 본문, 카카오 장소 검색으로 회사 찾기 |
+| jibsa 결과가 사이트에서 얻을 수 없는 것 | 안 된다 | 못 찾은 이름을 다른 소스로 찾기, 받은 매물을 금액으로 다시 거르기, 반경 순 재정렬, 같은 이름 후보 중 하나 고르기 |
+| 같은 API 로 더 편하게 | 된다. 다른 점을 소스 개발 가이드에 적는다 | 한 번에 50건 받기, 매매·전세·월세를 한 번에, `--max-minutes` 로 좁히기 |
+
+### 안 되는 것
+
+- 그 화면이 쓰지 않는 API 로 대신 찾기 (다른 소스는 물론, 같은 소스의 다른 화면 API 도 결과가 다르면 안 된다. 당근의 중고거래
+  지역 API 가 그랬다).
+- 서버가 준 결과를 다시 거르기·합치기·다시 세우기 (여러 동을 커서로 합치기, 통근 시간 순 재정렬, 금액으로 매물 빼기).
+- 같은 이름의 후보가 여럿일 때 하나를 임의로 고르기. `REGION_AMBIGUOUS` 로 묻는다.
+- 웹과 다른 기본값·계산식 (대표 평형 고르는 규칙, 반올림, 기간 탭의 달 수, 관리비 계산).
+- 웹이 보내지 않는 조건으로 결과를 바꾸기 (서버가 무시하는 조건을 보내 조용히 틀린 결과를 내는 것도 포함. 막거나 `notes`).
+
+### 되는 것
+
+결과 내용은 사이트에서도 손으로 하면 닿는 것이어야 하고, 어디가 다른지 소스 개발 가이드에 적는다.
+
+- **한 번에 더 받기.** 페이지 크기를 서버가 받는 만큼 키우기 (실거래 50건), 커서를 이어 받기.
+- **탭을 한 번에 보기.** 당근 `compare` 는 웹이 매매·전세·월세 탭을 하나씩 보여 주는 것을 한 번에 준다. 신고가 `--previous-days`
+  는 웹이 보여 주지 않는 이전 공개일까지 같은 변수(`includePreviousDays`)로 받는다. `real-price` 는 평형을 안 주면 웹의 평형
+  탭을 모두 합친 모든 평형이다 (거래마다 면적이 있다).
+- **웹에 없는 조건으로 좁히기.** `--max-minutes`·`--years` 처럼 받은 결과의 부분집합만 남기는 조건. 서버가 받지 않는 조건이면
+  판정할 값이 응답에 있어야 하고, 매물을 뺄 때는 `notes` 로 알린다 ([서버 필터와 클라이언트 후처리](#서버-필터와-클라이언트-후처리)).
+- **웹 UI 에 없지만 서버가 받는 조합.** 종류 없는 당근 `popular-listings` 전체 순위, 지역 실거래의 전월세(`BORROW`).
+- **출력 보강.** 거리(`distance_km`)·시·도 채우기처럼 매물·가격·순서·수를 바꾸지 않는 덧붙임.
+
+### 확인 방법
+
+기능을 고치거나 새로 짤 때 그 화면이 실제로 하는 요청을 먼저 확인한다. 웹 번들에서 쿼리 이름·변수·기본값·정렬·계산 함수를
+찾아 대조하고, 실제 호출로 결과를 확인한다 (요청은 최소로). 당근은 Relay persisted query 해시까지 번들의 것과 맞춘다. 다른
+소스는 그 소스의 웹 요청(개발자 도구의 네트워크 탭, 요청 헤더·쿼리)을 본다. 확인한 날짜와 번들 심볼 이름을 괄호에 적는다
+(`2026-11-12 번들 대조`, MapShell `Ff`).
+
+### 적는 곳
+
+웹과 다르게 한 곳은 그 소스 개발 가이드의 "웹과 다른 점" 절에 모은다
+([당근](providers/daangn.md#웹과-다른-점)·[직방](providers/zigbang.md#웹과-다른-점)·[네이버](providers/naver.md#웹과-다른-점)·[다방](providers/dabang.md#웹과-다른-점)).
+항목마다 무엇이 어떻게 다른지와 왜 그래도 사실이 어긋나지 않는지를 한 구절로 적는다. 리뷰에서 지적됐지만 고치지 않기로 한
+차이도 오탐을 막기 위해 같은 절에 이유와 함께 적는다.
+
+[서버 필터와 클라이언트 후처리](#서버-필터와-클라이언트-후처리)(받은 결과를 다시 거르지 않는다)와 architecture.md 의
+[소스끼리는 서로 모른다](architecture.md#계층)(다른 소스로 대신 찾지 않는다)는 이 원칙의 하위 규칙이다.
 
 ## 서버 필터와 클라이언트 후처리
 

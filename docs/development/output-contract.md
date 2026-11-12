@@ -68,26 +68,35 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   받지는 않는다 (뜻이 조금 다른 조건을 멋대로 옮기지 않는다).
 - 지역·장소·학교·단지 이름을 위치 인자 하나로 받는 명령은 따옴표 없이 띄어 쓴 이름(`송파구 신천동`)을 `run()` 이 Click 에
   넘기기 전에 한 인자로 잇는다 (`joined_name_args`). 새 명령의 이름 인자는 그 이름을 `NAME_ARGUMENTS` 에 넣는다. ID 인자는
-  넣지 않는다 (ID 두 개를 이어 찾지 않고 'unexpected extra argument' 로 알린다).
+  넣지 않는다 (ID 두 개를 이어 찾지 않고 'unexpected extra argument' 로 알린다). 옵션 값은 잇지 않지만, 이름 위치 인자와
+  함께 줄 수 없는 이름 옵션(`NAME_OPTIONS`: 당근 `search listings`·`search commute` 의 `--station`·`--university`·`--address`)은
+  값 바로 뒤의 낱말을 그 값에 잇는다 (`--address 테헤란로 152`. 뒤 낱말을 위치 인자로 보면 둘을 함께 준 것이 되어 막혔다).
+  뒤 낱말을 이을 앞 낱말의 모양을 아는 옵션은 마지막 낱말이 그 모양일 때만 잇는다 (`NAME_OPTION_PREFIX_WORDS`: 역 이름은
+  노선 이름 뒤에 한 낱말이라 `--station 서울5호선 양평역` 은 잇고 `--station 강남 역삼동` 의 역삼동은 위치 인자다). 다음 옵션에서
+  끝나고, 모르는 옵션이나 `--` 가 있으면 아무것도 잇지 않아 Click 이 알린다.
 - 요청 모델 검증 실패의 message 는 검증 함수가 던진 문구 그대로다 (pydantic 이 붙이는 `Value error, ` 를 뗀다).
   hint 는 사용법 오류와 같은 `'<명령> --help' 로 사용법을 확인하세요` 다.
 - `--trade` 와 맞지 않는 가격 조건(전세 + 월세 상한 등)은 `infer_trade_types` 가 사용법 오류로 막는다. 세 소스 모두
-  서버가 그 조건을 조용히 무시한다 (2026-10-10 실측).
+  서버가 그 조건을 조용히 무시한다 (2026-10-10 실측). 어느 거래에 쓰라는 안내는 `allowed` 를 주지 않으면 네 소스 공통 유형
+  (`SHARED_TRADE_TYPES`)만 들어, 연세가 없는 소스에 '연세 거래에만 쓰세요' 라고 하지 않는다. 당근은 연세 범위(`yearly`)와
+  당근 거래 유형(`allowed`)을 넘긴다.
 - 에러 JSON 의 `source` 는 기본으로 명령의 소스지만, `JibsaError.details['source']` 가 있으면 그 값이 이긴다.
-  한 소스의 명령이 위치 찾기에 다른 소스를 쓰면 그 단계의 에러(`REGION_NOT_FOUND`, `RATE_LIMITED`)는 위치를 찾은
-  소스 이름을 단다. 소스별 위치 찾기 순서는 각 provider 가이드에 있다 (예: [당근](providers/daangn.md)은 직방 → 네이버).
+  소스끼리 부르지 않으므로([계층](architecture.md#계층)) 다른 소스 이름이 붙는 에러는 없다.
 
 ## 매물 출력
 
-- 모호하거나 넓은 지역 안내, 당근이 다른 지역으로 조회한 안내(`region_notes`), 거래 유형을 좁힌 안내(`infer_trade_types`), 조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려준다는 안내(`core.listing.limit_notes`)는 `emit(..., notes=...)` 로 맨 앞 `notes` 에 붙이고, 없으면 키를 뺀다. 안내는 짧게 쓴다 (매번 나오는 안내는 출력 토큰을 늘린다). 예전의 `notice`(원 사이트에서 확인하라는 같은 문장)는 매 응답 토큰만 늘려 뺐다. 그 안내는 `docs/llm.md` 에 있다.
+- 모호하거나 넓은 지역 안내(직방 `region_notes`·`wide_area_note` 등), 거래 유형을 좁힌 안내(`infer_trade_types`), 조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려준다는 안내(`core.listing.limit_notes`)는 `emit(..., notes=...)` 로 맨 앞 `notes` 에 붙이고, 없으면 키를 뺀다. 안내는 짧게 쓴다 (매번 나오는 안내는 출력 토큰을 늘린다). 예전의 `notice`(원 사이트에서 확인하라는 같은 문장)는 매 응답 토큰만 늘려 뺐다. 그 안내는 `docs/llm.md` 에 있다.
 - 안내마다 앞에 종류 태그를 붙인다 (`core.listing.note`, `NoteKind`): `[일부]` 더 받을 결과가 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 받은 것 중 뺀 매물이 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 짐작해 좁혔다, `[실패]` 덤 조회가 실패했거나 대체 경로로 찾았다, `[참고]` 그 밖. 새 안내는 만드는 자리에서 `note(종류, 문장)` 으로 만든다. 태그 없이 둔 안내는 `emit` 이 `[참고]` 를 붙이고(`tagged_notes`), 같은 안내가 두 번이면 하나만 남긴다. 태그는 `[실패]` 처럼 LLM 이 문장을 다 읽지 않고도 사용자에게 알릴지 가르는 데 쓴다.
 - 찾을 때마다 같은 안내 중 거의 모든 세션이 부르는 매물 검색의 것(직방·당근 원룸 종류의 한계)은 `notes` 에 붙이지 않고 `docs/llm.md` 에 둔다. 드물게 부르는 명령의 같은 안내(당근 단지 목록의 `recent_trades`·후기 안내, `complex_list_notes`)는 `notes` 에 둔다. 가이드는 모든 세션이 읽어, 그 명령을 쓰지 않는 세션까지 토큰을 쓴다.
 - 출력에 1억(`10000` 만원) 이상 `*_manwon` 값이 있으면 `emit` 이 그 값으로 만든 억 환산 예시(`manwon_note`)를 `notes` 끝에 붙인다. 가이드의 환산 규칙만으로는 에이전트가 큰 금액의 자리를 틀려(440000 → 4억 4,000만) 숫자 옆에 정답을 둔다. `--fields` 로 고른 뒤의 값으로 만든다.
+- 같은 방식으로 출력에 연세 `yearly_rent_manwon`(당근 제주)이 있으면 `emit` 이 그 결과의 첫 값으로 읽는 법(`yearly_rent_note`,
+  `[참고] 연세는 1년치 월세를 한 번에 내는 제주 거래입니다: yearly_rent_manwon 1400 = 1년에 1,400만 원 (월세 아님)`)을 억 환산
+  안내 앞에 붙인다. 만원 숫자만 보면 월세로 읽기 쉬워서다.
 - 리스트를 그대로 내보내면 `notes` 를 붙이기 위해 `{"items": [...]}` 로 감싼다.
-- 매물 검색 결과의 찾은 위치 키는 소스마다 다르다 (직방·네이버 `region` + `boundary`·`radius_km`, 다방 `region` + `scope`, 당근 `regions[]`). 출력 계약이라 맞추지 않는다. 2026-10-31 에이전트 검증(6회)에서 이 차이로 틀린 일은 없었고, 에이전트는 범위를 `[범위]` 안내로 읽었다.
-- 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 서비스 결과의 `next_position`(출력하지 않음)을 CLI 가 `jibsa.cli.paging.encode_next` 로 감싸 `emit(..., next_token=...)` 으로 `has_more` 뒤에 `next` 로 붙인다. 이어 받기 표에는 명령·지역·조건과 소스가 이어 받을 위치(핀 순서·커서·지역마다 offset)를 담고, 소스에 따라 찾은 지역도 담아 이어 받을 때 지역을 다시 찾지 않는다. 표는 `<state_dir>/next/<번호>.json` 에 하루 동안 두고 `next` 에는 표 내용으로 만든 10자 번호만 준다 (표를 값에 담으면 500~600자라 에이전트가 베껴 쓰는 데 토큰이 들고 틀리기 쉽다). `--next` 는 `decode_next` 가 표를 읽어 명령·조건이 다르면 다른 옵션을 `message` 에 적어 `INVALID_ARGUMENT` 로 막고, 표가 없으면(하루 지남·다른 컴퓨터) 처음부터 다시 찾으라고 알린다. 둘 다 명령의 `handle_errors` 밖에서 부르므로 사용법 오류(`HintedBadParameter`)로만 끝낸다. `--limit`·`--details`·`--fields`·`--pretty` 는 이어 받는 동안 바꿀 수 있다 (`RESUMABLE_PARAMS`).
+- 매물 검색 결과의 찾은 위치 키는 소스마다 다르다 (직방·네이버 `region` + `boundary`·`radius_km`, 다방 `region` + `scope`, 당근 `region`, 지도 화면 범위면 `zoom`·`width_km`·`height_km` 도). 출력 계약이라 맞추지 않는다. 2026-10-31 에이전트 검증(6회)에서 이 차이로 틀린 일은 없었고, 에이전트는 범위를 `[범위]` 안내로 읽었다.
+- 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 서비스 결과의 `next_position`(출력하지 않음)을 CLI 가 `jibsa.cli.paging.encode_next` 로 감싸 `emit(..., next_token=...)` 으로 `has_more` 뒤에 `next` 로 붙인다. 이어 받기 표에는 명령·지역·조건과 소스가 이어 받을 위치(핀 순서·커서·지역마다 offset)를 담고, 소스에 따라 찾은 지역도 담아 이어 받을 때 지역을 다시 찾지 않는다. 표는 `<state_dir>/next/<번호>.json` 에 하루 동안 두고 `next` 에는 표 내용으로 만든 10자 번호만 준다 (표를 값에 담으면 500~600자라 에이전트가 베껴 쓰는 데 토큰이 들고 틀리기 쉽다). `--next` 는 `decode_next` 가 표를 읽어 명령·조건이 다르면 다른 옵션을 `message` 에 적어 `INVALID_ARGUMENT` 로 막고, 표가 없거나(하루 지남·다른 컴퓨터) 표를 만든 jibsa 버전(`jibsa --version` 한 줄)이 다르면 처음부터 다시 찾으라고 알린다. 업데이트로 옵션이 없어지거나 위치의 꼴이 바뀌면 옛 표를 조건 비교·소스가 읽지 못해서다. 둘 다 명령의 `handle_errors` 밖에서 부르므로 사용법 오류(`HintedBadParameter`)로만 끝낸다. `--limit`·`--details`·`--fields`·`--pretty` 는 이어 받는 동안 바꿀 수 있다 (`RESUMABLE_PARAMS`).
 - 좌표(`lat`·`lng`)는 `emit` 이 소수 일곱째 자리로 반올림한다 (원본의 부동소수점 찌꺼기 `127.04934499999999` 를 지운다). 소수점 아래가 없는 실수는 정수로 쓴다 (`1000.0` → `1000`, `_tidy_numbers`). 매물마다 금액·면적에 붙는 `.0` 이 토큰만 쓴다.
-- 매물 목록 명령은 `FieldsOption`(`--fields`)을 받아 `emit(..., fields=...)` 로 넘긴다. `emit` 은 `listings` 키의 매물(통근 검색은 역마다의 `listings`)에서 고른 필드와 `ALWAYS_FIELDS`(다음 명령에 넘길 `id`, notes 가 가리키는 당근 `in_regions`·네이버 중복 묶음의 `realtor_count`·`*_range_manwon`)만 남긴다. 필드 이름은 `Listing` 과 하위 모델의 필드(`listing_field_names`)로 옵션을 읽을 때 검증해, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다. 한 명령도 모드(동·역·단지·`--details`)마다 매물 모델이 달라 이 검증은 모든 명령의 필드로 보므로, 결과의 매물 모델에 없는 필드를 골랐으면 `emit` 이 `missing_fields_note` 로 `notes` 에 이 명령의 매물 필드를 알린다. 매물 목록을 내는 새 명령도 이 옵션을 단다.
+- 매물 목록 명령은 `FieldsOption`(`--fields`)을 받아 `emit(..., fields=...)` 로 넘긴다. `emit` 은 `listings` 키의 매물(통근 검색은 역마다의 `listings`)에서 고른 필드와 `ALWAYS_FIELDS`(다음 명령에 넘길 `id`, notes 가 가리키는 네이버 중복 묶음의 `realtor_count`·`*_range_manwon`)만 남긴다. 필드 이름은 `Listing` 과 하위 모델의 필드(`listing_field_names`)로 옵션을 읽을 때 검증해, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다. 한 명령도 모드(동·역·단지·`--details`)마다 매물 모델이 달라 이 검증은 모든 명령의 필드로 보므로, 결과의 매물 모델에 없는 필드를 골랐으면 `emit` 이 `missing_fields_note` 로 `notes` 에 이 명령의 매물 필드를 알린다. 매물 목록을 내는 새 명령도 이 옵션을 단다.
 
 ### 값이 없을 때
 
@@ -97,8 +106,8 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 | 모름 (해당은 되지만 소스가 알려 주지 않음) | `null` | 필드 기본값 `None` |
 | 알려 줬는데 비어 있음 | `[]` | 빈 리스트 |
 
-- 해당 없음 예: 월세의 `price_manwon`, 매매의 `deposit_manwon`·`rent_manwon`
-  (`NOT_APPLICABLE_PRICE_FIELDS`), 중심점 없는 조회와 상세의 `distance_km`.
+- 해당 없음 예: 월세의 `price_manwon`, 매매의 `deposit_manwon`·`rent_manwon`, 연세의 `rent_manwon`, 연세가 아닌 거래의
+  `yearly_rent_manwon` (`NOT_APPLICABLE_PRICE_FIELDS`), 중심점 없는 조회와 상세의 `distance_km`.
 - service 에서 "모름"과 "없음"을 섞지 않는다. 소스가 옵션 목록을 주지 않았으면 `options=None`,
   줬는데 비었으면 `options=[]`.
 - 소스 고유 필드가 있는 상세 모델은 `not_applicable_fields()` 를 넓혀 같은 방식으로 키를 뺀다
@@ -114,9 +123,17 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 
 ### 거래 유형
 
-- `trade_type` 은 `매매`·`전세`·`월세`·`단기임대` 넷이다. 지원 거래 유형·기본값·가격 조건에 따른 거래 유형 추론은 명령별 CLI 선언과 사용자 문서를 따른다. 아파트·실거래·단기임대 서비스처럼 일부 유형만 지원하거나 기본 매매인 명령도 있다.
+- `trade_type` 은 `매매`·`전세`·`월세`·`단기임대`·`연세` 다섯이다 (`TradeType`). 연세는 당근(제주)만 주고, 네 소스가 함께 쓰는 넷은 `SHARED_TRADE_TYPES` 다. 지원 거래 유형·기본값·가격 조건에 따른 거래 유형 추론은 명령별 CLI 선언과 사용자 문서를 따른다. 아파트·실거래·단기임대 서비스처럼 일부 유형만 지원하거나 기본 매매인 명령도 있다.
 - 단기임대를 월세로 내보내지 않는다. 보증금이 월세 한두 달치라 싼 월세로 읽힌다. 소스 표기: 네이버 `B3`,
   당근 `SHORT`, 직방은 요약의 `sales_type: 월세` + `contract: 단기` (거래 유형 필터 값은 `단기`).
+- 연세(당근 `YEAR`)도 월세로 내보내지 않는다. 1년치를 한 번에 내는 금액이라 월세로 읽으면 열두 배로 셈한다. `yearly_rent_manwon`
+  에 1년치 그대로 두고(월로 나눈 값은 당근 웹에도 없다) `rent_manwon` 은 해당 없음으로 키를 뺀다. `yearly_rent_manwon` 은 연세가 아닌
+  거래와 다른 소스에서 늘 키가 없다 (`NOT_APPLICABLE_PRICE_FIELDS`).
+
+### 거래 상태
+
+- `status` 는 `판매중`·`예약중` 둘이다. 예약 상태를 알려 주는 소스(지금은 당근)만 채우고, 그 밖의 소스는 해당 없음이라
+  키를 뺀다. 예약중은 계약이 깨질 수 있어 원 사이트처럼 내보낸다 (만료 매물이 아니다. 아래 표).
 
 ### 방 구조
 
@@ -142,7 +159,7 @@ jibsa 는 **찾기까지만** 한다. 원 사이트를 대신하게 되는 정�
 | --- | --- | --- | --- |
 | 직방 | 요약 `status: true`, 상세 `status: "open"`. 상가 `status: "open"`, 단기임대 상세 `status: true` + `checkStatus: COMPLETE`. 아파트 목록은 노출 중인 매물만 온다 | 제외 | `ListingUnavailableError` |
 | 네이버 | 응답 `isSuccess: true`, 아는 거래 유형 코드 (`TRADE_NAME_BY_CODE`) | 노출 중인 매물만 온다. 모르는 코드는 제외 | `ListingUnavailableError` (모르는 거래 유형이면 `reason: UNKNOWN_TRADE_TYPE`, 모르는 매물 유형이면 `UNKNOWN_REAL_ESTATE_TYPE`) |
-| 당근 | `ON_GOING` 이고 `isHide`·`invisibleReason`·`invisibleInfos` 없음 (`is_available`), 아는 거래 조건이 있음 | 제외 | `ListingUnavailableError` (상태·사유 포함, 거래 조건이 없으면 `reason: NO_TRADE_INFO`) |
+| 당근 | `ON_GOING`(판매중)·`RESERVED`(예약중)이고 `isHide`·`invisibleReason`·`invisibleInfos` 없음 (`is_available`), 아는 거래 조건이 있음. 상세는 비활성 중개소(`bizProfile.status` 가 `ACTIVE` 아님)도 막는다 | 제외. 목록 카드에는 중개소 상태가 없어 비활성 중개소 매물은 당근 웹처럼 목록에 나온다 | `ListingUnavailableError` (상태·사유 포함, 거래 조건이 없으면 `reason: NO_TRADE_INFO`, 비활성 중개소면 `BIZ_PROFILE_INACTIVE`) |
 | 다방 | 상세 `status` 가 비공개(0·3·4)가 아니고 `is_contract` 아님, 아는 거래 유형 (`TRADE_BY_SELLING_CODE`) | 목록 칸에 상태가 없어 다방 웹 목록과 같은 매물이 온다. 가격·거래 유형을 읽지 못한 매물은 제외 | `ListingUnavailableError` (비공개면 `status`, 계약 완료면 `status: contract`, 모르는 거래 유형이면 `reason: UNKNOWN_TRADE_TYPE`) |
 
 ## 개수 상한

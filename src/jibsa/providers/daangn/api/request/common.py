@@ -4,6 +4,7 @@ from math import isfinite
 
 from pydantic import (
     Field,
+    SerializationInfo,
     field_serializer,
     model_validator,
 )
@@ -13,6 +14,7 @@ from jibsa.core.schema import RequestModel
 
 from typing import (
     Annotated,
+    Any,
     Literal,
     Self,
 )
@@ -23,8 +25,9 @@ from typing import (
 DaangnSalesType = Literal[
     'APART', 'ONE_ROOM', 'TWO_ROOM', 'OFFICETEL', 'STORE', 'HOUSE', 'OFFICE', 'BUILDING', 'FACTORY', 'LAND',
 ]
-# 연세(YEAR)는 제주에서만 쓰여 jibsa 거래 유형(매매·전세·월세·단기임대)에 없으므로 받지 않는다
-DaangnTradeType = Literal['MONTH', 'BORROW', 'BUY', 'SHORT']
+# 연세(YEAR)는 1년치 월세를 한 번에 내는 제주 거래다. 웹은 제주에서만 '연세' 칩을 보여 주지만 서버는 어느 지역에서나
+# 받는다 (2026-11-13 실측: 노형동 tradeTypes ['YEAR'] 는 연세 매물만)
+DaangnTradeType = Literal['MONTH', 'BORROW', 'BUY', 'SHORT', 'YEAR']
 DaangnFloor = Literal['SEMI_BASEMENT', 'FIRST', 'SECOND_TO_FIFTH', 'SIX_TO_NINTH', 'TENTH_OR_MORE']
 DaangnRoomCount = Literal['TWO', 'THREE', 'FOUR_OR_MORE']
 DaangnSubSalesType = Literal['OPEN_ROOM', 'SPLIT_ROOM']
@@ -102,6 +105,10 @@ class DaangnPropertyFilterModel(RequestModel):
         DaangnAmountRangeModel | None,
         Field(description='월세 범위 (만원)', alias='monthlyPay')
     ] = None
+    yearly_pay: Annotated[
+        DaangnAmountRangeModel | None,
+        Field(description='연세 범위 (만원). 웹은 제주에서만 보여 준다 (PriceFiltersSection 의 isJeju)', alias='yearlyPay')
+    ] = None
     price_pay: Annotated[
         DaangnAmountRangeModel | None,
         Field(description='매매가 범위 (만원)', alias='pricePay')
@@ -152,15 +159,15 @@ class DaangnPropertyFilterModel(RequestModel):
     ] = None
     min_household_count: Annotated[
         int | None,
-        Field(ge=0, description='단지 세대수 하한 (아파트만)', alias='minHouseholdCount')
+        Field(ge=0, description='단지 세대수 하한 (유형 전체·아파트·오피스텔)', alias='minHouseholdCount')
     ] = None
     max_household_count: Annotated[
         int | None,
-        Field(ge=0, description='단지 세대수 상한 (아파트만)', alias='maxHouseholdCount')
+        Field(ge=0, description='단지 세대수 상한 (유형 전체·아파트·오피스텔)', alias='maxHouseholdCount')
     ] = None
     min_parking_per_household: Annotated[
         float | None,
-        Field(ge=0, description='세대당 주차 대수 하한 (아파트만)', alias='minParkingPerHousehold')
+        Field(ge=0, description='세대당 주차 대수 하한 (유형 전체·아파트·오피스텔)', alias='minParkingPerHousehold')
     ] = None
 
     @model_validator(mode='after')
@@ -168,10 +175,13 @@ class DaangnPropertyFilterModel(RequestModel):
         _validate_area_household(self)
         if self.sub_sales_types and 'ONE_ROOM' not in self.sales_types:
             raise ValueError('방 구조(오픈형·분리형) 조건은 원룸을 찾을 때만 쓸 수 있습니다')
-        apart_only = (self.min_household_count, self.max_household_count, self.min_parking_per_household)
-        # 웹도 아파트만 고른 경우에만 세대수·주차대수 조건을 보낸다
-        if any(value is not None for value in apart_only) and self.sales_types != ['APART']:
-            raise ValueError('세대수·주차대수 조건은 아파트만 찾을 때 쓸 수 있습니다')
+        complex_conditions = (self.min_household_count, self.max_household_count, self.min_parking_per_household)
+        # 웹은 유형을 고르지 않았거나(전체) 아파트·오피스텔이 들어 있을 때만 세대수·주차대수 조건을 보낸다 (ChatPanelActionsContext
+        # 의 `Gc`). 서버도 그때 실제로 건다 (2026-11-11 실측: 역삼동 전체 1000 → 세대수 1000 이상 40건, 오피스텔 895 → 0건)
+        if any(value is not None for value in complex_conditions) and not (
+            not self.sales_types or 'APART' in self.sales_types or 'OFFICETEL' in self.sales_types
+        ):
+            raise ValueError('세대수·주차대수 조건은 유형을 고르지 않거나 아파트·오피스텔을 넣어 찾을 때 쓸 수 있습니다')
         return self
 
     @field_serializer('min_area', 'max_area')
@@ -179,13 +189,33 @@ class DaangnPropertyFilterModel(RequestModel):
         return _area_text(value)
 
 
-class DaangnLocationFilterModel(RequestModel):
-    """`articleFeed` 의 `input.locationFilter`. 동 하나로 찾는다."""
+def is_empty_property_filter(property_filter: DaangnPropertyFilterModel) -> bool:
+    """조건이 하나도 없는 필터인지 (웹 지도 필터 atom 이 null 인 상태. `salesTypes` 는 늘 있어 빈 목록이면 없는 것으로 본다).
 
-    original_region_id: Annotated[
-        int,
-        Field(gt=0, description='당근 지역 ID (동)', alias='originalRegionId')
-    ]
+    기본값 모델과 비교해, None 이 아닌 기본값을 가진 필드가 늘어도 빈 조건으로 본다 (2026-11-12 리뷰).
+    """
+    return property_filter == DaangnPropertyFilterModel()
+
+
+def with_null_property_filter(
+    property_filter: DaangnPropertyFilterModel,
+    data: dict[str, Any],
+    info: SerializationInfo,
+) -> dict[str, Any]:
+    """`input` 모델의 매물 조건이 하나도 없으면 직렬화 결과에 null 로 넣는다 (`input` 모델의 `model_serializer` 용).
+
+    웹은 동 클러스터 목록(`articleByClusterId`)과 지역 거품(`articleClusters`)에 조건이 없으면 `propertyFilter: null` 을 명시해
+    보낸다 (mapQueryFilter 의 atom 이 null, 2026-11-12 번들 대조). GraphQL 은 변수 생략과 null 을 구분할 수 있어 웹과 같게 null
+    을 보낸다. client 가 변수를 `exclude_none` 으로 직렬화해도 여기서 넣은 null 은 남는다. 빈 조건인지(`is_empty_property_filter`)
+    여기서 가려 부르는 쪽은 조건을 그대로 넘긴다. 예전에는 부르는 쪽이 빈 조건을 None 으로 바꿔 넘겨야 해서, 빠뜨리면 빈 필터
+    `{salesTypes: []}` 가 나갔다 (2026-11-12 리뷰. 결과는 같았다: 역삼동 둘레 거품 142개·역삼동 6,426건).
+
+    키 이름은 직렬화하는 이름을 따른다 (alias 면 `propertyFilter`, 아니면 `property_filter`). 늘 `propertyFilter` 로 넣으면 alias
+    없이 직렬화할 때 `property_filter` 와 `propertyFilter: None` 이 함께 나왔다 (2026-11-12 리뷰).
+    """
+    if is_empty_property_filter(property_filter):
+        data['propertyFilter' if info.by_alias else 'property_filter'] = None
+    return data
 
 
 class DaangnCoordinateInputModel(RequestModel):
@@ -203,6 +233,19 @@ class DaangnCoordinateInputModel(RequestModel):
     @field_serializer('lat', 'lon')
     def serialize_degree(self, value: float) -> str:
         return f'{value:.6f}'
+
+
+class DaangnBoundsLocationFilterModel(RequestModel):
+    """좌표 범위 지역 조건 (웹 지도 화면의 북동·남서 꼭짓점). 지도 범위 매물 목록·매물 수·지도 범위 단지 목록이 함께 쓴다."""
+
+    ne_coordinate: Annotated[
+        DaangnCoordinateInputModel,
+        Field(description='북동 꼭짓점', alias='neCoordinate')
+    ]
+    sw_coordinate: Annotated[
+        DaangnCoordinateInputModel,
+        Field(description='남서 꼭짓점', alias='swCoordinate')
+    ]
 
 
 # 지역 단지 목록(웹 지도 단지 탭)의 코드값. 매물 조건(`DaangnSalesType` 등)과 이름·값이 다르다

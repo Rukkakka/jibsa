@@ -75,7 +75,7 @@ class DaangnRegionModel(ResponseModel):
     ] = None
     depth: Annotated[
         int | None,
-        Field(description='행정 단계. 3 이면 동/읍/면 (좌표 → 지역 조회에만)')
+        Field(description='행정 단계. 1 시·도, 2 구, 3 동/읍/면 (좌표 → 지역·지역 검색·단지 지역 조회가 준다, 2026-11-12 실측)')
     ] = None
     center_coordinate: Annotated[
         DaangnCoordinateModel | None,
@@ -97,11 +97,11 @@ class DaangnTradeModel(ResponseModel):
 
     typename: Annotated[
         str | None,
-        Field(description='MonthTrade / BuyTrade / BorrowTrade / ShortTrade', alias='__typename')
+        Field(description='MonthTrade / BuyTrade / BorrowTrade / ShortTrade / YearTrade', alias='__typename')
     ] = None
     type: Annotated[
         str,
-        Field(description='MONTH(월세), BUY(매매), BORROW(전세), SHORT(단기임대)')
+        Field(description='MONTH(월세), BUY(매매), BORROW(전세), SHORT(단기임대), YEAR(연세, 제주)')
     ]
     preferred: Annotated[
         bool | None,
@@ -114,6 +114,16 @@ class DaangnTradeModel(ResponseModel):
     monthly_pay: Annotated[
         int | None,
         Field(description='월세 (만원)', alias='monthlyPay')
+    ] = None
+    yearly_pay: Annotated[
+        int | None,
+        Field(
+            description=(
+                '연세 (만원, YEAR 만). 1년치를 한 번에 낸다 (2026-11-13 실측: 목록 카드·상세 SSR 모두 YearTrade 에 '
+                'deposit·yearlyPay, 5014421 은 1000/1400)'
+            ),
+            alias='yearlyPay',
+        )
     ] = None
     price: Annotated[
         int | None,
@@ -196,6 +206,10 @@ class DaangnBizProfileModel(ResponseModel):
         str | None,
         Field(description='사무소 도로명 주소 (상세 페이지에만)', alias='roadAddress')
     ] = None
+    status: Annotated[
+        str | None,
+        Field(description='중개사무소 상태 (ACTIVE 등, 상세 페이지에만). ACTIVE 가 아니면 웹 상세가 매물을 막는다')
+    ] = None
 
 
 class DaangnArticleOptionModel(ResponseModel):
@@ -245,7 +259,7 @@ class DaangnBrokerCommissionModel(ResponseModel):
 
     trade_type: Annotated[
         str | None,
-        Field(description='MONTH / BORROW / BUY / SHORT', alias='tradeType')
+        Field(description='MONTH / BORROW / BUY / SHORT / YEAR', alias='tradeType')
     ] = None
     commission: Annotated[
         LooseFloat,
@@ -281,8 +295,8 @@ class DaangnComplexRefModel(ResponseModel):
 class DaangnArticleModel(ResponseModel):
     """`__typename == "Article"` 레코드를 참조까지 펼친 것.
 
-    목록(map) 페이지와 상세(articles) 페이지가 같은 타입을 쓰지만 상세 페이지에만
-    채워지는 필드가 많아 대부분 optional 이다.
+    GraphQL 매물 목록 카드(동·지도 범위·역·대학 주변·출퇴근·단지 매물)와 상세(articles) 페이지가 같은 타입을 쓰지만
+    상세 페이지에만 채워지는 필드가 많아 대부분 optional 이다.
     """
 
     original_id: Annotated[
@@ -323,7 +337,7 @@ class DaangnArticleModel(ResponseModel):
     ] = None
     status: Annotated[
         str | None,
-        Field(description='거래 상태. ON_GOING 만 거래 가능 (그 외 예약·거래완료 등)')
+        Field(description='거래 상태. ON_GOING(판매중)·RESERVED(예약중, 계약이 깨질 수 있어 웹처럼 내보낸다)만 내보내고 그 밖(거래완료 등)은 거래 불가로 뺀다 (`LISTING_STATUS_BY_STATUS`)')
     ] = None
     is_hide: Annotated[
         bool | None,
@@ -642,7 +656,10 @@ class DaangnRealsaleDanjiModel(ResponseModel):
 
 
 class DaangnCommuteArticleModel(ResponseModel):
-    """역 주변 매물. 카드에 상태·종류·주소가 없어 ID 만 쓰고 `articlesByOriginalArticleIds` 로 다시 받는다."""
+    """역·대학 주변·출퇴근 역별 매물 카드 (CommuteArticleConnection). 상태·거래 조건이 다 있어 다시 받지 않고 그대로 쓴다.
+
+    예전에 카드를 다시 받던 `articlesByOriginalArticleIds` 와 필드·값이 같았다 (2026-10-11 실측: 역삼역·합정역 20건씩).
+    """
 
     article: Annotated[
         DaangnArticleModel | None,

@@ -1,6 +1,9 @@
 """응답 모델: 단지 정보·단지 이름 검색·지역 단지 목록·인기 단지·단지 매물 (complex, search complexes, trending-complexes, search listings --complex)."""
 
-from pydantic import Field
+from pydantic import (
+    Field,
+    model_validator,
+)
 
 from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
@@ -14,7 +17,10 @@ from jibsa.providers.daangn.api.response.common import (
     LooseFloat,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -24,6 +30,14 @@ from typing import Annotated
 class DaangnPyInfoModel(ResponseModel):
     """평형 하나."""
 
+    ptp_cd: Annotated[
+        int | None,
+        Field(description='평형 타입 코드 (단지 안 번호, 실거래·시세의 ptpCds 로 보낸다)', alias='ptpCd')
+    ] = None
+    ptp: Annotated[
+        str | None,
+        Field(description="평형 타입 이름 (예: 'A', 'J1')")
+    ] = None
     exclusive_area: Annotated[
         LooseFloat,
         Field(description='전용면적 (㎡)', alias='exclusiveArea')
@@ -43,11 +57,15 @@ class DaangnPyInfoModel(ResponseModel):
 
 
 class DaangnAreaGroupModel(ResponseModel):
-    """전용면적 묶음 (웹의 평형 탭 하나). 같은 묶음에 평형이 여러 개일 수 있다."""
+    """평형 묶음 (웹의 평형 탭 하나). 전용면적 묶음이나 공급 평 묶음이다. 같은 묶음에 평형이 여러 개일 수 있다."""
 
     label: Annotated[
         int | None,
-        Field(description='묶음 이름 (전용면적 ㎡ 정수)')
+        Field(description='묶음 이름 (전용면적 묶음은 ㎡ 정수, 공급 평 묶음은 평 정수)')
+    ] = None
+    is_representative: Annotated[
+        bool | None,
+        Field(description='대표 평형 묶음 (웹이 처음 고르는 평형)', alias='isRepresentative')
     ] = None
     total_count: Annotated[
         int | None,
@@ -79,6 +97,20 @@ class DaangnSubwayInfoModel(ResponseModel):
 class DaangnSchoolModel(ResponseModel):
     """학교."""
 
+    @model_validator(mode='before')
+    @classmethod
+    def resident_count_key(cls, data: Any) -> Any:
+        """이 단지 주민 수는 인자가 붙은 키(`complexResidentCount(complexOriginalId:"10667600")`)로 와서 이름을 맞춘다."""
+        if isinstance(data, dict):
+            key = next((key for key in data if str(key).startswith('complexResidentCount(')), None)
+            if key is not None:
+                data = {**data, 'complexResidentCount': data[key]}
+        return data
+
+    resident_count: Annotated[
+        int | None,
+        Field(description='이 단지 주민 중 다니는 수 (웹의 "이 단지 N명 이상이 다녀요")', alias='complexResidentCount')
+    ] = None
     name: Annotated[
         str | None,
         Field(description='학교 이름', alias='schNm')
@@ -99,6 +131,22 @@ class DaangnNearbySchoolModel(ResponseModel):
     walking_time_min: Annotated[
         LooseFloat,
         Field(description='도보 시간 (분)', alias='walkingTimeMin')
+    ] = None
+    walking_distance_m: Annotated[
+        LooseFloat,
+        Field(description='도보 거리 (m)', alias='walkingDistanceMeters')
+    ] = None
+    working_time: Annotated[
+        LooseFloat,
+        Field(description='배정 학교의 길찾기 도보 시간 (분). walkingTimeMin 이 없을 때 웹이 쓴다', alias='workingTime')
+    ] = None
+    distance: Annotated[
+        LooseFloat,
+        Field(description='배정 학교까지 직선거리 (m). walkingDistanceMeters 가 없을 때 웹이 쓴다 (ComplexSchoolSection `Re`)')
+    ] = None
+    allocation_method: Annotated[
+        str | None,
+        Field(description="배정 방식 (예: '자동')", alias='allocationMethod')
     ] = None
 
 
@@ -169,6 +217,10 @@ class DaangnProptierDanjiModel(ResponseModel):
     area_groups: Annotated[
         list[DaangnAreaGroupModel],
         Field(description='전용면적 묶음과 평형', alias='exclusiveAreaGroups')
+    ] = []
+    supply_pyeong_area_groups: Annotated[
+        list[DaangnAreaGroupModel],
+        Field(description='공급 평 묶음과 평형 (아파트형 단지. 웹은 아파트형이면 이 묶음으로 평형을 고른다)', alias='supplyPyeongAreaGroups')
     ] = []
     subways: Annotated[
         list[DaangnSubwayInfoModel],
@@ -368,6 +420,10 @@ class DaangnTrendingRealsaleConnectionModel(ResponseModel):
 class DaangnTrendingPyInfoModel(ResponseModel):
     """인기 단지 평형."""
 
+    households: Annotated[
+        int | None,
+        Field(description='이 평형의 세대수', alias='ptpTotHsehCnt')
+    ] = None
     exclusive_area: Annotated[
         LooseFloat,
         Field(description='전용면적 (㎡)', alias='exclusiveArea')
@@ -401,7 +457,7 @@ class DaangnTrendingDanjiModel(ResponseModel):
 
 
 class DaangnTrendingComplexModel(ResponseModel):
-    """요즘 많이 보는 단지. 사진(`imagesV2`)은 읽지 않는다."""
+    """인기 급상승 단지. 사진(`imagesV2`)은 읽지 않는다."""
 
     original_id: Annotated[
         str,
@@ -514,7 +570,7 @@ class DaangnComplexArticlesResponseModel(DaangnGraphQLResponseModel):
 
 
 # ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — searchComplexes (지역 단지 목록, region_complexes)
+# POST realty.kr.karrotmarket.com/graphql — complexByClusterId (동·구 단지 목록)
 # ---------------------------------------------------------------------------
 
 class DaangnRegionComplexEdgeModel(ResponseModel):
@@ -539,19 +595,41 @@ class DaangnRegionComplexesModel(ResponseModel):
     ] = None
 
 
-class DaangnRegionComplexesDataModel(ResponseModel):
+class DaangnComplexByClusterIdDataModel(ResponseModel):
+    """GraphQL `data`."""
+
+    complex_by_cluster_id: Annotated[
+        DaangnRegionComplexesModel | None,
+        Field(description='단지 목록', alias='complexByClusterId')
+    ] = None
+
+
+class DaangnComplexByClusterIdResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `complexByClusterId` 응답 (동·구 단지 목록)."""
+
+    data: Annotated[
+        DaangnComplexByClusterIdDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# POST realty.kr.karrotmarket.com/graphql — searchComplexes (지도 범위 단지 목록, 카드는 동·구 단지 목록과 같다)
+# ---------------------------------------------------------------------------
+
+class DaangnSearchComplexesViewportDataModel(ResponseModel):
     """GraphQL `data`."""
 
     search_complexes: Annotated[
         DaangnRegionComplexesModel | None,
-        Field(description='단지 목록', alias='searchComplexes')
+        Field(description='화면 범위 안 단지 목록', alias='searchComplexes')
     ] = None
 
 
-class DaangnRegionComplexesResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `searchComplexes` 응답 (지역 단지 목록)."""
+class DaangnSearchComplexesViewportResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `searchComplexes` 응답 (지도 범위 단지 목록, 웹 `ComplexListPanelViewportQuery`)."""
 
     data: Annotated[
-        DaangnRegionComplexesDataModel | None,
+        DaangnSearchComplexesViewportDataModel | None,
         Field(description='결과')
     ] = None
