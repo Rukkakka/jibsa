@@ -151,39 +151,91 @@ BROWSER_OWNED_HEADER_PREFIXES: tuple[str, ...] = ('proxy-', 'sec-')
 DECODED_RESPONSE_HEADERS: frozenset[str] = frozenset({'content-encoding', 'content-length', 'transfer-encoding'})
 # 서버에 묻지 않고 탭을 띄울 때 돌려주는 빈 페이지 (`_fulfill_blank`). 아이콘을 data: 로 두어 favicon 요청이 나가지 않는다
 BLANK_PAGE_HTML: str = '<link rel="icon" href="data:,">'
+# 본문이 이보다 크면 evaluate 한 번에 돌려주지 않고 브라우저 안에 두었다가 이만큼씩 나눠 읽는다 (`_read_body`). patchright 는
+# evaluate 결과가 크면 넘기는 시간이 크기보다 훨씬 빨리 는다. 같은 본문(97MB, 네트워크 없이 브라우저 안에서 만든 것)을 한 번에 넘기면
+# 44초, 1MB 씩이면 2.2초, 4MB 씩 2.7초, 16MB 씩 8.4초였다 (2026-11-11 로컬 실측). jibsa 소스 응답은 작아(1초 안팎) 평소엔 한 번에
+# 돌려주는 쪽만 탄다
+BODY_CHUNK_BYTES: int = 1 << 20
+# 브라우저 setTimeout 이 받는 가장 긴 시간(ms). 이보다 길면 기다리지 않고 바로 울린다 (2026-11-12 로컬 실측: timeout 3,000,000초는
+# 0초에 ReadTimeout, 2,147,483초는 정상). `BaseHTTPClient.timeout` 은 상한이 없어 `_fetch_arguments` 가 여기서 자르고, 에러
+# 메시지의 초도 자른 값으로 적는다
+MAX_TIMER_MS: int = 2**31 - 1
 # credentials 는 fetch 기본값(same-origin)이다. 같은 출처면 쿠키가 실리고 다른 출처(다방 동 경계 CDN 등)에는 안 실린다.
 # 'include' 로 두면 `Access-Control-Allow-Origin: *` 인 다른 출처 응답을 브라우저가 거절한다 (2026-11-09 다방 CDN 실측).
 # redirect 는 모든 소스가 브라우저 안에서 따라간다. 'manual' 이면 fetch 가 상태 0 인 opaqueredirect 를 줘 상태·Location 을 볼
 # 수 없어서, httpx 클라이언트의 follow_redirects 대로 httpx 가 따라가게 둘 수 없다. 같은 출처 redirect 는 사이트 웹처럼 따라가고
 # (끝이 JSON 이 아니면 PARSE_ERROR), CORS 를 허용하지 않는 다른 출처(로그인·보안 확인 화면)로 넘기면 fetch 가 실패해
 # 첫 응답(3xx)을 `_BlockedResponses` 로 돌려준다. 그래서 따라가지 않던 예전 httpx 처럼 UPSTREAM_ERROR 가 된다.
-# requestUrl 은 브라우저가 정리한 요청 주소로, CDP 이벤트의 요청 주소와 맞춰 보는 데 쓴다
-FETCH_SCRIPT: str = """async ({url, method, headers, body, timeoutMs}) => {
+# blob 을 base64 로 바꾸는 JS 함수 (FileReader 가 만든 data URL 의 쉼표 뒤). `FETCH_SCRIPT`·`BODY_SLICE_SCRIPT` 가 함께 쓴다.
+# 빈 blob 도 `data:application/octet-stream;base64,` 라 빈 문자열이 된다 (2026-11-12 로컬 실측)
+BLOB_BASE64_SCRIPT: str = """(blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result.slice(reader.result.indexOf(',') + 1));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+})"""
+# requestUrl 은 브라우저가 정리한 요청 주소로, CDP 이벤트의 요청 주소와 맞춰 보는 데 쓴다.
+# timeoutMs 는 응답 헤더가 올 때까지와 본문 조각 사이 간격의 제한이다 (`_fetch_arguments`). 본문을 조각마다 읽어 그 사이를 잰다.
+# 헤더가 늦으면 fetch 를 끊어 AbortError 다. 본문이 멈추면 이미 받은 상태·헤더에 error 'BodyTimeout' 을 붙여 돌려준다
+# (`_to_response` 가 3xx 이상이면 본문 없는 응답으로 만든다).
+# 본문이 inlineBytes 보다 크면 본문 대신 bodyId 를 돌려주고 본문은 이 evaluate 세계의 전역(`__jibsaBodies`)에 둔다
+# (`BODY_SLICE_SCRIPT` 로 읽고 `BODY_DROP_SCRIPT` 로 지운다). patchright 의 evaluate 는 사이트 JS 와 다른 격리된 세계에서 돌아
+# 사이트 JS 에는 이 전역이 보이지 않는다 (2026-11-11 로컬 실측: evaluate 로 둔 전역이 페이지 main world 에서는 undefined)
+FETCH_SCRIPT: str = """async ({url, method, headers, body, timeoutMs, inlineBytes}) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let requestUrl = url;
+  const readWithin = (reader, ms) => new Promise((resolve, reject) => {
+    const idle = setTimeout(() => resolve(null), ms);
+    reader.read().then(
+      (chunk) => { clearTimeout(idle); resolve(chunk); },
+      (error) => { clearTimeout(idle); reject(error); },
+    );
+  });
+  const readAll = async (reader) => {
+    const chunks = [];
+    while (true) {
+      const chunk = await readWithin(reader, timeoutMs);
+      if (chunk === null) {
+        reader.cancel().catch(() => {});
+        return null;
+      }
+      if (chunk.done) return new Blob(chunks);
+      chunks.push(chunk.value);
+    }
+  };
+  const base64 = """ + BLOB_BASE64_SCRIPT + """;
   try {
     requestUrl = new URL(url, location.href).href;
     const init = {method, headers, redirect: 'follow', signal: controller.signal};
     if (body !== null) init.body = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
     const response = await fetch(url, init);
-    const blob = await response.blob();
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    return {
-      requestUrl, url: response.url, status: response.status, headers: [...response.headers],
-      body: dataUrl.slice(dataUrl.indexOf(',') + 1),
-    };
+    clearTimeout(timer);
+    const meta = {requestUrl, url: response.url, status: response.status, headers: [...response.headers]};
+    const blob = response.body ? await readAll(response.body.getReader()) : new Blob([]);
+    if (blob === null) return {...meta, error: 'BodyTimeout'};
+    if (blob.size <= inlineBytes) return {...meta, body: await base64(blob)};
+    const bodies = globalThis.__jibsaBodies || (globalThis.__jibsaBodies = new Map());
+    globalThis.__jibsaBodyCount = (globalThis.__jibsaBodyCount || 0) + 1;
+    const bodyId = String(globalThis.__jibsaBodyCount);
+    bodies.set(bodyId, blob);
+    return {...meta, bodyId, size: blob.size};
   } catch (error) {
     return {requestUrl, error: error.name, message: String(error.message || error)};
   } finally {
     clearTimeout(timer);
   }
 }"""
+# `FETCH_SCRIPT` 가 브라우저 안에 둔 본문(bodyId)의 [start, end) 바이트를 base64 로 돌려준다 (`_read_body`). 본문이 없으면(그 사이
+# 격리 세계가 바뀜) 이유가 보이게 던져 `ConnectError` 메시지에 실린다. 그냥 읽으면 `Cannot read properties of undefined` 로만
+# 보였다 (2026-11-12 로컬 실측. 같은 실측에서 3MB 본문을 세 번에 나눠 읽는 동안 전역은 유지됐다)
+BODY_SLICE_SCRIPT: str = """async ([bodyId, start, end]) => {
+  const blob = globalThis.__jibsaBodies?.get(bodyId);
+  if (!blob) throw new Error(`브라우저에 둔 응답 본문(${bodyId})이 없습니다`);
+  const base64 = """ + BLOB_BASE64_SCRIPT + """;
+  return base64(blob.slice(start, end));
+}"""
+BODY_DROP_SCRIPT: str = """(bodyId) => { globalThis.__jibsaBodies?.delete(bodyId); }"""
 
 
 # 브라우저가 프록시에 닿지 못했거나 프록시가 CONNECT 를 거절했을 때의 Chromium 네트워크 오류(앞부분). httpx 의 ProxyError 처럼
@@ -747,10 +799,13 @@ def _fetch_arguments(request: Request, default_timeout: float) -> tuple[dict[str
 
     본문은 sync `read()` 로 읽는다. 비동기 transport 는 부르기 전에 `aread()` 로 읽어 둔다 (이미 읽은 본문은 그대로 준다).
 
-    timeout 은 httpx 의 read 값을 fetch 하나 전체(CORS 사전 요청·연결부터 본문 끝까지)의 제한으로 쓴다. httpx 는 연결·읽기
-    단계마다, 읽기는 받은 조각 사이마다 20초라 조금씩 계속 오는 22초짜리 응답도 받았지만 여기서는 20초에 `ReadTimeout`
-    이다 (2026-11-10 로컬 실측). 실제 사이트 응답은 1초 안팎이라(같은 날 실측) 본문 조각마다 타이머를 다시 거는 방식은
-    쓰지 않았다.
+    timeout 은 httpx 의 read 값을 응답 헤더가 올 때까지(CORS 사전 요청·연결 포함)와 본문 조각 사이 간격의 제한으로 쓴다. httpx 의
+    읽기 제한처럼 조금씩 계속 오는 응답은 전체가 timeout 보다 길어도 받는다. 예전에는 fetch 하나 전체의 제한이라 조금씩 계속 오는
+    22초짜리 응답이 20초에 `ReadTimeout` 이었다 (2026-11-10 로컬 실측). jibsa 소스 응답은 1초 안팎이라(같은 날 실측) 평소엔
+    차이가 없다. client 의 timeout 을 httpx 의 timeout 과 같은 뜻으로 두려고 조각 사이로 잰다.
+    요청 하나 전체의 상한은 따로 두지 않는다. 조각이 timeout 안에 끝없이 이어지는 응답은 브라우저 스레드를 Ctrl+C 까지 붙잡지만,
+    예전 httpx 도 읽기 제한만 있어 같았고 jibsa 소스 응답은 1초 안팎에 끝나는 JSON 이라 그런 응답이 없다. 상한을 두면 timeout 에
+    두 번째 뜻이 생긴다 (2026-11-12 리뷰에서 검토하고 그대로 둠).
 
     요청에 timeout 이 없으면 클라이언트의 timeout(`default_timeout`)을 쓴다. httpx 는 인증 흐름이 만든 요청(직방 익명 토큰
     `ZigbangGuestAuth._token_request`)에 timeout 을 붙이지 않아, 고정값을 쓰면 `timeout=60` 클라이언트에서도 토큰 요청만
@@ -764,14 +819,28 @@ def _fetch_arguments(request: Request, default_timeout: float) -> tuple[dict[str
         if name.lower() not in BROWSER_OWNED_HEADERS and not name.lower().startswith(BROWSER_OWNED_HEADER_PREFIXES)
     }
     content = request.read()
-    timeout = (request.extensions.get('timeout') or {}).get('read') or default_timeout
+    timeout = min((request.extensions.get('timeout') or {}).get('read') or default_timeout, MAX_TIMER_MS / 1000)
     return {
         'url': str(request.url),
         'method': request.method,
         'headers': headers,
         'body': base64.b64encode(content).decode() if content else None,
         'timeoutMs': timeout * 1000,
+        'inlineBytes': BODY_CHUNK_BYTES,
     }, timeout
+
+
+def _read_body(page: 'Page', body_id: str, size: int) -> bytes:
+    """`FETCH_SCRIPT` 가 브라우저 안에 둔 큰 본문을 `BODY_CHUNK_BYTES` 씩 읽고 브라우저 안의 것은 지운다."""
+    try:
+        return b''.join(
+            base64.b64decode(page.evaluate(BODY_SLICE_SCRIPT, [body_id, start, min(start + BODY_CHUNK_BYTES, size)]))
+            for start in range(0, size, BODY_CHUNK_BYTES)
+        )
+    finally:
+        # 읽다 실패해도 지운다. 탭이 이미 닫혔으면 본문도 함께 사라졌다
+        with suppress(_playwright_error()):
+            page.evaluate(BODY_DROP_SCRIPT, body_id)
 
 
 class _FailedFetch(NamedTuple):
@@ -912,6 +981,13 @@ def _response_headers(headers: Iterable[tuple[str, str]]) -> list[tuple[bytes, b
     return [(raw(name), raw(value)) for name, value in headers if name.lower() not in DECODED_RESPONSE_HEADERS]
 
 
+def _fetched_headers(result: dict[str, Any], page_headers: Mapping[str, Mapping[str, str]]) -> list[tuple[str, str]]:
+    """fetch 가 받은 응답 헤더에, CORS 가 페이지 JS 에 감춘 헤더를 브라우저 `response` 이벤트의 헤더(`page_headers`)로 채운다."""
+    headers = [(name, value) for name, value in result['headers']]
+    shown = {name for name, _ in headers}
+    return headers + [(name, value) for name, value in page_headers.get(result['url'], {}).items() if name not in shown]
+
+
 def _to_response(
     request: Request,
     result: dict[str, Any],
@@ -938,9 +1014,21 @@ def _to_response(
       오류(`CERT_NET_ERROR`)는 재시도하지 않는 `CertificateError`, 그 밖의 연결 실패는 Chromium 오류를 메시지에 붙인
       `ConnectError` 다. 첫 화면을 남긴 쿠키로 띄우면 서버에 묻지 않아, 프록시·인증서 오류는 우리 요청에서 처음 드러난다.
     """
+    if result.get('error') == 'BodyTimeout':
+        # 본문이 멈췄어도 상태·헤더는 받았다. 3xx 이상은 CORS 에 막힌 응답처럼 본문 없이 넘겨 429 는 요청 제한 훅이 Retry-After 로
+        # 쿨다운을 걸고, 그 밖은 `raise_for_status`·재시도 술어가 다룬다 (예전 httpx 도 응답 훅이 본문을 읽기 전에 돌았다).
+        # 2xx 는 본문이 있어야 하는 응답이라 `ReadTimeout` 이다
+        if result['status'] >= 300:
+            return Response(
+                status_code=result['status'],
+                headers=_response_headers(_fetched_headers(result, page_headers)),
+                content=b'',
+                request=request,
+            )
+        raise ReadTimeout(f'브라우저 요청의 응답 본문이 {timeout:.10g}초 동안 오지 않았습니다', request=request)
     if 'error' in result:
         if result['error'] == 'AbortError':
-            raise ReadTimeout(f'브라우저 요청이 {timeout:g}초 안에 끝나지 않았습니다', request=request)
+            raise ReadTimeout(f'브라우저 요청의 응답이 {timeout:.10g}초 안에 오지 않았습니다', request=request)
         if failed is not None and failed.cors_error is not None:
             status = failed.response[0] if failed.response is not None else None
             if failed.response is not None and status is not None and (
@@ -963,13 +1051,11 @@ def _to_response(
             raise CertificateError(f'브라우저가 {request.url.host} 의 인증서를 믿지 못했습니다: {failed.error_text}', request=request)
         reason = f' ({failed.error_text})' if failed is not None and failed.error_text else ''
         raise ConnectError(f'브라우저 fetch 실패: {result["error"]}: {result["message"]}{reason}', request=request)
-    headers = [(name, value) for name, value in result['headers']]
-    shown = {name for name, _ in headers}
-    headers += [(name, value) for name, value in page_headers.get(result['url'], {}).items() if name not in shown]
     return Response(
         status_code=result['status'],
-        headers=_response_headers(headers),
-        content=base64.b64decode(result['body']),
+        headers=_response_headers(_fetched_headers(result, page_headers)),
+        # 큰 본문은 `_handle_request` 가 조각으로 읽어 `content` 에 넣었다 (`_read_body`)
+        content=result['content'] if 'content' in result else base64.b64decode(result['body']),
         request=request,
     )
 
@@ -1663,10 +1749,14 @@ class BrowserTransport(BaseTransport):
                     and time.monotonic() < deadline
                 ):
                     page.wait_for_timeout(BLOCKED_RESPONSE_POLL_MS)
+                if 'bodyId' in result:
+                    result['content'] = _read_body(page, result.pop('bodyId'), result['size'])
             finally:
                 page.remove_listener('response', on_page_response)
         except _playwright_error() as error:
-            # 탭·브라우저가 닫혔으면 다시 써도 같은 에러다. 닫고 재시도에서 남긴 쿠키로 다시 띄운다
+            # 탭·브라우저가 닫혔으면 다시 써도 같은 에러다. 큰 본문을 나눠 읽다(`_read_body`) 본문이 없어졌으면 탭은 살아 있어도
+            # 페이지가 다른 곳으로 넘어가 evaluate 세계가 바뀐 것이라, 이 탭이 아직 첫 화면인지 알 수 없다. 어느 쪽이든 닫고 재시도에서
+            # 남긴 쿠키로 다시 띄운다 (2026-11-12 리뷰에서 검토하고 그대로 둠)
             self._close()
             raise ConnectError(f'브라우저 요청 실패: {_first_line(error)}', request=request) from error
         response = _to_response(request, result, timeout, page_headers, blocked.pop(result['requestUrl']))

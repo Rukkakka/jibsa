@@ -324,8 +324,8 @@ class BaseHTTPClient(BaseModel, ABC):
         verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
             내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
         proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
-        timeout: 브라우저 요청 하나가 끝나야 하는 시간(초). httpx 처럼 연결·읽기 단계마다가 아니라 연결부터 본문 끝까지
-            전체다 (`core.browser._fetch_arguments`). Defaults to 20.
+        timeout: 브라우저 요청의 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한(초). httpx 의 읽기 제한처럼
+            조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`). Defaults to 20.
         rate_limit: 프로세스 간 공유 요청 제한 정책. None 이면 클래스의
             `default_rate_limit` 을 쓴다. Defaults to None.
 

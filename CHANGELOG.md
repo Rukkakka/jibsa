@@ -9,6 +9,16 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 - 라이브러리로 쓸 때: `core.browser` 의 `BrowserTransport` 는 설정을 `BrowserOptions` 하나로 받고(모두 키워드), `AsyncBrowserTransport` 는 감쌀 `BrowserTransport` 하나를 받는다. `BrowserTransport('naver', url, ready_cookie='NNB')` 는 `BrowserTransport(BrowserOptions(source='naver', entry_url=url, ready_cookie='NNB'))` 로, `AsyncBrowserTransport('naver', url, ready_cookie='NNB')` 는 `AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))` 로 고친다. 소스 client 의 `browser_transport()`·`async_browser_transport()` 를 쓰면 고칠 것이 없다 (#216)
 
+### 변경
+
+- 라이브러리로 쓸 때: client 의 `timeout` 은 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한이다 (httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다). 예전에는 요청 하나의 연결부터 본문 끝까지 전체 시간이었다 (#217)
+- 라이브러리로 쓸 때: 1MB 보다 큰 응답 본문을 브라우저에서 1MB 씩 나눠 받아 빨라진다. jibsa 소스 응답은 1MB 보다 작아 CLI 에서는 달라지지 않는다 (#217)
+
+### 수정
+
+- 응답 헤더를 받은 뒤 본문이 멈춘 4xx·5xx 응답을 시간 초과 대신 그 상태로 알림. 429 면 `Retry-After` 대로 요청 제한 쿨다운을 건다 (#217)
+- 라이브러리로 쓸 때: client 의 `timeout` 을 약 24.8일(2³¹−1ms)보다 크게 주면 기다리지 않고 바로 시간 초과가 나던 것을 고침. 그 값에서 자른다 (#217)
+
 ## 0.12.0 — 2026-11-11
 
 ### 변경

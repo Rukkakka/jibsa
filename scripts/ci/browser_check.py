@@ -7,7 +7,9 @@ pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 �
 
     python scripts/ci/browser_check.py
 
-1. 첫 화면을 열고, 그 안에서 보낸 요청(GET·POST)이 데이터와 쿠키를 받아 오는지
+1. 첫 화면을 열고, 그 안에서 보낸 요청(GET·POST)이 데이터와 쿠키를 받아 오는지. 1MB 넘는 본문을 브라우저 안에 두었다가 나눠
+   받는지(`_read_body`), 응답 헤더가 늦거나 본문이 멈추면 timeout 에 맞춰 `ReadTimeout` 으로 끝나는지, 본문이 멈춘 429 는
+   429 로 알아보는지도 본다. 실제 소스 응답은 1초 안팎·1MB 미만이라 이 경로들은 여기서만 돈다
 2. 다시 띄우면 첫 화면을 열지 않고 남긴 쿠키로 바로 요청하는지
 3. 다른 출처가 CORS 없이 준 429 를 Retry-After 와 함께 429 로 알아보는지. 브라우저는 이런 응답을 가려 fetch 가 이유 없이
    실패하므로 jibsa 는 CDP 네트워크 이벤트로 상태를 알아낸다 (`_BlockedResponses`). 그래야 요청 제한이 쿨다운을 건다.
@@ -49,11 +51,13 @@ os.environ.setdefault('JIBSA_STATE_DIR', tempfile.mkdtemp(prefix='jibsa-browser-
 from httpx import (  # noqa: E402
     AsyncClient,
     Client,
+    ReadTimeout,
     Response,
 )
 from scrapling.engines._browsers import _base as scrapling_base  # noqa: E402
 
 from jibsa.core.browser import (  # noqa: E402
+    BODY_CHUNK_BYTES,
     AsyncBrowserTransport,
     BrowserOptions,
     BrowserTransport,
@@ -68,6 +72,13 @@ from jibsa.core.ratelimit import (  # noqa: E402
 READY_COOKIE: str = 'ready'
 # 다른 출처 요청에 붙이는 헤더. 기본 허용 헤더가 아니라 브라우저가 CORS 사전 요청(OPTIONS)을 먼저 보낸다 (6번 확인)
 PREFLIGHT_HEADER: str = 'x-check'
+# 1MB 넘는 응답 본문. jibsa 는 이보다 큰 본문을 evaluate 한 번에 받지 않고 브라우저 안에 두었다가 나눠 읽는다 (`BODY_CHUNK_BYTES`)
+BIG_BODY: bytes = json.dumps({'data': 'x' * (2 * BODY_CHUNK_BYTES + 1)}).encode()
+# 멈춘 본문 응답이 첫 조각 뒤 침묵하는 시간과 그 요청의 timeout. timeout 이 더 짧아야 본문 유휴 timeout 이 난다
+STALL_SECONDS: float = 5
+STALL_TIMEOUT_SECONDS: float = 2
+# 본문이 멈춘 429 응답의 Retry-After. 본문을 다 받지 못해도 상태·헤더로 429 를 알아봐야 요청 제한이 쿨다운을 건다
+STALL_RETRY_AFTER: str = '7'
 # 느린 첫 화면이 응답하기까지 걸리는 시간. Ctrl+C 가 이보다 훨씬 빨리 끝내야 한다
 SLOW_SECONDS: float = 30
 # Ctrl+C 를 보낸 뒤 KeyboardInterrupt 가 나고 클라이언트를 닫기까지 허용하는 시간
@@ -134,6 +145,21 @@ class EntryHandler(QuietHandler):
         elif self.path == '/api/data':
             payload = {'ok': True, 'cookie': self.headers.get('Cookie', '')}
             self._send(200, json.dumps(payload).encode(), 'application/json')
+        elif self.path == '/api/big':
+            self._send(200, BIG_BODY, 'application/json')
+        elif self.path == '/api/stall-head':
+            # 응답 헤더를 보내지 않고 멈춘다
+            time.sleep(STALL_SECONDS)
+        elif self.path in ('/api/stall', '/api/stall-429'):
+            # 본문 한 조각을 보내고 멈춘다 (Content-Length 없이 보내 끝을 알 수 없게 한다)
+            self.send_response(429 if self.path == '/api/stall-429' else 200)
+            self.send_header('Content-Type', 'application/json')
+            if self.path == '/api/stall-429':
+                self.send_header('Retry-After', STALL_RETRY_AFTER)
+            self.end_headers()
+            self.wfile.write(b'["a"')
+            self.wfile.flush()
+            time.sleep(STALL_SECONDS)
         elif self.path == '/slow':
             self.site.slow_started.set()
             time.sleep(SLOW_SECONDS)
@@ -212,6 +238,30 @@ def check_requests(entry: Site) -> None:
         check(f'{READY_COOKIE}=1' in cookie and 'sid=abc' in cookie, f'1. 요청에 첫 화면이 심은 쿠키가 실림 ({cookie!r})')
         echo = first.post(f'{entry.url}api/echo', json={'q': '역삼동'})
         check(echo.json() == {'q': '역삼동'}, '1. POST 본문이 그대로 감')
+        big = first.get(f'{entry.url}api/big')
+        check(
+            big.status_code == 200 and big.content == BIG_BODY,
+            f'1. 1MB 넘는 본문({len(BIG_BODY)}바이트)을 브라우저 안에 두었다가 나눠 받음 (HTTP {big.status_code}, {len(big.content)}바이트)',
+        )
+        # 너무 일찍 끝나도(타이머 단위 실수 등으로 정상 응답이 잘림) 실패로 본다
+        for what, path, said in (('헤더가 오지 않는 응답이', 'stall-head', '응답이'), ('멈춘 본문이', 'stall', '응답 본문이')):
+            started = time.monotonic()
+            try:
+                first.get(f'{entry.url}api/{path}', timeout=STALL_TIMEOUT_SECONDS)
+            except ReadTimeout as error:
+                took = time.monotonic() - started
+                check(
+                    said in str(error) and STALL_TIMEOUT_SECONDS * 0.9 <= took < STALL_SECONDS,
+                    f'1. {what} {STALL_TIMEOUT_SECONDS:g}초 timeout 에 ReadTimeout 으로 끝남 ({took:.1f}초, {error})',
+                )
+            else:
+                check(False, f'1. {what} ReadTimeout 으로 끝남 (끝나지 않고 응답이 왔다)')
+        limited = first.get(f'{entry.url}api/stall-429', timeout=STALL_TIMEOUT_SECONDS)
+        retry_after = limited.headers.get('retry-after')
+        check(
+            limited.status_code == 429 and retry_after == STALL_RETRY_AFTER,
+            f'1. 본문이 멈춘 429 를 Retry-After 와 함께 429 로 알아봄 (HTTP {limited.status_code}, Retry-After {retry_after})',
+        )
     check(entry.counts.get('/') == 1, f"1. 첫 화면을 한 번 열었음 ({entry.counts.get('/')}번)")
 
     with client('browser-check', entry.url) as second:
