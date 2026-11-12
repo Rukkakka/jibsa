@@ -2,7 +2,7 @@
 
 글자는 외곽선(path)으로 바꿔 넣는다. SVG 안에 글자로 두면 보는 사람 컴퓨터에 그 글꼴이 없을 때 다른 글꼴로 바뀐다.
 바탕을 색으로 채워서 GitHub 밝은 화면·어두운 화면과 PyPI 에서 파일 하나로 같게 보인다 (PyPI 는 밝은·어두운 판을
-고르는 `<source>` 태그를 걸러 낸다). 배치와 글꼴은 뱅기표(baenggipyo) 로고와 같게 맞췄다.
+고르는 `<source>` 태그를 걸러 낸다).
 
 글꼴은 저장소에 두지 않는다. Google Fonts 의 IBM Plex Mono SemiBold 와 IBM Plex Sans KR SemiBold(둘 다 OFL)를 받아
 경로를 넘긴다.

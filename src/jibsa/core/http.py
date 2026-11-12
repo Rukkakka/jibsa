@@ -44,6 +44,7 @@ from tenacity import RetryCallState
 from jibsa.core.browser import (
     DISCARD_STATE_STATUSES,
     AsyncBrowserTransport,
+    BrowserOptions,
     BrowserTransport,
 )
 from jibsa.core.ratelimit import (
@@ -53,7 +54,6 @@ from jibsa.core.ratelimit import (
 
 from typing import (
     Annotated,
-    Any,
     ClassVar,
     Literal,
     TypeVar,
@@ -324,8 +324,8 @@ class BaseHTTPClient(BaseModel, ABC):
         verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
             내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
         proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
-        timeout: 브라우저 요청 하나가 끝나야 하는 시간(초). httpx 처럼 연결·읽기 단계마다가 아니라 연결부터 본문 끝까지
-            전체다 (`core.browser._fetch_arguments`). Defaults to 20.
+        timeout: 브라우저 요청의 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한(초). httpx 의 읽기 제한처럼
+            조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`). Defaults to 20.
         rate_limit: 프로세스 간 공유 요청 제한 정책. None 이면 클래스의
             `default_rate_limit` 을 쓴다. Defaults to None.
 
@@ -391,21 +391,21 @@ class BaseHTTPClient(BaseModel, ABC):
     def browser_no_cors_hosts(self) -> frozenset[str]:
         return frozenset()
 
-    def _browser_options(self) -> dict[str, Any]:
-        return {
-            'source': self.source_name, 'entry_url': self.browser_entry_url, 'ready_cookie': self.browser_ready_cookie,
-            'api_hosts': self.browser_api_hosts, 'discard_statuses': self.browser_discard_statuses,
-            'no_cors_hosts': self.browser_no_cors_hosts, 'rate_limiter': self.rate_limiter, 'proxy': self.proxy,
-            'verify': self.verify, 'timeout': self.timeout,
-        }
+    def _browser_options(self) -> BrowserOptions:
+        return BrowserOptions(
+            source=self.source_name, entry_url=self.browser_entry_url, ready_cookie=self.browser_ready_cookie,
+            api_hosts=self.browser_api_hosts, discard_statuses=self.browser_discard_statuses,
+            no_cors_hosts=self.browser_no_cors_hosts, rate_limiter=self.rate_limiter, proxy=self.proxy,
+            verify=self.verify, timeout=self.timeout,
+        )
 
     def browser_transport(self) -> BrowserTransport:
         """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser.py`). 프록시도 브라우저가 쓴다."""
-        return BrowserTransport(**self._browser_options())
+        return BrowserTransport(self._browser_options())
 
     def async_browser_transport(self) -> AsyncBrowserTransport:
         """`browser_transport()` 의 비동기판."""
-        return AsyncBrowserTransport(**self._browser_options())
+        return AsyncBrowserTransport(BrowserTransport(self._browser_options()))
 
     @property
     @abstractmethod

@@ -46,6 +46,7 @@ from concurrent.futures import (
     wait,
 )
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import (
     unquote,
@@ -150,39 +151,91 @@ BROWSER_OWNED_HEADER_PREFIXES: tuple[str, ...] = ('proxy-', 'sec-')
 DECODED_RESPONSE_HEADERS: frozenset[str] = frozenset({'content-encoding', 'content-length', 'transfer-encoding'})
 # 서버에 묻지 않고 탭을 띄울 때 돌려주는 빈 페이지 (`_fulfill_blank`). 아이콘을 data: 로 두어 favicon 요청이 나가지 않는다
 BLANK_PAGE_HTML: str = '<link rel="icon" href="data:,">'
+# 본문이 이보다 크면 evaluate 한 번에 돌려주지 않고 브라우저 안에 두었다가 이만큼씩 나눠 읽는다 (`_read_body`). patchright 는
+# evaluate 결과가 크면 넘기는 시간이 크기보다 훨씬 빨리 는다. 같은 본문(97MB, 네트워크 없이 브라우저 안에서 만든 것)을 한 번에 넘기면
+# 44초, 1MB 씩이면 2.2초, 4MB 씩 2.7초, 16MB 씩 8.4초였다 (2026-11-11 로컬 실측). jibsa 소스 응답은 작아(1초 안팎) 평소엔 한 번에
+# 돌려주는 쪽만 탄다
+BODY_CHUNK_BYTES: int = 1 << 20
+# 브라우저 setTimeout 이 받는 가장 긴 시간(ms). 이보다 길면 기다리지 않고 바로 울린다 (2026-11-12 로컬 실측: timeout 3,000,000초는
+# 0초에 ReadTimeout, 2,147,483초는 정상). `BaseHTTPClient.timeout` 은 상한이 없어 `_fetch_arguments` 가 여기서 자르고, 에러
+# 메시지의 초도 자른 값으로 적는다
+MAX_TIMER_MS: int = 2**31 - 1
 # credentials 는 fetch 기본값(same-origin)이다. 같은 출처면 쿠키가 실리고 다른 출처(다방 동 경계 CDN 등)에는 안 실린다.
 # 'include' 로 두면 `Access-Control-Allow-Origin: *` 인 다른 출처 응답을 브라우저가 거절한다 (2026-11-09 다방 CDN 실측).
 # redirect 는 모든 소스가 브라우저 안에서 따라간다. 'manual' 이면 fetch 가 상태 0 인 opaqueredirect 를 줘 상태·Location 을 볼
 # 수 없어서, httpx 클라이언트의 follow_redirects 대로 httpx 가 따라가게 둘 수 없다. 같은 출처 redirect 는 사이트 웹처럼 따라가고
 # (끝이 JSON 이 아니면 PARSE_ERROR), CORS 를 허용하지 않는 다른 출처(로그인·보안 확인 화면)로 넘기면 fetch 가 실패해
 # 첫 응답(3xx)을 `_BlockedResponses` 로 돌려준다. 그래서 따라가지 않던 예전 httpx 처럼 UPSTREAM_ERROR 가 된다.
-# requestUrl 은 브라우저가 정리한 요청 주소로, CDP 이벤트의 요청 주소와 맞춰 보는 데 쓴다
-FETCH_SCRIPT: str = """async ({url, method, headers, body, timeoutMs}) => {
+# blob 을 base64 로 바꾸는 JS 함수 (FileReader 가 만든 data URL 의 쉼표 뒤). `FETCH_SCRIPT`·`BODY_SLICE_SCRIPT` 가 함께 쓴다.
+# 빈 blob 도 `data:application/octet-stream;base64,` 라 빈 문자열이 된다 (2026-11-12 로컬 실측)
+BLOB_BASE64_SCRIPT: str = """(blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result.slice(reader.result.indexOf(',') + 1));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+})"""
+# requestUrl 은 브라우저가 정리한 요청 주소로, CDP 이벤트의 요청 주소와 맞춰 보는 데 쓴다.
+# timeoutMs 는 응답 헤더가 올 때까지와 본문 조각 사이 간격의 제한이다 (`_fetch_arguments`). 본문을 조각마다 읽어 그 사이를 잰다.
+# 헤더가 늦으면 fetch 를 끊어 AbortError 다. 본문이 멈추면 이미 받은 상태·헤더에 error 'BodyTimeout' 을 붙여 돌려준다
+# (`_to_response` 가 3xx 이상이면 본문 없는 응답으로 만든다).
+# 본문이 inlineBytes 보다 크면 본문 대신 bodyId 를 돌려주고 본문은 이 evaluate 세계의 전역(`__jibsaBodies`)에 둔다
+# (`BODY_SLICE_SCRIPT` 로 읽고 `BODY_DROP_SCRIPT` 로 지운다). patchright 의 evaluate 는 사이트 JS 와 다른 격리된 세계에서 돌아
+# 사이트 JS 에는 이 전역이 보이지 않는다 (2026-11-11 로컬 실측: evaluate 로 둔 전역이 페이지 main world 에서는 undefined)
+FETCH_SCRIPT: str = """async ({url, method, headers, body, timeoutMs, inlineBytes}) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let requestUrl = url;
+  const readWithin = (reader, ms) => new Promise((resolve, reject) => {
+    const idle = setTimeout(() => resolve(null), ms);
+    reader.read().then(
+      (chunk) => { clearTimeout(idle); resolve(chunk); },
+      (error) => { clearTimeout(idle); reject(error); },
+    );
+  });
+  const readAll = async (reader) => {
+    const chunks = [];
+    while (true) {
+      const chunk = await readWithin(reader, timeoutMs);
+      if (chunk === null) {
+        reader.cancel().catch(() => {});
+        return null;
+      }
+      if (chunk.done) return new Blob(chunks);
+      chunks.push(chunk.value);
+    }
+  };
+  const base64 = """ + BLOB_BASE64_SCRIPT + """;
   try {
     requestUrl = new URL(url, location.href).href;
     const init = {method, headers, redirect: 'follow', signal: controller.signal};
     if (body !== null) init.body = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
     const response = await fetch(url, init);
-    const blob = await response.blob();
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    return {
-      requestUrl, url: response.url, status: response.status, headers: [...response.headers],
-      body: dataUrl.slice(dataUrl.indexOf(',') + 1),
-    };
+    clearTimeout(timer);
+    const meta = {requestUrl, url: response.url, status: response.status, headers: [...response.headers]};
+    const blob = response.body ? await readAll(response.body.getReader()) : new Blob([]);
+    if (blob === null) return {...meta, error: 'BodyTimeout'};
+    if (blob.size <= inlineBytes) return {...meta, body: await base64(blob)};
+    const bodies = globalThis.__jibsaBodies || (globalThis.__jibsaBodies = new Map());
+    globalThis.__jibsaBodyCount = (globalThis.__jibsaBodyCount || 0) + 1;
+    const bodyId = String(globalThis.__jibsaBodyCount);
+    bodies.set(bodyId, blob);
+    return {...meta, bodyId, size: blob.size};
   } catch (error) {
     return {requestUrl, error: error.name, message: String(error.message || error)};
   } finally {
     clearTimeout(timer);
   }
 }"""
+# `FETCH_SCRIPT` 가 브라우저 안에 둔 본문(bodyId)의 [start, end) 바이트를 base64 로 돌려준다 (`_read_body`). 본문이 없으면(그 사이
+# 격리 세계가 바뀜) 이유가 보이게 던져 `ConnectError` 메시지에 실린다. 그냥 읽으면 `Cannot read properties of undefined` 로만
+# 보였다 (2026-11-12 로컬 실측. 같은 실측에서 3MB 본문을 세 번에 나눠 읽는 동안 전역은 유지됐다)
+BODY_SLICE_SCRIPT: str = """async ([bodyId, start, end]) => {
+  const blob = globalThis.__jibsaBodies?.get(bodyId);
+  if (!blob) throw new Error(`브라우저에 둔 응답 본문(${bodyId})이 없습니다`);
+  const base64 = """ + BLOB_BASE64_SCRIPT + """;
+  return base64(blob.slice(start, end));
+}"""
+BODY_DROP_SCRIPT: str = """(bodyId) => { globalThis.__jibsaBodies?.delete(bodyId); }"""
 
 
 # 브라우저가 프록시에 닿지 못했거나 프록시가 CONNECT 를 거절했을 때의 Chromium 네트워크 오류(앞부분). httpx 의 ProxyError 처럼
@@ -746,10 +799,13 @@ def _fetch_arguments(request: Request, default_timeout: float) -> tuple[dict[str
 
     본문은 sync `read()` 로 읽는다. 비동기 transport 는 부르기 전에 `aread()` 로 읽어 둔다 (이미 읽은 본문은 그대로 준다).
 
-    timeout 은 httpx 의 read 값을 fetch 하나 전체(CORS 사전 요청·연결부터 본문 끝까지)의 제한으로 쓴다. httpx 는 연결·읽기
-    단계마다, 읽기는 받은 조각 사이마다 20초라 조금씩 계속 오는 22초짜리 응답도 받았지만 여기서는 20초에 `ReadTimeout`
-    이다 (2026-11-10 로컬 실측). 실제 사이트 응답은 1초 안팎이라(같은 날 실측) 본문 조각마다 타이머를 다시 거는 방식은
-    쓰지 않았다.
+    timeout 은 httpx 의 read 값을 응답 헤더가 올 때까지(CORS 사전 요청·연결 포함)와 본문 조각 사이 간격의 제한으로 쓴다. httpx 의
+    읽기 제한처럼 조금씩 계속 오는 응답은 전체가 timeout 보다 길어도 받는다. 예전에는 fetch 하나 전체의 제한이라 조금씩 계속 오는
+    22초짜리 응답이 20초에 `ReadTimeout` 이었다 (2026-11-10 로컬 실측). jibsa 소스 응답은 1초 안팎이라(같은 날 실측) 평소엔
+    차이가 없다. client 의 timeout 을 httpx 의 timeout 과 같은 뜻으로 두려고 조각 사이로 잰다.
+    요청 하나 전체의 상한은 따로 두지 않는다. 조각이 timeout 안에 끝없이 이어지는 응답은 브라우저 스레드를 Ctrl+C 까지 붙잡지만,
+    예전 httpx 도 읽기 제한만 있어 같았고 jibsa 소스 응답은 1초 안팎에 끝나는 JSON 이라 그런 응답이 없다. 상한을 두면 timeout 에
+    두 번째 뜻이 생긴다 (2026-11-12 리뷰에서 검토하고 그대로 둠).
 
     요청에 timeout 이 없으면 클라이언트의 timeout(`default_timeout`)을 쓴다. httpx 는 인증 흐름이 만든 요청(직방 익명 토큰
     `ZigbangGuestAuth._token_request`)에 timeout 을 붙이지 않아, 고정값을 쓰면 `timeout=60` 클라이언트에서도 토큰 요청만
@@ -763,14 +819,28 @@ def _fetch_arguments(request: Request, default_timeout: float) -> tuple[dict[str
         if name.lower() not in BROWSER_OWNED_HEADERS and not name.lower().startswith(BROWSER_OWNED_HEADER_PREFIXES)
     }
     content = request.read()
-    timeout = (request.extensions.get('timeout') or {}).get('read') or default_timeout
+    timeout = min((request.extensions.get('timeout') or {}).get('read') or default_timeout, MAX_TIMER_MS / 1000)
     return {
         'url': str(request.url),
         'method': request.method,
         'headers': headers,
         'body': base64.b64encode(content).decode() if content else None,
         'timeoutMs': timeout * 1000,
+        'inlineBytes': BODY_CHUNK_BYTES,
     }, timeout
+
+
+def _read_body(page: 'Page', body_id: str, size: int) -> bytes:
+    """`FETCH_SCRIPT` 가 브라우저 안에 둔 큰 본문을 `BODY_CHUNK_BYTES` 씩 읽고 브라우저 안의 것은 지운다."""
+    try:
+        return b''.join(
+            base64.b64decode(page.evaluate(BODY_SLICE_SCRIPT, [body_id, start, min(start + BODY_CHUNK_BYTES, size)]))
+            for start in range(0, size, BODY_CHUNK_BYTES)
+        )
+    finally:
+        # 읽다 실패해도 지운다. 탭이 이미 닫혔으면 본문도 함께 사라졌다
+        with suppress(_playwright_error()):
+            page.evaluate(BODY_DROP_SCRIPT, body_id)
 
 
 class _FailedFetch(NamedTuple):
@@ -911,6 +981,13 @@ def _response_headers(headers: Iterable[tuple[str, str]]) -> list[tuple[bytes, b
     return [(raw(name), raw(value)) for name, value in headers if name.lower() not in DECODED_RESPONSE_HEADERS]
 
 
+def _fetched_headers(result: dict[str, Any], page_headers: Mapping[str, Mapping[str, str]]) -> list[tuple[str, str]]:
+    """fetch 가 받은 응답 헤더에, CORS 가 페이지 JS 에 감춘 헤더를 브라우저 `response` 이벤트의 헤더(`page_headers`)로 채운다."""
+    headers = [(name, value) for name, value in result['headers']]
+    shown = {name for name, _ in headers}
+    return headers + [(name, value) for name, value in page_headers.get(result['url'], {}).items() if name not in shown]
+
+
 def _to_response(
     request: Request,
     result: dict[str, Any],
@@ -937,9 +1014,21 @@ def _to_response(
       오류(`CERT_NET_ERROR`)는 재시도하지 않는 `CertificateError`, 그 밖의 연결 실패는 Chromium 오류를 메시지에 붙인
       `ConnectError` 다. 첫 화면을 남긴 쿠키로 띄우면 서버에 묻지 않아, 프록시·인증서 오류는 우리 요청에서 처음 드러난다.
     """
+    if result.get('error') == 'BodyTimeout':
+        # 본문이 멈췄어도 상태·헤더는 받았다. 3xx 이상은 CORS 에 막힌 응답처럼 본문 없이 넘겨 429 는 요청 제한 훅이 Retry-After 로
+        # 쿨다운을 걸고, 그 밖은 `raise_for_status`·재시도 술어가 다룬다 (예전 httpx 도 응답 훅이 본문을 읽기 전에 돌았다).
+        # 2xx 는 본문이 있어야 하는 응답이라 `ReadTimeout` 이다
+        if result['status'] >= 300:
+            return Response(
+                status_code=result['status'],
+                headers=_response_headers(_fetched_headers(result, page_headers)),
+                content=b'',
+                request=request,
+            )
+        raise ReadTimeout(f'브라우저 요청의 응답 본문이 {timeout:.10g}초 동안 오지 않았습니다', request=request)
     if 'error' in result:
         if result['error'] == 'AbortError':
-            raise ReadTimeout(f'브라우저 요청이 {timeout:g}초 안에 끝나지 않았습니다', request=request)
+            raise ReadTimeout(f'브라우저 요청의 응답이 {timeout:.10g}초 안에 오지 않았습니다', request=request)
         if failed is not None and failed.cors_error is not None:
             status = failed.response[0] if failed.response is not None else None
             if failed.response is not None and status is not None and (
@@ -962,56 +1051,64 @@ def _to_response(
             raise CertificateError(f'브라우저가 {request.url.host} 의 인증서를 믿지 못했습니다: {failed.error_text}', request=request)
         reason = f' ({failed.error_text})' if failed is not None and failed.error_text else ''
         raise ConnectError(f'브라우저 fetch 실패: {result["error"]}: {result["message"]}{reason}', request=request)
-    headers = [(name, value) for name, value in result['headers']]
-    shown = {name for name, _ in headers}
-    headers += [(name, value) for name, value in page_headers.get(result['url'], {}).items() if name not in shown]
     return Response(
         status_code=result['status'],
-        headers=_response_headers(headers),
-        content=base64.b64decode(result['body']),
+        headers=_response_headers(_fetched_headers(result, page_headers)),
+        # 큰 본문은 `_handle_request` 가 조각으로 읽어 `content` 에 넣었다 (`_read_body`)
+        content=result['content'] if 'content' in result else base64.b64decode(result['body']),
         request=request,
     )
 
 
-class _BrowserState:
-    """transport 의 설정과 한 명령 동안의 기록.
+@dataclass(frozen=True, kw_only=True)
+class BrowserOptions:
+    """`BrowserTransport` 의 설정. 모두 키워드로만 받는다.
+
+    transport 와 `_BrowserState` 가 이 객체 하나를 받는다. 예전에는 같은 인자 10개를 `BaseHTTPClient._browser_options` 의 dict,
+    `BrowserTransport.__init__`, `_BrowserState.__init__` 에 따로 적고 dict 를 `**` 로 풀어 넘겨, 하나를 빠뜨리거나 이름을 틀려도
+    타입 검사가 잡지 못하고 기본값으로 돌았다 (2026-11-12 리뷰). 같은 타입이 이어지는 인자(`api_hosts`·
+    `no_cors_hosts` 는 둘 다 frozenset[str])를 위치로 넘기면 순서가 어긋나도 잡지 못해 키워드로만 받는다.
 
     Args:
         source: 소스 이름. 쿠키 파일 이름이 된다.
-        entry_url: 처음 열 사이트 화면. 요청 주소와 출처가 같아야 CORS 에 걸리지 않는다.
+        entry_url: 처음 열 사이트 화면 (`https://fin.land.naver.com/`). 요청 주소와 출처가 같아야 CORS 에 걸리지 않는다.
         ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
-        api_hosts: 사이트 API 호스트. 첫 화면이 이 호스트로 보낸 요청을 요청 제한에 센다. 비면 `entry_url` 의 호스트.
-        discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태.
-        no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트. 그 호스트 주소의 빈 탭에서 보낸다.
-        rate_limiter: 소스의 요청 제한기.
-        proxy: 브라우저가 쓸 프록시 URL.
-        verify: TLS 인증서 검증. False 면 브라우저가 인증서 오류를 무시한다.
-        timeout: 요청에 httpx timeout 이 없을 때 쓰는 값(초). 클라이언트의 timeout 이다 (`_fetch_arguments`).
+            None 이면 load 까지만 기다린다. Defaults to None.
+        api_hosts: 사이트 API 호스트. 첫 화면이 이 호스트로 보낸 요청을 요청 제한에 센다. 비우면 만들 때 `entry_url` 의
+            호스트로 채운다. Defaults to frozenset().
+        discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태. Defaults to `DISCARD_STATE_STATUSES`.
+        no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트. 그 호스트 주소의 빈 탭(서버에 묻지
+            않고 브라우저 안에서 띄운다)에서 보낸다. Defaults to frozenset().
+        rate_limiter: 소스의 요청 제한기. Defaults to None.
+        proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
+        verify: TLS 인증서 검증. False 면 브라우저가 인증서 오류를 무시한다. Defaults to True.
+        timeout: 요청에 httpx timeout 이 없을 때 쓰는 값(초). 클라이언트의 timeout 을 넘긴다 (`_fetch_arguments`).
+            Defaults to `DEFAULT_TIMEOUT_SECONDS`.
     """
 
-    def __init__(
-        self,
-        source: str,
-        entry_url: str,
-        ready_cookie: str | None,
-        api_hosts: frozenset[str],
-        discard_statuses: frozenset[int],
-        no_cors_hosts: frozenset[str],
-        rate_limiter: RateLimiter | None,
-        proxy: str | None,
-        verify: bool,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS
-    ) -> None:
-        self.source = source
-        self.discard_statuses = discard_statuses
-        self.no_cors_hosts = no_cors_hosts
-        self.entry_url = entry_url
-        self.ready_cookie = ready_cookie
-        self.api_hosts = api_hosts or frozenset({urlsplit(entry_url).netloc})
-        self.rate_limiter = rate_limiter
-        self.proxy = proxy
-        self.verify = verify
-        self.timeout = timeout
+    source: str
+    entry_url: str
+    ready_cookie: str | None = None
+    api_hosts: frozenset[str] = frozenset()
+    discard_statuses: frozenset[int] = DISCARD_STATE_STATUSES
+    no_cors_hosts: frozenset[str] = frozenset()
+    rate_limiter: RateLimiter | None = None
+    proxy: str | None = None
+    verify: bool = True
+    timeout: float = DEFAULT_TIMEOUT_SECONDS
+
+    def __post_init__(self) -> None:
+        # 빈 api_hosts 를 여기서 채워, 쓰는 쪽이 모두 `options.api_hosts` 하나만 읽게 한다. 따로 채운 값을 두면 빈 원래 값을
+        # 잘못 읽어 첫 화면 요청을 하나도 세지 않을 수 있다 (2026-11-12 리뷰). frozen 이라 object.__setattr__ 로 넣는다
+        if not self.api_hosts:
+            object.__setattr__(self, 'api_hosts', frozenset({urlsplit(self.entry_url).netloc}))
+
+
+class _BrowserState:
+    """transport 의 설정(`options`)과 한 명령 동안의 기록."""
+
+    def __init__(self, options: BrowserOptions) -> None:
+        self.options = options
         self.reset()
 
     def session_options(self) -> dict[str, Any]:
@@ -1027,9 +1124,9 @@ class _BrowserState:
         # 않으려고 막지 않는다. 사이트가 서비스 워커를 쓰기 시작하면 그 워커가 처리한 요청은 page.route 가 가로채지 못해
         # (Playwright 의 알려진 제한) 서버에 묻지 않을 빈 페이지 이동이 서버로 가니, 그때 additional_args 에
         # service_workers='block' 을 넣는다
-        additional_args: dict[str, Any] = {'ignore_https_errors': not self.verify}
+        additional_args: dict[str, Any] = {'ignore_https_errors': not self.options.verify}
         extra_flags: list[str] = []
-        proxy = _proxy_settings(self.proxy, self.entry_url)
+        proxy = _proxy_settings(self.options.proxy, self.options.entry_url)
         if proxy == 'direct':
             extra_flags.append('--no-proxy-server')
         elif proxy is not None:
@@ -1057,7 +1154,7 @@ class _BrowserState:
 
     def count_request(self, resource_type: str, url: str) -> None:
         """첫 화면 탭의 `request` 이벤트마다 부른다. route 는 탭을 다 띄운 뒤 걷으므로 이벤트로 센다 (`UNROUTE_BEHAVIOR`)."""
-        if resource_type in COUNTED_RESOURCE_TYPES and urlsplit(url).netloc in self.api_hosts:
+        if resource_type in COUNTED_RESOURCE_TYPES and urlsplit(url).netloc in self.options.api_hosts:
             self.routed += 1
 
     def count_preflight(self, url: str) -> None:
@@ -1075,10 +1172,10 @@ class _BrowserState:
         실측: 직방 검색 한 번에 13번, 합쳐 3.5ms 로 명령 시간의 0.1% 미만) 미뤄 쓰면 그사이 다른 jibsa 프로세스가 이 요청을
         세지 못하고, 쓰기 전에 프로세스가 끝나면 센 요청이 사라지기 때문이다.
         """
-        if self.rate_limiter is None or urlsplit(url).netloc not in self.api_hosts:
+        if self.options.rate_limiter is None or urlsplit(url).netloc not in self.options.api_hosts:
             return
         try:
-            self.rate_limiter.record(1)
+            self.options.rate_limiter.record(1)
         except (StateDirError, OSError) as error:
             # 잠금 풀기·잠금 파일 닫기의 OSError(Windows `msvcrt`)는 `record` 가 StateDirError 로 감싸지 않는다 (2026-11-10 리뷰)
             logger.warning('CORS 사전 요청을 요청 제한에 남기지 못했습니다: %s', error)
@@ -1099,7 +1196,7 @@ class _BrowserState:
         화면은 통과하고 다음 요청에서 쿨다운 600초). 첫 화면 탭에 CDP 기록을 미리 붙이면 잡을 수 있지만 그만큼 복잡해져
         두었다. 실제 첫 화면 API 응답은 리스너를 떼기 0.1~0.6초 전에 왔다 (같은 날 실측: 직방 4건, 다방 11건, 당근 1건).
         """
-        api = urlsplit(url).netloc in self.api_hosts
+        api = urlsplit(url).netloc in self.options.api_hosts
         if api:
             self.entry_429 = True
         if not (api or main_document) or not retry_after:
@@ -1136,24 +1233,24 @@ class _BrowserState:
                 출처가 달라 CORS 로 막히므로, 남겨 두면 다음 명령들도 실패한다.
         """
         self.routed_at_open = self.routed
-        if self.rate_limiter is not None:
-            self.rate_limiter.record(self.routed)
+        if self.options.rate_limiter is not None:
+            self.options.rate_limiter.record(self.routed)
         # 429 면 쿠키를 버리지 않는다. `DISCARD_STATE_STATUSES` 에 429 를 넣지 않은 것과 같은 이유로, 쿨다운 뒤 첫 명령이 남긴
         # 쿠키로 요청 1건만 보내 풀렸는지 본다. 버리면 아직 막혀 있을지 모르는 사이트에 첫 화면 요청을 20건쯤 다시 보낸다
         # (2026-11-09 리뷰: 첫 화면 API 하나가 429 인 것처럼 꾸미니 쿠키가 지워졌다). `ready_cookie` 를 못 받았으면 남긴
         # 쿠키를 쓰지 않아(`usable_cookies`) 다시 연다
         if self.entry_429 or status == 429:
-            if self.rate_limiter is not None and self.rate_limiter.policy.enabled:
-                blocked_until = self.rate_limiter.block(self.entry_retry_after)
-                raise RateLimitedError(self.source, blocked_until - time.time(), 'cooldown')
+            if self.options.rate_limiter is not None and self.options.rate_limiter.policy.enabled:
+                blocked_until = self.options.rate_limiter.block(self.entry_retry_after)
+                raise RateLimitedError(self.options.source, blocked_until - time.time(), 'cooldown')
         if status is not None and (status >= 500 or status == 429):
             if status >= 500:
                 # 사이트 장애라 방문자를 거부한 것이 아니다. 버리면 다시 넣은 방문자 쿠키(네이버 NNB 등)까지 지워 재시도가
                 # 새 방문자로 열었다 (2026-11-10 로컬 실측: 503 한 번에 vid=old 를 지우고 재시도가 vid=new 를 받음)
                 self.leave_saved = True
-            request = Request('GET', self.entry_url)
+            request = Request('GET', self.options.entry_url)
             raise EntryStatusError(
-                f'첫 화면({self.entry_url}) 응답이 HTTP {status} 입니다',
+                f'첫 화면({self.options.entry_url}) 응답이 HTTP {status} 입니다',
                 request=request, response=Response(status, request=request),
             )
         if status is not None and status >= 400:
@@ -1161,21 +1258,21 @@ class _BrowserState:
             if status in ENTRY_BLOCKED_STATUSES:
                 raise EntryPageError(
                     code='UPSTREAM_ERROR',
-                    message=f'{self.source} 첫 화면({self.entry_url}) 응답이 HTTP {status} 입니다',
+                    message=f'{self.options.source} 첫 화면({self.options.entry_url}) 응답이 HTTP {status} 입니다',
                     hint='사이트가 이 접속을 막았을 수 있습니다. 업데이트로는 풀리지 않으니 다른 소스를 쓰세요',
                     details={'status': status, 'blocked': True},
                 )
             raise EntryPageError(
                 code='UPSTREAM_ERROR',
-                message=f'{self.source} 첫 화면({self.entry_url}) 응답이 HTTP {status} 입니다',
+                message=f'{self.options.source} 첫 화면({self.options.entry_url}) 응답이 HTTP {status} 입니다',
                 hint='사이트 첫 화면 주소가 바뀌었을 수 있습니다. 다른 소스를 쓰세요',
                 details={'status': status},
             )
-        if _origin(self.page_url) != _origin(self.entry_url):
+        if _origin(self.page_url) != _origin(self.options.entry_url):
             self.discard = True
             raise EntryPageError(
                 code='UPSTREAM_ERROR',
-                message=f'{self.source} 첫 화면이 다른 출처로 넘어갔습니다: {self.page_url}',
+                message=f'{self.options.source} 첫 화면이 다른 출처로 넘어갔습니다: {self.page_url}',
                 hint='사이트가 보안 확인·로그인 화면으로 넘겼을 수 있습니다. 다른 소스를 쓰세요',
             )
 
@@ -1189,12 +1286,12 @@ class _BrowserState:
         """
         if status is not None and status >= 400 and status != 429:
             return False
-        return _origin(self.page_url) == _origin(self.entry_url)
+        return _origin(self.page_url) == _origin(self.options.entry_url)
 
     def abort_entry(self) -> None:
         """첫 화면을 열다 실패했을 때(`finish_entry` 전) 그때까지 페이지가 보낸 사이트 API 요청을 요청 제한에 남긴다."""
-        if self.rate_limiter is not None:
-            self.rate_limiter.record(self.routed)
+        if self.options.rate_limiter is not None:
+            self.options.rate_limiter.record(self.routed)
 
     def raise_if_entry_failed(self) -> None:
         """이 소스의 첫 화면이 `FAILED_ENTRY_MEMORY_SECONDS` 안에 다시 열어도 같은 이유로 실패했으면 그 에러를 다시 낸다.
@@ -1224,25 +1321,27 @@ class _BrowserState:
         실측: 죽은 `HTTPS_PROXY` 로 실패한 뒤 지워도 0.0초 만에 같은 ProxyUnreachableError). 환경 변수가 없을 때 Chromium 이
         보는 OS 프록시 설정(GNOME·Windows·macOS)을 바꾼 것은 알 수 없어 `FAILED_ENTRY_MEMORY_SECONDS` 가 지나야 다시 연다.
         """
-        env_proxies = None if self.proxy is not None else tuple(sorted(urllib.request.getproxies_environment().items()))
-        return self.source, self.proxy, env_proxies, self.verify
+        env_proxies = (
+            None if self.options.proxy is not None else tuple(sorted(urllib.request.getproxies_environment().items()))
+        )
+        return self.options.source, self.options.proxy, env_proxies, self.options.verify
 
     def own_origin(self, url: str) -> str | None:
         """그 호스트 주소의 빈 탭에서 보내야 하면 출처(`https://host`), 첫 화면 탭에서 보내면 None."""
         parts = urlsplit(url)
-        return f'{parts.scheme}://{parts.netloc}' if parts.netloc in self.no_cors_hosts else None
+        return f'{parts.scheme}://{parts.netloc}' if parts.netloc in self.options.no_cors_hosts else None
 
     def on_send(self, url: str, from_entry_page: bool) -> None:
         # 첫 화면 탭에서 `count_request` 가 센 우리 요청을 같은 조건(사이트 API 호스트)으로 센다. 첫 화면 JS 가 더 부른
         # 요청 수를 routed 에서 빼려는 것이라, 응답이 아니라 보낼 때 세야 실패한 요청도 routed 와 맞는다
-        if from_entry_page and urlsplit(url).netloc in self.api_hosts:
+        if from_entry_page and urlsplit(url).netloc in self.options.api_hosts:
             self.ours += 1
 
     def on_response(self, status: int) -> None:
         # 출처 탭(`no_cors_hosts`)에서 받은 403 에도 쿠키를 버린다. 그 요청에도 남긴 쿠키가 실린다 (당근 쿠키 `_ga` 는 도메인이
         # `.daangn.com` 이라 www.daangn.com 지역 API 에도 간다, 2026-11-10 확인). 쿠키 파일이 소스마다 하나라 그 출처의 쿠키만
         # 골라 버릴 수 없고, 버려서 드는 값은 다음 명령이 첫 화면을 한 번 다시 여는 것뿐이다 (2026-11-10 리뷰에서 검토하고 그대로 둠)
-        if status in self.discard_statuses:
+        if status in self.options.discard_statuses:
             self.discard = True
 
     def save(self, cookies: Sequence[Mapping[str, Any]]) -> None:
@@ -1253,7 +1352,7 @@ class _BrowserState:
         직방 명령 하나에서 나간 요청은 서버에 묻지 않는 첫 화면 주소의 빈 페이지와 `apis.zigbang.com` 뿐). 로그인 없는 익명
         방문자 쿠키라 거르지 않고, 상태 폴더의 다른 파일처럼 기본 권한으로 쓴다.
         """
-        _save_state(self.source, {
+        _save_state(self.options.source, {
             'opened_at': self.opened_at, 'page_url': self.page_url, 'cookies': [dict(cookie) for cookie in cookies],
         })
 
@@ -1263,10 +1362,10 @@ class _BrowserState:
         같은 쿠키로 함께 뜬 두 명령이 둘 다 403 을 받으면, 먼저 버린 뒤 다음 명령이 새로 받은 쿠키를 나중 명령이 지웠다
         (2026-11-10 리뷰). 읽고 지우는 사이는 잠그지 않는다. 겹쳐도 다음 명령이 첫 화면을 다시 열 뿐이다.
         """
-        current_opened_at = _load_state(self.source).get('opened_at')
+        current_opened_at = _load_state(self.options.source).get('opened_at')
         if isinstance(current_opened_at, (int, float)) and current_opened_at > opened_at:
             return
-        _discard_state(self.source)
+        _discard_state(self.options.source)
 
     def finish(self, cookies: Sequence[Mapping[str, Any]] | None) -> None:
         """첫 화면을 연 뒤 페이지 JS 가 더 부른 요청을 요청 제한에 남기고, 쿠키를 남기거나 버린다.
@@ -1283,14 +1382,14 @@ class _BrowserState:
         `_send_handling_redirects`, 2026-11-10 리뷰에서 확인).
         """
         extra = self.routed - self.routed_at_open - self.ours
-        if extra > 0 and self.rate_limiter is not None:
-            self.rate_limiter.record(extra)
+        if extra > 0 and self.options.rate_limiter is not None:
+            self.options.rate_limiter.record(extra)
         if self.discard:
             self.discard_saved(self.opened_at)
             return
         if cookies is None or self.leave_saved or not self.page_url:
             return
-        current = _load_state(self.source)
+        current = _load_state(self.options.source)
         current_opened_at = current.get('opened_at')
         if not current:
             return
@@ -1300,8 +1399,8 @@ class _BrowserState:
 
     def log_opened(self, started: float, how: str, cookies: Sequence[Mapping[str, object]]) -> None:
         ready = ''
-        if self.ready_cookie is not None:
-            ready = f', {self.ready_cookie} {"있음" if _has_cookie(cookies, self.ready_cookie) else "없음"}'
+        if self.options.ready_cookie is not None:
+            ready = f', {self.options.ready_cookie} {"있음" if _has_cookie(cookies, self.options.ready_cookie) else "없음"}'
         logger.info(
             '브라우저 준비 %.2f초 (%s, 쿠키 %d개%s, 첫 화면을 연 지 %d분)',
             time.perf_counter() - started, how, len(cookies), ready, (time.time() - self.opened_at) // 60,
@@ -1371,39 +1470,11 @@ class BrowserTransport(BaseTransport):
     때까지 남는다. 메모리에서 정리될 때 자동으로 닫지는 않는다 (브라우저 일은 브라우저 스레드에서만 할 수 있어서다).
 
     Args:
-        source: 소스 이름. 쿠키 파일 이름이 된다.
-        entry_url: 처음 열 사이트 화면 (`https://fin.land.naver.com/`). 요청 주소와 출처가 같아야 CORS 에 걸리지 않는다.
-        ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
-            None 이면 load 까지만 기다린다. Defaults to None.
-        api_hosts: 사이트 API 호스트. 첫 화면이 이 호스트로 보낸 요청을 요청 제한에 센다. 비면 `entry_url` 의
-            호스트. Defaults to frozenset().
-        discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태. Defaults to `DISCARD_STATE_STATUSES`.
-        no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트. 그 호스트 주소의 빈 탭(서버에 묻지
-            않고 브라우저 안에서 띄운다)에서 보낸다. Defaults to frozenset().
-        rate_limiter: 소스의 요청 제한기. Defaults to None.
-        proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
-        verify: TLS 인증서 검증. False 면 브라우저가 인증서 오류를 무시한다. Defaults to True.
-        timeout: 요청에 httpx timeout 이 없을 때 쓰는 값(초). 클라이언트의 timeout 을 넘긴다 (`_fetch_arguments`).
-            Defaults to `DEFAULT_TIMEOUT_SECONDS`.
+        options: 설정 (`BrowserOptions`).
     """
 
-    def __init__(
-        self,
-        source: str,
-        entry_url: str,
-        ready_cookie: str | None = None,
-        api_hosts: frozenset[str] = frozenset(),
-        discard_statuses: frozenset[int] = DISCARD_STATE_STATUSES,
-        no_cors_hosts: frozenset[str] = frozenset(),
-        rate_limiter: RateLimiter | None = None,
-        proxy: str | None = None,
-        verify: bool = True,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS
-    ) -> None:
-        self._state = _BrowserState(
-            source, entry_url, ready_cookie, api_hosts, discard_statuses, no_cors_hosts, rate_limiter, proxy, verify,
-            timeout,
-        )
+    def __init__(self, options: BrowserOptions) -> None:
+        self._state = _BrowserState(options)
         self._session: StealthySession | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
@@ -1521,9 +1592,9 @@ class BrowserTransport(BaseTransport):
         state = self._state
         state.reset()
         started = time.perf_counter()
-        saved = _load_state(state.source)
+        saved = _load_state(state.options.source)
         cookies: Sequence[Mapping[str, Any]] | None = usable_cookies(
-            saved, state.entry_url, state.ready_cookie, time.time(),
+            saved, state.options.entry_url, state.options.ready_cookie, time.time(),
         )
         from_saved = cookies is not None
         entry_status: int | None = None
@@ -1563,7 +1634,7 @@ class BrowserTransport(BaseTransport):
                     raise
                 how = '남긴 쿠키'
             else:
-                returning = returning_cookies(saved, state.entry_url, time.time())
+                returning = returning_cookies(saved, state.options.entry_url, time.time())
                 if returning:
                     try:
                         context.add_cookies(returning)  # type: ignore[arg-type]
@@ -1574,7 +1645,7 @@ class BrowserTransport(BaseTransport):
                 static = _watch_entry(context, page, state)
                 page.on('response', on_entry_response)
                 opening_entry = True
-                response = page.goto(state.entry_url, wait_until='domcontentloaded', timeout=ENTRY_TIMEOUT_MS)
+                response = page.goto(state.options.entry_url, wait_until='domcontentloaded', timeout=ENTRY_TIMEOUT_MS)
                 opening_entry = False
                 entry_status = response.status if response else None
                 # 첫 화면 문서가 4xx·5xx 면 load·ready_cookie 를 기다리지 않고 바로 `finish_entry` 로 멈춘다. 기다리면 그동안
@@ -1586,12 +1657,12 @@ class BrowserTransport(BaseTransport):
                     try:
                         page.wait_for_load_state('load', timeout=ENTRY_LOAD_TIMEOUT_MS)
                     except _playwright_timeout_error():
-                        _log_load_timeout(state.entry_url)
+                        _log_load_timeout(state.options.entry_url)
                 cookies = context.cookies()
                 deadline = time.monotonic() + READY_COOKIE_TIMEOUT_SECONDS
                 # 시간 안에 다 심지 않아도 멈추지 않고 이 쿠키로 요청한다. ready_cookie 가 없으면 남긴 쿠키는 다음 명령이 쓰지
                 # 않아 첫 화면을 다시 연다 (`usable_cookies`)
-                entry_cookies = _EntryCookies(state.ready_cookie, returning)
+                entry_cookies = _EntryCookies(state.options.ready_cookie, returning)
                 while (
                     not entry_failed and not state.entry_429 and not entry_cookies.ready(cookies, time.monotonic())
                     and time.monotonic() < deadline
@@ -1613,7 +1684,7 @@ class BrowserTransport(BaseTransport):
             state.abort_entry()
             if not isinstance(error, _playwright_error()):
                 raise
-            raise _entry_error(error, state.entry_url, opening_entry) from error
+            raise _entry_error(error, state.options.entry_url, opening_entry) from error
         # 탭(`_page`)은 첫 화면이 제대로 열린 것을 확인한 뒤에 내놓는다. 컨텍스트는 실패했을 때 `_close` 가 쿠키를 버리도록
         # 먼저 둔다 (`finish`)
         self._context = context
@@ -1656,7 +1727,7 @@ class BrowserTransport(BaseTransport):
         # 요청을 쓰는 당근 명령은 지역을 찾은 뒤 곧바로 첫 화면 출처 쪽 API(GraphQL·지도 페이지)도 불러 어차피 첫 화면이
         # 필요하다 (2026-11-10 리뷰에서 검토하고 그대로 둠)
         page = self._open_page()
-        arguments, timeout = _fetch_arguments(request, self._state.timeout)
+        arguments, timeout = _fetch_arguments(request, self._state.options.timeout)
         origin = self._state.own_origin(str(request.url))
         self._state.on_send(str(request.url), from_entry_page=origin is None)
         page_headers: dict[str, dict[str, str]] = {}
@@ -1678,10 +1749,14 @@ class BrowserTransport(BaseTransport):
                     and time.monotonic() < deadline
                 ):
                     page.wait_for_timeout(BLOCKED_RESPONSE_POLL_MS)
+                if 'bodyId' in result:
+                    result['content'] = _read_body(page, result.pop('bodyId'), result['size'])
             finally:
                 page.remove_listener('response', on_page_response)
         except _playwright_error() as error:
-            # 탭·브라우저가 닫혔으면 다시 써도 같은 에러다. 닫고 재시도에서 남긴 쿠키로 다시 띄운다
+            # 탭·브라우저가 닫혔으면 다시 써도 같은 에러다. 큰 본문을 나눠 읽다(`_read_body`) 본문이 없어졌으면 탭은 살아 있어도
+            # 페이지가 다른 곳으로 넘어가 evaluate 세계가 바뀐 것이라, 이 탭이 아직 첫 화면인지 알 수 없다. 어느 쪽이든 닫고 재시도에서
+            # 남긴 쿠키로 다시 띄운다 (2026-11-12 리뷰에서 검토하고 그대로 둠)
             self._close()
             raise ConnectError(f'브라우저 요청 실패: {_first_line(error)}', request=request) from error
         response = _to_response(request, result, timeout, page_headers, blocked.pop(result['requestUrl']))
@@ -1741,40 +1816,16 @@ class AsyncBrowserTransport(AsyncBaseTransport):
     그때는 출처 탭이 다른 요청을 함께 보냈지만, 탭이 둘인 소스는 당근뿐이고 요청 제한 간격(0.5초) 때문에 실제 요청에서는
     차이가 없었다 (같은 날 가짜 사이트 실측: 탭 둘에 8건, 응답 300ms 에 둘 다 3.81초).
 
+    설정은 감쌀 동기 transport 를 만들 때 준다 (`AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))`). 예전에는 동기
+    transport 의 인자를 시그니처·docstring 째 베껴 위치 인자로 넘겨, 인자를 더하거나 순서를 바꾸면 세 곳을 함께 고쳐야 했고 같은
+    타입이 이어지는 자리에서 어긋나도 타입 검사가 잡지 못했다.
+
     Args:
-        source: 소스 이름. 쿠키 파일 이름이 된다.
-        entry_url: 처음 열 사이트 화면 (`https://fin.land.naver.com/`). 요청 주소와 출처가 같아야 CORS 에 걸리지 않는다.
-        ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
-            None 이면 load 까지만 기다린다. Defaults to None.
-        api_hosts: 사이트 API 호스트. 첫 화면이 이 호스트로 보낸 요청을 요청 제한에 센다. 비면 `entry_url` 의
-            호스트. Defaults to frozenset().
-        discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태. Defaults to `DISCARD_STATE_STATUSES`.
-        no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트. 그 호스트 주소의 빈 탭(서버에 묻지
-            않고 브라우저 안에서 띄운다)에서 보낸다. Defaults to frozenset().
-        rate_limiter: 소스의 요청 제한기. Defaults to None.
-        proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
-        verify: TLS 인증서 검증. False 면 브라우저가 인증서 오류를 무시한다. Defaults to True.
-        timeout: 요청에 httpx timeout 이 없을 때 쓰는 값(초). 클라이언트의 timeout 을 넘긴다 (`_fetch_arguments`).
-            Defaults to `DEFAULT_TIMEOUT_SECONDS`.
+        transport: 감쌀 동기 transport. 이 transport 를 닫으면(`aclose`) 함께 닫힌다.
     """
 
-    def __init__(
-        self,
-        source: str,
-        entry_url: str,
-        ready_cookie: str | None = None,
-        api_hosts: frozenset[str] = frozenset(),
-        discard_statuses: frozenset[int] = DISCARD_STATE_STATUSES,
-        no_cors_hosts: frozenset[str] = frozenset(),
-        rate_limiter: RateLimiter | None = None,
-        proxy: str | None = None,
-        verify: bool = True,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS
-    ) -> None:
-        self._sync = BrowserTransport(
-            source, entry_url, ready_cookie, api_hosts, discard_statuses, no_cors_hosts, rate_limiter, proxy, verify,
-            timeout,
-        )
+    def __init__(self, transport: BrowserTransport) -> None:
+        self._sync = transport
 
     async def handle_async_request(self, request: Request) -> Response:
         # 비동기 본문(async iterator)은 브라우저 스레드에서 sync read() 로 읽을 수 없어 먼저 읽어 둔다. 읽은 본문은

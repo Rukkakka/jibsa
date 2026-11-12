@@ -38,8 +38,8 @@ pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩
 
 - 공통 필드: `url_schema`, `verify`, `proxy`, `timeout`, `rate_limit`. `extra='forbid'` 라 오타 난 설정은 생성 시점에 실패한다.
   UA 는 브라우저가 맡아 필드가 없다. `verify`·`proxy` 는 브라우저에 넘긴다. `verify` 는 Chromium 이 받는 켜기·끄기만 받는다
-  (Chromium 은 인증서 파일을 받지 않고 내장 목록과 OS 에 설치된 인증서를 믿는다). `timeout` 은 httpx 처럼 단계마다가 아니라
-  브라우저 요청 하나의 전체 시간이다. 실제 응답이 1초 안팎이라 httpx 와 맞추지 않았다 (`core.browser._fetch_arguments`).
+  (Chromium 은 인증서 파일을 받지 않고 내장 목록과 OS 에 설치된 인증서를 믿는다). `timeout` 은 응답 헤더가 올 때까지(연결 포함)와
+  본문 조각 사이 간격의 제한이다. httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`).
 - 브라우저 설정: ClassVar `browser_entry_url`(처음 열 화면)·`browser_ready_cookie`·`browser_discard_statuses` 와, 호스트
   필드에서 만드는 property `browser_api_hosts`·`browser_no_cors_hosts` (호스트 필드를 바꿔도 어긋나지 않게). 서브클래스는
   `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다
@@ -138,6 +138,13 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
 - redirect: 모든 소스가 브라우저 안에서 따라간다. fetch 의 `redirect: 'manual'` 은 상태·Location 을 감춰 httpx 가 대신
   따라갈 수 없기 때문이다. 같은 출처 redirect 는 사이트 웹처럼 따라가고(끝이 JSON 이 아니면 `PARSE_ERROR`), CORS 를
   허용하지 않는 다른 출처(로그인 화면 등)로 넘기면 위처럼 첫 응답(3xx)이 돌아와 `UPSTREAM_ERROR` 다.
+- 시간 제한: 응답 헤더가 client 의 `timeout` 안에 오지 않거나 본문 조각 사이가 `timeout` 을 넘으면 `ReadTimeout` 이다
+  ([BaseHTTPClient](#basehttpclient) 의 `timeout`). 본문은 브라우저 안에서 조각마다 읽어 그 사이를 잰다 (`FETCH_SCRIPT`).
+  본문이 멈춰도 3xx 이상이면 받은 상태·헤더로 본문 없는 응답을 만든다. 그래야 429 는 요청 제한이 `Retry-After` 로 쿨다운을 건다.
+  요청 하나 전체의 상한은 httpx 처럼 두지 않는다.
+- 큰 본문: 1MB(`BODY_CHUNK_BYTES`)보다 큰 응답 본문은 브라우저 안에 두었다가 1MB 씩 나눠 파이썬으로 옮긴다 (`_read_body`).
+  patchright 의 evaluate 결과는 클수록 넘기는 시간이 훨씬 빨리 늘어, 97MB 를 한 번에 넘기면 44초, 1MB 씩이면 2초쯤 걸렸다.
+  jibsa 소스 응답은 1MB 미만이라 이 경로와 본문 조각 사이 시간 초과는 CI 의 `브라우저 확인`에서만 돈다.
 - 남긴 쿠키 버리기: 우리 요청이 `browser_discard_statuses`(기본 403)를 받으면 버려 다음 명령이 첫 화면부터 연다. 출처
   탭(`browser_no_cors_hosts`)에서 받은 403 도 버린다. 쿠키 파일이 소스마다 하나이고 그 요청에도 같은 사이트 쿠키가 실린다
   (당근 `_ga` 는 `.daangn.com`).
