@@ -99,7 +99,9 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
   - `source_name: ClassVar[str]` — 요청 제한 상태 파일 이름. `Source` Literal 값과 같게.
   - `default_rate_limit: ClassVar[dict[str, object]]` — `RateLimitPolicy` 필드
   - `host: str` 필드와 `base_url` property (`create_base_url` 사용)
-  - `base_header` property — 사이트 웹이 붙이는 헤더만. UA·Origin·Referer 는 브라우저가 붙인다
+  - `base_header` property — 사이트 웹 코드가 모든 요청에 붙이는 헤더만 (실측 날짜와 함께). API 묶음마다 다른 헤더는
+    요청마다 `headers=` 로 붙이고, 웹이 붙이지 않는 헤더는 넣지 않는다. UA·Origin·Referer 는 브라우저가 붙인다
+    ([브라우저 요청](architecture.md#브라우저-요청)의 헤더)
   - 브라우저 설정 ([브라우저 요청](architecture.md#브라우저-요청)):
     - `browser_entry_url` — 처음 열 사이트 화면. jibsa 는 load 뒤(`browser_ready_cookie` 가 있으면 그 쿠키를 다 받은 뒤)
       바로 빈 페이지로 떠나므로, 그때까지 사이트 자체 API 를 덜 부르는 화면을 고른다. 페이지에 오래 머물 때의 수와 다르다

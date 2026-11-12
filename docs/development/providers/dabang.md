@@ -36,7 +36,7 @@
 
 - 새 방식 `/api/v5/` 는 웹이 붙이는 헤더(`D-Api-Version: 5.0.0`, `D-App-Version: 1`, `D-Call-Type: web`, `V5_HEADERS`)를 붙이고, 응답 봉투 `{code, msg, result}` 의 `result` 를 쓴다. 키는 camelCase.
 - 옛 방식 `/api/3/`(상세·매물번호)은 헤더 대신 쿼리에 `api_version=3.0.1&call_type=web&version=1` 을 붙이고(`DabangV3RequestParameterModel`) 봉투 없이 snake_case 로 온다.
-- 모든 요청에 웹 axios 인스턴스가 붙이는 `csrf: token` 헤더를 붙인다. 토큰·쿠키는 없다.
+- 모든 요청에 웹 axios 인스턴스(v5·v3 둘 다)가 붙이는 기본 헤더 `Accept: application/json, text/plain, */*`·`csrf: token`·`Cache-Control: no-cache`·`Pragma: no-cache`·`Expires: -1` 을 붙인다 (`base_header`, 2026-11-12 웹 화면 8개 요청 109건 실측과 번들. 요청마다 바뀌는 헤더는 없다). v5 인스턴스만 `V5_HEADERS` 를 더 붙인다. 토큰·쿠키는 없다.
 - 없는 주소·경로 값은 404 대신 **403 빈 응답** 이다 (아무 경로나 넣어도 같다). 요청 제한과 섞지 않는다. ID 가 경로에 들어가는 요청(단지 상세·주변 시설·학교)만 `is_missing_id` 로 빈 403 을 `NOT_FOUND` 로 본다. ID 가 쿼리로 가는 요청(분양 상세·교통·단지 실거래·매물 실거래·시군구 코드)은 없는 ID 에 400 이나 빈 결과를 줘서(2026-10-27 실측) 빈 403 이면 다방 주소가 바뀐 것으로 `UPSTREAM_ERROR` 다 (`in_path=False`).
 
 ### 브라우저 요청 (2026-11-09 실측)
@@ -49,7 +49,8 @@
 - 403 이 없는 주소라 `browser_discard_statuses` 를 비운다 (403 에 쿠키를 버리지 않는다). API 가 쿠키를 보지 않아 막힌 403
   이어도 쿠키를 버려서 풀릴 것이 없다. 다방이 방문자 쿠키(WAF 토큰 등)를 요구하기 시작하면 본문이 있는 403 만 버리게 바꾼다.
 - 동 경계 CDN(`geojson_host`)은 `Access-Control-Allow-Origin: *` 라 다른 출처 fetch 가 되지만, `csrf` 헤더를 붙이면 브라우저의
-  사전 확인(OPTIONS)이 403 이다. 그래서 동 경계 요청에서만 `csrf` 를 뺀다 (`_geojson_request`).
+  사전 확인(OPTIONS)이 403 이다. 웹도 이 파일은 axios 가 아니라 `fetch(url)` 로 받아 헤더를 하나도 붙이지 않으므로, 동 경계
+  요청에서는 기본 헤더를 모두 뺀다 (`_geojson_request`, 2026-11-12 실측).
 
 ### 매물 목록 (`search listings`)
 

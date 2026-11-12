@@ -109,8 +109,17 @@ client.get(...) → 요청 제한 훅 → BrowserTransport.handle_request
 client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브라우저를 닫는다
 ```
 
-- 헤더: UA·Origin·Referer·쿠키·Accept-Language·`sec-*` 는 브라우저가 연 페이지 기준으로 붙인다. client 의
-  `base_header` 에는 사이트 웹이 붙이는 헤더(Accept·`x-zigbang-platform` 등)만 둔다.
+- 헤더: 사이트 웹이 실제로 보내는 것과 같게 한다 (2026-11-12 네 소스 실측). 두 가지로 나뉜다.
+  - 크롬이 붙이는 헤더는 크롬 값을 쓴다. UA·Origin·Referer·쿠키·Accept-Language·`sec-*` 는 fetch 에 넘기지 않아 브라우저가
+    연 페이지 기준으로 붙인다. 웹에서 페이지 열기인 요청(당근 상세 HTML 등)은 `extensions={NAVIGATION_EXTENSION: True}` 를
+    달면, 크롬이 페이지를 열 때 붙이는 `accept`·`upgrade-insecure-requests` 를 붙인다. 이 값은 크롬 버전마다 달라 고정하지 않고
+    브라우저를 띄울 때마다 빈 페이지 띄우기(`_fulfill_blank`)에서 읽는다. `sec-fetch-*` 는 fetch 가 바꿀 수 없어 `cors` 로 나간다.
+  - 사이트 웹 코드(axios·ky 등)가 붙이는 헤더는 provider 에 하드코딩한다. client 의 `base_header` 는 모든 요청에 붙는 헤더만
+    두고, API 묶음마다 다른 헤더(다방 `V5_HEADERS`, 직방 `APT_HEADERS`, 당근 `graphql_header`)는 요청마다 `headers=` 로 붙인다.
+    웹이 붙이지 않는 헤더는 넣지 않는다. 묶음마다 헤더가 다르고(다방 v5 만 `d-*`, 직방 `/apt` 만 `sdk-version`) 요청·페이지마다
+    바뀌는 값(네이버 `sentry-trace`·`x-attest`)도 섞여, 첫 화면에서 자동으로 배워 쓰지 않는다. 헤더를 넣거나 고칠 때는 웹이 그
+    API 에 실제로 붙이는지 실측(CDP `Network.requestWillBeSent`)이나 번들로 확인하고 날짜를 남긴다. 요청마다 바뀌는 웹 헤더는
+    값 규칙을 따로 정하기 전에는 넣지 않는다.
 - 쿠키: fetch 의 기본값(`same-origin`)이라 같은 출처에만 실린다. `include` 로 두면 `Access-Control-Allow-Origin: *`
   인 다른 출처 응답을 브라우저가 거절한다.
 - CORS: 첫 화면 출처에서 부르는 것을 허용하지 않는 호스트(`browser_no_cors_hosts`)는 그 호스트 주소의 빈 탭(서버에

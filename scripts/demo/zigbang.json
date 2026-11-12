@@ -58,10 +58,6 @@
   "next": null,
   "limit": 10
  },
- "token": {
-  "result": true,
-  "token": "00000000-0000-0000-0000-000000000000"
- },
  "pins": {
   "onerooms": [
    {

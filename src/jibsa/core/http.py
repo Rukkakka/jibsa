@@ -95,19 +95,6 @@ def create_base_url(schema: Literal['https', 'http'], host: str) -> str:
     return f'{schema}://{host}'
 
 
-def bearer_authorization(token: str) -> str:
-    """Render `token` as an `Authorization` header value.
-
-    Accepts either the bare token or one already carrying the `Bearer ` prefix,
-    so a caller copying the header value verbatim does not end up sending
-    `Bearer Bearer ...`.
-    """
-    token = token.strip()
-    if token.startswith('Bearer '):
-        return token
-    return f'Bearer {token}'
-
-
 def _redact_json(value: object) -> object:
     if isinstance(value, dict):
         return {

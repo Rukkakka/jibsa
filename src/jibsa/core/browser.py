@@ -47,6 +47,7 @@ from concurrent.futures import (
 )
 from contextlib import suppress
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from urllib.parse import (
     unquote,
@@ -147,6 +148,9 @@ BROWSER_OWNED_HEADERS: frozenset[str] = frozenset({
     'user-agent', 'via',
 })
 BROWSER_OWNED_HEADER_PREFIXES: tuple[str, ...] = ('proxy-', 'sec-')
+# 사이트 페이지 HTML 을 받는 요청에 다는 httpx 요청 extension (`extensions={NAVIGATION_EXTENSION: True}`). 웹에서는 fetch 가
+# 아니라 페이지 열기라, 크롬이 페이지를 열 때 붙이는 헤더(`_BrowserState.navigation_headers`)를 붙인다 (`_fetch_arguments`)
+NAVIGATION_EXTENSION: str = 'jibsa_navigation'
 # 브라우저가 압축을 풀어 본문을 주므로, 남겨 두면 httpx 가 한 번 더 풀려다 깨진다
 DECODED_RESPONSE_HEADERS: frozenset[str] = frozenset({'content-encoding', 'content-length', 'transfer-encoding'})
 # 서버에 묻지 않고 탭을 띄울 때 돌려주는 빈 페이지 (`_fulfill_blank`). 아이콘을 data: 로 두어 favicon 요청이 나가지 않는다
@@ -779,7 +783,13 @@ def _is_main_document(response: 'PageResponse') -> bool:
 UNROUTE_BEHAVIOR: Literal['ignoreErrors'] = 'ignoreErrors'
 
 
-def _fulfill_blank(route: 'Route') -> None:
+def _browser_owned(name: str) -> bool:
+    """fetch 에 넘기지 않고 브라우저 값을 그대로 쓸 헤더인지 (`BROWSER_OWNED_HEADERS`·`BROWSER_OWNED_HEADER_PREFIXES`)."""
+    lowered = name.lower()
+    return lowered in BROWSER_OWNED_HEADERS or lowered.startswith(BROWSER_OWNED_HEADER_PREFIXES)
+
+
+def _fulfill_blank(state: '_BrowserState', route: 'Route') -> None:
     """탭을 이 주소로 띄울 때만 서버에 묻지 않고 브라우저 안에서 빈 페이지를 돌려준다 (그 출처의 탭만 필요할 때).
 
     같은 주소로 보내는 우리 fetch 는 다음 route 로 넘겨 서버에 보낸다. 넘기지 않으면 남긴 쿠키로 띄운 당근 지도 페이지와
@@ -787,15 +797,29 @@ def _fulfill_blank(route: 'Route') -> None:
 
     빈 페이지에도 아이콘 링크(`data:`)를 둔다. 없으면 Chromium 이 스스로 그 사이트의 `/favicon.ico` 를 쿠키를 실어 요청했고,
     이 요청은 route·`request` 이벤트·CDP Fetch 어디에도 잡히지 않아 요청 제한에도 세지 않았다 (2026-11-10 로컬 재현).
+
+    이때 크롬이 페이지를 열며 붙인 헤더(`accept`·`upgrade-insecure-requests`)를 남겨 둔다 (`navigation_headers`). 페이지 HTML
+    요청에 붙여 웹에서 페이지를 열 때와 같게 한다. 값이 크롬 버전마다 달라(Chromium 156 은 `accept` 에 `image/jxl` 이 있다)
+    고정하지 않고 띄울 때마다 읽는다. 서버로 나가는 첫 화면 문서 요청과 같은 값이다 (2026-11-12 실측). 브라우저를 띄울 때마다
+    이 빈 페이지를 거치므로(첫 화면을 새로 열 때도, 남긴 쿠키로 띄울 때도) 쿠키 파일에 남기지 않는다.
     """
     if route.request.is_navigation_request():
+        state.navigation_headers = {
+            name: value for name, value in route.request.headers.items() if not _browser_owned(name)
+        }
         route.fulfill(status=200, content_type='text/html', body=BLANK_PAGE_HTML)
     else:
         route.fallback()
 
 
-def _fetch_arguments(request: Request, default_timeout: float) -> tuple[dict[str, Any], float]:
+def _fetch_arguments(
+    request: Request, default_timeout: float, navigation_headers: Mapping[str, str],
+) -> tuple[dict[str, Any], float]:
     """`FETCH_SCRIPT` 에 넘길 인자와 timeout(초). 브라우저가 정하는 헤더는 뺀다.
+
+    헤더는 provider 가 붙인 것(사이트 웹 코드가 붙이는 헤더, 2026-11-12 소스별 실측)을 그대로 넘긴다. 페이지 HTML 요청
+    (`NAVIGATION_EXTENSION`)은 그 위에 크롬이 페이지를 열 때 붙이는 헤더(`navigation_headers`)를 얹는다. 웹에서는 페이지
+    열기라 `sec-fetch-mode: navigate` 등도 다르지만 `sec-*` 는 fetch 가 바꿀 수 없어 브라우저 값(`cors`)이 나간다.
 
     본문은 sync `read()` 로 읽는다. 비동기 transport 는 부르기 전에 `aread()` 로 읽어 둔다 (이미 읽은 본문은 그대로 준다).
 
@@ -807,17 +831,16 @@ def _fetch_arguments(request: Request, default_timeout: float) -> tuple[dict[str
     예전 httpx 도 읽기 제한만 있어 같았고 jibsa 소스 응답은 1초 안팎에 끝나는 JSON 이라 그런 응답이 없다. 상한을 두면 timeout 에
     두 번째 뜻이 생긴다 (2026-11-12 리뷰에서 검토하고 그대로 둠).
 
-    요청에 timeout 이 없으면 클라이언트의 timeout(`default_timeout`)을 쓴다. httpx 는 인증 흐름이 만든 요청(직방 익명 토큰
-    `ZigbangGuestAuth._token_request`)에 timeout 을 붙이지 않아, 고정값을 쓰면 `timeout=60` 클라이언트에서도 토큰 요청만
-    20초에 끊겼다 (2026-11-10 로컬 실측. 예전 httpx 는 이 요청을 시간 제한 없이 기다렸다).
+    요청에 timeout 이 없으면 클라이언트의 timeout(`default_timeout`)을 쓴다. httpx 는 인증 흐름(httpx `Auth`)이 만든 요청에
+    timeout 을 붙이지 않아, 고정값을 쓰면 `timeout=60` 클라이언트에서도 그 요청만 20초에 끊겼다 (2026-11-10 로컬 실측, 그때
+    있던 직방 익명 토큰 요청. 예전 httpx 는 이 요청을 시간 제한 없이 기다렸다).
     read 가 None(httpx `Timeout(None)`, 무제한)이어도 무제한으로 두지 않고 클라이언트 timeout 을 쓴다. 브라우저 fetch 를
     끝없이 기다리면 그 transport 의 브라우저 스레드가 묶여 Ctrl+C 로만 풀린다. CLI 는 늘 숫자 timeout 이라(`BaseHTTPClient
     .timeout` 은 0보다 큰 수) 라이브러리에서 무제한을 준 경우만 다르다 (2026-11-10 리뷰에서 검토하고 그대로 둠).
     """
-    headers = {
-        name: value for name, value in request.headers.items()
-        if name.lower() not in BROWSER_OWNED_HEADERS and not name.lower().startswith(BROWSER_OWNED_HEADER_PREFIXES)
-    }
+    headers = {name: value for name, value in request.headers.items() if not _browser_owned(name)}
+    if request.extensions.get(NAVIGATION_EXTENSION):
+        headers.update(navigation_headers)
     content = request.read()
     timeout = min((request.extensions.get('timeout') or {}).get('read') or default_timeout, MAX_TIMER_MS / 1000)
     return {
@@ -1151,6 +1174,8 @@ class _BrowserState:
         self.leave_saved = False
         self.page_url = ''
         self.opened_at = 0.0
+        # 크롬이 페이지를 열 때 붙인 헤더 (`_fulfill_blank` 가 채운다). 페이지 HTML 요청에 붙인다 (`NAVIGATION_EXTENSION`)
+        self.navigation_headers: dict[str, str] = {}
 
     def count_request(self, resource_type: str, url: str) -> None:
         """첫 화면 탭의 `request` 이벤트마다 부른다. route 는 탭을 다 띄운 뒤 걷으므로 이벤트로 센다 (`UNROUTE_BEHAVIOR`)."""
@@ -1675,7 +1700,7 @@ class BrowserTransport(BaseTransport):
                 how = f'첫 화면 HTTP {entry_status or "-"}, 페이지 요청 {state.routed}건, 이어 쓴 쿠키 {len(returning)}개'
             # 마지막으로 연 페이지 주소를 서버에 묻지 않고 브라우저 안에서 빈 페이지로 띄운다 (Referer 가 그 주소다). 새로 연
             # 첫 화면도 쿠키를 다 받은 뒤 빈 페이지로 바꿔, 명령 동안 사이트 JS 가 API·지도 타일을 더 부르지 않게 한다
-            page.route(lambda url: url == state.page_url, _fulfill_blank)
+            page.route(lambda url: url == state.page_url, partial(_fulfill_blank, state))
             page.goto(state.page_url, wait_until='commit')
             page.unroute_all(behavior=UNROUTE_BEHAVIOR)
             self._watch_blocked(context, page)
@@ -1710,7 +1735,7 @@ class BrowserTransport(BaseTransport):
         if page is None and self._context is not None:
             page = self._context.new_page()
             blank_url = f'{origin}/'
-            page.route(lambda url: url == blank_url, _fulfill_blank)
+            page.route(lambda url: url == blank_url, partial(_fulfill_blank, self._state))
             page.goto(blank_url, wait_until='commit')
             page.unroute_all(behavior=UNROUTE_BEHAVIOR)
             self._watch_blocked(self._context, page)
@@ -1727,7 +1752,7 @@ class BrowserTransport(BaseTransport):
         # 요청을 쓰는 당근 명령은 지역을 찾은 뒤 곧바로 첫 화면 출처 쪽 API(GraphQL·지도 페이지)도 불러 어차피 첫 화면이
         # 필요하다 (2026-11-10 리뷰에서 검토하고 그대로 둠)
         page = self._open_page()
-        arguments, timeout = _fetch_arguments(request, self._state.options.timeout)
+        arguments, timeout = _fetch_arguments(request, self._state.options.timeout, self._state.navigation_headers)
         origin = self._state.own_origin(str(request.url))
         self._state.on_send(str(request.url), from_entry_page=origin is None)
         page_headers: dict[str, dict[str, str]] = {}

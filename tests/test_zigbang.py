@@ -15,10 +15,7 @@ from jibsa.core.geo import (
     haversine_km,
 )
 from jibsa.core.listing import NEXT_HINT
-from jibsa.providers.zigbang.api.client import (
-    ZigbangClient,
-    ZigbangGuestAuth,
-)
+from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.apt import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
 )
@@ -141,25 +138,8 @@ def make_client(handler) -> ZigbangClient:
     client.__dict__['_client'] = httpx.Client(
         base_url=client.base_url,
         transport=httpx.MockTransport(handler),
-        auth=client._auth,
     )
     return client
-
-
-def test_guest_token_refreshes_on_401() -> None:
-    tokens = iter(['new'])
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': next(tokens)})
-        if request.headers['Authorization'] == 'Bearer old':
-            return httpx.Response(401)
-        return httpx.Response(200, json=load('items_onerooms_v1'))
-
-    auth = ZigbangGuestAuth(token_url='https://account.zigbang.com/v2/unauth/token', token='old')
-    with httpx.Client(transport=httpx.MockTransport(handler), auth=auth) as http:
-        response = http.get('https://apis.zigbang.com/house/property/v1/items/onerooms')
-    assert response.status_code == 200
 
 
 # --- service ----------------------------------------------------------------
@@ -169,8 +149,6 @@ def _search_with_fixtures(requested_batches: list[list[int]] | None = None, **kw
     summaries = load('items_list_v1')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/items/list'):
             if requested_batches is not None:
                 requested_batches.append(json.loads(request.content)['itemIds'])
@@ -198,8 +176,6 @@ def test_search_listings_oneroom_keeps_one_room_officetel() -> None:
     sent: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/items/list'):
             return httpx.Response(200, json=summaries)
         sent.append(dict(request.url.params))
@@ -240,8 +216,6 @@ def test_closed_items_are_excluded() -> None:
     pins = load('items_onerooms_v1')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/items/list'):
             return httpx.Response(200, json=summaries)
         if request.url.path.endswith('/detail'):
@@ -268,8 +242,6 @@ def test_items_without_status_are_excluded() -> None:
     pins = load('items_onerooms_v1')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/items/list'):
             return httpx.Response(200, json=summaries)
         if request.url.path.endswith('/detail'):
@@ -355,8 +327,6 @@ def test_locals_item_catalogs_serializes_trade_codes_and_path() -> None:
 
 def apt_detail_handler(apt_response: httpx.Response, requested: list[str]):
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         requested.append(f'{request.url.path}?{request.url.query.decode()}')
         if request.url.path.endswith('/items/list'):
             return httpx.Response(200, json=load('items_list_v1'))
@@ -420,8 +390,6 @@ def test_store_detail_closed_is_unavailable() -> None:
     data['item']['status'] = 'close'
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         return httpx.Response(200, json=data)
 
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
@@ -435,8 +403,6 @@ def test_stay_detail_not_reviewed_is_unavailable() -> None:
     data = dict(load('guest_items'), checkStatus='PENDING')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         return httpx.Response(200, json=data)
 
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
@@ -448,8 +414,6 @@ def test_stay_detail_not_reviewed_is_unavailable() -> None:
 
 def test_coalition_listing_gone_is_unavailable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         return httpx.Response(404, json={'message': 'not found item'})
 
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
@@ -460,8 +424,6 @@ def test_coalition_listing_gone_is_unavailable() -> None:
 
 def apt_near_handler(requested: list[str]):
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         requested.append(f'{request.url.path}?{request.url.query.decode()}')
         if request.url.path == '/apt/nearby-danjis':
             return httpx.Response(200, json=load('nearby_danjis'))
@@ -520,8 +482,6 @@ def test_store_price_filter_inclusive_and_unknown(field: str, wire: str, amount:
     payloads = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/stores/list'):
             return httpx.Response(200, json=summaries)
         payloads.append(json.loads(request.content))
@@ -559,8 +519,6 @@ def test_store_price_filter_batches_and_cap(
     ]}]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/stores/list'):
             ids = json.loads(request.content)['item_ids']
             requested.append(ids)
@@ -589,8 +547,6 @@ def test_apt_supply_area_region_does_not_refill_filtered_results() -> None:
     fixture = load('locals_item_catalogs')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         assert request.url.params['sizeContractM2Min'] == '80.0'
         assert request.url.params['sizeContractM2Max'] == '110.0'
         offset = int(request.url.params['offset'])
@@ -621,8 +577,6 @@ def test_new_house_detail_unavailable(primary_status: str | None, legacy_status:
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         calls.append(request.url.path)
         if request.url.path.endswith('/detail'):
             data = load('items_detail_v1')
@@ -655,8 +609,6 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
     fixture = load('locals_item_catalogs')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         offset = int(request.url.params['offset'])
         size = int(request.url.params['limit'])
         calls.append((offset, size))
@@ -683,8 +635,6 @@ def test_apt_radius_carries_unused_budget_to_next_complex() -> None:
     fixture = load('danjis_item_catalogs')
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path == '/apt/nearby-danjis':
             return httpx.Response(200, json=load('nearby_danjis'))
         size = int(request.url.params['limit'])
@@ -706,8 +656,6 @@ def test_real_price_empty_pyeongs_checks_danji(danji_status: int, expected: str 
     # 실거래 API 는 없는 단지에도 빈 성공을 준다. 평형 정보가 비면 단지 정보로 있는지 확인한다
     # (평형이 아직 없는 새 단지는 0건, 없는 단지는 NOT_FOUND)
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         if request.url.path.endswith('/rt-prices'):
             return httpx.Response(200, json={'data': [], 'hasNext': False, 'areaInfos': {}})
         return httpx.Response(danji_status, json=load('danjis') if danji_status == 200 else {})
@@ -759,8 +707,6 @@ def test_apt_region_shares_budget_across_ga_dongs(counts: dict[str, int], expect
     calls: list[tuple[str, int]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'account.zigbang.com':
-            return httpx.Response(201, json={'result': True, 'token': 't'})
         code = request.url.path.split('/')[-2]
         offset, limit = int(request.url.params['offset']), int(request.url.params['limit'])
         calls.append((code, limit))

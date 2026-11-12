@@ -18,16 +18,21 @@
     python scripts/monitor/api_check.py report result-*.json [--issues] [--dry-run]
 
 새 CLI 명령이나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 만들면 GROUPS 에 넣는다. tests/test_cli.py 가 CLI 명령 목록과 대조한다.
+
+명령 말고 따로 보는 것(`EXTRA_CHECKS`): 직방 웹이 API 에 붙이는 SDK 버전이 jibsa 값과 같은지. 서버가 옛 값도 받아 명령은
+정상으로 돌아 명령 감시로는 알 수 없다.
 """
 
 import argparse
 import datetime
 import json
 import os
+import re
 import string
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -335,6 +340,10 @@ GROUPS: dict[str, tuple[Step, ...]] = {
 
 # 매일 실행(워크플로 matrix)이 도는 소스. matrix 와 같게 둔다. 네이버는 GitHub 러너에서 응답을 받지 못해 로컬에서만 돌린다
 DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn', 'dabang')
+# 직방 첫 화면이 바로 불러오는 _app 번들. 웹 SDK 설정(`requestHeaders = {"sdk-version": ...}`)이 여기 있다 (2026-11-12 실측: 9개 중
+# 아파트 0.128.0 과 단기임대 zigbang-stay-sdk:0.11.0 이 든 2개)
+ZIGBANG_APP_CHUNK: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/chunks/pages/_app-[^"]+\.js)"')
+ZIGBANG_SDK_VERSION: re.Pattern[str] = re.compile(r'"sdk-version":"([^"]+)"')
 
 OK: str = 'ok'
 BROKEN: str = 'broken'
@@ -486,6 +495,78 @@ def _today() -> datetime.date:
     return datetime.datetime.now(KST).date()
 
 
+def check_zigbang_sdk_versions() -> dict[str, str]:
+    """직방 웹이 아파트·단기임대 API 에 붙이는 `sdk-version` 이 jibsa 값(`APT_HEADERS`·`STAY_HEADERS`)과 같은지 본다.
+
+    서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 값이 낡아도 명령 감시는 정상이다. 그래도
+    헤더는 사이트 웹이 실제로 붙이는 값이어야 해서, 직방 웹이 새로 배포해 버전이 바뀌면 고장으로 알려 값을 갱신하게 한다.
+    첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아(같은 날 실측) jibsa 브라우저로 받는다. 번들(s.zigbang.com)은 CORS 를
+    모두 허용해 같은 탭에서 받는다. 요청 제한 훅을 거쳐 첫 화면 1건과 번들 9건쯤이 나간다.
+
+    직방 명령 뒤에 돌아(`EXTRA_CHECKS`) 브라우저는 그 명령들이 남긴 쿠키로 빈 페이지를 띄우고 첫 화면을 다시 열지 않는다. 그래서
+    첫 화면 HTML 은 여기서 받는 1건뿐이다 (2026-11-12 리뷰 오탐에 실측: `zigbang search locations` 바로 뒤 이 검사의 브라우저 준비가
+    '남긴 쿠키' 였고 www.zigbang.com 요청은 1건). 남긴 쿠키를 쓸 수 없을 때(첫 화면을 연 지 30분이 넘음 등)만 브라우저가 첫 화면을
+    연 뒤 한 번 더 받는다.
+    """
+    import httpx
+
+    from jibsa.core.browser import NAVIGATION_EXTENSION
+    from jibsa.core.errors import JibsaError
+    from jibsa.providers.zigbang.api.client import (
+        APT_HEADERS,
+        STAY_HEADERS,
+        ZigbangClient,
+    )
+
+    step = {'label': '직방 웹 SDK 버전 (아파트·단기임대 헤더)', 'command': 'sdk-version'}
+    ours = [APT_HEADERS['sdk-version'], STAY_HEADERS['sdk-version']]
+    print('::group::직방 웹 SDK 버전', flush=True)
+    zigbang = ZigbangClient()
+    web: set[str] = set()
+    try:
+        with httpx.Client(
+            transport=zigbang.browser_transport(), event_hooks=zigbang.rate_limit_hooks(), timeout=zigbang.timeout,
+        ) as client:
+            home = client.get(zigbang.browser_entry_url, extensions={NAVIGATION_EXTENSION: True})
+            home.raise_for_status()
+            chunks = sorted(set(ZIGBANG_APP_CHUNK.findall(home.text)))
+            for url in chunks:
+                chunk = client.get(url)
+                chunk.raise_for_status()
+                web |= set(ZIGBANG_SDK_VERSION.findall(chunk.text))
+    # 요청 제한·네트워크·첫 화면 차단 등(httpx·jibsa 에러)은 사이트가 바뀐 것인지 알 수 없다
+    except (httpx.HTTPError, JibsaError) as exc:
+        print(f'{type(exc).__name__}: {exc}')
+        print('::endgroup::', flush=True)
+        return {**step, 'status': UNKNOWN, 'detail': f'번들을 받지 못함: {type(exc).__name__}: {str(exc)[:150]}'}
+    # 그 밖의 예외는 이 검사 코드가 틀린 것이라 확인 못 함으로 숨기지 않고 고장으로 알린다. 올리지 않는 것은 올리면 결과 파일을
+    # 못 써 앞 명령 결과까지 잃기 때문이다
+    except Exception as exc:
+        print(f'{type(exc).__name__}: {exc}')
+        print('::endgroup::', flush=True)
+        return {**step, 'status': BROKEN, 'detail': f'SDK 버전 검사 코드 오류: {type(exc).__name__}: {str(exc)[:150]}'}
+    print(f'_app 번들 {len(chunks)}개, sdk-version {sorted(web)}')
+    print('::endgroup::', flush=True)
+    if not web:
+        return {**step, 'status': BROKEN, 'detail': '첫 화면 _app 번들에서 sdk-version 을 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
+    missing = [value for value in ours if value not in web]
+    if missing:
+        return {
+            **step, 'status': BROKEN,
+            'detail': (
+                f"직방 웹 SDK 버전이 바뀜: 웹 번들에 jibsa 값({', '.join(missing)})이 없음 (웹: {', '.join(sorted(web))}). "
+                'zigbang api/client.py 의 APT_HEADERS·STAY_HEADERS 를 갱신'
+            ),
+        }
+    return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(ours)})"}
+
+
+# 소스마다 명령 뒤에 돌리는 따로 보는 것. 명령 뒤라 이 요청이 막혀도 명령 감시에는 영향이 없다
+EXTRA_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
+    'zigbang': (check_zigbang_sdk_versions,),
+}
+
+
 def run_group(name: str) -> dict[str, Any]:
     """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함)."""
     check_in = _today() + datetime.timedelta(days=STAY_CHECK_IN_DAYS)
@@ -506,6 +587,7 @@ def run_group(name: str) -> dict[str, Any]:
             if found is not None:
                 values.setdefault(capture.name, found)
         steps.append({'label': step.label, 'command': line, 'status': status, 'detail': detail})
+    steps += [check() for check in EXTRA_CHECKS.get(name, ())]
     return {'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}
 
 

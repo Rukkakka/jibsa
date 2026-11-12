@@ -55,9 +55,15 @@ service 가 부르지 않는 엔드포인트 3개(`article/agent`, `complex/hold
   차단 길이를 잰 값이 아니다.
   2026-11-09 실측: 첫 화면을 새로 연 뒤 `search listings`·`listing` 을 쉬지 않고 10분 이어 불러(명령 102개, 요청 596건,
   1분 창 최대 60건) 429 가 한 번도 없었다. 첫 화면을 다시 여는 30분 주기와 차단 길이는 재지 못했다.
-- 첫 화면의 front-api 요청에는 `x-attest` 헤더(요청마다 다른 118자 서명)가 붙지만 우리 fetch 에는 없다. 사이트가 `window.fetch`
-  가 아니라 자기 API 클라이언트에서 붙인다 (main world fetch 에도 붙지 않음). 없어도 200 이다. 네이버가 이 헤더를 요구하기 시작하면
-  생성 함수를 번들에서 찾아야 한다.
+- 헤더 (2026-11-12 웹 화면 8개 요청 324건 실측과 번들): 웹은 front-api 를 모두 axios 인스턴스 하나로 불러 경로와 상관없이 같은
+  헤더를 붙인다. 고정값은 axios 기본 `Accept: application/json, text/plain, */*` 와 본문이 있을 때의 `content-type` 뿐이고 jibsa
+  와 같다 (`base_header`). 나머지 넷은 요청·페이지마다 바뀌어 넣지 않는다:
+  - `x-page-url`: 보낸 순간의 주소창 주소 (`window.location.href`, 지도 상태가 다 들어 있다). 요청 인터셉터가 붙인다.
+  - `x-attest`: 요청마다 다른 136자 서명 (11-09 에는 118자). 서버가 렌더링해 페이지에 넣은 토큰(페이지 로드마다 다름)을 시각·난수와
+    함께 가려 만든다. 요청 인터셉터가 붙인다. 서버에는 헤더가 없을 때(`ABSENT`)를 포함한 상태값이 있고 지금은 없어도 200 이다.
+    네이버가 진짜 웹에서 보낸 요청인지 보려는 값이라, 이 헤더를 요구하기 시작하면 네이버 명령이 모두 막힐 수 있다.
+  - `sentry-trace`·`baggage`: Sentry 가 같은 출처 XHR 에 붙이는 추적 ID. 페이지 로드나 라우터 이동마다 새 값이다.
+  사이트가 `window.fetch` 가 아니라 자기 API 클라이언트에서 `x-page-url`·`x-attest` 를 붙여 main world fetch 에도 붙지 않는다.
 - 첫 화면의 front-api 요청을 막으면 쿠키가 `map_snb_collapsed` 하나만 생긴다. 이미지·지도 타일(`map.pstatic.net`)만 막는다.
 - GitHub 러너 IP 는 브라우저로도 응답을 받지 못한다 ([매일 API 감시](../README.md#매일-api-감시)).
 
