@@ -14,7 +14,7 @@ CLI 는 명령마다 새 프로세스라 브라우저도 매번 빈 쿠키로 �
 브라우저 일은 transport 마다 띄운 전용 스레드 하나에서 받은 차례대로 한다 (`_BrowserThread`). patchright 동기 API 는
 asyncio 이벤트 루프 안에서 부를 수 없지만 이 스레드에는 루프가 돌지 않아, 동기 `BrowserTransport` 는 어느 스레드·루프에서
 불려도 이 스레드에 일을 넘기고 기다린다. 비동기 `AsyncBrowserTransport` 는 동기 transport 를 감싸 같은 일을 넘기고 `await` 로
-기다린다 (`BrowserTransport._acall`). 그래서 흐름(`_open_page`·`_origin_page`·요청 보내기)은 한 벌이고, 동시에 온 요청도 이
+기다린다 (`BrowserTransport._acall`). 그래서 흐름(`_open_page`·요청 보내기)은 한 벌이고, 동시에 온 요청도 이
 스레드가 차례로 해 잠금이 없다. 예전에는 비동기 흐름을 patchright 비동기 API 로 따로 두어 고칠 때마다 함께 맞추고 동시성
 잠금(`asyncio.Lock`)을 따로 두었다 (2026-11-10 리뷰로 합침). CLI 와 매일 API 감시는 동기 transport 만 쓴다. 비동기 쪽은
 CI 의 브라우저 확인(`scripts/ci/browser_check.py` 5번)이 가짜 사이트로 띄워 보고, 실제 사이트는 고친 사람이 `AsyncClient` 로
@@ -278,8 +278,7 @@ FAILED_ENTRY_MEMORY_SECONDS: float = 60
 # 첫 화면 문서가 이 상태면 사이트가 이 접속(IP·봇)을 막은 것으로 보고 에러에 `blocked: true` 를 붙인다
 # (`_BrowserState.finish_entry`). 업데이트로 풀리지 않으니 에이전트는 업데이트를 권하지 않고, 매일 API 감시
 # (`scripts/monitor/api_check.py`)는 고장이 아니라 확인 못 함으로 센다. 그 밖의 4xx(404 등)는 첫 화면 주소가 바뀌었을 수 있다.
-# 예전에는 감시가 hint 문구를 맞춰 봐, 당근이 직방으로 위치를 찾다 막힌 에러(`geocoding_failed`, hint 가 다르다)를 고장으로
-# 셌다 (2026-11-10 리뷰)
+# 예전에는 감시가 hint 문구를 맞춰 봐, hint 가 다른 막힘 에러를 고장으로 셌다 (2026-11-10 리뷰)
 ENTRY_BLOCKED_STATUSES: frozenset[int] = frozenset({401, 403, 451})
 # (소스, proxy, 환경 변수 프록시, verify) → (실패 시각, 에러). 프록시·인증서 설정이 다른 클라이언트에는 앞 실패를 다시 내지
 # 않는다 (`_BrowserState._failure_key`)
@@ -304,8 +303,8 @@ def _fresh_error(error: Exception) -> Exception:
 class EntryOpenError(Exception):
     """브라우저를 띄워 사이트 첫 화면을 여는 단계에서 실패했다는 표식. 같은 클라이언트의 본 요청도 같은 단계부터 다시 한다.
 
-    첫 화면 실패를 다른 소스로 넘길지 정하는 곳(당근 `_geocode`)이 잡는다. 재시도 술어와 CLI 에러 매핑은 원래 종류대로
-    다루도록 실제 에러는 이것과 httpx·jibsa 에러를 함께 물려받는다 (`EntryConnectError`, `EntryStatusError`, `EntryPageError`).
+    첫 화면 단계의 실패만 따로 다룰 곳이 잡는다. 재시도 술어와 CLI 에러 매핑은 원래 종류대로 다루도록 실제 에러는 이것과
+    httpx·jibsa 에러를 함께 물려받는다 (`EntryConnectError`, `EntryStatusError`, `EntryPageError`).
     """
 
 
@@ -322,22 +321,13 @@ class EntryStatusError(HTTPStatusError, EntryOpenError):
     """
 
 
-class ProxyUnreachableError(ProxyError):
-    """프록시 설정이 잘못됐거나 프록시에 닿지 못했다. 어느 사이트로 보내도 같아 `SHARED_BROWSER_ERRORS` 에 든다.
-
-    프록시가 특정 사이트로의 연결(CONNECT)만 거절한 것(`net::ERR_TUNNEL_CONNECTION_FAILED`)은 이것이 아닌 `ProxyError` 다.
-    회사 프록시가 한 사이트만 막거나 `NO_PROXY` 로 일부만 바로 연결하면 다른 소스는 닿을 수 있다 (2026-11-10 리뷰).
-    """
-
-
 class EntryPageError(JibsaError, EntryOpenError):
     """사이트 첫 화면을 제대로 열지 못했다 (시간 초과는 NETWORK_ERROR, 차단 응답·다른 출처로 넘어감은 UPSTREAM_ERROR).
 
     재시도하지 않는다. 다시 열면 브라우저를 새로 띄우고 첫 화면 요청을 20건쯤 또 보내며, 시간 초과면 40초를 또 기다린다.
     소스별로 `FAILED_ENTRY_MEMORY_SECONDS` 동안 기억한다 (`_BrowserState.remember_if_fatal`). 전송 오류(`HTTPError`)가 아닌
     jibsa 에러라 덤 조회(`OPTIONAL_LOOKUP_BASE_ERRORS`)가 삼키지 않는다. 같은 클라이언트의 본 요청도 같은 에러로 끝나므로
-    결과는 같다. 실패하면 다른 소스로 넘기는 곳(당근 `_geocode` 의 `GEOCODE_FALLBACK_ERRORS`)은 직방의 이 에러를 따로 잡아
-    네이버로 넘기고, 당근 자신의 이 에러는 본 조회도 같아 넘기지 않는다.
+    결과는 같다.
     """
 
 
@@ -371,13 +361,6 @@ class CertificateError(TransportError):
     3번 보낸 뒤 '네트워크 상태를 확인하라'로 끝났다). `CorsBlockedError`·`ProxyError` 처럼 덤 조회가 삼키도록 httpx 전송
     오류로 두고, CLI 는 NETWORK_ERROR 와 `CERT_HINT` 를 붙인다 (`handle_errors`).
     """
-
-
-# 어느 소스로 보내도 같이 실패하는 브라우저 오류: 프록시 설정·프록시에 닿지 못함(환경 변수·OS 설정을 모든 소스가 같이 쓴다)과
-# Chromium 을 못 띄움. 실패하면 다른 소스로 넘기는 곳(당근 `_geocode`)은 이것을 넘기지 않고 바로 올린다. 넘기면 Chromium 을
-# 소스마다 더 띄우고 마지막 소스의 실패가 엉뚱한 hint 로 나갔다 (2026-11-10 리뷰: 프록시가 막히면 직방 UPSTREAM_ERROR 와
-# '당근 동 이름으로 찾으라')
-SHARED_BROWSER_ERRORS: tuple[type[Exception], ...] = (ProxyUnreachableError, BrowserUnavailableError)
 
 
 def _playwright_error() -> type[Exception]:
@@ -459,18 +442,21 @@ def _launch_error(error: Exception) -> BrowserUnavailableError:
 
 
 def _proxy_error(net_error: str, request: Request | None = None) -> ProxyError:
-    """Chromium 프록시 오류를 사이트별 거절(`ProxyError`)과 모든 사이트 공통(`ProxyUnreachableError`)으로 나눠 만든다."""
-    message = f'브라우저가 프록시로 연결하지 못했습니다: {net_error}'
-    if any(code in net_error for code in SITE_PROXY_NET_ERRORS):
-        return ProxyError(f'프록시가 이 사이트 연결을 거절했습니다: {net_error}', request=request)
-    return ProxyUnreachableError(message, request=request)
+    """Chromium 프록시 오류를 `ProxyError` 로 만든다. 프록시가 이 사이트 연결만 거절한 것(`SITE_PROXY_NET_ERRORS`)은 메시지로 가른다.
+
+    예전에는 프록시에 아예 닿지 못한 것을 `ProxyUnreachableError` 로 따로 두어, 실패하면 다른 소스로 넘기던 곳(당근 위치 찾기)이
+    어느 소스로 보내도 같은 실패를 넘기지 않게 했다. 그 넘기기를 뺀 뒤 가르는 곳이 없어 하나로 합쳤다 (2026-11-12 리뷰).
+    """
+    site_refused = any(code in net_error for code in SITE_PROXY_NET_ERRORS)
+    reason = '프록시가 이 사이트 연결을 거절했습니다' if site_refused else '브라우저가 프록시로 연결하지 못했습니다'
+    return ProxyError(f'{reason}: {net_error}', request=request)
 
 
 def _entry_error(error: Exception, entry_url: str, opening_entry: bool) -> Exception:
     """첫 화면 탭을 준비하다 난 patchright 에러를 재시도 술어가 아는 에러로 바꾼다. 모두 첫 화면 단계 실패(`EntryOpenError`)다.
 
     사이트 첫 화면 문서를 기다리다 난 시간 초과(`opening_entry`)는 `EntryPageError`, 프록시에 닿지 못한 것은
-    `ProxyUnreachableError`, 프록시가 이 사이트만 거절한 것은 `EntryPageError`(NETWORK_ERROR, 프록시 hint), 인증서를 믿지
+    `ProxyError`, 프록시가 이 사이트만 거절한 것은 `EntryPageError`(NETWORK_ERROR, 프록시 hint), 인증서를 믿지
     못한 것(`net::ERR_CERT_*`)은 `EntryPageError`(NETWORK_ERROR, `CERT_HINT`)로 낸다. 모두 다시 열어도 같아 재시도하지
     않는다. 그 밖의 시간 초과(서버에 묻지 않고 띄우는 빈 페이지, 쿠키 넣기 등)는 사이트가 아니라
     브라우저가 멈춘 것이라 다른 연결 실패처럼 재시도하는 `EntryConnectError` 다. 재시도는 브라우저를 새로 띄운다. 첫 화면
@@ -676,12 +662,12 @@ def _proxy_settings(proxy: str | None, target_url: str) -> dict[str, str] | Lite
     socks5·socks4 가 이미 그렇게 해 바꿔 넘긴다. 그대로 넘기면 `ERR_NO_SUPPORTED_PROXIES` 였다 (2026-11-09 실측).
 
     Raises:
-        ProxyUnreachableError: 프록시 주소를 해석할 수 없거나(포트가 숫자가 아님 등), Chromium 이 받지 않는 스킴이거나, SOCKS 프록시에
+        ProxyError: 프록시 주소를 해석할 수 없거나(포트가 숫자가 아님 등), Chromium 이 받지 않는 스킴이거나, SOCKS 프록시에
             아이디·비밀번호가 있을 때 (Chromium 이 지원하지 않아 띄우다 실패하고 BROWSER_UNAVAILABLE 이 됐다, 같은 날 실측).
             메시지에 비밀번호는 넣지 않는다.
     """
     bypass: list[str] = []
-    # 빈 문자열(`proxy=''`)은 '프록시 없음'이 아니라 잘못된 주소로 보고 아래에서 ProxyUnreachableError 를 낸다. 0.10.0 의 httpx
+    # 빈 문자열(`proxy=''`)은 '프록시 없음'이 아니라 잘못된 주소로 보고 아래에서 ProxyError 를 낸다. 0.10.0 의 httpx
     # 도 `proxy=''` 를 `ValueError: Unknown scheme for proxy URL` 로 거절했다 (2026-11-10 리뷰에서 확인하고 그대로 둠). 환경
     # 변수를 따르려면 None, 프록시 없이 바로 연결하려면 `NO_PROXY=*` 다
     if proxy is None:
@@ -709,13 +695,13 @@ def _proxy_settings(proxy: str | None, target_url: str) -> dict[str, str] | Lite
     try:
         port = parts.port
     except ValueError as error:
-        raise ProxyUnreachableError(f'프록시 주소를 해석하지 못했습니다 ({shown}): {error}') from None
+        raise ProxyError(f'프록시 주소를 해석하지 못했습니다 ({shown}): {error}') from None
     if scheme not in BROWSER_PROXY_SCHEMES or not hostname:
-        raise ProxyUnreachableError(
+        raise ProxyError(
             f'브라우저가 쓸 수 없는 프록시 주소입니다 ({shown}). http·https·socks4·socks5 프록시만 쓸 수 있습니다'
         )
     if scheme.startswith('socks') and (parts.username or parts.password):
-        raise ProxyUnreachableError(f'브라우저(Chromium)는 아이디·비밀번호가 있는 SOCKS 프록시를 쓰지 못합니다 ({shown})')
+        raise ProxyError(f'브라우저(Chromium)는 아이디·비밀번호가 있는 SOCKS 프록시를 쓰지 못합니다 ({shown})')
     host = f'[{hostname}]' if ':' in hostname else hostname
     settings = {'server': f'{scheme}://{host}' + (f':{port}' if port else '')}
     if parts.username:
@@ -1033,7 +1019,7 @@ def _to_response(
       사전 요청 없이 본 요청이 그 응답을 받았다). 그 밖의 사전 요청 실패는 사이트가 이 요청 헤더를 허용하지 않는 것이라
       `CorsBlockedError` 다. 사전 요청의 403·404 를 응답으로 넘기면 404·403 을 '없는 ID'로 읽는 호출부(다방 `is_missing_id`
       등)가 없는 매물로 알린다.
-    - 프록시 오류(`PROXY_NET_ERRORS`)는 재시도하지 않는 `ProxyError`(프록시에 닿지 못했으면 `ProxyUnreachableError`), 인증서
+    - 프록시 오류(`PROXY_NET_ERRORS`)는 재시도하지 않는 `ProxyError`, 인증서
       오류(`CERT_NET_ERROR`)는 재시도하지 않는 `CertificateError`, 그 밖의 연결 실패는 Chromium 오류를 메시지에 붙인
       `ConnectError` 다. 첫 화면을 남긴 쿠키로 띄우면 서버에 묻지 않아, 프록시·인증서 오류는 우리 요청에서 처음 드러난다.
     """
@@ -1089,8 +1075,8 @@ class BrowserOptions:
 
     transport 와 `_BrowserState` 가 이 객체 하나를 받는다. 예전에는 같은 인자 10개를 `BaseHTTPClient._browser_options` 의 dict,
     `BrowserTransport.__init__`, `_BrowserState.__init__` 에 따로 적고 dict 를 `**` 로 풀어 넘겨, 하나를 빠뜨리거나 이름을 틀려도
-    타입 검사가 잡지 못하고 기본값으로 돌았다 (2026-11-12 리뷰). 같은 타입이 이어지는 인자(`api_hosts`·
-    `no_cors_hosts` 는 둘 다 frozenset[str])를 위치로 넘기면 순서가 어긋나도 잡지 못해 키워드로만 받는다.
+    타입 검사가 잡지 못하고 기본값으로 돌았다 (2026-11-12 리뷰). 같은 타입의 인자(`ready_cookie`·`proxy` 는 둘 다
+    `str | None`)를 위치로 넘기면 순서가 어긋나도 잡지 못해 키워드로만 받는다.
 
     Args:
         source: 소스 이름. 쿠키 파일 이름이 된다.
@@ -1100,8 +1086,6 @@ class BrowserOptions:
         api_hosts: 사이트 API 호스트. 첫 화면이 이 호스트로 보낸 요청을 요청 제한에 센다. 비우면 만들 때 `entry_url` 의
             호스트로 채운다. Defaults to frozenset().
         discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태. Defaults to `DISCARD_STATE_STATUSES`.
-        no_cors_hosts: 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트. 그 호스트 주소의 빈 탭(서버에 묻지
-            않고 브라우저 안에서 띄운다)에서 보낸다. Defaults to frozenset().
         rate_limiter: 소스의 요청 제한기. Defaults to None.
         proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
         verify: TLS 인증서 검증. False 면 브라우저가 인증서 오류를 무시한다. Defaults to True.
@@ -1114,7 +1098,6 @@ class BrowserOptions:
     ready_cookie: str | None = None
     api_hosts: frozenset[str] = frozenset()
     discard_statuses: frozenset[int] = DISCARD_STATE_STATUSES
-    no_cors_hosts: frozenset[str] = frozenset()
     rate_limiter: RateLimiter | None = None
     proxy: str | None = None
     verify: bool = True
@@ -1188,7 +1171,7 @@ class _BrowserState:
         사전 요청은 요청 제한 훅도 페이지 `request` 이벤트도 거치지 않아 세지 않으면 서버로 가는 요청이 정책보다 많다. 직방
         apis.zigbang.com 은 `Access-Control-Max-Age` 가 없어(브라우저는 5초만 기억한다) 주소가 다른 요청마다 OPTIONS 가
         따라가, 검색 2건에 서버로 4건이 갔는데 요청 제한은 2건만 셌다 (2026-11-10 실측). 당근 GraphQL 도 같다. 첫 화면과
-        같은 출처로 가는 요청(네이버 front-api·다방, 출처 탭에서 보내는 당근 지역 API)은 사전 요청이 없다. CDP 이벤트
+        같은 출처로 가는 요청(네이버 front-api·다방)은 사전 요청이 없다. CDP 이벤트
         처리 중이라 상태 파일을 쓰지 못해도 올리지 않는다. 올리면 patchright 가 traceback 을 stderr 로 내고, 다음 브라우저
         호출에서 그 에러를 다시 만들다 TypeError 로 바꿔 내 명령이 INTERNAL_ERROR 로 끝났다 (2026-11-10 리뷰: `record` 는
         OSError 를 `StateDirError` 로 바꿔 올리는데 OSError 만 잡고 있었다).
@@ -1343,7 +1326,7 @@ class _BrowserState:
         """`_failed_entries` 의 키. `proxy` 를 주지 않았으면 브라우저가 읽는 환경 변수 프록시(`_proxy_settings`)도 넣는다.
 
         넣지 않았을 때는 환경 변수(`HTTPS_PROXY` 등)를 고친 뒤 새로 만든 클라이언트가 앞 실패를 그대로 받았다 (2026-11-10
-        실측: 죽은 `HTTPS_PROXY` 로 실패한 뒤 지워도 0.0초 만에 같은 ProxyUnreachableError). 환경 변수가 없을 때 Chromium 이
+        실측: 죽은 `HTTPS_PROXY` 로 실패한 뒤 지워도 0.0초 만에 같은 ProxyError). 환경 변수가 없을 때 Chromium 이
         보는 OS 프록시 설정(GNOME·Windows·macOS)을 바꾼 것은 알 수 없어 `FAILED_ENTRY_MEMORY_SECONDS` 가 지나야 다시 연다.
         """
         env_proxies = (
@@ -1351,21 +1334,13 @@ class _BrowserState:
         )
         return self.options.source, self.options.proxy, env_proxies, self.options.verify
 
-    def own_origin(self, url: str) -> str | None:
-        """그 호스트 주소의 빈 탭에서 보내야 하면 출처(`https://host`), 첫 화면 탭에서 보내면 None."""
-        parts = urlsplit(url)
-        return f'{parts.scheme}://{parts.netloc}' if parts.netloc in self.options.no_cors_hosts else None
-
-    def on_send(self, url: str, from_entry_page: bool) -> None:
+    def on_send(self, url: str) -> None:
         # 첫 화면 탭에서 `count_request` 가 센 우리 요청을 같은 조건(사이트 API 호스트)으로 센다. 첫 화면 JS 가 더 부른
         # 요청 수를 routed 에서 빼려는 것이라, 응답이 아니라 보낼 때 세야 실패한 요청도 routed 와 맞는다
-        if from_entry_page and urlsplit(url).netloc in self.options.api_hosts:
+        if urlsplit(url).netloc in self.options.api_hosts:
             self.ours += 1
 
     def on_response(self, status: int) -> None:
-        # 출처 탭(`no_cors_hosts`)에서 받은 403 에도 쿠키를 버린다. 그 요청에도 남긴 쿠키가 실린다 (당근 쿠키 `_ga` 는 도메인이
-        # `.daangn.com` 이라 www.daangn.com 지역 API 에도 간다, 2026-11-10 확인). 쿠키 파일이 소스마다 하나라 그 출처의 쿠키만
-        # 골라 버릴 수 없고, 버려서 드는 값은 다음 명령이 첫 화면을 한 번 다시 여는 것뿐이다 (2026-11-10 리뷰에서 검토하고 그대로 둠)
         if status in self.options.discard_statuses:
             self.discard = True
 
@@ -1503,8 +1478,6 @@ class BrowserTransport(BaseTransport):
         self._session: StealthySession | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
-        # 출처마다 띄운 빈 탭 (`no_cors_hosts`)
-        self._origin_pages: dict[str, Page] = {}
         # 탭마다 CORS 에 막힌 응답 기록
         self._blocked: dict[Page, _BlockedResponses] = {}
         # 브라우저 일을 하는 스레드 (`_call`). 첫 브라우저 일 때 띄운다
@@ -1714,8 +1687,8 @@ class BrowserTransport(BaseTransport):
         # 먼저 둔다 (`finish`)
         self._context = context
         if not from_saved and state.keeps_entry_cookies(entry_status):
-            # 새로 연 첫 화면의 쿠키는 확인(`finish_entry`) 전에 바로 남긴다. 같은 명령 안에서 새로 만든 같은 소스 클라이언트
-            # (당근 `_geocode` 등)가 첫 화면을 다시 열지 않게 하고, 429 로 멈춰도 쿨다운 뒤 남긴 쿠키로 요청 1건만 보내 풀렸는지
+            # 새로 연 첫 화면의 쿠키는 확인(`finish_entry`) 전에 바로 남긴다. 같은 명령 안에서 새로 만든 같은 소스 클라이언트가
+            # 첫 화면을 다시 열지 않게 하고, 429 로 멈춰도 쿨다운 뒤 남긴 쿠키로 요청 1건만 보내 풀렸는지
             # 보게 한다. 확인 뒤에 남겼을 때는 쿠키 파일이 없던 상태(첫 실행, 403 으로 버린 뒤)에서 429 로 멈추면 `finish` 가
             # 파일이 없다고 남기지 않았다 (2026-11-10 리뷰). 4xx·5xx·다른 출처면 남기지 않는다 (`keeps_entry_cookies`). 4xx·다른
             # 출처는 `finish_entry` 가 discard 를 켜 `_close` 가 옛 파일을 지우고, 5xx 는 옛 파일을 그대로 둔다(`leave_saved`).
@@ -1730,31 +1703,15 @@ class BrowserTransport(BaseTransport):
         state.log_opened(started, how, cookies)
         return page
 
-    def _origin_page(self, origin: str) -> 'Page':
-        page = self._origin_pages.get(origin)
-        if page is None and self._context is not None:
-            page = self._context.new_page()
-            blank_url = f'{origin}/'
-            page.route(lambda url: url == blank_url, partial(_fulfill_blank, self._state))
-            page.goto(blank_url, wait_until='commit')
-            page.unroute_all(behavior=UNROUTE_BEHAVIOR)
-            self._watch_blocked(self._context, page)
-            self._origin_pages[origin] = page
-        if page is None:
-            raise ConnectError(f'브라우저 탭을 열지 못했습니다: {origin}')
-        return page
-
     def handle_request(self, request: Request) -> Response:
         return self._call(self._handle_request, request)
 
     def _handle_request(self, request: Request) -> Response:
-        # 출처 탭(`no_cors_hosts`)으로만 가는 요청도 먼저 첫 화면을 연다. 출처 탭은 첫 화면을 연 브라우저 컨텍스트에 띄우고, 그
-        # 요청을 쓰는 당근 명령은 지역을 찾은 뒤 곧바로 첫 화면 출처 쪽 API(GraphQL·지도 페이지)도 불러 어차피 첫 화면이
-        # 필요하다 (2026-11-10 리뷰에서 검토하고 그대로 둠)
+        # 모든 요청을 첫 화면 탭에서 보낸다. 예전에는 첫 화면 출처의 CORS 를 허용하지 않는 호스트(당근 옛 지역 API)를 그 주소의
+        # 빈 탭에서 보내는 '출처 탭' 장치가 있었는데, 쓰던 API 를 뺀 뒤 쓰는 소스가 없어 지웠다 (#215, 2026-11-12)
         page = self._open_page()
         arguments, timeout = _fetch_arguments(request, self._state.options.timeout, self._state.navigation_headers)
-        origin = self._state.own_origin(str(request.url))
-        self._state.on_send(str(request.url), from_entry_page=origin is None)
+        self._state.on_send(str(request.url))
         page_headers: dict[str, dict[str, str]] = {}
 
         def on_page_response(page_response: 'PageResponse') -> None:
@@ -1762,8 +1719,6 @@ class BrowserTransport(BaseTransport):
                 page_headers[page_response.url] = page_response.headers
 
         try:
-            if origin is not None:
-                page = self._origin_page(origin)
             blocked = self._blocked[page]
             page.on('response', on_page_response)
             try:
@@ -1810,7 +1765,6 @@ class BrowserTransport(BaseTransport):
     def _close(self) -> None:
         session, context = self._session, self._context
         self._session = self._context = self._page = None
-        self._origin_pages.clear()
         self._blocked.clear()
         if session is None:
             return
@@ -1835,11 +1789,11 @@ class BrowserTransport(BaseTransport):
 class AsyncBrowserTransport(AsyncBaseTransport):
     """`BrowserTransport` 의 비동기판 (`AsyncClient` 용). 감싼 동기 transport 의 브라우저 스레드에 일을 넘기고 `await` 로 기다린다.
 
-    흐름(첫 화면 열기·출처 탭·요청 보내기)은 동기 transport 와 한 벌이다 (`BrowserTransport._acall`). 동시에 보낸 요청
+    흐름(첫 화면 열기·요청 보내기)은 동기 transport 와 한 벌이다 (`BrowserTransport._acall`). 동시에 보낸 요청
     (`asyncio.gather`)은 브라우저 스레드가 받은 차례대로 하나씩 보낸다. 예전에는 같은 흐름을 patchright 비동기 API 로 따로 두어
     고칠 때마다 함께 맞춰야 했고(리뷰에서 찾은 버그도 두 벌에 함께 있었다) 동시성 잠금을 따로 두었다 (2026-11-10 리뷰로 합침).
-    그때는 출처 탭이 다른 요청을 함께 보냈지만, 탭이 둘인 소스는 당근뿐이고 요청 제한 간격(0.5초) 때문에 실제 요청에서는
-    차이가 없었다 (같은 날 가짜 사이트 실측: 탭 둘에 8건, 응답 300ms 에 둘 다 3.81초).
+    탭이 하나라 차례로 보내도 요청 제한 간격(0.5초) 때문에 실제 요청에서는 차이가 없다 (같은 날 가짜 사이트 실측: 8건, 응답
+    300ms 에 3.81초).
 
     설정은 감쌀 동기 transport 를 만들 때 준다 (`AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))`). 예전에는 동기
     transport 의 인자를 시그니처·docstring 째 베껴 위치 인자로 넘겨, 인자를 더하거나 순서를 바꾸면 세 곳을 함께 고쳐야 했고 같은

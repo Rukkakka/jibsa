@@ -5,11 +5,13 @@ from .service.commute import (
     search_commute,
 )
 from .service.complex import (
+    DaangnBoundsComplexesResult,
     DaangnComplex,
     DaangnComplexCandidate,
     DaangnComplexListingsResult,
     DaangnRegionComplexesResult,
     get_complex,
+    list_bounds_complexes,
     list_complex_listings,
     list_region_complexes,
     search_complexes,
@@ -29,8 +31,15 @@ from .service.real_price import (
     get_region_real_prices,
 )
 from .service.region import (
-    resolve_regions,
-    search_locations,
+    DaangnAddress,
+    DaangnArea,
+    DaangnStation,
+    DaangnUniversity,
+    find_address,
+    find_station,
+    find_university,
+    resolve_area,
+    search_areas,
 )
 from .service.review import (
     DaangnRegionReviews,
@@ -41,6 +50,12 @@ from .service.school import (
     get_school,
 )
 from .service.search import (
-    DaangnSearchResult,
-    search_listings,
+    DaangnDongSearchResult,
+    DaangnMapSearchResult,
+    DaangnStationSearchResult,
+    DaangnUniversitySearchResult,
+    search_dong,
+    search_map_area,
+    search_station,
+    search_university,
 )

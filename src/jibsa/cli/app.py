@@ -62,7 +62,7 @@ from typing import Annotated
 # SIGINT 로 끝난 프로세스의 관례적인 exit code (128 + 2). Typer 도 KeyboardInterrupt 를 이 값으로 바꾼다.
 INTERRUPTED_EXIT_CODE: int = 130
 INTERRUPTED_HINT: str = '호출한 쪽이 실행을 끊었습니다. 결과가 필요하면 같은 명령을 다시 실행하세요'
-# 인자 하나 안에 공백 뒤(또는 맨 앞)의 옵션 모양('--city', '-t')이 든 것. 주소의 '719-28' 같은 값은 걸리지 않는다
+# 인자 하나 안에 공백 뒤(또는 맨 앞)의 옵션 모양('--limit', '-t')이 든 것. 주소의 '719-28' 같은 값은 걸리지 않는다
 JOINED_OPTION_PATTERN: re.Pattern[str] = re.compile(r'(?:^|\s)--?[A-Za-z][\w-]*')
 JOINED_OPTIONS_HINT: str = (
     '셸 변수에 옵션 여러 개를 담아 넘기면 인자 하나가 됩니다 (zsh 는 따옴표 없는 $VAR 도 나누지 않는다). '
@@ -87,6 +87,18 @@ SOURCE_COMMANDS: frozenset[str] = frozenset({'zigbang', 'naver', 'daangn', 'daba
 NAME_ARGUMENTS: frozenset[str] = frozenset({
     'query', 'dong', 'region', 'keyword', 'workplace', 'name', 'station', 'scope', 'complex_',
 })
+# 따옴표 없이 띄어 쓴 값('--address 테헤란로 152')의 뒤 낱말을 그 값에 잇는 옵션 (명령 함수의 인자 이름). 지역 이름 위치 인자와
+# 함께 줄 수 없는 옵션만 둔다 (당근 search listings·search commute). 뒤 낱말을 위치 인자로 보면 둘을 함께 준 것이 되어 막혔다
+# (2026-11-12 리뷰·실측: '--address 테헤란로 152' 가 주소 '테헤란로' 와 지역 '152' 로 나뉘어 '함께 줄 수 없습니다')
+NAME_OPTIONS: frozenset[str] = frozenset({'station', 'university', 'address'})
+# 당근 노선 이름 ('서울2호선'·'신분당선'·'공항철도'·'용인경전철'·'GTX-A', 2026-11-13 역 검색 실측 37개 노선이 모두 맞는다)
+LINE_NAME_PATTERN: re.Pattern[str] = re.compile(r'GTX-[A-Z]|\S+(?:선|철도|전철)')
+# 이름 옵션 가운데 뒤 낱말을 이을 앞 낱말의 모양을 아는 것. 역 이름 값은 노선 이름 뒤에 역 이름 하나가 와서('서울5호선 양평역',
+# '경의중앙선·서울5호선 양평', 당근 `find_station`), 지금까지 이은 마지막 낱말이 노선 이름일 때만 다음 낱말을 잇는다. 이으면
+# '--station 강남역 역삼동' 이 역 '강남역 역삼동' 을 한 번 찾은 뒤 없는 역이라고 했다 (2026-11-12 리뷰). 예전에는 '역' 으로 끝나는지만
+# 봐 '역' 없이 쓴 '--station 강남 역삼동' 은 그대로 이었다 (2026-11-13 리뷰). 잇지 않으면 지역 이름과 함께 준 것이라 요청 전에
+# '함께 줄 수 없습니다' 로 막힌다
+NAME_OPTION_PREFIX_WORDS: dict[str, re.Pattern[str]] = {'station': LINE_NAME_PATTERN}
 # Click 이 명령마다 붙이는 도움말 옵션 (명령의 params 에는 없다)
 HELP_OPTIONS: frozenset[str] = frozenset({'--help'})
 # 하위 명령 자리에 온 지역 이름을 알아본다 (`subcommand_hint`)
@@ -475,7 +487,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
 
 def joined_options_arg(args: Sequence[str]) -> str | None:
-    """옵션 여러 개가 셸에서 나뉘지 않고 인자 하나로 온 것 (`'--complex 111515 --pyeong 8,9'`, `'대치동 --city 강남구'`).
+    """옵션 여러 개가 셸에서 나뉘지 않고 인자 하나로 온 것 (`'--complex 111515 --pyeong 8,9'`, `'대치동 --limit 5'`).
 
     그대로 넘기면 없는 옵션이나 없는 지역으로 끝나 '--help 를 보라' 같은 힌트만 받고, 지역 인자는 요청까지 보낸 뒤에야
     실패한다. 2026-10-24 에이전트 검증 8명 중 4명, 2026-10-31 재검증 7건(zsh 에서 `P="--complex …"; jibsa … $P`)이
@@ -493,7 +505,10 @@ def joined_name_args(args: Sequence[str], cli: Command) -> list[str]:
 
     나뉜 채로 넘기면 Click 이 'unexpected extra argument (신천동)' 로 막고 '--help 를 보라' 만 알렸다. 에이전트가
     `REGION_AMBIGUOUS` 힌트의 '송파구 신천동' 을 따옴표 없이 옮겨 한 번 더 불렀다 (2026-11-01 에이전트 검증). 옵션 값은
-    명령의 옵션 정의로 건너뛰고, 모르는 옵션이나 `--` 가 있으면 그대로 둬 Click 이 알리게 한다.
+    명령의 옵션 정의로 건너뛰고, 모르는 옵션이나 `--` 가 있으면 그대로 둬 Click 이 알리게 한다. 이름 옵션(`NAME_OPTIONS`)의 값
+    바로 뒤에 붙은 낱말은 위치 인자가 아니라 그 값으로 잇는다 (`--address 테헤란로 152`). 뒤 낱말을 이을 앞 낱말의 모양을 아는
+    옵션은 마지막 낱말이 그 모양일 때만 잇는다 (`NAME_OPTION_PREFIX_WORDS`: `--station 서울5호선 양평역` 은 노선 뒤라 잇고
+    `--station 강남 역삼동`·`--station 강남역 역삼동` 의 역삼동은 위치 인자).
     """
     command, index = cli, 0
     while isinstance(command, TyperGroup) and index < len(args):
@@ -508,25 +523,48 @@ def joined_name_args(args: Sequence[str], cli: Command) -> list[str]:
     arguments = [param for param in command.params if param.param_type_name == 'argument']
     if isinstance(command, TyperGroup) or len(arguments) != 1 or arguments[0].name not in NAME_ARGUMENTS:
         return list(args)
+    # 같은 이름으로 이을 인자 묶음. 첫 자리에 이어 붙인 값을 두고 나머지 자리는 뺀다
+    groups: list[list[int]] = []
     positions: list[int] = []
+    # 바로 앞이 이름 옵션 값이면 그 값의 묶음 (뒤 낱말을 잇는다)과 뒤 낱말을 이을 앞 낱말의 모양
+    option_group: list[int] | None = None
+    prefix: re.Pattern[str] | None = None
     while index < len(args):
         arg = args[index]
         if arg.startswith('-') and len(arg) > 1:
             width = _option_width(command, arg)
             if width is None:
                 return list(args)
+            option_group = None
+            name = _option_name(command, arg)
+            if name in NAME_OPTIONS and index + width - 1 < len(args):
+                option_group = [index + width - 1]
+                groups.append(option_group)
+                prefix = NAME_OPTION_PREFIX_WORDS.get(name)
             index += width
         else:
-            positions.append(index)
+            (option_group if option_group is not None else positions).append(index)
             index += 1
-    if len(positions) < 2:
+        if option_group is not None and prefix is not None and not all(
+            prefix.fullmatch(part) for part in args[option_group[-1]].split('·')
+        ):
+            option_group = None
+    groups.append(positions)
+    groups = [group for group in groups if len(group) > 1]
+    if not groups:
         return list(args)
-    joined = ' '.join(args[position] for position in positions)
-    return [
-        joined if position == positions[0] else arg
-        for position, arg in enumerate(args)
-        if position not in positions[1:]
-    ]
+    joined = {group[0]: ' '.join(args[position] for position in group) for group in groups}
+    dropped = {position for group in groups for position in group[1:]}
+    return [joined.get(position, arg) for position, arg in enumerate(args) if position not in dropped]
+
+
+def _option_name(command: Command, arg: str) -> str | None:
+    """옵션 인자 `arg`(`--address`, `--address=테헤란로`)의 명령 함수 인자 이름. 모르는 옵션이면 None."""
+    name = arg.partition('=')[0]
+    return next(
+        (param.name for param in command.params if isinstance(param, TyperOption) and name in (*param.opts, *param.secondary_opts)),
+        None,
+    )
 
 
 def _option_width(command: Command, arg: str) -> int | None:

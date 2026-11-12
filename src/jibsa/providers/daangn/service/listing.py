@@ -98,7 +98,7 @@ class DaangnListingDetail(ListingDetail):
 
     other_trades: Annotated[
         list[str],
-        Field(description='보여 주는 조건 외에 함께 올라온 거래 조건 (만원, 예: 전세 20000)')
+        Field(description='보여 주는 조건 외에 함께 올라온 거래 조건 (만원, 예: 전세 20000, 월세 1000/50, 연세는 보증금/1년치 1000/1400)')
     ] = []
     manage_cost_excludes: Annotated[
         list[str] | None,
@@ -136,6 +136,10 @@ class DaangnListingDetail(ListingDetail):
         bool,
         Field(exclude=True, description='직거래 매물인지. 중개보수가 해당 없는지 가리는 데만 쓴다')
     ] = False
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='--trade 조건이 없어 대표 조건을 보여 준다는 안내. CLI 가 결과 위에 붙인다')
+    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
@@ -149,7 +153,7 @@ class DaangnListingDetail(ListingDetail):
 
 
 def _describe_trade(trade: DaangnTradeModel) -> str:
-    """거래 조건 한 줄 표기 ('월세 500/50').
+    """거래 조건 한 줄 표기 ('월세 500/50', 연세는 웹 카드처럼 보증금/1년치 '연세 1000/1400').
 
     당근은 거래 유형마다 금액을 늘 주어 None 을 따로 다루지 않는다 (2026-10-11 실측: 역삼역·신림역·오산역 주변 매물
     580건의 거래 600개 모두 매매가·보증금·월세가 있었다).
@@ -159,6 +163,8 @@ def _describe_trade(trade: DaangnTradeModel) -> str:
         return f'{label} {trade.price}'
     if trade.type in MONTHLY_TRADES:
         return f'{label} {trade.deposit}/{trade.monthly_pay}'
+    if trade.type == 'YEAR':
+        return f'{label} {trade.deposit}/{trade.yearly_pay}'
     return f'{label} {trade.deposit}'
 
 
@@ -218,6 +224,17 @@ def _broker_fee_manwon(article: DaangnArticleModel, trade: DaangnTradeModel) -> 
     return won_to_manwon(commission.total) if commission else None
 
 
+def _inactive_broker(article: DaangnArticleModel) -> bool:
+    """비활성 중개소의 매물인지. 당근 웹 상세는 `bizProfile.status !== 'ACTIVE'` 면 "비활성화된 중개소의 매물이에요" 로 막는다.
+
+    상세에서만 본다. 목록 카드의 `bizProfile` 에는 상태가 없어(id·badges 만) 웹도 목록에는 그 매물을 보여 주고 상세에서만
+    막는다. 목록에서 막으려면 매물마다 상세를 받아야 해 요청이 매물 수만큼 늘고 웹 목록과도 달라진다 (2026-11-11 사용자 결정,
+    `is_available` 참고). 그래서 jibsa 도 `listing` 과 `--details` 에서만 뺀다. 상태 키가 없으면(직거래 매물·응답이 바뀜) 막지
+    않는다. 웹은 키가 없어도 막지만, 응답 모양이 바뀌었을 때 중개사 매물 상세가 모두 막히는 것보다 낫다.
+    """
+    return article.biz_profile is not None and article.biz_profile.status not in (None, 'ACTIVE')
+
+
 def detail_to_listing(
     response: DaangnArticlesResponseModel,
     trade_type: str | None = None,
@@ -226,14 +243,16 @@ def detail_to_listing(
 
     사진·본문·중개사 정보·도로명 주소는 옮기지 않는다 (원 사이트에서 확인).
 
-    거래 조건이 여러 개인 매물(예: 매매 + 월세)은 기본으로 대표 조건을 보여 준다. 목록은 필터를
-    통과한 조건으로 내보내므로(월세로 찾으면 월세), `trade_type` 으로 그 조건을 골라 목록과 같은
-    가격을 보여 준다. 나머지 조건은 `other_trades` 로 간다.
+    거래 조건이 여러 개인 매물(예: 매매 + 월세)은 기본으로 대표 조건을 보여 준다. 목록은 필터의 거래 유형으로 고른
+    조건으로 내보내므로(월세로 찾으면 월세), `trade_type` 으로 그 조건을 골라 목록과 같은 가격을 보여 준다. 당근 웹 상세도
+    목록 필터의 거래 유형(`filteredTradeTypes`)으로 가격을 보여 준다. 그 조건이 없으면 웹처럼 대표 조건을 보여 주고 `notes` 로
+    알린다 (예전에는 TRADE_NOT_OFFERED 에러였다). 나머지 조건은 `other_trades` 로 간다.
 
     Raises:
-        ListingUnavailableError: 거래 완료·예약·숨김·노출 제한 매물이거나, 아는 거래 조건
-            (월세·전세·매매·단기임대)이 없을 때 (reason NO_TRADE_INFO). 목록에서 빠지는 매물과 같다.
-            `trade_type` 조건이 없으면 reason TRADE_NOT_OFFERED 이고 `offered_trades` 에 있는 조건을 싣는다.
+        ListingUnavailableError: 거래 완료·숨김·노출 제한 매물이거나(목록에서 빠지는 매물과 같다), 비활성 중개소의 매물이거나
+            (reason BIZ_PROFILE_INACTIVE, `_inactive_broker`), 아는 거래 조건(월세·전세·매매·단기임대·연세)이 없을 때
+            (reason NO_TRADE_INFO). 예약중 매물은 막지 않고 `status` 로 알린다. 연세만 있는 제주 매물은 예전에 여기서
+            NO_TRADE_INFO 로 막혔다 (2026-11-13 연세 지원 전: 웹에서는 판매중인 5014421).
     """
     article = response.article
     if not is_available(article):
@@ -248,16 +267,19 @@ def detail_to_listing(
             status=article.status,
             reason=article.invisible_reason or restriction or ('HIDDEN' if article.is_hide else None),
         )
+    if _inactive_broker(article):
+        raise ListingUnavailableError('daangn', article.original_id, status=article.status, reason='BIZ_PROFILE_INACTIVE')
     trades = trades_preferred_first(article)
     trade = trades[0] if trades else None
-    if trade_type is not None and trades:
-        trade = next((item for item in trades if TRADE_TYPE_BY_TRADE[item.type] == trade_type), None)
-        if trade is None:
-            error = ListingUnavailableError(
-                'daangn', article.original_id, status=article.status, reason='TRADE_NOT_OFFERED'
-            )
-            error.details['offered_trades'] = [_describe_trade(item) for item in trades]
-            raise error
+    notes: list[str] = []
+    if trade_type is not None and trade is not None:
+        wanted = next((item for item in trades if TRADE_TYPE_BY_TRADE[item.type] == trade_type), None)
+        if wanted is None:
+            shown = f'이 매물에는 {trade_type} 조건이 없어 대표 조건({_describe_trade(trade)})을 보여 줍니다'
+            # 거래가 하나뿐이면 other_trades 가 비어 있어 그쪽을 보라고 하지 않는다 (2026-11-11 실측: 4998393 월세 하나)
+            notes.append(note('참고', f'{shown}. 다른 조건은 other_trades 에 있습니다' if len(trades) > 1 else shown))
+        else:
+            trade = wanted
     base = article_to_listing(article, fallback_title=response.title, trade=trade)
     if base is None:
         raise ListingUnavailableError('daangn', article.original_id, status=article.status, reason='NO_TRADE_INFO')
@@ -319,6 +341,7 @@ def detail_to_listing(
             for item in article.trades
             if item is not trade and item.type in TRADE_TYPE_BY_TRADE
         ],
+        notes=notes,
     )
 
 
@@ -343,13 +366,19 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
     """목록 매물마다 상세를 1회씩 받아 목록에 없는 관리비·등록일·번지 주소·사용승인일·방 구조를 채운다 (`--details`).
 
     당근 목록은 관리비·등록일·번지를 주지 않아 `null` 이고, 방 구조도 원룸만 붙는다. 앞 `DETAILS_MAX` 건만 보고, 상세에서
-    거래가 끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
+    볼 수 없는 매물(거래완료·숨김·노출 제한·비활성 중개소)은 `listing` 과 같은 규칙으로 뺀다. 상태(`status`)도 상세 값으로 바꾼다
+    (목록을 받은 뒤 예약중이 됐을 수 있다). 목록을 받은 뒤 목록의 거래 조건이 내려갔으면 `listing --trade` 처럼 대표 조건의 거래
+    유형·가격으로 바꾸고 알린다. 목록의 가격을 두면 없어진 조건을 보여 주고, 상세의 안내(`notes`)도 목록에는 실리지 않았다
+    (2026-11-12 리뷰. 예전에는 TRADE_NOT_OFFERED 에러라 뺐다).
 
     Returns:
         (채운 매물, 안내).
     """
     kept: list[ListingT] = []
     gone = 0
+    # 목록의 거래 조건이 상세에서 없어져 대표 조건으로 바꾼 매물 ID, 그중 다른 조건(other_trades)이 남은 매물이 있는지
+    retraded: list[str] = []
+    other_trades_left = False
     for index, listing in enumerate(listings):
         if index >= DETAILS_MAX:
             kept.append(listing)
@@ -359,18 +388,41 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
         except ListingUnavailableError:
             gone += 1
             continue
-        kept.append(listing.model_copy(update={
+        update = {
             'manage_cost_manwon': detail.manage_cost_manwon,
             'registered_at': detail.registered_at,
             'address': detail.address,
             'approved_at': detail.approved_at,
             'room_type': detail.room_type,
-        }))
+            'status': detail.status,
+        }
+        if detail.trade_type != listing.trade_type:
+            retraded.append(listing.id)
+            other_trades_left = other_trades_left or bool(detail.other_trades)
+            update |= {
+                'trade_type': detail.trade_type,
+                'price_manwon': detail.price_manwon,
+                'deposit_manwon': detail.deposit_manwon,
+                'rent_manwon': detail.rent_manwon,
+                'yearly_rent_manwon': detail.yearly_rent_manwon,
+            }
+        kept.append(listing.model_copy(update=update))
     notes = []
+    if retraded:
+        shown = (
+            f"{len(retraded)}건({', '.join(retraded)})은 상세를 보니 목록의 거래 조건이 없어져 대표 조건의 거래 유형·가격으로 "
+            '바꿨습니다'
+        )
+        # 거래가 하나만 남았으면 other_trades 가 비어 있어 그쪽을 보라고 하지 않는다 (`detail_to_listing` 과 같다)
+        more = '. 다른 조건은 jibsa daangn listing <ID> 의 other_trades 에 있습니다' if other_trades_left else ''
+        notes.append(note('참고', shown + more))
     if gone:
         # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다. 받은 것 중 뺀 매물이라 [제외] 다
         # (직방 attach_building_use 와 같다. 태그 없이 두면 emit 이 [참고] 를 붙였다)
-        notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
+        notes.append(note(
+            '제외',
+            f'{gone}건은 상세를 보니 거래가 끝났거나 볼 수 없는 매물(숨김·노출 제한·비활성 중개소)이라 뺐습니다 (앞 안내의 건수는 빼기 전 기준)',
+        ))
     if len(listings) > DETAILS_MAX:
         # 직방의 같은 안내('건물 용도(--details)는 앞 N건에만')와 같은 [참고] 다
         notes.append(note('참고', f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다'))

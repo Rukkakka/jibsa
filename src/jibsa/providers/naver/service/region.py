@@ -140,13 +140,14 @@ def _find_legal_division(
     client: NaverClient,
     query: str,
     radius_km: float | None,
-    *,
-    stop_if_ambiguous: bool = False,
 ) -> tuple[NaverRegion, list[str]] | None:
-    """동 자동완성으로 법정동을 찾는다. 같은 이름이 여러 곳이면 첫 번째로 찾고 다른 곳을 안내한다.
+    """동 자동완성으로 법정동을 찾는다. 같은 이름이 여러 곳이면 고르지 않고 후보를 알린다.
+
+    예전에는 첫 번째로 찾고 다른 곳을 `notes` 로 알리는 길도 있었는데, 그 길을 쓰던 `resolve_region_with_notes` 를 뺀 뒤 부르는
+    곳이 모두 멈추는 쪽이라 지웠다 (2026-11-12 리뷰).
 
     Raises:
-        RegionAmbiguousError: `stop_if_ambiguous` 인데 같은 이름이 여러 곳일 때 ('신사' → 강남구·은평구·관악구 신사동).
+        RegionAmbiguousError: 같은 이름이 여러 곳일 때 ('신사' → 강남구·은평구·관악구 신사동).
     """
     page = unwrap(
         client.run_request_search_autocomplete_legal_divisions_v1(
@@ -163,7 +164,7 @@ def _find_legal_division(
     best = next((item for item in items if _last_word(item.legal_division_name) in names), items[0])
     notes: list[str] = []
     same = [item for item in items if _last_word(item.legal_division_name) == _last_word(best.legal_division_name)]
-    if len(same) >= 2 and stop_if_ambiguous:
+    if len(same) >= 2:
         words = query.split()
         full_name = _last_word(best.legal_division_name)
         if words[-1] != full_name:
@@ -181,12 +182,6 @@ def _find_legal_division(
         raise RegionAmbiguousError(
             query, [normalize_address(item.legal_division_name) for item in same[:MAX_CANDIDATE_NOTES]], total,
         )
-    if len(same) >= 2:
-        notes.append(_other_candidates_note(query, normalize_address(best.legal_division_name), [
-            (normalize_address(item.legal_division_name), *_lat_lng(item.coordinates))
-            for item in same
-            if item is not best
-        ]))
     # 단위는 GUN·EUP 만 온다. 서울·경기도 같은 시·도는 그 안의 구(GUN)로 오고, 리는 자동완성에 나오지 않는다
     # (검색어 16개, 2026-10-09 확인). 그래서 EUP 가 아니면 시·군·구로 본다.
     if radius_km is not None and best.legal_division_level_type not in (None, 'EUP'):
@@ -285,29 +280,6 @@ def _find_complex(
         legal_division_code=best.legal_division_number,
     )
     return region, [candidates_note] if candidates_note else []
-
-
-def resolve_region_with_notes(
-    client: NaverClient,
-    query: str,
-    radius_km: float = 1.0,
-) -> tuple[NaverRegion, list[str]]:
-    """지역·역·단지 이름을 검색 중심점으로 바꾼다. 모호하거나 넓은 지역이면 안내를 함께 준다.
-
-    네이버 검색창 자동완성을 동 → 역 → 단지 순으로 찾고 처음 나온 결과를 쓴다. '역' 으로 끝나면
-    역을 먼저 찾는다. 찾을 때마다 요청이 하나씩 들어 대개 1회, 많아야 3회다.
-
-    Raises:
-        RegionNotFoundError: 셋 다 결과가 없을 때.
-    """
-    lookups = [_find_legal_division, _find_subway_station, _find_complex]
-    if query.endswith('역'):
-        lookups = [_find_subway_station, _find_legal_division, _find_complex]
-    for lookup in lookups:
-        found = lookup(client, query, radius_km)
-        if found is not None:
-            return found
-    raise RegionNotFoundError(query)
 
 
 # 주소 검색 itemLevel 이 이 값 이상이면 번지·건물 단위다 (5 시·도/시·군·구, 8 동·읍·면, 12 번지·건물)
@@ -472,9 +444,8 @@ def resolve_search_region(
     """`naver search listings` 의 검색어를 검색 위치와 그 종류로 바꾼다.
 
     주소 검색 → 동 → 역 → 단지 순으로 찾고 처음 나온 결과를 쓴다. '역' 으로 끝나면 역을 먼저 찾는다
-    (주소 검색이 역 이름을 찾지 못해 요청 1회가 헛돈다). 대개 요청 1회다 (동 이름 일부('송정')면 1회 더). 당근의 위치 찾기는
-    `resolve_region_with_notes` (동 → 역 → 단지)를 쓴다. `radius_km` 는 안내에만 쓰고, 반경으로 찾지 않는 호출부(trend)는
-    None 을 넘겨 '반경 안만 검색했습니다' 안내를 받지 않는다.
+    (주소 검색이 역 이름을 찾지 못해 요청 1회가 헛돈다). 대개 요청 1회다 (동 이름 일부('송정')면 1회 더). `radius_km` 는
+    안내에만 쓰고, 반경으로 찾지 않는 호출부(trend)는 None 을 넘겨 '반경 안만 검색했습니다' 안내를 받지 않는다.
 
     Returns:
         tuple[NaverRegion, str, list[str]]: 위치, 종류('주소', '동', '역', '단지', '지역'), 안내.
@@ -485,15 +456,14 @@ def resolve_search_region(
         RegionNotFoundError: 넷 다 결과가 없을 때.
     """
     def legal_division(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
-        found = _find_legal_division(client, query, radius_km, stop_if_ambiguous=True)
+        found = _find_legal_division(client, query, radius_km)
         if found is None:
             return None
         region, notes = found
         if not is_dong_code(region.legal_division_code):
             return region, '지역', notes
         # 주소 검색이 못 찾은 '○가' 동의 앞 이름('부민')은 자동완성이 1가·2가·3가를 모두 주는데 첫 동만 찾고 안내도 없었다
-        # (2026-10-30 실측: 부민 → 부산 서구 부민동1가·2가·3가). `_find_address` 처럼 `ga_base` 를 채워 '○가' 동을 합친다.
-        # 이 경로만 채운다. 같은 자동완성을 쓰는 `resolve_region_with_notes` 는 다른 소스가 좌표만 빌려 써서 동을 합치지 않는다
+        # (2026-10-30 실측: 부민 → 부산 서구 부민동1가·2가·3가). `_find_address` 처럼 `ga_base` 를 채워 '○가' 동을 합친다
         words = query.split()
         ga_base = _ga_dong_base(words[-1], region.name)
         if ga_base is None:

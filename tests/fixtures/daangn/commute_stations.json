@@ -1,0 +1,82 @@
+{
+  "data": {
+    "commuteStations": [
+      {
+        "durationMinutes": 2,
+        "transferCount": 0,
+        "routeWaypoints": [
+          {
+            "stationName": "테스트역",
+            "lineName": "테스트1호선"
+          },
+          {
+            "stationName": "가까운역",
+            "lineName": "테스트1호선"
+          }
+        ],
+        "station": {
+          "stationName": "가까운역",
+          "lineNumber": [
+            "테스트1호선"
+          ],
+          "coordinate": {
+            "lat": "37.510000",
+            "lon": "127.040000"
+          }
+        }
+      },
+      {
+        "durationMinutes": 12,
+        "transferCount": 1,
+        "routeWaypoints": [
+          {
+            "stationName": "테스트역",
+            "lineName": "테스트1호선"
+          },
+          {
+            "stationName": "환승역",
+            "lineName": "테스트2호선"
+          },
+          {
+            "stationName": "먼역",
+            "lineName": "테스트2호선"
+          }
+        ],
+        "station": {
+          "stationName": "먼역",
+          "lineNumber": [
+            "테스트1호선"
+          ],
+          "coordinate": {
+            "lat": "37.510000",
+            "lon": "127.040000"
+          }
+        }
+      },
+      {
+        "durationMinutes": 40,
+        "transferCount": 2,
+        "routeWaypoints": [
+          {
+            "stationName": "테스트역",
+            "lineName": "테스트1호선"
+          },
+          {
+            "stationName": "아주먼역",
+            "lineName": "테스트1호선"
+          }
+        ],
+        "station": {
+          "stationName": "아주먼역",
+          "lineNumber": [
+            "테스트1호선"
+          ],
+          "coordinate": {
+            "lat": "37.510000",
+            "lon": "127.040000"
+          }
+        }
+      }
+    ]
+  }
+}

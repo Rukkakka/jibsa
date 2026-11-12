@@ -1,4 +1,4 @@
-"""요청 모델: 동네 후기 요약 (region-reviews)."""
+"""요청 모델: 동네 후기 (region-reviews)."""
 
 
 from pydantic import Field
@@ -18,15 +18,6 @@ class DaangnMapReviewsRequestParameterModel(RequestModel):
     name2: Annotated[
         str,
         Field(min_length=1, exclude=True, description='시/군/구 (예: 강남구, 용인시 처인구)')
-    ]
-
-
-class DaangnRegionByOriginalRegionIdRequestPayloadModel(RequestModel):
-    """GraphQL `regionByOriginalRegionId` 쿼리 변수 (웹의 `MapDongNeighborhoodSummaryQuery`, 동네 후기 요약)."""
-
-    region_id: Annotated[
-        int,
-        Field(gt=0, description='당근 지역 ID. 요약은 동에만 있다', alias='regionId')
     ]
 
 

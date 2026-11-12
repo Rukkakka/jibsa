@@ -61,8 +61,7 @@ providers/<source>/
 | 직방 | `/v3/items/{itemId}` | — | `items_v3` |
 | 네이버 | `/front-api/v1/complex/pyeongList` | `/front-api` | `complex_pyeong_list_v1` |
 | 네이버 | `/front-api/v1/complex/v2/pyeong/realPrice` (경로 가운데 버전이 또 있으면 그 버전) | `/front-api` | `complex_pyeong_real_price_v2` |
-| 당근 | `/kr/api/v1/regions/keyword` | `/kr/api` | `regions_keyword_v1` |
-| 당근 | `/map/{name1}/{name2}/{name3}` (페이지) | — | `map` |
+| 당근 | `/map/{name1}/{name2}/reviews` (페이지) | — | `map_reviews` |
 | 당근 | `POST /graphql` 의 `articleFeed` (GraphQL) | — | `article_feed` |
 | 다방 | `/api/v5/loc/search` · `/api/3/new-room/detail` (버전이 `3` 이면 `v3`) | `/api` | `loc_search_v5` · `new_room_detail_v3` |
 
@@ -107,10 +106,11 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
       바로 빈 페이지로 떠나므로, 그때까지 사이트 자체 API 를 덜 부르는 화면을 고른다. 페이지에 오래 머물 때의 수와 다르다
       (당근 실측은 [당근 브라우저 요청](providers/daangn.md#브라우저-요청-2026-11-09-실측))
     - `browser_ready_cookie` — 사이트 API 가 요구하거나 브라우저 식별인 쿠키. 없으면 None
-    - `browser_api_hosts` — 첫 화면이 부른 요청을 셀 사이트 API 호스트 (기본은 `browser_entry_url` 의 호스트)
-    - `browser_no_cors_hosts` — 첫 화면 출처에서 부르는 것을 CORS 로 허용하지 않는 호스트
-    - 위 둘은 호스트 필드(`host`·`region_host` 등)에서 만드는 property 로 쓴다. 호스트를 상수로 따로 적으면 호스트 필드를
-      바꿨을 때 어긋나 요청이 엉뚱한 탭에서 나간다. 나머지는 ClassVar 다
+    - `browser_api_hosts` — 첫 화면이 부른 요청을 셀 사이트 API 호스트 (기본은 `browser_entry_url` 의 호스트). 요청은 모두
+      첫 화면 탭에서 보내므로 사이트 API 가 첫 화면 출처의 CORS 를 허용해야 한다
+    - 이것은 호스트 필드(`host`·`graphql_host` 등)에서 만드는 property 로 쓴다. 호스트를 상수로 따로 적으면 호스트 필드를
+      바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은 그
+      호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`). 나머지는 ClassVar 다
     - `browser_discard_statuses` — 소스가 403 을 거부가 아닌 뜻으로 쓰면 바꾼다 (다방은 없는 주소)
 - `_client` / `_async_client` 는 `@cached_property` 로 만들고 반드시
   `event_hooks=self.rate_limit_hooks()` (async 는 `async_rate_limit_hooks()`), `timeout`,

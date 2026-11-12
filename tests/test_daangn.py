@@ -1,4 +1,3 @@
-import base64
 import gzip
 import json
 from pathlib import Path
@@ -7,14 +6,12 @@ import httpx
 import pytest
 
 from jibsa.core.listing import (
-    NEXT_HINT,
     UPDATE_MAYBE_NEEDED,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.parser import (
     parse_articles_html,
     parse_complexes_html,
-    parse_map_html,
 )
 from jibsa.providers.daangn.api.relay import resolve
 from jibsa.providers.daangn.service.common import (
@@ -32,8 +29,7 @@ from jibsa.providers.daangn.service.listing import (
     get_listing,
 )
 from jibsa.providers.daangn.service.real_price import get_real_prices
-from jibsa.providers.daangn.service.region import resolve_regions
-from jibsa.providers.daangn.service.search import search_listings
+from jibsa.providers.daangn.service.region import resolve_area
 
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'daangn'
@@ -43,8 +39,8 @@ def html(name: str) -> str:
     return gzip.open(FIXTURES / f'{name}.html.gz', 'rt', encoding='utf-8').read()
 
 
-def regions() -> dict:
-    return json.loads((FIXTURES / 'regions_keyword_v1.json').read_text(encoding='utf-8'))
+def search_region() -> dict:
+    return json.loads((FIXTURES / 'search_region.json').read_text(encoding='utf-8'))
 
 
 def article_feed() -> dict:
@@ -55,27 +51,11 @@ def articles_count() -> dict:
     return json.loads((FIXTURES / 'articles_count.json').read_text(encoding='utf-8'))
 
 
-def make_client(requests: list[httpx.Request] | None = None) -> DaangnClient:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if requests is not None:
-            requests.append(request)
-        if request.url.host == 'www.daangn.com':
-            return httpx.Response(200, json=regions())
-        if request.url.host == 'realty.kr.karrotmarket.com':
-            query_id = json.loads(request.content)['extensions']['persistedQuery']['sha256Hash']
-            return httpx.Response(200, json=articles_count() if query_id == DaangnClient.articles_count_query_id else article_feed())
-        if request.url.path.startswith('/map/'):
-            # 픽스처 지역 검색의 용인시 처인구 역삼동은 행정동이라 실제 당근도 지도가 404 다
-            return httpx.Response(404 if '처인구' in request.url.path else 200, text=html('map'))
-        return httpx.Response(200, text=html('articles'))
-
-    client = DaangnClient()
-    client.__dict__['_client'] = httpx.Client(
-        base_url=client.base_url,
-        transport=httpx.MockTransport(handler),
-        follow_redirects=True,
-    )
-    return client
+def _is_region_search(request: httpx.Request) -> bool:
+    """웹 지역 검색(`searchRegion`) 요청인지. 시·도 채우기·지역 해석이 부른다."""
+    if request.url.host != 'realty.kr.karrotmarket.com':
+        return False
+    return json.loads(request.content)['extensions']['persistedQuery']['sha256Hash'] == DaangnClient.search_region_query_id
 
 
 # --- relay ------------------------------------------------------------------
@@ -111,148 +91,383 @@ def _feed_payloads(requests: list[httpx.Request]) -> list[dict]:
     return _graphql_payloads(requests)
 
 
-def test_search_listings_filters_on_server() -> None:
-    # 조건이 있으면 지도 페이지의 첫 20건(조건 없음)은 쓰지 않고 서버가 거른 피드를 받는다
-    requests: list[httpx.Request] = []
-    with make_client(requests) as client:
-        result = search_listings(
-            client,
-            resolve_regions(client, '역삼동'),
-            conditions=DaangnListingConditions(trade_types=['월세'], rent_max=100),
-            limit=3,
-        )
-    payload = _feed_payloads(requests)[0]
-    assert payload['extensions']['persistedQuery']['sha256Hash'] == DaangnClient.article_feed_query_id
-    assert payload['variables'] == {
-        'first': 3,
-        'input': {
-            'locationFilter': {'originalRegionId': 6035},
-            'propertyFilter': {'salesTypes': [], 'tradeTypes': ['MONTH'], 'monthlyPay': {'maxAmount': 100}},
-            'surface': 'MAP',
-        },
-    }
-    # 조건에 맞는 매물 수는 피드와 같은 조건으로 따로 센다 (surface 없음)
-    assert _graphql_payloads(requests, DaangnClient.articles_count_query_id)[0]['variables'] == {
-        'input': {
-            'locationFilter': {'originalRegionId': 6035},
-            'propertyFilter': {'salesTypes': [], 'tradeTypes': ['MONTH'], 'monthlyPay': {'maxAmount': 100}},
-        },
-    }
-    # 조건에 맞는 매물(150건)이 많아, limit 이 찰 때까지 다음 페이지를 커서로 이어 받는다 (동마다 최대 3페이지)
-    assert [body['variables'].get('after') for body in _feed_payloads(requests)] == [None]
-    # 픽스처 피드는 요청한 수와 상관없이 6건을 주지만 쓰는 건 limit 건까지다. 남은 매물은 다음 페이지에서 다시 받는다
-    assert result.fetched == 3
-    assert result.total == 150
-    assert {listing.id for listing in result.listings} == {'1000101'}
-    assert result.listings[0].trade_type == '월세'
-    assert result.notes[0] == (
-        'total 150건은 조건에 맞는 매물을 주변 동 매물까지 센 당근 집계입니다 (동마다 1000에서 잘림). '
-        '그중 최근 3건을 받았습니다 (동마다 최대 120건)'
-    )
-
-
-def _paged_stub_client(count: int | None, payloads: list):
-    """피드는 늘 다음 페이지가 있는 픽스처(6건씩)를, 조건에 맞는 매물 수는 `count` 를 주는 가짜 client."""
+def _feed_articles() -> list:
+    """피드 픽스처의 매물 6건 (역삼동 5건·논현동 1건, 모두 판매중)."""
     from jibsa.providers.daangn.api.response.search import (
         DaangnArticleFeedResponseModel,
     )
 
-    client = _stub_client(parse_map_html(html('map'), '역삼동'), [], count=count)
+    feed = DaangnArticleFeedResponseModel.model_validate(article_feed()).data.article_feed
+    return [edge.node.article for edge in feed.edges]
 
-    def feed(payload):
+
+def _yeoksam_articles() -> list:
+    """피드 픽스처의 역삼동 매물 5건. 동 클러스터 목록은 그 동 매물만 준다 (논현동 매물을 넣으면 시·도를 찾으려 지역 검색을 부른다)."""
+    return [article for article in _feed_articles() if article.region and article.region.name3 == '역삼동']
+
+
+def _yeoksam_area():
+    from jibsa.providers.daangn.service.region import DaangnArea
+    return DaangnArea(level='동', name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035, lat=37.4954, lng=127.0333, zoom=14)
+
+
+def _cluster_page(articles: list, first: int, *, has_next: bool = False, errors: list | None = None):
+    from jibsa.providers.daangn.api.response.search import (
+        DaangnArticleByClusterIdResponseModel,
+    )
+
+    edges = [{'node': {'type': 'ARTICLE', 'article': article.model_dump(by_alias=True)}} for article in articles[:first]]
+    page = {'edges': edges, 'pageInfo': {'endCursor': 'next' if has_next else None, 'hasNextPage': has_next}}
+    return DaangnArticleByClusterIdResponseModel.model_validate(
+        {'data': None if errors else {'articleByClusterId': page}, 'errors': errors or []}
+    )
+
+
+def _dong_client(articles: list, *, count: int | None = 30, payloads: list | None = None, errors: list | None = None):
+    """동 클러스터 목록은 `articles` (또는 GraphQL `errors`), 동 거품 수는 `count` 를 주는 가짜 client. count 가 None 이면 수 조회가 실패한다."""
+    from types import SimpleNamespace
+
+    from jibsa.providers.daangn.api.response.search import (
+        DaangnArticleClustersResponseModel,
+    )
+
+    def cluster_list(payload):
+        if payloads is not None:
+            payloads.append(payload)
+        return _cluster_page(articles, payload.first, errors=errors)
+
+    def clusters(_):
+        if count is None:
+            return DaangnArticleClustersResponseModel.model_validate({'errors': [{'message': '알 수 없는 오류가 발생했어요'}]})
+        return DaangnArticleClustersResponseModel.model_validate({'data': {'articleClusters': [
+            {'originalId': 'REGION:6034', 'name': '논현동', 'count': 99},
+            {'originalId': 'REGION:6035', 'name': '역삼동', 'count': count},
+        ]}})
+
+    return SimpleNamespace(run_request_article_by_cluster_id=cluster_list, run_request_article_clusters=clusters)
+
+
+# 동 매물은 조건이 있든 없든 웹 지도에서 동을 누른 목록(articleByClusterId)으로 받고, 수는 그 동 거품의 수다
+def test_dong_search_uses_web_cluster_list_and_bubble_count() -> None:
+    from jibsa.providers.daangn.service.search import (
+        REGION_CLUSTER_ZOOM,
+        map_view_bounds,
+        search_dong,
+    )
+
+    area = _yeoksam_area()
+    feed = article_feed()['data']['articleFeed']
+    clusters = {'data': {'articleClusters': [
+        {'originalId': 'REGION:6034', 'name': '논현동', 'count': 99}, {'originalId': 'REGION:6035', 'name': '역삼동', 'count': 726},
+    ]}}
+    requests: list[httpx.Request] = []
+    responses = {
+        DaangnClient.article_by_cluster_id_query_id: {'data': {'articleByClusterId': {**feed, 'edges': feed['edges'][:3]}}},
+        DaangnClient.article_clusters_query_id: clusters,
+    }
+    with make_graphql_client(responses, requests) as client:
+        result = search_dong(client, area, conditions=DaangnListingConditions(trade_types=['월세'], rent_max=100), limit=3)
+    property_filter = {'salesTypes': [], 'tradeTypes': ['MONTH'], 'monthlyPay': {'maxAmount': 100}}
+    assert _graphql_payloads(requests, DaangnClient.article_by_cluster_id_query_id)[0]['variables'] == {
+        'first': 3, 'input': {'clusterId': 'REGION:6035', 'propertyFilter': property_filter},
+    }
+    # 거품 수는 웹이 동 거품을 그리는 줌(12)의 화면 범위로 묻고, 쓰지 않는 지역 경계(1.4MB)는 받지 않는다
+    bounds, _, _ = map_view_bounds(area.lat, area.lng, REGION_CLUSTER_ZOOM)
+    assert _graphql_payloads(requests, DaangnClient.article_clusters_query_id)[0]['variables'] == {
+        'input': {
+            'clusterType': 'REGION', 'locationFilter': bounds.model_dump(by_alias=True), 'propertyFilter': property_filter,
+            'zoomLevel': 8,
+        },
+        'includeBoundaries': False,
+    }
+    assert result.total == 726 and result.region.name3 == '역삼동'
+    assert [listing.id for listing in result.listings] == ['1000101', '1000102', '1000103']
+    assert result.has_more and result.next_position == {'after': 'cursor-5', 'total': 726, 'received': 3}
+
+    # 조건이 하나도 없으면 웹처럼 propertyFilter 를 null 로 명시해 보낸다 (변수 생략이 아니다)
+    requests.clear()
+    with make_graphql_client(responses, requests) as client:
+        search_dong(client, area, limit=3)
+    assert _graphql_payloads(requests, DaangnClient.article_by_cluster_id_query_id)[0]['variables']['input'] == {
+        'clusterId': 'REGION:6035', 'propertyFilter': None,
+    }
+    assert _graphql_payloads(requests, DaangnClient.article_clusters_query_id)[0]['variables']['input']['propertyFilter'] is None
+
+
+# 동 목록은 매물이 남았는데도 hasNextPage 를 false 로 준다 (2026-11-12 실측: 홍천군 내면 26건이 20건 쪽에서 false). 쪽이 꽉 차면
+# 다음 쪽도 받고, 받은 수가 동 거품 수에 닿으면 더 없다고 한다
+def test_dong_search_reads_past_false_has_next_page() -> None:
+    from jibsa.providers.daangn.api.response.search import (
+        DaangnArticleByClusterIdResponseModel,
+    )
+    from jibsa.providers.daangn.service.search import search_dong
+
+    template = _feed_articles()[0]
+    articles = [template.model_copy(update={'original_id': str(9000000 + index)}) for index in range(26)]
+    payloads: list = []
+    client = _dong_client(articles, count=26)
+
+    def cluster_list(payload):
         payloads.append(payload)
-        return DaangnArticleFeedResponseModel.model_validate(article_feed())
+        start = int(payload.after or 0)
+        edges = [
+            {'node': {'type': 'ARTICLE', 'article': article.model_dump(by_alias=True)}}
+            for article in articles[start:start + payload.first]
+        ]
+        return DaangnArticleByClusterIdResponseModel.model_validate({'data': {'articleByClusterId': {
+            'edges': edges, 'pageInfo': {'endCursor': str(start + len(edges)), 'hasNextPage': False},
+        }}})
 
-    client.run_request_article_feed = feed
-    return client
+    client.run_request_article_by_cluster_id = cluster_list
+    result = search_dong(client, _yeoksam_area(), limit=30)
+    assert [payload.first for payload in payloads] == [20, 10]
+    assert result.returned == 26 and not result.has_more
+    assert any('이 26건이 전부' in note for note in result.notes)
+
+    # 거품 수만큼 받았으면 쪽이 꽉 찼어도 더 없다. 이어 받기는 앞 결과가 받은 수까지 센다
+    first = search_dong(client, _yeoksam_area(), limit=20)
+    assert first.has_more and first.next_position == {'after': '20', 'total': 26, 'received': 20}
+    rest = search_dong(client, _yeoksam_area(), limit=6, after='20', total=26, received=20)
+    assert rest.returned == 6 and not rest.has_more
 
 
-def test_search_listings_does_not_refill_when_few_match() -> None:
-    # 조건에 맞는 매물이 100건 이하면 limit 와 상관없이 끝까지 받는다 (30건 → 20건씩 2페이지)
-    payloads: list = []
-    result = search_listings(_paged_stub_client(30, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
-    assert [payload.after for payload in payloads] == [None]
-    assert result.total == 30
-    assert payloads[0].first == 1
-    assert '조건 불일치를 빼고' not in ' '.join(result.notes)  # 반환 제한으로 잘린 정상 매물이다.
-
-    # 100건이 넘으면 지금처럼 limit 이 차면 멈춘다
-    payloads = []
-    result = search_listings(_paged_stub_client(101, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
-    assert len(payloads) == 1
-    assert result.notes[0].endswith('그중 최근 1건을 받았습니다 (동마다 최대 120건)')
-
-
-def test_search_listings_continues_when_count_fails() -> None:
+def test_dong_search_continues_when_count_fails() -> None:
     # 수 조회가 실패해도 검색은 하고, 모르는 수는 내지 않는다
-    payloads: list = []
-    result = search_listings(_paged_stub_client(None, payloads), [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=1)
-    assert len(payloads) == 1
+    from jibsa.providers.daangn.service.search import search_dong
+
+    result = search_dong(_dong_client(_yeoksam_articles(), count=None), _yeoksam_area())
     assert result.listings
     assert result.total is None
+    assert result.notes[0].startswith('[실패]')
 
 
-def test_count_does_not_swallow_rate_limit() -> None:
+def test_dong_count_rate_limit_keeps_received_listings() -> None:
+    # 수는 매물을 받은 뒤 세어, 요청 제한을 올리면 받은 매물까지 잃는다 (2026-11-12 리뷰)
+    from jibsa.providers.daangn.service.search import search_dong
+
+    client = _dong_client(_yeoksam_articles())
+    client.run_request_article_clusters = _rate_limited
+    result = search_dong(client, _yeoksam_area())
+    assert result.listings and result.total is None
+    assert result.notes[0].startswith('[실패] 요청 제한에 걸려')
+
+
+def test_dong_graphql_error_is_upstream_error() -> None:
+    from jibsa.core.errors import JibsaError
+    from jibsa.providers.daangn.service.search import search_dong
+
+    with pytest.raises(JibsaError) as exc:
+        search_dong(_dong_client([], errors=[{'message': '알 수 없는 오류가 발생했어요'}]), _yeoksam_area())
+    assert exc.value.code == 'UPSTREAM_ERROR'
+    assert '알 수 없는 오류' in exc.value.message
+
+
+def test_dong_budget_does_not_refill_expired_articles() -> None:
+    from jibsa.providers.daangn.service.search import search_dong
+
+    template = _feed_articles()[0]
+    articles = [
+        template.model_copy(update={'original_id': str(9000000 + index), 'is_hide': index < 5}) for index in range(20)
+    ]
+    payloads: list = []
+    client = _dong_client(articles, payloads=payloads)
+    client.run_request_article_by_cluster_id = lambda payload: (
+        payloads.append(payload) or _cluster_page(articles, payload.first, has_next=True)
+    )
+    result = search_dong(client, _yeoksam_area(), limit=20)
+    assert len(payloads) == 1 and payloads[0].first == 20
+    assert result.returned == 15
+    assert any('다시 채우지 않음' in note for note in result.notes)
+
+
+def test_dong_search_excludes_invisible_and_keeps_reserved() -> None:
+    from jibsa.providers.daangn.service.search import search_dong
+
+    articles = _feed_articles()
+    blocked = articles[0].model_copy(update={'invisible_infos': [{'__typename': 'CheckDenyInvisibleInfo'}]})
+    reserved = articles[3].model_copy(update={'status': 'RESERVED'})
+    traded = articles[5].model_copy(update={'status': 'TRADED'})
+    result = search_dong(_dong_client([blocked, reserved, traded]), _yeoksam_area())
+    assert [(listing.id, listing.status) for listing in result.listings] == [(reserved.original_id, '예약중')]
+
+
+def _rate_limited(_) -> None:
     from jibsa.core.ratelimit import RateLimitedError
 
-    client = _paged_stub_client(30, [])
-    client.run_request_articles_count = _rate_limited
-    with pytest.raises(RateLimitedError):
-        search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']))
+    raise RateLimitedError('daangn', 300.0, 'cooldown')
 
 
-def _regions_client(locations: list[dict]) -> DaangnClient:
+def _not_found(_) -> None:
+    request = httpx.Request('GET', 'https://realty.daangn.com/map/x')
+    raise httpx.HTTPStatusError('404', request=request, response=httpx.Response(404, request=request))
+
+
+# 시·도 채우기는 주소를 다듬는 보조 조회라, 요청 제한에 걸려도 받아 둔 매물을 버리지 않는다
+@pytest.mark.parametrize('lookup', [_not_found, _rate_limited])
+def test_missing_sido_stays_when_lookup_fails(lookup) -> None:
+    from jibsa.providers.daangn.service.search import search_dong
+
+    article = _feed_articles()[0]
+    neighbor = article.region.model_copy(update={'name1': None, 'name2': '고양시 덕양구', 'name3': '향동동'})
+    client = _dong_client([article.model_copy(update={'region': neighbor})])
+    client.run_request_search_region = lookup
+    assert search_dong(client, _yeoksam_area()).listings[0].address == '고양시 덕양구 향동동'
+
+
+# 웹 목록처럼 거래 유형만 보고 보여 줄 거래를 고르며, 맞는 거래가 없어도 매물을 빼지 않는다 (금액은 서버가 걸렀다)
+@pytest.mark.parametrize(('conditions', 'expected'), [
+    ({'trade_types': ['월세']}, 'MONTH'),
+    ({}, 'BUY'),
+    ({'trade_types': ['전세']}, 'BUY'),
+    ({'rent_max': 50}, 'BUY'),
+    ({'trade_types': ['매매', '월세']}, 'BUY'),
+])
+def test_trade_of_picks_by_trade_type_like_web(conditions: dict, expected: str) -> None:
+    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+    from jibsa.providers.daangn.service.common import trade_of
+
+    article = _feed_articles()[3].model_copy(update={
+        'trades': [
+            DaangnTradeModel.model_validate({'type': 'BUY', 'preferred': True, 'price': 39500}),
+            DaangnTradeModel.model_validate({'type': 'MONTH', 'preferred': False, 'deposit': 1200, 'monthlyPay': 120}),
+        ],
+    })
+    trade = trade_of(article, DaangnListingConditions(**conditions))
+    assert trade is not None and trade.type == expected
+
+
+def test_short_trade_is_short_term_rent() -> None:
+    # 당근 단기임대(ShortTrade)는 보증금·월세가 있다. 모르는 조건으로 버리지 않고 단기임대로 내보낸다.
+    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+
+    short = DaangnTradeModel.model_validate(
+        {'__typename': 'ShortTrade', 'type': 'SHORT', 'preferred': True, 'deposit': 200, 'monthlyPay': 130}
+    )
+    listing = article_to_listing(_feed_articles()[3].model_copy(update={'trades': [short]}))
+    assert (listing.trade_type, listing.deposit_manwon, listing.rent_manwon) == ('단기임대', 200, 130)
+
+
+def test_year_trade_is_yearly_rent_without_monthly_rent() -> None:
+    # 제주 연세(YearTrade)는 1년치를 한 번에 내는 거래라 월세로 읽히지 않게 rent_manwon 키 없이 yearly_rent_manwon 으로 낸다
+    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+
+    year = DaangnTradeModel.model_validate(
+        {'__typename': 'YearTrade', 'type': 'YEAR', 'preferred': True, 'deposit': 1000, 'yearlyPay': 1400}
+    )
+    data = article_to_listing(_feed_articles()[3].model_copy(update={'trades': [year]})).model_dump()
+    assert (data['trade_type'], data['deposit_manwon'], data['yearly_rent_manwon']) == ('연세', 1000, 1400)
+    assert 'rent_manwon' not in data and 'price_manwon' not in data
+
+
+def _regions_client(nodes: list[dict]) -> DaangnClient:
+    """지역 검색(`searchRegion`)이 `nodes` 중 검색어가 이름에 든 곳을 주는 클라이언트 (실제 검색도 이름이 비슷한 곳을 준다)."""
     def handler(request: httpx.Request) -> httpx.Response:
-        # 같은 이름 동이 여럿이면 지도가 있는지(법정동인지) 본다. 여기 후보는 모두 지도가 있다
-        if request.url.path.startswith('/map/'):
-            return httpx.Response(200, text=html('map'))
-        return httpx.Response(200, json={'locations': locations})
+        query = json.loads(request.content)['variables']['input']['query']
+        edges = [
+            {'node': {'centerCoordinate': {'lat': '37.5', 'lon': '127.0'}, 'mapViewDefaultZoomLevel': 5, **node}}
+            for node in nodes if any(query in node[key] for key in ('name1', 'name2', 'name3'))
+        ]
+        return httpx.Response(200, json={'data': {'searchRegion': {'edges': edges, 'pageInfo': {'hasNextPage': False}}}})
 
     client = DaangnClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     return client
 
 
-# --city 를 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아 엉뚱한 동을 고른다.
-# '서울시' 는 서울의 송정동 두 곳에 맞아 첫 곳을 고르지 않고 멈춘다. 띄어 쓴 이름은 마디마다 맞아야 한다
+# 같은 이름 동은 이름 앞에 붙인 구·시·도로 고른다. 글자가 들어 있는지로만 보면 '동구' 가 성동구에, '남구' 가 강남구에 맞아
+# 엉뚱한 동을 고른다. '서울시' 는 서울의 송정동 두 곳에 맞아 첫 곳을 고르지 않고 멈춘다. 띄어 쓴 이름은 마디마다 맞아야 한다
 @pytest.mark.parametrize(
-    ('city', 'expected'),
-    [('동구', '대구광역시'), ('성동', '서울특별시'), ('서울시', 'REGION_AMBIGUOUS'), ('남구', None), ('서울 성동구', '서울특별시')],
+    ('query', 'expected'),
+    [
+        ('동구 송정동', '대구광역시'), ('성동 송정동', '서울특별시'), ('서울시 송정동', 'REGION_AMBIGUOUS'), ('남구 송정동', None),
+        ('서울 성동구 송정동', '서울특별시'), ('송정동', 'REGION_AMBIGUOUS'),
+    ],
 )
-def test_city_matches_start_of_district_name(city: str, expected: str | None) -> None:
+def test_qualified_name_matches_start_of_district_name(query: str, expected: str | None) -> None:
     from jibsa.core.errors import (
         RegionAmbiguousError,
         RegionNotFoundError,
     )
 
-    locations = [
-        {'id': 1, 'name1': '서울특별시', 'name2': '성동구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
-        {'id': 2, 'name1': '대구광역시', 'name2': '동구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
-        {'id': 3, 'name1': '서울특별시', 'name2': '강남구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
+    nodes = [
+        {'originalId': 1, 'name1': '서울특별시', 'name2': '성동구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
+        {'originalId': 2, 'name1': '대구광역시', 'name2': '동구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
+        {'originalId': 3, 'name1': '서울특별시', 'name2': '강남구', 'name3': '송정동', 'name': '송정동', 'depth': 3},
     ]
-    with _regions_client(locations) as client:
+    with _regions_client(nodes) as client:
         if expected is None:
             with pytest.raises(RegionNotFoundError):
-                resolve_regions(client, '송정동', city=city)
+                resolve_area(client, query)
             return
         if expected == 'REGION_AMBIGUOUS':
             with pytest.raises(RegionAmbiguousError) as error:
-                resolve_regions(client, '송정동', city=city)
-            assert error.value.details['candidates'] == ['서울특별시 성동구 송정동', '서울특별시 강남구 송정동']
+                resolve_area(client, query)
+            assert error.value.details['candidates'][:2] == ['서울특별시 성동구 송정동', '서울특별시 강남구 송정동'] or query == '송정동'
             return
-        [region] = resolve_regions(client, '송정동', city=city)
-    assert region.name1 == expected
+        area = resolve_area(client, query)
+    assert area.name1 == expected and area.level == '동'
+
+
+# 웹 검색창처럼 이름이 정확히 같은 곳만 쓴다. 시·도와 구가 있는 시는 그 아래 구를, 이름이 같은 곳이 없으면 비슷한 지역을 후보로 준다.
+# 후보는 그대로 다시 넣으면 찾히는 이름이다 (시·도의 구는 시·도까지 붙인다. 짧은 '강서구' 는 부산·서울 2곳이다)
+@pytest.mark.parametrize(('query', 'candidates'), [
+    ('서울', ['서울특별시 강남구', '서울특별시 강동구']),
+    ('수원시', ['수원시 권선구', '수원시 영통구']),
+    ('성수동', ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가']),
+])
+def test_region_that_cannot_be_searched_as_is_asks_to_choose(query: str, candidates: list[str]) -> None:
+    from jibsa.core.errors import JibsaError
+
+    nodes = [
+        {'originalId': 1, 'name1': '서울특별시', 'name2': '', 'name3': '', 'name': '서울특별시', 'depth': 1},
+        {'originalId': 381, 'name1': '서울특별시', 'name2': '강남구', 'name3': '', 'name': '강남구', 'depth': 2},
+        {'originalId': 382, 'name1': '서울특별시', 'name2': '강동구', 'name3': '', 'name': '강동구', 'depth': 2},
+        {'originalId': 1270, 'name1': '경기도', 'name2': '수원시 권선구', 'name3': '', 'name': '수원시 권선구', 'depth': 2},
+        {'originalId': 1271, 'name1': '경기도', 'name2': '수원시 영통구', 'name3': '', 'name': '수원시 영통구', 'depth': 2},
+        {'originalId': 6100, 'name1': '서울특별시', 'name2': '성동구', 'name3': '성수동1가', 'name': '성수동1가', 'depth': 3},
+        {'originalId': 6101, 'name1': '서울특별시', 'name2': '성동구', 'name3': '성수동2가', 'name': '성수동2가', 'depth': 3},
+    ]
+    with _regions_client(nodes) as client, pytest.raises(JibsaError) as error:
+        resolve_area(client, query)
+    assert error.value.code == 'REGION_AMBIGUOUS'
+    assert error.value.details['candidates'][:2] == candidates
+
+
+# 안내의 예시는 그대로 다시 넣으면 찾혀야 한다. 구 이름까지 같은 동(서울·대구 중구 태평로2가)은 시·도까지 붙이고, 동을 받지 않는
+# 명령(인기 급상승 단지)은 동을 고르게 하지 않고 그 동들의 구를 준다. 예전에는 둘 다 예시를 따르면 또 막혔다
+def test_same_name_dong_hint_resolves_when_reentered() -> None:
+    from jibsa.core.errors import (
+        JibsaError,
+        RegionAmbiguousError,
+    )
+
+    nodes = [
+        {'originalId': 1, 'name1': '서울특별시', 'name2': '중구', 'name3': '태평로2가', 'name': '태평로2가', 'depth': 3},
+        {'originalId': 2, 'name1': '대구광역시', 'name2': '중구', 'name3': '태평로2가', 'name': '태평로2가', 'depth': 3},
+    ]
+    with _regions_client(nodes) as client:
+        with pytest.raises(RegionAmbiguousError) as ambiguous:
+            resolve_area(client, '태평로2가')
+        assert "'서울특별시 중구 태평로2가'" in (ambiguous.value.hint or '')
+        assert resolve_area(client, '서울특별시 중구 태평로2가').name1 == '서울특별시'
+        with pytest.raises(JibsaError) as invalid:
+            resolve_area(client, '태평로2가', levels=frozenset({'구', '시도'}))
+    assert invalid.value.code == 'INVALID_ARGUMENT'
+    assert invalid.value.details['candidates'] == ['서울특별시 중구', '대구광역시 중구']
 
 
 def test_unavailable_articles_are_excluded() -> None:
     from jibsa.core.errors import ListingUnavailableError
-
-    page = parse_map_html(html('map'), '역삼동')
-    traded = page.articles[0].model_copy(update={'status': 'TRADED'})
-    denied = page.articles[1].model_copy(update={'invisible_reason': 'CHECK_DENY'})
-    hidden = page.articles[2].model_copy(update={'is_hide': True})
     from jibsa.providers.daangn.service.common import is_available
-    assert is_available(page.articles[3])
+
+    articles = _feed_articles()
+    traded = articles[0].model_copy(update={'status': 'TRADED'})
+    denied = articles[1].model_copy(update={'invisible_reason': 'CHECK_DENY'})
+    hidden = articles[2].model_copy(update={'is_hide': True})
+    # 예약중은 계약이 깨질 수 있어 웹처럼 보여 주고 status 로 알린다
+    reserved = articles[3].model_copy(update={'status': 'RESERVED'})
+    assert is_available(articles[3]) and is_available(reserved)
+    assert article_to_listing(reserved).status == '예약중' and article_to_listing(articles[3]).status == '판매중'
     assert not any(is_available(article) for article in (traded, denied, hidden))
 
     response = parse_articles_html(html('articles'), 1000001)
@@ -271,6 +486,23 @@ def test_unavailable_articles_are_excluded() -> None:
     assert '거래 조건 없음' in exc.value.hint
 
 
+# 웹 상세처럼 비활성 중개소의 매물은 막는다. 목록 카드에는 중개소 상태가 없어 상세에서만 본다. 상태를 모르면 막지 않는다
+@pytest.mark.parametrize(('status', 'blocked'), [('INACTIVE', True), ('ACTIVE', False), (None, False)])
+def test_detail_blocks_inactive_broker(status: str | None, blocked: bool) -> None:
+    from jibsa.core.errors import ListingUnavailableError
+    from jibsa.providers.daangn.api.response.common import DaangnBizProfileModel
+
+    response = parse_articles_html(html('articles'), 1000001)
+    article = response.article.model_copy(update={'biz_profile': DaangnBizProfileModel(originalId='1', status=status)})
+    response = response.model_copy(update={'article': article})
+    if not blocked:
+        assert detail_to_listing(response).id == '1000001'
+        return
+    with pytest.raises(ListingUnavailableError) as exc:
+        detail_to_listing(response)
+    assert exc.value.details['reason'] == 'BIZ_PROFILE_INACTIVE'
+
+
 def test_missing_article_is_unavailable() -> None:
     from jibsa.core.errors import ListingUnavailableError
 
@@ -281,195 +513,6 @@ def test_missing_article_is_unavailable() -> None:
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client, pytest.raises(ListingUnavailableError):
         get_listing(client, 2000000)
-
-
-def test_search_listings_matches_non_preferred_trade() -> None:
-    # 대표 조건이 매매여도 함께 올린 월세 조건이 필터에 맞으면 월세로 내보낸다.
-    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
-    from jibsa.providers.daangn.service.common import DaangnRegion
-
-    page = parse_map_html(html('map'), '역삼동')
-    article = page.articles[3].model_copy(update={
-        'trades': [
-            DaangnTradeModel.model_validate({'type': 'BUY', 'preferred': True, 'price': 39500}),
-            DaangnTradeModel.model_validate({'type': 'MONTH', 'preferred': False, 'deposit': 1200, 'monthlyPay': 120}),
-        ],
-    })
-    client = _stub_client(page.model_copy(update={'articles': [article]}), [article])
-    region = DaangnRegion(name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035)
-
-    monthly = search_listings(client, [region], conditions=DaangnListingConditions(trade_types=['월세'])).listings
-    assert [(listing.trade_type, listing.deposit_manwon, listing.rent_manwon) for listing in monthly] == [('월세', 1200, 120)]
-    sale = search_listings(client, [region]).listings
-    assert [(listing.trade_type, listing.price_manwon) for listing in sale] == [('매매', 39500)]
-
-
-def _yeoksam():
-    from jibsa.providers.daangn.service.common import DaangnRegion
-    return DaangnRegion(name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035)
-
-
-def _feed_response(articles: list, *, errors: list | None = None):
-    from jibsa.providers.daangn.api.response.search import (
-        DaangnArticleFeedResponseModel,
-    )
-
-    edges = [{'node': {'type': 'ARTICLE', 'article': article.model_dump(by_alias=True)}} for article in articles]
-    data = {'articleFeed': {'edges': edges, 'pageInfo': {'endCursor': None, 'hasNextPage': False}}}
-    return DaangnArticleFeedResponseModel.model_validate({'data': None if errors else data, 'errors': errors or []})
-
-
-def _stub_client(
-    page,
-    feed_articles: list,
-    payloads: list | None = None,
-    errors: list | None = None,
-    count: int | None = None,
-):
-    """지도 페이지는 `page`, 피드는 `feed_articles` (또는 GraphQL `errors`) 를 주는 가짜 client.
-
-    조건에 맞는 매물 수는 `count` 다. None 이면 수 조회가 실패한다 (수를 모를 때의 동작).
-    """
-    from types import SimpleNamespace
-
-    from jibsa.providers.daangn.api.response.search import (
-        DaangnArticlesCountResponseModel,
-    )
-
-    def feed(payload):
-        if payloads is not None:
-            payloads.append(payload)
-        return _feed_response(feed_articles, errors=errors)
-
-    def articles_count(_):
-        if count is None:
-            return DaangnArticlesCountResponseModel.model_validate({'errors': [{'message': '알 수 없는 오류가 발생했어요'}]})
-        return DaangnArticlesCountResponseModel.model_validate({'data': {'count': count}})
-
-    return SimpleNamespace(run_request_map=lambda _: page, run_request_article_feed=feed, run_request_articles_count=articles_count)
-
-
-def _region(name3: str):
-    from jibsa.providers.daangn.service.common import DaangnRegion
-    return DaangnRegion(name1='제주특별자치도', name2='제주시', name3=name3, region_id=1)
-
-
-def _not_found(_) -> None:
-    request = httpx.Request('GET', 'https://realty.daangn.com/map/x')
-    raise httpx.HTTPStatusError('404', request=request, response=httpx.Response(404, request=request))
-
-
-@pytest.mark.parametrize('timed', [True, False])
-def test_dong_feeds_are_merged_by_time_across_pages(timed: bool) -> None:
-    # 당근은 동마다 주변 동 매물을 섞어 줘 같은 매물이 두 동 피드에 같은 시각으로 온다. 동 피드를 시각 순으로 합쳐야 다음
-    # 페이지에 앞 매물이 다시 나오지 않는다. 커서의 시각을 못 읽으면(형식 변경) 동 순서로 주고 next 를 주지 않는다
-    from types import SimpleNamespace
-
-    from jibsa.providers.daangn.api.response.search import (
-        DaangnArticleFeedResponseModel,
-    )
-    from jibsa.providers.daangn.service.common import DaangnRegion
-
-    base = parse_map_html(html('map'), '역삼동')
-    x1, x2, y1, y2, shared = base.articles[:5]
-    feeds = {1: [(x1, '12'), (shared, '10'), (x2, '08')], 2: [(y1, '11'), (shared, '10'), (y2, '09')]}
-    cursors = {
-        region_id: [
-            base64.b64encode(f'2026-10-21T{at}:00:00.000Z|{position}|0'.encode()).decode() if timed else f'cursor-{at}'
-            for position, (_, at) in enumerate(rows)
-        ]
-        for region_id, rows in feeds.items()
-    }
-    region_ids = {'역삼동': 1, '논현동': 2}
-
-    def map_page(parameter):
-        # 지도 페이지는 피드 첫 2건이다 (실제는 20건)
-        region_id = region_ids[parameter.name3]
-        return base.model_copy(update={
-            'articles': [article for article, _ in feeds[region_id][:2]], 'cursors': cursors[region_id][:2],
-            'end_cursor': cursors[region_id][1], 'has_next_page': True,
-        })
-
-    def feed(payload):
-        region_id = payload.input.location_filter.original_region_id
-        start = cursors[region_id].index(payload.after) + 1
-        rows = list(zip(feeds[region_id], cursors[region_id], strict=True))[start:start + payload.first]
-        edges = [{'node': {'type': 'ARTICLE', 'article': article.model_dump(by_alias=True)}, 'cursor': cursor} for (article, _), cursor in rows]
-        page_info = {'endCursor': rows[-1][1] if rows else None, 'hasNextPage': start + len(rows) < len(feeds[region_id])}
-        return DaangnArticleFeedResponseModel.model_validate({'data': {'articleFeed': {'edges': edges, 'pageInfo': page_info}}})
-
-    client = SimpleNamespace(run_request_map=map_page, run_request_article_feed=feed)
-    regions = [DaangnRegion(name1='서울특별시', name2='강남구', name3=name, region_id=region_id) for name, region_id in region_ids.items()]
-    first = search_listings(client, regions, limit=3)
-    if not timed:
-        assert first.next_position is None
-        assert first.notes[0].startswith('[실패] 당근 피드의 시각을 읽지 못해')
-        return
-    assert [listing.id for listing in first.listings] == [x1.original_id, y1.original_id, shared.original_id]
-    # 논현동 피드의 같은 매물(같은 시각)은 다시 내지 않고, 두 동의 남은 매물을 시각 순으로 잇는다
-    second = search_listings(client, regions, limit=3, resume=first.next_position)
-    assert [listing.id for listing in second.listings] == [y2.original_id, x2.original_id]
-    assert not second.has_more
-
-
-def test_missing_map_page_among_expanded_dongs_is_skipped() -> None:
-    from types import SimpleNamespace
-
-    page = parse_map_html(html('map'), '역삼동')
-    client = SimpleNamespace(
-        run_request_map=lambda parameter: _not_found(parameter) if parameter.name3 == '이도이동' else page
-    )
-    result = search_listings(client, [_region('이도이동'), _region('노형동')])
-    assert result.fetched == 20
-
-
-def test_search_listings_notes_neighbor_dongs() -> None:
-    # 픽스처의 역삼동 피드에는 논현동·도곡동 매물이 섞여 있다. 빼지 않고 in_regions 로 표시하고 알린다.
-    with make_client() as client:
-        result = search_listings(client, resolve_regions(client, '역삼동'))
-    assert {listing.address for listing in result.listings} >= {'서울특별시 강남구 논현동', '서울특별시 강남구 역삼동'}
-    assert all(listing.in_regions == listing.address.endswith('역삼동') for listing in result.listings)
-    assert result.notes[-1] == '[범위] 20건 중 10건은 당근이 섞어 준 주변 동(논현동, 도곡동) 매물입니다 (in_regions: false)'
-
-
-def _rate_limited(_) -> None:
-    from jibsa.core.ratelimit import RateLimitedError
-
-    raise RateLimitedError('daangn', 300.0, 'cooldown')
-
-
-# 시·도 채우기는 주소를 다듬는 보조 조회라, 요청 제한에 걸려도 받아 둔 매물을 버리지 않는다
-@pytest.mark.parametrize('lookup', [_not_found, _rate_limited])
-def test_missing_sido_stays_when_lookup_fails(lookup) -> None:
-    from types import SimpleNamespace
-
-    page = parse_map_html(html('map'), '역삼동')
-    neighbor = page.articles[0].region.model_copy(update={'name1': None, 'name2': '고양시 덕양구', 'name3': '향동동'})
-    article = page.articles[0].model_copy(update={'region': neighbor})
-    client = SimpleNamespace(
-        run_request_map=lambda _: page.model_copy(update={'articles': [article]}),
-        run_request_regions_keyword_v1=lookup,
-    )
-    assert search_listings(client, [_region('신사동')]).listings[0].address == '고양시 덕양구 향동동'
-
-
-def test_short_trade_is_short_term_rent() -> None:
-    # 당근 단기임대(ShortTrade)는 보증금·월세가 있다. 모르는 조건으로 버리지 않고 단기임대로 내보낸다.
-    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
-    from jibsa.providers.daangn.service.common import DaangnRegion
-
-    page = parse_map_html(html('map'), '역삼동')
-    short = DaangnTradeModel.model_validate(
-        {'__typename': 'ShortTrade', 'type': 'SHORT', 'preferred': True, 'deposit': 200, 'monthlyPay': 130}
-    )
-    article = page.articles[3].model_copy(update={'trades': [short]})
-    listing = article_to_listing(article)
-    assert (listing.trade_type, listing.deposit_manwon, listing.rent_manwon) == ('단기임대', 200, 130)
-
-    client = _stub_client(page.model_copy(update={'articles': [article]}), [article])
-    region = DaangnRegion(name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035)
-    assert [item.trade_type for item in search_listings(client, [region], conditions=DaangnListingConditions(trade_types=['단기임대'])).listings] == ['단기임대']
-    assert search_listings(client, [region], conditions=DaangnListingConditions(trade_types=['월세'])).listings == []
 
 
 def _multi_trade_detail():
@@ -484,13 +527,13 @@ def _multi_trade_detail():
     return response.model_copy(update={'article': response.article.model_copy(update={'trades': trades})})
 
 
-def test_detail_with_trade_not_offered_is_unavailable() -> None:
-    from jibsa.core.errors import ListingUnavailableError
-
-    with pytest.raises(ListingUnavailableError) as exc:
-        detail_to_listing(_multi_trade_detail(), '단기임대')
-    assert exc.value.details['reason'] == 'TRADE_NOT_OFFERED'
-    assert exc.value.details['offered_trades'] == ['매매 17500', '전세 16000', '월세 12500/30']
+def test_detail_with_trade_not_offered_shows_representative_trade() -> None:
+    # 매물에 없는 거래 조건을 달라면 웹 상세처럼 대표 조건을 보여 주고 알린다 (예전에는 TRADE_NOT_OFFERED 에러)
+    detail = detail_to_listing(_multi_trade_detail(), '단기임대')
+    assert (detail.trade_type, detail.price_manwon) == ('매매', 17500)
+    assert detail.other_trades == ['전세 16000', '월세 12500/30']
+    assert detail.notes == ['[참고] 이 매물에는 단기임대 조건이 없어 대표 조건(매매 17500)을 보여 줍니다. 다른 조건은 other_trades 에 있습니다']
+    assert detail_to_listing(_multi_trade_detail(), '월세').notes == []
 
 
 # --- property filter ----------------------------------------------------------
@@ -532,59 +575,6 @@ def test_property_filter_uses_daangn_web_codes() -> None:
     }
 
 
-def test_server_filtered_feed_rechecks_only_what_the_list_shows() -> None:
-    # 서버가 거른 매물도 거래 조건은 다시 고른다. 면적과 관리비 포함 월세는 서버에 맡긴다.
-    page = parse_map_html(html('map'), '역삼동')
-    article = page.articles[0].model_copy(update={'area': 99.0})
-    client = _stub_client(page, [article])
-    rent = article_to_listing(article).rent_manwon
-    assert search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(area_max=30)).listings
-    assert search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(rent_min=rent + 1, rent_includes_manage_cost=True)).listings
-    assert not search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(rent_min=rent + 1)).listings
-    # 관리비를 몰라도 총액 상한보다 비싼 월세를 대표 조건으로 선택하면 안 된다.
-    preferred = article.trades[0].model_copy(update={'monthly_pay': int(rent) + 100, 'preferred': True})
-    affordable = article.trades[0].model_copy(update={'preferred': False})
-    article = article.model_copy(update={'trades': [preferred, affordable]})
-    client = _stub_client(page, [article])
-    result = search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(rent_max=rent + 10, rent_includes_manage_cost=True))
-    assert result.listings[0].rent_manwon == rent
-
-
-@pytest.mark.parametrize('field,condition', [
-    ('monthly_pay', {'rent_max': 80}),
-    ('deposit', {'deposit_max': 1000}),
-])
-def test_unknown_amount_does_not_pass_budget(field: str, condition: dict) -> None:
-    page = parse_map_html(html('map'), '역삼동')
-    article = page.articles[0]
-    trade = article.trades[0].model_copy(update={field: None})
-    article = article.model_copy(update={'trades': [trade]})
-    client = _stub_client(page, [article])
-    assert search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세'])).listings
-    assert not search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세'], **condition)).listings
-
-
-def test_server_filtered_feed_keeps_category_and_notes_unselected_trade() -> None:
-    # 서버가 원룸 조건으로 준 매물은 카테고리가 달라도 다시 거르지 않고, 거래 조건을 못 고른 매물은 사유를 알린다
-    page = parse_map_html(html('map'), '역삼동')
-    article = page.articles[0]
-    officetel = article.model_copy(update={'sales_type': article.sales_type.model_copy(update={'type': 'OFFICETEL'})})
-    unknown = page.articles[3].model_copy(update={
-        'original_id': 'unknown-rent',
-        'trades': [page.articles[3].trades[0].model_copy(update={'monthly_pay': None})],
-    })
-    result = search_listings(_stub_client(page, [officetel, unknown]), [_yeoksam()], conditions=DaangnListingConditions(property_types=['원룸'], rent_max=1000))
-    assert [(listing.id, listing.property_type) for listing in result.listings] == [(officetel.original_id, '오피스텔')]
-    assert any(note.startswith('[제외] 당근이 조건에 맞다고 준 매물 중 1건은') for note in result.notes)
-
-    # 필터 API 를 못 써 조건 없는 지도 페이지로 대체 조회하면 유형을 직접 확인해 뺀다
-    rejected = [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]
-    fallback = page.model_copy(update={'articles': [officetel]})
-    result = search_listings(_stub_client(fallback, [], errors=rejected), [_yeoksam()], conditions=DaangnListingConditions(property_types=['원룸']))
-    assert result.listings == []
-    assert not any(note.startswith('[제외] 당근이 조건에 맞다고 준') for note in result.notes)
-
-
 @pytest.mark.parametrize('sales_type,room_count,room_type', [
     # 분리형원룸으로 올렸어도 방이 2개면 투룸이다 (실측). 방 수를 모르는 목록은 원룸 구조를 쓴다
     ('SPLIT_ONE_ROOM', 2, '투룸'),
@@ -593,7 +583,7 @@ def test_server_filtered_feed_keeps_category_and_notes_unselected_trade() -> Non
     ('OFFICETEL', 1, None),
 ])
 def test_room_type_prefers_room_count(sales_type: str, room_count: int | None, room_type: str | None) -> None:
-    article = parse_map_html(html('map'), '역삼동').articles[0]
+    article = _feed_articles()[0]
     article = article.model_copy(update={
         'sales_type': article.sales_type.model_copy(update={'type': sales_type}),
         'room_count': room_count,
@@ -601,65 +591,7 @@ def test_room_type_prefers_room_count(sales_type: str, room_count: int | None, r
     assert article_to_listing(article).room_type == room_type
 
 
-def test_feed_excludes_invisible_articles() -> None:
-    page = parse_map_html(html('map'), '역삼동')
-    blocked = page.articles[0].model_copy(update={'invisible_infos': [{'__typename': 'CheckDenyInvisibleInfo'}]})
-    client = _stub_client(page, [blocked, page.articles[3]])
-    result = search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세', '매매', '전세', '단기임대']))
-    assert [listing.id for listing in result.listings] == [page.articles[3].original_id]
-
-
-def test_rejected_feed_query_falls_back_to_map_page() -> None:
-    # 웹이 쿼리를 바꿔 해시가 거절되면 예전처럼 지도 페이지 20건에 직접 조건을 건다
-    page = parse_map_html(html('map'), '역삼동')
-    rejected = [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]
-    payloads: list = []
-    client = _stub_client(page, [], payloads, errors=rejected, count=50)
-    result = search_listings(client, [_yeoksam(), _yeoksam()], conditions=DaangnListingConditions(trade_types=['월세'], rent_max=100, area_min=10))
-    assert len(payloads) == 1
-    assert result.fetched == 20
-    assert result.listings
-    assert all(listing.trade_type == '월세' and listing.rent_manwon <= 100 for listing in result.listings)
-    assert result.notes[0].startswith('[실패] 당근 필터 API 를 쓸 수 없어')
-    assert '조건은 받아 온 최근 20건(동마다 최대 20건)에만 걸었으니' in result.notes[1]
-
-
-def test_rejected_feed_query_without_conditions_notes() -> None:
-    # 조건 없이 찾다가 다음 페이지 해시가 거절되면 지도 페이지 20건뿐이다. 실제 서버는 해시를 받아 주어 재현할 수 없다
-    page = parse_map_html(html('map'), '역삼동').model_copy(update={'end_cursor': 'next'})
-    rejected = [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]
-    client = _stub_client(page, [], errors=rejected)
-    result = search_listings(client, [_yeoksam()], limit=120)
-    assert result.fetched == 20
-    assert result.notes[0].startswith('[실패] 당근 매물 피드 API 를 쓸 수 없어') and '조건을 적용' not in result.notes[0]
-    assert result.notes[1].endswith('그중 최근 20건을 받았습니다 (동마다 최대 20건)')
-    assert not any('전부입니다' in note or '--limit' in note for note in result.notes)
-
-
-def test_rejected_feed_query_with_server_only_condition_is_an_error() -> None:
-    from jibsa.core.errors import JibsaError
-
-    page = parse_map_html(html('map'), '역삼동')
-    rejected = [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]
-    client = _stub_client(page, [], errors=rejected)
-    with pytest.raises(JibsaError) as exc:
-        search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(floors=['1층'], move_in_now=True))
-    assert exc.value.code == 'UPSTREAM_ERROR'
-    assert exc.value.message.endswith('floor, moveInNow')
-
-
-def test_feed_graphql_error_is_upstream_error() -> None:
-    from jibsa.core.errors import JibsaError
-
-    page = parse_map_html(html('map'), '역삼동')
-    client = _stub_client(page, [], errors=[{'message': '알 수 없는 오류가 발생했어요'}])
-    with pytest.raises(JibsaError) as exc:
-        search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']))
-    assert exc.value.code == 'UPSTREAM_ERROR'
-    assert '알 수 없는 오류' in exc.value.message
-
-
-# --- 좌표 반경 검색 (articleMapPoints → articlesByOriginalArticleIds) ----------
+# --- 지도 범위 검색 (articleFeed 좌표 범위) ---------------------------------
 
 def fixture(name: str) -> dict:
     return json.loads((FIXTURES / f'{name}.json').read_text(encoding='utf-8'))
@@ -672,17 +604,16 @@ def make_graphql_client(
     """GraphQL 은 persisted query 해시로 응답을 고른다. `responses` 로 해시별 응답을 바꾼다."""
     client = DaangnClient()
     by_hash = {
-        client.article_map_points_query_id: fixture('article_map_points'),
-        client.articles_by_original_article_ids_query_id: fixture('articles_by_original_article_ids'),
+        client.article_feed_query_id: article_feed(),
+        client.articles_count_query_id: articles_count(),
         client.get_region_by_coordinate_query_id: fixture('get_region_by_coordinate'),
+        client.search_region_query_id: search_region(),
         **(responses or {}),
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
         if requests is not None:
             requests.append(request)
-        if request.url.host == 'www.daangn.com':
-            return httpx.Response(200, json=regions())
         query_id = json.loads(request.content)['extensions']['persistedQuery']['sha256Hash']
         return httpx.Response(200, json=by_hash[query_id])
 
@@ -697,79 +628,45 @@ def make_graphql_client(
 REJECTED = {'errors': [{'message': 'PersistedQueryNotFound', 'extensions': {'code': 'PERSISTED_QUERY_NOT_IN_LIST'}}]}
 
 
-@pytest.mark.parametrize('missing_cards', [False, True])
-def test_search_area_fetches_only_enough_card_chunks(missing_cards: bool) -> None:
+# 웹 지도 목록과 같이 데스크톱 화면 범위와 줌의 resolution 을 보내고, 순서를 바꾸지 않는다
+def test_map_area_sends_web_view_bounds_and_keeps_order() -> None:
     from jibsa.providers.daangn.service.search import (
-        CARD_CHUNK_SIZE,
-        search_area,
+        map_view_bounds,
+        search_map_area,
     )
-
-    points = [
-        {'coordinate': {'lat': f'{37.5 + index * 1e-5:.6f}', 'lon': '127.036000'}, 'originalArticleId': str(3000000 + index)}
-        for index in range(100)
-    ]
-
-    def cards_for(ids: list[str]) -> dict:
-        base = fixture('articles_by_original_article_ids')['data']['articles'][1]
-        return {'data': {'articles': [{**base, 'originalId': article_id} for article_id in ids if not missing_cards or int(article_id) >= 3000005]}}
 
     requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        body = json.loads(request.content)
-        query_id = body['extensions']['persistedQuery']['sha256Hash']
-        if query_id == DaangnClient.article_map_points_query_id:
-            return httpx.Response(200, json={'data': {'articleMapPoints': points}})
-        if query_id == DaangnClient.articles_by_original_article_ids_query_id:
-            return httpx.Response(200, json=cards_for(body['variables']['originalArticleIds']))
-        return httpx.Response(200, json=fixture('get_region_by_coordinate'))
-
-    client = DaangnClient()
-    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
-    with client:
-        result = search_area(client, 37.5, 127.036, limit=25)
-    card_requests = [
-        request for request in requests
-        if json.loads(request.content)['extensions']['persistedQuery']['sha256Hash'] == DaangnClient.articles_by_original_article_ids_query_id
-    ]
-    # 25건을 채우는 데 20개씩 두 번이면 된다
-    assert len(card_requests) == 2 and CARD_CHUNK_SIZE == 20
-    assert result.returned == (20 if missing_cards else 25)
-    assert [len(json.loads(request.content)['variables']['originalArticleIds']) for request in card_requests] == [20, 5]
-    assert NEXT_HINT in result.notes[-1]
+    with make_graphql_client(requests=requests) as client:
+        result = search_map_area(client, 37.5, 127.036, zoom=15, limit=5)
+    payload = _graphql_payloads(requests)[0]['variables']
+    bounds, width_km, height_km = map_view_bounds(37.5, 127.036, 15)
+    assert payload['input']['locationFilter'] == bounds.model_dump(by_alias=True)
+    assert payload['input']['resolution'] == 9 and payload['first'] == 5
+    assert (width_km, height_km) == (result.width_km, result.height_km) == (1.6, 1.7)
+    feed_ids = [edge['node']['article']['originalId'] for edge in article_feed()['data']['articleFeed']['edges']]
+    assert [listing.id for listing in result.listings] == [id_ for id_ in feed_ids if id_ in {listing.id for listing in result.listings}]
 
 
-def test_search_area_notes_truncated_pins() -> None:
-    from jibsa.providers.daangn.service.search import (
-        PIN_LIMIT,
-        search_area,
-    )
-
-    point = {'coordinate': {'lat': '37.501000', 'lon': '127.036000'}, 'originalArticleId': '2000101'}
-    truncated = {'data': {'articleMapPoints': [point] * PIN_LIMIT}}
-    with make_graphql_client({DaangnClient.article_map_points_query_id: truncated}) as client:
-        result = search_area(client, 37.5, 127.036, radius_km=5.0)
-    assert result.notes[0].startswith(f'[일부] 당근은 넓은 범위의 매물을 {PIN_LIMIT}건에서 잘라')
-
-
-def test_search_area_continues_without_region() -> None:
-    # 검색 중심의 동은 표시용이라 못 찾아도 매물은 찾는다
-    from jibsa.providers.daangn.service.search import search_area
-
-    with make_graphql_client({DaangnClient.get_region_by_coordinate_query_id: REJECTED}) as client:
-        result = search_area(client, 37.5, 127.036)
-    assert result.region is None
-    assert result.returned == 3
-
-
-def test_search_area_rejected_pins_query_raises_for_fallback() -> None:
+def test_map_area_rejected_feed_query_raises() -> None:
     from jibsa.providers.daangn.service.common import FeedQueryRejectedError
-    from jibsa.providers.daangn.service.search import search_area
+    from jibsa.providers.daangn.service.search import search_map_area
 
-    with make_graphql_client({DaangnClient.article_map_points_query_id: REJECTED}) as client:
+    with make_graphql_client({DaangnClient.article_feed_query_id: REJECTED}) as client:
         with pytest.raises(FeedQueryRejectedError):
-            search_area(client, 37.5, 127.036)
+            search_map_area(client, 37.5, 127.036, zoom=15)
+
+
+# 첫 결과가 동을 못 찾았으면(region None) 역·대학 주변 목록처럼 이어 받기에서 다시 찾는다. 매물 수는 다시 세지 않는다
+# (첫 결과의 좌표 → 동 조회 실패는 실제 API 로 만들 수 없다)
+def test_map_area_resume_finds_missing_region_again() -> None:
+    from jibsa.providers.daangn.service.search import search_map_area
+
+    requests: list[httpx.Request] = []
+    with make_graphql_client(requests=requests) as client:
+        result = search_map_area(client, 37.5, 127.036, zoom=15, limit=5, after='c1', total=30)
+    assert len(_graphql_payloads(requests, DaangnClient.get_region_by_coordinate_query_id)) == 1
+    assert not _graphql_payloads(requests, DaangnClient.articles_count_query_id)
+    assert result.region is not None and result.total == 30
 
 
 def _same_name_stations_client(requests: list[httpx.Request]) -> DaangnClient:
@@ -796,9 +693,8 @@ def _same_name_stations_client(requests: list[httpx.Request]) -> DaangnClient:
     return client
 
 
-# 같은 이름의 역은 첫 역을 쓰고 다른 역을 알린다. --city 를 주면 역 위치의 동으로 그 지역의 역을 고른다
-def test_same_name_station_is_noted_and_city_picks_it() -> None:
-    from jibsa.core.errors import RegionNotFoundError
+# 같은 이름의 역은 웹 역 화면처럼 첫 역을 쓰고 다른 역을 알린다. 안내에 나온 노선 붙인 이름을 주면 그 역을 고른다
+def test_same_name_station_is_noted_and_line_picks_it() -> None:
     from jibsa.providers.daangn.service.region import (
         find_station,
         same_station_notes,
@@ -809,17 +705,12 @@ def test_same_name_station_is_noted_and_city_picks_it() -> None:
         first = find_station(client, '테스트역')
         assert first is not None and first.lines == ['테스트1호선']
         assert first.others == ['테스트5호선 테스트역']
-        assert same_station_notes(first, '다른 역이면 --city') != []
-        # --city 가 없으면 역 검색 한 번뿐이다
-        assert len(requests) == 1
-
-        chosen = find_station(client, '테스트역', city='서울')
-        assert chosen is not None and chosen.lines == ['테스트5호선']
-        assert chosen.others == []
-
-        with pytest.raises(RegionNotFoundError) as caught:
-            find_station(client, '테스트역', city='부산')
-    assert '양평군' in caught.value.hint and '영등포구' in caught.value.hint
+        assert "--station '테스트5호선 테스트역'" in same_station_notes(first)[0]
+        chosen = find_station(client, '테스트5호선 테스트역')
+        assert chosen is not None and chosen.lines == ['테스트5호선'] and chosen.others == []
+        assert find_station(client, '테스트9호선 테스트역') is None
+    # 역 검색 한 번씩이다 (좌표 → 동을 묻지 않는다)
+    assert len(requests) == 3
 
 
 # --- 단지 (complexes 페이지, searchComplexes) ----------------------------------
@@ -931,41 +822,47 @@ def test_real_prices_null_page_info_after_next_page_stops_with_notice() -> None:
     assert any('멈췄습니다' in note and UPDATE_MAYBE_NEEDED in note for note in result.notes)
 
 
-# --- 출퇴근 검색 (nearestCommuteStation → commuteFeed → commuteStationArticleConnection) ----
+# --- 출퇴근 검색 (nearestCommuteStation → commuteStations → commuteStationArticleConnection) ----
+
+def complex_article_cards() -> list[dict]:
+    return [edge['node'] for edge in fixture('complex_articles')['data']['complexByOriginalId']['complex']['articles']['edges']]
+
 
 def commute_client(
     requests: list[tuple[str, dict]] | None = None,
     nearest: dict | None = None,
-    feed_body: dict | None = None,
+    stations_body: dict | None = None,
 ) -> DaangnClient:
-    # 역마다 다른 매물을 준다. 2000101 은 두 역에 걸린다 (지하철 시간이 짧은 역으로 둔다)
-    ids_by_station = {'테스트역': ['2000101', '2000102'], '가까운역': ['2000104', '2000101'], '먼역': ['2000103']}
-    # 역 주변 매물은 카드(articlesByOriginalArticleIds)와 같은 필드로 온다 (2026-10-11 실측)
-    cards = {card['originalId']: card for card in fixture('articles_by_original_article_ids')['data']['articles']}
-    walk = {'2000101': ('테스트역', 5), '2000104': ('가까운역', 4)}
+    # 역마다 다른 매물을 준다. 2000101 은 두 역에 걸린다. 회사 역(테스트역)은 웹처럼 찾지 않는다
+    ids_by_station = {'가까운역': ['2000104', '2000101'], '먼역': ['2000103', '2000101']}
+    # 역 주변 매물도 단지 매물 목록과 같은 매물 카드(DaangnArticleModel)로 온다
+    cards = {card['originalId']: card for card in complex_article_cards()}
+    walk = {'2000101': ('먼역', 5), '2000104': ('가까운역', 4)}
     for article_id, (name, minutes) in walk.items():
         cards[article_id]['subwayStations'] = [
             {'station': {'stationName': name, 'lineNumber': ['테스트1호선']}, 'durationMinutes': minutes},
         ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'www.daangn.com':
+        if _is_region_search(request):
             # 카드에 시·도가 없는 동은 지역 검색으로 채운다
-            return httpx.Response(200, json=regions())
+            return httpx.Response(200, json=search_region())
         body = json.loads(request.content)
         query = body['extensions']['persistedQuery']['sha256Hash']
         variables = body['variables']
         if query == DaangnClient.nearest_commute_station_query_id:
             name = 'nearest'
             data = nearest or fixture('nearest_commute_station')
-        elif query == DaangnClient.commute_feed_query_id:
-            name = 'feed'
-            data = feed_body or fixture('commute_feed')
+        elif query == DaangnClient.commute_stations_query_id:
+            name = 'stations'
+            data = stations_body or fixture('commute_stations')
         elif query == DaangnClient.commute_station_article_connection_query_id:
             name = 'station'
             data = fixture('commute_station_article_connection')
+            # 당근처럼 요청한 수(first)까지만 준다 (2026-11-12 실측: 강남역 통근 --limit 1 은 10역 모두 1건)
             data['data']['commuteStationArticleConnection']['edges'] = [
-                {'node': {'article': cards[article_id]}} for article_id in ids_by_station[variables['stationName']]
+                {'node': {'article': cards[article_id]}}
+                for article_id in ids_by_station[variables['stationName']][:variables['first']]
             ]
         else:
             name = 'region'
@@ -985,19 +882,34 @@ def test_commute_unknown_workplace_walk_is_not_zero() -> None:
     with commute_client(nearest=nearest) as client:
         result = search_commute(client, 37.5, 127.03)
     assert result.listings
-    assert all(item.commute_minutes is None for item in result.listings)
+    # 웹의 '편도 N분' 은 회사 도보 + 지하철이라 회사 도보를 모르면 null 이다
+    assert all(group.one_way_minutes is None for group in result.stations)
 
 
 def test_commute_unknown_subway_time_is_not_zero() -> None:
-    feed = fixture('commute_feed')
-    feed['data']['commuteFeed']['edges'][0]['node']['durationMinutes'] = None
-    feed['data']['commuteFeed']['edges'][1]['node']['transferCount'] = None
-    with commute_client(feed_body=feed) as client:
+    stations = fixture('commute_stations')
+    stations['data']['commuteStations'][0]['durationMinutes'] = None
+    stations['data']['commuteStations'][1]['transferCount'] = None
+    with commute_client(stations_body=stations) as client:
         result = search_commute(client, 37.5, 127.03)
     assert '가까운역' not in [station.station_name for station in result.stations]
     assert not any(item.commute_station == '가까운역' for item in result.listings)
-    assert all(item.transfers is None for item in result.listings if item.commute_station == '먼역')
+    assert all(group.transfers is None for group in result.stations if group.station_name == '먼역')
     assert any('지하철 시간을 모르는 역' in note for note in result.notes)
+
+
+# 회사 역은 웹처럼 넣지 않아 --max-minutes 안에 역이 없으면 빈 결과다. 에러 대신 회사 역 주변을 볼 명령을 알린다
+def test_commute_no_station_within_max_minutes_notes_workplace_station() -> None:
+    requests: list[tuple[str, dict]] = []
+    with commute_client(requests) as client:
+        result = search_commute(client, 37.5, 127.03, max_minutes=1)
+    assert result.stations == [] and result.listings == []
+    assert not [name for name, _ in requests if name == 'station']
+    assert any(
+        '지하철 1분 안에는 조건에 맞는 매물이 있는 역이 없습니다' in note and "--station '테스트1호선 테스트역'" in note
+        and '--max-minutes 를 늘리고' in note
+        for note in result.notes
+    )
 
 
 # --- 단지 매물 목록 (complexByOriginalId.complex.articles) ------------------------
@@ -1009,43 +921,13 @@ def test_commute_limit_is_per_station_and_keeps_cross_station_matches(limit: int
     with commute_client(requests) as client:
         result = search_commute(client, 37.5, 127.03, limit=limit)
     station_requests = [variables for name, variables in requests if name == 'station']
-    assert len(station_requests) == 3
+    assert len(station_requests) == 2
     assert all(variables['first'] == limit for variables in station_requests)
-    # 모든 검색 대상 역을 조회하며 전체 결과 수로 조기 종료하지 않는다.
-    assert len(result.stations) == 3
+    # 모든 검색 대상 역(30분 안 가까운역·먼역)을 조회하며 전체 결과 수로 조기 종료하지 않는다.
+    assert len(result.stations) == 2
     assert all(group.returned <= limit for group in result.stations)
     assert result.returned == sum(group.returned for group in result.stations)
     assert result.unique_returned == len({listing.id for group in result.stations for listing in group.listings})
-
-
-def test_dong_budget_does_not_refill_expired_articles() -> None:
-    import copy
-
-    from jibsa.providers.daangn.api.response.search import (
-        DaangnArticleFeedResponseModel,
-    )
-
-    payloads: list = []
-    client = _paged_stub_client(200, payloads)
-    data = article_feed()
-    template = data['data']['articleFeed']['edges'][0]
-    edges = []
-    for index in range(20):
-        edge = copy.deepcopy(template)
-        edge['node']['article']['originalId'] = str(9000000 + index)
-        edge['node']['article']['isHide'] = index < 5
-        edges.append(edge)
-    data['data']['articleFeed']['edges'] = edges
-
-    def feed(payload):
-        payloads.append(payload)
-        return DaangnArticleFeedResponseModel.model_validate(data)
-
-    client.run_request_article_feed = feed
-    result = search_listings(client, [_yeoksam()], conditions=DaangnListingConditions(trade_types=['월세']), limit=20)
-    assert len(payloads) == 1 and payloads[0].first == 20
-    assert result.fetched == 20 and result.returned == 15
-    assert any('다시 채우지 않음' in note for note in result.notes)
 
 
 @pytest.mark.parametrize(('limit', 'total', 'expected_sizes'), [
@@ -1057,12 +939,12 @@ def test_region_complexes_paginates_and_notices_remaining(limit: int, total: int
     import copy
 
     sizes: list[int] = []
-    data = fixture('region_complexes')
+    data = fixture('search_complexes_viewport')
     template = data['data']['searchComplexes']['edges'][0]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'www.daangn.com':
-            return httpx.Response(200, json=regions())
+        if _is_region_search(request):
+            return httpx.Response(200, json=search_region())
         variables = json.loads(request.content)['variables']
         start = int(variables.get('after', '0'))
         size = variables['first']
@@ -1073,14 +955,14 @@ def test_region_complexes_paginates_and_notices_remaining(limit: int, total: int
             edge = copy.deepcopy(template)
             edge['node']['originalId'] = str(9000000 + index)
             edges.append(edge)
-        return httpx.Response(200, json={'data': {'searchComplexes': {
+        return httpx.Response(200, json={'data': {'complexByClusterId': {
             'edges': edges, 'pageInfo': {'endCursor': str(end), 'hasNextPage': end < total},
         }}})
 
     client = DaangnClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
-        result = list_region_complexes(client, '역삼동', city='강남구', limit=limit)
+        result = list_region_complexes(client, '강남구 역삼동', limit=limit)
     assert sizes == expected_sizes
     assert result.returned == limit
     assert result.has_more is (total > limit)
@@ -1090,7 +972,7 @@ def test_region_complexes_paginates_and_notices_remaining(limit: int, total: int
 def test_region_complexes_notices_oversized_final_response() -> None:
     import copy
 
-    template = fixture('region_complexes')['data']['searchComplexes']['edges'][0]
+    template = fixture('search_complexes_viewport')['data']['searchComplexes']['edges'][0]
     edges = []
     for index in range(1201):
         edge = copy.deepcopy(template)
@@ -1098,16 +980,16 @@ def test_region_complexes_notices_oversized_final_response() -> None:
         edges.append(edge)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'www.daangn.com':
-            return httpx.Response(200, json=regions())
-        return httpx.Response(200, json={'data': {'searchComplexes': {
+        if _is_region_search(request):
+            return httpx.Response(200, json=search_region())
+        return httpx.Response(200, json={'data': {'complexByClusterId': {
             'edges': edges, 'pageInfo': {'endCursor': None, 'hasNextPage': False},
         }}})
 
     client = DaangnClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
-        result = list_region_complexes(client, '역삼동', city='강남구', limit=1200)
+        result = list_region_complexes(client, '강남구 역삼동', limit=1200)
     assert result.returned == 1200 and result.has_more
     assert any('최대값은 1200' in note for note in result.notes)
     assert not any('거래 불가' in note for note in result.notes)
@@ -1197,13 +1079,13 @@ def test_complex_candidates_stalled_page_does_not_suggest_limit(empty: bool) -> 
 def test_complex_listings_null_articles_after_next_page_stops_with_notice() -> None:
     # 다음이 있다던 단지 매물의 다음 응답에 articles 가 null 이면 목록 끝이 아니라 응답이 바뀐 것이다 (stalled_page.
     # 2026-11-11 실측: 헬리오시티 10667600 의 2쪽만 articles null 로 바꾸니 고치기 전에는 안내 없이 끝났다)
-    cards = fixture('articles_by_original_article_ids')['data']['articles']
+    cards = complex_article_cards()
     sent: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == 'www.daangn.com':
+        if _is_region_search(request):
             # 카드에 시·도가 없는 동은 지역 검색으로 채운다
-            return httpx.Response(200, json=regions())
+            return httpx.Response(200, json=search_region())
         body = json.loads(request.content)
         if body['extensions']['persistedQuery']['sha256Hash'] != DaangnClient.complex_articles_query_id:
             return httpx.Response(200, json=fixture('get_region_by_coordinate'))
@@ -1273,7 +1155,7 @@ def test_search_commute_pages_station_listings_up_to_limit() -> None:
         body = json.loads(request.content)
         variables = body['variables']
         if body['extensions']['persistedQuery']['sha256Hash'] == DaangnClient.commute_station_article_connection_query_id \
-                and variables['stationName'] == '테스트역':
+                and variables['stationName'] == '가까운역':
             sent.append(('station', variables))
             ids, cursor, has_next = pages[variables.get('after')]
             return httpx.Response(200, json={'data': {'commuteStationArticleConnection': {
@@ -1284,10 +1166,191 @@ def test_search_commute_pages_station_listings_up_to_limit() -> None:
 
     client._client._transport.handler = routed
     with client:
-        result = search_commute(client, 37.5, 127.03, max_minutes=0, limit=2)
+        result = search_commute(client, 37.5, 127.03, limit=2)
 
     # 받은 수(1건)로 예산을 세고 남은 1건만 다음 페이지에서 받는다
     station_pages = [(variables['first'], variables.get('after')) for name, variables in sent
-                     if name == 'station' and variables['stationName'] == '테스트역']
+                     if name == 'station' and variables['stationName'] == '가까운역']
     assert station_pages == [(2, None), (1, 'cursor-1')]
     assert result.stations[0].inspected == 2
+
+
+# --- 출퇴근 경로·주소·지도 범위 단지·실거래 필드 (#215) ----------------------------
+
+def test_commute_station_groups_carry_route() -> None:
+    from jibsa.providers.daangn.service.commute import DaangnCommuteLeg
+
+    stations = fixture('commute_stations')
+    # 서버 경로가 회사 역(테스트역)에서 시작하지 않으면 방향을 짐작하지 않는다
+    stations['data']['commuteStations'][0]['routeWaypoints'].reverse()
+    with commute_client(stations_body=stations) as client:
+        result = search_commute(client, 37.5, 127.03)
+    routes = {group.station_name: group.route for group in result.stations}
+    # 서버 경로(회사 역 → 타는 역, 역마다 다음 구간 노선)를 타는 역에서 회사 역으로 가는 구간으로 뒤집는다
+    assert routes['먼역'] == [
+        DaangnCommuteLeg(from_station='먼역', to_station='환승역', line='테스트2호선'),
+        DaangnCommuteLeg(from_station='환승역', to_station='테스트역', line='테스트1호선'),
+    ]
+    assert routes['가까운역'] is None
+
+
+def test_real_prices_month_is_sent_as_trade_year_month_and_splits_contract_fields() -> None:
+    requests: list[dict] = []
+    with real_price_client(requests) as client:
+        result = get_real_prices(client, 9000001, trade_type='월세', limit=3, month='2026-08')
+        without_month = get_real_prices(client, 9000001, trade_type='월세', limit=3).model_dump()
+    assert requests[0]['tradeYearMonth'] == '202608' and result.month == '2026-08'
+    assert 'tradeYearMonth' not in requests[-1] and 'month' not in without_month
+    first = result.transactions[0].model_dump()
+    # 예전 renewal 은 계약 종류와 갱신요구권을 합쳤다. 웹 배지처럼 둘로 나눈다 (NEW → 신규, useRenewalOfContractRight → renewal_right)
+    assert (first['contract_type'], first['renewal_right']) == ('신규', False) and 'renewal' not in first
+
+
+def _realsale_feed_client(requests: list[httpx.Request], *, summary_rejected: bool = False) -> DaangnClient:
+    """역삼동 매매 피드 3건(신고가·내림·해제)과 요약을 준다."""
+    def sale(price: int, previous: int | None, new_high: bool, cancel: bool = False) -> dict:
+        return {'node': {
+            'realsale': {'id': str(price), 'tradeType': 'SALE', 'tradePrice': price, 'deposit': 0, 'monthRentFee': 0,
+                         'exclusiveArea': 84.9, 'floor': 10, 'contactDate': '20261103', 'cancel': cancel, 'transactionType': 'BROKERED'},
+            'dataDate': '20261112', 'danji': {'danjiAreaNm': '테스트아파트', 'totalTotHsehCnt': 100, 'buildDate': '2008-12-02'},
+            'complex': None, 'regionName': '서울 강남구 역삼동',
+            'priceInsight': None if previous is None else {'previousMaxPrice': previous, 'previousMaxContactDate': '20250509', 'isNewHigh': new_high},
+        }}
+
+    feed = {'data': {'realsaleFeed': {
+        'edges': [sale(360000, 295000, True), sale(150000, 180000, False), sale(300000, 295000, True, cancel=True), sale(100000, None, False)],
+        'pageInfo': {'endCursor': 'c1', 'hasNextPage': False},
+    }}}
+    summary = {'data': {'realsaleFeedSummary': {'dataDate': '20261112', 'saleCount': 4}, 'realsaleNewHighFeedSummary': {'newHighCount': 1}}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if _is_region_search(request):
+            return httpx.Response(200, json=search_region())
+        query_id = json.loads(request.content)['extensions']['persistedQuery']['sha256Hash']
+        if query_id == DaangnClient.realsale_feed_summary_query_id:
+            return httpx.Response(200, json=REJECTED if summary_rejected else summary)
+        return httpx.Response(200, json=feed)
+
+    client = DaangnClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    return client
+
+
+def test_region_real_prices_mark_new_high_like_web_card_and_add_summary() -> None:
+    from jibsa.providers.daangn.service.real_price import get_region_real_prices
+
+    requests: list[httpx.Request] = []
+    with _realsale_feed_client(requests) as client:
+        result = get_region_real_prices(client, '강남구 역삼동', limit=10)
+    rows = [row.model_dump() for row in result.transactions]
+    # 웹 카드(MapShell `yc`): 신고가 배지는 isNewHigh 이고 해제되지 않은 거래, '직전 최고가 대비' 는 웹과 같은 비율의 소수 둘째 자리
+    assert [(row['is_new_high'], row.get('previous_high_change_percent')) for row in rows] == [(True, 22.03), (False, -16.67), (False, None), (False, None)]
+    assert rows[0]['previous_high_manwon'] == 295000 and rows[0]['previous_high_date'] == '2025-05-09'
+    assert 'renewal' not in rows[0] and 'contract_type' not in rows[0]
+    assert result.summary is not None and result.summary.model_dump() == {'data_date': '2026-11-12', 'sale_count': 4, 'new_high_count': 1}
+    # 요약은 본 조회 뒤의 덤 조회다
+    hashes = [json.loads(request.content)['extensions']['persistedQuery']['sha256Hash'] for request in requests]
+    assert hashes.index(DaangnClient.realsale_feed_summary_query_id) > hashes.index(DaangnClient.realsale_feed_query_id)
+
+
+def test_region_real_prices_summary_failure_keeps_transactions() -> None:
+    from jibsa.providers.daangn.service.real_price import get_region_real_prices
+
+    with _realsale_feed_client([], summary_rejected=True) as client:
+        result = get_region_real_prices(client, '강남구 역삼동', limit=10)
+    assert result.returned == 4 and result.summary is None
+    assert any(note.startswith('[실패]') and '실거래 요약' in note for note in result.notes)
+
+
+# 소수 셋째 자리에서 .5 를 올린다 (0.25% 는 Python round 로 0.2 가 됐다). 바뀌었는데 0.00 이면 ±0.01
+@pytest.mark.parametrize(
+    'price,previous,expected',
+    [(295000, 295000, 0.0), (80200, 80000, 0.25), (100125, 100000, 0.13), (250001, 250000, 0.01), (294999, 295000, -0.01), (1000, 0, None)],
+)
+def test_previous_high_change_percent_rounds_to_two_decimals(price: int, previous: int, expected: float | None) -> None:
+    from jibsa.providers.daangn.service.real_price import previous_high_change_percent
+
+    assert previous_high_change_percent(price, previous) == expected
+
+
+def test_kb_sale_is_converted_from_won() -> None:
+    from jibsa.providers.daangn.api.response.real_price import DaangnPriceChartModel
+    from jibsa.providers.daangn.service.real_price import kb_sale_of
+
+    chart = DaangnPriceChartModel.model_validate({'averagePoints': [], 'latestKbSale': {'surveyBaseDate': '20261102', 'lower': 2700000000, 'upper': 2910000000}})
+    kb_sale = kb_sale_of(chart)
+    assert kb_sale is not None and kb_sale.model_dump() == {'low_manwon': 270000, 'high_manwon': 291000, 'survey_date': '2026-11-02'}
+    assert kb_sale_of(DaangnPriceChartModel.model_validate({'averagePoints': []})) is None
+
+
+def test_preschool_survey_responses_default_to_zero_like_web() -> None:
+    from jibsa.providers.daangn.service.school import get_preschool
+
+    bodies = iter([{'surveyResult': {'responseCount': 3}}, {'surveyResult': None}])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={'data': {'preschoolByNo': {'schoolNm': '테스트어린이집', 'type': 'DAYCARE', **next(bodies)}}})
+
+    client = DaangnClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        assert get_preschool(client, 1).survey_responses == 3
+        # 웹 상세(`Mu`)는 surveyResult?.responseCount ?? 0 이라 설문이 없으면 0 이다
+        assert get_preschool(client, 2).survey_responses == 0
+
+
+def test_bounds_complexes_send_map_view_bounds_instead_of_cluster() -> None:
+    from jibsa.providers.daangn.service.common import map_view_bounds
+    from jibsa.providers.daangn.service.complex import list_bounds_complexes
+
+    requests: list[httpx.Request] = []
+    with make_graphql_client({DaangnClient.search_complexes_viewport_query_id: fixture('search_complexes_viewport')}, requests) as client:
+        result = list_bounds_complexes(client, 37.5006, 127.0366, limit=5)
+    payload = _graphql_payloads(requests, DaangnClient.search_complexes_viewport_query_id)[0]['variables']
+    bounds, width_km, height_km = map_view_bounds(37.5006, 127.0366, 15)
+    assert payload['input']['locationFilter'] == bounds.model_dump(by_alias=True) and 'clusterId' not in payload['input']
+    assert (payload['input']['sort'], payload['tradeType'], payload['first']) == ('HOUSEHOLD_COUNT_DESC', 'BUY', 5)
+    assert (result.zoom, result.width_km, result.height_km) == (15, width_km, height_km)
+    assert [complex_.complex_id for complex_ in result.complexes] == ['10000001', '10000002'] and result.region is not None
+
+
+def _address_client(candidates: list[dict], unit: dict | None) -> DaangnClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        query_id = json.loads(request.content)['extensions']['persistedQuery']['sha256Hash']
+        if query_id == DaangnClient.search_address_query_id:
+            edges = [{'cursor': str(index), 'node': node} for index, node in enumerate(candidates)]
+            return httpx.Response(200, json={'data': {'searchAddress': {'edges': edges, 'pageInfo': {'hasNextPage': False, 'endCursor': None}}}})
+        return httpx.Response(200, json={'data': {'unitByAddress': {'unit': unit}}})
+
+    client = DaangnClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    return client
+
+
+def test_find_address_resolves_one_candidate_and_refuses_many() -> None:
+    from jibsa.core.errors import (
+        RegionAmbiguousError,
+        RegionNotFoundError,
+    )
+    from jibsa.providers.daangn.service.region import find_address
+
+    def candidate(number: int) -> dict:
+        return {'regionAddress': f'서울특별시 강남구 역삼동 {number} 테스트빌딩', 'roadAddress': f'서울특별시 강남구 테스트로 {number} (역삼동)',
+                'originalRoadAddress': f'서울특별시 강남구 테스트로 {number} (역삼동)', 'bdMgtSn': f'11680101001{number:05d}'}
+
+    unit = {'location': {'lat': '37.5000', 'lon': '127.0365'}, 'complex': None,
+            'building': {'id': 'b', 'originalId': '10486373', 'buildingName': '테스트빌딩', 'coordinate': {'lat': '37.5', 'lon': '127.03'}}}
+    with _address_client([candidate(152)], unit) as client:
+        found = find_address(client, '테스트로 152')
+    # 좌표는 웹처럼 주소 좌표(location)이고, 단지가 아니라 complex_id 키가 없다
+    assert (found.lat, found.lng, found.place) == (37.5, 127.0365, '테스트빌딩') and 'complex_id' not in found.model_dump()
+    with _address_client([candidate(101), candidate(103)], unit) as client:
+        with pytest.raises(RegionAmbiguousError) as ambiguous:
+            find_address(client, '테스트로')
+        assert ambiguous.value.details['candidates'] == ['서울특별시 강남구 테스트로 101 (역삼동)', '서울특별시 강남구 테스트로 103 (역삼동)']
+        # 후보가 여럿이어도 도로명 주소가 정확히 같은 하나는 고른다 (REGION_AMBIGUOUS 가 알린 이름 그대로 다시 준 경우)
+        assert find_address(client, '서울특별시 강남구 테스트로 103 (역삼동)').road_address.endswith('103 (역삼동)')
+    with _address_client([candidate(152)], None) as client:
+        with pytest.raises(RegionNotFoundError):
+            find_address(client, '테스트로 152')

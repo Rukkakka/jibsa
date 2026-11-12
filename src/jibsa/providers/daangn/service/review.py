@@ -1,7 +1,5 @@
 """동네 후기 요약 (region-reviews)."""
 
-import logging
-
 from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
@@ -9,18 +7,13 @@ from pydantic import (
     Field,
 )
 
-from jibsa.core.listing import note
-from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.review import (
     DaangnLivedReviewsByRegionRequestPayloadModel,
     DaangnMapReviewsRequestParameterModel,
-    DaangnRegionByOriginalRegionIdRequestPayloadModel,
 )
 from jibsa.providers.daangn.service.common import (
     COMPLEX_TYPE_LABELS,
-    OPTIONAL_LOOKUP_ERRORS,
-    partial_failure_note,
     unwrap_graphql,
 )
 from jibsa.providers.daangn.service.region import (
@@ -31,9 +24,8 @@ from jibsa.providers.daangn.service.region import (
 from typing import Annotated
 
 
-logger = logging.getLogger(__name__)
-# 당근 동네 요약은 후기를 이 수까지만 센다
-REVIEW_SUMMARY_CAP: int = 60
+# 후기 많은 단지 수. 당근 구 후기 페이지가 20곳을 준다 (reviewsDistrictQuery first:20)
+TOP_COMPLEXES_MAX: int = 20
 
 
 def map_url(*names: str, suffix: str = '') -> str:
@@ -87,7 +79,7 @@ class DaangnRegionReviews(BaseModel):
     ]
     review_count: Annotated[
         int | None,
-        Field(description='동네 후기 수 (당근 동네 요약에 쓰인 수, 최대 60 이라 60 이면 60개 이상). 동만 있고 구는 당근이 주지 않아 null')
+        Field(description='동네 후기 수 (당근 웹 모바일 후기 화면의 "후기 N개"와 같은 실제 수). 동·구 모두 있다. 당근이 주지 않으면 null')
     ] = None
     top_complexes: Annotated[
         list[DaangnReviewComplex],
@@ -107,50 +99,31 @@ def get_region_reviews(
     client: DaangnClient,
     query: str,
     *,
-    city: str | None = None,
-    top: int = 10,
+    top: int = TOP_COMPLEXES_MAX,
 ) -> DaangnRegionReviews:
     """동·구의 거주 후기가 있는지, 몇 개인지, 후기가 많은 단지를 알려 준다. 후기 내용은 담지 않는다.
 
-    동은 동네 요약(`regionByOriginalRegionId`)의 후기 수를, 구는 후기 목록(`livedReviewsByRegion`)으로
-    후기가 있는지만 본다. 후기 많은 단지는 구의 후기 페이지에서 받는다 (구가 없는 시는 없다).
-
-    후기 수는 덤 정보라 동네 요약이 실패하면(쿼리 변경·서버 오류) 수만 비우고 `notes` 로 알린다. 후기가
-    있는지는 후기 목록으로 다시 본다. 요청 제한은 그 후기 목록도 같은 제한에 걸리므로 바로 올린다.
+    후기 수는 당근 웹 후기 목록(`RegionLivedReviewListPanelQuery`)이 함께 받는 지역의 후기 수(`reviewRegion.livedReviewCount`)다.
+    웹은 이 수를 모바일 화면의 '당근 앱에서 후기 N개 더 보기' 로 보여 준다. 예전에는 동네 요약(`regionByOriginalRegionId`)의
+    요약에 쓰인 후기 수를 써서 60 에서 잘리고 구는 null 이었다 (2026-11-12 실측: 역삼동 1563·강남구 7132, #215). 후기 많은 단지는
+    구의 후기 페이지에서 받는다 (구가 없는 시는 없다).
 
     Raises:
         RegionNotFoundError: 지역을 찾지 못했을 때.
         RateLimitedError: 요청 제한에 걸렸을 때.
         JibsaError: 후기 목록이 실패하면 UPSTREAM_ERROR.
     """
-    region, notes = resolve_realsale_region(client, query, city=city)
+    region, notes = resolve_realsale_region(client, query)
 
-    review_count = None
-    if region.level == '동':
-        try:
-            response = client.run_request_region_by_original_region_id(
-                DaangnRegionByOriginalRegionIdRequestPayloadModel(region_id=region.region_id)
-            )
-            summary = unwrap_graphql(
-                response, response.data.region_by_original_region_id if response.data else None, '동네 요약'
-            )
-        except RateLimitedError:
-            raise
-        except OPTIONAL_LOOKUP_ERRORS as exc:
-            logger.warning('daangn region summary failed (%s); continuing without review count', exc)
-            notes.append(note('실패', partial_failure_note(exc, '동네 요약', '동네 후기 수를')))
-        else:
-            if summary.lived_review_summary is not None:
-                review_count = summary.lived_review_summary.source_review_count
-    has_reviews = bool(review_count)
-    if not has_reviews:
-        reviews_response = client.run_request_lived_reviews_by_region(
-            DaangnLivedReviewsByRegionRequestPayloadModel(region_id=region.region_id)
-        )
-        connection = unwrap_graphql(
-            reviews_response, reviews_response.data.lived_reviews_by_region if reviews_response.data else None, '동네 후기'
-        )
-        has_reviews = bool(connection.edges)
+    reviews_response = client.run_request_lived_reviews_by_region(
+        DaangnLivedReviewsByRegionRequestPayloadModel(region_id=region.region_id)
+    )
+    connection = unwrap_graphql(
+        reviews_response, reviews_response.data.lived_reviews_by_region if reviews_response.data else None, '동네 후기'
+    )
+    review_region = reviews_response.data.review_region if reviews_response.data else None
+    review_count = review_region.lived_review_count if review_region else None
+    has_reviews = bool(review_count) or bool(connection.edges)
 
     top_complexes: list[DaangnReviewComplex] = []
     if region.name1 and region.name2:
@@ -177,8 +150,6 @@ def get_region_reviews(
     else:
         url = map_url(region.name1, region.name2, region.name3)
 
-    if review_count is not None and review_count >= REVIEW_SUMMARY_CAP:
-        notes.append(f'동네 후기는 {REVIEW_SUMMARY_CAP}개 이상입니다 (당근이 {REVIEW_SUMMARY_CAP}개까지만 셉니다)')
     if top_complexes and region.level == '동':
         # 후기 많은 단지는 구의 후기 페이지에서 받아 구 전체 순위다. 알리지 않으니 동의 단지로 읽었다 (2026-11-11 LLM 사용
         # 시험·실측: 잠실동·문정동·가락동 모두 헬리오시티·송파파크하비오푸르지오·파크리오)

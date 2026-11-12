@@ -29,7 +29,6 @@ from .service.region import (
     NaverRegionList,
     list_regions,
     resolve_complex_number,
-    resolve_region_with_notes,
 )
 from .service.school import (
     NaverSchoolDetail,

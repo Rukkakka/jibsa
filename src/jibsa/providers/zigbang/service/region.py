@@ -2,14 +2,7 @@
 
 import re
 
-from httpx import (
-    HTTPStatusError,
-    TransportError,
-)
-
-from jibsa.core.browser import CorsBlockedError
 from jibsa.core.errors import (
-    JibsaError,
     RegionAmbiguousError,
     RegionNotFoundError,
 )
@@ -25,7 +18,6 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import note
-from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.region import (
     ZigbangLocalPolygonV2RequestParameterModel,
@@ -38,8 +30,6 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangRegion,
     region_from_search_item,
 )
-
-from typing import Any
 
 
 # room·store·stay 의 --radius 최대. 동 경계 검색도 이 원보다 지도 칸이 많으면 반경으로 바꾼다 (wide_boundary_note)
@@ -318,56 +308,6 @@ def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -
         code=boundaries[0].code,
         polygons=[polygon for boundary in boundaries for polygon in boundary.polygons],
     )
-
-
-def geocoding_failed(zigbang_error: Exception, naver_error: Exception) -> JibsaError:
-    """당근 단독 명령이 역·장소 이름의 좌표를 직방·네이버 어디서도 찾지 못했을 때의 에러.
-
-    당근 명령은 동이 아닌 이름을 직방 지역 검색으로 찾고, 직방이 막히거나 실패하면(서버 오류·네트워크·응답 형식)
-    네이버로 다시 찾는다. 네이버도 막혔거나 실패했거나 못 찾는 이름(대학교 등)일 때 쓴다. 당근 동 이름 검색과
-    좌표 검색은 직방·네이버를 거치지 않아 지금도 된다. 실패한 소스가 직방임을 `source` 로 알린다. 직방 요청 제한은
-    그 에러(RATE_LIMITED, 남은 시간)를 그대로 쓰고, 그 밖의 실패는 직방이 실패한 원인을 code 와 `status`·`blocked` 로
-    이어받는다 (`_zigbang_failure`). 그대로 올리면 명령의 소스(daangn)로 보고돼 에이전트가 멀쩡한 당근을 버린다.
-    """
-    if isinstance(naver_error, RateLimitedError):
-        reason = '네이버도 막혀 있습니다'
-    elif isinstance(naver_error, RegionNotFoundError):
-        reason = '네이버 지역 검색으로는 찾지 못했습니다'
-    else:
-        reason = '네이버 지역 검색도 실패했습니다'
-    rate_limited = isinstance(zigbang_error, RateLimitedError)
-    hint = (
-        f"역·장소 이름은 직방 지역 검색으로 위치를 찾는데 직방이 {'막혀 있고' if rate_limited else '실패했고'}, {reason}. "
-        '당근 동 이름(예: 역삼동)으로 찾거나 --lat/--lng 로 좌표를 직접 주세요'
-    )
-    if isinstance(zigbang_error, RateLimitedError):
-        zigbang_error.hint = hint
-        zigbang_error.details['source'] = 'zigbang'
-        return zigbang_error
-    code, details = _zigbang_failure(zigbang_error)
-    return JibsaError(
-        code=code,
-        message=f'직방 지역 검색이 실패했습니다 ({type(zigbang_error).__name__}: {zigbang_error})',
-        hint=hint,
-        details={**details, 'source': 'zigbang'},
-    )
-
-
-def _zigbang_failure(error: Exception) -> tuple[str, dict[str, Any]]:
-    """직방 지역 검색이 실패한 원인을 CLI 에러의 code 와 추가 필드로 (`geocoding_failed`). `handle_errors` 의 갈래를 따른다.
-
-    jibsa 에러(첫 화면 차단·시간 초과 등)는 그 code 와 `status`·`blocked` 를, 서버의 HTTP 오류는 UPSTREAM_ERROR 와 `status` 를,
-    연결 실패는 NETWORK_ERROR 를 준다. CORS 차단과 응답 형식 오류는 사이트가 바뀐 것이라 UPSTREAM_ERROR 다. 예전에는 늘
-    `status` 없는 UPSTREAM_ERROR 라 매일 API 감시가 직방 첫 화면 차단·서버 오류도 고장으로 셌고, 에이전트는 업데이트를
-    권했다 (2026-11-10 리뷰).
-    """
-    if isinstance(error, JibsaError):
-        return error.code, {key: value for key, value in error.details.items() if key != 'source'}
-    if isinstance(error, HTTPStatusError):
-        return 'UPSTREAM_ERROR', {'status': error.response.status_code}
-    if isinstance(error, TransportError) and not isinstance(error, CorsBlockedError):
-        return 'NETWORK_ERROR', {}
-    return 'UPSTREAM_ERROR', {}
 
 
 def to_int(value: str | None) -> int | None:

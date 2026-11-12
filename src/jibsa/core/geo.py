@@ -65,15 +65,18 @@ def geohash_bounds(geohash: str) -> tuple[float, float, float, float]:
     return lat_range[0], lat_range[1], lng_range[0], lng_range[1]
 
 
-def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Great-circle distance between two coordinates, in kilometres."""
+def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float, *, radius_km: float = EARTH_RADIUS_KM) -> float:
+    """Great-circle distance between two coordinates, in kilometres.
+
+    `radius_km` 는 사이트 웹과 같은 지구 반지름으로 견줘야 할 때만 준다 (당근 어린이집 순서).
+    """
     d_lat = radians(lat2 - lat1)
     d_lng = radians(lng2 - lng1)
     a = (
         sin(d_lat / 2) ** 2
         + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lng / 2) ** 2
     )
-    return 2 * EARTH_RADIUS_KM * asin(sqrt(a))
+    return 2 * radius_km * asin(sqrt(a))
 
 
 def within_radius(distance_km: float, radius_km: float) -> bool:

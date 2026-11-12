@@ -239,8 +239,52 @@ class DaangnRealsaleNewHighFeedResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
+class DaangnRealsaleFeedSummaryModel(ResponseModel):
+    """지역 실거래 화면 머리의 매매 요약 (`realsaleFeedSummary`)."""
+
+    data_date: Annotated[
+        str | None,
+        Field(description='가장 최근 공개일 (YYYYMMDD)', alias='dataDate')
+    ] = None
+    sale_count: Annotated[
+        int | None,
+        Field(description='그 공개일의 매매 거래 수', alias='saleCount')
+    ] = None
+
+
+class DaangnRealsaleNewHighSummaryModel(ResponseModel):
+    """지역 실거래 화면 머리의 신고가 요약 (`realsaleNewHighFeedSummary`)."""
+
+    new_high_count: Annotated[
+        int | None,
+        Field(description='가장 최근 공개일의 신고가 수', alias='newHighCount')
+    ] = None
+
+
+class DaangnRealsaleFeedSummaryDataModel(ResponseModel):
+    """GraphQL `data` (`realsaleFeedSummary` + `realsaleNewHighFeedSummary`)."""
+
+    realsale_feed_summary: Annotated[
+        DaangnRealsaleFeedSummaryModel | None,
+        Field(description='매매 요약', alias='realsaleFeedSummary')
+    ] = None
+    realsale_new_high_feed_summary: Annotated[
+        DaangnRealsaleNewHighSummaryModel | None,
+        Field(description='신고가 요약', alias='realsaleNewHighFeedSummary')
+    ] = None
+
+
+class DaangnRealsaleFeedSummaryResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `realsaleFeedSummary` 응답 (웹 `RealsaleFeedTitleSummaryQuery`)."""
+
+    data: Annotated[
+        DaangnRealsaleFeedSummaryDataModel | None,
+        Field(description='결과')
+    ] = None
+
+
 # ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — complexByOriginalId { complex { priceChart } } (단지 시세 차트)
+# POST realty.kr.karrotmarket.com/graphql — node(id:) { priceChart } (단지 시세 차트)
 # ---------------------------------------------------------------------------
 
 class DaangnPriceChartPointModel(ResponseModel):
@@ -260,6 +304,23 @@ class DaangnPriceChartPointModel(ResponseModel):
     ] = None
 
 
+class DaangnKbSaleSummaryModel(ResponseModel):
+    """시세 차트에 붙는 최근 KB 매매 시세 (`latestKbSale`). 금액은 **원** 단위다 (2026-11-12 실측: 역삼래미안 27억~29.1억)."""
+
+    survey_base_date: Annotated[
+        str | None,
+        Field(description='KB 시세 조사 기준일 (YYYYMMDD)', alias='surveyBaseDate')
+    ] = None
+    lower: Annotated[
+        float | None,
+        Field(description='하위 평균가 (원)')
+    ] = None
+    upper: Annotated[
+        float | None,
+        Field(description='상위 평균가 (원)')
+    ] = None
+
+
 class DaangnPriceChartModel(ResponseModel):
     """단지 시세 차트."""
 
@@ -267,14 +328,18 @@ class DaangnPriceChartModel(ResponseModel):
         list[DaangnPriceChartPointModel],
         Field(description='월별 평균 (오래된 달부터)', alias='averagePoints')
     ] = []
+    latest_kb_sale: Annotated[
+        DaangnKbSaleSummaryModel | None,
+        Field(description='최근 KB 매매 시세 (웹 그래프의 KB 시세 띠). 전세 그래프에도 매매 시세가 온다. 없으면 null', alias='latestKbSale')
+    ] = None
 
 
-class DaangnComplexPriceChartComplexModel(ResponseModel):
-    """시세 차트를 받은 단지."""
+class DaangnComplexPriceChartNodeModel(ResponseModel):
+    """시세 그래프를 받은 단지 노드."""
 
-    original_id: Annotated[
+    id: Annotated[
         str | None,
-        Field(description='숫자 단지 ID', alias='originalId')
+        Field(description='Relay 노드 ID')
     ] = None
     price_chart: Annotated[
         DaangnPriceChartModel | None,
@@ -282,26 +347,17 @@ class DaangnComplexPriceChartComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexPriceChartResultModel(ResponseModel):
-    """`complexByOriginalId` 결과. 없는 단지면 `complex` 가 null 이다."""
-
-    complex: Annotated[
-        DaangnComplexPriceChartComplexModel | None,
-        Field(description='단지')
-    ] = None
-
-
 class DaangnComplexPriceChartDataModel(ResponseModel):
     """GraphQL `data`."""
 
-    complex_by_original_id: Annotated[
-        DaangnComplexPriceChartResultModel | None,
-        Field(description='단지 결과', alias='complexByOriginalId')
+    node: Annotated[
+        DaangnComplexPriceChartNodeModel | None,
+        Field(description='단지 노드. 없는 노드면 null')
     ] = None
 
 
 class DaangnComplexPriceChartResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `complexByOriginalId { complex { priceChart } }` 응답."""
+    """GraphQL `node(id:) { priceChart }` 응답 (웹 `useTransactionComplexRefetchQuery`)."""
 
     data: Annotated[
         DaangnComplexPriceChartDataModel | None,

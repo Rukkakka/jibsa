@@ -6,14 +6,13 @@ from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
     DaangnCommuteStationArticleConnectionModel,
     DaangnGraphQLResponseModel,
-    DaangnPageInfoModel,
 )
 
 from typing import Annotated
 
 
 # ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — 출퇴근 (nearestCommuteStation, commuteFeed,
+# POST realty.kr.karrotmarket.com/graphql — 출퇴근 (nearestCommuteStation, commuteStations,
 # commuteStationArticleConnection)
 # ---------------------------------------------------------------------------
 
@@ -53,7 +52,7 @@ class DaangnNearestCommuteStationResponseModel(DaangnGraphQLResponseModel):
 
 
 class DaangnCommuteStationModel(ResponseModel):
-    """출퇴근 피드의 역."""
+    """`commuteStations` 항목의 역 (`DaangnCommuteReachableStationModel.station`)."""
 
     station_name: Annotated[
         str,
@@ -66,15 +65,15 @@ class DaangnCommuteStationModel(ResponseModel):
 
 
 class DaangnCommuteWaypointModel(ResponseModel):
-    """경로의 역 하나 (타는 역·갈아타는 역·내리는 역)."""
+    """경로의 역 하나 (회사 역·갈아타는 역·타는 역)."""
 
     station_name: Annotated[
         str | None,
-        Field(description='역 이름', alias='stationName')
+        Field(description="역 이름 ('역' 까지)", alias='stationName')
     ] = None
     line_name: Annotated[
         str | None,
-        Field(description='노선', alias='lineName')
+        Field(description='이 역에서 경로의 다음 역까지 구간의 노선. 마지막 역(타는 역)은 앞 구간 노선을 되풀이한다', alias='lineName')
     ] = None
 
 
@@ -91,7 +90,7 @@ class DaangnCommuteReachableStationModel(ResponseModel):
     ] = None
     route_waypoints: Annotated[
         list[DaangnCommuteWaypointModel],
-        Field(description='경로', alias='routeWaypoints')
+        Field(description='경로: 회사 역에서 시작해 갈아타는 역을 지나 타는 역(station)에서 끝난다. 역 수 = 환승 + 2', alias='routeWaypoints')
     ] = []
     station: Annotated[
         DaangnCommuteStationModel | None,
@@ -99,42 +98,20 @@ class DaangnCommuteReachableStationModel(ResponseModel):
     ] = None
 
 
-class DaangnCommuteStationEdgeModel(ResponseModel):
-    """출퇴근 피드 edge."""
-
-    node: Annotated[
-        DaangnCommuteReachableStationModel | None,
-        Field(description='역')
-    ] = None
-
-
-class DaangnCommuteFeedModel(ResponseModel):
-    """출퇴근 피드 연결. 지하철 시간이 짧은 순이다."""
-
-    edges: Annotated[
-        list[DaangnCommuteStationEdgeModel],
-        Field(description='역')
-    ] = []
-    page_info: Annotated[
-        DaangnPageInfoModel | None,
-        Field(description='페이지 정보', alias='pageInfo')
-    ] = None
-
-
-class DaangnCommuteFeedDataModel(ResponseModel):
+class DaangnCommuteStationsDataModel(ResponseModel):
     """GraphQL `data`."""
 
-    commute_feed: Annotated[
-        DaangnCommuteFeedModel | None,
-        Field(description='갈 수 있는 역', alias='commuteFeed')
+    commute_stations: Annotated[
+        list[DaangnCommuteReachableStationModel] | None,
+        Field(description='회사 역에서 지하철로 갈 수 있는 역 전부 (서버 상한 60분). 순서는 정해져 있지 않다', alias='commuteStations')
     ] = None
 
 
-class DaangnCommuteFeedResponseModel(DaangnGraphQLResponseModel):
-    """GraphQL `commuteFeed` 응답."""
+class DaangnCommuteStationsResponseModel(DaangnGraphQLResponseModel):
+    """GraphQL `commuteStations` 응답."""
 
     data: Annotated[
-        DaangnCommuteFeedDataModel | None,
+        DaangnCommuteStationsDataModel | None,
         Field(description='결과')
     ] = None
 

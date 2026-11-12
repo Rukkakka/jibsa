@@ -125,6 +125,15 @@ class DaangnPreschoolRegionModel(ResponseModel):
     ] = None
 
 
+class DaangnPreschoolSurveyResultModel(ResponseModel):
+    """어린이집·유치원 상세의 당근 설문 (`surveyResult`). 목록 쿼리와 달리 `responseCount` 이름 그대로 온다."""
+
+    response_count: Annotated[
+        int | None,
+        Field(description='설문 응답 수', alias='responseCount')
+    ] = None
+
+
 class DaangnPreschoolModel(ResponseModel):
     """어린이집·유치원 상세. 전화번호·홈페이지는 학교 정보처럼 내보내지 않아 읽지 않는다."""
 
@@ -162,11 +171,11 @@ class DaangnPreschoolModel(ResponseModel):
     ] = None
     child_cnt: Annotated[
         int | None,
-        Field(description='원아 수', alias='childCnt')
+        Field(description='정원 (당근 웹 어린이집 화면의 "정원 N명")', alias='childCnt')
     ] = None
     class_cnt: Annotated[
         int | None,
-        Field(description='반 수', alias='classCnt')
+        Field(description='학급 수', alias='classCnt')
     ] = None
     teacher_cnt: Annotated[
         int | None,
@@ -179,6 +188,10 @@ class DaangnPreschoolModel(ResponseModel):
     region: Annotated[
         DaangnPreschoolRegionModel | None,
         Field(description='구·동')
+    ] = None
+    survey_result: Annotated[
+        DaangnPreschoolSurveyResultModel | None,
+        Field(description='당근 설문. 응답이 없으면 null (2026-11-12 실측: 역삼몬테소리어린이집 responseCount 1)', alias='surveyResult')
     ] = None
 
 
@@ -205,7 +218,7 @@ class DaangnPreschoolByNoResponseModel(DaangnGraphQLResponseModel):
 # ---------------------------------------------------------------------------
 
 class DaangnSchoolSearchNodeModel(ResponseModel):
-    """이름으로 찾은 학교. 좌표도 오지만 쓰지 않는다."""
+    """이름으로 찾은 학교. 좌표는 있는지만 본다 (웹 검색창은 좌표 없는 학교를 뺀다)."""
 
     sch_cd: Annotated[
         str,
@@ -218,6 +231,10 @@ class DaangnSchoolSearchNodeModel(ResponseModel):
     sch_addr: Annotated[
         str | None,
         Field(description='주소', alias='schAddr')
+    ] = None
+    coordinate: Annotated[
+        DaangnCoordinateModel | None,
+        Field(description='학교 좌표. 내보내지 않고 있는지만 본다')
     ] = None
 
 
@@ -308,7 +325,7 @@ class DaangnSchoolDetailModel(ResponseModel):
         list[DaangnRegionComplexNodeModel] | None,
         Field(
             description='배정 단지 (초등학교만. 중·고등학교는 학교군 배정이라 빈 목록). 지역 단지 목록과 같은 카드이고 '
-            '순서가 정해져 있지 않으며, 소규모 빌라형 단지도 섞인다. 최근 실거래는 매매다',
+            '당근 웹 학교 화면과 같은 서버 순서다 (2026-11-12 실측: 대치초 15곳). 소규모 빌라형 단지도 섞인다. 최근 실거래는 매매다',
             alias='assignedComplexes'
         )
     ] = None
