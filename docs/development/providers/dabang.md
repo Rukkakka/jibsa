@@ -133,3 +133,7 @@
 ## API 변경 시 점검
 
 웹을 다시 배포하면 스크립트 이름이 바뀌고 주소·헤더가 바뀔 수 있다. 헤더·버전 쿼리는 client(`V5_HEADERS`)와 `DabangV3RequestParameterModel`, 유형별 필터 항목은 `request/common.py`, 목록 글자 꼴은 `service/common.py` 의 해석기를 본다. 필터 항목이 늘면 400 본문의 `errorDetails` 가 빠진 항목을 알려 준다.
+
+## 웹과 다른 점
+
+아직 웹과 대조하지 않았다. 대조 뒤 의도한 차이를 여기에 적는다 (2026-11-12).

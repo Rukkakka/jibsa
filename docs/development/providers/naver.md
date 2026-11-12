@@ -109,3 +109,7 @@ service 가 부르지 않는 엔드포인트 3개(`article/agent`, `complex/hold
 ## API 변경 시 점검
 
 client의 action별 endpoint/docstring → request 별칭·필터 → response 봉투와 중첩 모델 → service unwrap·만원 변환 → CLI 모드별 검증 순으로 확인한다. 학교·교통·세금·선택 평형 시세는 부가 요청 경로도 따로 확인한다. 재개발은 구역 목록과 매물 목록, trend는 호가와 실거래 건수를 구분한다.
+
+## 웹과 다른 점
+
+아직 웹과 대조하지 않았다. 대조 뒤 의도한 차이를 여기에 적는다 (2026-11-12).

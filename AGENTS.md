@@ -43,6 +43,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 - **조회 결과는 stdout JSON, 에러는 stderr JSON.** 도움말·자동완성·`guide`·`--version` 은 CLI 텍스트이며 `--verbose` 진행 로그는 stderr 로 나간다. 새 에러는 `JibsaError` 로 코드·힌트를 붙여 던진다. 예외는 transport 안에서 나는 전송 오류(`CorsBlockedError`·`ProxyError`·`CertificateError`)로, 덤 조회가 삼키도록 httpx 예외로 두고 `handle_errors` 가 코드·힌트를 붙인다 ([출력 규약](docs/development/output-contract.md)).
 - **값이 없을 때:** 해당 없음 → 키 삭제, 모름 → `null`, 비어 있음 → `[]`.
 - **만료 매물은 내보내지 않는다.** 목록에서는 거르고, 상세에서는 `ListingUnavailableError`.
+- **사이트가 보여 주는 사실과 어긋나지 않게 한다.** jibsa 는 사이트를 대체하는 도구가 아니라 사이트가 로그인 없이 보여 주는 것을 JSON 으로 그대로 받게 하는 창이라, 결과의 매물·가격·순서·수는 그 사이트 웹에서도 같은 조건으로 볼 수 있는 것이어야 한다. 기능을 고치거나 새로 짤 때 그 화면이 쓰는 API·변수·기본값·정렬·계산을 먼저 확인하고(당근은 persisted query 해시까지), 웹에 없는 결과를 만들지 않는다 (다른 API 로 대신 찾기, 받은 결과를 다시 거르기·합치기·다시 세우기, 후보 중 임의로 고르기, 웹과 다른 기본값·계산식). 웹에 있는데 jibsa 에 없는 기능은 괜찮다. 같은 API 로 더 편하게 다듬는 것(한 번에 더 받기, 탭을 한 번에 보기, 웹에 없는 조건으로 좁히기, 웹 UI 에 없지만 서버가 받는 조합)은 되지만, 웹과 다른 점은 그 소스 개발 가이드의 "웹과 다른 점" 절에 무엇이 다르고 왜 사실이 어긋나지 않는지 적는다. 아래 "서버가 거른 결과를 다시 거르지 않는다"·"소스끼리 부르지 않는다" 는 이 원칙의 하위 규칙이다. ([README 원칙](README.md#원칙-사이트가-보여-주는-대로) · [웹 화면과의 대응](docs/development/provider-conventions.md#웹-화면과의-대응))
 - **서버가 거른 결과를 같은 조건으로 다시 거르지 않는다.** 소스의 카테고리를 건물 용도나 방 개수로 다시 해석하지 않는다. 직접 거르는 건 서버가 받지 않는 조건과 서버 필터 없는 대체 조회뿐이고, 거래 조건을 못 골라 뺀 매물은 사유를 `notes`로 알린다. ([서버 필터와 클라이언트 후처리](docs/development/provider-conventions.md#서버-필터와-클라이언트-후처리))
 - **사진·중개사 연락처·본문(매물 설명)·매물 좌표는 출력하지 않는다.** 위치 검색의 지역 후보 좌표는 제공할 수 있다. 확인·문의는 `url` 의 원 사이트에서.
 - **모든 HTTP 요청은 브라우저로 보내고 요청 제한 훅을 거친다.** 새 클라이언트도 `transport=self.browser_transport()` 와 `rate_limit_hooks()` 를 `event_hooks` 로 넘기고, `base_header` 에 UA·Origin·Referer 를 넣지 않는다. 첫 화면이 스스로 부르는 요청은 transport 가 `RateLimiter.record` 로 센다. ([브라우저 요청](docs/development/architecture.md#브라우저-요청))
@@ -55,7 +56,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 
 - [README.md](docs/development/README.md) — 개발 환경 설치, 검증과 테스트 원칙, 매일 API 감시
 - [architecture.md](docs/development/architecture.md) — 계층 구조, 요청 흐름, 요청 제한
-- [provider-conventions.md](docs/development/provider-conventions.md) — provider 모듈 작성 규칙 (action id 명명, 재시도, 모델 배치, 서버 필터와 클라이언트 후처리)
+- [provider-conventions.md](docs/development/provider-conventions.md) — provider 모듈 작성 규칙 (action id 명명, 재시도, 모델 배치, 웹 화면과의 대응, 서버 필터와 클라이언트 후처리)
 - [output-contract.md](docs/development/output-contract.md) — CLI 출력·에러·exit code 규약, `Listing` 필드 규칙
 - [code-style.md](docs/development/code-style.md) — 문자열, import 순서, pydantic 선언, 타입 힌트, docstring, 테스트 코드 형식
 - [workflow.md](docs/development/workflow.md) — 이슈 → 브랜치 → 커밋 → PR 절차
