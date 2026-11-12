@@ -17,6 +17,8 @@
 | git 주소 (`uv tool install git+...`, `pipx`, `pip`) | `jibsa 0.2.0 (커밋 a1b2c3d)` |
 | 편집 가능 설치 (`pip install -e .`) | `jibsa 0.2.0 (개발 설치)` |
 | 로컬 경로 (`uv tool install .`) | `jibsa 0.2.0` |
+| 설치하지 않고 소스 폴더를 바로 실행 (`PYTHONPATH=src python -m jibsa`) | `jibsa (설치 정보 없음)` |
+| 설치 출처 파일(`direct_url.json`)이 깨진 설치 | `jibsa 0.2.0 (설치 출처 모름)` |
 
 ## 번호 붙이는 법
 

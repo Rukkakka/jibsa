@@ -1,3 +1,4 @@
+import hashlib
 import inspect
 import json
 import logging
@@ -6,7 +7,11 @@ import shlex
 import sys
 import unicodedata
 from collections.abc import Sequence
-from importlib.metadata import distribution
+from functools import cache
+from importlib.metadata import (
+    PackageNotFoundError,
+    distribution,
+)
 from importlib.resources import files
 from pathlib import Path
 
@@ -121,7 +126,7 @@ def show_version(value: bool) -> None:
     """`--version` 이 주어지면 버전 한 줄을 stdout 에 쓰고 명령을 실행하지 않고 끝낸다."""
     if not value:
         return
-    # 메타데이터가 없는 깨진 설치도 에러 JSON 으로 낸다
+    # 설치 정보가 없거나 설치 출처 파일이 깨져도 버전 줄을 쓴다 (`_install`). 그 밖에 메타데이터를 읽다 난 오류는 에러 JSON 으로 낸다
     with handle_errors('version'):
         typer.echo(version_text())
     raise typer.Exit()
@@ -319,21 +324,58 @@ def guide_section(text: str, query: str, topic: str) -> str:
 
 
 def version_text() -> str:
-    """`jibsa --version` 이 쓰는 한 줄 (`jibsa 0.2.0 (커밋 a1b2c3d)`).
+    """`jibsa --version` 이 쓰는 한 줄 (`jibsa 0.2.0 (커밋 a1b2c3d)`). 이어 받기 표(`paging`)도 이 줄로 만든 버전을 담는다 (`build_text`).
 
     버전은 pyproject.toml 에만 적고 설치 메타데이터에서 읽는다. `main` 을 git 주소로 설치하면 릴리스 사이의 커밋도
     버전이 같으므로, pip·uv 가 남긴 `direct_url.json`(PEP 610)의 커밋을 붙인다. PyPI 설치는 버전만 쓴다. 편집 가능
-    설치는 저장소 코드를 그대로 따라가 버전만으로는 어느 코드인지 알 수 없어 `(개발 설치)` 를 붙인다.
+    설치는 저장소 코드를 그대로 따라가 버전만으로는 어느 코드인지 알 수 없어 `(개발 설치)` 를 붙인다. 설치하지 않은
+    소스 폴더를 바로 돌리면(`PYTHONPATH=src python -m jibsa`) 메타데이터가 없어 `(설치 정보 없음)`, `direct_url.json` 을
+    읽지 못하면 `(설치 출처 모름)` 이다. 이어 받기 표가 한 명령에서 만들고 읽으며 두 번 부르므로 한 번만 읽는다 (`_install`).
     """
-    dist = distribution('jibsa')
+    return _install()[0]
+
+
+@cache
+def _install() -> tuple[str, bool]:
+    """(`version_text` 한 줄, 그 줄이 코드를 가르지 못하는지). 개발 설치·설치 정보 없음·설치 출처 모름은 코드가 바뀌어도 줄이 같다."""
+    try:
+        dist = distribution('jibsa')
+    except PackageNotFoundError:
+        # 예전에는 그대로 올라가, 매물을 다 받은 뒤 next 를 만들다 INTERNAL_ERROR 로 끝났다 (2026-11-12 리뷰)
+        return 'jibsa (설치 정보 없음)', True
     text = f'jibsa {dist.version}'
-    origin = json.loads(dist.read_text('direct_url.json') or '{}')
-    commit = origin.get('vcs_info', {}).get('commit_id')
+    try:
+        origin = json.loads(dist.read_text('direct_url.json') or '{}')
+        commit = origin.get('vcs_info', {}).get('commit_id')
+        editable = origin.get('dir_info', {}).get('editable')
+    except (ValueError, AttributeError):
+        # 쓰다 끊기거나 꼴이 다른 설치 출처 파일(PEP 610). 설치 정보 없음처럼 버전 줄을 주고 코드 지문으로 가른다. 예전에는
+        # 그대로 올라가 매물을 다 받은 뒤 next 를 만들다 PARSE_ERROR 로 끝났고, --next 는 traceback 을 냈다 (2026-11-12 리뷰)
+        return f'{text} (설치 출처 모름)', True
     if commit:
-        return f'{text} (커밋 {commit[:SHORT_COMMIT_LENGTH]})'
-    if origin.get('dir_info', {}).get('editable'):
-        return f'{text} (개발 설치)'
-    return text
+        return f'{text} (커밋 {commit[:SHORT_COMMIT_LENGTH]})', False
+    if editable:
+        return f'{text} (개발 설치)', True
+    return text, False
+
+
+@cache
+def build_text() -> str:
+    """이어 받기 표(`paging`)가 만든 jibsa 를 가르는 값. 버전 한 줄(`version_text`)이 코드를 가르지 못하면 코드 지문을 붙인다.
+
+    개발 설치·설치 정보 없음·설치 출처 모름은 코드를 고쳐도 버전 줄이 같아, 고치기 전에 만든 표가 버전 확인을 지나 바뀐 꼴의 위치를 읽다
+    엉뚱한 조건 오류나 KeyError 로 끝날 수 있었다 (2026-11-12 리뷰). 지문은 패키지 `.py` 파일 경로와 내용의 해시다. `jibsa --version`
+    에는 붙이지 않는다.
+    """
+    text, tracks_source = _install()
+    if not tracks_source:
+        return text
+    package = Path(__file__).resolve().parent.parent
+    digest = hashlib.sha256()
+    for path in sorted(package.rglob('*.py')):
+        digest.update(path.relative_to(package).as_posix().encode())
+        digest.update(path.read_bytes())
+    return f'{text} 코드 {digest.hexdigest()[:SHORT_COMMIT_LENGTH]}'
 
 
 class PlainHelpFormatter(HelpFormatter):

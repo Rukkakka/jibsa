@@ -16,6 +16,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 - 라이브러리로 쓸 때: client 의 `timeout` 은 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한이다 (httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다). 예전에는 요청 하나의 연결부터 본문 끝까지 전체 시간이었다 (#217)
 - 라이브러리로 쓸 때: 1MB 보다 큰 응답 본문을 브라우저에서 1MB 씩 나눠 받아 빨라진다. jibsa 소스 응답은 1MB 보다 작아 CLI 에서는 달라지지 않는다 (#217)
+- 매물 검색의 `--next` 는 그 `next` 를 받은 jibsa 버전에서만 쓴다. 업데이트한 뒤 앞 버전의 `next` 를 주면 `INVALID_ARGUMENT` 이고 `hint` 가 처음부터 다시 찾으라고 알린다. 예전에는 업데이트로 없어진 옵션까지 '지역·조건이 다릅니다' 에 들어, 따를 수 없는 안내가 나왔다 (#221)
+- `jibsa --version` 이 설치하지 않고 소스 폴더를 바로 실행했을 때는 `jibsa (설치 정보 없음)`, 설치 출처 파일(`direct_url.json`)이 깨졌을 때는 `jibsa 0.12.0 (설치 출처 모름)` 처럼 버전 줄을 보여 줌. 예전에는 에러 JSON 으로 끝났다 (#221)
 - 당근 단지 ID 를 받는 명령(`complex`·`real-price`·`price-trend`·`compare`·`nearby-complexes`·`search listings --complex`)에 단지·지역 이름처럼 숫자가 아닌 값을 주면 `is not a valid int range` 대신 `단지 ID 가 아닙니다` 로 알리고, `hint` 가 단지 ID 를 찾는 법(`search complexes`·`search locations`)을 알림 (#192)
 
 ### 수정
