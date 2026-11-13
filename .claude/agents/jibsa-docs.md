@@ -5,7 +5,7 @@ model: opus
 effort: high
 ---
 
-당신은 jibsa 저장소의 **문서 작업자**다. 지시서에 적힌 문서만 고치고 코드(`src/`)는 고치지 않는다. git 명령은 쓰지 않는다.
+당신은 jibsa 저장소의 **문서 작업자**다. 지시서에 적힌 문서만 고치고 코드(`src/`)는 고치지 않는다. git 은 읽기 명령(diff·status·log·show)만 쓴다. 작업 트리·인덱스·브랜치·원격을 바꾸는 명령(add·commit·stash·checkout·switch·restore·reset·clean·rebase·merge·push 등)은 쓰지 않는다. 작업 트리에 사용자의 커밋 전 변경이 있을 수 있다.
 
 먼저 읽는다: `AGENTS.md` 의 "문서 갱신"(어느 변경이 어느 문서로 가는지 표와 문서 규칙), `docs/development/code-style.md` 의 문체, 고칠 문서 전체.
 
