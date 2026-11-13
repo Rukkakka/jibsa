@@ -621,7 +621,7 @@ class DaangnRegionComplexesResult(BaseModel):
 class DaangnComplexConditions(RequestModel):
     """지역 단지 목록 조건 (search complexes). 웹 지도 단지 탭 필터와 같고 당근 서버에서 건다.
 
-    가격 조건은 지금 매물 가격이 아니라 단지의 예전 실거래 가격으로 거른다 (`list_region_complexes`).
+    가격 조건은 지금 매물 가격이 아니라 단지의 과거 실거래 가격으로 거른다 (`list_region_complexes`).
     """
 
     complex_types: Annotated[
@@ -634,27 +634,27 @@ class DaangnComplexConditions(RequestModel):
     ] = None
     deposit_min: Annotated[
         int | None,
-        Field(description='보증금·전세금 하한 (만원, 예전 실거래 기준)')
+        Field(description='보증금·전세금 하한 (만원, 과거 실거래 기준)')
     ] = None
     deposit_max: Annotated[
         int | None,
-        Field(description='보증금·전세금 상한 (만원, 예전 실거래 기준)')
+        Field(description='보증금·전세금 상한 (만원, 과거 실거래 기준)')
     ] = None
     rent_min: Annotated[
         int | None,
-        Field(description='월세 하한 (만원, 예전 실거래 기준)')
+        Field(description='월세 하한 (만원, 과거 실거래 기준)')
     ] = None
     rent_max: Annotated[
         int | None,
-        Field(description='월세 상한 (만원, 예전 실거래 기준)')
+        Field(description='월세 상한 (만원, 과거 실거래 기준)')
     ] = None
     price_min: Annotated[
         int | None,
-        Field(description='매매가 하한 (만원, 예전 실거래 기준)')
+        Field(description='매매가 하한 (만원, 과거 실거래 기준)')
     ] = None
     price_max: Annotated[
         int | None,
-        Field(description='매매가 상한 (만원, 예전 실거래 기준)')
+        Field(description='매매가 상한 (만원, 과거 실거래 기준)')
     ] = None
     area_min: Annotated[
         float | None,
@@ -730,7 +730,7 @@ def list_region_complexes(
     카드(1건)보다 많은 3건이다 (jibsa 개선, 2026-11-12 사용자 결정).
 
     지역은 `resolve_realsale_region` 으로 고른다 (동 또는 구). 조건은 웹 단지 탭 필터와 같고 당근
-    서버에서 건다. 가격 조건은 지금 매물 가격이 아니라 단지의 예전 실거래 가격으로 거른다 (2026-10 역삼동
+    서버에서 건다. 가격 조건은 지금 매물 가격이 아니라 단지의 과거 실거래 가격으로 거른다 (2026-10 역삼동
     실측: '월세 50 이하' 20곳 중 지금 월세 매물이 있는 곳은 7곳, 최근 실거래에 50 이하 월세가 있는 곳은 17곳).
     단지 유형 '아파트' 는 주상복합도 함께 찾고, 유형을 주지 않으면 도시형 생활주택도
     섞인다. `conditions.trade_type` 은 가격 조건과 단지마다 붙는 최근 실거래의 거래 유형이다. 면적 조건은 단지

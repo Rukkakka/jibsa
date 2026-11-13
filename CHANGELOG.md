@@ -100,6 +100,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 구 이름까지 같은 동(`태평로2가` → 서울·대구 중구)의 `REGION_AMBIGUOUS` 힌트 예시가 `'중구 태평로2가'` 라 다시 넣어도 모호하던 것을 고침. 시·도까지 붙인 이름을 예로 든다 (#215)
 - 당근 `trending-complexes 신사동` 처럼 같은 이름 동을 주면 `'강남구 신사동'` 을 권해 따르면 `INVALID_ARGUMENT` 이던 것을 고침. 바로 `INVALID_ARGUMENT` 로 그 동들의 구(`candidates`)를 준다 (#222)
 - 당근 `popular-listings` 가 여러 시·도에 있는 구 이름(중구·남구)의 동에서 시·도를 채우려 지역 검색을 더 보내던 것을 고침 (`'서울 중구 명동2가'` 요청 5회 → 2회) (#215)
+- `jibsa guide common` 이 `--fields` 를 받는 매물 목록 명령에 다방(`search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)을 빠뜨려, 다방에서는 `--fields` 를 쓸 수 없는 것처럼 읽히던 문제 (#227)
 
 ## 0.12.0 — 2026-11-11
 

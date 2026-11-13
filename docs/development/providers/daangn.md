@@ -35,9 +35,9 @@
 - 지역·역·대학 이름은 웹 지도 검색창과 같은 GraphQL(`searchRegion`·`searchSubwayStationPois`·`searchSchoolPois`)로 찾는다. 예전에 쓰던 `www.daangn.com/kr/api/v1/regions/keyword` 는 당근마켓(중고거래)의 지역 API 라 부동산 웹 번들에 없고 좌표·행정동 구분이 없어 뺐다 (#215).
 - 입력 타입이 틀리면 "알 수 없는 오류" 가 와서 preschoolByNo·getViewRankingArticles 는 숫자, trendingComplexes 의 regionId 는 문자열로 보낸다 (2026-10-10 실측).
 
-### 브라우저 요청 (2026-11-09 실측)
+### 브라우저 요청
 
-공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 당근만의 값:
+(2026-11-09 실측) 공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 당근만의 값:
 
 - 첫 화면은 역삼동 지도 페이지(`/map/서울특별시/강남구/역삼동`). 당근 웹 지도 화면이라 Referer 가 자연스럽다. 쿠키는
   분석용(`_ga`·`_clck`)뿐이고 API 는 쿠키 없이 응답해 기다릴 쿠키가 없어, load 직후 빈 페이지로 떠난다. 그래서 첫 화면이 실제로

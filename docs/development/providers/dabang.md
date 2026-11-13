@@ -39,9 +39,9 @@
 - 모든 요청에 웹 axios 인스턴스(v5·v3 둘 다)가 붙이는 기본 헤더 `Accept: application/json, text/plain, */*`·`csrf: token`·`Cache-Control: no-cache`·`Pragma: no-cache`·`Expires: -1` 을 붙인다 (`base_header`, 2026-11-12 웹 화면 8개 요청 109건 실측과 번들. 요청마다 바뀌는 헤더는 없다). v5 인스턴스만 `V5_HEADERS` 를 더 붙인다. 토큰·쿠키는 없다.
 - 없는 주소·경로 값은 404 대신 **403 빈 응답** 이다 (아무 경로나 넣어도 같다). 요청 제한과 섞지 않는다. ID 가 경로에 들어가는 요청(단지 상세·주변 시설·학교)만 `is_missing_id` 로 빈 403 을 `NOT_FOUND` 로 본다. ID 가 쿼리로 가는 요청(분양 상세·교통·단지 실거래·매물 실거래·시군구 코드)은 없는 ID 에 400 이나 빈 결과를 줘서(2026-10-27 실측) 빈 403 이면 다방 주소가 바뀐 것으로 `UPSTREAM_ERROR` 다 (`in_path=False`).
 
-### 브라우저 요청 (2026-11-09 실측)
+### 브라우저 요청
 
-공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 다방만의 값:
+(2026-11-09 실측) 공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 다방만의 값:
 
 - 첫 화면은 `https://www.dabangapp.com/`. 다방이 심는 쿠키는 분석·광고용(`_ga`·`wcs_bt`·`dable_uid` 등)뿐이고 API 는 쿠키 없이
   응답해 기다릴 쿠키가 없다 (`browser_ready_cookie = None`). 첫 화면이 다방 API 를 XHR 로 11번 부른다. JS 파일(`/_next/static`)도

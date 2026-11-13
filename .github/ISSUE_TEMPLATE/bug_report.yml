@@ -19,6 +19,7 @@ body:
         - 당근부동산 (jibsa daangn)
         - 다방 (jibsa dabang)
         - 요청 제한 (jibsa limits, RATE_LIMITED)
+        - 설치·브라우저 (jibsa install-browser, BROWSER_UNAVAILABLE·BROWSER_INSTALL_FAILED)
         - CLI 출력·에러 형식
         - 기타 / 잘 모르겠음
     validations:
@@ -55,7 +56,7 @@ body:
     id: versions
     attributes:
       label: 환경
-      description: "`jibsa --version` 출력, Python 버전, 실행한 날짜. 비공식 API 라 날짜가 중요합니다."
-      placeholder: "jibsa 0.1.0 (커밋 a1b2c3d), Python 3.11.6, 2026-10-06"
+      description: "`jibsa --version` 출력, Python 버전, 운영체제(Windows·macOS·Linux·WSL), 실행한 날짜. 비공식 API 라 날짜가 중요합니다."
+      placeholder: "jibsa 0.1.0 (커밋 a1b2c3d), Python 3.11.6, Ubuntu 24.04 (WSL), 2026-10-06"
     validations:
       required: false

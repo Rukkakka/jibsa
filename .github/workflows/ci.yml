@@ -42,8 +42,9 @@ jobs:
           fetch-depth: 2
       - id: classify
         env:
-          # 문서로 보는 파일: docs/ 아래 전부, 맨 위 .md(README·CHANGELOG·AGENTS 등), LICENSE, 이슈·PR 템플릿
-          DOC_PATTERN: '^(docs/|[^/]+\.md$|LICENSE$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$)'
+          # 문서로 보는 파일: docs/ 아래 전부, 맨 위 .md(README·CHANGELOG·AGENTS 등), LICENSE, .claude/(에이전트·스킬 정의),
+          # 이슈·PR 템플릿
+          DOC_PATTERN: '^(docs/|[^/]+\.md$|LICENSE$|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$)'
           # 브라우저 확인을 돌릴 파일: 브라우저 계층(core/), install-browser 명령(cli/app.py), 설치 스크립트, 확인 스크립트,
           # 의존성(patchright·scrapling 버전), 이 워크플로
           BROWSER_PATTERN: '^(src/jibsa/core/|src/jibsa/cli/app\.py$|scripts/install/|scripts/ci/|pyproject\.toml$|\.github/workflows/ci\.yml$)'

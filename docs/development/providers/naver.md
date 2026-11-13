@@ -36,9 +36,9 @@
 
 service 가 부르지 않는 엔드포인트 3개(`article/agent`, `complex/holdingTax`, `complex/declaredValue/pyeongType`)는 라이브러리용으로 client 메서드만 있다 (`article/agent` 는 중개사 정보라 출력하지 않는다는 원칙에 따라 쓰지 않는다). 모델은 [기준 7](../provider-conventions.md#service-모듈을-나누는-기준)대로 경로가 같은 기능 모듈에 둔다 (`article/agent` → `listing`, 나머지 둘 → `complex`).
 
-### 브라우저 요청 (2026-11-09 실측)
+### 브라우저 요청
 
-공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 네이버만의 값:
+(2026-11-09 실측) 공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 네이버만의 값:
 
 - 첫 화면은 `https://fin.land.naver.com/` (지도 `/map?...` 으로 넘어간다). load 시점 쿠키는 0~6개였다가 2초 안에 8개가 다 생겨
   `NNB`(400일)를 기다린다. 그 밖에 `NAC`·`BUC`(400일), `NACT`(24시간), `SRT30`(30분), `SRT5`(5분). `BUC` 는 front-api 응답마다
@@ -81,12 +81,16 @@ service 가 부르지 않는 엔드포인트 3개(`article/agent`, `complex/hold
 `NaverListingConditions`(`search`)가 이어받는다 ([공통 규칙](../provider-conventions.md#검색-조건-묶음)). 단지·재개발 목록은
 `price_filter_of`, 지도 검색은 `listing_filter_of` 로 원 단위 필터를 만든다. 시설·주차의 AND와 나머지 다중 조건의 OR, 가격별 거래 유형 추론을 유지한다. 지역·정렬·동 전체·단지·재개발 매물은 모두 서버 필터 응답이라 [공통 기준](../provider-conventions.md#서버-필터와-클라이언트-후처리)대로 가격·유형을 다시 거르지 않는다 (`listing_keeper`. 2026-10-10 실측: 가격 조건 4종 지역 검색 118건, 단지 매물 38건 모두 조건 안). 받은 뒤 빼는 것은 중복·모르는 거래 유형 코드와, 사각형으로 받은 반경 검색의 반경 밖·좌표 모름뿐이다. 목록 응답에는 매물 상태·노출 여부 필드가 없어 거래 불가로 뺄 매물이 없다 (`EXCLUDED_REASON`. 2026-10-14 실측: 역삼동 동 전체 목록 20건). 네이버 매물은 거래 조건이 하나라 거래 조건 선택이 없다. 서버는 틀린 필터 키를 조용히 무시하므로 필터 키를 바꾸면 원본 응답이 조건 안인지 live로 확인한다. 단지·재개발 모드는 지역 검색의 모든 옵션을 지원하지 않으므로 CLI 분기의 검증을 먼저 확인한다. 부가 조회 실패로 정보가 `null`인 경우와 거래 불가를 구분한다.
 
-## 원룸 구조 메모 (2026-10-10 실측)
+## 원룸 구조 메모
+
+(2026-10-10 실측)
 
 - 상세 `detailInfo.shape` 는 원룸 구조 코드('10' 오픈형, '20' 분리형)이고 지도 필터 `oneRoomShapeTypes` 와 같다. 방이 여럿인 매물도 '20' 으로 오므로 `room_type` 은 방 수(`spaceInfo.roomCount`)를 먼저 보고, 방 1개일 때만 `spaceInfo.duplex`(복층)와 `shape` 로 정한다 (`_room_type`).
 - `oneRoomShapeTypes` 는 `shape` 가 있는 매물만 건다. 단지 매물(아파트 A01·오피스텔 A02·단지형 빌라 A06·재건축 A04·분양권 B01 확인)은 `shape` 키가 없어 오픈형·분리형 어느 쪽이든 모두 빠진다 (역삼동 방 1개: 아파트 435건·오피스텔 2,074건 → 0건, 대치동 재건축 1,024건 → 0건). 원룸·빌라·상가주택 등도 중개사가 구조를 입력하지 않으면 `shape` 가 null 이라 빠진다 (역삼동 원룸 전세 35건 → 26건, 상가주택 73건 → 11건). `shape` 가 있는 매물은 필터와 상세가 일치한다. 서버 필터라 다시 거르지 않고, 구조 조건을 주면 유형과 무관하게 `ONE_ROOM_SHAPE_NOTE` 로 알린다.
 
-## 재개발·추이 엔드포인트 메모 (2026-10-10 실측)
+## 재개발·추이 엔드포인트 메모
+
+(2026-10-10 실측)
 
 - 재개발 구역 목록·매물 목록은 페이지 30건까지다 (31부터 400). 목록 응답에 좌표가 없어 반경 검색은 `redevelopmentArea/markers`(페이지 없음)로 위치를 받아 반경 밖을 뺀다.
 - 구역 목록·마커의 지도 줌(`precision`)이 결과를 바꾼다. 12 이하는 400, 줌이 높을수록 중심 근처만 준다. `REDEVELOPMENT_PRECISION = 14` 는 반경 1·3km 안 구역을 13 과 같이 모두 주면서 반경 밖은 덜 섞인다 (15 는 3km 에서 빠짐).
@@ -98,7 +102,9 @@ service 가 부르지 않는 엔드포인트 3개(`article/agent`, `complex/hold
 - `complex/redevelopment` 는 없는 구역 번호에도 `isSuccess: true, result: {}` 를 준다. 이름이 비면 NOT_FOUND 로 바꾼다. `redevelopmentArea/articleStats` 는 단지 매물 통계와 같은 모양이고 `tradeTypes[]`·가격 키를 서버가 거른다.
 - `complex/reconstruction` 은 재건축(A04) 단지용이다. 단계 코드 01~11 은 사이트 `COMPLEX_RECONSTRUCTION_STEP` 라벨로 바꾸고, 날짜 없는 단계(아직 안 거친 단계)는 내보내지 않는다.
 
-## 기간 조회·지역 목록·학교 엔드포인트 메모 (2026-10-10 실측)
+## 기간 조회·지역 목록·학교 엔드포인트 메모
+
+(2026-10-10 실측)
 
 - `complex/pyeong/realPrice/list` 는 `startDate`~`endDate` 거래를 페이지 없이 다 준다 (대단지 전세 5년 833건 한 번에). `realEstateType`·`endDate` 가 빠지면 400 이지만 유형 값은 결과에 영향이 없어 A01 을 보낸다. 빌라 단지는 거래가 있어도 빈 목록이라 `complex/villa/realPricePage`(size 100 가능, 최근 순)를 시작일까지 넘긴다.
 - `complex/marketPrice/list` 는 유형 코드 없이도 같은 값을 준다. 기관마다 기준일을 키로 한 dict 들이 온다 (1년이면 기관당 51~52점).

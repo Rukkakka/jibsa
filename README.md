@@ -42,7 +42,7 @@ Claude Code 에 "직방에서 강남역 근처 월세 70만원 이하 원룸 찾
 - **단지와 가격** — 단지 정보, 실거래가, 기관 시세, 월별·주별 가격 흐름, 동·단지 순위와 분양·청약 일정 (다방)
 - **동네 고르기** — 회사까지 지하철 통근 기준으로 매물 찾기, 학교 배정, 동네 후기·단지 근처 어린이집 (당근), 동네 인구·시설 수, 진학률·학원 수로 본 학군과 역 주변 평균 시세 (다방)
 
-네 사이트를 한 번에 찾는 통합 검색은 아직 없어서 사이트마다 따로 부른다 (`jibsa zigbang …`, `jibsa naver …`, `jibsa daangn …`, `jibsa dabang …`). 하려는 일별 명령 표는 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md#무엇을-하려면)에 있다.
+네 사이트를 한 번에 찾는 통합 검색은 두지 않고(소스끼리 결과를 합치지 않는다) 사이트마다 따로 부른다 (`jibsa zigbang …`, `jibsa naver …`, `jibsa daangn …`, `jibsa dabang …`). 하려는 일별 명령 표는 [LLM 사용 가이드](https://github.com/Rukkakka/jibsa/blob/main/docs/llm.md#무엇을-하려면)에 있다.
 
 - **로그인·API 키·설정 파일이 없다.** 로그인하지 않은 사람이 사이트에서 볼 수 있는 정보만 조회한다 ([원칙](https://github.com/Rukkakka/jibsa#원칙-로그인-없는-기능만))
 - **금액은 전부 만원**(`*_manwon`)이다. 원 단위로 주는 네이버도 만원으로 바꿔 준다
