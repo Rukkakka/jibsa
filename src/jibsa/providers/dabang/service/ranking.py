@@ -80,12 +80,17 @@ ValueKind = Literal['price', 'count', 'percent', 'change', 'age', 'score', 'popu
 
 
 class MetricSpec(NamedTuple):
-    """부동산 순위 항목 하나 (동·단지): 경로 이름, 값 종류, 받는 거래 유형 꼴, 유형을 받는지, 단지만인지."""
+    """부동산 순위 항목 하나 (동·단지): 경로 이름, 값 종류, 받는 거래 유형 꼴, 받는 단지 유형 꼴, 단지만인지.
+
+    `types` 는 웹 랭킹 화면의 단지 유형 고르기 꼴이다 (real-estate 청크, 2026-11-13): 'one' 은 하나만 고르고 기본 아파트
+    (평균가·평당가·시세증감·최고가증감), 'many' 는 아파트·오피스텔을 함께 고를 수 있고 기본이 둘 다라 `complexType` 을 빼고
+    보내 합산 순위를 받는다 (거래량·매물수·선호도·전세가율·갭가격, `complexType: size===2 ? null : 하나`), 'none' 은 받지 않는다.
+    """
 
     metric: DabangRankingMetric
     kind: ValueKind
     trade: Literal['one', 'many', 'none']
-    complex_type: bool
+    types: Literal['one', 'many', 'none']
     complex_only: bool = False
 
 
@@ -151,17 +156,17 @@ def _advancement(school_type: Literal['MIDDLE_SCHOOL', 'HIGH_SCHOOL'], advanceme
 
 # 다방 '부동산 랭킹' 항목 (real-estate 청크의 이름표와 요청 값, 2026-10-25)과 동네정보 랭킹 항목 (동만)
 METRIC_BY_LABEL: dict[str, MetricSpec | InfoMetricSpec] = {
-    '평균가': MetricSpec('average-price', 'price', 'one', True),
-    '평당가': MetricSpec('pyeong-price', 'price', 'one', True),
-    '거래량': MetricSpec('trade-volume', 'count', 'many', True),
-    '매물수': MetricSpec('room-count', 'count', 'many', True),
-    '시세증감': MetricSpec('average-price-change', 'change', 'one', True),
-    '최고가증감': MetricSpec('max-price-change', 'change', 'one', True),
-    '선호도': MetricSpec('reaction-score', 'score', 'many', True),
-    '세대수': MetricSpec('household-count', 'count', 'none', False),
-    '연식': MetricSpec('age', 'age', 'none', False),
-    '전세가율': MetricSpec('lease-rate', 'percent', 'none', True, complex_only=True),
-    '갭가격': MetricSpec('gap-price', 'price', 'none', True, complex_only=True),
+    '평균가': MetricSpec('average-price', 'price', 'one', 'one'),
+    '평당가': MetricSpec('pyeong-price', 'price', 'one', 'one'),
+    '거래량': MetricSpec('trade-volume', 'count', 'many', 'many'),
+    '매물수': MetricSpec('room-count', 'count', 'many', 'many'),
+    '시세증감': MetricSpec('average-price-change', 'change', 'one', 'one'),
+    '최고가증감': MetricSpec('max-price-change', 'change', 'one', 'one'),
+    '선호도': MetricSpec('reaction-score', 'score', 'many', 'many'),
+    '세대수': MetricSpec('household-count', 'count', 'none', 'none'),
+    '연식': MetricSpec('age', 'age', 'none', 'none'),
+    '전세가율': MetricSpec('lease-rate', 'percent', 'none', 'many', complex_only=True),
+    '갭가격': MetricSpec('gap-price', 'price', 'none', 'many', complex_only=True),
     # 진학률은 그 동 학교 졸업생 기준 (학교알리미 공시): 중학교 → 고교 유형, 고등학교 → 대학
     '과학고진학률': _advancement('MIDDLE_SCHOOL', 'SCIENCE_HIGH_SCHOOL'),
     '외국어고진학률': _advancement('MIDDLE_SCHOOL', 'FOREIGN_HIGH_SCHOOL'),
@@ -266,7 +271,7 @@ class DabangWatchRanking(BaseModel):
     ] = None
     view_count: Annotated[
         int | None,
-        Field(description='기간 안 조회 수')
+        Field(description="기간 안 조회한 사람 수 (다방 화면 'N명'. 조회 횟수가 아니다)")
     ] = None
     change: Annotated[
         str | None,
@@ -570,6 +575,13 @@ class DabangRegionRanking(BaseModel):
         str,
         Field(description='항목')
     ]
+    complex_type: Annotated[
+        str | None,
+        Field(description=(
+            "어느 단지 유형의 순위인지 ('아파트', '오피스텔', 합산이면 '아파트·오피스텔 합산'). 단지 유형을 받지 않는 항목"
+            '(세대수·연식·동네정보)은 키 없음'
+        ))
+    ] = None
     kind: Annotated[
         str | None,
         Field(description='--kind 로 고른 종류 (학원·학교·시설). 학원은 주지 않으면 입시')
@@ -602,7 +614,7 @@ class DabangRegionRanking(BaseModel):
     @model_serializer(mode='wrap')
     def drop_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for key in ('kind', 'base_month'):
+        for key in ('complex_type', 'kind', 'base_month'):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -670,7 +682,7 @@ def get_region_ranking(
     *,
     metric_label: str,
     unit: Literal['동', '단지'],
-    complex_type: str,
+    complex_types: list[str],
     trades: list[str],
     order: Literal['높은순', '낮은순'],
     limit: int,
@@ -679,12 +691,28 @@ def get_region_ranking(
     """범위(전국·시도·시군구) 안 동·단지 순위 (부동산은 50곳, 동네정보는 30곳마다 요청 1회).
 
     거래 유형은 항목에 맞게 보낸다: 평균가·평당가·시세증감·최고가증감은 하나(기본 매매), 거래량·매물수·선호도는 여럿(기본 전체).
+    단지 유형도 웹처럼 보낸다: 평균가·평당가·시세증감·최고가증감은 하나(기본 아파트), 거래량·매물수·선호도·전세가율·갭가격은
+    `complex_types` 가 비거나 둘이면 유형을 빼고 보내 아파트·오피스텔 합산 순위다 (웹 기본).
     동네정보 항목(학교·학원·진학률·인구·시설)은 동 단위만 있고 `kind_label` 로 종류를 고른다 (학원은 기본 입시).
     """
     spec = METRIC_BY_LABEL[metric_label]
     sort: Literal['DESC', 'ASC'] = 'ASC' if order == '낮은순' else 'DESC'
+    shown_type: str | None = None
     if isinstance(spec, MetricSpec):
         page_limit = RANKING_PAGE_LIMIT
+        complex_type: Literal['APT', 'OFFICETEL'] | None = None
+        chosen_types = list(dict.fromkeys(complex_types))
+        if spec.types == 'one':
+            shown_type = chosen_types[0] if chosen_types else '아파트'
+            complex_type = COMPLEX_TYPE_BY_LABEL[shown_type]
+        elif spec.types == 'many':
+            # 웹은 둘 다 고르면(기본) complexType 을 빼고 보낸다. 강남구 동 거래량 1위가 합산 역삼동 298개, 아파트만 개포동 233개
+            # (2026-11-13 웹 캡처·직접 조회)
+            if len(chosen_types) == 1:
+                shown_type = chosen_types[0]
+                complex_type = COMPLEX_TYPE_BY_LABEL[shown_type]
+            else:
+                shown_type = '아파트·오피스텔 합산'
         price_type: Literal['SALE', 'LEASE'] | None = None
         price_type_list = None
         if spec.trade == 'one':
@@ -698,7 +726,7 @@ def get_region_ranking(
                 unit='complex' if unit == '단지' else 'region',
                 metric=spec.metric,
                 scope_region_gid=scope.gid,
-                complex_type=COMPLEX_TYPE_BY_LABEL[complex_type] if spec.complex_type else None,
+                complex_type=complex_type,
                 price_type=price_type,
                 price_type_list=price_type_list,
                 sort=sort,
@@ -777,6 +805,6 @@ def get_region_ranking(
     if scope.kind != 'district' and any(entry.area and ' ' not in entry.area for entry in entries):
         notes.append(note('참고', 'area 가 시·도까지만 와서 같은 이름의 동은 어느 시·군·구인지 알 수 없습니다. 범위를 시·군·구로 주면 그 안의 동만 나옵니다'))
     return DabangRegionRanking(
-        scope=scope, unit=unit, metric=metric_label, kind=shown_kind, base_month=base_month, total=total,
+        scope=scope, unit=unit, metric=metric_label, complex_type=shown_type, kind=shown_kind, base_month=base_month, total=total,
         returned=len(entries), has_more=has_more, rankings=entries, notes=notes,
     )

@@ -49,7 +49,7 @@ from jibsa.providers.dabang.service.common import (
 )
 from jibsa.providers.dabang.service.region import (
     DabangScope,
-    dongs_bbox,
+    dong_bbox,
     scope_bbox,
     state_name,
 )
@@ -84,6 +84,21 @@ SALE_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})월$')
 SALE_SCHEDULE_MAX_LIMIT: int = 300
 # 청약 일정 글: '[청약접수] 인천 인천계양 A17블록 … (~10/27)'
 SCHEDULE_REGION_PATTERN: re.Pattern[str] = re.compile(r'^(?:\[[^\]]+\]\s*)+(\S+)')
+# 웹은 공급 유형 코드가 4·5(공공임대·민간임대)면 가격 이름표를 '임대가', 아니면 '분양가' 로 쓴다 (ic_24_download 청크 `x`,
+# 2026-11-13. 민간임대 6acca80f… 화면 '임대가 4억7770')
+RENTAL_SUPPLY_TYPES: frozenset[int] = frozenset({4, 5})
+# 청약 결과 숫자 글: '5.52:1' 의 5.52, '35점' 의 35, '261/1071' 의 261
+LEADING_NUMBER_PATTERN: re.Pattern[str] = re.compile(r'^\s*(\d[\d,]*(?:\.\d+)?)')
+
+
+def _leading_number(text: str | None) -> float | None:
+    match = LEADING_NUMBER_PATTERN.match(text or '')
+    return float(match.group(1).replace(',', '')) if match else None
+
+
+def _leading_int(text: str | None) -> int | None:
+    number = _leading_number(text)
+    return None if number is None else int(number)
 
 
 def sale_url(sale_id: str) -> str:
@@ -134,9 +149,9 @@ class DabangSaleSummary(BaseModel):
         str | None,
         Field(description='동까지의 주소')
     ] = None
-    household_count: Annotated[
+    sale_household_count: Annotated[
         int | None,
-        Field(description='세대수')
+        Field(description='분양 세대수 (총세대수가 아니다. 총세대수는 jibsa dabang sale 의 household_count)')
     ] = None
     price_kind: Annotated[
         str | None,
@@ -197,7 +212,7 @@ def _summary(item: DabangSaleItemModel) -> DabangSaleSummary:
         building_type=item.building_type_title,
         supply_type=item.supply_type_name,
         address=normalize_address(item.address),
-        household_count=household_count(item.household_num_title),
+        sale_household_count=household_count(item.household_num_title),
         price_kind=item.supply_price_type_name,
         price_manwon=manwon_from_text(item.price_title),
         next_schedule=item.schedule_title,
@@ -210,7 +225,7 @@ def search_sales(
     *,
     place: DabangPlace | None = None,
     scope: DabangScope | None = None,
-    places: list[DabangPlace] | None = None,
+    dong: DabangPlace | None = None,
     radius_km: float | None = None,
     building_types: list[str] | None = None,
     states: list[str] | None = None,
@@ -226,15 +241,15 @@ def search_sales(
     Args:
         place: 역·대학·좌표 (반경 사각형).
         scope: 시·군·구 (경계 사각형).
-        places: 동 (경계 사각형, '○가' 동이면 여럿).
+        dong: 동 (경계 사각형).
     """
     notes: list[str] = []
     prefixes: list[str] = []
     bbox: DabangBboxModel | None = None
-    if places:
-        bbox = dongs_bbox(client, places)
-        prefixes = [part.address or part.name for part in places]
-        scope_name = '·'.join(part.name for part in places) + ' 안'
+    if dong is not None:
+        bbox = dong_bbox(client, dong)
+        prefixes = [dong.address or dong.name]
+        scope_name = f'{dong.name} 안'
     elif scope is not None:
         bbox = scope_bbox(client, scope)
         prefixes = [scope.name]
@@ -343,8 +358,54 @@ class DabangSalePyeong(BaseModel):
     ] = None
     price_manwon: Annotated[
         float | None,
-        Field(description='분양가 (만원, 대표값)')
+        Field(description='분양가, 임대 공급이면 임대가 (만원, 대표값. 단지의 price_kind)')
     ] = None
+
+
+class DabangSubscriptionPyeong(BaseModel):
+    """청약 결과의 평형 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description="평형 ('59A')")
+    ] = None
+    household_count: Annotated[
+        int | None,
+        Field(description="이 평형의 분양 세대수 (다방 '분양/총세대' 의 앞 값)")
+    ] = None
+    competition_rate: Annotated[
+        float | None,
+        Field(description="경쟁률 (5.52 = '5.52:1'). 다방 표시가 숫자가 아니면 null")
+    ] = None
+    winning_point: Annotated[
+        int | None,
+        Field(description='당첨가점 (점). 다방 표시가 숫자가 아니면 null')
+    ] = None
+
+
+class DabangSubscriptionResult(BaseModel):
+    """청약 결과."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    min_winning_point: Annotated[
+        int | None,
+        Field(description="최저 당첨가점 (점, 다방 '당첨가점(커트라인)')")
+    ] = None
+    max_competition_rate: Annotated[
+        float | None,
+        Field(description="최고 경쟁률 (5.52 = '5.52:1')")
+    ] = None
+    pyeongs: Annotated[
+        list[DabangSubscriptionPyeong],
+        Field(description='평형별 경쟁률·당첨가점')
+    ]
 
 
 class DabangSaleDetail(BaseModel):
@@ -410,17 +471,25 @@ class DabangSaleDetail(BaseModel):
         str | None,
         Field(description='시행사')
     ] = None
+    price_kind: Annotated[
+        str,
+        Field(description="가격이 무엇인지 ('분양가', 공공임대·민간임대는 '임대가'. 다방 화면 이름표)")
+    ]
     price_min_manwon: Annotated[
         float | None,
-        Field(description='분양가 최저 (만원)')
+        Field(description='가격 최저 (만원, price_kind 의 분양가 또는 임대가)')
     ] = None
     price_max_manwon: Annotated[
         float | None,
-        Field(description='분양가 최고 (만원)')
+        Field(description='가격 최고 (만원, price_kind 의 분양가 또는 임대가)')
     ] = None
     price_per_pyeong_manwon: Annotated[
         float | None,
-        Field(description='평당 분양가 (만원)')
+        Field(description='평당가 (만원/3.3㎡, price_kind 기준)')
+    ] = None
+    region_average_price_per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description='최근 6개월 이 지역 평균 평당가 (만원/3.3㎡, 다방 표시). 다방이 주지 않으면 null')
     ] = None
     move_in: Annotated[
         str | None,
@@ -444,8 +513,12 @@ class DabangSaleDetail(BaseModel):
     ]
     pyeongs: Annotated[
         list[DabangSalePyeong],
-        Field(description='평형별 분양가·세대수')
+        Field(description='평형별 분양가(임대가)·세대수')
     ]
+    subscription_result: Annotated[
+        DabangSubscriptionResult | None,
+        Field(description='청약 결과 (최저 당첨가점·최고 경쟁률·평형별 값). 청약 전이거나 다방에 결과가 없으면 null')
+    ] = None
     notice_url: Annotated[
         str | None,
         Field(description='입주자 모집공고 파일 주소')
@@ -481,6 +554,7 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
     # '12억9990 ~ 22억7680' (2026-10-26 실측 19곳 모두 이 꼴). '~' 가 없으면 한 가격이라 최고가도 같고, 있는데 뒤를 못 읽으면
     # 최고가를 모르는 것이라 null 로 둔다 (최저가로 채우면 범위가 정해진 것처럼 보인다)
     low, separator, high = ((info.price_info.price_str if info.price_info else None) or '').partition('~')
+    subscription = response.subscription_result
     return DabangSaleDetail(
         sale_id=info.id,
         name=info.building_name,
@@ -496,9 +570,13 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
         basement_floors=info.underground_floor,
         builder=info.provider_name,
         developer=info.constructor_name,
+        price_kind='임대가' if info.supply_type in RENTAL_SUPPLY_TYPES else '분양가',
         price_min_manwon=manwon_from_text(low),
         price_max_manwon=manwon_from_text(high if separator else low),
         price_per_pyeong_manwon=manwon_from_text(info.price_info.pyeong_price) if info.price_info else None,
+        region_average_price_per_pyeong_manwon=(
+            manwon_from_text(info.price_info.region_average_pyeong_price) if info.price_info else None
+        ),
         move_in=sale_date(info.moving_date_str),
         regulation_area=info.regulation_area_str,
         price_cap=info.is_price_cap,
@@ -517,6 +595,19 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
             )
             for space in response.spaces
         ],
+        subscription_result=None if subscription is None else DabangSubscriptionResult(
+            min_winning_point=_leading_int(subscription.min_winning_point_str),
+            max_competition_rate=_leading_number(subscription.max_competitive_rate_str),
+            pyeongs=[
+                DabangSubscriptionPyeong(
+                    name=space.space_name,
+                    household_count=_leading_int(space.household_num_str),
+                    competition_rate=_leading_number(space.competitive_rate_str),
+                    winning_point=_leading_int(space.winning_point_str),
+                )
+                for space in subscription.subscription_spaces
+            ],
+        ),
         notice_url=info.notice_url,
         applyhome_url=info.applyhome_link,
         url=sale_url(info.id),

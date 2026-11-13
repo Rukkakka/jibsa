@@ -80,7 +80,7 @@ class DabangNearPoiModel(ResponseModel):
 
     name: Annotated[
         str | None,
-        Field(description='이름 (CCTV·경찰은 없다)')
+        Field(description='이름 (CCTV·치안은 없다)')
     ] = None
     distance: Annotated[
         float | None,
@@ -89,8 +89,10 @@ class DabangNearPoiModel(ResponseModel):
 
 
 class DabangNearGroupModel(ResponseModel):
-    """시설 종류 하나. `query` 는 카카오 장소 분류와 같은 코드다 (CS2 편의점, CE7 카페, BK9 은행, PO3 공공기관, SW8 지하철역)
-    와 다방 코드(BS 버스정류장, POLICE, CCTV, NS 어린이집, KS 유치원, ES 초등학교, MS 중학교, HS 고등학교). 2026-10-25 실측.
+    """시설 종류 하나. `query` 는 카카오 장소 분류와 같은 코드(MT1·CS2·CE7·BK9·PM9·PO3·SW8)와 다방 코드(BS·POLICE·CCTV·NS·KS·
+    ES·MS·HS)다. 웹 이름표는 distance-km-m 청크에 있다 (2026-11-13: BS 버스, SW8 지하철역, MT1 마트, CS2 편의점, CE7 카페,
+    BK9 은행, PM9 약국, PO3 관공서, POLICE 치안, CCTV, NS 어린이집, KS 유치원, ES 초등학교, MS 중학교, HS 고등학교).
+    치안은 이름 대신 `gubun`('지구대'), CCTV 는 `usage`('생활방범')가 온다.
     """
 
     query: Annotated[
@@ -99,7 +101,7 @@ class DabangNearGroupModel(ResponseModel):
     ]
     pois: Annotated[
         list[DabangNearPoiModel],
-        Field(description='가까운 순 시설')
+        Field(description='시설. 편의 종류는 거리순 15곳까지, 어린이집·CCTV 는 순서가 섞여 온다 (2026-11-13 실측)')
     ] = []
 
 

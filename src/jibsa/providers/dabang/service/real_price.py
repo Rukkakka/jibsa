@@ -28,12 +28,14 @@ from jibsa.providers.dabang.api.request.real_price import (
     DabangRealPriceComplexChartsV5RequestParameterModel,
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
+    DabangRealPriceHouseInitV5RequestParameterModel,
     DabangRealPriceSearchType,
 )
 from jibsa.providers.dabang.api.response.real_price import (
     DabangChartSeriesModel,
     DabangHighLowModel,
     DabangRealPriceHistoryModel,
+    DabangRealPriceHouseScopeModel,
 )
 from jibsa.providers.dabang.service.common import (
     complex_not_found,
@@ -53,6 +55,10 @@ from typing import (
 
 RealPriceTrade = Literal['매매', '전월세']
 SEARCH_TYPE_BY_TRADE: dict[RealPriceTrade, DabangRealPriceSearchType] = {'매매': 'SALE', '전월세': 'LEASE'}
+TRADE_BY_SEARCH_TYPE: dict[str, RealPriceTrade] = {'SALE': '매매', 'LEASE': '전월세'}
+# 매물 실거래 줄의 면적 칸. 단지 실거래는 평형으로 고르므로 면적이 없다(none). 매물 실거래는 웹처럼 다세대·연립(MULTIPLEX)이면
+# 전용면적·층, 그 밖(DETACHED 단독·다가구)이면 연면적·주택유형(매매만)이다 (room 청크 `ii` 가 MULTIPLEX 만 `Kr`, 나머지는 `ei`)
+AreaKind = Literal['none', 'exclusive', 'total_floor']
 TRADE_BY_PRICE_TYPE: dict[str, TradeType] = {'SALE': '매매', 'LEASE': '전세', 'MONTHLY': '월세'}
 REAL_PRICE_MAX_YEARS: int = 3
 REAL_PRICE_MAX_PAGES: int = 4
@@ -88,7 +94,15 @@ class DabangRealPrice(BaseModel):
     ] = None
     area_m2: Annotated[
         float | None,
-        Field(description='전용면적 (㎡, 단지 없는 매물 실거래만. 단지는 평형으로 고른다)')
+        Field(description='전용면적 (㎡, --listing 의 다세대·연립 거래만. 단지는 평형으로 고른다)')
+    ] = None
+    total_floor_area_m2: Annotated[
+        float | None,
+        Field(description='연면적 (㎡, 다방 화면의 이름. --listing 의 단독·다가구 거래만. 매물 전용면적과 기준이 달라 그대로 견주지 않는다)')
+    ] = None
+    house_type: Annotated[
+        str | None,
+        Field(description="주택 유형 ('단독', '다가구', --listing 의 단독·다가구 매매만)")
     ] = None
     price_manwon: Annotated[
         float | None,
@@ -110,18 +124,36 @@ class DabangRealPrice(BaseModel):
         bool | None,
         Field(description='직거래')
     ] = None
-    show_area: Annotated[
-        bool,
-        Field(exclude=True, description='면적 키를 낼지 (단지 없는 매물 실거래만)')
-    ] = False
+    # 리뷰 오탐 (2026-11-13): 단독·다가구 줄에 isRegistration 이 없어 키를 빼야 한다는 지적. 웹 단독·다가구 표(room 청크 `ei`)도
+    # 다세대 표처럼 `e.isRegistration` 이 참이면 등기 표시를 그린다. 다방이 이 줄에 값을 주지 않을 뿐이라 해당 없음이 아니라 모름(null)이다
+    registered: Annotated[
+        bool | None,
+        Field(description='등기된 거래 (다방 화면의 등기 표시). 다방이 주지 않으면 null (단독·다가구 거래)')
+    ] = None
+    newly_added: Annotated[
+        bool | None,
+        Field(description='다방이 새 거래로 표시한 거래 (화면의 새 거래 표시)')
+    ] = None
+    area_kind: Annotated[
+        AreaKind,
+        Field(exclude=True, description='낼 면적 키 (단지 실거래는 없음)')
+    ] = 'none'
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for field in NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type, frozenset()):
+        dropped = set(NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type, frozenset()))
+        if self.area_kind != 'exclusive':
+            dropped.add('area_m2')
+        if self.area_kind != 'total_floor':
+            dropped |= {'total_floor_area_m2', 'house_type'}
+        else:
+            # 웹 단독·다가구 표에는 층 칸이 없고(`ei`) 원본 층도 'null' 글자다. 주택유형은 매매 표에만 있다
+            dropped.add('floor')
+            if self.trade_type != '매매':
+                dropped.add('house_type')
+        for field in dropped:
             data.pop(field, None)
-        if not self.show_area:
-            data.pop('area_m2', None)
         return data
 
 
@@ -130,7 +162,7 @@ def _unknown_trade_note(count: int) -> list[str]:
     return [note('제외', f'거래 유형을 읽지 못한 실거래 {count}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}')] if count else []
 
 
-def _real_price(row: DabangRealPriceHistoryModel, *, show_area: bool = False) -> DabangRealPrice | None:
+def _real_price(row: DabangRealPriceHistoryModel, *, area_kind: AreaKind = 'none') -> DabangRealPrice | None:
     """실거래 한 줄. 거래 유형을 모르면 None (부르는 쪽이 빼고 알린다)."""
     trade_type = TRADE_BY_PRICE_TYPE.get(row.price_type or '')
     if trade_type is None:
@@ -142,13 +174,17 @@ def _real_price(row: DabangRealPriceHistoryModel, *, show_area: bool = False) ->
         trade_date=normalize_date(f'20{contract}') if contract else None,
         # 지하는 음수로 온다 ('-1', 2026-10-25 실측: 망원동 다세대 매매 50건 중 6건)
         floor=normalize_floor(str(int(floor))) if floor and floor.lstrip('-').isdecimal() else floor,
-        area_m2=row.size,
+        area_m2=row.size if area_kind == 'exclusive' else None,
+        total_floor_area_m2=row.size if area_kind == 'total_floor' else None,
+        house_type=row.building_type if area_kind == 'total_floor' else None,
         price_manwon=row.trade_price,
         deposit_manwon=row.deposit,
         rent_manwon=row.monthly_price,
         cancelled=row.is_release,
         direct=row.is_direct,
-        show_area=show_area,
+        registered=row.is_registration,
+        newly_added=row.is_new,
+        area_kind=area_kind,
     )
 
 
@@ -185,7 +221,10 @@ class DabangRealPriceResult(BaseModel):
     ]
     basis: Annotated[
         str | None,
-        Field(description="거래를 모은 범위 (--listing: '역삼동 단독·다가구' 처럼 그 동의 같은 건물 유형)")
+        Field(description=(
+            "거래를 모은 범위 (--listing 만): '이 집 (망원동 다세대·연립)' 은 이 매물과 같은 지번 건물, '역삼동 단독·다가구' 는 "
+            '그 동의 같은 건물 유형. 다방이 범위를 알려 주지 않으면 null'
+        ))
     ] = None
     total: Annotated[
         int | None,
@@ -285,7 +324,7 @@ class _Collected(NamedTuple):
     unknown: int
 
 
-def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, show_area: bool = False) -> _Collected:
+def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, area_kind: AreaKind = 'none') -> _Collected:
     """실거래를 `limit` 줄까지 쪽마다 받는다. `fetch(page, page_size)` 는 한 쪽을 주고, 결과가 없으면 None.
 
     다방은 (page - 1) × limit 번째부터 준다. 쪽마다 크기를 바꾸면 앞 쪽과 겹쳐 쪽 크기를 고정하고 넘치는 건 자른다
@@ -304,7 +343,7 @@ def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, show_area
         total = fetched.total if total is None else total
         page_rows = fetched.histories[:limit - received]
         received += len(page_rows)
-        rows = [_real_price(row, show_area=show_area) for row in page_rows]
+        rows = [_real_price(row, area_kind=area_kind) for row in page_rows]
         prices += [price for price in rows if price is not None]
         unknown += rows.count(None)
         has_more = fetched.has_more or len(page_rows) < len(fetched.histories)
@@ -362,49 +401,95 @@ def get_real_prices(
     )
 
 
+def _listing_scope(scope: DabangRealPriceHouseScopeModel) -> tuple[str | None, list[str]]:
+    """매물 실거래의 범위 이름(`basis`)과 안내. 웹 제목처럼 `historyBaseType` 을 따르고, 모르는 값이면 범위를 짐작하지 않는다."""
+    building = BUILDING_VIEW_LABELS.get(scope.building_view_type or '', scope.building_view_type or '')
+    if scope.building_view_type == 'MULTIPLEX':
+        area = '면적(area_m2)은 전용면적입니다. 면적·층을 보고 비슷한 집만 견주세요'
+    else:
+        area = '면적(total_floor_area_m2)은 다방이 연면적이라 부르는 값이라 매물 전용면적과 기준이 다릅니다. 그대로 견주지 마세요'
+    place = ' '.join(part for part in (scope.dong_name, building) if part)
+    if scope.history_base_type == 'JIBUN':
+        # 요청한 매물의 건물이라 범위가 요청과 다르지 않다 ([참고]). 같은 동 거래만 [범위] 다
+        return f'이 집 ({place})' if place else '이 집', [note(
+            '참고', f'이 매물과 같은 지번 건물(이 집)의 실거래입니다 (다방 매물 화면과 같은 범위). 같은 건물의 다른 집 거래도 들 수 있습니다. {area}',
+        )]
+    if scope.history_base_type == 'DONG':
+        target = f'같은 동의 같은 건물 유형({place})' if place else '같은 동의 같은 건물 유형'
+        return place or None, [note('범위', f'이 매물 건물이 아니라 {target} 실거래입니다 (다방 매물 화면과 같은 범위). {area}')]
+    return None, [note(
+        '참고', f'다방이 거래를 모은 범위(historyBaseType: {scope.history_base_type})를 알아보지 못했습니다. {area}. {UPDATE_MAYBE_NEEDED}',
+    )]
+
+
+def _listing_not_found(listing_id: str) -> JibsaError:
+    return JibsaError(
+        code='NOT_FOUND',
+        message=f'다방이 이 매물의 실거래를 주지 않았습니다: {listing_id} (없는 매물이거나 단지 매물)',
+        hint='단지 없는 매물(빌라·주택·원룸)의 ID 를 주세요. 오피스텔·아파트 매물은 jibsa dabang listing <ID> 결과의 '
+        'complex_id 로 jibsa dabang real-price <complex_id>',
+    )
+
+
 def get_listing_real_prices(
     client: DabangClient,
     listing_id: str,
     *,
-    trade: RealPriceTrade,
+    trade: RealPriceTrade | None,
     years: int,
     limit: int,
 ) -> DabangRealPriceResult:
-    """단지 없는 매물(빌라·주택·원룸)의 실거래. 그 건물이 아니라 같은 동의 같은 건물 유형 거래다 (다방 매물 상세 화면과 같다).
+    """단지 없는 매물(빌라·주택·원룸)의 실거래. 다방 매물 화면처럼 이 집(같은 지번) 또는 같은 동의 같은 건물 유형 거래다.
+
+    웹처럼 실거래 첫 화면(`house/init`)을 먼저 받아 건물 유형과 매물의 거래 유형을 안다 (요청 +1). `trade` 를 주지
+    않으면 웹처럼 매물의 거래 유형을 따른다 (매매 매물은 매매, 월세·전세 매물은 전월세). 범위(이 집 / 같은 동)는 거래
+    유형마다 달라 받은 거래 목록이 알려 주는 값을 쓴다.
 
     Raises:
-        JibsaError: 매물이 없거나 단지 매물일 때 (NOT_FOUND).
+        JibsaError: 매물이 없거나 단지 매물일 때 (NOT_FOUND), `trade` 없이 부르는데 다방이 매물의 거래 유형(searchType)을
+            알려 주지 않을 때 (UPSTREAM_ERROR).
     """
     from_month, to_month = period_months(years)
-    basis: str | None = None
+    init = client.run_request_real_price_house_init_v5(DabangRealPriceHouseInitV5RequestParameterModel(
+        room_id=listing_id, from_date=from_month, to_date=to_month,
+    )).result
+    # 없는 매물·단지 매물(오피스텔·아파트)에는 에러 대신 거래 유형·동·범위가 빈 결과를 준다. 거래가 0건인 매물도 동·범위는 온다
+    # (2026-10-25 실측: 없는 ID·강남역 오피스텔 매물은 dongName·historyBaseType null, 도곡동 단독 1년 매매 0건은 '도곡동'·'DONG'.
+    # 2026-11-13 실측: 없는 ID 의 house/init 도 searchType·dongName·historyBaseType 이 모두 null)
+    if init is None or (init.dong_name is None and init.history_base_type is None):
+        raise _listing_not_found(listing_id)
+    notes: list[str] = []
+    if trade is None:
+        chosen = TRADE_BY_SEARCH_TYPE.get(init.search_type or '')
+        if chosen is None:
+            raise JibsaError(
+                code='UPSTREAM_ERROR',
+                message=f'다방이 이 매물의 실거래 거래 유형을 알려 주지 않았습니다 (searchType: {init.search_type})',
+                hint=f'--trade 매매 또는 --trade 전월세 를 주세요. {UPDATE_MAYBE_NEEDED}',
+            )
+        trade = chosen
+        notes.append(note('거래', f'--trade 를 주지 않아 다방 매물 화면처럼 매물의 거래 유형대로 {trade} 실거래를 찾았습니다'))
+    search_type = SEARCH_TYPE_BY_TRADE[trade]
+    area_kind: AreaKind = 'exclusive' if init.building_view_type == 'MULTIPLEX' else 'total_floor'
+    # 범위는 거래 유형마다 다르다. `init` 의 범위는 매물의 거래 유형 것이라, `--trade` 로 다른 유형을 받으면 받은 목록
+    # (`history`)이 알려 주는 범위를 쓴다 (2026-11-13 리뷰·실측: 역삼동 월세 다세대 6ac9b09a…는 전월세 JIBUN 2건, 매매 DONG 585건)
+    scopes: list[DabangRealPriceHouseScopeModel] = []
 
     def fetch(page: int, page_size: int) -> _Page | None:
-        nonlocal basis
         # 매물 ID 가 쿼리로 가서 없는 매물에도 에러가 아니라 빈 결과가 온다. 그래서 4xx·403 은 다방 주소가 바뀐 것으로 둔다
         result = client.run_request_real_price_house_history_v5(DabangRealPriceHouseHistoryV5RequestParameterModel(
             room_id=listing_id, from_date=from_month, to_date=to_month,
-            search_type=SEARCH_TYPE_BY_TRADE[trade], page=page, limit=page_size,
+            search_type=search_type, page=page, limit=page_size,
         )).result
         if result is None:
             return None
-        if page == 1 and result.dong_name is None and result.history_base_type is None:
-            # 없는 매물·단지 매물(오피스텔·아파트)에는 에러 대신 동·범위가 빈 0건을 준다. 거래가 0건인 매물도 동·범위는 온다
-            # (2026-10-25 실측: 없는 ID·강남역 오피스텔 매물은 dongName·historyBaseType null, 도곡동 단독 1년 매매 0건은 '도곡동'·'DONG')
-            raise JibsaError(
-                code='NOT_FOUND',
-                message=f'다방이 이 매물의 동 실거래를 주지 않았습니다: {listing_id} (없는 매물이거나 단지 매물)',
-                hint='단지 없는 매물(빌라·주택·원룸)의 ID 를 주세요. 오피스텔·아파트 매물은 jibsa dabang listing <ID> 결과의 '
-                'complex_id 로 jibsa dabang real-price <complex_id>',
-            )
-        if basis is None and result.dong_name:
-            building = BUILDING_VIEW_LABELS.get(result.building_view_type or '', result.building_view_type or '')
-            basis = f'{result.dong_name} {building}'.strip() if result.history_base_type == 'DONG' else result.dong_name
+        if not scopes and result.history_base_type is not None:
+            scopes.append(result)
         return _Page(result.histories, result.total, bool(result.has_more))
 
-    collected = _collect(fetch, limit, show_area=True)
-    scope = f'같은 동의 같은 건물 유형({basis})' if basis else '같은 동의 같은 건물 유형'
-    notes = [f'이 매물 건물이 아니라 {scope} 실거래입니다 (다방 매물 화면과 같은 범위). 면적(area_m2)을 보고 비슷한 집만 견주세요']
-    notes += _unknown_trade_note(collected.unknown)
+    collected = _collect(fetch, limit, area_kind=area_kind)
+    basis, scope_notes = _listing_scope(scopes[0] if scopes else init)
+    notes += scope_notes + _unknown_trade_note(collected.unknown)
     return DabangRealPriceResult(
         listing_id=listing_id,
         trade=trade,
@@ -450,6 +535,14 @@ class DabangTrendMonth(BaseModel):
     rent_count: Annotated[
         int | None,
         Field(description='월세 거래 수')
+    ] = None
+    lease_rate_percent: Annotated[
+        float | None,
+        Field(description='그 달 전세가율 (%, 다방 갭 그래프). 매매·전세 평균이 없으면 null')
+    ] = None
+    gap_manwon: Annotated[
+        float | None,
+        Field(description='그 달 매매 평균 − 전세 평균 (만원, 다방 갭 그래프). 없으면 null')
     ] = None
 
 
@@ -569,6 +662,7 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     sale = result.sale or DabangChartSeriesModel()
     lease = result.lease_monthly or DabangChartSeriesModel()
     lease_by_month = {row.date: row for row in lease.statistics}
+    gap_by_month = {row.date: row for row in result.gap.statistics} if result.gap else {}
     # 달 목록은 매매 쪽으로 만든다. 매매·전월세는 늘 같은 36달이고, 매매가 한 건도 없는 평형도 sale 이 null 이 아니라
     # 거래 0건인 36달로 온다 (2026-10-25 실측: 은마·오피스텔 2곳 8개 평형, 매매 0건인 메이플자이 299902)
     months = [
@@ -579,6 +673,12 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
             lease_average_manwon=_average(lease_by_month[row.date].average_price) if row.date in lease_by_month else None,
             lease_count=lease_by_month[row.date].lease_volume if row.date in lease_by_month else None,
             rent_count=lease_by_month[row.date].monthly_volume if row.date in lease_by_month else None,
+            # 웹 갭 그래프는 전세가율이 0 이면 '-' 로 쓴다 (`leaseRate||'-'`). 0% 전세가율은 없으니 모름(None)으로 둔다
+            lease_rate_percent=gap_by_month[row.date].lease_rate or None if row.date in gap_by_month else None,
+            # 리뷰 오탐 (2026-11-13): 평균이 없는 달에 갭이 큰 숫자로 나온다는 지적. 다방은 매매·전세 평균이 0 인 달에
+            # rangeAveragePrice 를 null 로 줘서(58291f8906fa7d73a08581a073c4 평형 111596 은 36달 모두 null) 서버 값을
+            # 그대로 내도 모름이 숫자로 나오지 않는다
+            gap_manwon=gap_by_month[row.date].range_average_price if row.date in gap_by_month else None,
         )
         for row in sale.statistics
     ]

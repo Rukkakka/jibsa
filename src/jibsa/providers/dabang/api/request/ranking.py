@@ -113,7 +113,8 @@ class DabangRegionInfoRealEstateRankingV5RequestParameterModel(RequestModel):
         unit: 'region' 동, 'complex' 단지 (경로).
         metric: 항목 (경로).
         scope_region_gid: 범위 (시·도 또는 시·군·구의 다방 번호). 없으면 전국.
-        complex_type: 아파트·오피스텔.
+        complex_type: 아파트·오피스텔. 거래량·매물수·선호도·전세가율·갭가격은 빼면 아파트·오피스텔 합산 순위다 (웹은 두 유형을
+            모두 고르면 빼고 보낸다, 2026-11-13 real-estate 청크·캡처).
         price_type: 거래 유형 하나 (평균가·평당가·시세증감·최고가증감).
         price_type_list: 거래 유형 여럿 (거래량·매물수·선호도).
         sort: 'DESC' 높은 순, 'ASC' 낮은 순.

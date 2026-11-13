@@ -123,7 +123,7 @@ class DabangRegionInfoSummaryResultModel(ResponseModel):
     ] = []
     ranking_group: Annotated[
         DabangRankingGroupModel | None,
-        Field(description='순위', alias='rankingGroup')
+        Field(description="순위 (평균가는 웹 표시대로 '아파트/매매 기준')", alias='rankingGroup')
     ] = None
     update_date: Annotated[
         str | None,

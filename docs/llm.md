@@ -32,7 +32,7 @@
 | 매물 하나 상세 | `<소스> listing <id>` |
 | 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
-| 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
+| 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 이 집 또는 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
 | 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
 | 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름\|school_code>` (배정 단지, 여러 곳이면 `candidates` 의 `school_code` 로) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) · 단지 근처 어린이집·유치원 `daangn preschools <단지 ID>` (지역·역 이름으로는 찾지 않는다) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
@@ -48,8 +48,8 @@
 - 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 다방·직방 나머지 5km). 다만 역 이름은 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다.
 - 당근은 반경이 없고 당근 웹 화면별로 받는다: 동·구 이름, 역 `--station`, 대학 `--university`, 도로명 주소 `--address`, 좌표 `--lat/--lng`. 역·대학은 당근 주변 목록(역은 도보 `walk_minutes`), 구·좌표·주소는 웹 지도 화면 범위(기본 줌: 구 12 약 12.8×13.6km, 좌표·주소 15 약 1.6×1.7km, `--zoom` 으로 바꿈)를 최근 순으로 준다. 주소는 도로명 주소(`'테헤란로 152'`)만 되고 후보가 여럿이면 `REGION_AMBIGUOUS` 의 `candidates` 그대로 다시 준다. 건물·리 이름은 받지 않는다. 후보는 `daangn search locations <이름>` 이 칸별로 준다.
 - 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
-- 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`. 구 이름까지 겹치면 `hint` 의 예처럼 시·도도 붙인다: `서울 중구 태평로2가`. 직방은 시·도까지 붙인 전체 주소는 못 찾는다. 당근 `광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다 (당근은 노선을 붙여 고른다: `--station '서울5호선 양평역'`).
-- 매물 검색은 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다). 당근은 합치지 않고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성수동2가` 를 고르게 한다. 네이버 재개발 구역 검색처럼 첫 동만 찾는 명령은 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다.
+- 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`. 구 이름까지 겹치면 `hint` 의 예처럼 시·도도 붙인다: `서울 중구 태평로2가`. 직방은 시·도까지 붙인 전체 주소는 못 찾는다. 당근 `광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다 (당근은 노선을 붙여 고른다: `--station '서울5호선 양평역'`. 다방은 `REGION_AMBIGUOUS` 의 `hint` 대로 좌표로 찾는다).
+- 직방·네이버 매물 검색은 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다). 당근·다방은 합치지 않고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성수동2가` 를 고르게 한다. 다방은 여러 캠퍼스에 맞는 대학 이름(`연세대`)도 고르지 않고 `REGION_AMBIGUOUS` 로 캠퍼스 후보를 주니, 후보 이름 그대로(`'연세대학교(원주캠퍼스)'`) 다시 부른다. 네이버 재개발 구역 검색처럼 첫 동만 찾는 명령은 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다.
 
 ## 소스마다 다른 점
 
@@ -63,7 +63,7 @@
 | 반려동물 | `--condition 반려동물` | 없음 | `--option 반려동물가능` | 없음 |
 | 즉시 입주 | `--condition 즉시입주` | `--move-in 바로입주` | `--move-in-now` | 없음 |
 | 욕실 수 | `--bathroom 1` | `--bathroom 1개` | 없음 | 없음 |
-| 면적 | `--area-min` (전용 ㎡) | `--area-min` (전용 ㎡, `--area-basis 공급` 이면 공급) | `--area-min` (전용 ㎡) | `--area-pyeong-min` (평, 정수. 아파트는 공급 평) |
+| 면적 | `--area-min` (전용 ㎡) | `--area-min` (전용 ㎡, `--area-basis 공급` 이면 공급) | `--area-min` (전용 ㎡) | `--area-pyeong-min` (평, 정수. 빌라는 전용, 오피스텔은 계약, 아파트는 공급 평, `room` 은 매물 유형별) |
 | 아파트 공급 ○평대 (예: 30평대) | `apt --supply-area-min 99 --supply-area-max 132` | `-t 아파트 --area-basis 공급 --area-min 99 --area-max 132` | 공급 조건이 없어 전용 ㎡ 로 옮긴다: 공급 ㎡ × 0.75 쯤 (전용 59㎡형 ≈ 공급 24~26평, 84㎡형 ≈ 32~35평이라 20평대에 84㎡ 는 넣지 않는다). 답에 기준을 적는다 | `apt --area-pyeong-min 30 --area-pyeong-max 39` |
 | 반지하·지하 빼기 | `--floor 지상,옥탑방` (`지상` 만이면 옥탑방도 빠진다) | `--floor 1층,저층,중층,고층,탑층` | `--floor 1층,2~5층,6~9층,10층이상` | `--floor 1층,2층이상,옥탑` |
 
@@ -108,13 +108,14 @@
 
 - 매물 검색은 유형별 하위 명령(`room`·`villa`·`officetel`·`apt`)이다. 결과는 **다방 목록 순**이라 거리순이 아니다 (역·좌표 검색은 `distance_km` 로 고른다).
 - 동·역·대학 이름을 받고 구·시 이름은 못 찾는다 (`REGION_NOT_SUPPORTED`). 역은 다방이 정한 역 반경(강남역 750m)이다. `apt` 는 동 검색이 없어 동 경계를 덮는 사각형에서 그 동 매물만 남겨 `returned` 가 적을 수 있다.
-- 아파트 매물 목록(`apt`·단지 매물·인기 매물, `room` 에 섞인 아파트)은 다방이 공급면적만 줘서 `area_m2` 가 `null` 이고 `supply_area_m2` 가 공급면적이다. 다른 소스의 전용면적과 견주려면 `listing` 의 `area_m2` 를 본다. `--area-pyeong-min` 도 아파트는 공급 평이다.
+- 아파트 매물 목록(`apt`·단지 매물·인기 매물, `room` 에 섞인 아파트)은 다방이 공급면적만 줘서 `area_m2` 가 `null` 이고 `supply_area_m2` 가 공급면적이다. 다른 소스의 전용면적과 견주려면 `listing` 의 `area_m2` 를 본다. `--area-pyeong-min` 은 아파트는 공급 평, 오피스텔은 계약 평이다 (오피스텔 결과의 `area_m2` 는 전용이라 조건보다 작게 나온다).
 - 단기임대는 따로 있는 거래가 아니라 월세 매물에 붙는 표시라 `trade_type: 월세` 에 `short_lease: true` 다. 보증금이 월세 한두 달치(95/95)면 단기 계약 가격일 수 있다. 단기임대 가능 매물만은 `--condition 단기임대`.
 - 목록의 `address` 는 찾은 동의 매물만 시·구까지다 (역·좌표 검색은 동 이름만). `listing` 은 `id` 대신 다방 화면의 매물번호(`listing_number`)도 받는다.
-- `real-price --listing` 은 그 건물이 아니라 그 동의 같은 건물 유형 거래다 (`basis`). `area_m2` 가 비슷한 거래만 견준다.
-- `region-ranking` 의 값은 항목에 맞는 키에만 있다 (평균가 `value_manwon`, 거래량·학원수 `count`, 전세가율·진학률 `percent`, 시세증감 `change_percent`). 시세증감·최고가증감의 `change_manwon` 은 오른 금액이지 현재가가 아니다 (새 최고가 = `prev_price_manwon + change_manwon`). `search sales` 는 다방이 지도 사각형만 받아 역·좌표 둘레는 반경을 덮는 사각형 전체다.
+- `real-price --listing` 은 `--trade` 를 빼면 매물의 거래 유형(매매 매물은 매매, 월세·전세 매물은 전월세)을 따른다. `basis` 가 `이 집 (…)` 이면 이 매물과 같은 지번 건물 거래(같은 건물 다른 집도 든다), 아니면 그 건물이 아니라 그 동의 같은 건물 유형 거래다. 다세대·연립은 `area_m2`(전용)가 비슷한 거래만 견주고, 단독·다가구의 `total_floor_area_m2` 는 건물 전체 연면적이라 매물 전용면적과 견주지 않는다.
+- `region-ranking` 의 값은 항목에 맞는 키에만 있다 (평균가 `value_manwon`, 거래량·학원수 `count`, 전세가율·진학률 `percent`, 시세증감 `change_percent`). 시세증감·최고가증감의 `change_manwon` 은 오른 금액이지 현재가가 아니다 (새 최고가 = `prev_price_manwon + change_manwon`). 거래량·매물수·선호도·전세가율·갭가격은 기본이 아파트·오피스텔 합산(`complex_type`)이라 아파트만 보려면 `-t 아파트` 를 준다.
+- `search sales` 는 다방이 지도 사각형만 받아 역·좌표 둘레는 반경을 덮는 사각형 전체다. 목록의 `sale_household_count` 는 분양 세대수다 (총세대수는 `sale` 의 `household_count`). `sale` 의 `price_kind` 가 `임대가` 면 가격이 분양가가 아니다.
 - `school` 은 `--level` 이 학교 코드와 맞아야 한다 (`dabang complex` 의 `schools[].level` 을 그대로). 틀리면 다방이 서버 고장과 같은 500 을 줘서 `UPSTREAM_ERROR`(`status` 500)이니 코드·단계부터 다시 본다. 다방 학교 코드는 네이버 `school` 코드와 다르다.
-- `station-prices` 는 실거래가가 아니라 지금 올라온 원룸·투룸 매물의 평균(다방 '평균 매물가')이다. `neighborhood` 의 `rank` 는 1 이 가장 많거나 높고, 동 하나만 받는다 (`성수동` 은 `성수동1가` 처럼 고른다).
+- `station-prices` 는 실거래가가 아니라 지금 올라온 원룸·투룸 매물의 평균(다방 '평균 매물가')이다. `neighborhood` 의 `rank` 는 1 이 가장 많거나 높고, 동 하나만 받는다.
 
 ## 실거래·시세 읽기
 

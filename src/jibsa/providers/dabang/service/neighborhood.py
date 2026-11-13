@@ -8,10 +8,7 @@ from pydantic import (
     model_serializer,
 )
 
-from jibsa.core.errors import (
-    JibsaError,
-    RegionAmbiguousError,
-)
+from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     Listing,
@@ -79,17 +76,12 @@ POPULAR_KIND_BY_ROOM_TYPE: dict[str, ListingKind] = {'오피스텔': 'officetel'
 POPULAR_MAX_LIMIT: int = 100
 
 
-def single_dong(places: list[DabangPlace], query: str) -> DabangPlace:
-    """동네정보·인기 매물은 동 하나를 받는다. '○가' 로 나뉜 동(성수동)이면 하나를 고르게 한다.
+def single_dong(place: DabangPlace) -> DabangPlace:
+    """동네정보·인기 매물은 동 하나를 받는다. '○가' 로 나뉜 동(성수동)은 위치 찾기(`resolve_places`)가 하나를 고르게 한다.
 
     Raises:
-        RegionAmbiguousError: 동이 여럿일 때.
         JibsaError: 동이 아닌 역·대학·좌표일 때 (INVALID_ARGUMENT).
     """
-    if len(places) > 1:
-        names = [place.name for place in places]
-        raise RegionAmbiguousError(query, names, len(names), hint=f'동 하나를 골라 다시 부르세요 (예: {names[0]})')
-    place = places[0]
     if place.kind != 'dong' or place.gid is None:
         raise JibsaError(
             code='INVALID_ARGUMENT',
@@ -224,7 +216,7 @@ class DabangPriceStats(BaseModel):
     ]
     rank: Annotated[
         DabangRank | None,
-        Field(description='평균가 순위')
+        Field(description="아파트 평균 매매가 순위 (다방 화면 '아파트/매매 기준'. 오피스텔·전세가는 순위에 들지 않는다)")
     ] = None
 
 
@@ -532,7 +524,7 @@ def get_popular_listings(
             break
         total = result.total if total is None else total
         rows = result.list_[:limit - received]
-        for item in rows:
+        for index, item in enumerate(rows):
             received += 1
             item_kind = kind or POPULAR_KIND_BY_ROOM_TYPE.get((item.room_type_name or '').partition('•')[0].strip(), 'villa')
             # 인기 매물 칸에는 동 번호(gid)가 없다 (모두 그 동 매물이다). 동 번호 자리 0 에 찾은 동 주소를 두어 주소를 채운다
@@ -540,7 +532,9 @@ def get_popular_listings(
             if listing is None:
                 unreadable += 1
                 continue
-            listings.append(listing_as(DabangRankedListing, listing, rank=received))
+            # 순위는 받은 수가 아니라 읽은 쪽과 칸으로 센다. 다방이 한 쪽을 덜 채워도 다음 쪽은 (page - 1) × 쪽 크기 번째부터라
+            # 받은 수로 세면 그 뒤 순위가 앞으로 당겨진다
+            listings.append(listing_as(DabangRankedListing, listing, rank=(page - 1) * page_size + index + 1))
         has_more = bool(result.has_more) or len(rows) < len(result.list_)
         if not result.has_more or not result.list_:
             break

@@ -45,10 +45,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
-    UNBOUNDED_MAX,
-    DabangBboxModel,
-)
+from jibsa.providers.dabang.api.request.common import UNBOUNDED_MAX
 from jibsa.providers.dabang.api.response.region import DabangLocSearchResultModel
 from jibsa.providers.dabang.service.common import (
     COMPLEX_ID_PATTERN,
@@ -64,7 +61,6 @@ from jibsa.providers.dabang.service.common import (
     DabangListingConditions,
     DabangPlace,
     ListingKind,
-    middle_place,
 )
 from jibsa.providers.dabang.service.complex import (
     get_complex,
@@ -72,6 +68,7 @@ from jibsa.providers.dabang.service.complex import (
     search_complexes,
 )
 from jibsa.providers.dabang.service.listing import (
+    DabangListPosition,
     attach_details,
     get_listing,
     search_listings,
@@ -139,6 +136,16 @@ from typing import (
 
 SOURCE: str = 'dabang'
 MAX_RADIUS_KM: float = 5.0
+# search locations 의 --limit 최대값. 다방 장소 검색이 종류마다 50곳까지 준다
+LOCATIONS_MAX_LIMIT: int = 50
+# 방 크기 조건(pyeongRange)의 기준 면적. 다방 웹 필터 이름표를 따른다 (room-size-type-chunk, 2026-11-13). 목록의 area_m2 는 전용이고
+# 아파트는 supply_area_m2 가 공급이다. 오피스텔 강남역 --area-pyeong-min 17 은 23건 모두 전용 17평 미만이었다 (같은 날 실측)
+AREA_BASIS_BY_KIND: dict[ListingKind, str] = {
+    'room': "다방 '매물유형별 기준면적' 으로 걸어 결과 area_m2(전용)와 기준이 다를 수 있다",
+    'villa': '전용면적 기준',
+    'officetel': '계약면적 기준. 결과 area_m2 는 전용이라 더 작게 나온다',
+    'apt': '공급면적 기준 (결과 supply_area_m2)',
+}
 REAL_PRICE_TRADES: tuple[str, ...] = ('매매', '전월세')
 COMPLEX_KINDS: tuple[str, ...] = ('아파트', '오피스텔')
 # 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령에 없는 조건은 없다고 알린다
@@ -226,14 +233,25 @@ RadiusOption = Annotated[
         ),
     ),
 ]
+ComplexRadiusOption = Annotated[
+    float | None,
+    typer.Option(
+        '--radius',
+        min=0.1,
+        max=MAX_RADIUS_KM,
+        help=(
+            f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받는다 (단지 목록은 사각형 모서리의 반경 밖 단지도 빼지 않는다). '
+            f'없으면 동은 그 동 안, 역은 다방이 정한 역 반경, 대학은 대학 둘레(아파트는 {DEFAULT_RADIUS_KM:g}km 사각형), '
+            f'좌표는 {DEFAULT_RADIUS_KM:g}km 사각형'
+        ),
+    ),
+]
 LimitOption = Annotated[
     int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 매물 수 (제외 전, 다방은 24건씩 준다, 최대 {MAX_LIST_LIMIT})'),
 ]
 RentIncludesManageOption = Annotated[
     bool, typer.Option('--rent-includes-manage-cost', help='--rent-min/--rent-max 를 월세 + 관리비로 본다 (다방 필터)'),
 ]
-AreaPyeongMinOption = Annotated[int | None, typer.Option(min=0, help='방 크기 하한 (평, 정수)')]
-AreaPyeongMaxOption = Annotated[int | None, typer.Option(min=0, help='방 크기 상한 (평, 정수)')]
 DetailsOption = Annotated[
     bool,
     typer.Option(
@@ -253,6 +271,10 @@ FloorOption = Annotated[
 
 def _room_option(kind: ListingKind) -> object:
     return typer.Option('--room', help=f"방 개수: {', '.join(ROOM_LABELS_BY_KIND[kind])}. 반복하거나 쉼표로 구분 (OR). 기본 전체")
+
+
+def _area_option(kind: ListingKind, bound: str) -> object:
+    return typer.Option(min=0, help=f'방 크기 {bound} (평, 정수). {AREA_BASIS_BY_KIND[kind]}')
 
 
 def _condition_option(kind: ListingKind) -> object:
@@ -283,9 +305,9 @@ def _validate_ranges(*ranges: tuple[str, int | None, int | None]) -> None:
             )
 
 
-def _places(client: DabangClient, query: str | None, lat: float | None, lng: float | None) -> tuple[list[DabangPlace], list[str]]:
+def _place(client: DabangClient, query: str | None, lat: float | None, lng: float | None) -> DabangPlace:
     if lat is not None and lng is not None:
-        return [DabangPlace(kind='point', name=query or f'{lat},{lng}', lat=lat, lng=lng)], []
+        return DabangPlace(kind='point', name=query or f'{lat},{lng}', lat=lat, lng=lng)
     return resolve_places(client, query or '')
 
 
@@ -387,38 +409,33 @@ def _search(
             households_min=households_min,
             households_max=households_max,
         )
-        if position is not None and 'places' in position:
+        if position is not None and 'place' in position:
             # 이어 받기는 첫 결과가 찾은 위치를 그대로 쓴다. 장소 검색을 다시 묻지 않고, 그사이 다방 검색 순서가 바뀌어도
             # 같은 동·역에서 이어 받는다
-            places = [DabangPlace.model_validate(item) for item in position['places']]
-            notes = [str(item) for item in position.get('place_notes', [])]
+            place = DabangPlace.model_validate(position['place'])
         else:
-            places, notes = _places(client, query, lat, lng)
-        offsets = {str(key): int(value) for key, value in (position or {}).get('offsets', {}).items()}
-        finished = {
-            str(key): (int(done), None if counted is None else int(counted))
-            for key, (done, counted) in (position or {}).get('finished', {}).items()
-        }
-        saved_bbox = (position or {}).get('bbox')
+            place = _place(client, query, lat, lng)
+        resume = DabangListPosition.model_validate(position['list']) if position is not None and 'list' in position else None
         result = search_listings(
-            client, kind, places, conditions=conditions, limit=limit, radius_km=radius, offsets=offsets or None,
-            finished=finished or None, bbox=DabangBboxModel.model_validate(saved_bbox) if saved_bbox else None,
+            client, kind, place, conditions=conditions, limit=limit, radius_km=radius, resume=resume,
         )
-        next_position = result.next_position
-        if next_position is not None:
-            next_position = {**next_position, 'places': [_place_state(place) for place in places], 'place_notes': notes}
+        next_position = None
+        if result.next_position is not None:
+            next_position = {'list': result.next_position.model_dump(mode='json'), 'place': _place_state(place)}
         if details:
             result = attach_details(client, result, built_within_years=built_within)
-        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(next_position), fields=fields)
+        emit(result, pretty, notes=trade_notes + result.notes, next_token=encode_next(next_position), fields=fields)
 
 
 @search_app.command('locations')
 def locations_command(
     query: Annotated[str, typer.Argument(help='동·역·대학·단지 이름 (예: 역삼동, 강남역, 홍익대학교, 은마)')],
-    limit: Annotated[int, typer.Option(min=1, max=50, help='종류마다 최대 후보 수')] = 10,
+    limit: Annotated[
+        int, typer.Option(min=1, max=LOCATIONS_MAX_LIMIT, help=f'종류마다 최대 후보 수 (다방은 종류마다 {LOCATIONS_MAX_LIMIT}곳까지 준다)'),
+    ] = 10,
     pretty: PrettyOption = None,
 ) -> None:
-    """이름으로 다방의 동·역·대학·단지·분양 후보를 찾는다 (요청 1회).
+    """이름으로 다방의 동·역·대학·단지·분양 후보를 찾는다 (요청 1회). 후보는 다방 순서 그대로다.
 
     complexes[].complex_id 를 jibsa dabang complex·search listings --complex·real-price 에, sales[].sale_id 를 sale 에 넘긴다.
 
@@ -427,6 +444,18 @@ def locations_command(
     """
     with handle_errors(SOURCE), DabangClient() as client:
         result = search_locations(client, query, ['REGION', 'SUBWAY', 'UNIV', 'COMPLEX', 'SALE_IN_LOTS'])
+        # 다방 웹은 받은 후보를 모두 보여 준다. 종류마다 앞 --limit 곳만 주므로 자른 종류가 있으면 알린다
+        counts = {
+            '동': len(result.region_list),
+            '역': len(result.subway_list),
+            '대학': len(result.univ_list),
+            '단지': len(result.complex_list),
+            '분양': len(result.sale_in_lots_list),
+        }
+        cut = [f'{label} {count}곳 중 {limit}곳' for label, count in counts.items() if count > limit]
+        notes = [note(
+            '일부', f"종류마다 다방 순서로 앞 {limit}곳만 보여 줍니다 ({', '.join(cut)}). 더 보려면 --limit 을 늘리세요 (최대 {LOCATIONS_MAX_LIMIT})",
+        )] if cut else []
         emit(
             {
                 'query': query,
@@ -473,6 +502,7 @@ def locations_command(
                 ],
             },
             pretty,
+            notes=notes,
         )
 
 
@@ -488,8 +518,8 @@ def room_command(
     rent_min: RentMinOption = None,
     rent_max: RentMaxOption = None,
     rent_includes_manage_cost: RentIncludesManageOption = False,
-    area_pyeong_min: AreaPyeongMinOption = None,
-    area_pyeong_max: AreaPyeongMaxOption = None,
+    area_pyeong_min: Annotated[int | None, _area_option('room', '하한')] = None,
+    area_pyeong_max: Annotated[int | None, _area_option('room', '상한')] = None,
     built_within: BuiltWithinOption = None,
     floor: FloorOption = None,
     room: Annotated[list[str] | None, _room_option('room')] = None,
@@ -530,8 +560,8 @@ def villa_command(
     price_min: PriceMinOption = None,
     price_max: PriceMaxOption = None,
     rent_includes_manage_cost: RentIncludesManageOption = False,
-    area_pyeong_min: AreaPyeongMinOption = None,
-    area_pyeong_max: AreaPyeongMaxOption = None,
+    area_pyeong_min: Annotated[int | None, _area_option('villa', '하한')] = None,
+    area_pyeong_max: Annotated[int | None, _area_option('villa', '상한')] = None,
     built_within: BuiltWithinOption = None,
     floor: FloorOption = None,
     room: Annotated[list[str] | None, _room_option('villa')] = None,
@@ -544,7 +574,7 @@ def villa_command(
 ) -> None:
     """주택·빌라 (다방 '주택·빌라' 목록). 방 하나짜리 빌라도 나온다 (property_type '빌라').
 
-    예: jibsa dabang search listings villa 성수동 --trade 전세 --deposit-max 30000 --room 투룸,쓰리룸
+    예: jibsa dabang search listings villa 성수동1가 --trade 전세 --deposit-max 30000 --room 투룸,쓰리룸
     """
     _search(
         'villa', query=query, lat=lat, lng=lng, radius=radius, trade=trade, deposit_min=deposit_min, deposit_max=deposit_max,
@@ -569,8 +599,8 @@ def officetel_command(
     price_min: PriceMinOption = None,
     price_max: PriceMaxOption = None,
     rent_includes_manage_cost: RentIncludesManageOption = False,
-    area_pyeong_min: AreaPyeongMinOption = None,
-    area_pyeong_max: AreaPyeongMaxOption = None,
+    area_pyeong_min: Annotated[int | None, _area_option('officetel', '하한')] = None,
+    area_pyeong_max: Annotated[int | None, _area_option('officetel', '상한')] = None,
     built_within: BuiltWithinOption = None,
     room: Annotated[list[str] | None, _room_option('officetel')] = None,
     condition: Annotated[list[str] | None, _condition_option('officetel')] = None,
@@ -607,8 +637,8 @@ def apt_command(
     price_min: PriceMinOption = None,
     price_max: PriceMaxOption = None,
     rent_includes_manage_cost: RentIncludesManageOption = False,
-    area_pyeong_min: AreaPyeongMinOption = None,
-    area_pyeong_max: AreaPyeongMaxOption = None,
+    area_pyeong_min: Annotated[int | None, _area_option('apt', '하한')] = None,
+    area_pyeong_max: Annotated[int | None, _area_option('apt', '상한')] = None,
     built_within: BuiltWithinOption = None,
     room: Annotated[list[str] | None, _room_option('apt')] = None,
     condition: Annotated[list[str] | None, _condition_option('apt')] = None,
@@ -713,7 +743,7 @@ def complexes_command(
     complex_type: Annotated[str, typer.Option('--type', '-t', help='단지 유형: 아파트, 오피스텔')] = '아파트',
     lat: LatOption = None,
     lng: LngOption = None,
-    radius: RadiusOption = None,
+    radius: ComplexRadiusOption = None,
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='받을 단지 수 (제외 전, 다방은 24곳씩 준다)')] = DEFAULT_LIST_LIMIT,
     pretty: PrettyOption = None,
 ) -> None:
@@ -728,9 +758,9 @@ def complexes_command(
     require_finite('--radius', radius)
     chosen_type = _one([complex_type], COMPLEX_KINDS, '--type', '아파트')
     with handle_errors(SOURCE), DabangClient() as client:
-        places, notes = _places(client, query, lat, lng)
-        result = search_complexes(client, '오피스텔' if chosen_type == '오피스텔' else '아파트', places, limit=limit, radius_km=radius)
-        emit(result, pretty, notes=notes + result.notes)
+        place = _place(client, query, lat, lng)
+        result = search_complexes(client, '오피스텔' if chosen_type == '오피스텔' else '아파트', place, limit=limit, radius_km=radius)
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('listing')
@@ -761,7 +791,8 @@ def complex_command(
     complex_id: Annotated[str, typer.Argument(help='단지 ID (search locations·search complexes 결과의 complex_id)')],
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보: 세대수·동 수·주차·층·용적률·건폐율·시공사·사용승인일, 평형(pyeongs[].space_seq), 평당가 비교, 최근 실거래, 학교.
+    """단지 정보: 세대수·동 수·주차·층·용적률·건폐율·시공사·사용승인일·최근 거래 수·꼬리표, 평형(pyeongs[].space_seq), 평당가 비교,
+    최근 실거래, 학교·어린이집·유치원.
 
     예: jibsa dabang complex 58291f830ff9bd73a07ca123c632
     """
@@ -800,12 +831,21 @@ def real_price_command(
     complex_id: Annotated[str | None, typer.Argument(help='단지 ID. 단지 없는 매물은 빼고 --listing')] = None,
     listing: Annotated[
         str | None,
-        typer.Option('--listing', help='단지 없는 매물(빌라·주택·원룸)의 매물 ID. 그 동의 같은 건물 유형 실거래를 준다'),
+        typer.Option(
+            '--listing',
+            help='단지 없는 매물(빌라·주택·원룸)의 매물 ID. 다방 매물 화면처럼 이 집(같은 지번) 또는 같은 동의 같은 건물 유형 실거래를 준다',
+        ),
     ] = None,
     pyeong: Annotated[
         int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].space_seq). 기본 다방 대표 평형'),
     ] = None,
-    trade: Annotated[str, typer.Option('--trade', help='매매 또는 전월세 (전세·월세를 함께 준다)')] = '매매',
+    trade: Annotated[
+        str | None,
+        typer.Option('--trade', help=(
+            '매매 또는 전월세 (전세·월세를 함께 준다). 기본: 단지는 매매, --listing 은 다방 매물 화면처럼 매물의 거래 유형 '
+            '(매매 매물은 매매, 월세·전세 매물은 전월세)'
+        )),
+    ] = None,
     years: Annotated[
         int, typer.Option('--years', min=1, max=REAL_PRICE_MAX_YEARS, help=f'최근 몇 년 (1~{REAL_PRICE_MAX_YEARS}, 다방은 {REAL_PRICE_MAX_YEARS}년까지)'),
     ] = REAL_PRICE_MAX_YEARS,
@@ -816,12 +856,12 @@ def real_price_command(
 
     예: jibsa dabang real-price 58291f830ff9bd73a07ca123c632 --trade 매매
         jibsa dabang real-price 58291f830ff9bd73a07ca123c632 --pyeong 817 --trade 전월세 --years 1
-        jibsa dabang real-price --listing 6abb32f72f9f803f9c6f3830 --trade 전월세
+        jibsa dabang real-price --listing 6abb32f72f9f803f9c6f3830
     """
     if (complex_id is None) == (listing is None):
         raise typer.BadParameter('단지 ID 와 --listing 중 하나만 주세요', param_hint='COMPLEX_ID')
-    chosen_trade = _one([trade], REAL_PRICE_TRADES, '--trade', '매매')
-    real_trade: RealPriceTrade = '전월세' if chosen_trade == '전월세' else '매매'
+    chosen_trade = _one([trade] if trade is not None else None, REAL_PRICE_TRADES, '--trade', '')
+    given_trade: RealPriceTrade | None = '전월세' if chosen_trade == '전월세' else '매매' if chosen_trade == '매매' else None
     if listing is not None:
         if pyeong is not None:
             raise typer.BadParameter('--pyeong 은 단지 실거래에만 씁니다', param_hint='--pyeong')
@@ -829,12 +869,12 @@ def real_price_command(
         if LISTING_ID_PATTERN.fullmatch(listing_id) is None:
             raise typer.BadParameter(f"다방 매물 ID(24자리)가 아닙니다: '{listing}'", param_hint='--listing')
         with handle_errors(SOURCE), DabangClient() as client:
-            result = get_listing_real_prices(client, listing_id, trade=real_trade, years=years, limit=limit)
+            result = get_listing_real_prices(client, listing_id, trade=given_trade, years=years, limit=limit)
             emit(result, pretty, notes=result.notes)
         return
     value = _require_complex_id(complex_id or '')
     with handle_errors(SOURCE), DabangClient() as client:
-        result = get_real_prices(client, value, space_seq=pyeong, trade=real_trade, years=years, limit=limit)
+        result = get_real_prices(client, value, space_seq=pyeong, trade=given_trade or '매매', years=years, limit=limit)
         emit(result, pretty, notes=result.notes)
 
 
@@ -872,9 +912,8 @@ def neighborhood_command(
     """
     topics = split_csv(topic, NEIGHBORHOOD_TOPICS, '--topic')
     with handle_errors(SOURCE), DabangClient() as client:
-        places, notes = resolve_places(client, query)
-        result = get_neighborhood(client, single_dong(places, query), topics)
-        emit(result, pretty, notes=notes)
+        result = get_neighborhood(client, single_dong(resolve_places(client, query, only='dong')), topics)
+        emit(result, pretty)
 
 
 @app.command('popular-listings')
@@ -899,11 +938,10 @@ def popular_listings_command(
     building_types = split_csv(building_type, tuple(POPULAR_BUILDING_BY_LABEL), '--type')
     trade_types = split_csv(trade, tuple(POPULAR_PRICE_BY_TRADE), '--trade')
     with handle_errors(SOURCE), DabangClient() as client:
-        places, notes = resolve_places(client, query)
         result = get_popular_listings(
-            client, single_dong(places, query), building_types=building_types, trade_types=trade_types, limit=limit,
+            client, single_dong(resolve_places(client, query, only='dong')), building_types=building_types, trade_types=trade_types, limit=limit,
         )
-        emit(result, pretty, notes=notes + result.notes, fields=fields)
+        emit(result, pretty, notes=result.notes, fields=fields)
 
 
 @app.command('nearby')
@@ -913,8 +951,8 @@ def nearby_command(
     ],
     pretty: PrettyOption = None,
 ) -> None:
-    """매물·단지 둘레: 1km 안 지하철역(노선·거리), 500m 안 버스 노선 수, 가장 가까운 버스정류장·편의점·카페·은행·공공기관·경찰과
-    어린이집~고등학교 (요청 2회). 거리는 직선 거리(m)다.
+    """매물·단지 둘레: 1km 안 지하철역(노선·거리), 500m 안 버스 노선 수, 종류마다 가까운 순 3곳 (매물은 버스·편의점·카페·은행·
+    관공서·치안, 단지는 버스·마트·편의점·은행·약국·치안)과 어린이집~고등학교 (요청 2회). 거리는 직선 거리(m)다.
 
     예: jibsa dabang nearby 6abb32f72f9f803f9c6f3830
         jibsa dabang nearby 58291f830ff9bd73a07ca123c632
@@ -941,8 +979,7 @@ def station_prices_command(
     예: jibsa dabang station-prices 강남역
     """
     with handle_errors(SOURCE), DabangClient() as client:
-        places, notes = resolve_places(client, station)
-        emit(get_station_prices(client, places[0]), pretty, notes=notes)
+        emit(get_station_prices(client, resolve_places(client, station, only='station')), pretty)
 
 
 SALE_ID_HELP: str = '분양 ID (search sales·search locations 결과의 sale_id, 28자리)'
@@ -1041,7 +1078,6 @@ def sales_command(
     supplies = split_csv(supply, tuple(SALE_SUPPLY_BY_LABEL), '--supply')
     with handle_errors(SOURCE), DabangClient() as client:
         find = partial(search_sales, client, building_types=building_types, states=states, supply_types=supplies, limit=limit)
-        notes: list[str] = []
         point = lat is not None and lng is not None
         # --radius 를 줘도 시·군·구 이름인지 먼저 본다. 보지 않으면 시·군·구를 동·역으로 찾아 '시·군·구 전체를 찾지 못한다' 는
         # 매물 검색용 에러로 끝난다 (2026-10-26 실측: search sales 강남구 --radius 2)
@@ -1057,12 +1093,12 @@ def sales_command(
         elif scope is not None:
             result = find(scope=scope)
         else:
-            places, notes = resolve_places(client, query or '', searched=searched)
-            if radius is None and places[0].kind == 'dong':
-                result = find(places=places)
+            place = resolve_places(client, query or '', searched=searched)
+            if radius is None and place.kind == 'dong':
+                result = find(dong=place)
             else:
-                result = find(place=middle_place(places), radius_km=radius)
-        emit(result, pretty, notes=notes + result.notes)
+                result = find(place=place, radius_km=radius)
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('sale')
@@ -1174,7 +1210,13 @@ def region_ranking_command(
         )),
     ],
     unit: Annotated[list[str] | None, typer.Option('--unit', help='동 또는 단지. 기본 동')] = None,
-    complex_type: Annotated[list[str] | None, typer.Option('--type', '-t', help='단지 유형: 아파트, 오피스텔. 기본 아파트 (부동산 항목만, 세대수·연식은 받지 않음)')] = None,
+    complex_type: Annotated[
+        list[str] | None,
+        typer.Option('--type', '-t', help=(
+            '단지 유형: 아파트, 오피스텔 (부동산 항목만, 세대수·연식은 받지 않음). 평균가·평당가·시세증감·최고가증감은 하나(기본 아파트), '
+            '거래량·매물수·선호도·전세가율·갭가격은 주지 않거나 둘 다 주면 아파트·오피스텔 합산(다방 웹 기본)'
+        )),
+    ] = None,
     trade: Annotated[
         list[str] | None,
         typer.Option('--trade', help=(
@@ -1210,6 +1252,7 @@ def region_ranking_command(
     chosen_unit = _one(unit, RANKING_UNITS, '--unit', '동')
     trades = split_csv(trade, ('매매', '전세', '월세'), '--trade')
     chosen_kind: str | None = None
+    complex_types = split_csv(complex_type, ('아파트', '오피스텔'), '--type')
     if isinstance(spec, InfoMetricSpec):
         if chosen_unit != '동':
             raise typer.BadParameter(f'{by} 순위는 동 단위만 있습니다', param_hint='--unit')
@@ -1228,12 +1271,14 @@ def region_ranking_command(
             raise typer.BadParameter(f'--kind 는 동네정보 항목만 받습니다: {by}', param_hint='--kind')
         if spec.trade == 'none' and trades:
             raise typer.BadParameter(f'{by} 순위는 거래 유형을 받지 않습니다', param_hint='--trade')
-        if not spec.complex_type and complex_type:
+        if spec.types == 'none' and complex_types:
             # 다방이 단지 유형을 받지 않는 항목이라 요청에서 빠진다. 받아 두면 오피스텔 순위로 잘못 읽는다
             raise typer.BadParameter(f'{by} 순위는 단지 유형을 받지 않습니다', param_hint='--type')
+        if spec.types == 'one' and len(set(complex_types)) > 1:
+            # 웹도 이 항목은 유형을 하나만 고른다 (합산 순위가 없다)
+            raise typer.BadParameter(f'{by} 순위는 아파트·오피스텔 중 하나만 받습니다', param_hint='--type')
         if spec.trade == 'one' and (len(trades) > 1 or '월세' in trades):
             raise typer.BadParameter(f'{by} 순위는 매매·전세 중 하나만 받습니다', param_hint='--trade')
-    chosen_type = _one(complex_type, ('아파트', '오피스텔'), '--type', '아파트')
     chosen_order = _one(order, RANKING_ORDERS, '--order', '높은순')
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_region_ranking(
@@ -1241,7 +1286,7 @@ def region_ranking_command(
             resolve_scope(client, scope),
             metric_label=by,
             unit='단지' if chosen_unit == '단지' else '동',
-            complex_type=chosen_type,
+            complex_types=complex_types,
             trades=trades,
             order='낮은순' if chosen_order == '낮은순' else '높은순',
             limit=limit,

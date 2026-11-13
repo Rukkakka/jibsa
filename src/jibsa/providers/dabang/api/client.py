@@ -54,6 +54,7 @@ from jibsa.providers.dabang.api.request.real_price import (
     DabangRealPriceComplexChartsV5RequestParameterModel,
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
+    DabangRealPriceHouseInitV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.region import (
     DabangGeojsonRegionRequestParameterModel,
@@ -100,6 +101,7 @@ from jibsa.providers.dabang.api.response.real_price import (
     DabangRealPriceComplexChartsV5ResponseModel,
     DabangRealPriceComplexHistoriesV5ResponseModel,
     DabangRealPriceHouseHistoryV5ResponseModel,
+    DabangRealPriceHouseInitV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.region import (
     DabangGeojsonRegionResponseModel,
@@ -200,6 +202,7 @@ class DabangClient(BaseHTTPClient):
     complex_summary_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_type}/summary'
     real_price_complex_histories_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/histories'
     real_price_house_history_v5_endpoint: ClassVar[str] = '/api/v5/real-price/house/history'
+    real_price_house_init_v5_endpoint: ClassVar[str] = '/api/v5/real-price/house/init'
     real_price_complex_charts_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/charts'
     new_room_detail_v3_endpoint: ClassVar[str] = '/api/3/new-room/detail'
     room_get_room_id_v3_endpoint: ClassVar[str] = '/api/3/room/get-room-id'
@@ -597,7 +600,8 @@ class DabangClient(BaseHTTPClient):
     ) -> DabangRealPriceHouseHistoryV5ResponseModel:
         """List real transactions around a non-complex listing via `GET /api/v5/real-price/house/history`.
 
-        Same retry behaviour as `run_request_loc_search_v5`. 그 건물이 아니라 같은 동의 같은 건물 유형 거래다.
+        Same retry behaviour as `run_request_loc_search_v5`. 응답의 `historyBaseType` 이 `JIBUN` 이면 이 집(같은 지번) 거래,
+        `DONG` 이면 같은 동의 같은 건물 유형 거래다.
 
         Args:
             parameter: 매물 ID·기간·매매/전월세·쪽.
@@ -626,6 +630,45 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangRealPriceHouseHistoryV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_real_price_house_init_v5(
+        self,
+        parameter: DabangRealPriceHouseInitV5RequestParameterModel
+    ) -> DabangRealPriceHouseInitV5ResponseModel:
+        """Fetch a non-complex listing's real-price header via `GET /api/v5/real-price/house/init`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 매물 화면이 실거래 목록보다 먼저 부른다. 매물의 거래 유형으로
+        고른 매매·전월세(`searchType`), 거래를 모은 범위(`historyBaseType`), 건물 유형(`buildingViewType`)과 첫 거래를 준다.
+        매물 ID 가 쿼리로 가서 없는 매물에도 에러가 아니라 값이 모두 null 인 결과가 온다 (2026-11-13 실측).
+
+        Args:
+            parameter: 매물 ID·기간·거래 수.
+
+        Returns:
+            DabangRealPriceHouseInitV5ResponseModel: 거래 유형·범위·건물 유형과 첫 거래.
+        """
+        response = self._client.get(
+            url=self.real_price_house_init_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceHouseInitV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_real_price_house_init_v5(
+        self,
+        parameter: DabangRealPriceHouseInitV5RequestParameterModel
+    ) -> DabangRealPriceHouseInitV5ResponseModel:
+        """Async variant of `run_request_real_price_house_init_v5`."""
+        response = await self._async_client.get(
+            url=self.real_price_house_init_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceHouseInitV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_real_price_complex_charts_v5(

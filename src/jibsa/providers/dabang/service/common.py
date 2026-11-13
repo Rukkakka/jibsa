@@ -57,7 +57,8 @@ from typing import (
 
 
 SOURCE: Source = 'dabang'
-# 다방 목록 한 쪽 크기. 서버가 정하고 `limit` 을 보내도 무시한다 (2026-10-25 실측: limit=100 에도 24건)
+# 다방 목록 한 쪽 크기. 서버가 정하고 `limit` 을 보내도 무시한다 (2026-10-25 실측: limit=100 에도 24건). 매물 목록은 다음 쪽이
+# 있어도 23건만 줄 때가 있어(2026-11-13 웹 캡처: 아파트 강남역 1쪽) 이어 받을 위치를 이 크기로 셈하지 않는다 (`DabangListPosition`)
 PAGE_SIZE: int = 24
 DEFAULT_LIST_LIMIT: int = 24
 MAX_LIST_LIMIT: int = 120
@@ -133,6 +134,8 @@ CONDITIONS_BY_KIND: dict[ListingKind, tuple[str, ...]] = {
 COMPLEX_PROPERTY_TYPES: tuple[str, ...] = ('오피스텔', '아파트')
 # 목록 면적이 전용이 아니라 공급면적인 매물 유형 (`room_item_to_listing`)
 APARTMENT_TYPE: str = '아파트'
+# 다방이 계약면적을 주는 매물 유형 (`DabangListingDetail.contract_area_m2`)
+OFFICETEL_TYPE: str = '오피스텔'
 SchoolLevel = Literal['초등학교', '중학교', '고등학교']
 SCHOOL_LEVELS: tuple[SchoolLevel, ...] = ('초등학교', '중학교', '고등학교')
 # 웹 지도 확대 수준 (동 14, 역·대학 15, 지도 범위 16). 동·역 검색에도 필수라 보낸다 (빠지면 400 "줌은 필수값 입니다")
@@ -526,19 +529,6 @@ class DabangPlace(BaseModel):
         int | None,
         Field(exclude=True, description='다방 역 검색 반경 (m)')
     ] = None
-
-
-def middle_place(places: list[DabangPlace]) -> DabangPlace:
-    """반경 검색의 중심. '○가' 동 여럿이면 이름을 이어 붙이고 동 중심들의 가운데로 한다. 첫 동 중심만 쓰면 '합쳐 찾았다' 고
-    알리면서 뒤 동 쪽을 반경 밖으로 뺀다 (2026-10-26 실측: 성수동 --radius 0.5 가 성수동1가 중심 반경만 찾았다).
-    """
-    if len(places) == 1:
-        return places[0]
-    return places[0].model_copy(update={
-        'name': '·'.join(place.name for place in places),
-        'lat': sum(place.lat for place in places) / len(places),
-        'lng': sum(place.lng for place in places) / len(places),
-    })
 
 
 def premium_note(count: int) -> list[str]:

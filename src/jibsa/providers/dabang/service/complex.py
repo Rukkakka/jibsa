@@ -40,6 +40,7 @@ from jibsa.providers.dabang.api.request.complex import (
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.common import (
+    DabangComplexChildcareModel,
     DabangComplexResultModel,
     DabangComplexSchoolModel,
     DabangComplexSpaceModel,
@@ -51,7 +52,6 @@ from jibsa.providers.dabang.api.response.complex import (
 from jibsa.providers.dabang.service.common import (
     MAX_LIST_LIMIT,
     MAX_LIST_PAGES,
-    PAGE_SIZE,
     ZOOM_BY_SEARCH_TYPE,
     DabangListing,
     DabangListingConditions,
@@ -67,11 +67,10 @@ from jibsa.providers.dabang.service.common import (
     floor_label,
     household_count,
     manwon_from_text,
-    middle_place,
     premium_note,
     room_item_to_listing,
 )
-from jibsa.providers.dabang.service.region import dongs_bbox
+from jibsa.providers.dabang.service.region import dong_bbox
 
 from typing import (
     Annotated,
@@ -81,10 +80,14 @@ from typing import (
 
 
 ComplexKind = Literal['아파트', '오피스텔']
+# 최근 거래의 면적을 내는 키. 다방 요약의 면적은 아파트면 공급, 오피스텔이면 계약이다
+RecentAreaKey = Literal['supply_area_m2', 'contract_area_m2']
 CATEGORY_BY_COMPLEX_KIND: dict[ComplexKind, DabangComplexCategory] = {'아파트': 'apt', '오피스텔': 'officetel'}
 LISTING_KIND_BY_CATEGORY: dict[DabangComplexCategory, ListingKind] = {'apt': 'apt', 'officetel': 'officetel'}
 COMPLEX_KIND_BY_TYPE: dict[str, ComplexKind] = {'APT': '아파트', 'OFFICETEL': '오피스텔'}
-NEAREST_SCHOOLS: int = 2
+# 중·고등학교·어린이집·유치원은 가까운 순 3곳. 웹 '주변 보육/교육시설' 탭이 3곳씩 보이고 '더보기' 로 3곳씩 늘린다
+# (education 청크 `Y`·`X`·`Q`·`$` = 3, 2026-11-13)
+NEAREST_SCHOOLS: int = 3
 # 요약 면적('115.54㎡')과 평형표 면적이 같은지 볼 때 허용하는 차 (둘 다 소수 둘째 자리라 반올림 차만 둔다)
 AREA_MATCH_TOLERANCE_M2: float = 0.01
 # 덤 조회(최근 실거래 요약)가 실패해도 단지 정보는 돌려줄 예외. 세 소스 공통 범위에 요청 제한(분당 상한 대기·429 쿨다운)을
@@ -141,11 +144,11 @@ class DabangComplexSummary(BaseModel):
     ] = None
     recent_sale_manwon: Annotated[
         float | None,
-        Field(description='최근 매매 실거래가 (만원, 다방이 고른 대표 평형)')
+        Field(description='최근 매매 실거래가 (만원, 평형과 상관없이 단지의 가장 최근 거래. 다방 목록 카드와 같다)')
     ] = None
     recent_lease_manwon: Annotated[
         float | None,
-        Field(description='최근 전세 실거래가 (만원)')
+        Field(description='최근 전세 실거래가 (만원, 평형과 상관없이 단지의 가장 최근 거래)')
     ] = None
 
 
@@ -208,7 +211,7 @@ def _summary(item: DabangComplexListItemModel) -> DabangComplexSummary:
 def search_complexes(
     client: DabangClient,
     complex_kind: ComplexKind,
-    places: list[DabangPlace],
+    place: DabangPlace,
     *,
     limit: int,
     radius_km: float | None = None,
@@ -219,7 +222,6 @@ def search_complexes(
     """
     category = CATEGORY_BY_COMPLEX_KIND[complex_kind]
     filters = DabangAptFiltersModel() if category == 'apt' else DabangOfficetelFiltersModel()
-    place = middle_place(places) if radius_km is not None else places[0]
     notes: list[str] = []
     keep_gids: frozenset[int] | None = None
     search_type: DabangSearchType
@@ -233,19 +235,17 @@ def search_complexes(
     if radius_km is not None:
         south, north, west, east = box_around(place.lat, place.lng, radius_km)
         search_type, bbox, scope = 'bbox', bbox_of(south, north, west, east), f'{place.name} 반경 {radius_km:g}km (사각형)'
-        if len(places) > 1:
-            notes.append(note('범위', f'{place.name} 중심들의 가운데에서 반경 {radius_km:g}km 를 덮는 사각형을 찾았습니다'))
     elif place.kind == 'station':
         search_type, place_id, scope = 'subway', place.place_id, f'{place.name} 다방 역 반경'
     elif place.kind == 'university':
         # 여기 오는 것은 오피스텔뿐이다 (아파트 대학은 위에서 반경으로 바꾼다). 오피스텔 단지 목록은 대학 검색이 된다
         # (2026-10-26 실측: 홍익대학교 -t 오피스텔 정상, 403 은 아파트 단지 목록만)
         search_type, place_id, scope = 'univ', place.place_id, f'{place.name} 둘레'
-    elif category == 'apt' or len(places) > 1:
-        # 아파트는 동 검색이 없다. '○가' 동 여럿도 한 사각형으로 받아 그 동들 단지만 남긴다
-        search_type, bbox = 'bbox', dongs_bbox(client, places)
-        keep_gids = frozenset(part.gid for part in places if part.gid is not None)
-        scope = f"{'·'.join(part.name for part in places)} 안"
+    elif category == 'apt':
+        # 아파트는 동 검색이 없다. 동 경계를 덮는 사각형으로 받아 그 동 단지만 남긴다
+        search_type, bbox = 'bbox', dong_bbox(client, place)
+        keep_gids = frozenset({place.gid} if place.gid is not None else ())
+        scope = f'{place.name} 안'
     else:
         search_type, code, scope = 'region', place.code, f'{place.name} 안'
     complexes: list[DabangComplexSummary] = []
@@ -312,9 +312,8 @@ def search_complexes(
             f'단지가 더 있습니다 (다방 목록 순 앞 {received}곳을 봤습니다). '
             + more_hint(limit, MAX_LIST_LIMIT, '반경' if radius_km is not None or place.kind != 'dong' else '지역'),
         ))
-    region = place if len(places) == 1 else place.model_copy(update={'name': '·'.join(part.name for part in places)})
     return DabangComplexListResult(
-        region=region, scope=scope, total=total, returned=len(complexes), has_more=has_more, complexes=complexes, notes=notes,
+        region=place, scope=scope, total=total, returned=len(complexes), has_more=has_more, complexes=complexes, notes=notes,
     )
 
 
@@ -386,7 +385,7 @@ class DabangAreaPrice(BaseModel):
 
 
 class DabangRecentTrade(BaseModel):
-    """최근 실거래 한 건 (단지 요약)."""
+    """최근 실거래 한 건 (단지 요약). 면적은 다방 화면처럼 아파트는 공급면적, 오피스텔은 계약면적 키 하나만 있다."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -404,14 +403,32 @@ class DabangRecentTrade(BaseModel):
         str | None,
         Field(description='층')
     ] = None
+    supply_area_m2: Annotated[
+        float | None,
+        Field(description='거래 공급면적 (㎡, 아파트. 다방 화면의 면적)')
+    ] = None
+    contract_area_m2: Annotated[
+        float | None,
+        Field(description='거래 계약면적 (㎡, 오피스텔. 다방 화면의 면적)')
+    ] = None
     space_seq: Annotated[
         int | None,
-        Field(description='거래한 평형 번호 (pyeongs[].space_seq). 평형을 알아보지 못하면 null')
+        Field(description='거래한 평형 번호 (pyeongs[].space_seq). 면적이 맞는 평형이 하나일 때만, 없거나 여럿이면 null')
     ] = None
     area_m2: Annotated[
         float | None,
-        Field(description='거래한 평형의 전용면적 (㎡). 평형을 알아보지 못하면 null')
+        Field(description='거래한 평형의 전용면적 (㎡). space_seq 가 null 이면 null')
     ] = None
+    area_key: Annotated[
+        RecentAreaKey,
+        Field(exclude=True, description='단지 유형에 맞는 면적 키')
+    ] = 'supply_area_m2'
+
+    @model_serializer(mode='wrap')
+    def drop_other_area(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        data.pop('contract_area_m2' if self.area_key == 'supply_area_m2' else 'supply_area_m2', None)
+        return data
 
 
 class DabangComplexSchool(BaseModel):
@@ -471,6 +488,35 @@ class DabangComplexSchool(BaseModel):
         if self.level != '고등학교':
             data.pop('university_entrants', None)
         return data
+
+
+class DabangChildcare(BaseModel):
+    """단지 근처 어린이집·유치원 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    code: Annotated[
+        str | None,
+        Field(description='다방 시설 코드 (jibsa 에 이 코드로 보는 명령은 없다)')
+    ] = None
+    name: Annotated[
+        str,
+        Field(description='시설 이름')
+    ]
+    establishment: Annotated[
+        str | None,
+        Field(description="설립 유형 (어린이집 '국공립'·'민간'·'직장'·'가정'·'협동', 유치원 '공립'·'사립')")
+    ] = None
+    distance_m: Annotated[
+        int | None,
+        Field(description='단지에서 직선 거리 (m)')
+    ] = None
+    children_per_teacher: Annotated[
+        float | None,
+        Field(description='교사당 아동 수')
+    ] = None
 
 
 class DabangComplexDetail(BaseModel):
@@ -556,6 +602,14 @@ class DabangComplexDetail(BaseModel):
         int | None,
         Field(description='지금 올라온 매물 수')
     ] = None
+    recent_deal_count: Annotated[
+        int | None,
+        Field(description="최근 거래 수 (다방 화면의 '최근 거래수 N건', 다방이 기간을 밝히지 않는다)")
+    ] = None
+    tags: Annotated[
+        list[str],
+        Field(description="다방 단지 꼬리표 (예: '입주 5년차', '고속터미널역 도보 7분', '초품아'). 없으면 []")
+    ] = []
     pyeongs: Annotated[
         list[DabangPyeong],
         Field(description='평형')
@@ -578,7 +632,15 @@ class DabangComplexDetail(BaseModel):
     ] = None
     schools: Annotated[
         list[DabangComplexSchool] | None,
-        Field(description='배정 초등학교와 단지가 든 학교군의 가까운 중·고등학교 2곳씩. 모르면 null')
+        Field(description=f'배정 초등학교와 단지가 든 학교군의 가까운 중·고등학교 {NEAREST_SCHOOLS}곳씩. 모르면 null')
+    ] = None
+    nurseries: Annotated[
+        list[DabangChildcare] | None,
+        Field(description=f'가까운 어린이집 {NEAREST_SCHOOLS}곳. 없으면 [], 모르면 null')
+    ] = None
+    kindergartens: Annotated[
+        list[DabangChildcare] | None,
+        Field(description=f'가까운 유치원 {NEAREST_SCHOOLS}곳. 없으면 [], 모르면 null')
     ] = None
     url: Annotated[
         str,
@@ -586,7 +648,7 @@ class DabangComplexDetail(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='덤 조회 실패 안내')
+        Field(exclude=True, description='덤 조회 실패·최근 거래 평형 안내')
     ] = []
 
 
@@ -605,31 +667,66 @@ def _school(school: DabangComplexSchoolModel, level: SchoolLevel) -> DabangCompl
     )
 
 
-def _recent(trade: DabangLatelyPriceModel | None, spaces: list[DabangComplexSpaceModel]) -> DabangRecentTrade | None:
-    """단지 요약의 최근 거래. 요약 면적은 전용이 아니라 아파트는 공급면적, 오피스텔은 계약면적이고 평형 번호가 없어
-    평형표에서 그 면적인 평형을 찾아 전용면적을 낸다 (2026-10-26 실측: 은마 매매 115.54㎡ = 34평 공급, 전용 84.43㎡ /
-    역삼SK허브블루 매매 55.19㎡ = 16평 계약, 전용 30.06㎡).
+def _childcare(facility: DabangComplexChildcareModel) -> DabangChildcare:
+    teacher = (facility.child_per_teacher or '').removesuffix('명').strip()
+    try:
+        children = float(teacher) if teacher else None
+    except ValueError:
+        children = None
+    return DabangChildcare(
+        code=facility.code,
+        name=facility.name,
+        establishment=facility.type or facility.establish_divide,
+        distance_m=facility.distance,
+        children_per_teacher=children,
+    )
+
+
+def _recent(
+    trade: DabangLatelyPriceModel | None,
+    spaces: list[DabangComplexSpaceModel],
+    category: DabangComplexCategory,
+    label: str,
+) -> tuple[DabangRecentTrade | None, list[str]]:
+    """단지 요약의 최근 거래와 안내. 요약 면적은 전용이 아니라 아파트는 공급면적, 오피스텔은 계약면적이고 평형 번호가 없다
+    (2026-10-26 실측: 은마 매매 115.54㎡ = 34평 공급, 전용 84.43㎡ / 역삼SK허브블루 매매 55.19㎡ = 16평 계약, 전용 30.06㎡).
+
+    웹 요약은 면적만 보여 주므로 그 면적을 그대로 내고, 평형표에서 그 면적인 평형이 하나뿐일 때만 평형 번호·전용면적을 붙인다.
+    공급면적이 같은 평형이 여럿인 단지가 있어 고르지 않는다 (2026-11-13 실측: 삼호1차 82.08㎡ 는 3526(24A)·286028(24C)).
     """
     if trade is None or trade.format_price is None:
-        return None
+        return None, []
     text = (trade.format_room_size or '').rstrip('㎡m²').strip()
     try:
         size = float(text) if text else None
     except ValueError:
         size = None
-    space = next((
+    matches = [
         space for space in spaces
         if size is not None and any(
             value is not None and abs(value - size) < AREA_MATCH_TOLERANCE_M2 for value in (space.supply_space, space.contract_space)
         )
-    ), None)
+    ]
+    space = matches[0] if len(matches) == 1 else None
+    notes: list[str] = []
+    if len(matches) > 1:
+        candidates = ', '.join(f'{match.space_seq}({match.pyeong_type})' if match.pyeong_type else str(match.space_seq) for match in matches)
+        # 고르지 않고 비운 것이라 '하나를 골랐다' 는 뜻의 [모호] 가 아니라 [참고] 로 알린다 (output-contract.md 의 꼬리표)
+        notes.append(note(
+            '참고',
+            f'최근 {label} 거래의 면적 {size:g}㎡ 인 평형이 여럿이라 space_seq·area_m2 를 null 로 두었습니다. 후보 평형: {candidates}',
+        ))
+    area_key: RecentAreaKey = 'contract_area_m2' if category == 'officetel' else 'supply_area_m2'
     return DabangRecentTrade(
         price_manwon=manwon_from_text(trade.format_price),
         trade_date=normalize_date(f'20{trade.format_contract_date}') if trade.format_contract_date else None,
         floor=floor_label(trade.format_floor),
+        supply_area_m2=size if area_key == 'supply_area_m2' else None,
+        contract_area_m2=size if area_key == 'contract_area_m2' else None,
         space_seq=space.space_seq if space else None,
         area_m2=space.room_space if space else None,
-    )
+        area_key=area_key,
+    ), notes
 
 
 def _floor_int(value: str | None) -> int | None:
@@ -672,7 +769,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         summary = None
         notes.append(_summary_failure_note(exc))
     education = result.education
-    schools = None
+    schools = nurseries = kindergartens = None
     if education is not None:
         # 중·고등학교는 거리순으로 온다 (2026-10-25 실측: 은마 중 17곳·고 22곳, 오피스텔 중 7곳·고 22곳)
         schools = (
@@ -680,6 +777,10 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
             + [_school(school, '중학교') for school in education.middle_school[:NEAREST_SCHOOLS]]
             + [_school(school, '고등학교') for school in education.high_school[:NEAREST_SCHOOLS]]
         )
+        nurseries = [_childcare(facility) for facility in education.nursery_school[:NEAREST_SCHOOLS]]
+        kindergartens = [_childcare(facility) for facility in education.kinder_school[:NEAREST_SCHOOLS]]
+    recent_sale, sale_notes = _recent(summary.sell_lately_price if summary else None, result.spaces, category, '매매')
+    recent_lease, lease_notes = _recent(summary.lease_lately_price if summary else None, result.spaces, category, '전세')
     approved = info.building_approval_date_name
     return DabangComplexDetail(
         complex_id=info.complex_id,
@@ -701,6 +802,8 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         fuel=info.fuel_type_name,
         entrance=info.entrance_type_name,
         listing_count=result.room_count,
+        recent_deal_count=info.recent_deal_count,
+        tags=info.hash_tags,
         pyeongs=[
             DabangPyeong(
                 space_seq=space.space_seq,
@@ -724,11 +827,13 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
             )
             for price in result.area_average_price
         ],
-        recent_sale=_recent(summary.sell_lately_price, result.spaces) if summary else None,
-        recent_lease=_recent(summary.lease_lately_price, result.spaces) if summary else None,
+        recent_sale=recent_sale,
+        recent_lease=recent_lease,
         schools=schools,
+        nurseries=nurseries,
+        kindergartens=kindergartens,
         url=complex_url(info.complex_id),
-        notes=notes,
+        notes=notes + sale_notes + lease_notes,
     )
 
 
@@ -814,7 +919,9 @@ def list_complex_listings(
     total: int | None = None
     has_more = False
     page = 1
-    while len(listings) + unreadable + duplicate < limit and page <= MAX_LIST_PAGES:
+    # 쪽 수 상한은 --limit 최대값을 채우는 쪽 수(5쪽)에 한 쪽을 더 둔다. 다방이 한 쪽을 23건만 줄 때가 있어(아래) 다섯 쪽으로는
+    # 120건을 못 채울 수 있고, 단지 매물에는 이어 받기(--next)가 없어 남은 매물을 받을 길이 없다 (23건 × 6쪽 = 138건)
+    while len(listings) + unreadable + duplicate < limit and page <= MAX_LIST_PAGES + 1:
         page_result = client.run_request_room_list_category_complex_v5(DabangRoomListCategoryComplexV5RequestParameterModel(
             category=category, complex_id=complex_id, main_filters=filters, filters=room_filters, page=page,
         )).result
@@ -834,8 +941,12 @@ def list_complex_listings(
                 unreadable += 1
                 continue
             listings.append(listing)
-        has_more = len(rows) < len(page_result.room_list) or bool(page_result.has_more)
-        if not page_result.has_more or len(page_result.room_list) < PAGE_SIZE:
+        # 다음 쪽은 서버 hasMore 로만 본다. 다방 매물 목록은 다음 쪽이 있어도 한 쪽을 23건만 줄 때가 있어(2026-11-13 웹 캡처:
+        # 아파트 강남역 1쪽) 받은 수가 쪽 크기보다 적다고 끝내면 남은 매물을 놓친다. 빈 쪽이면 hasMore 가 와도 더 묻지 않는다
+        # (매물 검색 `_fetch` 와 같다. 빈 쪽을 MAX_LIST_PAGES 까지 묻지 않게)
+        next_page = bool(page_result.has_more) and bool(page_result.room_list)
+        has_more = len(rows) < len(page_result.room_list) or next_page
+        if not next_page:
             break
         page += 1
     notes: list[str] = []

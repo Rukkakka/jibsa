@@ -30,20 +30,22 @@ from jibsa.providers.dabang.service.common import (
 from typing import Annotated
 
 
-# 가까운 시설 종류 코드 → 이름 (카카오 장소 분류 코드와 다방 코드). 지하철역(SW8)은 transit/near 의 역 목록으로, CCTV 는
-# 이름·범위가 없어 쓰지 않는다. 다방은 대상마다 다른 종류를 준다 (2026-10-26 실측: 매물은 BS·SW8·CS2·CE7·BK9·PO3,
-# 단지는 BS·SW8·MT1·CS2·BK9·PM9, 둘 다 POLICE). 웹에 코드 이름표가 없어 이름은 카카오 분류 뜻대로 붙인다
+# 가까운 시설 종류 코드 → 이름. 웹 주변 지도의 이름표 그대로다 (distance-km-m 청크, 2026-11-13: BS 버스, PO3 관공서,
+# POLICE 치안 …). 지하철역(SW8)은 transit/near 의 역 목록으로, CCTV 는 이름이 없어 쓰지 않는다. 다방은 대상마다 다른 종류를
+# 준다 (2026-10-26 실측: 매물은 BS·SW8·CS2·CE7·BK9·PO3, 단지는 BS·SW8·MT1·CS2·BK9·PM9, 둘 다 POLICE)
 NEAR_LABELS: dict[str, str] = {
-    'BS': '버스정류장',
+    'BS': '버스',
     'MT1': '마트',
     'CS2': '편의점',
     'CE7': '카페',
     'BK9': '은행',
     'PM9': '약국',
-    'PO3': '공공기관',
-    'POLICE': '경찰',
+    'PO3': '관공서',
+    'POLICE': '치안',
 }
 SCHOOL_LABELS: dict[str, str] = {'NS': '어린이집', 'KS': '유치원', 'ES': '초등학교', 'MS': '중학교', 'HS': '고등학교'}
+# 종류마다 내는 가까운 시설 수. 웹은 받은 시설 전부(편의 종류는 15곳)를 지도에 찍는다
+NEAR_PLACES_PER_TYPE: int = 3
 BUILDING_LABELS: dict[str, str] = {'HOUSE_VILLA': '빌라', 'OFFICETEL': '오피스텔', 'APT': '아파트'}
 ROOM_LABELS: dict[str, str] = {'ONE_ROOM': '원룸', 'TWO_ROOM': '투룸'}
 # 역 둘레 평균 매물가를 받으려고 역을 덮는 지도 범위 (km). 확대 수준 16 이면 범위 안 역 표시에 평균이 붙는다
@@ -71,8 +73,25 @@ class DabangNearbyStation(BaseModel):
     ] = None
 
 
-class DabangNearestPlace(BaseModel):
-    """가장 가까운 시설 하나."""
+class DabangNearPlace(BaseModel):
+    """가까운 시설 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description='이름 (치안은 다방이 이름을 주지 않아 null)')
+    ] = None
+    distance_m: Annotated[
+        int | None,
+        Field(description='거리 (m, 직선, 다방 값)')
+    ] = None
+
+
+class DabangNearPlaces(BaseModel):
+    """시설 종류 하나와 가까운 순 시설."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -80,16 +99,12 @@ class DabangNearestPlace(BaseModel):
 
     type: Annotated[
         str,
-        Field(description='시설 종류')
+        Field(description='시설 종류 (다방 화면 이름표)')
     ]
-    name: Annotated[
-        str | None,
-        Field(description='이름 (경찰은 다방이 이름을 주지 않아 null)')
-    ] = None
-    distance_m: Annotated[
-        int | None,
-        Field(description='거리 (m, 직선)')
-    ] = None
+    places: Annotated[
+        list[DabangNearPlace],
+        Field(description=f'가까운 순 시설 {NEAR_PLACES_PER_TYPE}곳까지 (다방이 덜 주면 있는 만큼)')
+    ]
 
 
 class DabangNearby(BaseModel):
@@ -124,12 +139,18 @@ class DabangNearby(BaseModel):
         Field(description='버스 노선을 센 반경 (m)')
     ] = None
     nearest: Annotated[
-        list[DabangNearestPlace],
-        Field(description='종류마다 가장 가까운 시설 (매물: 버스정류장·편의점·카페·은행·공공기관·경찰, 단지: 버스정류장·마트·편의점·은행·약국·경찰). 다방이 찾지 못한 종류는 없다')
+        list[DabangNearPlaces],
+        Field(description=(
+            f'종류마다 가까운 순 시설 {NEAR_PLACES_PER_TYPE}곳까지 (매물: 버스·편의점·카페·은행·관공서·치안, '
+            '단지: 버스·마트·편의점·은행·약국·치안). 다방이 찾지 못한 종류는 없다'
+        ))
     ]
     schools: Annotated[
-        list[DabangNearestPlace],
-        Field(description='종류마다 가장 가까운 어린이집·유치원·초·중·고등학교 (배정 학교가 아니다). 다방 범위 안에 없는 종류는 없다')
+        list[DabangNearPlaces],
+        Field(description=(
+            f'종류마다 가까운 순 어린이집·유치원·초·중·고등학교 {NEAR_PLACES_PER_TYPE}곳까지 (배정 학교가 아니다). '
+            '다방 범위 안에 없는 종류는 없다'
+        ))
     ]
     url: Annotated[
         str,
@@ -137,21 +158,25 @@ class DabangNearby(BaseModel):
     ]
 
 
-def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list[DabangNearestPlace]:
-    places = []
+def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list[DabangNearPlaces]:
+    """종류마다 다방 거리 값으로 가까운 순 `NEAR_PLACES_PER_TYPE` 곳. 편의 종류는 거리순으로 오지만 어린이집은 섞여 와
+    (2026-11-13 실측: 역삼동 매물 어린이집 6곳) 거리로 다시 세운다. 거리를 모르는 시설은 뒤로 보낸다."""
+    result = []
     for group in groups:
         label = labels.get(group.query)
         if label is None or not group.pois:
             continue
-        poi = min(group.pois, key=lambda item: item.distance if item.distance is not None else float('inf'))
-        places.append(DabangNearestPlace(
-            type=label, name=poi.name, distance_m=None if poi.distance is None else round(poi.distance),
-        ))
-    return places
+        pois = sorted(group.pois, key=lambda item: item.distance if item.distance is not None else float('inf'))
+        result.append(DabangNearPlaces(type=label, places=[
+            DabangNearPlace(name=poi.name, distance_m=None if poi.distance is None else round(poi.distance))
+            for poi in pois[:NEAR_PLACES_PER_TYPE]
+        ]))
+    return result
 
 
 def get_nearby(client: DabangClient, target_id: str) -> DabangNearby:
-    """매물(24자리 ID)·단지(28자리 ID) 둘레의 지하철역·버스 노선과 가까운 시설 (요청 2회). 시설 좌표는 내보내지 않는다.
+    """매물(24자리 ID)·단지(28자리 ID) 둘레의 지하철역·버스 노선과 종류마다 가까운 시설 3곳 (요청 2회). 시설 좌표·전화는
+    내보내지 않는다.
 
     Raises:
         JibsaError: 없는 ID 일 때 (NOT_FOUND).

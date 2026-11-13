@@ -1,9 +1,13 @@
-from pydantic import Field
+from pydantic import (
+    Field,
+    field_validator,
+)
 
 from jibsa.core.schema import ResponseModel
 
 from typing import (
     Annotated,
+    Any,
     Generic,
     TypeVar,
 )
@@ -124,8 +128,9 @@ class DabangPremiumGroupModel(ResponseModel):
 
 
 class DabangRoomListResultModel(ResponseModel):
-    """매물 목록 `result`. 한 쪽 24건 고정이고 `total`·`hasMore` 는 일반 목록(`roomList`) 기준이다 (역삼동 원룸 423건 =
-    17쪽×24 + 15 로 18쪽이 `hasMore: false`, 19쪽은 빈 목록, 2026-10-25 실측). 광고(`premiumList`)는 따로 온다.
+    """매물 목록 `result`. 한 쪽은 24건까지이고 `total`·`hasMore` 는 일반 목록(`roomList`) 기준이다 (역삼동 원룸 423건 =
+    17쪽×24 + 15 로 18쪽이 `hasMore: false`, 19쪽은 빈 목록, 2026-10-25 실측). 다음 쪽이 있어도 23건만 올 때가 있어
+    (2026-11-13 웹 캡처: 아파트 강남역 1쪽) 받은 수로 마지막 쪽을 가리지 않는다. 광고(`premiumList`)는 따로 온다.
     """
 
     room_list: Annotated[
@@ -258,6 +263,26 @@ class DabangComplexInfoModel(ResponseModel):
         float | None,
         Field(description='매매 평당 평균가 (만원)', alias='tradeAveragePyeongPrice')
     ] = None
+    recent_deal_count: Annotated[
+        int | None,
+        Field(description="최근 거래 수 (웹 '최근 거래수 N건')", alias='recentDealCount')
+    ] = None
+    hash_tags: Annotated[
+        list[str],
+        Field(description="단지 꼬리표 ('입주 48년차', '대치역 도보 7분', '초품아')", alias='hashTags')
+    ] = []
+
+    @field_validator('recent_deal_count', mode='before')
+    @classmethod
+    def empty_count_is_unknown(cls, value: Any) -> Any:
+        """웹은 빈 글자('')면 '-' 로 쓴다 (complex 청크). 숫자로 읽지 못하니 모름(None)으로 받는다."""
+        return None if value == '' else value
+
+    @field_validator('hash_tags', mode='before')
+    @classmethod
+    def null_tags_are_empty(cls, value: Any) -> Any:
+        """웹은 `hashTags?.length` 로 없으면 꼬리표 칸을 그리지 않는다. null 도 빈 목록으로 받는다."""
+        return [] if value is None else value
 
 
 class DabangComplexSpaceModel(ResponseModel):
@@ -369,8 +394,50 @@ class DabangComplexSchoolModel(ResponseModel):
     ] = None
 
 
+class DabangComplexChildcareModel(ResponseModel):
+    """단지 근처 어린이집·유치원 하나. 거리순으로 온다 (2026-11-13 단지 20곳 어린이집 422곳·유치원 71곳 모두).
+
+    어린이집은 `type`(국공립·민간·직장·가정·협동), 유치원은 `establishDivide`(공립·사립)에 설립 유형이 온다. 교사당 아동 수는
+    글자('4.1명')다. 전화·좌표는 오지 않는다.
+    """
+
+    code: Annotated[
+        str | None,
+        Field(description="시설 코드 (어린이집 '11680000021', 유치원 UUID)")
+    ] = None
+    name: Annotated[
+        str,
+        Field(description='시설 이름')
+    ]
+    type: Annotated[
+        str | None,
+        Field(description="어린이집 유형 ('국공립', '민간', '직장', '가정', '협동')")
+    ] = None
+    establish_divide: Annotated[
+        str | None,
+        Field(description="유치원 설립 ('공립', '사립')", alias='establishDivide')
+    ] = None
+    child_per_teacher: Annotated[
+        str | None,
+        Field(description="교사당 아동 수 ('4.1명')", alias='childPerTeacher')
+    ] = None
+    distance: Annotated[
+        int | None,
+        Field(description='거리 (m)')
+    ] = None
+
+
 class DabangComplexEducationModel(ResponseModel):
-    """단지 근처 학교. 어린이집·유치원도 오지만 jibsa 는 초·중·고만 쓴다."""
+    """단지 근처 보육·교육 시설 (웹 '주변 보육/교육시설' 탭: 어린이집·유치원·초·중·고)."""
+
+    nursery_school: Annotated[
+        list[DabangComplexChildcareModel],
+        Field(description='어린이집', alias='nurserySchool')
+    ] = []
+    kinder_school: Annotated[
+        list[DabangComplexChildcareModel],
+        Field(description='유치원', alias='kinderSchool')
+    ] = []
 
     elementary_school: Annotated[
         list[DabangComplexSchoolModel],

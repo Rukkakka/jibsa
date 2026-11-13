@@ -252,7 +252,7 @@ class DabangCategoryListRequestParameterModel(RequestModel):
     """매물·단지 지도 목록(`.../category/{category}/{search_type}`)의 공통 쿼리.
 
     `filters`·`bbox` 는 JSON 문자열로 보낸다. `zoom` 과 `useMap` 은 동·역 검색에도 필수다 (빠지면 400 "줌은 필수값 입니다",
-    2026-10-25 실측). 한 쪽 크기는 24건 고정이고 `limit` 을 보내도 무시한다.
+    2026-10-25 실측). 한 쪽은 24건까지이고 `limit` 을 보내도 무시한다 (다음 쪽이 있어도 23건만 올 때가 있다, 2026-11-13).
 
     Args:
         category: 매물 유형 (경로).

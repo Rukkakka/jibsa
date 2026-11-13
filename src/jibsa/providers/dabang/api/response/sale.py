@@ -44,7 +44,7 @@ class DabangSaleItemModel(ResponseModel):
     ] = None
     household_num_title: Annotated[
         str | None,
-        Field(description="세대수 ('594세대')", alias='householdNumTitle')
+        Field(description="분양 세대수 ('87세대'. 상세의 lots_household_num 이고 총세대수가 아니다)", alias='householdNumTitle')
     ] = None
     supply_price_type_name: Annotated[
         str | None,
@@ -96,6 +96,52 @@ class DabangSaleInLotsPriceInfoModel(ResponseModel):
         str | None,
         Field(description="평당 분양가 ('1789', 만원)")
     ] = None
+    region_average_pyeong_price: Annotated[
+        str | None,
+        Field(description="최근 6개월 이 지역 평균 평당가 ('1294', 만원/3.3㎡). 없으면 null")
+    ] = None
+
+
+class DabangSubscriptionSpaceModel(ResponseModel):
+    """청약 결과의 평형 하나 (웹 '청약결과' 표: 평형명·분양/총세대·경쟁률·당첨가점·분양가)."""
+
+    space_name: Annotated[
+        str | None,
+        Field(description="평형 ('59A')")
+    ] = None
+    household_num_str: Annotated[
+        str | None,
+        Field(description="분양/총세대 ('261/1071')")
+    ] = None
+    competitive_rate_str: Annotated[
+        str | None,
+        Field(description="경쟁률 ('5.52:1')")
+    ] = None
+    winning_point_str: Annotated[
+        str | None,
+        Field(description="당첨가점 ('43점')")
+    ] = None
+    price_str: Annotated[
+        str | None,
+        Field(description="분양가(임대면 임대가) ('5.5억')")
+    ] = None
+
+
+class DabangSubscriptionResultModel(ResponseModel):
+    """청약 결과 (`subscriptionResult`, 안쪽 키는 snake_case). 청약 전이면 `subscriptionResult` 가 null 이다 (2026-11-13 실측)."""
+
+    min_winning_point_str: Annotated[
+        str | None,
+        Field(description="최저 당첨가점 ('35점', 웹 '당첨가점(커트라인)')")
+    ] = None
+    max_competitive_rate_str: Annotated[
+        str | None,
+        Field(description="최고 경쟁률 ('5.52:1')")
+    ] = None
+    subscription_spaces: Annotated[
+        list[DabangSubscriptionSpaceModel],
+        Field(description='평형별 결과')
+    ] = []
 
 
 class DabangSaleInLotsModel(ResponseModel):
@@ -124,6 +170,10 @@ class DabangSaleInLotsModel(ResponseModel):
     supply_type_str: Annotated[
         str | None,
         Field(description='공급 유형')
+    ] = None
+    supply_type: Annotated[
+        int | None,
+        Field(description='공급 유형 코드 (1 민간분양, 5 민간임대 등). 웹은 4·5 면 가격을 임대가, 아니면 분양가로 쓴다')
     ] = None
     jibun_address: Annotated[
         str | None,
@@ -256,6 +306,10 @@ class DabangSaleInLotsDetail2V3ResponseModel(ResponseModel):
         list[DabangSaleSpaceModel],
         Field(description='평형')
     ] = []
+    subscription_result: Annotated[
+        DabangSubscriptionResultModel | None,
+        Field(description='청약 결과 (청약 전이면 null)', alias='subscriptionResult')
+    ] = None
 
 
 class DabangSaleScheduleEntryModel(ResponseModel):

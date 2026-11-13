@@ -28,7 +28,7 @@ class DabangWatchRankingItemModel(ResponseModel):
     ]
     watch_count: Annotated[
         int | None,
-        Field(description='기간 안 조회 수', alias='watchCount')
+        Field(description="기간 안 조회한 사람 수 (웹은 'N명' 으로 보여 준다)", alias='watchCount')
     ] = None
     fluctuation: Annotated[
         DabangFluctuationModel | None,

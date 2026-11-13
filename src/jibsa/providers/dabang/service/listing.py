@@ -18,10 +18,8 @@ from jibsa.core.geo import (
     box_around,
     within_radius,
 )
-from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
-    NEXT_HINT,
     UPDATE_MAYBE_NEEDED,
     Listing,
     ListingDetail,
@@ -54,7 +52,7 @@ from jibsa.providers.dabang.service.common import (
     LISTING_NUMBER_PATTERN,
     MAX_LIST_LIMIT,
     MAX_LIST_PAGES,
-    PAGE_SIZE,
+    OFFICETEL_TYPE,
     SOURCE,
     ZOOM_BY_SEARCH_TYPE,
     DabangListing,
@@ -67,12 +65,12 @@ from jibsa.providers.dabang.service.common import (
     is_complex_type,
     is_missing_id,
     listing_url,
-    middle_place,
+    manwon_from_text,
     premium_note,
     room_item_to_listing,
     room_type_of,
 )
-from jibsa.providers.dabang.service.region import dongs_bbox
+from jibsa.providers.dabang.service.region import dong_bbox
 
 from typing import (
     Annotated,
@@ -81,7 +79,7 @@ from typing import (
 )
 
 
-# 한 번 검색에 받을 수 있는 쪽 수 (--limit 최대값을 채우는 쪽 수, 첫 쪽을 중간부터 받으면 한 쪽 더)
+# 한 번 검색에 받을 수 있는 쪽 수 (--limit 최대값을 채우는 쪽 수, 이어 받아 쪽 중간부터 받으면 한 쪽 더)
 MAX_PAGES_PER_TARGET: int = MAX_LIST_PAGES + 1
 # 상세 화면이 '비공개 처리된 매물' 로 닫는 상태 (room 청크 `[0,3,4].includes(t.room.status)`, 2026-10-25)
 HIDDEN_STATUSES: frozenset[int] = frozenset({0, 3, 4})
@@ -108,8 +106,23 @@ FIXED_FEE_ITEM_LABELS: dict[str, str] = {
     'F16': 'TV',
     'F99': '기타 관리비',
 }
-# 정액 관리비 세부 항목 중 관리비에 든 항목. 나머지(ACTUAL_EXPENSE)는 실비로 따로 낸다
+# 정액 관리비 세부 항목 중 관리비에 든 정액. 나머지(ACTUAL_EXPENSE)는 웹에 '실비' 로 보이고 따로 낸다
 FIXED_FEE_TYPE: str = 'FIXED_FEE'
+# 공용(F01)은 정액·실비 표시와 상관없이 웹이 금액과 함께 보여 주고 관리비 합계에 넣는다 (safety-option-chunk `E` 의 `h`, 2026-11-13)
+COMMON_FEE_CODE: str = 'F01'
+# 관리비 부과 방식 (safety-option-chunk `w`, 2026-11-13). 웹은 확인불가에는 표시를 붙이지 않고 상세보기에 '확인불가' 로 쓴다
+MANAGE_CHARGE_TYPE_LABELS: dict[str, str] = {
+    'FIXED_FEE_CHARGE': '정액관리비',
+    'ETC_FEE_CHARGE': '기타부과',
+    'UNABLE_CHECK': '확인불가',
+}
+FIXED_FEE_CHARGE: str = 'FIXED_FEE_CHARGE'
+ETC_FEE_CHARGE: str = 'ETC_FEE_CHARGE'
+# 웹이 관리비 상세보기(항목별)를 여는 입력 방식. 그 밖(SIMPLE)은 포함 항목 글(maintenance_items_str)만 괄호로 보인다 (room-chunk)
+DETAIL_INPUT_TYPE: str = 'DETAIL'
+# 정액관리비 중 항목마다 정액·실비를 적은 세부 종류 (세부 종류가 없거나 비어도 웹은 이쪽으로 본다). 10만원 미만(BELOW_…)·세부
+# 미고지(ABOVE_…_NO_DETAILS) 정액관리비와 기타부과는 포함 항목 코드(maintenance_etc_fee_charge_detail)로 보인다
+ITEMIZED_FIXED_FEE_DETAIL_TYPE: str = 'ABOVE_FIXED_FEE_THRESHOLD'
 # 에어컨 종류 옵션. 웹은 에어컨 목록(airConditionerTypeList)의 이름을 '에어컨' 없이 옵션에 섞어 보여 준다 (listing-request 청크)
 AIR_CONDITIONER_OPTIONS: frozenset[str] = frozenset({'벽걸이형', '스탠드형', '천장형'})
 ELEVATOR_BY_TEXT: dict[str, bool] = {'있음': True, '없음': False}
@@ -133,9 +146,49 @@ class DabangListingDetail(ListingDetail):
         int | None,
         Field(description='다방 화면의 매물번호')
     ] = None
+    manage_cost_charge_type: Annotated[
+        str | None,
+        Field(description="관리비 부과 방식 (다방 표시 '정액관리비'·'기타부과'·'확인불가'). 모르면 null")
+    ] = None
+    manage_cost_excludes: Annotated[
+        list[str] | None,
+        Field(description="관리비에 들지 않고 실비로 따로 내는 항목 (다방 상세보기의 '실비', 예 ['전기', '수도']). 정액관리비를 항목마다 적은 매물만 알고 그 밖은 null")
+    ] = None
     supply_area_m2: Annotated[
         float | None,
         Field(description='공급면적 (㎡)')
+    ] = None
+    contract_area_m2: Annotated[
+        float | None,
+        Field(description='계약면적 (㎡, 공급 + 주차장 등 기타 공용. 다방이 오피스텔에 주는 값). 오피스텔에만 키가 있고 모르면 null')
+    ] = None
+    with_tenant: Annotated[
+        bool,
+        Field(description='세입자를 끼고 파는 매매 (다방 기 보증금/월세 표시). 매매만')
+    ] = False
+    tenant_deposit_manwon: Annotated[
+        float | None,
+        Field(description='세입자 낀 매매의 기존 보증금·전세금 (만원). with_tenant 가 true 일 때만 키가 있고 읽지 못하면 null')
+    ] = None
+    tenant_rent_manwon: Annotated[
+        float | None,
+        Field(description='세입자 낀 매매의 기존 월세 (만원). 기존 세입자가 월세일 때만 키가 있다')
+    ] = None
+    lh_lease: Annotated[
+        bool,
+        Field(description='LH 전세임대 가능 (다방 표시). 매매는 키가 없다')
+    ] = False
+    leasehold_registration: Annotated[
+        bool,
+        Field(description='임차권 등기명령 매물 (다방 경고: 기존 임차인의 권리가 우선 적용되니 확인 후 거래)')
+    ] = False
+    unregistered_building: Annotated[
+        bool,
+        Field(description="미등기 건물 (다방 '미등기건물' 표시)")
+    ] = False
+    non_compliant_building: Annotated[
+        bool | None,
+        Field(description="위반건축물 여부 (다방 '해당'·'해당없음'). 다방이 알려 주지 않으면 null")
     ] = None
     short_lease_term: Annotated[
         str | None,
@@ -174,7 +227,52 @@ class DabangListingDetail(ListingDetail):
         # 유형과 상관없이 두고, 없을 때만 유형으로 해당 없음(키 삭제)과 모름(null)을 가른다
         if self.complex_id is None and not is_complex_type(self.property_type):
             fields = fields | {'complex_id'}
+        # 다방은 계약면적을 오피스텔에만 주고 다른 유형은 0 으로 준다 (2026-11-13 실측: 상세 46건 중 오피스텔 5건만 값이 있다).
+        # 오피스텔인데 값이 없으면 해당 없음이 아니라 모름(null)이라 키를 둔다 (공급면적과 같다)
+        if self.contract_area_m2 is None and not self.property_type.startswith(OFFICETEL_TYPE):
+            fields = fields | {'contract_area_m2'}
+        # 세입자 낀 매물·LH 전세임대는 웹이 거래 유형과 상관없이 표시만 보고 보여 준다. 해당 없는 거래는 키를 빼되 다방이
+        # 표시를 붙였으면 웹처럼 둔다
+        if self.trade_type != '매매' and not self.with_tenant:
+            fields = fields | {'with_tenant'}
+        if not self.with_tenant:
+            fields = fields | {'tenant_deposit_manwon', 'tenant_rent_manwon'}
+        elif self.tenant_deposit_manwon is not None and self.tenant_rent_manwon is None:
+            # 기존 세입자가 전세라 월세가 없다 ('20억')
+            fields = fields | {'tenant_rent_manwon'}
+        if self.trade_type == '매매' and not self.lh_lease:
+            fields = fields | {'lh_lease'}
         return fields
+
+
+class DabangListPosition(BaseModel):
+    """매물 검색을 이어 받을 위치 (`--next`). 받은 매물 수가 아니라 다방 쪽 번호와 그 쪽에서 쓴 칸으로 기억한다.
+
+    다방 목록은 번호 쪽 넘김이고 한 쪽이 24건보다 적게 올 때가 있다 (2026-11-13 웹 캡처: 아파트 강남역 1쪽 23건, 대치동 2쪽
+    23건). 예전처럼 받은 수로 쪽을 셈하면(`수 // 24 + 1` 쪽의 `수 % 24` 번째) 23건짜리 1쪽 뒤에 2쪽 첫 건까지 받아 24건을
+    주고, 다음 호출이 2쪽을 처음부터 다시 받아 같은 매물이 또 나왔다.
+    """
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    page: Annotated[
+        int,
+        Field(ge=1, description='다음에 물을 다방 쪽 번호')
+    ] = 1
+    skip: Annotated[
+        int,
+        Field(ge=0, description='그 쪽에서 앞 결과가 이미 쓴 칸 수 (그다음 칸부터 받는다)')
+    ] = 0
+    received: Annotated[
+        int,
+        Field(ge=0, description="앞 결과들까지 받은 매물 수. '[일부] N번째부터' 안내에만 쓴다")
+    ] = 0
+    bbox: Annotated[
+        DabangBboxModel | None,
+        Field(description='아파트 동 검색의 동 경계 사각형. 남기면 이어 받을 때 경계를 다시 받지 않는다')
+    ] = None
 
 
 class DabangSearchResult(BaseModel):
@@ -186,7 +284,7 @@ class DabangSearchResult(BaseModel):
 
     region: Annotated[
         DabangPlace,
-        Field(description='찾은 위치 (동을 여럿 합쳐 찾았으면 첫 동, 이름은 합친 이름)')
+        Field(description='찾은 위치')
     ]
     scope: Annotated[
         str,
@@ -209,8 +307,8 @@ class DabangSearchResult(BaseModel):
         Field(description='같은 조건으로 더 받을 매물이 있는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
     ] = False
     next_position: Annotated[
-        dict[str, Any] | None,
-        Field(exclude=True, description='이어 받을 위치 ({"offsets": {범위: 받은 수}}). 더 없으면 None')
+        DabangListPosition | None,
+        Field(exclude=True, description='이어 받을 위치 (다음 쪽 번호·그 쪽에서 쓴 칸·받은 수). 더 없으면 None')
     ] = None
     listings: Annotated[
         list[SerializeAsAny[Listing]],
@@ -230,9 +328,8 @@ class DabangSearchResult(BaseModel):
 
 
 class _Target(NamedTuple):
-    """다방에 물을 범위 하나 (동 하나, 역 하나, 지도 범위 하나)."""
+    """다방에 물을 범위 (동 하나, 역 하나, 대학 하나, 지도 범위 하나)."""
 
-    key: str
     search_type: DabangSearchType
     code: str | None = None
     place_id: int | None = None
@@ -244,10 +341,9 @@ class _Fetched(NamedTuple):
     total: int | None
     has_more: bool
     premium: int
-    # 마지막 쪽에서 몫을 넘어 받지 않은 칸과 그 뒤에 쪽이 더 있는지. 남은 몫을 더 받을 때 같은 쪽을 다시 묻지 않는다
-    spare: tuple[DabangRoomItemModel, ...] = ()
-    more_pages: bool = False
-
+    # 다음에 물을 쪽과 그 쪽에서 건너뛸 칸. 쪽 중간에서 멈췄으면 그 쪽과 쓴 칸 수, 쪽을 다 썼으면 다음 쪽과 0
+    page: int
+    skip: int
 
 
 def _fetch(
@@ -256,29 +352,19 @@ def _fetch(
     target: _Target,
     filters: DabangListFilters,
     *,
-    start: int,
     budget: int,
-    previous: _Fetched | None = None,
+    page: int,
+    skip: int,
 ) -> _Fetched:
-    """범위 하나에서 `start` 번째(다방 목록 순)부터 `budget` 건을 받는다. 한 쪽이 24건 고정이라 쪽 중간부터도 받는다.
+    """범위 하나에서 `page` 쪽의 `skip` 칸 뒤부터(다방 목록 순) `budget` 건을 받는다.
 
-    `previous` 는 같은 범위를 이번 검색에서 앞서 받은 결과다. 그 마지막 쪽에 남긴 칸을 먼저 쓰고, 모자랄 때만 다음 쪽을 묻는다.
+    한 쪽이 늘 24건은 아니라서(23건인 쪽이 있다) 이어 받을 위치는 받은 수로 셈하지 않고 읽은 쪽과 그 쪽에서 쓴 칸으로 둔다.
     """
     items: list[DabangRoomItemModel] = []
-    if previous is not None:
-        items = list(previous.spare[:budget])
-        if len(items) >= budget or not previous.more_pages:
-            left = previous.spare[len(items):]
-            return _Fetched(items, None, bool(left) or previous.more_pages, 0, left, previous.more_pages)
-        start += len(previous.spare)
     total: int | None = None
     premium = 0
-    page, skip = start // PAGE_SIZE + 1, start % PAGE_SIZE
-    spare: tuple[DabangRoomItemModel, ...] = ()
-    more_pages = False
+    has_more = False
     for _ in range(MAX_PAGES_PER_TARGET):
-        if len(items) >= budget:
-            break
         result = client.run_request_room_list_category_v5(DabangRoomListCategoryV5RequestParameterModel(
             category=CATEGORY_BY_KIND[kind],
             search_type=target.search_type,
@@ -298,97 +384,83 @@ def _fetch(
         rows = result.room_list[skip:]
         taken = rows[:budget - len(items)]
         items += taken
-        more_pages = bool(result.has_more) and bool(result.room_list)
         if len(taken) < len(rows):
-            spare = tuple(rows[len(taken):])
+            # 쪽 중간에서 몫을 채웠다. 다음에는 같은 쪽의 남은 칸부터 받는다
+            skip += len(taken)
+            has_more = True
             break
-        if not more_pages:
-            break
+        # 쪽을 다 썼다 (앞 결과가 쓴 칸보다 쪽이 짧아졌으면 남은 칸이 없다). 다음에는 다음 쪽 처음부터 받는다
+        has_more = bool(result.has_more) and bool(result.room_list)
         page, skip = page + 1, 0
-    # 몫을 쪽 끝에서 딱 채워 남긴 칸이 없어도 다음 쪽이 있으면 더 있다. 2026-10-26 실측: 인후동 원룸 --limit 48 은 1가가 첫 쪽
-    # 24건을 다 받고 다음 쪽이 없다고 남겨, 2가가 남긴 몫을 1가에 물을 때 받지 않고 끝내 226건 중 37건만 냈다
-    return _Fetched(items, total, bool(spare) or more_pages, premium, spare, more_pages)
-
-
-def _budgets(limit: int, count: int) -> list[int]:
-    """`limit` 을 범위 수로 나눈다 (앞 범위가 나머지를 가진다)."""
-    share, rest = divmod(limit, count)
-    return [share + (1 if index < rest else 0) for index in range(count)]
+        if not has_more or len(items) >= budget:
+            break
+    return _Fetched(items, total, has_more, premium, page, skip)
 
 
 def search_listings(
     client: DabangClient,
     kind: ListingKind,
-    places: list[DabangPlace],
+    place: DabangPlace,
     *,
     conditions: DabangListingConditions | None = None,
     limit: int,
     radius_km: float | None = None,
-    offsets: dict[str, int] | None = None,
-    finished: dict[str, tuple[int, int | None]] | None = None,
-    bbox: DabangBboxModel | None = None,
+    resume: DabangListPosition | None = None,
 ) -> DabangSearchResult:
     """한 유형의 매물을 다방 목록 순으로 받는다. 조건은 모두 다방 서버가 거른다.
 
     찾는 방식은 위치에 따라 정한다: 동은 그 동 안(`region`), 역은 다방이 정한 역 반경(`subway`), 대학은 대학 둘레(`univ`),
     좌표나 `radius_km` 는 반경을 덮는 지도 범위(`bbox`)로 받고 반경 밖은 뺀다. 아파트는 동·대학 검색이 없어 동은 경계를 덮는
-    지도 범위로 받아 그 동 매물만 남기고, 대학은 반경으로 찾는다. 동이 여럿('○가' 동)이면 `limit` 을 나눠 동마다 받는다.
+    지도 범위로 받아 그 동 매물만 남기고, 대학은 반경으로 찾는다.
 
     Args:
-        places: 찾은 위치 (`resolve_places`, 좌표는 kind='point' 하나).
+        place: 찾은 위치 (`resolve_places`, 좌표는 kind='point').
         limit: 받을 매물 수 (받은 수로 센다. 뺀 만큼 다시 채우지 않는다).
         radius_km: 반경 검색이면 반경 (km).
-        offsets: 이어 받기(`--next`)면 범위마다 앞서 받은 수.
-        finished: 이어 받기면 앞 결과까지 끝낸 범위마다 (받은 수, 다방이 센 수). 다시 받지 않고 total·몇 번째에만 더한다.
-        bbox: 이어 받기면 앞 결과가 남긴 동 경계 사각형 (아파트 동 검색). 주면 경계를 다시 받지 않는다.
+        resume: 이어 받기(`--next`)면 앞 결과의 `next_position`. 그 쪽의 남은 칸부터 받는다.
     """
     conditions = conditions or DabangListingConditions()
-    place = middle_place(places) if radius_km is not None else places[0]
+    resume = resume or DabangListPosition()
     center = (place.lat, place.lng)
     notes: list[str] = []
     keep_gids: frozenset[int] | None = None
     distance_center: tuple[float, float] | None = center
     filter_radius: float | None = None
     approximate = False
+    bbox: DabangBboxModel | None = None
     if radius_km is None and place.kind == 'point':
         radius_km = DEFAULT_RADIUS_KM
     if radius_km is None and place.kind == 'university' and kind == 'apt':
         radius_km = DEFAULT_RADIUS_KM
         notes.append(note('범위', f'다방 아파트 목록은 대학 검색이 없어 {place.name} 반경 {radius_km:g}km 안을 찾았습니다'))
     if radius_km is not None:
-        targets = [_Target('bbox', 'bbox', bbox=bbox_of(*box_around(place.lat, place.lng, radius_km)))]
+        target = _Target('bbox', bbox=bbox_of(*box_around(place.lat, place.lng, radius_km)))
         filter_radius, approximate = radius_km, True
         scope = f'{place.name} 반경 {radius_km:g}km'
-        if len(places) > 1:
-            notes.append(note('범위', f'{place.name} 중심들의 가운데에서 반경 {radius_km:g}km 안을 찾았습니다'))
     elif place.kind == 'station':
-        targets = [_Target(f'subway:{place.place_id}', 'subway', place_id=place.place_id)]
+        target = _Target('subway', place_id=place.place_id)
         if place.radius_m:
             radius_km = place.radius_m / 1000
         scope = f"{place.name} 다방 역 반경{f' {place.radius_m}m' if place.radius_m else ''}"
         notes.append(note('범위', f'{scope} 안을 찾았습니다 (반경을 정하려면 --radius)'))
     elif place.kind == 'university':
-        targets = [_Target(f'univ:{place.place_id}', 'univ', place_id=place.place_id)]
+        target = _Target('univ', place_id=place.place_id)
         scope = f'{place.name} 둘레 (다방 대학 검색 범위)'
         notes.append(note('범위', f'{scope}를 찾았습니다 (반경을 정하려면 --radius)'))
     elif kind == 'apt':
         # 아파트 목록에는 동 검색이 없다 (403). 동 경계를 덮는 지도 범위로 받아 그 동 매물(동 번호)만 남긴다.
-        # 사각형은 이어 받기 표에 남겨 --next 마다 동 경계(동마다 요청 1회)를 다시 받지 않는다
-        bbox = bbox or dongs_bbox(client, places)
-        targets = [_Target('bbox', 'bbox', bbox=bbox)]
-        keep_gids = frozenset(part.gid for part in places if part.gid is not None)
+        # 사각형은 이어 받기 표에 남겨 --next 마다 동 경계(요청 1회)를 다시 받지 않는다
+        bbox = resume.bbox or dong_bbox(client, place)
+        target = _Target('bbox', bbox=bbox)
+        keep_gids = frozenset({place.gid} if place.gid is not None else ())
         distance_center, approximate = None, True
-        scope = f"{'·'.join(part.name for part in places)} 안"
-        if len(places) == 1:
-            notes.append(note('범위', f'{scope}을 찾았습니다. 다방 아파트 목록은 동 검색이 없어 동 경계를 덮는 사각형으로 받아 그 동 매물만 남겼습니다'))
+        scope = f'{place.name} 안'
+        notes.append(note('범위', f'{scope}을 찾았습니다. 다방 아파트 목록은 동 검색이 없어 동 경계를 덮는 사각형으로 받아 그 동 매물만 남겼습니다'))
     else:
-        targets = [_Target(part.code or '', 'region', code=part.code) for part in places]
+        target = _Target('region', code=place.code)
         distance_center = None
-        scope = f"{'·'.join(part.name for part in places)} 안"
-    if targets[0].search_type == 'region' and len(targets) == 1:
+        scope = f'{place.name} 안'
         notes.append(note('범위', f'{scope}을 찾았습니다 (반경으로 찾으려면 --radius)'))
-    elif targets[0].search_type == 'region':
-        notes.append(note('범위', '--limit 을 동마다 나눠 받았습니다 (한 동이 몫보다 덜 주면 남은 몫은 매물이 남은 다른 동이 받음)'))
     if conditions.built_within_years is not None:
         # 다방은 사용승인 날짜가 아니라 연도로 센다 (2026-10-31 실측: --built-within 2 에 2024-02-21 승인, 10 에 2016-02-03 승인
         # 건물이 들어오고 그 앞 해 승인은 없었다). 목록에 사용승인일이 없어 다시 거를 수 없으니 실제 기준 날짜를 알린다.
@@ -403,73 +475,14 @@ def search_listings(
             'approved_at 으로 확인하세요',
         ))
 
-    addresses = {part.gid: part.address for part in places if part.gid is not None and part.address}
-    offsets = offsets or {}
-    finished = dict(finished or {})
-    total: int | None = None
-    done_before = 0
-    active: list[_Target] = []
-    for target in targets:
-        if offsets and target.key not in offsets:
-            # 이어 받기에서 앞 결과가 끝낸 범위는 다시 받지 않는다 (next 에는 더 받을 범위만 남긴다). 그 범위의 수는 이어 받기
-            # 표에서 더해 total·몇 번째가 첫 결과와 같게 한다 (성수동 원룸 1가 6건·2가 20건을 --limit 12 로: 둘 다 26건)
-            done, done_total = finished.get(target.key, (0, None))
-            done_before += done
-            if done_total is not None:
-                total = (total or 0) + done_total
-            continue
-        active.append(target)
-    positions = {target.key: offsets.get(target.key, 0) for target in active}
-    fetches: dict[str, _Fetched] = {}
-    totals: dict[str, int | None] = {}
-    rows: dict[str, list[DabangRoomItemModel]] = {target.key: [] for target in active}
-    premium = 0
-    filters = filters_of(kind, conditions)
-
-    def ask(target: _Target, budget: int) -> int:
-        """범위 하나에서 `budget` 건을 더 받고 받은 수를 돌려준다."""
-        nonlocal premium
-        previous = fetches.get(target.key)
-        fetched = _fetch(client, kind, target, filters, start=positions[target.key], budget=budget, previous=previous)
-        if previous is None:
-            totals[target.key] = fetched.total
-        premium += fetched.premium
-        fetches[target.key] = fetched
-        positions[target.key] += len(fetched.items)
-        rows[target.key] += fetched.items
-        return len(fetched.items)
-
-    # 몫은 아직 끝나지 않은 범위끼리 나누고, 앞 범위가 몫보다 적게 주고 끝나면 남은 몫을 다음 범위가 받는다
-    # (받은 뒤 뺀 매물은 다시 채우지 않는다). 동이 --limit 보다 많아 몫이 없는 동은 묻지 않고 이어 받기로 넘긴다
-    # (을지로1가~7가를 --limit 3 으로 찾을 때)
-    carry = 0
-    for target, share in zip(active, _budgets(limit, len(active))):
-        budget = share + carry
-        carry = budget - ask(target, budget) if budget > 0 else 0
-    # 뒤 범위가 남긴 몫은 매물이 남은 앞 범위부터 받는다. 2026-10-25 실측: 문래동 원룸 --limit 6 은 동마다 1건씩 나눠
-    # 6가의 남은 몫을 버려, 3가에 2건이 남았는데도 7건 중 5건만 냈다
-    for target in active:
-        if carry <= 0:
-            break
-        fetched = fetches.get(target.key)
-        if fetched is None or fetched.has_more:
-            carry -= ask(target, carry)
-    next_offsets: dict[str, int] = {}
-    for target in active:
-        fetched = fetches.get(target.key)
-        if fetched is None or fetched.has_more:
-            next_offsets[target.key] = positions[target.key]
-        else:
-            finished[target.key] = (positions[target.key], totals[target.key])
-    total_known = [count for count in totals.values() if count is not None]
-    if total_known:
-        total = (total or 0) + sum(total_known)
-    unasked = [target.key for target in active if target.key not in fetches]
+    addresses = {place.gid: place.address} if place.gid is not None and place.address else {}
+    fetched = _fetch(
+        client, kind, target, filters_of(kind, conditions), budget=limit, page=resume.page, skip=resume.skip,
+    )
     collected: list[DabangListing] = []
     seen: set[str] = set()
-    received = sum(len(items) for items in rows.values())
     unreadable = outside = other_dong = duplicate = 0
-    for item in (item for target in active for item in rows[target.key]):
+    for item in fetched.items:
         if item.id in seen:
             duplicate += 1
             continue
@@ -487,19 +500,10 @@ def search_listings(
             outside += 1
             continue
         collected.append(listing)
-    has_more = bool(next_offsets)
-    # 이어 받을 범위만 남기면 끝난 범위를 다시 받지 않는다
-    next_position: dict[str, Any] | None = {'offsets': next_offsets} if has_more else None
-    if next_position is not None and finished:
-        next_position['finished'] = {key: list(counts) for key, counts in finished.items()}
-    if next_position is not None and keep_gids is not None and bbox is not None:
-        next_position['bbox'] = bbox.model_dump()
-    if unasked:
-        # 묻지 않은 동의 매물 수를 몰라 전체 수도 모른다
-        total = None
-        names = {part.code: part.name for part in places}
-        skipped = '·'.join(names.get(key, key) for key in unasked)
-        notes.append(note('일부', f"--limit 이 동 수보다 작아 {skipped}{particle(skipped, '은/는')} 아직 찾지 않았습니다 (total 모름). {NEXT_HINT}"))
+    has_more = fetched.has_more
+    next_position = DabangListPosition(
+        page=fetched.page, skip=fetched.skip, received=resume.received + len(fetched.items), bbox=bbox,
+    ) if has_more else None
     # 더 받을 매물이 없으면 '다시 채우지 않음' 이라 하지 않는다. 그 말에 더 있는지 헷갈렸다 (2026-11-11 LLM 사용 시험: 반곡동
     # 아파트 7건 중 다른 동 4건을 빼고 has_more false)
     refill = '(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'
@@ -511,18 +515,17 @@ def search_listings(
         notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
     if duplicate:
         notes.append(note('제외', f'다방 목록에 두 번 나온 매물 {duplicate}건은 한 번만 넣었습니다 (다시 채우지 않음)'))
-    notes += premium_note(premium)
+    notes += premium_note(fetched.premium)
     notes += limit_notes(
-        total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
-        order='다방 목록', approximate=approximate, inspected=received, offset=sum(offsets.values()) + done_before,
+        fetched.total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
+        order='다방 목록', approximate=approximate, inspected=len(fetched.items), offset=resume.received,
         resumable=has_more, has_more=has_more,
     )
-    region = place if len(places) == 1 else place.model_copy(update={'name': '·'.join(part.name for part in places)})
     return DabangSearchResult(
-        region=region,
+        region=place,
         scope=scope,
         radius_km=radius_km,
-        total=total,
+        total=fetched.total,
         returned=len(collected),
         has_more=has_more,
         next_position=next_position,
@@ -548,24 +551,57 @@ def _price_fields(room: DabangNewRoomDetailRoomModel, trade_type: TradeType) -> 
     return {'price_manwon': entry[0]}
 
 
-def _manage_cost(room: DabangNewRoomDetailRoomModel) -> tuple[float | None, list[str] | None]:
-    """월 관리비(만원)와 포함 항목. 관리비가 '없음' 이면 0 과 [], 금액은 있는데 항목을 모르면 항목 None."""
+class _ManageCost(NamedTuple):
+    manwon: float | None
+    includes: list[str] | None
+    excludes: list[str] | None
+
+
+def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
+    """월 관리비(만원), 포함 항목, 실비로 따로 내는 항목. 웹 관리비 칸과 상세보기(safety-option-chunk `E`, room-chunk)를 따른다.
+
+    관리비가 '없음' 이면 0 과 포함 항목 [], 금액은 있는데 항목을 모르면 항목 None. 실비 항목은 정액관리비를 항목마다 적은
+    매물만 안다.
+    """
     if room.maintenance_cost is None:
         if (room.maintenance_cost_str or '').strip() == '없음':
-            return 0.0, []
-        return None, None
-    includes = list(room.maintenance_items_str)
-    if not includes and room.maintenance_etc_fee_charge_detail is not None:
-        includes = [MANAGE_ITEM_LABELS.get(code, code) for code in room.maintenance_etc_fee_charge_detail.detail_include_types]
-    if not includes and room.maintenance_fixed_fee_charge_detail_list:
-        # 정액 관리비 10만원 이상은 항목마다 정액(관리비에 듦)·실비(따로 냄)로 온다. 웹처럼 정액 항목만 관리비에 든 것으로 본다
-        # (2026-10-26 실측: 6ac7072d7857540badc794a7 관리비 10만원 = 공용 F01 정액, 전기~TV F11~F16 실비)
-        return won_to_manwon(room.maintenance_cost), [
-            FIXED_FEE_ITEM_LABELS.get(item.detail_code, item.detail_code)
-            for item in room.maintenance_fixed_fee_charge_detail_list
-            if item.detail_cost_formulated_type == FIXED_FEE_TYPE
-        ]
-    return won_to_manwon(room.maintenance_cost), includes or None
+            return _ManageCost(0.0, [], None)
+        return _ManageCost(None, None, None)
+    cost = won_to_manwon(room.maintenance_cost)
+    if room.maintenance_input_type != DETAIL_INPUT_TYPE:
+        # 웹은 세부 입력이 아닌 매물(입력 방식이 없으면 SIMPLE 로 본다)에 포함 항목 글만 괄호로 보여 준다
+        return _ManageCost(cost, list(room.maintenance_items_str) or None, None)
+    charge = room.maintenance_charge_type
+    fixed_items = room.maintenance_fixed_fee_charge_detail_list
+    detail_type = room.maintenance_charge_detail_type
+    if charge == FIXED_FEE_CHARGE and (not detail_type or detail_type == ITEMIZED_FIXED_FEE_DETAIL_TYPE):
+        if not fixed_items:
+            return _ManageCost(cost, None, None)
+        # 항목마다 정액(관리비에 듦)·실비(따로 냄)로 온다. 공용(F01)은 실비로 와도 웹이 금액과 함께 보여 주고 관리비 합계에 넣어
+        # 든 항목으로 본다. 예전에는 정액 항목만 넣어, 공용이 실비로 온 매물이 '포함 항목 없음' 으로 읽혔다 (2026-11-13 웹 대조:
+        # 6ae45e683b53321aea64a773 관리비 20만원, 상세보기 '공용 200,000원 · 사용료 실비')
+        includes: list[str] = []
+        excludes: list[str] = []
+        for item in fixed_items:
+            included = item.detail_code == COMMON_FEE_CODE or item.detail_cost_formulated_type == FIXED_FEE_TYPE
+            (includes if included else excludes).append(FIXED_FEE_ITEM_LABELS.get(item.detail_code, item.detail_code))
+        return _ManageCost(cost, includes, excludes)
+    if charge in (FIXED_FEE_CHARGE, ETC_FEE_CHARGE) and room.maintenance_etc_fee_charge_detail is not None:
+        # 10만원 미만·세부 미고지 정액관리비와 기타부과는 '포함 항목' 코드만 온다. 따로 내는 항목은 웹도 보여 주지 않는다
+        codes = room.maintenance_etc_fee_charge_detail.detail_include_types
+        return _ManageCost(cost, [MANAGE_ITEM_LABELS.get(code, code) for code in codes] or None, None)
+    # 확인불가는 웹도 항목을 보여 주지 않는다
+    return _ManageCost(cost, None, None)
+
+
+def _tenant_prices(title: str | None) -> dict[str, float | None]:
+    """세입자 낀 매매의 기존 보증금/월세 글('20억', '1억/50')을 만원으로. 읽지 못하면 둘 다 None (모름)."""
+    values = [manwon_from_text(part) for part in (title or '').split('/')]
+    if len(values) == 1 and values[0] is not None:
+        return {'tenant_deposit_manwon': values[0]}
+    if len(values) == 2 and None not in values:
+        return {'tenant_deposit_manwon': values[0], 'tenant_rent_manwon': values[1]}
+    return {'tenant_deposit_manwon': None, 'tenant_rent_manwon': None}
 
 
 def resolve_listing_id(client: DabangClient, listing_ref: str) -> str:
@@ -614,8 +650,12 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
     trade_type = TRADE_BY_SELLING_CODE.get(room.selling_type if room.selling_type is not None else -1)
     if trade_type is None:
         raise ListingUnavailableError(SOURCE, listing_ref, reason='UNKNOWN_TRADE_TYPE')
-    manage_cost, includes = _manage_cost(room)
+    manage = _manage_cost(room)
+    charge = room.maintenance_charge_type
     parking_count = room.parking_num
+    # 웹은 이 표시들이 없으면(null) 없는 것으로 보고 아무것도 보여 주지 않는다 (safety-option-chunk 의 `?? false`). 위반건축물만
+    # null 이면 그 줄을 감추고 true·false 를 '해당'·'해당없음' 으로 보여 준다 (room-chunk, 2026-11-13)
+    with_tenant = bool(room.is_take_tenant)
     return DabangListingDetail(
         source=SOURCE,
         id=room.id,
@@ -624,12 +664,22 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         property_type=room.room_type_str or '매물',
         room_type=room_type_of(room.room_type_str),
         title=room.title,
-        manage_cost_manwon=manage_cost,
-        manage_cost_includes=includes,
+        manage_cost_manwon=manage.manwon,
+        manage_cost_includes=manage.includes,
+        manage_cost_charge_type=MANAGE_CHARGE_TYPE_LABELS.get(charge, charge) if charge else None,
+        manage_cost_excludes=manage.excludes,
         area_m2=room.room_size,
         area_pyeong=m2_to_pyeong(room.room_size),
         # 오피스텔은 공급면적 칸에 0 을 주기도 한다 (2026-10-26 실측: 강남역투웨니퍼스트 6ad6eb6fcac3561f038ec567). 모름이다
         supply_area_m2=room.provision_size or None,
+        # 다른 유형은 계약면적을 0 으로 준다. 웹은 오피스텔에 '전용/계약면적' 으로 보여 준다 (room-chunk)
+        contract_area_m2=room.contract_size or None,
+        with_tenant=with_tenant,
+        **(_tenant_prices(room.take_tenant_price_title) if with_tenant else {}),
+        lh_lease=bool(room.is_lh_lease),
+        leasehold_registration=bool(room.is_leasehold),
+        unregistered_building=bool(room.is_new_construction),
+        non_compliant_building=room.is_non_compliant_building,
         floor=floor_label(room.room_floor_str),
         building_floor=floor_label(room.building_floor_str),
         address=room.full_jibun_address_str,

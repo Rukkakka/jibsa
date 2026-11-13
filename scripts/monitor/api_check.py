@@ -297,7 +297,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '원룸 동 역삼동', DABANG_LISTINGS + ('room',), ('역삼동', '--limit', '2'), 'listings',
             (Capture('room', 'listings', 'id'), Capture('room_next', '', 'next')),
         ),
-        # 이어 받기는 쪽 번호와 쪽 안 위치(24건씩)로 다시 묻는다
+        # 이어 받기는 다방 쪽 번호와 그 쪽에서 쓴 칸으로 다시 묻는다
         Step('원룸 동 이어 받기 역삼동', DABANG_LISTINGS + ('room',), ('역삼동', '--limit', '2', '--next', '{room_next}'), 'listings'),
         Step('원룸 상세', ('dabang', 'listing'), ('{room}',), 'id'),
         Step('원룸 역 강남역', DABANG_LISTINGS + ('room',), ('강남역', '--limit', '2'), 'listings'),
@@ -308,9 +308,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '원룸 좌표 반경 강남역', DABANG_LISTINGS + ('room',),
             ('--lat', '37.4979', '--lng', '127.0276', '--radius', '0.5', '--limit', '5'), 'listings',
         ),
-        # '○가' 로 나뉜 동은 동마다 목록을 받아 합친다
+        # 이 매물을 아래 '매물 실거래가' 가 쓰므로 빌라 매물이 늘 있는 동으로 본다 ('○가' 로 나뉜 성수동은 후보를 알리는 에러다)
         Step(
-            '빌라 여러 동 성수동', DABANG_LISTINGS + ('villa',), ('성수동', '--limit', '2'), 'listings',
+            '빌라 동 역삼동', DABANG_LISTINGS + ('villa',), ('역삼동', '--limit', '2'), 'listings',
             (Capture('villa', 'listings', 'id'),),
         ),
         Step('오피스텔 역 강남역', DABANG_LISTINGS + ('officetel',), ('강남역', '--limit', '2'), 'listings'),
