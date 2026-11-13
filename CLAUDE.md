@@ -23,8 +23,8 @@ AGENTS.md에서 연결한 공통 규약과 소스별 개발 가이드도 작업 
   - `/release` — 릴리스 절차. 사용자가 직접 칠 때만 돌고, 바깥으로 나가는 단계마다 다시 허락받는다
   - `/pr-ready` — PR 열기 전 점검
 - 워크플로(여러 에이전트를 정해진 순서로 돌리는 스크립트)는 `.claude/workflows/` 에 있다.
-  - `review-panel` — `/review` 가 부른다. 관점 묶음마다 `jibsa-reviewer` 를 동시에 → 소스마다 한 번에 `review-verifier` 하나 (지적이 10건을 넘으면 차례로 더)
-  - `web-parity-panel` — `/web-parity` 가 소스 둘 이상일 때 부른다. 소스마다 `web-parity-investigator` 하나 (Opus)
+  - `review-panel` — `/review` 가 부른다. 관점 묶음마다 `jibsa-reviewer` 를 동시에 → 소스마다 `review-verifier` 하나 (지적이 10건을 넘으면 같은 소스에 더, 동시에 셋까지, 네이버는 하나씩)
+  - `web-parity-panel` — `/web-parity` 가 조사원이 둘 이상일 때 부른다. 소스·범위마다 `web-parity-investigator` 하나 (Opus, 같은 소스는 동시에 셋까지, 네이버는 하나씩)
   - `implement-bundles` — 허락받은 구현 계획의 묶음을 `jibsa-coder` 로 돌린다 (공통 묶음 먼저, 같은 소스는 차례로, 소스끼리는 동시에.
     다른 소스 묶음끼리 같은 파일을 고치면 시작하지 않는다) → `jibsa-docs` 하나. 작업자는 자기 파일만 고치고 CHANGELOG·`docs/llm.md`·
     감시 목록 같은 공용 파일은 고칠 내용만 보고한다. 인자 형식은 그 파일의 `meta.whenToUse` 에 있다.

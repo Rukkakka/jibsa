@@ -1,10 +1,10 @@
 export const meta = {
   name: 'review-panel',
-  description: 'jibsa 변경을 관점 묶음별 리뷰어로 리뷰하고, 모은 지적을 소스마다 review-verifier 하나가 실제 조회로 재현해 진짜 문제·오탐으로 가른다',
+  description: 'jibsa 변경을 관점 묶음별 리뷰어로 리뷰하고, 모은 지적을 소스마다 review-verifier 가 실제 조회로 재현해 진짜 문제·오탐으로 가른다',
   whenToUse: '/review 명령이 부른다 (docs/development/agents.md "코드 리뷰"). args: target(리뷰 대상과 diff 를 보는 명령), groups(관점 키 묶음의 목록), 그 밖은 선택. args 없이 불렸으면 아무것도 띄우지 않고 /review 를 쓰라고 안내한다.',
   phases: [
     { title: '리뷰', detail: '관점 묶음마다 리뷰어 하나, 동시에. 코드만 읽는다' },
-    { title: '재검증', detail: '소스마다 review-verifier 하나가 지적을 실제 조회로 재현한다. 공통 코드 지적은 소스별 검증이 끝난 뒤' },
+    { title: '재검증', detail: '소스마다 review-verifier 가 지적을 실제 조회로 재현한다 (지적이 많으면 같은 소스에 동시에 셋까지, 네이버는 하나씩). 공통 코드 지적은 소스별 검증이 끝난 뒤' },
   ],
 }
 
@@ -19,9 +19,16 @@ const PERSPECTIVES = {
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 const MODELS = ['sonnet', 'opus']  // Haiku 는 쓰지 않는다 (CLAUDE.md)
 const EFFORTS = ['high', 'xhigh']
-const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스 안에서 차례로 나눈다
-// 리뷰 오탐 (2026-11-13): 검증 요청의 총량 상한이 없어 네이버 요청이 몰린다는 지적. 같은 소스의 검증자는 차례로만 돌고,
-// jibsa 요청 제한기가 프로세스 간 공유 상태로 소스별 속도를 막아(네이버 1초 간격·분당 60회, `jibsa limits`) 몰리지 않는다.
+const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스에 검증자를 더 둔다
+const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 부르는 검증자 수 (docs/development/agents.md "동시에 띄울 때")
+// 네이버 검증자는 한 번에 하나만 돌린다. jibsa 요청 제한기는 첫 화면이 스스로 부르는 요청을 연 뒤에 세어 미리 막지 못하는데
+// (src/jibsa/core/browser.py `finish_entry`), 남긴 쿠키가 없거나 오래됐을 때 jibsa 프로세스 여럿이 함께 시작하면 저마다 첫 화면을
+// 연다. 네이버는 첫 화면 한 번이 부르는 요청이 많아(docs/development/providers/naver.md) 그만큼 한꺼번에 몰린다.
+const SAME_SOURCE_MAX_BY = { naver: 1 }
+const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
+// 리뷰 오탐 (2026-11-13): 검증 요청의 총량 상한이 없어 네이버 요청이 몰린다는 지적. 같은 소스의 검증자는 동시에 셋까지(네이버는
+// 하나)만 돌고, 첫 화면 다음 요청부터는 jibsa 요청 제한기가 프로세스 간 공유 상태로 소스별 속도를 막아(네이버 1초 간격·분당 60회,
+// `jibsa limits`) 몰리지 않는다.
 
 let a = args
 if (typeof a === 'string') {
@@ -167,7 +174,7 @@ const verifyPrompt = (source, items) => [
   `리뷰 대상: ${a.target}`,
   source === 'common'
     ? '공통 코드 지적이다. 재현에 API 가 필요하면 소스 하나를 골라 최소로 부른다. 네이버는 차단 위험이 커서 다른 소스로 재현할 수 없을 때만 고른다. 소스별 검증은 끝났다.'
-    : `${source} 의 실제 API 만 부른다. 다른 검증자가 다른 소스를 동시에 부르고 있다.`,
+    : `${source} 의 실제 API 만 부른다. 다른 검증자가 같은 소스나 다른 소스를 동시에 부르고 있을 수 있다 (요청 제한은 함께 센다).`,
   '요청은 지적당 1~2회로 아낀다 (네이버는 특히). RATE_LIMITED 면 오래 기다리지 말고 미확인으로 둔다.',
   'jibsa 동작과 상관없는 지적(문서·설정·스크립트 문장끼리 어긋남 등)은 API 를 부르지 않고 원문을 대조해 판정한다.',
   '판정: real(재현됨) / false_positive(코드는 맞는데 그렇게 보임) / impossible(응답에 없는 값, 요청 모델이 막는 입력 등) / unconfirmed(재현도 반박도 못 했고 코드로도 단정할 수 없음) / duplicate(다른 지적과 같은 문제).',
@@ -191,17 +198,22 @@ const chunksOf = items => {
   return chunks
 }
 
-// 같은 소스의 실제 API 를 동시에 부르지 않는다: 소스 안에서는 차례로, 소스끼리는 동시에, 공통 코드는 마지막에.
+// 같은 소스의 검증자는 동시에 maxOf(source) 명까지(네이버 하나, 그 밖 SAME_SOURCE_MAX) 돌리고 남은 묶음은 그 뒤에 돌린다
+// (요청 수는 jibsa 요청 제한기가 프로세스끼리 합쳐서 센다). 소스끼리는 동시에, 공통 코드는 마지막에.
 const verifySource = async source => {
   const chunks = chunksOf(bySource[source])
   const out = []
-  for (const [i, chunk] of chunks.entries()) {
-    const r = await tryAgent(verifyPrompt(source, chunk), {
-      label: `재검증:${source}${chunks.length > 1 ? `#${i + 1}` : ''}`,
+  const max = maxOf(source)
+  for (let i = 0; i < chunks.length; i += max) {
+    const batch = chunks.slice(i, i + max)
+    const rs = await parallel(batch.map((chunk, j) => () => tryAgent(verifyPrompt(source, chunk), {
+      label: `재검증:${source}${chunks.length > 1 ? `#${i + j + 1}` : ''}`,
       phase: '재검증', agentType: 'review-verifier', model: 'sonnet', effort: 'high', schema: VERDICTS,
+    })))
+    batch.forEach((chunk, j) => {
+      if (rs[j]) out.push(...rs[j].results)
+      else log(`검증자 ${source}: 결과를 내지 못했다 (${chunk.map(f => f.id).join(', ')}, 미확인으로 둔다)`)
     })
-    if (r) out.push(...r.results)
-    else log(`검증자 ${source}: 결과를 내지 못했다 (${chunk.map(f => f.id).join(', ')}, 미확인으로 둔다)`)
   }
   return out
 }
