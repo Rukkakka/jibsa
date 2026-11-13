@@ -62,6 +62,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 - [code-style.md](docs/development/code-style.md) — 문자열, import 순서, pydantic 선언, 타입 힌트, docstring, 테스트 코드 형식
 - [workflow.md](docs/development/workflow.md) — 이슈 → 브랜치 → 커밋 → PR 절차
 - [release.md](docs/development/release.md) — 버전 번호 규칙, CHANGELOG 쓰는 법, 릴리스·태그·GitHub Release 절차
+- [agents.md](docs/development/agents.md) — 서브에이전트에 일을 나눠 맡기는 방식 (역할, 지시서, 검증 분담, 동시 실행, 코드 리뷰 절차)
 
 소스별 개발 가이드 (`docs/development/providers/`) — 그 소스에만 있는 구현·예외
 
@@ -96,6 +97,7 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 
 **에이전트는 사용자가 시킬 때만 이슈·브랜치·커밋·PR 을 만든다.** 시키지 않았으면 지금 브랜치에서 파일만 고치고 멈춘다.
 [workflow.md](docs/development/workflow.md) 의 "파일을 고치기 전에 브랜치부터 딴다" 보다 이 규칙이 먼저다. 시켰을 때는 아래 절차를 따른다.
+일을 서브에이전트에 나눠 맡길 때(역할·검증 분담·코드 리뷰 절차)는 [agents.md](docs/development/agents.md) 를 따른다. 서브에이전트에는 git 쓰기를 맡기지 않는다.
 
 커밋 전에 **[docs/development/workflow.md](docs/development/workflow.md)** 를 읽는다. 요약:
 **커밋 전에 `.github/ISSUE_TEMPLATE/` 템플릿으로 이슈를 연다.** `main` 에 직접 커밋하지 않고
