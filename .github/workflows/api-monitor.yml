@@ -47,7 +47,9 @@ jobs:
       # Chromium 이 쓰는 시스템 라이브러리도 깐다. install-browser 는 받은 Chromium 을 한 번 띄워 확인까지 한다
       - run: sudo "$(command -v python)" -m patchright install-deps chromium
       - run: python -m jibsa install-browser
-      - run: python scripts/monitor/api_check.py run ${{ matrix.group }} --out result-${{ matrix.group }}.json
+      # 주 1회 검사(웹 값 대조: 직방 SDK 버전·당근 쿼리 해시·다방 API 버전)는 예약 실행이면 월요일에만, 수동 실행·감시 파일을
+      # 고친 PR 은 요일과 상관없이 돈다
+      - run: python scripts/monitor/api_check.py run ${{ matrix.group }} --out result-${{ matrix.group }}.json ${{ github.event_name != 'schedule' && '--weekly' || '' }}
       - uses: actions/upload-artifact@v7
         with:
           name: result-${{ matrix.group }}

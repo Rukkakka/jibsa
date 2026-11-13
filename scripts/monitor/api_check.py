@@ -19,8 +19,13 @@
 
 새 CLI 명령이나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 만들면 GROUPS 에 넣는다. tests/test_cli.py 가 CLI 명령 목록과 대조한다.
 
-명령 말고 따로 보는 것(`EXTRA_CHECKS`): 직방 웹이 API 에 붙이는 SDK 버전이 jibsa 값과 같은지. 서버가 옛 값도 받아 명령은
-정상으로 돌아 명령 감시로는 알 수 없다.
+명령 말고 따로 보는 것: jibsa 가 웹 번들에서 옮겨 적은 값이 지금 웹 번들에도 있는지. 서버가 옛 값도 받으면 명령은 정상으로
+돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·당근 GraphQL 쿼리(해시가 바뀜·사라짐·이름만 바뀜·새로 생김)·다방 API 버전을
+주 1회(`WEEKLY_CHECKS`, 한국 시간 월요일 또는 `--weekly`) 본다. 당근 새 쿼리의 기준 목록은 `daangn_web_queries.txt` 이고
+살펴본 뒤 `daangn-queries` 로 다시 쓴다.
+
+    python scripts/monitor/api_check.py run daangn --out result-daangn.json --weekly
+    python scripts/monitor/api_check.py daangn-queries
 """
 
 import argparse
@@ -32,6 +37,7 @@ import string
 import subprocess
 import sys
 import tempfile
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -373,6 +379,32 @@ DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn', 'dabang')
 # 아파트 0.128.0 과 단기임대 zigbang-stay-sdk:0.11.0 이 든 2개)
 ZIGBANG_APP_CHUNK: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/chunks/pages/_app-[^"]+\.js)"')
 ZIGBANG_SDK_VERSION: re.Pattern[str] = re.compile(r'"sdk-version":"([^"]+)"')
+# 다방 첫 화면이 바로 받는 스크립트. 웹 API 클라이언트(axios 인스턴스)의 버전 값이 이 중 하나에 있다 (2026-11-13 실측: 31개 중
+# atoms-chunk). 따옴표는 지금 번들처럼 백틱이 아니어도 맞춘다
+DABANG_SCRIPT: re.Pattern[str] = re.compile(r'(?:src|href)="(/static/js/[^"]+\.js)"')
+_QUOTE: str = '[`"\']'
+# 새 방식(v5) 인스턴스가 붙이는 헤더 (`e['D-Api-Version']='5.0.0',e['D-App-Version']='1'`)
+DABANG_V5_VERSION: re.Pattern[str] = re.compile(rf'{_QUOTE}(D-Api-Version|D-App-Version){_QUOTE}\]={_QUOTE}([^`"\']+){_QUOTE}')
+# 옛 방식(v3) 인스턴스가 쿼리에 붙이는 버전 (`let t='3.0.1',n='web';…e.params.api_version=t,e.params.call_type=n,
+# e.params.version='1'`)
+DABANG_V3_API_VERSION: re.Pattern[str] = re.compile(
+    rf'(\w+)={_QUOTE}(\d+(?:\.\d+)+){_QUOTE}[^;]{{0,80}};.{{0,300}}?\.api_version=\1[,;)]', re.S,
+)
+DABANG_V3_VERSION: re.Pattern[str] = re.compile(rf'\.api_version=\w+,[^,]*\.call_type=\w+,[^,]*\.version={_QUOTE}([^`"\']+){_QUOTE}')
+# 당근 첫 화면 HTML 이 바로 받는 번들 (2026-11-13 실측: 114개)
+DAANGN_SCRIPT: re.Pattern[str] = re.compile(r'(?:src|href)="(https://[^"]+/assets/[^"/]+\.js)"')
+# 번들이 부르는 다른 번들 조각 (`import('./MapShell-CWyYEj_B.js')`). 이름 뒤 8자가 빌드 해시다
+DAANGN_CHUNK: re.Pattern[str] = re.compile(r'["\'`]((?:\./|/[^"\'`]*/assets/)?[A-Za-z0-9_$.-]+-[A-Za-z0-9_-]{8}\.js)["\'`]')
+# Relay 가 번들에 넣는 GraphQL 연산 (`params:{id:'<해시>',metadata:{},name:'<쿼리 이름>',operationKind:'query',text:null}`)
+DAANGN_QUERY_PARAMS: re.Pattern[str] = re.compile(
+    rf'id:{_QUOTE}([0-9a-f]{{64}}){_QUOTE},metadata:\{{.{{0,300}}?\}},name:{_QUOTE}(\w+){_QUOTE},'
+    rf'operationKind:{_QUOTE}(\w+){_QUOTE}',
+    re.S,
+)
+# 당근 웹 GraphQL 쿼리 이름의 기준 목록. 여기 없는 웹 쿼리를 새로 생긴 쿼리로 알린다 (`check_daangn_queries`)
+DAANGN_QUERY_LIST: Path = Path(__file__).with_name('daangn_web_queries.txt')
+# 주 1회 검사(`WEEKLY_CHECKS`)가 도는 요일 (한국 시간, 월요일 0)
+WEEKLY_CHECK_WEEKDAY: int = 0
 
 OK: str = 'ok'
 BROKEN: str = 'broken'
@@ -524,80 +556,278 @@ def _today() -> datetime.date:
     return datetime.datetime.now(KST).date()
 
 
-def check_zigbang_sdk_versions() -> dict[str, str]:
-    """직방 웹이 아파트·단기임대 API 에 붙이는 `sdk-version` 이 jibsa 값(`APT_HEADERS`·`STAY_HEADERS`)과 같은지 본다.
+def _read_web(step: dict[str, str], source: Any, collect: Callable[[Any, Any], Any]) -> tuple[Any, dict[str, str] | None]:
+    """소스 첫 화면 HTML 을 jibsa 브라우저로 받고 `collect(client, 첫 화면 응답)` 로 같은 탭에서 웹 번들을 받아 값을 모은다.
 
-    서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 값이 낡아도 명령 감시는 정상이다. 그래도
-    헤더는 사이트 웹이 실제로 붙이는 값이어야 해서, 직방 웹이 새로 배포해 버전이 바뀌면 고장으로 알려 값을 갱신하게 한다.
-    첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아(같은 날 실측) jibsa 브라우저로 받는다. 번들(s.zigbang.com)은 CORS 를
-    모두 허용해 같은 탭에서 받는다. 요청 제한 훅을 거쳐 첫 화면 1건과 번들 9건쯤이 나간다.
+    첫 화면 HTML 은 페이지 요청이라 크롬이 페이지를 열 때 붙이는 헤더로 받는다 (`NAVIGATION_EXTENSION`). 요청은 모두 그 소스의
+    요청 제한 훅을 거친다. 소스 명령 뒤에 돌아(`WEEKLY_CHECKS`) 브라우저는 그 명령들이 남긴 쿠키로 빈 페이지를 띄우고 첫 화면을
+    다시 열지 않아, 첫 화면 HTML 은 여기서 받는 1건뿐이다 (2026-11-12 리뷰 오탐에 실측: `zigbang search locations` 바로 뒤 이
+    검사의 브라우저 준비가 '남긴 쿠키' 였고 www.zigbang.com 요청은 1건). 남긴 쿠키를 쓸 수 없을 때(첫 화면을 연 지 30분이 넘음
+    등)만 브라우저가 첫 화면을 연 뒤 한 번 더 받는다.
 
-    직방 명령 뒤에 돌아(`EXTRA_CHECKS`) 브라우저는 그 명령들이 남긴 쿠키로 빈 페이지를 띄우고 첫 화면을 다시 열지 않는다. 그래서
-    첫 화면 HTML 은 여기서 받는 1건뿐이다 (2026-11-12 리뷰 오탐에 실측: `zigbang search locations` 바로 뒤 이 검사의 브라우저 준비가
-    '남긴 쿠키' 였고 www.zigbang.com 요청은 1건). 남긴 쿠키를 쓸 수 없을 때(첫 화면을 연 지 30분이 넘음 등)만 브라우저가 첫 화면을
-    연 뒤 한 번 더 받는다.
+    Returns:
+        (`collect` 결과, None). 번들을 받지 못했으면 (None, 확인 못 함 줄), 검사 코드가 틀렸으면 (None, 고장 줄).
     """
     import httpx
 
     from jibsa.core.browser import NAVIGATION_EXTENSION
     from jibsa.core.errors import JibsaError
+
+    print(f"::group::{step['label']}", flush=True)
+    try:
+        with httpx.Client(
+            transport=source.browser_transport(), event_hooks=source.rate_limit_hooks(), timeout=source.timeout,
+        ) as client:
+            home = client.get(source.browser_entry_url, extensions={NAVIGATION_EXTENSION: True})
+            home.raise_for_status()
+            return collect(client, home), None
+    # 요청 제한·네트워크·첫 화면 차단 등(httpx·jibsa 에러)은 사이트가 바뀐 것인지 알 수 없다
+    except (httpx.HTTPError, JibsaError) as exc:
+        print(f'{type(exc).__name__}: {exc}')
+        return None, {**step, 'status': UNKNOWN, 'detail': f'번들을 받지 못함: {type(exc).__name__}: {str(exc)[:150]}'}
+    # 그 밖의 예외는 이 검사 코드가 틀린 것이라 확인 못 함으로 숨기지 않고 고장으로 알린다. 올리지 않는 것은 올리면 결과 파일을
+    # 못 써 앞 명령 결과까지 잃기 때문이다
+    except Exception as exc:
+        print(f'{type(exc).__name__}: {exc}')
+        return None, {**step, 'status': BROKEN, 'detail': f'검사 코드 오류: {type(exc).__name__}: {str(exc)[:150]}'}
+    finally:
+        print('::endgroup::', flush=True)
+
+
+def check_web_values(
+    step: dict[str, str], source: Any, collect: Callable[[Any, Any], dict[str, set[str]]],
+    ours: list[tuple[str, str, str]], fix: str,
+) -> dict[str, str]:
+    """jibsa 가 웹 번들에서 옮겨 적은 값(직방 `sdk-version`, 다방 버전)이 지금 웹 번들의 값과 같은지 본다.
+
+    서버가 옛 값도 받아 값이 낡아도 명령 감시는 정상인 것들이다. 그래도 요청은 사이트 웹이 지금 보내는 값이어야 해서, 웹이 새로
+    배포해 값이 바뀌면 고장으로 알려 jibsa 값을 갱신하게 한다. 번들은 `_read_web` 이 받는다.
+
+    Args:
+        step: 결과 줄의 `label`·`command`.
+        source: 그 소스의 provider 클라이언트 (브라우저 transport·요청 제한 훅·첫 화면 주소).
+        collect: 번들을 받아 이름 → 찾은 값들을 돌려준다. 받지 못하면 httpx 에러를 올린다.
+        ours: (알림에 쓸 이름, `collect` 결과의 이름, jibsa 값). 같은 이름에 jibsa 값이 여럿일 수 있다 (직방 sdk-version 둘).
+        fix: 값이 다를 때 알림 끝에 붙일 고칠 곳.
+
+    Returns:
+        번들을 받지 못하면 확인 못 함, 어떤 이름의 값을 하나도 찾지 못했으면(번들 구조가 바뀜) 고장, jibsa 값이 웹 값에 없으면 고장.
+    """
+    web, failed = _read_web(step, source, collect)
+    if failed is not None:
+        return failed
+    unseen = [name for name in dict.fromkeys(key for _, key, _ in ours) if not web.get(name)]
+    if unseen:
+        return {
+            **step, 'status': BROKEN,
+            'detail': f"첫 화면 번들에서 찾지 못함: {', '.join(unseen)} (번들 구조가 바뀌었을 수 있음)",
+        }
+    stale = [f"{label} {value} → 웹 {', '.join(sorted(web[key]))}" for label, key, value in ours if value not in web[key]]
+    if stale:
+        return {**step, 'status': BROKEN, 'detail': f"웹 번들에 jibsa 값이 없음 ({'; '.join(stale)}). {fix}"}
+    return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(value for _, _, value in ours)})"}
+
+
+def check_zigbang_sdk_versions() -> dict[str, str]:
+    """직방 웹이 아파트·단기임대 API 에 붙이는 `sdk-version` 이 jibsa 값(`APT_HEADERS`·`STAY_HEADERS`)과 같은지 본다.
+
+    서버는 이 값을 보지 않는다 (2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과). 첫 화면 HTML 은 브라우저가 아닌 요청을
+    403 으로 막아(같은 날 실측) jibsa 브라우저로 받는다. 번들(s.zigbang.com)은 CORS 를 모두 허용해 같은 탭에서 받는다. 첫 화면
+    1건과 `_app` 번들 9건쯤이 나간다.
+    """
     from jibsa.providers.zigbang.api.client import (
         APT_HEADERS,
         STAY_HEADERS,
         ZigbangClient,
     )
 
-    step = {'label': '직방 웹 SDK 버전 (아파트·단기임대 헤더)', 'command': 'sdk-version'}
-    ours = [APT_HEADERS['sdk-version'], STAY_HEADERS['sdk-version']]
-    print('::group::직방 웹 SDK 버전', flush=True)
-    zigbang = ZigbangClient()
-    web: set[str] = set()
-    try:
-        with httpx.Client(
-            transport=zigbang.browser_transport(), event_hooks=zigbang.rate_limit_hooks(), timeout=zigbang.timeout,
-        ) as client:
-            home = client.get(zigbang.browser_entry_url, extensions={NAVIGATION_EXTENSION: True})
-            home.raise_for_status()
-            chunks = sorted(set(ZIGBANG_APP_CHUNK.findall(home.text)))
-            for url in chunks:
-                chunk = client.get(url)
-                chunk.raise_for_status()
-                web |= set(ZIGBANG_SDK_VERSION.findall(chunk.text))
-    # 요청 제한·네트워크·첫 화면 차단 등(httpx·jibsa 에러)은 사이트가 바뀐 것인지 알 수 없다
-    except (httpx.HTTPError, JibsaError) as exc:
-        print(f'{type(exc).__name__}: {exc}')
-        print('::endgroup::', flush=True)
-        return {**step, 'status': UNKNOWN, 'detail': f'번들을 받지 못함: {type(exc).__name__}: {str(exc)[:150]}'}
-    # 그 밖의 예외는 이 검사 코드가 틀린 것이라 확인 못 함으로 숨기지 않고 고장으로 알린다. 올리지 않는 것은 올리면 결과 파일을
-    # 못 써 앞 명령 결과까지 잃기 때문이다
-    except Exception as exc:
-        print(f'{type(exc).__name__}: {exc}')
-        print('::endgroup::', flush=True)
-        return {**step, 'status': BROKEN, 'detail': f'SDK 버전 검사 코드 오류: {type(exc).__name__}: {str(exc)[:150]}'}
-    print(f'_app 번들 {len(chunks)}개, sdk-version {sorted(web)}')
-    print('::endgroup::', flush=True)
+    def collect(client: Any, home: Any) -> dict[str, set[str]]:
+        found: set[str] = set()
+        for url in sorted(set(ZIGBANG_APP_CHUNK.findall(home.text))):
+            chunk = client.get(url)
+            chunk.raise_for_status()
+            found |= set(ZIGBANG_SDK_VERSION.findall(chunk.text))
+        print(f'sdk-version {sorted(found)}')
+        return {'sdk-version': found}
+
+    return check_web_values(
+        {'label': '직방 웹 SDK 버전 (아파트·단기임대 헤더)', 'command': 'sdk-version'}, ZigbangClient(), collect,
+        [
+            ('아파트 sdk-version', 'sdk-version', APT_HEADERS['sdk-version']),
+            ('단기임대 sdk-version', 'sdk-version', STAY_HEADERS['sdk-version']),
+        ],
+        'zigbang api/client.py 의 APT_HEADERS·STAY_HEADERS 를 갱신',
+    )
+
+
+def check_dabang_versions() -> dict[str, str]:
+    """다방 웹이 새 방식(v5) 헤더와 옛 방식(v3) 쿼리에 붙이는 버전이 jibsa 값(`V5_HEADERS`·`DabangV3RequestParameterModel`)과 같은지 본다.
+
+    첫 화면이 바로 받는 스크립트를 HTML 순서대로 받다가 네 값을 모두 찾으면 멈춘다 (2026-11-13 실측: 31개 중 atoms-chunk 하나에
+    모두 있다). 요청 제한(0.5초 간격·분당 60회) 안에서 첫 화면 1건과 스크립트 수십 건 이하다.
+    """
+    from jibsa.providers.dabang.api.client import V5_HEADERS, DabangClient
+    from jibsa.providers.dabang.api.request.common import DabangV3RequestParameterModel
+
+    def collect(client: Any, home: Any) -> dict[str, set[str]]:
+        found: dict[str, set[str]] = {'D-Api-Version': set(), 'D-App-Version': set(), 'api_version': set(), 'version': set()}
+        for path in dict.fromkeys(DABANG_SCRIPT.findall(home.text)):
+            script = client.get(home.url.join(path))
+            script.raise_for_status()
+            for name, value in DABANG_V5_VERSION.findall(script.text):
+                found[name].add(value)
+            found['api_version'] |= {match.group(2) for match in DABANG_V3_API_VERSION.finditer(script.text)}
+            found['version'] |= set(DABANG_V3_VERSION.findall(script.text))
+            if all(found.values()):
+                break
+        print({name: sorted(values) for name, values in found.items()})
+        return found
+
+    v3 = DabangV3RequestParameterModel()
+    return check_web_values(
+        {'label': '다방 웹 API 버전 (v5 헤더·v3 쿼리)', 'command': 'api-version'}, DabangClient(), collect,
+        [
+            ('v5 D-Api-Version', 'D-Api-Version', V5_HEADERS['D-Api-Version']),
+            ('v5 D-App-Version', 'D-App-Version', V5_HEADERS['D-App-Version']),
+            ('v3 api_version', 'api_version', v3.api_version),
+            ('v3 version', 'version', v3.version),
+        ],
+        'dabang api/client.py 의 V5_HEADERS·api/request/common.py 의 DabangV3RequestParameterModel 을 갱신',
+    )
+
+
+def _collect_daangn_queries(client: Any, home: Any) -> dict[str, set[str]]:
+    """당근 웹 GraphQL 쿼리 이름마다 번들에 든 해시를 모은다 (mutation 은 뺀다).
+
+    쿼리는 지도·단지 화면을 열 때 받는 번들 조각에 흩어져 있어, 첫 화면 HTML 이 받는 번들에서 시작해 조각이 부르는 조각을 모두
+    받는다 (2026-11-13 실측: 조각 534개. 요청 제한(초당 1건쯤)을 지켜 9분쯤). 새로 생긴 쿼리까지 보려고 jibsa 해시를 다 찾아도
+    멈추지 않는다.
+    """
+    queries: dict[str, set[str]] = {}
+    queue = deque(dict.fromkeys(DAANGN_SCRIPT.findall(home.text)))
+    seen = set(queue)
+    fetched = 0
+    while queue:
+        chunk = client.get(queue.popleft())
+        fetched += 1
+        # 조각 이름처럼 생긴 다른 글자를 따라갔으면 없는 파일이다. 건너뛰고, 요청 제한(429)·서버 오류는 올려 확인 못 함으로 둔다
+        if 400 <= chunk.status_code < 500 and chunk.status_code != 429:
+            print(f'건너뜀 {chunk.status_code} {chunk.url}')
+            continue
+        chunk.raise_for_status()
+        for query_id, name, kind in DAANGN_QUERY_PARAMS.findall(chunk.text):
+            if kind == 'query':
+                queries.setdefault(name, set()).add(query_id)
+        for ref in DAANGN_CHUNK.findall(chunk.text):
+            url = str(chunk.url.join(ref))
+            if url not in seen:
+                seen.add(url)
+                queue.append(url)
+    print(f'번들 조각 {fetched}개 받음, 웹 쿼리 {len(queries)}개')
+    return queries
+
+
+def _daangn_query_list() -> set[str]:
+    """기준 목록(`DAANGN_QUERY_LIST`)의 웹 쿼리 이름. 파일이 없으면 빈 집합이라 웹 쿼리가 모두 새로 생긴 것으로 나온다."""
+    if not DAANGN_QUERY_LIST.exists():
+        return set()
+    lines = DAANGN_QUERY_LIST.read_text(encoding='utf-8').splitlines()
+    return {line.strip() for line in lines if line.strip() and not line.startswith('#')}
+
+
+def check_daangn_queries() -> dict[str, str]:
+    """당근 GraphQL 해시(`DaangnClient` 의 `*_query_id`)를 웹 번들의 같은 이름 쿼리와 견주고, 웹에 새로 생긴 쿼리를 알린다 (#214).
+
+    웹이 쿼리를 바꿔도 서버가 옛 해시를 한동안 받아 명령 감시로는 알 수 없다 (2026-11-11 손 대조: 해시가 바뀐 쿼리 3개와 번들에서
+    사라진 쿼리 3개 모두 서버가 옛 해시를 받았다). 짝은 `DaangnClient.web_query_names` 다.
+
+    - 해시가 바뀐 쿼리: 같은 이름 쿼리의 웹 해시가 jibsa 해시와 다르다. 새 해시를 알려 준다.
+    - 웹에서 사라진 쿼리: 이름도 jibsa 해시도 번들에 없다.
+    - 이름만 바뀐 쿼리: 이름은 없지만 jibsa 해시가 다른 이름으로 있다. 요청은 그대로 맞고 짝만 고친다.
+    - 참고, 새로 생긴 쿼리: 기준 목록(`DAANGN_QUERY_LIST`)에 없는 웹 쿼리. jibsa 가 쓰는 기능이 새 쿼리로 옮겨 갔는지 살펴보는
+      데 쓴다 (예: 어린이집이 `EducationPoiLayerQuery` 에서 `ComplexSchoolListPanelQuery` 로 옮겨 감). 웹에만 있는 기능은 jibsa 에
+      넣지 않아도 된다. 살펴본 뒤 `daangn-queries` 로 기준 목록을 다시 쓴다.
+
+    하나라도 있으면 고장으로 알려 `api-broken` 이슈를 연다 (열려 있으면 댓글).
+    """
+    from jibsa.providers.daangn.api.client import DaangnClient
+
+    step = {'label': '당근 웹 GraphQL 쿼리 (해시·새 쿼리)', 'command': 'persisted-query'}
+    web, failed = _read_web(step, DaangnClient(), _collect_daangn_queries)
+    if failed is not None:
+        return failed
     if not web:
-        return {**step, 'status': BROKEN, 'detail': '첫 화면 _app 번들에서 sdk-version 을 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
-    missing = [value for value in ours if value not in web]
-    if missing:
-        return {
-            **step, 'status': BROKEN,
-            'detail': (
-                f"직방 웹 SDK 버전이 바뀜: 웹 번들에 jibsa 값({', '.join(missing)})이 없음 (웹: {', '.join(sorted(web))}). "
-                'zigbang api/client.py 의 APT_HEADERS·STAY_HEADERS 를 갱신'
-            ),
-        }
-    return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(ours)})"}
+        return {**step, 'status': BROKEN, 'detail': '번들에서 GraphQL 쿼리를 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
+    names_by_hash = {query_id: name for name, query_ids in web.items() for query_id in query_ids}
+    changed: list[str] = []
+    gone: list[str] = []
+    renamed: list[str] = []
+    for attribute, name in DaangnClient.web_query_names.items():
+        ours = getattr(DaangnClient, attribute)
+        if ours in web.get(name, set()):
+            continue
+        if name in web:
+            changed.append(f"{attribute}({name}) 새 해시 {', '.join(sorted(web[name]))}")
+        elif ours in names_by_hash:
+            renamed.append(f'{attribute}: {name} → {names_by_hash[ours]}')
+        else:
+            gone.append(f'{attribute}({name})')
+    new = sorted(set(web) - _daangn_query_list())
+    problems = []
+    if changed:
+        problems.append(f"해시가 바뀐 쿼리: {'; '.join(changed)}. daangn api/client.py 의 해시를 바꾸고 응답 필드가 바뀌었는지 본다")
+    if gone:
+        problems.append(f"웹에서 사라진 쿼리: {', '.join(gone)}. 그 명령의 대안을 정한다 (기능이 없어졌으면 명령을 뺀다)")
+    if renamed:
+        problems.append(f"이름만 바뀐 쿼리 (해시는 같음): {'; '.join(renamed)}. daangn api/client.py 의 web_query_names 를 고친다")
+    if new:
+        problems.append(
+            f"참고, 웹에 새로 생긴 쿼리 {len(new)}개: {', '.join(new)}. jibsa 가 쓰는 기능이 옮겨 갔는지 본 뒤 "
+            '`api_check.py daangn-queries` 로 기준 목록을 다시 쓴다',
+        )
+    if problems:
+        return {**step, 'status': BROKEN, 'detail': ' / '.join(problems)}
+    return {
+        **step, 'status': OK,
+        'detail': f'웹과 같음 (jibsa 쿼리 {len(DaangnClient.web_query_names)}개, 웹 쿼리 {len(web)}개)',
+    }
 
 
-# 소스마다 명령 뒤에 돌리는 따로 보는 것. 명령 뒤라 이 요청이 막혀도 명령 감시에는 영향이 없다
-EXTRA_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
+def write_daangn_query_list() -> int:
+    """당근 웹 번들의 GraphQL 쿼리 이름을 모아 기준 목록(`DAANGN_QUERY_LIST`)을 다시 쓴다. 새로 생긴 쿼리를 살펴본 뒤 돌린다."""
+    from jibsa.providers.daangn.api.client import DaangnClient
+
+    step = {'label': '당근 웹 GraphQL 쿼리 목록', 'command': 'daangn-queries'}
+    web, failed = _read_web(step, DaangnClient(), _collect_daangn_queries)
+    if failed is not None or not web:
+        print(failed['detail'] if failed is not None else '번들에서 GraphQL 쿼리를 찾지 못함', file=sys.stderr)
+        return 1
+    old = _daangn_query_list()
+    lines = [
+        '# 당근 웹 번들의 GraphQL 쿼리 이름. 주간 API 감시(check_daangn_queries)가 여기 없는 웹 쿼리를 새로 생긴 쿼리로 알린다.',
+        f'# `python scripts/monitor/api_check.py daangn-queries` 가 다시 쓴다 ({_today().isoformat()} 웹 번들)',
+        *sorted(web),
+    ]
+    DAANGN_QUERY_LIST.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f'웹 쿼리 {len(web)}개를 씀. 새로 생김 {sorted(set(web) - old)}, 사라짐 {sorted(old - set(web))}')
+    return 0
+
+
+# 소스마다 명령 뒤에 주 1회 돌리는 따로 보는 것 (웹 값 대조). 값이 낡아도 서버가 받는 동안은 명령이 멈추지 않아 매일 볼
+# 까닭이 없다 (2026-11-13 사용자 결정). `WEEKLY_CHECK_WEEKDAY` 에만 돌고, `run --weekly` 는 요일과 상관없이 돈다 (워크플로는
+# 예약 실행이 아닐 때 붙인다). 명령 뒤라 이 요청이 막혀도 명령 감시에는 영향이 없다
+WEEKLY_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
     'zigbang': (check_zigbang_sdk_versions,),
+    'daangn': (check_daangn_queries,),
+    'dabang': (check_dabang_versions,),
 }
 
 
-def run_group(name: str) -> dict[str, Any]:
-    """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함)."""
+def run_group(name: str, *, weekly: bool = False) -> dict[str, Any]:
+    """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함).
+
+    `weekly` 이거나 오늘이 `WEEKLY_CHECK_WEEKDAY` 면 명령 뒤에 `WEEKLY_CHECKS` 도 돈다.
+    """
     check_in = _today() + datetime.timedelta(days=STAY_CHECK_IN_DAYS)
     values: dict[str, str] = {'check_in': check_in.isoformat(), 'check_out': (check_in + datetime.timedelta(days=6)).isoformat()}
     steps: list[dict[str, str]] = []
@@ -616,7 +846,8 @@ def run_group(name: str) -> dict[str, Any]:
             if found is not None:
                 values.setdefault(capture.name, found)
         steps.append({'label': step.label, 'command': line, 'status': status, 'detail': detail})
-    steps += [check() for check in EXTRA_CHECKS.get(name, ())]
+    if weekly or _today().weekday() == WEEKLY_CHECK_WEEKDAY:
+        steps += [check() for check in WEEKLY_CHECKS.get(name, ())]
     return {'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}
 
 
@@ -762,16 +993,22 @@ def main() -> int:
     run = commands.add_parser('run', help='소스 하나의 명령을 부르고 결과를 JSON 파일로 쓴다')
     run.add_argument('group', choices=list(GROUPS))
     run.add_argument('--out', required=True)
+    run.add_argument('--weekly', action='store_true', help='주 1회 검사(WEEKLY_CHECKS)도 요일과 상관없이 돌린다')
+    commands.add_parser(
+        'daangn-queries', help='당근 웹 번들의 GraphQL 쿼리 이름으로 기준 목록(daangn_web_queries.txt)을 다시 쓴다 (9분쯤)',
+    )
     collect = commands.add_parser('report', help='결과 파일을 모아 표를 남기고 이슈를 고친다')
     collect.add_argument('paths', nargs='*')
     collect.add_argument('--issues', action='store_true', help='고장·연속 확인 못 함을 이슈로 알린다 (예약·수동 실행만)')
     collect.add_argument('--dry-run', action='store_true', help='이슈·라벨을 바꾸지 않고 보낼 gh 명령만 출력한다')
     options = parser.parse_args()
     if options.action == 'run':
-        result = run_group(options.group)
+        result = run_group(options.group, weekly=options.weekly)
         Path(options.out).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
         print(_table([result]))
         return 0
+    if options.action == 'daangn-queries':
+        return write_daangn_query_list()
     return report(options.paths, issues=options.issues, dry_run=options.dry_run)
 
 

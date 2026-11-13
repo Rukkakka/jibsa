@@ -102,9 +102,17 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
   보내 따로 깨질 수 있어, 그 방식마다 앞 결과의 `next` 로 같은 명령을 한 번 더 부른다 (`Capture` 의 `items` 를 비우면 결과 맨 위 칸을 꺼낸다).
   지역은 결과가 0건일 리 없는 곳(역삼동·강남역·강남구·한남동)이고 `--limit` 은 작게 준다. 소스마다 러너를 나눠, 한 소스가 막혀도 다른 소스
   검사는 그대로 된다.
-- **명령 말고 따로 보는 것 (`EXTRA_CHECKS`):** 직방 웹이 아파트·단기임대 API 에 붙이는 `sdk-version` 이 jibsa 값과 같은지 본다.
-  서버가 옛 값도 받아 명령은 정상으로 돌기 때문이다. 명령 감시 뒤에 첫 화면 `_app` 번들을 jibsa 브라우저로 받아 대조하고, 다르거나 값을
-  찾지 못하면 고장, 번들을 받지 못하면 확인 못 함이다 ([직방 인증·헤더](providers/zigbang.md#인증헤더)).
+- **명령 말고 주 1회 따로 보는 것 (`WEEKLY_CHECKS`):** jibsa 가 웹 번들에서 옮겨 적은 값이 지금 웹 번들에도 있는지 본다.
+  서버가 옛 값도 받으면 명령은 정상으로 돌아 명령 감시로는 알 수 없기 때문이다. 값이 낡아도 서버가 받는 동안은 명령이 멈추지 않아
+  매일 보지 않고, 예약 실행은 한국 시간 월요일에만 돈다 (`WEEKLY_CHECK_WEEKDAY`. 수동 실행·감시 파일을 고친 PR 과 `run --weekly` 는
+  요일과 상관없이 돈다). 명령 감시 뒤에 첫 화면을 jibsa 브라우저로 열어 번들을 받아 대조하고(`check_web_values`), jibsa 값이 웹에 없거나
+  값을 하나도 찾지 못하면(번들 구조가 바뀜) 고장, 번들을 받지 못하면 확인 못 함이다.
+
+  | 소스 | 보는 값 |
+  | --- | --- |
+  | 직방 | 아파트·단기임대 API 헤더 `sdk-version` (첫 화면 `_app` 번들, [직방 인증·헤더](providers/zigbang.md#인증헤더)) |
+  | 당근 | GraphQL persisted query 해시(`*_query_id`)를 웹 번들의 같은 이름 쿼리(`DaangnClient.web_query_names`)와 견줘 해시가 바뀐 쿼리(새 해시를 알려 줌)·웹에서 사라진 쿼리·이름만 바뀐 쿼리를 알리고, 기준 목록(`scripts/monitor/daangn_web_queries.txt`)에 없는 웹 쿼리를 참고로 알린다 (`check_daangn_queries`). 쿼리는 지도·단지 화면의 번들 조각에 흩어져 있어 첫 화면 번들에서 조각이 부르는 조각을 모두 받는다 (2026-11-13 실측: 조각 534개, 요청 제한을 지켜 9분쯤). 새 쿼리를 살펴본 뒤 `api_check.py daangn-queries` 로 기준 목록을 다시 쓴다 ([당근 API 변경 시 점검](providers/daangn.md#api-변경-시-점검)) |
+  | 다방 | v5 헤더 `D-Api-Version`·`D-App-Version`, v3 쿼리 `api_version`·`version` (첫 화면 스크립트, [다방 API 변경 시 점검](providers/dabang.md#api-변경-시-점검)) |
 - **판정:** 명령마다 셋으로 나눈다.
 
   | 판정 | 기준 |

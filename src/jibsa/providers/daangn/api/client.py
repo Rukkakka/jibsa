@@ -324,6 +324,49 @@ class DaangnClient(BaseHTTPClient):
     get_view_ranking_articles_query_id: ClassVar[str] = (
         '4f9f7ec5755d40d9903ae145b9343c74b9e46d914c0f5f1fcfac4864d6cc054d'
     )
+    # 위 해시마다 웹 번들의 쿼리 이름 (Relay `params: {id: <해시>, name: <쿼리 이름>}`). 주간 API 감시가 웹 번들에서 같은 이름
+    # 쿼리의 해시와 견줘 해시가 바뀌었거나 쿼리가 사라졌거나 이름만 바뀐 것을 알린다 (scripts/monitor/api_check.py 의
+    # `check_daangn_queries`, #214). 해시를 더하면 여기도 더한다 (`test_every_query_hash_has_web_query_name` 이 막는다)
+    web_query_names: ClassVar[dict[str, str]] = {
+        'article_feed_query_id': 'RegionArticleListPanelPaginationQuery',
+        'articles_count_query_id': 'MapFloatingControlsArticleCountQuery',
+        'get_region_by_coordinate_query_id': 'regionByCoordinateQuery',
+        'search_complexes_query_id': 'fetchComplexSearchResultQuery',
+        'complex_by_original_id_query_id': 'useTransactionComplexPagination_Query',
+        'complex_articles_query_id': 'ComplexArticleListPanelQuery',
+        'article_by_original_article_id_query_id': 'useTransactionArticlePagination_Query',
+        'realsale_feed_query_id': 'RealsaleFeedListQuery',
+        'realsale_new_high_feed_query_id': 'NewHighFeedListQuery',
+        'realsale_feed_summary_query_id': 'RealsaleFeedTitleSummaryQuery',
+        'nearest_commute_station_query_id': 'CommuteMapViewNearestQuery',
+        'commute_stations_query_id': 'CommuteMapViewPinsQuery',
+        'commute_station_article_connection_query_id': 'CommuteStationDetailPaginationQuery',
+        'lived_reviews_by_region_query_id': 'RegionLivedReviewListPanelQuery',
+        'complex_by_cluster_id_query_id': 'ComplexListPanelClusterPaginationQuery',
+        'search_complexes_viewport_query_id': 'ComplexListPanelViewportQuery',
+        'search_schools_query_id': 'fetchSchoolSearchResultQuery',
+        'school_by_code_query_id': 'SchoolDetailQuery',
+        'complex_price_chart_query_id': 'useTransactionComplexRefetchQuery',
+        'search_subway_station_pois_query_id': 'fetchSubwayResultQuery',
+        'search_region_query_id': 'fetchRegionResultQuery',
+        'search_school_pois_query_id': 'fetchUniversitySearchResultQuery',
+        'search_address_query_id': 'fetchAddressResultQuery',
+        'unit_by_address_query_id': 'getPlaceByJusoAddressQuery',
+        'article_by_cluster_id_query_id': 'ArticleListPanelPaginationQuery',
+        'article_clusters_query_id': 'MapViewRegionClustersQuery',
+        'university_article_connection_query_id': 'UniversityArticleListPanelPaginationQuery',
+        'subway_station_article_connection_query_id': 'SubwayArticleListPanelPaginationQuery',
+        'complex_schools_query_id': 'ComplexSchoolListPanelQuery',
+        'preschool_by_no_query_id': 'PreschoolDetailPanelQuery',
+        'complex_compare_query_id': 'ComplexCompareColumnQuery',
+        'nearby_complexes_query_id': 'ComplexNearbySectionQuery',
+        'complexes_by_original_complex_ids_query_id': 'ComplexListPanelMapPinsQuery',
+        'complex_region_query_id': 'ComplexIdSeoQuery',
+        'livable_region_scopes_query_id': 'GoodNeighborhoodRegionQuery',
+        'recommend_neighborhoods_query_id': 'GoodNeighborhoodResultQuery',
+        'trending_complexes_query_id': 'TrendingComplexListPanelListQuery',
+        'get_view_ranking_articles_query_id': 'PopularArticleRankingPanelQuery',
+    }
 
     source_name: ClassVar[str] = 'daangn'
     default_rate_limit: ClassVar[dict[str, object]] = {

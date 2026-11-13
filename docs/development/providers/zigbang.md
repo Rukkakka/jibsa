@@ -26,7 +26,7 @@
 - 헤더는 웹 axios 인스턴스가 API 묶음마다 붙이는 것과 같다 (2026-11-12 실측·번들). 모든 요청에 `Accept: application/json, text/plain, */*`(`base_header`)를 붙이고, 묶음마다 더 붙인다:
   - 옛 API(`/v2/search`·`/v2/local/polygon`): 더 붙이지 않는다 (웹의 옛 `APIS` 클래스).
   - 주거·상가(`/house/property`·`/v3/items`·`/v2/store`): `x-zigbang-platform: www` (`PLATFORM_HEADERS`). 없으면 일부 상세가 404 를 준다.
-  - 아파트(`/apt`): 위에 `sdk-version: 0.128.0` (`APT_HEADERS`). 단기임대(`stay-apis`): 위에 `sdk-version: zigbang-stay-sdk:0.11.0` (`STAY_HEADERS`). SDK 버전이라 직방 웹이 새로 배포되면 바뀐다. 서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 명령 감시로는 알 수 없어, 매일 API 감시가 첫 화면이 불러오는 `_app` 번들의 SDK 설정(`requestHeaders`)과 대조해 다르면 고장으로 알린다 (`check_zigbang_sdk_versions`). 첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아 jibsa 브라우저로 받는다.
+  - 아파트(`/apt`): 위에 `sdk-version: 0.128.0` (`APT_HEADERS`). 단기임대(`stay-apis`): 위에 `sdk-version: zigbang-stay-sdk:0.11.0` (`STAY_HEADERS`). SDK 버전이라 직방 웹이 새로 배포되면 바뀐다. 서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 명령 감시로는 알 수 없어, 매주 월요일 API 감시가 첫 화면이 불러오는 `_app` 번들의 SDK 설정(`requestHeaders`)과 대조해 다르면 고장으로 알린다 (`check_zigbang_sdk_versions`). 첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아 jibsa 브라우저로 받는다.
   - 웹 SDK 는 Sentry trace ID 로 만든 `x-transaction-id` 를 일부 호출에 붙이지만 (번들, 실측 137건에는 없었다) 요청마다 바뀌는 값이라 넣지 않는다.
 
 ### 브라우저 요청 (2026-11-09 실측)
@@ -130,7 +130,7 @@
 
 ## API 변경 시 점검
 
-호스트·API 묶음별 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)·재시도는 client, 유형별 필터 직렬화는 request, catalog·핀·요약·상세는 response를 확인한다. service의 상세 보완 호출과 만료 판정, 제휴 매물의 누락값을 함께 확인한다. 웹을 다시 배포하면 `sdk-version` 값이 바뀌어 매일 API 감시가 고장으로 알리니, 감시 내용의 웹 값으로 맞춘다.
+호스트·API 묶음별 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)·재시도는 client, 유형별 필터 직렬화는 request, catalog·핀·요약·상세는 response를 확인한다. service의 상세 보완 호출과 만료 판정, 제휴 매물의 누락값을 함께 확인한다. 웹을 다시 배포하면 `sdk-version` 값이 바뀌어 매주 월요일 API 감시가 고장으로 알리니, 감시 내용의 웹 값으로 맞춘다.
 
 ## 웹과 다른 점
 

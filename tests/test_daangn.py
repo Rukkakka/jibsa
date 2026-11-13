@@ -58,6 +58,14 @@ def _is_region_search(request: httpx.Request) -> bool:
     return json.loads(request.content)['extensions']['persistedQuery']['sha256Hash'] == DaangnClient.search_region_query_id
 
 
+# --- client -----------------------------------------------------------------
+
+def test_every_query_hash_has_web_query_name() -> None:
+    # 주간 API 감시가 이 짝으로 웹 번들의 같은 이름 쿼리와 해시를 견준다 (#214). 짝이 빠진 해시는 바뀌어도 알 수 없다
+    hashes = {name for name in dir(DaangnClient) if name.endswith('_query_id')}
+    assert set(DaangnClient.web_query_names) == hashes
+
+
 # --- relay ------------------------------------------------------------------
 
 def test_resolve_stops_at_depth() -> None:
