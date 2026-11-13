@@ -20,10 +20,12 @@
 새 CLI 명령이나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 만들면 GROUPS 에 넣는다. tests/test_cli.py 가 CLI 명령 목록과 대조한다.
 
 명령 말고 따로 보는 것: jibsa 가 웹 번들에서 옮겨 적은 값이 지금 웹 번들에도 있는지. 서버가 옛 값도 받으면 명령은 정상으로
-돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·다방 API 버전을 주 1회(`WEEKLY_CHECKS`, 한국 시간 월요일 또는 `--weekly`)
-본다.
+돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·당근 GraphQL 쿼리(해시가 바뀜·사라짐·이름만 바뀜·새로 생김)·다방 API 버전을
+주 1회(`WEEKLY_CHECKS`, 한국 시간 월요일 또는 `--weekly`) 본다. 당근 새 쿼리의 기준 목록은 `daangn_web_queries.txt` 이고
+살펴본 뒤 `daangn-queries` 로 다시 쓴다.
 
-    python scripts/monitor/api_check.py run dabang --out result-dabang.json --weekly
+    python scripts/monitor/api_check.py run daangn --out result-daangn.json --weekly
+    python scripts/monitor/api_check.py daangn-queries
 """
 
 import argparse
@@ -35,6 +37,7 @@ import string
 import subprocess
 import sys
 import tempfile
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -388,6 +391,18 @@ DABANG_V3_API_VERSION: re.Pattern[str] = re.compile(
     rf'(\w+)={_QUOTE}(\d+(?:\.\d+)+){_QUOTE}[^;]{{0,80}};.{{0,300}}?\.api_version=\1[,;)]', re.S,
 )
 DABANG_V3_VERSION: re.Pattern[str] = re.compile(rf'\.api_version=\w+,[^,]*\.call_type=\w+,[^,]*\.version={_QUOTE}([^`"\']+){_QUOTE}')
+# 당근 첫 화면 HTML 이 바로 받는 번들 (2026-11-13 실측: 114개)
+DAANGN_SCRIPT: re.Pattern[str] = re.compile(r'(?:src|href)="(https://[^"]+/assets/[^"/]+\.js)"')
+# 번들이 부르는 다른 번들 조각 (`import('./MapShell-CWyYEj_B.js')`). 이름 뒤 8자가 빌드 해시다
+DAANGN_CHUNK: re.Pattern[str] = re.compile(r'["\'`]((?:\./|/[^"\'`]*/assets/)?[A-Za-z0-9_$.-]+-[A-Za-z0-9_-]{8}\.js)["\'`]')
+# Relay 가 번들에 넣는 GraphQL 연산 (`params:{id:'<해시>',metadata:{},name:'<쿼리 이름>',operationKind:'query',text:null}`)
+DAANGN_QUERY_PARAMS: re.Pattern[str] = re.compile(
+    rf'id:{_QUOTE}([0-9a-f]{{64}}){_QUOTE},metadata:\{{.{{0,300}}?\}},name:{_QUOTE}(\w+){_QUOTE},'
+    rf'operationKind:{_QUOTE}(\w+){_QUOTE}',
+    re.S,
+)
+# 당근 웹 GraphQL 쿼리 이름의 기준 목록. 여기 없는 웹 쿼리를 새로 생긴 쿼리로 알린다 (`check_daangn_queries`)
+DAANGN_QUERY_LIST: Path = Path(__file__).with_name('daangn_web_queries.txt')
 # 주 1회 검사(`WEEKLY_CHECKS`)가 도는 요일 (한국 시간, 월요일 0)
 WEEKLY_CHECK_WEEKDAY: int = 0
 
@@ -681,11 +696,129 @@ def check_dabang_versions() -> dict[str, str]:
     )
 
 
+def _collect_daangn_queries(client: Any, home: Any) -> dict[str, set[str]]:
+    """당근 웹 GraphQL 쿼리 이름마다 번들에 든 해시를 모은다 (mutation 은 뺀다).
+
+    쿼리는 지도·단지 화면을 열 때 받는 번들 조각에 흩어져 있어, 첫 화면 HTML 이 받는 번들에서 시작해 조각이 부르는 조각을 모두
+    받는다 (2026-11-13 실측: 조각 534개. 요청 제한(초당 1건쯤)을 지켜 9분쯤). 새로 생긴 쿼리까지 보려고 jibsa 해시를 다 찾아도
+    멈추지 않는다.
+    """
+    queries: dict[str, set[str]] = {}
+    queue = deque(dict.fromkeys(DAANGN_SCRIPT.findall(home.text)))
+    seen = set(queue)
+    fetched = 0
+    while queue:
+        chunk = client.get(queue.popleft())
+        fetched += 1
+        # 조각 이름처럼 생긴 다른 글자를 따라갔으면 없는 파일이다. 건너뛰고, 요청 제한(429)·서버 오류는 올려 확인 못 함으로 둔다
+        if 400 <= chunk.status_code < 500 and chunk.status_code != 429:
+            print(f'건너뜀 {chunk.status_code} {chunk.url}')
+            continue
+        chunk.raise_for_status()
+        for query_id, name, kind in DAANGN_QUERY_PARAMS.findall(chunk.text):
+            if kind == 'query':
+                queries.setdefault(name, set()).add(query_id)
+        for ref in DAANGN_CHUNK.findall(chunk.text):
+            url = str(chunk.url.join(ref))
+            if url not in seen:
+                seen.add(url)
+                queue.append(url)
+    print(f'번들 조각 {fetched}개 받음, 웹 쿼리 {len(queries)}개')
+    return queries
+
+
+def _daangn_query_list() -> set[str]:
+    """기준 목록(`DAANGN_QUERY_LIST`)의 웹 쿼리 이름. 파일이 없으면 빈 집합이라 웹 쿼리가 모두 새로 생긴 것으로 나온다."""
+    if not DAANGN_QUERY_LIST.exists():
+        return set()
+    lines = DAANGN_QUERY_LIST.read_text(encoding='utf-8').splitlines()
+    return {line.strip() for line in lines if line.strip() and not line.startswith('#')}
+
+
+def check_daangn_queries() -> dict[str, str]:
+    """당근 GraphQL 해시(`DaangnClient` 의 `*_query_id`)를 웹 번들의 같은 이름 쿼리와 견주고, 웹에 새로 생긴 쿼리를 알린다 (#214).
+
+    웹이 쿼리를 바꿔도 서버가 옛 해시를 한동안 받아 명령 감시로는 알 수 없다 (2026-11-11 손 대조: 해시가 바뀐 쿼리 3개와 번들에서
+    사라진 쿼리 3개 모두 서버가 옛 해시를 받았다). 짝은 `DaangnClient.web_query_names` 다.
+
+    - 해시가 바뀐 쿼리: 같은 이름 쿼리의 웹 해시가 jibsa 해시와 다르다. 새 해시를 알려 준다.
+    - 웹에서 사라진 쿼리: 이름도 jibsa 해시도 번들에 없다.
+    - 이름만 바뀐 쿼리: 이름은 없지만 jibsa 해시가 다른 이름으로 있다. 요청은 그대로 맞고 짝만 고친다.
+    - 참고, 새로 생긴 쿼리: 기준 목록(`DAANGN_QUERY_LIST`)에 없는 웹 쿼리. jibsa 가 쓰는 기능이 새 쿼리로 옮겨 갔는지 살펴보는
+      데 쓴다 (예: 어린이집이 `EducationPoiLayerQuery` 에서 `ComplexSchoolListPanelQuery` 로 옮겨 감). 웹에만 있는 기능은 jibsa 에
+      넣지 않아도 된다. 살펴본 뒤 `daangn-queries` 로 기준 목록을 다시 쓴다.
+
+    하나라도 있으면 고장으로 알려 `api-broken` 이슈를 연다 (열려 있으면 댓글).
+    """
+    from jibsa.providers.daangn.api.client import DaangnClient
+
+    step = {'label': '당근 웹 GraphQL 쿼리 (해시·새 쿼리)', 'command': 'persisted-query'}
+    web, failed = _read_web(step, DaangnClient(), _collect_daangn_queries)
+    if failed is not None:
+        return failed
+    if not web:
+        return {**step, 'status': BROKEN, 'detail': '번들에서 GraphQL 쿼리를 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
+    names_by_hash = {query_id: name for name, query_ids in web.items() for query_id in query_ids}
+    changed: list[str] = []
+    gone: list[str] = []
+    renamed: list[str] = []
+    for attribute, name in DaangnClient.web_query_names.items():
+        ours = getattr(DaangnClient, attribute)
+        if ours in web.get(name, set()):
+            continue
+        if name in web:
+            changed.append(f"{attribute}({name}) 새 해시 {', '.join(sorted(web[name]))}")
+        elif ours in names_by_hash:
+            renamed.append(f'{attribute}: {name} → {names_by_hash[ours]}')
+        else:
+            gone.append(f'{attribute}({name})')
+    new = sorted(set(web) - _daangn_query_list())
+    problems = []
+    if changed:
+        problems.append(f"해시가 바뀐 쿼리: {'; '.join(changed)}. daangn api/client.py 의 해시를 바꾸고 응답 필드가 바뀌었는지 본다")
+    if gone:
+        problems.append(f"웹에서 사라진 쿼리: {', '.join(gone)}. 그 명령의 대안을 정한다 (기능이 없어졌으면 명령을 뺀다)")
+    if renamed:
+        problems.append(f"이름만 바뀐 쿼리 (해시는 같음): {'; '.join(renamed)}. daangn api/client.py 의 web_query_names 를 고친다")
+    if new:
+        problems.append(
+            f"참고, 웹에 새로 생긴 쿼리 {len(new)}개: {', '.join(new)}. jibsa 가 쓰는 기능이 옮겨 갔는지 본 뒤 "
+            '`api_check.py daangn-queries` 로 기준 목록을 다시 쓴다',
+        )
+    if problems:
+        return {**step, 'status': BROKEN, 'detail': ' / '.join(problems)}
+    return {
+        **step, 'status': OK,
+        'detail': f'웹과 같음 (jibsa 쿼리 {len(DaangnClient.web_query_names)}개, 웹 쿼리 {len(web)}개)',
+    }
+
+
+def write_daangn_query_list() -> int:
+    """당근 웹 번들의 GraphQL 쿼리 이름을 모아 기준 목록(`DAANGN_QUERY_LIST`)을 다시 쓴다. 새로 생긴 쿼리를 살펴본 뒤 돌린다."""
+    from jibsa.providers.daangn.api.client import DaangnClient
+
+    step = {'label': '당근 웹 GraphQL 쿼리 목록', 'command': 'daangn-queries'}
+    web, failed = _read_web(step, DaangnClient(), _collect_daangn_queries)
+    if failed is not None or not web:
+        print(failed['detail'] if failed is not None else '번들에서 GraphQL 쿼리를 찾지 못함', file=sys.stderr)
+        return 1
+    old = _daangn_query_list()
+    lines = [
+        '# 당근 웹 번들의 GraphQL 쿼리 이름. 주간 API 감시(check_daangn_queries)가 여기 없는 웹 쿼리를 새로 생긴 쿼리로 알린다.',
+        f'# `python scripts/monitor/api_check.py daangn-queries` 가 다시 쓴다 ({_today().isoformat()} 웹 번들)',
+        *sorted(web),
+    ]
+    DAANGN_QUERY_LIST.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f'웹 쿼리 {len(web)}개를 씀. 새로 생김 {sorted(set(web) - old)}, 사라짐 {sorted(old - set(web))}')
+    return 0
+
+
 # 소스마다 명령 뒤에 주 1회 돌리는 따로 보는 것 (웹 값 대조). 값이 낡아도 서버가 받는 동안은 명령이 멈추지 않아 매일 볼
 # 까닭이 없다 (2026-11-13 사용자 결정). `WEEKLY_CHECK_WEEKDAY` 에만 돌고, `run --weekly` 는 요일과 상관없이 돈다 (워크플로는
 # 예약 실행이 아닐 때 붙인다). 명령 뒤라 이 요청이 막혀도 명령 감시에는 영향이 없다
 WEEKLY_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
     'zigbang': (check_zigbang_sdk_versions,),
+    'daangn': (check_daangn_queries,),
     'dabang': (check_dabang_versions,),
 }
 
@@ -861,6 +994,9 @@ def main() -> int:
     run.add_argument('group', choices=list(GROUPS))
     run.add_argument('--out', required=True)
     run.add_argument('--weekly', action='store_true', help='주 1회 검사(WEEKLY_CHECKS)도 요일과 상관없이 돌린다')
+    commands.add_parser(
+        'daangn-queries', help='당근 웹 번들의 GraphQL 쿼리 이름으로 기준 목록(daangn_web_queries.txt)을 다시 쓴다 (9분쯤)',
+    )
     collect = commands.add_parser('report', help='결과 파일을 모아 표를 남기고 이슈를 고친다')
     collect.add_argument('paths', nargs='*')
     collect.add_argument('--issues', action='store_true', help='고장·연속 확인 못 함을 이슈로 알린다 (예약·수동 실행만)')
@@ -871,6 +1007,8 @@ def main() -> int:
         Path(options.out).write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
         print(_table([result]))
         return 0
+    if options.action == 'daangn-queries':
+        return write_daangn_query_list()
     return report(options.paths, issues=options.issues, dry_run=options.dry_run)
 
 
