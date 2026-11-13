@@ -49,6 +49,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 - **소스끼리 부르지 않는다.** `providers/<source>/` 와 `cli/<source>.py` 는 다른 소스의 provider·CLI 코드를 import 하지 않는다. 한 소스가 못 찾거나 실패한 것을 다른 소스로 대신 찾지 않고, 다른 소스가 필요하면 에러 `hint` 에 그 명령을 글로만 알린다. `test_sources_do_not_import_each_other` 가 막는다. ([계층](docs/development/architecture.md#계층))
 - **모든 HTTP 요청은 브라우저로 보내고 요청 제한 훅을 거친다.** 새 클라이언트도 `transport=self.browser_transport()` 와 `rate_limit_hooks()` 를 `event_hooks` 로 넘기고, `base_header` 에 UA·Origin·Referer 를 넣지 않는다. 헤더는 사이트 웹이 그 API 에 실제로 붙이는 것만 실측해 넣는다. 첫 화면이 스스로 부르는 요청은 transport 가 `RateLimiter.record` 로 센다. ([브라우저 요청](docs/development/architecture.md#브라우저-요청))
 - **검증은 실제 API 로, 테스트는 최소로.** 코드를 바꾸면 CLI 직접 조회 같은 실제 API 호출로 확인한다 (요청은 최소로). 테스트는 아주 드문 엣지케이스나 틀어지면 안 되는 핵심 동작일 때만 추가한다. 전체 `pytest` 는 먼저 묻고, 평소에는 바꾼 부분 테스트 몇 개만 이름으로 골라 한 번 돌린다. ([검증과 테스트](docs/development/README.md#검증과-테스트))
+- **코드 형식은 [code-style.md](docs/development/code-style.md) 를 따른다.** 주석·docstring·에러 message·hint·도움말은 한국어, 문자열은 작은따옴표. `ruff format` 은 쓰지 않고(여러 줄 필드 선언을 합친다), mypy 오류를 `# type: ignore` 로 덮지 않는다 ([코드 검사](docs/development/README.md#코드-검사)).
 - **명령을 추가·삭제하면 매일 API 감시 목록도 고친다.** `scripts/monitor/api_check.py` 의 `GROUPS` 에 넣고, 매물을 찾는 새 방식(동 이름·역·반경·단지처럼 다른 API 를 쓰는 경로)을 넣었으면 그 방식도 넣는다. 명령을 빠뜨리면 `test_every_source_command_is_in_api_monitor` 가 실패한다. ([매일 API 감시](docs/development/README.md#매일-api-감시))
 
 ## 문서 지도
