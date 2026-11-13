@@ -133,7 +133,7 @@
 
 ## API 변경 시 점검
 
-웹을 다시 배포하면 스크립트 이름이 바뀌고 주소·헤더가 바뀔 수 있다. 헤더·버전 쿼리는 client(`V5_HEADERS`)와 `DabangV3RequestParameterModel`, 유형별 필터 항목은 `request/common.py`, 목록 글자 꼴은 `service/common.py` 의 해석기를 본다. 필터 항목이 늘면 400 본문의 `errorDetails` 가 빠진 항목을 알려 준다.
+웹을 다시 배포하면 스크립트 이름이 바뀌고 주소·헤더가 바뀔 수 있다. 헤더·버전 쿼리는 client(`V5_HEADERS`)와 `DabangV3RequestParameterModel`, 유형별 필터 항목은 `request/common.py`, 목록 글자 꼴은 `service/common.py` 의 해석기를 본다. 필터 항목이 늘면 400 본문의 `errorDetails` 가 빠진 항목을 알려 준다. 버전 값(v5 `D-Api-Version`·`D-App-Version`, v3 `api_version`·`version`)은 서버가 옛 값도 받으면 명령이 정상으로 돌아, 매주 월요일 API 감시가 첫 화면 스크립트(2026-11-13 `atoms-chunk`)의 값과 대조해 다르면 고장으로 알린다 (`check_dabang_versions`, [매일 API 감시](../README.md#매일-api-감시)). 감시 내용의 웹 값으로 맞춘다.
 
 ## 웹과 다른 점
 
