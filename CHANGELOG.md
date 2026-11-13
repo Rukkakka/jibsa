@@ -47,6 +47,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 `listing --trade` 에 매물에 없는 거래 조건을 주면 `LISTING_UNAVAILABLE`(`TRADE_NOT_OFFERED`) 대신 대표 조건을 보여 주고 `notes` 로 알림. `--details` 도 목록을 받은 뒤 그 거래 조건이 내려간 매물을 빼지 않고 대표 조건의 거래 유형·가격으로 바꿔 알린다. 쓰는 쪽은 `TRADE_NOT_OFFERED` 에러 대신 결과의 `trade_type` 과 `notes` 로 요청한 거래가 없는지 본다 (#222)
 - 당근 `region-reviews` 의 `review_count` 가 동네 요약에 쓰인 후기 수(60 에서 잘림, 구는 `null`) 대신 동·구의 실제 후기 수를 줌 (당근 웹 모바일 화면의 '후기 N개'). `--top` 기본을 10 에서 당근 구 후기 페이지와 같은 20 으로 바꿈. 쓰는 쪽은 `review_count` 를 60 에서 잘린 요약 기준 수가 아니라 동·구의 전체 후기 수로 읽는다 (구도 수가 온다) (#222)
 - 당근 매물의 `trade_type` 에 `연세`(제주에서 1년치 월세를 한 번에 내는 거래)가 올 수 있음. 연세가 대표 거래인 매물은 당근 웹 목록처럼 연세로 보여 준다 (예전에는 같은 매물의 다른 거래를 보여 주거나 연세만 있으면 뺐다). 쓰는 쪽은 `연세` 를 처리하고, 금액은 `rent_manwon` 이 아니라 `yearly_rent_manwon`(1년치)으로 읽는다 (#222)
+- 네이버 `search listings`·`search complexes`·`search redevelopment`·`trend` 에 `성수동`·`성수`·`부민` 처럼 `○가` 로 나뉜 동을 주면 1가·2가를 합쳐 찾지 않고 `REGION_AMBIGUOUS` 로 `서울특별시 성동구 성수동1가` 꼴의 후보를 줌. 네이버 웹 검색창처럼 하나를 골라 그 주소로 다시 찾는다 (`--radius` 를 줘도, `서울특별시 성동구 성수동` 처럼 시·도·구를 붙여 줘도 같다). 예전에는 매물 동 검색이 동마다 `--limit` 을 나눠 합쳤고, 반경 검색과 다른 명령은 1가만 찾고 알렸다
+- 네이버가 같은 이름의 역·단지 중 첫 후보를 고르지 않음. 위치 검색에서 이름이 같은 역(`신흥역`)·단지가 여럿이면 `REGION_AMBIGUOUS` 로 역은 `{name, lines, lat, lng}`, 단지는 `{name, legal_division, complex_number, lat, lng}` 후보를 주니 고른 후보의 `lat`·`lng` 를 `--lat`/`--lng` 로 준다. 단지 이름을 받는 `complex`·`search listings --complex`·`market-price`·`school --complex` 는 띄어쓰기·대소문자만 빼고 이름이 똑같은 단지가 한 곳일 때만 찾는다. 여럿이면 `REGION_AMBIGUOUS`(`{name, legal_division, complex_number}`), 없으면 `NOT_FOUND` 에 이름이 비슷한 단지를 `candidates` 로 주니 고른 `complex_number` 로 다시 부른다. 위치 검색에서 이름이 같은 동·역·단지가 없으면 `REGION_NOT_FOUND` 이고 이름이 비슷한 역·단지를 같은 꼴의 객체로 `candidates` 에 실으니 맞는 후보의 `lat`·`lng` 를 `--lat`/`--lng` 로 준다. 네이버 검색 결과가 잘려 뒤쪽을 받지 못했으면(자동완성에 다음 쪽이 있거나 주소 결과가 10곳을 넘음) 이름이 같은 곳이 하나만 보여도 정하지 않고 그 한 곳을 후보로 `REGION_AMBIGUOUS` 로 멈춘다 (단지 명령도 같고, 단지 이름이 앞 10곳에 없으면 `NOT_FOUND` 가 뒤쪽에 있을 수 있다고 알린다). 예전에는 이름이 비슷한 첫 후보로 찾고 `[모호]` `notes` 로 알렸다. 받은 후보가 잘려 전체 수를 모르면 `candidate_count` 가 `null` 이다 (`regions` 의 같은 이름 후보도 같다)
+- 네이버 `listing` 의 매매 재산세·종부세를 네이버가 주지 않는 매물(오피스텔·상가 매매처럼 사이트에도 칸이 없는 것)은 `null` 대신 키를 빼서 줌. 취득세를 네이버가 주지 않으면 키를 남겨 `null`(모름)로 두고 `[참고]` `notes` 가 네이버 매물 화면에서 확인하라고 알린다. 쓰는 쪽은 키가 없으면 해당 없음, `null` 은 모름으로 읽는다
+- 라이브러리로 쓸 때: `jibsa.providers.naver` 의 `resolve_complex_number` 가 단지 번호와 빌라 단지인지 둘만 돌려준다 (안내 목록을 뺐다. 이름이 여러 곳이거나 없으면 에러로 후보를 준다). `search_area` 의 `legal_division_codes`(목록)는 `legal_division_code`(법정동 코드 하나)로 바뀌었고, `service.region` 의 `ga_dong_regions` 를 뺐다. `search_area` 의 `sort` 기본은 `가까운순` 에서 `랭킹순` 으로 바뀌어 거리순이 필요하면 `sort='가까운순'` 을 준다. `list_redevelopment_areas` 의 `sort` 기본은 `세대수순` 이다
 
 ### 추가
 
@@ -68,6 +72,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 매물 `status` 필드 (`판매중`·`예약중`). 예약 상태를 주는 당근만 채운다. 당근 예약중 매물은 계약이 깨질 수 있어 당근 웹처럼 내보낸다 (예전에는 뺐다) (#222)
 - 당근 연세를 `trade_type: 연세` 와 `deposit_manwon`·`yearly_rent_manwon`(만원, 1년치)으로 줌. 연세 매물에는 `rent_manwon` 키가 없고, 결과에 연세가 있으면 `notes` 가 그 값으로 읽는 법을 알린다. 예전에는 연세만 올린 매물을 목록에서 빼고 `listing` 은 `LISTING_UNAVAILABLE` 이었다 (#222)
 - 당근 `search listings`·`search commute` 에 `--trade 연세` 와 연세 범위 `--yearly-rent-min`/`--yearly-rent-max`(만원), `listing` 에 `--trade 연세`. `--trade 연세` 에 `--rent-*` 를 주거나 연세 없는 `--trade` 에 `--yearly-rent-*` 를 주면 `INVALID_ARGUMENT` (#222)
+- 네이버 `real-price` 의 거래에 `presale`(`입주권`·`분양권`, 직방·당근 `real-price` 와 같은 이름. 라이브러리는 `NaverRealPrice.presale`)이 붙음. 일반 거래와 빌라 단지 거래는 키가 없다. 입주권·분양권은 집이 아니라 들어갈 권리를 사고판 값이라 일반 매매 시세와 섞지 않는다 (새로 짓는 단지는 매매 대부분이 입주권일 수 있다)
 
 ### 변경
 
@@ -83,6 +88,12 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 `complex` 의 아파트형 단지 평형을 전용면적 묶음 대신 당근 웹처럼 공급 평 묶음으로 나누고, `schools` 의 중·고등학교를 도보 가까운 2곳 대신 웹 학군 카드처럼 이 단지 주민이 많이 다니는 순(같으면 도보 순)으로 고르며 주민 수를 붙임 (#222)
 - 당근 웹 쿼리 해시가 거절되면 동 지도 페이지 20건에 조건을 직접 걸어 찾던 대체 경로를 없애 `UPSTREAM_ERROR` 로 끝냄. 당근 웹에 없는 동작이었다 (#215)
 - 당근 `region-real-price --new-high` 가 당근 웹 신고가 화면처럼 가장 최근 공개일의 신고가만 줌. 그날 신고가가 없으면 빈 목록이고 `notes` 가 알린다. 예전처럼 이전 공개일 신고가까지 보려면 새 옵션 `--previous-days` 를 붙인다 (#222)
+- 네이버 `search listings` 의 주소·역·단지·좌표 반경 검색 기본 정렬을 가까운순에서 네이버 웹 매물 목록과 같은 랭킹순으로 바꿈. 거리는 매물의 `distance_km` 로 본다. `--sort 가까운순` 은 줄 때만 지도 칸(약 240m) 단위로 가까운 칸부터 훑어 거리로 세우고, 네이버 웹에 없는 근사 순서이며 요청이 많이 든다고 `[참고]` `notes` 로 알린다
+- 네이버 `search redevelopment` 의 `--sort` 기본을 매물수순에서 네이버 웹 구역 목록과 같은 세대수순으로 바꿈
+- 네이버 `regions` 가 네이버 웹 지역 선택처럼 리를 빼고 읍·면·동까지만 줌 (`regions 세종` 등). 리는 `search listings <리 이름>` 이 리 중심 반경으로 찾는다
+- 네이버 위치 검색의 같은 이름 동·주소 후보(`REGION_AMBIGUOUS`)를 네이버 웹 검색창처럼 법정동만 줌 (`신사동` → 강남구·은평구. 행정동인 관악구 신사동은 빠진다). 행정동(`역삼1동`)을 반경으로 찾았다는 `[범위]` 안내에는 관련 법정동(`역삼동`)을 붙인다
+- 네이버가 중개보수를 '개별확인' 으로 표시한 매물은 `listing` 의 `agent_fee_manwon` 을 `null` 로 두고 `notes` 로 알림 (네이버 사이트도 금액 대신 '개별확인' 을 보여 준다). `listing` 결과에 `notes` 가 붙을 수 있다
+- 네이버 `listing` 의 주소를 매물 좌표로 찾은 법정동 대신 매물에 붙은 법정동 코드의 이름으로 만들어 네이버 매물 화면의 '위치' 와 맞춤. 읍·면 매물은 리까지 넣는다 (`경기도 양평군 양평읍 대흥리 …`). 시·도는 다른 결과처럼 정식 이름(`서울특별시`)이고 요청 수는 같다
 
 ### 수정
 
@@ -101,6 +112,9 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 `trending-complexes 신사동` 처럼 같은 이름 동을 주면 `'강남구 신사동'` 을 권해 따르면 `INVALID_ARGUMENT` 이던 것을 고침. 바로 `INVALID_ARGUMENT` 로 그 동들의 구(`candidates`)를 준다 (#222)
 - 당근 `popular-listings` 가 여러 시·도에 있는 구 이름(중구·남구)의 동에서 시·도를 채우려 지역 검색을 더 보내던 것을 고침 (`'서울 중구 명동2가'` 요청 5회 → 2회) (#215)
 - `jibsa guide common` 이 `--fields` 를 받는 매물 목록 명령에 다방(`search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)을 빠뜨려, 다방에서는 `--fields` 를 쓸 수 없는 것처럼 읽히던 문제 (#227)
+- 네이버 `listing` 의 `move_in` 이 날짜 '이내'·'이후' 입주를 날짜만으로 내 뜻이 반대로 읽히던 문제. `"2026-12-31 이내"`·`"2026-12-31 이후"` 로 준다 (네이버 사이트 표기와 같다)
+- 네이버 `listing` 이 네이버가 관리비 '없음' 으로 표시한 매물의 `manage_cost_manwon` 을 `null`(모름)로 내던 문제. `0`·`manage_cost_includes: []` 로 준다
+- `REGION_AMBIGUOUS` 의 후보가 잘려 전체 수를 모를 때 `candidate_count` 키가 에러 JSON 에서 빠지던 문제. 문서대로 `null` 로 준다 (네이버·당근. 당근 `regions` 등 후보를 다 받지 못한 경우)
 
 ## 0.12.0 — 2026-11-11
 

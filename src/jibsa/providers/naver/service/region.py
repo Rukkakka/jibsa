@@ -10,7 +10,6 @@ from pydantic import (
 
 from jibsa.core.errors import (
     JibsaError,
-    RegionAmbiguousError,
     RegionNotFoundError,
 )
 from jibsa.core.korean import (
@@ -42,6 +41,7 @@ from jibsa.providers.naver.api.response.region import (
     NaverAddressModel,
     NaverAutocompleteComplexModel,
     NaverAutocompleteLegalDivisionModel,
+    NaverAutocompletePageModel,
     NaverAutocompleteSubwayStationModel,
     NaverLegalDivisionInfoModel,
 )
@@ -52,6 +52,7 @@ from jibsa.providers.naver.service.common import (
 
 from typing import (
     Annotated,
+    Any,
     Literal,
 )
 
@@ -62,8 +63,8 @@ def _lat_lng(coordinates: NaverCoordinatesModel | None) -> tuple[float, float]:
     return coordinates.y_coordinate, coordinates.x_coordinate
 
 
-# 같은 이름 지역·비슷한 이름 단지를 안내할 때 보여 줄 후보 수
-MAX_CANDIDATE_NOTES: int = 5
+# 같은 이름·비슷한 이름 후보를 알릴 때 보여 줄 후보 수
+MAX_CANDIDATES_SHOWN: int = 5
 
 
 class NaverRegion(BaseModel):
@@ -93,14 +94,6 @@ class NaverRegion(BaseModel):
         str | None,
         Field(description='법정동코드 (10자리, 역은 null)')
     ] = None
-    ga_base: Annotated[
-        str | None,
-        Field(exclude=True, description="'○가' 로 나뉜 동의 앞 이름 ('성수동'·'성수' 로 성수동1가를 찾았을 때 성수동). 아니면 None")
-    ] = None
-    ga_note: Annotated[
-        str | None,
-        Field(exclude=True, description='그 한 곳만 찾았다는 안내 (_ga_dong_note). 동들을 합쳐 찾으면 부르는 쪽이 뺀다')
-    ] = None
 
 
 # 끝말 없이 준 지역 이름('송정', '해운대')에 붙여 이름 전체로 보는 끝말
@@ -112,20 +105,45 @@ def _last_word(name: str) -> str:
     return name.split()[-1] if name.split() else name
 
 
-def _station_label(station: NaverAutocompleteSubwayStationModel) -> str:
-    lines = ', '.join(line.name for line in station.line_infos)
-    return f'{station.station_name}({lines})' if lines else station.station_name
+def _ambiguous(
+    query: str,
+    candidates: list[Any],
+    count: int | None,
+    hint: str,
+    message: str | None = None,
+) -> JibsaError:
+    """같은 이름 후보가 여럿(일 수 있어)이라 고르지 않고 멈추는 에러. 코드와 `details` 키는 `RegionAmbiguousError` 와 같다.
 
-
-def _other_candidates_note(query: str, chosen: str, others: list[tuple[str, float, float]]) -> str:
-    """같은 이름이 여러 곳일 때 안내. 다른 곳은 좌표로 다시 찾게 한다 (구 이름을 붙인 검색어는 확인하지 않았다)."""
-    # 받은 좌표를 그대로 쓴다. ':g' 는 유효숫자 6자리라 경도가 소수 셋째 자리(최대 약 44m 오차)로 잘린다
-    retry = ', '.join(f'{label} --lat {lat} --lng {lng}' for label, lat, lng in others[:MAX_CANDIDATE_NOTES])
-    return note(
-        '모호',
-        f"'{query}': 같은 이름이 여러 곳에 있어 첫 번째인 {chosen} 기준으로 검색했습니다. "
-        f'다른 곳이면 좌표로 다시 검색하세요: {retry}',
+    웹 검색창도 같은 이름 후보를 목록으로만 보여 주고 사용자가 고른다 (2026-11-13 웹 대조). `candidates` 는 받은 후보
+    전부이고 앞 `MAX_CANDIDATES_SHOWN` 곳만 싣는다. `count` 가 None 이면 받은 후보가 잘려 전체 수를 모른다 (모름 → null).
+    후보가 한 곳인데 `count` 가 None 이면 받은 결과 뒤쪽에 같은 이름이 더 있을 수 있어 그 한 곳으로 정하지 않은 경우다
+    (단지 '삼익' 은 자동완성 첫 쪽에 수서동 한 곳뿐이고 다음 쪽에 여의도·이촌 등 4곳이 더 있다, 2026-11-13 실측).
+    `message` 를 주면 기본 문구 대신 쓴다.
+    """
+    if message is None and count is None and len(candidates) == 1:
+        message = (
+            f"{quoted(query, '과/와')} 이름이 같은 곳을 1곳 찾았지만 받은 결과가 잘려 같은 이름이 더 있을 수 있어 "
+            '정하지 않았습니다'
+        )
+    elif message is None and count is None:
+        message = f"'{query}' 에 해당하는 곳이 {len(candidates)}곳 이상입니다 (후보를 다 받지 못해 전체 수를 모릅니다)"
+    elif message is None:
+        message = f"'{query}' 에 해당하는 곳이 {count}곳입니다"
+    return JibsaError(
+        code='REGION_AMBIGUOUS',
+        message=message,
+        hint=hint,
+        details={'candidates': candidates[:MAX_CANDIDATES_SHOWN], 'candidate_count': count},
     )
+
+
+def _station_candidate(station: NaverAutocompleteSubwayStationModel) -> dict[str, Any]:
+    """역 후보 (이름·노선·좌표). 역 자동완성에는 시·구가 없어(역 이름·노선·좌표만, 2026-11-13) 좌표로 다시 찾게 한다.
+
+    받은 좌표를 그대로 싣는다 (':g' 는 유효숫자 6자리라 경도가 소수 셋째 자리로 잘린다).
+    """
+    lat, lng = _lat_lng(station.coordinates)
+    return {'name': station.station_name, 'lines': [line.name for line in station.line_infos], 'lat': lat, 'lng': lng}
 
 
 def _wide_region_unit(code: str | None) -> str:
@@ -136,52 +154,128 @@ def _wide_region_unit(code: str | None) -> str:
     return '시·도' if code and len(code) == 10 and code[2:] == '0' * 8 else '시·군·구'
 
 
+def _autocomplete_legal_divisions(
+    client: NaverClient,
+    keyword: str,
+) -> NaverAutocompletePageModel[NaverAutocompleteLegalDivisionModel]:
+    """사이트 검색창의 지역 자동완성 첫 페이지 (다섯 곳)."""
+    return unwrap(
+        client.run_request_search_autocomplete_legal_divisions_v1(
+            NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel(keyword=keyword)
+        ),
+        '지역 검색',
+    )
+
+
+def _ga_dong_base(name: str, dong: str) -> str | None:
+    """`dong` 이 검색어 끝 단어 `name` 의 '○가' 동이면 '○가' 를 뗀 앞 이름 ('성수동'·'성수' → 성수동1가 의 성수동). 아니면 None.
+
+    주소 검색은 '동' 을 뺀 '성수' 에도 '성수동' 처럼 성수동1가 한 곳만 준다 (2026-10-28 실측). 검색어 바로 뒤에 숫자+'가' 가
+    올 때만 '○가' 동으로 보면 '성수' 는 사이에 '동' 이 껴 1가만 찾고 안내도 없었다 (2026-10-28 리뷰).
+    """
+    match = re.fullmatch(r'(.+?)\d+가', dong)
+    if match is None or match.group(1) not in (name, f'{name}동'):
+        return None
+    return match.group(1)
+
+
+def _ga_dongs(
+    items: list[NaverAutocompleteLegalDivisionModel],
+    name: str,
+) -> list[NaverAutocompleteLegalDivisionModel]:
+    """자동완성 후보 중 `name`('성수'·'성수동')의 '○가' 동 (성수동1가·성수동2가)."""
+    return [item for item in items if _ga_dong_base(name, _last_word(item.legal_division_name)) is not None]
+
+
+def _ga_dong_ambiguous(query: str, dongs: list[NaverAutocompleteLegalDivisionModel], more: bool) -> JibsaError:
+    """'○가' 로 나뉜 동(성수동 → 성수동1가·성수동2가)을 고르지 않고 후보로 주는 에러.
+
+    동 매물 목록(legalDivisionArticleList)은 법정동 코드를 하나만 받고(둘이면 400, 2026-10-15 실측) 웹에도 두 동을 한 목록으로
+    보는 화면이 없다. 웹 검색창은 '성수동' 에 성수동1가·성수동2가를 지역 후보로 따로 보여 사용자가 고른다 (2026-11-13 웹 대조).
+    예전에는 동마다 `--limit` 을 나눠 찾아 합쳤다. `more` 는 자동완성에 다음 페이지가 있는지다 (있으면 전체 수를 모른다).
+    """
+    candidates = [normalize_address(item.legal_division_name) or item.legal_division_name for item in dongs]
+    return _ambiguous(
+        query, candidates, None if more else len(candidates),
+        f"'○가' 로 나뉜 동은 하나씩 찾습니다. 찾을 동을 골라 그 주소로 다시 주세요 (예: '{candidates[0]}')",
+    )
+
+
+def _legal_division_label(item: NaverAutocompleteLegalDivisionModel) -> str:
+    """동 자동완성 후보의 정식 주소 ('서울시 강남구 역삼동' → 서울특별시 강남구 역삼동)."""
+    return normalize_address(item.legal_division_name) or item.legal_division_name
+
+
 def _find_legal_division(
     client: NaverClient,
     query: str,
     radius_km: float | None,
+    truncated: list[str],
 ) -> tuple[NaverRegion, list[str]] | None:
-    """동 자동완성으로 법정동을 찾는다. 같은 이름이 여러 곳이면 고르지 않고 후보를 알린다.
+    """동 자동완성으로 법정동을 찾는다. 이름이 검색어와 같은 곳만 쓰고, 같은 이름이 여러 곳이면 고르지 않고 멈춘다.
 
-    예전에는 첫 번째로 찾고 다른 곳을 `notes` 로 알리는 길도 있었는데, 그 길을 쓰던 `resolve_region_with_notes` 를 뺀 뒤 부르는
-    곳이 모두 멈추는 쪽이라 지웠다 (2026-11-12 리뷰).
+    이름이 같은 곳이 없으면 '○가' 동('부민' → 부민동1가·2가·3가)을 후보로 멈추고, 그것도 없으면 None 이다 (예전에는 첫 후보를
+    골랐다). 자동완성은 첫 쪽(다섯 곳)만 받아, 다음 쪽이 있으면 이름이 같은 곳이 한 곳뿐이어도 정하지 않고 멈춘다 (뒤쪽에 같은
+    이름이 더 있을 수 있다). 다음 쪽이 있는데 이름이 같은 곳이 없으면 `truncated` 에 '동' 을 더하고 None 이다.
 
     Raises:
-        RegionAmbiguousError: 같은 이름이 여러 곳일 때 ('신사' → 강남구·은평구·관악구 신사동).
+        JibsaError: 같은 이름이 여러 곳이거나 다음 쪽이 있어 더 있을 수 있을 때 REGION_AMBIGUOUS ('신사' → 강남구·은평구
+            신사동, '○가' 로 나뉜 동, 같은 이름을 동 이름 전체로 다시 물은 주소 결과(`_unique_address`)).
     """
-    page = unwrap(
-        client.run_request_search_autocomplete_legal_divisions_v1(
-            NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel(keyword=query)
-        ),
-        '지역 검색',
-    )
+    page = _autocomplete_legal_divisions(client, query)
+    more = bool(page.has_next_page)
     items = [item for item in page.items if item.coordinates is not None]
     if not items:
         return None
-    # 동·구 이름을 끝말 없이 줘도('신흥', '해운대') 그 이름의 곳을 고른다. 첫 결과로 고르면 '신흥' 이 인천 신흥동1가가
+    words = query.split()
+    # 동·구 이름을 끝말 없이 줘도('신흥', '해운대') 그 이름의 곳을 찾는다. 첫 결과로 고르면 '신흥' 이 인천 신흥동1가가
     # 되고 같은 이름 신흥동 여러 곳(대전 동구·성남 수정구 …)을 알리지 않는다 (2026-10-11)
-    names = {query, *(query + suffix for suffix in DIVISION_NAME_SUFFIXES)}
-    best = next((item for item in items if _last_word(item.legal_division_name) in names), items[0])
-    notes: list[str] = []
-    same = [item for item in items if _last_word(item.legal_division_name) == _last_word(best.legal_division_name)]
-    if len(same) >= 2:
-        words = query.split()
-        full_name = _last_word(best.legal_division_name)
-        if words[-1] != full_name:
+    # 리뷰 오탐 (2026-11-13): 이 매칭은 주소 검색이 못 찾은 이름만 탄다. '강남'·'해운대' 는 주소 검색이 먼저 정한다
+    # (강남 → 강남구·진주 강남동 2곳은 주소 검색 결과)
+    names = {words[-1], *(words[-1] + suffix for suffix in DIVISION_NAME_SUFFIXES)}
+    same = [item for item in items if _last_word(item.legal_division_name) in names]
+    if not same:
+        # 주소 검색이 못 찾은 '○가' 동의 앞 이름('부민')은 자동완성이 1가·2가·3가를 모두 준다 (2026-10-30 실측: 부민 → 부산 서구
+        # 부민동1가·2가·3가). 한 곳만 있고 다음 쪽이 없으면 그곳이다
+        same = _ga_dongs(items, words[-1])
+        if len(same) > 1:
+            raise _ga_dong_ambiguous(query, same, more)
+        if not same:
+            if more:
+                truncated.append('동')
+            return None
+        if more:
+            label = _legal_division_label(same[0])
+            raise _ambiguous(
+                query, [label], None,
+                "검색 결과가 더 있어 '○가' 로 나뉜 동이 더 있을 수 있습니다. 찾을 동의 주소로 다시 주세요 "
+                f"(예: '{label}')",
+            )
+    if len(same) > 1:
+        full_names = {_last_word(item.legal_division_name) for item in same}
+        full_name = next(iter(full_names))
+        if len(full_names) == 1 and words[-1] != full_name:
             # 끝말 없는 이름('신흥')은 주소 검색이 못 찾지만 이름 전체('신흥동')로는 같은 이름 동을 모두 준다 (신흥동 14곳.
             # 자동완성은 대전·성남 2곳에 totalCount 12, 신사 2곳 ↔ 신사동 3곳, 2026-10-11). 그래서 이름 전체로 1회 더 물어
             # `search listings 신흥동` 과 같은 후보로 멈춘다
             others, others_total = _search_address(client, ' '.join([*words[:-1], full_name]))
             if others_total > 1:
-                raise RegionAmbiguousError(
-                    query, [item.full_address for item in others[:MAX_CANDIDATE_NOTES] if item.full_address], others_total,
-                )
-        # 자동완성은 한 쪽에 다섯 곳만 줘서 다음 쪽이 있으면 전체 수(totalCount)로 센다 ('송정' 은 첫 쪽 다섯 곳이 모두
-        # 송정동이고 totalCount 14, 2026-10-11). totalCount 는 '중앙동1가' 같은 비슷한 이름도 세어 조금 많을 수 있다
-        total = max(page.total_count or 0, len(same)) if page.has_next_page else len(same)
-        raise RegionAmbiguousError(
-            query, [normalize_address(item.legal_division_name) for item in same[:MAX_CANDIDATE_NOTES]], total,
+                _unique_address(query, others, others_total)
+        # 자동완성은 한 쪽에 다섯 곳만 줘서 다음 쪽이 있으면 전체 수를 모른다 (null). totalCount 는 '중앙동1가' 같은 비슷한
+        # 이름도 세어 같은 이름의 수가 아니다 ('송정' 은 첫 쪽 다섯 곳이 모두 송정동이고 totalCount 14, 2026-10-11)
+        candidates = [_legal_division_label(item) for item in same]
+        raise _ambiguous(
+            query, candidates, None if more else len(candidates),
+            f'시·구를 붙여 정확한 주소로 다시 검색하세요 (예: {candidates[0]})',
         )
+    if more:
+        label = _legal_division_label(same[0])
+        raise _ambiguous(
+            query, [label], None,
+            f'검색 결과가 더 있어 이름이 같은 곳이 더 있을 수 있습니다. 시·구를 붙여 정확한 주소로 다시 주세요 (예: {label})',
+        )
+    best = same[0]
+    notes: list[str] = []
     # 단위는 GUN·EUP 만 온다. 서울·경기도 같은 시·도는 그 안의 구(GUN)로 오고, 리는 자동완성에 나오지 않는다
     # (검색어 16개, 2026-10-09 확인). 그래서 EUP 가 아니면 시·군·구로 본다.
     if radius_km is not None and best.legal_division_level_type not in (None, 'EUP'):
@@ -205,72 +299,128 @@ def _find_legal_division(
 def _find_subway_station(
     client: NaverClient,
     query: str,
-    radius_km: float | None,
+    similar: list[dict[str, Any]],
+    truncated: list[str],
 ) -> tuple[NaverRegion, list[str]] | None:
-    items = [
-        item
-        for item in unwrap(
-            client.run_request_search_autocomplete_subway_stations_v1(
-                NaverSearchAutocompleteSubwayStationsV1RequestParameterModel(keyword=query)
-            ),
-            '역 검색',
-        ).items
-        if item.coordinates is not None
-    ]
-    if not items:
-        return None
-    names = (query, f'{query}역')
-    best = next((item for item in items if item.station_name in names), items[0])
-    same = [item for item in items if item.station_name == best.station_name and item is not best]
-    notes = [
-        _other_candidates_note(query, _station_label(best), [
-            (_station_label(item), *_lat_lng(item.coordinates)) for item in same
-        ])
-    ] if same else []
-    lat, lng = _lat_lng(best.coordinates)
-    region = NaverRegion(
-        name=best.station_name,
-        lat=lat,
-        lng=lng,
+    """역 자동완성으로 이름이 검색어(또는 검색어+'역')와 같은 역을 찾는다.
+
+    이름이 같은 역이 없으면 None 이고 `similar` 에 후보를 더한다 (다음 쪽이 있으면 `truncated` 에 '역' 도 더한다).
+    자동완성은 첫 쪽만 받아, 다음 쪽이 있으면 이름이 같은 역이 한 곳뿐이어도 정하지 않는다 (뒤쪽에 더 있을 수 있다).
+
+    Raises:
+        JibsaError: 이름이 같은 역이 여러 곳이거나 다음 쪽이 있어 더 있을 수 있을 때 REGION_AMBIGUOUS ('신흥역' → 8호선 성남·
+            대전 1호선, 2026-11-13 웹 대조).
+    """
+    page = unwrap(
+        client.run_request_search_autocomplete_subway_stations_v1(
+            NaverSearchAutocompleteSubwayStationsV1RequestParameterModel(keyword=query)
+        ),
+        '역 검색',
     )
-    return region, notes
+    more = bool(page.has_next_page)
+    items = [item for item in page.items if item.coordinates is not None]
+    same = [item for item in items if item.station_name in (query, f'{query}역')]
+    if len(same) > 1 or (same and more):
+        # 역 자동완성에는 시·구가 없어 이름으로는 가를 수 없다. 좌표로 다시 찾게 한다
+        candidates = [_station_candidate(item) for item in same]
+        first = candidates[0]
+        retry = f"lat·lng 를 --lat/--lng 로 주세요 (예: --lat {first['lat']} --lng {first['lng']})"
+        hint = (
+            '이름이 같은 역이 여러 곳입니다 (역 검색은 시·구를 주지 않아 노선·좌표로만 가릅니다. 대전 1호선도 1호선으로 옵니다). '
+            f'고른 역의 {retry}'
+        ) if len(same) > 1 else (
+            '역 검색 결과가 더 있어 이름이 같은 역이 더 있을 수 있습니다 (역 검색은 시·구를 주지 않습니다). '
+            f'노선·좌표가 맞으면 그 {retry}'
+        )
+        raise _ambiguous(query, candidates, None if more else len(candidates), hint)
+    if not same:
+        similar += [_station_candidate(item) for item in items]
+        if more:
+            truncated.append('역')
+        return None
+    best = same[0]
+    lat, lng = _lat_lng(best.coordinates)
+    return NaverRegion(name=best.station_name, lat=lat, lng=lng), []
 
 
-def search_complexes(client: NaverClient, keyword: str) -> list[NaverAutocompleteComplexModel]:
+def search_complexes(client: NaverClient, keyword: str) -> NaverAutocompletePageModel[NaverAutocompleteComplexModel]:
     """단지 이름 자동완성 첫 페이지. 사이트 검색창과 같은 순서다."""
     return unwrap(
         client.run_request_search_autocomplete_complexes_v1(
             NaverSearchAutocompleteComplexesV1RequestParameterModel(keyword=keyword)
         ),
         '단지 검색',
-    ).items
-
-
-def _complex_candidates_note(query: str, best: NaverAutocompleteComplexModel, items: list[NaverAutocompleteComplexModel]) -> str | None:
-    others = [item for item in items if item is not best][:MAX_CANDIDATE_NOTES]
-    if not others:
-        return None
-    listed = ', '.join(f'{item.complex_name}({item.complex_number})' for item in others)
-    return note(
-        '모호',
-        f"'{query}': 이름이 비슷한 단지가 더 있어 {best.complex_name}({best.complex_number}) {particle(best.complex_name, '을/를')} 골랐습니다. 다른 단지: {listed}",
     )
 
 
-def _pick_complex(query: str, items: list[NaverAutocompleteComplexModel]) -> NaverAutocompleteComplexModel:
-    return next((item for item in items if item.complex_name == query), items[0])
+def _complex_key(name: str) -> str:
+    """단지 이름 비교 키. 띄어쓰기·영문 대소문자만 무시한다 ('역삼 IPARK' = '역삼IPARK')."""
+    return ''.join(name.split()).casefold()
+
+
+def _complex_candidate(item: NaverAutocompleteComplexModel, *, coordinates: bool) -> dict[str, Any]:
+    """단지 후보 (이름·법정동·단지 번호). 위치로 찾는 명령이면 `--lat/--lng` 로 다시 찾게 좌표도 싣는다."""
+    candidate: dict[str, Any] = {
+        'name': item.complex_name,
+        'legal_division': normalize_address(item.legal_division_name),
+        'complex_number': item.complex_number,
+    }
+    if coordinates and item.coordinates is not None:
+        candidate['lat'], candidate['lng'] = _lat_lng(item.coordinates)
+    return candidate
+
+
+def _same_name_complex(
+    query: str,
+    page: NaverAutocompletePageModel[NaverAutocompleteComplexModel],
+    *,
+    coordinates: bool,
+) -> NaverAutocompleteComplexModel | None:
+    """자동완성 첫 페이지에서 이름이 검색어와 똑같은 단지 하나. 없으면 None (첫 후보를 고르지 않는다).
+
+    자동완성은 첫 쪽(10곳)만 받고 똑같은 이름을 앞에 모아 주지 않는다 ('한신', 2026-11-13 실측). 그래서 다음 쪽이 있으면
+    똑같은 이름이 한 곳뿐이어도 정하지 않는다 ('삼익' 은 첫 쪽에 수서동 한 곳, 다음 쪽에 여의도·이촌 등 4곳). 흔한 구체
+    이름(잠실엘스·래미안대치팰리스·헬리오시티)은 다음 쪽이 없어 그대로 정한다.
+
+    Raises:
+        JibsaError: 이름이 똑같은 단지가 여러 곳이거나 다음 쪽이 있어 더 있을 수 있으면 REGION_AMBIGUOUS ('현대' → 보령·
+            용인·관악, 2026-11-13 웹 대조).
+    """
+    more = bool(page.has_next_page)
+    items = [item for item in page.items if not coordinates or item.coordinates is not None]
+    same = [item for item in items if _complex_key(item.complex_name) == _complex_key(query)]
+    if not same or (len(same) == 1 and not more):
+        return same[0] if same else None
+    candidates = [_complex_candidate(item, coordinates=coordinates) for item in same]
+    first = candidates[0]
+    retry = (
+        f"lat·lng 를 --lat/--lng 로 주세요 (예: --lat {first['lat']} --lng {first['lng']})"
+        if coordinates else f"complex_number(단지 번호)로 다시 부르세요 (예: {first['complex_number']})"
+    )
+    hint = (
+        f'이름이 같은 단지가 여러 곳입니다. legal_division 으로 고른 단지의 {retry}' if len(same) > 1
+        else f'단지 검색 결과가 더 있어 이름이 같은 단지가 더 있을 수 있습니다. legal_division 이 맞으면 그 단지의 {retry}'
+    )
+    raise _ambiguous(query, candidates, None if more else len(candidates), hint)
 
 
 def _find_complex(
     client: NaverClient,
     query: str,
-    radius_km: float | None,
+    similar: list[dict[str, Any]],
+    truncated: list[str],
 ) -> tuple[NaverRegion, list[str]] | None:
-    items = [item for item in search_complexes(client, query) if item.coordinates is not None]
-    if not items:
+    """이름이 검색어와 똑같은 단지를 찾는다 (`_same_name_complex`).
+
+    없으면 None 이고 `similar` 에 후보를 더한다 (다음 쪽이 있으면 `truncated` 에 '단지' 도 더한다).
+    """
+    page = search_complexes(client, query)
+    best = _same_name_complex(query, page, coordinates=True)
+    if best is None:
+        similar += [_complex_candidate(item, coordinates=True) for item in page.items if item.coordinates is not None]
+        if page.has_next_page:
+            truncated.append('단지')
         return None
-    best = _pick_complex(query, items)
-    candidates_note = _complex_candidates_note(query, best, items)
     lat, lng = _lat_lng(best.coordinates)
     region = NaverRegion(
         name=best.complex_name,
@@ -279,7 +429,7 @@ def _find_complex(
         lng=lng,
         legal_division_code=best.legal_division_number,
     )
-    return region, [candidates_note] if candidates_note else []
+    return region, []
 
 
 # 주소 검색 itemLevel 이 이 값 이상이면 번지·건물 단위다 (5 시·도/시·군·구, 8 동·읍·면, 12 번지·건물)
@@ -301,59 +451,46 @@ def _search_address(client: NaverClient, query: str) -> tuple[list[NaverAddressM
     return items, max(block.total_count, len(items)) if items else 0
 
 
-def _ga_dong_base(name: str, dong: str) -> str | None:
-    """찾은 동이 검색어 끝 단어 `name` 의 '○가' 동이면 '○가' 를 뗀 앞 이름 ('성수동'·'성수' → 성수동1가 의 성수동). 아니면 None.
+def _unique_address(query: str, items: list[NaverAddressModel], total: int) -> NaverAddressModel:
+    """주소 검색 결과에서 검색 위치 하나. 여러 곳이면 고르지 않고 멈춘다.
 
-    주소 검색은 '동' 을 뺀 '성수' 에도 '성수동' 처럼 성수동1가 한 곳만 준다 (2026-10-28 실측). 검색어 바로 뒤에 숫자+'가' 가
-    올 때만 '○가' 동으로 보면 '성수' 는 사이에 '동' 이 껴 1가만 찾고 안내도 없었다 (2026-10-28 리뷰).
+    후보는 법정동 코드(bcode)가 있는 결과만이다. 웹 검색창의 지역 후보가 법정동만이라 ('신사동' → 은평구·강남구, 2026-11-13
+    웹 대조) 행정동 결과(관악구 신사동, hcode 만 있음)는 뺀다. 법정동이 한 곳만 남으면 그곳이다. 법정동 결과가 없으면(행정동만
+    여러 곳) 고를 수 없어 그 행정동들을 후보로 준다. 목록은 앞 10곳만 와서 뒤에 법정동이 더 있을 수 있으면 전체 수를 모르고,
+    앞 10곳에 법정동이 한 곳뿐이어도 정하지 않는다 (2026-11-13 사용자 결정: 그 한 곳으로 정하지 않고 멈춘다).
+
+    Raises:
+        JibsaError: 법정동(없으면 행정동)이 여러 곳이거나 잘린 목록이라 더 있을 수 있을 때 REGION_AMBIGUOUS (신사동 2곳,
+            중앙동 1 은 21곳, 송정 15곳).
     """
-    match = re.fullmatch(r'(.+?)\d+가', dong)
-    if match is None or match.group(1) not in (name, f'{name}동'):
-        return None
-    return match.group(1)
-
-
-def _ga_dong_note(label: str, base: str, dong: str) -> str:
-    """'○가' 로 나뉜 동의 한 곳만 찾았다는 안내 ('성수동' → 성수동1가). `label` 은 끝 단어를 앞 이름으로 바꾼 검색어다.
-
-    주소 검색은 '성수동' 에 성수동1가 한 곳만 주고 2가가 있다는 것은 알리지 않는다 (2026-10-15 실측). 직방은 '○가' 동을
-    합쳐 찾지만 네이버 동 경계 검색은 동 하나만 받아 안내만 붙인다.
-    """
-    other = f'{base}2가' if dong == f'{base}1가' else f'{base}1가'
-    # '○가' 로 끝나 조사는 받침 없는 꼴(만·처럼)로 고정한다
-    return note(
-        '범위',
-        f"{quoted(label, '은/는')} {dong}·{other} 처럼 '○가' 로 나뉜 동이라 {dong}만 찾았습니다. "
-        f"다른 곳도 보려면 '{other}' 처럼 각각 검색하세요",
+    if total <= 1:
+        return items[0]
+    complete = total == len(items)
+    legal = [item for item in items if item.address_elements is not None and item.address_elements.bcode]
+    if len(legal) == 1 and complete:
+        return legal[0]
+    pool = legal or items
+    candidates = [item.full_address for item in pool if item.full_address]
+    count = len(pool) if complete else None
+    example = candidates[0] if candidates else '서울특별시 강남구 역삼동'
+    hint = (
+        f'같은 이름이 더 있을 수 있으니 시·구를 붙여 정확한 주소로 다시 주세요 (예: {example})'
+        if count is None and len(candidates) == 1
+        else f'시·구를 붙여 정확한 주소로 다시 검색하세요 (예: {example})'
     )
+    raise _ambiguous(query, candidates, count, hint)
 
 
-def ga_dong_regions(client: NaverClient, region: NaverRegion) -> list[NaverRegion]:
-    """'○가' 로 나뉜 동(성수동 → 성수동1가·성수동2가)을 모두 준다. 같은 시·구의 하위 지역 목록 1회로 찾는다.
+def _related_legal_dongs(item: NaverAddressModel) -> list[str]:
+    """행정동 주소 결과의 관련 법정동 이름 (역삼1동 → 역삼동). 웹 검색창은 이 값을 그리지 않고 `[범위]` 안내에만 쓴다.
 
-    동 경계 매물 목록(legalDivisionArticleList)은 법정동 코드를 하나만 받아(2026-10-15 실측: 둘이면 400) 동마다 따로
-    찾아 합친다. `region` 이 '○가' 로 찾은 동이 아니거나 형제 동이 없으면 `[region]` 이다.
+    응답 모델에 없는 키라 원본(`relatedRegionAddressList`, [{'address': '역삼동', 'linkQuery': '서울특별시 강남구 역삼동'}])에서
+    읽는다 (2026-11-13 캡처). 모양이 다르면 빈 목록이다.
     """
-    code = region.legal_division_code
-    if region.ga_base is None or code is None:
-        return [region]
-    pattern = re.compile(rf'{re.escape(region.ga_base)}(\d+)가')
-    found: list[tuple[int, NaverRegion]] = []
-    for item in _sub_regions(client, 'GUN', code[:5] + '00000'):
-        name = _last_word(item.legal_division_name or '')
-        match = pattern.fullmatch(name)
-        if match is None or item.coordinates is None:
-            continue
-        lat, lng = _lat_lng(item.coordinates)
-        found.append((int(match.group(1)), NaverRegion(
-            name=name,
-            address=normalize_address(item.legal_division_name),
-            lat=lat,
-            lng=lng,
-            legal_division_code=item.legal_division_number,
-        )))
-    regions = [dong for _, dong in sorted(found, key=lambda entry: entry[0])]
-    return regions if len(regions) > 1 else [region]
+    related = (item.model_extra or {}).get('relatedRegionAddressList')
+    if not isinstance(related, list):
+        return []
+    return [entry['address'] for entry in related if isinstance(entry, dict) and isinstance(entry.get('address'), str)]
 
 
 def _find_address(
@@ -363,42 +500,51 @@ def _find_address(
 ) -> tuple[NaverRegion, str, list[str]] | None:
     """사이트 검색창의 주소 검색. 번지·도로명이면 그 지점, 법정동이면 그 동, 시·군·구면 넓은 지역이다.
 
-    동 이름 일부('송정')로 찾은 동은 동 이름 전체로 1회 더 물어 같은 이름 동이 여러 곳인지 본다 ('○가' 동은 '성수' →
-    성수동처럼 앞 이름으로). '○가' 로 나뉜 동이면 `ga_base`·`ga_note` 를 채워 '성수'·'성수동' 을 똑같이 다룬다.
+    동 이름 일부('송정')로 찾은 동은 동 이름 전체로 1회 더 물어 같은 이름 동이 여러 곳인지 본다. '○가' 동('성수동'·'성수' →
+    성수동1가)이면 주소 결과의 시·군·구와 앞 이름으로 동 자동완성에 1회 더 물어 '○가' 동들을 후보로 멈춘다. '○가' 동을 한 곳
+    이하로 받아도 1가로 정하지 않고 멈춘다. '성수동1가' 처럼 '○가' 까지 주면 그 동이다.
 
     Raises:
-        RegionAmbiguousError: 같은 이름의 동·주소가 여러 곳일 때 (신사동 3곳, 중앙동 1 은 21곳, 송정 15곳).
+        JibsaError: 같은 이름의 동·주소가 여러 곳이거나 잘린 목록이라 더 있을 수 있을 때, '○가' 로 나뉜 동일 때
+            REGION_AMBIGUOUS (`_unique_address`, `_ga_dong_ambiguous`).
     """
     items, total = _search_address(client, query)
     if not items:
         return None
-    if total > 1:
-        raise RegionAmbiguousError(
-            query, [item.full_address for item in items[:MAX_CANDIDATE_NOTES] if item.full_address], total,
-        )
-    item = items[0]
+    item = _unique_address(query, items, total)
     elements = item.address_elements or NaverAddressElementsModel()
     code = elements.bcode or None
     words = query.split()
     dong = elements.dongmyun or ''
     ga_base = _ga_dong_base(words[-1], dong) if is_dong_code(code) and not elements.ri else None
-    # '○가' 동은 '○가' 를 뗀 앞 이름('성수' → 성수동)이 동 이름 전체다. 끝 단어가 그보다 짧을 때만 다시 묻는다. 번지('신사동
-    # 535-1' → '신사동 신사동')나 앞 이름 그대로('성수동')까지 다시 물어 요청만 1회 늘었고 (2026-10-23 리뷰), '성수' 를
-    # '성수동1가' 로 다시 물으면 그 한 곳만 와 앞 이름이 여러 곳인지 볼 수 없었다 (2026-10-28 리뷰)
-    full_name = ga_base or dong
-    if is_dong_code(code) and not elements.ri and dong.startswith(words[-1]) and full_name != words[-1]:
+    if ga_base is not None:
+        # 주소 검색은 '성수동'·'성수' 에 성수동1가 한 곳만 주고 2가가 있다는 것은 알리지 않는다 (2026-10-15 실측). 앞 이름을
+        # 자동완성에 물으면 성수동1가·성수동2가를 모두 준다 (2026-11-13 캡처). 사용자 단어 대신 주소 결과의 시·군·구로 묻는다.
+        # 자동완성은 정식 시·도 이름('서울특별시 성동구 성수동')을 받지 않아 빈 목록이고 1가로 조용히 정했다 (2026-11-13
+        # 실측, 주소 결과의 sigugun 은 '성동구')
+        page = _autocomplete_legal_divisions(client, ' '.join(filter(None, [elements.sigugun, ga_base])))
+        dongs = _ga_dongs([dong_item for dong_item in page.items if dong_item.coordinates is not None], ga_base)
+        if len(dongs) > 1:
+            raise _ga_dong_ambiguous(query, dongs, bool(page.has_next_page))
+        # 그래도 '○가' 동을 한 곳 이하로 받으면 다른 '○가' 동이 있는지 알 수 없어 1가로 정하지 않는다
+        candidates = [_legal_division_label(dong_item) for dong_item in dongs] or [item.full_address or query]
+        raise _ambiguous(
+            query, candidates, None,
+            f"'○가' 로 나뉜 동은 하나씩 찾습니다. 찾을 동의 주소로 다시 주세요 (예: '{candidates[0]}')",
+            message=(
+                f"{quoted(query, '은/는')} '○가' 로 나뉜 동인데 '○가' 동을 다 찾지 못해 "
+                f'{candidates[0]} 로 정하지 않았습니다'
+            ),
+        )
+    elif is_dong_code(code) and not elements.ri and dong.startswith(words[-1]) and dong != words[-1]:
         # 동 이름 일부는 주소 검색이 대표 한 곳만 준다 ('송정' 은 부산 해운대구 송정동 1곳, '송정동' 은 15곳.
-        # '역삼'·'역삼동' 은 둘 다 강남구 역삼동 1곳, 2026-10-11). 그래서 동 이름 전체로 다시 물어 여러 곳이면 멈춘다
-        same, same_total = _search_address(client, ' '.join([*words[:-1], full_name]))
+        # '역삼'·'역삼동' 은 둘 다 강남구 역삼동 1곳, 2026-10-11). 그래서 동 이름 전체로 다시 물어 여러 곳이면 멈춘다.
+        # 번지('신사동 535-1' → '신사동 신사동')나 이름 그대로('역삼동')는 다시 묻지 않는다 (2026-10-23 리뷰)
+        same, same_total = _search_address(client, ' '.join([*words[:-1], dong]))
         if same_total > 1:
-            raise RegionAmbiguousError(
-                query, [other.full_address for other in same[:MAX_CANDIDATE_NOTES] if other.full_address], same_total,
-            )
+            _unique_address(query, same, same_total)
     full_address = item.full_address or query
     notes: list[str] = []
-    ga_note = _ga_dong_note(' '.join([*words[:-1], ga_base]), ga_base, dong) if ga_base else None
-    if ga_note:
-        notes.append(ga_note)
     if (item.item_level or 0) >= ADDRESS_LOT_ITEM_LEVEL or elements.jibun or elements.build_number:
         kind, name = '주소', full_address
     elif is_dong_code(code) and not elements.ri:
@@ -414,13 +560,20 @@ def _find_address(
                 '검색했습니다' + ('. 리 전체를 보려면 --radius 를 늘리세요 (최대 3km)' if radius_km < 3 else ''),
             ))
     elif elements.dongmyun:
-        # 행정동(역삼1동, 관악구 신사동)은 법정동 코드가 비어 있어 동 경계로 찾을 수 없다
+        # 행정동(역삼1동, 관악구 신사동)은 법정동 코드가 비어 있어 동 경계로 찾을 수 없다. 웹 검색창은 번지 없는 주소 결과를
+        # 숨기고(`!!addressElements.jibun`) 지역 후보에도 행정동이 없다. 관련 법정동은 웹이 그리지 않는 응답의
+        # `relatedRegionAddressList` 다 (2026-11-13 웹 대조: 역삼1동 → 단지 섹션만)
         kind, name = '지역', elements.dongmyun
         if radius_km is not None:
+            related = _related_legal_dongs(item)
+            example = (
+                f"관련 법정동: {', '.join(related)}. 그 이름으로 검색하면 동 전체를 찾습니다" if related
+                else '법정동 이름(예: 역삼1동 → 역삼동)으로 검색하면 동 전체를 찾습니다'
+            )
             notes.append(note(
                 '범위',
                 f"'{query}': 행정동이라 동 경계로 찾을 수 없어 중심({full_address})에서 반경 {radius_km:g}km 안만 "
-                '검색했습니다. 법정동 이름(예: 역삼1동 → 역삼동)으로 검색하면 동 전체를 찾습니다',
+                f'검색했습니다. {example}',
             ))
     else:
         kind, name = '지역', _last_word(full_address)
@@ -430,9 +583,7 @@ def _find_address(
                 f"'{query}': {_wide_region_unit(code)} 단위의 넓은 지역이라 중심({full_address})에서 "
                 f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
             ))
-    region = NaverRegion(
-        name=name, address=full_address, lat=item.y, lng=item.x, legal_division_code=code, ga_base=ga_base, ga_note=ga_note,
-    )
+    region = NaverRegion(name=name, address=full_address, lat=item.y, lng=item.x, legal_division_code=code)
     return region, kind, notes
 
 
@@ -444,39 +595,39 @@ def resolve_search_region(
     """`naver search listings` 의 검색어를 검색 위치와 그 종류로 바꾼다.
 
     주소 검색 → 동 → 역 → 단지 순으로 찾고 처음 나온 결과를 쓴다. '역' 으로 끝나면 역을 먼저 찾는다
-    (주소 검색이 역 이름을 찾지 못해 요청 1회가 헛돈다). 대개 요청 1회다 (동 이름 일부('송정')면 1회 더). `radius_km` 는
-    안내에만 쓰고, 반경으로 찾지 않는 호출부(trend)는 None 을 넘겨 '반경 안만 검색했습니다' 안내를 받지 않는다.
+    (주소 검색이 역 이름을 찾지 못해 요청 1회가 헛돈다). 대개 요청 1회다 (동 이름 일부('송정')·'○가' 동이면 1회 더).
+    동·역·단지는 이름이 검색어와 같은 곳만 쓰고, 같은 이름이 여러 곳이면 고르지 않고 멈춘다 (웹 검색창도 후보를 목록으로만
+    보여 준다). `radius_km` 는 안내에만 쓰고, 반경으로 찾지 않는 호출부(trend)는 None 을 넘겨 '반경 안만 검색했습니다'
+    안내를 받지 않는다.
 
     Returns:
         tuple[NaverRegion, str, list[str]]: 위치, 종류('주소', '동', '역', '단지', '지역'), 안내.
             '동' 이면 법정동 코드가 있어 동 전체를 검색할 수 있다.
 
     Raises:
-        RegionAmbiguousError: 같은 이름의 동·주소가 여러 곳일 때.
-        RegionNotFoundError: 넷 다 결과가 없을 때.
+        JibsaError: 같은 이름의 동·주소·역·단지나 '○가' 동이 여러 곳이면 REGION_AMBIGUOUS. 받은 결과가 잘려(다음 쪽이 있거나
+            주소 결과가 10곳 넘음) 같은 이름이 한 곳만 보여도 정하지 않고 REGION_AMBIGUOUS(`candidate_count` null) 다. 넷 다
+            이름이 같은 곳이 없으면 REGION_NOT_FOUND (이름이 비슷한 역·단지가 있으면 `candidates` 에 `--lat/--lng` 로 줄 좌표와
+            함께 싣고, 받은 결과가 잘렸으면 뒤쪽에 있을 수 있다고 알린다).
     """
+    # 이름이 같지 않아 쓰지 않은 역·단지 후보(REGION_AMBIGUOUS 후보와 같은 모양). 못 찾았을 때 후보로 준다
+    similar: list[dict[str, Any]] = []
+    # 다음 쪽이 있어 뒤쪽에 이름이 같은 곳이 있을 수 있는 검색 ('동', '역', '단지')
+    truncated: list[str] = []
+
     def legal_division(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
-        found = _find_legal_division(client, query, radius_km)
+        found = _find_legal_division(client, query, radius_km, truncated)
         if found is None:
             return None
         region, notes = found
-        if not is_dong_code(region.legal_division_code):
-            return region, '지역', notes
-        # 주소 검색이 못 찾은 '○가' 동의 앞 이름('부민')은 자동완성이 1가·2가·3가를 모두 주는데 첫 동만 찾고 안내도 없었다
-        # (2026-10-30 실측: 부민 → 부산 서구 부민동1가·2가·3가). `_find_address` 처럼 `ga_base` 를 채워 '○가' 동을 합친다
-        words = query.split()
-        ga_base = _ga_dong_base(words[-1], region.name)
-        if ga_base is None:
-            return region, '동', notes
-        ga_note = _ga_dong_note(' '.join([*words[:-1], ga_base]), ga_base, region.name)
-        return region.model_copy(update={'ga_base': ga_base, 'ga_note': ga_note}), '동', [*notes, ga_note]
+        return region, '동' if is_dong_code(region.legal_division_code) else '지역', notes
 
     def station(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
-        found = _find_subway_station(client, query, radius_km)
+        found = _find_subway_station(client, query, similar, truncated)
         return None if found is None else (found[0], '역', found[1])
 
     def complex_(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
-        found = _find_complex(client, query, radius_km)
+        found = _find_complex(client, query, similar, truncated)
         return None if found is None else (found[0], '단지', found[1])
 
     lookups = [_find_address, legal_division, station, complex_]
@@ -486,32 +637,78 @@ def resolve_search_region(
         found = lookup(client, query, radius_km)
         if found is not None:
             return found
-    raise RegionNotFoundError(
-        query,
-        hint="주소(예: '역삼동 719-28', '테헤란로 152'), 동 이름(예: '역삼동'), 역 이름(예: '강남역'), "
-        '단지 이름으로 다시 검색하거나 --lat/--lng 로 좌표를 직접 주세요',
+    hint = (
+        "주소(예: '역삼동 719-28', '테헤란로 152'), 동 이름(예: '역삼동'), 역 이름(예: '강남역'), "
+        '단지 이름으로 다시 검색하거나 --lat/--lng 로 좌표를 직접 주세요'
+    )
+    if not similar and not truncated:
+        raise RegionNotFoundError(query, hint=hint)
+    message = f"{quoted(query, '과/와')} 이름이 같은 지역·역·단지를 찾지 못했습니다"
+    if truncated:
+        message += f" ({'·'.join(truncated)} 검색 결과가 잘려 뒤쪽에 이름이 같은 곳이 있을 수 있습니다)"
+        hint = f'단지는 search complexes <동 이름> 으로 단지 번호를 찾아 --complex 로 주세요. 그 밖에는 {hint}'
+    if similar:
+        hint = (
+            '이름이 비슷한 역·단지가 있습니다 (candidates). 맞는 곳이 있으면 그 lat·lng 를 --lat/--lng 로 주세요 '
+            f'(단지 안 매물만은 --complex <complex_number>). 없으면 {hint}'
+        )
+    raise JibsaError(
+        code='REGION_NOT_FOUND',
+        message=message,
+        hint=hint,
+        details={'candidates': similar[:MAX_CANDIDATES_SHOWN]} if similar else None,
     )
 
 
-def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | None, list[str]]:
-    """단지 이름을 단지 번호로 바꾼다. 이름이 똑같은 단지를 우선하고, 후보가 더 있으면 안내를 함께 준다.
+def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | None]:
+    """단지 이름을 단지 번호로 바꾼다. 이름이 똑같은 단지가 한 곳일 때만 그 단지다 (첫 후보를 고르지 않는다).
+
+    자동완성 첫 쪽(10곳)만 보므로 다음 쪽이 있으면 똑같은 이름이 한 곳이어도 정하지 않는다 (`_same_name_complex`).
 
     Returns:
-        tuple[int, bool | None, list[str]]: 단지 번호, 빌라 단지인지 (`complex_is_villa`), 안내.
+        tuple[int, bool | None]: 단지 번호, 빌라 단지인지 (`complex_is_villa`).
 
     Raises:
-        JibsaError: 단지를 찾지 못하면 NOT_FOUND.
+        JibsaError: 단지를 찾지 못하거나 이름이 똑같은 단지가 없으면 NOT_FOUND (비슷한 단지를 `candidates` 에 싣고, 다음 쪽이
+            있으면 뒤쪽에 있을 수 있다고 알린다), 이름이 똑같은 단지가 여러 곳이거나 다음 쪽이 있어 더 있을 수 있으면
+            REGION_AMBIGUOUS.
     """
-    items = search_complexes(client, name)
-    if not items:
+    page = search_complexes(client, name)
+    if not page.items:
         raise JibsaError(
             code='NOT_FOUND',
             message=f"'{name}' 에 해당하는 네이버 단지를 찾지 못했습니다",
             hint='단지 이름을 줄이거나(예: 래미안) 단지 번호(fin.land.naver.com/complexes/{번호})로 다시 조회하세요',
         )
-    best = _pick_complex(name, items)
-    candidates_note = _complex_candidates_note(name, best, items)
-    return best.complex_number, complex_is_villa(best.type), [candidates_note] if candidates_note else []
+    best = _same_name_complex(name, page, coordinates=False)
+    if best is None:
+        shown = [_complex_candidate(item, coordinates=False) for item in page.items[:MAX_CANDIDATES_SHOWN]]
+        retry = (
+            '이름이 비슷한 단지가 있습니다 (candidates). 맞는 단지가 있으면 그 complex_number(단지 번호)로 다시 부르세요 '
+            f"(예: {shown[0]['complex_number']})"
+        )
+        if page.has_next_page:
+            # 자동완성은 똑같은 이름을 앞에 모아 주지 않는다 ('우성' 은 첫 쪽에 똑같은 이름이 없고 다음 쪽에 2곳, 2026-11-13 실측)
+            total = f'결과 {page.total_count}곳 중' if page.total_count else '결과가 더 있는데'
+            raise JibsaError(
+                code='NOT_FOUND',
+                message=(
+                    f"'{name}' 단지 검색 결과 앞 {len(page.items)}곳에 이름이 같은 단지가 없습니다 "
+                    f'({total} 앞쪽만 받아 뒤쪽에 있을 수 있습니다)'
+                ),
+                hint=(
+                    f'{retry}. 없으면 단지 번호로 부르거나, search complexes <동 이름> 으로 그 동의 단지 번호를 찾아 '
+                    '다시 부르세요'
+                ),
+                details={'candidates': shown},
+            )
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f"{quoted(name, '과/와')} 이름이 같은 네이버 단지가 없습니다",
+            hint=retry,
+            details={'candidates': shown},
+        )
+    return best.complex_number, complex_is_villa(best.type)
 
 
 def complex_is_villa(code: str | None) -> bool | None:
@@ -623,6 +820,15 @@ def _region_entry(item: NaverLegalDivisionInfoModel, name: str | None = None) ->
     )
 
 
+def _region_entries(items: list[NaverLegalDivisionInfoModel]) -> list[NaverRegionEntry]:
+    """하위 지역 목록. 리(LI)는 뺀다.
+
+    웹 지역 선택은 하위 지역 목록(subInfoList) 중 읍·면·동(EUP)까지만 보여 준다. 리는 좌표가 0,0 으로 와 위치로도 쓸 수 없다
+    (2026-11-13 웹 대조: 세종 150곳 중 117곳이 리).
+    """
+    return [_region_entry(item) for item in items if item.legal_division_level_type != 'LI']
+
+
 def _find_province(provinces: list[NaverLegalDivisionInfoModel], name: str) -> NaverLegalDivisionInfoModel | None:
     """시·도를 부르는 이름(서울·서울시·서울특별시·충북·전라북도·광주 등)에 맞는 시·도. 시·도 이름이 아니면 None.
 
@@ -654,7 +860,8 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
 
     Raises:
         RegionNotFoundError: 지역을 찾지 못했을 때.
-        JibsaError: 읍·면·동처럼 하위 지역이 없는 단위면 NOT_FOUND.
+        JibsaError: 읍·면·동처럼 하위 지역이 없는 단위면 NOT_FOUND, 이름이 같은 시·군·구(동)가 여러 곳이면 REGION_AMBIGUOUS
+            (자동완성 다음 쪽이 있으면 `candidate_count` null).
     """
     provinces = unwrap(
         client.run_request_legal_division_info_list_by_level_v1(NaverLegalDivisionInfoListByLevelV1RequestParameterModel()),
@@ -682,13 +889,13 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
             return NaverRegionList(
                 parent=name,
                 parent_code=only.legal_division_number,
-                regions=[_region_entry(item) for item in _sub_regions(client, 'GUN', only.legal_division_number)],
+                regions=_region_entries(_sub_regions(client, 'GUN', only.legal_division_number)),
                 notes=notes + [f"{name}{particle(name, '은/는')} 시·군·구가 {only.legal_division_name} 하나뿐이라 그 아래 읍·면·동입니다"],
             )
         return NaverRegionList(
             parent=name,
             parent_code=province.legal_division_number,
-            regions=[_region_entry(item) for item in children],
+            regions=_region_entries(children),
             notes=notes,
         )
 
@@ -699,12 +906,8 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
     words = query.split()
     named = _find_province(provinces, words[0]) if len(words) > 1 else None
     keyword = ' '.join([named.legal_division_name, *words[1:]]) if named and named.legal_division_name else query
-    items = unwrap(
-        client.run_request_search_autocomplete_legal_divisions_v1(
-            NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel(keyword=keyword)
-        ),
-        '지역 검색',
-    ).items
+    page = _autocomplete_legal_divisions(client, keyword)
+    items = page.items
     exact = [
         item for item in items
         if item.legal_division_name == keyword or item.legal_division_name.endswith(f' {keyword}')
@@ -744,10 +947,13 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         if item.legal_division_level_type == best.legal_division_level_type
     ]
     if len(same) > 1:
-        # 첫 곳으로 고르면 다른 곳의 동 목록이 나온다. search listings 처럼 후보를 알리고 멈춘다 (2026-10-15)
-        candidates = [normalize_address(name) or name for name in same[:MAX_CANDIDATE_NOTES]]
-        raise RegionAmbiguousError(
-            query, candidates, len(same), hint=f"시·도 이름을 붙여 다시 주세요 (예: '{candidates[0]}')",
+        # 첫 곳으로 고르면 다른 곳의 동 목록이 나온다. search listings 처럼 후보를 알리고 멈춘다 (2026-10-15).
+        # 자동완성은 다섯 곳만 줘서 다음 쪽이 있으면 전체 수를 모른다 ('송정동' 은 첫 쪽 5곳에 hasNextPage true·totalCount 14,
+        # 2026-11-13 실측). 첫 쪽에 이름이 같은 곳이 한 곳뿐이면 그곳으로 보는 동작은 그대로 둔다 (2026-11-13 사용자 결정)
+        candidates = [normalize_address(name) or name for name in same]
+        raise _ambiguous(
+            query, candidates, None if page.has_next_page else len(candidates),
+            f"시·도 이름을 붙여 다시 주세요 (예: '{candidates[0]}')",
         )
     notes = []
     if best.legal_division_level_type != 'GUN':
@@ -759,6 +965,6 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
     return NaverRegionList(
         parent=normalize_address(best.legal_division_name),
         parent_code=best.legal_division_number,
-        regions=[_region_entry(item) for item in _sub_regions(client, 'GUN', best.legal_division_number)],
+        regions=_region_entries(_sub_regions(client, 'GUN', best.legal_division_number)),
         notes=notes,
     )

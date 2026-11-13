@@ -19,6 +19,19 @@ class NaverLegalDivisionInfoListByLevelV1RequestParameterModel(RequestModel):
     ] = 'SI'
 
 
+class NaverLegalDivisionInfoListV1RequestParameterModel(RequestModel):
+    """`GET /front-api/v1/legalDivision/infoList` 쿼리. 법정동 코드로 이름을 받는다.
+
+    웹 매물 화면이 '위치' 를 만들 때 쓴다. 배열은 `legalDivisionNumbers[]=1171010700` 처럼 키에 `[]` 를 붙여 반복한다
+    (2026-11-13 확인).
+    """
+
+    legal_division_numbers: Annotated[
+        list[str],
+        Field(min_length=1, description='법정동 코드 (10자리)', alias='legalDivisionNumbers[]')
+    ]
+
+
 class NaverLegalDivisionSubInfoListV1RequestParameterModel(RequestModel):
     """`GET /front-api/v1/legalDivision/subInfoList` 쿼리. 지역 하나의 바로 아래 지역.
 
@@ -74,4 +87,9 @@ class NaverSearchAutocompleteSubwayStationsV1RequestParameterModel(NaverSearchAu
 
 
 class NaverSearchAutocompleteComplexesV1RequestParameterModel(NaverSearchAutocompleteRequestParameterModel):
-    """`GET /front-api/v1/search/autocomplete/complexes` 쿼리."""
+    """`GET /front-api/v1/search/autocomplete/complexes` 쿼리. 웹 검색창은 단지만 `size=10` 을 붙인다 (2026-11-13 캡처)."""
+
+    size: Annotated[
+        int,
+        Field(ge=1, le=10, description='한 쪽 크기. 안 보내면 서버 기본 5곳이라 같은 이름 단지를 놓친다 (웹과 같은 10)')
+    ] = 10

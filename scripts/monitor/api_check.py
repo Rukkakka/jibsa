@@ -170,9 +170,19 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step('매물 동 전체 이어 받기 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2', '--next', '{dong_next}'), 'listings'),
         Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id'),
+        # 반경 검색 기본(랭킹순)은 반경을 감싼 사각형의 정렬 목록(boundedArticles)을 받고, 그 목록의 커서로 이어 받는다
         Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('near_next', '', 'next'),)),
-        # 가까운순은 지도 칸 번호와 그 칸의 커서로 이어 받는다
         Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),
+        # 가까운순은 다른 API(지도 칸 articleClusters → 칸 매물 clusteredArticles)라 따로 부르고, 지도 칸 번호와 그 칸의 커서로
+        # 이어 받는다
+        Step(
+            '매물 역 반경 가까운순 강남역', NAVER_LISTINGS, ('강남역', '--sort', '가까운순', '--limit', '2'), 'listings',
+            (Capture('nearest_next', '', 'next'),),
+        ),
+        Step(
+            '매물 역 반경 가까운순 이어 받기 강남역', NAVER_LISTINGS,
+            ('강남역', '--sort', '가까운순', '--limit', '2', '--next', '{nearest_next}'), 'listings',
+        ),
         Step(
             '단지 목록 역삼동', ('naver', 'search', 'complexes'), ('역삼동', '--sort', '세대수순', '--limit', '1'), 'complexes',
             (Capture('complex', 'complexes', 'complex_number'),),

@@ -1,0 +1,14 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "1168010300": {
+   "legalDivisionNumber": "1168010300",
+   "legalDivisionName": "개포동",
+   "legalDivisionLevelType": "EUP",
+   "regionName": "서울시 강남구 개포동",
+   "fullAddress": "서울시 강남구 개포동"
+  }
+ }
+}

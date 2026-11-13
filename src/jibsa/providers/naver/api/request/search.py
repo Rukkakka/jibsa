@@ -97,8 +97,8 @@ class NaverArticleBoundedArticlesV1RequestPayloadModel(RequestModel):
 class NaverArticleLegalDivisionArticleListV1RequestPayloadModel(RequestModel):
     """`POST /front-api/v1/article/legalDivisionArticleList` 본문. 법정동 하나의 매물 전체를 정렬해 준다.
 
-    `filter.legalDivisionNumbers` 에 동 코드 하나, `legalDivisionType` 은 EUP 이다. 구·시 단위(GU·SI)는
-    400 이다. 페이지는 30건까지 (50부터 400). 지도 필터가 그대로 걸린다 (2026-10-09 확인).
+    `filter.legalDivisionNumbers` 에 동 코드 하나, `legalDivisionType` 은 EUP(동·읍·면) 이다. GUN(시·군·구)은 200,
+    SI(시·도)와 GU 는 400 이다 (2026-11-13 실측). 페이지는 30건까지 (50부터 400). 지도 필터가 그대로 걸린다 (2026-10-09 확인).
     """
 
     filter: Annotated[

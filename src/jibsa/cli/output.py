@@ -62,6 +62,9 @@ MANWON_PER_EOK: int = 10000
 ALWAYS_FIELDS: frozenset[str] = frozenset({
     'id', 'realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon',
 })
+# 에러 details 에서 값이 None 이어도 키를 남기는 키 (모름 → null). 후보 목록이 잘려 전체 수를 모를 때
+# `candidate_count` 는 키를 빼지 않고 `null` 로 내야, 문서가 약속한 '수를 모른다' 를 에이전트가 읽을 수 있다
+NULLABLE_ERROR_KEYS: frozenset[str] = frozenset({'candidate_count'})
 ChoiceT = TypeVar('ChoiceT', bound=str)
 TradeT = TypeVar('TradeT', bound=str)
 
@@ -288,13 +291,14 @@ def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any
 
     `code`·`message`·`hint` 는 위치 인자로만 받아, `JibsaError.details` 에 같은 이름의 키가 있어도 인자가 겹쳐
     (TypeError) 에러 JSON 대신 traceback 으로 끝나지 않는다. 겹친 키는 앞의 세 값을 덮어쓰지 않는다.
+    값이 None 인 키는 뺀다. 다만 `NULLABLE_ERROR_KEYS` 의 키는 '모름' 이라 `null` 로 남긴다.
     """
     error: dict[str, Any] = {'code': code, 'message': message}
     if hint:
         error['hint'] = hint
     error.update({
         key: value for key, value in extra.items()
-        if value is not None and key not in ('code', 'message', 'hint')
+        if (value is not None or key in NULLABLE_ERROR_KEYS) and key not in ('code', 'message', 'hint')
     })
     # 들여쓰기는 stdout 이 아니라 에러를 쓰는 stderr 가 터미널인지로 정한다 (`jibsa ... | jq` 도 에러는 터미널에 보인다)
     typer.echo(_dumps({'error': error}, sys.stderr.isatty()), err=True)

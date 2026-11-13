@@ -182,7 +182,7 @@ def list_redevelopment_areas(
     legal_division_code: str | None = None,
     legal_division_name: str | None = None,
     trade_types: list[str] | None = None,
-    sort: str = '매물수순',
+    sort: str = '세대수순',
     limit: int = 30,
 ) -> NaverRedevelopmentAreasResult:
     """지역 안 재개발 구역 (사업 단계·세대수·매물 수·매매 호가).
@@ -196,7 +196,8 @@ def list_redevelopment_areas(
         trade_types: 거래 유형 이름. 주면 그 거래 매물이 1건 이상인 구역만 남긴다. 서버는 tradeTypes 로 구역을 거르지
             않고(hasArticle 을 켜도 같다) 매물수순 정렬 순서만 바꾸므로, 받은 뒤 매물 수로 거르고 뺀 수를 `notes` 로
             알린다 (한강진역 1.5km: 단기임대만 줘도 매매만 있는 7곳이 그대로, 2026-10-10). 없으면 거르지 않는다.
-        sort: `REDEVELOPMENT_SORT_TYPE_BY_NAME` 의 이름.
+        sort: `REDEVELOPMENT_SORT_TYPE_BY_NAME` 의 이름. 기본은 웹 구역 목록의 기본 정렬과 같은 세대수순이다
+            (`DEFAULT_REDEVELOPMENT_LIST_SORT_TYPE` = HOUSEHOLD_NUMBER_DESC, 2026-11-13 웹 번들 대조).
     """
     filter_ = NaverArticleFilterModel(real_estate_types=[REDEVELOPMENT_CODE])
     if trade_types:

@@ -177,6 +177,10 @@ class NaverArticleKeyAddressModel(ResponseModel):
         str | None,
         Field(description='지번 (예: 12-2)')
     ] = None
+    li: Annotated[
+        str | None,
+        Field(description='리 이름 (읍·면 매물만, 예: 대흥리). 이때 legalDivisionNumber 는 리가 아니라 읍·면 코드다 (양평읍 전원주택 3건, 2026-11-13)')
+    ] = None
 
 
 class NaverArticleKeyModel(ResponseModel):
@@ -298,8 +302,8 @@ class NaverMovingInInfoModel(ResponseModel):
     moving_in_type: Annotated[
         str | None,
         Field(
-            description="'MV001' 즉시입주(날짜 없음), 'MV004' 날짜 지정(movingInDate), 'EARLY'·'MID'·'LATE' 는 "
-            'movingInDate 달의 초·중·하순 (매물 65건 실측, 2026-10-10)',
+            description="웹 번들 ARTICLE_MOVING_IN_TYPE 과 대조 (2026-11-13): 'MV001' 즉시입주(날짜 없음), 'MV002' 날짜 이내 입주, "
+            "'MV003' 날짜 이후 입주, 'MV004' 날짜 지정(movingInDate), 'EARLY'·'MID'·'LATE' 는 movingInDate 달의 초·중·하순",
             alias='movingInType'
         )
     ] = None
@@ -476,6 +480,15 @@ class NaverFixDetailModel(ResponseModel):
     ] = None
 
 
+class NaverUncheckDetailModel(ResponseModel):
+    """관리비 미확인(typeCode '03')의 사유."""
+
+    type: Annotated[
+        str | None,
+        Field(description="'99' 면 관리비가 없는 것이다 (웹 표기 '없음'). 그 밖의 값은 웹이 '확인 어려움' 으로 보여 준다 (웹 번들, 2026-11-13). 실매물 표본에서는 '03' 만 보였다")
+    ] = None
+
+
 class NaverArticleMaintenanceFeeModel(ResponseModel):
     """관리비."""
 
@@ -495,6 +508,10 @@ class NaverArticleMaintenanceFeeModel(ResponseModel):
     fix_detail_list: Annotated[
         list[NaverFixDetailModel] | None,
         Field(description='항목별 금액 (typeCode 01). 원룸 2653883790: 공용 10만원 정액 + 전기~TV 실비 = 합계 10만원 (2026-10-10)', alias='fixDetailList')
+    ] = None
+    uncheck_detail: Annotated[
+        NaverUncheckDetailModel | None,
+        Field(description="미확인(typeCode '03') 사유", alias='uncheckDetail')
     ] = None
     fix_non_detail_list: Annotated[
         NaverEtcDetailModel | None,

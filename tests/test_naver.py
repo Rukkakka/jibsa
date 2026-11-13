@@ -21,7 +21,10 @@ from jibsa.providers.naver.service.listing import (
     list_complex_articles,
 )
 from jibsa.providers.naver.service.real_price import get_real_prices
-from jibsa.providers.naver.service.region import legal_division_code_at
+from jibsa.providers.naver.service.region import (
+    legal_division_code_at,
+    resolve_complex_number,
+)
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
     MAX_CLUSTER_PAGE_REQUESTS,
@@ -37,6 +40,7 @@ ROUTES = {
     '/front-api/v1/complex': 'complex_v1',
     '/front-api/v1/complex/v2/pyeong/realPrice': 'complex_pyeong_real_price_v2',
     '/front-api/v1/legalDivision/searchByCoordinate': 'legal_division_search_by_coordinate_v1',
+    '/front-api/v1/legalDivision/infoList': 'legal_division_info_list_v1',
     '/front-api/v1/data-service/transport': 'data_service_transport_v1',
     '/front-api/v1/education/building/school': 'education_building_school_v1',
     '/front-api/v1/article/key': 'article_key_v1',
@@ -182,14 +186,14 @@ def test_search_area_stops_at_page_request_cap(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(naver_search, 'MAX_CLUSTER_PAGE_REQUESTS', 2)
     requests: list[httpx.Request] = []
     with make_client(requests) as client:
-        result = search_area(client, 37.4928, 127.0305, conditions=NaverListingConditions(trade_types=['월세']), radius_km=3.0, limit=90)
+        result = search_area(client, 37.4928, 127.0305, conditions=NaverListingConditions(trade_types=['월세']), radius_km=3.0, sort='가까운순', limit=90)
     assert sum(request.url.path.endswith('/clusteredArticles') for request in requests) == 2
     assert result.notes[0].startswith('[일부] 네이버 차단을 피하려고 검색 중심에서 가까운 지도 칸')
     assert 'notes' not in result.model_dump()
 
     # limit 을 채워 멈추면 상한에 걸린 게 아니라 안내가 없다
     with make_client() as client:
-        notes = search_area(client, 37.4928, 127.0305, radius_km=3.0, limit=1).notes
+        notes = search_area(client, 37.4928, 127.0305, radius_km=3.0, sort='가까운순', limit=1).notes
     assert not any(note.startswith('네이버 차단을 피하려고') for note in notes)
 
 
@@ -213,7 +217,7 @@ def test_search_area_moves_on_from_sparse_cluster() -> None:
     client = NaverClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(recording))
     with client:
-        result = search_area(client, 37.4928, 127.0305, radius_km=3.0, limit=30)
+        result = search_area(client, 37.4928, 127.0305, radius_km=3.0, sort='가까운순', limit=30)
     # 픽스처의 지도 칸 5개에 3건씩이라 칸을 모두 열어 15건을 받는다
     assert sum(request.url.path.endswith('/clusteredArticles') for request in requests) == 5
     assert len(result.listings) == 15
@@ -248,7 +252,7 @@ def test_cluster_resume_neither_skips_nor_reuses_cursor() -> None:
         client = NaverClient()
         client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
         with client:
-            return search_area(client, 37.4928, 127.0305, radius_km=1.0, limit=120, start=start).next_position
+            return search_area(client, 37.4928, 127.0305, radius_km=1.0, sort='가까운순', limit=120, start=start).next_position
 
     # 칸마다 1쪽이라 상한만큼 칸을 열고, 상한에 막힌 다음 칸이 이어 받을 칸이다
     position = run(clusters, None)
@@ -273,7 +277,7 @@ def test_search_area_puts_unknown_distance_last() -> None:
     client = NaverClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
-        result = search_area(client, 37.4928, 127.0305, radius_km=3.0, limit=50)
+        result = search_area(client, 37.4928, 127.0305, radius_km=3.0, sort='가까운순', limit=50)
     distances = [listing.distance_km for listing in result.listings]
     assert distances[-1] is None
     assert None not in distances[:-1]
@@ -366,7 +370,7 @@ def test_search_area_sends_server_filters() -> None:
     requests: list[httpx.Request] = []
     with make_client(requests) as client:
         search_area(
-            client, 37.4928, 127.0305, radius_km=1.0, limit=5, conditions=NaverListingConditions(
+            client, 37.4928, 127.0305, radius_km=1.0, sort='가까운순', limit=5, conditions=NaverListingConditions(
                 deposit_max=1000, rent_max=50, price_max=50000,
                 room_types=['투룸', '포룸이상'], area_min=33, area_max=49.5,
                 floors=['1층', '지하층'], directions=['남향', '남동향'],
@@ -389,7 +393,7 @@ def test_search_area_sends_extended_filters() -> None:
     requests: list[httpx.Request] = []
     with make_client(requests) as client:
         result = search_area(
-            client, 37.4928, 127.0305, radius_km=1.0, limit=5, conditions=NaverListingConditions(
+            client, 37.4928, 127.0305, radius_km=1.0, sort='가까운순', limit=5, conditions=NaverListingConditions(
                 deposit_min=500, rent_min=30, price_min=10000,
                 manage_cost_min=12, manage_cost_max=47,
                 bathrooms=['2개'], facilities=['주차', '엘리베이터'], one_room_shapes=['분리형'],
@@ -427,6 +431,8 @@ def test_search_area_sends_extended_filters() -> None:
         ({'typeCode': '02', 'etcDetail': {'amount': 0, 'type': '02'}, 'criteriaType': '02'}, 0),
         # 관리비를 확인하지 않았다. 목록에서는 이것도 0 으로 온다
         ({'typeCode': '03', 'uncheckDetail': {'type': '03'}}, None),
+        # 사유가 '99' 면 웹이 '없음' 으로 보여 주는 관리비 없는 매물이다 (웹 번들 확인. 실매물 표본에는 없어 픽스처로만 확인)
+        ({'typeCode': '03', 'uncheckDetail': {'type': '99'}}, 0),
         # 정액 합계를 etcDetail 이 아닌 fixNonDetailList 로 준다 (원룸 2652339975, 2026-10-11)
         (
             {'typeCode': '04', 'criteriaType': '02',
@@ -453,6 +459,72 @@ def test_detail_manage_cost_zero_is_known_unchecked_is_unknown(fee: dict, expect
     with client:
         detail = get_listing(client, '1000000001')
     assert detail.manage_cost_manwon == expected
+
+
+def test_detail_address_uses_info_list_with_li_and_jibun() -> None:
+    # 주소는 article/key 의 법정동 코드를 infoList 로 풀어 만든다 (웹 '위치'). 읍·면 매물은 리를 동 이름 뒤에 붙인다
+    key = load('article_key_v1')
+    key['result']['address'] = {'legalDivisionNumber': '1168010300', 'li': '대흥리', 'jibun': '12-2'}
+    requests: list[httpx.Request] = []
+    with make_path_client(requests, {'/article/key': key}) as client:
+        detail = get_listing(client, '1000000001')
+    assert detail.address == '서울특별시 강남구 개포동 대흥리 12-2'
+    assert not any(request.url.path.endswith('/searchByCoordinate') for request in requests)
+
+
+def test_detail_agent_fee_individual_check_is_unknown_with_note() -> None:
+    # 웹이 금액 대신 '개별확인' 을 보여 주는 매물은 금액을 내지 않고 안내한다
+    fee = {'isSuccess': True, 'result': {'fee': 10500000, 'isIndividualCheckRequired': True}}
+    with make_path_client([], {'/article/agentFee': fee}) as client:
+        detail = get_listing(client, '1000000001')
+    assert detail.model_dump()['agent_fee_manwon'] is None
+    assert any('개별 확인' in text for text in detail.notes)
+
+
+def test_detail_tax_null_from_server_is_not_applicable() -> None:
+    # 서버가 null 로 준 세금 항목(오피스텔·상가 매매)은 해당 없음이라 키를 뺀다. 조회 실패는 null 로 남는다
+    tax = load('article_tax_v1')
+    tax['result']['propertyTax'] = None
+    tax['result']['totalRealEstateTax'] = None
+    with make_path_client([], {'/article/tax': tax}) as client:
+        dumped = get_listing(client, '1000000001').model_dump(mode='json')
+    assert dumped['acquisition_tax_manwon'] == 5250
+    assert not {'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'} & set(dumped)
+
+
+def test_detail_acquisition_tax_null_from_server_is_unknown_with_note() -> None:
+    # 취득세를 비워 오면 해당 없음이 아니라 모름이라 키를 두고 null, 안내를 붙인다
+    tax = load('article_tax_v1')
+    tax['result']['acquisitionTax'] = None
+    with make_path_client([], {'/article/tax': tax}) as client:
+        detail = get_listing(client, '1000000001')
+    assert detail.model_dump(mode='json')['acquisition_tax_manwon'] is None
+    assert any('취득세' in text for text in detail.notes)
+
+
+def test_detail_move_in_before_and_after_date() -> None:
+    # MV002 는 '날짜 이내', MV003 은 '날짜 이후' 다. 날짜만 내면 뜻이 반대가 된다
+    from jibsa.providers.naver.api.response.listing import NaverMovingInInfoModel
+    from jibsa.providers.naver.service.listing import _move_in_label
+
+    def label(code: str, negotiation: bool = False) -> str | None:
+        return _move_in_label(NaverMovingInInfoModel(movingInType=code, movingInDate='2026-12-31', movingInNegotiation=negotiation))
+
+    assert (label('MV002'), label('MV003', True)) == ('2026-12-31 이내', '2026-12-31 이후 (협의 가능)')
+
+
+def test_real_price_presale_label() -> None:
+    # 입주권·분양권은 라벨을 달고 일반(NORMAL) 거래는 키를 뺀다
+    data = load('complex_pyeong_real_price_v2')
+    data['result']['list'] = [
+        {**data['result']['list'][0], 'propertyType': 'OCCUPANCY_RIGHT'},
+        {**data['result']['list'][1], 'propertyType': 'NORMAL'},
+    ]
+    with make_path_client([], {'/complex/v2/pyeong/realPrice': data}) as client:
+        result = get_real_prices(client, 100001, 1)
+    dumped = [item.model_dump() for item in result.transactions]
+    assert dumped[0]['presale'] == '입주권'
+    assert 'presale' not in dumped[1]
 
 
 # --- 빌라 단지 (연립·다세대) -------------------------------------------------
@@ -574,7 +646,7 @@ def test_sale_cost_lookup_failure_is_unknown() -> None:
 
 def test_detail_optional_lookup_failure_is_unknown() -> None:
     # 관리비·법정동·단지 조회가 HTTP 오류가 아닌 이유(응답 모양이 바뀜)로 실패해도 상세는 내보내고 그 값만 모름이다
-    broken = ('/article/maintenanceFee', '/legalDivision/searchByCoordinate', '/complex')
+    broken = ('/article/maintenanceFee', '/legalDivision/infoList', '/complex')
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.removeprefix('/front-api/v1') in broken:
@@ -656,7 +728,7 @@ def test_whole_dong_budget_carries_seed_and_cursor() -> None:
     client = NaverClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
-        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == 4
     assert result.returned == 120
 
@@ -666,7 +738,7 @@ def test_whole_dong_stops_when_cursor_stalls() -> None:
     stuck = _complex_article_page(['1000000001', '1000000002'], has_next=True)
     requests: list[httpx.Request] = []
     with make_path_client(requests, {'/article/legalDivisionArticleList': stuck}) as client:
-        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == 2
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
     # 끝 문구(더 받을 매물이 남았는지)는 받은 수와 서버 수로 정해져 여기서는 보지 않는다
@@ -697,7 +769,7 @@ def test_whole_dong_stops_at_request_cap() -> None:
 
     requests: list[httpx.Request] = []
     with _short_page_client(requests, '/article/legalDivisionArticleList', _short_article_page) as client:
-        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == MAX_LEGAL_DIVISION_PAGE_REQUESTS
     assert result.returned == 5 * MAX_LEGAL_DIVISION_PAGE_REQUESTS
     assert any(f'{5 * MAX_LEGAL_DIVISION_PAGE_REQUESTS}건까지만' in note for note in result.notes)
@@ -740,3 +812,33 @@ def test_coordinate_lookup_failure_is_upstream_error_not_missing_dong() -> None:
     with client_returning({'isSuccess': False, 'detailCode': 'INTERNAL_ERROR'}) as client, pytest.raises(JibsaError) as exc:
         legal_division_code_at(client, 37.5, 127.0)
     assert exc.value.code == 'UPSTREAM_ERROR'
+
+
+# --- 이름 해석 ---------------------------------------------------------------
+
+
+def test_complex_name_is_resolved_only_when_one_complex_has_that_exact_name() -> None:
+    # 웹 검색창은 후보를 목록으로만 보여 주고 고르지 않는다. 이름이 똑같은 단지가 여럿이면 첫 후보를 고르지 않고 멈추고,
+    # 똑같은 이름이 없으면 비슷한 후보를 준다 (예전에는 첫 후보를 골라 엉뚱한 단지를 조회했다)
+    def page(*names: str) -> dict:
+        items = [
+            {'complexNumber': index + 1, 'complexName': name, 'type': 'A01', 'legalDivisionName': f'시 구 {index}동'}
+            for index, name in enumerate(names)
+        ]
+        return {'isSuccess': True, 'result': {'hasNextPage': False, 'totalCount': len(items), 'list': items}}
+
+    requests: list[httpx.Request] = []
+    with make_path_client(requests, {'/search/autocomplete/complexes': page('현대', '현대아이파크', '현대')}) as client:
+        with pytest.raises(JibsaError) as exc:
+            resolve_complex_number(client, '현대')
+    assert exc.value.code == 'REGION_AMBIGUOUS'
+    assert [candidate['complex_number'] for candidate in exc.value.details['candidates']] == [1, 3]
+    assert exc.value.details['candidate_count'] == 2
+
+    with make_path_client(requests, {'/search/autocomplete/complexes': page('현대아이파크', '현대')}) as client:
+        assert resolve_complex_number(client, '현대') == (2, False)
+    with make_path_client(requests, {'/search/autocomplete/complexes': page('현대아이파크')}) as client:
+        with pytest.raises(JibsaError) as exc:
+            resolve_complex_number(client, '현대')
+    assert exc.value.code == 'NOT_FOUND'
+    assert exc.value.details['candidates'][0]['complex_number'] == 1

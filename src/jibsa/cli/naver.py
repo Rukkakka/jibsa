@@ -32,10 +32,7 @@ from jibsa.cli.paging import (
 )
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
-from jibsa.core.korean import (
-    is_ri_code,
-    quoted,
-)
+from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
     normalize_address,
     note,
@@ -69,7 +66,6 @@ from jibsa.providers.naver.service.redevelopment import (
 )
 from jibsa.providers.naver.service.region import (
     NaverRegion,
-    ga_dong_regions,
     legal_division_code_at,
     list_regions,
     resolve_complex_number,
@@ -126,15 +122,19 @@ search_app = typer.Typer(help='지역에서 매물 또는 단지를 찾는다', 
 app.add_typer(search_app, name='search')
 
 
-def _complex_number(client: NaverClient, complex_: str) -> tuple[int, bool | None, list[str]]:
-    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 비슷한 후보 안내를 함께 준다)."""
+def _complex_number(client: NaverClient, complex_: str) -> tuple[int, bool | None]:
+    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지를 함께 준다).
+
+    이름은 똑같은 이름의 단지가 한 곳일 때만 찾는다. 여러 곳이면 REGION_AMBIGUOUS, 없으면 NOT_FOUND 로 후보를 준다
+    (`resolve_complex_number`). complex·search listings --complex·market-price·school --complex 가 함께 쓴다.
+    """
     # 붙여 넣은 번호의 앞뒤 공백(' 8928')을 먼저 떼야 번호를 이름으로 찾지 않는다
     complex_ = complex_.strip()
     if NUMBER_PATTERN.fullmatch(complex_) is None:
         return resolve_complex_number(client, complex_)
     if int(complex_) < 1:
         raise typer.BadParameter('단지 번호는 1 이상입니다', param_hint='COMPLEX')
-    return int(complex_), None, []
+    return int(complex_), None
 
 
 def _split_dongs(values: list[str] | None) -> list[str]:
@@ -283,28 +283,6 @@ def _whole_dong(region: NaverRegion, kind: str, radius: float | None) -> bool:
     return kind == '동' and radius is None and region.legal_division_code is not None
 
 
-def _merged_region(region: NaverRegion, dongs: list[NaverRegion]) -> NaverRegion:
-    """합쳐 찾은 '○가' 동들을 직방처럼 한 지역으로 보인다 (이름 '성수동1가·성수동2가', 중심은 처음 찾은 동, 코드 없음)."""
-    names = '·'.join(dong.name for dong in dongs)
-    parent = (region.address or '').rsplit(' ', 1)[0]
-    return NaverRegion(name=names, address=f'{parent} {names}'.strip(), lat=region.lat, lng=region.lng)
-
-
-def _radius_ga_note(region: NaverRegion, notes: list[str], radius: float | None) -> None:
-    """'○가' 로 나뉜 동(성수동 → 성수동1가)을 반경으로 찾았으면 '1가만 찾았다, 다른 곳은 각각 검색하라' 안내를 반경 안내로 바꾼다.
-
-    그 안내는 동 경계로 찾을 때의 말이다. 반경은 이웃한 2가도 덮어 각각 찾으라는 말이 틀린다 (2026-10-31 에이전트 검증:
-    '성수동 --radius 2' 재개발 구역 8곳에 성수동2가 구역 4곳이 들어 있는데 '성수동1가만 찾았습니다' 라고 안내했다).
-    """
-    if region.ga_note is None or region.ga_note not in notes or region.ga_base is None:
-        return
-    notes[notes.index(region.ga_note)] = note(
-        '범위',
-        f"{quoted(region.ga_base, '은/는')} '○가' 로 나뉜 동이라 {region.name} 중심에서 반경 {radius or DEFAULT_RADIUS_KM:g}km "
-        "안을 찾았습니다 (반경 안의 다른 '○가' 동도 들어 있습니다)",
-    )
-
-
 def _search_scope(region: NaverRegion, whole_dong: bool, radius: float | None) -> dict[str, object]:
     """어디를 찾았는지. 동 경계로 찾았으면 boundary(동 이름), 아니면 radius_km 다 (직방 search 와 같다)."""
     return {'boundary': region.name} if whole_dong else {'radius_km': radius or DEFAULT_RADIUS_KM}
@@ -336,8 +314,9 @@ def complex_command(
     dong_names = _split_dongs(dong)
     pyeong_numbers = split_ints(pyeong, '--pyeong')
     with handle_errors(SOURCE), NaverClient() as client:
-        complex_number, villa, notes = _complex_number(client, complex_)
+        complex_number, villa = _complex_number(client, complex_)
         summary = get_complex(client, complex_number, pyeong_numbers=pyeong_numbers, dong_names=dong_names, villa=villa)
+        notes: list[str] = []
         scope: list[str] = []
         if pyeong_numbers:
             scope.append(f"{', '.join(map(str, pyeong_numbers))}번 평형")
@@ -395,8 +374,6 @@ def complexes_command(
         whole_dong = _whole_dong(region, kind, radius)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
-        else:
-            _radius_ga_note(region, notes, radius)
         result = list_area_complexes(
             client,
             region.lat,
@@ -467,7 +444,7 @@ def _search_complex_listings(
     """
     dong_names = _split_dongs(dong)
     with handle_errors(SOURCE), NaverClient() as client:
-        complex_number, villa, notes = _complex_number(client, complex_)
+        complex_number, villa = _complex_number(client, complex_)
         result = list_complex_articles(
             client,
             complex_number,
@@ -482,7 +459,7 @@ def _search_complex_listings(
         emit(
             {'complex_number': complex_number, **result.model_dump(mode='json')},
             pretty,
-            notes=trade_notes + notes + result.notes,
+            notes=trade_notes + result.notes,
             fields=fields,
             fields_source=result,
         )
@@ -528,8 +505,8 @@ def redevelopment_command(
     ] = None,
     sort: Annotated[
         str,
-        typer.Option('--sort', help=f"정렬: {', '.join(REDEVELOPMENT_SORT_TYPE_BY_NAME)}. 네이버가 정렬해 준다")
-    ] = '매물수순',
+        typer.Option('--sort', help=f"정렬: {', '.join(REDEVELOPMENT_SORT_TYPE_BY_NAME)}. 기본은 웹 구역 목록과 같은 세대수순. 네이버가 정렬해 준다")
+    ] = '세대수순',
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     pretty: PrettyOption = None,
 ) -> None:
@@ -550,8 +527,6 @@ def redevelopment_command(
         whole_dong = _whole_dong(region, kind, radius)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
-        else:
-            _radius_ga_note(region, notes, radius)
         result = list_redevelopment_areas(
             client,
             region.lat,
@@ -691,8 +666,8 @@ def market_price_command(
     """
     _check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
     with handle_errors(SOURCE), NaverClient() as client:
-        complex_number, villa, notes = _complex_number(client, complex_)
-        emit(get_market_price_history(client, complex_number, pyeong, period=period, villa=villa), pretty, notes=notes)
+        complex_number, villa = _complex_number(client, complex_)
+        emit(get_market_price_history(client, complex_number, pyeong, period=period, villa=villa), pretty)
 
 
 @app.command('redevelopment')
@@ -761,11 +736,8 @@ def school_command(
     if SCHOOL_CODE_PATTERN.fullmatch(school_code) is None:
         raise typer.BadParameter('학교 코드는 영문·숫자입니다 (예: B100000747)', param_hint='SCHOOL_CODE')
     with handle_errors(SOURCE), NaverClient() as client:
-        notes: list[str] = []
-        complex_number, villa = None, None
-        if complex_ is not None:
-            complex_number, villa, notes = _complex_number(client, complex_)
-        emit(get_school(client, school_code, complex_number=complex_number, villa=villa), pretty, notes=notes)
+        complex_number, villa = _complex_number(client, complex_) if complex_ is not None else (None, None)
+        emit(get_school(client, school_code, complex_number=complex_number, villa=villa), pretty)
 
 
 @app.command('listing')
@@ -779,7 +751,8 @@ def listing_command(
     if NUMBER_PATTERN.fullmatch(item_id) is None:
         raise typer.BadParameter('매물 ID 는 숫자입니다 (search listings 결과의 id)', param_hint='ITEM_ID')
     with handle_errors(SOURCE), NaverClient() as client:
-        emit(get_listing(client, item_id), pretty)
+        detail = get_listing(client, item_id)
+        emit(detail, pretty, notes=detail.notes)
 
 
 def _listing_conditions(
@@ -907,7 +880,7 @@ def search_command(
     ] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다). 동 이름으로 찾았을 때 주면 동 전체 대신 동 중심 반경으로 찾는다')
+        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). --sort 가까운순 에서는 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다). 동 이름으로 찾았을 때 주면 동 전체 대신 동 중심 반경으로 찾는다')
     ] = None,
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     deposit_min: DepositMinOption = None,
@@ -978,23 +951,28 @@ def search_command(
         str | None,
         typer.Option(
             '--sort',
-            help=f"정렬: {', '.join(SORT_TYPE_BY_NAME)}. 기본은 가까운순, 동 전체 검색이면 랭킹순. 가까운순 말고는 네이버 정렬 그대로 준다 (distance_km 순이 아님). 동 이름에 가까운순을 주면 동 중심 반경으로 찾는다",
+            help=(
+                f"정렬: {', '.join(SORT_TYPE_BY_NAME)}. 기본은 랭킹순. 가까운순 말고는 네이버 정렬 그대로 준다 (distance_km 순이 아님). "
+                '가까운순은 네이버 웹에 없는 정렬로, jibsa 가 지도 칸(약 240m) 단위로 훑어 거리로 세운 근사 순서이고 요청이 많이 든다. '
+                '동 이름에 가까운순을 주면 동 중심 반경으로 찾는다'
+            ),
         )
     ] = None,
     next_: NextOption = None,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을 가까운 순으로, 동 이름은 그 동 전체를 랭킹순으로 찾는다.
+    """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을, 동 이름은 그 동 전체를 네이버 랭킹순으로 찾는다.
 
     결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
-    그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소가 여러 곳이면 REGION_AMBIGUOUS 로 멈추니 시·구를 붙여 다시 검색한다.
+    그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소·역·단지나 '○가' 로 나뉜 동(성수동 → 성수동1가·2가)이면
+    REGION_AMBIGUOUS 로 멈추니 후보(candidates) 중 하나로 다시 검색한다.
     결과의 title 에 단지명이 들어 있다.
 
     조건은 모두 네이버 서버 필터로 거른다. 목록에는 방 수가 없어 room_type 은 null 이다
     (방 수는 listing 의 room_count). 빌라에는 단지로 등록된 연립·다세대도 들어간다.
 
-    가까운 순은 약 200m 단위 근사다 (네이버가 매물을 지도 칸 단위로 주기 때문). 가장 가까운 매물이라고 단정하지 않는다.
+    --sort 가까운순 은 지도 칸(약 240m) 단위 근사다 (네이버가 매물을 지도 칸 단위로 주기 때문). 가장 가까운 매물이라고 단정하지 않는다.
 
     address 는 동까지다 (네이버 목록이 번지를 주지 않음). 번지까지 있는 주소는 listing 에서.
 
@@ -1064,7 +1042,7 @@ def search_command(
             resumed_region = NaverRegion.model_validate(target['region'])
             result = search_area(
                 client, resumed_region.lat, resumed_region.lng, conditions=conditions, radius_km=radius or DEFAULT_RADIUS_KM,
-                sort=target['sort'], legal_division_codes=target['codes'], limit=limit, start=position,
+                sort=target['sort'], legal_division_code=target['code'], limit=limit, start=position,
             )
             emit(
                 {'region': target['region'], **target['scope'], **result.model_dump(mode='json')},
@@ -1078,31 +1056,13 @@ def search_command(
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
         # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
         whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
-        if not whole_dong:
-            _radius_ga_note(region, notes, radius)
-        dongs = [region]
-        if whole_dong and region.ga_base is not None:
-            # '○가' 로 나뉜 동(성수동)은 직방처럼 모두 찾아 합친다. 한 곳만 찾았다는 안내는 뺀다
-            dongs = ga_dong_regions(client, region)
-            # 동마다 --limit 을 나눠 쓰므로 동이 limit 보다 많으면 몫이 0 인 동이 생긴다. 직방 아파트처럼 뒤쪽 동은 찾지 않고
-            # 알린다 (예전에는 첫 동의 몫부터 0 이라 성수동 --limit 1 이 요청 없이 '0건이 전부' 를 냈다)
-            skipped = dongs[limit:]
-            dongs = dongs[:limit]
-            if len(dongs) + len(skipped) > 1 and region.ga_note in notes:
-                notes.remove(region.ga_note)
-                region = _merged_region(region, dongs)
-            if skipped:
-                notes.append(note(
-                    '일부',
-                    f"--limit({limit})이 함께 찾을 동 수({len(dongs) + len(skipped)})보다 작아 "
-                    f"{'·'.join(dong.name for dong in skipped)}는 찾지 않았습니다. "
-                    f'모두 찾으려면 --limit 을 {len(dongs) + len(skipped)} 이상으로 주세요',
-                ))
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 
-        search_sort = sort or ('랭킹순' if whole_dong else '가까운순')
-        codes = [dong.legal_division_code for dong in dongs if dong.legal_division_code] if whole_dong else None
+        # 웹 매물 목록의 기본 정렬은 랭킹순이고 거리순은 없다 (2026-11-13 웹 대조). 반경 검색도 랭킹순이 기본이고,
+        # 가까운순은 직접 줄 때만 지도 칸을 훑는다
+        search_sort = sort or '랭킹순'
+        code = region.legal_division_code if whole_dong else None
         result = search_area(
             client,
             region.lat,
@@ -1110,14 +1070,14 @@ def search_command(
             conditions=conditions,
             radius_km=radius or DEFAULT_RADIUS_KM,
             sort=search_sort,
-            legal_division_codes=codes,
+            legal_division_code=code,
             limit=limit,
         )
         # 직방처럼 어디를 얼마나 찾았는지 함께 준다. 서비스는 좌표만 받아
         # 지역을 모르므로(단지 매물 목록과 결과 모델을 같이 쓴다) 지역을 아는 여기서 붙인다
         scope = _search_scope(region, whole_dong, radius)
         # 이어 받기 표에는 찾은 지역·동·정렬을 담아 다음에 지역을 다시 찾지 않는다
-        target = {'region': region.model_dump(mode='json'), 'scope': scope, 'sort': search_sort, 'codes': codes}
+        target = {'region': region.model_dump(mode='json'), 'scope': scope, 'sort': search_sort, 'code': code}
         emit(
             {
                 'region': region.model_dump(mode='json'),

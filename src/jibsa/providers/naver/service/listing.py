@@ -10,6 +10,7 @@ from jibsa.core.listing import (
     join_address,
     m2_to_pyeong,
     move_in_label,
+    normalize_address,
     normalize_date,
     note,
     parking_label,
@@ -20,7 +21,6 @@ from jibsa.providers.naver.api.request.common import (
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
-    NaverLegalDivisionSearchByCoordinateV1RequestParameterModel,
     NaverRealEstateType,
 )
 from jibsa.providers.naver.api.request.listing import (
@@ -34,9 +34,11 @@ from jibsa.providers.naver.api.request.listing import (
     NaverDataServiceTransportV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
 )
+from jibsa.providers.naver.api.request.region import (
+    NaverLegalDivisionInfoListV1RequestParameterModel,
+)
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
-    NaverCoordinatesModel,
     NaverFacilityInfoModel,
 )
 from jibsa.providers.naver.api.response.listing import (
@@ -106,10 +108,15 @@ DIRECTION_BY_CODE: dict[str, str] = {
     'WN': '북서향',
     'NW': '북서향',
 }
-# 입주 시기 코드. MV001 은 날짜 없이 오는 패턴으로 보아 즉시입주로 추정했다.
+# 입주 시기 코드. 웹 번들 ARTICLE_MOVING_IN_TYPE 과 대조했다 (2026-11-13): MV001 즉시입주, MV002 이내입주, MV003 이후입주,
+# MV004 지정날짜. MV002·MV003 은 날짜 뒤에 이내·이후를 붙여야 뜻이 맞는다 ('2026-12-31 이내' 를 날짜만 내면 반대로 읽힌다).
 # EARLY / MID / LATE 는 movingInDate 의 달 초순·중순·하순이다.
 MOVING_IN_LABELS: dict[str, str] = {
     'MV001': '즉시입주',
+}
+MOVING_IN_DATE_SUFFIXES: dict[str, str] = {
+    'MV002': '이내',
+    'MV003': '이후',
 }
 MOVING_IN_PERIOD_LABELS: dict[str, str] = {
     'EARLY': '초순',
@@ -202,13 +209,34 @@ def _sum_manwon(*amounts: int | None) -> float | None:
     return won_to_manwon(sum(known)) if known else None
 
 
-def _sale_costs(client: NaverClient, article_number: str) -> dict[str, float | None]:
-    """매매 매물의 중개보수·세금 (2회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다."""
+# 중개보수를 금액으로 정할 수 없어 웹이 '개별확인' 으로 보여 주는 매물에 붙이는 안내
+INDIVIDUAL_AGENT_FEE_NOTE: str = note('참고', '중개보수는 중개사와 개별 확인하라고 네이버가 표시한 매물입니다 (agent_fee_manwon 은 null)')
+# 네이버가 취득세를 주지 않아 금액을 모를 때 붙이는 안내 (재산세·종부세처럼 웹에 칸이 없는 항목이라는 근거가 없어 해당 없음이 아니라 모름으로 둔다)
+UNKNOWN_ACQUISITION_TAX_NOTE: str = note(
+    '참고', '네이버가 이 매물의 취득세를 주지 않아 모릅니다 (acquisition_tax_manwon 은 null). 네이버 매물 화면(url)에서 확인하세요',
+)
+
+
+def _sale_costs(
+    client: NaverClient, article_number: str,
+) -> tuple[dict[str, float | None], frozenset[str], list[str]]:
+    """매매 매물의 중개보수·세금 (2회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다.
+
+    Returns:
+        tuple: 필드별 금액, 해당 없어 출력에서 키를 뺄 필드, 안내. 서버가 재산세·종부세를 null 로 주면 해당 없음이다
+        (오피스텔·상가 매매는 웹도 그 항목을 보여 주지 않는다). 취득세를 null 로 주면 해당 없음이 아니라 모름(None)으로 두고
+        안내를 붙인다 (2026-11-13 사용자 결정. 확인한 매물에는 취득세가 늘 값이 있었다). 중개보수가 개별 확인(isIndividualCheckRequired)이면
+        웹이 금액 대신 '개별확인' 을 보여 주므로 모름(None)으로 두고 안내를 붙인다.
+    """
     costs: dict[str, float | None] = dict.fromkeys(SALE_ONLY_FIELDS)
+    not_applicable: set[str] = set()
+    notes: list[str] = []
     fee = result_or_none(lambda: client.run_request_article_agent_fee_v1(
         NaverArticleAgentFeeV1RequestParameterModel(article_number=article_number)
     ))
-    if fee is not None and fee.fee is not None:
+    if fee is not None and fee.is_individual_check_required:
+        notes.append(INDIVIDUAL_AGENT_FEE_NOTE)
+    elif fee is not None and fee.fee is not None:
         costs['agent_fee_manwon'] = won_to_manwon(fee.fee)
     tax = result_or_none(lambda: client.run_request_article_tax_v1(
         NaverArticleTaxV1RequestParameterModel(article_number=article_number)
@@ -219,17 +247,23 @@ def _sale_costs(client: NaverClient, article_number: str) -> dict[str, float | N
             costs['acquisition_tax_manwon'] = _sum_manwon(
                 acquisition.acquisition_tax, acquisition.local_tax, acquisition.rural_special_tax,
             )
+        else:
+            notes.append(UNKNOWN_ACQUISITION_TAX_NOTE)
         if tax.property_tax is not None:
             property_ = tax.property_tax
             costs['property_tax_manwon'] = _sum_manwon(
                 property_.property_tax, property_.local_education_tax, property_.urban_area_segment_tax,
             )
+        else:
+            not_applicable.add('property_tax_manwon')
         if tax.total_real_estate_tax is not None:
             total = tax.total_real_estate_tax
             costs['comprehensive_real_estate_tax_manwon'] = _sum_manwon(
                 total.total_real_estate_tax, total.rural_special_tax,
             )
-    return costs
+        else:
+            not_applicable.add('comprehensive_real_estate_tax_manwon')
+    return costs, frozenset(not_applicable), notes
 
 
 def _subway_label(station: NaverTransportSubwayModel) -> str | None:
@@ -342,6 +376,14 @@ class NaverListingDetail(ListingDetail):
         bool,
         Field(exclude=True, description='배정 학교를 조회하는 매물인지 (단지·동 번호가 있음). schools 가 해당 없는지 가리는 데만 쓴다')
     ] = False
+    not_applicable_costs: Annotated[
+        frozenset[str],
+        Field(exclude=True, description='서버가 null 로 줘 해당 없는 세금 필드 (키를 뺀다). 조회 실패로 모르는 값은 null 로 남는다')
+    ] = frozenset()
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='중개보수 개별확인 안내 등. CLI 가 결과 위에 붙인다')
+    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         # 단지에 속하지 않는 매물(빌라 등)은 단지·동·평형 번호가 원래 없다.
@@ -357,7 +399,7 @@ class NaverListingDetail(ListingDetail):
         # 세금·중개보수는 매매 매물만 조회한다
         if self.trade_type != '매매':
             fields = fields | SALE_ONLY_FIELDS
-        return fields
+        return fields | self.not_applicable_costs
 
 
 def _room_type(space: NaverSpaceInfoModel | None, shape: str | None) -> str | None:
@@ -527,6 +569,7 @@ def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
     """입주 시기 코드를 읽을 수 있는 문구로 바꾼다.
 
     날짜 지정('MV004')·모르는 코드는 날짜만 쓰고, 날짜도 없으면 모름(None)이다. 코드('MV004')를 그대로 내보내지 않는다.
+    'MV002' 는 '<날짜> 이내', 'MV003' 은 '<날짜> 이후' 다 (웹과 같다).
     """
     if moving is None:
         return None
@@ -537,6 +580,11 @@ def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
         month = (normalize_date(date) or date)[:7]
         label = f'{month} {MOVING_IN_PERIOD_LABELS[code]}'
         return f'{label} (협의 가능)' if moving.moving_in_negotiation else label
+    if code in MOVING_IN_DATE_SUFFIXES and date:
+        dated = move_in_label(date)
+        if dated is not None:
+            label = f'{dated} {MOVING_IN_DATE_SUFFIXES[code]}'
+            return f'{label} (협의 가능)' if moving.moving_in_negotiation else label
     return move_in_label(MOVING_IN_LABELS.get(code or '', date), negotiable=bool(moving.moving_in_negotiation))
 
 
@@ -550,7 +598,9 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     그래서 항목이 모두 실비면 0만원·[] 이다. 정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이
     아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
     미확인('03')은 etcDetail·fixNonDetailList 가 null 이고 uncheckDetail 로 와서 모름이다 (빌라 2654619539·2653716463,
-    2026-10-11). 그래서 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
+    2026-10-11). 그래서 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 다만 uncheckDetail.type 이 '99' 면 웹이 '없음' 으로
+    보여 주는 관리비 없는 매물이라 0만원·[] 이다 (웹 번들, 2026-11-13. 실매물 표본에는 '99' 가 없어 픽스처로만 확인했다).
+    그 밖의 값은 웹이 '확인 어려움' 으로 보여 주므로 모름이다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
     중 하나만 오고 나머지는 null 이라(신림동 월세 29건: '04' 18·'02' 10·'01' 1, 2026-10-11) 객체가 있는지만 본다.
     금액 없는 빈 etcDetail 이 다른 키와 함께 오는 응답은 없었다.
     """
@@ -565,6 +615,8 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
         includes = [MANAGE_COST_ITEM_LABELS.get(item.type, item.type) for item in fixed if item.amount and item.type]
         return won_to_manwon(sum(item.amount or 0 for item in fixed)), includes
+    if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type == '99':
+        return 0.0, []
     return None, None
 
 
@@ -609,13 +661,13 @@ def _complex_approved_at(client: NaverClient, complex_number: int | None, key: N
 
 
 def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
-    """매물 상세: key → basicInfo → maintenanceFee → 좌표의 법정동 → 단지 (최대 5회 호출, 단지는 필요할 때만).
+    """매물 상세: key → basicInfo → maintenanceFee → 법정동 이름 → 단지 (최대 5회 호출, 단지는 필요할 때만).
 
     매매 매물은 중개보수(agentFee)·세금(tax)을 더 조회한다 (2회 더). 주변 교통(지하철·버스)은 늘,
     배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더, 최대 9회).
 
-    중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 지번 주소는 좌표로 얻은
-    법정동 이름과 article/key 의 지번을 합쳐 만든다. 사용승인일은 상세의 건물 날짜(facilityInfo)를 쓰고, 없으면 단지 정보에서 받는다.
+    중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 주소는 웹 매물 화면의 '위치' 처럼
+    article/key 의 법정동 코드로 받은 이름(`legalDivision/infoList`)에 리·지번을 합쳐 만든다. 사용승인일은 상세의 건물 날짜(facilityInfo)를 쓰고, 없으면 단지 정보에서 받는다.
 
     key·basicInfo 밖의 부가 조회(관리비·법정동·단지·중개보수·세금·교통·학교)는 실패하면 그 값만 모름(None)이다.
 
@@ -649,7 +701,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     listed_area = size.supply_space if size else None
     coordinates = article.coordinates if article else None
 
-    address = _jibun_address(client, key, coordinates)
+    address = _jibun_address(client, key)
 
     # communalComplexInfo 는 단지 매물에만 오고, 오면 complexNumber 가 article/key 의 단지 번호와 같다. 단지가 없는
     # 매물은 둘 다 비어 있다 (단독·다가구·빌라·원룸·단지형 빌라·오피스텔·아파트 10건, 2026-10-10 확인)
@@ -657,6 +709,9 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     parking = _parking_label(facility, complex_number is not None)
 
     facility_codes = (facility.life + facility.security + facility.etc + facility.aircon) if facility else []
+    costs, not_applicable_costs, cost_notes = (
+        _sale_costs(client, article_number) if trade_type == '매매' else ({}, frozenset(), [])
+    )
 
     return NaverListingDetail(
         source='naver',
@@ -713,7 +768,9 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
             if code != 'ELEVATOR'
         ] if facility is not None else None,
         loan_manwon=_loan_manwon(price),
-        **(_sale_costs(client, article_number) if trade_type == '매매' else {}),
+        **costs,
+        not_applicable_costs=not_applicable_costs,
+        notes=cost_notes,
         **_surroundings(client, article_number, key),
     )
 
@@ -787,28 +844,22 @@ def _listing_title(
     return title
 
 
-def _jibun_address(
-    client: NaverClient,
-    key: NaverArticleKeyModel,
-    coordinates: NaverCoordinatesModel | None,
-) -> str | None:
-    """좌표로 얻은 법정동 이름과 article/key 의 지번을 합친 주소. 좌표가 없거나 법정동 조회가 실패하면 None.
+def _jibun_address(client: NaverClient, key: NaverArticleKeyModel) -> str | None:
+    """웹 매물 화면의 '위치' 와 같은 주소: 법정동 이름 + 리 + 지번. 법정동 코드가 없거나 이름 조회가 실패하면 None.
 
-    article/key 에는 법정동 코드만 있고 이름이 없어 좌표로 이름을 찾는다. 좌표로 찾은 동이 article/key 의 동과 달라
-    옆 동 이름에 지번이 붙는 일은 실측으로 없었다 (2026-10-12 실측: 서울 중구 회현동·예장동·남학동, 종로구 운니동·낙원동·
-    경운동 등 원룸·빌라·단독·다가구 20건 모두 두 법정동 코드가 같음). 2026-10-12 리뷰 오탐 확인
+    article/key 의 법정동 코드를 `legalDivision/infoList` 로 풀어 regionName 을 받는다. 웹도 이 API 로 위치를 만든다.
+    regionName 의 시·도는 줄여진 이름이라('서울시') `normalize_address` 로 다른 결과와 같은 정식 이름('서울특별시')으로 맞춘다.
+    읍·면 매물은 article/key 가 읍·면 코드와 리 이름(`address.li`)을 따로 주므로 리를 동 이름 뒤에 붙인다.
+    지번은 article/key 의 `address.jibun` 이다 (`key.pnu` 는 번지가 들어 있어 쓰지 않는다).
     """
-    if coordinates is None:
+    address = key.address
+    code = address.legal_division_number if address else None
+    if address is None or not code:
         return None
-    division = result_or_none(lambda: client.run_request_legal_division_search_by_coordinate_v1(
-        NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(
-            latitude=coordinates.y_coordinate,
-            longitude=coordinates.x_coordinate,
-        )
+    divisions = result_or_none(lambda: client.run_request_legal_division_info_list_v1(
+        NaverLegalDivisionInfoListV1RequestParameterModel(legal_division_numbers=[code])
     ))
-    if division is None:
+    division = divisions.get(code) if divisions else None
+    if division is None or not division.region_name:
         return None
-    return join_address(
-        division.legal_division_name,
-        key.address.jibun if key.address else None,
-    )
+    return join_address(normalize_address(division.region_name), address.li, address.jibun)

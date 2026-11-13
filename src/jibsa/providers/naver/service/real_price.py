@@ -86,6 +86,10 @@ class NaverRealPrice(BaseModel):
         bool | None,
         Field(description='갱신 계약')
     ] = None
+    presale: Annotated[
+        str | None,
+        Field(description='분양권 / 입주권 거래 (해당할 때만 키가 있다)')
+    ] = None
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -95,6 +99,9 @@ class NaverRealPrice(BaseModel):
         # 갱신 계약은 전월세에만 있다
         if self.trade_type == '매매':
             data.pop('renewal', None)
+        # 일반 거래(NORMAL)는 해당 없음이라 키를 뺀다
+        if self.presale is None:
+            data.pop('presale', None)
         return data
 
 
@@ -143,11 +150,24 @@ class NaverRealPriceResult(BaseModel):
         return data
 
 
+# 실거래 거래 대상 코드(propertyType) 이름. 웹 번들 표 {NORMAL: null, PRESALE: '분양권', OCCUPANCY_RIGHT: '입주권'} 과 같다
+# (2026-11-13). NORMAL(일반)은 이름이 없어 키를 내지 않는다
+REAL_PRICE_PROPERTY_TYPE_LABELS: dict[str, str] = {
+    'PRESALE': '분양권',
+    'OCCUPANCY_RIGHT': '입주권',
+}
 # 실거래가 한 페이지 크기. 예전 엔드포인트(complex/pyeong/realPrice)와 같은 10건으로 둬 --pages 의 뜻을 유지한다
 REAL_PRICE_PAGE_SIZE: int = 10
 # 기간 조회에서 빌라 단지 실거래를 받는 페이지 크기와 페이지 수 상한. 빌라 단지는 거래가 적어 보통 한 페이지로 끝난다
 VILLA_PERIOD_PAGE_SIZE: int = 100
 MAX_VILLA_PERIOD_PAGES: int = 5
+
+
+def _presale_label(code: str | None) -> str | None:
+    """거래 대상 코드를 이름으로. 일반(NORMAL)·없음은 None, 모르는 코드는 원래 코드를 그대로 둔다 (정보를 버리지 않는다)."""
+    if code is None or code == 'NORMAL':
+        return None
+    return REAL_PRICE_PROPERTY_TYPE_LABELS.get(code, code)
 
 
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
@@ -161,6 +181,7 @@ def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
         category=item.trade_category,
         cancelled=item.is_delete,
         renewal=item.is_renew,
+        presale=_presale_label(item.property_type),
     )
 
 

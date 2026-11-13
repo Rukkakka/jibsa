@@ -47,6 +47,14 @@ class NaverRealPriceModel(ResponseModel):
         bool | None,
         Field(description='갱신 계약 여부 (전월세)', alias='isRenew')
     ] = None
+    property_type: Annotated[
+        str | None,
+        Field(
+            description="거래 대상. 'NORMAL' 일반, 'PRESALE' 분양권, 'OCCUPANCY_RIGHT' 입주권 (웹은 NORMAL 외에만 라벨을 띄운다). "
+            '올림픽파크포레온 평형 9 매매 3년 200건 중 153건이 입주권이었다 (2026-11-13)',
+            alias='propertyType'
+        )
+    ] = None
 
 
 class NaverRealPriceListModel(ResponseModel):
