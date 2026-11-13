@@ -28,6 +28,8 @@
 - [ ] 명령·옵션·출력 필드·에러 코드·요청 제한이 바뀌었다면 `docs/<source>.md`·`docs/common.md` 와 [docs/development/output-contract.md](https://github.com/Rukkakka/jibsa/blob/main/docs/development/output-contract.md) 를 고쳤다
 - [ ] 명령을 추가·삭제했거나 에이전트가 틀리기 쉬운 해석 규칙이 바뀌었다면 `docs/llm.md` 를 고쳤다
 - [ ] 명령을 추가·삭제했거나 매물을 찾는 새 방식을 넣었다면 매일 API 감시 목록(`scripts/monitor/api_check.py` 의 `GROUPS`)도 고쳤다
+- [ ] 설치 스크립트(`scripts/install/`)를 바꿨다면 `docs/install.md` 의 한 줄 설치 절을 고쳤다 (머지하는 즉시 사용자에게 적용된다)
+- [ ] 의존성을 바꿨다면 `pyproject.toml` 에 기존처럼 상한을 두었다 (상한을 두지 않는 항목은 그 이유가 `pyproject.toml` 주석에 있다)
 - [ ] 사용자에게 보이는 변경이면 `CHANGELOG.md` 의 `Unreleased` 에 적었다 ([쓰는 법](https://github.com/Rukkakka/jibsa/blob/main/docs/development/release.md#changelog-쓰는-법))
 - [ ] 모듈을 추가·이름 변경·삭제했다면 `AGENTS.md` 구조 표와 해당 `docs/development/providers/<source>.md` 를 고쳤다
 - [ ] 새 픽스처와 diff 에 토큰, 쿠키, 중개사 연락처 같은 개인정보가 없다

@@ -38,3 +38,7 @@ body:
           required: false
         - label: 출력이 바뀐다면 docs/development/output-contract.md 를 읽었다
           required: false
+        - label: 로그인 없이 호출되는 기능이다 (README 원칙 '로그인 없는 기능만')
+          required: false
+        - label: 결과가 그 사이트 웹에서도 같은 조건으로 볼 수 있는 것이다 (README 원칙 '사이트가 보여 주는 대로')
+          required: false
