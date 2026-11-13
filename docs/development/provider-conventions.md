@@ -104,7 +104,7 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
   - 브라우저 설정 ([브라우저 요청](architecture.md#브라우저-요청)):
     - `browser_entry_url` — 처음 열 사이트 화면. jibsa 는 load 뒤(`browser_ready_cookie` 가 있으면 그 쿠키를 다 받은 뒤)
       바로 빈 페이지로 떠나므로, 그때까지 사이트 자체 API 를 덜 부르는 화면을 고른다. 페이지에 오래 머물 때의 수와 다르다
-      (당근 실측은 [당근 브라우저 요청](providers/daangn.md#브라우저-요청-2026-11-09-실측))
+      (당근 실측은 [당근 브라우저 요청](providers/daangn.md#브라우저-요청))
     - `browser_ready_cookie` — 사이트 API 가 요구하거나 브라우저 식별인 쿠키. 없으면 None
     - `browser_api_hosts` — 첫 화면이 부른 요청을 셀 사이트 API 호스트 (기본은 `browser_entry_url` 의 호스트). 요청은 모두
       첫 화면 탭에서 보내므로 사이트 API 가 첫 화면 출처의 CORS 를 허용해야 한다

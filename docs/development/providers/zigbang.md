@@ -29,9 +29,9 @@
   - 아파트(`/apt`): 위에 `sdk-version: 0.128.0` (`APT_HEADERS`). 단기임대(`stay-apis`): 위에 `sdk-version: zigbang-stay-sdk:0.11.0` (`STAY_HEADERS`). SDK 버전이라 직방 웹이 새로 배포되면 바뀐다. 서버는 이 값을 보지 않아(2026-11-12 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 명령 감시로는 알 수 없어, 매주 월요일 API 감시가 첫 화면이 불러오는 `_app` 번들의 SDK 설정(`requestHeaders`)과 대조해 다르면 고장으로 알린다 (`check_zigbang_sdk_versions`). 첫 화면 HTML 은 브라우저가 아닌 요청을 403 으로 막아 jibsa 브라우저로 받는다.
   - 웹 SDK 는 Sentry trace ID 로 만든 `x-transaction-id` 를 일부 호출에 붙이지만 (번들, 실측 137건에는 없었다) 요청마다 바뀌는 값이라 넣지 않는다.
 
-### 브라우저 요청 (2026-11-09 실측)
+### 브라우저 요청
 
-공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 직방만의 값:
+(2026-11-09 실측) 공통 동작은 [브라우저 요청](../architecture.md#브라우저-요청). 직방만의 값:
 
 - 첫 화면은 `https://www.zigbang.com/`. 첫 화면이 `apis.zigbang.com` 을 4번 부른다. API 는 모두 다른 출처라 원래 쿠키 없이 응답해
   기다릴 쿠키가 없다.
