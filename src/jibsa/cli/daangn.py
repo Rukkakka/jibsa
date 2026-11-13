@@ -1403,12 +1403,12 @@ def complexes_command(
         str | None,
         typer.Option('--trade', help='매매, 전세, 월세 중 하나. 가격 조건과 단지마다 붙는 최근 실거래의 거래 유형. 기본 매매 (웹처럼 주지 않으면 거래 유형을 단지 조건으로 보내지 않는다)')
     ] = None,
-    deposit_min: Annotated[int | None, typer.Option(min=0, help='보증금/전세금 하한 (만원, 전세·월세. 예전 실거래 기준)')] = None,
-    deposit_max: Annotated[int | None, typer.Option(min=0, help='보증금/전세금 상한 (만원, 전세·월세. 예전 실거래 기준)')] = None,
-    rent_min: Annotated[int | None, typer.Option(min=0, help='월세 하한 (만원, 월세. 예전 실거래 기준)')] = None,
-    rent_max: Annotated[int | None, typer.Option(min=0, help='월세 상한 (만원, 월세. 예전 실거래 기준)')] = None,
-    price_min: Annotated[int | None, typer.Option(min=0, help='매매가 하한 (만원, 매매. 예전 실거래 기준)')] = None,
-    price_max: Annotated[int | None, typer.Option(min=0, help='매매가 상한 (만원, 매매. 예전 실거래 기준)')] = None,
+    deposit_min: Annotated[int | None, typer.Option(min=0, help='보증금/전세금 하한 (만원, 전세·월세. 과거 실거래 기준)')] = None,
+    deposit_max: Annotated[int | None, typer.Option(min=0, help='보증금/전세금 상한 (만원, 전세·월세. 과거 실거래 기준)')] = None,
+    rent_min: Annotated[int | None, typer.Option(min=0, help='월세 하한 (만원, 월세. 과거 실거래 기준)')] = None,
+    rent_max: Annotated[int | None, typer.Option(min=0, help='월세 상한 (만원, 월세. 과거 실거래 기준)')] = None,
+    price_min: Annotated[int | None, typer.Option(min=0, help='매매가 하한 (만원, 매매. 과거 실거래 기준)')] = None,
+    price_max: Annotated[int | None, typer.Option(min=0, help='매매가 상한 (만원, 매매. 과거 실거래 기준)')] = None,
     area_min: Annotated[float | None, typer.Option(min=0, help='전용면적 하한 (㎡, 1평=3.3㎡)')] = None,
     area_max: Annotated[float | None, typer.Option(min=0, help='전용면적 상한 (㎡)')] = None,
     approval: ApprovalOption = None,
@@ -1424,7 +1424,7 @@ def complexes_command(
 ) -> None:
     """동·구 또는 좌표(--lat/--lng)의 웹 지도 화면 범위의 단지 목록 (당근 지도 단지 탭). 세대수·가격·입주일 순으로 정렬하고, 조건은 당근 서버에서 건다.
 
-    가격 조건은 지금 매물이 아니라 단지의 예전 실거래 가격 기준이다. 지금 매물은 search listings --complex <complex_id> 로 본다.
+    가격 조건은 지금 매물이 아니라 단지의 과거 실거래 가격 기준이다. 지금 매물은 search listings --complex <complex_id> 로 본다.
 
     예: jibsa daangn search complexes '강남구 역삼동' -t 아파트 --sort 가격높은순 --household-min 500
     예: jibsa daangn search complexes --lat 37.5006 --lng 127.0366 --zoom 14 -t 오피스텔
