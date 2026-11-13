@@ -125,9 +125,10 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
 엔드포인트마다 sync·async 쌍을 만든다. 본문은 같은 모양을 따른다.
 CLI 와 service 는 sync 만 쓰고 async 변형(`arun_request_*`, `_async_client`, `async_rate_limit_hooks`)은 jibsa 를 라이브러리로
 쓸 때의 공개 API 다. 저장소 안 호출부가 없어도 죽은 코드가 아니니 지우지 않는다. 엔드포인트를 고치면 async 쪽도 함께 고치고,
-의심되면 그 메서드를 한 번 실제로 불러 확인한다 (2026-10-11 세 소스 모두 실제 호출로 동작 확인).
+의심되면 그 메서드를 한 번 실제로 불러 확인한다 (2026-10-11 직방·당근·네이버 실제 호출로 동작 확인).
 재시도 데코레이터는 client 모듈에 소스별로 한 번만 정의하고(`zigbang_retry`, `daangn_retry`,
-`naver_retry`) 메서드에는 그 이름만 붙인다. 정책을 바꿀 때 한 곳만 고치면 된다.
+`naver_retry`, `dabang_retry`) 메서드에는 그 이름만 붙인다. 다방은 500 을 다시 보내지 않는 학교 상세 전용
+`dabang_education_retry` 가 하나 더 있다. 정책을 바꿀 때 한 곳만 고치면 된다.
 
 ```python
 zigbang_retry = retry(
@@ -216,7 +217,7 @@ def run_request_items_onerooms_v1(
   검사하는 소스는 그 소스 개발 가이드에 적는다.
 - 여러 모듈이 쓰는 모델은 `service/common.py`, 한 기능만 쓰면 그 모듈에 둔다 ([나누는 기준](#service-모듈을-나누는-기준)).
 - 소스마다 다른 점(필드 이름, 일부 명령만 받는 조건)은 그 소스 개발 가이드에 적는다.
-- CLI 옵션 별칭 중 세 소스가 도움말까지 똑같이 쓰는 것(`PrettyOption`, 보증금·월세·매매가 하한·상한)은 `cli/options.py`
+- CLI 옵션 별칭 중 네 소스가 도움말까지 똑같이 쓰는 것(`PrettyOption`, 보증금·월세·매매가 하한·상한)은 `cli/options.py`
   에 둔다. 도움말이 다르면 각 소스 CLI 에 둔다.
 - 같은 뜻의 조건도 옵션 이름·값은 소스 필터를 따라 다르다 (세대수 `--household-min` 과 다방 아파트 `--households-min`, 연식
   네이버 `--building-age-max 10`·당근 `--approval 10년이내`·다방 `--built-within 10`, 관리비 포함 월세 당근
