@@ -87,7 +87,7 @@ from typing import (
   위치와 상관없이 필드 이름으로 생성자를 만든다. mypy·ruff 가 잡지 못해 `tests/test_schema.py` 가 대입 위치의 `Field()` 에
   `default_factory` 말고 다른 인자가 있는지와 별칭이 있는 모델이 필드 이름을 받는지를 검사한다.
 - 별칭은 `alias_generator` 로 자동 생성하지 않고 필드마다 적는다. 원본 응답의 키(`walkingDistance`)로 코드를 검색할 수
-  있어야 하고, 자동 변환으로 나오지 않는 키(`roomCnt`, 한글 키, `__typename` 등 136개)가 많은데 응답 모델은
+  있어야 하고, 자동 변환으로 나오지 않는 키(`roomCnt`, 한글 키, `__typename` 등)가 많은데 응답 모델은
   `extra='allow'` 라 별칭을 빠뜨리면 에러 없이 `None` 이 된다. 직방 상가 요청 본문(`item_ids`, `sales_type`)처럼
   snake_case 로 보내야 하는 필드는 자동 변환이 보내는 이름까지 바꾼다.
 - `Field(...)`(ellipsis)로 필수를 강조하지 않는다. 기본값이 없으면 필수다.
