@@ -36,6 +36,7 @@ from jibsa.providers.dabang.api.request.common import (
 from jibsa.providers.dabang.api.request.complex import (
     DabangComplexListCategoryV5RequestParameterModel,
     DabangComplexRoomFiltersModel,
+    DabangComplexRoomOrder,
     DabangComplexSummaryV5RequestParameterModel,
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
@@ -80,6 +81,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    NamedTuple,
 )
 
 
@@ -97,6 +99,28 @@ AREA_MATCH_TOLERANCE_M2: float = 0.01
 # 덤 조회(최근 실거래 요약)가 실패해도 단지 정보는 돌려줄 예외. 세 소스 공통 범위에 요청 제한(분당 상한 대기·429 쿨다운)을
 # 더한다. 받아 둔 단지 정보까지 버리지 않는다 (당근 `OPTIONAL_LOOKUP_ERRORS` 와 같은 뜻)
 OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
+
+
+class ComplexSort(NamedTuple):
+    """단지 매물 정렬 하나."""
+
+    # 다방 요청의 order 값
+    order: DabangComplexRoomOrder
+    # `[일부]` 안내에 쓰는 정렬 이름 ('… 순으로 앞 N건')
+    text: str
+
+
+# 단지 매물 정렬 (--sort). 다방 웹 단지 매물 탭의 정렬 메뉴 이름 그대로다 (complex 청크 `xt`, 2026-11-13. 기본 랭킹순). 은마
+# 5건이 낮은가격순 30억7000 → 34억, 높은가격순은 그 반대로 왔다 (같은 날 실측). 다방이 정렬한 순서를 그대로 낸다
+COMPLEX_SORT_BY_LABEL: dict[str, ComplexSort] = {
+    '랭킹순': ComplexSort('RANKING', '다방 랭킹'),
+    '최신순': ComplexSort('LATEST', '다방 최신'),
+    '높은가격순': ComplexSort('SELLING_HIGHEST', '다방 높은 가격'),
+    '낮은가격순': ComplexSort('SELLING_LOWEST', '다방 낮은 가격'),
+    '면적넓은순': ComplexSort('ROOM_SIZE_LARGEST', '다방 넓은 면적'),
+    '면적좁은순': ComplexSort('ROOM_SIZE_SMALLEST', '다방 좁은 면적'),
+}
+DEFAULT_COMPLEX_SORT: str = '랭킹순'
 
 
 class DabangComplexSummary(BaseModel):
@@ -852,6 +876,10 @@ class DabangComplexListingsResult(BaseModel):
         list[int] | None,
         Field(description='고른 평형 번호. null 이면 전체 평형')
     ] = None
+    sort: Annotated[
+        str,
+        Field(description="매물 순서 (다방 웹 단지 매물 정렬: '랭킹순'·'최신순'·'높은가격순'·'낮은가격순'·'면적넓은순'·'면적좁은순')")
+    ] = DEFAULT_COMPLEX_SORT
     total: Annotated[
         int | None,
         Field(description='조건에 맞는 매물 수 (limit 적용 전)')
@@ -866,7 +894,7 @@ class DabangComplexListingsResult(BaseModel):
     ] = False
     listings: Annotated[
         list[DabangListing],
-        Field(description='다방 목록 순 매물')
+        Field(description='sort 순서 그대로의 매물 (다방이 정렬한 순서)')
     ]
     notes: Annotated[
         list[str],
@@ -880,9 +908,13 @@ def list_complex_listings(
     *,
     conditions: DabangListingConditions | None = None,
     space_seqs: list[int] | None = None,
+    sort: str = DEFAULT_COMPLEX_SORT,
     limit: int,
 ) -> DabangComplexListingsResult:
-    """단지 하나의 매물 (다방 목록 순, 24건씩). 요청은 단지 상세 1회 + 쪽마다 1회.
+    """단지 하나의 매물 (`sort` 순, 24건씩). 요청은 단지 상세 1회 + 쪽마다 1회.
+
+    Args:
+        sort: 다방 웹 단지 매물 정렬 이름 (`COMPLEX_SORT_BY_LABEL`). 다방이 정렬한 순서를 다시 세우지 않는다.
 
     Raises:
         JibsaError: 단지가 없을 때 (NOT_FOUND), 단지에 없는 평형 번호를 줬을 때 (INVALID_ARGUMENT).
@@ -907,12 +939,14 @@ def list_complex_listings(
         # 평형 없는 단지는 보지 못해 따로 다루지 않는다
         space_seq_list=space_seqs or all_seqs,
     )
+    order = COMPLEX_SORT_BY_LABEL[sort]
     premium = 0
 
     def fetch(page: int) -> DabangPage[DabangRoomItemModel] | None:
         nonlocal premium
         result = client.run_request_room_list_category_complex_v5(DabangRoomListCategoryComplexV5RequestParameterModel(
-            category=category, complex_id=complex_id, main_filters=filters, filters=room_filters, page=page,
+            category=category, complex_id=complex_id, main_filters=filters, filters=room_filters,
+            order=order.order, page=page,
         )).result
         if result is None:
             return None
@@ -946,7 +980,7 @@ def list_complex_listings(
     notes += premium_note(premium)
     # 단지 하나라 지역·반경 대신 단지 매물의 조건만 좁히라고 한다
     notes += limit_notes(
-        total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order='다방 목록', narrow='거래 유형·평형·가격 조건',
+        total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order=order.text, narrow='거래 유형·평형·가격 조건',
         inspected=received, has_more=has_more,
     )
     if pages.capped:
@@ -955,6 +989,7 @@ def list_complex_listings(
         complex_id=complex_id,
         name=result.complex.complex_name,
         space_seqs=space_seqs,
+        sort=sort,
         total=total,
         returned=len(listings),
         has_more=has_more,

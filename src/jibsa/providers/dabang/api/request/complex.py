@@ -21,6 +21,13 @@ from typing import (
 )
 
 
+# 단지 매물 정렬. 다방 웹 단지 매물 탭의 정렬 메뉴 값이다 (complex 청크 `xt`, 2026-11-13: 랭킹순·최신순·높은가격순·낮은가격순·
+# 면적넓은순·면적좁은순). 없는 값은 400 이다 (같은 날 실측)
+DabangComplexRoomOrder = Literal[
+    'RANKING', 'LATEST', 'SELLING_HIGHEST', 'SELLING_LOWEST', 'ROOM_SIZE_LARGEST', 'ROOM_SIZE_SMALLEST',
+]
+
+
 class DabangComplexListCategoryV5RequestParameterModel(DabangCategoryListRequestParameterModel):
     """`GET /api/v5/complex-list/category/{category}/{search_type}` 쿼리 (단지 지도 목록, 아파트·오피스텔)."""
 
@@ -78,7 +85,7 @@ class DabangRoomListCategoryComplexV5RequestParameterModel(RequestModel):
         complex_id: 단지 ID.
         main_filters: 유형 필터.
         filters: 거래 유형·평형.
-        order: 정렬. 웹 기본 'RANKING'.
+        order: 정렬 (웹 정렬 메뉴 값). 웹 기본 'RANKING'(랭킹순).
         page: 쪽 번호 (1부터, 24건씩).
     """
 
@@ -99,7 +106,7 @@ class DabangRoomListCategoryComplexV5RequestParameterModel(RequestModel):
         Field(description='거래 유형·평형 (JSON 으로 보낸다)')
     ]
     order: Annotated[
-        Literal['RANKING'],
+        DabangComplexRoomOrder,
         Field(description='정렬')
     ] = 'RANKING'
     page: Annotated[

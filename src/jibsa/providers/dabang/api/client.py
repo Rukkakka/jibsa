@@ -163,7 +163,7 @@ class DabangClient(BaseHTTPClient):
     """다방 (www.dabangapp.com) 비공식 웹 API 클라이언트.
 
     로그인·토큰 없이 장소 검색, 매물 지도 목록(원룸·투룸, 주택·빌라, 오피스텔, 아파트), 매물 상세, 단지 목록·상세·요약,
-    단지 매물, 실거래, 시세 흐름, 동네정보(요약·시설 수·인기 매물), 주변 교통·시설, 지도 집계(역 둘레 평균 매물가)와 동 경계
+    단지 매물, 실거래, 시세 흐름, 동네정보(요약·시설 수·인기 매물), 매물·단지·분양 주변 교통·시설, 지도 집계(역 둘레 평균 매물가)와 동 경계
     파일, 분양(목록·상세·청약 일정), 학교 상세(학교알리미 공시), 전국 조회·거래 순위, 범위 안 동·단지 순위(부동산·학교·인구·시설)를 조회한다. 금액은 **만원** 이지만 상세 관리비(`maintenance_cost`)와 단지
     평형 관리비(`maintenanceTotalPrice`)는 원이다. 목록 가격은 숫자 없이 글자('1000/63', '3억9000')로만 온다.
 
@@ -930,12 +930,12 @@ class DabangClient(BaseHTTPClient):
         self,
         parameter: DabangTransitNearV5RequestParameterModel
     ) -> DabangTransitNearV5ResponseModel:
-        """Fetch subway stations (1km) and bus routes (500m) around a listing or complex via `GET /api/v5/transit/near/{target}`.
+        """Fetch subway stations (1km) and bus routes (500m) around a listing, complex or sale via `GET /api/v5/transit/near/{target}`.
 
         Same retry behaviour as `run_request_loc_search_v5`.
 
         Args:
-            parameter: 대상(매물·단지)과 ID.
+            parameter: 대상(매물·단지·분양)과 ID.
 
         Returns:
             DabangTransitNearV5ResponseModel: 가까운 순 역과 버스 노선.
@@ -967,12 +967,12 @@ class DabangClient(BaseHTTPClient):
         self,
         parameter: DabangNearV5RequestParameterModel
     ) -> DabangNearV5ResponseModel:
-        """Fetch the nearest facilities around a listing or complex via `GET /api/v5/{target}/{target_id}/near`.
+        """Fetch the nearest facilities around a listing, complex or sale via `GET /api/v5/{target}/{target_id}/near`.
 
         Same retry behaviour as `run_request_loc_search_v5`. 편의(편의점·카페·은행·공공기관·버스정류장)·안전(경찰·CCTV)·교육(어린이집~고등학교) 시설을 종류마다 가까운 순으로 준다.
 
         Args:
-            parameter: 대상(매물·단지)과 ID.
+            parameter: 대상(매물·단지·분양)과 ID.
 
         Returns:
             DabangNearV5ResponseModel: 종류별 가까운 시설과 거리.

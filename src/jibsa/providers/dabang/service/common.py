@@ -124,19 +124,21 @@ ROOM_LABELS_BY_KIND: dict[ListingKind, tuple[str, ...]] = {
     'officetel': tuple(ROOM_COUNT_FILTER_BY_LABEL),
     'apt': tuple(ROOM_COUNT_FILTER_BY_LABEL),
 }
-# 기타 조건 라벨 → 필터 필드. 유형마다 받는 필드가 다르다 (filter-init 청크, 2026-10-25)
+# 기타 조건 라벨 → 필터 필드. 유형마다 받는 필드가 다르다 (filter-init 청크, 2026-10-25). '세안고' 는 웹 아파트 '추가필터' 의
+# 이름 그대로다 (세입자가 있는 채로 파는 매매 매물, filter 청크 2026-11-13)
 CONDITION_FIELD_BY_LABEL: dict[str, str] = {
     '주차': 'can_parking',
     '엘리베이터': 'has_elevator',
     '단기임대': 'is_short_lease',
     '분리형': 'is_division',
     '복층': 'is_duplex',
+    '세안고': 'has_take_tenant',
 }
 CONDITIONS_BY_KIND: dict[ListingKind, tuple[str, ...]] = {
     'room': ('주차', '엘리베이터', '단기임대', '분리형', '복층'),
     'villa': ('주차', '엘리베이터', '단기임대'),
     'officetel': ('주차', '엘리베이터', '단기임대'),
-    'apt': ('단기임대',),
+    'apt': ('단기임대', '세안고'),
 }
 # 목록 면적이 전용이 아니라 공급면적인 매물 유형 (`room_item_to_listing`)
 APARTMENT_TYPE: str = '아파트'
@@ -439,8 +441,12 @@ class DabangListingConditions(RequestModel):
     ] = []
     conditions: Annotated[
         list[str],
-        Field(description='기타 조건 라벨 (주차, 엘리베이터, 단기임대, 분리형, 복층)')
+        Field(description='기타 조건 라벨 (주차, 엘리베이터, 단기임대, 분리형, 복층, 세안고)')
     ] = []
+    parking_per_household_min: Annotated[
+        int | None,
+        Field(ge=0, description='세대당 주차 대수 하한 (대, 오피스텔·아파트)')
+    ] = None
     households_min: Annotated[
         int | None,
         Field(ge=0, description='세대수 하한 (아파트)')
@@ -493,9 +499,12 @@ def filters_of(kind: ListingKind, conditions: DabangListingConditions) -> Dabang
     }
     if category == 'house-villa':
         return DabangHouseVillaFiltersModel(**sale, room_floor_list=floors)
+    parking = range_of(conditions.parking_per_household_min, None)
     if category == 'officetel':
-        return DabangOfficetelFiltersModel(**sale)
-    return DabangAptFiltersModel(**sale, household_num_range=range_of(conditions.households_min, conditions.households_max))
+        return DabangOfficetelFiltersModel(**sale, parking_num_range=parking)
+    return DabangAptFiltersModel(
+        **sale, household_num_range=range_of(conditions.households_min, conditions.households_max), parking_num_range=parking,
+    )
 
 
 class DabangPlace(BaseModel):

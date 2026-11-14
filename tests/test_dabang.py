@@ -142,10 +142,17 @@ def test_complex_listings_fill_max_limit_when_pages_are_short() -> None:
             'formattedYearOfYearChangeCount': '1명',
             'formattedYearOfYearChangePercentage': '0%',
         }),
+        # 거래증감·매물증감도 변화 수를 부호 없이 준다 (2026-11-13 강남구 매물증감 낮은순 신사동 '2개'·'-9.1%')
+        ('count-change', {
+            'formattedCurrCount': '2,000개',
+            'formattedPrevCount': '2,001개',
+            'formattedCount': '1개',
+            'formattedChangeRate': '0%',
+        }),
     ],
 )
 def test_change_count_decrease_is_negative(kind: ValueKind, values: dict[str, str]) -> None:
-    # 다방은 인구 변화 수를 부호 없이('327명') 준다. 앞·지금 수가 있으면 그 차로 내서, changeStatus 가 빠지고
+    # 다방은 인구·거래·매물 변화 수를 부호 없이('327명') 준다. 앞·지금 수가 있으면 그 차로 내서, changeStatus 가 빠지고
     # 변화율이 '0%' 로 반올림돼도 줄었으면 음수다
     row = DabangRegionRankingItemModel.model_validate({'rank': 1, 'regionName': '[가상]동', **values})
     entry = _entry(row, kind)

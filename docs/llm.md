@@ -38,9 +38,9 @@
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
 | 단지 비교 | `daangn compare <ID> <ID> …` (최대 10곳, 비슷한 크기 평형끼리) · `daangn nearby-complexes <ID>` |
 | 동네 고르기 | `daangn good-neighborhoods --lifestyle …` · `region-reviews <동>` · `trending-complexes [시·도·구]` (조회 급상승, 빼면 전국) · `popular-listings <동>` (모두 `daangn`) · 동 요약 숫자와 순위 `dabang neighborhood <동>` · `dabang popular-listings <동>` |
-| 역 둘레 시세·주변 | 역 둘레 평균 매물가(호가) `dabang station-prices <역>` · 매물·단지 둘레 역·버스·시설 `dabang nearby <ID>` |
-| 분양·청약 | `dabang search sales <동·구>` → `dabang sale <sale_id>` (일정·평형별 분양가) · 날짜별 전국 일정 `dabang sale-schedule --region 서울` |
-| 동네·단지 순위 | 구·시도·전국 안 `dabang region-ranking <범위> --by 평균가` (전세가율·갭가격은 `--unit 단지`, 신고가 단지는 `--by 최고가증감 --unit 단지`) · 학군·생활 동 순위 `--by 과학고진학률`·`대학교진학률`·`학원수 --kind 입시`·`인구증감`·`의료시설` 등 · 전국 `dabang trending-complexes` (조회) · `dabang trade-rankings` (거래) |
+| 역 둘레 시세·주변 | 역 둘레 평균 매물가(호가) `dabang station-prices <역>` · 매물·단지 둘레 역·버스·시설 `dabang nearby <ID>` (분양은 `nearby --sale <sale_id>`) |
+| 분양·청약 | `dabang search sales <동·구>` → `dabang sale <sale_id>` (일정·평형별 분양가) · 분양 둘레 `dabang nearby --sale <sale_id>` · 날짜별 전국 일정 `dabang sale-schedule --region 서울` |
+| 동네·단지 순위 | 구·시도·전국 안 `dabang region-ranking <범위> --by 평균가` (전세가율·갭가격은 `--unit 단지`, 신고가 단지는 `--by 최고가증감 --unit 단지`, 동 안 단지는 `region-ranking <동> --unit 단지`, 거래·매물이 는 곳은 `--by 거래증감`·`매물증감`) · 학군·생활 동 순위 `--by 과학고진학률`·`대학교진학률`·`학원수 --kind 입시`·`인구증감`·`의료시설` 등 · 전국 `dabang trending-complexes` (조회) · `dabang trade-rankings` (거래) |
 | 구 안의 동 이름 | `naver regions <시·도 또는 시·군·구>` |
 
 ## 위치 입력
@@ -106,13 +106,15 @@
 
 ### 다방
 
-- 매물 검색은 유형별 하위 명령(`room`·`villa`·`officetel`·`apt`)이다. 결과는 **다방 목록 순**이라 거리순이 아니다 (역·좌표 검색은 `distance_km` 로 고른다).
+- 매물 검색은 유형별 하위 명령(`room`·`villa`·`officetel`·`apt`)이다. 결과는 **다방 목록 순**이라 거리순이 아니다 (역·좌표 검색은 `distance_km` 로 고른다). 정렬은 단지 매물에만 있다: 단지에서 가장 싼 매물은 `search listings --complex <ID> --trade 매매 --sort 낮은가격순` (넓은 순은 `면적넓은순`).
+- `apt --condition 세안고` 는 세입자 낀 매매 매물만이라 매매 없이 주면 `INVALID_ARGUMENT` 다. 단지 세대당 주차 대수는 `officetel`·`apt` 의 `--parking-min` 이고, `--condition 주차` 는 주차 가능 여부다.
 - 동·역·대학 이름을 받고 구·시 이름은 못 찾는다 (`REGION_NOT_SUPPORTED`). 역은 다방이 정한 역 반경(강남역 750m)이다. `apt` 는 동 검색이 없어 동 경계를 덮는 사각형에서 그 동 매물만 남겨 `returned` 가 적을 수 있다.
 - 아파트 매물 목록(`apt`·단지 매물·인기 매물, `room` 에 섞인 아파트)은 다방이 공급면적만 줘서 `area_m2` 가 `null` 이고 `supply_area_m2` 가 공급면적이다. 다른 소스의 전용면적과 견주려면 `listing` 의 `area_m2` 를 본다. `--area-pyeong-min` 은 아파트는 공급 평, 오피스텔은 계약 평이다 (오피스텔 결과의 `area_m2` 는 전용이라 조건보다 작게 나온다).
 - 단기임대는 따로 있는 거래가 아니라 월세 매물에 붙는 표시라 `trade_type: 월세` 에 `short_lease: true` 다. 보증금이 월세 한두 달치(95/95)면 단기 계약 가격일 수 있다. 단기임대 가능 매물만은 `--condition 단기임대`.
 - 목록의 `address` 는 찾은 동의 매물만 시·구까지다 (역·좌표 검색은 동 이름만). `listing` 은 `id` 대신 다방 화면의 매물번호(`listing_number`)도 받는다.
 - `real-price --listing` 은 `--trade` 를 빼면 매물의 거래 유형(매매 매물은 매매, 월세·전세 매물은 전월세)을 따른다. `basis` 가 `이 집 (…)` 이면 이 매물과 같은 지번 건물 거래(같은 건물 다른 집도 든다), 아니면 그 건물이 아니라 그 동의 같은 건물 유형 거래다. 다세대·연립은 `area_m2`(전용)가 비슷한 거래만 견주고, 단독·다가구의 `total_floor_area_m2` 는 건물 전체 연면적이라 매물 전용면적과 견주지 않는다.
-- `region-ranking` 의 값은 항목에 맞는 키에만 있다 (평균가 `value_manwon`, 거래량·학원수 `count`, 전세가율·진학률 `percent`, 시세증감 `change_percent`). 시세증감·최고가증감의 `change_manwon` 은 오른 금액이지 현재가가 아니다 (새 최고가 = `prev_price_manwon + change_manwon`). 거래량·매물수·선호도·전세가율·갭가격은 기본이 아파트·오피스텔 합산(`complex_type`)이라 아파트만 보려면 `-t 아파트` 를 준다.
+- `region-ranking` 의 값은 항목에 맞는 키에만 있다 (평균가 `value_manwon`, 거래량·학원수 `count`, 전세가율·진학률 `percent`, 시세증감 `change_percent`). 시세증감·최고가증감의 `change_manwon` 은 오른 금액이지 현재가가 아니다 (새 최고가 = `prev_price_manwon + change_manwon`). 거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 기본이 아파트·오피스텔 합산(`complex_type`)이라 아파트만 보려면 `-t 아파트` 를 준다. 거래증감·매물증감은 `prev_count` → `count` 를 `comparison`(`전월대비`·`최근 30일 전 대비`) 기준으로 읽고 `change_count` 는 줄면 음수다. 동 이름 범위는 `--unit 단지` 만 받는다.
+- 분양 둘레는 `nearby --sale <sale_id>` 로 준다. 분양 ID 를 위치 인자로 주면 단지 ID 로 읽혀 `NOT_FOUND` 다.
 - `search sales` 는 다방이 지도 사각형만 받아 역·좌표 둘레는 반경을 덮는 사각형 전체다. 목록의 `sale_household_count` 는 분양 세대수다 (총세대수는 `sale` 의 `household_count`). `sale` 의 `price_kind` 가 `임대가` 면 가격이 분양가가 아니다.
 - `school` 은 `--level` 이 학교 코드와 맞아야 한다 (`dabang complex` 의 `schools[].level` 을 그대로). 틀리면 다방이 서버 고장과 같은 500 을 줘서 `UPSTREAM_ERROR`(`status` 500)이니 코드·단계부터 다시 본다. 다방 학교 코드는 네이버 `school` 코드와 다르다.
 - `station-prices` 는 실거래가가 아니라 지금 올라온 원룸·투룸 매물의 평균(다방 '평균 매물가')이다. `neighborhood` 의 `rank` 는 1 이 가장 많거나 높고, 동 하나만 받는다.

@@ -6,6 +6,8 @@ from pydantic import (
 
 from jibsa.core.schema import RequestModel
 from jibsa.providers.dabang.api.request.common import (
+    COMPLEX_ID_PATTERN_TEXT,
+    LISTING_ID_PATTERN_TEXT,
     DabangBboxModel,
     DabangCategory,
     DabangListFilters,
@@ -17,17 +19,22 @@ from typing import (
 )
 
 
-DabangNearTarget = Literal['room', 'complex']
+# 둘레 정보를 받는 대상: 매물·단지·분양. 분양은 분양 상세의 주변 정보가 같은 두 주소를 `sale` 로 부른다 (2026-11-13 실측: 김포
+# 풍무역세권 B5블록 호반써밋 `sale/{id}/near` 는 편의 6·안전 2·교육 5 종류, `transit/near/sale?saleId=` 는 풍무역 476m)
+DabangNearTarget = Literal['room', 'complex', 'sale']
+# 매물 ID(24자리) 또는 단지·분양 ID(28자리)
+NEAR_TARGET_ID_PATTERN: str = f'{LISTING_ID_PATTERN_TEXT}|{COMPLEX_ID_PATTERN_TEXT}'
 
 
 class DabangTransitNearV5RequestParameterModel(RequestModel):
-    """`GET /api/v5/transit/near/{target}` 쿼리 (매물·단지 둘레 지하철역 1km·버스 노선 500m).
+    """`GET /api/v5/transit/near/{target}` 쿼리 (매물·단지·분양 둘레 지하철역 1km·버스 노선 500m).
 
-    쿼리 키가 대상에 따라 `roomId`·`complexId` 로 바뀐다 (웹 `{[`${e}Id`]: t}`).
+    쿼리 키가 대상에 따라 `roomId`·`complexId`·`saleId` 로 바뀐다 (웹 `{[`${e}Id`]: t}`, 분양은 `saleId` 만 받는다: `id`·
+    `saleInLotsId` 는 400, 2026-11-13 실측).
 
     Args:
-        target: 'room' 또는 'complex' (경로).
-        target_id: 매물 ID 또는 단지 ID.
+        target: 'room'·'complex'·'sale' (경로).
+        target_id: 매물 ID, 단지 ID 또는 분양 ID.
     """
 
     target: Annotated[
@@ -36,7 +43,7 @@ class DabangTransitNearV5RequestParameterModel(RequestModel):
     ]
     target_id: Annotated[
         str,
-        Field(pattern=r'^[0-9a-f]{24}$|^[0-9a-f]{28}$', description='매물 ID(24자리) 또는 단지 ID(28자리)')
+        Field(pattern=NEAR_TARGET_ID_PATTERN, description='매물 ID(24자리), 단지 ID 또는 분양 ID(28자리)')
     ]
 
     @model_serializer(mode='plain')
@@ -48,8 +55,8 @@ class DabangNearV5RequestParameterModel(RequestModel):
     """`GET /api/v5/{target}/{target_id}/near` 의 경로 값 (가까운 편의·안전·교육 시설).
 
     Args:
-        target: 'room' 또는 'complex'.
-        target_id: 매물 ID 또는 단지 ID.
+        target: 'room'·'complex'·'sale'.
+        target_id: 매물 ID, 단지 ID 또는 분양 ID.
     """
 
     target: Annotated[
@@ -58,7 +65,7 @@ class DabangNearV5RequestParameterModel(RequestModel):
     ]
     target_id: Annotated[
         str,
-        Field(exclude=True, pattern=r'^[0-9a-f]{24}$|^[0-9a-f]{28}$', description='매물 ID 또는 단지 ID (경로)')
+        Field(exclude=True, pattern=NEAR_TARGET_ID_PATTERN, description='매물 ID, 단지 ID 또는 분양 ID (경로)')
     ]
 
 

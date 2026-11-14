@@ -55,11 +55,18 @@ from typing import (
 AMBIGUOUS_CANDIDATES: int = 5
 # 시·군·구 이름 ('강남구', '성남시', '양평군'). 다방 장소 검색은 시·군·구를 주지 않고 그 안의 동을 준다 (2026-10-25 실측)
 DISTRICT_PATTERN: re.Pattern[str] = re.compile(r'^[가-힣]+[구군시]$')
+# 동·읍·면·리 이름 ('역삼동', '역삼1동', '봉담읍', '남면', '종로1가'). 동 범위를 받지 않는 곳에서 장소 검색 없이 동을 알아본다
+DONG_NAME_PATTERN: re.Pattern[str] = re.compile(r'^[가-힣0-9]+(?:[동읍면리]|\d가)$')
 REGION_HINT: str = (
     "동 이름(예: '역삼동', 같은 이름이 여럿이면 '강남구 신사동'), 역 이름(예: '강남역'), 대학 이름(예: '홍익대학교')으로 "
     '찾거나 --lat/--lng 로 좌표를 주세요'
 )
 SCOPE_HINT: str = "'전국', 시·도 이름(예: '서울'), 시·군·구 이름(예: '강남구', '성남시 분당구') 중 하나를 주세요"
+# 동도 범위로 받는 곳(단지 순위)의 안내
+DONG_SCOPE_HINT: str = (
+    "'전국', 시·도 이름(예: '서울'), 시·군·구 이름(예: '강남구', '성남시 분당구'), 동 이름(예: '역삼동', '강남구 신사동') 중 "
+    '하나를 주세요'
+)
 
 
 def search_locations(
@@ -222,6 +229,11 @@ def resolve_places(
     def unpicked(place: DabangPlace, count: int) -> DabangPlace:
         """`only` 와 다른 종류의 후보가 여럿일 때 돌려주는 첫 후보에는 사용자가 준 이름을 붙인다. 부른 쪽 에러 문구에 고르지도
         않은 첫 후보 이름('역 이름이 아닙니다: 성수동1가')이 아니라 준 이름('성수동')이 찍히게 한다."""
+        # 리뷰 오탐 (2026-11-14): 이름을 바꾼 place 가 조회·출력에 쓰이는 일은 없다. only 를 주는 네 곳(neighborhood·
+        # popular-listings·_dong_scope·station-prices)이 모두 돌려받은 종류를 바로 INVALID_ARGUMENT 로 거절한다. 종류 에러를 여기서
+        # 내면 부른 쪽마다 다른 문구·hint(동네정보는 역 둘레 안내, 범위는 범위 hint)를 잃는다. 종류 검사(동이면서 gid 있음)가
+        # single_dong 과 _dong_scope 에 한 줄씩 있는 것도 같은 이유로 둔다: 거절 문구·hint 가 호출마다 달라 합치려면 문구를 인자로
+        # 받는 함수가 되고 조건 한 줄만 아낀다
         return place.model_copy(update={'name': text}) if count > 1 else place
 
     if last.endswith('역') and stations:
@@ -323,23 +335,23 @@ def state_name(text: str) -> str | None:
 
 
 class DabangScope(BaseModel):
-    """순위·분양 범위: 전국, 시·도, 시·군·구."""
+    """순위·분양 범위: 전국, 시·도, 시·군·구, 동 (동은 단지 순위만)."""
 
     model_config = ConfigDict(
         extra='forbid',
     )
 
     kind: Annotated[
-        Literal['national', 'state', 'district'],
-        Field(description='범위 종류 (전국·시도·시군구)')
+        Literal['national', 'state', 'district', 'dong'],
+        Field(description='범위 종류 (전국·시도·시군구·동)')
     ]
     name: Annotated[
         str,
-        Field(description="범위 이름 ('전국', '서울특별시', '서울특별시 강남구')")
+        Field(description="범위 이름 ('전국', '서울특별시', '서울특별시 강남구', '서울특별시 강남구 역삼동')")
     ]
     code: Annotated[
         str | None,
-        Field(description='법정동 코드 앞자리 (시·도 2, 시·군·구 5자리)')
+        Field(description='법정동 코드 (시·도 앞 2자리, 시·군·구 앞 5자리, 동 10자리)')
     ] = None
     gid: Annotated[
         int | None,
@@ -365,17 +377,23 @@ def _region_by_code(client: DabangClient, code: str) -> DabangRegionModel | None
         raise
 
 
-def resolve_scope(client: DabangClient, query: str, *, searched: DabangLocSearchResultModel | None = None) -> DabangScope:
+def resolve_scope(
+    client: DabangClient, query: str, *, searched: DabangLocSearchResultModel | None = None, dong: bool = False,
+) -> DabangScope:
     """'전국'·시·도·시·군·구 이름을 범위로 바꾼다. 시·도는 시·도 목록(요청 1회), 시·군·구는 장소 검색의 동 코드 앞 5자리로
     다방 지역을 받는다 (요청 2회). 구가 있는 시(성남시)는 다방 지역이 아니라 구 이름을 붙이게 한다.
 
     Args:
         searched: 같은 이름으로 이미 받은 장소 검색 결과. 주면 다시 묻지 않는다.
+        dong: 동 이름도 범위로 받을지 (단지 순위). 동은 위치 찾기(`resolve_places`)로 찾아 장소 검색의 동 번호를 범위로 쓴다
+            (요청 1회, 웹 단지 순위가 고른 동의 `gid` 를 보낸다). 시·군·구 모양(○구·○군·○시)의 이름은 동으로 보지 않는다.
+            Defaults to False (분양 범위는 시·군·구까지).
 
     Raises:
-        RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구').
+        RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구'), 동 이름이 여러 곳일 때.
         UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
         RegionNotFoundError: 범위로 알아볼 수 없는 이름일 때.
+        JibsaError: `dong` 인데 동이 아니라 역·대학 이름일 때 (INVALID_ARGUMENT).
     """
     text = query.strip()
     if text in NATIONAL_NAMES:
@@ -390,8 +408,10 @@ def resolve_scope(client: DabangClient, query: str, *, searched: DabangLocSearch
                 kind='state', name=state.name, code=state.code, gid=state.gid,
                 lat=location.lat if location else None, lng=location.lng if location else None,
             )
-    words = _words(text, SCOPE_HINT)
+    words = _words(text, DONG_SCOPE_HINT if dong else SCOPE_HINT)
     last = words[-1]
+    if dong and not DISTRICT_PATTERN.fullmatch(last):
+        return _dong_scope(client, text, searched)
     if DISTRICT_PATTERN.fullmatch(last):
         # 시·군·구 이름마다 처음 나온 동 하나 ('중구' 는 서울·부산·대구·대전·울산, 2026-10-25 실측)
         districts: dict[str, tuple[DabangLocRegionModel, list[str], int]] = {}
@@ -428,7 +448,25 @@ def resolve_scope(client: DabangClient, query: str, *, searched: DabangLocSearch
                     kind='district', name=normalize_address(' '.join(parts[:index + 1])), code=found.code, gid=found.gid,
                     lat=location.lat if location else None, lng=location.lng if location else None,
                 )
-    raise RegionNotFoundError(text, hint=SCOPE_HINT)
+    raise RegionNotFoundError(text, hint=DONG_SCOPE_HINT if dong else SCOPE_HINT)
+
+
+def _dong_scope(client: DabangClient, text: str, searched: DabangLocSearchResultModel | None) -> DabangScope:
+    """동 이름을 범위로 (위치 찾기 1회). 같은 이름의 동이 여럿이면 `resolve_places` 가 REGION_AMBIGUOUS 로 후보를 준다."""
+    try:
+        place = resolve_places(client, text, searched=searched, only='dong')
+    except RegionNotFoundError:
+        # 위치 찾기의 안내는 역·좌표 검색을 권해 범위 이름에 맞지 않는다
+        raise RegionNotFoundError(text, hint=legal_dong_hint(text) or DONG_SCOPE_HINT) from None
+    if place.kind != 'dong' or place.gid is None:
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f'범위로 받지 않는 이름입니다 (동 이름이 아닙니다): {place.name}',
+            hint=DONG_SCOPE_HINT,
+        )
+    return DabangScope(
+        kind='dong', name=place.address or place.name, code=place.legal_division_code, gid=place.gid, lat=place.lat, lng=place.lng,
+    )
 
 
 def scope_bbox(client: DabangClient, scope: DabangScope) -> DabangBboxModel | None:

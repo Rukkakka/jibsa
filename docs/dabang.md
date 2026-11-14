@@ -16,20 +16,20 @@
 | `search complexes` | 아파트·오피스텔 단지 목록 | 동·역·대학 이름 또는 좌표 | `complex`, `search listings --complex`, `real-price`, `price-trend` |
 | `complex` | 단지 정보·평형·학교·어린이집·유치원 | 단지 ID | `search listings --complex`, `real-price`, `price-trend`, `school` |
 | `school` | 학교 하나: 학급당·교원당 학생 수, 진학률 (학교알리미 공시) | 학교 코드와 `--level` (`complex` 의 `schools[]`) | — |
-| `search listings --complex` | 단지 안 매물 | 단지 ID | `listing` |
+| `search listings --complex` | 단지 안 매물 (다방 웹 정렬: 랭킹순·가격순·면적순·최신순) | 단지 ID | `listing` |
 | `real-price` | 평형별 실거래가 (단지 없는 매물은 이 집 또는 그 동의 같은 건물 유형) | 단지 ID 또는 `--listing` | — |
 | `price-trend` | 평형 하나의 36달 시세 흐름 | 단지 ID | — |
 | `listing` | 매물 하나 상세 | 매물 ID 또는 매물번호 | `nearby` |
 | `neighborhood` | 동네정보: 매물 수·거래량·평균가·인구와 순위, 학교·편의·교통·안전 시설 수 | 동 이름 | `popular-listings` |
 | `popular-listings` | 동 안 인기 매물 순위 | 동 이름 | `listing` |
-| `nearby` | 매물·단지 둘레 지하철역·버스 노선·가까운 시설·학교 | 매물 ID 또는 단지 ID | — |
+| `nearby` | 매물·단지·분양 둘레 지하철역·버스 노선·가까운 시설·학교 | 매물 ID 또는 단지 ID, 분양은 `--sale <분양 ID>` | — |
 | `station-prices` | 역 둘레 평균 매물가 (빌라·오피스텔·아파트 × 원룸·투룸) | 역 이름 | `search listings` |
-| `search sales` | 분양 단지 목록 (새 아파트·오피스텔 청약) | 동·시군구·역·대학 이름 또는 좌표 | `sale` |
+| `search sales` | 분양 단지 목록 (새 아파트·오피스텔 청약) | 동·시군구·역·대학 이름 또는 좌표 | `sale`, `nearby --sale` |
 | `sale` | 분양 단지 하나: 일정·평형별 분양가·청약 결과 | 분양 ID | — |
 | `sale-schedule` | 날짜별 전국 청약 일정 (7일까지) | 시작 날 | `sale` |
 | `trending-complexes` | 전국에서 지금 많이 보는 단지·동 순위 | — | `complex` |
 | `trade-rankings` | 전국에서 거래 많은 단지 순위 | — | `complex`, `real-price` |
-| `region-ranking` | 시군구·시도·전국 안 동·단지 순위 (평균가·전세가율·신고가, 동은 진학률·학원 수·인구·시설 수도) | 범위 이름 | `complex` |
+| `region-ranking` | 시군구·시도·전국 안 동·단지 순위, 동 안 단지 순위 (평균가·전세가율·신고가·거래증감·매물증감, 동은 진학률·학원 수·인구·시설 수도) | 범위 이름 | `complex` |
 
 ### 보통 이렇게 이어서 쓴다
 
@@ -41,6 +41,7 @@
                   region-ranking · trending-complexes · trade-rankings → complex
 학군 보기         complex → school · region-ranking --by 과학고진학률 / 학원수
 분양 보기         search sales 또는 sale-schedule → sale
+                  search sales → nearby --sale
 ```
 
 ## 옵션 읽는 법
@@ -118,7 +119,7 @@ jibsa dabang search listings room 역삼동 --trade 월세 --next <앞 결과의
 
 **주의사항**
 
-결과는 **다방 목록 순**이다 (거리순이 아니다). 역·좌표 검색은 `distance_km` 를 주니 가까운 매물이 필요하면 그것으로 고른다. 다방 광고 칸(중개사 추천 매물)은 넣지 않고 `notes` 에 뺀 수를 알린다. `--next` 는 다방 쪽 번호와 그 쪽에서 쓴 칸으로 이어 받아, 다방이 한 쪽을 23건만 줘도 앞 결과의 매물을 다시 주지 않는다. 다만 다방은 쪽끼리 같은 매물을 겹쳐 주기도 해서(웹도 그대로 보여 준다) 앞 결과에 있던 매물이 `--next` 결과에 다시 나올 수 있다. 한 결과 안에서는 한 번만 넣고 `notes` 로 알린다. `--built-within` 은 다방이 사용승인 연도로 세어 날짜로는 그 햇수보다 오래된 건물도 들어온다 (2026년에 `10` 이면 2016-02 승인도 들어온다). `notes` 가 연도 기준과 오늘 기준 날짜를 함께 알리고, 목록에는 사용승인일이 없어 날짜로 따져야 하면 `--details` 로 `approved_at` 을 채운다. `--details` 를 주면 오늘 기준 그 햇수가 넘은 매물을 `notes` 가 ID·승인일로 짚는다 (빼지는 않는다) (매물마다 `listing` 을 부르는 것과 같고 한 번에 된다). `--details` 는 `villa`·`officetel`·`apt` 에도 있고, 단지 매물(`--complex`)에는 없다.
+결과는 **다방 목록 순**이다 (거리순이 아니다). 다방 웹처럼 동·역·대학 매물 목록에는 정렬이 없어 `--sort` 를 주면 `INVALID_ARGUMENT` 이고 `hint` 가 단지 매물의 `--sort` 를 알린다. 역·좌표 검색은 `distance_km` 를 주니 가까운 매물이 필요하면 그것으로 고른다. 다방 광고 칸(중개사 추천 매물)은 넣지 않고 `notes` 에 뺀 수를 알린다. `--next` 는 다방 쪽 번호와 그 쪽에서 쓴 칸으로 이어 받아, 다방이 한 쪽을 23건만 줘도 앞 결과의 매물을 다시 주지 않는다. 다만 다방은 쪽끼리 같은 매물을 겹쳐 주기도 해서(웹도 그대로 보여 준다) 앞 결과에 있던 매물이 `--next` 결과에 다시 나올 수 있다. 한 결과 안에서는 한 번만 넣고 `notes` 로 알린다. `--built-within` 은 다방이 사용승인 연도로 세어 날짜로는 그 햇수보다 오래된 건물도 들어온다 (2026년에 `10` 이면 2016-02 승인도 들어온다). `notes` 가 연도 기준과 오늘 기준 날짜를 함께 알리고, 목록에는 사용승인일이 없어 날짜로 따져야 하면 `--details` 로 `approved_at` 을 채운다. `--details` 를 주면 오늘 기준 그 햇수가 넘은 매물을 `notes` 가 ID·승인일로 짚는다 (빼지는 않는다) (매물마다 `listing` 을 부르는 것과 같고 한 번에 된다). `--details` 는 `villa`·`officetel`·`apt` 에도 있고, 단지 매물(`--complex`)에는 없다.
 
 ## 3. `search listings villa` — 주택·빌라 매물 찾기
 
@@ -130,20 +131,32 @@ jibsa dabang search listings villa 성수동1가 --trade 전세 --deposit-max 30
 
 ## 4. `search listings officetel` — 오피스텔 매물 찾기
 
-다방 '오피스텔' 목록이다. 옵션은 `villa` 와 같고 층(`--floor`) 조건이 없다. 방 크기(`--area-pyeong-min/max`)는 다방이 **계약면적** 기준으로 걸어 결과 `area_m2`(전용)가 조건보다 작게 나온다 (강남역 `--area-pyeong-min 17` 결과가 모두 전용 17평 미만). 계약면적은 `listing` 의 `contract_area_m2` 로 본다.
+다방 '오피스텔' 목록이다. 옵션은 `villa` 와 같고 층(`--floor`) 조건이 없으며 `--parking-min` 이 더 있다. 방 크기(`--area-pyeong-min/max`)는 다방이 **계약면적** 기준으로 걸어 결과 `area_m2`(전용)가 조건보다 작게 나온다 (강남역 `--area-pyeong-min 17` 결과가 모두 전용 17평 미만). 계약면적은 `listing` 의 `contract_area_m2` 로 본다.
+
+| 옵션 | 설명·허용값 | 기본값 |
+| --- | --- | --- |
+| `--parking-min` | 단지 세대당 주차 대수 하한 (대, 정수) 범위: 1 이상. 다방 웹 주차 필터의 '세대당 1대 이상'·'2대 이상'이고, 그 밖의 정수도 다방이 받는 대로 보낸다 | 미지정 |
 
 ```bash
 jibsa dabang search listings officetel 강남역 --trade 월세 --rent-max 100 --condition 주차
+jibsa dabang search listings officetel 강남역 --parking-min 1
 ```
+
+`--parking-min` 은 매물이 든 단지의 세대당 주차 대수이고, `--condition 주차`(이 매물이 주차할 수 있는지)와 다른 조건이다. 다방이 거른다 (강남역 오피스텔 126건 → 1대 이상 6건 → 2대 이상 0건, 2026-11-13). 원룸·빌라에는 이 옵션이 없고, 주면 `hint` 가 `officetel`·`apt` 에만 있다고 알린다.
 
 ## 5. `search listings apt` — 아파트 매물 찾기
 
-다방 '아파트' 목록이다 (주상복합·도시형 생활주택 포함). 옵션은 `officetel` 과 같고 `--households-min/--households-max`(단지 세대수)가 더 있으며 `--condition` 은 단기임대만 있다.
+다방 '아파트' 목록이다 (주상복합·도시형 생활주택 포함). 옵션은 `officetel` 과 같고(`--parking-min` 포함) `--households-min/--households-max`(단지 세대수)가 더 있으며 `--condition` 은 단기임대·세안고다.
 
 ```bash
 jibsa dabang search listings apt 대치동 --trade 매매 --price-max 300000
 jibsa dabang search listings apt 강남역 --trade 전세 --households-min 500
+jibsa dabang search listings apt 강남역 --trade 매매 --condition 세안고
 ```
+
+`--condition 세안고` 는 세입자가 있는 채로 파는 매매 매물만 찾는다 (다방 웹 아파트 '추가필터' 의 이름 그대로. 강남역 113건 → 7건, 모두 매매, 2026-11-13). 매매 조건이라 검색할 거래 유형에 매매가 없으면 `INVALID_ARGUMENT` 다: `--trade 전세`·`월세` 만 줄 때, `--condition 단기임대`(월세 매물 조건)와 함께 줄 때, 보증금·월세 조건만 주어 월세·전세로 좁혀질 때. 다방 웹도 거래 유형에 매매가 있을 때만 이 필터를 보여 준다. 기존 세입자의 보증금·월세는 `listing` 의 `with_tenant`·`tenant_deposit_manwon`·`tenant_rent_manwon` 으로 본다. 원룸·빌라·오피스텔에 주면 선택지 오류다.
+
+아파트의 `--parking-min` 도 단지 세대당 주차 대수다 (강남역 113건 → 1대 이상 79건 → 2대 이상 19건, 2026-11-13). 아파트에는 `--condition 주차`(주차 가능 여부)가 없다.
 
 다방은 아파트에 동·대학 검색을 주지 않는다. 동 이름은 동 경계를 덮는 사각형으로 받아 그 동 매물만 남기고(경계 요청 1회 추가), 다른 동 매물을 뺀 수를 `notes` 로 알린다. 그래서 `returned` 가 `--limit` 보다 꽤 적을 수 있다 (뺀 만큼 다시 채우지 않는다). 대학 이름은 그 대학 중심 1km 반경으로 찾는다.
 
@@ -208,13 +221,17 @@ jibsa dabang school S010000704 --level 중학교
 | `--pyeong` | 평형 번호(`space_seq`). 반복하거나 쉼표로 구분 (OR) | 전체 평형 |
 | `--trade` | 거래 유형: 월세, 전세, 매매 | 전체 |
 | `--deposit-min/max`, `--rent-min/max`, `--price-min/max` | 금액 (만원) | 미지정 |
+| `--sort` | 매물 순서 (다방 웹 단지 매물 정렬 메뉴): 랭킹순, 최신순, 높은가격순, 낮은가격순, 면적넓은순, 면적좁은순 중 하나 | 랭킹순 |
 | `--limit` | 받을 매물 수 범위: 1~120. | 24 |
 
 ```bash
 jibsa dabang search listings --complex 58291f830ff9bd73a07ca123c632 --trade 매매
+jibsa dabang search listings --complex 58291f830ff9bd73a07ca123c632 --trade 매매 --sort 낮은가격순
 ```
 
 단지 상세 1회 + 쪽(24건)마다 1회. 다방이 한 쪽을 23건만 줘도 다음 쪽을 이어 받는다. 단지에 없는 평형 번호는 `INVALID_ARGUMENT` 다.
+
+매물은 다방이 `--sort` 로 정렬한 순서 그대로이고 jibsa 가 다시 세우지 않는다 (은마 매매 `낮은가격순` 은 30억7000 부터, `높은가격순` 은 34억부터, 2026-11-13). 결과의 `sort` 가 고른 정렬 이름(`"낮은가격순"`)이고, 다 받지 못했을 때의 `[일부]` 안내도 `다방 낮은 가격 순으로 앞 N건` 처럼 그 정렬을 따른다. 허용값이 아니거나 둘 이상이면 `INVALID_ARGUMENT` 다.
 
 ## 10. `real-price` — 실거래가
 
@@ -307,14 +324,20 @@ jibsa dabang popular-listings 역삼동 -t 빌라,오피스텔 --trade 월세 --
 
 다방 선호도(조회수·찜수·문의수를 합친 점수) 높은 순이고 매물마다 `rank`(1 이 가장 높다)가 붙는다. 50건마다 요청 1회. `total` 은 고른 유형·거래 유형에서 순위가 있는 매물 수다. 매물 필드는 `search listings` 와 같고, 유형을 하나만 고르면 그 유형으로 `property_type` 을 붙인다. 여럿이면 다방 표시대로 오피스텔·아파트이고, 방 개수(원룸·투룸)로 표시된 주택·빌라 매물은 `"빌라"` 다.
 
-## 15. `nearby` — 매물·단지 둘레
+## 15. `nearby` — 매물·단지·분양 둘레
+
+| 인자·옵션 | 설명·허용값 | 기본값 |
+| --- | --- | --- |
+| `TARGET_ID` | 매물 ID(`id`, 24자리) 또는 단지 ID(`complex_id`, 28자리). 매물번호는 받지 않는다 | 미지정 |
+| `--sale` | 분양 ID (`search sales` 의 `sale_id`, 28자리). 다방 분양 화면의 주변 정보 | 미지정 |
 
 ```bash
 jibsa dabang nearby 6abb32f72f9f803f9c6f3830
 jibsa dabang nearby 58291f830ff9bd73a07ca123c632
+jibsa dabang nearby --sale 68f1ac43f6e4d16e5bf6b7fb2469
 ```
 
-매물 ID(24자리)나 단지 ID(28자리)를 받는다 (요청 2회, 매물번호는 받지 않는다). `stations`(1km 안 지하철역: 노선·거리), `bus_route_count`(500m 안 정류장을 지나는 버스 노선 수), `nearest`(가까운 시설), `schools`(가까운 어린이집·유치원·초·중·고등학교)를 준다. `nearest`·`schools` 는 종류마다 `{"type": "편의점", "places": [{"name": …, "distance_m": …}, …]}` 이고 `places` 는 다방 거리로 가까운 순 3곳까지다 (덜 있으면 있는 만큼). 종류 이름은 다방 화면 이름표이고 다방이 주는 종류가 달라 매물은 버스·편의점·카페·은행·관공서·치안, 단지는 버스·마트·편의점·은행·약국·치안이다. 치안(지구대 등)은 다방이 이름을 주지 않아 `name` 이 `null` 이다. 거리는 직선 거리(m)다. 다방이 범위 안에서 찾지 못한 종류는 목록에 없다. `schools` 는 가까운 학교이지 배정 학교가 아니다 (단지의 배정 초등학교는 `complex` 의 `schools`).
+`TARGET_ID` 와 `--sale` 중 하나만 준다 (둘 다 주거나 둘 다 없으면 `INVALID_ARGUMENT`). 분양 ID 는 단지 ID 와 길이가 같아 위치 인자로 주면 단지로 찾아 `NOT_FOUND` 이니 꼭 `--sale` 로 준다. 요청 2회. 결과의 `target` 은 `"매물"`·`"단지"`·`"분양"`, `url` 은 그 매물·단지·분양 페이지(분양은 `https://www.dabangapp.com/sale-in-lots/{id}`)다. 없는 ID 는 `NOT_FOUND` 다. `stations`(1km 안 지하철역: 노선·거리), `bus_route_count`(500m 안 정류장을 지나는 버스 노선 수), `nearest`(가까운 시설), `schools`(가까운 어린이집·유치원·초·중·고등학교)를 준다. `nearest`·`schools` 는 종류마다 `{"type": "편의점", "places": [{"name": …, "distance_m": …}, …]}` 이고 `places` 는 다방 거리로 가까운 순 3곳까지다 (덜 있으면 있는 만큼). 종류 이름은 다방 화면 이름표이고 다방이 주는 종류가 달라 매물은 버스·편의점·카페·은행·관공서·치안, 단지·분양은 버스·마트·편의점·은행·약국·치안이다. 치안(지구대 등)은 다방이 이름을 주지 않아 `name` 이 `null` 이다. 거리는 직선 거리(m)다. 다방이 범위 안에서 찾지 못한 종류는 목록에 없다. `schools` 는 가까운 학교이지 배정 학교가 아니다 (단지의 배정 초등학교는 `complex` 의 `schools`).
 
 ## 16. `station-prices` — 역 둘레 평균 매물가
 
@@ -395,11 +418,11 @@ jibsa dabang sale-schedule --region 서울
 
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
-| `SCOPE` | 시·군·구(강남구, '성남시 분당구'), 시·도(서울), 전국 | 필수 |
-| `--by` | 부동산(동·단지): 평균가, 평당가, 거래량, 매물수, 시세증감, 최고가증감, 선호도, 세대수, 연식, 전세가율(단지만), 갭가격(단지만). 동네정보(동만): 과학고진학률, 외국어고진학률, 자사고진학률, 예술체육고진학률, 대학교진학률, 전문대학진학률, 학원수, 초등학교수, 중학교수, 고등학교수, 유치원수, 어린이집수, 인구, 인구증감, 생활편의시설, 의료시설, 외식시설, 대형쇼핑시설, 체육시설, 교통시설, 주차시설, 주유시설, 차량관리시설, 안전시설, 안전기관, 불편요소 | 필수 |
+| `SCOPE` | 시·군·구(강남구, '성남시 분당구'), 시·도(서울), 전국. `--unit 단지` 의 부동산 항목은 동(역삼동, '강남구 신사동')도 받는다 (그 동 안 단지 순위) | 필수 |
+| `--by` | 부동산(동·단지): 평균가, 평당가, 거래량, 매물수, 시세증감, 최고가증감, 거래증감, 매물증감, 선호도, 세대수, 연식, 전세가율(단지만), 갭가격(단지만). 동네정보(동만): 과학고진학률, 외국어고진학률, 자사고진학률, 예술체육고진학률, 대학교진학률, 전문대학진학률, 학원수, 초등학교수, 중학교수, 고등학교수, 유치원수, 어린이집수, 인구, 인구증감, 생활편의시설, 의료시설, 외식시설, 대형쇼핑시설, 체육시설, 교통시설, 주차시설, 주유시설, 차량관리시설, 안전시설, 안전기관, 불편요소 | 필수 |
 | `--unit` | 동, 단지 (동네정보 항목은 동만) | 동 |
-| `--type` / `-t` | 아파트, 오피스텔 (부동산 항목만. 세대수·연식과 동네정보 항목에 주면 INVALID_ARGUMENT). 평균가·평당가·시세증감·최고가증감은 하나만 (둘을 주면 INVALID_ARGUMENT), 거래량·매물수·선호도·전세가율·갭가격은 둘 다 주면 합산 | 평균가·평당가·시세증감·최고가증감은 아파트, 거래량·매물수·선호도·전세가율·갭가격은 아파트·오피스텔 합산 |
-| `--trade` | 평균가·평당가·시세증감·최고가증감은 매매·전세 중 하나, 거래량·매물수·선호도는 매매·전세·월세 여럿. 동네정보 항목은 받지 않는다 | 매매 / 전체 |
+| `--type` / `-t` | 아파트, 오피스텔 (부동산 항목만. 세대수·연식과 동네정보 항목에 주면 INVALID_ARGUMENT). 평균가·평당가·시세증감·최고가증감은 하나만 (둘을 주면 INVALID_ARGUMENT), 거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 둘 다 주면 합산 | 평균가·평당가·시세증감·최고가증감은 아파트, 거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 아파트·오피스텔 합산 |
+| `--trade` | 평균가·평당가·시세증감·최고가증감은 매매·전세 중 하나, 거래량·매물수·거래증감·매물증감·선호도는 매매·전세·월세 여럿. 동네정보 항목은 받지 않는다 | 매매 / 전체 |
 | `--kind` | 동네정보 항목의 종류 하나 (아래 표) | 전체 (학원수는 입시) |
 | `--order` | 높은순, 낮은순 | 높은순 |
 | `--limit` | 범위: 1~100. (부동산 50곳, 동네정보 30곳마다 요청 1회) | 20 |
@@ -426,11 +449,17 @@ jibsa dabang sale-schedule --region 서울
 jibsa dabang region-ranking 강남구 --by 평균가
 jibsa dabang region-ranking 서울 --by 전세가율 --unit 단지 --limit 10
 jibsa dabang region-ranking 강남구 --by 최고가증감 --unit 단지
+jibsa dabang region-ranking 역삼동 --by 평균가 --unit 단지
+jibsa dabang region-ranking 강남구 --by 거래증감
 jibsa dabang region-ranking 강남구 --by 과학고진학률
 jibsa dabang region-ranking 서울 --by 학원수 --kind 입시 --limit 10
 ```
 
-다방 '부동산 랭킹'과 '동네정보' 랭킹이다. 부동산 순위는 결과의 `complex_type` 이 어느 단지 유형의 순위인지 알린다 (`"아파트"`·`"오피스텔"`·`"아파트·오피스텔 합산"`, 단지 유형을 받지 않는 세대수·연식과 동네정보 항목은 키가 없다). 거래량·매물수·선호도·전세가율·갭가격은 `-t` 를 주지 않으면 다방 웹 기본처럼 아파트·오피스텔 합산이다 (동·단지 순위 모두): 강남구 `--by 거래량` 은 합산 1위가 역삼동 298개, `-t 아파트` 는 1위가 개포동 233개였다 (2026-11-13). 금액·거래량은 국토교통부 실거래, 매물수·선호도(조회수·찜수·문의수 등을 합친 점수)는 다방, 진학률은 학교알리미 공시(그 동 학교 졸업생 중 그 학교로 간 비율), 인구는 행정안전부 기준이다. `rankings[]` 는 `rank`, `name`, `area`(상위 지역), 단지면 `complex_id`, `value_text`(다방 표시 값)와 항목에 맞는 값만 있다: 평균가·평당가·갭가격 `value_manwon`, 거래량·매물수·세대수·학교·학원·시설 수·인구 `count`, 전세가율·진학률 `percent`, 선호도 `score`, 시세증감·최고가증감 `change_manwon`(오른 금액, 현재가가 아니다)·`change_percent`·`prev_price_manwon`(앞 시세·앞 최고가), 인구증감 `count`(올해 인구)·`prev_count`·`change_count`(줄면 음수)·`change_percent`, 연식 `age_years`. 최고가증감은 `prev_price_date`(앞 최고가 달)도 주고 새 최고가는 `prev_price_manwon + change_manwon` 이다. 단지 순위는 `pyeong`(평형), `price_date`(기준 달, 최고가증감은 새 최고가 달), `price_detail`('매매 90억 / 전세 14.5억')도 준다. 시세증감·최고가증감 동 순위는 다방이 센 달을 `base_month`(YYYY-MM)로, 고른 종류는 `kind` 로 알린다. 다방이 값을 `'-'` 로 주는 줄(거래·매물이 없는 동·단지)은 `value_text` 가 `"-"` 이고 그 항목의 값 필드는 `null` 이다.
+다방 '부동산 랭킹'과 '동네정보' 랭킹이다. 부동산 순위는 결과의 `complex_type` 이 어느 단지 유형의 순위인지 알린다 (`"아파트"`·`"오피스텔"`·`"아파트·오피스텔 합산"`, 단지 유형을 받지 않는 세대수·연식과 동네정보 항목은 키가 없다). 거래량·매물수·선호도·전세가율·갭가격은 `-t` 를 주지 않으면 다방 웹 기본처럼 아파트·오피스텔 합산이다 (동·단지 순위 모두): 강남구 `--by 거래량` 은 합산 1위가 역삼동 298개, `-t 아파트` 는 1위가 개포동 233개였다 (2026-11-13). 금액·거래량은 국토교통부 실거래, 매물수·선호도(조회수·찜수·문의수 등을 합친 점수)는 다방, 진학률은 학교알리미 공시(그 동 학교 졸업생 중 그 학교로 간 비율), 인구는 행정안전부 기준이다. `rankings[]` 는 `rank`, `name`, `area`(상위 지역), 단지면 `complex_id`, `value_text`(다방 표시 값)와 항목에 맞는 값만 있다: 평균가·평당가·갭가격 `value_manwon`, 거래량·매물수·세대수·학교·학원·시설 수·인구 `count`, 전세가율·진학률 `percent`, 선호도 `score`, 시세증감·최고가증감 `change_manwon`(오른 금액, 현재가가 아니다)·`change_percent`·`prev_price_manwon`(앞 시세·앞 최고가), 인구증감 `count`(올해 인구)·`prev_count`·`change_count`(줄면 음수)·`change_percent`, 거래증감·매물증감 `count`(지금 수)·`prev_count`(견준 앞 수)·`change_count`(줄면 음수)·`change_percent`, 연식 `age_years`. 최고가증감은 `prev_price_date`(앞 최고가 달)도 주고 새 최고가는 `prev_price_manwon + change_manwon` 이다. 단지 순위는 `pyeong`(평형), `price_date`(기준 달, 최고가증감은 새 최고가 달), `price_detail`('매매 90억 / 전세 14.5억')도 준다. 시세증감·최고가증감 동 순위는 다방이 센 달을 `base_month`(YYYY-MM)로, 고른 종류는 `kind` 로 알린다. 다방이 값을 `'-'` 로 주는 줄(평균가처럼 값이 없는 동·단지)은 `value_text` 가 `"-"` 이고 그 항목의 값 필드는 `null` 이다. 거래증감·매물증감은 거래·매물이 없는 줄을 `'-'` 가 아니라 `"0개 (0%)"` 로 준다.
+
+거래증감·매물증감은 다방 웹 '거래증감'·'매물증감' 순위다 (동·단지 모두). 결과의 `comparison` 이 무엇과 견줬는지 다방 화면 문구로 알린다: 거래증감 `"전월대비"`, 매물증감 `"최근 30일 전 대비"`. 다른 항목은 `comparison` 키가 없다. 줄마다 `prev_count` → `count` 로 읽고 `value_text` 는 다방 표시(`"73개 (+101.4%)"`)다: 강남구 거래증감 1위 논현동은 72 → 145 (`change_count` 73, `change_percent` 101.4, 2026-11-13). 앞 수가 0 이면 다방이 변화율을 `0%` 로 줘서 `change_percent` 가 0 이니 `prev_count`·`change_count` 로 본다.
+
+동 범위는 `--unit 단지` 의 부동산 항목만 받는다 (다방 웹 단지 순위의 동 범위): `region-ranking 역삼동 --by 평균가 --unit 단지` 는 역삼동 안 아파트 순위로 1위가 개나리푸르지오 39.5억이었다 (2026-11-13). 결과 `scope` 는 `kind` `"dong"`, `name` `"서울특별시 강남구 역삼동"`, `code` 10자리 법정동코드(`"1168010100"`)다. `--unit` 을 주지 않거나 `동` 이면(동 안의 동 순위는 없다) `INVALID_ARGUMENT` 이고 `hint` 가 `--unit 단지` 나 시·군·구 범위를 알린다. 동네정보 항목(학원수·진학률 등)도 동 범위는 `INVALID_ARGUMENT` 다 (다방 웹에도 없다). 같은 이름의 동이 여럿이면(`신사동`) `REGION_AMBIGUOUS` 로 `'강남구 신사동'` 처럼 고르게 하고, 역·대학 이름은 `INVALID_ARGUMENT` 다.
 
 학원수·진학률 순위는 `area` 가 시·도(`"서울"`)까지만 와서 범위가 전국·시·도면 같은 이름의 동(신사동)을 구별하지 못한다 (`[참고]` 로 알린다). 범위 찾기에 요청 1~2회가 더 든다. 구가 있는 시(`성남시`)는 구 이름을 붙이라고 `REGION_NOT_SUPPORTED`, 여러 시·도에 있는 시·군·구 이름(`중구`·`고성군`)은 시·도를 붙이라고(`'서울 중구'`) `REGION_AMBIGUOUS` 로 알린다. `광주시` 는 경기도 광주시이고 전남광주통합특별시는 `광주`·`전남광주` 로 준다.
 
@@ -464,6 +493,7 @@ jibsa dabang region-ranking 서울 --by 학원수 --kind 입시 --limit 10
 | `complex_id` | `complex`·`search listings --complex`·`real-price`·`price-trend` |
 | `pyeongs[].space_seq` | 평형 조건 `--pyeong` |
 | `schools[].school_code` · `level` | `school` 의 학교 코드와 `--level` |
+| `sale_id` | `sale`, `nearby --sale` (위치 인자가 아니다) |
 | `scope` · `radius_km` | 찾은 범위 |
 | `notes` | 범위·제외·일부 안내 |
 | `url` | 원 사이트(다방 지도 화면)에서 확인·문의 |

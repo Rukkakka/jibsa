@@ -18,7 +18,7 @@ DabangTradeBaseOn = Literal['CURRENT_WEEK', 'LAST_WEEK', 'CURRENT_MONTH', 'LAST_
 DabangRankingUnit = Literal['region', 'complex']
 DabangRankingMetric = Literal[
     'average-price', 'pyeong-price', 'trade-volume', 'room-count', 'average-price-change', 'max-price-change',
-    'reaction-score', 'household-count', 'age', 'lease-rate', 'gap-price',
+    'trade-volume-change', 'room-count-change', 'reaction-score', 'household-count', 'age', 'lease-rate', 'gap-price',
 ]
 DabangRankingPriceType = Literal['SALE', 'LEASE', 'MONTHLY_RENT']
 # 순위 한 번에 받을 수 있는 수 (웹은 10~20, 50 까지 확인)
@@ -107,16 +107,18 @@ class DabangRegionInfoRealEstateRankingV5RequestParameterModel(RequestModel):
     """`GET /api/v5/region-info/real-estate/ranking/{unit}/{metric}` 쿼리 (범위 안 동·단지 순위).
 
     항목마다 받는 값이 다르다 (real-estate 청크, 2026-10-25): 평균가·평당가·시세증감·최고가증감은 `priceType` 하나,
-    거래량·매물수·선호도는 `priceTypeList`, 전세가율·갭가격(단지만)은 유형만, 세대수·연식은 유형도 받지 않는다.
+    거래량·매물수·거래증감·매물증감·선호도는 `priceTypeList`, 전세가율·갭가격(단지만)은 유형만, 세대수·연식은 유형도 받지 않는다.
 
     Args:
         unit: 'region' 동, 'complex' 단지 (경로).
         metric: 항목 (경로).
-        scope_region_gid: 범위 (시·도 또는 시·군·구의 다방 번호). 없으면 전국.
-        complex_type: 아파트·오피스텔. 거래량·매물수·선호도·전세가율·갭가격은 빼면 아파트·오피스텔 합산 순위다 (웹은 두 유형을
-            모두 고르면 빼고 보낸다, 2026-11-13 real-estate 청크·캡처).
+        scope_region_gid: 범위 (시·도 또는 시·군·구의 다방 번호, 단지 순위는 동 번호도). 없으면 전국. 웹 단지 순위는 고른 동이
+            있으면 동 번호를 보낸다 (real-estate 청크 `dong.gid → city.gid → state.gid`, 2026-11-13. 역삼동 10063 → 개나리푸르지오
+            1위). 동 순위는 시·군·구·시·도만 보낸다.
+        complex_type: 아파트·오피스텔. 거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 빼면 아파트·오피스텔 합산
+            순위다 (웹은 두 유형을 모두 고르면 빼고 보낸다, 2026-11-13 real-estate 청크·캡처).
         price_type: 거래 유형 하나 (평균가·평당가·시세증감·최고가증감).
-        price_type_list: 거래 유형 여럿 (거래량·매물수·선호도).
+        price_type_list: 거래 유형 여럿 (거래량·매물수·거래증감·매물증감·선호도).
         sort: 'DESC' 높은 순, 'ASC' 낮은 순.
         page: 쪽 번호.
         limit: 한 쪽 수 (최대 50).

@@ -32,6 +32,10 @@ ALL_SELLING_TYPES: tuple[DabangSellingType, ...] = ('MONTHLY_RENT', 'LEASE', 'SE
 ALL_ROOM_FLOORS: tuple[DabangRoomFloor, ...] = ('GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP')
 ALL_ROOM_TYPES: tuple[DabangRoomType, ...] = ('ONE_ROOM', 'TWO_ROOM')
 ALL_ROOM_COUNTS: tuple[DabangRoomCount, ...] = ('ONE_ROOM', 'TWO_ROOM', 'THREE_ROOM', 'FOUR_ROOM')
+# 오피스텔·아파트 필터의 `parkingNumRange`. 웹 주차 필터의 '세대당 1대 이상'·'2대 이상'(`{min: 1|2, max: 999999}`, parking 청크
+# 2026-11-13)이라 세대당 주차 대수다 (같은 날 실측: 아파트 강남역 113 → 1대 이상 79 → 2대 이상 19건, 오피스텔 126 → 6 → 0건).
+# 원룸·빌라·오피스텔의 `canParking`(주차 가능 여부)과 다른 조건이다
+PARKING_NUM_RANGE_DESCRIPTION: str = '세대당 주차 대수 (대)'
 
 
 class DabangRangeModel(RequestModel):
@@ -182,7 +186,7 @@ class DabangOfficetelFiltersModel(DabangSaleFiltersModel):
 
     parking_num_range: Annotated[
         DabangRangeModel,
-        Field(description='주차 대수 (뜻을 확인하지 않아 jibsa 는 늘 전체)', alias='parkingNumRange')
+        Field(description=PARKING_NUM_RANGE_DESCRIPTION, alias='parkingNumRange')
     ] = Field(default_factory=DabangRangeModel)
     can_parking: Annotated[
         bool,
@@ -207,11 +211,17 @@ class DabangAptFiltersModel(DabangSaleFiltersModel):
     ] = Field(default_factory=DabangRangeModel)
     parking_num_range: Annotated[
         DabangRangeModel,
-        Field(description='주차 대수 (뜻을 확인하지 않아 jibsa 는 늘 전체)', alias='parkingNumRange')
+        Field(description=PARKING_NUM_RANGE_DESCRIPTION, alias='parkingNumRange')
     ] = Field(default_factory=DabangRangeModel)
     has_take_tenant: Annotated[
         bool,
-        Field(description='세입자가 있는 채로 파는 매물만으로 보인다 (뜻을 확인하지 않아 jibsa 는 늘 False)', alias='hasTakeTenant')
+        Field(
+            description=(
+                "세입자가 있는 채로 파는 매매 매물만 (웹 아파트 '추가필터' 의 '세안고'. 웹은 거래 유형에 매매가 있을 때만 보여 주고 "
+                '매매를 빼면 끈다, filter 청크 2026-11-13. 아파트 강남역 113건 → 7건, 같은 날 실측)'
+            ),
+            alias='hasTakeTenant',
+        )
     ] = False
 
 

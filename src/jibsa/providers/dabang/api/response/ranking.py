@@ -127,6 +127,10 @@ class DabangRegionRankingItemModel(ResponseModel):
     최고가증감은 `formattedPrice` 가 오른 금액이고 `formattedMaxPrice` 가 앞 최고가다 (2026-10-25 강남구 단지 1위
     아이파크삼성: 15.2억 = 62.8억 × 24.2%). 인구 증감은 `formattedYearOfYearChangeCount` 가 부호 없이('327명') 오고
     줄었는지는 `changeStatus`(INCREASE·DECREASE)와 `formattedYearOfYearChangePercentage`('-0.6%')로 안다.
+    거래증감·매물증감은 `formattedCount` 가 변화 수, `formattedPrevCount`·`formattedCurrCount` 가 앞·지금 수,
+    `formattedChangeRate` 가 변화율이다 (2026-11-13 강남구 동 거래증감 1위 논현동: '73개' = 72개 → 145개, '+101.4%'). 단지 순위
+    (`--unit 단지`)도 같은 키로 온다 (2026-11-14 강남구 단지 거래증감 '43개 (+477.8%)' = 9 → 52, 매물증감 '2개 (+28.6%)' = 7 → 9).
+    거래·매물이 없는 줄은 '-' 가 아니라 '0개'·'0%' 로 온다 (2026-11-14 세종 동 33곳·단지 하위 100곳).
     """
 
     rank: Annotated[
@@ -155,7 +159,7 @@ class DabangRegionRankingItemModel(ResponseModel):
     ] = None
     formatted_count: Annotated[
         str | None,
-        Field(description="수 글자 ('27개', '6,702세대')", alias='formattedCount')
+        Field(description="수 글자 ('27개', '6,702세대', 거래증감·매물증감은 변화 수 '73개')", alias='formattedCount')
     ] = None
     formatted_percentage: Annotated[
         str | None,
@@ -167,7 +171,7 @@ class DabangRegionRankingItemModel(ResponseModel):
     ] = None
     formatted_change_rate: Annotated[
         str | None,
-        Field(description="변화율 ('+0.8%')", alias='formattedChangeRate')
+        Field(description="변화율 ('+0.8%', 거래증감 '+101.4%')", alias='formattedChangeRate')
     ] = None
     formatted_prev_price: Annotated[
         str | None,
@@ -199,11 +203,11 @@ class DabangRegionRankingItemModel(ResponseModel):
     ] = None
     formatted_curr_count: Annotated[
         str | None,
-        Field(description="올해 인구 (인구 증감, '68,936명')", alias='formattedCurrCount')
+        Field(description="지금 수 (인구 증감은 올해 인구 '68,936명', 거래증감·매물증감은 '145개')", alias='formattedCurrCount')
     ] = None
     formatted_prev_count: Annotated[
         str | None,
-        Field(description='한 해 전 인구 (인구 증감)', alias='formattedPrevCount')
+        Field(description="앞 수 (인구 증감은 한 해 전 인구, 거래증감·매물증감은 '72개')", alias='formattedPrevCount')
     ] = None
     formatted_year_of_year_change_count: Annotated[
         str | None,

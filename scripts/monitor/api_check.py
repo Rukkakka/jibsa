@@ -358,6 +358,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('sale', 'sales', 'sale_id'),),
         ),
         Step('분양 상세', ('dabang', 'sale'), ('{sale}',), 'schedules'),
+        # 분양 주변은 매물·단지 주변과 같은 두 주소에 대상만 sale 이다 (sale/{id}/near, transit/near/sale?saleId=). 역은 1km 안에
+        # 없을 수 있어 버스·마트·편의점 같은 가까운 시설로 본다
+        Step('분양 주변', ('dabang', 'nearby'), ('--sale', '{sale}'), 'nearest'),
         Step('청약 일정', ('dabang', 'sale-schedule'), ('--limit', '3'), 'schedules', may_be_empty=True),
         Step('조회 순위 단지', ('dabang', 'trending-complexes'), ('--limit', '3'), 'rankings'),
         Step('조회 순위 동', ('dabang', 'trending-complexes'), ('--unit', '동', '--limit', '3'), 'rankings'),
@@ -366,6 +369,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('거래 순위', ('dabang', 'trade-rankings'), ('--period', '지난주', '--limit', '3'), 'rankings'),
         # 동 순위와 단지 순위는 다른 주소다
         Step('구 안 동 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '평균가', '--limit', '3'), 'rankings'),
+        # 증감 순위(거래증감·매물증감)는 다른 항목 주소(…/trade-volume-change)이고 값 칸(앞·지금 수)도 다르다
+        Step('구 안 동 거래증감 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '거래증감', '--limit', '3'), 'rankings'),
         Step(
             '구 안 단지 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '전세가율', '--unit', '단지', '--limit', '3'),
             'rankings',

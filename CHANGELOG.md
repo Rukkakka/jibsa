@@ -81,6 +81,12 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 `price-trend` 의 `months[]` 에 그 달 전세가율 `lease_rate_percent` 와 매매·전세 평균 차이 `gap_manwon` (#235)
 - 다방 `sale` 에 가격 종류 `price_kind`(`분양가`, 공공임대·민간임대는 `임대가`), 최근 6개월 지역 평균 평당가 `region_average_price_per_pyeong_manwon`, 청약 결과 `subscription_result`(최저 당첨가점·최고 경쟁률·평형별 경쟁률과 당첨가점, 청약 전이면 `null`) (#235)
 - 다방 `search locations` 가 종류마다 `--limit` 보다 많은 후보를 잘랐으면 `[일부]` 로 몇 곳 중 몇 곳인지 알림 (다방은 종류마다 50곳까지 준다) (#235)
+- 다방 `search listings --complex <단지 ID> --sort`: 다방 웹 단지 매물 정렬 메뉴 그대로 `랭킹순`(기본)·`최신순`·`높은가격순`·`낮은가격순`·`면적넓은순`·`면적좁은순` 중 하나. 결과에 고른 정렬 `sort` 가 붙고, `[일부]` 안내도 `다방 목록 순` 대신 `다방 랭킹 순`·`다방 낮은 가격 순` 처럼 고른 정렬을 쓴다. 동·역·대학 매물 목록(`room`·`villa`·`officetel`·`apt`)에는 다방 웹처럼 정렬이 없다 (#240)
+- 다방 `search listings apt --condition 세안고`: 세입자가 있는 채로 파는 매매 매물만 (다방 웹 아파트 '추가필터'). 검색할 거래 유형에 매매가 없으면 `INVALID_ARGUMENT` (#240)
+- 다방 `search listings officetel`·`apt --parking-min <대>`: 단지 세대당 주차 대수 하한 (다방 웹 주차 필터 '세대당 1대 이상'·'2대 이상'). `--condition 주차`(주차 가능 여부)와 다른 조건이다 (#240)
+- 다방 `region-ranking <동> --unit 단지`: 그 동 안 단지 순위 (다방 웹 단지 순위의 동 범위). 결과 `scope.kind` 가 `dong` 이다. 동 순위·동네정보 항목에 동 이름을 주면 `INVALID_ARGUMENT` (#240)
+- 다방 `region-ranking --by 거래증감`·`매물증감` (동·단지): 줄마다 `count`(지금 수)·`prev_count`(앞 수)·`change_count`(줄면 음수)·`change_percent`, 결과에 견준 기준 `comparison`(`전월대비`·`최근 30일 전 대비`). 기본은 거래량처럼 아파트·오피스텔 합산·모든 거래 유형 (#240)
+- 다방 `nearby --sale <분양 ID>`: 분양 단지 둘레의 지하철역·버스 노선·가까운 시설·학교 (`target` `분양`). 분양 ID 는 단지 ID 와 길이가 같아 옵션으로 받고, 이때는 위치 인자를 주지 않는다 (둘 다 주면 `INVALID_ARGUMENT`) (#240)
 
 ### 변경
 

@@ -1,4 +1,4 @@
-"""주변 (nearby) 과 역 둘레 평균 매물가 (station-prices)."""
+"""주변 (nearby: 매물·단지·분양) 과 역 둘레 평균 매물가 (station-prices)."""
 from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
@@ -26,13 +26,15 @@ from jibsa.providers.dabang.service.common import (
     listing_url,
     manwon_from_text,
 )
+from jibsa.providers.dabang.service.sale import sale_url
 
 from typing import Annotated
 
 
 # 가까운 시설 종류 코드 → 이름. 웹 주변 지도의 이름표 그대로다 (distance-km-m 청크, 2026-11-13: BS 버스, PO3 관공서,
 # POLICE 치안 …). 지하철역(SW8)은 transit/near 의 역 목록으로, CCTV 는 이름이 없어 쓰지 않는다. 다방은 대상마다 다른 종류를
-# 준다 (2026-10-26 실측: 매물은 BS·SW8·CS2·CE7·BK9·PO3, 단지는 BS·SW8·MT1·CS2·BK9·PM9, 둘 다 POLICE)
+# 준다 (2026-10-26 실측: 매물은 BS·SW8·CS2·CE7·BK9·PO3, 단지는 BS·SW8·MT1·CS2·BK9·PM9, 둘 다 POLICE). 분양은 단지와 같은
+# 종류를 준다 (2026-11-13 실측: 호반써밋 풍무Ⅱ BS·SW8·MT1·CS2·BK9·PM9·POLICE·CCTV)
 NEAR_LABELS: dict[str, str] = {
     'BS': '버스',
     'MT1': '마트',
@@ -44,6 +46,8 @@ NEAR_LABELS: dict[str, str] = {
     'POLICE': '치안',
 }
 SCHOOL_LABELS: dict[str, str] = {'NS': '어린이집', 'KS': '유치원', 'ES': '초등학교', 'MS': '중학교', 'HS': '고등학교'}
+# 대상 → 결과의 target 이름과 없는 ID 안내에 쓰는 이름
+TARGET_LABELS: dict[DabangNearTarget, str] = {'room': '매물', 'complex': '단지', 'sale': '분양'}
 # 종류마다 내는 가까운 시설 수. 웹은 받은 시설 전부(편의 종류는 15곳)를 지도에 찍는다
 NEAR_PLACES_PER_TYPE: int = 3
 BUILDING_LABELS: dict[str, str] = {'HOUSE_VILLA': '빌라', 'OFFICETEL': '오피스텔', 'APT': '아파트'}
@@ -108,7 +112,7 @@ class DabangNearPlaces(BaseModel):
 
 
 class DabangNearby(BaseModel):
-    """매물·단지 둘레 교통과 가까운 시설."""
+    """매물·단지·분양 둘레 교통과 가까운 시설."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -116,11 +120,11 @@ class DabangNearby(BaseModel):
 
     target: Annotated[
         str,
-        Field(description="'매물' 또는 '단지'")
+        Field(description="'매물', '단지' 또는 '분양'")
     ]
     id: Annotated[
         str,
-        Field(description='매물 ID 또는 단지 ID')
+        Field(description='매물 ID, 단지 ID 또는 분양 ID')
     ]
     stations: Annotated[
         list[DabangNearbyStation],
@@ -142,7 +146,7 @@ class DabangNearby(BaseModel):
         list[DabangNearPlaces],
         Field(description=(
             f'종류마다 가까운 순 시설 {NEAR_PLACES_PER_TYPE}곳까지 (매물: 버스·편의점·카페·은행·관공서·치안, '
-            '단지: 버스·마트·편의점·은행·약국·치안). 다방이 찾지 못한 종류는 없다'
+            '단지·분양: 버스·마트·편의점·은행·약국·치안). 다방이 찾지 못한 종류는 없다'
         ))
     ]
     schools: Annotated[
@@ -154,7 +158,7 @@ class DabangNearby(BaseModel):
     ]
     url: Annotated[
         str,
-        Field(description='매물·단지 페이지 URL')
+        Field(description='매물·단지·분양 페이지 URL')
     ]
 
 
@@ -174,14 +178,17 @@ def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list
     return result
 
 
-def get_nearby(client: DabangClient, target_id: str) -> DabangNearby:
-    """매물(24자리 ID)·단지(28자리 ID) 둘레의 지하철역·버스 노선과 종류마다 가까운 시설 3곳 (요청 2회). 시설 좌표·전화는
-    내보내지 않는다.
+def get_nearby(client: DabangClient, target_id: str, *, sale: bool = False) -> DabangNearby:
+    """매물(24자리 ID)·단지(28자리 ID)·분양(`sale`, 28자리 ID) 둘레의 지하철역·버스 노선과 종류마다 가까운 시설 3곳
+    (요청 2회). 시설 좌표·전화는 내보내지 않는다.
+
+    Args:
+        sale: `target_id` 가 분양 ID 인지. 분양 ID 와 단지 ID 는 둘 다 28자리라 길이로 가르지 못해 부르는 쪽이 알린다.
 
     Raises:
         JibsaError: 없는 ID 일 때 (NOT_FOUND).
     """
-    target: DabangNearTarget = 'complex' if COMPLEX_ID_PATTERN.fullmatch(target_id) else 'room'
+    target: DabangNearTarget = 'sale' if sale else 'complex' if COMPLEX_ID_PATTERN.fullmatch(target_id) else 'room'
     # 없는 ID 는 ID 가 경로에 들어가는 시설 요청으로 가린다 (400). 교통 요청은 ID 가 쿼리로 가서 없는 ID 에도 빈 결과를 주므로
     # (2026-10-27 실측) 그 에러는 다방 주소가 바뀐 것이다 (`is_missing_id`)
     try:
@@ -190,15 +197,19 @@ def get_nearby(client: DabangClient, target_id: str) -> DabangNearby:
         if is_missing_id(exc):
             raise JibsaError(
                 code='NOT_FOUND',
-                message=f'다방에서 찾지 못한 {"단지" if target == "complex" else "매물"}입니다: {target_id}',
-                hint='ID 를 같은 소스(dabang) 결과에서 그대로 옮겼는지 확인하세요',
+                message=f'다방에서 찾지 못한 {TARGET_LABELS[target]}입니다: {target_id}',
+                hint=(
+                    '분양 ID 는 jibsa dabang search sales 결과의 sale_id 를 그대로 주세요 (단지 ID 는 --sale 없이 줍니다)'
+                    if sale else 'ID 를 같은 소스(dabang) 결과에서 그대로 옮겼는지 확인하세요'
+                    + (' (분양 ID 는 단지 ID 와 자릿수가 같습니다. search sales 의 sale_id 면 --sale <ID> 로 주세요)' if target == 'complex' else '')
+                ),
             ) from None
         raise
     transit = client.run_request_transit_near_v5(DabangTransitNearV5RequestParameterModel(target=target, target_id=target_id)).result
     subway = transit.subway if transit else None
     route = transit.route if transit else None
     return DabangNearby(
-        target='단지' if target == 'complex' else '매물',
+        target=TARGET_LABELS[target],
         id=target_id,
         stations=[
             DabangNearbyStation(
@@ -213,7 +224,7 @@ def get_nearby(client: DabangClient, target_id: str) -> DabangNearby:
         bus_radius_m=route.radius if route else None,
         nearest=_nearest((near.convenience + near.safety) if near else [], NEAR_LABELS),
         schools=_nearest(near.education if near else [], SCHOOL_LABELS),
-        url=complex_url(target_id) if target == 'complex' else listing_url(target_id),
+        url=sale_url(target_id) if target == 'sale' else complex_url(target_id) if target == 'complex' else listing_url(target_id),
     )
 
 
