@@ -135,6 +135,7 @@ from typing import (
 
 
 SOURCE: str = 'dabang'
+MIN_RADIUS_KM: float = 0.1
 MAX_RADIUS_KM: float = 5.0
 # search locations 의 --limit 최대값. 다방 장소 검색이 종류마다 50곳까지 준다
 LOCATIONS_MAX_LIMIT: int = 50
@@ -222,28 +223,26 @@ QueryArgument = Annotated[
 ]
 LatOption = Annotated[float | None, typer.Option(help='중심 위도 (이름 대신)')]
 LngOption = Annotated[float | None, typer.Option(help='중심 경도 (이름 대신)')]
+
+
+def _radius_option(help: str) -> object:
+    """반경 옵션 (km). 범위는 명령마다 같고 도움말만 다르다 (매물·단지·분양 검색)."""
+    return typer.Option('--radius', min=MIN_RADIUS_KM, max=MAX_RADIUS_KM, help=help)
+
+
 RadiusOption = Annotated[
     float | None,
-    typer.Option(
-        min=0.1,
-        max=MAX_RADIUS_KM,
-        help=(
-            f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받고 반경 밖은 뺀다. 없으면 동은 그 동 안, 역은 다방이 정한 '
-            f'역 반경, 대학은 대학 둘레, 좌표는 {DEFAULT_RADIUS_KM:g}km'
-        ),
+    _radius_option(
+        f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받고 반경 밖은 뺀다. 없으면 동은 그 동 안, 역은 다방이 정한 '
+        f'역 반경, 대학은 대학 둘레, 좌표는 {DEFAULT_RADIUS_KM:g}km'
     ),
 ]
 ComplexRadiusOption = Annotated[
     float | None,
-    typer.Option(
-        '--radius',
-        min=0.1,
-        max=MAX_RADIUS_KM,
-        help=(
-            f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받는다 (단지 목록은 사각형 모서리의 반경 밖 단지도 빼지 않는다). '
-            f'없으면 동은 그 동 안, 역은 다방이 정한 역 반경, 대학은 대학 둘레(아파트는 {DEFAULT_RADIUS_KM:g}km 사각형), '
-            f'좌표는 {DEFAULT_RADIUS_KM:g}km 사각형'
-        ),
+    _radius_option(
+        f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받는다 (단지 목록은 사각형 모서리의 반경 밖 단지도 빼지 않는다). '
+        f'없으면 동은 그 동 안, 역은 다방이 정한 역 반경, 대학은 대학 둘레(아파트는 {DEFAULT_RADIUS_KM:g}km 사각형), '
+        f'좌표는 {DEFAULT_RADIUS_KM:g}km 사각형'
     ),
 ]
 LimitOption = Annotated[
@@ -1047,7 +1046,7 @@ def sales_command(
     lng: LngOption = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=MAX_RADIUS_KM, help=f'역·대학·좌표 둘레 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경을 덮는 사각형으로 찾는다'),
+        _radius_option(f'역·대학·좌표 둘레 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경을 덮는 사각형으로 찾는다'),
     ] = None,
     building_type: Annotated[
         list[str] | None,

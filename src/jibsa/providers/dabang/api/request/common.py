@@ -17,6 +17,8 @@ from typing import (
 UNBOUNDED_MAX: int = 999999
 # 다방 단지 ID (28자리 16진수, 예: 58291f830ff9bd73a07ca123c632)
 COMPLEX_ID_PATTERN_TEXT: str = r'^[0-9a-f]{28}$'
+# 다방 매물 ID (24자리 16진수, 예: 69aa437a89300d7e5b7251a9)
+LISTING_ID_PATTERN_TEXT: str = r'^[0-9a-f]{24}$'
 
 DabangCategory = Literal['one-two', 'house-villa', 'officetel', 'apt']
 DabangComplexCategory = Literal['officetel', 'apt']

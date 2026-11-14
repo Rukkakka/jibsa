@@ -35,6 +35,8 @@ from jibsa.providers.dabang.api.response.real_price import (
     DabangChartSeriesModel,
     DabangHighLowModel,
     DabangRealPriceHistoryModel,
+    DabangRealPriceHouseHistoryResultModel,
+    DabangRealPriceHouseInitResultModel,
     DabangRealPriceHouseScopeModel,
 )
 from jibsa.providers.dabang.service.common import (
@@ -55,7 +57,7 @@ from typing import (
 
 RealPriceTrade = Literal['매매', '전월세']
 SEARCH_TYPE_BY_TRADE: dict[RealPriceTrade, DabangRealPriceSearchType] = {'매매': 'SALE', '전월세': 'LEASE'}
-TRADE_BY_SEARCH_TYPE: dict[str, RealPriceTrade] = {'SALE': '매매', 'LEASE': '전월세'}
+TRADE_BY_SEARCH_TYPE: dict[str, RealPriceTrade] = {search_type: trade for trade, search_type in SEARCH_TYPE_BY_TRADE.items()}
 # 매물 실거래 줄의 면적 칸. 단지 실거래는 평형으로 고르므로 면적이 없다(none). 매물 실거래는 웹처럼 다세대·연립(MULTIPLEX)이면
 # 전용면적·층, 그 밖(DETACHED 단독·다가구)이면 연면적·주택유형(매매만)이다 (room 청크 `ii` 가 MULTIPLEX 만 `Kr`, 나머지는 `ei`)
 AreaKind = Literal['none', 'exclusive', 'total_floor']
@@ -324,6 +326,11 @@ class _Collected(NamedTuple):
     unknown: int
 
 
+def _page_size(limit: int) -> int:
+    """실거래 한 쪽 크기. 모든 쪽을 같은 크기로 묻는다 (`_collect`)."""
+    return min(REAL_PRICE_PAGE_LIMIT, limit)
+
+
 def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, area_kind: AreaKind = 'none') -> _Collected:
     """실거래를 `limit` 줄까지 쪽마다 받는다. `fetch(page, page_size)` 는 한 쪽을 주고, 결과가 없으면 None.
 
@@ -335,7 +342,7 @@ def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, area_kind
     total: int | None = None
     has_more = False
     received = unknown = 0
-    page_size = min(REAL_PRICE_PAGE_LIMIT, limit)
+    page_size = _page_size(limit)
     for page in range(1, REAL_PRICE_MAX_PAGES + 1):
         fetched = fetch(page, page_size)
         if fetched is None:
@@ -441,54 +448,77 @@ def get_listing_real_prices(
 ) -> DabangRealPriceResult:
     """단지 없는 매물(빌라·주택·원룸)의 실거래. 다방 매물 화면처럼 이 집(같은 지번) 또는 같은 동의 같은 건물 유형 거래다.
 
-    웹처럼 실거래 첫 화면(`house/init`)을 먼저 받아 건물 유형과 매물의 거래 유형을 안다 (요청 +1). `trade` 를 주지
-    않으면 웹처럼 매물의 거래 유형을 따른다 (매매 매물은 매매, 월세·전세 매물은 전월세). 범위(이 집 / 같은 동)는 거래
-    유형마다 달라 받은 거래 목록이 알려 주는 값을 쓴다.
+    `trade` 를 주지 않으면 웹처럼 실거래 첫 화면(`house/init`)을 먼저 받아 매물의 거래 유형을 따른다 (매매 매물은 매매, 월세·
+    전세 매물은 전월세, 요청 +1). `trade` 를 주면 첫 화면을 받지 않는다. 범위(이 집 / 같은 동)·동·건물 유형은 받은 거래 목록
+    (`house/history`)의 첫 쪽이 알려 주고, 범위는 거래 유형마다 달라 그 값을 쓴다. 목록이 범위를 주지 않을 때만 첫 화면으로
+    매물을 확인한다 (없는 매물·단지 매물은 둘 다 빈 결과).
 
     Raises:
         JibsaError: 매물이 없거나 단지 매물일 때 (NOT_FOUND), `trade` 없이 부르는데 다방이 매물의 거래 유형(searchType)을
             알려 주지 않을 때 (UPSTREAM_ERROR).
     """
     from_month, to_month = period_months(years)
-    init = client.run_request_real_price_house_init_v5(DabangRealPriceHouseInitV5RequestParameterModel(
-        room_id=listing_id, from_date=from_month, to_date=to_month,
-    )).result
+
+    def house_init() -> DabangRealPriceHouseInitResultModel | None:
+        return client.run_request_real_price_house_init_v5(DabangRealPriceHouseInitV5RequestParameterModel(
+            room_id=listing_id, from_date=from_month, to_date=to_month,
+        )).result
+
     # 없는 매물·단지 매물(오피스텔·아파트)에는 에러 대신 거래 유형·동·범위가 빈 결과를 준다. 거래가 0건인 매물도 동·범위는 온다
     # (2026-10-25 실측: 없는 ID·강남역 오피스텔 매물은 dongName·historyBaseType null, 도곡동 단독 1년 매매 0건은 '도곡동'·'DONG'.
-    # 2026-11-13 실측: 없는 ID 의 house/init 도 searchType·dongName·historyBaseType 이 모두 null)
-    if init is None or (init.dong_name is None and init.history_base_type is None):
-        raise _listing_not_found(listing_id)
+    # 2026-11-13 실측: 없는 ID 의 house/init 도 searchType·dongName·historyBaseType 이 모두 null. 2026-11-14 실측: 매물 7곳 ×
+    # 매매·전월세의 house/history 는 0건인 기간에도 dongName·historyBaseType·buildingViewType 을 줬고 init 과 같았다)
     notes: list[str] = []
+    init: DabangRealPriceHouseInitResultModel | None = None
+    init_trade: RealPriceTrade | None = None
     if trade is None:
-        chosen = TRADE_BY_SEARCH_TYPE.get(init.search_type or '')
-        if chosen is None:
+        init = house_init()
+        if init is None or not init.is_known_listing:
+            raise _listing_not_found(listing_id)
+        init_trade = TRADE_BY_SEARCH_TYPE.get(init.search_type or '')
+        if init_trade is None:
             raise JibsaError(
                 code='UPSTREAM_ERROR',
                 message=f'다방이 이 매물의 실거래 거래 유형을 알려 주지 않았습니다 (searchType: {init.search_type})',
                 hint=f'--trade 매매 또는 --trade 전월세 를 주세요. {UPDATE_MAYBE_NEEDED}',
             )
-        trade = chosen
+        trade = init_trade
         notes.append(note('거래', f'--trade 를 주지 않아 다방 매물 화면처럼 매물의 거래 유형대로 {trade} 실거래를 찾았습니다'))
     search_type = SEARCH_TYPE_BY_TRADE[trade]
-    area_kind: AreaKind = 'exclusive' if init.building_view_type == 'MULTIPLEX' else 'total_floor'
-    # 범위는 거래 유형마다 다르다. `init` 의 범위는 매물의 거래 유형 것이라, `--trade` 로 다른 유형을 받으면 받은 목록
-    # (`history`)이 알려 주는 범위를 쓴다 (2026-11-13 리뷰·실측: 역삼동 월세 다세대 6ac9b09a…는 전월세 JIBUN 2건, 매매 DONG 585건)
-    scopes: list[DabangRealPriceHouseScopeModel] = []
 
-    def fetch(page: int, page_size: int) -> _Page | None:
+    def history(page: int, page_size: int) -> DabangRealPriceHouseHistoryResultModel | None:
         # 매물 ID 가 쿼리로 가서 없는 매물에도 에러가 아니라 빈 결과가 온다. 그래서 4xx·403 은 다방 주소가 바뀐 것으로 둔다
-        result = client.run_request_real_price_house_history_v5(DabangRealPriceHouseHistoryV5RequestParameterModel(
+        return client.run_request_real_price_house_history_v5(DabangRealPriceHouseHistoryV5RequestParameterModel(
             room_id=listing_id, from_date=from_month, to_date=to_month,
             search_type=search_type, page=page, limit=page_size,
         )).result
-        if result is None:
-            return None
-        if not scopes and result.history_base_type is not None:
-            scopes.append(result)
-        return _Page(result.histories, result.total, bool(result.has_more))
+
+    first = history(1, _page_size(limit))
+    if init is None and (first is None or first.history_base_type is None):
+        init = house_init()
+        init_trade = TRADE_BY_SEARCH_TYPE.get(init.search_type or '') if init is not None else None
+    known = [model for model in (first, init) if model is not None and model.is_known_listing]
+    if not known:
+        raise _listing_not_found(listing_id)
+    # 범위는 거래 유형마다 다르다 (2026-11-13 리뷰·실측: 역삼동 월세 다세대 6ac9b09a…는 전월세 JIBUN 2건, 매매 DONG 585건).
+    # 받은 목록(`history`)이 알려 주는 범위를 쓰고, `init` 의 범위는 매물의 거래 유형 것이라 그 유형을 찾을 때만 쓴다. 둘 다
+    # 아니면 범위를 모른다고 알린다 (`_listing_scope`)
+    scope: DabangRealPriceHouseScopeModel
+    if first is not None and first.history_base_type is not None:
+        scope = first
+    elif init is not None and init.history_base_type is not None and init_trade == trade:
+        scope = init
+    else:
+        scope = known[0].model_copy(update={'history_base_type': None})
+    building = next((model.building_view_type for model in known if model.building_view_type), None)
+    area_kind: AreaKind = 'exclusive' if building == 'MULTIPLEX' else 'total_floor'
+
+    def fetch(page: int, page_size: int) -> _Page | None:
+        result = first if page == 1 else history(page, page_size)
+        return None if result is None else _Page(result.histories, result.total, bool(result.has_more))
 
     collected = _collect(fetch, limit, area_kind=area_kind)
-    basis, scope_notes = _listing_scope(scopes[0] if scopes else init)
+    basis, scope_notes = _listing_scope(scope)
     notes += scope_notes + _unknown_trade_note(collected.unknown)
     return DabangRealPriceResult(
         listing_id=listing_id,
@@ -662,7 +692,8 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     sale = result.sale or DabangChartSeriesModel()
     lease = result.lease_monthly or DabangChartSeriesModel()
     lease_by_month = {row.date: row for row in lease.statistics}
-    gap_by_month = {row.date: row for row in result.gap.statistics} if result.gap else {}
+    gap_rows = (result.gap.statistics or []) if result.gap else []
+    gap_by_month = {row.date: row for row in gap_rows if row.date is not None}
     # 달 목록은 매매 쪽으로 만든다. 매매·전월세는 늘 같은 36달이고, 매매가 한 건도 없는 평형도 sale 이 null 이 아니라
     # 거래 0건인 36달로 온다 (2026-10-25 실측: 은마·오피스텔 2곳 8개 평형, 매매 0건인 메이플자이 299902)
     months = [

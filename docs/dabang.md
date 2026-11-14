@@ -183,7 +183,7 @@ jibsa dabang complex 58291f830ff9bd73a07ca123c632
 
 `pyeongs[].space_seq` 를 `search listings --complex`·`real-price`·`price-trend` 의 `--pyeong` 에 준다. 평형 이름은 아파트가 공급 평(`"30"`), 오피스텔이 다방 표기(`"13B1"`)다.
 
-`schools[]` 는 `level`(초등학교·중학교·고등학교), `school_code`, `name`, `establishment`(공립·사립), `distance_m`, `district`(초등학교는 배정 통학구역, 중·고등학교는 단지가 든 학교군), `students_per_class`(학급당 학생 수)이고, 중학교는 `special_high_entrants`·`autonomous_high_entrants`(특목고·자율형 진학 인원), 고등학교는 `university_entrants`(대학교 진학 인원)도 있다. 진학률과 시·도 평균 비교는 `school_code`·`level` 을 `school` 에 준다.
+`schools[]` 는 `level`(초등학교·중학교·고등학교), `school_code`, `name`, `establishment`(공립·사립), `distance_m`, `district`(초등학교는 배정 통학구역, 중·고등학교는 단지가 든 학교군), `students_per_class`(학급당 학생 수)이고, 중학교는 `special_high_entrants`·`autonomous_high_entrants`(특목고·자율형 진학 인원), 고등학교는 `university_entrants`(대학교 진학 인원)도 있다. 진학률과 시·도 평균 비교는 `school_code`·`level` 을 `school` 에 준다. 다방이 한 학교급의 목록만 주지 않으면(모름) 그 학교급은 `schools[]` 에 없고 `[참고]` 로 알린다. 그 학교가 없다는 뜻이 아니다.
 
 ## 8. `school` — 학교 하나 상세
 
@@ -352,7 +352,7 @@ jibsa dabang sale 6a7a774cf962bc11cafe5cd6d0f1
 
 `price_kind` 는 가격이 무엇인지다: 보통 `"분양가"` 이고 공공임대·민간임대는 다방 화면처럼 `"임대가"` 다. `price_min_manwon`·`price_max_manwon`·`price_per_pyeong_manwon`·`pyeongs[].price_manwon` 이 이 종류의 값이라 `"임대가"` 면 분양가가 아니다.
 
-`subscription_result` 는 `min_winning_point`(최저 당첨가점, 점), `max_competition_rate`(최고 경쟁률, `5.52` = 5.52:1), `pyeongs[]`(`name` `"59A"`, `household_count` 그 평형의 분양 세대수, `competition_rate`, `winning_point`)다. 다방 표시가 숫자가 아니면 그 값은 `null` 이고, 청약 전이거나 다방에 결과가 없으면 `subscription_result` 가 `null` 이다.
+`subscription_result` 는 `min_winning_point`(최저 당첨가점, 점), `max_competition_rate`(최고 경쟁률, `5.52` = 5.52:1), `pyeongs[]`(`name` `"59A"`, `household_count` 그 평형의 분양 세대수, `competition_rate`, `winning_point`)다. 다방 표시가 숫자가 아니면 그 값은 `null` 이고, 다방이 평형별 결과를 주지 않으면 `pyeongs` 가 `null`(모름)이다. 청약 전이거나 다방에 결과가 없으면 `subscription_result` 가 `null` 이다.
 
 ## 19. `sale-schedule` — 날짜별 청약 일정
 
@@ -451,7 +451,7 @@ jibsa dabang region-ranking 서울 --by 학원수 --kind 입시 --limit 10
 
 ## 조회 한도
 
-매물 검색(`room`·`villa`·`officetel`·`apt`·`--complex`)의 `--limit` 은 기본 24·최대 120이다. 다방은 한 쪽에 24건씩(가끔 23건) 주므로 요청은 쪽마다 1회다. 받은 원본 수로 조회 예산을 세고, 받은 뒤 뺀 매물(반경 밖·다른 동·광고)만큼 다시 채우지 않는다. `total`·`has_more` 는 다방이 센 값이라 `next` 로 끝까지 이어 받을 수 있다. `search complexes` 는 기본 24·최대 120이고 매물 검색처럼 받은 단지 수로 센다 (아파트 동 검색에서 뺀 다른 동 단지만큼 다시 채우지 않는다). `real-price` 는 기본 30·최대 200(50건마다 1회)이다.
+매물 검색(`room`·`villa`·`officetel`·`apt`·`--complex`)의 `--limit` 은 기본 24·최대 120이다. 다방은 한 쪽에 24건씩(가끔 더 적게) 주고 요청은 쪽마다 1회다. 쪽이 짧으면 `--limit` 이 찰 때까지 쪽을 더 받고, 10쪽까지 받고도 못 채웠는데 더 있으면 `[일부]` 로 알린다 (매물 검색은 `next` 로 이어 받는다). 받은 원본 수로 조회 예산을 세고, 받은 뒤 뺀 매물(반경 밖·다른 동·광고)만큼 다시 채우지 않는다. `total`·`has_more` 는 다방이 센 값이라 `next` 로 끝까지 이어 받을 수 있다. `search complexes` 는 기본 24·최대 120이고 매물 검색처럼 받은 단지 수로 센다 (아파트 동 검색에서 뺀 다른 동 단지만큼 다시 채우지 않는다). `search complexes`·`search sales` 도 10쪽까지 받고 못 채웠는데 더 있으면 `[일부]` 로 알린다. 둘은 `next` 가 없어 안내대로 지역·반경·조건을 좁혀 다시 찾는다. `real-price` 는 기본 30·최대 200(50건마다 1회)이다.
 
 가격 조건만 주고 `--trade` 를 생략하면 그 금액이 있는 거래로 좁히고 `notes` 로 알린다 ([공통 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#출력-규칙)).
 

@@ -1,4 +1,5 @@
 from pydantic import (
+    BeforeValidator,
     Field,
     field_validator,
 )
@@ -14,6 +15,15 @@ from typing import (
 
 
 T = TypeVar('T')
+
+
+def _round_meters(value: Any) -> Any:
+    """거리는 정수(m)로 온다 (2026-11-14 단지 38곳 학교, 어린이집 329곳·유치원 89곳 모두). 소수로 와도 단지 정보 전체가 파싱
+    에러로 끝나지 않게 반올림해 받는다."""
+    return round(value) if isinstance(value, float) else value
+
+
+Meters = Annotated[int | None, BeforeValidator(_round_meters)]
 
 
 class DabangV5ResponseModel(ResponseModel, Generic[T]):
@@ -274,9 +284,16 @@ class DabangComplexInfoModel(ResponseModel):
 
     @field_validator('recent_deal_count', mode='before')
     @classmethod
-    def empty_count_is_unknown(cls, value: Any) -> Any:
-        """웹은 빈 글자('')면 '-' 로 쓴다 (complex 청크). 숫자로 읽지 못하니 모름(None)으로 받는다."""
-        return None if value == '' else value
+    def unreadable_count_is_unknown(cls, value: Any) -> Any:
+        """웹은 빈 글자('')면 '-' 로 쓴다 (complex 청크). 숫자로 읽지 못하는 글자('', '-' 등)는 모름(None)으로 받는다.
+        정수로 온다 (2026-11-14 단지 38곳 모두).
+        """
+        # 리뷰 오탐 (2026-11-14): 이 칸은 단위 없는 정수(또는 빈 글자)로 오고 웹이 '건' 을 붙이므로 단위 글자를 읽는 service
+        # count_of 와 읽는 법이 다르다.
+        if isinstance(value, str):
+            digits = value.replace(',', '').strip()
+            return int(digits) if digits.isdigit() else None
+        return value
 
     @field_validator('hash_tags', mode='before')
     @classmethod
@@ -361,9 +378,9 @@ class DabangComplexSchoolModel(ResponseModel):
         Field(description="학교 코드 (학교알리미, 'S010000743'). `/api/3/education/{level}/{code}` 의 값")
     ] = None
     name: Annotated[
-        str,
+        str | None,
         Field(description='학교 이름')
-    ]
+    ] = None
     hakgudo_name: Annotated[
         str | None,
         Field(description='통학구역·학교군 이름', alias='hakgudoName')
@@ -373,9 +390,10 @@ class DabangComplexSchoolModel(ResponseModel):
         Field(description="설립 ('공립', '사립')", alias='establishDivide')
     ] = None
     distance: Annotated[
-        int | None,
+        Meters,
         Field(description='거리 (m)')
     ] = None
+
     avg_students_per_class: Annotated[
         str | None,
         Field(description="학급당 학생 수 ('24명')", alias='avgStudentsPerClass')
@@ -406,9 +424,9 @@ class DabangComplexChildcareModel(ResponseModel):
         Field(description="시설 코드 (어린이집 '11680000021', 유치원 UUID)")
     ] = None
     name: Annotated[
-        str,
+        str | None,
         Field(description='시설 이름')
-    ]
+    ] = None
     type: Annotated[
         str | None,
         Field(description="어린이집 유형 ('국공립', '민간', '직장', '가정', '협동')")
@@ -422,33 +440,37 @@ class DabangComplexChildcareModel(ResponseModel):
         Field(description="교사당 아동 수 ('4.1명')", alias='childPerTeacher')
     ] = None
     distance: Annotated[
-        int | None,
+        Meters,
         Field(description='거리 (m)')
     ] = None
 
 
 class DabangComplexEducationModel(ResponseModel):
-    """단지 근처 보육·교육 시설 (웹 '주변 보육/교육시설' 탭: 어린이집·유치원·초·중·고)."""
+    """단지 근처 보육·교육 시설 (웹 '주변 보육/교육시설' 탭: 어린이집·유치원·초·중·고).
+
+    목록은 늘 오고 시설이 없으면 `[]` 다 (2026-11-14 단지 38곳, 어린이집 없는 6곳·유치원 없는 2곳도 `[]`). `null` 로 오면 그 목록은
+    모름으로 받는다. 단지 상세를 단지 정보·단지 매물·실거래가가 함께 읽어, 한 목록 때문에 세 명령이 파싱 에러로 끝나지 않게 한다.
+    """
 
     nursery_school: Annotated[
-        list[DabangComplexChildcareModel],
+        list[DabangComplexChildcareModel] | None,
         Field(description='어린이집', alias='nurserySchool')
     ] = []
     kinder_school: Annotated[
-        list[DabangComplexChildcareModel],
+        list[DabangComplexChildcareModel] | None,
         Field(description='유치원', alias='kinderSchool')
     ] = []
 
     elementary_school: Annotated[
-        list[DabangComplexSchoolModel],
+        list[DabangComplexSchoolModel] | None,
         Field(description='초등학교 (배정)', alias='elementarySchool')
     ] = []
     middle_school: Annotated[
-        list[DabangComplexSchoolModel],
+        list[DabangComplexSchoolModel] | None,
         Field(description='중학교', alias='middleSchool')
     ] = []
     high_school: Annotated[
-        list[DabangComplexSchoolModel],
+        list[DabangComplexSchoolModel] | None,
         Field(description='고등학교', alias='highSchool')
     ] = []
 

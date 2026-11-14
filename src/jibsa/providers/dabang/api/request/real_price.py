@@ -4,7 +4,10 @@ from pydantic import (
 )
 
 from jibsa.core.schema import RequestModel
-from jibsa.providers.dabang.api.request.common import COMPLEX_ID_PATTERN_TEXT
+from jibsa.providers.dabang.api.request.common import (
+    COMPLEX_ID_PATTERN_TEXT,
+    LISTING_ID_PATTERN_TEXT,
+)
 
 from typing import (
     Annotated,
@@ -104,7 +107,7 @@ class DabangRealPriceHouseHistoryV5RequestParameterModel(DabangRealPricePeriodMo
 
     room_id: Annotated[
         str,
-        Field(pattern=r'^[0-9a-f]{24}$', description='매물 ID', alias='roomId')
+        Field(pattern=LISTING_ID_PATTERN_TEXT, description='매물 ID', alias='roomId')
     ]
 
 
@@ -120,7 +123,7 @@ class DabangRealPriceHouseInitV5RequestParameterModel(DabangRealPriceMonthsModel
 
     room_id: Annotated[
         str,
-        Field(pattern=r'^[0-9a-f]{24}$', description='매물 ID', alias='roomId')
+        Field(pattern=LISTING_ID_PATTERN_TEXT, description='매물 ID', alias='roomId')
     ]
     limit: Annotated[
         int,

@@ -132,6 +132,11 @@ class DabangRealPriceHouseScopeModel(ResponseModel):
         Field(description="건물 유형 ('MULTIPLEX' 다세대·연립, 'DETACHED' 단독·다가구)", alias='buildingViewType')
     ] = None
 
+    @property
+    def is_known_listing(self) -> bool:
+        """다방이 아는 매물인가. 없는 매물·단지 매물은 동 이름·범위가 모두 null 이다."""
+        return self.dong_name is not None or self.history_base_type is not None
+
 
 class DabangRealPriceHouseHistoryResultModel(DabangRealPriceHousePageModel, DabangRealPriceHouseScopeModel):
     """단지 없는 매물 실거래 `result`. 범위는 `DabangRealPriceHouseScopeModel` 을 본다."""
@@ -241,18 +246,18 @@ class DabangChartGapStatisticModel(DabangChartGapRecentModel):
     """달마다 매매·전세 평균과 차이, 전세가율. 아직 거래가 없는 이번 달은 모두 null 로 온다 (2026-11-13 웹 캡처: 은마 202611)."""
 
     date: Annotated[
-        str,
-        Field(description='달 (YYYYMM)')
-    ]
+        str | None,
+        Field(description='달 (YYYYMM). 없으면 그 줄은 어느 달인지 몰라 쓰지 않는다')
+    ] = None
 
 
 class DabangChartGapModel(ResponseModel):
     """매매·전세 차이."""
 
     statistics: Annotated[
-        list[DabangChartGapStatisticModel],
-        Field(description='36달')
-    ] = []
+        list[DabangChartGapStatisticModel] | None,
+        Field(description='36달. null 이면 모름')
+    ] = None
     recent_info: Annotated[
         DabangChartGapRecentModel | None,
         Field(description='최근', alias='recentInfo')

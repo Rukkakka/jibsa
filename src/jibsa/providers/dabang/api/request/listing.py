@@ -1,6 +1,7 @@
 from pydantic import Field
 
 from jibsa.providers.dabang.api.request.common import (
+    LISTING_ID_PATTERN_TEXT,
     DabangCategoryListRequestParameterModel,
     DabangV3RequestParameterModel,
 )
@@ -24,7 +25,7 @@ class DabangNewRoomDetailV3RequestParameterModel(DabangV3RequestParameterModel):
 
     room_id: Annotated[
         str,
-        Field(pattern=r'^[0-9a-f]{24}$', description='매물 ID')
+        Field(pattern=LISTING_ID_PATTERN_TEXT, description='매물 ID')
     ]
 
 

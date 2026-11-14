@@ -44,6 +44,7 @@ from jibsa.providers.dabang.api.response.common import (
     DabangComplexResultModel,
     DabangComplexSchoolModel,
     DabangComplexSpaceModel,
+    DabangRoomItemModel,
 )
 from jibsa.providers.dabang.api.response.complex import (
     DabangComplexListItemModel,
@@ -51,10 +52,10 @@ from jibsa.providers.dabang.api.response.complex import (
 )
 from jibsa.providers.dabang.service.common import (
     MAX_LIST_LIMIT,
-    MAX_LIST_PAGES,
     ZOOM_BY_SEARCH_TYPE,
     DabangListing,
     DabangListingConditions,
+    DabangPage,
     DabangPlace,
     ListingKind,
     SchoolLevel,
@@ -63,10 +64,13 @@ from jibsa.providers.dabang.service.common import (
     complex_url,
     count_of,
     fetch_complex,
+    fetch_pages,
     filters_of,
     floor_label,
     household_count,
     manwon_from_text,
+    number_of,
+    page_cap_note,
     premium_note,
     room_item_to_listing,
 )
@@ -248,47 +252,39 @@ def search_complexes(
         scope = f'{place.name} 안'
     else:
         search_type, code, scope = 'region', place.code, f'{place.name} 안'
-    complexes: list[DabangComplexSummary] = []
-    # limit 은 받은 단지 수로 센다. 다른 동이라 뺀 단지만큼 다음 쪽을 더 받지 않는다 (매물 목록과 같다)
-    received = 0
-    other_dong = duplicate = 0
-    # 다방 단지 목록은 쪽마다 순서가 흔들려 앞 쪽 끝의 단지를 다음 쪽 첫머리에 다시 준다 (정렬 옵션이 없다). 2026-10-26 실측:
-    # 잠실동 아파트 1쪽 23·24번째(신동아로쟌뷰·갤러리아팰리스)가 2쪽 1·2번째로 다시 와 3쪽까지 71줄 중 단지는 69곳이었다
-    seen_ids: set[str] = set()
-    total: int | None = None
-    has_more = False
-    page = 1
-    while received < limit and page <= MAX_LIST_PAGES:
+
+    def fetch(page: int) -> DabangPage[DabangComplexListItemModel] | None:
         result = client.run_request_complex_list_category_v5(DabangComplexListCategoryV5RequestParameterModel(
             category=category, search_type=search_type, filters=filters, code=code, id=place_id, bbox=bbox,
             zoom=ZOOM_BY_SEARCH_TYPE[search_type], page=page,
         )).result
-        if result is None:
-            break
-        total = result.total if total is None else total
-        # limit 에 닿아 쪽 중간에서 멈추면 남은 칸이 있어 더 있다 (다른 동을 빼는 범위도 본 칸까지만 센다)
-        seen = 0
-        for item in result.list_:
-            if received >= limit:
-                break
-            received += 1
-            seen += 1
-            if item.complex_id in seen_ids:
-                duplicate += 1
-                continue
-            seen_ids.add(item.complex_id)
-            if keep_gids is not None and item.gid not in keep_gids:
-                other_dong += 1
-                continue
-            complexes.append(_summary(item))
-        has_more = bool(result.has_more) or seen < len(result.list_)
-        if not result.has_more:
-            break
-        page += 1
+        return None if result is None else DabangPage(result.list_, result.total, bool(result.has_more))
+
+    # limit 은 받은 단지 수로 센다. 다른 동이라 뺀 단지만큼 다음 쪽을 더 받지 않는다 (매물 목록과 같다)
+    pages = fetch_pages(fetch, limit)
+    total, has_more, received = pages.total, pages.has_more, len(pages.rows)
+    complexes: list[DabangComplexSummary] = []
+    other_dong = duplicate = 0
+    # 다방 단지 목록은 쪽마다 순서가 흔들려 앞 쪽 끝의 단지를 다음 쪽 첫머리에 다시 준다 (정렬 옵션이 없다). 2026-10-26 실측:
+    # 잠실동 아파트 1쪽 23·24번째(신동아로쟌뷰·갤러리아팰리스)가 2쪽 1·2번째로 다시 와 3쪽까지 71줄 중 단지는 69곳이었다
+    seen_ids: set[str] = set()
+    for item in pages.rows:
+        if item.complex_id in seen_ids:
+            duplicate += 1
+            continue
+        seen_ids.add(item.complex_id)
+        if keep_gids is not None and item.gid not in keep_gids:
+            other_dong += 1
+            continue
+        complexes.append(_summary(item))
     if other_dong:
         notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 단지 중 다른 동 {other_dong}곳을 뺐습니다'))
     if duplicate:
         notes.append(note('제외', f'다방이 다음 쪽에 다시 준 단지 {duplicate}곳은 한 번만 넣었습니다 (다시 채우지 않음)'))
+    # 조건 옵션이 없어 범위만 권한다. 동은 지역을, 역·대학·좌표는 반경을 권한다. --radius 가 없어도 역은 다방이 정한 역
+    # 반경·대학은 대학 둘레라 더 좁은 지역이 없고 --radius 로 좁힌다 (limit_notes 의 radius 설명, 분양 search_sales 와 같다.
+    # 2026-11-11 리뷰·실측: 강남역 --limit 1 이 범위 '강남역 다방 역 반경' 에 '지역을 좁히세요')
+    narrow = '반경' if radius_km is not None or place.kind != 'dong' else '지역'
     if has_more and received >= limit and keep_gids is not None and other_dong:
         # 동 검색은 동을 덮는 사각형의 다방 목록에서 그 동만 남겨, 늘려도 다른 동이 대부분이다. '지역을 좁히세요' 는 이미 동
         # 하나라 따를 수 없었고 total 도 사각형 안 수였다 (2026-11-11 LLM 사용 시험: 반포동 --limit 60 에 반포동 6곳, total 348).
@@ -306,12 +302,11 @@ def search_complexes(
         # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 역삼동 --limit 120 에 '--limit 을 늘리거나')
         notes.append(note(
             '일부',
-            # 조건 옵션이 없어 범위만 권한다. 동은 지역을, 역·대학·좌표는 반경을 권한다. --radius 가 없어도 역은 다방이 정한 역
-            # 반경·대학은 대학 둘레라 더 좁은 지역이 없고 --radius 로 좁힌다 (limit_notes 의 radius 설명, 분양 search_sales 와 같다.
-            # 2026-11-11 리뷰·실측: 강남역 --limit 1 이 범위 '강남역 다방 역 반경' 에 '지역을 좁히세요')
             f'단지가 더 있습니다 (다방 목록 순 앞 {received}곳을 봤습니다). '
-            + more_hint(limit, MAX_LIST_LIMIT, '반경' if radius_km is not None or place.kind != 'dong' else '지역'),
+            + more_hint(limit, MAX_LIST_LIMIT, narrow),
         ))
+    if pages.capped:
+        notes.append(page_cap_note(received, limit, next_step=f'{narrow}을 좁혀 다시 찾으세요'))
     return DabangComplexListResult(
         region=place, scope=scope, total=total, returned=len(complexes), has_more=has_more, complexes=complexes, notes=notes,
     )
@@ -447,9 +442,9 @@ class DabangComplexSchool(BaseModel):
         Field(description='학교 코드. jibsa dabang school <school_code> --level <level> 로 학교 상세를 본다')
     ] = None
     name: Annotated[
-        str,
-        Field(description='학교 이름')
-    ]
+        str | None,
+        Field(description='학교 이름 (다방이 주지 않으면 null)')
+    ] = None
     establishment: Annotated[
         str | None,
         Field(description='설립 (공립, 사립)')
@@ -502,9 +497,9 @@ class DabangChildcare(BaseModel):
         Field(description='다방 시설 코드 (jibsa 에 이 코드로 보는 명령은 없다)')
     ] = None
     name: Annotated[
-        str,
-        Field(description='시설 이름')
-    ]
+        str | None,
+        Field(description='시설 이름 (다방이 주지 않으면 null)')
+    ] = None
     establishment: Annotated[
         str | None,
         Field(description="설립 유형 (어린이집 '국공립'·'민간'·'직장'·'가정'·'협동', 유치원 '공립'·'사립')")
@@ -668,17 +663,12 @@ def _school(school: DabangComplexSchoolModel, level: SchoolLevel) -> DabangCompl
 
 
 def _childcare(facility: DabangComplexChildcareModel) -> DabangChildcare:
-    teacher = (facility.child_per_teacher or '').removesuffix('명').strip()
-    try:
-        children = float(teacher) if teacher else None
-    except ValueError:
-        children = None
     return DabangChildcare(
         code=facility.code,
         name=facility.name,
         establishment=facility.type or facility.establish_divide,
         distance_m=facility.distance,
-        children_per_teacher=children,
+        children_per_teacher=number_of(facility.child_per_teacher),
     )
 
 
@@ -696,11 +686,7 @@ def _recent(
     """
     if trade is None or trade.format_price is None:
         return None, []
-    text = (trade.format_room_size or '').rstrip('㎡m²').strip()
-    try:
-        size = float(text) if text else None
-    except ValueError:
-        size = None
+    size = number_of(trade.format_room_size)
     matches = [
         space for space in spaces
         if size is not None and any(
@@ -771,14 +757,24 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     education = result.education
     schools = nurseries = kindergartens = None
     if education is not None:
-        # 중·고등학교는 거리순으로 온다 (2026-10-25 실측: 은마 중 17곳·고 22곳, 오피스텔 중 7곳·고 22곳)
-        schools = (
-            [_school(school, '초등학교') for school in education.elementary_school]
-            + [_school(school, '중학교') for school in education.middle_school[:NEAREST_SCHOOLS]]
-            + [_school(school, '고등학교') for school in education.high_school[:NEAREST_SCHOOLS]]
+        # 중·고등학교는 거리순으로 온다 (2026-10-25 실측: 은마 중 17곳·고 22곳, 오피스텔 중 7곳·고 22곳). 목록이 null 로 오면
+        # 그 목록은 모름이다 (단지 38곳 실측에서는 늘 목록이었고 없으면 [] 였다, 2026-11-14)
+        levels: tuple[tuple[SchoolLevel, list[DabangComplexSchoolModel] | None, int | None], ...] = (
+            ('초등학교', education.elementary_school, None),
+            ('중학교', education.middle_school, NEAREST_SCHOOLS),
+            ('고등학교', education.high_school, NEAREST_SCHOOLS),
         )
-        nurseries = [_childcare(facility) for facility in education.nursery_school[:NEAREST_SCHOOLS]]
-        kindergartens = [_childcare(facility) for facility in education.kinder_school[:NEAREST_SCHOOLS]]
+        if any(rows is not None for _, rows, _ in levels):
+            schools = [_school(school, level) for level, rows, count in levels for school in (rows or [])[:count]]
+            # 다른 학교급은 목록인데 null 로 온 학교급은 schools 에 빠져 '그 학교급 없음' 처럼 보여 모름이라고 알린다
+            notes += [
+                note('참고', f'다방이 {level} 목록을 주지 않아 schools 에 {level}가 없습니다 (없다는 뜻이 아니라 모름)')
+                for level, rows, _ in levels if rows is None
+            ]
+        if education.nursery_school is not None:
+            nurseries = [_childcare(facility) for facility in education.nursery_school[:NEAREST_SCHOOLS]]
+        if education.kinder_school is not None:
+            kindergartens = [_childcare(facility) for facility in education.kinder_school[:NEAREST_SCHOOLS]]
     recent_sale, sale_notes = _recent(summary.sell_lately_price if summary else None, result.spaces, category, '매매')
     recent_lease, lease_notes = _recent(summary.lease_lately_price if summary else None, result.spaces, category, '전세')
     approved = info.building_approval_date_name
@@ -911,44 +907,37 @@ def list_complex_listings(
         # 평형 없는 단지는 보지 못해 따로 다루지 않는다
         space_seq_list=space_seqs or all_seqs,
     )
+    premium = 0
+
+    def fetch(page: int) -> DabangPage[DabangRoomItemModel] | None:
+        nonlocal premium
+        result = client.run_request_room_list_category_complex_v5(DabangRoomListCategoryComplexV5RequestParameterModel(
+            category=category, complex_id=complex_id, main_filters=filters, filters=room_filters, page=page,
+        )).result
+        if result is None:
+            return None
+        premium += sum(len(group.room_list) for group in result.premium_list)
+        return DabangPage(result.room_list, result.total, bool(result.has_more))
+
+    # 쪽 수는 limit 을 24건으로 나눠 정하지 않고 limit 이 찰 때까지 받는다 (`fetch_pages`). 다방이 한 쪽을 23건만 줄 때가
+    # 있어 다섯 쪽으로는 120건을 못 채울 수 있고, 단지 매물에는 이어 받기(--next)가 없어 남은 매물을 받을 길이 없다
+    pages = fetch_pages(fetch, limit)
+    total, has_more, received = pages.total, pages.has_more, len(pages.rows)
     listings: list[DabangListing] = []
-    received = premium = unreadable = duplicate = 0
+    unreadable = duplicate = 0
     # 단지 목록(`search_complexes`)처럼 쪽이 겹칠 수 있어 같은 매물은 한 번만 넣는다. 다방 단지 매물은 적어 둘째 쪽을 실제로
     # 받아 보지 못했다 (2026-10-26 실측: 가장 많은 곳이 아파트 14건 잠실 우성4차·개포 현대2차, 오피스텔 8건 빅토리아)
     seen_ids: set[str] = set()
-    total: int | None = None
-    has_more = False
-    page = 1
-    # 쪽 수 상한은 --limit 최대값을 채우는 쪽 수(5쪽)에 한 쪽을 더 둔다. 다방이 한 쪽을 23건만 줄 때가 있어(아래) 다섯 쪽으로는
-    # 120건을 못 채울 수 있고, 단지 매물에는 이어 받기(--next)가 없어 남은 매물을 받을 길이 없다 (23건 × 6쪽 = 138건)
-    while len(listings) + unreadable + duplicate < limit and page <= MAX_LIST_PAGES + 1:
-        page_result = client.run_request_room_list_category_complex_v5(DabangRoomListCategoryComplexV5RequestParameterModel(
-            category=category, complex_id=complex_id, main_filters=filters, filters=room_filters, page=page,
-        )).result
-        if page_result is None:
-            break
-        total = page_result.total if total is None else total
-        premium += sum(len(group.room_list) for group in page_result.premium_list)
-        rows = page_result.room_list[:limit - received]
-        for item in rows:
-            received += 1
-            if item.id in seen_ids:
-                duplicate += 1
-                continue
-            seen_ids.add(item.id)
-            listing = room_item_to_listing(item, kind)
-            if listing is None:
-                unreadable += 1
-                continue
-            listings.append(listing)
-        # 다음 쪽은 서버 hasMore 로만 본다. 다방 매물 목록은 다음 쪽이 있어도 한 쪽을 23건만 줄 때가 있어(2026-11-13 웹 캡처:
-        # 아파트 강남역 1쪽) 받은 수가 쪽 크기보다 적다고 끝내면 남은 매물을 놓친다. 빈 쪽이면 hasMore 가 와도 더 묻지 않는다
-        # (매물 검색 `_fetch` 와 같다. 빈 쪽을 MAX_LIST_PAGES 까지 묻지 않게)
-        next_page = bool(page_result.has_more) and bool(page_result.room_list)
-        has_more = len(rows) < len(page_result.room_list) or next_page
-        if not next_page:
-            break
-        page += 1
+    for item in pages.rows:
+        if item.id in seen_ids:
+            duplicate += 1
+            continue
+        seen_ids.add(item.id)
+        listing = room_item_to_listing(item, kind)
+        if listing is None:
+            unreadable += 1
+            continue
+        listings.append(listing)
     notes: list[str] = []
     if unreadable:
         notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
@@ -960,6 +949,8 @@ def list_complex_listings(
         total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order='다방 목록', narrow='거래 유형·평형·가격 조건',
         inspected=received, has_more=has_more,
     )
+    if pages.capped:
+        notes.append(page_cap_note(received, limit, next_step='거래 유형·평형·가격 조건을 좁혀 다시 찾으세요'))
     return DabangComplexListingsResult(
         complex_id=complex_id,
         name=result.complex.complex_name,

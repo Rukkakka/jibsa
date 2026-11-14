@@ -39,13 +39,16 @@ from jibsa.providers.dabang.api.request.sale import (
 from jibsa.providers.dabang.api.response.sale import DabangSaleItemModel
 from jibsa.providers.dabang.service.common import (
     MAX_LIST_LIMIT,
-    MAX_LIST_PAGES,
-    PAGE_SIZE,
+    DabangPage,
     DabangPlace,
     bbox_of,
+    count_of,
+    fetch_pages,
     household_count,
     is_missing_id,
     manwon_from_text,
+    number_of,
+    page_cap_note,
 )
 from jibsa.providers.dabang.service.region import (
     DabangScope,
@@ -87,18 +90,6 @@ SCHEDULE_REGION_PATTERN: re.Pattern[str] = re.compile(r'^(?:\[[^\]]+\]\s*)+(\S+)
 # 웹은 공급 유형 코드가 4·5(공공임대·민간임대)면 가격 이름표를 '임대가', 아니면 '분양가' 로 쓴다 (ic_24_download 청크 `x`,
 # 2026-11-13. 민간임대 6acca80f… 화면 '임대가 4억7770')
 RENTAL_SUPPLY_TYPES: frozenset[int] = frozenset({4, 5})
-# 청약 결과 숫자 글: '5.52:1' 의 5.52, '35점' 의 35, '261/1071' 의 261
-LEADING_NUMBER_PATTERN: re.Pattern[str] = re.compile(r'^\s*(\d[\d,]*(?:\.\d+)?)')
-
-
-def _leading_number(text: str | None) -> float | None:
-    match = LEADING_NUMBER_PATTERN.match(text or '')
-    return float(match.group(1).replace(',', '')) if match else None
-
-
-def _leading_int(text: str | None) -> int | None:
-    number = _leading_number(text)
-    return None if number is None else int(number)
 
 
 def sale_url(sale_id: str) -> str:
@@ -274,39 +265,36 @@ def search_sales(
         state_list=[SALE_STATE_BY_LABEL[label] for label in states or []] or list(ALL_SALE_STATES),
         supply_type_list=[SALE_SUPPLY_BY_LABEL[label] for label in supply_types or []] or list(ALL_SALE_SUPPLY_TYPES),
     )
-    sales: list[DabangSaleSummary] = []
-    received = outside = 0
-    total: int | None = None
-    has_more = False
-    for page in range(1, MAX_LIST_PAGES + 1):
+
+    def fetch(page: int) -> DabangPage[DabangSaleItemModel] | None:
         result = client.run_request_sale_list_category_bbox_v5(
             DabangSaleListCategoryBboxV5RequestParameterModel(filters=filters, bbox=bbox, page=page)
         ).result
-        if result is None:
-            break
-        total = result.total if total is None else total
-        rows = result.sale_list[:limit - received]
-        for item in rows:
-            received += 1
-            address = normalize_address(item.address) or ''
-            if prefixes and not any(address == prefix or address.startswith(f'{prefix} ') for prefix in prefixes):
-                outside += 1
-                continue
-            sales.append(_summary(item))
-        has_more = len(rows) < len(result.sale_list) or bool(result.has_more)
-        if received >= limit or not result.has_more or len(result.sale_list) < PAGE_SIZE:
-            break
+        return None if result is None else DabangPage(result.sale_list, result.total, bool(result.has_more))
+
+    # 쪽 수는 limit 을 24건으로 나눠 정하지 않고 limit 이 찰 때까지 받는다 (`fetch_pages`). limit 은 받은 단지 수로 센다
+    pages = fetch_pages(fetch, limit)
+    total, has_more, received = pages.total, pages.has_more, len(pages.rows)
+    sales: list[DabangSaleSummary] = []
+    outside = 0
+    for item in pages.rows:
+        address = normalize_address(item.address) or ''
+        if prefixes and not any(address == prefix or address.startswith(f'{prefix} ') for prefix in prefixes):
+            outside += 1
+            continue
+        sales.append(_summary(item))
     if outside:
         notes.append(note('제외', f'경계를 덮는 사각형에서 받은 단지 중 주소가 다른 {outside}곳을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
+    # 역·대학·좌표(place)는 반경 사각형이라 반경을, 동·시군구는 지역을 좁히라고 한다
+    narrow = f"건물 유형·분양 상태·공급 유형 조건·{'반경' if place is not None else '지역'}"
     if has_more and received >= limit:
         among = f' 약 {total}곳 중' if total is not None else ''
         # --limit 이 이미 최대값이면 늘리라고 하지 않고 좁힐 조건을 권한다 (2026-11-10 리뷰: --limit 120 에도 '--limit 을 늘리세요' 뿐)
         notes.append(note(
-            '일부',
-            f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다. '
-            # 역·대학·좌표(place)는 반경 사각형이라 반경을, 동·시군구는 지역을 좁히라고 한다
-            + more_hint(limit, MAX_LIST_LIMIT, f"건물 유형·분양 상태·공급 유형 조건·{'반경' if place is not None else '지역'}"),
+            '일부', f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다. ' + more_hint(limit, MAX_LIST_LIMIT, narrow),
         ))
+    if pages.capped:
+        notes.append(page_cap_note(received, limit, next_step=f'{narrow}을 좁혀 다시 찾으세요'))
     return DabangSaleListResult(scope=scope_name, total=total, returned=len(sales), has_more=has_more, sales=sales, notes=notes)
 
 
@@ -403,9 +391,9 @@ class DabangSubscriptionResult(BaseModel):
         Field(description="최고 경쟁률 (5.52 = '5.52:1')")
     ] = None
     pyeongs: Annotated[
-        list[DabangSubscriptionPyeong],
-        Field(description='평형별 경쟁률·당첨가점')
-    ]
+        list[DabangSubscriptionPyeong] | None,
+        Field(description='평형별 경쟁률·당첨가점. 다방이 평형별 결과를 주지 않으면 null (모름, 없다는 뜻이 아니다)')
+    ] = None
 
 
 class DabangSaleDetail(BaseModel):
@@ -596,14 +584,15 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
             for space in response.spaces
         ],
         subscription_result=None if subscription is None else DabangSubscriptionResult(
-            min_winning_point=_leading_int(subscription.min_winning_point_str),
-            max_competition_rate=_leading_number(subscription.max_competitive_rate_str),
-            pyeongs=[
+            min_winning_point=count_of(subscription.min_winning_point_str),
+            max_competition_rate=number_of(subscription.max_competitive_rate_str),
+            # 평형별 결과가 null 이면 모름이라 [] (없음) 로 바꾸지 않는다
+            pyeongs=None if subscription.subscription_spaces is None else [
                 DabangSubscriptionPyeong(
                     name=space.space_name,
-                    household_count=_leading_int(space.household_num_str),
-                    competition_rate=_leading_number(space.competitive_rate_str),
-                    winning_point=_leading_int(space.winning_point_str),
+                    household_count=count_of(space.household_num_str),
+                    competition_rate=number_of(space.competitive_rate_str),
+                    winning_point=count_of(space.winning_point_str),
                 )
                 for space in subscription.subscription_spaces
             ],

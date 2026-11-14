@@ -19,6 +19,7 @@ from jibsa.providers.dabang.service.common import (
 from jibsa.providers.dabang.service.complex import list_complex_listings
 from jibsa.providers.dabang.service.listing import search_listings
 from jibsa.providers.dabang.service.ranking import (
+    ValueKind,
     _entry,
     get_region_ranking,
 )
@@ -132,19 +133,23 @@ def test_complex_listings_fill_max_limit_when_pages_are_short() -> None:
 # --- ranking values ---
 
 
-def test_population_decrease_is_negative() -> None:
-    # 다방은 인구 변화 수를 부호 없이('327명') 주고 줄었는지는 changeStatus·변화율로만 알린다
-    row = DabangRegionRankingItemModel.model_validate({
-        'rank': 1,
-        'regionName': '[가상]동',
-        'formattedCurrCount': '1,000명',
-        'formattedPrevCount': '1,010명',
-        'formattedYearOfYearChangeCount': '10명',
-        'formattedYearOfYearChangePercentage': '-1%',
-        'changeStatus': 'DECREASE',
-    })
-    entry = _entry(row, 'population-change')
-    assert (entry.count, entry.prev_count, entry.change_count, entry.change_percent) == (1000, 1010, -10, -1)
+@pytest.mark.parametrize(
+    ('kind', 'values'),
+    [
+        ('population-change', {
+            'formattedCurrCount': '2,000명',
+            'formattedPrevCount': '2,001명',
+            'formattedYearOfYearChangeCount': '1명',
+            'formattedYearOfYearChangePercentage': '0%',
+        }),
+    ],
+)
+def test_change_count_decrease_is_negative(kind: ValueKind, values: dict[str, str]) -> None:
+    # 다방은 인구 변화 수를 부호 없이('327명') 준다. 앞·지금 수가 있으면 그 차로 내서, changeStatus 가 빠지고
+    # 변화율이 '0%' 로 반올림돼도 줄었으면 음수다
+    row = DabangRegionRankingItemModel.model_validate({'rank': 1, 'regionName': '[가상]동', **values})
+    entry = _entry(row, kind)
+    assert (entry.count, entry.prev_count, entry.change_count, entry.change_percent) == (2000, 2001, -1, 0)
 
 
 @pytest.mark.parametrize(

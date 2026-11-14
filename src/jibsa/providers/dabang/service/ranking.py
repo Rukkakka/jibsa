@@ -37,8 +37,10 @@ from jibsa.providers.dabang.api.response.ranking import (
 )
 from jibsa.providers.dabang.service.common import (
     building_years,
+    count_of,
     household_count,
     manwon_from_text,
+    number_of,
 )
 from jibsa.providers.dabang.service.region import (
     DabangScope,
@@ -71,7 +73,6 @@ TRADE_PERIOD_BY_LABEL: dict[str, DabangTradeBaseOn] = {
 PREVIOUS_TRADE_PERIOD: dict[str, str] = {'이번주': '지난주', '이번달': '지난달', '올해': '지난달'}
 RANKING_TRADE_BY_LABEL: dict[str, DabangRankingPriceType] = {'매매': 'SALE', '전세': 'LEASE', '월세': 'MONTHLY_RENT'}
 FLUCTUATION_LABELS: dict[str, str] = {'UP': '상승', 'DOWN': '하락', 'STEADY': '유지', 'NEW': '신규'}
-NUMBER_PATTERN: re.Pattern[str] = re.compile(r'[+-]?\d[\d,]*(?:\.\d+)?')
 REGION_RANKING_MAX_LIMIT: int = 100
 AGE_YEARS_PATTERN: re.Pattern[str] = re.compile(r'(\d+)\s*년')
 # 기준 달 글자: '26년 10월'
@@ -209,16 +210,6 @@ VALUE_FIELDS_BY_KIND: dict[ValueKind, frozenset[str]] = {
     'score': frozenset({'score'}),
     'population-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
 }
-
-
-def _number(text: str | None) -> float | None:
-    match = NUMBER_PATTERN.search((text or '').replace(' ', ''))
-    return float(match.group().replace(',', '')) if match else None
-
-
-def _int(text: str | None) -> int | None:
-    number = _number(text)
-    return None if number is None else int(number)
 
 
 def _manwon(text: str | None) -> float | None:
@@ -644,14 +635,14 @@ def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRa
     if kind == 'price':
         entry.value_manwon = _manwon(row.formatted_price)
     elif kind == 'count':
-        entry.count = _int(row.formatted_count)
+        entry.count = count_of(row.formatted_count)
     elif kind == 'percent':
-        entry.percent = _number(row.formatted_percentage)
+        entry.percent = number_of(row.formatted_percentage)
     elif kind == 'score':
-        entry.score = _int(row.formatted_score)
+        entry.score = count_of(row.formatted_score)
     elif kind == 'change':
         entry.value_text = row.formatted_change_rate or text
-        entry.change_percent = _number(row.formatted_change_rate)
+        entry.change_percent = number_of(row.formatted_change_rate, signed=True)
         entry.change_manwon = _manwon(row.formatted_price)
         if entry.change_manwon is not None and entry.change_percent is not None and entry.change_percent < 0:
             entry.change_manwon = -abs(entry.change_manwon)
@@ -659,21 +650,38 @@ def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRa
         entry.prev_price_manwon = _manwon(row.formatted_prev_price or row.formatted_max_price)
         entry.prev_price_date = row.formatted_max_price_date
     elif kind == 'population-change':
-        change_text = row.formatted_year_of_year_change_count
-        rate_text = row.formatted_year_of_year_change_percentage
-        entry.value_text = f'{change_text} ({rate_text})' if change_text and rate_text else change_text or rate_text
-        entry.count = _int(row.formatted_curr_count)
-        entry.prev_count = _int(row.formatted_prev_count)
-        entry.change_percent = _number(rate_text)
-        # 변화 수는 부호 없이('327명') 온다. 줄었는지는 changeStatus 와 변화율 부호로 본다 (2026-10-25 강남구 도곡동 -0.6%)
-        change = _int(change_text)
-        decreased = row.change_status == 'DECREASE' or (entry.change_percent is not None and entry.change_percent < 0)
-        entry.change_count = -abs(change) if change is not None and decreased else change
+        _fill_count_change(entry, row, row.formatted_year_of_year_change_count, row.formatted_year_of_year_change_percentage)
     else:
         # '44년 6개월' → 44, '1개월 미만'·'8개월' → 0
         years = AGE_YEARS_PATTERN.search(row.formatted_age or '')
         entry.age_years = int(years.group(1)) if years else (0 if '개월' in (row.formatted_age or '') else None)
     return entry
+
+
+def _fill_count_change(
+    entry: DabangRegionRankingEntry,
+    row: DabangRegionRankingItemModel,
+    change_text: str | None,
+    rate_text: str | None,
+) -> None:
+    """인구증감 값. 변화 수는 부호 없이('327명') 온다.
+
+    변화 수는 앞·지금 수가 둘 다 오면 그 차로 낸다. 차는 늘 `formattedCount`·`formattedYearOfYearChangeCount` 와 같았다
+    (2026-11-14 약 700행). 둘 중 하나라도 없으면 부호 없는 변화 수에 changeStatus(DECREASE)·변화율 부호로 부호를 붙인다
+    (2026-10-25 강남구 도곡동 -0.6%). changeStatus 는 모든 행에 왔지만 빠지고 변화율이 '0%' 로 반올림되면 줄어도 부호를 모른다.
+    다방이 '-' 로 주는 칸은 값이 없는 것이라 `value_text` 에 붙이지 않는다 (둘 다 '-' 면 '-').
+    """
+    shown = [text for text in (change_text, rate_text) if text and text.strip() != '-']
+    entry.value_text = f'{shown[0]} ({shown[1]})' if len(shown) == 2 else (shown[0] if shown else change_text or rate_text)
+    entry.count = count_of(row.formatted_curr_count)
+    entry.prev_count = count_of(row.formatted_prev_count)
+    entry.change_percent = number_of(rate_text, signed=True)
+    if entry.count is not None and entry.prev_count is not None:
+        entry.change_count = entry.count - entry.prev_count
+        return
+    change = count_of(change_text)
+    decreased = row.change_status == 'DECREASE' or (entry.change_percent is not None and entry.change_percent < 0)
+    entry.change_count = -abs(change) if change is not None and decreased else change
 
 
 def get_region_ranking(

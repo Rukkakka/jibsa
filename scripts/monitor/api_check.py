@@ -339,6 +339,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단지 실거래가', ('dabang', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
         # --listing 은 단지 없는 매물만 받는다. 원룸 목록에는 오피스텔이 섞여 빌라 목록의 매물을 쓴다
         Step('매물 실거래가', ('dabang', 'real-price'), ('--listing', '{villa}', '--trade', '전월세', '--limit', '3'), 'transactions'),
+        # --trade 를 주지 않으면 매물의 거래 유형을 real-price/house/init 으로 먼저 받는다. --trade 를 준 줄은 init 을 부르지 않는다
+        Step('매물 실거래가 기본', ('dabang', 'real-price'), ('--listing', '{villa}', '--limit', '3'), 'transactions'),
         Step('단지 시세 흐름', ('dabang', 'price-trend'), ('{complex}',), 'months'),
         # 동네정보는 탭마다 다른 주소다 (요약 3종·수 4종). 기본은 모든 주제
         Step('동네정보 역삼동', ('dabang', 'neighborhood'), ('역삼동',), 'safety'),

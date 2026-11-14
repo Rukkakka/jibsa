@@ -139,9 +139,9 @@ class DabangSubscriptionResultModel(ResponseModel):
         Field(description="최고 경쟁률 ('5.52:1')")
     ] = None
     subscription_spaces: Annotated[
-        list[DabangSubscriptionSpaceModel],
-        Field(description='평형별 결과')
-    ] = []
+        list[DabangSubscriptionSpaceModel] | None,
+        Field(description='평형별 결과. null 이면 다방이 평형별 결과를 주지 않은 것이라 모름')
+    ] = None
 
 
 class DabangSaleInLotsModel(ResponseModel):

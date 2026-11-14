@@ -234,12 +234,18 @@ def resolve_places(
     if stations:
         return station_place()
     if len(universities) > 1 and only is None:
-        # 줄인 이름('연세대')이 여러 캠퍼스에 맞으면 첫 곳을 고르지 않는다. 후보 이름을 그대로 주면 이름이 똑같은 대학으로 찾는다
+        # 줄인 이름('연세대')이 여러 캠퍼스에 맞으면 첫 곳을 고르지 않는다. 후보 이름을 그대로 주면 이름이 똑같은 대학으로 찾는다.
+        # 다방은 캠퍼스를 '연세대학교(원주캠퍼스)' 처럼 이름으로 가른다 (2026-11-14 대학 28개 이름 검색에 이름이 똑같은 대학 없음).
+        # 그래도 이름이 똑같은 대학이 여럿 오면 이름으로는 다시 가를 수 없어, 같은 이름 역처럼 좌표로 찾게 한다
         names = [univ.name for univ in universities]
-        raise RegionAmbiguousError(
-            text, names[:AMBIGUOUS_CANDIDATES], len(names),
-            hint=f"대학 이름을 후보 그대로 따옴표로 감싸 다시 주세요 (예: '{names[0]}')",
-        )
+        if len(set(names)) == 1:
+            hint = (
+                f'이름이 같은 대학이 {len(names)}곳이라 이름으로는 가를 수 없습니다. jibsa dabang search locations {names[0]} '
+                '결과에서 대학마다 좌표를 볼 수 있습니다. 그 좌표를 --lat/--lng (와 --radius) 로 주세요'
+            )
+        else:
+            hint = f"대학 이름을 후보 그대로 따옴표로 감싸 다시 주세요 (예: '{names[0]}')"
+        raise RegionAmbiguousError(text, names[:AMBIGUOUS_CANDIDATES], len(names), hint=hint)
     if universities:
         univ = universities[0]
         lat, lng = _lat_lng(univ.location, univ.name)

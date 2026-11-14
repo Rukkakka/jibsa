@@ -51,21 +51,24 @@ from jibsa.providers.dabang.service.common import (
     CATEGORY_BY_KIND,
     LISTING_NUMBER_PATTERN,
     MAX_LIST_LIMIT,
-    MAX_LIST_PAGES,
     OFFICETEL_TYPE,
     SOURCE,
     ZOOM_BY_SEARCH_TYPE,
     DabangListing,
     DabangListingConditions,
+    DabangPage,
+    DabangPages,
     DabangPlace,
     ListingKind,
     bbox_of,
+    fetch_pages,
     filters_of,
     floor_label,
     is_complex_type,
     is_missing_id,
     listing_url,
     manwon_from_text,
+    page_cap_note,
     premium_note,
     room_item_to_listing,
     room_type_of,
@@ -79,8 +82,6 @@ from typing import (
 )
 
 
-# 한 번 검색에 받을 수 있는 쪽 수 (--limit 최대값을 채우는 쪽 수, 이어 받아 쪽 중간부터 받으면 한 쪽 더)
-MAX_PAGES_PER_TARGET: int = MAX_LIST_PAGES + 1
 # 상세 화면이 '비공개 처리된 매물' 로 닫는 상태 (room 청크 `[0,3,4].includes(t.room.status)`, 2026-10-25)
 HIDDEN_STATUSES: frozenset[int] = frozenset({0, 3, 4})
 TRADE_BY_SELLING_CODE: dict[int, TradeType] = {0: '월세', 1: '전세', 2: '매매'}
@@ -337,13 +338,9 @@ class _Target(NamedTuple):
 
 
 class _Fetched(NamedTuple):
-    items: list[DabangRoomItemModel]
-    total: int | None
-    has_more: bool
+    pages: DabangPages[DabangRoomItemModel]
+    # 목록과 함께 온 광고(중개사별 추천 매물) 수
     premium: int
-    # 다음에 물을 쪽과 그 쪽에서 건너뛸 칸. 쪽 중간에서 멈췄으면 그 쪽과 쓴 칸 수, 쪽을 다 썼으면 다음 쪽과 0
-    page: int
-    skip: int
 
 
 def _fetch(
@@ -356,15 +353,11 @@ def _fetch(
     page: int,
     skip: int,
 ) -> _Fetched:
-    """범위 하나에서 `page` 쪽의 `skip` 칸 뒤부터(다방 목록 순) `budget` 건을 받는다.
-
-    한 쪽이 늘 24건은 아니라서(23건인 쪽이 있다) 이어 받을 위치는 받은 수로 셈하지 않고 읽은 쪽과 그 쪽에서 쓴 칸으로 둔다.
-    """
-    items: list[DabangRoomItemModel] = []
-    total: int | None = None
+    """범위 하나에서 `page` 쪽의 `skip` 칸 뒤부터(다방 목록 순) `budget` 건을 받는다 (쪽 따라가기는 `fetch_pages`)."""
     premium = 0
-    has_more = False
-    for _ in range(MAX_PAGES_PER_TARGET):
+
+    def fetch(number: int) -> DabangPage[DabangRoomItemModel] | None:
+        nonlocal premium
         result = client.run_request_room_list_category_v5(DabangRoomListCategoryV5RequestParameterModel(
             category=CATEGORY_BY_KIND[kind],
             search_type=target.search_type,
@@ -373,28 +366,16 @@ def _fetch(
             id=target.place_id,
             bbox=target.bbox,
             zoom=ZOOM_BY_SEARCH_TYPE[target.search_type],
-            page=page,
+            page=number,
         )).result
         if result is None:
-            break
-        if total is None:
-            total = result.total
+            return None
         # 광고는 첫 쪽에만 와서 쪽마다 더해도 같은 광고를 두 번 세지 않는다 (2026-10-28 실측: 역삼동 원룸 1~3쪽 광고 8·0·0건)
         premium += sum(len(group.room_list) for group in result.premium_list)
-        rows = result.room_list[skip:]
-        taken = rows[:budget - len(items)]
-        items += taken
-        if len(taken) < len(rows):
-            # 쪽 중간에서 몫을 채웠다. 다음에는 같은 쪽의 남은 칸부터 받는다
-            skip += len(taken)
-            has_more = True
-            break
-        # 쪽을 다 썼다 (앞 결과가 쓴 칸보다 쪽이 짧아졌으면 남은 칸이 없다). 다음에는 다음 쪽 처음부터 받는다
-        has_more = bool(result.has_more) and bool(result.room_list)
-        page, skip = page + 1, 0
-        if not has_more or len(items) >= budget:
-            break
-    return _Fetched(items, total, has_more, premium, page, skip)
+        return DabangPage(result.room_list, result.total, bool(result.has_more))
+
+    pages = fetch_pages(fetch, budget, page=page, skip=skip)
+    return _Fetched(pages, premium)
 
 
 def search_listings(
@@ -479,10 +460,11 @@ def search_listings(
     fetched = _fetch(
         client, kind, target, filters_of(kind, conditions), budget=limit, page=resume.page, skip=resume.skip,
     )
+    pages = fetched.pages
     collected: list[DabangListing] = []
     seen: set[str] = set()
     unreadable = outside = other_dong = duplicate = 0
-    for item in fetched.items:
+    for item in pages.rows:
         if item.id in seen:
             duplicate += 1
             continue
@@ -500,9 +482,9 @@ def search_listings(
             outside += 1
             continue
         collected.append(listing)
-    has_more = fetched.has_more
+    has_more = pages.has_more
     next_position = DabangListPosition(
-        page=fetched.page, skip=fetched.skip, received=resume.received + len(fetched.items), bbox=bbox,
+        page=pages.page, skip=pages.skip, received=resume.received + len(pages.rows), bbox=bbox,
     ) if has_more else None
     # 더 받을 매물이 없으면 '다시 채우지 않음' 이라 하지 않는다. 그 말에 더 있는지 헷갈렸다 (2026-11-11 LLM 사용 시험: 반곡동
     # 아파트 7건 중 다른 동 4건을 빼고 has_more false)
@@ -517,15 +499,17 @@ def search_listings(
         notes.append(note('제외', f'다방 목록에 두 번 나온 매물 {duplicate}건은 한 번만 넣었습니다 (다시 채우지 않음)'))
     notes += premium_note(fetched.premium)
     notes += limit_notes(
-        fetched.total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
-        order='다방 목록', approximate=approximate, inspected=len(fetched.items), offset=resume.received,
+        pages.total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
+        order='다방 목록', approximate=approximate, inspected=len(pages.rows), offset=resume.received,
         resumable=has_more, has_more=has_more,
     )
+    if pages.capped:
+        notes.append(page_cap_note(len(pages.rows), limit, next_step='결과의 next 로 이어 받으세요'))
     return DabangSearchResult(
         region=place,
         scope=scope,
         radius_km=radius_km,
-        total=fetched.total,
+        total=pages.total,
         returned=len(collected),
         has_more=has_more,
         next_position=next_position,
@@ -596,6 +580,8 @@ def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
 
 def _tenant_prices(title: str | None) -> dict[str, float | None]:
     """세입자 낀 매매의 기존 보증금/월세 글('20억', '1억/50')을 만원으로. 읽지 못하면 둘 다 None (모름)."""
+    # 리뷰 오탐 (2026-11-14): 금액 글자 읽기는 manwon_from_text 하나가 맡고 여기는 거래 유형 없이 조각 수로 보증금/월세를
+    # 정해(읽지 못하면 두 키 null) listing_prices(거래 유형별, 못 읽으면 None)와 계약이 다르다.
     values = [manwon_from_text(part) for part in (title or '').split('/')]
     if len(values) == 1 and values[0] is not None:
         return {'tenant_deposit_manwon': values[0]}

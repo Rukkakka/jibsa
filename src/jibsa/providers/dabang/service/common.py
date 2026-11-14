@@ -1,5 +1,6 @@
 """두 기능 이상이 쓰는 다방 결과 모델·변환·상수 (매물 목록은 search listings 와 단지 매물이 같이 쓴다)."""
 import re
+from collections.abc import Callable
 from math import (
     ceil,
     isfinite,
@@ -27,6 +28,8 @@ from jibsa.providers.dabang.api.request.common import (
     ALL_ROOM_COUNTS,
     ALL_ROOM_FLOORS,
     ALL_ROOM_TYPES,
+    COMPLEX_ID_PATTERN_TEXT,
+    LISTING_ID_PATTERN_TEXT,
     UNBOUNDED_MAX,
     DabangAptFiltersModel,
     DabangBboxModel,
@@ -52,7 +55,10 @@ from jibsa.providers.dabang.api.response.common import (
 from typing import (
     Annotated,
     Any,
+    Generic,
     Literal,
+    NamedTuple,
+    TypeVar,
 )
 
 
@@ -62,17 +68,19 @@ SOURCE: Source = 'dabang'
 PAGE_SIZE: int = 24
 DEFAULT_LIST_LIMIT: int = 24
 MAX_LIST_LIMIT: int = 120
-# --limit 최대값을 채우는 쪽 수 (120 = 5쪽). 목록마다 쪽 수 상한으로 쓴다
-MAX_LIST_PAGES: int = ceil(MAX_LIST_LIMIT / PAGE_SIZE)
+# 목록(매물·단지 매물·단지·분양)마다 한 번에 따라갈 쪽 수 상한. 쪽은 24건보다 짧을 수 있어(2026-11-14 강남역 아파트 반경 3km
+# 6~8쪽 22·22·21건) --limit 이 찰 때까지 다음 쪽을 받되, 끝없이 묻지 않게 --limit 최대값을 꽉 찬 쪽으로 채우는 쪽 수(5쪽)의 두
+# 배에서 멈춘다. 멈췄는데 다방에 더 있으면 `page_cap_note` 로 알린다
+MAX_FETCH_PAGES: int = 2 * ceil(MAX_LIST_LIMIT / PAGE_SIZE)
 MANWON_PER_EOK: int = 10000
 # 매물·단지 주소. 서버가 지도 화면으로 넘겨 준다 (2026-10-25 실측: /room/{id} → 302 /map/onetwo?…detail_type=room,
 # /complex/{id} → 302 /map/apt?…detail_type=complex). 상세의 짧은 주소(redirect.dabangapp.com)도 /room/{id} 로 넘긴다
 LISTING_URL: str = 'https://www.dabangapp.com/room/{room_id}'
 COMPLEX_URL: str = 'https://www.dabangapp.com/complex/{complex_id}'
-LISTING_ID_PATTERN: re.Pattern[str] = re.compile(r'^[0-9a-f]{24}$')
+LISTING_ID_PATTERN: re.Pattern[str] = re.compile(LISTING_ID_PATTERN_TEXT)
 # 매물번호는 0 으로 시작하지 않는다. '00000' 같은 값은 요청 모델(seq > 0)의 영어 메시지 대신 CLI 의 형식 오류로 막는다
 LISTING_NUMBER_PATTERN: re.Pattern[str] = re.compile(r'^[1-9]\d{4,9}$')
-COMPLEX_ID_PATTERN: re.Pattern[str] = re.compile(r'^[0-9a-f]{28}$')
+COMPLEX_ID_PATTERN: re.Pattern[str] = re.compile(COMPLEX_ID_PATTERN_TEXT)
 # 다방 매물 종류 표시 뒤에 붙는 단기임대 표시 ('오피스텔 • 단기'). 단기임대는 따로 있는 거래가 아니라 월세 매물이 1개월 이상
 # 단기 계약도 받는다는 뜻이다 (상세 short_lease_str '1개월(이상 협의가능)', 보증금 1000·월세 90 같은 보통 월세에도 붙는다,
 # 2026-10-25 실측: 역삼동 원룸 월세 423건 중 275건)
@@ -130,12 +138,12 @@ CONDITIONS_BY_KIND: dict[ListingKind, tuple[str, ...]] = {
     'officetel': ('주차', '엘리베이터', '단기임대'),
     'apt': ('단기임대',),
 }
-# 단지가 있는 매물 유형. 상세 유형은 '오피스텔(분리형)' 처럼 뒤에 구조를 붙여 와서 앞부분으로 본다
-COMPLEX_PROPERTY_TYPES: tuple[str, ...] = ('오피스텔', '아파트')
 # 목록 면적이 전용이 아니라 공급면적인 매물 유형 (`room_item_to_listing`)
 APARTMENT_TYPE: str = '아파트'
 # 다방이 계약면적을 주는 매물 유형 (`DabangListingDetail.contract_area_m2`)
 OFFICETEL_TYPE: str = '오피스텔'
+# 단지가 있는 매물 유형. 상세 유형은 '오피스텔(분리형)' 처럼 뒤에 구조를 붙여 와서 앞부분으로 본다
+COMPLEX_PROPERTY_TYPES: tuple[str, ...] = (OFFICETEL_TYPE, APARTMENT_TYPE)
 SchoolLevel = Literal['초등학교', '중학교', '고등학교']
 SCHOOL_LEVELS: tuple[SchoolLevel, ...] = ('초등학교', '중학교', '고등학교')
 # 웹 지도 확대 수준 (동 14, 역·대학 15, 지도 범위 16). 동·역 검색에도 필수라 보낸다 (빠지면 400 "줌은 필수값 입니다")
@@ -144,8 +152,8 @@ ZOOM_BY_SEARCH_TYPE: dict[DabangSearchType, int] = {'region': 14, 'subway': 15, 
 # 가격 글자: '1000', '3억9000', '22억', '31억 3,000' (단지 목록은 띄어쓰기·쉼표), '61.1억'
 MANWON_TEXT_PATTERN: re.Pattern[str] = re.compile(r'^(?:(\d+(?:\.\d+)?)억)?(\d+(?:\.\d+)?)?$')
 FLOOR_NUMBER_PATTERN: re.Pattern[str] = re.compile(r'^(지하)?(\d+)층$')
-# 수 글자: '1,074개', '60위', '24명', '대학교 163명'
-COUNT_TEXT_PATTERN: re.Pattern[str] = re.compile(r'\d[\d,]*')
+# 숫자 글자: '1,074개', '60위', '대학교 163명', '4.1명', '5.52:1', '261/1071', '115.54㎡', '-0.6%', '+2.6%'
+NUMBER_TEXT_PATTERN: re.Pattern[str] = re.compile(r'([+-]?)(\d[\d,]*(?:\.\d+)?)')
 # 세대수 글자: '아파트 · 48년차 · 615세대' (단지 목록), '594세대' (분양 목록), '11년차ㆍ3636세대ㆍ…' (거래 순위)
 HOUSEHOLDS_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d[\d,]*)\s*세대')
 # 연차 글자: 세대수와 같은 칸에 온다 ('48년차', '11년차')
@@ -182,10 +190,23 @@ def manwon_from_text(text: str | None) -> float | None:
     return round(value, 1) if isfinite(value) else None
 
 
+def number_of(text: str | None, *, signed: bool = False) -> float | None:
+    """글자의 첫 숫자 ('4.1명' → 4.1, '5.52:1' → 5.52, '대학교 163명' → 163, '115.54㎡' → 115.54). 띄어쓰기·천 단위 쉼표는
+    무시한다. `signed` 면 앞의 부호도 읽는다 ('-0.6%' → -0.6). 숫자가 없으면('-', 빈 글자) None.
+
+    다방은 수를 단위·이름표를 붙인 글자로 준다. 순위·분양 청약·단지 학교·어린이집·최근 거래·목록 설명이 모두 이 함수로 읽는다.
+    """
+    match = NUMBER_TEXT_PATTERN.search((text or '').replace(' ', ''))
+    if match is None:
+        return None
+    value = float(match.group(2).replace(',', ''))
+    return -value if signed and match.group(1) == '-' else value
+
+
 def count_of(text: str | None) -> int | None:
-    """'1,074개'·'60위'·'대학교 163명' 같은 글자의 (첫) 숫자. 없으면 None."""
-    match = COUNT_TEXT_PATTERN.search(text or '')
-    return int(match.group().replace(',', '')) if match else None
+    """'1,074개'·'60위'·'대학교 163명' 같은 글자의 (첫) 숫자를 정수로. 없으면 None."""
+    number = number_of(text)
+    return None if number is None else int(number)
 
 
 def household_count(text: str | None) -> int | None:
@@ -237,10 +258,7 @@ def parse_room_desc(desc: str | None) -> tuple[str | None, float | None, float |
     manage: float | None = None
     for token in (part.strip() for part in (desc or '').split(',')):
         if token.endswith(('m²', '㎡')):
-            try:
-                area = float(token.rstrip('m²㎡').strip())
-            except ValueError:
-                area = None
+            area = number_of(token)
         elif token.startswith('관리비'):
             amount = token.removeprefix('관리비').strip()
             manage = 0.0 if amount in ('없음', '0') else manwon_from_text(amount.removesuffix('만'))
@@ -529,6 +547,92 @@ class DabangPlace(BaseModel):
         int | None,
         Field(exclude=True, description='다방 역 검색 반경 (m)')
     ] = None
+
+
+T = TypeVar('T')
+
+
+class DabangPage(NamedTuple, Generic[T]):
+    """다방 목록 한 쪽 (`fetch_pages` 에 넘기는 값)."""
+
+    rows: list[T]
+    total: int | None
+    # 서버 hasMore (다음 쪽이 있는지)
+    has_more: bool
+
+
+class DabangPages(NamedTuple, Generic[T]):
+    """`fetch_pages` 가 따라간 결과."""
+
+    # limit 까지 받은 줄 (다방 목록 순). 부르는 쪽이 중복·다른 동을 빼도 limit 은 이 수로 센다 (뺀 것은 다시 채우지 않는다)
+    rows: list[T]
+    # 처음 받은 쪽의 total
+    total: int | None
+    # 다방에 더 있는지
+    has_more: bool
+    # 쪽 수 상한(`MAX_FETCH_PAGES`)까지 받고도 limit 을 못 채웠는데 다방에 더 있는지 (`page_cap_note`)
+    capped: bool
+    # 다음에 물을 쪽과 그 쪽에서 건너뛸 칸. 쪽 중간에서 멈췄으면 그 쪽과 쓴 칸 수, 쪽을 다 썼으면 다음 쪽과 0
+    page: int
+    skip: int
+
+
+def fetch_pages(
+    fetch: Callable[[int], DabangPage[T] | None], limit: int, *, page: int = 1, skip: int = 0,
+) -> DabangPages[T]:
+    """다방 목록(매물·단지 매물·단지·분양)을 `page` 쪽의 `skip` 칸 뒤부터 `limit` 줄이 찰 때까지 다음 쪽으로 따라간다.
+
+    다방 목록은 번호 쪽 넘김이고 한 쪽이 늘 `PAGE_SIZE` 건은 아니다 (2026-11-13 웹 캡처: 아파트 강남역 1쪽 23건, 대치동 2쪽
+    23건). 그래서 쪽 수를 `limit` 을 쪽 크기로 나눠 정하지 않고 `limit` 이 찰 때까지 받으며(상한 `MAX_FETCH_PAGES`), 이어 받을
+    위치도 받은 수로 셈하지 않고 읽은 쪽과 그 쪽에서 쓴 칸으로 둔다. 다음 쪽은 서버 hasMore 로만 본다. 받은 수가 쪽 크기보다
+    적다고 끝내면 남은 것을 놓친다. 빈 쪽이면 hasMore 가 와도 더 묻지 않는다 (빈 쪽을 상한까지 묻고 '다방에 더 있음' 이라고
+    잘못 알리지 않게).
+
+    Args:
+        fetch: 쪽 번호 → 그 쪽. 결과가 없으면(`result` 가 null) None 이고 거기서 멈춘다 (has_more 는 그 전 값).
+        limit: 받을 줄 수.
+        page: 처음 물을 쪽. Defaults to 1.
+        skip: 그 쪽에서 앞 결과가 이미 쓴 칸 수. Defaults to 0.
+    """
+    rows: list[T] = []
+    total: int | None = None
+    has_more = False
+    capped = False
+    for _ in range(MAX_FETCH_PAGES):
+        got = fetch(page)
+        if got is None:
+            break
+        if total is None:
+            total = got.total
+        remaining = got.rows[skip:]
+        taken = remaining[:limit - len(rows)]
+        rows += taken
+        if len(taken) < len(remaining):
+            # 쪽 중간에서 몫을 채웠다. 남은 칸이 있어 더 있고, 다음에는 같은 쪽의 남은 칸부터 받는다
+            skip += len(taken)
+            has_more = True
+            break
+        # 쪽을 다 썼다 (앞 결과가 쓴 칸보다 쪽이 짧아졌으면 남은 칸이 없다). 다음에는 다음 쪽 처음부터 받는다
+        has_more = got.has_more and bool(got.rows)
+        page, skip = page + 1, 0
+        if not has_more or len(rows) >= limit:
+            break
+    else:
+        capped = True
+    return DabangPages(rows, total, has_more, capped, page, skip)
+
+
+def page_cap_note(received: int, limit: int, *, next_step: str) -> str:
+    """쪽 수 상한(`MAX_FETCH_PAGES`)까지 받고도 `limit` 을 못 채웠는데 다방에 더 있을 때의 안내. 쪽이 `PAGE_SIZE` 건보다 짧게 와야 닿는다.
+
+    `limit_notes` 는 받은 수가 `limit` 보다 적으면 다 받은 것으로 보고 안내하지 않아, 그대로 두면 더 있는데 적게 받은 것을 모른다.
+
+    Args:
+        next_step: 이어서 할 일 (예: '결과의 next 로 이어 받으세요').
+    """
+    return note(
+        '일부', f'다방이 쪽을 {PAGE_SIZE}건보다 짧게 줘 {MAX_FETCH_PAGES}쪽까지 {received}건을 받고 멈췄습니다 (요청 {limit}건, 다방에 더 있음). {next_step}',
+    )
 
 
 def premium_note(count: int) -> list[str]:
