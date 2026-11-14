@@ -572,8 +572,9 @@ def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
         return _ManageCost(cost, includes, excludes)
     if charge in (FIXED_FEE_CHARGE, ETC_FEE_CHARGE) and room.maintenance_etc_fee_charge_detail is not None:
         # 10만원 미만·세부 미고지 정액관리비와 기타부과는 '포함 항목' 코드만 온다. 따로 내는 항목은 웹도 보여 주지 않는다
+        # 포함 항목 코드를 주지 않으면 모름(None), 빈 목록이면 비어 있음([])이다 (항목별 분기와 같다)
         codes = room.maintenance_etc_fee_charge_detail.detail_include_types
-        return _ManageCost(cost, [MANAGE_ITEM_LABELS.get(code, code) for code in codes] or None, None)
+        return _ManageCost(cost, None if codes is None else [MANAGE_ITEM_LABELS.get(code, code) for code in codes], None)
     # 확인불가는 웹도 항목을 보여 주지 않는다
     return _ManageCost(cost, None, None)
 

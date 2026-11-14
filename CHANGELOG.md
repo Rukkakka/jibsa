@@ -125,6 +125,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 매물 검색(`--next` 로 이어 받을 때 포함)·`search listings --complex`·`search complexes`·`search sales` 가 다방이 한 쪽을 24건보다 짧게 주면 다방에 더 있어도 `--limit` 을 다 채우지 못하고 안내 없이 멈추던 문제. `--limit` 이 찰 때까지 쪽을 더 받고(10쪽까지), 그래도 못 채우면 `[일부]` 로 알린다 (#235)
 - 다방 `popular-listings` 의 `rank` 를 받은 수로 세어, 다방이 한 쪽을 덜 채우면 그 뒤 순위가 앞으로 당겨질 수 있던 문제. 쪽과 그 쪽 안 위치로 센다 (#235)
 - 다방 `listing` 의 `manage_cost_includes` 가 공용 관리비를 실비로 표시한 매물에서 비던 문제. 다방 화면처럼 공용은 관리비 합계에 들어 `공용 관리비` 를 넣고, 포함 항목을 다방 화면의 규칙(관리비 입력 방식·부과 방식)대로 고른다 (#235)
+- 다방 `listing` 의 `manage_cost_includes` 가 기타부과 매물과 항목을 적지 않은 정액관리비 매물에서 다방이 포함 항목을 빈 목록으로 주면 `[]` 가 아니라 `null`(모름)로 나가던 문제 (#241)
+- 다방 `popular-listings`·`region-ranking`·`real-price` 가 다방이 빈 쪽에 '더 있음' 을 주면 `has_more` 를 `true` 로 내던 문제. 빈 쪽이면 `false` 로 두고, `real-price` 는 빈 쪽 뒤를 더 묻지 않는다 (#241)
 - 다방 `search complexes` 의 `recent_sale_manwon`·`recent_lease_manwon` 을 '다방이 고른 대표 평형' 의 거래라고 적던 문서 오류. 평형과 상관없이 단지의 가장 최근 거래다 (다방 목록 카드와 같다) (#235)
 - 다방 `trending-complexes` 의 `view_count` 를 조회 수로, `neighborhood` 의 `prices.rank` 를 평균가 순위로만 적던 문서 오류. `view_count` 는 기간 안 조회한 사람 수(다방 화면의 'N명'), `prices.rank` 는 아파트 매매 기준 순위다 (#235)
 - 다방 `search complexes --radius` 도움말이 반경 밖 단지를 뺀다고 하던 문제 (반경을 덮는 사각형을 그대로 받는다). 매물 검색의 방 크기 옵션 도움말이 아파트 공급 평만 적던 것도 고쳐 유형별 기준 면적(원룸·투룸 매물 유형별, 빌라 전용, 오피스텔 계약, 아파트 공급)을 적는다 (#235)

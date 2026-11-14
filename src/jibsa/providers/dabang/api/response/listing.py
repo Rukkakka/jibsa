@@ -25,13 +25,13 @@ class DabangMaintenanceEtcDetailModel(ResponseModel):
     (`ETC_FEE_CHARGE`) 매물에 온다. 웹 상세보기는 '포함 항목' 만 보여 준다 (safety-option-chunk `E` 의 `g`, 2026-11-13).
 
     Args:
-        detail_include_types: 관리비에 든 항목 코드 (`WATER_RATES` 수도, `INTERNET_RATES` 인터넷 …).
+        detail_include_types: 관리비에 든 항목 코드 (`WATER_RATES` 수도, `INTERNET_RATES` 인터넷 …). 다방이 주지 않으면 None.
     """
 
     detail_include_types: Annotated[
-        list[str],
+        list[str] | None,
         Field(description='관리비 포함 항목 코드')
-    ] = []
+    ] = None
 
 
 class DabangMaintenanceFixedDetailModel(ResponseModel):

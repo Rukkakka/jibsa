@@ -586,6 +586,21 @@ class DabangPages(NamedTuple, Generic[T]):
     skip: int
 
 
+def more_after(server_has_more: bool, rows: int, *, cut: int = 0) -> bool:
+    """다방 목록 한 쪽 뒤에 더 있는지.
+
+    limit 에 맞춰 잘라 내고 쓰지 않은 줄(`cut`)이 있으면 서버 hasMore 와 상관없이 더 있다. 잘라 낸 줄이 없으면 서버 hasMore 를
+    따르되, 빈 쪽(`rows` 0)이면 hasMore 가 와도 더 없다고 본다 (빈 쪽을 상한까지 묻고 '다방에 더 있음' 이라고 잘못 알리지
+    않게, 2026-11-14 리뷰).
+
+    Args:
+        server_has_more: 서버가 준 hasMore.
+        rows: 그 쪽에 온 줄 수.
+        cut: limit 에 맞춰 잘라 내고 쓰지 않은 줄 수. Defaults to 0.
+    """
+    return cut > 0 or (server_has_more and rows > 0)
+
+
 def fetch_pages(
     fetch: Callable[[int], DabangPage[T] | None], limit: int, *, page: int = 1, skip: int = 0,
 ) -> DabangPages[T]:
@@ -622,7 +637,7 @@ def fetch_pages(
             has_more = True
             break
         # 쪽을 다 썼다 (앞 결과가 쓴 칸보다 쪽이 짧아졌으면 남은 칸이 없다). 다음에는 다음 쪽 처음부터 받는다
-        has_more = got.has_more and bool(got.rows)
+        has_more = more_after(got.has_more, len(got.rows))
         page, skip = page + 1, 0
         if not has_more or len(rows) >= limit:
             break

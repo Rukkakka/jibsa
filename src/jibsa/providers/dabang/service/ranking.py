@@ -41,6 +41,7 @@ from jibsa.providers.dabang.service.common import (
     count_of,
     household_count,
     manwon_from_text,
+    more_after,
     number_of,
 )
 from jibsa.providers.dabang.service.region import (
@@ -842,8 +843,8 @@ def get_region_ranking(
         taken = rows[:limit - len(entries)]
         entries += taken
         # 둘째 쪽부터는 한도만큼 받아 limit 에 맞춰 자르므로, 자른 줄이 있으면 서버 hasMore 가 false 여도 더 있다
-        # (2026-10-25 실측: 울산 동 84곳을 --limit 70 으로 받으면 둘째 쪽 34곳 중 20곳만 넣는다)
-        has_more = bool(ranking.has_more) or len(taken) < len(rows)
+        # (2026-10-25 실측: 울산 동 84곳을 --limit 70 으로 받으면 둘째 쪽 34곳 중 20곳만 넣는다). 빈 쪽이면 hasMore 가 와도 더 없다
+        has_more = more_after(bool(ranking.has_more), len(rows), cut=len(rows) - len(taken))
         if not ranking.has_more or not ranking.list_:
             break
         page += 1

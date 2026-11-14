@@ -45,6 +45,7 @@ from jibsa.providers.dabang.service.common import (
     error_message,
     fetch_complex,
     listing_url,
+    more_after,
 )
 
 from typing import (
@@ -336,7 +337,7 @@ def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, area_kind
 
     다방은 (page - 1) × limit 번째부터 준다. 쪽마다 크기를 바꾸면 앞 쪽과 겹쳐 쪽 크기를 고정하고 넘치는 건 자른다
     (2026-10-25 실측: 50건 다음 10건을 물으니 11~20번째를 다시 줬다). limit 은 받은 줄 수로 센다. 거래 유형을 읽지 못해
-    뺀 줄만큼 다음 쪽을 더 받지 않는다.
+    뺀 줄만큼 다음 쪽을 더 받지 않는다. 빈 쪽이 오면 서버 hasMore 가 true 여도 더 없다고 보고 멈춘다 (`more_after`).
     """
     prices: list[DabangRealPrice] = []
     total: int | None = None
@@ -353,8 +354,8 @@ def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, area_kind
         rows = [_real_price(row, area_kind=area_kind) for row in page_rows]
         prices += [price for price in rows if price is not None]
         unknown += rows.count(None)
-        has_more = fetched.has_more or len(page_rows) < len(fetched.histories)
-        if not fetched.has_more or received >= limit:
+        has_more = more_after(fetched.has_more, len(fetched.histories), cut=len(fetched.histories) - len(page_rows))
+        if not fetched.has_more or not fetched.histories or received >= limit:
             break
     return _Collected(prices, total, has_more, unknown)
 
@@ -408,10 +409,14 @@ def get_real_prices(
     )
 
 
-def _listing_scope(scope: DabangRealPriceHouseScopeModel) -> tuple[str | None, list[str]]:
-    """매물 실거래의 범위 이름(`basis`)과 안내. 웹 제목처럼 `historyBaseType` 을 따르고, 모르는 값이면 범위를 짐작하지 않는다."""
-    building = BUILDING_VIEW_LABELS.get(scope.building_view_type or '', scope.building_view_type or '')
-    if scope.building_view_type == 'MULTIPLEX':
+def _listing_scope(scope: DabangRealPriceHouseScopeModel, building_view_type: str | None) -> tuple[str | None, list[str]]:
+    """매물 실거래의 범위 이름(`basis`)과 안내. 웹 제목처럼 `historyBaseType` 을 따르고, 모르는 값이면 범위를 짐작하지 않는다.
+
+    건물 유형(`building_view_type`)은 거래 줄의 면적 키(`area_kind`)를 정한 값과 같은 값을 받아, 안내의 건물 이름·면적 기준이
+    거래 줄과 어긋나지 않게 한다. 동 이름·범위는 `scope` 에서 읽는다.
+    """
+    building = BUILDING_VIEW_LABELS.get(building_view_type or '', building_view_type or '')
+    if building_view_type == 'MULTIPLEX':
         area = '면적(area_m2)은 전용면적입니다. 면적·층을 보고 비슷한 집만 견주세요'
     else:
         area = '면적(total_floor_area_m2)은 다방이 연면적이라 부르는 값이라 매물 전용면적과 기준이 다릅니다. 그대로 견주지 마세요'
@@ -510,6 +515,7 @@ def get_listing_real_prices(
         scope = init
     else:
         scope = known[0].model_copy(update={'history_base_type': None})
+    # 건물 유형은 거래 줄의 면적 키와 안내의 건물 이름·면적 기준이 함께 쓴다 (목록 첫 쪽이 비어 있으면 첫 화면 값)
     building = next((model.building_view_type for model in known if model.building_view_type), None)
     area_kind: AreaKind = 'exclusive' if building == 'MULTIPLEX' else 'total_floor'
 
@@ -518,7 +524,7 @@ def get_listing_real_prices(
         return None if result is None else _Page(result.histories, result.total, bool(result.has_more))
 
     collected = _collect(fetch, limit, area_kind=area_kind)
-    basis, scope_notes = _listing_scope(scope)
+    basis, scope_notes = _listing_scope(scope, building)
     notes += scope_notes + _unknown_trade_note(collected.unknown)
     return DabangRealPriceResult(
         listing_id=listing_id,

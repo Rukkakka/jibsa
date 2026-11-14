@@ -38,6 +38,7 @@ from jibsa.providers.dabang.service.common import (
     DabangPlace,
     ListingKind,
     count_of,
+    more_after,
     room_item_to_listing,
 )
 
@@ -535,7 +536,8 @@ def get_popular_listings(
             # 순위는 받은 수가 아니라 읽은 쪽과 칸으로 센다. 다방이 한 쪽을 덜 채워도 다음 쪽은 (page - 1) × 쪽 크기 번째부터라
             # 받은 수로 세면 그 뒤 순위가 앞으로 당겨진다
             listings.append(listing_as(DabangRankedListing, listing, rank=(page - 1) * page_size + index + 1))
-        has_more = bool(result.has_more) or len(rows) < len(result.list_)
+        # 잘라 낸 줄이 있으면 더 있고, 빈 쪽이면 hasMore 가 와도 더 없다 (`more_after`)
+        has_more = more_after(bool(result.has_more), len(result.list_), cut=len(result.list_) - len(rows))
         if not result.has_more or not result.list_:
             break
         page += 1
