@@ -434,6 +434,11 @@ def _listing_scope(scope: DabangRealPriceHouseScopeModel, building_view_type: st
     )]
 
 
+def _init_trade(init: DabangRealPriceHouseInitResultModel) -> RealPriceTrade | None:
+    """실거래 첫 화면(`house/init`)이 알려 주는 매물의 거래 유형. 모르는 searchType 이면 None."""
+    return TRADE_BY_SEARCH_TYPE.get(init.search_type or '')
+
+
 def _listing_not_found(listing_id: str) -> JibsaError:
     return JibsaError(
         code='NOT_FOUND',
@@ -480,7 +485,7 @@ def get_listing_real_prices(
         init = house_init()
         if init is None or not init.is_known_listing:
             raise _listing_not_found(listing_id)
-        init_trade = TRADE_BY_SEARCH_TYPE.get(init.search_type or '')
+        init_trade = _init_trade(init)
         if init_trade is None:
             raise JibsaError(
                 code='UPSTREAM_ERROR',
@@ -501,7 +506,7 @@ def get_listing_real_prices(
     first = history(1, _page_size(limit))
     if init is None and (first is None or first.history_base_type is None):
         init = house_init()
-        init_trade = TRADE_BY_SEARCH_TYPE.get(init.search_type or '') if init is not None else None
+        init_trade = _init_trade(init) if init is not None else None
     known = [model for model in (first, init) if model is not None and model.is_known_listing]
     if not known:
         raise _listing_not_found(listing_id)

@@ -20,7 +20,6 @@ from jibsa.core.geo import (
 )
 from jibsa.core.listing import (
     KST,
-    UPDATE_MAYBE_NEEDED,
     Listing,
     ListingDetail,
     TradeType,
@@ -37,7 +36,6 @@ from jibsa.core.listing import (
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
     DabangBboxModel,
-    DabangListFilters,
     DabangSearchType,
 )
 from jibsa.providers.dabang.api.request.listing import (
@@ -57,10 +55,10 @@ from jibsa.providers.dabang.service.common import (
     DabangListing,
     DabangListingConditions,
     DabangPage,
-    DabangPages,
     DabangPlace,
     ListingKind,
     bbox_of,
+    duplicate_note,
     fetch_pages,
     filters_of,
     floor_label,
@@ -71,7 +69,9 @@ from jibsa.providers.dabang.service.common import (
     page_cap_note,
     premium_note,
     room_item_to_listing,
+    room_list_page,
     room_type_of,
+    unreadable_note,
 )
 from jibsa.providers.dabang.service.region import dong_bbox
 
@@ -337,47 +337,6 @@ class _Target(NamedTuple):
     bbox: DabangBboxModel | None = None
 
 
-class _Fetched(NamedTuple):
-    pages: DabangPages[DabangRoomItemModel]
-    # 목록과 함께 온 광고(중개사별 추천 매물) 수
-    premium: int
-
-
-def _fetch(
-    client: DabangClient,
-    kind: ListingKind,
-    target: _Target,
-    filters: DabangListFilters,
-    *,
-    budget: int,
-    page: int,
-    skip: int,
-) -> _Fetched:
-    """범위 하나에서 `page` 쪽의 `skip` 칸 뒤부터(다방 목록 순) `budget` 건을 받는다 (쪽 따라가기는 `fetch_pages`)."""
-    premium = 0
-
-    def fetch(number: int) -> DabangPage[DabangRoomItemModel] | None:
-        nonlocal premium
-        result = client.run_request_room_list_category_v5(DabangRoomListCategoryV5RequestParameterModel(
-            category=CATEGORY_BY_KIND[kind],
-            search_type=target.search_type,
-            filters=filters,
-            code=target.code,
-            id=target.place_id,
-            bbox=target.bbox,
-            zoom=ZOOM_BY_SEARCH_TYPE[target.search_type],
-            page=number,
-        )).result
-        if result is None:
-            return None
-        # 광고는 첫 쪽에만 와서 쪽마다 더해도 같은 광고를 두 번 세지 않는다 (2026-10-28 실측: 역삼동 원룸 1~3쪽 광고 8·0·0건)
-        premium += sum(len(group.room_list) for group in result.premium_list)
-        return DabangPage(result.room_list, result.total, bool(result.has_more))
-
-    pages = fetch_pages(fetch, budget, page=page, skip=skip)
-    return _Fetched(pages, premium)
-
-
 def search_listings(
     client: DabangClient,
     kind: ListingKind,
@@ -457,10 +416,30 @@ def search_listings(
         ))
 
     addresses = {place.gid: place.address} if place.gid is not None and place.address else {}
-    fetched = _fetch(
-        client, kind, target, filters_of(kind, conditions), budget=limit, page=resume.page, skip=resume.skip,
-    )
-    pages = fetched.pages
+    filters = filters_of(kind, conditions)
+    # 목록과 함께 온 광고(중개사별 추천 매물) 수
+    premium = 0
+
+    def fetch(number: int) -> DabangPage[DabangRoomItemModel] | None:
+        nonlocal premium
+        result = client.run_request_room_list_category_v5(DabangRoomListCategoryV5RequestParameterModel(
+            category=CATEGORY_BY_KIND[kind],
+            search_type=target.search_type,
+            filters=filters,
+            code=target.code,
+            id=target.place_id,
+            bbox=target.bbox,
+            zoom=ZOOM_BY_SEARCH_TYPE[target.search_type],
+            page=number,
+        )).result
+        if result is None:
+            return None
+        page, count = room_list_page(result)
+        premium += count
+        return page
+
+    # 범위 하나에서 resume 쪽의 남은 칸부터(다방 목록 순) limit 건을 받는다 (쪽 따라가기는 fetch_pages)
+    pages = fetch_pages(fetch, limit, page=resume.page, skip=resume.skip)
     collected: list[DabangListing] = []
     seen: set[str] = set()
     unreadable = outside = other_dong = duplicate = 0
@@ -493,11 +472,9 @@ def search_listings(
         notes.append(note('제외', f'반경을 덮는 사각형에서 받은 매물 중 반경 {filter_radius:g}km 밖 {outside}건을 뺐습니다 {refill}'))
     if other_dong:
         notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 매물 중 다른 동 {other_dong}건을 뺐습니다 {refill}'))
-    if unreadable:
-        notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
-    if duplicate:
-        notes.append(note('제외', f'다방 목록에 두 번 나온 매물 {duplicate}건은 한 번만 넣었습니다 (다시 채우지 않음)'))
-    notes += premium_note(fetched.premium)
+    notes += unreadable_note(unreadable)
+    notes += duplicate_note(duplicate)
+    notes += premium_note(premium)
     notes += limit_notes(
         pages.total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
         order='다방 목록', approximate=approximate, inspected=len(pages.rows), offset=resume.received,

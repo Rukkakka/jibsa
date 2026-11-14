@@ -1,4 +1,6 @@
 """주변 (nearby: 매물·단지·분양) 과 역 둘레 평균 매물가 (station-prices)."""
+from collections.abc import Callable
+
 from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
@@ -25,8 +27,8 @@ from jibsa.providers.dabang.service.common import (
     is_missing_id,
     listing_url,
     manwon_from_text,
+    sale_url,
 )
-from jibsa.providers.dabang.service.sale import sale_url
 
 from typing import Annotated
 
@@ -48,6 +50,8 @@ NEAR_LABELS: dict[str, str] = {
 SCHOOL_LABELS: dict[str, str] = {'NS': '어린이집', 'KS': '유치원', 'ES': '초등학교', 'MS': '중학교', 'HS': '고등학교'}
 # 대상 → 결과의 target 이름과 없는 ID 안내에 쓰는 이름
 TARGET_LABELS: dict[DabangNearTarget, str] = {'room': '매물', 'complex': '단지', 'sale': '분양'}
+# 대상 → 매물·단지·분양 페이지 주소
+URL_BY_TARGET: dict[DabangNearTarget, Callable[[str], str]] = {'room': listing_url, 'complex': complex_url, 'sale': sale_url}
 # 종류마다 내는 가까운 시설 수. 웹은 받은 시설 전부(편의 종류는 15곳)를 지도에 찍는다
 NEAR_PLACES_PER_TYPE: int = 3
 BUILDING_LABELS: dict[str, str] = {'HOUSE_VILLA': '빌라', 'OFFICETEL': '오피스텔', 'APT': '아파트'}
@@ -224,7 +228,7 @@ def get_nearby(client: DabangClient, target_id: str, *, sale: bool = False) -> D
         bus_radius_m=route.radius if route else None,
         nearest=_nearest((near.convenience + near.safety) if near else [], NEAR_LABELS),
         schools=_nearest(near.education if near else [], SCHOOL_LABELS),
-        url=sale_url(target_id) if target == 'sale' else complex_url(target_id) if target == 'complex' else listing_url(target_id),
+        url=URL_BY_TARGET[target](target_id),
     )
 
 

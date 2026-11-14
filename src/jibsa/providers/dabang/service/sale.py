@@ -49,6 +49,7 @@ from jibsa.providers.dabang.service.common import (
     manwon_from_text,
     number_of,
     page_cap_note,
+    sale_url,
 )
 from jibsa.providers.dabang.service.region import (
     DabangScope,
@@ -60,7 +61,6 @@ from jibsa.providers.dabang.service.region import (
 from typing import Annotated
 
 
-SALE_URL: str = 'https://www.dabangapp.com/sale-in-lots/{sale_id}'
 SALE_BUILDING_TYPE_BY_LABEL: dict[str, DabangSaleBuildingType] = {
     '아파트': 'APT',
     '오피스텔': 'OFFICETEL',
@@ -90,11 +90,6 @@ SCHEDULE_REGION_PATTERN: re.Pattern[str] = re.compile(r'^(?:\[[^\]]+\]\s*)+(\S+)
 # 웹은 공급 유형 코드가 4·5(공공임대·민간임대)면 가격 이름표를 '임대가', 아니면 '분양가' 로 쓴다 (ic_24_download 청크 `x`,
 # 2026-11-13. 민간임대 6acca80f… 화면 '임대가 4억7770')
 RENTAL_SUPPLY_TYPES: frozenset[int] = frozenset({4, 5})
-
-
-def sale_url(sale_id: str) -> str:
-    """분양 페이지. 서버가 지도 화면으로 넘겨 준다 (2026-10-25 실측: /sale-in-lots/{id} → 302 /map/sale-in-lots?…)."""
-    return SALE_URL.format(sale_id=sale_id)
 
 
 def sale_date(text: str | None) -> str | None:

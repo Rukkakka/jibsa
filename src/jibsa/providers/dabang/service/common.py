@@ -16,6 +16,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
+    UPDATE_MAYBE_NEEDED,
     Listing,
     Source,
     TradeType,
@@ -50,6 +51,7 @@ from jibsa.providers.dabang.api.request.common import (
 from jibsa.providers.dabang.api.response.common import (
     DabangComplexResultModel,
     DabangRoomItemModel,
+    DabangRoomListResultModel,
 )
 
 from typing import (
@@ -77,6 +79,7 @@ MANWON_PER_EOK: int = 10000
 # /complex/{id} → 302 /map/apt?…detail_type=complex). 상세의 짧은 주소(redirect.dabangapp.com)도 /room/{id} 로 넘긴다
 LISTING_URL: str = 'https://www.dabangapp.com/room/{room_id}'
 COMPLEX_URL: str = 'https://www.dabangapp.com/complex/{complex_id}'
+SALE_URL: str = 'https://www.dabangapp.com/sale-in-lots/{sale_id}'
 LISTING_ID_PATTERN: re.Pattern[str] = re.compile(LISTING_ID_PATTERN_TEXT)
 # 매물번호는 0 으로 시작하지 않는다. '00000' 같은 값은 요청 모델(seq > 0)의 영어 메시지 대신 CLI 의 형식 오류로 막는다
 LISTING_NUMBER_PATTERN: re.Pattern[str] = re.compile(r'^[1-9]\d{4,9}$')
@@ -170,6 +173,11 @@ def listing_url(room_id: str) -> str:
 
 def complex_url(complex_id: str) -> str:
     return COMPLEX_URL.format(complex_id=complex_id)
+
+
+def sale_url(sale_id: str) -> str:
+    """분양 페이지. 서버가 지도 화면으로 넘겨 준다 (2026-10-25 실측: /sale-in-lots/{id} → 302 /map/sale-in-lots?…)."""
+    return SALE_URL.format(sale_id=sale_id)
 
 
 def bbox_of(south: float, north: float, west: float, east: float) -> DabangBboxModel:
@@ -601,6 +609,15 @@ def more_after(server_has_more: bool, rows: int, *, cut: int = 0) -> bool:
     return cut > 0 or (server_has_more and rows > 0)
 
 
+def room_list_page(result: DabangRoomListResultModel) -> tuple[DabangPage[DabangRoomItemModel], int]:
+    """매물 목록 응답 한 쪽을 (그 쪽, 함께 온 광고 수) 로.
+
+    광고는 첫 쪽에만 와서 쪽마다 더해도 같은 광고를 두 번 세지 않는다 (2026-10-28 실측: 역삼동 원룸 1~3쪽 광고 8·0·0건).
+    """
+    premium = sum(len(group.room_list) for group in result.premium_list)
+    return DabangPage(result.room_list, result.total, bool(result.has_more)), premium
+
+
 def fetch_pages(
     fetch: Callable[[int], DabangPage[T] | None], limit: int, *, page: int = 1, skip: int = 0,
 ) -> DabangPages[T]:
@@ -664,6 +681,20 @@ def premium_note(count: int) -> list[str]:
     if count <= 0:
         return []
     return [note('제외', f'다방 광고 칸(중개사 추천 매물) {count}건은 넣지 않았습니다')]
+
+
+def unreadable_note(count: int) -> list[str]:
+    """가격·거래 유형을 읽지 못해 뺀 매물이 있다는 안내."""
+    if count <= 0:
+        return []
+    return [note('제외', f'가격·거래 유형을 읽지 못한 {count}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}')]
+
+
+def duplicate_note(count: int, *, what: str = '매물', unit: str = '건') -> list[str]:
+    """다방 목록에 두 번 나온 줄을 한 번만 넣었다는 안내."""
+    if count <= 0:
+        return []
+    return [note('제외', f'다방 목록에 두 번 나온 {what} {count}{unit}은 한 번만 넣었습니다 (다시 채우지 않음)')]
 
 
 def error_message(exc: HTTPStatusError) -> str | None:

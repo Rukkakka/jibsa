@@ -64,6 +64,7 @@ from jibsa.providers.dabang.service.common import (
     building_years,
     complex_url,
     count_of,
+    duplicate_note,
     fetch_complex,
     fetch_pages,
     filters_of,
@@ -74,6 +75,8 @@ from jibsa.providers.dabang.service.common import (
     page_cap_note,
     premium_note,
     room_item_to_listing,
+    room_list_page,
+    unreadable_note,
 )
 from jibsa.providers.dabang.service.region import dong_bbox
 
@@ -303,8 +306,7 @@ def search_complexes(
         complexes.append(_summary(item))
     if other_dong:
         notes.append(note('제외', f'동 경계를 덮는 사각형에서 받은 단지 중 다른 동 {other_dong}곳을 뺐습니다'))
-    if duplicate:
-        notes.append(note('제외', f'다방이 다음 쪽에 다시 준 단지 {duplicate}곳은 한 번만 넣었습니다 (다시 채우지 않음)'))
+    notes += duplicate_note(duplicate, what='단지', unit='곳')
     # 조건 옵션이 없어 범위만 권한다. 동은 지역을, 역·대학·좌표는 반경을 권한다. --radius 가 없어도 역은 다방이 정한 역
     # 반경·대학은 대학 둘레라 더 좁은 지역이 없고 --radius 로 좁힌다 (limit_notes 의 radius 설명, 분양 search_sales 와 같다.
     # 2026-11-11 리뷰·실측: 강남역 --limit 1 이 범위 '강남역 다방 역 반경' 에 '지역을 좁히세요')
@@ -950,8 +952,9 @@ def list_complex_listings(
         )).result
         if result is None:
             return None
-        premium += sum(len(group.room_list) for group in result.premium_list)
-        return DabangPage(result.room_list, result.total, bool(result.has_more))
+        page_rows, count = room_list_page(result)
+        premium += count
+        return page_rows
 
     # 쪽 수는 limit 을 24건으로 나눠 정하지 않고 limit 이 찰 때까지 받는다 (`fetch_pages`). 다방이 한 쪽을 23건만 줄 때가
     # 있어 다섯 쪽으로는 120건을 못 채울 수 있고, 단지 매물에는 이어 받기(--next)가 없어 남은 매물을 받을 길이 없다
@@ -973,10 +976,8 @@ def list_complex_listings(
             continue
         listings.append(listing)
     notes: list[str] = []
-    if unreadable:
-        notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
-    if duplicate:
-        notes.append(note('제외', f'다방이 다음 쪽에 다시 준 매물 {duplicate}건은 한 번만 넣었습니다 (다시 채우지 않음)'))
+    notes += unreadable_note(unreadable)
+    notes += duplicate_note(duplicate)
     notes += premium_note(premium)
     # 단지 하나라 지역·반경 대신 단지 매물의 조건만 좁히라고 한다
     notes += limit_notes(

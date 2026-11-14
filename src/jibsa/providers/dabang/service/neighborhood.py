@@ -10,11 +10,9 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
-    UPDATE_MAYBE_NEEDED,
     Listing,
     limit_notes,
     listing_as,
-    note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.neighborhood import (
@@ -40,6 +38,7 @@ from jibsa.providers.dabang.service.common import (
     count_of,
     more_after,
     room_item_to_listing,
+    unreadable_note,
 )
 
 from typing import (
@@ -542,8 +541,7 @@ def get_popular_listings(
             break
         page += 1
     notes: list[str] = []
-    if unreadable:
-        notes.append(note('제외', f'가격·거래 유형을 읽지 못한 {unreadable}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
+    notes += unreadable_note(unreadable)
     # 동 하나(single_dong)의 순위라 좁힐 지역이 없어 이 명령의 -t·--trade 만 권한다 (2026-11-10 리뷰·실측: 역삼동 --limit 100
     # 600건에 '조건·지역을 좁히세요')
     notes += limit_notes(
