@@ -66,8 +66,11 @@ if (!MODELS.includes(reviewerModel)) {
 const reviewerEffort = EFFORTS.includes(a.reviewerEffort) ? a.reviewerEffort : 'high'
 if (a.reviewerEffort && reviewerEffort !== a.reviewerEffort) log(`리뷰어: effort ${a.reviewerEffort} 대신 high 로 돌린다`)
 
-// agent() 가 예외를 던져도 그 에이전트만 실패로 두고 이어 간다.
+// agent() 가 예외를 던져도 그 에이전트만 실패로 두고 이어 간다. 띄운 수는 /review 가 보고에 적는다 (상한은 두지 않는다:
+// 검증자 한 명이 받는 지적을 늘리면 판정이 흐려져, 비용은 시작할 때 어림 인원을 알리는 것으로 다룬다).
+let agentsRun = 0
 const tryAgent = async (prompt, opts) => {
+  agentsRun += 1
   try { return await agent(prompt, opts) } catch (e) { log(`${opts.label}: 예외로 끝났다 (${String(e && e.message || e).slice(0, 120)})`); return null }
 }
 const verify = a.verify !== false
@@ -163,10 +166,10 @@ log(`지적 ${found.length}건 (리뷰어 ${groups.length}명)`)
 
 // ok 가 false 면 리뷰가 덜 된 것이다: 지적 0건이어도 깨끗한 리뷰가 아니다.
 const base = { started: true, ok: failedReviewers.length === 0, reviewers: groups.length, missingPerspectives: missing, failedReviewers, findings: found.length }
-if (!found.length) return { ...base, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
+if (!found.length) return { ...base, agents: agentsRun, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
 if (!verify) {
   log('재검증은 건너뛴다 (verify: false). 주 에이전트가 직접 재현한다')
-  return { ...base, verified: false, items: found }
+  return { ...base, agents: agentsRun, verified: false, items: found }
 }
 
 phase('재검증')
@@ -227,7 +230,7 @@ const byId = Object.fromEntries(verdicts.map(v => [v.id, v]))
 // 중복은 가리키는 지적이 있고 그 지적이 중복이 아닐 때만 인정한다 (서로 가리켜 둘 다 사라지지 않게).
 const isDuplicate = v => v.verdict === 'duplicate' && byId[v.duplicate_of] && byId[v.duplicate_of].verdict !== 'duplicate'
 // 일어날 수 없음·중복도 근거와 함께 돌려준다. 사용자에게는 보여 주지 않지만 주 에이전트가 잘못 갈린 것이 없는지 훑는다.
-const result = { ...base, verified: true, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
+const result = { ...base, agents: agentsRun, verified: true, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
 for (const f of found) {
   const v = byId[f.id]
   const item = { ...f, evidence: v ? v.evidence : '검증 결과 없음', note: v && v.note ? v.note : '' }
@@ -238,5 +241,5 @@ for (const f of found) {
   else if (isDuplicate(v)) result.duplicate.push({ ...item, duplicateOf: v.duplicate_of })
   else result.unconfirmed.push({ ...item, note: `중복이라 했지만 가리킨 지적(${v.duplicate_of || '없음'})이 없거나 그것도 중복이다` })
 }
-log(`진짜 문제 ${result.real.length}, 오탐 ${result.falsePositive.length}, 미확인 ${result.unconfirmed.length}, 일어날 수 없음 ${result.impossible.length}, 중복 ${result.duplicate.length}`)
+log(`진짜 문제 ${result.real.length}, 오탐 ${result.falsePositive.length}, 미확인 ${result.unconfirmed.length}, 일어날 수 없음 ${result.impossible.length}, 중복 ${result.duplicate.length} (띄운 에이전트 ${agentsRun}명)`)
 return result
