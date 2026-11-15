@@ -39,7 +39,10 @@ import sys
 import tempfile
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    replace,
+)
 from pathlib import Path
 
 from typing import Any
@@ -48,6 +51,8 @@ from typing import Any
 @dataclass(frozen=True)
 class Capture:
     """결과에서 뒤 명령에 넘길 값 하나. 목록 칸의 항목 중 조건에 맞는 첫 항목에서 꺼낸다.
+
+    조건에 맞는 다음 항목들은 남겨 두었다가, 넘긴 매물이 내려간 매물로 나오면 한 번 더 부를 때 쓴다 (`run_group`).
 
     Args:
         name: 뒤 명령 인자의 `{name}` 에 채울 이름. 이미 담긴 이름이면 덮어쓰지 않는다.
@@ -453,7 +458,10 @@ STATUS_LABELS: dict[str, str] = {OK: '✅ 정상', BROKEN: '❌ 고장', UNKNOWN
 # 사이트가 바뀐 것인지 알 수 없는 에러. 그 밖의 에러 코드(PARSE_ERROR, INTERNAL_ERROR, NOT_FOUND, REGION_NOT_FOUND 등)는 고장이다.
 # BROWSER_UNAVAILABLE 은 일부러 넣지 않는다. 조회 잡이 바로 앞 단계에서 install-browser 로 Chromium 을 받아 한 번 띄워 봤으므로,
 # 그 뒤 명령에서 못 띄우면 사이트가 아니라 jibsa(브라우저 쪽) 고장이고 사용자도 같이 막힌다 (2026-11-10 재검토)
-UNKNOWN_CODES: frozenset[str] = frozenset({'RATE_LIMITED', 'NETWORK_ERROR', 'LISTING_UNAVAILABLE'})
+# 검색 직후 내려간 매물의 에러. 확인 못 함이지만 목록에서 받은 다른 매물로 한 번 더 불러 그것도 이 에러면 고장으로 본다
+# (`run_group`). 상세 API 가 바뀌어 살아 있는 매물이 모두 내려간 매물로 나오면 날마다 확인 못 함으로만 남는다 (직방 아파트 상세)
+GONE_CODE: str = 'LISTING_UNAVAILABLE'
+UNKNOWN_CODES: frozenset[str] = frozenset({'RATE_LIMITED', 'NETWORK_ERROR', GONE_CODE})
 
 BROKEN_LABEL: str = 'api-broken'
 BLOCKED_LABEL: str = 'api-blocked'
@@ -475,6 +483,28 @@ def _error(stderr: str) -> dict[str, Any] | None:
                 return None
             return body if isinstance(body, dict) else None
     return None
+
+
+@dataclass(frozen=True)
+class StepResult:
+    """명령 하나의 판정.
+
+    Args:
+        status: `OK`·`BROKEN`·`UNKNOWN`.
+        detail: 보고 표에 적을 내용 (사람이 읽는 글자라 판정에 다시 쓰지 않는다).
+        data: 성공했으면 stdout JSON.
+        code: 에러로 끝났으면 그 에러 code (예: `LISTING_UNAVAILABLE`).
+    """
+
+    status: str
+    detail: str
+    data: dict[str, Any] | None = None
+    code: str | None = None
+
+
+def _is_gone(result: StepResult) -> bool:
+    """명령 결과가 내려간 매물(`GONE_CODE`)이라 확인 못 함인지."""
+    return result.status == UNKNOWN and result.code == GONE_CODE
 
 
 def _is_unknown(error: dict[str, Any]) -> bool:
@@ -501,13 +531,14 @@ def _present(value: Any) -> bool:
     return value is not None and value != '' and value != [] and value != {}
 
 
-def _capture(data: dict[str, Any], capture: Capture) -> str | None:
+def _capture(data: dict[str, Any], capture: Capture) -> list[str]:
+    """조건에 맞는 값들 (앞이 뒤 명령에 넘길 값, 나머지는 그 값이 내려간 매물일 때 대신 넘길 값). 겹치는 값은 한 번만."""
     if not capture.items:
         value = data.get(capture.field)
-        return str(value) if _present(value) else None
+        return [str(value)] if _present(value) else []
     items = data.get(capture.items)
     if not isinstance(items, list):
-        return None
+        return []
     found = [
         item for item in items
         if isinstance(item, dict) and _present(item.get(capture.field)) and str(item[capture.field]).startswith(capture.prefix)
@@ -515,7 +546,7 @@ def _capture(data: dict[str, Any], capture: Capture) -> str | None:
     ]
     if capture.largest:
         found.sort(key=lambda item: item[capture.largest] if isinstance(item.get(capture.largest), int | float) else -1, reverse=True)
-    return str(found[0][capture.field]) if found else None
+    return list(dict.fromkeys(str(item[capture.field]) for item in found))
 
 
 def _names(step: Step) -> list[str]:
@@ -523,8 +554,7 @@ def _names(step: Step) -> list[str]:
     return [name for arg in step.args for _, name, _, _ in string.Formatter().parse(arg) if name]
 
 
-def _run_step(step: Step, values: dict[str, str]) -> tuple[str, str, dict[str, Any] | None]:
-    """(판정, 내용, stdout JSON)."""
+def _run_step(step: Step, values: dict[str, str]) -> StepResult:
     command = [*step.command, *(arg.format(**values) for arg in step.args)]
     print(f"::group::jibsa {' '.join(command)}", flush=True)
     try:
@@ -534,17 +564,17 @@ def _run_step(step: Step, values: dict[str, str]) -> tuple[str, str, dict[str, A
         )
     except subprocess.TimeoutExpired:
         print('::endgroup::', flush=True)
-        return UNKNOWN, f'{COMMAND_TIMEOUT_SECONDS}초 안에 끝나지 않음', None
+        return StepResult(UNKNOWN, f'{COMMAND_TIMEOUT_SECONDS}초 안에 끝나지 않음')
     # 요청 로그만 남긴다. 결과(매물 제목·주소)는 공개 실행 기록에 남기지 않고, 고장일 때만 앞부분을 남긴다
     print(done.stderr.strip())
-    status, detail, data = _judge(step, done)
-    if status != OK:
+    result = _judge(step, done)
+    if result.status != OK:
         print(done.stdout.strip()[:1000])
     print('::endgroup::', flush=True)
-    return status, detail, data
+    return result
 
 
-def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str, dict[str, Any] | None]:
+def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
     # 결과는 나오지만 고쳐야 한다는 안내. 지역 검색이 바뀌었을 수 있어 대체 경로로 찾았거나(직방 단기임대가 지역 대신 지도로),
     # 덤 조회(단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했거나(당근
     # partial_failure_note, 다방 단지 최근 실거래 요약), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
@@ -559,36 +589,40 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> tuple[str, str
         try:
             data = json.loads(done.stdout)
         except ValueError:
-            return BROKEN, 'stdout 이 JSON 이 아님', None
+            return StepResult(BROKEN, 'stdout 이 JSON 이 아님')
         if not isinstance(data, dict):
-            return BROKEN, 'stdout 이 JSON 객체가 아님', None
+            return StepResult(BROKEN, 'stdout 이 JSON 객체가 아님')
         degraded = [
             note for note in data.get('notes') or []
             if isinstance(note, str) and (UPDATE_NEEDED in note or UPDATE_MAYBE_NEEDED in note)
         ]
         if degraded:
-            return BROKEN, f'대체 경로로 돌았거나 일부를 받지 못함: {degraded[0][:200]}', data
+            return StepResult(BROKEN, f'대체 경로로 돌았거나 일부를 받지 못함: {degraded[0][:200]}', data)
         value = _value(data, step.expect)
         if not _present(value):
             # 칸이 아예 없거나 목록이 아니면 응답 형식이 바뀐 것이라 empty_ok 여도 아래에서 고장으로 본다
             if step.empty_ok and value == []:
-                return OK, '0건 (빈 목록도 정상인 칸)', data
+                return StepResult(OK, '0건 (빈 목록도 정상인 칸)', data)
             # 하루 비었다고 고장으로 보지 않는다. 계속 비면 사흘 연속 확인 못 함(api-blocked)으로 알린다
             if step.may_be_empty:
-                return UNKNOWN, f'{step.expect} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data
+                return StepResult(UNKNOWN, f'{step.expect} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data)
             # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
             # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약)
             failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
             if failed is not None:
-                return UNKNOWN, f'{step.expect} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data
-            return BROKEN, f'{step.expect} 칸이 비어 있음', data
-        return OK, f'{len(value)}건' if isinstance(value, list) else f'{step.expect} 있음', data
+                return StepResult(UNKNOWN, f'{step.expect} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data)
+            return StepResult(BROKEN, f'{step.expect} 칸이 비어 있음', data)
+        return StepResult(OK, f'{len(value)}건' if isinstance(value, list) else f'{step.expect} 있음', data)
     error = _error(done.stderr)
     if error is None:
-        return BROKEN, f'exit {done.returncode}, 에러 JSON 없음', None
-    detail = ' '.join(str(part) for part in (error.get('code'), error.get('status')) if part)
+        return StepResult(BROKEN, f'exit {done.returncode}, 에러 JSON 없음')
+    code = error.get('code')
+    detail = ' '.join(str(part) for part in (code, error.get('status')) if part)
     message = str(error.get('message') or '').replace('\n', ' ')
-    return (UNKNOWN if _is_unknown(error) else BROKEN), f'{detail}: {message[:200]}', None
+    return StepResult(
+        UNKNOWN if _is_unknown(error) else BROKEN, f'{detail}: {message[:200]}',
+        code=code if isinstance(code, str) else None,
+    )
 
 
 def _today() -> datetime.date:
@@ -866,26 +900,58 @@ WEEKLY_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
 def run_group(name: str, *, weekly: bool = False) -> dict[str, Any]:
     """소스 하나의 명령을 차례로 부른다. 앞 명령이 넘길 번호를 주지 않은 명령은 건너뛴다 (확인 못 함).
 
+    넘긴 매물이 내려간 매물(`GONE_CODE`)로 나오면 같은 목록의 다음 매물로 한 번 더 부르고, 그것도 내려간 매물이면 고장이다.
+    목록에 매물이 하나뿐이면 다시 부르지 못해 확인 못 함으로 둔다. 두 번 확인해 내려간 값은 기억해 두고, 뒤 명령이
+    그 값을 쓰면 부르지 않고 확인 못 함으로 건너뛴다 (같은 값과 같은 예비 매물로 요청이 또 늘지 않게).
+
     `weekly` 이거나 오늘이 `WEEKLY_CHECK_WEEKDAY` 면 명령 뒤에 `WEEKLY_CHECKS` 도 돈다.
     """
     check_in = _today() + datetime.timedelta(days=STAY_CHECK_IN_DAYS)
     values: dict[str, str] = {'check_in': check_in.isoformat(), 'check_out': (check_in + datetime.timedelta(days=6)).isoformat()}
+    # 이름마다 목록의 다음 값들. 넘긴 매물이 내려간 매물로 나오면 이 값으로 한 번 더 부른다
+    spares: dict[str, list[str]] = {}
+    # 이름마다 (그 값, 두 번 확인한 앞 명령 이름). 값과 예비 매물이 모두 내려간 매물로 나온 것
+    gone_twice: dict[str, tuple[str, str]] = {}
     steps: list[dict[str, str]] = []
     for step in GROUPS[name]:
         line = ' '.join(step.command)
         missing = [field for field in _names(step) if field not in values]
+        known_gone = [field for field in _names(step) if field not in missing and gone_twice.get(field, ('', ''))[0] == values[field]]
+        if not missing and known_gone:
+            steps.append({
+                'label': step.label, 'command': line, 'status': UNKNOWN,
+                'detail': f"앞 명령 '{gone_twice[known_gone[0]][1]}' 에서 이 값의 매물 2건이 모두 내려간 매물로 나와 다시 부르지 않음",
+            })
+            continue
         if missing:
             steps.append({
                 'label': step.label, 'command': line, 'status': UNKNOWN,
                 'detail': f"앞 명령 결과에 {', '.join(missing)} 값이 없어 건너뜀",
             })
             continue
-        status, detail, data = _run_step(step, values)
+        result = _run_step(step, values)
+        if _is_gone(result):
+            # 방금 목록에서 받은 매물이 내려간 매물이라고 나왔다. 목록의 다음 매물로 한 번 더 부른다
+            retry = {field: spares[field][0] for field in _names(step) if spares.get(field)}
+            if retry:
+                result = _run_step(step, values | retry)
+                if _is_gone(result):
+                    for field in retry:
+                        gone_twice[field] = (values[field], step.label)
+                    result = replace(result, status=BROKEN, detail=(
+                        f'방금 목록에서 받은 매물 2건이 모두 내려간 매물로 나옴 (상세 조회가 바뀌었을 수 있음). {result.detail}'
+                    ))
+                else:
+                    # 뒤 명령도 살아 있는 매물로 부른다
+                    values |= retry
+                    for field in retry:
+                        spares[field] = spares[field][1:]
         for capture in step.captures:
-            found = _capture(data, capture) if data else None
-            if found is not None:
-                values.setdefault(capture.name, found)
-        steps.append({'label': step.label, 'command': line, 'status': status, 'detail': detail})
+            found = _capture(result.data, capture) if result.data else []
+            if found and capture.name not in values:
+                values[capture.name] = found[0]
+                spares[capture.name] = found[1:]
+        steps.append({'label': step.label, 'command': line, 'status': result.status, 'detail': result.detail})
     if weekly or _today().weekday() == WEEKLY_CHECK_WEEKDAY:
         steps += [check() for check in WEEKLY_CHECKS.get(name, ())]
     return {'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}

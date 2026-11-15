@@ -17,6 +17,8 @@ from jibsa.cli.app import (
 )
 from jibsa.core.browser import BrowserTransport
 
+from typing import Any
+
 
 def stderr_error(capsys: pytest.CaptureFixture[str]) -> dict:
     captured = capsys.readouterr()
@@ -375,15 +377,52 @@ def test_workflow_concurrency_limits_match() -> None:
 
 # --- 매일 API 감시 ---
 
-def test_every_source_command_is_in_api_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 비공식 API 는 언제 바뀔지 몰라 매일 새벽 소스 명령을 모두 실제로 불러 본다 (scripts/monitor/api_check.py).
-    # 새 명령을 만들고 감시 목록에 넣지 않으면 그 명령은 깨져도 모른다
+def _load_api_monitor(monkeypatch: pytest.MonkeyPatch) -> Any:
     path = Path(__file__).resolve().parents[1] / 'scripts' / 'monitor' / 'api_check.py'
     spec = importlib.util.spec_from_file_location('api_check', path)
     assert spec is not None and spec.loader is not None
     monitor = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, 'api_check', monitor)  # dataclass 가 자기 모듈을 찾는다
     spec.loader.exec_module(monitor)
+    return monitor
+
+
+def test_api_monitor_calls_gone_listing_broken_when_next_one_is_gone_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 검색 직후 내려간 매물(LISTING_UNAVAILABLE)은 확인 못 함이지만, 상세 조회가 바뀌어 살아 있는 매물이 모두 내려간 매물로
+    # 나오면 날마다 확인 못 함으로만 남는다 (2026-11-14 직방 아파트 상세). 같은 목록의 다음 매물도 내려간 매물이면 고장이다.
+    # 그렇게 두 번 확인한 값은 뒤 명령이 다시 부르지 않고 확인 못 함으로 건너뛴다 (요청을 늘리지 않는다, 2026-11-15 리뷰)
+    monitor = _load_api_monitor(monkeypatch)
+    listing = ('fake', 'listing')
+    monkeypatch.setitem(monitor.GROUPS, 'fake', (
+        monitor.Step('목록', ('fake', 'search'), (), 'listings', (monitor.Capture('room', 'listings', 'id'),)),
+        monitor.Step('상세', listing, ('{room}',), 'id'),
+        monitor.Step('상세 한 번 더', listing, ('{room}',), 'id'),
+    ))
+    gone = monitor.StepResult(monitor.UNKNOWN, 'LISTING_UNAVAILABLE: 현재 거래할 수 없는 매물입니다', code='LISTING_UNAVAILABLE')
+    alive: set[str] = set()
+    called: list[str] = []
+
+    def run_step(step: Any, values: dict[str, str]) -> Any:
+        if step.command != listing:
+            return monitor.StepResult(monitor.OK, '3건', {'listings': [{'id': 1}, {'id': 2}, {'id': 3}]})
+        called.append(values['room'])
+        return monitor.StepResult(monitor.OK, 'id 있음', {'id': values['room']}) if values['room'] in alive else gone
+
+    monkeypatch.setattr(monitor, '_run_step', run_step)
+    assert [step['status'] for step in monitor.run_group('fake')['steps']] == [monitor.OK, monitor.BROKEN, monitor.UNKNOWN]
+    assert called == ['1', '2']
+
+    # 다음 매물이 살아 있으면 정상이고, 뒤 명령도 그 매물로 부른다
+    alive.add('2')
+    called.clear()
+    assert [step['status'] for step in monitor.run_group('fake')['steps']] == [monitor.OK, monitor.OK, monitor.OK]
+    assert called == ['1', '2', '2']
+
+
+def test_every_source_command_is_in_api_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 비공식 API 는 언제 바뀔지 몰라 매일 새벽 소스 명령을 모두 실제로 불러 본다 (scripts/monitor/api_check.py).
+    # 새 명령을 만들고 감시 목록에 넣지 않으면 그 명령은 깨져도 모른다
+    monitor = _load_api_monitor(monkeypatch)
 
     leaves: set[tuple[str, ...]] = set()
     groups: set[tuple[str, ...]] = set()
