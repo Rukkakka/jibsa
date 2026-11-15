@@ -20,6 +20,7 @@ from jibsa.providers.dabang.api.request.nearby import (
 )
 from jibsa.providers.dabang.api.response.nearby import DabangNearGroupModel
 from jibsa.providers.dabang.service.common import (
+    BUILDING_LABEL_BY_CATEGORY,
     COMPLEX_ID_PATTERN,
     DabangPlace,
     bbox_of,
@@ -54,7 +55,6 @@ TARGET_LABELS: dict[DabangNearTarget, str] = {'room': '매물', 'complex': '단�
 URL_BY_TARGET: dict[DabangNearTarget, Callable[[str], str]] = {'room': listing_url, 'complex': complex_url, 'sale': sale_url}
 # 종류마다 내는 가까운 시설 수. 웹은 받은 시설 전부(편의 종류는 15곳)를 지도에 찍는다
 NEAR_PLACES_PER_TYPE: int = 3
-BUILDING_LABELS: dict[str, str] = {'HOUSE_VILLA': '빌라', 'OFFICETEL': '오피스텔', 'APT': '아파트'}
 ROOM_LABELS: dict[str, str] = {'ONE_ROOM': '원룸', 'TWO_ROOM': '투룸'}
 # 역 둘레 평균 매물가를 받으려고 역을 덮는 지도 범위 (km). 확대 수준 16 이면 범위 안 역 표시에 평균이 붙는다
 STATION_BOX_KM: float = 0.3
@@ -315,7 +315,7 @@ def get_station_prices(client: DabangClient, place: DabangPlace) -> DabangStatio
     for item in station.average_price_list:
         deposit, _, rent = (item.monthly_rent or '').partition('/')
         prices.append(DabangStationPrice(
-            building_type=BUILDING_LABELS.get(item.building_category or '', item.building_category or ''),
+            building_type=BUILDING_LABEL_BY_CATEGORY.get(item.building_category or '', item.building_category or ''),
             room=ROOM_LABELS.get(item.room_type or '', item.room_type or ''),
             lease_average_manwon=manwon_from_text(item.lease),
             rent_deposit_average_manwon=manwon_from_text(deposit) if rent else None,

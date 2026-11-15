@@ -27,6 +27,8 @@ DabangSellingType = Literal['MONTHLY_RENT', 'LEASE', 'SELL']
 DabangRoomFloor = Literal['GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP']
 DabangRoomType = Literal['ONE_ROOM', 'TWO_ROOM']
 DabangRoomCount = Literal['ONE_ROOM', 'TWO_ROOM', 'THREE_ROOM', 'FOUR_ROOM']
+# 동네정보 '매물정보' 계열의 buildingCategoryList — 인기 매물·동 매물수 순위
+DabangRoomBuildingCategory = Literal['HOUSE_VILLA', 'OFFICETEL', 'APT']
 
 ALL_SELLING_TYPES: tuple[DabangSellingType, ...] = ('MONTHLY_RENT', 'LEASE', 'SELL')
 ALL_ROOM_FLOORS: tuple[DabangRoomFloor, ...] = ('GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP')

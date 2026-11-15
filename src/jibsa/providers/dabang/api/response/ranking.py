@@ -122,7 +122,7 @@ class DabangRealPriceTradeRankingsComplexV5ResponseModel(DabangV5ResponseModel[D
 class DabangRegionRankingItemModel(ResponseModel):
     """범위 안 순위 한 칸. 값은 항목마다 다른 글자 키로 온다: `formattedPrice`('61.1억'), `formattedCount`('27개',
     '6,702세대', '86,513명'), `formattedPercentage`('133.3%', 진학률 '2%'), `formattedAge`('44년 6개월'),
-    `formattedChangeRate`('+0.8%'), `formattedScore`('19점').
+    `formattedChangeRate`('+0.8%'), `formattedScore`('19점'). 동네정보 '매물정보' 랭킹의 거래량만 `formattedVolume`('266개')이다.
 
     최고가증감은 `formattedPrice` 가 오른 금액이고 `formattedMaxPrice` 가 앞 최고가다 (2026-10-25 강남구 단지 1위
     아이파크삼성: 15.2억 = 62.8억 × 24.2%). 인구 증감은 `formattedYearOfYearChangeCount` 가 부호 없이('327명') 오고
@@ -201,6 +201,10 @@ class DabangRegionRankingItemModel(ResponseModel):
         str | None,
         Field(description="선호도 점수 ('19점')", alias='formattedScore')
     ] = None
+    formatted_volume: Annotated[
+        str | None,
+        Field(description="거래량 ('266개', 동네정보 '매물정보' 랭킹)", alias='formattedVolume')
+    ] = None
     formatted_curr_count: Annotated[
         str | None,
         Field(description="지금 수 (인구 증감은 올해 인구 '68,936명', 거래증감·매물증감은 '145개')", alias='formattedCurrCount')
@@ -259,3 +263,7 @@ class DabangRegionInfoRealEstateRankingV5ResponseModel(DabangV5ResponseModel[Dab
 
 class DabangRegionInfoRankingV5ResponseModel(DabangV5ResponseModel[DabangRegionRankingResultModel]):
     """`GET /api/v5/region-info/{topic}/ranking/{metric}` 응답 (부동산 순위와 같은 모양)."""
+
+
+class DabangRegionInfoRoomRankingV5ResponseModel(DabangV5ResponseModel[DabangRegionRankingResultModel]):
+    """`GET /api/v5/region-info/room/ranking/{metric}` 응답 (부동산 순위와 같은 모양, 거래량 값만 `formattedVolume`)."""

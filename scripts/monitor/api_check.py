@@ -356,6 +356,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단지 시세 흐름', ('dabang', 'price-trend'), ('{complex}',), 'months'),
         # 동네정보는 탭마다 다른 주소다 (요약 3종·수 4종). 기본은 모든 주제
         Step('동네정보 역삼동', ('dabang', 'neighborhood'), ('역삼동',), 'safety'),
+        # --ranks 는 학교·편의·교통·안전 탭의 요약 주소(region-info/{주제}/regional/summary, 종류마다 1회)를 더 부른다. 안전만
+        # 고르면 요약 3회다
+        Step('동네정보 순위 역삼동', ('dabang', 'neighborhood'), ('역삼동', '--topic', '안전', '--ranks'), 'ranks'),
+        # 핫플레이스(region-info/hot-places)는 미쉐린·블루리본 식당이다. 역삼동은 블루리본 식당이 많다 (2026-11-13 캡처)
+        Step('핫플레이스 역삼동', ('dabang', 'hot-places'), ('역삼동', '--limit', '3'), 'places'),
         Step('인기 매물 역삼동', ('dabang', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
         Step('매물 주변', ('dabang', 'nearby'), ('{room}',), 'stations'),
         Step('단지 주변', ('dabang', 'nearby'), ('{complex}',), 'stations'),
@@ -393,6 +398,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('구 안 동 거래증감 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '거래증감', '--limit', '3'), 'rankings'),
         Step(
             '구 안 단지 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '전세가율', '--unit', '단지', '--limit', '3'),
+            'rankings',
+        ),
+        # -t 빌라 는 동네정보 '매물정보' 탭 순위 주소(region-info/room/ranking/{항목})다
+        Step(
+            '구 안 동 빌라 매물수 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '매물수', '-t', '빌라', '--limit', '3'),
             'rankings',
         ),
         # 학교·학원·인구·시설 순위는 동네정보 순위 주소(region-info/{주제}/ranking/{항목})다

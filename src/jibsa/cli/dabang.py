@@ -55,10 +55,12 @@ from jibsa.providers.dabang.service.common import (
     LISTING_ID_PATTERN,
     LISTING_NUMBER_PATTERN,
     MAX_LIST_LIMIT,
+    POPULAR_BUILDING_BY_LABEL,
     REGION_INFO_DEFAULT_LIMIT,
     REGION_INFO_MAX_LIMIT,
     ROOM_LABELS_BY_KIND,
     TRADE_TYPES_BY_KIND,
+    VILLA_LABEL,
     DabangListingConditions,
     DabangPlace,
     ListingKind,
@@ -81,17 +83,22 @@ from jibsa.providers.dabang.service.nearby import (
     get_station_prices,
 )
 from jibsa.providers.dabang.service.neighborhood import (
+    HOT_PLACE_TYPE_BY_LABEL,
     NEIGHBORHOOD_TOPICS,
-    POPULAR_BUILDING_BY_LABEL,
     POPULAR_MAX_LIMIT,
     POPULAR_PRICE_BY_TRADE,
+    RANK_TOPICS,
+    RANK_TYPES_BY_TOPIC,
+    get_hot_places,
     get_neighborhood,
     get_popular_listings,
     single_dong,
 )
 from jibsa.providers.dabang.service.ranking import (
     METRIC_BY_LABEL,
+    RANKING_TRADE_BY_LABEL,
     REGION_RANKING_MAX_LIMIT,
+    ROOM_RANKING_METRIC_BY_LABEL,
     TRADE_PERIOD_BY_LABEL,
     WATCH_PERIOD_BY_LABEL,
     InfoMetricSpec,
@@ -99,6 +106,7 @@ from jibsa.providers.dabang.service.ranking import (
     get_region_ranking,
     get_trade_rankings,
     get_watch_rankings,
+    is_room_ranking,
     takes_dong_scope,
 )
 from jibsa.providers.dabang.service.real_price import (
@@ -211,9 +219,9 @@ USAGE_HINTS: dict[str, UsageHints] = {
 app = typer.Typer(
     help=(
         '다방: 매물 찾기(search listings room·villa·officetel·apt), 장소·단지(search locations, search complexes, complex, '
-        'search listings --complex), 상세(listing), 실거래(real-price, price-trend), 동네·주변(neighborhood, popular-listings, '
-        'nearby, station-prices), 학교(school), 분양(search sales, sale, sale-schedule), 순위(trending-complexes, trade-rankings, '
-        'region-ranking) '
+        'search listings --complex), 상세(listing), 실거래·시세(real-price, price-trend, nearby-complexes), 동네·주변(neighborhood, '
+        'popular-listings, hot-places, nearby, station-prices), 학교·유치원·어린이집(search schools, school), 분양(search sales, sale, '
+        'sale-schedule), 순위(trending-complexes, trade-rankings, region-ranking) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
     no_args_is_help=True,
@@ -1040,6 +1048,12 @@ def nearby_complexes_command(
         result = get_nearby_complexes(client, value, space_seq=pyeong)
         emit(result, pretty, notes=result.notes)
 
+
+# --ranks 도움말: 주제마다 종류 수 ('학교 5·편의 5·교통 4·안전 3'), 고른 주제를 모두 받을 때의 요청 수. 종류마다 요청 1회다
+RANK_TYPE_COUNTS: str = '·'.join(f'{topic} {len(types)}' for topic, types in RANK_TYPES_BY_TOPIC.items())
+RANK_ALL_REQUESTS: int = sum(len(types) for types in RANK_TYPES_BY_TOPIC.values())
+
+
 @app.command('neighborhood')
 def neighborhood_command(
     query: Annotated[str, typer.Argument(help="법정동 이름 (예: 역삼동, '강남구 신사동')")],
@@ -1047,17 +1061,57 @@ def neighborhood_command(
         list[str] | None,
         typer.Option('--topic', help=f"주제: {', '.join(NEIGHBORHOOD_TOPICS)}. 반복하거나 쉼표로 구분. 기본 전체 (주제마다 요청 1회)"),
     ] = None,
+    ranks: Annotated[
+        bool,
+        typer.Option('--ranks', help=(
+            '학교·편의·교통·안전 주제의 종류마다 합계·구성과 전국·시도·구 순위를 더한다 (다방 동네정보 탭의 요약 칸). 종류마다 요청 '
+            f'1회 더: {RANK_TYPE_COUNTS} (모두면 {RANK_ALL_REQUESTS}회). --topic 으로 주제를 좁히면 그 주제의 종류만 받는다'
+        )),
+    ] = False,
     pretty: PrettyOption = None,
 ) -> None:
     """다방 동네정보: 매물 수·거래량·아파트/오피스텔 평균가·인구(전국·시도·구 순위 포함)와 학교·편의·교통·안전 시설 수.
+    --ranks 면 학교·편의·교통·안전도 종류마다 순위(ranks)를 붙인다.
 
     예: jibsa dabang neighborhood 역삼동
         jibsa dabang neighborhood 역삼동 --topic 매물,인구,학교
+        jibsa dabang neighborhood 역삼동 --topic 편의,안전 --ranks
     """
     topics = split_csv(topic, NEIGHBORHOOD_TOPICS, '--topic')
+    if ranks and topics and not any(item in RANK_TOPICS for item in topics):
+        raise typer.BadParameter(
+            f"--ranks 는 {'·'.join(RANK_TOPICS)} 주제의 순위입니다. --topic 에 그 주제를 넣거나 --ranks 를 빼세요", param_hint='--ranks',
+        )
     with handle_errors(SOURCE), DabangClient() as client:
-        result = get_neighborhood(client, single_dong(resolve_places(client, query, only='dong')), topics)
+        dong = resolve_dong(
+            client, query, subject='동네정보', elsewhere='jibsa dabang station-prices <역> 이나 search listings',
+        )
+        result = get_neighborhood(client, dong, topics, ranks=ranks)
         emit(result, pretty)
+
+
+@app.command('hot-places')
+def hot_places_command(
+    query: Annotated[str, typer.Argument(help="법정동 이름 (예: 역삼동, '강남구 신사동')")],
+    type_: Annotated[
+        str,
+        typer.Option('--type', '-t', help=f"가이드: {', '.join(HOT_PLACE_TYPE_BY_LABEL)} (다방 웹 고르기 이름 그대로). 기본 전체"),
+    ] = '전체',
+    limit: RegionInfoLimitOption = REGION_INFO_DEFAULT_LIMIT,
+    pretty: PrettyOption = None,
+) -> None:
+    """동 안 핫플레이스: 미쉐린·블루리본 가이드에 오른 식당의 이름·가이드·주소·꼬리표 (다방 동네정보 '핫플레이스', 다방 목록 순).
+
+    base_month 는 다방이 모은 기준 달이다. 사진은 주지 않는다.
+
+    예: jibsa dabang hot-places 역삼동
+        jibsa dabang hot-places 역삼동 --type 미쉐린
+    """
+    chosen_type = check_choice(type_, HOT_PLACE_TYPE_BY_LABEL, '--type')
+    with handle_errors(SOURCE), DabangClient() as client:
+        dong = resolve_dong(client, query, subject='핫플레이스', elsewhere=None)
+        result = get_hot_places(client, dong, type_label=chosen_type, limit=limit)
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('popular-listings')
@@ -1363,14 +1417,16 @@ def region_ranking_command(
         list[str] | None,
         typer.Option('--type', '-t', help=(
             '단지 유형: 아파트, 오피스텔 (부동산 항목만, 세대수·연식은 받지 않음). 평균가·평당가·시세증감·최고가증감은 하나(기본 아파트), '
-            '거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 주지 않거나 둘 다 주면 아파트·오피스텔 합산(다방 웹 기본)'
+            '거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 주지 않거나 둘 다 주면 아파트·오피스텔 합산(다방 웹 기본). '
+            f"{VILLA_LABEL}(주택/빌라)를 넣으면 매물수·거래량·선호도를 다방 동네정보 '매물정보' 탭 순위(동만)로 받는다: 고른 매물 유형 "
+            f"({VILLA_LABEL}·오피스텔·아파트) 합산. 아파트·오피스텔만 주면 '시세정보' 탭 순위다"
         )),
     ] = None,
     trade: Annotated[
         list[str] | None,
         typer.Option('--trade', help=(
             '거래 유형. 평균가·평당가·시세증감·최고가증감은 매매·전세 중 하나(기본 매매), 거래량·매물수·거래증감·매물증감·선호도는 '
-            '매매·전세·월세 여럿(기본 전체)'
+            f"{'·'.join(RANKING_TRADE_BY_LABEL)} 여럿(기본 전체)"
         )),
     ] = None,
     kind: Annotated[
@@ -1381,13 +1437,14 @@ def region_ranking_command(
         )),
     ] = None,
     order: Annotated[list[str] | None, typer.Option('--order', help='높은순 또는 낮은순. 기본 높은순')] = None,
-    limit: Annotated[int, typer.Option(min=1, max=REGION_RANKING_MAX_LIMIT, help='최대 순위 수 (부동산 50곳, 동네정보 30곳마다 요청 1회)')] = 20,
+    limit: Annotated[int, typer.Option(min=1, max=REGION_RANKING_MAX_LIMIT, help='최대 순위 수 (부동산 50곳, 동네정보·-t 빌라 30곳마다 요청 1회)')] = 20,
     pretty: PrettyOption = None,
 ) -> None:
     """범위 안 동·단지 순위 (다방 부동산·동네정보 랭킹).
 
-    부동산: 평균가·평당가·거래량·매물수·시세증감·최고가증감·거래증감(전월대비)·매물증감(최근 30일 전 대비)·선호도·세대수·연식,
-    단지는 전세가율·갭가격도. 금액은 국토교통부 실거래, 매물수·매물증감·선호도는 다방 기준이다. 단지 순위는 동 안으로도 좁힌다.
+    부동산(동네정보 '시세정보' 탭, 아파트·오피스텔): 평균가·평당가·거래량·매물수·시세증감·최고가증감·거래증감(전월대비)·
+    매물증감(최근 30일 전 대비)·선호도·세대수·연식, 단지는 전세가율·갭가격도. 금액은 국토교통부 실거래, 매물수·매물증감·선호도는
+    다방 기준이다. 단지 순위는 동 안으로도 좁힌다. -t 빌라 를 주면 매물수·거래량·선호도를 '매물정보' 탭(주택/빌라 포함)으로 받는다.
     동네정보(동만): 진학률(중학교 → 과학고·외국어고·자사고·예술체육고, 고등학교 → 대학교·전문대학, 학교알리미), 학원·학교 수,
     인구·인구증감, 편의·교통·안전 시설 수.
 
@@ -1395,15 +1452,26 @@ def region_ranking_command(
         jibsa dabang region-ranking 서울 --by 전세가율 --unit 단지 --limit 10
         jibsa dabang region-ranking 역삼동 --by 평균가 --unit 단지
         jibsa dabang region-ranking 강남구 --by 거래증감
+        jibsa dabang region-ranking 강남구 --by 매물수 -t 빌라
         jibsa dabang region-ranking 강남구 --by 과학고진학률
         jibsa dabang region-ranking 서울 --by 학원수 --kind 입시
     """
     by = check_choice(by, METRIC_BY_LABEL, '--by')
     spec = METRIC_BY_LABEL[by]
     chosen_unit = _one(unit, RANKING_UNITS, '--unit', '동')
-    trades = split_csv(trade, ('매매', '전세', '월세'), '--trade')
+    trades = split_csv(trade, tuple(RANKING_TRADE_BY_LABEL), '--trade')
     chosen_kind: str | None = None
-    complex_types = split_csv(complex_type, ('아파트', '오피스텔'), '--type')
+    complex_types = split_csv(complex_type, (*COMPLEX_KINDS, VILLA_LABEL), '--type')
+    if is_room_ranking(complex_types) and not isinstance(spec, InfoMetricSpec):
+        # 주택/빌라 순위는 동네정보 '매물정보' 탭뿐이고 그 탭에는 매물수·거래량·선호도의 동 순위만 있다 (room-info 청크 2026-11-13)
+        if by not in ROOM_RANKING_METRIC_BY_LABEL:
+            raise typer.BadParameter(
+                f"{VILLA_LABEL}(주택/빌라) 순위는 {'·'.join(ROOM_RANKING_METRIC_BY_LABEL)}만 있습니다 (다방 동네정보 '매물정보' 탭). "
+                f'{by} 순위는 아파트·오피스텔만 받습니다',
+                param_hint='--type',
+            )
+        if chosen_unit != '동':
+            raise typer.BadParameter(f"{VILLA_LABEL}(주택/빌라) 순위는 동 단위만 있습니다 (다방 동네정보 '매물정보' 탭)", param_hint='--unit')
     if isinstance(spec, InfoMetricSpec):
         if chosen_unit != '동':
             raise typer.BadParameter(f'{by} 순위는 동 단위만 있습니다', param_hint='--unit')
@@ -1433,7 +1501,7 @@ def region_ranking_command(
     chosen_order = _one(order, RANKING_ORDERS, '--order', '높은순')
     ranking_unit: Literal['동', '단지'] = '단지' if chosen_unit == '단지' else '동'
     with handle_errors(SOURCE), DabangClient() as client:
-        check_scope_name(scope, metric_label=by, unit=ranking_unit)
+        check_scope_name(scope, metric_label=by, unit=ranking_unit, complex_types=complex_types)
         result = get_region_ranking(
             client,
             resolve_scope(client, scope, dong=takes_dong_scope(by, ranking_unit)),

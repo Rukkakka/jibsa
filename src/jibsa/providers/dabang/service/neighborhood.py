@@ -13,33 +13,50 @@ from jibsa.core.listing import (
     Listing,
     limit_notes,
     listing_as,
+    normalize_address,
 )
 from jibsa.providers.dabang.api.client import DabangClient
+from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
 from jibsa.providers.dabang.api.request.neighborhood import (
     POPULAR_ROOM_PAGE_LIMIT,
-    DabangPopularBuildingCategory,
+    SUMMARY_TYPE_FIELD_BY_TOPIC,
+    DabangAmenitySummaryType,
+    DabangHotPlaceType,
+    DabangLifeSafetySummaryType,
+    DabangMobilitySummaryType,
     DabangPopularPriceType,
     DabangRegionInfoCountTopic,
+    DabangRegionInfoHotPlacesV5RequestParameterModel,
     DabangRegionInfoRegionalCountV5RequestParameterModel,
     DabangRegionInfoRegionalSummaryV5RequestParameterModel,
     DabangRegionInfoRoomRegionalPopularRoomV5RequestParameterModel,
+    DabangRegionInfoSummaryTopic,
+    DabangSchoolSummaryType,
 )
 from jibsa.providers.dabang.api.response.neighborhood import (
     DabangCountGroupModel,
     DabangCountModel,
     DabangDistributionModel,
+    DabangHotPlaceModel,
     DabangRankingGroupModel,
     DabangRegionInfoSummaryResultModel,
 )
 from jibsa.providers.dabang.service.common import (
+    POPULAR_BUILDING_BY_LABEL,
+    REGION_INFO_MAX_LIMIT,
+    VILLA_LABEL,
     DabangListing,
+    DabangPage,
     DabangPlace,
     ListingKind,
     count_of,
+    fetch_pages,
     more_after,
+    region_info_list_notes,
     room_item_to_listing,
     unreadable_note,
 )
+from jibsa.providers.dabang.service.region import DabangDong
 
 from typing import (
     Annotated,
@@ -67,13 +84,37 @@ FIELD_BY_TOPIC: dict[str, str] = {
     '교통': 'transport',
     '안전': 'safety',
 }
-POPULAR_BUILDING_BY_LABEL: dict[str, DabangPopularBuildingCategory] = {'빌라': 'HOUSE_VILLA', '오피스텔': 'OFFICETEL', '아파트': 'APT'}
 POPULAR_PRICE_BY_TRADE: dict[str, DabangPopularPriceType] = {'월세': 'MONTHLY_RENT', '전세': 'LEASE', '매매': 'SALE'}
-POPULAR_KIND_BY_BUILDING: dict[str, ListingKind] = {'빌라': 'villa', '오피스텔': 'officetel', '아파트': 'apt'}
+POPULAR_KIND_BY_BUILDING: dict[str, ListingKind] = {VILLA_LABEL: 'villa', '오피스텔': 'officetel', '아파트': 'apt'}
 # 유형을 섞어 받으면 칸에 건물 유형이 없다. 오피스텔·아파트는 그 이름으로, 주택·빌라는 방 개수('원룸'·'투룸')로 표시한다
 # (2026-10-25 실측: 역삼동·대치동 유형별 50건씩)
 POPULAR_KIND_BY_ROOM_TYPE: dict[str, ListingKind] = {'오피스텔': 'officetel', '아파트': 'apt'}
 POPULAR_MAX_LIMIT: int = 100
+# --ranks: 학교·편의·교통·안전 탭의 요약 칸 종류 (웹 이름표, 요청 값). 웹 요약 칸의 고르기 순서 그대로다 (school·facility·
+# traffic·life-safety 청크 tabList, 2026-11-13). 종류마다 요청 1회. 요청 값은 주제마다 그 탭의 Literal 로 검사한다
+SCHOOL_RANK_TYPE_BY_LABEL: dict[str, DabangSchoolSummaryType] = {
+    '어린이집': 'NURSERY_SCHOOL', '유치원': 'KINDER_SCHOOL', '초등학교': 'ELEMENTARY_SCHOOL', '중학교': 'MIDDLE_SCHOOL',
+    '고등학교': 'HIGH_SCHOOL',
+}
+AMENITY_RANK_TYPE_BY_LABEL: dict[str, DabangAmenitySummaryType] = {
+    '생활 편의시설': 'LIVING', '의료시설': 'MEDICAL', '외식시설': 'DINING', '대형 쇼핑시설': 'SHOPPING', '체육시설': 'SPORTS',
+}
+MOBILITY_RANK_TYPE_BY_LABEL: dict[str, DabangMobilitySummaryType] = {
+    '교통시설': 'TRANSIT', '주차시설': 'PARKING_LOT', '주유시설': 'CHARGE_STATION', '차량관리시설': 'MAINTENANCE_SHOP',
+}
+LIFE_SAFETY_RANK_TYPE_BY_LABEL: dict[str, DabangLifeSafetySummaryType] = {
+    '안전시설': 'SAFETY_FACILITY', '안전기관': 'SAFETY_ORGANIZATION', '불편요소': 'INCONVENIENCE',
+}
+RANK_TYPES_BY_TOPIC: dict[str, dict[str, str]] = {
+    '학교': dict(SCHOOL_RANK_TYPE_BY_LABEL),
+    '편의': dict(AMENITY_RANK_TYPE_BY_LABEL),
+    '교통': dict(MOBILITY_RANK_TYPE_BY_LABEL),
+    '안전': dict(LIFE_SAFETY_RANK_TYPE_BY_LABEL),
+}
+RANK_TOPICS: tuple[str, ...] = tuple(RANK_TYPES_BY_TOPIC)
+# 핫플레이스 가이드 고르기 (웹 이름표 → 요청 값, hot-place 청크 2026-11-13)와 줄의 가이드 이름표
+HOT_PLACE_TYPE_BY_LABEL: dict[str, DabangHotPlaceType] = {'전체': 'ALL', '미쉐린': 'MICHELIN_GUIDE', '블루리본': 'BLUE_RIBBON'}
+HOT_PLACE_GUIDE_LABELS: dict[str, str] = {value: label for label, value in HOT_PLACE_TYPE_BY_LABEL.items() if value != 'ALL'}
 
 
 def single_dong(place: DabangPlace) -> DabangPlace:
@@ -270,6 +311,35 @@ class DabangPopulation(BaseModel):
     ] = None
 
 
+class DabangCategoryRank(BaseModel):
+    """학교·편의·교통·안전 탭 종류 하나의 합계·구성과 순위 (웹 요약 칸, `--ranks`)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    topic: Annotated[
+        str,
+        Field(description="주제 ('학교', '편의', '교통', '안전')")
+    ]
+    type: Annotated[
+        str,
+        Field(description="종류 (다방 요약 칸 이름표: '어린이집', '생활 편의시설', '교통시설', '안전시설' 등)")
+    ]
+    total: Annotated[
+        int | None,
+        Field(description='그 종류의 합계 (시설·학교 수)')
+    ] = None
+    counts: Annotated[
+        dict[str, int | None] | None,
+        Field(description="구성 ({'편의점': 204, '세탁소': 62}, 어린이집은 설립 구분 {'공공': 3})")
+    ] = None
+    rank: Annotated[
+        DabangRank | None,
+        Field(description='합계 순위 (전국·시도·구)')
+    ] = None
+
+
 class DabangNeighborhood(BaseModel):
     """다방 동네정보 요약. 고르지 않은 주제는 키가 없다."""
 
@@ -317,10 +387,18 @@ class DabangNeighborhood(BaseModel):
         dict[str, dict[str, int | None]] | None,
         Field(description="생활안전 시설 수 ({'안전시설': {'CCTV': 1074}})")
     ] = None
+    ranks: Annotated[
+        list[DabangCategoryRank],
+        Field(description='학교·편의·교통·안전 종류마다 합계·구성과 전국·시도·구 순위 (--ranks 일 때만)')
+    ] = []
     topics: Annotated[
         list[str],
         Field(exclude=True, description='고른 주제')
     ] = []
+    with_ranks: Annotated[
+        bool,
+        Field(exclude=True, description='--ranks 를 줬는지')
+    ] = False
 
     @model_serializer(mode='wrap')
     def drop_unrequested(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -328,6 +406,8 @@ class DabangNeighborhood(BaseModel):
         for topic, field in FIELD_BY_TOPIC.items():
             if topic not in self.topics:
                 data.pop(field, None)
+        if not self.with_ranks:
+            data.pop('ranks', None)
         return data
 
 
@@ -386,21 +466,34 @@ def _month(update_date: str | None) -> str | None:
     return f'20{year}-{int(month):02d}' if year.isdecimal() and month.isdecimal() else None
 
 
-def get_neighborhood(client: DabangClient, place: DabangPlace, topics: list[NeighborhoodTopic]) -> DabangNeighborhood:
-    """동 하나의 다방 동네정보. 주제마다 요청 1회 (매물·거래·시세·인구는 요약과 순위, 학교·편의·교통·안전은 항목별 수)."""
-    gid = place.gid
-    assert gid is not None  # single_dong 이 동만 넘긴다
+def get_neighborhood(
+    client: DabangClient, dong: DabangDong, topics: list[NeighborhoodTopic], *, ranks: bool = False,
+) -> DabangNeighborhood:
+    """동 하나의 다방 동네정보. 주제마다 요청 1회 (매물·거래·시세·인구는 요약과 순위, 학교·편의·교통·안전은 항목별 수).
+
+    Args:
+        dong: 찾은 동 (`resolve_dong`).
+        ranks: 학교·편의·교통·안전 주제의 종류마다 웹 요약 칸(`regional/summary`)을 더 받아 합계·구성·순위를 붙일지. 종류마다
+            요청 1회 (주제마다 `RANK_TYPES_BY_TOPIC` 의 종류 수만큼). 고른 주제의 종류만 받는다. Defaults to False.
+    """
+    place, gid = dong
     chosen = list(topics or NEIGHBORHOOD_TOPICS)
     data: dict[str, Any] = {}
     months: list[str | None] = []
 
     def summary(
-        topic: Literal['room', 'real-estate', 'population'], summary_type: Any = None,
+        topic: DabangRegionInfoSummaryTopic | DabangRegionInfoCountTopic, summary_type: str | None = None,
     ) -> DabangRegionInfoSummaryResultModel | None:
-        """요약 하나. 다방이 result 를 주지 않으면 None 이고, 부르는 쪽은 그 주제를 모름(null)으로 둔다 (빈 값이면 없다로 읽힌다)."""
-        result = client.run_request_region_info_regional_summary_v5(DabangRegionInfoRegionalSummaryV5RequestParameterModel(
-            topic=topic, region_gid=gid, summary_type=summary_type,
-        )).result
+        """요약 하나. 다방이 result 를 주지 않으면 None 이고, 부르는 쪽은 그 주제를 모름(null)으로 둔다 (빈 값이면 없다로 읽힌다).
+
+        종류(`summary_type`)는 그 탭이 받는 칸(`SUMMARY_TYPE_FIELD_BY_TOPIC`)에 담아 보낸다. 인구는 종류가 없다.
+        """
+        params: dict[str, Any] = {'topic': topic, 'region_gid': gid}
+        if summary_type is not None:
+            params[SUMMARY_TYPE_FIELD_BY_TOPIC[topic]] = summary_type
+        result = client.run_request_region_info_regional_summary_v5(
+            DabangRegionInfoRegionalSummaryV5RequestParameterModel.model_validate(params)
+        ).result
         if result is not None:
             months.append(_month(result.update_date))
         return result
@@ -436,10 +529,35 @@ def get_neighborhood(client: DabangClient, place: DabangPlace, topics: list[Neig
         if counts.academy_count is not None:
             values['학원'] = _count_items(counts.academy_count.count_list)
         data[FIELD_BY_TOPIC[topic]] = values
+    rank_list: list[DabangCategoryRank] = []
+    if ranks:
+        for topic, types in RANK_TYPES_BY_TOPIC.items():
+            if topic not in chosen:
+                continue
+            api_topic = COUNT_TOPIC_BY_LABEL[topic]
+            for label, value in types.items():
+                result = summary(api_topic, value)
+                if result is None:
+                    # 다방이 result 를 주지 않으면 그 종류는 모름(null)이다
+                    rank_list.append(DabangCategoryRank(topic=topic, type=label))
+                    continue
+                rank_list.append(DabangCategoryRank(
+                    topic=topic,
+                    type=label,
+                    total=count_of(result.formatted_total_count),
+                    # 다방이 구성을 null 로 주면 모름(null), 빈 목록으로 주면 없음({})이다
+                    counts=None if result.distribution_list is None else {
+                        item.name: item.count if item.count is not None else count_of(item.formatted_count)
+                        for item in result.distribution_list
+                    },
+                    rank=_rank(result.ranking_group),
+                ))
     return DabangNeighborhood(
         region=place,
         base_month=next((month for month in months if month), None),
         topics=chosen,
+        ranks=rank_list,
+        with_ranks=ranks,
         **data,
     )
 
@@ -549,3 +667,115 @@ def get_popular_listings(
         inspected=received, has_more=has_more,
     )
     return DabangPopularResult(region=place, total=total, returned=len(listings), has_more=has_more, listings=listings, notes=notes)
+
+
+class DabangHotPlace(BaseModel):
+    """핫플레이스 식당 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description='식당 이름')
+    ] = None
+    guide: Annotated[
+        str | None,
+        Field(description="오른 가이드 ('미쉐린', '블루리본'. 다방 이름표가 없는 값이면 null)")
+    ] = None
+    address: Annotated[
+        str | None,
+        Field(description="주소 (다방이 주지 않으면 null, 웹은 '주소 정보를 확인하고 있어요.')")
+    ] = None
+    labels: Annotated[
+        list[str],
+        Field(description="꼬리표 ('한식(일반한식)', '솥밥')")
+    ]
+
+
+class DabangHotPlacesResult(BaseModel):
+    """동 안 핫플레이스."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    region: Annotated[
+        DabangPlace,
+        Field(description='동')
+    ]
+    type: Annotated[
+        str,
+        Field(description="고른 가이드 ('전체', '미쉐린', '블루리본')")
+    ]
+    basis: Annotated[
+        str,
+        Field(description='무엇을 모은 목록인지')
+    ]
+    base_month: Annotated[
+        str | None,
+        Field(description='다방 기준 달 (YYYY-MM)')
+    ] = None
+    total: Annotated[
+        int | None,
+        Field(description='전체 수')
+    ] = None
+    returned: Annotated[
+        int,
+        Field(description='반환한 수')
+    ]
+    has_more: Annotated[
+        bool,
+        Field(description='더 있는지')
+    ] = False
+    places: Annotated[
+        list[DabangHotPlace],
+        Field(description='다방 목록 순 식당')
+    ]
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='일부 안내')
+    ] = []
+
+
+def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, limit: int) -> DabangHotPlacesResult:
+    """동 안 핫플레이스 (웹 동네정보 '핫플레이스', 30곳마다 요청 1회). 미쉐린·블루리본 가이드에 오른 식당을 다방 목록 순으로 준다.
+
+    사진 주소는 내보내지 않는다.
+    """
+    place, gid = dong
+    month: list[str | None] = []
+
+    def fetch(page: int) -> DabangPage[DabangHotPlaceModel] | None:
+        result = client.run_request_region_info_hot_places_v5(DabangRegionInfoHotPlacesV5RequestParameterModel(
+            region_gid=gid, type=HOT_PLACE_TYPE_BY_LABEL[type_label], page=page,
+        )).result
+        if result is None:
+            return None
+        month.append(_month(result.update_date))
+        return DabangPage(result.list_ or [], result.total, bool(result.has_more))
+
+    pages = fetch_pages(fetch, limit, page_size=REGION_INFO_PAGE_LIMIT, max_limit=REGION_INFO_MAX_LIMIT)
+    places = [
+        DabangHotPlace(
+            name=row.restaurant_name, guide=HOT_PLACE_GUIDE_LABELS.get(row.type or ''),
+            address=normalize_address(row.address or None),
+            labels=row.label_list or [],
+        )
+        for row in pages.rows
+    ]
+    # 가이드 종류를 아직 고르지 않았을 때만 좁히라고 권한다
+    narrow = '가이드 종류(--type 미쉐린·블루리본) 조건' if type_label == '전체' else None
+    notes = region_info_list_notes(pages, limit, subject=f'{place.name} 핫플레이스', narrow=narrow)
+    return DabangHotPlacesResult(
+        region=place,
+        type=type_label,
+        basis="다방 동네정보 '핫플레이스': 미쉐린·블루리본 가이드에 오른 식당 (출처 미쉐린·블루리본)",
+        base_month=next((value for value in month if value), None),
+        total=pages.total,
+        returned=len(places),
+        has_more=pages.has_more,
+        places=places,
+        notes=notes,
+    )

@@ -45,6 +45,7 @@ from jibsa.providers.dabang.api.request.common import (
     DabangOneTwoFiltersModel,
     DabangPointModel,
     DabangRangeModel,
+    DabangRoomBuildingCategory,
     DabangRoomCount,
     DabangRoomFloor,
     DabangRoomType,
@@ -102,6 +103,11 @@ CATEGORY_BY_KIND: dict[ListingKind, DabangCategory] = {
     'apt': 'apt',
 }
 KIND_LABELS: dict[ListingKind, str] = {'room': '원룸·투룸', 'villa': '주택·빌라', 'officetel': '오피스텔', 'apt': '아파트'}
+# 주택/빌라 유형의 이름 (인기 매물·동네정보 매물 유형·순위 `-t` 가 같이 쓴다)
+VILLA_LABEL: str = '빌라'
+POPULAR_BUILDING_BY_LABEL: dict[str, DabangRoomBuildingCategory] = {VILLA_LABEL: 'HOUSE_VILLA', '오피스텔': 'OFFICETEL', '아파트': 'APT'}
+# 위 표의 반대 방향 (건물 유형 코드 → 이름)
+BUILDING_LABEL_BY_CATEGORY: dict[str, str] = {category: label for label, category in POPULAR_BUILDING_BY_LABEL.items()}
 # 설립 구분 이름. 웹 동네정보 '학군' 상세 목록의 탭 이름 그대로다 (school-regional 청크, 2026-11-13). 학교·유치원은 국공립·사립,
 # 어린이집은 공공·민간·가정·직장·협동이다. 웹 '전체' 탭은 값을 보내지 않는 것이라 옵션을 주지 않으면 된다
 ESTABLISHMENT_BY_LABEL: dict[str, DabangSchoolEstablishmentType] = {'국공립': 'PUBLIC', '사립': 'PRIVATE'}
@@ -674,7 +680,7 @@ def fetch_pages(
     page_size: int = PAGE_SIZE,
     max_limit: int = MAX_LIST_LIMIT,
 ) -> DabangPages[T]:
-    """다방 목록(매물·단지 매물·단지·분양)을 `page` 쪽의 `skip` 칸 뒤부터 `limit` 줄이 찰 때까지 다음 쪽으로 따라간다.
+    """다방 목록(매물·단지 매물·단지·분양, 동네정보 학교·핫플레이스)을 `page` 쪽의 `skip` 칸 뒤부터 `limit` 줄이 찰 때까지 다음 쪽으로 따라간다.
 
     다방 목록은 번호 쪽 넘김이고 한 쪽이 늘 `PAGE_SIZE` 건은 아니다 (2026-11-13 웹 캡처: 아파트 강남역 1쪽 23건, 대치동 2쪽
     23건). 그래서 쪽 수를 `limit` 을 쪽 크기로 나눠 정하지 않고 `limit` 이 찰 때까지 받으며(상한 `max_fetch_pages`), 이어 받을
