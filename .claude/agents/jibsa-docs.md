@@ -1,6 +1,7 @@
 ---
 name: jibsa-docs
-description: jibsa 문서(docs/, AGENTS.md, CHANGELOG)를 코드 변경에 맞춰 고치는 작업자. 여러 사실을 종합해 "웹과 다른 점" 같은 절을 쓸 때 쓴다. 기본 Opus high, 종합할 사실이 수십 건이면 호출 때 xhigh 로 올린다.
+description: jibsa 문서(docs/, AGENTS.md, CHANGELOG)를 코드 변경에 맞춰 고치는 작업자. 여러 사실을 종합해 "웹과 다른 점" 같은 절을 쓸 때 쓴다. 모델·effort 는 CLAUDE.md 의 기준으로 호출 때 정한다.
+tools: Bash, Read, Edit, Write, Glob, Grep
 model: opus
 effort: high
 ---
