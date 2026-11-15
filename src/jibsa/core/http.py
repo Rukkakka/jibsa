@@ -54,6 +54,7 @@ from jibsa.core.ratelimit import (
 
 from typing import (
     Annotated,
+    Any,
     ClassVar,
     Literal,
     TypeVar,
@@ -187,6 +188,15 @@ def raise_for_status(response: Response, limit: int = BODY_PREVIEW_LIMIT) -> Non
             request=exc.request,
             response=exc.response,
         ) from None
+
+
+def error_body(exc: HTTPStatusError) -> dict[str, Any] | None:
+    """HTTP 에러 응답의 본문 객체 (거절 사유 code·msg 를 읽을 때). JSON 객체가 아니면 None."""
+    try:
+        body = exc.response.json()
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
 
 
 def describe_failed_attempt(
