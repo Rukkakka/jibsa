@@ -41,18 +41,23 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import UNBOUNDED_MAX
+from jibsa.providers.dabang.api.request.common import (
+    REGION_INFO_PAGE_LIMIT,
+    UNBOUNDED_MAX,
+)
 from jibsa.providers.dabang.service.common import (
     COMPLEX_ID_PATTERN,
     COMPLEX_KINDS,
     CONDITIONS_BY_KIND,
     DEFAULT_LIST_LIMIT,
+    EDUCATION_LEVELS,
     FLOOR_FILTER_BY_LABEL,
     LISTING_ID_PATTERN,
     LISTING_NUMBER_PATTERN,
     MAX_LIST_LIMIT,
+    REGION_INFO_DEFAULT_LIMIT,
+    REGION_INFO_MAX_LIMIT,
     ROOM_LABELS_BY_KIND,
-    SCHOOL_LEVELS,
     TRADE_TYPES_BY_KIND,
     DabangListingConditions,
     DabangPlace,
@@ -110,6 +115,7 @@ from jibsa.providers.dabang.service.region import (
     find_scope,
     is_national_or_state,
     legal_division_code,
+    resolve_dong,
     resolve_places,
     resolve_scope,
     search_locations,
@@ -125,7 +131,9 @@ from jibsa.providers.dabang.service.sale import (
 )
 from jibsa.providers.dabang.service.school import (
     SCHOOL_CODE_PATTERN,
+    establishment_labels,
     get_school,
+    search_schools,
 )
 
 from typing import (
@@ -211,7 +219,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 search_app = typer.Typer(
-    help='다방 장소 후보(locations), 매물 찾기(listings room·villa·officetel·apt), 단지 목록(complexes)',
+    help='다방 장소 후보(locations), 매물 찾기(listings room·villa·officetel·apt), 단지 목록(complexes), 분양(sales), 동 안 학교 목록(schools)',
     no_args_is_help=True,
 )
 app.add_typer(search_app, name='search')
@@ -251,6 +259,9 @@ ComplexRadiusOption = Annotated[
 ]
 LimitOption = Annotated[
     int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 매물 수 (제외 전, 다방은 24건씩 준다, 최대 {MAX_LIST_LIMIT})'),
+]
+RegionInfoLimitOption = Annotated[
+    int, typer.Option(min=1, max=REGION_INFO_MAX_LIMIT, help=f'받을 수 (다방은 {REGION_INFO_PAGE_LIMIT}곳씩 준다. 그만큼마다 요청 1회)'),
 ]
 PrimaryPyeongOption = Annotated[
     int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].space_seq). 기본 다방 대표 평형'),
@@ -872,25 +883,77 @@ def complex_command(
 
 @app.command('school')
 def school_command(
-    school_code: Annotated[str, typer.Argument(help='학교 코드 (complex 결과 schools[].school_code, 예: S010000704)')],
+    school_code: Annotated[
+        str,
+        typer.Argument(help=(
+            '학교·유치원·어린이집 코드 (complex 결과 schools[].school_code·nurseries[].code·kindergartens[].code, search schools '
+            '결과의 school_code. 예: S010000704)'
+        )),
+    ],
     level: Annotated[
         str,
-        typer.Option('--level', help='초등학교, 중학교, 고등학교 (complex 결과 schools[].level). 코드와 맞아야 한다'),
+        typer.Option('--level', help=(
+            f"{', '.join(EDUCATION_LEVELS)} (complex 결과 schools[].level, nurseries 는 어린이집, kindergartens 는 유치원, "
+            'search schools 결과의 level). 코드와 맞아야 한다'
+        )),
     ],
     pretty: PrettyOption = None,
 ) -> None:
-    """학교 하나의 학교알리미 공시: 학급당·교원당 학생 수(시·도·시·군·구 평균과 비교), 중학교 고교 유형별 진학률, 고등학교 대학 진학률.
+    """학교·유치원·어린이집 하나의 공시 (요청 1회).
 
-    학교 코드는 complex 결과의 schools[] 에서 옮긴다. 전화·홈페이지·좌표는 주지 않는다.
+    학교(학교알리미): 학급당·교원당 학생 수(시·도·시·군·구 평균과 비교), 중학교 고교 유형별 진학률, 고등학교 대학 진학률.
+    유치원(유치원알리미)·어린이집(어린이집정보공개포털): 설립 유형·운영 시간·통학버스·원아 구성·교사 급수별 수·교사 1명당 아동 수·
+    제공 서비스, 유치원은 홈페이지와 통학 차량 수도. 유치원 원비는 주지 않는다 (결과 url 의 공시 페이지에서 본다).
+    전화·좌표는 주지 않는다 (학교는 홈페이지도).
 
     예: jibsa dabang school S010000704 --level 중학교
+        jibsa dabang school 11650000153 --level 어린이집
     """
     value = school_code.strip()
     if SCHOOL_CODE_PATTERN.fullmatch(value) is None:
-        raise typer.BadParameter(f"학교 코드는 영문·숫자입니다: '{school_code}'", param_hint='SCHOOL_CODE')
-    chosen_level = check_choice(level, SCHOOL_LEVELS, '--level')
+        raise typer.BadParameter(f"코드는 영문·숫자·'-' 입니다: '{school_code}'", param_hint='SCHOOL_CODE')
+    chosen_level = check_choice(level, EDUCATION_LEVELS, '--level')
     with handle_errors(SOURCE), DabangClient() as client:
         emit(get_school(client, value, chosen_level), pretty)
+
+
+@search_app.command('schools')
+def schools_command(
+    query: Annotated[str, typer.Argument(help="법정동 이름 (예: 역삼동, '강남구 신사동')")],
+    level: Annotated[
+        str,
+        typer.Option('--level', help=f"{', '.join(EDUCATION_LEVELS)} 중 하나 (다방 동네정보 학군 목록의 탭)"),
+    ],
+    establishment: Annotated[
+        str | None,
+        typer.Option('--establishment', help=(
+            '설립 구분 (다방 탭 이름 그대로). 초·중·고등학교·유치원: 국공립·사립, 어린이집: 공공·민간·가정·직장·협동. 기본 전체'
+        )),
+    ] = None,
+    limit: RegionInfoLimitOption = REGION_INFO_DEFAULT_LIMIT,
+    pretty: PrettyOption = None,
+) -> None:
+    """동 안 학교·유치원·어린이집 목록 (다방 동네정보 '학군' 상세 목록과 같은 목록·순서·전체 수).
+
+    줄마다 코드·이름·설립 구분·주소, 중·고등학교는 특목고·자사고 진학률도. 결과의 school_code 와 level 을
+    jibsa dabang school <school_code> --level <level> 에 그대로 넘긴다.
+
+    예: jibsa dabang search schools 역삼동 --level 초등학교
+        jibsa dabang search schools 역삼동 --level 어린이집 --establishment 공공
+    """
+    chosen_level = check_choice(level, EDUCATION_LEVELS, '--level')
+    # 빈 값은 주지 않은 것과 같이 전체다
+    given_establishment = (establishment or '').strip()
+    chosen_establishment = check_choice(
+        given_establishment, establishment_labels(chosen_level), '--establishment',
+        context=f'--level {chosen_level} 의 설립 구분',
+    ) if given_establishment else None
+    with handle_errors(SOURCE), DabangClient() as client:
+        result = search_schools(
+            client, resolve_dong(client, query, subject='동 안 학교', elsewhere=None), chosen_level,
+            establishment=chosen_establishment, limit=limit,
+        )
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('real-price')

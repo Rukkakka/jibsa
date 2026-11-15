@@ -33,6 +33,7 @@ from jibsa.providers.dabang.api.request.common import (
     ALL_ROOM_TYPES,
     COMPLEX_ID_PATTERN_TEXT,
     LISTING_ID_PATTERN_TEXT,
+    REGION_INFO_PAGE_LIMIT,
     UNBOUNDED_MAX,
     DabangAptFiltersModel,
     DabangBboxModel,
@@ -50,6 +51,7 @@ from jibsa.providers.dabang.api.request.common import (
     DabangSearchType,
     DabangSellingType,
 )
+from jibsa.providers.dabang.api.request.school import DabangSchoolEstablishmentType
 from jibsa.providers.dabang.api.response.common import (
     DabangAreaAveragePriceModel,
     DabangComplexResultModel,
@@ -74,6 +76,9 @@ PAGE_SIZE: int = 24
 DEFAULT_LIST_LIMIT: int = 24
 MAX_LIST_LIMIT: int = 120
 MANWON_PER_EOK: int = 10000
+# search schools·hot-places 의 --limit. 다방 동네정보 목록은 30줄씩 주고(31 이상은 400) 웹도 30줄씩 쪽을 넘긴다. 쪽 넘김을 4쪽까지 한 번에 받는다
+REGION_INFO_DEFAULT_LIMIT: int = REGION_INFO_PAGE_LIMIT
+REGION_INFO_MAX_LIMIT: int = REGION_INFO_PAGE_LIMIT * 4
 # 매물·단지 주소. 서버가 지도 화면으로 넘겨 준다 (2026-10-25 실측: /room/{id} → 302 /map/onetwo?…detail_type=room,
 # /complex/{id} → 302 /map/apt?…detail_type=complex). 상세의 짧은 주소(redirect.dabangapp.com)도 /room/{id} 로 넘긴다
 LISTING_URL: str = 'https://www.dabangapp.com/room/{room_id}'
@@ -97,6 +102,16 @@ CATEGORY_BY_KIND: dict[ListingKind, DabangCategory] = {
     'apt': 'apt',
 }
 KIND_LABELS: dict[ListingKind, str] = {'room': '원룸·투룸', 'villa': '주택·빌라', 'officetel': '오피스텔', 'apt': '아파트'}
+# 설립 구분 이름. 웹 동네정보 '학군' 상세 목록의 탭 이름 그대로다 (school-regional 청크, 2026-11-13). 학교·유치원은 국공립·사립,
+# 어린이집은 공공·민간·가정·직장·협동이다. 웹 '전체' 탭은 값을 보내지 않는 것이라 옵션을 주지 않으면 된다
+ESTABLISHMENT_BY_LABEL: dict[str, DabangSchoolEstablishmentType] = {'국공립': 'PUBLIC', '사립': 'PRIVATE'}
+NURSERY_ESTABLISHMENT_BY_LABEL: dict[str, DabangSchoolEstablishmentType] = {
+    '공공': 'PUBLIC',
+    '민간': 'PRIVATE',
+    '가정': 'HOME',
+    '직장': 'WORKPLACE',
+    '협동': 'COOPERATIVE',
+}
 ComplexKind = Literal['아파트', '오피스텔']
 ComplexType = Literal['APT', 'OFFICETEL']
 # 단지 유형 (이름, 코드) 짝. 두 방향 표가 이 한 곳에서 나온다
@@ -157,6 +172,12 @@ OFFICETEL_TYPE: str = '오피스텔'
 COMPLEX_PROPERTY_TYPES: tuple[str, ...] = (OFFICETEL_TYPE, APARTMENT_TYPE)
 SchoolLevel = Literal['초등학교', '중학교', '고등학교']
 SCHOOL_LEVELS: tuple[SchoolLevel, ...] = ('초등학교', '중학교', '고등학교')
+# 유치원·어린이집. 학교와 상세 응답이 달라(유치원알리미·어린이집정보공개포털) 따로 둔다
+ChildcareLevel = Literal['유치원', '어린이집']
+CHILDCARE_LEVELS: tuple[ChildcareLevel, ...] = ('유치원', '어린이집')
+# school --level 과 search schools --level 이 받는 단계 (학교 다음 유치원·어린이집)
+EducationLevel = Literal['초등학교', '중학교', '고등학교', '유치원', '어린이집']
+EDUCATION_LEVELS: tuple[EducationLevel, ...] = (*SCHOOL_LEVELS, *CHILDCARE_LEVELS)
 # 웹 지도 확대 수준 (동 14, 역·대학 15, 지도 범위 16). 동·역 검색에도 필수라 보낸다 (빠지면 400 "줌은 필수값 입니다")
 ZOOM_BY_SEARCH_TYPE: dict[DabangSearchType, int] = {'region': 14, 'subway': 15, 'univ': 15, 'bbox': 16}
 
@@ -778,6 +799,26 @@ def more_list_notes(
     if not pages.has_more:
         return []
     return [note('일부', f'{seen}. {more_hint(limit, max_limit, narrow)}')]
+
+
+def region_info_list_notes(pages: DabangPages[Any], limit: int, *, subject: str, narrow: str | None) -> list[str]:
+    """동네정보 목록(search schools·hot-places)이 다방의 전부가 아닐 때의 안내. 다 받았으면 빈 목록.
+
+    받은 줄과 결과 줄이 1:1 이라 `len(pages.rows)` 가 결과 수다.
+
+    Args:
+        pages: `fetch_pages` 가 받은 쪽 모음.
+        limit: 요청한 수.
+        subject: 안내 앞머리 (예: '역삼동 어린이집', '역삼동 핫플레이스').
+        narrow: 좁히라고 권할 조건 (예: '설립 구분(--establishment) 조건'). 좁힐 옵션을 아직 고르지 않았을 때만 좁히라고
+            권하므로 이미 골랐으면 None.
+    """
+    # 다방이 total 을 null 로 줘도 hasMore 면 알린다 (2026-11-14 리뷰)
+    among = f'{pages.total}곳 중 ' if pages.total is not None else ''
+    return more_list_notes(
+        pages, limit, seen=f'{subject} {among}다방 목록 순으로 앞 {len(pages.rows)}곳입니다',
+        max_limit=REGION_INFO_MAX_LIMIT, narrow=narrow,
+    )
 
 
 def premium_note(count: int) -> list[str]:

@@ -332,10 +332,19 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step(
             '단지', ('dabang', 'complex'), ('{complex}',), 'recent_sale',
             # 진학 인원이 모두 비어도 초등학교 코드를 고르지 않게 중학교만 본다 (단계가 틀리면 500 이라 확인 못 함으로 묻힌다)
-            (Capture('middle_school', 'schools', 'school_code', largest='special_high_entrants', where=('level', '중학교')),),
+            (
+                Capture('middle_school', 'schools', 'school_code', largest='special_high_entrants', where=('level', '중학교')),
+                Capture('nursery', 'nurseries', 'code'),
+                Capture('kinder', 'kindergartens', 'code'),
+            ),
         ),
         # 학교 상세는 옛 방식(/api/3/education/{단계}/{코드}). 단계가 코드와 다르면 500 이라 단지의 중학교로 본다
         Step('학교 상세 중학교', ('dabang', 'school'), ('{middle_school}', '--level', '중학교'), 'advancement'),
+        # 어린이집·유치원 상세는 같은 옛 방식이지만 응답 모양이 다르다 (education/nursery-school·kinder-school)
+        Step('어린이집 상세', ('dabang', 'school'), ('{nursery}', '--level', '어린이집'), 'teachers'),
+        Step('유치원 상세', ('dabang', 'school'), ('{kinder}', '--level', '유치원'), 'teachers'),
+        # 동 안 학교 목록은 동네정보 학군 상세 목록 주소(region-info/school/regional/{단계})다. 역삼동 초등학교는 늘 있다
+        Step('동 안 학교 역삼동', ('dabang', 'search', 'schools'), ('역삼동', '--level', '초등학교'), 'schools'),
         # 평형대 평당가 비교(real-price/complex/price-per-py). 은마 대표 평형은 '30평대 비교' 가 있다 (2026-11-14 실측)
         Step('평형대 평당가 비교', ('dabang', 'nearby-complexes'), ('{complex}',), 'area_prices'),
         Step('단지 매물', DABANG_LISTINGS, ('--complex', '{listed_complex}', '--limit', '2'), 'listings'),

@@ -36,6 +36,10 @@ ALL_ROOM_COUNTS: tuple[DabangRoomCount, ...] = ('ONE_ROOM', 'TWO_ROOM', 'THREE_R
 # 2026-11-13)이라 세대당 주차 대수다 (같은 날 실측: 아파트 강남역 113 → 1대 이상 79 → 2대 이상 19건, 오피스텔 126 → 6 → 0건).
 # 원룸·빌라·오피스텔의 `canParking`(주차 가능 여부)과 다른 조건이다
 PARKING_NUM_RANGE_DESCRIPTION: str = '세대당 주차 대수 (대)'
+# 동네정보(`/api/v5/region-info/...`) 목록 한 쪽에 받을 수 있는 최대 줄 수. 동 안 학교 목록(school/regional)·순위(ranking)·
+# 핫플레이스(hot-places) 모두 31 이상이면 400 '페이지 당 호출 가능한 최대 행수는 30를 초과할 수 없습니다' 다 (2026-11-14 실측:
+# 어린이집 limit=50, 핫플레이스 31·40). 웹도 이 목록들을 30줄씩 묻는다. 부동산 순위(real-estate/ranking)는 50 까지 된다
+REGION_INFO_PAGE_LIMIT: int = 30
 
 
 class DabangRangeModel(RequestModel):

@@ -103,6 +103,13 @@ LISTING_KIND_BY_CATEGORY: dict[DabangComplexCategory, ListingKind] = {'apt': 'ap
 # 중·고등학교·어린이집·유치원은 가까운 순 3곳. 웹 '주변 보육/교육시설' 탭이 3곳씩 보이고 '더보기' 로 3곳씩 늘린다
 # (education 청크 `Y`·`X`·`Q`·`$` = 3, 2026-11-13)
 NEAREST_SCHOOLS: int = 3
+# 단지 응답의 설립 유형 글자를 다방 학군 화면(`search schools`·`school`)의 이름으로 맞춘다. 다방은 같은 시설을 화면마다 다르게
+# 부른다 (2026-11-14 실측: 방배본동 행복한 어린이집은 단지 화면 '국공립'·상세 '공공', 서울서래초병설유치원은 단지 화면
+# '공립'·상세 '국공립'). 표에 없는 글자는 그대로 낸다
+# 리뷰 오탐 (2026-11-14): nurseries·kindergartens 는 v0.12.0 뒤 Unreleased 에 처음 생긴 필드라 값 정리가 호환 깨짐이 아니다
+# (CHANGELOG 의 호환 깨짐 절에 적지 않는다)
+NURSERY_ESTABLISHMENT_LABELS: dict[str, str] = {'국공립': '공공'}
+KINDER_ESTABLISHMENT_LABELS: dict[str, str] = {'공립': '국공립'}
 # 요약 면적('115.54㎡')과 평형표 면적이 같은지 볼 때 허용하는 차 (둘 다 소수 둘째 자리라 반올림 차만 둔다)
 AREA_MATCH_TOLERANCE_M2: float = 0.01
 # 덤 조회(최근 실거래 요약)가 실패해도 단지 정보는 돌려줄 예외. 세 소스 공통 범위에 요청 제한(분당 상한 대기·429 쿨다운)을
@@ -503,7 +510,7 @@ class DabangChildcare(BaseModel):
 
     code: Annotated[
         str | None,
-        Field(description='다방 시설 코드 (jibsa 에 이 코드로 보는 명령은 없다)')
+        Field(description='다방 시설 코드. jibsa dabang school <code> --level 어린이집 (nurseries) 또는 --level 유치원 (kindergartens) 으로 상세를 본다')
     ] = None
     name: Annotated[
         str | None,
@@ -511,7 +518,7 @@ class DabangChildcare(BaseModel):
     ] = None
     establishment: Annotated[
         str | None,
-        Field(description="설립 유형 (어린이집 '국공립'·'민간'·'직장'·'가정'·'협동', 유치원 '공립'·'사립')")
+        Field(description="설립 유형 (어린이집 '공공'·'민간'·'가정'·'직장'·'협동', 유치원 '국공립'·'사립'. search schools·school 과 같은 이름)")
     ] = None
     distance_m: Annotated[
         int | None,
@@ -686,10 +693,17 @@ def _school(school: DabangComplexSchoolModel, level: SchoolLevel) -> DabangCompl
 
 
 def _childcare(facility: DabangComplexChildcareModel) -> DabangChildcare:
+    # 어린이집은 `type`, 유치원은 `establishDivide` 에 설립 유형이 온다
+    if facility.type:
+        establishment: str | None = NURSERY_ESTABLISHMENT_LABELS.get(facility.type, facility.type)
+    elif facility.establish_divide:
+        establishment = KINDER_ESTABLISHMENT_LABELS.get(facility.establish_divide, facility.establish_divide)
+    else:
+        establishment = None
     return DabangChildcare(
         code=facility.code,
         name=facility.name,
-        establishment=facility.type or facility.establish_divide,
+        establishment=establishment,
         distance_m=facility.distance,
         children_per_teacher=number_of(facility.child_per_teacher),
     )

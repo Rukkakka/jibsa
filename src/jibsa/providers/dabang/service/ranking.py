@@ -1,5 +1,6 @@
 """순위 (trending-complexes · trade-rankings · region-ranking)."""
 import re
+from collections.abc import Mapping
 
 from pydantic import (
     BaseModel,
@@ -39,6 +40,8 @@ from jibsa.providers.dabang.api.response.ranking import (
 )
 from jibsa.providers.dabang.service.common import (
     COMPLEX_TYPE_BY_LABEL,
+    ESTABLISHMENT_BY_LABEL,
+    NURSERY_ESTABLISHMENT_BY_LABEL,
     building_years,
     count_of,
     household_count,
@@ -114,7 +117,7 @@ class InfoMetricSpec(NamedTuple):
     school_type: Literal['MIDDLE_SCHOOL', 'HIGH_SCHOOL'] | None = None
     advancement: DabangSchoolAdvancementType | None = None
     kind_field: Literal['academy_type', 'school_establishment_type', 'facility_type'] | None = None
-    kinds: dict[str, str] | None = None
+    kinds: Mapping[str, str] | None = None
     default_kind: str | None = None
 
 
@@ -122,10 +125,6 @@ class InfoMetricSpec(NamedTuple):
 ACADEMY_KIND_BY_LABEL: dict[str, str] = {
     '입시': 'ADMISSION_EXAM', '예체능': 'ARTS_SPORTS', '외국어': 'FOREIGN_LANGUAGE', '특성화': 'SPECIALIZED',
     '종합': 'COMPREHENSIVE', '인문사회': 'HUMANITIES_SOCIAL', '코딩': 'PROGRAMMING',
-}
-SCHOOL_KIND_BY_LABEL: dict[str, str] = {'국공립': 'PUBLIC', '사립': 'PRIVATE'}
-NURSERY_KIND_BY_LABEL: dict[str, str] = {
-    '공공': 'PUBLIC', '민간': 'PRIVATE', '가정': 'HOME', '직장': 'WORKPLACE', '협동': 'COOPERATIVE',
 }
 FACILITY_KIND_BY_LABEL: dict[DabangRegionInfoRankingMetric, dict[str, str]] = {
     'living': {'편의점': 'CONVENIENCE_STORE', '세탁소': 'LAUNDRY', '헬스장': 'GYM', '공원': 'PARK', '도서관': 'LIBRARY'},
@@ -153,7 +152,8 @@ def _facility(topic: DabangRegionInfoTopic, metric: DabangRegionInfoRankingMetri
     return InfoMetricSpec(topic, metric, 'count', kind_field='facility_type', kinds=FACILITY_KIND_BY_LABEL[metric])
 
 
-def _school_count(metric: DabangRegionInfoRankingMetric, kinds: dict[str, str]) -> InfoMetricSpec:
+def _school_count(metric: DabangRegionInfoRankingMetric, kinds: Mapping[str, str]) -> InfoMetricSpec:
+    # 학교·유치원 수의 --kind 는 search schools --establishment 와 같은 설립 구분 표다 (어린이집만 공공·민간·가정·직장·협동)
     return InfoMetricSpec('school', metric, 'count', kind_field='school_establishment_type', kinds=kinds)
 
 
@@ -188,11 +188,11 @@ METRIC_BY_LABEL: dict[str, MetricSpec | InfoMetricSpec] = {
     '학원수': InfoMetricSpec(
         'school', 'academy', 'count', kind_field='academy_type', kinds=ACADEMY_KIND_BY_LABEL, default_kind='입시',
     ),
-    '초등학교수': _school_count('elementary-school', SCHOOL_KIND_BY_LABEL),
-    '중학교수': _school_count('middle-school', SCHOOL_KIND_BY_LABEL),
-    '고등학교수': _school_count('high-school', SCHOOL_KIND_BY_LABEL),
-    '유치원수': _school_count('kinder-school', SCHOOL_KIND_BY_LABEL),
-    '어린이집수': _school_count('nursery-school', NURSERY_KIND_BY_LABEL),
+    '초등학교수': _school_count('elementary-school', ESTABLISHMENT_BY_LABEL),
+    '중학교수': _school_count('middle-school', ESTABLISHMENT_BY_LABEL),
+    '고등학교수': _school_count('high-school', ESTABLISHMENT_BY_LABEL),
+    '유치원수': _school_count('kinder-school', ESTABLISHMENT_BY_LABEL),
+    '어린이집수': _school_count('nursery-school', NURSERY_ESTABLISHMENT_BY_LABEL),
     '인구': InfoMetricSpec('population', 'count', 'count'),
     '인구증감': InfoMetricSpec('population', 'year-of-year-change', 'population-change'),
     '생활편의시설': _facility('amenity', 'living'),

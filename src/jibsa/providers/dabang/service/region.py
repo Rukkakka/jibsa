@@ -46,6 +46,7 @@ from jibsa.providers.dabang.service.common import (
 from typing import (
     Annotated,
     Literal,
+    NamedTuple,
 )
 
 
@@ -293,6 +294,37 @@ def resolve_places(
             skip_note=f"다방은 시·군·구 전체를 찾지 못해 {text}{particle(text, '을/를')} 건너뛰었습니다",
         )
     raise RegionNotFoundError(text, hint=legal_dong_hint(text) or REGION_HINT)
+
+
+class DabangDong(NamedTuple):
+    """동 하나와 그 동 번호. 동 하나를 받는 명령(neighborhood·hot-places·popular-listings·search schools)에 넘긴다."""
+
+    place: DabangPlace
+    # 다방 동 번호 (동네정보 요청의 regionGid)
+    gid: int
+
+
+def resolve_dong(client: DabangClient, query: str, *, subject: str, elsewhere: str | None) -> DabangDong:
+    """동 이름을 동 하나로 찾는다 (위치 찾기 1회). 동네정보·인기 매물·핫플레이스·동 안 학교는 동 하나를 받는다.
+    '○가' 로 나뉜 동(성수동)은 위치 찾기(`resolve_places`)가 하나를 고르게 한다.
+
+    Args:
+        subject: 에러 문구에 쓸, 이 명령이 찾는 것 (예: '동네정보', '인기 매물', '동 안 학교', '핫플레이스').
+        elsewhere: 역·대학 둘레를 볼 다른 명령 (예: 'search listings'). 그 명령이 같은 것을 주지 않으면 None 이라 권하지 않는다
+            (학교·식당은 station-prices·search listings 가 주지 않는다).
+
+    Raises:
+        JibsaError: 동이 아닌 역·대학일 때 (INVALID_ARGUMENT).
+    """
+    place = resolve_places(client, query, only='dong')
+    if place.kind != 'dong' or place.gid is None:
+        around = f'역 둘레는 {elsewhere} 로 봅니다' if elsewhere else '이 명령은 역·대학 둘레를 찾지 않습니다'
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f"{subject}{particle(subject, '은/는')} 동 이름으로만 찾습니다: {place.name}",
+            hint=f"법정동 이름(예: '역삼동')을 주세요. {around}",
+        )
+    return DabangDong(place, place.gid)
 
 
 def dong_boundary(client: DabangClient, code: str) -> MultiPolygon:

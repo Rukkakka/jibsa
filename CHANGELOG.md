@@ -90,6 +90,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 `nearby --sale <분양 ID>`: 분양 단지 둘레의 지하철역·버스 노선·가까운 시설·학교 (`target` `분양`). 분양 ID 는 단지 ID 와 길이가 같아 옵션으로 받고, 이때는 위치 인자를 주지 않는다 (둘 다 주면 `INVALID_ARGUMENT`) (#240)
 - 다방 `search sales <시·도>`·`search sales 전국`: 다방 웹 분양 지역 목록 그대로 (예전에는 `REGION_NOT_SUPPORTED`). 전국·시·도·시·군·구에 `--radius` 를 주면 `INVALID_ARGUMENT` (전국·시·도는 요청 없이) (#244)
 - 다방 `sale-schedule --details`: 줄마다 다방 청약 일정에서 날짜를 누르면 나오는 표의 분양 단지 정보 `sale`(`state`·`building_type`·`supply_type`·`address`·`sale_household_count`·`household_count`·`price_kind`·`price_manwon`). 내보낼 줄이 든 날마다 요청 1회 더. 그 날 표에서 짝을 찾지 못한 줄은 `sale` 이 `null` (다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄도 `null` 이고 `[참고]` 가 따로 알리며 업데이트 안내는 붙이지 않는다), 표를 받지 않은 결과(`--details`·`--region` 없이)는 `sale` 키가 없다 (#244)
+- 다방 `search schools <동> --level <초등학교|중학교|고등학교|유치원|어린이집>`: 동 안 학교·유치원·어린이집 목록 (다방 동네정보 '학군' 상세 목록과 같은 목록·순서·전체 수). `--establishment` 로 설립 구분, `--limit` 기본 30·최대 120. `school_code`·`level` 을 `school` 에 그대로 넘긴다 (#246)
+- 다방 `school --level 유치원`·`어린이집`: 유치원·어린이집 공시 (설립 유형·운영 시간·통학버스·원아 구성·교사 급수별 수·교사 1명당 아동 수·제공 서비스, 유치원은 홈페이지와 통학 차량 수도. 유치원 원비는 다방 값이 공시와 맞지 않아 주지 않고 결과 `url` 의 공시 페이지에서 본다). 코드는 `complex` 의 `nurseries[].code`·`kindergartens[].code` 나 `search schools` 의 `school_code` 이고, 유치원 코드(UUID)처럼 `-` 가 든 코드도 받는다 (#246)
 - 다방 `nearby-complexes <단지 ID> [--pyeong <space_seq>]`: 다방 단지 화면 평당가 칸의 기본 탭 'N평대 비교'. 그 평형대의 이 단지·동·구 매매·전세 평당가와 반경 1km 주변 단지의 평당가·세대수·연차·거리. 다방이 그 평형에 평형대 탭이나 주변 단지를 주지 않으면 그 목록이 `null` (#245)
 - 다방 `complex` 에 다방 대출 계산기가 대출 비율을 50%로 묶는 지역인지 `overheated_district` (다방 단지 화면의 대출 계산 조건, 웹 문구 '투기지역 (대출 비율 50% 제한)'. 받지 못하거나 다방이 값을 비워 주면 `null` 과 `[실패]`) (#245)
 

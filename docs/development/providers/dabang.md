@@ -13,7 +13,8 @@
 | `listing` | (매물번호면 `room/get-room-id`) → `new-room/detail` | `listing` |
 | `search complexes` | 이름 해석 → `complex-list/category/{apt·officetel}/{…}` | `complex` |
 | `complex` | `complex/{id}` + `complex/{apt·officetel}/summary` + `complex/{id}/loan-calc-condition` (뒤의 둘은 덤 조회) | `complex` |
-| `school` | `3/education/{elementary·middle·high}-school/{코드}` | `school` |
+| `school` | `3/education/{elementary·middle·high}-school/{코드}`, 유치원·어린이집은 `3/education/{kinder·nursery}-school/{코드}` | `school` |
+| `search schools` | 이름 해석(동만) → `region-info/school/regional/{elementary·middle·high·kinder·nursery}-school` 30곳씩 | `school` |
 | `search listings --complex` | `complex/{id}` (평형·유형) → `room-list/category/{apt·officetel}/complex` (`order` 정렬) | `complex` |
 | `real-price` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/histories`, `--listing` 은 `real-price/house/init` → `real-price/house/history` | `real_price` |
 | `price-trend` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/charts` | `real_price` |
@@ -91,6 +92,8 @@
 - 단지 상세의 학교(`education`)는 초등학교가 배정 학교(통학구역), 중·고등학교가 단지가 든 학교군의 학교 전부(은마 17곳·22곳)를 거리순으로 준다. 학급당 학생 수·진학 인원은 글자('24명', '대학교 163명')라 `count_of` 로 읽는다. 어린이집(`nurserySchool`)·유치원(`kinderSchool`)도 거리순으로 온다 (2026-11-13: 단지 20곳 어린이집 422곳·유치원 71곳 모두). 설립 유형은 어린이집 `type`, 유치원 `establishDivide` 에 오고 교사당 아동 수는 글자('4.1명')다. 전화·좌표는 오지 않는다. 중·고등학교·어린이집·유치원은 웹 '주변 보육/교육시설' 탭처럼 가까운 3곳씩 낸다 (`NEAREST_SCHOOLS`, education 청크 `Y`·`X`·`Q`·`$` = 3. 웹은 '더보기' 로 3곳씩 늘린다).
 - 단지 상세의 `recentDealCount` 는 웹 '최근 거래수 N건' 이다 (기간은 다방이 밝히지 않는다). 빈 글자('')로 오면 웹이 '-' 로 써 모름(`null`)으로 받는다. `hashTags`(단지 꼬리표)는 `null` 이면 웹이 칸을 그리지 않아 `[]` 로 받는다.
 - 학교 상세(`3/education/{단계}-school/{코드}`)는 단계와 코드가 맞지 않거나 없는 코드면 404 가 아니라 **500** "일시적으로 서비스가 지연되고 있습니다." 다. 코드만으로 단계를 알 수 없어 CLI 가 `--level` 을 받는다 (단계를 차례로 불러 보면 요청이 늘어난다). 다시 보내도 같은 500 이라 이 엔드포인트만 500 을 재시도하지 않는다 (`dabang_education_retry`, [재시도 규약](../provider-conventions.md#요청-메서드)의 예외). 서버 고장도 같은 500·같은 본문이라 가르지 못해, 500 이면 `NOT_FOUND` 로 단정하지 않고 `UPSTREAM_ERROR`(`status` 500)와 입력을 다시 보라는 hint 를 낸다 (매일 감시는 이것을 '확인 못 함'으로 본다). 개교일·개교기념일('1986.21')은 달이 맞지 않아 쓰지 않는다. 학교 코드는 학교알리미 코드('S010000743')라 네이버(`B10…`) 코드와 다르다.
+- 유치원·어린이집 상세(`3/education/{kinder·nursery}-school/{코드}`)는 웹 단지 '주변 보육/교육시설' 에서 시설을 누르면 부르는 학교 상세와 같은 옛 방식이다. 없는 코드도 같은 500 이라 (2026-11-14 실측) 같은 재시도 예외(`dabang_education_retry`)와 오류 처리(`_fetch_education`)를 쓴다. 코드는 단지 상세의 어린이집·유치원 코드와 같고, 어린이집은 숫자('11680000021'), 유치원은 UUID 라 `SCHOOL_CODE_PATTERN` 이 '-' 도 받는다. 응답 꼴이 학교와 달라 모델(`DabangNurseryEducationV3ResponseModel`·`DabangKinderEducationV3ResponseModel`)과 출력(`DabangChildcareDetail`)을 따로 둔다. 웹 상세 화면이 그리는 값만 낸다 (school 청크, 2026-11-13): 원아 구성은 0 이 아닌 반·나이만(`w`·`Ie`. 반·나이별 수가 모두 `null` 이면 모름이라 `children` 이 `null`, 하나라도 오면 0 이 아닌 것만), 교사 급수는 0 명도 그린다(`ee`·`Le`). 유치원 '통학버스' 칸은 `schoolbus` 가 아니라 통학 차량 수(`commute_school_car`, 글자 '2')이고 '0' 이면 웹이 '-' 로 쓴다. 이 값은 유치원알리미 '통학차량 현황'의 운행 차량수와 같고 '0' 은 미운영이다 (2026-11-14 공시 대조: 6곳). 유치원 교육비(`avg_base_cost`·`avg_care_cost`, 원 단위 월 평균)는 내지 않는다 (아래 웹과 다른 점의 `school` 유치원 교육비 항목). 유치원 `provide_service` 는 ' 특수학급' 처럼 앞에 빈칸이 붙어 와 다듬는다 (2026-11-14 실측). 개원일(어린이집 `permission_date` '1998.-0', 유치원 `anniversary_date` '1996.30')은 달이 맞지 않아, 평가인증(`certification_date`)·정원(`total_approve`)은 웹이 그리지 않아 모델에 두지 않는다. 전화·좌표도 옮기지 않는다.
+- 동 안 학교 목록(`region-info/school/regional/{단계}`)은 웹 동네정보 '학군' 상세 목록이다 (school-regional 청크, 2026-11-13 웹 캡처: 역삼동 초등학교 `regionGid=10063&limit=30&page=1`). 한 쪽은 30곳까지이고 31 이상은 400 '페이지 당 호출 가능한 최대 행수는 30를 초과할 수 없습니다.' 다 (2026-11-14 실측: 어린이집 `limit=50`). 설립 구분(`schoolEstablishmentType`)은 웹 탭 값 그대로이고 '전체' 면 보내지 않는다: 학교·유치원은 PUBLIC 국공립·PRIVATE 사립, 어린이집은 PUBLIC 공공·PRIVATE 민간·HOME 가정·WORKPLACE 직장·COOPERATIVE 협동이다 (요청 모델이 학교·유치원에 가정·직장·협동을 막는다. CLI 라벨 검사와 겹쳐 보이지만 서버가 거절할 와이어 값을 요청 모델에서 막는 층이라 둔다, 2026-11-14 리뷰 오탐). 줄의 `schoolCode` 는 상세(`school`)가 받는 코드다 (서울도성초 `S010000752`). 중·고등학교 줄에는 웹 목록의 진학률 꼬리표(`advancementList`)가 온다. 모르는 설립 값은 웹 칩도 비워(`f`) `null` 이다.
 - 단지 요약(`complex/{유형}/summary`)은 경로 가운데에 단지 ID 가 아니라 소문자 유형이 들어간다.
 - 실거래 기간은 최대 36달이다 (37달이면 400). 요청 모델이 막는다. 한 번에 50건까지 받는다. 쪽은 `(page - 1) × limit` 번째부터라 쪽마다 `limit` 을 바꾸면 앞 쪽과 겹친다. 쪽 크기를 고정하고 넘치는 건 자른다 (인기 매물도 같다).
 - 없는 단지·평형은 실거래·시세 흐름 모두 400 과 사유("존재하지 않는 단지입니다."·"존재하지 않는 평형 정보입니다.")를 준다. 사유를 보고 `NOT_FOUND`·`INVALID_ARGUMENT` 로 바꾼다.
@@ -166,11 +169,11 @@
 - **`--condition 단기임대` 와 가격 조건의 거래 좁히기.** 단기임대를 주면 월세로 좁힌다. 웹은 월세+전세에 '단기월세만 보기' 를 켜면 전세가 섞여 오고, jibsa 결과는 웹에서 월세만 고르고 단기월세만 보기를 켠 것과 같다 (filter-chunk). 가격 조건만 줄 때 그 금액이 있는 거래로 좁히는 것도 웹에서 그 거래만 고른 것과 같다 (2026-11-13).
 - **`search locations` 후보 수.** 종류마다 `--limit`(기본 10, 최대 50) 앞부분만 준다. 웹은 API 가 준 후보(종류마다 최대 50)를 모두 보여 준다. 순서는 같고, 자른 종류가 있으면 `[일부]` 로 몇 곳 중 몇 곳인지 알린다 (2026-11-13 web.js `In`).
 - **검색어 괄호를 띄어 보내기.** 웹은 그대로 보내 '연세대학교(원주캠퍼스)' 가 0건이다. jibsa 는 '연세대학교 원주캠퍼스' 로 보내고, 이것은 웹 검색창에 그렇게 넣은 것과 같은 요청이다 ([위치 해석](#위치-해석-region), 2026-11-13 debounce-chunk `ae`).
-- **표기 다듬기.** 빌라 `property_type` '빌라'(웹 카드는 '쓰리룸' 등), '오피스텔 • 단기' → 오피스텔 + `short_lease`, 에어컨 옵션 이름에 '에어컨' 붙이기(listing-request 청크), 목록 주소에 시·구 채우기, `distance_km`. 매물·가격·순서·수를 바꾸지 않는 표기다 ([매물 목록](#매물-목록-search-listings)·[상세](#상세단지학교실거래), 2026-11-13).
+- **표기 다듬기.** 빌라 `property_type` '빌라'(웹 카드는 '쓰리룸' 등), '오피스텔 • 단기' → 오피스텔 + `short_lease`, 에어컨 옵션 이름에 '에어컨' 붙이기(listing-request 청크), 목록 주소에 시·구 채우기, `distance_km`, 단지 화면의 어린이집·유치원 설립 유형을 학군 화면 이름으로 맞추기(다방이 같은 시설을 단지 화면에서는 '국공립'·'공립', 학군 화면·상세에서는 '공공'·'국공립' 이라 부른다. `complex` 의 `nurseries`·`kindergartens` 를 `search schools`·`school` 과 같은 이름으로 낸다, 2026-11-14 실측). 매물·가격·순서·수를 바꾸지 않는 표기다 ([매물 목록](#매물-목록-search-listings)·[상세](#상세단지학교실거래), 2026-11-13).
 - **관리비 포함 항목의 순서·이름 (바꾸지 않기로 함).** 기타부과 매물은 웹이 공용→전기→수도→인터넷→난방→가스→TV→기타 순으로 세우고 jibsa 는 응답 순서다. 이름도 웹 정액 표는 '공용'·'기타', jibsa 는 '공용 관리비'·'기타 관리비' 다. 항목 집합과 관리비 금액은 웹과 같아 사실이 어긋나지 않아, 대조에서 지적됐지만 이번에는 고치지 않았다 (2026-11-13 safety-option-chunk `E`).
 - **이름 해석 요청.** 웹은 동을 고르면 `/api/v5/region/{gid}` 로 code 를 다시 받고 jibsa 는 `loc/search` 의 code 를 쓴다 (같은 값). 웹은 동·역·대학 목록에도 지도 bbox·zoom 을 붙이지만 결과에 영향이 없다 (대학 zoom 14 와 15 도 같다, 2026-11-13 web.js `en`).
 
-### 단지·실거래·학교 (`search complexes`·`complex`·`search listings --complex`·`real-price`·`price-trend`·`school`)
+### 단지·실거래·학교 (`search complexes`·`complex`·`search listings --complex`·`real-price`·`price-trend`·`nearby-complexes`·`school`·`search schools`)
 
 - **`search complexes` 아파트 동 이름.** 웹 아파트 단지 목록은 bbox·역 검색만 쓰고, 동을 찾으면 지도를 그 동 중심(줌 14)으로 옮긴 화면 범위를 보여 준다 (대치동이면 잠실까지 849곳). jibsa 는 동 경계를 덮는 사각형으로 받고 `gid` 가 그 동인 단지만 남긴 뒤 `notes` 로 알린다. 같은 bbox 목록의 부분집합이다 ([위치 해석](#위치-해석-region), 2026-11-13).
 - **`search complexes` 아파트 대학·좌표와 `--radius`.** 반경을 덮는 사각형을 그대로 bbox 로 보낸다 (반경 밖을 빼지 않는다). 웹에서 지도 범위를 그만큼 잡은 결과와 같다 (2026-11-13).
@@ -186,6 +189,10 @@
 - **`real-price` 의 쪽 크기·기간·거래 유형.** 쪽마다 50건씩 최대 200건 받는다 (웹은 5건씩 '더보기'). `--years 2` 는 웹에 없다 (웹은 1년·3년). `--listing` 의 `--years 1·2` 도 웹에 없다 (웹은 36달 고정). `--listing` 에 `--trade` 를 주어 매물과 다른 거래 유형(매매 매물의 전월세 등)을 보는 것도 웹에 없다 (웹은 탭 없이 매물의 거래 유형만 보여 준다). 모두 서버가 받는 같은 파라미터라 거래 한 건 한 건은 웹 자료 그대로다 (2026-11-13 room 청크 `Rr`).
 - **`price-trend` 를 한 번에.** 웹이 토글로 나눠 보여 주는 1년·3년 최고·최저와 매매·전월세·갭 값을 한 번에 낸다. 평균 0 은 `null` 로 바꾼다. 같은 `charts` 응답의 값이다 ([상세·단지·학교·실거래](#상세단지학교실거래), 2026-11-13).
 - **`school` 의 진학 갈래.** 웹은 인원이 0 인 갈래(특성화고·취업자)를 숨기고 과학고·외국어고·예술체육고·자사고 비율은 그리지 않는다. jibsa 는 같은 응답에서 모두 낸다. 갈래 이름도 줄였다 (특수목적고→특목고, 자율형고→자율고, 국외진학→국외, 취업자→취업). 웹이 숨긴 값을 더 보여 준 것이라 값은 같다 (2026-11-13 school-chunk).
+- **`school` 의 어린이집 `stats_period`.** 어린이집 상세 화면은 공시 기준(`base_date`)을 그리지 않는다. jibsa 는 학교·유치원처럼 같은 응답의 값을 `stats_period` 로 낸다. 웹이 받은 값을 더 보여 준 것이고 다른 칸은 화면과 같다 ([상세·단지·학교·실거래](#상세단지학교실거래), 2026-11-14 school 청크).
+- **`school` 의 유치원 교육비를 내지 않는다.** 웹 유치원 상세는 기본·방과후 교육비(`avgBaseCost`·`avgCareCost`)를 '지원금을 제외한 실제 학부모에게 고지하는 금액' 이라며 원 단위로 그린다 (0 이면 '-', school 청크 `Xe`). jibsa 는 이 두 값을 내지 않는다. 유치원알리미 공시와 견주면 사립 5곳은 공시 학부모 부담금이 있는데 다방이 0 을 주고, 0 이 아닌 1곳은 수업료를 뺀 교재비였다 (2026-11-14 대조: 유치원 8곳). 웹 설명대로 원비로 읽으면 사실과 어긋나서 원비는 결과 `url`(유치원알리미)의 '비용·회계' 에서 보게 한다. 웹에 있는 값을 빼는 것이라 사실이 어긋나지 않는다.
+- **`school` 의 유치원 통학 차량 0.** 웹 '통학버스' 칸은 차량 수가 '0' 이면 '-' 로 쓴다 (`Ue`). jibsa `school_bus_vehicles` 는 0 그대로 낸다. 유치원알리미 '통학차량 현황'의 운행 차량수와 같은 값이고 0 은 미운영이라 (2026-11-14 대조: 6곳) 같은 사실을 숫자로 보인 것이다.
+- **`search schools` 를 여러 쪽 한 번에.** 웹 동네정보 '학군' 상세 목록은 30곳씩 쪽을 넘긴다. jibsa 는 `--limit` 까지(최대 120곳, 4쪽) 차례로 받는다. 같은 쪽을 차례로 받은 것이라 목록·순서·`total` 이 웹과 같다 (2026-11-14 school-regional 청크).
 - **`nearby-complexes` 의 주변 단지 수와 거리.** 웹 'N평대 비교' 탭은 주변 단지를 3곳씩 '더보기' 로 늘리고 거리를 그리지 않는다. jibsa 는 응답의 10곳을 서버 순서 그대로 모두 내고, 같은 응답의 거리(`distance`)를 `distance_m` 으로 낸다. 단지·평당가·순서는 웹 탭과 같은 응답의 값이다 ([상세·단지·학교·실거래](#상세단지학교실거래), 2026-11-14 complex 청크 `nn`).
 
 ### 동네·주변·분양·순위

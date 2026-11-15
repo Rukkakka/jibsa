@@ -4,6 +4,7 @@ from pydantic import (
 )
 
 from jibsa.core.schema import RequestModel
+from jibsa.providers.dabang.api.request.school import DabangSchoolEstablishmentType
 
 from typing import (
     Annotated,
@@ -41,7 +42,6 @@ DabangSchoolAdvancementType = Literal[
 DabangAcademyType = Literal[
     'ADMISSION_EXAM', 'ARTS_SPORTS', 'FOREIGN_LANGUAGE', 'SPECIALIZED', 'COMPREHENSIVE', 'HUMANITIES_SOCIAL', 'PROGRAMMING',
 ]
-DabangSchoolEstablishmentType = Literal['PUBLIC', 'PRIVATE', 'HOME', 'WORKPLACE', 'COOPERATIVE']
 # 동네정보 순위 한 번에 받을 수 있는 수. 넘으면 400 '페이지 당 호출 가능한 최대 행수는 30를 초과할 수 없습니다' (2026-10-25
 # 실측: 학교·학원·진학률·인구·인구 증감·의료·교통·안전 모두 31 이면 400, 부동산 순위는 50 까지 된다)
 REGION_INFO_RANKING_PAGE_LIMIT: int = 30

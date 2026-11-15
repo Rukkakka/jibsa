@@ -72,7 +72,10 @@ from jibsa.providers.dabang.api.request.sale import (
     DabangSaleListCategoryBboxV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.school import (
+    DabangEducationKinderSchoolV3RequestParameterModel,
+    DabangEducationNurserySchoolV3RequestParameterModel,
     DabangEducationV3RequestParameterModel,
+    DabangRegionInfoSchoolRegionalV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.common import DabangComplexV5ResponseModel
 from jibsa.providers.dabang.api.response.complex import (
@@ -122,7 +125,12 @@ from jibsa.providers.dabang.api.response.sale import (
     DabangSaleInLotsListSearch3V3ResponseModel,
     DabangSaleListCategoryBboxV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.school import DabangEducationV3ResponseModel
+from jibsa.providers.dabang.api.response.school import (
+    DabangEducationV3ResponseModel,
+    DabangKinderEducationV3ResponseModel,
+    DabangNurseryEducationV3ResponseModel,
+    DabangRegionInfoSchoolRegionalV5ResponseModel,
+)
 
 from typing import ClassVar
 
@@ -138,10 +146,10 @@ dabang_retry = retry(
 
 
 def should_retry_education(exc: BaseException) -> bool:
-    """학교 상세 재시도 술어. 500 만 빼고 `should_retry_idempotent` 와 같다.
+    """학교·유치원·어린이집 상세 재시도 술어. 500 만 빼고 `should_retry_idempotent` 와 같다.
 
     학교 상세는 단계와 코드가 맞지 않거나 없는 코드면 늘 500 이다 (2026-10-25 실측: 휘문중 S010000736 을 고등학교로, 없는
-    코드 S999999999 를 중학교로). 다시 보내도 같은 응답이라 요청 제한 몫과 대기만 쓴다. 첫 화면(다방 홈)의 500
+    코드 S999999999 를 중학교로. 2026-11-14 실측: 없는 어린이집·유치원 코드도). 다시 보내도 같은 응답이라 요청 제한 몫과 대기만 쓴다. 첫 화면(다방 홈)의 500
     (`EntryStatusError`)은 학교 상세 응답이 아니라 사이트 장애라 다른 5xx 처럼 재시도한다.
     """
     if isinstance(exc, HTTPStatusError) and exc.response.status_code == 500 and not isinstance(exc, EntryOpenError):
@@ -156,7 +164,7 @@ dabang_education_retry = retry(
     reraise=True,
     before_sleep=log_retry_before_sleep,
 )
-"""학교 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
+"""학교·유치원·어린이집 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
 
 # 새 방식(`/api/v5/`) 요청에 웹이 붙이는 헤더 (fetch 청크 `requestHeaders`, 2026-10-25. 2026-11-12 실측도 같다). 웹은 v5 용
 # axios 인스턴스만 이 헤더를 더 붙인다. 옛 방식(`/api/3/`)은 헤더 대신 쿼리에 버전을 붙인다 (`DabangV3RequestParameterModel`)
@@ -217,6 +225,9 @@ class DabangClient(BaseHTTPClient):
     new_room_detail_v3_endpoint: ClassVar[str] = '/api/3/new-room/detail'
     room_get_room_id_v3_endpoint: ClassVar[str] = '/api/3/room/get-room-id'
     education_v3_endpoint: ClassVar[str] = '/api/3/education/{level}/{school_code}'
+    education_nursery_school_v3_endpoint: ClassVar[str] = '/api/3/education/nursery-school/{school_code}'
+    education_kinder_school_v3_endpoint: ClassVar[str] = '/api/3/education/kinder-school/{school_code}'
+    region_info_school_regional_v5_endpoint: ClassVar[str] = '/api/v5/region-info/school/regional/{level}'
     geojson_region_endpoint: ClassVar[str] = '/geojson/region/{code}'
     region_info_regional_summary_v5_endpoint: ClassVar[str] = '/api/v5/region-info/{topic}/regional/summary'
     region_info_regional_count_v5_endpoint: ClassVar[str] = '/api/v5/region-info/{topic}/regional/count'
@@ -901,6 +912,113 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    def run_request_education_nursery_school_v3(
+        self,
+        parameter: DabangEducationNurserySchoolV3RequestParameterModel
+    ) -> DabangNurseryEducationV3ResponseModel:
+        """Fetch a daycare centre's public disclosure via `GET /api/3/education/nursery-school/{school_code}`.
+
+        Same retry behaviour as `run_request_education_v3` (HTTP 500 is raised at once). 없는 코드도 늘 500 이다.
+
+        Args:
+            parameter: 어린이집 코드.
+
+        Returns:
+            DabangNurseryEducationV3ResponseModel: 유형·운영 시간·통학버스·반별 원아 수·교사 급수별 수·제공 서비스.
+        """
+        response = self._client.get(
+            url=self.education_nursery_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangNurseryEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    async def arun_request_education_nursery_school_v3(
+        self,
+        parameter: DabangEducationNurserySchoolV3RequestParameterModel
+    ) -> DabangNurseryEducationV3ResponseModel:
+        """Async variant of `run_request_education_nursery_school_v3`."""
+        response = await self._async_client.get(
+            url=self.education_nursery_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangNurseryEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    def run_request_education_kinder_school_v3(
+        self,
+        parameter: DabangEducationKinderSchoolV3RequestParameterModel
+    ) -> DabangKinderEducationV3ResponseModel:
+        """Fetch a kindergarten's public disclosure via `GET /api/3/education/kinder-school/{school_code}`.
+
+        Same retry behaviour as `run_request_education_v3` (HTTP 500 is raised at once). 없는 코드도 늘 500 이다.
+
+        Args:
+            parameter: 유치원 코드 (UUID).
+
+        Returns:
+            DabangKinderEducationV3ResponseModel: 설립·운영 시간·통학 차량 수·나이별 원아 수·교사 자격별 수.
+        """
+        response = self._client.get(
+            url=self.education_kinder_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangKinderEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    async def arun_request_education_kinder_school_v3(
+        self,
+        parameter: DabangEducationKinderSchoolV3RequestParameterModel
+    ) -> DabangKinderEducationV3ResponseModel:
+        """Async variant of `run_request_education_kinder_school_v3`."""
+        response = await self._async_client.get(
+            url=self.education_kinder_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangKinderEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_region_info_school_regional_v5(
+        self,
+        parameter: DabangRegionInfoSchoolRegionalV5RequestParameterModel
+    ) -> DabangRegionInfoSchoolRegionalV5ResponseModel:
+        """List schools, kindergartens or daycare centres of a dong via `GET /api/v5/region-info/school/regional/{level}`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 동네정보 '학군' 상세 목록이다. 한 쪽은 30곳까지다 (31 이면 400).
+
+        Args:
+            parameter: 단계·동 번호·설립 구분·쪽.
+
+        Returns:
+            DabangRegionInfoSchoolRegionalV5ResponseModel: 학교 코드·이름·설립 구분·주소 (중·고등학교는 진학률도), 전체 수.
+        """
+        response = self._client.get(
+            url=self.region_info_school_regional_v5_endpoint.format(level=parameter.level),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoSchoolRegionalV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_region_info_school_regional_v5(
+        self,
+        parameter: DabangRegionInfoSchoolRegionalV5RequestParameterModel
+    ) -> DabangRegionInfoSchoolRegionalV5ResponseModel:
+        """Async variant of `run_request_region_info_school_regional_v5`."""
+        response = await self._async_client.get(
+            url=self.region_info_school_regional_v5_endpoint.format(level=parameter.level),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoSchoolRegionalV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_region_info_regional_summary_v5(

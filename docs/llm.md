@@ -34,7 +34,7 @@
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
 | 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 이 집 또는 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
 | 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
-| 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름\|school_code>` (배정 단지, 여러 곳이면 `candidates` 의 `school_code` 로) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) · 단지 근처 어린이집·유치원 `daangn preschools <단지 ID>` (지역·역 이름으로는 찾지 않는다) |
+| 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름\|school_code>` (배정 단지, 여러 곳이면 `candidates` 의 `school_code` 로) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) · 동 안 학교·유치원·어린이집 목록 `dabang search schools <동> --level <단계>` · 단지 근처 어린이집·유치원 `daangn preschools <단지 ID>` (지역·역 이름으로는 찾지 않는다) · 다방 어린이집·유치원 상세 `dabang school <code> --level 어린이집`·`유치원` (`dabang complex` 의 `nurseries[]`·`kindergartens[]` 의 `code`) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
 | 단지 비교 | `daangn compare <ID> <ID> …` (최대 10곳, 비슷한 크기 평형끼리) · `daangn nearby-complexes <ID>` · 평형대 평당가와 1km 안 단지 `dabang nearby-complexes <ID>` |
 | 동네 고르기 | `daangn good-neighborhoods --lifestyle …` · `region-reviews <동>` · `trending-complexes [시·도·구]` (조회 급상승, 빼면 전국) · `popular-listings <동>` (모두 `daangn`) · 동 요약 숫자와 순위 `dabang neighborhood <동>` · `dabang popular-listings <동>` |
@@ -116,7 +116,7 @@
 - `region-ranking` 의 값은 항목에 맞는 키에만 있다 (평균가 `value_manwon`, 거래량·학원수 `count`, 전세가율·진학률 `percent`, 시세증감 `change_percent`). 시세증감·최고가증감의 `change_manwon` 은 오른 금액이지 현재가가 아니다 (새 최고가 = `prev_price_manwon + change_manwon`). 거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 기본이 아파트·오피스텔 합산(`complex_type`)이라 아파트만 보려면 `-t 아파트` 를 준다. 거래증감·매물증감은 `prev_count` → `count` 를 `comparison`(`전월대비`·`최근 30일 전 대비`) 기준으로 읽고 `change_count` 는 줄면 음수다. 동 이름 범위는 `--unit 단지` 만 받는다.
 - 분양 둘레는 `nearby --sale <sale_id>` 로 준다. 분양 ID 를 위치 인자로 주면 단지 ID 로 읽혀 `NOT_FOUND` 다.
 - `search sales` 는 전국·시·도·시·군·구면 다방 분양 지역 목록 그대로(`total` 은 그 지역의 분양 수)이고, 동·역·좌표는 지도 사각형이라 역·좌표 둘레는 반경을 덮는 사각형 전체다. 목록의 `sale_household_count` 는 분양 세대수, `household_count` 는 총세대수다 (지도 사각형 결과는 `null`). `price_kind` 가 `임대가`·`보증금` 이면 가격이 분양가가 아니다.
-- `school` 은 `--level` 이 학교 코드와 맞아야 한다 (`dabang complex` 의 `schools[].level` 을 그대로). 틀리면 다방이 서버 고장과 같은 500 을 줘서 `UPSTREAM_ERROR`(`status` 500)이니 코드·단계부터 다시 본다. 다방 학교 코드는 네이버 `school` 코드와 다르다.
+- `school` 은 `--level` 이 코드와 맞아야 한다 (`dabang complex` 의 `schools[].level` 을 그대로, `nurseries[]` 는 어린이집, `kindergartens[]` 는 유치원). 틀리면 다방이 서버 고장과 같은 500 을 줘서 `UPSTREAM_ERROR`(`status` 500)이니 코드·단계부터 다시 본다. 다방 학교 코드는 네이버 `school` 코드와 다르다.
 - `station-prices` 는 실거래가가 아니라 지금 올라온 원룸·투룸 매물의 평균(다방 '평균 매물가')이다. `neighborhood` 의 `rank` 는 1 이 가장 많거나 높고, 동 하나만 받는다.
 
 ## 실거래·시세 읽기
