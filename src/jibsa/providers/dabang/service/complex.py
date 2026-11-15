@@ -18,7 +18,6 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     limit_notes,
     m2_to_pyeong,
-    more_hint,
     normalize_address,
     normalize_date,
     note,
@@ -69,12 +68,14 @@ from jibsa.providers.dabang.service.common import (
     duplicate_note,
     fetch_complex,
     fetch_pages,
+    fetch_stop_notes,
     filters_of,
     floor_label,
     household_count,
     manwon_from_text,
+    more_list_notes,
+    narrow_again,
     number_of,
-    page_cap_note,
     premium_note,
     room_item_to_listing,
     room_list_page,
@@ -324,15 +325,13 @@ def search_complexes(
             f'단지가 더 있습니다 (동을 덮는 사각형의 다방 목록 순 앞 {received}곳 중 이 동 {len(complexes)}곳, total 은 사각형 안 수). '
             + grow + '동 안 단지를 빠짐없이 보려면 jibsa daangn search complexes <동> 이나 jibsa naver search complexes <동> 으로 찾으세요',
         ))
-    elif has_more and received >= limit:
+    else:
+        # 위 가지는 받은 수가 limit 이상이라 멈춤 안내(`fetch_stop_notes`)와 함께 나오지 않는다
         # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 역삼동 --limit 120 에 '--limit 을 늘리거나')
-        notes.append(note(
-            '일부',
-            f'단지가 더 있습니다 (다방 목록 순 앞 {received}곳을 봤습니다). '
-            + more_hint(limit, MAX_LIST_LIMIT, narrow),
-        ))
-    if pages.capped:
-        notes.append(page_cap_note(received, limit, next_step=f'{narrow}을 좁혀 다시 찾으세요'))
+        notes += more_list_notes(
+            pages, limit, seen=f'단지가 더 있습니다 (다방 목록 순 앞 {received}곳을 봤습니다)', max_limit=MAX_LIST_LIMIT,
+            narrow=narrow,
+        )
     return DabangComplexListResult(
         region=place, scope=scope, total=total, returned=len(complexes), has_more=has_more, complexes=complexes, notes=notes,
     )
@@ -980,12 +979,11 @@ def list_complex_listings(
     notes += duplicate_note(duplicate)
     notes += premium_note(premium)
     # 단지 하나라 지역·반경 대신 단지 매물의 조건만 좁히라고 한다
+    narrow = '거래 유형·평형·가격 조건'
     notes += limit_notes(
-        total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order=order.text, narrow='거래 유형·평형·가격 조건',
-        inspected=received, has_more=has_more,
+        total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order=order.text, narrow=narrow, inspected=received, has_more=has_more,
     )
-    if pages.capped:
-        notes.append(page_cap_note(received, limit, next_step='거래 유형·평형·가격 조건을 좁혀 다시 찾으세요'))
+    notes += fetch_stop_notes(pages, limit, cap_next=narrow_again(narrow))
     return DabangComplexListingsResult(
         complex_id=complex_id,
         name=result.complex.complex_name,

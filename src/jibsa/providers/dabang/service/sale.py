@@ -40,6 +40,7 @@ from jibsa.providers.dabang.api.response.sale import DabangSaleItemModel
 from jibsa.providers.dabang.service.common import (
     MAX_LIST_LIMIT,
     DabangPage,
+    DabangPages,
     DabangPlace,
     bbox_of,
     count_of,
@@ -47,8 +48,8 @@ from jibsa.providers.dabang.service.common import (
     household_count,
     is_missing_id,
     manwon_from_text,
+    more_list_notes,
     number_of,
-    page_cap_note,
     sale_url,
 )
 from jibsa.providers.dabang.service.region import (
@@ -58,7 +59,10 @@ from jibsa.providers.dabang.service.region import (
     state_name,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 SALE_BUILDING_TYPE_BY_LABEL: dict[str, DabangSaleBuildingType] = {
@@ -206,6 +210,23 @@ def _summary(item: DabangSaleItemModel) -> DabangSaleSummary:
     )
 
 
+def _sale_list_notes(pages: DabangPages[Any], limit: int, *, in_box: bool, narrow_end: str) -> list[str]:
+    """분양 목록(지도·지역)의 [일부] 안내.
+
+    Args:
+        in_box: 지도 목록(범위 사각형)이면 True. 다방이 센 수가 사각형 안 수라 '약' 을 붙인다.
+        narrow_end: 좁히라고 권할 범위 ('반경' 또는 '지역').
+    """
+    total, received = pages.total, len(pages.rows)
+    narrow = f'건물 유형·분양 상태·공급 유형 조건·{narrow_end}'
+    among = f" {'약 ' if in_box else ''}{total}곳 중" if total is not None else ''
+    # --limit 이 이미 최대값이면 늘리라고 하지 않고 좁힐 조건을 권한다 (2026-11-10 리뷰: --limit 120 에도 '--limit 을 늘리세요' 뿐)
+    seen = f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다' if in_box else (
+        f'분양 단지{among} 다방 목록 순 앞 {received}곳입니다'
+    )
+    return more_list_notes(pages, limit, seen=seen, max_limit=MAX_LIST_LIMIT, narrow=narrow)
+
+
 def search_sales(
     client: DabangClient,
     *,
@@ -269,7 +290,6 @@ def search_sales(
 
     # 쪽 수는 limit 을 24건으로 나눠 정하지 않고 limit 이 찰 때까지 받는다 (`fetch_pages`). limit 은 받은 단지 수로 센다
     pages = fetch_pages(fetch, limit)
-    total, has_more, received = pages.total, pages.has_more, len(pages.rows)
     sales: list[DabangSaleSummary] = []
     outside = 0
     for item in pages.rows:
@@ -281,16 +301,10 @@ def search_sales(
     if outside:
         notes.append(note('제외', f'경계를 덮는 사각형에서 받은 단지 중 주소가 다른 {outside}곳을 뺐습니다 (뺀 만큼 다시 채우지 않음)'))
     # 역·대학·좌표(place)는 반경 사각형이라 반경을, 동·시군구는 지역을 좁히라고 한다
-    narrow = f"건물 유형·분양 상태·공급 유형 조건·{'반경' if place is not None else '지역'}"
-    if has_more and received >= limit:
-        among = f' 약 {total}곳 중' if total is not None else ''
-        # --limit 이 이미 최대값이면 늘리라고 하지 않고 좁힐 조건을 권한다 (2026-11-10 리뷰: --limit 120 에도 '--limit 을 늘리세요' 뿐)
-        notes.append(note(
-            '일부', f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다. ' + more_hint(limit, MAX_LIST_LIMIT, narrow),
-        ))
-    if pages.capped:
-        notes.append(page_cap_note(received, limit, next_step=f'{narrow}을 좁혀 다시 찾으세요'))
-    return DabangSaleListResult(scope=scope_name, total=total, returned=len(sales), has_more=has_more, sales=sales, notes=notes)
+    notes += _sale_list_notes(pages, limit, in_box=True, narrow_end='반경' if place is not None else '지역')
+    return DabangSaleListResult(
+        scope=scope_name, total=pages.total, returned=len(sales), has_more=pages.has_more, sales=sales, notes=notes,
+    )
 
 
 class DabangSaleStep(BaseModel):

@@ -20,6 +20,7 @@ from jibsa.core.geo import (
 )
 from jibsa.core.listing import (
     KST,
+    NEXT_HINT,
     Listing,
     ListingDetail,
     TradeType,
@@ -60,13 +61,13 @@ from jibsa.providers.dabang.service.common import (
     bbox_of,
     duplicate_note,
     fetch_pages,
+    fetch_stop_notes,
     filters_of,
     floor_label,
     is_complex_type,
     is_missing_id,
     listing_url,
     manwon_from_text,
-    page_cap_note,
     premium_note,
     room_item_to_listing,
     room_list_page,
@@ -480,8 +481,7 @@ def search_listings(
         order='다방 목록', approximate=approximate, inspected=len(pages.rows), offset=resume.received,
         resumable=has_more, has_more=has_more,
     )
-    if pages.capped:
-        notes.append(page_cap_note(len(pages.rows), limit, next_step='결과의 next 로 이어 받으세요'))
+    notes += fetch_stop_notes(pages, limit, cap_next=NEXT_HINT, cut_next=NEXT_HINT)
     return DabangSearchResult(
         region=place,
         scope=scope,
