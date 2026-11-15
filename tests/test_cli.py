@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -356,6 +357,20 @@ def test_sources_do_not_import_each_other() -> None:
                     if parts[:1] == ['jibsa'] and len(parts) > 2 and parts[1] in ('providers', 'cli') and parts[2] in others:
                         found.append(f'{path.relative_to(root)}: {module}')
     assert found == []
+
+
+def test_workflow_concurrency_limits_match() -> None:
+    # 서브에이전트 워크플로(.claude/workflows/)는 다른 파일을 불러올 수 없어 같은 소스 동시 실행 상한을 파일마다 둔다
+    # (docs/development/agents.md "동시에 띄울 때"). 한 파일만 고치면 그 워크플로만 네이버를 여럿 동시에 불러 요청이 몰린다
+    root = Path(__file__).resolve().parents[1] / '.claude' / 'workflows'
+    limits: dict[str, tuple[str, str]] = {}
+    for name in ('review-panel', 'web-parity-panel', 'implement-bundles'):
+        text = (root / f'{name}.js').read_text(encoding='utf-8')
+        same = re.search(r'^const SAME_SOURCE_MAX = (\d+)', text, re.MULTILINE)
+        naver = re.search(r'^const SAME_SOURCE_MAX_BY = \{[^}]*\bnaver: (\d+)', text, re.MULTILINE)
+        assert same and naver, name
+        limits[name] = (same.group(1), naver.group(1))
+    assert len(set(limits.values())) == 1, limits
 
 
 # --- 매일 API 감시 ---

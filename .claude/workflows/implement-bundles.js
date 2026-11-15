@@ -1,7 +1,7 @@
 export const meta = {
   name: 'implement-bundles',
   description: '사용자가 허락한 구현 계획의 묶음을 jibsa-coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지·네이버는 하나씩), 모두 끝나면 jibsa-docs 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
-  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), model?: sonnet|opus, effort?: high|xhigh }], docs?: { brief, files?, model?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
+  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), model?: sonnet|opus, effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, model?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
     { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지(네이버는 하나씩), 소스끼리는 동시에' },
@@ -12,7 +12,8 @@ export const meta = {
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 // 같은 소스의 묶음을 동시에 돌리는 수 (docs/development/agents.md "동시에 띄울 때"). 네이버는 하나씩. 동시 실행 상한
 // (SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와 그 절을 같이
-// 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+// 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다. 세 파일의 같은 소스 상한·네이버 상한이 다르면
+// tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 const SAME_SOURCE_MAX = 3
 const SAME_SOURCE_MAX_BY = { naver: 1 }
 const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
@@ -44,6 +45,12 @@ for (const [i, b] of bundles.entries()) {
   if (!b || typeof b.brief !== 'string' || !b.brief.trim()) problems.push(`${label}: 지시서(brief)가 없다`)
   if (b && b.first != null && typeof b.first !== 'boolean') problems.push(`${label}: first 는 true·false 다`)
 }
+// 고치기 전 출력이 없으면 고친 뒤 무엇이 바뀌었는지 비교할 수 없다 (docs/development/agents.md "검증 분담"). 워크플로는 파일을
+// 열 수 없어 그 경로에 파일이 있는지는 보지 못하고, 저장하는 단계를 빠뜨리는 것만 막는다.
+const baseline = typeof a.baseline === 'string' ? a.baseline.trim() : ''
+if (!baseline) {
+  problems.push('고치기 전 출력을 저장한 경로(baseline)가 없다. 바뀔 명령과 바뀌면 안 되는 명령의 지금 출력을 scratchpad 에 먼저 저장하고 그 경로를 넘긴다')
+}
 if (a.docs != null && !(typeof a.docs === 'object' && typeof a.docs.brief === 'string' && a.docs.brief.trim())) {
   problems.push('docs 를 넘겼는데 지시서(docs.brief)가 비었다')
 }
@@ -68,7 +75,7 @@ if (problems.length) {
     started: false,
     reason: 'bad-bundles',
     problems,
-    next: '동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스)·공통 묶음(여러 소스)으로 뺀다. 고쳐서 다시 부른다.',
+    next: 'problems 를 고쳐서 다시 부른다. 동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스)·공통 묶음(여러 소스)으로 뺀다. baseline 이 없으면 고치기 전 출력을 먼저 저장한다.',
   }
 }
 
@@ -212,9 +219,10 @@ const done = list.filter(r => r.status === 'done').length
 const needsAttention = list.filter(r => r.report && (r.report.notDone || []).length).map(r => r.name)
 if (needsAttention.length) log(`못 한 것이 남은 묶음: ${needsAttention.join(', ')}`)
 if (!docs && othersToTouch.length) log(`문서 단계가 없어 주 에이전트가 처리할 곳 ${othersToTouch.length}건`)
-log(`묶음 ${done}/${list.length} 완료${docs ? `, 문서 ${docsReport ? '완료' : '안 함'}` : ''}. 최종 검증은 주 에이전트가 한다`)
+log(`묶음 ${done}/${list.length} 완료${docs ? `, 문서 ${docsReport ? '완료' : '안 함'}` : ''}. 최종 검증은 주 에이전트가 한다 (같은 명령의 지금 출력을 ${baseline} 와 비교)`)
 return {
   started: true,
+  baseline,
   allReturned: done === list.length && (!docs || Boolean(docsReport)),
   needsAttention,
   othersToTouch,

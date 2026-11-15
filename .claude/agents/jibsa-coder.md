@@ -1,6 +1,7 @@
 ---
 name: jibsa-coder
-description: jibsa 코드를 지시서대로 고치는 작업자. 범위가 좁고 지시서가 구체적이면 Sonnet high 로, 얽힌 코드를 지우거나 여러 명령으로 번지는 변경이면 호출 때 Opus xhigh 로 올려 쓴다.
+description: jibsa 코드를 지시서대로 고치는 작업자. 모델·effort 는 CLAUDE.md 의 기준으로 호출 때 정한다.
+tools: Bash, Read, Edit, Write, Glob, Grep
 model: sonnet
 effort: high
 ---

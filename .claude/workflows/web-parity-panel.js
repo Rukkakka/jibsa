@@ -11,6 +11,7 @@ const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 const EFFORTS = ['high', 'xhigh']  // 브라우저 조작이 든 조사라 모델은 Opus 만 쓴다 (CLAUDE.md)
 // 동시 실행 상한(SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+// 세 파일의 같은 소스 상한·네이버 상한이 다르면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 조사하는 조사원 수 (docs/development/agents.md "동시에 띄울 때")
 // 네이버 조사원은 한 번에 하나만 돌린다. 조사원이 직접 여는 브라우저는 jibsa 요청 제한기가 세지 않는데, 네이버는 첫 화면 한 번이
 // 부르는 요청이 많아(docs/development/providers/naver.md) 조사원끼리 여는 때를 맞출 수 없으면 한꺼번에 몰린다.

@@ -23,6 +23,7 @@ const EFFORTS = ['high', 'xhigh']
 const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스에 검증자를 더 둔다
 // 동시 실행 상한(SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+// 세 파일의 같은 소스 상한·네이버 상한이 다르면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 부르는 검증자 수 (docs/development/agents.md "동시에 띄울 때")
 // 네이버 검증자는 한 번에 하나만 돌린다. jibsa 요청 제한기는 첫 화면이 스스로 부르는 요청을 연 뒤에 세어 미리 막지 못하는데
 // (src/jibsa/core/browser.py `finish_entry`), 남긴 쿠키가 없거나 오래됐을 때 jibsa 프로세스 여럿이 함께 시작하면 저마다 첫 화면을
@@ -66,8 +67,11 @@ if (!MODELS.includes(reviewerModel)) {
 const reviewerEffort = EFFORTS.includes(a.reviewerEffort) ? a.reviewerEffort : 'high'
 if (a.reviewerEffort && reviewerEffort !== a.reviewerEffort) log(`리뷰어: effort ${a.reviewerEffort} 대신 high 로 돌린다`)
 
-// agent() 가 예외를 던져도 그 에이전트만 실패로 두고 이어 간다.
+// agent() 가 예외를 던져도 그 에이전트만 실패로 두고 이어 간다. 띄운 수는 /review 가 보고에 적는다 (상한은 두지 않는다:
+// 검증자 한 명이 받는 지적을 늘리면 판정이 흐려져, 비용은 시작할 때 어림 인원을 알리는 것으로 다룬다).
+let agentsRun = 0
 const tryAgent = async (prompt, opts) => {
+  agentsRun += 1
   try { return await agent(prompt, opts) } catch (e) { log(`${opts.label}: 예외로 끝났다 (${String(e && e.message || e).slice(0, 120)})`); return null }
 }
 const verify = a.verify !== false
@@ -163,10 +167,10 @@ log(`지적 ${found.length}건 (리뷰어 ${groups.length}명)`)
 
 // ok 가 false 면 리뷰가 덜 된 것이다: 지적 0건이어도 깨끗한 리뷰가 아니다.
 const base = { started: true, ok: failedReviewers.length === 0, reviewers: groups.length, missingPerspectives: missing, failedReviewers, findings: found.length }
-if (!found.length) return { ...base, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
+if (!found.length) return { ...base, agents: agentsRun, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
 if (!verify) {
   log('재검증은 건너뛴다 (verify: false). 주 에이전트가 직접 재현한다')
-  return { ...base, verified: false, items: found }
+  return { ...base, agents: agentsRun, verified: false, items: found }
 }
 
 phase('재검증')
@@ -180,12 +184,10 @@ const verifyPrompt = (source, items) => [
     ? '공통 코드 지적이다. 재현에 API 가 필요하면 소스 하나를 골라 최소로 부른다. 네이버는 차단 위험이 커서 다른 소스로 재현할 수 없을 때만 고른다. 소스별 검증은 끝났다.'
     : `${source} 의 실제 API 만 부른다. 다른 검증자가 같은 소스나 다른 소스를 동시에 부르고 있을 수 있다 (요청 제한은 함께 센다).`,
   '요청은 지적당 1~2회로 아낀다 (네이버는 특히). RATE_LIMITED 면 오래 기다리지 말고 미확인으로 둔다.',
-  'jibsa 동작과 상관없는 지적(문서·설정·스크립트 문장끼리 어긋남 등)은 API 를 부르지 않고 원문을 대조해 판정한다.',
-  '구조·중복·단순화(design) 지적은 API 로 재현하지 않고 겹쳤다는 자리들을 나란히 대조한다. "닿지 않는 코드" 라는 주장만 그 경로를 CLI 로 불러 확인한다. 이 관점에서는 "한쪽만 고치면 어긋난다" 가 가정이 아니라 지적의 요지라, 겹침·일부에만 붙은 처리·닿지 않는 코드가 지금 코드에 실제로 있으면 real 이다 (evidence 에 겹친 자리 파일:줄 들). 두 곳의 규칙이 다르면 그 차이가 일부러인지(응답 형식이 달라 읽는 법이 다르다 등) 본다. 일부러면 false_positive 이고, 아니면 real 이며 합치면 바뀌는 출력을 적는다.',
-  '판정: real(재현됨, 또는 아래 기준으로 코드로 확인) / false_positive(지금 어떤 입력을 줘도 코드가 맞는데 틀려 보임. 코드를 잘못 읽은 것, 코드가 나중에 바뀌어야만 문제가 되는 것도 여기) / impossible(jibsa 코드가 그 입력을 스스로 막음: 옵션 검사·요청 모델·앞 단계에서 이미 거름. 막는 자리 파일:줄 을 댄다. 응답에 아직 안 온 값은 여기 들지 않는다) / unconfirmed(재현도 반박도 못 했고 코드로도 단정할 수 없음) / duplicate(다른 지적과 같은 문제).',
-  '그 상황을 만들 데이터가 지금 없어 재현할 수 없어도, 서버가 보낼 수 있는 값이나 닿을 수 있는 상태에서 코드가 틀린 출력·에러에 이르면 real 이다. 서버가 보낼 수 있는 값은 값이 없을 때의 모양(null·빈 글자·빈 목록·"-" 같은 표시 글자)과 지금 값의 연장(소수, 더 큰 수, 더 짧은 쪽, 이름이 같은 후보, 상한 도달)이다. "실측에 아직 없다"·"본 적 없다"·"아직 상한에 안 닿는다" 는 real 이 아닐 이유가 아니다. 실제 응답의 값만 바꿔 넣거나 상한 상수를 낮춰(저장소 파일은 고치지 않고 scratchpad 스크립트로) 그 분기를 태워 보고, evidence 를 "재현 못 함, 코드로 확인:" 으로 시작해 재현하지 못한 이유·실측에서 본 값·파일:줄 흐름을 적는다. 코드를 잘못 읽은 것, 코드가 나중에 바뀌어야만 문제가 되는 것("나중에 누가 이 함수를 검사 없이 부르면"), 응답 형식 자체가 바뀌는 것(필드 이름·자료형 변경, 엔드포인트 폐기. 매일 API 감시가 잡는다)은 real 이 아니다.',
-  '지적은 파일·줄 순이다. 이웃한 지적이 같은 문제를 가리키면 하나만 판정하고 나머지는 duplicate 로 두어 duplicate_of 에 그 id 를 적는다. 같은 줄이라도 문제가 다르면 따로 판정한다.',
-  `오탐이면 note 에 남길 자리와 문장을 제안한다: 웹과의 차이면 그 소스 가이드 "웹과 다른 점", 그 밖은 코드 자리의 \`# 리뷰 오탐 (${date}): 이유\` 주석. 이미 적혀 있으면 그 위치를 댄다.`,
+  // 판정 기준은 docs/development/agents.md "코드 리뷰" 2·3단계 원문 하나에만 둔다. 검증자 정의가 그 절을 먼저 읽게 한다.
+  '재현 방법과 판정 기준은 검증자 정의(.claude/agents/review-verifier.md)가 먼저 읽으라는 docs/development/agents.md "코드 리뷰" 2·3단계 원문을 따른다.',
+  '판정 키: real = 진짜 문제, false_positive = 오탐, impossible = 일어날 수 없음, unconfirmed = 미확인, duplicate = 중복 (duplicate_of 에 같은 문제를 가리키는 지적 id). 지적은 파일·줄 순이라 같은 문제는 대개 이웃해 있다.',
+  `오탐이면 note 에 남길 자리와 문장을 제안한다. 코드 주석이면 \`# 리뷰 오탐 (${date}): 이유\` 꼴로 쓴다.`,
   '',
   '지적:',
   ...items.map(f => `${f.id} [${f.file}:${f.line}] (${f.perspectives.join('+')}) ${f.title}\n  문제: ${f.problem}\n  상황: ${f.scenario}`),
@@ -229,7 +231,7 @@ const byId = Object.fromEntries(verdicts.map(v => [v.id, v]))
 // 중복은 가리키는 지적이 있고 그 지적이 중복이 아닐 때만 인정한다 (서로 가리켜 둘 다 사라지지 않게).
 const isDuplicate = v => v.verdict === 'duplicate' && byId[v.duplicate_of] && byId[v.duplicate_of].verdict !== 'duplicate'
 // 일어날 수 없음·중복도 근거와 함께 돌려준다. 사용자에게는 보여 주지 않지만 주 에이전트가 잘못 갈린 것이 없는지 훑는다.
-const result = { ...base, verified: true, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
+const result = { ...base, agents: agentsRun, verified: true, real: [], falsePositive: [], unconfirmed: [], impossible: [], duplicate: [] }
 for (const f of found) {
   const v = byId[f.id]
   const item = { ...f, evidence: v ? v.evidence : '검증 결과 없음', note: v && v.note ? v.note : '' }
@@ -240,5 +242,5 @@ for (const f of found) {
   else if (isDuplicate(v)) result.duplicate.push({ ...item, duplicateOf: v.duplicate_of })
   else result.unconfirmed.push({ ...item, note: `중복이라 했지만 가리킨 지적(${v.duplicate_of || '없음'})이 없거나 그것도 중복이다` })
 }
-log(`진짜 문제 ${result.real.length}, 오탐 ${result.falsePositive.length}, 미확인 ${result.unconfirmed.length}, 일어날 수 없음 ${result.impossible.length}, 중복 ${result.duplicate.length}`)
+log(`진짜 문제 ${result.real.length}, 오탐 ${result.falsePositive.length}, 미확인 ${result.unconfirmed.length}, 일어날 수 없음 ${result.impossible.length}, 중복 ${result.duplicate.length} (띄운 에이전트 ${agentsRun}명)`)
 return result
