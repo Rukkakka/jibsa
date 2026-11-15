@@ -36,7 +36,7 @@
 | 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
 | 학교 | `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서) · `daangn school <학교 이름\|school_code>` (배정 단지, 여러 곳이면 `candidates` 의 `school_code` 로) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) · 단지 근처 어린이집·유치원 `daangn preschools <단지 ID>` (지역·역 이름으로는 찾지 않는다) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호>` → `naver search listings --redevelopment <구역 번호>` |
-| 단지 비교 | `daangn compare <ID> <ID> …` (최대 10곳, 비슷한 크기 평형끼리) · `daangn nearby-complexes <ID>` |
+| 단지 비교 | `daangn compare <ID> <ID> …` (최대 10곳, 비슷한 크기 평형끼리) · `daangn nearby-complexes <ID>` · 평형대 평당가와 1km 안 단지 `dabang nearby-complexes <ID>` |
 | 동네 고르기 | `daangn good-neighborhoods --lifestyle …` · `region-reviews <동>` · `trending-complexes [시·도·구]` (조회 급상승, 빼면 전국) · `popular-listings <동>` (모두 `daangn`) · 동 요약 숫자와 순위 `dabang neighborhood <동>` · `dabang popular-listings <동>` |
 | 역 둘레 시세·주변 | 역 둘레 평균 매물가(호가) `dabang station-prices <역>` · 매물·단지 둘레 역·버스·시설 `dabang nearby <ID>` (분양은 `nearby --sale <sale_id>`) |
 | 분양·청약 | `dabang search sales <동·구·시도 또는 전국>` → `dabang sale <sale_id>` (일정·평형별 분양가) · 분양 둘레 `dabang nearby --sale <sale_id>` · 날짜별 전국 일정 `dabang sale-schedule --region 서울` (주소·가격은 `--details`) |

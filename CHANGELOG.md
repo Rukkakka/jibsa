@@ -90,6 +90,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 `nearby --sale <분양 ID>`: 분양 단지 둘레의 지하철역·버스 노선·가까운 시설·학교 (`target` `분양`). 분양 ID 는 단지 ID 와 길이가 같아 옵션으로 받고, 이때는 위치 인자를 주지 않는다 (둘 다 주면 `INVALID_ARGUMENT`) (#240)
 - 다방 `search sales <시·도>`·`search sales 전국`: 다방 웹 분양 지역 목록 그대로 (예전에는 `REGION_NOT_SUPPORTED`). 전국·시·도·시·군·구에 `--radius` 를 주면 `INVALID_ARGUMENT` (전국·시·도는 요청 없이) (#244)
 - 다방 `sale-schedule --details`: 줄마다 다방 청약 일정에서 날짜를 누르면 나오는 표의 분양 단지 정보 `sale`(`state`·`building_type`·`supply_type`·`address`·`sale_household_count`·`household_count`·`price_kind`·`price_manwon`). 내보낼 줄이 든 날마다 요청 1회 더. 그 날 표에서 짝을 찾지 못한 줄은 `sale` 이 `null` (다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄도 `null` 이고 `[참고]` 가 따로 알리며 업데이트 안내는 붙이지 않는다), 표를 받지 않은 결과(`--details`·`--region` 없이)는 `sale` 키가 없다 (#244)
+- 다방 `nearby-complexes <단지 ID> [--pyeong <space_seq>]`: 다방 단지 화면 평당가 칸의 기본 탭 'N평대 비교'. 그 평형대의 이 단지·동·구 매매·전세 평당가와 반경 1km 주변 단지의 평당가·세대수·연차·거리. 다방이 그 평형에 평형대 탭이나 주변 단지를 주지 않으면 그 목록이 `null` (#245)
+- 다방 `complex` 에 다방 대출 계산기가 대출 비율을 50%로 묶는 지역인지 `overheated_district` (다방 단지 화면의 대출 계산 조건, 웹 문구 '투기지역 (대출 비율 50% 제한)'. 받지 못하거나 다방이 값을 비워 주면 `null` 과 `[실패]`) (#245)
 
 ### 변경
 
@@ -106,8 +108,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 웹 쿼리 해시가 거절되면 동 지도 페이지 20건에 조건을 직접 걸어 찾던 대체 경로를 없애 `UPSTREAM_ERROR` 로 끝냄. 당근 웹에 없는 동작이었다 (#215)
 - 당근 `region-real-price --new-high` 가 당근 웹 신고가 화면처럼 가장 최근 공개일의 신고가만 줌. 그날 신고가가 없으면 빈 목록이고 `notes` 가 알린다. 예전처럼 이전 공개일 신고가까지 보려면 새 옵션 `--previous-days` 를 붙인다 (#222)
 - 다방 `complex` 의 중·고등학교를 2곳에서 다방 화면처럼 가까운 3곳씩 줌 (#235)
+- 다방 `complex` 의 요청이 2회에서 3회로 늘어남 (`overheated_district` 를 받는 대출 계산 조건) (#245)
 - 다방 `sale-schedule --region` 이 일정 글 앞의 시·도가 아니라 그 날 분양 단지 표의 주소로 시·도를 가림. 일정이 있는 날마다 요청이 1회 늘고(7일이면 최대 8회) 줄에 `sale` 이 붙는다. 남긴 일정이 `--limit` 을 넘으면 그 뒤 날은 받지 않고, `[일부]` 의 전체 수를 '적어도 N건' 으로 알린다. 글이 시·도 없이 시작해 지역을 몰라 빠지던 일정(`'남춘천 센트레빌'`)도 주소로 가린다 (#244)
 - 다방 `region-ranking`·`search sales` 의 시·도·시·군·구 범위를 다방 웹 지역 고르기와 같은 시·도·시·군·구 목록에서 찾음. `'서울 중구'` 처럼 시·도를 붙인 이름은 장소 검색 없이 찾고, `search sales '서울 홍대입구'` 처럼 '입구' 로 끝나는 역 이름은 범위 목록을 묻지 않고 바로 장소 검색으로 찾는다 (`region-ranking` 은 목록을 묻지 않고 바로 에러로 알린다). 찾는 범위와 결과는 같다 (#244)
+- 다방 `price-trend` 가 `--pyeong` 없이 대표 평형으로 찾았다는 `[참고]` 에 다른 평형은 `complex` 결과의 `pyeongs` 에서 고르라는 말을 붙임 (`real-price`·`nearby-complexes` 와 같은 안내). `real-price`·`price-trend`·`nearby-complexes` 는 다방이 대표 평형을 주지 않아 다방 웹처럼 첫 평형으로 찾았으면 `[참고]` 가 다방 대표 평형이라 하지 않고 첫 평형을 골랐다고 알린다. `complex` 의 `primary_space_seq` 도 같은 첫 평형을 낸다 (다방이 준 0 을 그대로 내던 것) (#245)
 - 하나만 받는 옵션이 앞뒤 공백을 다듬어 받고, 쉼표로 여러 값을 주면 `INVALID_ARGUMENT` 의 message 가 '허용되지 않는 값' 대신 `하나만 주세요: …` 로 바뀜 (같은 값만 반복했으면 그 값으로 받고, 틀린 조각이 있으면 그 조각으로 '허용되지 않는 값'). 바뀌는 옵션: 네이버 `search complexes`·`search redevelopment`·`search listings` 의 `--sort`, `search listings` 의 `--area-basis`·`--loan`, `trend` 의 `--trade`·`--period`, `real-price`·`market-price` 의 `--period`, 직방 `search listings store` 의 `--trade`, `search listings stay` 의 `--structure`, 다방 `school` 의 `--level`, `region-ranking` 의 `--by`, `jibsa guide` 의 `TOPIC` (#243)
 - 다방 `sale-schedule --details` 에서 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄을 '그 날 분양 단지 표에서 찾지 못해' 가 아니라 '다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 sale 이 null' 이라는 `[참고]` 로 따로 알림. 그런 줄뿐이어도 업데이트 안내는 붙이지 않는다 (#244)
 
@@ -134,6 +138,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 `listing` 의 `manage_cost_includes` 가 공용 관리비를 실비로 표시한 매물에서 비던 문제. 다방 화면처럼 공용은 관리비 합계에 들어 `공용 관리비` 를 넣고, 포함 항목을 다방 화면의 규칙(관리비 입력 방식·부과 방식)대로 고른다 (#235)
 - 다방 `listing` 의 `manage_cost_includes` 가 기타부과 매물과 항목을 적지 않은 정액관리비 매물에서 다방이 포함 항목을 빈 목록으로 주면 `[]` 가 아니라 `null`(모름)로 나가던 문제 (#241)
 - 다방 `popular-listings`·`region-ranking`·`real-price` 가 다방이 빈 쪽에 '더 있음' 을 주면 `has_more` 를 `true` 로 내던 문제. 빈 쪽이면 `false` 로 두고, `real-price` 는 빈 쪽 뒤를 더 묻지 않는다 (#241)
+- 다방 `complex` 의 `area_prices` 가 다방이 평당가를 0 으로 주면 `0` 으로 내던 문제. 다방 화면이 '정보 없음' 으로 그리는 값(없거나 0)은 `null` 로 낸다 (#245)
+- 다방 `complex` 가 다방이 평당가 비교(`area_prices`)나 평형 목록(`pyeongs`)을 `null` 로 주면 `PARSE_ERROR` 로 끝나던 문제. 그 칸을 `null`(모름)로 내고 나머지 결과는 그대로 낸다. 평형을 모르면 `recent_sale`·`recent_lease` 의 `space_seq`·`area_m2` 는 `null` 이다. `search listings --complex` 는 `--pyeong` 이 있으면 그 번호를 그대로 보내고(없는 번호라고 막지 않는다), 없으면 `NOT_FOUND` 다 (#245)
 - 다방 `sale-schedule --details`·`--region` 이 청약 일정 표의 한 줄에 분양 ID 가 없을 때 `PARSE_ERROR` 로 끝나던 문제. 그 줄의 `sale` 이 `null` 이고 `[참고]` 가 그 날 분양 단지 표에서 같은 분양·종류를 찾지 못했다고 알린다 (#244)
 - 다방 `search complexes` 의 `recent_sale_manwon`·`recent_lease_manwon` 을 '다방이 고른 대표 평형' 의 거래라고 적던 문서 오류. 평형과 상관없이 단지의 가장 최근 거래다 (다방 목록 카드와 같다) (#235)
 - 다방 `trending-complexes` 의 `view_count` 를 조회 수로, `neighborhood` 의 `prices.rank` 를 평균가 순위로만 적던 문서 오류. `view_count` 는 기간 안 조회한 사람 수(다방 화면의 'N명'), `prices.rank` 는 아파트 매매 기준 순위다 (#235)

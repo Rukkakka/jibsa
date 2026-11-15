@@ -10,6 +10,7 @@ from jibsa.providers.dabang.api.request.common import (
     DabangAptFiltersModel,
     DabangCategoryListRequestParameterModel,
     DabangComplexCategory,
+    DabangComplexV5RequestParameterModel,
     DabangOfficetelFiltersModel,
     DabangSellingType,
 )
@@ -124,3 +125,12 @@ class DabangRoomListCategoryComplexV5RequestParameterModel(RequestModel):
         if not isinstance(self.main_filters, expected):
             raise ValueError(f'{self.category} 단지에 맞지 않는 필터입니다: {type(self.main_filters).__name__}')
         return self
+
+
+class DabangComplexLoanCalcConditionV5RequestParameterModel(DabangComplexV5RequestParameterModel):
+    """`GET /api/v5/complex/{complex_id}/loan-calc-condition` 의 경로 값 (단지 대출 계산 조건). 웹 단지 화면이 단지 상세 뒤에
+    바로 부른다 (complex 청크 `je`, 2026-11-13 웹 캡처).
+
+    Args:
+        complex_id: 단지 ID (28자리 16진수).
+    """

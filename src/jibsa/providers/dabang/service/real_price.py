@@ -1,4 +1,4 @@
-"""실거래가 (real-price) 와 시세 흐름 (price-trend)."""
+"""실거래가 (real-price), 시세 흐름 (price-trend), 평형대 평당가와 주변 단지 비교 (nearby-complexes)."""
 from collections.abc import Callable
 from datetime import datetime
 
@@ -18,6 +18,7 @@ from jibsa.core.listing import (
     SAME_AREA_PYEONG_TRADES_NOTE,
     UPDATE_MAYBE_NEEDED,
     TradeType,
+    normalize_address,
     normalize_date,
     normalize_floor,
     note,
@@ -27,6 +28,7 @@ from jibsa.providers.dabang.api.request.real_price import (
     REAL_PRICE_PAGE_LIMIT,
     DabangRealPriceComplexChartsV5RequestParameterModel,
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
+    DabangRealPriceComplexPricePerPyV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
     DabangRealPriceHouseInitV5RequestParameterModel,
     DabangRealPriceSearchType,
@@ -34,18 +36,24 @@ from jibsa.providers.dabang.api.request.real_price import (
 from jibsa.providers.dabang.api.response.real_price import (
     DabangChartSeriesModel,
     DabangHighLowModel,
+    DabangNearComplexModel,
     DabangRealPriceHistoryModel,
     DabangRealPriceHouseHistoryResultModel,
     DabangRealPriceHouseInitResultModel,
     DabangRealPriceHouseScopeModel,
 )
 from jibsa.providers.dabang.service.common import (
+    COMPLEX_KIND_BY_TYPE,
+    DabangAreaPrice,
+    area_price,
+    building_years,
     complex_not_found,
     complex_url,
     error_message,
     fetch_complex,
     listing_url,
     more_after,
+    primary_space_of,
 )
 
 from typing import (
@@ -53,8 +61,11 @@ from typing import (
     Any,
     Literal,
     NamedTuple,
+    TypeVar,
 )
 
+
+T = TypeVar('T')
 
 RealPriceTrade = Literal['매매', '전월세']
 SEARCH_TYPE_BY_TRADE: dict[RealPriceTrade, DabangRealPriceSearchType] = {'매매': 'SALE', '전월세': 'LEASE'}
@@ -294,22 +305,62 @@ def _complex_error(exc: HTTPStatusError, complex_id: str, space_seq: int) -> Jib
     return None
 
 
-def primary_space_seq(client: DabangClient, complex_id: str) -> tuple[int, str]:
-    """단지의 다방 대표 평형 번호와 이름 (단지 상세 1회).
+def _fetch_complex_space(fetch: Callable[[], T], complex_id: str, space_seq: int) -> T:
+    """단지 평형 요청 하나. 없는 단지·평형이라는 다방 오류를 NOT_FOUND·INVALID_ARGUMENT 로 바꾼다 (`_complex_error`).
+
+    Raises:
+        JibsaError: 없는 단지·평형일 때. 다른 HTTP 오류는 그대로 올린다.
+    """
+    try:
+        return fetch()
+    except HTTPStatusError as exc:
+        error = _complex_error(exc, complex_id, space_seq)
+        if error is not None:
+            raise error from None
+        raise
+
+
+def primary_space(client: DabangClient, complex_id: str, *, verb: str) -> tuple[int, str]:
+    """`--pyeong` 을 안 준 조회의 (평형 번호, 대표 평형으로 조회했다는 안내) (단지 상세 1회).
+
+    다방이 대표를 주지 않으면(없거나 0) 웹처럼 첫 평형을 고른다.
+
+    Args:
+        verb: 안내 끝말 ('찾았습니다'·'비교했습니다').
 
     Raises:
         JibsaError: 단지가 없거나 평형이 없을 때 (NOT_FOUND).
     """
     result = fetch_complex(client, complex_id)
-    if not result.spaces:
+    chosen = primary_space_of(result)
+    if chosen is None:
         raise JibsaError(
             code='NOT_FOUND',
             message=f'다방 단지의 평형을 찾지 못했습니다: {complex_id}',
             hint='jibsa dabang complex <단지ID> 결과의 pyeongs[].space_seq 를 --pyeong 으로 주세요',
         )
-    seq = result.primary_space_seq or result.spaces[0].space_seq
-    name = next((space.pyeong_type for space in result.spaces if space.space_seq == seq), None)
-    return seq, name or str(seq)
+    seq, from_dabang = chosen
+    name = next((space.pyeong_type for space in result.spaces or [] if space.space_seq == seq), None)
+    return seq, primary_space_note(name or str(seq), seq, verb=verb, from_dabang=from_dabang)
+
+
+def primary_space_note(name: str, space_seq: int, *, verb: str, from_dabang: bool) -> str:
+    """`--pyeong` 을 안 줘 대표 평형으로 조회했다는 안내 (`verb`: '찾았습니다'·'비교했습니다').
+
+    Args:
+        from_dabang: 다방이 대표 평형을 줬는지. 아니면 다방 웹처럼 첫 평형을 고른 것이라 그렇게 알린다.
+    """
+    if not from_dabang:
+        return note(
+            '참고',
+            f'--pyeong 을 주지 않았고 다방이 대표 평형을 주지 않아 다방 웹처럼 첫 평형({name}, space_seq {space_seq})으로 {verb}. '
+            '다른 평형은 complex 결과의 pyeongs 에서 고르세요',
+        )
+    return note(
+        '참고',
+        f'--pyeong 을 주지 않아 다방 대표 평형({name}, space_seq {space_seq})으로 {verb}. '
+        '다른 평형은 complex 결과의 pyeongs 에서 고르세요',
+    )
 
 
 class _Page(NamedTuple):
@@ -376,21 +427,19 @@ def get_real_prices(
     """
     notes: list[str] = []
     if space_seq is None:
-        space_seq, name = primary_space_seq(client, complex_id)
-        notes.append(f'--pyeong 을 주지 않아 다방 대표 평형({name}, space_seq {space_seq})으로 찾았습니다. 다른 평형은 complex 결과의 pyeongs 에서 고르세요')
+        space_seq, space_note = primary_space(client, complex_id, verb='찾았습니다')
+        notes.append(space_note)
     from_month, to_month = period_months(years)
 
     def fetch(page: int, page_size: int) -> _Page | None:
-        try:
-            result = client.run_request_real_price_complex_histories_v5(DabangRealPriceComplexHistoriesV5RequestParameterModel(
+        result = _fetch_complex_space(
+            lambda: client.run_request_real_price_complex_histories_v5(DabangRealPriceComplexHistoriesV5RequestParameterModel(
                 complex_id=complex_id, space_seq=space_seq, from_date=from_month, to_date=to_month,
                 search_type=SEARCH_TYPE_BY_TRADE[trade], page=page, limit=page_size,
-            )).result
-        except HTTPStatusError as exc:
-            error = _complex_error(exc, complex_id, space_seq)
-            if error is not None:
-                raise error from None
-            raise
+            )).result,
+            complex_id,
+            space_seq,
+        )
         return _Page(result.list_, result.total, bool(result.has_more)) if result else None
 
     collected = _collect(fetch, limit)
@@ -687,17 +736,15 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     """
     notes: list[str] = []
     if space_seq is None:
-        space_seq, name = primary_space_seq(client, complex_id)
-        notes.append(f'--pyeong 을 주지 않아 다방 대표 평형({name}, space_seq {space_seq})으로 찾았습니다')
-    try:
-        result = client.run_request_real_price_complex_charts_v5(
+        space_seq, space_note = primary_space(client, complex_id, verb='찾았습니다')
+        notes.append(space_note)
+    result = _fetch_complex_space(
+        lambda: client.run_request_real_price_complex_charts_v5(
             DabangRealPriceComplexChartsV5RequestParameterModel(complex_id=complex_id, space_seq=space_seq)
-        ).result
-    except HTTPStatusError as exc:
-        error = _complex_error(exc, complex_id, space_seq)
-        if error is not None:
-            raise error from None
-        raise
+        ).result,
+        complex_id,
+        space_seq,
+    )
     if result is None:
         raise JibsaError(code='NOT_FOUND', message=f'다방 시세 흐름이 없습니다: {complex_id}', hint='단지 ID·평형 번호를 확인하세요')
     sale = result.sale or DabangChartSeriesModel()
@@ -742,3 +789,160 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
         notes=notes,
     )
 
+
+class DabangNearbyComplex(BaseModel):
+    """반경 1km 주변 단지 하나 (평당가 비교)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    complex_id: Annotated[
+        str,
+        Field(description='단지 ID (complex·real-price 에 넘긴다)')
+    ]
+    name: Annotated[
+        str | None,
+        Field(description='단지 이름')
+    ] = None
+    complex_type: Annotated[
+        str | None,
+        Field(description='아파트 / 오피스텔')
+    ] = None
+    address: Annotated[
+        str | None,
+        Field(description="주소 (동까지, '서울특별시 강남구 대치동')")
+    ] = None
+    per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description='그 평형대 평당가 (만원). sale_nearby 는 매매, lease_nearby 는 전세. 다방 웹이 빈 칸으로 두는 값은 null')
+    ] = None
+    household_count: Annotated[
+        int | None,
+        Field(description='세대수')
+    ] = None
+    years: Annotated[
+        int | None,
+        Field(description="입주 연차 (다방 '입주 37년차')")
+    ] = None
+    distance_m: Annotated[
+        int | None,
+        Field(description='이 단지에서 거리 (m, 다방 값. 웹 목록은 거리를 그리지 않는다)')
+    ] = None
+
+
+class DabangNearbyComplexes(BaseModel):
+    """단지 평형대 평당가와 반경 1km 주변 단지 비교 (다방 웹 단지 화면 평당가 칸의 기본 탭 'N평대 비교')."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    complex_id: Annotated[
+        str,
+        Field(description='단지 ID')
+    ]
+    space_seq: Annotated[
+        int,
+        Field(description='고른 평형 번호 (그 평형이 든 평형대로 비교한다)')
+    ]
+    # 리뷰 오탐 (2026-11-14): 'N평대 비교' 탭을 주지 않는 것은 다방이 값을 주지 않은 모름이라 키를 빼지 않고 null 로 둔다
+    # (해당 없음 아님). 웹도 이때 이 탭을 그리지 않는다 (소스 가이드 평형대 평당가 비교)
+    pyeong_range: Annotated[
+        str | None,
+        Field(description="비교한 평형대 (다방 탭 이름 '30평대 비교' 의 '30평대'). 다방이 이 평형에 평형대 탭을 주지 않으면 null")
+    ] = None
+    area_prices: Annotated[
+        list[DabangAreaPrice] | None,
+        Field(description=(
+            "그 평형대의 평당 평균가 (이 단지·동·구, 만원). 다방 웹이 '정보 없음' 으로 쓰는 값(없거나 0)은 각 칸 안에서 null. "
+            "다방이 이 평형에 평형대 탭을 주지 않거나 이 목록을 null 로 주면 목록 전체가 null"
+        ))
+    ] = None
+    sale_nearby: Annotated[
+        list[DabangNearbyComplex] | None,
+        Field(description=(
+            '반경 1km 주변 단지의 매매 평당가 (다방 순서 그대로: 평당가가 있는 단지를 가까운 순으로 앞에). 다방이 평형대 탭이나 '
+            '주변 단지(nearComplexes)나 매매 쪽을 null 로 주면 null, 주었는데 매매 쪽이 비었으면 []'
+        ))
+    ] = None
+    lease_nearby: Annotated[
+        list[DabangNearbyComplex] | None,
+        Field(description=(
+            '반경 1km 주변 단지의 전세 평당가 (다방 웹 전월세 탭, 다방 순서 그대로). 다방이 평형대 탭이나 주변 단지'
+            '(nearComplexes)나 전세 쪽을 null 로 주면 null, 주었는데 전세 쪽이 비었으면 []'
+        ))
+    ] = None
+    url: Annotated[
+        str,
+        Field(description='단지 페이지 URL')
+    ]
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='평형 안내')
+    ] = []
+
+
+def _nearby_complex(row: DabangNearComplexModel) -> DabangNearbyComplex | None:
+    # 웹은 단지 ID 가 없는 줄을 그리지 않는다 (complex 청크 `nn`: `if(!e.complexId)return null`)
+    if not row.complex_id:
+        return None
+    return DabangNearbyComplex(
+        complex_id=row.complex_id,
+        name=row.complex_name,
+        complex_type=COMPLEX_KIND_BY_TYPE.get(row.complex_type or ''),
+        address=normalize_address(row.address),
+        # 리뷰 오탐 (2026-11-14): 주변 단지 평당가는 0 을 null 로 바꾸지 않는다. 웹 complex 청크 `nn` 은 `averagePyeongPrice ?? ''` 를
+        # 가격 글자로 바꿔 null 은 '-', 0 은 '0원' 으로 그린다 (area_prices 막대 `Yt` 와 다르다)
+        per_pyeong_manwon=row.average_pyeong_price,
+        household_count=row.household_num,
+        years=building_years(row.complex_desc),
+        distance_m=row.distance,
+    )
+
+
+def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: int | None) -> DabangNearbyComplexes:
+    """평형대 평당가와 반경 1km 주변 단지 비교 (요청 1회, 평형을 안 주면 대표 평형을 찾느라 +1).
+
+    다방 웹 단지 화면 평당가 칸의 기본 탭('N평대 비교')이다. 다방이 탭 이름을 비워 주면 웹은 이 탭을 그리지 않고 '전체 평형
+    비교'(complex 결과 area_prices)만 보여 주므로 area_prices·sale_nearby·lease_nearby 를 모름(null)으로 두고 안내를 낸다.
+
+    Raises:
+        JibsaError: 단지가 없을 때 (NOT_FOUND), 단지에 없는 평형 번호를 줬을 때 (INVALID_ARGUMENT).
+    """
+    notes: list[str] = []
+    if space_seq is None:
+        space_seq, space_note = primary_space(client, complex_id, verb='비교했습니다')
+        notes.append(space_note)
+    result = _fetch_complex_space(
+        lambda: client.run_request_real_price_complex_price_per_py_v5(
+            DabangRealPriceComplexPricePerPyV5RequestParameterModel(complex_id=complex_id, space_seq=space_seq)
+        ).result,
+        complex_id,
+        space_seq,
+    )
+    tab = (result.pyeong_range_tab_name or '').strip() if result else ''
+    if result is None or not tab:
+        notes.append(note(
+            '참고',
+            f"다방이 이 평형(space_seq {space_seq})에는 'N평대 비교' 를 주지 않습니다 (다방 웹도 이 탭 없이 '전체 평형 비교' 만 "
+            f'보여 줍니다). 단지 전체 평형의 평당가 비교는 jibsa dabang complex {complex_id} 의 area_prices 로 보세요',
+        ))
+        return DabangNearbyComplexes(complex_id=complex_id, space_seq=space_seq, url=complex_url(complex_id), notes=notes)
+    near = result.near_complexes
+    # 매매·전월세 쪽이 null 이면 그 쪽은 모름(null), 비어 있으면 []
+    sale_rows = [_nearby_complex(row) for row in near.trade] if near and near.trade is not None else None
+    lease_rows = [_nearby_complex(row) for row in near.lease] if near and near.lease is not None else None
+    skipped = (sale_rows or []).count(None) + (lease_rows or []).count(None)
+    if skipped:
+        notes.append(note('제외', f'단지 ID 가 없는 주변 단지 {skipped}줄은 다방 웹처럼 넣지 않았습니다'))
+    return DabangNearbyComplexes(
+        complex_id=complex_id,
+        space_seq=space_seq,
+        pyeong_range=tab.removesuffix('비교').strip(),
+        area_prices=None if result.area_average_price is None else [area_price(price) for price in result.area_average_price],
+        sale_nearby=None if sale_rows is None else [row for row in sale_rows if row is not None],
+        lease_nearby=None if lease_rows is None else [row for row in lease_rows if row is not None],
+        url=complex_url(complex_id),
+        notes=notes,
+    )

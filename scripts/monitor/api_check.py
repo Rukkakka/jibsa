@@ -324,7 +324,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단지 목록 대치동', ('dabang', 'search', 'complexes'), ('대치동', '--limit', '10'), 'complexes',
             (Capture('listed_complex', 'complexes', 'complex_id', largest='listing_count'),),
         ),
-        # 최근 실거래 요약은 덤 조회라 실패해도 단지 정보가 나온다. 은마는 늘 거래가 있어 실패 안내 없이 비면 요약이 깨진 것이다
+        # 최근 실거래 요약·대출 계산 조건(투기과열지구)은 덤 조회라 실패해도 단지 정보가 나온다. 은마는 늘 거래가 있어 실패 안내
+        # 없이 비면 요약이 깨진 것이다. 대출 계산 조건이 거절되거나 형식이 바뀌면 업데이트 안내로 고장이 된다
         # 단지 목록도 찾는 방식마다 다른 주소다: 아파트 동은 위의 경계 사각형(bbox), 오피스텔 동은 region, 역은 subway
         Step('오피스텔 단지 목록 역삼동', ('dabang', 'search', 'complexes'), ('역삼동', '-t', '오피스텔', '--limit', '2'), 'complexes'),
         Step('단지 목록 역 강남역', ('dabang', 'search', 'complexes'), ('강남역', '--limit', '2'), 'complexes'),
@@ -335,6 +336,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         # 학교 상세는 옛 방식(/api/3/education/{단계}/{코드}). 단계가 코드와 다르면 500 이라 단지의 중학교로 본다
         Step('학교 상세 중학교', ('dabang', 'school'), ('{middle_school}', '--level', '중학교'), 'advancement'),
+        # 평형대 평당가 비교(real-price/complex/price-per-py). 은마 대표 평형은 '30평대 비교' 가 있다 (2026-11-14 실측)
+        Step('평형대 평당가 비교', ('dabang', 'nearby-complexes'), ('{complex}',), 'area_prices'),
         Step('단지 매물', DABANG_LISTINGS, ('--complex', '{listed_complex}', '--limit', '2'), 'listings'),
         Step('단지 실거래가', ('dabang', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
         # --listing 은 단지 없는 매물만 받는다. 원룸 목록에는 오피스텔이 섞여 빌라 목록의 매물을 쓴다

@@ -14,6 +14,7 @@ from jibsa.core.geo import (
     box_around,
 )
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
+from jibsa.core.korean import particle
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     limit_notes,
@@ -34,6 +35,7 @@ from jibsa.providers.dabang.api.request.common import (
 )
 from jibsa.providers.dabang.api.request.complex import (
     DabangComplexListCategoryV5RequestParameterModel,
+    DabangComplexLoanCalcConditionV5RequestParameterModel,
     DabangComplexRoomFiltersModel,
     DabangComplexRoomOrder,
     DabangComplexSummaryV5RequestParameterModel,
@@ -55,12 +57,14 @@ from jibsa.providers.dabang.service.common import (
     MAX_LIST_LIMIT,
     ZOOM_BY_SEARCH_TYPE,
     ComplexKind,
+    DabangAreaPrice,
     DabangListing,
     DabangListingConditions,
     DabangPage,
     DabangPlace,
     ListingKind,
     SchoolLevel,
+    area_price,
     bbox_of,
     building_years,
     complex_url,
@@ -77,6 +81,7 @@ from jibsa.providers.dabang.service.common import (
     narrow_again,
     number_of,
     premium_note,
+    primary_space_of,
     room_item_to_listing,
     room_list_page,
     unreadable_note,
@@ -383,27 +388,6 @@ class DabangPyeong(BaseModel):
     ] = None
 
 
-class DabangAreaPrice(BaseModel):
-    """평당 평균가 비교 한 칸."""
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    scope: Annotated[
-        str,
-        Field(description="범위 ('해당 단지', 동 이름, 구 이름)")
-    ]
-    sale_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description='매매 평당 평균가 (만원)')
-    ] = None
-    lease_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description='전세 평당 평균가 (만원)')
-    ] = None
-
-
 class DabangRecentTrade(BaseModel):
     """최근 실거래 한 건 (단지 요약). 면적은 다방 화면처럼 아파트는 공급면적, 오피스텔은 계약면적 키 하나만 있다."""
 
@@ -631,16 +615,22 @@ class DabangComplexDetail(BaseModel):
         Field(description="다방 단지 꼬리표 (예: '입주 5년차', '고속터미널역 도보 7분', '초품아'). 없으면 []")
     ] = []
     pyeongs: Annotated[
-        list[DabangPyeong],
-        Field(description='평형')
+        list[DabangPyeong] | None,
+        Field(description='평형. null 이면 다방이 평형을 주지 않은 것이라 모름')
     ]
     primary_space_seq: Annotated[
         int | None,
-        Field(description='다방 대표 평형 번호 (real-price·price-trend 에 --pyeong 이 없을 때 쓴다)')
+        Field(description=(
+            '대표 평형 번호 (real-price·price-trend·nearby-complexes 에 --pyeong 이 없을 때 쓴다). 다방이 대표를 주지 않으면 '
+            '다방 웹처럼 첫 평형이고, 평형이 없으면 null'
+        ))
     ] = None
     area_prices: Annotated[
-        list[DabangAreaPrice],
-        Field(description='평당 평균가 비교 (이 단지·동·구)')
+        list[DabangAreaPrice] | None,
+        Field(description=(
+            "평당 평균가 비교 (이 단지·동·구, 다방 웹 평당가 칸의 '전체 평형 비교' 탭). 기본 탭 'N평대 비교' 는 "
+            'jibsa dabang nearby-complexes <complex_id>. null 이면 다방이 주지 않은 것이라 모름'
+        ))
     ]
     recent_sale: Annotated[
         DabangRecentTrade | None,
@@ -649,6 +639,14 @@ class DabangComplexDetail(BaseModel):
     recent_lease: Annotated[
         DabangRecentTrade | None,
         Field(description='최근 전세 실거래 (없거나 받지 못하면 null)')
+    ] = None
+    overheated_district: Annotated[
+        bool | None,
+        Field(description=(
+            "다방 대출 계산기가 대출 비율을 50%로 묶는 지역인지 (다방 단지 대출 계산 조건 isOverheatedDistrict). 웹 대출 계산기는 "
+            "true 면 대출 가능액을 집값의 절반으로 셈하고, 자본금이 모자랄 때 '투기지역 (대출 비율 50% 제한) 입니다.' 라고 알린다. "
+            "받지 못하면 null"
+        ))
     ] = None
     schools: Annotated[
         list[DabangComplexSchool] | None,
@@ -699,7 +697,7 @@ def _childcare(facility: DabangComplexChildcareModel) -> DabangChildcare:
 
 def _recent(
     trade: DabangLatelyPriceModel | None,
-    spaces: list[DabangComplexSpaceModel],
+    spaces: list[DabangComplexSpaceModel] | None,
     category: DabangComplexCategory,
     label: str,
 ) -> tuple[DabangRecentTrade | None, list[str]]:
@@ -708,12 +706,14 @@ def _recent(
 
     웹 요약은 면적만 보여 주므로 그 면적을 그대로 내고, 평형표에서 그 면적인 평형이 하나뿐일 때만 평형 번호·전용면적을 붙인다.
     공급면적이 같은 평형이 여럿인 단지가 있어 고르지 않는다 (2026-11-13 실측: 삼호1차 82.08㎡ 는 3526(24A)·286028(24C)).
+    다방이 평형 목록을 주지 않으면(`spaces` 가 None) 맞출 평형이 없어 평형 번호·전용면적이 null 이다. '평형 없음' 같은 안내는
+    쓰지 않는다 (모르는 것이라 pyeongs 가 null 이고, 이 두 칸은 원래 맞는 평형이 하나가 아니면 null 이다).
     """
     if trade is None or trade.format_price is None:
         return None, []
     size = number_of(trade.format_room_size)
     matches = [
-        space for space in spaces
+        space for space in spaces or []
         if size is not None and any(
             value is not None and abs(value - size) < AREA_MATCH_TOLERANCE_M2 for value in (space.supply_space, space.contract_space)
         )
@@ -749,24 +749,28 @@ def _category_of(result: DabangComplexResultModel) -> DabangComplexCategory:
     return 'officetel' if result.complex.complex_type == 'OFFICETEL' else 'apt'
 
 
-def _summary_failure_note(exc: Exception) -> str:
-    """최근 실거래 요약을 받지 못한 안내. 실패 이유마다 다음 행동이 달라(업데이트·다시 시도) 이유를 넣는다.
+def _lookup_failure_note(exc: Exception, what: str, unknown: str) -> str:
+    """덤 조회(최근 실거래 요약·대출 계산 조건)를 받지 못한 안내. 실패 이유마다 다음 행동이 달라(업데이트·다시 시도) 이유를 넣는다.
 
     다방이 요청을 거절했거나(4xx) 응답 형식이 바뀌면 업데이트 안내를 붙인다 (매일 감시가 고장으로 본다). 요청 제한·서버
     오류(5xx)·연결 실패는 사이트가 바뀐 것이 아니라 붙이지 않는다 (감시는 확인 못 함으로 본다).
+
+    Args:
+        what: 받지 못한 것 ('최근 실거래 요약').
+        unknown: 모름(null)이 된 칸과 다음 할 일 (끝에 마침표 없음).
     """
-    unknown = 'recent_sale·recent_lease 는 모름(null)입니다. 실거래는 real-price 로 보세요'
     if isinstance(exc, RateLimitedError):
-        return note('실패', f'요청 제한에 걸려 최근 실거래 요약을 받지 못했습니다 ({exc.message}). {unknown}')
+        return note('실패', f"요청 제한에 걸려 {what}{particle(what, '을/를')} 받지 못했습니다 ({exc.message}). {unknown}")
     if isinstance(exc, ValueError) or (isinstance(exc, HTTPStatusError) and exc.response.status_code < 500):
-        return note('실패', f'다방이 최근 실거래 요약 요청을 거절했거나 응답 형식이 바뀌었습니다. {unknown}. {UPDATE_MAYBE_NEEDED}')
-    return note('실패', f'다방 최근 실거래 요약 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
+        return note('실패', f'다방이 {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {unknown}. {UPDATE_MAYBE_NEEDED}')
+    return note('실패', f'다방 {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
 
 
 def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
-    """단지 정보 (요청 2회: 단지 상세 + 최근 실거래 요약). 사진·관리사무소 전화·광고 중개사는 옮기지 않는다.
+    """단지 정보 (요청 3회: 단지 상세 + 최근 실거래 요약 + 대출 계산 조건). 사진·관리사무소 전화·광고 중개사는 옮기지 않는다.
 
-    최근 실거래 요약은 덤이라 실패해도 단지 정보는 돌려주고 recent_sale·recent_lease 를 모름(null)으로 둔다.
+    최근 실거래 요약과 대출 계산 조건은 덤이라 실패해도 단지 정보는 돌려주고 recent_sale·recent_lease·overheated_district 를
+    모름(null)으로 둔다.
     """
     result = fetch_complex(client, complex_id)
     info = result.complex
@@ -778,7 +782,19 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         ).result
     except OPTIONAL_LOOKUP_ERRORS as exc:
         summary = None
-        notes.append(_summary_failure_note(exc))
+        notes.append(_lookup_failure_note(exc, '최근 실거래 요약', 'recent_sale·recent_lease 는 모름(null)입니다. 실거래는 real-price 로 보세요'))
+    # 웹 단지 화면이 단지 상세 바로 뒤에 부르는 대출 계산 조건이다 (complex 청크 `je`). 금리는 다방 계산기 기본값이라 내지 않는다
+    try:
+        loan = client.run_request_complex_loan_calc_condition_v5(
+            DabangComplexLoanCalcConditionV5RequestParameterModel(complex_id=complex_id)
+        ).result
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        loan = None
+        notes.append(_lookup_failure_note(exc, '대출 계산 조건', 'overheated_district 는 모름(null)입니다'))
+    else:
+        # 요청은 성공했는데 result 나 is_overheated_district 를 주지 않은 경우 (예외일 때의 안내와 겹치지 않게 else)
+        if loan is None or loan.is_overheated_district is None:
+            notes.append(note('실패', '다방이 대출 계산 조건 값을 주지 않아 overheated_district 는 모름(null)입니다'))
     education = result.education
     schools = nurseries = kindergartens = None
     if education is not None:
@@ -803,6 +819,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     recent_sale, sale_notes = _recent(summary.sell_lately_price if summary else None, result.spaces, category, '매매')
     recent_lease, lease_notes = _recent(summary.lease_lately_price if summary else None, result.spaces, category, '전세')
     approved = info.building_approval_date_name
+    primary = primary_space_of(result)
     return DabangComplexDetail(
         complex_id=info.complex_id,
         name=info.complex_name,
@@ -825,7 +842,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         listing_count=result.room_count,
         recent_deal_count=info.recent_deal_count,
         tags=info.hash_tags,
-        pyeongs=[
+        pyeongs=None if result.spaces is None else [
             DabangPyeong(
                 space_seq=space.space_seq,
                 name=space.pyeong_type,
@@ -839,17 +856,11 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
             )
             for space in result.spaces
         ],
-        primary_space_seq=result.primary_space_seq,
-        area_prices=[
-            DabangAreaPrice(
-                scope=price.scope,
-                sale_per_pyeong_manwon=price.trade_average_pyeong_price,
-                lease_per_pyeong_manwon=price.lease_average_pyeong_price,
-            )
-            for price in result.area_average_price
-        ],
+        primary_space_seq=primary[0] if primary else None,
+        area_prices=None if result.area_average_price is None else [area_price(price) for price in result.area_average_price],
         recent_sale=recent_sale,
         recent_lease=recent_lease,
+        overheated_district=loan.is_overheated_district if loan else None,
         schools=schools,
         nurseries=nurseries,
         kindergartens=kindergartens,
@@ -918,27 +929,36 @@ def list_complex_listings(
         sort: 다방 웹 단지 매물 정렬 이름 (`COMPLEX_SORT_BY_LABEL`). 다방이 정렬한 순서를 다시 세우지 않는다.
 
     Raises:
-        JibsaError: 단지가 없을 때 (NOT_FOUND), 단지에 없는 평형 번호를 줬을 때 (INVALID_ARGUMENT).
+        JibsaError: 단지가 없을 때 (NOT_FOUND), 단지에 없는 평형 번호를 줬을 때 (INVALID_ARGUMENT),
+        다방이 평형을 주지 않았는데 --pyeong 도 없을 때 (NOT_FOUND).
     """
     conditions = conditions or DabangListingConditions()
     result = fetch_complex(client, complex_id)
     category = _category_of(result)
     kind = LISTING_KIND_BY_CATEGORY[category]
-    all_seqs = [space.space_seq for space in result.spaces]
-    unknown = [seq for seq in space_seqs or [] if seq not in all_seqs]
+    # 다방이 평형 목록을 주지 않으면(None) 어떤 번호가 없는지 모르니 막지 않고 그대로 보낸다 (모르는데 '없다' 고 하지 않는다)
+    all_seqs = None if result.spaces is None else [space.space_seq for space in result.spaces]
+    unknown = [seq for seq in space_seqs or [] if all_seqs is not None and seq not in all_seqs]
     if unknown:
         raise JibsaError(
             code='INVALID_ARGUMENT',
             message=f"이 단지에 없는 평형 번호입니다: {', '.join(map(str, unknown))}",
             hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].space_seq 를 주세요',
         )
+    # 단지 상세는 평형을 늘 하나 이상 준다 (2026-10-25 실측: 아파트·오피스텔·주상복합·재건축 62곳 모두). 요청은 평형 번호가
+    # 하나 이상 있어야 해서, 평형을 안 주거나 비어 있고 --pyeong 도 없으면 보낼 번호가 없다
+    seqs = space_seqs or all_seqs
+    if not seqs:
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f'다방이 단지의 평형을 주지 않아 매물을 조회하지 못했습니다: {complex_id}',
+            hint='평형 번호를 알면 --pyeong 으로 직접 주세요',
+        )
     filters = filters_of(kind, conditions)
     assert isinstance(filters, DabangAptFiltersModel | DabangOfficetelFiltersModel)  # 단지는 아파트·오피스텔뿐이다
     room_filters = DabangComplexRoomFiltersModel(
         selling_type_list=filters.selling_type_list,
-        # 단지 상세는 평형을 늘 하나 이상 준다 (2026-10-25 실측: 아파트·오피스텔·주상복합·재건축 62곳 모두).
-        # 평형 없는 단지는 보지 못해 따로 다루지 않는다
-        space_seq_list=space_seqs or all_seqs,
+        space_seq_list=seqs,
     )
     order = COMPLEX_SORT_BY_LABEL[sort]
     premium = 0

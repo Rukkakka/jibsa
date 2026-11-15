@@ -26,6 +26,7 @@ from jibsa.providers.dabang.api.request.common import (
 )
 from jibsa.providers.dabang.api.request.complex import (
     DabangComplexListCategoryV5RequestParameterModel,
+    DabangComplexLoanCalcConditionV5RequestParameterModel,
     DabangComplexSummaryV5RequestParameterModel,
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
@@ -53,6 +54,7 @@ from jibsa.providers.dabang.api.request.ranking import (
 from jibsa.providers.dabang.api.request.real_price import (
     DabangRealPriceComplexChartsV5RequestParameterModel,
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
+    DabangRealPriceComplexPricePerPyV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
     DabangRealPriceHouseInitV5RequestParameterModel,
 )
@@ -75,6 +77,7 @@ from jibsa.providers.dabang.api.request.school import (
 from jibsa.providers.dabang.api.response.common import DabangComplexV5ResponseModel
 from jibsa.providers.dabang.api.response.complex import (
     DabangComplexListCategoryV5ResponseModel,
+    DabangComplexLoanCalcConditionV5ResponseModel,
     DabangComplexSummaryV5ResponseModel,
     DabangRoomListCategoryComplexV5ResponseModel,
 )
@@ -102,6 +105,7 @@ from jibsa.providers.dabang.api.response.ranking import (
 from jibsa.providers.dabang.api.response.real_price import (
     DabangRealPriceComplexChartsV5ResponseModel,
     DabangRealPriceComplexHistoriesV5ResponseModel,
+    DabangRealPriceComplexPricePerPyV5ResponseModel,
     DabangRealPriceHouseHistoryV5ResponseModel,
     DabangRealPriceHouseInitV5ResponseModel,
 )
@@ -204,10 +208,12 @@ class DabangClient(BaseHTTPClient):
     complex_list_category_v5_endpoint: ClassVar[str] = '/api/v5/complex-list/category/{category}/{search_type}'
     complex_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_id}'
     complex_summary_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_type}/summary'
+    complex_loan_calc_condition_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_id}/loan-calc-condition'
     real_price_complex_histories_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/histories'
     real_price_house_history_v5_endpoint: ClassVar[str] = '/api/v5/real-price/house/history'
     real_price_house_init_v5_endpoint: ClassVar[str] = '/api/v5/real-price/house/init'
     real_price_complex_charts_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/charts'
+    real_price_complex_price_per_py_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/price-per-py'
     new_room_detail_v3_endpoint: ClassVar[str] = '/api/3/new-room/detail'
     room_get_room_id_v3_endpoint: ClassVar[str] = '/api/3/room/get-room-id'
     education_v3_endpoint: ClassVar[str] = '/api/3/education/{level}/{school_code}'
@@ -563,6 +569,44 @@ class DabangClient(BaseHTTPClient):
         return DabangComplexSummaryV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
+    def run_request_complex_loan_calc_condition_v5(
+        self,
+        parameter: DabangComplexLoanCalcConditionV5RequestParameterModel
+    ) -> DabangComplexLoanCalcConditionV5ResponseModel:
+        """Fetch a complex's loan-calculator condition via `GET /api/v5/complex/{complex_id}/loan-calc-condition`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 단지 화면이 단지 상세 뒤에 부른다. 다방 대출 계산기가
+        대출 비율을 50%로 묶는 지역인지(`isOverheatedDistrict`)와 계산기의 기본 금리를 준다. 웹 대출 계산기는 이 값이 true 면
+        대출 가능액을 집값의 절반으로 셈하고(ic_24_cook_gray600 청크 `Ni`), 자본금이 모자랄 때 '투기지역 (대출 비율 50% 제한)
+        입니다.' 라고 알린다 (dong-info 청크, 2026-11-14). '투기과열지구' 라는 말은 웹에 없다.
+
+        Args:
+            parameter: 단지 ID.
+
+        Returns:
+            DabangComplexLoanCalcConditionV5ResponseModel: 대출 비율을 50%로 묶는 지역인지.
+        """
+        response = self._client.get(
+            url=self.complex_loan_calc_condition_v5_endpoint.format(complex_id=parameter.complex_id),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangComplexLoanCalcConditionV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_complex_loan_calc_condition_v5(
+        self,
+        parameter: DabangComplexLoanCalcConditionV5RequestParameterModel
+    ) -> DabangComplexLoanCalcConditionV5ResponseModel:
+        """Async variant of `run_request_complex_loan_calc_condition_v5`."""
+        response = await self._async_client.get(
+            url=self.complex_loan_calc_condition_v5_endpoint.format(complex_id=parameter.complex_id),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangComplexLoanCalcConditionV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
     def run_request_real_price_complex_histories_v5(
         self,
         parameter: DabangRealPriceComplexHistoriesV5RequestParameterModel
@@ -712,6 +756,44 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangRealPriceComplexChartsV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_real_price_complex_price_per_py_v5(
+        self,
+        parameter: DabangRealPriceComplexPricePerPyV5RequestParameterModel
+    ) -> DabangRealPriceComplexPricePerPyV5ResponseModel:
+        """Compare a pyeong range's price per pyeong via `GET /api/v5/real-price/complex/price-per-py`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 단지 화면 평당가 칸의 기본 탭('N평대 비교')이다: 이 단지·동·구의
+        그 평형대 매매·전세 평당가와 반경 1km 주변 단지 10곳씩(매매·전월세). 탭 이름이 비면 웹은 이 탭을 그리지 않는다.
+
+        Args:
+            parameter: 단지 ID·평형.
+
+        Returns:
+            DabangRealPriceComplexPricePerPyV5ResponseModel: 탭 이름, 평당가 비교, 주변 단지.
+        """
+        response = self._client.get(
+            url=self.real_price_complex_price_per_py_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceComplexPricePerPyV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_real_price_complex_price_per_py_v5(
+        self,
+        parameter: DabangRealPriceComplexPricePerPyV5RequestParameterModel
+    ) -> DabangRealPriceComplexPricePerPyV5ResponseModel:
+        """Async variant of `run_request_real_price_complex_price_per_py_v5`."""
+        response = await self._async_client.get(
+            url=self.real_price_complex_price_per_py_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceComplexPricePerPyV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_new_room_detail_v3(

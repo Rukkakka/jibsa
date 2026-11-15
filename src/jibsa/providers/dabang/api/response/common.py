@@ -492,13 +492,13 @@ class DabangComplexResultModel(ResponseModel):
         Field(description='단지')
     ]
     spaces: Annotated[
-        list[DabangComplexSpaceModel],
-        Field(description='평형')
-    ] = []
+        list[DabangComplexSpaceModel] | None,
+        Field(description='평형. null 이면 다방이 평형을 주지 않은 것이라 모름')
+    ] = None
     area_average_price: Annotated[
-        list[DabangAreaAveragePriceModel],
-        Field(description='평당가 비교', alias='areaAveragePrice')
-    ] = []
+        list[DabangAreaAveragePriceModel] | None,
+        Field(description='평당가 비교. null 이면 다방이 주지 않은 것이라 모름', alias='areaAveragePrice')
+    ] = None
     education: Annotated[
         DabangComplexEducationModel | None,
         Field(description='근처 학교')

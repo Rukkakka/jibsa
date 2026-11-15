@@ -102,6 +102,7 @@ from jibsa.providers.dabang.service.real_price import (
     SEARCH_TYPE_BY_TRADE,
     RealPriceTrade,
     get_listing_real_prices,
+    get_nearby_complexes,
     get_price_trend,
     get_real_prices,
 )
@@ -250,6 +251,9 @@ ComplexRadiusOption = Annotated[
 ]
 LimitOption = Annotated[
     int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 매물 수 (제외 전, 다방은 24건씩 준다, 최대 {MAX_LIST_LIMIT})'),
+]
+PrimaryPyeongOption = Annotated[
+    int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].space_seq). 기본 다방 대표 평형'),
 ]
 RentIncludesManageOption = Annotated[
     bool, typer.Option('--rent-includes-manage-cost', help='--rent-min/--rent-max 를 월세 + 관리비로 본다 (다방 필터)'),
@@ -856,7 +860,7 @@ def complex_command(
     pretty: PrettyOption = None,
 ) -> None:
     """단지 정보: 세대수·동 수·주차·층·용적률·건폐율·시공사·사용승인일·최근 거래 수·꼬리표, 평형(pyeongs[].space_seq), 평당가 비교,
-    최근 실거래, 학교·어린이집·유치원.
+    최근 실거래, 대출 비율 50% 제한 지역 여부, 학교·어린이집·유치원 (요청 3회).
 
     예: jibsa dabang complex 58291f830ff9bd73a07ca123c632
     """
@@ -899,9 +903,7 @@ def real_price_command(
             help='단지 없는 매물(빌라·주택·원룸)의 매물 ID. 다방 매물 화면처럼 이 집(같은 지번) 또는 같은 동의 같은 건물 유형 실거래를 준다',
         ),
     ] = None,
-    pyeong: Annotated[
-        int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].space_seq). 기본 다방 대표 평형'),
-    ] = None,
+    pyeong: PrimaryPyeongOption = None,
     trade: Annotated[
         str | None,
         typer.Option('--trade', help=(
@@ -943,9 +945,7 @@ def real_price_command(
 @app.command('price-trend')
 def price_trend_command(
     complex_id: Annotated[str, typer.Argument(help='단지 ID')],
-    pyeong: Annotated[
-        int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].space_seq). 기본 다방 대표 평형'),
-    ] = None,
+    pyeong: PrimaryPyeongOption = None,
     pretty: PrettyOption = None,
 ) -> None:
     """평형 하나의 36달 시세 흐름: 달마다 매매·전세 평균 실거래가와 거래 수, 전세가율, 1년·3년 최고·최저 (요청 1회).
@@ -957,6 +957,25 @@ def price_trend_command(
         result = get_price_trend(client, value, space_seq=pyeong)
         emit(result, pretty, notes=result.notes)
 
+
+@app.command('nearby-complexes')
+def nearby_complexes_command(
+    complex_id: Annotated[str, typer.Argument(help='단지 ID')],
+    pyeong: PrimaryPyeongOption = None,
+    pretty: PrettyOption = None,
+) -> None:
+    """평형대 평당가 비교 (다방 단지 화면 평당가 칸의 기본 탭 'N평대 비교', 요청 1회. --pyeong 이 없으면 +1).
+
+    그 평형이 든 평형대(예: 30평대)의 이 단지·동·구 매매·전세 평당가와, 반경 1km 주변 단지의 매매·전세 평당가·세대수·연차·거리를
+    다방 순서 그대로 준다. 단지 전체 평형의 비교('전체 평형 비교' 탭)는 complex 결과의 area_prices 다.
+
+    예: jibsa dabang nearby-complexes 58291f830ff9bd73a07ca123c632
+        jibsa dabang nearby-complexes 58291f830ff9bd73a07ca123c632 --pyeong 818
+    """
+    value = _require_complex_id(complex_id)
+    with handle_errors(SOURCE), DabangClient() as client:
+        result = get_nearby_complexes(client, value, space_seq=pyeong)
+        emit(result, pretty, notes=result.notes)
 
 @app.command('neighborhood')
 def neighborhood_command(
