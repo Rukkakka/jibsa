@@ -232,7 +232,7 @@ def resolve_places(
         # 리뷰 오탐 (2026-11-14): 이름을 바꾼 place 가 조회·출력에 쓰이는 일은 없다. only 를 주는 네 곳(neighborhood·
         # popular-listings·_dong_scope·station-prices)이 모두 돌려받은 종류를 바로 INVALID_ARGUMENT 로 거절한다. 종류 에러를 여기서
         # 내면 부른 쪽마다 다른 문구·hint(동네정보는 역 둘레 안내, 범위는 범위 hint)를 잃는다. 종류 검사(동이면서 gid 있음)가
-        # single_dong 과 _dong_scope 에 한 줄씩 있는 것도 같은 이유로 둔다: 거절 문구·hint 가 호출마다 달라 합치려면 문구를 인자로
+        # resolve_dong 과 _dong_scope 에 한 줄씩 있는 것도 같은 이유로 둔다: 거절 문구·hint 가 호출마다 달라 합치려면 문구를 인자로
         # 받는 함수가 되고 조건 한 줄만 아낀다
         return place.model_copy(update={'name': text}) if count > 1 else place
 
@@ -286,11 +286,19 @@ def resolve_places(
             )
         return place_of_region(split[0])
     if is_district_word(last) and result.region_list:
+        example = ' '.join((result.region_list[0].full_name or result.region_list[0].name).split()[-2:])
+        # 동만 받는 명령은 역 이름·좌표를, 역만 받는 명령(station-prices)은 동 이름·좌표를 받지 않아 따를 수 있는 것만 권한다
+        # (2026-11-14 리뷰: station-prices 강남구 가 동 이름·반경을 권했다)
+        if only == 'dong':
+            hint = f"그 안의 동 이름(예: '{example}')으로 다시 주세요"
+        elif only == 'station':
+            hint = "역 이름(예: '강남역')으로 주세요"
+        else:
+            hint = f"그 안의 동 이름(예: '{example}')이나 역 이름으로 찾거나, --lat/--lng 와 --radius 로 반경을 주세요"
         raise UnsupportedRegionError(
             code='REGION_NOT_SUPPORTED',
             message=f"다방은 시·군·구 전체를 찾지 못합니다: '{text}'",
-            hint=f"그 안의 동 이름(예: '{' '.join((result.region_list[0].full_name or result.region_list[0].name).split()[-2:])}')이나 역 이름으로 찾거나, "
-            '--lat/--lng 와 --radius 로 반경을 주세요',
+            hint=hint,
             skip_note=f"다방은 시·군·구 전체를 찾지 못해 {text}{particle(text, '을/를')} 건너뛰었습니다",
         )
     raise RegionNotFoundError(text, hint=legal_dong_hint(text) or REGION_HINT)

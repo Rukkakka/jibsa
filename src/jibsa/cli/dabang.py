@@ -94,7 +94,6 @@ from jibsa.providers.dabang.service.neighborhood import (
     get_hot_places,
     get_neighborhood,
     get_popular_listings,
-    single_dong,
 )
 from jibsa.providers.dabang.service.ranking import (
     METRIC_BY_LABEL,
@@ -1139,7 +1138,8 @@ def popular_listings_command(
     trade_types = split_csv(trade, tuple(POPULAR_PRICE_BY_TRADE), '--trade')
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_popular_listings(
-            client, single_dong(resolve_places(client, query, only='dong')), building_types=building_types, trade_types=trade_types, limit=limit,
+            client, resolve_dong(client, query, subject='인기 매물', elsewhere='jibsa dabang search listings'),
+            building_types=building_types, trade_types=trade_types, limit=limit,
         )
         emit(result, pretty, notes=result.notes, fields=fields)
 

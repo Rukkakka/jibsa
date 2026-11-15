@@ -8,7 +8,6 @@ from pydantic import (
     model_serializer,
 )
 
-from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     Listing,
     limit_notes,
@@ -115,21 +114,6 @@ RANK_TOPICS: tuple[str, ...] = tuple(RANK_TYPES_BY_TOPIC)
 # 핫플레이스 가이드 고르기 (웹 이름표 → 요청 값, hot-place 청크 2026-11-13)와 줄의 가이드 이름표
 HOT_PLACE_TYPE_BY_LABEL: dict[str, DabangHotPlaceType] = {'전체': 'ALL', '미쉐린': 'MICHELIN_GUIDE', '블루리본': 'BLUE_RIBBON'}
 HOT_PLACE_GUIDE_LABELS: dict[str, str] = {value: label for label, value in HOT_PLACE_TYPE_BY_LABEL.items() if value != 'ALL'}
-
-
-def single_dong(place: DabangPlace) -> DabangPlace:
-    """동네정보·인기 매물은 동 하나를 받는다. '○가' 로 나뉜 동(성수동)은 위치 찾기(`resolve_places`)가 하나를 고르게 한다.
-
-    Raises:
-        JibsaError: 동이 아닌 역·대학·좌표일 때 (INVALID_ARGUMENT).
-    """
-    if place.kind != 'dong' or place.gid is None:
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f'동네정보는 동 이름으로만 찾습니다: {place.name}',
-            hint="법정동 이름(예: '역삼동')을 주세요. 역 둘레는 jibsa dabang station-prices <역> 이나 search listings 로 봅니다",
-        )
-    return place
 
 
 class DabangRank(BaseModel):
@@ -606,7 +590,7 @@ class DabangPopularResult(BaseModel):
 
 def get_popular_listings(
     client: DabangClient,
-    place: DabangPlace,
+    dong: DabangDong,
     *,
     building_types: list[str],
     trade_types: list[str],
@@ -616,8 +600,7 @@ def get_popular_listings(
 
     매물 유형을 하나만 고르면 그 유형으로, 여럿이면 칸의 표시로 `property_type` 을 붙인다 (방 개수 표시는 빌라다).
     """
-    gid = place.gid
-    assert gid is not None  # single_dong 이 동만 넘긴다
+    place, gid = dong
     labels = building_types or list(POPULAR_BUILDING_BY_LABEL)
     kind: ListingKind | None = POPULAR_KIND_BY_BUILDING[labels[0]] if len(labels) == 1 else None
     listings: list[Listing] = []
@@ -660,10 +643,18 @@ def get_popular_listings(
         page += 1
     notes: list[str] = []
     notes += unreadable_note(unreadable)
-    # 동 하나(single_dong)의 순위라 좁힐 지역이 없어 이 명령의 -t·--trade 만 권한다 (2026-11-10 리뷰·실측: 역삼동 --limit 100
-    # 600건에 '조건·지역을 좁히세요')
+    # 동 하나(resolve_dong)의 순위라 좁힐 지역이 없어 이 명령의 -t·--trade 만 권한다 (2026-11-10 리뷰·실측: 역삼동 --limit 100
+    # 600건에 '조건·지역을 좁히세요'). 이미 하나씩 골랐으면 더 좁힐 조건이 없어 권하지 않고, 한쪽만 골랐으면 다른 쪽만 권한다
+    one_building = len(building_types or []) == 1
+    one_trade = len(trade_types or []) == 1
+    narrow = (
+        None if one_building and one_trade
+        else '거래 유형 조건' if one_building
+        else '매물 유형 조건' if one_trade
+        else '매물 유형·거래 유형 조건'
+    )
     notes += limit_notes(
-        total, len(listings), limit, max_limit=POPULAR_MAX_LIMIT, order='선호도 높은', narrow='매물 유형·거래 유형 조건',
+        total, len(listings), limit, max_limit=POPULAR_MAX_LIMIT, order='선호도 높은', narrow=narrow,
         inspected=received, has_more=has_more,
     )
     return DabangPopularResult(region=place, total=total, returned=len(listings), has_more=has_more, listings=listings, notes=notes)
