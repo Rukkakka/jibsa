@@ -20,24 +20,29 @@ class DabangNamedModel(ResponseModel):
 
 
 class DabangMaintenanceEtcDetailModel(ResponseModel):
-    """관리비 세부 (`maintenance_etc_fee_charge_detail`). 정액 관리비가 10만원 미만이라 세부를 따로 적지 않은 매물 등에 온다.
+    """관리비 세부 (`maintenance_etc_fee_charge_detail`). 정액관리비가 10만원 미만이거나 세부를 알리지 않은 매물
+    (`maintenance_charge_detail_type` 의 `BELOW_FIXED_FEE_THRESHOLD`·`ABOVE_FIXED_FEE_THRESHOLD_NO_DETAILS`)과 기타부과
+    (`ETC_FEE_CHARGE`) 매물에 온다. 웹 상세보기는 '포함 항목' 만 보여 준다 (safety-option-chunk `E` 의 `g`, 2026-11-13).
 
     Args:
-        detail_include_types: 관리비에 든 항목 코드 (`WATER_RATES` 수도, `INTERNET_RATES` 인터넷 …).
+        detail_include_types: 관리비에 든 항목 코드 (`WATER_RATES` 수도, `INTERNET_RATES` 인터넷 …). 다방이 주지 않으면 None.
     """
 
     detail_include_types: Annotated[
-        list[str],
+        list[str] | None,
         Field(description='관리비 포함 항목 코드')
-    ] = []
+    ] = None
 
 
 class DabangMaintenanceFixedDetailModel(ResponseModel):
-    """정액 관리비 세부 항목 하나 (`maintenance_fixed_fee_charge_detail_list`). 정액 관리비가 10만원 이상인 매물에 온다.
+    """정액관리비 세부 항목 하나 (`maintenance_fixed_fee_charge_detail_list`). 정액관리비가 10만원 이상이고 항목마다 적은 매물
+    (`maintenance_charge_detail_type: ABOVE_FIXED_FEE_THRESHOLD`)에 온다.
 
     Args:
         detail_code: 항목 코드 (`F01` 공용, `F11` 전기, `F12` 수도, `F13` 가스, `F14` 난방, `F15` 인터넷, `F16` TV, `F99` 기타).
-        detail_cost_formulated_type: `FIXED_FEE`(관리비에 든 정액) 또는 `ACTUAL_EXPENSE`(실비로 따로 냄).
+        detail_cost_formulated_type: `FIXED_FEE`(관리비에 든 정액) 또는 `ACTUAL_EXPENSE`(웹에 '실비' 로 보이고 따로 냄). 공용(F01)은
+            `ACTUAL_EXPENSE` 로 와도 웹이 금액과 함께 보여 주고 관리비 합계에 넣는다 (2026-11-13 실측: 6ae45e683b53321aea64a773
+            공용 200,000원).
     """
 
     detail_code: Annotated[
@@ -98,6 +103,10 @@ class DabangNewRoomDetailRoomModel(ResponseModel):
         float | None,
         Field(description='공급면적 (㎡)')
     ] = None
+    contract_size: Annotated[
+        float | None,
+        Field(description='계약면적 (㎡). 오피스텔에만 값이 있고 다른 유형은 0')
+    ] = None
     maintenance_cost: Annotated[
         float | None,
         Field(description='월 관리비 (원). 관리비가 없으면 null 이고 maintenance_cost_str 이 "없음"')
@@ -116,7 +125,19 @@ class DabangNewRoomDetailRoomModel(ResponseModel):
     ] = None
     maintenance_fixed_fee_charge_detail_list: Annotated[
         list[DabangMaintenanceFixedDetailModel] | None,
-        Field(description='정액 관리비 세부 항목 (10만원 이상)')
+        Field(description='정액관리비 세부 항목 (10만원 이상)')
+    ] = None
+    maintenance_charge_type: Annotated[
+        str | None,
+        Field(description="관리비 부과 방식 ('FIXED_FEE_CHARGE' 정액관리비, 'ETC_FEE_CHARGE' 기타부과, 'UNABLE_CHECK' 확인불가)")
+    ] = None
+    maintenance_charge_detail_type: Annotated[
+        str | None,
+        Field(description="정액관리비 세부 종류 ('ABOVE_FIXED_FEE_THRESHOLD' 10만원 이상 항목별, 'BELOW_FIXED_FEE_THRESHOLD' 10만원 미만, 'ABOVE_FIXED_FEE_THRESHOLD_NO_DETAILS' 세부 미고지). 기타부과는 null")
+    ] = None
+    maintenance_input_type: Annotated[
+        str | None,
+        Field(description="관리비 입력 방식 ('DETAIL' 이면 웹이 상세보기를, 그 밖은 maintenance_items_str 을 보여 준다)")
     ] = None
     parking: Annotated[
         bool | None,
@@ -205,6 +226,30 @@ class DabangNewRoomDetailRoomModel(ResponseModel):
     is_contract: Annotated[
         bool | None,
         Field(description='계약 완료 표시')
+    ] = None
+    is_take_tenant: Annotated[
+        bool | None,
+        Field(description='세입자를 끼고 파는 매물 (웹 가격정보의 기 보증금/월세 줄)')
+    ] = None
+    take_tenant_price_title: Annotated[
+        str | None,
+        Field(description="기존 세입자의 보증금/월세 글 ('20억', 만원)")
+    ] = None
+    is_lh_lease: Annotated[
+        bool | None,
+        Field(description='LH 전세임대 가능')
+    ] = None
+    is_leasehold: Annotated[
+        bool | None,
+        Field(description='임차권 등기명령 매물 (웹이 맨 위에 경고를 띄운다). null 은 아님으로 본다')
+    ] = None
+    is_new_construction: Annotated[
+        bool | None,
+        Field(description="미등기 건물 (웹 방종류 옆 '미등기건물' 표시)")
+    ] = None
+    is_non_compliant_building: Annotated[
+        bool | None,
+        Field(description="위반건축물 여부 (웹 '해당'·'해당없음'). null 이면 웹이 그 줄을 감춘다")
     ] = None
 
 

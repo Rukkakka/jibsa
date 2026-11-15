@@ -23,16 +23,20 @@ AGENTS.md에서 연결한 공통 규약과 소스별 개발 가이드도 작업 
   - `/release` — 릴리스 절차. 사용자가 직접 칠 때만 돌고, 바깥으로 나가는 단계마다 다시 허락받는다
   - `/pr-ready` — PR 열기 전 점검
 - 워크플로(여러 에이전트를 정해진 순서로 돌리는 스크립트)는 `.claude/workflows/` 에 있다.
-  - `review-panel` — `/review` 가 부른다. 관점 묶음마다 `jibsa-reviewer` 를 동시에 → 소스마다 한 번에 `review-verifier` 하나 (지적이 10건을 넘으면 차례로 더)
-  - `web-parity-panel` — `/web-parity` 가 소스 둘 이상일 때 부른다. 소스마다 `web-parity-investigator` 하나 (Opus)
-  - `implement-bundles` — 허락받은 구현 계획의 묶음을 `jibsa-coder` 로 돌린다 (공통 묶음 먼저, 같은 소스는 차례로, 소스끼리는 동시에.
-    다른 소스 묶음끼리 같은 파일을 고치면 시작하지 않는다) → `jibsa-docs` 하나. 작업자는 자기 파일만 고치고 CHANGELOG·`docs/llm.md`·
-    감시 목록 같은 공용 파일은 고칠 내용만 보고한다. 인자 형식은 그 파일의 `meta.whenToUse` 에 있다.
+  - `review-panel` — `/review` 가 부른다. 관점 묶음마다 `jibsa-reviewer` 를 동시에 → 소스마다 `review-verifier` 하나 (지적이 10건을 넘으면 같은 소스에 더, 동시에 셋까지, 네이버는 하나씩)
+  - `web-parity-panel` — `/web-parity` 가 조사원이 둘 이상일 때 부른다. 소스·범위마다 `web-parity-investigator` 하나 (Opus, 같은 소스는 동시에 셋까지, 네이버는 하나씩)
+  - `implement-bundles` — 허락받은 구현 계획의 묶음을 `jibsa-coder` 로 돌린다 (공통 묶음 먼저, 소스마다 `first` 묶음 먼저, 나머지는
+    파일이 겹치지 않아 같은 소스도 동시에 셋까지·네이버는 하나씩, 소스끼리는 동시에. 동시에 돌 수 있는 묶음끼리 같은 파일을
+    고치면 시작하지 않는다) → `jibsa-docs` 하나. 작업자는 자기 파일만 고치고 CHANGELOG·`docs/llm.md`·감시 목록 같은 공용 파일은
+    고칠 내용만 보고한다. 작업자는 실제 조회를 하지 않고, 고치기 전·후 출력 비교는 주 에이전트가 한다. 인자 형식은 그 파일의
+    `meta.whenToUse` 에 있다.
 
   **언제 돌리나.** 에이전트를 여러 개 써 비용이 크다.
   - `review-panel`·`web-parity-panel`: 사용자가 `/review`·`/web-parity` 를 직접 쳤으면 돌린다. 치지 않았는데 요청을 보고 그 명령을
     골랐으면 에이전트 수를 알리고 허락받은 뒤 돌린다.
-  - `implement-bundles`: "implement-bundles 로 구현한다" 고 적은 구현 계획을 사용자가 허락했을 때만 돌린다.
+  - `implement-bundles`: "implement-bundles 로 구현한다" 고 적은 구현 계획을 사용자가 허락했을 때만 돌린다. 고칠 코드가 많으면
+    (`src/` 코드 파일 다섯 개를 넘게 고치고 파일이 겹치지 않는 묶음이 둘 이상, 같은 소스여도) 계획에 그렇게 적어 나눠 제안하고,
+    적으면 직접 고친다 ([나눌지 정하기](docs/development/agents.md#나눌지-정하기)).
 
   **만들 때.** 저장한 워크플로는 슬래시 명령 목록에도 이름으로 올라가므로 명령과 이름이 겹치지 않게 짓는다. 인자 없이 불리면
   아무것도 띄우지 않고 안내만 돌려주게 한다.

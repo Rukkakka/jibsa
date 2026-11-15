@@ -149,3 +149,18 @@ class DabangComplexSummaryResultModel(ResponseModel):
 
 class DabangComplexSummaryV5ResponseModel(DabangV5ResponseModel[DabangComplexSummaryResultModel]):
     """`GET /api/v5/complex/{complex_type}/summary` 응답."""
+
+
+class DabangComplexLoanCalcConditionResultModel(ResponseModel):
+    """단지 대출 계산 조건 `result`. 금리 두 값(`saleLoanInterestRate`·`leaseLoanInterestRate`)은 다방 계산기의 기본값이라 두지
+    않는다."""
+
+    is_overheated_district: Annotated[
+        bool | None,
+        Field(description="다방 대출 계산기가 대출 비율을 50%로 묶는 지역인지 (웹 문구 '투기지역 (대출 비율 50% 제한)')", alias='isOverheatedDistrict')
+    ] = None
+
+
+class DabangComplexLoanCalcConditionV5ResponseModel(DabangV5ResponseModel[DabangComplexLoanCalcConditionResultModel]):
+    """`GET /api/v5/complex/{complex_id}/loan-calc-condition` 응답. 없는 단지는 400 '존재하지 않는 단지 정보입니다.' 다
+    (2026-11-14 실측)."""

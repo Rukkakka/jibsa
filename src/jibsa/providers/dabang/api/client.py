@@ -26,6 +26,7 @@ from jibsa.providers.dabang.api.request.common import (
 )
 from jibsa.providers.dabang.api.request.complex import (
     DabangComplexListCategoryV5RequestParameterModel,
+    DabangComplexLoanCalcConditionV5RequestParameterModel,
     DabangComplexSummaryV5RequestParameterModel,
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
@@ -37,9 +38,12 @@ from jibsa.providers.dabang.api.request.listing import (
 from jibsa.providers.dabang.api.request.nearby import (
     DabangMarkersCategoryV5RequestParameterModel,
     DabangNearV5RequestParameterModel,
+    DabangPetPlacesV5RequestParameterModel,
+    DabangPublicDataCarShareZoneV5RequestParameterModel,
     DabangTransitNearV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.neighborhood import (
+    DabangRegionInfoHotPlacesV5RequestParameterModel,
     DabangRegionInfoRegionalCountV5RequestParameterModel,
     DabangRegionInfoRegionalSummaryV5RequestParameterModel,
     DabangRegionInfoRoomRegionalPopularRoomV5RequestParameterModel,
@@ -49,29 +53,38 @@ from jibsa.providers.dabang.api.request.ranking import (
     DabangRealTimeWatchRankingsV5RequestParameterModel,
     DabangRegionInfoRankingV5RequestParameterModel,
     DabangRegionInfoRealEstateRankingV5RequestParameterModel,
+    DabangRegionInfoRoomRankingV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.real_price import (
     DabangRealPriceComplexChartsV5RequestParameterModel,
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
+    DabangRealPriceComplexPricePerPyV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
+    DabangRealPriceHouseInitV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.region import (
     DabangGeojsonRegionRequestParameterModel,
     DabangLocSearchV5RequestParameterModel,
+    DabangRegionCitiesV5RequestParameterModel,
     DabangRegionStatesV5RequestParameterModel,
-    DabangRegionV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.sale import (
     DabangSaleInLotsDetail2V3RequestParameterModel,
+    DabangSaleInLotsListScheduleSearchV3RequestParameterModel,
     DabangSaleInLotsListScheduleV3RequestParameterModel,
+    DabangSaleInLotsListSearch3V3RequestParameterModel,
     DabangSaleListCategoryBboxV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.school import (
+    DabangEducationKinderSchoolV3RequestParameterModel,
+    DabangEducationNurserySchoolV3RequestParameterModel,
     DabangEducationV3RequestParameterModel,
+    DabangRegionInfoSchoolRegionalV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.common import DabangComplexV5ResponseModel
 from jibsa.providers.dabang.api.response.complex import (
     DabangComplexListCategoryV5ResponseModel,
+    DabangComplexLoanCalcConditionV5ResponseModel,
     DabangComplexSummaryV5ResponseModel,
     DabangRoomListCategoryComplexV5ResponseModel,
 )
@@ -83,9 +96,12 @@ from jibsa.providers.dabang.api.response.listing import (
 from jibsa.providers.dabang.api.response.nearby import (
     DabangMarkersCategoryV5ResponseModel,
     DabangNearV5ResponseModel,
+    DabangPetPlacesV5ResponseModel,
+    DabangPublicDataCarShareZoneV5ResponseModel,
     DabangTransitNearV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.neighborhood import (
+    DabangRegionInfoHotPlacesV5ResponseModel,
     DabangRegionInfoRegionalCountV5ResponseModel,
     DabangRegionInfoRegionalSummaryV5ResponseModel,
     DabangRegionInfoRoomRegionalPopularRoomV5ResponseModel,
@@ -95,24 +111,34 @@ from jibsa.providers.dabang.api.response.ranking import (
     DabangRealTimeWatchRankingsV5ResponseModel,
     DabangRegionInfoRankingV5ResponseModel,
     DabangRegionInfoRealEstateRankingV5ResponseModel,
+    DabangRegionInfoRoomRankingV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.real_price import (
     DabangRealPriceComplexChartsV5ResponseModel,
     DabangRealPriceComplexHistoriesV5ResponseModel,
+    DabangRealPriceComplexPricePerPyV5ResponseModel,
     DabangRealPriceHouseHistoryV5ResponseModel,
+    DabangRealPriceHouseInitV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.region import (
     DabangGeojsonRegionResponseModel,
     DabangLocSearchV5ResponseModel,
+    DabangRegionCitiesV5ResponseModel,
     DabangRegionStatesV5ResponseModel,
-    DabangRegionV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.sale import (
     DabangSaleInLotsDetail2V3ResponseModel,
+    DabangSaleInLotsListScheduleSearchV3ResponseModel,
     DabangSaleInLotsListScheduleV3ResponseModel,
+    DabangSaleInLotsListSearch3V3ResponseModel,
     DabangSaleListCategoryBboxV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.school import DabangEducationV3ResponseModel
+from jibsa.providers.dabang.api.response.school import (
+    DabangEducationV3ResponseModel,
+    DabangKinderEducationV3ResponseModel,
+    DabangNurseryEducationV3ResponseModel,
+    DabangRegionInfoSchoolRegionalV5ResponseModel,
+)
 
 from typing import ClassVar
 
@@ -128,10 +154,10 @@ dabang_retry = retry(
 
 
 def should_retry_education(exc: BaseException) -> bool:
-    """학교 상세 재시도 술어. 500 만 빼고 `should_retry_idempotent` 와 같다.
+    """학교·유치원·어린이집 상세 재시도 술어. 500 만 빼고 `should_retry_idempotent` 와 같다.
 
     학교 상세는 단계와 코드가 맞지 않거나 없는 코드면 늘 500 이다 (2026-10-25 실측: 휘문중 S010000736 을 고등학교로, 없는
-    코드 S999999999 를 중학교로). 다시 보내도 같은 응답이라 요청 제한 몫과 대기만 쓴다. 첫 화면(다방 홈)의 500
+    코드 S999999999 를 중학교로. 2026-11-14 실측: 없는 어린이집·유치원 코드도). 다시 보내도 같은 응답이라 요청 제한 몫과 대기만 쓴다. 첫 화면(다방 홈)의 500
     (`EntryStatusError`)은 학교 상세 응답이 아니라 사이트 장애라 다른 5xx 처럼 재시도한다.
     """
     if isinstance(exc, HTTPStatusError) and exc.response.status_code == 500 and not isinstance(exc, EntryOpenError):
@@ -146,7 +172,7 @@ dabang_education_retry = retry(
     reraise=True,
     before_sleep=log_retry_before_sleep,
 )
-"""학교 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
+"""학교·유치원·어린이집 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
 
 # 새 방식(`/api/v5/`) 요청에 웹이 붙이는 헤더 (fetch 청크 `requestHeaders`, 2026-10-25. 2026-11-12 실측도 같다). 웹은 v5 용
 # axios 인스턴스만 이 헤더를 더 붙인다. 옛 방식(`/api/3/`)은 헤더 대신 쿼리에 버전을 붙인다 (`DabangV3RequestParameterModel`)
@@ -160,9 +186,11 @@ V5_HEADERS: dict[str, str] = {
 class DabangClient(BaseHTTPClient):
     """다방 (www.dabangapp.com) 비공식 웹 API 클라이언트.
 
-    로그인·토큰 없이 장소 검색, 매물 지도 목록(원룸·투룸, 주택·빌라, 오피스텔, 아파트), 매물 상세, 단지 목록·상세·요약,
-    단지 매물, 실거래, 시세 흐름, 동네정보(요약·시설 수·인기 매물), 주변 교통·시설, 지도 집계(역 둘레 평균 매물가)와 동 경계
-    파일, 분양(목록·상세·청약 일정), 학교 상세(학교알리미 공시), 전국 조회·거래 순위, 범위 안 동·단지 순위(부동산·학교·인구·시설)를 조회한다. 금액은 **만원** 이지만 상세 관리비(`maintenance_cost`)와 단지
+    로그인·토큰 없이 장소 검색, 매물 지도 목록(원룸·투룸, 주택·빌라, 오피스텔, 아파트), 매물 상세, 단지 목록·상세·요약·대출 계산
+    조건, 단지 매물, 실거래, 시세 흐름, 평형대 평당가와 주변 단지 비교, 동네정보(요약·시설 수·인기 매물·동 안 학교 목록·핫플레이스), 매물·단지·분양
+    주변 교통·시설과 단지 반려동물 장소·매물·단지 카셰어링 존, 지도 집계(역 둘레 평균 매물가)와 동 경계 파일, 분양(지도 목록·지역 목록·상세·청약 일정과 그 하루 상세), 학교·유치원·
+    어린이집 상세(학교알리미·유치원알리미·어린이집정보공개포털 공시), 전국 조회·거래 순위, 범위 안 동·단지 순위(부동산·매물정보·학교·인구·시설), 시·도·시·군·구 목록을
+    조회한다. 금액은 **만원** 이지만 상세 관리비(`maintenance_cost`)와 단지
     평형 관리비(`maintenanceTotalPrice`)는 원이다. 목록 가격은 숫자 없이 글자('1000/63', '3억9000')로만 온다.
 
     API 가 두 방식이다. 새 방식 `/api/v5/` 는 `D-Api-Version` 등 헤더(`V5_HEADERS`)를 붙이고 응답 봉투
@@ -174,8 +202,12 @@ class DabangClient(BaseHTTPClient):
     (`/api/v5/loc/search` → `loc_search_v5`, `/api/3/new-room/detail` → `new_room_detail_v3`,
     `/api/v5/room-list/category/{category}/{search_type}` → `room_list_category_v5`,
     `/api/v5/room-list/category/{category}/complex` → `room_list_category_complex_v5`, `/api/v5/{target}/{target_id}/near` →
-    `near_v5`, `/api/3/education/{level}/{school_code}` → `education_v3`, `/api/v5/region-info/{topic}/ranking/{metric}` →
-    `region_info_ranking_v5`). 동 경계는 지도 집계가 주는 CDN
+    `near_v5`, `/api/3/education/{level}/{school_code}` → `education_v3`, `/api/3/education/nursery-school/{school_code}` →
+    `education_nursery_school_v3`, `/api/v5/region-info/{topic}/ranking/{metric}` → `region_info_ranking_v5`,
+    `/api/v5/region-info/school/regional/{level}` → `region_info_school_regional_v5`,
+    `/api/v5/complex/{complex_id}/loan-calc-condition` → `complex_loan_calc_condition_v5`,
+    `/api/v5/region-info/room/ranking/{metric}` → `region_info_room_ranking_v5`, `/api/v5/public-data/{target}/car-share-zone` →
+    `public_data_car_share_zone_v5`). 동 경계는 지도 집계가 주는 CDN
     (`geojson_host`) 파일이라 버전이 없다 (`geojson_region`).
 
     Args:
@@ -198,28 +230,40 @@ class DabangClient(BaseHTTPClient):
     complex_list_category_v5_endpoint: ClassVar[str] = '/api/v5/complex-list/category/{category}/{search_type}'
     complex_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_id}'
     complex_summary_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_type}/summary'
+    complex_loan_calc_condition_v5_endpoint: ClassVar[str] = '/api/v5/complex/{complex_id}/loan-calc-condition'
     real_price_complex_histories_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/histories'
     real_price_house_history_v5_endpoint: ClassVar[str] = '/api/v5/real-price/house/history'
+    real_price_house_init_v5_endpoint: ClassVar[str] = '/api/v5/real-price/house/init'
     real_price_complex_charts_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/charts'
+    real_price_complex_price_per_py_v5_endpoint: ClassVar[str] = '/api/v5/real-price/complex/price-per-py'
     new_room_detail_v3_endpoint: ClassVar[str] = '/api/3/new-room/detail'
     room_get_room_id_v3_endpoint: ClassVar[str] = '/api/3/room/get-room-id'
     education_v3_endpoint: ClassVar[str] = '/api/3/education/{level}/{school_code}'
+    education_nursery_school_v3_endpoint: ClassVar[str] = '/api/3/education/nursery-school/{school_code}'
+    education_kinder_school_v3_endpoint: ClassVar[str] = '/api/3/education/kinder-school/{school_code}'
+    region_info_school_regional_v5_endpoint: ClassVar[str] = '/api/v5/region-info/school/regional/{level}'
     geojson_region_endpoint: ClassVar[str] = '/geojson/region/{code}'
     region_info_regional_summary_v5_endpoint: ClassVar[str] = '/api/v5/region-info/{topic}/regional/summary'
     region_info_regional_count_v5_endpoint: ClassVar[str] = '/api/v5/region-info/{topic}/regional/count'
     region_info_room_regional_popular_room_v5_endpoint: ClassVar[str] = '/api/v5/region-info/room/regional/popular-room'
+    region_info_hot_places_v5_endpoint: ClassVar[str] = '/api/v5/region-info/hot-places'
     transit_near_v5_endpoint: ClassVar[str] = '/api/v5/transit/near/{target}'
     near_v5_endpoint: ClassVar[str] = '/api/v5/{target}/{target_id}/near'
+    pet_places_v5_endpoint: ClassVar[str] = '/api/v5/pet-places'
+    public_data_car_share_zone_v5_endpoint: ClassVar[str] = '/api/v5/public-data/{target}/car-share-zone'
     markers_category_v5_endpoint: ClassVar[str] = '/api/v5/markers/category/{category}'
-    region_v5_endpoint: ClassVar[str] = '/api/v5/region'
     region_states_v5_endpoint: ClassVar[str] = '/api/v5/region/states'
+    region_cities_v5_endpoint: ClassVar[str] = '/api/v5/region/cities'
     sale_list_category_bbox_v5_endpoint: ClassVar[str] = '/api/v5/sale-list/category/bbox'
     real_time_watch_rankings_v5_endpoint: ClassVar[str] = '/api/v5/real-time-watch-rankings/{unit}'
     real_price_trade_rankings_complex_v5_endpoint: ClassVar[str] = '/api/v5/real-price/trade/rankings/complex'
     region_info_real_estate_ranking_v5_endpoint: ClassVar[str] = '/api/v5/region-info/real-estate/ranking/{unit}/{metric}'
     region_info_ranking_v5_endpoint: ClassVar[str] = '/api/v5/region-info/{topic}/ranking/{metric}'
+    region_info_room_ranking_v5_endpoint: ClassVar[str] = '/api/v5/region-info/room/ranking/{metric}'
     sale_in_lots_detail2_v3_endpoint: ClassVar[str] = '/api/3/sale-in-lots/detail2'
     sale_in_lots_list_schedule_v3_endpoint: ClassVar[str] = '/api/3/sale-in-lots/list/schedule'
+    sale_in_lots_list_schedule_search_v3_endpoint: ClassVar[str] = '/api/3/sale-in-lots/list/schedule/search'
+    sale_in_lots_list_search3_v3_endpoint: ClassVar[str] = '/api/3/sale-in-lots/list/search3'
 
     source_name: ClassVar[str] = 'dabang'
     default_rate_limit: ClassVar[dict[str, object]] = {
@@ -554,6 +598,44 @@ class DabangClient(BaseHTTPClient):
         return DabangComplexSummaryV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
+    def run_request_complex_loan_calc_condition_v5(
+        self,
+        parameter: DabangComplexLoanCalcConditionV5RequestParameterModel
+    ) -> DabangComplexLoanCalcConditionV5ResponseModel:
+        """Fetch a complex's loan-calculator condition via `GET /api/v5/complex/{complex_id}/loan-calc-condition`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 단지 화면이 단지 상세 뒤에 부른다. 다방 대출 계산기가
+        대출 비율을 50%로 묶는 지역인지(`isOverheatedDistrict`)와 계산기의 기본 금리를 준다. 웹 대출 계산기는 이 값이 true 면
+        대출 가능액을 집값의 절반으로 셈하고(ic_24_cook_gray600 청크 `Ni`), 자본금이 모자랄 때 '투기지역 (대출 비율 50% 제한)
+        입니다.' 라고 알린다 (dong-info 청크, 2026-11-14). '투기과열지구' 라는 말은 웹에 없다.
+
+        Args:
+            parameter: 단지 ID.
+
+        Returns:
+            DabangComplexLoanCalcConditionV5ResponseModel: 대출 비율을 50%로 묶는 지역인지.
+        """
+        response = self._client.get(
+            url=self.complex_loan_calc_condition_v5_endpoint.format(complex_id=parameter.complex_id),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangComplexLoanCalcConditionV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_complex_loan_calc_condition_v5(
+        self,
+        parameter: DabangComplexLoanCalcConditionV5RequestParameterModel
+    ) -> DabangComplexLoanCalcConditionV5ResponseModel:
+        """Async variant of `run_request_complex_loan_calc_condition_v5`."""
+        response = await self._async_client.get(
+            url=self.complex_loan_calc_condition_v5_endpoint.format(complex_id=parameter.complex_id),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangComplexLoanCalcConditionV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
     def run_request_real_price_complex_histories_v5(
         self,
         parameter: DabangRealPriceComplexHistoriesV5RequestParameterModel
@@ -597,7 +679,8 @@ class DabangClient(BaseHTTPClient):
     ) -> DabangRealPriceHouseHistoryV5ResponseModel:
         """List real transactions around a non-complex listing via `GET /api/v5/real-price/house/history`.
 
-        Same retry behaviour as `run_request_loc_search_v5`. 그 건물이 아니라 같은 동의 같은 건물 유형 거래다.
+        Same retry behaviour as `run_request_loc_search_v5`. 응답의 `historyBaseType` 이 `JIBUN` 이면 이 집(같은 지번) 거래,
+        `DONG` 이면 같은 동의 같은 건물 유형 거래다.
 
         Args:
             parameter: 매물 ID·기간·매매/전월세·쪽.
@@ -626,6 +709,45 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangRealPriceHouseHistoryV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_real_price_house_init_v5(
+        self,
+        parameter: DabangRealPriceHouseInitV5RequestParameterModel
+    ) -> DabangRealPriceHouseInitV5ResponseModel:
+        """Fetch a non-complex listing's real-price header via `GET /api/v5/real-price/house/init`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 매물 화면이 실거래 목록보다 먼저 부른다. 매물의 거래 유형으로
+        고른 매매·전월세(`searchType`), 거래를 모은 범위(`historyBaseType`), 건물 유형(`buildingViewType`)과 첫 거래를 준다.
+        매물 ID 가 쿼리로 가서 없는 매물에도 에러가 아니라 값이 모두 null 인 결과가 온다 (2026-11-13 실측).
+
+        Args:
+            parameter: 매물 ID·기간·거래 수.
+
+        Returns:
+            DabangRealPriceHouseInitV5ResponseModel: 거래 유형·범위·건물 유형과 첫 거래.
+        """
+        response = self._client.get(
+            url=self.real_price_house_init_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceHouseInitV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_real_price_house_init_v5(
+        self,
+        parameter: DabangRealPriceHouseInitV5RequestParameterModel
+    ) -> DabangRealPriceHouseInitV5ResponseModel:
+        """Async variant of `run_request_real_price_house_init_v5`."""
+        response = await self._async_client.get(
+            url=self.real_price_house_init_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceHouseInitV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_real_price_complex_charts_v5(
@@ -663,6 +785,44 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangRealPriceComplexChartsV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_real_price_complex_price_per_py_v5(
+        self,
+        parameter: DabangRealPriceComplexPricePerPyV5RequestParameterModel
+    ) -> DabangRealPriceComplexPricePerPyV5ResponseModel:
+        """Compare a pyeong range's price per pyeong via `GET /api/v5/real-price/complex/price-per-py`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 단지 화면 평당가 칸의 기본 탭('N평대 비교')이다: 이 단지·동·구의
+        그 평형대 매매·전세 평당가와 반경 1km 주변 단지 10곳씩(매매·전월세). 탭 이름이 비면 웹은 이 탭을 그리지 않는다.
+
+        Args:
+            parameter: 단지 ID·평형.
+
+        Returns:
+            DabangRealPriceComplexPricePerPyV5ResponseModel: 탭 이름, 평당가 비교, 주변 단지.
+        """
+        response = self._client.get(
+            url=self.real_price_complex_price_per_py_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceComplexPricePerPyV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_real_price_complex_price_per_py_v5(
+        self,
+        parameter: DabangRealPriceComplexPricePerPyV5RequestParameterModel
+    ) -> DabangRealPriceComplexPricePerPyV5ResponseModel:
+        """Async variant of `run_request_real_price_complex_price_per_py_v5`."""
+        response = await self._async_client.get(
+            url=self.real_price_complex_price_per_py_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRealPriceComplexPricePerPyV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_new_room_detail_v3(
@@ -771,6 +931,113 @@ class DabangClient(BaseHTTPClient):
         raise_for_status(response=response)
         return DabangEducationV3ResponseModel.model_validate(response.json())
 
+    @dabang_education_retry
+    def run_request_education_nursery_school_v3(
+        self,
+        parameter: DabangEducationNurserySchoolV3RequestParameterModel
+    ) -> DabangNurseryEducationV3ResponseModel:
+        """Fetch a daycare centre's public disclosure via `GET /api/3/education/nursery-school/{school_code}`.
+
+        Same retry behaviour as `run_request_education_v3` (HTTP 500 is raised at once). 없는 코드도 늘 500 이다.
+
+        Args:
+            parameter: 어린이집 코드.
+
+        Returns:
+            DabangNurseryEducationV3ResponseModel: 유형·운영 시간·통학버스·반별 원아 수·교사 급수별 수·제공 서비스.
+        """
+        response = self._client.get(
+            url=self.education_nursery_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangNurseryEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    async def arun_request_education_nursery_school_v3(
+        self,
+        parameter: DabangEducationNurserySchoolV3RequestParameterModel
+    ) -> DabangNurseryEducationV3ResponseModel:
+        """Async variant of `run_request_education_nursery_school_v3`."""
+        response = await self._async_client.get(
+            url=self.education_nursery_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangNurseryEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    def run_request_education_kinder_school_v3(
+        self,
+        parameter: DabangEducationKinderSchoolV3RequestParameterModel
+    ) -> DabangKinderEducationV3ResponseModel:
+        """Fetch a kindergarten's public disclosure via `GET /api/3/education/kinder-school/{school_code}`.
+
+        Same retry behaviour as `run_request_education_v3` (HTTP 500 is raised at once). 없는 코드도 늘 500 이다.
+
+        Args:
+            parameter: 유치원 코드 (UUID).
+
+        Returns:
+            DabangKinderEducationV3ResponseModel: 설립·운영 시간·통학 차량 수·나이별 원아 수·교사 자격별 수.
+        """
+        response = self._client.get(
+            url=self.education_kinder_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangKinderEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_education_retry
+    async def arun_request_education_kinder_school_v3(
+        self,
+        parameter: DabangEducationKinderSchoolV3RequestParameterModel
+    ) -> DabangKinderEducationV3ResponseModel:
+        """Async variant of `run_request_education_kinder_school_v3`."""
+        response = await self._async_client.get(
+            url=self.education_kinder_school_v3_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangKinderEducationV3ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_region_info_school_regional_v5(
+        self,
+        parameter: DabangRegionInfoSchoolRegionalV5RequestParameterModel
+    ) -> DabangRegionInfoSchoolRegionalV5ResponseModel:
+        """List schools, kindergartens or daycare centres of a dong via `GET /api/v5/region-info/school/regional/{level}`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 동네정보 '학군' 상세 목록이다. 한 쪽은 30곳까지다 (31 이면 400).
+
+        Args:
+            parameter: 단계·동 번호·설립 구분·쪽.
+
+        Returns:
+            DabangRegionInfoSchoolRegionalV5ResponseModel: 학교 코드·이름·설립 구분·주소 (중·고등학교는 진학률도), 전체 수.
+        """
+        response = self._client.get(
+            url=self.region_info_school_regional_v5_endpoint.format(level=parameter.level),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoSchoolRegionalV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_region_info_school_regional_v5(
+        self,
+        parameter: DabangRegionInfoSchoolRegionalV5RequestParameterModel
+    ) -> DabangRegionInfoSchoolRegionalV5ResponseModel:
+        """Async variant of `run_request_region_info_school_regional_v5`."""
+        response = await self._async_client.get(
+            url=self.region_info_school_regional_v5_endpoint.format(level=parameter.level),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoSchoolRegionalV5ResponseModel.model_validate(response.json())
+
     @dabang_retry
     def run_request_region_info_regional_summary_v5(
         self,
@@ -778,13 +1045,14 @@ class DabangClient(BaseHTTPClient):
     ) -> DabangRegionInfoRegionalSummaryV5ResponseModel:
         """Fetch one neighbourhood-info summary via `GET /api/v5/region-info/{topic}/regional/summary`.
 
-        Same retry behaviour as `run_request_loc_search_v5`. 탭(매물정보·시세정보·인구) 하나의 요약과 전국·시도·구 순위다.
+        Same retry behaviour as `run_request_loc_search_v5`. 탭(매물정보·시세정보·인구·학군·편의시설·교통/차량·생활안전) 종류 하나의
+        요약과 전국·시도·구 순위다. 학군·편의·교통·안전은 종류마다 합계와 구성이 온다.
 
         Args:
-            parameter: 탭·동 번호·요약 항목.
+            parameter: 탭·동 번호·요약 항목(학군·편의·교통·안전은 그 탭의 종류).
 
         Returns:
-            DabangRegionInfoRegionalSummaryV5ResponseModel: 매물 유형별 값 또는 인구, 순위, 기준 달.
+            DabangRegionInfoRegionalSummaryV5ResponseModel: 매물 유형별 값, 인구 또는 종류의 합계·구성, 순위, 기준 달.
         """
         response = self._client.get(
             url=self.region_info_regional_summary_v5_endpoint.format(topic=parameter.topic),
@@ -883,16 +1151,54 @@ class DabangClient(BaseHTTPClient):
         return DabangRegionInfoRoomRegionalPopularRoomV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
+    def run_request_region_info_hot_places_v5(
+        self,
+        parameter: DabangRegionInfoHotPlacesV5RequestParameterModel
+    ) -> DabangRegionInfoHotPlacesV5ResponseModel:
+        """List restaurants of a dong via `GET /api/v5/region-info/hot-places`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 동네정보 '핫플레이스' 로, 미쉐린·블루리본 가이드에 오른 식당이다
+        (웹 출처 '미쉐린 : 미쉐린', '블루리본 : 블루리본'). 사진 주소(`thumbnail`)도 오지만 쓰지 않는다.
+
+        Args:
+            parameter: 동 번호·가이드 종류·쪽.
+
+        Returns:
+            DabangRegionInfoHotPlacesV5ResponseModel: 식당 이름·주소·꼬리표·가이드, 기준 달, 전체 수.
+        """
+        response = self._client.get(
+            url=self.region_info_hot_places_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoHotPlacesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_region_info_hot_places_v5(
+        self,
+        parameter: DabangRegionInfoHotPlacesV5RequestParameterModel
+    ) -> DabangRegionInfoHotPlacesV5ResponseModel:
+        """Async variant of `run_request_region_info_hot_places_v5`."""
+        response = await self._async_client.get(
+            url=self.region_info_hot_places_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoHotPlacesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
     def run_request_transit_near_v5(
         self,
         parameter: DabangTransitNearV5RequestParameterModel
     ) -> DabangTransitNearV5ResponseModel:
-        """Fetch subway stations (1km) and bus routes (500m) around a listing or complex via `GET /api/v5/transit/near/{target}`.
+        """Fetch subway stations (1km) and bus routes (500m) around a listing, complex or sale via `GET /api/v5/transit/near/{target}`.
 
         Same retry behaviour as `run_request_loc_search_v5`.
 
         Args:
-            parameter: 대상(매물·단지)과 ID.
+            parameter: 대상(매물·단지·분양)과 ID.
 
         Returns:
             DabangTransitNearV5ResponseModel: 가까운 순 역과 버스 노선.
@@ -924,12 +1230,12 @@ class DabangClient(BaseHTTPClient):
         self,
         parameter: DabangNearV5RequestParameterModel
     ) -> DabangNearV5ResponseModel:
-        """Fetch the nearest facilities around a listing or complex via `GET /api/v5/{target}/{target_id}/near`.
+        """Fetch the nearest facilities around a listing, complex or sale via `GET /api/v5/{target}/{target_id}/near`.
 
         Same retry behaviour as `run_request_loc_search_v5`. 편의(편의점·카페·은행·공공기관·버스정류장)·안전(경찰·CCTV)·교육(어린이집~고등학교) 시설을 종류마다 가까운 순으로 준다.
 
         Args:
-            parameter: 대상(매물·단지)과 ID.
+            parameter: 대상(매물·단지·분양)과 ID.
 
         Returns:
             DabangNearV5ResponseModel: 종류별 가까운 시설과 거리.
@@ -953,6 +1259,82 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangNearV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_pet_places_v5(
+        self,
+        parameter: DabangPetPlacesV5RequestParameterModel
+    ) -> DabangPetPlacesV5ResponseModel:
+        """List pet places (2km) around a complex via `GET /api/v5/pet-places`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 단지 화면 '펫세권' 이다. 종류(동물병원·미용실·카페·호텔)마다 가까운 순
+        10곳까지 온다 (2026-11-14 실측). 전화(`phone`)도 오지만 쓰지 않는다.
+
+        Args:
+            parameter: 단지 ID.
+
+        Returns:
+            DabangPetPlacesV5ResponseModel: 반경과 종류별 장소 이름·도로명 주소·거리·분류.
+        """
+        response = self._client.get(
+            url=self.pet_places_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPetPlacesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_pet_places_v5(
+        self,
+        parameter: DabangPetPlacesV5RequestParameterModel
+    ) -> DabangPetPlacesV5ResponseModel:
+        """Async variant of `run_request_pet_places_v5`."""
+        response = await self._async_client.get(
+            url=self.pet_places_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPetPlacesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_public_data_car_share_zone_v5(
+        self,
+        parameter: DabangPublicDataCarShareZoneV5RequestParameterModel
+    ) -> DabangPublicDataCarShareZoneV5ResponseModel:
+        """List car-sharing zones (2km) around a listing or complex via `GET /api/v5/public-data/{target}/car-share-zone`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 매물·단지 화면 'Car세권' 이다 (쏘카존·그린존). 분양은 403 이다
+        (2026-11-14 실측).
+
+        Args:
+            parameter: 대상(매물·단지)과 ID.
+
+        Returns:
+            DabangPublicDataCarShareZoneV5ResponseModel: 반경과 가까운 순 존 업체·이름·주소·거리.
+        """
+        response = self._client.get(
+            url=self.public_data_car_share_zone_v5_endpoint.format(target=parameter.target),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPublicDataCarShareZoneV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_public_data_car_share_zone_v5(
+        self,
+        parameter: DabangPublicDataCarShareZoneV5RequestParameterModel
+    ) -> DabangPublicDataCarShareZoneV5ResponseModel:
+        """Async variant of `run_request_public_data_car_share_zone_v5`."""
+        response = await self._async_client.get(
+            url=self.public_data_car_share_zone_v5_endpoint.format(target=parameter.target),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPublicDataCarShareZoneV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_markers_category_v5(
@@ -992,43 +1374,6 @@ class DabangClient(BaseHTTPClient):
         return DabangMarkersCategoryV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
-    def run_request_region_v5(
-        self,
-        parameter: DabangRegionV5RequestParameterModel
-    ) -> DabangRegionV5ResponseModel:
-        """Fetch one region by legal-dong code prefix via `GET /api/v5/region`.
-
-        Same retry behaviour as `run_request_loc_search_v5`. 시·도(2자리)·시·군·구(5자리)·동(8자리) 코드를 받는다.
-
-        Args:
-            parameter: 법정동 코드 앞자리.
-
-        Returns:
-            DabangRegionV5ResponseModel: 다방 지역 번호·이름·중심 좌표.
-        """
-        response = self._client.get(
-            url=self.region_v5_endpoint,
-            params=parameter.model_dump(by_alias=True, exclude_none=True),
-            headers=V5_HEADERS
-        )
-        raise_for_status(response=response)
-        return DabangRegionV5ResponseModel.model_validate(response.json())
-
-    @dabang_retry
-    async def arun_request_region_v5(
-        self,
-        parameter: DabangRegionV5RequestParameterModel
-    ) -> DabangRegionV5ResponseModel:
-        """Async variant of `run_request_region_v5`."""
-        response = await self._async_client.get(
-            url=self.region_v5_endpoint,
-            params=parameter.model_dump(by_alias=True, exclude_none=True),
-            headers=V5_HEADERS
-        )
-        raise_for_status(response=response)
-        return DabangRegionV5ResponseModel.model_validate(response.json())
-
-    @dabang_retry
     def run_request_region_states_v5(
         self,
         parameter: DabangRegionStatesV5RequestParameterModel
@@ -1062,6 +1407,44 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangRegionStatesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_region_cities_v5(
+        self,
+        parameter: DabangRegionCitiesV5RequestParameterModel
+    ) -> DabangRegionCitiesV5ResponseModel:
+        """List districts of a province via `GET /api/v5/region/cities`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 랭킹·분양 지역 고르기의 시·군·구 목록이다. 구가 있는 시는 구마다 한 줄이다
+        ('성남시 분당구').
+
+        Args:
+            parameter: 시·도 코드.
+
+        Returns:
+            DabangRegionCitiesV5ResponseModel: 시·군·구 목록 (다방 번호·코드 5자리·이름).
+        """
+        response = self._client.get(
+            url=self.region_cities_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionCitiesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_region_cities_v5(
+        self,
+        parameter: DabangRegionCitiesV5RequestParameterModel
+    ) -> DabangRegionCitiesV5ResponseModel:
+        """Async variant of `run_request_region_cities_v5`."""
+        response = await self._async_client.get(
+            url=self.region_cities_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionCitiesV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_sale_list_category_bbox_v5(
@@ -1249,6 +1632,44 @@ class DabangClient(BaseHTTPClient):
         return DabangRegionInfoRankingV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
+    def run_request_region_info_room_ranking_v5(
+        self,
+        parameter: DabangRegionInfoRoomRankingV5RequestParameterModel
+    ) -> DabangRegionInfoRoomRankingV5ResponseModel:
+        """List dongs ranked by listings, trades or preference of chosen building types via `GET /api/v5/region-info/room/ranking/{metric}`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 동네정보 '매물정보' 랭킹이다 (주택/빌라·오피스텔·아파트를 함께 고른다).
+        부동산 랭킹(`run_request_region_info_real_estate_ranking_v5`)과 다른 화면이다.
+
+        Args:
+            parameter: 항목·범위·매물 유형·거래 유형·정렬·쪽.
+
+        Returns:
+            DabangRegionInfoRoomRankingV5ResponseModel: 순위와 전체 수.
+        """
+        response = self._client.get(
+            url=self.region_info_room_ranking_v5_endpoint.format(metric=parameter.metric),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoRoomRankingV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_region_info_room_ranking_v5(
+        self,
+        parameter: DabangRegionInfoRoomRankingV5RequestParameterModel
+    ) -> DabangRegionInfoRoomRankingV5ResponseModel:
+        """Async variant of `run_request_region_info_room_ranking_v5`."""
+        response = await self._async_client.get(
+            url=self.region_info_room_ranking_v5_endpoint.format(metric=parameter.metric),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangRegionInfoRoomRankingV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
     def run_request_sale_in_lots_detail2_v3(
         self,
         parameter: DabangSaleInLotsDetail2V3RequestParameterModel
@@ -1317,3 +1738,75 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangSaleInLotsListScheduleV3ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_sale_in_lots_list_schedule_search_v3(
+        self,
+        parameter: DabangSaleInLotsListScheduleSearchV3RequestParameterModel
+    ) -> DabangSaleInLotsListScheduleSearchV3ResponseModel:
+        """List the sale-in-lots complexes of one schedule day via `GET /api/3/sale-in-lots/list/schedule/search`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 청약 일정 화면에서 날짜를 누르면 부른다. 줄은 분양 지역 목록과
+        같은 꼴(주소·유형·세대수·가격)에 그 날 일정의 종류 번호(`grouping`)가 붙는다.
+
+        Args:
+            parameter: 그 날.
+
+        Returns:
+            DabangSaleInLotsListScheduleSearchV3ResponseModel: 그 날 일정의 분양 단지 (요약과 같은 순서).
+        """
+        response = self._client.get(
+            url=self.sale_in_lots_list_schedule_search_v3_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangSaleInLotsListScheduleSearchV3ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_sale_in_lots_list_schedule_search_v3(
+        self,
+        parameter: DabangSaleInLotsListScheduleSearchV3RequestParameterModel
+    ) -> DabangSaleInLotsListScheduleSearchV3ResponseModel:
+        """Async variant of `run_request_sale_in_lots_list_schedule_search_v3`."""
+        response = await self._async_client.get(
+            url=self.sale_in_lots_list_schedule_search_v3_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangSaleInLotsListScheduleSearchV3ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_sale_in_lots_list_search3_v3(
+        self,
+        parameter: DabangSaleInLotsListSearch3V3RequestParameterModel
+    ) -> DabangSaleInLotsListSearch3V3ResponseModel:
+        """List sale-in-lots complexes of a state or city via `GET /api/3/sale-in-lots/list/search3`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 분양 지역 목록(`/sale-in-lots/list`)이 부른다. 시·도
+        (`state_code`)·시·군·구(`city_code`) 코드로 찾고, 둘 다 없으면 전국이다. 24곳씩 준다. `total` 은 웹의 '총 N건' 이다.
+
+        Args:
+            parameter: 시·도·시·군·구 코드, 필터(번호 목록), 쪽.
+
+        Returns:
+            DabangSaleInLotsListSearch3V3ResponseModel: 분양 단지와 범위 안 수.
+        """
+        response = self._client.get(
+            url=self.sale_in_lots_list_search3_v3_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangSaleInLotsListSearch3V3ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_sale_in_lots_list_search3_v3(
+        self,
+        parameter: DabangSaleInLotsListSearch3V3RequestParameterModel
+    ) -> DabangSaleInLotsListSearch3V3ResponseModel:
+        """Async variant of `run_request_sale_in_lots_list_search3_v3`."""
+        response = await self._async_client.get(
+            url=self.sale_in_lots_list_search3_v3_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True)
+        )
+        raise_for_status(response=response)
+        return DabangSaleInLotsListSearch3V3ResponseModel.model_validate(response.json())

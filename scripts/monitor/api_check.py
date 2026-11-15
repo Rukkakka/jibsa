@@ -297,7 +297,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '원룸 동 역삼동', DABANG_LISTINGS + ('room',), ('역삼동', '--limit', '2'), 'listings',
             (Capture('room', 'listings', 'id'), Capture('room_next', '', 'next')),
         ),
-        # 이어 받기는 쪽 번호와 쪽 안 위치(24건씩)로 다시 묻는다
+        # 이어 받기는 다방 쪽 번호와 그 쪽에서 쓴 칸으로 다시 묻는다
         Step('원룸 동 이어 받기 역삼동', DABANG_LISTINGS + ('room',), ('역삼동', '--limit', '2', '--next', '{room_next}'), 'listings'),
         Step('원룸 상세', ('dabang', 'listing'), ('{room}',), 'id'),
         Step('원룸 역 강남역', DABANG_LISTINGS + ('room',), ('강남역', '--limit', '2'), 'listings'),
@@ -308,9 +308,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '원룸 좌표 반경 강남역', DABANG_LISTINGS + ('room',),
             ('--lat', '37.4979', '--lng', '127.0276', '--radius', '0.5', '--limit', '5'), 'listings',
         ),
-        # '○가' 로 나뉜 동은 동마다 목록을 받아 합친다
+        # 이 매물을 아래 '매물 실거래가' 가 쓰므로 빌라 매물이 늘 있는 동으로 본다 ('○가' 로 나뉜 성수동은 후보를 알리는 에러다)
         Step(
-            '빌라 여러 동 성수동', DABANG_LISTINGS + ('villa',), ('성수동', '--limit', '2'), 'listings',
+            '빌라 동 역삼동', DABANG_LISTINGS + ('villa',), ('역삼동', '--limit', '2'), 'listings',
             (Capture('villa', 'listings', 'id'),),
         ),
         Step('오피스텔 역 강남역', DABANG_LISTINGS + ('officetel',), ('강남역', '--limit', '2'), 'listings'),
@@ -324,48 +324,88 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단지 목록 대치동', ('dabang', 'search', 'complexes'), ('대치동', '--limit', '10'), 'complexes',
             (Capture('listed_complex', 'complexes', 'complex_id', largest='listing_count'),),
         ),
-        # 최근 실거래 요약은 덤 조회라 실패해도 단지 정보가 나온다. 은마는 늘 거래가 있어 실패 안내 없이 비면 요약이 깨진 것이다
+        # 최근 실거래 요약·대출 계산 조건(투기과열지구)은 덤 조회라 실패해도 단지 정보가 나온다. 은마는 늘 거래가 있어 실패 안내
+        # 없이 비면 요약이 깨진 것이다. 대출 계산 조건이 거절되거나 형식이 바뀌면 업데이트 안내로 고장이 된다
         # 단지 목록도 찾는 방식마다 다른 주소다: 아파트 동은 위의 경계 사각형(bbox), 오피스텔 동은 region, 역은 subway
         Step('오피스텔 단지 목록 역삼동', ('dabang', 'search', 'complexes'), ('역삼동', '-t', '오피스텔', '--limit', '2'), 'complexes'),
         Step('단지 목록 역 강남역', ('dabang', 'search', 'complexes'), ('강남역', '--limit', '2'), 'complexes'),
         Step(
             '단지', ('dabang', 'complex'), ('{complex}',), 'recent_sale',
             # 진학 인원이 모두 비어도 초등학교 코드를 고르지 않게 중학교만 본다 (단계가 틀리면 500 이라 확인 못 함으로 묻힌다)
-            (Capture('middle_school', 'schools', 'school_code', largest='special_high_entrants', where=('level', '중학교')),),
+            (
+                Capture('middle_school', 'schools', 'school_code', largest='special_high_entrants', where=('level', '중학교')),
+                Capture('nursery', 'nurseries', 'code'),
+                Capture('kinder', 'kindergartens', 'code'),
+            ),
         ),
         # 학교 상세는 옛 방식(/api/3/education/{단계}/{코드}). 단계가 코드와 다르면 500 이라 단지의 중학교로 본다
         Step('학교 상세 중학교', ('dabang', 'school'), ('{middle_school}', '--level', '중학교'), 'advancement'),
+        # 어린이집·유치원 상세는 같은 옛 방식이지만 응답 모양이 다르다 (education/nursery-school·kinder-school)
+        Step('어린이집 상세', ('dabang', 'school'), ('{nursery}', '--level', '어린이집'), 'teachers'),
+        Step('유치원 상세', ('dabang', 'school'), ('{kinder}', '--level', '유치원'), 'teachers'),
+        # 동 안 학교 목록은 동네정보 학군 상세 목록 주소(region-info/school/regional/{단계})다. 역삼동 초등학교는 늘 있다
+        Step('동 안 학교 역삼동', ('dabang', 'search', 'schools'), ('역삼동', '--level', '초등학교'), 'schools'),
+        # 평형대 평당가 비교(real-price/complex/price-per-py). 은마 대표 평형은 '30평대 비교' 가 있다 (2026-11-14 실측)
+        Step('평형대 평당가 비교', ('dabang', 'nearby-complexes'), ('{complex}',), 'area_prices'),
         Step('단지 매물', DABANG_LISTINGS, ('--complex', '{listed_complex}', '--limit', '2'), 'listings'),
         Step('단지 실거래가', ('dabang', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
         # --listing 은 단지 없는 매물만 받는다. 원룸 목록에는 오피스텔이 섞여 빌라 목록의 매물을 쓴다
         Step('매물 실거래가', ('dabang', 'real-price'), ('--listing', '{villa}', '--trade', '전월세', '--limit', '3'), 'transactions'),
+        # --trade 를 주지 않으면 매물의 거래 유형을 real-price/house/init 으로 먼저 받는다. --trade 를 준 줄은 init 을 부르지 않는다
+        Step('매물 실거래가 기본', ('dabang', 'real-price'), ('--listing', '{villa}', '--limit', '3'), 'transactions'),
         Step('단지 시세 흐름', ('dabang', 'price-trend'), ('{complex}',), 'months'),
         # 동네정보는 탭마다 다른 주소다 (요약 3종·수 4종). 기본은 모든 주제
         Step('동네정보 역삼동', ('dabang', 'neighborhood'), ('역삼동',), 'safety'),
+        # --ranks 는 학교·편의·교통·안전 탭의 요약 주소(region-info/{주제}/regional/summary, 종류마다 1회)를 더 부른다. 안전만
+        # 고르면 요약 3회다
+        Step('동네정보 순위 역삼동', ('dabang', 'neighborhood'), ('역삼동', '--topic', '안전', '--ranks'), 'ranks'),
+        # 핫플레이스(region-info/hot-places)는 미쉐린·블루리본 식당이다. 역삼동은 블루리본 식당이 많다 (2026-11-13 캡처)
+        Step('핫플레이스 역삼동', ('dabang', 'hot-places'), ('역삼동', '--limit', '3'), 'places'),
         Step('인기 매물 역삼동', ('dabang', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
         Step('매물 주변', ('dabang', 'nearby'), ('{room}',), 'stations'),
         Step('단지 주변', ('dabang', 'nearby'), ('{complex}',), 'stations'),
+        # --with 의 반려동물(pet-places, 단지만)·카셰어링(public-data/{room|complex}/car-share-zone)은 다른 주소다
+        Step('단지 주변 반려동물', ('dabang', 'nearby'), ('{complex}', '--with', '반려동물'), 'pet_places.types'),
+        Step('매물 주변 카셰어링', ('dabang', 'nearby'), ('{room}', '--with', '카셰어링'), 'car_share.zones'),
         # 역 둘레 평균 매물가는 원룸·투룸 지도 집계(markers)의 역 표시에 붙는다
         Step('역 평균 매물가 강남역', ('dabang', 'station-prices'), ('강남역',), 'prices'),
-        # 분양은 시·군·구 경계 사각형에서 주소로 고른다. 동·역·좌표로 찾아도 같은 지도 범위 주소(sale-list/category/bbox)라
-        # 시 하나로 본다 (동 경계 파일은 아파트 동 경계에서 본다). 분양이 적은 구는 빈 날이 있어(2026-10-27 실측: 강남구 2곳,
-        # 송파구 0곳) 확인 못 함이 이어지면 막힘으로 잘못 알린다. 많은 곳(평택시 40곳)으로 본다. 경계 사각형에 이웃 시가 섞여
-        # (앞 5곳 중 2곳이 평택시 밖) 한 쪽(24곳)을 다 본다. 요청은 1회다
+        # 분양은 전국·시·도·시·군·구면 웹 분양 지역 목록(3/sale-in-lots/list/search3), 동·역·대학·좌표면 지도 목록
+        # (sale-list/category/bbox)이라 두 주소를 따로 본다. 분양이 적은 구는 빈 날이 있어(2026-10-27 실측: 강남구 2곳,
+        # 송파구 0곳) 확인 못 함이 이어지면 막힘으로 잘못 알린다. 많은 곳(평택시)으로 본다
         Step(
-            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '24'), 'sales',
+            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '3'), 'sales',
             (Capture('sale', 'sales', 'sale_id'),),
         ),
+        # 전국·시·도 이름은 장소 검색 없이 시·도 목록(region/states)에서 찾아 분양 지역 목록으로 받는다 (region-ranking 서울 도 같은
+        # 시·도 목록을 쓴다). 감시가 이 주소를 보지 않으면 다방이 바꿔도 모른다
+        Step('분양 찾기 시·도 서울', DABANG_LISTINGS[:2] + ('sales',), ('서울', '--limit', '3'), 'sales'),
+        # 지도 목록은 동 경계를 덮는 사각형에서 주소로 고른다. 분양이 많은 동(2026-11-14 실측: 평택 고덕동 사각형 27곳, 앞 24곳
+        # 모두 고덕동)으로 본다. 한 쪽(24곳)이라 요청은 1회다
+        Step('분양 찾기 동 고덕동', DABANG_LISTINGS[:2] + ('sales',), ('평택시 고덕동', '--limit', '5'), 'sales'),
         Step('분양 상세', ('dabang', 'sale'), ('{sale}',), 'schedules'),
+        # 분양 주변은 매물·단지 주변과 같은 두 주소에 대상만 sale 이다 (sale/{id}/near, transit/near/sale?saleId=). 역은 1km 안에
+        # 없을 수 있어 버스·마트·편의점 같은 가까운 시설로 본다
+        Step('분양 주변', ('dabang', 'nearby'), ('--sale', '{sale}'), 'nearest'),
         Step('청약 일정', ('dabang', 'sale-schedule'), ('--limit', '3'), 'schedules', may_be_empty=True),
+        # 하루 상세는 다른 주소(3/sale-in-lots/list/schedule/search)다. 한 줄도 상세와 맞추지 못하면 업데이트 안내로 고장이 된다.
+        # --limit 3 이면 앞 3줄이 든 날까지만 더 받는다 (첫 일정 날이 3건 이상이면 요청 2회, 적으면 다음 일정 날도 받아 더)
+        Step('청약 일정 상세', ('dabang', 'sale-schedule'), ('--details', '--limit', '3'), 'schedules', may_be_empty=True),
         Step('조회 순위 단지', ('dabang', 'trending-complexes'), ('--limit', '3'), 'rankings'),
         Step('조회 순위 동', ('dabang', 'trending-complexes'), ('--unit', '동', '--limit', '3'), 'rankings'),
         # 기본 기간 '이번주' 는 월요일 아침에 아직 집계가 없어 빈 목록이다 (2026-10-26 월 실측: 이번주 0곳, 지난주·이번달은 있음).
         # 새벽 감시가 월요일마다 고장으로 잘못 알리지 않게 지난주로 본다
         Step('거래 순위', ('dabang', 'trade-rankings'), ('--period', '지난주', '--limit', '3'), 'rankings'),
-        # 동 순위와 단지 순위는 다른 주소다
+        # 동 순위와 단지 순위는 다른 주소다. 시·군·구 범위는 시·군·구 목록(region/cities)에서 찾는다
         Step('구 안 동 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '평균가', '--limit', '3'), 'rankings'),
+        # 증감 순위(거래증감·매물증감)는 다른 항목 주소(…/trade-volume-change)이고 값 칸(앞·지금 수)도 다르다
+        Step('구 안 동 거래증감 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '거래증감', '--limit', '3'), 'rankings'),
         Step(
             '구 안 단지 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '전세가율', '--unit', '단지', '--limit', '3'),
+            'rankings',
+        ),
+        # -t 빌라 는 동네정보 '매물정보' 탭 순위 주소(region-info/room/ranking/{항목})다
+        Step(
+            '구 안 동 빌라 매물수 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '매물수', '-t', '빌라', '--limit', '3'),
             'rankings',
         ),
         # 학교·학원·인구·시설 순위는 동네정보 순위 주소(region-info/{주제}/ranking/{항목})다

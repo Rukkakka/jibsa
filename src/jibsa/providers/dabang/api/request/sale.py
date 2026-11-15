@@ -34,8 +34,18 @@ ALL_SALE_SCHEDULE_STATES: tuple[DabangSaleScheduleState, ...] = (
     'CONTRACT_TERM', 'EXPECTED_MOVE_IN_DATE', 'COMPLETION_PERIOD',
 )
 ALL_SALE_SUPPLY_TYPES: tuple[DabangSaleSupplyType, ...] = ('PUBLIC_SALE', 'PRIVATE_SALE', 'PUBLIC_RENTAL', 'PRIVATE_RENTAL')
+# 웹 분양 지역 목록(`list/search3`)의 필터는 이름 대신 번호다 (supply-type 청크의 `numValue`, 2026-11-13)
+SALE_BUILDING_TYPE_NUMBERS: dict[DabangSaleBuildingType, int] = {'APT': 2, 'OFFICETEL': 0, 'URBAN_HOUSE': 1, 'KNOWLEDGE_INDUSTRY_CENTER': 3}
+SALE_STATE_NUMBERS: dict[DabangSaleState, int] = {
+    'EXPECTED': 0, 'ACCEPTING': 3, 'ACCEPT_COMPLETE': 4, 'MOVE_IN_EXPECTED': 5, 'MOVE_IN_RECRUIT': 2,
+}
+SALE_SUPPLY_TYPE_NUMBERS: dict[DabangSaleSupplyType, int] = {
+    'PUBLIC_SALE': 0, 'PRIVATE_SALE': 1, 'PUBLIC_RENTAL': 4, 'PRIVATE_RENTAL': 5,
+}
 # 청약 일정 한 번에 받을 수 있는 날 수. 그보다 길면 400 "최대 일주일의 데이터를 요청할 수 있습니다." (2026-10-25 실측: 10-26~11-01 은 200)
 SALE_SCHEDULE_MAX_DAYS: int = 7
+# 웹 분양 지역 목록의 쪽 크기 (list 청크 `limit:24`)
+SALE_SEARCH_PAGE_SIZE: int = 24
 
 
 class DabangSaleInLotsFiltersModel(RequestModel):
@@ -145,3 +155,92 @@ class DabangSaleInLotsListScheduleV3RequestParameterModel(DabangV3RequestParamet
         if days > SALE_SCHEDULE_MAX_DAYS:
             raise ValueError(f'다방 청약 일정은 한 번에 {SALE_SCHEDULE_MAX_DAYS}일까지 받습니다 ({days}일)')
         return self
+
+
+class DabangSaleInLotsListScheduleSearchV3RequestParameterModel(DabangV3RequestParameterModel):
+    """`GET /api/3/sale-in-lots/list/schedule/search` 쿼리 (청약 일정 하루의 분양 단지).
+
+    Args:
+        from_date: 그 날. 웹처럼 날만 0 을 채우지 않고 보낸다 ('2026-11-5', schedule 청크 `yyyy-MM-d`).
+    """
+
+    from_date: Annotated[
+        date,
+        Field(description='그 날', alias='from')
+    ]
+
+    @field_serializer('from_date')
+    def as_text(self, value: date) -> str:
+        return f'{value.year}-{value.month:02d}-{value.day}'
+
+
+class DabangSaleInLotsSearchFiltersModel(RequestModel):
+    """분양 지역 목록 필터 (번호 목록). 빈 목록이 전체다 (웹 초기값, 2026-11-13 list 청크).
+
+    Args:
+        building_type: 건물 유형 번호 (`SALE_BUILDING_TYPE_NUMBERS`).
+        state: 분양 상태 번호 (`SALE_STATE_NUMBERS`).
+        new_schedule_state: 일정 단계 번호. jibsa 는 늘 전체(빈 목록).
+        supply_type: 공급 유형 번호 (`SALE_SUPPLY_TYPE_NUMBERS`).
+    """
+
+    building_type: Annotated[
+        list[int],
+        Field(description='건물 유형')
+    ] = []
+    state: Annotated[
+        list[int],
+        Field(description='분양 상태')
+    ] = []
+    new_schedule_state: Annotated[
+        list[int],
+        Field(description='일정 단계')
+    ] = []
+    supply_type: Annotated[
+        list[int],
+        Field(description='공급 유형')
+    ] = []
+
+
+class DabangSaleInLotsListSearch3V3RequestParameterModel(DabangV3RequestParameterModel):
+    """`GET /api/3/sale-in-lots/list/search3` 쿼리 (웹 분양 지역 목록, 24곳씩).
+
+    시·도·시·군·구를 주지 않으면 전국이다 (2026-11-13 웹 캡처: 전국 total 1143).
+
+    Args:
+        keyword: 웹 값 'ALL'.
+        page: 쪽 번호 (1부터).
+        limit: 쪽 크기 (웹 24. 더 크게 받는지는 확인하지 않았다).
+        state_code: 시·도 코드 (2자리, `region/states`·`loc/state` 의 code). 전국은 없음.
+        city_code: 시·군·구 코드 (5자리, `loc/city` 의 code). 시·도 전체·전국은 없음.
+        filters: 필터 (JSON).
+    """
+
+    keyword: Annotated[
+        Literal['ALL'],
+        Field(description='검색어 (웹 값)')
+    ] = 'ALL'
+    page: Annotated[
+        int,
+        Field(ge=1, description='쪽 번호')
+    ] = 1
+    limit: Annotated[
+        int,
+        Field(ge=1, le=SALE_SEARCH_PAGE_SIZE, description='쪽 크기 (웹 값 24)')
+    ] = SALE_SEARCH_PAGE_SIZE
+    state_code: Annotated[
+        str | None,
+        Field(pattern=r'^\d{2}$', description='시·도 코드')
+    ] = None
+    city_code: Annotated[
+        str | None,
+        Field(pattern=r'^\d{5}$', description='시·군·구 코드')
+    ] = None
+    filters: Annotated[
+        DabangSaleInLotsSearchFiltersModel,
+        Field(description='필터 (JSON)')
+    ] = Field(default_factory=DabangSaleInLotsSearchFiltersModel)
+
+    @field_serializer('filters')
+    def as_json(self, value: DabangSaleInLotsSearchFiltersModel) -> str:
+        return value.model_dump_json()

@@ -43,18 +43,20 @@ class DabangGeojsonRegionRequestParameterModel(RequestModel):
     ]
 
 
-class DabangRegionV5RequestParameterModel(RequestModel):
-    """`GET /api/v5/region` 쿼리 (법정동 코드로 다방 지역 하나: 시·도 2자리, 시·군·구 5자리, 동 8자리).
-
-    Args:
-        code: 법정동 코드 앞자리 (2·5·8자리).
-    """
-
-    code: Annotated[
-        str,
-        Field(pattern=r'^(\d{2}|\d{5}|\d{8})$', description='법정동 코드 앞자리')
-    ]
-
-
 class DabangRegionStatesV5RequestParameterModel(RequestModel):
     """`GET /api/v5/region/states` (시·도 목록). 쿼리가 없다."""
+
+
+class DabangRegionCitiesV5RequestParameterModel(RequestModel):
+    """`GET /api/v5/region/cities` 쿼리 (시·도 하나의 시·군·구 목록, 웹 랭킹·분양 지역 고르기).
+
+    시·도 코드 없이 부르면 400 '유효하지 않은값이 있습니다.' 다 (2026-11-14 실측).
+
+    Args:
+        state_code: 시·도 법정동 코드 2자리 (시·도 목록의 `code`).
+    """
+
+    state_code: Annotated[
+        str,
+        Field(pattern=r'^\d{2}$', description='시·도 코드 (2자리)', alias='stateCode')
+    ]

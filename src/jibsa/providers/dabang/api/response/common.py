@@ -1,15 +1,29 @@
-from pydantic import Field
+from pydantic import (
+    BeforeValidator,
+    Field,
+    field_validator,
+)
 
 from jibsa.core.schema import ResponseModel
 
 from typing import (
     Annotated,
+    Any,
     Generic,
     TypeVar,
 )
 
 
 T = TypeVar('T')
+
+
+def _round_meters(value: Any) -> Any:
+    """거리는 정수(m)로 온다 (2026-11-14 단지 38곳 학교, 어린이집 329곳·유치원 89곳 모두). 소수로 와도 단지 정보 전체가 파싱
+    에러로 끝나지 않게 반올림해 받는다."""
+    return round(value) if isinstance(value, float) else value
+
+
+Meters = Annotated[int | None, BeforeValidator(_round_meters)]
 
 
 class DabangV5ResponseModel(ResponseModel, Generic[T]):
@@ -124,8 +138,9 @@ class DabangPremiumGroupModel(ResponseModel):
 
 
 class DabangRoomListResultModel(ResponseModel):
-    """매물 목록 `result`. 한 쪽 24건 고정이고 `total`·`hasMore` 는 일반 목록(`roomList`) 기준이다 (역삼동 원룸 423건 =
-    17쪽×24 + 15 로 18쪽이 `hasMore: false`, 19쪽은 빈 목록, 2026-10-25 실측). 광고(`premiumList`)는 따로 온다.
+    """매물 목록 `result`. 한 쪽은 24건까지이고 `total`·`hasMore` 는 일반 목록(`roomList`) 기준이다 (역삼동 원룸 423건 =
+    17쪽×24 + 15 로 18쪽이 `hasMore: false`, 19쪽은 빈 목록, 2026-10-25 실측). 다음 쪽이 있어도 23건만 올 때가 있어
+    (2026-11-13 웹 캡처: 아파트 강남역 1쪽) 받은 수로 마지막 쪽을 가리지 않는다. 광고(`premiumList`)는 따로 온다.
     """
 
     room_list: Annotated[
@@ -258,6 +273,33 @@ class DabangComplexInfoModel(ResponseModel):
         float | None,
         Field(description='매매 평당 평균가 (만원)', alias='tradeAveragePyeongPrice')
     ] = None
+    recent_deal_count: Annotated[
+        int | None,
+        Field(description="최근 거래 수 (웹 '최근 거래수 N건')", alias='recentDealCount')
+    ] = None
+    hash_tags: Annotated[
+        list[str],
+        Field(description="단지 꼬리표 ('입주 48년차', '대치역 도보 7분', '초품아')", alias='hashTags')
+    ] = []
+
+    @field_validator('recent_deal_count', mode='before')
+    @classmethod
+    def unreadable_count_is_unknown(cls, value: Any) -> Any:
+        """웹은 빈 글자('')면 '-' 로 쓴다 (complex 청크). 숫자로 읽지 못하는 글자('', '-' 등)는 모름(None)으로 받는다.
+        정수로 온다 (2026-11-14 단지 38곳 모두).
+        """
+        # 리뷰 오탐 (2026-11-14): 이 칸은 단위 없는 정수(또는 빈 글자)로 오고 웹이 '건' 을 붙이므로 단위 글자를 읽는 service
+        # count_of 와 읽는 법이 다르다.
+        if isinstance(value, str):
+            digits = value.replace(',', '').strip()
+            return int(digits) if digits.isdigit() else None
+        return value
+
+    @field_validator('hash_tags', mode='before')
+    @classmethod
+    def null_tags_are_empty(cls, value: Any) -> Any:
+        """웹은 `hashTags?.length` 로 없으면 꼬리표 칸을 그리지 않는다. null 도 빈 목록으로 받는다."""
+        return [] if value is None else value
 
 
 class DabangComplexSpaceModel(ResponseModel):
@@ -336,9 +378,9 @@ class DabangComplexSchoolModel(ResponseModel):
         Field(description="학교 코드 (학교알리미, 'S010000743'). `/api/3/education/{level}/{code}` 의 값")
     ] = None
     name: Annotated[
-        str,
+        str | None,
         Field(description='학교 이름')
-    ]
+    ] = None
     hakgudo_name: Annotated[
         str | None,
         Field(description='통학구역·학교군 이름', alias='hakgudoName')
@@ -348,9 +390,10 @@ class DabangComplexSchoolModel(ResponseModel):
         Field(description="설립 ('공립', '사립')", alias='establishDivide')
     ] = None
     distance: Annotated[
-        int | None,
+        Meters,
         Field(description='거리 (m)')
     ] = None
+
     avg_students_per_class: Annotated[
         str | None,
         Field(description="학급당 학생 수 ('24명')", alias='avgStudentsPerClass')
@@ -369,19 +412,65 @@ class DabangComplexSchoolModel(ResponseModel):
     ] = None
 
 
+class DabangComplexChildcareModel(ResponseModel):
+    """단지 근처 어린이집·유치원 하나. 거리순으로 온다 (2026-11-13 단지 20곳 어린이집 422곳·유치원 71곳 모두).
+
+    어린이집은 `type`(국공립·민간·직장·가정·협동), 유치원은 `establishDivide`(공립·사립)에 설립 유형이 온다. 교사당 아동 수는
+    글자('4.1명')다. 전화·좌표는 오지 않는다.
+    """
+
+    code: Annotated[
+        str | None,
+        Field(description="시설 코드 (어린이집 '11680000021', 유치원 UUID)")
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='시설 이름')
+    ] = None
+    type: Annotated[
+        str | None,
+        Field(description="어린이집 유형 ('국공립', '민간', '직장', '가정', '협동')")
+    ] = None
+    establish_divide: Annotated[
+        str | None,
+        Field(description="유치원 설립 ('공립', '사립')", alias='establishDivide')
+    ] = None
+    child_per_teacher: Annotated[
+        str | None,
+        Field(description="교사당 아동 수 ('4.1명')", alias='childPerTeacher')
+    ] = None
+    distance: Annotated[
+        Meters,
+        Field(description='거리 (m)')
+    ] = None
+
+
 class DabangComplexEducationModel(ResponseModel):
-    """단지 근처 학교. 어린이집·유치원도 오지만 jibsa 는 초·중·고만 쓴다."""
+    """단지 근처 보육·교육 시설 (웹 '주변 보육/교육시설' 탭: 어린이집·유치원·초·중·고).
+
+    목록은 늘 오고 시설이 없으면 `[]` 다 (2026-11-14 단지 38곳, 어린이집 없는 6곳·유치원 없는 2곳도 `[]`). `null` 로 오면 그 목록은
+    모름으로 받는다. 단지 상세를 단지 정보·단지 매물·실거래가가 함께 읽어, 한 목록 때문에 세 명령이 파싱 에러로 끝나지 않게 한다.
+    """
+
+    nursery_school: Annotated[
+        list[DabangComplexChildcareModel] | None,
+        Field(description='어린이집', alias='nurserySchool')
+    ] = []
+    kinder_school: Annotated[
+        list[DabangComplexChildcareModel] | None,
+        Field(description='유치원', alias='kinderSchool')
+    ] = []
 
     elementary_school: Annotated[
-        list[DabangComplexSchoolModel],
+        list[DabangComplexSchoolModel] | None,
         Field(description='초등학교 (배정)', alias='elementarySchool')
     ] = []
     middle_school: Annotated[
-        list[DabangComplexSchoolModel],
+        list[DabangComplexSchoolModel] | None,
         Field(description='중학교', alias='middleSchool')
     ] = []
     high_school: Annotated[
-        list[DabangComplexSchoolModel],
+        list[DabangComplexSchoolModel] | None,
         Field(description='고등학교', alias='highSchool')
     ] = []
 
@@ -403,13 +492,13 @@ class DabangComplexResultModel(ResponseModel):
         Field(description='단지')
     ]
     spaces: Annotated[
-        list[DabangComplexSpaceModel],
-        Field(description='평형')
-    ] = []
+        list[DabangComplexSpaceModel] | None,
+        Field(description='평형. null 이면 다방이 평형을 주지 않은 것이라 모름')
+    ] = None
     area_average_price: Annotated[
-        list[DabangAreaAveragePriceModel],
-        Field(description='평당가 비교', alias='areaAveragePrice')
-    ] = []
+        list[DabangAreaAveragePriceModel] | None,
+        Field(description='평당가 비교. null 이면 다방이 주지 않은 것이라 모름', alias='areaAveragePrice')
+    ] = None
     education: Annotated[
         DabangComplexEducationModel | None,
         Field(description='근처 학교')

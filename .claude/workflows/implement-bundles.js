@@ -1,15 +1,21 @@
 export const meta = {
   name: 'implement-bundles',
-  description: '사용자가 허락한 구현 계획의 묶음을 jibsa-coder 로 돌리고(공통 묶음 먼저, 같은 소스는 차례로, 소스끼리는 동시에), 모두 끝나면 jibsa-docs 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
-  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, model?: sonnet|opus, effort?: high|xhigh }], docs?: { brief, files?, model?, effort? } }. 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
+  description: '사용자가 허락한 구현 계획의 묶음을 jibsa-coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지·네이버는 하나씩), 모두 끝나면 jibsa-docs 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
+  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), model?: sonnet|opus, effort?: high|xhigh }], docs?: { brief, files?, model?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
-    { title: '소스별 구현', detail: '소스마다 한 줄로 차례로, 소스끼리는 동시에' },
+    { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지(네이버는 하나씩), 소스끼리는 동시에' },
     { title: '문서', detail: '모든 묶음이 끝난 뒤 jibsa-docs 하나' },
   ],
 }
 
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
+// 같은 소스의 묶음을 동시에 돌리는 수 (docs/development/agents.md "동시에 띄울 때"). 네이버는 하나씩. 동시 실행 상한
+// (SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와 그 절을 같이
+// 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+const SAME_SOURCE_MAX = 3
+const SAME_SOURCE_MAX_BY = { naver: 1 }
+const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
 const MODELS = ['sonnet', 'opus']  // Haiku 는 쓰지 않는다 (CLAUDE.md)
 const EFFORTS = ['high', 'xhigh']
 
@@ -36,27 +42,33 @@ for (const [i, b] of bundles.entries()) {
   if (!b || !(SOURCES.includes(b.source) || b.source === 'common')) problems.push(`${label}: source 는 ${SOURCES.join('·')}·common 중 하나다`)
   if (!b || !Array.isArray(b.files) || !b.files.length) problems.push(`${label}: 고칠 파일(files)이 없다`)
   if (!b || typeof b.brief !== 'string' || !b.brief.trim()) problems.push(`${label}: 지시서(brief)가 없다`)
+  if (b && b.first != null && typeof b.first !== 'boolean') problems.push(`${label}: first 는 true·false 다`)
 }
 if (a.docs != null && !(typeof a.docs === 'object' && typeof a.docs.brief === 'string' && a.docs.brief.trim())) {
   problems.push('docs 를 넘겼는데 지시서(docs.brief)가 비었다')
 }
 const docs = a.docs != null ? a.docs : null
 
-// 동시에 도는 것은 서로 다른 소스의 줄뿐이다. 공통 묶음은 먼저 끝나고, 같은 소스 묶음은 차례로, 문서는 마지막이라
-// 겹쳐도 안전하다. 서로 다른 소스 줄이 같은 파일을 고칠 때만 거절한다.
-const sourceOwners = {}
-for (const b of bundles.filter(b => b && SOURCES.includes(b.source) && Array.isArray(b.files))) {
-  for (const f of b.files.map(norm)) (sourceOwners[f] ||= new Set()).add(b.source)
+// 동시에 돌 수 있는 두 묶음이 같은 파일을 고치면 거절한다. 공통 묶음은 먼저 차례로, 문서는 마지막이라 겹쳐도 된다. 소스끼리는
+// 동시에 돌아 서로 다른 소스의 두 묶음은 언제든 겹칠 수 있다. 같은 소스 안에서는 first 묶음이 차례로 먼저 끝난 뒤 나머지가
+// 동시에 돌아, first 가 아닌 두 묶음만 겹칠 수 있다.
+const sourced = bundles.filter(b => b && SOURCES.includes(b.source) && Array.isArray(b.files))
+const overlap = []
+for (const [i, x] of sourced.entries()) {
+  for (const y of sourced.slice(i + 1)) {
+    if (x.source === y.source && (x.first || y.first)) continue
+    const shared = x.files.map(norm).filter(f => y.files.map(norm).includes(f))
+    if (shared.length) overlap.push(`${shared.join(', ')} (${x.name}·${y.name})`)
+  }
 }
-const overlap = Object.entries(sourceOwners).filter(([, s]) => s.size > 1).map(([f, s]) => `${f} (${[...s].join(', ')})`)
-if (overlap.length) problems.push(`서로 다른 소스 묶음이 동시에 같은 파일을 고친다: ${overlap.join('; ')}`)
+if (overlap.length) problems.push(`동시에 돌 수 있는 묶음이 같은 파일을 고친다: ${overlap.join('; ')}`)
 if (problems.length) {
   log(`묶음이 잘못돼 아무것도 띄우지 않았다: ${problems.join(' / ')}`)
   return {
     started: false,
     reason: 'bad-bundles',
     problems,
-    next: '서로 다른 소스 묶음이 같은 파일을 고치면 그 파일을 공통 묶음으로 옮기거나 묶음을 합친다. 고쳐서 다시 부른다.',
+    next: '동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스)·공통 묶음(여러 소스)으로 뺀다. 고쳐서 다시 부른다.',
   }
 }
 
@@ -72,13 +84,13 @@ const REPORT = {
     checks: { type: 'string', description: 'ruff check·mypy·바꾼 부분 테스트 결과' },
     liveChecks: {
       type: 'array',
-      description: '바꾼 동작마다 실제 조회 1건',
+      description: '바꾼 동작마다 실제 조회 1건 (지시가 실제 조회를 하지 말라고 했으면 빈 목록)',
       items: { type: 'object', properties: { command: { type: 'string' }, keyFields: { type: 'string', description: '응답의 핵심 필드만' } }, required: ['command', 'keyFields'] },
     },
     notDone: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, why: { type: 'string' } }, required: ['what', 'why'] } },
     othersToTouch: { type: 'array', items: { type: 'string' }, description: '네 files 밖이라 고치지 않은 곳: "파일 — 고칠 내용" (문서, CHANGELOG, 감시 목록 GROUPS 등)' },
   },
-  required: ['changed', 'checks', 'liveChecks', 'notDone', 'othersToTouch'],
+  required: ['changed', 'checks', 'notDone', 'othersToTouch'],
 }
 
 const allFiles = [...new Set(bundles.flatMap(b => b.files.map(norm)))]
@@ -92,10 +104,13 @@ const coderPrompt = b => [
   '위 고칠 파일만 고친다. 그 밖의 파일은 열어 보기만 한다. 네 정의가 같은 작업에서 고치라는 문서·CHANGELOG·docs/llm.md·scripts/monitor/api_check.py 의 GROUPS 도',
   '고칠 파일에 없으면 고치지 말고 othersToTouch 에 "파일 — 고칠 내용" 으로 적는다. 다른 묶음과 같은 파일을 덮어쓰지 않기 위해서다.',
   `다른 묶음이 동시에 다른 파일을 고칠 수 있다: ${allFiles.filter(f => !b.files.map(norm).includes(f)).join(', ') || '없음'}. ruff·mypy 오류가 네 파일 밖에서 나면 고치지 말고 보고에 적는다.`,
-  b.source === 'common'
-    ? '실제 조회는 바꾼 동작을 볼 수 있는 소스 하나로 최소로 한다.'
-    : `실제 조회는 ${b.source} 명령만 최소로 한다. 다른 소스는 다른 묶음이 부르고 있을 수 있다.`,
-].join('\n')
+  b.first ? '같은 소스의 다른 묶음이 이 묶음이 만드는 함수·상수를 쓴다. 지시서에 정한 이름·인자·뜻을 바꾸지 않는다.' : '',
+  a.workerLiveChecks !== true
+    ? '실제 조회(.venv/bin/jibsa)는 하지 않는다. 주 에이전트가 묶음을 띄우기 전에 남긴 출력과 고친 뒤 출력을 비교한다 (docs/development/agents.md "검증 분담"). 검증은 ruff·mypy·바꾼 부분 테스트만 한다.'
+    : b.source === 'common'
+      ? '실제 조회는 바꾼 동작을 볼 수 있는 소스 하나로 최소로 한다.'
+      : `실제 조회는 ${b.source} 명령만 최소로 한다. 다른 소스는 다른 묶음이 부르고 있을 수 있다.`,
+].filter(Boolean).join('\n')
 
 // agent() 가 예외를 던져도 실패로 기록하고 이어 간다.
 const tryAgent = async (prompt, opts) => {
@@ -104,25 +119,48 @@ const tryAgent = async (prompt, opts) => {
 
 const results = Object.fromEntries(bundles.map(b => [b.name, { name: b.name, source: b.source, status: 'skipped', report: null }]))
 
+const runOne = async (b, phaseTitle) => {
+  results[b.name].status = 'running'
+  const r = await tryAgent(coderPrompt(b), {
+    label: `구현:${b.name}`,
+    phase: phaseTitle,
+    agentType: 'jibsa-coder',
+    model: MODELS.includes(b.model) ? b.model : 'sonnet',
+    effort: EFFORTS.includes(b.effort) ? b.effort : 'high',
+    schema: REPORT,
+  })
+  results[b.name] = { name: b.name, source: b.source, status: r ? 'done' : 'failed', report: r }
+  if (!r) log(`묶음 ${b.name}: 결과를 내지 못했다. 파일을 일부 고쳤을 수 있다`)
+  return Boolean(r)
+}
+
 // 한 줄 안에서는 차례로 돌리고, 앞 묶음이 실패하면 뒤 묶음은 그 결과에 기댈 수 있어 건너뛴다.
 const runLane = async (lane, phaseTitle) => {
   for (const b of lane) {
-    results[b.name].status = 'running'
-    const r = await tryAgent(coderPrompt(b), {
-      label: `구현:${b.name}`,
-      phase: phaseTitle,
-      agentType: 'jibsa-coder',
-      model: MODELS.includes(b.model) ? b.model : 'sonnet',
-      effort: EFFORTS.includes(b.effort) ? b.effort : 'high',
-      schema: REPORT,
-    })
-    results[b.name] = { name: b.name, source: b.source, status: r ? 'done' : 'failed', report: r }
-    if (!r) {
-      log(`묶음 ${b.name}: 결과를 내지 못했다. 파일을 일부 고쳤을 수 있다. 같은 줄의 나머지 묶음은 건너뛴다`)
+    if (!(await runOne(b, phaseTitle))) {
+      log(`묶음 ${b.name} 이 실패해 같은 줄의 나머지 묶음은 건너뛴다`)
       return false
     }
   }
   return true
+}
+
+// 소스 하나: first 묶음을 차례로 먼저 돌리고(실패하면 나머지는 그 결과에 기대므로 건너뛴다), 나머지는 서로 기대지 않아
+// maxOf(source) 개씩 동시에 돌린다. 하나가 실패해도 나머지는 이어 간다.
+const runSource = async source => {
+  const mine = bundles.filter(b => b.source === source)
+  const firsts = mine.filter(b => b.first)
+  const rest = mine.filter(b => !b.first)
+  if (firsts.length && !(await runLane(firsts, '소스별 구현'))) {
+    log(`${source}: first 묶음이 실패해 나머지 묶음(${rest.map(b => b.name).join(', ') || '없음'})은 시작하지 않았다`)
+    return false
+  }
+  let ok = true
+  for (let i = 0; i < rest.length; i += maxOf(source)) {
+    const rs = await parallel(rest.slice(i, i + maxOf(source)).map(b => () => runOne(b, '소스별 구현')))
+    ok = rs.every(Boolean) && ok
+  }
+  return ok
 }
 
 phase('공통 구현')
@@ -132,8 +170,7 @@ const commonOk = common.length ? await runLane(common, '공통 구현') : true
 let lanesOk = commonOk
 if (commonOk) {
   phase('소스별 구현')
-  const lanes = SOURCES.map(s => bundles.filter(b => b.source === s)).filter(l => l.length)
-  const oks = await parallel(lanes.map(lane => () => runLane(lane, '소스별 구현')))
+  const oks = await parallel(SOURCES.filter(s => bundles.some(b => b.source === s)).map(s => () => runSource(s)))
   lanesOk = oks.every(ok => ok === true)
 } else {
   log('공통 묶음이 실패해 소스별 묶음을 시작하지 않았다')

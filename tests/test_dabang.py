@@ -1,18 +1,29 @@
 import pytest
 from httpx import (
+    Client,
     HTTPStatusError,
+    MockTransport,
     Request,
     Response,
 )
 
+from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.response.ranking import DabangRegionRankingItemModel
 from jibsa.providers.dabang.service.common import (
+    DabangPlace,
     is_missing_id,
     listing_prices,
     manwon_from_text,
     parse_room_desc,
 )
-from jibsa.providers.dabang.service.ranking import _entry
+from jibsa.providers.dabang.service.complex import list_complex_listings
+from jibsa.providers.dabang.service.listing import search_listings
+from jibsa.providers.dabang.service.ranking import (
+    ValueKind,
+    _entry,
+    get_region_ranking,
+)
+from jibsa.providers.dabang.service.region import DabangScope
 
 
 # --- price text ---
@@ -49,22 +60,134 @@ def test_listing_price_and_description_are_split_by_trade_type() -> None:
     assert parse_room_desc('3층, 23.14m²') == ('3', 23.14, None)
 
 
+# --- listing search paging ---
+
+
+def test_next_resumes_after_short_page_without_repeating_listings() -> None:
+    # 다방 목록은 한 쪽이 24건보다 적게 올 때가 있다 (2026-11-13 웹 캡처: 아파트 강남역 1쪽 23건). 받은 수로 쪽을 셈하면
+    # 23건 쪽 뒤에 2쪽 첫 건까지 받은 다음, 이어 받을 때 2쪽을 처음부터 다시 받아 같은 매물을 또 줬다
+    sizes = {1: 23, 2: 24, 3: 24}
+    starts = {1: 0, 2: 23, 3: 47}
+
+    def handler(request: Request) -> Response:
+        page = int(request.url.params['page'])
+        rows = [
+            {
+                'id': f'{number:024x}',
+                'roomTypeName': '원룸',
+                'roomDesc': '3층, 20m², 관리비 5만',
+                'priceTypeName': '월세',
+                'priceTitle': '1000/50',
+            }
+            for number in range(starts[page], starts[page] + sizes[page])
+        ]
+        return Response(200, json={'code': 200, 'result': {'roomList': rows, 'total': 71, 'hasMore': page < 3}})
+
+    client = DabangClient()
+    client.__dict__['_client'] = Client(base_url=client.base_url, transport=MockTransport(handler))
+    place = DabangPlace(kind='dong', name='[가상]동', lat=37.5, lng=127.0, code='00000001', gid=1)
+    with client:
+        first = search_listings(client, 'room', place, limit=24)
+        second = search_listings(client, 'room', place, limit=24, resume=first.next_position)
+    assert [listing.id for listing in first.listings] == [f'{number:024x}' for number in range(24)]
+    assert [listing.id for listing in second.listings] == [f'{number:024x}' for number in range(24, 48)]
+    # 사용자에게 보이는 '몇 번째부터' 는 받은 수 기준이다
+    assert second.next_position is not None and second.next_position.received == 48
+
+
+def test_complex_listings_fill_max_limit_when_pages_are_short() -> None:
+    # 단지 매물은 이어 받기(--next)가 없다. 쪽 수 상한이 --limit 최대값을 채우는 다섯 쪽이면 다방이 쪽마다 23건만 줄 때
+    # 115건에서 멈춰 남은 매물을 받을 길이 없었다
+    complex_id = '0000000000000000000000000001'  # 다방 단지 ID 꼴(16진수 28자)의 가짜 값
+    pages: list[int] = []
+
+    def handler(request: Request) -> Response:
+        if request.url.path.endswith(f'/complex/{complex_id}'):
+            return Response(200, json={'code': 200, 'result': {
+                'complex': {'complexId': complex_id, 'complexType': 'APT', 'complexName': '[가상]아파트'},
+                'spaces': [{'spaceSeq': 1}],
+            }})
+        page = int(request.url.params['page'])
+        pages.append(page)
+        rows = [
+            {
+                'id': f'{number:024x}',
+                'roomTypeName': '아파트',
+                'roomDesc': '3층, 84m², 관리비 20만',
+                'priceTypeName': '전세',
+                'priceTitle': '5억',
+            }
+            for number in range((page - 1) * 23, page * 23)
+        ]
+        return Response(200, json={'code': 200, 'result': {'roomList': rows, 'total': 200, 'hasMore': True}})
+
+    client = DabangClient()
+    client.__dict__['_client'] = Client(base_url=client.base_url, transport=MockTransport(handler))
+    with client:
+        result = list_complex_listings(client, complex_id, limit=120)
+    assert pages == [1, 2, 3, 4, 5, 6]
+    assert result.returned == 120
+    assert result.has_more
+
+
 # --- ranking values ---
 
 
-def test_population_decrease_is_negative() -> None:
-    # 다방은 인구 변화 수를 부호 없이('327명') 주고 줄었는지는 changeStatus·변화율로만 알린다
-    row = DabangRegionRankingItemModel.model_validate({
-        'rank': 1,
-        'regionName': '[가상]동',
-        'formattedCurrCount': '1,000명',
-        'formattedPrevCount': '1,010명',
-        'formattedYearOfYearChangeCount': '10명',
-        'formattedYearOfYearChangePercentage': '-1%',
-        'changeStatus': 'DECREASE',
-    })
-    entry = _entry(row, 'population-change')
-    assert (entry.count, entry.prev_count, entry.change_count, entry.change_percent) == (1000, 1010, -10, -1)
+@pytest.mark.parametrize(
+    ('kind', 'values'),
+    [
+        ('population-change', {
+            'formattedCurrCount': '2,000명',
+            'formattedPrevCount': '2,001명',
+            'formattedYearOfYearChangeCount': '1명',
+            'formattedYearOfYearChangePercentage': '0%',
+        }),
+        # 거래증감·매물증감도 변화 수를 부호 없이 준다 (2026-11-13 강남구 매물증감 낮은순 신사동 '2개'·'-9.1%')
+        ('count-change', {
+            'formattedCurrCount': '2,000개',
+            'formattedPrevCount': '2,001개',
+            'formattedCount': '1개',
+            'formattedChangeRate': '0%',
+        }),
+    ],
+)
+def test_change_count_decrease_is_negative(kind: ValueKind, values: dict[str, str]) -> None:
+    # 다방은 인구·거래·매물 변화 수를 부호 없이('327명') 준다. 앞·지금 수가 있으면 그 차로 내서, changeStatus 가 빠지고
+    # 변화율이 '0%' 로 반올림돼도 줄었으면 음수다
+    row = DabangRegionRankingItemModel.model_validate({'rank': 1, 'regionName': '[가상]동', **values})
+    entry = _entry(row, kind)
+    assert (entry.count, entry.prev_count, entry.change_count, entry.change_percent) == (2000, 2001, -1, 0)
+
+
+@pytest.mark.parametrize(
+    ('metric', 'types', 'sent', 'shown'),
+    [
+        # 웹 기본은 아파트·오피스텔을 둘 다 골라 complexType 을 빼고 보낸다 (합산 순위)
+        ('거래량', [], None, '아파트·오피스텔 합산'),
+        ('거래량', ['아파트', '오피스텔'], None, '아파트·오피스텔 합산'),
+        ('거래량', ['오피스텔'], 'OFFICETEL', '오피스텔'),
+        # 평균가는 웹도 하나만 고르고 기본이 아파트다
+        ('평균가', [], 'APT', '아파트'),
+    ],
+)
+def test_region_ranking_sends_complex_type_like_the_web(
+    metric: str, types: list[str], sent: str | None, shown: str,
+) -> None:
+    queries = []
+
+    def handler(request: Request) -> Response:
+        queries.append(request.url.params)
+        return Response(200, json={'code': 200, 'result': {'ranking': {'list': [], 'total': 0, 'hasMore': False}}})
+
+    client = DabangClient()
+    client.__dict__['_client'] = Client(base_url=client.base_url, transport=MockTransport(handler))
+    scope = DabangScope(kind='district', name='[가상]구', gid=1)
+    with client:
+        result = get_region_ranking(
+            client, scope, metric_label=metric, unit='동', complex_types=types, trades=[], order='높은순', limit=5,
+        )
+    assert queries[0].get('complexType') == sent
+    assert result.complex_type == shown
 
 
 # --- missing ID ---

@@ -17,6 +17,8 @@ from typing import (
 UNBOUNDED_MAX: int = 999999
 # 다방 단지 ID (28자리 16진수, 예: 58291f830ff9bd73a07ca123c632)
 COMPLEX_ID_PATTERN_TEXT: str = r'^[0-9a-f]{28}$'
+# 다방 매물 ID (24자리 16진수, 예: 69aa437a89300d7e5b7251a9)
+LISTING_ID_PATTERN_TEXT: str = r'^[0-9a-f]{24}$'
 
 DabangCategory = Literal['one-two', 'house-villa', 'officetel', 'apt']
 DabangComplexCategory = Literal['officetel', 'apt']
@@ -25,11 +27,21 @@ DabangSellingType = Literal['MONTHLY_RENT', 'LEASE', 'SELL']
 DabangRoomFloor = Literal['GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP']
 DabangRoomType = Literal['ONE_ROOM', 'TWO_ROOM']
 DabangRoomCount = Literal['ONE_ROOM', 'TWO_ROOM', 'THREE_ROOM', 'FOUR_ROOM']
+# 동네정보 '매물정보' 계열의 buildingCategoryList — 인기 매물·동 매물수 순위
+DabangRoomBuildingCategory = Literal['HOUSE_VILLA', 'OFFICETEL', 'APT']
 
 ALL_SELLING_TYPES: tuple[DabangSellingType, ...] = ('MONTHLY_RENT', 'LEASE', 'SELL')
 ALL_ROOM_FLOORS: tuple[DabangRoomFloor, ...] = ('GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP')
 ALL_ROOM_TYPES: tuple[DabangRoomType, ...] = ('ONE_ROOM', 'TWO_ROOM')
 ALL_ROOM_COUNTS: tuple[DabangRoomCount, ...] = ('ONE_ROOM', 'TWO_ROOM', 'THREE_ROOM', 'FOUR_ROOM')
+# 오피스텔·아파트 필터의 `parkingNumRange`. 웹 주차 필터의 '세대당 1대 이상'·'2대 이상'(`{min: 1|2, max: 999999}`, parking 청크
+# 2026-11-13)이라 세대당 주차 대수다 (같은 날 실측: 아파트 강남역 113 → 1대 이상 79 → 2대 이상 19건, 오피스텔 126 → 6 → 0건).
+# 원룸·빌라·오피스텔의 `canParking`(주차 가능 여부)과 다른 조건이다
+PARKING_NUM_RANGE_DESCRIPTION: str = '세대당 주차 대수 (대)'
+# 동네정보(`/api/v5/region-info/...`) 목록 한 쪽에 받을 수 있는 최대 줄 수. 동 안 학교 목록(school/regional)·순위(ranking)·
+# 핫플레이스(hot-places) 모두 31 이상이면 400 '페이지 당 호출 가능한 최대 행수는 30를 초과할 수 없습니다' 다 (2026-11-14 실측:
+# 어린이집 limit=50, 핫플레이스 31·40). 웹도 이 목록들을 30줄씩 묻는다. 부동산 순위(real-estate/ranking)는 50 까지 된다
+REGION_INFO_PAGE_LIMIT: int = 30
 
 
 class DabangRangeModel(RequestModel):
@@ -180,7 +192,7 @@ class DabangOfficetelFiltersModel(DabangSaleFiltersModel):
 
     parking_num_range: Annotated[
         DabangRangeModel,
-        Field(description='주차 대수 (뜻을 확인하지 않아 jibsa 는 늘 전체)', alias='parkingNumRange')
+        Field(description=PARKING_NUM_RANGE_DESCRIPTION, alias='parkingNumRange')
     ] = Field(default_factory=DabangRangeModel)
     can_parking: Annotated[
         bool,
@@ -205,11 +217,17 @@ class DabangAptFiltersModel(DabangSaleFiltersModel):
     ] = Field(default_factory=DabangRangeModel)
     parking_num_range: Annotated[
         DabangRangeModel,
-        Field(description='주차 대수 (뜻을 확인하지 않아 jibsa 는 늘 전체)', alias='parkingNumRange')
+        Field(description=PARKING_NUM_RANGE_DESCRIPTION, alias='parkingNumRange')
     ] = Field(default_factory=DabangRangeModel)
     has_take_tenant: Annotated[
         bool,
-        Field(description='세입자가 있는 채로 파는 매물만으로 보인다 (뜻을 확인하지 않아 jibsa 는 늘 False)', alias='hasTakeTenant')
+        Field(
+            description=(
+                "세입자가 있는 채로 파는 매매 매물만 (웹 아파트 '추가필터' 의 '세안고'. 웹은 거래 유형에 매매가 있을 때만 보여 주고 "
+                '매매를 빼면 끈다, filter 청크 2026-11-13. 아파트 강남역 113건 → 7건, 같은 날 실측)'
+            ),
+            alias='hasTakeTenant',
+        )
     ] = False
 
 
@@ -252,7 +270,7 @@ class DabangCategoryListRequestParameterModel(RequestModel):
     """매물·단지 지도 목록(`.../category/{category}/{search_type}`)의 공통 쿼리.
 
     `filters`·`bbox` 는 JSON 문자열로 보낸다. `zoom` 과 `useMap` 은 동·역 검색에도 필수다 (빠지면 400 "줌은 필수값 입니다",
-    2026-10-25 실측). 한 쪽 크기는 24건 고정이고 `limit` 을 보내도 무시한다.
+    2026-10-25 실측). 한 쪽은 24건까지이고 `limit` 을 보내도 무시한다 (다음 쪽이 있어도 23건만 올 때가 있다, 2026-11-13).
 
     Args:
         category: 매물 유형 (경로).

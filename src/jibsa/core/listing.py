@@ -312,7 +312,7 @@ def note(kind: NoteKind, text: str) -> str:
     return f'[{kind}] {text}'
 
 
-def more_hint(limit: int, max_limit: int, narrow: str) -> str:
+def more_hint(limit: int, max_limit: int, narrow: str | None) -> str:
     """결과가 더 남았을 때 더 보는 법 (끝에 마침표 없음). `--limit` 이 이미 최대값이면 늘리라고 하지 않는다.
 
     늘리면 옵션 검사에서 `INVALID_ARGUMENT` 로 막힌다. 소스마다 따로 쓰던 '--limit 의 최대값은 N입니다…' 를 여기 모은다.
@@ -323,7 +323,12 @@ def more_hint(limit: int, max_limit: int, narrow: str) -> str:
         limit: 요청한 `--limit`.
         max_limit: 그 명령의 `--limit` 최대값.
         narrow: 좁히라고 권할 것. 그 명령에 있는 옵션만 적는다 (예: '조건·반경', '거래 유형·업종·가격 조건·지역').
+            None 이면 좁힐 조건을 권하지 않고 `--limit` 만 말한다 (다방 동네정보 목록처럼 좁힐 옵션을 이미 골랐을 때).
     """
+    if narrow is None:
+        if limit >= max_limit:
+            return f'--limit 의 최대값은 {max_limit}입니다'
+        return '더 보려면 --limit 을 늘리세요'
     target = f"{narrow}{particle(narrow, '을/를')}"
     if limit >= max_limit:
         return f'--limit 의 최대값은 {max_limit}입니다. 더 보려면 {target} 좁히세요'
@@ -361,7 +366,7 @@ def limit_notes(
     limit: int,
     *,
     max_limit: int,
-    narrow: str,
+    narrow: str | None,
     order: str = '검색 중심에서 가까운',
     approximate: bool = False,
     basis: str = '',
@@ -387,7 +392,7 @@ def limit_notes(
             을 권하면 강남역처럼 이미 좁게 찾은 검색에도 '더 좁은 지역' 이 붙고, 단지 하나의 매물처럼 좁힐 범위가 없는데 붙이면
             다방 단지 매물이 '조건·지역을 좁히세요' 라고 했다 (2026-11-10 리뷰). 예전에는 '조건'·지역 기본값과 반경·범위 플래그로
             받았는데, 빠뜨려도 조용히 '조건·지역' 이 나가 `max_limit` 처럼 기본값 없이 받는다 (`pagination_notes`·
-            `apt_pagination_notes` 와 같다, 2026-11-11 리뷰).
+            `apt_pagination_notes` 와 같다, 2026-11-11 리뷰). None 이면 좁힐 조건을 권하지 않는다 (좁힐 옵션을 이미 모두 골랐을 때).
         order: 돌려준 매물을 고른 기준. 뒤에 '순으로' 를 붙여 쓴다 (예: '검색 중심에서 가까운', '최근 게시된', '다방 목록').
         approximate: `total` 이 근사값이면 True ('약 N건').
         basis: `total` 이 어떤 조건까지 적용한 수인지 덧붙일 말 (예: '가격 조건 적용 전').

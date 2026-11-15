@@ -16,6 +16,6 @@ effort: high
 - 테스트는 아주 드문 엣지케이스나 틀어지면 안 되는 핵심 동작일 때만 추가한다. 지운 기능의 테스트는 함께 지운다.
 - 명령·옵션·반환 필드가 바뀌면 `docs/<source>.md`, 에이전트가 틀리기 쉬운 해석 규칙이면 `docs/llm.md`(200줄 이하), 명령이나 매물 찾는 방식이 바뀌면 `scripts/monitor/api_check.py` 의 `GROUPS`, 사용자에게 보이는 변경이면 `CHANGELOG.md` 의 `Unreleased` 를 같은 작업에서 고친다. 지시서가 문서를 다른 에이전트에 맡겼다면 손댈 문서 목록만 보고한다. 다른 작업자와 동시에 돌고 있으면(지시서에 적힌다) 여럿이 함께 고칠 공용 파일(`CHANGELOG.md`·`docs/llm.md`·`GROUPS`)은 고치지 않고 고칠 내용만 보고한다 (`docs/development/agents.md` "동시에 띄울 때").
 
-검증은 **기본 검증만**: `.venv/bin/ruff check`·`.venv/bin/mypy` 0건, 바꾼 부분 테스트만 `tests/test_x.py::test_name` 으로, 바꾼 동작마다 `.venv/bin/jibsa ...` 실제 조회 1회(요청 최소, 네이버는 특히). 전체 `pytest`·웹 대조·넓은 실제 조회는 하지 않는다.
+검증은 **기본 검증만**: `.venv/bin/ruff check`·`.venv/bin/mypy` 0건, 바꾼 부분 테스트만 `tests/test_x.py::test_name` 으로, 바꾼 동작마다 `.venv/bin/jibsa ...` 실제 조회 1회(요청 최소, 네이버는 특히). 지시가 실제 조회를 하지 말라고 하면(구현 묶음은 주 에이전트가 고치기 전·후 출력을 비교한다) 하지 않는다. 전체 `pytest`·웹 대조·넓은 실제 조회는 하지 않는다.
 
 보고는 압축해서: 바꾼 파일·함수, 실행한 검증과 결과, 바꾼 동작마다 실제 조회 1건의 핵심 필드(JSON 전체 아님), 고치지 않은 것과 이유, 손댈 문서 목록. diff 전체는 붙이지 않는다.

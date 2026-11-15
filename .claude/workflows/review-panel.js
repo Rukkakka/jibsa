@@ -1,27 +1,38 @@
 export const meta = {
   name: 'review-panel',
-  description: 'jibsa 변경을 관점 묶음별 리뷰어로 리뷰하고, 모은 지적을 소스마다 review-verifier 하나가 실제 조회로 재현해 진짜 문제·오탐으로 가른다',
+  description: 'jibsa 변경을 관점 묶음별 리뷰어로 리뷰하고, 모은 지적을 소스마다 review-verifier 가 실제 조회로 재현해 진짜 문제·오탐으로 가른다',
   whenToUse: '/review 명령이 부른다 (docs/development/agents.md "코드 리뷰"). args: target(리뷰 대상과 diff 를 보는 명령), groups(관점 키 묶음의 목록), 그 밖은 선택. args 없이 불렸으면 아무것도 띄우지 않고 /review 를 쓰라고 안내한다.',
   phases: [
     { title: '리뷰', detail: '관점 묶음마다 리뷰어 하나, 동시에. 코드만 읽는다' },
-    { title: '재검증', detail: '소스마다 review-verifier 하나가 지적을 실제 조회로 재현한다. 공통 코드 지적은 소스별 검증이 끝난 뒤' },
+    { title: '재검증', detail: '소스마다 review-verifier 가 지적을 실제 조회로 재현한다 (지적이 많으면 같은 소스에 동시에 셋까지, 네이버는 하나씩). 공통 코드 지적은 소스별 검증이 끝난 뒤 하나씩' },
   ],
 }
 
-// 관점 다섯 가지 (docs/development/agents.md "코드 리뷰" 1단계). /review 는 이 키로 묶음을 정해 넘긴다.
+// 관점 여섯 가지 (docs/development/agents.md "코드 리뷰" 1단계). /review 는 이 키로 묶음을 정해 넘긴다.
 const PERSPECTIVES = {
   convention: '규약 위반: AGENTS.md "꼭 지킬 것" (로그인 없는 기능만, 금액은 만원, 결과는 stdout JSON·에러는 stderr JSON, 만료 매물 제외, 서버가 거른 결과를 같은 조건으로 다시 거르지 않기, 소스끼리 import 금지, 모든 요청은 브라우저 transport 와 요청 제한 훅, 사진·중개사 연락처·본문·매물 좌표 출력 금지)와 docs/development/code-style.md.',
-  correctness: '정확성·버그: 잘못된 분기, 누락값 규칙(해당 없음은 키 삭제·모름은 null·비어 있음은 []), 단위 환산(만원), 이어 받기(--next) 커서·offset.',
+  correctness: '정확성·버그: 잘못된 분기, 누락값 규칙(해당 없음은 키 삭제·모름은 null·비어 있음은 []), 단위 환산(만원), 이어 받기(--next) 커서·offset, 응답 값이 없을 때(null·빈 글자·"-")와 상한에 닿았을 때의 처리 (실측에 아직 없어도 본다).',
   contract: '출력 계약: docs/development/output-contract.md 와 docs/<source>.md 의 필드·에러 코드·exit code 와 코드가 맞는지, 바뀐 동작이 문서에 반영됐는지.',
   web: '웹 대응: docs/development/provider-conventions.md "웹 화면과의 대응" 의 "안 되는 것" 에 해당하는 결과를 만드는지 ("되는 것" 에 든 예외는 위반이 아니다), 웹과 다르게 한 곳이 그 소스 가이드 "웹과 다른 점" 에 적혔는지. 두 목록은 그 문서에서 읽는다.',
   requests: '요청 수·차단 위험: 매물마다 추가 조회처럼 요청을 늘리는 변경, 요청 제한 훅을 거치지 않는 요청, 재시도가 요청을 불리는 곳, 네이버 차단 위험.',
+  design: '구조·중복·단순화: 바뀐 코드가 같은 소스나 core/ 에 이미 있는 함수·상수·옵션(팩토리 포함)을 다시 만들었는지, 같은 규칙(상한·검사·글자 파싱)을 여러 곳에 따로 둬 한쪽만 고치면 어긋나는지, 같은 처리가 비슷한 경로 중 일부에만 붙었는지, 같은 검사를 여러 겹 해 닿지 않는 코드가 생겼는지, 돌려주는 값이 이름·필드와 맞지 않게 꾸며졌는지, 같은 출력을 더 단순하게 낼 수 있는지. 지적에 겹친 자리(파일:줄 둘 이상)와 합칠 자리·모양을 적는다. 다른 소스 코드와 겹치는 것은 core/ 로 올릴 만큼 같은 규칙일 때만 지적한다 (소스끼리는 import 하지 않는다).',
 }
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 const MODELS = ['sonnet', 'opus']  // Haiku 는 쓰지 않는다 (CLAUDE.md)
 const EFFORTS = ['high', 'xhigh']
-const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스 안에서 차례로 나눈다
-// 리뷰 오탐 (2026-11-13): 검증 요청의 총량 상한이 없어 네이버 요청이 몰린다는 지적. 같은 소스의 검증자는 차례로만 돌고,
-// jibsa 요청 제한기가 프로세스 간 공유 상태로 소스별 속도를 막아(네이버 1초 간격·분당 60회, `jibsa limits`) 몰리지 않는다.
+const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스에 검증자를 더 둔다
+// 동시 실행 상한(SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
+// docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 부르는 검증자 수 (docs/development/agents.md "동시에 띄울 때")
+// 네이버 검증자는 한 번에 하나만 돌린다. jibsa 요청 제한기는 첫 화면이 스스로 부르는 요청을 연 뒤에 세어 미리 막지 못하는데
+// (src/jibsa/core/browser.py `finish_entry`), 남긴 쿠키가 없거나 오래됐을 때 jibsa 프로세스 여럿이 함께 시작하면 저마다 첫 화면을
+// 연다. 네이버는 첫 화면 한 번이 부르는 요청이 많아(docs/development/providers/naver.md) 그만큼 한꺼번에 몰린다.
+// 공통 코드 검증자도 하나씩 돌린다. 저마다 재현할 소스를 고르므로 둘이 동시에 돌면 함께 네이버를 고를 수 있다 (2026-11-14 리뷰).
+const SAME_SOURCE_MAX_BY = { naver: 1, common: 1 }
+const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
+// 리뷰 오탐 (2026-11-13): 검증 요청의 총량 상한이 없어 네이버 요청이 몰린다는 지적. 같은 소스의 검증자는 동시에 셋까지(네이버는
+// 하나)만 돌고, 첫 화면 다음 요청부터는 jibsa 요청 제한기가 프로세스 간 공유 상태로 소스별 속도를 막아(네이버 1초 간격·분당 60회,
+// `jibsa limits`) 몰리지 않는다.
 
 let a = args
 if (typeof a === 'string') {
@@ -167,11 +178,12 @@ const verifyPrompt = (source, items) => [
   `리뷰 대상: ${a.target}`,
   source === 'common'
     ? '공통 코드 지적이다. 재현에 API 가 필요하면 소스 하나를 골라 최소로 부른다. 네이버는 차단 위험이 커서 다른 소스로 재현할 수 없을 때만 고른다. 소스별 검증은 끝났다.'
-    : `${source} 의 실제 API 만 부른다. 다른 검증자가 다른 소스를 동시에 부르고 있다.`,
+    : `${source} 의 실제 API 만 부른다. 다른 검증자가 같은 소스나 다른 소스를 동시에 부르고 있을 수 있다 (요청 제한은 함께 센다).`,
   '요청은 지적당 1~2회로 아낀다 (네이버는 특히). RATE_LIMITED 면 오래 기다리지 말고 미확인으로 둔다.',
   'jibsa 동작과 상관없는 지적(문서·설정·스크립트 문장끼리 어긋남 등)은 API 를 부르지 않고 원문을 대조해 판정한다.',
-  '판정: real(재현됨) / false_positive(코드는 맞는데 그렇게 보임) / impossible(응답에 없는 값, 요청 모델이 막는 입력 등) / unconfirmed(재현도 반박도 못 했고 코드로도 단정할 수 없음) / duplicate(다른 지적과 같은 문제).',
-  '그 상황을 만들 데이터가 지금 없어 재현할 수 없어도, 코드가 받는 입력과 서버의 실측된 동작만으로 틀린 출력에 이르는 흐름이 분명하면 real 이다. evidence 를 "재현 못 함, 코드로 확인:" 으로 시작하고 재현하지 못한 이유와 파일:줄 흐름을 적는다. 가정("나중에 누가 이러면"), 서버가 하지 않는 동작을 전제한 것, 코드를 잘못 읽은 것은 real 이 아니다.',
+  '구조·중복·단순화(design) 지적은 API 로 재현하지 않고 겹쳤다는 자리들을 나란히 대조한다. "닿지 않는 코드" 라는 주장만 그 경로를 CLI 로 불러 확인한다. 이 관점에서는 "한쪽만 고치면 어긋난다" 가 가정이 아니라 지적의 요지라, 겹침·일부에만 붙은 처리·닿지 않는 코드가 지금 코드에 실제로 있으면 real 이다 (evidence 에 겹친 자리 파일:줄 들). 두 곳의 규칙이 다르면 그 차이가 일부러인지(응답 형식이 달라 읽는 법이 다르다 등) 본다. 일부러면 false_positive 이고, 아니면 real 이며 합치면 바뀌는 출력을 적는다.',
+  '판정: real(재현됨, 또는 아래 기준으로 코드로 확인) / false_positive(지금 어떤 입력을 줘도 코드가 맞는데 틀려 보임. 코드를 잘못 읽은 것, 코드가 나중에 바뀌어야만 문제가 되는 것도 여기) / impossible(jibsa 코드가 그 입력을 스스로 막음: 옵션 검사·요청 모델·앞 단계에서 이미 거름. 막는 자리 파일:줄 을 댄다. 응답에 아직 안 온 값은 여기 들지 않는다) / unconfirmed(재현도 반박도 못 했고 코드로도 단정할 수 없음) / duplicate(다른 지적과 같은 문제).',
+  '그 상황을 만들 데이터가 지금 없어 재현할 수 없어도, 서버가 보낼 수 있는 값이나 닿을 수 있는 상태에서 코드가 틀린 출력·에러에 이르면 real 이다. 서버가 보낼 수 있는 값은 값이 없을 때의 모양(null·빈 글자·빈 목록·"-" 같은 표시 글자)과 지금 값의 연장(소수, 더 큰 수, 더 짧은 쪽, 이름이 같은 후보, 상한 도달)이다. "실측에 아직 없다"·"본 적 없다"·"아직 상한에 안 닿는다" 는 real 이 아닐 이유가 아니다. 실제 응답의 값만 바꿔 넣거나 상한 상수를 낮춰(저장소 파일은 고치지 않고 scratchpad 스크립트로) 그 분기를 태워 보고, evidence 를 "재현 못 함, 코드로 확인:" 으로 시작해 재현하지 못한 이유·실측에서 본 값·파일:줄 흐름을 적는다. 코드를 잘못 읽은 것, 코드가 나중에 바뀌어야만 문제가 되는 것("나중에 누가 이 함수를 검사 없이 부르면"), 응답 형식 자체가 바뀌는 것(필드 이름·자료형 변경, 엔드포인트 폐기. 매일 API 감시가 잡는다)은 real 이 아니다.',
   '지적은 파일·줄 순이다. 이웃한 지적이 같은 문제를 가리키면 하나만 판정하고 나머지는 duplicate 로 두어 duplicate_of 에 그 id 를 적는다. 같은 줄이라도 문제가 다르면 따로 판정한다.',
   `오탐이면 note 에 남길 자리와 문장을 제안한다: 웹과의 차이면 그 소스 가이드 "웹과 다른 점", 그 밖은 코드 자리의 \`# 리뷰 오탐 (${date}): 이유\` 주석. 이미 적혀 있으면 그 위치를 댄다.`,
   '',
@@ -191,17 +203,22 @@ const chunksOf = items => {
   return chunks
 }
 
-// 같은 소스의 실제 API 를 동시에 부르지 않는다: 소스 안에서는 차례로, 소스끼리는 동시에, 공통 코드는 마지막에.
+// 같은 소스의 검증자는 동시에 maxOf(source) 명까지(네이버·공통 코드 하나, 그 밖 SAME_SOURCE_MAX) 돌리고 남은 묶음은 그 뒤에 돌린다
+// (요청 수는 jibsa 요청 제한기가 프로세스끼리 합쳐서 센다). 소스끼리는 동시에, 공통 코드는 마지막에.
 const verifySource = async source => {
   const chunks = chunksOf(bySource[source])
   const out = []
-  for (const [i, chunk] of chunks.entries()) {
-    const r = await tryAgent(verifyPrompt(source, chunk), {
-      label: `재검증:${source}${chunks.length > 1 ? `#${i + 1}` : ''}`,
+  const max = maxOf(source)
+  for (let i = 0; i < chunks.length; i += max) {
+    const batch = chunks.slice(i, i + max)
+    const rs = await parallel(batch.map((chunk, j) => () => tryAgent(verifyPrompt(source, chunk), {
+      label: `재검증:${source}${chunks.length > 1 ? `#${i + j + 1}` : ''}`,
       phase: '재검증', agentType: 'review-verifier', model: 'sonnet', effort: 'high', schema: VERDICTS,
+    })))
+    batch.forEach((chunk, j) => {
+      if (rs[j]) out.push(...rs[j].results)
+      else log(`검증자 ${source}: 결과를 내지 못했다 (${chunk.map(f => f.id).join(', ')}, 미확인으로 둔다)`)
     })
-    if (r) out.push(...r.results)
-    else log(`검증자 ${source}: 결과를 내지 못했다 (${chunk.map(f => f.id).join(', ')}, 미확인으로 둔다)`)
   }
   return out
 }

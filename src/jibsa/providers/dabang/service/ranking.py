@@ -1,5 +1,6 @@
 """순위 (trending-complexes · trade-rankings · region-ranking)."""
 import re
+from collections.abc import Mapping
 
 from pydantic import (
     BaseModel,
@@ -10,14 +11,19 @@ from pydantic import (
     model_serializer,
 )
 
+from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    more_hint,
     normalize_address,
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
+from jibsa.providers.dabang.api.request.common import (
+    REGION_INFO_PAGE_LIMIT,
+    DabangRoomBuildingCategory,
+)
 from jibsa.providers.dabang.api.request.ranking import (
     RANKING_PAGE_LIMIT,
-    REGION_INFO_RANKING_PAGE_LIMIT,
     DabangRankingMetric,
     DabangRankingPriceType,
     DabangRealPriceTradeRankingsComplexV5RequestParameterModel,
@@ -25,7 +31,9 @@ from jibsa.providers.dabang.api.request.ranking import (
     DabangRegionInfoRankingMetric,
     DabangRegionInfoRankingV5RequestParameterModel,
     DabangRegionInfoRealEstateRankingV5RequestParameterModel,
+    DabangRegionInfoRoomRankingV5RequestParameterModel,
     DabangRegionInfoTopic,
+    DabangRoomRankingMetric,
     DabangSchoolAdvancementType,
     DabangTradeBaseOn,
     DabangWatchBaseOn,
@@ -36,11 +44,20 @@ from jibsa.providers.dabang.api.response.ranking import (
     DabangRegionRankingResultModel,
 )
 from jibsa.providers.dabang.service.common import (
+    COMPLEX_TYPE_BY_LABEL,
+    ESTABLISHMENT_BY_LABEL,
+    NURSERY_ESTABLISHMENT_BY_LABEL,
+    POPULAR_BUILDING_BY_LABEL,
+    VILLA_LABEL,
     building_years,
+    count_of,
     household_count,
     manwon_from_text,
+    more_after,
+    number_of,
 )
 from jibsa.providers.dabang.service.region import (
+    DONG_NAME_PATTERN,
     DabangScope,
     legal_division_code,
 )
@@ -53,7 +70,6 @@ from typing import (
 )
 
 
-COMPLEX_TYPE_BY_LABEL: dict[str, Literal['APT', 'OFFICETEL']] = {'아파트': 'APT', '오피스텔': 'OFFICETEL'}
 WATCH_PERIOD_BY_LABEL: dict[str, DabangWatchBaseOn] = {
     '방금전': 'JUST_BEFORE',
     '어제': 'YESTERDAY',
@@ -71,22 +87,45 @@ TRADE_PERIOD_BY_LABEL: dict[str, DabangTradeBaseOn] = {
 PREVIOUS_TRADE_PERIOD: dict[str, str] = {'이번주': '지난주', '이번달': '지난달', '올해': '지난달'}
 RANKING_TRADE_BY_LABEL: dict[str, DabangRankingPriceType] = {'매매': 'SALE', '전세': 'LEASE', '월세': 'MONTHLY_RENT'}
 FLUCTUATION_LABELS: dict[str, str] = {'UP': '상승', 'DOWN': '하락', 'STEADY': '유지', 'NEW': '신규'}
-NUMBER_PATTERN: re.Pattern[str] = re.compile(r'[+-]?\d[\d,]*(?:\.\d+)?')
 REGION_RANKING_MAX_LIMIT: int = 100
+# 동네정보 '매물정보' 랭킹 (room-info 청크, 2026-11-13). 매물 유형에 주택/빌라가 있는 순위는 이 화면뿐이라 -t 빌라 로 고른다.
+# 항목은 매물수·거래량·선호도, 동 순위만 있다 (빌라 이름은 service/common.py 의 `VILLA_LABEL`)
+ROOM_RANKING_METRIC_BY_LABEL: dict[str, DabangRoomRankingMetric] = {
+    '매물수': 'room-count', '거래량': 'trade-volume', '선호도': 'reaction-score',
+}
+# -t 라벨 → 매물 유형 값과 웹 고르기 이름. 웹 순서(주택/빌라·오피스텔·아파트)대로 둔다. 값은 인기 매물(`popular-listings`)의
+# 매물 유형과 같은 buildingCategoryList 라 그 표에서 만들고, 웹 이름이 라벨과 다른 빌라만 따로 적는다
+ROOM_RANKING_WEB_NAME_BY_LABEL: dict[str, str] = {VILLA_LABEL: '주택/빌라'}
+ROOM_RANKING_BUILDING_BY_LABEL: dict[str, tuple[DabangRoomBuildingCategory, str]] = {
+    label: (value, ROOM_RANKING_WEB_NAME_BY_LABEL.get(label, label)) for label, value in POPULAR_BUILDING_BY_LABEL.items()
+}
+# 웹 동네정보 탭 이름 (어느 랭킹 화면의 순위인지). 부동산 순위는 '시세정보', 매물 유형 순위는 '매물정보' 탭이다
+TAB_BY_TOPIC: dict[DabangRegionInfoTopic, str] = {
+    'school': '학군', 'population': '인구수', 'amenity': '편의시설', 'mobility': '교통/차량', 'life-safety': '생활안전',
+}
+REAL_ESTATE_TAB: str = '시세정보'
+ROOM_TAB: str = '매물정보'
 AGE_YEARS_PATTERN: re.Pattern[str] = re.compile(r'(\d+)\s*년')
 # 기준 달 글자: '26년 10월'
 MONTH_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d{2})년\s*(\d{1,2})월')
-ValueKind = Literal['price', 'count', 'percent', 'change', 'age', 'score', 'population-change']
+ValueKind = Literal['price', 'count', 'percent', 'change', 'age', 'score', 'population-change', 'count-change']
 
 
 class MetricSpec(NamedTuple):
-    """부동산 순위 항목 하나 (동·단지): 경로 이름, 값 종류, 받는 거래 유형 꼴, 유형을 받는지, 단지만인지."""
+    """부동산 순위 항목 하나 (동·단지): 경로 이름, 값 종류, 받는 거래 유형 꼴, 받는 단지 유형 꼴, 단지만인지.
+
+    `types` 는 웹 랭킹 화면의 단지 유형 고르기 꼴이다 (real-estate 청크, 2026-11-13): 'one' 은 하나만 고르고 기본 아파트
+    (평균가·평당가·시세증감·최고가증감), 'many' 는 아파트·오피스텔을 함께 고를 수 있고 기본이 둘 다라 `complexType` 을 빼고
+    보내 합산 순위를 받는다 (거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격, `complexType: size===2 ? null : 하나`),
+    'none' 은 받지 않는다. `comparison` 은 증감 항목이 무엇과 견준 수인지 웹 화면 문구다.
+    """
 
     metric: DabangRankingMetric
     kind: ValueKind
     trade: Literal['one', 'many', 'none']
-    complex_type: bool
+    types: Literal['one', 'many', 'none']
     complex_only: bool = False
+    comparison: str | None = None
 
 
 class InfoMetricSpec(NamedTuple):
@@ -102,7 +141,7 @@ class InfoMetricSpec(NamedTuple):
     school_type: Literal['MIDDLE_SCHOOL', 'HIGH_SCHOOL'] | None = None
     advancement: DabangSchoolAdvancementType | None = None
     kind_field: Literal['academy_type', 'school_establishment_type', 'facility_type'] | None = None
-    kinds: dict[str, str] | None = None
+    kinds: Mapping[str, str] | None = None
     default_kind: str | None = None
 
 
@@ -110,10 +149,6 @@ class InfoMetricSpec(NamedTuple):
 ACADEMY_KIND_BY_LABEL: dict[str, str] = {
     '입시': 'ADMISSION_EXAM', '예체능': 'ARTS_SPORTS', '외국어': 'FOREIGN_LANGUAGE', '특성화': 'SPECIALIZED',
     '종합': 'COMPREHENSIVE', '인문사회': 'HUMANITIES_SOCIAL', '코딩': 'PROGRAMMING',
-}
-SCHOOL_KIND_BY_LABEL: dict[str, str] = {'국공립': 'PUBLIC', '사립': 'PRIVATE'}
-NURSERY_KIND_BY_LABEL: dict[str, str] = {
-    '공공': 'PUBLIC', '민간': 'PRIVATE', '가정': 'HOME', '직장': 'WORKPLACE', '협동': 'COOPERATIVE',
 }
 FACILITY_KIND_BY_LABEL: dict[DabangRegionInfoRankingMetric, dict[str, str]] = {
     'living': {'편의점': 'CONVENIENCE_STORE', '세탁소': 'LAUNDRY', '헬스장': 'GYM', '공원': 'PARK', '도서관': 'LIBRARY'},
@@ -141,7 +176,8 @@ def _facility(topic: DabangRegionInfoTopic, metric: DabangRegionInfoRankingMetri
     return InfoMetricSpec(topic, metric, 'count', kind_field='facility_type', kinds=FACILITY_KIND_BY_LABEL[metric])
 
 
-def _school_count(metric: DabangRegionInfoRankingMetric, kinds: dict[str, str]) -> InfoMetricSpec:
+def _school_count(metric: DabangRegionInfoRankingMetric, kinds: Mapping[str, str]) -> InfoMetricSpec:
+    # 학교·유치원 수의 --kind 는 search schools --establishment 와 같은 설립 구분 표다 (어린이집만 공공·민간·가정·직장·협동)
     return InfoMetricSpec('school', metric, 'count', kind_field='school_establishment_type', kinds=kinds)
 
 
@@ -151,17 +187,21 @@ def _advancement(school_type: Literal['MIDDLE_SCHOOL', 'HIGH_SCHOOL'], advanceme
 
 # 다방 '부동산 랭킹' 항목 (real-estate 청크의 이름표와 요청 값, 2026-10-25)과 동네정보 랭킹 항목 (동만)
 METRIC_BY_LABEL: dict[str, MetricSpec | InfoMetricSpec] = {
-    '평균가': MetricSpec('average-price', 'price', 'one', True),
-    '평당가': MetricSpec('pyeong-price', 'price', 'one', True),
-    '거래량': MetricSpec('trade-volume', 'count', 'many', True),
-    '매물수': MetricSpec('room-count', 'count', 'many', True),
-    '시세증감': MetricSpec('average-price-change', 'change', 'one', True),
-    '최고가증감': MetricSpec('max-price-change', 'change', 'one', True),
-    '선호도': MetricSpec('reaction-score', 'score', 'many', True),
-    '세대수': MetricSpec('household-count', 'count', 'none', False),
-    '연식': MetricSpec('age', 'age', 'none', False),
-    '전세가율': MetricSpec('lease-rate', 'percent', 'none', True, complex_only=True),
-    '갭가격': MetricSpec('gap-price', 'price', 'none', True, complex_only=True),
+    '평균가': MetricSpec('average-price', 'price', 'one', 'one'),
+    '평당가': MetricSpec('pyeong-price', 'price', 'one', 'one'),
+    '거래량': MetricSpec('trade-volume', 'count', 'many', 'many'),
+    '매물수': MetricSpec('room-count', 'count', 'many', 'many'),
+    '시세증감': MetricSpec('average-price-change', 'change', 'one', 'one'),
+    '최고가증감': MetricSpec('max-price-change', 'change', 'one', 'one'),
+    # 거래증감·매물증감은 웹 기본이 아파트·오피스텔 합산, 매매·전세·월세 모두다 (real-estate 청크 TradeVolumeChange·
+    # RoomCountChange 스토어, 2026-11-13). 비교 기준은 웹 화면 문구 그대로다 (같은 청크의 설명 글 '전월대비'·'최근 30일 전 대비')
+    '거래증감': MetricSpec('trade-volume-change', 'count-change', 'many', 'many', comparison='전월대비'),
+    '매물증감': MetricSpec('room-count-change', 'count-change', 'many', 'many', comparison='최근 30일 전 대비'),
+    '선호도': MetricSpec('reaction-score', 'score', 'many', 'many'),
+    '세대수': MetricSpec('household-count', 'count', 'none', 'none'),
+    '연식': MetricSpec('age', 'age', 'none', 'none'),
+    '전세가율': MetricSpec('lease-rate', 'percent', 'none', 'many', complex_only=True),
+    '갭가격': MetricSpec('gap-price', 'price', 'none', 'many', complex_only=True),
     # 진학률은 그 동 학교 졸업생 기준 (학교알리미 공시): 중학교 → 고교 유형, 고등학교 → 대학
     '과학고진학률': _advancement('MIDDLE_SCHOOL', 'SCIENCE_HIGH_SCHOOL'),
     '외국어고진학률': _advancement('MIDDLE_SCHOOL', 'FOREIGN_HIGH_SCHOOL'),
@@ -172,11 +212,11 @@ METRIC_BY_LABEL: dict[str, MetricSpec | InfoMetricSpec] = {
     '학원수': InfoMetricSpec(
         'school', 'academy', 'count', kind_field='academy_type', kinds=ACADEMY_KIND_BY_LABEL, default_kind='입시',
     ),
-    '초등학교수': _school_count('elementary-school', SCHOOL_KIND_BY_LABEL),
-    '중학교수': _school_count('middle-school', SCHOOL_KIND_BY_LABEL),
-    '고등학교수': _school_count('high-school', SCHOOL_KIND_BY_LABEL),
-    '유치원수': _school_count('kinder-school', SCHOOL_KIND_BY_LABEL),
-    '어린이집수': _school_count('nursery-school', NURSERY_KIND_BY_LABEL),
+    '초등학교수': _school_count('elementary-school', ESTABLISHMENT_BY_LABEL),
+    '중학교수': _school_count('middle-school', ESTABLISHMENT_BY_LABEL),
+    '고등학교수': _school_count('high-school', ESTABLISHMENT_BY_LABEL),
+    '유치원수': _school_count('kinder-school', ESTABLISHMENT_BY_LABEL),
+    '어린이집수': _school_count('nursery-school', NURSERY_ESTABLISHMENT_BY_LABEL),
     '인구': InfoMetricSpec('population', 'count', 'count'),
     '인구증감': InfoMetricSpec('population', 'year-of-year-change', 'population-change'),
     '생활편의시설': _facility('amenity', 'living'),
@@ -203,17 +243,8 @@ VALUE_FIELDS_BY_KIND: dict[ValueKind, frozenset[str]] = {
     'age': frozenset({'age_years'}),
     'score': frozenset({'score'}),
     'population-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
+    'count-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
 }
-
-
-def _number(text: str | None) -> float | None:
-    match = NUMBER_PATTERN.search((text or '').replace(' ', ''))
-    return float(match.group().replace(',', '')) if match else None
-
-
-def _int(text: str | None) -> int | None:
-    number = _number(text)
-    return None if number is None else int(number)
 
 
 def _manwon(text: str | None) -> float | None:
@@ -266,7 +297,7 @@ class DabangWatchRanking(BaseModel):
     ] = None
     view_count: Annotated[
         int | None,
-        Field(description='기간 안 조회 수')
+        Field(description="기간 안 조회한 사람 수 (다방 화면 'N명'. 조회 횟수가 아니다)")
     ] = None
     change: Annotated[
         str | None,
@@ -483,7 +514,10 @@ class DabangRegionRankingEntry(BaseModel):
     ] = None
     value_text: Annotated[
         str | None,
-        Field(description="다방 표시 값 ('61.1억', '27개', '133.3%', '44년 6개월', '19점', 인구증감 '327명 (-0.6%)')")
+        Field(description=(
+            "다방 표시 값 ('61.1억', '27개', '133.3%', '44년 6개월', '19점', 인구증감 '327명 (-0.6%)', 거래증감·매물증감 "
+            "'73개 (+101.4%)')"
+        ))
     ] = None
     value_manwon: Annotated[
         float | None,
@@ -491,15 +525,17 @@ class DabangRegionRankingEntry(BaseModel):
     ] = None
     count: Annotated[
         int | None,
-        Field(description='수 (거래량·매물수·세대수, 학교·학원·시설 수, 인구. 인구증감은 올해 인구)')
+        Field(description=(
+            '수 (거래량·매물수·세대수, 학교·학원·시설 수, 인구. 인구증감은 올해 인구, 거래증감·매물증감은 지금 거래·매물 수)'
+        ))
     ] = None
     prev_count: Annotated[
         int | None,
-        Field(description='한 해 전 인구 (인구증감)')
+        Field(description='견준 앞 수 (인구증감은 한 해 전 인구, 거래증감·매물증감은 comparison 기준의 앞 거래·매물 수)')
     ] = None
     change_count: Annotated[
         int | None,
-        Field(description='한 해 사이 인구 변화 (명, 줄면 음수, 인구증감)')
+        Field(description='변화 수 (count - prev_count, 줄면 음수. 인구증감·거래증감·매물증감)')
     ] = None
     percent: Annotated[
         float | None,
@@ -515,7 +551,7 @@ class DabangRegionRankingEntry(BaseModel):
     ] = None
     change_percent: Annotated[
         float | None,
-        Field(description='변화율 (%, 시세증감·최고가증감·인구증감)')
+        Field(description="변화율 (%, 시세증감·최고가증감·인구증감·거래증감·매물증감. 다방은 앞 수가 0 이면 '0%' 로 준다)")
     ] = None
     prev_price_manwon: Annotated[
         float | None,
@@ -570,9 +606,35 @@ class DabangRegionRanking(BaseModel):
         str,
         Field(description='항목')
     ]
+    tab: Annotated[
+        str,
+        Field(description=(
+            "다방 동네정보의 어느 탭 랭킹인지 ('시세정보' 아파트·오피스텔 단지 기준, '매물정보' 주택/빌라를 포함한 매물 유형 기준, "
+            "'학군'·'인구수'·'편의시설'·'교통/차량'·'생활안전'). 매물수·거래량·선호도는 '시세정보'·'매물정보' 두 탭에 있고 값이 다르다"
+        ))
+    ]
+    complex_type: Annotated[
+        str | None,
+        Field(description=(
+            "어느 단지 유형의 순위인지 ('아파트', '오피스텔', 합산이면 '아파트·오피스텔 합산'). 단지 유형을 받지 않는 항목"
+            "(세대수·연식·동네정보)과 '매물정보' 탭 순위는 키 없음"
+        ))
+    ] = None
+    building_type: Annotated[
+        str | None,
+        Field(description=(
+            "'매물정보' 탭 순위의 매물 유형 ('주택/빌라', 여럿이면 '주택/빌라·아파트 합산'). 다른 탭은 키 없음"
+        ))
+    ] = None
     kind: Annotated[
         str | None,
         Field(description='--kind 로 고른 종류 (학원·학교·시설). 학원은 주지 않으면 입시')
+    ] = None
+    comparison: Annotated[
+        str | None,
+        Field(description=(
+            "증감을 무엇과 견줬는지 (다방 화면 문구: 거래증감 '전월대비', 매물증감 '최근 30일 전 대비'). 다른 항목은 키 없음"
+        ))
     ] = None
     base_month: Annotated[
         str | None,
@@ -602,7 +664,7 @@ class DabangRegionRanking(BaseModel):
     @model_serializer(mode='wrap')
     def drop_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for key in ('kind', 'base_month'):
+        for key in ('complex_type', 'building_type', 'kind', 'comparison', 'base_month'):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -617,7 +679,7 @@ def _month(text: str | None) -> str | None:
 def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRankingEntry:
     text = (
         row.formatted_price or row.formatted_count or row.formatted_percentage or row.formatted_age
-        or row.formatted_change_rate or row.formatted_score
+        or row.formatted_change_rate or row.formatted_score or row.formatted_volume
     )
     entry = DabangRegionRankingEntry(
         rank=row.rank,
@@ -632,14 +694,15 @@ def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRa
     if kind == 'price':
         entry.value_manwon = _manwon(row.formatted_price)
     elif kind == 'count':
-        entry.count = _int(row.formatted_count)
+        # 매물정보 탭 거래량은 formattedVolume 으로 온다
+        entry.count = count_of(row.formatted_count or row.formatted_volume)
     elif kind == 'percent':
-        entry.percent = _number(row.formatted_percentage)
+        entry.percent = number_of(row.formatted_percentage)
     elif kind == 'score':
-        entry.score = _int(row.formatted_score)
+        entry.score = count_of(row.formatted_score)
     elif kind == 'change':
         entry.value_text = row.formatted_change_rate or text
-        entry.change_percent = _number(row.formatted_change_rate)
+        entry.change_percent = number_of(row.formatted_change_rate, signed=True)
         entry.change_manwon = _manwon(row.formatted_price)
         if entry.change_manwon is not None and entry.change_percent is not None and entry.change_percent < 0:
             entry.change_manwon = -abs(entry.change_manwon)
@@ -647,21 +710,88 @@ def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRa
         entry.prev_price_manwon = _manwon(row.formatted_prev_price or row.formatted_max_price)
         entry.prev_price_date = row.formatted_max_price_date
     elif kind == 'population-change':
-        change_text = row.formatted_year_of_year_change_count
-        rate_text = row.formatted_year_of_year_change_percentage
-        entry.value_text = f'{change_text} ({rate_text})' if change_text and rate_text else change_text or rate_text
-        entry.count = _int(row.formatted_curr_count)
-        entry.prev_count = _int(row.formatted_prev_count)
-        entry.change_percent = _number(rate_text)
-        # 변화 수는 부호 없이('327명') 온다. 줄었는지는 changeStatus 와 변화율 부호로 본다 (2026-10-25 강남구 도곡동 -0.6%)
-        change = _int(change_text)
-        decreased = row.change_status == 'DECREASE' or (entry.change_percent is not None and entry.change_percent < 0)
-        entry.change_count = -abs(change) if change is not None and decreased else change
+        _fill_count_change(entry, row, row.formatted_year_of_year_change_count, row.formatted_year_of_year_change_percentage)
+    elif kind == 'count-change':
+        # 거래증감·매물증감: formattedCount 가 변화 수, 앞·지금 수가 따로 온다 (2026-11-13 강남구 논현동 '73개' = 72 → 145)
+        _fill_count_change(entry, row, row.formatted_count, row.formatted_change_rate)
     else:
         # '44년 6개월' → 44, '1개월 미만'·'8개월' → 0
         years = AGE_YEARS_PATTERN.search(row.formatted_age or '')
         entry.age_years = int(years.group(1)) if years else (0 if '개월' in (row.formatted_age or '') else None)
     return entry
+
+
+def _fill_count_change(
+    entry: DabangRegionRankingEntry,
+    row: DabangRegionRankingItemModel,
+    change_text: str | None,
+    rate_text: str | None,
+) -> None:
+    """인구증감·거래증감·매물증감 값. 변화 수는 부호 없이('327명', '73개') 온다.
+
+    변화 수는 앞·지금 수가 둘 다 오면 그 차로 낸다. 차는 늘 `formattedCount`·`formattedYearOfYearChangeCount` 와 같았다
+    (2026-11-14 약 700행). 둘 중 하나라도 없으면 부호 없는 변화 수에 changeStatus(DECREASE)·변화율 부호로 부호를 붙인다
+    (2026-10-25 강남구 도곡동 -0.6%). changeStatus 는 모든 행에 왔지만 빠지고 변화율이 '0%' 로 반올림되면 줄어도 부호를 모른다.
+    다방이 '-' 로 주는 칸은 값이 없는 것이라 `value_text` 에 붙이지 않는다 (둘 다 '-' 면 '-').
+    """
+    shown = [text for text in (change_text, rate_text) if text and text.strip() != '-']
+    entry.value_text = f'{shown[0]} ({shown[1]})' if len(shown) == 2 else (shown[0] if shown else change_text or rate_text)
+    entry.count = count_of(row.formatted_curr_count)
+    entry.prev_count = count_of(row.formatted_prev_count)
+    entry.change_percent = number_of(rate_text, signed=True)
+    if entry.count is not None and entry.prev_count is not None:
+        entry.change_count = entry.count - entry.prev_count
+        return
+    change = count_of(change_text)
+    decreased = row.change_status == 'DECREASE' or (entry.change_percent is not None and entry.change_percent < 0)
+    entry.change_count = -abs(change) if change is not None and decreased else change
+
+
+def is_room_ranking(complex_types: list[str]) -> bool:
+    """`-t` 에 빌라가 있어 동네정보 '매물정보' 탭 순위(`region-info/room/ranking`)로 받는지. 부동산 순위('시세정보' 탭)는 아파트·
+    오피스텔 단지만 있어 주택/빌라를 받는 순위는 이 탭뿐이다."""
+    return VILLA_LABEL in complex_types
+
+
+def takes_dong_scope(metric_label: str, unit: Literal['동', '단지']) -> bool:
+    """동 이름을 범위로 받는 순위인지. 웹 랭킹은 단지 순위(부동산 항목)만 고른 동을 범위로 보낸다. 동 순위와 동네정보 순위는
+    시·군·구·시·도만 보낸다 (real-estate·school·facility·population 청크 `city.gid → state.gid`, 2026-11-13). 동 안의 동 순위는 없다.
+    """
+    return unit == '단지' and not isinstance(METRIC_BY_LABEL[metric_label], InfoMetricSpec)
+
+
+def _dong_scope_error(metric_label: str, name: str, *, room: bool) -> JibsaError:
+    info = isinstance(METRIC_BY_LABEL[metric_label], InfoMetricSpec)
+    what = f'{metric_label} 순위는 동네정보 항목이라' if info else '동 안의 동 순위는 없어'
+    # 빌라 순위('매물정보' 탭)는 동 순위만 있어 --unit 단지 를 권하면 따른 뒤 다시 막힌다 (2026-11-14 리뷰)
+    return JibsaError(
+        code='INVALID_ARGUMENT',
+        message=f'{what} 동 범위({name})를 받지 않습니다',
+        hint=(
+            "시·군·구 이름(예: '강남구')을 범위로 주세요" if info or room
+            else "동 안 단지 순위는 --unit 단지 를 주고, 동 순위는 시·군·구 이름(예: '강남구')을 범위로 주세요"
+        ),
+    )
+
+
+def check_scope_name(query: str, *, metric_label: str, unit: Literal['동', '단지'], complex_types: list[str]) -> None:
+    """동 범위를 받지 않는 순위(동 순위·동네정보)에 동 모양의 이름이 오면 장소 검색 없이 막는다. 동이 아닌 이름(역·오타)은
+    `resolve_scope(dong=False)` 가 요청 없이 REGION_NOT_FOUND 로 막는다 (동을 찾게 두면 요청 1회 뒤 동 이름을 권하는 안내가 나가,
+    따르면 다시 막혔다. 2026-11-13 리뷰).
+
+    Args:
+        complex_types: `-t` 값. 빌라 순위(`is_room_ranking`)면 동 순위만 있어 hint 가 --unit 단지 를 권하지 않는다.
+
+    Raises:
+        JibsaError: 동 범위를 받지 않는 순위에 동 이름을 줄 때 (INVALID_ARGUMENT).
+    """
+    # 리뷰 오탐 (2026-11-14): resolve_scope(dong=False) 와 겹치는 검사가 아니다. resolve_scope 는 동 이름을 REGION_NOT_FOUND 로
+    # 막아 있는 동을 못 찾았다고 알리고 --unit 단지 를 권하지 못한다. 동 모양 검사를 resolve_scope 로 옮길 수도 없다: search sales
+    # 가 같은 함수를 dong=False 로 불러 RegionNotFoundError 를 받으면 동·역 장소 검색으로 넘어가서, 동 이름에 INVALID_ARGUMENT 를
+    # 던지면 search sales 역삼동 이 막힌다
+    words = query.split()
+    if words and not takes_dong_scope(metric_label, unit) and DONG_NAME_PATTERN.fullmatch(words[-1]):
+        raise _dong_scope_error(metric_label, query.strip(), room=is_room_ranking(complex_types))
 
 
 def get_region_ranking(
@@ -670,27 +800,69 @@ def get_region_ranking(
     *,
     metric_label: str,
     unit: Literal['동', '단지'],
-    complex_type: str,
+    complex_types: list[str],
     trades: list[str],
     order: Literal['높은순', '낮은순'],
     limit: int,
     kind_label: str | None = None,
 ) -> DabangRegionRanking:
-    """범위(전국·시도·시군구) 안 동·단지 순위 (부동산은 50곳, 동네정보는 30곳마다 요청 1회).
+    """범위(전국·시도·시군구, 단지 순위는 동도) 안 동·단지 순위 (부동산은 50곳, 동네정보는 30곳마다 요청 1회).
 
-    거래 유형은 항목에 맞게 보낸다: 평균가·평당가·시세증감·최고가증감은 하나(기본 매매), 거래량·매물수·선호도는 여럿(기본 전체).
-    동네정보 항목(학교·학원·진학률·인구·시설)은 동 단위만 있고 `kind_label` 로 종류를 고른다 (학원은 기본 입시).
+    거래 유형은 항목에 맞게 보낸다: 평균가·평당가·시세증감·최고가증감은 하나(기본 매매), 거래량·매물수·거래증감·매물증감·
+    선호도는 여럿(기본 전체). 단지 유형도 웹처럼 보낸다: 평균가·평당가·시세증감·최고가증감은 하나(기본 아파트),
+    거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 `complex_types` 가 비거나 둘이면 유형을 빼고 보내
+    아파트·오피스텔 합산 순위다 (웹 기본). 동네정보 항목(학교·학원·진학률·인구·시설)은 동 단위만 있고 `kind_label` 로 종류를
+    고른다 (학원은 기본 입시). `complex_types` 에 빌라가 있으면(`is_room_ranking`) 매물수·거래량·선호도를 동네정보 '매물정보' 탭
+    순위로 받는다: 고른 매물 유형(주택/빌라·오피스텔·아파트) 합산 동 순위이고 30곳씩이다 (웹 값).
+    동 범위는 부동산 단지 순위만 받는다 (웹도 같다). 동 범위는 `resolve_scope(dong=takes_dong_scope(...))` 가 그럴 때만 만들고,
+    동 이름은 CLI 가 `check_scope_name` 으로 먼저 막는다.
     """
     spec = METRIC_BY_LABEL[metric_label]
     sort: Literal['DESC', 'ASC'] = 'ASC' if order == '낮은순' else 'DESC'
-    if isinstance(spec, MetricSpec):
+    shown_type: str | None = None
+    shown_building: str | None = None
+    # 여러 거래 유형을 받는 항목(매물정보 탭·부동산 'many')이 보낼 거래 유형. 고르지 않았으면 전체다 (웹 기본)
+    chosen_prices = [RANKING_TRADE_BY_LABEL[trade] for trade in trades] or list(RANKING_TRADE_BY_LABEL.values())
+    if isinstance(spec, MetricSpec) and is_room_ranking(complex_types):
+        tab = ROOM_TAB
+        page_limit = REGION_INFO_PAGE_LIMIT
+        room_metric = ROOM_RANKING_METRIC_BY_LABEL[metric_label]
+        buildings = [value for label, value in ROOM_RANKING_BUILDING_BY_LABEL.items() if label in complex_types]
+        names = [name for _, name in buildings]
+        shown_building = names[0] if len(names) == 1 else f"{'·'.join(names)} 합산"
+
+        def fetch(page: int, size: int) -> DabangRegionRankingResultModel | None:
+            return client.run_request_region_info_room_ranking_v5(DabangRegionInfoRoomRankingV5RequestParameterModel(
+                metric=room_metric,
+                scope_region_gid=scope.gid,
+                building_category_list=[category for category, _ in buildings],
+                price_type_list=chosen_prices,
+                sort=sort,
+                page=page,
+                limit=size,
+            )).result
+    elif isinstance(spec, MetricSpec):
+        tab = REAL_ESTATE_TAB
         page_limit = RANKING_PAGE_LIMIT
+        complex_type: Literal['APT', 'OFFICETEL'] | None = None
+        chosen_types = complex_types
+        if spec.types == 'one':
+            shown_type = chosen_types[0] if chosen_types else '아파트'
+            complex_type = COMPLEX_TYPE_BY_LABEL[shown_type]
+        elif spec.types == 'many':
+            # 웹은 둘 다 고르면(기본) complexType 을 빼고 보낸다. 강남구 동 거래량 1위가 합산 역삼동 298개, 아파트만 개포동 233개
+            # (2026-11-13 웹 캡처·직접 조회)
+            if len(chosen_types) == 1:
+                shown_type = chosen_types[0]
+                complex_type = COMPLEX_TYPE_BY_LABEL[shown_type]
+            else:
+                shown_type = '아파트·오피스텔 합산'
         price_type: Literal['SALE', 'LEASE'] | None = None
         price_type_list = None
         if spec.trade == 'one':
             price_type = 'LEASE' if trades[:1] == ['전세'] else 'SALE'
         elif spec.trade == 'many':
-            price_type_list = [RANKING_TRADE_BY_LABEL[trade] for trade in trades] or list(RANKING_TRADE_BY_LABEL.values())
+            price_type_list = chosen_prices
 
         def fetch(page: int, size: int) -> DabangRegionRankingResultModel | None:
             assert isinstance(spec, MetricSpec)
@@ -698,7 +870,7 @@ def get_region_ranking(
                 unit='complex' if unit == '단지' else 'region',
                 metric=spec.metric,
                 scope_region_gid=scope.gid,
-                complex_type=COMPLEX_TYPE_BY_LABEL[complex_type] if spec.complex_type else None,
+                complex_type=complex_type,
                 price_type=price_type,
                 price_type_list=price_type_list,
                 sort=sort,
@@ -706,7 +878,8 @@ def get_region_ranking(
                 limit=size,
             )).result
     else:
-        page_limit = REGION_INFO_RANKING_PAGE_LIMIT
+        tab = TAB_BY_TOPIC[spec.topic]
+        page_limit = REGION_INFO_PAGE_LIMIT
         kind_label = kind_label or spec.default_kind
         kinds: dict[str, Any] = {}
         if spec.kind_field and spec.kinds and kind_label:
@@ -743,8 +916,8 @@ def get_region_ranking(
         taken = rows[:limit - len(entries)]
         entries += taken
         # 둘째 쪽부터는 한도만큼 받아 limit 에 맞춰 자르므로, 자른 줄이 있으면 서버 hasMore 가 false 여도 더 있다
-        # (2026-10-25 실측: 울산 동 84곳을 --limit 70 으로 받으면 둘째 쪽 34곳 중 20곳만 넣는다)
-        has_more = bool(ranking.has_more) or len(taken) < len(rows)
+        # (2026-10-25 실측: 울산 동 84곳을 --limit 70 으로 받으면 둘째 쪽 34곳 중 20곳만 넣는다). 빈 쪽이면 hasMore 가 와도 더 없다
+        has_more = more_after(bool(ranking.has_more), len(rows), cut=len(rows) - len(taken))
         if not ranking.has_more or not ranking.list_:
             break
         page += 1
@@ -758,25 +931,26 @@ def get_region_ranking(
     notes = []
     if has_more:
         among = f' {total}곳 중' if total is not None else ''
-        label = f'{metric_label}({shown_kind})' if shown_kind else metric_label
+        label = f'{metric_label}({shown_kind or shown_building})' if shown_kind or shown_building else metric_label
         # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰·실측: 서울 단지 평균가 --limit 100 11135곳에 '--limit 을
         # 늘리세요'). 시·도·전국은 범위를 좁히라고 하고, 더 좁힐 수 없는 시·군·구는 --order 로 반대쪽 끝을 보라고 한다
-        if scope.kind != 'district':
+        if scope.kind not in ('district', 'dong'):
             # '범위' 만 쓰면 무엇을 좁히라는지(반경·--limit 으로도 읽힌다) 알 수 없어 줄 범위를 예로 든다 (2026-11-11 리뷰)
             into = '시·군·구(예: 강남구)로' if scope.kind == 'state' else '시·도(예: 서울)나 시·군·구로'
             more = (
                 f'--limit 의 최대값은 {REGION_RANKING_MAX_LIMIT}입니다. 더 보려면 범위를 {into} 좁히세요'
                 if limit >= REGION_RANKING_MAX_LIMIT else f'더 보려면 --limit 을 늘리거나 범위를 {into} 좁히세요'
             )
-        elif limit < REGION_RANKING_MAX_LIMIT:
-            more = '더 보려면 --limit 을 늘리세요'
         else:
-            more = f'--limit 의 최대값은 {REGION_RANKING_MAX_LIMIT}입니다. 반대쪽 끝은 --order 를 바꿔 보세요'
+            more = more_hint(limit, REGION_RANKING_MAX_LIMIT, None)
+            if limit >= REGION_RANKING_MAX_LIMIT:
+                more += '. 반대쪽 끝은 --order 를 바꿔 보세요'
         notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. {more}'))
     # 학원수·진학률 순위는 상위 지역을 시·도까지만 준다 (2026-10-25 실측: 전국 외국어 학원 1위 '신사동' area '서울')
-    if scope.kind != 'district' and any(entry.area and ' ' not in entry.area for entry in entries):
+    if scope.kind not in ('district', 'dong') and any(entry.area and ' ' not in entry.area for entry in entries):
         notes.append(note('참고', 'area 가 시·도까지만 와서 같은 이름의 동은 어느 시·군·구인지 알 수 없습니다. 범위를 시·군·구로 주면 그 안의 동만 나옵니다'))
     return DabangRegionRanking(
-        scope=scope, unit=unit, metric=metric_label, kind=shown_kind, base_month=base_month, total=total,
+        scope=scope, unit=unit, metric=metric_label, tab=tab, complex_type=shown_type, building_type=shown_building, kind=shown_kind,
+        comparison=spec.comparison if isinstance(spec, MetricSpec) else None, base_month=base_month, total=total,
         returned=len(entries), has_more=has_more, rankings=entries, notes=notes,
     )

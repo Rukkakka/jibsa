@@ -47,6 +47,14 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 `listing --trade` 에 매물에 없는 거래 조건을 주면 `LISTING_UNAVAILABLE`(`TRADE_NOT_OFFERED`) 대신 대표 조건을 보여 주고 `notes` 로 알림. `--details` 도 목록을 받은 뒤 그 거래 조건이 내려간 매물을 빼지 않고 대표 조건의 거래 유형·가격으로 바꿔 알린다. 쓰는 쪽은 `TRADE_NOT_OFFERED` 에러 대신 결과의 `trade_type` 과 `notes` 로 요청한 거래가 없는지 본다 (#222)
 - 당근 `region-reviews` 의 `review_count` 가 동네 요약에 쓰인 후기 수(60 에서 잘림, 구는 `null`) 대신 동·구의 실제 후기 수를 줌 (당근 웹 모바일 화면의 '후기 N개'). `--top` 기본을 10 에서 당근 구 후기 페이지와 같은 20 으로 바꿈. 쓰는 쪽은 `review_count` 를 60 에서 잘린 요약 기준 수가 아니라 동·구의 전체 후기 수로 읽는다 (구도 수가 온다) (#222)
 - 당근 매물의 `trade_type` 에 `연세`(제주에서 1년치 월세를 한 번에 내는 거래)가 올 수 있음. 연세가 대표 거래인 매물은 당근 웹 목록처럼 연세로 보여 준다 (예전에는 같은 매물의 다른 거래를 보여 주거나 연세만 있으면 뺐다). 쓰는 쪽은 `연세` 를 처리하고, 금액은 `rent_manwon` 이 아니라 `yearly_rent_manwon`(1년치)으로 읽는다 (#222)
+- 다방 `search listings`·`search complexes`·`search sales` 에 `성수동` 처럼 `○가` 로 나뉜 동을 주면 1가·2가를 합쳐 찾지 않고 `REGION_AMBIGUOUS` 로 `○가` 동을 모두 후보(전체 주소)로 줌. 다방 웹 검색창처럼 동 하나만 찾는다. 후보 하나(`성수동1가`)로 다시 부른다. 합친 이름(`"성수동1가·성수동2가"`)의 `region` 과 `--limit` 을 동마다 나눴다는 `notes` 는 없어졌다 (#235)
+- 다방에 여러 캠퍼스에 맞는 줄인 대학 이름(`연세대`)을 주면 첫 캠퍼스로 찾고 `[모호]` 로 알리던 것을 고르지 않고 `REGION_AMBIGUOUS` 로 캠퍼스 이름을 후보로 줌. 후보 이름을 따옴표로 감싸 그대로(`'연세대학교(원주캠퍼스)'`) 다시 부른다. 이름이 똑같은 역이 여럿 와도 첫 역 대신 `REGION_AMBIGUOUS`(후보에 노선)이고 `hint` 대로 `search locations` 의 좌표로 찾는다 (매물·단지·분양 검색. 좌표를 받지 않는 `station-prices` 는 가려 받지 못한다고 알린다). 동만 받는 `neighborhood`·`popular-listings` 와 역만 받는 `station-prices` 는 받지 않는 종류의 이름에 후보를 고르라고 하지 않고 바로 `INVALID_ARGUMENT` 다 (#235)
+- 다방 `real-price --listing` 의 `--trade` 기본값을 매매에서 다방 매물 화면처럼 매물의 거래 유형(매매 매물은 매매, 월세·전세 매물은 전월세)으로 바꿈. 매매 거래를 보려면 `--trade 매매` 를 준다. 범위·거래 유형을 다방에서 먼저 받아 요청이 1회 는다. `basis` 는 다방이 이 집(같은 지번 건물) 거래를 주면 `"이 집 (망원동 다세대·연립)"` 이고, 같은 동 거래면 전처럼 `"역삼동 단독·다가구"` 다 (예전에는 늘 같은 동 거래라고 알렸다). 범위는 거래 유형마다 달라 `--trade` 로 받은 거래의 범위를 알린다. 단독·다가구 거래는 `area_m2`·`floor` 대신 `total_floor_area_m2`(다방이 연면적이라 부르는 건물 전체 면적)와 매매만 `house_type`(`단독`·`다가구`)을 준다. 읽는 쪽은 단독·다가구 면적을 `total_floor_area_m2` 로 읽고 매물 전용면적과 견주지 않는다 (#235)
+- 다방 `complex` 의 `recent_sale`·`recent_lease` 가 면적이 같은 평형이 여럿이면 `space_seq`·`area_m2` 를 `null` 로 두고 `[참고]` 로 후보 평형을 알림 (예전에는 첫 평형을 골랐다). 다방 화면의 면적은 새 `supply_area_m2`(아파트)·`contract_area_m2`(오피스텔)로 온다 (#235)
+- 다방 `nearby` 의 `nearest`·`schools` 항목을 `{type, name, distance_m}` 하나에서 `{type, places: [{name, distance_m}, …]}` 로 바꿔 종류마다 다방 거리로 가까운 순 3곳까지 줌. 종류 이름도 다방 화면 이름표로 바꿈: 버스정류장 → 버스, 공공기관 → 관공서, 경찰 → 치안. 읽는 쪽은 가장 가까운 곳을 `places[0]` 으로 읽는다 (#235)
+- 다방 `search sales` 의 `household_count` 를 `sale_household_count` 로 바꿈. 다방 목록의 값은 총세대수가 아니라 분양 세대수다. 총세대수는 `sale` 의 `household_count` 로 본다 (#235)
+- 다방 `region-ranking` 의 거래량·매물수·선호도·전세가율·갭가격이 `-t` 없이 다방 웹 기본처럼 아파트·오피스텔 합산 순위를 줌 (예전에는 아파트만). 아파트만 보려면 `-t 아파트` 를 준다. `-t 아파트,오피스텔` 도 합산이고, 평균가·평당가·시세증감·최고가증감에 둘을 주면 `INVALID_ARGUMENT` 다. 결과에 `complex_type`(`아파트`·`오피스텔`·`아파트·오피스텔 합산`)이 붙는다 (#235)
+- 다방 `search sales` 의 시·군·구 결과가 다방 웹 분양 지역 목록('분양정보' 목록)과 같은 목록·순서로 오고, `total` 이 경계를 덮는 사각형 안 수에서 그 시·군·구의 분양 단지 수(웹 '총 N건')로 바뀜 (김포시 74 → 37). 주소로 걸러 뺐다는 `[제외]` 안내는 없어졌고, 전국·시·도·시·군·구가 다방이 첫 쪽에 함께 주는 추천 칸(`features`)은 웹 분양 목록에 없어 넣지 않고 `[제외] 다방 추천 칸(features) N곳은 웹 분양 목록에 없어 넣지 않았습니다` 로 수만 알린다. 이 결과(새로 받는 전국·시·도도)에는 `household_count` 가 총세대수로 온다 (0.12.0 의 `household_count` 는 분양 세대수였고 지금은 `sale_household_count` 다). 공공·민간임대의 `price_kind` 는 `보증금` 대신 웹 목록처럼 `임대가` 다. 읽는 쪽은 `total` 을 그 지역 전체 분양 수로, `household_count` 를 총세대수로 읽고, `price_kind` 는 `임대가`·`보증금` 둘 다 분양가가 아닌 것으로 본다. 동·역·대학·좌표는 전처럼 지도 목록이고 `household_count` 는 `null` 이다 (#244)
 
 ### 추가
 
@@ -68,6 +76,28 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 매물 `status` 필드 (`판매중`·`예약중`). 예약 상태를 주는 당근만 채운다. 당근 예약중 매물은 계약이 깨질 수 있어 당근 웹처럼 내보낸다 (예전에는 뺐다) (#222)
 - 당근 연세를 `trade_type: 연세` 와 `deposit_manwon`·`yearly_rent_manwon`(만원, 1년치)으로 줌. 연세 매물에는 `rent_manwon` 키가 없고, 결과에 연세가 있으면 `notes` 가 그 값으로 읽는 법을 알린다. 예전에는 연세만 올린 매물을 목록에서 빼고 `listing` 은 `LISTING_UNAVAILABLE` 이었다 (#222)
 - 당근 `search listings`·`search commute` 에 `--trade 연세` 와 연세 범위 `--yearly-rent-min`/`--yearly-rent-max`(만원), `listing` 에 `--trade 연세`. `--trade 연세` 에 `--rent-*` 를 주거나 연세 없는 `--trade` 에 `--yearly-rent-*` 를 주면 `INVALID_ARGUMENT` (#222)
+- 다방 `listing` 에 다방 상세 화면의 값: 관리비 부과 방식 `manage_cost_charge_type`(`정액관리비`·`기타부과`·`확인불가`)과 실비로 따로 내는 항목 `manage_cost_excludes`, 오피스텔 계약면적 `contract_area_m2`, 세입자 낀 매매 `with_tenant` 와 기존 세입자의 `tenant_deposit_manwon`·`tenant_rent_manwon`, LH 전세임대 `lh_lease`, 임차권 등기명령 `leasehold_registration`, 미등기 건물 `unregistered_building`, 위반건축물 `non_compliant_building` (#235)
+- 다방 `real-price` 거래마다 등기 표시 `registered` 와 새 거래 표시 `newly_added` (#235)
+- 다방 `complex` 에 최근 거래 수 `recent_deal_count`, 단지 꼬리표 `tags`, 가까운 어린이집 `nurseries`·유치원 `kindergartens`(3곳씩, 설립 유형·거리·교사당 아동 수) (#235)
+- 다방 `price-trend` 의 `months[]` 에 그 달 전세가율 `lease_rate_percent` 와 매매·전세 평균 차이 `gap_manwon` (#235)
+- 다방 `sale` 에 가격 종류 `price_kind`(`분양가`, 공공임대·민간임대는 `임대가`), 최근 6개월 지역 평균 평당가 `region_average_price_per_pyeong_manwon`, 청약 결과 `subscription_result`(최저 당첨가점·최고 경쟁률·평형별 경쟁률과 당첨가점, 청약 전이면 `null`) (#235)
+- 다방 `search locations` 가 종류마다 `--limit` 보다 많은 후보를 잘랐으면 `[일부]` 로 몇 곳 중 몇 곳인지 알림 (다방은 종류마다 50곳까지 준다) (#235)
+- 다방 `search listings --complex <단지 ID> --sort`: 다방 웹 단지 매물 정렬 메뉴 그대로 `랭킹순`(기본)·`최신순`·`높은가격순`·`낮은가격순`·`면적넓은순`·`면적좁은순` 중 하나. 결과에 고른 정렬 `sort` 가 붙고, `[일부]` 안내도 `다방 목록 순` 대신 `다방 랭킹 순`·`다방 낮은 가격 순` 처럼 고른 정렬을 쓴다. 동·역·대학 매물 목록(`room`·`villa`·`officetel`·`apt`)에는 다방 웹처럼 정렬이 없다 (#240)
+- 다방 `search listings apt --condition 세안고`: 세입자가 있는 채로 파는 매매 매물만 (다방 웹 아파트 '추가필터'). 검색할 거래 유형에 매매가 없으면 `INVALID_ARGUMENT` (#240)
+- 다방 `search listings officetel`·`apt --parking-min <대>`: 단지 세대당 주차 대수 하한 (다방 웹 주차 필터 '세대당 1대 이상'·'2대 이상'). `--condition 주차`(주차 가능 여부)와 다른 조건이다 (#240)
+- 다방 `region-ranking <동> --unit 단지`: 그 동 안 단지 순위 (다방 웹 단지 순위의 동 범위). 결과 `scope.kind` 가 `dong` 이다. 동 순위·동네정보 항목에 동 이름을 주면 `INVALID_ARGUMENT` (#240)
+- 다방 `region-ranking --by 거래증감`·`매물증감` (동·단지): 줄마다 `count`(지금 수)·`prev_count`(앞 수)·`change_count`(줄면 음수)·`change_percent`, 결과에 견준 기준 `comparison`(`전월대비`·`최근 30일 전 대비`). 기본은 거래량처럼 아파트·오피스텔 합산·모든 거래 유형 (#240)
+- 다방 `nearby --sale <분양 ID>`: 분양 단지 둘레의 지하철역·버스 노선·가까운 시설·학교 (`target` `분양`). 분양 ID 는 단지 ID 와 길이가 같아 옵션으로 받고, 이때는 위치 인자를 주지 않는다 (둘 다 주면 `INVALID_ARGUMENT`) (#240)
+- 다방 `search sales <시·도>`·`search sales 전국`: 다방 웹 분양 지역 목록 그대로 (예전에는 `REGION_NOT_SUPPORTED`). 전국·시·도·시·군·구에 `--radius` 를 주면 `INVALID_ARGUMENT` (전국·시·도는 요청 없이) (#244)
+- 다방 `sale-schedule --details`: 줄마다 다방 청약 일정에서 날짜를 누르면 나오는 표의 분양 단지 정보 `sale`(`state`·`building_type`·`supply_type`·`address`·`sale_household_count`·`household_count`·`price_kind`·`price_manwon`). 내보낼 줄이 든 날마다 요청 1회 더. 그 날 표에서 짝을 찾지 못한 줄은 `sale` 이 `null` (다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄도 `null` 이고 `[참고]` 가 따로 알리며 업데이트 안내는 붙이지 않는다), 표를 받지 않은 결과(`--details`·`--region` 없이)는 `sale` 키가 없다 (#244)
+- 다방 `search schools <동> --level <초등학교|중학교|고등학교|유치원|어린이집>`: 동 안 학교·유치원·어린이집 목록 (다방 동네정보 '학군' 상세 목록과 같은 목록·순서·전체 수). `--establishment` 로 설립 구분, `--limit` 기본 30·최대 120. `school_code`·`level` 을 `school` 에 그대로 넘긴다 (#246)
+- 다방 `school --level 유치원`·`어린이집`: 유치원·어린이집 공시 (설립 유형·운영 시간·통학버스·원아 구성·교사 급수별 수·교사 1명당 아동 수·제공 서비스, 유치원은 홈페이지와 통학 차량 수도. 유치원 원비는 다방 값이 공시와 맞지 않아 주지 않고 결과 `url` 의 공시 페이지에서 본다). 코드는 `complex` 의 `nurseries[].code`·`kindergartens[].code` 나 `search schools` 의 `school_code` 이고, 유치원 코드(UUID)처럼 `-` 가 든 코드도 받는다 (#246)
+- 다방 `nearby-complexes <단지 ID> [--pyeong <space_seq>]`: 다방 단지 화면 평당가 칸의 기본 탭 'N평대 비교'. 그 평형대의 이 단지·동·구 매매·전세 평당가와 반경 1km 주변 단지의 평당가·세대수·연차·거리. 다방이 그 평형에 평형대 탭이나 주변 단지를 주지 않으면 그 목록이 `null` (#245)
+- 다방 `complex` 에 다방 대출 계산기가 대출 비율을 50%로 묶는 지역인지 `overheated_district` (다방 단지 화면의 대출 계산 조건, 웹 문구 '투기지역 (대출 비율 50% 제한)'. 받지 못하거나 다방이 값을 비워 주면 `null` 과 `[실패]`) (#245)
+- 다방 `neighborhood --ranks`: 학교·편의·교통·안전 주제의 종류마다 합계·구성과 전국·시도·구 순위 `ranks[]`. 종류마다 요청 1회 더 (넷 다면 17회) (#247)
+- 다방 `hot-places <동>`: 다방 동네정보 '핫플레이스' 의 미쉐린·블루리본 식당 (이름·가이드·주소·꼬리표, 기준 달). `--type 전체|미쉐린|블루리본`, `--limit` 기본 30·최대 120 (#247)
+- 다방 `nearby --with 반려동물,카셰어링`: 다방 '펫세권'(동물병원·미용실·카페·호텔, 단지만)·'Car세권'(쏘카존·그린존, 매물·단지만) 2km 안 가까운 순 3곳. 받지 못하는 대상에 주면 `INVALID_ARGUMENT` (#248)
+- 다방 `region-ranking -t 빌라`: 매물수·거래량·선호도의 동 순위를 다방 동네정보 '매물정보' 탭(주택/빌라 포함, 고른 유형 합산)으로 받는다. 결과에 `building_type` 이 붙는다. 모든 `region-ranking` 결과에 어느 탭 순위인지 `tab`(`시세정보`·`매물정보`·`학군` 등)이 붙는다 (#247)
 
 ### 변경
 
@@ -83,6 +113,16 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 `complex` 의 아파트형 단지 평형을 전용면적 묶음 대신 당근 웹처럼 공급 평 묶음으로 나누고, `schools` 의 중·고등학교를 도보 가까운 2곳 대신 웹 학군 카드처럼 이 단지 주민이 많이 다니는 순(같으면 도보 순)으로 고르며 주민 수를 붙임 (#222)
 - 당근 웹 쿼리 해시가 거절되면 동 지도 페이지 20건에 조건을 직접 걸어 찾던 대체 경로를 없애 `UPSTREAM_ERROR` 로 끝냄. 당근 웹에 없는 동작이었다 (#215)
 - 당근 `region-real-price --new-high` 가 당근 웹 신고가 화면처럼 가장 최근 공개일의 신고가만 줌. 그날 신고가가 없으면 빈 목록이고 `notes` 가 알린다. 예전처럼 이전 공개일 신고가까지 보려면 새 옵션 `--previous-days` 를 붙인다 (#222)
+- 다방 `complex` 의 중·고등학교를 2곳에서 다방 화면처럼 가까운 3곳씩 줌 (#235)
+- 다방 `complex` 의 요청이 2회에서 3회로 늘어남 (`overheated_district` 를 받는 대출 계산 조건) (#245)
+- 다방 `sale-schedule --region` 이 일정 글 앞의 시·도가 아니라 그 날 분양 단지 표의 주소로 시·도를 가림. 일정이 있는 날마다 요청이 1회 늘고(7일이면 최대 8회) 줄에 `sale` 이 붙는다. 남긴 일정이 `--limit` 을 넘으면 그 뒤 날은 받지 않고, `[일부]` 의 전체 수를 '적어도 N건' 으로 알린다. 글이 시·도 없이 시작해 지역을 몰라 빠지던 일정(`'남춘천 센트레빌'`)도 주소로 가린다 (#244)
+- 다방 `region-ranking`·`search sales` 의 시·도·시·군·구 범위를 다방 웹 지역 고르기와 같은 시·도·시·군·구 목록에서 찾음. `'서울 중구'` 처럼 시·도를 붙인 이름은 장소 검색 없이 찾고, `search sales '서울 홍대입구'` 처럼 '입구' 로 끝나는 역 이름은 범위 목록을 묻지 않고 바로 장소 검색으로 찾는다 (`region-ranking` 은 목록을 묻지 않고 바로 에러로 알린다). 찾는 범위와 결과는 같다 (#244)
+- 다방 `price-trend` 가 `--pyeong` 없이 대표 평형으로 찾았다는 `[참고]` 에 다른 평형은 `complex` 결과의 `pyeongs` 에서 고르라는 말을 붙임 (`real-price`·`nearby-complexes` 와 같은 안내). `real-price`·`price-trend`·`nearby-complexes` 는 다방이 대표 평형을 주지 않아 다방 웹처럼 첫 평형으로 찾았으면 `[참고]` 가 다방 대표 평형이라 하지 않고 첫 평형을 골랐다고 알린다. `complex` 의 `primary_space_seq` 도 같은 첫 평형을 낸다 (다방이 준 0 을 그대로 내던 것) (#245)
+- 하나만 받는 옵션이 앞뒤 공백을 다듬어 받고, 쉼표로 여러 값을 주면 `INVALID_ARGUMENT` 의 message 가 '허용되지 않는 값' 대신 `하나만 주세요: …` 로 바뀜 (같은 값만 반복했으면 그 값으로 받고, 틀린 조각이 있으면 그 조각으로 '허용되지 않는 값'). 바뀌는 옵션: 네이버 `search complexes`·`search redevelopment`·`search listings` 의 `--sort`, `search listings` 의 `--area-basis`·`--loan`, `trend` 의 `--trade`·`--period`, `real-price`·`market-price` 의 `--period`, 직방 `search listings store` 의 `--trade`, `search listings stay` 의 `--structure`, 다방 `school` 의 `--level`, `region-ranking` 의 `--by`, `jibsa guide` 의 `TOPIC` (#243)
+- 다방 동만 받는 명령(`neighborhood`·`popular-listings`·`hot-places`·`search schools`)에 시·군·구 이름(`강남구`)을 주면 `REGION_NOT_SUPPORTED` 의 `hint` 가 '그 안의 동 이름(예: '강남구 역삼동')으로 다시 주세요' 로, 역만 받는 `station-prices` 는 '역 이름(예: '강남역')으로 주세요' 로 그 명령이 받는 이름만 권함. 역·대학 이름을 준 `INVALID_ARGUMENT` 는 명령마다 주어를 달리해 '동네정보는/인기 매물은/동 안 학교는/핫플레이스는 동 이름으로만 찾습니다: <이름>' 이라 하고, `hint` 는 역 둘레를 볼 수 있는 명령만 권한다 (`neighborhood` 는 `station-prices`·`search listings`, `popular-listings` 는 `search listings`. `hot-places`·`search schools` 는 역 둘레를 볼 명령이 없어 '이 명령은 역·대학 둘레를 찾지 않습니다') (#249)
+- 다방 `region-ranking <동> -t 빌라` 가 동 범위를 막을 때의 `hint` 가 `--unit 단지` 를 권하지 않고 시·군·구 이름을 범위로 주라고만 알림 (빌라 순위는 동 순위만 있어 `--unit 단지` 를 따르면 다시 막혔다). `--limit` 도움말은 '부동산 50곳, 동네정보·`-t 빌라` 30곳마다 요청 1회' 다 (#247)
+- 다방 `popular-listings` 가 더 있을 때 `-t`·`--trade` 를 이미 하나씩 골랐으면 조건을 좁히라고 권하지 않고 `--limit` 만 알리며, 한쪽만 골랐으면 나머지 한쪽만 권함 (예전에는 늘 둘 다 권했다) (#249)
+- 다방 `sale-schedule --details` 에서 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄을 '그 날 분양 단지 표에서 찾지 못해' 가 아니라 '다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 sale 이 null' 이라는 `[참고]` 로 따로 알림. 그런 줄뿐이어도 업데이트 안내는 붙이지 않는다 (#244)
 
 ### 수정
 
@@ -101,6 +141,18 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 `trending-complexes 신사동` 처럼 같은 이름 동을 주면 `'강남구 신사동'` 을 권해 따르면 `INVALID_ARGUMENT` 이던 것을 고침. 바로 `INVALID_ARGUMENT` 로 그 동들의 구(`candidates`)를 준다 (#222)
 - 당근 `popular-listings` 가 여러 시·도에 있는 구 이름(중구·남구)의 동에서 시·도를 채우려 지역 검색을 더 보내던 것을 고침 (`'서울 중구 명동2가'` 요청 5회 → 2회) (#215)
 - `jibsa guide common` 이 `--fields` 를 받는 매물 목록 명령에 다방(`search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)을 빠뜨려, 다방에서는 `--fields` 를 쓸 수 없는 것처럼 읽히던 문제 (#227)
+- 다방 매물 검색의 `--next` 가 다방이 한 쪽을 23건만 준 뒤 앞 결과의 매물을 다시 주던 문제. 다방 쪽 번호와 그 쪽에서 쓴 칸으로 이어 받는다. 다방이 쪽끼리 같은 매물을 겹쳐 주는 것은 웹처럼 남는다 (#235)
+- 다방 매물 검색(`--next` 로 이어 받을 때 포함)·`search listings --complex`·`search complexes`·`search sales` 가 다방이 한 쪽을 24건보다 짧게 주면 다방에 더 있어도 `--limit` 을 다 채우지 못하고 안내 없이 멈추던 문제. `--limit` 이 찰 때까지 쪽을 더 받고(쪽 수 상한은 그 목록의 쪽 크기를 따라 24건씩 오는 목록은 10쪽까지, 30곳씩 오는 `search schools`·`hot-places` 는 8쪽까지), 그래도 못 채우거나 다방이 더 있다고 한 뒤 다음 쪽 결과를 주지 않아 멈추면 `[일부]` 로 알린다 (#235)
+- 다방 `popular-listings` 의 `rank` 를 받은 수로 세어, 다방이 한 쪽을 덜 채우면 그 뒤 순위가 앞으로 당겨질 수 있던 문제. 쪽과 그 쪽 안 위치로 센다 (#235)
+- 다방 `listing` 의 `manage_cost_includes` 가 공용 관리비를 실비로 표시한 매물에서 비던 문제. 다방 화면처럼 공용은 관리비 합계에 들어 `공용 관리비` 를 넣고, 포함 항목을 다방 화면의 규칙(관리비 입력 방식·부과 방식)대로 고른다 (#235)
+- 다방 `listing` 의 `manage_cost_includes` 가 기타부과 매물과 항목을 적지 않은 정액관리비 매물에서 다방이 포함 항목을 빈 목록으로 주면 `[]` 가 아니라 `null`(모름)로 나가던 문제 (#241)
+- 다방 `popular-listings`·`region-ranking`·`real-price` 가 다방이 빈 쪽에 '더 있음' 을 주면 `has_more` 를 `true` 로 내던 문제. 빈 쪽이면 `false` 로 두고, `real-price` 는 빈 쪽 뒤를 더 묻지 않는다 (#241)
+- 다방 `complex` 의 `area_prices` 가 다방이 평당가를 0 으로 주면 `0` 으로 내던 문제. 다방 화면이 '정보 없음' 으로 그리는 값(없거나 0)은 `null` 로 낸다 (#245)
+- 다방 `complex` 가 다방이 평당가 비교(`area_prices`)나 평형 목록(`pyeongs`)을 `null` 로 주면 `PARSE_ERROR` 로 끝나던 문제. 그 칸을 `null`(모름)로 내고 나머지 결과는 그대로 낸다. 평형을 모르면 `recent_sale`·`recent_lease` 의 `space_seq`·`area_m2` 는 `null` 이다. `search listings --complex` 는 `--pyeong` 이 있으면 그 번호를 그대로 보내고(없는 번호라고 막지 않는다), 없으면 `NOT_FOUND` 다 (#245)
+- 다방 `sale-schedule --details`·`--region` 이 청약 일정 표의 한 줄에 분양 ID 가 없을 때 `PARSE_ERROR` 로 끝나던 문제. 그 줄의 `sale` 이 `null` 이고 `[참고]` 가 그 날 분양 단지 표에서 같은 분양·종류를 찾지 못했다고 알린다 (#244)
+- 다방 `search complexes` 의 `recent_sale_manwon`·`recent_lease_manwon` 을 '다방이 고른 대표 평형' 의 거래라고 적던 문서 오류. 평형과 상관없이 단지의 가장 최근 거래다 (다방 목록 카드와 같다) (#235)
+- 다방 `trending-complexes` 의 `view_count` 를 조회 수로, `neighborhood` 의 `prices.rank` 를 평균가 순위로만 적던 문서 오류. `view_count` 는 기간 안 조회한 사람 수(다방 화면의 'N명'), `prices.rank` 는 아파트 매매 기준 순위다 (#235)
+- 다방 `search complexes --radius` 도움말이 반경 밖 단지를 뺀다고 하던 문제 (반경을 덮는 사각형을 그대로 받는다). 매물 검색의 방 크기 옵션 도움말이 아파트 공급 평만 적던 것도 고쳐 유형별 기준 면적(원룸·투룸 매물 유형별, 빌라 전용, 오피스텔 계약, 아파트 공급)을 적는다 (#235)
 
 ## 0.12.0 — 2026-11-11
 

@@ -4,6 +4,11 @@ from pydantic import (
 )
 
 from jibsa.core.schema import RequestModel
+from jibsa.providers.dabang.api.request.common import (
+    REGION_INFO_PAGE_LIMIT,
+    DabangRoomBuildingCategory,
+)
+from jibsa.providers.dabang.api.request.school import DabangSchoolEstablishmentType
 
 from typing import (
     Annotated,
@@ -18,7 +23,7 @@ DabangTradeBaseOn = Literal['CURRENT_WEEK', 'LAST_WEEK', 'CURRENT_MONTH', 'LAST_
 DabangRankingUnit = Literal['region', 'complex']
 DabangRankingMetric = Literal[
     'average-price', 'pyeong-price', 'trade-volume', 'room-count', 'average-price-change', 'max-price-change',
-    'reaction-score', 'household-count', 'age', 'lease-rate', 'gap-price',
+    'trade-volume-change', 'room-count-change', 'reaction-score', 'household-count', 'age', 'lease-rate', 'gap-price',
 ]
 DabangRankingPriceType = Literal['SALE', 'LEASE', 'MONTHLY_RENT']
 # 순위 한 번에 받을 수 있는 수 (웹은 10~20, 50 까지 확인)
@@ -41,10 +46,8 @@ DabangSchoolAdvancementType = Literal[
 DabangAcademyType = Literal[
     'ADMISSION_EXAM', 'ARTS_SPORTS', 'FOREIGN_LANGUAGE', 'SPECIALIZED', 'COMPREHENSIVE', 'HUMANITIES_SOCIAL', 'PROGRAMMING',
 ]
-DabangSchoolEstablishmentType = Literal['PUBLIC', 'PRIVATE', 'HOME', 'WORKPLACE', 'COOPERATIVE']
-# 동네정보 순위 한 번에 받을 수 있는 수. 넘으면 400 '페이지 당 호출 가능한 최대 행수는 30를 초과할 수 없습니다' (2026-10-25
-# 실측: 학교·학원·진학률·인구·인구 증감·의료·교통·안전 모두 31 이면 400, 부동산 순위는 50 까지 된다)
-REGION_INFO_RANKING_PAGE_LIMIT: int = 30
+# 동네정보 '매물정보' 랭킹 항목과 매물 유형 (room-info 청크, 2026-11-13). 매물 유형은 여럿 고르고 기본은 셋 다다
+DabangRoomRankingMetric = Literal['room-count', 'trade-volume', 'reaction-score']
 
 
 class DabangRealTimeWatchRankingsV5RequestParameterModel(RequestModel):
@@ -107,15 +110,18 @@ class DabangRegionInfoRealEstateRankingV5RequestParameterModel(RequestModel):
     """`GET /api/v5/region-info/real-estate/ranking/{unit}/{metric}` 쿼리 (범위 안 동·단지 순위).
 
     항목마다 받는 값이 다르다 (real-estate 청크, 2026-10-25): 평균가·평당가·시세증감·최고가증감은 `priceType` 하나,
-    거래량·매물수·선호도는 `priceTypeList`, 전세가율·갭가격(단지만)은 유형만, 세대수·연식은 유형도 받지 않는다.
+    거래량·매물수·거래증감·매물증감·선호도는 `priceTypeList`, 전세가율·갭가격(단지만)은 유형만, 세대수·연식은 유형도 받지 않는다.
 
     Args:
         unit: 'region' 동, 'complex' 단지 (경로).
         metric: 항목 (경로).
-        scope_region_gid: 범위 (시·도 또는 시·군·구의 다방 번호). 없으면 전국.
-        complex_type: 아파트·오피스텔.
+        scope_region_gid: 범위 (시·도 또는 시·군·구의 다방 번호, 단지 순위는 동 번호도). 없으면 전국. 웹 단지 순위는 고른 동이
+            있으면 동 번호를 보낸다 (real-estate 청크 `dong.gid → city.gid → state.gid`, 2026-11-13. 역삼동 10063 → 개나리푸르지오
+            1위). 동 순위는 시·군·구·시·도만 보낸다.
+        complex_type: 아파트·오피스텔. 거래량·매물수·거래증감·매물증감·선호도·전세가율·갭가격은 빼면 아파트·오피스텔 합산
+            순위다 (웹은 두 유형을 모두 고르면 빼고 보낸다, 2026-11-13 real-estate 청크·캡처).
         price_type: 거래 유형 하나 (평균가·평당가·시세증감·최고가증감).
-        price_type_list: 거래 유형 여럿 (거래량·매물수·선호도).
+        price_type_list: 거래 유형 여럿 (거래량·매물수·거래증감·매물증감·선호도).
         sort: 'DESC' 높은 순, 'ASC' 낮은 순.
         page: 쪽 번호.
         limit: 한 쪽 수 (최대 50).
@@ -230,7 +236,7 @@ class DabangRegionInfoRankingV5RequestParameterModel(RequestModel):
     ] = 1
     limit: Annotated[
         int,
-        Field(ge=1, le=REGION_INFO_RANKING_PAGE_LIMIT, description='한 쪽 수')
+        Field(ge=1, le=REGION_INFO_PAGE_LIMIT, description='한 쪽 수')
     ] = 20
 
     @model_validator(mode='after')
@@ -240,3 +246,51 @@ class DabangRegionInfoRankingV5RequestParameterModel(RequestModel):
         if self.metric == 'school-advancement' and (self.school_type is None or self.school_advancement_type is None):
             raise ValueError('진학률 순위는 학교와 진학 갈래가 필요합니다')
         return self
+
+
+class DabangRegionInfoRoomRankingV5RequestParameterModel(RequestModel):
+    """`GET /api/v5/region-info/room/ranking/{metric}` 쿼리 (범위 안 동 순위: 동네정보 '매물정보' 랭킹의 매물수·거래량·선호도).
+
+    부동산 랭킹(`real-estate/ranking`, 아파트·오피스텔 단지 기준)과 다른 화면이다. 매물 유형에 주택/빌라가 있고 여럿을 함께 고르며
+    (웹 기본 셋 다), 동 순위만 있다 (room-info 청크 2026-11-13: `buildingCategoryList`·`priceTypeList` 기본 전체, `limit` 30,
+    범위는 고른 시·군·구 → 시·도 `gid`). 웹 거래량 화면은 `baseMonth`(이번 달)도 보내지만 부동산 순위처럼 보내지 않는다
+    (2026-11-14 실측: 강남구 빌라 거래량이 보낸 것과 같았다).
+
+    Args:
+        metric: 'room-count' 매물수, 'trade-volume' 거래량, 'reaction-score' 선호도 (경로).
+        scope_region_gid: 범위 (시·도 또는 시·군·구의 다방 번호). 없으면 전국.
+        building_category_list: 매물 유형 (주택/빌라·오피스텔·아파트). 같은 키를 값마다 반복해 보낸다.
+        price_type_list: 거래 유형.
+        sort: 'DESC' 높은 순, 'ASC' 낮은 순.
+        page: 쪽 번호.
+        limit: 한 쪽 수 (웹 값 30).
+    """
+
+    metric: Annotated[
+        DabangRoomRankingMetric,
+        Field(exclude=True, description='항목 (경로)')
+    ]
+    scope_region_gid: Annotated[
+        int | None,
+        Field(gt=0, description='범위 다방 번호 (없으면 전국)', alias='scopeRegionGid')
+    ] = None
+    building_category_list: Annotated[
+        list[DabangRoomBuildingCategory],
+        Field(min_length=1, description='매물 유형', alias='buildingCategoryList')
+    ] = ['HOUSE_VILLA', 'OFFICETEL', 'APT']
+    price_type_list: Annotated[
+        list[DabangRankingPriceType],
+        Field(min_length=1, description='거래 유형', alias='priceTypeList')
+    ] = ['SALE', 'LEASE', 'MONTHLY_RENT']
+    sort: Annotated[
+        Literal['DESC', 'ASC'],
+        Field(description='정렬')
+    ] = 'DESC'
+    page: Annotated[
+        int,
+        Field(ge=1, description='쪽 번호')
+    ] = 1
+    limit: Annotated[
+        int,
+        Field(ge=1, le=REGION_INFO_PAGE_LIMIT, description='한 쪽 수')
+    ] = REGION_INFO_PAGE_LIMIT
