@@ -79,6 +79,8 @@ from jibsa.providers.dabang.service.listing import (
     search_listings,
 )
 from jibsa.providers.dabang.service.nearby import (
+    NEARBY_EXTRAS,
+    NearbyExtra,
     get_nearby,
     get_station_prices,
 )
@@ -1154,15 +1156,24 @@ def nearby_command(
             help=f'{SALE_ID_HELP}. 단지 ID 와 길이가 같아 옵션으로 받는다. 다방 분양 화면의 주변 정보',
         ),
     ] = None,
+    with_: Annotated[
+        list[str] | None,
+        typer.Option('--with', help=(
+            f"더 받을 생활 정보: {', '.join(NEARBY_EXTRAS)}. 반복하거나 쉼표로 구분. 하나마다 요청 1회 더. 반려동물(웹 '펫세권', "
+            "2km 안 동물병원·미용실 등)은 단지만, 카셰어링(웹 'Car세권', 2km 안 쏘카존·그린존)은 매물·단지만 된다"
+        )),
+    ] = None,
     pretty: PrettyOption = None,
 ) -> None:
     """매물·단지·분양 둘레: 1km 안 지하철역(노선·거리), 500m 안 버스 노선 수, 종류마다 가까운 순 3곳 (매물은 버스·편의점·카페·
     은행·관공서·치안, 단지·분양은 버스·마트·편의점·은행·약국·치안)과 어린이집~고등학교 (요청 2회). 거리는 직선 거리(m)다.
+    --with 반려동물·카셰어링 이면 가까운 순 3곳(반려동물은 종류마다)을 더한다. 전화번호는 주지 않는다.
 
     예: jibsa dabang nearby 6abb32f72f9f803f9c6f3830
-        jibsa dabang nearby 58291f830ff9bd73a07ca123c632
+        jibsa dabang nearby 58291f830ff9bd73a07ca123c632 --with 반려동물,카셰어링
         jibsa dabang nearby --sale 68f1ac43f6e4d16e5bf6b7fb2469
     """
+    extras: list[NearbyExtra] = split_csv(with_, NEARBY_EXTRAS, '--with')
     if (target_id is None) == (sale is None):
         raise typer.BadParameter('매물·단지 ID 와 --sale 중 하나만 주세요', param_hint='TARGET_ID')
     if sale is not None:
@@ -1175,7 +1186,7 @@ def nearby_command(
                 param_hint='TARGET_ID',
             )
     with handle_errors(SOURCE), DabangClient() as client:
-        emit(get_nearby(client, value, sale=sale is not None), pretty)
+        emit(get_nearby(client, value, sale=sale is not None, extras=extras), pretty)
 
 
 @app.command('station-prices')

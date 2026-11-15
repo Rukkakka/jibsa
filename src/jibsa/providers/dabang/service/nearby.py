@@ -6,19 +6,30 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
 )
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import box_around
+from jibsa.core.listing import normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import DabangOneTwoFiltersModel
 from jibsa.providers.dabang.api.request.nearby import (
+    DabangCarShareTarget,
     DabangMarkersCategoryV5RequestParameterModel,
     DabangNearTarget,
     DabangNearV5RequestParameterModel,
+    DabangPetPlacesV5RequestParameterModel,
+    DabangPublicDataCarShareZoneV5RequestParameterModel,
     DabangTransitNearV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.nearby import DabangNearGroupModel
+from jibsa.providers.dabang.api.response.nearby import (
+    DabangCarShareZoneModel,
+    DabangNearGroupModel,
+    DabangNearPoiModel,
+    DabangPetPlaceModel,
+)
 from jibsa.providers.dabang.service.common import (
     BUILDING_LABEL_BY_CATEGORY,
     COMPLEX_ID_PATTERN,
@@ -31,7 +42,11 @@ from jibsa.providers.dabang.service.common import (
     sale_url,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+)
 
 
 # 가까운 시설 종류 코드 → 이름. 웹 주변 지도의 이름표 그대로다 (distance-km-m 청크, 2026-11-13: BS 버스, PO3 관공서,
@@ -56,6 +71,13 @@ URL_BY_TARGET: dict[DabangNearTarget, Callable[[str], str]] = {'room': listing_u
 # 종류마다 내는 가까운 시설 수. 웹은 받은 시설 전부(편의 종류는 15곳)를 지도에 찍는다
 NEAR_PLACES_PER_TYPE: int = 3
 ROOM_LABELS: dict[str, str] = {'ONE_ROOM': '원룸', 'TWO_ROOM': '투룸'}
+# --with 로 더 받는 생활 정보와 받는 대상. 반려동물 장소(웹 '펫세권')는 웹이 단지 화면에서만 부르고 매물·분양 ID 로는 빈
+# 목록이다. 카셰어링 존(웹 'Car세권')은 매물·단지만 되고 분양은 403 이다 (dong-info 청크 2026-11-13, 2026-11-14 실측)
+NearbyExtra = Literal['반려동물', '카셰어링']
+NEARBY_EXTRAS: tuple[NearbyExtra, ...] = ('반려동물', '카셰어링')
+EXTRA_TARGETS: dict[NearbyExtra, tuple[DabangNearTarget, ...]] = {'반려동물': ('complex',), '카셰어링': ('room', 'complex')}
+# 카셰어링 업체 코드 → 웹 이름표
+CAR_SHARE_LABELS: dict[str, str] = {'SOCAR': '쏘카존', 'GREENCAR': '그린존'}
 # 역 둘레 평균 매물가를 받으려고 역을 덮는 지도 범위 (km). 확대 수준 16 이면 범위 안 역 표시에 평균이 붙는다
 STATION_BOX_KM: float = 0.3
 
@@ -115,6 +137,107 @@ class DabangNearPlaces(BaseModel):
     ]
 
 
+class DabangPetPlace(BaseModel):
+    """반려동물 장소 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description='이름')
+    ] = None
+    road_address: Annotated[
+        str | None,
+        Field(description='도로명 주소')
+    ] = None
+    distance_m: Annotated[
+        int | None,
+        Field(description='거리 (m, 직선, 다방 값)')
+    ] = None
+    categories: Annotated[
+        list[str],
+        Field(description="분류 (웹 '#' 꼬리표, '반려동물'·'동물병원')")
+    ]
+
+
+class DabangPetPlaces(BaseModel):
+    """반려동물 장소 종류 하나와 가까운 순 장소."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    type: Annotated[
+        str | None,
+        Field(description="종류 (웹 탭 이름: '동물병원', '미용실', '카페', '호텔')")
+    ] = None
+    places: Annotated[
+        list[DabangPetPlace],
+        Field(description=f'가까운 순 {NEAR_PLACES_PER_TYPE}곳까지')
+    ]
+
+
+class DabangPetPlacesResult(BaseModel):
+    """단지 둘레 반려동물 장소 (웹 '펫세권')."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    radius_m: Annotated[
+        int | None,
+        Field(description='다방이 찾은 반경 (m)')
+    ] = None
+    types: Annotated[
+        list[DabangPetPlaces],
+        Field(description='종류마다 가까운 순 장소. 다방이 찾지 못한 종류는 없다')
+    ]
+
+
+class DabangCarShareZone(BaseModel):
+    """카셰어링 존 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    service: Annotated[
+        str | None,
+        Field(description="업체 (웹 이름표 '쏘카존'·'그린존')")
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='존 이름')
+    ] = None
+    address: Annotated[
+        str | None,
+        Field(description='주소')
+    ] = None
+    distance_m: Annotated[
+        int | None,
+        Field(description='거리 (m, 직선, 다방 값)')
+    ] = None
+
+
+class DabangCarShareResult(BaseModel):
+    """매물·단지 둘레 카셰어링 존 (웹 'Car세권')."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    radius_m: Annotated[
+        int | None,
+        Field(description='다방이 찾은 반경 (m)')
+    ] = None
+    zones: Annotated[
+        list[DabangCarShareZone],
+        Field(description=f'가까운 순 {NEAR_PLACES_PER_TYPE}곳까지')
+    ]
+
+
 class DabangNearby(BaseModel):
     """매물·단지·분양 둘레 교통과 가까운 시설."""
 
@@ -160,10 +283,70 @@ class DabangNearby(BaseModel):
             '다방 범위 안에 없는 종류는 없다'
         ))
     ]
+    pet_places: Annotated[
+        DabangPetPlacesResult | None,
+        Field(description='단지 둘레 반려동물 장소 (--with 반려동물 일 때만)')
+    ] = None
+    car_share: Annotated[
+        DabangCarShareResult | None,
+        Field(description='둘레 카셰어링 존 (--with 카셰어링 일 때만)')
+    ] = None
     url: Annotated[
         str,
         Field(description='매물·단지·분양 페이지 URL')
     ]
+    extras: Annotated[
+        list[str],
+        Field(exclude=True, description='--with 로 고른 생활 정보')
+    ] = []
+
+    @model_serializer(mode='wrap')
+    def drop_unrequested(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if '반려동물' not in self.extras:
+            data.pop('pet_places', None)
+        if '카셰어링' not in self.extras:
+            data.pop('car_share', None)
+        return data
+
+
+def _by_distance(item: DabangPetPlaceModel | DabangCarShareZoneModel | DabangNearPoiModel) -> float:
+    return item.distance if item.distance is not None else float('inf')
+
+
+def _pet_places(client: DabangClient, complex_id: str) -> DabangPetPlacesResult | None:
+    """단지 둘레 반려동물 장소 (요청 1회). 종류마다 다방 거리 값으로 가까운 순 `NEAR_PLACES_PER_TYPE` 곳. 전화는 내보내지 않는다."""
+    result = client.run_request_pet_places_v5(DabangPetPlacesV5RequestParameterModel(complex_id=complex_id)).result
+    # 종류 목록을 null 로 주면 result 가 없을 때처럼 모름(null)이다
+    if result is None or result.pet_place_list is None:
+        return None
+    return DabangPetPlacesResult(radius_m=result.radius, types=[
+        DabangPetPlaces(type=group.name, places=[
+            DabangPetPlace(
+                name=place.name, road_address=normalize_address(place.road_address),
+                distance_m=place.distance, categories=place.category_list or [],
+            )
+            for place in sorted(group.place_list, key=_by_distance)[:NEAR_PLACES_PER_TYPE]
+        ])
+        for group in result.pet_place_list if group.place_list
+    ])
+
+
+def _car_share(client: DabangClient, target: DabangCarShareTarget, target_id: str) -> DabangCarShareResult | None:
+    """매물·단지 둘레 카셰어링 존 (요청 1회). 다방 거리 값으로 가까운 순 `NEAR_PLACES_PER_TYPE` 곳 (웹도 3곳씩 '더보기')."""
+    result = client.run_request_public_data_car_share_zone_v5(
+        DabangPublicDataCarShareZoneV5RequestParameterModel(target=target, target_id=target_id)
+    ).result
+    # 존 목록을 null 로 주면 result 가 없을 때처럼 모름(null)이다
+    if result is None or result.zone_list is None:
+        return None
+    return DabangCarShareResult(radius_m=result.radius, zones=[
+        DabangCarShareZone(
+            service=CAR_SHARE_LABELS.get(zone.zone_type or '', zone.zone_type), name=zone.zone_name,
+            address=normalize_address(zone.address), distance_m=zone.distance,
+        )
+        for zone in sorted(result.zone_list, key=_by_distance)[:NEAR_PLACES_PER_TYPE]
+    ])
 
 
 def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list[DabangNearPlaces]:
@@ -174,7 +357,9 @@ def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list
         label = labels.get(group.query)
         if label is None or not group.pois:
             continue
-        pois = sorted(group.pois, key=lambda item: item.distance if item.distance is not None else float('inf'))
+        # 리뷰 오탐 (2026-11-14): 시설 거리는 소수로 온다 (실측 88.58277413). 정밀한 거리로 세운 뒤 내보낼 때만 반올림하려고
+        # 역·반려동물·카셰어링처럼 `Meters` 로 받지 않는다. 먼저 반올림하면 같은 m 의 두 곳이 서버 순서를 따른다
+        pois = sorted(group.pois, key=_by_distance)
         result.append(DabangNearPlaces(type=label, places=[
             DabangNearPlace(name=poi.name, distance_m=None if poi.distance is None else round(poi.distance))
             for poi in pois[:NEAR_PLACES_PER_TYPE]
@@ -182,17 +367,32 @@ def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list
     return result
 
 
-def get_nearby(client: DabangClient, target_id: str, *, sale: bool = False) -> DabangNearby:
+def get_nearby(
+    client: DabangClient, target_id: str, *, sale: bool = False, extras: list[NearbyExtra] | None = None,
+) -> DabangNearby:
     """매물(24자리 ID)·단지(28자리 ID)·분양(`sale`, 28자리 ID) 둘레의 지하철역·버스 노선과 종류마다 가까운 시설 3곳
     (요청 2회). 시설 좌표·전화는 내보내지 않는다.
 
     Args:
         sale: `target_id` 가 분양 ID 인지. 분양 ID 와 단지 ID 는 둘 다 28자리라 길이로 가르지 못해 부르는 쪽이 알린다.
+        extras: 더 받을 생활 정보 (반려동물은 단지만, 카셰어링은 매물·단지만). 하나마다 요청 1회. Defaults to None.
 
     Raises:
-        JibsaError: 없는 ID 일 때 (NOT_FOUND).
+        JibsaError: 없는 ID 일 때 (NOT_FOUND), 그 대상에 없는 생활 정보를 고를 때 (INVALID_ARGUMENT).
     """
     target: DabangNearTarget = 'sale' if sale else 'complex' if COMPLEX_ID_PATTERN.fullmatch(target_id) else 'room'
+    chosen = extras or []
+    for extra in chosen:
+        # 대상에 없는 생활 정보는 요청 전에 막는다. 다방은 빈 목록(반려동물)이나 403(분양 카셰어링)을 줘 없다로 잘못 읽힌다
+        # 리뷰 오탐 (2026-11-14): extra 는 NearbyExtra Literal 의 고정 라벨('반려동물'·'카셰어링')이라 끝 글자에 늘 받침이 있어 조사를
+        # 그대로 쓴다 (code-style 의 '끝 글자가 늘 정해진 값')
+        if target not in EXTRA_TARGETS[extra]:
+            where = '·'.join(TARGET_LABELS[item] for item in EXTRA_TARGETS[extra])
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message=f'--with {extra}은 {where}에만 있습니다 ({TARGET_LABELS[target]}에는 다방이 주지 않습니다)',
+                hint=f'{where} ID 로 다시 주거나 --with 에서 {extra}을 빼세요',
+            )
     # 없는 ID 는 ID 가 경로에 들어가는 시설 요청으로 가린다 (400). 교통 요청은 ID 가 쿼리로 가서 없는 ID 에도 빈 결과를 주므로
     # (2026-10-27 실측) 그 에러는 다방 주소가 바뀐 것이다 (`is_missing_id`)
     try:
@@ -219,7 +419,7 @@ def get_nearby(client: DabangClient, target_id: str, *, sale: bool = False) -> D
             DabangNearbyStation(
                 name=station.name,
                 lines=[line.name for line in station.line_list if line.name],
-                distance_m=None if station.distance is None else round(station.distance),
+                distance_m=station.distance,
             )
             for station in (subway.list_ if subway else [])
         ],
@@ -228,7 +428,10 @@ def get_nearby(client: DabangClient, target_id: str, *, sale: bool = False) -> D
         bus_radius_m=route.radius if route else None,
         nearest=_nearest((near.convenience + near.safety) if near else [], NEAR_LABELS),
         schools=_nearest(near.education if near else [], SCHOOL_LABELS),
+        pet_places=_pet_places(client, target_id) if '반려동물' in chosen else None,
+        car_share=_car_share(client, 'room' if target == 'room' else 'complex', target_id) if '카셰어링' in chosen else None,
         url=URL_BY_TARGET[target](target_id),
+        extras=chosen,
     )
 
 

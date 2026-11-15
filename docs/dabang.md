@@ -25,7 +25,7 @@
 | `neighborhood` | 동네정보: 매물 수·거래량·평균가·인구와 순위, 학교·편의·교통·안전 시설 수 (`--ranks` 면 그 순위도) | 동 이름 | `popular-listings` |
 | `hot-places` | 동 안 미쉐린·블루리본 식당 | 동 이름 | — |
 | `popular-listings` | 동 안 인기 매물 순위 | 동 이름 | `listing` |
-| `nearby` | 매물·단지·분양 둘레 지하철역·버스 노선·가까운 시설·학교 | 매물 ID 또는 단지 ID, 분양은 `--sale <분양 ID>` | — |
+| `nearby` | 매물·단지·분양 둘레 지하철역·버스 노선·가까운 시설·학교 (`--with` 로 반려동물 장소·카셰어링) | 매물 ID 또는 단지 ID, 분양은 `--sale <분양 ID>` | — |
 | `station-prices` | 역 둘레 평균 매물가 (빌라·오피스텔·아파트 × 원룸·투룸) | 역 이름 | `search listings` |
 | `search sales` | 분양 단지 목록 (새 아파트·오피스텔 청약) | 동·시군구·시도 이름, `전국`, 역·대학 이름 또는 좌표 | `sale`, `nearby --sale` |
 | `sale` | 분양 단지 하나: 일정·평형별 분양가·청약 결과 | 분양 ID | — |
@@ -394,14 +394,17 @@ jibsa dabang popular-listings 역삼동 -t 빌라,오피스텔 --trade 월세 --
 | --- | --- | --- |
 | `TARGET_ID` | 매물 ID(`id`, 24자리) 또는 단지 ID(`complex_id`, 28자리). 매물번호는 받지 않는다 | 미지정 |
 | `--sale` | 분양 ID (`search sales` 의 `sale_id`, 28자리). 다방 분양 화면의 주변 정보 | 미지정 |
+| `--with` | 더 받을 생활 정보: 반려동물(단지만), 카셰어링(매물·단지만). 반복하거나 쉼표로 구분. 하나마다 요청 1회 더 | 미지정 |
 
 ```bash
 jibsa dabang nearby 6abb32f72f9f803f9c6f3830
-jibsa dabang nearby 58291f830ff9bd73a07ca123c632
+jibsa dabang nearby 58291f830ff9bd73a07ca123c632 --with 반려동물,카셰어링
 jibsa dabang nearby --sale 68f1ac43f6e4d16e5bf6b7fb2469
 ```
 
 `TARGET_ID` 와 `--sale` 중 하나만 준다 (둘 다 주거나 둘 다 없으면 `INVALID_ARGUMENT`). 분양 ID 는 단지 ID 와 길이가 같아 위치 인자로 주면 단지로 찾아 `NOT_FOUND` 이니 꼭 `--sale` 로 준다. 요청 2회. 결과의 `target` 은 `"매물"`·`"단지"`·`"분양"`, `url` 은 그 매물·단지·분양 페이지(분양은 `https://www.dabangapp.com/sale-in-lots/{id}`)다. 없는 ID 는 `NOT_FOUND` 다. `stations`(1km 안 지하철역: 노선·거리), `bus_route_count`(500m 안 정류장을 지나는 버스 노선 수), `nearest`(가까운 시설), `schools`(가까운 어린이집·유치원·초·중·고등학교)를 준다. `nearest`·`schools` 는 종류마다 `{"type": "편의점", "places": [{"name": …, "distance_m": …}, …]}` 이고 `places` 는 다방 거리로 가까운 순 3곳까지다 (덜 있으면 있는 만큼). 종류 이름은 다방 화면 이름표이고 다방이 주는 종류가 달라 매물은 버스·편의점·카페·은행·관공서·치안, 단지·분양은 버스·마트·편의점·은행·약국·치안이다. 치안(지구대 등)은 다방이 이름을 주지 않아 `name` 이 `null` 이다. 거리는 직선 거리(m)다. 다방이 범위 안에서 찾지 못한 종류는 목록에 없다. `schools` 는 가까운 학교이지 배정 학교가 아니다 (단지의 배정 초등학교는 `complex` 의 `schools`).
+
+`--with 반려동물` 은 다방 단지 화면의 '펫세권'(2km 안)이고 `pet_places` 에 `radius_m` 과 `types[]`(종류 `type` `"동물병원"`·`"미용실"`·`"카페"`·`"호텔"` 마다 `places[]` 의 `name`·`road_address`·`distance_m`·`categories`)를 준다. `--with 카셰어링` 은 다방 매물·단지 화면의 'Car세권'(2km 안)이고 `car_share` 에 `radius_m` 과 `zones[]`(`service` `"쏘카존"`·`"그린존"`, `name`, `address`, `distance_m`)를 준다. 둘 다 다방 거리로 가까운 순 3곳까지다 (반려동물은 종류마다). 다방이 찾지 못한 반려동물 종류는 목록에 없고, 장소에 분류가 없으면 `categories` 는 `[]` 다. 다방이 목록을 주지 않으면 `pet_places`·`car_share` 는 `null`(모름)이다. 다방은 반려동물을 단지에만, 카셰어링을 매물·단지에만 주어 받지 못하는 대상(매물·분양의 반려동물, 분양의 카셰어링)에 주면 요청 없이 `INVALID_ARGUMENT` 다. 전화번호·좌표는 주지 않는다. `--with` 가 없으면 `pet_places`·`car_share` 키가 없다.
 
 ## 19. `station-prices` — 역 둘레 평균 매물가
 

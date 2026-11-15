@@ -364,6 +364,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('인기 매물 역삼동', ('dabang', 'popular-listings'), ('역삼동', '--limit', '3'), 'listings'),
         Step('매물 주변', ('dabang', 'nearby'), ('{room}',), 'stations'),
         Step('단지 주변', ('dabang', 'nearby'), ('{complex}',), 'stations'),
+        # --with 의 반려동물(pet-places, 단지만)·카셰어링(public-data/{room|complex}/car-share-zone)은 다른 주소다
+        Step('단지 주변 반려동물', ('dabang', 'nearby'), ('{complex}', '--with', '반려동물'), 'pet_places.types'),
+        Step('매물 주변 카셰어링', ('dabang', 'nearby'), ('{room}', '--with', '카셰어링'), 'car_share.zones'),
         # 역 둘레 평균 매물가는 원룸·투룸 지도 집계(markers)의 역 표시에 붙는다
         Step('역 평균 매물가 강남역', ('dabang', 'station-prices'), ('강남역',), 'prices'),
         # 분양은 전국·시·도·시·군·구면 웹 분양 지역 목록(3/sale-in-lots/list/search3), 동·역·대학·좌표면 지도 목록

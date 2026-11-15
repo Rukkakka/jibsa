@@ -38,6 +38,8 @@ from jibsa.providers.dabang.api.request.listing import (
 from jibsa.providers.dabang.api.request.nearby import (
     DabangMarkersCategoryV5RequestParameterModel,
     DabangNearV5RequestParameterModel,
+    DabangPetPlacesV5RequestParameterModel,
+    DabangPublicDataCarShareZoneV5RequestParameterModel,
     DabangTransitNearV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.neighborhood import (
@@ -94,6 +96,8 @@ from jibsa.providers.dabang.api.response.listing import (
 from jibsa.providers.dabang.api.response.nearby import (
     DabangMarkersCategoryV5ResponseModel,
     DabangNearV5ResponseModel,
+    DabangPetPlacesV5ResponseModel,
+    DabangPublicDataCarShareZoneV5ResponseModel,
     DabangTransitNearV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.neighborhood import (
@@ -182,9 +186,11 @@ V5_HEADERS: dict[str, str] = {
 class DabangClient(BaseHTTPClient):
     """다방 (www.dabangapp.com) 비공식 웹 API 클라이언트.
 
-    로그인·토큰 없이 장소 검색, 매물 지도 목록(원룸·투룸, 주택·빌라, 오피스텔, 아파트), 매물 상세, 단지 목록·상세·요약,
-    단지 매물, 실거래, 시세 흐름, 동네정보(요약·시설 수·인기 매물), 매물·단지·분양 주변 교통·시설, 지도 집계(역 둘레 평균 매물가)와 동 경계
-    파일, 분양(목록·상세·청약 일정), 학교 상세(학교알리미 공시), 전국 조회·거래 순위, 범위 안 동·단지 순위(부동산·학교·인구·시설)를 조회한다. 금액은 **만원** 이지만 상세 관리비(`maintenance_cost`)와 단지
+    로그인·토큰 없이 장소 검색, 매물 지도 목록(원룸·투룸, 주택·빌라, 오피스텔, 아파트), 매물 상세, 단지 목록·상세·요약·대출 계산
+    조건, 단지 매물, 실거래, 시세 흐름, 평형대 평당가와 주변 단지 비교, 동네정보(요약·시설 수·인기 매물·동 안 학교 목록·핫플레이스), 매물·단지·분양
+    주변 교통·시설과 단지 반려동물 장소·매물·단지 카셰어링 존, 지도 집계(역 둘레 평균 매물가)와 동 경계 파일, 분양(지도 목록·지역 목록·상세·청약 일정과 그 하루 상세), 학교·유치원·
+    어린이집 상세(학교알리미·유치원알리미·어린이집정보공개포털 공시), 전국 조회·거래 순위, 범위 안 동·단지 순위(부동산·매물정보·학교·인구·시설), 시·도·시·군·구 목록을
+    조회한다. 금액은 **만원** 이지만 상세 관리비(`maintenance_cost`)와 단지
     평형 관리비(`maintenanceTotalPrice`)는 원이다. 목록 가격은 숫자 없이 글자('1000/63', '3억9000')로만 온다.
 
     API 가 두 방식이다. 새 방식 `/api/v5/` 는 `D-Api-Version` 등 헤더(`V5_HEADERS`)를 붙이고 응답 봉투
@@ -196,8 +202,12 @@ class DabangClient(BaseHTTPClient):
     (`/api/v5/loc/search` → `loc_search_v5`, `/api/3/new-room/detail` → `new_room_detail_v3`,
     `/api/v5/room-list/category/{category}/{search_type}` → `room_list_category_v5`,
     `/api/v5/room-list/category/{category}/complex` → `room_list_category_complex_v5`, `/api/v5/{target}/{target_id}/near` →
-    `near_v5`, `/api/3/education/{level}/{school_code}` → `education_v3`, `/api/v5/region-info/{topic}/ranking/{metric}` →
-    `region_info_ranking_v5`). 동 경계는 지도 집계가 주는 CDN
+    `near_v5`, `/api/3/education/{level}/{school_code}` → `education_v3`, `/api/3/education/nursery-school/{school_code}` →
+    `education_nursery_school_v3`, `/api/v5/region-info/{topic}/ranking/{metric}` → `region_info_ranking_v5`,
+    `/api/v5/region-info/school/regional/{level}` → `region_info_school_regional_v5`,
+    `/api/v5/complex/{complex_id}/loan-calc-condition` → `complex_loan_calc_condition_v5`,
+    `/api/v5/region-info/room/ranking/{metric}` → `region_info_room_ranking_v5`, `/api/v5/public-data/{target}/car-share-zone` →
+    `public_data_car_share_zone_v5`). 동 경계는 지도 집계가 주는 CDN
     (`geojson_host`) 파일이라 버전이 없다 (`geojson_region`).
 
     Args:
@@ -239,6 +249,8 @@ class DabangClient(BaseHTTPClient):
     region_info_hot_places_v5_endpoint: ClassVar[str] = '/api/v5/region-info/hot-places'
     transit_near_v5_endpoint: ClassVar[str] = '/api/v5/transit/near/{target}'
     near_v5_endpoint: ClassVar[str] = '/api/v5/{target}/{target_id}/near'
+    pet_places_v5_endpoint: ClassVar[str] = '/api/v5/pet-places'
+    public_data_car_share_zone_v5_endpoint: ClassVar[str] = '/api/v5/public-data/{target}/car-share-zone'
     markers_category_v5_endpoint: ClassVar[str] = '/api/v5/markers/category/{category}'
     region_states_v5_endpoint: ClassVar[str] = '/api/v5/region/states'
     region_cities_v5_endpoint: ClassVar[str] = '/api/v5/region/cities'
@@ -1247,6 +1259,82 @@ class DabangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return DabangNearV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_pet_places_v5(
+        self,
+        parameter: DabangPetPlacesV5RequestParameterModel
+    ) -> DabangPetPlacesV5ResponseModel:
+        """List pet places (2km) around a complex via `GET /api/v5/pet-places`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 단지 화면 '펫세권' 이다. 종류(동물병원·미용실·카페·호텔)마다 가까운 순
+        10곳까지 온다 (2026-11-14 실측). 전화(`phone`)도 오지만 쓰지 않는다.
+
+        Args:
+            parameter: 단지 ID.
+
+        Returns:
+            DabangPetPlacesV5ResponseModel: 반경과 종류별 장소 이름·도로명 주소·거리·분류.
+        """
+        response = self._client.get(
+            url=self.pet_places_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPetPlacesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_pet_places_v5(
+        self,
+        parameter: DabangPetPlacesV5RequestParameterModel
+    ) -> DabangPetPlacesV5ResponseModel:
+        """Async variant of `run_request_pet_places_v5`."""
+        response = await self._async_client.get(
+            url=self.pet_places_v5_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPetPlacesV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    def run_request_public_data_car_share_zone_v5(
+        self,
+        parameter: DabangPublicDataCarShareZoneV5RequestParameterModel
+    ) -> DabangPublicDataCarShareZoneV5ResponseModel:
+        """List car-sharing zones (2km) around a listing or complex via `GET /api/v5/public-data/{target}/car-share-zone`.
+
+        Same retry behaviour as `run_request_loc_search_v5`. 웹 매물·단지 화면 'Car세권' 이다 (쏘카존·그린존). 분양은 403 이다
+        (2026-11-14 실측).
+
+        Args:
+            parameter: 대상(매물·단지)과 ID.
+
+        Returns:
+            DabangPublicDataCarShareZoneV5ResponseModel: 반경과 가까운 순 존 업체·이름·주소·거리.
+        """
+        response = self._client.get(
+            url=self.public_data_car_share_zone_v5_endpoint.format(target=parameter.target),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPublicDataCarShareZoneV5ResponseModel.model_validate(response.json())
+
+    @dabang_retry
+    async def arun_request_public_data_car_share_zone_v5(
+        self,
+        parameter: DabangPublicDataCarShareZoneV5RequestParameterModel
+    ) -> DabangPublicDataCarShareZoneV5ResponseModel:
+        """Async variant of `run_request_public_data_car_share_zone_v5`."""
+        response = await self._async_client.get(
+            url=self.public_data_car_share_zone_v5_endpoint.format(target=parameter.target),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=V5_HEADERS
+        )
+        raise_for_status(response=response)
+        return DabangPublicDataCarShareZoneV5ResponseModel.model_validate(response.json())
 
     @dabang_retry
     def run_request_markers_category_v5(
