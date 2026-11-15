@@ -27,12 +27,14 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
+    ZigbangAptItemSource,
+    ZigbangAptTranType,
     ZigbangDanjisRequestParameterModel,
     ZigbangFloorFilter,
     ZigbangItemsListV1RequestPayloadModel,
@@ -51,6 +53,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    get_args,
 )
 
 
@@ -201,10 +204,57 @@ def item_url(service_type: str | None, item_id: int) -> str:
     return f'https://www.zigbang.com/home/{path}/items/{item_id}'
 
 
-def apt_item_url(item_id: int, item_source: str = 'zigbang') -> str:
+def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
     # 웹 아파트 매물 페이지(v2). 옛 경로 /home/apt/item/{id} 는 /error 로 보낸다.
     # 마지막 칸은 대표로 띄울 중개사 번호인데 빠지면 404 라, 0 을 넣어 직방이 고르게 한다.
     return f'https://www.zigbang.com/home/apt/item/v2/{item_id}/{item_source}/0'
+
+
+def apt_catalog_url(area_ho_id: int, tran_type: str) -> str:
+    # 같은 호를 여러 중개사가 올린 묶음 화면. 웹 아파트 카드를 누르면 가격 범위(isPriceRange)와 상관없이 가는 곳이다
+    # (신규분양 카드만 분양 화면으로 간다. 2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress)
+    return f'https://www.zigbang.com/home/apt/item-catalog?areaHoId={area_ho_id}&tranType={tran_type}'
+
+
+# 아파트 거래 유형 코드. 요청은 영어 코드(`ZigbangAptTranType`)를 받는다
+APT_TRAN_TYPE_BY_TRADE: dict[TradeType, ZigbangAptTranType] = {
+    '매매': 'trade',
+    '전세': 'charter',
+    '월세': 'rental',
+}
+# 응답의 거래 유형 코드 → 거래 유형 (응답 코드는 글자라 모르는 코드도 올 수 있다)
+TRADE_BY_APT_TRAN_TYPE: dict[str, TradeType] = {
+    tran_type: trade for trade, tran_type in APT_TRAN_TYPE_BY_TRADE.items()
+}
+# 같은 호·거래 유형의 아파트 매물 묶음 ID (`<호 ID>-<거래 유형 코드>`, 예: 8260358-trade). 묶음 화면 API 가 이 둘을 받는다
+CATALOG_ID_PATTERN: re.Pattern[str] = re.compile(rf"^([1-9]\d*)-({'|'.join(TRADE_BY_APT_TRAN_TYPE)})$")
+# 묶음 ID 형식이 틀렸을 때 안내 (`parse_catalog_id` 의 INVALID_ARGUMENT hint)
+CATALOG_ID_HINT: str = 'search listings apt·search listings --complex <apt-…> 결과의 catalog_id 를 그대로 주세요 (예: 8260358-trade)'
+
+
+def apt_catalog_id(area_ho_id: int, tran_type: str) -> str:
+    """아파트 목록 줄의 `catalog_id` (`zigbang catalog` 에 넘긴다). 읽는 쪽은 `parse_catalog_id` 다."""
+    return f'{area_ho_id}-{tran_type}'
+
+
+def parse_catalog_id(catalog_id: str) -> tuple[int, ZigbangAptTranType]:
+    """`catalog_id` 를 (호 ID, 거래 유형 코드) 로 나눈다. 거래 유형(한글)은 `TRADE_BY_APT_TRAN_TYPE` 으로 꺼낸다.
+
+    `zigbang catalog` 명령은 형식을 따로 검사하지 않고 이 에러를 그대로 낸다.
+
+    Raises:
+        JibsaError: 형식이 맞지 않을 때 (INVALID_ARGUMENT).
+    """
+    match = CATALOG_ID_PATTERN.match(catalog_id.strip())
+    if match is None:
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f"직방 아파트 묶음 ID 형식이 아닙니다: '{catalog_id}'",
+            hint=CATALOG_ID_HINT,
+        )
+    # 정규식이 이 표의 코드만 받으므로 늘 찾는다. 글자를 표의 값으로 바꿔 거래 유형 코드 타입으로 돌려준다
+    tran_type = next(code for code in APT_TRAN_TYPE_BY_TRADE.values() if code == match.group(2))
+    return int(match.group(1)), tran_type
 
 
 def region_from_search_item(item: ZigbangSearchItemModel) -> ZigbangRegion:
@@ -241,7 +291,9 @@ def summary_to_listing(
     """요약 응답 한 건을 `ZigbangListing` 으로 바꾼다.
 
     매매 매물은 요약 응답의 `deposit` 에 매매가가 들어오므로 `price_manwon` 으로
-    옮긴다. 관리비는 원 단위 문자열이라 만원으로 환산한다. 면적은 `size_m2`
+    옮긴다. 관리비는 웹 목록 카드와 같은 값(`listed_manage_cost`, 원 단위)을 만원으로 환산한다: 0 이면 0(웹 '관리비 없음'),
+    null 이면 모름. 금액은 원 단위까지 낸다. 웹 카드는 0.1만원 아래를 버려 보여 준다 (_app 번들 toManWonText
+    `Math.floor(fee/1e4*10)/10`, 375,700원 → 37.5, jibsa 37.57). 면적은 `size_m2`
     (공급면적) 대신 `전용면적` 을 쓴다. 단기임대는 `trade_type_of` 로 구분한다.
     요약에는 오피스텔 건물 ID 가 없어 지도 핀의 `buildingId` 를 `building_id` 로 받는다.
     """
@@ -263,7 +315,9 @@ def summary_to_listing(
         price_manwon=summary.deposit if is_sale else None,
         deposit_manwon=None if is_sale else summary.deposit,
         rent_manwon=summary.rent if summary.sales_type == '월세' else None,
-        manage_cost_manwon=won_to_manwon(summary.manage_cost),
+        # 리뷰 오탐 (2026-11-15): 관리비 확인 불가(UnknownManageCost) 매물은 itemSummaries[].fee 가 0 이 아니라 null 이라
+        # 목록·상세 모두 모름이다 (서초동 오피스텔 51031039 실측). 목록은 웹 카드의 fee 를 그대로 따른다
+        manage_cost_manwon=won_to_manwon_exact(summary.listed_manage_cost),
         area_m2=area_m2,
         area_pyeong=m2_to_pyeong(area_m2),
         floor=summary.floor,
@@ -301,13 +355,18 @@ def sent_or_none(model: BaseModel, field: str, values: list[str]) -> list[str] |
 
 
 @contextmanager
-def unavailable_on_404(listing_id: int | str) -> Generator[None, None, None]:
-    """상세 요청의 404 를 만료 매물(`ListingUnavailableError`)로 바꾼다. 그 밖의 HTTP 오류는 그대로 낸다."""
+def unavailable_on_404(listing_id: int | str, reason: str | None = None) -> Generator[None, None, None]:
+    """상세 요청의 404 를 만료 매물(`ListingUnavailableError`)로 바꾼다. 그 밖의 HTTP 오류는 그대로 낸다.
+
+    Args:
+        listing_id: 매물 ID.
+        reason: 직방 매물인 것을 알고 부른 상세면 그 사유. 없으면 다른 소스 ID 일 수 있다는 안내가 붙는다.
+    """
     try:
         yield
     except HTTPStatusError as exc:
         if exc.response.status_code == 404:
-            raise ListingUnavailableError('zigbang', listing_id) from None
+            raise ListingUnavailableError('zigbang', listing_id, reason=reason) from None
         raise
 
 
@@ -447,17 +506,9 @@ def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangIt
     return summaries
 
 
-APT_TRAN_TYPE_BY_TRADE: dict[TradeType, str] = {
-    '매매': 'trade',
-    '전세': 'charter',
-    '월세': 'rental',
-}
-TRADE_BY_APT_TRAN_TYPE: dict[str, TradeType] = {
-    tran_type: trade for trade, tran_type in APT_TRAN_TYPE_BY_TRADE.items()
-}
 DANJI_CATALOG_PAGE_SIZE: int = 50
-# 상세를 볼 수 있는 아파트 매물 출처 (앞이 우선). coalition 은 호갱노노 집주인 매물이다
-APT_ITEM_SOURCES: tuple[str, ...] = ('zigbang', 'coalition')
+# 상세를 볼 수 있는 아파트 매물 출처 (앞이 우선)
+APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
 
 
 class ZigbangAptListing(Listing):
@@ -477,33 +528,75 @@ class ZigbangAptListing(Listing):
     ] = None
     is_price_range: Annotated[
         bool | None,
-        Field(description='같은 호를 올린 매물끼리 가격이 달라 가격이 최솟값이면 true')
+        Field(description='true 면 같은 호를 올린 매물끼리 가격이 달라 가격은 묶음의 최저가라 id 매물의 가격과 다를 수 있다. 매물별 가격은 catalog_id 를 zigbang catalog 에 넘겨 한 번에 본다')
     ] = None
+    catalog_id: Annotated[
+        str | None,
+        Field(description='같은 호·거래 유형의 매물 묶음 ID (예: 8260358-trade). zigbang catalog 에 넘기면 묶음 매물 전부를 매물마다의 가격·상세와 함께 준다. 직방이 호 ID 를 주지 않으면 모름(null)이고, 그때 url 은 id 매물 페이지이며 묶음은 catalog 로 볼 수 없어 listing_ids 를 listing 으로 하나씩 본다')
+    ] = None
+    listing_ids: Annotated[
+        list[str],
+        Field(description='같은 호를 올린 매물 중 상세를 볼 수 있는 ID 전부 (id 포함, id 가 맨 앞). zigbang listing 에 넘긴다')
+    ] = []
     listing_count: Annotated[
         int | None,
         Field(description='같은 호를 올린 매물(중개사) 수')
     ] = None
 
 
+# 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다
+APT_ID_PREFIXES: tuple[ZigbangAptItemSource, ...] = tuple(source for source in APT_ITEM_SOURCES if source != 'zigbang')
+
+
+def apt_listing_id(item_id: int, item_source: ZigbangAptItemSource) -> str:
+    """아파트 매물의 jibsa ID (목록 `id`·`listing_ids` 와 상세 `id`). 직방 매물은 숫자 그대로, 제휴 매물은 `coalition-<id>`.
+
+    접두어를 다시 출처로 읽는 쪽은 `apt_item_source` 다 (접두어가 곧 출처 이름이다).
+    """
+    return f'{item_source}-{item_id}' if item_source in APT_ID_PREFIXES else str(item_id)
+
+
+def apt_item_source(name: str | None) -> ZigbangAptItemSource | None:
+    """출처 이름(응답의 매물 출처, 또는 ID 접두어) → 상세를 볼 수 있는 아파트 매물 출처. 그 밖의 출처(상세를 볼 수 없음)면 None."""
+    return next((source for source in APT_ITEM_SOURCES if source == name), None)
+
+
 def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> ZigbangAptListing | None:
     """카탈로그 한 건을 `ZigbangAptListing` 으로 바꾼다. 상세를 볼 수 있는 매물 ID 가 없으면 None.
 
     `depositMin` 은 매매면 매매가, 전세·월세면 보증금이다. 묶인 매물 중 직방 매물을 먼저 쓰고, 없으면 제휴
-    (호갱노노 집주인) 매물을 `coalition-123` ID 로 쓴다. 둘 다 `zigbang item` 으로 상세를 볼 수 있고
-    `url` 은 그 매물의 웹 페이지다. 그 밖의 출처는 상세를 볼 수 없어 뺀다.
+    (호갱노노 집주인) 매물을 `coalition-123` ID 로 쓴다. 둘 다 `zigbang listing` 으로 상세를 볼 수 있다.
+    그 밖의 출처는 상세를 볼 수 없어 뺀다. 상세를 볼 수 있는 ID 전부는 같은 순서(직방 먼저, 그다음 제휴,
+    같은 출처 안에서는 응답 순서)로 `listing_ids` 에 담고 `id` 는 그 맨 앞이다.
+
+    `isPriceRange` 가 true 면 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다 (웹 카드는 '최저가 ~').
+    웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면으로 가므로(신규분양 카드만 분양 화면, 2026-11-15 번들
+    ItemCard_AptItemCatalogCard 의 onPress) `url` 도 호 ID 가 있으면 늘 그 화면이다. jibsa 는 목록 요청에
+    `offerItemCount` 를 보내지 않아 신규분양 카드가 오지 않는다. 호 ID 가 없으면 묶음 화면을 만들 수 없어 `id` 매물의
+    웹 페이지다. 묶음 화면이 받는 호 ID·거래 유형은 `catalog_id` 로 낸다.
     """
-    entry = next(
-        (entry for source in APT_ITEM_SOURCES for entry in catalog.item_id_list if entry.item_source == source),
-        None,
-    )
+    viewable = [
+        (entry.item_id, source)
+        for entry in catalog.item_id_list if (source := apt_item_source(entry.item_source)) is not None
+    ]
+    # 출처 우선순위대로 (같은 출처 안에서는 응답 순서 그대로, sorted 는 순서를 지킨다).
+    # 리뷰 오탐 (2026-11-15): 거르기와 출처순 정렬을 이중 루프 하나로 합치자는 지적. 같은 규칙이 두 곳에 있는 것이 아니고
+    # 출력도 같다 (출처 우선, 같은 출처 안은 응답 순)
+    entries = sorted(viewable, key=lambda entry: APT_ITEM_SOURCES.index(entry[1]))
     trade_type = TRADE_BY_APT_TRAN_TYPE.get(catalog.tran_type)
-    if entry is None or trade_type is None:
+    if not entries or trade_type is None:
         return None
+    item_id, item_source = entries[0]
+    listing_ids = [apt_listing_id(*entry) for entry in entries]
     is_sale = trade_type == '매매'
     return ZigbangAptListing(
         source='zigbang',
-        id=str(entry.item_id) if entry.item_source == 'zigbang' else f'coalition-{entry.item_id}',
-        url=apt_item_url(entry.item_id, entry.item_source or 'zigbang'),
+        id=listing_ids[0],
+        url=(
+            apt_catalog_url(catalog.area_ho_id, catalog.tran_type)
+            if catalog.area_ho_id is not None
+            else apt_item_url(item_id, item_source)
+        ),
         trade_type=trade_type,
         property_type='아파트',
         title=catalog.item_title or join_address(catalog.area_danji_name, catalog.dong),
@@ -518,6 +611,8 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         complex_name=join_address(catalog.area_danji_name, catalog.dong),
         supply_area_m2=catalog.size_contract_m2,
         is_price_range=catalog.is_price_range,
+        catalog_id=apt_catalog_id(catalog.area_ho_id, catalog.tran_type) if catalog.area_ho_id is not None else None,
+        listing_ids=listing_ids,
         listing_count=catalog.item_count,
     )
 

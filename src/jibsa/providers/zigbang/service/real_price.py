@@ -75,7 +75,14 @@ class ZigbangRealPrice(BaseModel):
     ] = None
     pyeong_name: Annotated[
         str | None,
-        Field(description='평형 이름 (공급면적 평 기준, 예: 34A)')
+        Field(description=(
+            '평형 이름 (공급면적 평 기준, 예: 34A). 후보가 여럿이면 "32A 외 4" '
+            '(같은 전용면적의 평형이 여럿이라 어느 평형인지 직방도 모른다). 직방이 후보를 주지 않거나 첫 후보의 평 이름을 주지 않으면 null (후보는 pyeong_names)'
+        ))
+    ] = None
+    pyeong_names: Annotated[
+        list[str | None] | None,
+        Field(description='평형 후보 이름 전부 (응답 순서, 직방이 평 이름을 주지 않은 후보는 null). 후보가 하나면 키가 없고, 직방이 후보를 주지 않으면 null')
     ] = None
     floor: Annotated[
         str | None,
@@ -120,6 +127,9 @@ class ZigbangRealPrice(BaseModel):
             fields |= {'category', 'cancelled', 'presale'}
         if self.presale is None:
             fields.add('presale')
+        # 후보가 하나면 해당 없음이라 키를 지운다. 후보를 주지 않았으면(None) 모름이라 null 로 둔다
+        if self.pyeong_names is not None and len(self.pyeong_names) == 1:
+            fields.add('pyeong_names')
         for field in fields:
             data.pop(field, None)
         return data
@@ -186,12 +196,16 @@ def rt_price_to_real_price(transaction: ZigbangRtPriceModel) -> ZigbangRealPrice
     if trade_type is None:
         return None
     is_sale = trade_type == '매매'
-    title = transaction.area_infos[0] if transaction.area_infos else None
+    # 실거래 신고에는 전용면적만 있어 같은 전용면적의 평형이 여럿이면 직방이 후보를 모두 준다. 웹은 첫 후보의 ㎡ 이름과 나머지
+    # 후보 수로 '107A㎡외4' 처럼 보여 준다. areaInfos 전부를 후보로 세고 평 이름이 빈 후보 자리는 모름(None)으로 남겨, 수와
+    # 첫 후보를 웹(getTypeOrPrice·getType)과 맞춘다. 후보가 없으면(빈 목록) 직방이 후보를 주지 않은 것이라 pyeong_names 는 null
+    names = [info.p or None for info in transaction.area_infos]
     return ZigbangRealPrice(
         trade_type=trade_type,
         trade_date=rt_deal_date(transaction.deal_date),
         area_m2=transaction.area_m2,
-        pyeong_name=title.p if title else None,
+        pyeong_name=(f'{names[0]} 외 {len(names) - 1}' if len(names) > 1 else names[0]) if names and names[0] else None,
+        pyeong_names=names or None,
         # 매물 목록·상세(Listing 검증기)와 당근 실거래가처럼 지하층을 '지하1' 로 맞춘다
         floor=None if transaction.floor is None else normalize_floor(str(transaction.floor)),
         price_manwon=transaction.price if is_sale else None,

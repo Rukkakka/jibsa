@@ -34,6 +34,7 @@ from jibsa.providers.zigbang.api.request.complex import (
 from jibsa.providers.zigbang.api.request.listing import (
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
+    ZigbangItemCatalogsRequestParameterModel,
     ZigbangItemsDetailV1RequestParameterModel,
     ZigbangItemsOfficetelsV1RequestParameterModel,
     ZigbangItemsOneroomsV1RequestParameterModel,
@@ -79,6 +80,7 @@ from jibsa.providers.zigbang.api.response.complex import (
 from jibsa.providers.zigbang.api.response.listing import (
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemCatalogsItemsResponseModel,
+    ZigbangItemCatalogsResponseModel,
     ZigbangItemsDetailV1ResponseModel,
     ZigbangItemsOfficetelsV1ResponseModel,
     ZigbangItemsOneroomsV1ResponseModel,
@@ -148,7 +150,7 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·상세, 상가,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·상세·같은 호 묶음, 상가,
     단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는
     헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
@@ -190,6 +192,7 @@ class ZigbangClient(BaseHTTPClient):
     items_list_v1_endpoint: ClassVar[str] = '/house/property/v1/items/list'
     locals_item_catalogs_endpoint: ClassVar[str] = '/apt/locals/{local_code}/item-catalogs'
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
+    item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
     bls_school_zones_v1_endpoint: ClassVar[str] = '/house/property/v1/bls/{pnu}/school_zones'
@@ -522,13 +525,15 @@ class ZigbangClient(BaseHTTPClient):
         """Fetch the structured house detail via `GET /house/property/v1/items/{itemId}/detail`.
 
         Same retry behaviour as `run_request_items_onerooms_v1`. `/v3/items` 와 응답 구조가 다르다.
-        없는 매물이면 404 로 `ResponseStatusError` 가 나고, 내려간 매물은 200 에 `status` 가 open 이 아니다.
+        원룸·빌라·오피스텔만 준다. 없는 매물이면 404 로 `ResponseStatusError` 가 나고(본문에 `code` 없음), 아파트 매물도
+        404 지만 본문 `code` 가 `ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED` 다 (2026-11-15 실측). 내려간 매물은 200 에
+        `status` 가 open 이 아니다.
 
         Args:
             parameter: `item_id` (경로).
 
         Returns:
-            ZigbangItemsDetailV1ResponseModel: 주소·면적·층·입주일·관리비·옵션과 인근 지하철역.
+            ZigbangItemsDetailV1ResponseModel: 주소·면적·층·입주일·관리비(부과 방식별 내역 포함)·옵션과 인근 지하철역.
                 입주일(`moveInAt`)은 null 일 수 있다.
         """
         response = self._client.get(
@@ -560,8 +565,9 @@ class ZigbangClient(BaseHTTPClient):
     ) -> ZigbangItemsV3ResponseModel:
         """Fetch the full item detail via `GET /v3/items/{itemId}`.
 
-        Same retry behaviour as `run_request_items_onerooms_v1`. 없는 매물이면
-        404 로 `ResponseStatusError` 가 난다.
+        Same retry behaviour as `run_request_items_onerooms_v1`. 새 주거 상세의 입주일이 null 일 때
+        입주 문구·주차를 보완하는 데 쓴다. 없는 매물과 아파트 매물은 404 로 `ResponseStatusError` 가 난다
+        (2026-11-15 실측).
 
         Args:
             parameter: `item_id` (경로) plus `domain`.
@@ -637,15 +643,15 @@ class ZigbangClient(BaseHTTPClient):
     ) -> ZigbangItemCatalogsItemsResponseModel:
         """Fetch an apartment item detail via `GET /apt/item-catalogs/items/{itemId}`.
 
-        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 매물 페이지(v2)가 쓰는
-        엔드포인트로, `/v3/items` 가 아파트에 대해 주지 않는 단지 이름·방 수·욕실 수·사용승인일과
-        아파트 관리비를 준다. 없는 매물이면 404 다.
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 매물 페이지(v2)가 부르는 유일한
+        상세다 (2026-11-15 실측). 주거 상세·`/v3/items` 는 아파트에 404 라 아파트 매물(직방·제휴)의 상세는 이것 하나로
+        만든다. 없는 매물이나 아파트가 아닌 매물(원룸 ID)이면 404 다. 상태 필드는 없다.
 
         Args:
             parameter: `item_id` (경로) plus `item_source`.
 
         Returns:
-            ZigbangItemCatalogsItemsResponseModel: 아파트 매물 상세 (관리비는 원 단위).
+            ZigbangItemCatalogsItemsResponseModel: 아파트 매물 상세 (관리비는 원 단위, 층은 직방 매물이면 저·중·고).
         """
         response = self._client.get(
             url=self.item_catalogs_items_endpoint.format(item_id=parameter.item_id),
@@ -668,6 +674,47 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangItemCatalogsItemsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_item_catalogs(
+        self,
+        parameter: ZigbangItemCatalogsRequestParameterModel
+    ) -> ZigbangItemCatalogsResponseModel:
+        """Fetch one page of an apartment listing bundle via `GET /apt/item-catalogs/{areaHoId}`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 같은 호·거래 유형을 올린 매물(중개사별) 묶음으로, 웹 아파트
+        목록 카드가 가격 범위(`isPriceRange`)일 때 누르면 가는 묶음 화면(`/home/apt/item-catalog?areaHoId=…&tranType=…`)이
+        부른다 (번들 `getItemCatalog`·`useItemCatalogDetail`: 20건씩 `itemCount` 까지, 첫 쪽은 서버가 그려 넣는다. 2026-11-15).
+        매물마다 아파트 상세(`/apt/item-catalogs/items/{itemId}`)와 같은 꼴이라 묶음 매물의 가격·상세를 매물마다 따로 부르지
+        않고 받는다. 묶음에 매물이 없거나 그 호에 그 거래 유형 매물이 없으면 404 (`not found item in catalog`)다.
+
+        Args:
+            parameter: `area_ho_id` (경로) plus 거래 유형(`tranType`), `offset`/`limit`.
+
+        Returns:
+            ZigbangItemCatalogsResponseModel: 묶음의 매물 수와 이 쪽의 매물 (관리비는 원 단위, 층은 직방 매물이면 저·중·고).
+        """
+        response = self._client.get(
+            url=self.item_catalogs_endpoint.format(area_ho_id=parameter.area_ho_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangItemCatalogsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_item_catalogs(
+        self,
+        parameter: ZigbangItemCatalogsRequestParameterModel
+    ) -> ZigbangItemCatalogsResponseModel:
+        """Async variant of `run_request_item_catalogs`."""
+        response = await self._async_client.get(
+            url=self.item_catalogs_endpoint.format(area_ho_id=parameter.area_ho_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangItemCatalogsResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis(

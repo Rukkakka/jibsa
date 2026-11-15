@@ -26,12 +26,14 @@ from jibsa.core.geo import (
     haversine_km,
     within_radius,
 )
+from jibsa.core.http import error_body
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
     beyond_radius_notes,
     by_distance,
+    format_manwon,
     join_address,
     limit_notes,
     listing_as,
@@ -39,7 +41,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -164,12 +166,11 @@ STAY_PRICE_ERRORS: dict[str, str] = {
     'MIN_CONTRACT_PERIOD': '계약 기간이 이 매물의 최소 계약 기간보다 짧습니다',
     'MAX_CONTRACT_PERIOD': '계약 기간이 이 매물의 최대 계약 기간보다 깁니다',
 }
-# 직방 단기임대 매물은 웹 매물 페이지가 없고 직방 앱에서만 열린다.
-STAY_URL: str = 'https://www.zigbang.com/home/short-term-rental'
-STAY_APP_NOTE: str = (
-    '직방 단기임대 매물은 웹 매물 페이지가 없어 url 이 직방 단기임대 안내 페이지입니다. '
-    '매물 확인·예약은 직방 앱의 단기임대 탭에서 제목으로 찾으세요'
-)
+
+
+def stay_item_url(stay_id: int | str) -> str:
+    """단기임대 매물 웹 페이지 주소. 로그인 없이 열린다."""
+    return f'https://www.zigbang.com/stay/item/{stay_id}'
 
 
 class ZigbangStayListing(Listing):
@@ -366,7 +367,7 @@ class ZigbangStaySearchResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='앱에서만 열린다·일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -374,25 +375,40 @@ class ZigbangStaySearchResult(BaseModel):
         return drop_unused_scope(handler(self))
 
 
-def stay_discount_label(discount: ZigbangStayDiscountModel) -> str | None:
-    """할인 조건 한 줄. 꺼진 할인은 None."""
-    if discount.is_active is False:
+def _discount_amount_text(amount_won: float | None) -> str | None:
+    """할인 금액(원)을 'N만원' 으로 (반올림 없이 원 단위까지, 2,500원 → '0.25만원'). 금액이 없거나 0 이하면 None (할인이 아니다)."""
+    if not amount_won or amount_won <= 0:
         return None
-    if discount.discount_rate:
-        amount = f'{discount.discount_rate:g}%'
-    elif discount.discount_amount:
-        amount = f'{won_to_manwon(discount.discount_amount):g}만원'
-    else:
-        return None
-    if discount.discount_type == 'LONG_TERM' and discount.condition_weeks:
-        return f'{discount.condition_weeks}주 이상 {amount} 할인'
+    return f'{format_manwon(won_to_manwon_exact(amount_won) or 0)}만원'
+
+
+def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | None) -> str | None:
+    """할인 조건 한 줄. 웹 상세(`DiscountDetailList`)가 그리지 않는 할인은 None.
+
+    웹은 장기계약·즉시입주 할인만 그린다. 장기계약은 주 수·할인율·주당 임대료가 모두 0보다 클 때만 '{주}주 이상 {율}% 할인' 이고
+    할인 금액은 쓰지 않는다. 즉시입주는 금액만 보고(0 이하면 None) 입주 시점 조건을 붙인다. 주 수·할인율·조건 일수가 null 이면
+    웹처럼 0 으로 본다 (조건 일수 0 은 오늘). 웹은 할인의 `isActive` 를 보지 않아 꺼진 할인도 그리므로 여기서도 거르지 않는다
+    (2026-11-15 번들 `DiscountDetailList`·목록 카드 `pickDiscountTextsForCard`. 실측 강남역·홍대입구역 할인 124건은 모두 true).
+    """
+    if discount.discount_type == 'LONG_TERM':
+        weeks = discount.condition_weeks or 0
+        rate = discount.discount_rate or 0
+        if weeks <= 0 or rate <= 0 or (weekly_rent or 0) <= 0:
+            return None
+        return f'{weeks}주 이상 {rate:g}% 할인'
     if discount.discount_type == 'INSTANT':
-        return f'즉시 {amount} 할인'
-    return f'{amount} 할인'
+        amount = _discount_amount_text(discount.discount_amount)
+        if amount is None:
+            # 리뷰 오탐 (2026-11-15): --discount 즉시 결과에서 즉시 할인이 빠지지 않는다. 웹이 금액 없는 즉시 할인을 숨기고,
+            # 실측 강남역 --discount 즉시 의 즉시 할인 27건은 모두 금액(discountAmount)이 있었다 (할인율만 있는 것 0건)
+            return None
+        days = discount.condition_days or 0
+        return f'오늘 입주 시 {amount} 할인' if days == 0 else f'오늘부터 {days}일 이내 입주 시 {amount} 할인'
+    return None
 
 
-def stay_discounts(discounts: list[ZigbangStayDiscountModel]) -> list[str]:
-    return [label for label in (stay_discount_label(discount) for discount in discounts) if label]
+def stay_discounts(discounts: list[ZigbangStayDiscountModel], weekly_rent: int | None) -> list[str]:
+    return [label for label in (stay_discount_label(discount, weekly_rent) for discount in discounts) if label]
 
 
 def stay_summary_to_listing(
@@ -403,7 +419,7 @@ def stay_summary_to_listing(
     return ZigbangStayListing(
         source='zigbang',
         id=f'stay-{summary.id}',
-        url=STAY_URL,
+        url=stay_item_url(summary.id),
         trade_type='단기임대',
         property_type=STAY_BUILDING_TYPE_LABELS.get(summary.building_type or '', summary.building_type or '단기임대'),
         title=summary.title,
@@ -420,11 +436,11 @@ def stay_summary_to_listing(
         lng=summary.lng,
         distance_km=None if distance_km is None else round(distance_km, 2),
         registered_at=normalize_date(summary.reviewed_at),
-        weekly_rent_manwon=won_to_manwon(summary.weekly_rent),
-        weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
+        weekly_rent_manwon=won_to_manwon_exact(summary.weekly_rent),
+        weekly_manage_cost_manwon=won_to_manwon_exact(summary.weekly_manage_cost),
         room_count=summary.room_count,
         bathroom_count=summary.bathroom_count,
-        discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts)),
+        discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts, summary.weekly_rent)),
     )
 
 
@@ -653,7 +669,7 @@ def search_stay_listings(
         returned=len(listings),
         has_more=has_more,
         listings=listings,
-        notes=[STAY_APP_NOTE] + scope_notes,
+        notes=scope_notes,
     )
 
 
@@ -826,16 +842,16 @@ def stay_detail_to_listing(
     registered_at: str | None = None,
 ) -> ZigbangStayListingDetail:
     """단기임대 상세를 `ZigbangStayListingDetail` 로 바꾼다. 사진·본문·호스트 정보는 옮기지 않는다."""
-    manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon(detail.weekly_manage_cost)
+    manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon_exact(detail.weekly_manage_cost)
     includes = detail.manage_cost_includes
     return ZigbangStayListingDetail(
         source='zigbang',
         id=f'stay-{detail.id}',
-        url=STAY_URL,
+        url=stay_item_url(detail.id),
         trade_type='단기임대',
         property_type=STAY_BUILDING_TYPE_LABELS.get(detail.building_type or '', detail.building_type or '단기임대'),
         title=detail.title,
-        deposit_manwon=won_to_manwon(detail.deposit),
+        deposit_manwon=won_to_manwon_exact(detail.deposit),
         area_m2=detail.size_m2,
         area_pyeong=m2_to_pyeong(detail.size_m2),
         floor=detail.floor,
@@ -859,10 +875,10 @@ def stay_detail_to_listing(
             f'{station.name} ({station.description})' if station.description else station.name
             for station in detail.nearby_stations
         ]),
-        weekly_rent_manwon=won_to_manwon(detail.weekly_rent),
+        weekly_rent_manwon=won_to_manwon_exact(detail.weekly_rent),
         weekly_manage_cost_manwon=manage_cost,
-        cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon(detail.cleaning_fee),
-        discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts)),
+        cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon_exact(detail.cleaning_fee),
+        discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts, detail.weekly_rent)),
         min_contract_weeks=detail.min_contract_weeks,
         max_contract_weeks=detail.max_contract_weeks,
         max_guests=detail.max_guests,
@@ -1005,13 +1021,7 @@ StayParameter = TypeVar('StayParameter')
 
 def _stay_400_body(exc: HTTPStatusError) -> dict[str, Any] | None:
     """단기임대 API 가 400 으로 준 본문 객체 (`error` 코드·`message`). 400 이 아니거나 JSON 객체가 아니면 None."""
-    if exc.response.status_code != 400:
-        return None
-    try:
-        body = exc.response.json()
-    except ValueError:
-        return None
-    return body if isinstance(body, dict) else None
+    return error_body(exc) if exc.response.status_code == 400 else None
 
 
 def _stay_search_call(call: Callable[[StayParameter], StayResponse], parameter: StayParameter) -> StayResponse:
@@ -1101,16 +1111,16 @@ def stay_period_cost(
         days=price.total_days,
         weeks=price.weeks,
         remaining_days=price.remaining_days,
-        rent_manwon=won_to_manwon(price.total_rent),
-        manage_cost_manwon=won_to_manwon(price.total_manage_cost),
-        cleaning_fee_manwon=won_to_manwon(cleaning),
-        discount_manwon=won_to_manwon(discount),
+        rent_manwon=won_to_manwon_exact(price.total_rent),
+        manage_cost_manwon=won_to_manwon_exact(price.total_manage_cost),
+        cleaning_fee_manwon=won_to_manwon_exact(cleaning),
+        discount_manwon=won_to_manwon_exact(discount),
         discounts=[
             f'{discount.name} {discount.rate:g}%' if discount.rate is not None else discount.name
             for discount in price.discounts
             if discount.name
         ],
-        service_fee_manwon=won_to_manwon(price.platform_fee),
-        deposit_manwon=won_to_manwon(price.deposit),
-        total_payment_manwon=won_to_manwon(price.total_guest_payment),
+        service_fee_manwon=won_to_manwon_exact(price.platform_fee),
+        deposit_manwon=won_to_manwon_exact(price.deposit),
+        total_payment_manwon=won_to_manwon_exact(price.total_guest_payment),
     )

@@ -1,6 +1,7 @@
-"""원룸·빌라·오피스텔 매물 검색과 주거 매물 상세 (search listings room, listing)."""
+"""원룸·빌라·오피스텔 매물 검색과 주거·아파트 매물 상세·아파트 매물 묶음 (search listings room, listing, catalog)."""
 
 from collections.abc import (
+    Callable,
     Iterator,
     Sequence,
 )
@@ -23,9 +24,11 @@ from jibsa.core.geo import (
     haversine_km,
     within_radius,
 )
+from jibsa.core.http import error_body
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
+    TradeType,
     beyond_radius_notes,
     by_distance,
     join_address,
@@ -36,16 +39,18 @@ from jibsa.core.listing import (
     normalize_date,
     note,
     parking_label,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
+    ZigbangAptItemSource,
     ZigbangItemsListV1RequestPayloadModel,
     ZigbangSalesType,
 )
 from jibsa.providers.zigbang.api.request.listing import (
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
+    ZigbangItemCatalogsRequestParameterModel,
     ZigbangItemsDetailV1RequestParameterModel,
     ZigbangItemsOfficetelsV1RequestParameterModel,
     ZigbangItemsOneroomsV1RequestParameterModel,
@@ -60,8 +65,11 @@ from jibsa.providers.zigbang.api.response.listing import (
     ZigbangAptItemModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemDetailModel,
+    ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
     ZigbangItemsResponseModel,
+    ZigbangManageCostEntryModel,
+    ZigbangManageCostUsageFeeModel,
 )
 from jibsa.providers.zigbang.service.common import (
     MAX_LIST_LIMIT,
@@ -74,12 +82,17 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangListing,
     ZigbangRegion,
     ZigbangRoomConditions,
+    apt_catalog_id,
+    apt_catalog_url,
     apt_complex_id,
+    apt_item_source,
     apt_item_url,
+    apt_listing_id,
     drop_unused_scope,
     excluded_notes,
     item_url,
     officetel_complex_id,
+    parse_catalog_id,
     room_filter_of,
     school_label,
     sent_or_none,
@@ -117,6 +130,8 @@ ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '�
 GEOHASH_PRECISION: int = 5
 # --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
 DETAILS_MAX: int = 30
+# 웹 묶음 화면이 한 번에 받는 매물 수 (`useItemCatalogDetail`, 2026-11-15 번들)
+CATALOG_PAGE_SIZE: int = 20
 # 기존 상세(/v3/items)의 주차 문장과 가능 여부
 LEGACY_PARKING_AVAILABLE: dict[str, bool] = {'주차 가능': True, '주차 불가능': False, '주차 불가': False}
 DIRECTION_LABELS: dict[str, str] = {
@@ -129,6 +144,28 @@ DIRECTION_LABELS: dict[str, str] = {
     'SE': '남동향',
     'SW': '남서향',
 }
+# 새 주거 상세가 아파트 매물에 주는 404 의 본문 code. 없는 매물의 404 는 code 가 없다 (2026-11-15 실측)
+APT_DETAIL_NOT_SUPPORTED_CODE: str = 'ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED'
+# 정액 관리비 사용료 항목 (관리비 포함 항목 include 가 쓰는 이름, 응답에서 그 항목을 꺼내는 함수). 순서는 웹 매물 화면의
+# 순서라 응답 모델의 필드 순서와 다르다. 필드를 직접 읽어 이름이 어긋나면 mypy 가 잡는다
+USAGE_FEES: tuple[tuple[str, Callable[[ZigbangManageCostUsageFeeModel], ZigbangManageCostEntryModel | None]], ...] = (
+    ('전기', lambda usage: usage.electricity),
+    ('수도', lambda usage: usage.water),
+    ('가스', lambda usage: usage.gas),
+    ('난방', lambda usage: usage.heating),
+    ('인터넷', lambda usage: usage.internet),
+    ('TV', lambda usage: usage.tv),
+)
+NORMAL_MANAGE_COST_LABEL: str = '일반(공용) 관리비'
+ETC_MANAGE_COST_LABEL: str = '기타 관리비'
+# 웹 매물 화면의 관리비 항목 순서 (`getFixedManageCostDetailKeys`, 2026-11-15 번들). 웹은 include 목록도 이 이름 순서로
+# 정렬하고, 이 이름이 아니면 원래 순서대로 뒤에 둔다. 웹의 기타 관리비 이름은 붙여 쓴 '기타관리비' 라, include 에
+# 띄어 써 오는 '기타 관리비' 는 맨 뒤로 간다 (2026-11-15 실측: 50905571 의 include 가 일반·기타·인터넷·TV 순)
+MANAGE_COST_ORDER: dict[str, int] = {
+    name: index for index, name in enumerate((NORMAL_MANAGE_COST_LABEL, *(label for label, _ in USAGE_FEES), '기타관리비'))
+}
+FIXED_MANAGE_COST_TYPE: str = 'FixedManageCost'
+UNKNOWN_MANAGE_COST_TYPE: str = 'UnknownManageCost'
 
 
 class ZigbangSearchResult(BaseModel):
@@ -212,11 +249,11 @@ class ZigbangListingDetail(ListingDetail):
     ] = None
     total_parking_count: Annotated[
         int | float | None,
-        Field(description='총 주차 대수 (새 주거 상세만). 직방이 소수(0.4)로 주기도 해 그대로 준다')
+        Field(description='총 주차 대수 (아파트는 단지 전체). 직방이 소수(0.4)로 주기도 해 그대로 준다')
     ] = None
     household_count: Annotated[
         int | None,
-        Field(description='주차 계산에 쓰는 매물 측 세대수. 단지 총세대수와 다를 수 있다')
+        Field(description='주차 계산에 쓰는 매물 측 세대수. 단지 총세대수와 다를 수 있다. 아파트는 아파트 상세에 없어 null')
     ] = None
     direction_criterion: Annotated[
         str | None,
@@ -229,8 +266,6 @@ class ZigbangListingDetail(ListingDetail):
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
-        if self.id.startswith('coalition-'):
-            fields = fields | {'total_parking_count', 'household_count', 'direction_criterion'}
         # 아파트 학군은 단지 정보(zigbang complex)에서 준다
         if self.property_type == '아파트':
             fields = fields | {'schools'}
@@ -266,29 +301,101 @@ def building_schools(response: ZigbangBlsSchoolZonesV1ResponseModel) -> list[str
     return [label for label in labels if label]
 
 
+def _usage_fee_items(usage: ZigbangManageCostUsageFeeModel | None) -> list[tuple[str, ZigbangManageCostEntryModel]]:
+    """사용료 여섯 항목을 웹 순서로 (이름, 항목) 으로. 키가 빠진 항목은 웹처럼 해당 없음으로 본다."""
+    return [
+        (label, (entry_of(usage) if usage else None) or ZigbangManageCostEntryModel(type='not_applicable'))
+        for label, entry_of in USAGE_FEES
+    ]
+
+
+def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[str] | None:
+    """관리비에 든 항목을 웹 매물 화면(`renderManageCostData`, 2026-11-15 번들)과 같은 규칙으로 고른다.
+
+    `include` 목록은 실비로 따로 내는 사용료까지 포함으로 담는다. 웹은 정액 관리비(`FixedManageCost`)면 항목별로
+    '일반(공용) 관리비 220,000원 / 전기 실비 …' 처럼 보여 주므로, 관리비 금액에 실제로 든 항목만 낸다: 금액이 있는
+    일반(공용) 관리비, 정액 사용료 항목, 금액이 있는 기타 관리비. 실비·해당 없음·미제공 항목은 넣지 않는다.
+    항목별 내역을 알리지 않았거나(`hasInformed` false, 또는 키가 없는데 여섯 항목이 모두 미제공·해당 없음) 실비 관리비이거나
+    `detail` 이 없으면 웹처럼 `include` 목록을 `MANAGE_COST_ORDER` 순서로 정렬해 낸다. `hasInformed` 가 null 로 오면 웹처럼
+    (`void 0===e.hasInformed` 는 null 이 아니다) 항목별로 본다. `detail` 이 없고 관리비 금액도 없으면(0·null) 웹은
+    '관리비 없음' 만 보여 주고 항목을 그리지 않아 빈 목록이다. 정액 관리비의 항목도 웹 순서다
+    (일반(공용) 관리비, 사용료, 기타 관리비). 확인 불가(`UnknownManageCost`)는 부르는 쪽(`detail_to_listing`)이 거른다.
+    """
+    listed = sent_or_none(manage, 'includes', sorted(
+        (entry.name for entry in manage.includes if entry.name),
+        key=lambda name: MANAGE_COST_ORDER.get(name, len(MANAGE_COST_ORDER)),
+    ))
+    detail = manage.detail
+    if detail is None:
+        # 웹(`!manageCost.amount`)처럼 `amount` 로 본다. `amount` 가 비고(0·null) `fee` 만 있는 매물은 `detail_to_listing` 이 먼저 모름으로 뺀다
+        return listed if manage.amount else []
+    # 리뷰 오탐 (2026-11-15): 실비 관리비(ActualManageCost)도 웹은 include 이름으로 포함 항목을 그린다. detailIncludes 는
+    # '전기료'·'수도료' 처럼 이름이 달라 쓰면 웹과 어긋난다 (실측 50987398 웹 '일반(공용) 관리비, 전기, 수도, 가스, 기타 관리비'
+    # = include. 실비 매물 6건 모두 두 목록의 항목은 같고 이름만 다름)
+    if detail.type != FIXED_MANAGE_COST_TYPE:
+        return listed
+    usage = _usage_fee_items(detail.usage_fee)
+    if detail.has_informed is False:
+        return listed
+    if 'has_informed' not in detail.model_fields_set and all(entry.type in ('unknown', 'not_applicable') for _, entry in usage):
+        return listed
+    includes: list[str] = []
+    if detail.normal_manage_cost and (detail.normal_manage_cost.amount or 0) > 0:
+        includes.append(NORMAL_MANAGE_COST_LABEL)
+    includes += [label for label, entry in usage if entry.type == 'fixed' and (entry.amount or 0) > 0]
+    etc = detail.etc_manage_cost
+    if etc and not etc.is_unknown and (etc.amount or 0) > 0:
+        # 리뷰 오탐 (2026-11-15): 중개사가 쓴 설명을 이름으로 내는 것이 맞다. 웹(`renderManageCostData`)도 '기타 관리비' 소제목
+        # 아래 줄의 이름표로 description 을 쓴다 (실측 50893092: '주차비 5,000원')
+        includes.append(etc.description or ETC_MANAGE_COST_LABEL)
+    return includes
+
+
+def _manage_cost_manwon(manage: ZigbangItemsDetailV1ManageCostModel) -> float | None:
+    """주거 상세 관리비 금액 (만원). 웹 매물 화면의 관리비 절이 그리는 금액을 원 단위까지 낸다.
+
+    내역이 있으면 웹(`renderManageCostData`, 2026-11-15 번들)처럼 정액 `totalAmount`·실비 `avgManageCost`(원)다. 웹은 `fee` 를
+    읽지 않고, 내역이 없으면 `amount` × 10000 원을 그린다. `amount`(만원)는 직방이 0.1만원 아래를 버린 값이라(실측 51105591:
+    amount 37.5, fee 375700) 그때는 목록 카드처럼 원 단위 `fee` 를 쓴다 (개발 가이드 "웹과 다른 점"). 원 단위 금액이 없을 때만
+    `amount` 다. 내역이 없고 금액도 없으면(0·null) 웹은 '관리비 없음' 이라 0 이다 (포함 항목도 빈 목록, `manage_cost_includes`).
+    """
+    detail = manage.detail
+    if detail is not None:
+        won = detail.total_amount if detail.type == FIXED_MANAGE_COST_TYPE else detail.avg_manage_cost
+        if won is not None:
+            return won_to_manwon_exact(won)
+    if manage.fee is not None:
+        return won_to_manwon_exact(manage.fee)
+    return (manage.amount or 0) if detail is None else manage.amount
+
+
 def detail_to_listing(
     response: ZigbangItemsDetailV1ResponseModel,
     *,
     legacy: ZigbangItemDetailModel | None = None,
     registered_at: str | None = None,
     short_term: bool = False,
-    apt: ZigbangAptItemModel | None = None,
 ) -> ZigbangListingDetail:
-    """새 주거 상세(`/items/{id}/detail`) 응답을 `ZigbangListingDetail` 로 바꾼다.
+    """새 주거 상세(`/items/{id}/detail`) 응답을 `ZigbangListingDetail` 로 바꾼다 (원룸·빌라·오피스텔).
 
     사진·본문·중개사 정보는 응답에 있어도 옮기지 않는다 (원 사이트에서 확인).
     입주일(`moveInAt`)이 null 이면 기존 상세(`/v3/items`, `legacy`)의 입주 문구로 보완하고, 그때는 주차도
     기존 상세의 문구를 쓴다. 상세 응답에는 등록일이 없어 요약 응답의 `reg_date` 를 `registered_at` 으로 받는다.
     없으면 모름(None). 단기임대 여부도 상세 응답에는 없어 요약 응답(`trade_type_of`)에서 `short_term` 으로 받는다.
-    아파트는 단지 이름·방 수·욕실 수·사용승인일을 아파트 상세(`apt`)로 채운다.
+    관리비가 확인 불가(`UnknownManageCost`)면 웹처럼 금액도 항목도 모름(None)이다. 금액은 `_manage_cost_manwon` 이 정한다.
     """
     item = response.item
     residence = item.residence
     price = item.price
     manage = item.manage_cost
-    manage_cost = manage.amount if manage else None
-    if manage_cost is None and manage is not None:
-        manage_cost = won_to_manwon(manage.fee)
+    if manage is not None and manage.detail is not None and manage.detail.type == UNKNOWN_MANAGE_COST_TYPE:
+        # 웹은 '관리비 확인 불가' 로 보여 주고 금액도 항목도 내지 않는다
+        manage = None
+    if manage is not None and manage.detail is None and not manage.amount and manage.fee:
+        # 내역이 없으면 웹은 `amount` 만 보고(0·null) '관리비 없음' 으로 보여 주는데 `fee` 에는 금액이 있다. 어느 쪽이 맞는지
+        # 몰라 틀릴 수 있는 금액을 내지 않고 금액도 항목도 모름(None)이다 (2026-11-15 사용자 결정)
+        manage = None
+    manage_cost = _manage_cost_manwon(manage) if manage is not None else None
     origin = item.address.origin
     address = origin.full_text if origin else None
     if item.address.jibun and origin and origin.local1:
@@ -306,14 +413,10 @@ def detail_to_listing(
         text = legacy.parking_available_text
         parking = parking_label(LEGACY_PARKING_AVAILABLE.get(text)) or text
 
-    url = (
-        apt_item_url(item.id) if item.service_type == '아파트'
-        else item_url(item.service_type, item.id)
-    )
     detail = ZigbangListingDetail(
         source='zigbang',
         id=str(item.id),
-        url=url,
+        url=item_url(item.service_type, item.id),
         trade_type='단기임대' if short_term and item.sales_type == '월세' else item.sales_type,
         property_type=item.service_type,
         room_type=residence.room_type,
@@ -337,7 +440,7 @@ def detail_to_listing(
         parking=parking,
         elevator=residence.elevator,
         options=sent_or_none(item, 'options', [option.name for option in item.options if option.name]),
-        manage_cost_includes=sent_or_none(manage, 'includes', [entry.name for entry in manage.includes if entry.name]) if manage else None,
+        manage_cost_includes=manage_cost_includes(manage) if manage else None,
         nearby_subways=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
@@ -345,15 +448,16 @@ def detail_to_listing(
         # 표시 문구를 정규화하지 않는다. 코드는 원룸·빌라가 대부분 '그외'라 문구가 더 정확하다 (2026-10-10 실측).
         # 원본 문구 끝에 공백이 붙어 오기도 해('주택   ') 앞뒤 공백만 뗀다
         residence_type=(residence.residence_description or residence.residence_type or '').strip() or None,
+        total_parking_count=residence.total_parking_count,
+        household_count=residence.household_count,
+        direction_criterion=residence.direction_criterion,
     )
     if item.service_type == '오피스텔':
         return detail.model_copy(update={
             'complex_id': officetel_complex_id(item.building_id) if item.building_id else None,
             'complex_name': response.danji.name if response.danji else None,
         })
-    if item.service_type != '아파트':
-        return detail
-    return apply_apt_detail(detail, apt)
+    return detail
 
 
 def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> ZigbangSearchResult:
@@ -400,70 +504,246 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})
 
 
-def get_coalition_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:
-    """아파트 제휴(호갱노노 집주인) 매물 하나의 상세를 조회한다 (1회 호출).
+def get_apt_listing(client: ZigbangClient, item_id: int, item_source: ZigbangAptItemSource = 'zigbang') -> ZigbangListingDetail:
+    """아파트 매물(직방, 또는 `coalition` 이면 호갱노노 집주인 제휴 매물) 하나의 상세를 아파트 상세(`/apt/item-catalogs/items`) 1회로 조회한다.
 
-    제휴 매물은 `/v3/items` 가 404 라 아파트 상세(`/apt/item-catalogs/items`)만으로 만든다.
-    상태 필드가 없고 내려간 매물은 404 다. 등록일은 주지 않아 모름(None)이다.
+    웹 아파트 매물 화면(`/home/apt/item/v2/{id}/{출처}/0`)이 부르는 상세는 이것 하나다 (2026-11-15 실측). 주거 상세·`/v3/items` 는
+    아파트에 404 다. 상태 필드가 없고 내려간 매물은 404 다. 이 상세는 주거 상세가 아파트 매물이라고 알린 숫자 ID 나
+    `coalition-` ID 로만 부르므로, 404 는 다른 소스 ID 가 아니라 직방 아파트 매물이 없거나 내려간 것이다 (`APT_ITEM_NOT_FOUND`).
 
     Raises:
-        ListingUnavailableError: 없는 매물(404)일 때.
+        ListingUnavailableError: 없는 매물(404, `APT_ITEM_NOT_FOUND`)이거나 거래 유형을 모를 때.
     """
-    listing_id = f'coalition-{item_id}'
-    with unavailable_on_404(listing_id):
+    listing_id = apt_listing_id(item_id, item_source)
+    with unavailable_on_404(listing_id, reason='APT_ITEM_NOT_FOUND'):
         apt = client.run_request_item_catalogs_items(
-            ZigbangItemCatalogsItemsRequestParameterModel(item_id=item_id, item_source='coalition')
+            ZigbangItemCatalogsItemsRequestParameterModel(item_id=item_id, item_source=item_source)
         ).item
-    trade_type = TRADE_BY_APT_TRAN_TYPE.get(apt.tran_type or '')
+    return apt_item_to_listing(apt, item_source)
+
+
+def _text_or_none(value: str | None) -> str | None:
+    """빈 글자(공백뿐)는 모름(None), 아니면 그대로. 아파트 상세는 값이 없는 칸을 빈 글자로 준다 (`oldAddress` 등).
+
+    방향 기준(`directionBase`)은 '기준' 을 떼야 해 `apt_item_to_listing` 이 같은 규칙을 따로 적용한다.
+    """
+    return value if value and value.strip() else None
+
+
+def apt_item_to_listing(
+    apt: ZigbangAptItemModel,
+    item_source: ZigbangAptItemSource,
+    trade_type: TradeType | None = None,
+) -> ZigbangListingDetail:
+    """아파트 상세(`/apt/item-catalogs/items`) 응답을 `ZigbangListingDetail` 로 바꾼다 (직방·제휴 매물).
+
+    거래 유형은 `trade_type` 을 주면 그것을, 아니면 응답의 `tranType` 을 쓴다. 묶음(`get_catalog`)은 요청한 거래 유형으로
+    받은 매물이라 그 거래 유형을 넘긴다 (웹 묶음 화면도 매물의 `tranType` 으로 거르지 않는다).
+
+    제목·층·방향이 빈 글자면 주소처럼 모름(None)이다. 층은 직방 매물이면 '저'·'중'·'고' 그대로다 (웹 아파트 화면에도 정확한 층이 없다). 주소는 지번 주소(`oldAddress`)다.
+    직방 매물은 지번이 빈 문자열이라 모름(None)이다: 응답의 `address` 는 도로명이라 매물 출력에 내지 않고(출력 규약), 웹 매물
+    화면도 지번을 보여 주지 않는다 (2026-11-15 웹 캡처: 단지 API 도 부르지 않는다). 지번은 단지(`complex_id`)에서 본다.
+    등록일·인근 역·엘리베이터·건축물 용도·방 구조·세대수는 이 응답에 없어 모름(None)이다. 총 주차 대수(`parkingCount`)는 제휴 매물에 오지 않아 모름(None)이다. 관리비는
+    확인 불가거나 모르는 종류거나 0원이면 모름(None)이다. 옵션은 아파트 상세에 옵션 칸이 없어 (2026-10-11 실측 19건) 모름(None)으로 둔다.
+
+    Raises:
+        ListingUnavailableError: `trade_type` 을 주지 않았는데 응답의 거래 유형을 모를 때 (UNKNOWN_TRADE_TYPE).
+    """
+    listing_id = apt_listing_id(apt.item_id, item_source)
+    trade_type = trade_type or TRADE_BY_APT_TRAN_TYPE.get(apt.tran_type or '')
     if trade_type is None:
         raise ListingUnavailableError('zigbang', listing_id, reason='UNKNOWN_TRADE_TYPE')
     is_sale = trade_type == '매매'
-    detail = ZigbangListingDetail(
+    cost = apt.manage_cost.amount if apt.manage_cost else None
+    # '거실기준' 을 새 주거 상세의 방향 기준('거실')과 같은 꼴로 맞춘다
+    criterion = (apt.direction_base or '').strip().removesuffix('기준').strip() or None
+    direction = _text_or_none(apt.direction)
+    return ZigbangListingDetail(
         source='zigbang',
         id=listing_id,
-        url=apt_item_url(item_id, 'coalition'),
+        url=apt_item_url(apt.item_id, item_source),
         trade_type=trade_type,
         property_type='아파트',
-        title=apt.item_title,
+        title=_text_or_none(apt.item_title),
         price_manwon=apt.deposit if is_sale else None,
         deposit_manwon=None if is_sale else apt.deposit,
         rent_manwon=apt.rent if trade_type == '월세' else None,
+        # 0원이면 웹(`getManagementFee`, 2026-11-15 번들)은 관리비 칸을 빈 글자로 두어 '관리비 없음' 이 아니라 모름(None)이다
+        manage_cost_manwon=won_to_manwon_exact(cost.monthly_cost) if cost and cost.monthly_cost else None,
         area_m2=apt.size_m2,
         area_pyeong=m2_to_pyeong(apt.size_m2),
-        floor=apt.floor,
+        floor=_text_or_none(apt.floor),
         building_floor=str(apt.building_floor) if apt.building_floor is not None else None,
-        address=apt.old_address or None,
-        direction=DIRECTION_LABELS.get((apt.direction or '').upper(), apt.direction),
+        address=_text_or_none(apt.old_address),
+        room_count=apt.room_count,
+        bathroom_count=apt.bathroom_count,
+        direction=DIRECTION_LABELS.get(direction.upper(), direction) if direction else None,
         move_in=move_in_label(apt.movein_date),
+        approved_at=normalize_date(apt.approval_date),
         parking=parking_label(None, f'세대당 {apt.parking_count_by_household:g}대') if apt.parking_count_by_household is not None else None,
+        options=None,
+        manage_cost_includes=cost.include_items if cost else None,
+        complex_id=apt_complex_id(apt.area_danji_id) if apt.area_danji_id else None,
+        complex_name=join_address(apt.area_danji_name, apt.area_building_name),
+        supply_area_m2=apt.size_contract_m2,
+        total_parking_count=apt.parking_count,
+        direction_criterion=criterion,
     )
-    return apply_apt_detail(detail, apt)
 
 
-def apply_apt_detail(detail: ZigbangListingDetail, apt: ZigbangAptItemModel | None) -> ZigbangListingDetail:
-    """아파트 상세(`/apt/item-catalogs/items`)로 `/v3/items` 가 비워 둔 값을 채운다.
+class ZigbangCatalogResult(BaseModel):
+    """같은 호·거래 유형의 아파트 매물 묶음 (catalog)."""
 
-    관리비는 아파트 상세 것만 쓴다. `/v3/items` 는 아파트 관리비를 금액 없이 '모두 별도' 로 주는데
-    사실과 달라, 아파트 상세가 없거나 확인 불가면 모름(None)으로 둔다. 층은 아파트 상세가
-    '저'·'중'·'고' 로만 줘서 `/v3/items` 의 층을 그대로 둔다. 옵션은 두 상세 모두 아파트에 빈 목록만 주고 아파트
-    상세에는 옵션 칸이 없어 (2026-10-11 실측 19건) 모름(None)으로 둔다.
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    catalog_id: Annotated[
+        str,
+        Field(description='묶음 ID (검색 결과의 catalog_id)')
+    ]
+    url: Annotated[
+        str,
+        Field(description='직방 웹 묶음 화면 (중개사별 매물 목록)')
+    ]
+    trade_type: Annotated[
+        TradeType,
+        Field(description='거래 유형')
+    ]
+    total: Annotated[
+        int | None,
+        Field(description='묶음의 매물 수 (직방 itemCount. 상세를 볼 수 없는 출처도 센다). 직방이 묶음 수를 주지 않으면 모름(null)')
+    ]
+    returned: Annotated[
+        int,
+        Field(description='반환한 매물 수')
+    ]
+    has_more: Annotated[
+        bool,
+        Field(description=(
+            f'직방이 알린 묶음 매물 수(total)보다 덜 받았는지 (앞 {MAX_LIST_LIMIT}건까지만 받고, 직방이 다음 쪽을 주지 않으면 거기서 멈춘다). '
+            f'total 이 null 이면 {MAX_LIST_LIMIT}건에 닿아 멈췄고 마지막 쪽이 가득 찼을 때 true (더 있을 수 있음)'
+        ))
+    ] = False
+    listings: Annotated[
+        list[ZigbangListingDetail],
+        Field(description='묶음 매물 (직방이 준 순서 그대로). 매물마다 listing 상세와 같은 필드')
+    ]
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='뺀 매물·일부만 받았다는 안내. CLI 가 notice 아래에 붙인다')
+    ] = []
+
+
+def _empty_catalog_error(catalog_id: str) -> JibsaError:
+    """묶음에 매물이 없을 때의 에러. 첫 쪽이 404 든 200 빈 목록이든 같은 에러를 낸다."""
+    return JibsaError(
+        code='LISTING_UNAVAILABLE',
+        message=(
+            f'거래할 수 있는 매물이 없는 직방 아파트 묶음입니다: {catalog_id} '
+            '(모두 내려갔거나 그 호에 그 거래 유형 매물이 없음)'
+        ),
+        hint='이 묶음은 빼고 search listings apt·search listings --complex <apt-…> 로 현재 매물을 다시 찾으세요',
+        details={'catalog_id': catalog_id, 'reason': 'EMPTY_CATALOG'},
+    )
+
+
+def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
+    """같은 호를 올린 아파트 매물 묶음의 매물을 웹 묶음 화면과 같은 API(`/apt/item-catalogs/{areaHoId}`)로 받는다.
+
+    웹처럼 20건씩 `itemCount` 까지 받되(앞 `MAX_LIST_LIMIT` 건까지), 웹은 스크롤할 때마다 다음 20건을 받고 여기서는 한 번에
+    끝까지 받는다. 매물마다 아파트 상세와 같은 꼴이라 `apt_item_to_listing` 으로 바꿔, 매물마다 상세를 따로 부르지 않는다.
+    순서는 직방이 준 그대로다 (웹도 다시 세우지 않는다). 상세를 볼 수 없는 출처(직방·제휴 밖)의 매물은 목록의 `listing_ids`
+    처럼 빼고 그 수를 `[제외]` 로 알린다 (2026-11-15 헬리오시티·은마 묶음 270건은 모두 직방·제휴였다). 거래 유형은 묶음 ID 의
+    것을 쓴다 (매물의 `tranType` 이 비어도 웹 묶음 화면처럼 빼지 않는다).
+
+    받는 도중 직방이 다음 쪽을 주지 않으면(받는 사이 묶음이 줄어 404, 또는 빈 쪽) 받은 데까지 내고 `[일부]` 로 알린다.
+    직방이 `itemCount` 를 주지 않으면(`total` null) 쪽이 가득(`CATALOG_PAGE_SIZE`) 찬 동안 상한까지 받고, 덜 찬 쪽이나
+    404·빈 쪽이 오면 끝으로 본다. `(최대 N건)` 안내는 상한에 닿아 멈췄을 때만이다.
+
+    Raises:
+        JibsaError: 묶음 ID 형식이 아닐 때 (INVALID_ARGUMENT). 묶음에 매물이 없을 때 (LISTING_UNAVAILABLE, reason
+            `EMPTY_CATALOG`. 모두 내려갔거나 그 호에 그 거래 유형 매물이 없음. 첫 쪽이 404 이거나 200 빈 목록). 묶음 ID 는
+            매물 ID 가 아니라 `listing_id` 대신 `catalog_id` 로 싣는다.
     """
-    cost = apt.manage_cost.amount if apt and apt.manage_cost else None
-    update: dict[str, object] = {
-        'manage_cost_manwon': won_to_manwon(cost.monthly_cost) if cost else None,
-        'manage_cost_includes': cost.include_items if cost else None,
-        'options': None,
-    }
-    if apt is not None:
-        update |= {
-            'complex_id': apt_complex_id(apt.area_danji_id) if apt.area_danji_id else None,
-            'complex_name': join_address(apt.area_danji_name, apt.area_building_name),
-            'supply_area_m2': apt.size_contract_m2,
-            'room_count': apt.room_count,
-            'bathroom_count': apt.bathroom_count if apt.bathroom_count is not None else detail.bathroom_count,
-            'approved_at': normalize_date(apt.approval_date) or detail.approved_at,
-        }
-    return detail.model_copy(update=update)
+    area_ho_id, tran_type = parse_catalog_id(catalog_id)
+    trade_type = TRADE_BY_APT_TRAN_TYPE[tran_type]
+    catalog_id = apt_catalog_id(area_ho_id, tran_type)
+    listings: list[ZigbangListingDetail] = []
+    received = 0
+    total: int | None = None
+    last_page_full = False
+    cut_short = False
+    while True:
+        try:
+            page = client.run_request_item_catalogs(ZigbangItemCatalogsRequestParameterModel(
+                area_ho_id=area_ho_id, tran_type=tran_type, offset=received, limit=CATALOG_PAGE_SIZE,
+            ))
+        except HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+            if not received:
+                raise _empty_catalog_error(catalog_id) from None
+            # 알린 수에 못 미쳤으면 받는 사이 묶음이 줄어 뒤 쪽이 없어졌다. 수를 모르면 끝까지 받은 것으로 본다. 받은 데까지 낸다
+            cut_short = total is not None
+            break
+        if not page.items:
+            if not received:
+                # 첫 쪽이 200 빈 목록이어도 404 와 같은 빈 묶음이다 (itemCount 와 상관없이)
+                raise _empty_catalog_error(catalog_id)
+            # 둘째 쪽부터의 빈 쪽도 404 와 같다. 이 쪽의 itemCount 는 줄어든 뒤의 수라 쓰지 않고 앞 쪽이 알린 수로 본다
+            cut_short = total is not None
+            break
+        total = page.item_count
+        received += len(page.items)
+        last_page_full = len(page.items) >= CATALOG_PAGE_SIZE
+        for apt in page.items:
+            if (source := apt_item_source(apt.item_source)) is not None:
+                listings.append(apt_item_to_listing(apt, source, trade_type))
+        if total is None:
+            # 묶음 수를 모르면 쪽이 가득 찬 동안만 다음 쪽을 받는다
+            if not last_page_full or received >= MAX_LIST_LIMIT:
+                break
+            continue
+        if received >= min(total, MAX_LIST_LIMIT):
+            break
+    notes: list[str] = []
+    if received > len(listings):
+        notes.append(note(
+            '제외', f'묶음 매물 {received}건 중 상세를 볼 수 없는 출처 {received - len(listings)}건을 뺐습니다',
+        ))
+    if total is None:
+        has_more = received >= MAX_LIST_LIMIT and last_page_full
+    else:
+        has_more = received < total
+    # cut_short 는 받은 수가 직방이 알린 수(total)에 못 미친 채 멈췄을 때만 서므로 has_more 는 늘 참이다
+    if cut_short:
+        notes.append(note(
+            '일부',
+            f'직방이 다음 쪽 매물을 주지 않아 {received}건에서 멈췄습니다 (직방이 알린 묶음 {total}건, 받는 사이 묶음이 바뀌었을 수 '
+            '있음). 다시 부르거나 url 의 직방 묶음 화면에서 보세요',
+        ))
+    elif has_more and total is None:
+        notes.append(note(
+            '일부',
+            f'직방이 묶음 매물 수를 알려 주지 않아 앞 {received}건만 받았습니다 (최대 {MAX_LIST_LIMIT}건, 더 있을 수 있음). '
+            '나머지는 url 의 직방 묶음 화면에서 보세요',
+        ))
+    elif has_more:
+        notes.append(note(
+            '일부',
+            f'묶음 매물 {total}건 중 앞 {received}건만 받았습니다 (최대 {MAX_LIST_LIMIT}건). 나머지는 url 의 직방 묶음 화면에서 보세요',
+        ))
+    return ZigbangCatalogResult(
+        catalog_id=catalog_id,
+        url=apt_catalog_url(area_ho_id, tran_type),
+        trade_type=trade_type,
+        total=total,
+        returned=len(listings),
+        has_more=has_more,
+        listings=listings,
+        notes=notes,
+    )
 
 
 def unsearchable_types(property_types: Sequence[str], trade_types: Sequence[str]) -> list[str]:
@@ -855,20 +1135,30 @@ def _search_result(
 
 
 def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:
-    """새 주거 상세 + 등록일·단기임대 요약을 조회한다. 입주일이 null이면 기존 상세 1회를 추가한다.
+    """숫자 ID 매물의 상세를 조회한다. 원룸·빌라·오피스텔은 새 주거 상세 + 등록일·단기임대 요약이고, 입주일이 null 이면
+    기존 상세 1회, 필지가 있으면 건물 학군 1회를 더한다 (학군은 실패하면 모름).
 
-    아파트는 단지 이름·방 수·욕실 수·사용승인일·관리비를 아파트 상세에서 받아 1회 더 호출한다.
-    원룸·빌라·오피스텔은 학군을 건물(필지) 학군에서 받아 1회 더 호출한다 (실패하면 모름).
-    아파트 상세만 404 면 그 값들을 모름(None)으로 두고 나머지는 그대로 돌려준다.
+    새 주거 상세는 아파트 매물에 본문 code 가 `APT_DETAIL_NOT_SUPPORTED_CODE` 인 404 를 준다. 그때는 웹 아파트 매물 화면처럼
+    아파트 상세 1회로 만든다 (`get_apt_listing`).
 
     Raises:
         ListingUnavailableError: 없는 매물(404)이거나 상태가 open 이 아닐 때 (상태가 없을 때 포함).
         JibsaError: 거래 중인 매물인데 거래 유형·매물 유형이 없을 때 (PARSE_ERROR).
     """
+    structured: ZigbangItemsDetailV1ResponseModel | None
     with unavailable_on_404(item_id):
-        structured = client.run_request_items_detail_v1(
-            ZigbangItemsDetailV1RequestParameterModel(item_id=item_id)
-        )
+        try:
+            structured = client.run_request_items_detail_v1(
+                ZigbangItemsDetailV1RequestParameterModel(item_id=item_id)
+            )
+        except HTTPStatusError as exc:
+            # 리뷰 오탐 (2026-11-15): 주거 상세는 아파트 매물에 200 을 주지 않고 이 code 의 404 만 준다 (실측 51174606·51183455).
+            # 200 이 오면 엔드포인트 동작이 바뀐 것이라(매일 API 감시가 볼 일) 아파트 여부를 다시 확인하는 가드는 두지 않는다
+            if exc.response.status_code != 404 or (error_body(exc) or {}).get('code') != APT_DETAIL_NOT_SUPPORTED_CODE:
+                raise
+            structured = None
+    if structured is None:
+        return get_apt_listing(client, item_id)
     if structured.item.status != 'open':
         raise ListingUnavailableError('zigbang', item_id, status=structured.item.status)
     # 내려간 매물 안내가 먼저다. 살아 있는 매물인데 유형이 없으면 거래·매물 유형과 url 을 만들 수 없다
@@ -887,7 +1177,7 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:
     legacy = None
     if residence.move_in_at is None:
         # null을 즉시 입주로 추측하지 않고 기존 API의 설명으로 보완한다.
-        # 실측: 두 API 의 status 는 늘 같고(open·close·cancel), 아파트는 입주일이 늘 null 이라 매번 이 호출을 탄다.
+        # 실측: 두 API 의 status 는 늘 같다(open·close·cancel).
         with unavailable_on_404(item_id):
             legacy = client.run_request_items_v3(ZigbangItemsV3RequestParameterModel(item_id=item_id))
         if legacy.item.status != 'open':
@@ -901,7 +1191,7 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:
     summary = next((summary for summary in summaries.items if summary.item_id == item_id), None)
     schools = None
     pnu = structured.item.address.pnu
-    if structured.item.service_type != '아파트' and pnu:
+    if pnu:
         try:
             schools = building_schools(client.run_request_bls_school_zones_v1(
                 ZigbangBlsSchoolZonesV1RequestParameterModel(pnu=pnu)
@@ -909,27 +1199,10 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail:
         except SCHOOL_LOOKUP_ERRORS:
             # 학군을 못 받아도 매물 상세는 돌려준다 (모름)
             schools = None
-    apt = None
-    if structured.item.service_type == '아파트':
-        try:
-            apt = client.run_request_item_catalogs_items(
-                ZigbangItemCatalogsItemsRequestParameterModel(item_id=item_id)
-            ).item
-        except HTTPStatusError as exc:
-            if exc.response.status_code != 404:
-                raise
     detail = detail_to_listing(
         structured,
         legacy=legacy.item if legacy else None,
         registered_at=summary.reg_date if summary else None,
         short_term=summary is not None and trade_type_of(summary) == '단기임대',
-        apt=apt,
     )
-    updates: dict[str, object] = {
-        'total_parking_count': residence.total_parking_count,
-        'household_count': residence.household_count,
-        'direction_criterion': residence.direction_criterion,
-    }
-    if schools is not None:
-        updates['schools'] = schools
-    return detail.model_copy(update=updates)
+    return detail if schools is None else detail.model_copy(update={'schools': schools})

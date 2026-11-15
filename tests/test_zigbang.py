@@ -328,41 +328,47 @@ def test_locals_item_catalogs_serializes_trade_codes_and_path() -> None:
 def apt_detail_handler(apt_response: httpx.Response, requested: list[str]):
     def handler(request: httpx.Request) -> httpx.Response:
         requested.append(f'{request.url.path}?{request.url.query.decode()}')
-        if request.url.path.endswith('/items/list'):
-            return httpx.Response(200, json=load('items_list_v1'))
         if request.url.path.startswith('/apt/item-catalogs/items/'):
             return apt_response
-        detail = load('items_detail_v1')
-        detail['item']['serviceType'] = '아파트'
-        # /v3/items 는 아파트 관리비를 금액 없이 '모두 별도' 로 준다
-        detail['item']['manageCost'] = {'include': [], 'exclude': [{'name': '전기'}, {'name': '수도'}]}
-        detail['item']['residence'].pop('approveDate', None)
-        detail['item']['residence'].pop('bathroomCnt', None)
-        return httpx.Response(200, json=detail)
+        if request.url.path.endswith('/detail'):
+            # 새 주거 상세는 아파트 매물에 code 가 있는 404 를 준다 (2026-11-15 실측). 없는 매물의 404 에는 code 가 없다
+            return httpx.Response(404, json={
+                'statusCode': 404, 'code': 'ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED', 'metadata': {'serviceType': '아파트'},
+            })
+        pytest.fail(f'아파트 상세에 쓰지 않는 요청입니다: {request.url.path}')
     return handler
 
 
-def test_apt_detail_without_apt_item_leaves_unknown() -> None:
+def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> None:
     from jibsa.providers.zigbang.service.listing import get_listing
 
-    handler = apt_detail_handler(httpx.Response(404, json={'code': 404, 'message': 'not found item'}), [])
+    # 아파트 매물은 웹 아파트 화면처럼 아파트 상세 하나로 만든다. 주거 상세의 404 를 내려간 매물로 읽으면
+    # 살아 있는 아파트 매물이 모두 LISTING_UNAVAILABLE 이 된다 (2026-11-14 실측)
+    requested: list[str] = []
+    handler = apt_detail_handler(httpx.Response(200, json=load('item_catalogs_items')), requested)
     with make_client(handler) as client:
-        detail = get_listing(client, 1000001)
+        dumped = get_listing(client, 1000001).model_dump()
+    assert [line.split('?')[0] for line in requested] == [
+        '/house/property/v1/items/1000001/detail', '/apt/item-catalogs/items/1000001',
+    ]
+    assert 'itemSource=zigbang' in requested[1]
+    assert dumped['property_type'] == '아파트' and dumped['complex_name'] == '가상아파트 101동'
+    assert dumped['url'] == 'https://www.zigbang.com/home/apt/item/v2/1000001/zigbang/0'
+    # 세대수는 아파트에도 있지만 아파트 상세가 주지 않아 모름이다
+    assert dumped['direction_criterion'] == '거실' and dumped['household_count'] is None
 
-    dumped = detail.model_dump()
-    assert dumped['complex_name'] is None and dumped['room_count'] is None
-    # /v3/items 의 아파트 관리비는 틀린 값이라 쓰지 않고 모름으로 둔다
-    assert dumped['manage_cost_manwon'] is None and dumped['manage_cost_includes'] is None
+    # 아파트 상세도 404 면 내려간 매물이다
+    handler = apt_detail_handler(httpx.Response(404, json={'code': 404, 'message': 'not found item'}), [])
+    with make_client(handler) as client, pytest.raises(ListingUnavailableError):
+        get_listing(client, 1000001)
 
 
 def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
-    from jibsa.providers.zigbang.service.listing import apply_apt_detail
+    from jibsa.providers.zigbang.service.listing import apt_item_to_listing
 
     apt = ZigbangItemCatalogsItemsResponseModel.model_validate(load('item_catalogs_items')).item
     apt.manage_cost = ZigbangAptManageCostModel(type='unconfirmed')
-    response = ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))
-    response.item.service_type = '아파트'
-    detail = apply_apt_detail(detail_to_listing(response), apt)
+    detail = apt_item_to_listing(apt, 'zigbang')
     assert detail.manage_cost_manwon is None and detail.manage_cost_includes is None
     assert detail.room_count == 3
 
@@ -596,11 +602,49 @@ def test_new_house_detail_unavailable(primary_status: str | None, legacy_status:
 
 
 def test_new_house_detail_manage_cost_units() -> None:
+    # 금액은 원 단위까지: 직방이 0.1만원 아래를 버린 amount(만원) 대신 원 단위 fee 를 쓴다 (실측 51105591)
     data = load('items_detail_v1')
+    data['item']['manageCost'] = {'amount': 37.5, 'fee': 375700, 'include': [{'code': '01', 'name': '수도'}]}
+    result = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(data))
+    assert result.manage_cost_manwon == 37.57
+    assert result.manage_cost_includes == ['수도']
+
+    # 내역 없이 fee 만 있으면 웹(amount 만 봄)은 '관리비 없음' 이라 두 칸이 어긋나 모름이다
     data['item']['manageCost'] = {'fee': 153000, 'include': [{'code': '01', 'name': '수도'}]}
     result = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(data))
-    assert result.manage_cost_manwon == 15.3
-    assert result.manage_cost_includes == ['수도']
+    assert result.manage_cost_manwon is None
+    assert result.manage_cost_includes is None
+
+
+@pytest.mark.parametrize(('detail', 'expected'), [
+    # 정액 관리비는 웹이 항목별로 보여 준다. 실비로 따로 내는 항목은 include 에 있어도 관리비에 든 것이 아니다
+    (
+        {
+            'type': 'FixedManageCost', 'hasInformed': True, 'normalManageCost': {'type': 'fixed', 'amount': 90000},
+            'usageFee': {'electricity': {'type': 'actual'}, 'water': {'type': 'fixed', 'amount': 10000}},
+        },
+        (10, ['일반(공용) 관리비', '수도']),
+    ),
+    # 항목별 내역을 알리지 않았으면 웹도 include 목록을 보여 준다. 순서는 웹처럼 일반(공용)·전기·수도·…·TV 이고,
+    # 웹 이름표에 없는 '기타 관리비'(웹은 '기타관리비')는 맨 뒤다 (2026-11-15 실측: 50905571)
+    (
+        {'type': 'FixedManageCost', 'hasInformed': False, 'normalManageCost': {'type': 'fixed', 'amount': 90000}},
+        (10, ['일반(공용) 관리비', '전기', '수도', 'TV', '기타 관리비']),
+    ),
+    # 관리비 확인 불가는 금액도 항목도 모름이다 (실측 표본이 없어 실제 응답의 detail 만 바꿨다)
+    ({'type': 'UnknownManageCost'}, (None, None)),
+])
+def test_new_house_detail_manage_cost_includes_follow_web_rule(detail: dict, expected: tuple) -> None:
+    data = load('items_detail_v1')
+    data['item']['manageCost'] = {
+        'amount': 10, 'fee': 100000, 'detail': detail,
+        'include': [
+            {'code': '06', 'name': '기타 관리비'}, {'code': '05', 'name': 'TV'}, {'code': '03', 'name': '수도'},
+            {'code': '01', 'name': '전기'}, {'code': '00', 'name': '일반(공용) 관리비'},
+        ],
+    }
+    result = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(data))
+    assert (result.manage_cost_manwon, result.manage_cost_includes) == expected
 
 
 @pytest.mark.parametrize('limit', [20, 120])

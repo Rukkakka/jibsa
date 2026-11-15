@@ -2,7 +2,10 @@
 
 import typer
 
-from jibsa.cli.output import check_fields
+from jibsa.cli.output import (
+    ALWAYS_FIELD_GROUPS,
+    check_fields,
+)
 
 from typing import Annotated
 
@@ -11,6 +14,8 @@ PrettyOption = Annotated[
     bool | None,
     typer.Option('--pretty/--compact', help='JSON 들여쓰기. 기본값은 터미널이면 pretty, 파이프면 compact'),
 ]
+# 늘 나오는 묶음 필드 설명 (`output.ALWAYS_FIELD_GROUPS` 에서 만든다)
+_ALWAYS_FIELDS_HELP = ', '.join(group + '의 ' + '·'.join(fields) for group, fields in ALWAYS_FIELD_GROUPS.items())
 FieldsOption = Annotated[
     list[str] | None,
     typer.Option(
@@ -18,8 +23,8 @@ FieldsOption = Annotated[
         callback=check_fields,
         help=(
             '매물마다 낼 필드만 고른다 (출력이 준다). 결과의 매물 키 이름을 반복하거나 쉼표로 구분 '
-            '(예: id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url). id 와 notes 가 가리키는 필드(네이버 중복 묶음의 '
-            'realtor_count·*_range_manwon)는 늘 나온다. 기본 전체'
+            '(예: id,trade_type,deposit_manwon,rent_manwon,area_m2,floor,address,url). '
+            f'id 와 묶음 필드({_ALWAYS_FIELDS_HELP})는 늘 나온다. 기본 전체'
         ),
     ),
 ]

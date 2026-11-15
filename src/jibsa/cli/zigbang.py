@@ -45,7 +45,6 @@ from jibsa.core.listing import (
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.stay import (
     ZigbangGuestItemsFiltersRequestParameterModel,
-    ZigbangGuestItemsPriceCalculationRequestPayloadModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
 from jibsa.providers.zigbang.service.apt import (
@@ -77,16 +76,14 @@ from jibsa.providers.zigbang.service.complex import (
     list_complex_listings,
     search_regions_and_complexes,
 )
-from jibsa.providers.zigbang.service.detail import (
-    LISTING_ID_PATTERN,
-    get_any_listing,
-)
+from jibsa.providers.zigbang.service.detail import get_any_listing
 from jibsa.providers.zigbang.service.listing import (
     DETAILS_MAX,
     GEOHASH_PRECISION,
     PROPERTY_TYPES,
     attach_building_use,
     check_without_random,
+    get_catalog,
     search_listings,
     unsearchable_note,
     unsearchable_types,
@@ -203,7 +200,8 @@ USAGE_HINTS: dict[str, UsageHints] = {
 
 app = typer.Typer(
     help=(
-        '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, complex, search listings --complex, real-price), 상세(listing) '
+        '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, complex, search listings --complex, real-price), '
+        '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
     no_args_is_help=True,
@@ -376,7 +374,15 @@ search_app = typer.Typer(
 app.add_typer(search_app, name='search')
 
 
-listings_app = typer.Typer(help='매물 유형별 검색 또는 --complex로 단지 매물 검색', invoke_without_command=True)
+# 이 그룹의 --help 는 콜백(`complex_listings_command`) docstring 이 아니라 이 help 를 보여 준다. 콜백 docstring 의 안내를 여기에도 둔다
+listings_app = typer.Typer(
+    help=(
+        '매물 유형별 검색 또는 --complex로 단지 매물 검색.\n\n'
+        '--complex 결과의 상세는 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(is_price_range true) 줄은 가격이 묶음 '
+        '최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.'
+    ),
+    invoke_without_command=True,
+)
 search_app.add_typer(listings_app, name='listings')
 
 
@@ -597,6 +603,7 @@ def search_apt_command(
 
     반경 검색은 반경 안 단지를 가까운 순으로 단지마다 조회해(단지당 요청 1회, 최대 30곳) 느리고 요청이 많다.
     결과는 같은 호·거래 유형의 매물을 묶은 것이다 (listing_count). 상세는 결과의 id 로 jibsa zigbang listing <id>.
+    가격 범위(is_price_range true) 줄은 가격이 묶음 최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.
 
     예: jibsa zigbang search listings apt 강남구 --trade 매매 --price-max 200000
         jibsa zigbang search listings apt 역삼동 --trade 전세 --area-min 59
@@ -741,7 +748,8 @@ def complex_listings_command(
 ) -> None:
     """단지 하나의 매물 목록 (직방 목록 순, 거리가 없다). 조건은 직방 서버에서 거른다.
 
-    상세는 결과의 id 로 jibsa zigbang listing <id>.
+    상세는 결과의 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(is_price_range true) 줄은 가격이 묶음 최저가라
+    매물별 가격은 jibsa zigbang catalog <catalog_id>.
 
     예: jibsa zigbang search listings --complex apt-68579 --trade 전세 --deposit-max 150000
         jibsa zigbang search listings --complex officetel-20227 --trade 월세 --rent-max 100 --option 침대 --condition 반려동물
@@ -982,7 +990,7 @@ def stay_command(
 ) -> None:
     """직방 단기임대(주 단위 계약) 매물을 거리·가격·최근 등록 순으로 조회한다. 금액은 주당 만원.
 
-    원룸·빌라의 '단기임대' 거래(search room --trade 단기임대)와 다른 별도 서비스다. 매물은 직방 앱에서만 열린다.
+    원룸·빌라의 '단기임대' 거래(search room --trade 단기임대)와 다른 별도 서비스다.
     상세는 결과의 id(stay-123) 로 jibsa zigbang listing <id>. 가격순은 주당 요금 기준이라, 기간 실제 비용은 --details 로 본다.
 
     예: jibsa zigbang search listings stay 강남역 --weekly-rent-max 50 --building 오피스텔 --option 세탁기,와이파이
@@ -1157,23 +1165,35 @@ def listing_command(
 
     예: jibsa zigbang listing stay-3783 --check-in 2026-11-02 --check-out 2026-11-29
     """
-    if LISTING_ID_PATTERN.match(item_id.strip()) is None:
-        raise typer.BadParameter(
-            f"직방 매물 ID 형식이 아닙니다: '{item_id}'. 검색 결과의 id 를 그대로 주세요 (예: 12345, store-123, stay-123, coalition-123)",
-            param_hint='ITEM_ID',
-        )
+    # ID 형식과 단기임대 날짜는 서비스(`get_any_listing`)가 요청 전에 검사해 INVALID_ARGUMENT 로 낸다 (클라이언트는 첫 요청 때
+    # 브라우저를 띄우므로 with 안에서 검사해도 비용이 없다)
     if (check_in is None) != (check_out is None):
         raise typer.BadParameter('--check-in 과 --check-out 은 함께 주세요', param_hint='--check-in')
     if pet and check_in is None:
         raise typer.BadParameter('--pet 은 --check-in/--check-out 과 함께 주세요', param_hint='--pet')
-    if item_id.strip().startswith('stay-') and check_in is not None and check_out is not None:
-        with handle_errors(SOURCE):
-            ZigbangGuestItemsPriceCalculationRequestPayloadModel(
-                item_id=int(item_id.strip().removeprefix('stay-')),
-                check_in_date=check_in, check_out_date=check_out, has_pet=pet,
-            )
     with handle_errors(SOURCE), ZigbangClient() as client:
         emit(
             get_any_listing(client, item_id, check_in=check_in, check_out=check_out, pet=pet),
             pretty,
         )
+
+
+@app.command('catalog')
+def catalog_command(
+    catalog_id: Annotated[
+        str,
+        typer.Argument(help='아파트 매물 묶음 ID. search listings apt·search listings --complex <apt-…> 결과의 catalog_id 그대로 (예: 8260358-trade)')
+    ],
+    fields: FieldsOption = None,
+    pretty: PrettyOption = None,
+) -> None:
+    """같은 호를 여러 중개사가 올린 아파트 매물 묶음(직방 웹 묶음 화면)의 매물 전부. 매물마다 가격·관리비·입주일 등 listing 상세와 같은 필드.
+
+    검색 결과의 is_price_range 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (20건마다 요청 1회).
+
+    예: jibsa zigbang catalog 8260358-trade --fields id,price_manwon,floor,move_in
+    """
+    # 묶음 ID 형식은 서비스(`parse_catalog_id`)가 요청 전에 검사해 INVALID_ARGUMENT 로 낸다
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_catalog(client, catalog_id.strip())
+        emit(result, pretty, notes=result.notes, fields=fields)

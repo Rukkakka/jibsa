@@ -136,11 +136,14 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '아파트 동 목록 역삼동', APT, ('역삼동', '--limit', '2'), 'listings',
             (
                 Capture('apt', 'listings', 'complex_id', prefix='apt-'), Capture('apt_listing', 'listings', 'id'),
+                # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
+                Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),
                 Capture('apt_next', '', 'next'),
             ),
         ),
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
+        Step('아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings'),
         Step('아파트 역 반경 강남역', APT, ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
         Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),
         Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),

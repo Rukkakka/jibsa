@@ -17,6 +17,7 @@
 | `search listings --complex` | 아파트 catalog / 오피스텔 건물 핀·요약 | `complex` |
 | `real-price` | 아파트 실거래 → 거래 유형 필터·페이지 조회 | `real_price` |
 | `listing` | ID 접두사 분기 → 주거·상가·단기임대·제휴 상세 | `detail` (ID 분기) → `listing`·`store`·`stay` |
+| `catalog` | 묶음 ID → item-catalogs/{areaHoId} 20건씩 → 아파트 상세 변환 | `listing` |
 
 ## 소스 고유 구현
 
@@ -48,6 +49,7 @@
 - 목록은 geohash 타일로 핀(ID·좌표)을 받고 → 가까운 순으로 정렬하고 → 가까운 `--limit` 개만 `items/list` 로 15개씩 요약을 받는 3단계다. 요약에서 뺀 매물은 다시 채우지 않는다.
 - 원룸은 방 하나짜리를 뜻해, 원룸 목록(`items/onerooms`)이 섞어 주는 오피스텔 중 투룸은 원룸형 `roomType` 만 요청해 막고 원룸형 오피스텔은 결과에 둔다 (직방 웹 원룸 화면도 방 구조를 고르지 않으면 같은 목록을 보여 준다). 원룸 목록 핀에는 건물 ID(`buildingId`)가 없어 (실측: 모두 null, 요약에도 없음), 오피스텔을 따로 조회하지 않은 검색에서 건물 ID 없는 오피스텔이 결과에 있으면 그 매물이 있던 지도 칸에서 같은 조건으로 오피스텔 목록을 한 번 더 받아 `complex_id` 를 채운다 (실패하면 `null`).
 - 빌라 목록은 투룸 이상뿐이라 원룸형 구조만 주면 빌라는 요청하지 않는다.
+- 목록 관리비는 웹 목록 카드처럼 `items/list` 응답의 `itemSummaries[].fee` 를 쓴다. 같은 응답의 `items[].manage_cost` 는 관리비 0원 매물도 null 이라 (2026-11-15 실측) 그 매물이 `itemSummaries` 에 없을 때만 쓴다. 응답 모델이 같은 ID 의 `items` 요약에 `fee` 를 실어 준다 (`attach_web_fee`). `itemSummaries` 중 모델이 읽지 못하는 항목(ID 가 정수가 아니거나 `fee` 가 숫자·숫자 글자·null 이 아님)만 빼고, 그 매물은 `items[].manage_cost` 로 돌아간다 (`readable_summaries`). 금액은 원 단위까지 낸다 (`won_to_manwon_exact`, [웹과 다른 점](#웹과-다른-점)).
 - `search listings room` 에서 역 이름이 지하철역으로 풀리면 지도 칸 대신 `items/subways/{id}/<유형>` 을 유형별 1회 부르고 반경 밖은 버린다 (좌표 검색은 지도 칸 그대로).
 
 ### 지도 칸과 동 경계 (`room`·`store`)
@@ -64,21 +66,27 @@
 - 아파트 지역 목록은 시·도 2자리 코드에 늘 0건이라(2026-10-11 실측: 11·41·26·36 모두 0건, 강남구 11680 은 1683건) `resolve_apt_region` 이 시·도를 `RegionNotFoundError` 로 넘겨 CLI 가 반경으로 찾는다.
 - 구가 있는 시는 직방 지역 검색이 시 대신 그 구들을 주고 시 코드(성남시 41130)는 0건이라, 같은 시의 구를 모두 `extra_regions` 로 넘겨 합친다(`city_gu_items`, 결과 지역은 `merged_gu_region`). 첫 구만 찾으면 성남시는 분당구 255건만 나오고 수정구 558건·중원구 116건이 빠졌다. '시' 를 떼고 쓴 이름('성남')도 검색 중심이 '<이름>시 ○구' 면 같은 시로 본다 (2026-10-28 실측: 성남·안양·고양 모두 직방이 구들을 맨 앞에, 같은 이름의 동을 그 뒤에 준다. 전에는 '성남' 아파트가 분당구 283건만 찾고 다른 구 안내도 없었다 → 세 구 1058건, 단기임대 38 → 47건으로 '성남시' 와 같다). 검색 중심이 그 시의 구가 아니면(동 이름 등) 합치지 않는다.
 - 리는 10자리 코드가 0건이라 읍·면 8자리로 찾고(양근리 → 양평읍 88건) `notes` 로 알린다.
+- 카탈로그 한 건은 같은 호·거래 유형을 올린 매물 묶음이다 (`itemIdList`). `id` 는 직방 매물 먼저, 없으면 제휴 매물(`coalition-`)이고, 상세를 볼 수 있는 ID 전부를 같은 순서로 `listing_ids` 에 담는다 (`apt_listing_id`). `isPriceRange` 가 true 면 웹 카드는 최저가를 보여 준다. 웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면(`/home/apt/item-catalog?areaHoId=…&tranType=…`)으로 가서 (신규분양 카드만 분양 화면으로 간다. 2026-11-15 번들 `ItemCard_AptItemCatalogCard` 의 `onPress`), `url` 도 호 ID 가 있으면 늘 그 화면이다 (`apt_catalog_url`). jibsa 는 목록 요청에 `offerItemCount` 를 보내지 않아 신규분양 카드가 오지 않는다. `areaHoId` 가 없으면 묶음 화면을 만들 수 없어 `url` 은 `id` 매물 페이지이고 `catalog_id` 는 null 이다. 묶음 화면이 받는 호 ID·거래 유형은 `catalog_id`(`<areaHoId>-<tranType>`, `apt_catalog_id`·`parse_catalog_id`)로 낸다. 묶음 ID·매물 ID 의 형식 검사는 서비스(`parse_catalog_id`·`get_any_listing`)가 요청 전에 하고, CLI 는 따로 검사하지 않아 `INVALID_ARGUMENT` 의 `hint` 가 전용 안내(`CATALOG_ID_HINT`, 매물 ID 접두어)다.
+- 묶음 화면은 `GET /apt/item-catalogs/{areaHoId}?tranType=…&limit=20&offset=…&firstItemSource=coalition` 을 `itemCount` 까지 20건씩 부른다 (번들 `getItemCatalog`·`useItemCatalogDetail`, 첫 쪽은 서버가 그려 넣는다. 2026-11-15). 매물마다 아파트 상세(`/apt/item-catalogs/items`)와 같은 꼴이라 `catalog` 는 `apt_item_to_listing` 으로 바꾼다 (실측: 은마 묶음 4건이 `listing` 상세와 필드까지 같다). 웹은 거르거나 다시 세우지 않고 서버 순서 그대로 보여 준다. `firstItemSource=coalition` 은 웹이 매물 ID(`firstItemId`) 없이도 늘 보내는 기본값이고 순서를 바꾸지 않는다 (2026-11-15 실측). 매물이 없거나 그 호에 그 거래 유형 매물이 없으면 404 (`not found item in catalog`)라 `LISTING_UNAVAILABLE`(reason `EMPTY_CATALOG`)이다. 첫 쪽이 200 빈 목록이어도 같은 에러다 (`_empty_catalog_error`). 묶음 ID 는 `listing` 에 넘길 수 없어 `listing_id` 대신 `catalog_id` 에 싣는다. 둘째 쪽부터의 404·빈 쪽은 받는 사이 묶음이 줄어든 것이라 받은 데까지 내고, 상한(120건)과 다른 `[일부]` 안내를 붙인다. `itemCount` 가 null 이면(실측에서는 늘 정수) `total` 도 null 이고, 쪽이 가득(20건) 찬 동안 상한까지 받아 덜 찬 쪽이나 404 를 끝으로 본다. 이때 `has_more` 는 상한에 닿았는데 마지막 쪽이 가득 찼을 때만 참이다. 응답 모델은 `items` 의 null 도 빈 목록으로 받는다 (`null_items_as_empty`). 묶음 매물의 거래 유형은 요청한 `tranType`(묶음 ID)으로 정한다 (웹도 매물의 `tranType` 으로 거르지 않는다). 응답의 근처 중개사무소(`acceptedLocalAgents`)·매물마다의 중개사·사진·설명은 내지 않는다.
 - 아파트 반경 검색은 반경 안 아파트 매물을 한 번에 주는 공개 API 가 없어 `nearby-danjis` 로 단지를 받고 가까운 단지부터 `danjis/{id}/item-catalogs` 를 단지마다 부른다 (최대 30곳·2km, 면적 조건이 있으면 60곳, 요청당 50건, 받은 원본 개수로 `--limit` 예산을 세고 남은 예산은 다음 단지로). 단지 목록(`danjis`)은 50건씩, 동·구 지역 목록(`locals`)은 20건을 넘으면 400 이라 20건씩 받는다 (2026-10-10 실측: 단지 목록은 50건씩 받아도 순서·내용이 같다). 공급면적 조건이 있으면 단지마다 `limit=1` 로 평형 목록(`roomTypes`, 이름이 공급면적 ㎡)을 먼저 받아 맞는 평형만 `danjiRoomTypeIds` 로 요청한다. 이 1건은 예산에 넣지 않는다.
 
 ### 오피스텔 건물·주거 상세
 
 - 오피스텔 건물 매물(`items/officetels/{buildingId}`)은 서버가 거래 유형으로 거른 거래 중 매물만 줘서 핀 수가 곧 조건에 맞는 수다.
 - 오피스텔 건물 정보의 `elevator: false` 는 믿을 수 없어 `complex` 에서 `null` 로 낸다 (실측: false 30곳이 모두 매물 상세에서는 엘리베이터 있음).
-- 주거 상세는 `items/{id}/detail` 이 기본이고, 입주일(`moveInAt`)이 null 이면 `/v3/items` 로 입주 문구·주차를 보완한다. 아파트는 입주일이 늘 null 이라 매번 보완 호출을 타고, 두 API 의 `status` 는 늘 같다(실측). 등록일·단기임대 여부는 상세에 없어 `items/list` 요약에서 받는다. 요약의 `status`(노출 여부)도 상세와 늘 같아 (2026-10-10 실측 180건: true ↔ open, false ↔ close·cancel, 요약 없음 ↔ 404) 상세에서는 다시 보지 않는다.
+- 주거 상세(원룸·빌라·오피스텔)는 `items/{id}/detail` 이 기본이고, 입주일(`moveInAt`)이 null 이면 `/v3/items` 로 입주 문구·주차를 보완한다. 두 API 의 `status` 는 늘 같다(실측). 등록일·단기임대 여부는 상세에 없어 `items/list` 요약에서 받는다. 요약의 `status`(노출 여부)도 상세와 늘 같아 (2026-10-10 실측 180건: true ↔ open, false ↔ close·cancel, 요약 없음 ↔ 404) 상세에서는 다시 보지 않는다.
+- 주거 상세는 아파트 매물에 404 를 주고 본문 `code` 가 `ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED` 다 (없는 매물의 404 는 `code` 가 없다). `/v3/items` 도 아파트에 404 다 (2026-11-15 실측). 그 `code` 면 웹 아파트 매물 화면처럼 아파트 상세(`/apt/item-catalogs/items`) 하나로 만든다 (`get_apt_listing`, 제휴 매물도 같은 변환 `apt_item_to_listing`). 숫자 ID 만으로는 아파트인지 원룸·빌라·오피스텔인지 알 수 없어(같은 번호 대역을 함께 쓴다), 직방 아파트 매물 하나에 주거 상세 404 와 아파트 상세로 요청이 2회 든다 (아파트 상세를 먼저 부르면 다른 매물이 같은 손해를 본다). 이 응답에는 상태 필드가 없고 내려간 매물은 404 다. 아파트 상세는 직방 아파트로 확인된 ID 에만 부르므로 이 404 에는 `reason: APT_ITEM_NOT_FOUND` 를 붙여, 다른 소스 ID·접두어를 확인하라는 안내(사유 없는 404 에만 붙는다)가 붙지 않게 한다. 직방 매물의 층은 저·중·고로만 오고(웹 화면에도 정확한 층이 없다), 등록일·인근 역·엘리베이터·건축물 용도·방 구조·세대수가 없어 모두 모름(null)이다 (세대수는 아파트에도 있는 값이라 해당 없음이 아니다). 지번 주소(`oldAddress`)가 직방 매물에는 빈 문자열이라 주소는 모름(null)이다. 이 응답은 값이 없는 칸을 빈 글자로 주기도 해(`oldAddress`·`directionBase`) 제목·층·방향의 빈 글자도 모름(null)으로 낸다 (`_text_or_none`). 응답의 `address` 는 도로명이라 매물 출력 규약상 내지 않고, 웹 매물 화면도 도로명만 보여 주며 단지 API 를 부르지 않는다 (2026-11-15 웹 캡처: 지번은 단지 화면의 위치에만 있다). 제휴 매물은 반대로 도로명이 없고 지번만 온다 (2026-11-15 실측: coalition-257592). 제휴 매물도 방향 기준(`directionBase`)은 오고 총 주차 대수(`parkingCount`)는 오지 않아, 직방 매물과 같이 응답 값을 내고 없으면 모름(null)이다 (2026-11-15 실측: coalition-254466).
+- 관리비 포함 항목(`manage_cost_includes`)은 웹 매물 화면의 규칙(`renderManageCostData`, 2026-11-15 번들)을 따른다. `manageCost.include` 는 실비로 따로 내는 사용료도 포함으로 담아 (2026-11-15 실측: include 에 전기·수도·가스가 있는데 `detail.usageFee` 는 모두 실비), `manageCost.detail.type` 이 정액(`FixedManageCost`)이고 항목별 내역을 알렸으면 금액이 있는 일반(공용) 관리비, 정액 사용료, 금액이 있는 기타 관리비만 낸다. 내역을 알리지 않은 것은 웹(`false===e.hasInformed||undefined===e.hasInformed&&!f`)처럼 `hasInformed` 가 false 이거나, 키가 없는데 사용료 여섯 항목이 모두 미제공·해당 없음일 때뿐이다. `hasInformed` 가 null 로 오면 웹처럼 항목별로 본다 (응답 모델은 null 과 키 없음을 모두 None 으로 읽어 `model_fields_set` 으로 가른다). 확인 불가(`UnknownManageCost`)면 웹처럼 관리비 금액과 항목 모두 모름(null)이다. `detail` 이 없고 `amount` 가 0·null 이면 웹이 '관리비 없음' 만 보여 주어 빈 목록이고 금액은 0 이다. 다만 `detail` 이 없고 `amount` 는 비었는데(0·null) `fee` 에 금액이 있으면 웹('관리비 없음')과 `fee` 가 어긋나 어느 쪽이 맞는지 몰라 관리비 금액과 항목 모두 모름(null)이다 (2026-11-15 사용자 결정, 실측 표본은 없다). 상세 관리비 금액은 웹 관리비 절이 그리는 값이다 (`_manage_cost_manwon`, 2026-11-15 번들 `renderManageCostData`): `detail` 이 있으면 정액 `totalAmount`·실비 `avgManageCost`(원)를 '관리비 : 375,700원' 처럼 그대로 보여 주고 `fee` 는 읽지 않는다. `detail` 이 없으면 웹은 `amount` × 10000 원을 그리는데, `amount` 는 직방이 0.1만원 아래를 버린 값이라(실측 51105591: `amount` 37.5, `fee` 375700) jibsa 는 원 단위 `fee` 를 낸다 ([웹과 다른 점](#웹과-다른-점)). 원 단위 금액이 없을 때만 `amount` 다. 웹 상세 화면은 이 응답 대신 `/v3/items` 를 부르는데, 그 응답의 `manageCostDetail` 은 이 응답의 `manageCost.detail` 과 같다 (2026-11-15 실측 3건: 51105591·50893092·51161523. `/v3` 응답에는 `fee` 가 없다). 그 밖(실비 관리비, 내역을 알리지 않은 정액, 금액이 있는데 `detail` 이 없음)에는 `include` 다 (`manage_cost_includes`). 실비 관리비도 웹은 `include` 이름으로 그린다 (`detailIncludes` 는 '전기료' 처럼 이름이 달라 쓰지 않는다). 순서도 웹처럼 일반(공용) 관리비·전기·수도·가스·난방·인터넷·TV 이고, `include` 는 이 이름 순서로 정렬해 그 밖의 이름을 원래 순서대로 뒤에 둔다. 웹의 기타 관리비 이름은 붙여 쓴 '기타관리비' 라 `include` 에 띄어 써 오는 '기타 관리비' 는 맨 뒤로 간다 (`MANAGE_COST_ORDER`, 2026-11-15 번들 `getFixedManageCostDetailKeys`·`getLegacyManageCostData`). 아파트 상세의 `includeItems` 는 웹 아파트 화면도 정렬하지 않아 그대로다.
 
 ### 실거래 (`real-price`)
 
 - 실거래 API 는 없는 단지에도 빈 성공을 줘서, 첫 쪽의 단지 평형 정보(`areaInfos`)가 비면 단지 정보(`danjis/{id}`)로 있는지 한 번 더 확인해 없으면 `NOT_FOUND` 로 낸다 (거래 없는 단지도 평형 정보는 와서 평소에는 요청이 늘지 않고, 평형이 아직 없는 새 단지는 정상 0건이 된다). 지정한 평형이 평형 정보에 없으면 `INVALID_ARGUMENT`.
+- 실거래 신고에는 전용면적만 있어 같은 전용면적의 평형이 여럿이면 직방이 거래마다 평형 후보를 모두 준다 (`areaInfos`). 웹은 첫 후보와 나머지 수('107A㎡외4')로 보여 주고, jibsa 는 같은 꼴로 `pyeong_name`('32A 외 4')을 내고 후보 전부를 `pyeong_names` 에 담는다 (`rt_price_to_real_price`). 웹(`getTypeOrPrice` 는 `areaInfos` 길이 - 1, `getType` 은 `e[0]`, 2026-11-15 번들)처럼 `areaInfos` 를 거르지 않고 전부 후보로 세고, 평 이름(`p`)이 빈 후보는 자리를 null 로 남겨 후보 수와 첫 후보가 웹과 같다 (첫 후보가 비면 `pyeong_name` 은 null). 후보가 하나면 `pyeong_names` 는 해당 없음이라 키를 지우고, `areaInfos` 가 빈 목록이면 후보를 모르는 것이라 null 이다 (`drop_not_applicable`).
 
 ### 단기임대 (`stay`)
 
 - 단기임대(`stay-apis.zigbang.com`)는 지역 전체면 지역 검색(`guest/items/search`), 반경·동 경계면 지도(`guest/items/markers`)로 ID 를 모아 `guest/items/by-ids` 로 50건씩 요약을 받는다. `by-ids` 는 노출 중·검수 완료 매물만 돌려줘서(실측) 목록에서는 상태를 다시 보지 않는다. 예약 달력(`guest/items/{id}/calendar`)은 손님 토큰을 붙여도 403 이었다 (로그인이 필요해 쓰지 않는다).
+- 매물 `url` 은 웹 단기임대 매물 페이지(`https://www.zigbang.com/stay/item/<번호>`, `stay_item_url`)로 로그인 없이 열린다. 즉시입주 할인(`INSTANT`)은 웹 상세처럼 입주 시점 조건(`conditionDays`)을 붙인다: 0일이면 '오늘 입주 시', 1일 이상이면 '오늘부터 N일 이내 입주 시' 이고, null 이면 웹처럼 0일로 본다. 웹은 즉시입주 할인을 금액(`discountAmount`)으로만 보여 주고 0 이하면 줄을 숨겨, 금액이 없는 즉시입주 할인은 내지 않는다. 장기계약 할인(`LONG_TERM`)은 주 수(`conditionWeeks`)·할인율(`discountRate`)·주당 임대료(`weeklyRent`)가 모두 0보다 클 때만 '{주}주 이상 {율}% 할인' 으로 보여 주고 금액은 쓰지 않으며, 두 종류 밖의 할인은 그리지 않아 jibsa 도 같다. 웹은 할인의 `isActive` 를 보지 않아 jibsa 도 꺼진 할인을 거르지 않는다 (`stay_discount_label`, 2026-11-15 번들 `DiscountDetailList`·`pickDiscountTextsForCard`). 실제로 깎이는 금액은 요금 계산(`period_cost`)에 있다. 할인 문구의 금액은 반올림 없이 만원으로 쓴다 (2,500원 → '0.25만원', `format_manwon(won_to_manwon_exact(…))`). 주당 임대료·관리비, 보증금, 청소비, 기간 비용 등 단기임대의 다른 금액도 `won_to_manwon_exact` 로 원 단위까지 낸다.
 - 단기임대 날짜는 `checkOutDate` 까지 이용일로 센다 (11-02~11-08 = 7일). 검색(`guest/items/search`·`markers`)은 7~84일만 받아 `STAY_SEARCH_MIN_DAYS`·`STAY_SEARCH_MAX_DAYS` 로 요청 전에 막고, 서버의 `MIN/MAX_DURATION_VIOLATION` 도 입력 오류로 바꾼다(`_stay_search_call`). 요금 계산은 매물 계약 범위(최소 1~8주)를 서버가 판단해 7~84일 검사를 하지 않는다.
 - 단기임대 지역 전체 검색은 경계 대신 `○가` 동마다 `guest/items/search` 를 불러 ID 를 합친다(`extra_regions`).
 - 목록 요약에는 주당 요금만 있고 기간 비용(청소비·이용료·할인)은 매물마다 요금 계산(`guest/items/{id}/price-calculation`)에만 있다. `search listings stay --details` 는 앞 `DETAILS_MAX` 건에 요금 계산만 1회씩 불러 `period_cost` 를 붙인다(`attach_stay_period_costs`). 상세(`listing stay-…`)처럼 상세·요약·예약 확인 지도를 다시 받지 않는다: 검색이 같은 날짜로 지도를 걸렀으니 `available` 은 true 로, `--flexibility` 면 null 로 둔다. 2026-10-31 실측: 강남역 4주 가격순 4건의 결제액(보증금 30만 포함)이 상세와 같은 181.2·265.5·288.3·286.9만이고, 3위와 4위가 기간 비용으로는 뒤바뀐다.
@@ -92,13 +100,14 @@
 
 ## 원본 금액 단위
 
-최종 출력 금액은 모두 만원이지만 직방 원본 응답의 단위는 action별로 다르다.
+최종 출력 금액은 모두 만원이고 [금액 규칙](../output-contract.md#금액단위)대로 원 단위까지 낸다. 직방 원본 응답의 단위는 action별로 다르다.
 
 | 원본 응답 | 단위·처리 |
 | --- | --- |
 | 일반 주거 가격·상가 가격 | 대부분 만원. 해당 response 필드 설명을 확인한다 |
-| 원룸·빌라 요약의 `manage_cost` | 원. `won_to_manwon`으로 환산한다 |
-| 아파트 상세 관리비 | 원. `won_to_manwon`으로 환산한다 |
+| 원룸·빌라 요약의 `manage_cost`, 웹 목록 요약의 `itemSummaries[].fee` | 원. `won_to_manwon_exact`로 환산한다 |
+| 주거 상세 `manageCost` | `amount` 는 만원, `fee` 와 `detail` 의 금액(`totalAmount`·`usageFee`·`normalManageCost`·`etcManageCost`·`avgManageCost`)은 원 |
+| 아파트 상세 관리비 | 원. `won_to_manwon_exact`로 환산한다 |
 | 단기임대 응답 금액 | 원. 주당 임대료·관리비와 기간 비용 모두 해당 정규화 경로를 확인한다 |
 
 새 필드를 추가할 때 소스 이름만으로 단위를 결정하지 않고 action의 client docstring·response 모델을 확인한다.
@@ -130,8 +139,17 @@
 
 ## API 변경 시 점검
 
-호스트·API 묶음별 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)·재시도는 client, 유형별 필터 직렬화는 request, catalog·핀·요약·상세는 response를 확인한다. service의 상세 보완 호출과 만료 판정, 제휴 매물의 누락값을 함께 확인한다. 웹을 다시 배포하면 `sdk-version` 값이 바뀌어 매주 월요일 API 감시가 고장으로 알리니, 감시 내용의 웹 값으로 맞춘다.
+호스트·API 묶음별 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)·재시도는 client, 유형별 필터 직렬화는 request, catalog·핀·요약·상세는 response를 확인한다. service의 상세 보완 호출과 만료 판정, 아파트 상세로 넘기는 404 `code`(`APT_DETAIL_NOT_SUPPORTED_CODE`), 아파트·제휴 매물의 누락값을 함께 확인한다. 웹을 다시 배포하면 `sdk-version` 값이 바뀌어 매주 월요일 API 감시가 고장으로 알리니, 감시 내용의 웹 값으로 맞춘다.
 
 ## 웹과 다른 점
 
-아직 웹과 대조하지 않았다. 대조 뒤 의도한 차이를 여기에 적는다 (2026-11-12).
+[웹 화면과의 대응](../provider-conventions.md#웹-화면과의-대응) 원칙 안에서 직방 웹과 다르게 한 곳을 모은다. 2026-11-15 에 아파트 매물 상세, 원룸·빌라·오피스텔 목록 관리비와 상세 관리비 포함 항목, 아파트 목록의 묶음 줄, 실거래 평형 이름, 단기임대 매물 주소·할인 문구를 웹 화면과 맞췄고, 아래는 그때 남긴 차이다. 나머지 명령은 아직 웹과 대조해 정리하지 않았다.
+
+- **아파트 묶음 줄에 `listing_ids`.** 웹 카드는 묶인 매물 ID 를 보여 주지 않고, 누르면 그 호의 묶음 화면에서 중개사별 매물을 보여 준다. jibsa 는 같은 카탈로그 응답의 `itemIdList` 중 상세를 볼 수 있는 ID 를 `listing_ids` 로 덧붙이고 `id` 를 그 맨 앞으로 둔다. 묶음 화면이 보여 주는 매물을 ID 로 옮긴 것이고 줄의 가격·`url` 은 웹 카드와 같아, 매물·가격·순서는 바뀌지 않는다 (2026-11-15, `isPriceRange`·`itemIdList`).
+- **아파트 목록 모든 줄에 `catalog_id`.** 웹 카드는 묶음 ID 를 보여 주지 않고 누르면 그 호의 묶음 화면으로 간다. jibsa 는 그 화면이 받는 호 ID·거래 유형을 모든 줄에 `catalog_id` 로 덧붙인다. 같은 카탈로그 응답의 `areaHoId`·`tranType` 을 옮긴 것이라 줄의 매물·가격·순서는 바뀌지 않는다 (2026-11-15, 번들 `ItemCard_AptItemCatalogCard` 의 `onPress`).
+- **`catalog` 는 묶음 매물을 한 번에 끝까지.** 웹 묶음 화면은 20건을 보여 주고 스크롤하면 다음 20건을 받는다. jibsa 는 같은 API·같은 쪽 크기로 `itemCount` 까지(앞 120건까지) 이어 받아 한 번에 낸다. 매물과 순서는 웹이 스크롤로 보여 주는 것과 같다. 상세를 볼 수 없는 출처(직방·제휴 밖)는 `listing_ids` 처럼 빼고 `[제외]` 로 알린다 (2026-11-15 실측: 헬리오시티·은마 묶음 270건은 모두 직방·제휴라 빠진 매물이 없었다). 그 밖에는 빼지 않는다 (매물의 `tranType` 이 비어도 묶음의 거래 유형으로 낸다). 웹 묶음 카드는 매물별 관리비를 그리지 않는다 (화면의 '평균 22만원' 은 평형 평균, `/apt/danjis/{id}/room_types`). jibsa 의 매물별 `manage_cost_manwon` 은 같은 응답의 `monthlyCost` 로, 그 매물 상세 화면(`url`)이 보여 주는 금액과 같다 (2026-11-15 실측 51092076: 묶음·상세 모두 220000).
+- **목록 관리비가 `itemSummaries` 에 없는 매물.** 웹 카드는 `itemSummaries[].fee` 만 보여 준다. jibsa 는 그 매물이 `itemSummaries` 에 없으면 같은 응답 `items[].manage_cost` 로 대신한다. 같은 응답이 같은 매물에 주는 원 단위 관리비라 웹과 다른 금액을 만들지 않고, 0원 매물은 이 값이 null 이라 0 대신 모름으로 나올 뿐이다 (2026-11-15, `itemSummaries`).
+- **목록 관리비를 원 단위까지.** 웹 카드는 관리비를 0.1만원 아래를 버려 보여 준다 (375,700원 → '37.5만원'). jibsa 는 같은 `fee` 를 반올림·버림 없이 원 단위까지 낸다 (`37.57`). 같은 금액을 웹이 줄여 보여 줄 뿐이라 사실이 어긋나지 않고, 줄인 값을 내면 실제와 다른 금액을 사실처럼 보여 주게 되어 [금액 규칙](../output-contract.md#금액단위)대로 실제 금액을 낸다 (2026-11-15, `_app` 번들 `toManWonText`·`resolveManageCostText`). 원룸·빌라·오피스텔 상세도 같다: 웹 상세 맨 위 요약줄은 `amount`(0.1만원 아래를 버린 값)를 '37.5만원' 으로 쓰고, 관리비 내역(`detail`)이 없는 매물은 관리비 절에도 `amount` × 10000 원('375,000원')을 그린다. jibsa 는 이때 같은 응답의 원 단위 `fee` 를 낸다. 내역이 있으면 관리비 절이 원 단위 금액(정액 `totalAmount`·실비 `avgManageCost`)을 그려 jibsa 도 그 값이라 같다 (`_manage_cost_manwon`, 2026-11-15 번들 `renderOverviewData`·`renderManageCostData`).
+- **단기임대 할인 금액을 만원으로.** 웹 상세는 즉시입주 할인을 '2,500원 할인' 처럼 원으로 쓴다. jibsa 는 금액 필드처럼 만원으로 써 '0.25만원 할인' 이다. 반올림 없이 단위만 바꾼 같은 금액이라 사실이 어긋나지 않는다 (2026-11-15, 번들 `DiscountDetailList`).
+- **관리비 포함 항목을 이름 목록으로.** 웹은 정액 관리비를 '일반(공용) 관리비 220,000원', '전기 실비' 처럼 항목별 금액·부과 방식으로 보여 준다. jibsa 는 그 매물에서 관리비 금액에 든 항목의 이름만 `manage_cost_includes` 로 내고 금액은 `manage_cost_manwon` 합계 하나다 (그 밖의 매물은 웹이 그리는 `include` 이름 그대로다). 웹이 금액을 적어 보여 주는 항목만 고른 것이라 포함 여부가 웹 화면과 어긋나지 않는다 (2026-11-15, `renderManageCostData`).
+- **실거래 평형 후보 전부를 `pyeong_names` 로.** 웹은 첫 후보와 나머지 수('107A㎡외4', ㎡ 이름)만 보여 준다. jibsa 는 `pyeong_name` 을 평 이름으로 같은 꼴('32A 외 4')로 내고 후보 전부를 `pyeong_names` 로 덧붙인다. 같은 거래의 `areaInfos` 를 그대로 옮긴 것이라 거래·순서는 바뀌지 않는다 (2026-11-15, `areaInfos`).

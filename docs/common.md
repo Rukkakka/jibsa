@@ -6,7 +6,7 @@
 
 - 결과는 stdout 에 JSON. 터미널이면 들여쓰기, 파이프면 한 줄 (`--pretty` / `--compact` 로 강제)
 - 소수점 아래가 없는 숫자는 정수로 쓴다 (`1000.0` 이 아니라 `1000`). 같은 필드도 값에 따라 `1000` 과 `24.2` 처럼 섞여 나온다
-- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`, 다방 `search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 `notes` 가 가리키는 필드(네이버 중복 묶음의 `realtor_count`·`*_range_manwon`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
+- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex` 와 `catalog`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`, 다방 `search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 묶음 필드(네이버 중복 묶음의 `realtor_count`·`*_range_manwon`, 직방 아파트 묶음의 `is_price_range`·`catalog_id`·`listing_ids`·`listing_count`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
 - 매물 필드에 값이 없을 때는 의미에 따라 다르게 나타낸다
 
   | 상태 | 표현 | 예 |
@@ -25,6 +25,7 @@
 - 숫자 범위(`--area-min/max` 등)의 하한이 상한보다 크거나, 숫자 옵션(범위·`--radius`)에 `inf`·`nan` 을 주면 모든 소스가 요청 전에 `INVALID_ARGUMENT` 로 막는다
 - 에러는 **항상** stderr 에 `{"error": {"code", "message", "hint", ...}}` JSON 으로 쓴다. 사용법 오류(없는 옵션·잘못된 값·인자 누락)도 마찬가지
 - **금액은 소스와 무관하게 전부 만원 단위**로 정규화 (`price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon`, 당근 연세 `yearly_rent_manwon`). 네이버 원본은 원 단위라 환산한다
+- 직방 금액은 반올림 없이 원 단위까지 정확한 값이다 (375,700원 → `37.57`. 직방 웹은 줄여 보여 줄 수 있다). 네이버·다방·당근은 사이트가 원 단위로 준 금액을 아직 1,000원 단위(0.1만원)로 반올림해 낸다
 
 | exit code | 뜻 | 출력 |
 |---|---|---|

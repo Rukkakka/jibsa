@@ -29,6 +29,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 ```
 
 - `code` 는 기계가 읽는 값, `message` 는 사람이 읽는 설명, `hint` 는 **다음에 할 행동**이다.
+  `listing_id` 는 `listing` 에 넘길 수 있는 매물 ID 만 싣는다. 매물이 아닌 묶음 ID(직방 `catalog` 의 빈 묶음)는 `catalog_id` 로 싣는다.
   LLM 이 hint 를 보고 재시도·옵션 수정·소스 변경을 고르므로, 새 에러에는 구체적인 hint 를 단다.
 - 애플리케이션 에러는 `core.errors.JibsaError` (또는 서브클래스)로 던진다. 추가 필드는 `details` 에
   넣으면 에러 JSON 에 평탄하게 실린다.
@@ -96,7 +97,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 - 매물 검색 결과의 찾은 위치 키는 소스마다 다르다 (직방·네이버 `region` + `boundary`·`radius_km`, 다방 `region` + `scope`, 당근 `region`, 지도 화면 범위면 `zoom`·`width_km`·`height_km` 도). 출력 계약이라 맞추지 않는다. 2026-10-31 에이전트 검증(6회)에서 이 차이로 틀린 일은 없었고, 에이전트는 범위를 `[범위]` 안내로 읽었다.
 - 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 서비스 결과의 `next_position`(출력하지 않음)을 CLI 가 `jibsa.cli.paging.encode_next` 로 감싸 `emit(..., next_token=...)` 으로 `has_more` 뒤에 `next` 로 붙인다. 이어 받기 표에는 명령·지역·조건과 소스가 이어 받을 위치(핀 순서·커서·지역마다 offset)를 담고, 소스에 따라 찾은 지역도 담아 이어 받을 때 지역을 다시 찾지 않는다. 표는 `<state_dir>/next/<번호>.json` 에 하루 동안 두고 `next` 에는 표 내용으로 만든 10자 번호만 준다 (표를 값에 담으면 500~600자라 에이전트가 베껴 쓰는 데 토큰이 들고 틀리기 쉽다). `--next` 는 `decode_next` 가 표를 읽어 명령·조건이 다르면 다른 옵션을 `message` 에 적어 `INVALID_ARGUMENT` 로 막고, 표가 없거나(하루 지남·다른 컴퓨터) 표를 만든 jibsa 버전(`jibsa --version` 한 줄)이 다르면 처음부터 다시 찾으라고 알린다. 업데이트로 옵션이 없어지거나 위치의 꼴이 바뀌면 옛 표를 조건 비교·소스가 읽지 못해서다. 둘 다 명령의 `handle_errors` 밖에서 부르므로 사용법 오류(`HintedBadParameter`)로만 끝낸다. `--limit`·`--details`·`--fields`·`--pretty` 는 이어 받는 동안 바꿀 수 있다 (`RESUMABLE_PARAMS`).
 - 좌표(`lat`·`lng`)는 `emit` 이 소수 일곱째 자리로 반올림한다 (원본의 부동소수점 찌꺼기 `127.04934499999999` 를 지운다). 소수점 아래가 없는 실수는 정수로 쓴다 (`1000.0` → `1000`, `_tidy_numbers`). 매물마다 금액·면적에 붙는 `.0` 이 토큰만 쓴다.
-- 매물 목록 명령은 `FieldsOption`(`--fields`)을 받아 `emit(..., fields=...)` 로 넘긴다. `emit` 은 `listings` 키의 매물(통근 검색은 역마다의 `listings`)에서 고른 필드와 `ALWAYS_FIELDS`(다음 명령에 넘길 `id`, notes 가 가리키는 네이버 중복 묶음의 `realtor_count`·`*_range_manwon`)만 남긴다. 필드 이름은 `Listing` 과 하위 모델의 필드(`listing_field_names`)로 옵션을 읽을 때 검증해, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다. 한 명령도 모드(동·역·단지·`--details`)마다 매물 모델이 달라 이 검증은 모든 명령의 필드로 보므로, 결과의 매물 모델에 없는 필드를 골랐으면 `emit` 이 `missing_fields_note` 로 `notes` 에 이 명령의 매물 필드를 알린다. 매물 목록을 내는 새 명령도 이 옵션을 단다.
+- 매물 목록 명령은 `FieldsOption`(`--fields`)을 받아 `emit(..., fields=...)` 로 넘긴다. `emit` 은 `listings` 키의 매물(통근 검색은 역마다의 `listings`)에서 고른 필드와 `ALWAYS_FIELDS`(다음 명령에 넘길 `id`, 네이버 중복 묶음의 `realtor_count`·`*_range_manwon`, 직방 아파트 묶음의 `is_price_range`·`catalog_id`·`listing_ids`·`listing_count`)만 남긴다. 필드 이름은 `Listing` 과 하위 모델의 필드(`listing_field_names`)로 옵션을 읽을 때 검증해, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다. 한 명령도 모드(동·역·단지·`--details`)마다 매물 모델이 달라 이 검증은 모든 명령의 필드로 보므로, 결과의 매물 모델에 없는 필드를 골랐으면 `emit` 이 `missing_fields_note` 로 `notes` 에 이 명령의 매물 필드를 알린다. 매물 목록을 내는 새 명령도 이 옵션을 단다.
 
 ### 값이 없을 때
 
@@ -168,7 +169,7 @@ jibsa 는 **찾기까지만** 한다. 원 사이트를 대신하게 되는 정�
 
 | 소스 | 거래 가능 조건 | 목록 | 상세 |
 | --- | --- | --- | --- |
-| 직방 | 요약 `status: true`, 상세 `status: "open"`. 상가 `status: "open"`, 단기임대 상세 `status: true` + `checkStatus: COMPLETE`. 아파트 목록은 노출 중인 매물만 온다 | 제외 | `ListingUnavailableError` |
+| 직방 | 요약 `status: true`, 상세 `status: "open"`. 상가 `status: "open"`, 단기임대 상세 `status: true` + `checkStatus: COMPLETE`. 아파트 목록·묶음(`catalog`)은 노출 중인 매물만 온다. 아파트 상세(숫자 ID 아파트·`coalition-`)는 상태 필드가 없고 내려간 매물은 404 다 | 제외 | `ListingUnavailableError` (아파트 상세 404 는 `reason: APT_ITEM_NOT_FOUND`, 모르는 거래 유형이면 `UNKNOWN_TRADE_TYPE`). `catalog` 는 묶음에 매물이 없으면(첫 쪽 404) `LISTING_UNAVAILABLE` 에 `catalog_id`·`reason: EMPTY_CATALOG` |
 | 네이버 | 응답 `isSuccess: true`, 아는 거래 유형 코드 (`TRADE_NAME_BY_CODE`) | 노출 중인 매물만 온다. 모르는 코드는 제외 | `ListingUnavailableError` (모르는 거래 유형이면 `reason: UNKNOWN_TRADE_TYPE`, 모르는 매물 유형이면 `UNKNOWN_REAL_ESTATE_TYPE`) |
 | 당근 | `ON_GOING`(판매중)·`RESERVED`(예약중)이고 `isHide`·`invisibleReason`·`invisibleInfos` 없음 (`is_available`), 아는 거래 조건이 있음. 상세는 비활성 중개소(`bizProfile.status` 가 `ACTIVE` 아님)도 막는다 | 제외. 목록 카드에는 중개소 상태가 없어 비활성 중개소 매물은 당근 웹처럼 목록에 나온다 | `ListingUnavailableError` (상태·사유 포함, 거래 조건이 없으면 `reason: NO_TRADE_INFO`, 비활성 중개소면 `BIZ_PROFILE_INACTIVE`) |
 | 다방 | 상세 `status` 가 비공개(0·3·4)가 아니고 `is_contract` 아님, 아는 거래 유형 (`TRADE_BY_SELLING_CODE`) | 목록 칸에 상태가 없어 다방 웹 목록과 같은 매물이 온다. 가격·거래 유형을 읽지 못한 매물은 제외 | `ListingUnavailableError` (비공개면 `status`, 계약 완료면 `status: contract`, 모르는 거래 유형이면 `reason: UNKNOWN_TRADE_TYPE`) |
