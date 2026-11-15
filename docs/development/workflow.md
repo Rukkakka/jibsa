@@ -85,7 +85,8 @@ PR 템플릿의 `변경 종류` 도 같은 다섯 이름을 쓴다. PR 이 닫�
 
 PR 을 열면 [CI](../../.github/workflows/ci.yml) 가 `ruff check`·`mypy`·전체 `pytest`(Ubuntu·macOS·Windows ×
 Python 3.11·3.12·3.13·3.14)·설치본 확인(`jibsa --version`, `jibsa guide` 와 `docs/llm.md` 비교)·`docs/llm.md` 200줄 검사를 돌린다.
-문서만 바꾼 PR(`docs/` 아래, 맨 위 `.md`, `LICENSE`, 이슈·PR 템플릿)은 `pytest` 를 건너뛴다. 머지 조건은 마지막 `CI 결과`
+문서만 바꾼 PR(`docs/` 아래, 맨 위 `.md`, `LICENSE`, `.claude/`, 이슈·PR 템플릿)은 `pytest` 를 건너뛴다. 다만 `.claude/workflows/`
+의 동시 실행 상한이 같은지 보는 테스트 하나는 린트에서 늘 돈다. 머지 조건은 마지막 `CI 결과`
 검사 하나다 (앞 검사 중 실패·취소가 있으면 실패). PR 을 연 뒤 `main` 이 바뀌면 "Update branch" 로 최신 `main` 을 합쳐 CI 를
 다시 통과해야 머지할 수 있다. 머지 뒤 `main` 에서는 CI 를 다시 돌리지 않는다.
 브라우저·설치에 관련된 파일(`src/jibsa/core/`, `src/jibsa/cli/app.py`, `scripts/install/`, `scripts/ci/`, `pyproject.toml`,

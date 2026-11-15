@@ -12,7 +12,8 @@ export const meta = {
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 // 같은 소스의 묶음을 동시에 돌리는 수 (docs/development/agents.md "동시에 띄울 때"). 네이버는 하나씩. 동시 실행 상한
 // (SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와 그 절을 같이
-// 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+// 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다. 세 파일의 같은 소스 상한·네이버 상한이 다르면
+// tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 const SAME_SOURCE_MAX = 3
 const SAME_SOURCE_MAX_BY = { naver: 1 }
 const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX

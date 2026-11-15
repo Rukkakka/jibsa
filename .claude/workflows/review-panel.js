@@ -23,6 +23,7 @@ const EFFORTS = ['high', 'xhigh']
 const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스에 검증자를 더 둔다
 // 동시 실행 상한(SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
+// 세 파일의 같은 소스 상한·네이버 상한이 다르면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 부르는 검증자 수 (docs/development/agents.md "동시에 띄울 때")
 // 네이버 검증자는 한 번에 하나만 돌린다. jibsa 요청 제한기는 첫 화면이 스스로 부르는 요청을 연 뒤에 세어 미리 막지 못하는데
 // (src/jibsa/core/browser.py `finish_entry`), 남긴 쿠키가 없거나 오래됐을 때 jibsa 프로세스 여럿이 함께 시작하면 저마다 첫 화면을
