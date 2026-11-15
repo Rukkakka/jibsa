@@ -10,7 +10,7 @@ export const meta = {
 
 // 관점 여섯 가지 (docs/development/agents.md "코드 리뷰" 1단계). /review 는 이 키로 묶음을 정해 넘긴다.
 const PERSPECTIVES = {
-  convention: '규약 위반: AGENTS.md "꼭 지킬 것" (로그인 없는 기능만, 금액은 만원, 결과는 stdout JSON·에러는 stderr JSON, 만료 매물 제외, 서버가 거른 결과를 같은 조건으로 다시 거르지 않기, 소스끼리 import 금지, 모든 요청은 브라우저 transport 와 요청 제한 훅, 사진·중개사 연락처·본문·매물 좌표 출력 금지)와 docs/development/code-style.md.',
+  convention: '규약 위반: AGENTS.md "꼭 지킬 것" (로그인 없는 기능만, 금액은 만원이고 반올림·버림·올림 없이 원 단위까지 — 금액 필드·라벨·안내 문구의 round·floor·`:g`·`.1f` 와 0.1만원으로 반올림하는 `won_to_manwon` 을 새로 쓰는 곳을 잡는다 (거리·면적·비율은 줄여도 된다, 네이버·다방·당근의 기존 반올림은 #257 로 남겨 둔 것), 결과는 stdout JSON·에러는 stderr JSON, 만료 매물 제외, 서버가 거른 결과를 같은 조건으로 다시 거르지 않기, 소스끼리 import 금지, 모든 요청은 브라우저 transport 와 요청 제한 훅, 사진·중개사 연락처·본문·매물 좌표 출력 금지)와 docs/development/code-style.md.',
   correctness: '정확성·버그: 잘못된 분기, 누락값 규칙(해당 없음은 키 삭제·모름은 null·비어 있음은 []), 단위 환산(만원), 이어 받기(--next) 커서·offset, 응답 값이 없을 때(null·빈 글자·"-")와 상한에 닿았을 때의 처리 (실측에 아직 없어도 본다).',
   contract: '출력 계약: docs/development/output-contract.md 와 docs/<source>.md 의 필드·에러 코드·exit code 와 코드가 맞는지, 바뀐 동작이 문서에 반영됐는지.',
   web: '웹 대응: docs/development/provider-conventions.md "웹 화면과의 대응" 의 "안 되는 것" 에 해당하는 결과를 만드는지 ("되는 것" 에 든 예외는 위반이 아니다), 웹과 다르게 한 곳이 그 소스 가이드 "웹과 다른 점" 에 적혔는지. 두 목록은 그 문서에서 읽는다.',
