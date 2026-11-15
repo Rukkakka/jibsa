@@ -12,6 +12,7 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    more_hint,
     normalize_address,
     note,
 )
@@ -37,6 +38,7 @@ from jibsa.providers.dabang.api.response.ranking import (
     DabangRegionRankingResultModel,
 )
 from jibsa.providers.dabang.service.common import (
+    COMPLEX_TYPE_BY_LABEL,
     building_years,
     count_of,
     household_count,
@@ -58,7 +60,6 @@ from typing import (
 )
 
 
-COMPLEX_TYPE_BY_LABEL: dict[str, Literal['APT', 'OFFICETEL']] = {'아파트': 'APT', '오피스텔': 'OFFICETEL'}
 WATCH_PERIOD_BY_LABEL: dict[str, DabangWatchBaseOn] = {
     '방금전': 'JUST_BEFORE',
     '어제': 'YESTERDAY',
@@ -868,10 +869,10 @@ def get_region_ranking(
                 f'--limit 의 최대값은 {REGION_RANKING_MAX_LIMIT}입니다. 더 보려면 범위를 {into} 좁히세요'
                 if limit >= REGION_RANKING_MAX_LIMIT else f'더 보려면 --limit 을 늘리거나 범위를 {into} 좁히세요'
             )
-        elif limit < REGION_RANKING_MAX_LIMIT:
-            more = '더 보려면 --limit 을 늘리세요'
         else:
-            more = f'--limit 의 최대값은 {REGION_RANKING_MAX_LIMIT}입니다. 반대쪽 끝은 --order 를 바꿔 보세요'
+            more = more_hint(limit, REGION_RANKING_MAX_LIMIT, None)
+            if limit >= REGION_RANKING_MAX_LIMIT:
+                more += '. 반대쪽 끝은 --order 를 바꿔 보세요'
         notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. {more}'))
     # 학원수·진학률 순위는 상위 지역을 시·도까지만 준다 (2026-10-25 실측: 전국 외국어 학원 1위 '신사동' area '서울')
     if scope.kind not in ('district', 'dong') and any(entry.area and ' ' not in entry.area for entry in entries):

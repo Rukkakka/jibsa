@@ -52,8 +52,10 @@ from jibsa.providers.dabang.api.response.complex import (
     DabangLatelyPriceModel,
 )
 from jibsa.providers.dabang.service.common import (
+    COMPLEX_KIND_BY_TYPE,
     MAX_LIST_LIMIT,
     ZOOM_BY_SEARCH_TYPE,
+    ComplexKind,
     DabangListing,
     DabangListingConditions,
     DabangPage,
@@ -88,12 +90,10 @@ from typing import (
 )
 
 
-ComplexKind = Literal['아파트', '오피스텔']
 # 최근 거래의 면적을 내는 키. 다방 요약의 면적은 아파트면 공급, 오피스텔이면 계약이다
 RecentAreaKey = Literal['supply_area_m2', 'contract_area_m2']
 CATEGORY_BY_COMPLEX_KIND: dict[ComplexKind, DabangComplexCategory] = {'아파트': 'apt', '오피스텔': 'officetel'}
 LISTING_KIND_BY_CATEGORY: dict[DabangComplexCategory, ListingKind] = {'apt': 'apt', 'officetel': 'officetel'}
-COMPLEX_KIND_BY_TYPE: dict[str, ComplexKind] = {'APT': '아파트', 'OFFICETEL': '오피스텔'}
 # 중·고등학교·어린이집·유치원은 가까운 순 3곳. 웹 '주변 보육/교육시설' 탭이 3곳씩 보이고 '더보기' 로 3곳씩 늘린다
 # (education 청크 `Y`·`X`·`Q`·`$` = 3, 2026-11-13)
 NEAREST_SCHOOLS: int = 3

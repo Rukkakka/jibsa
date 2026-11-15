@@ -1,7 +1,9 @@
 import json
 import sys
 from collections.abc import (
+    Collection,
     Generator,
+    Iterable,
     Mapping,
 )
 from contextlib import contextmanager
@@ -63,6 +65,8 @@ ALWAYS_FIELDS: frozenset[str] = frozenset({
     'id', 'realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon',
 })
 ChoiceT = TypeVar('ChoiceT', bound=str)
+# 하나만 받는 옵션의 허용값 (`check_choice`). 글자 말고 숫자 옵션(네이버 --pyeong-range)도 있다
+OptionT = TypeVar('OptionT')
 TradeT = TypeVar('TradeT', bound=str)
 
 
@@ -488,6 +492,49 @@ class ChangedUsage(NamedTuple):
     removed_options: frozenset[str] = frozenset()
 
 
+def not_allowed_message(value: object, allowed: Iterable[object]) -> str:
+    """허용 밖 라벨 값의 에러 문장. `split_csv` 와 따로 검사하는 옵션도 같은 문장을 쓴다."""
+    return f"허용되지 않는 값입니다: '{value}'. 가능한 값: {', '.join(map(str, allowed))}"
+
+
+def check_choice(value: object, allowed: Collection[OptionT], option: str, *, context: str | None = None) -> OptionT:
+    """하나만 받는 옵션의 값이 허용값인지 보고 그 허용값을 돌려준다. 값의 타입은 `allowed` 를 따른다 (`split_csv` 와 같다).
+
+    글자 값은 앞뒤 공백을 다듬어 비교한다. 쉼표로 여러 값을 주면 `split_csv` 와 같은 규칙으로 조각을 나눠(조각마다 공백
+    다듬기, 빈 조각 건너뛰기, 같은 값은 한 번) 서로 다른 허용값이 둘 이상이면 '하나만 주세요' 로 막고, 하나면 그 값을 받는다.
+    허용 밖의 값(쉼표 값이면 첫 번째 틀린 조각)이나 다듬고 나서 빈 값은 `not_allowed_message` 문장으로 사용법 오류를 낸다.
+    글자가 아닌 값(네이버 --pyeong-range 의 정수)은 그대로 비교한다.
+
+    Args:
+        context: 에러 문장 끝에 괄호로 붙이는 덧말 (예: '--level 어린이집 의 설립 구분'. 허용값이 다른 옵션에 따라 바뀔 때).
+    """
+    suffix = f' ({context})' if context else ''
+
+    def match(given: object) -> OptionT:
+        for choice in allowed:
+            if choice == given:
+                return choice
+        raise typer.BadParameter(f'{not_allowed_message(given, allowed)}{suffix}', param_hint=option)
+
+    if not isinstance(value, str):
+        return match(value)
+    text = value.strip()
+    if ',' not in text:
+        return match(text)
+    chosen: list[OptionT] = []
+    for part in text.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        choice = match(part)
+        if choice not in chosen:
+            chosen.append(choice)
+    if len(chosen) > 1:
+        raise typer.BadParameter(f"하나만 주세요: {', '.join(map(str, chosen))}{suffix}", param_hint=option)
+    # 조각이 모두 비면 다듬은 값 그대로 허용 밖으로 알린다
+    return chosen[0] if chosen else match(text)
+
+
 def split_csv(
     values: list[str] | None,
     allowed: tuple[ChoiceT, ...],
@@ -505,7 +552,7 @@ def split_csv(
             if not part:
                 continue
             if part not in allowed:
-                message = f"허용되지 않는 값입니다: '{part}'. 가능한 값: {', '.join(allowed)}"
+                message = not_allowed_message(part, allowed)
                 # 틀린 값 하나만 본다. 쉼표로 함께 준 맞는 값까지 다른 옵션으로 안내하지 않게
                 hint = hints.hint(option, part) if hints else None
                 if hint:

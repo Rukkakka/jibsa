@@ -1,5 +1,4 @@
 import re
-from collections.abc import Iterable
 
 import typer
 
@@ -16,6 +15,7 @@ from jibsa.cli.options import (
 from jibsa.cli.output import (
     HintedBadParameter,
     UsageHints,
+    check_choice,
     emit,
     handle_errors,
     infer_trade_types,
@@ -206,14 +206,6 @@ LISTING_HINTS: UsageHints = UsageHints(
 USAGE_HINTS: dict[str, UsageHints] = {'jibsa naver search listings': LISTING_HINTS}
 
 
-def _check_choice(value: object, allowed: Iterable[object], option: str) -> None:
-    """하나만 받는 옵션의 값이 허용값인지 본다."""
-    if value not in allowed:
-        raise typer.BadParameter(
-            f"허용되지 않는 값입니다: '{value}'. 가능한 값: {', '.join(map(str, allowed))}", param_hint=option,
-        )
-
-
 def _price_trade_types(
     trade: list[str] | None,
     deposit_min: int | None,
@@ -387,7 +379,7 @@ def complexes_command(
     _require_location(query, lat, lng)
     require_finite('--radius', radius)
     property_types = split_csv(property_type, tuple(AREA_COMPLEX_CODES_BY_TYPE), '--type')
-    _check_choice(sort, COMPLEX_LIST_SORT_TYPE_BY_NAME, '--sort')
+    sort = check_choice(sort, COMPLEX_LIST_SORT_TYPE_BY_NAME, '--sort')
     validate_ranges(('household', household_min, household_max), ('building-age', building_age_min, building_age_max))
 
     with handle_errors(SOURCE), NaverClient() as client:
@@ -435,7 +427,7 @@ def _trade_conditions(
     """
     trade_types, trade_notes = _price_trade_types(trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max)
     validate_ranges(('deposit', deposit_min, deposit_max), ('rent', rent_min, rent_max), ('price', price_min, price_max))
-    _check_choice(sort, COMPLEX_SORT_TYPE_BY_NAME, '--sort')
+    sort = check_choice(sort, COMPLEX_SORT_TYPE_BY_NAME, '--sort')
     with handle_errors(SOURCE):
         conditions = NaverTradeConditions(
             trade_types=trade_types,
@@ -543,7 +535,7 @@ def redevelopment_command(
     _require_location(query, lat, lng)
     require_finite('--radius', radius)
     trade_types = split_csv(trade, TRADE_TYPES, '--trade')
-    _check_choice(sort, REDEVELOPMENT_SORT_TYPE_BY_NAME, '--sort')
+    sort = check_choice(sort, REDEVELOPMENT_SORT_TYPE_BY_NAME, '--sort')
 
     with handle_errors(SOURCE), NaverClient() as client:
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
@@ -597,10 +589,10 @@ def trend_command(
     예: jibsa naver trend 역삼동 --trade 전세 --period 3년 --pyeong-range 30
     """
     _require_location(query, lat, lng)
-    _check_choice(trade, TREND_TRADE_CODE_BY_NAME, '--trade')
-    _check_choice(period, TREND_PERIOD_BY_NAME, '--period')
+    trade = check_choice(trade, TREND_TRADE_CODE_BY_NAME, '--trade')
+    period = check_choice(period, TREND_PERIOD_BY_NAME, '--period')
     if pyeong_range is not None:
-        _check_choice(pyeong_range, TREND_PYEONG_RANGES, '--pyeong-range')
+        pyeong_range = check_choice(pyeong_range, TREND_PYEONG_RANGES, '--pyeong-range')
 
     with handle_errors(SOURCE), NaverClient() as client:
         region, kind, notes = _resolve_location(client, query, lat, lng, None, radius_search=False)
@@ -660,7 +652,7 @@ def real_price_command(
     if len(trade_types) != 1:
         raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세 중 하나)', param_hint='--trade')
     if period is not None:
-        _check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
+        period = check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
         if pages is not None:
             raise typer.BadParameter('--period 와 --pages 는 함께 쓸 수 없습니다. 기간이면 --period 만 주세요', param_hint='--pages')
     with handle_errors(SOURCE), NaverClient() as client:
@@ -689,7 +681,7 @@ def market_price_command(
 
     예: jibsa naver market-price 개포자이 --pyeong 1 --period 3년
     """
-    _check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
+    period = check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
     with handle_errors(SOURCE), NaverClient() as client:
         complex_number, villa, notes = _complex_number(client, complex_)
         emit(get_market_price_history(client, complex_number, pyeong, period=period, villa=villa), pretty, notes=notes)
@@ -832,11 +824,11 @@ def _listing_conditions(
     move_in_types = split_csv(move_in, tuple(MOVE_IN_CODE_BY_NAME), '--move-in', LISTING_HINTS)
     parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking', LISTING_HINTS)
     entrances = split_csv(entrance, tuple(ENTRANCE_CODE_BY_NAME), '--entrance')
-    _check_choice(area_basis, AREA_BASES, '--area-basis')
+    area_basis = check_choice(area_basis, AREA_BASES, '--area-basis')
     if sort is not None:
-        _check_choice(sort, SORT_TYPE_BY_NAME, '--sort')
+        sort = check_choice(sort, SORT_TYPE_BY_NAME, '--sort')
     if loan is not None:
-        _check_choice(loan, LOAN_CODE_BY_NAME, '--loan')
+        loan = check_choice(loan, LOAN_CODE_BY_NAME, '--loan')
     validate_ranges(
         ('deposit', deposit_min, deposit_max),
         ('rent', rent_min, rent_max),

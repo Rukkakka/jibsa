@@ -18,6 +18,7 @@ from jibsa.cli.options import (
 )
 from jibsa.cli.output import (
     UsageHints,
+    check_choice,
     emit,
     handle_errors,
     infer_trade_types,
@@ -49,6 +50,7 @@ from jibsa.providers.dabang.api.request.common import UNBOUNDED_MAX
 from jibsa.providers.dabang.api.response.region import DabangLocSearchResultModel
 from jibsa.providers.dabang.service.common import (
     COMPLEX_ID_PATTERN,
+    COMPLEX_KINDS,
     CONDITIONS_BY_KIND,
     DEFAULT_LIST_LIMIT,
     FLOOR_FILTER_BY_LABEL,
@@ -103,6 +105,7 @@ from jibsa.providers.dabang.service.ranking import (
 from jibsa.providers.dabang.service.real_price import (
     REAL_PRICE_MAX_LIMIT,
     REAL_PRICE_MAX_YEARS,
+    SEARCH_TYPE_BY_TRADE,
     RealPriceTrade,
     get_listing_real_prices,
     get_price_trend,
@@ -152,8 +155,7 @@ AREA_BASIS_BY_KIND: dict[ListingKind, str] = {
     'officetel': '계약면적 기준. 결과 area_m2 는 전용이라 더 작게 나온다',
     'apt': '공급면적 기준 (결과 supply_area_m2)',
 }
-REAL_PRICE_TRADES: tuple[str, ...] = ('매매', '전월세')
-COMPLEX_KINDS: tuple[str, ...] = ('아파트', '오피스텔')
+REAL_PRICE_TRADES: tuple[RealPriceTrade, ...] = tuple(SEARCH_TYPE_BY_TRADE)
 # 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령에 없는 조건은 없다고 알린다
 LISTING_HINTS: UsageHints = UsageHints(
     by_value={
@@ -826,10 +828,10 @@ def complexes_command(
     """
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
-    chosen_type = _one([complex_type], COMPLEX_KINDS, '--type', '아파트')
+    chosen_type = check_choice(complex_type, COMPLEX_KINDS, '--type')
     with handle_errors(SOURCE), DabangClient() as client:
         place = _place(client, query, lat, lng)
-        result = search_complexes(client, '오피스텔' if chosen_type == '오피스텔' else '아파트', place, limit=limit, radius_km=radius)
+        result = search_complexes(client, chosen_type, place, limit=limit, radius_km=radius)
         emit(result, pretty, notes=result.notes)
 
 
@@ -890,10 +892,9 @@ def school_command(
     value = school_code.strip()
     if SCHOOL_CODE_PATTERN.fullmatch(value) is None:
         raise typer.BadParameter(f"학교 코드는 영문·숫자입니다: '{school_code}'", param_hint='SCHOOL_CODE')
-    if level not in SCHOOL_LEVELS:
-        raise typer.BadParameter(f"허용되지 않는 값입니다: '{level}'. 가능한 값: {', '.join(SCHOOL_LEVELS)}", param_hint='--level')
+    chosen_level = check_choice(level, SCHOOL_LEVELS, '--level')
     with handle_errors(SOURCE), DabangClient() as client:
-        emit(get_school(client, value, level), pretty)
+        emit(get_school(client, value, chosen_level), pretty)
 
 
 @app.command('real-price')
@@ -912,7 +913,7 @@ def real_price_command(
     trade: Annotated[
         str | None,
         typer.Option('--trade', help=(
-            '매매 또는 전월세 (전세·월세를 함께 준다). 기본: 단지는 매매, --listing 은 다방 매물 화면처럼 매물의 거래 유형 '
+            f"{' 또는 '.join(REAL_PRICE_TRADES)} (전세·월세를 함께 준다). 기본: 단지는 매매, --listing 은 다방 매물 화면처럼 매물의 거래 유형 "
             '(매매 매물은 매매, 월세·전세 매물은 전월세)'
         )),
     ] = None,
@@ -930,8 +931,7 @@ def real_price_command(
     """
     if (complex_id is None) == (listing is None):
         raise typer.BadParameter('단지 ID 와 --listing 중 하나만 주세요', param_hint='COMPLEX_ID')
-    chosen_trade = _one([trade] if trade is not None else None, REAL_PRICE_TRADES, '--trade', '')
-    given_trade: RealPriceTrade | None = '전월세' if chosen_trade == '전월세' else '매매' if chosen_trade == '매매' else None
+    given_trade = check_choice(trade, REAL_PRICE_TRADES, '--trade') if trade is not None else None
     if listing is not None:
         if pyeong is not None:
             raise typer.BadParameter('--pyeong 은 단지 실거래에만 씁니다', param_hint='--pyeong')
@@ -1072,7 +1072,10 @@ TRADE_RANKING_TRADES: tuple[str, ...] = ('매매', '전세')
 
 
 def _one(values: list[str] | None, allowed: tuple[str, ...], option: str, default: str) -> str:
-    """하나만 받는 라벨 옵션 (`split_csv` 로 검사하고 여럿이면 막는다)."""
+    """여러 번 줄 수 있게 열어 둔 옵션에서 하나만 받는다 (`split_csv` 로 검사하고 여럿이면 막는다).
+
+    값이 하나뿐인 `str` 옵션은 `check_choice` 로 검사한다.
+    """
     chosen = split_csv(values, allowed, option)
     if len(chosen) > 1:
         raise typer.BadParameter(f"하나만 주세요: {', '.join(chosen)}", param_hint=option)
@@ -1240,7 +1243,7 @@ def trending_complexes_command(
     예: jibsa dabang trending-complexes
         jibsa dabang trending-complexes -t 오피스텔 --period 지난주 --unit 동
     """
-    chosen_type = _one(complex_type, ('아파트', '오피스텔'), '--type', '아파트')
+    chosen_type = _one(complex_type, COMPLEX_KINDS, '--type', '아파트')
     chosen_period = _one(period, tuple(WATCH_PERIOD_BY_LABEL), '--period', '방금전')
     chosen_unit = _one(unit, WATCH_UNITS, '--unit', '단지')
     with handle_errors(SOURCE), DabangClient() as client:
@@ -1267,7 +1270,7 @@ def trade_rankings_command(
     예: jibsa dabang trade-rankings
         jibsa dabang trade-rankings --trade 전세 --period 이번달
     """
-    chosen_type = _one(complex_type, ('아파트', '오피스텔'), '--type', '아파트')
+    chosen_type = _one(complex_type, COMPLEX_KINDS, '--type', '아파트')
     chosen_trade = _one(trade, TRADE_RANKING_TRADES, '--trade', '매매')
     chosen_period = _one(period, tuple(TRADE_PERIOD_BY_LABEL), '--period', '이번주')
     with handle_errors(SOURCE), DabangClient() as client:
@@ -1335,8 +1338,7 @@ def region_ranking_command(
         jibsa dabang region-ranking 강남구 --by 과학고진학률
         jibsa dabang region-ranking 서울 --by 학원수 --kind 입시
     """
-    if by not in METRIC_BY_LABEL:
-        raise typer.BadParameter(f"허용되지 않는 값입니다: '{by}'. 가능한 값: {', '.join(METRIC_BY_LABEL)}", param_hint='--by')
+    by = check_choice(by, METRIC_BY_LABEL, '--by')
     spec = METRIC_BY_LABEL[by]
     chosen_unit = _one(unit, RANKING_UNITS, '--unit', '동')
     trades = split_csv(trade, ('매매', '전세', '월세'), '--trade')

@@ -98,6 +98,13 @@ CATEGORY_BY_KIND: dict[ListingKind, DabangCategory] = {
     'apt': 'apt',
 }
 KIND_LABELS: dict[ListingKind, str] = {'room': '원룸·투룸', 'villa': '주택·빌라', 'officetel': '오피스텔', 'apt': '아파트'}
+ComplexKind = Literal['아파트', '오피스텔']
+ComplexType = Literal['APT', 'OFFICETEL']
+# 단지 유형 (이름, 코드) 짝. 두 방향 표가 이 한 곳에서 나온다
+_COMPLEX_KIND_TYPES: tuple[tuple[ComplexKind, ComplexType], ...] = (('아파트', 'APT'), ('오피스텔', 'OFFICETEL'))
+COMPLEX_KINDS: tuple[ComplexKind, ...] = tuple(kind for kind, _ in _COMPLEX_KIND_TYPES)
+COMPLEX_KIND_BY_TYPE: dict[str, ComplexKind] = {type_: kind for kind, type_ in _COMPLEX_KIND_TYPES}
+COMPLEX_TYPE_BY_LABEL: dict[str, ComplexType] = {kind: type_ for kind, type_ in _COMPLEX_KIND_TYPES}
 TRADE_BY_PRICE_TYPE_NAME: dict[str, TradeType] = {'월세': '월세', '전세': '전세', '매매': '매매'}
 SELLING_TYPE_BY_TRADE: dict[str, DabangSellingType] = {'월세': 'MONTHLY_RENT', '전세': 'LEASE', '매매': 'SELL'}
 # 원룸·투룸 목록은 매매를 받지 않는다 (매매만 보내면 무시하고 월세를 준다, 2026-10-25 실측)

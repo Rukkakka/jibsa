@@ -12,6 +12,7 @@ from jibsa.cli.options import (
 )
 from jibsa.cli.output import (
     UsageHints,
+    check_choice,
     emit,
     handle_errors,
     infer_trade_types,
@@ -869,11 +870,7 @@ def store_command(
     """
     _require_center(query, lat, lng)
     require_finite('--radius', radius)
-    if trade is not None and trade not in STORE_TRADE_TYPES:
-        raise typer.BadParameter(
-            f"허용되지 않는 값입니다: '{trade}'. 가능한 값: {', '.join(STORE_TRADE_TYPES)}",
-            param_hint='--trade',
-        )
+    store_trade = check_choice(trade, STORE_TRADE_TYPES, '--trade') if trade is not None else '전체'
     # 금액 범위는 store_price_trade 가 거꾸로 된 범위를 거절한다. 면적은 float 이라 inf 가 typer 의 min=0 을 통과해
     # 요청 JSON 인코딩에서 PARSE_ERROR 로 끝났다 (2026-10-11 실측: --area-min inf). 상한이 '미만' 이라 같은 값도 막아야 해서
     # validate_ranges(min > max 만 거절) 대신 유한한지만 보고 범위는 아래 검사 하나로 본다
@@ -886,7 +883,7 @@ def store_command(
     if area_min is not None and area_max is not None and area_min >= area_max:
         raise typer.BadParameter('--area-max 는 --area-min 보다 커야 합니다', param_hint='--area-max')
     with handle_errors(SOURCE):
-        effective_trade = store_price_trade(trade or '전체', {
+        effective_trade = store_price_trade(store_trade, {
             'deposit_manwon': (deposit_min, deposit_max),
             'rent_manwon': (rent_min, rent_max),
             'price_manwon': (price_min, price_max),
@@ -1004,11 +1001,8 @@ def stay_command(
             check_in_date=check_in, check_out_date=check_out, flexibility=flexibility,
         )
         stay_sort = check_stay_sort(sort)
-    if structure is not None and structure not in STAY_STRUCTURES:
-        raise typer.BadParameter(
-            f"허용되지 않는 값입니다: '{structure}'. 가능한 값: {', '.join(STAY_STRUCTURES)}",
-            param_hint='--structure',
-        )
+    if structure is not None:
+        structure = check_choice(structure, STAY_STRUCTURES, '--structure')
     buildings = split_csv(building, tuple(STAY_BUILDING_TYPE_BY_LABEL), '--building')
     discounts = split_csv(discount, tuple(STAY_DISCOUNT_TYPE_BY_LABEL), '--discount')
     options = split_csv(option, tuple(STAY_OPTION_BY_LABEL), '--option')

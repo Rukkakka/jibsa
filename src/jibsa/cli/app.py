@@ -43,6 +43,7 @@ from jibsa.cli import (
 from jibsa.cli.output import (
     ChangedUsage,
     UsageHints,
+    check_choice,
     emit,
     emit_error,
     handle_errors,
@@ -239,10 +240,8 @@ def guide_command(
         jibsa guide daangn 'search listings'
         jibsa guide zigbang listing
     """
-    if topic is not None and topic not in GUIDE_TOPICS:
-        raise typer.BadParameter(
-            f"허용되지 않는 값입니다: '{topic}'. 가능한 값: {', '.join(GUIDE_TOPICS)}", param_hint='TOPIC',
-        )
+    if topic is not None:
+        topic = check_choice(topic, GUIDE_TOPICS, 'TOPIC')
     # 파일이 없는 깨진 설치와 없는 절도 에러 JSON 으로 낸다
     with handle_errors('guide'):
         text = read_guide(GUIDE_TOPICS[topic] if topic else GUIDE_FILE)

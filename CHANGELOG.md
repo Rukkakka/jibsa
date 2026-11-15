@@ -103,6 +103,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 당근 웹 쿼리 해시가 거절되면 동 지도 페이지 20건에 조건을 직접 걸어 찾던 대체 경로를 없애 `UPSTREAM_ERROR` 로 끝냄. 당근 웹에 없는 동작이었다 (#215)
 - 당근 `region-real-price --new-high` 가 당근 웹 신고가 화면처럼 가장 최근 공개일의 신고가만 줌. 그날 신고가가 없으면 빈 목록이고 `notes` 가 알린다. 예전처럼 이전 공개일 신고가까지 보려면 새 옵션 `--previous-days` 를 붙인다 (#222)
 - 다방 `complex` 의 중·고등학교를 2곳에서 다방 화면처럼 가까운 3곳씩 줌 (#235)
+- 하나만 받는 옵션이 앞뒤 공백을 다듬어 받고, 쉼표로 여러 값을 주면 `INVALID_ARGUMENT` 의 message 가 '허용되지 않는 값' 대신 `하나만 주세요: …` 로 바뀜 (같은 값만 반복했으면 그 값으로 받고, 틀린 조각이 있으면 그 조각으로 '허용되지 않는 값'). 바뀌는 옵션: 네이버 `search complexes`·`search redevelopment`·`search listings` 의 `--sort`, `search listings` 의 `--area-basis`·`--loan`, `trend` 의 `--trade`·`--period`, `real-price`·`market-price` 의 `--period`, 직방 `search listings store` 의 `--trade`, `search listings stay` 의 `--structure`, 다방 `school` 의 `--level`, `region-ranking` 의 `--by`, `jibsa guide` 의 `TOPIC` (#243)
 
 ### 수정
 
