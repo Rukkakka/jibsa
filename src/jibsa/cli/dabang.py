@@ -33,13 +33,8 @@ from jibsa.cli.paging import (
     decode_next,
     encode_next,
 )
-from jibsa.core.errors import (
-    JibsaError,
-    RegionNotFoundError,
-    UnsupportedRegionError,
-)
+from jibsa.core.errors import JibsaError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
-from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
     normalize_address,
@@ -47,7 +42,6 @@ from jibsa.core.listing import (
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import UNBOUNDED_MAX
-from jibsa.providers.dabang.api.response.region import DabangLocSearchResultModel
 from jibsa.providers.dabang.service.common import (
     COMPLEX_ID_PATTERN,
     COMPLEX_KINDS,
@@ -112,14 +106,12 @@ from jibsa.providers.dabang.service.real_price import (
     get_real_prices,
 )
 from jibsa.providers.dabang.service.region import (
-    DISTRICT_PATTERN,
-    NATIONAL_NAMES,
-    DabangScope,
+    find_scope,
+    is_national_or_state,
     legal_division_code,
     resolve_places,
     resolve_scope,
     search_locations,
-    state_name,
 )
 from jibsa.providers.dabang.service.sale import (
     SALE_BUILDING_TYPE_BY_LABEL,
@@ -1082,51 +1074,22 @@ def _one(values: list[str] | None, allowed: tuple[str, ...], option: str, defaul
     return chosen[0] if chosen else default
 
 
-def _is_scope_name(query: str) -> bool:
-    """전국·시·도·시·군·구 이름처럼 보이는지 ('전국', '서울', '경기도', '강남구', '성남시 분당구')."""
-    text = query.strip()
-    words = text.split()
-    return text in NATIONAL_NAMES or state_name(text) is not None or bool(words and DISTRICT_PATTERN.fullmatch(words[-1]))
-
-
-def _sales_scope(client: DabangClient, query: str) -> tuple[DabangScope | None, DabangLocSearchResultModel | None]:
-    """분양을 시·군·구 범위로 찾을 이름이면 그 범위, 동·역·대학 이름이면 None.
-
-    이름 모양만 보면 '홍대입구'·'을지로입구' 같은 역도 '구' 로 끝나 시·군·구로 보인다. 범위로 찾지 못한 이름은 None 으로
-    돌려 동·역으로 다시 찾게 한다 (2026-10-25 실측: '홍대입구' 가 REGION_NOT_FOUND 로 끝났다).
-
-    Returns:
-        (범위, 장소 검색 결과). 시·군·구 모양 이름은 여기서 장소 검색을 한 번 받아 `resolve_scope` 에 주고, 범위로 찾지
-        못하면 그 결과를 돌려 `resolve_places` 가 같은 요청을 또 보내지 않게 한다.
-
-    Raises:
-        UnsupportedRegionError: '전국'·시·도 이름일 때 (분양은 시·군·구까지만 찾는다). 요청 없이 이름으로 막는다.
-    """
-    if not _is_scope_name(query):
-        return None, None
-    text = query.strip()
-    # 전국·시·도는 시·도 목록을 묻기 전에 막는다 ('서울시' 도 '시' 로 끝나지만 시·도다). `resolve_scope` 는 이 두 경우에만
-    # 시·군·구가 아닌 범위를 주므로, 아래에서 받는 범위는 늘 시·군·구다
-    if text in NATIONAL_NAMES or state_name(text) is not None:
-        raise UnsupportedRegionError(
-            code='REGION_NOT_SUPPORTED',
-            message=f"분양은 시·도·전국 범위로 찾지 않습니다: '{text}'",
-            hint="시·군·구 이름(예: '강남구')이나 동·역 이름으로 찾으세요. 날짜별 전국 일정은 jibsa dabang sale-schedule",
-            skip_note=f"{text}{particle(text, '은/는')} 범위가 넓어 건너뛰었습니다",
-        )
-    searched = search_locations(client, text)
-    try:
-        scope = resolve_scope(client, query, searched=searched)
-    except RegionNotFoundError:
-        return None, searched
-    return scope, searched
+def _scope_radius_error(query: str | None) -> JibsaError:
+    """분양 범위(전국·시·도·시·군·구) 이름에 --radius 를 준 에러. 범위를 찾기 전·후 두 자리가 같은 에러를 쓴다."""
+    return JibsaError(
+        code='INVALID_ARGUMENT',
+        message=f"전국·시·도·시·군·구 범위에는 --radius 를 주지 않습니다: '{query}'",
+        hint='그 범위 안 분양 전체는 --radius 를 빼고, 반경으로 찾으려면 동·역 이름이나 --lat/--lng 에 --radius 를 주세요',
+    )
 
 
 @search_app.command('sales')
 def sales_command(
     query: Annotated[
         str | None,
-        typer.Argument(help="동·시군구·역·대학 이름 (예: 역삼동, 강남구, '성남시 분당구', 강남역). --lat/--lng 를 주면 생략"),
+        typer.Argument(
+            help="동·시군구·시도·역·대학 이름이나 '전국' (예: 역삼동, 강남구, '성남시 분당구', 서울, 강남역). --lat/--lng 를 주면 생략",
+        ),
     ] = None,
     lat: LatOption = None,
     lng: LngOption = None,
@@ -1146,14 +1109,18 @@ def sales_command(
         list[str] | None,
         typer.Option('--supply', help=f"공급 유형: {', '.join(SALE_SUPPLY_BY_LABEL)}. 반복하거나 쉼표로 구분. 기본 전체"),
     ] = None,
-    limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='받을 분양 단지 수 (제외 전, 다방은 24곳씩 준다)')] = DEFAULT_LIST_LIMIT,
+    limit: Annotated[
+        int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='받을 분양 단지 수 (동 이름이면 주소로 거르기 전, 다방은 24곳씩 준다)'),
+    ] = DEFAULT_LIST_LIMIT,
     pretty: PrettyOption = None,
 ) -> None:
     """분양 단지 (새 아파트·오피스텔 청약). 상태·공급 유형·다음 일정·대표 분양가를 다방 목록 순으로 준다.
 
+    전국·시·도·시·군·구는 다방 분양 지역 목록(웹 '분양정보' 목록)과 같은 목록·순서·총 수다. 동·역·대학·좌표는 지도 목록이다.
     상세(일정·평형별 분양가)는 결과의 sale_id 로 jibsa dabang sale <sale_id>.
 
     예: jibsa dabang search sales 강남구 --state 분양예정,접수중
+        jibsa dabang search sales 서울 -t 아파트
         jibsa dabang search sales 강남역 --radius 3 -t 아파트
     """
     _require_center(query, lat, lng)
@@ -1164,15 +1131,15 @@ def sales_command(
     with handle_errors(SOURCE), DabangClient() as client:
         find = partial(search_sales, client, building_types=building_types, states=states, supply_types=supplies, limit=limit)
         point = lat is not None and lng is not None
-        # --radius 를 줘도 시·군·구 이름인지 먼저 본다. 보지 않으면 시·군·구를 동·역으로 찾아 '시·군·구 전체를 찾지 못한다' 는
+        # 전국·시·도 이름은 시·도 목록 요청 1회를 쓰기 전에 막는다. 시·군·구 모양 이름은 범위로 못 찾으면 동·역으로 다시 찾으므로
+        # find_scope 뒤에서 본다
+        if not point and radius is not None and is_national_or_state((query or '').strip()):
+            raise _scope_radius_error(query)
+        # --radius 를 줘도 범위 이름인지 먼저 본다. 보지 않으면 시·군·구를 동·역으로 찾아 '시·군·구 전체를 찾지 못한다' 는
         # 매물 검색용 에러로 끝난다 (2026-10-26 실측: search sales 강남구 --radius 2)
-        scope, searched = _sales_scope(client, query or '') if not point else (None, None)
+        scope, searched = find_scope(client, query or '') if not point else (None, None)
         if scope is not None and radius is not None:
-            raise JibsaError(
-                code='INVALID_ARGUMENT',
-                message=f"시·군·구 범위에는 --radius 를 주지 않습니다: '{query}'",
-                hint='시·군·구 안 분양 전체는 --radius 를 빼고, 반경으로 찾으려면 동·역 이름이나 --lat/--lng 에 --radius 를 주세요',
-            )
+            raise _scope_radius_error(query)
         if point:
             result = find(place=DabangPlace(kind='point', name=query or f'{lat},{lng}', lat=lat, lng=lng), radius_km=radius)
         elif scope is not None:
@@ -1209,22 +1176,33 @@ def sale_schedule_command(
     ] = None,
     days: Annotated[int, typer.Option(min=1, max=7, help='며칠 (1~7, 다방은 7일까지)')] = 7,
     region: Annotated[
-        str | None, typer.Option('--region', help='시·도 (예: 서울, 경기, 충청북도). 일정 글의 시·도로 jibsa 가 거른다'),
+        str | None,
+        typer.Option(
+            '--region',
+            help='시·도 (예: 서울, 경기, 충청북도). 상세를 받아(--details 와 같다) 주소의 시·도로 jibsa 가 거른다. 일정이 있는 날마다 요청 1회 더',
+        ),
     ] = None,
+    details: Annotated[
+        bool,
+        typer.Option(
+            '--details',
+            help='줄마다 분양 단지의 주소·건물 유형·공급 유형·세대수·가격을 붙인다 (다방 청약 일정에서 날짜를 누르면 나오는 표). 내보낼 줄이 든 날마다 요청 1회 더',
+        ),
+    ] = False,
     limit: Annotated[int, typer.Option(min=1, max=SALE_SCHEDULE_MAX_LIMIT, help='최대 일정 수')] = 50,
     pretty: PrettyOption = None,
 ) -> None:
-    """날짜별 전국 청약 일정 (청약 접수·특별공급·당첨자발표 등, 요청 1회).
+    """날짜별 전국 청약 일정 (청약 접수·특별공급·당첨자발표 등, 요청 1회. --details·--region 이면 날마다 1회 더).
 
     예: jibsa dabang sale-schedule --region 서울
-        jibsa dabang sale-schedule --from 2026-11-02 --days 3
+        jibsa dabang sale-schedule --from 2026-11-02 --days 3 --details
     """
     try:
         start = date.fromisoformat(from_date) if from_date else datetime.now(KST).date()
     except ValueError:
         raise typer.BadParameter(f"YYYY-MM-DD 꼴로 주세요: '{from_date}'", param_hint='--from') from None
     with handle_errors(SOURCE), DabangClient() as client:
-        result = get_sale_schedule(client, start=start, days=days, region=region, limit=limit)
+        result = get_sale_schedule(client, start=start, days=days, region=region, details=details, limit=limit)
         emit(result, pretty, notes=result.notes)
 
 

@@ -211,11 +211,12 @@ class DabangGeojsonRegionResponseModel(ResponseModel):
 
 
 class DabangRegionModel(ResponseModel):
-    """다방 지역 하나 (시·도·시·군·구·동).
+    """다방 지역 하나 (시·도·시·군·구). 시·도·시·군·구 목록은 중심 좌표(`location`)를 비워 준다 (2026-11-13 캡처).
 
     Args:
-        gid: 다방 지역 번호. 동네정보 순위의 범위(`scopeRegionGid`)로 쓴다.
-        code: 법정동 코드 앞자리 (시·도 2, 시·군·구 5, 동 8자리).
+        gid: 다방 지역 번호. 순위의 범위(`scopeRegionGid`)로 쓴다.
+        code: 법정동 코드 앞자리 (시·도 2, 시·군·구 5자리).
+        name: 이름. 시·군·구는 구가 있는 시면 시를 붙인다 ('성남시 분당구', 2026-11-13 캡처: 경기도 47곳).
         short_name: 줄인 이름 ('서울').
     """
 
@@ -235,15 +236,11 @@ class DabangRegionModel(ResponseModel):
         str | None,
         Field(description='줄인 이름', alias='shortName')
     ] = None
-    location: Annotated[
-        DabangLocationModel | None,
-        Field(description='중심 좌표')
-    ] = None
-
-
-class DabangRegionV5ResponseModel(DabangV5ResponseModel[DabangRegionModel]):
-    """`GET /api/v5/region` 응답."""
 
 
 class DabangRegionStatesV5ResponseModel(DabangV5ResponseModel[list[DabangRegionModel]]):
     """`GET /api/v5/region/states` 응답 (시·도 목록. 광주·전남은 '전남광주통합특별시' 코드 12)."""
+
+
+class DabangRegionCitiesV5ResponseModel(DabangV5ResponseModel[list[DabangRegionModel]]):
+    """`GET /api/v5/region/cities` 응답 (시·도 하나의 시·군·구 목록)."""

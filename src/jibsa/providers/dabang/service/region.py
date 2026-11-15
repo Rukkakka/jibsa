@@ -1,7 +1,6 @@
 """위치 찾기: 동·역·대학 이름을 다방 검색 방식(동 코드·역 번호·대학 번호)으로 바꾸고, 동 경계를 받는다."""
 import re
 
-from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -30,8 +29,8 @@ from jibsa.providers.dabang.api.request.region import (
     DabangGeojsonRegionRequestParameterModel,
     DabangLocColumn,
     DabangLocSearchV5RequestParameterModel,
+    DabangRegionCitiesV5RequestParameterModel,
     DabangRegionStatesV5RequestParameterModel,
-    DabangRegionV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.common import DabangLocationModel
 from jibsa.providers.dabang.api.response.region import (
@@ -42,7 +41,6 @@ from jibsa.providers.dabang.api.response.region import (
 from jibsa.providers.dabang.service.common import (
     DabangPlace,
     bbox_of,
-    is_missing_id,
 )
 
 from typing import (
@@ -53,7 +51,8 @@ from typing import (
 
 # 같은 이름 후보를 에러에 몇 곳까지 보일지
 AMBIGUOUS_CANDIDATES: int = 5
-# 시·군·구 이름 ('강남구', '성남시', '양평군'). 다방 장소 검색은 시·군·구를 주지 않고 그 안의 동을 준다 (2026-10-25 실측)
+# 시·군·구 이름 ('강남구', '성남시', '양평군'). 다방 장소 검색은 시·군·구를 주지 않고 그 안의 동을 준다 (2026-10-25 실측).
+# 낱말 하나를 볼 때는 '입구' 로 끝나는 역 이름을 거르는 `is_district_word` 를 쓴다
 DISTRICT_PATTERN: re.Pattern[str] = re.compile(r'^[가-힣]+[구군시]$')
 # 동·읍·면·리 이름 ('역삼동', '역삼1동', '봉담읍', '남면', '종로1가'). 동 범위를 받지 않는 곳에서 장소 검색 없이 동을 알아본다
 DONG_NAME_PATTERN: re.Pattern[str] = re.compile(r'^[가-힣0-9]+(?:[동읍면리]|\d가)$')
@@ -285,7 +284,7 @@ def resolve_places(
                 text, candidates, len(candidates), hint=f"동 하나를 골라 그 이름으로 다시 주세요 (예: '{split[0].name}')",
             )
         return place_of_region(split[0])
-    if DISTRICT_PATTERN.fullmatch(last) and result.region_list:
+    if is_district_word(last) and result.region_list:
         raise UnsupportedRegionError(
             code='REGION_NOT_SUPPORTED',
             message=f"다방은 시·군·구 전체를 찾지 못합니다: '{text}'",
@@ -300,14 +299,14 @@ def dong_boundary(client: DabangClient, code: str) -> MultiPolygon:
     """동 경계 (법정동코드 앞 8자리). 지도 집계가 동마다 주는 CDN 파일을 받는다 (요청 1회).
 
     장소 검색이 주는 동은 모두 경계 파일이 있다 (2026-10-25 실측: 읍·면·세종·전남광주·신도시 동 27곳 모두, 빈 좌표 없음).
-    그래서 시·군·구 경계(`scope_bbox`)처럼 없을 때를 대신하지 않고, 403 은 UPSTREAM_ERROR 로 두어 스펙 변경으로 알린다.
+    그래서 없을 때를 대신하지 않고, 403 은 UPSTREAM_ERROR 로 두어 스펙 변경으로 알린다.
     """
     return client.run_request_geojson_region(DabangGeojsonRegionRequestParameterModel(code=code)).coordinates
 
 
-def _covering_bbox(boundaries: list[MultiPolygon]) -> DabangBboxModel:
-    """경계들을 모두 덮는 지도 범위 (동 경계·시군구 경계)."""
-    points = [point for boundary in boundaries for polygon in boundary for ring in polygon for point in ring]
+def _covering_bbox(boundary: MultiPolygon) -> DabangBboxModel:
+    """경계를 덮는 지도 범위."""
+    points = [point for polygon in boundary for ring in polygon for point in ring]
     lats = [point[1] for point in points]
     lngs = [point[0] for point in points]
     return bbox_of(min(lats), max(lats), min(lngs), max(lngs))
@@ -316,8 +315,8 @@ def _covering_bbox(boundaries: list[MultiPolygon]) -> DabangBboxModel:
 def dong_bbox(client: DabangClient, place: DabangPlace) -> DabangBboxModel:
     """동 경계를 덮는 지도 범위 (경계 요청 1회). 동 검색이 없는 아파트 목록과 지도 범위만 받는 단지·분양 목록에 쓴다."""
     # 동 코드는 장소 검색 응답 값이다. 늘 8자리라 요청 모델의 꼴(8자리)을 벗어나지 않아 따로 막지 않는다 (core/schema.py,
-    # 2026-10-26 실측: 중구·신사동·효자동·성수동 장소 검색의 동 61곳 모두 8자리). 시·군·구 범위의 앞 5자리도 같다
-    return _covering_bbox([dong_boundary(client, place.code or '')])
+    # 2026-10-26 실측: 중구·신사동·효자동·성수동 장소 검색의 동 61곳 모두 8자리)
+    return _covering_bbox(dong_boundary(client, place.code or ''))
 
 
 NATIONAL_NAMES: frozenset[str] = frozenset({'전국', '전체', '대한민국'})
@@ -353,41 +352,153 @@ class DabangScope(BaseModel):
         str | None,
         Field(description='법정동 코드 (시·도 앞 2자리, 시·군·구 앞 5자리, 동 10자리)')
     ] = None
+    state_code: Annotated[
+        str | None,
+        Field(exclude=True, description='시·도 코드 (2자리, 시·도·시·군·구. 시·군·구 목록을 받은 시·도)')
+    ] = None
     gid: Annotated[
         int | None,
         Field(exclude=True, description='다방 지역 번호 (전국은 없음)')
     ] = None
-    lat: Annotated[
-        float | None,
-        Field(exclude=True, description='중심 위도')
-    ] = None
-    lng: Annotated[
-        float | None,
-        Field(exclude=True, description='중심 경도')
-    ] = None
 
 
-def _region_by_code(client: DabangClient, code: str) -> DabangRegionModel | None:
+def _states(client: DabangClient) -> list[DabangRegionModel]:
+    """시·도 목록 (요청 1회)."""
+    return client.run_request_region_states_v5(DabangRegionStatesV5RequestParameterModel()).result or []
+
+
+def _state_of(states: list[DabangRegionModel], official: str, text: str) -> DabangRegionModel | None:
+    """시·도 목록에서 정식 이름(`official`, `state_name(text)`)이나 사용자가 준 줄임말(`text`, '서울')에 맞는 시·도.
+
+    부르는 쪽이 `state_name` 으로 시·도 이름인지 먼저 보고('광주시' 는 경기도 광주시라 시·도가 아니다) 시·도 목록을 받는다.
+    """
+    return next((state for state in states if state.name == official or state.short_name == text), None)
+
+
+def _cities(client: DabangClient, state_code: str) -> list[DabangRegionModel]:
+    """시·도 하나의 시·군·구 목록 (요청 1회). 웹 랭킹·분양 지역 고르기와 같은 목록이다."""
+    return client.run_request_region_cities_v5(DabangRegionCitiesV5RequestParameterModel(state_code=state_code)).result or []
+
+
+def _district_scope(state_name_: str, state_code: str, city: DabangRegionModel) -> DabangScope:
+    return DabangScope(
+        kind='district', name=normalize_address(f'{state_name_} {city.name}') or city.name, code=city.code, state_code=state_code,
+        gid=city.gid,
+    )
+
+
+def _city_with_gu_error(text: str, example: str) -> UnsupportedRegionError:
+    """구가 있는 시 전체('성남시')를 범위로 받지 않는다는 에러. `example` 은 구를 붙인 이름 ('성남시 분당구')."""
+    return UnsupportedRegionError(
+        code='REGION_NOT_SUPPORTED',
+        message=f"다방은 구가 있는 시 전체를 범위로 받지 않습니다: '{text}'",
+        hint=f"구 이름을 붙여 주세요 (예: '{example}')",
+        skip_note=f'{text} 는 구가 있는 시라 건너뛰었습니다',
+    )
+
+
+def _pick_city(cities: list[DabangRegionModel], words: list[str], text: str) -> DabangRegionModel | None:
+    """시·군·구 목록에서 이름('강남구', '성남시 분당구', '분당구')에 맞는 곳. 없으면 None.
+
+    다방 시·군·구 목록은 구가 있는 시를 구마다 '성남시 분당구' 로 두고 시 하나('성남시')는 두지 않는다 (2026-11-13 캡처: 경기도
+    47곳). 시 이름만 주면 그 시의 구를 붙이게 한다. 웹 지역 고르기도 시 전체를 고르지 못한다.
+
+    Raises:
+        RegionAmbiguousError: 마지막 낱말만 맞는 시·군·구가 그 시·도에 여럿일 때.
+        UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
+    """
+    name = ' '.join(words)
+    exact = [city for city in cities if city.name == name]
+    if exact:
+        return exact[0]
+    # '분당구' 처럼 시를 빼고 준 구. 앞 낱말이 있으면 그 낱말도 이름에 들어야 한다
+    tail = [
+        city for city in cities
+        if city.name.split()[-1] == words[-1] and all(word in city.name.split() for word in words[:-1])
+    ]
+    if len(tail) > 1:
+        names = [city.name for city in tail]
+        raise RegionAmbiguousError(text, names[:AMBIGUOUS_CANDIDATES], len(names), hint=f"시를 붙여 다시 주세요 (예: '{names[0]}')")
+    if tail:
+        return tail[0]
+    under = [city.name for city in cities if city.name.startswith(f'{name} ')]
+    if under:
+        # 구가 있는 시(경기도 성남시 수정구 …)는 다방 지역이 아니다. 웹 지역 고르기에도 시 전체가 없다
+        raise _city_with_gu_error(text, under[0])
+    return None
+
+
+def is_national_or_state(text: str) -> bool:
+    """'전국'·시·도 이름인지 ('서울시' 도 '시' 로 끝나지만 시·도다). 범위로 찾을 때 장소 검색을 쓰지 않는다."""
+    return text in NATIONAL_NAMES or state_name(text) is not None
+
+
+def _prefixed_state(words: list[str]) -> str | None:
+    """시·도를 붙인 이름('서울 중구', '경기 성남시 분당구')이면 그 시·도의 정식 이름, 아니면 None. 범위로 찾을 때 장소 검색을
+    쓰지 않는다."""
+    return state_name(words[0]) if len(words) > 1 else None
+
+
+def is_district_word(word: str) -> bool:
+    """시·군·구 이름 모양의 낱말인지 ('강남구', '성남시', '양평군').
+
+    '입구' 로 끝나면 시·군·구로 보지 않는다. '홍대입구'·'을지로입구'·'서울대입구' 같은 역 이름도 '구' 로 끝나지만 '입구' 로 끝나는
+    시·군·구는 없다. 시·군·구로 보면 '서울 홍대입구' 가 시·도 목록·시·군·구 목록을 받고서야 못 찾는다 (요청 2회를 버린다).
+    """
+    return bool(DISTRICT_PATTERN.fullmatch(word)) and not word.endswith('입구')
+
+
+def is_scope_name(query: str) -> bool:
+    """전국·시·도·시·군·구 이름처럼 보이는지 ('전국', '서울', '경기도', '강남구', '성남시 분당구'). 마지막 낱말로 본다."""
+    text = query.strip()
+    words = text.split()
+    return is_national_or_state(text) or bool(words and is_district_word(words[-1]))
+
+
+def find_scope(client: DabangClient, query: str) -> tuple[DabangScope | None, DabangLocSearchResultModel | None]:
+    """범위(전국·시·도·시·군·구) 이름이면 그 범위, 동·역·대학 이름이면 None (분양 지역 목록으로 찾을지 고른다).
+
+    이름 모양(○구·○군·○시)만으로는 시·군·구인지 알 수 없다. 범위로 찾지 못한 이름은 None 으로 돌려 동·역으로 다시 찾게 한다
+    (2026-10-25 실측: '홍대입구' 가 REGION_NOT_FOUND 로 끝났다. '입구' 로 끝나는 역 이름은 이제 `is_scope_name` 이 먼저 거른다).
+
+    Returns:
+        (범위, 장소 검색 결과). 시·도 없는 시·군·구 모양 이름은 여기서 장소 검색을 한 번 받아 `resolve_scope` 에 주고, 범위로
+        찾지 못하면 그 결과를 돌려 `resolve_places` 가 같은 요청을 또 보내지 않게 한다. 전국·시·도와 시·도를 붙인 시·군·구
+        ('서울 중구')는 장소 검색 없이 시·도·시·군·구 목록으로 찾아 장소 검색 결과는 None 이다.
+
+    Raises:
+        RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구').
+        UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
+    """
+    if not is_scope_name(query):
+        return None, None
+    text = query.strip()
+    # 전국은 요청 없이, 시·도는 시·도 목록 1회. 찾지 못한 시·도 이름은 동·역으로 넘기지 않고 에러로 둔다
+    if is_national_or_state(text):
+        return resolve_scope(client, text), None
+    searched = None if _prefixed_state(text.split()) is not None else search_locations(client, text)
     try:
-        return client.run_request_region_v5(DabangRegionV5RequestParameterModel(code=code)).result
-    except HTTPStatusError as exc:
-        # 코드는 쿼리로 간다. 모르는 코드에는 에러 대신 다른 지역을 준다 (2026-10-27 실측: 99999 → 서초동)
-        if is_missing_id(exc, in_path=False):
-            return None
-        raise
+        return resolve_scope(client, text, searched=searched), searched
+    except RegionNotFoundError:
+        return None, searched
 
 
 def resolve_scope(
     client: DabangClient, query: str, *, searched: DabangLocSearchResultModel | None = None, dong: bool = False,
 ) -> DabangScope:
-    """'전국'·시·도·시·군·구 이름을 범위로 바꾼다. 시·도는 시·도 목록(요청 1회), 시·군·구는 장소 검색의 동 코드 앞 5자리로
-    다방 지역을 받는다 (요청 2회). 구가 있는 시(성남시)는 다방 지역이 아니라 구 이름을 붙이게 한다.
+    """'전국'·시·도·시·군·구 이름을 범위로 바꾼다. 웹 랭킹·분양 지역 고르기처럼 시·도 목록(`region/states`)과 시·군·구 목록
+    (`region/cities?stateCode=`)에서 이름으로 찾는다 (useSiGuDong 청크 2026-11-13).
+
+    시·도는 시·도 목록 1회다. 시·군·구는 시·도를 붙인 이름('서울 중구')이면 시·도 목록과 그 시·도의 시·군·구 목록(요청 2회),
+    시·도 없는 이름('강남구', '성남시 분당구')이면 장소 검색으로 그 이름의 시·군·구가 든 시·도를 찾고 그 시·도의 시·군·구 목록을
+    받는다 (요청 2회). 시·군·구 목록은 시·도마다 따로라, 시·도 없는 이름을 목록만으로 찾으려면 시·도 17곳을 모두 받아야 한다.
+    장소 검색은 동을 50곳까지만 줘 이름이 같은 시·군·구가 여러 시·도에 있을 때 후보에 빠진 시·도가 있을 수 있다.
 
     Args:
         searched: 같은 이름으로 이미 받은 장소 검색 결과. 주면 다시 묻지 않는다.
         dong: 동 이름도 범위로 받을지 (단지 순위). 동은 위치 찾기(`resolve_places`)로 찾아 장소 검색의 동 번호를 범위로 쓴다
             (요청 1회, 웹 단지 순위가 고른 동의 `gid` 를 보낸다). 시·군·구 모양(○구·○군·○시)의 이름은 동으로 보지 않는다.
-            Defaults to False (분양 범위는 시·군·구까지).
+            Defaults to False (분양 범위는 전국·시·도·시·군·구).
 
     Raises:
         RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구'), 동 이름이 여러 곳일 때.
@@ -398,57 +509,55 @@ def resolve_scope(
     text = query.strip()
     if text in NATIONAL_NAMES:
         return DabangScope(kind='national', name='전국')
+    hint = DONG_SCOPE_HINT if dong else SCOPE_HINT
     official = state_name(text)
     if official is not None:
-        states = client.run_request_region_states_v5(DabangRegionStatesV5RequestParameterModel()).result or []
-        state = next((item for item in states if item.name == official or item.short_name == text), None)
+        state = _state_of(_states(client), official, text)
         if state is not None:
-            location = state.location
-            return DabangScope(
-                kind='state', name=state.name, code=state.code, gid=state.gid,
-                lat=location.lat if location else None, lng=location.lng if location else None,
-            )
-    words = _words(text, DONG_SCOPE_HINT if dong else SCOPE_HINT)
+            return DabangScope(kind='state', name=state.name, code=state.code, state_code=state.code, gid=state.gid)
+    words = _words(text, hint)
     last = words[-1]
-    if dong and not DISTRICT_PATTERN.fullmatch(last):
+    if dong and not is_district_word(last):
         return _dong_scope(client, text, searched)
-    if DISTRICT_PATTERN.fullmatch(last):
-        # 시·군·구 이름마다 처음 나온 동 하나 ('중구' 는 서울·부산·대구·대전·울산, 2026-10-25 실측)
-        districts: dict[str, tuple[DabangLocRegionModel, list[str], int]] = {}
-        named = [
-            region for region in (searched if searched is not None else search_locations(client, text)).region_list
-            if last in (region.full_name or '').split()[1:3]
-        ]
-        for region in _in_context(named, words):
-            parts = (region.full_name or '').split()
-            index = parts.index(last)
-            districts.setdefault(' '.join(parts[:index + 1]), (region, parts, index))
-        if len(districts) > 1:
-            names = sorted(normalize_address(name) for name in districts)
-            raise RegionAmbiguousError(
-                text, names[:AMBIGUOUS_CANDIDATES], len(names), hint=f"시·도를 붙여 다시 주세요 (예: '{names[0]}')",
-            )
-        for region, parts, index in districts.values():
-            if index == 1 and len(parts) > 3 and parts[2].endswith('구'):
-                # 구가 있는 시(경기도 성남시 수정구 …)는 다방 지역이 아니다. 시 코드(41130)를 물으면 다른 지역(서초동)을
-                # 돌려준다 (2026-10-25 실측). 구 이름을 붙이게 한다
-                raise UnsupportedRegionError(
-                    code='REGION_NOT_SUPPORTED',
-                    message=f"다방은 구가 있는 시 전체를 범위로 받지 않습니다: '{text}'",
-                    hint=f"구 이름을 붙여 주세요 (예: '{last} {parts[2]}')",
-                    skip_note=f'{text} 는 구가 있는 시라 건너뛰었습니다',
-                )
-            # 동 코드(늘 8자리, `dong_bbox` 참고)의 앞 5자리라 요청 모델의 꼴을 벗어나지 않는다
-            code = region.code[:5]
-            found = _region_by_code(client, code)
-            # 모르는 코드에 다른 지역을 줄 수 있어 코드가 같은지 본다
-            if found is not None and found.code == code:
-                location = found.location
-                return DabangScope(
-                    kind='district', name=normalize_address(' '.join(parts[:index + 1])), code=found.code, gid=found.gid,
-                    lat=location.lat if location else None, lng=location.lng if location else None,
-                )
-    raise RegionNotFoundError(text, hint=DONG_SCOPE_HINT if dong else SCOPE_HINT)
+    if not is_district_word(last):
+        raise RegionNotFoundError(text, hint=hint)
+    official = _prefixed_state(words)
+    if official is not None:
+        # 시·도를 붙인 이름('서울 중구', '경기 성남시 분당구')은 장소 검색 없이 그 시·도의 시·군·구 목록에서 찾는다. 장소 검색으로
+        # 먼저 찾지 않는 까닭: 장소 검색은 이름이 같은 동을 50곳까지만 줘 붙인 시·도의 동이 빠질 수 있다 (2026-11-14 실측: '인천
+        # 중구' 장소 검색의 동 50곳 중 인천 중구는 0곳, 대전 중구 12곳). 시·도의 시·군·구 목록은 그 시·도를 모두 준다
+        state = _state_of(_states(client), official, words[0])
+        if state is None:
+            raise RegionNotFoundError(text, hint=hint)
+        city = _pick_city(_cities(client, state.code), words[1:], text)
+        if city is None:
+            raise RegionNotFoundError(text, hint=hint)
+        return _district_scope(state.name, state.code, city)
+    # 시·도 없는 이름은 장소 검색이 주는 그 시·군·구의 동으로 시·도를 찾는다. 시·군·구 이름마다 처음 나온 동 하나 ('중구' 는
+    # 서울·부산·대구·대전·울산, 2026-10-25 실측)
+    districts: dict[str, tuple[DabangLocRegionModel, list[str], int]] = {}
+    named = [
+        region for region in (searched if searched is not None else search_locations(client, text)).region_list
+        if last in (region.full_name or '').split()[1:3]
+    ]
+    for region in _in_context(named, words[:-1]):
+        parts = (region.full_name or '').split()
+        index = parts.index(last)
+        districts.setdefault(' '.join(parts[:index + 1]), (region, parts, index))
+    if len(districts) > 1:
+        names = sorted(normalize_address(name) for name in districts)
+        raise RegionAmbiguousError(text, names[:AMBIGUOUS_CANDIDATES], len(names), hint=f"시·도를 붙여 다시 주세요 (예: '{names[0]}')")
+    for region, parts, index in districts.values():
+        if index == 1 and len(parts) > 3 and parts[2].endswith('구'):
+            # 구가 있는 시('경기도 성남시 수정구 …' 의 '성남시')는 시·군·구 목록에 시 하나로 없다. 목록을 받지 않고 막는다
+            raise _city_with_gu_error(text, f'{last} {parts[2]}')
+        # 동 코드(늘 8자리, `dong_bbox` 참고)의 앞 2자리가 시·도 코드다. 시·군·구 이름은 시·도 뒤부터 그 시·군·구까지의 낱말이다
+        # ('경기도 성남시 분당구 …' → '성남시 분당구')
+        state_code = region.code[:2]
+        city = _pick_city(_cities(client, state_code), parts[1:index + 1], text)
+        if city is not None:
+            return _district_scope(parts[0], state_code, city)
+    raise RegionNotFoundError(text, hint=hint)
 
 
 def _dong_scope(client: DabangClient, text: str, searched: DabangLocSearchResultModel | None) -> DabangScope:
@@ -464,19 +573,4 @@ def _dong_scope(client: DabangClient, text: str, searched: DabangLocSearchResult
             message=f'범위로 받지 않는 이름입니다 (동 이름이 아닙니다): {place.name}',
             hint=DONG_SCOPE_HINT,
         )
-    return DabangScope(
-        kind='dong', name=place.address or place.name, code=place.legal_division_code, gid=place.gid, lat=place.lat, lng=place.lng,
-    )
-
-
-def scope_bbox(client: DabangClient, scope: DabangScope) -> DabangBboxModel | None:
-    """시·군·구 경계를 덮는 지도 범위 (경계 요청 1회). 경계 파일이 없으면 None."""
-    if scope.kind != 'district' or scope.code is None:
-        return None
-    try:
-        polygons = client.run_request_geojson_region(DabangGeojsonRegionRequestParameterModel(code=scope.code)).coordinates
-    except HTTPStatusError as exc:
-        if exc.response.status_code in (403, 404):
-            return None
-        raise
-    return _covering_bbox([polygons])
+    return DabangScope(kind='dong', name=place.address or place.name, code=place.legal_division_code, gid=place.gid)

@@ -349,25 +349,33 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단지 주변', ('dabang', 'nearby'), ('{complex}',), 'stations'),
         # 역 둘레 평균 매물가는 원룸·투룸 지도 집계(markers)의 역 표시에 붙는다
         Step('역 평균 매물가 강남역', ('dabang', 'station-prices'), ('강남역',), 'prices'),
-        # 분양은 시·군·구 경계 사각형에서 주소로 고른다. 동·역·좌표로 찾아도 같은 지도 범위 주소(sale-list/category/bbox)라
-        # 시 하나로 본다 (동 경계 파일은 아파트 동 경계에서 본다). 분양이 적은 구는 빈 날이 있어(2026-10-27 실측: 강남구 2곳,
-        # 송파구 0곳) 확인 못 함이 이어지면 막힘으로 잘못 알린다. 많은 곳(평택시 40곳)으로 본다. 경계 사각형에 이웃 시가 섞여
-        # (앞 5곳 중 2곳이 평택시 밖) 한 쪽(24곳)을 다 본다. 요청은 1회다
+        # 분양은 전국·시·도·시·군·구면 웹 분양 지역 목록(3/sale-in-lots/list/search3), 동·역·대학·좌표면 지도 목록
+        # (sale-list/category/bbox)이라 두 주소를 따로 본다. 분양이 적은 구는 빈 날이 있어(2026-10-27 실측: 강남구 2곳,
+        # 송파구 0곳) 확인 못 함이 이어지면 막힘으로 잘못 알린다. 많은 곳(평택시)으로 본다
         Step(
-            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '24'), 'sales',
+            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '3'), 'sales',
             (Capture('sale', 'sales', 'sale_id'),),
         ),
+        # 전국·시·도 이름은 장소 검색 없이 시·도 목록(region/states)에서 찾아 분양 지역 목록으로 받는다 (region-ranking 서울 도 같은
+        # 시·도 목록을 쓴다). 감시가 이 주소를 보지 않으면 다방이 바꿔도 모른다
+        Step('분양 찾기 시·도 서울', DABANG_LISTINGS[:2] + ('sales',), ('서울', '--limit', '3'), 'sales'),
+        # 지도 목록은 동 경계를 덮는 사각형에서 주소로 고른다. 분양이 많은 동(2026-11-14 실측: 평택 고덕동 사각형 27곳, 앞 24곳
+        # 모두 고덕동)으로 본다. 한 쪽(24곳)이라 요청은 1회다
+        Step('분양 찾기 동 고덕동', DABANG_LISTINGS[:2] + ('sales',), ('평택시 고덕동', '--limit', '5'), 'sales'),
         Step('분양 상세', ('dabang', 'sale'), ('{sale}',), 'schedules'),
         # 분양 주변은 매물·단지 주변과 같은 두 주소에 대상만 sale 이다 (sale/{id}/near, transit/near/sale?saleId=). 역은 1km 안에
         # 없을 수 있어 버스·마트·편의점 같은 가까운 시설로 본다
         Step('분양 주변', ('dabang', 'nearby'), ('--sale', '{sale}'), 'nearest'),
         Step('청약 일정', ('dabang', 'sale-schedule'), ('--limit', '3'), 'schedules', may_be_empty=True),
+        # 하루 상세는 다른 주소(3/sale-in-lots/list/schedule/search)다. 한 줄도 상세와 맞추지 못하면 업데이트 안내로 고장이 된다.
+        # --limit 3 이면 앞 3줄이 든 날까지만 더 받는다 (첫 일정 날이 3건 이상이면 요청 2회, 적으면 다음 일정 날도 받아 더)
+        Step('청약 일정 상세', ('dabang', 'sale-schedule'), ('--details', '--limit', '3'), 'schedules', may_be_empty=True),
         Step('조회 순위 단지', ('dabang', 'trending-complexes'), ('--limit', '3'), 'rankings'),
         Step('조회 순위 동', ('dabang', 'trending-complexes'), ('--unit', '동', '--limit', '3'), 'rankings'),
         # 기본 기간 '이번주' 는 월요일 아침에 아직 집계가 없어 빈 목록이다 (2026-10-26 월 실측: 이번주 0곳, 지난주·이번달은 있음).
         # 새벽 감시가 월요일마다 고장으로 잘못 알리지 않게 지난주로 본다
         Step('거래 순위', ('dabang', 'trade-rankings'), ('--period', '지난주', '--limit', '3'), 'rankings'),
-        # 동 순위와 단지 순위는 다른 주소다
+        # 동 순위와 단지 순위는 다른 주소다. 시·군·구 범위는 시·군·구 목록(region/cities)에서 찾는다
         Step('구 안 동 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '평균가', '--limit', '3'), 'rankings'),
         # 증감 순위(거래증감·매물증감)는 다른 항목 주소(…/trade-volume-change)이고 값 칸(앞·지금 수)도 다르다
         Step('구 안 동 거래증감 순위 강남구', ('dabang', 'region-ranking'), ('강남구', '--by', '거래증감', '--limit', '3'), 'rankings'),
