@@ -9,15 +9,29 @@ export const meta = {
 
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 const EFFORTS = ['high', 'xhigh']  // 브라우저 조작이 든 조사라 모델은 Opus 만 쓴다 (CLAUDE.md)
-// 동시 실행 상한(SAME_SOURCE_MAX)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
+// 동시 실행 상한(SAME_SOURCE_MAX)은 두 워크플로(web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
-// 세 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
+// 두 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 // 네이버도 같은 상한이다. 예전에는 하나씩 돌렸는데, 2026-11-16 에 조사원 셋을 동시에 돌려 429 가 없어 풀었다 (그 절에 실측).
 const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 조사하는 조사원 수 (docs/development/agents.md "동시에 띄울 때")
 
 let a = args
-if (typeof a === 'string') {
-  try { a = JSON.parse(a) } catch { a = null }
+// args 가 JSON 문자열로, 때로는 문자열이 한 번 더 감싸여 올 수 있어 객체가 될 때까지 푼다. 읽지 못하면 소스 없이 불린 것과
+// 가르게 따로 알린다 (implement-bundles 와 같다. 2026-11-16: 그쪽 첫 호출의 args 가 문자열로 와 '묶음 없이 불렸다' 로 끝났다)
+// 빈 글자·공백뿐인 글자는 읽지 못한 것이 아니라 인자 없이 불린 것이라, 아래 '대상 없이 불림' 안내로 보낸다
+if (typeof a === 'string' && !a.trim()) a = null
+let parseError = null
+for (let i = 0; i < 3 && typeof a === 'string'; i++) {
+  try { a = JSON.parse(a) } catch (e) { parseError = String(e); a = null }
+}
+if (parseError) {
+  log(`args 를 JSON 으로 읽지 못해 아무것도 띄우지 않았다: ${parseError}`)
+  return {
+    started: false,
+    reason: 'bad-args',
+    error: parseError,
+    next: 'args 를 문자열로 감싸지 않고 객체(JSON 값)로 다시 넘긴다.',
+  }
 }
 const targets = a && Array.isArray(a.targets) ? a.targets : []
 if (!targets.length) {
