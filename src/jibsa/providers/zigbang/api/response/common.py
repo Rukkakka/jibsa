@@ -86,6 +86,19 @@ class ZigbangSearchItemModel(ResponseModel):
     ] = None
 
 
+class ZigbangItemSectionModel(ResponseModel):
+    """노출 구역별 매물 ID 묶음."""
+
+    type: Annotated[
+        str,
+        Field(description='구역 종류 (VIP, PREMIUM_RECOMMEND, PREMIUM, RECOMMEND, NORMAL)')
+    ]
+    ids: Annotated[
+        list[int],
+        Field(description='해당 구역의 매물 ID')
+    ] = []
+
+
 class ZigbangItemPinModel(ResponseModel):
     """지도 핀 하나. 상세 정보 없이 ID 와 좌표만 담긴다."""
 

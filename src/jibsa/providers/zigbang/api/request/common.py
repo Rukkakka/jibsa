@@ -182,7 +182,13 @@ class ZigbangOfficetelOrderMixin(RequestModel):
 
     without_random: Annotated[
         bool | None,
-        Field(description='서버의 무작위 섞기를 생략한다. 일정한 순서를 보장하지 않는다', alias='withoutRandom')
+        Field(
+            description=(
+                '서버의 무작위 섞기를 생략한다. 섹션 안이 매물 번호순으로 오고 시간이 지나도 같다 (2026-11-16 실측). '
+                'VIP 섹션은 그대로 바뀐다'
+            ),
+            alias='withoutRandom'
+        )
     ] = None
 
 

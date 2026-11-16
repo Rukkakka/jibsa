@@ -199,12 +199,42 @@ def test_search_listings_oneroom_keeps_one_room_officetel() -> None:
 
 
 def test_search_listings_does_not_refill_excluded() -> None:
-    # 받은 뒤 뺀 매물만큼 다음 핀을 더 받지 않고 알린다
+    # 받은 뒤 뺀 매물만큼 다음 핀을 더 받지 않고 알린다 (직방 목록 순 앞 3건 중 1000003 은 요약이 없다)
     requested_batches: list[list[int]] = []
-    _, result = _search_with_fixtures(requested_batches, radius_km=5, limit=2, conditions=ZigbangRoomConditions(trade_types=['전세']))
-    assert sum(len(batch) for batch in requested_batches) == 2
-    assert result.returned < 2
+    _, result = _search_with_fixtures(requested_batches, radius_km=5, limit=3, conditions=ZigbangRoomConditions(trade_types=['전세']))
+    assert sum(len(batch) for batch in requested_batches) == 3
+    assert result.returned < 3
     assert any('다시 채우지 않음' in note for note in result.notes)
+
+
+def test_search_listings_follows_section_order_and_keeps_radius() -> None:
+    # 웹 목록처럼 섹션 순서(안심추천 → 안심일반)·섹션 안 서버 순서로 내고 거리순으로 다시 세우지 않는다.
+    # 반경 밖 매물(1000002, 약 1.6km)은 반경 안이 --limit 보다 적어도 채우지 않는다
+    pins = load('items_onerooms_v1')
+    pins['sections'] = [
+        {'type': 'PREMIUM_RECOMMEND', 'ids': [1000004, 1000002]},
+        {'type': 'PREMIUM', 'ids': [1000005, 1000001]},
+    ]
+    template = load('items_list_v1')['items'][0]
+    requested: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/items/list'):
+            ids = json.loads(request.content)['itemIds']
+            requested.extend(ids)
+            # 요약 응답 순서가 달라도 보낸 순서로 낸다
+            return httpx.Response(200, json={'items': [dict(template, item_id=item_id) for item_id in reversed(ids)]})
+        return httpx.Response(200, json=pins)
+
+    center = pins['items'][0]
+    region = ZigbangRegion(name='center', lat=center['lat'], lng=center['lng'])
+    with make_client(handler) as client:
+        result = search_listings(client, region, property_types=['원룸'], radius_km=1, limit=10)
+
+    # 섹션에 없는 1000003 은 맨 뒤다
+    assert requested == [1000004, 1000005, 1000001, 1000003]
+    assert [listing.id for listing in result.listings] == ['1000004', '1000005', '1000001', '1000003']
+    assert result.total == 4 and not result.has_more
 
 
 def test_closed_items_are_excluded() -> None:

@@ -9,6 +9,7 @@ from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
     ZigbangItemPinModel,
+    ZigbangItemSectionModel,
     ZigbangLatLngModel,
     ZigbangSubwayBriefModel,
 )
@@ -22,19 +23,6 @@ from typing import (
 # ---------------------------------------------------------------------------
 # GET /house/property/v1/items/{onerooms|officetels|villas}
 # ---------------------------------------------------------------------------
-
-class ZigbangItemSectionModel(ResponseModel):
-    """노출 구역별 매물 ID 묶음."""
-
-    type: Annotated[
-        str,
-        Field(description='구역 종류 (VIP, PREMIUM_RECOMMEND, PREMIUM, RECOMMEND, NORMAL)')
-    ]
-    ids: Annotated[
-        list[int],
-        Field(description='해당 구역의 매물 ID')
-    ] = []
-
 
 class ZigbangSubwayLineModel(ResponseModel):
     """지하철 노선."""

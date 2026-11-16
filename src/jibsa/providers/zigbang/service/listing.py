@@ -20,17 +20,12 @@ from jibsa.core.errors import (
     JibsaError,
     ListingUnavailableError,
 )
-from jibsa.core.geo import (
-    haversine_km,
-    within_radius,
-)
+from jibsa.core.geo import haversine_km
 from jibsa.core.http import error_body
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
     TradeType,
-    beyond_radius_notes,
-    by_distance,
     join_address,
     limit_notes,
     listing_as,
@@ -95,6 +90,7 @@ from jibsa.providers.zigbang.service.common import (
     parse_catalog_id,
     room_filter_of,
     school_label,
+    section_ordered_ids,
     sent_or_none,
     summary_to_listing,
     trade_type_of,
@@ -189,7 +185,10 @@ class ZigbangSearchResult(BaseModel):
     ] = None
     total: Annotated[
         int,
-        Field(description='반경(동 경계로 찾았으면 경계) 안 매물 수 근사값 (limit 적용 전, 방 구조·유형으로 거르기 전). 반경 밖 매물은 세지 않아 반경 밖 매물로 채운 returned 보다 작을 수 있다')
+        Field(description=(
+            '범위(반경·동 경계, 역은 서버가 준 역 반경) 안 서로 다른 매물 수 근사값 (limit 적용 전, 거래 불가를 빼기 전). '
+            '종류 여럿에 함께 있는 매물은 한 번만 센다'
+        ))
     ]
     returned: Annotated[
         int,
@@ -197,16 +196,16 @@ class ZigbangSearchResult(BaseModel):
     ]
     has_more: Annotated[
         bool,
-        Field(description='반경(동 경계) 안에 아직 받지 않은 매물이 있는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
+        Field(description='범위 안에 아직 받지 않은 매물이 남은 종류가 있는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
     ] = False
     next_position: Annotated[
         dict[str, Any] | None,
-        Field(exclude=True, description='이어 받을 위치 ({"offset": 앞서 받은 핀 수}). 더 없으면 None')
+        Field(exclude=True, description='이어 받을 위치 ({"offsets": {종류: 그 종류 직방 목록에서 다음에 받을 자리}}). 더 없으면 None')
     ] = None
     listings: Annotated[
         # 오피스텔의 complex_id 까지 내보낸다 (SerializeAsAny 가 없으면 공통 Listing 필드만 나간다)
         list[SerializeAsAny[Listing]],
-        Field(description='가까운 순 매물')
+        Field(description='직방 목록 순서의 매물. 종류 여럿이면 요청한 종류 순서로 종류별 묶음을 잇는다')
     ]
     notes: Annotated[
         list[str],
@@ -840,28 +839,23 @@ def _officetel_building_ids(
     return {pin.id: pin.building_id for _, response in responses for pin in response.items if pin.building_id}
 
 
-def check_without_random(property_types: list[ZigbangPropertyType]) -> None:
-    """무작위 섞기 해제는 오피스텔 목록에만 있다. CLI 는 지역을 찾기 전에 같은 검사로 막는다.
-
-    Raises:
-        JibsaError: 찾는 유형에 오피스텔이 없을 때 (INVALID_ARGUMENT).
-    """
-    if '오피스텔' not in property_types:
-        raise JibsaError(
-            code='INVALID_ARGUMENT', message='무작위 섞기 해제는 오피스텔에만 지원됩니다',
-            hint='--type 오피스텔을 포함하거나 --without-random을 빼세요',
-        )
+# 유형 하나의 (거래 유형 필터, 요청 필드)
+_TypeQuery = tuple[list[ZigbangSalesType], dict[str, object]]
 
 
 class _ScopePins(NamedTuple):
-    """`_collect_pins` 결과: 범위 안 핀(매물 ID → (핀, 중심에서 거리)), 유형별 안내, 원룸 조회 조건과 지도 칸."""
+    """`_collect_pins` 결과: 종류마다 범위 안 매물 ID(직방 목록 순서), 매물별 중심 거리·건물 ID, 원룸 조회 조건과 지도 칸."""
 
-    pins: dict[int, tuple[ZigbangItemPinModel, float]]
-    notes: list[str]
+    ids_by_type: dict[ZigbangPropertyType, list[int]]
+    distances: dict[int, float]
+    # 오피스텔 핀의 건물 ID. 원룸 목록에 섞여 온 같은 매물의 핀에는 없어 종류와 상관없이 매물 ID 로 찾는다
+    buildings: dict[int, int]
     # 원룸 목록에 섞여 온 오피스텔의 건물 ID 를 같은 조건의 오피스텔 목록으로 채울 때 쓴다
-    oneroom_query: tuple[list[ZigbangSalesType], dict[str, object]] | None
+    oneroom_query: _TypeQuery | None
     # 원룸 핀을 받은 지도 칸. 건물 ID 가 빠진 매물이 있던 칸만 오피스텔 목록을 다시 받는다
     oneroom_cells: dict[int, str]
+    # 앞 종류 목록에도 있어 그 종류 목록에서 뺀 매물 수 (원룸 목록의 '이 지역 오피스텔' 은 오피스텔 목록에도 있다)
+    overlaps: dict[ZigbangPropertyType, int]
 
 
 def search_listings(
@@ -874,38 +868,55 @@ def search_listings(
     limit: int = 20,
     boundary: ZigbangBoundary | None = None,
     subway_id: int | None = None,
-    offset: int = 0,
+    start: dict[str, Any] | None = None,
 ) -> ZigbangSearchResult:
-    """중심점 반경 안의 매물을 가까운 순으로 `limit` 건 조회한다.
+    """원룸·빌라·오피스텔 매물을 직방 웹 목록 순서로 `limit` 건 조회한다.
 
-    반경을 덮는 geohash 타일마다 매물 핀을 받아 반경 밖과 중복을 걸러낸 뒤,
-    가까운 핀 `limit` 개의 요약을 15개씩 받아 `Listing` 으로 바꾼다. 가격·관리비(만원), 방 구조,
-    면적(㎡·평), 층, 욕실 수, 옵션, 기타 조건(`CONDITION_FIELD_BY_LABEL`)은 서버에서 거른다.
+    종류마다 검색 범위의 지도 칸(역이면 역 반경 API)에서 핀(`items`)과 섹션(`sections`)을 받아, 웹 목록처럼 응답의 섹션
+    순서(VIP → 안심추천 → 안심일반 → 추천 → 일반)대로 잇는다 (2026-11-15 번들 `_app` 의 `loadSectionsWithItemIdsByGeoHash`·
+    `createSectionsToUpdate`). 섹션 안은 서버가 준 순서 그대로 둔다. 웹은 VIP 밖 섹션 안을 화면에서 무작위로 섞지만, 서버
+    순서는 같은 요청에 늘 같아 (2026-11-15 실측) 이어 받기 자리가 흔들리지 않는다. 지도 칸이 여럿이면 섹션 종류마다 칸 순서
+    (`scope_geohashes`)대로 잇고, 어느 섹션에도 없는 핀은 잃지 않게 맨 뒤에 핀 순서로 붙인다. 거리로 다시 세우지 않고
+    `distance_km` 는 매물마다 덧붙이기만 한다. 고른 매물의 요약을 15개씩 받아 고른 순서대로 `Listing` 으로 바꾼다.
+    가격·관리비(만원), 방 구조, 면적(㎡·평), 층, 욕실 수, 옵션, 기타 조건(`CONDITION_FIELD_BY_LABEL`)은 서버에서 거른다.
     요약을 받은 뒤 거래 불가·지원하지 않는 거래 종류로 뺀 매물은 다시 채우지 않고 `notes` 로 알린다.
+
+    범위는 핀 좌표로 좁힌다. `boundary` 를 주면 반경 대신 그 동 경계 안 핀만 남기고(경계를 덮는 지도 칸을 받는다), 좌표·구·
+    시·`--radius` 는 검색 중심에서 `radius_km` 안 핀만 반올림 없이 남긴다. 반경 안이 모자라도 반경 밖 핀으로 채우지 않는다
+    (웹 지도 목록은 화면 사각형이라 반경이 없고, 반경 밖을 덧붙이는 화면도 없다). `subway_id` 를 명시하면 지도 칸 대신 역 반경
+    API 를 종류별 1회 부르고, 서버가 반경으로 준 결과를 다시 자르지 않는다.
+
+    종류가 여럿이면(기본은 세 종류) 웹처럼 종류마다 목록이 따로라, `limit` 을 조회할 종류 수로 고르게 나눠(20 → 7·7·6, 앞
+    종류부터 한 건씩 더) 종류별 묶음을 요청한 종류 순서대로 잇는다. 한 종류의 남은 매물이 제 몫보다 적으면 남는 몫을 다른
+    종류에 돌린다. 원룸 목록의 '이 지역 오피스텔' 섹션 매물은 오피스텔 목록에도 있어, 앞 종류 목록에 있는 매물은 뒤 종류
+    목록에서 빼고 세며 몇 건인지 `notes` 로 알린다. 받기 전에 빼서 `--next` 로 이어 받아도 다시 나오지 않고, 이어 받기 자리·
+    `total`·`[일부]` 가 모두 서로 다른 매물 수로 맞는다 (2026-11-16 리뷰: 한 호출 안에서만 빼자 강남역 이어 받기에서 앞 쪽
+    매물이 16~59건씩 다시 나왔고, 자리를 종류별로 더한 수가 `total` 을 넘어 더 있는데도 `[일부]` 가 사라졌다).
 
     원룸은 건물 종류가 아니라 방 하나짜리를 뜻한다. 직방 원룸 목록은 오피스텔(투룸 포함)을 함께 주므로
     원룸형 구조(`ONE_ROOM_STRUCTURES`)만 서버에 요청하고, 섞여 온 원룸형 오피스텔은 결과에 넣는다.
     원룸 목록 핀에는 건물 ID 가 없어, 오피스텔을 따로 조회하지 않았으면 같은 범위·조건의 오피스텔
     목록을 한 번 더 받아 `complex_id` 를 채운다 (결과에 건물 ID 없는 오피스텔이 있을 때만).
 
-    받아 온 지도 칸에는 반경 밖 매물도 있다. 반경 안 매물이 `limit` 보다 적으면 그 매물도
-    가까운 순으로 이어 돌려주고 `notes` 로 알린다.
+    오피스텔 요청에는 늘 서버의 무작위 섞기 해제(`withoutRandom`)를 보낸다. 직방은 오피스텔 섹션 안 순서만 무작위로 섞어 주고
+    시간이 지나면 다시 섞어, 그대로 받으면 이어 받기(`--next`)의 자리가 흔들려 매물이 겹치거나 빠진다. 섞지 않은 순서는 원룸·
+    빌라처럼 매물 번호순이라 시간이 지나도 같다 (2026-11-15~16 실측: wydm6 오피스텔 안심추천 168건·안심일반 363건이 섞는
+    요청과 같은 매물이고, 하루 뒤에도 남은 매물의 순서가 같았다). 맨 위 VIP 섹션(광고, 다른 섹션 매물 중 32건)만은 직방이
+    요청마다·시간마다 바꿔 준다.
 
-    `boundary` 를 주면 반경 대신 그 동 경계 안의 매물만 찾는다 (경계를 덮는 지도 칸을 받아 경계 안 핀만
-    남긴다). 이때는 반경 밖 매물을 잇지 않고, 가까운 순은 검색 중심(동 중심)에서 잰다.
-
-    `subway_id` 를 명시하면 지도 칸 대신 역 반경 전용 API 를 유형별 1회 조회하고 반경 밖은 제외한다.
-    주지 않으면(좌표·동·구 검색) 지도 칸으로 찾는다.
-    `conditions.without_random` 은 오피스텔 요청의 서버 셔플만 끄며, 최종 결과는 거리순이다.
-
-    `offset` 은 이어 받기(`--next`)에서 앞서 받은 핀 수다. 핀은 다시 받아 가까운 순으로 세운 뒤 그다음부터 요약을 받는다.
-    핀 요청은 지도 칸 수만큼이라 적고, 요약은 15개에 1회라 앞서 받은 매물의 요약을 다시 받지 않는다.
+    `start` 는 이어 받기(`--next`) 표의 위치다 (`{'offsets': {종류: 그 종류 목록에서 다음에 받을 자리}}`). 핀은 다시 받아
+    같은 순서로 세운 뒤 종류마다 그 자리부터 요약을 받는다. 핀 요청은 지도 칸 수만큼이라 적고, 요약은 15개에 1회라 앞서 받은
+    매물의 요약을 다시 받지 않는다.
 
     직방 카테고리별 방 구조: 원룸 = 오픈형·분리형·복층형 원룸 (원룸형 오피스텔 포함), 빌라 = 투룸·
     쓰리룸·포룸이상 (원룸형 구조만 주면 빌라는 조회하지 않는다), 오피스텔 = 원룸형·투룸·쓰리룸 이상.
 
     거래 유형도 서버에서 거른다. 직방의 '월세' 필터는 단기임대를 빼고, 단기임대는 '단기' 로
     따로 받는다 (`SALES_TYPE_BY_TRADE`). 거래 유형을 주지 않으면 단기임대도 함께 나온다.
+
+    Raises:
+        JibsaError: 역 반경과 동 경계를 함께 줬거나, 이어 받기 표의 종류가 이번 검색과 다르거나 모양이 틀릴 때
+            (INVALID_ARGUMENT).
     """
     # 방어용. CLI 는 둘을 함께 넘기지만 역 검색 결과에는 법정동코드가 없어 역이면 boundary 가 늘 None 이다.
     if subway_id is not None and boundary is not None:
@@ -916,36 +927,37 @@ def search_listings(
     conditions = conditions or ZigbangRoomConditions()
     requested_types = property_types or []
     property_types = property_types or list(PROPERTY_TYPES)
-    if conditions.without_random:
-        check_without_random(property_types)
 
+    queries, notes = _type_queries(conditions, property_types, requested_types)
+    types = list(queries)
+    # 핀을 받기 전에 본다. 표가 틀리면 요청 없이 멈춘다
+    starts = _start_offsets(start, types)
     geohashes = [] if subway_id is not None else scope_geohashes(region, radius_km, boundary, GEOHASH_PRECISION)
     scan = _collect_pins(
-        client, region, conditions, property_types, requested_types,
-        geohashes=geohashes, subway_id=subway_id, radius_km=radius_km, boundary=boundary,
+        client, region, queries, geohashes=geohashes, subway_id=subway_id, radius_km=radius_km, boundary=boundary,
     )
 
-    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다. 거리가 같으면 매물 번호 순으로 세워 이어 받기
-    # (offset)의 경계가 서버 순서에 흔들리지 않게 한다 (2026-10-21 실측: 강남역 0.5km 오피스텔 핀 543개 중 같은 건물이라 거리가
-    # 같은 묶음 101개, 큰 것은 36개)
-    nearest = sorted(scan.pins.values(), key=lambda entry: (entry[1], entry[0].id))[offset:offset + limit]
-    distance_by_id = {pin.id: distance for pin, distance in nearest}
-    building_by_id = {pin.id: pin.building_id for pin, _ in nearest}
-    ids = [pin.id for pin, _ in nearest]
-
-    # 원룸 목록에 섞여 온 원룸형 오피스텔도 그대로 둔다
-    listings: list[Listing] = [
-        summary_to_listing(summary, distance_by_id.get(summary.item_id), building_by_id.get(summary.item_id))
-        for summary in tradeable_summaries(client, ids)
+    # 조회 예산은 요약을 받는 자리 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
+    remaining = [max(len(scan.ids_by_type[kind]) - starts[kind], 0) for kind in types]
+    shares = dict(zip(types, _split_limit(limit, remaining)))
+    # 종류별 목록은 서로 겹치지 않는다 (_collect_pins)
+    ids = [
+        item_id
+        for kind in types
+        for item_id in scan.ids_by_type[kind][starts[kind]:starts[kind] + shares[kind]]
     ]
-    if scan.oneroom_query is not None and '오피스텔' not in property_types:
+    summaries = {summary.item_id: summary for summary in tradeable_summaries(client, ids)}
+    # 요약 응답 순서에 기대지 않고 고른 순서로 세운다. 원룸 목록에 섞여 온 원룸형 오피스텔도 그대로 둔다
+    listings: list[Listing] = [
+        summary_to_listing(summaries[item_id], scan.distances.get(item_id), scan.buildings.get(item_id))
+        for item_id in ids
+        if item_id in summaries
+    ]
+    if scan.oneroom_query is not None and '오피스텔' not in queries:
         _fill_officetel_complex_ids(client, listings, scan, subway_id=subway_id, radius_km=radius_km)
 
-    listings.sort(key=by_distance)
-    listings = listings[:limit]
     return _search_result(
-        region, listings, scan.pins, scan.notes, limit=limit, inspected=len(ids), radius_km=radius_km, boundary=boundary,
-        offset=offset,
+        region, listings, scan, notes, starts=starts, shares=shares, limit=limit, radius_km=radius_km, boundary=boundary,
     )
 
 
@@ -955,7 +967,7 @@ def _type_query(
     requested_types: list[ZigbangPropertyType],
     filters: dict[str, object],
     notes: list[str],
-) -> tuple[list[ZigbangSalesType], dict[str, object]] | None:
+) -> _TypeQuery | None:
     """유형 하나의 (거래 유형 필터, 요청 필드). 그 유형은 조회할 게 없으면 None 이고 직접 찾은 유형이면 `notes` 에 알린다."""
     all_sales_types = [SALES_TYPE_BY_TRADE[trade] for trade in conditions.trade_types]
     sales_types = all_sales_types
@@ -983,24 +995,18 @@ def _type_query(
             return None
     type_filters = {**filters, 'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in type_rooms]}
     # 방 1개짜리 아파트는 여기서 찾지 않는다는 안내는 원룸을 찾을 때마다 나와 docs/llm.md 로 옮겼다
-    if property_type == '오피스텔' and conditions.without_random:
+    if property_type == '오피스텔':
+        # 섞지 않은 순서로 받아 이어 받기의 자리가 흔들리지 않게 한다 (search_listings docstring)
         type_filters['without_random'] = True
     return sales_types, type_filters
 
 
-def _collect_pins(
-    client: ZigbangClient,
-    region: ZigbangRegion,
+def _type_queries(
     conditions: ZigbangRoomConditions,
     property_types: list[ZigbangPropertyType],
     requested_types: list[ZigbangPropertyType],
-    *,
-    geohashes: list[str],
-    subway_id: int | None,
-    radius_km: float,
-    boundary: ZigbangBoundary | None,
-) -> _ScopePins:
-    """유형마다 검색 범위의 핀을 받아 범위 밖과 중복을 거른다."""
+) -> tuple[dict[ZigbangPropertyType, _TypeQuery], list[str]]:
+    """조회할 종류마다 (거래 유형 필터, 요청 필드) 를 요청한 종류 순서로, 조회하지 않는 종류의 안내와 함께 만든다."""
     # 방 구조는 유형마다 달라 _type_query 에서 넣는다
     filters: dict[str, object] = {
         'deposit_min': conditions.deposit_min,
@@ -1011,33 +1017,103 @@ def _collect_pins(
         'sales_price_max': conditions.price_max,
         **room_filter_of(conditions),
     }
-    scan = _ScopePins(pins={}, notes=[], oneroom_query=None, oneroom_cells={})
+    notes: list[str] = []
+    queries: dict[ZigbangPropertyType, _TypeQuery] = {}
     for property_type in property_types:
-        query = _type_query(property_type, conditions, requested_types, filters, scan.notes)
-        if query is None:
-            continue
-        sales_types, type_filters = query
-        if property_type == '원룸':
-            scan = scan._replace(oneroom_query=query)
-        responses = _scope_pins(
+        query = _type_query(property_type, conditions, requested_types, filters, notes)
+        if query is not None:
+            queries[property_type] = query
+    return queries, notes
+
+
+def _start_offsets(start: dict[str, Any] | None, types: list[ZigbangPropertyType]) -> dict[ZigbangPropertyType, int]:
+    """이어 받기 표(`--next`)에서 종류마다 다음에 받을 자리를 꺼낸다. 표가 없으면 모두 0 이다.
+
+    Raises:
+        JibsaError: 표의 종류가 이번 검색의 종류와 다르거나 모양이 틀릴 때 (INVALID_ARGUMENT). 예전 `{'offset': n}` 표도
+            여기 걸린다.
+    """
+    if start is None:
+        return {kind: 0 for kind in types}
+    offsets = start.get('offsets')
+    if (
+        isinstance(offsets, dict)
+        and set(offsets) == set(types)
+        and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in offsets.values())
+    ):
+        return {kind: offsets[kind] for kind in types}
+    raise JibsaError(
+        code='INVALID_ARGUMENT',
+        message='이어 받기 표(--next)의 위치가 이 검색의 매물 종류와 맞지 않아 이어 받을 수 없습니다',
+        hint='--next 없이 같은 지역·조건으로 다시 검색하세요',
+    )
+
+
+def _split_limit(limit: int, remaining: list[int]) -> list[int]:
+    """`limit` 을 종류마다 고르게 나눈다 (20 → 7·7·6, 앞 종류부터 한 건씩 더). `remaining` 은 종류마다 남은 자리 수다.
+
+    남은 자리가 제 몫보다 적은 종류는 남은 만큼만 받고, 남는 몫은 아직 남은 종류에 같은 규칙으로 다시 나눈다.
+    """
+    shares = [0] * len(remaining)
+    left = limit
+    open_kinds = [index for index, count in enumerate(remaining) if count > 0]
+    while left > 0 and open_kinds:
+        base, extra = divmod(left, len(open_kinds))
+        for rank, index in enumerate(open_kinds):
+            take = min(base + (1 if rank < extra else 0), remaining[index] - shares[index])
+            shares[index] += take
+            left -= take
+        open_kinds = [index for index in open_kinds if shares[index] < remaining[index]]
+    return shares
+
+
+def _collect_pins(
+    client: ZigbangClient,
+    region: ZigbangRegion,
+    queries: dict[ZigbangPropertyType, _TypeQuery],
+    *,
+    geohashes: list[str],
+    subway_id: int | None,
+    radius_km: float,
+    boundary: ZigbangBoundary | None,
+) -> _ScopePins:
+    """종류마다 검색 범위의 핀과 섹션을 받아 범위 안 매물 ID 를 웹 목록 순서로 세운다 (`section_ordered_ids`).
+
+    섹션 종류마다 칸 순서대로 잇고, 어느 섹션에도 없는 핀은 맨 뒤에 칸·핀 순서로 붙인다. 같은 매물이 두 번 오면 앞의 것만 둔다.
+    앞 종류 목록에 있는 매물은 뒤 종류 목록에서 빼 종류별 목록이 서로 겹치지 않게 한다 (`search_listings`).
+    """
+    scan = _ScopePins(
+        ids_by_type={}, distances={}, buildings={}, oneroom_query=queries.get('원룸'), oneroom_cells={}, overlaps={},
+    )
+    claimed: set[int] = set()
+
+    def in_scope(pin: ZigbangItemPinModel | None) -> bool:
+        if pin is None:
+            # 섹션에 있는데 핀이 없는 매물 (실측으로는 두 ID 집합이 같다, 2026-11-15 wydm6 원룸 1187건). 역은 서버가 반경으로
+            # 준 결과라 그대로 두고, 지도 칸은 좌표를 몰라 범위 안인지 볼 수 없어 뺀다
+            return subway_id is not None
+        if boundary is not None:
+            return not outside_boundary(boundary, pin.lat, pin.lng)
+        # 역은 서버가 반경으로 거른 결과라 다시 자르지 않는다. 좌표·구·시는 반올림 없이 반경 안만 둔다
+        return subway_id is not None or scan.distances[pin.id] <= radius_km
+
+    for property_type, (sales_types, type_filters) in queries.items():
+        responses = list(_scope_pins(
             client, property_type, geohashes=geohashes, subway_id=subway_id, radius_km=radius_km,
             sales_types=sales_types, type_filters=type_filters,
-        )
+        ))
         for geohash, response in responses:
             for pin in response.items:
-                if outside_boundary(boundary, pin.lat, pin.lng):
-                    continue
-                distance = haversine_km(region.lat, region.lng, pin.lat, pin.lng)
-                # 반경 안은 출력 거리처럼 반올림해 본다 (within_radius). 동·좌표 검색의 total 과 같은 기준이다
-                if subway_id is not None and not within_radius(distance, radius_km):
-                    continue
-                known = scan.pins.get(pin.id)
-                if known is not None and known[0].building_id and not pin.building_id:
-                    # 원룸 목록에 섞여 온 오피스텔 핀이 건물 ID 를 지우지 않게 한다
-                    continue
-                scan.pins[pin.id] = (pin, distance)
+                scan.distances[pin.id] = haversine_km(region.lat, region.lng, pin.lat, pin.lng)
+                if pin.building_id:
+                    scan.buildings[pin.id] = pin.building_id
                 if property_type == '원룸' and geohash is not None:
                     scan.oneroom_cells[pin.id] = geohash
+        ordered = section_ordered_ids([response for _, response in responses], in_scope)
+        ids = [item_id for item_id in ordered if item_id not in claimed]
+        scan.ids_by_type[property_type] = ids
+        scan.overlaps[property_type] = len(ordered) - len(ids)
+        claimed.update(ids)
     return scan
 
 
@@ -1076,61 +1152,76 @@ def _fill_officetel_complex_ids(
             listing.complex_id = officetel_complex_id(building_id)
 
 
+def _type_share_note(
+    scan: _ScopePins,
+    starts: dict[ZigbangPropertyType, int],
+    shares: dict[ZigbangPropertyType, int],
+) -> str:
+    """종류 여럿을 찾았을 때 종류마다 범위 안 몇 건 중 목록의 몇 번째 자리를 받았는지 한 줄로 알린다."""
+    parts: list[str] = []
+    for kind, share in shares.items():
+        found = len(scan.ids_by_type[kind])
+        first, last = starts[kind] + 1, starts[kind] + share
+        if not found:
+            parts.append(f'{kind} 0건')
+        elif not share:
+            parts.append(f'{kind} 약 {found}건 중 0건')
+        elif first == last:
+            parts.append(f'{kind} 약 {found}건 중 1건 ({first}번째)')
+        else:
+            parts.append(f'{kind} 약 {found}건 중 {share}건 ({first}~{last}번째)')
+    overlaps = [f'{kind} {count}건' for kind, count in scan.overlaps.items() if count]
+    return note(
+        '참고',
+        '직방은 매물 종류마다 목록이 따로라 --limit 을 종류별로 나눠 각 목록 순서대로 받았습니다: ' + ', '.join(parts)
+        + (
+            f". 앞 종류 목록에도 있는 매물({', '.join(overlaps)}, 원룸 목록의 '이 지역 오피스텔')은 앞 종류에서만 세고 냅니다"
+            if overlaps else ''
+        ),
+    )
+
+
 def _search_result(
     region: ZigbangRegion,
     listings: list[Listing],
-    pins: dict[int, tuple[ZigbangItemPinModel, float]],
+    scan: _ScopePins,
     notes: list[str],
     *,
+    starts: dict[ZigbangPropertyType, int],
+    shares: dict[ZigbangPropertyType, int],
     limit: int,
-    inspected: int,
     radius_km: float,
     boundary: ZigbangBoundary | None,
-    offset: int = 0,
 ) -> ZigbangSearchResult:
-    """범위 안 핀 수와 조회 한도·반경 밖 안내를 붙여 결과를 만든다. `inspected` 는 요약을 받은 핀 수다.
+    """범위 안 매물 수와 조회 한도·제외 안내를 붙여 결과를 만든다.
 
-    범위(동 경계·반경) 안에 아직 요약을 받지 않은 핀이 남았으면 이어 받을 위치를 붙인다. 반경 밖 핀은 반경 안이
-    모자랄 때 채우는 것이라 남은 매물로 세지 않는다 (당근 반경 검색과 같다).
+    `shares` 는 종류마다 이번에 요약을 받은 자리 수다. 종류별 목록이 서로 겹치지 않아(`_collect_pins`) 자리를 더한 수가 곧
+    받은 매물 수다. 범위(동 경계·반경) 안에 아직 요약을 받지 않은 자리가 남은 종류가 있으면 종류마다 다음 자리를 이어 받을
+    위치로 붙인다.
     """
-    if boundary is not None:
-        in_scope = len(pins)
-    else:
-        in_scope = sum(1 for _, distance in pins.values() if within_radius(distance, radius_km))
-    received = offset + inspected
-    has_more = inspected > 0 and received < in_scope
-    next_position = {'offset': received} if has_more else None
-    notes = notes + excluded_notes(limit, inspected, len(listings), has_more=has_more)
-    if boundary is not None:
-        return ZigbangSearchResult(
-            region=region,
-            boundary=boundary.name,
-            total=in_scope,
-            returned=len(listings),
-            listings=listings,
-            notes=notes
-            + limit_notes(
-                in_scope, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow='조건·지역', order=f'{boundary.name} 중심에서 가까운',
-                approximate=True, inspected=inspected, offset=offset, resumable=has_more, has_more=has_more,
-            ),
-            has_more=has_more,
-            next_position=next_position,
-        )
+    in_scope = sum(len(ids) for ids in scan.ids_by_type.values())
+    offsets = {kind: starts[kind] + share for kind, share in shares.items()}
+    has_more = any(offsets[kind] < len(scan.ids_by_type[kind]) for kind in offsets)
+    taken = sum(shares.values())
+    notes = notes + excluded_notes(limit, taken, len(listings), order='직방 목록 순으로 앞의', has_more=has_more)
+    # 핀 수는 거래 불가를 요약에서 거르기 전이라 근사값이다. 이어 받은 자리는 종류별 자리를 더한 수다
+    notes += limit_notes(
+        in_scope, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow='조건·반경' if boundary is None else '조건·지역',
+        order='직방 목록', approximate=True, inspected=taken, offset=sum(starts.values()), resumable=has_more,
+        has_more=has_more,
+    )
+    if len(shares) > 1:
+        notes.append(_type_share_note(scan, starts, shares))
     return ZigbangSearchResult(
         region=region,
-        radius_km=radius_km,
+        radius_km=radius_km if boundary is None else None,
+        boundary=boundary.name if boundary is not None else None,
         total=in_scope,
         returned=len(listings),
         listings=listings,
-        # 핀 수는 거래 불가·조건 불일치를 요약에서 거르기 전이라 근사값이다
-        notes=notes
-        + limit_notes(
-            in_scope, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow='조건·반경', approximate=True, inspected=inspected,
-            offset=offset, resumable=has_more, has_more=has_more,
-        )
-        + beyond_radius_notes(listings, radius_km, resumed=offset > 0),
+        notes=notes,
         has_more=has_more,
-        next_position=next_position,
+        next_position={'offsets': offsets} if has_more else None,
     )
 
 

@@ -6,6 +6,7 @@ from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
     ZigbangItemPinModel,
+    ZigbangItemSectionModel,
 )
 
 from typing import Annotated
@@ -57,7 +58,14 @@ class ZigbangItemsOfficetelsBuildingV1ResponseModel(ResponseModel):
 
     items: Annotated[
         list[ZigbangItemPinModel],
-        Field(description='건물 안 매물 핀. 건물 하나라 좌표가 모두 같다')
+        Field(description='건물 안 매물 핀. 건물 하나라 좌표가 모두 같다. 순서는 sections 를 이은 순서와 다르다')
+    ] = []
+    sections: Annotated[
+        list[ZigbangItemSectionModel],
+        Field(description=(
+            '노출 구역별 매물 ID. 웹 건물 화면은 이 순서로 이어 매물을 세운다 (2026-11-15 번들 `loadItemsV2`: '
+            '`sections.flatMap(ids)`)'
+        ))
     ] = []
     building: Annotated[
         ZigbangOfficetelBuildingModel,

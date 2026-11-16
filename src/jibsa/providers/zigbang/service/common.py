@@ -1,7 +1,11 @@
 """직방 service 공통: 여러 모듈이 쓰는 결과 모델·URL·안내 문구·상수."""
 
 import re
-from collections.abc import Generator
+from collections.abc import (
+    Callable,
+    Generator,
+    Iterable,
+)
 from contextlib import contextmanager
 
 from httpx import HTTPStatusError
@@ -45,6 +49,8 @@ from jibsa.providers.zigbang.api.request.common import (
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangDanjisResponseModel,
     ZigbangItemCatalogModel,
+    ZigbangItemPinModel,
+    ZigbangItemSectionModel,
     ZigbangItemSummaryModel,
     ZigbangSearchItemModel,
 )
@@ -53,6 +59,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    Protocol,
     get_args,
 )
 
@@ -72,6 +79,9 @@ WEB_PATH_BY_SERVICE_TYPE: dict[str, str] = {
     '빌라': 'villa',
 }
 ITEMS_LIST_BATCH_SIZE: int = 15
+# 웹 목록이 섹션을 잇는 순서: VIP → 안심추천 → 안심일반 → 추천(원룸 목록은 '이 지역 오피스텔') → 일반 (2026-11-15 번들 `_app` 의
+# `createSectionsToUpdate`·`loadItemsV2`. 실측: 강남역 3km 지도 칸 18곳 모두 다섯 섹션을 이 순서로 주고 빈 섹션도 ids [] 로 둔다)
+SECTION_ORDER: tuple[str, ...] = ('VIP', 'PREMIUM_RECOMMEND', 'PREMIUM', 'RECOMMEND', 'NORMAL')
 # 학군은 덤이라 이 실패들은 학군만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`: 네트워크·상태 코드,
 # 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 학군 차례의 요청 제한을 더한다
 SCHOOL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
@@ -461,10 +471,6 @@ class ZigbangRoomConditions(RequestModel):
         list[str],
         Field(description='기타 조건 (CONDITIONS, AND)')
     ] = []
-    without_random: Annotated[
-        bool,
-        Field(description='오피스텔 서버의 무작위 섞기 해제')
-    ] = False
 
 
 def room_filter_of(conditions: ZigbangRoomConditions) -> dict[str, object]:
@@ -482,6 +488,45 @@ def room_filter_of(conditions: ZigbangRoomConditions) -> dict[str, object]:
         'options': conditions.options,
         **{CONDITION_FIELD_BY_LABEL[condition]: True for condition in conditions.extra_conditions},
     }
+
+
+class SectionedPins(Protocol):
+    """핀과 섹션을 함께 주는 응답 (지도 칸·역 반경·오피스텔 건물)."""
+
+    @property
+    def items(self) -> list[ZigbangItemPinModel]: ...
+
+    @property
+    def sections(self) -> list[ZigbangItemSectionModel]: ...
+
+
+def section_ordered_ids(
+    responses: Iterable[SectionedPins],
+    keep: Callable[[ZigbangItemPinModel | None], bool] = lambda pin: True,
+) -> list[int]:
+    """응답들(지도 칸 여럿이면 칸 순서)의 매물 ID 를 웹 목록 순서로 잇는다. 지도 목록(room)과 오피스텔 건물 매물이 함께 쓴다.
+
+    섹션 종류는 `SECTION_ORDER` 순서이고, 종류마다 응답 순서대로 잇는다. 처음 보는 섹션 종류는 아는 종류 뒤에 처음 나온
+    순서로, 어느 섹션에도 없는 핀은 잃지 않게 맨 뒤에 응답·핀 순서로 붙인다. 같은 매물이 두 번 오면 앞의 것만 둔다.
+    `keep` 은 섹션의 매물이면 그 핀(핀이 없으면 None)을, 섹션 밖이면 핀을 받아 남길지 정한다 (범위 안인지).
+
+    응답마다의 섹션 순서를 합치면 빈 섹션을 뺀 칸이 있을 때 섹션의 앞뒤가 뒤집혔다 (2026-11-16 리뷰: [안심일반, 일반] 칸 뒤에
+    [VIP, 안심추천, 일반] 칸이 오면 VIP·안심추천이 안심일반 뒤로 갔다). 순서표로 정해 두 화면의 규칙이 따로 갈리지 않게 한다.
+    """
+    by_section: dict[str, list[int]] = {}
+    unsectioned: list[int] = []
+    for response in responses:
+        pins = {pin.id: pin for pin in response.items}
+        sectioned: set[int] = set()
+        for section in response.sections:
+            sectioned.update(section.ids)
+            by_section.setdefault(section.type, []).extend(
+                item_id for item_id in section.ids if keep(pins.get(item_id))
+            )
+        unsectioned += [pin.id for pin in response.items if pin.id not in sectioned and keep(pin)]
+    order = [kind for kind in SECTION_ORDER if kind in by_section]
+    order += [kind for kind in by_section if kind not in SECTION_ORDER]
+    return list(dict.fromkeys([*(item_id for kind in order for item_id in by_section[kind]), *unsectioned]))
 
 
 def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangItemSummaryModel]:
@@ -672,11 +717,13 @@ def fetch_danji(client: ZigbangClient, complex_id: str, danji_id: int) -> Zigban
         raise
 
 
-def excluded_notes(limit: int, inspected: int, returned: int, *, order: str = '가까운', has_more: bool = True) -> list[str]:
+def excluded_notes(
+    limit: int, inspected: int, returned: int, *, order: str = '직방 목록 순으로 앞의', has_more: bool = True,
+) -> list[str]:
     """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다.
 
     Args:
-        order: 요약을 받은 매물을 고른 기준. 거리순이 아닌 건물 매물 목록은 '직방 목록 순으로 앞의'.
+        order: 요약을 받은 매물을 고른 기준. 원룸·빌라·오피스텔 목록과 건물 매물 목록 모두 직방 목록 순이다.
         has_more: 결과의 `has_more`. 더 받을 매물이 없으면 다시 채우지 않는다는 말 대신 더 받을 매물이 없다고 한다 (당근
             `listing_budget_notes` 와 같다).
     """

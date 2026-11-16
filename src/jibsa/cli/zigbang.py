@@ -11,6 +11,7 @@ from jibsa.cli.options import (
     RentMinOption,
 )
 from jibsa.cli.output import (
+    ChangedUsage,
     UsageHints,
     check_choice,
     emit,
@@ -82,7 +83,6 @@ from jibsa.providers.zigbang.service.listing import (
     GEOHASH_PRECISION,
     PROPERTY_TYPES,
     attach_building_use,
-    check_without_random,
     get_catalog,
     search_listings,
     unsearchable_note,
@@ -177,7 +177,7 @@ ROOM_HINTS: UsageHints = UsageHints(
         '--direction': '--condition 남향 (직방은 남향만 거른다)',
         '--city': "직방에는 --city 가 없습니다. 지역 이름 앞에 구 이름을 붙이세요 (예: '강남구 신사동')",
         '--deal': '직방에는 직거래 조건이 없습니다. 직거래는 jibsa daangn search listings --deal 직거래 로 찾으세요',
-        '--sort': '직방 room 은 검색 중심에서 가까운 순으로만 줍니다',
+        '--sort': '직방 room 은 직방 목록 순서(안심추천·안심일반·일반)로만 줍니다. 가까운 매물은 결과의 distance_km 로 고르세요',
         '--with-manage-cost': '직방은 월세와 관리비를 따로 거릅니다: --rent-max 와 --manage-cost-max',
         '--expand': '주변까지 보려면 --radius 로 반경을 넓히세요 (최대 5km)',
     },
@@ -196,6 +196,17 @@ USAGE_HINTS: dict[str, UsageHints] = {
     'jibsa zigbang search listings room': ROOM_HINTS,
     'jibsa zigbang search listings': ROOM_HINTS,
     'jibsa zigbang search listings apt': APT_HINTS,
+}
+# 없앤 옵션을 준 사용법 오류에 바뀐 사용법을 알린다 (jibsa.cli.app.changed_usage_hint). '-' 로 시작하는 안내를 USAGE_HINTS 에
+# 두면 옵션 줄로 읽혀 '이 명령에서는 이렇게 주세요: --without-random 은 없앴습니다' 가 되고, 표에 없으면 다른 명령에 있다며 room·
+# 다른 소스를 권했다 (2026-11-16 리뷰: apt --radius)
+WITHOUT_RANDOM_REMOVED: ChangedUsage = ChangedUsage(
+    '--without-random 을 없앴습니다. 오피스텔은 늘 직방이 섞지 않은 순서로 받으니 옵션 없이 부르세요',
+    removed_options=frozenset({'--without-random'}),
+)
+CHANGED_USAGE: dict[str, ChangedUsage] = {
+    'jibsa zigbang search listings room': WITHOUT_RANDOM_REMOVED,
+    'jibsa zigbang search listings': WITHOUT_RANDOM_REMOVED,
 }
 
 app = typer.Typer(
@@ -319,7 +330,6 @@ def _room_conditions(
     bathroom: int | None,
     option: list[str] | None,
     condition: list[str] | None,
-    without_random: bool,
 ) -> ZigbangRoomConditions:
     """room 과 --complex 가 같이 받는 가격·방·건물 조건을 조회 전에 검사해 조건 모델로 만든다. 거래 유형은 비워 둔다.
 
@@ -361,7 +371,6 @@ def _room_conditions(
         bathroom_count=bathroom,
         options=split_csv(option, OPTION_FILTERS, '--option', ROOM_HINTS),
         extra_conditions=split_csv(condition, CONDITIONS, '--condition', ROOM_HINTS),
-        without_random=without_random,
     )
 
 
@@ -445,7 +454,7 @@ def search_room_command(
         )
     ] = None,
     radius: ScopeRadiusOption = None,
-    limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='확인할 가까운 매물 수 (제외 전)')] = 15,
+    limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='직방 목록 순으로 확인할 매물 수 (제외 전). 종류가 여럿이면 종류별로 고르게 나눈다')] = 15,
     deposit_min: DepositMinOption = None,
     deposit_max: DepositMaxOption = None,
     rent_min: RentMinOption = None,
@@ -472,9 +481,6 @@ def search_room_command(
         list[str] | None,
         typer.Option('--condition', help=f"기타 조건: {', '.join(CONDITIONS)}. 반복하거나 쉼표로 구분 (AND)")
     ] = None,
-    without_random: Annotated[
-        bool, typer.Option('--without-random', help='오피스텔 서버의 무작위 섞기 해제. 검색 결과는 거리순 유지'),
-    ] = False,
     details: Annotated[
         bool,
         typer.Option(
@@ -489,11 +495,12 @@ def search_room_command(
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """원룸·오피스텔·빌라를 검색 중심에서 가까운 순으로 조회한다. 모든 조건은 직방 서버에서 거른다.
+    """원룸·오피스텔·빌라를 직방 목록 순서(안심추천 → 안심일반 → 일반)로 조회한다. 모든 조건은 직방 서버에서 거른다.
 
-    동 이름을 주고 --radius 를 주지 않으면 반경 대신 그 동 경계 안의 매물을 동 중심에서 가까운 순으로 준다.
-    역·학교 이름, 구·시 이름, --lat/--lng, --radius 는 반경 검색이다.
-    역으로 식별된 검색은 역 전용 API 를 사용하고 반경 밖 매물은 포함하지 않는다.
+    거리순이 아니다. 매물마다 검색 중심에서의 거리(distance_km)가 있으니 가까운 매물은 그 값으로 고른다.
+    종류를 여럿 찾으면(기본은 원룸·오피스텔·빌라 모두) --limit 을 종류별로 고르게 나눠 종류별 묶음으로 준다.
+    동 이름을 주고 --radius 를 주지 않으면 반경 대신 그 동 경계 안의 매물을 준다.
+    역 이름은 직방 역 주변 목록(반경은 --radius), 학교·구·시 이름과 --lat/--lng 는 반경 검색이다. 반경 밖 매물은 나오지 않는다.
 
     예: jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-max 1000 --rent-max 70
         jibsa zigbang search listings room 역삼동 -t 빌라,오피스텔 --room 투룸 --trade 전세 --condition 전세대출,엘리베이터
@@ -524,12 +531,8 @@ def search_room_command(
             bathroom=bathroom,
             option=option,
             condition=condition,
-            without_random=without_random,
         )
     property_types = split_csv(property_type, PROPERTY_TYPES, '--type', ROOM_HINTS)
-    if without_random:
-        with handle_errors(SOURCE):
-            check_without_random(property_types or list(PROPERTY_TYPES))
     trade_types, trade_notes = infer_trade_types(
         split_csv(trade, TRADE_TYPES, '--trade'),
         rent=rent_min is not None or rent_max is not None,
@@ -554,7 +557,7 @@ def search_room_command(
             limit=limit,
             boundary=boundary,
             subway_id=region.subway_id,
-            offset=int(position.get('offset', 0)) if position else 0,
+            start=position,
         )
         if details:
             result = attach_building_use(client, result)
@@ -741,9 +744,6 @@ def complex_listings_command(
         list[str] | None,
         typer.Option('--condition', help=f"시설 조건 (오피스텔만): {', '.join(CONDITIONS)}. 반복하거나 쉼표로 구분 (AND)")
     ] = None,
-    without_random: Annotated[
-        bool, typer.Option('--without-random', help='오피스텔 서버의 무작위 섞기 해제. 서버 목록 순으로 반환'),
-    ] = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -792,9 +792,7 @@ def complex_listings_command(
             bathroom=bathroom,
             option=option,
             condition=condition,
-            without_random=without_random,
         )
-    # 무작위 섞기 해제는 따로 막는다 (list_complex_listings)
     has_building_filters = bool(conditions.room_types) or any(
         value is not None and value != [] for value in room_filter_of(conditions).values()
     )

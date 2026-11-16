@@ -56,6 +56,7 @@ from jibsa.providers.zigbang.service.common import (
     parse_complex_id,
     room_filter_of,
     school_label,
+    section_ordered_ids,
     summary_to_listing,
     tradeable_summaries,
 )
@@ -441,7 +442,8 @@ def list_complex_listings(
     """단지 하나의 매물을 직방이 보여 주는 순서로 `limit` 건 조회한다.
 
     아파트는 단지 정보(시·도 주소용)와 단지 매물 목록(같은 호·거래 유형을 묶은 카탈로그)을 50건씩,
-    오피스텔은 건물의 매물 핀을 받아 15개씩 요약을 받는다. 거래 유형·가격(만원)·평형 조건은 서버에서
+    오피스텔은 건물의 매물 핀·섹션을 받아 웹 건물 화면처럼 섹션 순서로 세운 뒤 15개씩 요약을 받는다
+    (`_list_officetel_building_listings`). 거래 유형·가격(만원)·평형 조건은 서버에서
     거른다. 평형은 아파트만 있다. 관리비·방 구조·면적·층·욕실·옵션·시설 조건은 오피스텔만 받으며
     건물 API 에 그대로 보내 서버에서 거른다.
 
@@ -452,13 +454,9 @@ def list_complex_listings(
     """
     conditions = conditions or ZigbangRoomConditions()
     kind, number = parse_complex_id(complex_id)
-    if conditions.without_random and kind != 'officetel':
-        raise JibsaError(
-            code='INVALID_ARGUMENT', message='무작위 섞기 해제는 오피스텔 건물에만 지원됩니다',
-            hint='officetel-... 건물 ID를 사용하거나 --without-random을 빼세요',
-        )
     building_filters: dict[str, object] = {
-        'without_random': True if conditions.without_random else None,
+        # 오피스텔 건물 매물은 섞지 않은 순서로 받는다 (지도 목록과 같다, listing.search_listings). 아파트는 이 값을 쓰지 않는다
+        'without_random': True if kind == 'officetel' else None,
         'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in conditions.room_types],
         **room_filter_of(conditions),
     }
@@ -564,6 +562,13 @@ def _list_officetel_building_listings(
     limit: int,
     filters: dict[str, object],
 ) -> ZigbangComplexListingsResult:
+    """오피스텔 건물 하나의 매물을 웹 건물 화면 순서로 `limit` 건 조회한다 (건물 핀 1회 + 요약 15개에 1회).
+
+    웹 건물 화면처럼 섹션 순서대로 매물 ID 를 잇는다 (2026-11-15 번들 `loadItemsV2`: `sections.flatMap(ids)`. 실측
+    officetel-20227: 핀 순서는 51154972·51094170·51155651 인데 섹션은 안심추천 51094170·51155651, 안심일반 51154972). 핀
+    순서는 이 순서와 달라 쓰지 않고, 어느 섹션에도 없는 핀만 잃지 않게 맨 뒤에 핀 순서로 붙인다 (지도 목록과 같은
+    `section_ordered_ids`). 섹션 안은 서버가 섞지 않은 순서(`withoutRandom`)로 받는다. 앞 `limit` 개의 요약을 받아 그 순서대로 낸다.
+    """
     response = _fetch_building(
         client,
         complex_id,
@@ -579,18 +584,15 @@ def _list_officetel_building_listings(
             **filters,
         )
     )
-    ids = [pin.id for pin in response.items]
-    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
+    ids = section_ordered_ids([response])
+    # 조회 예산은 요약을 받는 매물 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
     scanned = ids[:limit]
+    summaries = {summary.item_id: summary for summary in tradeable_summaries(client, scanned)}
+    # 요약 응답 순서에 기대지 않고 섹션 순서로 세운다
     listings: list[Listing] = [
-        summary_to_listing(summary, building_id=building_id) for summary in tradeable_summaries(client, scanned)
+        summary_to_listing(summaries[item_id], building_id=building_id) for item_id in scanned if item_id in summaries
     ]
-    if filters.get('without_random'):
-        # 요약 응답의 순서가 달라도 서버가 반환한 핀 순서를 유지한 뒤 limit을 적용한다.
-        rank = {str(item_id): index for index, item_id in enumerate(ids)}
-        listings.sort(key=lambda listing: rank[listing.id])
-    listings = listings[:limit]
-    # 건물 핀은 서버가 거래 유형으로 이미 걸러 준 거래 중 매물뿐이라 핀 수가 곧 조건에 맞는 수다.
+    # 건물 매물은 서버가 거래 유형으로 이미 걸러 준 거래 중 매물뿐이라 매물 수가 곧 조건에 맞는 수다.
     total = len(ids)
     has_more = len(scanned) < total
     return ZigbangComplexListingsResult(
