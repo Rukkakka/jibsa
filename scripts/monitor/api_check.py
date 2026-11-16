@@ -102,7 +102,7 @@ COMMAND_TIMEOUT_SECONDS: int = 300
 # 결과·표·이슈에 쓰는 날짜의 시간대. 러너는 UTC 라 한국 04:17 실행이 전날 날짜로 찍혔다 (2026-10-18 실행이 2026-10-17).
 # 정리 잡에는 jibsa 가 없어 jibsa 의 kst_today 를 가져오지 않는다
 KST: datetime.timezone = datetime.timezone(datetime.timedelta(hours=9), 'KST')
-# 단기임대 기간 비용(`listing --check-in/--check-out`)은 앞날 기간만 받아 실행하는 날로 정한다. 이만큼 뒤에 입주해 1주 머문다
+# 단기임대 날짜 상세(`listing --check-in/--check-out` 의 예약 가능 여부)는 앞날 기간만 받아 실행하는 날로 정한다. 이만큼 뒤에 입주해 1주 머문다
 STAY_CHECK_IN_DAYS: int = 14
 
 ROOM: tuple[str, ...] = ('zigbang', 'search', 'listings', 'room')
@@ -165,10 +165,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('stay', 'listings', 'id'),),
         ),
         Step('단기임대 상세', ZIGBANG_LISTING, ('{stay}',), 'id'),
-        # 기간 비용은 예약 가능 여부와 상관없이 온다 (예약된 기간이면 available false)
-        Step(
-            '단기임대 기간 비용', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'period_cost',
-        ),
+        # 날짜를 주면 상세의 막힌 날짜(schedules)로 예약 가능 여부를 붙인다. 예약된 기간이면 false 라 값 대신 상세가 오는지만 본다
+        Step('단기임대 날짜 상세', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'id'),
         # 역 이름은 직방 단기임대 역 검색, --radius 를 주면 지도 핀이다
         Step('단기임대 역 검색 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--limit', '2'), 'listings'),
         Step('단기임대 지도 반경 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--radius', '1', '--limit', '2'), 'listings'),

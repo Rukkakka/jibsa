@@ -55,7 +55,6 @@ from jibsa.providers.zigbang.api.request.region import (
 from jibsa.providers.zigbang.api.request.stay import (
     ZigbangGuestItemsByIdsRequestParameterModel,
     ZigbangGuestItemsMarkersRequestParameterModel,
-    ZigbangGuestItemsPriceCalculationRequestPayloadModel,
     ZigbangGuestItemsRequestParameterModel,
     ZigbangGuestItemsSearchRequestParameterModel,
 )
@@ -101,7 +100,6 @@ from jibsa.providers.zigbang.api.response.region import (
 from jibsa.providers.zigbang.api.response.stay import (
     ZigbangGuestItemsByIdsResponseModel,
     ZigbangGuestItemsMarkersResponseModel,
-    ZigbangGuestItemsPriceCalculationResponseModel,
     ZigbangGuestItemsResponseModel,
     ZigbangGuestItemsSearchResponseModel,
 )
@@ -208,7 +206,6 @@ class ZigbangClient(BaseHTTPClient):
     guest_items_markers_endpoint: ClassVar[str] = '/guest/items/markers'
     guest_items_by_ids_endpoint: ClassVar[str] = '/guest/items/by-ids'
     guest_items_endpoint: ClassVar[str] = '/guest/items/{item_id}'
-    guest_items_price_calculation_endpoint: ClassVar[str] = '/guest/items/{item_id}/price-calculation'
     items_detail_v1_endpoint: ClassVar[str] = '/house/property/v1/items/{item_id}/detail'
     items_v3_endpoint: ClassVar[str] = '/v3/items/{item_id}'
 
@@ -1263,45 +1260,6 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangGuestItemsResponseModel.model_validate(response.json())
-
-    @zigbang_retry
-    def run_request_guest_items_price_calculation(
-        self,
-        payload: ZigbangGuestItemsPriceCalculationRequestPayloadModel
-    ) -> ZigbangGuestItemsPriceCalculationResponseModel:
-        """Calculate a short-term stay price via `POST stay-apis.zigbang.com/guest/items/{itemId}/price-calculation`.
-
-        POST 지만 계산만 하는 조회라(예약을 만들지 않는다) idempotent 재시도를 쓴다. Same retry behaviour as
-        `run_request_items_onerooms_v1`. 그 날짜에 예약이 비어 있는지는 보지 않는다. 지난 입주일이나
-        계약 기간을 벗어난 기간은 400 이다.
-
-        Args:
-            payload: `item_id` (경로) plus 입주·퇴거일과 반려동물 동반 여부.
-
-        Returns:
-            ZigbangGuestItemsPriceCalculationResponseModel: 기간 임대료·관리비·할인·이용료·보증금과 총액 (원).
-        """
-        response = self._client.post(
-            url=self.stay_base_url + self.guest_items_price_calculation_endpoint.format(item_id=payload.item_id),
-            json=payload.model_dump(by_alias=True, exclude_none=True),
-            headers=STAY_HEADERS
-        )
-        raise_for_status(response=response)
-        return ZigbangGuestItemsPriceCalculationResponseModel.model_validate(response.json())
-
-    @zigbang_retry
-    async def arun_request_guest_items_price_calculation(
-        self,
-        payload: ZigbangGuestItemsPriceCalculationRequestPayloadModel
-    ) -> ZigbangGuestItemsPriceCalculationResponseModel:
-        """Async variant of `run_request_guest_items_price_calculation`."""
-        response = await self._async_client.post(
-            url=self.stay_base_url + self.guest_items_price_calculation_endpoint.format(item_id=payload.item_id),
-            json=payload.model_dump(by_alias=True, exclude_none=True),
-            headers=STAY_HEADERS
-        )
-        raise_for_status(response=response)
-        return ZigbangGuestItemsPriceCalculationResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_items_subways_onerooms_v1(

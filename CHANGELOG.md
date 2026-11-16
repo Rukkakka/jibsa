@@ -59,8 +59,9 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `search listings --complex officetel-…` 이 직방 웹 건물 화면처럼 묶음 순서(안심추천 → 안심일반 → 일반 등)로 줌. `--without-random` 옵션은 없앴다 (늘 섞지 않은 순서로 받는다) (#272)
 - 직방 `search listings store` 가 가까운 순 대신 직방 웹 상가 목록 순서 그대로 줌 (가까운 매물은 `distance_km`). 반경 밖 매물로 채우지 않고 반경은 반올림하지 않는다. 동 이름(`--radius` 없음)은 그 동 안을 찾고(`○가` 로 나뉜 동은 함께), 리·구·시·역·학교·좌표는 반경이다. 가격 조건은 가까운 후보 대신 직방 목록 앞의 후보를 확인한다. 직방 상가 순서는 시간이 지나면 바뀐다 (#273)
 - 직방 `search listings stay` 의 기본 정렬을 가까운 순에서 직방 웹과 같은 추천순(`--sort recommended`)으로 바꿈. `--sort distance` 는 `--radius` 없는 역 이름 검색에서만 되고, 그 밖에는 `INVALID_ARGUMENT` 다. 역·학교·동·구 이름은 직방 단기임대 검색 결과를 직방 순서 그대로 주고(역은 역 1km 안이라 `radius_km` 1, 동·구는 이웃 동 매물이 섞일 수 있다고 알린다), 좌표·`--radius` 는 반경 안 지도 매물을 직방 웹 지도 목록과 같은 순서로 준다. `성수동` 처럼 `○가` 로 나뉜 동과 성남시처럼 구가 있는 시를 합쳐 찾던 것을 없애고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성남시 분당구` 같은 후보를 고르게 한다 (#274)
+- 직방 단기임대 기간 비용을 뺌: `search listings stay --details`, `listing stay-… --pet`, 결과의 `period_cost`. 직방 웹은 로그인해야 기간 요금을 보여 준다. `listing stay-…` 에 날짜를 주면 예약 가능 여부 `available` 만 붙고, 매물의 계약 기간에 맞지 않는 날짜는 `INVALID_ARGUMENT` 대신 `available: false` 다. 쓰던 쪽은 `--details`·`--pet` 을 지운다 (#275)
 - 직방에서 같은 이름의 역·학교(양평역)를 첫 곳으로 찾고 `notes` 로 알리던 것을 없애고 `REGION_AMBIGUOUS` 로 후보를 알림. `hint` 대로 `영등포구 양평역`·`창천동 신촌역` 처럼 구·동 이름을 앞에 붙이면 그 후보로 찾는다 (#271)
-- 라이브러리로 쓸 때: `search_listings` 의 `offset` 은 이어 받기 표 `start`(`{'offsets': {종류: 자리}}`)로, `search_store_listings` 는 `boundary` 대신 동 목록 `dongs` 를 받는다 (#272, #273)
+- 라이브러리로 쓸 때: `jibsa.providers.zigbang` 의 `attach_stay_period_costs` 를 뺌. `search_listings` 의 `offset` 은 이어 받기 표 `start`(`{'offsets': {종류: 자리}}`)로, `search_store_listings` 는 `boundary` 대신 동 목록 `dongs` 를 받고, `get_stay_listing` 에는 `pet` 이 없다 (#272, #273, #275)
 
 ### 추가
 
@@ -106,6 +107,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `catalog <catalog_id>`: 같은 호를 여러 중개사가 올린 아파트 매물 묶음(직방 웹 묶음 화면)의 매물 전부를 매물마다 가격·관리비·입주일 등 `listing` 상세와 같은 필드로 준다 (20건마다 요청 1회, 앞 120건까지). `search listings apt`·`search listings --complex <apt-…>` 매물에 그 묶음 ID `catalog_id` 가 붙는다. `is_price_range: true` 인 줄의 매물별 가격을 매물마다 `listing` 하지 않고(매물마다 요청 2회) 한 번에 본다. `--fields` 로 매물마다 낼 필드를 고른다. `total` 은 묶음의 매물 수이고 직방이 알려 주지 않으면 `null` 이다. 묶음에 매물이 없으면(첫 쪽이 404 이거나 빈 목록) `LISTING_UNAVAILABLE`(`reason: EMPTY_CATALOG`, 묶음 ID 는 `listing_id` 가 아니라 `catalog_id` 에). 묶음 ID 형식이 아니면 `INVALID_ARGUMENT` 이고 `hint` 가 결과의 `catalog_id` 를 그대로 주라고 알린다 (#262)
 - 직방 `search listings apt`·`search listings --complex <apt-…>` 매물에 `listing_ids`: 같은 호를 올린 매물 중 `listing` 으로 상세를 볼 수 있는 ID 전부 (`id` 가 맨 앞) (#261)
 - 직방 `real-price` 거래에 `pyeong_names`: 같은 전용면적의 평형이 여럿이라 직방이 평형 후보를 모두 준 거래의 후보 이름 전부 (후보가 하나면 키가 없고, 직방이 후보를 주지 않은 거래는 `null`, 평 이름을 주지 않은 후보 자리는 `null`) (#261)
+- 직방 단기임대 `listing stay-… --check-in … --check-out …` 에 그 기간을 예약할 수 있는지 `available`: 직방 웹 날짜 고르기 창이 막는 규칙(오늘 이후, 최소 계약 주 이상·84일 이하, 예약·막힌 날 없음) 그대로다. 직방이 일정을 주지 않으면 `null` 이다 (#275)
 - 다방 `region-ranking -t 빌라`: 매물수·거래량·선호도의 동 순위를 다방 동네정보 '매물정보' 탭(주택/빌라 포함, 고른 유형 합산)으로 받는다. 결과에 `building_type` 이 붙는다. 모든 `region-ranking` 결과에 어느 탭 순위인지 `tab`(`시세정보`·`매물정보`·`학군` 등)이 붙는다 (#247)
 
 ### 변경
@@ -136,7 +138,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 제휴 아파트 매물 상세(`listing coalition-…`)에 직방이 주는 방향 기준 `direction_criterion` 이 붙고, `total_parking_count`·`household_count` 가 키 없음(해당 없음) 대신 `null`(모름)로 나옴 (#261)
 - 직방 아파트 목록(`search listings apt`·`search listings --complex <apt-…>`)의 `is_price_range`·`catalog_id`·`listing_ids`·`listing_count` 가 `--fields` 로 고르지 않아도 늘 나옴 (네이버 묶음 필드와 같다). 빠지면 가격이 묶음 최저가인지 모르고 매물별 가격을 볼 ID 도 없었다. `--fields` 도움말에도 늘 나오는 필드로 적었다 (#261)
 - 직방 `real-price` 의 `pyeong_name` 이 평형 후보가 여럿인 거래에서 첫 후보 이름 대신 직방 웹처럼 `32A 외 4` 로 나옴. 후보 전부는 새 `pyeong_names` 에 있다 (#261)
-- 직방 금액을 반올림 없이 원 단위까지 냄. 단기임대(`search listings stay`·`listing stay-…`)의 주당 임대료·관리비·보증금·청소비와 `period_cost` 금액, 원룸·빌라·오피스텔·아파트의 관리비가 0.1만원(1,000원) 단위로 반올림하지 않고 원 단위까지 나온다 (375,700원 → `37.57`. 직방 웹 목록 카드는 0.1만원 아래를 버려 `37.5만원` 으로 보여 준다). 원룸·빌라·오피스텔 `listing` 관리비도 직방이 0.1만원 아래를 버린 값(`37.5`) 대신 원 단위 금액(`37.57`, 웹 상세와 같은 금액)을 낸다. 네이버·다방·당근 금액은 아직 1,000원 단위로 반올림한다 (#259)
+- 직방 금액을 반올림 없이 원 단위까지 냄. 단기임대(`search listings stay`·`listing stay-…`)의 주당 임대료·관리비·보증금·청소비, 원룸·빌라·오피스텔·아파트의 관리비가 0.1만원(1,000원) 단위로 반올림하지 않고 원 단위까지 나온다 (375,700원 → `37.57`. 직방 웹 목록 카드는 0.1만원 아래를 버려 `37.5만원` 으로 보여 준다). 원룸·빌라·오피스텔 `listing` 관리비도 직방이 0.1만원 아래를 버린 값(`37.5`) 대신 원 단위 금액(`37.57`, 웹 상세와 같은 금액)을 낸다. 네이버·다방·당근 금액은 아직 1,000원 단위로 반올림한다 (#259)
 - 직방 `listing` 에 매물 ID 형식이 아닌 값을 주면 `INVALID_ARGUMENT` 의 message 앞 `Invalid value for ITEM_ID:` 가 없어지고, `hint` 가 `--help` 를 보라는 말 대신 검색 결과의 id 를 그대로 주라는 안내(숫자, `store-123`, `stay-123`, `coalition-123`)가 됨 (#261)
 - 다방 `popular-listings` 가 더 있을 때 `-t`·`--trade` 를 이미 하나씩 골랐으면 조건을 좁히라고 권하지 않고 `--limit` 만 알리며, 한쪽만 골랐으면 나머지 한쪽만 권함 (예전에는 늘 둘 다 권했다) (#249)
 - 다방 `sale-schedule --details` 에서 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄을 '그 날 분양 단지 표에서 찾지 못해' 가 아니라 '다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 sale 이 null' 이라는 `[참고]` 로 따로 알림. 그런 줄뿐이어도 업데이트 안내는 붙이지 않는다 (#244)

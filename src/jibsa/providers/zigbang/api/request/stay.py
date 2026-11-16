@@ -48,10 +48,15 @@ def stay_days(check_in: str, check_out: str) -> int:
     return (date.fromisoformat(check_out) - date.fromisoformat(check_in)).days + 1
 
 
-def _validate_stay_dates(check_in: str, check_out: str) -> None:
-    # 2026-10-09 비로그인 API 실측: 검색·요금 계산 모두 오늘 입주를 허용하고 과거는 400.
-    # 2027-02-30은 검색에서 500, 요금 계산에서 200이므로 서버에 맡기지 않고 달력을 검증한다.
-    # 기간이 매물 계약 범위에 맞는지는 매물마다 달라(최소 1~8주) 요금 계산에서는 서버 판단에 맡긴다
+def validate_stay_dates(check_in: str, check_out: str) -> None:
+    """입주일·마지막 날이 실제 날짜이고, 입주일이 한국 날짜로 오늘 이후이며, 마지막 날이 입주일보다 뒤인지 본다.
+
+    Raises:
+        ValueError: 위 조건을 어길 때 (요청 모델 검증 안에서 불러 CLI 는 INVALID_ARGUMENT).
+    """
+    # 2026-10-09 비로그인 API 실측: 검색은 오늘 입주를 허용하고 과거는 400. 2027-02-30 은 검색에서 500 이므로 서버에 맡기지
+    # 않고 달력을 검증한다. 상세(listing stay-…)는 날짜를 서버에 보내지 않지만, 웹 날짜 고르기 창도 지난 날을 고를 수 없어
+    # 같은 검사를 한다. 기간이 매물 계약 범위에 맞는지는 매물마다 달라(최소 1~8주) 여기서 보지 않는다
     try:
         start = date.fromisoformat(check_in)
         end = date.fromisoformat(check_out)
@@ -96,7 +101,7 @@ class ZigbangStayDatesMixin(RequestModel):
         if self.flexibility is not None and self.check_in_date is None:
             raise ValueError('일정 유연성은 입주일·퇴거일과 함께 써야 합니다')
         if self.check_in_date is not None and self.check_out_date is not None:
-            _validate_stay_dates(self.check_in_date, self.check_out_date)
+            validate_stay_dates(self.check_in_date, self.check_out_date)
             _validate_stay_search_period(self.check_in_date, self.check_out_date)
         return self
 
@@ -248,33 +253,3 @@ class ZigbangGuestItemsRequestParameterModel(RequestModel):
         int,
         Field(gt=0, exclude=True, description='단기임대 매물 ID. 경로에 들어간다')
     ]
-
-
-class ZigbangGuestItemsPriceCalculationRequestPayloadModel(RequestModel):
-    """`POST stay-apis.zigbang.com/guest/items/{itemId}/price-calculation` 경로 + 본문. 기간 요금 계산.
-
-    지난 입주일, 최소·최대 계약 기간을 벗어난 기간은 서버가 400 `VALIDATION_ERROR` 로 거절한다
-    (message: '입주일은 오늘 이후여야 합니다', `MIN_CONTRACT_PERIOD`, `MAX_CONTRACT_PERIOD`).
-    """
-
-    item_id: Annotated[
-        int,
-        Field(gt=0, exclude=True, description='단기임대 매물 ID. 경로에 들어가며 본문으로는 보내지 않는다')
-    ]
-    check_in_date: Annotated[
-        str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주일 (YYYY-MM-DD)', alias='checkInDate')
-    ]
-    check_out_date: Annotated[
-        str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD, 이용일에 센다)', alias='checkOutDate')
-    ]
-    has_pet: Annotated[
-        bool,
-        Field(description='반려동물 동반 여부 (반려동물 청소비가 붙는다)', alias='hasPet')
-    ] = False
-
-    @model_validator(mode='after')
-    def valid_dates(self) -> Self:
-        _validate_stay_dates(self.check_in_date, self.check_out_date)
-        return self

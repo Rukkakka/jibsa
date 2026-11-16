@@ -7,9 +7,6 @@ from jibsa.core.errors import (
     ListingUnavailableError,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.stay import (
-    ZigbangGuestItemsPriceCalculationRequestPayloadModel,
-)
 from jibsa.providers.zigbang.service.common import (
     APT_ID_PREFIXES,
     apt_item_source,
@@ -41,7 +38,6 @@ def get_any_listing(
     *,
     check_in: str | None = None,
     check_out: str | None = None,
-    pet: bool = False,
 ) -> ZigbangListingDetail | ZigbangStoreListingDetail | ZigbangStayListingDetail:
     """검색 결과의 `id` 그대로 상세를 조회한다.
 
@@ -49,7 +45,7 @@ def get_any_listing(
     아파트 매물이라고 알리는 404 를 주면 아파트 상세 `/apt/item-catalogs/items` 하나로),
     `store-` 는 상가, `stay-` 는 단기임대, `coalition-` 은 아파트 제휴(호갱노노 집주인) 매물이다.
     매물 번호 체계가 서로 달라 같은 숫자가 다른 매물일 수 있어 접두어로 구분한다.
-    입주·퇴거일(`check_in`·`check_out`, `pet`)은 단기임대만 받는다. `listing` 명령은 ID 형식을 따로 검사하지 않고 이 에러를
+    입주·퇴거일(`check_in`·`check_out`)은 단기임대만 받는다. `listing` 명령은 ID 형식을 따로 검사하지 않고 이 에러를
     그대로 낸다.
 
     Raises:
@@ -65,21 +61,16 @@ def get_any_listing(
             hint="search 결과는 숫자, store 결과는 'store-123', stay 결과는 'stay-123', 아파트 제휴 매물은 'coalition-123' 처럼 결과의 id 를 그대로 주세요",
         )
     kind, number = match.groups()
-    if kind != 'stay' and (check_in or check_out or pet):
+    if kind != 'stay' and (check_in or check_out):
         raise JibsaError(
             code='INVALID_ARGUMENT',
-            message='입주·퇴거일과 반려동물 조건은 직방 단기임대(stay-…) 상세에만 쓸 수 있습니다',
-            hint='--check-in/--check-out/--pet 을 빼고 다시 조회하세요',
+            message='입주·퇴거일은 직방 단기임대(stay-…) 상세에만 쓸 수 있습니다',
+            hint='--check-in/--check-out 을 빼고 다시 조회하세요',
         )
     if kind == 'store':
         return get_store_listing(client, int(number))
     if kind == 'stay':
-        if check_in is not None and check_out is not None:
-            # 요금 계산은 상세·요약을 받은 뒤라, 틀린 날짜로 요청을 보내기 전에 날짜를 먼저 검사한다
-            ZigbangGuestItemsPriceCalculationRequestPayloadModel(
-                item_id=int(number), check_in_date=check_in, check_out_date=check_out, has_pet=pet,
-            )
-        return get_stay_listing(client, int(number), check_in=check_in, check_out=check_out, pet=pet)
+        return get_stay_listing(client, int(number), check_in=check_in, check_out=check_out)
     # 접두어가 곧 출처 이름이다 (coalition-123). store·stay 는 앞에서 갈렸고 숫자만이면 kind 가 None 이다
     if (apt_source := apt_item_source(kind)) is not None:
         return get_apt_listing(client, int(number), apt_source)

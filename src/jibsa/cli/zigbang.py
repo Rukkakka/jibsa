@@ -113,7 +113,6 @@ from jibsa.providers.zigbang.service.stay import (
     STAY_OPTION_BY_LABEL,
     STAY_WEEKLY_PRICE_NOTE,
     ZigbangStayConditions,
-    attach_stay_period_costs,
     check_stay_sort,
     search_stay_listings,
     stay_distance_sort_error,
@@ -208,6 +207,16 @@ WITHOUT_RANDOM_REMOVED: ChangedUsage = ChangedUsage(
 CHANGED_USAGE: dict[str, ChangedUsage] = {
     'jibsa zigbang search listings room': WITHOUT_RANDOM_REMOVED,
     'jibsa zigbang search listings': WITHOUT_RANDOM_REMOVED,
+    'jibsa zigbang search listings stay': ChangedUsage(
+        '--details 를 없앴습니다. 직방 웹은 기간 요금을 로그인해야 보여 줘 기간 비용(period_cost)을 뺐습니다. 그 기간을 예약할 수 '
+        '있는지는 jibsa zigbang listing stay-<ID> --check-in <날짜> --check-out <날짜> 의 available 로 보세요',
+        removed_options=frozenset({'--details'}),
+    ),
+    'jibsa zigbang listing': ChangedUsage(
+        '--pet 을 없앴습니다. 직방 웹은 기간 요금을 로그인해야 보여 줘 반려동물 청소비를 넣던 기간 비용(period_cost)을 뺐습니다. '
+        '날짜를 주면 예약 가능 여부 available 만 붙습니다. 반려동물 가능 매물은 jibsa zigbang search listings stay --pet 으로 찾으세요',
+        removed_options=frozenset({'--pet'}),
+    ),
 }
 
 app = typer.Typer(
@@ -1018,16 +1027,6 @@ def stay_command(
         ),
     ] = 'recommended',
     limit: LimitOption = 15,
-    details: Annotated[
-        bool,
-        typer.Option(
-            '--details',
-            help=(
-                f'--check-in/--check-out 과 함께: 앞 {DETAILS_MAX}건에 그 기간의 실제 비용(period_cost: 청소비·직방 이용료·장기 '
-                '할인 포함)을 붙인다. 매물당 요청 1회. --pet 이면 반려동물 청소비도 넣는다'
-            ),
-        ),
-    ] = False,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -1036,14 +1035,13 @@ def stay_command(
     원룸·빌라의 '단기임대' 거래(search room --trade 단기임대)와 다른 별도 서비스다.
     역·학교·동·구 이름은 직방 단기임대 검색 결과를 직방 순서 그대로 준다 (역은 역에서 1km 안, 동·구는 이웃 동 매물이 섞일 수
     있다). --radius 나 --lat/--lng 를 주면 그 중심에서 반경 안의 지도 매물을 준다. 가까운 매물은 distance_km 로 고른다.
-    상세는 결과의 id(stay-123) 로 jibsa zigbang listing <id>. 가격순은 주당 요금 기준이라, 기간 실제 비용은 --details 로 본다.
+    상세는 결과의 id(stay-123) 로 jibsa zigbang listing <id>. 금액은 주당 임대료+관리비이고, 기간 전체 비용은 직방이 로그인한
+    사용자에게만 계산해 줘서 주지 않는다.
 
     예: jibsa zigbang search listings stay 강남역 --weekly-rent-max 50 --building 오피스텔 --option 세탁기,와이파이
-        jibsa zigbang search listings stay 역삼동 --check-in 2026-11-01 --check-out 2026-11-28 --rooms 1 --details
+        jibsa zigbang search listings stay 역삼동 --check-in 2026-11-01 --check-out 2026-11-28 --rooms 1 --sort price
     """
     _require_center(query, lat, lng)
-    if details and (check_in is None or check_out is None):
-        raise typer.BadParameter('기간 비용을 계산할 날짜가 필요합니다. --check-in 과 --check-out 을 함께 주세요', param_hint='--details')
     require_finite('--radius', radius)
     validate_ranges(
         ('weekly-rent', weekly_rent_min, weekly_rent_max),
@@ -1148,9 +1146,7 @@ def stay_command(
             result = search_stay_listings(
                 client, region, conditions=conditions, sort=stay_sort, radius_km=radius_km, limit=limit, boundary=boundary,
             )
-        if details:
-            result = attach_stay_period_costs(client, result, conditions)
-        elif check_in is not None and result.listings:
+        if check_in is not None and result.listings:
             notes.append(STAY_WEEKLY_PRICE_NOTE)
         emit(result, pretty, notes=notes + result.notes, fields=fields)
 
@@ -1193,15 +1189,14 @@ def listing_command(
     ],
     check_in: Annotated[
         str | None,
-        typer.Option(help='단기임대(stay-…)만: 입주일 (YYYY-MM-DD). --check-out 과 함께 주면 기간 비용·예약 가능 여부를 붙인다')
+        typer.Option(help='단기임대(stay-…)만: 입주일 (YYYY-MM-DD). --check-out 과 함께 주면 그 기간에 예약할 수 있는지(available)를 붙인다')
     ] = None,
     check_out: Annotated[str | None, typer.Option(help='단기임대(stay-…)만: 마지막으로 머무는 날 (YYYY-MM-DD). 직방은 이 날까지 이용일로 센다 (1주 = 11-02~11-08). --check-in 과 함께')] = None,
-    pet: Annotated[bool, typer.Option('--pet', help='단기임대(stay-…)만: 반려동물 동반 (기간 비용에 반려동물 청소비가 붙는다)')] = False,
     pretty: PrettyOption = None,
 ) -> None:
     """매물 상세 (옵션·관리비·입주일·주차). 사진·상세 설명·문의는 url 의 원 사이트에서.
 
-    단기임대는 --check-in/--check-out 을 주면 그 기간의 총비용과 예약이 비어 있는지(period_cost)도 준다.
+    단기임대는 --check-in/--check-out 을 주면 그 기간에 예약할 수 있는지(available)도 준다 (직방 웹 달력이 막는 날짜 기준).
 
     예: jibsa zigbang listing stay-3783 --check-in 2026-11-02 --check-out 2026-11-29
     """
@@ -1209,11 +1204,9 @@ def listing_command(
     # 브라우저를 띄우므로 with 안에서 검사해도 비용이 없다)
     if (check_in is None) != (check_out is None):
         raise typer.BadParameter('--check-in 과 --check-out 은 함께 주세요', param_hint='--check-in')
-    if pet and check_in is None:
-        raise typer.BadParameter('--pet 은 --check-in/--check-out 과 함께 주세요', param_hint='--pet')
     with handle_errors(SOURCE), ZigbangClient() as client:
         emit(
-            get_any_listing(client, item_id, check_in=check_in, check_out=check_out, pet=pet),
+            get_any_listing(client, item_id, check_in=check_in, check_out=check_out),
             pretty,
         )
 

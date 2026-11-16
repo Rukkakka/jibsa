@@ -92,9 +92,10 @@
 - 단기임대(`stay-apis.zigbang.com`)는 두 경로다. 이름(역·학교·대학, 동·구)으로 찾고 `--radius` 가 없으면 웹 검색 결과 목록처럼 검색 API(`guest/items/search`)에 정렬을 보내 응답 ID 순서 그대로 앞 `limit` 개를 받는다 (`_search_stay_by_search_api`, `total` 은 검색 ID 수). 좌표·`--radius`·동 경계(대체 경로)는 지도(`guest/items/markers`) 핀 중 범위 안(반올림 없는 거리 또는 경계 안)만 남겨 웹 지도 목록과 같은 규칙으로 세운 뒤 앞 `limit` 개를 받는다 (`_search_stay_by_markers`·`stay_marker_order`, `total` 은 범위 안 핀 수). 두 경로 모두 받은 매물을 다시 거르거나 세우지 않고 `guest/items/by-ids` 로 50건씩 요약을 받아 고른 순서대로 낸다 (`_stay_summaries`). `by-ids` 는 노출 중·검수 완료 매물만 돌려줘서(실측) 목록에서는 상태를 다시 보지 않는다. 예약 달력(`guest/items/{id}/calendar`)은 손님 토큰을 붙여도 403 이었다 (로그인이 필요해 쓰지 않는다).
 - 검색 API 정렬(2026-11-15 실측): `RECOMMENDED` 는 안 보내도 같은 순서(강남역 71건·역삼동 64건), `PRICE_ASC`·`STATION_DISTANCE_ASC` 는 같은 값이면 ID 큰 순이고 같은 요청은 늘 같은 순서다. `STATION_DISTANCE_ASC` 를 역이 아닌 검색에 보내면 400 `STATION_SORT_REQUIRES_SUBWAY` 라 요청 모델과 서비스가 먼저 막는다 (웹도 역 검색에서만 고를 수 있다). 역 검색은 서버가 역에서 약 1km 안만 주어(강남역 71건, 가장 먼 것 0.979km) `radius_km` 를 1 로 내고(`STAY_SUBWAY_RADIUS_KM`), 동·구 검색은 동 경계가 아니라 이웃 동 매물도 섞여 와(성수동2가 34건 중 성수동2가 17건, 화양동 9·자양동 5·성수동1가 3건) `[범위]` 로 알린다. 학교·대학 검색은 서버가 정하는 범위를 실측하지 못해 `radius_km` 를 내지 않고 `[범위]` 로만 알린다.
 - 지도 핀 정렬은 웹 `sortStayMarkers` 그대로다: 추천순은 `totalScore` 높은 순, 같으면 ID 큰 순(`compareRecommended`), 가격순은 핀의 `weeklyPrice`(주당 임대료+관리비, 만원 미만 버림. 실측 71/71) 낮은 순, 최신순은 `reviewedAt` 늦은 순이고, 같은 값이면 추천순 규칙이다. 역 가까운 순은 지도 경로에서 막는다. 핀 좌표는 요약 좌표와 같다 (2026-11-15 실측 71건). 실측: 강남역 좌표 검색 추천순 앞 6건이 역 검색의 서버 추천순과 같고, 역 `--sort distance` 는 서버 `STATION_DISTANCE_ASC` 순서와 같다.
-- 매물 `url` 은 웹 단기임대 매물 페이지(`https://www.zigbang.com/stay/item/<번호>`, `stay_item_url`)로 로그인 없이 열린다. 즉시입주 할인(`INSTANT`)은 웹 상세처럼 입주 시점 조건(`conditionDays`)을 붙인다: 0일이면 '오늘 입주 시', 1일 이상이면 '오늘부터 N일 이내 입주 시' 이고, null 이면 웹처럼 0일로 본다. 웹은 즉시입주 할인을 금액(`discountAmount`)으로만 보여 주고 0 이하면 줄을 숨겨, 금액이 없는 즉시입주 할인은 내지 않는다. 장기계약 할인(`LONG_TERM`)은 주 수(`conditionWeeks`)·할인율(`discountRate`)·주당 임대료(`weeklyRent`)가 모두 0보다 클 때만 '{주}주 이상 {율}% 할인' 으로 보여 주고 금액은 쓰지 않으며, 두 종류 밖의 할인은 그리지 않아 jibsa 도 같다. 웹은 할인의 `isActive` 를 보지 않아 jibsa 도 꺼진 할인을 거르지 않는다 (`stay_discount_label`, 2026-11-15 번들 `DiscountDetailList`·`pickDiscountTextsForCard`). 실제로 깎이는 금액은 요금 계산(`period_cost`)에 있다. 할인 문구의 금액은 반올림 없이 만원으로 쓴다 (2,500원 → '0.25만원', `format_manwon(won_to_manwon_exact(…))`). 주당 임대료·관리비, 보증금, 청소비, 기간 비용 등 단기임대의 다른 금액도 `won_to_manwon_exact` 로 원 단위까지 낸다.
-- 단기임대 날짜는 `checkOutDate` 까지 이용일로 센다 (11-02~11-08 = 7일). 검색(`guest/items/search`·`markers`)은 7~84일만 받아 `STAY_SEARCH_MIN_DAYS`·`STAY_SEARCH_MAX_DAYS` 로 요청 전에 막고, 서버의 `MIN/MAX_DURATION_VIOLATION` 도 입력 오류로 바꾼다(`_stay_search_call`). 요금 계산은 매물 계약 범위(최소 1~8주)를 서버가 판단해 7~84일 검사를 하지 않는다.
-- 목록 요약에는 주당 요금만 있고 기간 비용(청소비·이용료·할인)은 매물마다 요금 계산(`guest/items/{id}/price-calculation`)에만 있다. `search listings stay --details` 는 앞 `DETAILS_MAX` 건에 요금 계산만 1회씩 불러 `period_cost` 를 붙인다(`attach_stay_period_costs`). 상세(`listing stay-…`)처럼 상세·요약·예약 확인 지도를 다시 받지 않는다: 검색이 같은 날짜로 지도를 걸렀으니 `available` 은 true 로, `--flexibility` 면 null 로 둔다. 2026-10-31 실측: 강남역 4주 가격순 4건의 결제액(보증금 30만 포함)이 상세와 같은 181.2·265.5·288.3·286.9만이고, 3위와 4위가 기간 비용으로는 뒤바뀐다.
+- 매물 `url` 은 웹 단기임대 매물 페이지(`https://www.zigbang.com/stay/item/<번호>`, `stay_item_url`)로 로그인 없이 열린다. 즉시입주 할인(`INSTANT`)은 웹 상세처럼 입주 시점 조건(`conditionDays`)을 붙인다: 0일이면 '오늘 입주 시', 1일 이상이면 '오늘부터 N일 이내 입주 시' 이고, null 이면 웹처럼 0일로 본다. 웹은 즉시입주 할인을 금액(`discountAmount`)으로만 보여 주고 0 이하면 줄을 숨겨, 금액이 없는 즉시입주 할인은 내지 않는다. 장기계약 할인(`LONG_TERM`)은 주 수(`conditionWeeks`)·할인율(`discountRate`)·주당 임대료(`weeklyRent`)가 모두 0보다 클 때만 '{주}주 이상 {율}% 할인' 으로 보여 주고 금액은 쓰지 않으며, 두 종류 밖의 할인은 그리지 않아 jibsa 도 같다. 웹은 할인의 `isActive` 를 보지 않아 jibsa 도 꺼진 할인을 거르지 않는다 (`stay_discount_label`, 2026-11-15 번들 `DiscountDetailList`·`pickDiscountTextsForCard`). 할인 문구의 금액은 반올림 없이 만원으로 쓴다 (2,500원 → '0.25만원', `format_manwon(won_to_manwon_exact(…))`). 주당 임대료·관리비, 보증금, 청소비 등 단기임대의 다른 금액도 `won_to_manwon_exact` 로 원 단위까지 낸다.
+- 단기임대 날짜는 `checkOutDate` 까지 이용일로 센다 (11-02~11-08 = 7일). 검색(`guest/items/search`·`markers`)은 7~84일만 받아 `STAY_SEARCH_MIN_DAYS`·`STAY_SEARCH_MAX_DAYS` 로 요청 전에 막고, 서버의 `MIN/MAX_DURATION_VIOLATION` 도 입력 오류로 바꾼다(`_stay_search_call`).
+- 상세(`listing stay-…`)에 날짜를 주면 상세 응답의 일정(`schedules`, 로그인 없이 온다)으로 웹 날짜 고르기 창 규칙을 그대로 따져 `available` 을 붙인다 (`stay_range_available`, 2026-11-15 번들 `resolveScheduleAutofill` 의 `isRangeAvailable`·`isStayRangeFreeOfOccupancy`, 요청이 늘지 않는다). 입주일이 오늘보다 앞이거나, 두 날짜 사이 일수가 최소 계약 주 × 7 − 1 보다 적거나(최소 계약 주가 null 이면 1주), 마지막 날이 입주일 + 83일(`getMaxCheckOut`)보다 뒤면 불가이고, `RESERVED`·`BLOCKED` 일정이 입주일~마지막 날 전날에 걸리거나 마지막 날이 `BLOCKED` 면 불가다. `schedules` 가 없으면 null 이다. 없는 날짜·지난 입주일·순서 오류만 요청 전에 막고(`ZigbangStayPeriod`·`validate_stay_dates`), 계약 주 밖은 웹처럼 `available: false` 다. 실측: stay-4114 의 막힌 기간(11-23~12-06)에 걸치면 false, 12-07~12-27 은 true (2026-11-15~16).
+- 기간 총비용(청소비·직방 이용료·할인)은 웹이 로그인했을 때만 요금 계산(`price-calculation`)을 불러 보여 주어 (2026-11-15 웹: 로그인하지 않으면 날짜를 골라도 주당 금액만) 부르지 않는다. 날짜를 준 검색에는 목록 금액·가격순이 기간 비용이 아니라는 `STAY_WEEKLY_PRICE_NOTE` 를 늘 붙인다.
 - 단기임대 지역 검색은 2026-10 에 세종의 동을 local1·local2 를 어떻게 줘도 400 `REGION_NOT_FOUND` 로 거절했다 (2026-10-11 실측: 반곡동을 세종특별자치시·세종시 × 세종·없음 조합 모두 400, 세종특별자치시 전체·양평읍·역삼동은 200). `_stay_region_search` 가 이를 `RegionNotFoundError` 로 바꾸고, CLI 가 room 과 같은 `_scope`(동 경계, 넓으면 반경)로 지도 칸을 다시 찾는다. 2026-11-10 에는 반곡동·어진동·나성동 모두 local1=세종특별자치시·local2=세종 으로 200 이고, 매물이 없는 읍·면(인제군 서화면·울릉군 울릉읍)도 200·0건이라 대체 경로를 타지 않는다. 다시 막힐 수 있어 대체 경로는 남겨 둔다. 이 경로를 타면 직방이 바뀐 것이라 `[실패]` 안내에 `UPDATE_MAYBE_NEEDED` 를 붙인다. 매일 API 감시는 업데이트 문구 없는 `[실패]` 를 잠깐 실패한 덤 조회로 보아, 붙이지 않으면 대체 경로도 0건일 때 고장 대신 확인 못 함으로 넘긴다.
 - 단기임대 검색창은 `○가` 동(성수동1가·2가)과 구가 있는 시의 구를 따로 준다. 지역 검색 여럿을 합친 순서·수는 웹에 없어 합치지 않고 `divided_region_error` 로 묻는다 (2026-11-15 실측: 성수동2가 검색에 성수동1가 매물도 온다). 리는 지역 결과의 local3 이 그 위 읍·면이라 읍·면 기준으로 찾으므로(양근리 → 양평읍 창대리 매물) `boundary` 를 읍·면 이름으로 내고 `notes` 로 알린다 (`is_ri_code`).
 
@@ -122,7 +123,7 @@
 | 원룸·빌라 요약의 `manage_cost`, 웹 목록 요약의 `itemSummaries[].fee` | 원. `won_to_manwon_exact`로 환산한다 |
 | 주거 상세 `manageCost` | `amount` 는 만원, `fee` 와 `detail` 의 금액(`totalAmount`·`usageFee`·`normalManageCost`·`etcManageCost`·`avgManageCost`)은 원 |
 | 아파트 상세 관리비 | 원. `won_to_manwon_exact`로 환산한다 |
-| 단기임대 응답 금액 | 원. 주당 임대료·관리비와 기간 비용 모두 해당 정규화 경로를 확인한다 |
+| 단기임대 응답 금액 | 원. 주당 임대료·관리비·보증금·청소비 모두 해당 정규화 경로를 확인한다. 지도 핀의 `weeklyPrice` 는 만원 미만을 버린 주당 임대료+관리비라 정렬에만 쓴다 |
 
 새 필드를 추가할 때 소스 이름만으로 단위를 결정하지 않고 action의 client docstring·response 모델을 확인한다.
 
@@ -130,7 +131,7 @@
 
 ## 페이지네이션과 조건 처리
 
-유형마다 요청 경로와 필터 적용 위치가 다르다. 원룸·오피스텔의 서버 필터, 아파트 전용면적의 후처리, 상가 가격의 로컬 필터, 단기임대의 주 단위 비용을 하나의 흐름으로 합치지 않는다. 단지 ID의 `apt-`·`officetel-`, 상세 ID의 `store-`·`stay-`·`coalition-` 접두사를 보존한다.
+유형마다 요청 경로와 필터 적용 위치가 다르다. 원룸·오피스텔의 서버 필터, 아파트 전용면적의 후처리, 상가 가격의 로컬 필터, 단기임대의 주 단위 요금을 하나의 흐름으로 합치지 않는다. 단지 ID의 `apt-`·`officetel-`, 상세 ID의 `store-`·`stay-`·`coalition-` 접두사를 보존한다.
 
 `--limit` 예산은 확인한 원본 수로 세고, 받은 뒤 뺀 매물은 다시 채우지 않는다. 직방에서는 조회 방식마다 이렇게 적용한다.
 
@@ -149,7 +150,7 @@
 `ZigbangStayConditions`(`stay`). `--condition`(기타 조건)은 모델에서 `extra_conditions` 다 (`conditions` 는 묶음 이름이라).
 매물 유형(`property_types`)은 단지 매물 목록에 없어 `search_listings` 인자로 따로 받고, 단기임대 정렬은 `StaySort` 로 받는다.
 
-핀 집계·조회한 원본 수·가격 확인 후보 수·최종 반환 수를 구분한다. 가격·기간·관리비 없음 옵션의 충돌은 CLI에서 거절한다. 라벨 옵션(업종·방 구조·단기임대 방 종류·옵션·할인·층)은 CLI 의 `split_csv` 가 허용값으로 검증하고, service 는 검증된 라벨만 받는다. 라벨 → 서버 코드 사전(`*_BY_LABEL`) 조회의 KeyError 는 입력 오류가 아니라 내부 오류라 따로 잡지 않는다 (2026-10-10 실측: 잘못된 라벨 7종 모두 요청 전에 `INVALID_ARGUMENT`). 기간 비용의 요금 계산과 실제 예약 가능 여부 확인은 별도 요청이다. 실거래 전세·월세는 혼합 응답에서 필터하며, 쪽 수 상한 없이 넘기면 `--limit 1000` 에 요청이 62회까지 나가(2026-10-10 실측: 헬리오시티 전세) 당근처럼 24쪽(최근 1200건)에서 멈추고 `notes` 로 본 범위를 알린다. 매매는 받은 거래를 모두 써서 `--limit` 최대 1200 도 24쪽이면 된다. 갱신 여부는 알려지지 않았으면 `null`이다.
+핀 집계·조회한 원본 수·가격 확인 후보 수·최종 반환 수를 구분한다. 가격·관리비 없음 옵션의 충돌은 CLI에서 거절한다. 라벨 옵션(업종·방 구조·단기임대 방 종류·옵션·할인·층)은 CLI 의 `split_csv` 가 허용값으로 검증하고, service 는 검증된 라벨만 받는다. 라벨 → 서버 코드 사전(`*_BY_LABEL`) 조회의 KeyError 는 입력 오류가 아니라 내부 오류라 따로 잡지 않는다 (2026-10-10 실측: 잘못된 라벨 7종 모두 요청 전에 `INVALID_ARGUMENT`). 실거래 전세·월세는 혼합 응답에서 필터하며, 쪽 수 상한 없이 넘기면 `--limit 1000` 에 요청이 62회까지 나가(2026-10-10 실측: 헬리오시티 전세) 당근처럼 24쪽(최근 1200건)에서 멈추고 `notes` 로 본 범위를 알린다. 매매는 받은 거래를 모두 써서 `--limit` 최대 1200 도 24쪽이면 된다. 갱신 여부는 알려지지 않았으면 `null`이다.
 
 ## API 변경 시 점검
 
@@ -180,5 +181,6 @@
 - **단기임대 지도 경로의 범위.** 웹 지도 목록은 화면 사각형 안 핀인데 jibsa 의 좌표·`--radius` 검색은 반경 원(대체 경로는 동 경계) 안 핀을 웹과 같은 규칙으로 세운다. 범위만 좁힌 부분집합이고 그 안의 순서·매물은 웹 지도와 같다 (2026-11-15 실측: 강남역 좌표 추천순 앞 6건이 서버 추천순과 같음, 번들 `sortStayMarkers`·`compareRecommended`).
 - **단기임대 검색 결과를 한 번에.** 웹 검색 목록은 스크롤로 요약을 받는데 jibsa 는 고른 순서의 앞 `limit` 건을 by-ids 50건씩 한 번에 받는다. 같은 순서를 앞에서 자른 것이다 (2026-11-15, `guest/items/by-ids`).
 - **단기임대 지역 검색 범위.** 동·구 이름은 웹 검색창처럼 직방 검색 결과 그대로라 이웃 동 매물이 섞인다. 다시 거르지 않고 `[범위]` 로 알리며, 학교·대학은 서버가 정하는 범위를 실측하지 못해 `radius_km` 를 내지 않는다 (2026-11-15 실측: 성수동2가 34건 중 17건이 그 동, `guest/items/search`).
+- **단기임대 `available`.** 웹은 날짜 고르기 창이 막는 날짜를 고를 수 없게 할 뿐인데 jibsa 는 같은 규칙의 결과를 `true`/`false` 로 알린다. 매물·가격을 바꾸지 않는 출력 보강이다 (2026-11-15, 번들 `resolveScheduleAutofill` 의 `isRangeAvailable`·`isStayRangeFreeOfOccupancy`·`getMaxCheckOut`). 옮기지 못한 조건은 둘이다: 일정 유연성으로 앞뒤 날짜를 자동으로 맞추는 것(`buildOffsets`)은 `listing` 에 `--flexibility` 가 없어 0일만 보고, 웹의 '오늘' 은 브라우저 날짜인데 jibsa 는 한국 날짜로 본다. 웹 달력이 보지 않는 `maxContractWeeks` 는 쓰지 않는다 (실측 최대는 늘 12주).
 - **같은 이름 역을 검색어 낱말로 가리기.** 웹 검색창은 같은 이름 역 후보를 보여 주고 사용자가 고르는데, jibsa 는 `REGION_AMBIGUOUS` 로 묻고 다시 받은 검색어의 앞 낱말(구·동 이름)이 주소에 든 후보가 하나뿐이면 그 후보로 찾는다. 사용자가 붙인 낱말로 고른 것이라 임의로 고르는 것이 아니다 (2026-11-15 실측: 직방은 '신촌동 신촌역' 에도 두 역을 다 준다, `_qualified_item`).
 - **`distance_km` 는 출력 보강.** 원룸·빌라·오피스텔·상가·단기임대의 `distance_km` 는 검색 중심에서 잰 거리를 덧붙인 것이고 순서에 쓰지 않는다 (단기임대 역 이름 검색의 `--sort distance` 는 서버 `STATION_DISTANCE_ASC` 순서다). 웹 순서·매물을 바꾸지 않는다 (2026-11-15).
