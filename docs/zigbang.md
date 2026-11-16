@@ -9,6 +9,7 @@
 | 명령 | 하는 일 | 무엇을 넣나 | 다음에 쓰는 곳 |
 | --- | --- | --- | --- |
 | `search locations` | 지역·단지 후보 찾기 | 지역·역·학교·단지 이름 | `search listings`, `complex`, `search listings --complex` |
+| `search complexes` | 역 주변 아파트 단지 목록 | 역 이름 | `complex`, `search listings --complex` |
 | `search listings room` | 원룸·빌라·오피스텔 매물 찾기 | 지역 또는 좌표 | `listing` |
 | `search listings apt` | 아파트 매물 찾기 | 동·구·역 또는 좌표 | `complex`, `search listings --complex`, `listing`, `catalog` |
 | `search listings store` | 상가·사무실 매물 찾기 | 지역 또는 좌표 | `listing` |
@@ -25,6 +26,7 @@
 지역에서 집 찾기   search listings room / apt / store / stay → listing
 단지 골라 집 찾기  search locations → complex → search listings --complex → listing
                             └→ real-price (아파트)
+역 주변 아파트     search complexes → complex / search listings --complex → listing
 아파트 묶음 가격   search listings apt / --complex (is_price_range: true) → catalog
 ```
 
@@ -64,7 +66,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 
 **주의사항**
 
-`results[]`는 지역 후보, `complexes[]`는 아파트·오피스텔 후보다. `complexes[].complex_id`를 `complex`·`search listings --complex`에 넘긴다. 이름·별칭이 비슷한 다른 단지가 섞일 수 있으므로 주소·세대수로 고른다. `--limit`은 두 후보 목록에 각각 적용한다.
+`results[]`는 지역 후보, `complexes[]`는 아파트·오피스텔 후보다. `complexes[].complex_id`를 `complex`·`search listings --complex`에 넘긴다. 이름·별칭이 비슷한 다른 단지가 섞일 수 있으므로 주소·세대수로 고른다. `--limit`은 두 후보 목록에 각각 적용한다. 역 주변 아파트 단지 목록은 [`search complexes`](#11-search-complexes--역-주변-아파트-단지)로 본다.
 
 ## 2. `search listings room` — 원룸·빌라·오피스텔 매물 찾기
 
@@ -319,7 +321,7 @@ ID 접두사·형식 위반은 `INVALID_ARGUMENT`, 없는 단지·건물은 `NOT
 
 **주의사항**
 
-단지 이름 대신 ID를 넣는다. 단지 ID 는 `search locations <단지 이름>` 결과의 `complexes[].complex_id`, `search listings apt`·`search listings room` 오피스텔 결과와 아파트 상세의 `complex_id` 에서 얻는다. 아파트 단지와 오피스텔 건물은 번호 체계가 달라 `apt-`·`officetel-` 을 붙인다.
+단지 이름 대신 ID를 넣는다. 단지 ID 는 `search locations <단지 이름>` 결과의 `complexes[].complex_id`, 역 주변 단지 `search complexes <역 이름>` 결과의 `complexes[].complex_id`, `search listings apt`·`search listings room` 오피스텔 결과와 아파트 상세의 `complex_id` 에서 얻는다. 아파트 단지와 오피스텔 건물은 번호 체계가 달라 `apt-`·`officetel-` 을 붙인다.
 
 `pyeongs[].id`는 `search listings --complex`·`real-price`의 `--pyeong`에 넣는 평형 ID이며 평수가 아니다. 후기는 본문을 내보내지 않고, 후기가 있으면 단지 페이지에서 보라고 `notes` 로 알린다. 관리사무소 연락처는 출력하지 않는다.
 
@@ -479,6 +481,33 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 **주의사항**
 
 `is_price_range: true` 인 줄의 가격은 묶음 최저가라, 매물별 가격은 이 명령 한 번으로 본다 (20건마다 요청 1회). 같은 매물을 `listing_ids` 로 하나씩 `listing` 하면 매물마다 요청 2회다. 묶음이 120건을 넘으면 앞 120건만 받고 `[일부]` 로 알린다. 받는 사이 묶음이 줄어 직방이 다음 쪽을 주지 않으면 받은 데까지 내고 `[일부]` 로 알린다 (`has_more: true`, 다시 부르면 지금 묶음을 받는다). 직방이 묶음 매물 수를 알려 주지 않으면(`total: null`) 쪽이 가득 찬 동안 120건까지 받고, 120건에 닿아 멈췄는데 마지막 쪽이 가득 찼을 때만 `has_more: true` 와 `[일부]` 로 알린다. 직방·제휴 밖 출처처럼 상세를 볼 수 없는 매물은 `listing_ids` 와 같이 빼고 `[제외]` 로 알린다 (`total` 에는 센다).
+
+## 11. `search complexes` — 역 주변 아파트 단지
+
+역에서 1.5km 안의 아파트 단지를 직방 웹 아파트 지도의 '<역> 주변단지' 목록과 같은 순서(조회수 순)로 준다. 가까운 순이 아니다.
+
+| 인자·옵션 | 설명·허용값 | 기본값 |
+| --- | --- | --- |
+| `QUERY` | 역 이름 (예: 강남역). 동·구 이름은 받지 않는다 | 필수 |
+| `--limit` | 받을 단지 수 범위: 1~120. | 20 |
+
+**사용 예시**
+
+```bash
+jibsa zigbang search complexes 강남역 --limit 10
+```
+
+**반환값**
+
+`station`(찾은 역 이름), `station_address`(역 주소), `total`(1.5km 안 단지 수, 직방이 주지 않으면 `null`), `returned`, `has_more`, `complexes`를 준다. 단지마다 `complex_id`(`apt-…`), `name`, `address`(지번), `households`(세대수), `distance_m`(역에서의 거리, m), `url`(직방 단지 페이지)이 있다. 단지 좌표는 주지 않는다. 직방 역 주변 단지 정보에 없는 단지는 빼지 않고 `name`·`address`·`households`·`distance_m` 을 `null` 로 두고 `notes` 로 알린다. 역 주변 단지 정보를 받지 못하면(요청 실패) 순서·수는 그대로 내고 모든 단지의 그 필드를 `null` 로 두어 `[실패]` 로 알린다. `total` 이 `null` 이면 `--limit` 만큼 꽉 찼을 때 `has_more: true` 다 (더 있을 수 있음).
+
+**오류와 대응**
+
+검색 결과에 그 이름의 역이 없으면(동·구 등) 같은 이름의 동이 여러 곳이어도 `INVALID_ARGUMENT` 이고 `hint` 가 단지를 찾는 다른 길(`search locations <단지 이름>`, `search listings apt <동>` 결과의 `complex_id`)을 알린다. 같은 이름의 역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 못 찾은 이름은 `REGION_NOT_FOUND`.
+
+**주의사항**
+
+순서는 조회수 순이라 가까운 단지는 `distance_m` 으로 고른다. 이어 받기(`--next`)는 없고, 단지가 `--limit` 보다 많으면 `[일부]` 로 알리니 `--limit` 을 늘린다 (요청은 `--limit` 과 상관없이 역 찾기 1회와 단지 요청 2회). 분양·분양 예정 단지도 직방 웹처럼 함께 나온다. 단지의 매물은 `complex_id` 를 [`search listings --complex`](#7-search-listings---complex--단지건물-안-매물-목록)에, 단지 정보는 [`complex`](#6-complex--단지건물-하나-정보)에 넘긴다. 역 이름으로 아파트 매물을 찾는 [`search listings apt <역 이름>`](#3-search-listings-apt--아파트-매물-찾기)은 역 주변 단지가 아니라 역이 속한 동의 목록이다.
 
 ## 검색 명령 비교
 

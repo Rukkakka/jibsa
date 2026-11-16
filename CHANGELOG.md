@@ -107,6 +107,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `catalog <catalog_id>`: 같은 호를 여러 중개사가 올린 아파트 매물 묶음(직방 웹 묶음 화면)의 매물 전부를 매물마다 가격·관리비·입주일 등 `listing` 상세와 같은 필드로 준다 (20건마다 요청 1회, 앞 120건까지). `search listings apt`·`search listings --complex <apt-…>` 매물에 그 묶음 ID `catalog_id` 가 붙는다. `is_price_range: true` 인 줄의 매물별 가격을 매물마다 `listing` 하지 않고(매물마다 요청 2회) 한 번에 본다. `--fields` 로 매물마다 낼 필드를 고른다. `total` 은 묶음의 매물 수이고 직방이 알려 주지 않으면 `null` 이다. 묶음에 매물이 없으면(첫 쪽이 404 이거나 빈 목록) `LISTING_UNAVAILABLE`(`reason: EMPTY_CATALOG`, 묶음 ID 는 `listing_id` 가 아니라 `catalog_id` 에). 묶음 ID 형식이 아니면 `INVALID_ARGUMENT` 이고 `hint` 가 결과의 `catalog_id` 를 그대로 주라고 알린다 (#262)
 - 직방 `search listings apt`·`search listings --complex <apt-…>` 매물에 `listing_ids`: 같은 호를 올린 매물 중 `listing` 으로 상세를 볼 수 있는 ID 전부 (`id` 가 맨 앞) (#261)
 - 직방 `real-price` 거래에 `pyeong_names`: 같은 전용면적의 평형이 여럿이라 직방이 평형 후보를 모두 준 거래의 후보 이름 전부 (후보가 하나면 키가 없고, 직방이 후보를 주지 않은 거래는 `null`, 평 이름을 주지 않은 후보 자리는 `null`) (#261)
+- 직방 `search complexes <역 이름>`: 직방 웹 아파트 지도의 '역 주변단지' 처럼 역 1.5km 안 아파트 단지를 조회수 순으로 주고(가까운 순이 아니다), 단지마다 역에서의 거리 `distance_m`·세대수 `households`·지번 주소를 붙인다. `--limit` 기본 20·최대 120, 이어 받기는 없다. 역이 아닌 이름은 `INVALID_ARGUMENT` 다 (#276)
 - 직방 단기임대 `listing stay-… --check-in … --check-out …` 에 그 기간을 예약할 수 있는지 `available`: 직방 웹 날짜 고르기 창이 막는 규칙(오늘 이후, 최소 계약 주 이상·84일 이하, 예약·막힌 날 없음) 그대로다. 직방이 일정을 주지 않으면 `null` 이다 (#275)
 - 다방 `region-ranking -t 빌라`: 매물수·거래량·선호도의 동 순위를 다방 동네정보 '매물정보' 탭(주택/빌라 포함, 고른 유형 합산)으로 받는다. 결과에 `building_type` 이 붙는다. 모든 `region-ranking` 결과에 어느 탭 순위인지 `tab`(`시세정보`·`매물정보`·`학군` 등)이 붙는다 (#247)
 

@@ -43,6 +43,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangRoomConditions,
     summary_to_listing,
 )
+from jibsa.providers.zigbang.service.complex import search_station_complexes
 from jibsa.providers.zigbang.service.detail import get_any_listing
 from jibsa.providers.zigbang.service.listing import (
     detail_to_listing,
@@ -854,3 +855,40 @@ def test_same_name_station_asks_unless_query_picks_one(query: str, expected: str
         else:
             region, _, _ = resolve_region_scope(client, query)
             assert region.address == expected
+
+
+# --- 역 주변 단지 -------------------------------------------------------------
+
+def test_station_complexes_keep_view_count_order_and_add_distance() -> None:
+    # 순서·수는 웹 주변단지 목록(/apt/danjis/ids, 조회수 순) 그대로다. 거리는 역 주변 단지 정보(거리순)에서 붙이고 다시 세우지
+    # 않는다. 주변 단지 정보에 없는 단지는 빼지 않고 이름·거리를 모름으로 둔다
+    requested: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(request.url)
+        if request.url.path == '/v2/search':
+            return httpx.Response(200, json=_station_items('가상동'))
+        if request.url.path == '/apt/subways/1':
+            return httpx.Response(200, json={'id': 1, 'name': '가상역', 'aptList': [
+                {'id': 1001, 'name': '[가상] 가까운단지', '구주소': '서울시 가상구 가상동 000-1', 'household': '1,000세대', 'distanceNum': 100},
+                {'id': 1003, 'name': '[가상] 먼단지', '구주소': '서울시 가상구 가상동 000-3', 'household': '세대수 모름', 'distanceNum': 300},
+            ]})
+        assert request.url.path == '/apt/danjis/ids'
+        return httpx.Response(200, json={'count': 5, 'ids': [1003, 1001, 1009]})
+
+    with make_client(handler) as client:
+        result = search_station_complexes(client, '가상역', limit=3)
+
+    # 순서·수를 주는 본 조회를 덤 조회(/apt/subways)보다 먼저 부른다
+    assert [url.path for url in requested[1:]] == ['/apt/danjis/ids', '/apt/subways/1']
+    assert dict(requested[1].params) == {
+        'type': 'subway', 'id': '1', 'order': 'viewCount', 'limit': '3',
+        'serviceType[0]': 'apt', 'serviceType[1]': 'offer', 'serviceType[2]': 'preOffer',
+    }
+    assert [(c.complex_id, c.name, c.households, c.distance_m) for c in result.complexes] == [
+        ('apt-1003', '[가상] 먼단지', None, 300),
+        ('apt-1001', '[가상] 가까운단지', 1000, 100),
+        ('apt-1009', None, None, None),
+    ]
+    assert result.complexes[1].address == '서울특별시 가상구 가상동 000-1'
+    assert (result.total, result.returned, result.has_more) == (5, 3, True)

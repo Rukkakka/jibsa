@@ -28,8 +28,10 @@ from jibsa.providers.zigbang.api.request.common import (
     ZigbangItemsListV1RequestPayloadModel,
 )
 from jibsa.providers.zigbang.api.request.complex import (
+    ZigbangDanjisIdsRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
+    ZigbangSubwaysRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.listing import (
     ZigbangBlsSchoolZonesV1RequestParameterModel,
@@ -73,8 +75,10 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemsListV1ResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex import (
+    ZigbangDanjisIdsResponseModel,
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
+    ZigbangSubwaysResponseModel,
 )
 from jibsa.providers.zigbang.api.response.listing import (
     ZigbangBlsSchoolZonesV1ResponseModel,
@@ -192,6 +196,8 @@ class ZigbangClient(BaseHTTPClient):
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
     item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}'
+    danjis_ids_endpoint: ClassVar[str] = '/apt/danjis/ids'
+    subways_endpoint: ClassVar[str] = '/apt/subways/{subway_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
     bls_school_zones_v1_endpoint: ClassVar[str] = '/house/property/v1/bls/{pnu}/school_zones'
     nearby_danjis_endpoint: ClassVar[str] = '/apt/nearby-danjis'
@@ -785,6 +791,81 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangNearbyDanjisResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_subways(
+        self,
+        parameter: ZigbangSubwaysRequestParameterModel
+    ) -> ZigbangSubwaysResponseModel:
+        """Fetch a station and the apartment complexes around it via `GET /apt/subways/{subwayId}`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도에서 역을 고르면(`/home/apt/subways/{id}`)
+        부른다 (2026-11-15 캡처). 역 ID 는 지역 검색(`/v2/search`) 결과의 역 id 와 같다. `aptList` 는 역에서 1.5km 안
+        단지를 가까운 순으로 주고 단지마다 역에서의 거리(m)가 있다.
+
+        Args:
+            parameter: `subway_id` (경로).
+
+        Returns:
+            ZigbangSubwaysResponseModel: 역 이름과 주변 단지 (이름·지번 주소·세대수 문구·거리).
+        """
+        response = self._client.get(
+            url=self.subways_endpoint.format(subway_id=parameter.subway_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangSubwaysResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_subways(
+        self,
+        parameter: ZigbangSubwaysRequestParameterModel
+    ) -> ZigbangSubwaysResponseModel:
+        """Async variant of `run_request_subways`."""
+        response = await self._async_client.get(
+            url=self.subways_endpoint.format(subway_id=parameter.subway_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangSubwaysResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_ids(
+        self,
+        parameter: ZigbangDanjisIdsRequestParameterModel
+    ) -> ZigbangDanjisIdsResponseModel:
+        """List apartment complex IDs around a station via `GET /apt/danjis/ids`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도의 '<역> 주변단지' 패널(조회수 순 5곳)과
+        더보기 화면(`limit` 없이 모두)이 부른다 (2026-11-15 캡처·번들 `getAPTTypedListIds`). 쪽 넘김은 없다.
+
+        Args:
+            parameter: `type`(subway)·`id`(역 ID)·`order`(viewCount)·`limit`·`serviceType` 배열.
+
+        Returns:
+            ZigbangDanjisIdsResponseModel: 주변 단지 전체 수(`count`)와 요청한 순서의 단지 ID.
+        """
+        response = self._client.get(
+            url=self.danjis_ids_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisIdsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_ids(
+        self,
+        parameter: ZigbangDanjisIdsRequestParameterModel
+    ) -> ZigbangDanjisIdsResponseModel:
+        """Async variant of `run_request_danjis_ids`."""
+        response = await self._async_client.get(
+            url=self.danjis_ids_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisIdsResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis_rt_prices(

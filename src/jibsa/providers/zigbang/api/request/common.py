@@ -34,7 +34,9 @@ ZigbangAptTranType = Literal['trade', 'charter', 'rental']
 ZigbangAptItemSource = Literal['zigbang', 'coalition']
 
 # 직방은 배열 쿼리를 `salesTypes[0]=전세&salesTypes[1]=월세` 처럼 인덱스를 붙여 받는다.
-INDEXED_ARRAY_KEYS: tuple[str, ...] = ('salesTypes', 'roomType', 'floor', 'options', 'tranTypeIn', 'danjiRoomTypeIds')
+INDEXED_ARRAY_KEYS: tuple[str, ...] = (
+    'salesTypes', 'roomType', 'floor', 'options', 'tranTypeIn', 'danjiRoomTypeIds', 'serviceType',
+)
 
 
 def _index_arrays(data: dict[str, Any]) -> dict[str, Any]:

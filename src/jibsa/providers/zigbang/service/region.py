@@ -246,6 +246,25 @@ def resolve_region_scope(
     )
 
 
+def resolve_station(client: ZigbangClient, query: str) -> ZigbangRegion | None:
+    """역 이름을 역 하나로 바꾼다 (역만 받는 명령: search complexes). 검색어(마지막 낱말)와 이름이 같은 역이 없으면 None.
+
+    다른 검색처럼 지역(address) 결과를 먼저 고르면, 동 이름('신사동')에 같은 이름 동의 `REGION_AMBIGUOUS` 를 내고 그 힌트
+    ('은평구 신사동')를 따르면 '역이 아닙니다' 가 됐다 (2026-11-16 리뷰). 역 결과만 보고, 같은 이름 역이 여럿이면 다른
+    검색과 같이 멈춘다 ('창천동 신촌역' 은 검색어 앞 낱말로 가린다).
+
+    Raises:
+        RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
+        RegionAmbiguousError: 같은 이름의 역이 여러 곳일 때 (`settled_item`).
+    """
+    items = search_regions(client, query)
+    if not items:
+        raise RegionNotFoundError(query, hint=legal_dong_hint(query))
+    name = _dong_name(query)
+    station = next((item for item in items if item.type == 'subway' and item.name == name), None)
+    return region_from_search_item(settled_item(query, items, station)) if station else None
+
+
 def ga_dong_siblings(
     query: str,
     items: list[ZigbangSearchItemModel],

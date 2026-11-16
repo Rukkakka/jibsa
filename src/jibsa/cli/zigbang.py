@@ -76,6 +76,7 @@ from jibsa.providers.zigbang.service.complex import (
     get_complex,
     list_complex_listings,
     search_regions_and_complexes,
+    search_station_complexes,
 )
 from jibsa.providers.zigbang.service.detail import get_any_listing
 from jibsa.providers.zigbang.service.listing import (
@@ -221,7 +222,8 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 
 app = typer.Typer(
     help=(
-        '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, complex, search listings --complex, real-price), '
+        '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역 주변 단지 search complexes, complex, '
+        'search listings --complex, real-price), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
@@ -421,7 +423,8 @@ def _room_conditions(
 
 search_app = typer.Typer(
     help=(
-        '직방 장소 후보(locations)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), 상가·사무실(store), 단기임대 서비스(stay). '
+        '직방 장소 후보(locations), 역 주변 아파트 단지(complexes)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), '
+        '상가·사무실(store), 단기임대 서비스(stay). '
         '상세는 결과의 id 로 jibsa zigbang listing <id>'
     ),
     no_args_is_help=True,
@@ -476,6 +479,24 @@ def locations_command(
             },
             pretty,
         )
+
+
+@search_app.command('complexes')
+def complexes_command(
+    query: Annotated[str, typer.Argument(help='역 이름 (예: 강남역). 동·구 이름은 받지 않는다')],
+    limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 단지 수 (최대 {MAX_LIST_LIMIT}곳)')] = 20,
+    pretty: PrettyOption = None,
+) -> None:
+    """역 주변(1.5km) 아파트 단지를 직방 웹 아파트 지도의 '<역> 주변단지' 순서(조회수 순)로 준다.
+
+    가까운 순이 아니다. 단지마다 역에서의 거리(distance_m)가 있으니 가까운 단지는 그 값으로 고른다.
+    단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는 jibsa zigbang complex <complex_id>.
+
+    예: jibsa zigbang search complexes 강남역 --limit 10
+    """
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = search_station_complexes(client, query, limit=limit)
+        emit(result, pretty, notes=result.notes)
 
 
 @listings_app.command('room')
