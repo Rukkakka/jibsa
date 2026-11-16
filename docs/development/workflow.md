@@ -12,7 +12,9 @@
 말하면 된다. 이슈를 댈 수 없는 커밋은 아직 작업 범위가 정해지지 않았다는 신호다.
 
 1. `.github/ISSUE_TEMPLATE/` 의 템플릿으로 **이슈를 연다.** 빈 이슈는 쓰지 않는다.
-2. 브랜치에 있지 않다면 `main` 에서 **브랜치를 딴다.**
+2. 브랜치에 있지 않다면 `main` 에서 **브랜치를 따고, 커밋하기 전에 빈 채로 push 한다**
+   (`git push -u origin <브랜치>`). 브랜치를 처음 push 할 때 함께 올라간 커밋은 이슈 타임라인에 붙지
+   않는다. 브랜치를 먼저 올려 둬야 이슈에서 그 이슈를 단 커밋이 보인다.
 3. 그 브랜치에 이슈 번호를 달아 **커밋한다** (`Refs #12`).
 4. **PR 을 연다.** `.github/PULL_REQUEST_TEMPLATE.md` 가 자동으로 채워진다. 해결한 이슈는 커밋이
    아니라 PR 본문에서 닫는다 (`Closes #12`).
@@ -27,6 +29,7 @@
 ```
 git switch main && git pull
 git switch -c feature/naver-region-search
+git push -u origin feature/naver-region-search   # 커밋 전에 빈 채로 올린다 (이슈에 커밋이 보이게)
 ```
 
 이름은 `<type>/<짧은-slug>` 로 짓는다. `<type>` 은 `fix`, `feature`, `docs`, `chore`, `task` 중 작업의
