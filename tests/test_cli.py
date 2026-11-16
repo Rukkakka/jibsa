@@ -361,15 +361,16 @@ def test_sources_do_not_import_each_other() -> None:
 
 def test_workflow_concurrency_limits_match() -> None:
     # 서브에이전트 워크플로(.claude/workflows/)는 다른 파일을 불러올 수 없어 같은 소스 동시 실행 상한을 파일마다 둔다
-    # (docs/development/agents.md "동시에 띄울 때"). 한 파일만 고치면 그 워크플로만 네이버를 여럿 동시에 불러 요청이 몰린다
+    # (docs/development/agents.md "동시에 띄울 때"). 한 파일만 고치면 그 워크플로만 같은 소스를 더 많이 동시에 부른다.
+    # 소스별 예외(예전의 네이버 하나씩)는 2026-11-16 에 없앴다. 다시 두려면 세 파일과 그 절, 이 테스트를 함께 고친다
     root = Path(__file__).resolve().parents[1] / '.claude' / 'workflows'
-    limits: dict[str, tuple[str, str]] = {}
+    limits: dict[str, str] = {}
     for name in ('review-panel', 'web-parity-panel', 'implement-bundles'):
         text = (root / f'{name}.js').read_text(encoding='utf-8')
         same = re.search(r'^const SAME_SOURCE_MAX = (\d+)', text, re.MULTILINE)
-        naver = re.search(r'^const SAME_SOURCE_MAX_BY = \{[^}]*\bnaver: (\d+)', text, re.MULTILINE)
-        assert same and naver, name
-        limits[name] = (same.group(1), naver.group(1))
+        assert same, name
+        assert 'SAME_SOURCE_MAX_BY' not in text, name
+        limits[name] = same.group(1)
     assert len(set(limits.values())) == 1, limits
 
 

@@ -1,22 +1,21 @@
 export const meta = {
   name: 'implement-bundles',
-  description: '사용자가 허락한 구현 계획의 묶음을 jibsa-coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지·네이버는 하나씩), 모두 끝나면 jibsa-docs 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
+  description: '사용자가 허락한 구현 계획의 묶음을 jibsa-coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 jibsa-docs 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
   whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), model?: sonnet|opus, effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, model?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
-    { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지(네이버는 하나씩), 소스끼리는 동시에' },
+    { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지, 소스끼리는 동시에' },
     { title: '문서', detail: '모든 묶음이 끝난 뒤 jibsa-docs 하나' },
   ],
 }
 
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
-// 같은 소스의 묶음을 동시에 돌리는 수 (docs/development/agents.md "동시에 띄울 때"). 네이버는 하나씩. 동시 실행 상한
-// (SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와 그 절을 같이
-// 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다. 세 파일의 같은 소스 상한·네이버 상한이 다르면
+// 같은 소스의 묶음을 동시에 돌리는 수 (docs/development/agents.md "동시에 띄울 때"). 동시 실행 상한(SAME_SOURCE_MAX)은
+// 세 워크플로(review-panel·web-parity-panel·implement-bundles)와 그 절을 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올
+// 수 없어 파일마다 둔다. 세 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면
 // tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
+// 네이버도 같은 상한이다. 예전에는 하나씩 돌렸는데, 2026-11-16 에 조사원 셋을 동시에 돌려 429 가 없어 풀었다 (그 절에 실측).
 const SAME_SOURCE_MAX = 3
-const SAME_SOURCE_MAX_BY = { naver: 1 }
-const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
 const MODELS = ['sonnet', 'opus']  // Haiku 는 쓰지 않는다 (CLAUDE.md)
 const EFFORTS = ['high', 'xhigh']
 
@@ -153,7 +152,7 @@ const runLane = async (lane, phaseTitle) => {
 }
 
 // 소스 하나: first 묶음을 차례로 먼저 돌리고(실패하면 나머지는 그 결과에 기대므로 건너뛴다), 나머지는 서로 기대지 않아
-// maxOf(source) 개씩 동시에 돌린다. 하나가 실패해도 나머지는 이어 간다.
+// SAME_SOURCE_MAX 개씩 동시에 돌린다. 하나가 실패해도 나머지는 이어 간다.
 const runSource = async source => {
   const mine = bundles.filter(b => b.source === source)
   const firsts = mine.filter(b => b.first)
@@ -163,8 +162,8 @@ const runSource = async source => {
     return false
   }
   let ok = true
-  for (let i = 0; i < rest.length; i += maxOf(source)) {
-    const rs = await parallel(rest.slice(i, i + maxOf(source)).map(b => () => runOne(b, '소스별 구현')))
+  for (let i = 0; i < rest.length; i += SAME_SOURCE_MAX) {
+    const rs = await parallel(rest.slice(i, i + SAME_SOURCE_MAX).map(b => () => runOne(b, '소스별 구현')))
     ok = rs.every(Boolean) && ok
   }
   return ok
