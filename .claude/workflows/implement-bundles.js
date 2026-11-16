@@ -11,8 +11,8 @@ export const meta = {
 
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 // 같은 소스의 묶음을 동시에 돌리는 수 (docs/development/agents.md "동시에 띄울 때"). 동시 실행 상한(SAME_SOURCE_MAX)은
-// 세 워크플로(review-panel·web-parity-panel·implement-bundles)와 그 절을 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올
-// 수 없어 파일마다 둔다. 세 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면
+// 두 워크플로(web-parity-panel·implement-bundles)와 그 절을 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올
+// 수 없어 파일마다 둔다. 두 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면
 // tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
 // 네이버도 같은 상한이다. 예전에는 하나씩 돌렸는데, 2026-11-16 에 조사원 셋을 동시에 돌려 429 가 없어 풀었다 (그 절에 실측).
 const SAME_SOURCE_MAX = 3
