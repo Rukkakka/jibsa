@@ -328,11 +328,12 @@ def city_gu_items(
 
     직방 지역 검색은 구가 있는 시를 시 대신 그 구들로 준다 (2026-10-11 실측: 성남시 → 분당구·수정구·중원구, 수원시 4곳,
     창원시 5곳, 고양·용인·부천시 3곳, 포항시 2곳). 시 코드(성남시 41130)의 아파트 목록은 0건이라 첫 구만 찾으면 나머지
-    구 매물이 조용히 빠진다 (분당구 255건만 찾고 수정구 558건·중원구 116건이 빠짐). 아파트는 구마다 지역 목록을 받아 합친다.
+    구 매물이 조용히 빠진다 (분당구 255건만 찾고 수정구 558건·중원구 116건이 빠짐). 그래서 아파트·단기임대는 첫 구로 찾지 않고
+    어느 구인지 묻는다 (`divided_region_error`).
 
     '시' 를 떼고 쓴 이름('성남')도 같은 시로 본다. 직방은 '성남' 에도 그 시의 구들을 맨 앞에 주는데, '시' 가 붙은 이름만
-    합치면 첫 구만 찾고 다른 구가 빠졌다는 안내도 없었다 (2026-10-28 실측: 성남·안양·고양 모두 구들이 맨 앞이고 같은 이름의
-    동은 그 뒤, '성남' 아파트는 분당구 283건만 찾다가 '성남시' 처럼 세 구 1058건). 검색 중심이 '<이름>시 ○구' 가 아니면
+    보면 첫 구만 찾고 다른 구가 빠졌다는 안내도 없었다 (2026-10-28 실측: 성남·안양·고양 모두 구들이 맨 앞이고 같은 이름의
+    동은 그 뒤, '성남' 아파트는 분당구 283건만 찾았다). 검색 중심이 '<이름>시 ○구' 가 아니면
     (동 이름 등 다른 뜻) 그대로 [] 다.
     """
     city = _dong_name(query)
@@ -353,6 +354,24 @@ def city_gu_regions(query: str, items: list[ZigbangSearchItemModel]) -> list[Zig
     """구가 있는 시(성남시)면 그 시의 구들 (검색 중심 구가 먼저). 아니면 []. 검색 중심은 `resolve_region_scope` 와 같이 고른다."""
     best = best_region_item(query, items)
     return [region_from_search_item(item) for item in city_gu_items(query, items, best)] if best else []
+
+
+def merged_dong_region(
+    region: ZigbangRegion,
+    parts: list[ZigbangRegion],
+    center: tuple[float, float] | None = None,
+) -> ZigbangRegion:
+    """'○가' 동들(성수동1가·2가)을 함께 찾은 결과의 검색 중심. room·store 가 같은 모양으로 낸다.
+
+    이름·주소의 동을 '성수동1가·성수동2가' 로 바꾸고, 중심은 `center`(없으면 동 중심들의 가운데)로 옮기며,
+    한 동의 법정동코드는 뗀다. 아파트·단기임대는 동들을 합치지 않아(`divided_region_error`) 쓰지 않는다.
+    """
+    names = '·'.join(part.name for part in parts)
+    lat, lng = center or (sum(part.lat for part in parts) / len(parts), sum(part.lng for part in parts) / len(parts))
+    parent = (region.address or '').rsplit(' ', 1)[0]
+    return region.model_copy(update={
+        'name': names, 'address': f'{parent} {names}'.strip(), 'lat': lat, 'lng': lng, 'legal_division_code': None,
+    })
 
 
 def divided_region_error(query: str, parts: list[ZigbangRegion]) -> RegionAmbiguousError:

@@ -20,7 +20,7 @@ from jibsa.core.http import (
 )
 from jibsa.providers.zigbang.api.request.apt import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
-    ZigbangNearbyDanjisRequestParameterModel,
+    ZigbangLocalsPolygonRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.common import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
@@ -67,7 +67,7 @@ from jibsa.providers.zigbang.api.request.store import (
 )
 from jibsa.providers.zigbang.api.response.apt import (
     ZigbangLocalsItemCatalogsResponseModel,
-    ZigbangNearbyDanjisResponseModel,
+    ZigbangLocalsPolygonResponseModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangDanjisItemCatalogsResponseModel,
@@ -152,7 +152,7 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·상세·같은 호 묶음, 상가,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음, 상가,
     단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는
     헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
@@ -193,6 +193,7 @@ class ZigbangClient(BaseHTTPClient):
     items_villas_v1_endpoint: ClassVar[str] = '/house/property/v1/items/villas'
     items_list_v1_endpoint: ClassVar[str] = '/house/property/v1/items/list'
     locals_item_catalogs_endpoint: ClassVar[str] = '/apt/locals/{local_code}/item-catalogs'
+    locals_polygon_endpoint: ClassVar[str] = '/apt/locals/polygon'
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
     item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}'
@@ -200,7 +201,6 @@ class ZigbangClient(BaseHTTPClient):
     subways_endpoint: ClassVar[str] = '/apt/subways/{subway_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
     bls_school_zones_v1_endpoint: ClassVar[str] = '/house/property/v1/bls/{pnu}/school_zones'
-    nearby_danjis_endpoint: ClassVar[str] = '/apt/nearby-danjis'
     danjis_item_catalogs_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/item-catalogs'
     danjis_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/rt-prices'
     danjis_room_types_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/room-types/{room_type_id}/rt-prices'
@@ -640,6 +640,45 @@ class ZigbangClient(BaseHTTPClient):
         return ZigbangLocalsItemCatalogsResponseModel.model_validate(response.json())
 
     @zigbang_retry
+    def run_request_locals_polygon(
+        self,
+        parameter: ZigbangLocalsPolygonRequestParameterModel
+    ) -> ZigbangLocalsPolygonResponseModel:
+        """Find the dong containing a geohash cell via `GET /apt/locals/polygon`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도가 지도 가운데의 동을 정해
+        '○○동 주변 매물보기' 를 띄우는 엔드포인트다 (2026-11-15 캡처). 웹은 geohash 를 암호화해 보내지만 평문도 받는다.
+        geohash 칸이 크면 옆 동을 주므로 정밀도 10 으로 보낸다.
+
+        Args:
+            parameter: `geohash`, `level` (local3), `polygon` (false 면 경계 없이).
+
+        Returns:
+            ZigbangLocalsPolygonResponseModel: 동의 직방 지역 코드(8자리)와 이름.
+        """
+        response = self._client.get(
+            url=self.locals_polygon_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsPolygonResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_polygon(
+        self,
+        parameter: ZigbangLocalsPolygonRequestParameterModel
+    ) -> ZigbangLocalsPolygonResponseModel:
+        """Async variant of `run_request_locals_polygon`."""
+        response = await self._async_client.get(
+            url=self.locals_polygon_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsPolygonResponseModel.model_validate(response.json())
+
+    @zigbang_retry
     def run_request_item_catalogs_items(
         self,
         parameter: ZigbangItemCatalogsItemsRequestParameterModel
@@ -753,44 +792,6 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangDanjisResponseModel.model_validate(response.json())
-
-    @zigbang_retry
-    def run_request_nearby_danjis(
-        self,
-        parameter: ZigbangNearbyDanjisRequestParameterModel
-    ) -> ZigbangNearbyDanjisResponseModel:
-        """List apartment complexes around a point via `GET /apt/nearby-danjis`.
-
-        Same retry behaviour as `run_request_items_onerooms_v1`. 단지마다 거리(m)가 붙고 가까운 순이다.
-        매물 수는 주지 않는다.
-
-        Args:
-            parameter: 중심 `lat`/`lng`, 반경 `radius` (km), `limit`.
-
-        Returns:
-            ZigbangNearbyDanjisResponseModel: 반경 안 단지 (가까운 순).
-        """
-        response = self._client.get(
-            url=self.nearby_danjis_endpoint,
-            params=parameter.model_dump(by_alias=True, exclude_none=True),
-            headers=APT_HEADERS
-        )
-        raise_for_status(response=response)
-        return ZigbangNearbyDanjisResponseModel.model_validate(response.json())
-
-    @zigbang_retry
-    async def arun_request_nearby_danjis(
-        self,
-        parameter: ZigbangNearbyDanjisRequestParameterModel
-    ) -> ZigbangNearbyDanjisResponseModel:
-        """Async variant of `run_request_nearby_danjis`."""
-        response = await self._async_client.get(
-            url=self.nearby_danjis_endpoint,
-            params=parameter.model_dump(by_alias=True, exclude_none=True),
-            headers=APT_HEADERS
-        )
-        raise_for_status(response=response)
-        return ZigbangNearbyDanjisResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_subways(

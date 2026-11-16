@@ -457,32 +457,6 @@ def test_coalition_listing_gone_is_unavailable() -> None:
         get_any_listing(client, 'coalition-3000002')
 
 
-# --- 아파트 반경 검색 ---------------------------------------------------------------
-
-def apt_near_handler(requested: list[str]):
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested.append(f'{request.url.path}?{request.url.query.decode()}')
-        if request.url.path == '/apt/nearby-danjis':
-            return httpx.Response(200, json=load('nearby_danjis'))
-        if request.url.path == '/apt/danjis/9001/item-catalogs':
-            return httpx.Response(200, json=load('danjis_item_catalogs'))
-        # 매물이 없는 단지
-        return httpx.Response(200, json={'totalCount': 0, 'itemCountPerTranType': {}, 'danjiRoomTypes': [], 'list': []})
-    return handler
-
-
-def test_search_apt_listings_near_stops_at_complex_cap() -> None:
-    from jibsa.providers.zigbang.service.apt import search_apt_listings_near
-
-    requested: list[str] = []
-    region = ZigbangRegion(name='가상역', lat=37.5, lng=127.03)
-    with make_client(apt_near_handler(requested)) as client:
-        result = search_apt_listings_near(client, region, limit=20, max_complexes=2)
-
-    assert result.complexes_scanned == 2 and len(requested) == 3
-    assert any('3곳 중 가까운 2곳만' in note for note in result.notes)
-
-
 # --- search room 동 경계 ----------------------------------------------------------------
 
 # 1000001·1000003·1000004·1000005 (127.012~127.015) 만 들어가고 1000002 (127.031) 는 밖인 가상 동 경계
@@ -697,31 +671,8 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
     assert result.returned == 0
     assert any('다시 채우지 않음' in note for note in result.notes)
     # 남은 매물은 --limit 을 늘리는 대신 next 로 이어 받는다
-    assert result.has_more and result.next_position == {
-        'codes': ['11680101'], 'offsets': [limit], 'done': [False], 'totals': [200],
-    }
+    assert result.has_more and result.next_position == {'code': '11680101', 'offset': limit}
     assert any(NEXT_HINT in note for note in result.notes)
-
-
-def test_apt_radius_carries_unused_budget_to_next_complex() -> None:
-    from jibsa.providers.zigbang.service.apt import search_apt_listings_near
-
-    calls: list[int] = []
-    fixture = load('danjis_item_catalogs')
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == '/apt/nearby-danjis':
-            return httpx.Response(200, json=load('nearby_danjis'))
-        size = int(request.url.params['limit'])
-        calls.append(size)
-        count = 3 if len(calls) == 1 else size
-        return httpx.Response(200, json=dict(fixture, totalCount=count, list=[fixture['list'][0]] * count))
-
-    with make_client(handler) as client:
-        result = search_apt_listings_near(client, ZigbangRegion(name='가상역', lat=37.5, lng=127.03))
-    assert calls == [20, 17]
-    assert result.complexes_scanned == 2
-    assert result.returned == 1  # 중복도 원본 조회 예산에 포함한다.
 
 
 # --- 없는 단지 실거래 · ○가 동 ------------------------------------------------------------
@@ -770,33 +721,20 @@ def test_ga_dong_scope(query: str, items: list[tuple[str, str]], split: list[str
     assert (split_note is None) if note is None else (note in split_note)
 
 
-@pytest.mark.parametrize('counts,expected', [
-    # 두 동 모두 넉넉하면 예산 20건을 10건씩 나눈다
-    ({'11200114': 100, '11200115': 100}, [('11200114', 10), ('11200115', 10)]),
-    # 한 동이 일찍 끝나면 남은 예산을 다른 동이 이어 쓴다
-    ({'11200114': 4, '11200115': 100}, [('11200114', 10), ('11200115', 10), ('11200115', 6)]),
+@pytest.mark.parametrize('query,items,candidates', [
+    # '○가' 로만 나뉜 동과 구가 있는 시는 직방 웹이 지역 목록을 따로 보여 줘, 합치지 않고 어느 곳인지 묻는다
+    ('성수동', [('성수동1가', '성동구'), ('성수동2가', '성동구')], ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가']),
 ])
-def test_apt_region_shares_budget_across_ga_dongs(counts: dict[str, int], expected: list[tuple[str, int]]) -> None:
-    # '○가' 로 나뉜 동(성수동1가·2가)을 함께 찾을 때 한 동이 예산을 다 쓰지 않도록 번갈아 받는다
-    fixture = load('locals_item_catalogs')
-    calls: list[tuple[str, int]] = []
+def test_apt_region_divided_into_several_lists_is_ambiguous(query: str, items: list[tuple[str, str]], candidates: list[str]) -> None:
+    from jibsa.providers.zigbang.service.apt import resolve_apt_region
 
     def handler(request: httpx.Request) -> httpx.Response:
-        code = request.url.path.split('/')[-2]
-        offset, limit = int(request.url.params['offset']), int(request.url.params['limit'])
-        calls.append((code, limit))
-        size = max(0, min(limit, counts[code] - offset))
-        return httpx.Response(200, json=dict(fixture, count=counts[code], list=[fixture['list'][0]] * size))
+        return httpx.Response(200, json=_search_items(*items))
 
-    first, second = (
-        ZigbangRegion(name=name, lat=37.54, lng=127.05, legal_division_code=f'{code}00')
-        for name, code in (('성수동1가', '11200114'), ('성수동2가', '11200115'))
-    )
-    with make_client(handler) as client:
-        result = search_apt_listings(client, first, limit=20, extra_regions=[second])
-    assert calls == expected
-    assert result.local_code == '11200114,11200115'
-    assert result.region.name == '성수동1가·성수동2가'
+    with make_client(handler) as client, pytest.raises(JibsaError) as caught:
+        resolve_apt_region(client, query)
+    assert caught.value.code == 'REGION_AMBIGUOUS'
+    assert caught.value.details['candidates'] == candidates
 
 
 def test_store_dong_codes_never_send_a_code_the_server_does_not_know() -> None:

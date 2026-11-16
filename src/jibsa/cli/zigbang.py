@@ -50,14 +50,11 @@ from jibsa.providers.zigbang.api.request.stay import (
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
 from jibsa.providers.zigbang.service.apt import (
-    APT_NEAR_MAX_RADIUS_KM,
     APT_TRADE_TYPES,
     ZigbangAptConditions,
-    apt_resume_changed_error,
-    merged_dong_region,
+    apt_dong_at,
     resolve_apt_region,
     search_apt_listings,
-    search_apt_listings_near,
 )
 from jibsa.providers.zigbang.service.common import (
     COMPLEX_ID_PATTERN,
@@ -100,6 +97,7 @@ from jibsa.providers.zigbang.service.region import (
     divided_region_error,
     dong_boundary,
     merge_dong_boundaries,
+    merged_dong_region,
     resolve_region_scope,
     resolve_region_with_notes,
     search_regions,
@@ -208,6 +206,11 @@ WITHOUT_RANDOM_REMOVED: ChangedUsage = ChangedUsage(
 CHANGED_USAGE: dict[str, ChangedUsage] = {
     'jibsa zigbang search listings room': WITHOUT_RANDOM_REMOVED,
     'jibsa zigbang search listings': WITHOUT_RANDOM_REMOVED,
+    'jibsa zigbang search listings apt': ChangedUsage(
+        '--radius 를 없앴습니다. 아파트는 직방 웹처럼 동·구 하나의 매물 목록이라 동·구 이름으로 찾고, 역·학교 이름과 '
+        '--lat/--lng 는 그 위치가 속한 동의 목록을 줍니다. 역 주변 단지는 jibsa zigbang search complexes <역 이름> 으로 찾으세요',
+        removed_options=frozenset({'--radius'}),
+    ),
     'jibsa zigbang search listings stay': ChangedUsage(
         '--details 를 없앴습니다. 직방 웹은 기간 요금을 로그인해야 보여 줘 기간 비용(period_cost)을 뺐습니다. 그 기간을 예약할 수 '
         '있는지는 jibsa zigbang listing stay-<ID> --check-in <날짜> --check-out <날짜> 의 available 로 보세요',
@@ -634,18 +637,10 @@ def search_room_command(
 def search_apt_command(
     query: Annotated[
         str | None,
-        typer.Argument(help='동·구 이름 (예: 역삼동, 강남구) 또는 역 이름 (예: 강남역). --lat/--lng 를 주면 생략')
+        typer.Argument(help='동·구 이름 (예: 역삼동, 강남구). 역 이름(예: 강남역)을 주면 그 역이 속한 동을 찾는다. --lat/--lng 를 주면 생략')
     ] = None,
     lat: LatOption = None,
     lng: LngOption = None,
-    radius: Annotated[
-        float | None,
-        typer.Option(
-            min=0.1,
-            max=APT_NEAR_MAX_RADIUS_KM,
-            help=f'반경 (km, 최대 {APT_NEAR_MAX_RADIUS_KM:g}). 주면 동·구 전체 대신 반경 안 단지를 가까운 순으로 훑는다. 역 이름·좌표면 기본 {DEFAULT_RADIUS_KM:g}km',
-        ),
-    ] = None,
     trade: Annotated[
         list[str] | None,
         typer.Option('--trade', help='거래 유형: 매매, 전세, 월세. 반복하거나 쉼표로 구분. 기본 전체')
@@ -660,31 +655,32 @@ def search_apt_command(
     area_min: Annotated[float | None, typer.Option(min=0, help='전용면적 하한 (㎡). 직방이 받지 않아 받은 뒤 거른다')] = None,
     area_max: Annotated[float | None, typer.Option(min=0, help='전용면적 상한 (㎡). 직방이 받지 않아 받은 뒤 거른다')] = None,
     supply_area_min: Annotated[
-        float | None, typer.Option(min=0, help='공급면적 하한 (㎡). 동·구는 서버에서, 반경 검색은 받은 뒤 거른다'),
+        float | None, typer.Option(min=0, help='공급면적 하한 (㎡). 직방 서버에서 거른다'),
     ] = None,
     supply_area_max: Annotated[
-        float | None, typer.Option(min=0, help='공급면적 상한 (㎡). 동·구는 서버에서, 반경 검색은 받은 뒤 거른다'),
+        float | None, typer.Option(min=0, help='공급면적 상한 (㎡). 직방 서버에서 거른다'),
     ] = None,
     next_: NextOption = None,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """아파트 매물. 동·구 이름이면 그 동·구 전체(직방 목록 순, 거리 없음), 역 이름·좌표·--radius 면 반경 검색.
+    """아파트 매물. 동·구 하나의 직방 지역 목록을 직방 순서 그대로 준다 (거리 없음).
 
-    반경 검색은 반경 안 단지를 가까운 순으로 단지마다 조회해(단지당 요청 1회, 최대 30곳) 느리고 요청이 많다.
+    역·학교 이름이나 --lat/--lng 를 주면 그 위치가 속한 동의 목록을 준다 (직방 웹 지도의 '○○동 주변 매물보기').
+    그 위치에서 가까운 순이 아니고 이웃 동은 빠진다. 성수동(성수동1가·2가)·성남시(분당구·수정구·중원구)처럼 직방이
+    따로 보여 주는 지역 여럿에 걸리는 이름은 REGION_AMBIGUOUS 로 후보를 알려 주니 하나를 골라 다시 찾는다.
     결과는 같은 호·거래 유형의 매물을 묶은 것이다 (listing_count). 상세는 결과의 id 로 jibsa zigbang listing <id>.
     가격 범위(is_price_range true) 줄은 가격이 묶음 최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.
 
     예: jibsa zigbang search listings apt 강남구 --trade 매매 --price-max 200000
         jibsa zigbang search listings apt 역삼동 --trade 전세 --area-min 59
-        jibsa zigbang search listings apt 강남역 --radius 1 --trade 전세
+        jibsa zigbang search listings apt 강남역 --trade 전세
         jibsa zigbang search listings apt 역삼동 --supply-area-min 80 --supply-area-max 110
 
-    동·구 검색 결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다 (반경 검색은 이어 받지 않는다).
+    결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다.
     """
     position = decode_next(next_)
     _require_center(query, lat, lng)
-    require_finite('--radius', radius)
     validate_ranges(
         ('deposit', deposit_min, deposit_max),
         ('rent', rent_min, rent_max),
@@ -713,28 +709,36 @@ def search_apt_command(
             supply_area_min_m2=supply_area_min,
             supply_area_max_m2=supply_area_max,
         )
-        notes: list[str] = []
-        items = None
-        if lat is None and radius is None:
-            # 동·구 이름이면 그 동·구 전체를 준다. 동·구가 아니면(역 등) 반경으로 찾는데, 지역 검색 결과는 다시 쓴다
+        if lat is not None and lng is not None:
+            district = apt_dong_at(client, lat, lng)
+            notes = [note(
+                '범위',
+                f"좌표가 속한 {district.name}의 아파트 목록입니다 (직방 웹 지도의 '{district.name} 주변 매물보기'). "
+                '좌표에서 가까운 순이 아니고 이웃 동은 빠집니다',
+            )]
+        else:
             items = search_regions(client, query or '')
             try:
-                district, notes, extra = resolve_apt_region(client, query or '', items=items)
+                district, notes = resolve_apt_region(client, query or '', items=items)
             except RegionNotFoundError:
-                if position is not None:
-                    # 반경 검색은 이어 받지 않는다. 토큰을 버리고 첫 페이지를 주면 앞 결과와 겹친다
-                    raise apt_resume_changed_error() from None
-                notes = [f"{quoted(query or '', '은/는')} 동·구가 아니라 그 위치에서 반경 {DEFAULT_RADIUS_KM:g}km 안 아파트를 찾았습니다"]
-            else:
-                result = search_apt_listings(
-                    client, district, conditions=conditions, limit=limit, extra_regions=extra, start=position,
-                )
-                emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
-                return
-        radius_km = radius or DEFAULT_RADIUS_KM
-        region, region_notes = _region(client, query, lat, lng, radius_km, items)
-        near = search_apt_listings_near(client, region, conditions=conditions, radius_km=radius_km, limit=limit)
-        emit(near, pretty, notes=trade_notes + region_notes + notes + near.notes, fields=fields)
+                # 동·구가 아닌 곳(역·학교)은 웹 아파트 지도처럼 그 위치가 속한 동의 목록으로 찾는다. 반경 안 단지의 매물을 거리순으로
+                # 잇는 목록은 웹에 없다 (2026-11-15 캡처: 역을 고르면 주변 단지 목록과 지도 가운데 동의 매물 목록만 있다).
+                # 지역(시·도, 행정동처럼 결과가 없는 이름)은 동 이름으로 다시 찾으라는 에러를 그대로 낸다
+                place, _, _ = resolve_region_scope(client, query or '', items=items)
+                if place.search_type == 'address':
+                    raise
+                district = apt_dong_at(client, place.lat, place.lng)
+                notes = [note(
+                    '범위',
+                    f"{quoted(query or '', '은/는')} 동·구가 아니라 그 위치가 속한 {district.name}의 아파트 목록을 찾았습니다 "
+                    f"(직방 웹 지도의 '{district.name} 주변 매물보기'). {place.name}에서 가까운 순이 아니고 이웃 동은 빠집니다"
+                    + (
+                        f'. 역 주변 단지는 jibsa zigbang search complexes {query}'
+                        if place.search_type == 'subway' else ''
+                    ),
+                )]
+        result = search_apt_listings(client, district, conditions=conditions, limit=limit, start=position)
+        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:

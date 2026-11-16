@@ -1,4 +1,4 @@
-"""응답 모델: 아파트 매물 검색 (search listings apt): 지역 목록과 반경(nearby-danjis) 검색."""
+"""응답 모델: 아파트 매물 검색 (search listings apt): 지역 목록과 좌표가 속한 동 찾기."""
 
 from pydantic import Field
 
@@ -42,54 +42,17 @@ class ZigbangLocalsItemCatalogsResponseModel(ResponseModel):
 
 
 # ---------------------------------------------------------------------------
-# GET /apt/nearby-danjis
+# GET /apt/locals/polygon
 # ---------------------------------------------------------------------------
 
-class ZigbangNearbyDanjiModel(ResponseModel):
-    """반경 안 아파트 단지 한 곳."""
+class ZigbangLocalsPolygonResponseModel(ResponseModel):
+    """geohash 칸 중심이 속한 동 (예: `{code: '11650108', name: '서초동', geojson: null}`). 경계(geojson)는 읽지 않는다."""
 
-    id: Annotated[
-        int,
-        Field(description='단지 ID')
-    ]
+    code: Annotated[
+        str | None,
+        Field(description='직방 지역 코드. local3 이면 법정동코드 앞 8자리 (2026-11-15 실측)')
+    ] = None
     name: Annotated[
-        str,
-        Field(description='단지 이름')
-    ]
-    local1: Annotated[
         str | None,
-        Field(description='시/도 (예: 서울특별시)')
+        Field(description='동 이름')
     ] = None
-    local2: Annotated[
-        str | None,
-        Field(description='시/군/구')
-    ] = None
-    local3: Annotated[
-        str | None,
-        Field(description='읍/면/동')
-    ] = None
-    lat: Annotated[
-        float | None,
-        Field(description='단지 위도')
-    ] = None
-    lng: Annotated[
-        float | None,
-        Field(description='단지 경도')
-    ] = None
-    household: Annotated[
-        str | None,
-        Field(description="세대수 문구 (예: '38세대')")
-    ] = None
-    distance_m: Annotated[
-        int | None,
-        Field(description='중심에서 단지까지 거리 (m)', alias='distanceNum')
-    ] = None
-
-
-class ZigbangNearbyDanjisResponseModel(ResponseModel):
-    """반경 안 아파트 단지 목록 (가까운 순)."""
-
-    danjis: Annotated[
-        list[ZigbangNearbyDanjiModel],
-        Field(description='가까운 순 단지', alias='list')
-    ] = []

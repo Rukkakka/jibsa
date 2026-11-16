@@ -144,7 +144,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         Step('아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings'),
-        Step('아파트 역 반경 강남역', APT, ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
+        # 역 이름은 그 역이 속한 동을 찾아(/apt/locals/polygon) 그 동의 지역 목록을 준다
+        Step('아파트 역이 속한 동 강남역', APT, ('강남역', '--limit', '2'), 'listings'),
         # 역 주변 단지는 웹 '주변단지' 목록(/apt/danjis/ids, 조회수 순)에 역 주변 단지 정보(/apt/subways/{id})의 거리를 붙인다
         Step('역 주변 아파트 단지 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--limit', '3'), 'complexes'),
         Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),

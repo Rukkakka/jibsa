@@ -24,7 +24,7 @@
 | --- | --- |
 | 유형을 정하지 않은 집 | `zigbang search listings room`·`apt` · `naver search listings <동·역>` (`-t` 없이 주거용 전체) · `daangn search listings <동> -t 아파트,오피스텔,원룸,투룸,주택` · `dabang search listings room`·`villa`·`officetel`·`apt` |
 | 원룸·투룸·빌라·오피스텔 | `zigbang search listings room <동·역>` · `daangn search listings <동>` (역은 `--station <역>`, 대학은 `--university <대학>`) · `naver search listings <동·역> -t 원룸,빌라,오피스텔` · `dabang search listings room <동·역>` (빌라 `villa`, 오피스텔 `officetel`) |
-| 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
+| 아파트 매물 | `zigbang search listings apt <동·구>` (역·좌표는 그 위치가 속한 동 목록) · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
 | 상가·사무실 | `zigbang search listings store <동·역>` · `naver search listings <동·역> -t 상가,사무실` · `daangn search listings <동> -t 상가,사무실` (단지 안 상가도 `--complex <ID> -t 상가` 처럼 종류를 줘야 온다. 다방은 상가가 없다) |
 | 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 `search listings room`·`villa`·`officetel`·`apt` 에 `--condition 단기임대`) |
@@ -45,11 +45,11 @@
 
 ## 위치 입력
 
-- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 다방·직방 나머지 5km). 다만 역 이름은 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다.
+- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 네이버 3km, 다방·직방 5km). 다만 역 이름은 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다. 직방 `apt` 는 반경이 없다: 역·좌표를 주면 그 위치가 속한 동 하나의 목록(이웃 동은 빠지고 거리 없음)이라, 역 근처 단지는 `zigbang search complexes <역>` 으로 본다.
 - 당근은 반경이 없고 당근 웹 화면별로 받는다: 동·구 이름, 역 `--station`, 대학 `--university`, 도로명 주소 `--address`, 좌표 `--lat/--lng`. 역·대학은 당근 주변 목록(역은 도보 `walk_minutes`), 구·좌표·주소는 웹 지도 화면 범위(기본 줌: 구 12 약 12.8×13.6km, 좌표·주소 15 약 1.6×1.7km, `--zoom` 으로 바꿈)를 최근 순으로 준다. 주소는 도로명 주소(`'테헤란로 152'`)만 되고 후보가 여럿이면 `REGION_AMBIGUOUS` 의 `candidates` 그대로 다시 준다. 건물·리 이름은 받지 않는다. 후보는 `daangn search locations <이름>` 이 칸별로 준다.
 - 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
 - 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`. 구 이름까지 겹치면 `hint` 의 예처럼 시·도도 붙인다: `서울 중구 태평로2가`. 직방은 시·도까지 붙인 전체 주소는 못 찾는다. 당근 `광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 첫 역으로 찾고 `notes` 로 알린다 (직방은 역·학교도 `REGION_AMBIGUOUS` 라 `hint` 대로 `'영등포구 양평역'` 처럼 구·동 이름을 붙인다. 당근은 노선을 붙여 고른다: `--station '서울5호선 양평역'`. 다방은 `REGION_AMBIGUOUS` 의 `hint` 대로 좌표로 찾는다).
-- 직방·네이버 매물 검색은 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다). 당근·다방은 합치지 않고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성수동2가` 를 고르게 한다. 다방은 여러 캠퍼스에 맞는 대학 이름(`연세대`)도 고르지 않고 `REGION_AMBIGUOUS` 로 캠퍼스 후보를 주니, 후보 이름 그대로(`'연세대학교(원주캠퍼스)'`) 다시 부른다. 네이버 재개발 구역 검색처럼 첫 동만 찾는 명령은 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다.
+- 네이버 매물 검색과 직방 `room`·`store` 는 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾는다 (네이버는 `--limit` 을 나눠 쓰고, 동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다). 직방 `apt`·`stay`·당근·다방은 합치지 않고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성수동2가` 를 고르게 한다 (직방 `apt`·`stay` 는 성남시처럼 구가 있는 시도 `성남시 분당구` 처럼 구를 고르게 한다). 다방은 여러 캠퍼스에 맞는 대학 이름(`연세대`)도 고르지 않고 `REGION_AMBIGUOUS` 로 캠퍼스 후보를 주니, 후보 이름 그대로(`'연세대학교(원주캠퍼스)'`) 다시 부른다. 네이버 재개발 구역 검색처럼 첫 동만 찾는 명령은 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다.
 
 ## 소스마다 다른 점
 
