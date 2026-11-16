@@ -363,16 +363,31 @@ def test_sources_do_not_import_each_other() -> None:
 
 def test_workflow_concurrency_limits_match() -> None:
     # 서브에이전트 워크플로(.claude/workflows/)는 다른 파일을 불러올 수 없어 같은 소스 동시 실행 상한을 파일마다 둔다
-    # (docs/development/agents.md "동시에 띄울 때"). 한 파일만 고치면 그 워크플로만 네이버를 여럿 동시에 불러 요청이 몰린다
+    # (docs/development/agents.md "동시에 띄울 때"). 한 파일만 고치면 그 워크플로만 같은 소스를 더 많이 동시에 부른다.
+    # 소스별 예외(예전의 네이버 하나씩)는 2026-11-16 에 없앴다. 다시 두려면 두 파일과 그 절, 이 테스트를 함께 고친다
     root = Path(__file__).resolve().parents[1] / '.claude' / 'workflows'
-    limits: dict[str, tuple[str, str]] = {}
-    for name in ('review-panel', 'web-parity-panel', 'implement-bundles'):
+    limits: dict[str, str] = {}
+    for name in ('web-parity-panel', 'implement-bundles'):
         text = (root / f'{name}.js').read_text(encoding='utf-8')
         same = re.search(r'^const SAME_SOURCE_MAX = (\d+)', text, re.MULTILINE)
-        naver = re.search(r'^const SAME_SOURCE_MAX_BY = \{[^}]*\bnaver: (\d+)', text, re.MULTILINE)
-        assert same and naver, name
-        limits[name] = (same.group(1), naver.group(1))
+        assert same, name
+        assert 'SAME_SOURCE_MAX_BY' not in text, name
+        limits[name] = same.group(1)
     assert len(set(limits.values())) == 1, limits
+
+
+def test_workflow_args_parsing_blocks_match() -> None:
+    # 워크플로는 다른 파일을 불러올 수 없어 args 풀기 블록(빈 글자 처리 ~ 'bad-args' 응답)도 두 파일에 복사해 둔다.
+    # 한 파일만 고치면 워크플로마다 잘못된 args 에 다르게 답한다
+    root = Path(__file__).resolve().parents[1] / '.claude' / 'workflows'
+    blocks: dict[str, str] = {}
+    for name in ('web-parity-panel', 'implement-bundles'):
+        lines = (root / f'{name}.js').read_text(encoding='utf-8').splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith("if (typeof a === 'string' && !a.trim())"))
+        reason = next(i for i, line in enumerate(lines) if i > start and "reason: 'bad-args'" in line)
+        end = next(i for i, line in enumerate(lines) if i > reason and line == '  }')
+        blocks[name] = '\n'.join(line for line in lines[start:end + 1] if not line.lstrip().startswith('//'))
+    assert len(set(blocks.values())) == 1, blocks
 
 
 # --- 매일 API 감시 ---

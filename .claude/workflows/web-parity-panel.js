@@ -1,26 +1,37 @@
 export const meta = {
   name: 'web-parity-panel',
-  description: '소스·범위마다 web-parity-investigator 하나를 동시에 돌려(같은 소스는 동시에 셋까지, 네이버는 하나씩) jibsa 명령이 그 사이트 웹과 어긋나는지(A 어긋남·B 의도한 차이·C 같음·D 웹에만 있음) 조사한다. 읽기 전용',
+  description: '소스·범위마다 web-parity-investigator 하나를 동시에 돌려(같은 소스는 동시에 셋까지) jibsa 명령이 그 사이트 웹과 어긋나는지(A 어긋남·B 의도한 차이·C 같음·D 웹에만 있음) 조사한다. 읽기 전용',
   whenToUse: '/web-parity 명령이 조사원이 둘 이상일 때(소스 둘 이상, 또는 한 소스를 범위로 나눔) 부른다. args.targets 에 [{source, scope}] 를 조사원 하나당 하나씩 넘긴다. args 없이 불렸으면 아무것도 띄우지 않고 /web-parity 를 쓰라고 안내한다.',
   phases: [
-    { title: '조사', detail: '소스·범위마다 조사원 하나, 동시에 (같은 소스는 셋까지, 네이버는 하나씩)' },
+    { title: '조사', detail: '소스·범위마다 조사원 하나, 동시에 (같은 소스는 셋까지)' },
   ],
 }
 
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 const EFFORTS = ['high', 'xhigh']  // 브라우저 조작이 든 조사라 모델은 Opus 만 쓴다 (CLAUDE.md)
-// 동시 실행 상한(SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
+// 동시 실행 상한(SAME_SOURCE_MAX)은 두 워크플로(web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
-// 세 파일의 같은 소스 상한·네이버 상한이 다르면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
+// 두 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
+// 네이버도 같은 상한이다. 예전에는 하나씩 돌렸는데, 2026-11-16 에 조사원 셋을 동시에 돌려 429 가 없어 풀었다 (그 절에 실측).
 const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 조사하는 조사원 수 (docs/development/agents.md "동시에 띄울 때")
-// 네이버 조사원은 한 번에 하나만 돌린다. 조사원이 직접 여는 브라우저는 jibsa 요청 제한기가 세지 않는데, 네이버는 첫 화면 한 번이
-// 부르는 요청이 많아(docs/development/providers/naver.md) 조사원끼리 여는 때를 맞출 수 없으면 한꺼번에 몰린다.
-const SAME_SOURCE_MAX_BY = { naver: 1 }
-const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
 
 let a = args
-if (typeof a === 'string') {
-  try { a = JSON.parse(a) } catch { a = null }
+// args 가 JSON 문자열로, 때로는 문자열이 한 번 더 감싸여 올 수 있어 객체가 될 때까지 푼다. 읽지 못하면 소스 없이 불린 것과
+// 가르게 따로 알린다 (implement-bundles 와 같다. 2026-11-16: 그쪽 첫 호출의 args 가 문자열로 와 '묶음 없이 불렸다' 로 끝났다)
+// 빈 글자·공백뿐인 글자는 읽지 못한 것이 아니라 인자 없이 불린 것이라, 아래 '대상 없이 불림' 안내로 보낸다
+if (typeof a === 'string' && !a.trim()) a = null
+let parseError = null
+for (let i = 0; i < 3 && typeof a === 'string'; i++) {
+  try { a = JSON.parse(a) } catch (e) { parseError = String(e); a = null }
+}
+if (parseError) {
+  log(`args 를 JSON 으로 읽지 못해 아무것도 띄우지 않았다: ${parseError}`)
+  return {
+    started: false,
+    reason: 'bad-args',
+    error: parseError,
+    next: 'args 를 문자열로 감싸지 않고 객체(JSON 값)로 다시 넘긴다.',
+  }
 }
 const targets = a && Array.isArray(a.targets) ? a.targets : []
 if (!targets.length) {
@@ -96,7 +107,7 @@ const investigate = i => {
       '',
       '저장소 파일은 고치지 않는다. 작업 파일은 scratchpad 에만 만든다.',
       `다른 조사원이 다른 소스를 동시에 조사하고 있을 수 있다. ${t.source} 사이트와 jibsa ${t.source} 명령만 부른다.`,
-      ...(others.length ? [`${t.source} 의 다른 범위는 다른 조사원이 본다 (${maxOf(t.source) > 1 ? '동시에 돌 수 있다. jibsa 명령의 요청 제한은 함께 세지만 직접 여는 브라우저는 세지 않으니, 페이지를 여는 사이를 띄운다' : '너와 동시에 돌지 않고 앞뒤로 차례로 돈다'}). 네 범위만 본다. 다른 범위: ${others.join(' / ')}`] : []),
+      ...(others.length ? [`${t.source} 의 다른 범위는 다른 조사원이 본다 (동시에 돌 수 있다. jibsa 명령의 요청 제한은 함께 세지만 직접 여는 브라우저는 세지 않으니, 페이지를 여는 사이를 띄운다). 네 범위만 본다. 다른 범위: ${others.join(' / ')}`] : []),
       '판정 기준·방법·요청 한도는 네 정의를 따른다. A 는 캡처나 실제 조회로 근거를 대고, 확인하지 못한 것은 unconfirmed 로 둔다.',
       'B 는 그 소스 가이드 "웹과 다른 점" 에 이미 적혔는지 documented 로 적는다. C 는 범위 안에서 확인한 것만 짧게 적는다.',
     ].join('\n'),
@@ -112,13 +123,12 @@ const investigate = i => {
 }
 
 phase('조사')
-// 소스끼리는 동시에. 같은 소스는 동시에 SAME_SOURCE_MAX 명(네이버는 하나)까지 돌리고 남은 범위는 그 뒤에 돌린다 (요청 수는
+// 소스끼리는 동시에. 같은 소스는 동시에 SAME_SOURCE_MAX 명까지 돌리고 남은 범위는 그 뒤에 돌린다 (요청 수는
 // jibsa 요청 제한기가 프로세스끼리 합쳐서 세지만, 조사원이 직접 여는 브라우저는 세지 않는다).
 const reports = []
-await parallel(Object.entries(bySource).map(([source, same]) => async () => {
-  const max = maxOf(source)
-  for (let k = 0; k < same.length; k += max) {
-    const batch = same.slice(k, k + max)
+await parallel(Object.values(bySource).map(same => async () => {
+  for (let k = 0; k < same.length; k += SAME_SOURCE_MAX) {
+    const batch = same.slice(k, k + SAME_SOURCE_MAX)
     const rs = await parallel(batch.map(i => () => investigate(i)))
     batch.forEach((i, j) => { reports[i] = rs[j] })
   }
