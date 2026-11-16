@@ -1,5 +1,4 @@
 import multiprocessing
-import threading
 import time
 from types import SimpleNamespace
 
@@ -79,15 +78,25 @@ def test_cooldown_blocks_until_expiry() -> None:
     assert 55 <= exc.value.retry_after <= 60
 
 
-def test_cooldown_set_while_waiting_stops_reserved_request() -> None:
-    # 슬롯을 기다리는 동안 다른 프로세스가 429 를 받으면, 미리 잡아 둔 슬롯의 요청도 보내지 않는다
-    first, second = limiter(min_interval=0.5, cooldown=60), limiter(min_interval=0.5, cooldown=60)
+def test_cooldown_set_while_waiting_stops_reserved_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 슬롯을 기다리는 동안 다른 프로세스가 429 를 받으면, 미리 잡아 둔 슬롯의 요청도 보내지 않는다.
+    # 쿨다운은 기다리는 sleep 자리에서 건다. 예전에는 0.5초 뒤 슬롯을 0.1초 뒤 타이머 스레드로 막았는데, 느린 러너에서
+    # 예약에 시간이 걸려 기다리지 않거나 타이머가 대기보다 늦게 돌아 요청이 나갔다 (2026-11-16 CI, Windows Python 3.11, #269)
+    first, second = limiter(min_interval=30, cooldown=60), limiter(min_interval=30, cooldown=60)
     first.reserve()
-    blocker = threading.Timer(0.1, first.block)
-    blocker.start()
+    waited: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        if seconds < 1:  # 상태 파일 바꿔치기 재시도는 그대로 쉰다
+            time.sleep(seconds)
+            return
+        waited.append(seconds)
+        first.block()
+
+    monkeypatch.setattr('jibsa.core.ratelimit.time', SimpleNamespace(time=time.time, sleep=sleep))
     with pytest.raises(RateLimitedError) as exc:
         second.acquire()
-    blocker.join()
+    assert len(waited) == 1  # 예약할 때가 아니라 슬롯을 기다린 뒤에 막혔다
     assert exc.value.reason == 'cooldown'
 
 
