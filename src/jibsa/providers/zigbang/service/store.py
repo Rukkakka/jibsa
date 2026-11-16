@@ -14,16 +14,15 @@ from jibsa.core.errors import (
     JibsaError,
     ListingUnavailableError,
 )
-from jibsa.core.geo import (
-    haversine_km,
-    within_radius,
+from jibsa.core.geo import haversine_km
+from jibsa.core.korean import (
+    is_ri_code,
+    quoted,
 )
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
     TradeType,
-    beyond_radius_notes,
-    by_distance,
     in_range,
     join_address,
     limit_notes,
@@ -39,6 +38,7 @@ from jibsa.providers.zigbang.api.request.store import (
     ZigbangStoreArticleStoresV2RequestPayloadModel,
     ZigbangStoreArticleStoreV2RequestParameterModel,
     ZigbangStoreBusinessModel,
+    ZigbangStoreCircleModel,
     ZigbangStoreSalesType,
 )
 from jibsa.providers.zigbang.api.response.store import (
@@ -47,15 +47,10 @@ from jibsa.providers.zigbang.api.response.store import (
 )
 from jibsa.providers.zigbang.service.common import (
     MAX_LIST_LIMIT,
-    ZigbangBoundary,
     ZigbangRegion,
     drop_unused_scope,
     sent_or_none,
     unavailable_on_404,
-)
-from jibsa.providers.zigbang.service.region import (
-    outside_boundary,
-    scope_geohashes,
 )
 
 from typing import (
@@ -88,7 +83,6 @@ STORE_BUSINESSES_BY_CATEGORY: dict[str, tuple[str, ...]] = {
 STORE_BUSINESS_NAMES: tuple[str, ...] = tuple(
     dict.fromkeys([*STORE_BUSINESSES_BY_CATEGORY, *(b for bs in STORE_BUSINESSES_BY_CATEGORY.values() for b in bs)])
 )
-STORE_GEOHASH_PRECISION: int = 6
 STORE_LIST_BATCH_SIZE: int = 50
 STORE_VACANT_SECTION: str = '이 지역 비어있는 상가'
 STORE_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^(지하)?\s*(\d+)\s*층$')
@@ -173,19 +167,19 @@ class ZigbangStoreSearchResult(BaseModel):
     ]
     radius_km: Annotated[
         float | None,
-        Field(description='검색 반경 (km). 동 경계로 찾았으면 키가 없다')
+        Field(description='검색 반경 (km). 동 안을 찾았으면 키가 없다')
     ] = None
     boundary: Annotated[
         str | None,
-        Field(description='반경 대신 경계 안을 찾은 동 이름. 반경으로 찾았으면 키가 없다')
+        Field(description="반경 대신 법정동 코드로 그 안을 찾은 동 이름 (여럿이면 '·' 로 잇는다). 반경으로 찾았으면 키가 없다")
     ] = None
     total: Annotated[
         int,
-        Field(description='반경(또는 동 경계) 안 지도 후보 수. 가격 필터 적용 전')
+        Field(description='반경(또는 동) 안 직방 목록의 매물 수. 가격 필터 적용 전')
     ]
     inspected_in_radius: Annotated[
         int | None,
-        Field(description='반경(또는 동 경계) 안 요약을 요청한 후보 수. 가격 조건이 있을 때만 출력')
+        Field(description='반경(또는 동) 안 직방 목록 앞에서부터 요약을 요청한 매물 수. 가격 조건이 있을 때만 출력')
     ] = None
     price_matched_in_radius: Annotated[
         int | None,
@@ -197,11 +191,11 @@ class ZigbangStoreSearchResult(BaseModel):
     ]
     has_more: Annotated[
         bool,
-        Field(description='범위(반경·동 경계) 안에 더 있는지: 요약을 받지 않은 후보가 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
+        Field(description='범위(반경·동) 안에 더 있는지: 요약을 받지 않은 매물이 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
     ] = False
     listings: Annotated[
         list[ZigbangStoreListing],
-        Field(description='가까운 순 매물')
+        Field(description='직방 목록 순서 그대로의 매물 (거리순이 아니다)')
     ]
     notes: Annotated[
         list[str],
@@ -431,6 +425,36 @@ class ZigbangStoreConditions(RequestModel):
     ] = None
 
 
+def store_region_codes(dongs: list[ZigbangRegion]) -> tuple[list[str], list[str]]:
+    """동 이름으로 찾을 때 `지역` 에 보낼 법정동 코드(10자리)와 안내.
+
+    직방은 모르는 코드에 에러 없이 전국 매물을 준다 (2026-11-15 실측: 리 코드 4183025021 → 57,782건). 그래서 리는 그 위
+    읍·면 코드(앞 8자리 + '00')로 바꿔 읍·면 전체를 찾고 알리며, 코드가 없는 동은 전국 목록을 내지 않게 막는다.
+
+    Raises:
+        JibsaError: 법정동 코드(10자리)가 없는 동이 있을 때 (REGION_NOT_SUPPORTED).
+    """
+    codes: list[str] = []
+    notes: list[str] = []
+    for dong in dongs:
+        code = dong.legal_division_code or ''
+        if len(code) != 10 or not (code.isascii() and code.isdigit()):
+            raise JibsaError(
+                code='REGION_NOT_SUPPORTED',
+                message=f"직방 지역 검색 결과에 '{dong.name}' 의 법정동 코드(10자리)가 없어 그 동 안을 찾을 수 없습니다",
+                hint=f"--radius 를 주면 '{dong.name}' 중심에서 반경으로 찾습니다 (예: --radius 1)",
+            )
+        if is_ri_code(code):
+            code = f'{code[:8]}00'
+            notes.append(note(
+                '범위',
+                f"{quoted(dong.name, '은/는')} 리라 그 리가 속한 읍·면 전체를 찾았습니다. 직방 상가는 리 단위로 찾지 못합니다 "
+                '(반경으로 찾으려면 --radius)',
+            ))
+        codes.append(code)
+    return list(dict.fromkeys(codes)), notes
+
+
 def search_store_listings(
     client: ZigbangClient,
     region: ZigbangRegion,
@@ -438,15 +462,23 @@ def search_store_listings(
     conditions: ZigbangStoreConditions | None = None,
     radius_km: float = 1.0,
     limit: int = 20,
-    boundary: ZigbangBoundary | None = None,
+    dongs: list[ZigbangRegion] | None = None,
 ) -> ZigbangStoreSearchResult:
-    """중심점 반경(또는 `boundary` 동 경계) 안의 상가·사무실을 가까운 순으로 `limit` 건 조회한다.
+    """중심점 반경(또는 `dongs` 동) 안의 상가·사무실을 직방 목록 순서 그대로 `limit` 건 조회한다.
+
+    웹 상가 검색처럼 범위 안 위치 목록을 한 번에 받고 그 순서대로 앞에서부터 요약을 받는다 (2026-11-15 번들
+    `HomeStoreListScreenModel.loadItems`: 응답 순서대로 15건씩, 정렬 없음). 순서는 거리순이 아니고, `distance_km` 는
+    검색 중심에서 잰 거리다. 반경은 원(`상권`)으로 보내고, `dongs` 가 있으면 반경 대신 그 동들의 법정동 코드(`지역`)로
+    찾는다 (`store_region_codes`). 서버가 범위 안 매물만 준다.
 
     거래 유형(임대·매매), 1층, 업종, 면적(㎡, 상한은 미만)은 서버에서 거른다.
-    가격 조건은 요약을 받은 뒤 거른다 (상·하한 포함, 모르는 금액은 제외). 가까운 후보를 기존
-    상한(max(limit * SCAN_FACTOR, MIN_SCAN_PINS))까지 조회하며, 전체 후보를 확인하지 못하면 안내한다.
-    업종 조건을 걸면 직방이 그 업종과 무관한 공실을 따로 주는데, 업종 조건을
+    가격 조건은 요약을 받은 뒤 거른다 (상·하한 포함, 모르는 금액은 제외). 직방 목록 앞의 후보를 조회
+    상한(max(limit * SCAN_FACTOR, MIN_SCAN_PINS))까지 확인하며, 전체 후보를 확인하지 못하면 안내한다.
+    업종 조건을 걸면 직방이 그 업종과 무관한 범위 안 공실을 따로 주는데, 업종 조건을
     지키도록 공실은 빼고 몇 건인지 `notes` 로 알린다.
+
+    Raises:
+        JibsaError: `dongs` 에 법정동 코드가 없는 동이 있을 때 (`store_region_codes`).
     """
     conditions = conditions or ZigbangStoreConditions()
     bounds = {
@@ -459,133 +491,120 @@ def search_store_listings(
     trade = store_price_trade(conditions.trade, bounds)
     filter_price = any(value is not None for pair in bounds.values() for value in pair)
     business_conditions = store_businesses(conditions.businesses or [])
-    pins: dict[int, tuple[float, float, float]] = {}
-    vacant: set[int] = set()
-    for geohash in scope_geohashes(region, radius_km, boundary, STORE_GEOHASH_PRECISION):
-        response = client.run_request_store_article_stores_v2(
-            ZigbangStoreArticleStoresV2RequestPayloadModel(
-                geohash=geohash,
-                sales_type=trade,
-                first_floor=conditions.first_floor,
-                businesses=business_conditions,
-                area_min_m2=conditions.area_min_m2,
-                area_max_m2=conditions.area_max_m2,
-            )
+    circles: list[ZigbangStoreCircleModel] | None = None
+    region_codes: list[str] | None = None
+    scope_notes: list[str] = []
+    if dongs:
+        region_codes, scope_notes = store_region_codes(dongs)
+    else:
+        circles = [ZigbangStoreCircleModel(lat=region.lat, lng=region.lng, radius=round(radius_km * 1000))]
+    response = client.run_request_store_article_stores_v2(
+        ZigbangStoreArticleStoresV2RequestPayloadModel(
+            circles=circles,
+            region_codes=region_codes,
+            sales_type=trade,
+            first_floor=conditions.first_floor,
+            businesses=business_conditions,
+            area_min_m2=conditions.area_min_m2,
+            area_max_m2=conditions.area_max_m2,
         )
-        for section in response.sections:
-            for location in section.item_locations:
-                if outside_boundary(boundary, location.lat, location.lng):
-                    continue
-                distance = haversine_km(region.lat, region.lng, location.lat, location.lng)
-                # 공실 묶음은 업종 조건을 걸 때만 찬다. 업종 조건이 없으면 비어 와서 안내 없이 빼는 매물이 없다 (2026-10-18 실측:
-                # 성수역 0.3km 업종 조건 없이 일반 묶음 393건, 공실 묶음 0건). 2026-10-18 리뷰 오탐 확인
-                if section.title == STORE_VACANT_SECTION:
-                    if boundary is not None or distance <= radius_km:
-                        vacant.add(location.item_id)
-                    continue
-                pins[location.item_id] = (distance, location.lat, location.lng)
+    )
+    # 직방 목록 순서대로 매물 ID → 좌표
+    pins: dict[int, tuple[float, float]] = {}
+    vacant: set[int] = set()
+    for section in response.sections:
+        # 공실 묶음은 업종 조건을 걸 때만 찬다. 업종 조건이 없으면 비어 와서 안내 없이 빼는 매물이 없다 (2026-10-18 실측:
+        # 성수역 0.3km 업종 조건 없이 일반 묶음 393건, 공실 묶음 0건). 2026-10-18 리뷰 오탐 확인. 공실 묶음도 범위 안
+        # 매물만 온다 (2026-11-15 실측: 역삼역 1000m 카페/커피 공실 970건)
+        if section.title == STORE_VACANT_SECTION:
+            vacant.update(location.item_id for location in section.item_locations)
+            continue
+        for location in section.item_locations:
+            pins.setdefault(location.item_id, (location.lat, location.lng))
 
     scan_cap = max(limit * SCAN_FACTOR, MIN_SCAN_PINS)
-    nearest = sorted(pins.items(), key=lambda entry: entry[1][0])[:scan_cap]
+    candidates = list(pins)[:scan_cap]
     listings: list[ZigbangStoreListing] = []
-    inspected: set[int] = set()
-    matched: set[int] = set()
-    for start in range(0, len(nearest), STORE_LIST_BATCH_SIZE):
+    inspected = 0
+    matched = 0
+    for start in range(0, len(candidates), STORE_LIST_BATCH_SIZE):
         if len(listings) >= limit:
             break
-        batch = nearest[start:start + STORE_LIST_BATCH_SIZE]
-        position = dict(batch)
-        inspected.update(position)
+        batch = candidates[start:start + STORE_LIST_BATCH_SIZE]
+        inspected += len(batch)
         summaries = client.run_request_store_article_stores_list_v2(
-            ZigbangStoreArticleStoresListV2RequestPayloadModel(item_ids=[item_id for item_id, _ in batch])
+            ZigbangStoreArticleStoresListV2RequestPayloadModel(item_ids=batch)
         )
-        for summary in summaries.items:
-            if summary.status != 'open' or summary.item_id not in position:
+        # 요약 응답의 순서에 기대지 않고 보낸 순서(직방 목록 순서)대로 놓는다
+        summary_by_id = {summary.item_id: summary for summary in summaries.items}
+        for item_id in batch:
+            summary = summary_by_id.get(item_id)
+            if summary is None or summary.status != 'open':
                 continue
-            distance, lat, lng = position[summary.item_id]
-            listing = store_summary_to_listing(summary, distance, lat, lng)
+            lat, lng = pins[item_id]
+            listing = store_summary_to_listing(summary, haversine_km(region.lat, region.lng, lat, lng), lat, lng)
             # 거래 유형은 서버가 걸었으므로 다시 거르지 않는다 (2026-10-10 실측: 역삼역·성수동 임대·매매 662건 모두 조건 안)
             if not _store_price_matches(listing, bounds):
                 continue
-            matched.add(summary.item_id)
+            matched += 1
             listings.append(listing)
 
-    listings.sort(key=by_distance)
-    # --limit 에 맞춰 잘라 낸 매물. 후보 요약을 다 받았어도 범위 안 매물이 잘렸으면 더 있다 (2026-10-21 실측: 성수역 반경
+    # --limit 에 맞춰 잘라 낸 매물. 후보 요약을 다 받았어도 잘린 매물이 있으면 더 있다 (2026-10-21 실측: 성수역 반경
     # 0.2km 범위 안 35건을 한 묶음에 다 받고 3건만 주며 has_more false 였다)
     cut = listings[limit:]
     listings = listings[:limit]
-    if boundary is not None:
-        in_radius = len(pins)
-    else:
-        in_radius = sum(1 for distance, _, _ in pins.values() if within_radius(distance, radius_km))
-    inspected_in_radius = sum(
-        1 for item_id in inspected if boundary is not None or within_radius(pins[item_id][0], radius_km)
-    )
-    matched_in_radius = sum(
-        1 for item_id in matched if boundary is not None or within_radius(pins[item_id][0], radius_km)
-    )
-    has_more = inspected_in_radius < in_radius or any(
-        boundary is not None or within_radius(listing.distance_km or 0, radius_km) for listing in cut
-    )
-    area = '지역' if boundary is not None else '반경'
-    if boundary is not None:
-        notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}',
-            order=f'{boundary.name} 중심에서 가까운', inspected=len(inspected), has_more=has_more,
-        )
-    else:
-        notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}', inspected=len(inspected),
-            has_more=has_more,
-        ) + beyond_radius_notes(listings, radius_km)
+    total = len(pins)
+    has_more = inspected < total or bool(cut)
+    area = '지역' if dongs else '반경'
     if filter_price:
-        notes = [] if boundary is not None else beyond_radius_notes(listings, radius_km)
-        notes.append(
-            f'가격 조건은 요약을 받은 뒤 거릅니다. total({in_radius}건)은 가격 적용 전 지도 후보 수이고, '
-            f'그중 {inspected_in_radius}건의 요약을 요청해 거래 가능하고 가격 조건에 맞는 {matched_in_radius}건을 확인했습니다'
-        )
-        # 위 문장의 total·확인 수와 같은 기준(반경·경계 안)으로 센다. 지도 칸 전체 핀에는 반경 밖도 있다
-        # 가격 조건이 있으면 위에서 limit_notes 의 [일부] 를 지우므로, 더 있다는 안내와 다음 할 일을 여기서 붙인다. 후보 조회
+        notes = [
+            f'가격 조건은 요약을 받은 뒤 거릅니다. total({total}건)은 가격 적용 전 직방 목록의 매물 수이고, '
+            f'그중 앞의 {inspected}건의 요약을 요청해 거래 가능하고 가격 조건에 맞는 {matched}건을 확인했습니다'
+        ]
+        # 가격 조건이 있으면 limit_notes 의 [일부] 를 쓰지 않으므로, 더 있다는 안내와 다음 할 일을 여기서 붙인다. 후보 조회
         # 상한도 --limit 에 비례해(SCAN_FACTOR) --limit 을 늘리면 더 확인한다 (2026-11-10 리뷰·실측: 성수역 0.2km --rent-max
         # 1000 --limit 5 는 34건 중 5건, 0.8km --limit 120 은 '150건만 조회했습니다' 에서 끝나 다음 할 일이 없었다)
-        # 후보 조회 상한에서 멈췄으면 가격 조건은 권하지 않는다. 가격은 가까운 후보를 상한까지 고른 뒤 거르므로, 좁혀도 같은
-        # 후보만 다시 보고 일치 수만 준다. 미확인 후보에 닿는 건 --limit(상한이 비례)과 서버가 거르는 조건·범위다 (2026-11-11
-        # 리뷰·실측: 성수역 0.8km --limit 5 를 --rent-max 50 에서 30 으로 좁혀도 같은 60건만 보고 242건이 미확인)
-        capped = inspected_in_radius < in_radius and len(listings) < limit
+        # 후보 조회 상한에서 멈췄으면 가격 조건은 권하지 않는다. 가격은 직방 목록 앞의 후보를 상한까지 고른 뒤 거르므로, 좁혀도
+        # 같은 후보만 다시 보고 일치 수만 준다. 미확인 후보에 닿는 건 --limit(상한이 비례)과 서버가 거르는 조건·범위다
+        # (2026-11-11 리뷰·실측: 성수역 0.8km --limit 5 를 --rent-max 50 에서 30 으로 좁혀도 같은 60건만 보고 242건이 미확인)
+        capped = inspected < total and len(listings) < limit
         hint = more_hint(limit, MAX_LIST_LIMIT, f'{STORE_SERVER_NARROW if capped else STORE_NARROW}·{area}')
-        if inspected_in_radius < in_radius:
+        if inspected < total:
             notes.append(note(
                 '일부',
-                f"{'후보 조회 상한' if capped else '결과 개수 제한'}으로 가까운 후보 {len(inspected)}건만 조회했습니다 "
+                f"{'후보 조회 상한' if capped else '결과 개수 제한'}으로 직방 목록 앞의 후보 {inspected}건만 조회했습니다 "
                 # 상한이 --limit 에 비례한다는 말이 없으면 '--limit 을 늘리라' 와 따로 정해진 상한으로 읽혀 늘리지 않았다
                 # (2026-11-11 LLM 사용 시험: 성수역 --rent-max 50 --limit 20 의 '조회 상한 100건' 에 --limit 대신 반경만 좁힘)
                 f'(조회 상한은 --limit 의 {SCAN_FACTOR}배·최소 {MIN_SCAN_PINS}건이라 {scan_cap}건, '
-                f'미확인 후보 {in_radius - inspected_in_radius}건). 전체 가격 조건 일치 수는 모릅니다. {hint}',
+                f'미확인 후보 {total - inspected}건). 전체 가격 조건 일치 수는 모릅니다. {hint}',
             ))
         elif has_more:
-            # matched 에는 반경 밖 매물도 있어 그 수로 보면, --limit 에 잘린 것이 반경 밖뿐이라 has_more 가 false 인데도 '더 있다' 고
-            # 했다 (2026-11-10 리뷰). 위 분기가 아니면 has_more 는 반경 안 매물이 --limit 에 잘렸다는 뜻이다
-            notes.append(note('일부', f'확인한 가격 조건 일치 매물 중 가까운 {len(listings)}건만 보여 줍니다. {hint}'))
+            # 위 분기가 아니면 has_more 는 확인한 일치 매물이 --limit 에 잘렸다는 뜻이다
+            notes.append(note('일부', f'확인한 가격 조건 일치 매물 중 직방 목록 앞의 {len(listings)}건만 보여 줍니다. {hint}'))
+    else:
+        notes = limit_notes(
+            total, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}', order='직방 목록',
+            inspected=inspected, has_more=has_more,
+        )
     if business_conditions and vacant:
         # [제외] 가 아니라 [참고] 다. 공실은 업종 조건에 맞는 매물을 뺀 것이 아니라 직방이 업종과 무관하게 따로 주는 묶음이다
         # (2026-11-10 리뷰가 [제외] 라고 했으나 오탐. 실측: 성수역 0.5km --business 카페/커피 는 카페 5건과 '이 지역 비어있는
         # 상가' 23건. 업종 조건 없이 찾는 법은 안내에 있다)
         notes.append(
-            f"업종 조건과 별개로 {'경계' if boundary else '반경'} 안에 비어 있는 상가가 {len(vacant)}건 있습니다. "
+            f"업종 조건과 별개로 {'동' if dongs else '반경'} 안에 비어 있는 상가가 {len(vacant)}건 있습니다. "
             '공실도 보려면 --business 없이 다시 검색하세요'
         )
     return ZigbangStoreSearchResult(
         region=region,
-        radius_km=None if boundary else radius_km,
-        boundary=boundary.name if boundary else None,
-        total=in_radius,
-        inspected_in_radius=inspected_in_radius if filter_price else None,
-        price_matched_in_radius=matched_in_radius if filter_price else None,
+        radius_km=None if dongs else radius_km,
+        boundary='·'.join(dong.name for dong in dongs) if dongs else None,
+        total=total,
+        inspected_in_radius=inspected if filter_price else None,
+        price_matched_in_radius=matched if filter_price else None,
         returned=len(listings),
         has_more=has_more,
         listings=listings,
-        notes=notes,
+        notes=scope_notes + notes,
     )
 
 

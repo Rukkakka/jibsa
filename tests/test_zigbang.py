@@ -798,6 +798,18 @@ def test_apt_region_shares_budget_across_ga_dongs(counts: dict[str, int], expect
     assert result.region.name == '성수동1가·성수동2가'
 
 
+def test_store_dong_codes_never_send_a_code_the_server_does_not_know() -> None:
+    # 직방 상가는 모르는 법정동 코드(리 코드 등)에 에러 없이 전국 매물을 준다. 리는 읍·면 코드로 바꾸고 코드가 없으면 막는다
+    from jibsa.providers.zigbang.service.store import store_region_codes
+
+    ri = ZigbangRegion(name='가상리', lat=37.49, lng=127.49, legal_division_code='4183025021')
+    codes, notes = store_region_codes([ri])
+    assert codes == ['4183025000'] and any('읍·면 전체' in note for note in notes)
+    with pytest.raises(JibsaError) as caught:
+        store_region_codes([ZigbangRegion(name='가상역', lat=37.5, lng=127.03)])
+    assert caught.value.code == 'REGION_NOT_SUPPORTED'
+
+
 def _station_items(*dongs: str) -> dict:
     return {'success': True, 'items': [
         {'id': index + 1, 'type': 'subway', 'name': '가상역', 'description': f'서울특별시 가상구 {dong}',

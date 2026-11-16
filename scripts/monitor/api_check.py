@@ -158,6 +158,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('store', 'listings', 'id'),),
         ),
         Step('상가 상세', ZIGBANG_LISTING, ('{store}',), 'id'),
+        # 동 이름은 반경(상권) 대신 법정동 코드(지역)로 찾는다
+        Step('상가 동 역삼동', ('zigbang', 'search', 'listings', 'store'), ('역삼동', '--limit', '2'), 'listings'),
         Step(
             '단기임대 지역 강남구', ('zigbang', 'search', 'listings', 'stay'), ('강남구', '--limit', '2'), 'listings',
             (Capture('stay', 'listings', 'id'),),

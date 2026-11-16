@@ -1007,13 +1007,14 @@ class ZigbangClient(BaseHTTPClient):
         self,
         payload: ZigbangStoreArticleStoresV2RequestPayloadModel
     ) -> ZigbangStoreArticleStoresV2ResponseModel:
-        """List store locations in a geohash tile via `POST /v2/store/article/stores`.
+        """List store locations in a circle or legal dongs via `POST /v2/store/article/stores`.
 
         POST 지만 조회 전용이라 idempotent 재시도를 쓴다. Same retry behaviour as
         `run_request_items_onerooms_v1`. 응답 최상위가 배열이라 `sections` 로 감싸 검증한다.
 
         Args:
-            payload: `geohash` plus 거래 유형, 1층 여부, 업종, 면적(㎡) 조건.
+            payload: `상권`(원: 중심·반경 m) 또는 `지역`(법정동 코드 10자리) 중 하나와 거래 유형, 1층 여부,
+                업종, 면적(㎡) 조건.
 
         Returns:
             ZigbangStoreArticleStoresV2ResponseModel: 위치 묶음(조건에 맞는 상가, 공실).

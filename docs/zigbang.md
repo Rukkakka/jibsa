@@ -189,7 +189,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 
 ## 4. `search listings store` — 상가·사무실 매물 찾기
 
-상가·사무실 매물을 업종·권리금·가격으로 찾는다.
+상가·사무실 매물을 업종·권리금·가격으로 찾는다. 결과는 거리순이 아니라 직방 목록 순서 그대로다.
 
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
@@ -211,7 +211,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 | `--manage-cost-max` | 월 관리비 상한 (만원, 포함) 범위: 0~제한 없음. | 미지정 |
 | `--key-money-min` | 권리금 하한 (만원, 포함) 범위: 0~제한 없음. | 미지정 |
 | `--key-money-max` | 권리금 상한 (만원, 포함) 범위: 0~제한 없음. | 미지정 |
-| `--radius` | 검색 반경 (km, 기본 1). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 경계 안을 찾는다. 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다) 범위: 0.1~5.0. | 미지정 |
+| `--radius` | 검색 반경 (km, 기본 1). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 안을 찾는다. 반경 안 매물이 모자라도 반경 밖 매물로 채우지 않는다 범위: 0.1~5.0. | 미지정 |
 | `--limit` | 최대 결과 수 범위: 1~120. | 15 |
 
 **사용 예시**
@@ -222,19 +222,19 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 **반환값**
 
-`total`, `returned`, `listings`; 가격 조건 사용 시 `inspected_in_radius`, `price_matched_in_radius`도 준다.
+`region`, `boundary`(동 안을 찾았을 때) 또는 `radius_km`, `total`, `returned`, `has_more`, `listings`; 가격 조건 사용 시 `inspected_in_radius`, `price_matched_in_radius`도 준다. `listings` 는 직방 목록 순서 그대로이고 거리순이 아니다. `distance_km` 는 검색 중심에서 잰 거리라 가까운 매물은 그 값으로 고른다. 이어 받기(`--next`)는 없어 더 보려면 `--limit`·조건·범위를 바꾼다.
 
 **오류와 대응**
 
-임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
+임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 동 안을 찾을 때 직방이 그 동의 법정동 코드를 주지 않으면 `REGION_NOT_SUPPORTED` 이니 `hint` 대로 `--radius` 를 준다.
 
 **주의사항**
 
-동 이름은 경계 안, 그 밖의 위치는 반경을 기준으로 가까운 순으로 찾는다 ([`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)과 같다). `--trade 임대`는 월세·전세를 포함하며 `--trade`는 하나만 받는다. 업종은 반복·쉼표로 지정하며 OR다. `--business` 를 주면 직방이 그 업종과 무관한 공실을 따로 주는데, 업종 조건을 지키도록 빼고 몇 건인지 `notes` 로 알린다. 공실도 보려면 `--business` 없이 검색한다.
+동(읍·면·동) 이름에 `--radius`·좌표를 주지 않으면 반경 대신 그 동 안을 찾고 `[범위]` 로 알린다 (결과에 `radius_km` 대신 `boundary`). 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)은 그 동들을 함께 찾는다 (`boundary`·`region.name` 은 `"성수동1가·성수동2가"`). 리·구·시·역·학교 이름과 좌표, `--radius` 는 검색 중심에서 반경 안을 찾는다 (기본 1km). 반경 안 매물만 나오고 모자라도 반경 밖으로 채우지 않는다. 직방 상가 목록 순서는 시간이 지나면 바뀌어, 같은 검색도 조금 뒤에 부르면 앞쪽 매물이 다를 수 있다. `--trade 임대`는 월세·전세를 포함하며 `--trade`는 하나만 받는다. 업종은 반복·쉼표로 지정하며 OR다. `--business` 를 주면 직방이 그 업종과 무관한 공실을 따로 주는데, 업종 조건을 지키도록 빼고 범위(동·반경) 안에 몇 건인지 `notes` 로 알린다. 공실도 보려면 `--business` 없이 검색한다.
 
 가격 조건(`--deposit-*`, `--rent-*`, `--price-*`, `--manage-cost-*`, `--key-money-*`)은 모두 만원이고 하한·상한을 포함하며, 조합하면 모든 조건을 만족해야 한다. 보증금·월세·권리금 조건은 임대, 매매가 조건은 매매로 자동 좁히며, 서로 섞거나 `--trade` 와 충돌하면 `INVALID_ARGUMENT` 이다. 월세 조건은 월세 매물에만 적용하고 관리비 조건은 임대·매매 모두에 쓸 수 있다. `--area-max`는 지정 면적 미만이다.
 
-가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 가까운 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. `total` 은 가격 적용 전 지도 후보 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 반경 밖 결과는 이 집계에 넣지 않는다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000` (2026-10-10 실측 15건. 무권리 `--key-money-max 0` 까지 걸면 역삼동·역삼역 모두 가까운 75건 안에 없어 0건이었다)
+가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 직방 목록 앞의 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. `total` 은 가격 적용 전 범위 안 직방 목록의 매물 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000`
 
 상세는 결과의 `store-…` ID를 그대로 `listing`에 넘긴다.
 
@@ -491,7 +491,7 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 | `search listings room` | 원룸, 오피스텔, 빌라 (`-t` 로 고름, 기본 전체. 원룸은 원룸형 오피스텔 포함, 투룸 이상은 빌라·오피스텔) | 동 이름이면 **그 동 경계 안**, 역·학교·구 이름, `--lat/--lng`, `--radius` 면 검색 중심 반경. 직방 목록 순 (거리순 아님, 종류별 묶음) |
 | `search listings apt` | 아파트 | 동·구 이름이면 **그 동·구 전체**, 직방 목록 순 (거리 없음). 역 이름·`--lat/--lng`·`--radius`(최대 2km)면 반경 안 단지를 가까운 순으로 (거리는 단지까지) |
 | `search listings --complex` | 아파트 단지 하나 또는 오피스텔 건물 하나 | 단지 ID (`apt-…`, `officetel-…`), 직방 목록 순. 거리가 없다 |
-| `search listings store` | 상가·사무실 | `search listings room` 과 같다 (동 이름이면 그 동 경계 안, 아니면 반경) |
+| `search listings store` | 상가·사무실 | 동 이름이면 **그 동 안**, 아니면 검색 중심 반경. 직방 목록 순 (거리순 아님) |
 | `search listings stay` | 직방 단기임대 (주 단위 계약 서비스) | 동·구 등 지역 이름이고 `--radius` 가 없으면 지역 전체. 역·학교·좌표 또는 `--radius` 를 주면 반경 |
 
 ### 유형별 지원 조건

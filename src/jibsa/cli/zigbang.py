@@ -34,6 +34,7 @@ from jibsa.core.geo import (
     multipolygon_bounds,
 )
 from jibsa.core.korean import (
+    is_dong_code,
     is_ri_code,
     particle,
     quoted,
@@ -118,7 +119,6 @@ from jibsa.providers.zigbang.service.stay import (
 )
 from jibsa.providers.zigbang.service.store import (
     STORE_BUSINESS_NAMES,
-    STORE_GEOHASH_PRECISION,
     STORE_TRADE_TYPES,
     ZigbangStoreConditions,
     search_store_listings,
@@ -251,7 +251,7 @@ ScopeRadiusOption = Annotated[
     typer.Option(
         min=0.1,
         max=MAX_RADIUS_KM,
-        help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 경계 안을 찾는다. 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다)',
+        help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 안을 찾는다. 반경 안 매물이 모자라도 반경 밖 매물로 채우지 않는다',
     ),
 ]
 
@@ -281,7 +281,7 @@ def _scope(
     notes = []
     boundary = None
     if radius is None:
-        # '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)은 경계를 합쳐 모두 찾는다
+        # '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)은 경계를 합쳐 그 안의 핀을 모두 찾는다 (room, stay 의 지도 대체 경로)
         boundary = merge_dong_boundaries(client, split) if split else dong_boundary(client, region)
         if split and boundary is not None:
             # 첫 동 중심에서 재면 다른 '○가' 매물이 늘 멀게 나와, 합친 범위의 가운데를 검색 중심으로 쓴다.
@@ -301,6 +301,41 @@ def _scope(
     if boundary is not None:
         notes.append(note('범위', f'{boundary.name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)'))
     return region, notes, boundary, radius_km
+
+
+def _store_scope(
+    client: ZigbangClient,
+    query: str | None,
+    lat: float | None,
+    lng: float | None,
+    radius: float | None,
+) -> tuple[ZigbangRegion, list[str], list[ZigbangRegion] | None, float]:
+    """상가 검색 중심과 범위를 정한다. 동 이름에 --radius·좌표가 없으면 반경 대신 그 동(직방 서버의 법정동 코드 조회)을 찾는다.
+
+    '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)은 그 동들을 함께 넘긴다 (서버가 코드 여럿을 한 번에 받는다). 리·구·시·역·학교
+    이름은 중심 반경으로 찾는다.
+
+    Returns:
+        (검색 중심, 안내, 찾을 동들 또는 None, 반경 km).
+    """
+    radius_km = radius or DEFAULT_RADIUS_KM
+    if lat is not None and lng is not None:
+        region, notes = _region(client, query, lat, lng, radius_km)
+        return region, notes, None, radius_km
+    region, split_note, split = resolve_region_scope(client, query or '')
+    notes = []
+    dongs: list[ZigbangRegion] | None = None
+    if radius is None and is_dong_code(region.legal_division_code):
+        dongs = split or [region]
+        if split:
+            region = merged_dong_region(region, split)
+            split_note = None
+        notes.append(note('범위', f'{region.name} 안을 찾았습니다 (반경으로 찾으려면 --radius)'))
+    elif wide_note := wide_area_note(query or '', region, radius_km):
+        notes.append(wide_note)
+    if split_note:
+        notes.append(split_note)
+    return region, notes, dongs, radius_km
 
 
 def _require_center(query: str | None, lat: float | None, lng: float | None) -> None:
@@ -868,7 +903,9 @@ def store_command(
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """상가·사무실을 검색 중심에서 가까운 순으로 조회한다. 가격은 요약을 받은 뒤 거른다. 모르는 금액은 제외한다.
+    """상가·사무실을 직방 목록 순서 그대로 조회한다 (거리순 아님, 거리는 distance_km). 가격은 요약을 받은 뒤 거른다. 모르는 금액은 제외한다.
+
+    동 이름을 주고 --radius 를 주지 않으면 그 동 안을, 역·구 이름·좌표·--radius 는 중심에서 반경 안을 찾는다.
 
     상세는 결과의 id(store-123) 로 jibsa zigbang listing <id>.
 
@@ -902,7 +939,7 @@ def store_command(
         price_notes.append(note('거래', f'가격 조건에 맞춰 거래 유형을 {effective_trade}로 좁혔습니다'))
     businesses = split_csv(business, STORE_BUSINESS_NAMES, '--business')
     with handle_errors(SOURCE), ZigbangClient() as client:
-        region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, STORE_GEOHASH_PRECISION)
+        region, notes, dongs, radius_km = _store_scope(client, query, lat, lng, radius)
         result = search_store_listings(
             client,
             region,
@@ -924,7 +961,7 @@ def store_command(
                 key_money_max=key_money_max,
             ),
             radius_km=radius_km,
-            boundary=boundary,
+            dongs=dongs,
             limit=limit,
         )
         emit(result, pretty, notes=price_notes + notes + result.notes, fields=fields)

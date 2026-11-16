@@ -32,7 +32,7 @@ from jibsa.providers.zigbang.service.common import (
 )
 
 
-# room·store·stay 의 --radius 최대. 동 경계 검색도 이 원보다 지도 칸이 많으면 반경으로 바꾼다 (wide_boundary_note)
+# room·store·stay 의 --radius 최대. room·stay 의 동 경계 검색도 이 원보다 지도 칸이 많으면 반경으로 바꾼다 (wide_boundary_note)
 MAX_RADIUS_KM: float = 5.0
 
 
@@ -217,7 +217,7 @@ def resolve_region_scope(
     """`resolve_region_with_notes` 와 같되 넓은 지역 안내 없이, '○가' 로 나뉜 동의 안내와 동들을 따로 준다.
 
     같은 이름의 동 없이 '<검색어>N가' 로만 나뉜 동(성수동 → 성수동1가·2가)이면 그 동들을 준다 (첫 동이 검색 중심).
-    경계로 찾는 쪽은 경계를 합치고 안내를 빼며, 그 밖에는 안내만 붙인다. 넓은 지역 안내(`wide_area_note`)는
+    동 안을 찾는 쪽은 그 동들을 함께 찾고 안내를 빼며, 그 밖에는 안내만 붙인다. 넓은 지역 안내(`wide_area_note`)는
     넣지 않아, 반경으로 찾는 쪽이 붙인다.
 
     어느 동을 합칠지는 `best_region_item`·`ga_dong_siblings`·`ga_dong_split`·`ga_dong_note` 만 판단한다
@@ -409,11 +409,11 @@ def wide_boundary_note(
 ) -> str | None:
     """동 경계에 닿는 지도 칸이 반경 `MAX_RADIUS_KM` 원보다 많으면, 경계 대신 중심 반경으로 찾는다는 안내. 아니면 None.
 
-    지도 칸마다 요청 1회라 큰 읍·면은 경계 검색이 수백 번 요청한다 (2026-10-10 실측: 홍천 내면은 상가 851칸,
-    원룸 41칸 × 유형 수). 반경 5km 원은 상가(정밀도 6) 159칸, 원룸(정밀도 5) 11칸이다.
+    지도 칸마다 요청 1회라 큰 읍·면은 경계 검색이 요청을 많이 보낸다 (2026-10-10 실측: 홍천 내면은 원룸 41칸 × 유형 수).
+    반경 5km 원은 원룸(정밀도 5) 11칸이다. 상가는 지도 칸 대신 서버의 동 코드 조회를 써서 이 검사를 거치지 않는다.
 
     경계 검색이 이어지면 검색 함수가 같은 칸을 다시 계산하지만, 이 검사를 통과한 경계는 칸이 적어 칸 목록을 넘기지
-    않는다 (2026-10-11 실측: 역삼동 상가 14칸 2ms, 울릉읍 64칸 21ms. 홍천 내면 851칸 140ms 는 여기서 반경으로 바뀐다).
+    않는다.
     """
     cells = len(geohashes_touching(boundary.polygons, precision))
     if cells <= len(geohashes_covering(region.lat, region.lng, MAX_RADIUS_KM, precision)):
