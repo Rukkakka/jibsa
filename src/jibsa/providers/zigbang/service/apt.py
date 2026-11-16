@@ -51,8 +51,8 @@ from jibsa.providers.zigbang.service.region import (
     ga_dong_note,
     ga_dong_siblings,
     ga_dong_split,
-    region_notes,
     search_regions,
+    settled_item,
 )
 
 from typing import (
@@ -186,10 +186,12 @@ def resolve_apt_region(
     Raises:
         RegionNotFoundError: 법정동코드가 있는 지역 결과가 없거나(역 이름만 준 경우 등) 시·도일 때. 직방 지역 목록은
             시·도 코드에 늘 0건이라(`local_code_of`) CLI 가 반경 검색으로 넘긴다.
-        RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때 (`region_notes`).
+        RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때 (`settled_item`).
     """
     items = search_regions(client, query) if items is None else items
     best = best_region_item(query, items, require_code=True)
+    # 같은 이름 동·구는 room·store·stay 와 같이 검색어 앞 낱말로 가리고, 가려지지 않으면 묻는다
+    best = settled_item(query, items, best) if best is not None else None
     code = best.source.legal_division_code if best and best.source else None
     if best is None or code is None or code.endswith('00000000'):
         # 행정동(역삼1동)은 직방 지역 검색이 0건이라(2026-10-11 실측: 역삼1동·화곡제1동·상계3.4동·월곡1동) CLI 의 반경 검색
@@ -199,7 +201,7 @@ def resolve_apt_region(
             hint="아파트는 동·구 단위로 조회합니다. 역·시·도 이름 대신 동 이름(예: '역삼동')이나 구 이름(예: '강남구')으로 다시 검색하세요",
         )
     # 구 단위로 조회해 넓은 지역 안내(wide_area_note)는 붙이지 않는다
-    notes = region_notes(query, items, best)
+    notes: list[str] = []
     gus = city_gu_items(query, items, best)
     if gus:
         return region_from_search_item(best), notes, [region_from_search_item(item) for item in gus if item is not best]

@@ -57,44 +57,81 @@ def search_regions(
     ]
 
 
-def _retry_hint(address: str, name: str) -> str:
-    """다른 후보로 다시 검색하는 법. 구 이름을 뒤에 붙이면('신사동 강남구') 직방이 동 대신 학교 같은
-    다른 결과를 먼저 주므로, 다른 후보의 시·군·구를 앞에 붙인 검색어를 예로 든다 ('강남구 신사동')."""
-    district = next((word for word in reversed(address.split()) if word[-1] in '시군구'), None)
-    if district is None:
-        return '구 이름을 앞에 붙여 다시 검색하세요'
-    return f"'{district} {name}' 처럼 구 이름을 앞에 붙여 다시 검색하세요"
+def _prefix_words(address: str, name: str) -> list[tuple[str, str]]:
+    """후보 주소에서 검색어 앞에 붙여 볼 낱말과 그 단위. 시·군·구 → 동 → 시·도 순이다.
+
+    주소 첫 낱말은 시·도라('서울특별시 중구', '세종특별자치시 반곡동') 시·군·구로 보지 않는다.
+    """
+    words = address.split()
+    district = next((word for word in reversed(words[1:]) if word[-1] in '시군구' and word != name), None)
+    prefixes: list[tuple[str, str]] = []
+    if district is not None:
+        prefixes.append((district, district[-1]))
+    if words and words[-1] not in (name, district) and words[-1][-1] not in '시군구':
+        prefixes.append((words[-1], '동' if words[-1][-1] in '동가' else words[-1][-1]))
+    if len(words) > 1:
+        prefixes.append((words[0], '시·도'))
+    return prefixes
 
 
-def region_notes(
+def _retry_hint(same: list[ZigbangSearchItemModel], name: str) -> str:
+    """다른 후보로 다시 검색하는 법. 예로 드는 검색어는 후보 하나로 가려지는 것(`_qualified_item`)만 쓴다.
+
+    구 이름을 뒤에 붙이면('신사동 강남구') 직방이 동 대신 학교 같은 다른 결과를 먼저 주므로, 후보 주소의 낱말을 앞에 붙인
+    검색어를 예로 든다. 시·군·구 → 동 → 시·도 순으로 붙여 본다: 다른 구의 같은 이름 동은 '강남구 신사동', 후보가 모두 같은
+    시·군·구면(신촌역: 서대문구 창천동·신촌동) '창천동 신촌역', 같은 이름 구(중구)는 '서울특별시 중구' 다 (2026-11-16 실측:
+    직방은 '서울특별시 중구'·'서울 중구' 에 서울 중구 하나만 준다). 후보 하나로 가려지지 않는 검색어를 들면 따라도 같은 에러가
+    되풀이됐다 (2026-11-16 리뷰: 중구에 '구 이름을 앞에 붙이라' 고 했다).
+    """
+    for item in same:
+        for word, unit in _prefix_words(item.description or '', name):
+            example = f'{word} {name}'
+            if _qualified_item(example, same) is item:
+                return f"'{example}' 처럼 {unit} 이름을 앞에 붙여 다시 검색하세요"
+    return '후보(candidates) 주소의 시·도·구·동 이름을 앞에 붙여 다시 검색하세요'
+
+
+def _qualified_item(query: str, same: list[ZigbangSearchItemModel]) -> ZigbangSearchItemModel | None:
+    """같은 이름 후보 가운데 검색어의 앞 낱말(구·동 이름)이 주소에 모두 든 곳이 하나뿐이면 그 후보(첫 결과). 아니면 None.
+
+    직방은 '신촌동 신촌역' 에도 서대문구 창천동·신촌동의 두 신촌역을 함께 준다 (2026-11-15 실측). 사용자가 붙인 낱말로
+    가릴 수 있으면 임의로 고르는 것이 아니라 그 후보로 찾는다. 주소까지 같은 결과는 같은 곳으로 본다 (`settled_item` 도
+    주소로 후보를 센다).
+    """
+    qualifiers = query.split()[:-1]
+    if not qualifiers:
+        return None
+    matched = [item for item in same if all(word in (item.description or '').split() for word in qualifiers)]
+    return matched[0] if matched and len({item.description for item in matched}) == 1 else None
+
+
+def settled_item(
     query: str,
     items: list[ZigbangSearchItemModel],
     best: ZigbangSearchItemModel,
-) -> list[str]:
-    """고른 지역이 모호할 때 결과에 붙일 안내. 같은 이름의 지역(동·구)이 여러 곳이면 고르지 않고 멈춘다.
+) -> ZigbangSearchItemModel:
+    """고른 곳과 이름·종류가 같은 후보 가운데 검색할 곳 하나를 정한다. 여러 곳이면 고르지 않고 멈춘다.
 
-    같은 이름·같은 종류 결과가 여러 곳이면 (신사동, 양평역, 종로1가) 후보를 알린다. 이름이 비슷하기만 한
-    결과(세종 → 세종동·세종로)나 종류가 다른 결과(신사동 → 신사역)는 세지 않는다. 넓은 지역 안내는 반경으로
-    찾을 때만 맞아 `wide_area_note` 로 따로 붙인다.
+    검색어 앞 낱말로 후보 하나가 가려지면(`_qualified_item`) 그 후보, 같은 이름·같은 종류 후보가 한 곳이면 `best` 다.
+    이름이 비슷하기만 한 결과(세종 → 세종동·세종로)나 종류가 다른 결과(신사동 → 신사역)는 세지 않는다.
 
-    지역은 첫 곳으로 찾으면 소스마다 다른 곳을 찾는다 (2026-10-15 실측: 신사동은 직방 첫 곳이 은평구, 당근은 강남구,
-    네이버는 REGION_AMBIGUOUS). 그래서 네이버처럼 후보를 알리고 멈춘다. 역은 네이버·당근처럼 첫 역으로 찾고 안내한다.
-    전체 주소('서울특별시 강남구 신사동')는 직방이 학교만 찾아 주므로 구 이름을 붙인 검색어를 권한다.
+    첫 곳으로 찾으면 엉뚱한 곳의 결과가 조용히 나온다 (2026-10-15 실측: 신사동은 직방 첫 곳이 은평구. 2026-11-15 실측:
+    양평역은 첫 곳이 서울 영등포구이고 경기 양평군 양평역은 안내로만 알렸다). 지역·역·학교 모두 같은 이름의 후보 중 하나를
+    임의로 고르지 않는다 (docs/development/provider-conventions.md '웹 화면과의 대응'. 웹 검색창도 후보를 보여 주고
+    사용자가 고른다). 전체 주소('서울특별시 강남구 신사동')는 직방이 학교만 찾아 주므로 낱말 하나를 붙인 검색어를 권한다
+    (`_retry_hint`). 모든 검색이 이 함수로 정해, 검색어 앞 낱말로 가리는 규칙이 명령마다 다르지 않다.
 
     Raises:
-        RegionAmbiguousError: 같은 이름의 지역(동·구)이 여러 곳일 때.
+        RegionAmbiguousError: 같은 이름·같은 종류의 후보가 여러 곳일 때.
     """
     same = [item for item in items if item.type == best.type and item.name == best.name]
+    qualified = _qualified_item(query, same)
+    if qualified is not None:
+        return qualified
     addresses = list(dict.fromkeys(item.description for item in same if item.description))
     if len(addresses) < 2:
-        return []
-    if best.type == 'address':
-        raise RegionAmbiguousError(query, addresses, len(addresses), hint=_retry_hint(addresses[0], best.name))
-    return [note(
-        '모호',
-        f"{quoted(query, '은/는')} 여러 곳에 있습니다 ({', '.join(addresses)}). "
-        f'첫 번째인 {addresses[0]} 기준으로 검색했습니다. 다른 곳이면 {_retry_hint(addresses[1], best.name)}',
-    )]
+        return best
+    raise RegionAmbiguousError(query, addresses, len(addresses), hint=_retry_hint(same, best.name or query))
 
 
 def wide_area_note(query: str, region: ZigbangRegion, radius_km: float) -> str | None:
@@ -121,18 +158,18 @@ def resolve_region_with_notes(
     radius_km: float = 1.0,
     items: list[ZigbangSearchItemModel] | None = None,
 ) -> tuple[ZigbangRegion, list[str]]:
-    """지역명·역명을 반경 검색 중심점으로 바꾸고(지역(address) 결과 우선), 모호하거나 넓은 지역이면 안내
-    (`region_notes`·`wide_area_note`)를 함께 준다.
+    """지역명·역명을 반경 검색 중심점으로 바꾸고(지역(address) 결과 우선), 넓은 지역이거나 '○가' 로 나뉜 동이면 안내
+    (`wide_area_note`·`ga_dong_note`)를 함께 준다. 같은 이름 후보가 여러 곳이면 멈춘다 (`settled_item`).
 
     `items` 는 같은 검색어로 이미 받은 `search_regions` 결과다. 주면 지역 검색을 다시 하지 않는다.
 
     Raises:
         RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
-        RegionAmbiguousError: 같은 이름의 지역(동·구)이 여러 곳일 때 (`region_notes`).
+        RegionAmbiguousError: 같은 이름·같은 종류의 후보(동·구·역·학교)가 여러 곳일 때 (`settled_item`).
     """
-    region, notes, split_note, _ = resolve_region_scope(client, query, items=items)
+    region, split_note, _ = resolve_region_scope(client, query, items=items)
     wide_note = wide_area_note(query, region, radius_km)
-    return region, notes + [note for note in (wide_note, split_note) if note]
+    return region, [note for note in (wide_note, split_note) if note]
 
 
 def _dong_name(query: str) -> str:
@@ -176,8 +213,8 @@ def resolve_region_scope(
     query: str,
     *,
     items: list[ZigbangSearchItemModel] | None = None,
-) -> tuple[ZigbangRegion, list[str], str | None, list[ZigbangRegion]]:
-    """`resolve_region_with_notes` 와 같고, '○가' 로 나뉜 동의 안내와 동들을 따로 준다.
+) -> tuple[ZigbangRegion, str | None, list[ZigbangRegion]]:
+    """`resolve_region_with_notes` 와 같되 넓은 지역 안내 없이, '○가' 로 나뉜 동의 안내와 동들을 따로 준다.
 
     같은 이름의 동 없이 '<검색어>N가' 로만 나뉜 동(성수동 → 성수동1가·2가)이면 그 동들을 준다 (첫 동이 검색 중심).
     경계로 찾는 쪽은 경계를 합치고 안내를 빼며, 그 밖에는 안내만 붙인다. 넓은 지역 안내(`wide_area_note`)는
@@ -188,21 +225,21 @@ def resolve_region_scope(
     동마다 검색 API, apt 는 동마다 지역 목록) 범위 객체 하나로 묶지 않는다.
 
     Returns:
-        (검색 중심, 안내, ○가 안내 또는 None, 합칠 ○가 동 (없으면 [])).
+        (검색 중심, ○가 안내 또는 None, 합칠 ○가 동 (없으면 [])).
 
     Raises:
         RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
-        RegionAmbiguousError: 같은 이름의 지역(동·구)이 여러 곳일 때 (`region_notes`).
+        RegionAmbiguousError: 같은 이름·같은 종류의 후보(동·구·역·학교)가 여러 곳일 때 (`settled_item`).
     """
     items = search_regions(client, query) if items is None else items
     if not items:
         raise RegionNotFoundError(query, hint=legal_dong_hint(query))
-    best = best_region_item(query, items) or items[0]
+    # 같은 이름 후보가 여럿이어도 검색어 앞 낱말로 하나가 가려지면 그 후보가 검색 중심이다 ('신촌동 신촌역')
+    best = settled_item(query, items, best_region_item(query, items) or items[0])
     siblings = ga_dong_siblings(query, items, best)
     split = ga_dong_split(query, siblings, best)
     return (
         region_from_search_item(best),
-        region_notes(query, items, best),
         ga_dong_note(query, siblings, best),
         [region_from_search_item(item) for item in split],
     )
@@ -215,7 +252,7 @@ def ga_dong_siblings(
 ) -> list[ZigbangSearchItemModel]:
     """'<검색어>N가' 이름의 법정동 후보 (성수동 → 성수동1가·성수동2가). 고른 지역과 같은 시·구만 센다.
 
-    '○가' 동은 이름이 검색어와 달라 `region_notes` 의 같은 이름 안내에 걸리지 않는데, 첫 후보만 찾으면
+    '○가' 동은 이름이 검색어와 달라 `settled_item` 의 같은 이름 검사에 걸리지 않는데, 첫 후보만 찾으면
     나머지 '○가' 가 조용히 빠진다 (2026-10-10 실측: 성수동은 1가만 찾아 2가 상가 217건이 빠짐).
     """
     name = _dong_name(query)

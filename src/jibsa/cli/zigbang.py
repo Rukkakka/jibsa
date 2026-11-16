@@ -266,7 +266,8 @@ def _scope(
     if lat is not None and lng is not None:
         region, notes = _region(client, query, lat, lng, radius_km)
         return region, notes, None, radius_km
-    region, notes, split_note, split = resolve_region_scope(client, query or '', items=items)
+    region, split_note, split = resolve_region_scope(client, query or '', items=items)
+    notes = []
     boundary = None
     if radius is None:
         # '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)은 경계를 합쳐 모두 찾는다
@@ -1025,7 +1026,8 @@ def stay_command(
             region, notes = _region(client, query, lat, lng, radius_km)
         else:
             items = search_regions(client, query or '')
-            region, notes, split_note, split = resolve_region_scope(client, query or '', items=items)
+            region, split_note, split = resolve_region_scope(client, query or '', items=items)
+            notes = []
             gus = city_gu_regions(query or '', items)
         whole_address = lat is None and radius is None and region.search_type == 'address' and bool(region.local1)
         extra: list[ZigbangRegion] = []

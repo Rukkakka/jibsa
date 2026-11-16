@@ -734,7 +734,7 @@ def test_ga_dong_scope(query: str, items: list[tuple[str, str]], split: list[str
         return httpx.Response(200, json=_search_items(*items))
 
     with make_client(handler) as client:
-        _, _, split_note, regions = resolve_region_scope(client, query)
+        _, split_note, regions = resolve_region_scope(client, query)
     assert [region.name for region in regions] == split
     assert (split_note is None) if note is None else (note in split_note)
 
@@ -766,3 +766,31 @@ def test_apt_region_shares_budget_across_ga_dongs(counts: dict[str, int], expect
     assert calls == expected
     assert result.local_code == '11200114,11200115'
     assert result.region.name == '성수동1가·성수동2가'
+
+
+def _station_items(*dongs: str) -> dict:
+    return {'success': True, 'items': [
+        {'id': index + 1, 'type': 'subway', 'name': '가상역', 'description': f'서울특별시 가상구 {dong}',
+         'lat': 37.55 + index * 0.005, 'lng': 126.93}
+        for index, dong in enumerate(dongs)
+    ]}
+
+
+@pytest.mark.parametrize('query,expected', [
+    # 이름이 같은 역이 여러 곳이면 첫 역으로 찾지 않고 묻는다. 같은 구라 구 이름으로 못 갈라 동 이름을 붙이라고 알린다
+    ('가상역', 'REGION_AMBIGUOUS'),
+    # 직방은 동 이름을 붙여도 두 역을 다 준다. 붙인 낱말이 주소에 있는 후보가 하나면 그 역으로 찾는다
+    ('둘째동 가상역', '서울특별시 가상구 둘째동'),
+])
+def test_same_name_station_asks_unless_query_picks_one(query: str, expected: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_station_items('첫째동', '둘째동'))
+
+    with make_client(handler) as client:
+        if expected == 'REGION_AMBIGUOUS':
+            with pytest.raises(JibsaError) as caught:
+                resolve_region_scope(client, query)
+            assert caught.value.code == expected and "'첫째동 가상역'" in caught.value.hint
+        else:
+            region, _, _ = resolve_region_scope(client, query)
+            assert region.address == expected
