@@ -55,7 +55,6 @@ from jibsa.providers.zigbang.service.apt import (
     ZigbangAptConditions,
     apt_resume_changed_error,
     merged_dong_region,
-    merged_gu_region,
     resolve_apt_region,
     search_apt_listings,
     search_apt_listings_near,
@@ -97,6 +96,7 @@ from jibsa.providers.zigbang.service.real_price import (
 from jibsa.providers.zigbang.service.region import (
     MAX_RADIUS_KM,
     city_gu_regions,
+    divided_region_error,
     dong_boundary,
     merge_dong_boundaries,
     resolve_region_scope,
@@ -116,6 +116,7 @@ from jibsa.providers.zigbang.service.stay import (
     attach_stay_period_costs,
     check_stay_sort,
     search_stay_listings,
+    stay_distance_sort_error,
 )
 from jibsa.providers.zigbang.service.store import (
     STORE_BUSINESS_NAMES,
@@ -1002,14 +1003,20 @@ def stay_command(
     flexibility: Annotated[int | None, typer.Option(min=0, max=30, help='일정을 앞뒤로 며칠까지 유연하게 볼지 (--check-in 과 함께)')] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=MAX_RADIUS_KM, help='검색 반경 (km, 기본 1). 동·구 이름에 지역 전체, 역·학교·좌표는 반경 검색'),
+        typer.Option(min=0.1, max=MAX_RADIUS_KM, help='검색 반경 (km). 주면 이름 검색도 그 중심에서 반경 안의 지도 매물을 찾는다. 안 주면 역·학교·동·구 이름은 직방 단기임대 검색 결과 그대로, 좌표는 1km'),
     ] = None,
     # 다른 명령의 --sort 와 달리 값이 영어지만 바꾸지 않는다 (바꾸면 호환 깨짐). 2026-10-31 에이전트 검증에서 이 명령을 쓴
-    # 2명 모두 --help 대로 --sort price 를 줬고, 한국어 값을 주면 에러 hint 가 distance·price·newest 를 알린다
+    # 2명 모두 --help 대로 --sort price 를 줬고, 한국어 값을 주면 에러 hint 가 값들을 알린다
     sort: Annotated[
         str,
-        typer.Option('--sort', help='distance 가까운 순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순'),
-    ] = 'distance',
+        typer.Option(
+            '--sort',
+            help=(
+                'recommended 직방 추천순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순, '
+                'distance 역에서 가까운 순 (--radius 없는 역 이름 검색에서만)'
+            ),
+        ),
+    ] = 'recommended',
     limit: LimitOption = 15,
     details: Annotated[
         bool,
@@ -1024,9 +1031,11 @@ def stay_command(
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """직방 단기임대(주 단위 계약) 매물을 거리·가격·최근 등록 순으로 조회한다. 금액은 주당 만원.
+    """직방 단기임대(주 단위 계약) 매물을 직방 추천순(기본)·가격·최근 등록 순으로 조회한다. 금액은 주당 만원.
 
     원룸·빌라의 '단기임대' 거래(search room --trade 단기임대)와 다른 별도 서비스다.
+    역·학교·동·구 이름은 직방 단기임대 검색 결과를 직방 순서 그대로 준다 (역은 역에서 1km 안, 동·구는 이웃 동 매물이 섞일 수
+    있다). --radius 나 --lat/--lng 를 주면 그 중심에서 반경 안의 지도 매물을 준다. 가까운 매물은 distance_km 로 고른다.
     상세는 결과의 id(stay-123) 로 jibsa zigbang listing <id>. 가격순은 주당 요금 기준이라, 기간 실제 비용은 --details 로 본다.
 
     예: jibsa zigbang search listings stay 강남역 --weekly-rent-max 50 --building 오피스텔 --option 세탁기,와이파이
@@ -1045,6 +1054,9 @@ def stay_command(
             check_in_date=check_in, check_out_date=check_out, flexibility=flexibility,
         )
         stay_sort = check_stay_sort(sort)
+        if stay_sort == 'distance' and (radius is not None or lat is not None):
+            # 좌표·반경은 찾은 곳과 상관없이 늘 막히는 조합이라 지역 검색 요청 전에 막는다. 이름은 역인지 알아야 해 서비스가 막는다
+            raise stay_distance_sort_error()
     if structure is not None:
         structure = check_choice(structure, STAY_STRUCTURES, '--structure')
     buildings = split_csv(building, tuple(STAY_BUILDING_TYPE_BY_LABEL), '--building')
@@ -1064,19 +1076,13 @@ def stay_command(
             region, split_note, split = resolve_region_scope(client, query or '', items=items)
             notes = []
             gus = city_gu_regions(query or '', items)
-        whole_address = lat is None and radius is None and region.search_type == 'address' and bool(region.local1)
-        extra: list[ZigbangRegion] = []
-        if whole_address and split:
-            # '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)은 각 동을 지역 전체로 찾아 합친다.
-            # 가까운 순은 동 중심들의 가운데에서 잰다
-            extra = [part for part in split if part.name != region.name]
-            region = merged_dong_region(region, split)
-            split_note = None
-        elif whole_address and gus:
-            # 구가 있는 시(성남시)는 직방 지역 검색이 시 대신 구들을 줘서 첫 구만 찾으면 나머지 구가 빠진다 (2026-10-11 실측:
-            # 분당구 35건만 찾고 수정구 등이 빠짐). 아파트처럼 구마다 지역 검색을 불러 합친다
-            extra = [part for part in gus if part.name != region.name]
-            region = merged_gu_region(region, gus)
+        # 이름으로 찾고 --radius 를 주지 않았으면 직방 단기임대 검색(역·학교·동·구)의 결과를 그대로 받는다
+        by_name = lat is None and radius is None
+        whole_address = by_name and region.search_type == 'address' and bool(region.local1)
+        if whole_address and (split or gus):
+            # '○가' 로 나뉜 동(성수동 → 성수동1가·2가)과 구가 있는 시(성남시)는 직방 검색창이 동·구를 따로 준다. 지역 검색 여럿을
+            # 합친 순서·수는 웹에 없어 합치지 않고 어느 곳인지 묻는다 (2026-11-15 실측: 성수동2가 검색에 성수동1가 매물도 온다)
+            raise divided_region_error(query or '', split or gus)
         if split_note:
             notes.append(split_note)
         if whole_address and is_ri_code(region.legal_division_code) and region.local3:
@@ -1084,12 +1090,10 @@ def stay_command(
             # 양평읍 창대리 매물)
             notes.append(note(
                 '범위',
-                f"{quoted(region.name, '은/는')} 리 단위라 직방 단기임대 지역 검색이 상위 {region.local3} 전체를 찾았습니다. "
+                f"{quoted(region.name, '은/는')} 리 단위라 직방 단기임대 지역 검색이 상위 {region.local3} 기준으로 찾았습니다. "
                 '리 주변만 보려면 --radius 를 주세요',
             ))
-        elif whole_address:
-            notes.append(note('범위', f'반경 대신 {region.name} 지역 전체를 검색했습니다. 반경으로 찾으려면 --radius 를 주세요'))
-        boundary = dong_boundary(client, region) if lat is None and radius is None and not whole_address else None
+        boundary = dong_boundary(client, region) if by_name and not whole_address else None
         if boundary is not None and (wide_note := wide_boundary_note(region, boundary, STAY_GEOHASH_PRECISION, radius_km)):
             notes.append(wide_note)
             boundary = None
@@ -1121,16 +1125,15 @@ def stay_command(
                 sort=stay_sort,
                 radius_km=radius_km,
                 limit=limit,
-                use_search_api=lat is None,
+                use_search_api=by_name,
                 whole_address=whole_address,
-                extra_regions=extra,
                 boundary=boundary,
             )
         except RegionNotFoundError as exc:
             if not whole_address:
                 raise
             # 단기임대 지역 검색이 동을 찾지 못하면(2026-10 의 세종의 동, _stay_region_search) room·store 처럼 동 경계(넓거나
-            # 없으면 반경) 안 지도 칸으로 다시 찾는다. 함께 찾는 동·구 중 처음 못 찾은 곳을 댄다 (_stay_search_ids)
+            # 없으면 반경) 안 지도 칸으로 다시 찾는다
             missing = exc.query
             region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, STAY_GEOHASH_PRECISION, items=items)
             # 대체 경로로 찾았으니 [실패] 다 (docs/common.md 의 태그 정의). 지금은 매물이 없는 곳까지

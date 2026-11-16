@@ -1,10 +1,6 @@
 """단기임대 매물 검색과 상세 (search listings stay, listing stay-*)."""
 
 from collections.abc import Callable
-from datetime import (
-    datetime,
-    timezone,
-)
 
 from httpx import HTTPStatusError
 from pydantic import (
@@ -24,15 +20,12 @@ from jibsa.core.errors import (
 from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
-    within_radius,
 )
 from jibsa.core.http import error_body
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
-    beyond_radius_notes,
-    by_distance,
     format_manwon,
     join_address,
     limit_notes,
@@ -57,6 +50,7 @@ from jibsa.providers.zigbang.api.request.stay import (
     ZigbangStayDiscountType,
     ZigbangStayFloorType,
     ZigbangStayOption,
+    ZigbangStaySearchSort,
     stay_days,
 )
 from jibsa.providers.zigbang.api.response.stay import (
@@ -64,6 +58,7 @@ from jibsa.providers.zigbang.api.response.stay import (
     ZigbangGuestItemsResponseModel,
     ZigbangStayDiscountModel,
     ZigbangStayItemSummaryModel,
+    ZigbangStayMarkerModel,
 )
 from jibsa.providers.zigbang.service.common import (
     MAX_LIST_LIMIT,
@@ -159,13 +154,30 @@ STAY_GEOHASH_PRECISION: int = 5
 # 결과가 limit 보다 많을 때 좁히라고 권할 조건. 주 단위 단기임대에는 거래 유형·매물 유형 옵션이 없다
 STAY_NARROW: str = '방 종류·가격·날짜 조건'
 STAY_BY_IDS_BATCH_SIZE: int = 50
-StaySort = Literal['distance', 'price', 'newest']
-STAY_SORTS: tuple[StaySort, ...] = ('distance', 'price', 'newest')
+# 웹 정렬 넷과 같다: 추천순(기본), 낮은 가격순, 최근 등록순, 역 가까운 순. 역 가까운 순은 웹도 지하철역 검색에서만 고를 수
+# 있다 (2026-11-15 웹)
+StaySort = Literal['recommended', 'price', 'newest', 'distance']
+STAY_SORTS: tuple[StaySort, ...] = ('recommended', 'price', 'newest', 'distance')
+STAY_SERVER_SORTS: dict[StaySort, ZigbangStaySearchSort] = {
+    'recommended': 'RECOMMENDED',
+    'price': 'PRICE_ASC',
+    'newest': 'NEWEST',
+    'distance': 'STATION_DISTANCE_ASC',
+}
 STAY_AVAILABILITY_RADIUS_KM: float = 0.3
 STAY_PRICE_ERRORS: dict[str, str] = {
     'MIN_CONTRACT_PERIOD': '계약 기간이 이 매물의 최소 계약 기간보다 짧습니다',
     'MAX_CONTRACT_PERIOD': '계약 기간이 이 매물의 최대 계약 기간보다 깁니다',
 }
+# limit_notes 의 '… 순으로' 앞말
+STAY_SORT_ORDERS: dict[StaySort, str] = {
+    'recommended': '직방 추천',
+    'price': '주당 임대료·관리비 합계가 낮은',
+    'newest': '최근 등록된',
+    'distance': '역에서 가까운',
+}
+# 역 검색(type=subway)은 직방이 역에서 약 1km 안만 준다 (2026-11-15 실측: 강남역 71건, 가장 먼 것 0.979km)
+STAY_SUBWAY_RADIUS_KM: float = 1.0
 
 
 def stay_item_url(stay_id: int | str) -> str:
@@ -342,15 +354,21 @@ class ZigbangStaySearchResult(BaseModel):
     ]
     radius_km: Annotated[
         float | None,
-        Field(description='검색 반경 (km). 동 경계로 찾았으면 키가 없다')
+        Field(description=(
+            '검색 반경 (km). 역 이름 검색은 직방이 역에서 약 1km 안을 주어 1. 동·구 등 지역 이름·동 경계·학교 이름으로 찾았으면 '
+            '키가 없다'
+        ))
     ] = None
     boundary: Annotated[
         str | None,
-        Field(description='반경 대신 찾은 동·구 등 지역 이름. 반경으로 찾았으면 키가 없다')
+        Field(description=(
+            '반경 대신 찾은 지역 이름. 동·구 이름이면 직방 단기임대 지역 검색 결과라 이웃 동 매물이 섞일 수 있고, 동 경계로 '
+            '찾았으면 그 경계 안만이다. 반경으로 찾았으면 키가 없다'
+        ))
     ] = None
     total: Annotated[
         int,
-        Field(description='반경(동 경계로 찾았으면 경계) 안 조건에 맞는 매물 수 (limit 적용 전)')
+        Field(description='범위 안 조건에 맞는 매물 수 (limit 적용 전). 이름 검색이면 직방 검색 결과 수, 지도로 찾았으면 반경·동 경계 안 핀 수')
     ]
     returned: Annotated[
         int,
@@ -358,12 +376,12 @@ class ZigbangStaySearchResult(BaseModel):
     ]
     has_more: Annotated[
         bool,
-        Field(description='범위 안에 더 있는지: 요약을 받지 않은 후보가 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
+        Field(description='범위 안에 요약을 받지 않은 매물이 더 있는지 (이어 받기는 없다. --limit·조건으로)')
     ] = False
     listings: Annotated[
         # --details 의 period_cost 까지 내보낸다 (SerializeAsAny 가 없으면 ZigbangStayListing 필드만 나간다)
         list[SerializeAsAny[ZigbangStayListing]],
-        Field(description='선택한 정렬 순서의 매물')
+        Field(description='선택한 정렬 순서의 매물 (직방이 준 순서 또는 웹 지도 목록과 같은 순서)')
     ]
     notes: Annotated[
         list[str],
@@ -457,6 +475,16 @@ def check_stay_sort(sort: str) -> StaySort:
             hint=f"--sort {', '.join(STAY_SORTS)} 중 하나를 주세요",
         )
     return sort
+
+
+def stay_distance_sort_error() -> JibsaError:
+    """역 가까운 순(`distance`)을 역 이름 검색이 아닌 곳에 줬을 때의 에러. CLI 는 좌표·`--radius` 와 함께 준 것을 지역을 찾기
+    전에, 서비스는 찾은 곳이 역이 아닌 것을 매물을 받기 전에 같은 에러로 막는다."""
+    return JibsaError(
+        code='INVALID_ARGUMENT',
+        message='역 가까운 순(--sort distance)은 --radius 없이 역 이름으로 찾을 때만 됩니다',
+        hint='--sort recommended·price·newest 중 하나를 쓰거나 --radius 없이 역 이름으로 검색하세요',
+    )
 
 
 class ZigbangStayConditions(RequestModel):
@@ -555,137 +583,164 @@ def search_stay_listings(
     region: ZigbangRegion,
     *,
     conditions: ZigbangStayConditions | None = None,
-    sort: StaySort = 'distance',
+    sort: StaySort = 'recommended',
     radius_km: float = 1.0,
     limit: int = 20,
     boundary: ZigbangBoundary | None = None,
     use_search_api: bool = False,
     whole_address: bool = False,
-    extra_regions: list[ZigbangRegion] | None = None,
 ) -> ZigbangStaySearchResult:
-    """직방 단기임대를 거리·가격·최근 등록 순으로 조회한다. 지역 전체 또는 반경·동 경계를 지원한다.
+    """직방 단기임대를 웹 정렬(추천·낮은 가격·최근 등록·역 가까운 순)로 조회한다.
 
     직방 단기임대는 원룸·빌라의 '단기' 거래와 다른 별도 서비스(주 단위 계약, stay-apis)다.
     모든 조건(`conditions`)은 서버에서 거른다 (주당 요금은 만원). 라벨(오피스텔, 에어컨, 지하 ...)은 서버 코드로 바꿔 보낸다.
-    use_search_api 면 이름 검색으로 보고 반경 밖을 자르며, 검색 API 로 ID 를 받는 건 지역 전체·동 경계일 때뿐이다
-    (반경 안 매물은 지도 핀에 모두 있다). whole_address는 지역 전체를 조회한다.
-    extra_regions 는 지역 전체로 함께 찾을 동 ('○가' 로 나뉜 성수동1가·2가 등)이나 구가 있는 시의 나머지 구 (성남시 수정구·중원구).
-    지역마다 검색 API 를 1회 더 부르고 매물 ID 를 합친 뒤 정렬·limit 을 적용한다. 리는 검색 API 가 local3(그 위 읍·면)으로
-    찾아 `boundary` 를 읍·면 이름으로 낸다.
+    두 경로 모두 받은 매물을 다시 거르거나 다시 세우지 않고, 고른 순서의 앞 `limit` 개만 요약(by-ids)을 받는다.
+
+    - 검색 API (`use_search_api`: 역·학교·대학 이름, `whole_address` 인 동·구 이름): 웹 검색 결과 목록처럼 정렬을 서버에
+      보내고(`guest/items/search`) 응답 ID 순서 그대로 낸다. 반경으로 자르지 않는다. 역은 직방이 역에서 약 1km 안을 주어
+      `radius_km` 를 1 로 내고, 동·구는 동 경계가 아니라 이웃 동 매물이 섞여 와 `[범위]` 로 알린다. 리는 검색 API 가
+      local3(그 위 읍·면)으로 찾아 `boundary` 를 읍·면 이름으로 낸다.
+    - 지도 핀 (좌표·`--radius`·동 경계 `boundary`, 검색 API 가 받지 않는 지역): 반경(또는 동 경계)을 덮는 지도 칸의 핀 중
+      범위 안만 남기고 웹 지도 목록처럼 핀 값으로 세운다 (`stay_marker_order`).
+
+    역 가까운 순(`distance`)은 웹처럼 역 이름 검색(검색 API `type=subway`)에서만 된다.
 
     Raises:
+        JibsaError: 역 이름 검색이 아닌데 `distance` 를 줬을 때 (INVALID_ARGUMENT, 매물 요청을 보내기 전에).
         RegionNotFoundError: 검색 API 가 지역을 찾지 못했을 때 (2026-10 의 세종의 동, `_stay_region_search`).
     """
     check_stay_sort(sort)
+    if sort == 'distance' and not (use_search_api and region.search_type == 'subway'):
+        # 직방 검색 API 는 역 검색이 아니면 400 STATION_SORT_REQUIRES_SUBWAY 를 주고, 웹 지도 목록도 역 기준점이 없으면
+        # 추천순으로 바꾼다 (2026-11-15 실측·번들 `sortStayMarkers`)
+        raise stay_distance_sort_error()
     conditions = conditions or ZigbangStayConditions()
     filters = stay_filter_of(conditions)
-    context = _stay_search_context(region, sort, filters) if use_search_api else None
-    address_scope = context is not None and context.type == 'address' and whole_address
-    if address_scope:
-        boundary = None
-    # 이름 검색·가격순·최신순은 요약을 받은 뒤 반경으로 자른다
-    radius_cut = (context is not None or sort != 'distance') and not address_scope and boundary is None
-    # 검색 API 응답 ID (부른 순서대로, 응답 순서 그대로). 지역 전체 가격순·최신순은 이 순서로 앞쪽만 요약을 받는다
-    search_lists: list[list[int]] = []
-    # 반경으로 자르면 검색 API 를 부르지 않는다. 반경 안 매물은 지도 핀에 모두 있고, 지역 검색 ID 는 구·동 전체라 반경 밖
-    # 요약까지 받게 된다 (2026-10-11 실측: 강남구·마포구·역삼동·성수동·강남역·홍대입구역에서 핀에 없는 검색 ID 25개 모두
-    # 반경 밖, 강남구 1km 가격순 by-ids 4회 → 1회)
-    if context is not None and not radius_cut:
-        search_lists = _stay_search_ids(client, context, region, (extra_regions or []) if address_scope else [])
-    search_ids = {item_id for ids in search_lists for item_id in ids}
-    # 전용 API에는 반경 파라미터가 없어 지도 칸으로 원하는 반경의 후보를 보완한다.
-    hashes = [] if address_scope else scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION)
-    pins = _stay_pins(client, region, hashes, filters, boundary)
-
-    # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받아도 버리므로 미리 뺀다 (2026-10-10 실측: 강남역 1km 핀 130개 중
-    # 반경 안 57개, by-ids 3회 → 1회)
-    if radius_cut:
-        pins = {item_id: distance for item_id, distance in pins.items() if within_radius(distance, radius_km)}
-    nearest = [item_id for item_id, _ in sorted(pins.items(), key=lambda entry: entry[1])[:limit]]
-    # 지역 전체 가격순·최신순은 검색 API 가 같은 기준(주당 임대료+관리비, 등록 시각)으로 정렬해 준다 (2026-10-11 실측:
-    # 강남구·마포구 343건, 날짜·방 수·가격 조건을 줘도 역전 0건). 지역마다 앞 limit 개만 요약을 받아 아래에서 합쳐 정렬하고 자른다
-    server_sorted = address_scope and sort != 'distance'
-    if sort == 'distance' and (radius_cut or context is None):
-        # 거리순은 가까운 핀 limit 개만 요약을 받는다
-        candidate_ids = nearest
-    elif server_sorted:
-        candidate_ids = sorted({item_id for ids in search_lists for item_id in ids[:limit]})
-    else:
-        # 검색 ID에는 위치가 없고 정렬 값은 요약에만 있어 후보 요약을 모두 받은 뒤 반경·정렬·limit 을 적용한다.
-        # 지역 전체 거리순도 위치가 요약에만 있어 상한을 두지 않는다 (2026-10-11 실측: 서울시 전체 1,491건이 by-ids 30회·약 7초)
-        candidate_ids = sorted(search_ids | pins.keys())
-    listings, accepted_ids, sort_keys = _stay_summaries(
-        client, region, candidate_ids, conditions, pins,
-        sort=sort, boundary=boundary, radius_cut=radius_cut, radius_km=radius_km,
+    context = _stay_search_context(region, sort, filters, whole_address) if use_search_api else None
+    if context is not None:
+        return _search_stay_by_search_api(client, region, context, conditions, sort=sort, limit=limit)
+    return _search_stay_by_markers(
+        client, region, filters, conditions, sort=sort, radius_km=radius_km, limit=limit, boundary=boundary,
     )
 
-    if sort == 'distance':
-        listings.sort(key=by_distance)
-    else:
-        listings.sort(key=lambda listing: sort_keys[listing.id])
-    order = {'distance': '검색 중심에서 가까운', 'price': '주당 임대료·관리비 합계가 낮은', 'newest': '최근 등록된'}[sort]
-    # 요약을 받은 매물을 --limit 에 맞춰 잘랐는지. 후보를 다 봤어도 자른 만큼 더 있다 (마포구 거리순 199건 중 5건이 has_more false 였다)
-    truncated = False
-    if context is not None or sort != 'distance':
-        if radius_cut and sort == 'distance':
-            # 거리순 이름 검색은 가까운 핀만 요약을 받아, 받지 않은 반경 안 핀도 센다
-            in_radius = len(pins.keys() | accepted_ids)
-        elif server_sorted:
-            # 앞쪽만 요약을 받아 검색 ID 수로 센다. by-ids 가 빼는 매물은 검색에도 없다 (2026-10-11 실측: 서울시 1,491건·강남구
-            # 156건·마포구 187건 모두 같음)
-            in_radius = len(search_ids)
-        else:
-            in_radius = len(listings)
-        truncated = len(listings) > limit
-        listings = listings[:limit]
-        has_more = truncated or len(candidate_ids) < in_radius
-        scope_notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'반경' if radius_cut else '지역'}",
-            order=order, inspected=len(candidate_ids), has_more=has_more,
+
+def _search_stay_by_search_api(
+    client: ZigbangClient,
+    region: ZigbangRegion,
+    context: ZigbangGuestItemsSearchRequestParameterModel,
+    conditions: ZigbangStayConditions,
+    *,
+    sort: StaySort,
+    limit: int,
+) -> ZigbangStaySearchResult:
+    """검색 API 가 정렬해 준 ID 순서 그대로 앞 `limit` 개의 요약을 받는다. `total` 은 검색 ID 수다.
+
+    by-ids 가 빼는 매물(그사이 내려간 매물)은 다시 채우지 않는다. 검색 ID 에는 위치가 없어 `distance_km` 는 요약 좌표로 잰다.
+    """
+    ids = list(dict.fromkeys(_stay_region_search(client, context, _searched_area(context) or region.name)))
+    head = ids[:limit]
+    listings = [
+        stay_summary_to_listing(
+            summary,
+            None if summary.lat is None or summary.lng is None else haversine_km(region.lat, region.lng, summary.lat, summary.lng),
         )
-    elif boundary is not None:
-        in_radius = len(pins)
-        has_more = len(candidate_ids) < in_radius
-        scope_notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STAY_NARROW}·지역',
-            order=f'{boundary.name} 중심에서 가까운', inspected=len(candidate_ids), has_more=has_more,
-        )
-    else:
-        in_radius = sum(1 for distance in pins.values() if within_radius(distance, radius_km))
-        has_more = len(candidate_ids) < in_radius
-        scope_notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STAY_NARROW}·반경',
-            inspected=len(candidate_ids),
-            has_more=has_more,
-        ) + beyond_radius_notes(listings, radius_km)
+        for summary in _stay_summaries(client, head, conditions)
+    ]
+    has_more = len(ids) > len(head)
+    address_scope = context.type == 'address'
+    notes = limit_notes(
+        len(ids), len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'지역' if address_scope else '반경'}",
+        order=STAY_SORT_ORDERS[sort], inspected=len(head), has_more=has_more,
+    )
+    area = None
+    if address_scope:
+        area = region.local3 if is_ri_code(region.legal_division_code) and region.local3 else region.name
+        notes.append(note(
+            '범위', f'직방 단기임대 지역 검색 결과라 {area} 밖 이웃 동 매물이 섞일 수 있습니다 (매물의 address 로 동을 확인하세요)',
+        ))
+    elif context.type != 'subway':
+        notes.append(note(
+            '범위', '직방 단기임대 학교 검색 결과라 범위는 직방이 정하고 반경으로 자르지 않았습니다. 반경으로 찾으려면 --radius 를 주세요',
+        ))
     return ZigbangStaySearchResult(
         region=region,
-        radius_km=None if boundary or address_scope else radius_km,
-        boundary=(
-            (region.local3 if is_ri_code(region.legal_division_code) and region.local3 else region.name) if address_scope
-            else boundary.name if boundary else None
-        ),
-        total=in_radius,
+        radius_km=STAY_SUBWAY_RADIUS_KM if context.type == 'subway' else None,
+        boundary=area,
+        total=len(ids),
         returned=len(listings),
         has_more=has_more,
         listings=listings,
-        notes=scope_notes,
+        notes=notes,
     )
+
+
+def _search_stay_by_markers(
+    client: ZigbangClient,
+    region: ZigbangRegion,
+    filters: dict[str, Any],
+    conditions: ZigbangStayConditions,
+    *,
+    sort: StaySort,
+    radius_km: float,
+    limit: int,
+    boundary: ZigbangBoundary | None,
+) -> ZigbangStaySearchResult:
+    """반경(또는 동 경계) 안 지도 핀을 웹 지도 목록 순서로 세워 앞 `limit` 개의 요약을 받는다. `total` 은 범위 안 핀 수다."""
+    pins = _stay_pins(client, region, scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION), filters, boundary)
+    if boundary is None:
+        # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받지 않고 뺀다 (반올림 없이 잰 거리)
+        pins = {item_id: pin for item_id, pin in pins.items() if pin[1] <= radius_km}
+    head = stay_marker_order([marker for marker, _ in pins.values()], sort)[:limit]
+    listings = [stay_summary_to_listing(summary, pins[summary.id][1]) for summary in _stay_summaries(client, head, conditions)]
+    has_more = len(pins) > len(head)
+    notes = limit_notes(
+        len(pins), len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'지역' if boundary else '반경'}",
+        order=STAY_SORT_ORDERS[sort], inspected=len(head), has_more=has_more,
+    )
+    return ZigbangStaySearchResult(
+        region=region,
+        radius_km=None if boundary else radius_km,
+        boundary=boundary.name if boundary else None,
+        total=len(pins),
+        returned=len(listings),
+        has_more=has_more,
+        listings=listings,
+        notes=notes,
+    )
+
+
+def stay_marker_order(markers: list[ZigbangStayMarkerModel], sort: StaySort) -> list[int]:
+    """지도 핀을 웹 지도 목록 순서로 세운 매물 ID (번들 `sortStayMarkers`).
+
+    추천순은 `totalScore` 높은 순, 같으면 ID 큰 순이다 (`compareRecommended`). 가격순은 `weeklyPrice`(주당 임대료+관리비,
+    만원 미만 버림) 낮은 순, 최신순은 `reviewedAt` 늦은 순(문자열 비교)이고, 둘 다 같은 값이면 추천순 규칙을 따른다.
+    역 가까운 순은 역 기준점이 없으면 웹도 추천순으로 바꾸는데, 지도 경로에서는 `search_stay_listings` 가 먼저 막는다.
+    값이 없으면 점수·가격은 0, 등록 시각은 가장 이른 것으로 본다 (2026-11-15 실측: 핀 2,313개 모두 값이 있었다).
+    """
+    # 정렬은 안정적이라(reverse=True 여도) 추천순으로 먼저 세운 뒤 기준 값으로 다시 세우면 같은 값끼리 추천순이 남는다
+    ranked = sorted(markers, key=lambda marker: (-(marker.total_score or 0), -marker.id))
+    if sort == 'price':
+        ranked.sort(key=lambda marker: marker.weekly_price or 0)
+    elif sort == 'newest':
+        ranked.sort(key=lambda marker: marker.reviewed_at or '', reverse=True)
+    return [marker.id for marker in ranked]
 
 
 def _stay_search_context(
     region: ZigbangRegion,
     sort: StaySort,
     filters: dict[str, Any],
+    whole_address: bool,
 ) -> ZigbangGuestItemsSearchRequestParameterModel | None:
-    """이름으로 찾은 지역의 검색 API 요청. 검색 API 가 받지 않는 지역(좌표·시·도 없는 주소)이면 None."""
+    """이름으로 찾은 지역의 검색 API 요청. 검색 API 가 받지 않는 지역(좌표·시·도 없는 주소)이거나, 동·구인데 지역 검색으로
+    찾으라는 표시(`whole_address`)가 없으면 None."""
     if region.search_type not in {'address', 'subway', 'school', 'university'}:
         return None
-    if region.search_type == 'address' and not region.local1:
+    if region.search_type == 'address' and not (region.local1 and whole_address):
         return None
     return ZigbangGuestItemsSearchRequestParameterModel(
         type=region.search_type,
-        sort={'price': 'PRICE_ASC', 'newest': 'NEWEST'}.get(sort),
+        sort=STAY_SERVER_SORTS[sort],
         local1=region.local1 if region.search_type == 'address' else None,
         local2=region.local2 if region.search_type == 'address' else None,
         local3=region.local3 if region.search_type == 'address' else None,
@@ -695,31 +750,8 @@ def _stay_search_context(
     )
 
 
-def _stay_search_ids(
-    client: ZigbangClient,
-    context: ZigbangGuestItemsSearchRequestParameterModel,
-    region: ZigbangRegion,
-    extra_regions: list[ZigbangRegion],
-) -> list[list[int]]:
-    """검색 API 로 지역(과 함께 찾을 지역)마다 매물 ID 를 받는다. 지역마다 응답 순서 그대로다.
-
-    한 곳이라도 못 찾으면 그 자리에서 `RegionNotFoundError` 를 낸다. CLI 는 모든 지역을 지도로 다시 찾으므로 나머지 지역을
-    더 물어도 결과는 버려지고 요청만 늘며, 그 사이 다른 에러가 나면 지도 대체 경로를 막는다 (2026-11-10 리뷰). 에러의
-    이름은 그 요청에 보낸 지역(`_searched_area`)이다. 함께 찾는 지역이 있으면 `region` 은 합친 이름이라, 그 이름을 대면 한
-    곳만 못 찾아도 모두 못 찾은 것처럼 읽혔다 (2026-11-10 리뷰·실측: 성수동2가만 없는 동으로 바꿔 보내니 직방은 그 동에만
-    REGION_NOT_FOUND 를 줬는데 안내는 '성수동1가·성수동9가를 찾지 못해').
-    """
-    search_lists = [_stay_region_search(client, context, _searched_area(context) or region.name)]
-    # '○가' 동·구가 있는 시의 구는 검색 중심과 같은 시·구에서만 오고 local1 이 늘 있어 (2026-10-11 실측: '○가' 동 13곳,
-    # 성남시·수원시 구) model_copy 로 다시 검증하지 않는다
-    for extra in extra_regions:
-        extra_context = context.model_copy(update={'local1': extra.local1, 'local2': extra.local2, 'local3': extra.local3})
-        search_lists.append(_stay_region_search(client, extra_context, _searched_area(extra_context) or extra.name))
-    return search_lists
-
-
 def _searched_area(context: ZigbangGuestItemsSearchRequestParameterModel) -> str | None:
-    """검색 API 에 보낸 지역 (local1~3, 주소 검색이 아니면 None).
+    """검색 API 에 보낸 지역 (local1~3, 주소 검색이 아니면 None). 지역을 못 찾았다는 에러에 이 이름을 댄다.
 
     `normalize_address` 로 세종의 겹친 시 이름을 뺀다. 직방은 세종의 동을 local1 '세종특별자치시'·local2 '세종'·local3
     '반곡동' 으로 줘서, 그대로 이으면(`join_address`) '세종특별자치시 세종 반곡동' 이 된다 (2026-11-10 리뷰·실측. 직방 지역
@@ -735,9 +767,12 @@ def _stay_pins(
     hashes: list[str],
     filters: dict[str, Any],
     boundary: ZigbangBoundary | None,
-) -> dict[int, float]:
-    """지도 칸마다 단기임대 핀을 받아 매물 ID → 검색 중심에서 거리로 모은다. 동 경계 밖 핀은 뺀다."""
-    pins: dict[int, float] = {}
+) -> dict[int, tuple[ZigbangStayMarkerModel, float]]:
+    """지도 칸마다 단기임대 핀을 받아 매물 ID → (핀, 검색 중심에서 거리)로 모은다. 동 경계 밖 핀은 뺀다.
+
+    핀 좌표는 요약(by-ids) 좌표와 같아 (2026-11-15 실측 71건) 핀으로 범위를 정하고 거리를 잰다.
+    """
+    pins: dict[int, tuple[ZigbangStayMarkerModel, float]] = {}
     for geohash in hashes:
         response = _stay_search_call(
             client.run_request_guest_items_markers,
@@ -746,87 +781,33 @@ def _stay_pins(
         for marker in response.markers:
             if outside_boundary(boundary, marker.lat, marker.lng):
                 continue
-            pins[marker.id] = haversine_km(region.lat, region.lng, marker.lat, marker.lng)
+            pins[marker.id] = (marker, haversine_km(region.lat, region.lng, marker.lat, marker.lng))
     return pins
 
 
 def _stay_summaries(
     client: ZigbangClient,
-    region: ZigbangRegion,
-    candidate_ids: list[int],
+    item_ids: list[int],
     conditions: ZigbangStayConditions,
-    pins: dict[int, float],
-    *,
-    sort: StaySort,
-    boundary: ZigbangBoundary | None,
-    radius_cut: bool,
-    radius_km: float,
-) -> tuple[list[ZigbangStayListing], set[int], dict[str, tuple[bool, float, int]]]:
-    """후보 요약을 받아 범위 밖을 뺀 매물, 받아들인 매물 ID, 가격·최신순 정렬 키를 준다."""
-    listings: list[ZigbangStayListing] = []
-    accepted_ids: set[int] = set()
-    sort_keys: dict[str, tuple[bool, float, int]] = {}
+) -> list[ZigbangStayItemSummaryModel]:
+    """매물 요약을 `item_ids` 순서대로 받는다. 응답에 없는 매물은 빠진다."""
+    summaries: dict[int, ZigbangStayItemSummaryModel] = {}
     # 만료 단기임대는 by-ids 가 응답에서 뺀다 (비노출·REJECTED·PENDING·404 를 섞어 보내면 노출 중인 것만 온다).
     # 그래서 상세(get_stay_listing)처럼 status·checkStatus 를 다시 보지 않는다.
-    for start in range(0, len(candidate_ids), STAY_BY_IDS_BATCH_SIZE):
-        batch = set(candidate_ids[start:start + STAY_BY_IDS_BATCH_SIZE])
-        summaries = _stay_search_call(
+    for start in range(0, len(item_ids), STAY_BY_IDS_BATCH_SIZE):
+        batch = item_ids[start:start + STAY_BY_IDS_BATCH_SIZE]
+        response = _stay_search_call(
             client.run_request_guest_items_by_ids,
             ZigbangGuestItemsByIdsRequestParameterModel(
-                item_ids=sorted(batch), check_in_date=conditions.check_in, check_out_date=conditions.check_out,
+                item_ids=batch, check_in_date=conditions.check_in, check_out_date=conditions.check_out,
                 flexibility=conditions.flexibility,
             ),
         )
-        for summary in summaries.items:
-            if summary.id not in batch or summary.id in accepted_ids:
-                continue
-            distance = pins.get(summary.id)
-            # 경계 검사(outside_boundary)는 좌표가 있을 때만 한다. 좌표 없는 요약은 경계 검사에 None 이 가지 않고, 아래에서
-            # 경계 안으로 거른 핀(pins)에 있으면 남고 없으면 빠진다 (2026-10-11 리뷰 오탐 확인. 실측: by-ids 응답 4건의
-            # 요약 30건 모두 좌표 있음)
-            if summary.lat is not None and summary.lng is not None:
-                distance = haversine_km(region.lat, region.lng, summary.lat, summary.lng)
-                if outside_boundary(boundary, summary.lat, summary.lng):
-                    continue
-            if radius_cut and (distance is None or not within_radius(distance, radius_km)):
-                continue
-            if boundary is not None and summary.id not in pins:
-                if summary.lat is None or summary.lng is None:
-                    continue
-            accepted_ids.add(summary.id)
-            listing = stay_summary_to_listing(summary, distance)
-            listings.append(listing)
-            key = _stay_sort_key(summary, sort)
-            if key is not None:
-                sort_keys[listing.id] = key
-    return listings, accepted_ids, sort_keys
-
-
-def _stay_sort_key(
-    summary: ZigbangStayItemSummaryModel,
-    sort: StaySort,
-) -> tuple[bool, float, int] | None:
-    """가격순·최신순 정렬 키 (모르는 값은 뒤로). 거리순이면 None."""
-    if sort == 'price':
-        # 관리비가 없는 매물은 요약(by-ids)이 null 이 아니라 0 을 주어 뒤로 밀리지 않는다. 상세는 null 과
-        # isWeeklyManageCostAbsent 로 주어 `stay_detail_to_listing` 이 0.0 으로 맞춘다 (2026-10-14 실측: 강남구 가격순 40건 중
-        # 0 이 3건·null 0건, 그중 1669 의 상세는 weeklyManageCost null·isWeeklyManageCostAbsent true)
-        known = summary.weekly_rent is not None and summary.weekly_manage_cost is not None
-        price = (summary.weekly_rent or 0) + (summary.weekly_manage_cost or 0)
-        return (not known, price, summary.id)
-    if sort == 'newest':
-        # 출력 날짜는 일 단위라 원 응답의 등록 시각으로 정렬한다. 시간대 없는 값을 UTC 로 보는 것은 출력(normalize_date 는
-        # 한국 시간으로 봄)과 다르지만 실제 응답은 늘 'Z' 를 붙여 와 두 곳이 같은 시각으로 읽는다 (2026-10-17 리뷰 오탐 확인.
-        # 실측: 강남구 최신순 by-ids 5건 모두 '2026-10-15T00:42:20.000Z' 꼴)
-        try:
-            moment = datetime.fromisoformat((summary.reviewed_at or '').replace('Z', '+00:00'))
-            if moment.tzinfo is None:
-                moment = moment.replace(tzinfo=timezone.utc)
-            timestamp = moment.timestamp()
-        except ValueError:
-            timestamp = None
-        return (timestamp is None, -(timestamp or 0), summary.id)
-    return None
+        requested = set(batch)
+        for summary in response.items:
+            if summary.id in requested:
+                summaries.setdefault(summary.id, summary)
+    return [summaries[item_id] for item_id in item_ids if item_id in summaries]
 
 
 def stay_parking(detail: ZigbangGuestItemsResponseModel) -> str | None:

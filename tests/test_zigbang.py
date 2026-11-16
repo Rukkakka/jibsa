@@ -810,6 +810,24 @@ def test_store_dong_codes_never_send_a_code_the_server_does_not_know() -> None:
     assert caught.value.code == 'REGION_NOT_SUPPORTED'
 
 
+def test_stay_marker_order_breaks_ties_like_web_map_list() -> None:
+    # 웹 지도 목록(sortStayMarkers): 추천순은 점수 높은 순·같으면 ID 큰 순, 가격순·최신순은 같은 값끼리 추천순 규칙
+    from jibsa.providers.zigbang.api.response.stay import ZigbangStayMarkerModel
+    from jibsa.providers.zigbang.service.stay import stay_marker_order
+
+    markers = [
+        ZigbangStayMarkerModel.model_validate(dict(id=item_id, lat=37.5, lng=127.03, weeklyPrice=price, reviewedAt=at, totalScore=score))
+        for item_id, price, at, score in [
+            (1, 30, '2026-11-01T00:00:00.000Z', 0.5),
+            (2, 30, '2026-11-02T00:00:00.000Z', 0.9),
+            (3, 20, '2026-11-02T00:00:00.000Z', 0.5),
+        ]
+    ]
+    assert stay_marker_order(markers, 'recommended') == [2, 3, 1]
+    assert stay_marker_order(markers, 'price') == [3, 2, 1]
+    assert stay_marker_order(markers, 'newest') == [2, 3, 1]
+
+
 def _station_items(*dongs: str) -> dict:
     return {'success': True, 'items': [
         {'id': index + 1, 'type': 'subway', 'name': '가상역', 'description': f'서울특별시 가상구 {dong}',

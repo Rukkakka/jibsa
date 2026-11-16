@@ -174,10 +174,11 @@ def test_split_name_is_joined_but_option_values_and_ids_are_not(argv: list[str],
 
 def test_jibsa_invalid_argument_exits_2_with_own_hint(capsys: pytest.CaptureFixture[str]) -> None:
     # 조회 중에야 알 수 있는 입력 오류(JibsaError)도 사용법 오류와 같은 exit 2 이고, 자기 힌트는 그대로 둔다
-    assert run(['zigbang', 'search', 'listings', 'room', '역삼동', '-t', '원룸', '--without-random']) == 2
+    # 단기임대 역 가까운 순은 역 이름 검색에서만 된다 (좌표 검색이라 지역을 찾는 요청 없이 서비스가 막는다)
+    assert run(['zigbang', 'search', 'listings', 'stay', '--lat', '37.5', '--lng', '127.03', '--sort', 'distance']) == 2
     error = stderr_error(capsys)
     assert error['code'] == 'INVALID_ARGUMENT'
-    assert '--without-random' in error['hint']
+    assert '--sort recommended' in error['hint']
 
 
 def test_limits_state_dir_failure_is_json_error(

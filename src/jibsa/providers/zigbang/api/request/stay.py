@@ -33,6 +33,8 @@ ZigbangStayOption = Literal[
     'SOFA', 'TOASTER', 'VANITY', 'BATHTUB', 'BIDET', 'CABLE_TV', 'CCTV', 'DOOR_LOCK',
     'DRYING_RACK', 'MANAGEMENT_OFFICE', 'OTT', 'VACUUM_CLEANER', 'BALCONY',
 ]
+# 웹 정렬 넷과 같다: 추천순(기본), 낮은 가격순, 최근 등록순, 역 가까운 순 (2026-11-15 웹)
+ZigbangStaySearchSort = Literal['RECOMMENDED', 'PRICE_ASC', 'NEWEST', 'STATION_DISTANCE_ASC']
 
 
 # 단기임대 지도·지역 검색이 받는 기간 (입주일과 마지막 날을 모두 센 일수). 2026-10-10 실측: 두 API 모두
@@ -172,7 +174,9 @@ class ZigbangGuestItemsMarkersRequestParameterModel(ZigbangGuestItemsFiltersRequ
 class ZigbangGuestItemsSearchRequestParameterModel(ZigbangGuestItemsFiltersRequestParameterModel):
     """`GET /guest/items/search` 지역·역·학교 검색. 응답 ID는 by-ids로 조회한다.
 
-    반경 지정은 지원하지 않는다. 지역은 local1~3, 역·학교는 lat/lng를 사용한다.
+    반경 지정은 지원하지 않는다. 지역은 local1~3, 역·학교는 lat/lng를 사용한다. 역(`subway`)은 서버가 역에서 약 1km 안만
+    주고, 지역(`address`)은 동 경계가 아니라 이웃 동 매물도 섞여 온다 (2026-11-15 실측: 강남역 71건 중 가장 먼 것 0.979km,
+    성수동2가 34건 중 성수동2가는 17건이고 화양동 9·자양동 5·성수동1가 3건).
     """
 
     type: Annotated[
@@ -204,8 +208,12 @@ class ZigbangGuestItemsSearchRequestParameterModel(ZigbangGuestItemsFiltersReque
     ] = None
 
     sort: Annotated[
-        Literal['RECOMMENDED', 'PRICE_ASC', 'NEWEST', 'STATION_DISTANCE_ASC'] | None,
-        Field(description='직방 단기임대 검색 정렬 기준')
+        ZigbangStaySearchSort | None,
+        Field(description=(
+            '정렬. RECOMMENDED 추천순(안 보내도 같은 순서, 2026-11-15 실측 강남역 71건·역삼동 64건), PRICE_ASC 주당 '
+            '임대료+관리비 낮은 순, NEWEST 등록 시각 늦은 순, STATION_DISTANCE_ASC 역에서 가까운 순(subway 만). '
+            'PRICE_ASC·STATION_DISTANCE_ASC 는 같은 값이면 ID 큰 순이고, 같은 요청은 늘 같은 순서다 (2026-11-15 실측)'
+        ))
     ] = None
 
     @model_validator(mode='after')
@@ -217,6 +225,10 @@ class ZigbangGuestItemsSearchRequestParameterModel(ZigbangGuestItemsFiltersReque
             raise ValueError('역·학교 검색에는 위도와 경도가 필요합니다')
         if (self.lat is None) != (self.lng is None):
             raise ValueError('위도와 경도는 함께 주어야 합니다')
+        # 서버가 400 STATION_SORT_REQUIRES_SUBWAY '역 가까운 순은 지하철역 검색에서만 사용 가능합니다' 를 준다
+        # (2026-11-15 실측: address·university)
+        if self.sort == 'STATION_DISTANCE_ASC' and self.type != 'subway':
+            raise ValueError('역 가까운 순은 지하철역 검색에서만 쓸 수 있습니다')
         return self
 
 

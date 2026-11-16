@@ -169,7 +169,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step(
             '단기임대 기간 비용', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'period_cost',
         ),
-        Step('단기임대 역 반경 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
+        # 역 이름은 직방 단기임대 역 검색, --radius 를 주면 지도 핀이다
+        Step('단기임대 역 검색 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--limit', '2'), 'listings'),
+        Step('단기임대 지도 반경 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
     ),
     'naver': (
         Step('하위 지역 강남구', ('naver', 'regions'), ('강남구',), 'regions'),

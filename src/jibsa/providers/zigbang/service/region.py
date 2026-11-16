@@ -220,9 +220,10 @@ def resolve_region_scope(
     동 안을 찾는 쪽은 그 동들을 함께 찾고 안내를 빼며, 그 밖에는 안내만 붙인다. 넓은 지역 안내(`wide_area_note`)는
     넣지 않아, 반경으로 찾는 쪽이 붙인다.
 
-    어느 동을 합칠지는 `best_region_item`·`ga_dong_siblings`·`ga_dong_split`·`ga_dong_note` 만 판단한다
-    (`resolve_apt_region` 도 같은 헬퍼를 쓴다). 명령마다 다른 건 합치는 방법뿐이라(room·store 는 경계를 합치고, stay 는
-    동마다 검색 API, apt 는 동마다 지역 목록) 범위 객체 하나로 묶지 않는다.
+    어느 동이 함께 걸리는지는 `best_region_item`·`ga_dong_siblings`·`ga_dong_split`·`ga_dong_note` 만 판단한다
+    (`resolve_apt_region` 도 같은 헬퍼를 쓴다). 그 동들을 어떻게 다룰지는 명령마다 다르다: room 은 지도 칸의 핀을 합친
+    경계로 좁히고, store 는 서버에 동 코드를 함께 보내며, 지역 하나의 목록만 있는 apt·stay 는 합치지 않고 어느 동인지
+    묻는다 (`divided_region_error`).
 
     Returns:
         (검색 중심, ○가 안내 또는 None, 합칠 ○가 동 (없으면 [])).
@@ -333,6 +334,25 @@ def city_gu_regions(query: str, items: list[ZigbangSearchItemModel]) -> list[Zig
     """구가 있는 시(성남시)면 그 시의 구들 (검색 중심 구가 먼저). 아니면 []. 검색 중심은 `resolve_region_scope` 와 같이 고른다."""
     best = best_region_item(query, items)
     return [region_from_search_item(item) for item in city_gu_items(query, items, best)] if best else []
+
+
+def divided_region_error(query: str, parts: list[ZigbangRegion]) -> RegionAmbiguousError:
+    """검색어가 직방이 따로 보여 주는 지역 여럿에 걸릴 때의 에러: '○가' 로 나뉜 동(성수동 → 성수동1가·2가), 구가 있는 시
+    (성남시 → 분당구·수정구·중원구).
+
+    지역 하나의 목록만 있는 조회(아파트 지역 목록, 단기임대 지역 검색)가 쓴다. 웹은 그 동·구를 하나씩 따로 보여 주고
+    (2026-11-15 실측: 아파트 성남시 코드 41130 은 0건, 단기임대 검색창은 성수동1가·2가를 따로 준다), 목록 여럿을 합친
+    순서·수는 웹에 없어 합치지 않고 어느 곳인지 묻는다. 지도 칸의 핀을 좁히는 room, 동 코드 여럿을 서버가 한 번에 받는
+    store 는 합친 범위로 찾는다.
+    """
+    first = parts[0].name if parts else query
+    unit = '구 이름까지' if first.split()[-1].endswith('구') else '동 이름을 정확히'
+    return RegionAmbiguousError(
+        query,
+        [part.address or part.name for part in parts],
+        len(parts),
+        hint=f"'{first}' 처럼 {unit} 주세요",
+    )
 
 
 def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -> ZigbangBoundary | None:

@@ -240,7 +240,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 ## 5. `search listings stay` — 주 단위 단기임대 찾기
 
-주 단위 단기임대 매물을 날짜·가격·시설로 찾는다.
+주 단위 단기임대 매물을 날짜·가격·시설로 찾는다. 기본 순서는 직방 추천순이다.
 
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
@@ -263,8 +263,8 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 | `--check-in` | 입주 희망일 (YYYY-MM-DD). --check-out 과 함께 | 미지정 |
 | `--check-out` | 마지막으로 머무는 날 (YYYY-MM-DD). 직방은 이 날까지 이용일로 센다 (4주 = 11-01~11-28). --check-in 과 함께 | 미지정 |
 | `--flexibility` | 일정을 앞뒤로 며칠까지 유연하게 볼지 (--check-in 과 함께) 범위: 0~30. | 미지정 |
-| `--radius` | 검색 반경 (km, 기본 1). 동·구 이름에 생략하면 지역 전체, 역·학교·좌표는 반경 검색 범위: 0.1~5.0. | 미지정 |
-| `--sort` | distance 가까운 순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순 | distance |
+| `--radius` | 검색 반경 (km). 주면 이름 검색도 그 중심에서 반경 안의 지도 매물을 찾는다. 안 주면 역·학교·동·구 이름은 직방 단기임대 검색 결과 그대로, 좌표는 1km 범위: 0.1~5.0. | 미지정 |
+| `--sort` | recommended 직방 추천순 (기본), price 주당 임대료+관리비 낮은 순, newest 최근 등록순, distance 역에서 가까운 순 (--radius 없는 역 이름 검색에서만) | recommended |
 | `--limit` | 최대 결과 수 범위: 1~120. | 15 |
 | `--details` | `--check-in`/`--check-out` 과 함께: 앞 30건에 그 기간의 실제 비용(`period_cost`)을 붙인다. 매물당 요청 1회 | 꺼짐 |
 
@@ -281,13 +281,13 @@ jibsa zigbang search listings stay 강남역 --check-in 2026-11-02 --check-out 2
 
 **오류와 대응**
 
-날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`. 같은 이름의 동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다.
+날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`. `--sort distance` 를 좌표나 `--radius` 와 함께 주면 요청 전에, 역이 아닌 이름(동·구·학교)과 함께 주면 지역 검색 1회 뒤에 `INVALID_ARGUMENT` 다. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)과 구가 있는 시(성남시)도 합치지 않고 `REGION_AMBIGUOUS` 로 후보를 알리니 `hint` 대로 `성수동1가`·`성남시 분당구` 처럼 하나를 골라 다시 찾는다.
 
 **주의사항**
 
 월세가 아닌 주 단위 임대 서비스다. 금액 필드는 `weekly_rent_manwon`·`weekly_manage_cost_manwon`이고, 상세·`period_cost`·할인 문구까지 모든 금액을 반올림 없이 원 단위까지 낸다. `url` 은 직방 웹 단기임대 매물 페이지(`https://www.zigbang.com/stay/item/<번호>`)다. `search listings room --trade 단기임대`(중개사가 올린 원룸·빌라 매물)와는 매물이 다르다.
 
-동·구 등 지역 이름에 `--radius` 를 주지 않으면 그 지역 전체를 찾는다. 결과의 `boundary` 는 지역 이름이고 `total` 은 지역 안 매물 수다. 역·학교 이름이나 `--radius` 를 주면 반경 안만, 좌표만 주면 지도에서 가까운 순으로 찾는다. 넓은 지역은 요청이 많아 느릴 수 있다. 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)은 그 동들을 지역 전체로 모두 찾아 합친다 (동마다 검색 요청 1회 추가, `boundary` 와 `region.name`·`region.address` 의 동은 `"성수동1가·성수동2가"`). 같은 이름의 동이 따로 있거나(당산동) `--radius` 를 주면 한 동을 기준으로 찾고 빠진 `○가` 동을 `notes` 로 알린다. 구가 있는 시(성남시)는 그 구들을 모두 지역 전체로 찾아 합친다 ('시' 를 빼고 '성남' 으로 줘도 같다. 구마다 검색 요청 1회 추가, `boundary`·`region.name` 은 `"성남시 분당구·수정구·중원구"`). 리(양근리)는 직방 지역 검색이 상위 읍·면(양평읍) 전체를 찾아 `boundary` 가 읍·면 이름이고 `notes` 로 알린다. 리 주변만 보려면 `--radius` 를 준다. 직방 단기임대 지역 검색이 동을 찾지 못하면(한때 세종의 동이 그랬다), 원룸 검색처럼 그 동 경계(넓으면 중심 반경) 안을 지도로 찾고 `notes` 의 `[실패]` 로 알린다. 지금은 매물이 없는 곳도 지역 검색이 찾으므로 이 안내에는 jibsa 업데이트가 필요할 수 있다는 말이 붙는다. 함께 찾는 동·구(성수동1가·2가, 성남시의 구) 중 한 곳만 못 찾아도 지도로 찾고, 안내에는 처음 못 찾은 곳을 댄다. 이때 `○가` 동은 경계를 합쳐 모두 찾지만, 구가 있는 시는 첫 구(성남시는 분당구) 중심에서 반경 1km 안만 찾고 `notes` 의 `[범위]` 로 알린다.
+역·학교·동·구 이름에 `--radius` 를 주지 않으면 직방 단기임대 검색 결과를 직방 순서 그대로 준다. 역은 직방이 역에서 약 1km 안을 주어 `radius_km` 가 `1` 이다. 동·구는 동 경계가 아니라 직방 검색 결과라 이웃 동 매물이 섞일 수 있어 `notes` 의 `[범위]` 로 알리니 매물의 `address` 로 동을 확인한다 (`boundary` 는 지역 이름). 학교는 범위를 직방이 정해 `radius_km` 가 없다. 리(양근리)는 직방 검색이 상위 읍·면(양평읍) 기준으로 찾아 `boundary` 가 읍·면 이름이고 `notes` 로 알린다. `--radius` 나 좌표(`--lat/--lng`, 기본 1km)를 주면 그 중심에서 반경 안의 지도 매물을 직방 웹 지도 목록과 같은 순서로 준다. 반경 밖 매물은 나오지 않는다. 매물마다 `distance_km` 가 있으니 가까운 매물은 그 값으로 고른다. 직방 단기임대 지역 검색이 동을 찾지 못하면(한때 세종의 동이 그랬다), 원룸 검색처럼 그 동 경계(넓으면 중심 반경) 안을 지도로 찾고 `notes` 의 `[실패]` 로 알린다. 지금은 매물이 없는 곳도 지역 검색이 찾으므로 이 안내에는 jibsa 업데이트가 필요할 수 있다는 말이 붙는다.
 
 가격·옵션·입주/퇴거일 조건은 서버에서 거르고, 고른 순서로 정렬한 뒤 `--limit` 를 적용한다. 정렬은 `distance`(거리), `price`(주당 임대료+관리비 합계), `newest`(등록 시각)이고 그 값이 없으면 뒤로 보낸다. 가격순은 할인·청소비·직방 이용료·보증금을 넣지 않아 기간 실제 비용 순서와 다를 수 있다 (강남역 4주 가격순 3위가 실제 비용으로는 4위였다). 그래서 날짜를 주고 `--details` 를 빼면 `notes` 가 `--details` 를 알린다. 주당 요금 × 주 수를 기간 비용으로 쓰지 않는다 (1위 매물이 주당 32만 × 4 = 128만이지만 실제는 151만 2천).
 
@@ -492,7 +492,7 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 | `search listings apt` | 아파트 | 동·구 이름이면 **그 동·구 전체**, 직방 목록 순 (거리 없음). 역 이름·`--lat/--lng`·`--radius`(최대 2km)면 반경 안 단지를 가까운 순으로 (거리는 단지까지) |
 | `search listings --complex` | 아파트 단지 하나 또는 오피스텔 건물 하나 | 단지 ID (`apt-…`, `officetel-…`), 직방 목록 순. 거리가 없다 |
 | `search listings store` | 상가·사무실 | 동 이름이면 **그 동 안**, 아니면 검색 중심 반경. 직방 목록 순 (거리순 아님) |
-| `search listings stay` | 직방 단기임대 (주 단위 계약 서비스) | 동·구 등 지역 이름이고 `--radius` 가 없으면 지역 전체. 역·학교·좌표 또는 `--radius` 를 주면 반경 |
+| `search listings stay` | 직방 단기임대 (주 단위 계약 서비스) | 역·학교·동·구 이름이고 `--radius` 가 없으면 직방 단기임대 검색 결과 그대로 (역은 1km, 동·구는 이웃 동이 섞일 수 있음). 좌표 또는 `--radius` 를 주면 반경. 기본 직방 추천순 |
 
 ### 유형별 지원 조건
 
@@ -505,7 +505,7 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 | 방 | `--room` 오픈형원룸, 분리형원룸, 복층형원룸, 투룸, 쓰리룸, 포룸이상 (OR) | — | — | `--rooms` 1~3 (정확히), 4 (4개 이상) |
 | 층 | `--floor` 지상, 반지하, 옥탑방, 1층 (OR) | — | `--first-floor` | `--floor` 지하, 1층, 옥탑 (OR) |
 | 욕실 | `--bathroom` 1, 2 (정확히), 3 (3개 이상) | — | — | — |
-| 정렬 | — | — | — | `--sort distance` 가까운 순 (기본), `price` 주당 임대료+관리비 낮은 순, `newest` 최근 등록순 |
+| 정렬 | — | — | — | `--sort recommended` 직방 추천순 (기본), `price` 주당 임대료+관리비 낮은 순, `newest` 최근 등록순, `distance` 역에서 가까운 순 (`--radius` 없는 역 이름 검색만) |
 | 옵션 (AND) | `--option` 에어컨, 냉장고, 세탁기, 가스레인지, 인덕션, 전자레인지, 책상, 책장, 침대, 옷장, 신발장, 싱크대 | — | — | `--option` 에어컨, 침대, 세탁기, 와이파이, 건조기, 정수기 등 32종 (`jibsa zigbang search listings stay --help`) |
 | 기타 | `--condition` 즉시입주, 남향, 엘리베이터, 주차, CCTV, 반려동물, 전세대출, 전기차충전 (AND) | — | `--business` 업종(카페/커피, 편의점/슈퍼 …) 또는 대분류(휴게음식점, 일반음식/주류점, 스포츠/마사지/오락, 판매업, 기타) (OR) | `--building` 오피스텔, 아파트, 빌라, 원룸, 주택, 상가주택, 고시원, 펜션, 셰어하우스, 게스트하우스, 레지던스 (OR), `--discount` 장기계약, 즉시, `--pet`, `--structure` 복층·단층, `--parking`, `--elevator`, `--check-in/--check-out` (YYYY-MM-DD, 함께), `--flexibility` (±일) |
 
