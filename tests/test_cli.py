@@ -374,6 +374,20 @@ def test_workflow_concurrency_limits_match() -> None:
     assert len(set(limits.values())) == 1, limits
 
 
+def test_workflow_args_parsing_blocks_match() -> None:
+    # 워크플로는 다른 파일을 불러올 수 없어 args 풀기 블록(빈 글자 처리 ~ 'bad-args' 응답)도 두 파일에 복사해 둔다.
+    # 한 파일만 고치면 워크플로마다 잘못된 args 에 다르게 답한다
+    root = Path(__file__).resolve().parents[1] / '.claude' / 'workflows'
+    blocks: dict[str, str] = {}
+    for name in ('web-parity-panel', 'implement-bundles'):
+        lines = (root / f'{name}.js').read_text(encoding='utf-8').splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith("if (typeof a === 'string' && !a.trim())"))
+        reason = next(i for i, line in enumerate(lines) if i > start and "reason: 'bad-args'" in line)
+        end = next(i for i, line in enumerate(lines) if i > reason and line == '  }')
+        blocks[name] = '\n'.join(line for line in lines[start:end + 1] if not line.lstrip().startswith('//'))
+    assert len(set(blocks.values())) == 1, blocks
+
+
 # --- 매일 API 감시 ---
 
 def test_every_source_command_is_in_api_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
