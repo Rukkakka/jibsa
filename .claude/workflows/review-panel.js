@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: '/review 명령이 부른다 (docs/development/agents.md "코드 리뷰"). args: target(리뷰 대상과 diff 를 보는 명령), groups(관점 키 묶음의 목록), 그 밖은 선택. args 없이 불렸으면 아무것도 띄우지 않고 /review 를 쓰라고 안내한다.',
   phases: [
     { title: '리뷰', detail: '관점 묶음마다 리뷰어 하나, 동시에. 코드만 읽는다' },
-    { title: '재검증', detail: '소스마다 review-verifier 가 지적을 실제 조회로 재현한다 (지적이 많으면 같은 소스에 동시에 셋까지, 네이버는 하나씩). 공통 코드 지적은 소스별 검증이 끝난 뒤 하나씩' },
+    { title: '재검증', detail: '소스마다 review-verifier 가 지적을 실제 조회로 재현한다 (지적이 많으면 같은 소스에 동시에 셋까지). 공통 코드 지적은 소스별 검증이 끝난 뒤' },
   ],
 }
 
@@ -21,18 +21,15 @@ const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 const MODELS = ['sonnet', 'opus']  // Haiku 는 쓰지 않는다 (CLAUDE.md)
 const EFFORTS = ['high', 'xhigh']
 const CHUNK = 10  // 검증자 한 명이 한 번에 받는 지적 수. 넘치면 같은 소스에 검증자를 더 둔다
-// 동시 실행 상한(SAME_SOURCE_MAX·SAME_SOURCE_MAX_BY·maxOf)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
+// 동시 실행 상한(SAME_SOURCE_MAX)은 세 워크플로(review-panel·web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
-// 세 파일의 같은 소스 상한·네이버 상한이 다르면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
+// 세 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
+// 네이버와 공통 코드 검증자도 같은 상한이다. 예전에는 하나씩 돌렸다 (jibsa 프로세스 여럿이 함께 시작하면 저마다 첫 화면을 열어
+// 네이버 요청이 몰린다고 보았고, 공통 코드 검증자는 함께 네이버를 고를 수 있어서). 첫 화면 요청은 사람이 페이지를 열 때 나가는
+// 묶음과 같고, 2026-11-16 에 네이버 조사원 셋을 동시에 돌려 429 가 없어 풀었다 (그 절에 실측).
 const SAME_SOURCE_MAX = 3  // 같은 소스를 동시에 부르는 검증자 수 (docs/development/agents.md "동시에 띄울 때")
-// 네이버 검증자는 한 번에 하나만 돌린다. jibsa 요청 제한기는 첫 화면이 스스로 부르는 요청을 연 뒤에 세어 미리 막지 못하는데
-// (src/jibsa/core/browser.py `finish_entry`), 남긴 쿠키가 없거나 오래됐을 때 jibsa 프로세스 여럿이 함께 시작하면 저마다 첫 화면을
-// 연다. 네이버는 첫 화면 한 번이 부르는 요청이 많아(docs/development/providers/naver.md) 그만큼 한꺼번에 몰린다.
-// 공통 코드 검증자도 하나씩 돌린다. 저마다 재현할 소스를 고르므로 둘이 동시에 돌면 함께 네이버를 고를 수 있다 (2026-11-14 리뷰).
-const SAME_SOURCE_MAX_BY = { naver: 1, common: 1 }
-const maxOf = source => SAME_SOURCE_MAX_BY[source] || SAME_SOURCE_MAX
-// 리뷰 오탐 (2026-11-13): 검증 요청의 총량 상한이 없어 네이버 요청이 몰린다는 지적. 같은 소스의 검증자는 동시에 셋까지(네이버는
-// 하나)만 돌고, 첫 화면 다음 요청부터는 jibsa 요청 제한기가 프로세스 간 공유 상태로 소스별 속도를 막아(네이버 1초 간격·분당 60회,
+// 리뷰 오탐 (2026-11-13): 검증 요청의 총량 상한이 없어 네이버 요청이 몰린다는 지적. 같은 소스의 검증자는 동시에 셋까지만 돌고,
+// 첫 화면 다음 요청부터는 jibsa 요청 제한기가 프로세스 간 공유 상태로 소스별 속도를 막아(네이버 1초 간격·분당 60회,
 // `jibsa limits`) 몰리지 않는다.
 
 let a = args
@@ -205,12 +202,12 @@ const chunksOf = items => {
   return chunks
 }
 
-// 같은 소스의 검증자는 동시에 maxOf(source) 명까지(네이버·공통 코드 하나, 그 밖 SAME_SOURCE_MAX) 돌리고 남은 묶음은 그 뒤에 돌린다
+// 같은 소스의 검증자는 동시에 SAME_SOURCE_MAX 명까지 돌리고 남은 묶음은 그 뒤에 돌린다
 // (요청 수는 jibsa 요청 제한기가 프로세스끼리 합쳐서 센다). 소스끼리는 동시에, 공통 코드는 마지막에.
 const verifySource = async source => {
   const chunks = chunksOf(bySource[source])
   const out = []
-  const max = maxOf(source)
+  const max = SAME_SOURCE_MAX
   for (let i = 0; i < chunks.length; i += max) {
     const batch = chunks.slice(i, i + max)
     const rs = await parallel(batch.map((chunk, j) => () => tryAgent(verifyPrompt(source, chunk), {
