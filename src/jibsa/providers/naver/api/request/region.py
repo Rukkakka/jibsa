@@ -74,4 +74,12 @@ class NaverSearchAutocompleteSubwayStationsV1RequestParameterModel(NaverSearchAu
 
 
 class NaverSearchAutocompleteComplexesV1RequestParameterModel(NaverSearchAutocompleteRequestParameterModel):
-    """`GET /front-api/v1/search/autocomplete/complexes` 쿼리."""
+    """`GET /front-api/v1/search/autocomplete/complexes` 쿼리.
+
+    사이트 검색창은 `size=10&page=0` 을 보낸다. size 를 빼면 서버 기본 5건만 온다 (2026-11-16 실측).
+    """
+
+    size: Annotated[
+        int,
+        Field(ge=1, description='한 페이지 결과 수 (사이트 검색창 10)')
+    ] = 10

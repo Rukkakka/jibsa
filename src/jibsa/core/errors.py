@@ -53,16 +53,17 @@ class RegionAmbiguousError(JibsaError):
     Args:
         query: 사용자가 준 검색어.
         candidates: 후보 주소 (앞의 몇 곳).
-        total: 전체 후보 수.
+        total: 전체 후보 수. 후보가 더 남았는데 전체 수를 모르면 None 이고 `candidate_count` 도 null 이다 (모름 → null).
         hint: 다시 묻는 법. 소스마다 받는 검색어가 달라 바꿔 줄 수 있다 (직방은 전체 주소를 받지 못한다).
             Defaults to None (첫 후보 주소를 예로 든다).
     """
 
-    def __init__(self, query: str, candidates: list[str], total: int, hint: str | None = None) -> None:
+    def __init__(self, query: str, candidates: list[str], total: int | None, hint: str | None = None) -> None:
         example = candidates[0] if candidates else '서울특별시 강남구 역삼동'
+        count = f'{total}곳' if total is not None else f'{len(candidates)}곳 이상'
         super().__init__(
             code='REGION_AMBIGUOUS',
-            message=f"'{query}' 에 해당하는 곳이 {total}곳입니다",
+            message=f"'{query}' 에 해당하는 곳이 {count}입니다",
             hint=hint or f'시·구를 붙여 정확한 주소로 다시 검색하세요 (예: {example})',
             details={'candidates': candidates, 'candidate_count': total},
         )
