@@ -15,6 +15,7 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import haversine_km
+from jibsa.core.http import error_body
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
@@ -850,13 +851,7 @@ def duplicate_note(count: int, *, what: str = '매물', unit: str = '건') -> li
 
 def error_message(exc: HTTPStatusError) -> str | None:
     """다방 400 본문의 사유 ("존재하지 않는 단지입니다." 등). 없거나 JSON 이 아니면 None."""
-    try:
-        body = exc.response.json()
-    except ValueError:
-        return None
-    if not isinstance(body, dict):
-        return None
-    message = body.get('msg')
+    message = (error_body(exc) or {}).get('msg')
     return message if isinstance(message, str) else None
 
 

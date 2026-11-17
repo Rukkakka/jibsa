@@ -1,34 +1,28 @@
-"""응답 모델: 원룸·빌라·오피스텔 매물 검색과 주거 매물 상세 (search listings room, listing)."""
+"""응답 모델: 원룸·빌라·오피스텔 매물 검색과 매물 상세·아파트 매물 묶음 (search listings room, listing, catalog)."""
 
-from pydantic import Field
+from pydantic import (
+    Field,
+    field_validator,
+)
 
 from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
     ZigbangItemPinModel,
+    ZigbangItemSectionModel,
     ZigbangLatLngModel,
     ZigbangSubwayBriefModel,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 # ---------------------------------------------------------------------------
 # GET /house/property/v1/items/{onerooms|officetels|villas}
 # ---------------------------------------------------------------------------
-
-class ZigbangItemSectionModel(ResponseModel):
-    """노출 구역별 매물 ID 묶음."""
-
-    type: Annotated[
-        str,
-        Field(description='구역 종류 (VIP, PREMIUM_RECOMMEND, PREMIUM, RECOMMEND, NORMAL)')
-    ]
-    ids: Annotated[
-        list[int],
-        Field(description='해당 구역의 매물 ID')
-    ] = []
-
 
 class ZigbangSubwayLineModel(ResponseModel):
     """지하철 노선."""
@@ -337,7 +331,7 @@ class ZigbangItemDetailModel(ResponseModel):
 
 
 class ZigbangV3DanjiModel(ResponseModel):
-    """상세 응답의 단지(오피스텔 건물) 요약. 아파트 매물이면 null 이다."""
+    """상세 응답의 단지(오피스텔 건물) 요약. 아파트는 이 상세가 404 라 여기서 받지 않는다."""
 
     id: Annotated[
         int | None,
@@ -477,8 +471,116 @@ class ZigbangItemsDetailV1ResidenceModel(ResponseModel):
     ] = None
 
 
+class ZigbangManageCostEntryModel(ResponseModel):
+    """정액 관리비의 항목 하나: 일반(공용) 관리비(`normalManageCost`) 또는 사용료 항목(전기·수도·가스·난방·인터넷·TV)."""
+
+    type: Annotated[
+        str | None,
+        Field(description='부과 방식 (fixed 정액, actual 실비, not_applicable 해당 없음, unknown 미제공). 일반(공용) 관리비는 fixed 다')
+    ] = None
+    amount: Annotated[
+        float | None,
+        Field(description='정액 금액 (원, type 이 fixed 일 때)')
+    ] = None
+
+
+class ZigbangManageCostUsageFeeModel(ResponseModel):
+    """정액 관리비의 사용료 항목들. 키가 빠진 항목은 웹이 해당 없음(not_applicable)으로 본다."""
+
+    total_amount: Annotated[
+        float | None,
+        Field(description='정액 사용료 합계 (원)', alias='totalAmount')
+    ] = None
+    electricity: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='전기')
+    ] = None
+    gas: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='가스')
+    ] = None
+    water: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='수도')
+    ] = None
+    heating: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='난방')
+    ] = None
+    internet: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='인터넷')
+    ] = None
+    tv: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='TV')
+    ] = None
+
+
+class ZigbangEtcManageCostModel(ResponseModel):
+    """정액 관리비의 기타 관리비."""
+
+    is_unknown: Annotated[
+        bool | None,
+        Field(description='금액을 알 수 없는지', alias='isUnknown')
+    ] = None
+    description: Annotated[
+        str | None,
+        Field(description='기타 관리비 항목 설명')
+    ] = None
+    amount: Annotated[
+        float | None,
+        Field(description='금액 (원)')
+    ] = None
+
+
+class ZigbangItemsDetailV1ManageCostDetailModel(ResponseModel):
+    """주거 상세 관리비의 부과 방식별 내역. 웹 매물 화면은 `type` 에 따라 관리비 항목을 다르게 보여 준다.
+
+    `FixedManageCost` 는 일반(공용) 관리비·사용료 항목(정액·실비·해당 없음·미제공)·기타 관리비로 나눠 주고,
+    `ActualManageCost` 는 포함 항목 코드와 평균 관리비, `UnknownManageCost` 는 관리비를 확인할 수 없는 매물이다.
+    """
+
+    type: Annotated[
+        str | None,
+        Field(description='부과 방식 (FixedManageCost 정액, ActualManageCost 실비, UnknownManageCost 확인 불가)')
+    ] = None
+    total_amount: Annotated[
+        float | None,
+        Field(description='정액 관리비 합계 (원)', alias='totalAmount')
+    ] = None
+    has_informed: Annotated[
+        bool | None,
+        Field(description='항목별 내역을 알렸는지. false 면 웹은 항목별 내역 대신 포함 항목 목록을 보여 준다', alias='hasInformed')
+    ] = None
+    usage_fee: Annotated[
+        ZigbangManageCostUsageFeeModel | None,
+        Field(description='사용료 항목 (정액 관리비)', alias='usageFee')
+    ] = None
+    normal_manage_cost: Annotated[
+        ZigbangManageCostEntryModel | None,
+        Field(description='일반(공용) 관리비 (정액 관리비)', alias='normalManageCost')
+    ] = None
+    etc_manage_cost: Annotated[
+        ZigbangEtcManageCostModel | None,
+        Field(description='기타 관리비 (정액 관리비)', alias='etcManageCost')
+    ] = None
+    manage_cost_criteria: Annotated[
+        str | None,
+        Field(description='관리비 기준 코드', alias='manageCostCriteria')
+    ] = None
+    avg_manage_cost: Annotated[
+        float | None,
+        Field(description='평균 관리비 (원, 실비 관리비)', alias='avgManageCost')
+    ] = None
+
+
 class ZigbangItemsDetailV1ManageCostModel(ResponseModel):
-    """주거 상세 관리비. amount는 만원, fee는 원이다."""
+    """주거 상세 관리비. amount는 만원, fee는 원이다.
+
+    `include` 는 실비로 따로 내는 항목도 포함으로 담는다 (2026-11-15 실측: 매물 51161523 은 include 에 전기·수도·가스가
+    있는데 `detail.usageFee` 는 모두 실비). 웹은 `detail` 이 정액 관리비면 항목별 내역을 보여 준다.
+    """
 
     amount: Annotated[
         float | None,
@@ -490,12 +592,16 @@ class ZigbangItemsDetailV1ManageCostModel(ResponseModel):
     ] = None
     includes: Annotated[
         list[ZigbangStructuredOptionModel],
-        Field(description='포함 항목', alias='include')
+        Field(description='포함 항목. 실비 항목도 들어 있다', alias='include')
     ] = []
     excludes: Annotated[
         list[ZigbangStructuredOptionModel],
         Field(description='별도 항목', alias='exclude')
     ] = []
+    detail: Annotated[
+        ZigbangItemsDetailV1ManageCostDetailModel | None,
+        Field(description='부과 방식별 내역. 관리비가 없는 매물은 null')
+    ] = None
 
 
 class ZigbangItemsDetailV1ItemModel(ResponseModel):
@@ -617,10 +723,10 @@ class ZigbangAptManageCostModel(ResponseModel):
 
 
 class ZigbangAptItemModel(ResponseModel):
-    """아파트 매물 상세 본문.
+    """아파트 매물 상세 본문 (직방·제휴 매물).
 
-    `/v3/items` 가 아파트에 대해 주지 않는 단지 이름·방 수·욕실 수·사용승인일·공급면적과
-    아파트 관리비를 준다. 층은 '저'·'중'·'고' 로만 와서 정확한 층은 `/v3/items` 에서 받는다.
+    웹 아파트 매물 화면이 부르는 유일한 상세다 (주거 상세·`/v3/items` 는 아파트에 404). 직방 매물의 층은
+    '저'·'중'·'고' 로만 오고 웹 화면에도 정확한 층이 없다. 상태·등록일·인근 역·엘리베이터·건축물 용도·세대수 필드는 없다.
     """
 
     item_source: Annotated[
@@ -631,6 +737,10 @@ class ZigbangAptItemModel(ResponseModel):
         int,
         Field(description='매물 ID', alias='itemId')
     ]
+    item_type: Annotated[
+        str | None,
+        Field(description='매물 종류 (offer 신규분양, partner 집주인이 내놓음, self_ad 중개사무소가 등록)', alias='itemType')
+    ] = None
     area_danji_id: Annotated[
         int | None,
         Field(description='단지 ID', alias='areaDanjiId')
@@ -665,7 +775,11 @@ class ZigbangAptItemModel(ResponseModel):
     ] = None
     old_address: Annotated[
         str | None,
-        Field(description='지번 주소 (예: 경기도 성남시 분당구 삼평동 705). 직방 매물은 빈 문자열로 오기도 한다', alias='oldAddress')
+        Field(description='지번 주소 (예: 경기도 성남시 분당구 삼평동 705). 직방 매물은 빈 문자열로 온다', alias='oldAddress')
+    ] = None
+    address: Annotated[
+        str | None,
+        Field(description="도로명 주소 (예: '서울시 송파구 송파대로 345'). 웹 아파트 매물 화면이 보여 주는 주소다")
     ] = None
     building_floor: Annotated[
         int | None,
@@ -675,9 +789,17 @@ class ZigbangAptItemModel(ResponseModel):
         str | None,
         Field(description='방향 (소문자 e, sw ...)')
     ] = None
+    direction_base: Annotated[
+        str | None,
+        Field(description="방향 기준 (예: '거실기준')", alias='directionBase')
+    ] = None
     movein_date: Annotated[
         str | None,
         Field(description='입주 가능일 (예: 즉시입주가능, 2026.11.30(협의가능))', alias='moveinDate')
+    ] = None
+    parking_count: Annotated[
+        int | float | None,
+        Field(description='단지 전체 주차 대수', alias='parkingCount')
     ] = None
     parking_count_by_household: Annotated[
         float | None,
@@ -705,7 +827,7 @@ class ZigbangAptItemModel(ResponseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description="층. 직방 매물은 '저'·'중'·'고', 제휴 매물은 숫자")
+        Field(description="층. 직방 매물은 '저'·'중'·'고' (정확한 층은 주지 않는다), 제휴 매물은 숫자")
     ] = None
     manage_cost: Annotated[
         ZigbangAptManageCostModel | None,
@@ -720,6 +842,37 @@ class ZigbangItemCatalogsItemsResponseModel(ResponseModel):
         ZigbangAptItemModel,
         Field(description='매물 상세')
     ]
+
+
+# ---------------------------------------------------------------------------
+# GET /apt/item-catalogs/{areaHoId}
+# ---------------------------------------------------------------------------
+
+class ZigbangItemCatalogsResponseModel(ResponseModel):
+    """같은 호·거래 유형의 아파트 매물 묶음 한 쪽 (웹 묶음 화면). 매물마다 아파트 상세(`/apt/item-catalogs/items`)와 같은 꼴이다.
+
+    이 밖에 묶음의 가격 범위(`depositMin`·`depositMax`·`rentMin`·`rentMax`)와 근처 중개사무소(`acceptedLocalAgents`, 이름·대표자·주소)가
+    오지만 쓰지 않는다 (가격은 매물마다 있고, 중개사 정보는 내보내지 않는다).
+    """
+
+    area_ho_id: Annotated[
+        int | None,
+        Field(description='호 ID', alias='areaHoId')
+    ] = None
+    item_count: Annotated[
+        int | None,
+        Field(description='묶음의 매물 수 (쪽과 상관없는 전체). 주지 않으면 모름', alias='itemCount')
+    ] = None
+    items: Annotated[
+        list[ZigbangAptItemModel],
+        Field(description='이 쪽의 매물 (서버 순서 그대로 웹이 보여 준다). null 이면 빈 목록')
+    ] = []
+
+    @field_validator('items', mode='before')
+    @classmethod
+    def null_items_as_empty(cls, value: Any) -> Any:
+        """null 은 빈 쪽으로 받는다. 매물이 없다는 모양이라 응답 형식 오류(PARSE_ERROR)로 끝내지 않는다."""
+        return [] if value is None else value
 
 
 # ---------------------------------------------------------------------------

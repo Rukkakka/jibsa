@@ -20,7 +20,7 @@ from jibsa.core.http import (
 )
 from jibsa.providers.zigbang.api.request.apt import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
-    ZigbangNearbyDanjisRequestParameterModel,
+    ZigbangLocalsPolygonRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.common import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
@@ -28,12 +28,15 @@ from jibsa.providers.zigbang.api.request.common import (
     ZigbangItemsListV1RequestPayloadModel,
 )
 from jibsa.providers.zigbang.api.request.complex import (
+    ZigbangDanjisIdsRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
+    ZigbangSubwaysRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.listing import (
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
+    ZigbangItemCatalogsRequestParameterModel,
     ZigbangItemsDetailV1RequestParameterModel,
     ZigbangItemsOfficetelsV1RequestParameterModel,
     ZigbangItemsOneroomsV1RequestParameterModel,
@@ -54,7 +57,6 @@ from jibsa.providers.zigbang.api.request.region import (
 from jibsa.providers.zigbang.api.request.stay import (
     ZigbangGuestItemsByIdsRequestParameterModel,
     ZigbangGuestItemsMarkersRequestParameterModel,
-    ZigbangGuestItemsPriceCalculationRequestPayloadModel,
     ZigbangGuestItemsRequestParameterModel,
     ZigbangGuestItemsSearchRequestParameterModel,
 )
@@ -65,7 +67,7 @@ from jibsa.providers.zigbang.api.request.store import (
 )
 from jibsa.providers.zigbang.api.response.apt import (
     ZigbangLocalsItemCatalogsResponseModel,
-    ZigbangNearbyDanjisResponseModel,
+    ZigbangLocalsPolygonResponseModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangDanjisItemCatalogsResponseModel,
@@ -73,12 +75,15 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemsListV1ResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex import (
+    ZigbangDanjisIdsResponseModel,
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
+    ZigbangSubwaysResponseModel,
 )
 from jibsa.providers.zigbang.api.response.listing import (
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemCatalogsItemsResponseModel,
+    ZigbangItemCatalogsResponseModel,
     ZigbangItemsDetailV1ResponseModel,
     ZigbangItemsOfficetelsV1ResponseModel,
     ZigbangItemsOneroomsV1ResponseModel,
@@ -99,7 +104,6 @@ from jibsa.providers.zigbang.api.response.region import (
 from jibsa.providers.zigbang.api.response.stay import (
     ZigbangGuestItemsByIdsResponseModel,
     ZigbangGuestItemsMarkersResponseModel,
-    ZigbangGuestItemsPriceCalculationResponseModel,
     ZigbangGuestItemsResponseModel,
     ZigbangGuestItemsSearchResponseModel,
 )
@@ -148,7 +152,7 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·상세, 상가,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음, 상가,
     단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는
     헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
@@ -189,11 +193,14 @@ class ZigbangClient(BaseHTTPClient):
     items_villas_v1_endpoint: ClassVar[str] = '/house/property/v1/items/villas'
     items_list_v1_endpoint: ClassVar[str] = '/house/property/v1/items/list'
     locals_item_catalogs_endpoint: ClassVar[str] = '/apt/locals/{local_code}/item-catalogs'
+    locals_polygon_endpoint: ClassVar[str] = '/apt/locals/polygon'
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
+    item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}'
+    danjis_ids_endpoint: ClassVar[str] = '/apt/danjis/ids'
+    subways_endpoint: ClassVar[str] = '/apt/subways/{subway_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
     bls_school_zones_v1_endpoint: ClassVar[str] = '/house/property/v1/bls/{pnu}/school_zones'
-    nearby_danjis_endpoint: ClassVar[str] = '/apt/nearby-danjis'
     danjis_item_catalogs_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/item-catalogs'
     danjis_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/rt-prices'
     danjis_room_types_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/room-types/{room_type_id}/rt-prices'
@@ -205,7 +212,6 @@ class ZigbangClient(BaseHTTPClient):
     guest_items_markers_endpoint: ClassVar[str] = '/guest/items/markers'
     guest_items_by_ids_endpoint: ClassVar[str] = '/guest/items/by-ids'
     guest_items_endpoint: ClassVar[str] = '/guest/items/{item_id}'
-    guest_items_price_calculation_endpoint: ClassVar[str] = '/guest/items/{item_id}/price-calculation'
     items_detail_v1_endpoint: ClassVar[str] = '/house/property/v1/items/{item_id}/detail'
     items_v3_endpoint: ClassVar[str] = '/v3/items/{item_id}'
 
@@ -522,13 +528,15 @@ class ZigbangClient(BaseHTTPClient):
         """Fetch the structured house detail via `GET /house/property/v1/items/{itemId}/detail`.
 
         Same retry behaviour as `run_request_items_onerooms_v1`. `/v3/items` 와 응답 구조가 다르다.
-        없는 매물이면 404 로 `ResponseStatusError` 가 나고, 내려간 매물은 200 에 `status` 가 open 이 아니다.
+        원룸·빌라·오피스텔만 준다. 없는 매물이면 404 로 `ResponseStatusError` 가 나고(본문에 `code` 없음), 아파트 매물도
+        404 지만 본문 `code` 가 `ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED` 다 (2026-11-15 실측). 내려간 매물은 200 에
+        `status` 가 open 이 아니다.
 
         Args:
             parameter: `item_id` (경로).
 
         Returns:
-            ZigbangItemsDetailV1ResponseModel: 주소·면적·층·입주일·관리비·옵션과 인근 지하철역.
+            ZigbangItemsDetailV1ResponseModel: 주소·면적·층·입주일·관리비(부과 방식별 내역 포함)·옵션과 인근 지하철역.
                 입주일(`moveInAt`)은 null 일 수 있다.
         """
         response = self._client.get(
@@ -560,8 +568,9 @@ class ZigbangClient(BaseHTTPClient):
     ) -> ZigbangItemsV3ResponseModel:
         """Fetch the full item detail via `GET /v3/items/{itemId}`.
 
-        Same retry behaviour as `run_request_items_onerooms_v1`. 없는 매물이면
-        404 로 `ResponseStatusError` 가 난다.
+        Same retry behaviour as `run_request_items_onerooms_v1`. 새 주거 상세의 입주일이 null 일 때
+        입주 문구·주차를 보완하는 데 쓴다. 없는 매물과 아파트 매물은 404 로 `ResponseStatusError` 가 난다
+        (2026-11-15 실측).
 
         Args:
             parameter: `item_id` (경로) plus `domain`.
@@ -631,21 +640,60 @@ class ZigbangClient(BaseHTTPClient):
         return ZigbangLocalsItemCatalogsResponseModel.model_validate(response.json())
 
     @zigbang_retry
+    def run_request_locals_polygon(
+        self,
+        parameter: ZigbangLocalsPolygonRequestParameterModel
+    ) -> ZigbangLocalsPolygonResponseModel:
+        """Find the dong containing a geohash cell via `GET /apt/locals/polygon`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도가 지도 가운데의 동을 정해
+        '○○동 주변 매물보기' 를 띄우는 엔드포인트다 (2026-11-15 캡처). 웹은 geohash 를 암호화해 보내지만 평문도 받는다.
+        geohash 칸이 크면 옆 동을 주므로 정밀도 10 으로 보낸다.
+
+        Args:
+            parameter: `geohash`, `level` (local3), `polygon` (false 면 경계 없이).
+
+        Returns:
+            ZigbangLocalsPolygonResponseModel: 동의 직방 지역 코드(8자리)와 이름.
+        """
+        response = self._client.get(
+            url=self.locals_polygon_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsPolygonResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_polygon(
+        self,
+        parameter: ZigbangLocalsPolygonRequestParameterModel
+    ) -> ZigbangLocalsPolygonResponseModel:
+        """Async variant of `run_request_locals_polygon`."""
+        response = await self._async_client.get(
+            url=self.locals_polygon_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsPolygonResponseModel.model_validate(response.json())
+
+    @zigbang_retry
     def run_request_item_catalogs_items(
         self,
         parameter: ZigbangItemCatalogsItemsRequestParameterModel
     ) -> ZigbangItemCatalogsItemsResponseModel:
         """Fetch an apartment item detail via `GET /apt/item-catalogs/items/{itemId}`.
 
-        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 매물 페이지(v2)가 쓰는
-        엔드포인트로, `/v3/items` 가 아파트에 대해 주지 않는 단지 이름·방 수·욕실 수·사용승인일과
-        아파트 관리비를 준다. 없는 매물이면 404 다.
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 매물 페이지(v2)가 부르는 유일한
+        상세다 (2026-11-15 실측). 주거 상세·`/v3/items` 는 아파트에 404 라 아파트 매물(직방·제휴)의 상세는 이것 하나로
+        만든다. 없는 매물이나 아파트가 아닌 매물(원룸 ID)이면 404 다. 상태 필드는 없다.
 
         Args:
             parameter: `item_id` (경로) plus `item_source`.
 
         Returns:
-            ZigbangItemCatalogsItemsResponseModel: 아파트 매물 상세 (관리비는 원 단위).
+            ZigbangItemCatalogsItemsResponseModel: 아파트 매물 상세 (관리비는 원 단위, 층은 직방 매물이면 저·중·고).
         """
         response = self._client.get(
             url=self.item_catalogs_items_endpoint.format(item_id=parameter.item_id),
@@ -668,6 +716,47 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangItemCatalogsItemsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_item_catalogs(
+        self,
+        parameter: ZigbangItemCatalogsRequestParameterModel
+    ) -> ZigbangItemCatalogsResponseModel:
+        """Fetch one page of an apartment listing bundle via `GET /apt/item-catalogs/{areaHoId}`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 같은 호·거래 유형을 올린 매물(중개사별) 묶음으로, 웹 아파트
+        목록 카드가 가격 범위(`isPriceRange`)일 때 누르면 가는 묶음 화면(`/home/apt/item-catalog?areaHoId=…&tranType=…`)이
+        부른다 (번들 `getItemCatalog`·`useItemCatalogDetail`: 20건씩 `itemCount` 까지, 첫 쪽은 서버가 그려 넣는다. 2026-11-15).
+        매물마다 아파트 상세(`/apt/item-catalogs/items/{itemId}`)와 같은 꼴이라 묶음 매물의 가격·상세를 매물마다 따로 부르지
+        않고 받는다. 묶음에 매물이 없거나 그 호에 그 거래 유형 매물이 없으면 404 (`not found item in catalog`)다.
+
+        Args:
+            parameter: `area_ho_id` (경로) plus 거래 유형(`tranType`), `offset`/`limit`.
+
+        Returns:
+            ZigbangItemCatalogsResponseModel: 묶음의 매물 수와 이 쪽의 매물 (관리비는 원 단위, 층은 직방 매물이면 저·중·고).
+        """
+        response = self._client.get(
+            url=self.item_catalogs_endpoint.format(area_ho_id=parameter.area_ho_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangItemCatalogsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_item_catalogs(
+        self,
+        parameter: ZigbangItemCatalogsRequestParameterModel
+    ) -> ZigbangItemCatalogsResponseModel:
+        """Async variant of `run_request_item_catalogs`."""
+        response = await self._async_client.get(
+            url=self.item_catalogs_endpoint.format(area_ho_id=parameter.area_ho_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangItemCatalogsResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis(
@@ -705,42 +794,79 @@ class ZigbangClient(BaseHTTPClient):
         return ZigbangDanjisResponseModel.model_validate(response.json())
 
     @zigbang_retry
-    def run_request_nearby_danjis(
+    def run_request_subways(
         self,
-        parameter: ZigbangNearbyDanjisRequestParameterModel
-    ) -> ZigbangNearbyDanjisResponseModel:
-        """List apartment complexes around a point via `GET /apt/nearby-danjis`.
+        parameter: ZigbangSubwaysRequestParameterModel
+    ) -> ZigbangSubwaysResponseModel:
+        """Fetch a station and the apartment complexes around it via `GET /apt/subways/{subwayId}`.
 
-        Same retry behaviour as `run_request_items_onerooms_v1`. 단지마다 거리(m)가 붙고 가까운 순이다.
-        매물 수는 주지 않는다.
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도에서 역을 고르면(`/home/apt/subways/{id}`)
+        부른다 (2026-11-15 캡처). 역 ID 는 지역 검색(`/v2/search`) 결과의 역 id 와 같다. `aptList` 는 역에서 1.5km 안
+        단지를 가까운 순으로 주고 단지마다 역에서의 거리(m)가 있다.
 
         Args:
-            parameter: 중심 `lat`/`lng`, 반경 `radius` (km), `limit`.
+            parameter: `subway_id` (경로).
 
         Returns:
-            ZigbangNearbyDanjisResponseModel: 반경 안 단지 (가까운 순).
+            ZigbangSubwaysResponseModel: 역 이름과 주변 단지 (이름·지번 주소·세대수 문구·거리).
         """
         response = self._client.get(
-            url=self.nearby_danjis_endpoint,
-            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            url=self.subways_endpoint.format(subway_id=parameter.subway_id),
             headers=APT_HEADERS
         )
         raise_for_status(response=response)
-        return ZigbangNearbyDanjisResponseModel.model_validate(response.json())
+        return ZigbangSubwaysResponseModel.model_validate(response.json())
 
     @zigbang_retry
-    async def arun_request_nearby_danjis(
+    async def arun_request_subways(
         self,
-        parameter: ZigbangNearbyDanjisRequestParameterModel
-    ) -> ZigbangNearbyDanjisResponseModel:
-        """Async variant of `run_request_nearby_danjis`."""
+        parameter: ZigbangSubwaysRequestParameterModel
+    ) -> ZigbangSubwaysResponseModel:
+        """Async variant of `run_request_subways`."""
         response = await self._async_client.get(
-            url=self.nearby_danjis_endpoint,
+            url=self.subways_endpoint.format(subway_id=parameter.subway_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangSubwaysResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_ids(
+        self,
+        parameter: ZigbangDanjisIdsRequestParameterModel
+    ) -> ZigbangDanjisIdsResponseModel:
+        """List apartment complex IDs around a station via `GET /apt/danjis/ids`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도의 '<역> 주변단지' 패널(조회수 순 5곳)과
+        더보기 화면(`limit` 없이 모두)이 부른다 (2026-11-15 캡처·번들 `getAPTTypedListIds`). 쪽 넘김은 없다.
+
+        Args:
+            parameter: `type`(subway)·`id`(역 ID)·`order`(viewCount)·`limit`·`serviceType` 배열.
+
+        Returns:
+            ZigbangDanjisIdsResponseModel: 주변 단지 전체 수(`count`)와 요청한 순서의 단지 ID.
+        """
+        response = self._client.get(
+            url=self.danjis_ids_endpoint,
             params=parameter.model_dump(by_alias=True, exclude_none=True),
             headers=APT_HEADERS
         )
         raise_for_status(response=response)
-        return ZigbangNearbyDanjisResponseModel.model_validate(response.json())
+        return ZigbangDanjisIdsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_ids(
+        self,
+        parameter: ZigbangDanjisIdsRequestParameterModel
+    ) -> ZigbangDanjisIdsResponseModel:
+        """Async variant of `run_request_danjis_ids`."""
+        response = await self._async_client.get(
+            url=self.danjis_ids_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisIdsResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis_rt_prices(
@@ -960,13 +1086,14 @@ class ZigbangClient(BaseHTTPClient):
         self,
         payload: ZigbangStoreArticleStoresV2RequestPayloadModel
     ) -> ZigbangStoreArticleStoresV2ResponseModel:
-        """List store locations in a geohash tile via `POST /v2/store/article/stores`.
+        """List store locations in a circle or legal dongs via `POST /v2/store/article/stores`.
 
         POST 지만 조회 전용이라 idempotent 재시도를 쓴다. Same retry behaviour as
         `run_request_items_onerooms_v1`. 응답 최상위가 배열이라 `sections` 로 감싸 검증한다.
 
         Args:
-            payload: `geohash` plus 거래 유형, 1층 여부, 업종, 면적(㎡) 조건.
+            payload: `상권`(원: 중심·반경 m) 또는 `지역`(법정동 코드 10자리) 중 하나와 거래 유형, 1층 여부,
+                업종, 면적(㎡) 조건.
 
         Returns:
             ZigbangStoreArticleStoresV2ResponseModel: 위치 묶음(조건에 맞는 상가, 공실).
@@ -1215,45 +1342,6 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangGuestItemsResponseModel.model_validate(response.json())
-
-    @zigbang_retry
-    def run_request_guest_items_price_calculation(
-        self,
-        payload: ZigbangGuestItemsPriceCalculationRequestPayloadModel
-    ) -> ZigbangGuestItemsPriceCalculationResponseModel:
-        """Calculate a short-term stay price via `POST stay-apis.zigbang.com/guest/items/{itemId}/price-calculation`.
-
-        POST 지만 계산만 하는 조회라(예약을 만들지 않는다) idempotent 재시도를 쓴다. Same retry behaviour as
-        `run_request_items_onerooms_v1`. 그 날짜에 예약이 비어 있는지는 보지 않는다. 지난 입주일이나
-        계약 기간을 벗어난 기간은 400 이다.
-
-        Args:
-            payload: `item_id` (경로) plus 입주·퇴거일과 반려동물 동반 여부.
-
-        Returns:
-            ZigbangGuestItemsPriceCalculationResponseModel: 기간 임대료·관리비·할인·이용료·보증금과 총액 (원).
-        """
-        response = self._client.post(
-            url=self.stay_base_url + self.guest_items_price_calculation_endpoint.format(item_id=payload.item_id),
-            json=payload.model_dump(by_alias=True, exclude_none=True),
-            headers=STAY_HEADERS
-        )
-        raise_for_status(response=response)
-        return ZigbangGuestItemsPriceCalculationResponseModel.model_validate(response.json())
-
-    @zigbang_retry
-    async def arun_request_guest_items_price_calculation(
-        self,
-        payload: ZigbangGuestItemsPriceCalculationRequestPayloadModel
-    ) -> ZigbangGuestItemsPriceCalculationResponseModel:
-        """Async variant of `run_request_guest_items_price_calculation`."""
-        response = await self._async_client.post(
-            url=self.stay_base_url + self.guest_items_price_calculation_endpoint.format(item_id=payload.item_id),
-            json=payload.model_dump(by_alias=True, exclude_none=True),
-            headers=STAY_HEADERS
-        )
-        raise_for_status(response=response)
-        return ZigbangGuestItemsPriceCalculationResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_items_subways_onerooms_v1(

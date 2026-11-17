@@ -33,6 +33,8 @@ ZigbangStayOption = Literal[
     'SOFA', 'TOASTER', 'VANITY', 'BATHTUB', 'BIDET', 'CABLE_TV', 'CCTV', 'DOOR_LOCK',
     'DRYING_RACK', 'MANAGEMENT_OFFICE', 'OTT', 'VACUUM_CLEANER', 'BALCONY',
 ]
+# 웹 정렬 넷과 같다: 추천순(기본), 낮은 가격순, 최근 등록순, 역 가까운 순 (2026-11-15 웹)
+ZigbangStaySearchSort = Literal['RECOMMENDED', 'PRICE_ASC', 'NEWEST', 'STATION_DISTANCE_ASC']
 
 
 # 단기임대 지도·지역 검색이 받는 기간 (입주일과 마지막 날을 모두 센 일수). 2026-10-10 실측: 두 API 모두
@@ -46,10 +48,15 @@ def stay_days(check_in: str, check_out: str) -> int:
     return (date.fromisoformat(check_out) - date.fromisoformat(check_in)).days + 1
 
 
-def _validate_stay_dates(check_in: str, check_out: str) -> None:
-    # 2026-10-09 비로그인 API 실측: 검색·요금 계산 모두 오늘 입주를 허용하고 과거는 400.
-    # 2027-02-30은 검색에서 500, 요금 계산에서 200이므로 서버에 맡기지 않고 달력을 검증한다.
-    # 기간이 매물 계약 범위에 맞는지는 매물마다 달라(최소 1~8주) 요금 계산에서는 서버 판단에 맡긴다
+def validate_stay_dates(check_in: str, check_out: str) -> None:
+    """입주일·마지막 날이 실제 날짜이고, 입주일이 한국 날짜로 오늘 이후이며, 마지막 날이 입주일보다 뒤인지 본다.
+
+    Raises:
+        ValueError: 위 조건을 어길 때 (요청 모델 검증 안에서 불러 CLI 는 INVALID_ARGUMENT).
+    """
+    # 2026-10-09 비로그인 API 실측: 검색은 오늘 입주를 허용하고 과거는 400. 2027-02-30 은 검색에서 500 이므로 서버에 맡기지
+    # 않고 달력을 검증한다. 상세(listing stay-…)는 날짜를 서버에 보내지 않지만, 웹 날짜 고르기 창도 지난 날을 고를 수 없어
+    # 같은 검사를 한다. 기간이 매물 계약 범위에 맞는지는 매물마다 달라(최소 1~8주) 여기서 보지 않는다
     try:
         start = date.fromisoformat(check_in)
         end = date.fromisoformat(check_out)
@@ -94,7 +101,7 @@ class ZigbangStayDatesMixin(RequestModel):
         if self.flexibility is not None and self.check_in_date is None:
             raise ValueError('일정 유연성은 입주일·퇴거일과 함께 써야 합니다')
         if self.check_in_date is not None and self.check_out_date is not None:
-            _validate_stay_dates(self.check_in_date, self.check_out_date)
+            validate_stay_dates(self.check_in_date, self.check_out_date)
             _validate_stay_search_period(self.check_in_date, self.check_out_date)
         return self
 
@@ -172,7 +179,9 @@ class ZigbangGuestItemsMarkersRequestParameterModel(ZigbangGuestItemsFiltersRequ
 class ZigbangGuestItemsSearchRequestParameterModel(ZigbangGuestItemsFiltersRequestParameterModel):
     """`GET /guest/items/search` 지역·역·학교 검색. 응답 ID는 by-ids로 조회한다.
 
-    반경 지정은 지원하지 않는다. 지역은 local1~3, 역·학교는 lat/lng를 사용한다.
+    반경 지정은 지원하지 않는다. 지역은 local1~3, 역·학교는 lat/lng를 사용한다. 역(`subway`)은 서버가 역에서 약 1km 안만
+    주고, 지역(`address`)은 동 경계가 아니라 이웃 동 매물도 섞여 온다 (2026-11-15 실측: 강남역 71건 중 가장 먼 것 0.979km,
+    성수동2가 34건 중 성수동2가는 17건이고 화양동 9·자양동 5·성수동1가 3건).
     """
 
     type: Annotated[
@@ -204,8 +213,12 @@ class ZigbangGuestItemsSearchRequestParameterModel(ZigbangGuestItemsFiltersReque
     ] = None
 
     sort: Annotated[
-        Literal['RECOMMENDED', 'PRICE_ASC', 'NEWEST', 'STATION_DISTANCE_ASC'] | None,
-        Field(description='직방 단기임대 검색 정렬 기준')
+        ZigbangStaySearchSort | None,
+        Field(description=(
+            '정렬. RECOMMENDED 추천순(안 보내도 같은 순서, 2026-11-15 실측 강남역 71건·역삼동 64건), PRICE_ASC 주당 '
+            '임대료+관리비 낮은 순, NEWEST 등록 시각 늦은 순, STATION_DISTANCE_ASC 역에서 가까운 순(subway 만). '
+            'PRICE_ASC·STATION_DISTANCE_ASC 는 같은 값이면 ID 큰 순이고, 같은 요청은 늘 같은 순서다 (2026-11-15 실측)'
+        ))
     ] = None
 
     @model_validator(mode='after')
@@ -217,6 +230,10 @@ class ZigbangGuestItemsSearchRequestParameterModel(ZigbangGuestItemsFiltersReque
             raise ValueError('역·학교 검색에는 위도와 경도가 필요합니다')
         if (self.lat is None) != (self.lng is None):
             raise ValueError('위도와 경도는 함께 주어야 합니다')
+        # 서버가 400 STATION_SORT_REQUIRES_SUBWAY '역 가까운 순은 지하철역 검색에서만 사용 가능합니다' 를 준다
+        # (2026-11-15 실측: address·university)
+        if self.sort == 'STATION_DISTANCE_ASC' and self.type != 'subway':
+            raise ValueError('역 가까운 순은 지하철역 검색에서만 쓸 수 있습니다')
         return self
 
 
@@ -236,33 +253,3 @@ class ZigbangGuestItemsRequestParameterModel(RequestModel):
         int,
         Field(gt=0, exclude=True, description='단기임대 매물 ID. 경로에 들어간다')
     ]
-
-
-class ZigbangGuestItemsPriceCalculationRequestPayloadModel(RequestModel):
-    """`POST stay-apis.zigbang.com/guest/items/{itemId}/price-calculation` 경로 + 본문. 기간 요금 계산.
-
-    지난 입주일, 최소·최대 계약 기간을 벗어난 기간은 서버가 400 `VALIDATION_ERROR` 로 거절한다
-    (message: '입주일은 오늘 이후여야 합니다', `MIN_CONTRACT_PERIOD`, `MAX_CONTRACT_PERIOD`).
-    """
-
-    item_id: Annotated[
-        int,
-        Field(gt=0, exclude=True, description='단기임대 매물 ID. 경로에 들어가며 본문으로는 보내지 않는다')
-    ]
-    check_in_date: Annotated[
-        str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주일 (YYYY-MM-DD)', alias='checkInDate')
-    ]
-    check_out_date: Annotated[
-        str,
-        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD, 이용일에 센다)', alias='checkOutDate')
-    ]
-    has_pet: Annotated[
-        bool,
-        Field(description='반려동물 동반 여부 (반려동물 청소비가 붙는다)', alias='hasPet')
-    ] = False
-
-    @model_validator(mode='after')
-    def valid_dates(self) -> Self:
-        _validate_stay_dates(self.check_in_date, self.check_out_date)
-        return self

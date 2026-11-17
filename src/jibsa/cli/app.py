@@ -114,7 +114,7 @@ USAGE_HINTS: dict[str, UsageHints] = {
     **zigbang.USAGE_HINTS, **naver.USAGE_HINTS, **daangn.USAGE_HINTS, **dabang.USAGE_HINTS,
 }
 # 예전 문서대로 부른 명령에 바뀐 사용법을 알린다 (`changed_usage_hint`)
-CHANGED_USAGE: dict[str, ChangedUsage] = {**daangn.CHANGED_USAGE}
+CHANGED_USAGE: dict[str, ChangedUsage] = {**zigbang.CHANGED_USAGE, **daangn.CHANGED_USAGE}
 # Click 은 없는 하위 명령 이름을 repr 로 감싸(작은따옴표가 든 이름은 큰따옴표) 마침표를 붙이고, 비슷한 이름이 있으면
 # 'Did you mean' 을 잇는다
 NO_SUCH_COMMAND_PATTERN: re.Pattern[str] = re.compile(r"No such command (['\"])(.*?)\1\.")

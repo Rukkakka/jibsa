@@ -30,9 +30,13 @@ ZigbangOptionFilter = Literal[
 ]
 # 아파트 거래 유형. 원룸·빌라와 달리 영어 코드를 받고 한글을 보내면 400 이다.
 ZigbangAptTranType = Literal['trade', 'charter', 'rental']
+# 상세를 볼 수 있는 아파트 매물 출처. coalition 은 제휴 매물이다 (집주인이 내놓은 매물과 신규분양, 응답의 itemType 으로 가른다)
+ZigbangAptItemSource = Literal['zigbang', 'coalition']
 
 # 직방은 배열 쿼리를 `salesTypes[0]=전세&salesTypes[1]=월세` 처럼 인덱스를 붙여 받는다.
-INDEXED_ARRAY_KEYS: tuple[str, ...] = ('salesTypes', 'roomType', 'floor', 'options', 'tranTypeIn', 'danjiRoomTypeIds')
+INDEXED_ARRAY_KEYS: tuple[str, ...] = (
+    'salesTypes', 'roomType', 'floor', 'options', 'tranTypeIn', 'danjiRoomTypeIds', 'serviceType',
+)
 
 
 def _index_arrays(data: dict[str, Any]) -> dict[str, Any]:
@@ -180,7 +184,13 @@ class ZigbangOfficetelOrderMixin(RequestModel):
 
     without_random: Annotated[
         bool | None,
-        Field(description='서버의 무작위 섞기를 생략한다. 일정한 순서를 보장하지 않는다', alias='withoutRandom')
+        Field(
+            description=(
+                '서버의 무작위 섞기를 생략한다. 섹션 안이 매물 번호순으로 오고 시간이 지나도 같다 (2026-11-16 실측). '
+                'VIP 섹션은 그대로 바뀐다'
+            ),
+            alias='withoutRandom'
+        )
     ] = None
 
 

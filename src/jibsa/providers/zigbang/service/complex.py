@@ -1,4 +1,4 @@
-"""아파트 단지·오피스텔 건물 정보와 단지 매물 목록 (complex, search listings --complex)."""
+"""아파트 단지·오피스텔 건물 정보와 단지 매물 목록, 역 주변 단지 (complex, search listings --complex, search complexes)."""
 
 import re
 
@@ -13,20 +13,25 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
+from jibsa.core.korean import quoted
 from jibsa.core.listing import (
     Listing,
     join_address,
     limit_notes,
+    more_hint,
     normalize_address,
     normalize_date,
+    note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.complex import (
+    ZigbangDanjisIdsRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
+    ZigbangSubwaysRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangDanjisItemCatalogsResponseModel,
@@ -35,6 +40,7 @@ from jibsa.providers.zigbang.api.response.common import (
 from jibsa.providers.zigbang.api.response.complex import (
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
+    ZigbangSubwayAptModel,
 )
 from jibsa.providers.zigbang.service.common import (
     APT_TRAN_TYPE_BY_TRADE,
@@ -47,6 +53,7 @@ from jibsa.providers.zigbang.service.common import (
     TRADE_BY_APT_TRAN_TYPE,
     ComplexKind,
     ZigbangRoomConditions,
+    apt_complex_id,
     apt_danji_url,
     apt_pagination_notes,
     catalog_to_listing,
@@ -56,10 +63,12 @@ from jibsa.providers.zigbang.service.common import (
     parse_complex_id,
     room_filter_of,
     school_label,
+    section_ordered_ids,
     summary_to_listing,
     tradeable_summaries,
 )
 from jibsa.providers.zigbang.service.region import (
+    resolve_station,
     search_regions,
     to_int,
 )
@@ -441,7 +450,8 @@ def list_complex_listings(
     """단지 하나의 매물을 직방이 보여 주는 순서로 `limit` 건 조회한다.
 
     아파트는 단지 정보(시·도 주소용)와 단지 매물 목록(같은 호·거래 유형을 묶은 카탈로그)을 50건씩,
-    오피스텔은 건물의 매물 핀을 받아 15개씩 요약을 받는다. 거래 유형·가격(만원)·평형 조건은 서버에서
+    오피스텔은 건물의 매물 핀·섹션을 받아 웹 건물 화면처럼 섹션 순서로 세운 뒤 15개씩 요약을 받는다
+    (`_list_officetel_building_listings`). 거래 유형·가격(만원)·평형 조건은 서버에서
     거른다. 평형은 아파트만 있다. 관리비·방 구조·면적·층·욕실·옵션·시설 조건은 오피스텔만 받으며
     건물 API 에 그대로 보내 서버에서 거른다.
 
@@ -452,13 +462,9 @@ def list_complex_listings(
     """
     conditions = conditions or ZigbangRoomConditions()
     kind, number = parse_complex_id(complex_id)
-    if conditions.without_random and kind != 'officetel':
-        raise JibsaError(
-            code='INVALID_ARGUMENT', message='무작위 섞기 해제는 오피스텔 건물에만 지원됩니다',
-            hint='officetel-... 건물 ID를 사용하거나 --without-random을 빼세요',
-        )
     building_filters: dict[str, object] = {
-        'without_random': True if conditions.without_random else None,
+        # 오피스텔 건물 매물은 섞지 않은 순서로 받는다 (지도 목록과 같다, listing.search_listings). 아파트는 이 값을 쓰지 않는다
+        'without_random': True if kind == 'officetel' else None,
         'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in conditions.room_types],
         **room_filter_of(conditions),
     }
@@ -564,6 +570,13 @@ def _list_officetel_building_listings(
     limit: int,
     filters: dict[str, object],
 ) -> ZigbangComplexListingsResult:
+    """오피스텔 건물 하나의 매물을 웹 건물 화면 순서로 `limit` 건 조회한다 (건물 핀 1회 + 요약 15개에 1회).
+
+    웹 건물 화면처럼 섹션 순서대로 매물 ID 를 잇는다 (2026-11-15 번들 `loadItemsV2`: `sections.flatMap(ids)`. 실측
+    officetel-20227: 핀 순서는 51154972·51094170·51155651 인데 섹션은 안심추천 51094170·51155651, 안심일반 51154972). 핀
+    순서는 이 순서와 달라 쓰지 않고, 어느 섹션에도 없는 핀만 잃지 않게 맨 뒤에 핀 순서로 붙인다 (지도 목록과 같은
+    `section_ordered_ids`). 섹션 안은 서버가 섞지 않은 순서(`withoutRandom`)로 받는다. 앞 `limit` 개의 요약을 받아 그 순서대로 낸다.
+    """
     response = _fetch_building(
         client,
         complex_id,
@@ -579,18 +592,15 @@ def _list_officetel_building_listings(
             **filters,
         )
     )
-    ids = [pin.id for pin in response.items]
-    # 조회 예산은 요약을 받는 핀 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
+    ids = section_ordered_ids([response])
+    # 조회 예산은 요약을 받는 매물 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
     scanned = ids[:limit]
+    summaries = {summary.item_id: summary for summary in tradeable_summaries(client, scanned)}
+    # 요약 응답 순서에 기대지 않고 섹션 순서로 세운다
     listings: list[Listing] = [
-        summary_to_listing(summary, building_id=building_id) for summary in tradeable_summaries(client, scanned)
+        summary_to_listing(summaries[item_id], building_id=building_id) for item_id in scanned if item_id in summaries
     ]
-    if filters.get('without_random'):
-        # 요약 응답의 순서가 달라도 서버가 반환한 핀 순서를 유지한 뒤 limit을 적용한다.
-        rank = {str(item_id): index for index, item_id in enumerate(ids)}
-        listings.sort(key=lambda listing: rank[listing.id])
-    listings = listings[:limit]
-    # 건물 핀은 서버가 거래 유형으로 이미 걸러 준 거래 중 매물뿐이라 핀 수가 곧 조건에 맞는 수다.
+    # 건물 매물은 서버가 거래 유형으로 이미 걸러 준 거래 중 매물뿐이라 매물 수가 곧 조건에 맞는 수다.
     total = len(ids)
     has_more = len(scanned) < total
     return ZigbangComplexListingsResult(
@@ -611,4 +621,167 @@ def _list_officetel_building_listings(
                 narrow='거래 유형·방 구조·면적·가격 조건', inspected=len(scanned), has_more=has_more,
             )
         ),
+    )
+
+
+# 역 주변 단지 세대수 문구 (예: '38세대', '1,161세대')
+HOUSEHOLD_TEXT_PATTERN: re.Pattern[str] = re.compile(r'([\d,]+)\s*세대')
+# 역 주변 단지 순서가 거리순이 아니라는 안내. 웹 패널(주변단지 탭)과 더보기 화면 모두 거리순이 없다
+STATION_COMPLEX_ORDER_NOTE: str = (
+    '직방 웹 아파트 지도의 역 주변단지 목록처럼 조회수 순입니다 (가까운 순이 아님). 가까운 단지는 distance_m 으로 고르세요'
+)
+
+
+class ZigbangStationComplex(BaseModel):
+    """역 주변 아파트 단지 하나. 좌표는 담지 않는다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    complex_id: Annotated[
+        str,
+        Field(description='단지 ID (zigbang complex·search listings --complex 에 넘긴다)')
+    ]
+    name: Annotated[
+        str | None,
+        Field(description='단지 이름')
+    ]
+    address: Annotated[
+        str | None,
+        Field(description='지번 주소')
+    ]
+    households: Annotated[
+        int | None,
+        Field(description='세대수')
+    ]
+    distance_m: Annotated[
+        int | None,
+        Field(description='역에서의 거리 (m)')
+    ]
+    url: Annotated[
+        str,
+        Field(description='단지 페이지 URL')
+    ]
+
+
+class ZigbangStationComplexesResult(BaseModel):
+    """역 주변 아파트 단지 목록 (조회수 순)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    station: Annotated[
+        str,
+        Field(description='찾은 역 이름')
+    ]
+    station_address: Annotated[
+        str | None,
+        Field(description='역 주소')
+    ] = None
+    total: Annotated[
+        int | None,
+        Field(description='역에서 1.5km 안 단지 수 (limit 적용 전). 직방이 주지 않으면 모름(null)')
+    ]
+    returned: Annotated[
+        int,
+        Field(description='반환한 단지 수')
+    ]
+    has_more: Annotated[
+        bool,
+        Field(description='받지 않은 단지가 남았는지 (이어 받기는 없다. --limit 으로)')
+    ]
+    complexes: Annotated[
+        list[ZigbangStationComplex],
+        Field(description='직방 웹 주변단지 목록 순서(조회수 순)의 단지')
+    ]
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='순서·일부만 보여 준다는 안내. CLI 가 결과 위에 붙인다')
+    ] = []
+
+
+def household_count(text: str | None) -> int | None:
+    """세대수 문구('1,161세대')를 정수로. 읽지 못하면 None."""
+    match = HOUSEHOLD_TEXT_PATTERN.fullmatch((text or '').strip())
+    return int(match.group(1).replace(',', '')) if match else None
+
+
+def station_complex_of(danji_id: int, apt: ZigbangSubwayAptModel | None) -> ZigbangStationComplex:
+    """단지 ID 와 역 주변 단지 정보로 결과 한 줄을 만든다. 역 주변 단지 정보에 없는 단지면 이름·주소·거리는 모름(null)이다."""
+    return ZigbangStationComplex(
+        complex_id=apt_complex_id(danji_id),
+        name=apt.name if apt else None,
+        address=normalize_address(apt.old_address) if apt else None,
+        households=household_count(apt.household) if apt else None,
+        distance_m=apt.distance_num if apt else None,
+        url=apt_danji_url(danji_id),
+    )
+
+
+def search_station_complexes(client: ZigbangClient, query: str, *, limit: int = 20) -> ZigbangStationComplexesResult:
+    """역 주변 아파트 단지를 직방 웹 '<역> 주변단지' 목록 순서(조회수 순)로 `limit` 곳 준다 (지역 검색 1회 + 2회 호출).
+
+    순서와 수는 `/apt/danjis/ids`(웹 패널·더보기 화면과 같은 변수) 그대로이고 다시 세우지 않는다. 단지 이름·주소·세대수·
+    역에서의 거리는 웹이 역을 고를 때 함께 부르는 `/apt/subways/{id}` 의 주변 단지에서 붙인다 (출력 보강, 2026-11-15
+    실측: 강남역 112곳이 두 응답에 똑같이 있다). 두 응답이 어긋나 주변 단지에 없는 단지는 빼지 않고 이름·거리를 모름(null)으로
+    두고 알린다. 이 덤 조회는 본 조회 뒤에 부르고, 실패(요청 제한 포함)하면 단지 ID 목록만 `[실패]` 안내와 함께 낸다.
+    지역 검색은 역 결과만 본다 (`resolve_station`).
+
+    Raises:
+        JibsaError: 역이 아닌 이름일 때 (INVALID_ARGUMENT).
+        RegionNotFoundError: 이름을 찾지 못했을 때.
+        RegionAmbiguousError: 같은 이름의 역이 여러 곳일 때.
+    """
+    place = resolve_station(client, query)
+    if place is None or place.subway_id is None:
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f"역 이름을 주세요. {quoted(query, '은/는')} 직방 지역 검색에서 역이 아닙니다",
+            hint=(
+                '동·구의 단지는 jibsa zigbang search locations <단지 이름> 으로 찾거나 jibsa zigbang search listings apt <동> '
+                '결과의 complex_id 를 쓰세요'
+            ),
+        )
+    # 순서·수를 주는 본 조회를 먼저 받는다. 이름·주소·세대수·거리는 덤이라 실패해도 단지 ID 목록은 버리지 않는다
+    response = client.run_request_danjis_ids(ZigbangDanjisIdsRequestParameterModel(subway_id=place.subway_id, limit=limit))
+    notes: list[str] = []
+    station_name: str | None = None
+    apts: dict[int, ZigbangSubwayAptModel] = {}
+    lookup_failed = False
+    try:
+        station = client.run_request_subways(ZigbangSubwaysRequestParameterModel(subway_id=place.subway_id))
+    except SCHOOL_LOOKUP_ERRORS as exc:
+        lookup_failed = True
+        notes.append(note(
+            '실패',
+            f'직방 역 주변 단지 정보를 받지 못해({type(exc).__name__}) 단지 이름·주소·세대수·거리를 모릅니다 (url 의 단지 페이지에서 확인)',
+        ))
+    else:
+        station_name = station.name
+        apts = {apt.id: apt for apt in station.apt_list}
+    ids = response.ids[:limit]
+    complexes = [station_complex_of(danji_id, apts.get(danji_id)) for danji_id in ids]
+    total = response.count
+    # 직방이 단지 수를 주지 않으면 더 있는지 모른다. 꽉 찬 쪽이면 더 있을 수 있다고 본다 (catalog 과 같다)
+    has_more = total > len(complexes) if total is not None else len(response.ids) >= limit
+    unknown = sum(1 for danji_id in ids if danji_id not in apts)
+    if unknown and not lookup_failed:
+        notes.append(note('참고', f'{unknown}곳은 직방 역 주변 단지 정보에 없어 이름·주소·세대수·거리를 모릅니다 (url 의 단지 페이지에서 확인)'))
+    notes.append(STATION_COMPLEX_ORDER_NOTE)
+    if has_more:
+        head = (
+            f'주변 단지 {total}곳 중 앞 {len(complexes)}곳입니다' if total is not None
+            else f'앞 {len(complexes)}곳입니다. 직방이 주변 단지 수를 주지 않아 더 있을 수 있습니다'
+        )
+        notes.append(note('일부', f'{head}. {more_hint(limit, MAX_LIST_LIMIT, None)}'))
+    return ZigbangStationComplexesResult(
+        station=station_name or place.name,
+        station_address=place.address,
+        total=total,
+        returned=len(complexes),
+        has_more=has_more,
+        complexes=complexes,
+        notes=notes,
     )

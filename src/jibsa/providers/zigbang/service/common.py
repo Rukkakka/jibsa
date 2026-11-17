@@ -1,7 +1,11 @@
 """직방 service 공통: 여러 모듈이 쓰는 결과 모델·URL·안내 문구·상수."""
 
 import re
-from collections.abc import Generator
+from collections.abc import (
+    Callable,
+    Generator,
+    Iterable,
+)
 from contextlib import contextmanager
 
 from httpx import HTTPStatusError
@@ -27,12 +31,14 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
+    ZigbangAptItemSource,
+    ZigbangAptTranType,
     ZigbangDanjisRequestParameterModel,
     ZigbangFloorFilter,
     ZigbangItemsListV1RequestPayloadModel,
@@ -43,6 +49,8 @@ from jibsa.providers.zigbang.api.request.common import (
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangDanjisResponseModel,
     ZigbangItemCatalogModel,
+    ZigbangItemPinModel,
+    ZigbangItemSectionModel,
     ZigbangItemSummaryModel,
     ZigbangSearchItemModel,
 )
@@ -51,6 +59,8 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    Protocol,
+    get_args,
 )
 
 
@@ -69,6 +79,9 @@ WEB_PATH_BY_SERVICE_TYPE: dict[str, str] = {
     '빌라': 'villa',
 }
 ITEMS_LIST_BATCH_SIZE: int = 15
+# 웹 목록이 섹션을 잇는 순서: VIP → 안심추천 → 안심일반 → 추천(원룸 목록은 '이 지역 오피스텔') → 일반 (2026-11-15 번들 `_app` 의
+# `createSectionsToUpdate`·`loadItemsV2`. 실측: 강남역 3km 지도 칸 18곳 모두 다섯 섹션을 이 순서로 주고 빈 섹션도 ids [] 로 둔다)
+SECTION_ORDER: tuple[str, ...] = ('VIP', 'PREMIUM_RECOMMEND', 'PREMIUM', 'RECOMMEND', 'NORMAL')
 # 학군은 덤이라 이 실패들은 학군만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`: 네트워크·상태 코드,
 # 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 학군 차례의 요청 제한을 더한다
 SCHOOL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
@@ -201,10 +214,58 @@ def item_url(service_type: str | None, item_id: int) -> str:
     return f'https://www.zigbang.com/home/{path}/items/{item_id}'
 
 
-def apt_item_url(item_id: int, item_source: str = 'zigbang') -> str:
+def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
     # 웹 아파트 매물 페이지(v2). 옛 경로 /home/apt/item/{id} 는 /error 로 보낸다.
     # 마지막 칸은 대표로 띄울 중개사 번호인데 빠지면 404 라, 0 을 넣어 직방이 고르게 한다.
     return f'https://www.zigbang.com/home/apt/item/v2/{item_id}/{item_source}/0'
+
+
+def apt_catalog_url(area_ho_id: int, tran_type: str) -> str:
+    # 같은 호를 여러 중개사가 올린 묶음 화면. 웹 아파트 카드를 누르면 가격 범위(isPriceRange)와 상관없이 가는 곳이다
+    # (2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress). 신규분양 카드는 누르면 그 매물 상세 화면으로 가지만
+    # (`onPressOfferItem` → `HomeAptItemDetail`), 이 묶음 화면도 그 매물 1건과 '일반 매매가 아닌 신규분양 매물입니다' 를 보여 준다
+    return f'https://www.zigbang.com/home/apt/item-catalog?areaHoId={area_ho_id}&tranType={tran_type}'
+
+
+# 아파트 거래 유형 코드. 요청은 영어 코드(`ZigbangAptTranType`)를 받는다
+APT_TRAN_TYPE_BY_TRADE: dict[TradeType, ZigbangAptTranType] = {
+    '매매': 'trade',
+    '전세': 'charter',
+    '월세': 'rental',
+}
+# 응답의 거래 유형 코드 → 거래 유형 (응답 코드는 글자라 모르는 코드도 올 수 있다)
+TRADE_BY_APT_TRAN_TYPE: dict[str, TradeType] = {
+    tran_type: trade for trade, tran_type in APT_TRAN_TYPE_BY_TRADE.items()
+}
+# 같은 호·거래 유형의 아파트 매물 묶음 ID (`<호 ID>-<거래 유형 코드>`, 예: 8260358-trade). 묶음 화면 API 가 이 둘을 받는다
+CATALOG_ID_PATTERN: re.Pattern[str] = re.compile(rf"^([1-9]\d*)-({'|'.join(TRADE_BY_APT_TRAN_TYPE)})$")
+# 묶음 ID 형식이 틀렸을 때 안내 (`parse_catalog_id` 의 INVALID_ARGUMENT hint)
+CATALOG_ID_HINT: str = 'search listings apt·search listings --complex <apt-…> 결과의 catalog_id 를 그대로 주세요 (예: 8260358-trade)'
+
+
+def apt_catalog_id(area_ho_id: int, tran_type: str) -> str:
+    """아파트 목록 줄의 `catalog_id` (`zigbang catalog` 에 넘긴다). 읽는 쪽은 `parse_catalog_id` 다."""
+    return f'{area_ho_id}-{tran_type}'
+
+
+def parse_catalog_id(catalog_id: str) -> tuple[int, ZigbangAptTranType]:
+    """`catalog_id` 를 (호 ID, 거래 유형 코드) 로 나눈다. 거래 유형(한글)은 `TRADE_BY_APT_TRAN_TYPE` 으로 꺼낸다.
+
+    `zigbang catalog` 명령은 형식을 따로 검사하지 않고 이 에러를 그대로 낸다.
+
+    Raises:
+        JibsaError: 형식이 맞지 않을 때 (INVALID_ARGUMENT).
+    """
+    match = CATALOG_ID_PATTERN.match(catalog_id.strip())
+    if match is None:
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f"직방 아파트 묶음 ID 형식이 아닙니다: '{catalog_id}'",
+            hint=CATALOG_ID_HINT,
+        )
+    # 정규식이 이 표의 코드만 받으므로 늘 찾는다. 글자를 표의 값으로 바꿔 거래 유형 코드 타입으로 돌려준다
+    tran_type = next(code for code in APT_TRAN_TYPE_BY_TRADE.values() if code == match.group(2))
+    return int(match.group(1)), tran_type
 
 
 def region_from_search_item(item: ZigbangSearchItemModel) -> ZigbangRegion:
@@ -241,7 +302,9 @@ def summary_to_listing(
     """요약 응답 한 건을 `ZigbangListing` 으로 바꾼다.
 
     매매 매물은 요약 응답의 `deposit` 에 매매가가 들어오므로 `price_manwon` 으로
-    옮긴다. 관리비는 원 단위 문자열이라 만원으로 환산한다. 면적은 `size_m2`
+    옮긴다. 관리비는 웹 목록 카드와 같은 값(`listed_manage_cost`, 원 단위)을 만원으로 환산한다: 0 이면 0(웹 '관리비 없음'),
+    null 이면 모름. 금액은 원 단위까지 낸다. 웹 카드는 0.1만원 아래를 버려 보여 준다 (_app 번들 toManWonText
+    `Math.floor(fee/1e4*10)/10`, 375,700원 → 37.5, jibsa 37.57). 면적은 `size_m2`
     (공급면적) 대신 `전용면적` 을 쓴다. 단기임대는 `trade_type_of` 로 구분한다.
     요약에는 오피스텔 건물 ID 가 없어 지도 핀의 `buildingId` 를 `building_id` 로 받는다.
     """
@@ -263,7 +326,9 @@ def summary_to_listing(
         price_manwon=summary.deposit if is_sale else None,
         deposit_manwon=None if is_sale else summary.deposit,
         rent_manwon=summary.rent if summary.sales_type == '월세' else None,
-        manage_cost_manwon=won_to_manwon(summary.manage_cost),
+        # 리뷰 오탐 (2026-11-15): 관리비 확인 불가(UnknownManageCost) 매물은 itemSummaries[].fee 가 0 이 아니라 null 이라
+        # 목록·상세 모두 모름이다 (서초동 오피스텔 51031039 실측). 목록은 웹 카드의 fee 를 그대로 따른다
+        manage_cost_manwon=won_to_manwon_exact(summary.listed_manage_cost),
         area_m2=area_m2,
         area_pyeong=m2_to_pyeong(area_m2),
         floor=summary.floor,
@@ -301,13 +366,18 @@ def sent_or_none(model: BaseModel, field: str, values: list[str]) -> list[str] |
 
 
 @contextmanager
-def unavailable_on_404(listing_id: int | str) -> Generator[None, None, None]:
-    """상세 요청의 404 를 만료 매물(`ListingUnavailableError`)로 바꾼다. 그 밖의 HTTP 오류는 그대로 낸다."""
+def unavailable_on_404(listing_id: int | str, reason: str | None = None) -> Generator[None, None, None]:
+    """상세 요청의 404 를 만료 매물(`ListingUnavailableError`)로 바꾼다. 그 밖의 HTTP 오류는 그대로 낸다.
+
+    Args:
+        listing_id: 매물 ID.
+        reason: 직방 매물인 것을 알고 부른 상세면 그 사유. 없으면 다른 소스 ID 일 수 있다는 안내가 붙는다.
+    """
     try:
         yield
     except HTTPStatusError as exc:
         if exc.response.status_code == 404:
-            raise ListingUnavailableError('zigbang', listing_id) from None
+            raise ListingUnavailableError('zigbang', listing_id, reason=reason) from None
         raise
 
 
@@ -402,10 +472,6 @@ class ZigbangRoomConditions(RequestModel):
         list[str],
         Field(description='기타 조건 (CONDITIONS, AND)')
     ] = []
-    without_random: Annotated[
-        bool,
-        Field(description='오피스텔 서버의 무작위 섞기 해제')
-    ] = False
 
 
 def room_filter_of(conditions: ZigbangRoomConditions) -> dict[str, object]:
@@ -423,6 +489,45 @@ def room_filter_of(conditions: ZigbangRoomConditions) -> dict[str, object]:
         'options': conditions.options,
         **{CONDITION_FIELD_BY_LABEL[condition]: True for condition in conditions.extra_conditions},
     }
+
+
+class SectionedPins(Protocol):
+    """핀과 섹션을 함께 주는 응답 (지도 칸·역 반경·오피스텔 건물)."""
+
+    @property
+    def items(self) -> list[ZigbangItemPinModel]: ...
+
+    @property
+    def sections(self) -> list[ZigbangItemSectionModel]: ...
+
+
+def section_ordered_ids(
+    responses: Iterable[SectionedPins],
+    keep: Callable[[ZigbangItemPinModel | None], bool] = lambda pin: True,
+) -> list[int]:
+    """응답들(지도 칸 여럿이면 칸 순서)의 매물 ID 를 웹 목록 순서로 잇는다. 지도 목록(room)과 오피스텔 건물 매물이 함께 쓴다.
+
+    섹션 종류는 `SECTION_ORDER` 순서이고, 종류마다 응답 순서대로 잇는다. 처음 보는 섹션 종류는 아는 종류 뒤에 처음 나온
+    순서로, 어느 섹션에도 없는 핀은 잃지 않게 맨 뒤에 응답·핀 순서로 붙인다. 같은 매물이 두 번 오면 앞의 것만 둔다.
+    `keep` 은 섹션의 매물이면 그 핀(핀이 없으면 None)을, 섹션 밖이면 핀을 받아 남길지 정한다 (범위 안인지).
+
+    응답마다의 섹션 순서를 합치면 빈 섹션을 뺀 칸이 있을 때 섹션의 앞뒤가 뒤집혔다 (2026-11-16 리뷰: [안심일반, 일반] 칸 뒤에
+    [VIP, 안심추천, 일반] 칸이 오면 VIP·안심추천이 안심일반 뒤로 갔다). 순서표로 정해 두 화면의 규칙이 따로 갈리지 않게 한다.
+    """
+    by_section: dict[str, list[int]] = {}
+    unsectioned: list[int] = []
+    for response in responses:
+        pins = {pin.id: pin for pin in response.items}
+        sectioned: set[int] = set()
+        for section in response.sections:
+            sectioned.update(section.ids)
+            by_section.setdefault(section.type, []).extend(
+                item_id for item_id in section.ids if keep(pins.get(item_id))
+            )
+        unsectioned += [pin.id for pin in response.items if pin.id not in sectioned and keep(pin)]
+    order = [kind for kind in SECTION_ORDER if kind in by_section]
+    order += [kind for kind in by_section if kind not in SECTION_ORDER]
+    return list(dict.fromkeys([*(item_id for kind in order for item_id in by_section[kind]), *unsectioned]))
 
 
 def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangItemSummaryModel]:
@@ -447,17 +552,22 @@ def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangIt
     return summaries
 
 
-APT_TRAN_TYPE_BY_TRADE: dict[TradeType, str] = {
-    '매매': 'trade',
-    '전세': 'charter',
-    '월세': 'rental',
-}
-TRADE_BY_APT_TRAN_TYPE: dict[str, TradeType] = {
-    tran_type: trade for trade, tran_type in APT_TRAN_TYPE_BY_TRADE.items()
-}
 DANJI_CATALOG_PAGE_SIZE: int = 50
-# 상세를 볼 수 있는 아파트 매물 출처 (앞이 우선). coalition 은 호갱노노 집주인 매물이다
-APT_ITEM_SOURCES: tuple[str, ...] = ('zigbang', 'coalition')
+# 상세를 볼 수 있는 아파트 매물 출처
+APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
+
+
+# 아파트 카드·상세의 매물 종류 코드(`itemType`) → 웹 카드가 보여 주는 말. 신규분양은 가격이 분양가다
+APT_LISTING_KIND_LABELS: dict[str, str] = {'offer': '신규분양', 'partner': '집주인', 'self_ad': '중개사'}
+APT_LISTING_KIND_DESCRIPTION: str = (
+    '매물 종류: 신규분양(분양 매물, 가격은 분양가)·집주인(집주인이 내놓은 매물)·중개사(중개사무소가 등록한 매물). '
+    '모르는 코드는 직방 코드 그대로, 직방이 주지 않으면 null (묶음 줄은 묶음 맨 앞 매물이 상세를 볼 수 없는 출처라 id 가 맨 앞 매물이 아닐 때도 null)'
+)
+
+
+def apt_listing_kind(item_type: str | None) -> str | None:
+    """아파트 매물 종류 코드를 말로 바꾼다. 코드가 없으면 모름(None), 모르는 코드는 직방 코드 그대로 둔다."""
+    return None if item_type is None else APT_LISTING_KIND_LABELS.get(item_type, item_type)
 
 
 class ZigbangAptListing(Listing):
@@ -477,33 +587,89 @@ class ZigbangAptListing(Listing):
     ] = None
     is_price_range: Annotated[
         bool | None,
-        Field(description='같은 호를 올린 매물끼리 가격이 달라 가격이 최솟값이면 true')
+        Field(description='true 면 같은 호를 올린 매물끼리 가격이 달라 가격은 묶음의 최저가라 id 매물의 가격과 다를 수 있다. 매물별 가격은 catalog_id 를 zigbang catalog 에 넘겨 한 번에 본다')
     ] = None
+    catalog_id: Annotated[
+        str | None,
+        Field(description='같은 호·거래 유형의 매물 묶음 ID (예: 8260358-trade). zigbang catalog 에 넘기면 묶음 매물 전부를 매물마다의 가격·상세와 함께 준다. 직방이 호 ID 를 주지 않으면 모름(null)이고, 그때 url 은 id 매물 페이지이며 묶음은 catalog 로 볼 수 없어 listing_ids 를 listing 으로 하나씩 본다')
+    ] = None
+    listing_ids: Annotated[
+        list[str],
+        Field(description='같은 호를 올린 매물 중 상세를 볼 수 있는 ID 전부 (id 포함, id 가 맨 앞). zigbang listing 에 넘긴다')
+    ] = []
     listing_count: Annotated[
         int | None,
         Field(description='같은 호를 올린 매물(중개사) 수')
     ] = None
+    listing_kind: Annotated[
+        str | None,
+        Field(description=APT_LISTING_KIND_DESCRIPTION)
+    ] = None
+
+
+# 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다
+APT_ID_PREFIXES: tuple[ZigbangAptItemSource, ...] = tuple(source for source in APT_ITEM_SOURCES if source != 'zigbang')
+
+
+def apt_listing_id(item_id: int, item_source: ZigbangAptItemSource) -> str:
+    """아파트 매물의 jibsa ID (목록 `id`·`listing_ids` 와 상세 `id`). 직방 매물은 숫자 그대로, 제휴 매물은 `coalition-<id>`.
+
+    접두어를 다시 출처로 읽는 쪽은 `apt_item_source` 다 (접두어가 곧 출처 이름이다).
+    """
+    return f'{item_source}-{item_id}' if item_source in APT_ID_PREFIXES else str(item_id)
+
+
+def apt_item_source(name: str | None) -> ZigbangAptItemSource | None:
+    """출처 이름(응답의 매물 출처, 또는 ID 접두어) → 상세를 볼 수 있는 아파트 매물 출처. 그 밖의 출처(상세를 볼 수 없음)면 None."""
+    return next((source for source in APT_ITEM_SOURCES if source == name), None)
 
 
 def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> ZigbangAptListing | None:
     """카탈로그 한 건을 `ZigbangAptListing` 으로 바꾼다. 상세를 볼 수 있는 매물 ID 가 없으면 None.
 
-    `depositMin` 은 매매면 매매가, 전세·월세면 보증금이다. 묶인 매물 중 직방 매물을 먼저 쓰고, 없으면 제휴
-    (호갱노노 집주인) 매물을 `coalition-123` ID 로 쓴다. 둘 다 `zigbang item` 으로 상세를 볼 수 있고
-    `url` 은 그 매물의 웹 페이지다. 그 밖의 출처는 상세를 볼 수 없어 뺀다.
+    `depositMin` 은 매매면 매매가, 전세·월세면 보증금이다. 묶인 매물 중 상세를 볼 수 있는 것(직방 매물, 제휴
+    매물 = 집주인이 내놓은 매물이나 신규분양, 제휴는 `coalition-123` ID)을 직방 응답(`itemIdList`) 순서 그대로
+    `listing_ids` 에 담고 `id` 는 그 맨 앞이다. 둘 다 `zigbang listing` 으로 상세를 볼 수 있다. 그 밖의 출처는 상세를
+    볼 수 없어 뺀다. 출처로 다시 정렬하지 않는 까닭은 묶음의 `itemType`·`itemTitle`·`floor` 가 모두 `itemIdList` 맨 앞
+    매물의 값이라, 응답 순서를 지켜야 `id` 가 그 값들과 같은 매물을 가리키기 때문이다 (2026-11-17 실측: 서패동(41480119)
+    묶음 `itemIdList: [coalition 254486, zigbang 50026248]` 에 `itemType: partner`·숫자 층·제목이 모두 제휴 매물 것이었다).
+    응답 맨 앞이 상세를 볼 수 없는 출처라 `id` 가 맨 앞 매물이 아니면 묶음 `itemType` 은 `id` 매물의 종류가 아니므로
+    `listing_kind` 는 null(모름)이다.
+
+    `isPriceRange` 가 true 면 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다 (웹 카드는 '최저가 ~').
+    웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면으로 가므로(2026-11-15 번들 ItemCard_AptItemCatalogCard 의
+    onPress) `url` 도 호 ID 가 있으면 늘 그 화면이다. 웹 신규분양 카드는 누르면 그 매물의 상세 화면으로 가지만
+    (`onPressOfferItem` → `HomeAptItemDetail`), 분양 줄의 묶음 화면 주소도 그 매물 1건과 '일반 매매가 아닌 신규분양
+    매물입니다' 를 보여 줘 사실이 어긋나지 않는다. 호 ID 가 없으면 묶음 화면을 만들 수 없어 `id` 매물의 웹 페이지다.
+    묶음 화면이 받는 호 ID·거래 유형은 `catalog_id` 로 낸다.
+
+    지역 목록(`/apt/locals/{코드}/item-catalogs`)에는 신규분양 카드가 일반 매물과 같은 목록에 섞여 온다. 서버는
+    `includeOfferItem` 이 없으면 `true` 와 똑같이 분양을 넣어 주고(웹 기본 화면의 '신규 분양 포함' 켠 상태와 같다),
+    분양 카드도 `count`·`offset` 에 든다 (2026-11-17 실측: 파주시 41480 은 값 없음·true 608건, false 600건). 분양 카드는
+    `itemType: offer` 에 출처가 `coalition` 이라 일반 제휴 매물처럼 `coalition-` 줄이 되고 `listing_kind` 가 '신규분양'
+    이다 (가격은 분양가). `offerItemCount` 는 단지 요약(`/apt/danjis/{id}/item-catalogs/summary`)의 파라미터라 이 목록과
+    상관없다.
     """
-    entry = next(
-        (entry for source in APT_ITEM_SOURCES for entry in catalog.item_id_list if entry.item_source == source),
-        None,
-    )
+    entries = [
+        (entry.item_id, source)
+        for entry in catalog.item_id_list if (source := apt_item_source(entry.item_source)) is not None
+    ]
     trade_type = TRADE_BY_APT_TRAN_TYPE.get(catalog.tran_type)
-    if entry is None or trade_type is None:
+    if not entries or trade_type is None:
         return None
+    item_id, item_source = entries[0]
+    listing_ids = [apt_listing_id(*entry) for entry in entries]
+    # 묶음 종류는 응답 맨 앞 매물의 값이라, 그 매물이 id 가 아니면(상세를 볼 수 없는 출처) id 매물의 종류를 모른다
+    leads_bundle = apt_item_source(catalog.item_id_list[0].item_source) is not None
     is_sale = trade_type == '매매'
     return ZigbangAptListing(
         source='zigbang',
-        id=str(entry.item_id) if entry.item_source == 'zigbang' else f'coalition-{entry.item_id}',
-        url=apt_item_url(entry.item_id, entry.item_source or 'zigbang'),
+        id=listing_ids[0],
+        url=(
+            apt_catalog_url(catalog.area_ho_id, catalog.tran_type)
+            if catalog.area_ho_id is not None
+            else apt_item_url(item_id, item_source)
+        ),
         trade_type=trade_type,
         property_type='아파트',
         title=catalog.item_title or join_address(catalog.area_danji_name, catalog.dong),
@@ -518,7 +684,10 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         complex_name=join_address(catalog.area_danji_name, catalog.dong),
         supply_area_m2=catalog.size_contract_m2,
         is_price_range=catalog.is_price_range,
+        catalog_id=apt_catalog_id(catalog.area_ho_id, catalog.tran_type) if catalog.area_ho_id is not None else None,
+        listing_ids=listing_ids,
         listing_count=catalog.item_count,
+        listing_kind=apt_listing_kind(catalog.item_type) if leads_bundle else None,
     )
 
 
@@ -577,11 +746,13 @@ def fetch_danji(client: ZigbangClient, complex_id: str, danji_id: int) -> Zigban
         raise
 
 
-def excluded_notes(limit: int, inspected: int, returned: int, *, order: str = '가까운', has_more: bool = True) -> list[str]:
+def excluded_notes(
+    limit: int, inspected: int, returned: int, *, order: str = '직방 목록 순으로 앞의', has_more: bool = True,
+) -> list[str]:
     """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다.
 
     Args:
-        order: 요약을 받은 매물을 고른 기준. 거리순이 아닌 건물 매물 목록은 '직방 목록 순으로 앞의'.
+        order: 요약을 받은 매물을 고른 기준. 원룸·빌라·오피스텔 목록과 건물 매물 목록 모두 직방 목록 순이다.
         has_more: 결과의 `has_more`. 더 받을 매물이 없으면 다시 채우지 않는다는 말 대신 더 받을 매물이 없다고 한다 (당근
             `listing_budget_notes` 와 같다).
     """

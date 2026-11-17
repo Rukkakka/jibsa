@@ -6,7 +6,7 @@
 
 - 결과는 stdout 에 JSON. 터미널이면 들여쓰기, 파이프면 한 줄 (`--pretty` / `--compact` 로 강제)
 - 소수점 아래가 없는 숫자는 정수로 쓴다 (`1000.0` 이 아니라 `1000`). 같은 필드도 값에 따라 `1000` 과 `24.2` 처럼 섞여 나온다
-- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`, 다방 `search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 `notes` 가 가리키는 필드(네이버 중복 묶음의 `realtor_count`·`*_range_manwon`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
+- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex` 와 `catalog`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`, 다방 `search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 묶음 필드(네이버 중복 묶음의 `realtor_count`·`*_range_manwon`, 직방 아파트 묶음의 `is_price_range`·`catalog_id`·`listing_ids`·`listing_count`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
 - 매물 필드에 값이 없을 때는 의미에 따라 다르게 나타낸다
 
   | 상태 | 표현 | 예 |
@@ -25,6 +25,7 @@
 - 숫자 범위(`--area-min/max` 등)의 하한이 상한보다 크거나, 숫자 옵션(범위·`--radius`)에 `inf`·`nan` 을 주면 모든 소스가 요청 전에 `INVALID_ARGUMENT` 로 막는다
 - 에러는 **항상** stderr 에 `{"error": {"code", "message", "hint", ...}}` JSON 으로 쓴다. 사용법 오류(없는 옵션·잘못된 값·인자 누락)도 마찬가지
 - **금액은 소스와 무관하게 전부 만원 단위**로 정규화 (`price_manwon`, `deposit_manwon`, `rent_manwon`, `manage_cost_manwon`, 당근 연세 `yearly_rent_manwon`). 네이버 원본은 원 단위라 환산한다
+- 직방 금액은 반올림 없이 원 단위까지 정확한 값이다 (375,700원 → `37.57`. 직방 웹은 줄여 보여 줄 수 있다). 네이버·다방·당근은 사이트가 원 단위로 준 금액을 아직 1,000원 단위(0.1만원)로 반올림해 낸다
 
 | exit code | 뜻 | 출력 |
 |---|---|---|
@@ -51,7 +52,7 @@
 | `yearly_rent_manwon` | 당근 제주 연세(`trade_type: 연세`)의 1년치 금액(만원). 월세가 아니고, 연세 매물에는 `rent_manwon` 이 없다. 다른 거래·소스에는 키가 없다 |
 | `area_m2`, `area_pyeong` | 전용면적 ㎡·평 |
 | `floor`, `floor_number`, `building_floor` | 해당 층·그 층의 숫자·전체 층수. `floor` 는 `"3"`·`"지하1"`·`"반지하"`·`"저층"`·`"중층"`·`"고층"`·`"옥탑"` 처럼 오고, `floor_number` 는 지상 양수·지하 음수다 (`"지하1"` → `-1`). 반지하·저층처럼 몇 층인지 모르면 `floor_number` 는 `null` |
-| `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 반경 안·밖은 출력한 `distance_km`(km, 소수 둘째 자리)로 가르고 `total`·반경 밖 안내도 같은 기준이다. 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
+| `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 결과가 거리순이 아닌 검색도 있어 가까운 매물은 이 값으로 고른다. 반경으로 거르는 검색은 대개 출력한 `distance_km`(km, 소수 둘째 자리)로 반경 안·밖을 가르고 `total`·반경 밖 안내도 같은 기준이다 (다른 기준과 반경 밖 매물을 주는지는 소스 문서). 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
 | `registered_at`, `approved_at` | 등록일·사용승인일 (`YYYY-MM-DD`). 소스가 알려 주지 않으면 `null` |
 | 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `elevator`, `options` 등 |
 | `move_in`, `parking` | 입주 가능일은 모든 소스가 `"2026-10-24"`·`"즉시입주"`, 협의할 수 있으면 뒤에 `" (협의 가능)"`. 네이버 `listing` 만 이내입주·이후입주에 날짜 뒤 `이내`·`이후`(`"2026-12-01 이내"`·`"2026-12-01 이후"`, 연월만 오면 `"2026-12 이내"`)를, 달 단위로 정한 매물에 `"2026-11 초순"`(중순·하순도)을 쓴다. 다른 소스는 같은 뜻의 문구에서 날짜만 남긴다. 날짜로 읽을 수 없는 글자는 받은 그대로 두고, 협의할 수 있으면 그 뒤에도 `" (협의 가능)"` 이 붙는다. 주차는 모든 소스가 `"가능"`·`"불가"`, 대수가 있으면 `"가능 (총 4대)"` 처럼 괄호로 붙는다 |

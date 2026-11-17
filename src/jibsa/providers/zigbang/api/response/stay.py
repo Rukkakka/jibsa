@@ -12,7 +12,7 @@ from typing import Annotated
 # ---------------------------------------------------------------------------
 
 class ZigbangStayMarkerModel(ResponseModel):
-    """단기임대 매물 위치 핀."""
+    """단기임대 매물 위치 핀. 웹 지도 목록은 화면 안 핀을 이 값들로 세운다 (번들 `sortStayMarkers`)."""
 
     id: Annotated[
         int,
@@ -20,7 +20,7 @@ class ZigbangStayMarkerModel(ResponseModel):
     ]
     lat: Annotated[
         float,
-        Field(description='위도')
+        Field(description='위도 (요약 by-ids 의 좌표와 같다. 2026-11-15 실측 71건)')
     ]
     lng: Annotated[
         float,
@@ -28,16 +28,27 @@ class ZigbangStayMarkerModel(ResponseModel):
     ]
     weekly_price: Annotated[
         int | None,
-        Field(description='주당 요금 (만원, 반올림)', alias='weeklyPrice')
+        Field(
+            description='주당 임대료+관리비 (만원, 만원 미만 버림. 2026-11-15 실측 71건 모두). 웹 지도 목록 가격순의 기준',
+            alias='weeklyPrice'
+        )
     ] = None
     has_discount: Annotated[
         bool | None,
         Field(description='할인 여부', alias='hasDiscount')
     ] = None
+    reviewed_at: Annotated[
+        str | None,
+        Field(description='검수 완료(노출 시작) 일시 (UTC ISO 8601, 요약과 같다). 웹 지도 목록 최신순의 기준', alias='reviewedAt')
+    ] = None
+    total_score: Annotated[
+        float | None,
+        Field(description='직방 추천 점수 (예: 0.85). 웹 지도 목록 추천순의 기준 (높을수록 앞)', alias='totalScore')
+    ] = None
 
 
 class ZigbangGuestItemsSearchResponseModel(ResponseModel):
-    """지역·역·학교 조건에 맞는 단기임대 ID 목록."""
+    """지역·역·학교 조건에 맞는 단기임대 ID 목록. 요청한 정렬(`sort`) 순서이고, 웹 검색 결과 목록이 이 순서 그대로다."""
 
     item_ids: Annotated[
         list[int],
@@ -220,6 +231,23 @@ class ZigbangStayStationModel(ResponseModel):
     ] = None
 
 
+class ZigbangStayScheduleModel(ResponseModel):
+    """단기임대 매물의 일정. 웹 날짜 고르기 창이 예약된·막힌 날을 이것으로 막는다."""
+
+    schedule_type: Annotated[
+        str | None,
+        Field(description="일정 종류 ('RESERVED' 예약됨, 'BLOCKED' 호스트가 막음). 웹은 이 둘만 막는다", alias='scheduleType')
+    ] = None
+    start_date: Annotated[
+        str | None,
+        Field(description='시작일 (YYYY-MM-DD, 이 날부터 막힌다)', alias='startDate')
+    ] = None
+    end_date: Annotated[
+        str | None,
+        Field(description='끝날 (YYYY-MM-DD, 이 날까지 막힌다)', alias='endDate')
+    ] = None
+
+
 class ZigbangGuestItemsResponseModel(ResponseModel):
     """단기임대 매물 상세. 금액은 **원** 단위다."""
 
@@ -285,7 +313,7 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
     ] = None
     parking_type: Annotated[
         str | None,
-        Field(description='주차 (AVAILABLE, UNAVAILABLE ...)', alias='parkingType')
+        Field(description='주차 (AVAILABLE, LIMITED, UNAVAILABLE)', alias='parkingType')
     ] = None
     parking_fee: Annotated[
         str | None,
@@ -355,89 +383,10 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
         str | None,
         Field(description='등록 일시 (UTC ISO 8601)', alias='createdAt')
     ] = None
-
-
-# ---------------------------------------------------------------------------
-# POST stay-apis.zigbang.com/guest/items/{itemId}/price-calculation
-# ---------------------------------------------------------------------------
-
-class ZigbangStayPriceDiscountModel(ResponseModel):
-    """기간 요금에 적용된 할인."""
-
-    type: Annotated[
-        str | None,
-        Field(description='할인 종류 (LONG_TERM 장기계약, INSTANT 즉시 ...)')
-    ] = None
-    name: Annotated[
-        str | None,
-        Field(description='할인 이름 (예: 장기계약 할인)')
-    ] = None
-    rate: Annotated[
-        float | None,
-        Field(description='할인율 (%)')
-    ] = None
-    saved_amount: Annotated[
-        int | None,
-        Field(description='할인 금액 (**원**)', alias='savedAmount')
-    ] = None
-
-
-class ZigbangGuestItemsPriceCalculationResponseModel(ResponseModel):
-    """단기임대 기간 요금 계산. 금액은 모두 **원** 단위다. 그 날짜에 예약이 비어 있는지는 보지 않는다.
-
-    `totalGuestPayment` = `totalAmount`(임대료 + 관리비 + 청소비 − 할인) + `platformFee` + `oneTimePayment`
-    (보증금 + 청소비 등 한 번 내는 돈) 이다.
-    """
-
-    total_days: Annotated[
-        int | None,
-        Field(description='계약 일수', alias='totalDays')
-    ] = None
-    weeks: Annotated[
-        int | None,
-        Field(description='계약 주 수 (일수를 7로 나눈 몫)')
-    ] = None
-    remaining_days: Annotated[
-        int | None,
-        Field(description='주 단위로 나누고 남은 일수', alias='remainingDays')
-    ] = None
-    total_rent: Annotated[
-        int | None,
-        Field(description='기간 임대료 (원, 할인 전)', alias='totalRent')
-    ] = None
-    total_manage_cost: Annotated[
-        int | None,
-        Field(description='기간 관리비 (원)', alias='totalManageCost')
-    ] = None
-    deposit: Annotated[
-        int | None,
-        Field(description='보증금 (원, 돌려받는 돈)')
-    ] = None
-    cleaning_fee: Annotated[
-        int | None,
-        Field(description='청소비 (원)', alias='cleaningFee')
-    ] = None
-    pet_cleaning_fee: Annotated[
-        int | None,
-        Field(description='반려동물 청소비 (원)', alias='petCleaningFee')
-    ] = None
-    discounts: Annotated[
-        list[ZigbangStayPriceDiscountModel],
-        Field(description='적용된 할인')
-    ] = []
-    total_discount_amount: Annotated[
-        int | None,
-        Field(description='할인 합계 (원)', alias='totalDiscountAmount')
-    ] = None
-    total_promotion_discount: Annotated[
-        int | None,
-        Field(description='프로모션 할인 합계 (원)', alias='totalPromotionDiscount')
-    ] = None
-    platform_fee: Annotated[
-        int | None,
-        Field(description='직방 이용료 (원)', alias='platformFee')
-    ] = None
-    total_guest_payment: Annotated[
-        int | None,
-        Field(description='세입자가 내는 총액 (원, 보증금 포함)', alias='totalGuestPayment')
+    schedules: Annotated[
+        list[ZigbangStayScheduleModel] | None,
+        Field(description=(
+            '예약된·막힌 일정. 로그인 없이 온다 (2026-11-15 실측: 4114 는 BLOCKED 2026-11-11~2026-12-02 하나이고 웹 달력이 그 '
+            '날짜를 막았다). 키가 없으면 None (모름)'
+        ))
     ] = None

@@ -1,10 +1,19 @@
 """여러 기능이 같이 쓰는 응답 모델 (중첩·봉투·기반 모델)."""
 
-from pydantic import Field
+from pydantic import (
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from jibsa.core.schema import ResponseModel
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Any,
+    Self,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +84,19 @@ class ZigbangSearchItemModel(ResponseModel):
         ZigbangSearchSourceModel | None,
         Field(description='원본 색인 문서', alias='_source')
     ] = None
+
+
+class ZigbangItemSectionModel(ResponseModel):
+    """노출 구역별 매물 ID 묶음."""
+
+    type: Annotated[
+        str,
+        Field(description='구역 종류 (VIP, PREMIUM_RECOMMEND, PREMIUM, RECOMMEND, NORMAL)')
+    ]
+    ids: Annotated[
+        list[int],
+        Field(description='해당 구역의 매물 ID')
+    ] = []
 
 
 class ZigbangItemPinModel(ResponseModel):
@@ -157,6 +179,19 @@ class ZigbangAddressOriginModel(ResponseModel):
     ] = None
 
 
+class ZigbangWebItemSummaryModel(ResponseModel):
+    """웹 목록 카드가 쓰는 매물 요약 한 건 (`itemSummaries`, camelCase). 관리비(`fee`)만 읽는다."""
+
+    id: Annotated[
+        int,
+        Field(description='매물 ID')
+    ]
+    fee: Annotated[
+        float | None,
+        Field(description="월 관리비 (**원** 단위). 0 이면 웹이 '관리비 없음', null 이면 빈칸으로 보여 준다")
+    ] = None
+
+
 class ZigbangItemSummaryModel(ResponseModel):
     """매물 요약 한 건 (snake_case 필드 응답)."""
 
@@ -214,7 +249,11 @@ class ZigbangItemSummaryModel(ResponseModel):
     ] = None
     manage_cost: Annotated[
         str | None,
-        Field(description='월 관리비 (**원** 단위 문자열). 상세 응답과 단위가 다르다')
+        Field(description='월 관리비 (**원** 단위 문자열). 상세 응답과 단위가 다르다. 관리비 0원 매물도 null 로 와서 `web_fee` 를 우선한다')
+    ] = None
+    web_fee: Annotated[
+        float | None,
+        Field(description='웹 목록 카드의 관리비 (`itemSummaries[].fee`, **원** 단위). 같은 매물이 `itemSummaries` 에 있을 때만 응답 모델이 싣는다', exclude=True)
     ] = None
     location: Annotated[
         ZigbangLatLngModel | None,
@@ -245,12 +284,20 @@ class ZigbangItemSummaryModel(ResponseModel):
         Field(description='노출 중 여부')
     ] = None
 
+    @property
+    def listed_manage_cost(self) -> float | str | None:
+        """목록에 낼 월 관리비 (원). 웹 목록 카드처럼 `web_fee` 를 실었으면 그 값(null 이면 모름), 싣지 않았으면 `manage_cost`."""
+        # 속성에 대입한 필드도 model_fields_set 에 든다. 실은 값이 null 이어도 웹 값이라 manage_cost 로 넘어가지 않는다
+        return self.web_fee if 'web_fee' in self.model_fields_set else self.manage_cost
+
 
 class ZigbangItemsListV1ResponseModel(ResponseModel):
     """매물 요약 배치 응답.
 
     `items` (snake_case) 와 `itemSummaries` (camelCase) 가 같은 매물을 다른
-    모양으로 담는다. 정규화에는 필드가 더 많은 `items` 를 쓴다. 토큰이
+    모양으로 담는다. 정규화에는 필드가 더 많은 `items` 를 쓰되, 웹 목록 카드가 보여 주는 관리비는
+    `itemSummaries[].fee` 다 (관리비 0원 매물이 `items` 의 `manage_cost` 에서는 null 이다, 2026-11-15 실측).
+    같은 ID 의 요약에 `fee` 를 실어 주므로(`web_fee`) 호출하는 쪽은 `items` 의 `listed_manage_cost` 만 본다. 토큰이
     잘못되거나 없어도 같은 결과가 200 으로 온다 (2026-10-11 실측: 가짜 토큰·토큰 없음 모두
     정상 요약. 상세·`/v3/items`·단지·단기임대 검색도 같다). jibsa 는 로그인하지 않은 웹처럼 토큰 없이 부른다.
     """
@@ -259,10 +306,41 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
         list[ZigbangItemSummaryModel],
         Field(description='매물 요약 (snake_case)')
     ] = []
+    item_summaries: Annotated[
+        list[ZigbangWebItemSummaryModel],
+        Field(description='웹 목록 카드가 쓰는 매물 요약 (camelCase). 관리비를 `items` 에 실어 주는 데만 쓴다', alias='itemSummaries')
+    ] = []
     total_count: Annotated[
         int,
         Field(description='반환된 매물 수', alias='totalCount')
     ] = 0
+
+    @field_validator('item_summaries', mode='before')
+    @classmethod
+    def readable_summaries(cls, value: Any) -> Any:
+        """관리비를 실을 수 있는 요약만 받는다. 관리비 한 칸 때문에 배치 전체(검색 요약·상세의 등록일)를 읽지 못하면 안 된다.
+
+        목록이 아니면(null 등) 빈 목록, `ZigbangWebItemSummaryModel` 이 읽지 못하는 항목(ID 가 정수가 아니거나 관리비가
+        숫자·null 이 아닌 '', '-' 등)은 빼서 그 매물은 `items` 의 `manage_cost` 로 돌아간다. 형식 규칙은 모델 한 곳에 둔다.
+        """
+        if not isinstance(value, list):
+            return []
+        summaries = []
+        for summary in value:
+            try:
+                summaries.append(ZigbangWebItemSummaryModel.model_validate(summary))
+            except ValidationError:
+                continue
+        return summaries
+
+    @model_validator(mode='after')
+    def attach_web_fee(self) -> Self:
+        """같은 ID 의 `items` 요약에 웹 목록의 관리비(`fee`)를 실어 준다."""
+        fee_by_id = {summary.id: summary.fee for summary in self.item_summaries}
+        for summary in self.items:
+            if summary.item_id in fee_by_id:
+                summary.web_fee = fee_by_id[summary.item_id]
+        return self
 
 
 class ZigbangSubwayBriefModel(ResponseModel):
@@ -300,7 +378,7 @@ class ZigbangCatalogItemIdModel(ResponseModel):
 
     item_source: Annotated[
         str | None,
-        Field(description="매물 출처. 'zigbang' 이면 `/v3/items/{itemId}` 로 상세를 볼 수 있다", alias='itemSource')
+        Field(description="매물 출처. 'zigbang'(직방)·'coalition'(제휴) 이면 아파트 상세(`/apt/item-catalogs/items/{itemId}`)로 상세를 볼 수 있다", alias='itemSource')
     ] = None
     item_id: Annotated[
         int,
@@ -321,7 +399,7 @@ class ZigbangItemCatalogModel(ResponseModel):
     ]
     item_type: Annotated[
         str | None,
-        Field(description='매물 종류 (self_ad ...)', alias='itemType')
+        Field(description='매물 종류 (offer 신규분양, partner 집주인이 내놓음, self_ad 중개사무소가 등록)', alias='itemType')
     ] = None
     area_danji_id: Annotated[
         int | None,

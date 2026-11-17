@@ -1,4 +1,4 @@
-"""요청 모델: 아파트 매물 검색 (search listings apt): 지역 목록과 반경(nearby-danjis) 검색."""
+"""요청 모델: 아파트 매물 검색 (search listings apt): 지역 목록과 좌표가 속한 동 찾기."""
 
 
 from pydantic import (
@@ -16,6 +16,7 @@ from jibsa.providers.zigbang.api.request.common import (
 from typing import (
     Annotated,
     Any,
+    Literal,
 )
 
 
@@ -87,22 +88,28 @@ class ZigbangLocalsItemCatalogsRequestParameterModel(RequestModel):
         return _index_arrays(handler(self))
 
 
-class ZigbangNearbyDanjisRequestParameterModel(RequestModel):
-    """`GET /apt/nearby-danjis` 쿼리. 좌표 반경 안의 아파트 단지 (가까운 순)."""
+class ZigbangLocalsPolygonRequestParameterModel(RequestModel):
+    """`GET /apt/locals/polygon` 쿼리. geohash 칸 중심이 속한 동.
 
-    lat: Annotated[
-        float,
-        Field(ge=-90, le=90, description='중심 위도')
+    웹 아파트 지도는 지도 가운데 geohash 로 이 API 를 불러 '○○동 주변 매물보기' 의 동을 정한다 (2026-11-15 캡처). 웹은
+    geohash 를 암호화해 보내지만 평문도 받는다.
+    """
+
+    geohash: Annotated[
+        str,
+        Field(
+            pattern=r'^[0-9bcdefghjkmnpqrstuvwxyz]{5,12}$',
+            description=(
+                '찾을 위치. 칸이 크면 옆 동이 잡혀 정밀도 10 으로 보낸다 (2026-11-15 실측: 강남역은 정밀도 5 에 논현동, '
+                '6 에 역삼동, 7·8 에 서초동, 9·10·12 에 역 주소와 같은 역삼동)'
+            )
+        )
     ]
-    lng: Annotated[
-        float,
-        Field(ge=-180, le=180, description='중심 경도')
-    ]
-    radius: Annotated[
-        float,
-        Field(gt=0, le=5, description='반경 (km). 강남역 1km 에 54곳, 2km 에 204곳')
-    ]
-    limit: Annotated[
-        int,
-        Field(ge=1, le=1000, description='최대 단지 수. 빼면 반경 안 전부지만 서버가 요구하는 값이라 넉넉히 보낸다')
-    ] = 1000
+    level: Annotated[
+        Literal['local3'],
+        Field(description='행정 단계. 웹 지도의 주변 매물보기는 local3(읍·면·동)만 보낸다')
+    ] = 'local3'
+    polygon: Annotated[
+        bool,
+        Field(description='경계 좌표(geojson)를 받을지. False 면 geojson 이 null 이다')
+    ] = False

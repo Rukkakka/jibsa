@@ -59,12 +59,17 @@ from typing import (
 COORDINATE_DECIMALS: int = 7
 # 1억 (만원). 이만큼 이상 금액이 있으면 notes 에 억 환산 예시를 붙인다 (`manwon_note`)
 MANWON_PER_EOK: int = 10000
-# `--fields` 로 고르지 않아도 늘 내는 매물 필드. 다음 명령에 넘길 id 와, notes 가 가리키는 네이버 중복 묶음
-# (중개사 수·호가 범위). 당근 주변 동 표시(in_regions)는 동 검색이 그 동 매물만 주게 되어 없앴다 (#215). 묶음 필드는 묶음 매물에만 있어 다른 매물에는 키가 없다. 2026-10-31 재검증: --fields price_manwon,…
-# 으로 고르자 묶음 범위(30억~33억)가 빠져 notes 가 가리키는 33억 호가를 보지 못하고 최고 호가를 32억으로 답했다
-ALWAYS_FIELDS: frozenset[str] = frozenset({
-    'id', 'realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon',
-})
+# `--fields` 로 고르지 않아도 늘 내는 묶음 필드 (묶음 설명 → 필드). 묶음 필드는 묶음 매물에만 있어 다른 매물에는 키가 없다.
+# 도움말(`options.FieldsOption`)도 이 표에서 만든다.
+# - 네이버 중복 묶음: notes 가 가리키는 중개사 수·호가 범위. 2026-10-31 재검증: --fields price_manwon,…
+#   으로 고르자 묶음 범위(30억~33억)가 빠져 notes 가 가리키는 33억 호가를 보지 못하고 최고 호가를 32억으로 답했다
+# - 직방 아파트 묶음: 빠지면 가격이 묶음 최저가인지 모르고 매물별 가격을 볼 묶음 ID 도 없다. 신규분양이면 가격이 분양가인지도 모른다
+ALWAYS_FIELD_GROUPS: dict[str, tuple[str, ...]] = {
+    '네이버 중복 묶음': ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon'),
+    '직방 아파트 묶음': ('is_price_range', 'catalog_id', 'listing_ids', 'listing_count', 'listing_kind'),
+}
+# 다음 명령에 넘길 id 와 묶음 필드. 당근 주변 동 표시(in_regions)는 동 검색이 그 동 매물만 주게 되어 없앴다 (#215)
+ALWAYS_FIELDS: frozenset[str] = frozenset({'id'}).union(*ALWAYS_FIELD_GROUPS.values())
 ChoiceT = TypeVar('ChoiceT', bound=str)
 # 하나만 받는 옵션의 허용값 (`check_choice`). 글자 말고 숫자 옵션(네이버 --pyeong-range)도 있다
 OptionT = TypeVar('OptionT')

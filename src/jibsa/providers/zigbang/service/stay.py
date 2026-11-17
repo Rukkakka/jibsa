@@ -2,8 +2,9 @@
 
 from collections.abc import Callable
 from datetime import (
+    date,
     datetime,
-    timezone,
+    timedelta,
 )
 
 from httpx import HTTPStatusError
@@ -11,9 +12,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SerializeAsAny,
     SerializerFunctionWrapHandler,
     model_serializer,
+    model_validator,
 )
 
 from jibsa.core.errors import (
@@ -21,25 +22,21 @@ from jibsa.core.errors import (
     ListingUnavailableError,
     RegionNotFoundError,
 )
-from jibsa.core.geo import (
-    geohashes_covering,
-    haversine_km,
-    within_radius,
-)
+from jibsa.core.geo import haversine_km
+from jibsa.core.http import error_body
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
+    KST,
     Listing,
     ListingDetail,
-    beyond_radius_notes,
-    by_distance,
+    format_manwon,
     join_address,
     limit_notes,
-    listing_as,
     m2_to_pyeong,
     normalize_address,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -48,20 +45,21 @@ from jibsa.providers.zigbang.api.request.stay import (
     STAY_SEARCH_MIN_DAYS,
     ZigbangGuestItemsByIdsRequestParameterModel,
     ZigbangGuestItemsMarkersRequestParameterModel,
-    ZigbangGuestItemsPriceCalculationRequestPayloadModel,
     ZigbangGuestItemsRequestParameterModel,
     ZigbangGuestItemsSearchRequestParameterModel,
     ZigbangStayBuildingType,
     ZigbangStayDiscountType,
     ZigbangStayFloorType,
     ZigbangStayOption,
-    stay_days,
+    ZigbangStaySearchSort,
+    validate_stay_dates,
 )
 from jibsa.providers.zigbang.api.response.stay import (
-    ZigbangGuestItemsPriceCalculationResponseModel,
     ZigbangGuestItemsResponseModel,
     ZigbangStayDiscountModel,
     ZigbangStayItemSummaryModel,
+    ZigbangStayMarkerModel,
+    ZigbangStayScheduleModel,
 )
 from jibsa.providers.zigbang.service.common import (
     MAX_LIST_LIMIT,
@@ -71,7 +69,6 @@ from jibsa.providers.zigbang.service.common import (
     sent_or_none,
     unavailable_on_404,
 )
-from jibsa.providers.zigbang.service.listing import DETAILS_MAX
 from jibsa.providers.zigbang.service.region import (
     outside_boundary,
     scope_geohashes,
@@ -81,6 +78,7 @@ from typing import (
     Annotated,
     Any,
     Literal,
+    Self,
     TypeVar,
 )
 
@@ -150,26 +148,41 @@ STAY_DISCOUNT_TYPE_BY_LABEL: dict[str, ZigbangStayDiscountType] = {
 }
 STAY_REFUND_POLICY_LABELS: dict[str, str] = {
     'FLEXIBLE': '유연',
-    'STANDARD': '보통',
+    'STANDARD': '표준',
     'STRICT': '엄격',
 }
 STAY_GEOHASH_PRECISION: int = 5
 # 결과가 limit 보다 많을 때 좁히라고 권할 조건. 주 단위 단기임대에는 거래 유형·매물 유형 옵션이 없다
 STAY_NARROW: str = '방 종류·가격·날짜 조건'
 STAY_BY_IDS_BATCH_SIZE: int = 50
-StaySort = Literal['distance', 'price', 'newest']
-STAY_SORTS: tuple[StaySort, ...] = ('distance', 'price', 'newest')
-STAY_AVAILABILITY_RADIUS_KM: float = 0.3
-STAY_PRICE_ERRORS: dict[str, str] = {
-    'MIN_CONTRACT_PERIOD': '계약 기간이 이 매물의 최소 계약 기간보다 짧습니다',
-    'MAX_CONTRACT_PERIOD': '계약 기간이 이 매물의 최대 계약 기간보다 깁니다',
+# 웹 정렬 넷과 같다: 추천순(기본), 낮은 가격순, 최근 등록순, 역 가까운 순. 역 가까운 순은 웹도 지하철역 검색에서만 고를 수
+# 있다 (2026-11-15 웹)
+StaySort = Literal['recommended', 'price', 'newest', 'distance']
+STAY_SORTS: tuple[StaySort, ...] = ('recommended', 'price', 'newest', 'distance')
+STAY_SERVER_SORTS: dict[StaySort, ZigbangStaySearchSort] = {
+    'recommended': 'RECOMMENDED',
+    'price': 'PRICE_ASC',
+    'newest': 'NEWEST',
+    'distance': 'STATION_DISTANCE_ASC',
 }
-# 직방 단기임대 매물은 웹 매물 페이지가 없고 직방 앱에서만 열린다.
-STAY_URL: str = 'https://www.zigbang.com/home/short-term-rental'
-STAY_APP_NOTE: str = (
-    '직방 단기임대 매물은 웹 매물 페이지가 없어 url 이 직방 단기임대 안내 페이지입니다. '
-    '매물 확인·예약은 직방 앱의 단기임대 탭에서 제목으로 찾으세요'
-)
+# limit_notes 의 '… 순으로' 앞말
+STAY_SORT_ORDERS: dict[StaySort, str] = {
+    'recommended': '직방 추천',
+    'price': '주당 임대료·관리비 합계가 낮은',
+    'newest': '최근 등록된',
+    'distance': '역에서 가까운',
+}
+# 역 검색(type=subway)은 직방이 역에서 약 1km 안만 준다 (2026-11-15 실측: 강남역 71건, 가장 먼 것 0.979km)
+STAY_SUBWAY_RADIUS_KM: float = 1.0
+# 웹 날짜 고르기 창이 받는 가장 늦은 마지막 날은 입주일 + 83일이다 (번들 `getMaxCheckOut`)
+STAY_MAX_CHECK_OUT_DAYS: int = 83
+# 웹이 날짜를 막는 일정 종류 (번들 `isUnavailableSchedule`)
+STAY_UNAVAILABLE_SCHEDULES: frozenset[str] = frozenset({'RESERVED', 'BLOCKED'})
+
+
+def stay_item_url(stay_id: int | str) -> str:
+    """단기임대 매물 웹 페이지 주소. 로그인 없이 열린다."""
+    return f'https://www.zigbang.com/stay/item/{stay_id}'
 
 
 class ZigbangStayListing(Listing):
@@ -201,82 +214,8 @@ class ZigbangStayListing(Listing):
         return super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
 
 
-class ZigbangStayPeriodCost(BaseModel):
-    """입주·퇴거일을 준 단기임대 상세의 기간 비용 (만원). 직방 요금 계산 그대로다."""
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    check_in: Annotated[
-        str,
-        Field(description='입주일 (YYYY-MM-DD)')
-    ]
-    check_out: Annotated[
-        str,
-        Field(description='마지막으로 머무는 날 (YYYY-MM-DD). 직방은 이 날까지 이용일로 센다 (1주 = 11-02~11-08)')
-    ]
-    available: Annotated[
-        bool | None,
-        Field(description='그 기간에 예약이 비어 있는지. 같은 날짜로 지도 검색에 나오면 true. 좌표가 없거나 기간이 지도 검색이 받는 7~84일 밖이라 확인 못 하면 null')
-    ] = None
-    days: Annotated[
-        int | None,
-        Field(description='이용 일수 (입주일·마지막 날 포함)')
-    ] = None
-    weeks: Annotated[
-        int | None,
-        Field(description='이용 일수 중 온전한 주 수')
-    ] = None
-    remaining_days: Annotated[
-        int | None,
-        Field(description='주 단위로 떨어지지 않고 남는 일수. 0 이 아니면 그 일수만큼 일할 요금이 붙는다')
-    ] = None
-    rent_manwon: Annotated[
-        float | None,
-        Field(description='기간 임대료 (만원, 할인 전)')
-    ] = None
-    manage_cost_manwon: Annotated[
-        float | None,
-        Field(description='기간 관리비 (만원)')
-    ] = None
-    cleaning_fee_manwon: Annotated[
-        float | None,
-        Field(description='청소비 (만원, 반려동물 청소비 포함)')
-    ] = None
-    discount_manwon: Annotated[
-        float | None,
-        Field(description='할인 합계 (만원, 프로모션 포함)')
-    ] = None
-    discounts: Annotated[
-        list[str],
-        Field(description='적용된 할인 (예: 장기계약 할인 5%)')
-    ] = []
-    service_fee_manwon: Annotated[
-        float | None,
-        Field(description='직방 이용료 (만원)')
-    ] = None
-    deposit_manwon: Annotated[
-        float | None,
-        Field(description='보증금 (만원, 퇴거 후 돌려받는다)')
-    ] = None
-    total_payment_manwon: Annotated[
-        float | None,
-        Field(description='내는 돈 총액 (만원). 돌려받는 보증금이 들어 있다')
-    ] = None
-
-
-class ZigbangStayPricedListing(ZigbangStayListing):
-    """`--details` 로 기간 요금 계산을 1회 더 받아 기간 비용을 붙인 단기임대 매물."""
-
-    period_cost: Annotated[
-        ZigbangStayPeriodCost | None,
-        Field(description='입주·퇴거일의 기간 비용 (직방 요금 계산). 앞 30건 밖이거나 직방이 계산을 거절했으면 null')
-    ] = None
-
-
 class ZigbangStayListingDetail(ListingDetail):
-    """상세 조회로 보강한 직방 단기임대 매물. 입주·퇴거일을 주면 `period_cost` 가 붙는다."""
+    """상세 조회로 보강한 직방 단기임대 매물. 입주일·마지막 날을 주면 예약 가능 여부(`available`)가 붙는다."""
 
     weekly_rent_manwon: Annotated[
         float | None,
@@ -312,19 +251,24 @@ class ZigbangStayListingDetail(ListingDetail):
     ] = None
     refund_policy: Annotated[
         str | None,
-        Field(description='환불 정책 (유연, 보통, 엄격)')
+        Field(description='환불 정책 (유연, 표준, 엄격. 직방 웹 위약금 정보의 이름)')
     ] = None
 
-    period_cost: Annotated[
-        ZigbangStayPeriodCost | None,
-        Field(description='입주·퇴거일을 줬을 때의 기간 비용과 예약 가능 여부')
+    available: Annotated[
+        bool | None,
+        Field(description=(
+            '입주일·마지막 날을 줬을 때 그 기간을 예약할 수 있는지. 직방 웹 날짜 고르기 창 규칙 그대로, 입주일이 오늘 이후이고 '
+            '기간이 최소 계약 주(min_contract_weeks) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약된·막힌 날이 없고 '
+            '마지막 날이 막힌 날이 아니면 true. 직방이 일정을 주지 않으면 null'
+        ))
     ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
-        # 날짜를 주지 않은 조회에는 기간 비용이 해당 없다
-        if self.period_cost is None:
-            fields = fields | {'period_cost'}
+        # 날짜를 주지 않은 조회에는 예약 가능 여부가 해당 없다. 날짜를 주면 get_stay_listing 이 모를 때(None)도 값을
+        # 넣어(model_copy) model_fields_set 에 든다
+        if 'available' not in self.model_fields_set:
+            fields = fields | {'available'}
         return fields
 
 
@@ -341,15 +285,21 @@ class ZigbangStaySearchResult(BaseModel):
     ]
     radius_km: Annotated[
         float | None,
-        Field(description='검색 반경 (km). 동 경계로 찾았으면 키가 없다')
+        Field(description=(
+            '검색 반경 (km). 역 이름 검색은 직방이 역에서 약 1km 안을 주어 1. 동·구 등 지역 이름·동 경계·학교 이름으로 찾았으면 '
+            '키가 없다'
+        ))
     ] = None
     boundary: Annotated[
         str | None,
-        Field(description='반경 대신 찾은 동·구 등 지역 이름. 반경으로 찾았으면 키가 없다')
+        Field(description=(
+            '반경 대신 찾은 지역 이름. 동·구 이름이면 직방 단기임대 지역 검색 결과라 이웃 동 매물이 섞일 수 있고, 동 경계로 '
+            '찾았으면 그 경계 안만이다. 반경으로 찾았으면 키가 없다'
+        ))
     ] = None
     total: Annotated[
         int,
-        Field(description='반경(동 경계로 찾았으면 경계) 안 조건에 맞는 매물 수 (limit 적용 전)')
+        Field(description='범위 안 조건에 맞는 매물 수 (limit 적용 전). 이름 검색이면 직방 검색 결과 수, 지도로 찾았으면 반경·동 경계 안 핀 수')
     ]
     returned: Annotated[
         int,
@@ -357,16 +307,15 @@ class ZigbangStaySearchResult(BaseModel):
     ]
     has_more: Annotated[
         bool,
-        Field(description='범위 안에 더 있는지: 요약을 받지 않은 후보가 남았거나 --limit 에 맞춰 잘랐다 (이어 받기는 없다. --limit·조건으로)')
+        Field(description='범위 안에 요약을 받지 않은 매물이 더 있는지 (이어 받기는 없다. --limit·조건으로)')
     ] = False
     listings: Annotated[
-        # --details 의 period_cost 까지 내보낸다 (SerializeAsAny 가 없으면 ZigbangStayListing 필드만 나간다)
-        list[SerializeAsAny[ZigbangStayListing]],
-        Field(description='선택한 정렬 순서의 매물')
+        list[ZigbangStayListing],
+        Field(description='선택한 정렬 순서의 매물 (직방이 준 순서 또는 웹 지도 목록과 같은 순서)')
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='앱에서만 열린다·일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -374,25 +323,40 @@ class ZigbangStaySearchResult(BaseModel):
         return drop_unused_scope(handler(self))
 
 
-def stay_discount_label(discount: ZigbangStayDiscountModel) -> str | None:
-    """할인 조건 한 줄. 꺼진 할인은 None."""
-    if discount.is_active is False:
+def _discount_amount_text(amount_won: float | None) -> str | None:
+    """할인 금액(원)을 'N만원' 으로 (반올림 없이 원 단위까지, 2,500원 → '0.25만원'). 금액이 없거나 0 이하면 None (할인이 아니다)."""
+    if not amount_won or amount_won <= 0:
         return None
-    if discount.discount_rate:
-        amount = f'{discount.discount_rate:g}%'
-    elif discount.discount_amount:
-        amount = f'{won_to_manwon(discount.discount_amount):g}만원'
-    else:
-        return None
-    if discount.discount_type == 'LONG_TERM' and discount.condition_weeks:
-        return f'{discount.condition_weeks}주 이상 {amount} 할인'
+    return f'{format_manwon(won_to_manwon_exact(amount_won) or 0)}만원'
+
+
+def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | None) -> str | None:
+    """할인 조건 한 줄. 웹 상세(`DiscountDetailList`)가 그리지 않는 할인은 None.
+
+    웹은 장기계약·즉시입주 할인만 그린다. 장기계약은 주 수·할인율·주당 임대료가 모두 0보다 클 때만 '{주}주 이상 {율}% 할인' 이고
+    할인 금액은 쓰지 않는다. 즉시입주는 금액만 보고(0 이하면 None) 입주 시점 조건을 붙인다. 주 수·할인율·조건 일수가 null 이면
+    웹처럼 0 으로 본다 (조건 일수 0 은 오늘). 웹은 할인의 `isActive` 를 보지 않아 꺼진 할인도 그리므로 여기서도 거르지 않는다
+    (2026-11-15 번들 `DiscountDetailList`·목록 카드 `pickDiscountTextsForCard`. 실측 강남역·홍대입구역 할인 124건은 모두 true).
+    """
+    if discount.discount_type == 'LONG_TERM':
+        weeks = discount.condition_weeks or 0
+        rate = discount.discount_rate or 0
+        if weeks <= 0 or rate <= 0 or (weekly_rent or 0) <= 0:
+            return None
+        return f'{weeks}주 이상 {rate:g}% 할인'
     if discount.discount_type == 'INSTANT':
-        return f'즉시 {amount} 할인'
-    return f'{amount} 할인'
+        amount = _discount_amount_text(discount.discount_amount)
+        if amount is None:
+            # 리뷰 오탐 (2026-11-15): --discount 즉시 결과에서 즉시 할인이 빠지지 않는다. 웹이 금액 없는 즉시 할인을 숨기고,
+            # 실측 강남역 --discount 즉시 의 즉시 할인 27건은 모두 금액(discountAmount)이 있었다 (할인율만 있는 것 0건)
+            return None
+        days = discount.condition_days or 0
+        return f'오늘 입주 시 {amount} 할인' if days == 0 else f'오늘부터 {days}일 이내 입주 시 {amount} 할인'
+    return None
 
 
-def stay_discounts(discounts: list[ZigbangStayDiscountModel]) -> list[str]:
-    return [label for label in (stay_discount_label(discount) for discount in discounts) if label]
+def stay_discounts(discounts: list[ZigbangStayDiscountModel], weekly_rent: int | None) -> list[str]:
+    return [label for label in (stay_discount_label(discount, weekly_rent) for discount in discounts) if label]
 
 
 def stay_summary_to_listing(
@@ -403,7 +367,7 @@ def stay_summary_to_listing(
     return ZigbangStayListing(
         source='zigbang',
         id=f'stay-{summary.id}',
-        url=STAY_URL,
+        url=stay_item_url(summary.id),
         trade_type='단기임대',
         property_type=STAY_BUILDING_TYPE_LABELS.get(summary.building_type or '', summary.building_type or '단기임대'),
         title=summary.title,
@@ -420,11 +384,11 @@ def stay_summary_to_listing(
         lng=summary.lng,
         distance_km=None if distance_km is None else round(distance_km, 2),
         registered_at=normalize_date(summary.reviewed_at),
-        weekly_rent_manwon=won_to_manwon(summary.weekly_rent),
-        weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
+        weekly_rent_manwon=won_to_manwon_exact(summary.weekly_rent),
+        weekly_manage_cost_manwon=won_to_manwon_exact(summary.weekly_manage_cost),
         room_count=summary.room_count,
         bathroom_count=summary.bathroom_count,
-        discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts)),
+        discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts, summary.weekly_rent)),
     )
 
 
@@ -441,6 +405,16 @@ def check_stay_sort(sort: str) -> StaySort:
             hint=f"--sort {', '.join(STAY_SORTS)} 중 하나를 주세요",
         )
     return sort
+
+
+def stay_distance_sort_error() -> JibsaError:
+    """역 가까운 순(`distance`)을 역 이름 검색이 아닌 곳에 줬을 때의 에러. CLI 는 좌표·`--radius` 와 함께 준 것을 지역을 찾기
+    전에, 서비스는 찾은 곳이 역이 아닌 것을 매물을 받기 전에 같은 에러로 막는다."""
+    return JibsaError(
+        code='INVALID_ARGUMENT',
+        message='역 가까운 순(--sort distance)은 --radius 없이 역 이름으로 찾을 때만 됩니다',
+        hint='--sort recommended·price·newest 중 하나를 쓰거나 --radius 없이 역 이름으로 검색하세요',
+    )
 
 
 class ZigbangStayConditions(RequestModel):
@@ -539,137 +513,164 @@ def search_stay_listings(
     region: ZigbangRegion,
     *,
     conditions: ZigbangStayConditions | None = None,
-    sort: StaySort = 'distance',
+    sort: StaySort = 'recommended',
     radius_km: float = 1.0,
     limit: int = 20,
     boundary: ZigbangBoundary | None = None,
     use_search_api: bool = False,
     whole_address: bool = False,
-    extra_regions: list[ZigbangRegion] | None = None,
 ) -> ZigbangStaySearchResult:
-    """직방 단기임대를 거리·가격·최근 등록 순으로 조회한다. 지역 전체 또는 반경·동 경계를 지원한다.
+    """직방 단기임대를 웹 정렬(추천·낮은 가격·최근 등록·역 가까운 순)로 조회한다.
 
     직방 단기임대는 원룸·빌라의 '단기' 거래와 다른 별도 서비스(주 단위 계약, stay-apis)다.
     모든 조건(`conditions`)은 서버에서 거른다 (주당 요금은 만원). 라벨(오피스텔, 에어컨, 지하 ...)은 서버 코드로 바꿔 보낸다.
-    use_search_api 면 이름 검색으로 보고 반경 밖을 자르며, 검색 API 로 ID 를 받는 건 지역 전체·동 경계일 때뿐이다
-    (반경 안 매물은 지도 핀에 모두 있다). whole_address는 지역 전체를 조회한다.
-    extra_regions 는 지역 전체로 함께 찾을 동 ('○가' 로 나뉜 성수동1가·2가 등)이나 구가 있는 시의 나머지 구 (성남시 수정구·중원구).
-    지역마다 검색 API 를 1회 더 부르고 매물 ID 를 합친 뒤 정렬·limit 을 적용한다. 리는 검색 API 가 local3(그 위 읍·면)으로
-    찾아 `boundary` 를 읍·면 이름으로 낸다.
+    두 경로 모두 받은 매물을 다시 거르거나 다시 세우지 않고, 고른 순서의 앞 `limit` 개만 요약(by-ids)을 받는다.
+
+    - 검색 API (`use_search_api`: 역·학교·대학 이름, `whole_address` 인 동·구 이름): 웹 검색 결과 목록처럼 정렬을 서버에
+      보내고(`guest/items/search`) 응답 ID 순서 그대로 낸다. 반경으로 자르지 않는다. 역은 직방이 역에서 약 1km 안을 주어
+      `radius_km` 를 1 로 내고, 동·구는 동 경계가 아니라 이웃 동 매물이 섞여 와 `[범위]` 로 알린다. 리는 검색 API 가
+      local3(그 위 읍·면)으로 찾아 `boundary` 를 읍·면 이름으로 낸다.
+    - 지도 핀 (좌표·`--radius`·동 경계 `boundary`, 검색 API 가 받지 않는 지역): 반경(또는 동 경계)을 덮는 지도 칸의 핀 중
+      범위 안만 남기고 웹 지도 목록처럼 핀 값으로 세운다 (`stay_marker_order`).
+
+    역 가까운 순(`distance`)은 웹처럼 역 이름 검색(검색 API `type=subway`)에서만 된다.
 
     Raises:
+        JibsaError: 역 이름 검색이 아닌데 `distance` 를 줬을 때 (INVALID_ARGUMENT, 매물 요청을 보내기 전에).
         RegionNotFoundError: 검색 API 가 지역을 찾지 못했을 때 (2026-10 의 세종의 동, `_stay_region_search`).
     """
     check_stay_sort(sort)
+    if sort == 'distance' and not (use_search_api and region.search_type == 'subway'):
+        # 직방 검색 API 는 역 검색이 아니면 400 STATION_SORT_REQUIRES_SUBWAY 를 주고, 웹 지도 목록도 역 기준점이 없으면
+        # 추천순으로 바꾼다 (2026-11-15 실측·번들 `sortStayMarkers`)
+        raise stay_distance_sort_error()
     conditions = conditions or ZigbangStayConditions()
     filters = stay_filter_of(conditions)
-    context = _stay_search_context(region, sort, filters) if use_search_api else None
-    address_scope = context is not None and context.type == 'address' and whole_address
-    if address_scope:
-        boundary = None
-    # 이름 검색·가격순·최신순은 요약을 받은 뒤 반경으로 자른다
-    radius_cut = (context is not None or sort != 'distance') and not address_scope and boundary is None
-    # 검색 API 응답 ID (부른 순서대로, 응답 순서 그대로). 지역 전체 가격순·최신순은 이 순서로 앞쪽만 요약을 받는다
-    search_lists: list[list[int]] = []
-    # 반경으로 자르면 검색 API 를 부르지 않는다. 반경 안 매물은 지도 핀에 모두 있고, 지역 검색 ID 는 구·동 전체라 반경 밖
-    # 요약까지 받게 된다 (2026-10-11 실측: 강남구·마포구·역삼동·성수동·강남역·홍대입구역에서 핀에 없는 검색 ID 25개 모두
-    # 반경 밖, 강남구 1km 가격순 by-ids 4회 → 1회)
-    if context is not None and not radius_cut:
-        search_lists = _stay_search_ids(client, context, region, (extra_regions or []) if address_scope else [])
-    search_ids = {item_id for ids in search_lists for item_id in ids}
-    # 전용 API에는 반경 파라미터가 없어 지도 칸으로 원하는 반경의 후보를 보완한다.
-    hashes = [] if address_scope else scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION)
-    pins = _stay_pins(client, region, hashes, filters, boundary)
-
-    # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받아도 버리므로 미리 뺀다 (2026-10-10 실측: 강남역 1km 핀 130개 중
-    # 반경 안 57개, by-ids 3회 → 1회)
-    if radius_cut:
-        pins = {item_id: distance for item_id, distance in pins.items() if within_radius(distance, radius_km)}
-    nearest = [item_id for item_id, _ in sorted(pins.items(), key=lambda entry: entry[1])[:limit]]
-    # 지역 전체 가격순·최신순은 검색 API 가 같은 기준(주당 임대료+관리비, 등록 시각)으로 정렬해 준다 (2026-10-11 실측:
-    # 강남구·마포구 343건, 날짜·방 수·가격 조건을 줘도 역전 0건). 지역마다 앞 limit 개만 요약을 받아 아래에서 합쳐 정렬하고 자른다
-    server_sorted = address_scope and sort != 'distance'
-    if sort == 'distance' and (radius_cut or context is None):
-        # 거리순은 가까운 핀 limit 개만 요약을 받는다
-        candidate_ids = nearest
-    elif server_sorted:
-        candidate_ids = sorted({item_id for ids in search_lists for item_id in ids[:limit]})
-    else:
-        # 검색 ID에는 위치가 없고 정렬 값은 요약에만 있어 후보 요약을 모두 받은 뒤 반경·정렬·limit 을 적용한다.
-        # 지역 전체 거리순도 위치가 요약에만 있어 상한을 두지 않는다 (2026-10-11 실측: 서울시 전체 1,491건이 by-ids 30회·약 7초)
-        candidate_ids = sorted(search_ids | pins.keys())
-    listings, accepted_ids, sort_keys = _stay_summaries(
-        client, region, candidate_ids, conditions, pins,
-        sort=sort, boundary=boundary, radius_cut=radius_cut, radius_km=radius_km,
+    context = _stay_search_context(region, sort, filters, whole_address) if use_search_api else None
+    if context is not None:
+        return _search_stay_by_search_api(client, region, context, conditions, sort=sort, limit=limit)
+    return _search_stay_by_markers(
+        client, region, filters, conditions, sort=sort, radius_km=radius_km, limit=limit, boundary=boundary,
     )
 
-    if sort == 'distance':
-        listings.sort(key=by_distance)
-    else:
-        listings.sort(key=lambda listing: sort_keys[listing.id])
-    order = {'distance': '검색 중심에서 가까운', 'price': '주당 임대료·관리비 합계가 낮은', 'newest': '최근 등록된'}[sort]
-    # 요약을 받은 매물을 --limit 에 맞춰 잘랐는지. 후보를 다 봤어도 자른 만큼 더 있다 (마포구 거리순 199건 중 5건이 has_more false 였다)
-    truncated = False
-    if context is not None or sort != 'distance':
-        if radius_cut and sort == 'distance':
-            # 거리순 이름 검색은 가까운 핀만 요약을 받아, 받지 않은 반경 안 핀도 센다
-            in_radius = len(pins.keys() | accepted_ids)
-        elif server_sorted:
-            # 앞쪽만 요약을 받아 검색 ID 수로 센다. by-ids 가 빼는 매물은 검색에도 없다 (2026-10-11 실측: 서울시 1,491건·강남구
-            # 156건·마포구 187건 모두 같음)
-            in_radius = len(search_ids)
-        else:
-            in_radius = len(listings)
-        truncated = len(listings) > limit
-        listings = listings[:limit]
-        has_more = truncated or len(candidate_ids) < in_radius
-        scope_notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'반경' if radius_cut else '지역'}",
-            order=order, inspected=len(candidate_ids), has_more=has_more,
+
+def _search_stay_by_search_api(
+    client: ZigbangClient,
+    region: ZigbangRegion,
+    context: ZigbangGuestItemsSearchRequestParameterModel,
+    conditions: ZigbangStayConditions,
+    *,
+    sort: StaySort,
+    limit: int,
+) -> ZigbangStaySearchResult:
+    """검색 API 가 정렬해 준 ID 순서 그대로 앞 `limit` 개의 요약을 받는다. `total` 은 검색 ID 수다.
+
+    by-ids 가 빼는 매물(그사이 내려간 매물)은 다시 채우지 않는다. 검색 ID 에는 위치가 없어 `distance_km` 는 요약 좌표로 잰다.
+    """
+    ids = list(dict.fromkeys(_stay_region_search(client, context, _searched_area(context) or region.name)))
+    head = ids[:limit]
+    listings = [
+        stay_summary_to_listing(
+            summary,
+            None if summary.lat is None or summary.lng is None else haversine_km(region.lat, region.lng, summary.lat, summary.lng),
         )
-    elif boundary is not None:
-        in_radius = len(pins)
-        has_more = len(candidate_ids) < in_radius
-        scope_notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STAY_NARROW}·지역',
-            order=f'{boundary.name} 중심에서 가까운', inspected=len(candidate_ids), has_more=has_more,
-        )
-    else:
-        in_radius = sum(1 for distance in pins.values() if within_radius(distance, radius_km))
-        has_more = len(candidate_ids) < in_radius
-        scope_notes = limit_notes(
-            in_radius, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STAY_NARROW}·반경',
-            inspected=len(candidate_ids),
-            has_more=has_more,
-        ) + beyond_radius_notes(listings, radius_km)
+        for summary in _stay_summaries(client, head, conditions)
+    ]
+    has_more = len(ids) > len(head)
+    address_scope = context.type == 'address'
+    notes = limit_notes(
+        len(ids), len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'지역' if address_scope else '반경'}",
+        order=STAY_SORT_ORDERS[sort], inspected=len(head), has_more=has_more,
+    )
+    area = None
+    if address_scope:
+        area = region.local3 if is_ri_code(region.legal_division_code) and region.local3 else region.name
+        notes.append(note(
+            '범위', f'직방 단기임대 지역 검색 결과라 {area} 밖 이웃 동 매물이 섞일 수 있습니다 (매물의 address 로 동을 확인하세요)',
+        ))
+    elif context.type != 'subway':
+        notes.append(note(
+            '범위', '직방 단기임대 학교 검색 결과라 범위는 직방이 정하고 반경으로 자르지 않았습니다. 반경으로 찾으려면 --radius 를 주세요',
+        ))
     return ZigbangStaySearchResult(
         region=region,
-        radius_km=None if boundary or address_scope else radius_km,
-        boundary=(
-            (region.local3 if is_ri_code(region.legal_division_code) and region.local3 else region.name) if address_scope
-            else boundary.name if boundary else None
-        ),
-        total=in_radius,
+        radius_km=STAY_SUBWAY_RADIUS_KM if context.type == 'subway' else None,
+        boundary=area,
+        total=len(ids),
         returned=len(listings),
         has_more=has_more,
         listings=listings,
-        notes=[STAY_APP_NOTE] + scope_notes,
+        notes=notes,
     )
+
+
+def _search_stay_by_markers(
+    client: ZigbangClient,
+    region: ZigbangRegion,
+    filters: dict[str, Any],
+    conditions: ZigbangStayConditions,
+    *,
+    sort: StaySort,
+    radius_km: float,
+    limit: int,
+    boundary: ZigbangBoundary | None,
+) -> ZigbangStaySearchResult:
+    """반경(또는 동 경계) 안 지도 핀을 웹 지도 목록 순서로 세워 앞 `limit` 개의 요약을 받는다. `total` 은 범위 안 핀 수다."""
+    pins = _stay_pins(client, region, scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION), filters, boundary)
+    if boundary is None:
+        # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받지 않고 뺀다 (반올림 없이 잰 거리)
+        pins = {item_id: pin for item_id, pin in pins.items() if pin[1] <= radius_km}
+    head = stay_marker_order([marker for marker, _ in pins.values()], sort)[:limit]
+    listings = [stay_summary_to_listing(summary, pins[summary.id][1]) for summary in _stay_summaries(client, head, conditions)]
+    has_more = len(pins) > len(head)
+    notes = limit_notes(
+        len(pins), len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'지역' if boundary else '반경'}",
+        order=STAY_SORT_ORDERS[sort], inspected=len(head), has_more=has_more,
+    )
+    return ZigbangStaySearchResult(
+        region=region,
+        radius_km=None if boundary else radius_km,
+        boundary=boundary.name if boundary else None,
+        total=len(pins),
+        returned=len(listings),
+        has_more=has_more,
+        listings=listings,
+        notes=notes,
+    )
+
+
+def stay_marker_order(markers: list[ZigbangStayMarkerModel], sort: StaySort) -> list[int]:
+    """지도 핀을 웹 지도 목록 순서로 세운 매물 ID (번들 `sortStayMarkers`).
+
+    추천순은 `totalScore` 높은 순, 같으면 ID 큰 순이다 (`compareRecommended`). 가격순은 `weeklyPrice`(주당 임대료+관리비,
+    만원 미만 버림) 낮은 순, 최신순은 `reviewedAt` 늦은 순(문자열 비교)이고, 둘 다 같은 값이면 추천순 규칙을 따른다.
+    역 가까운 순은 역 기준점이 없으면 웹도 추천순으로 바꾸는데, 지도 경로에서는 `search_stay_listings` 가 먼저 막는다.
+    값이 없으면 점수·가격은 0, 등록 시각은 가장 이른 것으로 본다 (2026-11-15 실측: 핀 2,313개 모두 값이 있었다).
+    """
+    # 정렬은 안정적이라(reverse=True 여도) 추천순으로 먼저 세운 뒤 기준 값으로 다시 세우면 같은 값끼리 추천순이 남는다
+    ranked = sorted(markers, key=lambda marker: (-(marker.total_score or 0), -marker.id))
+    if sort == 'price':
+        ranked.sort(key=lambda marker: marker.weekly_price or 0)
+    elif sort == 'newest':
+        ranked.sort(key=lambda marker: marker.reviewed_at or '', reverse=True)
+    return [marker.id for marker in ranked]
 
 
 def _stay_search_context(
     region: ZigbangRegion,
     sort: StaySort,
     filters: dict[str, Any],
+    whole_address: bool,
 ) -> ZigbangGuestItemsSearchRequestParameterModel | None:
-    """이름으로 찾은 지역의 검색 API 요청. 검색 API 가 받지 않는 지역(좌표·시·도 없는 주소)이면 None."""
+    """이름으로 찾은 지역의 검색 API 요청. 검색 API 가 받지 않는 지역(좌표·시·도 없는 주소)이거나, 동·구인데 지역 검색으로
+    찾으라는 표시(`whole_address`)가 없으면 None."""
     if region.search_type not in {'address', 'subway', 'school', 'university'}:
         return None
-    if region.search_type == 'address' and not region.local1:
+    if region.search_type == 'address' and not (region.local1 and whole_address):
         return None
     return ZigbangGuestItemsSearchRequestParameterModel(
         type=region.search_type,
-        sort={'price': 'PRICE_ASC', 'newest': 'NEWEST'}.get(sort),
+        sort=STAY_SERVER_SORTS[sort],
         local1=region.local1 if region.search_type == 'address' else None,
         local2=region.local2 if region.search_type == 'address' else None,
         local3=region.local3 if region.search_type == 'address' else None,
@@ -679,31 +680,8 @@ def _stay_search_context(
     )
 
 
-def _stay_search_ids(
-    client: ZigbangClient,
-    context: ZigbangGuestItemsSearchRequestParameterModel,
-    region: ZigbangRegion,
-    extra_regions: list[ZigbangRegion],
-) -> list[list[int]]:
-    """검색 API 로 지역(과 함께 찾을 지역)마다 매물 ID 를 받는다. 지역마다 응답 순서 그대로다.
-
-    한 곳이라도 못 찾으면 그 자리에서 `RegionNotFoundError` 를 낸다. CLI 는 모든 지역을 지도로 다시 찾으므로 나머지 지역을
-    더 물어도 결과는 버려지고 요청만 늘며, 그 사이 다른 에러가 나면 지도 대체 경로를 막는다 (2026-11-10 리뷰). 에러의
-    이름은 그 요청에 보낸 지역(`_searched_area`)이다. 함께 찾는 지역이 있으면 `region` 은 합친 이름이라, 그 이름을 대면 한
-    곳만 못 찾아도 모두 못 찾은 것처럼 읽혔다 (2026-11-10 리뷰·실측: 성수동2가만 없는 동으로 바꿔 보내니 직방은 그 동에만
-    REGION_NOT_FOUND 를 줬는데 안내는 '성수동1가·성수동9가를 찾지 못해').
-    """
-    search_lists = [_stay_region_search(client, context, _searched_area(context) or region.name)]
-    # '○가' 동·구가 있는 시의 구는 검색 중심과 같은 시·구에서만 오고 local1 이 늘 있어 (2026-10-11 실측: '○가' 동 13곳,
-    # 성남시·수원시 구) model_copy 로 다시 검증하지 않는다
-    for extra in extra_regions:
-        extra_context = context.model_copy(update={'local1': extra.local1, 'local2': extra.local2, 'local3': extra.local3})
-        search_lists.append(_stay_region_search(client, extra_context, _searched_area(extra_context) or extra.name))
-    return search_lists
-
-
 def _searched_area(context: ZigbangGuestItemsSearchRequestParameterModel) -> str | None:
-    """검색 API 에 보낸 지역 (local1~3, 주소 검색이 아니면 None).
+    """검색 API 에 보낸 지역 (local1~3, 주소 검색이 아니면 None). 지역을 못 찾았다는 에러에 이 이름을 댄다.
 
     `normalize_address` 로 세종의 겹친 시 이름을 뺀다. 직방은 세종의 동을 local1 '세종특별자치시'·local2 '세종'·local3
     '반곡동' 으로 줘서, 그대로 이으면(`join_address`) '세종특별자치시 세종 반곡동' 이 된다 (2026-11-10 리뷰·실측. 직방 지역
@@ -719,9 +697,12 @@ def _stay_pins(
     hashes: list[str],
     filters: dict[str, Any],
     boundary: ZigbangBoundary | None,
-) -> dict[int, float]:
-    """지도 칸마다 단기임대 핀을 받아 매물 ID → 검색 중심에서 거리로 모은다. 동 경계 밖 핀은 뺀다."""
-    pins: dict[int, float] = {}
+) -> dict[int, tuple[ZigbangStayMarkerModel, float]]:
+    """지도 칸마다 단기임대 핀을 받아 매물 ID → (핀, 검색 중심에서 거리)로 모은다. 동 경계 밖 핀은 뺀다.
+
+    핀 좌표는 요약(by-ids) 좌표와 같아 (2026-11-15 실측 71건) 핀으로 범위를 정하고 거리를 잰다.
+    """
+    pins: dict[int, tuple[ZigbangStayMarkerModel, float]] = {}
     for geohash in hashes:
         response = _stay_search_call(
             client.run_request_guest_items_markers,
@@ -730,95 +711,48 @@ def _stay_pins(
         for marker in response.markers:
             if outside_boundary(boundary, marker.lat, marker.lng):
                 continue
-            pins[marker.id] = haversine_km(region.lat, region.lng, marker.lat, marker.lng)
+            pins[marker.id] = (marker, haversine_km(region.lat, region.lng, marker.lat, marker.lng))
     return pins
 
 
 def _stay_summaries(
     client: ZigbangClient,
-    region: ZigbangRegion,
-    candidate_ids: list[int],
+    item_ids: list[int],
     conditions: ZigbangStayConditions,
-    pins: dict[int, float],
-    *,
-    sort: StaySort,
-    boundary: ZigbangBoundary | None,
-    radius_cut: bool,
-    radius_km: float,
-) -> tuple[list[ZigbangStayListing], set[int], dict[str, tuple[bool, float, int]]]:
-    """후보 요약을 받아 범위 밖을 뺀 매물, 받아들인 매물 ID, 가격·최신순 정렬 키를 준다."""
-    listings: list[ZigbangStayListing] = []
-    accepted_ids: set[int] = set()
-    sort_keys: dict[str, tuple[bool, float, int]] = {}
+) -> list[ZigbangStayItemSummaryModel]:
+    """매물 요약을 `item_ids` 순서대로 받는다. 응답에 없는 매물은 빠진다."""
+    summaries: dict[int, ZigbangStayItemSummaryModel] = {}
     # 만료 단기임대는 by-ids 가 응답에서 뺀다 (비노출·REJECTED·PENDING·404 를 섞어 보내면 노출 중인 것만 온다).
     # 그래서 상세(get_stay_listing)처럼 status·checkStatus 를 다시 보지 않는다.
-    for start in range(0, len(candidate_ids), STAY_BY_IDS_BATCH_SIZE):
-        batch = set(candidate_ids[start:start + STAY_BY_IDS_BATCH_SIZE])
-        summaries = _stay_search_call(
+    for start in range(0, len(item_ids), STAY_BY_IDS_BATCH_SIZE):
+        batch = item_ids[start:start + STAY_BY_IDS_BATCH_SIZE]
+        response = _stay_search_call(
             client.run_request_guest_items_by_ids,
             ZigbangGuestItemsByIdsRequestParameterModel(
-                item_ids=sorted(batch), check_in_date=conditions.check_in, check_out_date=conditions.check_out,
+                item_ids=batch, check_in_date=conditions.check_in, check_out_date=conditions.check_out,
                 flexibility=conditions.flexibility,
             ),
         )
-        for summary in summaries.items:
-            if summary.id not in batch or summary.id in accepted_ids:
-                continue
-            distance = pins.get(summary.id)
-            # 경계 검사(outside_boundary)는 좌표가 있을 때만 한다. 좌표 없는 요약은 경계 검사에 None 이 가지 않고, 아래에서
-            # 경계 안으로 거른 핀(pins)에 있으면 남고 없으면 빠진다 (2026-10-11 리뷰 오탐 확인. 실측: by-ids 응답 4건의
-            # 요약 30건 모두 좌표 있음)
-            if summary.lat is not None and summary.lng is not None:
-                distance = haversine_km(region.lat, region.lng, summary.lat, summary.lng)
-                if outside_boundary(boundary, summary.lat, summary.lng):
-                    continue
-            if radius_cut and (distance is None or not within_radius(distance, radius_km)):
-                continue
-            if boundary is not None and summary.id not in pins:
-                if summary.lat is None or summary.lng is None:
-                    continue
-            accepted_ids.add(summary.id)
-            listing = stay_summary_to_listing(summary, distance)
-            listings.append(listing)
-            key = _stay_sort_key(summary, sort)
-            if key is not None:
-                sort_keys[listing.id] = key
-    return listings, accepted_ids, sort_keys
-
-
-def _stay_sort_key(
-    summary: ZigbangStayItemSummaryModel,
-    sort: StaySort,
-) -> tuple[bool, float, int] | None:
-    """가격순·최신순 정렬 키 (모르는 값은 뒤로). 거리순이면 None."""
-    if sort == 'price':
-        # 관리비가 없는 매물은 요약(by-ids)이 null 이 아니라 0 을 주어 뒤로 밀리지 않는다. 상세는 null 과
-        # isWeeklyManageCostAbsent 로 주어 `stay_detail_to_listing` 이 0.0 으로 맞춘다 (2026-10-14 실측: 강남구 가격순 40건 중
-        # 0 이 3건·null 0건, 그중 1669 의 상세는 weeklyManageCost null·isWeeklyManageCostAbsent true)
-        known = summary.weekly_rent is not None and summary.weekly_manage_cost is not None
-        price = (summary.weekly_rent or 0) + (summary.weekly_manage_cost or 0)
-        return (not known, price, summary.id)
-    if sort == 'newest':
-        # 출력 날짜는 일 단위라 원 응답의 등록 시각으로 정렬한다. 시간대 없는 값을 UTC 로 보는 것은 출력(normalize_date 는
-        # 한국 시간으로 봄)과 다르지만 실제 응답은 늘 'Z' 를 붙여 와 두 곳이 같은 시각으로 읽는다 (2026-10-17 리뷰 오탐 확인.
-        # 실측: 강남구 최신순 by-ids 5건 모두 '2026-10-15T00:42:20.000Z' 꼴)
-        try:
-            moment = datetime.fromisoformat((summary.reviewed_at or '').replace('Z', '+00:00'))
-            if moment.tzinfo is None:
-                moment = moment.replace(tzinfo=timezone.utc)
-            timestamp = moment.timestamp()
-        except ValueError:
-            timestamp = None
-        return (timestamp is None, -(timestamp or 0), summary.id)
-    return None
+        requested = set(batch)
+        for summary in response.items:
+            if summary.id in requested:
+                summaries.setdefault(summary.id, summary)
+    return [summaries[item_id] for item_id in item_ids if item_id in summaries]
 
 
 def stay_parking(detail: ZigbangGuestItemsResponseModel) -> str | None:
+    """주차 가능 여부를 직방 웹 표기로 바꾼다 (LIMITED 는 '제한적 가능', 2026-11-17 번들).
+
+    요금(FREE 무료·PAID 유료)은 웹 상세(`AdditionalInfoSection`)처럼 가능(AVAILABLE)·제한적 가능(LIMITED) 둘 다에 붙인다.
+    모르는 코드는 그대로 낸다.
+    """
     if detail.parking_type is None:
         return None
-    available = {'AVAILABLE': '가능', 'UNAVAILABLE': '불가'}.get(detail.parking_type, detail.parking_type)
+    available = {'AVAILABLE': '가능', 'LIMITED': '제한적 가능', 'UNAVAILABLE': '불가'}.get(
+        detail.parking_type, detail.parking_type,
+    )
     fee = {'PAID': '유료', 'FREE': '무료'}.get(detail.parking_fee or '')
-    return f'{available} ({fee})' if fee and available == '가능' else available
+    return f'{available} ({fee})' if fee and detail.parking_type in ('AVAILABLE', 'LIMITED') else available
 
 
 def stay_detail_to_listing(
@@ -826,16 +760,16 @@ def stay_detail_to_listing(
     registered_at: str | None = None,
 ) -> ZigbangStayListingDetail:
     """단기임대 상세를 `ZigbangStayListingDetail` 로 바꾼다. 사진·본문·호스트 정보는 옮기지 않는다."""
-    manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon(detail.weekly_manage_cost)
+    manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon_exact(detail.weekly_manage_cost)
     includes = detail.manage_cost_includes
     return ZigbangStayListingDetail(
         source='zigbang',
         id=f'stay-{detail.id}',
-        url=STAY_URL,
+        url=stay_item_url(detail.id),
         trade_type='단기임대',
         property_type=STAY_BUILDING_TYPE_LABELS.get(detail.building_type or '', detail.building_type or '단기임대'),
         title=detail.title,
-        deposit_manwon=won_to_manwon(detail.deposit),
+        deposit_manwon=won_to_manwon_exact(detail.deposit),
         area_m2=detail.size_m2,
         area_pyeong=m2_to_pyeong(detail.size_m2),
         floor=detail.floor,
@@ -859,10 +793,10 @@ def stay_detail_to_listing(
             f'{station.name} ({station.description})' if station.description else station.name
             for station in detail.nearby_stations
         ]),
-        weekly_rent_manwon=won_to_manwon(detail.weekly_rent),
+        weekly_rent_manwon=won_to_manwon_exact(detail.weekly_rent),
         weekly_manage_cost_manwon=manage_cost,
-        cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon(detail.cleaning_fee),
-        discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts)),
+        cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon_exact(detail.cleaning_fee),
+        discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts, detail.weekly_rent)),
         min_contract_weeks=detail.min_contract_weeks,
         max_contract_weeks=detail.max_contract_weeks,
         max_guests=detail.max_guests,
@@ -871,23 +805,42 @@ def stay_detail_to_listing(
     )
 
 
+class ZigbangStayPeriod(RequestModel):
+    """단기임대 상세에 준 입주일·마지막 날 (listing stay-… --check-in/--check-out). 서버에 보내지 않고 예약 가능 여부만 따진다."""
+
+    check_in: Annotated[
+        str,
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='입주일 (YYYY-MM-DD)')
+    ]
+    check_out: Annotated[
+        str,
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='마지막으로 머무는 날 (YYYY-MM-DD)')
+    ]
+
+    @model_validator(mode='after')
+    def valid_dates(self) -> Self:
+        validate_stay_dates(self.check_in, self.check_out)
+        return self
+
+
 def get_stay_listing(
     client: ZigbangClient,
     item_id: int,
     *,
     check_in: str | None = None,
     check_out: str | None = None,
-    pet: bool = False,
 ) -> ZigbangStayListingDetail:
     """단기임대 매물 하나의 상세를 조회한다 (상세 + 노출 시작일용 요약, 2회 호출).
 
-    입주·퇴거일을 주면 기간 비용(`period_cost`)을 직방 요금 계산으로 붙이고, 같은 날짜로 매물 주변 지도를
-    조회해 예약이 비어 있는지도 본다 (요금 계산은 예약 여부를 보지 않는다). 요청이 2~5회 늘어난다.
+    입주일·마지막 날(`check_in`·`check_out`)을 주면 상세의 일정(`schedules`)으로 그 기간을 예약할 수 있는지(`available`)를
+    웹 날짜 고르기 창 규칙대로 붙인다 (`stay_range_available`, 요청이 늘지 않는다). 그 기간의 총비용은 웹이 로그인했을 때만
+    요금 계산(`price-calculation`)을 불러 보여 주어 내지 않는다 (2026-11-15 웹: 로그인하지 않으면 날짜를 골라도 주당 금액만).
 
     Raises:
+        ValidationError: 없는 날짜이거나 지난 입주일이거나 마지막 날이 입주일보다 뒤가 아닐 때 (요청 전에, CLI 는 INVALID_ARGUMENT).
         ListingUnavailableError: 없는 매물(404)이거나 노출 중이 아니거나 검수가 끝나지 않았을 때.
-        JibsaError: 지난 입주일이거나 계약 기간(최소·최대 주)을 벗어났을 때 (INVALID_ARGUMENT).
     """
+    period = None if check_in is None or check_out is None else ZigbangStayPeriod(check_in=check_in, check_out=check_out)
     listing_id = f'stay-{item_id}'
     with unavailable_on_404(listing_id):
         detail = client.run_request_guest_items(ZigbangGuestItemsRequestParameterModel(item_id=item_id))
@@ -904,97 +857,64 @@ def get_stay_listing(
     )
     summary = next((summary for summary in summaries.items if summary.id == item_id), None)
     listing = stay_detail_to_listing(detail, summary.reviewed_at if summary else None)
-    if check_in is None or check_out is None:
+    if period is None:
         return listing
-    price = _calculate_stay_price(client, detail, check_in, check_out, pet)
-    available = _stay_available(client, detail, check_in, check_out)
-    return listing.model_copy(update={'period_cost': stay_period_cost(price, check_in, check_out, available)})
+    available = None if detail.schedules is None else stay_range_available(
+        detail.schedules, detail.min_contract_weeks, period.check_in, period.check_out, datetime.now(KST).date(),
+    )
+    return listing.model_copy(update={'available': available})
+
+
+def stay_range_available(
+    schedules: list[ZigbangStayScheduleModel],
+    min_contract_weeks: int | None,
+    check_in: str,
+    check_out: str,
+    today: date,
+) -> bool:
+    """입주일~마지막 날(`check_out`)을 예약할 수 있는지. 웹 날짜 고르기 창 규칙 그대로다 (번들 `resolveScheduleAutofill` 의
+    `isRangeAvailable`, 일정 유연성 0).
+
+    입주일이 오늘보다 앞이거나, 두 날짜 사이 일수가 최소 계약 주 × 7 − 1 보다 적거나(최소 계약 주가 없으면 1주, 1일보다 적게
+    보지 않는다), 마지막 날이 입주일 + 83일보다 뒤면 불가다. 그 밖에는 예약된·막힌 일정이 덮는 날(시작·끝 날 포함,
+    `generateDateRange`)에 입주일~마지막 날 전날이 하루라도 들거나, 마지막 날이 막힌(BLOCKED) 날이면 불가다
+    (`isStayRangeFreeOfOccupancy`). 날짜가 없거나 틀린 일정은 웹처럼 아무 날도 덮지 않는다.
+    """
+    start = date.fromisoformat(check_in)
+    end = date.fromisoformat(check_out)
+    weeks = 1 if min_contract_weeks is None else min_contract_weeks
+    if start < today or (end - start).days < max(1, 7 * weeks - 1) or end > start + timedelta(days=STAY_MAX_CHECK_OUT_DAYS):
+        return False
+    last_night = end - timedelta(days=1)
+    for schedule in schedules:
+        if schedule.schedule_type not in STAY_UNAVAILABLE_SCHEDULES or (covered := _schedule_dates(schedule)) is None:
+            continue
+        first, last = covered
+        if first <= last_night and last >= start:
+            return False
+        if schedule.schedule_type == 'BLOCKED' and first <= end <= last:
+            return False
+    return True
+
+
+def _schedule_dates(schedule: ZigbangStayScheduleModel) -> tuple[date, date] | None:
+    """일정이 덮는 첫날·끝날. 날짜가 없거나 틀렸거나 끝날이 첫날보다 앞이면 웹(`generateDateRange`)처럼 덮는 날이 없어 None."""
+    try:
+        first = date.fromisoformat(schedule.start_date or '')
+        last = date.fromisoformat(schedule.end_date or '')
+    except ValueError:
+        return None
+    return (first, last) if first <= last else None
 
 
 # 날짜를 준 검색의 금액·가격순이 기간 비용이 아니라는 안내. 2026-10-31 에이전트 검증: 강남역 4주 가격순 1위를 주당 32만 × 4 =
-# 128만으로 답했지만 청소비·이용료를 더한 실제 결제는 151만 2천이었고, 주당 요금 3위는 기간 비용으로 4위였다
+# 128만으로 답했지만 청소비·이용료를 더한 실제 결제는 151만 2천이었고, 주당 요금 3위는 기간 비용으로 4위였다. 기간 비용은
+# 웹이 로그인했을 때만 계산해 보여 주어(2026-11-15) jibsa 는 내지 않는다
 STAY_WEEKLY_PRICE_NOTE: str = note(
     '참고',
     '목록 금액과 가격순은 주당 임대료+관리비 기준이라 청소비·직방 이용료·장기 할인이 빠져 있습니다. 그 기간에 실제로 내는 돈은 '
-    f'--details 로 앞 {DETAILS_MAX}건에 period_cost 를 붙여 보세요 (매물당 요청 1회)',
+    '직방에 로그인해야 계산해 보여 줘서 jibsa 는 주지 않습니다. 청소비·보증금·할인 조건은 listing stay-… 상세에서 보세요',
 )
-
-
-def attach_stay_period_costs(
-    client: ZigbangClient,
-    result: ZigbangStaySearchResult,
-    conditions: ZigbangStayConditions,
-) -> ZigbangStaySearchResult:
-    """날짜를 준 단기임대 검색의 앞 `DETAILS_MAX` 건에 기간 비용(`period_cost`)을 붙인다 (`--details`, 매물당 요금 계산 1회).
-
-    상세(`get_stay_listing`)와 같은 요금 계산이지만 상세·요약·예약 확인은 다시 받지 않는다. 검색이 같은 날짜로 지도를
-    걸렀으니 예약은 비어 있다고 보되, `--flexibility` 로 날짜를 넓혔으면 그 날짜가 비었는지 몰라 `available` 을 null 로 둔다.
-    `--pet`(반려동물 허용 매물만)을 줬으면 반려동물을 데려간다고 보고 반려동물 청소비를 넣는다. 정렬은 바꾸지 않는다.
-    직방이 계산을 거절한 매물(계약 기간 밖, 그사이 내려감)은 `period_cost` 를 null 로 두고 `notes` 로 알린다.
-    """
-    check_in, check_out = conditions.check_in, conditions.check_out
-    # CLI 가 --details 에 날짜를 요구한다
-    assert check_in is not None and check_out is not None
-    available = None if conditions.flexibility else True
-    listings: list[ZigbangStayListing] = []
-    rejected = 0
-    for index, listing in enumerate(result.listings):
-        if index >= DETAILS_MAX:
-            listings.append(listing_as(ZigbangStayPricedListing, listing))
-            continue
-        try:
-            price = client.run_request_guest_items_price_calculation(
-                ZigbangGuestItemsPriceCalculationRequestPayloadModel(
-                    item_id=int(listing.id.removeprefix('stay-')), check_in_date=check_in, check_out_date=check_out,
-                    has_pet=conditions.pet_allowed,
-                )
-            )
-        except HTTPStatusError as exc:
-            if exc.response.status_code not in (400, 404):
-                raise
-            rejected += 1
-            listings.append(listing_as(ZigbangStayPricedListing, listing))
-            continue
-        listings.append(listing_as(
-            ZigbangStayPricedListing, listing, period_cost=stay_period_cost(price, check_in, check_out, available),
-        ))
-    notes = [note(
-        '참고',
-        '정렬은 주당 임대료+관리비 기준 그대로입니다. 그 기간에 실제로 내는 돈은 period_cost.total_payment_manwon 에서 '
-        'deposit_manwon(돌려받는 보증금)을 뺀 값입니다',
-    )]
-    if rejected:
-        notes.append(note('실패', f'{rejected}건은 직방이 이 기간 요금 계산을 거절해 period_cost 가 null 입니다 (계약 기간 밖 등)'))
-    if len(result.listings) > DETAILS_MAX:
-        notes.append(f'기간 비용(--details)은 앞 {DETAILS_MAX}건에만 붙였습니다')
-    return result.model_copy(update={'listings': listings, 'notes': result.notes + notes})
-
-
-def _calculate_stay_price(
-    client: ZigbangClient,
-    detail: ZigbangGuestItemsResponseModel,
-    check_in: str,
-    check_out: str,
-    pet: bool,
-) -> ZigbangGuestItemsPriceCalculationResponseModel:
-    try:
-        return client.run_request_guest_items_price_calculation(
-            ZigbangGuestItemsPriceCalculationRequestPayloadModel(
-                item_id=detail.id, check_in_date=check_in, check_out_date=check_out, has_pet=pet,
-            )
-        )
-    except HTTPStatusError as exc:
-        if exc.response.status_code != 400:
-            raise
-        # 400 본문은 늘 객체이고 message 는 문자열 또는 형식 오류 배열이다 (2026-10-11 실측 6종)
-        message = (_stay_400_body(exc) or {}).get('message')
-        reason = message if isinstance(message, str) else None
-        weeks = f'{detail.min_contract_weeks or "?"}~{detail.max_contract_weeks or "?"}주'
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=STAY_PRICE_ERRORS.get(reason or '', reason or '직방이 기간 요금 계산을 거절했습니다'),
-            hint=f'입주일은 한국 날짜 기준 오늘 이후로, 계약 기간은 이 매물의 {weeks} 안으로 --check-in/--check-out 을 다시 주세요',
-        ) from None
 
 
 # 단기임대 검색 API 의 기간 오류. 로컬에서 7~84일을 먼저 막지만 직방이 제한을 바꿔도 소스 장애로 보이지 않게 한다
@@ -1005,13 +925,7 @@ StayParameter = TypeVar('StayParameter')
 
 def _stay_400_body(exc: HTTPStatusError) -> dict[str, Any] | None:
     """단기임대 API 가 400 으로 준 본문 객체 (`error` 코드·`message`). 400 이 아니거나 JSON 객체가 아니면 None."""
-    if exc.response.status_code != 400:
-        return None
-    try:
-        body = exc.response.json()
-    except ValueError:
-        return None
-    return body if isinstance(body, dict) else None
+    return error_body(exc) if exc.response.status_code == 400 else None
 
 
 def _stay_search_call(call: Callable[[StayParameter], StayResponse], parameter: StayParameter) -> StayResponse:
@@ -1052,65 +966,3 @@ def _stay_region_search(
         if body is None or body.get('error') != 'REGION_NOT_FOUND':
             raise
         raise RegionNotFoundError(name, hint='--radius 로 반경 검색하세요') from None
-
-
-def _stay_available(
-    client: ZigbangClient,
-    detail: ZigbangGuestItemsResponseModel,
-    check_in: str,
-    check_out: str,
-) -> bool | None:
-    """같은 날짜로 매물 주변 지도 칸을 조회해 이 매물이 나오면 예약이 비어 있다고 본다. 좌표가 없으면 None.
-
-    지도 검색은 입주일과 마지막 날을 포함해 7~84일만 받는다. 요금 계산은 매물 계약 범위만 보므로, 그 밖의
-    기간(지금은 없지만 12주보다 길게 받는 매물 등)은 확인하지 않고 모름(None)으로 둔다.
-    """
-    if detail.lat is None or detail.lng is None:
-        return None
-    if not STAY_SEARCH_MIN_DAYS <= stay_days(check_in, check_out) <= STAY_SEARCH_MAX_DAYS:
-        return None
-    # 지도 좌표가 상세 좌표와 조금 달라 칸 경계를 넘을 수 있어 주변 칸까지 본다
-    for geohash in geohashes_covering(detail.lat, detail.lng, STAY_AVAILABILITY_RADIUS_KM, STAY_GEOHASH_PRECISION):
-        markers = client.run_request_guest_items_markers(
-            ZigbangGuestItemsMarkersRequestParameterModel(
-                geohash=geohash, check_in_date=check_in, check_out_date=check_out,
-            )
-        )
-        if any(marker.id == detail.id for marker in markers.markers):
-            return True
-    return False
-
-
-def stay_period_cost(
-    price: ZigbangGuestItemsPriceCalculationResponseModel,
-    check_in: str,
-    check_out: str,
-    available: bool | None,
-) -> ZigbangStayPeriodCost:
-    """요금 계산 응답(원)을 만원 단위 기간 비용으로 바꾼다."""
-    cleaning = None
-    if price.cleaning_fee is not None or price.pet_cleaning_fee is not None:
-        cleaning = (price.cleaning_fee or 0) + (price.pet_cleaning_fee or 0)
-    discount = None
-    if price.total_discount_amount is not None or price.total_promotion_discount is not None:
-        discount = (price.total_discount_amount or 0) + (price.total_promotion_discount or 0)
-    return ZigbangStayPeriodCost(
-        check_in=check_in,
-        check_out=check_out,
-        available=available,
-        days=price.total_days,
-        weeks=price.weeks,
-        remaining_days=price.remaining_days,
-        rent_manwon=won_to_manwon(price.total_rent),
-        manage_cost_manwon=won_to_manwon(price.total_manage_cost),
-        cleaning_fee_manwon=won_to_manwon(cleaning),
-        discount_manwon=won_to_manwon(discount),
-        discounts=[
-            f'{discount.name} {discount.rate:g}%' if discount.rate is not None else discount.name
-            for discount in price.discounts
-            if discount.name
-        ],
-        service_fee_manwon=won_to_manwon(price.platform_fee),
-        deposit_manwon=won_to_manwon(price.deposit),
-        total_payment_manwon=won_to_manwon(price.total_guest_payment),
-    )

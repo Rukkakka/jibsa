@@ -11,7 +11,7 @@
 - `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물이 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패 또는 대체 경로로 찾음(사용자에게 알린다), `[참고]` 그 밖.
 - `--limit` 은 들여다볼 개수라 뺀 매물만큼 `returned` 가 적을 수 있다. 처음에는 작게 잡고, 한 번에 매물 50건 이하로 본다 (100건이면 4만 자가 넘어 잘린다). `search commute` 는 역마다 `--limit` 건(최대 10역)이라 역당 5건 이하로 시작한다.
 - 매물 목록의 `has_more` 가 `true` 이고 `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 이어 받는다 (`--limit`·`--fields` 는 바꿔도 된다, 하루 동안 쓴다). `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 가 없으면 `notes` 대로 `--limit` 을 늘리거나(최대값 전까지) 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다.
-- 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않고, 받은 글자 그대로 옮긴다 (ID 로 주소를 만들거나 경로를 고치지 않는다). `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`)에만 있고 상세 `listing` 에는 없다.
+- 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않고, 받은 글자 그대로 옮긴다 (ID 로 주소를 만들거나 경로를 고치지 않는다). `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`, 직방 `catalog`)에만 있고 상세 `listing` 에는 없다.
 - 층은 `floor`(`"3"`·`"반지하"`·`"중층"`)와 숫자 `floor_number`(지하는 음수, 모르면 `null`).
 - 사진·매물 설명·중개사 연락처·매물 좌표는 없다. 확인·문의·계약은 `url` 로 안내한다.
 - ID 는 받은 그대로 같은 소스 명령에 넣는다. 소스끼리 통하지 않고, 접두사(`apt-`, `officetel-`, `store-`, `stay-`, `coalition-`)를 떼지 않는다. 여러 소스의 같은 집을 합쳐 주지 않는다. 같은 집인지 가리려고 `listing` 을 여러 번 부르지 않고, 가격·면적·층이 같으면 '같은 집일 수 있다' 고만 알린다 (사용자가 상세 비교를 원하면 그 후보만 `listing` 으로 본다).
@@ -24,13 +24,13 @@
 | --- | --- |
 | 유형을 정하지 않은 집 | `zigbang search listings room`·`apt` · `naver search listings <동·역>` (`-t` 없이 주거용 전체) · `daangn search listings <동> -t 아파트,오피스텔,원룸,투룸,주택` · `dabang search listings room`·`villa`·`officetel`·`apt` |
 | 원룸·투룸·빌라·오피스텔 | `zigbang search listings room <동·역>` · `daangn search listings <동>` (역은 `--station <역>`, 대학은 `--university <대학>`) · `naver search listings <동·역> -t 원룸,빌라,오피스텔` · `dabang search listings room <동·역>` (빌라 `villa`, 오피스텔 `officetel`) |
-| 아파트 매물 | `zigbang search listings apt <동·구·역>` · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
+| 아파트 매물 | `zigbang search listings apt <동·구>` (역·좌표는 그 위치가 속한 동 목록) · `naver search listings <동> -t 아파트` · `daangn search listings <동> -t 아파트` · `dabang search listings apt <동·역>` |
 | 단지 하나 안 매물 | `<소스> search listings --complex <단지 ID>` (네이버는 이름도 된다) |
 | 상가·사무실 | `zigbang search listings store <동·역>` · `naver search listings <동·역> -t 상가,사무실` · `daangn search listings <동> -t 상가,사무실` (단지 안 상가도 `--complex <ID> -t 상가` 처럼 종류를 줘야 온다. 다방은 상가가 없다) |
 | 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 `search listings room`·`villa`·`officetel`·`apt` 에 `--condition 단기임대`) |
 | 회사 통근 기준 | `daangn search commute --station <회사 역> --max-minutes 30` (통근 시간 조건은 당근만 있다. 다른 소스는 결과의 역 이름으로 그 역 주변을 찾는다) |
 | 매물 하나 상세 | `<소스> listing <id>` |
-| 단지 찾기 | `zigbang search locations <이름>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
+| 단지 찾기 | `zigbang search locations <이름>` · 역 주변 아파트 단지 `zigbang search complexes <역>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
 | 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 이 집 또는 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
 | 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
@@ -45,11 +45,11 @@
 
 ## 위치 입력
 
-- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 직방 `apt` 2km, 네이버 3km, 다방·직방 나머지 5km). 다만 역 이름은 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다.
+- 동 이름은 그 동 안을 찾는다. 역·장소 이름, `--lat`·`--lng`(함께, 한국 안), `--radius` 는 반경 검색이고 기본 1km다 (매물 검색 최대: 네이버 3km, 다방·직방 5km). 다만 역 이름은 다방이 정한 역 반경(강남역 750m)으로 찾아 범위가 다르다. 직방 `apt` 는 반경이 없다: 역·좌표를 주면 그 위치가 속한 동 하나의 목록(이웃 동은 빠지고 거리 없음)이라, 역 근처 단지는 `zigbang search complexes <역>` 으로 본다.
 - 당근은 반경이 없고 당근 웹 화면별로 받는다: 동·구 이름, 역 `--station`, 대학 `--university`, 도로명 주소 `--address`, 좌표 `--lat/--lng`. 역·대학은 당근 주변 목록(역은 도보 `walk_minutes`), 구·좌표·주소는 웹 지도 화면 범위(기본 줌: 구 12 약 12.8×13.6km, 좌표·주소 15 약 1.6×1.7km, `--zoom` 으로 바꿈)를 최근 순으로 준다. 주소는 도로명 주소(`'테헤란로 152'`)만 되고 후보가 여럿이면 `REGION_AMBIGUOUS` 의 `candidates` 그대로 다시 준다. 건물·리 이름은 받지 않는다. 후보는 `daangn search locations <이름>` 이 칸별로 준다.
 - 동 이름은 법정동(`역삼동`)으로 준다. 행정동(`역삼1동`)은 직방·당근·다방이 `REGION_NOT_FOUND` 힌트로 법정동을 알려 주고, 네이버는 행정동 중심 반경으로 찾는다.
-- 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`. 구 이름까지 겹치면 `hint` 의 예처럼 시·도도 붙인다: `서울 중구 태평로2가`. 직방은 시·도까지 붙인 전체 주소는 못 찾는다. 당근 `광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 직방은 첫 역으로 찾고 `notes` 로 알린다 (당근은 노선을 붙여 고른다: `--station '서울5호선 양평역'`. 다방·네이버는 `REGION_AMBIGUOUS` 의 `candidates`·`hint` 대로 좌표로 찾는다).
-- 직방 매물 검색은 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾고 `--limit` 을 나눠 쓴다 (동 수보다 작으면 뒤쪽 동은 `notes` 로 알리고 건너뛴다. 첫 동만 찾았으면 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다). 네이버·당근·다방은 합치지 않고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성수동2가` 를 고르게 한다. 다방은 여러 캠퍼스에 맞는 대학 이름(`연세대`)도 고르지 않고 `REGION_AMBIGUOUS` 로 캠퍼스 후보를 주니, 후보 이름 그대로(`'연세대학교(원주캠퍼스)'`) 다시 부른다. 네이버 단지 이름도 여러 단지에 맞으면 `REGION_AMBIGUOUS` 라 `candidates` 의 단지 번호로 다시 부른다 (위치로 준 단지 이름이면 `hint` 대로 단지 둘레는 후보의 동 이름으로). 네이버는 이름이 맞는 역·동이 없고 후보가 여럿일 때도 `REGION_AMBIGUOUS` 라 후보의 역·동 이름 그대로 다시 부른다.
+- 같은 이름의 동·구가 여러 곳이면 `REGION_AMBIGUOUS` 와 `candidates` 가 온다. 구 이름을 앞에 붙인다 (`강남구 신사동`. 구 이름까지 겹치면 `hint` 의 예처럼 시·도도 붙인다: `서울 중구 태평로2가`. 직방은 시·도까지 붙인 전체 주소는 못 찾는다. 당근 `광주시` 는 경기도, 옛 광주광역시는 `전남광주`나 구 이름). 같은 이름의 역은 당근만 첫 역으로 찾고 `notes` 로 알린다 (당근은 노선을 붙여 고른다: `--station '서울5호선 양평역'`. 직방은 역·학교도 `REGION_AMBIGUOUS` 라 `hint` 대로 `'영등포구 양평역'` 처럼 구·동 이름을 붙인다. 다방·네이버는 `REGION_AMBIGUOUS` 의 `candidates`·`hint` 대로 좌표로 찾는다).
+- 직방 `room`·`store` 는 `성수동` 처럼 `○가` 로 나뉜 동을 1가·2가 합쳐 찾는다 (첫 동만 찾았으면 `notes` 로 알리니 나머지 `○가` 동을 따로 찾는다). 직방 `apt`·`stay`·네이버·당근·다방은 합치지 않고 `REGION_AMBIGUOUS` 로 `성수동1가`·`성수동2가` 를 고르게 한다 (직방 `apt`·`stay` 는 성남시처럼 구가 있는 시도 `성남시 분당구` 처럼 구를 고르게 한다). 다방은 여러 캠퍼스에 맞는 대학 이름(`연세대`)도 고르지 않고 `REGION_AMBIGUOUS` 로 캠퍼스 후보를 주니, 후보 이름 그대로(`'연세대학교(원주캠퍼스)'`) 다시 부른다. 네이버 단지 이름도 여러 단지에 맞으면 `REGION_AMBIGUOUS` 라 `candidates` 의 단지 번호로 다시 부른다 (위치로 준 단지 이름이면 `hint` 대로 단지 둘레는 후보의 동 이름으로). 네이버는 이름이 맞는 역·동이 없고 후보가 여럿일 때도 `REGION_AMBIGUOUS` 라 후보의 역·동 이름 그대로 다시 부른다.
 
 ## 소스마다 다른 점
 
@@ -79,11 +79,12 @@
 
 ### 직방
 
-- 매물 검색은 유형별 하위 명령(`room`·`apt`·`store`·`stay`)이고, 단지 매물만 `search listings --complex <ID>` 다.
+- 매물 검색은 유형별 하위 명령(`room`·`apt`·`store`·`stay`)이고, 단지 매물만 `search listings --complex <ID>` 다. `room`·`store` 결과는 **직방 목록 순**이라 거리순이 아니다 (가까운 매물은 `distance_km` 로 고른다). `room` 은 종류(원룸·오피스텔·빌라)마다 `--limit` 을 나눠 종류별 묶음으로 준다.
 - 단지 ID 는 `apt-…`(아파트)·`officetel-…`. `real-price` 는 `apt-…` 만 받는다.
-- 아파트 목록은 같은 호의 매물을 묶어 가격이 최솟값일 수 있다 (`is_price_range`, `listing_count`).
-- `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 `listing stay-… --check-in … --check-out …` 의 `period_cost` 이고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일).
-- `store` 권리금 `0` 은 무권리, `null` 은 모름이다.
+- 아파트 목록은 같은 호의 매물을 한 줄로 묶는다 (`listing_count`). `is_price_range: true` 면 가격은 묶음 최저가라 `id` 매물의 가격과 다를 수 있으니, 매물별 가격은 `zigbang catalog <catalog_id>` 한 번으로 본다 (묶음 매물 전부의 가격·상세. `listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). `catalog_id` 가 `null` 이면(직방이 호 ID 를 주지 않음) 묶음을 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 본다.
+- 아파트 줄의 `listing_kind` 가 `신규분양` 이면 가격은 분양가다. `coalition-` ID 에는 집주인 매물뿐 아니라 신규분양도 있고, 지역 목록 앞쪽에 신규분양이 섞여 올 수 있다.
+- `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 가 주지 않는다 (주당 금액 × 주 수가 아니다). `listing stay-… --check-in … --check-out …` 은 그 기간에 예약할 수 있는지 `available` 만 주고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일). `stay --sort distance` 는 `--radius` 없는 역 이름 검색에서만 된다 (기본은 직방 추천순).
+- `store` 권리금 `0` 은 무권리, `null` 은 모름이다. 사무실은 권리금이 해당 없음이라 `key_money_manwon` 키가 없을 수 있고, 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠진다.
 - 상세 `residence_type` 이 `근린생활시설` 이면 전입신고·전세대출이 막힐 수 있고, `다가구` 면 선순위 보증금을 확인하라고 알린다. 목록에서 보려면 `room` 에 `--details` (매물마다 요청 1회 더).
 
 ### 네이버

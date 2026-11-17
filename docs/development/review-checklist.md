@@ -68,6 +68,22 @@
     (INTERNAL_ERROR)가 된다. 서버가 빈 응답을 줘서 지금 안 닿는 것은 막는 이유가 아니다. 확인: `' '` 를 넣어 그 줄까지 따라간다.
     예: `providers/naver/service/region.py:172` (`words[-1]`, 요청 전에 `:740` 에서 INVALID_ARGUMENT 로 막았다, 2026-11-16).
     언제: 사용자 검색어에 `.split()`·인덱스를 쓰는 줄을 조건 밖으로 옮기거나 새로 더한 diff.
+11. **목록 여럿을 이어 낼 때 쪽 사이 겹침과 자리.** 서로 겹치는 목록(직방 원룸 목록의 '이 지역 오피스텔' 과 오피스텔 목록)을
+    이어 내며 겹침을 한 호출 안에서만 빼면, `--next` 의 다음 쪽에 앞 쪽 매물이 다시 나오고, 목록마다의 자리를 더한 수가 서로 다른
+    매물 수(`total`)를 넘어 더 있는데도 `[일부]` 가 사라진다. 커서 하나로 이은 쪽은 겹치지 않아 해당 없다 (아래 "지적하지 말 것"
+    3). 확인: 겹치는 두 목록으로 이어 받기를 끝까지 따라가 쪽마다 앞 쪽과 같은 ID 수와 `offset + returned` 를 `total` 과 견준다.
+    예: `providers/zigbang/service/listing.py:1113` (받기 전에 앞 목록의 ID 를 뒤 목록에서 뺐다, 2026-11-16).
+    언제: 목록·종류 여럿을 한 결과로 잇고 이어 받기 표에 목록마다의 자리를 두는 diff.
+12. **묶음 한 줄의 대표 값과 고른 `id`.** 서버가 여러 매물을 한 줄로 묶어 줄 때 그 줄의 종류·제목·층 같은 필드는 묶음 안 어느
+    매물의 값인지 보고, `id` 를 서버와 다른 순서(출처 우선 등)로 고르면 `id` 와 그 필드가 다른 매물을 가리킨다. 확인: 섞인 묶음의
+    원본 응답에서 목록 순서와 대표 필드를 대 보고, 줄의 필드를 `id` 상세와 견준다.
+    예: `providers/zigbang/service/common.py:690` (직방 먼저 고른 `id` 가 중개사인데 `listing_kind` 는 집주인, 2026-11-17).
+    언제: 묶음·카탈로그 줄에 필드를 더하거나 묶인 ID 중 대표를 고르는 순서를 정·바꾸는 diff.
+13. **해당 없음으로 키를 뺀 필드에 조건을 걸 때.** 키를 뺀 매물도 내부 값은 `None` 이라 `in_range` 같은 거르기가 '모름' 처럼
+    조용히 뺀다. 그 조건으로 뺀 해당 없음 매물을 `[제외]` 로 알리거나 문서에 적었는가. 확인: 키를 빼는 조건(`not_applicable_fields`)과
+    같은 필드의 거르기 함수를 나란히 보고, 그 매물이 있는 범위에 조건을 걸어 notes 를 본다.
+    예: `providers/zigbang/service/store.py:587` (권리금 조건에 사무실이 말없이 빠졌다, 2026-11-17).
+    언제: `not_applicable_fields` 에 값에 따라 빠지는 키를 더하는 diff, 또는 그런 필드에 거르기 조건을 더하는 diff.
 
 ## `contract` 출력 계약
 
@@ -78,8 +94,10 @@
    언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff.
 2. **예시 이름과 권하는 명령.** hint 의 예시·명령을 그대로 넣으면 그 명령이 받는가 (동을 받지 않는 명령에 동 이름, 여전히 모호한
    예시, 필수 옵션을 빼라는 안내). 확인: 예시를 그 명령의 인자 검사·resolver 에 넣어 따라간다.
-   예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`.
-   언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄.
+   예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`, `providers/zigbang/service/region.py:77`
+   (같은 이름 구 '중구' 에 '구 이름을 붙이라' 고 했고, 좌표를 받지 않는 `search complexes` 에 `--lat/--lng` 를 권했다. 후보 하나로
+   가려지는 예시만 들게 했다, 2026-11-16).
+   언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄, 여러 명령이 함께 쓰는 hint 를 새 명령이 부르게 한 diff.
 3. **notes 태그.** 더 있음 `[일부]`, 뺀 것 `[제외]`, 찾은 범위가 다름 `[범위]`, 덤 조회 실패 `[실패]` 가 맞게 붙었는가 (맨
    문자열은 `[참고]` 로 나간다, [docs/common.md](../common.md)). 예: `providers/daangn/service/commute.py:260`.
    언제: `notes` 에 문자열을 더하는 `+` 줄.
@@ -95,6 +113,14 @@
 7. **help·Field description·`docs/<source>.md` 가 동작과 같은가.** 기본값·거르기를 바꾼 diff 면 셋을 함께 grep 한다.
    예: `cli/daangn.py:253`.
    언제: 기본값·거르기·옵션·출력 필드를 바꾼 diff (help·`Field(description=`·`docs/<source>.md` 중 일부만 바뀌었으면 특히).
+8. **가격·값을 읽는 데 필요한 새 필드는 `--fields` 로 골라도 나오나.** 빠지면 다른 필드를 잘못 읽게 되는 필드(가격이 분양가인지,
+   묶음 최저가인지)는 `cli/output.py` 의 `ALWAYS_FIELD_GROUPS` 에 넣는다. 확인: `--fields id,price_manwon` 으로 불러 그 필드가
+   남는지 본다. 예: `cli/output.py:68` (`listing_kind` 가 빠져 분양가를 호가로 읽었다, 2026-11-17).
+   언제: 묶음·매물 목록에 가격 해석을 바꾸는 필드를 더하는 diff.
+9. **코드를 말로 바꾸는 표에서 모르는 코드.** `.get(코드)` 로 모르는 코드를 `None` 으로 버리면 '서버가 주지 않음(null)' 으로
+   읽힌다. 다른 표처럼 `.get(코드, 코드)` 로 원본을 남기거나, 버린다면 설명에 적었는가. 확인: 새 이름표 dict 를 쓰는 `.get(`
+   의 두 번째 인자와 Field 설명의 null 뜻을 대 본다. 예: `providers/zigbang/service/common.py:570` (2026-11-17).
+   언제: 서버 코드 → 한국어 이름표 dict 를 새로 두거나 값을 더하는 diff.
 
 ## `web` 웹 대응
 
@@ -140,9 +166,11 @@
 2. **호출부마다 달라야 할 인자에 기본값.** `narrow`·`max_limit` 처럼 호출부마다 값이 달라야 맞는 인자에 기본값을 두면 빠뜨려도
    조용히 틀린다. 설정을 dict 로 `**` 풀어 넘기지 않는다. 예: `providers/naver/service/common.py` `pagination_notes` 의 `narrow`.
    언제: 기본값이 있는 인자를 더하거나, 설정 dict 를 `**` 로 넘기는 `+` 줄.
-3. **닿지 않는 갈래·쓰지 않는 인자.** 부르는 곳이 사라진 갈래·예외 클래스, 받기만 하고 쓰지 않는 인자가 남지 않았는가.
-   예: `core/browser.py:448`.
-   언제: 코드를 지우거나, 부르는 곳을 옮기거나, 인자를 더한 diff.
+3. **닿지 않는 갈래·쓰지 않는 인자.** 부르는 곳이 사라진 갈래·예외 클래스, 받기만 하고 쓰지 않는 인자, 늘 같은 값(`[]`·`None`)만
+   돌려주게 된 반환값과 그 값을 받아 잇는 호출부가 남지 않았는가. 확인: 갈래를 지운 함수의 `return` 을 모두 보고 호출부를 grep 한다.
+   예: `core/browser.py:448`, `providers/zigbang/service/region.py` `region_notes` (안내 갈래를 지운 뒤 늘 `[]` 였고 호출부 여섯 곳이
+   이었다. 검사 함수 `settled_item` 으로 바꿨다, 2026-11-16).
+   언제: 코드를 지우거나, 부르는 곳을 옮기거나, 인자를 더한 diff, 함수의 갈래를 지워 돌려주는 값이 줄어든 diff.
 4. **따로 도는 CI 단계의 짝.** `.claude/` 처럼 문서로 분류돼 pytest 를 건너뛰는 파일을 지키는 테스트는 CI lint 단계에서 이름으로
    따로 돈다. 같은 종류의 테스트를 더했으면 그 단계 명령과 `workflow.md` 설명에도 더했는가. 확인: 새 테스트가 지키는 파일이
    `ci.yml` 의 `DOC_PATTERN` 에 드는지 보고 lint 단계의 `pytest` 명령과 대조한다.
@@ -158,10 +186,14 @@
 3. **바뀐 동작 근처의 주석·docstring.** 동작을 바꾼 diff 면 그 함수 docstring·주변 주석(요청 수, 예시, `리뷰 오탐` 주석)이 새
    동작과 맞는가. 예: `providers/naver/service/common.py:136` 위 주석 (단지 모드에도 붙는 hint 를 지역 검색에만 붙인다고 적었다, 2026-11-16).
    언제: 동작을 바꾼 diff 에서 그 함수의 docstring·주석이 함께 바뀌지 않았을 때.
-4. **CHANGELOG 절.** 문구·안내만 바뀐 줄은 `변경`, 받던 입력을 더는 받지 않거나 출력 꼴이 바뀐 줄은 `⚠️ 호환 깨짐` 이다
+4. **금액을 줄이지 않기.** 금액은 만원이고 반올림·버림·올림 없이 원 단위까지 낸다 ([금액·단위](output-contract.md#금액단위)). 금액
+   필드·라벨·안내 문구에 `round`·`floor`·`:g`·`.1f` 나 0.1만원으로 반올림하는 `won_to_manwon` 을 새로 쓰지 않았는가
+   (`won_to_manwon_exact`·`format_manwon` 을 쓴다). 거리·면적·비율은 줄여도 된다. 네이버·다방·당근의 기존 반올림은 #257 로 남겨 둔 것이라 지적하지 않는다.
+   언제: 금액(`*_manwon`)을 만들거나 글자로 쓰는 `+` 줄.
+5. **CHANGELOG 절.** 문구·안내만 바뀐 줄은 `변경`, 받던 입력을 더는 받지 않거나 출력 꼴이 바뀐 줄은 `⚠️ 호환 깨짐` 이다
    ([release.md](release.md) 버전 번호 규칙). 예: `CHANGELOG.md` 의 네이버 반경 안내 문구 줄 (호환 깨짐에 있었다, 2026-11-17).
    언제: `CHANGELOG.md` 에 줄을 더한 diff.
-5. **운용 규칙은 원문 한 곳.** 같은 규칙(작업자가 다르게 해도 되는 범위, 모델 기준, 검증 범위)을 `docs/development/agents.md`·
+6. **운용 규칙은 원문 한 곳.** 같은 규칙(작업자가 다르게 해도 되는 범위, 모델 기준, 검증 범위)을 `docs/development/agents.md`·
    `CLAUDE.md`·에이전트 정의·워크플로·skill 에 따로 옮겨 적지 않고 원문 한 곳을 가리키는가. 바꾼 규칙과 같은 주제의 다른 문장도
    함께 바뀌었는가. 예: 원문 `docs/development/agents.md` "지시서와 다르게 할 때" 문단과 그것을 가리키기만 하는
    `.claude/agents/coder.md:22` (2026-11-17 에는 이 규칙을 네 곳에 다른 말로 적어 `first` 묶음 이름만 막는 곳과 다른 묶음이 부르는

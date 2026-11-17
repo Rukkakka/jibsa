@@ -116,13 +116,41 @@ def m2_to_pyeong(m2: float | None) -> float | None:
 
 
 def won_to_manwon(won: float | int | str | None) -> float | None:
-    """원 단위 값을 만원 단위로 바꾼다. 빈 값이나 숫자가 아닌 문자열은 None."""
+    """원 단위 값을 만원 단위로 바꾼다. 빈 값이나 숫자가 아닌 문자열은 None.
+
+    0.1만원(1,000원)으로 반올림해 금액 규칙(원 단위까지)에 어긋난다. 네이버·다방·당근을 #257 에서
+    `won_to_manwon_exact` 로 옮긴 뒤 지운다. 새 코드는 쓰지 않는다.
+    """
     if won is None or won == '':
         return None
     try:
         return round(float(won) / 10_000, 1)
     except (TypeError, ValueError):
         return None
+
+
+def won_to_manwon_exact(won: float | int | str | None) -> float | None:
+    """원 단위 값을 만원 단위로 바꾼다. 금액은 원 단위까지 낸다 (375,700원 → 37.57).
+
+    빈 값이나 숫자가 아닌 문자열은 None. 만원 소수 넷째 자리가 1원이라, 1원 아래만 반올림해 부동소수점 찌꺼기를 지운다
+    (docs/development/output-contract.md 금액 절).
+    """
+    if won is None or won == '':
+        return None
+    try:
+        return round(float(won) / 10_000, 4)
+    except (TypeError, ValueError):
+        return None
+
+
+def format_manwon(value: float | int) -> str:
+    """만원 금액을 글자(라벨·안내 문구)로 쓴다. 반올림하지 않고 원 단위까지 쓴다 (37.57 → '37.57', 3.0 → '3').
+
+    `:g` 는 유효숫자 6자리라 12345.6789 를 '12345.7' 로 줄이므로 쓰지 않는다. 천 단위 쉼표는 넣지 않는다.
+    """
+    if isinstance(value, int):
+        return str(value)
+    return f'{round(value, 4):.4f}'.rstrip('0').rstrip('.')
 
 
 @overload
