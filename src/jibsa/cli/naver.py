@@ -32,10 +32,7 @@ from jibsa.cli.paging import (
 )
 from jibsa.core.errors import RegionNotFoundError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
-from jibsa.core.korean import (
-    is_ri_code,
-    quoted,
-)
+from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
     normalize_address,
     note,
@@ -69,7 +66,6 @@ from jibsa.providers.naver.service.redevelopment import (
 )
 from jibsa.providers.naver.service.region import (
     NaverRegion,
-    ga_dong_regions,
     legal_division_code_at,
     list_regions,
     resolve_complex_number,
@@ -275,28 +271,6 @@ def _whole_dong(region: NaverRegion, kind: str, radius: float | None) -> bool:
     return kind == '동' and radius is None and region.legal_division_code is not None
 
 
-def _merged_region(region: NaverRegion, dongs: list[NaverRegion]) -> NaverRegion:
-    """합쳐 찾은 '○가' 동들을 직방처럼 한 지역으로 보인다 (이름 '성수동1가·성수동2가', 중심은 처음 찾은 동, 코드 없음)."""
-    names = '·'.join(dong.name for dong in dongs)
-    parent = (region.address or '').rsplit(' ', 1)[0]
-    return NaverRegion(name=names, address=f'{parent} {names}'.strip(), lat=region.lat, lng=region.lng)
-
-
-def _radius_ga_note(region: NaverRegion, notes: list[str], radius: float | None) -> None:
-    """'○가' 로 나뉜 동(성수동 → 성수동1가)을 반경으로 찾았으면 '1가만 찾았다, 다른 곳은 각각 검색하라' 안내를 반경 안내로 바꾼다.
-
-    그 안내는 동 경계로 찾을 때의 말이다. 반경은 이웃한 2가도 덮어 각각 찾으라는 말이 틀린다 (2026-10-31 에이전트 검증:
-    '성수동 --radius 2' 재개발 구역 8곳에 성수동2가 구역 4곳이 들어 있는데 '성수동1가만 찾았습니다' 라고 안내했다).
-    """
-    if region.ga_note is None or region.ga_note not in notes or region.ga_base is None:
-        return
-    notes[notes.index(region.ga_note)] = note(
-        '범위',
-        f"{quoted(region.ga_base, '은/는')} '○가' 로 나뉜 동이라 {region.name} 중심에서 반경 {radius or DEFAULT_RADIUS_KM:g}km "
-        "안을 찾았습니다 (반경 안의 다른 '○가' 동도 들어 있습니다)",
-    )
-
-
 def _search_scope(region: NaverRegion, whole_dong: bool, radius: float | None) -> dict[str, object]:
     """어디를 찾았는지. 동 경계로 찾았으면 boundary(동 이름), 아니면 radius_km 다 (직방 search 와 같다)."""
     return {'boundary': region.name} if whole_dong else {'radius_km': radius or DEFAULT_RADIUS_KM}
@@ -387,8 +361,6 @@ def complexes_command(
         whole_dong = _whole_dong(region, kind, radius)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
-        else:
-            _radius_ga_note(region, notes, radius)
         result = list_area_complexes(
             client,
             region.lat,
@@ -542,8 +514,6 @@ def redevelopment_command(
         whole_dong = _whole_dong(region, kind, radius)
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
-        else:
-            _radius_ga_note(region, notes, radius)
         result = list_redevelopment_areas(
             client,
             region.lat,
@@ -1070,26 +1040,7 @@ def search_command(
         region, kind, notes = _resolve_location(client, query, lat, lng, radius)
         # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
         whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
-        if not whole_dong:
-            _radius_ga_note(region, notes, radius)
         dongs = [region]
-        if whole_dong and region.ga_base is not None:
-            # '○가' 로 나뉜 동(성수동)은 직방처럼 모두 찾아 합친다. 한 곳만 찾았다는 안내는 뺀다
-            dongs = ga_dong_regions(client, region)
-            # 동마다 --limit 을 나눠 쓰므로 동이 limit 보다 많으면 몫이 0 인 동이 생긴다. 직방 아파트처럼 뒤쪽 동은 찾지 않고
-            # 알린다 (예전에는 첫 동의 몫부터 0 이라 성수동 --limit 1 이 요청 없이 '0건이 전부' 를 냈다)
-            skipped = dongs[limit:]
-            dongs = dongs[:limit]
-            if len(dongs) + len(skipped) > 1 and region.ga_note in notes:
-                notes.remove(region.ga_note)
-                region = _merged_region(region, dongs)
-            if skipped:
-                notes.append(note(
-                    '일부',
-                    f"--limit({limit})이 함께 찾을 동 수({len(dongs) + len(skipped)})보다 작아 "
-                    f"{'·'.join(dong.name for dong in skipped)}는 찾지 않았습니다. "
-                    f'모두 찾으려면 --limit 을 {len(dongs) + len(skipped)} 이상으로 주세요',
-                ))
         if whole_dong:
             notes.append(WHOLE_DONG_NOTE.format(name=region.name))
 

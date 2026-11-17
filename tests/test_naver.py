@@ -21,7 +21,10 @@ from jibsa.providers.naver.service.listing import (
     list_complex_articles,
 )
 from jibsa.providers.naver.service.real_price import get_real_prices
-from jibsa.providers.naver.service.region import legal_division_code_at
+from jibsa.providers.naver.service.region import (
+    legal_division_code_at,
+    resolve_search_region,
+)
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
     MAX_CLUSTER_PAGE_REQUESTS,
@@ -740,3 +743,189 @@ def test_coordinate_lookup_failure_is_upstream_error_not_missing_dong() -> None:
     with client_returning({'isSuccess': False, 'detailCode': 'INTERNAL_ERROR'}) as client, pytest.raises(JibsaError) as exc:
         legal_division_code_at(client, 37.5, 127.0)
     assert exc.value.code == 'UPSTREAM_ERROR'
+
+
+# --- 위치·단지 이름 해석 -----------------------------------------------------------
+
+
+def _ok(result: object) -> dict:
+    return {'isSuccess': True, 'detailCode': 'success', 'result': result}
+
+
+def _ga_dong_address(full_address: str, code: str) -> dict:
+    return _ok({'type': 'jibun-address', 'jibunAddress': {'totalCount': 1, 'list': [{
+        'fullAddress': full_address, 'itemLevel': 8, 'x': 127.05, 'y': 37.54,
+        'addressElements': {
+            'sido': '서울특별시', 'sigugun': full_address.split()[1], 'dongmyun': full_address.split()[-1], 'bcode': code,
+        },
+    }]}})
+
+
+@pytest.mark.parametrize(
+    'query,found,dongs,expected',
+    [
+        # '성수동' 은 주소 검색이 성수동1가 한 곳만 준다. 첫 동을 고르거나 합치지 않고 '○가' 동을 모두 알린다
+        (
+            '성수동',
+            ('서울특별시 성동구 성수동1가', '1120011400'),
+            [('1120011400', '서울시 성동구 성수동1가'), ('1120011500', '서울시 성동구 성수동2가')],
+            ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가'],
+        ),
+        # 같은 앞 이름의 '○가' 동이 다른 구에 있어도 한 동만 조용히 찾지 않는다 (충정로1가는 중구, 2가·3가는 서대문구)
+        (
+            '충정로',
+            ('서울특별시 중구 충정로1가', '1114017000'),
+            [
+                ('1114017000', '서울시 중구 충정로1가'),
+                ('1141010200', '서울시 서대문구 충정로3가'),
+                ('1141010100', '서울시 서대문구 충정로2가'),
+            ],
+            ['서울특별시 중구 충정로1가', '서울특별시 서대문구 충정로2가', '서울특별시 서대문구 충정로3가'],
+        ),
+    ],
+)
+def test_ga_dong_base_name_is_ambiguous(
+    query: str, found: tuple[str, str], dongs: list[tuple[str, str]], expected: list[str],
+) -> None:
+    requests: list[httpx.Request] = []
+    autocomplete = _ok({'hasNextPage': False, 'totalCount': len(dongs), 'list': [
+        {
+            'legalDivisionNumber': code, 'legalDivisionName': name, 'legalDivisionLevelType': 'EUP',
+            'coordinates': {'xCoordinate': 127.05, 'yCoordinate': 37.54},
+        }
+        for code, name in dongs
+    ]})
+    overrides = {'/maps-search/address': _ga_dong_address(*found), '/search/autocomplete/legalDivisions': autocomplete}
+    with make_path_client(requests, overrides) as client:
+        with pytest.raises(JibsaError) as exc:
+            resolve_search_region(client, query)
+    assert exc.value.code == 'REGION_AMBIGUOUS'
+    assert exc.value.details == {'candidates': expected, 'candidate_count': len(expected)}
+
+
+def test_ga_dong_check_sees_total_count_when_has_next_page_is_empty() -> None:
+    # hasNextPage 가 비어 와도 totalCount 가 받은 수보다 크면 다음 쪽이 남았다 (`_has_more`). 첫 쪽에 '○가' 동이 없는
+    # '종로'(totalCount 90)에서 하위 지역 목록을 부르지 않으면 종로1가 하나만 남아 말없이 골랐다 (2026-11-16 리뷰)
+    from jibsa.providers.naver.service.region import _check_ga_dongs
+
+    requests: list[httpx.Request] = []
+    autocomplete = _ok({'hasNextPage': None, 'totalCount': 90, 'list': [
+        _legal_division('1111000000', '서울시 종로구'), _legal_division('1111010100', '서울시 종로구 청운동'),
+    ]})
+    sub_regions = _ok([
+        {'legalDivisionNumber': code, 'legalDivisionName': name, 'legalDivisionLevelType': 'EUP'}
+        for code, name in [('1111016400', '종로1가'), ('1111016500', '종로2가')]
+    ])
+    overrides = {'/search/autocomplete/legalDivisions': autocomplete, '/legalDivision/subInfoList': sub_regions}
+    with make_path_client(requests, overrides) as client:
+        with pytest.raises(JibsaError) as exc:
+            _check_ga_dongs(client, '종로', '종로', '1111016400', '서울시 종로구 종로1가')
+    assert exc.value.code == 'REGION_AMBIGUOUS'
+    assert exc.value.details['candidates'] == ['서울특별시 종로구 종로1가', '서울특별시 종로구 종로2가']
+
+
+def test_ga_dong_check_stops_on_single_dong_when_next_page_remains() -> None:
+    # 하위 지역 목록은 찾은 동의 시·구만 덮는다. 자동완성 다음 쪽이 남았는데 '○가' 동이 한 곳만 모이면 다음 쪽에 다른
+    # 시·구의 '○가' 동이 있을 수 있어 고르지 않는다 (2026-11-17 리뷰. 실제로 이런 앞 이름은 아직 찾지 못했다)
+    from jibsa.providers.naver.service.region import _check_ga_dongs
+
+    requests: list[httpx.Request] = []
+    autocomplete = _ok({'hasNextPage': True, 'totalCount': 7, 'list': [
+        _legal_division('1114000000', '서울시 중구'), _legal_division('1114010100', '서울시 중구 무교동'),
+    ]})
+    sub_regions = _ok([
+        {'legalDivisionNumber': code, 'legalDivisionName': name, 'legalDivisionLevelType': 'EUP'}
+        for code, name in [('1114010100', '무교동'), ('1114017500', '가나로1가')]
+    ])
+    overrides = {'/search/autocomplete/legalDivisions': autocomplete, '/legalDivision/subInfoList': sub_regions}
+    with make_path_client(requests, overrides) as client:
+        with pytest.raises(JibsaError) as exc:
+            _check_ga_dongs(client, '가나로', '가나로', '1114017500', '서울시 중구 가나로1가')
+    assert exc.value.code == 'REGION_AMBIGUOUS'
+    assert exc.value.details == {'candidates': ['서울특별시 중구 가나로1가'], 'candidate_count': None}
+
+
+def _legal_division(code: str, name: str, *, coordinates: bool = True) -> dict:
+    return {
+        'legalDivisionNumber': code, 'legalDivisionName': name, 'legalDivisionLevelType': 'EUP',
+        'coordinates': {'xCoordinate': 127.05, 'yCoordinate': 37.54} if coordinates else None,
+    }
+
+
+def _address_list(full_addresses: list[str], bcode: str = '') -> dict:
+    return _ok({'type': 'jibun-address', 'jibunAddress': {'totalCount': len(full_addresses), 'list': [
+        {'fullAddress': address, 'itemLevel': 8, 'x': 127.05, 'y': 37.54, 'addressElements': {'bcode': bcode}}
+        for address in full_addresses
+    ]}})
+
+
+@pytest.mark.parametrize(
+    'dongs,expected',
+    [
+        # 좌표 없는 후보도 센다. 먼저 빼면 웹에는 후보가 둘인데 남은 하나를 '후보가 하나뿐' 으로 골랐다
+        (
+            [
+                _legal_division('1100010100', '서울시 가구 가나동', coordinates=False),
+                _legal_division('1100010200', '서울시 가구 가다동'),
+            ],
+            'REGION_AMBIGUOUS',
+        ),
+        # 고른 동에 좌표가 없으면 다른 후보로 바꾸지 않고 멈춘다
+        ([_legal_division('1100010300', '서울시 가구 가동', coordinates=False)], 'REGION_NOT_FOUND'),
+        # 이름이 맞는 곳이 끝말만 다르면(가동·가면) 첫 끝말 하나를 고르지 않는다 (2026-11-16 리뷰: '신평' 신평동·신평면)
+        (
+            [_legal_division('1100010300', '서울시 가구 가동'), _legal_division('4400025000', '충남 가군 가면')],
+            'REGION_AMBIGUOUS',
+        ),
+    ],
+)
+def test_legal_division_counts_candidates_without_coordinates(dongs: list[dict], expected: str) -> None:
+    requests: list[httpx.Request] = []
+    autocomplete = _ok({'hasNextPage': False, 'totalCount': len(dongs), 'list': dongs})
+    overrides = {'/maps-search/address': _address_list([]), '/search/autocomplete/legalDivisions': autocomplete}
+    with make_path_client(requests, overrides) as client:
+        with pytest.raises(JibsaError) as exc:
+            resolve_search_region(client, '가')
+    assert exc.value.code == expected
+
+
+@pytest.mark.parametrize(
+    'same_name,bcode,expected',
+    [
+        # 이름 전체('신흥동')로 물으니 같은 이름 동이 여럿이면 그 후보로 멈춘다
+        (['대전광역시 동구 신흥동', '경기도 성남시 수정구 신흥동'], '', 'REGION_AMBIGUOUS'),
+        # 한 곳뿐이고 그곳이 고른 동이면 그 동이다
+        (['대전광역시 동구 신흥동'], '3011010600', '3011010600'),
+        # 한 곳뿐이어도 고른 동과 다른 곳이거나 bcode 가 비었으면 같은 곳인지 몰라 고르지 않는다 (2026-11-16 리뷰. 주소 검색은
+        # 자동완성에 없는 곳도 bcode 를 비워 섞어 준다)
+        (['경기도 부천시 오정구 신흥동'], '', 'REGION_AMBIGUOUS'),
+        (['경기도 안성시 신흥동'], '4155011200', 'REGION_AMBIGUOUS'),
+        # 주소 검색이 못 찾아 하나뿐인지 확인할 수 없으면 고르지 않는다 (2026-11-16 결정)
+        ([], '', 'REGION_AMBIGUOUS'),
+    ],
+)
+def test_named_dong_with_next_page_is_checked_by_full_name(same_name: list[str], bcode: str, expected: str) -> None:
+    # 이름이 맞는 동이 첫 쪽(5곳)에 하나뿐이어도 다음 쪽이 남았으면 뒤쪽에 같은 이름 동이 더 있을 수 있다
+    autocomplete = _ok({'hasNextPage': True, 'totalCount': 12, 'list': [
+        _legal_division('2817010100', '인천시 중구 신흥동1가'),
+        _legal_division('2817010200', '인천시 중구 신흥동2가'),
+        _legal_division('3011010600', '대전시 동구 신흥동'),
+    ]})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix('/front-api/v1')
+        if path == '/search/autocomplete/legalDivisions':
+            return httpx.Response(200, json=autocomplete)
+        # 주소 검색은 끝말 없는 '신흥' 을 못 찾고 이름 전체 '신흥동' 에만 답한다
+        return httpx.Response(200, json=_address_list(same_name if request.url.params.get('query') == '신흥동' else [], bcode))
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        if expected.startswith('REGION_'):
+            with pytest.raises(JibsaError) as exc:
+                resolve_search_region(client, '신흥')
+            assert exc.value.code == expected
+        else:
+            region, kind, _ = resolve_search_region(client, '신흥')
+            assert (region.legal_division_code, kind) == (expected, '동')
