@@ -737,6 +737,10 @@ class ZigbangAptItemModel(ResponseModel):
         int,
         Field(description='매물 ID', alias='itemId')
     ]
+    item_type: Annotated[
+        str | None,
+        Field(description='매물 종류 (offer 신규분양, partner 집주인이 내놓음, self_ad 중개사무소가 등록)', alias='itemType')
+    ] = None
     area_danji_id: Annotated[
         int | None,
         Field(description='단지 ID', alias='areaDanjiId')

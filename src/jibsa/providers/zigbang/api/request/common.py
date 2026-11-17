@@ -30,7 +30,7 @@ ZigbangOptionFilter = Literal[
 ]
 # 아파트 거래 유형. 원룸·빌라와 달리 영어 코드를 받고 한글을 보내면 400 이다.
 ZigbangAptTranType = Literal['trade', 'charter', 'rental']
-# 상세를 볼 수 있는 아파트 매물 출처. coalition 은 호갱노노 집주인(제휴) 매물이다
+# 상세를 볼 수 있는 아파트 매물 출처. coalition 은 제휴 매물이다 (집주인이 내놓은 매물과 신규분양, 응답의 itemType 으로 가른다)
 ZigbangAptItemSource = Literal['zigbang', 'coalition']
 
 # 직방은 배열 쿼리를 `salesTypes[0]=전세&salesTypes[1]=월세` 처럼 인덱스를 붙여 받는다.

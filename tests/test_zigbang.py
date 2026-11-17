@@ -23,6 +23,7 @@ from jibsa.providers.zigbang.api.request.listing import (
     ZigbangItemsVillasV1RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangItemCatalogModel,
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
@@ -41,6 +42,7 @@ from jibsa.providers.zigbang.service.apt import (
 from jibsa.providers.zigbang.service.common import (
     ZigbangRegion,
     ZigbangRoomConditions,
+    catalog_to_listing,
     summary_to_listing,
 )
 from jibsa.providers.zigbang.service.complex import search_station_complexes
@@ -394,6 +396,43 @@ def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> No
         get_listing(client, 1000001)
 
 
+def test_apt_listing_kind_from_item_type() -> None:
+    from jibsa.providers.zigbang.service.common import ZigbangAptListing
+    from jibsa.providers.zigbang.service.listing import apt_item_to_listing
+
+    # 신규분양 카드는 출처가 coalition 이라 coalition- 줄이 되고, 분양가가 집주인 호가로 읽히지 않게 종류를 알린다
+    card = load('locals_item_catalogs')['list'][0]
+    card['itemIdList'] = [{'itemSource': 'coalition', 'itemId': 3000009}]
+
+    def kind(item_type: str | None) -> str | None:
+        line = catalog_to_listing(ZigbangItemCatalogModel.model_validate({**card, 'itemType': item_type}), '서울특별시')
+        assert line is not None and line.id == 'coalition-3000009'
+        return line.listing_kind
+
+    assert kind('offer') == '신규분양' and kind('self_ad') == '중개사' and kind('partner') == '집주인'
+    assert kind('unknown_kind') == 'unknown_kind' and kind(None) is None
+
+    # 섞인 묶음은 직방 응답 순서 그대로라 id 는 묶음 종류·제목·층을 정하는 맨 앞 매물이다 (제휴가 앞이면 제휴 매물)
+    def mixed(id_list: list[dict[str, object]]) -> ZigbangAptListing:
+        item = ZigbangItemCatalogModel.model_validate({**card, 'itemType': 'partner', 'itemIdList': id_list})
+        line = catalog_to_listing(item, '서울특별시')
+        assert line is not None
+        return line
+
+    line = mixed([{'itemSource': 'coalition', 'itemId': 3000009}, {'itemSource': 'zigbang', 'itemId': 3000010}])
+    assert line.id == 'coalition-3000009' and line.listing_ids == ['coalition-3000009', '3000010']
+    assert line.listing_kind == '집주인'
+    # 맨 앞이 상세를 볼 수 없는 출처면 id 는 묶음 종류를 정한 매물이 아니라 종류를 모른다
+    line = mixed([{'itemSource': 'other', 'itemId': 3000009}, {'itemSource': 'zigbang', 'itemId': 3000010}])
+    assert line.id == '3000010' and line.listing_kind is None
+
+    # 상세·묶음 줄도 같은 값이고, 직방이 종류를 주지 않았으면 모름(null)이다
+    apt = ZigbangItemCatalogsItemsResponseModel.model_validate(load('item_catalogs_items')).item
+    assert apt_item_to_listing(apt, 'zigbang').model_dump()['listing_kind'] == '중개사'
+    apt.item_type = None
+    assert apt_item_to_listing(apt, 'zigbang').model_dump()['listing_kind'] is None
+
+
 def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
     from jibsa.providers.zigbang.service.listing import apt_item_to_listing
 
@@ -406,7 +445,7 @@ def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
 
 def test_non_apt_detail_omits_apt_only_fields() -> None:
     dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
-    assert 'complex_name' not in dumped and 'supply_area_m2' not in dumped
+    assert 'complex_name' not in dumped and 'supply_area_m2' not in dumped and 'listing_kind' not in dumped
 
 
 # --- 상가 --------------------------------------------------------------------
@@ -446,7 +485,7 @@ def test_stay_detail_not_reviewed_is_unavailable() -> None:
         get_any_listing(client, 'stay-5001')
 
 
-# --- 아파트 제휴(호갱노노 집주인) 매물 ----------------------------------------------
+# --- 아파트 제휴(집주인·신규분양) 매물 ---------------------------------------------
 
 
 def test_coalition_listing_gone_is_unavailable() -> None:

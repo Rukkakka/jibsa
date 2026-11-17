@@ -222,7 +222,8 @@ def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
 
 def apt_catalog_url(area_ho_id: int, tran_type: str) -> str:
     # 같은 호를 여러 중개사가 올린 묶음 화면. 웹 아파트 카드를 누르면 가격 범위(isPriceRange)와 상관없이 가는 곳이다
-    # (신규분양 카드만 분양 화면으로 간다. 2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress)
+    # (2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress). 신규분양 카드는 누르면 그 매물 상세 화면으로 가지만
+    # (`onPressOfferItem` → `HomeAptItemDetail`), 이 묶음 화면도 그 매물 1건과 '일반 매매가 아닌 신규분양 매물입니다' 를 보여 준다
     return f'https://www.zigbang.com/home/apt/item-catalog?areaHoId={area_ho_id}&tranType={tran_type}'
 
 
@@ -556,6 +557,19 @@ DANJI_CATALOG_PAGE_SIZE: int = 50
 APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
 
 
+# 아파트 카드·상세의 매물 종류 코드(`itemType`) → 웹 카드가 보여 주는 말. 신규분양은 가격이 분양가다
+APT_LISTING_KIND_LABELS: dict[str, str] = {'offer': '신규분양', 'partner': '집주인', 'self_ad': '중개사'}
+APT_LISTING_KIND_DESCRIPTION: str = (
+    '매물 종류: 신규분양(분양 매물, 가격은 분양가)·집주인(집주인이 내놓은 매물)·중개사(중개사무소가 등록한 매물). '
+    '모르는 코드는 직방 코드 그대로, 직방이 주지 않으면 null (묶음 줄은 묶음 맨 앞 매물이 상세를 볼 수 없는 출처라 id 가 맨 앞 매물이 아닐 때도 null)'
+)
+
+
+def apt_listing_kind(item_type: str | None) -> str | None:
+    """아파트 매물 종류 코드를 말로 바꾼다. 코드가 없으면 모름(None), 모르는 코드는 직방 코드 그대로 둔다."""
+    return None if item_type is None else APT_LISTING_KIND_LABELS.get(item_type, item_type)
+
+
 class ZigbangAptListing(Listing):
     """직방 아파트 매물. 같은 호·거래 유형의 매물(중개사별)을 하나로 묶은 카탈로그 한 건이다."""
 
@@ -587,6 +601,10 @@ class ZigbangAptListing(Listing):
         int | None,
         Field(description='같은 호를 올린 매물(중개사) 수')
     ] = None
+    listing_kind: Annotated[
+        str | None,
+        Field(description=APT_LISTING_KIND_DESCRIPTION)
+    ] = None
 
 
 # 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다
@@ -610,17 +628,27 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
     """카탈로그 한 건을 `ZigbangAptListing` 으로 바꾼다. 상세를 볼 수 있는 매물 ID 가 없으면 None.
 
     `depositMin` 은 매매면 매매가, 전세·월세면 보증금이다. 묶인 매물 중 상세를 볼 수 있는 것(직방 매물, 제휴
-    (호갱노노 집주인) 매물은 `coalition-123` ID)을 직방 응답(`itemIdList`) 순서 그대로
+    매물 = 집주인이 내놓은 매물이나 신규분양, 제휴는 `coalition-123` ID)을 직방 응답(`itemIdList`) 순서 그대로
     `listing_ids` 에 담고 `id` 는 그 맨 앞이다. 둘 다 `zigbang listing` 으로 상세를 볼 수 있다. 그 밖의 출처는 상세를
     볼 수 없어 뺀다. 출처로 다시 정렬하지 않는 까닭은 묶음의 `itemType`·`itemTitle`·`floor` 가 모두 `itemIdList` 맨 앞
     매물의 값이라, 응답 순서를 지켜야 `id` 가 그 값들과 같은 매물을 가리키기 때문이다 (2026-11-17 실측: 서패동(41480119)
     묶음 `itemIdList: [coalition 254486, zigbang 50026248]` 에 `itemType: partner`·숫자 층·제목이 모두 제휴 매물 것이었다).
+    응답 맨 앞이 상세를 볼 수 없는 출처라 `id` 가 맨 앞 매물이 아니면 묶음 `itemType` 은 `id` 매물의 종류가 아니므로
+    `listing_kind` 는 null(모름)이다.
 
     `isPriceRange` 가 true 면 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다 (웹 카드는 '최저가 ~').
-    웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면으로 가므로(신규분양 카드만 분양 화면, 2026-11-15 번들
-    ItemCard_AptItemCatalogCard 의 onPress) `url` 도 호 ID 가 있으면 늘 그 화면이다. jibsa 는 목록 요청에
-    `offerItemCount` 를 보내지 않아 신규분양 카드가 오지 않는다. 호 ID 가 없으면 묶음 화면을 만들 수 없어 `id` 매물의
-    웹 페이지다. 묶음 화면이 받는 호 ID·거래 유형은 `catalog_id` 로 낸다.
+    웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면으로 가므로(2026-11-15 번들 ItemCard_AptItemCatalogCard 의
+    onPress) `url` 도 호 ID 가 있으면 늘 그 화면이다. 웹 신규분양 카드는 누르면 그 매물의 상세 화면으로 가지만
+    (`onPressOfferItem` → `HomeAptItemDetail`), 분양 줄의 묶음 화면 주소도 그 매물 1건과 '일반 매매가 아닌 신규분양
+    매물입니다' 를 보여 줘 사실이 어긋나지 않는다. 호 ID 가 없으면 묶음 화면을 만들 수 없어 `id` 매물의 웹 페이지다.
+    묶음 화면이 받는 호 ID·거래 유형은 `catalog_id` 로 낸다.
+
+    지역 목록(`/apt/locals/{코드}/item-catalogs`)에는 신규분양 카드가 일반 매물과 같은 목록에 섞여 온다. 서버는
+    `includeOfferItem` 이 없으면 `true` 와 똑같이 분양을 넣어 주고(웹 기본 화면의 '신규 분양 포함' 켠 상태와 같다),
+    분양 카드도 `count`·`offset` 에 든다 (2026-11-17 실측: 파주시 41480 은 값 없음·true 608건, false 600건). 분양 카드는
+    `itemType: offer` 에 출처가 `coalition` 이라 일반 제휴 매물처럼 `coalition-` 줄이 되고 `listing_kind` 가 '신규분양'
+    이다 (가격은 분양가). `offerItemCount` 는 단지 요약(`/apt/danjis/{id}/item-catalogs/summary`)의 파라미터라 이 목록과
+    상관없다.
     """
     entries = [
         (entry.item_id, source)
@@ -631,6 +659,8 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         return None
     item_id, item_source = entries[0]
     listing_ids = [apt_listing_id(*entry) for entry in entries]
+    # 묶음 종류는 응답 맨 앞 매물의 값이라, 그 매물이 id 가 아니면(상세를 볼 수 없는 출처) id 매물의 종류를 모른다
+    leads_bundle = apt_item_source(catalog.item_id_list[0].item_source) is not None
     is_sale = trade_type == '매매'
     return ZigbangAptListing(
         source='zigbang',
@@ -657,6 +687,7 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         catalog_id=apt_catalog_id(catalog.area_ho_id, catalog.tran_type) if catalog.area_ho_id is not None else None,
         listing_ids=listing_ids,
         listing_count=catalog.item_count,
+        listing_kind=apt_listing_kind(catalog.item_type) if leads_bundle else None,
     )
 
 

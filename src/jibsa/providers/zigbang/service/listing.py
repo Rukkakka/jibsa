@@ -67,6 +67,7 @@ from jibsa.providers.zigbang.api.response.listing import (
     ZigbangManageCostUsageFeeModel,
 )
 from jibsa.providers.zigbang.service.common import (
+    APT_LISTING_KIND_DESCRIPTION,
     MAX_LIST_LIMIT,
     NEAREST_SCHOOLS,
     ROOM_TYPE_FILTER_BY_LABEL,
@@ -83,6 +84,7 @@ from jibsa.providers.zigbang.service.common import (
     apt_item_source,
     apt_item_url,
     apt_listing_id,
+    apt_listing_kind,
     drop_unused_scope,
     excluded_notes,
     item_url,
@@ -118,7 +120,7 @@ PROPERTY_TYPES: tuple[ZigbangPropertyType, ...] = ('원룸', '오피스텔', '�
 BUILDING_LOOKUP_ERRORS: tuple[type[Exception], ...] = SCHOOL_LOOKUP_ERRORS
 # 단지·건물이 있는 유형(아파트·오피스텔)의 상세에만 있는 필드와 아파트 상세에만 있는 필드. 없는 유형은 키를 뺀다
 COMPLEX_DETAIL_FIELDS: frozenset[str] = frozenset({'complex_id', 'complex_name'})
-APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2'})
+APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2', 'listing_kind'})
 # 방 하나짜리 구조. 원룸 유형은 이 구조만 서버에 요청한다 (직방 원룸 목록에는 투룸 오피스텔도 섞여 온다)
 ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
@@ -228,7 +230,7 @@ class ZigbangDetailedListing(ZigbangListing):
 
 
 class ZigbangListingDetail(ListingDetail):
-    """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, `supply_area_m2` 는 아파트에만 있다."""
+    """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, `supply_area_m2`·`listing_kind` 는 아파트에만 있다."""
 
     residence_type: Annotated[
         str | None,
@@ -261,6 +263,10 @@ class ZigbangListingDetail(ListingDetail):
     schools: Annotated[
         list[str] | None,
         Field(description='배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩 (원룸·빌라·오피스텔만, 아파트는 complex 에서). 모르면 null')
+    ] = None
+    listing_kind: Annotated[
+        str | None,
+        Field(description=APT_LISTING_KIND_DESCRIPTION)
     ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
@@ -504,7 +510,7 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
 
 
 def get_apt_listing(client: ZigbangClient, item_id: int, item_source: ZigbangAptItemSource = 'zigbang') -> ZigbangListingDetail:
-    """아파트 매물(직방, 또는 `coalition` 이면 호갱노노 집주인 제휴 매물) 하나의 상세를 아파트 상세(`/apt/item-catalogs/items`) 1회로 조회한다.
+    """아파트 매물(직방, 또는 `coalition` 이면 집주인이 내놓았거나 신규분양인 제휴 매물) 하나의 상세를 아파트 상세(`/apt/item-catalogs/items`) 1회로 조회한다.
 
     웹 아파트 매물 화면(`/home/apt/item/v2/{id}/{출처}/0`)이 부르는 상세는 이것 하나다 (2026-11-15 실측). 주거 상세·`/v3/items` 는
     아파트에 404 다. 상태 필드가 없고 내려간 매물은 404 다. 이 상세는 주거 상세가 아파트 매물이라고 알린 숫자 ID 나
@@ -587,6 +593,7 @@ def apt_item_to_listing(
         supply_area_m2=apt.size_contract_m2,
         total_parking_count=apt.parking_count,
         direction_criterion=criterion,
+        listing_kind=apt_listing_kind(apt.item_type),
     )
 
 
