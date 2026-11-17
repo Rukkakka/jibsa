@@ -1,6 +1,6 @@
 ---
 name: doc-writer
-description: jibsa 문서(docs/, AGENTS.md, CHANGELOG)를 코드 변경에 맞춰 고치는 작업자. 여러 사실을 종합해 "웹과 다른 점" 같은 절을 쓸 때 쓴다. 모델·effort 는 CLAUDE.md 의 기준으로 호출 때 정한다.
+description: jibsa 문서(docs/, AGENTS.md, CHANGELOG)를 코드 변경에 맞춰 고치는 작업자. 주 에이전트가 항목으로 모아 준 사실로 "웹과 다른 점" 같은 절을 쓸 때도 쓴다. 모델·effort 는 CLAUDE.md 의 기준으로 호출 때 정한다.
 tools: Bash, Read, Edit, Write, Glob, Grep
 model: sonnet
 effort: high
