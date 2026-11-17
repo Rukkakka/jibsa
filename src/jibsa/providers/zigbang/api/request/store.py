@@ -69,7 +69,7 @@ class ZigbangStoreArticleStoresV2RequestPayloadModel(RequestModel):
     ] = None
     region_codes: Annotated[
         list[Annotated[str, Field(pattern=r'^\d{10}$')]] | None,
-        Field(min_length=1, description='검색할 법정동 코드(10자리) 목록. 웹 화면이 보내는 곳은 확인하지 못했다', alias='지역')
+        Field(min_length=1, description='검색할 법정동 코드(10자리) 목록. 웹은 업종으로 찾기 화면이 주소 검색 결과의 코드를 보낸다 (2026-11-17 번들)', alias='지역')
     ] = None
     domain: Annotated[
         Literal['zigbang'],
