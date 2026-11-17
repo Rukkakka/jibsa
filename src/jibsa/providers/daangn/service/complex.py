@@ -375,7 +375,7 @@ def _web_school_card(items: list[DaangnNearbySchoolModel]) -> list[DaangnNearbyS
     near = {id(item) for item in ordered if (walk := walks[id(item)]) is not None and _web_minutes(walk) <= 20}
     if not near and ordered:
         # 웹 `[...e].sort(G).slice(0,1)`: 시간, 같으면 거리 순 (모르면 뒤). 모두 모르면 안정 정렬이라 첫 학교. 웹 비교(`R`)는
-        # `e ?? 2**53-1` 이라 0 분·0 m 도 값이다. `or inf` 로 두면 거리 0 이 '모름' 이 됐다 (2026-11-12 리뷰, 2026-11-v73 번들 대조)
+        # `e ?? 2**53-1` 이라 0 분·0 m 도 값이다. `or inf` 로 두면 거리 0 이 '모름' 이 됐다 (2026-11-12 리뷰, 웹 배포 2026-11-v73 번들 대조)
         nearest = min(ordered, key=lambda item: (_or_inf(walks[id(item)]), _or_inf(_school_distance(item, False))))
         near = {id(nearest)}
     kept = [
