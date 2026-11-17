@@ -161,6 +161,12 @@
 4. **CHANGELOG 절.** 문구·안내만 바뀐 줄은 `변경`, 받던 입력을 더는 받지 않거나 출력 꼴이 바뀐 줄은 `⚠️ 호환 깨짐` 이다
    ([release.md](release.md) 버전 번호 규칙). 예: `CHANGELOG.md` 의 네이버 반경 안내 문구 줄 (호환 깨짐에 있었다, 2026-11-17).
    언제: `CHANGELOG.md` 에 줄을 더한 diff.
+5. **운용 규칙은 원문 한 곳.** 같은 규칙(작업자가 다르게 해도 되는 범위, 모델 기준, 검증 범위)을 `docs/development/agents.md`·
+   `CLAUDE.md`·에이전트 정의·워크플로·skill 에 따로 옮겨 적지 않고 원문 한 곳을 가리키는가. 바꾼 규칙과 같은 주제의 다른 문장도
+   함께 바뀌었는가. 예: 원문 `docs/development/agents.md` "지시서와 다르게 할 때" 문단과 그것을 가리키기만 하는
+   `.claude/agents/coder.md:22` (2026-11-17 에는 이 규칙을 네 곳에 다른 말로 적어 `first` 묶음 이름만 막는 곳과 다른 묶음이 부르는
+   이름까지 막는 곳이 갈렸고, `doc-writer` 를 Sonnet 고정에 넣으며 바로 위 "종합 문서는 Opus" 를 남겼다).
+   언제: `.claude/`·`CLAUDE.md`·`AGENTS.md`·`docs/development/agents.md` 를 고친 diff.
 
 ## 지적하지 말 것
 
