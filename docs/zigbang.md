@@ -171,7 +171,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 
 `region`(찾은 동·구), `local_code`(조회한 직방 지역 코드 하나), `total`, `returned`, `has_more`(받지 않은 매물이 남았는지), `next`(더 있을 때만), `listings`를 준다. 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 직방 목록 순서로 앞 결과 다음부터 받는다. 거리(`distance_km`)는 없다.
 
-매물 한 줄은 같은 호·거래 유형을 올린 여러 매물을 직방 웹 카드처럼 묶은 것이다 (`listing_count` 는 묶인 매물 수). `listing_ids` 에 그중 `listing` 으로 상세를 볼 수 있는 ID 가 모두 오고, `id` 는 그 맨 앞이다 (직방 매물 먼저, 없으면 제휴 매물 `coalition-123`). `url` 은 직방 웹 카드를 누르면 가는 그 호의 묶음 화면(중개사별 매물 목록)이다. 묶인 매물끼리 가격이 다르면 `is_price_range: true` 이고, 이때 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다. 매물별 가격은 `catalog_id` 를 [`catalog`](#10-catalog--아파트-같은-호-묶음의-매물-전부)에 넘겨 한 번에 본다 (`listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). 직방이 호 ID 를 주지 않은 줄은 `catalog_id` 가 `null` 이고 `url` 은 `id` 매물의 직방 웹 페이지다. 이때 묶음은 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 하나씩 본다.
+매물 한 줄은 같은 호·거래 유형을 올린 여러 매물을 직방 웹 카드처럼 묶은 것이다 (`listing_count` 는 묶인 매물 수). `listing_ids` 에 그중 `listing` 으로 상세를 볼 수 있는 ID 가 모두 오고, `id` 는 그 맨 앞이다 (직방이 준 순서 그대로라, 직방 웹 카드가 대표로 보여 주는 매물이다. 제휴 매물이면 `coalition-123`). 줄의 제목(`title`)·층(`floor`)은 `id` 매물의 값이다. `url` 은 직방 웹 카드를 누르면 가는 그 호의 묶음 화면(중개사별 매물 목록)이다. 묶인 매물끼리 가격이 다르면 `is_price_range: true` 이고, 이때 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다. 매물별 가격은 `catalog_id` 를 [`catalog`](#10-catalog--아파트-같은-호-묶음의-매물-전부)에 넘겨 한 번에 본다 (`listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). 직방이 호 ID 를 주지 않은 줄은 `catalog_id` 가 `null` 이고 `url` 은 `id` 매물의 직방 웹 페이지다. 이때 묶음은 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 하나씩 본다.
 
 **오류와 대응**
 

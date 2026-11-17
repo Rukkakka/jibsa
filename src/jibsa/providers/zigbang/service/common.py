@@ -552,7 +552,7 @@ def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangIt
 
 
 DANJI_CATALOG_PAGE_SIZE: int = 50
-# 상세를 볼 수 있는 아파트 매물 출처 (앞이 우선)
+# 상세를 볼 수 있는 아파트 매물 출처
 APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
 
 
@@ -609,10 +609,12 @@ def apt_item_source(name: str | None) -> ZigbangAptItemSource | None:
 def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> ZigbangAptListing | None:
     """카탈로그 한 건을 `ZigbangAptListing` 으로 바꾼다. 상세를 볼 수 있는 매물 ID 가 없으면 None.
 
-    `depositMin` 은 매매면 매매가, 전세·월세면 보증금이다. 묶인 매물 중 직방 매물을 먼저 쓰고, 없으면 제휴
-    (호갱노노 집주인) 매물을 `coalition-123` ID 로 쓴다. 둘 다 `zigbang listing` 으로 상세를 볼 수 있다.
-    그 밖의 출처는 상세를 볼 수 없어 뺀다. 상세를 볼 수 있는 ID 전부는 같은 순서(직방 먼저, 그다음 제휴,
-    같은 출처 안에서는 응답 순서)로 `listing_ids` 에 담고 `id` 는 그 맨 앞이다.
+    `depositMin` 은 매매면 매매가, 전세·월세면 보증금이다. 묶인 매물 중 상세를 볼 수 있는 것(직방 매물, 제휴
+    (호갱노노 집주인) 매물은 `coalition-123` ID)을 직방 응답(`itemIdList`) 순서 그대로
+    `listing_ids` 에 담고 `id` 는 그 맨 앞이다. 둘 다 `zigbang listing` 으로 상세를 볼 수 있다. 그 밖의 출처는 상세를
+    볼 수 없어 뺀다. 출처로 다시 정렬하지 않는 까닭은 묶음의 `itemType`·`itemTitle`·`floor` 가 모두 `itemIdList` 맨 앞
+    매물의 값이라, 응답 순서를 지켜야 `id` 가 그 값들과 같은 매물을 가리키기 때문이다 (2026-11-17 실측: 서패동(41480119)
+    묶음 `itemIdList: [coalition 254486, zigbang 50026248]` 에 `itemType: partner`·숫자 층·제목이 모두 제휴 매물 것이었다).
 
     `isPriceRange` 가 true 면 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다 (웹 카드는 '최저가 ~').
     웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면으로 가므로(신규분양 카드만 분양 화면, 2026-11-15 번들
@@ -620,14 +622,10 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
     `offerItemCount` 를 보내지 않아 신규분양 카드가 오지 않는다. 호 ID 가 없으면 묶음 화면을 만들 수 없어 `id` 매물의
     웹 페이지다. 묶음 화면이 받는 호 ID·거래 유형은 `catalog_id` 로 낸다.
     """
-    viewable = [
+    entries = [
         (entry.item_id, source)
         for entry in catalog.item_id_list if (source := apt_item_source(entry.item_source)) is not None
     ]
-    # 출처 우선순위대로 (같은 출처 안에서는 응답 순서 그대로, sorted 는 순서를 지킨다).
-    # 리뷰 오탐 (2026-11-15): 거르기와 출처순 정렬을 이중 루프 하나로 합치자는 지적. 같은 규칙이 두 곳에 있는 것이 아니고
-    # 출력도 같다 (출처 우선, 같은 출처 안은 응답 순)
-    entries = sorted(viewable, key=lambda entry: APT_ITEM_SOURCES.index(entry[1]))
     trade_type = TRADE_BY_APT_TRAN_TYPE.get(catalog.tran_type)
     if not entries or trade_type is None:
         return None
