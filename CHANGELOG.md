@@ -63,6 +63,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `search listings apt` 의 `--radius` 를 뺌. 역·학교 이름과 `--lat/--lng` 는 반경 안 단지를 훑는 대신 그 위치가 속한 동의 매물 목록을 직방 웹 지도의 '○○동 주변 매물보기' 와 같게 준다 (역 주변 단지는 새 `search complexes`). 시·도 이름은 반경으로 찾지 않고 `REGION_NOT_FOUND` 다. `성수동` 처럼 `○가` 로 나뉜 동과 성남시처럼 구가 있는 시는 목록을 합치지 않고 `REGION_AMBIGUOUS` 로 후보(`성수동1가`·`성남시 분당구` 등)를 알린다. `local_code` 는 늘 코드 하나다. `--radius` 를 주던 쪽은 지우고 동·구 이름이나 `search complexes` 를 쓴다 (#277)
 - 직방에서 같은 이름의 역·학교(양평역)를 첫 곳으로 찾고 `notes` 로 알리던 것을 없애고 `REGION_AMBIGUOUS` 로 후보를 알림. `hint` 대로 `영등포구 양평역`·`창천동 신촌역` 처럼 구·동 이름을 앞에 붙이면 그 후보로 찾는다 (#271)
 - 직방 상가(`search listings store`·`listing store-…`)에서 업종이 사무실이고 직방이 권리금을 주지 않은 매물의 `key_money_manwon` 이 `null`(모름) 대신 키가 없음(해당 없음)이 됨. 직방 웹 상세도 사무실이면 권리금 줄을 숨긴다. 이 키를 바로 읽던 쪽은 키가 없을 때를 처리한다. 사무실이 아니거나 직방이 값을 준 매물은 그대로다 (`0` 은 무권리, 사무실이 아닌 매물의 값 없음은 `null`). 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠지고, 확인한 후보에서 뺀 건수를 `[제외]` 로 알린다 (#297)
+- 직방 단기임대 `listing stay-…` 의 `refund_policy` 값 `보통` 을 직방 웹 위약금 정보의 이름 `표준` 으로, `parking` 값 `LIMITED` 를 웹 표기 `제한적 가능` 으로 바꿈 (주차 요금을 알리면 `가능` 처럼 `제한적 가능 (유료)` 로 붙는다). `보통`·`LIMITED` 로 비교하던 읽는 쪽은 새 값으로 고친다 (#299)
 - 라이브러리로 쓸 때: `jibsa.providers.zigbang` 의 `search_apt_listings_near`·`ZigbangAptNearSearchResult`·`attach_stay_period_costs` 를 뺌. `search_listings` 의 `offset` 은 이어 받기 표 `start`(`{'offsets': {종류: 자리}}`)로, `search_apt_listings` 는 `extra_regions` 없이 지역 하나만 받고, `resolve_apt_region` 은 (지역, 안내) 두 값을 돌려준다. `search_store_listings` 는 `boundary` 대신 동 목록 `dongs` 를 받고, `get_stay_listing` 에는 `pet` 이 없다 (#272, #273, #275, #277)
 
 ### 추가

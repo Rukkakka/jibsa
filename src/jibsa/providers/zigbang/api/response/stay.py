@@ -313,7 +313,7 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
     ] = None
     parking_type: Annotated[
         str | None,
-        Field(description='주차 (AVAILABLE, UNAVAILABLE ...)', alias='parkingType')
+        Field(description='주차 (AVAILABLE, LIMITED, UNAVAILABLE)', alias='parkingType')
     ] = None
     parking_fee: Annotated[
         str | None,

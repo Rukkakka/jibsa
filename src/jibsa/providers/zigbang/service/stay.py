@@ -148,7 +148,7 @@ STAY_DISCOUNT_TYPE_BY_LABEL: dict[str, ZigbangStayDiscountType] = {
 }
 STAY_REFUND_POLICY_LABELS: dict[str, str] = {
     'FLEXIBLE': '유연',
-    'STANDARD': '보통',
+    'STANDARD': '표준',
     'STRICT': '엄격',
 }
 STAY_GEOHASH_PRECISION: int = 5
@@ -251,7 +251,7 @@ class ZigbangStayListingDetail(ListingDetail):
     ] = None
     refund_policy: Annotated[
         str | None,
-        Field(description='환불 정책 (유연, 보통, 엄격)')
+        Field(description='환불 정책 (유연, 표준, 엄격. 직방 웹 위약금 정보의 이름)')
     ] = None
 
     available: Annotated[
@@ -741,11 +741,18 @@ def _stay_summaries(
 
 
 def stay_parking(detail: ZigbangGuestItemsResponseModel) -> str | None:
+    """주차 가능 여부를 직방 웹 표기로 바꾼다 (LIMITED 는 '제한적 가능', 2026-11-17 번들).
+
+    요금(FREE 무료·PAID 유료)은 웹 상세(`AdditionalInfoSection`)처럼 가능(AVAILABLE)·제한적 가능(LIMITED) 둘 다에 붙인다.
+    모르는 코드는 그대로 낸다.
+    """
     if detail.parking_type is None:
         return None
-    available = {'AVAILABLE': '가능', 'UNAVAILABLE': '불가'}.get(detail.parking_type, detail.parking_type)
+    available = {'AVAILABLE': '가능', 'LIMITED': '제한적 가능', 'UNAVAILABLE': '불가'}.get(
+        detail.parking_type, detail.parking_type,
+    )
     fee = {'PAID': '유료', 'FREE': '무료'}.get(detail.parking_fee or '')
-    return f'{available} ({fee})' if fee and available == '가능' else available
+    return f'{available} ({fee})' if fee and detail.parking_type in ('AVAILABLE', 'LIMITED') else available
 
 
 def stay_detail_to_listing(
