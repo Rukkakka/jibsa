@@ -1,11 +1,11 @@
 export const meta = {
   name: 'implement-bundles',
-  description: '사용자가 허락한 구현 계획의 묶음을 jibsa-coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 jibsa-docs 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
+  description: '사용자가 허락한 구현 계획의 묶음을 coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
   whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에 고칠 함수·부르는 곳·바뀌면 안 되는 동작, 문서에 들어갈 사실을 적는다 (CLAUDE.md, docs/development/agents.md "맡길 때 지시서에 넣는 것"). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
     { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지, 소스끼리는 동시에' },
-    { title: '문서', detail: '모든 묶음이 끝난 뒤 jibsa-docs 하나' },
+    { title: '문서', detail: '모든 묶음이 끝난 뒤 doc-writer 하나' },
   ],
 }
 
@@ -111,10 +111,15 @@ const REPORT = {
       description: '바꾼 동작마다 실제 조회 1건 (지시가 실제 조회를 하지 말라고 했으면 빈 목록)',
       items: { type: 'object', properties: { command: { type: 'string' }, keyFields: { type: 'string', description: '응답의 핵심 필드만' } }, required: ['command', 'keyFields'] },
     },
+    deviations: {
+      type: 'array',
+      description: '지시서와 다르게 한 것 (docs/development/agents.md "지시서와 다르게 할 때" 의 작은 차이). 없으면 빈 목록',
+      items: { type: 'object', properties: { what: { type: 'string', description: '지시서는 무엇이었고 실제로는 어떻게 했는지' }, why: { type: 'string' } }, required: ['what', 'why'] },
+    },
     notDone: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, why: { type: 'string' } }, required: ['what', 'why'] } },
     othersToTouch: { type: 'array', items: { type: 'string' }, description: '네 files 밖이라 고치지 않은 곳: "파일 — 고칠 내용" (문서, CHANGELOG, 감시 목록 GROUPS 등)' },
   },
-  required: ['changed', 'checks', 'notDone', 'othersToTouch'],
+  required: ['changed', 'checks', 'deviations', 'notDone', 'othersToTouch'],
 }
 
 const allFiles = [...new Set(bundles.flatMap(b => b.files.map(norm)))]
@@ -129,6 +134,7 @@ const coderPrompt = b => [
   '고칠 파일에 없으면 고치지 말고 othersToTouch 에 "파일 — 고칠 내용" 으로 적는다. 다른 묶음과 같은 파일을 덮어쓰지 않기 위해서다.',
   `다른 묶음이 동시에 다른 파일을 고칠 수 있다: ${allFiles.filter(f => !b.files.map(norm).includes(f)).join(', ') || '없음'}. ruff·mypy 오류가 네 파일 밖에서 나면 고치지 말고 보고에 적는다.`,
   b.first ? '같은 소스의 다른 묶음이 이 묶음이 만드는 함수·상수를 쓴다. 지시서에 정한 이름·인자·뜻을 바꾸지 않는다.' : '',
+  '지시서대로 할 수 없거나 다르게 하는 편이 맞아 보이면 docs/development/agents.md 의 "지시서와 다르게 할 때" 문단을 따른다. 그 문단의 작은 차이는 deviations 에, 하지 않은 것은 notDone 에 적는다.',
   a.workerLiveChecks !== true
     ? '실제 조회(.venv/bin/jibsa)는 하지 않는다. 주 에이전트가 묶음을 띄우기 전에 남긴 출력과 고친 뒤 출력을 비교한다 (docs/development/agents.md "검증 분담"). 검증은 ruff·mypy·바꾼 부분 테스트만 한다.'
     : b.source === 'common'
@@ -148,7 +154,7 @@ const runOne = async (b, phaseTitle) => {
   const r = await tryAgent(coderPrompt(b), {
     label: `구현:${b.name}`,
     phase: phaseTitle,
-    agentType: 'jibsa-coder',
+    agentType: 'coder',
     model: MODEL,
     effort: EFFORTS.includes(b.effort) ? b.effort : 'high',
     schema: REPORT,
@@ -213,17 +219,18 @@ if (docs && lanesOk) {
     docs.brief,
     '',
     '구현 보고:',
-    ...list.map(r => `- ${r.name} (${r.source}): ${(r.report.changed || []).map(c => `${c.file} — ${c.what}`).join('; ')}`),
+    ...list.map(r => `- ${r.name} (${r.source}): ${(r.report.changed || []).map(c => `${c.file} — ${c.what}`).join('; ')}${(r.report.deviations || []).length ? ` (지시서와 다르게 한 것: ${r.report.deviations.map(d => `${d.what} — 이유: ${d.why}`).join('; ')})` : ''}`),
     '',
     '묶음들이 손대지 않고 넘긴 곳:',
     ...(othersToTouch.length ? othersToTouch.map(t => `- ${t}`) : ['- 없음']),
     '',
     '문서(docs/·AGENTS.md·CHANGELOG.md·README.md)만 고친다. scripts/·src/·tests/ 처럼 문서가 아닌 곳은 고치지 말고 보고에 남겨 주 에이전트에게 넘긴다.',
     '코드와 어긋나 보여 고치지 못한 것도 보고에 적는다.',
+    '지시서와 구현 보고의 "지시서와 다르게 한 것" 이 어긋나면 docs/development/agents.md 의 "지시서와 다르게 할 때" 문단의 문서 작업자 규칙을 따른다 (주 에이전트가 그 차이를 받아들일지 아직 정하지 않았다).',
   ].join('\n'), {
     label: '문서',
     phase: '문서',
-    agentType: 'jibsa-docs',
+    agentType: 'doc-writer',
     model: MODEL,
     effort: EFFORTS.includes(docs.effort) ? docs.effort : 'high',
   })
@@ -235,13 +242,16 @@ if (docs && lanesOk) {
 const done = list.filter(r => r.status === 'done').length
 const needsAttention = list.filter(r => r.report && (r.report.notDone || []).length).map(r => r.name)
 if (needsAttention.length) log(`못 한 것이 남은 묶음: ${needsAttention.join(', ')}`)
+const deviated = list.filter(r => r.report && (r.report.deviations || []).length).map(r => r.name)
+if (deviated.length) log(`지시서와 다르게 한 것이 있는 묶음: ${deviated.join(', ')} (받아들일지 주 에이전트가 정해 사용자에게 알린다)`)
 if (!docs && othersToTouch.length) log(`문서 단계가 없어 주 에이전트가 처리할 곳 ${othersToTouch.length}건`)
-log(`묶음 ${done}/${list.length} 완료${docs ? `, 문서 ${docsReport ? '완료' : '안 함'}` : ''}. 최종 검증은 주 에이전트가 한다 (같은 명령의 지금 출력을 ${baseline} 와 비교)`)
+log(`묶음 ${done}/${list.length} 완료${docs ? `, 문서 ${docsReport ? '완료' : '안 함'}` : ''}. 최종 검증은 주 에이전트가 한다 (지시서 항목 대조, 같은 명령의 지금 출력을 ${baseline} 와 비교)`)
 return {
   started: true,
   baseline,
   allReturned: done === list.length && (!docs || Boolean(docsReport)),
   needsAttention,
+  deviated,
   othersToTouch,
   bundles: list,
   docs: docsReport,
