@@ -1,5 +1,7 @@
 """단지 매물 목록과 매물 상세 (search listings --complex, listing)."""
 
+import re
+
 from httpx import HTTPStatusError
 from pydantic import Field
 
@@ -7,12 +9,14 @@ from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
+    iso_date,
     join_address,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
     note,
     parking_label,
+    with_negotiable,
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -106,16 +110,23 @@ DIRECTION_BY_CODE: dict[str, str] = {
     'WN': '북서향',
     'NW': '북서향',
 }
-# 입주 시기 코드. MV001 은 날짜 없이 오는 패턴으로 보아 즉시입주로 추정했다.
-# EARLY / MID / LATE 는 movingInDate 의 달 초순·중순·하순이다.
+# 입주 시기 코드 (네이버 웹 번들의 ARTICLE_MOVING_IN_TYPE 과 대조, 2026-11-16): MV001 즉시입주, MV002 이내입주,
+# MV003 이후입주, MV004 지정날짜. EARLY / MID / LATE 는 movingInDate 의 달 초순·중순·하순이다.
 MOVING_IN_LABELS: dict[str, str] = {
     'MV001': '즉시입주',
+}
+# 웹은 '2026년 12월 01일 이내입주' 처럼 날짜 뒤에 이내·이후를 붙여 보여 준다. 날짜만 내면 둘이 구분되지 않는다
+MOVING_IN_BOUND_LABELS: dict[str, str] = {
+    'MV002': '이내',
+    'MV003': '이후',
 }
 MOVING_IN_PERIOD_LABELS: dict[str, str] = {
     'EARLY': '초순',
     'MID': '중순',
     'LATE': '하순',
 }
+# 기간 코드(초순·중순·하순)는 달만 있으면 돼 연월만 온 날짜(2026-11·202611·2026.11)도 받는다
+YEAR_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^(\d{4})[-./]?(\d{2})$')
 # 관리비 항목 코드 (사이트 관리비 상세보기 화면과 대조, 2026-10-10). 이름은 당근·직방 manage_cost_includes 와 맞춘다
 MANAGE_COST_ITEM_LABELS: dict[str, str] = {
     '01': '공용',
@@ -523,21 +534,38 @@ def _loan_manwon(price: NaverPriceInfoModel | None) -> float | None:
     return None
 
 
+def _year_month(value: str | None) -> str | None:
+    """연월만 있는 글자(`2026-11`·`202611`·`2026.11`)를 `YYYY-MM` 으로 읽는다. 월이 1~12 가 아니거나 못 읽으면 None."""
+    match = YEAR_MONTH_PATTERN.match((value or '').strip())
+    if match is None or not 1 <= int(match.group(2)) <= 12:
+        return None
+    return f'{match.group(1)}-{match.group(2)}'
+
+
 def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
     """입주 시기 코드를 읽을 수 있는 문구로 바꾼다.
 
-    날짜 지정('MV004')·모르는 코드는 날짜만 쓰고, 날짜도 없으면 모름(None)이다. 코드('MV004')를 그대로 내보내지 않는다.
+    이내입주('MV002')·이후입주('MV003')는 날짜 뒤에 '이내'·'이후' 를 붙인다 (웹과 같다). 날짜 지정('MV004')·모르는 코드는
+    날짜만 쓰고, 날짜도 없으면 모름(None)이다. 코드('MV004')를 그대로 내보내지 않는다. 초순·중순·하순과 이내·이후는 연월만
+    와도 만든다 ('2026-12 초순'·'2026-12 이내'. 이내·이후는 전체 날짜면 '2026-12-01 이내'). '-'·빈 날짜는 모름(None)이고,
+    못 읽는 글자는 받은 그대로 둔다.
     """
     if moving is None:
         return None
-    code = moving.moving_in_type
-    date = moving.moving_in_date
-    label: str | None
-    if code in MOVING_IN_PERIOD_LABELS and date:
-        month = (normalize_date(date) or date)[:7]
-        label = f'{month} {MOVING_IN_PERIOD_LABELS[code]}'
-        return f'{label} (협의 가능)' if moving.moving_in_negotiation else label
-    return move_in_label(MOVING_IN_LABELS.get(code or '', date), negotiable=bool(moving.moving_in_negotiation))
+    code = moving.moving_in_type or ''
+    date = (moving.moving_in_date or '').strip() or None
+    if date == '-':
+        # 날짜 자리의 '-' 는 값이 없다는 표시라 모름이다 (층의 '-' 와 같다, `known_floor`)
+        date = None
+    negotiable = moving.moving_in_negotiation
+    day = iso_date(date)
+    # 연월은 두 갈래가 같게 읽는다 (이내·이후만 전체 날짜를 요구하면 연월만 온 이내·이후입주가 '이내'·'이후' 를 잃는다)
+    month = day[:7] if day is not None else _year_month(date)
+    if code in MOVING_IN_PERIOD_LABELS and month is not None:
+        return with_negotiable(f'{month} {MOVING_IN_PERIOD_LABELS[code]}', negotiable)
+    if code in MOVING_IN_BOUND_LABELS and month is not None:
+        return with_negotiable(f'{day or month} {MOVING_IN_BOUND_LABELS[code]}', negotiable)
+    return move_in_label(MOVING_IN_LABELS.get(code, date), negotiable=bool(negotiable))
 
 
 def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | None, list[str] | None]:

@@ -354,6 +354,33 @@ def test_detail_manage_cost_zero_is_known_unchecked_is_unknown(fee: dict, expect
     assert detail.manage_cost_manwon == expected
 
 
+def test_detail_move_in_within_and_after_keep_the_bound() -> None:
+    # 웹은 이내입주·이후입주를 날짜 뒤에 붙여 구분해 보여 준다
+    from jibsa.providers.naver.api.response.listing import NaverMovingInInfoModel
+    from jibsa.providers.naver.service.listing import _move_in_label
+
+    def label(code: str, date: str | None, negotiation: bool = False) -> str | None:
+        return _move_in_label(NaverMovingInInfoModel.model_validate(
+            {'movingInType': code, 'movingInDate': date, 'movingInNegotiation': negotiation},
+        ))
+
+    assert label('MV002', '20261201') == '2026-12-01 이내'
+    assert label('MV003', '20261201', True) == '2026-12-01 이후 (협의 가능)'
+    assert label('MV004', '20261201') == '2026-12-01'
+    assert label('MV002', None) is None
+    # 초순·중순·하순은 달만 있으면 돼 연월만 와도 낸다. 날짜 자리의 '-' 는 값이 없다는 표시라 모름이다 (실측에 없는 값)
+    assert label('EARLY', '2026-11') == '2026-11 초순'
+    assert label('LATE', '202611') == '2026-11 하순'
+    assert label('MV002', '-') is None
+    assert label('EARLY', '-') is None
+    # 이내·이후도 연월만 오면 연월로 낸다. 못 읽는 글자도 협의 가능은 붙인다 (2026-11-16 리뷰)
+    assert label('MV003', '202612') == '2026-12 이후'
+    assert label('MID', 'abc', True) == 'abc (협의 가능)'
+    # 꼴만 맞고 없는 날짜는 날짜로 읽지 않고 받은 글자 그대로 둔다 ('0000-00 초순' 을 내지 않는다, 2026-11-17 리뷰)
+    assert label('EARLY', '0000-00-00') == '0000-00-00'
+    assert label('MV002', '2026-02-30') == '2026-02-30'
+
+
 # --- 빌라 단지 (연립·다세대) -------------------------------------------------
 
 def make_path_client(requests: list[httpx.Request], overrides: dict[str, dict]) -> NaverClient:

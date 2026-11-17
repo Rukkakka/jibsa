@@ -298,8 +298,9 @@ class NaverMovingInInfoModel(ResponseModel):
     moving_in_type: Annotated[
         str | None,
         Field(
-            description="'MV001' 즉시입주(날짜 없음), 'MV004' 날짜 지정(movingInDate), 'EARLY'·'MID'·'LATE' 는 "
-            'movingInDate 달의 초·중·하순 (매물 65건 실측, 2026-10-10)',
+            description="'MV001' 즉시입주(날짜 없음), 'MV002' 이내입주·'MV003' 이후입주·'MV004' 날짜 지정 (모두 movingInDate, "
+            "웹 번들 ARTICLE_MOVING_IN_TYPE 대조 2026-11-16), 'EARLY'·'MID'·'LATE' 는 movingInDate 달의 초·중·하순 "
+            '(매물 65건 실측, 2026-10-10)',
             alias='movingInType'
         )
     ] = None

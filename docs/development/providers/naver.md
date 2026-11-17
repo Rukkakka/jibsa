@@ -138,3 +138,4 @@ client의 action별 endpoint/docstring → request 별칭·필터 → response �
 ### 매물 (`search listings`·`listing`)
 
 - **반경 검색.** 웹 지도 목록은 화면 사각형과 그때 줌을 `boundedArticles` 에 보낸다. jibsa 는 반경을 감싼 정사각형(`bounding_box`)과 반경에 맞춘 줌 14~16(`bounded_precision`)으로 같은 `boundedArticles` 를 받아, 응답 좌표로 반경 밖·좌표 모름 매물만 빼고 `[제외]` 로 알린다. 서버가 받는 사각형·줌 조합의 목록에서 반경 안만 남긴 부분집합이고 순서는 서버 순서 그대로다. 동 이름에 `--radius` 를 주면 동 경계 대신 동 중심 반경이다 ([페이지네이션과 조건 처리](#페이지네이션과-조건-처리), 2026-11-16 번들 대조).
+- **입주 시기 표기.** 웹은 '2026년 12월 01일 이내입주'·'… 이후입주' 로, jibsa `move_in` 은 `2026-12-01 이내`·`2026-12-01 이후` 로 낸다 (`MOVING_IN_BOUND_LABELS`). 같은 코드(MV002·MV003)와 날짜를 날짜 꼴만 바꿔 쓴 것이라 뜻이 같다 (2026-11-16 번들 `getMovingInDateLabel`·`ARTICLE_MOVING_IN_TYPE`).

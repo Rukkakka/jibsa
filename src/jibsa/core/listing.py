@@ -245,6 +245,22 @@ def normalize_date(value: str | None) -> str | None:
     return moment.astimezone(KST).date().isoformat()
 
 
+def iso_date(value: str | None) -> str | None:
+    """날짜 글자를 `YYYY-MM-DD` 로 읽으면 그 값, 읽지 못하면(연월만·'-'·빈 값·문장·없는 날짜) None.
+
+    입주일처럼 날짜인지 가려야 할 때 쓴다 (`normalize_date` 는 못 읽으면 원래 값을 돌려준다). 꼴만 맞고 없는
+    날짜('0000-00-00'·'2026-02-30')는 `normalize_date` 가 원래 값 그대로 돌려줘 꼴만 보면 날짜로 통과하므로 달력으로 확인한다.
+    """
+    text = normalize_date(value)
+    if text is None or not ISO_DATE_PATTERN.match(text):
+        return None
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        return None
+    return text
+
+
 def move_in_label(value: str | None, *, negotiable: bool = False) -> str | None:
     """입주 가능일을 세 소스가 같은 꼴로 쓴다: 날짜는 `YYYY-MM-DD`, 날짜 없이 바로면 `즉시입주`, 협의 가능하면
     뒤에 ` (협의 가능)`.
@@ -265,12 +281,19 @@ def move_in_label(value: str | None, *, negotiable: bool = False) -> str | None:
     if '즉시' in head:
         label = MOVE_IN_NOW
     else:
-        date = normalize_date(head)
-        if date is None or not ISO_DATE_PATTERN.match(date):
-            return text
+        date = iso_date(head)
+        if date is None:
+            # 못 읽은 글자도 소스가 따로 준 협의 가능(네이버 movingInNegotiation, 당근)은 붙인다. 괄호 안에서 읽은 협의는 이미
+            # 글자에 있어 겹쳐 붙이지 않는다
+            return with_negotiable(text, negotiable and '협의' not in text)
         label = date
     if extra:
         label += f' ({extra})'
+    return with_negotiable(label, negotiable)
+
+
+def with_negotiable(label: str, negotiable: bool | None) -> str:
+    """입주 시기 글자 뒤에 협의 가능이면 ` (협의 가능)` 을 붙인다. 소스마다 같은 꼴로 쓰도록 접미사를 한 곳에 둔다."""
     return label + (' (협의 가능)' if negotiable else '')
 
 
@@ -648,8 +671,8 @@ class ListingDetail(Listing):
     사진, 본문, 중개사 연락처, 도로명 주소, 조회수는 담지 않는다.
 
     `move_in`·`parking` 은 세 소스가 같은 꼴이다 (`move_in_label`·`parking_label`: '2026-10-24', '즉시입주',
-    '2026-11 초순', 뒤에 ' (협의 가능)' / '가능', '불가', '가능 (총 4대)'). `nearby_subways` 는 소스 표기대로라
-    괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
+    뒤에 ' (협의 가능)' / '가능', '불가', '가능 (총 4대)'). 네이버 `move_in` 만 '2026-12-01 이내'·'2026-12-01 이후'·
+    '2026-11 초순'(중순·하순도)도 쓴다. `nearby_subways` 는 소스 표기대로라 괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
 
     Args:
         room_count: 방 수. Defaults to None.
@@ -677,7 +700,10 @@ class ListingDetail(Listing):
     ] = None
     move_in: Annotated[
         str | None,
-        Field(description="입주 가능일 ('2026-10-24', '즉시입주', '2026-11 초순', 협의 가능하면 뒤에 ' (협의 가능)')")
+        Field(
+            description="입주 가능일 ('2026-10-24', '즉시입주', 협의 가능하면 뒤에 ' (협의 가능)'. 네이버는 "
+            "'2026-12-01 이내'·'2026-12-01 이후'·'2026-11 초순' 도)"
+        )
     ] = None
     parking: Annotated[
         str | None,
