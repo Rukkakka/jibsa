@@ -1,5 +1,5 @@
 ---
-name: jibsa-reviewer
+name: reviewer
 description: jibsa 변경을 혼자 한 맥락에서 리뷰해 지적 후보를 모으는 리뷰어 (읽기 전용, 재현하지 않음). /review 가 하나만 띄운다.
 tools: Bash, Read, Glob, Grep
 model: sonnet
