@@ -96,6 +96,18 @@ STORE_NOT_APPLICABLE_FIELDS: frozenset[str] = frozenset({'room_type'})
 STORE_NOT_APPLICABLE_DETAIL_FIELDS: frozenset[str] = STORE_NOT_APPLICABLE_FIELDS | frozenset({
     'room_count', 'bathroom_count', 'direction', 'move_in', 'options', 'manage_cost_includes',
 })
+# 업종 '사무실' 에는 권리금이 없다. 웹 상세는 이 업종이면 권리금 줄을 숨기고, 직방도 값을 주지 않는다 (2026-11-17 번들
+# `renderItemInfoData`, 상가 340건 중 권리금이 없는 199건이 모두 사무실). 그래서 직방이 값을 주지 않은 사무실은 모름이
+# 아니라 해당 없음으로 `key_money_manwon` 키를 뺀다. 값을 줬으면(0 포함) 그대로 낸다. 권리금 조건을 걸면 이런 사무실은
+# 빼고(해당 없음을 0 으로 치지 않는다) `search_store_listings` 가 [제외] 로 알린다
+STORE_OFFICE_BUSINESS: str = '사무실'
+
+
+def _store_not_applicable_key_money(business: str | None, key_money_manwon: float | None) -> frozenset[str]:
+    """업종이 사무실이고 직방이 권리금을 주지 않았으면 키를 뺄 권리금 필드."""
+    if business == STORE_OFFICE_BUSINESS and key_money_manwon is None:
+        return frozenset({'key_money_manwon'})
+    return frozenset()
 
 
 class ZigbangStoreListing(Listing):
@@ -107,11 +119,15 @@ class ZigbangStoreListing(Listing):
     ] = None
     key_money_manwon: Annotated[
         float | None,
-        Field(description='권리금 (만원). 0 이면 무권리')
+        Field(description='권리금 (만원). 0 이면 무권리. 업종이 사무실이고 직방이 주지 않으면 키가 없다')
     ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
-        return super().not_applicable_fields() | STORE_NOT_APPLICABLE_FIELDS
+        return (
+            super().not_applicable_fields()
+            | STORE_NOT_APPLICABLE_FIELDS
+            | _store_not_applicable_key_money(self.business, self.key_money_manwon)
+        )
 
 
 class ZigbangStoreListingDetail(ListingDetail):
@@ -123,7 +139,7 @@ class ZigbangStoreListingDetail(ListingDetail):
     ] = None
     key_money_manwon: Annotated[
         float | None,
-        Field(description='권리금 (만원). 0 이면 무권리')
+        Field(description='권리금 (만원). 0 이면 무권리. 업종이 사무실이고 직방이 주지 않으면 키가 없다')
     ] = None
     recommended_business: Annotated[
         str | None,
@@ -151,7 +167,11 @@ class ZigbangStoreListingDetail(ListingDetail):
     ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
-        return super().not_applicable_fields() | STORE_NOT_APPLICABLE_DETAIL_FIELDS
+        return (
+            super().not_applicable_fields()
+            | STORE_NOT_APPLICABLE_DETAIL_FIELDS
+            | _store_not_applicable_key_money(self.business, self.key_money_manwon)
+        )
 
 
 class ZigbangStoreSearchResult(BaseModel):
@@ -472,7 +492,9 @@ def search_store_listings(
     찾는다 (`store_region_codes`). 서버가 범위 안 매물만 준다.
 
     거래 유형(임대·매매), 1층, 업종, 면적(㎡, 상한은 미만)은 서버에서 거른다.
-    가격 조건은 요약을 받은 뒤 거른다 (상·하한 포함, 모르는 금액은 제외). 직방 목록 앞의 후보를 조회
+    가격 조건은 요약을 받은 뒤 거른다 (상·하한 포함, 모르는 금액은 제외). 권리금 조건을 걸면 권리금이 해당 없는
+    사무실(`key_money_manwon` 키 없음)도 빠지므로, 권리금만 아니면 다른 가격 조건에 맞던 수를 `notes` 로 알린다.
+    직방 목록 앞의 후보를 조회
     상한(max(limit * SCAN_FACTOR, MIN_SCAN_PINS))까지 확인하며, 전체 후보를 확인하지 못하면 안내한다.
     업종 조건을 걸면 직방이 그 업종과 무관한 범위 안 공실을 따로 주는데, 업종 조건을
     지키도록 공실은 빼고 몇 건인지 `notes` 로 알린다.
@@ -527,6 +549,10 @@ def search_store_listings(
     listings: list[ZigbangStoreListing] = []
     inspected = 0
     matched = 0
+    # 권리금 조건 때문에만 빠진 권리금 해당 없음 사무실 수
+    key_money_bounds = bounds['key_money_manwon']
+    other_bounds = {field: pair for field, pair in bounds.items() if field != 'key_money_manwon'}
+    office_no_key_money = 0
     for start in range(0, len(candidates), STORE_LIST_BATCH_SIZE):
         if len(listings) >= limit:
             break
@@ -545,6 +571,13 @@ def search_store_listings(
             listing = store_summary_to_listing(summary, haversine_km(region.lat, region.lng, lat, lng), lat, lng)
             # 거래 유형은 서버가 걸었으므로 다시 거르지 않는다 (2026-10-10 실측: 역삼역·성수동 임대·매매 662건 모두 조건 안)
             if not _store_price_matches(listing, bounds):
+                if (
+                    any(value is not None for value in key_money_bounds)
+                    and listing.business == STORE_OFFICE_BUSINESS
+                    and listing.key_money_manwon is None
+                    and _store_price_matches(listing, other_bounds)
+                ):
+                    office_no_key_money += 1
                 continue
             matched += 1
             listings.append(listing)
@@ -586,6 +619,12 @@ def search_store_listings(
             total, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}', order='직방 목록',
             inspected=inspected, has_more=has_more,
         )
+    if office_no_key_money:
+        notes.append(note(
+            '제외',
+            f'권리금 조건을 걸어 확인한 후보 중 권리금이 해당 없는 사무실 {office_no_key_money}건을 뺐습니다 '
+            '(직방이 사무실에는 권리금을 주지 않습니다). 사무실도 보려면 권리금 조건 없이 검색하세요',
+        ))
     if business_conditions and vacant:
         # [제외] 가 아니라 [참고] 다. 공실은 업종 조건에 맞는 매물을 뺀 것이 아니라 직방이 업종과 무관하게 따로 주는 묶음이다
         # (2026-11-10 리뷰가 [제외] 라고 했으나 오탐. 실측: 성수역 0.5km --business 카페/커피 는 카페 5건과 '이 지역 비어있는

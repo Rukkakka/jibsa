@@ -234,9 +234,11 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 동(읍·면·동) 이름에 `--radius`·좌표를 주지 않으면 반경 대신 그 동 안을 찾고 `[범위]` 로 알린다 (결과에 `radius_km` 대신 `boundary`). 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)은 그 동들을 함께 찾는다 (`boundary`·`region.name` 은 `"성수동1가·성수동2가"`). 리·구·시·역·학교 이름과 좌표, `--radius` 는 검색 중심에서 반경 안을 찾는다 (기본 1km). 반경 안 매물만 나오고 모자라도 반경 밖으로 채우지 않는다. 직방 상가 목록 순서는 시간이 지나면 바뀌어, 같은 검색도 조금 뒤에 부르면 앞쪽 매물이 다를 수 있다. `--trade 임대`는 월세·전세를 포함하며 `--trade`는 하나만 받는다. 업종은 반복·쉼표로 지정하며 OR다. `--business` 를 주면 직방이 그 업종과 무관한 공실을 따로 주는데, 업종 조건을 지키도록 빼고 범위(동·반경) 안에 몇 건인지 `notes` 로 알린다. 공실도 보려면 `--business` 없이 검색한다.
 
+업종이 사무실이고 직방이 권리금을 주지 않은 매물은 `key_money_manwon` 키가 없다 (직방 웹도 사무실은 권리금 줄을 숨긴다). 사무실이 아닌 매물의 값 없음은 `null`(모름)이다.
+
 가격 조건(`--deposit-*`, `--rent-*`, `--price-*`, `--manage-cost-*`, `--key-money-*`)은 모두 만원이고 하한·상한을 포함하며, 조합하면 모든 조건을 만족해야 한다. 보증금·월세·권리금 조건은 임대, 매매가 조건은 매매로 자동 좁히며, 서로 섞거나 `--trade` 와 충돌하면 `INVALID_ARGUMENT` 이다. 월세 조건은 월세 매물에만 적용하고 관리비 조건은 임대·매매 모두에 쓸 수 있다. `--area-max`는 지정 면적 미만이다.
 
-가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 직방 목록 앞의 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. `total` 은 가격 적용 전 범위 안 직방 목록의 매물 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000`
+가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 직방 목록 앞의 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. 권리금 조건(`--key-money-*`)을 걸면 권리금 키가 없는 사무실(해당 없음)도 제외하고, 확인한 후보에서 그렇게 뺀 건수를 `[제외]` 로 알린다. `total` 은 가격 적용 전 범위 안 직방 목록의 매물 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000`
 
 상세는 결과의 `store-…` ID를 그대로 `listing`에 넘긴다.
 
@@ -600,7 +602,7 @@ jibsa zigbang search listings room --help
 | 직방 주거 상세 (`listing`) | `total_parking_count`, `household_count`, `direction_criterion` | 총 주차 대수(직방이 `0.4` 처럼 소수로 주기도 한다, 아파트는 단지 전체), 주차 계산에 쓰는 매물 측 세대수(단지 전체 세대수와 다를 수 있음, 아파트는 직방이 주지 않아 `null`), 방향 기준(안방·거실). 모르면 `null` |
 | 직방 오피스텔 (`search listings room`, `search listings --complex`, `listing`) | `complex_id`, `complex_name`(상세만) | 건물 ID (예: `"officetel-20227"`)와 건물 이름. `zigbang complex`·`search listings --complex` 에 넘겨 그 건물 매물을 본다. 원룸·빌라는 키가 없다 |
 | 직방 아파트 (`search listings apt`, `search listings --complex`) | `complex_id`, `complex_name`, `supply_area_m2`, `is_price_range`, `catalog_id`, `listing_ids`, `listing_count`, `listing_kind` | 단지 ID(`zigbang complex`·`search listings --complex` 에 넘긴다), 단지명·동, 공급면적(㎡), 같은 호를 올린 매물끼리 가격이 달라 가격이 묶음 최저가인지, 묶음 ID(`zigbang catalog` 에 넘긴다), 상세를 볼 수 있는 묶인 매물 ID 전부, 같은 호를 올린 매물(중개사) 수, 매물 종류(신규분양·집주인·중개사, 신규분양이면 가격은 분양가, 처음 보는 종류는 직방 코드 그대로, 모르면 `null`). `is_price_range`·`catalog_id`·`listing_ids`·`listing_count` 는 목록에만 있고 (`listing_kind` 와 함께 `--fields` 로 골라도 늘 나온다) ([`search listings apt`](#3-search-listings-apt--아파트-매물-찾기) 반환값), `complex_id`·`complex_name`·`supply_area_m2`·`listing_kind` 는 아파트 `listing` 상세와 `catalog` 매물에도 있다. 아파트 상세에서 비는 값은 [`listing`](#9-listing--매물-하나-상세)에 있다 |
-| 직방 상가 (`search listings store`) | `business`, `key_money_manwon` | 업종(현재·직전, 공실이면 `기타`), 권리금(만원). 상세는 `recommended_business`·`vacancy`·`lease_unit`·`interior`·`toilet`·`heating` 도 준다. 직방 상가에는 방 정보가 없어 `room_type`(목록·상세)과 `room_count`·`bathroom_count`·`direction`·`move_in`·`options`·`manage_cost_includes`(상세) 키가 없다 |
+| 직방 상가 (`search listings store`) | `business`, `key_money_manwon` | 업종(현재·직전, 공실이면 `기타`), 권리금(만원, 업종이 사무실이고 직방이 주지 않으면 키가 없다). 상세는 `recommended_business`·`vacancy`·`lease_unit`·`interior`·`toilet`·`heating` 도 준다. 직방 상가에는 방 정보가 없어 `room_type`(목록·상세)과 `room_count`·`bathroom_count`·`direction`·`move_in`·`options`·`manage_cost_includes`(상세) 키가 없다 |
 | 직방 단기임대 (`search listings stay`) | `weekly_rent_manwon`, `weekly_manage_cost_manwon`, `room_count`, `bathroom_count`, `discounts` | 주당 임대료·관리비(만원), 방·욕실 수, 할인 조건(예: `"4주 이상 10% 할인"`, `"오늘부터 1일 이내 입주 시 7만원 할인"`. 직방 웹 상세처럼 장기계약은 주 수·할인율·주당 임대료가 모두 있을 때, 즉시입주는 금액이 있을 때만 나온다. 주당 임대료가 없거나 0 이면 장기계약 할인이 있어도 빠지므로, 이때 `discounts` 가 `[]` 여도 할인이 없다는 뜻은 아니다. 즉시입주 할인 금액은 원 단위까지 만원으로 써 2,500원이면 `"오늘 입주 시 0.25만원 할인"` 이다. 그 기간에 실제로 깎이는 금액은 직방이 로그인해야 계산해 보여 줘서 주지 않는다). 요금이 주 단위라 `rent_manwon`·`manage_cost_manwon` 키가 없다. 상세는 `deposit_manwon`·`cleaning_fee_manwon`·`min_contract_weeks`·`max_contract_weeks`·`max_guests`·`duplex`·`refund_policy` 도 준다. 상세에 `--check-in/--check-out` 을 주면 그 기간을 예약할 수 있는지 `available`(직방 일정이 없으면 `null`)이 붙는다 |
 
 ## 매물 해석 시 주의사항
@@ -609,4 +611,4 @@ jibsa zigbang search listings room --help
 
 상세 `residence_type`에 `다가구`가 들어가면(`다가구`·`다가구주택`·`다가구용단독주택`) 건물 전체의 다른 세입자 선순위 보증금도 계약 전 확인한다. `근린생활시설`이 들어가면(`제2종근린생활시설` 등, 이른바 근생 원룸) 주거용 건물이 아니라 전입신고·전세대출·전세보증보험이 막힐 수 있으니 계약 전 확인한다. 등록일·입주일·주차는 조회 유형에 따라 제공 여부가 다르며 `null`을 없다고 해석하지 않는다.
 
-상가 권리금은 `0`이면 무권리, `null`이면 모름이다. 단기임대의 주당 가격과 월세를 직접 비교하지 않는다. 주당 금액 × 주 수는 기간 비용이 아니고(청소비·직방 이용료가 더해진다), 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 는 주지 않는다.
+상가 권리금은 `0`이면 무권리, `null`이면 모름이다 (업종이 사무실이고 직방이 주지 않으면 키가 없다). 단기임대의 주당 가격과 월세를 직접 비교하지 않는다. 주당 금액 × 주 수는 기간 비용이 아니고(청소비·직방 이용료가 더해진다), 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 는 주지 않는다.

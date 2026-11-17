@@ -34,6 +34,7 @@ from jibsa.providers.zigbang.api.response.listing import (
 )
 from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoreV2ResponseModel,
+    ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.apt import (
     ZigbangAptConditions,
@@ -57,6 +58,7 @@ from jibsa.providers.zigbang.service.store import (
     ZigbangStoreConditions,
     search_store_listings,
     store_detail_to_listing,
+    store_summary_to_listing,
 )
 
 
@@ -459,6 +461,25 @@ def test_store_detail_drops_contact_and_photos() -> None:
     assert detail['nearby_subways'] == ['가상역 (2호선)']
     text = json.dumps(detail, ensure_ascii=False)
     assert '010-0000-0000' not in text and 'photo.jpg' not in text and '가상 설명' not in text
+
+
+@pytest.mark.parametrize('business, key_money, has_key', [
+    ('사무실', None, False),
+    ('사무실', 0, True),
+    ('카페/커피', None, True),
+])
+def test_store_office_key_money_key_dropped_only_when_missing(business: str, key_money: int | None, has_key: bool) -> None:
+    summary = ZigbangStoreSummaryModel.model_validate(load('store_article_stores_list_v2')[0])
+    summary = summary.model_copy(update={'business': business, 'key_money': key_money})
+    listing = store_summary_to_listing(summary).model_dump(mode='json')
+    assert ('key_money_manwon' in listing) is has_key
+    if has_key:
+        assert listing['key_money_manwon'] == key_money
+    data = load('store_article_store_v2')
+    data['item']['업종'] = business
+    data['item']['권리금액'] = key_money
+    detail = store_detail_to_listing(ZigbangStoreArticleStoreV2ResponseModel.model_validate(data)).model_dump(mode='json')
+    assert ('key_money_manwon' in detail) is has_key
 
 
 def test_store_detail_closed_is_unavailable() -> None:
