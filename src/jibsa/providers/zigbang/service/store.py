@@ -101,6 +101,8 @@ STORE_NOT_APPLICABLE_DETAIL_FIELDS: frozenset[str] = STORE_NOT_APPLICABLE_FIELDS
 # 아니라 해당 없음으로 `key_money_manwon` 키를 뺀다. 값을 줬으면(0 포함) 그대로 낸다. 권리금 조건을 걸면 이런 사무실은
 # 빼고(해당 없음을 0 으로 치지 않는다) `search_store_listings` 가 [제외] 로 알린다
 STORE_OFFICE_BUSINESS: str = '사무실'
+# 웹 상가 카드·상세가 거래 이름으로 쓰는 응답의 `sales_title` 값
+STORE_TRADE_BY_TITLE: dict[str, TradeType] = {'매매': '매매', '전세': '전세', '월세': '월세'}
 
 
 def _store_not_applicable_key_money(business: str | None, key_money_manwon: float | None) -> frozenset[str]:
@@ -256,11 +258,18 @@ def store_parking(text: str | None) -> str | None:
 
 
 def store_trade(summary: ZigbangStoreSummaryModel) -> TradeType:
-    """상가 거래 유형. 매매가 아니면 임대이고, 월세가 있으면 월세, 없으면 전세다.
+    """상가 거래 유형. 응답의 `sales_title`(매매·전세·월세)을 그대로 쓰고, 없거나 다른 값이면 예전 규칙으로 정한다.
 
-    임대 상가는 월세금액이 늘 있어 월세가 비어 전세로 잘못 읽히는 일은 없다 (2026-10-10 실측: 7개 역 1,709건 중
-    임대 1,649건 모두 월세 > 0, 전세 상가 0건, 매매는 월세 0).
+    웹 상가 카드·상세는 거래 이름을 `sales_title` 로 정한다 (2026-11-17 번들 `StoreItemCard`·`createMetaData`: 매매면
+    매매금액, 전세·월세면 보증금액을 쓴다). 요약·상세 응답 모두 이 필드가 있다. `sales_title` 을 못 쓸 때는 매매가
+    아니면 임대이고, 월세금액이 있으면 월세, 없으면 전세로 정한다. 지금까지 본 약 2,000건에서는 두 규칙의 답이 같았다
+    (2026-10-10 실측: 7개 역 1,709건 중 임대 1,649건 모두 월세 > 0, 매매는 월세 0, 2026-11-17 상가 130건도 같다.
+    `sales_title` 은 월세·매매뿐이고 전세 상가는 0건). 다만 `sales_title` 이 월세인데 월세금액이 0 이면 웹처럼 월세로
+    낸다 (`rent_manwon` 은 0).
     """
+    title = STORE_TRADE_BY_TITLE.get(summary.sales_title or '')
+    if title is not None:
+        return title
     if summary.sales_type == '매매':
         return '매매'
     return '월세' if summary.rent else '전세'

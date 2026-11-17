@@ -482,6 +482,20 @@ def test_store_office_key_money_key_dropped_only_when_missing(business: str, key
     assert ('key_money_manwon' in detail) is has_key
 
 
+@pytest.mark.parametrize('sales_title, rent, expected', [
+    ('월세', 0, '월세'),
+    ('가상값', 200, '월세'),
+])
+def test_store_trade_follows_sales_title_then_rent(sales_title: str | None, rent: int, expected: str) -> None:
+    data = load('store_article_store_v2')
+    data['item']['sales_title'] = sales_title
+    data['item']['월세금액'] = rent
+    detail = store_detail_to_listing(ZigbangStoreArticleStoreV2ResponseModel.model_validate(data)).model_dump(mode='json')
+    assert detail['trade_type'] == expected
+    if expected == '월세':
+        assert detail['rent_manwon'] == rent
+
+
 def test_store_detail_closed_is_unavailable() -> None:
     data = load('store_article_store_v2')
     data['item']['status'] = 'close'
