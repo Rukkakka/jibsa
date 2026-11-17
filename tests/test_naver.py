@@ -326,6 +326,9 @@ def test_search_area_sends_extended_filters() -> None:
         ({'typeCode': '02', 'etcDetail': {'amount': 0, 'type': '02'}, 'criteriaType': '02'}, 0),
         # 관리비를 확인하지 않았다. 목록에서는 이것도 0 으로 온다
         ({'typeCode': '03', 'uncheckDetail': {'type': '03'}}, None),
+        ({'typeCode': '03'}, None),
+        # 확인 불가 사유가 '없음'(99)이면 웹이 관리비 '없음' 으로 보여 준다
+        ({'typeCode': '03', 'uncheckDetail': {'type': '99'}}, 0),
         # 정액 합계를 etcDetail 이 아닌 fixNonDetailList 로 준다 (원룸 2652339975, 2026-10-11)
         (
             {'typeCode': '04', 'criteriaType': '02',
@@ -352,6 +355,11 @@ def test_detail_manage_cost_zero_is_known_unchecked_is_unknown(fee: dict, expect
     with client:
         detail = get_listing(client, '1000000001')
     assert detail.manage_cost_manwon == expected
+    # 포함 항목은 관리비 없음일 때만 빈 목록이고, 모르면 null 이다
+    if fee.get('uncheckDetail') == {'type': '99'}:
+        assert detail.manage_cost_includes == []
+    elif fee['typeCode'] == '03':
+        assert detail.manage_cost_includes is None
 
 
 def test_detail_move_in_within_and_after_keep_the_bound() -> None:

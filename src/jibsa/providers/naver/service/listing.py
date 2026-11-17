@@ -127,6 +127,8 @@ MOVING_IN_PERIOD_LABELS: dict[str, str] = {
 }
 # 기간 코드(초순·중순·하순)는 달만 있으면 돼 연월만 온 날짜(2026-11·202611·2026.11)도 받는다
 YEAR_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^(\d{4})[-./]?(\d{2})$')
+# 관리비 확인 불가 사유 코드 중 '없음' (웹 번들의 UNABLE_CHECK_DETAIL_CODE_TYPE, 2026-11-16)
+MANAGE_COST_NONE_REASON: str = '99'
 # 관리비 항목 코드 (사이트 관리비 상세보기 화면과 대조, 2026-10-10). 이름은 당근·직방 manage_cost_includes 와 맞춘다
 MANAGE_COST_ITEM_LABELS: dict[str, str] = {
     '01': '공용',
@@ -577,8 +579,10 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     쓴 만큼 따로 내서 빠진다 (원룸 2653883790: 공용 10만원 정액, 전기~TV 실비 → 합계 10만원, 2026-10-10).
     그래서 항목이 모두 실비면 0만원·[] 이다. 정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이
     아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
-    미확인('03')은 etcDetail·fixNonDetailList 가 null 이고 uncheckDetail 로 와서 모름이다 (빌라 2654619539·2653716463,
-    2026-10-11). 그래서 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
+    미확인('03')은 etcDetail·fixNonDetailList 가 null 이고 uncheckDetail 로 사유가 와서 대개 모름이다 (빌라 2654619539·
+    2653716463, 2026-10-11). 다만 사유가 '99'(없음)이면 웹이 관리비 '없음' 으로 보여 주므로 0만원·[] 이다 (직방의 '관리비
+    없음' 과 같은 꼴, 웹 번들 getMaintenanceFeeLabel 대조 2026-11-16). 다른 사유('01'~'04')·사유 없음은 웹도 '확인 어려움'
+    이라 모름이다. 그래서 금액은 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
     중 하나만 오고 나머지는 null 이라(신림동 월세 29건: '04' 18·'02' 10·'01' 1, 2026-10-11) 객체가 있는지만 본다.
     금액 없는 빈 etcDetail 이 다른 키와 함께 오는 응답은 없었다.
     """
@@ -593,6 +597,8 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
         includes = [MANAGE_COST_ITEM_LABELS.get(item.type, item.type) for item in fixed if item.amount and item.type]
         return won_to_manwon(sum(item.amount or 0 for item in fixed)), includes
+    if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type == MANAGE_COST_NONE_REASON:
+        return 0.0, []
     return None, None
 
 

@@ -477,6 +477,19 @@ class NaverFixDetailModel(ResponseModel):
     ] = None
 
 
+class NaverUncheckDetailModel(ResponseModel):
+    """관리비를 확인할 수 없는 사유 (typeCode '03' 의 uncheckDetail)."""
+
+    type: Annotated[
+        str | None,
+        Field(
+            description="사유 코드 (웹 번들 UNABLE_CHECK_DETAIL_CODE_TYPE 대조, 2026-11-16). '01' 단독주택이라 중개사 미기재, "
+            "'02' 오피스텔 외 상가건물이라 중개사 미기재, '03' 미등기·신축이라 확인 어려움, '04' 임대인 미고지, '99' 없음 "
+            "(웹이 관리비 '없음' 으로 보여 준다)"
+        )
+    ] = None
+
+
 class NaverArticleMaintenanceFeeModel(ResponseModel):
     """관리비."""
 
@@ -496,6 +509,10 @@ class NaverArticleMaintenanceFeeModel(ResponseModel):
     fix_detail_list: Annotated[
         list[NaverFixDetailModel] | None,
         Field(description='항목별 금액 (typeCode 01). 원룸 2653883790: 공용 10만원 정액 + 전기~TV 실비 = 합계 10만원 (2026-10-10)', alias='fixDetailList')
+    ] = None
+    uncheck_detail: Annotated[
+        NaverUncheckDetailModel | None,
+        Field(description="확인 불가 사유 (typeCode '03')", alias='uncheckDetail')
     ] = None
     fix_non_detail_list: Annotated[
         NaverEtcDetailModel | None,
