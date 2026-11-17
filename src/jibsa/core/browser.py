@@ -1623,6 +1623,9 @@ class BrowserTransport(BaseTransport):
             if cookies is not None:
                 state.page_url, state.opened_at = saved['page_url'], saved['opened_at']
                 try:
+                    # add_cookies 는 SetCookieParam(TypedDict)을 받는데 patchright 가 그 타입을 공개하지 않는다 (`_impl` 에만
+                    # 있다). 쿠키는 jibsa 가 남긴 JSON 이라 Mapping 이고, 내부 모듈을 import 해 cast 하면 patchright 를 올릴 때
+                    # 깨질 수 있어 오류 코드를 붙여 둔다. 아래 returning 도 같다
                     context.add_cookies(cookies)  # type: ignore[arg-type]
                 except _playwright_error():
                     # 브라우저가 남긴 쿠키를 받지 않으면 다음 시도·명령도 같으니 버린다. 재시도는 첫 화면부터 연다. 버리는 것은
@@ -1635,7 +1638,7 @@ class BrowserTransport(BaseTransport):
                 returning = returning_cookies(saved, state.options.entry_url, time.time())
                 if returning:
                     try:
-                        context.add_cookies(returning)  # type: ignore[arg-type]
+                        context.add_cookies(returning)  # type: ignore[arg-type]  # 위 남긴 쿠키와 같은 이유
                     except _playwright_error() as error:
                         # 브라우저가 받지 않으면 빈 채로 연다. 첫 화면을 연 뒤 남기는 쿠키가 이 쿠키를 덮는다
                         logger.warning('남긴 방문자 쿠키를 넣지 못해 빈 채로 엽니다: %s', _first_line(error))

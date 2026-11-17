@@ -49,6 +49,7 @@ from jibsa.core.schema import is_request_validation_error
 from typing import (
     Any,
     NamedTuple,
+    NoReturn,
     TypeVar,
     cast,
 )
@@ -502,7 +503,22 @@ def not_allowed_message(value: object, allowed: Iterable[object]) -> str:
     return f"허용되지 않는 값입니다: '{value}'. 가능한 값: {', '.join(map(str, allowed))}"
 
 
-def check_choice(value: object, allowed: Collection[OptionT], option: str, *, context: str | None = None) -> OptionT:
+def _reject_choice(message: str, option: str, hints: UsageHints | None, value: object) -> NoReturn:
+    """허용 밖의 값을 사용법 오류로 낸다. 글자 값이 `hints` 에 있으면 이 명령에서 주는 법을 힌트로 붙인다."""
+    hint = hints.hint(option, value) if hints and isinstance(value, str) else None
+    if hint:
+        raise HintedBadParameter(message, option, hint)
+    raise typer.BadParameter(message, param_hint=option)
+
+
+def check_choice(
+    value: object,
+    allowed: Collection[OptionT],
+    option: str,
+    *,
+    context: str | None = None,
+    hints: UsageHints | None = None,
+) -> OptionT:
     """하나만 받는 옵션의 값이 허용값인지 보고 그 허용값을 돌려준다. 값의 타입은 `allowed` 를 따른다 (`split_csv` 와 같다).
 
     글자 값은 앞뒤 공백을 다듬어 비교한다. 쉼표로 여러 값을 주면 `split_csv` 와 같은 규칙으로 조각을 나눠(조각마다 공백
@@ -512,6 +528,7 @@ def check_choice(value: object, allowed: Collection[OptionT], option: str, *, co
 
     Args:
         context: 에러 문장 끝에 괄호로 붙이는 덧말 (예: '--level 어린이집 의 설립 구분'. 허용값이 다른 옵션에 따라 바뀔 때).
+        hints: 허용 밖의 글자 값(쉼표 값이면 첫 틀린 조각)이 표에 있으면 이 명령에서 주는 법을 에러 힌트로 알린다 (`split_csv` 와 같다).
     """
     suffix = f' ({context})' if context else ''
 
@@ -519,7 +536,7 @@ def check_choice(value: object, allowed: Collection[OptionT], option: str, *, co
         for choice in allowed:
             if choice == given:
                 return choice
-        raise typer.BadParameter(f'{not_allowed_message(given, allowed)}{suffix}', param_hint=option)
+        _reject_choice(f'{not_allowed_message(given, allowed)}{suffix}', option, hints, given)
 
     if not isinstance(value, str):
         return match(value)
@@ -557,12 +574,8 @@ def split_csv(
             if not part:
                 continue
             if part not in allowed:
-                message = not_allowed_message(part, allowed)
                 # 틀린 값 하나만 본다. 쉼표로 함께 준 맞는 값까지 다른 옵션으로 안내하지 않게
-                hint = hints.hint(option, part) if hints else None
-                if hint:
-                    raise HintedBadParameter(message, option, hint)
-                raise typer.BadParameter(message, param_hint=option)
+                _reject_choice(not_allowed_message(part, allowed), option, hints, part)
             if part not in result:
                 result.append(part)
     return result

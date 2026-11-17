@@ -14,7 +14,7 @@
 '--deposit-max (앞: 1000, 지금: 없음)', 옵션 순서를 바꿔 적으면 그대로 이어 받는다).
 
 표에는 만든 jibsa 버전(`jibsa --version` 한 줄)도 담아, 버전이 다른 jibsa 에 주면 처음부터 다시 찾게 한다. 업데이트로 옵션이
-없어지거나 위치의 꼴이 바뀌면 옛 표의 조건·위치를 지금 명령이 읽지 못한다. 개발 설치는 코드를 고쳐도 버전 줄이 같아 코드
+없어지거나 위치의 꼴이 바뀌면 옛 표의 조건·위치를 지금 명령이 읽지 못한다. 개발·로컬 설치는 코드를 고쳐도 버전 줄이 같아 코드
 지문을 붙여 가른다 (`build_text`).
 """
 import hashlib
@@ -124,7 +124,7 @@ def _prune(directory: Path, now: float) -> None:
 
 
 def _version() -> str:
-    """표를 만든·읽는 jibsa (`jibsa --version` 한 줄, 개발 설치는 코드 지문까지. `build_text`). git 주소 설치는 커밋까지 붙어
+    """표를 만든·읽는 jibsa (`jibsa --version` 한 줄, 개발·로컬 설치는 코드 지문까지. `build_text`). git 주소 설치는 커밋까지 붙어
     릴리스 사이의 코드도 가른다."""
     # app 이 소스 명령 모듈을 거쳐 이 모듈을 불러, 순환 import 를 피하려고 여기서 가져온다
     from jibsa.cli.app import build_text

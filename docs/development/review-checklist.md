@@ -40,7 +40,9 @@
    확인: 후보 목록에 걸린 `len(...) == 1`·`break`·`next(...)`·`[0]` 자리마다 그 목록이 어디서 왔는지 거슬러 본다.
    예: `providers/naver/service/region.py:162`·`:191`·`:170` (2026-11-16), `providers/daangn/service/school.py:204`.
    언제: 후보 목록에 `len(...) == 1`·`next(`·`[0]`·`break` 가 걸린 `+` 줄, 또는 이름·주소로 후보를 고르거나 거르는 줄,
-   `> 1` 로 멈추던 결과에 `== 1` 갈래를 더한 diff.
+   `> 1` 로 멈추던 결과에 `== 1` 갈래를 더한 diff. 한 자동완성 판정(다음 쪽·좌표 없는 후보)을 고친 diff 면 같은 자동완성을 쓰는
+   짝 함수(동·역·단지·`regions`)도 본다. 예: `providers/naver/service/region.py:359`·`:1064` (동·단지만 고치고 역·`regions` 가
+   첫 쪽만 봤다, 2026-11-17).
 5. **누락값과 0.** 실패·모름은 `null`, 해당 없음은 키 삭제, 정말 빈 것만 `[]` 인가. `or`·`or 0`·`or inf`·`if not x` 로 0 과
    모름을 섞지 않는가. 날짜·층 자리의 `'-'`·빈 글자를 그대로 내지 않는가. 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가
    돌려주는 값을 본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16).
@@ -60,7 +62,9 @@
 9. **실패·취소 경로 (주로 `core/`).** 예외·Ctrl+C·다른 프로세스와 겹칠 때 브라우저·잠금·쿠키 파일을 정리하는가, 다른 프로세스가
    새로 쓴 파일을 덮지 않는가, 잠깐의 실패에 오래 남는 상태를 만들지 않는가. 예: `core/browser.py:1363`·`:1630`.
    언제: `core/` 의 `try`·`except`·`finally`·잠금·파일 쓰기·브라우저 열고 닫기를 바꾼 diff.
-10. **공백뿐인 사용자 입력.** 위치·이름 인자는 `min_length=1` 을 공백(`' '`)으로 지나므로 `.split()[-1]`·`[0]` 이 IndexError
+10. **공백뿐이거나 앞뒤 공백이 붙은 사용자 입력.** 앞뒤 공백을 떼지 않으면 이름 비교(`==`·`endswith`)가 어긋나 맞는 후보를
+    못 찾는다 (웹 검색창은 trim 해서 보낸다). 예: `providers/naver/service/region.py:812` ('파크리오 ' 가 후보 3곳으로 멈췄다,
+    2026-11-17). 위치·이름 인자는 `min_length=1` 을 공백(`' '`)으로 지나므로 `.split()[-1]`·`[0]` 이 IndexError
     (INTERNAL_ERROR)가 된다. 서버가 빈 응답을 줘서 지금 안 닿는 것은 막는 이유가 아니다. 확인: `' '` 를 넣어 그 줄까지 따라간다.
     예: `providers/naver/service/region.py:172` (`words[-1]`, 요청 전에 `:740` 에서 INVALID_ARGUMENT 로 막았다, 2026-11-16).
     언제: 사용자 검색어에 `.split()`·인덱스를 쓰는 줄을 조건 밖으로 옮기거나 새로 더한 diff.
@@ -186,6 +190,15 @@
    필드·라벨·안내 문구에 `round`·`floor`·`:g`·`.1f` 나 0.1만원으로 반올림하는 `won_to_manwon` 을 새로 쓰지 않았는가
    (`won_to_manwon_exact`·`format_manwon` 을 쓴다). 거리·면적·비율은 줄여도 된다. 네이버·다방·당근의 기존 반올림은 #257 로 남겨 둔 것이라 지적하지 않는다.
    언제: 금액(`*_manwon`)을 만들거나 글자로 쓰는 `+` 줄.
+5. **CHANGELOG 절.** 문구·안내만 바뀐 줄은 `변경`, 받던 입력을 더는 받지 않거나 출력 꼴이 바뀐 줄은 `⚠️ 호환 깨짐` 이다
+   ([release.md](release.md) 버전 번호 규칙). 예: `CHANGELOG.md` 의 네이버 반경 안내 문구 줄 (호환 깨짐에 있었다, 2026-11-17).
+   언제: `CHANGELOG.md` 에 줄을 더한 diff.
+6. **운용 규칙은 원문 한 곳.** 같은 규칙(작업자가 다르게 해도 되는 범위, 모델 기준, 검증 범위)을 `docs/development/agents.md`·
+   `CLAUDE.md`·에이전트 정의·워크플로·skill 에 따로 옮겨 적지 않고 원문 한 곳을 가리키는가. 바꾼 규칙과 같은 주제의 다른 문장도
+   함께 바뀌었는가. 예: 원문 `docs/development/agents.md` "지시서와 다르게 할 때" 문단과 그것을 가리키기만 하는
+   `.claude/agents/coder.md:22` (2026-11-17 에는 이 규칙을 네 곳에 다른 말로 적어 `first` 묶음 이름만 막는 곳과 다른 묶음이 부르는
+   이름까지 막는 곳이 갈렸고, `doc-writer` 를 Sonnet 고정에 넣으며 바로 위 "종합 문서는 Opus" 를 남겼다).
+   언제: `.claude/`·`CLAUDE.md`·`AGENTS.md`·`docs/development/agents.md` 를 고친 diff.
 
 ## 지적하지 말 것
 
@@ -211,3 +224,5 @@
 8. **검토하고 그대로 둔 설계.** `proxy=''` 를 잘못된 주소로 보기, 요청 하나 전체에 시간 상한 없음, 탭이 닫히면 닫고 다시 띄우기
    (`core/browser.py:671`·`:818`·`:1739`), 평형 코드가 없을 때 전체 평균으로 물러서지 않기
    (`providers/daangn/service/compare.py:611`).
+9. **꺼진 상태가 정상인 기능 스위치의 기본값.** 한 호출부만 켜고 나머지는 꺼야 맞는 bool(`listing_search`)은 `design` 2 가
+   아니다. 지금 호출부는 모두 맞고, 틀리려면 호출부가 바뀌어야 한다. 예: `providers/naver/service/region.py:761`.

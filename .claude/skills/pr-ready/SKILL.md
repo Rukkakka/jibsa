@@ -17,5 +17,5 @@ allowed-tools: Bash(git diff *) Bash(git status *) Bash(.venv/bin/ruff *) Bash(.
    - `scripts/install/` → `docs/install.md` 한 줄 설치 절. `pyproject.toml` 의존성 → 상한 규칙.
    - 웹과 다르게 한 곳 → 그 소스 가이드 "웹과 다른 점".
 3. `.venv/bin/ruff check` 와 `.venv/bin/mypy` 를 돌린다 (0건이어야 한다). 전체 `pytest` 는 돌리지 않는다 (CI 가 돌린다).
-4. 1 의 세 곳(`git diff <기준>...HEAD`, `git diff HEAD`, 추적 안 된 파일 내용)에 토큰·쿠키·중개사 이름·전화번호 같은 개인정보나 실제 매물 데이터 픽스처가 없는지 훑는다.
+4. 1 의 세 곳(`git diff <기준>...HEAD`, `git diff HEAD`, 추적 안 된 파일 내용)에 토큰·쿠키·중개사 이름·전화번호 같은 개인정보나 실제 매물 데이터 픽스처가 없는지 훑는다. diff 는 `CLAUDE.md` "명령 출력을 맥락에 적게 남기기" 대로 scratchpad 파일로 저장해 Grep 으로 훑고, 걸린 자리만 연다 (저장할 때 허락 창이 뜰 수 있다).
 5. 보고: 빠진 문서·목록을 "파일 → 고쳐야 할 곳" 으로, ruff·mypy 결과, 의심되는 개인정보 위치. 다 맞으면 "PR 템플릿의 변경 종류와 Closes #이슈 를 채우면 된다" 고 끝낸다.

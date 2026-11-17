@@ -950,7 +950,7 @@ class NaverClient(BaseHTTPClient):
         사이트 검색창의 자동완성과 같은 결과다. 로그인 없이 쓴다.
 
         Args:
-            parameter: `keyword`, `page`.
+            parameter: `keyword`, `page`, `size` (사이트 검색창은 10, 빼면 서버 기본 5건).
 
         Returns:
             NaverSearchAutocompleteComplexesV1ResponseModel: 단지 번호·이름·유형·법정동·좌표.

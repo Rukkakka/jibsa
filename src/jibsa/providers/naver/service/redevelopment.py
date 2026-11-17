@@ -39,12 +39,13 @@ from jibsa.providers.naver.api.response.redevelopment import (
 )
 from jibsa.providers.naver.service.common import (
     COMPLEX_SORT_TYPE_BY_NAME,
-    RADIUS_TOTAL_BASIS,
     TRADE_CODE_BY_NAME,
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
+    area_scope,
     bounding_box,
+    dong_filter,
     group_sort_notes,
     listing_keeper,
     pagination_notes,
@@ -205,7 +206,7 @@ def list_redevelopment_areas(
     pins: dict[int, NaverRedevelopmentAreaPinModel] = {}
     box = bounding_box(lat, lng, radius_km)
     if legal_division_code is not None:
-        filter_ = filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': 'EUP'})
+        filter_ = dong_filter(filter_, legal_division_code)
     else:
         markers = unwrap(
             client.run_request_complex_redevelopment_area_markers_v1(
@@ -263,12 +264,12 @@ def list_redevelopment_areas(
     scan_pages(scan, fetch, keep, page_size=REDEVELOPMENT_PAGE_SIZE)
     result = list(areas.values())[:limit]
     notes: list[str] = []
+    area_text = area_scope(legal_division_code, radius_km)
     if scan.truncated:
         notes.append(note(
             '일부',
             f'네이버 차단을 피하려고 {scan.received}곳까지만 훑었습니다. 구역이 더 있을 수 있으니 '
-            + ('조건을 좁혀' if legal_division_code is not None else '반경을 줄이거나 조건을 좁혀')
-            + ' 다시 검색하세요',
+            f'{area_text.narrow_action} 다시 검색하세요',
         ))
     if no_trade:
         notes.append(note(
@@ -283,8 +284,7 @@ def list_redevelopment_areas(
         reason = '검색 범위(반경) 밖이거나 고른 거래 유형 매물이 없는' if trade_types else '중복이거나 검색 범위(반경) 밖의'
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, subject='구역', truncated=scan.truncated, excluded_reason=reason,
-        total_basis='' if legal_division_code is not None else RADIUS_TOTAL_BASIS,
-        narrow='조건·지역' if legal_division_code is not None else '조건·반경',
+        scope=area_text.scope, total_basis=area_text.total_basis, narrow=area_text.narrow,
     )
     return NaverRedevelopmentAreasResult(total=scan.total, returned=len(result), areas=result, notes=notes)
 

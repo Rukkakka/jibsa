@@ -348,7 +348,7 @@ def version_text() -> str:
 
 @cache
 def _install() -> tuple[str, bool]:
-    """(`version_text` 한 줄, 그 줄이 코드를 가르지 못하는지). 개발 설치·설치 정보 없음·설치 출처 모름은 코드가 바뀌어도 줄이 같다."""
+    """(`version_text` 한 줄, 그 줄이 코드를 가르지 못하는지). 개발 설치·로컬 폴더·파일 설치·설치 정보 없음·설치 출처 모름은 코드가 바뀌어도 줄이 같다."""
     try:
         dist = distribution('jibsa')
     except PackageNotFoundError:
@@ -367,14 +367,16 @@ def _install() -> tuple[str, bool]:
         return f'{text} (커밋 {commit[:SHORT_COMMIT_LENGTH]})', False
     if editable:
         return f'{text} (개발 설치)', True
-    return text, False
+    # direct_url.json 이 있는 설치는 인덱스(PyPI)에서 받은 것이 아니라(PEP 610: 인덱스 설치는 이 파일이 없다) 로컬 폴더·wheel·압축
+    # 파일처럼 같은 버전 번호로 코드만 바꿔 다시 설치할 수 있다. 커밋이 없으면 코드 지문으로 가른다
+    return text, bool(origin)
 
 
 @cache
 def build_text() -> str:
     """이어 받기 표(`paging`)가 만든 jibsa 를 가르는 값. 버전 한 줄(`version_text`)이 코드를 가르지 못하면 코드 지문을 붙인다.
 
-    개발 설치·설치 정보 없음·설치 출처 모름은 코드를 고쳐도 버전 줄이 같아, 고치기 전에 만든 표가 버전 확인을 지나 바뀐 꼴의 위치를 읽다
+    개발 설치·로컬 폴더·파일 설치·설치 정보 없음·설치 출처 모름은 코드를 고쳐도 버전 줄이 같아, 고치기 전에 만든 표가 버전 확인을 지나 바뀐 꼴의 위치를 읽다
     엉뚱한 조건 오류나 KeyError 로 끝날 수 있었다 (2026-11-12 리뷰). 지문은 패키지 `.py` 파일 경로와 내용의 해시다. `jibsa --version`
     에는 붙이지 않는다.
     """
