@@ -65,7 +65,7 @@ def _lat_lng(coordinates: NaverCoordinatesModel | None) -> tuple[float, float]:
     return coordinates.y_coordinate, coordinates.x_coordinate
 
 
-# 같은 이름 지역·비슷한 이름 단지를 안내할 때 보여 줄 후보 수
+# 같은 이름 지역·역을 안내할 때 보여 줄 후보 수
 MAX_CANDIDATE_NOTES: int = 5
 
 
@@ -381,29 +381,26 @@ def _find_subway_station(
     return region, notes
 
 
-def search_complexes(client: NaverClient, keyword: str) -> list[NaverAutocompleteComplexModel]:
-    """단지 이름 자동완성 첫 페이지. 사이트 검색창과 같은 순서다."""
-    return unwrap(
+def _search_complexes(
+    client: NaverClient,
+    keyword: str,
+) -> tuple[list[NaverAutocompleteComplexModel], int | None, bool | None]:
+    """단지 이름 자동완성 첫 페이지(10건)와 전체 수(totalCount)·다음 쪽 여부(hasNextPage). 사이트 검색창과 같은 요청·순서다."""
+    page = unwrap(
         client.run_request_search_autocomplete_complexes_v1(
             NaverSearchAutocompleteComplexesV1RequestParameterModel(keyword=keyword)
         ),
         '단지 검색',
-    ).items
-
-
-def _complex_candidates_note(query: str, best: NaverAutocompleteComplexModel, items: list[NaverAutocompleteComplexModel]) -> str | None:
-    others = [item for item in items if item is not best][:MAX_CANDIDATE_NOTES]
-    if not others:
-        return None
-    listed = ', '.join(f'{item.complex_name}({item.complex_number})' for item in others)
-    return note(
-        '모호',
-        f"'{query}': 이름이 비슷한 단지가 더 있어 {best.complex_name}({best.complex_number}) {particle(best.complex_name, '을/를')} 골랐습니다. 다른 단지: {listed}",
     )
+    return page.items, page.total_count, page.has_next_page
 
 
-def _pick_complex(query: str, items: list[NaverAutocompleteComplexModel]) -> NaverAutocompleteComplexModel:
-    return next((item for item in items if item.complex_name == query), items[0])
+def _complex_label(item: NaverAutocompleteComplexModel) -> str:
+    """단지 후보 글 ('래미안 (서울특별시 강남구 개포동, 단지 번호 12345)')."""
+    address = normalize_address(item.legal_division_name)
+    return f'{item.complex_name} ({address}, 단지 번호 {item.complex_number})' if address else (
+        f'{item.complex_name} (단지 번호 {item.complex_number})'
+    )
 
 
 def _has_more(total: int | None, has_next_page: bool | None, received: int) -> bool:
@@ -448,16 +445,93 @@ def _stop_unless_only(
         raise RegionAmbiguousError(query, labels[:shown], _candidate_count(len(labels), total, more), hint=hint)
 
 
+def _pick_complex(
+    query: str,
+    items: list[NaverAutocompleteComplexModel],
+    total: int | None,
+    has_next_page: bool | None,
+    hint: Callable[[NaverAutocompleteComplexModel], str],
+) -> tuple[NaverAutocompleteComplexModel, list[str]]:
+    """단지 이름 자동완성 후보에서 단지 하나와 안내를 고른다. 고를 수 없으면 후보를 알린다.
+
+    네이버 웹 검색창은 후보 목록을 보여 주고 사람이 고른다 (2026-11-16 웹 대조: '현대' 첫 10건 중 이름이 정확히 '현대' 인
+    단지가 5곳, 전체 3,924건). 그래서 이름이 정확히 같은 후보가 하나이거나 후보가 하나뿐일 때만 그 단지로 정하고, 첫 후보를
+    임의로 고르지 않는다. 이름이 다른 단지 하나로 정했으면 어느 단지인지 안내한다.
+    다만 다음 쪽이 남았으면(hasNextPage 거나 전체 수가 받은 후보 수보다 크면) 웹이 '더보기' 로 다음 쪽(page=1, 2…)을 더
+    보여 주는 경우라 뒤쪽에 이름이 같은 단지가 더 있을 수 있다 (2026-11-16 '한양' 실측: 전체 852건, 정확히 '한양' 인 단지가
+    첫 쪽(page=0)에 1~2곳(첫 쪽 순서가 요청마다 달랐다), page=1 에 2곳, page=2 에 1곳). 다음 쪽을 더 부르지 않고, 이때는
+    정확히 같은 이름이 하나여도 후보가 하나여도 고르지 않는다. totalCount 가 비어 와도 hasNextPage 로 다음 쪽을 안다
+    (같은 모듈의 동·역 자동완성도 `_has_more` 로 같게 본다).
+
+    Args:
+        query: 사용자가 준 단지 이름.
+        items: 자동완성 후보 (사이트 순서).
+        total: 자동완성 전체 수 (totalCount). 비어 올 수 있다 (다음 쪽이 남았는데 비면 `candidate_count` 는 null, `_candidate_count`).
+        has_next_page: 자동완성의 다음 쪽 여부 (hasNextPage).
+        hint: 후보가 여럿일 때 다시 묻는 법을 만드는 함수 (부르는 명령마다 다르다). 예로 들 단지 후보를 받는다.
+            정확히 같은 이름의 후보가 있으면 그중 첫 곳, 없으면 첫 후보다 (이름이 다른 단지를 예로 들지 않게).
+
+    Raises:
+        RegionAmbiguousError: 다음 쪽이 남았거나, 이름이 정확히 같은 후보가 여럿이거나, 정확히 같은 이름 없이 후보가 여럿일 때.
+    """
+    exact = [item for item in items if item.complex_name == query]
+    has_more = _has_more(total, has_next_page, len(items))
+    if not has_more and len(exact) == 1:
+        return exact[0], []
+    # 후보가 여럿이거나 다음 쪽이 남았으면 여기서 멈춘다 (받은 후보를 모두 알린다). 돌아오면 후보가 하나뿐이다
+    _stop_unless_only(
+        query,
+        [_complex_label(item) for item in items],
+        has_more,
+        total,
+        hint=hint((exact or items)[0]),
+        shown=len(items),
+    )
+    only = items[0]
+    return only, [note('참고', f"'{query}': 단지 이름으로 {_complex_label(only)} 단지를 찾았습니다")]
+
+
 def _find_complex(
     client: NaverClient,
     query: str,
-    radius_km: float | None,
+    listing_search: bool,
 ) -> tuple[NaverRegion, list[str]] | None:
-    items = [item for item in search_complexes(client, query) if item.coordinates is not None]
-    if not items:
+    """단지 이름 자동완성으로 단지를 찾아 그 좌표를 위치로 쓴다 (`_pick_complex`).
+
+    Args:
+        listing_search: `search listings` 에서 부르는지. 그때만 단지 안 매물을 단지 번호(`--complex`)로 찾으라고 알린다.
+
+    Raises:
+        RegionAmbiguousError: 단지를 하나로 정할 수 없을 때.
+        JibsaError: 정한 단지에 좌표가 없으면 REGION_NOT_FOUND (단지는 찾았지만 위치로 쓸 수 없다).
+    """
+    found, total, has_next_page = _search_complexes(client, query)
+    if not found:
         return None
-    best = _pick_complex(query, items)
-    candidates_note = _complex_candidates_note(query, best, items)
+
+    def ambiguous_hint(item: NaverAutocompleteComplexModel) -> str:
+        listings = (
+            '단지 안 매물은 후보의 단지 번호로 찾으세요 '
+            f'(예: jibsa naver search listings --complex {item.complex_number}). '
+        ) if listing_search else ''
+        # 후보 글에는 동까지의 주소만 있어(번지·도로명 없음) 그 동 이름으로 찾으면 단지 둘레가 아니라 동 전체가 된다.
+        # `complex` 가 주는 번지 주소로 찾으면 그 지점 둘레를 반경으로 찾는다
+        return (
+            f'{listings}단지 둘레는 jibsa naver complex <후보의 단지 번호> 의 address(번지 주소)로 다시 검색하세요 '
+            f'(예: jibsa naver complex {item.complex_number})'
+        )
+
+    best, notes = _pick_complex(query, found, total, has_next_page, hint=ambiguous_hint)
+    if best.coordinates is None:
+        # 단지는 찾았으니 '지역을 찾지 못했습니다' 와 단지 이름으로 다시 검색하라는 힌트(같은 에러가 되풀이된다)를 주지 않는다
+        listings = (
+            f'단지 안 매물은 단지 번호로 찾고 (jibsa naver search listings --complex {best.complex_number}), '
+        ) if listing_search else ''
+        raise JibsaError(
+            code='REGION_NOT_FOUND',
+            message=f"{quoted(query, '은/는')} {_complex_label(best)} 단지로 찾았지만 네이버가 좌표를 주지 않아 위치로 쓸 수 없습니다",
+            hint=f'{listings}둘레는 jibsa naver complex {best.complex_number} 의 address(번지 주소)로 다시 검색하거나 --lat/--lng 로 찾으세요',
+        )
     lat, lng = _lat_lng(best.coordinates)
     region = NaverRegion(
         name=best.complex_name,
@@ -466,7 +540,7 @@ def _find_complex(
         lng=lng,
         legal_division_code=best.legal_division_number,
     )
-    return region, [candidates_note] if candidates_note else []
+    return region, notes
 
 
 # 주소 검색 itemLevel 이 이 값 이상이면 번지·건물 단위다 (5 시·도/시·군·구, 8 동·읍·면, 12 번지·건물)
@@ -681,6 +755,10 @@ def resolve_search_region(
     client: NaverClient,
     query: str,
     radius_km: float | None = 1.0,
+    *,
+    # 리뷰 오탐 (2026-11-17): 호출부마다 달라야 할 인자(체크리스트 design-2)가 아니라 꺼진 상태가 정상인 기능 스위치다.
+    # `--complex` 는 `search listings` 옵션이라 거기서만 켜고, search complexes·search redevelopment·trend 는 False 가 맞다
+    listing_search: bool = False,
 ) -> tuple[NaverRegion, str, list[str]]:
     """`naver search listings` 등의 검색어를 검색 위치와 그 종류로 바꾼다.
 
@@ -695,13 +773,21 @@ def resolve_search_region(
     `radius_km` 는 안내에만 쓰고, 반경으로 찾지 않는 호출부(trend)는 None 을 넘겨 '반경 안만 검색했습니다' 안내를
     받지 않는다. 반경 검색이어도 '○가' 동의 앞 이름이면 멈춘다 (중심으로 쓸 동을 임의로 고르는 것이라).
 
+    Args:
+        listing_search: `search listings` 에서 부르는지. 단지 이름 후보가 여럿이거나 좌표가 없을 때 단지 안 매물을 단지
+            번호(`--complex`)로 찾으라는 힌트를 이때만 붙인다 (다른 명령에는 다음 할 일이 아니다).
+
     Returns:
         tuple[NaverRegion, str, list[str]]: 위치, 종류('주소', '동', '역', '단지', '지역'), 안내.
             '동' 이면 법정동 코드가 있어 동 전체를 검색할 수 있다.
 
     Raises:
-        RegionAmbiguousError: 같은 이름의 동·주소가 여러 곳일 때.
+        RegionAmbiguousError: 같은 이름의 동·주소·역·단지가 여러 곳이거나, 이름이 맞는 동·역 없이 후보가 여럿이거나,
+            이름이 맞는 동이 자동완성 첫 쪽에 하나뿐인데 다음 쪽이 남았고 하나뿐인지 확인할 수 없거나,
+            '○가' 로 나뉜 동(성수동1가·성수동2가)의 앞 이름일 때.
         RegionNotFoundError: 넷 다 결과가 없을 때.
+        JibsaError: 동·역·단지 이름으로 정한 곳에 좌표가 없으면 REGION_NOT_FOUND (그곳을 찾았다고 알린다). 검색어가
+            공백뿐이면 요청 없이 INVALID_ARGUMENT.
     """
     def legal_division(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
         found = _find_legal_division(client, query, radius_km)
@@ -718,7 +804,7 @@ def resolve_search_region(
         return None if found is None else (found[0], '역', found[1])
 
     def complex_(client: NaverClient, query: str, radius_km: float | None) -> tuple[NaverRegion, str, list[str]] | None:
-        found = _find_complex(client, query, radius_km)
+        found = _find_complex(client, query, listing_search)
         return None if found is None else (found[0], '단지', found[1])
 
     # 웹 검색창은 앞뒤 공백을 떼고 보낸다 (번들 검색창 `e.trim()`). 떼지 않으면 '파크리오 ' 가 이름이 정확히 같은 단지를
@@ -747,24 +833,34 @@ def resolve_search_region(
 
 
 def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | None, list[str]]:
-    """단지 이름을 단지 번호로 바꾼다. 이름이 똑같은 단지를 우선하고, 후보가 더 있으면 안내를 함께 준다.
+    """단지 이름을 단지 번호로 바꾼다. 이름이 똑같은 단지가 하나이거나 후보가 하나뿐일 때만 정한다 (`_pick_complex`).
+    다음 쪽 후보가 남았으면(hasNextPage 거나 전체 수가 받은 수보다 크면) 그때도 정하지 않는다.
 
     Returns:
         tuple[int, bool | None, list[str]]: 단지 번호, 빌라 단지인지 (`complex_is_villa`), 안내.
 
     Raises:
         JibsaError: 단지를 찾지 못하면 NOT_FOUND.
+        RegionAmbiguousError: 후보가 여럿이라 정할 수 없을 때. 후보에 단지 번호를 붙여 번호로 다시 묻게 한다.
     """
-    items = search_complexes(client, name)
+    items, total, has_next_page = _search_complexes(client, name)
     if not items:
         raise JibsaError(
             code='NOT_FOUND',
             message=f"'{name}' 에 해당하는 네이버 단지를 찾지 못했습니다",
-            hint='단지 이름을 줄이거나(예: 래미안) 단지 번호(fin.land.naver.com/complexes/{번호})로 다시 조회하세요',
+            # 이름을 줄이라고 하면 흔한 이름('래미안' 303곳)이 되어 후보가 첫 쪽 10건을 넘어 고르지 않는다 (`_pick_complex`)
+            hint='단지 이름의 오타·띄어쓰기를 고치거나 단지 번호(fin.land.naver.com/complexes/{번호})로 다시 조회하세요. '
+            '흔한 이름(예: 래미안)만 주면 후보가 많아 고르지 않습니다',
         )
-    best = _pick_complex(name, items)
-    candidates_note = _complex_candidates_note(name, best, items)
-    return best.complex_number, complex_is_villa(best.type), [candidates_note] if candidates_note else []
+    best, notes = _pick_complex(
+        name,
+        items,
+        total,
+        has_next_page,
+        # 단지 이름을 받는 명령(complex·market-price·school·search listings --complex)이 함께 써서 예시에 명령을 적지 않는다
+        hint=lambda example: f'단지 이름 대신 후보의 단지 번호를 주세요 (예: {example.complex_number})',
+    )
+    return best.complex_number, complex_is_villa(best.type), notes
 
 
 def complex_is_villa(code: str | None) -> bool | None:

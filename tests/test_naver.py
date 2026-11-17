@@ -23,6 +23,7 @@ from jibsa.providers.naver.service.listing import (
 from jibsa.providers.naver.service.real_price import get_real_prices
 from jibsa.providers.naver.service.region import (
     legal_division_code_at,
+    resolve_complex_number,
     resolve_search_region,
 )
 from jibsa.providers.naver.service.search import (
@@ -645,6 +646,39 @@ def test_coordinate_lookup_failure_is_upstream_error_not_missing_dong() -> None:
 
 def _ok(result: object) -> dict:
     return {'isSuccess': True, 'detailCode': 'success', 'result': result}
+
+
+def _complex_item(number: int, name: str) -> dict:
+    return {
+        'complexNumber': number, 'complexName': name, 'type': 'A01',
+        'legalDivisionName': '서울시 강남구 개포동', 'legalDivisionNumber': '1168010300',
+        'coordinates': {'xCoordinate': 127.05, 'yCoordinate': 37.48},
+    }
+
+
+@pytest.mark.parametrize(
+    'items,total,expected',
+    [
+        # 이름이 정확히 같은 후보가 하나면 그 단지다 (비슷한 이름 후보가 더 있어도, 후보를 다 받았을 때)
+        ([_complex_item(1, '현대아이파크'), _complex_item(2, '현대')], 2, 2),
+        # 이름이 같은 단지가 여럿이면 첫 후보를 고르지 않고 후보를 알린다 (네이버 웹은 목록에서 사람이 고른다)
+        ([_complex_item(1, '현대'), _complex_item(2, '현대'), _complex_item(3, '현대아이파크')], 3924, None),
+        # 다음 쪽이 남았으면 정확히 같은 이름이 하나여도 고르지 않는다 (뒤쪽에 같은 이름이 더 있을 수 있다)
+        ([_complex_item(1, '현대아이파크'), _complex_item(2, '현대')], 852, None),
+    ],
+)
+def test_complex_name_picks_only_unique_exact_match(items: list[dict], total: int, expected: int | None) -> None:
+    requests: list[httpx.Request] = []
+    body = _ok({'hasNextPage': total > len(items), 'totalCount': total, 'list': items})
+    with make_path_client(requests, {'/search/autocomplete/complexes': body}) as client:
+        if expected is not None:
+            assert resolve_complex_number(client, '현대')[0] == expected
+        else:
+            with pytest.raises(JibsaError) as exc:
+                resolve_complex_number(client, '현대')
+            assert exc.value.code == 'REGION_AMBIGUOUS'
+            assert exc.value.details['candidate_count'] == total
+            assert exc.value.details['candidates'][0].startswith(f'{items[0]["complexName"]} (')
 
 
 def _ga_dong_address(full_address: str, code: str) -> dict:

@@ -122,7 +122,7 @@ app.add_typer(search_app, name='search')
 
 
 def _complex_number(client: NaverClient, complex_: str) -> tuple[int, bool | None, list[str]]:
-    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 비슷한 후보 안내를 함께 준다)."""
+    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS."""
     # 붙여 넣은 번호의 앞뒤 공백(' 8928')을 먼저 떼야 번호를 이름으로 찾지 않는다
     complex_ = complex_.strip()
     if NUMBER_PATTERN.fullmatch(complex_) is None:
@@ -255,10 +255,12 @@ def _resolve_location(
     radius: float | None,
     *,
     radius_search: bool = True,
+    listing_search: bool = False,
 ) -> tuple[NaverRegion, str, list[str]]:
     """검색 위치, 그 종류, 안내. 좌표를 주면 좌표(종류 '좌표')가 이름보다 앞선다.
 
     반경으로 찾지 않는 명령(trend)은 `radius_search=False` 로 '반경 안만 검색했습니다' 안내를 받지 않는다.
+    `listing_search` 는 `search listings` 에서만 켠다 (단지 이름 후보에 `--complex` 힌트를 붙인다, `resolve_search_region`).
 
     이름은 네이버 주소 검색 → 자동완성(동 → 역 → 단지)으로 찾는다. 못 찾으면 REGION_NOT_FOUND, 여러 곳이면
     REGION_AMBIGUOUS, 막히면 RATE_LIMITED 로 끝낸다 (다른 소스로 대신 찾지 않는다).
@@ -268,7 +270,9 @@ def _resolve_location(
         return NaverRegion(name=query or f'{lat},{lng}', lat=lat, lng=lng), '좌표', notes
     # 좌표가 없으면 _require_location 이 이름을 요구했다
     assert query is not None
-    return resolve_search_region(client, query, (radius or DEFAULT_RADIUS_KM) if radius_search else None)
+    return resolve_search_region(
+        client, query, (radius or DEFAULT_RADIUS_KM) if radius_search else None, listing_search=listing_search,
+    )
 
 
 def _whole_dong(region: NaverRegion, kind: str, radius: float | None) -> bool:
@@ -287,13 +291,15 @@ def _area_location(
     lat: float | None,
     lng: float | None,
     radius: float | None,
+    *,
+    listing_search: bool = False,
 ) -> tuple[NaverRegion, list[str], str | None, dict[str, object]]:
     """지역 안을 찾는 명령(search listings·complexes·redevelopment)의 검색 위치, 안내, 동 경계 법정동 코드, 찾은 범위.
 
     동 이름이고 반경을 주지 않았으면 동 경계 안 전체를 찾아 법정동 코드를 주고, 아니면 None 이라 반경 안을 찾는다.
     범위는 결과에 붙이는 boundary 또는 radius_km 다 (`_search_scope`).
     """
-    region, kind, notes = _resolve_location(client, query, lat, lng, radius)
+    region, kind, notes = _resolve_location(client, query, lat, lng, radius, listing_search=listing_search)
     whole_dong = _whole_dong(region, kind, radius)
     if whole_dong:
         notes.append(WHOLE_DONG_NOTE.format(name=region.name))
@@ -965,6 +971,7 @@ def search_command(
 
     결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
     그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소가 여러 곳이면 REGION_AMBIGUOUS 로 멈추니 시·구를 붙여 다시 검색한다.
+    '○가' 로 나뉜 동의 앞 이름(성수동 → 성수동1가·성수동2가)이나 여러 단지에 맞는 단지 이름도 REGION_AMBIGUOUS 로 후보를 알린다.
     결과의 title 에 단지명이 들어 있다.
 
     조건은 모두 네이버 서버 필터로 거른다. 목록에는 방 수가 없어 room_type 은 null 이다
@@ -1056,7 +1063,7 @@ def search_command(
             return
         # 동 이름이면 동 전체를 찾는다. 반경을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다.
         # '○가' 로 나뉜 동(성수동)은 위치 해석에서 REGION_AMBIGUOUS 로 멈춰 동 경계는 늘 동 하나다 (네이버 웹도 동 하나씩 연다)
-        region, notes, code, scope = _area_location(client, query, lat, lng, radius)
+        region, notes, code, scope = _area_location(client, query, lat, lng, radius, listing_search=True)
         result = search_area(
             client,
             region.lat,

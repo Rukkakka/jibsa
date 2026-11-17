@@ -102,7 +102,7 @@ jibsa naver search listings 역삼동 -t 오피스텔 --trade 월세 --deposit-m
 
 **오류와 대응**
 
-모호한 주소·동은 `REGION_AMBIGUOUS`(시·구를 붙여 다시 찾는다), 위치 미발견은 `REGION_NOT_FOUND`. 동 이름을 끝말 없이 줘도(`송정`, `신흥`) `송정동`처럼 같은 이름 동이 여러 곳인지 보고 멈춘다 (요청 1회 더 들 수 있다). `○가` 로 나뉜 동(성수동 → 성수동1가·2가)은 `성수` 처럼 `동` 을 빼고 줘도 직방처럼 모두 찾아 합친다 (`boundary`·`region.name` 은 `"성수동1가·성수동2가"`). 동 목록 API 가 법정동을 하나만 받아 동마다 따로 찾고 `--limit` 을 동끼리 나눠 쓰며, 형제 동을 찾는 요청 1회와 동마다의 목록 요청이 더 든다. `--radius`·가까운순으로 찾으면 1가 중심의 반경이라 반경 안의 2가도 들어가고 `notes` 가 그렇게 알린다 (`search complexes`·`search redevelopment` 도 같다. 둘은 동 경계로 찾을 때 1가만 찾고 2가는 따로 검색하라고 알린다). 목록 옵션에 없는 값이나 다른 소스의 옵션을 옮겨 쓰면(`--bathroom 1`, `--room 2`, `--condition 엘리베이터`, `--room-count 2개`) 에러 `hint` 가 맞는 옵션(`--bathroom 1개`, `--room 투룸`, `--facility 엘리베이터`, `--room 투룸`)이나 네이버에 그 조건이 없다는 것(`--option 반려동물가능`, `--city`)을 알려 준다. `--next` 가 다른 지역·조건의 값이면 `INVALID_ARGUMENT` 다. 좌표 누락·옵션 범위·모드 충돌은 `INVALID_ARGUMENT`.
+모호한 주소·동은 `REGION_AMBIGUOUS`(시·구를 붙여 다시 찾는다), 위치 미발견은 `REGION_NOT_FOUND`. 동 이름을 끝말 없이 줘도(`송정`, `신흥`, `수정구 신흥` 은 끝 단어 `신흥`) `송정동`처럼 같은 이름 동이 여러 곳인지 보고 멈춘다 (요청 1회 더 들 수 있다). 이름이 맞는 동이 검색창 첫 쪽에 하나뿐이어도 다음 쪽이 남았으면 이름 전체 주소 검색으로 하나뿐인지 확인하고(주소 검색이 준 한 곳이 찾은 동과 같은 곳일 때만), 확인할 수 없으면 고르지 않고 `REGION_AMBIGUOUS` 로 후보를 알린다. 검색창 동·역 후보에 이름이 맞는 곳이 없으면 첫 후보를 쓰지 않는다. 후보가 여럿이면 `REGION_AMBIGUOUS` 로 후보(동은 전체 주소, 역은 `역이름(노선)`)를 알리고 (`서울대` → 서울대입구역·서울대벤처타운역), 하나뿐이면 그곳으로 찾고 `[참고]` 로 알린다. 역 후보는 역 이름 그대로(`서울대입구역`) 다시 찾는다. 이름이 같은 역이 여러 곳이면(`시청역` → 서울·대전·부산) 하나를 고르지 않고 `REGION_AMBIGUOUS` 로 후보를 좌표와 함께(`시청역(1호선) --lat 36.351677 --lng 127.386736`, 좌표가 없으면 `(좌표 없음)`) 알린다. 역 이름·노선이 같은 역이 있어 고를 역의 `--lat/--lng` 로 다시 찾는다. 같은 이름 역이 검색창 첫 쪽 끝까지 이어지면 다음 쪽을 최대 2회 더 받아 세고, 그래도 남으면 `candidate_count` 는 `null` 이다. `○가` 로 나뉜 동의 앞 이름(`성수동`·`성수` → 성수동1가·성수동2가, `부민` → 부민동1가~3가)은 한 곳을 고르지도, 합치지도 않고 `REGION_AMBIGUOUS` 로 다른 시·구의 것까지 `○가` 동을 모두 후보(`candidates`, 전체 주소)로 알린다 (`충정로` → 중구 충정로1가·서대문구 충정로2가·3가). 시·구를 붙이면(`서대문구 충정로`) 그 시·구의 `○가` 동만 센다. `--radius` 를 줘도 같고, 요청이 더 든다: 주소 검색이 1가를 찾은 `성수동` 은 검색창 동 후보 1회(다음 쪽이 있으면 하위 지역 목록 1회 더), 검색창 동 후보로 찾은 `충정로` 는 받은 동 후보를 다시 써 더 들지 않고, `부민` 은 다음 쪽이 없을 때만 다시 쓰고 남았으면 `부민동` 동 후보 1회 더 (둘 다 다음 쪽이 있으면 하위 지역 목록 1회 더). 후보 하나(`성수동1가`)로 다시 찾는다. 검색창 동 후보에 다음 쪽이 남아 다른 시·구의 `○가` 동을 다 보지 못했으면 `○가` 동이 한 곳만 모여도 고르지 않고 `REGION_AMBIGUOUS` 다 (`candidate_count` 는 `null`). 단지 이름을 위치로 줬는데 여러 단지에 맞아도 `REGION_AMBIGUOUS` 다 (후보 꼴은 [3절](#3-complex--단지-하나-정보)). `hint` 대로 단지 안 매물은 후보의 단지 번호를 `--complex` 에 넣고, 단지 둘레는 `jibsa naver complex <후보의 단지 번호>` 의 `address`(번지 주소)로 다시 찾는다 (후보의 동 이름으로 찾으면 단지 둘레가 아니라 동 전체다). 단지 이름으로 정한 단지에 네이버가 좌표를 주지 않으면 `REGION_NOT_FOUND` 다. `message` 가 찾은 단지를 알리고, `hint` 대로 단지 안 매물은 단지 번호(`--complex`)로, 둘레는 `complex <단지 번호>` 의 `address`(번지 주소)나 `--lat/--lng` 로 찾는다. 동·역 이름으로 정한 곳도 후보로는 좌표 없는 곳까지 세지만, 정한 곳에 네이버가 좌표를 주지 않으면 다른 후보로 바꾸지 않고 `REGION_NOT_FOUND` 다 (`message` 가 찾은 곳을 알리고 `hint` 가 번지·도로명 주소나 `--lat/--lng` 를 알린다). `--sort 가까운순` 은 `INVALID_ARGUMENT` 다 (네이버 정렬에는 거리순이 없다. 지역 검색이면 `hint` 가 다른 방법을 알린다). 목록 옵션에 없는 값이나 다른 소스의 옵션을 옮겨 쓰면(`--bathroom 1`, `--room 2`, `--condition 엘리베이터`, `--room-count 2개`) 에러 `hint` 가 맞는 옵션(`--bathroom 1개`, `--room 투룸`, `--facility 엘리베이터`, `--room 투룸`)이나 네이버에 그 조건이 없다는 것(`--option 반려동물가능`, `--city`)을 알려 준다. `--next` 가 다른 지역·조건의 값이면 `INVALID_ARGUMENT` 다. 좌표 누락·옵션 범위·모드 충돌, 공백뿐인 지역 이름은 `INVALID_ARGUMENT`.
 
 **주의사항**
 
@@ -152,7 +152,7 @@ jibsa naver search complexes 역삼동 --sort 세대수순
 
 **오류와 대응**
 
-지역 모호·미발견은 `REGION_AMBIGUOUS`·`REGION_NOT_FOUND`. 필터 범위·유형 위반은 `INVALID_ARGUMENT`.
+지역 모호·미발견은 `REGION_AMBIGUOUS`·`REGION_NOT_FOUND`. `○가` 로 나뉜 동의 앞 이름(`성수동`), 이름이 맞지 않는 동·역 후보 여럿, 여러 단지에 맞는 단지 이름도 `REGION_AMBIGUOUS` 다 ([매물 검색](#1-search-listings--매물-찾기)과 같다). 다만 단지 이름의 `hint` 는 `--complex` 없이 `complex <후보의 단지 번호>` 의 번지 주소로 다시 찾으라고만 알린다 (좌표 없는 단지의 `REGION_NOT_FOUND` 도 같다). 필터 범위·유형 위반은 `INVALID_ARGUMENT`.
 
 **주의사항**
 
@@ -184,13 +184,13 @@ jibsa naver complex 개포자이 --pyeong 1
 
 **오류와 대응**
 
-없는 단지·평형·동은 `NOT_FOUND`이며, 평형·동이면 그 단지의 평형·동 목록을 `hint` 로 준다. 부가 정보 미제공은 빈 값이나 안내로 구분한다.
+없는 단지·평형·동은 `NOT_FOUND`이며, 평형·동이면 그 단지의 평형·동 목록을 `hint` 로 준다. 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS` 이고 후보의 단지 번호로 다시 조회한다 (아래 단지 이름 설명). 부가 정보 미제공은 빈 값이나 안내로 구분한다.
 
 **주의사항**
 
 `--pyeong`(평형 번호, 결과의 `pyeongs[].number`)과 `--dong`(동 이름)은 반복 또는 쉼표로 지정한다. 주면 `article_counts` 와 호가 범위를 그 평형·동 매물만으로 세고 `notes` 로 알린다 (단지 정보와 `pyeongs` 는 그대로 단지 전체). 주지 않으면 단지 전체로 센다.
 
-단지 번호는 `naver complex <단지 이름>`(네이버 단지 검색, 이름이 똑같은 단지 우선. 비슷한 후보는 `notes` 로 알린다), `fin.land.naver.com/complexes/{번호}`, 매물 상세(`listing`)에서 얻는다. 단지로 등록된 빌라(연립·다세대, 빌라 매물의 `complex_number`)도 `complex`·`search listings --complex`·`real-price` 로 볼 수 있다 (빌라 단지에는 동 수·건설사·방 수가 없다).
+단지 이름은 네이버 검색창의 단지 검색으로 찾는다. 검색창 단지 후보는 첫 쪽 10건만 받고 다음 쪽은 부르지 않는다. 다음 쪽이 없을 때(네이버가 다음 쪽이 있다고 하지 않고 후보 전체 수 `candidate_count` 가 10건 안일 때) 그중 이름이 정확히 같은 단지가 하나이거나 후보가 하나뿐일 때만 그 단지로 찾고 (이름이 다른 한 곳이면 `notes` 로 어느 단지인지 알린다), 그 밖에는 정확히 같은 이름이 하나여도 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`, `"이름 (주소, 단지 번호 N)"` 꼴로 최대 10곳)와 네이버 검색 결과 전체 수(`candidate_count`. 다음 쪽이 남았는데 네이버가 전체 수를 주지 않으면 `null` 이고 `message` 는 `"N곳 이상"`)를 알린다. 흔한 이름(`한양`·`현대`)은 후보가 10건을 넘어 늘 이렇게 알리고, 구체적인 이름(`래미안대치팰리스`·`잠실엘스`·`반포자이`)은 그대로 찾아진다. 후보의 단지 번호로 다시 조회한다. 위치로 준 단지 이름도 같은 규칙으로 정하고, 정한 단지에 좌표가 없으면 `REGION_NOT_FOUND` 로 멈추고 단지 번호·동 이름·좌표로 찾으라고 알린다 ([매물 검색](#1-search-listings--매물-찾기)의 오류). 단지 이름을 받는 `complex`·`search listings --complex`·`market-price`·`school --complex` 모두 같다. 단지 번호는 이 결과, `fin.land.naver.com/complexes/{번호}`, 매물 상세(`listing`)에서도 얻는다. 단지로 등록된 빌라(연립·다세대, 빌라 매물의 `complex_number`)도 `complex`·`search listings --complex`·`real-price` 로 볼 수 있다 (빌라 단지에는 동 수·건설사·방 수가 없다).
 
 빌라 단지에는 단일 평형 선택 시의 관리비·기관별 시세·실거래 요약을 붙이지 않고 `notes`로 알린다. 개별 실거래는 `real-price`로 확인한다.
 
@@ -222,7 +222,7 @@ jibsa naver search listings --complex 개포자이 --trade 매매 --dong 104 --p
 
 **오류와 대응**
 
-지역·좌표·지원하지 않는 지역 필터와 `--complex` 동시 지정은 `INVALID_ARGUMENT`. 없는 단지·동은 `NOT_FOUND`이며, 동이면 그 단지의 동 이름을 `hint` 로 준다. 단지 번호로 찾았는데 0건이면 단지가 있는지 확인한다(요청 1~2회 추가). `--pyeong` 을 주었는데 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다.
+지역·좌표·지원하지 않는 지역 필터와 `--complex` 동시 지정은 `INVALID_ARGUMENT`. 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS` 다 ([단지 이름 해석](#3-complex--단지-하나-정보)). `--sort 가까운순` 은 `INVALID_ARGUMENT` 다 (`message` 가 고를 수 있는 정렬을 알린다. 단지 안 매물은 거리가 없어 `--radius` 를 권하지 않는다). 없는 단지·동은 `NOT_FOUND`이며, 동이면 그 단지의 동 이름을 `hint` 로 준다. 단지 번호로 찾았는데 0건이면 단지가 있는지 확인한다(요청 1~2회 추가). `--pyeong` 을 주었는데 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다.
 
 **주의사항**
 
@@ -332,7 +332,7 @@ jibsa naver search redevelopment 한강진역 --radius 1 --trade 매매 --sort �
 
 **오류와 대응**
 
-이름·좌표 모두 누락, 좌표 한쪽 누락, 정렬·거래 유형·반경·한도 위반은 `INVALID_ARGUMENT`다. 모호한 지역은 `REGION_AMBIGUOUS`, 미발견은 `REGION_NOT_FOUND`다.
+이름·좌표 모두 누락, 좌표 한쪽 누락, 정렬·거래 유형·반경·한도 위반은 `INVALID_ARGUMENT`다. 모호한 지역은 `REGION_AMBIGUOUS`, 미발견은 `REGION_NOT_FOUND`다. `○가` 로 나뉜 동의 앞 이름(`성수동`), 이름이 맞지 않는 동·역 후보 여럿, 여러 단지에 맞는 단지 이름도 `REGION_AMBIGUOUS` 다 ([매물 검색](#1-search-listings--매물-찾기)과 같다). 다만 단지 이름의 `hint` 는 `--complex` 없이 `complex <후보의 단지 번호>` 의 번지 주소로 다시 찾으라고만 알린다 (좌표 없는 단지의 `REGION_NOT_FOUND` 도 같다).
 
 **주의사항**
 
@@ -402,7 +402,7 @@ jibsa naver trend 역삼동 --trade 전세 --period 3년 --pyeong-range 30
 
 **오류와 대응**
 
-월세·없는 기간·허용되지 않은 평형대, 이름·좌표 누락은 `INVALID_ARGUMENT`다. 지역 미발견과 위치(역·단지·좌표)의 법정동을 찾지 못한 경우(바다 좌표 등)는 `REGION_NOT_FOUND`, 모호하면 `REGION_AMBIGUOUS`다.
+월세·없는 기간·허용되지 않은 평형대, 이름·좌표 누락은 `INVALID_ARGUMENT`다. 지역 미발견과 위치(역·단지·좌표)의 법정동을 찾지 못한 경우(바다 좌표 등)는 `REGION_NOT_FOUND`, 모호하면 `REGION_AMBIGUOUS`다. `○가` 로 나뉜 동의 앞 이름(`성수동`), 이름이 맞지 않는 동·역 후보 여럿, 여러 단지에 맞는 단지 이름도 `REGION_AMBIGUOUS` 다 ([매물 검색](#1-search-listings--매물-찾기)과 같다). 다만 단지 이름의 `hint` 는 `--complex` 없이 `complex <후보의 단지 번호>` 의 번지 주소로 다시 찾으라고만 알린다 (좌표 없는 단지의 `REGION_NOT_FOUND` 도 같다). `trend` 는 동 단위라 후보의 동 이름(그 단지의 법정동)을 그대로 넣어도 된다.
 
 **주의사항**
 
@@ -430,7 +430,7 @@ jibsa naver market-price 개포자이 --pyeong 1 --period 3년
 
 **오류와 대응**
 
-평형 번호 누락·없는 기간은 `INVALID_ARGUMENT`, 없는 단지 이름은 `NOT_FOUND`다. 시세가 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다. 평형 목록이 비면(없는 단지 번호이거나 평형 정보가 없는 단지) `complex` 로 단지를 확인하라고 `hint` 로 준다.
+평형 번호 누락·없는 기간은 `INVALID_ARGUMENT`, 없는 단지 이름은 `NOT_FOUND`, 여러 단지에 맞는 단지 이름은 `REGION_AMBIGUOUS` 다 ([단지 이름 해석](#3-complex--단지-하나-정보)). 시세가 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다. 평형 목록이 비면(없는 단지 번호이거나 평형 정보가 없는 단지) `complex` 로 단지를 확인하라고 `hint` 로 준다.
 
 **주의사항**
 
@@ -515,7 +515,7 @@ jibsa naver school B100000747 --complex 개포자이
 
 **오류와 대응**
 
-없는 학교 코드나 `--complex` 의 없는 단지 번호는 `NOT_FOUND`, 영문·숫자가 아닌 코드는 `INVALID_ARGUMENT`다.
+없는 학교 코드나 `--complex` 의 없는 단지 번호는 `NOT_FOUND`, `--complex` 의 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS`([단지 이름 해석](#3-complex--단지-하나-정보)), 영문·숫자가 아닌 코드는 `INVALID_ARGUMENT`다.
 
 **주의사항**
 
