@@ -35,6 +35,7 @@ from jibsa.core.listing import (
 from jibsa.core.schema import RequestModel
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
+    NaverArticleFilterModel,
     NaverArticleSortType,
     NaverBoundingBoxModel,
     NaverComplexBuildingListV1RequestParameterModel,
@@ -65,6 +66,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import (
     Annotated,
     Any,
+    NamedTuple,
     TypeVar,
 )
 
@@ -119,10 +121,9 @@ WON_PER_MANWON: int = 10_000
 # 검색 모드(search listings·complexes·redevelopment, --complex·--redevelopment)의 --limit 최대값.
 # CLI 옵션의 max 와 상한 안내(`pagination_notes`)가 함께 쓴다
 MAX_LIST_LIMIT: int = 120
-# 가까운 순이 아닌 정렬은 사각형 안 매물 목록(boundedArticles)을 네이버 정렬 그대로 받는다.
-# limit 건까지만 받고, 반경 밖(사각형 모서리) 매물을 빼도 그만큼 다시 받지 않는다.
-SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType | None] = {
-    '가까운순': None,
+# 매물 목록 정렬. 네이버 웹 정렬(ARTICLE_SORT_TYPE)의 여섯이고 거리순은 없다. 반경 검색은 반경을 감싼 사각형 안 매물
+# 목록(boundedArticles)을, 동 전체는 동 매물 목록을 이 정렬 그대로 받는다
+SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType] = {
     '랭킹순': 'RANKING_DESC',
     '가격낮은순': 'PRICE_ASC',
     '가격높은순': 'PRICE_DESC',
@@ -130,10 +131,9 @@ SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType | None] = {
     '면적좁은순': 'SPACE_ASC',
     '면적넓은순': 'SPACE_DESC',
 }
-# 단지 매물 목록 정렬. 거리가 없어 가까운순은 뺀다
-COMPLEX_SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType] = {
-    name: code for name, code in SORT_TYPE_BY_NAME.items() if code is not None
-}
+# 단지·재개발 구역 매물 목록 정렬. 지역 매물 검색과 같은 표라 별칭으로 둔다. 가까운순은 이쪽에 원래 없어 그 안내(cli 의
+# NEAREST_SORT_HINT)는 search_command 가 지역 검색 모드에만 붙인다
+COMPLEX_SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType] = SORT_TYPE_BY_NAME
 
 
 def article_url(article_number: str) -> str:
@@ -307,7 +307,7 @@ class NaverListingsResult(BaseModel):
     ] = False
     next_position: Annotated[
         dict[str, Any] | None,
-        Field(exclude=True, description='이어 받을 위치 (목록 커서 seed·last_info 와 지도 칸·동 번호). 더 없으면 None')
+        Field(exclude=True, description='이어 받을 위치 (목록 커서 seed·last_info). 더 없으면 None')
     ] = None
     listings: Annotated[
         # 중복 묶음 필드(NaverListing)까지 내보낸다 (SerializeAsAny 가 없으면 공통 Listing 필드만 나간다)
@@ -316,7 +316,7 @@ class NaverListingsResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='요청 상한으로 일부 클러스터만 훑었다는 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='요청 상한으로 일부만 훑었다는 안내 등. CLI 가 notice 아래에 붙인다')
     ] = []
 
 
@@ -671,7 +671,7 @@ def resolve_dong_numbers(
 
 
 class PageScan(BaseModel):
-    """페이지 넘김 조회 예산. 가까운순처럼 여러 번 이어 부르면 예산과 이미 본 항목을 함께 쓴다."""
+    """페이지 넘김 조회 예산과 훑은 결과 (`scan_pages` 가 채운다)."""
 
     limit: Annotated[
         int,
@@ -733,7 +733,6 @@ def scan_pages(
     keep: Callable[[Any], Any],
     *,
     page_size: int,
-    max_pages: int | None = None,
     start: tuple[str | None, Any] | None = None,
 ) -> None:
     """`fetch(size, seed, last_info)` 로 페이지를 차례로 받아 항목마다 `keep(item)` 을 부른다.
@@ -749,20 +748,17 @@ def scan_pages(
 
     Args:
         keep: 항목을 걸러 담고 그 항목의 번호를 돌려준다 (모르면 None).
-        max_pages: 이번 호출에서 받을 페이지 상한 (가까운순의 클러스터 하나). 없으면 요청 상한까지.
         start: 이어 받을 (seed, lastInfo). 없으면 첫 페이지부터.
     """
     seed, last_info = start if start is not None else (None, None)
     scan.cursor = start
-    pages = 0
-    while max_pages is None or pages < max_pages:
+    while True:
         if scan.received >= scan.limit:
             return
         if scan.page_requests >= scan.max_requests:
             scan.truncated = True
             return
         scan.page_requests += 1
-        pages += 1
         page = fetch(min(page_size, scan.limit - scan.received), seed, last_info)
         if page is None:
             scan.cursor = None
@@ -775,7 +771,7 @@ def scan_pages(
             scan.cursor = None
             return
         # seed 는 첫 응답 값이 마지막 페이지까지 그대로 오고 null 로 온 적이 없어 응답 값을 그대로 넘긴다
-        # (단지 매물·동 전체·최신순·가까운순·재개발 구역·단지 목록 6종 22쪽, 2026-10-10 확인)
+        # (단지 매물·동 전체·최신순·지도 칸 매물(clusteredArticles)·재개발 구역·단지 목록 6종 22쪽, 2026-10-10 확인)
         seed, last_info = page.seed, page.last_info
         scan.cursor = (seed, last_info)
 
@@ -801,15 +797,38 @@ def listing_keeper(
     return keep
 
 
-# `pagination_notes` 의 제외 사유. 반경 밖은 사각형으로 받아 반경으로 거르는 검색(정렬 매물·단지·재개발 구역)에만 있다.
-# 동 전체·단지·재개발 매물은 반경 없이 받고, 가까운순(지도 칸)은 반경 밖도 빼지 않고 `beyond_radius_notes` 로 알린다.
-# 그런 검색에 '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다.
+# `pagination_notes` 의 제외 사유. 반경 밖은 사각형으로 받아 반경으로 거르는 검색(반경 매물·단지·재개발 구역)에만 있다.
+# 동 전체·단지·재개발 구역 매물은 반경 없이 받아, '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다.
 # 목록 응답에는 매물 상태·노출 여부 필드가 없어 거래 불가로 빼는 매물은 없다. 빼는 것은 번호가 같은 중복과 모르는 거래 유형
 # 코드(`article_info_to_listing`)뿐이다 (2026-10-14 실측: 역삼동 동 전체 목록 20건의 모든 키에 상태 필드 없음)
 EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형인'
 RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의'
 # 반경 검색의 서버 집계(total)가 센 범위. 반경 원이 아니라 그 원을 감싼 사각형 안이라 반경 안 수보다 크다
 RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
+
+
+def dong_filter(filter_: NaverArticleFilterModel, legal_division_code: str) -> NaverArticleFilterModel:
+    """동 경계 검색 필터. 법정동 코드 하나를 읍·면·동 단위로 넣는다 (동 매물·단지·재개발 구역 목록이 같은 꼴을 받는다)."""
+    return filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': 'EUP'})
+
+
+class AreaScope(NamedTuple):
+    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
+
+    scope: str  # pagination_notes 의 scope ('전부'·'없습니다' 가 어느 범위인지)
+    total_basis: str  # pagination_notes 의 total_basis
+    narrow: str  # pagination_notes 의 narrow
+    narrow_action: str  # 요청 상한 안내 끝의 좁히는 법 ('조건을 좁혀' / '반경을 줄이거나 조건을 좁혀')
+
+
+def area_scope(legal_division_code: str | None, radius_km: float) -> AreaScope:
+    """동 코드가 있으면 동 경계, 없으면 반경 검색의 안내 말."""
+    if legal_division_code is not None:
+        return AreaScope(scope='', total_basis='', narrow='조건·지역', narrow_action='조건을 좁혀')
+    return AreaScope(
+        scope=f'반경 {radius_km:g}km 안에서 ', total_basis=RADIUS_TOTAL_BASIS, narrow='조건·반경',
+        narrow_action='반경을 줄이거나 조건을 좁혀',
+    )
 
 
 def pagination_notes(
@@ -838,7 +857,7 @@ def pagination_notes(
             `RADIUS_EXCLUDED_REASON`.
         resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
         resumed: 이어 받기(`--next`)로 받은 결과면 True. 앞 결과에서 받은 매물이 있어 '전부' 대신 '남은 매물' 이라 한다.
-        scope: '전부' 가 어느 범위인지 앞에 붙일 말 (예: '반경 1km 안팎에서 '). 반경을 넓히면 더 나오는데 '전부' 만 쓰면
+        scope: '전부' 가 어느 범위인지 앞에 붙일 말 (예: '반경 1km 안에서 '). 반경을 넓히면 더 나오는데 '전부' 만 쓰면
             찾은 범위의 전부인지 알 수 없다 (2026-10-20 LLM 사용 시험: 1km '26건이 전부' 뒤 2km 85건).
         total_basis: `total` 이 정확한 범위의 수가 아니면 그 범위 (반경 검색은 `RADIUS_TOTAL_BASIS`). 주면 '약 N건(범위)' 으로
             쓴다. 반경 검색에 '조건에 맞는 매물이 1197건' 이라고 하면 사각형 모서리까지 센 수를 반경 안의 수로 읽는다
@@ -1011,7 +1030,7 @@ def bounded_precision(radius_km: float) -> int:
 
     줌이 높을수록 사각형을 다 주지 않고 중심 근처만 준다. 모델 기본값 16 이면 반경 2km 부터 가장자리 매물이 빠져,
     빠진 매물만 조건에 맞을 때 '0건이 전부' 라고 냈다 (2026-10-31 강남역 2km 아파트 전세 5억 이하 + 500세대 이상:
-    줌 16 0건, 가까운순 클러스터 6건). 같은 날 강남역 아파트 전세 4~5억의 반경 안 매물 수:
+    줌 16 0건, 지도 칸 매물(clusteredArticles) 6건). 같은 날 강남역 아파트 전세 4~5억의 반경 안 매물 수:
     1.5km 줌 16·15 모두 10건, 2km 줌 16 21건·15 33건·14 33건, 3km 줌 15 60건·14 62건·13 62건.
     단지 목록도 같다 (3km 아파트 단지 total 줌 16 242곳, 14 1,048곳). 줌을 더 낮추면 반경 밖 매물이 섞여 `--limit`
     몫을 쓴다 (1km 줌 14 는 51건 중 22건이 반경 밖, 줌 16 과 반경 안 수가 같음). 재개발 구역 목록은 따로 14 를 쓴다.

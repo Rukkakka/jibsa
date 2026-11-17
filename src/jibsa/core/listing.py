@@ -426,7 +426,7 @@ def limit_notes(
 
 
 def beyond_radius_notes(
-    listings: Sequence['Listing'], radius_km: float, *, complete: bool = True, resumed: bool = False,
+    listings: Sequence['Listing'], radius_km: float, *, resumed: bool = False,
 ) -> list[str]:
     """반경 안 매물이 모자라 반경 밖 매물까지 함께 돌려줄 때의 안내.
 
@@ -435,9 +435,6 @@ def beyond_radius_notes(
     가장 가까운 게 1.1km" 를 0건 대신 알 수 있게).
 
     Args:
-        complete: 반경을 덮는 칸을 끝까지 받았는지. 조회 한도(`limit`·요청 상한)에 닿아 멈췄으면 False 로 주어
-            "반경 안 매물이 N건뿐" 이라고 단정하지 않는다. 받지 않은 칸·페이지에 반경 안 매물이 더 있을 수 있다
-            (네이버 강남역 반경 0.3km 120건: '116건뿐' 이라 했지만 목화밀라트만 9건이 더 있었다, 2026-10-10).
         resumed: 이어 받기(`--next`)로 받은 결과면 True. 반경 안 매물 수는 이번 결과만 센 것이라 '남은' 매물이라 한다
             (앞 결과에서 받은 반경 안 매물은 세지 않는다).
     """
@@ -449,17 +446,10 @@ def beyond_radius_notes(
     inside = len(distances) - len(beyond)
     # 소수 한 자리로 깎으면 반경 0.1km 밖의 0.13km 가 '최대 0.1km' 로 보여 반경 안처럼 읽힌다
     farthest = f'{round(max(beyond), 2):g}km'
-    # 반경을 덮는 범위(네이버·당근 사각형, 직방 지도 칸)에서 받은 것이라 모서리 쪽만 들어온다. '가까운 매물' 이라 하면 반경 밖을
-    # 빠짐없이 가까운 순으로 고른 줄 안다 (2026-10-20 LLM 사용 시험: 네이버 1km 에 1.43km 모서리 매물은 있고 정북쪽 1.26km 는 없었다)
+    # 반경을 덮는 직방 지도 칸에서 받은 것이라 반경 밖은 칸 모서리 쪽만 들어온다. '가까운 매물' 이라 하면 반경 밖을
+    # 빠짐없이 가까운 순으로 고른 줄 안다
     found = f'반경을 덮어 받은 범위의 반경 밖 매물 {len(beyond)}건(최대 {farthest})'
     partial = '반경 밖은 받은 범위의 일부라 더 보려면 --radius 를 늘리세요'
-    if not complete:
-        head = (
-            f'받은 매물 중 반경 {radius_km:g}km 안 매물이 없어 {found}을'
-            if inside == 0 else
-            f'받은 매물 중 반경 {radius_km:g}km 안은 {inside}건이라 {found}도 함께'
-        )
-        return [note('범위', f'{head} 보여 줍니다. 조회 한도에 닿아 멈췄으므로 반경 안 매물이 더 있을 수 있습니다')]
     remaining = '남은 매물 중 ' if resumed else ''
     if inside == 0:
         return [note(

@@ -4,15 +4,11 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    ValidationError,
 )
 
-from jibsa.core.errors import JibsaError
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     Listing,
-    beyond_radius_notes,
-    by_distance,
     join_address,
     normalize_address,
     normalize_date,
@@ -22,7 +18,6 @@ from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
     NaverArticleFilterModel,
     NaverArticleSortType,
-    NaverBoundingBoxModel,
     NaverDirectionType,
     NaverEntranceType,
     NaverFloorType,
@@ -36,9 +31,7 @@ from jibsa.providers.naver.api.request.common import (
 )
 from jibsa.providers.naver.api.request.search import (
     NaverArticleBoundedArticlesV1RequestPayloadModel,
-    NaverArticleClusteredArticlesV1RequestPayloadModel,
     NaverArticleLegalDivisionArticleListV1RequestPayloadModel,
-    NaverArticleMapArticleClustersV1RequestPayloadModel,
     NaverArticlePagingRequestModel,
     NaverComplexBoundedComplexesV1RequestPayloadModel,
     NaverComplexLegalDivisionComplexListV1RequestPayloadModel,
@@ -57,7 +50,6 @@ from jibsa.providers.naver.service.common import (
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PROPERTY_NAME_BY_CODE,
     RADIUS_EXCLUDED_REASON,
-    RADIUS_TOTAL_BASIS,
     SEARCH_CODES_BY_PROPERTY,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
@@ -65,10 +57,12 @@ from jibsa.providers.naver.service.common import (
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
+    area_scope,
     bounded_precision,
     bounding_box,
     complex_url,
     cursor_position,
+    dong_filter,
     group_sort_notes,
     listing_keeper,
     pagination_notes,
@@ -164,18 +158,6 @@ ENTRANCE_CODE_BY_NAME: dict[str, NaverEntranceType] = {
 COMPLEX_FILTER_NOTE: str = note(
     '제외', '세대수·단지 주차·현관 구조는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다',
 )
-CLUSTER_PRECISION: int = 15
-# 지도 칸(줌 17 타일, 서울 위도에서 약 240m) 중심이 반경을 이만큼 넘어도 칸 안에 반경 안 매물이 있을 수 있다 (칸 반 대각선 약 0.17km)
-CLUSTER_REACH_KM: float = 0.2
-CLUSTER_PAGE_SIZE: int = 30
-MAX_PAGES_PER_CLUSTER: int = 5
-# 한 검색에서 클러스터 매물(clusteredArticles)을 부르는 최대 횟수. 지도 클러스터 1회와 합쳐 네이버 요청
-# 25회로, 1초 간격이라 약 25초에 끝난다 (2026-10-07 실측 24.5초). 분당 상한(60)은 브라우저 첫 화면이 부르는 요청(18~22건,
-# 30분에 한 번)과 나눠 쓰는데, 둘을 합쳐도 넘지 않아 상한 때문에 기다리지는 않는다. 법정동 조회는
-# 하지 않는다 (`search_area` 의 legal_division_numbers 참고). 가격 조건에 맞는 매물이 거의 없으면
-# 반경 안 클러스터를 끝까지 훑게 되는데, 역삼동 1km 월세에서 140회·4분 19초가 걸렸다 (2026-10-07 실측).
-# 같은 측정에서 맞는 매물이 72건 이상이면 limit 10 은 15회 안에 차서 상한이 결과를 바꾸지 않았다.
-MAX_CLUSTER_PAGE_REQUESTS: int = 24
 BOUNDED_PAGE_SIZE: int = 30
 MAX_BOUNDED_PAGE_REQUESTS: int = 10
 # 동 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
@@ -206,64 +188,6 @@ def _filter_range(low: float | None, high: float | None, scale: int = 1) -> Nave
     return NaverRangeModel(
         min=None if low is None else low * scale,
         max=None if high is None else high * scale,
-    )
-
-
-def _search_sorted(
-    client: NaverClient,
-    lat: float,
-    lng: float,
-    radius_km: float,
-    filter_: NaverArticleFilterModel,
-    box: NaverBoundingBoxModel,
-    sort_type: NaverArticleSortType,
-    filter_notes: list[str],
-    limit: int,
-    start: dict[str, Any] | None = None,
-) -> NaverListingsResult:
-    """반경 안 매물을 네이버 정렬 순서 그대로 모은다 (boundedArticles, 페이지당 1회).
-
-    서버는 반경을 감싼 사각형 안을 정렬해 주므로 반경 밖(모서리) 매물은 뺀다. 제외된 수만큼 추가 조회하지 않는다.
-    좌표를 모르는 매물은 반경 안인지 알 수 없어 뺀다. 요청은 `MAX_BOUNDED_PAGE_REQUESTS` 회에서 멈춘다.
-    `start` 는 이어 받기 위치(목록 커서)다.
-    """
-    listings: dict[str, Listing] = {}
-    scan = PageScan(limit=limit, max_requests=MAX_BOUNDED_PAGE_REQUESTS)
-
-    def fetch(size: int, seed: str | None, last_info: Any) -> NaverArticlePageModel:
-        paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
-        return unwrap(
-            client.run_request_article_bounded_articles_v1(
-                NaverArticleBoundedArticlesV1RequestPayloadModel(
-                    filter=filter_, bounding_box=box, precision=bounded_precision(radius_km), article_paging_request=paging,
-                )
-            ),
-            '매물 목록',
-        )
-
-    scan_pages(
-        scan, fetch, listing_keeper(listings, (lat, lng), radius_km), page_size=BOUNDED_PAGE_SIZE, start=resume_cursor(start),
-    )
-    total, inspected, truncated = scan.total, scan.received, scan.truncated
-    next_position = cursor_position(scan.cursor) or None
-
-    result = list(listings.values())[:limit]
-    notes: list[str] = []
-    if truncated:
-        notes.append(note(
-            '일부',
-            f'네이버 차단을 피하려고 정렬 순서로 {inspected}건까지만 훑었습니다. '
-            '반경 안 매물이 더 있을 수 있으니 반경을 줄이거나 조건을 좁혀 다시 검색하세요',
-        ))
-    notes += filter_notes
-    notes += pagination_notes(
-        total, len(result), limit, inspected, truncated=truncated, excluded_reason=RADIUS_EXCLUDED_REASON,
-        resumable=next_position is not None, resumed=start is not None, scope=f'반경 {radius_km:g}km 안에서 ',
-        total_basis=RADIUS_TOTAL_BASIS, narrow='조건·반경',
-    )
-    return NaverListingsResult(
-        total=total, returned=len(result), has_more=next_position is not None, next_position=next_position,
-        listings=result, notes=notes,
     )
 
 
@@ -420,7 +344,7 @@ def list_area_complexes(
         approval_elapsed_year=_filter_range(building_age_min, building_age_max),
     )
     if legal_division_code is not None:
-        filter_ = filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': 'EUP'})
+        filter_ = dong_filter(filter_, legal_division_code)
     sort_type = COMPLEX_LIST_SORT_TYPE_BY_NAME[sort]
     complexes: dict[int, NaverAreaComplex] = {}
     scan = PageScan(limit=limit, max_requests=MAX_COMPLEX_LIST_PAGE_REQUESTS)
@@ -455,104 +379,98 @@ def list_area_complexes(
 
     result = list(complexes.values())[:limit]
     notes: list[str] = []
+    area = area_scope(legal_division_code, radius_km)
     if truncated:
         notes.append(note(
             '일부',
-            f'네이버 차단을 피하려고 {inspected}곳까지만 훑었습니다. 단지가 더 있을 수 있으니 '
-            + ('조건을 좁혀' if legal_division_code is not None else '반경을 줄이거나 조건을 좁혀')
-            + ' 다시 검색하세요',
+            f'네이버 차단을 피하려고 {inspected}곳까지만 훑었습니다. 단지가 더 있을 수 있으니 {area.narrow_action} 다시 검색하세요',
         ))
     notes += pagination_notes(
         total, len(result), limit, inspected, subject='단지', truncated=truncated,
         excluded_reason=EXCLUDED_REASON if legal_division_code is not None else RADIUS_EXCLUDED_REASON,
-        total_basis='' if legal_division_code is not None else RADIUS_TOTAL_BASIS,
-        narrow='조건·지역' if legal_division_code is not None else '조건·반경',
+        scope=area.scope, total_basis=area.total_basis, narrow=area.narrow,
     )
     return NaverAreaComplexesResult(total=total, returned=len(result), complexes=result, notes=notes)
 
 
-def _search_legal_division(
+def _search_listing_pages(
     client: NaverClient,
     lat: float,
     lng: float,
-    legal_division_codes: list[str],
+    *,
+    radius_km: float,
+    legal_division_code: str | None,
     filter_: NaverArticleFilterModel,
     sort_type: NaverArticleSortType,
     filter_notes: list[str],
     limit: int,
     start: dict[str, Any] | None = None,
 ) -> NaverListingsResult:
-    """법정동의 매물을 네이버 정렬 순서 그대로 모은다 (legalDivisionArticleList, 30건에 1회).
+    """반경 안이나 법정동 안 매물을 네이버 정렬 순서 그대로 모은다 (30건에 1회).
 
-    반경 검색과 달리 동 경계 안 매물만 오고 전체 수(`total`)도 정확하다 (역삼동 4,401건 / 같은 중심 1km 사각형
-    7,803건, 2026-10-09). 거리(`distance_km`)는 `lat`/`lng`(첫 동 중심)에서 잰 값이다.
+    `legal_division_code` 를 주면 그 동 경계 안 목록(legalDivisionArticleList)이라 동 안 매물만 오고 전체 수(`total`)도
+    정확하다 (역삼동 4,401건 / 같은 중심 1km 사각형 7,803건, 2026-10-09). 거리(`distance_km`)는 `lat`/`lng`(동 중심)에서
+    잰 값이다. 목록 API 는 동 코드를 하나만 받는다 (2026-10-15 실측: 둘이면 400). 요청은 `MAX_LEGAL_DIVISION_PAGE_REQUESTS`
+    회에서 멈춘다.
 
-    '○가' 로 나뉜 동(성수동1가·2가)은 코드를 여럿 받는다. 목록 API 가 코드를 하나만 받아(2026-10-15 실측: 둘이면 400)
-    동마다 차례로 찾고, `limit` 은 남은 몫을 아직 찾지 않은 동 수로 나눠 쓴다 (앞 동이 적으면 뒤 동이 이어 쓴다).
-    뒤 동이 적어 몫이 남으면 매물이 남은 동을 한 바퀴 더 돌며 남은 몫을 다시 나눈다.
-    코드는 `limit` 개 이하로 준다. 그래야 동마다 몫이 1건 이상이다 (많으면 CLI 가 뒤쪽 동을 빼고 알린다).
+    아니면 지도 범위 목록(boundedArticles)이다. 서버는 반경을 감싼 사각형 안을 정렬해 주므로 반경 밖(모서리) 매물은
+    뺀다. 제외된 수만큼 추가 조회하지 않는다. 좌표를 모르는 매물은 반경 안인지 알 수 없어 뺀다. 요청은
+    `MAX_BOUNDED_PAGE_REQUESTS` 회에서 멈춘다.
 
-    `start` 는 이어 받기 위치다. `dongs` 는 동마다의 상태로 None 은 아직 안 받은 동, 커서(seed·last_info)는 그 커서부터
-    이어 받을 동, False 는 끝까지 받은 동이다. `totals` 는 동마다 앞에서 받은 전체 수라 `total` 이 페이지마다 같다.
-    끝까지 받은 동은 건너뛰고 나머지 동이 `limit` 을 나눠 쓴다. 결과의 `next_position` 은 같은 꼴의 다음 위치다.
+    `start` 는 이어 받기 위치(목록 커서)다.
     """
     listings: dict[str, Listing] = {}
-    inspected = 0
-    truncated = False
-    # 동마다 이어 받을 상태와 전체 수. 커서가 남은 첫 동만 남기면 뒤 동을 이어 받을 때 처음부터 다시 받아 앞 결과와
-    # 겹친다 (2026-10-21 실측: 성수동 --limit 30 의 --next 가 앞 결과 30건 중 12건을 다시 냈다)
-    states: list[dict[str, Any] | bool | None] = list(start['dongs']) if start else [None] * len(legal_division_codes)
-    totals: list[int] = [int(value) for value in start['totals']] if start else [0] * len(legal_division_codes)
-    # 한 바퀴만 돌면 뒤 동이 몫을 다 못 쓸 때 남은 몫이 버려진다 (앞 동 100건·뒤 동 5건에 --limit 30 이면 15 + 5 = 20건만 받고
-    # '이 20건이 전부' 와 '[일부] next 로 이어 보세요' 가 함께 나갔다, 2026-10-23 리뷰). 몫이 남고 매물이 남은 동이 있으면 다시 돈다.
-    # 몫을 다 받은 동은 다음 바퀴에 남은 몫이 없으므로, 다시 도는 건 앞 바퀴에서 끝난 동이 생겼을 때뿐이다 (동 수 + 1 바퀴 이하)
-    while inspected < limit and not truncated and any(state is not False for state in states):
-        for index, code in enumerate(legal_division_codes):
-            if states[index] is False:
-                continue
-            if inspected >= limit:
-                break
-            # 몫은 1건 이상이다. 이어 받으며 --limit 을 동 수보다 작게 줘도 앞 동부터 받고, 못 받은 동은 상태를 그대로 남긴다
-            remaining = sum(1 for state in states[index:] if state is not False)
-            share = max(1, (limit - inspected) // remaining)
-            dong_filter = filter_.model_copy(update={'legal_division_numbers': [code], 'legal_division_type': 'EUP'})
-            scan = PageScan(limit=share, max_requests=MAX_LEGAL_DIVISION_PAGE_REQUESTS)
+    by_dong = legal_division_code is not None
+    if legal_division_code is not None:
+        filter_ = dong_filter(filter_, legal_division_code)
+    box = None if by_dong else bounding_box(lat, lng, radius_km)
+    scan = PageScan(limit=limit, max_requests=MAX_LEGAL_DIVISION_PAGE_REQUESTS if by_dong else MAX_BOUNDED_PAGE_REQUESTS)
 
-            def fetch(size: int, seed: str | None, last_info: Any, dong_filter: NaverArticleFilterModel = dong_filter) -> NaverArticlePageModel:
-                paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
-                return unwrap(
-                    client.run_request_article_legal_division_article_list_v1(
-                        NaverArticleLegalDivisionArticleListV1RequestPayloadModel(filter=dong_filter, article_paging_request=paging)
-                    ),
-                    '동 매물 목록',
-                )
-
-            state = states[index]
-            scan_pages(
-                scan, fetch, listing_keeper(listings, (lat, lng)), page_size=LEGAL_DIVISION_PAGE_SIZE,
-                start=resume_cursor(state) if isinstance(state, dict) else None,
+    def fetch(size: int, seed: str | None, last_info: Any) -> NaverArticlePageModel:
+        paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
+        if box is None:
+            return unwrap(
+                client.run_request_article_legal_division_article_list_v1(
+                    NaverArticleLegalDivisionArticleListV1RequestPayloadModel(filter=filter_, article_paging_request=paging)
+                ),
+                '동 매물 목록',
             )
-            states[index] = cursor_position(scan.cursor) if scan.cursor is not None else False
-            if scan.page_requests:
-                totals[index] = scan.total
-            inspected += scan.received
-            truncated = truncated or scan.truncated
+        return unwrap(
+            client.run_request_article_bounded_articles_v1(
+                NaverArticleBoundedArticlesV1RequestPayloadModel(
+                    filter=filter_, bounding_box=box, precision=bounded_precision(radius_km), article_paging_request=paging,
+                )
+            ),
+            '매물 목록',
+        )
 
-    total = sum(totals)
-    next_position = {'dongs': states, 'totals': totals} if any(state is not False for state in states) else None
+    scan_pages(
+        scan, fetch, listing_keeper(listings, (lat, lng), None if by_dong else radius_km),
+        page_size=LEGAL_DIVISION_PAGE_SIZE if by_dong else BOUNDED_PAGE_SIZE, start=resume_cursor(start),
+    )
+    total, inspected, truncated = scan.total, scan.received, scan.truncated
+    next_position = cursor_position(scan.cursor) or None
 
     result = list(listings.values())[:limit]
     notes: list[str] = []
+    area = area_scope(legal_division_code, radius_km)
     if truncated:
         notes.append(note(
             '일부',
-            f'네이버 차단을 피하려고 동 전체에서 {inspected}건까지만 '
-            '훑었습니다. 조건에 맞는 매물이 더 있을 수 있으니 조건을 좁혀 다시 검색하세요',
+            (
+                f'네이버 차단을 피하려고 동 전체에서 {inspected}건까지만 '
+                f'훑었습니다. 조건에 맞는 매물이 더 있을 수 있으니 {area.narrow_action} 다시 검색하세요'
+            ) if by_dong else (
+                f'네이버 차단을 피하려고 정렬 순서로 {inspected}건까지만 훑었습니다. '
+                f'반경 안 매물이 더 있을 수 있으니 {area.narrow_action} 다시 검색하세요'
+            ),
         ))
     notes += filter_notes
     notes += pagination_notes(
         total, len(result), limit, inspected, truncated=truncated,
-        resumable=next_position is not None, resumed=start is not None, narrow='조건·지역',
+        excluded_reason=EXCLUDED_REASON if by_dong else RADIUS_EXCLUDED_REASON,
+        resumable=next_position is not None, resumed=start is not None,
+        scope=area.scope, total_basis=area.total_basis, narrow=area.narrow,
     )
     return NaverListingsResult(
         total=total, returned=len(result), has_more=next_position is not None, next_position=next_position,
@@ -712,43 +630,30 @@ def search_area(
     *,
     conditions: NaverListingConditions | None = None,
     radius_km: float = 1.0,
-    sort: str = '가까운순',
-    legal_division_codes: list[str] | None = None,
+    sort: str = '랭킹순',
+    legal_division_code: str | None = None,
     limit: int = 30,
     start: dict[str, Any] | None = None,
 ) -> NaverListingsResult:
-    """좌표 반경 안의 매물을 가까운 클러스터부터 모은다.
+    """좌표 반경 안이나 법정동 안의 매물을 네이버 정렬 순서 그대로 모은다.
 
-    클러스터(articleClusters) → 클러스터 매물(clusteredArticles)
-    순으로 조회한다. 조건은 모두 서버 필터로 보내 조건에 맞는 매물만 받고, 받은 뒤 다시 거르지 않는다
+    `legal_division_code` 를 주면 그 동 경계 안 목록, 아니면 반경을 감싼 사각형 안 목록에서 반경 밖 매물을 뺀다
+    (`_search_listing_pages`). 둘 다 네이버 웹 지도의 매물 목록이 쓰는 API 이고, 네이버 정렬에는
+    거리순이 없어 결과도 `distance_km` 순이 아니다. 받은 매물 수가 `limit` 에 닿거나 요청 상한에 닿으면 멈추고,
+    받은 뒤 뺀 매물만큼 다시 채우지 않는다.
+
+    조건은 모두 서버 필터로 보내 조건에 맞는 매물만 받고, 받은 뒤 다시 거르지 않는다
     (2026-10-10 실측: 가격 조건 4종 118건과 단지 매물 38건 모두 조건 안). 서버는 키 이름이 틀리면 조용히
     무시하므로, 필터 키를 바꿀 때는 원본 응답이 조건 안인지 live 테스트로 확인한다. 금액은 만원으로 받아 원으로 바꿔 보낸다.
-    받은 클러스터 매물 수가 `limit`에 도달하면 멈춘다 (요청한 크기가 아니라 받은 개수로 세서, 매물이 적은 칸에서 못 받은
-    몫은 다음 칸에서 받는다). 받은 뒤 제외한 결과는 센 채로 두어 추가로 채우지 않는다. 조건에 맞는 매물이 드물어
-    `limit` 을 못 채워도 클러스터 매물 요청은 `MAX_CLUSTER_PAGE_REQUESTS` 회에서 멈추고, 받은 만큼
-    돌려주며 `notes` 로 알린다 (네이버 차단 위험과 대기 시간 때문).
+    세대수·단지 주차·현관 구조는 단지로 등록된 매물에만 있어, 주면 단지가 없는 빌라 대부분이 빠진다 (`notes` 로 알린다).
 
     Args:
         conditions: 매물 조건 (`NaverListingConditions`). 비면 주거용 전체.
-        sort: 정렬 (`SORT_TYPE_BY_NAME` 의 이름). 가까운순이 아니면 `_search_sorted` 로 네이버 정렬 그대로 받는다.
-        legal_division_codes: 법정동 코드 ('○가' 동은 여럿). 주면 반경 대신 그 동 전체를 `_search_legal_division` 으로 찾는다
-            (가까운순은 없어 랭킹순으로 바꾼다). `lat`/`lng` 는 거리 계산에만 쓴다.
-
-    세대수·단지 주차·현관 구조는 단지로 등록된 매물에만 있어, 주면 단지가 없는 빌라 대부분이 빠진다
-    (`notes` 로 알린다).
-
-    그래서 가까운 순은 근사다. 클러스터는 줌 17 타일(서울 위도에서 약 240m)이고 그 안의 매물은
-    랭킹 순으로 오므로, 옆 클러스터나 같은 클러스터의 뒤 페이지에 더 가까운 매물이 남을 수 있다
-    (오차는 대략 200m). 정확히 맞추려면 클러스터를 더 열어야 해 요청이 몇 배로 늘고, 네이버는
-    차단(429)이 잦아 요청 수를 우선한다.
-
-    받아 온 사각형에는 반경 밖 매물도 있다. 반경 안 매물이 `limit` 보다 적으면 그 매물도
-    가까운 순으로 이어 돌려주고 `notes` 로 알린다 (사각형 모서리에만 매물이 있으면 0건이 되던 문제).
-
-    `start` 는 이어 받기(`--next`) 위치로, 앞 결과의 `next_position` 이다. 결과의 `next_position` 은 더 받을 게 남았을 때만 있다.
+        sort: 정렬 (`SORT_TYPE_BY_NAME` 의 이름).
+        legal_division_code: 법정동 코드. 주면 반경 대신 그 동 전체를 찾고 `lat`/`lng` 는 거리 계산에만 쓴다.
+        start: 이어 받기(`--next`) 위치로, 앞 결과의 `next_position` 이다. 결과의 `next_position` 은 더 받을 게 남았을 때만 있다.
     """
     conditions = conditions or NaverListingConditions()
-    box = bounding_box(lat, lng, radius_km)
     filter_ = listing_filter_of(conditions)
     # 서버 필터가 특정 매물 유형을 통째로 빼는 조건은 notes 로 알린다 (결과는 다시 거르지 않는다)
     filter_notes: list[str] = []
@@ -762,155 +667,9 @@ def search_area(
     sort_type = SORT_TYPE_BY_NAME[sort]
     # 동 전체·반경 정렬 모두 같은 서버 가격순이다
     filter_notes += price_sort_notes(sort_type, conditions.trade_types)
-    if legal_division_codes:
-        result = _search_legal_division(
-            client, lat, lng, legal_division_codes, filter_, sort_type or 'RANKING_DESC', filter_notes, limit, start,
-        )
-    elif sort_type is not None:
-        result = _search_sorted(
-            client, lat, lng, radius_km, filter_, box, sort_type, filter_notes, limit, start,
-        )
-    else:
-        return _search_clusters(client, lat, lng, radius_km, filter_, box, filter_notes, limit, start)
+    result = _search_listing_pages(
+        client, lat, lng, radius_km=radius_km, legal_division_code=legal_division_code, filter_=filter_,
+        sort_type=sort_type, filter_notes=filter_notes, limit=limit, start=start,
+    )
     # 결과의 안내 맨 뒤('이 N건이 전부입니다' 등) 앞에 둘 필요가 없어 끝에 붙인다
     return result.model_copy(update={'notes': result.notes + group_sort_notes(sort_type, result.listings)})
-
-
-def _search_clusters(
-    client: NaverClient,
-    lat: float,
-    lng: float,
-    radius_km: float,
-    filter_: NaverArticleFilterModel,
-    box: NaverBoundingBoxModel,
-    filter_notes: list[str],
-    limit: int,
-    start: dict[str, Any] | None = None,
-) -> NaverListingsResult:
-    """가까운순: 사각형 안 지도 클러스터를 가까운 칸부터 열어 매물을 모은다 (`search_area` 참고).
-
-    `start` 는 이어 받기 위치다 (`cluster`: 이어 받을 칸 ID, 그 칸의 목록 커서). 칸 목록은 다시 받아 같은 가까운 순으로
-    세우고 그 칸부터 연다. 칸 ID 는 지도 타일이라 같은 조건이면 그대로다. 그 칸이 없어졌으면(매물이 빠짐) 칸 순서
-    (`index`)로 이어 간다.
-    """
-    clusters = unwrap(
-        client.run_request_article_map_article_clusters_v1(
-            NaverArticleMapArticleClustersV1RequestPayloadModel(
-                filter=filter_,
-                bounding_box=box,
-                precision=CLUSTER_PRECISION,
-            )
-        ),
-        '지도 클러스터',
-    )
-    ordered = sorted(
-        clusters.clusters,
-        key=lambda cluster: haversine_km(
-            lat, lng, cluster.coordinates.y_coordinate, cluster.coordinates.x_coordinate
-        ),
-    )
-
-    listings: dict[str, Listing] = {}
-    # 할당량·요청 상한·이미 본 매물은 클러스터 전체가 함께 쓴다. 매물이 적은 칸에서 못 받은 몫은 다음 칸에서 받고,
-    # 받았다가 조건에 안 맞아 뺀 매물은 센 채로 두어 그만큼 다시 채우지 않는다.
-    # 매물 번호가 같은 것만 하나로 친다. 건물·면적·가격이 같은데 번호가 다른 매물은 같은 집을
-    # 중개사 여럿이 올린 것일 수 있지만 묶지 않는다. 네이버가 이미 같은 매물을 묶어 대표 매물만
-    # 주고(duplicatedArticleInfo), 그래도 따로 온 것은 같은 평형의 다른 호실일 수 있어서다
-    # (층을 '13'·'중' 처럼 다르게 적기도 해 구분할 수 없다). 잘못 묶으면 실제 매물이 사라진다.
-    scan = PageScan(limit=limit, max_requests=MAX_CLUSTER_PAGE_REQUESTS)
-    keep = listing_keeper(listings, (lat, lng))
-    opened_clusters = 0
-    first = 0
-    # 이어 받을 칸의 커서. 그 칸이 없어져 칸 순서로 이어 가면 그 자리의 다른 칸은 처음부터 받는다 (커서는 칸마다 다르다)
-    resume_at: tuple[str | None, Any] | None = None
-    if start:
-        ids = [cluster.cluster_id for cluster in ordered]
-        if start['cluster'] in ids:
-            first, resume_at = ids.index(start['cluster']), resume_cursor(start)
-        else:
-            first = min(int(start['index']), len(ordered))
-    # 마지막으로 연 칸과 그 칸의 다음 커서. 칸을 다 받았으면(None) 다음 칸부터 이어 받는다
-    last: tuple[int, tuple[str | None, Any] | None] | None = None
-    for index, cluster in enumerate(ordered):
-        if index < first:
-            continue
-        if scan.received >= limit or scan.truncated:
-            break
-
-        def fetch(size: int, seed: str | None, last_info: Any, cluster_id: str = cluster.cluster_id) -> NaverArticlePageModel:
-            paging = NaverArticlePagingRequestModel(size=size, seed=seed, last_info=last_info)
-            try:
-                payload = NaverArticleClusteredArticlesV1RequestPayloadModel(
-                    cluster_id=cluster_id, filter=filter_, article_paging_request=paging,
-                )
-            except ValidationError as exc:
-                # 클러스터 ID 는 응답 값이라, 요청 모델의 형식 검사에 걸리면 handle_errors 가 사용자 입력 오류
-                # (INVALID_ARGUMENT)로 낸다. 응답 형식이 바뀐 것이므로 직방 매물 상세처럼 PARSE_ERROR 로 바꾼다
-                raise JibsaError(
-                    code='PARSE_ERROR',
-                    message=f"네이버 지도 클러스터 ID 가 '{{zoom}}/{{x}}/{{y}}' 형식이 아닙니다: {cluster_id!r}",
-                    hint='비공식 API 응답 형식이 바뀌었을 수 있습니다. 다른 소스를 쓰세요',
-                ) from exc
-            return unwrap(client.run_request_article_clustered_articles_v1(payload), '클러스터 매물')
-
-        before = scan.page_requests
-        # 처음 보는 매물이 없는 페이지는 커서가 진행되지 않는 것으로 보고 다음 클러스터로 넘어간다. `seen` 을 클러스터끼리
-        # 같이 써도 다른 칸의 매물 때문에 멈추지 않는다. 클러스터 ID 가 지도 타일('{zoom}/{x}/{y}')이라 매물은 한 칸에만
-        # 온다 (2026-10-14 실측: 오산역 원룸 클러스터 19개 53건, 강남역 1개 칸 4쪽 100건 모두 칸·쪽 사이 중복 0건).
-        # 칸마다 쪽 상한(MAX_PAGES_PER_CLUSTER)에 걸려 멈춰도 truncated 를 켜지 않는다. 다음 쪽이 남은 동안 쪽은 요청한 만큼 꽉
-        # 차서 와, --limit 최대 120건은 30건짜리 4쪽이면 차 5쪽째를 부르지 않는다 (2026-10-19 실측: 강남역 --limit 120,
-        # 신림역 원룸·빌라 월세 --limit 120 에서 다음 쪽이 남은 쪽 8개 모두 꽉 참). 2026-10-19 리뷰 오탐 확인
-        scan_pages(
-            scan, fetch, keep, page_size=CLUSTER_PAGE_SIZE, max_pages=MAX_PAGES_PER_CLUSTER,
-            start=resume_at if index == first else None,
-        )
-        # 요청 상한에 닿아 열지 못한 칸은 마지막 칸으로 치지 않는다. 치면 커서가 없어 그 칸을 건너뛰고 다음 칸부터 이어 받는다
-        if scan.page_requests > before:
-            last = (index, scan.cursor)
-            opened_clusters += 1
-    inspected, truncated = scan.received, scan.truncated
-    # 이어 받을 칸: 마지막 칸에 쪽이 남았으면 그 칸의 커서부터, 아니면 그다음 칸부터 (연 칸이 없으면 시작한 칸부터)
-    if last is not None and last[1] is not None:
-        resume_index, cursor = last
-    else:
-        resume_index, cursor = (last[0] + 1 if last is not None else first), None
-    # 남은 칸이 모두 반경 밖이면 더 받을 매물로 치지 않는다 (직방·당근 반경 검색과 같다). 반경 밖 매물은 반경 안이 모자랄 때 채우는
-    # 것이다. 칸은 가까운 순이라 이어 받을 칸이 반경 밖이면 그 뒤 칸도 모두 밖이다 (2026-10-20 LLM 사용 시험: 2km 안 85건을
-    # 다 받고도 사각형 모서리 칸 때문에 has_more 가 true 였다)
-    reachable = resume_index < len(ordered) and haversine_km(
-        lat, lng, ordered[resume_index].coordinates.y_coordinate, ordered[resume_index].coordinates.x_coordinate,
-    ) <= radius_km + CLUSTER_REACH_KM
-    next_position = (
-        {'cluster': ordered[resume_index].cluster_id, 'index': resume_index, **cursor_position(cursor)}
-        if reachable else None
-    )
-
-    result = sorted(listings.values(), key=by_distance)[:limit]
-    notes: list[str] = []
-    if truncated:
-        # 안내 문장은 끝에 마침표가 없어 다른 안내와 이어 붙일 수 있다
-        notes.append(note(
-            '일부',
-            f'네이버 차단을 피하려고 검색 중심에서 가까운 지도 칸 {opened_clusters}/{len(ordered)}개까지만 '
-            f'훑었습니다 (클러스터 매물 요청 {MAX_CLUSTER_PAGE_REQUESTS}회). 조건에 맞는 매물이 더 있을 수 있으니 '
-            '조건을 넓히거나 반경을 줄여 다시 검색하세요',
-        ))
-    notes += filter_notes
-    # 서버 집계는 반경을 감싸는 사각형 안의 수다. 가격·방 수 등 조건은 서버 필터라 이미 적용돼 있다
-    notes += pagination_notes(
-        clusters.total_count, len(result), limit, inspected, truncated=truncated,
-        resumable=next_position is not None, resumed=start is not None,
-        # 반경을 감싼 사각형의 지도 칸을 받아 반경 밖 매물도 섞여 '안팎' 이다
-        scope=f'반경 {radius_km:g}km 안팎에서 ',
-        total_basis=RADIUS_TOTAL_BASIS, narrow='조건·반경',
-    )
-    # 반경 밖 매물도 할당량에 세므로, 할당량을 다 쓰고 멈췄으면 열지 않은 칸·페이지에 반경 안 매물이 남았을 수 있다
-    notes += beyond_radius_notes(result, radius_km, complete=next_position is None, resumed=start is not None)
-    return NaverListingsResult(
-        total=clusters.total_count,
-        returned=len(result),
-        has_more=next_position is not None,
-        next_position=next_position,
-        listings=result,
-        notes=notes,
-    )

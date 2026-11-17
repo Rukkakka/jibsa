@@ -40,7 +40,6 @@ from jibsa.core.listing import (
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.service.common import (
     AREA_BASES,
-    COMPLEX_SORT_TYPE_BY_NAME,
     MAX_LIST_LIMIT,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PERIOD_YEARS_BY_NAME,
@@ -149,6 +148,10 @@ MODE_ACCEPTED_OPTIONS: dict[str, str] = {
     '--redevelopment': '재개발 모드는 거래 유형·가격·정렬·--limit 만 받습니다',
 }
 NO_PET_FILTER: str = '네이버에는 반려동물 조건이 없습니다 (직방 --condition 반려동물, 당근 --option 반려동물가능)'
+# 없앤 search listings --sort 가까운순 (지역 검색에만 안내한다). 지도 칸 여러 개의 매물을 합쳐 거리로 다시 세운 목록이라 네이버 웹에 없었다
+NEAREST_SORT_HINT: str = (
+    '네이버 정렬에는 거리순이 없어 가까운순을 없앴습니다. 가까운 매물은 --radius 를 줄이거나 결과의 distance_km 로 고르세요'
+)
 AREA_IN_M2: str = '네이버 면적은 ㎡ 로 주세요: --area-min·--area-max (1평 = 3.3058㎡)'
 # 지역 매물 검색에 다른 소스 표현을 옮겨 쓴 사용법 오류의 힌트 (UsageHints). 이 명령의 다른 옵션 값과, 뜻이 같은 다른 소스
 # 표현이다 (직방 --room 오픈형원룸·--condition 즉시입주, 당근 --option 주차가능·--room-count 2개). '2개'·'3개' 는 욕실 수
@@ -182,6 +185,8 @@ LISTING_HINTS: UsageHints = UsageHints(
         '--room': {'1': '--room 원룸', '2': '--room 투룸', '3': '--room 쓰리룸', '4': '--room 포룸이상'},
         # 직방 --bathroom 은 숫자(3 은 3개 이상)다
         '--bathroom': {'1': '--bathroom 1개', '2': '--bathroom 2개', '3': '--bathroom 3개,4개이상'},
+        # 없앤 --sort 가까운순의 안내 (지역 검색에만)
+        '--sort': {'가까운순': NEAREST_SORT_HINT},
     },
     by_option={
         '--condition': '--facility (시설) 이나 --move-in (입주) · --direction (방향)',
@@ -276,6 +281,26 @@ def _search_scope(region: NaverRegion, whole_dong: bool, radius: float | None) -
     return {'boundary': region.name} if whole_dong else {'radius_km': radius or DEFAULT_RADIUS_KM}
 
 
+def _area_location(
+    client: NaverClient,
+    query: str | None,
+    lat: float | None,
+    lng: float | None,
+    radius: float | None,
+) -> tuple[NaverRegion, list[str], str | None, dict[str, object]]:
+    """지역 안을 찾는 명령(search listings·complexes·redevelopment)의 검색 위치, 안내, 동 경계 법정동 코드, 찾은 범위.
+
+    동 이름이고 반경을 주지 않았으면 동 경계 안 전체를 찾아 법정동 코드를 주고, 아니면 None 이라 반경 안을 찾는다.
+    범위는 결과에 붙이는 boundary 또는 radius_km 다 (`_search_scope`).
+    """
+    region, kind, notes = _resolve_location(client, query, lat, lng, radius)
+    whole_dong = _whole_dong(region, kind, radius)
+    if whole_dong:
+        notes.append(WHOLE_DONG_NOTE.format(name=region.name))
+    code = region.legal_division_code if whole_dong else None
+    return region, notes, code, _search_scope(region, whole_dong, radius)
+
+
 @app.command('complex')
 def complex_command(
     complex_: Annotated[
@@ -357,16 +382,13 @@ def complexes_command(
     validate_ranges(('household', household_min, household_max), ('building-age', building_age_min, building_age_max))
 
     with handle_errors(SOURCE), NaverClient() as client:
-        region, kind, notes = _resolve_location(client, query, lat, lng, radius)
-        whole_dong = _whole_dong(region, kind, radius)
-        if whole_dong:
-            notes.append(WHOLE_DONG_NOTE.format(name=region.name))
+        region, notes, code, scope = _area_location(client, query, lat, lng, radius)
         result = list_area_complexes(
             client,
             region.lat,
             region.lng,
             radius_km=radius or DEFAULT_RADIUS_KM,
-            legal_division_code=region.legal_division_code if whole_dong else None,
+            legal_division_code=code,
             property_types=property_types,
             sort=sort,
             listed_only=not include_empty,
@@ -377,7 +399,7 @@ def complexes_command(
             limit=limit,
         )
         emit(
-            {'region': region.model_dump(mode='json'), **_search_scope(region, whole_dong, radius), **result.model_dump(mode='json')},
+            {'region': region.model_dump(mode='json'), **scope, **result.model_dump(mode='json')},
             pretty,
             notes=notes + result.notes,
         )
@@ -385,7 +407,6 @@ def complexes_command(
 
 def _trade_conditions(
     trade: list[str] | None,
-    sort: str,
     deposit_min: int | None,
     deposit_max: int | None,
     rent_min: int | None,
@@ -393,13 +414,12 @@ def _trade_conditions(
     price_min: int | None,
     price_max: int | None,
 ) -> tuple[NaverTradeConditions, list[str]]:
-    """단지·재개발 구역 매물 목록의 거래 유형·가격·정렬을 확인하고 조건 묶음과 거래 유형 추론 안내를 준다.
+    """단지·재개발 구역 매물 목록의 거래 유형·가격을 확인하고 조건 묶음과 거래 유형 추론 안내를 준다.
 
     지역 검색보다 받는 조건이 적다.
     """
     trade_types, trade_notes = _price_trade_types(trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max)
     validate_ranges(('deposit', deposit_min, deposit_max), ('rent', rent_min, rent_max), ('price', price_min, price_max))
-    sort = check_choice(sort, COMPLEX_SORT_TYPE_BY_NAME, '--sort')
     with handle_errors(SOURCE):
         conditions = NaverTradeConditions(
             trade_types=trade_types,
@@ -510,23 +530,20 @@ def redevelopment_command(
     sort = check_choice(sort, REDEVELOPMENT_SORT_TYPE_BY_NAME, '--sort')
 
     with handle_errors(SOURCE), NaverClient() as client:
-        region, kind, notes = _resolve_location(client, query, lat, lng, radius)
-        whole_dong = _whole_dong(region, kind, radius)
-        if whole_dong:
-            notes.append(WHOLE_DONG_NOTE.format(name=region.name))
+        region, notes, code, scope = _area_location(client, query, lat, lng, radius)
         result = list_redevelopment_areas(
             client,
             region.lat,
             region.lng,
             radius_km=radius or DEFAULT_RADIUS_KM,
-            legal_division_code=region.legal_division_code if whole_dong else None,
-            legal_division_name=(region.address or region.name) if whole_dong else None,
+            legal_division_code=code,
+            legal_division_name=(region.address or region.name) if code is not None else None,
             trade_types=trade_types,
             sort=sort,
             limit=limit,
         )
         emit(
-            {'region': region.model_dump(mode='json'), **_search_scope(region, whole_dong, radius), **result.model_dump(mode='json')},
+            {'region': region.model_dump(mode='json'), **scope, **result.model_dump(mode='json')},
             pretty,
             notes=notes + result.notes,
         )
@@ -748,7 +765,6 @@ def _listing_conditions(
     *,
     property_type: list[str] | None,
     trade: list[str] | None,
-    sort: str | None,
     deposit_min: int | None,
     deposit_max: int | None,
     rent_min: int | None,
@@ -795,8 +811,6 @@ def _listing_conditions(
     parking_types = split_csv(parking, tuple(PARKING_CODE_BY_NAME), '--parking', LISTING_HINTS)
     entrances = split_csv(entrance, tuple(ENTRANCE_CODE_BY_NAME), '--entrance')
     area_basis = check_choice(area_basis, AREA_BASES, '--area-basis')
-    if sort is not None:
-        sort = check_choice(sort, SORT_TYPE_BY_NAME, '--sort')
     if loan is not None:
         loan = check_choice(loan, LOAN_CODE_BY_NAME, '--loan')
     validate_ranges(
@@ -869,7 +883,7 @@ def search_command(
     ] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 안 매물이 모자라면 반경을 덮어 받은 범위의 반경 밖 매물도 나온다 (반경 밖은 가까운 매물을 빠짐없이 고른 것이 아니다). 동 이름으로 찾았을 때 주면 동 전체 대신 동 중심 반경으로 찾는다')
+        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 밖 매물은 뺀다. 동 이름으로 찾았을 때 주면 동 전체 대신 동 중심 반경으로 찾는다')
     ] = None,
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     deposit_min: DepositMinOption = None,
@@ -937,17 +951,17 @@ def search_command(
     ] = None,
     owner_verified: Annotated[bool, typer.Option(help='집주인 확인 매물만')] = False,
     sort: Annotated[
-        str | None,
+        str,
         typer.Option(
             '--sort',
-            help=f"정렬: {', '.join(SORT_TYPE_BY_NAME)}. 기본은 가까운순, 동 전체 검색이면 랭킹순. 가까운순 말고는 네이버 정렬 그대로 준다 (distance_km 순이 아님). 동 이름에 가까운순을 주면 동 중심 반경으로 찾는다",
+            help=f"정렬: {', '.join(SORT_TYPE_BY_NAME)}. 네이버 정렬 그대로 준다 (네이버에는 거리순이 없어 distance_km 순이 아님)",
         )
-    ] = None,
+    ] = '랭킹순',
     next_: NextOption = None,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을 가까운 순으로, 동 이름은 그 동 전체를 랭킹순으로 찾는다.
+    """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을, 동 이름은 그 동 전체를 네이버 정렬(기본 랭킹순)로 찾는다.
 
     결과에 boundary(동 이름)가 있으면 법정동 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
     그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소가 여러 곳이면 REGION_AMBIGUOUS 로 멈추니 시·구를 붙여 다시 검색한다.
@@ -955,8 +969,6 @@ def search_command(
 
     조건은 모두 네이버 서버 필터로 거른다. 목록에는 방 수가 없어 room_type 은 null 이다
     (방 수는 listing 의 room_count). 빌라에는 단지로 등록된 연립·다세대도 들어간다.
-
-    가까운 순은 약 200m 단위 근사다 (네이버가 매물을 지도 칸 단위로 주기 때문). 가장 가까운 매물이라고 단정하지 않는다.
 
     address 는 동까지다 (네이버 목록이 번지를 주지 않음). 번지까지 있는 주소는 listing 에서.
 
@@ -966,6 +978,11 @@ def search_command(
     단지·재개발 구역 매물(--complex·--redevelopment)은 이어 받지 않는다.
     """
     position = decode_next(next_)
+    # 지역·단지·재개발 구역 모드가 같은 정렬 표를 쓴다 (다듬은 값을 넘겨야 서비스의 표 조회가 맞는다). 가까운순 안내는
+    # 지역 검색 모드에만 붙인다 (단지·재개발 모드는 --radius 를 받지 않고 distance_km 도 없다)
+    sort = check_choice(
+        sort, SORT_TYPE_BY_NAME, '--sort', hints=LISTING_HINTS if complex_ is None and redevelopment is None else None,
+    )
     # 단지·재개발 구역 매물 목록이 받지 않는 지역 검색 조건 (기본값이면 주지 않은 것으로 None)
     area_options = {
         '--lat': lat, '--lng': lng, '--radius': radius,
@@ -986,19 +1003,19 @@ def search_command(
             '지역 이름(QUERY)': query, '--complex': complex_, '--pyeong': pyeong, '--dong': dong, **area_options,
         })
         conditions, trade_notes = _trade_conditions(
-            trade, sort or '랭킹순', deposit_min, deposit_max, rent_min, rent_max, price_min, price_max,
+            trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max,
         )
         _search_redevelopment_listings(
-            redevelopment, conditions, trade_notes, sort=sort or '랭킹순', limit=limit, pretty=pretty, fields=fields,
+            redevelopment, conditions, trade_notes, sort=sort, limit=limit, pretty=pretty, fields=fields,
         )
         return
     if complex_ is not None:
         _reject_options('--complex', {'지역 이름(QUERY)': query, **area_options})
         conditions, trade_notes = _trade_conditions(
-            trade, sort or '랭킹순', deposit_min, deposit_max, rent_min, rent_max, price_min, price_max,
+            trade, deposit_min, deposit_max, rent_min, rent_max, price_min, price_max,
         )
         _search_complex_listings(
-            complex_, conditions, trade_notes, pyeong=split_ints(pyeong, '--pyeong'), dong=dong, sort=sort or '랭킹순', limit=limit,
+            complex_, conditions, trade_notes, pyeong=split_ints(pyeong, '--pyeong'), dong=dong, sort=sort, limit=limit,
             pretty=pretty,
             fields=fields,
         )
@@ -1008,7 +1025,7 @@ def search_command(
     _require_location(query, lat, lng)
     require_finite('--radius', radius)
     conditions, trade_notes = _listing_conditions(
-        property_type=property_type, trade=trade, sort=sort,
+        property_type=property_type, trade=trade,
         deposit_min=deposit_min, deposit_max=deposit_max, rent_min=rent_min, rent_max=rent_max,
         price_min=price_min, price_max=price_max, manage_cost_min=manage_cost_min, manage_cost_max=manage_cost_max,
         room=room, area_min=area_min, area_max=area_max, area_basis=area_basis, floor=floor, direction=direction,
@@ -1026,7 +1043,7 @@ def search_command(
             resumed_region = NaverRegion.model_validate(target['region'])
             result = search_area(
                 client, resumed_region.lat, resumed_region.lng, conditions=conditions, radius_km=radius or DEFAULT_RADIUS_KM,
-                sort=target['sort'], legal_division_codes=target['codes'], limit=limit, start=position,
+                sort=target['sort'], legal_division_code=target['code'], limit=limit, start=position,
             )
             emit(
                 {'region': target['region'], **target['scope'], **result.model_dump(mode='json')},
@@ -1037,30 +1054,23 @@ def search_command(
                 fields_source=result,
             )
             return
-        region, kind, notes = _resolve_location(client, query, lat, lng, radius)
-        # 동 이름이면 동 전체를 찾는다. 반경이나 가까운순을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다
-        whole_dong = _whole_dong(region, kind, radius) and sort != '가까운순'
-        dongs = [region]
-        if whole_dong:
-            notes.append(WHOLE_DONG_NOTE.format(name=region.name))
-
-        search_sort = sort or ('랭킹순' if whole_dong else '가까운순')
-        codes = [dong.legal_division_code for dong in dongs if dong.legal_division_code] if whole_dong else None
+        # 동 이름이면 동 전체를 찾는다. 반경을 직접 주면 그 뜻대로 동 중심 반경으로 찾는다.
+        # '○가' 로 나뉜 동(성수동)은 위치 해석에서 REGION_AMBIGUOUS 로 멈춰 동 경계는 늘 동 하나다 (네이버 웹도 동 하나씩 연다)
+        region, notes, code, scope = _area_location(client, query, lat, lng, radius)
         result = search_area(
             client,
             region.lat,
             region.lng,
             conditions=conditions,
             radius_km=radius or DEFAULT_RADIUS_KM,
-            sort=search_sort,
-            legal_division_codes=codes,
+            sort=sort,
+            legal_division_code=code,
             limit=limit,
         )
-        # 직방처럼 어디를 얼마나 찾았는지 함께 준다. 서비스는 좌표만 받아
-        # 지역을 모르므로(단지 매물 목록과 결과 모델을 같이 쓴다) 지역을 아는 여기서 붙인다
-        scope = _search_scope(region, whole_dong, radius)
+        # 직방처럼 어디를 얼마나 찾았는지(scope) 함께 준다. 서비스는 좌표만 받아
+        # 지역을 모르므로(단지 매물 목록과 결과 모델을 같이 쓴다) 지역을 아는 여기서 붙인다.
         # 이어 받기 표에는 찾은 지역·동·정렬을 담아 다음에 지역을 다시 찾지 않는다
-        target = {'region': region.model_dump(mode='json'), 'scope': scope, 'sort': search_sort, 'codes': codes}
+        target = {'region': region.model_dump(mode='json'), 'scope': scope, 'sort': sort, 'code': code}
         emit(
             {
                 'region': region.model_dump(mode='json'),

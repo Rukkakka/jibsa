@@ -171,7 +171,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('매물 동 전체 이어 받기 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2', '--next', '{dong_next}'), 'listings'),
         Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id'),
         Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('near_next', '', 'next'),)),
-        # 가까운순은 지도 칸 번호와 그 칸의 커서로 이어 받는다
+        # 반경 검색은 지도 범위 목록(boundedArticles)의 커서로 이어 받는다
         Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),
         Step(
             '단지 목록 역삼동', ('naver', 'search', 'complexes'), ('역삼동', '--sort', '세대수순', '--limit', '1'), 'complexes',

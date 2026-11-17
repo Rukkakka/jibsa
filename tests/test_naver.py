@@ -27,7 +27,6 @@ from jibsa.providers.naver.service.region import (
 )
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
-    MAX_CLUSTER_PAGE_REQUESTS,
     ONE_ROOM_SHAPE_NOTE,
     NaverListingConditions,
     search_area,
@@ -48,8 +47,8 @@ ROUTES = {
     '/front-api/v1/article/tax': 'article_tax_v1',
     '/front-api/v1/article/agentFee': 'article_agent_fee_v1',
     '/front-api/v1/complex/article/list': 'complex_article_list_v1',
-    '/front-api/v1/article/map/articleClusters': 'article_map_article_clusters_v1',
-    '/front-api/v1/article/clusteredArticles': 'article_clustered_articles_v1',
+    # 지도 범위 목록은 지도 칸 매물(clusteredArticles)과 같은 매물 목록 모양이다
+    '/front-api/v1/article/boundedArticles': 'article_clustered_articles_v1',
     '/front-api/v1/legalDivision/articleCountWeeklyInfo': 'legal_division_article_count_weekly_info_v1',
     '/front-api/v1/legalDivision/realTradeCountWeeklyList': 'legal_division_real_trade_count_weekly_list_v1',
 }
@@ -178,111 +177,6 @@ def test_get_listing_monthly_rent_uses_warranty_and_rent_amount() -> None:
     assert (detail.trade_type, detail.deposit_manwon, detail.rent_manwon, detail.price_manwon) == ('월세', 1000, 83, None)
 
 
-def test_search_area_stops_at_page_request_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 매물이 limit 보다 적으면 클러스터를 끝까지 훑게 되므로 요청 상한에서 멈추고 알린다
-    import jibsa.providers.naver.service.search as naver_search
-
-    monkeypatch.setattr(naver_search, 'MAX_CLUSTER_PAGE_REQUESTS', 2)
-    requests: list[httpx.Request] = []
-    with make_client(requests) as client:
-        result = search_area(client, 37.4928, 127.0305, conditions=NaverListingConditions(trade_types=['월세']), radius_km=3.0, limit=90)
-    assert sum(request.url.path.endswith('/clusteredArticles') for request in requests) == 2
-    assert result.notes[0].startswith('[일부] 네이버 차단을 피하려고 검색 중심에서 가까운 지도 칸')
-    assert 'notes' not in result.model_dump()
-
-    # limit 을 채워 멈추면 상한에 걸린 게 아니라 안내가 없다
-    with make_client() as client:
-        notes = search_area(client, 37.4928, 127.0305, radius_km=3.0, limit=1).notes
-    assert not any(note.startswith('네이버 차단을 피하려고') for note in notes)
-
-
-def test_search_area_moves_on_from_sparse_cluster() -> None:
-    # 칸에 매물이 limit 보다 적으면 요청한 수만큼 썼다고 치지 않고 다음 칸에서 나머지를 받는다
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = load(ROUTES[request.url.path])
-        if request.url.path.endswith('/clusteredArticles'):
-            cluster_id = json.loads(request.content)['clusterId']
-            body['result']['hasNextPage'] = False
-            for index, item in enumerate(body['result']['list']):
-                item['representativeArticleInfo']['articleNumber'] = f'{cluster_id}-{index}'
-        return httpx.Response(200, json=body)
-
-    requests: list[httpx.Request] = []
-
-    def recording(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return handler(request)
-
-    client = NaverClient()
-    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(recording))
-    with client:
-        result = search_area(client, 37.4928, 127.0305, radius_km=3.0, limit=30)
-    # 픽스처의 지도 칸 5개에 3건씩이라 칸을 모두 열어 15건을 받는다
-    assert sum(request.url.path.endswith('/clusteredArticles') for request in requests) == 5
-    assert len(result.listings) == 15
-
-
-def test_cluster_resume_neither_skips_nor_reuses_cursor() -> None:
-    # 실제 API 로 만들 수 없는 두 경계. 요청 상한에 닿는 순간 칸이 끝나면 열지 못한 다음 칸부터 이어 받고,
-    # 이어 받을 칸이 없어져 칸 순서로 이어 가면 그 자리의 다른 칸에 옛 칸의 커서를 넘기지 않는다
-    clusters = [
-        {
-            'clusterId': f'17/{111700 + index}/50700',
-            'coordinates': {'xCoordinate': 127.0305, 'yCoordinate': 37.4928 + index * 0.0001},
-            'articleCount': 1,
-        }
-        for index in range(MAX_CLUSTER_PAGE_REQUESTS + 2)
-    ]
-    sent: list[dict] = []
-
-    def run(shown: list[dict], start: dict | None) -> dict | None:
-        def handler(request: httpx.Request) -> httpx.Response:
-            body = load(ROUTES[request.url.path])
-            if request.url.path.endswith('/articleClusters'):
-                body['result']['clusters'] = shown
-            else:
-                payload = json.loads(request.content)
-                sent.append(payload)
-                body['result']['hasNextPage'] = False
-                body['result']['list'] = body['result']['list'][:1]
-                body['result']['list'][0]['representativeArticleInfo']['articleNumber'] = payload['clusterId'].replace('/', '')
-            return httpx.Response(200, json=body)
-
-        client = NaverClient()
-        client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
-        with client:
-            return search_area(client, 37.4928, 127.0305, radius_km=1.0, limit=120, start=start).next_position
-
-    # 칸마다 1쪽이라 상한만큼 칸을 열고, 상한에 막힌 다음 칸이 이어 받을 칸이다
-    position = run(clusters, None)
-    assert len(sent) == MAX_CLUSTER_PAGE_REQUESTS
-    assert position is not None and position['index'] == MAX_CLUSTER_PAGE_REQUESTS
-
-    sent.clear()
-    run(clusters[:2] + clusters[3:], {'cluster': '17/999999/50700', 'index': 2, 'seed': 'old', 'last_info': [1, 2.0, 'x']})
-    assert sent[0]['clusterId'] == clusters[3]['clusterId']
-    paging = sent[0]['articlePagingRequest']
-    assert paging.get('seed') is None and paging.get('lastInfo') is None
-
-
-def test_search_area_puts_unknown_distance_last() -> None:
-    # 좌표가 없어 거리를 모르는 매물을 가장 가까운 매물처럼 맨 앞에 두지 않는다
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = load(ROUTES[request.url.path])
-        if request.url.path.endswith('/clusteredArticles'):
-            body['result']['list'][0]['representativeArticleInfo']['address'].pop('coordinates', None)
-        return httpx.Response(200, json=body)
-
-    client = NaverClient()
-    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
-    with client:
-        result = search_area(client, 37.4928, 127.0305, radius_km=3.0, limit=50)
-    distances = [listing.distance_km for listing in result.listings]
-    assert distances[-1] is None
-    assert None not in distances[:-1]
-    assert distances[:-1] == sorted(distances[:-1])
-
-
 def test_removed_article_is_unavailable() -> None:
     from jibsa.core.errors import ListingUnavailableError
     from jibsa.providers.naver.api.response.listing import (
@@ -357,10 +251,11 @@ def test_loan_distinguishes_none_from_unknown() -> None:
     assert _loan_manwon(NaverPriceInfoModel.model_validate({'loan': 0})) is None
 
 
-def _cluster_filters(requests: list[httpx.Request]) -> list[dict]:
+def _bounded_filters(requests: list[httpx.Request]) -> list[dict]:
+    """반경 검색(boundedArticles)에 보낸 필터. 픽스처 한 쪽이 3건이라 limit 3 이면 요청이 한 번이다."""
     return [
         json.loads(request.content)['filter']
-        for request in requests if request.url.path.endswith('/articleClusters')
+        for request in requests if request.url.path.endswith('/boundedArticles')
     ]
 
 
@@ -369,13 +264,13 @@ def test_search_area_sends_server_filters() -> None:
     requests: list[httpx.Request] = []
     with make_client(requests) as client:
         search_area(
-            client, 37.4928, 127.0305, radius_km=1.0, limit=5, conditions=NaverListingConditions(
+            client, 37.4928, 127.0305, radius_km=1.0, limit=3, conditions=NaverListingConditions(
                 deposit_max=1000, rent_max=50, price_max=50000,
                 room_types=['투룸', '포룸이상'], area_min=33, area_max=49.5,
                 floors=['1층', '지하층'], directions=['남향', '남동향'],
             ),
         )
-    [filter_] = _cluster_filters(requests)
+    [filter_] = _bounded_filters(requests)
     assert filter_['warrantyPrice'] == {'max': 10_000_000}
     assert filter_['rentPrice'] == {'max': 500_000}
     assert filter_['dealPrice'] == {'max': 500_000_000}
@@ -392,7 +287,7 @@ def test_search_area_sends_extended_filters() -> None:
     requests: list[httpx.Request] = []
     with make_client(requests) as client:
         result = search_area(
-            client, 37.4928, 127.0305, radius_km=1.0, limit=5, conditions=NaverListingConditions(
+            client, 37.4928, 127.0305, radius_km=1.0, limit=3, conditions=NaverListingConditions(
                 deposit_min=500, rent_min=30, price_min=10000,
                 manage_cost_min=12, manage_cost_max=47,
                 bathrooms=['2개'], facilities=['주차', '엘리베이터'], one_room_shapes=['분리형'],
@@ -401,7 +296,7 @@ def test_search_area_sends_extended_filters() -> None:
                 building_age_min=5, building_age_max=19, subway_minutes=8,
             ),
         )
-    [filter_] = _cluster_filters(requests)
+    [filter_] = _bounded_filters(requests)
     assert filter_['warrantyPrice'] == {'min': 5_000_000}
     assert filter_['rentPrice'] == {'min': 300_000}
     assert filter_['dealPrice'] == {'min': 100_000_000}
@@ -659,7 +554,7 @@ def test_whole_dong_budget_carries_seed_and_cursor() -> None:
     client = NaverClient()
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
-        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == 4
     assert result.returned == 120
 
@@ -669,7 +564,7 @@ def test_whole_dong_stops_when_cursor_stalls() -> None:
     stuck = _complex_article_page(['1000000001', '1000000002'], has_next=True)
     requests: list[httpx.Request] = []
     with make_path_client(requests, {'/article/legalDivisionArticleList': stuck}) as client:
-        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == 2
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
     # 끝 문구(더 받을 매물이 남았는지)는 받은 수와 서버 수로 정해져 여기서는 보지 않는다
@@ -700,7 +595,7 @@ def test_whole_dong_stops_at_request_cap() -> None:
 
     requests: list[httpx.Request] = []
     with _short_page_client(requests, '/article/legalDivisionArticleList', _short_article_page) as client:
-        result = search_area(client, 37.5, 127.0, legal_division_codes=['1168010100'], sort='랭킹순', limit=120)
+        result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == MAX_LEGAL_DIVISION_PAGE_REQUESTS
     assert result.returned == 5 * MAX_LEGAL_DIVISION_PAGE_REQUESTS
     assert any(f'{5 * MAX_LEGAL_DIVISION_PAGE_REQUESTS}건까지만' in note for note in result.notes)
