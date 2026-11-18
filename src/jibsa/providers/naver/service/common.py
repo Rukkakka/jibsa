@@ -122,6 +122,13 @@ ENTRANCE_CODE_BY_NAME: dict[str, NaverEntranceType] = {
     '복도식': '20',
     '복합식': '30',
 }
+# 확인 방식(verificationInfo.verificationType) → 확인 배지. 네이버 웹 번들 대조 (2026-11-17: 상수 VERIFICATION_TYPE,
+# 목록 PropertyBadgeList.tsx, 이름표 함수 getOwnerLabel). 이 밖의 코드(NONE, DOC, TEL, DOCV2, NDOC2, LESR, LH, FT, JOINT)와
+# 표에 없는 코드는 웹도 방식 배지를 붙이지 않는다 (날짜 배지와 'HUG 안심임대인' 은 따로 있어 여기서 다루지 않는다)
+OWNER_VERIFICATION_TYPES: frozenset[str] = frozenset({'MOBL', 'OWNER', 'NDOC1'})
+SITE_VERIFICATION_TYPES: frozenset[str] = frozenset({'SITE', 'S_VR'})
+# 웹은 비주거 매물의 집주인 배지를 '소유자' 로 바꿔 보여 준다. 고시원(G01) 같이 이 열 개에 없는 유형은 '집주인' 이다
+NON_RESIDENTIAL_TYPES: frozenset[str] = frozenset({'D01', 'D02', 'E04', 'D03', 'D04', 'E01', 'E02', 'Z00', 'E03', 'F01'})
 # 면적 필터 기준. 전용이면 filtersExclusiveSpace 를 켠다. 결과의 area_m2 가 전용면적이라 기본은 전용
 AREA_BASES: tuple[str, ...] = ('전용', '공급')
 WON_PER_MANWON: int = 10_000
@@ -235,6 +242,12 @@ class NaverAssignedSchool(BaseModel):
     ] = None
 
 
+BADGES_DESCRIPTION: str = (
+    '네이버 화면의 확인 배지 (집주인·소유자·현장). 방식 배지가 없으면 [], 모르면 null. [] 에는 전화·서류로 확인한 매물과 확인하지 않은 매물이 함께 든다'
+)
+"""목록 매물(`NaverListing`)과 상세(`NaverListingDetail`)의 `badges` 설명. 두 모델은 상속이 갈려 필드를 함께 쓸 수 없다."""
+
+
 # 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
 # 목록(`NaverListing`)이 함께 쓴다. 목록 모델에 없는 필드 이름은 출력에서 그냥 지나간다.
 # 2026-11-17 네이버 웹 번들 대조: 기본 정보 칸은 청크 0n-xsnd22pdxz 의 getBasicInfoSpaceTarget·면적 함수, 건축물 정보
@@ -283,6 +296,10 @@ class NaverListing(Listing):
     rent_range_manwon: Annotated[
         list[float | None] | None,
         Field(description='묶음의 월세 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+    ] = None
+    badges: Annotated[
+        list[str] | None,
+        Field(description=BADGES_DESCRIPTION)
     ] = None
     real_estate_type: Annotated[
         str | None,
@@ -416,6 +433,22 @@ def unknown_code_label(kind: str, code: str) -> str:
     return f'알 수 없는 {kind} ({code})'
 
 
+def verification_badges(verification_type: str | None, real_estate_type: str | None) -> list[str] | None:
+    """확인 방식 코드와 매물 유형 코드로 네이버 화면의 확인 배지를 만든다. 목록과 상세가 함께 쓴다.
+
+    집주인(MOBL·OWNER·NDOC1)은 비주거 매물이면 '소유자', 현장(SITE·S_VR)은 '현장' 이다. 그 밖의 코드는 방식 배지가 없어
+    []이고(전화·서류로 확인한 매물(TEL·DOC 등)과 무검증 매물(NONE)이 모두 [] 다), 확인 정보 자체가 없으면
+    (코드가 없거나 빈 글자면) 모름이라 None 이다.
+    """
+    if not verification_type:
+        return None
+    if verification_type in OWNER_VERIFICATION_TYPES:
+        return ['소유자' if real_estate_type in NON_RESIDENTIAL_TYPES else '집주인']
+    if verification_type in SITE_VERIFICATION_TYPES:
+        return ['현장']
+    return []
+
+
 def known_floor(value: str | None) -> str | None:
     """층 값. 층이 없다는 뜻으로 오는 '0'·'-'·빈 값은 모름(None)으로 둔다.
 
@@ -518,6 +551,10 @@ def article_info_to_listing(
         distance_km=distance,
         registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
         approved_at=building_approved_at(info.building_info),
+        badges=verification_badges(
+            info.verification_info.verification_type if info.verification_info else None,
+            info.real_estate_type,
+        ),
         real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )

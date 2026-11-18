@@ -57,6 +57,7 @@ from jibsa.providers.naver.api.response.listing import (
     NaverTransportSubwayModel,
 )
 from jibsa.providers.naver.service.common import (
+    BADGES_DESCRIPTION,
     COMPLEX_SORT_TYPE_BY_NAME,
     ENTRANCE_CODE_BY_NAME,
     NOT_APPLICABLE_FIELDS_BY_TYPE,
@@ -86,6 +87,7 @@ from jibsa.providers.naver.service.common import (
     scan_pages,
     unknown_code_label,
     unwrap,
+    verification_badges,
     villa_by_complex_response,
     villa_fallback_found,
 )
@@ -517,6 +519,10 @@ class NaverListingDetail(ListingDetail):
     parking: Annotated[
         str | None,
         Field(description="주차 ('가능', '불가', 대수가 있으면 '가능 (총 4대)'. 가능 여부를 모르면 대수만). 웹처럼 아파트·오피스텔·재건축·분양권은 단지 전체 대수만 ('단지 전체 12602대 (세대당 1.32대)', 가능 여부 없음)이고, 단지형 빌라는 매물 대수가 0이거나 없으면 단지 대수를 붙인다 ('가능 (단지 전체 8대, 세대당 0.5대)')")
+    ] = None
+    badges: Annotated[
+        list[str] | None,
+        Field(description=BADGES_DESCRIPTION)
     ] = None
     loan_manwon: Annotated[
         float | None,
@@ -1101,6 +1107,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
 
     facility_codes = (facility.life + facility.security + facility.etc + facility.aircon) if facility else []
     real_estate_type = key.type.real_estate_type
+    verification = detail.verification_info if detail else None
     # 직거래 여부를 모르면(상세 정보를 못 읽었거나 값이 없으면) None 이다. 직거래에도 agentFee 가 금액을 주므로 모를 때는 요청하지 않는다
     is_direct_trade = article.is_direct_trade if article else None
     pre_sale_status_type = detail.pre_sale_status_type if detail else None
@@ -1173,6 +1180,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         heating=facility_values.heating,
         heating_fuel=facility_values.heating_fuel,
         entrance=facility_values.entrance,
+        badges=verification_badges(verification.verification_type if verification else None, real_estate_type),
         loan_manwon=_loan_manwon(price),
         # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
         # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교)

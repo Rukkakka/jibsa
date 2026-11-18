@@ -7,6 +7,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
     NaverCoordinatesModel,
     NaverFacilityInfoModel,
+    NaverListVerificationInfoModel,
     NaverPropertyTaxModel,
     NaverResponseModel,
     NaverSchoolModel,
@@ -385,6 +386,10 @@ class NaverDetailInfoModel(ResponseModel):
     size_info: Annotated[
         NaverSizeInfoModel | None,
         Field(description='면적', alias='sizeInfo')
+    ] = None
+    verification_info: Annotated[
+        NaverListVerificationInfoModel | None,
+        Field(description='확인 정보. 목록의 verificationInfo 와 같은 모양 (확인 방식 verificationType 으로 확인 배지를 정한다)', alias='verificationInfo')
     ] = None
     shape: Annotated[
         str | None,
