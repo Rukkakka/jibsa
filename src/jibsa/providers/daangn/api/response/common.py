@@ -37,6 +37,11 @@ def _to_str(v: Any) -> Any:
     return str(int(number)) if number.is_integer() else str(number)
 
 
+def _none_to_list(v: Any) -> Any:
+    """목록 칸이 null 로 오면 빈 목록으로 받는다. 매물 하나의 칸이 비어 와도 검색 전체가 PARSE_ERROR 로 깨지지 않게 한다."""
+    return [] if v is None else v
+
+
 LooseFloat = Annotated[float | None, BeforeValidator(_to_float)]
 FloorText = Annotated[str | None, BeforeValidator(_to_str)]
 
@@ -381,12 +386,16 @@ class DaangnArticleModel(ResponseModel):
             alias='isHideAddress',
         )
     ] = None
+    # null 은 빈 목록으로 받는다. 2026-11-18 API 감시에서 출퇴근 검색의 매물 하나가 목록이 아닌 subwayStations 를 줘 검색 전체가
+    # PARSE_ERROR 였다 (#331, 같은 날 다시 부르니 정상이라 어떤 값이었는지는 못 봤다)
     subway_stations: Annotated[
         list[DaangnNearBySubwayStationModel],
+        BeforeValidator(_none_to_list),
         Field(description='인근 지하철역 (도보 시간 포함). 상세 페이지에서는 비어 있기도 하다', alias='subwayStations')
     ] = []
     nearby_subway_stations: Annotated[
         list[DaangnNearbySubwayStationEdgeModel],
+        BeforeValidator(_none_to_list),
         Field(description='주변 지하철역 이름 (상세 페이지에만). subwayStations 가 비어도 채워져 있기도 하다', alias='nearbySubwayStations')
     ] = []
     images: Annotated[

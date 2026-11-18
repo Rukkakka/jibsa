@@ -14,6 +14,7 @@ from jibsa.providers.daangn.api.parser import (
     parse_complexes_html,
 )
 from jibsa.providers.daangn.api.relay import resolve
+from jibsa.providers.daangn.api.response.common import DaangnArticleModel
 from jibsa.providers.daangn.service.common import (
     DaangnListingConditions,
     article_to_listing,
@@ -1362,3 +1363,10 @@ def test_find_address_resolves_one_candidate_and_refuses_many() -> None:
     with _address_client([candidate(152)], None) as client:
         with pytest.raises(RegionNotFoundError):
             find_address(client, '테스트로 152')
+
+
+def test_article_null_subway_stations_are_empty_lists():
+    # 매물 하나의 역 칸이 null 로 와도 검색 전체가 PARSE_ERROR 로 깨지지 않는다 (#331, 2026-11-18 출퇴근 검색 감시)
+    article = DaangnArticleModel.model_validate({'id': 'a', 'originalId': '1', 'subwayStations': None, 'nearbySubwayStations': None})
+    assert article.subway_stations == []
+    assert article.nearby_subway_stations == []
