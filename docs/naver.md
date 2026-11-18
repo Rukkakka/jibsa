@@ -255,7 +255,7 @@ jibsa naver real-price 12345 --pyeong 2 --period 3년
 
 **반환값**
 
-`complex_number`, `pyeong_number`, `trade_type`, `transactions[]`를 준다. `--period` 를 주면 `period`·`since`(기간 시작일)가 붙는다. 거래마다 계약일, 층, 가격(매매가 또는 보증금·월세), 중개거래/직거래, 해제(취소) 여부, 갱신 계약 여부가 있다. 국토부 신고 기준이고 최근 순이다.
+`complex_number`, `pyeong_number`, `trade_type`, `transactions[]`를 준다. `--period` 를 주면 `period`·`since`(기간 시작일)가 붙는다. 거래마다 계약일, 층, 가격(매매가 또는 보증금·월세), 중개거래/직거래, 해제(취소) 여부, 갱신 계약 여부가 있다. 전세·월세 거래가 갱신 계약(`renewal: true`)이면 종전 보증금 `previous_deposit_manwon`(만원)도, 월세 거래면 종전 월세 `previous_rent_manwon`(만원)도 붙는다. 갱신이 아니거나 매매면 두 키가 없고, 전세 갱신에는 종전 월세 키가 없으며(네이버 웹도 전세는 종전 보증금만 보여 준다), 갱신인데 네이버가 값을 주지 않으면 `null` 이다. 빌라 단지 실거래에는 두 키가 나오지 않는다 (`renewal` 도 계약갱신요구권을 쓴 거래만 `true`). 국토부 신고 기준이고 최근 순이다.
 
 **오류와 대응**
 
