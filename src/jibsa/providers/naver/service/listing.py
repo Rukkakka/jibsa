@@ -865,10 +865,11 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
 
     합계형(typeCode '02')은 etcDetail, 정액 합계형('04')은 같은 모양의 fixNonDetailList 의 금액과 포함 항목(categoryList)을
     쓴다. 0 은 중개사가 0원으로 입력한 것이다. '04' 는 원룸·빌라·오피스텔 16건 중 7건일 만큼 흔하다 (신림동, 2026-10-11).
-    항목별형('01')은 사이트처럼 정액 항목의 금액을 더해 합계로 보고, 정액 항목만 포함 항목으로 친다. 실비 항목은
-    쓴 만큼 따로 내서 빠진다 (원룸 2653883790: 공용 10만원 정액, 전기~TV 실비 → 합계 10만원, 2026-10-10).
-    그래서 항목이 모두 실비면 0만원·[] 이다. 정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이
-    아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
+    항목별형('01')은 웹처럼(번들 getMaintenanceFeeLabel: `fixDetailList.reduce((s, e) => s + (e.amount ?? 0), 0)`, 2026-11-18)
+    정액·실비를 가리지 않고 모든 항목의 금액을 더해 합계로 본다. 실비 항목은 쓴 만큼 따로 내서 지금까지 본 응답에서는 모두 금액이
+    null 이라 합계가 정액 항목의 합과 같다 (원룸 2653883790: 공용 10만원 정액, 전기~TV 실비 → 합계 10만원, 2026-10-10).
+    포함 항목은 정액 항목(unitType '01')만 친다. 그래서 실비 금액이 모두 null 이고 항목이 모두 실비면 0만원·[] 이다.
+    정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이 아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
     미확인('03')은 etcDetail·fixNonDetailList 가 null 이고 uncheckDetail 로 사유가 와서 대개 모름이다 (빌라 2654619539·
     2653716463, 2026-10-11). 다만 사유가 '99'(없음)이면 웹이 관리비 '없음' 으로 보여 주므로 0만원·[] 이다 (직방의 '관리비
     없음' 과 같은 꼴, 웹 번들 getMaintenanceFeeLabel 대조 2026-11-16). 다른 사유('01'~'04')·사유 없음은 웹도 '확인 어려움'
@@ -886,7 +887,7 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     if fee.fix_detail_list:
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
         includes = [_manage_cost_item_label(item.type) for item in fixed if item.amount and item.type]
-        return won_to_manwon_exact(sum(item.amount or 0 for item in fixed)), includes
+        return won_to_manwon_exact(sum(item.amount or 0 for item in fee.fix_detail_list)), includes
     if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type == MANAGE_COST_NONE_REASON:
         return 0.0, []
     return None, None

@@ -394,6 +394,23 @@ def test_detail_move_in_within_and_after_keep_the_bound() -> None:
     assert label('MV002', '2026-02-30') == '2026-02-30'
 
 
+def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -> None:
+    # 웹은 항목별형의 합계에 정액·실비를 가리지 않고 모든 항목 금액을 더한다. 포함 항목은 정액 항목만 남긴다
+    from jibsa.providers.naver.api.response.listing import (
+        NaverArticleMaintenanceFeeModel,
+    )
+    from jibsa.providers.naver.service.listing import _manage_cost
+
+    fee = NaverArticleMaintenanceFeeModel.model_validate({'typeCode': '01', 'fixDetailList': [
+        {'type': '01', 'unitType': '01', 'amount': 100000},
+        {'type': '11', 'unitType': '02', 'amount': 30000},
+        {'type': '12', 'unitType': '02'},
+    ]})
+    manage_cost, includes = _manage_cost(fee)
+    assert manage_cost == 13.0
+    assert includes is not None and len(includes) == 1
+
+
 # --- 빌라 단지 (연립·다세대) -------------------------------------------------
 
 def make_path_client(requests: list[httpx.Request], overrides: dict[str, dict]) -> NaverClient:
