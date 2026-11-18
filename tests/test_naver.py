@@ -5,6 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from jibsa.cli.app import run
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     months_ago,
@@ -32,8 +33,10 @@ from jibsa.providers.naver.service.region import (
     WIDE_REGION_NOTE_MARK,
     legal_division_code_at,
     resolve_complex_number,
+    resolve_redevelopment_number,
     resolve_search_region,
 )
+from jibsa.providers.naver.service.school import list_school_complexes
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
     ENTRANCE_FILTER_NOTE,
@@ -63,10 +66,17 @@ ROUTES = {
     '/front-api/v1/article/boundedArticles': 'article_clustered_articles_v1',
     '/front-api/v1/legalDivision/articleCountWeeklyInfo': 'legal_division_article_count_weekly_info_v1',
     '/front-api/v1/legalDivision/realTradeCountWeeklyList': 'legal_division_real_trade_count_weekly_list_v1',
+    '/front-api/v1/development/article': 'development_article_v1',
+}
+# 픽스처 파일 없이 코드로 둔 응답. 근처 개발 예정은 두 목록이 모두 빈 매물이 많다 (원룸, 2026-11-18 실측)
+INLINE_RESPONSES = {
+    'development_article_v1': {'isSuccess': True, 'detailCode': 'success', 'result': {'railList': [], 'jiguList': []}},
 }
 
 
 def load(name: str) -> dict:
+    if name in INLINE_RESPONSES:
+        return INLINE_RESPONSES[name]
     return json.loads((FIXTURES / f'{name}.json').read_text(encoding='utf-8'))
 
 
@@ -865,6 +875,47 @@ def test_complex_name_picks_only_unique_exact_match(items: list[dict], total: in
             assert exc.value.details['candidates'][0].startswith(f'{items[0]["complexName"]} (')
 
 
+def _redevelopment_item(number: int, name: str, dong: str) -> dict:
+    return {
+        'redevelopmentAreaNumber': number, 'name': name,
+        'legalDivisionName': f'서울시 용산구 {dong}', 'legalDivisionNumber': '1117013000',
+    }
+
+
+@pytest.mark.parametrize(
+    'items,expected',
+    [
+        # 이름이 정확히 같은 구역이 하나면 그 번호다 (이름이 비슷한 구역이 더 있어도, 후보를 다 받았을 때)
+        ([_redevelopment_item(1, '한남3구역', '한남동'), _redevelopment_item(2, '한남3구역 일부', '보광동')], 1),
+        # 같은 이름이 법정동마다 번호를 달리해 여럿 오면 하나를 고르지 않고 후보를 알린다 (한남제3재정비촉진구역
+        # 10017678 한남동·1000208 보광동, 2026-11-18 실측)
+        ([_redevelopment_item(10017678, '한남3구역', '한남동'), _redevelopment_item(1000208, '한남3구역', '보광동')], None),
+    ],
+)
+def test_redevelopment_name_picks_only_unique_exact_match(items: list[dict], expected: int | None) -> None:
+    body = _ok({'hasNextPage': False, 'totalCount': len(items), 'list': items})
+    with make_path_client([], {'/search/autocomplete/redevelopmentAreas': body}) as client:
+        if expected is not None:
+            assert resolve_redevelopment_number(client, '한남3구역') == (expected, [])
+        else:
+            with pytest.raises(JibsaError) as exc:
+                resolve_redevelopment_number(client, '한남3구역')
+            assert exc.value.code == 'REGION_AMBIGUOUS'
+            assert exc.value.details['candidate_count'] == 2
+            assert exc.value.details['candidates'][0] == '한남3구역 (서울특별시 용산구 한남동, 구역 번호 10017678)'
+            assert '10017678' in (exc.value.hint or '')
+
+
+@pytest.mark.parametrize('items', [[], None])
+def test_redevelopment_name_without_candidates_is_not_found(items: list | None) -> None:
+    # 후보 목록이 비어도 null 이어도 후보 없음이다. 단지 이름(`resolve_complex_number`)과 같은 NOT_FOUND 로 낸다
+    body = _ok({'hasNextPage': False, 'totalCount': 0, 'list': items})
+    with make_path_client([], {'/search/autocomplete/redevelopmentAreas': body}) as client, pytest.raises(JibsaError) as exc:
+        resolve_redevelopment_number(client, '없는구역')
+    assert exc.value.code == 'NOT_FOUND'
+    assert exc.value.message == "'없는구역' 에 해당하는 네이버 재개발 구역을 찾지 못했습니다"
+
+
 def _ga_dong_address(full_address: str, code: str) -> dict:
     return _ok({'type': 'jibun-address', 'jibunAddress': {'totalCount': 1, 'list': [{
         'fullAddress': full_address, 'itemLevel': 8, 'x': 127.05, 'y': 37.54,
@@ -1085,6 +1136,198 @@ def test_city_name_is_boundary_only_when_it_has_no_district(
         assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
     else:
         assert (boundary_code, scope) == (code, {'boundary': city})
+
+
+# --- 학교 배정 단지 ----------------------------------------------------------
+
+
+def _school_complex_item(number: int, all_assigned: bool = False, groups: list[list[str]] | None = None) -> dict:
+    return {
+        'complexInfo': {
+            'complexNumber': number, 'name': f'단지{number}', 'type': 'A01', 'buildingCount': 10,
+            'totalHouseholdNumber': 500, 'useApprovalDate': '20100706',
+        },
+        'articleCountInfoDto': {'dealCount': 1, 'leaseDepositCount': 0, 'leaseMonthlyCount': 0, 'leaseShortTerm': 0},
+        'articlePriceInfoDto': {},
+        'isAllBuildingAssigned': all_assigned,
+        'convertedBuildingNameGroups': groups or [],
+    }
+
+
+def _school_complex_client(pages: list[dict], requests: list[httpx.Request]) -> NaverClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_ok(pages[int(request.url.params['page'])]))
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    return client
+
+
+def test_school_complexes_take_total_from_the_first_page_only() -> None:
+    # 끝 쪽(둘째 쪽)은 totalCount 가 0 으로 온다 (2026-11-18 실측). 총수를 마지막 쪽 것으로 덮지 않는다
+    pages = [
+        {'totalCount': 3, 'hasNextPage': True, 'list': [_school_complex_item(1), _school_complex_item(2)]},
+        {'totalCount': 0, 'hasNextPage': False, 'list': [_school_complex_item(3)]},
+    ]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='세대수순', limit=20)
+    assert (result.total, result.returned, result.has_more) == (3, 3, False)
+    assert [request.url.params['page'] for request in requests] == ['0', '1']
+    assert requests[0].url.params['sortType'] == 'HOUSEHOLD_COUNT'
+
+
+@pytest.mark.parametrize(
+    'all_assigned,groups,expected',
+    [
+        (True, [], ['전체 동']),
+        (False, [['101', '102', '103'], ['105']], ['101동~103동', '105동']),
+        # 전체 배정이 아닌데 동 묶음이 비면 어느 동인지 모른다 (배정 동 없음 [] 이 아니다)
+        (False, [], None),
+    ],
+)
+def test_school_complex_assigned_dongs(all_assigned: bool, groups: list[list[str]], expected: list[str] | None) -> None:
+    pages = [{'totalCount': 1, 'hasNextPage': False, 'list': [_school_complex_item(1, all_assigned, groups)]}]
+    with _school_complex_client(pages, []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert result.complexes[0].assigned_dongs == expected
+
+
+def test_school_complexes_null_cells_are_unknown_not_a_parse_error() -> None:
+    # 총수·다음 쪽·동 묶음·목록이 null 로 와도 명령이 깨지지 않고 모름(null)으로 낸다. 단지 정보가 없는 항목은 건너뛰고 [제외] 로 알린다
+    item = _school_complex_item(1)
+    item['convertedBuildingNameGroups'] = None
+    pages = [{'totalCount': None, 'hasNextPage': None, 'list': [item, {'isAllBuildingAssigned': True}]}]
+    with _school_complex_client(pages, []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.total, result.returned, result.has_more) == (None, 1, None)
+    assert result.complexes[0].assigned_dongs is None
+    assert [text for text in result.notes if text.startswith('[제외]')] == ['[제외] 네이버가 단지 정보를 주지 않은 1곳은 뺐습니다']
+    # 목록 자체가 null 이면 그 쪽은 0곳이다
+    with _school_complex_client([{'totalCount': None, 'hasNextPage': None, 'list': None}], []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.total, result.returned, result.has_more, result.notes) == (None, 0, None, [])
+
+
+def test_school_complexes_empty_page_with_next_page_is_reported_without_asking_for_more_limit() -> None:
+    # 다음 쪽이 있다면서 빈 쪽을 주면 거기서 멈춘다. --limit 을 늘려도 같은 빈 쪽이라 늘리라고 하지 않는다
+    pages = [
+        {'totalCount': 30, 'hasNextPage': True, 'list': [_school_complex_item(1), _school_complex_item(2)]},
+        {'totalCount': 0, 'hasNextPage': True, 'list': []},
+    ]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.total, result.returned, result.has_more) == (30, 2, True)
+    assert len(requests) == 2
+    assert result.notes == ['[일부] 네이버가 더 있다면서 빈 쪽을 줘 2곳까지만 받았습니다']
+
+
+def _school_complex_page(start: int, count: int, *, total: int, has_next: bool | None) -> dict:
+    return {'totalCount': total, 'hasNextPage': has_next, 'list': [_school_complex_item(start + index) for index in range(count)]}
+
+
+def test_school_complexes_null_next_page_uses_first_page_total() -> None:
+    # 다음 쪽 여부가 null 이어도 첫 쪽 총수(35)가 받은 수(20)보다 크면 더 있는 것이다. 이어 받아 총수까지 채우면 더 없다
+    pages = [_school_complex_page(0, 20, total=35, has_next=None), _school_complex_page(20, 15, total=0, has_next=None)]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=40)
+    assert (result.total, result.returned, result.has_more, len(requests)) == (35, 35, False, 2)
+    # limit 에서 멈추면 더 있다고 알리고 --limit 을 늘리라고 한다 (늘리면 위처럼 이어 받는다)
+    with _school_complex_client(pages, []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.returned, result.has_more) == (20, True)
+    assert result.notes == ['[일부] 학교에 배정되는 단지가 35곳 있고, 그중 20곳만 보여 줍니다. 더 보려면 --limit 을 늘리세요']
+
+
+@pytest.mark.parametrize('limit', [60, 100])
+def test_school_complexes_request_cap_with_short_pages_does_not_ask_for_more_limit(limit: int) -> None:
+    # 네이버가 쪽을 10곳씩 짧게 주면 요청 상한(5쪽)에서 50곳만 받는다. --limit 을 늘려도(최대값이면 '최대값은 100') 같은 곳에서 멈춘다
+    pages = [_school_complex_page(page * 10, 10, total=200 if page == 0 else 0, has_next=True) for page in range(5)]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=limit)
+    assert (len(requests), result.returned, result.has_more) == (5, 50, True)
+    assert result.notes == ['[일부] 네이버가 쪽을 짧게 줘 요청 상한(5쪽)까지 50곳만 받았습니다 (학교에 배정되는 단지는 200곳)']
+
+
+# --- 평형 묶음 실거래 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize('groups', [[], None])
+def test_real_price_group_without_groups_is_one_not_found(groups: list | None) -> None:
+    # 없는 단지 번호(99999999)와 빌라 단지(673573)가 모두 isSuccess true·result [] 라 서버 응답으로 가를 수 없다 (2026-11-18). result null 도 같다
+    requests: list[httpx.Request] = []
+    with make_path_client(requests, {'/complex/pyeongGroups': _ok(groups)}) as client, pytest.raises(JibsaError) as exc:
+        get_real_prices(client, 99999999, 1, group=True)
+    assert exc.value.code == 'NOT_FOUND'
+    assert '평형 묶음을 찾지 못했습니다' in exc.value.message
+    assert exc.value.hint is not None and '(jibsa naver complex 99999999)' in exc.value.hint
+    assert _paths(requests) == ['/complex/pyeongGroups']
+
+
+def test_complex_pyeong_groups_null_result_is_empty_but_failure_is_unknown() -> None:
+    from jibsa.providers.naver.service.complex import _pyeong_groups
+
+    # 성공인데 result 가 null 이면 real-price --group 과 같게 묶음 없음([])이고, 조회 실패(isSuccess false)만 모름(null)이다
+    with make_path_client([], {'/complex/pyeongGroups': _ok(None)}) as client:
+        assert _pyeong_groups(client, 100001) == []
+    failure = {'isSuccess': False, 'detailCode': 'ERROR', 'result': {}}
+    with make_path_client([], {'/complex/pyeongGroups': failure}) as client:
+        assert _pyeong_groups(client, 100001) is None
+
+
+def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() -> None:
+    from jibsa.providers.naver.service.complex import _pyeong_groups
+    from jibsa.providers.naver.service.real_price import _find_pyeong_group
+
+    groups = [
+        {'representativePyeongName': '33평', 'representativePyeongNumber': 1, 'householdCount': 10, 'pyeongTypes': None},
+        # 묶음 평형은 번호만 쓴다 (name 이 null 이어도 깨지지 않는다)
+        {'representativePyeongName': '40평', 'representativePyeongNumber': 3, 'householdCount': 5, 'pyeongTypes': [{'number': 3}, {'number': 2, 'name': None}]},
+    ]
+    with make_path_client([], {'/complex/pyeongGroups': _ok(groups)}) as client:
+        # complex: 그 묶음만 pyeong_numbers 가 null(모름)이다
+        assert [group.pyeong_numbers for group in _pyeong_groups(client, 100001) or []] == [None, [2, 3]]
+        # real-price --group: 번호를 모르는 묶음은 건너뛰고 번호가 든 묶음에서 짝을 찾는다
+        group, request_numbers = _find_pyeong_group(client, 100001, 2)
+        assert (group.name, group.pyeong_numbers, request_numbers) == ('40평', [2, 3], [3, 2])
+        with pytest.raises(JibsaError) as exc:
+            _find_pyeong_group(client, 100001, 1)
+    assert exc.value.code == 'NOT_FOUND'
+
+
+def test_price_per_pyeong_null_region_list_keeps_the_price() -> None:
+    from jibsa.providers.naver.api.response.complex import NaverComplexPyeongPriceModel
+    from jibsa.providers.naver.service.complex import (
+        _price_per_pyeong,
+        _price_per_pyeong_trade,
+    )
+
+    # 지역 목록이 null 이어도 평당가는 그대로 내고 지역·기준일만 모름(null)이다
+    result = NaverComplexPyeongPriceModel.model_validate({'pricePerPyeong': 150000000, 'legalDivisionPricePerPyeongList': None})
+    trade = _price_per_pyeong_trade(result)
+    assert (trade.manwon_per_pyeong, trade.as_of, trade.regions) == (15000, None, None)
+    # 성공인데 result 가 null 이면 평당가를 주지 않은 것이라 키를 빼고(월세와 같다), 조회 실패만 null(모름)이다
+    with make_path_client([], {'/complex/pyeongPrice/pyeongType': _ok(None)}) as client:
+        assert _price_per_pyeong(client, 100001, 1, 'A01') == {}
+    failure = {'isSuccess': False, 'detailCode': 'ERROR', 'result': {}}
+    with make_path_client([], {'/complex/pyeongPrice/pyeongType': failure}) as client:
+        assert _price_per_pyeong(client, 100001, 1, 'A01') == {'sale': None, 'jeonse': None}
+
+
+# --- 사용법 오류 ----------------------------------------------------------------
+
+
+def test_real_price_group_rejects_period(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_request(*args, **kwargs) -> None:
+        raise AssertionError('입력 오류 검증에서 HTTP 요청을 보내면 안 됩니다')
+
+    monkeypatch.setattr(httpx.Client, 'send', unexpected_request)
+    assert run(['naver', 'real-price', '100001', '--pyeong', '1', '--group', '--period', '1년']) == 2
+    assert json.loads(capsys.readouterr().err)['error']['code'] == 'INVALID_ARGUMENT'
 
 
 # --- 호가 짝·기간 --------------------------------------------------------------

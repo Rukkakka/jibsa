@@ -566,6 +566,78 @@ class NaverDataServiceTransportV1ResponseModel(NaverResponseModel[NaverTransport
     """`GET /front-api/v1/data-service/transport` 응답."""
 
 
+class NaverDevelopmentRailModel(ResponseModel):
+    """매물 근처에 생길 지하철역 한 곳. 좌표도 오지만 쓰지 않는다."""
+
+    station_id: Annotated[
+        int | str | None,
+        Field(description='역 ID. 타입을 실측하지 못해 숫자·문자열을 모두 받는다', alias='stationId')
+    ] = None
+    station_name: Annotated[
+        str | None,
+        Field(description="역 이름. 개통 예정 연도가 괄호로 붙는다 ('탄천역(2027년예정)')", alias='stationName')
+    ] = None
+    rail_id: Annotated[
+        int | str | None,
+        Field(description='노선 ID. 타입을 실측하지 못해 숫자·문자열을 모두 받는다', alias='railId')
+    ] = None
+    rail_name: Annotated[
+        str | None,
+        Field(description="노선 이름 ('위례신사선(예정)')", alias='railName')
+    ] = None
+    open_date: Annotated[
+        str | None,
+        Field(description="개통 예정 연도 ('2027', 문자열)", alias='openDate')
+    ] = None
+    distance: Annotated[
+        int | None,
+        Field(description='매물에서의 거리 (m)')
+    ] = None
+    walking_time: Annotated[
+        int | None,
+        Field(description='도보 시간 (분)', alias='walkingTime')
+    ] = None
+
+
+class NaverDevelopmentJiguModel(ResponseModel):
+    """매물 근처 개발 지구 한 곳."""
+
+    id: Annotated[
+        int | str | None,
+        Field(description='개발 지구 ID. 타입을 실측하지 못해 숫자·문자열을 모두 받는다')
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='개발 지구 이름')
+    ] = None
+    type_name: Annotated[
+        str | None,
+        Field(description='개발 유형 이름', alias='typeName')
+    ] = None
+    step: Annotated[
+        int | str | None,
+        Field(description='진행 단계. 타입을 실측하지 못해 숫자·문자열을 모두 받는다')
+    ] = None
+    period: Annotated[
+        str | None,
+        Field(description="사업 기간 ('2010-07-14~2027-12-31'). 없을 수 있다")
+    ] = None
+
+
+class NaverDevelopmentArticleModel(ResponseModel):
+    """매물 근처 개발 예정. 두 목록 모두 빈 매물이 많다 (원룸은 `{"railList": [], "jiguList": []}`)."""
+
+    # 한 목록이 null 로 와도 다른 목록까지 모름이 되지 않게 None 을 받는다 (service 가 그 목록만 null 로 낸다)
+    rail_list: Annotated[
+        list[NaverDevelopmentRailModel] | None,
+        Field(description='근처 예정 지하철역', alias='railList')
+    ] = []
+    jigu_list: Annotated[
+        list[NaverDevelopmentJiguModel] | None,
+        Field(description='근처 개발 지구', alias='jiguList')
+    ] = []
+
+
 class NaverEducationBuildingSchoolV1ResponseModel(NaverResponseModel[list[NaverSchoolModel]]):
     """`GET /front-api/v1/education/building/school` 응답."""
 
@@ -609,3 +681,7 @@ class NaverArticleMaintenanceFeeV1ResponseModel(NaverResponseModel[NaverArticleM
 
 class NaverComplexArticleListV1ResponseModel(NaverResponseModel[NaverArticlePageModel]):
     """`POST /front-api/v1/complex/article/list` 응답."""
+
+
+class NaverDevelopmentArticleV1ResponseModel(NaverResponseModel[NaverDevelopmentArticleModel]):
+    """`GET /front-api/v1/development/article` 응답."""

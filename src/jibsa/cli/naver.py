@@ -77,9 +77,15 @@ from jibsa.providers.naver.service.region import (
     legal_division_code_at,
     list_regions,
     resolve_complex_number,
+    resolve_redevelopment_number,
     resolve_search_region,
 )
-from jibsa.providers.naver.service.school import get_school
+from jibsa.providers.naver.service.school import (
+    MAX_SCHOOL_COMPLEX_LIMIT,
+    SCHOOL_COMPLEX_SORT_TYPE_BY_NAME,
+    get_school,
+    list_school_complexes,
+)
 from jibsa.providers.naver.service.search import (
     AREA_COMPLEX_CODES_BY_TYPE,
     BATHROOM_CODE_BY_NAME,
@@ -118,6 +124,9 @@ PROPERTY_TYPES: tuple[str, ...] = tuple(SEARCH_CODES_BY_PROPERTY)
 # str.isdigit·isalnum 은 '²'·한글도 통과시켜 int() 가 PARSE_ERROR 를 내거나 요청 모델의 영어 오류가 나온다
 NUMBER_PATTERN: re.Pattern[str] = re.compile(r'[0-9]+')
 SCHOOL_CODE_PATTERN: re.Pattern[str] = re.compile(r'[A-Za-z0-9]+')
+# school --complexes 의 기본 정렬·단지 수 (웹 학교 상세와 같다). --sort·--limit 을 --complexes 없이 줬는지 가리려고 옵션 기본값은 None 이다
+SCHOOL_COMPLEX_DEFAULT_SORT: str = '거리순'
+SCHOOL_COMPLEX_DEFAULT_LIMIT: int = 20
 
 app = typer.Typer(
     help=(
@@ -140,6 +149,21 @@ def _complex_number(client: NaverClient, complex_: str) -> tuple[int, bool | Non
     if int(complex_) < 1:
         raise typer.BadParameter('단지 번호는 1 이상입니다', param_hint='COMPLEX')
     return int(complex_), None, []
+
+
+def _redevelopment_number(client: NaverClient, area: str, param_hint: str) -> tuple[int, list[str]]:
+    """구역 번호면 그대로, 이름이면 네이버 재개발 구역 검색으로 번호를 찾는다 (안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS.
+
+    Args:
+        param_hint: 구역을 받은 인자·옵션 이름 (번호가 0 일 때의 사용법 오류에 쓴다).
+    """
+    # 붙여 넣은 번호의 앞뒤 공백(' 10017678')을 먼저 떼야 번호를 이름으로 찾지 않는다
+    area = area.strip()
+    if NUMBER_PATTERN.fullmatch(area) is None:
+        return resolve_redevelopment_number(client, area)
+    if int(area) < 1:
+        raise typer.BadParameter('재개발 구역 번호는 1 이상입니다', param_hint=param_hint)
+    return int(area), []
 
 
 def _split_dongs(values: list[str] | None) -> list[str]:
@@ -412,7 +436,7 @@ def complex_command(
     ],
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래도 붙인다 (요청 최대 6회 추가). 반복하거나 쉼표로 구분')
+        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래·평당가도 붙인다 (요청 최대 8회 추가). 반복하거나 쉼표로 구분')
     ] = None,
     dong: Annotated[
         list[str] | None,
@@ -420,7 +444,7 @@ def complex_command(
     ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보·거래유형별 매물 수·호가 범위·평형 목록. 결과의 complex_number 를 search listings --complex·real-price 에 넘긴다.
+    """단지 정보·거래유형별 매물 수·호가 범위·평형 목록·평형 묶음(pyeong_groups). 결과의 complex_number 를 search listings --complex·real-price 에 넘긴다.
 
     예: jibsa naver complex 개포자이 --pyeong 1   # 1번 평형 매물 수·호가·관리비·시세·실거래 요약
     """
@@ -573,7 +597,7 @@ def _search_complex_listings(
 
 
 def _search_redevelopment_listings(
-    area_number: int,
+    area: str,
     conditions: NaverTradeConditions,
     trade_notes: list[str],
     *,
@@ -582,13 +606,15 @@ def _search_redevelopment_listings(
     pretty: bool | None,
     fields: list[str] | None,
 ) -> None:
-    """재개발 구역 하나의 매물 목록 (기본 네이버 랭킹 순). 가격 조건은 네이버 서버 필터로 거른다."""
+    """재개발 구역 하나(번호 또는 이름)의 매물 목록 (기본 네이버 랭킹 순). 가격 조건은 네이버 서버 필터로 거른다."""
     with handle_errors(SOURCE), NaverClient() as client:
+        # 이름으로 찾았으면 고른 구역 번호를 함께 줘야 redevelopment 로 이어 조회할 수 있다
+        area_number, notes = _redevelopment_number(client, area, '--redevelopment')
         result = list_redevelopment_articles(client, area_number, conditions=conditions, sort=sort, limit=limit)
         emit(
             {'redevelopment_number': area_number, **result.model_dump(mode='json')},
             pretty,
-            notes=trade_notes + result.notes,
+            notes=trade_notes + notes + result.notes,
             fields=fields,
             fields_source=result,
         )
@@ -770,13 +796,18 @@ def real_price_command(
     ] = None,
     period: Annotated[
         str | None,
-        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다")
+        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다. --group 과 함께 쓸 수 없다")
     ] = None,
+    group: Annotated[
+        bool,
+        typer.Option('--group', help='같은 평형 묶음(complex 결과의 pyeong_groups)의 실거래를 함께 준다. 거래마다 평형은 알 수 없다. --period 와 함께 쓸 수 없다')
+    ] = False,
     pretty: PrettyOption = None,
 ) -> None:
     """평형별 실거래가 (국토부 신고 기준, 최근 순).
 
     예: jibsa naver real-price 12345 --pyeong 2 --trade 전세 --period 3년
+    예: jibsa naver real-price 12345 --pyeong 2 --group --pages 2
     """
     trade_types = split_csv([trade], ('매매', '전세', '월세'), '--trade')
     if len(trade_types) != 1:
@@ -785,9 +816,11 @@ def real_price_command(
         period = check_choice(period, PERIOD_MONTHS_BY_NAME, '--period')
         if pages is not None:
             raise typer.BadParameter('--period 와 --pages 는 함께 쓸 수 없습니다. 기간이면 --period 만 주세요', param_hint='--pages')
+        if group:
+            raise typer.BadParameter('--group 과 --period 는 함께 쓸 수 없습니다. 묶음 실거래는 --pages 로 페이지를 넘기세요', param_hint='--group')
     with handle_errors(SOURCE), NaverClient() as client:
         result = get_real_prices(
-            client, complex_number, pyeong, trade_type=trade_types[0], pages=pages or 1, period=period,
+            client, complex_number, pyeong, trade_type=trade_types[0], pages=pages or 1, period=period, group=group,
         )
         emit(result, pretty, notes=result.notes)
 
@@ -819,9 +852,9 @@ def market_price_command(
 
 @app.command('redevelopment')
 def redevelopment_detail_command(
-    area_number: Annotated[
-        int,
-        typer.Argument(min=1, metavar='REDEVELOPMENT_NUMBER', help='재개발 구역 번호 (search redevelopment 결과의 redevelopment_number)')
+    area: Annotated[
+        str,
+        typer.Argument(metavar='REDEVELOPMENT', help='재개발 구역 번호(search redevelopment 결과의 redevelopment_number) 또는 이름 (예: 성수전략정비구역제3지구). 같은 이름이 여러 구역이면 후보의 구역 번호를 준다')
     ],
     trade: Annotated[
         list[str] | None,
@@ -831,14 +864,17 @@ def redevelopment_detail_command(
 ) -> None:
     """재개발 구역 하나: 계획 세대수·시공사·용적률·건폐율·사업 단계와 거래 유형별 매물 수·호가 범위 (요청 2회).
 
-    매물 목록은 search listings --redevelopment 로 본다.
+    매물 목록은 search listings --redevelopment 로 본다. 이름으로 찾으면 구역 검색 요청 1회가 는다.
 
     예: jibsa naver redevelopment 10017678 --trade 매매
+    예: jibsa naver redevelopment 성수전략정비구역제3지구
     """
     trade_types = split_csv(trade, TRADE_TYPES, '--trade')
     with handle_errors(SOURCE), NaverClient() as client:
+        area_number, notes = _redevelopment_number(client, area, 'REDEVELOPMENT')
         detail = get_redevelopment(client, area_number, trade_types=trade_types)
-        notes = [f"article_counts·호가 범위는 {', '.join(trade_types)} 매물만 센 값입니다"] if trade_types else []
+        if trade_types:
+            notes.append(f"article_counts·호가 범위는 {', '.join(trade_types)} 매물만 센 값입니다")
         emit(detail, pretty, notes=notes)
 
 
@@ -871,23 +907,51 @@ def school_command(
         str | None,
         typer.Option('--complex', help='단지 번호 또는 이름. 주면 그 단지에서 이 학교에 배정되는 동을 붙인다 (요청 2~3회 추가)')
     ] = None,
+    complexes: Annotated[
+        bool,
+        typer.Option('--complexes', help='이 학교에 배정되는 단지 목록(assigned_complexes: 단지 정보·매물 수·호가·배정 동)을 붙인다 (20곳마다 요청 1회 추가)')
+    ] = False,
+    sort: Annotated[
+        str | None,
+        typer.Option('--sort', help=f"--complexes 전용 정렬: {', '.join(SCHOOL_COMPLEX_SORT_TYPE_BY_NAME)} (기본 {SCHOOL_COMPLEX_DEFAULT_SORT}, 학교에서 가까운 순)")
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option('--limit', min=1, max=MAX_SCHOOL_COMPLEX_LIMIT, help=f'--complexes 전용: 최대 단지 수 (기본 {SCHOOL_COMPLEX_DEFAULT_LIMIT})')
+    ] = None,
     pretty: PrettyOption = None,
 ) -> None:
     """초등학교 상세: 학생 수·학급당/교원당 학생 수와 시·구 평균, 운영 구분, 개교일 (학교알리미 공시, 요청 1회).
 
-    전화·홈페이지는 주지 않는다. 학교 배정은 교육청 학구도로 확인한다.
+    --complex 를 주면 요청이 2~3회 더 든다 (이름으로 주면 단지 검색 1회 포함). --complexes 를 주면 20곳마다 1회씩(최대 5회) 더 든다.
+    전화·홈페이지는 주지 않는다. 학교 배정은 교육청 학구도로 확인한다. --complexes 를 주면 이 학교에 배정되는 단지(assigned_complexes)도 본다.
 
     예: jibsa naver school B100000747 --complex 개포자이
+    예: jibsa naver school B100000747 --complexes --sort 세대수순
     """
     school_code = school_code.strip()
     if SCHOOL_CODE_PATTERN.fullmatch(school_code) is None:
         raise typer.BadParameter('학교 코드는 영문·숫자입니다 (예: B100000747)', param_hint='SCHOOL_CODE')
+    if not complexes and (sort is not None or limit is not None):
+        raise typer.BadParameter('--sort·--limit 은 --complexes 와 함께 사용하세요', param_hint='--complexes')
+    sort = check_choice(SCHOOL_COMPLEX_DEFAULT_SORT if sort is None else sort, SCHOOL_COMPLEX_SORT_TYPE_BY_NAME, '--sort')
     with handle_errors(SOURCE), NaverClient() as client:
         notes: list[str] = []
         complex_number, villa = None, None
         if complex_ is not None:
             complex_number, villa, notes = _complex_number(client, complex_)
-        emit(get_school(client, school_code, complex_number=complex_number, villa=villa), pretty, notes=notes)
+        school = get_school(client, school_code, complex_number=complex_number, villa=villa)
+        if not complexes:
+            emit(school, pretty, notes=notes)
+            return
+        assigned = list_school_complexes(
+            client, school_code, sort=sort, limit=SCHOOL_COMPLEX_DEFAULT_LIMIT if limit is None else limit,
+        )
+        emit(
+            {**school.model_dump(mode='json'), 'assigned_complexes': assigned.model_dump(mode='json')},
+            pretty,
+            notes=notes + assigned.notes,
+        )
 
 
 @app.command('listing')
@@ -1009,8 +1073,8 @@ def search_command(
     ] = None,
     complex_: Annotated[str | None, typer.Option('--complex', help='단지 이름 또는 번호. 지역·좌표와 함께 사용할 수 없다')] = None,
     redevelopment: Annotated[
-        int | None,
-        typer.Option('--redevelopment', min=1, help='재개발 구역 번호 (search redevelopment 결과의 redevelopment_number). 그 구역 매물을 찾는다. 지역·좌표·--complex 와 함께 사용할 수 없다')
+        str | None,
+        typer.Option('--redevelopment', help='재개발 구역 번호(search redevelopment 결과의 redevelopment_number) 또는 이름 (예: 성수전략정비구역제3지구). 그 구역 매물을 찾는다. 같은 이름이 여러 구역이면 후보의 구역 번호를 준다. 지역·좌표·--complex 와 함께 사용할 수 없다')
     ] = None,
     pyeong: Annotated[list[str] | None, typer.Option('--pyeong', metavar='<int>', help='--complex 전용: 평형 ID (평수 아님). 반복하거나 쉼표로 구분')] = None,
     dong: Annotated[list[str] | None, typer.Option('--dong', help='--complex 전용: 동 이름 (104 또는 104동). 반복하거나 쉼표로 구분')] = None,
@@ -1117,6 +1181,7 @@ def search_command(
     address 는 동까지다 (네이버 목록이 번지를 주지 않음). 번지까지 있는 주소는 listing 에서.
 
     예: jibsa naver search listings 역삼동 -t 오피스텔 --trade 월세 --deposit-max 3000 --rent-max 150
+    예: jibsa naver search listings --redevelopment 성수전략정비구역제3지구 --trade 매매   # 재개발 구역 이름 (같은 이름이 여러 구역이면 후보의 번호)
 
     결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다. 이어 받을 때는 지역을 다시 찾지 않아 네이버 요청이 준다.
     단지·재개발 구역 매물(--complex·--redevelopment)은 이어 받지 않는다.

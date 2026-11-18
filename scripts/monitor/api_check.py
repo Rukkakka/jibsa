@@ -208,9 +208,17 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단지', ('naver', 'complex'), ('{complex}',), 'pyeongs',
             (Capture('pyeong', 'pyeongs', 'number', largest='household_count'), Capture('school', 'schools', 'school_code')),
         ),
+        # 평형 하나를 주면 평형 관리비·시세·실거래 요약·평당가(complex/pyeongPrice/pyeongType)를 더 부른다. 그 경로의 고장을 잡는다
+        # (사용자 결정 2026-11-18). 기대 칸은 세대수가 가장 많은 평형의 매매 평당가다. `price_per_pyeong` 만 보면 조회 실패
+        # (`{sale: null, jeonse: null}`)도 비지 않은 dict 라 통과한다 (review-checklist convention-8)
+        Step('평형 요약', ('naver', 'complex'), ('{complex}', '--pyeong', '{pyeong}'), 'price_per_pyeong.sale'),
         Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'transactions'),
+        # 평형 묶음(complex/pyeongGroups)으로 같은 묶음 평형의 실거래를 함께 받는다 (complex/pyeong/realPrice/group)
+        Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'transactions'),
         Step('평형 시세', ('naver', 'market-price'), ('{complex}', '--pyeong', '{pyeong}'), 'providers'),
         Step('학교', ('naver', 'school'), ('{school}',), 'school_code'),
+        # 학교는 그 단지가 배정된 학교라 목록이 비면 고장이다 (dict 만 보면 키 이름이 바뀌어 빈 목록이 돼도 못 잡는다)
+        Step('학교 배정 단지', ('naver', 'school'), ('{school}', '--complexes', '--limit', '1'), 'assigned_complexes.complexes'),
         Step('단지 매물', NAVER_LISTINGS, ('--complex', '{complex}', '--limit', '2'), 'listings'),
         Step(
             '재개발 구역 한남동', ('naver', 'search', 'redevelopment'), ('한남동', '--limit', '1'), 'areas',
@@ -218,6 +226,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step('재개발 구역', ('naver', 'redevelopment'), ('{redevelopment}',), 'redevelopment_number'),
         Step('재개발 구역 매물', NAVER_LISTINGS, ('--redevelopment', '{redevelopment}', '--limit', '2'), 'listings'),
+        # 구역 이름은 재개발 자동완성(search/autocomplete/redevelopmentAreas)으로 번호를 찾는다. 이름이 하나로 정해지는 구역이어야
+        # 한다 (한남제3재정비촉진구역은 한남동·보광동에 번호가 둘이라 REGION_AMBIGUOUS, 2026-11-18)
+        Step('재개발 구역 이름 성수전략정비구역제3지구', ('naver', 'redevelopment'), ('성수전략정비구역제3지구',), 'redevelopment_number'),
     ),
     'daangn': (
         # 웹 지도 검색창처럼 지역(searchRegion)·역·대학·학교·단지 검색을 한꺼번에 부른다

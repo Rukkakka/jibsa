@@ -75,13 +75,18 @@ class NaverSearchAutocompleteSubwayStationsV1RequestParameterModel(NaverSearchAu
     """`GET /front-api/v1/search/autocomplete/subwayStations` 쿼리."""
 
 
-class NaverSearchAutocompleteComplexesV1RequestParameterModel(NaverSearchAutocompleteRequestParameterModel):
-    """`GET /front-api/v1/search/autocomplete/complexes` 쿼리.
-
-    사이트 검색창은 `size=10&page=0` 을 보낸다. size 를 빼면 서버 기본 5건만 온다 (2026-11-16 실측).
-    """
+class NaverSearchAutocompleteSizedRequestParameterModel(NaverSearchAutocompleteRequestParameterModel):
+    """`size` 를 받는 자동완성 쿼리. 사이트 검색창은 `size=10&page=0` 을 보낸다. size 를 빼면 서버 기본 5건만 온다 (2026-11-16 실측)."""
 
     size: Annotated[
         int,
         Field(ge=1, description='한 페이지 결과 수 (사이트 검색창 10)')
     ] = 10
+
+
+class NaverSearchAutocompleteComplexesV1RequestParameterModel(NaverSearchAutocompleteSizedRequestParameterModel):
+    """`GET /front-api/v1/search/autocomplete/complexes` 쿼리."""
+
+
+class NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel(NaverSearchAutocompleteSizedRequestParameterModel):
+    """`GET /front-api/v1/search/autocomplete/redevelopmentAreas` 쿼리. 재개발 구역 이름 검색 (size 를 빼면 서버 기본 5건, 2026-11-18 실측)."""
