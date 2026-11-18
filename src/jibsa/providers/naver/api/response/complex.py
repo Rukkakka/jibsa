@@ -234,3 +234,49 @@ class NaverEducationComplexSchoolV1ResponseModel(NaverResponseModel[list[NaverSc
 
 class NaverComplexReconstructionV1ResponseModel(NaverResponseModel[NaverComplexReconstructionModel]):
     """`GET /front-api/v1/complex/reconstruction` 응답."""
+
+
+class NaverLegalDivisionPricePerPyeongModel(ResponseModel):
+    """지역(시·구·동)의 평당 호가 (원). 평형이 속한 지역을 큰 단위부터 서울시(SI)·송파구(GUN)·가락동(EUP) 순으로 준다."""
+
+    price_per_pyeong: Annotated[
+        int | None,
+        Field(description='평당 호가 (원)', alias='pricePerPyeong')
+    ] = None
+    first_day_of_week: Annotated[
+        str | None,
+        Field(description='기준 주 첫날 (YYYY-MM-DD)', alias='firstDayOfWeek')
+    ] = None
+    legal_division_number: Annotated[
+        str | None,
+        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
+    ] = None
+    legal_division_name: Annotated[
+        str | None,
+        Field(description='지역 이름 (서울시, 송파구, 가락동)', alias='legalDivisionName')
+    ] = None
+    legal_division_level_type: Annotated[
+        str | None,
+        Field(description='단위. SI 시·도, GUN 시·군·구, EUP 읍·면·동', alias='legalDivisionLevelType')
+    ] = None
+    trade_type: Annotated[
+        str | None,
+        Field(description='거래 유형', alias='tradeType')
+    ] = None
+
+
+class NaverComplexPyeongPriceModel(ResponseModel):
+    """평형의 평당 호가. 월세(B2)나 없는 값은 `pricePerPyeong` 키가 없고 목록이 비어 온다."""
+
+    price_per_pyeong: Annotated[
+        int | None,
+        Field(description='평당 호가 (원, 공급 평수 기준, 매물 호가 기준 주간값)', alias='pricePerPyeong')
+    ] = None
+    legal_division_price_per_pyeong_list: Annotated[
+        list[NaverLegalDivisionPricePerPyeongModel] | None,
+        Field(description='시·구·동 평균 평당 호가 (서울시·송파구·가락동 순). 서버가 null 로 줄 수 있어 모름이다 (평당가는 그대로 내고 지역·기준일만 모름으로 낸다)', alias='legalDivisionPricePerPyeongList')
+    ] = None
+
+
+class NaverComplexPyeongPricePyeongTypeV1ResponseModel(NaverResponseModel[NaverComplexPyeongPriceModel]):
+    """`GET /front-api/v1/complex/pyeongPrice/pyeongType` 응답."""

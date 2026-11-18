@@ -22,6 +22,7 @@ from jibsa.core.http import (
 )
 from jibsa.providers.naver.api.request.common import (
     NaverComplexBuildingListV1RequestParameterModel,
+    NaverComplexPyeongGroupsV1RequestParameterModel,
     NaverComplexPyeongListV1RequestParameterModel,
     NaverComplexPyeongV1RequestParameterModel,
     NaverComplexV1RequestParameterModel,
@@ -36,6 +37,7 @@ from jibsa.providers.naver.api.request.complex import (
     NaverComplexHoldingTaxV1RequestParameterModel,
     NaverComplexMaintenanceFeeV1RequestParameterModel,
     NaverComplexMarketPriceRecentV1RequestParameterModel,
+    NaverComplexPyeongPricePyeongTypeV1RequestParameterModel,
     NaverComplexPyeongRealPriceSummaryV1RequestParameterModel,
     NaverComplexReconstructionV1RequestParameterModel,
     NaverComplexVillaArticleStatsV1RequestParameterModel,
@@ -52,12 +54,14 @@ from jibsa.providers.naver.api.request.listing import (
     NaverComplexBuildingRegistrationV1RequestParameterModel,
     NaverComplexVillaArticleListV1RequestPayloadModel,
     NaverDataServiceTransportV1RequestParameterModel,
+    NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.market_price import (
     NaverComplexMarketPriceListV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.real_price import (
+    NaverComplexPyeongRealPriceGroupV1RequestParameterModel,
     NaverComplexPyeongRealPriceListV1RequestParameterModel,
     NaverComplexPyeongRealPriceV2RequestParameterModel,
     NaverComplexVillaRealPricePageV1RequestParameterModel,
@@ -76,9 +80,11 @@ from jibsa.providers.naver.api.request.region import (
     NaverMapsSearchAddressV1RequestParameterModel,
     NaverSearchAutocompleteComplexesV1RequestParameterModel,
     NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel,
+    NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel,
     NaverSearchAutocompleteSubwayStationsV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.school import (
+    NaverEducationComplexPagesV1RequestParameterModel,
     NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel,
     NaverEducationSchoolV1RequestParameterModel,
 )
@@ -97,6 +103,7 @@ from jibsa.providers.naver.api.request.trend import (
 )
 from jibsa.providers.naver.api.response.common import (
     NaverComplexBuildingListV1ResponseModel,
+    NaverComplexPyeongGroupsV1ResponseModel,
     NaverComplexPyeongListV1ResponseModel,
     NaverComplexPyeongV1ResponseModel,
     NaverComplexV1ResponseModel,
@@ -111,6 +118,7 @@ from jibsa.providers.naver.api.response.complex import (
     NaverComplexHoldingTaxV1ResponseModel,
     NaverComplexMaintenanceFeeV1ResponseModel,
     NaverComplexMarketPriceRecentV1ResponseModel,
+    NaverComplexPyeongPricePyeongTypeV1ResponseModel,
     NaverComplexPyeongRealPriceSummaryV1ResponseModel,
     NaverComplexReconstructionV1ResponseModel,
     NaverComplexVillaArticleStatsV1ResponseModel,
@@ -127,12 +135,14 @@ from jibsa.providers.naver.api.response.listing import (
     NaverComplexBuildingRegistrationV1ResponseModel,
     NaverComplexVillaArticleListV1ResponseModel,
     NaverDataServiceTransportV1ResponseModel,
+    NaverDevelopmentArticleV1ResponseModel,
     NaverEducationBuildingSchoolV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.market_price import (
     NaverComplexMarketPriceListV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.real_price import (
+    NaverComplexPyeongRealPriceGroupV1ResponseModel,
     NaverComplexPyeongRealPriceListV1ResponseModel,
     NaverComplexPyeongRealPriceV2ResponseModel,
     NaverComplexVillaRealPricePageV1ResponseModel,
@@ -151,9 +161,11 @@ from jibsa.providers.naver.api.response.region import (
     NaverMapsSearchAddressV1ResponseModel,
     NaverSearchAutocompleteComplexesV1ResponseModel,
     NaverSearchAutocompleteLegalDivisionsV1ResponseModel,
+    NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel,
     NaverSearchAutocompleteSubwayStationsV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.school import (
+    NaverEducationComplexPagesV1ResponseModel,
     NaverEducationComplexSchoolAllocationDongsV1ResponseModel,
     NaverEducationSchoolV1ResponseModel,
 )
@@ -284,6 +296,12 @@ class NaverClient(BaseHTTPClient):
     legal_division_sub_info_list_v1_endpoint: ClassVar[str] = '/front-api/v1/legalDivision/subInfoList'
     education_school_v1_endpoint: ClassVar[str] = '/front-api/v1/education/school'
     education_complex_school_allocation_dongs_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/school/allocation-dongs'
+    education_complex_pages_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/pages'
+    complex_pyeong_price_pyeong_type_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongPrice/pyeongType'
+    complex_pyeong_groups_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongGroups'
+    complex_pyeong_real_price_group_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeong/realPrice/group'
+    development_article_v1_endpoint: ClassVar[str] = '/front-api/v1/development/article'
+    search_autocomplete_redevelopment_areas_v1_endpoint: ClassVar[str] = '/front-api/v1/search/autocomplete/redevelopmentAreas'
 
     source_name: ClassVar[str] = 'naver'
     default_rate_limit: ClassVar[dict[str, object]] = {
@@ -1859,3 +1877,192 @@ class NaverClient(BaseHTTPClient):
     ) -> NaverEducationComplexSchoolAllocationDongsV1ResponseModel:
         """Async variant of `run_request_education_complex_school_allocation_dongs_v1`."""
         return await self._aget(self.education_complex_school_allocation_dongs_v1_endpoint, parameter, NaverEducationComplexSchoolAllocationDongsV1ResponseModel)
+
+    @naver_retry
+    def run_request_education_complex_pages_v1(
+        self,
+        parameter: NaverEducationComplexPagesV1RequestParameterModel
+    ) -> NaverEducationComplexPagesV1ResponseModel:
+        """List the complexes assigned to a school via `GET /front-api/v1/education/complex/pages`.
+
+        `sortType` 은 `DISTANCE`·`HOUSEHOLD_COUNT` 만 받는다 (그 밖은 400 FST_ERR_VALIDATION). 웹 페이지 크기는 기본 10,
+        상세 화면 20 이다 (2026-11-18 실측, 로그인 없이 200). 항목마다 단지 정보(`complexInfo`)·매물 수·호가 범위(원, 매물이
+        없으면 `{}`)와 그 단지에서 배정되는 동(`isAllBuildingAssigned`·`convertedBuildingNameGroups`)이 온다.
+        끝 쪽을 넘긴 페이지(page=9)는 `list: []`·`hasNextPage: false`·`totalCount: 0` 이라 총수는 첫 쪽에서만 믿는다.
+
+        Args:
+            parameter: `school_code`, `size`, `page`, `sort_type`.
+
+        Returns:
+            NaverEducationComplexPagesV1ResponseModel: 단지 목록 한 페이지 (`totalCount`·`hasNextPage`·`list`).
+        """
+        return self._get(
+            self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_education_complex_pages_v1(
+        self,
+        parameter: NaverEducationComplexPagesV1RequestParameterModel
+    ) -> NaverEducationComplexPagesV1ResponseModel:
+        """Async variant of `run_request_education_complex_pages_v1`."""
+        return await self._aget(
+            self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_pyeong_price_pyeong_type_v1(
+        self,
+        parameter: NaverComplexPyeongPricePyeongTypeV1RequestParameterModel
+    ) -> NaverComplexPyeongPricePyeongTypeV1ResponseModel:
+        """Fetch a floor-plan type's price per pyeong via `GET /front-api/v1/complex/pyeongPrice/pyeongType`.
+
+        `result.pricePerPyeong` 는 원/평 (공급 평수 기준, 매물 호가 기준 주간값)이고 `legalDivisionPricePerPyeongList` 는
+        서울시(SI)·송파구(GUN)·가락동(EUP) 순 평균이다 (헬리오시티 111515 평형 19 매매 85,572,091 / 서울시 60,404,729 /
+        송파구 86,124,738 / 가락동 84,077,252, 2026-11-18 실측, 로그인 없이 200). `tradeType` B2(월세)는 200 이지만
+        `pricePerPyeong` 키가 없고 목록이 `[]` 다. 없는 평형은 `isSuccess: false`·`result: {}` 다. 웹은 `realEstateTypes` 를
+        보내지 않는다.
+
+        Args:
+            parameter: `complex_number`, `pyeong_type_number`, `trade_type`.
+
+        Returns:
+            NaverComplexPyeongPricePyeongTypeV1ResponseModel: 평당 호가 (원)와 시·구·동 평균 목록.
+        """
+        return self._get(
+            self.complex_pyeong_price_pyeong_type_v1_endpoint, parameter, NaverComplexPyeongPricePyeongTypeV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_pyeong_price_pyeong_type_v1(
+        self,
+        parameter: NaverComplexPyeongPricePyeongTypeV1RequestParameterModel
+    ) -> NaverComplexPyeongPricePyeongTypeV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_price_pyeong_type_v1`."""
+        return await self._aget(
+            self.complex_pyeong_price_pyeong_type_v1_endpoint, parameter, NaverComplexPyeongPricePyeongTypeV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_pyeong_groups_v1(
+        self,
+        parameter: NaverComplexPyeongGroupsV1RequestParameterModel
+    ) -> NaverComplexPyeongGroupsV1ResponseModel:
+        """List floor-plan groups via `GET /front-api/v1/complex/pyeongGroups`.
+
+        `result` 는 배열이다. 항목은 대표 평수 이름·번호(`representativePyeongName`·`representativePyeongNumber`, 번호가
+        `pyeongTypes` 의 첫 항목이 아닐 수 있다)·세대수와 묶음에 든 평형(`pyeongTypes[]`: 번호·이름·`nameType`·면적·세대수·
+        `isVRExist`)이다 (2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `complex_number`.
+
+        Returns:
+            NaverComplexPyeongGroupsV1ResponseModel: 평형 묶음 목록.
+        """
+        return self._get(
+            self.complex_pyeong_groups_v1_endpoint, parameter, NaverComplexPyeongGroupsV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_pyeong_groups_v1(
+        self,
+        parameter: NaverComplexPyeongGroupsV1RequestParameterModel
+    ) -> NaverComplexPyeongGroupsV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_groups_v1`."""
+        return await self._aget(
+            self.complex_pyeong_groups_v1_endpoint, parameter, NaverComplexPyeongGroupsV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_pyeong_real_price_group_v1(
+        self,
+        parameter: NaverComplexPyeongRealPriceGroupV1RequestParameterModel
+    ) -> NaverComplexPyeongRealPriceGroupV1ResponseModel:
+        """Fetch a floor-plan group's real prices via `GET /front-api/v1/complex/pyeong/realPrice/group`.
+
+        평형 번호는 `pyeongTypeNumbers[]=19&pyeongTypeNumbers[]=16` 처럼 키에 `[]` 를 붙여 반복한다. 웹은
+        `[대표 번호, ...나머지 번호순]` 으로 보낸다. 응답은 `complex/v2/pyeong/realPrice` 와 같은 모양이다
+        (2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `complex_number`, `pyeong_type_numbers`, `trade_type`, `page`, `size`.
+
+        Returns:
+            NaverComplexPyeongRealPriceGroupV1ResponseModel: 실거래 목록 한 페이지.
+        """
+        return self._get(
+            self.complex_pyeong_real_price_group_v1_endpoint, parameter, NaverComplexPyeongRealPriceGroupV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_pyeong_real_price_group_v1(
+        self,
+        parameter: NaverComplexPyeongRealPriceGroupV1RequestParameterModel
+    ) -> NaverComplexPyeongRealPriceGroupV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_real_price_group_v1`."""
+        return await self._aget(
+            self.complex_pyeong_real_price_group_v1_endpoint, parameter, NaverComplexPyeongRealPriceGroupV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_development_article_v1(
+        self,
+        parameter: NaverDevelopmentArticleV1RequestParameterModel
+    ) -> NaverDevelopmentArticleV1ResponseModel:
+        """Fetch planned developments near a listing via `GET /front-api/v1/development/article`.
+
+        `result.railList[]` 는 근처 예정 지하철역(역·노선 이름, 개통 예정 연도 `openDate`, 거리 m, 도보 분)이고
+        `result.jiguList[]` 는 근처 개발 지구(이름·유형·단계·기간 `period`, 기간은 없을 수 있다)다. 좌표도 오지만 쓰지 않는다.
+        둘 다 빈 매물이 많다 (원룸 `{"railList": [], "jiguList": []}`, 2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `article_number`.
+
+        Returns:
+            NaverDevelopmentArticleV1ResponseModel: 근처 예정 지하철역·개발 지구.
+        """
+        return self._get(
+            self.development_article_v1_endpoint, parameter, NaverDevelopmentArticleV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_development_article_v1(
+        self,
+        parameter: NaverDevelopmentArticleV1RequestParameterModel
+    ) -> NaverDevelopmentArticleV1ResponseModel:
+        """Async variant of `run_request_development_article_v1`."""
+        return await self._aget(
+            self.development_article_v1_endpoint, parameter, NaverDevelopmentArticleV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_search_autocomplete_redevelopment_areas_v1(
+        self,
+        parameter: NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel
+    ) -> NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel:
+        """Autocomplete redevelopment area names via `GET /front-api/v1/search/autocomplete/redevelopmentAreas`.
+
+        `result` 는 `{hasNextPage, totalCount, list[]}` 이고 항목은 구역 번호(`redevelopmentAreaNumber`)·이름·법정동 이름·
+        코드다 (좌표도 오지만 쓰지 않는다). `size` 를 빼면 서버 기본 5건이 오고, 없는 이름은 `totalCount: 0`·`list: []` 다
+        (2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `keyword`, `page`, `size`.
+
+        Returns:
+            NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel: 재개발 구역 자동완성 한 페이지.
+        """
+        return self._get(
+            self.search_autocomplete_redevelopment_areas_v1_endpoint, parameter, NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_search_autocomplete_redevelopment_areas_v1(
+        self,
+        parameter: NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel
+    ) -> NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel:
+        """Async variant of `run_request_search_autocomplete_redevelopment_areas_v1`."""
+        return await self._aget(
+            self.search_autocomplete_redevelopment_areas_v1_endpoint, parameter, NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel
+        )

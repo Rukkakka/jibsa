@@ -16,11 +16,11 @@
 | `market-price` | 단지 평형별 **기관 시세 추이** | 단지 이름 또는 번호 | `real-price` |
 | `listing` | 매물 하나 **상세** | 매물 ID | `school` |
 | `search redevelopment` | 지역의 재개발 구역 | 지역 또는 좌표 | `redevelopment`, `search listings --redevelopment` |
-| `redevelopment` | 재개발 구역 하나의 정보 | 구역 번호 | `search listings --redevelopment` |
-| `search listings --redevelopment` | 구역 안 현재 매물 | 구역 번호 | `listing` |
+| `redevelopment` | 재개발 구역 하나의 정보 | 구역 번호 또는 이름 | `search listings --redevelopment` |
+| `search listings --redevelopment` | 구역 안 현재 매물 | 구역 번호 또는 이름 | `listing` |
 | `trend` | 동·구·전국 아파트 주간 추이 | 지역·좌표 또는 `전국` | — |
 | `regions` | 시·도·구의 **하위 지역** 목록 | 시·도 또는 시·군·구 이름 | `search listings`, `search complexes`, `trend` |
-| `school` | 초등학교 하나 **상세** | 학교 코드 | — |
+| `school` | 초등학교 하나 **상세**, 그 학교에 배정되는 **단지** | 학교 코드 | `complex`, `search listings --complex` (`--complexes` 의 단지) |
 
 ### 보통 이렇게 이어서 쓴다
 
@@ -30,6 +30,7 @@
                                              ├─▶ real-price / market-price
                                              └─▶ school (schools[].school_code)
 재개발 구역 고르기     search redevelopment ─▶ redevelopment ─▶ search listings --redevelopment ─▶ listing
+학교 배정 단지 보기    school --complexes ─▶ complex ─▶ search listings --complex ─▶ listing
 동네 흐름 보기         trend
 동네 하나씩 훑기       regions <구> ─▶ (동마다) search listings / search complexes
 ```
@@ -42,7 +43,7 @@
 
 **무엇을 넣느냐에 따라 찾는 방식이 다르다**
 
-재개발 구역 매물은 `search listings --redevelopment <구역 번호>`로 찾는다. 지원 옵션은 8절에 있다.
+재개발 구역 매물은 `search listings --redevelopment <구역 번호 또는 이름>`로 찾는다. 지원 옵션은 8절에 있다.
 
 특정 단지의 매물은 `search listings --complex <단지 이름 또는 번호>`로 찾는다. 지역·좌표와 함께 사용할 수 없다. `--complex` 모드의 지원 옵션은 4절에 있다.
 
@@ -166,7 +167,7 @@ jibsa naver search complexes 역삼동 --sort 세대수순
 | 넣는 것 | 설명 |
 | --- | --- |
 | 단지 (필수) | 단지 이름 (`개포자이`) 또는 번호 |
-| `--pyeong` | 평형 번호 (평형 ID, 평수 아님). 그 평형만으로 매물 수·호가를 센다. **하나만** 주면 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래도 붙는다 (요청 최대 6회 추가) |
+| `--pyeong` | 평형 번호 (평형 ID, 평수 아님). 그 평형만으로 매물 수·호가를 센다. **하나만** 주면 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래·평당가도 붙는다 (요청 최대 8회 추가) |
 | `--dong` | 동 (`104` 또는 `104동`). 그 동만으로 센다 |
 
 **사용 예시**
@@ -179,9 +180,10 @@ jibsa naver complex 개포자이 --pyeong 1
 
 - 기본: 단지 번호, 단지명, 주소(지번·도로명), 세대수, 동 수, 사용승인일, 시공사, 세대당 주차, 용적률, 거래 유형별 매물 수, 매매·전세 호가 범위, 월세·단기임대 호가 `monthly_asking`·`short_term_asking` (보증금·월세 짝. 뜻은 [소스별 반환 필드](#소스별-반환-필드와-해석))
 - `pyeongs[]`: 평형 번호 (평형 ID, 평수 아님), 전용·공급·계약면적, 방·욕실 수, 세대수 → **이 번호를 `search listings --complex`, `real-price` 의 `--pyeong` 에 넣는다**
+- `pyeong_groups[]`: 네이버가 비슷한 평형을 대표 평수로 묶은 목록 (평형이 많은 단지에서 평수를 고를 때 쓴다). 묶음마다 `name`(대표 평수, 예: `33평`), `representative_pyeong`(대표 평형 번호 → **`--pyeong`·`real-price --pyeong` 에 넣는다**), `households`(묶음 세대수), `pyeong_numbers`(묶음에 든 평형 번호, 번호순이라 대표 번호가 첫 항목이 아닐 수 있다. 네이버가 그 묶음의 평형 목록을 주지 않으면 그 묶음만 `null`). `--pyeong` 을 몇 개 주든 붙고 요청 1회를 더 한다. 빌라 단지는 키가 없고, 네이버가 묶음을 주지 않으면(성공 응답의 `result` 가 빈 목록이거나 null) `[]`, 조회에 실패하면 `null`
 - `schools[]`: 배정 초등학교. 학교마다 `school_code`(→ `naver school` 에 넣는다), `name`, `assignment`(배정·선택), `operation_type`(공립·혁신 등), `walking_minutes`, `distance_m`, `students_per_class`, `students_per_teacher`. 요청을 1회 더 해 붙이고, 단지형 빌라도 준다. 조회에 실패하면 `null`, 배정 정보가 없으면 `[]`
 - `reconstruction`: **재건축 단지만** 키가 있다. 현재 사업 단계와 그 날짜(`current_step`, `current_step_date`), 선정된 시공사, 재건축 후 계획 세대수(`planned_households`), 계획 용적률(`planned_floor_area_ratio`), 지나온 단계와 날짜(`steps[]`, 날짜가 있는 단계만). 요청을 1회 더 한다. 조회에 실패하면 `null`
-- `--pyeong` 을 하나만 주면 추가로: 월 관리비(최근·평균·여름·겨울), 기관별 시세(한국부동산원·KB 등, 매매·전세 평균과 범위), 최근 3년(거래가 없으면 5년) 매매·전세 실거래 요약(평균·최저·최고·3개월 평균). 필드는 [선택 평형 부가 정보](#선택-평형-부가-정보-complex---pyeong)
+- `--pyeong` 을 하나만 주면 추가로: 월 관리비(최근·평균·여름·겨울), 기관별 시세(한국부동산원·KB 등, 매매·전세 평균과 범위), 최근 3년(거래가 없으면 5년) 매매·전세 실거래 요약(평균·최저·최고·3개월 평균), 매매·전세 평당 호가와 같은 동·구·시 평균(`price_per_pyeong`). 필드는 [선택 평형 부가 정보](#선택-평형-부가-정보-complex---pyeong)
 
 **오류와 대응**
 
@@ -189,11 +191,11 @@ jibsa naver complex 개포자이 --pyeong 1
 
 **주의사항**
 
-`--pyeong`(평형 번호, 결과의 `pyeongs[].number`)과 `--dong`(동 이름)은 반복 또는 쉼표로 지정한다. 주면 `article_counts` 와 호가 범위를 그 평형·동 매물만으로 세고 `notes` 로 알린다 (단지 정보와 `pyeongs` 는 그대로 단지 전체). 주지 않으면 단지 전체로 센다.
+`--pyeong`(평형 번호, 결과의 `pyeongs[].number`)과 `--dong`(동 이름)은 반복 또는 쉼표로 지정한다. 주면 `article_counts` 와 호가 범위를 그 평형·동 매물만으로 세고 `notes` 로 알린다 (단지 정보와 `pyeongs`·`pyeong_groups` 는 그대로 단지 전체). 주지 않으면 단지 전체로 센다.
 
 단지 이름은 네이버 검색창의 단지 검색으로 찾는다. 검색창 단지 후보는 첫 쪽 10건만 받고 다음 쪽은 부르지 않는다. 다음 쪽이 없을 때(네이버가 다음 쪽이 있다고 하지 않고 후보 전체 수 `candidate_count` 가 10건 안일 때) 그중 이름이 정확히 같은 단지가 하나이거나 후보가 하나뿐일 때만 그 단지로 찾고 (이름이 다른 한 곳이면 `notes` 로 어느 단지인지 알린다), 그 밖에는 정확히 같은 이름이 하나여도 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`, `"이름 (주소, 단지 번호 N)"` 꼴로 최대 10곳)와 네이버 검색 결과 전체 수(`candidate_count`. 다음 쪽이 남았는데 네이버가 전체 수를 주지 않으면 `null` 이고 `message` 는 `"N곳 이상"`)를 알린다. 흔한 이름(`한양`·`현대`)은 후보가 10건을 넘어 늘 이렇게 알리고, 구체적인 이름(`래미안대치팰리스`·`잠실엘스`·`반포자이`)은 그대로 찾아진다. 후보의 단지 번호로 다시 조회한다. 위치로 준 단지 이름도 같은 규칙으로 정하고, 정한 단지에 좌표가 없으면 `REGION_NOT_FOUND` 로 멈추고 단지 번호·동 이름·좌표로 찾으라고 알린다 ([매물 검색](#1-search-listings--매물-찾기)의 오류). 단지 이름을 받는 `complex`·`search listings --complex`·`market-price`·`school --complex` 모두 같다. 단지 번호는 이 결과, `fin.land.naver.com/complexes/{번호}`, 매물 상세(`listing`)에서도 얻는다. 단지로 등록된 빌라(연립·다세대, 빌라 매물의 `complex_number`)도 `complex`·`search listings --complex`·`real-price` 로 볼 수 있다 (빌라 단지에는 동 수·건설사·방 수가 없다).
 
-빌라 단지에는 단일 평형 선택 시의 관리비·기관별 시세·실거래 요약을 붙이지 않고 `notes`로 알린다. 개별 실거래는 `real-price`로 확인한다.
+빌라 단지에는 단일 평형 선택 시의 관리비·기관별 시세·실거래 요약을 붙이지 않고 `notes`로 알린다 (평당가 `price_per_pyeong` 과 `pyeong_groups` 도 묻지 않아 키가 없다). 개별 실거래는 `real-price`로 확인한다.
 
 ## 4. `search listings --complex` — 단지 안 매물 목록
 
@@ -245,22 +247,24 @@ jibsa naver search listings --complex 개포자이 --trade 매매 --dong 104 --p
 | `--pyeong` | 평형 번호 (평형 ID, 평수 아님) (필수) |
 | `--trade` | 매매(기본), 전세, 월세 |
 | `--pages` | 몇 페이지 받을지 (1~10, 페이지당 10건, 기본 1) |
-| `--period` | 기간: 3개월, 1년, 3년, 5년. 주면 페이지 대신 그 기간 안 거래를 **모두** 준다. `--pages` 와 함께 쓸 수 없다 |
+| `--period` | 기간: 3개월, 1년, 3년, 5년. 주면 페이지 대신 그 기간 안 거래를 **모두** 준다. `--pages`·`--group` 과 함께 쓸 수 없다 |
+| `--group` | 그 평형이 든 평형 묶음(`complex` 결과의 `pyeong_groups`)의 거래를 함께 받는다. 거래마다 어느 평형인지는 알 수 없다. `--period` 와 함께 쓸 수 없다 |
 
 **사용 예시**
 
 ```bash
 jibsa naver real-price 12345 --pyeong 2 --trade 전세 --pages 3
 jibsa naver real-price 12345 --pyeong 2 --period 3년
+jibsa naver real-price 12345 --pyeong 2 --group --pages 2
 ```
 
 **반환값**
 
-`complex_number`, `pyeong_number`, `trade_type`, `transactions[]`를 준다. `--period` 를 주면 `period`·`since`(기간 시작일)가 붙는다. 거래마다 계약일, 층, 가격(매매가 또는 보증금·월세), 중개거래/직거래, 해제(취소) 여부, 갱신 계약 여부가 있다. 전세·월세 거래가 갱신 계약(`renewal: true`)이면 종전 보증금 `previous_deposit_manwon`(만원)도, 월세 거래면 종전 월세 `previous_rent_manwon`(만원)도 붙는다. 갱신이 아니거나 매매면 두 키가 없고, 전세 갱신에는 종전 월세 키가 없으며(네이버 웹도 전세는 종전 보증금만 보여 준다), 갱신이어도 네이버가 준 종전 보증금·월세가 둘 다 0 이거나 없으면 두 키가 없다(네이버 웹도 그때는 '기존' 금액을 보여 주지 않는다). 빌라 단지 실거래도 같은 규칙으로 종전 금액이 붙는다 (빌라의 `renewal` 은 계약갱신요구권을 쓴 거래만 `true` 라 합의로 갱신한 거래는 키가 없다). 국토부 신고 기준이고 최근 순이다.
+`complex_number`, `pyeong_number`, `trade_type`, `transactions[]`를 준다. `--period` 를 주면 `period`·`since`(기간 시작일)가, `--group` 을 주면 `pyeong_group`(`name`: 묶음 이름, `pyeong_numbers`: 묶음에 든 평형 번호, 번호순)이 붙는다 (`--group` 이 아니면 `pyeong_group` 키가 없다). 거래마다 계약일, 층, 가격(매매가 또는 보증금·월세), 중개거래/직거래, 해제(취소) 여부, 갱신 계약 여부가 있다. 전세·월세 거래가 갱신 계약(`renewal: true`)이면 종전 보증금 `previous_deposit_manwon`(만원)도, 월세 거래면 종전 월세 `previous_rent_manwon`(만원)도 붙는다. 갱신이 아니거나 매매면 두 키가 없고, 전세 갱신에는 종전 월세 키가 없으며(네이버 웹도 전세는 종전 보증금만 보여 준다), 갱신이어도 네이버가 준 종전 보증금·월세가 둘 다 0 이거나 없으면 두 키가 없다(네이버 웹도 그때는 '기존' 금액을 보여 주지 않는다). 빌라 단지 실거래도 같은 규칙으로 종전 금액이 붙는다 (빌라의 `renewal` 은 계약갱신요구권을 쓴 거래만 `true` 라 합의로 갱신한 거래는 키가 없다). 국토부 신고 기준이고 최근 순이다.
 
 **오류와 대응**
 
-평형 번호 누락·여러 거래 유형·페이지 범위 위반·없는 기간·`--period` 와 `--pages` 동시 지정은 `INVALID_ARGUMENT`. 조회 대상 미발견은 `NOT_FOUND`. 거래가 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다. 평형 목록이 비면(없는 단지 번호이거나 평형 정보가 없는 단지) `complex` 로 단지를 확인하라고 `hint` 로 준다.
+평형 번호 누락·여러 거래 유형·페이지 범위 위반·없는 기간·`--period` 와 `--pages` 동시 지정·`--group` 과 `--period` 동시 지정은 `INVALID_ARGUMENT`. 조회 대상 미발견은 `NOT_FOUND`. 거래가 0건이면 평형 번호를 확인해(요청 1~2회 추가), 그 단지에 없는 번호면 `NOT_FOUND` 와 함께 이 단지의 평형 번호를 `hint` 로 준다. 평형 목록이 비면(없는 단지 번호이거나 평형 정보가 없는 단지) `complex` 로 단지를 확인하라고 `hint` 로 준다. `--group` 은 단지에 평형 묶음이 없으면(없는 단지 번호이거나 단지형 빌라 등. 네이버가 둘 다 빈 목록으로 줘서 가를 수 없다) `NOT_FOUND` 이고 `hint` 가 `complex` 로 단지가 있는지 보고 있으면 `--group` 없이 부르라고 알린다. 묶음은 있는데 그 평형 번호가 어느 묶음에도 없으면 `NOT_FOUND` 이고, `hint` 가 묶음별 평형 번호를 알려 그 번호로 다시 부르게 한다.
 
 **주의사항**
 
@@ -268,7 +272,9 @@ jibsa naver real-price 12345 --pyeong 2 --period 3년
 
 `--period` 는 아파트·오피스텔 단지면 요청 1회로 기간 안 거래를 모두 받는다. 거래가 많은 평형은 수백 건이 될 수 있다 (대단지 전세 5년 800건 이상). 빌라 단지는 네이버가 기간 조회를 주지 않아 페이지(100건씩, 최대 5페이지)를 받아 기간 시작일 전 거래를 뺀다. 그래도 다 받지 못하면 `notes` 로 알린다. 기간 안 거래가 없으면 `transactions` 가 `[]` 다.
 
-네이버는 같은 거래를 다른 평형 여러 곳에 함께 준다. 국토부 신고에 평형 타입이 없어 전용면적이 같은 평형끼리는 거의 모든 거래가 겹치고 (헬리오시티 84㎡대 평형 5개가 3년 매매를 서로 164~166건씩 겹쳐 줘, 더하면 1,309건이 실제 329건), 면적이 다른 평형에도 가끔 들어간다 (개포우성1,2차 전세: 84㎡ 평형과 127㎡ 평형에 같은 날·층·금액의 거래 3건). 그래서 거래가 있으면 `notes` 가 알린다. 평형 여러 개를 합칠 때는 같은 날·층·금액을 한 번만 센다. 거래마다 면적을 주지 않아 jibsa 가 가려낼 수 없으니, 평형별 시세를 말할 때는 당근 `real-price` 의 거래별 `area_m2` 로 확인한다.
+네이버는 같은 거래를 다른 평형 여러 곳에 함께 준다. 국토부 신고에 평형 타입이 없어 전용면적이 같은 평형끼리는 거의 모든 거래가 겹치고 (헬리오시티 84㎡대 평형 5개가 3년 매매를 서로 164~166건씩 겹쳐 줘, 더하면 1,309건이 실제 329건), 면적이 다른 평형에도 가끔 들어간다 (개포우성1,2차 전세: 84㎡ 평형과 127㎡ 평형에 같은 날·층·금액의 거래 3건). 그래서 거래가 있으면 `notes` 가 알린다 (`--group` 이면 아래 묶음 안내가 대신 나온다). 평형 여러 개를 합칠 때는 같은 날·층·금액을 한 번만 센다. 거래마다 면적을 주지 않아 jibsa 가 가려낼 수 없으니, 평형별 시세를 말할 때는 당근 `real-price` 의 거래별 `area_m2` 로 확인한다.
+
+`--group` 은 `--pyeong` 평형이 든 평형 묶음의 모든 평형 거래를 최근 순으로 받는다 (네이버 웹의 '유사면적 묶기' 와 같은 요청). 평형 하나만 받는 기본과 달리 같은 묶음의 다른 평형 거래가 섞이고 거래마다 어느 평형인지 알려 주지 않으므로, 거래가 있으면 `[참고]` 로 알린다 (묶음에 든 평형은 `pyeong_group.pyeong_numbers`). 평형별 값이 필요하면 `--group` 없이 평형마다 부른다. 요청은 묶음 조회 1회에 쪽 수(`--pages`, 페이지당 10건)를 더한 만큼이고, 거래가 끝나면 일찍 멈춘다. `--period` 와는 함께 쓸 수 없어 기간으로 자르려면 평형 하나로 부른다. 빌라 단지는 묶음이 없어 `--group` 이 `NOT_FOUND` 다 (없는 단지 번호와 구분되지 않는다).
 
 ## 6. `listing` — 매물 상세
 
@@ -291,7 +297,8 @@ jibsa naver listing 2512345678
 - 단지: 단지 번호, 단지명, 동, 평형 번호 (평형 ID, 평수 아님), 공급·계약면적
 - 돈: 융자금, 중개보수 상한(직거래가 아닌 모든 거래 유형), 취득세, 재산세, 종부세 (세금은 **매매만**, 네이버 계산값. 재산세·종부세는 아파트·재건축·단지형 빌라만, 원룸·고시원과 일반분양권이 아닌 분양권은 세금 키가 없다)
 - 주변: 버스 노선, 배정 초등학교
-- 매물 유형에 따라 네이버 웹 상세에 칸이 없는 필드는 키가 없다 (해당 없음. `search listings` 목록의 매물도 같은 유형별 표로 해당 없는 키를 뺀다). 토지는 방·욕실·방 구조·방향·층·면적·사용승인일·난방·현관·주차·엘리베이터·옵션, 고시원은 방·욕실·방 구조·방향·층·면적·사용승인일·난방·현관·주차·융자금, 재개발은 방·욕실·방 구조·면적, 사무실·상가·지식산업센터는 방 수·방 구조, 건물·상가건물·숙박·공장·창고·기타는 방 수·방 구조·해당층(`floor`)·공급면적이 없다. `floor` 가 없는 매물은 `floor_number` 도 없다. 키가 있는데 `null` 이면 칸은 있지만 값을 모르는 것이다
+- 주변 개발 예정 `nearby_development`: `rail[]`(근처에 생길 지하철역: `station`·`line`·`opens`(개통 예정 연도)·`distance_m`·`walking_minutes`)와 `area[]`(근처 개발 지구: `name`·`type`·`step`·`period`(사업 기간. 네이버가 주지 않으면 키가 없다)). 요청을 1회 더 한다 (상세 전체 최대 11회). 유형과 상관없이 모든 매물에 붙고(토지·원룸 등도), 근처에 없으면 `rail`·`area` 가 `[]`, 조회에 실패하면 `nearby_development` 가 `null`, 네이버가 한 목록만 비워 주면 그 목록만 `null`(모름) 이다
+- 매물 유형에 따라 네이버 웹 상세에 칸이 없는 필드는 키가 없다 (해당 없음. `search listings` 목록의 매물도 같은 유형별 표로 해당 없는 키를 뺀다). 토지는 방·욕실·방 구조·방향·층·면적·사용승인일·난방·현관·주차·엘리베이터·옵션, 고시원은 방·욕실·방 구조·방향·층·면적·사용승인일·난방·현관·주차·융자금, 재개발은 방·욕실·방 구조·면적, 사무실·상가·지식산업센터는 방 수·방 구조, 건물·상가건물·숙박·공장·창고·기타는 방 수·방 구조·해당층(`floor`)·공급면적이 없다. `floor` 가 없는 매물은 `floor_number` 도 없다. 키가 있는데 `null` 이면 칸은 있지만 값을 모르는 것이다. `nearby_development` 는 이 표에 없이 모든 유형에 있다
 
 필드 뜻은 [소스별 반환 필드와 해석](#소스별-반환-필드와-해석)에 있다.
 
@@ -347,7 +354,7 @@ jibsa naver search redevelopment 한강진역 --radius 1 --trade 매매 --sort �
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
-| `--redevelopment` | 1 이상의 구역 번호 | 필수 |
+| `--redevelopment` | 구역 번호(1 이상) 또는 구역 이름 (`성수전략정비구역제3지구`). 이름 해석은 [11절](#11-redevelopment--재개발-구역-하나) | 필수 |
 | `--trade` | 매매·전세·월세·단기임대. 반복·쉼표 가능 | 미지정 |
 | `--deposit-min/max` | 보증금·전세금, 0 이상 만원 | 미지정 |
 | `--rent-min/max` | 월세, 0 이상 만원 | 미지정 |
@@ -359,21 +366,22 @@ jibsa naver search redevelopment 한강진역 --radius 1 --trade 매매 --sort �
 
 ```bash
 jibsa naver search listings --redevelopment 9000001 --trade 매매 --price-max 300000
+jibsa naver search listings --redevelopment 성수전략정비구역제3지구 --trade 매매
 ```
 
 구역 번호는 문법 설명용 가상 값이다. `search redevelopment`의 실제 결과를 사용한다.
 
 **반환값**
 
-`redevelopment_number`, `total`, `returned`, `listings`를 준다 (매물 모양은 지역 검색과 같아 `badges` 도 있다). 매물의 `id`를 `listing`에 넘긴다.
+`redevelopment_number`(이름으로 줬으면 찾은 구역의 번호), `total`, `returned`, `listings`를 준다 (매물 모양은 지역 검색과 같아 `badges` 도 있다). 매물의 `id`를 `listing`에 넘긴다.
 
 **오류와 대응**
 
-지역·좌표·`--complex`·`--pyeong`·`--dong`과 함께 사용하거나 유형·면적·방·관리비·시설 등 이 표에 없는 지역 검색 조건을 지정하면 `INVALID_ARGUMENT`다. 하한이 상한보다 큰 가격 범위와 가까운순 정렬도 입력 오류다. 조회 실패는 에러의 `code`·`hint`를 확인한다.
+지역·좌표·`--complex`·`--pyeong`·`--dong`과 함께 사용하거나 유형·면적·방·관리비·시설 등 이 표에 없는 지역 검색 조건을 지정하면 `INVALID_ARGUMENT`다. 하한이 상한보다 큰 가격 범위와 가까운순 정렬도 입력 오류다. 이름이 여러 구역에 맞으면 `REGION_AMBIGUOUS`, 맞는 구역이 없으면 `NOT_FOUND` 다 ([11절](#11-redevelopment--재개발-구역-하나)과 같다). 조회 실패는 에러의 `code`·`hint`를 확인한다.
 
 **주의사항**
 
-재개발 매물은 건물이 아니라 대지지분 단위라 `area_m2`·`area_pyeong` 키가 없고(해당 없음), 층이 없는 매물은 `floor`·`building_floor`가 `null`이다 (면적은 원 사이트에서, 목록·`listing` 상세 모두 같다). 가격 조건은 서버 필터이며 명시하지 않은 거래 유형을 가격 조건에 맞게 추론하면 `notes`로 알린다. 가격순은 네이버 기준이므로 여러 거래 유형의 가격을 같은 척도로 단정하지 않는다 (거래 유형이 여럿이면 `notes` 로 알린다). 페이지 요청 예산 때문에 한도보다 적게 반환될 수 있다. 예산을 다 쓴 결과는 구역 전체를 끝까지 조회한 결과가 아니다.
+구역 이름을 주면 이름을 번호로 바꾸는 구역 검색 요청이 1회 더 든다. 이름이 다른 구역 하나로 정했으면 `notes` 에 `[참고]` 로 어느 구역인지 알린다. 재개발 매물은 건물이 아니라 대지지분 단위라 `area_m2`·`area_pyeong` 키가 없고(해당 없음), 층이 없는 매물은 `floor`·`building_floor`가 `null`이다 (면적은 원 사이트에서, 목록·`listing` 상세 모두 같다). 가격 조건은 서버 필터이며 명시하지 않은 거래 유형을 가격 조건에 맞게 추론하면 `notes`로 알린다. 가격순은 네이버 기준이므로 여러 거래 유형의 가격을 같은 척도로 단정하지 않는다 (거래 유형이 여럿이면 `notes` 로 알린다). 페이지 요청 예산 때문에 한도보다 적게 반환될 수 있다. 예산을 다 쓴 결과는 구역 전체를 끝까지 조회한 결과가 아니다.
 
 ## 9. `trend` — 동네 아파트 주간 추이
 
@@ -446,13 +454,14 @@ jibsa naver market-price 개포자이 --pyeong 1 --period 3년
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
-| `REDEVELOPMENT_NUMBER` | 구역 번호 (`search redevelopment` 결과의 `redevelopment_number`) | 필수 |
+| `REDEVELOPMENT` | 구역 번호 (`search redevelopment` 결과의 `redevelopment_number`) 또는 구역 이름 (`성수전략정비구역제3지구`) | 필수 |
 | `--trade` | 매매·전세·월세·단기임대. 반복·쉼표 가능. 주면 매물 수·호가 범위를 그 거래만으로 센다 | 미지정 (전체) |
 
 **사용 예시**
 
 ```bash
 jibsa naver redevelopment 9000001 --trade 매매
+jibsa naver redevelopment 성수전략정비구역제3지구
 ```
 
 구역 번호는 문법 설명용 가상 값이다.
@@ -463,11 +472,13 @@ jibsa naver redevelopment 9000001 --trade 매매
 
 **오류와 대응**
 
-없는 구역 번호는 `NOT_FOUND`, 잘못된 거래 유형은 `INVALID_ARGUMENT`다.
+없는 구역 번호는 `NOT_FOUND`, 잘못된 거래 유형은 `INVALID_ARGUMENT`다. 이름에 맞는 구역이 없으면 `NOT_FOUND`(단지 이름과 같다), 이름이 여러 구역에 맞으면 `REGION_AMBIGUOUS` 다 (아래 구역 이름).
 
 **주의사항**
 
-요청 2회다. 조합 연락처와 구역 좌표는 내보내지 않는다. 매물 목록은 `search listings --redevelopment` 로 본다. `--trade` 를 주면 `notes` 로 그 거래만 센 값이라고 알린다.
+요청 2회다 (이름으로 주면 구역 검색 1회 추가). 조합 연락처와 구역 좌표는 내보내지 않는다. 매물 목록은 `search listings --redevelopment` 로 본다. `--trade` 를 주면 `notes` 로 그 거래만 센 값이라고 알린다.
+
+구역 이름은 네이버 검색창의 재개발 구역 검색으로 찾는다 (`search listings --redevelopment` 도 같다). 후보는 첫 쪽 10건만 받고 다음 쪽은 부르지 않는다. 다음 쪽이 없을 때(네이버가 다음 쪽이 있다고 하지 않고 후보 전체 수 `candidate_count` 가 10건 안일 때) 그중 이름이 정확히 같은 구역이 하나이거나 후보가 하나뿐일 때만 그 구역으로 찾고 (이름이 다른 한 곳이면 `notes` 로 어느 구역인지 알린다), 그 밖에는 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`, `"이름 (주소, 구역 번호 N)"` 꼴)와 `candidate_count` 를 알린다. 네이버는 같은 사업 구역을 법정동마다 따로 등록하기도 해 이름이 같은 구역이 번호를 달리해 여럿 올 수 있다 (한남제3재정비촉진구역: 한남동과 보광동에 각각 다른 구역 번호). 이때는 후보의 구역 번호로 다시 부른다. 이름에 맞는 구역이 하나도 없으면 `NOT_FOUND`(단지 이름과 같다)이고 `hint` 가 `search redevelopment <동 이름>` 으로 구역 목록을 보라고 알린다.
 
 ## 12. `regions` — 하위 지역 목록
 
@@ -500,34 +511,42 @@ jibsa naver regions 세종        # 세종의 읍·면·동 (시·군·구가 �
 
 ## 13. `school` — 초등학교 상세
 
-`complex`·`listing` 의 `schools[].school_code` 로 학교 하나의 공시 정보를 본다.
+`complex`·`listing` 의 `schools[].school_code` 로 학교 하나의 공시 정보와, 그 학교에 배정되는 단지를 본다.
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
 | `SCHOOL_CODE` | 학교 코드 (예: `B100000747`) | 필수 |
 | `--complex` | 단지 이름 또는 번호. 주면 그 단지에서 이 학교에 배정되는 동을 붙인다 | 미지정 |
+| `--complexes` | 이 학교에 배정되는 단지 목록(`assigned_complexes`)을 붙인다 | 꺼짐 |
+| `--sort` | `--complexes` 의 정렬: 거리순(학교에서 가까운 순), 세대수순 | 거리순 |
+| `--limit` | `--complexes` 의 최대 단지 수 (1~100) | 20 |
 
 **사용 예시**
 
 ```bash
 jibsa naver school B100000747 --complex 개포자이
+jibsa naver school B100000747 --complexes --sort 세대수순 --limit 40
 ```
 
 **반환값**
 
 `school_code`, `name`, `address`, `office_of_education`, `operation_type`, `establishment_type`, `opened_at`(개교일), `stats_date`(공시 기준일), `students`, `students_per_class`, `students_per_teacher`, 비교용 `city_average`·`district_average`(지역, 학급당·교원당 학생 수), `url`. `--complex` 를 주면 `complex_number`, `all_dongs_assigned`, `assigned_dongs`(예: `["101동~103동", "105동"]`, 전체 배정이면 `["전체 동"]`)가 붙는다.
 
+`--complexes` 를 주면 `assigned_complexes` 가 붙는다: `total`(학교에 배정되는 전체 단지 수, 서버 집계. 네이버가 주지 않으면 `null`), `returned`, `has_more`(네이버가 다음 쪽이 있는지 주지 않으면 첫 쪽 `total` 이 받은 수보다 큰지로 정하고, `total` 도 주지 않았고 받은 것이 `--limit` 안이면 `null`), `complexes[]`(`--sort` 순서). 단지마다 `complex_number`(→ `complex`·`search listings --complex`·`real-price` 에 넣는다), `name`, `property_type`, `households`, `dong_count`, `approved_at`, 거래 유형별 매물 수 `article_counts`(네이버가 주지 않으면 `null`), 매매·전세 호가 범위 `sale_asking_range_manwon`·`jeonse_asking_range_manwon`, 월세·단기임대 호가 `monthly_asking`·`short_term_asking`(뜻은 [소스별 반환 필드](#소스별-반환-필드와-해석)), 그 단지에서 이 학교에 배정되는 동 `assigned_dongs`(`--complex` 와 같은 표기, 단지 전체가 배정이면 `["전체 동"]`)가 있다. 이 목록의 단지는 모두 이 학교에 배정되므로 `assigned_dongs` 가 `null` 이면 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데, 네이버가 어느 동인지(동 묶음)를 주지 않은 것이다 (전체 배정 여부를 주지 않아도 동 묶음이 오면 그 동을 낸다). 네이버가 단지 정보를 주지 않은 항목은 단지 번호·이름을 알 수 없어 건너뛰고 `[제외]` 로 몇 곳을 뺐는지 알린다. 단지 좌표·주소·사진은 내보내지 않는다.
+
 **오류와 대응**
 
-없는 학교 코드나 `--complex` 의 없는 단지 번호는 `NOT_FOUND`, `--complex` 의 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS`([단지 이름 해석](#3-complex--단지-하나-정보)), 영문·숫자가 아닌 코드는 `INVALID_ARGUMENT`다.
+없는 학교 코드나 `--complex` 의 없는 단지 번호는 `NOT_FOUND`, `--complex` 의 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS`([단지 이름 해석](#3-complex--단지-하나-정보)), 영문·숫자가 아닌 코드와 `--complexes` 없이 준 `--sort`·`--limit` 은 `INVALID_ARGUMENT`다.
 
 **주의사항**
 
-요청 1회, `--complex` 를 주면 2~3회 추가다 (단지 이름이면 단지 검색 1회, 단지 번호면 빌라 단지인지 확인 1회, 번호로 준 빌라 단지는 단지가 있는지 확인 1회 더). 배정 동 조회에 실패하면 `all_dongs_assigned`·`assigned_dongs` 가 `null` 이다. 전체 배정이 아닌데(`all_dongs_assigned: false`) 네이버가 어느 동인지 주지 않으면 `assigned_dongs` 만 `null` 이다. 일부 동만 배정된 단지와 이 학교에 배정되지 않은 단지가 같은 모양으로 와서 구분할 수 없다 (배정 동이 없다는 뜻도, 일부 배정이라는 뜻도 아니다). 전화·홈페이지·좌표는 내보내지 않는다. 학교 배정은 교육청 학구도 안내로 최종 확인한다.
+요청 1회, `--complex` 를 주면 2~3회 추가다 (단지 이름이면 단지 검색 1회, 단지 번호면 빌라 단지인지 확인 1회, 번호로 준 빌라 단지는 단지가 있는지 확인 1회 더). 배정 동 조회에 실패하면 `all_dongs_assigned`·`assigned_dongs` 가 `null` 이다. 전체 배정이 아닌데(`all_dongs_assigned: false`) 네이버가 어느 동인지 주지 않거나, 전체 배정 여부(`all_dongs_assigned`) 자체를 주지 않았는데 어느 동인지도 주지 않으면 `assigned_dongs` 만 `null` 이다. 일부 동만 배정된 단지와 이 학교에 배정되지 않은 단지가 같은 모양으로 와서 구분할 수 없다 (배정 동이 없다는 뜻도, 일부 배정이라는 뜻도 아니다). 전화·홈페이지·좌표는 내보내지 않는다. 학교 배정은 교육청 학구도 안내로 최종 확인한다.
+
+`--complexes` 는 단지를 20곳마다 요청 1회로 받아(최대 5회, 그래서 `--limit` 은 100까지) `--limit` 곳을 채우면 멈춘다. 더 남았으면 `has_more` 가 `true` 이고 `[일부]` 안내가 나온다 (`--limit` 이 100 아래면 늘리라고, 100 이면 최대값이라고 알린다). 네이버가 쪽을 20곳보다 짧게 줘 요청 상한(5회)에서 `--limit` 곳을 채우지 못하고 멈추면 `has_more` 는 `true` 이고 `[일부]` 안내가 받은 곳 수와 상한을 알린다 (`--limit` 을 늘려도 같은 쪽 수에서 멈춰 늘리라고도 최대값이라고도 하지 않는다). 네이버가 더 있다면서 빈 쪽을 주면 거기서 멈추고 `has_more` 는 `true` 인 채 `[일부]` 안내가 그 사실과 받은 곳 수를 알린다 (`--limit` 을 늘려도 같은 빈 쪽에서 멈춰 늘리라고 하지 않는다). 네이버가 다음 쪽 여부(`hasNextPage`)를 주지 않으면(null) 첫 쪽 `total` 이 받은 수보다 클 때만 더 있는 것으로 보고 이어 받으며(그때 `has_more` 는 `true` 또는 다 받았으면 `false`), `total` 도 주지 않았으면 더 받지 않고 받은 것이 `--limit` 안이면 `has_more` 는 `null`(모름)이다. `hasNextPage` 가 거짓이면 `total` 이 더 커도 거짓 그대로다. `total` 은 첫 쪽에서만 받고, `complexes[]` 는 `--limit` 곳까지만이라 `total` 보다 적을 수 있다.
 
 ## 조회 개수와 페이지 처리
 
-검색 모드(`search listings`, `search listings --complex`, `search complexes`, `search redevelopment`, `search listings --redevelopment`) 모두 `--limit` 기본 30, 범위 1~120이다. `complex`·`listing`·`trend`·`market-price`·`redevelopment`·`regions`·`school`에는 `--limit`이 없고, `real-price`는 `--pages` 또는 `--period`를 사용한다.
+검색 모드(`search listings`, `search listings --complex`, `search complexes`, `search redevelopment`, `search listings --redevelopment`) 모두 `--limit` 기본 30, 범위 1~120이다. `complex`·`listing`·`trend`·`market-price`·`redevelopment`·`regions`에는 `--limit`이 없고, `real-price`는 `--pages` 또는 `--period`를 사용한다. `school` 은 `--complexes` 를 줄 때만 `--limit`(기본 20, 범위 1~100)이 있다.
 
 ```bash
 jibsa naver search listings 역삼동 --trade 전세 --limit 120
@@ -582,6 +601,7 @@ API 요청당 최대 30건이다. 명령 한 번 안에서 이전 응답의 `las
 | 학교 `schools[].school_code` | `school` |
 | 구역 `redevelopment_number` | `redevelopment`, `search listings --redevelopment` |
 | 단지 상세 `pyeongs[].number` | `--pyeong`. 평수가 아니라 평형 ID |
+| 단지 상세 `pyeong_groups[].representative_pyeong` | `--pyeong`, `real-price --group`. 묶음의 대표 평형 번호 |
 | 지역 검색 `boundary` | 동·구·군·구 없는 시 경계 안을 검색했다는 표시 |
 | 지역 검색 `radius_km` | 중심점 반경으로 검색했다는 표시 |
 | `notes` | 범위·일부 반환·정렬·조회 제한 안내 |
@@ -633,6 +653,7 @@ jibsa naver trend --help
 | 네이버 (`listing`) | `approved_at` | 사용승인일 (`YYYY-MM-DD`). 값을 가져오는 곳이 유형마다 다르다. 아파트·오피스텔·재건축·분양권(단지 번호가 있을 때)은 네이버 웹 단지 칸처럼 `complex` 의 사용승인일만 쓰고 매물의 건물 날짜는 쓰지 않는다 (단지 조회에 실패하면 `null`). 단지형 빌라는 매물 값, 없으면 동 목록(`buildingList`)의 값이다. 그 밖의 유형은 매물 값, 없으면 단지 정보 값이다. 토지·고시원은 키가 없다 |
 | 네이버 (`listing`) | `move_in` | 입주 가능일. `"즉시입주"`, `"2026-11-27"`(그 날짜), `"2026-12-01 이내"`·`"2026-12-01 이후"`(네이버 '이내입주'·'이후입주', 연월만 오면 `"2026-12 이내"`), `"2027-02 초순"` (중순·하순도, 네이버가 연월만 줘도), 협의할 수 있으면 뒤에 `" (협의 가능)"`. 모르면(날짜 자리가 `-` 거나 비었을 때도) `null`. 날짜로 읽을 수 없는 다른 글자는 받은 그대로 (협의할 수 있으면 그 뒤에도 `" (협의 가능)"`) |
 | 네이버 (`listing`) | `nearby_subways`, `bus_routes`, `schools` | 가까운 지하철역 (예: `"대청역 (3호선, 도보 9분)"`, 노선이 여럿이면 `2호선·신분당선`), 주변 정류장의 버스 노선 (종류별, 예: `{"간선": ["146", "341"], "마을": ["강남01"]}`), 배정 초등학교 (`complex` 의 `schools[]` 와 같은 모양, `school_code` 는 `naver school` 에 넣는다). 요청을 1~2회 더 해 붙인다. 학교는 단지·동 번호가 있는 매물(아파트·오피스텔·단지형 빌라)만이고 나머지는 `schools` 키가 없다. 학교 조회에 실패하면 `null`. 네이버에 역·버스 정보가 통째로 없는 매물이나 조회 실패도 `null` 이다 (주변에 역이 없다는 뜻이 아니다) |
+| 네이버 (`listing`) | `nearby_development` | 매물 근처의 개발 예정. `rail[]` 는 근처에 생길 지하철역(`station`·`line`·개통 예정 연도 `opens`·`distance_m`·`walking_minutes`), `area[]` 는 개발 지구(`name`·`type`·`step`·사업 기간 `period`). 역·노선·사업 종류·단계 글자는 네이버가 준 그대로라 역 이름에 `(2027년예정)` 같은 말이 붙어 있을 수 있다. 근처에 없으면 `rail`·`area` 가 `[]`(예정 역·지구가 없다는 뜻이다), 조회에 실패했으면 `nearby_development` 가 `null`(모름이고 없다는 뜻이 아니다), 네이버가 한 목록만 비워 주면 그 목록만 `null`. 사업 기간을 주지 않은 지구는 `period` 키가 없고, 빈 글자로 온 역·노선 이름과 개통 연도, 지구의 이름·사업 종류·단계는 `null` 이다. 요청을 1회 더 해 붙인다. `nearby_subways` 는 이미 있는 가까운 지하철역이고 이 필드는 아직 없는 예정 역이다 |
 | 네이버 (`listing`) | `agent_fee_manwon` | 중개보수 상한 (만원, 네이버 계산값). 매매뿐 아니라 전세·월세·단기임대에도 나온다 (네이버 웹도 월세 매물에 '최대 28만원' 처럼 보여 준다). 네이버가 금액 대신 '개별확인' 으로 보여 주는 매물(`agent_fee_individual_check_required: true`)이면 `null`. 조회에 실패하거나 값이 없어도 `null`. 직거래인지 모르면 조회하지 않고 `null`. 직거래 매물은 중개사가 없어 네이버 웹도 중개보수를 보여 주지 않으므로 이 키와 `agent_fee_individual_check_required` 가 없다. 직거래가 아닌 모든 거래 유형의 상세가 요청을 1회 더 해 붙인다 |
 | 네이버 (`listing`) | `agent_fee_individual_check_required` | 중개보수를 네이버가 금액 대신 '개별확인' 으로 보여 주는 매물이면 `true` (중개보수는 중개사에게 따로 확인한다), 금액을 보여 주는 매물이면 `false`. 중개보수 조회에 실패하거나 네이버가 직거래인지 주지 않아 조회하지 않았으면 `null` |
 | 네이버 (`listing`, 매매만) | `acquisition_tax_manwon`, `property_tax_manwon`, `comprehensive_real_estate_tax_manwon` | 취득세 합계(지방교육세·농특세 포함), 연 재산세 합계, 연 종부세 합계 (만원). 네이버 사이트의 계산값이라 실제와 다를 수 있다 (보유세는 공시가 기준). 매매 매물 상세만 요청 1회를 더 해 붙이고, 전월세에는 키가 없다. 네이버 웹 상세가 그리는 세금만 낸다: 재산세·종부세는 아파트·재건축·단지형 빌라만이고 다른 유형은 두 키가 없다. 원룸·고시원과 일반분양권이 아닌 분양권·오피스텔분양권은 세금 칸이 없어 요청하지 않고 세 키가 없다. 분양 상태를 모르는 분양권·오피스텔분양권 매매는 칸이 있는지 몰라 요청하지 않고 `acquisition_tax_manwon` 이 `null` 이다 (재산세·종부세 키는 없다) |
@@ -652,10 +673,13 @@ jibsa naver trend --help
 | `pyeong_maintenance_fee` | 월 관리비 (만원): 최근 달(`year_month`, `latest_manwon`), 월평균, 여름·겨울 평균. 자료가 없으면 `null` |
 | `market_prices` | 기관별 최신 시세 (한국부동산원, KB부동산, 부동산뱅크): 기준일, 매매 시세 평균(`sale_average_manwon`)·범위, 전세 시세 평균(`jeonse_average_manwon`)·범위, 전세가율(%). 기관이 그 시세를 주지 않았으면(0 포함) 평균·범위·전세가율이 `null`. 시세가 없으면 `[]` |
 | `real_price_summary` | 최근 3년(`since`) 매매(`sale`)·전세(`jeonse`) 실거래의 평균(`average_manwon`)과 최저·최고 거래 (가격·계약일·층·중개/직거래·해제 여부), 최근 3개월 평균(`average_3m_manwon`, 3개월 안 거래가 없거나 조회에 실패하면 `null`). 거래 유형마다 3년 안 거래가 없으면 5년으로 다시 받고 그 유형에만 요약 안에 `since`(5년 전 날짜) 키가 붙는다 (3년으로 받았으면 키가 없다). 5년 안에도 거래가 없으면 그 거래 유형이 `null` 이다. 3년 요약 조회가 실패한 유형은 5년으로 바꾸지 않고 `null`(모름)이고, 5년으로 요약한 유형은 3개월 요청을 하지 않아 `average_3m_manwon` 도 `null` 이다 |
+| `price_per_pyeong` | 이 평형의 평당 호가와 같은 동·구·시 평균 (만원/평): `{sale, jeonse}` 각 `{manwon_per_pyeong, as_of, regions[]}`. `regions[]` 는 동·구·시 순서로 `name`·`level`(읍·면·동, 시·군·구, 시·도)·`manwon_per_pyeong`(그 지역 평균, 네이버가 0 으로 주면 `null`)이고 `as_of` 는 기준 주 첫날(`YYYY-MM-DD`, 읽지 못하면 `null`)이다. 네이버가 지역 목록을 주지 않으면 평당가 `manwon_per_pyeong` 은 그대로 내고 `regions`·`as_of` 만 `null`(모름)이다. **공급 평수 기준이고 네이버 매물 호가 기준 주간값(매주 월요일 갱신)이라 실거래 평당가가 아니다.** 월세는 네이버가 주지 않아 키가 없다. 네이버가 평당가를 주지 않는(없거나 0, 성공 응답의 `result` 가 null) 거래 유형은 그 키가 없고(둘 다 없으면 `{}`), 조회에 실패한 유형은 `null` 이다. 아파트·오피스텔·재건축·분양권·오피스텔분양권 단지만 키가 있고 빌라 등 다른 단지는 키가 없다. 네이버가 단지 유형을 주지 않으면(빈 글자 포함) 유형을 알 수 없어 묻지 않고 `null`(모름)이다 |
 
 ## 매물·시세 해석 시 주의사항
 
 상세 `loan_manwon`이 양수면 융자가 표시된 매물이므로 계약 전에 등기부등본으로 확인한다. `null`은 융자 없음이 아니다. 학교·교통 정보가 `null`인 것도 주변에 학교·역이 없다는 뜻이 아니다.
+
+`complex --pyeong` 의 `price_per_pyeong` 은 네이버 매물 호가 기준의 주간 평당가(공급 평수 기준)라 실제 거래 가격이 아니다. 실거래는 `real_price_summary`·`real-price` 로 본다.
 
 `complex`의 `market_prices`는 기관 추정 시세다. 기관 이름과 `base_date`를 함께 읽고 실제 거래는 `real_price_summary`·`real-price`로 확인한다. 실거래 요약의 최저가가 직거래(`trade_category`)면 일반 중개 거래와 차이가 날 수 있다. 요약 안에 `since` 키가 있는 유형은 3년이 아니라 5년 거래의 평균·최저·최고다 (3년 안에 거래가 없었다). 같은 `complex` 결과에서 매매·전세의 기간이 다를 수 있다. 해제된 거래는 시세 계산에서 제외한다.
 

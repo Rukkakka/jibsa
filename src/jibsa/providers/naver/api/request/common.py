@@ -84,6 +84,10 @@ class NaverComplexPyeongListV1RequestParameterModel(NaverComplexRequestParameter
     """`GET /front-api/v1/complex/pyeongList` 쿼리."""
 
 
+class NaverComplexPyeongGroupsV1RequestParameterModel(NaverComplexRequestParameterModel):
+    """`GET /front-api/v1/complex/pyeongGroups` 쿼리. 평형을 대표 평수(33평 등)로 묶은 목록."""
+
+
 class NaverComplexBuildingListV1RequestParameterModel(NaverComplexRequestParameterModel):
     """`GET /front-api/v1/complex/buildingList` 쿼리."""
 

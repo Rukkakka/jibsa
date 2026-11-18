@@ -1,4 +1,4 @@
-"""지역·역·단지 이름과 좌표 해석, 시·도·시·군·구 목록 (regions, 모든 검색의 지역 해석)."""
+"""지역·역·단지·재개발 구역 이름과 좌표 해석, 시·도·시·군·구 목록 (regions, 모든 검색의 지역 해석)."""
 
 import re
 from collections.abc import Callable
@@ -35,6 +35,7 @@ from jibsa.providers.naver.api.request.region import (
     NaverMapsSearchAddressV1RequestParameterModel,
     NaverSearchAutocompleteComplexesV1RequestParameterModel,
     NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel,
+    NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel,
     NaverSearchAutocompleteSubwayStationsV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.response.common import NaverCoordinatesModel
@@ -44,6 +45,7 @@ from jibsa.providers.naver.api.response.region import (
     NaverAutocompleteComplexModel,
     NaverAutocompleteLegalDivisionModel,
     NaverAutocompletePageModel,
+    NaverAutocompleteRedevelopmentAreaModel,
     NaverAutocompleteSubwayStationModel,
     NaverLegalDivisionInfoModel,
     NaverLegalDivisionSubInfoListV1ResponseModel,
@@ -149,7 +151,7 @@ def _collect_matching(
         tuple[list, bool]: 받은 후보 전체 (사이트 순서), 이름이 맞는 후보가 아직 남았을 수 있는지 (쪽 상한에 닿았거나
             다음 쪽이 있다면서 빈 쪽을 줬을 때).
     """
-    items = list(first.items)
+    items = list(first.items or [])
     page = first
     pages = 1
     while items and matches(items[-1]) and _has_more(page.total_count, page.has_next_page, len(items)):
@@ -216,7 +218,7 @@ def _find_legal_division(
         '지역 검색',
     )
     # 좌표 없는 후보도 센다. 먼저 빼면 웹에는 후보가 둘인데 하나가 좌표 없을 때 남은 하나를 '하나뿐' 으로 골라 버린다
-    items = page.items
+    items = page.items or []
     if not items:
         return None
     # 자동완성은 한 쪽에 다섯 곳만 줘서 다음 쪽이 있으면 전체 수(totalCount)로 센다 ('송정' 은 첫 쪽 다섯 곳이 모두
@@ -351,7 +353,7 @@ def _find_subway_station(
         )
 
     page = fetch(0)
-    items = page.items
+    items = page.items or []
     if not items:
         return None
     names = (query, f'{query}역')
@@ -406,7 +408,7 @@ def _search_complexes(
         ),
         '단지 검색',
     )
-    return page.items, page.total_count, page.has_next_page
+    return page.items or [], page.total_count, page.has_next_page
 
 
 def _complex_label(item: NaverAutocompleteComplexModel) -> str:
@@ -639,12 +641,13 @@ def _check_ga_dongs(
             ),
             '지역 검색',
         )
-    for item in page.items:
+    page_items = page.items or []
+    for item in page_items:
         add(item.legal_division_number, normalize_address(item.legal_division_name))
     if found_address:
         add(code, found_address)
     # 다음 쪽이 남았는지는 다른 자동완성 판정과 같게 본다 (hasNextPage 가 비어도 totalCount 가 받은 수보다 크면 남았다)
-    more = _has_more(page.total_count, page.has_next_page, len(page.items))
+    more = _has_more(page.total_count, page.has_next_page, len(page_items))
     if more:
         for sub in _sub_regions(client, 'EUP', code[:5] + '00000'):
             add(sub.legal_division_number, f'{parent} {_last_word(sub.legal_division_name or "")}'.strip())
@@ -884,6 +887,62 @@ def complex_is_villa(code: str | None) -> bool | None:
     if code in ('A01', 'A02'):
         return False
     return None
+
+
+def _redevelopment_label(item: NaverAutocompleteRedevelopmentAreaModel) -> str:
+    """재개발 구역 후보 글 ('한남제3재정비촉진구역 (서울특별시 용산구 한남동, 구역 번호 10017678)')."""
+    address = normalize_address(item.legal_division_name)
+    where = f'{address}, ' if address else ''
+    return f'{item.name} ({where}구역 번호 {item.redevelopment_area_number})'
+
+
+# 리뷰 오탐 (2026-11-18): _pick_complex 와 판정이 비슷하지만 단지·구역은 이름 필드·후보 라벨·안내 문구·반환형이 달라 일부러 따로 둔다 (공통 부분은 _stop_unless_only·_has_more 로 이미 뺐다)
+def resolve_redevelopment_number(client: NaverClient, name: str) -> tuple[int, list[str]]:
+    """재개발 구역 이름을 구역 번호로 바꾼다. 이름이 똑같은 구역이 하나이거나 후보가 하나뿐일 때만 정한다 (`_pick_complex` 와 같은 규칙).
+
+    네이버 웹 검색창은 후보를 보여 주고 사람이 고른다. 한 구역을 법정동마다 따로 등록해 같은 이름이 번호를 달리해 여럿
+    오기도 해서(한남제3재정비촉진구역: 한남동 10017678·보광동 1000208, 2026-11-18 실측) 이름이 정확히 같은 후보가 둘 이상이면
+    고르지 않는다. 이름이 다른 구역 하나로 정했으면 어느 구역인지 안내한다. 다음 쪽 후보가 남았으면(hasNextPage 거나 전체 수가
+    받은 수보다 크면) 뒤쪽에 같은 이름이 더 있을 수 있어 그때도 정하지 않는다 (다음 쪽은 부르지 않는다).
+    웹은 size 를 보내지 않아 5건과 '더보기' 인데 여기서는 10건을 한 번에 받는다 (단지 이름과 같다).
+
+    Returns:
+        tuple[int, list[str]]: 구역 번호, 안내.
+
+    Raises:
+        JibsaError: 이름에 맞는 구역이 없으면 NOT_FOUND (단지 이름과 같다. 구역 번호로 조회하는 명령에서 없는 번호가 NOT_FOUND 인 것과 같은 코드).
+        RegionAmbiguousError: 후보가 여럿이라 정할 수 없을 때. 후보에 구역 번호를 붙여 번호로 다시 묻게 한다.
+    """
+    page = unwrap(
+        client.run_request_search_autocomplete_redevelopment_areas_v1(
+            NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel(keyword=name)
+        ),
+        '재개발 구역 검색',
+    )
+    items = page.items or []
+    if not items:
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f"'{name}' 에 해당하는 네이버 재개발 구역을 찾지 못했습니다",
+            hint='구역 이름의 오타·띄어쓰기를 고쳐 다시 찾거나, jibsa naver search redevelopment <동 이름> 으로 그 동의 구역 목록을 보고 '
+            '구역 번호로 조회하세요 (예: jibsa naver search redevelopment 한남동)',
+        )
+    exact = [item for item in items if item.name == name]
+    more = _has_more(page.total_count, page.has_next_page, len(items))
+    if not more and len(exact) == 1:
+        return exact[0].redevelopment_area_number, []
+    # 후보가 여럿이거나 다음 쪽이 남았으면 여기서 멈춘다. 돌아오면 후보가 하나뿐이다. 예시는 정확히 같은 이름의 후보가 있으면 그중
+    # 첫 곳이다 (이름이 다른 구역을 예로 들지 않게)
+    _stop_unless_only(
+        name,
+        [_redevelopment_label(item) for item in items],
+        more,
+        page.total_count,
+        hint=f'구역 이름 대신 후보의 구역 번호를 주세요 (예: {(exact or items)[0].redevelopment_area_number})',
+        shown=len(items),
+    )
+    only = items[0]
+    return only.redevelopment_area_number, [note('참고', f"'{name}': 구역 이름으로 {_redevelopment_label(only)} 구역을 찾았습니다")]
 
 
 def legal_division_code_at(client: NaverClient, lat: float, lng: float) -> tuple[str, str | None] | None:

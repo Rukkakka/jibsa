@@ -63,6 +63,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverListBuildingInfoModel,
     NaverMinMaxPriceModel,
     NaverPriceRangeModel,
+    NaverPyeongGroupModel,
     NaverPyeongModel,
     NaverRedevelopmentAreaCountModel,
     NaverRedevelopmentAreaPageModel,
@@ -424,6 +425,21 @@ def result_or_none(request: Callable[[], NaverResponseModel[T]]) -> T | None:
         return None
 
 
+def result_or_empty(request: Callable[[], NaverResponseModel[T]], empty: Callable[[], T]) -> T | None:
+    """부가 정보 조회. 실패하면(예외·`isSuccess` false) 모름(None), 성공했는데 `result` 가 null 이면 네이버가 주지 않은 것이라 `empty()`.
+
+    `result_or_none` 은 둘을 모두 None 으로 합쳐, 성공 응답을 '조회 실패(모름)' 로 내게 된다. 서버가 빈 목록·빈 객체를 주는 자리에
+    `result: null` 이 와도 그 빈 응답과 같게 읽을 때 쓴다 (`empty` 는 `list` 나 빈 모델 클래스처럼 빈 값을 만드는 호출 가능한 것).
+    """
+    try:
+        response = request()
+    except OPTIONAL_LOOKUP_ERRORS:
+        return None
+    if not response.is_success:
+        return None
+    return empty() if response.result is None else response.result
+
+
 # 단지형 빌라(연립·다세대·도시형생활주택 단지). 학교는 이 유형이면 villa 로 묻는다
 VILLA_COMPLEX_CODES: frozenset[str] = frozenset({'A05', 'A06', 'A07'})
 SCHOOL_ALLOCATION_LABELS: dict[str, str] = {'01': '배정', '02': '선택'}
@@ -709,6 +725,41 @@ def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopm
     }
 
 
+def complex_row_fields(
+    *,
+    type_code: str | None,
+    households: int | None,
+    dong_count: int | None,
+    use_approval_date: str | None,
+    counts: NaverComplexArticleCountModel | None,
+    prices: NaverComplexArticlePriceModel | None,
+) -> dict[str, Any]:
+    """단지 한 곳의 공통 칸을 만든다: 단지 유형·세대수·동 수·사용승인일·거래 유형별 매물 수·매매·전세 호가 범위·월세·단기임대 호가 짝.
+
+    학교 배정 단지(`school`)·지역 단지 목록(`search complexes`)·단지 요약(`complex`)이 같은 값을 같은 식으로 내도록 한 곳에 둔다.
+    호출부는 각 모델 생성자에 `**` 로 풀어 넣는다 (각 모델의 필드 순서와 `address`·`distance_km`·`url`·`assigned_dongs` 같은 자기 칸은
+    호출부가 정한다). `counts`·`prices` 가 없으면(서버가 주지 않음) 그 칸은 `None`(모름)이다. 단지 요약의 두 값은 응답 모델이 빈 모델로 채워
+    `None` 갈래에 닿지 않는다.
+
+    Args:
+        type_code: 단지 유형 코드. 표에 없는 코드는 코드 그대로 내고, 빈 글자는 모름(None)이다.
+        dong_count: 동 수. 단지 목록 항목은 `buildingCount`, 단지 정보는 `dongCount` 라 호출부가 맞는 쪽을 넘긴다.
+        use_approval_date: 사용승인일 (YYYYMMDD).
+    """
+    return {
+        # 빈 글자는 단지 유형을 모르는 것이라 None 이다 (`complex` 의 시세·평당가 판정이 빈 글자를 모름으로 읽는 것과 같다)
+        'property_type': PROPERTY_NAME_BY_CODE.get(type_code or '', type_code or None),
+        'households': households,
+        'dong_count': dong_count,
+        'approved_at': normalize_date(use_approval_date),
+        'article_counts': trade_article_counts(counts) if counts is not None else None,
+        'sale_asking_range_manwon': won_to_manwon_range(prices.deal_min_price, prices.deal_max_price) if prices is not None else None,
+        'jeonse_asking_range_manwon': won_to_manwon_range(prices.rent_min_price, prices.rent_max_price) if prices is not None else None,
+        'monthly_asking': rent_asking_range(prices, 'monthly'),
+        'short_term_asking': rent_asking_range(prices, 'short'),
+    }
+
+
 def raise_missing_pyeongs(
     complex_number: int,
     pyeong_numbers: list[int] | None,
@@ -748,6 +799,19 @@ def pyeong_list(client: NaverClient, complex_number: int, villa: bool) -> list[N
         client.run_request_complex_pyeong_list_v1(NaverComplexPyeongListV1RequestParameterModel(complex_number=complex_number)),
         '평형',
     )
+
+
+def group_pyeong_numbers(group: NaverPyeongGroupModel) -> list[int] | None:
+    """평형 묶음에 든 평형 번호 (번호순). 대표 번호가 `pyeongTypes` 의 첫 항목이 아닐 수 있어 순서를 믿지 않고 정렬한다.
+
+    네이버가 평형 목록을 주지 않거나(`pyeongTypes` null) 번호가 빈 평형이 있으면 묶음의 번호를 다 알 수 없어 모름(None)이다.
+    """
+    if group.pyeong_types is None:
+        return None
+    numbers = {pyeong.number for pyeong in group.pyeong_types}
+    if None in numbers:
+        return None
+    return sorted(number for number in numbers if number is not None)
 
 
 def check_pyeong_numbers(

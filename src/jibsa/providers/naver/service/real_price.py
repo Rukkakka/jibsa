@@ -10,6 +10,7 @@ from pydantic import (
     model_serializer,
 )
 
+from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     SAME_AREA_PYEONG_TRADES_NOTE,
@@ -19,12 +20,18 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
+from jibsa.providers.naver.api.request.common import (
+    NaverComplexPyeongGroupsV1RequestParameterModel,
+)
 from jibsa.providers.naver.api.request.real_price import (
+    NaverComplexPyeongRealPriceGroupV1RequestParameterModel,
     NaverComplexPyeongRealPriceListV1RequestParameterModel,
     NaverComplexPyeongRealPriceV2RequestParameterModel,
     NaverComplexVillaRealPricePageV1RequestParameterModel,
 )
+from jibsa.providers.naver.api.response.common import NaverResponseModel
 from jibsa.providers.naver.api.response.real_price import (
+    NaverRealPriceListModel,
     NaverRealPriceModel,
     NaverVillaRealPriceModel,
 )
@@ -32,6 +39,7 @@ from jibsa.providers.naver.service.common import (
     PERIOD_MONTHS_BY_NAME,
     TRADE_CODE_BY_NAME,
     check_pyeong_numbers,
+    group_pyeong_numbers,
     kst_today,
     unwrap,
 )
@@ -118,6 +126,23 @@ class NaverRealPrice(BaseModel):
         return data
 
 
+class NaverRealPricePyeongGroup(BaseModel):
+    """실거래를 묶어 받은 평형 묶음 (대표 평수 하나, 예: 33평 묶음에 61A·61B)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description='묶음 이름 (대표 평수, 예: 33평)')
+    ] = None
+    pyeong_numbers: Annotated[
+        list[int],
+        Field(description='묶음에 든 평형 번호 (번호순). 이 평형들의 거래가 transactions 에 섞여 있다')
+    ] = []
+
+
 class NaverRealPriceResult(BaseModel):
     """평형별 실거래 내역."""
 
@@ -145,9 +170,13 @@ class NaverRealPriceResult(BaseModel):
         str | None,
         Field(description='기간 시작일 (YYYY-MM-DD). --period 를 주지 않았으면 키가 없다')
     ] = None
+    pyeong_group: Annotated[
+        NaverRealPricePyeongGroup | None,
+        Field(description='--group 으로 받은 평형 묶음. --group 을 주지 않았으면 키가 없다')
+    ] = None
     transactions: Annotated[
         list[NaverRealPrice],
-        Field(description='최근 순 실거래')
+        Field(description='최근 순 실거래. --group 이면 묶음에 든 모든 평형의 거래가 섞여 있고 거래마다 어느 평형인지 알 수 없다')
     ]
     notes: Annotated[
         list[str],
@@ -160,6 +189,8 @@ class NaverRealPriceResult(BaseModel):
         if self.period is None:
             data.pop('period', None)
             data.pop('since', None)
+        if self.pyeong_group is None:
+            data.pop('pyeong_group', None)
         return data
 
 
@@ -168,6 +199,10 @@ REAL_PRICE_PAGE_SIZE: int = 10
 # 기간 조회에서 빌라 단지 실거래를 받는 페이지 크기와 페이지 수 상한. 빌라 단지는 거래가 적어 보통 한 페이지로 끝난다
 VILLA_PERIOD_PAGE_SIZE: int = 100
 MAX_VILLA_PERIOD_PAGES: int = 5
+PYEONG_GROUP_TRADES_NOTE: str = note(
+    '참고',
+    '같은 묶음의 다른 평형 거래가 섞여 있고, 거래마다 어느 평형인지는 알려 주지 않습니다. 묶음에 든 평형은 pyeong_group.pyeong_numbers 입니다',
+)
 
 
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
@@ -215,6 +250,7 @@ def get_real_prices(
     trade_type: str = '매매',
     pages: int = 1,
     period: str | None = None,
+    group: bool = False,
     today: date | None = None,
 ) -> NaverRealPriceResult:
     """평형별 실거래가를 `pages` 페이지(페이지당 `REAL_PRICE_PAGE_SIZE` 건)까지 모아 만원으로 환산한다.
@@ -224,37 +260,53 @@ def get_real_prices(
 
     Args:
         period: `PERIOD_MONTHS_BY_NAME` 의 이름. 주면 `pages` 대신 그 기간 안 거래를 모두 받는다
-            (아파트 단지는 1회 호출).
+            (아파트 단지는 1회 호출). `group` 과 함께 줄 수 없다.
+        group: 주면 그 평형이 든 평형 묶음(`complex/pyeongGroups`, 1회 호출)의 모든 평형 거래를 `pages` 페이지까지 받는다.
+            웹 평형 묶음 화면과 같은 요청이다. 묶음이 없는 단지(빌라 단지 등)는 다른 API 로 대신 찾지 않고 에러로 낸다.
         today: 기간의 기준일. Defaults to 오늘(한국 시간).
 
     Raises:
-        JibsaError: 거래가 0건인데 평형 번호가 그 단지에 없으면 NOT_FOUND.
+        ValueError: `group` 과 `period` 를 함께 줬을 때 (CLI 가 먼저 막는다).
+        JibsaError: 거래가 0건인데 평형 번호가 그 단지에 없으면 NOT_FOUND. `group` 이면 단지에 평형 묶음이 없을 때와
+            묶음에 그 평형 번호가 없을 때 NOT_FOUND.
     """
+    if group and period is not None:
+        raise ValueError('group 과 period 는 함께 쓸 수 없습니다')
     if period is not None:
         return _get_real_prices_in_period(
             client, complex_number, pyeong_number, trade_type=trade_type, period=period, today=today or kst_today(),
         )
-    # 네이버는 같은 거래를 면적이 다른 평형 여러 곳에 함께 주기도 하고 거래마다 면적은 주지 않아 가려낼 수 없다
-    # (2026-10-24 실측: 단지 65 전세 평형 1·2 응답에 2026-09-11 3층 19억 등 3건이 같이 있었다. 요청의 pyeongTypeNumber 는
-    # 1·2 로 달랐다. 당근 실거래로는 84.81㎡ 거래). docs/naver.md 가 당근 area_m2 로 확인하라고 안내하고, 전용면적이 같은
-    # 평형끼리는 거의 모두 겹쳐 결과에도 SAME_AREA_PYEONG_TRADES_NOTE 를 붙인다
-    transactions: list[NaverRealPrice] = []
-    villa = False
-    for page in range(pages):
-        result = unwrap(
-            client.run_request_complex_pyeong_real_price_v2(
-                NaverComplexPyeongRealPriceV2RequestParameterModel(
+    # 묶음 조회는 이 목록 요청 앞에서 한다 (없는 묶음이면 요청 없이 멈춘다)
+    pyeong_group, group_numbers = _find_pyeong_group(client, complex_number, pyeong_number) if group else (None, [])
+
+    def fetch_page(page: int) -> NaverResponseModel[NaverRealPriceListModel]:
+        if pyeong_group is not None:
+            return client.run_request_complex_pyeong_real_price_group_v1(
+                NaverComplexPyeongRealPriceGroupV1RequestParameterModel(
                     complex_number=complex_number,
-                    pyeong_type_number=pyeong_number,
+                    pyeong_type_numbers=group_numbers,
                     trade_type=TRADE_CODE_BY_NAME[trade_type],
                     page=page,
                     size=REAL_PRICE_PAGE_SIZE,
                 )
-            ),
-            '실거래가',
+            )
+        return client.run_request_complex_pyeong_real_price_v2(
+            NaverComplexPyeongRealPriceV2RequestParameterModel(
+                complex_number=complex_number,
+                pyeong_type_number=pyeong_number,
+                trade_type=TRADE_CODE_BY_NAME[trade_type],
+                page=page,
+                size=REAL_PRICE_PAGE_SIZE,
+            )
         )
+
+    transactions: list[NaverRealPrice] = []
+    villa = False
+    for page in range(pages):
+        result = unwrap(fetch_page(page), '실거래가')
         if page == 0 and not result.items:
-            if check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True):
+            # 묶음으로 받을 때는 그 평형이 든 묶음을 이미 찾았으니 빌라 단지가 아니다 (빌라 단지는 묶음을 찾는 데서 에러)
+            if pyeong_group is None and check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True):
                 villa = True
                 transactions, _ = _villa_real_prices(
                     client, complex_number, pyeong_number, trade_type=trade_type, size=REAL_PRICE_PAGE_SIZE, max_pages=pages,
@@ -265,13 +317,70 @@ def get_real_prices(
         transactions.extend(_real_price(item, trade_type) for item in result.items)
         if result.has_next_page is False:
             break
+    # 네이버는 같은 거래를 면적이 다른 평형 여러 곳에 함께 주기도 하고 거래마다 면적은 주지 않아 가려낼 수 없다
+    # (2026-10-24 실측: 단지 65 전세 평형 1·2 응답에 2026-09-11 3층 19억 등 3건이 같이 있었다. 요청의 pyeongTypeNumber 는
+    # 1·2 로 달랐다. 당근 실거래로는 84.81㎡ 거래). docs/naver.md 가 당근 area_m2 로 확인하라고 안내하고, 전용면적이 같은
+    # 평형끼리는 거의 모두 겹쳐 결과에도 SAME_AREA_PYEONG_TRADES_NOTE 를 붙인다
+    notes: list[str] = []
+    if transactions and pyeong_group is not None:
+        notes.append(PYEONG_GROUP_TRADES_NOTE)
+    elif transactions and not villa:
+        notes.append(SAME_AREA_PYEONG_TRADES_NOTE)
     return NaverRealPriceResult(
         complex_number=complex_number,
         pyeong_number=pyeong_number,
         trade_type=trade_type,
+        pyeong_group=pyeong_group,
         transactions=transactions,
-        notes=[SAME_AREA_PYEONG_TRADES_NOTE] if transactions and not villa else [],
+        notes=notes,
     )
+
+
+def _find_pyeong_group(
+    client: NaverClient,
+    complex_number: int,
+    pyeong_number: int,
+) -> tuple[NaverRealPricePyeongGroup, list[int]]:
+    """평형이 든 평형 묶음을 찾는다 (1회 호출). 조회가 실패하면 삼키지 않고 `unwrap` 이 에러로 올린다.
+
+    웹은 단지형 빌라에서 묶음을 부르지 않는다. 묶음이 없는 단지(빌라 단지 등)는 다른 API 로 대신 찾지 않고 묶음 없이 부르라고 알린다.
+    없는 단지 번호와 빌라 단지가 모두 `isSuccess: true, result: []` 로 와서(없는 단지 99999999·빌라 단지 673573·572549, 2026-11-18 실측)
+    응답으로 둘을 가를 수 없다. `result: null` 도 같게 본다.
+
+    Returns:
+        tuple[NaverRealPricePyeongGroup, list[int]]: 출력용 묶음 정보, 요청에 보낼 평형 번호 (웹과 같게 대표 번호가 먼저, 나머지는 번호순).
+
+    Raises:
+        JibsaError: 단지에 평형 묶음이 없거나 묶음에 그 평형 번호가 없으면 NOT_FOUND (평형 번호를 주지 않은 묶음은 없는 것으로 본다).
+            조회가 실패하면(`isSuccess` false) UPSTREAM_ERROR.
+    """
+    response = client.run_request_complex_pyeong_groups_v1(NaverComplexPyeongGroupsV1RequestParameterModel(complex_number=complex_number))
+    # 성공인데 result 가 null 이어도 `[]` 와 같다 (`unwrap` 은 이것을 다른 NOT_FOUND 로 낸다). 실패 응답은 그대로 `unwrap` 이 에러로 올린다
+    groups = [] if response.is_success and response.result is None else unwrap(response, '평형 묶음')
+    if not groups:
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f'단지 {complex_number} 의 평형 묶음을 찾지 못했습니다 (없는 단지 번호이거나 단지형 빌라처럼 평형 묶음이 없는 단지)',
+            # 번호 끝자리마다 '로/으로' 가 갈려 조사 없이 쓴다 (convention-2)
+            hint=f'단지가 있는지 확인하고(jibsa naver complex {complex_number}), 있으면 --group 없이 평형 하나의 실거래를 조회하세요',
+        )
+    # 네이버가 평형 번호를 주지 않은 묶음(`pyeongTypes` null 등)은 번호를 짝지을 수 없어 건너뛴다
+    numbers_by_group = [(item, group_pyeong_numbers(item)) for item in groups]
+    known = [(item, numbers) for item, numbers in numbers_by_group if numbers]
+    found = next(((item, numbers) for item, numbers in known if pyeong_number in numbers), None)
+    if found is None:
+        available = '; '.join(f"{item.representative_pyeong_name or '이름 없음'}: {', '.join(map(str, numbers))}" for item, numbers in known)
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f'단지 {complex_number} 의 평형 묶음에 없는 평형 번호입니다: {pyeong_number}',
+            hint=(
+                f'묶음별 평형 번호: {available}. 위 묶음의 평형 번호 중 하나로 다시 부르세요' if available
+                else '네이버가 묶음의 평형 번호를 주지 않았습니다. --group 없이 평형 하나의 실거래를 조회하세요'
+            ),
+        )
+    group, numbers = found
+    request_numbers = sorted(numbers, key=lambda number: (number != group.representative_pyeong_number, number))
+    return NaverRealPricePyeongGroup(name=group.representative_pyeong_name, pyeong_numbers=numbers), request_numbers
 
 
 def _villa_real_prices(
