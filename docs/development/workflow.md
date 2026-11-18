@@ -74,8 +74,8 @@ PR 템플릿의 `변경 종류` 도 같은 다섯 이름을 쓴다. PR 이 닫�
 - [검증과 테스트](README.md#검증과-테스트) 원칙대로 확인했다. 가짜 응답으로만 확인했다면 그 이유를,
   테스트를 추가했다면 드문 엣지케이스인지 핵심 동작인지 PR 에 적었다.
 - 명령·옵션·출력 필드·에러 코드·요청 제한 정책이 바뀌었다면 해당 `docs/<source>.md`·`docs/common.md`와
-  [output-contract.md](output-contract.md) 를 고쳤다. 명령을 추가·삭제했거나 에이전트가 틀리기 쉬운 해석 규칙이 바뀌었다면
-  `docs/llm.md` 도 고쳤다.
+  [output-contract.md](output-contract.md) 를 고쳤다. 명령을 추가·삭제했거나 에이전트가 틀리기 쉬운 해석 규칙(단위·누락값·ID 등)·에러 대응이
+  바뀌었다면 `docs/llm.md` 도 고쳤다.
 - 명령을 추가·삭제했거나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 넣었다면 매일 API 감시 목록
   (`scripts/monitor/api_check.py` 의 `GROUPS`)도 고쳤다 ([매일 API 감시](README.md#매일-api-감시)).
 - 사용자(에이전트 포함)에게 보이는 변경이면 `CHANGELOG.md` 의 `Unreleased` 에 적었다
