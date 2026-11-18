@@ -140,6 +140,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 네이버 `trend 전국`: 지역을 찾지 않고 네이버 홈의 전국(시·도 전체) 추이를 준다 (`legal_division` 은 `"전국"`) (#324)
 - 직방 `real-price` 거래에 직방 웹 실거래 탭이 보여 주는 값: `dong`(동, 매매만)·`registered`(등기까지 마무리된 거래, 매매만)·`new_high`·`new_low`(최근 3년 안 신고가·신저가, 매매·전세)·`price_per_pyeong_manwon`(직방이 계산한 공급면적 3.3㎡당 가격, 매매만)·`jeonse_ratio`(전세가율, 0~1 비율. 전세이고 `--pyeong` 을 준 조회에서만)·`offer_price_diff_manwon`(분양가 대비 차액, 분양권 거래만. 직방이 주지 않으면 `null`). 그 거래 유형에 없는 값은 키가 없다. `registered` 는 표시가 없으면 `false` 가 아니라 `null`(모름)이다. 직방은 2023년 1월 이후 계약만 등기 여부를 표시한다 (#334)
 - 직방 `real-price --trade 전체`: 매매와 전월세를 계약일 최신 순으로 한 목록에 주고 거래마다 `trade_type` 을 붙인다 (직방 웹 실거래 탭의 '전체'). 전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있다 (#334)
+- 직방 아파트 매물(`search listings apt`·`search listings --complex <apt-…>`·`catalog`·`listing`)에 `pyeong_id`·`pyeong_name`(평형 ID·이름, `pyeong_id` 는 `--pyeong` 에 그대로 넘긴다)이 붙고, 상세·`catalog` 매물에는 직방이 매물을 확인한 날짜 `confirmed_at`·직방 웹의 '실매물 확인' 배지 `actual_listing_checked`·위반 건축물 여부 `non_compliant_building` 도 붙음. 직방이 주지 않으면(제휴 매물의 위반 건축물 등) `null` 이다 (#336)
 
 ### 변경
 
@@ -178,6 +179,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 `popular-listings` 가 더 있을 때 `-t`·`--trade` 를 이미 하나씩 골랐으면 조건을 좁히라고 권하지 않고 `--limit` 만 알리며, 한쪽만 골랐으면 나머지 한쪽만 권함 (예전에는 늘 둘 다 권했다) (#249)
 - 다방 `sale-schedule --details` 에서 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄을 '그 날 분양 단지 표에서 찾지 못해' 가 아니라 '다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 sale 이 null' 이라는 `[참고]` 로 따로 알림. 그런 줄뿐이어도 업데이트 안내는 붙이지 않는다 (#244)
 - 네이버 `search complexes`·`search redevelopment` 를 반경으로 찾으면 '조건에 맞는 단지는 이 N곳이 전부입니다'·'조건에 맞는 단지(구역)가 없습니다' 앞에 `반경 Nkm 안에서 ` 가 붙음 (`search listings` 와 같다. 예: `반경 0.3km 안에서 조건에 맞는 단지가 없습니다`)
+- 직방 아파트 매물 상세(`listing`·`catalog`)의 `residence_type` 이 `null` 대신 직방의 중개대상물 종류(`아파트`)로 나옴. 제휴 매물은 직방이 주지 않아 그대로 `null` 이다 (#336)
 
 ### 수정
 

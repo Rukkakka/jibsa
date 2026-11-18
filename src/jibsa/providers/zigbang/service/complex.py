@@ -65,6 +65,7 @@ from jibsa.providers.zigbang.service.common import (
     school_label,
     section_ordered_ids,
     summary_to_listing,
+    text_or_none,
     tradeable_summaries,
 )
 from jibsa.providers.zigbang.service.region import (
@@ -426,7 +427,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             ZigbangPyeong(
                 id=room_type.id,
                 name=room_type.room_type_title.m2 if room_type.room_type_title else None,
-                pyeong_name=room_type.room_type_title.p if room_type.room_type_title else None,
+                pyeong_name=text_or_none(room_type.room_type_title.p) if room_type.room_type_title else None,
             )
             for room_type in catalogs.room_types
         ],

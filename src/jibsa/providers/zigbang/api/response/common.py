@@ -429,6 +429,10 @@ class ZigbangItemCatalogModel(ResponseModel):
         int | None,
         Field(description='월세 (만원). 매매·전세는 0', alias='rentMin')
     ] = None
+    danji_room_type_id: Annotated[
+        int | None,
+        Field(description='평형 ID. 단지 정보(complex)의 pyeongs[].id·--pyeong 값과 같다', alias='danjiRoomTypeId')
+    ] = None
     room_type_title: Annotated[
         ZigbangRoomTypeTitleModel | None,
         Field(description='평형 이름', alias='roomTypeTitle')

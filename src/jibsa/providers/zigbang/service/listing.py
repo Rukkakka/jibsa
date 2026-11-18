@@ -26,6 +26,7 @@ from jibsa.core.listing import (
     Listing,
     ListingDetail,
     TradeType,
+    iso_date,
     join_address,
     limit_notes,
     listing_as,
@@ -68,6 +69,8 @@ from jibsa.providers.zigbang.api.response.listing import (
 )
 from jibsa.providers.zigbang.service.common import (
     APT_LISTING_KIND_DESCRIPTION,
+    APT_PYEONG_ID_DESCRIPTION,
+    APT_PYEONG_NAME_DESCRIPTION,
     MAX_LIST_LIMIT,
     NEAREST_SCHOOLS,
     ROOM_TYPE_FILTER_BY_LABEL,
@@ -95,6 +98,7 @@ from jibsa.providers.zigbang.service.common import (
     section_ordered_ids,
     sent_or_none,
     summary_to_listing,
+    text_or_none,
     trade_type_of,
     tradeable_summaries,
     unavailable_on_404,
@@ -120,7 +124,9 @@ PROPERTY_TYPES: tuple[ZigbangPropertyType, ...] = ('원룸', '오피스텔', '�
 BUILDING_LOOKUP_ERRORS: tuple[type[Exception], ...] = SCHOOL_LOOKUP_ERRORS
 # 단지·건물이 있는 유형(아파트·오피스텔)의 상세에만 있는 필드와 아파트 상세에만 있는 필드. 없는 유형은 키를 뺀다
 COMPLEX_DETAIL_FIELDS: frozenset[str] = frozenset({'complex_id', 'complex_name'})
-APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2', 'listing_kind'})
+APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({
+    'supply_area_m2', 'listing_kind', 'pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked', 'non_compliant_building',
+})
 # 방 하나짜리 구조. 원룸 유형은 이 구조만 서버에 요청한다 (직방 원룸 목록에는 투룸 오피스텔도 섞여 온다)
 ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
@@ -230,11 +236,11 @@ class ZigbangDetailedListing(ZigbangListing):
 
 
 class ZigbangListingDetail(ListingDetail):
-    """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, `supply_area_m2`·`listing_kind` 는 아파트에만 있다."""
+    """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, 아파트 전용 필드(`APT_ONLY_DETAIL_FIELDS`)는 아파트에만 있다."""
 
     residence_type: Annotated[
         str | None,
-        Field(description='건축물 용도 (예: 다가구, 다세대, 오피스텔). 중개사 입력 문구라 같은 용도도 다가구·다가구주택처럼 다르게 온다')
+        Field(description="건축물 용도 (예: 다가구, 다세대, 오피스텔). 중개사 입력 문구라 같은 용도도 다가구·다가구주택처럼 다르게 온다. 아파트는 웹의 '중개대상물 종류' (예: 아파트)이고 제휴 매물은 null")
     ] = None
     complex_id: Annotated[
         str | None,
@@ -267,6 +273,26 @@ class ZigbangListingDetail(ListingDetail):
     listing_kind: Annotated[
         str | None,
         Field(description=APT_LISTING_KIND_DESCRIPTION)
+    ] = None
+    pyeong_id: Annotated[
+        int | None,
+        Field(description=APT_PYEONG_ID_DESCRIPTION + ' (아파트만)')
+    ] = None
+    pyeong_name: Annotated[
+        str | None,
+        Field(description=APT_PYEONG_NAME_DESCRIPTION + ' (아파트만)')
+    ] = None
+    confirmed_at: Annotated[
+        str | None,
+        Field(description="직방이 매물을 마지막으로 확인한 날짜 (YYYY-MM-DD, 한국 시간. 아파트만). 웹 매물 화면은 이 시각으로 '2주 전 확인' 처럼 상대 표기를 보여 준다. 모르면 null")
+    ] = None
+    actual_listing_checked: Annotated[
+        bool | None,
+        Field(description="직방 웹의 '실매물 확인' 배지 (아파트만). 직방이 뜻을 설명하지 않는다. 모르면 null")
+    ] = None
+    non_compliant_building: Annotated[
+        bool | None,
+        Field(description='위반 건축물 여부 (아파트만. 웹 매물 화면의 위반 건축물 해당·해당없음). 직방이 주지 않으면(제휴 매물) null')
     ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
@@ -527,14 +553,6 @@ def get_apt_listing(client: ZigbangClient, item_id: int, item_source: ZigbangApt
     return apt_item_to_listing(apt, item_source)
 
 
-def _text_or_none(value: str | None) -> str | None:
-    """빈 글자(공백뿐)는 모름(None), 아니면 그대로. 아파트 상세는 값이 없는 칸을 빈 글자로 준다 (`oldAddress` 등).
-
-    방향 기준(`directionBase`)은 '기준' 을 떼야 해 `apt_item_to_listing` 이 같은 규칙을 따로 적용한다.
-    """
-    return value if value and value.strip() else None
-
-
 def apt_item_to_listing(
     apt: ZigbangAptItemModel,
     item_source: ZigbangAptItemSource,
@@ -548,7 +566,9 @@ def apt_item_to_listing(
     제목·층·방향이 빈 글자면 주소처럼 모름(None)이다. 층은 직방 매물이면 '저'·'중'·'고' 그대로다 (웹 아파트 화면에도 정확한 층이 없다). 주소는 지번 주소(`oldAddress`)다.
     직방 매물은 지번이 빈 문자열이라 모름(None)이다: 응답의 `address` 는 도로명이라 매물 출력에 내지 않고(출력 규약), 웹 매물
     화면도 지번을 보여 주지 않는다 (2026-11-15 웹 캡처: 단지 API 도 부르지 않는다). 지번은 단지(`complex_id`)에서 본다.
-    등록일·인근 역·엘리베이터·건축물 용도·방 구조·세대수는 이 응답에 없어 모름(None)이다. 총 주차 대수(`parkingCount`)는 제휴 매물에 오지 않아 모름(None)이다. 관리비는
+    등록일·인근 역·엘리베이터·방 구조·세대수는 이 응답에 없어 모름(None)이다. 건축물 용도(`residence_type`)는 `realType`(중개대상물 종류, 예 '아파트')이고 제휴 매물은 키가 없어 모름(None)이다.
+    평형(`roomTypeInfo`)은 ID·이름(평 기준)으로 내고, 확인 시각(`effectivenessUpdatedAt`)은 웹의 '2주 전 확인' 대신 한국 날짜로 낸다.
+    실매물 확인 배지·위반 건축물 여부는 직방이 준 bool 그대로다 (위반 건축물은 제휴 매물에 키가 없어 모름(None)). 총 주차 대수(`parkingCount`)는 제휴 매물에 오지 않아 모름(None)이다. 관리비는
     확인 불가거나 모르는 종류거나 0원이면 모름(None)이다. 옵션은 아파트 상세에 옵션 칸이 없어 (2026-10-11 실측 19건) 모름(None)으로 둔다.
 
     Raises:
@@ -562,14 +582,15 @@ def apt_item_to_listing(
     cost = apt.manage_cost.amount if apt.manage_cost else None
     # '거실기준' 을 새 주거 상세의 방향 기준('거실')과 같은 꼴로 맞춘다
     criterion = (apt.direction_base or '').strip().removesuffix('기준').strip() or None
-    direction = _text_or_none(apt.direction)
+    direction = text_or_none(apt.direction)
+    room_type = apt.room_type_info
     return ZigbangListingDetail(
         source='zigbang',
         id=listing_id,
         url=apt_item_url(apt.item_id, item_source),
         trade_type=trade_type,
         property_type='아파트',
-        title=_text_or_none(apt.item_title),
+        title=text_or_none(apt.item_title),
         price_manwon=apt.deposit if is_sale else None,
         deposit_manwon=None if is_sale else apt.deposit,
         rent_manwon=apt.rent if trade_type == '월세' else None,
@@ -577,9 +598,9 @@ def apt_item_to_listing(
         manage_cost_manwon=won_to_manwon(cost.monthly_cost) if cost and cost.monthly_cost else None,
         area_m2=apt.size_m2,
         area_pyeong=m2_to_pyeong(apt.size_m2),
-        floor=_text_or_none(apt.floor),
+        floor=text_or_none(apt.floor),
         building_floor=str(apt.building_floor) if apt.building_floor is not None else None,
-        address=_text_or_none(apt.old_address),
+        address=text_or_none(apt.old_address),
         room_count=apt.room_count,
         bathroom_count=apt.bathroom_count,
         direction=DIRECTION_LABELS.get(direction.upper(), direction) if direction else None,
@@ -594,6 +615,12 @@ def apt_item_to_listing(
         total_parking_count=apt.parking_count,
         direction_criterion=criterion,
         listing_kind=apt_listing_kind(apt.item_type),
+        pyeong_id=room_type.danji_room_type_id if room_type else None,
+        pyeong_name=text_or_none(room_type.room_type_title.p) if room_type and room_type.room_type_title else None,
+        confirmed_at=iso_date(apt.effectiveness_updated_at),
+        actual_listing_checked=apt.is_actual_item_checked,
+        non_compliant_building=apt.has_violations,
+        residence_type=text_or_none(apt.real_type),
     )
 
 

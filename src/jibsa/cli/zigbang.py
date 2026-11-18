@@ -781,7 +781,7 @@ def complex_listings_command(
     ] = None,
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복하거나 쉼표로 구분 (OR)')
+        typer.Option('--pyeong', metavar='<int>', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만. 아파트 매물의 pyeong_id 와 같은 번호). 반복하거나 쉼표로 구분 (OR)')
     ] = None,
     limit: Annotated[int | None, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수. 기본 아파트 20, 오피스텔 15')] = None,
     deposit_min: DepositMinOption = None,
@@ -1185,7 +1185,7 @@ def real_price_command(
     trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세, 전체 중 하나. 전체는 매매와 전월세를 계약일 최신 순으로 한 목록에 주고, 거래마다 trade_type 이 붙는다')] = '매매',
     pyeong: Annotated[
         int | None,
-        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id). 기본 전체 평형')
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id, 아파트 매물의 pyeong_id 와 같은 번호). 기본 전체 평형')
     ] = None,
     # 기본 120건(약 4~5천 토큰)이지만 낮추지 않는다. 에이전트는 대개 가이드의 '처음에는 작게' 를 따라 --limit 을 직접 준다
     # (2026-10-23 에이전트 검증: 당근 실거래를 부른 sonnet 2명 모두 --limit 8 을 줬다. 직방 실거래는 부르지 않았다)

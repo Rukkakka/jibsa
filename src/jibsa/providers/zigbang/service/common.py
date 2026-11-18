@@ -349,6 +349,14 @@ def summary_to_listing(
 NEAREST_SCHOOLS: int = 2
 
 
+def text_or_none(value: str | None) -> str | None:
+    """앞뒤 공백을 떼고, 빈 글자는 모름(None). 아파트 상세는 값이 없는 칸을 빈 글자로 준다 (`oldAddress` 등).
+
+    방향 기준(`directionBase`)은 '기준' 을 떼야 해 `apt_item_to_listing` 이 같은 규칙을 따로 적용한다.
+    """
+    return (value.strip() or None) if value else None
+
+
 def school_label(name: str | None, *details: str | None) -> str | None:
     if not name:
         return None
@@ -565,6 +573,13 @@ APT_LISTING_KIND_DESCRIPTION: str = (
 )
 
 
+# 아파트 매물 줄·상세가 함께 쓰는 평형 필드 설명. 이름 규칙은 real-price 의 pyeong_name(평 기준)과 같다
+APT_PYEONG_ID_DESCRIPTION: str = (
+    '평형 ID (complex 의 pyeongs[].id 와 같은 번호). search listings --complex <단지> --pyeong·real-price <단지> --pyeong 에 넘긴다. 모르면 null'
+)
+APT_PYEONG_NAME_DESCRIPTION: str = '평형 이름 (평 기준, 예: 34A. complex 의 pyeongs[].pyeong_name 과 같다). 모르면 null'
+
+
 def apt_listing_kind(item_type: str | None) -> str | None:
     """아파트 매물 종류 코드를 말로 바꾼다. 코드가 없으면 모름(None), 모르는 코드는 직방 코드 그대로 둔다."""
     return None if item_type is None else APT_LISTING_KIND_LABELS.get(item_type, item_type)
@@ -604,6 +619,14 @@ class ZigbangAptListing(Listing):
     listing_kind: Annotated[
         str | None,
         Field(description=APT_LISTING_KIND_DESCRIPTION)
+    ] = None
+    pyeong_id: Annotated[
+        int | None,
+        Field(description=APT_PYEONG_ID_DESCRIPTION)
+    ] = None
+    pyeong_name: Annotated[
+        str | None,
+        Field(description=APT_PYEONG_NAME_DESCRIPTION)
     ] = None
 
 
@@ -688,6 +711,8 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         listing_ids=listing_ids,
         listing_count=catalog.item_count,
         listing_kind=apt_listing_kind(catalog.item_type) if leads_bundle else None,
+        pyeong_id=catalog.danji_room_type_id,
+        pyeong_name=text_or_none(catalog.room_type_title.p) if catalog.room_type_title else None,
     )
 
 

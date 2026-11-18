@@ -49,6 +49,7 @@ from jibsa.providers.zigbang.service.common import (
 from jibsa.providers.zigbang.service.complex import search_station_complexes
 from jibsa.providers.zigbang.service.detail import get_any_listing
 from jibsa.providers.zigbang.service.listing import (
+    apt_item_to_listing,
     detail_to_listing,
     search_listings,
 )
@@ -400,8 +401,6 @@ def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> No
 
 def test_apt_listing_kind_from_item_type() -> None:
     from jibsa.providers.zigbang.service.common import ZigbangAptListing
-    from jibsa.providers.zigbang.service.listing import apt_item_to_listing
-
     # 신규분양 카드는 출처가 coalition 이라 coalition- 줄이 되고, 분양가가 집주인 호가로 읽히지 않게 종류를 알린다
     card = load('locals_item_catalogs')['list'][0]
     card['itemIdList'] = [{'itemSource': 'coalition', 'itemId': 3000009}]
@@ -436,8 +435,6 @@ def test_apt_listing_kind_from_item_type() -> None:
 
 
 def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
-    from jibsa.providers.zigbang.service.listing import apt_item_to_listing
-
     apt = ZigbangItemCatalogsItemsResponseModel.model_validate(load('item_catalogs_items')).item
     apt.manage_cost = ZigbangAptManageCostModel(type='unconfirmed')
     detail = apt_item_to_listing(apt, 'zigbang')
@@ -448,6 +445,40 @@ def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
 def test_non_apt_detail_omits_apt_only_fields() -> None:
     dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
     assert 'complex_name' not in dumped and 'supply_area_m2' not in dumped and 'listing_kind' not in dumped
+
+
+def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
+    # 목록 줄은 평형 ID·이름(평 기준)을 붙이고, 확인일·실매물·위반 건축물은 상세·묶음에만 있다
+    card = load('locals_item_catalogs')['list'][0]
+    line = catalog_to_listing(ZigbangItemCatalogModel.model_validate(card), '서울특별시')
+    assert line is not None and (line.pyeong_id, line.pyeong_name) == (8001, '33A')
+    dumped = line.model_dump()
+    assert 'confirmed_at' not in dumped and 'actual_listing_checked' not in dumped
+
+    # 직방 매물: 값이 그대로 나오고 확인 시각은 한국 날짜가 된다
+    item = load('item_catalogs_items')['item']
+    item.update({
+        'roomTypeInfo': {'danjiRoomTypeId': 8001, 'roomTypeTitle': {'m2': '110A', 'p': '33A'}, 'floorPlanImageUrl': 'plan.png'},
+        'effectivenessUpdatedAt': '2026-01-02T23:59:59+09:00', 'isActualItemChecked': True, 'hasViolations': False,
+    })
+    detail = apt_item_to_listing(ZigbangItemCatalogsItemsResponseModel.model_validate({'item': item}).item, 'zigbang').model_dump()
+    assert (detail['pyeong_id'], detail['pyeong_name']) == (8001, '33A')
+    assert detail['confirmed_at'] == '2026-01-02' and detail['actual_listing_checked'] is True
+    assert detail['non_compliant_building'] is False and detail['residence_type'] == item['realType']
+    assert 'plan.png' not in json.dumps(detail, ensure_ascii=False)
+
+    # 제휴 매물은 위반 건축물·중개대상물 종류 키가 없어 모름(null), 평형 정보가 없어도 키는 나온다
+    for key in ('hasViolations', 'realType', 'roomTypeInfo', 'effectivenessUpdatedAt', 'isActualItemChecked'):
+        item.pop(key)
+    partner = apt_item_to_listing(ZigbangItemCatalogsItemsResponseModel.model_validate({'item': item}).item, 'coalition').model_dump()
+    for key in ('non_compliant_building', 'residence_type', 'pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked'):
+        assert key in partner and partner[key] is None
+
+
+def test_non_apt_detail_has_no_new_apt_keys() -> None:
+    dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
+    for key in ('pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+        assert key not in dumped
 
 
 # --- 상가 --------------------------------------------------------------------

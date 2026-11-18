@@ -83,6 +83,7 @@
 - 단지 ID 는 `apt-…`(아파트)·`officetel-…`. `real-price` 는 `apt-…` 만 받는다.
 - 아파트 목록은 같은 호의 매물을 한 줄로 묶는다 (`listing_count`). `is_price_range: true` 면 가격은 묶음 최저가라 `id` 매물의 가격과 다를 수 있으니, 매물별 가격은 `zigbang catalog <catalog_id>` 한 번으로 본다 (묶음 매물 전부의 가격·상세. `listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). `catalog_id` 가 `null` 이면(직방이 호 ID 를 주지 않음) 묶음을 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 본다.
 - 아파트 줄의 `listing_kind` 가 `신규분양` 이면 가격은 분양가다. `coalition-` ID 에는 집주인 매물뿐 아니라 신규분양도 있고, 지역 목록 앞쪽에 신규분양이 섞여 올 수 있다.
+- 아파트 줄·상세의 `pyeong_id` 는 평형 ID 라 `search listings --complex <단지> --pyeong <pyeong_id>` 와 `real-price <단지> --pyeong <pyeong_id>` 에 그대로 넘겨 같은 평형의 매물·실거래를 잇는다.
 - `real-price` 의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이다 (직방은 2023년 1월 이후 계약만 표시). `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니고, `jeonse_ratio` 는 0~1 비율이다. `--trade 전체` 는 매매와 전월세를 최신 순으로 섞어 주니 전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있다.
 - `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 가 주지 않는다 (주당 금액 × 주 수가 아니다). `listing stay-… --check-in … --check-out …` 은 그 기간에 예약할 수 있는지 `available` 만 주고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일). `stay --sort distance` 는 `--radius` 없는 역 이름 검색에서만 된다 (기본은 직방 추천순).
 - `store` 권리금 `0` 은 무권리, `null` 은 모름이다. 사무실은 권리금이 해당 없음이라 `key_money_manwon` 키가 없을 수 있고, 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠진다.
