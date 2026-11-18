@@ -150,6 +150,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('역 주변 아파트 단지 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--limit', '3'), 'complexes'),
         Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),
         Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),
+        # 전체는 서버 거래 유형 all 을 보내 매매와 전월세를 한 목록으로 받는다 (거래마다 trade_type)
+        Step('아파트 실거래가 전체', ('zigbang', 'real-price'), ('{apt}', '--trade', '전체', '--limit', '3'), 'transactions'),
         # 평형별 실거래는 다른 API 다. 고른 평형에 거래가 없을 수 있어 거래 칸 대신 평형 칸을 본다. API 가 바뀌면 첫 응답의 평형
         # 목록 확인(`_check_real_price_scope`)이 NOT_FOUND 를 내 고장으로 잡힌다
         Step('아파트 평형 실거래가', ('zigbang', 'real-price'), ('{apt}', '--pyeong', '{apt_pyeong}', '--limit', '3'), 'pyeong_id'),

@@ -769,6 +769,78 @@ def test_real_price_empty_pyeongs_checks_danji(danji_status: int, expected: str 
             assert get_real_prices(client, 'apt-100').returned == expected
 
 
+def _tx(deal_type: str, **extra) -> dict:
+    return {
+        'rtId': 1, 'rtDealDate': '26. 1. 2', 'rtFloor': 3, 'rtArea': '84.0', 'rtDealType': deal_type,
+        'rtPrice': 10000, 'dongName': None, 'areaInfos': [{'m2': '111Z', 'p': '99Z'}], 'isNew': False,
+        'isCancellation': False, **extra,
+    }
+
+
+def _real_prices(transactions: list[dict], trade_type: str, requests: list | None = None) -> dict:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+        pyeongs = {'1': [{'m2': '111Z', 'p': '99Z'}]}
+        return httpx.Response(200, json={'data': transactions, 'hasNext': False, 'areaInfos': pyeongs})
+
+    with make_client(handler) as client:
+        return json.loads(get_real_prices(client, 'apt-100', trade_type=trade_type).model_dump_json())
+
+
+def test_real_price_sale_registered_null_without_mark() -> None:
+    # 등기 표시가 없으면 false 가 아니라 null (2023년 전 계약인지 등기 전인지 모른다), 신고가는 표시가 없으면 false
+    plain, marked = _real_prices([
+        _tx('sales', dongName='000', pynPrice=1111),
+        _tx('sales', isRegistration=True, isNewHighest=True),
+    ], '매매')['transactions']
+    assert plain['registered'] is None
+    assert plain['new_high'] is False
+    assert plain['new_low'] is False
+    assert plain['dong'] == '000'
+    assert plain['price_per_pyeong_manwon'] == 1111
+    assert marked['registered'] is True
+    assert marked['new_high'] is True
+    # 동·평당가는 직방이 안 줘도 모름(null) 으로 키가 남는다
+    assert marked['dong'] is None
+    assert marked['price_per_pyeong_manwon'] is None
+    assert 'jeonse_ratio' not in plain
+    assert 'offer_price_diff_manwon' not in plain
+
+
+def test_real_price_monthly_rent_has_no_sale_only_keys() -> None:
+    rent = _real_prices([_tx('rent', rtPriceRent=10, dongName='000', pynPrice=1)], '월세')['transactions'][0]
+    for key in ('dong', 'registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
+        assert key not in rent
+    charter = _real_prices([_tx('charter')], '전세')['transactions'][0]
+    assert charter['new_high'] is False
+    assert 'dong' not in charter
+    assert 'registered' not in charter
+
+
+def test_real_price_jeonse_ratio_only_for_charter_with_value() -> None:
+    with_ratio, without = _real_prices([_tx('charter', charterRate=0.123456789), _tx('charter')], '전세')['transactions']
+    assert with_ratio['jeonse_ratio'] == 0.123456789
+    assert 'jeonse_ratio' not in without
+    # 분양가 대비 차액은 0 이어도 값이 있으면 낸다
+    sale = _real_prices([_tx('sales', offerPriceDiff=0)], '매매')['transactions'][0]
+    assert sale['offer_price_diff_manwon'] == 0
+
+
+def test_real_price_all_requests_deal_type_all_and_keeps_order() -> None:
+    requests: list[httpx.Request] = []
+    result = _real_prices([_tx('rent', rtPriceRent=10), _tx('sales'), _tx('charter')], '전체', requests)
+    assert [request.url.params['dealType'] for request in requests if request.url.path.endswith('/rt-prices')] == ['all']
+    assert result['trade_type'] == '전체'
+    assert [transaction['trade_type'] for transaction in result['transactions']] == ['월세', '매매', '전세']
+    # 거래마다 유형이 맨 앞에 오고 유형별 필드 규칙은 그대로다
+    assert list(result['transactions'][0])[0] == 'trade_type'
+    assert 'new_high' not in result['transactions'][0]
+    assert 'new_high' in result['transactions'][1]
+    # 매매·전세·월세 조회는 거래마다 유형을 내지 않는다
+    assert 'trade_type' not in _real_prices([_tx('sales')], '매매')['transactions'][0]
+
+
 def _search_items(*names: tuple[str, str]) -> dict:
     return {'success': True, 'items': [
         {'id': index + 1, 'type': 'address', 'name': name, 'description': f'서울특별시 {district} {name}',

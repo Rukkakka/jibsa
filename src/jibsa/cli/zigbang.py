@@ -1182,7 +1182,7 @@ def real_price_command(
         str,
         typer.Argument(help='아파트 단지 ID (search locations 결과의 complexes[].complex_id, search listings apt·listing의 complex_id, 예: apt-68579)'),
     ],
-    trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세 중 하나')] = '매매',
+    trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세, 전체 중 하나. 전체는 매매와 전월세를 계약일 최신 순으로 한 목록에 주고, 거래마다 trade_type 이 붙는다')] = '매매',
     pyeong: Annotated[
         int | None,
         typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id). 기본 전체 평형')
@@ -1192,15 +1192,16 @@ def real_price_command(
     limit: Annotated[int, typer.Option(min=1, max=REAL_PRICE_MAX_LIMIT, help='최대 거래 수')] = 120,
     pretty: PrettyOption = None,
 ) -> None:
-    """아파트 단지 실거래가 (국토부 신고 기준, 최근 계약 순). cancelled: true 는 해제된 거래.
+    """아파트 단지 실거래가 (국토부 신고 기준, 최근 계약 순, 매매·전세·월세 또는 전체). cancelled: true 는 해제된 거래.
 
     예: jibsa zigbang real-price apt-68579 --trade 매매
         jibsa zigbang real-price apt-68579 --trade 전세 --pyeong 400085 --limit 10
+        jibsa zigbang real-price apt-68579 --trade 전체 --limit 10
     """
     _require_complex_id(complex_id)
     trade_types = split_csv([trade], REAL_PRICE_TRADE_TYPES, '--trade')
     if len(trade_types) != 1:
-        raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세 중 하나)', param_hint='--trade')
+        raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세, 전체 중 하나)', param_hint='--trade')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_real_prices(client, complex_id.strip(), trade_type=trade_types[0], pyeong_id=pyeong, limit=limit)
         emit(result, pretty, notes=result.notes)
