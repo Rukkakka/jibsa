@@ -180,7 +180,7 @@ jibsa naver complex 개포자이 --pyeong 1
 - `pyeongs[]`: 평형 번호 (평형 ID, 평수 아님), 전용·공급·계약면적, 방·욕실 수, 세대수 → **이 번호를 `search listings --complex`, `real-price` 의 `--pyeong` 에 넣는다**
 - `schools[]`: 배정 초등학교. 학교마다 `school_code`(→ `naver school` 에 넣는다), `name`, `assignment`(배정·선택), `operation_type`(공립·혁신 등), `walking_minutes`, `distance_m`, `students_per_class`, `students_per_teacher`. 요청을 1회 더 해 붙이고, 단지형 빌라도 준다. 조회에 실패하면 `null`, 배정 정보가 없으면 `[]`
 - `reconstruction`: **재건축 단지만** 키가 있다. 현재 사업 단계와 그 날짜(`current_step`, `current_step_date`), 선정된 시공사, 재건축 후 계획 세대수(`planned_households`), 계획 용적률(`planned_floor_area_ratio`), 지나온 단계와 날짜(`steps[]`, 날짜가 있는 단계만). 요청을 1회 더 한다. 조회에 실패하면 `null`
-- `--pyeong` 을 하나만 주면 추가로: 월 관리비(최근·평균·여름·겨울), 기관별 시세(한국부동산원·KB 등), 최근 3년 매매·전세 실거래 요약(평균·최저·최고). 필드는 [선택 평형 부가 정보](#선택-평형-부가-정보-complex---pyeong)
+- `--pyeong` 을 하나만 주면 추가로: 월 관리비(최근·평균·여름·겨울), 기관별 시세(한국부동산원·KB 등, 매매·전세 평균과 범위), 최근 3년 매매·전세 실거래 요약(평균·최저·최고). 필드는 [선택 평형 부가 정보](#선택-평형-부가-정보-complex---pyeong)
 
 **오류와 대응**
 
@@ -428,7 +428,7 @@ jibsa naver market-price 개포자이 --pyeong 1 --period 3년
 
 **반환값**
 
-`complex_number`, `pyeong_number`, `period`, `since`, `providers[]`, `url`. 기관마다 `provider` 와 `points[]`(오래된 것부터, 보통 주 1회)를 주고, 점마다 `base_date`, `sale_manwon`(매매 시세 평균), `sale_range_manwon`, `jeonse_manwon`, `jeonse_range_manwon`, `jeonse_ratio_percent`(전세가율 범위, %)가 있다.
+`complex_number`, `pyeong_number`, `period`, `since`, `providers[]`, `url`. 기관마다 `provider` 와 `points[]`(오래된 것부터, 보통 주 1회)를 주고, 점마다 `base_date`, `sale_manwon`(매매 시세 평균), `sale_range_manwon`, `jeonse_manwon`, `jeonse_range_manwon`, `jeonse_ratio_percent`(전세가율 범위, %)가 있다. 그 날짜에 기관이 시세를 주지 않았거나 0 으로 주면 `sale_manwon`·`jeonse_manwon` 은 `null` 이고, 전세가율이 둘 다 0 이어도 `jeonse_ratio_percent` 는 `[0, 0]` 이 아니라 `null` 이다.
 
 **오류와 대응**
 
@@ -646,7 +646,7 @@ jibsa naver trend --help
 | 필드 | 설명 |
 |---|---|
 | `pyeong_maintenance_fee` | 월 관리비 (만원): 최근 달(`year_month`, `latest_manwon`), 월평균, 여름·겨울 평균. 자료가 없으면 `null` |
-| `market_prices` | 기관별 최신 시세 (한국부동산원, KB부동산, 부동산뱅크): 기준일, 매매 시세 평균·범위, 전세 시세 범위, 전세가율(%). 시세가 없으면 `[]` |
+| `market_prices` | 기관별 최신 시세 (한국부동산원, KB부동산, 부동산뱅크): 기준일, 매매 시세 평균(`sale_average_manwon`)·범위, 전세 시세 평균(`jeonse_average_manwon`)·범위, 전세가율(%). 기관이 그 시세를 주지 않았으면(0 포함) 평균·범위·전세가율이 `null`. 시세가 없으면 `[]` |
 | `real_price_summary` | 최근 3년(`since`) 매매(`sale`)·전세(`jeonse`) 실거래의 평균과 최저·최고 거래 (가격·계약일·층·중개/직거래·해제 여부). 기간 안 거래가 없으면 그 거래 유형이 `null` |
 
 ## 매물·시세 해석 시 주의사항

@@ -43,7 +43,7 @@ class NaverMarketPricePoint(BaseModel):
     ]
     sale_manwon: Annotated[
         float | None,
-        Field(description='매매 시세 평균 (만원)')
+        Field(description='매매 시세 평균 (만원). 없으면 null')
     ] = None
     sale_range_manwon: Annotated[
         list[float | None] | None,
@@ -51,7 +51,7 @@ class NaverMarketPricePoint(BaseModel):
     ] = None
     jeonse_manwon: Annotated[
         float | None,
-        Field(description='전세 시세 평균 (만원)')
+        Field(description='전세 시세 평균 (만원). 없으면 null')
     ] = None
     jeonse_range_manwon: Annotated[
         list[float | None] | None,
@@ -59,7 +59,7 @@ class NaverMarketPricePoint(BaseModel):
     ] = None
     jeonse_ratio_percent: Annotated[
         list[float | None] | None,
-        Field(description='전세가율 [하한, 상한] (%)')
+        Field(description='전세가율 [하한, 상한] (%). 시세가 없으면(0 포함) null')
     ] = None
 
 
@@ -159,9 +159,10 @@ def get_market_price_history(
             points=[
                 NaverMarketPricePoint(
                     base_date=normalize_date(day) or day,
-                    sale_manwon=won_to_manwon(item.deal_prices.get(day)),
+                    # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (complex --pyeong 의 _market_price 와 같다)
+                    sale_manwon=won_to_manwon(item.deal_prices.get(day)) or None,
                     sale_range_manwon=manwon_range(item.deal_price_ranges.get(day)),
-                    jeonse_manwon=won_to_manwon(item.deposit_prices.get(day)),
+                    jeonse_manwon=won_to_manwon(item.deposit_prices.get(day)) or None,
                     jeonse_range_manwon=manwon_range(item.deposit_price_ranges.get(day)),
                     jeonse_ratio_percent=manwon_range(item.lease_per_deal_rates.get(day), scale=False),
                 )

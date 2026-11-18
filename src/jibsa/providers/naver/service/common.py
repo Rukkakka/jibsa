@@ -674,12 +674,15 @@ def kst_today() -> date:
 
 
 def manwon_range(price_range: NaverPriceRangeModel | None, scale: bool = True) -> list[float | None] | None:
-    """시세 범위(하한·상한)를 만원으로 (`won_to_manwon_range`). `scale` 이 False 면 비율(전세가율 %, 37~41)이라 그대로 둔다."""
+    """시세 범위(하한·상한)를 만원으로 (`won_to_manwon_range`). `scale` 이 False 면 비율(전세가율 %, 37~41)이라 그대로 둔다.
+
+    둘 다 0·None 이면 없음이다 (기관이 0 을 주면 시세 없음이라 전세가율 0% 를 내지 않는다, 시세 평균·범위와 같은 규칙).
+    """
     if price_range is None:
         return None
     if scale:
         return won_to_manwon_range(price_range.floor, price_range.ceiling)
-    if price_range.floor is None and price_range.ceiling is None:
+    if not price_range.floor and not price_range.ceiling:
         return None
     return [price_range.floor, price_range.ceiling]
 

@@ -17,6 +17,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     won_to_manwon,
+    won_to_manwon_exact,
     years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -155,11 +156,15 @@ class NaverMarketPrice(BaseModel):
     ] = None
     sale_average_manwon: Annotated[
         float | None,
-        Field(description='매매 시세 평균 (만원)')
+        Field(description='매매 시세 평균 (만원). 없으면 null')
     ] = None
     sale_range_manwon: Annotated[
         list[float | None] | None,
         Field(description='매매 시세 [하한, 상한] (만원)')
+    ] = None
+    jeonse_average_manwon: Annotated[
+        float | None,
+        Field(description='전세 시세 평균 (만원). 없으면 null')
     ] = None
     jeonse_range_manwon: Annotated[
         list[float | None] | None,
@@ -167,7 +172,7 @@ class NaverMarketPrice(BaseModel):
     ] = None
     jeonse_ratio_percent: Annotated[
         list[float | None] | None,
-        Field(description='전세가율 [하한, 상한] (%)')
+        Field(description='전세가율 [하한, 상한] (%). 시세가 없으면(0 포함) null')
     ] = None
 
 
@@ -581,8 +586,10 @@ def _market_price(item: NaverMarketPriceModel) -> NaverMarketPrice:
     return NaverMarketPrice(
         provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
         base_date=normalize_date(item.base_date),
-        sale_average_manwon=won_to_manwon(item.deal_average_price),
+        # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다)
+        sale_average_manwon=won_to_manwon(item.deal_average_price) if item.deal_average_price else None,
         sale_range_manwon=manwon_range(item.deal_price_range),
+        jeonse_average_manwon=won_to_manwon_exact(item.lease_average_price) if item.lease_average_price else None,
         jeonse_range_manwon=manwon_range(item.deposit_price_range),
         jeonse_ratio_percent=manwon_range(item.lease_per_deal_rate, scale=False),
     )

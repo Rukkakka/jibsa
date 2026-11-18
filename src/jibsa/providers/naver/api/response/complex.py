@@ -59,6 +59,10 @@ class NaverMarketPriceModel(ResponseModel):
         int | None,
         Field(description='매매 시세 평균', alias='dealAveragePrice')
     ] = None
+    lease_average_price: Annotated[
+        int | None,
+        Field(description='전세 시세 평균', alias='leaseAveragePrice')
+    ] = None
     deposit_price_range: Annotated[
         NaverPriceRangeModel | None,
         Field(description='전세 시세 범위', alias='depositPriceRange')
