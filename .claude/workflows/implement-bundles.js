@@ -106,6 +106,11 @@ const REPORT = {
   properties: {
     changed: { type: 'array', items: { type: 'object', properties: { file: { type: 'string' }, what: { type: 'string', description: '바꾼 함수·내용 한 줄' } }, required: ['file', 'what'] } },
     checks: { type: 'string', description: 'ruff check·mypy·바꾼 부분 테스트 결과' },
+    selfChecks: {
+      type: 'array',
+      description: '셀프 체크 증거: 리뷰 체크리스트에서 **언제** 신호가 걸린 항목마다 "항목 키: 어떻게 확인했는지" 한 줄 (docs/development/agents.md "검증 분담")',
+      items: { type: 'string' },
+    },
     liveChecks: {
       type: 'array',
       description: '바꾼 동작마다 실제 조회 1건 (지시가 실제 조회를 하지 말라고 했으면 빈 목록)',
@@ -119,7 +124,7 @@ const REPORT = {
     notDone: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, why: { type: 'string' } }, required: ['what', 'why'] } },
     othersToTouch: { type: 'array', items: { type: 'string' }, description: '네 files 밖이라 고치지 않은 곳: "파일 — 고칠 내용" (문서, CHANGELOG, 감시 목록 GROUPS 등)' },
   },
-  required: ['changed', 'checks', 'deviations', 'notDone', 'othersToTouch'],
+  required: ['changed', 'checks', 'selfChecks', 'deviations', 'notDone', 'othersToTouch'],
 }
 
 const allFiles = [...new Set(bundles.flatMap(b => b.files.map(norm)))]

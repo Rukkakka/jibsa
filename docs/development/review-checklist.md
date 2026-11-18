@@ -278,6 +278,12 @@
    확인: diff 의 `+from jibsa.providers.<source>.service.<기능>` 줄. 예: 네이버 `service/complex.py` 가 `service/market_price.py` 의
    `jeonse_ratio_range` 를 가져다 썼다 (2026-11-18).
    언제: `service/` 에 새 import 를 더한 diff.
+8. **감시 단계는 비면 고장으로 잡히는 칸을 보는가.** `scripts/monitor/api_check.py` 의 `Step` 기대 칸(`expect`)이 늘 있는 바깥
+   dict(`assigned_complexes`)면 키 이름이 바뀌어 안쪽 목록이 빈 채로 와도 정상으로 본다. 그 명령이 정상이면 비지 않는 목록
+   (`assigned_complexes.complexes`)을 가리킨다. 확인: 새 `Step` 의 기대 칸이 정상 응답에서 늘 비지 않는 값인지, 그 값을 만드는
+   응답 키가 바뀌면 빈 값(`[]`·`{}`·null)이 되는지 본다. 예: `scripts/monitor/api_check.py:214` (네이버 `school --complexes`
+   단계가 바깥 dict 만 봤다, 2026-11-18).
+   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸을 바꾼 diff.
 
 ## 지적하지 말 것
 
