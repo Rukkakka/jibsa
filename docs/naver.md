@@ -18,7 +18,7 @@
 | `search redevelopment` | 지역의 재개발 구역 | 지역 또는 좌표 | `redevelopment`, `search listings --redevelopment` |
 | `redevelopment` | 재개발 구역 하나의 정보 | 구역 번호 | `search listings --redevelopment` |
 | `search listings --redevelopment` | 구역 안 현재 매물 | 구역 번호 | `listing` |
-| `trend` | 동·구 아파트 주간 추이 | 지역 또는 좌표 | — |
+| `trend` | 동·구·전국 아파트 주간 추이 | 지역·좌표 또는 `전국` | — |
 | `regions` | 시·도·구의 **하위 지역** 목록 | 시·도 또는 시·군·구 이름 | `search listings`, `search complexes`, `trend` |
 | `school` | 초등학교 하나 **상세** | 학교 코드 | — |
 
@@ -377,11 +377,11 @@ jibsa naver search listings --redevelopment 9000001 --trade 매매 --price-max 3
 
 ## 9. `trend` — 동네 아파트 주간 추이
 
-동·구의 아파트 매물 수, 평균 평당 호가, 실거래 건수의 주간 추이를 본다. 개별 단지 실거래는 `real-price`로 확인한다.
+동·구·전국의 아파트 매물 수, 평균 평당 호가, 실거래 건수의 주간 추이를 본다. 개별 단지 실거래는 `real-price`로 확인한다.
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
-| `QUERY` | 동·구 이름(구가 있는 시는 `성남시 분당구` 처럼 구까지). 역·주소·단지는 해당 위치의 법정동 | 미지정 |
+| `QUERY` | 동·구 이름(구가 있는 시는 `성남시 분당구` 처럼 구까지) 또는 `전국`. 역·주소·단지는 해당 위치의 법정동 | 미지정 |
 | `--lat`, `--lng` | 함께 지정하는 한국 내 좌표. 이름도 주면 좌표 우선 | 미지정 |
 | `--trade` | 매매·전세 | 매매 |
 | `--period` | 1개월·6개월·1년·3년·5년 | 1년 |
@@ -391,11 +391,12 @@ jibsa naver search listings --redevelopment 9000001 --trade 매매 --price-max 3
 
 ```bash
 jibsa naver trend 역삼동 --trade 전세 --period 3년 --pyeong-range 30
+jibsa naver trend 전국
 ```
 
 **반환값**
 
-`legal_division`, `trade_type`, `period`, `pyeong_range`와 아래 세 묶음을 준다. 조회 실패한 묶음은 `null`일 수 있다.
+`legal_division`(`전국`이면 `"전국"`), `trade_type`, `period`, `pyeong_range`와 아래 세 묶음을 준다. 조회 실패한 묶음은 `null`일 수 있다.
 
 | 필드 | 의미 |
 | --- | --- |
@@ -409,7 +410,7 @@ jibsa naver trend 역삼동 --trade 전세 --period 3년 --pyeong-range 30
 
 **주의사항**
 
-아파트만 제공하며 오피스텔·빌라·월세 추이는 없다. 리 단위 추이도 네이버가 주지 않아, 리를 넣으면 그 리가 속한 읍·면 추이를 주고 `notes` 로 알린다. 번지·도로명 주소를 넣으면 `legal_division` 은 주소가 아니라 그 자리의 법정동 이름이다. 평균 평당 호가는 실제 거래 가격과 다르다. 실거래 건수(`trade_count`)는 계약한 주에 세는데 신고는 계약 뒤 30일 안이라, 최근 4주쯤은 덜 모여 적게 나오고 `notes` 로 알린다 (마포구 6개월 주간 거래 19·13·6·0건, `latest` 0). 거래 흐름은 한 달 넘게 지난 주로 본다. `--pyeong-range 30`은 평형 번호가 아니라 30~40평 범위다. 기본 조회는 세 종류의 데이터 요청이며 위치 해석 요청이 추가될 수 있고, 시 이름이면 구가 있는지 묻는 요청이 1회 더 든다.
+`전국` 은 지역을 찾지 않고 네이버 홈의 전국(시·도 전체) 추이를 그대로 준다 (`--lat/--lng` 를 함께 주면 좌표가 먼저라 `전국` 이 아니라 그 좌표의 법정동이다). 아파트만 제공하며 오피스텔·빌라·월세 추이는 없다. 리 단위 추이도 네이버가 주지 않아, 리를 넣으면 그 리가 속한 읍·면 추이를 주고 `notes` 로 알린다. 번지·도로명 주소를 넣으면 `legal_division` 은 주소가 아니라 그 자리의 법정동 이름이다. 평균 평당 호가는 실제 거래 가격과 다르다. 실거래 건수(`trade_count`)는 계약한 주에 세는데 신고는 계약 뒤 30일 안이라, 최근 4주쯤은 덜 모여 적게 나오고 `notes` 로 알린다 (마포구 6개월 주간 거래 19·13·6·0건, `latest` 0). 거래 흐름은 한 달 넘게 지난 주로 본다. `--pyeong-range 30`은 평형 번호가 아니라 30~40평 범위다. 기본 조회는 세 종류의 데이터 요청이며 위치 해석 요청이 추가될 수 있고, 시 이름이면 구가 있는지 묻는 요청이 1회 더 든다.
 
 ## 10. `market-price` — 기관 시세 추이
 

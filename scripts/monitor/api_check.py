@@ -177,6 +177,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
     'naver': (
         Step('하위 지역 강남구', ('naver', 'regions'), ('강남구',), 'regions'),
         Step('동네 추이 역삼동', ('naver', 'trend'), ('역삼동',), 'listing_count.weekly'),
+        # 전국은 지역 해석 없이 법정동 코드 0000000000 으로 부른다
+        Step('전국 추이', ('naver', 'trend'), ('전국',), 'listing_count.weekly'),
         # 구·군 이름은 경계 전체(legalDivisionType GUN)로 찾는다
         Step('매물 구 전체 성동구', NAVER_LISTINGS, ('성동구', '--limit', '2'), 'listings'),
         # 구 없는 시는 하위 지역 목록 1회로 구가 없는지 본 뒤 시 경계 전체(GUN)로 찾는다

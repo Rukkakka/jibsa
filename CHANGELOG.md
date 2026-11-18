@@ -137,6 +137,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 네이버 `complex --pyeong` 의 `real_price_summary.sale`·`jeonse` 에 최근 3개월 평균 `average_3m_manwon`(3개월 안 거래가 없으면 `null`). 추가 요청이 최대 4회에서 최대 6회로 늘어난다. 5년으로 요약한 유형은 3개월 요청을 하지 않아 `average_3m_manwon` 이 `null` 이다 (#316)
 - 네이버 `search complexes -t` 에 `재건축`·`분양권`·`오피스텔분양권`. 단지 행 모양은 아파트와 같다 (#317)
 - 네이버 `real-price`·`market-price` 의 `--period` 에 `3개월` (선택지 3개월·1년·3년·5년) (#315)
+- 네이버 `trend 전국`: 지역을 찾지 않고 네이버 홈의 전국(시·도 전체) 추이를 준다 (`legal_division` 은 `"전국"`) (#324)
 
 ### 변경
 

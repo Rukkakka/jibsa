@@ -97,6 +97,8 @@ from jibsa.providers.naver.service.search import (
     search_area,
 )
 from jibsa.providers.naver.service.trend import (
+    NATIONWIDE_CODE,
+    NATIONWIDE_NAME,
     TREND_PERIOD_BY_NAME,
     TREND_PYEONG_RANGES,
     TREND_TRADE_CODE_BY_NAME,
@@ -706,7 +708,7 @@ def _trend_district(
 def trend_command(
     query: Annotated[
         str | None,
-        typer.Argument(help='동·구 이름 (예: 역삼동, 강남구). 역·주소·단지면 그 자리의 법정동. --lat/--lng 를 주면 생략')
+        typer.Argument(help=f'동·구 이름 (예: 역삼동, 강남구) 또는 {NATIONWIDE_NAME}. 역·주소·단지면 그 자리의 법정동. --lat/--lng 를 주면 생략')
     ] = None,
     lat: Annotated[float | None, typer.Option(help='위도 (그 자리의 법정동)')] = None,
     lng: Annotated[float | None, typer.Option(help='경도 (그 자리의 법정동)')] = None,
@@ -726,7 +728,10 @@ def trend_command(
 ) -> None:
     """동네 아파트 주간 추이: 매물 수·평균 평당 호가(만원)·실거래 건수. 오피스텔·빌라 추이는 네이버가 주지 않는다 (요청 3회).
 
+    전국은 지역을 찾지 않고 네이버 홈의 전국(시·도 전체) 추이를 그대로 준다.
+
     예: jibsa naver trend 역삼동 --trade 전세 --period 3년 --pyeong-range 30
+    예: jibsa naver trend 전국
     """
     _require_location(query, lat, lng)
     trade = check_choice(trade, TREND_TRADE_CODE_BY_NAME, '--trade')
@@ -736,7 +741,12 @@ def trend_command(
 
     with handle_errors(SOURCE), NaverClient() as client:
         division: str | None
-        code, division, notes = _trend_district(client, query, lat, lng)
+        notes: list[str]
+        # 좌표를 함께 주면 좌표가 이름보다 앞서(`_resolve_location`) '전국' 도 이름으로 쓰지 않는다
+        if query is not None and query.strip() == NATIONWIDE_NAME and lat is None and lng is None:
+            code, division, notes = NATIONWIDE_CODE, NATIONWIDE_NAME, []
+        else:
+            code, division, notes = _trend_district(client, query, lat, lng)
         trend = get_district_trend(client, code, trade_type=trade, period=period, pyeong_range=pyeong_range)
         if trend.trade_count is not None:
             # 거래는 계약 주에 세어지는데 신고가 계약 뒤 30일 안이라 최근 주일수록 덜 모였다. 안내가 없으면 줄어드는 끝을
