@@ -144,6 +144,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `search listings apt --no-new-sale`: 직방 웹의 '신규 분양 포함' 을 끈 동·구 목록처럼 신규분양 매물을 빼고 `total` 도 그만큼 준다 (이어 받을 때도 같은 옵션을 준다). 단지 매물(`--complex`)에는 없다 (#337)
 - 직방 단기임대 `listing stay-…` 상세에 `kitchen_count`·`living_room_count`(주방·거실 수), `parking_count`·`parking_method`(주차 대수·방식, 주차 불가면 키 없음), `pet_allowed`·`pet_cleaning_fee_manwon`(반려동물 동반 여부·추가 청소비. 동반 여부는 직방이 옵션 목록을 주지 않으면 `null`, 청소비는 직방 웹처럼 동반 불가여도 0 보다 크면 나오고 동반 불가이고 0 이면 키 없음), `check_in_time`·`check_out_time`·`check_in_method`·`check_out_method`(입·퇴실 시각·방식), `unavailable_periods`(예약할 수 없는 기간), `refund_rules`(위약금 표, 정책을 모르면 `null`)가 붙음. `refund_rules` 는 직방 웹에 고정된 표를 옮긴 것이라 임대인 설정에 따라 다를 수 있으니 계약 전 `url` 에서 확인한다 (#338)
 - 직방 `search listings stay --floor` 에 `2-10층`·`11층이상` (#339)
+- 네이버 `school` 에 `--complexes`(`--sort 거리순|세대수순`, `--limit` 기본 20·최대 100): 그 학교에 배정되는 단지 `assigned_complexes`(`total`·`returned`·`has_more`·`complexes[]`)를 붙임. 단지마다 단지 번호·이름·유형·세대수·동 수·사용승인일·거래 유형별 매물 수·호가 범위·배정 동 `assigned_dongs`(전체 배정이면 `["전체 동"]`, 아니면 동 묶음마다 `"101동~105동"`, 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데 네이버가 어느 동인지 주지 않으면 `null`)가 있다. 네이버가 총수를 주지 않으면 `total` 이, 다음 쪽 여부와 총수를 모두 주지 않고 받은 것이 `--limit` 안이면 `has_more` 가 `null`(모름)이다. 20곳마다 요청 1회가 더 든다. `--sort`·`--limit` 은 `--complexes` 없이 주면 `INVALID_ARGUMENT` 다 (#343)
 
 ### 변경
 

@@ -20,7 +20,7 @@
 | `search listings --redevelopment` | 구역 안 현재 매물 | 구역 번호 | `listing` |
 | `trend` | 동·구·전국 아파트 주간 추이 | 지역·좌표 또는 `전국` | — |
 | `regions` | 시·도·구의 **하위 지역** 목록 | 시·도 또는 시·군·구 이름 | `search listings`, `search complexes`, `trend` |
-| `school` | 초등학교 하나 **상세** | 학교 코드 | — |
+| `school` | 초등학교 하나 **상세**, 그 학교에 배정되는 **단지** | 학교 코드 | `complex`, `search listings --complex` (`--complexes` 의 단지) |
 
 ### 보통 이렇게 이어서 쓴다
 
@@ -30,6 +30,7 @@
                                              ├─▶ real-price / market-price
                                              └─▶ school (schools[].school_code)
 재개발 구역 고르기     search redevelopment ─▶ redevelopment ─▶ search listings --redevelopment ─▶ listing
+학교 배정 단지 보기    school --complexes ─▶ complex ─▶ search listings --complex ─▶ listing
 동네 흐름 보기         trend
 동네 하나씩 훑기       regions <구> ─▶ (동마다) search listings / search complexes
 ```
@@ -500,34 +501,42 @@ jibsa naver regions 세종        # 세종의 읍·면·동 (시·군·구가 �
 
 ## 13. `school` — 초등학교 상세
 
-`complex`·`listing` 의 `schools[].school_code` 로 학교 하나의 공시 정보를 본다.
+`complex`·`listing` 의 `schools[].school_code` 로 학교 하나의 공시 정보와, 그 학교에 배정되는 단지를 본다.
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
 | `SCHOOL_CODE` | 학교 코드 (예: `B100000747`) | 필수 |
 | `--complex` | 단지 이름 또는 번호. 주면 그 단지에서 이 학교에 배정되는 동을 붙인다 | 미지정 |
+| `--complexes` | 이 학교에 배정되는 단지 목록(`assigned_complexes`)을 붙인다 | 꺼짐 |
+| `--sort` | `--complexes` 의 정렬: 거리순(학교에서 가까운 순), 세대수순 | 거리순 |
+| `--limit` | `--complexes` 의 최대 단지 수 (1~100) | 20 |
 
 **사용 예시**
 
 ```bash
 jibsa naver school B100000747 --complex 개포자이
+jibsa naver school B100000747 --complexes --sort 세대수순 --limit 40
 ```
 
 **반환값**
 
 `school_code`, `name`, `address`, `office_of_education`, `operation_type`, `establishment_type`, `opened_at`(개교일), `stats_date`(공시 기준일), `students`, `students_per_class`, `students_per_teacher`, 비교용 `city_average`·`district_average`(지역, 학급당·교원당 학생 수), `url`. `--complex` 를 주면 `complex_number`, `all_dongs_assigned`, `assigned_dongs`(예: `["101동~103동", "105동"]`, 전체 배정이면 `["전체 동"]`)가 붙는다.
 
+`--complexes` 를 주면 `assigned_complexes` 가 붙는다: `total`(학교에 배정되는 전체 단지 수, 서버 집계. 네이버가 주지 않으면 `null`), `returned`, `has_more`(네이버가 다음 쪽이 있는지 주지 않으면 첫 쪽 `total` 이 받은 수보다 큰지로 정하고, `total` 도 주지 않았고 받은 것이 `--limit` 안이면 `null`), `complexes[]`(`--sort` 순서). 단지마다 `complex_number`(→ `complex`·`search listings --complex`·`real-price` 에 넣는다), `name`, `property_type`, `households`, `dong_count`, `approved_at`, 거래 유형별 매물 수 `article_counts`(네이버가 주지 않으면 `null`), 매매·전세 호가 범위 `sale_asking_range_manwon`·`jeonse_asking_range_manwon`, 월세·단기임대 호가 `monthly_asking`·`short_term_asking`(뜻은 [소스별 반환 필드](#소스별-반환-필드와-해석)), 그 단지에서 이 학교에 배정되는 동 `assigned_dongs`(`--complex` 와 같은 표기, 단지 전체가 배정이면 `["전체 동"]`)가 있다. 이 목록의 단지는 모두 이 학교에 배정되므로 `assigned_dongs` 가 `null` 이면 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데, 네이버가 어느 동인지(동 묶음)를 주지 않은 것이다 (전체 배정 여부를 주지 않아도 동 묶음이 오면 그 동을 낸다). 네이버가 단지 정보를 주지 않은 항목은 단지 번호·이름을 알 수 없어 건너뛰고 `[제외]` 로 몇 곳을 뺐는지 알린다. 단지 좌표·주소·사진은 내보내지 않는다.
+
 **오류와 대응**
 
-없는 학교 코드나 `--complex` 의 없는 단지 번호는 `NOT_FOUND`, `--complex` 의 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS`([단지 이름 해석](#3-complex--단지-하나-정보)), 영문·숫자가 아닌 코드는 `INVALID_ARGUMENT`다.
+없는 학교 코드나 `--complex` 의 없는 단지 번호는 `NOT_FOUND`, `--complex` 의 단지 이름이 여러 단지에 맞으면 `REGION_AMBIGUOUS`([단지 이름 해석](#3-complex--단지-하나-정보)), 영문·숫자가 아닌 코드와 `--complexes` 없이 준 `--sort`·`--limit` 은 `INVALID_ARGUMENT`다.
 
 **주의사항**
 
-요청 1회, `--complex` 를 주면 2~3회 추가다 (단지 이름이면 단지 검색 1회, 단지 번호면 빌라 단지인지 확인 1회, 번호로 준 빌라 단지는 단지가 있는지 확인 1회 더). 배정 동 조회에 실패하면 `all_dongs_assigned`·`assigned_dongs` 가 `null` 이다. 전체 배정이 아닌데(`all_dongs_assigned: false`) 네이버가 어느 동인지 주지 않으면 `assigned_dongs` 만 `null` 이다. 일부 동만 배정된 단지와 이 학교에 배정되지 않은 단지가 같은 모양으로 와서 구분할 수 없다 (배정 동이 없다는 뜻도, 일부 배정이라는 뜻도 아니다). 전화·홈페이지·좌표는 내보내지 않는다. 학교 배정은 교육청 학구도 안내로 최종 확인한다.
+요청 1회, `--complex` 를 주면 2~3회 추가다 (단지 이름이면 단지 검색 1회, 단지 번호면 빌라 단지인지 확인 1회, 번호로 준 빌라 단지는 단지가 있는지 확인 1회 더). 배정 동 조회에 실패하면 `all_dongs_assigned`·`assigned_dongs` 가 `null` 이다. 전체 배정이 아닌데(`all_dongs_assigned: false`) 네이버가 어느 동인지 주지 않거나, 전체 배정 여부(`all_dongs_assigned`) 자체를 주지 않았는데 어느 동인지도 주지 않으면 `assigned_dongs` 만 `null` 이다. 일부 동만 배정된 단지와 이 학교에 배정되지 않은 단지가 같은 모양으로 와서 구분할 수 없다 (배정 동이 없다는 뜻도, 일부 배정이라는 뜻도 아니다). 전화·홈페이지·좌표는 내보내지 않는다. 학교 배정은 교육청 학구도 안내로 최종 확인한다.
+
+`--complexes` 는 단지를 20곳마다 요청 1회로 받아(최대 5회, 그래서 `--limit` 은 100까지) `--limit` 곳을 채우면 멈춘다. 더 남았으면 `has_more` 가 `true` 이고 `[일부]` 안내가 나온다 (`--limit` 이 100 아래면 늘리라고, 100 이면 최대값이라고 알린다). 네이버가 쪽을 20곳보다 짧게 줘 요청 상한(5회)에서 `--limit` 곳을 채우지 못하고 멈추면 `has_more` 는 `true` 이고 `[일부]` 안내가 받은 곳 수와 상한을 알린다 (`--limit` 을 늘려도 같은 쪽 수에서 멈춰 늘리라고도 최대값이라고도 하지 않는다). 네이버가 더 있다면서 빈 쪽을 주면 거기서 멈추고 `has_more` 는 `true` 인 채 `[일부]` 안내가 그 사실과 받은 곳 수를 알린다 (`--limit` 을 늘려도 같은 빈 쪽에서 멈춰 늘리라고 하지 않는다). 네이버가 다음 쪽 여부(`hasNextPage`)를 주지 않으면(null) 첫 쪽 `total` 이 받은 수보다 클 때만 더 있는 것으로 보고 이어 받으며(그때 `has_more` 는 `true` 또는 다 받았으면 `false`), `total` 도 주지 않았으면 더 받지 않고 받은 것이 `--limit` 안이면 `has_more` 는 `null`(모름)이다. `hasNextPage` 가 거짓이면 `total` 이 더 커도 거짓 그대로다. `total` 은 첫 쪽에서만 받고, `complexes[]` 는 `--limit` 곳까지만이라 `total` 보다 적을 수 있다.
 
 ## 조회 개수와 페이지 처리
 
-검색 모드(`search listings`, `search listings --complex`, `search complexes`, `search redevelopment`, `search listings --redevelopment`) 모두 `--limit` 기본 30, 범위 1~120이다. `complex`·`listing`·`trend`·`market-price`·`redevelopment`·`regions`·`school`에는 `--limit`이 없고, `real-price`는 `--pages` 또는 `--period`를 사용한다.
+검색 모드(`search listings`, `search listings --complex`, `search complexes`, `search redevelopment`, `search listings --redevelopment`) 모두 `--limit` 기본 30, 범위 1~120이다. `complex`·`listing`·`trend`·`market-price`·`redevelopment`·`regions`에는 `--limit`이 없고, `real-price`는 `--pages` 또는 `--period`를 사용한다. `school` 은 `--complexes` 를 줄 때만 `--limit`(기본 20, 범위 1~100)이 있다.
 
 ```bash
 jibsa naver search listings 역삼동 --trade 전세 --limit 120

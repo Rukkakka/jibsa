@@ -211,6 +211,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'transactions'),
         Step('평형 시세', ('naver', 'market-price'), ('{complex}', '--pyeong', '{pyeong}'), 'providers'),
         Step('학교', ('naver', 'school'), ('{school}',), 'school_code'),
+        # 학교는 그 단지가 배정된 학교라 목록이 비면 고장이다 (dict 만 보면 키 이름이 바뀌어 빈 목록이 돼도 못 잡는다)
+        Step('학교 배정 단지', ('naver', 'school'), ('{school}', '--complexes', '--limit', '1'), 'assigned_complexes.complexes'),
         Step('단지 매물', NAVER_LISTINGS, ('--complex', '{complex}', '--limit', '2'), 'listings'),
         Step(
             '재개발 구역 한남동', ('naver', 'search', 'redevelopment'), ('한남동', '--limit', '1'), 'areas',

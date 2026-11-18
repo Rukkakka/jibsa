@@ -17,7 +17,7 @@
 | `market-price` | 단지 해석 → 기관별 주간 시세 기간 목록 1회 | `market_price` |
 | `redevelopment` | 구역 기본 정보 → 구역 매물 통계 | `redevelopment` |
 | `regions` | 시·도 목록 → 시·도면 하위 목록, 아니면 자동완성 → 시·군·구 하위 목록 | `region` |
-| `school` | 학교 상세, `--complex` 면 배정 동 (단지 번호만이면 빌라 여부 확인 1회, 빌라면 단지가 있는지 확인 1회 더) | `school` |
+| `school` | 학교 상세, `--complex` 면 배정 동 (단지 번호만이면 빌라 여부 확인 1회, 빌라면 단지가 있는지 확인 1회 더), `--complexes` 면 배정 단지 20곳마다 1회 (최대 5회) | `school` |
 | `search redevelopment` | 지역 해석(시 이름이면 구가 있는지 확인 1회) → 동·시·군·구 경계 또는 반경 재개발 구역 목록·마커 | `redevelopment` |
 | `search listings --redevelopment` | 구역 번호 → 재개발 매물 페이지 | `redevelopment` |
 | `trend` | 법정동 코드 해석(`전국` 은 해석 없이 전국 코드, 시 이름이면 구가 있는지 확인 1회) → 매물 수·평당 호가·거래 건수 3종 조회 | `trend` |
@@ -146,6 +146,12 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - `article/tax` 는 면제되는 항목도 null 이 아니라 0 으로 준다 (85㎡ 이하 취득 농특세, 종부세 대상 아님. 헬리오시티 39·85·111·150㎡·일신동 빌라 2건, 2026-10-11 실측). 그래서 세금 합계(`_sum_manwon`)에서 일부 항목만 null 인 경우는 실제 응답에 없다.
 - 재검토 후 넣지 않은 엔드포인트: `complex/asking-price`(단지 매물 목록과 같은 정보), `article/boundedArticlesCount`(검색의 `total_count` 와 같음), `search/articles`(`listing` 과 같고 중개사·본문이 섞임), `legalDivision/infoList`, `complex/villa/asking-price`(빈 결과), `complex/villa/realPriceAround`(파라미터를 찾지 못해 400).
 
+## 학교 배정 단지 엔드포인트 메모
+
+(2026-11-18 실측, 모두 로그인 없이 200)
+
+- `education/complex/pages`(`schoolCode`·`size`·`page`·`sortType`)는 학교에 배정되는 단지를 준다. `sortType` 은 `DISTANCE`·`HOUSEHOLD_COUNT` 만 받고 그 밖은 400 이다 (웹 enum `ELEMENTARY_SCHOOL_SORT_TYPE`). 항목은 단지 정보·매물 수·호가 범위(원, 매물이 없으면 `{}`)와 배정 동(`isAllBuildingAssigned`·`convertedBuildingNameGroups`)이다. 끝 쪽을 넘긴 쪽(page=9)은 `list: []`·`hasNextPage: false`·`totalCount: 0` 이라 총수는 첫 쪽에서만 믿는다. `hasNextPage` 가 null 이면 첫 쪽 `totalCount` 가 받은 수보다 클 때 더 있는 것으로 보고 이어 받으며(쪽 요청 상한 5회 안), 상한에 걸려 `--limit` 에 못 미치면 `--limit` 을 권하지 않는 안내를 따로 낸다. 빌라가 `villaInfo` 로 올 경우에 대비해 그 칸도 받는다 (오는지는 확인하지 못했다: 2026-11-18 인천일신초 E100000875 에 배정되는 빌라 가람아트빌 673573 이 목록에 없었다).
+
 ## API 변경 시 점검
 
 client의 action별 endpoint/docstring → request 별칭·필터 → response 봉투와 중첩 모델 → service unwrap·만원 변환 → CLI 모드별 검증 순으로 확인한다. 학교·교통·세금·선택 평형 시세는 부가 요청 경로도 따로 확인한다. 재개발은 구역 목록과 매물 목록, trend는 호가와 실거래 건수를 구분한다.
@@ -191,6 +197,7 @@ client의 action별 endpoint/docstring → request 별칭·필터 → response �
 - **`real-price` 한 쪽 10건.** 웹은 최근 3건·요약 5건·전체 목록 100건(`TRANSACTION_PRICE_PAGE_PAGINATION_SIZE`)씩 보여 준다. jibsa 는 쪽마다 10건(`--pages` 최대 10)이다. 순서가 같아 앞쪽 N건이 웹과 같다 (2026-11-16).
 - **빌라 단지 `real-price --period`.** 웹 빌라 실거래 목록에는 기간 조건이 없다. jibsa 는 최근 순 페이지를 받아 시작일 전 거래를 뺀다. 받은 목록의 부분집합이라 웹에 없는 조건으로 좁히기다 ([기간 조회·지역 목록·학교 엔드포인트 메모](#기간-조회지역-목록학교-엔드포인트-메모), 2026-11-16).
 - **탭을 한 번에.** `complex --pyeong` 은 실거래 요약을 매매·전세 둘 다(웹은 거래 탭 하나씩), 기관 시세 세 곳을 모두(웹은 기관 하나씩) 준다. 웹이 탭마다 보여 주는 값을 함께 낸 것이다 (2026-11-16).
+- **학교 배정 단지 쪽 크기 20.** 웹 학교 상세는 배정 단지를 처음 3곳 보여 주고 '더보기' 로 전체 목록(쪽 크기 20)을 본다. `school --complexes` 는 같은 `education/complex/pages` 를 쪽 크기 20 으로 `--limit`(기본 20, 최대 100) 곳까지 이어 받는다. 웹 전체 목록과 같은 쪽을 차례로 받은 것이고 총수는 첫 쪽의 `totalCount` 만 믿는다 (끝 쪽 이후는 0). 정렬은 웹 enum 두 값(`DISTANCE`·`HOUSEHOLD_COUNT`)뿐이고, 단지 좌표·주소·사진은 내지 않으며, 단지마다의 배정 동 판정은 `school --complex` 와 같다 (위 `school` 배정 동 표기 항목) (2026-11-18 실측).
 - **`complex --pyeong` 의 3년 평균 실거래가 (그대로 두기로 함).** `real_price_summary.*.average_manwon` 은 웹도 같은 요청(`complex/pyeong/realPrice/summary`, 시작일 3년 전)으로 받지만, 웹 화면(`ComplexTransactionPriceSummary`)은 3년 최고·최저만 그리고 평균은 '3개월 평균 실거래' 에만 쓴다 (받은 번들 386개 중 평균값을 쓰는 곳은 그 화면과 로그인이 필요한 우리집 시세 둘뿐). 같은 응답에 서버가 준 값이라 그대로 낸다 (2026-11-16 번들 chunk `1un70f33iojlw`).
 - **`complex --pyeong` 의 3개월 평균 실거래.** 웹은 3개월 평균을 매물 상세(`RecentTransaction`)에만 보여 주는데 jibsa 는 `real_price_summary` 의 `average_3m_manwon` 으로 낸다. 같은 요약 요청(`complex/pyeong/realPrice/summary`)을 3개월 전 시작일로 부른 서버 값 그대로라 웹에 없는 결과를 만들지 않는다 ([기간 조회·지역 목록·학교 엔드포인트 메모](#기간-조회지역-목록학교-엔드포인트-메모), 2026-11-18).
 - **실거래 요약의 5년 대체를 `since` 로 밝히기.** 웹 단지 화면(`ComplexTransactionPriceSummary`)은 거래 유형마다 3년 요약이 비면 5년으로 다시 받아 그리고 5년을 썼다는 말은 따로 하지 않는다. jibsa 도 같은 순서로 받고 5년을 쓴 유형에만 `since` 를 붙인다. 같은 요청의 같은 값에 기간 정보를 더한 것이다. 3년 요약 조회가 실패한 유형은 5년으로 바꾸지 않고 `null`(모름)로 둔다 (실패는 거래 없음이 아니라 모르는 값이라 다른 기간의 값을 대신 내지 않는다) (2026-11-18, 청크 1un70f33iojlw).

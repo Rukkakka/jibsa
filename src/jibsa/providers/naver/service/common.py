@@ -720,7 +720,7 @@ def complex_row_fields(
 ) -> dict[str, Any]:
     """단지 한 곳의 공통 칸을 만든다: 단지 유형·세대수·동 수·사용승인일·거래 유형별 매물 수·매매·전세 호가 범위·월세·단기임대 호가 짝.
 
-    지역 단지 목록(`search complexes`)·단지 요약(`complex`)이 같은 값을 같은 식으로 내도록 한 곳에 둔다.
+    학교 배정 단지(`school`)·지역 단지 목록(`search complexes`)·단지 요약(`complex`)이 같은 값을 같은 식으로 내도록 한 곳에 둔다.
     호출부는 각 모델 생성자에 `**` 로 풀어 넣는다 (각 모델의 필드 순서와 `address`·`distance_km`·`url`·`assigned_dongs` 같은 자기 칸은
     호출부가 정한다). `counts`·`prices` 가 없으면(서버가 주지 않음) 그 칸은 `None`(모름)이다. 단지 요약의 두 값은 응답 모델이 빈 모델로 채워
     `None` 갈래에 닿지 않는다.

@@ -79,7 +79,12 @@ from jibsa.providers.naver.service.region import (
     resolve_complex_number,
     resolve_search_region,
 )
-from jibsa.providers.naver.service.school import get_school
+from jibsa.providers.naver.service.school import (
+    MAX_SCHOOL_COMPLEX_LIMIT,
+    SCHOOL_COMPLEX_SORT_TYPE_BY_NAME,
+    get_school,
+    list_school_complexes,
+)
 from jibsa.providers.naver.service.search import (
     AREA_COMPLEX_CODES_BY_TYPE,
     BATHROOM_CODE_BY_NAME,
@@ -118,6 +123,9 @@ PROPERTY_TYPES: tuple[str, ...] = tuple(SEARCH_CODES_BY_PROPERTY)
 # str.isdigit·isalnum 은 '²'·한글도 통과시켜 int() 가 PARSE_ERROR 를 내거나 요청 모델의 영어 오류가 나온다
 NUMBER_PATTERN: re.Pattern[str] = re.compile(r'[0-9]+')
 SCHOOL_CODE_PATTERN: re.Pattern[str] = re.compile(r'[A-Za-z0-9]+')
+# school --complexes 의 기본 정렬·단지 수 (웹 학교 상세와 같다). --sort·--limit 을 --complexes 없이 줬는지 가리려고 옵션 기본값은 None 이다
+SCHOOL_COMPLEX_DEFAULT_SORT: str = '거리순'
+SCHOOL_COMPLEX_DEFAULT_LIMIT: int = 20
 
 app = typer.Typer(
     help=(
@@ -871,23 +879,51 @@ def school_command(
         str | None,
         typer.Option('--complex', help='단지 번호 또는 이름. 주면 그 단지에서 이 학교에 배정되는 동을 붙인다 (요청 2~3회 추가)')
     ] = None,
+    complexes: Annotated[
+        bool,
+        typer.Option('--complexes', help='이 학교에 배정되는 단지 목록(assigned_complexes: 단지 정보·매물 수·호가·배정 동)을 붙인다 (20곳마다 요청 1회 추가)')
+    ] = False,
+    sort: Annotated[
+        str | None,
+        typer.Option('--sort', help=f"--complexes 전용 정렬: {', '.join(SCHOOL_COMPLEX_SORT_TYPE_BY_NAME)} (기본 {SCHOOL_COMPLEX_DEFAULT_SORT}, 학교에서 가까운 순)")
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option('--limit', min=1, max=MAX_SCHOOL_COMPLEX_LIMIT, help=f'--complexes 전용: 최대 단지 수 (기본 {SCHOOL_COMPLEX_DEFAULT_LIMIT})')
+    ] = None,
     pretty: PrettyOption = None,
 ) -> None:
     """초등학교 상세: 학생 수·학급당/교원당 학생 수와 시·구 평균, 운영 구분, 개교일 (학교알리미 공시, 요청 1회).
 
-    전화·홈페이지는 주지 않는다. 학교 배정은 교육청 학구도로 확인한다.
+    --complex 를 주면 요청이 2~3회 더 든다 (이름으로 주면 단지 검색 1회 포함). --complexes 를 주면 20곳마다 1회씩(최대 5회) 더 든다.
+    전화·홈페이지는 주지 않는다. 학교 배정은 교육청 학구도로 확인한다. --complexes 를 주면 이 학교에 배정되는 단지(assigned_complexes)도 본다.
 
     예: jibsa naver school B100000747 --complex 개포자이
+    예: jibsa naver school B100000747 --complexes --sort 세대수순
     """
     school_code = school_code.strip()
     if SCHOOL_CODE_PATTERN.fullmatch(school_code) is None:
         raise typer.BadParameter('학교 코드는 영문·숫자입니다 (예: B100000747)', param_hint='SCHOOL_CODE')
+    if not complexes and (sort is not None or limit is not None):
+        raise typer.BadParameter('--sort·--limit 은 --complexes 와 함께 사용하세요', param_hint='--complexes')
+    sort = check_choice(SCHOOL_COMPLEX_DEFAULT_SORT if sort is None else sort, SCHOOL_COMPLEX_SORT_TYPE_BY_NAME, '--sort')
     with handle_errors(SOURCE), NaverClient() as client:
         notes: list[str] = []
         complex_number, villa = None, None
         if complex_ is not None:
             complex_number, villa, notes = _complex_number(client, complex_)
-        emit(get_school(client, school_code, complex_number=complex_number, villa=villa), pretty, notes=notes)
+        school = get_school(client, school_code, complex_number=complex_number, villa=villa)
+        if not complexes:
+            emit(school, pretty, notes=notes)
+            return
+        assigned = list_school_complexes(
+            client, school_code, sort=sort, limit=SCHOOL_COMPLEX_DEFAULT_LIMIT if limit is None else limit,
+        )
+        emit(
+            {**school.model_dump(mode='json'), 'assigned_complexes': assigned.model_dump(mode='json')},
+            pretty,
+            notes=notes + assigned.notes,
+        )
 
 
 @app.command('listing')

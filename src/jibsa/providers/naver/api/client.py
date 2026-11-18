@@ -79,6 +79,7 @@ from jibsa.providers.naver.api.request.region import (
     NaverSearchAutocompleteSubwayStationsV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.school import (
+    NaverEducationComplexPagesV1RequestParameterModel,
     NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel,
     NaverEducationSchoolV1RequestParameterModel,
 )
@@ -154,6 +155,7 @@ from jibsa.providers.naver.api.response.region import (
     NaverSearchAutocompleteSubwayStationsV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.school import (
+    NaverEducationComplexPagesV1ResponseModel,
     NaverEducationComplexSchoolAllocationDongsV1ResponseModel,
     NaverEducationSchoolV1ResponseModel,
 )
@@ -284,6 +286,7 @@ class NaverClient(BaseHTTPClient):
     legal_division_sub_info_list_v1_endpoint: ClassVar[str] = '/front-api/v1/legalDivision/subInfoList'
     education_school_v1_endpoint: ClassVar[str] = '/front-api/v1/education/school'
     education_complex_school_allocation_dongs_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/school/allocation-dongs'
+    education_complex_pages_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/pages'
 
     source_name: ClassVar[str] = 'naver'
     default_rate_limit: ClassVar[dict[str, object]] = {
@@ -1859,3 +1862,35 @@ class NaverClient(BaseHTTPClient):
     ) -> NaverEducationComplexSchoolAllocationDongsV1ResponseModel:
         """Async variant of `run_request_education_complex_school_allocation_dongs_v1`."""
         return await self._aget(self.education_complex_school_allocation_dongs_v1_endpoint, parameter, NaverEducationComplexSchoolAllocationDongsV1ResponseModel)
+
+    @naver_retry
+    def run_request_education_complex_pages_v1(
+        self,
+        parameter: NaverEducationComplexPagesV1RequestParameterModel
+    ) -> NaverEducationComplexPagesV1ResponseModel:
+        """List the complexes assigned to a school via `GET /front-api/v1/education/complex/pages`.
+
+        `sortType` 은 `DISTANCE`·`HOUSEHOLD_COUNT` 만 받는다 (그 밖은 400 FST_ERR_VALIDATION). 웹 페이지 크기는 기본 10,
+        상세 화면 20 이다 (2026-11-18 실측, 로그인 없이 200). 항목마다 단지 정보(`complexInfo`)·매물 수·호가 범위(원, 매물이
+        없으면 `{}`)와 그 단지에서 배정되는 동(`isAllBuildingAssigned`·`convertedBuildingNameGroups`)이 온다.
+        끝 쪽을 넘긴 페이지(page=9)는 `list: []`·`hasNextPage: false`·`totalCount: 0` 이라 총수는 첫 쪽에서만 믿는다.
+
+        Args:
+            parameter: `school_code`, `size`, `page`, `sort_type`.
+
+        Returns:
+            NaverEducationComplexPagesV1ResponseModel: 단지 목록 한 페이지 (`totalCount`·`hasNextPage`·`list`).
+        """
+        return self._get(
+            self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_education_complex_pages_v1(
+        self,
+        parameter: NaverEducationComplexPagesV1RequestParameterModel
+    ) -> NaverEducationComplexPagesV1ResponseModel:
+        """Async variant of `run_request_education_complex_pages_v1`."""
+        return await self._aget(
+            self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )

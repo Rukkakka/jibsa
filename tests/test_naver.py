@@ -34,6 +34,7 @@ from jibsa.providers.naver.service.region import (
     resolve_complex_number,
     resolve_search_region,
 )
+from jibsa.providers.naver.service.school import list_school_complexes
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
     ENTRANCE_FILTER_NOTE,
@@ -1085,6 +1086,121 @@ def test_city_name_is_boundary_only_when_it_has_no_district(
         assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
     else:
         assert (boundary_code, scope) == (code, {'boundary': city})
+
+
+# --- 학교 배정 단지 ----------------------------------------------------------
+
+
+def _school_complex_item(number: int, all_assigned: bool = False, groups: list[list[str]] | None = None) -> dict:
+    return {
+        'complexInfo': {
+            'complexNumber': number, 'name': f'단지{number}', 'type': 'A01', 'buildingCount': 10,
+            'totalHouseholdNumber': 500, 'useApprovalDate': '20100706',
+        },
+        'articleCountInfoDto': {'dealCount': 1, 'leaseDepositCount': 0, 'leaseMonthlyCount': 0, 'leaseShortTerm': 0},
+        'articlePriceInfoDto': {},
+        'isAllBuildingAssigned': all_assigned,
+        'convertedBuildingNameGroups': groups or [],
+    }
+
+
+def _school_complex_client(pages: list[dict], requests: list[httpx.Request]) -> NaverClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=_ok(pages[int(request.url.params['page'])]))
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    return client
+
+
+def test_school_complexes_take_total_from_the_first_page_only() -> None:
+    # 끝 쪽(둘째 쪽)은 totalCount 가 0 으로 온다 (2026-11-18 실측). 총수를 마지막 쪽 것으로 덮지 않는다
+    pages = [
+        {'totalCount': 3, 'hasNextPage': True, 'list': [_school_complex_item(1), _school_complex_item(2)]},
+        {'totalCount': 0, 'hasNextPage': False, 'list': [_school_complex_item(3)]},
+    ]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='세대수순', limit=20)
+    assert (result.total, result.returned, result.has_more) == (3, 3, False)
+    assert [request.url.params['page'] for request in requests] == ['0', '1']
+    assert requests[0].url.params['sortType'] == 'HOUSEHOLD_COUNT'
+
+
+@pytest.mark.parametrize(
+    'all_assigned,groups,expected',
+    [
+        (True, [], ['전체 동']),
+        (False, [['101', '102', '103'], ['105']], ['101동~103동', '105동']),
+        # 전체 배정이 아닌데 동 묶음이 비면 어느 동인지 모른다 (배정 동 없음 [] 이 아니다)
+        (False, [], None),
+    ],
+)
+def test_school_complex_assigned_dongs(all_assigned: bool, groups: list[list[str]], expected: list[str] | None) -> None:
+    pages = [{'totalCount': 1, 'hasNextPage': False, 'list': [_school_complex_item(1, all_assigned, groups)]}]
+    with _school_complex_client(pages, []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert result.complexes[0].assigned_dongs == expected
+
+
+def test_school_complexes_null_cells_are_unknown_not_a_parse_error() -> None:
+    # 총수·다음 쪽·동 묶음·목록이 null 로 와도 명령이 깨지지 않고 모름(null)으로 낸다. 단지 정보가 없는 항목은 건너뛰고 [제외] 로 알린다
+    item = _school_complex_item(1)
+    item['convertedBuildingNameGroups'] = None
+    pages = [{'totalCount': None, 'hasNextPage': None, 'list': [item, {'isAllBuildingAssigned': True}]}]
+    with _school_complex_client(pages, []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.total, result.returned, result.has_more) == (None, 1, None)
+    assert result.complexes[0].assigned_dongs is None
+    assert [text for text in result.notes if text.startswith('[제외]')] == ['[제외] 네이버가 단지 정보를 주지 않은 1곳은 뺐습니다']
+    # 목록 자체가 null 이면 그 쪽은 0곳이다
+    with _school_complex_client([{'totalCount': None, 'hasNextPage': None, 'list': None}], []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.total, result.returned, result.has_more, result.notes) == (None, 0, None, [])
+
+
+def test_school_complexes_empty_page_with_next_page_is_reported_without_asking_for_more_limit() -> None:
+    # 다음 쪽이 있다면서 빈 쪽을 주면 거기서 멈춘다. --limit 을 늘려도 같은 빈 쪽이라 늘리라고 하지 않는다
+    pages = [
+        {'totalCount': 30, 'hasNextPage': True, 'list': [_school_complex_item(1), _school_complex_item(2)]},
+        {'totalCount': 0, 'hasNextPage': True, 'list': []},
+    ]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.total, result.returned, result.has_more) == (30, 2, True)
+    assert len(requests) == 2
+    assert result.notes == ['[일부] 네이버가 더 있다면서 빈 쪽을 줘 2곳까지만 받았습니다']
+
+
+def _school_complex_page(start: int, count: int, *, total: int, has_next: bool | None) -> dict:
+    return {'totalCount': total, 'hasNextPage': has_next, 'list': [_school_complex_item(start + index) for index in range(count)]}
+
+
+def test_school_complexes_null_next_page_uses_first_page_total() -> None:
+    # 다음 쪽 여부가 null 이어도 첫 쪽 총수(35)가 받은 수(20)보다 크면 더 있는 것이다. 이어 받아 총수까지 채우면 더 없다
+    pages = [_school_complex_page(0, 20, total=35, has_next=None), _school_complex_page(20, 15, total=0, has_next=None)]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=40)
+    assert (result.total, result.returned, result.has_more, len(requests)) == (35, 35, False, 2)
+    # limit 에서 멈추면 더 있다고 알리고 --limit 을 늘리라고 한다 (늘리면 위처럼 이어 받는다)
+    with _school_complex_client(pages, []) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=20)
+    assert (result.returned, result.has_more) == (20, True)
+    assert result.notes == ['[일부] 학교에 배정되는 단지가 35곳 있고, 그중 20곳만 보여 줍니다. 더 보려면 --limit 을 늘리세요']
+
+
+@pytest.mark.parametrize('limit', [60, 100])
+def test_school_complexes_request_cap_with_short_pages_does_not_ask_for_more_limit(limit: int) -> None:
+    # 네이버가 쪽을 10곳씩 짧게 주면 요청 상한(5쪽)에서 50곳만 받는다. --limit 을 늘려도(최대값이면 '최대값은 100') 같은 곳에서 멈춘다
+    pages = [_school_complex_page(page * 10, 10, total=200 if page == 0 else 0, has_next=True) for page in range(5)]
+    requests: list[httpx.Request] = []
+    with _school_complex_client(pages, requests) as client:
+        result = list_school_complexes(client, 'B100000898', sort='거리순', limit=limit)
+    assert (len(requests), result.returned, result.has_more) == (5, 50, True)
+    assert result.notes == ['[일부] 네이버가 쪽을 짧게 줘 요청 상한(5쪽)까지 50곳만 받았습니다 (학교에 배정되는 단지는 200곳)']
 
 
 # --- 호가 짝·기간 --------------------------------------------------------------
