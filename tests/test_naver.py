@@ -431,7 +431,7 @@ def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -
 )
 def test_detail_building_registration_parking_fills_in_zero_listing_count(registration: dict, expected: str) -> None:
     key = _ok({
-        'key': {'pnu': '1162010200102550134'}, 'type': {'realEstateType': 'C01', 'tradeType': 'B2'},
+        'key': {'pnu': '1100000000100010000'}, 'type': {'realEstateType': 'C01', 'tradeType': 'B2'},
         'address': {'legalDivisionNumber': '1162010200', 'jibun': '255-134'},
     })
     basic = load('article_basic_info_v1')
@@ -444,7 +444,7 @@ def test_detail_building_registration_parking_fills_in_zero_listing_count(regist
     assert detail.parking == expected
     registry_requests = [request for request in requests if request.url.path.endswith('/complex/buildingRegistration')]
     assert len(registry_requests) == 1
-    assert registry_requests[0].url.params['pnu'] == '1162010200102550134'
+    assert registry_requests[0].url.params['pnu'] == '1100000000100010000'
     assert registry_requests[0].url.params['realEstateType'] == 'C01'
 
 
