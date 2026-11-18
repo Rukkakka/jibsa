@@ -208,6 +208,10 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단지', ('naver', 'complex'), ('{complex}',), 'pyeongs',
             (Capture('pyeong', 'pyeongs', 'number', largest='household_count'), Capture('school', 'schools', 'school_code')),
         ),
+        # 평형 하나를 주면 평형 관리비·시세·실거래 요약·평당가(complex/pyeongPrice/pyeongType)를 더 부른다. 그 경로의 고장을 잡는다
+        # (사용자 결정 2026-11-18). 기대 칸은 세대수가 가장 많은 평형의 매매 평당가다. `price_per_pyeong` 만 보면 조회 실패
+        # (`{sale: null, jeonse: null}`)도 비지 않은 dict 라 통과한다 (review-checklist convention-8)
+        Step('평형 요약', ('naver', 'complex'), ('{complex}', '--pyeong', '{pyeong}'), 'price_per_pyeong.sale'),
         Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'transactions'),
         # 평형 묶음(complex/pyeongGroups)으로 같은 묶음 평형의 실거래를 함께 받는다 (complex/pyeong/realPrice/group)
         Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'transactions'),

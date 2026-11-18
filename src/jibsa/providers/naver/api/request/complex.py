@@ -100,3 +100,16 @@ class NaverEducationComplexSchoolV1RequestParameterModel(RequestModel):
         Literal['complex', 'villa'],
         Field(description='단지 종류 (사이트 ArticleSchoolItemType)', alias='itemType')
     ] = 'complex'
+
+
+class NaverComplexPyeongPricePyeongTypeV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
+    """`GET /front-api/v1/complex/pyeongPrice/pyeongType` 쿼리. 평형의 평당 호가와 시·구·동 평균.
+
+    웹은 `realEstateTypes` 를 보내지 않는다. 월세(B2)는 200 이지만 `pricePerPyeong` 키 없이 빈 목록이 온다
+    (2026-11-18 확인). 단기임대(B3)는 확인하지 않아 받지 않는다.
+    """
+
+    trade_type: Annotated[
+        Literal['A1', 'B1', 'B2'],
+        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)', alias='tradeType')
+    ] = 'A1'

@@ -747,7 +747,7 @@ def complex_row_fields(
         use_approval_date: 사용승인일 (YYYYMMDD).
     """
     return {
-        # 빈 글자는 단지 유형을 모르는 것이라 None 이다 (`complex` 의 시세 판정이 빈 글자를 모름으로 읽는 것과 같다)
+        # 빈 글자는 단지 유형을 모르는 것이라 None 이다 (`complex` 의 시세·평당가 판정이 빈 글자를 모름으로 읽는 것과 같다)
         'property_type': PROPERTY_NAME_BY_CODE.get(type_code or '', type_code or None),
         'households': households,
         'dong_count': dong_count,

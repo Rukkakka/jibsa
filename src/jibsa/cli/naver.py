@@ -420,7 +420,7 @@ def complex_command(
     ],
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래도 붙인다 (요청 최대 6회 추가). 반복하거나 쉼표로 구분')
+        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래·평당가도 붙인다 (요청 최대 8회 추가). 반복하거나 쉼표로 구분')
     ] = None,
     dong: Annotated[
         list[str] | None,

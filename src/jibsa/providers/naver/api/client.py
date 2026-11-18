@@ -37,6 +37,7 @@ from jibsa.providers.naver.api.request.complex import (
     NaverComplexHoldingTaxV1RequestParameterModel,
     NaverComplexMaintenanceFeeV1RequestParameterModel,
     NaverComplexMarketPriceRecentV1RequestParameterModel,
+    NaverComplexPyeongPricePyeongTypeV1RequestParameterModel,
     NaverComplexPyeongRealPriceSummaryV1RequestParameterModel,
     NaverComplexReconstructionV1RequestParameterModel,
     NaverComplexVillaArticleStatsV1RequestParameterModel,
@@ -116,6 +117,7 @@ from jibsa.providers.naver.api.response.complex import (
     NaverComplexHoldingTaxV1ResponseModel,
     NaverComplexMaintenanceFeeV1ResponseModel,
     NaverComplexMarketPriceRecentV1ResponseModel,
+    NaverComplexPyeongPricePyeongTypeV1ResponseModel,
     NaverComplexPyeongRealPriceSummaryV1ResponseModel,
     NaverComplexReconstructionV1ResponseModel,
     NaverComplexVillaArticleStatsV1ResponseModel,
@@ -293,6 +295,7 @@ class NaverClient(BaseHTTPClient):
     education_school_v1_endpoint: ClassVar[str] = '/front-api/v1/education/school'
     education_complex_school_allocation_dongs_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/school/allocation-dongs'
     education_complex_pages_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/pages'
+    complex_pyeong_price_pyeong_type_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongPrice/pyeongType'
     complex_pyeong_groups_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongGroups'
     complex_pyeong_real_price_group_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeong/realPrice/group'
     development_article_v1_endpoint: ClassVar[str] = '/front-api/v1/development/article'
@@ -1902,6 +1905,39 @@ class NaverClient(BaseHTTPClient):
         """Async variant of `run_request_education_complex_pages_v1`."""
         return await self._aget(
             self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_pyeong_price_pyeong_type_v1(
+        self,
+        parameter: NaverComplexPyeongPricePyeongTypeV1RequestParameterModel
+    ) -> NaverComplexPyeongPricePyeongTypeV1ResponseModel:
+        """Fetch a floor-plan type's price per pyeong via `GET /front-api/v1/complex/pyeongPrice/pyeongType`.
+
+        `result.pricePerPyeong` 는 원/평 (공급 평수 기준, 매물 호가 기준 주간값)이고 `legalDivisionPricePerPyeongList` 는
+        서울시(SI)·송파구(GUN)·가락동(EUP) 순 평균이다 (헬리오시티 111515 평형 19 매매 85,572,091 / 서울시 60,404,729 /
+        송파구 86,124,738 / 가락동 84,077,252, 2026-11-18 실측, 로그인 없이 200). `tradeType` B2(월세)는 200 이지만
+        `pricePerPyeong` 키가 없고 목록이 `[]` 다. 없는 평형은 `isSuccess: false`·`result: {}` 다. 웹은 `realEstateTypes` 를
+        보내지 않는다.
+
+        Args:
+            parameter: `complex_number`, `pyeong_type_number`, `trade_type`.
+
+        Returns:
+            NaverComplexPyeongPricePyeongTypeV1ResponseModel: 평당 호가 (원)와 시·구·동 평균 목록.
+        """
+        return self._get(
+            self.complex_pyeong_price_pyeong_type_v1_endpoint, parameter, NaverComplexPyeongPricePyeongTypeV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_pyeong_price_pyeong_type_v1(
+        self,
+        parameter: NaverComplexPyeongPricePyeongTypeV1RequestParameterModel
+    ) -> NaverComplexPyeongPricePyeongTypeV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_price_pyeong_type_v1`."""
+        return await self._aget(
+            self.complex_pyeong_price_pyeong_type_v1_endpoint, parameter, NaverComplexPyeongPricePyeongTypeV1ResponseModel
         )
 
     @naver_retry
