@@ -131,6 +131,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 네이버 `real-price` 의 갱신 계약(`renewal: true`) 전세·월세 거래에 종전 보증금 `previous_deposit_manwon` 과 (월세·단기임대 갱신만) 종전 월세 `previous_rent_manwon`. 갱신이 아니거나 매매면 키가 없고, 전세 갱신에는 종전 월세 키가 없다 (네이버 웹도 전세는 종전 보증금만 보여 준다). 빌라 단지 실거래도 갱신(계약갱신요구권을 쓴 거래)이면 같은 규칙으로 붙는다. 종전 보증금·월세가 둘 다 0 이거나 없으면 네이버 웹처럼 두 키를 내지 않는다 (#308)
 - 네이버 `complex --pyeong` 의 `market_prices[]` 에 기관의 전세 시세 평균 `jeonse_average_manwon` (기관이 주지 않았으면 `null`) (#309)
 - 네이버 `complex --pyeong` 의 `real_price_summary.sale`·`jeonse` 에 최근 3개월 평균 `average_3m_manwon`(3개월 안 거래가 없으면 `null`). 추가 요청이 최대 4회에서 최대 6회로 늘어난다. 5년으로 요약한 유형은 3개월 요청을 하지 않아 `average_3m_manwon` 이 `null` 이다 (#316)
+- 네이버 `search complexes -t` 에 `재건축`·`분양권`·`오피스텔분양권`. 단지 행 모양은 아파트와 같다 (#317)
 - 네이버 `real-price`·`market-price` 의 `--period` 에 `3개월` (선택지 3개월·1년·3년·5년) (#315)
 
 ### 변경

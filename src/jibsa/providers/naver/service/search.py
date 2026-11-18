@@ -173,6 +173,11 @@ AREA_COMPLEX_CODES_BY_TYPE: dict[str, tuple[NaverRealEstateType, ...]] = {
     '오피스텔': ('A02',),
     # 단지로 등록된 연립·다세대·도시형생활주택. 역삼동만 779곳이고 대부분 매물이 없다
     '빌라': ('A05', 'A06', 'A07'),
+    # 이름은 `SEARCH_CODES_BY_PROPERTY` 와 같다. 응답 모양이 아파트와 같다 (2026-11-18 실측: 재건축 A04 대치동 5곳,
+    # 분양권 B01 둔촌동 1곳, 오피스텔분양권 B02 는 넷 지역 모두 0곳이고 서버 답 그대로 낸다)
+    '재건축': ('A04',),
+    '분양권': ('B01',),
+    '오피스텔분양권': ('B02',),
 }
 COMPLEX_LIST_SORT_TYPE_BY_NAME: dict[str, NaverComplexSortType] = {
     '인기순': 'POPULARITY_DESC',
@@ -211,7 +216,7 @@ class NaverAreaComplex(BaseModel):
     ]
     property_type: Annotated[
         str | None,
-        Field(description='단지 유형 (아파트, 오피스텔, 빌라)')
+        Field(description='단지 유형 (아파트, 오피스텔, 빌라, 재건축, 분양권, 오피스텔분양권)')
     ] = None
     address: Annotated[
         str | None,
