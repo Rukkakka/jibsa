@@ -1,7 +1,7 @@
 export const meta = {
   name: 'implement-bundles',
   description: '사용자가 허락한 구현 계획의 묶음을 coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
-  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에 고칠 함수·부르는 곳·바뀌면 안 되는 동작, 문서에 들어갈 사실을 적는다 (CLAUDE.md, docs/development/agents.md "맡길 때 지시서에 넣는 것"). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
+  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
     { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지, 소스끼리는 동시에' },
