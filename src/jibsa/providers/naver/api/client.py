@@ -1738,7 +1738,7 @@ class NaverClient(BaseHTTPClient):
         """List a region's child regions via `GET /front-api/v1/legalDivision/subInfoList`.
 
         Args:
-            parameter: 단위 (SI 시·도, GUN 시·군·구)와 법정동 코드.
+            parameter: 받을 하위 지역 단위 (GUN 시·군·구, EUP 읍·면·동)와 법정동 코드.
 
         Returns:
             NaverLegalDivisionSubInfoListV1ResponseModel: 바로 아래 지역의 이름·단위·법정동 코드·중심 좌표.
