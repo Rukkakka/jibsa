@@ -14,12 +14,14 @@ from jibsa.providers.naver.api.client import (
     NaverClient,
     should_retry_naver,
 )
+from jibsa.providers.naver.api.response.common import NaverComplexArticlePriceModel
 from jibsa.providers.naver.api.response.search import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
 from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
     article_info_to_listing,
+    rent_asking_range,
 )
 from jibsa.providers.naver.service.listing import (
     get_listing,
@@ -1013,6 +1015,32 @@ def test_named_dong_with_next_page_is_checked_by_full_name(same_name: list[str],
 
 
 # --- 호가 짝·기간 --------------------------------------------------------------
+
+
+def test_rent_asking_range_pairs_deposit_with_rent_of_the_first_listing() -> None:
+    # 헬리오시티 111515 (2026-11-18): 보증금 낮은 첫 매물의 월세가 보증금 높은 첫 매물의 월세보다 크다
+    price = NaverComplexArticlePriceModel.model_validate({
+        'rentMonthlyLeaseMinPrice': 50000000, 'rentMonthlyMinPrice': 4200000,
+        'rentMonthlyLeaseMaxPrice': 7000000000, 'rentMonthlyMaxPrice': 2400000,
+    })
+    result = rent_asking_range(price, 'monthly')
+    assert result is not None
+    assert (result.lowest.deposit_manwon, result.lowest.rent_manwon) == (5000, 420)
+    assert (result.highest.deposit_manwon, result.highest.rent_manwon) == (700000, 240)
+    # 단기임대 매물이 없으면 단기 키가 오지 않는다
+    assert rent_asking_range(price, 'short') is None
+
+
+def test_rent_asking_range_empties_a_pair_whose_deposit_and_rent_are_both_zero() -> None:
+    # 한 짝의 보증금·월세가 모두 0 이면 서버가 비운 짝이라 보증금 0 을 내지 않는다
+    price = NaverComplexArticlePriceModel.model_validate({
+        'rentMonthlyLeaseMinPrice': 0, 'rentMonthlyMinPrice': 0,
+        'rentMonthlyLeaseMaxPrice': 100000000, 'rentMonthlyMaxPrice': 1000000,
+    })
+    result = rent_asking_range(price, 'monthly')
+    assert result is not None
+    assert (result.lowest.deposit_manwon, result.lowest.rent_manwon) == (None, None)
+    assert (result.highest.deposit_manwon, result.highest.rent_manwon) == (10000.0, 100.0)
 
 
 def test_months_ago_clamps_to_month_end_and_matches_years_ago() -> None:

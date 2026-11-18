@@ -131,6 +131,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 네이버 `real-price` 의 갱신 계약(`renewal: true`) 전세·월세 거래에 종전 보증금 `previous_deposit_manwon` 과 (월세·단기임대 갱신만) 종전 월세 `previous_rent_manwon`. 갱신이 아니거나 매매면 키가 없고, 전세 갱신에는 종전 월세 키가 없다 (네이버 웹도 전세는 종전 보증금만 보여 준다). 빌라 단지 실거래도 갱신(계약갱신요구권을 쓴 거래)이면 같은 규칙으로 붙는다. 종전 보증금·월세가 둘 다 0 이거나 없으면 네이버 웹처럼 두 키를 내지 않는다 (#308)
 - 네이버 `complex --pyeong` 의 `market_prices[]` 에 기관의 전세 시세 평균 `jeonse_average_manwon` (기관이 주지 않았으면 `null`) (#309)
 - 네이버 `search listings`(지역·`--complex`·`--redevelopment`)와 `listing` 의 매물에 `confirmed_at`(네이버가 매물을 확인한 날, `YYYY-MM-DD`, 모르거나 읽지 못하면 `null`)과 `badges` 의 `"HUG 안심임대인"`(HUG 안심임대인 매물에 확인 방식 배지 뒤로 붙고, 확인 정보를 모르면 `badges` 는 `null` 그대로) (#318)
+- 네이버 `complex` 요약과 `search complexes` 행에 월세·단기임대 호가 `monthly_asking`·`short_term_asking`(`{lowest, highest}` 각 `{deposit_manwon, rent_manwon}`, 그 거래 매물이 없거나 네이버가 네 값을 모두 0 으로 주면 `null`. 다른 값이 있는데 월세만 0 이면 그 `rent_manwon` 만 `null`, 보증금 0 은 그대로. 한 짝의 보증금·월세가 모두 0 이면 그 짝은 두 값 모두 `null`). 월세 최저·최고가 아니라 가격 낮은 순 첫 매물과 높은 순 첫 매물의 (보증금, 월세) 짝이라 `lowest` 의 월세가 `highest` 보다 클 수 있다 (헬리오시티 `5000/420 ~ 700000/240`) (#319)
 - 네이버 `complex --pyeong` 의 `real_price_summary.sale`·`jeonse` 에 최근 3개월 평균 `average_3m_manwon`(3개월 안 거래가 없으면 `null`). 추가 요청이 최대 4회에서 최대 6회로 늘어난다. 5년으로 요약한 유형은 3개월 요청을 하지 않아 `average_3m_manwon` 이 `null` 이다 (#316)
 - 네이버 `search complexes -t` 에 `재건축`·`분양권`·`오피스텔분양권`. 단지 행 모양은 아파트와 같다 (#317)
 - 네이버 `real-price`·`market-price` 의 `--period` 에 `3개월` (선택지 3개월·1년·3년·5년) (#315)

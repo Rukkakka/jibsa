@@ -226,7 +226,12 @@ class NaverComplexArticleCountModel(ResponseModel):
 
 
 class NaverComplexArticlePriceModel(ResponseModel):
-    """호가 범위 (원)."""
+    """호가 범위 (원).
+
+    월세·단기임대는 보증금과 월세가 짝이다. Min 짝은 가격 낮은 순 첫 매물의 (보증금, 월세), Max 짝은 가격 높은 순 첫 매물의
+    (보증금, 월세)라 월세 Min 이 Max 보다 클 수 있다 (헬리오시티 111515, 2026-11-18: 보증금 5000만/월세 420만 ~ 보증금 70억/월세
+    240만). 단기임대 매물이 없으면 단기 키는 오지 않는다.
+    """
 
     deal_min_price: Annotated[
         int | None,
@@ -243,6 +248,38 @@ class NaverComplexArticlePriceModel(ResponseModel):
     rent_max_price: Annotated[
         int | None,
         Field(description='전세 최고 호가 (원)', alias='rentMaxPrice')
+    ] = None
+    rent_monthly_lease_min_price: Annotated[
+        int | None,
+        Field(description='월세 가격 낮은 순 첫 매물의 보증금 (원)', alias='rentMonthlyLeaseMinPrice')
+    ] = None
+    rent_monthly_lease_max_price: Annotated[
+        int | None,
+        Field(description='월세 가격 높은 순 첫 매물의 보증금 (원)', alias='rentMonthlyLeaseMaxPrice')
+    ] = None
+    rent_monthly_min_price: Annotated[
+        int | None,
+        Field(description='월세 가격 낮은 순 첫 매물의 월세 (원)', alias='rentMonthlyMinPrice')
+    ] = None
+    rent_monthly_max_price: Annotated[
+        int | None,
+        Field(description='월세 가격 높은 순 첫 매물의 월세 (원)', alias='rentMonthlyMaxPrice')
+    ] = None
+    rent_short_lease_min_price: Annotated[
+        int | None,
+        Field(description='단기임대 가격 낮은 순 첫 매물의 보증금 (원)', alias='rentShortLeaseMinPrice')
+    ] = None
+    rent_short_lease_max_price: Annotated[
+        int | None,
+        Field(description='단기임대 가격 높은 순 첫 매물의 보증금 (원)', alias='rentShortLeaseMaxPrice')
+    ] = None
+    rent_short_min_price: Annotated[
+        int | None,
+        Field(description='단기임대 가격 낮은 순 첫 매물의 월세 (원)', alias='rentShortMinPrice')
+    ] = None
+    rent_short_max_price: Annotated[
+        int | None,
+        Field(description='단기임대 가격 높은 순 첫 매물의 월세 (원)', alias='rentShortMaxPrice')
     ] = None
 
 

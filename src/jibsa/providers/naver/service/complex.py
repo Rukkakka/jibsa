@@ -42,15 +42,19 @@ from jibsa.providers.naver.api.response.complex import (
 )
 from jibsa.providers.naver.service.common import (
     MARKET_PRICE_PROVIDER_NAMES,
+    MONTHLY_ASKING_DESCRIPTION,
     OFFICETEL_CODE,
     PROPERTY_NAME_BY_CODE,
+    SHORT_TERM_ASKING_DESCRIPTION,
     NaverAssignedSchool,
+    NaverRentAskingRange,
     assigned_schools,
     complex_url,
     kst_today,
     manwon_range,
     pyeong_list,
     raise_missing_pyeongs,
+    rent_asking_range,
     resolve_dong_numbers,
     result_or_none,
     trade_article_counts,
@@ -375,6 +379,14 @@ class NaverComplexSummary(BaseModel):
         list[float | None] | None,
         Field(description='전세 호가 [최저, 최고] (만원)')
     ] = None
+    monthly_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=MONTHLY_ASKING_DESCRIPTION)
+    ] = None
+    short_term_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
+    ] = None
     pyeongs: Annotated[
         list[NaverPyeong],
         Field(description='평형 목록')
@@ -590,6 +602,8 @@ def get_complex(
         article_counts=trade_article_counts(counts),
         sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price),
         jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price),
+        monthly_asking=rent_asking_range(prices, 'monthly'),
+        short_term_asking=rent_asking_range(prices, 'short'),
         pyeongs=[_pyeong(pyeong, complex_.type == OFFICETEL_CODE) for pyeong in pyeongs],
         schools=None if schools is None else assigned_schools(schools),
         reconstruction=reconstruction,

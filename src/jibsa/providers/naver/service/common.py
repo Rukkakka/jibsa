@@ -53,6 +53,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverArticleListItemModel,
     NaverArticlePageModel,
     NaverComplexArticleCountModel,
+    NaverComplexArticlePriceModel,
     NaverComplexListPageModel,
     NaverDuplicatedArticleInfoModel,
     NaverFacilityInfoModel,
@@ -69,6 +70,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import (
     Annotated,
     Any,
+    Literal,
     NamedTuple,
     TypeVar,
 )
@@ -255,6 +257,15 @@ CONFIRMED_AT_DESCRIPTION: str = (
     "네이버가 매물을 확인한 날 (YYYY-MM-DD). 웹 목록은 협회 매물이 아니면 이 날짜로 '25.11.17. 확인매물' 날짜 배지를, 협회 매물이면 "
     "노출 시작일(`registered_at`)로 '등록' 배지를 그린다. 목록과 상세의 글자 규칙이 달라 날짜만 낸다. 모르면 null"
 )
+MONTHLY_ASKING_DESCRIPTION: str = (
+    '월세 호가 범위 (보증금·월세 짝). 월세 매물이 없거나 네이버가 값을 주지 않으면 null (빌라 단지는 대개 null). '
+    '한 짝의 월세만 0 이면 그 rent_manwon 만 null, 한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
+)
+SHORT_TERM_ASKING_DESCRIPTION: str = (
+    '단기임대 호가 범위 (보증금·월세 짝). 단기임대 매물이 없거나 네이버가 값을 주지 않으면 null. '
+    '한 짝의 월세만 0 이면 그 rent_manwon 만 null, 한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
+)
+"""`NaverListing`·상세 모델의 `confirmed_at` 설명, 단지·단지 검색 모델의 `monthly_asking`·`short_term_asking` 설명. 모델끼리 필드를 함께 쓸 수 없어 상수로 공유한다."""
 
 
 # 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
@@ -604,6 +615,85 @@ def won_to_manwon_range(low: float | None, high: float | None) -> list[float | N
     if not low and not high:
         return None
     return [won_to_manwon_exact(low), won_to_manwon_exact(high)]
+
+
+class NaverAskingPair(BaseModel):
+    """월세·단기임대 호가의 보증금·월세 짝 (만원)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='보증금 (만원)')
+    ] = None
+    rent_manwon: Annotated[
+        float | None,
+        Field(description='월세 (만원)')
+    ] = None
+
+
+class NaverRentAskingRange(BaseModel):
+    """월세·단기임대 호가 범위. 두 끝이 월세 최저·최고가 아니라 가격순 첫 매물의 짝이다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    lowest: Annotated[
+        NaverAskingPair,
+        Field(description='가격 낮은 순 첫 매물의 보증금·월세 짝 (월세 최저가 아님)')
+    ]
+    highest: Annotated[
+        NaverAskingPair,
+        Field(description='가격 높은 순 첫 매물의 보증금·월세 짝 (월세 최고가 아님)')
+    ]
+
+
+def _asking_pair(deposit: int | None, rent: int | None) -> NaverAskingPair:
+    """한 짝의 보증금·월세(원)를 만원 짝으로. 월세만 0 이면 월세만 null, 보증금과 월세가 모두 0(또는 없음)이면 두 값 모두 null."""
+    if not deposit and not rent:
+        return NaverAskingPair(deposit_manwon=None, rent_manwon=None)
+    return NaverAskingPair(deposit_manwon=won_to_manwon_exact(deposit), rent_manwon=won_to_manwon_exact(rent or None))
+
+
+def rent_asking_range(
+    price: NaverComplexArticlePriceModel | None,
+    kind: Literal['monthly', 'short'],
+) -> NaverRentAskingRange | None:
+    """단지 호가 범위(`NaverComplexArticlePriceModel`)의 월세·단기임대 짝을 만원으로 묶는다.
+
+    웹 호가 범위가 '보증금min/월세min ~ 보증금max/월세max' 로 그리는 것과 같은 짝이다. 보증금이 낮은 매물이 월세는
+    높을 수 있어 월세 Min 이 Max 보다 클 수 있다. `price` 가 없거나 그 종류의 네 값이 모두 없거나 0 이면 None 이다
+    (단기임대 매물이 없으면 단기 키는 오지 않는다). 그 밖에 한 짝의 월세만 0 이면 서버가 비운 값이라 그 월세만 null 이고,
+    한 짝의 보증금과 월세가 모두 0 이면 그 짝은 비어 있어 두 값 모두 null 이다. 월세가 있는 짝의 보증금 0 은 그대로 0 으로 낸다.
+
+    Args:
+        kind: 'monthly' 월세, 'short' 단기임대.
+    """
+    if price is None:
+        return None
+    if kind == 'monthly':
+        values = (
+            price.rent_monthly_lease_min_price, price.rent_monthly_min_price,
+            price.rent_monthly_lease_max_price, price.rent_monthly_max_price,
+        )
+    else:
+        values = (
+            price.rent_short_lease_min_price, price.rent_short_min_price,
+            price.rent_short_lease_max_price, price.rent_short_max_price,
+        )
+    # 월세 0원 매물은 없어 네 값이 모두 0 이면 서버가 0 으로 비운 것이라 null 이고, 한 짝의 월세만 0 이어도 비운 값이라
+    # 그 월세만 null(모름)이다. 한 짝의 보증금과 월세가 모두 0 이면 그 짝이 비어 있어 두 값 모두 null 이다. 월세가 있는 짝의
+    # 보증금 0 은 실제로 있을 수 있어 그대로 0 으로 낸다 (`won_to_manwon_range` 도 0 을 시세 없음으로 본다)
+    if not any(values):
+        return None
+    low_deposit, low_rent, high_deposit, high_rent = values
+    return NaverRentAskingRange(
+        lowest=_asking_pair(low_deposit, low_rent),
+        highest=_asking_pair(high_deposit, high_rent),
+    )
 
 
 def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopmentAreaCountModel) -> dict[str, int]:

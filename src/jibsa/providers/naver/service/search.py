@@ -47,14 +47,17 @@ from jibsa.providers.naver.api.response.common import (
 from jibsa.providers.naver.service.common import (
     ENTRANCE_CODE_BY_NAME,
     EXCLUDED_REASON,
+    MONTHLY_ASKING_DESCRIPTION,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PROPERTY_NAME_BY_CODE,
     RADIUS_EXCLUDED_REASON,
     SEARCH_CODES_BY_PROPERTY,
+    SHORT_TERM_ASKING_DESCRIPTION,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
     WON_PER_MANWON,
     NaverListingsResult,
+    NaverRentAskingRange,
     NaverTradeConditions,
     PageScan,
     area_scope,
@@ -67,6 +70,7 @@ from jibsa.providers.naver.service.common import (
     listing_keeper,
     pagination_notes,
     price_sort_notes,
+    rent_asking_range,
     resume_cursor,
     scan_pages,
     trade_article_counts,
@@ -250,6 +254,14 @@ class NaverAreaComplex(BaseModel):
         list[float | None] | None,
         Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null')
     ] = None
+    monthly_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=MONTHLY_ASKING_DESCRIPTION)
+    ] = None
+    short_term_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
+    ] = None
     url: Annotated[
         str,
         Field(description='단지 페이지 URL')
@@ -314,6 +326,8 @@ def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) 
         article_counts=trade_article_counts(counts) if counts else None,
         sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price) if prices else None,
         jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price) if prices else None,
+        monthly_asking=rent_asking_range(prices, 'monthly'),
+        short_term_asking=rent_asking_range(prices, 'short'),
         url=complex_url(info.complex_number),
     )
 
