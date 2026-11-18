@@ -660,6 +660,10 @@ def search_apt_command(
     supply_area_max: Annotated[
         float | None, typer.Option(min=0, help='공급면적 상한 (㎡). 직방 서버에서 거른다'),
     ] = None,
+    no_new_sale: Annotated[
+        bool,
+        typer.Option('--no-new-sale', help='신규분양 매물을 빼고 본다 (직방 웹의 "신규 분양 포함" 을 끈 목록)'),
+    ] = False,
     next_: NextOption = None,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
@@ -676,6 +680,9 @@ def search_apt_command(
         jibsa zigbang search listings apt 역삼동 --trade 전세 --area-min 59
         jibsa zigbang search listings apt 강남역 --trade 전세
         jibsa zigbang search listings apt 역삼동 --supply-area-min 80 --supply-area-max 110
+        jibsa zigbang search listings apt 파주시 --no-new-sale
+
+    --no-new-sale 은 신규분양 매물(listing_kind 신규분양)을 빼고 total 도 그만큼 준다. 단지 매물(--complex)에는 없다.
 
     결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다.
     """
@@ -708,6 +715,7 @@ def search_apt_command(
             area_max_m2=area_max,
             supply_area_min_m2=supply_area_min,
             supply_area_max_m2=supply_area_max,
+            exclude_new_sale=no_new_sale,
         )
         if lat is not None and lng is not None:
             district = apt_dong_at(client, lat, lng)

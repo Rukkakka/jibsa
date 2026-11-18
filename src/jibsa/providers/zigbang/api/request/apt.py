@@ -71,6 +71,16 @@ class ZigbangLocalsItemCatalogsRequestParameterModel(RequestModel):
         float | None,
         Field(ge=0, description='공급면적 상한 (㎡)', alias='sizeContractM2Max')
     ] = None
+    include_offer_item: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "신규분양 카드를 넣을지 (웹의 '신규 분양 포함'). 값이 없으면 서버가 true 와 같게 분양을 넣고, false 면 분양 카드가 빠지고 "
+                'count 도 준다. 쪽마다 같은 값을 보내야 쪽이 겹치지 않는다 (2026-11-17 실측)'
+            ),
+            alias='includeOfferItem'
+        )
+    ] = None
     offset: Annotated[
         int,
         Field(ge=0, description='건너뛸 매물 수')

@@ -142,6 +142,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             ),
         ),
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
+        # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다
+        Step('아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings'),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         Step('아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings'),
         # 역 이름은 그 역이 속한 동을 찾아(/apt/locals/polygon) 그 동의 지역 목록을 준다

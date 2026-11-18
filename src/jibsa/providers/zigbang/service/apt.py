@@ -231,7 +231,7 @@ def _validate_apt_supply_area(minimum: float | None, maximum: float | None) -> N
 class ZigbangAptConditions(RequestModel):
     """아파트 매물 조건 (search listings apt). 금액은 만원, 면적은 ㎡.
 
-    거래 유형·가격·공급면적은 서버에서 거른다. 전용면적은 직방이 받지 않아 받은 뒤에 거른다.
+    거래 유형·가격·공급면적·신규분양 제외는 서버에서 거른다. 전용면적은 직방이 받지 않아 받은 뒤에 거른다.
     """
 
     trade_types: Annotated[
@@ -278,6 +278,10 @@ class ZigbangAptConditions(RequestModel):
         float | None,
         Field(description='공급면적 상한 (㎡)')
     ] = None
+    exclude_new_sale: Annotated[
+        bool,
+        Field(description="신규분양 매물을 빼고 볼지 (웹의 '신규 분양 포함' 을 끈 목록). 거짓이면 서버 기본(분양 포함)이다")
+    ] = False
 
 
 def search_apt_listings(
@@ -294,6 +298,10 @@ def search_apt_listings(
     (2026-11-15 캡처). 반경 검색이 아니라 거리가 없다. 거래 유형·가격(만원) 조건은 서버에서 거른다. 면적은 다른 유형과
     같게 전용면적(㎡)으로 받는데, 직방 지역 목록은 공급면적 조건만 받아 전용면적은 받은 뒤에 거른다. 공급면적은
     supply_area_min/max_m2로 서버에 전달한다. 실제로 받은 원본 개수로 조회 예산을 계산하며 제외된 만큼 추가 조회하지 않는다.
+
+    `exclude_new_sale` 이면 지역 목록 요청마다 `includeOfferItem=false` 를 보내 신규분양 카드를 뺀다 (웹의 '신규 분양 포함' 끔,
+    `total` 도 그만큼 준다). 이어 받는 쪽에도 보내야 쪽이 겹치지 않는다. 단지 목록(`/apt/danjis/{id}/item-catalogs`)은 이 값을
+    무시해 (2026-11-17 실측) 거기에는 넣지 않는다.
 
     `start` 는 이어 받기(`--next`) 위치다. 앞서 받은 수(`offset`)부터 직방 offset 으로 받는다. 지역 목록은 같은 이름이면
     같은 순서로 나온다 (resolve_apt_region).
@@ -334,6 +342,8 @@ def search_apt_listings(
                 rent_max=conditions.rent_max,
                 supply_area_min_m2=conditions.supply_area_min_m2,
                 supply_area_max_m2=conditions.supply_area_max_m2,
+                # 웹 기본 화면(분양 포함)과 같게 거짓이면 값을 보내지 않는다. 끄면 모든 쪽에 보낸다 (첫 쪽만 보내면 분양 카드 수만큼 겹친다)
+                include_offer_item=False if conditions.exclude_new_sale else None,
                 offset=offset,
                 limit=min(LOCAL_CATALOG_PAGE_SIZE, limit - inspected),
             )

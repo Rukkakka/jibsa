@@ -141,6 +141,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `real-price` 거래에 직방 웹 실거래 탭이 보여 주는 값: `dong`(동, 매매만)·`registered`(등기까지 마무리된 거래, 매매만)·`new_high`·`new_low`(최근 3년 안 신고가·신저가, 매매·전세)·`price_per_pyeong_manwon`(직방이 계산한 공급면적 3.3㎡당 가격, 매매만)·`jeonse_ratio`(전세가율, 0~1 비율. 전세이고 `--pyeong` 을 준 조회에서만)·`offer_price_diff_manwon`(분양가 대비 차액, 분양권 거래만. 직방이 주지 않으면 `null`). 그 거래 유형에 없는 값은 키가 없다. `registered` 는 표시가 없으면 `false` 가 아니라 `null`(모름)이다. 직방은 2023년 1월 이후 계약만 등기 여부를 표시한다 (#334)
 - 직방 `real-price --trade 전체`: 매매와 전월세를 계약일 최신 순으로 한 목록에 주고 거래마다 `trade_type` 을 붙인다 (직방 웹 실거래 탭의 '전체'). 전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있다 (#334)
 - 직방 아파트 매물(`search listings apt`·`search listings --complex <apt-…>`·`catalog`·`listing`)에 `pyeong_id`·`pyeong_name`(평형 ID·이름, `pyeong_id` 는 `--pyeong` 에 그대로 넘긴다)이 붙고, 상세·`catalog` 매물에는 직방이 매물을 확인한 날짜 `confirmed_at`·직방 웹의 '실매물 확인' 배지 `actual_listing_checked`·위반 건축물 여부 `non_compliant_building` 도 붙음. 직방이 주지 않으면(제휴 매물의 위반 건축물 등) `null` 이다 (#336)
+- 직방 `search listings apt --no-new-sale`: 직방 웹의 '신규 분양 포함' 을 끈 동·구 목록처럼 신규분양 매물을 빼고 `total` 도 그만큼 준다 (이어 받을 때도 같은 옵션을 준다). 단지 매물(`--complex`)에는 없다 (#337)
 
 ### 변경
 

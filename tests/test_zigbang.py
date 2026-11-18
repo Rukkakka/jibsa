@@ -481,6 +481,24 @@ def test_non_apt_detail_has_no_new_apt_keys() -> None:
         assert key not in dumped
 
 
+def test_apt_no_new_sale_sends_false_on_every_page() -> None:
+    seen: list[dict[str, str]] = []
+    fixture = load('locals_item_catalogs')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json=dict(fixture, count=100, list=[fixture['list'][0]] * int(request.url.params['limit'])))
+
+    region = ZigbangRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
+    with make_client(handler) as client:
+        first = search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=40)
+        search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=20, start=first.next_position)
+        assert len(seen) == 3 and all(params['includeOfferItem'] == 'false' for params in seen)
+        seen.clear()
+        search_apt_listings(client, region, limit=20)
+        assert len(seen) == 1 and 'includeOfferItem' not in seen[0]
+
+
 # --- 상가 --------------------------------------------------------------------
 
 
