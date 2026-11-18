@@ -17,7 +17,7 @@ from jibsa.core.listing import (
     note,
     parking_label,
     with_negotiable,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -372,7 +372,7 @@ def _sum_manwon(*amounts: int | None) -> float | None:
     (헬리오시티 39~150㎡·일신동 빌라 6건, 2026-10-11). 일부만 null 이 오면 응답 형식이 바뀐 것이다.
     """
     known = [amount for amount in amounts if amount is not None]
-    return won_to_manwon(sum(known)) if known else None
+    return won_to_manwon_exact(sum(known)) if known else None
 
 
 def _agent_fee(client: NaverClient, article_number: str) -> dict[str, Any]:
@@ -390,7 +390,7 @@ def _agent_fee(client: NaverClient, article_number: str) -> dict[str, Any]:
         return {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None}
     individual = fee.is_individual_check_required is True
     return {
-        'agent_fee_manwon': None if individual else won_to_manwon(fee.fee),
+        'agent_fee_manwon': None if individual else won_to_manwon_exact(fee.fee),
         'agent_fee_individual_check_required': individual,
     }
 
@@ -815,7 +815,7 @@ def _loan_manwon(price: NaverPriceInfoModel | None) -> float | None:
     if price is None:
         return None
     if price.loan:
-        return won_to_manwon(price.loan)
+        return won_to_manwon_exact(price.loan)
     if price.loan_code == '0':
         return 0.0
     return None
@@ -882,11 +882,11 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     if summary is not None:
         codes = summary.category_list
         includes = None if codes is None else [_manage_cost_item_label(code) for code in codes]
-        return won_to_manwon(summary.amount), includes
+        return won_to_manwon_exact(summary.amount), includes
     if fee.fix_detail_list:
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
         includes = [_manage_cost_item_label(item.type) for item in fixed if item.amount and item.type]
-        return won_to_manwon(sum(item.amount or 0 for item in fixed)), includes
+        return won_to_manwon_exact(sum(item.amount or 0 for item in fixed)), includes
     if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type == MANAGE_COST_NONE_REASON:
         return 0.0, []
     return None, None
@@ -1129,13 +1129,13 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         property_type=PROPERTY_NAME_BY_CODE.get(real_estate_type, real_estate_type),
         room_type=_room_type(space, detail.shape if detail else None),
         title=title or None,
-        price_manwon=won_to_manwon(price.price) if price and trade_type == '매매' else None,
+        price_manwon=won_to_manwon_exact(price.price) if price and trade_type == '매매' else None,
         deposit_manwon=(
-            won_to_manwon(price.warranty_amount if price.warranty_amount is not None else price.price)
+            won_to_manwon_exact(price.warranty_amount if price.warranty_amount is not None else price.price)
             if price and trade_type != '매매' else None
         ),
         rent_manwon=(
-            won_to_manwon(price.rent_amount if price.rent_amount is not None else price.monthly_rent)
+            won_to_manwon_exact(price.rent_amount if price.rent_amount is not None else price.monthly_rent)
             if price and trade_type in ('월세', '단기임대') else None
         ),
         # 목록의 0 은 0원 입력과 미확인을 구분할 수 없어 모름으로 두고, 상세 관리비 API 로 구분한다 (`_manage_cost`)

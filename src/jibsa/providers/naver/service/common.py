@@ -25,12 +25,13 @@ from jibsa.core.listing import (
     KST,
     NEXT_HINT,
     Listing,
+    format_manwon,
     join_address,
     m2_to_pyeong,
     more_hint,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.naver.api.client import NaverClient
@@ -535,12 +536,12 @@ def article_info_to_listing(
         trade_type=trade_type,
         property_type=PROPERTY_NAME_BY_CODE.get(info.real_estate_type, info.real_estate_type),
         title=title,
-        price_manwon=won_to_manwon(price.deal_price) if price and trade_type == '매매' else None,
-        deposit_manwon=won_to_manwon(price.warranty_price) if price and trade_type != '매매' else None,
-        rent_manwon=won_to_manwon(price.rent_price) if price and trade_type in ('월세', '단기임대') else None,
+        price_manwon=won_to_manwon_exact(price.deal_price) if price and trade_type == '매매' else None,
+        deposit_manwon=won_to_manwon_exact(price.warranty_price) if price and trade_type != '매매' else None,
+        rent_manwon=won_to_manwon_exact(price.rent_price) if price and trade_type in ('월세', '단기임대') else None,
         # 목록은 관리비를 입력하지 않은 매물도 0으로 준다 (0원 3건 중 2건이 상세 관리비 정보 없음, 2026-10-09 확인).
         # 0원과 미입력을 구분할 수 없어 모름(null)으로 두고, 상세(관리비 API)에서 구분한다
-        manage_cost_manwon=won_to_manwon(price.management_fee_amount) if price and price.management_fee_amount else None,
+        manage_cost_manwon=won_to_manwon_exact(price.management_fee_amount) if price and price.management_fee_amount else None,
         area_m2=exclusive,
         area_pyeong=m2_to_pyeong(exclusive),
         floor=floor,
@@ -568,7 +569,7 @@ def won_to_manwon_range(low: float | None, high: float | None) -> list[float | N
     """
     if not low and not high:
         return None
-    return [won_to_manwon(low), won_to_manwon(high)]
+    return [won_to_manwon_exact(low), won_to_manwon_exact(high)]
 
 
 def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopmentAreaCountModel) -> dict[str, int]:
@@ -1052,11 +1053,12 @@ def group_sort_notes(sort_type: str | None, listings: list[Listing]) -> list[str
         return []
     end, pick = (max if descending else min)(ends, key=lambda pair: pair[0])
     price = pick.price_manwon if pick.price_manwon is not None else pick.deposit_manwon
+    price_text = '모름' if price is None else format_manwon(price)
     edge = '최고' if descending else '최저'
     return [note(
         '참고',
         f'같은 집을 중개사 여럿이 올린 매물(realtor_count)의 가격은 대표 매물 호가이고, 네이버 가격순은 묶음의 {edge} 호가로 '
-        f'정렬합니다. 이 결과의 묶음 {edge} 호가는 {end:g}만원입니다 ({pick.id}: 대표 {price:g}만원). 가격 조건(--price-*·'
+        f'정렬합니다. 이 결과의 묶음 {edge} 호가는 {format_manwon(end)}만원입니다 ({pick.id}: 대표 {price_text}만원). 가격 조건(--price-*·'
         '--deposit-*·--rent-*)은 대표 호가로만 걸려 이런 묶음 안의 호가는 찾지 못합니다',
     )]
 

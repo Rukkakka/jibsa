@@ -126,7 +126,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   - 금액을 글자(라벨·안내 문구)로 쓸 때도 `:g`(유효숫자 6자리라 12345.6789 → `12345.7`)·`:.1f`·`round`·`floor` 를 쓰지 않고 `format_manwon` 을 쓴다
     (37.57 → `'37.57'`, 3.0 → `'3'`).
   - 돈이 아닌 값은 줄여도 된다: 거리(`distance_km` 는 소수 둘째 자리)·면적·평·비율.
-  - 아직 반올림하는 소스: 네이버·다방·당근은 공용 `won_to_manwon`(0.1만원 = 1,000원 단위 반올림)을 써서
+  - 아직 반올림하는 소스: 다방·당근은 공용 `won_to_manwon`(0.1만원 = 1,000원 단위 반올림)을 써서
     [#257](https://github.com/Rukkakka/jibsa/issues/257) 에서 맞춘다. `won_to_manwon` 은 그 뒤 지우니 새 코드는 쓰지 않는다.
 - 면적은 `area_m2` + `area_pyeong`, 날짜는 한국 날짜 `YYYY-MM-DD` (`normalize_date`).
 - 층(`floor`)은 `normalize_floor` 로 표기를 맞춘다 (지하 `지하1`, 반지하, 저·중·고 → 저층·중층·고층). `Listing` 출력에는 `floor` 바로 뒤에 숫자 `floor_number` 가 붙는다 (지하는 음수, 몇 층인지 모르면 `null`). 매물 유형에 층 칸이 없어 `floor` 가 해당 없음(키 없음)이면 `floor_number` 도 없다.
