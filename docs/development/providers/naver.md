@@ -12,7 +12,7 @@
 | `search complexes` | 지역 해석 → 단지 목록·마커 | `search` |
 | `complex` | 이름/번호 해석 → 기본 정보·통계·평형·학교, 재건축 단지면 사업 단계, 선택 평형 부가 정보 | `complex` |
 | `search listings --complex` | 단지 해석 → 동·평형 검증 → 단지 매물 페이지 | `listing` |
-| `listing` | 매물 기본 정보 → 교통·학교, 매매 비용 부가 조회 | `listing` |
+| `listing` | 매물 기본 정보 → 교통·학교, 중개보수(직거래 제외 모든 거래 유형. 직거래인지 모르면 요청 안 함)·세금(매매) 부가 조회 | `listing` |
 | `real-price` | 단지·평형별 실거래 페이지, `--period` 면 기간 목록 1회 (빌라는 페이지를 기간 시작일까지) | `real_price` |
 | `market-price` | 단지 해석 → 기관별 주간 시세 기간 목록 1회 | `market_price` |
 | `redevelopment` | 구역 기본 정보 → 구역 매물 통계 | `redevelopment` |
@@ -94,6 +94,7 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 
 (2026-11-17 웹 번들·화면 대조)
 
+- 중개보수(`article/agentFee`)는 월세 매물에도 값이 있고 웹도 '최대 28만원' 을 보여 줘 직거래가 아니면 모든 거래 유형에서 부른다. 직거래(`articleDetailInfo.isDirectTrade`)는 웹이 칸을 붙이지 않아 부르지 않고 두 키를 지운다 (agentFee 는 직거래에도 금액을 준다, 토지 2661679787) (리뷰 오탐 (2026-11-17): 번들 `ArticleMain` 청크 0l4pkwg0qhg2t 는 직거래가 아니면 거래 유형 상관없이 `ArticleRealtorFee` 를 붙이고, 컴포넌트에도 거래 유형 분기가 없다. 전세 2660661335 → 26만원). 세금(`article/tax`)은 매매만이다.
 - 상세에서 유형마다 웹에 칸이 없는 필드는 키를 지운다 (`service/common.py` 의 `NOT_APPLICABLE_FIELDS_BY_TYPE`. 목록 매물 `NaverListing` 도 같은 표로 뺀다). 웹 `ArticleMain` 은 기본 정보 칸을 유형으로 고르고(`getBasicInfoSpaceTarget`·면적 함수, 청크 0n-xsnd22pdxz), 건축물 정보(`ArticleBuildingInfo`: 사용승인일·난방·현관·주차)는 `isBuildingRegistrationType` 유형에만, 시설(`ArticleFacilityInfo`)은 토지가 아닐 때만 붙인다 (청크 0l4pkwg0qhg2t). (리뷰 오탐 (2026-11-17): 단지 유형 `ArticleComplexInfo`·단지형 빌라 `ArticleVillaBuildingInfo` 도 난방 칸이 있어 `heating` 키를 지우지 않는다. 청크 0l4pkwg0qhg2t) 그래서 토지(E03)·고시원(G01)은 방·층·전용/공급면적·난방 등 칸이 없고 (토지는 면적 칸으로 대지면적 `sizeInfo.landSpace` 한 칸만 그리고 jibsa 는 대지면적 필드가 없다. 고시원은 면적 칸이 없다, 번들 면적 함수 `E_`), 비주거 8종은 방/욕실 대신 '화장실 수' 만, D03·D04·E01·E02·Z00 은 해당층 대신 지상/지하 층수만 그리고 공급면적 칸이 없다. 세금은 `getArticleTaxExposeInfo` 대로 재산세·종부세가 A01·A04·A05·A06·A07 매매만, 원룸(C01)·고시원(G01)은 세금 칸이 없어 `article/tax` 를 부르지 않는다 (2026-11-17 번들 대조, 토지 2662289059·건물 2662255256·사무실 2662006979·재개발 2659842435 실측). 분양권(B01·B02)은 웹이 일반분양권(`detailInfo.preSaleStatusType` '10')일 때만 세금 칸을 그려, 다른 값이면 `article/tax` 를 부르지 않고 세 키를 지운다 (둔촌동 분양권 2661144592 '10'·2659804873 '20'). 상태가 없거나 빈 글자면 웹 규칙(getArticleTaxExposeInfo 는 '10' 일 때만 칸을 그림)으로는 칸이 없지만 상태를 읽지 못했을 수도 있어 칸이 있는지 알 수 없다고 보고, 요청하지 않고 `acquisition_tax_manwon` 을 `null`(모름)로 둔다 (재산세·종부세 키는 없다. 직거래인지 모를 때 중개보수를 요청하지 않는 것과 같은 기준이다, `_draws_sale_taxes`).
 
 ## 재개발·추이 엔드포인트 메모

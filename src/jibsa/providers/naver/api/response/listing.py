@@ -341,6 +341,10 @@ class NaverArticleDetailInfoModel(ResponseModel):
         NaverCoordinatesModel | None,
         Field(description='좌표')
     ] = None
+    is_direct_trade: Annotated[
+        bool | None,
+        Field(description='직거래 매물인지. 네이버 웹은 직거래 매물에 중개보수 칸을 그리지 않는다 (2026-11-17 확인, 토지 2661679787)', alias='isDirectTrade')
+    ] = None
 
 
 class NaverDetailInfoModel(ResponseModel):

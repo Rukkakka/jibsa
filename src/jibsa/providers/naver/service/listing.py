@@ -200,12 +200,9 @@ COMPLEX_PAGE_SIZE: int = 30
 MAX_COMPLEX_ARTICLE_PAGE_REQUESTS: int = 5
 
 
-# 매매 매물 상세에만 붙이는 필드 (요청을 아끼려고 전월세는 조회하지 않는다)
-SALE_ONLY_FIELDS: frozenset[str] = frozenset({
-    'agent_fee_manwon', 'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon',
-})
 # 매매 매물 상세에만 붙이는 세금 필드 (요청을 아끼려고 전월세는 세금을 조회하지 않는다. 원룸·고시원과 일반분양권이 아닌 분양권은
-# 웹에 세금 칸이 없어 매매여도 조회하지 않는다. 분양권은 분양 상태를 모르면 칸이 있는지 몰라 요청하지 않고 모름(null)으로 둔다)
+# 웹에 세금 칸이 없어 매매여도 조회하지 않는다. 분양권은 분양 상태를 모르면 칸이 있는지 몰라 요청하지 않고 모름(null)으로 둔다.
+# 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회한다)
 SALE_TAX_FIELDS: frozenset[str] = frozenset({
     'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon',
 })
@@ -249,16 +246,29 @@ def _sum_manwon(*amounts: int | None) -> float | None:
     return won_to_manwon(sum(known)) if known else None
 
 
-def _sale_costs(client: NaverClient, article_number: str, with_taxes: bool) -> dict[str, float | None]:
-    """매매 매물의 중개보수·세금. 세금은 웹이 세금 칸을 그리는 매물(`with_taxes`)만 조회한다 (1~2회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다."""
-    costs: dict[str, float | None] = dict.fromkeys(SALE_ONLY_FIELDS)
+def _agent_fee(client: NaverClient, article_number: str) -> dict[str, Any]:
+    """중개보수 상한(`agent_fee_manwon`, 만원)과 '개별확인' 여부 (1회 호출). 직거래가 아니면 모든 거래 유형에서 조회한다 (웹도 월세 매물에 '최대 28만원' 을 보여 준다).
+
+    네이버 웹은 `isIndividualCheckRequired` 가 참이면 금액 대신 '개별확인' 을 그리므로 금액은 None 이고 여부가 True 다.
+    플래그가 없거나 거짓이면 웹도 금액을 그린다. 조회가 실패하면 둘 다 모름(None)이다.
+    금액(fee)이 비어 오고 플래그가 참이 아니면 agent_fee_manwon 만 None 이고 여부는 False 다. 웹(ArticleRealtorFee)도
+    그때 '개별확인' 이 아니라 금액 줄을 그린다 (리뷰 오탐, 2026-11-17).
+    """
     fee = result_or_none(lambda: client.run_request_article_agent_fee_v1(
         NaverArticleAgentFeeV1RequestParameterModel(article_number=article_number)
     ))
-    if fee is not None and fee.fee is not None:
-        costs['agent_fee_manwon'] = won_to_manwon(fee.fee)
-    if not with_taxes:
-        return costs
+    if fee is None:
+        return {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None}
+    individual = fee.is_individual_check_required is True
+    return {
+        'agent_fee_manwon': None if individual else won_to_manwon(fee.fee),
+        'agent_fee_individual_check_required': individual,
+    }
+
+
+def _sale_taxes(client: NaverClient, article_number: str) -> dict[str, float | None]:
+    """매매 매물의 세금 (1회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다."""
+    costs: dict[str, float | None] = dict.fromkeys(SALE_TAX_FIELDS)
     tax = result_or_none(lambda: client.run_request_article_tax_v1(
         NaverArticleTaxV1RequestParameterModel(article_number=article_number)
     ))
@@ -363,7 +373,11 @@ class NaverListingDetail(ListingDetail):
     ] = None
     agent_fee_manwon: Annotated[
         float | None,
-        Field(description='중개보수 상한 (만원, 네이버 계산. 매매만)')
+        Field(description="중개보수 상한 (만원, 네이버 계산). 네이버가 '개별확인' 으로 보여 주는 매물(agent_fee_individual_check_required)이면 null. 조회가 실패하거나 값이 없어도 null. 직거래면 키 없음, 직거래인지 모르면 null")
+    ] = None
+    agent_fee_individual_check_required: Annotated[
+        bool | None,
+        Field(description="중개보수를 네이버가 금액 대신 '개별확인' 으로 보여 주는 매물인지 (중개사에게 따로 확인). true 면 agent_fee_manwon 은 null. 조회가 실패하면 null. 직거래면 키 없음, 직거래인지 모르면 null")
     ] = None
     acquisition_tax_manwon: Annotated[
         float | None,
@@ -391,6 +405,10 @@ class NaverListingDetail(ListingDetail):
         bool,
         Field(exclude=True, description='배정 학교를 조회하는 매물인지 (단지·동 번호가 있음). schools 가 해당 없는지 가리는 데만 쓴다')
     ] = False
+    is_direct_trade: Annotated[
+        bool,
+        Field(exclude=True, description='직거래 매물인지 (참일 때만 참, 모르면 거짓). 중개보수가 해당 없는지 가리는 데만 쓴다')
+    ] = False
     pre_sale_status_type: Annotated[
         str | None,
         Field(exclude=True, description="분양권 상태 코드 ('10' 일반분양권). 분양권 매매의 세금 칸이 해당 없는지 가리는 데만 쓴다. 모르면 null")
@@ -411,13 +429,15 @@ class NaverListingDetail(ListingDetail):
         # 네이버는 오피스텔에만 계약면적을 준다 (다른 유형은 상세의 supplySpace 가 공급면적).
         if self.property_type != '오피스텔':
             fields = fields | {'contract_area_m2'}
+        # 직거래는 중개사가 없어 네이버 웹도 중개보수 칸을 그리지 않는다 (2026-11-17 번들 ArticleMain 청크 0l4pkwg0qhg2t:
+        # `!articleDetailInfo.isDirectTrade` 일 때만 ArticleRealtorFee 를 붙인다). agentFee 는 직거래에도 금액을 준다 (토지 2661679787)
+        if self.is_direct_trade:
+            fields = fields | {'agent_fee_manwon', 'agent_fee_individual_check_required'}
         # 유형마다 웹이 칸을 그리지 않는 필드 (토지의 방 수·층 등)
         fields = fields | NOT_APPLICABLE_FIELDS_BY_TYPE.get(self.real_estate_type or '', frozenset())
-        # 세금·중개보수는 매매 매물만 조회한다. 원룸·고시원·일반분양권이 아닌 분양권은
+        # 세금은 매매 매물만 조회한다 (중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형). 원룸·고시원·일반분양권이 아닌 분양권은
         # 세금 칸이 없고, 세 세금을 모두 그리는 유형 밖의 매매는 취득세만 그린다. 분양 상태를 모르는 분양권 매매는 요청하지 않아
         # 칸이 있는지 몰라서, 취득세는 null 로 남긴다 (모름)
-        if self.trade_type != '매매':
-            fields = fields | SALE_ONLY_FIELDS
         draws_taxes = _draws_sale_taxes(self.trade_type, self.real_estate_type, self.pre_sale_status_type)
         if draws_taxes is False:
             fields = fields | SALE_TAX_FIELDS
@@ -698,8 +718,8 @@ def _complex_approved_at(client: NaverClient, complex_number: int | None, key: N
 def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     """매물 상세: key → basicInfo → maintenanceFee → 좌표의 법정동 → 단지 (최대 5회 호출, 단지는 필요할 때만).
 
-    매매 매물은 중개보수(agentFee)·세금(tax)을 더 조회한다 (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은
-    세금을 조회하지 않는다) (1~2회 더). 주변 교통(지하철·버스)은 늘,
+    중개보수(agentFee)는 직거래가 아니면(직거래이거나 직거래인지 모를 때는 조회하지 않는다) 모든 거래 유형에서, 세금(tax)은 매매 매물만 더 조회한다
+    (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은 조회하지 않는다) (1회 더, 매매는 2회 더). 주변 교통(지하철·버스)은 늘,
     배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더, 최대 9회).
 
     중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 지번 주소는 좌표로 얻은
@@ -746,6 +766,8 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
 
     facility_codes = (facility.life + facility.security + facility.etc + facility.aircon) if facility else []
     real_estate_type = key.type.real_estate_type
+    # 직거래 여부를 모르면(상세 정보를 못 읽었거나 값이 없으면) None 이다. 직거래에도 agentFee 가 금액을 주므로 모를 때는 요청하지 않는다
+    is_direct_trade = article.is_direct_trade if article else None
     pre_sale_status_type = detail.pre_sale_status_type if detail else None
 
     return NaverListingDetail(
@@ -782,6 +804,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         complex_name=complex_info.complex_name if complex_info else None,
         dong=complex_info.dong_name if complex_info else None,
         pyeong_number=key.key.pyeong_type_number if key.key else None,
+        is_direct_trade=is_direct_trade is True,
         pre_sale_status_type=pre_sale_status_type,
         real_estate_type=real_estate_type,
         supply_area_m2=None if is_officetel else listed_area,
@@ -805,10 +828,16 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
             if code != 'ELEVATOR'
         ] if facility is not None else None,
         loan_manwon=_loan_manwon(price),
-        # 세금은 웹이 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다
+        # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
+        # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교)
         **(
-            _sale_costs(client, article_number, _draws_sale_taxes(trade_type, real_estate_type, pre_sale_status_type) is True)
-            if trade_type == '매매' else {}
+            {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None} if is_direct_trade is None
+            else {} if is_direct_trade
+            else _agent_fee(client, article_number)
+        ),
+        **(
+            _sale_taxes(client, article_number)
+            if _draws_sale_taxes(trade_type, real_estate_type, pre_sale_status_type) is True else {}
         ),
         **_surroundings(client, article_number, key),
     )

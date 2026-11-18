@@ -7,7 +7,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ### ⚠️ 호환 깨짐
 
-- 네이버 `listing`(상세)과 `search listings` 목록의 매물이 매물 유형에 따라 네이버 웹 상세에 칸이 없는 필드를 `null` 대신 키 없이 냄 (해당 없음. 목록에 없는 필드는 해당하지 않는다). 토지: `room_count`·`bathroom_count`·`room_type`·`direction`·`floor`·`building_floor`·`area_m2`·`area_pyeong`·`supply_area_m2`·`approved_at`·`parking`·`elevator`·`options`. 고시원: 토지와 같되 `elevator`·`options` 는 남고 `loan_manwon` 이 빠진다. 재개발: 방·욕실·방 구조·면적. 사무실·상가·지식산업센터: `room_count`·`room_type`. 건물·상가건물·숙박·공장·창고·기타: `room_count`·`room_type`·`floor`·`supply_area_m2`. 매매 세금은 웹이 그리는 것만 내 `property_tax_manwon`·`comprehensive_real_estate_tax_manwon` 은 아파트·재건축·단지형 빌라에만 있고, 원룸·고시원과 일반분양권이 아닌 분양권·오피스텔분양권 매매는 세금 요청을 하지 않아 세 키가 없고, 분양 상태를 모르는 분양권 매매도 세금을 요청하지 않아 `acquisition_tax_manwon` 이 `null` 이다 (두 키는 없다). `floor` 가 없는 매물은 `floor_number` 도 없다. 이 필드를 늘 있다고 보고 읽던 쪽은 키가 없을 때를 처리한다 (#303)
+- 네이버 `listing`(상세)과 `search listings` 목록의 매물이 매물 유형에 따라 네이버 웹 상세에 칸이 없는 필드를 `null` 대신 키 없이 냄 (해당 없음. 목록에 없는 필드는 해당하지 않는다). 토지: `room_count`·`bathroom_count`·`room_type`·`direction`·`floor`·`building_floor`·`area_m2`·`area_pyeong`·`supply_area_m2`·`approved_at`·`parking`·`elevator`·`options`. 고시원: 토지와 같되 `elevator`·`options` 는 남고 `loan_manwon` 이 빠진다. 재개발: 방·욕실·방 구조·면적. 사무실·상가·지식산업센터: `room_count`·`room_type`. 건물·상가건물·숙박·공장·창고·기타: `room_count`·`room_type`·`floor`·`supply_area_m2`. 매매 세금은 웹이 그리는 것만 내 `property_tax_manwon`·`comprehensive_real_estate_tax_manwon` 은 아파트·재건축·단지형 빌라에만 있고, 원룸·고시원과 일반분양권이 아닌 분양권·오피스텔분양권 매매는 세금 요청을 하지 않아 세 키가 없고, 분양 상태를 모르는 분양권 매매도 세금을 요청하지 않아 `acquisition_tax_manwon` 이 `null` 이다 (두 키는 없다). 직거래 매물은 중개사가 없어 네이버 웹이 중개보수를 보여 주지 않으므로 `agent_fee_manwon`·`agent_fee_individual_check_required` 키가 없고 중개보수 요청도 하지 않는다 (예전에는 금액이 나갔다). `floor` 가 없는 매물은 `floor_number` 도 없다. 이 필드를 늘 있다고 보고 읽던 쪽은 키가 없을 때를 처리한다 (#303, #304)
 - 라이브러리로 쓸 때: `core.browser` 의 `BrowserTransport` 는 설정을 `BrowserOptions` 하나로 받고(모두 키워드), `AsyncBrowserTransport` 는 감쌀 `BrowserTransport` 하나를 받는다. `BrowserTransport('naver', url, ready_cookie='NNB')` 는 `BrowserTransport(BrowserOptions(source='naver', entry_url=url, ready_cookie='NNB'))` 로, `AsyncBrowserTransport('naver', url, ready_cookie='NNB')` 는 `AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))` 로 고친다. 소스 client 의 `browser_transport()`·`async_browser_transport()` 를 쓰면 고칠 것이 없다 (#216)
 - 라이브러리로 쓸 때: `core.browser` 의 `ProxyUnreachableError`·`SHARED_BROWSER_ERRORS` 와 브라우저 transport 의 `no_cors_hosts`(`BaseHTTPClient.browser_no_cors_hosts`)를 뺌. 프록시 오류는 모두 `ProxyError` 로 잡는다. 출처 탭(`no_cors_hosts`)과 소스 간 공통 실패 구분은 쓰던 당근 옛 지역 API·다른 소스로 위치 찾기를 빼 쓰는 곳이 없다 (#215)
 - 라이브러리로 쓸 때: `jibsa.providers.zigbang` 의 `ZigbangGuestAuth` 와 `ZigbangClient` 의 `token`·`account_host`·`token_url`, `core.http` 의 `bearer_authorization` 을 뺌. 로그인하지 않은 직방 웹처럼 손님 토큰을 받지 않고 부른다. `ZigbangClient(token='x')` 처럼 주던 인자는 `ValidationError` 이니 지운다 (#220)
@@ -121,6 +121,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 단기임대 `listing stay-… --check-in … --check-out …` 에 그 기간을 예약할 수 있는지 `available`: 직방 웹 날짜 고르기 창이 막는 규칙(오늘 이후, 최소 계약 주 이상·84일 이하, 예약·막힌 날 없음) 그대로다. 직방이 일정을 주지 않으면 `null` 이다 (#275)
 - 직방 아파트 매물(`search listings apt`·`search listings --complex <apt-…>`·`catalog`·`listing` 의 아파트·제휴 매물)에 `listing_kind`: 직방 웹 카드의 '신규분양' 배지와 상세 안내 문구에 해당하는 매물 종류 (`신규분양`·`집주인`·`중개사`, 처음 보는 종류는 직방 코드 그대로, 직방이 주지 않으면 `null`). `신규분양` 이면 가격은 분양가다. 목록에서는 `--fields` 로 골라도 늘 나온다. `coalition-` ID 줄에는 집주인 매물뿐 아니라 신규분양도 있고, 직방 웹 기본 화면처럼 `search listings apt` 지역 목록 앞쪽에 신규분양 매물이 섞여 온다. 원룸·빌라·오피스텔·상가·단기임대에는 키가 없다 (#296)
 - 다방 `region-ranking -t 빌라`: 매물수·거래량·선호도의 동 순위를 다방 동네정보 '매물정보' 탭(주택/빌라 포함, 고른 유형 합산)으로 받는다. 결과에 `building_type` 이 붙는다. 모든 `region-ranking` 결과에 어느 탭 순위인지 `tab`(`시세정보`·`매물정보`·`학군` 등)이 붙는다 (#247)
+- 네이버 `listing` 의 중개보수 상한 `agent_fee_manwon` 이 매매뿐 아니라 전세·월세·단기임대에도 나옴 (네이버 웹도 월세 매물에 '최대 28만원' 처럼 보여 준다). 취득세·재산세·종부세는 그대로 매매만이다. 상세가 직거래가 아닌 모든 거래 유형에서 네이버 요청을 1회 더 한다. 네이버가 금액 대신 '개별확인' 으로 보여 주는 매물은 `agent_fee_manwon` 이 `null` 이고 새 필드 `agent_fee_individual_check_required` 가 `true` 다 (금액을 보여 주면 `false`, 조회 실패나 직거래인지 모르면 `null`) (#304)
 
 ### 변경
 
@@ -160,6 +161,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ### 수정
 
+- 네이버 `listing` 의 매매 매물을 네이버가 중개보수 '개별확인' 으로 보여 주면 `agent_fee_manwon` 이 금액 대신 `null` 임 (예전에는 금액이 나갔다. 네이버 웹은 그 매물에 금액을 보여 주지 않는다). 그런 매물은 `agent_fee_individual_check_required` 가 `true` 다 (#304)
 - 응답 헤더를 받은 뒤 본문이 멈춘 4xx·5xx 응답을 시간 초과 대신 그 상태로 알림. 429 면 `Retry-After` 대로 요청 제한 쿨다운을 건다 (#217)
 - 라이브러리로 쓸 때: client 의 `timeout` 을 약 24.8일(2³¹−1ms)보다 크게 주면 기다리지 않고 바로 시간 초과가 나던 것을 고침. 그 값에서 자른다 (#217)
 - 당근 `region-reviews`·`school`·`preschool` 이 쓰는 웹 쿼리 해시를 당근 웹이 바꾼 해시로 갱신. 당근이 옛 해시를 막으면 이 명령들이 `UPSTREAM_ERROR` 로 실패했을 것이다 (#192)

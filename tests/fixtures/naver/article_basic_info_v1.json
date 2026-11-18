@@ -17,6 +17,7 @@
    },
    "articleDetailInfo": {
     "articleName": "테스트아파트",
+    "isDirectTrade": false,
     "articleFeatureDescription": "테스트 매물 1",
     "exposureStartDate": "2026-01-05",
     "buildingPrincipalUse": "공동주택",

@@ -491,6 +491,29 @@ def test_list_complex_articles_stops_when_cursor_stalls() -> None:
 # --- 매물 상세 중개보수·세금·시설 글자 ------------------------------------------
 
 
+def test_monthly_rent_detail_has_agent_fee_but_no_taxes() -> None:
+    # 중개보수는 월세 매물에도 있고(웹도 '최대 28만원' 을 보여 준다), 세금은 매매만 조회한다
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/key'):
+            body['result']['type']['tradeType'] = 'B2'
+        if request.url.path.endswith('/basicInfo'):
+            body['result']['priceInfo'] = {'tradeType': 'B2', 'warrantyAmount': 10_000_000, 'rentAmount': 830_000, 'loan': 0}
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        dumped = get_listing(client, '1000000002').model_dump(mode='json')
+    assert dumped['agent_fee_manwon'] == 1050
+    assert not {'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'} & set(dumped)
+    paths = _paths(requests)
+    assert '/article/agentFee' in paths and '/article/tax' not in paths
+
+
 @pytest.mark.parametrize(('real_estate_type', 'absent', 'present', 'taxes_requested'), [
     # 토지는 웹에 방·층·난방·시설 칸이 없고 세금은 취득세만 그린다
     ('E03', {'room_count', 'floor', 'floor_number', 'options', 'property_tax_manwon'}, {'acquisition_tax_manwon'}, True),
@@ -519,6 +542,25 @@ def test_detail_drops_fields_the_web_does_not_draw_by_type(
     assert ('/article/tax' in _paths(requests)) is taxes_requested
 
 
+def test_unknown_direct_trade_skips_agent_fee_and_keeps_keys_null() -> None:
+    # 상세 정보(articleDetailInfo)를 못 읽어 직거래인지 모르면 agentFee 를 부르지 않고 둘 다 모름(null)으로 낸다
+    # (agentFee 는 직거래에도 금액을 주므로, 모르는 채로 내면 웹이 그리지 않는 값이 나갈 수 있다)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/basicInfo'):
+            del body['result']['detailInfo']['articleDetailInfo']
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        dumped = get_listing(client, '1000000001').model_dump(mode='json')
+    assert '/article/agentFee' not in _paths(requests)
+    assert dumped['agent_fee_manwon'] is None
+    assert dumped['agent_fee_individual_check_required'] is None
 
 
 # --- 매매 매물 중개보수·세금 -------------------------------------------------
