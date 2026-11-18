@@ -40,6 +40,7 @@ from jibsa.core.listing import (
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.service.common import (
     AREA_BASES,
+    ENTRANCE_CODE_BY_NAME,
     MAX_LIST_LIMIT,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PERIOD_YEARS_BY_NAME,
@@ -77,7 +78,6 @@ from jibsa.providers.naver.service.search import (
     COMPLEX_LIST_SORT_TYPE_BY_NAME,
     DEFAULT_SEARCH_PROPERTY_TYPES,
     DIRECTION_FILTER_CODE_BY_NAME,
-    ENTRANCE_CODE_BY_NAME,
     FACILITY_CODE_BY_NAME,
     FLOOR_CODE_BY_NAME,
     LOAN_CODE_BY_NAME,
@@ -947,7 +947,7 @@ def search_command(
     ] = None,
     entrance: Annotated[
         list[str] | None,
-        typer.Option('--entrance', help=f"단지 현관 구조: {', '.join(ENTRANCE_CODE_BY_NAME)}. 단지가 없는 빌라 대부분이 빠진다")
+        typer.Option('--entrance', help=f"현관 구조: {', '.join(ENTRANCE_CODE_BY_NAME)}. 현관 구조가 등록된 매물만 걸려 등록되지 않은 매물이 빠진다 (단지가 아닌 빌라도 등록돼 있으면 나온다)")
     ] = None,
     building_age_min: Annotated[int | None, typer.Option(min=0, help='사용승인 후 지난 햇수 하한 (년). 5면 5년 이상')] = None,
     building_age_max: Annotated[int | None, typer.Option(min=0, help='사용승인 후 지난 햇수 상한 (년). 5 면 5년 이내 건물')] = None,
@@ -975,7 +975,7 @@ def search_command(
     결과의 title 에 단지명이 들어 있다.
 
     조건은 모두 네이버 서버 필터로 거른다. 목록에는 방 수가 없어 room_type 은 null 이다
-    (방 수는 listing 의 room_count). 빌라에는 단지로 등록된 연립·다세대도 들어간다.
+    (토지·사무실·상가·건물처럼 방 칸이 없는 유형은 키가 없다) (방 수는 listing 의 room_count). 빌라에는 단지로 등록된 연립·다세대도 들어간다.
 
     address 는 동까지다 (네이버 목록이 번지를 주지 않음). 번지까지 있는 주소는 listing 에서.
 

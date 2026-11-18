@@ -28,6 +28,8 @@ from jibsa.providers.naver.service.region import (
 )
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
+    ENTRANCE_FILTER_NOTE,
+    ENTRANCE_WITH_COMPLEX_FILTER_NOTE,
     ONE_ROOM_SHAPE_NOTE,
     NaverListingConditions,
     search_area,
@@ -38,6 +40,7 @@ from jibsa.providers.naver.service.trend import get_district_trend
 FIXTURES = Path(__file__).parent / 'fixtures' / 'naver'
 ROUTES = {
     '/front-api/v1/complex': 'complex_v1',
+    '/front-api/v1/complex/pyeong': 'complex_pyeong_v1',
     '/front-api/v1/complex/v2/pyeong/realPrice': 'complex_pyeong_real_price_v2',
     '/front-api/v1/legalDivision/searchByCoordinate': 'legal_division_search_by_coordinate_v1',
     '/front-api/v1/data-service/transport': 'data_service_transport_v1',
@@ -314,8 +317,10 @@ def test_search_area_sends_extended_filters() -> None:
     assert filter_['approvalElapsedYear'] == {'min': 5, 'max': 19}
     # 역세권은 사이트처럼 하한 0 을 함께 보낸다
     assert filter_['walkingMinuteToSubwayStation'] == {'min': 0, 'max': 8}
-    # 단지 정보 필터는 단지가 없는 빌라를, 원룸 구조는 구조를 입력하지 않은 매물을 빼므로 둘 다 알린다
+    # 세대수·주차는 단지가 없는 빌라를, 현관 구조·원룸 구조는 그 값을 입력하지 않은 매물을 빼므로 모두 알린다
     assert COMPLEX_FILTER_NOTE in result.notes
+    assert ENTRANCE_WITH_COMPLEX_FILTER_NOTE in result.notes
+    assert ENTRANCE_FILTER_NOTE not in result.notes
     assert ONE_ROOM_SHAPE_NOTE in result.notes
 
 
@@ -486,6 +491,96 @@ def test_list_complex_articles_stops_when_cursor_stalls() -> None:
     assert _paths(requests) == ['/complex/article/list', '/complex/article/list']
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
     assert any('중복' in note for note in result.notes)
+
+
+# --- 매물 상세 중개보수·세금·시설 글자 ------------------------------------------
+
+
+def test_monthly_rent_detail_has_agent_fee_but_no_taxes() -> None:
+    # 중개보수는 월세 매물에도 있고(웹도 '최대 28만원' 을 보여 준다), 세금은 매매만 조회한다
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/key'):
+            body['result']['type']['tradeType'] = 'B2'
+        if request.url.path.endswith('/basicInfo'):
+            body['result']['priceInfo'] = {'tradeType': 'B2', 'warrantyAmount': 10_000_000, 'rentAmount': 830_000, 'loan': 0}
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        dumped = get_listing(client, '1000000002').model_dump(mode='json')
+    assert dumped['agent_fee_manwon'] == 1050
+    assert not {'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'} & set(dumped)
+    paths = _paths(requests)
+    assert '/article/agentFee' in paths and '/article/tax' not in paths
+
+
+@pytest.mark.parametrize(('real_estate_type', 'absent', 'present', 'taxes_requested'), [
+    # 토지는 웹에 방·층·난방·시설 칸이 없고 세금은 취득세만 그린다
+    ('E03', {'room_count', 'floor', 'floor_number', 'heating', 'options', 'property_tax_manwon'}, {'acquisition_tax_manwon'}, True),
+    ('A01', set(), {'room_count', 'floor', 'heating', 'options', 'property_tax_manwon', 'acquisition_tax_manwon'}, True),
+    # 원룸은 매매여도 세금 칸이 없어 세금을 조회하지 않는다
+    ('C01', {'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'}, {'room_count'}, False),
+])
+def test_detail_drops_fields_the_web_does_not_draw_by_type(
+    real_estate_type: str, absent: set[str], present: set[str], taxes_requested: bool,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/key'):
+            body['result']['type']['realEstateType'] = real_estate_type
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        dumped = get_listing(client, '1000000001').model_dump(mode='json')
+    assert not absent & set(dumped)
+    assert present <= set(dumped)
+    assert ('/article/tax' in _paths(requests)) is taxes_requested
+
+
+def test_unknown_facility_code_is_not_a_known_label() -> None:
+    # 표에 없는 시설 코드는 코드 글자도 null 도 아니라 못 읽었다는 글자로 낸다. 화면 글자(인덕션레인지)는 그대로 낸다
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/basicInfo'):
+            body['result']['detailInfo']['facilityInfo']['life'] = ['INDUCTION_RANGE', 'XYZ01']
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        detail = get_listing(client, '1000000001')
+    assert detail.options == ['인덕션레인지', '알 수 없는 시설 (XYZ01)']
+
+
+def test_unknown_direct_trade_skips_agent_fee_and_keeps_keys_null() -> None:
+    # 상세 정보(articleDetailInfo)를 못 읽어 직거래인지 모르면 agentFee 를 부르지 않고 둘 다 모름(null)으로 낸다
+    # (agentFee 는 직거래에도 금액을 주므로, 모르는 채로 내면 웹이 그리지 않는 값이 나갈 수 있다)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/basicInfo'):
+            del body['result']['detailInfo']['articleDetailInfo']
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        dumped = get_listing(client, '1000000001').model_dump(mode='json')
+    assert '/article/agentFee' not in _paths(requests)
+    assert dumped['agent_fee_manwon'] is None
+    assert dumped['agent_fee_individual_check_required'] is None
 
 
 # --- 매매 매물 중개보수·세금 -------------------------------------------------

@@ -25,12 +25,13 @@ from jibsa.core.listing import (
     KST,
     NEXT_HINT,
     Listing,
+    format_manwon,
     join_address,
     m2_to_pyeong,
     more_hint,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.naver.api.client import NaverClient
@@ -42,6 +43,7 @@ from jibsa.providers.naver.api.request.common import (
     NaverComplexPyeongListV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaPyeongListV1RequestParameterModel,
+    NaverEntranceType,
     NaverOneRoomShape,
     NaverRealEstateType,
 )
@@ -115,6 +117,19 @@ ONE_ROOM_SHAPE_CODE_BY_NAME: dict[str, NaverOneRoomShape] = {
     '오픈형': '10',
     '분리형': '20',
 }
+# 현관 구조 (검색 조건 이름 → 코드). 상세의 현관 구조 글자도 이 표의 반대 방향이다
+ENTRANCE_CODE_BY_NAME: dict[str, NaverEntranceType] = {
+    '계단식': '10',
+    '복도식': '20',
+    '복합식': '30',
+}
+# 확인 방식(verificationInfo.verificationType) → 확인 배지. 네이버 웹 번들 대조 (2026-11-17: 상수 VERIFICATION_TYPE,
+# 목록 PropertyBadgeList.tsx, 이름표 함수 getOwnerLabel). 이 밖의 코드(NONE, DOC, TEL, DOCV2, NDOC2, LESR, LH, FT, JOINT)와
+# 표에 없는 코드는 웹도 방식 배지를 붙이지 않는다 (날짜 배지와 'HUG 안심임대인' 은 따로 있어 여기서 다루지 않는다)
+OWNER_VERIFICATION_TYPES: frozenset[str] = frozenset({'MOBL', 'OWNER', 'NDOC1'})
+SITE_VERIFICATION_TYPES: frozenset[str] = frozenset({'SITE', 'S_VR'})
+# 웹은 비주거 매물의 집주인 배지를 '소유자' 로 바꿔 보여 준다. 고시원(G01) 같이 이 열 개에 없는 유형은 '집주인' 이다
+NON_RESIDENTIAL_TYPES: frozenset[str] = frozenset({'D01', 'D02', 'E04', 'D03', 'D04', 'E01', 'E02', 'Z00', 'E03', 'F01'})
 # 면적 필터 기준. 전용이면 filtersExclusiveSpace 를 켠다. 결과의 area_m2 가 전용면적이라 기본은 전용
 AREA_BASES: tuple[str, ...] = ('전용', '공급')
 WON_PER_MANWON: int = 10_000
@@ -228,6 +243,36 @@ class NaverAssignedSchool(BaseModel):
     ] = None
 
 
+BADGES_DESCRIPTION: str = (
+    '네이버 화면의 확인 배지 (집주인·소유자·현장). 방식 배지가 없으면 [], 모르면 null. [] 에는 전화·서류로 확인한 매물과 확인하지 않은 매물이 함께 든다'
+)
+"""목록 매물(`NaverListing`)과 상세(`NaverListingDetail`)의 `badges` 설명. 두 모델은 상속이 갈려 필드를 함께 쓸 수 없다."""
+
+
+# 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
+# 목록(`NaverListing`)이 함께 쓴다. 목록 모델에 없는 필드 이름은 출력에서 그냥 지나간다.
+# 2026-11-17 네이버 웹 번들 대조: 기본 정보 칸은 청크 0n-xsnd22pdxz 의 getBasicInfoSpaceTarget·면적 함수, 건축물 정보
+# ArticleBuildingInfo 는 isBuildingRegistrationType 유형만, 시설 ArticleFacilityInfo 는 토지_임야(E03) 만 제외 (청크 0l4pkwg0qhg2t)
+NOT_APPLICABLE_FIELDS_BY_TYPE: dict[str, frozenset[str]] = {
+    # 토지
+    'E03': frozenset({
+        'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
+        'supply_area_m2', 'approved_at', 'heating', 'heating_fuel', 'entrance', 'parking', 'elevator', 'options',
+    }),
+    # 고시원: 시설 칸은 있어 elevator·options 는 남긴다
+    'G01': frozenset({
+        'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
+        'supply_area_m2', 'approved_at', 'heating', 'heating_fuel', 'entrance', 'parking', 'loan_manwon',
+    }),
+    # 재개발
+    'F01': frozenset({'room_count', 'bathroom_count', 'room_type', 'area_m2', 'area_pyeong', 'supply_area_m2'}),
+    # 사무실·상가·지식산업센터: 웹은 방/욕실 대신 '화장실 수' 만 그린다 (bathroom_count 는 남긴다)
+    **dict.fromkeys(('D01', 'D02', 'E04'), frozenset({'room_count', 'room_type'})),
+    # 건물·상가건물·숙박·공장창고·기타: 웹은 해당층 대신 지상/지하 층수만 그리고 공급면적 칸이 없다 (building_floor 는 그대로)
+    **dict.fromkeys(('D03', 'D04', 'E01', 'E02', 'Z00'), frozenset({'room_count', 'room_type', 'floor', 'supply_area_m2'})),
+}
+
+
 class NaverListing(Listing):
     """네이버 목록 매물. 같은 집을 중개사 여럿이 올려 네이버가 한 매물로 묶었으면 묶음의 중개사 수와 호가 범위가 붙는다.
 
@@ -253,9 +298,22 @@ class NaverListing(Listing):
         list[float | None] | None,
         Field(description='묶음의 월세 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
     ] = None
+    badges: Annotated[
+        list[str] | None,
+        Field(description=BADGES_DESCRIPTION)
+    ] = None
+    real_estate_type: Annotated[
+        str | None,
+        Field(exclude=True, description='네이버 매물 유형 코드 (A01 …). 유형마다 웹에 없는 칸을 가리는 데만 쓴다')
+    ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
-        return super().not_applicable_fields() | {name for name in GROUP_FIELDS if getattr(self, name) is None}
+        # 유형마다 웹이 칸을 그리지 않는 필드 (토지의 방 수·층·면적 등). 값을 모르는 null 이 아니라 키째 뺀다
+        return (
+            super().not_applicable_fields()
+            | {name for name in GROUP_FIELDS if getattr(self, name) is None}
+            | NOT_APPLICABLE_FIELDS_BY_TYPE.get(self.real_estate_type or '', frozenset())
+        )
 
 
 # 묶음이 아니거나 중개사마다 호가가 같으면 해당 없는(키를 빼는) 필드
@@ -363,6 +421,35 @@ def assigned_schools(schools: list[NaverSchoolModel]) -> list[NaverAssignedSchoo
     ]
 
 
+def unknown_code_label(kind: str, code: str) -> str:
+    """jibsa 표에 없는 코드를 낼 글자 ('알 수 없는 시설 (XYZ01)').
+
+    값은 응답에 있는데 jibsa 가 못 읽은 것이라, 값이 없다는 뜻의 null 도 코드 글자 그대로도 아니다. 사용자가 이 글자를 보고
+    코드를 알려 주면 표에 더할 수 있다.
+
+    Args:
+        kind: 무엇의 코드인지 ('값' 하나짜리, '시설' 시설 목록 항목, '항목' 관리비 포함 항목).
+        code: 응답의 코드.
+    """
+    return f'알 수 없는 {kind} ({code})'
+
+
+def verification_badges(verification_type: str | None, real_estate_type: str | None) -> list[str] | None:
+    """확인 방식 코드와 매물 유형 코드로 네이버 화면의 확인 배지를 만든다. 목록과 상세가 함께 쓴다.
+
+    집주인(MOBL·OWNER·NDOC1)은 비주거 매물이면 '소유자', 현장(SITE·S_VR)은 '현장' 이다. 그 밖의 코드는 방식 배지가 없어
+    []이고(전화·서류로 확인한 매물(TEL·DOC 등)과 무검증 매물(NONE)이 모두 [] 다), 확인 정보 자체가 없으면
+    (코드가 없거나 빈 글자면) 모름이라 None 이다.
+    """
+    if not verification_type:
+        return None
+    if verification_type in OWNER_VERIFICATION_TYPES:
+        return ['소유자' if real_estate_type in NON_RESIDENTIAL_TYPES else '집주인']
+    if verification_type in SITE_VERIFICATION_TYPES:
+        return ['현장']
+    return []
+
+
 def known_floor(value: str | None) -> str | None:
     """층 값. 층이 없다는 뜻으로 오는 '0'·'-'·빈 값은 모름(None)으로 둔다.
 
@@ -449,12 +536,12 @@ def article_info_to_listing(
         trade_type=trade_type,
         property_type=PROPERTY_NAME_BY_CODE.get(info.real_estate_type, info.real_estate_type),
         title=title,
-        price_manwon=won_to_manwon(price.deal_price) if price and trade_type == '매매' else None,
-        deposit_manwon=won_to_manwon(price.warranty_price) if price and trade_type != '매매' else None,
-        rent_manwon=won_to_manwon(price.rent_price) if price and trade_type in ('월세', '단기임대') else None,
+        price_manwon=won_to_manwon_exact(price.deal_price) if price and trade_type == '매매' else None,
+        deposit_manwon=won_to_manwon_exact(price.warranty_price) if price and trade_type != '매매' else None,
+        rent_manwon=won_to_manwon_exact(price.rent_price) if price and trade_type in ('월세', '단기임대') else None,
         # 목록은 관리비를 입력하지 않은 매물도 0으로 준다 (0원 3건 중 2건이 상세 관리비 정보 없음, 2026-10-09 확인).
         # 0원과 미입력을 구분할 수 없어 모름(null)으로 두고, 상세(관리비 API)에서 구분한다
-        manage_cost_manwon=won_to_manwon(price.management_fee_amount) if price and price.management_fee_amount else None,
+        manage_cost_manwon=won_to_manwon_exact(price.management_fee_amount) if price and price.management_fee_amount else None,
         area_m2=exclusive,
         area_pyeong=m2_to_pyeong(exclusive),
         floor=floor,
@@ -465,6 +552,11 @@ def article_info_to_listing(
         distance_km=distance,
         registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
         approved_at=building_approved_at(info.building_info),
+        badges=verification_badges(
+            info.verification_info.verification_type if info.verification_info else None,
+            info.real_estate_type,
+        ),
+        real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )
 
@@ -477,7 +569,7 @@ def won_to_manwon_range(low: float | None, high: float | None) -> list[float | N
     """
     if not low and not high:
         return None
-    return [won_to_manwon(low), won_to_manwon(high)]
+    return [won_to_manwon_exact(low), won_to_manwon_exact(high)]
 
 
 def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopmentAreaCountModel) -> dict[str, int]:
@@ -583,12 +675,15 @@ def kst_today() -> date:
 
 
 def manwon_range(price_range: NaverPriceRangeModel | None, scale: bool = True) -> list[float | None] | None:
-    """시세 범위(하한·상한)를 만원으로 (`won_to_manwon_range`). `scale` 이 False 면 비율(전세가율 %, 37~41)이라 그대로 둔다."""
+    """시세 범위(하한·상한)를 만원으로 (`won_to_manwon_range`). `scale` 이 False 면 비율(전세가율 %, 37~41)이라 그대로 둔다.
+
+    둘 다 0·None 이면 없음이다 (기관이 0 을 주면 시세 없음이라 전세가율 0% 를 내지 않는다, 시세 평균·범위와 같은 규칙).
+    """
     if price_range is None:
         return None
     if scale:
         return won_to_manwon_range(price_range.floor, price_range.ceiling)
-    if price_range.floor is None and price_range.ceiling is None:
+    if not price_range.floor and not price_range.ceiling:
         return None
     return [price_range.floor, price_range.ceiling]
 
@@ -958,11 +1053,12 @@ def group_sort_notes(sort_type: str | None, listings: list[Listing]) -> list[str
         return []
     end, pick = (max if descending else min)(ends, key=lambda pair: pair[0])
     price = pick.price_manwon if pick.price_manwon is not None else pick.deposit_manwon
+    price_text = '모름' if price is None else format_manwon(price)
     edge = '최고' if descending else '최저'
     return [note(
         '참고',
         f'같은 집을 중개사 여럿이 올린 매물(realtor_count)의 가격은 대표 매물 호가이고, 네이버 가격순은 묶음의 {edge} 호가로 '
-        f'정렬합니다. 이 결과의 묶음 {edge} 호가는 {end:g}만원입니다 ({pick.id}: 대표 {price:g}만원). 가격 조건(--price-*·'
+        f'정렬합니다. 이 결과의 묶음 {edge} 호가는 {format_manwon(end)}만원입니다 ({pick.id}: 대표 {price_text}만원). 가격 조건(--price-*·'
         '--deposit-*·--rent-*)은 대표 호가로만 걸려 이런 묶음 안의 호가는 찾지 못합니다',
     )]
 

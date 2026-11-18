@@ -7,6 +7,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
     NaverCoordinatesModel,
     NaverFacilityInfoModel,
+    NaverListVerificationInfoModel,
     NaverPropertyTaxModel,
     NaverResponseModel,
     NaverSchoolModel,
@@ -341,6 +342,22 @@ class NaverArticleDetailInfoModel(ResponseModel):
         NaverCoordinatesModel | None,
         Field(description='좌표')
     ] = None
+    non_complex_building_name: Annotated[
+        str | None,
+        Field(description='단지에 속하지 않는 건물의 이름 (예: 새롬빌). 건물 이름이 없는 매물은 키가 없다 (2026-11-17 확인)', alias='nonComplexBuildingName')
+    ] = None
+    non_complex_building_sub_name: Annotated[
+        str | None,
+        Field(description='건물 이름 뒤에 붙이는 이름 (동 이름 등). 웹은 매물 유형에 따라 건물 이름 뒤에 붙여 제목에 쓴다', alias='nonComplexBuildingSubName')
+    ] = None
+    building_type: Annotated[
+        str | None,
+        Field(description='건물 세부 유형 코드 (C0203 빌라, C0201 다세대, C0101 일반원룸 ...). 단지 매물은 키가 없다 (2026-11-17 확인)', alias='buildingType')
+    ] = None
+    is_direct_trade: Annotated[
+        bool | None,
+        Field(description='직거래 매물인지. 네이버 웹은 직거래 매물에 중개보수 칸을 그리지 않는다 (2026-11-17 확인, 토지 2661679787)', alias='isDirectTrade')
+    ] = None
 
 
 class NaverDetailInfoModel(ResponseModel):
@@ -354,6 +371,10 @@ class NaverDetailInfoModel(ResponseModel):
         NaverArticleDetailInfoModel | None,
         Field(description='본문 정보', alias='articleDetailInfo')
     ] = None
+    pre_sale_status_type: Annotated[
+        str | None,
+        Field(description="분양권 상태 코드. '10' 일반분양권. 네이버 웹은 분양권(B01·B02) 매매에서 이 값이 '10' 일 때만 세금 칸을 그린다 (2026-11-17 둔촌동 분양권 2661144592 '10'·2659804873 '20', 번들 getArticleTaxExposeInfo)", alias='preSaleStatusType')
+    ] = None
     moving_in_info: Annotated[
         NaverMovingInInfoModel | None,
         Field(description='입주 가능일', alias='movingInInfo')
@@ -365,6 +386,10 @@ class NaverDetailInfoModel(ResponseModel):
     size_info: Annotated[
         NaverSizeInfoModel | None,
         Field(description='면적', alias='sizeInfo')
+    ] = None
+    verification_info: Annotated[
+        NaverListVerificationInfoModel | None,
+        Field(description='확인 정보. 목록의 verificationInfo 와 같은 모양 (확인 방식 verificationType 으로 확인 배지를 정한다)', alias='verificationInfo')
     ] = None
     shape: Annotated[
         str | None,

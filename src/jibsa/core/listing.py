@@ -118,7 +118,7 @@ def m2_to_pyeong(m2: float | None) -> float | None:
 def won_to_manwon(won: float | int | str | None) -> float | None:
     """원 단위 값을 만원 단위로 바꾼다. 빈 값이나 숫자가 아닌 문자열은 None.
 
-    0.1만원(1,000원)으로 반올림해 금액 규칙(원 단위까지)에 어긋난다. 네이버·다방·당근을 #257 에서
+    0.1만원(1,000원)으로 반올림해 금액 규칙(원 단위까지)에 어긋난다. 다방·당근을 #257 에서
     `won_to_manwon_exact` 로 옮긴 뒤 지운다. 새 코드는 쓰지 않는다.
     """
     if won is None or won == '':
@@ -687,8 +687,12 @@ class Listing(BaseModel):
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for field in self.not_applicable_fields():
+        not_applicable = self.not_applicable_fields()
+        for field in not_applicable:
             data.pop(field, None)
+        # 층이 해당 없는 매물(네이버 토지 등)은 층 숫자도 해당 없다
+        if 'floor' in not_applicable:
+            return data
         # 층이 '3'·'지하1'·'중층' 처럼 섞여 와 층으로 거르거나 정렬하기 어려워 숫자를 floor 바로 뒤에 붙인다
         return insert_after(data, 'floor', 'floor_number', floor_number(self.floor))
 
@@ -700,7 +704,8 @@ class ListingDetail(Listing):
 
     `move_in`·`parking` 은 세 소스가 같은 꼴이다 (`move_in_label`·`parking_label`: '2026-10-24', '즉시입주',
     뒤에 ' (협의 가능)' / '가능', '불가', '가능 (총 4대)'). 네이버 `move_in` 만 '2026-12-01 이내'·'2026-12-01 이후'·
-    '2026-11 초순'(중순·하순도)도 쓴다. `nearby_subways` 는 소스 표기대로라 괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
+    '2026-11 초순'(중순·하순도)도 쓴다. 네이버 단지 유형(아파트·오피스텔·재건축·분양권) `parking` 만 가능·불가 없이 단지 대수
+    `'단지 전체 N대 (세대당 M대)'` 다 (웹 칸에 주차가능여부가 없어 `parking_label` 을 쓰지 않는다). `nearby_subways` 는 소스 표기대로라 괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
 
     Args:
         room_count: 방 수. Defaults to None.

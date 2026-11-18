@@ -15,7 +15,7 @@ from jibsa.core.listing import (
     SAME_AREA_PYEONG_TRADES_NOTE,
     normalize_date,
     note,
-    won_to_manwon,
+    won_to_manwon_exact,
     years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -86,6 +86,14 @@ class NaverRealPrice(BaseModel):
         bool | None,
         Field(description='갱신 계약')
     ] = None
+    previous_deposit_manwon: Annotated[
+        float | None,
+        Field(description='갱신 계약의 종전 보증금 (만원)')
+    ] = None
+    previous_rent_manwon: Annotated[
+        float | None,
+        Field(description='갱신 계약의 종전 월세 (만원). 월세·단기임대 갱신 거래만')
+    ] = None
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -95,6 +103,16 @@ class NaverRealPrice(BaseModel):
         # 갱신 계약은 전월세에만 있다
         if self.trade_type == '매매':
             data.pop('renewal', None)
+        # 종전 보증금·월세는 갱신 계약에만 있다 (갱신이 아니거나 모르면 해당 없음). 빌라 단지 실거래는 값 출처가 없어
+        # 두 필드를 넘기지 않으므로(model_fields_set 에 없음) 갱신이어도 내지 않는다
+        # 리뷰 오탐 (2026-11-17): isRenew 가 null 이면 종전 금액을 지우는 것은 웹과 같다 (웹도 isRenew 가 참일 때만 '기존 …' 을 그린다)
+        # 전세 행은 종전 월세도 없다 (웹 실거래 행의 '기존 …' 은 getPriceLabel 로 그려 전세면 보증금만, 월세·단기임대일 때만
+        # '보증금/월세' 를 그린다, 2026-11-17 번들 확인). 전세 갱신은 종전 월세로 대부분 0 이 오므로 rent_manwon 처럼 뺀다
+        for field in ('previous_deposit_manwon', 'previous_rent_manwon'):
+            if field == 'previous_rent_manwon' and 'rent_manwon' in NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type, frozenset()):
+                data.pop(field, None)
+            elif self.trade_type == '매매' or self.renewal is not True or field not in self.model_fields_set:
+                data.pop(field, None)
         return data
 
 
@@ -155,12 +173,14 @@ def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
         trade_type=trade_type,
         trade_date=normalize_date(item.trade_date) or item.trade_date,
         floor=item.floor,
-        price_manwon=won_to_manwon(item.deal_price),
-        deposit_manwon=won_to_manwon(item.deposit),
-        rent_manwon=won_to_manwon(item.monthly_rent),
+        price_manwon=won_to_manwon_exact(item.deal_price),
+        deposit_manwon=won_to_manwon_exact(item.deposit),
+        rent_manwon=won_to_manwon_exact(item.monthly_rent),
         category=item.trade_category,
         cancelled=item.is_delete,
         renewal=item.is_renew,
+        previous_deposit_manwon=won_to_manwon_exact(item.already_deposit),
+        previous_rent_manwon=won_to_manwon_exact(item.already_monthly_rent),
     )
 
 
@@ -169,14 +189,16 @@ def _villa_real_price(item: NaverVillaRealPriceModel, trade_type: str) -> NaverR
         trade_type=trade_type,
         trade_date=normalize_date(item.trade_date) or item.trade_date,
         floor=item.floor,
-        price_manwon=won_to_manwon(item.deal_price),
-        deposit_manwon=won_to_manwon(item.deposit),
-        rent_manwon=won_to_manwon(item.monthly_rent),
+        price_manwon=won_to_manwon_exact(item.deal_price),
+        deposit_manwon=won_to_manwon_exact(item.deposit),
+        rent_manwon=won_to_manwon_exact(item.monthly_rent),
         category=item.trade_category,
         cancelled=item.is_canceled,
         # 빌라는 갱신 계약 여부 대신 계약갱신요구권 사용 여부만 준다. 썼으면 갱신이지만,
         # 안 썼어도 합의 갱신일 수 있어 그때는 모름(None)이다
         renewal=True if item.is_renew_request_right else None,
+        # 종전 보증금·월세는 빌라 단지 응답에 오는지 확인하지 못했다 (값 출처가 없다). 일부러 넘기지 않아
+        # drop_not_applicable 이 renewal 이 True 여도 두 키를 지운다
     )
 
 

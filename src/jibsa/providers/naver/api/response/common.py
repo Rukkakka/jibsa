@@ -123,6 +123,19 @@ class NaverBuildingRatioInfoModel(ResponseModel):
     ] = None
 
 
+class NaverHeatingAndCoolingInfoModel(ResponseModel):
+    """단지의 난방 방식·연료 (`/complex`·`/complex/villa` 의 heatingAndCoolingInfo). 코드 뜻은 `NaverFacilityInfoModel` 과 같다."""
+
+    heating_and_cooling_system_type: Annotated[
+        str | None,
+        Field(description='난방 방식 코드 (HT001 개별난방 ...)', alias='heatingAndCoolingSystemType')
+    ] = None
+    heating_energy_type: Annotated[
+        str | None,
+        Field(description='난방 연료 코드 (HF001 도시가스 ...)', alias='heatingEnergyType')
+    ] = None
+
+
 class NaverComplexModel(ResponseModel):
     """단지 종합정보."""
 
@@ -169,6 +182,13 @@ class NaverComplexModel(ResponseModel):
     parking_info: Annotated[
         NaverParkingInfoModel | None,
         Field(description='주차', alias='parkingInfo')
+    ] = None
+    heating_and_cooling_info: Annotated[
+        NaverHeatingAndCoolingInfoModel | None,
+        Field(
+            description='난방 방식·연료. 매물 상세에 난방이 없을 때 웹이 단지 값으로 채운다. 단지형 빌라(`/complex/villa`)는 값이 없으면 {} 로 온다',
+            alias='heatingAndCoolingInfo'
+        )
     ] = None
     highest_dong_floor: Annotated[
         int | None,
@@ -345,6 +365,14 @@ class NaverPyeongModel(ResponseModel):
         str | None,
         Field(description='대표 방향 코드')
     ] = None
+    entrance_type: Annotated[
+        str | None,
+        Field(
+            description="현관 구조 코드 ('10' 계단식, '20' 복도식, '30' 복합식). pyeongList·`/complex/pyeong` 둘 다 온다 "
+            '(2026-11-18 pyeongList 189377 실측). 네이버 웹 상세는 `/complex/pyeong` 값을 쓴다',
+            alias='entranceType'
+        )
+    ] = None
 
 
 class NaverPropertyTaxModel(ResponseModel):
@@ -444,6 +472,29 @@ class NaverFacilityInfoModel(ResponseModel):
     building_conjunction_date_type: Annotated[
         str | None,
         Field(description="날짜 종류 코드. 'CDY01' 만 확인됨 (사용승인일)", alias='buildingConjunctionDateType')
+    ] = None
+    heating_and_cooling_system_type: Annotated[
+        str | None,
+        Field(
+            description='난방 방식 코드 (2026-11-17 웹 번들 대조): HT001 개별난방, HT002 중앙난방, HT003 개별냉난방, HT004 중앙냉난방, '
+            'HT005 지역난방, HT006 지역냉난방, HT000 미노출(알리지 않음). 입력하지 않은 매물은 키가 없다',
+            alias='heatingAndCoolingSystemType'
+        )
+    ] = None
+    heating_energy_type: Annotated[
+        str | None,
+        Field(
+            description='난방 연료 코드 (2026-11-17 웹 번들 대조): HF001 도시가스, HF002 열병합, HF003 기름, HF004 전기, HF005 심야전기, '
+            'HF006 태양열, HF007 LPG, HF008 지열, HF000 미노출(알리지 않음). 입력하지 않은 매물은 키가 없다',
+            alias='heatingEnergyType'
+        )
+    ] = None
+    entrance_type: Annotated[
+        str | None,
+        Field(
+            description="현관 구조 코드 (2026-11-17 웹 번들 대조): '10' 계단식, '20' 복도식, '30' 복합식. 입력하지 않은 매물은 키가 없다",
+            alias='entranceType'
+        )
     ] = None
 
 
@@ -970,6 +1021,10 @@ class NaverComplexVillaPyeongListV1ResponseModel(NaverResponseModel[list[NaverPy
 
 class NaverComplexPyeongListV1ResponseModel(NaverResponseModel[list[NaverPyeongModel]]):
     """`GET /front-api/v1/complex/pyeongList` 응답."""
+
+
+class NaverComplexPyeongV1ResponseModel(NaverResponseModel[NaverPyeongModel]):
+    """`GET /front-api/v1/complex/pyeong` 응답. 평형 하나. 항목 모양은 pyeongList 와 같다."""
 
 
 class NaverComplexBuildingListV1ResponseModel(NaverResponseModel[list[NaverBuildingModel]]):

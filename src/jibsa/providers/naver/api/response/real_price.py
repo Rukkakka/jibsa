@@ -47,6 +47,14 @@ class NaverRealPriceModel(ResponseModel):
         bool | None,
         Field(description='갱신 계약 여부 (전월세)', alias='isRenew')
     ] = None
+    already_deposit: Annotated[
+        int | None,
+        Field(description='갱신 계약의 종전 보증금 (원). 갱신 거래에만 온다', alias='alreadyDeposit')
+    ] = None
+    already_monthly_rent: Annotated[
+        int | None,
+        Field(description='갱신 계약의 종전 월세 (원). 갱신 거래에만 온다', alias='alreadyMonthlyRent')
+    ] = None
 
 
 class NaverRealPriceListModel(ResponseModel):

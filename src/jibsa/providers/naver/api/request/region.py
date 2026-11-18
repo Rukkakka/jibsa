@@ -22,13 +22,15 @@ class NaverLegalDivisionInfoListByLevelV1RequestParameterModel(RequestModel):
 class NaverLegalDivisionSubInfoListV1RequestParameterModel(RequestModel):
     """`GET /front-api/v1/legalDivision/subInfoList` 쿼리. 지역 하나의 바로 아래 지역.
 
-    단위는 하위 목록을 볼 지역의 단위다. 시·도 코드에 SI 면 시·군·구, 시·군·구 코드에 GUN 이면 읍·면·동을 준다.
-    구 코드에 SI 를 주면 그 구가 속한 시·도의 구를 준다. GU 는 400 이다 (2026-10-10 확인).
+    단위는 받을 하위 지역의 단위다. 시·도 코드에 GUN 이면 시·군·구, 시·군·구 코드에 EUP 이면 읍·면·동을 준다. 네이버 웹이
+    보내는 값과 같다 (2026-11-16 웹 캡처). 예전에는 그 지역 자신의 단위(SI·GUN)를 보냈고 서버가 같은 결과를 줬다 (2026-11-17
+    실측). '구 코드에 SI 를 주면 그 구가 속한 시·도의 구를 준다' 는 웹이 보내지 않는 조합이라 이제 쓰지 않는다. GU 는 400 이다
+    (2026-10-10 확인).
     """
 
     legal_division_level_type: Annotated[
-        Literal['SI', 'GUN'],
-        Field(description='지역 단위 (SI 시·도, GUN 시·군·구)', alias='legalDivisionLevelType')
+        Literal['GUN', 'EUP'],
+        Field(description='받을 하위 지역의 단위 (GUN 시·군·구, EUP 읍·면·동)', alias='legalDivisionLevelType')
     ]
     legal_division_number: Annotated[
         str,
