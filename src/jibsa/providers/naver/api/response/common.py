@@ -547,6 +547,10 @@ class NaverListArticleDetailModel(ResponseModel):
         NaverListFloorDetailModel | None,
         Field(description='층 상세', alias='floorDetailInfo')
     ] = None
+    is_safe_lessor_of_hug: Annotated[
+        bool | None,
+        Field(description='HUG(주택도시보증공사) 안심임대인 여부', alias='isSafeLessorOfHug')
+    ] = None
 
 
 class NaverListAddressModel(ResponseModel):

@@ -358,6 +358,10 @@ class NaverArticleDetailInfoModel(ResponseModel):
         bool | None,
         Field(description='직거래 매물인지. 네이버 웹은 직거래 매물에 중개보수 칸을 그리지 않는다 (2026-11-17 확인, 토지 2661679787)', alias='isDirectTrade')
     ] = None
+    is_safe_lessor_of_hug: Annotated[
+        bool | None,
+        Field(description='HUG(주택도시보증공사) 안심임대인 여부. 목록의 같은 이름 필드(articleDetail.isSafeLessorOfHug)와 같다. 참이면 확인 배지 뒤에 HUG 안심임대인 배지를 붙인다', alias='isSafeLessorOfHug')
+    ] = None
 
 
 class NaverDetailInfoModel(ResponseModel):

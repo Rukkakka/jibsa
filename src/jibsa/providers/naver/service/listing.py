@@ -59,6 +59,7 @@ from jibsa.providers.naver.api.response.listing import (
 from jibsa.providers.naver.service.common import (
     BADGES_DESCRIPTION,
     COMPLEX_SORT_TYPE_BY_NAME,
+    CONFIRMED_AT_DESCRIPTION,
     ENTRANCE_CODE_BY_NAME,
     NOT_APPLICABLE_FIELDS_BY_TYPE,
     OFFICETEL_CODE,
@@ -78,6 +79,7 @@ from jibsa.providers.naver.service.common import (
     dong_label,
     group_sort_notes,
     known_floor,
+    listing_badges,
     listing_keeper,
     pagination_notes,
     price_filter_of,
@@ -87,7 +89,6 @@ from jibsa.providers.naver.service.common import (
     scan_pages,
     unknown_code_label,
     unwrap,
-    verification_badges,
     villa_by_complex_response,
     villa_fallback_found,
 )
@@ -523,6 +524,10 @@ class NaverListingDetail(ListingDetail):
     badges: Annotated[
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
+    ] = None
+    confirmed_at: Annotated[
+        str | None,
+        Field(description=CONFIRMED_AT_DESCRIPTION)
     ] = None
     loan_manwon: Annotated[
         float | None,
@@ -1181,7 +1186,12 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         heating=facility_values.heating,
         heating_fuel=facility_values.heating_fuel,
         entrance=facility_values.entrance,
-        badges=verification_badges(verification.verification_type if verification else None, real_estate_type),
+        badges=listing_badges(
+            verification.verification_type if verification else None,
+            real_estate_type,
+            article.is_safe_lessor_of_hug if article else None,
+        ),
+        confirmed_at=iso_date(verification.article_confirm_date) if verification else None,
         loan_manwon=_loan_manwon(price),
         # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
         # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교)

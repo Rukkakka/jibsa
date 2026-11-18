@@ -26,6 +26,7 @@ from jibsa.core.listing import (
     NEXT_HINT,
     Listing,
     format_manwon,
+    iso_date,
     join_address,
     m2_to_pyeong,
     more_hint,
@@ -244,9 +245,16 @@ class NaverAssignedSchool(BaseModel):
 
 
 BADGES_DESCRIPTION: str = (
-    '네이버 화면의 확인 배지 (집주인·소유자·현장). 방식 배지가 없으면 [], 모르면 null. [] 에는 전화·서류로 확인한 매물과 확인하지 않은 매물이 함께 든다'
+    "네이버 화면의 확인 배지 (집주인·소유자·현장). 확인 정보가 있으면 그 뒤에 집주인이 HUG 안심임대인일 때 'HUG 안심임대인' 이 붙는다. "
+    '방식 배지·HUG 배지가 모두 없으면 [], 모르면 null. 전화·서류로 확인한 매물과 확인하지 않은 매물도 HUG 안심임대인이면 '
+    "['HUG 안심임대인'] 이라, 비어 있지 않다고 집주인·현장 확인 매물인 것은 아니다"
 )
 """목록 매물(`NaverListing`)과 상세(`NaverListingDetail`)의 `badges` 설명. 두 모델은 상속이 갈려 필드를 함께 쓸 수 없다."""
+
+CONFIRMED_AT_DESCRIPTION: str = (
+    "네이버가 매물을 확인한 날 (YYYY-MM-DD). 웹 목록은 협회 매물이 아니면 이 날짜로 '25.11.17. 확인매물' 날짜 배지를, 협회 매물이면 "
+    "노출 시작일(`registered_at`)로 '등록' 배지를 그린다. 목록과 상세의 글자 규칙이 달라 날짜만 낸다. 모르면 null"
+)
 
 
 # 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
@@ -301,6 +309,10 @@ class NaverListing(Listing):
     badges: Annotated[
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
+    ] = None
+    confirmed_at: Annotated[
+        str | None,
+        Field(description=CONFIRMED_AT_DESCRIPTION)
     ] = None
     real_estate_type: Annotated[
         str | None,
@@ -434,6 +446,26 @@ def unknown_code_label(kind: str, code: str) -> str:
     return f'알 수 없는 {kind} ({code})'
 
 
+HUG_SAFE_LESSOR_BADGE: str = 'HUG 안심임대인'
+
+
+def listing_badges(
+    verification_type: str | None,
+    real_estate_type: str | None,
+    is_safe_lessor_of_hug: bool | None,
+) -> list[str] | None:
+    """`verification_badges` 에 HUG 안심임대인 배지를 뒤에 붙인다. 목록과 상세가 함께 쓴다.
+
+    웹은 '집주인'·'현장' 배지 옆에 'HUG 안심임대인' 배지를 따로 그린다. 방식 배지·HUG 배지가 모두 없으면 [] 이고, 방식 배지가 없는
+    코드(전화·서류 확인 TEL·DOC 등, 무검증 NONE)여도 HUG 안심임대인이면 ['HUG 안심임대인'] 이라 비어 있지 않다고 집주인·현장 확인
+    매물인 것은 아니다. 확인 배지를 모르면(None) HUG 가 true 여도 None 그대로 둔다 (확인 정보 없이 HUG 만 true 인 매물은 드물다).
+    """
+    badges = verification_badges(verification_type, real_estate_type)
+    if badges is not None and is_safe_lessor_of_hug:
+        return [*badges, HUG_SAFE_LESSOR_BADGE]
+    return badges
+
+
 def verification_badges(verification_type: str | None, real_estate_type: str | None) -> list[str] | None:
     """확인 방식 코드와 매물 유형 코드로 네이버 화면의 확인 배지를 만든다. 목록과 상세가 함께 쓴다.
 
@@ -552,10 +584,12 @@ def article_info_to_listing(
         distance_km=distance,
         registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
         approved_at=building_approved_at(info.building_info),
-        badges=verification_badges(
+        badges=listing_badges(
             info.verification_info.verification_type if info.verification_info else None,
             info.real_estate_type,
+            info.article_detail.is_safe_lessor_of_hug if info.article_detail else None,
         ),
+        confirmed_at=iso_date(info.verification_info.article_confirm_date) if info.verification_info else None,
         real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )
