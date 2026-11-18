@@ -437,7 +437,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
 # 매일 실행(워크플로 matrix)이 도는 소스. matrix 와 같게 둔다. 네이버는 GitHub 러너에서 응답을 받지 못해 로컬에서만 돌린다
 DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn', 'dabang')
 # 직방 첫 화면이 바로 불러오는 _app 번들. 웹 SDK 설정(`requestHeaders = {"sdk-version": ...}`)이 여기 있다 (2026-11-12 실측: 9개 중
-# 아파트 0.128.0 과 단기임대 zigbang-stay-sdk:0.11.0 이 든 2개)
+# 아파트 0.128.0 과 단기임대 zigbang-stay-sdk:0.11.0 이 든 2개. 2026-11-18 에는 0.128.0·0.13.0·zigbang-stay-sdk:0.12.0)
 ZIGBANG_APP_CHUNK: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/chunks/pages/_app-[^"]+\.js)"')
 ZIGBANG_SDK_VERSION: re.Pattern[str] = re.compile(r'"sdk-version":"([^"]+)"')
 # 다방 첫 화면이 바로 받는 스크립트. 웹 API 클라이언트(axios 인스턴스)의 버전 값이 이 중 하나에 있다 (2026-11-13 실측: 31개 중
