@@ -109,6 +109,10 @@ class NaverComplexPyeongRequestParameterModel(NaverComplexRequestParameterModel)
     ]
 
 
+class NaverComplexPyeongV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
+    """`GET /front-api/v1/complex/pyeong` 쿼리. 평형 하나의 상세 (현관 구조·방향·세대수 등)."""
+
+
 class NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(RequestModel):
     """`GET /front-api/v1/legalDivision/searchByCoordinate` 쿼리."""
 

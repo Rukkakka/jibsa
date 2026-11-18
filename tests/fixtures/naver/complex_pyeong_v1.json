@@ -1,0 +1,12 @@
+{
+ "isSuccess": true,
+ "detailCode": "success",
+ "message": "",
+ "result": {
+  "number": 1,
+  "name": "112A",
+  "supplyArea": 112.4,
+  "exclusiveArea": 84.9,
+  "entranceType": "10"
+ }
+}

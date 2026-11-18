@@ -341,6 +341,18 @@ class NaverArticleDetailInfoModel(ResponseModel):
         NaverCoordinatesModel | None,
         Field(description='좌표')
     ] = None
+    non_complex_building_name: Annotated[
+        str | None,
+        Field(description='단지에 속하지 않는 건물의 이름 (예: 새롬빌). 건물 이름이 없는 매물은 키가 없다 (2026-11-17 확인)', alias='nonComplexBuildingName')
+    ] = None
+    non_complex_building_sub_name: Annotated[
+        str | None,
+        Field(description='건물 이름 뒤에 붙이는 이름 (동 이름 등). 웹은 매물 유형에 따라 건물 이름 뒤에 붙여 제목에 쓴다', alias='nonComplexBuildingSubName')
+    ] = None
+    building_type: Annotated[
+        str | None,
+        Field(description='건물 세부 유형 코드 (C0203 빌라, C0201 다세대, C0101 일반원룸 ...). 단지 매물은 키가 없다 (2026-11-17 확인)', alias='buildingType')
+    ] = None
     is_direct_trade: Annotated[
         bool | None,
         Field(description='직거래 매물인지. 네이버 웹은 직거래 매물에 중개보수 칸을 그리지 않는다 (2026-11-17 확인, 토지 2661679787)', alias='isDirectTrade')

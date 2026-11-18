@@ -40,6 +40,7 @@ from jibsa.core.listing import (
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.service.common import (
     AREA_BASES,
+    ENTRANCE_CODE_BY_NAME,
     MAX_LIST_LIMIT,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PERIOD_YEARS_BY_NAME,
@@ -77,7 +78,6 @@ from jibsa.providers.naver.service.search import (
     COMPLEX_LIST_SORT_TYPE_BY_NAME,
     DEFAULT_SEARCH_PROPERTY_TYPES,
     DIRECTION_FILTER_CODE_BY_NAME,
-    ENTRANCE_CODE_BY_NAME,
     FACILITY_CODE_BY_NAME,
     FLOOR_CODE_BY_NAME,
     LOAN_CODE_BY_NAME,

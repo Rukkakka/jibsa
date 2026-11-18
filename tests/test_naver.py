@@ -38,6 +38,7 @@ from jibsa.providers.naver.service.trend import get_district_trend
 FIXTURES = Path(__file__).parent / 'fixtures' / 'naver'
 ROUTES = {
     '/front-api/v1/complex': 'complex_v1',
+    '/front-api/v1/complex/pyeong': 'complex_pyeong_v1',
     '/front-api/v1/complex/v2/pyeong/realPrice': 'complex_pyeong_real_price_v2',
     '/front-api/v1/legalDivision/searchByCoordinate': 'legal_division_search_by_coordinate_v1',
     '/front-api/v1/data-service/transport': 'data_service_transport_v1',
@@ -516,8 +517,8 @@ def test_monthly_rent_detail_has_agent_fee_but_no_taxes() -> None:
 
 @pytest.mark.parametrize(('real_estate_type', 'absent', 'present', 'taxes_requested'), [
     # 토지는 웹에 방·층·난방·시설 칸이 없고 세금은 취득세만 그린다
-    ('E03', {'room_count', 'floor', 'floor_number', 'options', 'property_tax_manwon'}, {'acquisition_tax_manwon'}, True),
-    ('A01', set(), {'room_count', 'floor', 'options', 'property_tax_manwon', 'acquisition_tax_manwon'}, True),
+    ('E03', {'room_count', 'floor', 'floor_number', 'heating', 'options', 'property_tax_manwon'}, {'acquisition_tax_manwon'}, True),
+    ('A01', set(), {'room_count', 'floor', 'heating', 'options', 'property_tax_manwon', 'acquisition_tax_manwon'}, True),
     # 원룸은 매매여도 세금 칸이 없어 세금을 조회하지 않는다
     ('C01', {'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'}, {'room_count'}, False),
 ])

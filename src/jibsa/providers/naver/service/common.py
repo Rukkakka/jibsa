@@ -42,6 +42,7 @@ from jibsa.providers.naver.api.request.common import (
     NaverComplexPyeongListV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaPyeongListV1RequestParameterModel,
+    NaverEntranceType,
     NaverOneRoomShape,
     NaverRealEstateType,
 )
@@ -114,6 +115,12 @@ PROPERTY_NAME_BY_CODE: dict[str, str] = {
 ONE_ROOM_SHAPE_CODE_BY_NAME: dict[str, NaverOneRoomShape] = {
     '오픈형': '10',
     '분리형': '20',
+}
+# 현관 구조 (검색 조건 이름 → 코드). 상세의 현관 구조 글자도 이 표의 반대 방향이다
+ENTRANCE_CODE_BY_NAME: dict[str, NaverEntranceType] = {
+    '계단식': '10',
+    '복도식': '20',
+    '복합식': '30',
 }
 # 면적 필터 기준. 전용이면 filtersExclusiveSpace 를 켠다. 결과의 area_m2 가 전용면적이라 기본은 전용
 AREA_BASES: tuple[str, ...] = ('전용', '공급')
@@ -236,12 +243,12 @@ NOT_APPLICABLE_FIELDS_BY_TYPE: dict[str, frozenset[str]] = {
     # 토지
     'E03': frozenset({
         'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
-        'supply_area_m2', 'approved_at', 'parking', 'elevator', 'options',
+        'supply_area_m2', 'approved_at', 'heating', 'heating_fuel', 'entrance', 'parking', 'elevator', 'options',
     }),
     # 고시원: 시설 칸은 있어 elevator·options 는 남긴다
     'G01': frozenset({
         'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
-        'supply_area_m2', 'approved_at', 'parking', 'loan_manwon',
+        'supply_area_m2', 'approved_at', 'heating', 'heating_fuel', 'entrance', 'parking', 'loan_manwon',
     }),
     # 재개발
     'F01': frozenset({'room_count', 'bathroom_count', 'room_type', 'area_m2', 'area_pyeong', 'supply_area_m2'}),

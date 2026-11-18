@@ -19,7 +19,6 @@ from jibsa.providers.naver.api.request.common import (
     NaverArticleFilterModel,
     NaverArticleSortType,
     NaverDirectionType,
-    NaverEntranceType,
     NaverFloorType,
     NaverLoanRatioType,
     NaverMoveInType,
@@ -46,6 +45,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverResponseModel,
 )
 from jibsa.providers.naver.service.common import (
+    ENTRANCE_CODE_BY_NAME,
     EXCLUDED_REASON,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PROPERTY_NAME_BY_CODE,
@@ -149,11 +149,6 @@ PARKING_CODE_BY_NAME: dict[str, NaverParkingType] = {
     '세대당1대': 'PKF01',
     '세대당1.5대': 'PKF02',
     '전기차충전': 'PKF03',
-}
-ENTRANCE_CODE_BY_NAME: dict[str, NaverEntranceType] = {
-    '계단식': '10',
-    '복도식': '20',
-    '복합식': '30',
 }
 COMPLEX_FILTER_NOTE: str = note(
     '제외', '세대수·단지 주차·현관 구조는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다',

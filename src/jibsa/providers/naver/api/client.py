@@ -23,6 +23,7 @@ from jibsa.core.http import (
 from jibsa.providers.naver.api.request.common import (
     NaverComplexBuildingListV1RequestParameterModel,
     NaverComplexPyeongListV1RequestParameterModel,
+    NaverComplexPyeongV1RequestParameterModel,
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaPyeongListV1RequestParameterModel,
@@ -96,6 +97,7 @@ from jibsa.providers.naver.api.request.trend import (
 from jibsa.providers.naver.api.response.common import (
     NaverComplexBuildingListV1ResponseModel,
     NaverComplexPyeongListV1ResponseModel,
+    NaverComplexPyeongV1ResponseModel,
     NaverComplexV1ResponseModel,
     NaverComplexVillaBuildingListV1ResponseModel,
     NaverComplexVillaPyeongListV1ResponseModel,
@@ -228,6 +230,7 @@ class NaverClient(BaseHTTPClient):
     complex_v1_endpoint: ClassVar[str] = '/front-api/v1/complex'
     complex_article_stats_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/article/stats'
     complex_pyeong_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongList'
+    complex_pyeong_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeong'
     complex_building_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/buildingList'
     complex_pyeong_real_price_v2_endpoint: ClassVar[str] = '/front-api/v1/complex/v2/pyeong/realPrice'
     complex_declared_value_pyeong_type_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/declaredValue/pyeongType'
@@ -449,6 +452,31 @@ class NaverClient(BaseHTTPClient):
         return await self._aget(
             self.complex_pyeong_list_v1_endpoint, parameter, NaverComplexPyeongListV1ResponseModel
         )
+
+    @naver_retry
+    def run_request_complex_pyeong_v1(
+        self,
+        parameter: NaverComplexPyeongV1RequestParameterModel
+    ) -> NaverComplexPyeongV1ResponseModel:
+        """Fetch one floor-plan type via `GET /front-api/v1/complex/pyeong`.
+
+        매물 상세에 현관 구조가 없을 때 웹이 평형의 현관 구조(`entranceType`)로 채운다 (단지 유형 매물, 2026-11-17 웹 캡처).
+
+        Args:
+            parameter: `complex_number`, `pyeong_type_number`.
+
+        Returns:
+            NaverComplexPyeongV1ResponseModel: 평형 번호·이름·면적·방 수·세대수·현관 구조 코드.
+        """
+        return self._get(self.complex_pyeong_v1_endpoint, parameter, NaverComplexPyeongV1ResponseModel)
+
+    @naver_retry
+    async def arun_request_complex_pyeong_v1(
+        self,
+        parameter: NaverComplexPyeongV1RequestParameterModel
+    ) -> NaverComplexPyeongV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_v1`."""
+        return await self._aget(self.complex_pyeong_v1_endpoint, parameter, NaverComplexPyeongV1ResponseModel)
 
     @naver_retry
     def run_request_complex_building_list_v1(
