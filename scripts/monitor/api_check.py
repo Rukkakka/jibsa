@@ -209,6 +209,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('pyeong', 'pyeongs', 'number', largest='household_count'), Capture('school', 'schools', 'school_code')),
         ),
         Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'transactions'),
+        # 평형 묶음(complex/pyeongGroups)으로 같은 묶음 평형의 실거래를 함께 받는다 (complex/pyeong/realPrice/group)
+        Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'transactions'),
         Step('평형 시세', ('naver', 'market-price'), ('{complex}', '--pyeong', '{pyeong}'), 'providers'),
         Step('학교', ('naver', 'school'), ('{school}',), 'school_code'),
         # 학교는 그 단지가 배정된 학교라 목록이 비면 고장이다 (dict 만 보면 키 이름이 바뀌어 빈 목록이 돼도 못 잡는다)

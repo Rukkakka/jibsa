@@ -5,6 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from jibsa.cli.app import run
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     months_ago,
@@ -1208,6 +1209,64 @@ def test_school_complexes_request_cap_with_short_pages_does_not_ask_for_more_lim
         result = list_school_complexes(client, 'B100000898', sort='거리순', limit=limit)
     assert (len(requests), result.returned, result.has_more) == (5, 50, True)
     assert result.notes == ['[일부] 네이버가 쪽을 짧게 줘 요청 상한(5쪽)까지 50곳만 받았습니다 (학교에 배정되는 단지는 200곳)']
+
+
+# --- 평형 묶음 실거래 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize('groups', [[], None])
+def test_real_price_group_without_groups_is_one_not_found(groups: list | None) -> None:
+    # 없는 단지 번호(99999999)와 빌라 단지(673573)가 모두 isSuccess true·result [] 라 서버 응답으로 가를 수 없다 (2026-11-18). result null 도 같다
+    requests: list[httpx.Request] = []
+    with make_path_client(requests, {'/complex/pyeongGroups': _ok(groups)}) as client, pytest.raises(JibsaError) as exc:
+        get_real_prices(client, 99999999, 1, group=True)
+    assert exc.value.code == 'NOT_FOUND'
+    assert '평형 묶음을 찾지 못했습니다' in exc.value.message
+    assert exc.value.hint is not None and '(jibsa naver complex 99999999)' in exc.value.hint
+    assert _paths(requests) == ['/complex/pyeongGroups']
+
+
+def test_complex_pyeong_groups_null_result_is_empty_but_failure_is_unknown() -> None:
+    from jibsa.providers.naver.service.complex import _pyeong_groups
+
+    # 성공인데 result 가 null 이면 real-price --group 과 같게 묶음 없음([])이고, 조회 실패(isSuccess false)만 모름(null)이다
+    with make_path_client([], {'/complex/pyeongGroups': _ok(None)}) as client:
+        assert _pyeong_groups(client, 100001) == []
+    failure = {'isSuccess': False, 'detailCode': 'ERROR', 'result': {}}
+    with make_path_client([], {'/complex/pyeongGroups': failure}) as client:
+        assert _pyeong_groups(client, 100001) is None
+
+
+def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() -> None:
+    from jibsa.providers.naver.service.complex import _pyeong_groups
+    from jibsa.providers.naver.service.real_price import _find_pyeong_group
+
+    groups = [
+        {'representativePyeongName': '33평', 'representativePyeongNumber': 1, 'householdCount': 10, 'pyeongTypes': None},
+        # 묶음 평형은 번호만 쓴다 (name 이 null 이어도 깨지지 않는다)
+        {'representativePyeongName': '40평', 'representativePyeongNumber': 3, 'householdCount': 5, 'pyeongTypes': [{'number': 3}, {'number': 2, 'name': None}]},
+    ]
+    with make_path_client([], {'/complex/pyeongGroups': _ok(groups)}) as client:
+        # complex: 그 묶음만 pyeong_numbers 가 null(모름)이다
+        assert [group.pyeong_numbers for group in _pyeong_groups(client, 100001) or []] == [None, [2, 3]]
+        # real-price --group: 번호를 모르는 묶음은 건너뛰고 번호가 든 묶음에서 짝을 찾는다
+        group, request_numbers = _find_pyeong_group(client, 100001, 2)
+        assert (group.name, group.pyeong_numbers, request_numbers) == ('40평', [2, 3], [3, 2])
+        with pytest.raises(JibsaError) as exc:
+            _find_pyeong_group(client, 100001, 1)
+    assert exc.value.code == 'NOT_FOUND'
+
+
+# --- 사용법 오류 ----------------------------------------------------------------
+
+
+def test_real_price_group_rejects_period(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_request(*args, **kwargs) -> None:
+        raise AssertionError('입력 오류 검증에서 HTTP 요청을 보내면 안 됩니다')
+
+    monkeypatch.setattr(httpx.Client, 'send', unexpected_request)
+    assert run(['naver', 'real-price', '100001', '--pyeong', '1', '--group', '--period', '1년']) == 2
+    assert json.loads(capsys.readouterr().err)['error']['code'] == 'INVALID_ARGUMENT'
 
 
 # --- 호가 짝·기간 --------------------------------------------------------------

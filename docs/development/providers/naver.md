@@ -10,10 +10,10 @@
 | --- | --- | --- |
 | `search listings` | 지역 해석(시 이름이면 구가 있는지 확인 1회) → 동·시·군·구 경계 또는 지도 범위 → 매물 목록 | `search` |
 | `search complexes` | 지역 해석(시 이름이면 구가 있는지 확인 1회) → 동·시·군·구 경계 단지 목록 또는 반경 단지 목록·마커 | `search` |
-| `complex` | 이름/번호 해석 → 기본 정보·통계·평형·학교, 재건축 단지면 사업 단계, 선택 평형 부가 정보 | `complex` |
+| `complex` | 이름/번호 해석 → 기본 정보·통계·평형·학교·평형 묶음(빌라 단지 제외), 재건축 단지면 사업 단계, 선택 평형 부가 정보 | `complex` |
 | `search listings --complex` | 단지 해석 → 동·평형 검증 → 단지 매물 페이지 | `listing` |
 | `listing` | 매물 기본 정보 → 단지 유형·단지형 빌라면 단지 정보(현관이 비면 평형 정보도), 건축물대장 유형이고 매물 주차 대수가 0·없고 pnu 가 있으면 건축물대장 1회, 교통·학교, 중개보수(직거래 제외 모든 거래 유형. 직거래인지 모르면 요청 안 함)·세금(매매), 개발 예정(`development/article`, 유형과 상관없이 늘 1회) 부가 조회. 최대 11회 | `listing` |
-| `real-price` | 단지·평형별 실거래 페이지, `--period` 면 기간 목록 1회 (빌라는 페이지를 기간 시작일까지) | `real_price` |
+| `real-price` | 단지·평형별 실거래 페이지, `--period` 면 기간 목록 1회 (빌라는 페이지를 기간 시작일까지), `--group` 이면 평형 묶음 1회 → 묶음 실거래 페이지 | `real_price` |
 | `market-price` | 단지 해석 → 기관별 주간 시세 기간 목록 1회 | `market_price` |
 | `redevelopment` | 구역 기본 정보 → 구역 매물 통계 | `redevelopment` |
 | `regions` | 시·도 목록 → 시·도면 하위 목록, 아니면 자동완성 → 시·군·구 하위 목록 | `region` |
@@ -27,7 +27,7 @@
 모든 응답이 `{isSuccess, detailCode, message, result}` 봉투다
  (`NaverResponseModel[T]`). service 는 `unwrap()` 으로 `result` 를 꺼내고, 실패면 `JibsaError`
  (`NOT_FOUND` / `UPSTREAM_ERROR`)를 던진다. 실패 봉투는 HTTP 상태와 별도로 검사한다. 금액은 원 단위라
- `won_to_manwon`로 원 단위까지 만원으로 바꾸고, 글자로 쓸 때는 `format_manwon` 을 쓴다 ([금액·단위](../output-contract.md#금액단위)). 가장 차단이 잦은 소스라 요청 수를 늘리는 변경(매물마다 추가 조회 등)은 피한다. 늘리려면 사용자와 정한다 (예: `listing` 의 개발 예정은 웹이 모든 매물 상세에 그려 1회 늘리기로 했다. 2026-11-18).
+ `won_to_manwon`로 원 단위까지 만원으로 바꾸고, 글자로 쓸 때는 `format_manwon` 을 쓴다 ([금액·단위](../output-contract.md#금액단위)). 가장 차단이 잦은 소스라 요청 수를 늘리는 변경(매물마다 추가 조회 등)은 피한다. 늘리려면 사용자와 정한다 (예: `listing` 의 개발 예정은 웹이 모든 매물 상세에 그려 1회 늘리기로 했다, `complex` 의 평형 묶음은 `--pyeong` 과 상관없이 1회 늘리되 빌라 단지는 묻지 않기로 했다. 모두 2026-11-18).
  429 는 봇 차단이라 일반 재시도 대상이 아니다. `should_retry_naver`는 5xx 와 `RETRYABLE_TRANSPORT_ERRORS`(timeout·연결 실패 등)만 재시도한다.
 
 빌라 단지(A05·A06·A07)인지는 명령 맨 앞에서 한 번에 정하지 않고, 아파트 쪽 응답이 비었을 때 그 자리에서 정한다 (`villa_by_complex_response` docstring). 맨 앞에서 정하면 단지 종류를 모를 때마다(대부분 아파트) 요청이 1회 늘기 때문이다. 판별이 여러 곳에 흩어진 것은 이 때문이며, 한 번 빌라로 정해지면 빌라 엔드포인트의 실패 응답은 0건이 아니라 에러로 낸다. 단지 매물 목록은 아파트·빌라 모두 없는 단지 번호에도 빈 성공 응답을 줘서(2026-10-23 실측: 99999999 와 헬리오시티 111515 의 빌라 목록이 같은 `totalCount: 0`), 단지 번호만 받아 종류를 모른 채 0건이면 단지 정보(아파트 → 빌라)로 단지가 있는지 확인한다 (`_raise_if_missing_complex`). 빌라 단지에 거래·동이 없을 때 빌라 엔드포인트는 실패가 아니라 빈 목록을 주고(서진빌라 724112 월세 실거래 0건), 아파트 동 목록(`complex/buildingList`)도 빌라 단지에 `result=null` 이 아니라 빈 목록을 준다 (2026-10-10 실측).
@@ -146,10 +146,12 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - `article/tax` 는 면제되는 항목도 null 이 아니라 0 으로 준다 (85㎡ 이하 취득 농특세, 종부세 대상 아님. 헬리오시티 39·85·111·150㎡·일신동 빌라 2건, 2026-10-11 실측). 그래서 세금 합계(`_sum_manwon`)에서 일부 항목만 null 인 경우는 실제 응답에 없다.
 - 재검토 후 넣지 않은 엔드포인트: `complex/asking-price`(단지 매물 목록과 같은 정보), `article/boundedArticlesCount`(검색의 `total_count` 와 같음), `search/articles`(`listing` 과 같고 중개사·본문이 섞임), `legalDivision/infoList`, `complex/villa/asking-price`(빈 결과), `complex/villa/realPriceAround`(파라미터를 찾지 못해 400).
 
-## 개발 예정·학교 배정 단지 엔드포인트 메모
+## 평형 묶음·개발 예정·학교 배정 단지 엔드포인트 메모
 
 (2026-11-18 실측, 모두 로그인 없이 200)
 
+- `complex/pyeongGroups`(`complexNumber`)는 평형 묶음 배열을 준다. 항목은 대표 평수 이름·번호(`representativePyeongName`·`representativePyeongNumber`)·세대수와 묶음에 든 평형(`pyeongTypes[]`)이고, 대표 번호가 `pyeongTypes` 의 첫 항목이 아닐 수 있어 `pyeong_numbers` 는 번호순으로 정렬해 낸다. 웹은 단지형 빌라가 아닐 때만 부른다 (`!isVilla`). 성공인데 `result` 가 null 이면 `[]` 와 같게(묶음 없음), 조회 실패면 `pyeong_groups: null` 이다. `pyeongTypes` 가 null 이거나 번호가 빈 평형이 있으면 그 묶음만 `pyeong_numbers: null` 이고 `real-price --group` 은 그 묶음을 짝 찾기에서 건너뛴다.
+- `complex/pyeong/realPrice/group` 은 묶음 실거래를 준다. 평형 번호를 `pyeongTypeNumbers[]=19&pyeongTypeNumbers[]=16` 처럼 키에 `[]` 를 붙여 반복하고, 웹은 `[대표 번호, …나머지 번호순]` 으로 보낸다 (`_find_pyeong_group`). 응답은 `complex/v2/pyeong/realPrice` 와 같은 모양이라 같은 `NaverRealPriceListModel` 을 쓴다. 거래마다 어느 평형인지는 오지 않는다.
 - `development/article`(`articleNumber`)은 `result.railList[]`(역·노선 이름·개통 예정 연도 `openDate`·거리 m·도보 분)와 `jiguList[]`(이름·유형·단계·기간 `period`, 기간은 없을 수 있다)를 준다. 좌표도 오지만 읽지 않는다. 원룸은 `{"railList": [], "jiguList": []}` 로 온다. `stationId`·`railId`·지구의 `id`·`step` 의 자료형은 실측으로 가리지 못해 `int | str | None` 으로 받는다. 웹 `ArticleMain`(청크 c29992b834_0l4pkwg0qhg2t)은 매물 유형 조건 없이 부르고 두 목록이 비면 칸을 그리지 않는다.
 - `education/complex/pages`(`schoolCode`·`size`·`page`·`sortType`)는 학교에 배정되는 단지를 준다. `sortType` 은 `DISTANCE`·`HOUSEHOLD_COUNT` 만 받고 그 밖은 400 이다 (웹 enum `ELEMENTARY_SCHOOL_SORT_TYPE`). 항목은 단지 정보·매물 수·호가 범위(원, 매물이 없으면 `{}`)와 배정 동(`isAllBuildingAssigned`·`convertedBuildingNameGroups`)이다. 끝 쪽을 넘긴 쪽(page=9)은 `list: []`·`hasNextPage: false`·`totalCount: 0` 이라 총수는 첫 쪽에서만 믿는다. `hasNextPage` 가 null 이면 첫 쪽 `totalCount` 가 받은 수보다 클 때 더 있는 것으로 보고 이어 받으며(쪽 요청 상한 5회 안), 상한에 걸려 `--limit` 에 못 미치면 `--limit` 을 권하지 않는 안내를 따로 낸다. 빌라가 `villaInfo` 로 올 경우에 대비해 그 칸도 받는다 (오는지는 확인하지 못했다: 2026-11-18 인천일신초 E100000875 에 배정되는 빌라 가람아트빌 673573 이 목록에 없었다).
 
@@ -199,6 +201,8 @@ client의 action별 endpoint/docstring → request 별칭·필터 → response �
 - **`real-price` 한 쪽 10건.** 웹은 최근 3건·요약 5건·전체 목록 100건(`TRANSACTION_PRICE_PAGE_PAGINATION_SIZE`)씩 보여 준다. jibsa 는 쪽마다 10건(`--pages` 최대 10)이다. 순서가 같아 앞쪽 N건이 웹과 같다 (2026-11-16).
 - **빌라 단지 `real-price --period`.** 웹 빌라 실거래 목록에는 기간 조건이 없다. jibsa 는 최근 순 페이지를 받아 시작일 전 거래를 뺀다. 받은 목록의 부분집합이라 웹에 없는 조건으로 좁히기다 ([기간 조회·지역 목록·학교 엔드포인트 메모](#기간-조회지역-목록학교-엔드포인트-메모), 2026-11-16).
 - **탭을 한 번에.** `complex --pyeong` 은 실거래 요약을 매매·전세 둘 다(웹은 거래 탭 하나씩), 기관 시세 세 곳을 모두(웹은 기관 하나씩) 준다. 웹이 탭마다 보여 주는 값을 함께 낸 것이다 (2026-11-16).
+- **평형 묶음을 `--pyeong` 과 상관없이 늘 붙이기.** `complex` 는 `--pyeong` 을 주든 말든 `pyeong_groups` 를 준다 (웹은 단지형 빌라가 아닐 때만 `complex/pyeongGroups` 를 부른다). 웹이 단지형 빌라가 아닐 때 부르는 같은 요청의 값 그대로이고 빌라 단지는 묻지 않아 웹에 없는 값을 만들지 않는다 (2026-11-18 실측).
+- **`real-price --group` 은 웹 '유사면적 묶기' 와 같은 요청.** 웹은 이 묶기가 기본으로 꺼져 있고 jibsa 는 `--group` 을 줄 때만 쓴다. 같은 `complex/pyeong/realPrice/group` 을 웹과 같게 `[대표 번호, …나머지 번호순]` 으로 불러 서버가 준 묶음 거래 그대로 내고, 거래마다 평형을 알 수 없다는 안내(`[참고]`)를 붙인다. 쪽 크기는 위 '`real-price` 한 쪽 10건' 항목과 같다 (2026-11-18 실측).
 - **학교 배정 단지 쪽 크기 20.** 웹 학교 상세는 배정 단지를 처음 3곳 보여 주고 '더보기' 로 전체 목록(쪽 크기 20)을 본다. `school --complexes` 는 같은 `education/complex/pages` 를 쪽 크기 20 으로 `--limit`(기본 20, 최대 100) 곳까지 이어 받는다. 웹 전체 목록과 같은 쪽을 차례로 받은 것이고 총수는 첫 쪽의 `totalCount` 만 믿는다 (끝 쪽 이후는 0). 정렬은 웹 enum 두 값(`DISTANCE`·`HOUSEHOLD_COUNT`)뿐이고, 단지 좌표·주소·사진은 내지 않으며, 단지마다의 배정 동 판정은 `school --complex` 와 같다 (위 `school` 배정 동 표기 항목) (2026-11-18 실측).
 - **`complex --pyeong` 의 3년 평균 실거래가 (그대로 두기로 함).** `real_price_summary.*.average_manwon` 은 웹도 같은 요청(`complex/pyeong/realPrice/summary`, 시작일 3년 전)으로 받지만, 웹 화면(`ComplexTransactionPriceSummary`)은 3년 최고·최저만 그리고 평균은 '3개월 평균 실거래' 에만 쓴다 (받은 번들 386개 중 평균값을 쓰는 곳은 그 화면과 로그인이 필요한 우리집 시세 둘뿐). 같은 응답에 서버가 준 값이라 그대로 낸다 (2026-11-16 번들 chunk `1un70f33iojlw`).
 - **`complex --pyeong` 의 3개월 평균 실거래.** 웹은 3개월 평균을 매물 상세(`RecentTransaction`)에만 보여 주는데 jibsa 는 `real_price_summary` 의 `average_3m_manwon` 으로 낸다. 같은 요약 요청(`complex/pyeong/realPrice/summary`)을 3개월 전 시작일로 부른 서버 값 그대로라 웹에 없는 결과를 만들지 않는다 ([기간 조회·지역 목록·학교 엔드포인트 메모](#기간-조회지역-목록학교-엔드포인트-메모), 2026-11-18).

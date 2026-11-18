@@ -22,6 +22,7 @@ from jibsa.core.http import (
 )
 from jibsa.providers.naver.api.request.common import (
     NaverComplexBuildingListV1RequestParameterModel,
+    NaverComplexPyeongGroupsV1RequestParameterModel,
     NaverComplexPyeongListV1RequestParameterModel,
     NaverComplexPyeongV1RequestParameterModel,
     NaverComplexV1RequestParameterModel,
@@ -59,6 +60,7 @@ from jibsa.providers.naver.api.request.market_price import (
     NaverComplexMarketPriceListV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.real_price import (
+    NaverComplexPyeongRealPriceGroupV1RequestParameterModel,
     NaverComplexPyeongRealPriceListV1RequestParameterModel,
     NaverComplexPyeongRealPriceV2RequestParameterModel,
     NaverComplexVillaRealPricePageV1RequestParameterModel,
@@ -99,6 +101,7 @@ from jibsa.providers.naver.api.request.trend import (
 )
 from jibsa.providers.naver.api.response.common import (
     NaverComplexBuildingListV1ResponseModel,
+    NaverComplexPyeongGroupsV1ResponseModel,
     NaverComplexPyeongListV1ResponseModel,
     NaverComplexPyeongV1ResponseModel,
     NaverComplexV1ResponseModel,
@@ -136,6 +139,7 @@ from jibsa.providers.naver.api.response.market_price import (
     NaverComplexMarketPriceListV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.real_price import (
+    NaverComplexPyeongRealPriceGroupV1ResponseModel,
     NaverComplexPyeongRealPriceListV1ResponseModel,
     NaverComplexPyeongRealPriceV2ResponseModel,
     NaverComplexVillaRealPricePageV1ResponseModel,
@@ -289,6 +293,8 @@ class NaverClient(BaseHTTPClient):
     education_school_v1_endpoint: ClassVar[str] = '/front-api/v1/education/school'
     education_complex_school_allocation_dongs_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/school/allocation-dongs'
     education_complex_pages_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/pages'
+    complex_pyeong_groups_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongGroups'
+    complex_pyeong_real_price_group_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeong/realPrice/group'
     development_article_v1_endpoint: ClassVar[str] = '/front-api/v1/development/article'
 
     source_name: ClassVar[str] = 'naver'
@@ -1896,6 +1902,68 @@ class NaverClient(BaseHTTPClient):
         """Async variant of `run_request_education_complex_pages_v1`."""
         return await self._aget(
             self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_pyeong_groups_v1(
+        self,
+        parameter: NaverComplexPyeongGroupsV1RequestParameterModel
+    ) -> NaverComplexPyeongGroupsV1ResponseModel:
+        """List floor-plan groups via `GET /front-api/v1/complex/pyeongGroups`.
+
+        `result` 는 배열이다. 항목은 대표 평수 이름·번호(`representativePyeongName`·`representativePyeongNumber`, 번호가
+        `pyeongTypes` 의 첫 항목이 아닐 수 있다)·세대수와 묶음에 든 평형(`pyeongTypes[]`: 번호·이름·`nameType`·면적·세대수·
+        `isVRExist`)이다 (2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `complex_number`.
+
+        Returns:
+            NaverComplexPyeongGroupsV1ResponseModel: 평형 묶음 목록.
+        """
+        return self._get(
+            self.complex_pyeong_groups_v1_endpoint, parameter, NaverComplexPyeongGroupsV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_pyeong_groups_v1(
+        self,
+        parameter: NaverComplexPyeongGroupsV1RequestParameterModel
+    ) -> NaverComplexPyeongGroupsV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_groups_v1`."""
+        return await self._aget(
+            self.complex_pyeong_groups_v1_endpoint, parameter, NaverComplexPyeongGroupsV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_pyeong_real_price_group_v1(
+        self,
+        parameter: NaverComplexPyeongRealPriceGroupV1RequestParameterModel
+    ) -> NaverComplexPyeongRealPriceGroupV1ResponseModel:
+        """Fetch a floor-plan group's real prices via `GET /front-api/v1/complex/pyeong/realPrice/group`.
+
+        평형 번호는 `pyeongTypeNumbers[]=19&pyeongTypeNumbers[]=16` 처럼 키에 `[]` 를 붙여 반복한다. 웹은
+        `[대표 번호, ...나머지 번호순]` 으로 보낸다. 응답은 `complex/v2/pyeong/realPrice` 와 같은 모양이다
+        (2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `complex_number`, `pyeong_type_numbers`, `trade_type`, `page`, `size`.
+
+        Returns:
+            NaverComplexPyeongRealPriceGroupV1ResponseModel: 실거래 목록 한 페이지.
+        """
+        return self._get(
+            self.complex_pyeong_real_price_group_v1_endpoint, parameter, NaverComplexPyeongRealPriceGroupV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_pyeong_real_price_group_v1(
+        self,
+        parameter: NaverComplexPyeongRealPriceGroupV1RequestParameterModel
+    ) -> NaverComplexPyeongRealPriceGroupV1ResponseModel:
+        """Async variant of `run_request_complex_pyeong_real_price_group_v1`."""
+        return await self._aget(
+            self.complex_pyeong_real_price_group_v1_endpoint, parameter, NaverComplexPyeongRealPriceGroupV1ResponseModel
         )
 
     @naver_retry

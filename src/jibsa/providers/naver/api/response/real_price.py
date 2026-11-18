@@ -61,9 +61,9 @@ class NaverRealPriceListModel(ResponseModel):
     """실거래 목록."""
 
     items: Annotated[
-        list[NaverRealPriceModel],
-        Field(description='최근 순 실거래', alias='list')
-    ] = []
+        list[NaverRealPriceModel] | None,
+        Field(description='최근 순 실거래. 서버가 null 로 줄 수 있어 읽는 쪽이 빈 쪽으로 본다 (`real-price --group` 도 이 모델을 쓴다)', alias='list')
+    ] = None
     has_next_page: Annotated[
         bool | None,
         Field(description='다음 페이지 여부', alias='hasNextPage')
@@ -142,3 +142,7 @@ class NaverComplexPyeongRealPriceV2ResponseModel(NaverResponseModel[NaverRealPri
 
 class NaverComplexPyeongRealPriceListV1ResponseModel(NaverResponseModel[list[NaverRealPriceModel]]):
     """`GET /front-api/v1/complex/pyeong/realPrice/list` 응답. 최근 순."""
+
+
+class NaverComplexPyeongRealPriceGroupV1ResponseModel(NaverResponseModel[NaverRealPriceListModel]):
+    """`GET /front-api/v1/complex/pyeong/realPrice/group` 응답. `complex/v2/pyeong/realPrice` 와 같은 모양이다."""

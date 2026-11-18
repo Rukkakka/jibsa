@@ -428,7 +428,7 @@ def complex_command(
     ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보·거래유형별 매물 수·호가 범위·평형 목록. 결과의 complex_number 를 search listings --complex·real-price 에 넘긴다.
+    """단지 정보·거래유형별 매물 수·호가 범위·평형 목록·평형 묶음(pyeong_groups). 결과의 complex_number 를 search listings --complex·real-price 에 넘긴다.
 
     예: jibsa naver complex 개포자이 --pyeong 1   # 1번 평형 매물 수·호가·관리비·시세·실거래 요약
     """
@@ -778,13 +778,18 @@ def real_price_command(
     ] = None,
     period: Annotated[
         str | None,
-        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다")
+        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다. --group 과 함께 쓸 수 없다")
     ] = None,
+    group: Annotated[
+        bool,
+        typer.Option('--group', help='같은 평형 묶음(complex 결과의 pyeong_groups)의 실거래를 함께 준다. 거래마다 평형은 알 수 없다. --period 와 함께 쓸 수 없다')
+    ] = False,
     pretty: PrettyOption = None,
 ) -> None:
     """평형별 실거래가 (국토부 신고 기준, 최근 순).
 
     예: jibsa naver real-price 12345 --pyeong 2 --trade 전세 --period 3년
+    예: jibsa naver real-price 12345 --pyeong 2 --group --pages 2
     """
     trade_types = split_csv([trade], ('매매', '전세', '월세'), '--trade')
     if len(trade_types) != 1:
@@ -793,9 +798,11 @@ def real_price_command(
         period = check_choice(period, PERIOD_MONTHS_BY_NAME, '--period')
         if pages is not None:
             raise typer.BadParameter('--period 와 --pages 는 함께 쓸 수 없습니다. 기간이면 --period 만 주세요', param_hint='--pages')
+        if group:
+            raise typer.BadParameter('--group 과 --period 는 함께 쓸 수 없습니다. 묶음 실거래는 --pages 로 페이지를 넘기세요', param_hint='--group')
     with handle_errors(SOURCE), NaverClient() as client:
         result = get_real_prices(
-            client, complex_number, pyeong, trade_type=trade_types[0], pages=pages or 1, period=period,
+            client, complex_number, pyeong, trade_type=trade_types[0], pages=pages or 1, period=period, group=group,
         )
         emit(result, pretty, notes=result.notes)
 

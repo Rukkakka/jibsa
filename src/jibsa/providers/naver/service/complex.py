@@ -1,4 +1,4 @@
-"""단지 요약·평형·관리비·시세·실거래 요약 (complex)."""
+"""단지 요약·평형·평형 묶음·관리비·시세·실거래 요약 (complex)."""
 
 from datetime import date
 
@@ -22,6 +22,7 @@ from jibsa.core.listing import (
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
+    NaverComplexPyeongGroupsV1RequestParameterModel,
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
 )
@@ -50,11 +51,13 @@ from jibsa.providers.naver.service.common import (
     assigned_schools,
     complex_row_fields,
     complex_url,
+    group_pyeong_numbers,
     kst_today,
     manwon_range,
     pyeong_list,
     raise_missing_pyeongs,
     resolve_dong_numbers,
+    result_or_empty,
     result_or_none,
     unwrap,
     villa_by_complex_response,
@@ -108,6 +111,31 @@ class NaverPyeong(BaseModel):
     household_count: Annotated[
         int | None,
         Field(description='세대수')
+    ] = None
+
+
+class NaverPyeongGroup(BaseModel):
+    """평형 묶음 하나. 네이버는 평형이 많은 단지를 대표 평수(33평 등)로 묶어 보여 준다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description='묶음 이름 (대표 평수, 예: 33평)')
+    ] = None
+    representative_pyeong: Annotated[
+        int | None,
+        Field(description='대표 평형 번호 (real-price 의 --pyeong). 묶음에 든 평형 번호 중 하나다')
+    ] = None
+    households: Annotated[
+        int | None,
+        Field(description='묶음의 세대수')
+    ] = None
+    pyeong_numbers: Annotated[
+        list[int] | None,
+        Field(description='묶음에 든 평형 번호 (번호순, pyeongs[].number). 네이버가 이 묶음의 평형 목록을 주지 않으면 null (모름)')
     ] = None
 
 
@@ -388,6 +416,10 @@ class NaverComplexSummary(BaseModel):
         list[NaverPyeong],
         Field(description='평형 목록')
     ] = []
+    pyeong_groups: Annotated[
+        list[NaverPyeongGroup] | None,
+        Field(description='평형 묶음 (대표 평수별 평형 번호). 빌라 단지는 키가 없고, 서버가 묶음을 주지 않으면 [], 조회 실패면 null. --pyeong 을 몇 개 주든 붙는다')
+    ] = None
     pyeong_maintenance_fee: Annotated[
         NaverComplexMaintenanceFee | None,
         Field(description='--pyeong 평형의 월 관리비. 평형을 하나만 줄 때만 키가 있고, 자료가 없으면 null')
@@ -424,6 +456,8 @@ class NaverComplexSummary(BaseModel):
     _pyeong_scoped: bool = PrivateAttr(default=False)
     # 재건축 단지인지. 아니면 reconstruction 은 해당 없음이라 뺀다
     _reconstruction_scoped: bool = PrivateAttr(default=False)
+    # 평형 묶음을 조회했는지. 빌라 단지는 웹도 묻지 않아 pyeong_groups 는 해당 없음이라 뺀다
+    _pyeong_groups_scoped: bool = PrivateAttr(default=False)
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -433,6 +467,8 @@ class NaverComplexSummary(BaseModel):
                 data.pop(field, None)
         if not self._reconstruction_scoped:
             data.pop('reconstruction', None)
+        if not self._pyeong_groups_scoped:
+            data.pop('pyeong_groups', None)
         return data
 
 
@@ -500,6 +536,28 @@ def _reconstruction(client: NaverClient, complex_number: int) -> NaverReconstruc
     )
 
 
+def _pyeong_groups(client: NaverClient, complex_number: int) -> list[NaverPyeongGroup] | None:
+    """평형 묶음 (1회 호출). 네이버가 묶음을 주지 않으면(빈 목록이거나 성공인데 `result` 가 null) [], 조회가 실패하면 모름(None).
+
+    `real-price --group` 의 `_find_pyeong_group` 도 성공인데 `result` 가 null 인 응답을 빈 목록과 같게 읽는다. 묶음의 평형 목록을 주지 않으면
+    (`pyeongTypes` null) 그 묶음만 `pyeong_numbers` 가 모름(None)이다.
+    """
+    groups = result_or_empty(lambda: client.run_request_complex_pyeong_groups_v1(
+        NaverComplexPyeongGroupsV1RequestParameterModel(complex_number=complex_number)
+    ), list)
+    if groups is None:
+        return None
+    return [
+        NaverPyeongGroup(
+            name=group.representative_pyeong_name,
+            representative_pyeong=group.representative_pyeong_number,
+            households=group.household_count,
+            pyeong_numbers=group_pyeong_numbers(group),
+        )
+        for group in groups
+    ]
+
+
 def get_complex(
     client: NaverClient,
     complex_number: int,
@@ -509,9 +567,10 @@ def get_complex(
     villa: bool | None = None,
     today: date | None = None,
 ) -> NaverComplexSummary:
-    """단지 정보·매물 수·호가 범위·평형·배정 초등학교를 한 번에 모은다 (4회 호출, 빌라 단지는 5회, 종류를 알면 4회).
+    """단지 정보·매물 수·호가 범위·평형·배정 초등학교·평형 묶음을 한 번에 모은다 (아파트 단지 5회, 빌라 단지는 종류를 모르면 5회·알면 4회).
 
     재건축(A04) 단지는 사업 단계·시공사·계획 세대수를 1회 더 물어 `reconstruction` 으로 붙인다.
+    평형 묶음(`pyeong_groups`)은 `--pyeong` 과 상관없이 1회 물어 붙인다 (웹은 단지형 빌라에서 부르지 않아 빌라 단지는 묻지 않고 키가 없다).
 
     단지로 등록된 빌라(A05·A06·A07)는 아파트 단지 엔드포인트가 성공 응답에 빈 결과를 주므로,
     그때 빌라 단지 엔드포인트로 다시 묻는다. 빌라 단지에는 동 수·건설사·방 수가 없다.
@@ -568,6 +627,8 @@ def get_complex(
 
     is_reconstruction = not villa and complex_.type == RECONSTRUCTION_CODE
     reconstruction = _reconstruction(client, complex_number) if is_reconstruction else None
+    # 웹은 단지형 빌라에서 평형 묶음을 부르지 않는다 (`!isVilla`)
+    pyeong_groups = None if villa else _pyeong_groups(client, complex_number)
 
     notes: list[str] = []
     pyeong_details: dict[str, Any] = {}
@@ -593,6 +654,7 @@ def get_complex(
         parking_per_household=complex_.parking_info.parking_count_per_household if complex_.parking_info else None,
         floor_area_ratio=complex_.building_ratio_info.floor_area_ratio if complex_.building_ratio_info else None,
         pyeongs=[_pyeong(pyeong, complex_.type == OFFICETEL_CODE) for pyeong in pyeongs],
+        pyeong_groups=pyeong_groups,
         schools=None if schools is None else assigned_schools(schools),
         reconstruction=reconstruction,
         url=complex_url(complex_number),
@@ -609,6 +671,7 @@ def get_complex(
     )
     summary._pyeong_scoped = bool(pyeong_details)
     summary._reconstruction_scoped = is_reconstruction
+    summary._pyeong_groups_scoped = not villa
     return summary
 
 

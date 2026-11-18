@@ -412,6 +412,52 @@ class NaverPyeongModel(ResponseModel):
     ] = None
 
 
+class NaverPyeongGroupTypeModel(ResponseModel):
+    """평형 묶음에 든 평형 하나. 평형 목록(`pyeongList`, `NaverPyeongModel`)의 평형과 같은 키(면적·방 수 등)에 이름 구분·VR 여부가 더 온다.
+
+    jibsa 는 묶음의 평형 번호만 쓴다. `NaverPyeongModel` 을 이어받지 않는다: 그 필수 칸(`number`·`name`)이 서버에서 비어 와도
+    단지·`real-price --group` 전체가 `PARSE_ERROR` 로 깨지지 않게 칸을 모두 선택으로 받고, 쓰지 않는 키는 `extra='allow'` 로 남는다.
+    """
+
+    number: Annotated[
+        int | None,
+        Field(description='평형 번호. null 이면 이 묶음의 평형 번호 전체를 모름으로 본다 (`group_pyeong_numbers`)')
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='평형 이름. 묶음에서는 쓰지 않는다')
+    ] = None
+    name_type: Annotated[
+        str | None,
+        Field(description='평형 이름 구분', alias='nameType')
+    ] = None
+    is_vr_exist: Annotated[
+        bool | None,
+        Field(description='VR 있는지', alias='isVRExist')
+    ] = None
+
+
+class NaverPyeongGroupModel(ResponseModel):
+    """평형 묶음 하나 ('33평' 묶음에 61A·61B 등). 사이트는 평형이 많은 단지를 대표 평수로 묶어 보여 준다."""
+
+    representative_pyeong_name: Annotated[
+        str | None,
+        Field(description='대표 평수 이름 (예: 33평)', alias='representativePyeongName')
+    ] = None
+    representative_pyeong_number: Annotated[
+        int | None,
+        Field(description='대표 평형 번호. `pyeongTypes` 의 첫 항목이 아닐 수 있다', alias='representativePyeongNumber')
+    ] = None
+    household_count: Annotated[
+        int | None,
+        Field(description='묶음의 세대수', alias='householdCount')
+    ] = None
+    pyeong_types: Annotated[
+        list[NaverPyeongGroupTypeModel] | None,
+        Field(description='묶음에 든 평형. 서버가 null 로 줄 수 있어 모름이다 (그 묶음의 평형 번호를 모름으로 본다)', alias='pyeongTypes')
+    ] = None
+
+
 class NaverPropertyTaxModel(ResponseModel):
     """재산세 (원)."""
 
@@ -1066,6 +1112,10 @@ class NaverComplexVillaPyeongListV1ResponseModel(NaverResponseModel[list[NaverPy
 
 class NaverComplexPyeongListV1ResponseModel(NaverResponseModel[list[NaverPyeongModel]]):
     """`GET /front-api/v1/complex/pyeongList` 응답."""
+
+
+class NaverComplexPyeongGroupsV1ResponseModel(NaverResponseModel[list[NaverPyeongGroupModel]]):
+    """`GET /front-api/v1/complex/pyeongGroups` 응답."""
 
 
 class NaverComplexPyeongV1ResponseModel(NaverResponseModel[NaverPyeongModel]):

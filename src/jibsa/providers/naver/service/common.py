@@ -63,6 +63,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverListBuildingInfoModel,
     NaverMinMaxPriceModel,
     NaverPriceRangeModel,
+    NaverPyeongGroupModel,
     NaverPyeongModel,
     NaverRedevelopmentAreaCountModel,
     NaverRedevelopmentAreaPageModel,
@@ -424,6 +425,21 @@ def result_or_none(request: Callable[[], NaverResponseModel[T]]) -> T | None:
         return None
 
 
+def result_or_empty(request: Callable[[], NaverResponseModel[T]], empty: Callable[[], T]) -> T | None:
+    """부가 정보 조회. 실패하면(예외·`isSuccess` false) 모름(None), 성공했는데 `result` 가 null 이면 네이버가 주지 않은 것이라 `empty()`.
+
+    `result_or_none` 은 둘을 모두 None 으로 합쳐, 성공 응답을 '조회 실패(모름)' 로 내게 된다. 서버가 빈 목록·빈 객체를 주는 자리에
+    `result: null` 이 와도 그 빈 응답과 같게 읽을 때 쓴다 (`empty` 는 `list` 나 빈 모델 클래스처럼 빈 값을 만드는 호출 가능한 것).
+    """
+    try:
+        response = request()
+    except OPTIONAL_LOOKUP_ERRORS:
+        return None
+    if not response.is_success:
+        return None
+    return empty() if response.result is None else response.result
+
+
 # 단지형 빌라(연립·다세대·도시형생활주택 단지). 학교는 이 유형이면 villa 로 묻는다
 VILLA_COMPLEX_CODES: frozenset[str] = frozenset({'A05', 'A06', 'A07'})
 SCHOOL_ALLOCATION_LABELS: dict[str, str] = {'01': '배정', '02': '선택'}
@@ -783,6 +799,19 @@ def pyeong_list(client: NaverClient, complex_number: int, villa: bool) -> list[N
         client.run_request_complex_pyeong_list_v1(NaverComplexPyeongListV1RequestParameterModel(complex_number=complex_number)),
         '평형',
     )
+
+
+def group_pyeong_numbers(group: NaverPyeongGroupModel) -> list[int] | None:
+    """평형 묶음에 든 평형 번호 (번호순). 대표 번호가 `pyeongTypes` 의 첫 항목이 아닐 수 있어 순서를 믿지 않고 정렬한다.
+
+    네이버가 평형 목록을 주지 않거나(`pyeongTypes` null) 번호가 빈 평형이 있으면 묶음의 번호를 다 알 수 없어 모름(None)이다.
+    """
+    if group.pyeong_types is None:
+        return None
+    numbers = {pyeong.number for pyeong in group.pyeong_types}
+    if None in numbers:
+        return None
+    return sorted(number for number in numbers if number is not None)
 
 
 def check_pyeong_numbers(
