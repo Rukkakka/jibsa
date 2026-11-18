@@ -35,7 +35,7 @@ from jibsa.core.listing import (
     more_hint,
     normalize_date,
     note,
-    won_to_manwon_exact,
+    won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.naver.api.client import NaverClient
@@ -582,12 +582,12 @@ def article_info_to_listing(
         trade_type=trade_type,
         property_type=PROPERTY_NAME_BY_CODE.get(info.real_estate_type, info.real_estate_type),
         title=title,
-        price_manwon=won_to_manwon_exact(price.deal_price) if price and trade_type == '매매' else None,
-        deposit_manwon=won_to_manwon_exact(price.warranty_price) if price and trade_type != '매매' else None,
-        rent_manwon=won_to_manwon_exact(price.rent_price) if price and trade_type in ('월세', '단기임대') else None,
+        price_manwon=won_to_manwon(price.deal_price) if price and trade_type == '매매' else None,
+        deposit_manwon=won_to_manwon(price.warranty_price) if price and trade_type != '매매' else None,
+        rent_manwon=won_to_manwon(price.rent_price) if price and trade_type in ('월세', '단기임대') else None,
         # 목록은 관리비를 입력하지 않은 매물도 0으로 준다 (0원 3건 중 2건이 상세 관리비 정보 없음, 2026-10-09 확인).
         # 0원과 미입력을 구분할 수 없어 모름(null)으로 두고, 상세(관리비 API)에서 구분한다
-        manage_cost_manwon=won_to_manwon_exact(price.management_fee_amount) if price and price.management_fee_amount else None,
+        manage_cost_manwon=won_to_manwon(price.management_fee_amount) if price and price.management_fee_amount else None,
         area_m2=exclusive,
         area_pyeong=m2_to_pyeong(exclusive),
         floor=floor,
@@ -617,7 +617,7 @@ def won_to_manwon_range(low: float | None, high: float | None) -> list[float | N
     """
     if not low and not high:
         return None
-    return [won_to_manwon_exact(low), won_to_manwon_exact(high)]
+    return [won_to_manwon(low), won_to_manwon(high)]
 
 
 class NaverAskingPair(BaseModel):
@@ -658,7 +658,7 @@ def _asking_pair(deposit: int | None, rent: int | None) -> NaverAskingPair:
     """한 짝의 보증금·월세(원)를 만원 짝으로. 월세만 0 이면 월세만 null, 보증금과 월세가 모두 0(또는 없음)이면 두 값 모두 null."""
     if not deposit and not rent:
         return NaverAskingPair(deposit_manwon=None, rent_manwon=None)
-    return NaverAskingPair(deposit_manwon=won_to_manwon_exact(deposit), rent_manwon=won_to_manwon_exact(rent or None))
+    return NaverAskingPair(deposit_manwon=won_to_manwon(deposit), rent_manwon=won_to_manwon(rent or None))
 
 
 def rent_asking_range(

@@ -11,7 +11,7 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import won_to_manwon_exact
+from jibsa.core.listing import won_to_manwon
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.trend import (
     NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel,
@@ -231,7 +231,7 @@ def get_district_trend(
             hint='법정동·구 이름으로 다시 찾거나 잠시 뒤 다시 시도하세요',
         )
     price_weekly = [
-        NaverWeeklyPrice(week_start=point.first_day_of_week, price_per_pyeong_manwon=won_to_manwon_exact(point.average_pyeong_price))
+        NaverWeeklyPrice(week_start=point.first_day_of_week, price_per_pyeong_manwon=won_to_manwon(point.average_pyeong_price))
         for point in prices or []
     ]
     return NaverDistrictTrend(

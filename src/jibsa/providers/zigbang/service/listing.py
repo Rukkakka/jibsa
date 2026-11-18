@@ -34,7 +34,7 @@ from jibsa.core.listing import (
     normalize_date,
     note,
     parking_label,
-    won_to_manwon_exact,
+    won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
@@ -368,9 +368,9 @@ def _manage_cost_manwon(manage: ZigbangItemsDetailV1ManageCostModel) -> float | 
     if detail is not None:
         won = detail.total_amount if detail.type == FIXED_MANAGE_COST_TYPE else detail.avg_manage_cost
         if won is not None:
-            return won_to_manwon_exact(won)
+            return won_to_manwon(won)
     if manage.fee is not None:
-        return won_to_manwon_exact(manage.fee)
+        return won_to_manwon(manage.fee)
     return (manage.amount or 0) if detail is None else manage.amount
 
 
@@ -574,7 +574,7 @@ def apt_item_to_listing(
         deposit_manwon=None if is_sale else apt.deposit,
         rent_manwon=apt.rent if trade_type == '월세' else None,
         # 0원이면 웹(`getManagementFee`, 2026-11-15 번들)은 관리비 칸을 빈 글자로 두어 '관리비 없음' 이 아니라 모름(None)이다
-        manage_cost_manwon=won_to_manwon_exact(cost.monthly_cost) if cost and cost.monthly_cost else None,
+        manage_cost_manwon=won_to_manwon(cost.monthly_cost) if cost and cost.monthly_cost else None,
         area_m2=apt.size_m2,
         area_pyeong=m2_to_pyeong(apt.size_m2),
         floor=_text_or_none(apt.floor),

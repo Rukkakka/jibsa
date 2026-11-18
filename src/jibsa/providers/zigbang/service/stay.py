@@ -36,7 +36,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
-    won_to_manwon_exact,
+    won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -327,7 +327,7 @@ def _discount_amount_text(amount_won: float | None) -> str | None:
     """할인 금액(원)을 'N만원' 으로 (반올림 없이 원 단위까지, 2,500원 → '0.25만원'). 금액이 없거나 0 이하면 None (할인이 아니다)."""
     if not amount_won or amount_won <= 0:
         return None
-    return f'{format_manwon(won_to_manwon_exact(amount_won) or 0)}만원'
+    return f'{format_manwon(won_to_manwon(amount_won) or 0)}만원'
 
 
 def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | None) -> str | None:
@@ -384,8 +384,8 @@ def stay_summary_to_listing(
         lng=summary.lng,
         distance_km=None if distance_km is None else round(distance_km, 2),
         registered_at=normalize_date(summary.reviewed_at),
-        weekly_rent_manwon=won_to_manwon_exact(summary.weekly_rent),
-        weekly_manage_cost_manwon=won_to_manwon_exact(summary.weekly_manage_cost),
+        weekly_rent_manwon=won_to_manwon(summary.weekly_rent),
+        weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
         room_count=summary.room_count,
         bathroom_count=summary.bathroom_count,
         discounts=sent_or_none(summary, 'discounts', stay_discounts(summary.discounts, summary.weekly_rent)),
@@ -760,7 +760,7 @@ def stay_detail_to_listing(
     registered_at: str | None = None,
 ) -> ZigbangStayListingDetail:
     """단기임대 상세를 `ZigbangStayListingDetail` 로 바꾼다. 사진·본문·호스트 정보는 옮기지 않는다."""
-    manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon_exact(detail.weekly_manage_cost)
+    manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon(detail.weekly_manage_cost)
     includes = detail.manage_cost_includes
     return ZigbangStayListingDetail(
         source='zigbang',
@@ -769,7 +769,7 @@ def stay_detail_to_listing(
         trade_type='단기임대',
         property_type=STAY_BUILDING_TYPE_LABELS.get(detail.building_type or '', detail.building_type or '단기임대'),
         title=detail.title,
-        deposit_manwon=won_to_manwon_exact(detail.deposit),
+        deposit_manwon=won_to_manwon(detail.deposit),
         area_m2=detail.size_m2,
         area_pyeong=m2_to_pyeong(detail.size_m2),
         floor=detail.floor,
@@ -793,9 +793,9 @@ def stay_detail_to_listing(
             f'{station.name} ({station.description})' if station.description else station.name
             for station in detail.nearby_stations
         ]),
-        weekly_rent_manwon=won_to_manwon_exact(detail.weekly_rent),
+        weekly_rent_manwon=won_to_manwon(detail.weekly_rent),
         weekly_manage_cost_manwon=manage_cost,
-        cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon_exact(detail.cleaning_fee),
+        cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon(detail.cleaning_fee),
         discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts, detail.weekly_rent)),
         min_contract_weeks=detail.min_contract_weeks,
         max_contract_weeks=detail.max_contract_weeks,

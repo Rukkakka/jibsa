@@ -781,7 +781,7 @@ def _weighted(points: list[tuple[float, int]]) -> tuple[float, int] | None:
     count = sum(transactions for _, transactions in points)
     if count == 0:
         return None
-    return round(sum(average * transactions for average, transactions in points) / count, 1), count
+    return round(sum(average * transactions for average, transactions in points) / count, 4), count
 
 
 def get_price_trend(
@@ -845,7 +845,7 @@ def get_price_trend(
     monthly: dict[int, tuple[float, int]] = {}
     for point in node.price_chart.average_points if node.price_chart else []:
         average = won_to_manwon(point.average_amount)
-        # 평균 0(또는 500원 미만이라 0.0만원)은 실제 거래가가 아니라 빈 값으로 본다. 넣으면 변화율이 0 으로 나뉜다
+        # 평균 0 은 실제 거래가가 아니라 빈 값으로 본다. 넣으면 변화율이 0 으로 나뉜다
         # (실제 응답에서는 아직 보지 못한 방어 코드)
         if average and point.transaction_count:
             monthly[_month_index(point.year_month)] = (average, point.transaction_count)
@@ -889,7 +889,7 @@ def get_price_trend(
             end_average_manwon=end[0],
             months=last_index - first,
             change_percent=round((end[0] / start[0] - 1) * 100, 1),
-            change_manwon=round(end[0] - start[0], 1),
+            change_manwon=round(end[0] - start[0], 4),
         )
         if min(start[1], end[1]) < PRICE_TREND_FEW_TRANSACTIONS:
             notes.append(note(
