@@ -231,7 +231,7 @@ def manwon_from_text(text: str | None) -> float | None:
     if not compact or match is None or (match.group(1) is None and match.group(2) is None):
         return None
     value = float(match.group(1) or 0) * MANWON_PER_EOK + float(match.group(2) or 0)
-    return round(value, 1) if isfinite(value) else None
+    return round(value, 4) if isfinite(value) else None
 
 
 def number_of(text: str | None, *, signed: bool = False) -> float | None:

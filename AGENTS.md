@@ -39,7 +39,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 ## 꼭 지킬 것
 
 - **로그인 없는 기능만.** 계정·쿠키·API 키를 받지 않고, 로그인이 필요한 API(관심 단지·매물, 내 집 인증 등)나 사용자 대신 보내는 기능(문의·예약·신고)은 넣지 않는다. 새 엔드포인트는 로그인 없이 호출되는지 먼저 확인한다. ([README 원칙](README.md#원칙-로그인-없는-기능만))
-- **금액은 전부 만원, 원 단위까지.** 필드 이름에 단위를 붙인다 (`deposit_manwon`). 원 단위 원본은 `won_to_manwon_exact` 로 환산하고 반올림·버림 없이 원까지 남긴다 (375,700원 → `37.57`). jibsa 가 계산한 평균도 같고, 글자로 쓸 때는 `:g`·`round` 대신 `format_manwon`. 네이버·다방·당근은 아직 1,000원 단위로 반올림한다 (#257) ([금액·단위](docs/development/output-contract.md#금액단위))
+- **금액은 전부 만원, 원 단위까지.** 필드 이름에 단위를 붙인다 (`deposit_manwon`). 원 단위 원본은 `won_to_manwon` 으로 환산하고 반올림·버림 없이 원까지 남긴다 (375,700원 → `37.57`). jibsa 가 계산한 평균도 같고, 글자로 쓸 때는 `:g`·`round` 대신 `format_manwon` ([금액·단위](docs/development/output-contract.md#금액단위))
 - **조회 결과는 stdout JSON, 에러는 stderr JSON.** 도움말·자동완성·`guide`·`--version` 은 CLI 텍스트이며 `--verbose` 진행 로그는 stderr 로 나간다. 새 에러는 `JibsaError` 로 코드·힌트를 붙여 던진다. 예외는 transport 안에서 나는 전송 오류(`CorsBlockedError`·`ProxyError`·`CertificateError`)로, 덤 조회가 삼키도록 httpx 예외로 두고 `handle_errors` 가 코드·힌트를 붙인다 ([출력 규약](docs/development/output-contract.md)).
 - **값이 없을 때:** 해당 없음 → 키 삭제, 모름 → `null`, 비어 있음 → `[]`.
 - **만료 매물은 내보내지 않는다.** 목록에서는 거르고, 상세에서는 `ListingUnavailableError`.

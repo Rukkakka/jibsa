@@ -117,20 +117,6 @@ def m2_to_pyeong(m2: float | None) -> float | None:
 
 
 def won_to_manwon(won: float | int | str | None) -> float | None:
-    """원 단위 값을 만원 단위로 바꾼다. 빈 값이나 숫자가 아닌 문자열은 None.
-
-    0.1만원(1,000원)으로 반올림해 금액 규칙(원 단위까지)에 어긋난다. 다방·당근을 #257 에서
-    `won_to_manwon_exact` 로 옮긴 뒤 지운다. 새 코드는 쓰지 않는다.
-    """
-    if won is None or won == '':
-        return None
-    try:
-        return round(float(won) / 10_000, 1)
-    except (TypeError, ValueError):
-        return None
-
-
-def won_to_manwon_exact(won: float | int | str | None) -> float | None:
     """원 단위 값을 만원 단위로 바꾼다. 금액은 원 단위까지 낸다 (375,700원 → 37.57).
 
     빈 값이나 숫자가 아닌 문자열은 None. 만원 소수 넷째 자리가 1원이라, 1원 아래만 반올림해 부동소수점 찌꺼기를 지운다

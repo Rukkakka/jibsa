@@ -11,7 +11,7 @@ from pydantic import (
 from jibsa.core.listing import (
     months_ago,
     normalize_date,
-    won_to_manwon_exact,
+    won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.market_price import (
@@ -160,9 +160,9 @@ def get_market_price_history(
                 NaverMarketPricePoint(
                     base_date=normalize_date(day) or day,
                     # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (complex --pyeong 의 _market_price 와 같다)
-                    sale_manwon=won_to_manwon_exact(item.deal_prices.get(day)) or None,
+                    sale_manwon=won_to_manwon(item.deal_prices.get(day)) or None,
                     sale_range_manwon=manwon_range(item.deal_price_ranges.get(day)),
-                    jeonse_manwon=won_to_manwon_exact(item.deposit_prices.get(day)) or None,
+                    jeonse_manwon=won_to_manwon(item.deposit_prices.get(day)) or None,
                     jeonse_range_manwon=manwon_range(item.deposit_price_ranges.get(day)),
                     jeonse_ratio_percent=manwon_range(item.lease_per_deal_rates.get(day), scale=False),
                 )

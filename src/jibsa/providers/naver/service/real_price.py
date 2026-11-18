@@ -16,7 +16,7 @@ from jibsa.core.listing import (
     months_ago,
     normalize_date,
     note,
-    won_to_manwon_exact,
+    won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.real_price import (
@@ -175,14 +175,14 @@ def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
         trade_type=trade_type,
         trade_date=normalize_date(item.trade_date) or item.trade_date,
         floor=item.floor,
-        price_manwon=won_to_manwon_exact(item.deal_price),
-        deposit_manwon=won_to_manwon_exact(item.deposit),
-        rent_manwon=won_to_manwon_exact(item.monthly_rent),
+        price_manwon=won_to_manwon(item.deal_price),
+        deposit_manwon=won_to_manwon(item.deposit),
+        rent_manwon=won_to_manwon(item.monthly_rent),
         category=item.trade_category,
         cancelled=item.is_delete,
         renewal=item.is_renew,
-        previous_deposit_manwon=won_to_manwon_exact(item.already_deposit),
-        previous_rent_manwon=won_to_manwon_exact(item.already_monthly_rent),
+        previous_deposit_manwon=won_to_manwon(item.already_deposit),
+        previous_rent_manwon=won_to_manwon(item.already_monthly_rent),
     )
 
 
@@ -191,9 +191,9 @@ def _villa_real_price(item: NaverVillaRealPriceModel, trade_type: str) -> NaverR
         trade_type=trade_type,
         trade_date=normalize_date(item.trade_date) or item.trade_date,
         floor=item.floor,
-        price_manwon=won_to_manwon_exact(item.deal_price),
-        deposit_manwon=won_to_manwon_exact(item.deposit),
-        rent_manwon=won_to_manwon_exact(item.monthly_rent),
+        price_manwon=won_to_manwon(item.deal_price),
+        deposit_manwon=won_to_manwon(item.deposit),
+        rent_manwon=won_to_manwon(item.monthly_rent),
         category=item.trade_category,
         cancelled=item.is_canceled,
         # 빌라는 갱신 계약 여부 대신 계약갱신요구권 사용 여부만 준다. 썼으면 갱신이지만,
@@ -202,8 +202,8 @@ def _villa_real_price(item: NaverVillaRealPriceModel, trade_type: str) -> NaverR
         # 종전 보증금·월세: 빌라 실거래 행에도 alreadyDeposit·alreadyMonthlyDeposit(아파트의 alreadyMonthlyRent 와 키 이름이
         # 다르다)가 오고, 웹 빌라 실거래 표는 isRenewRequestRight 행에 '기존 …' 으로 보여 준다 (2026-11-18 번들 청크
         # 1un70f33iojlw). drop_not_applicable 이 아파트와 같은 규칙(갱신 전세·월세만, 전세는 종전 월세 삭제)으로 키를 지운다
-        previous_deposit_manwon=won_to_manwon_exact(item.already_deposit),
-        previous_rent_manwon=won_to_manwon_exact(item.already_monthly_deposit),
+        previous_deposit_manwon=won_to_manwon(item.already_deposit),
+        previous_rent_manwon=won_to_manwon(item.already_monthly_deposit),
     )
 
 

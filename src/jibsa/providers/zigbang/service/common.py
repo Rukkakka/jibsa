@@ -31,7 +31,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
-    won_to_manwon_exact,
+    won_to_manwon,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
@@ -328,7 +328,7 @@ def summary_to_listing(
         rent_manwon=summary.rent if summary.sales_type == '월세' else None,
         # 리뷰 오탐 (2026-11-15): 관리비 확인 불가(UnknownManageCost) 매물은 itemSummaries[].fee 가 0 이 아니라 null 이라
         # 목록·상세 모두 모름이다 (서초동 오피스텔 51031039 실측). 목록은 웹 카드의 fee 를 그대로 따른다
-        manage_cost_manwon=won_to_manwon_exact(summary.listed_manage_cost),
+        manage_cost_manwon=won_to_manwon(summary.listed_manage_cost),
         area_m2=area_m2,
         area_pyeong=m2_to_pyeong(area_m2),
         floor=summary.floor,

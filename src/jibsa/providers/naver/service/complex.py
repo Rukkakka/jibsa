@@ -17,7 +17,7 @@ from jibsa.core.listing import (
     months_ago,
     normalize_address,
     normalize_date,
-    won_to_manwon_exact,
+    won_to_manwon,
     years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -622,9 +622,9 @@ def _market_price(item: NaverMarketPriceModel) -> NaverMarketPrice:
         provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
         base_date=normalize_date(item.base_date),
         # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다)
-        sale_average_manwon=won_to_manwon_exact(item.deal_average_price) if item.deal_average_price else None,
+        sale_average_manwon=won_to_manwon(item.deal_average_price) if item.deal_average_price else None,
         sale_range_manwon=manwon_range(item.deal_price_range),
-        jeonse_average_manwon=won_to_manwon_exact(item.lease_average_price) if item.lease_average_price else None,
+        jeonse_average_manwon=won_to_manwon(item.lease_average_price) if item.lease_average_price else None,
         jeonse_range_manwon=manwon_range(item.deposit_price_range),
         jeonse_ratio_percent=manwon_range(item.lease_per_deal_rate, scale=False),
     )
@@ -634,7 +634,7 @@ def _real_price_extreme(trade: NaverRealPriceSummaryTradeModel | None, jeonse: b
     if trade is None:
         return None
     return NaverRealPriceExtreme(
-        price_manwon=won_to_manwon_exact(trade.deposit if jeonse else trade.deal_price),
+        price_manwon=won_to_manwon(trade.deposit if jeonse else trade.deal_price),
         trade_date=normalize_date(trade.trade_date),
         floor=trade.floor,
         trade_category=trade.trade_category or None,
@@ -647,7 +647,7 @@ def _real_price_trade_summary(summary: NaverRealPriceSummaryModel | None, jeonse
     if summary is None or (summary.avg_price is None and summary.min_price is None and summary.max_price is None):
         return None
     return NaverRealPriceTradeSummary(
-        average_manwon=won_to_manwon_exact(summary.avg_price),
+        average_manwon=won_to_manwon(summary.avg_price),
         lowest=_real_price_extreme(summary.min_price, jeonse),
         highest=_real_price_extreme(summary.max_price, jeonse),
     )
@@ -700,7 +700,7 @@ def _pyeong_details(
         # 3개월 안 거래가 없으면 서버가 빈 객체를 줘 평균이 없다
         recent = real_price_summary(trade_type, months_ago(today, REAL_PRICE_RECENT_MONTHS))
         if recent is not None and recent.avg_price:
-            summary.average_3m_manwon = won_to_manwon_exact(recent.avg_price)
+            summary.average_3m_manwon = won_to_manwon(recent.avg_price)
         return summary
 
     sale_summary = trade_summary('A1', jeonse=False)
@@ -709,10 +709,10 @@ def _pyeong_details(
     if fee is not None and fee.month_average_fee is not None:
         maintenance = NaverComplexMaintenanceFee(
             year_month=fee.year_month,
-            latest_manwon=won_to_manwon_exact(fee.year_month_fee),
-            monthly_average_manwon=won_to_manwon_exact(fee.month_average_fee),
-            summer_average_manwon=won_to_manwon_exact(fee.summer_average_fee),
-            winter_average_manwon=won_to_manwon_exact(fee.winter_average_fee),
+            latest_manwon=won_to_manwon(fee.year_month_fee),
+            monthly_average_manwon=won_to_manwon(fee.month_average_fee),
+            summer_average_manwon=won_to_manwon(fee.summer_average_fee),
+            winter_average_manwon=won_to_manwon(fee.winter_average_fee),
         )
     return {
         'pyeong_maintenance_fee': maintenance,

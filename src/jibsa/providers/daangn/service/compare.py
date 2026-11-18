@@ -62,7 +62,7 @@ class DaangnAskingAverage(BaseModel):
         extra='forbid',
     )
 
-    average_manwon: Annotated[int, Field(description='평균 (만원, 0원 매물은 뺀다)')]
+    average_manwon: Annotated[float, Field(description='평균 (만원, 0원 매물은 뺀다). 반올림 없이 원 단위까지 낸다')]
     count: Annotated[int, Field(description='평균을 낸 거래 조건 수')]
 
 
@@ -382,8 +382,8 @@ class DaangnCompareResult(BaseModel):
 
 
 def _average(values: list[int]) -> DaangnAskingAverage | None:
-    # 웹(compare `je`)처럼 Math.round
-    return DaangnAskingAverage(average_manwon=js_round(sum(values) / len(values)), count=len(values)) if values else None
+    # 웹(compare `je`)은 Math.round 로 만원 정수를 보여 주지만 jibsa 는 원 단위(만원 소수 넷째 자리)까지 낸다
+    return DaangnAskingAverage(average_manwon=round(sum(values) / len(values), 4), count=len(values)) if values else None
 
 
 def _asking_prices(complex_: DaangnCompareComplexModel) -> DaangnAskingPrices:
@@ -553,7 +553,7 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None) ->
         listing_count=complex_.live_article_count.total if complex_.live_article_count else None,
         asking=_asking_prices(complex_),
         manage_cost_manwon=(
-            round(per_m2 * pyeong.exclusive_area_m2 / 10000, 1)
+            round(per_m2 * pyeong.exclusive_area_m2 / 10000, 4)
             if per_m2 is not None and pyeong is not None and pyeong.exclusive_area_m2 else None
         ),
         manage_cost_per_m2_manwon=round(per_m2 / 10000, 4) if per_m2 is not None else None,
