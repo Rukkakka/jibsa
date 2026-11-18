@@ -7,6 +7,7 @@ from pydantic import (
 )
 
 from jibsa.core.geo import haversine_km
+from jibsa.core.korean import is_district_code
 from jibsa.core.listing import (
     Listing,
     join_address,
@@ -47,26 +48,30 @@ from jibsa.providers.naver.api.response.common import (
 from jibsa.providers.naver.service.common import (
     ENTRANCE_CODE_BY_NAME,
     EXCLUDED_REASON,
+    MONTHLY_ASKING_DESCRIPTION,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PROPERTY_NAME_BY_CODE,
     RADIUS_EXCLUDED_REASON,
     SEARCH_CODES_BY_PROPERTY,
+    SHORT_TERM_ASKING_DESCRIPTION,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
     WON_PER_MANWON,
     NaverListingsResult,
+    NaverRentAskingRange,
     NaverTradeConditions,
     PageScan,
     area_scope,
+    boundary_filter,
     bounded_precision,
     bounding_box,
     complex_url,
     cursor_position,
-    dong_filter,
     group_sort_notes,
     listing_keeper,
     pagination_notes,
     price_sort_notes,
+    rent_asking_range,
     resume_cursor,
     scan_pages,
     trade_article_counts,
@@ -163,7 +168,7 @@ ENTRANCE_FILTER_NOTE: str = note(
 ENTRANCE_WITH_COMPLEX_FILTER_NOTE: str = note('제외', '현관 구조가 등록된 매물만 걸려, 등록되지 않은 매물은 빠졌습니다')
 BOUNDED_PAGE_SIZE: int = 30
 MAX_BOUNDED_PAGE_REQUESTS: int = 10
-# 동 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
+# 동·시·군·구 경계 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
 # limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로 빠져도 그만큼 다시 받지 않는다
 LEGAL_DIVISION_PAGE_SIZE: int = 30
 MAX_LEGAL_DIVISION_PAGE_REQUESTS: int = 5
@@ -173,6 +178,11 @@ AREA_COMPLEX_CODES_BY_TYPE: dict[str, tuple[NaverRealEstateType, ...]] = {
     '오피스텔': ('A02',),
     # 단지로 등록된 연립·다세대·도시형생활주택. 역삼동만 779곳이고 대부분 매물이 없다
     '빌라': ('A05', 'A06', 'A07'),
+    # 이름은 `SEARCH_CODES_BY_PROPERTY` 와 같다. 응답 모양이 아파트와 같다 (2026-11-18 실측: 재건축 A04 대치동 5곳,
+    # 분양권 B01 둔촌동 1곳, 오피스텔분양권 B02 는 넷 지역 모두 0곳이고 서버 답 그대로 낸다)
+    '재건축': ('A04',),
+    '분양권': ('B01',),
+    '오피스텔분양권': ('B02',),
 }
 COMPLEX_LIST_SORT_TYPE_BY_NAME: dict[str, NaverComplexSortType] = {
     '인기순': 'POPULARITY_DESC',
@@ -211,7 +221,7 @@ class NaverAreaComplex(BaseModel):
     ]
     property_type: Annotated[
         str | None,
-        Field(description='단지 유형 (아파트, 오피스텔, 빌라)')
+        Field(description='단지 유형 (아파트, 오피스텔, 빌라, 재건축, 분양권, 오피스텔분양권)')
     ] = None
     address: Annotated[
         str | None,
@@ -231,7 +241,7 @@ class NaverAreaComplex(BaseModel):
     ] = None
     distance_km: Annotated[
         float | None,
-        Field(description='검색 중심(동이면 동 중심)에서의 거리 (km)')
+        Field(description='검색 중심(동·시·군·구면 그 지역 중심)에서의 거리 (km)')
     ] = None
     article_counts: Annotated[
         dict[str, int] | None,
@@ -244,6 +254,14 @@ class NaverAreaComplex(BaseModel):
     jeonse_asking_range_manwon: Annotated[
         list[float | None] | None,
         Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null')
+    ] = None
+    monthly_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=MONTHLY_ASKING_DESCRIPTION)
+    ] = None
+    short_term_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
     ] = None
     url: Annotated[
         str,
@@ -260,7 +278,7 @@ class NaverAreaComplexesResult(BaseModel):
 
     total: Annotated[
         int,
-        Field(description='서버 집계 단지 수 (동이면 동 안, 반경이면 반경을 감싸는 사각형 안. limit 적용 전)')
+        Field(description='서버 집계 단지 수 (동·시·군·구면 그 경계 안, 반경이면 반경을 감싸는 사각형 안. limit 적용 전)')
     ]
     returned: Annotated[
         int,
@@ -309,6 +327,8 @@ def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) 
         article_counts=trade_article_counts(counts) if counts else None,
         sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price) if prices else None,
         jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price) if prices else None,
+        monthly_asking=rent_asking_range(prices, 'monthly'),
+        short_term_asking=rent_asking_range(prices, 'short'),
         url=complex_url(info.complex_number),
     )
 
@@ -331,8 +351,9 @@ def list_area_complexes(
 ) -> NaverAreaComplexesResult:
     """지역 안 단지를 네이버 정렬 순서대로 모은다 (30곳에 1회, 최대 `MAX_COMPLEX_LIST_PAGE_REQUESTS` 회).
 
-    `legal_division_code` 를 주면 그 법정동 안 단지 전체(legalDivisionComplexList), 아니면 반경을 감싼 사각형 안
-    단지(boundedComplexes)에서 반경 밖을 뺀다. 응답의 대표 사진과 주민 댓글 본문은 옮기지 않는다.
+    `legal_division_code` 를 주면 그 법정동·시·군·구 안 단지 전체(legalDivisionComplexList), 아니면 반경을
+    감싼 사각형 안 단지(boundedComplexes)에서 반경 밖을 뺀다. 코드가 시·군·구면 시·군·구 경계(GUN), 아니면 읍·면·동 경계(EUP)다
+    (`boundary_filter`). 응답의 대표 사진과 주민 댓글 본문은 옮기지 않는다.
 
     Args:
         property_types: 단지 유형 (`AREA_COMPLEX_CODES_BY_TYPE` 의 이름). Defaults to 아파트.
@@ -347,7 +368,7 @@ def list_area_complexes(
         approval_elapsed_year=_filter_range(building_age_min, building_age_max),
     )
     if legal_division_code is not None:
-        filter_ = dong_filter(filter_, legal_division_code)
+        filter_ = boundary_filter(filter_, legal_division_code)
     sort_type = COMPLEX_LIST_SORT_TYPE_BY_NAME[sort]
     complexes: dict[int, NaverAreaComplex] = {}
     scan = PageScan(limit=limit, max_requests=MAX_COMPLEX_LIST_PAGE_REQUESTS)
@@ -411,10 +432,11 @@ def _search_listing_pages(
 ) -> NaverListingsResult:
     """반경 안이나 법정동 안 매물을 네이버 정렬 순서 그대로 모은다 (30건에 1회).
 
-    `legal_division_code` 를 주면 그 동 경계 안 목록(legalDivisionArticleList)이라 동 안 매물만 오고 전체 수(`total`)도
-    정확하다 (역삼동 4,401건 / 같은 중심 1km 사각형 7,803건, 2026-10-09). 거리(`distance_km`)는 `lat`/`lng`(동 중심)에서
-    잰 값이다. 목록 API 는 동 코드를 하나만 받는다 (2026-10-15 실측: 둘이면 400). 요청은 `MAX_LEGAL_DIVISION_PAGE_REQUESTS`
-    회에서 멈춘다.
+    `legal_division_code` 를 주면 그 경계 안 목록(legalDivisionArticleList)이라 경계 안 매물만 오고 전체 수(`total`)도
+    정확하다 (역삼동 4,401건 / 같은 중심 1km 사각형 7,803건, 2026-10-09). 코드는 읍·면·동이거나 시·군·구다
+    (`boundary_filter` 가 코드로 단위를 정한다. 성동구 + GUN 도 같은 API·같은 나눔이다, 2026-11-18 실측). 거리(`distance_km`)는
+    `lat`/`lng`(경계 중심)에서 잰 값이다. 목록 API 는 코드를 하나만 받는다 (2026-10-15 실측: 둘이면 400). 요청은
+    `MAX_LEGAL_DIVISION_PAGE_REQUESTS` 회에서 멈춘다.
 
     아니면 지도 범위 목록(boundedArticles)이다. 서버는 반경을 감싼 사각형 안을 정렬해 주므로 반경 밖(모서리) 매물은
     뺀다. 제외된 수만큼 추가 조회하지 않는다. 좌표를 모르는 매물은 반경 안인지 알 수 없어 뺀다. 요청은
@@ -423,11 +445,12 @@ def _search_listing_pages(
     `start` 는 이어 받기 위치(목록 커서)다.
     """
     listings: dict[str, Listing] = {}
-    by_dong = legal_division_code is not None
+    by_boundary = legal_division_code is not None
+    boundary_label = '시·군·구' if is_district_code(legal_division_code) else '동'
     if legal_division_code is not None:
-        filter_ = dong_filter(filter_, legal_division_code)
-    box = None if by_dong else bounding_box(lat, lng, radius_km)
-    scan = PageScan(limit=limit, max_requests=MAX_LEGAL_DIVISION_PAGE_REQUESTS if by_dong else MAX_BOUNDED_PAGE_REQUESTS)
+        filter_ = boundary_filter(filter_, legal_division_code)
+    box = None if by_boundary else bounding_box(lat, lng, radius_km)
+    scan = PageScan(limit=limit, max_requests=MAX_LEGAL_DIVISION_PAGE_REQUESTS if by_boundary else MAX_BOUNDED_PAGE_REQUESTS)
 
     def fetch(size: int, seed: str | None, last_info: Any) -> NaverArticlePageModel:
         paging = NaverArticlePagingRequestModel(size=size, article_sort_type=sort_type, seed=seed, last_info=last_info)
@@ -436,7 +459,7 @@ def _search_listing_pages(
                 client.run_request_article_legal_division_article_list_v1(
                     NaverArticleLegalDivisionArticleListV1RequestPayloadModel(filter=filter_, article_paging_request=paging)
                 ),
-                '동 매물 목록',
+                f'{boundary_label} 매물 목록',
             )
         return unwrap(
             client.run_request_article_bounded_articles_v1(
@@ -448,8 +471,8 @@ def _search_listing_pages(
         )
 
     scan_pages(
-        scan, fetch, listing_keeper(listings, (lat, lng), None if by_dong else radius_km),
-        page_size=LEGAL_DIVISION_PAGE_SIZE if by_dong else BOUNDED_PAGE_SIZE, start=resume_cursor(start),
+        scan, fetch, listing_keeper(listings, (lat, lng), None if by_boundary else radius_km),
+        page_size=LEGAL_DIVISION_PAGE_SIZE if by_boundary else BOUNDED_PAGE_SIZE, start=resume_cursor(start),
     )
     total, inspected, truncated = scan.total, scan.received, scan.truncated
     next_position = cursor_position(scan.cursor) or None
@@ -461,9 +484,9 @@ def _search_listing_pages(
         notes.append(note(
             '일부',
             (
-                f'네이버 차단을 피하려고 동 전체에서 {inspected}건까지만 '
+                f'네이버 차단을 피하려고 {boundary_label} 전체에서 {inspected}건까지만 '
                 f'훑었습니다. 조건에 맞는 매물이 더 있을 수 있으니 {area.narrow_action} 다시 검색하세요'
-            ) if by_dong else (
+            ) if by_boundary else (
                 f'네이버 차단을 피하려고 정렬 순서로 {inspected}건까지만 훑었습니다. '
                 f'반경 안 매물이 더 있을 수 있으니 {area.narrow_action} 다시 검색하세요'
             ),
@@ -471,7 +494,7 @@ def _search_listing_pages(
     notes += filter_notes
     notes += pagination_notes(
         total, len(result), limit, inspected, truncated=truncated,
-        excluded_reason=EXCLUDED_REASON if by_dong else RADIUS_EXCLUDED_REASON,
+        excluded_reason=EXCLUDED_REASON if by_boundary else RADIUS_EXCLUDED_REASON,
         resumable=next_position is not None, resumed=start is not None,
         scope=area.scope, total_basis=area.total_basis, narrow=area.narrow,
     )
@@ -639,9 +662,9 @@ def search_area(
     limit: int = 30,
     start: dict[str, Any] | None = None,
 ) -> NaverListingsResult:
-    """좌표 반경 안이나 법정동 안의 매물을 네이버 정렬 순서 그대로 모은다.
+    """좌표 반경 안이나 법정동·시·군·구 안의 매물을 네이버 정렬 순서 그대로 모은다.
 
-    `legal_division_code` 를 주면 그 동 경계 안 목록, 아니면 반경을 감싼 사각형 안 목록에서 반경 밖 매물을 뺀다
+    `legal_division_code` 를 주면 그 동·시·군·구 경계 안 목록, 아니면 반경을 감싼 사각형 안 목록에서 반경 밖 매물을 뺀다
     (`_search_listing_pages`). 둘 다 네이버 웹 지도의 매물 목록이 쓰는 API 이고, 네이버 정렬에는
     거리순이 없어 결과도 `distance_km` 순이 아니다. 받은 매물 수가 `limit` 에 닿거나 요청 상한에 닿으면 멈추고,
     받은 뒤 뺀 매물만큼 다시 채우지 않는다.
@@ -655,7 +678,7 @@ def search_area(
     Args:
         conditions: 매물 조건 (`NaverListingConditions`). 비면 주거용 전체.
         sort: 정렬 (`SORT_TYPE_BY_NAME` 의 이름).
-        legal_division_code: 법정동 코드. 주면 반경 대신 그 동 전체를 찾고 `lat`/`lng` 는 거리 계산에만 쓴다.
+        legal_division_code: 법정동 코드. 주면 반경 대신 그 경계 전체를 찾고 `lat`/`lng` 는 거리 계산에만 쓴다.
         start: 이어 받기(`--next`) 위치로, 앞 결과의 `next_position` 이다. 결과의 `next_position` 은 더 받을 게 남았을 때만 있다.
     """
     conditions = conditions or NaverListingConditions()
@@ -672,7 +695,7 @@ def search_area(
     if conditions.one_room_shapes:
         filter_notes.append(ONE_ROOM_SHAPE_NOTE)
     sort_type = SORT_TYPE_BY_NAME[sort]
-    # 동 전체·반경 정렬 모두 같은 서버 가격순이다
+    # 경계 전체·반경 정렬 모두 같은 서버 가격순이다
     filter_notes += price_sort_notes(sort_type, conditions.trade_types)
     result = _search_listing_pages(
         client, lat, lng, radius_km=radius_km, legal_division_code=legal_division_code, filter_=filter_,

@@ -298,6 +298,6 @@ class NaverArticleFilterModel(RequestModel):
         Field(description='법정동 코드. 비우면 동으로 거르지 않고 bounding_box 안 전체', alias='legalDivisionNumbers')
     ] = []
     legal_division_type: Annotated[
-        Literal['EUP', 'SI', 'GU'],
-        Field(description='법정동 단위. EUP 이면 동/읍/면', alias='legalDivisionType')
+        Literal['EUP', 'SI', 'GUN'],
+        Field(description='법정동 단위. EUP 이면 읍/면/동, GUN 이면 시/군/구 (GU 는 서버가 400)', alias='legalDivisionType')
     ] = 'EUP'

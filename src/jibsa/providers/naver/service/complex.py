@@ -14,6 +14,7 @@ from pydantic import (
 from jibsa.core.listing import (
     join_address,
     m2_to_pyeong,
+    months_ago,
     normalize_address,
     normalize_date,
     won_to_manwon_exact,
@@ -41,15 +42,19 @@ from jibsa.providers.naver.api.response.complex import (
 )
 from jibsa.providers.naver.service.common import (
     MARKET_PRICE_PROVIDER_NAMES,
+    MONTHLY_ASKING_DESCRIPTION,
     OFFICETEL_CODE,
     PROPERTY_NAME_BY_CODE,
+    SHORT_TERM_ASKING_DESCRIPTION,
     NaverAssignedSchool,
+    NaverRentAskingRange,
     assigned_schools,
     complex_url,
     kst_today,
     manwon_range,
     pyeong_list,
     raise_missing_pyeongs,
+    rent_asking_range,
     resolve_dong_numbers,
     result_or_none,
     trade_article_counts,
@@ -211,9 +216,17 @@ class NaverRealPriceTradeSummary(BaseModel):
         extra='forbid',
     )
 
+    since: Annotated[
+        str | None,
+        Field(description='3년 안에 거래가 없어 5년으로 다시 받았을 때만 있는 시작일 (YYYY-MM-DD, 5년 전 오늘). 3년으로 받았으면 키가 없다')
+    ] = None
     average_manwon: Annotated[
         float | None,
         Field(description='평균 거래가 (만원)')
+    ] = None
+    average_3m_manwon: Annotated[
+        float | None,
+        Field(description='최근 3개월 평균 거래가 (만원). 3개월 안 거래가 없거나 조회 실패면 null')
     ] = None
     lowest: Annotated[
         NaverRealPriceExtreme | None,
@@ -223,6 +236,13 @@ class NaverRealPriceTradeSummary(BaseModel):
         NaverRealPriceExtreme | None,
         Field(description='최고가 거래')
     ] = None
+
+    @model_serializer(mode='wrap')
+    def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.since is None:
+            data.pop('since', None)
+        return data
 
 
 class NaverRealPriceSummary(BaseModel):
@@ -234,15 +254,15 @@ class NaverRealPriceSummary(BaseModel):
 
     since: Annotated[
         str,
-        Field(description='이 날짜 이후 거래 (YYYY-MM-DD, 3년 전 오늘)')
+        Field(description='이 날짜 이후 거래 (YYYY-MM-DD, 3년 전 오늘). 3년 안 거래가 없는 유형은 5년으로 다시 받고 그 유형의 요약에 since 가 따로 있다')
     ]
     sale: Annotated[
         NaverRealPriceTradeSummary | None,
-        Field(description='매매. 기간 안 거래가 없거나 조회 실패면 null')
+        Field(description='매매. 5년 안에도 거래가 없거나 조회 실패면 null')
     ] = None
     jeonse: Annotated[
         NaverRealPriceTradeSummary | None,
-        Field(description='전세. 기간 안 거래가 없거나 조회 실패면 null')
+        Field(description='전세. 5년 안에도 거래가 없거나 조회 실패면 null')
     ] = None
 
 
@@ -359,6 +379,14 @@ class NaverComplexSummary(BaseModel):
         list[float | None] | None,
         Field(description='전세 호가 [최저, 최고] (만원)')
     ] = None
+    monthly_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=MONTHLY_ASKING_DESCRIPTION)
+    ] = None
+    short_term_asking: Annotated[
+        NaverRentAskingRange | None,
+        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
+    ] = None
     pyeongs: Annotated[
         list[NaverPyeong],
         Field(description='평형 목록')
@@ -373,7 +401,10 @@ class NaverComplexSummary(BaseModel):
     ] = None
     real_price_summary: Annotated[
         NaverRealPriceSummary | None,
-        Field(description='--pyeong 평형의 최근 3년 매매·전세 실거래 요약. 평형을 하나만 줄 때만 키가 있다')
+        Field(description=(
+            '--pyeong 평형의 최근 3년 매매·전세 실거래 요약. 평형을 하나만 줄 때만 키가 있다. 그 거래 유형의 3년 거래가 없으면 5년으로 '
+            '요약하고 그 유형에 since 가 붙는다. 3개월 평균 average_3m_manwon 은 5년으로 요약했으면 null 이다. 조회가 실패한 유형은 null'
+        ))
     ] = None
     schools: Annotated[
         list[NaverAssignedSchool] | None,
@@ -410,8 +441,11 @@ class NaverComplexSummary(BaseModel):
 
 # 단지 요약에서 --pyeong 을 하나만 줄 때만 붙이는 평형 정보
 PYEONG_SCOPED_FIELDS: frozenset[str] = frozenset({'pyeong_maintenance_fee', 'market_prices', 'real_price_summary'})
-# 실거래 요약 기간. 사이트 매물 상세의 요약과 같다
+# 실거래 요약 기간. 웹 단지 화면 실거래 요약(ComplexTransactionPriceSummary)과 같다. 비면 5년
 REAL_PRICE_SUMMARY_YEARS: int = 3
+REAL_PRICE_SUMMARY_FALLBACK_YEARS: int = 5
+# 요약에 덧붙이는 최근 평균 기간 (웹 매물 상세 RecentTransaction 의 '3개월 평균 실거래' 와 같은 요청)
+REAL_PRICE_RECENT_MONTHS: int = 3
 
 
 def _pyeong(pyeong: NaverPyeongModel, is_officetel: bool = False) -> NaverPyeong:
@@ -491,7 +525,7 @@ def get_complex(
         villa: 빌라 단지인지 (`resolve_complex_number` 결과). 알면 빌라 단지는 아파트 단지 정보를 묻지 않는다 (1회 절약).
         today: 실거래 요약 기간(3년 전 오늘부터)의 기준일. Defaults to 오늘(한국 시간).
 
-    평형을 하나만 주면 그 평형의 관리비·최신 시세·최근 3년 매매/전세 실거래 요약을 더 붙인다 (4회 추가).
+    평형을 하나만 주면 그 평형의 관리비·최신 시세·최근 3년 매매/전세 실거래 요약을 더 붙인다 (관리비 1 + 시세 1(단지 유형이 있을 때) + 매매·전세 각 1~2 = 4~6회, 시세 요청이 없으면 3~5회).
     빌라 단지는 네이버가 이 정보를 주지 않아(모두 빈 결과, 2026-10-09 확인) 묻지 않고 notes 로 알린다.
     """
     response = None
@@ -568,6 +602,8 @@ def get_complex(
         article_counts=trade_article_counts(counts),
         sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price),
         jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price),
+        monthly_asking=rent_asking_range(prices, 'monthly'),
+        short_term_asking=rent_asking_range(prices, 'short'),
         pyeongs=[_pyeong(pyeong, complex_.type == OFFICETEL_CODE) for pyeong in pyeongs],
         schools=None if schools is None else assigned_schools(schools),
         reconstruction=reconstruction,
@@ -624,7 +660,7 @@ def _pyeong_details(
     real_estate_type: str | None,
     today: date,
 ) -> dict[str, Any]:
-    """평형의 관리비·최신 시세·최근 3년 매매/전세 실거래 요약 (4회 호출). 조회가 실패하면 그 값만 None."""
+    """평형의 관리비·최신 시세·최근 3년(비면 5년) 매매/전세 실거래 요약과 3개월 평균 (관리비 1 + 시세 1(단지 유형이 있을 때) + 매매·전세 각 1~2 = 4~6회, 시세 요청이 없으면 3~5회). 조회가 실패하면 그 값만 None."""
     fee = result_or_none(lambda: client.run_request_complex_maintenance_fee_v1(
         NaverComplexMaintenanceFeeV1RequestParameterModel(complex_number=complex_number, pyeong_type_number=pyeong_number)
     ))
@@ -639,15 +675,36 @@ def _pyeong_details(
         ))
     since = years_ago(today, REAL_PRICE_SUMMARY_YEARS)
 
-    def real_price_summary(trade_type: str) -> NaverRealPriceSummaryModel | None:
+    def real_price_summary(trade_type: str, start_date: str) -> NaverRealPriceSummaryModel | None:
         return result_or_none(lambda: client.run_request_complex_pyeong_real_price_summary_v1(
             NaverComplexPyeongRealPriceSummaryV1RequestParameterModel(
-                complex_number=complex_number, pyeong_type_number=pyeong_number, trade_type=trade_type, start_date=since,
+                complex_number=complex_number, pyeong_type_number=pyeong_number, trade_type=trade_type, start_date=start_date,
             )
         ))
 
-    sale_summary = real_price_summary('A1')
-    jeonse_summary = real_price_summary('B1')
+    def trade_summary(trade_type: str, jeonse: bool) -> NaverRealPriceTradeSummary | None:
+        raw = real_price_summary(trade_type, since)
+        if raw is None:
+            # 조회 실패(모름)다. 빈 것으로 보고 5년으로 다시 부르지 않는다
+            return None
+        summary = _real_price_trade_summary(raw, jeonse)
+        if summary is None:
+            # 웹 단지 화면은 거래 유형마다 3년 요약이 비면 5년으로 한 번 더 부른다
+            fallback_since = years_ago(today, REAL_PRICE_SUMMARY_FALLBACK_YEARS)
+            summary = _real_price_trade_summary(real_price_summary(trade_type, fallback_since), jeonse)
+            if summary is None:
+                return None
+            summary.since = fallback_since
+            # 3개월 구간은 3년 구간 안이라 3년이 비었으면 3개월도 비어 요청하지 않는다
+            return summary
+        # 3개월 안 거래가 없으면 서버가 빈 객체를 줘 평균이 없다
+        recent = real_price_summary(trade_type, months_ago(today, REAL_PRICE_RECENT_MONTHS))
+        if recent is not None and recent.avg_price:
+            summary.average_3m_manwon = won_to_manwon_exact(recent.avg_price)
+        return summary
+
+    sale_summary = trade_summary('A1', jeonse=False)
+    jeonse_summary = trade_summary('B1', jeonse=True)
     maintenance = None
     if fee is not None and fee.month_average_fee is not None:
         maintenance = NaverComplexMaintenanceFee(
@@ -662,7 +719,7 @@ def _pyeong_details(
         'market_prices': None if market is None else [_market_price(item) for item in market],
         'real_price_summary': NaverRealPriceSummary(
             since=since,
-            sale=_real_price_trade_summary(sale_summary, jeonse=False),
-            jeonse=_real_price_trade_summary(jeonse_summary, jeonse=True),
+            sale=sale_summary,
+            jeonse=jeonse_summary,
         ),
     }

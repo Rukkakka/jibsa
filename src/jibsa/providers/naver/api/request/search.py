@@ -97,8 +97,9 @@ class NaverArticleBoundedArticlesV1RequestPayloadModel(RequestModel):
 class NaverArticleLegalDivisionArticleListV1RequestPayloadModel(RequestModel):
     """`POST /front-api/v1/article/legalDivisionArticleList` 본문. 법정동 하나의 매물 전체를 정렬해 준다.
 
-    `filter.legalDivisionNumbers` 에 동 코드 하나, `legalDivisionType` 은 EUP 이다. 구·시 단위(GU·SI)는
-    400 이다. 페이지는 30건까지 (50부터 400). 지도 필터가 그대로 걸린다 (2026-10-09 확인).
+    `filter.legalDivisionNumbers` 에 법정동 코드 하나, `legalDivisionType` 은 동이면 EUP, 구·군이면 GUN 이다 ('GU' 는
+    400, 성동구 GUN 전세 totalCount 1103·seed/lastInfo 쪽 나눔이 동과 같다, 2026-11-18). 페이지는 30건까지 (50부터 400).
+    지도 필터가 그대로 걸린다 (2026-10-09 확인).
     """
 
     filter: Annotated[
@@ -135,7 +136,8 @@ class NaverComplexPagingRequestModel(RequestModel):
 class NaverComplexLegalDivisionComplexListV1RequestPayloadModel(RequestModel):
     """`POST /front-api/v1/complex/legalDivisionComplexList` 본문. 법정동 하나의 단지 전체.
 
-    `filter.legalDivisionNumbers` 에 동 코드 하나, `legalDivisionType` 은 EUP. 지도 필터가 그대로 걸리고
+    `filter.legalDivisionNumbers` 에 법정동 코드 하나, `legalDivisionType` 은 동이면 EUP, 구·군이면 GUN (성동구 아파트
+    148곳, 2026-11-18). 지도 필터가 그대로 걸리고
     `hasArticle` 이면 매물 있는 단지만 준다 (역삼동 아파트 160 → 114곳, 2026-10-09 확인).
     """
 

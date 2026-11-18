@@ -79,7 +79,8 @@ class NaverComplexRedevelopmentAreaListV1RequestPayloadModel(RequestModel):
 class NaverComplexRedevelopmentAreaLegalDivisionListV1RequestPayloadModel(RequestModel):
     """`POST /front-api/v1/complex/redevelopmentArea/legalDivisionList` 본문. 법정동 하나 안의 재개발 구역.
 
-    `filter.legalDivisionNumbers` 에 동 코드 하나, `legalDivisionType` 은 EUP (한남동 → 한남2·3구역, 2026-10-10).
+    `filter.legalDivisionNumbers` 에 법정동 코드 하나, `legalDivisionType` 은 동이면 EUP (한남동 → 한남2·3구역, 2026-10-10),
+    구·군이면 GUN (성동구 10곳, 2026-11-18. 구 단위 응답에는 `legalDivisionAddress` 가 없다).
     """
 
     filter: Annotated[

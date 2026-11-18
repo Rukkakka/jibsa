@@ -46,9 +46,11 @@ from jibsa.providers.naver.api.response.region import (
     NaverAutocompletePageModel,
     NaverAutocompleteSubwayStationModel,
     NaverLegalDivisionInfoModel,
+    NaverLegalDivisionSubInfoListV1ResponseModel,
 )
 from jibsa.providers.naver.service.common import (
     VILLA_COMPLEX_CODES,
+    result_or_none,
     unwrap,
 )
 
@@ -169,6 +171,20 @@ def _wide_region_unit(code: str | None) -> str:
     return '시·도' if code and len(code) == 10 and code[2:] == '0' * 8 else '시·군·구'
 
 
+# 시·도·시·군·구 이름에 붙이는 '[범위] … 단위의 넓은 지역이라 중심에서 반경 … 안만 검색했습니다' 안내(`_wide_region_note`)의 토막.
+# 시·군·구 경계 전체로 찾으면 맞지 않는 안내라 CLI 가 이 토막으로 그 안내를 찾아 뺀다 (`_area_location`)
+WIDE_REGION_NOTE_MARK: str = '단위의 넓은 지역이라'
+
+
+def _wide_region_note(query: str, code: str | None, center: str, radius_km: float) -> str:
+    """시·도·시·군·구 이름이라 넓어서 중심 반경 안만 찾았다는 안내. `WIDE_REGION_NOTE_MARK` 를 품는다."""
+    return note(
+        '범위',
+        f"'{query}': {_wide_region_unit(code)} {WIDE_REGION_NOTE_MARK} 중심({center})에서 "
+        f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
+    )
+
+
 def _find_legal_division(
     client: NaverClient,
     query: str,
@@ -286,10 +302,8 @@ def _find_legal_division(
     # 단위는 GUN·EUP 만 온다. 서울·경기도 같은 시·도는 그 안의 구(GUN)로 오고, 리는 자동완성에 나오지 않는다
     # (검색어 16개, 2026-10-09 확인). 그래서 EUP 가 아니면 시·군·구로 본다.
     if radius_km is not None and best.legal_division_level_type not in (None, 'EUP'):
-        notes.append(note(
-            '범위',
-            f"'{query}': {_wide_region_unit(best.legal_division_number)} 단위의 넓은 지역이라 중심({normalize_address(best.legal_division_name)})에서 "
-            f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
+        notes.append(_wide_region_note(
+            query, best.legal_division_number, normalize_address(best.legal_division_name), radius_km,
         ))
     if best.coordinates is None:
         # 후보를 다른 곳으로 바꾸지 않는다 (웹에서 사람이 고르는 것을 임의로 고르는 것이라). `_find_complex` 와 같다
@@ -742,11 +756,7 @@ def _find_address(
     else:
         kind, name = '지역', _last_word(full_address)
         if radius_km is not None:
-            notes.append(note(
-                '범위',
-                f"'{query}': {_wide_region_unit(code)} 단위의 넓은 지역이라 중심({full_address})에서 "
-                f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
-            ))
+            notes.append(_wide_region_note(query, code, full_address, radius_km))
     region = NaverRegion(name=name, address=full_address, lat=item.y, lng=item.x, legal_division_code=code)
     return region, kind, notes
 
@@ -985,14 +995,53 @@ def _find_province(provinces: list[NaverLegalDivisionInfoModel], name: str) -> N
     )
 
 
-def _sub_regions(client: NaverClient, level: Literal['GUN', 'EUP'], code: str) -> list[NaverLegalDivisionInfoModel]:
-    """받을 하위 지역 단위(GUN 시·군·구, EUP 읍·면·동)와 그 윗지역 코드로 하위 지역 목록을 받는다. 사이트가 보내는 값이다."""
-    return unwrap(
-        client.run_request_legal_division_sub_info_list_v1(
-            NaverLegalDivisionSubInfoListV1RequestParameterModel(legal_division_level_type=level, legal_division_number=code)
-        ),
-        '하위 지역',
+def _sub_regions_response(
+    client: NaverClient, level: Literal['GUN', 'EUP'], code: str
+) -> NaverLegalDivisionSubInfoListV1ResponseModel:
+    """받을 하위 지역 단위(GUN 시·군·구, EUP 읍·면·동)와 그 윗지역 코드로 하위 지역 목록 응답을 받는다. 사이트가 보내는 값이다."""
+    return client.run_request_legal_division_sub_info_list_v1(
+        NaverLegalDivisionSubInfoListV1RequestParameterModel(legal_division_level_type=level, legal_division_number=code)
     )
+
+
+def _sub_regions(client: NaverClient, level: Literal['GUN', 'EUP'], code: str) -> list[NaverLegalDivisionInfoModel]:
+    """하위 지역 목록. 실패하면 예외다."""
+    return unwrap(_sub_regions_response(client, level, code), '하위 지역')
+
+
+def _city_districts(sub_regions: list[NaverLegalDivisionInfoModel], city_code: str) -> list[NaverLegalDivisionInfoModel]:
+    """시·도 아래 시·군·구 목록에서 그 시(코드 `city_code`)의 구. 코드 앞 네 자리가 같고 시 자신이 아닌 곳이다."""
+    return [
+        item for item in sub_regions
+        if item.legal_division_number[:4] == city_code[:4] and item.legal_division_number != city_code
+    ]
+
+
+def city_district_names(client: NaverClient, code: str) -> list[str] | None:
+    """시·군 법정동 코드 아래 구 이름 (성남시 4113000000 → 성남시 수정구·성남시 중원구·성남시 분당구). 구가 없으면 [] (요청 1회).
+
+    네이버는 구가 있는 시를 시·군·구 목록에 따로 두지 않고 그 구를 시·도 아래 바로 둔다 (`list_regions`). 그래서 시·도 아래
+    시·군·구 목록(시·도 코드 = 앞 두 자리 + '00000000')에서 코드 앞 네 자리가 같고 시 자신이 아닌 곳이 그 시의 구다.
+    구 있는 시 코드를 `legalDivisionArticleList` 의 시·군·구(GUN)에 넣으면 오류 없이 0건이라(성남시, 2026-11-18 실측) 경계로
+    찾기 전에 구가 있는지 본다.
+
+    구 이름은 시 이름을 붙여 준다 ('경기도 성남시 분당구' → 성남시 분당구). '남구' 처럼 같은 이름의 구가 여럿인 이름(남구 6곳)은
+    REGION_AMBIGUOUS 라 시 이름을 붙인다. 하위 지역 조회가 실패하거나 고른 구 중 이름이 빈 곳이 있으면 None 이다 (구가 있는지·
+    이름을 모름). 빈 이름을 빼면 모두 빈 경우가 [] ('구 없는 시') 와 섞이므로 빼지 않는다.
+
+    구 없는 시(구리시 4131000000)는 그 목록에 자기 코드로 있고 구 있는 시는 자기 코드 없이 구로만 있다. 그래서 고른 구가 없고
+    목록에 시 자신(`legal_division_number == code`)도 없으면(빈 목록 포함) 구가 있는지 모르는 것이라 None 이다.
+    """
+    # 리뷰 오탐 (2026-11-18): 시 코드 앞 두 자리는 네이버 시·도 코드와 같다 (강원 51·전북 52·전남광주 12 모두 시·도 목록과 같은 새 코드, 전주·목포·춘천 실측)
+    sido_code = code[:2] + '00000000'
+    sub_regions = result_or_none(lambda: _sub_regions_response(client, 'GUN', sido_code))
+    if sub_regions is None:
+        return None
+    districts = _city_districts(sub_regions, code)
+    if not districts and not any(item.legal_division_number == code for item in sub_regions):
+        return None
+    names = [' '.join((item.legal_division_name or '').split()[-2:]) for item in districts]
+    return None if '' in names else names
 
 
 def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionList:
@@ -1088,11 +1137,9 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         # (2026-11-17 실측: 수정구 코드 + SI 와 경기도 코드 + GUN 이 같은 47곳)
         # 리뷰 오탐 (2026-11-17): 법정동 코드 앞 두 자리가 시·도다. 시·도 16곳 모두 '앞 두 자리 + 00000000' 이다 (코드가 바뀐
         # 전북 52·강원 51·전남광주 12 포함, regions 전주시·청주시·창원시 실측)
-        entries = [
-            _region_entry(item)
-            for item in _sub_regions(client, 'GUN', under.legal_division_number[:2] + '00000000')
-            if (item.legal_division_name or '').startswith(f'{parent[-1]} ')
-        ]
+        # 시의 구는 코드로 고른다 (`_city_districts`). 시 코드는 구 코드 앞 네 자리 + '000000' 이다 (4113100000 → 4113000000)
+        sub_regions = _sub_regions(client, 'GUN', under.legal_division_number[:2] + '00000000')
+        entries = [_region_entry(item) for item in _city_districts(sub_regions, under.legal_division_number[:4] + '000000')]
         return NaverRegionList(parent=' '.join(parent), regions=entries)
 
     # 시·군·구를 먼저 본다 (하위 지역이 있는 쪽)

@@ -20,12 +20,16 @@ from jibsa.core.geo import (
     haversine_km,
 )
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
-from jibsa.core.korean import particle
+from jibsa.core.korean import (
+    is_district_code,
+    particle,
+)
 from jibsa.core.listing import (
     KST,
     NEXT_HINT,
     Listing,
     format_manwon,
+    iso_date,
     join_address,
     m2_to_pyeong,
     more_hint,
@@ -52,6 +56,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverArticleListItemModel,
     NaverArticlePageModel,
     NaverComplexArticleCountModel,
+    NaverComplexArticlePriceModel,
     NaverComplexListPageModel,
     NaverDuplicatedArticleInfoModel,
     NaverFacilityInfoModel,
@@ -68,6 +73,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import (
     Annotated,
     Any,
+    Literal,
     NamedTuple,
     TypeVar,
 )
@@ -244,9 +250,25 @@ class NaverAssignedSchool(BaseModel):
 
 
 BADGES_DESCRIPTION: str = (
-    '네이버 화면의 확인 배지 (집주인·소유자·현장). 방식 배지가 없으면 [], 모르면 null. [] 에는 전화·서류로 확인한 매물과 확인하지 않은 매물이 함께 든다'
+    "네이버 화면의 확인 배지 (집주인·소유자·현장). 확인 정보가 있으면 그 뒤에 집주인이 HUG 안심임대인일 때 'HUG 안심임대인' 이 붙는다. "
+    '방식 배지·HUG 배지가 모두 없으면 [], 모르면 null. 전화·서류로 확인한 매물과 확인하지 않은 매물도 HUG 안심임대인이면 '
+    "['HUG 안심임대인'] 이라, 비어 있지 않다고 집주인·현장 확인 매물인 것은 아니다"
 )
 """목록 매물(`NaverListing`)과 상세(`NaverListingDetail`)의 `badges` 설명. 두 모델은 상속이 갈려 필드를 함께 쓸 수 없다."""
+
+CONFIRMED_AT_DESCRIPTION: str = (
+    "네이버가 매물을 확인한 날 (YYYY-MM-DD). 웹 목록은 협회 매물이 아니면 이 날짜로 '25.11.17. 확인매물' 날짜 배지를, 협회 매물이면 "
+    "노출 시작일(`registered_at`)로 '등록' 배지를 그린다. 목록과 상세의 글자 규칙이 달라 날짜만 낸다. 모르면 null"
+)
+MONTHLY_ASKING_DESCRIPTION: str = (
+    '월세 호가 범위 (보증금·월세 짝). 월세 매물이 없거나 네이버가 값을 주지 않으면 null (빌라 단지는 대개 null). '
+    '한 짝의 월세만 0 이면 그 rent_manwon 만 null, 한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
+)
+SHORT_TERM_ASKING_DESCRIPTION: str = (
+    '단기임대 호가 범위 (보증금·월세 짝). 단기임대 매물이 없거나 네이버가 값을 주지 않으면 null. '
+    '한 짝의 월세만 0 이면 그 rent_manwon 만 null, 한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
+)
+"""`NaverListing`·상세 모델의 `confirmed_at` 설명, 단지·단지 검색 모델의 `monthly_asking`·`short_term_asking` 설명. 모델끼리 필드를 함께 쓸 수 없어 상수로 공유한다."""
 
 
 # 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
@@ -302,6 +324,10 @@ class NaverListing(Listing):
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
     ] = None
+    confirmed_at: Annotated[
+        str | None,
+        Field(description=CONFIRMED_AT_DESCRIPTION)
+    ] = None
     real_estate_type: Annotated[
         str | None,
         Field(exclude=True, description='네이버 매물 유형 코드 (A01 …). 유형마다 웹에 없는 칸을 가리는 데만 쓴다')
@@ -353,7 +379,7 @@ class NaverListingsResult(BaseModel):
 
     total: Annotated[
         int,
-        Field(description='서버 집계 매물 수. search 는 반경을 감싸는 사각형 안, 동 경계로 찾았으면 동 안 정확한 수 (조건 적용 후, limit 적용 전)')
+        Field(description='서버 집계 매물 수. search 는 반경을 감싸는 사각형 안, 동·시·군·구 경계로 찾았으면 그 경계 안 정확한 수 (조건 적용 후, limit 적용 전)')
     ]
     returned: Annotated[
         int,
@@ -432,6 +458,26 @@ def unknown_code_label(kind: str, code: str) -> str:
         code: 응답의 코드.
     """
     return f'알 수 없는 {kind} ({code})'
+
+
+HUG_SAFE_LESSOR_BADGE: str = 'HUG 안심임대인'
+
+
+def listing_badges(
+    verification_type: str | None,
+    real_estate_type: str | None,
+    is_safe_lessor_of_hug: bool | None,
+) -> list[str] | None:
+    """`verification_badges` 에 HUG 안심임대인 배지를 뒤에 붙인다. 목록과 상세가 함께 쓴다.
+
+    웹은 '집주인'·'현장' 배지 옆에 'HUG 안심임대인' 배지를 따로 그린다. 방식 배지·HUG 배지가 모두 없으면 [] 이고, 방식 배지가 없는
+    코드(전화·서류 확인 TEL·DOC 등, 무검증 NONE)여도 HUG 안심임대인이면 ['HUG 안심임대인'] 이라 비어 있지 않다고 집주인·현장 확인
+    매물인 것은 아니다. 확인 배지를 모르면(None) HUG 가 true 여도 None 그대로 둔다 (확인 정보 없이 HUG 만 true 인 매물은 드물다).
+    """
+    badges = verification_badges(verification_type, real_estate_type)
+    if badges is not None and is_safe_lessor_of_hug:
+        return [*badges, HUG_SAFE_LESSOR_BADGE]
+    return badges
 
 
 def verification_badges(verification_type: str | None, real_estate_type: str | None) -> list[str] | None:
@@ -552,10 +598,12 @@ def article_info_to_listing(
         distance_km=distance,
         registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
         approved_at=building_approved_at(info.building_info),
-        badges=verification_badges(
+        badges=listing_badges(
             info.verification_info.verification_type if info.verification_info else None,
             info.real_estate_type,
+            info.article_detail.is_safe_lessor_of_hug if info.article_detail else None,
         ),
+        confirmed_at=iso_date(info.verification_info.article_confirm_date) if info.verification_info else None,
         real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )
@@ -570,6 +618,85 @@ def won_to_manwon_range(low: float | None, high: float | None) -> list[float | N
     if not low and not high:
         return None
     return [won_to_manwon_exact(low), won_to_manwon_exact(high)]
+
+
+class NaverAskingPair(BaseModel):
+    """월세·단기임대 호가의 보증금·월세 짝 (만원)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='보증금 (만원)')
+    ] = None
+    rent_manwon: Annotated[
+        float | None,
+        Field(description='월세 (만원)')
+    ] = None
+
+
+class NaverRentAskingRange(BaseModel):
+    """월세·단기임대 호가 범위. 두 끝이 월세 최저·최고가 아니라 가격순 첫 매물의 짝이다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    lowest: Annotated[
+        NaverAskingPair,
+        Field(description='가격 낮은 순 첫 매물의 보증금·월세 짝 (월세 최저가 아님)')
+    ]
+    highest: Annotated[
+        NaverAskingPair,
+        Field(description='가격 높은 순 첫 매물의 보증금·월세 짝 (월세 최고가 아님)')
+    ]
+
+
+def _asking_pair(deposit: int | None, rent: int | None) -> NaverAskingPair:
+    """한 짝의 보증금·월세(원)를 만원 짝으로. 월세만 0 이면 월세만 null, 보증금과 월세가 모두 0(또는 없음)이면 두 값 모두 null."""
+    if not deposit and not rent:
+        return NaverAskingPair(deposit_manwon=None, rent_manwon=None)
+    return NaverAskingPair(deposit_manwon=won_to_manwon_exact(deposit), rent_manwon=won_to_manwon_exact(rent or None))
+
+
+def rent_asking_range(
+    price: NaverComplexArticlePriceModel | None,
+    kind: Literal['monthly', 'short'],
+) -> NaverRentAskingRange | None:
+    """단지 호가 범위(`NaverComplexArticlePriceModel`)의 월세·단기임대 짝을 만원으로 묶는다.
+
+    웹 호가 범위가 '보증금min/월세min ~ 보증금max/월세max' 로 그리는 것과 같은 짝이다. 보증금이 낮은 매물이 월세는
+    높을 수 있어 월세 Min 이 Max 보다 클 수 있다. `price` 가 없거나 그 종류의 네 값이 모두 없거나 0 이면 None 이다
+    (단기임대 매물이 없으면 단기 키는 오지 않는다). 그 밖에 한 짝의 월세만 0 이면 서버가 비운 값이라 그 월세만 null 이고,
+    한 짝의 보증금과 월세가 모두 0 이면 그 짝은 비어 있어 두 값 모두 null 이다. 월세가 있는 짝의 보증금 0 은 그대로 0 으로 낸다.
+
+    Args:
+        kind: 'monthly' 월세, 'short' 단기임대.
+    """
+    if price is None:
+        return None
+    if kind == 'monthly':
+        values = (
+            price.rent_monthly_lease_min_price, price.rent_monthly_min_price,
+            price.rent_monthly_lease_max_price, price.rent_monthly_max_price,
+        )
+    else:
+        values = (
+            price.rent_short_lease_min_price, price.rent_short_min_price,
+            price.rent_short_lease_max_price, price.rent_short_max_price,
+        )
+    # 월세 0원 매물은 없어 네 값이 모두 0 이면 서버가 0 으로 비운 것이라 null 이고, 한 짝의 월세만 0 이어도 비운 값이라
+    # 그 월세만 null(모름)이다. 한 짝의 보증금과 월세가 모두 0 이면 그 짝이 비어 있어 두 값 모두 null 이다. 월세가 있는 짝의
+    # 보증금 0 은 실제로 있을 수 있어 그대로 0 으로 낸다 (`won_to_manwon_range` 도 0 을 시세 없음으로 본다)
+    if not any(values):
+        return None
+    low_deposit, low_rent, high_deposit, high_rent = values
+    return NaverRentAskingRange(
+        lowest=_asking_pair(low_deposit, low_rent),
+        highest=_asking_pair(high_deposit, high_rent),
+    )
 
 
 def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopmentAreaCountModel) -> dict[str, int]:
@@ -902,13 +1029,18 @@ RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또�
 RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
 
 
-def dong_filter(filter_: NaverArticleFilterModel, legal_division_code: str) -> NaverArticleFilterModel:
-    """동 경계 검색 필터. 법정동 코드 하나를 읍·면·동 단위로 넣는다 (동 매물·단지·재개발 구역 목록이 같은 꼴을 받는다)."""
-    return filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': 'EUP'})
+def boundary_filter(filter_: NaverArticleFilterModel, legal_division_code: str) -> NaverArticleFilterModel:
+    """경계 검색 필터. 법정동 코드 하나를 넣는다. 시·군·구 코드면 시·군·구 단위(GUN), 아니면 읍·면·동 단위(EUP)다.
+
+    동 매물·단지·재개발 구역 목록이 같은 꼴을 받는다 (성동구 + GUN 도 같은 API 다, 2026-11-18 실측). 단위는 코드로 정한다
+    (`is_district_code`). 리 코드는 `is_dong_code` 가 아니라서 `not is_dong_code` 로 가르면 시·군·구로 잘못 읽힌다.
+    """
+    unit = 'GUN' if is_district_code(legal_division_code) else 'EUP'
+    return filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': unit})
 
 
 class AreaScope(NamedTuple):
-    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
+    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동·시·군·구 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
 
     scope: str  # pagination_notes 의 scope ('전부'·'없습니다' 가 어느 범위인지)
     total_basis: str  # pagination_notes 의 total_basis
@@ -917,7 +1049,7 @@ class AreaScope(NamedTuple):
 
 
 def area_scope(legal_division_code: str | None, radius_km: float) -> AreaScope:
-    """동 코드가 있으면 동 경계, 없으면 반경 검색의 안내 말."""
+    """법정동 코드가 있으면 동·시·군·구 경계, 없으면 반경 검색의 안내 말."""
     if legal_division_code is not None:
         return AreaScope(scope='', total_basis='', narrow='조건·지역', narrow_action='조건을 좁혀')
     return AreaScope(
@@ -1112,8 +1244,8 @@ def price_filter_of(conditions: NaverTradeConditions) -> dict[str, int]:
     }
 
 
-# real-price·market-price 의 --period
-PERIOD_YEARS_BY_NAME: dict[str, int] = {'1년': 1, '3년': 3, '5년': 5}
+# real-price·market-price 의 --period (이름 → 달 수). 웹 실거래·시세 기간 선택지는 startDate 로 보내는 3개월·3년·5년이고 1년은 jibsa 가 더한 값이다
+PERIOD_MONTHS_BY_NAME: dict[str, int] = {'3개월': 3, '1년': 12, '3년': 36, '5년': 60}
 
 
 def bounding_box(lat: float, lng: float, radius_km: float) -> NaverBoundingBoxModel:

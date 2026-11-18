@@ -1,6 +1,10 @@
 """단지 매물 목록과 매물 상세 (search listings --complex, listing)."""
 
 import re
+from decimal import (
+    ROUND_FLOOR,
+    Decimal,
+)
 
 from httpx import HTTPStatusError
 from pydantic import Field
@@ -35,6 +39,7 @@ from jibsa.providers.naver.api.request.listing import (
     NaverArticleMaintenanceFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
     NaverComplexArticleListV1RequestPayloadModel,
+    NaverComplexBuildingRegistrationV1RequestParameterModel,
     NaverComplexVillaArticleListV1RequestPayloadModel,
     NaverDataServiceTransportV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
@@ -59,6 +64,7 @@ from jibsa.providers.naver.api.response.listing import (
 from jibsa.providers.naver.service.common import (
     BADGES_DESCRIPTION,
     COMPLEX_SORT_TYPE_BY_NAME,
+    CONFIRMED_AT_DESCRIPTION,
     ENTRANCE_CODE_BY_NAME,
     NOT_APPLICABLE_FIELDS_BY_TYPE,
     OFFICETEL_CODE,
@@ -78,6 +84,7 @@ from jibsa.providers.naver.service.common import (
     dong_label,
     group_sort_notes,
     known_floor,
+    listing_badges,
     listing_keeper,
     pagination_notes,
     price_filter_of,
@@ -87,7 +94,6 @@ from jibsa.providers.naver.service.common import (
     scan_pages,
     unknown_code_label,
     unwrap,
-    verification_badges,
     villa_by_complex_response,
     villa_fallback_found,
 )
@@ -224,6 +230,13 @@ ENTRANCE_LABELS: dict[str, str] = {code: name for name, code in ENTRANCE_CODE_BY
 # 오피스텔분양권 B02 (웹 isComplexType, 2026-11-17 번들 청크 0l4pkwg0qhg2t 의 ArticleComplexInfo). 단지형 빌라(A05~A07,
 # `VILLA_COMPLEX_CODES`)는 다른 화면(ArticleVillaBuildingInfo)이라 규칙이 다르다 (`_facility_values`)
 COMPLEX_INFO_TYPES: frozenset[str] = frozenset({'A01', 'A02', 'A04', 'B01', 'B02'})
+# 웹이 건축물 정보 칸을 그리는 건축물대장 유형 15개 (웹 isBuildingRegistrationType, 2026-11-18 번들 청크 0l4pkwg0qhg2t 의
+# ArticleBuildingInfo, 번들 REAL_ESTATE_TYPE 대조). 매물에 주차 대수가 없을 때 건축물대장 대수로 채우는 유형이다 (`_registered_parking_count`)
+BUILDING_REGISTRATION_TYPES: frozenset[str] = frozenset({
+    'C01', 'C02', 'C03', 'C04', 'C06',
+    'D01', 'D02', 'D03', 'D04', 'D05',
+    'E01', 'E02', 'E04', 'F01', 'Z00',
+})
 # 건물 세부 유형 코드 (articleDetailInfo.buildingType). 네이버 웹 번들의 ARTICLE_BUILDING_TYPE_MAP 과 같다 (2026-11-17 대조)
 BUILDING_TYPE_LABELS: dict[str, str] = {
     'C0101': '일반원룸',
@@ -518,11 +531,15 @@ class NaverListingDetail(ListingDetail):
     ] = None
     parking: Annotated[
         str | None,
-        Field(description="주차 ('가능', '불가', 대수가 있으면 '가능 (총 4대)'. 가능 여부를 모르면 대수만). 웹처럼 아파트·오피스텔·재건축·분양권은 단지 전체 대수만 ('단지 전체 12602대 (세대당 1.32대)', 가능 여부 없음)이고, 단지형 빌라는 매물 대수가 0이거나 없으면 단지 대수를 붙인다 ('가능 (단지 전체 8대, 세대당 0.5대)')")
+        Field(description="주차 ('가능', '불가', 대수가 있으면 '가능 (총 4대)'. 가능 여부를 모르면 대수만). 웹처럼 아파트·오피스텔·재건축·분양권은 단지 전체 대수만 ('단지 전체 12602대 (세대당 1.32대)', 가능 여부 없음)이고, 단지형 빌라는 매물 대수가 0이거나 없으면 단지 대수를 붙인다 ('가능 (단지 전체 8대, 세대당 0.5대)'). 원룸·빌라·단독 등 건축물대장 유형(15개)은 매물 주차 대수가 0 이거나 없으면 건축물대장의 총 주차 대수를 쓰고 (대장에 대수가 없으면 가능 여부만), 대수를 가져온 쪽에 세대당 대수가 0보다 크면 '가능 (총 8대, 세대당 0.5대)' 로 붙인다")
     ] = None
     badges: Annotated[
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
+    ] = None
+    confirmed_at: Annotated[
+        str | None,
+        Field(description=CONFIRMED_AT_DESCRIPTION)
     ] = None
     loan_manwon: Annotated[
         float | None,
@@ -865,10 +882,11 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
 
     합계형(typeCode '02')은 etcDetail, 정액 합계형('04')은 같은 모양의 fixNonDetailList 의 금액과 포함 항목(categoryList)을
     쓴다. 0 은 중개사가 0원으로 입력한 것이다. '04' 는 원룸·빌라·오피스텔 16건 중 7건일 만큼 흔하다 (신림동, 2026-10-11).
-    항목별형('01')은 사이트처럼 정액 항목의 금액을 더해 합계로 보고, 정액 항목만 포함 항목으로 친다. 실비 항목은
-    쓴 만큼 따로 내서 빠진다 (원룸 2653883790: 공용 10만원 정액, 전기~TV 실비 → 합계 10만원, 2026-10-10).
-    그래서 항목이 모두 실비면 0만원·[] 이다. 정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이
-    아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
+    항목별형('01')은 웹처럼(번들 getMaintenanceFeeLabel: `fixDetailList.reduce((s, e) => s + (e.amount ?? 0), 0)`, 2026-11-18)
+    정액·실비를 가리지 않고 모든 항목의 금액을 더해 합계로 본다. 실비 항목은 쓴 만큼 따로 내서 지금까지 본 응답에서는 모두 금액이
+    null 이라 합계가 정액 항목의 합과 같다 (원룸 2653883790: 공용 10만원 정액, 전기~TV 실비 → 합계 10만원, 2026-10-10).
+    포함 항목은 정액 항목(unitType '01')만 친다. 그래서 실비 금액이 모두 null 이고 항목이 모두 실비면 0만원·[] 이다.
+    정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이 아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
     미확인('03')은 etcDetail·fixNonDetailList 가 null 이고 uncheckDetail 로 사유가 와서 대개 모름이다 (빌라 2654619539·
     2653716463, 2026-10-11). 다만 사유가 '99'(없음)이면 웹이 관리비 '없음' 으로 보여 주므로 0만원·[] 이다 (직방의 '관리비
     없음' 과 같은 꼴, 웹 번들 getMaintenanceFeeLabel 대조 2026-11-16). 다른 사유('01'~'04')·사유 없음은 웹도 '확인 어려움'
@@ -886,7 +904,7 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     if fee.fix_detail_list:
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
         includes = [_manage_cost_item_label(item.type) for item in fixed if item.amount and item.type]
-        return won_to_manwon_exact(sum(item.amount or 0 for item in fixed)), includes
+        return won_to_manwon_exact(sum(item.amount or 0 for item in fee.fix_detail_list)), includes
     if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type == MANAGE_COST_NONE_REASON:
         return 0.0, []
     return None, None
@@ -897,8 +915,10 @@ def _parking_label(facility: NaverFacilityInfoModel | None, in_complex: bool) ->
 
     아파트·오피스텔·재건축·분양권(`COMPLEX_INFO_TYPES`)은 웹이 매물 주차 값을 쓰지 않아 이 함수를 거치지 않고, 단지형 빌라는
     매물 대수가 0 보다 클 때와 단지 조회가 실패했을 때만 이 함수를 쓴다 (`_facility_values`).
-    대수가 있어도 이 매물은 주차 불가일 수 있어(원룸 총 6대·불가, 2026-10-10) 가능 여부를 앞에 붙인다.
-    단지가 없는 원룸·빌라에는 '단지 전체' 를 붙이지 않는다. 0대는 모름이 아니라 0대다.
+    건축물대장 유형(원룸·빌라·단독 등 `BUILDING_REGISTRATION_TYPES`)은 `_building_parking` 으로 가 이 함수를 거치지 않는다.
+    이 함수는 단지형 빌라와, 마지막 갈래에 오는 단지 번호 없는 단지 유형·토지·고시원 등이 쓴다.
+    대수가 있어도 이 매물은 주차 불가일 수 있어(2026-10-10 실측: 총 6대·불가) 가능 여부를
+    앞에 붙인다. 단지 안(`in_complex`)일 때만 '단지 전체' 를 붙이고 아니면 '총' 이다. 0대는 모름이 아니라 0대다.
     """
     if facility is None:
         return None
@@ -982,7 +1002,73 @@ def _complex_parking_text(complex_: NaverComplexModel | None, *, with_parenthese
     per_household = info.parking_count_per_household
     if per_household is None:
         return text
-    return f'{text} (세대당 {per_household:g}대)' if with_parentheses else f'{text}, 세대당 {per_household:g}대'
+    return f'{text} ({_per_household_text(per_household)})' if with_parentheses else f'{text}, {_per_household_text(per_household)}'
+
+
+def _per_household_text(per_household: float) -> str:
+    """세대당 주차 대수 글자 ('세대당 0.5대'·'세대당 1대'). 불필요한 0 없이 낸다."""
+    return f'세대당 {per_household:g}대'
+
+
+class _ParkingCount(NamedTuple):
+    """총 주차 대수와 세대당 대수 (웹 ArticleBuildingInfo 의 `[W, J]`)."""
+
+    total: int
+    per_household: float | None
+
+
+def _floor_per_household(per_household: float | None) -> float | None:
+    """세대당 주차 대수를 소수 둘째 자리 아래를 버려 정한다 (웹 lodash `floor(값 || 0, 2)`). 0 이거나 없으면 None.
+
+    웹은 이 값이 0 이면 '(세대당 N대)' 를 붙이지 않는다. 버림은 십진 글자로 계산해 1.33 이 1.32 가 되지 않게 한다.
+    """
+    if not per_household:
+        return None
+    return float(Decimal(str(per_household)).quantize(Decimal('0.01'), rounding=ROUND_FLOOR)) or None
+
+
+def _registered_parking_count(client: NaverClient, key: NaverArticleKeyModel) -> _ParkingCount | None:
+    """건축물대장의 총 주차 대수와 세대당 대수 (1회 호출). pnu 가 없거나 조회가 실패하거나 대장에 대수가 없으면 모름(None)이다.
+
+    웹(ArticleBuildingInfo)은 pnu 가 없으면 이 요청을 보내지 않는다 (`enabled: !!pnu`). 0 대도 대수라 그대로 돌려준다.
+    """
+    pnu = key.key.pnu if key.key else None
+    if not pnu:
+        return None
+    registration = result_or_none(lambda: client.run_request_complex_building_registration_v1(
+        NaverComplexBuildingRegistrationV1RequestParameterModel(pnu=pnu, real_estate_type=key.type.real_estate_type)
+    ))
+    info = registration.parking_info if registration else None
+    if info is None or info.total_parking_count is None:
+        return None
+    return _ParkingCount(info.total_parking_count, _floor_per_household(info.parking_count_per_household))
+
+
+def _building_parking(
+    client: NaverClient,
+    key: NaverArticleKeyModel,
+    facility: NaverFacilityInfoModel | None,
+) -> str | None:
+    """건축물대장 유형(`BUILDING_REGISTRATION_TYPES`)의 주차 ('가능 (총 8대, 세대당 0.5대)', 가능 여부를 모르면 '총 8대 (세대당 0.5대)').
+
+    웹처럼 매물 주차 대수가 참(0 이 아닌 수)이면 매물 대수와 매물 세대당 대수를, 아니면 건축물대장 값을 쓴다 (대장은 1회 호출).
+    대장에도 대수가 없으면 대수는 모름이라 가능 여부만 낸다. 세대당 대수가 0 이거나 없으면 붙이지 않는다.
+    """
+    possible = facility.is_parking_possible if facility else None
+    if facility is not None and facility.total_parking_count:
+        parking = _ParkingCount(facility.total_parking_count, _floor_per_household(facility.parking_count_per_household))
+    else:
+        registered = _registered_parking_count(client, key)
+        if registered is None:
+            return parking_label(possible)
+        parking = registered
+    # 웹 건축물 정보(ArticleBuildingInfo)는 '주차 N대' 하나뿐이라 매물 대수도 '단지 전체' 없이 늘 '총' 이다
+    detail = f'총 {parking.total}대'
+    if parking.per_household is not None:
+        # 가능 여부가 있으면 그 뒤 괄호 안에 함께 넣고, 없으면 대수가 앞이라 세대당을 괄호로 붙인다
+        per_household = _per_household_text(parking.per_household)
+        detail = f'{detail}, {per_household}' if possible is not None else f'{detail} ({per_household})'
+    return parking_label(possible, detail)
 
 
 def _facility_values(
@@ -1006,6 +1092,14 @@ def _facility_values(
       (매물 facilityInfo 는 보지 않는다). 주차는 매물 totalParkingCount 가 0 보다 크면 매물 값, 아니면 단지 parkingInfo 이고
       주차가능여부 칸은 매물 값이다. 2661158391(A06, 단지 479920)은 매물이 0대·가능이라 웹이 '주차 8대 (세대당 0.5대)',
       '주차가능여부 가능' 이고 jibsa 는 '가능 (단지 전체 8대, 세대당 0.5대)' 로 낸다. 현관 구조는 건드리지 않는다.
+    - 건축물대장 유형(`BUILDING_REGISTRATION_TYPES` 15개, ArticleBuildingInfo): 주차 대수는 매물 totalParkingCount 가 참(0 이 아닌 수)이면
+      매물 값, 아니면(0·null·facilityInfo 없음) `GET /complex/buildingRegistration?pnu=&realEstateType=` 의 parkingInfo.totalParkingCount
+      이고, 그 값이 수(0 포함)일 때만 '주차 N대' 칸을 그린다. 세대당 대수도 같은 쪽의 `parkingCountPerHousehold` 를 소수 둘째 자리까지 버린 값
+      (lodash `floor(값 || 0, 2)`)이고, 0 이면 '(세대당 N대)' 를 붙이지 않는다 (번들 `L` 은 lodash floor 다, 2026-11-18).
+      웹은 '주차가능여부'(매물 값)와 '주차 N대 (세대당 M대)' 두 칸으로 그리고 jibsa 는 '가능 (총 8대, 세대당 0.5대)' 로 합친다
+      (가능 여부를 모르면 '총 8대 (세대당 0.5대)', 세대당이 0·없음이면 '가능 (총 8대)').
+      pnu 는 article/key 의 key.pnu 고, 없으면 웹도 요청하지 않는다. 원룸 2661724695 는 매물이 0대·불가이고 대장이 0대라 웹이 '주차 0대',
+      2661862868 은 매물이 8대라 대장을 부르지 않는다. 대장 조회가 실패하거나 대수가 없으면 대수는 모름이라 가능 여부만 낸다 (`_building_parking`).
     그 밖의 유형은 매물 값 그대로다. 단지 조회(`complex_`)가 실패하면 그 값만 모름이다 (단지형 빌라 주차는 매물 값으로 되돌린다).
     """
     real_estate_type = key.type.real_estate_type
@@ -1042,11 +1136,19 @@ def _facility_values(
             entrance=_coded_label(ENTRANCE_LABELS, entrance),
             parking=parking,
         )
+    # 건축물대장 유형은 웹이 매물 대수가 0 이어도 쓰지 않고 대장 대수만 '주차 N대' 로 그린다. 대장에 대수가 없으면 칸이 없어 가능 여부만 낸다 ('총 0대' 를 내지 않는다)
+    parking = (
+        _building_parking(client, key, facility)
+        if real_estate_type in BUILDING_REGISTRATION_TYPES
+        # 여기 오는 유형 중 단지 번호가 있는 것은 토지·고시원뿐이고 둘은 나중에 parking 키를 지운다 (common.py). 그래서 단지 안이 아니다
+        # (근거: 2026-11-18 가산동·신림동 목록 160건과 지식산업센터 2662172371 에는 단지 번호가 없었다)
+        else _parking_label(facility, False)
+    )
     return _FacilityValues(
         heating=_coded_label(HEATING_LABELS, system),
         heating_fuel=_coded_label(HEATING_FUEL_LABELS, energy),
         entrance=_coded_label(ENTRANCE_LABELS, entrance),
-        parking=_parking_label(facility, complex_number is not None),
+        parking=parking,
     )
 
 
@@ -1061,6 +1163,8 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     중개보수(agentFee)는 직거래가 아니면(직거래이거나 직거래인지 모를 때는 조회하지 않는다) 모든 거래 유형에서, 세금(tax)은 매매 매물만 더 조회한다
     (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은 조회하지 않는다) (1회 더, 매매는 2회 더). 주변 교통(지하철·버스)은 늘,
     배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더, 최대 10회).
+    건축물대장 유형(원룸·빌라 등 15개)은 매물 주차 대수가 0 이거나 없고 article/key 에 pnu 가 있을 때만 건축물대장(`/complex/buildingRegistration`)을
+    1회 더 조회하고, 그 대수와 세대당 대수로 주차를 채운다 (`_facility_values`). 이 유형은 단지 정보를 받아도 1회뿐이라 최대 10회를 넘지 않는다.
 
     중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 지번 주소는 좌표로 얻은
     법정동 이름과 article/key 의 지번을 합쳐 만든다. 사용승인일은 단지 유형(아파트·오피스텔·재건축·분양권)이면 단지 정보(`/complex`)의
@@ -1111,7 +1215,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     # 직거래 여부를 모르면(상세 정보를 못 읽었거나 값이 없으면) None 이다. 직거래에도 agentFee 가 금액을 주므로 모를 때는 요청하지 않는다
     is_direct_trade = article.is_direct_trade if article else None
     pre_sale_status_type = detail.pre_sale_status_type if detail else None
-    # 단지 유형은 단지 정보를 한 번 받아 사용승인일·난방·주차가, 단지형 빌라는 난방·주차가 함께 쓴다 (단지형 빌라 사용승인일은 동 목록을 따로 받는다) (요청 순서: 법정동, 단지, 동 목록·평형, agentFee ...)
+    # 단지 유형은 단지 정보를 한 번 받아 사용승인일·난방·주차가, 단지형 빌라는 난방·주차가 함께 쓴다 (단지형 빌라 사용승인일은 동 목록을 따로 받는다) (요청 순서: 법정동, 단지, 동 목록·평형, 건축물대장, agentFee ...)
     complex_ = _complex_overview(client, complex_number, real_estate_type)
     if complex_number is not None and real_estate_type in COMPLEX_INFO_TYPES:
         # 웹(ArticleComplexInfo)은 단지 유형의 사용승인일을 단지 정보(useApprovalDate)에서만 그리고 매물 facilityInfo 날짜는 보지 않는다.
@@ -1180,7 +1284,12 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         heating=facility_values.heating,
         heating_fuel=facility_values.heating_fuel,
         entrance=facility_values.entrance,
-        badges=verification_badges(verification.verification_type if verification else None, real_estate_type),
+        badges=listing_badges(
+            verification.verification_type if verification else None,
+            real_estate_type,
+            article.is_safe_lessor_of_hug if article else None,
+        ),
+        confirmed_at=iso_date(verification.article_confirm_date) if verification else None,
         loan_manwon=_loan_manwon(price),
         # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
         # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교)
