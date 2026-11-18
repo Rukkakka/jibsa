@@ -403,6 +403,19 @@ def assigned_schools(schools: list[NaverSchoolModel]) -> list[NaverAssignedSchoo
     ]
 
 
+def unknown_code_label(kind: str, code: str) -> str:
+    """jibsa 표에 없는 코드를 낼 글자 ('알 수 없는 시설 (XYZ01)').
+
+    값은 응답에 있는데 jibsa 가 못 읽은 것이라, 값이 없다는 뜻의 null 도 코드 글자 그대로도 아니다. 사용자가 이 글자를 보고
+    코드를 알려 주면 표에 더할 수 있다.
+
+    Args:
+        kind: 무엇의 코드인지 ('값' 하나짜리, '시설' 시설 목록 항목, '항목' 관리비 포함 항목).
+        code: 응답의 코드.
+    """
+    return f'알 수 없는 {kind} ({code})'
+
+
 def known_floor(value: str | None) -> str | None:
     """층 값. 층이 없다는 뜻으로 오는 '0'·'-'·빈 값은 모름(None)으로 둔다.
 

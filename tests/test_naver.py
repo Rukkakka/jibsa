@@ -543,6 +543,21 @@ def test_detail_drops_fields_the_web_does_not_draw_by_type(
     assert ('/article/tax' in _paths(requests)) is taxes_requested
 
 
+def test_unknown_facility_code_is_not_a_known_label() -> None:
+    # 표에 없는 시설 코드는 코드 글자도 null 도 아니라 못 읽었다는 글자로 낸다. 화면 글자(인덕션레인지)는 그대로 낸다
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/basicInfo'):
+            body['result']['detailInfo']['facilityInfo']['life'] = ['INDUCTION_RANGE', 'XYZ01']
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        detail = get_listing(client, '1000000001')
+    assert detail.options == ['인덕션레인지', '알 수 없는 시설 (XYZ01)']
+
+
 def test_unknown_direct_trade_skips_agent_fee_and_keeps_keys_null() -> None:
     # 상세 정보(articleDetailInfo)를 못 읽어 직거래인지 모르면 agentFee 를 부르지 않고 둘 다 모름(null)으로 낸다
     # (agentFee 는 직거래에도 금액을 주므로, 모르는 채로 내면 웹이 그리지 않는 값이 나갈 수 있다)

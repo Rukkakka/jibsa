@@ -84,6 +84,7 @@ from jibsa.providers.naver.service.common import (
     resolve_dong_numbers,
     result_or_none,
     scan_pages,
+    unknown_code_label,
     unwrap,
     villa_by_complex_response,
     villa_fallback_found,
@@ -145,58 +146,54 @@ MANAGE_COST_ITEM_LABELS: dict[str, str] = {
     '16': 'TV',
     '99': '기타',
 }
-# 시설 코드 이름. 네이버 웹 스크립트의 ARTICLE_FACILITY_*_TYPE 표와 대조했다 (2026-10-24: 사설경비·에어컨·가스오븐·소파가
-# 빠져 PRIVATE_SECURITY 같은 영어 코드가 options 에 그대로 나갔다). 이름은 다른 소스와 맞춰 줄였다 (인덕션레인지 → 인덕션).
+# 시설 코드 이름. 2026-11-17 네이버 웹 번들의 시설 이름 표와 똑같이 화면 글자 그대로 쓴다. 그 뒤 네이버가 더한 코드는 이 표에
+# 없어 '알 수 없는 시설 (코드)' 로 낸다 (2026-10-24: 사설경비·에어컨·가스오븐·소파가 빠져 PRIVATE_SECURITY 같은 영어 코드가 options 에 그대로 나갔다).
 # ELEVATOR 는 options 가 아니라 elevator 로 낸다
+# 리뷰 오탐 (2026-11-17): 직방·당근의 options 글자(인덕션 등)와 다르다. options 는 소스끼리 글자를 맞추는 약속이 없고
+# 네이버는 화면 글자를 따른다
+# 리뷰 오탐 (2026-11-17): 표에서 지운 DRESSING_TABLE·DRYER·GAS_RANGE·OVEN·ROOF_TOP·CENTRAL·DOOR_LOCK 은 첫 커밋의 추정 이름이고 웹 시설 표(ARTICLE_FACILITY_*)에 없다
 FACILITY_LABELS: dict[str, str] = {
     # 생활시설
+    'AIRCON': '에어컨',
+    'BATHTUB': '욕조',
     'BED': '침대',
+    'BIDET': '비데',
+    'BUILT_IN_CLOSET': '붙박이장',
+    'CLOSET': '옷장',
+    'CLOTHES_DRYER': '건조기',
     'DESK': '책상',
     'DINING_TABLE': '식탁',
-    'CLOSET': '옷장',
-    'BUILT_IN_CLOSET': '붙박이장',
-    'DRESSING_TABLE': '화장대',
-    'SHOE_RACK': '신발장',
-    'SINK': '싱크대',
-    'REFRIGERATOR': '냉장고',
-    'WASHING_MACHINE': '세탁기',
-    'DRYER': '건조기',
-    'CLOTHES_DRYER': '건조기',
     'DISH_WASHER': '식기세척기',
-    'GAS_RANGE': '가스레인지',
-    'GAS_STOVE': '가스레인지',
-    'INDUCTION_RANGE': '인덕션',
-    'MICROWAVE': '전자레인지',
-    'OVEN': '오븐',
     'GAS_OVEN': '가스오븐',
-    'AIRCON': '에어컨',
+    'GAS_STOVE': '가스레인지',
+    'INDUCTION_RANGE': '인덕션레인지',
+    'MICROWAVE': '전자레인지',
+    'REFRIGERATOR': '냉장고',
+    'SHOE_RACK': '신발장',
     'SOFA': '소파',
-    'TV': 'TV',
-    'BIDET': '비데',
     'SHOWER_BOOTH': '샤워부스',
-    'BATHTUB': '욕조',
+    'SINK': '싱크대',
+    'TV': 'TV',
+    'WASHING_MACHINE': '세탁기',
     # 보안시설
     'GUARD': '경비원',
-    'CCTV': 'CCTV',
-    'INTER_PHONE': '인터폰',
     'VIDEO_PHONE': '비디오폰',
-    'SECURITY_WINDOW': '방범창',
-    'CARD_KEY': '카드키',
-    'DOOR_LOCK': '도어락',
-    'ENTRANCE_SECURITY': '현관보안',
+    'INTER_PHONE': '인터폰',
     'PRIVATE_SECURITY': '사설경비',
+    'CARD_KEY': '카드키',
+    'CCTV': 'CCTV',
+    'ENTRANCE_SECURITY': '현관보안',
+    'SECURITY_WINDOW': '방범창',
     # 기타시설
     'FIRE_ALARM': '화재경보기',
-    'TERRACE': '테라스',
     'VERANDA': '베란다',
-    'ROOF_TOP': '옥상',
+    'TERRACE': '테라스',
     'YARD': '마당',
     'DELIVERY_BOX': '무인택배함',
     # 냉방시설
-    'WALL': '벽걸이 에어컨',
-    'CEILING': '천장형 에어컨',
-    'STAND': '스탠드 에어컨',
-    'CENTRAL': '중앙냉방',
+    'WALL': '벽걸이에어컨',
+    'STAND': '스탠드에어컨',
+    'CEILING': '천장에어컨',
 }
 # 난방 방식·난방 연료·현관 구조 코드 (네이버 웹 번들 대조, 2026-11-17). 웹은 난방 한 칸에 '개별난방 / 도시가스' 로 이어 보여 주지만
 # jibsa 는 방식(heating)과 연료(heating_fuel)를 따로 낸다
@@ -495,7 +492,7 @@ class NaverListingDetail(ListingDetail):
     ] = None
     building_type: Annotated[
         str | None,
-        Field(description="건물 세부 유형 (네이버 화면 글자: '빌라', '다세대', '일반원룸' ... 토지는 지목 '대'·'전'·'임야' 등, 사무실·숙박 등은 그 구분 '대형사무실' 등). 단지 매물은 키를 뺀다. 모르면 null")
+        Field(description="건물 세부 유형 (네이버 화면 글자: '빌라', '다세대', '일반원룸' ... 토지는 지목 '대'·'전'·'임야' 등, 사무실·숙박 등은 그 구분 '대형사무실' 등). 코드를 못 읽으면 '알 수 없는 값 (코드)'. 단지 매물은 키를 뺀다. 모르면 null")
     ] = None
     supply_area_m2: Annotated[
         float | None,
@@ -507,15 +504,15 @@ class NaverListingDetail(ListingDetail):
     ] = None
     heating: Annotated[
         str | None,
-        Field(description="난방 방식 ('개별난방', '중앙난방', '지역난방' ...). 알리지 않았거나 모르면 null. 웹처럼 아파트·오피스텔·재건축·분양권은 매물에 없으면 단지의 난방, 단지형 빌라는 단지(/complex/villa)의 난방만 쓴다")
+        Field(description="난방 방식 ('개별난방', '중앙난방', '지역난방' ...). 알리지 않았거나 모르면 null. 코드를 못 읽으면 '알 수 없는 값 (코드)'. 웹처럼 아파트·오피스텔·재건축·분양권은 매물에 없으면 단지의 난방, 단지형 빌라는 단지(/complex/villa)의 난방만 쓴다")
     ] = None
     heating_fuel: Annotated[
         str | None,
-        Field(description="난방 연료 ('도시가스', '열병합', '전기' ...). 알리지 않았거나 모르면 null. 난방 방식과 같게 아파트·오피스텔·재건축·분양권은 매물에 없으면 단지의 연료, 단지형 빌라는 단지의 연료만 쓴다")
+        Field(description="난방 연료 ('도시가스', '열병합', '전기' ...). 알리지 않았거나 모르면 null. 코드를 못 읽으면 '알 수 없는 값 (코드)'. 난방 방식과 같게 아파트·오피스텔·재건축·분양권은 매물에 없으면 단지의 연료, 단지형 빌라는 단지의 연료만 쓴다")
     ] = None
     entrance: Annotated[
         str | None,
-        Field(description="현관 구조 ('계단식', '복도식', '복합식'). 모르면 null. 웹처럼 아파트·오피스텔·재건축·분양권은 매물에 없으면 평형(/complex/pyeong)의 현관 구조를 쓴다")
+        Field(description="현관 구조 ('계단식', '복도식', '복합식'). 모르면 null. 코드를 못 읽으면 '알 수 없는 값 (코드)'. 웹처럼 아파트·오피스텔·재건축·분양권은 매물에 없으면 평형(/complex/pyeong)의 현관 구조를 쓴다")
     ] = None
     parking: Annotated[
         str | None,
@@ -615,13 +612,26 @@ class NaverListingDetail(ListingDetail):
 
 
 def _coded_label(labels: dict[str, str], code: str | None) -> str | None:
-    """값 하나짜리 코드(난방·현관·건물 세부 유형)의 글자. 코드가 없으면 모름(None), 표에 없으면 코드 그대로.
+    """값 하나짜리 코드(방향·난방·현관·건물 세부 유형)의 글자. 코드가 없으면 모름(None), 표에 없으면 '알 수 없는 값 (코드)'.
 
     '미노출'(`UNDISCLOSED_HEATING_CODES`)은 중개사가 알리지 않은 것이라 모름(None)이다.
     """
     if not code or code in UNDISCLOSED_HEATING_CODES:
         return None
-    return labels.get(code, code)
+    return labels.get(code) or unknown_code_label('값', code)
+
+
+def _direction_label(space: NaverSpaceInfoModel | None) -> str | None:
+    """방향 ('남향', 기준이 있으면 '남향 (거실 기준)').
+
+    표에 없는 코드는 괄호를 한 번만 써서 '알 수 없는 값 (XY, 거실 기준)' 으로 낸다.
+    """
+    direction = _coded_label(DIRECTION_BY_CODE, space.direction if space else None)
+    if direction is None or space is None or not space.direction_standard:
+        return direction
+    if space.direction not in DIRECTION_BY_CODE:
+        return unknown_code_label('값', f'{space.direction}, {space.direction_standard}')
+    return f'{direction} ({space.direction_standard})'
 
 
 def _building_name(article: NaverArticleDetailInfoModel | None, real_estate_type: str) -> str | None:
@@ -839,6 +849,11 @@ def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
     return move_in_label(MOVING_IN_LABELS.get(code, date), negotiable=bool(negotiable))
 
 
+def _manage_cost_item_label(code: str) -> str:
+    """관리비 포함 항목 코드의 글자. 표에 없으면 '알 수 없는 항목 (코드)'."""
+    return MANAGE_COST_ITEM_LABELS.get(code) or unknown_code_label('항목', code)
+
+
 def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | None, list[str] | None]:
     """월 관리비(만원)와 관리비에 포함된 항목. 모르면 None.
 
@@ -860,11 +875,11 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     summary = fee.etc_detail or fee.fix_non_detail_list
     if summary is not None:
         codes = summary.category_list
-        includes = None if codes is None else [MANAGE_COST_ITEM_LABELS.get(code, code) for code in codes]
+        includes = None if codes is None else [_manage_cost_item_label(code) for code in codes]
         return won_to_manwon(summary.amount), includes
     if fee.fix_detail_list:
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
-        includes = [MANAGE_COST_ITEM_LABELS.get(item.type, item.type) for item in fixed if item.amount and item.type]
+        includes = [_manage_cost_item_label(item.type) for item in fixed if item.amount and item.type]
         return won_to_manwon(sum(item.amount or 0 for item in fixed)), includes
     if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type == MANAGE_COST_NONE_REASON:
         return 0.0, []
@@ -1143,11 +1158,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         contract_area_m2=listed_area if is_officetel else None,
         room_count=space.room_count if space else None,
         bathroom_count=space.bath_room_count if space else None,
-        direction=(
-            f'{DIRECTION_BY_CODE.get(space.direction, space.direction)} ({space.direction_standard})'
-            if space and space.direction and space.direction_standard
-            else (DIRECTION_BY_CODE.get(space.direction, space.direction) if space and space.direction else None)
-        ),
+        direction=_direction_label(space),
         move_in=move_in,
         parking=facility_values.parking,
         # 엘리베이터는 중개사가 고르는 기타시설(etc) 항목 하나라 없으면 고르지 않은 것인지 없는 것인지 모른다. 그래서 False 를
@@ -1155,7 +1166,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         # 보안시설을 비워 두었다. 엘리베이터 없음을 따로 알리는 필드는 없다)
         elevator=True if 'ELEVATOR' in facility_codes else None,
         options=[
-            FACILITY_LABELS.get(code, code)
+            FACILITY_LABELS.get(code) or unknown_code_label('시설', code)
             for code in facility_codes
             if code != 'ELEVATOR'
         ] if facility is not None else None,
