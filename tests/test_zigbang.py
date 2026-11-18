@@ -32,6 +32,7 @@ from jibsa.providers.zigbang.api.response.listing import (
     ZigbangItemCatalogsItemsResponseModel,
     ZigbangItemsDetailV1ResponseModel,
 )
+from jibsa.providers.zigbang.api.response.stay import ZigbangGuestItemsResponseModel
 from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
@@ -55,6 +56,10 @@ from jibsa.providers.zigbang.service.listing import (
 )
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import resolve_region_scope
+from jibsa.providers.zigbang.service.stay import (
+    STAY_REFUND_RULES,
+    stay_detail_to_listing,
+)
 from jibsa.providers.zigbang.service.store import (
     ZigbangStoreConditions,
     search_store_listings,
@@ -567,6 +572,73 @@ def test_stay_detail_not_reviewed_is_unavailable() -> None:
 
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
         get_any_listing(client, 'stay-5001')
+
+
+def stay_output(**changes) -> dict:
+    data = load('guest_items')
+    data.update(changes)
+    detail = ZigbangGuestItemsResponseModel.model_validate(data)
+    return stay_detail_to_listing(detail).model_dump(mode='json')
+
+
+def test_stay_pet_option_moves_to_pet_allowed() -> None:
+    pet = {'category': 'PET_FRIENDLY', 'optionName': 'PET_ALLOWED'}
+    options = [{'category': 'BASIC', 'optionName': 'WIFI'}, pet, {'category': 'BASIC', 'optionName': 'TV'}]
+    allowed = stay_output(itemOptions=options, petCleaningFee=0)
+    assert allowed['options'] == ['와이파이', 'TV']
+    assert allowed['pet_allowed'] is True
+    assert allowed['pet_cleaning_fee_manwon'] == 0
+    assert allowed['pet_cleaning_fee_manwon'] is not None
+    denied = stay_output(itemOptions=options[:1] + options[2:], petCleaningFee=0)
+    assert denied['pet_allowed'] is False
+    assert 'pet_cleaning_fee_manwon' not in denied
+    # 반려동물 가능인데 청소비를 주지 않으면 모름(null)
+    unknown = stay_output(itemOptions=[pet])
+    assert unknown['pet_cleaning_fee_manwon'] is None
+    assert unknown['options'] == []
+
+
+def test_stay_pet_fields_without_option_list_or_with_fee_when_denied() -> None:
+    data = load('guest_items')
+    data.pop('itemOptions', None)
+    data['petCleaningFee'] = 0
+    unknown = stay_detail_to_listing(ZigbangGuestItemsResponseModel.model_validate(data)).model_dump(mode='json')
+    # 직방이 옵션 목록을 주지 않으면 모름(null). 청소비는 키가 남는다
+    assert unknown['pet_allowed'] is None
+    assert unknown['options'] is None
+    assert unknown['pet_cleaning_fee_manwon'] is None
+    # 동반 불가여도 웹처럼 추가 청소비가 0 보다 크면 낸다
+    denied = stay_output(itemOptions=[{'category': 'BASIC', 'optionName': 'WIFI'}], petCleaningFee=50000)
+    assert denied['pet_allowed'] is False
+    assert denied['pet_cleaning_fee_manwon'] == 5
+
+
+def test_stay_parking_count_is_not_applicable_when_unavailable() -> None:
+    unavailable = stay_output(parkingType='UNAVAILABLE', parkingCount=None)
+    assert 'parking_count' not in unavailable
+    assert 'parking_method' not in unavailable
+    unknown = stay_output(parkingType='LIMITED')
+    assert unknown['parking_count'] is None
+    assert unknown['parking_method'] is None
+    known = stay_output(parkingType='AVAILABLE', parkingCount=2, parkingMethod='MECHANICAL')
+    assert known['parking_count'] == 2
+    assert known['parking_method'] == '기계식'
+
+
+def test_stay_refund_rules_follow_policy_code() -> None:
+    strict = stay_output(refundPolicy='STRICT')
+    assert [(rule['when'], rule['penalty']) for rule in strict['refund_rules']] == list(STAY_REFUND_RULES['STRICT'])
+    assert stay_output(refundPolicy='NEW_POLICY')['refund_rules'] is None
+    assert stay_output(refundPolicy=None)['refund_rules'] is None
+
+
+def test_stay_unavailable_periods_empty_schedule_is_empty_list() -> None:
+    assert stay_output(schedules=[])['unavailable_periods'] == []
+    blocked = {'scheduleType': 'BLOCKED', 'startDate': '2099-01-01', 'endDate': '2099-01-10'}
+    assert stay_output(schedules=[blocked])['unavailable_periods'] == [
+        {'start': '2099-01-01', 'end': '2099-01-10', 'kind': '막힘'},
+    ]
+    assert stay_output()['unavailable_periods'] is None
 
 
 # --- 아파트 제휴(집주인·신규분양) 매물 ---------------------------------------------

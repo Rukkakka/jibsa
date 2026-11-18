@@ -106,11 +106,12 @@ Windows 는 `.venv/bin/pytest` 대신 `.venv\Scripts\pytest` 로 부른다.
   서버가 옛 값도 받으면 명령은 정상으로 돌아 명령 감시로는 알 수 없기 때문이다. 값이 낡아도 서버가 받는 동안은 명령이 멈추지 않아
   매일 보지 않고, 예약 실행은 한국 시간 월요일에만 돈다 (`WEEKLY_CHECK_WEEKDAY`. 수동 실행·감시 파일을 고친 PR 과 `run --weekly` 는
   요일과 상관없이 돈다). 명령 감시 뒤에 첫 화면을 jibsa 브라우저로 열어 번들을 받아 대조하고(`check_web_values`), jibsa 값이 웹에 없거나
-  값을 하나도 찾지 못하면(번들 구조가 바뀜) 고장, 번들을 받지 못하면 확인 못 함이다.
+  값을 하나도 찾지 못하면(번들 구조가 바뀜) 고장, 번들을 받지 못하면 확인 못 함이다. 직방 위약금 표는 이름 → 값 집합이 아니라 정책·행으로 된 표라
+  `check_web_values` 대신 표 전체를 견주어, 웹에만 있는 정책·행과 글자가 바뀐 행도 알린다 (표를 못 찾으면 고장, 번들을 받지 못하면 확인 못 함). 웹 표의 시점 이름 수와 정책 행 수가 어긋나면(번들 구조 변경) 잘라 견주지 않고 `검사 코드 오류` 고장으로 보고한다.
 
   | 소스 | 보는 값 |
   | --- | --- |
-  | 직방 | 아파트·단기임대 API 헤더 `sdk-version` (첫 화면 `_app` 번들, [직방 인증·헤더](providers/zigbang.md#인증헤더)) |
+  | 직방 | 아파트·단기임대 API 헤더 `sdk-version` (첫 화면 `_app` 번들, [직방 인증·헤더](providers/zigbang.md#인증헤더)). 단기임대 상세 `refund_rules` 의 위약금 표(`STAY_REFUND_RULES`)를 웹 단기임대 상세 화면(`/stay/item_detail`) 번들 조각의 표와 견준다 (`check_zigbang_stay_refund_rules`). 표는 첫 화면 번들이 아니라 그 화면 조각에 있어 첫 화면의 빌드 매니페스트 → 화면 조각 → webpack 런타임 → 그 화면이 부르는 조각을 따라가 받는다 (매물 번호는 필요 없다). 정책 코드·이름표(유연·표준·엄격)·행 이름·글자 중 하나라도 다르면 고장 ([직방 단기임대](providers/zigbang.md#단기임대-stay)) |
   | 당근 | GraphQL persisted query 해시(`*_query_id`)를 웹 번들의 같은 이름 쿼리(`DaangnClient.web_query_names`)와 견줘 해시가 바뀐 쿼리(새 해시를 알려 줌)·웹에서 사라진 쿼리·이름만 바뀐 쿼리를 알리고, 기준 목록(`scripts/monitor/daangn_web_queries.txt`)에 없는 웹 쿼리를 참고로 알린다 (`check_daangn_queries`). 쿼리는 지도·단지 화면의 번들 조각에 흩어져 있어 첫 화면 번들에서 조각이 부르는 조각을 모두 받는다 (2026-11-13 실측: 조각 534개, 요청 제한을 지켜 9분쯤). 새 쿼리를 살펴본 뒤 `api_check.py daangn-queries` 로 기준 목록을 다시 쓴다 ([당근 API 변경 시 점검](providers/daangn.md#api-변경-시-점검)) |
   | 다방 | v5 헤더 `D-Api-Version`·`D-App-Version`, v3 쿼리 `api_version`·`version` (첫 화면 스크립트, [다방 API 변경 시 점검](providers/dabang.md#api-변경-시-점검)) |
 - **판정:** 명령마다 셋으로 나눈다.

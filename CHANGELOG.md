@@ -142,6 +142,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 직방 `real-price --trade 전체`: 매매와 전월세를 계약일 최신 순으로 한 목록에 주고 거래마다 `trade_type` 을 붙인다 (직방 웹 실거래 탭의 '전체'). 전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있다 (#334)
 - 직방 아파트 매물(`search listings apt`·`search listings --complex <apt-…>`·`catalog`·`listing`)에 `pyeong_id`·`pyeong_name`(평형 ID·이름, `pyeong_id` 는 `--pyeong` 에 그대로 넘긴다)이 붙고, 상세·`catalog` 매물에는 직방이 매물을 확인한 날짜 `confirmed_at`·직방 웹의 '실매물 확인' 배지 `actual_listing_checked`·위반 건축물 여부 `non_compliant_building` 도 붙음. 직방이 주지 않으면(제휴 매물의 위반 건축물 등) `null` 이다 (#336)
 - 직방 `search listings apt --no-new-sale`: 직방 웹의 '신규 분양 포함' 을 끈 동·구 목록처럼 신규분양 매물을 빼고 `total` 도 그만큼 준다 (이어 받을 때도 같은 옵션을 준다). 단지 매물(`--complex`)에는 없다 (#337)
+- 직방 단기임대 `listing stay-…` 상세에 `kitchen_count`·`living_room_count`(주방·거실 수), `parking_count`·`parking_method`(주차 대수·방식, 주차 불가면 키 없음), `pet_allowed`·`pet_cleaning_fee_manwon`(반려동물 동반 여부·추가 청소비. 동반 여부는 직방이 옵션 목록을 주지 않으면 `null`, 청소비는 직방 웹처럼 동반 불가여도 0 보다 크면 나오고 동반 불가이고 0 이면 키 없음), `check_in_time`·`check_out_time`·`check_in_method`·`check_out_method`(입·퇴실 시각·방식), `unavailable_periods`(예약할 수 없는 기간), `refund_rules`(위약금 표, 정책을 모르면 `null`)가 붙음. `refund_rules` 는 직방 웹에 고정된 표를 옮긴 것이라 임대인 설정에 따라 다를 수 있으니 계약 전 `url` 에서 확인한다 (#338)
 
 ### 변경
 
@@ -227,6 +228,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 네이버 `regions` 가 같은 이름의 시·군·구를 검색창 첫 쪽(다섯 곳)만 보고 세어, 여섯 곳 이상이면 `5곳입니다` 로 단정하고 첫 쪽에 하나뿐이면 다음 쪽을 보지 않고 고를 수 있던 문제. 이름이 맞는 곳이 첫 쪽 끝까지 이어지면 다음 쪽을 최대 2회 더 받아 센다 (`중구`·`동구` 는 요청 1회 더)
 - 네이버 `listing` 이 네이버가 관리비 '없음' 으로 보여 주는 매물의 `manage_cost_manwon`·`manage_cost_includes` 를 모름(`null`)으로 내던 문제. `0`·`[]` 로 낸다 (관리비를 확인할 수 없는 다른 사유는 그대로 `null`)
 - 로컬 폴더·파일에서 설치한 jibsa(`uv tool install .`·`pip install .`)가 같은 버전 번호로 코드만 바꿔 다시 설치해도 그 전에 받은 `next` 를 받아, 위치 꼴이 바뀐 명령이 엉뚱한 오류를 내거나 앞 결과와 겹쳐 이어 받을 수 있던 문제. 이제 `다른 버전의 jibsa 가 만든 next` 로 멈춰 처음부터 다시 찾게 한다. `jibsa --version` 출력은 그대로다
+- 직방 단기임대 상세의 `options` 에 반려동물 가능 매물이면 직방 코드 `PET_ALLOWED` 가 그대로 섞여 나오던 문제. 직방 웹처럼 옵션 목록에서 빼고 반려동물은 새 `pet_allowed` 로 낸다 (#338)
 - 직방 `real-price` 가 거래 유형을 읽지 못한 실거래(jibsa 가 모르는 유형이거나 유형이 빈 거래)를 알리지 않고 빼던 문제. `--trade` 가 무엇이든 `[제외] 거래 유형을 읽지 못한 실거래 N건을 뺐습니다. jibsa 업데이트가 필요할 수 있습니다` 로 `notes` 가 알린다 (#335)
 
 ## 0.12.0 — 2026-11-11

@@ -20,7 +20,7 @@
 새 CLI 명령이나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 만들면 GROUPS 에 넣는다. tests/test_cli.py 가 CLI 명령 목록과 대조한다.
 
 명령 말고 따로 보는 것: jibsa 가 웹 번들에서 옮겨 적은 값이 지금 웹 번들에도 있는지. 서버가 옛 값도 받으면 명령은 정상으로
-돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·당근 GraphQL 쿼리(해시가 바뀜·사라짐·이름만 바뀜·새로 생김)·다방 API 버전을
+돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·직방 단기임대 위약금 표(상세 화면 번들 조각)·당근 GraphQL 쿼리(해시가 바뀜·사라짐·이름만 바뀜·새로 생김)·다방 API 버전을
 주 1회(`WEEKLY_CHECKS`, 한국 시간 월요일 또는 `--weekly`) 본다. 당근 새 쿼리의 기준 목록은 `daangn_web_queries.txt` 이고
 살펴본 뒤 `daangn-queries` 로 다시 쓴다.
 
@@ -444,10 +444,27 @@ DAILY_GROUPS: tuple[str, ...] = ('zigbang', 'daangn', 'dabang')
 # 아파트 0.128.0 과 단기임대 zigbang-stay-sdk:0.11.0 이 든 2개. 2026-11-18 에는 0.128.0·0.13.0·zigbang-stay-sdk:0.12.0)
 ZIGBANG_APP_CHUNK: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/chunks/pages/_app-[^"]+\.js)"')
 ZIGBANG_SDK_VERSION: re.Pattern[str] = re.compile(r'"sdk-version":"([^"]+)"')
+# 번들 글자 안의 따옴표 (큰따옴표·작은따옴표·백틱)
+_QUOTE: str = '[`"\']'
+# 직방 단기임대 상세 화면(`/stay/item_detail`)의 번들 조각을 찾는 길. 첫 화면 HTML 에 webpack 런타임과 빌드 매니페스트 주소가 있고,
+# 매니페스트가 화면 경로 → 화면 조각을, 화면 조각이 `n.e(<조각 번호>)` 로 부르는 조각 번호를, 런타임이 번호 → 파일 이름(해시가
+# 배포마다 바뀜)을 알려 준다 (2026-11-17 실측: 화면 조각이 부르는 조각 6개 중 `RefundPolicySection` 이 든 것은 다섯째)
+ZIGBANG_WEBPACK_RUNTIME: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/chunks/webpack-[^"]+\.js)"')
+ZIGBANG_BUILD_MANIFEST: re.Pattern[str] = re.compile(r'src="(https://s\.zigbang\.com/[^"]*/_next/static/[^"/]+/_buildManifest\.js)"')
+ZIGBANG_STAY_DETAIL_ROUTE: re.Pattern[str] = re.compile(r'["\']/stay/item_detail["\']:\[([^\]]*)\]')
+ZIGBANG_STAY_DETAIL_PAGE_CHUNKS: re.Pattern[str] = re.compile(r'\.e\((\d+)\)')
+# 런타임이 조각 번호를 파일 이름으로 바꾸는 두 모양: `6404===e?"static/chunks/6404-<해시>.c1.js"` 와 `3589:"<해시>"` 표 + `.c1.js`
+ZIGBANG_CHUNK_FILE_SUFFIX: re.Pattern[str] = re.compile(r'\)\[\w+\]\+"(\.[\w.]*\.js)"')
+# 위약금 표. 취소 시점 행 이름 배열(`["입주 14일전",…]`)과 정책별 이름표·위약금(`{FLEXIBLE:{label:"유연",rows:["없음",…]},…}`).
+# 변수 이름은 번들마다 바뀌어 글자(따옴표 안의 값)에만 기댄다. 이름표(2번째 묶음)는 없을 수 있어 없으면 None 이다
+_STRING = rf'{_QUOTE}([^`"\']*){_QUOTE}'
+ZIGBANG_STAY_REFUND_WHENS: re.Pattern[str] = re.compile(rf'\[((?:{_QUOTE}입주[^`"\']*{_QUOTE},?)+)\]')
+ZIGBANG_STAY_REFUND_POLICIES: re.Pattern[str] = re.compile(
+    rf'{_QUOTE}?([A-Z][A-Z_]*){_QUOTE}?:\{{(?:label:{_QUOTE}([^`"\']*){_QUOTE},)?rows:\[((?:{_QUOTE}[^`"\']*{_QUOTE},?)+)\]\}}',
+)
 # 다방 첫 화면이 바로 받는 스크립트. 웹 API 클라이언트(axios 인스턴스)의 버전 값이 이 중 하나에 있다 (2026-11-13 실측: 31개 중
 # atoms-chunk). 따옴표는 지금 번들처럼 백틱이 아니어도 맞춘다
 DABANG_SCRIPT: re.Pattern[str] = re.compile(r'(?:src|href)="(/static/js/[^"]+\.js)"')
-_QUOTE: str = '[`"\']'
 # 새 방식(v5) 인스턴스가 붙이는 헤더 (`e['D-Api-Version']='5.0.0',e['D-App-Version']='1'`)
 DABANG_V5_VERSION: re.Pattern[str] = re.compile(rf'{_QUOTE}(D-Api-Version|D-App-Version){_QUOTE}\]={_QUOTE}([^`"\']+){_QUOTE}')
 # 옛 방식(v3) 인스턴스가 쿼리에 붙이는 버전 (`let t='3.0.1',n='web';…e.params.api_version=t,e.params.call_type=n,
@@ -754,6 +771,141 @@ def check_zigbang_sdk_versions() -> dict[str, str]:
     )
 
 
+def _zigbang_chunk_url(base: str, runtime: str, chunk_id: str) -> str | None:
+    """webpack 런타임에서 조각 번호의 파일 주소를 찾는다. 런타임에 없으면 None."""
+    direct = re.search(rf'(?<![\w$]){chunk_id}===\w+\?"(static/chunks/[^"]+)"', runtime)
+    if direct:
+        return f'{base}/{direct.group(1)}'
+    # 리뷰 오탐 (2026-11-17): 런타임에는 {번호:"해시"} 표가 JS·CSS 둘인데 JS 표가 앞이고, CSS 번호는 단기임대 화면 조각 번호와 겹치지 않아 CSS 표를 잡지 않는다
+    hashed = re.search(rf'(?<![\w$]){chunk_id}:"([0-9a-f]+)"', runtime)
+    suffix = ZIGBANG_CHUNK_FILE_SUFFIX.search(runtime)
+    if hashed and suffix:
+        return f'{base}/static/chunks/{chunk_id}.{hashed.group(1)}{suffix.group(1)}'
+    return None
+
+
+def _zigbang_stay_refund_table(
+    text: str,
+) -> tuple[dict[str, tuple[tuple[str, str], ...]], dict[str, str | None]]:
+    """번들 조각 글에서 단기임대 위약금 표를 읽는다.
+
+    Returns:
+        (정책 코드 → (취소 시점, 위약금) 쌍들, 정책 코드 → 웹 이름표). 웹에 이름표가 없는 정책은 None. 표가 없으면 둘 다 빈 표.
+    """
+    whens = ZIGBANG_STAY_REFUND_WHENS.search(text)
+    if not whens:
+        return {}, {}
+    names = re.findall(_STRING, whens.group(1))
+    table: dict[str, tuple[tuple[str, str], ...]] = {}
+    labels: dict[str, str | None] = {}
+    for match in ZIGBANG_STAY_REFUND_POLICIES.finditer(text):
+        policy = match.group(1)
+        table[policy] = tuple(zip(names, re.findall(_STRING, match.group(3)), strict=True))
+        labels[policy] = match.group(2)
+    return table, labels
+
+
+def _zigbang_stay_refund_diff(
+    ours: dict[str, tuple[tuple[str, str], ...]], web: dict[str, tuple[tuple[str, str], ...]],
+    our_labels: dict[str, str], web_labels: dict[str, str | None],
+) -> list[str]:
+    """jibsa 표·이름표와 웹 표·이름표가 다른 곳을 글로 (정책·행·jibsa 값·웹 값). 같으면 빈 목록.
+
+    이름표는 jibsa 가 상세 `refund_policy` 로 내보내는 정책 이름(`STAY_REFUND_POLICY_LABELS`)이고, 두 쪽에 다 있는 정책만 견준다.
+    웹에 이름표가 없으면(`None`) jibsa 이름을 웹에서 확인할 수 없는 것이라 '웹에 이름 없음' 으로 알린다.
+    """
+    diffs: list[str] = []
+    for policy in dict.fromkeys([*ours, *web]):
+        if policy not in web:
+            diffs.append(f'{policy} 는 jibsa 에만 있음')
+        elif policy not in ours:
+            diffs.append(f'{policy} 는 웹에만 있음 ({", ".join(f"{when} {penalty}" for when, penalty in web[policy])})')
+        else:
+            web_label = web_labels.get(policy)
+            if policy in our_labels and our_labels[policy] != web_label:
+                diffs.append(f'{policy} 이름: jibsa {our_labels[policy]} → ' + ('웹에 이름 없음' if web_label is None else f'웹 {web_label}'))
+            mine, theirs = ours[policy], web[policy]
+            for index in range(max(len(mine), len(theirs))):
+                ours_row = ' '.join(mine[index]) if index < len(mine) else '없음'
+                web_row = ' '.join(theirs[index]) if index < len(theirs) else '없음'
+                if ours_row != web_row:
+                    diffs.append(f'{policy} {index + 1}번째 행: jibsa {ours_row} → 웹 {web_row}')
+    return diffs
+
+
+def check_zigbang_stay_refund_rules() -> dict[str, str]:
+    """직방 웹 단기임대 상세 화면의 위약금 표·정책 이름표가 jibsa 표(`STAY_REFUND_RULES`)·이름표(`STAY_REFUND_POLICY_LABELS`)와 같은지 본다.
+
+    직방 단기임대 상세 응답은 위약금 정책 이름(`refundPolicy`)만 주고, '입주 7일전 → 임대료의 30%' 같은 표는 웹 번들에 고정돼
+    있어 jibsa 가 옮겨 적었다. 직방이 표를 바꿔도 명령은 그대로 돌아 명령 감시로는 알 수 없다. 표는 첫 화면 번들이 아니라 단기임대
+    상세 화면의 번들 조각에 있어, 매물 번호 없이 첫 화면의 빌드 매니페스트에서 그 화면(`/stay/item_detail`)의 조각을 찾아 따라간다
+    (`ZIGBANG_BUILD_MANIFEST` 주석). 요청은 첫 화면 1건과 매니페스트·화면 조각·webpack 런타임 3건, 표가 든 조각을 찾을 때까지
+    그 화면이 부르는 조각들이다 (2026-11-17 실측: 조각 5건).
+
+    Returns:
+        번들을 받지 못하면 확인 못 함, 표를 못 찾았거나(번들 구조가 바뀜) 웹 표·이름표(유연·표준·엄격)가 jibsa 와 다르면 고장.
+    """
+    from jibsa.providers.zigbang.api.client import ZigbangClient
+    from jibsa.providers.zigbang.service.stay import (
+        STAY_REFUND_POLICY_LABELS,
+        STAY_REFUND_RULES,
+    )
+
+    def collect(client: Any, home: Any) -> tuple[dict[str, tuple[tuple[str, str], ...]], dict[str, str | None]]:
+        runtime_url = ZIGBANG_WEBPACK_RUNTIME.search(home.text)
+        manifest_url = ZIGBANG_BUILD_MANIFEST.search(home.text)
+        if not runtime_url or not manifest_url:
+            print('첫 화면에서 webpack 런타임·빌드 매니페스트 주소를 찾지 못함')
+            return {}, {}
+        base = manifest_url.group(1).split('/static/')[0]
+        manifest = client.get(manifest_url.group(1))
+        manifest.raise_for_status()
+        route = ZIGBANG_STAY_DETAIL_ROUTE.search(manifest.text)
+        pages = re.findall(_STRING, route.group(1)) if route else []
+        # 배열 앞에 공유 조각이 올 수 있어(`/_error` 는 `[공유 조각, 화면 조각]`) 첫 항목이 아니라 이름으로 화면 조각을 고른다
+        page_path = next((path for path in pages if 'pages/stay/item_detail' in path), None)
+        if page_path is None:
+            print('빌드 매니페스트에 /stay/item_detail 화면이 없음')
+            return {}, {}
+        page = client.get(f'{base}/{page_path}')
+        page.raise_for_status()
+        runtime = client.get(runtime_url.group(1))
+        runtime.raise_for_status()
+        for chunk_id in dict.fromkeys(ZIGBANG_STAY_DETAIL_PAGE_CHUNKS.findall(page.text)):
+            url = _zigbang_chunk_url(base, runtime.text, chunk_id)
+            if url is None:
+                continue
+            chunk = client.get(url)
+            chunk.raise_for_status()
+            table, labels = _zigbang_stay_refund_table(chunk.text)
+            if table:
+                print(f'위약금 표 {url.rsplit("/", 1)[-1]}: {sorted(table)} 이름표 {labels}')
+                return table, labels
+        print('단기임대 상세 화면 조각에서 위약금 표를 찾지 못함')
+        return {}, {}
+
+    step = {'label': '직방 단기임대 위약금 표 (상세 `refund_rules`)', 'command': 'stay-refund-rules'}
+    web, failed = _read_web(step, ZigbangClient(), collect)
+    if failed is not None:
+        return failed
+    web_table, web_labels = web
+    if not web_table:
+        return {
+            **step, 'status': BROKEN,
+            'detail': '단기임대 상세 화면 번들에서 위약금 표를 찾지 못함 (번들 구조가 바뀌었을 수 있음)',
+        }
+    diffs = _zigbang_stay_refund_diff(STAY_REFUND_RULES, web_table, STAY_REFUND_POLICY_LABELS, web_labels)
+    if diffs:
+        return {
+            **step, 'status': BROKEN,
+            'detail': (
+                f"웹 위약금 표가 jibsa 와 다름 ({'; '.join(diffs)}). "
+                'zigbang service/stay.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
+            ),
+        }
+    return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(STAY_REFUND_RULES)} 정책 {sum(len(rows) for rows in STAY_REFUND_RULES.values())}행)"}
+
+
 def check_dabang_versions() -> dict[str, str]:
     """다방 웹이 새 방식(v5) 헤더와 옛 방식(v3) 쿼리에 붙이는 버전이 jibsa 값(`V5_HEADERS`·`DabangV3RequestParameterModel`)과 같은지 본다.
 
@@ -911,7 +1063,7 @@ def write_daangn_query_list() -> int:
 # 까닭이 없다 (2026-11-13 사용자 결정). `WEEKLY_CHECK_WEEKDAY` 에만 돌고, `run --weekly` 는 요일과 상관없이 돈다 (워크플로는
 # 예약 실행이 아닐 때 붙인다). 명령 뒤라 이 요청이 막혀도 명령 감시에는 영향이 없다
 WEEKLY_CHECKS: dict[str, tuple[Callable[[], dict[str, str]], ...]] = {
-    'zigbang': (check_zigbang_sdk_versions,),
+    'zigbang': (check_zigbang_sdk_versions, check_zigbang_stay_refund_rules),
     'daangn': (check_daangn_queries,),
     'dabang': (check_dabang_versions,),
 }
