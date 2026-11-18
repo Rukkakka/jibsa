@@ -49,6 +49,7 @@ from jibsa.providers.naver.api.request.listing import (
     NaverArticleMaintenanceFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
     NaverComplexArticleListV1RequestPayloadModel,
+    NaverComplexBuildingRegistrationV1RequestParameterModel,
     NaverComplexVillaArticleListV1RequestPayloadModel,
     NaverDataServiceTransportV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
@@ -123,6 +124,7 @@ from jibsa.providers.naver.api.response.listing import (
     NaverArticleMaintenanceFeeV1ResponseModel,
     NaverArticleTaxV1ResponseModel,
     NaverComplexArticleListV1ResponseModel,
+    NaverComplexBuildingRegistrationV1ResponseModel,
     NaverComplexVillaArticleListV1ResponseModel,
     NaverDataServiceTransportV1ResponseModel,
     NaverEducationBuildingSchoolV1ResponseModel,
@@ -257,6 +259,7 @@ class NaverClient(BaseHTTPClient):
     article_maintenance_fee_v1_endpoint: ClassVar[str] = '/front-api/v1/article/maintenanceFee'
     article_tax_v1_endpoint: ClassVar[str] = '/front-api/v1/article/tax'
     article_agent_fee_v1_endpoint: ClassVar[str] = '/front-api/v1/article/agentFee'
+    complex_building_registration_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/buildingRegistration'
     complex_article_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/article/list'
     complex_legal_division_complex_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/legalDivisionComplexList'
     complex_bounded_complexes_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/boundedComplexes'
@@ -1181,6 +1184,36 @@ class NaverClient(BaseHTTPClient):
         """Async variant of `run_request_article_maintenance_fee_v1`."""
         return await self._aget(
             self.article_maintenance_fee_v1_endpoint, parameter, NaverArticleMaintenanceFeeV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_building_registration_v1(
+        self,
+        parameter: NaverComplexBuildingRegistrationV1RequestParameterModel
+    ) -> NaverComplexBuildingRegistrationV1ResponseModel:
+        """Fetch a building register summary via `GET /front-api/v1/complex/buildingRegistration`.
+
+        건축물대장 유형(원룸·빌라·단독 등)의 매물 상세가 매물에 주차 대수가 없을 때 대신 보여 주는 값이다.
+        로그인 없이 200 이다. 응답에는 좌표·주소 등도 오지만 읽는 것은 `parkingInfo` 뿐이다.
+
+        Args:
+            parameter: `pnu` (article/key 의 key.pnu), `real_estate_type`.
+
+        Returns:
+            NaverComplexBuildingRegistrationV1ResponseModel: 건축물대장의 주차 (총 대수·세대당 대수).
+        """
+        return self._get(
+            self.complex_building_registration_v1_endpoint, parameter, NaverComplexBuildingRegistrationV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_building_registration_v1(
+        self,
+        parameter: NaverComplexBuildingRegistrationV1RequestParameterModel
+    ) -> NaverComplexBuildingRegistrationV1ResponseModel:
+        """Async variant of `run_request_complex_building_registration_v1`."""
+        return await self._aget(
+            self.complex_building_registration_v1_endpoint, parameter, NaverComplexBuildingRegistrationV1ResponseModel
         )
 
     # --- 매물 목록 (POST, 조회 전용) ------------------------------------------

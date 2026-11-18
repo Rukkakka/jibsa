@@ -75,6 +75,22 @@ class NaverDataServiceTransportV1RequestParameterModel(RequestModel):
     ]
 
 
+class NaverComplexBuildingRegistrationV1RequestParameterModel(RequestModel):
+    """`GET /front-api/v1/complex/buildingRegistration` 쿼리. 매물 상세 화면이 건축물대장 유형의 주차 대수를 얻을 때 부른다.
+
+    `pnu` 는 article/key 의 `key.pnu` (필지 고유번호 19자리)다. 사이트는 pnu 가 없으면 이 요청을 보내지 않는다.
+    """
+
+    pnu: Annotated[
+        str,
+        Field(min_length=1, description='필지 고유번호 (article/key 의 key.pnu, 19자리 글자)')
+    ]
+    real_estate_type: Annotated[
+        NaverRealEstateType,
+        Field(description='매물 유형 코드 (article/key 의 type.realEstateType)', alias='realEstateType')
+    ]
+
+
 class NaverEducationBuildingSchoolV1RequestParameterModel(RequestModel):
     """`GET /front-api/v1/education/building/school` 쿼리. 단지의 동마다 배정 초등학교를 준다.
 

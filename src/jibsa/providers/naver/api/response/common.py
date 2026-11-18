@@ -498,6 +498,10 @@ class NaverFacilityInfoModel(ResponseModel):
             alias='totalParkingCount'
         )
     ] = None
+    parking_count_per_household: Annotated[
+        float | None,
+        Field(description='세대당 주차 대수', alias='parkingCountPerHousehold')
+    ] = None
     is_parking_possible: Annotated[
         bool | None,
         Field(description='이 매물의 주차 가능 여부. 주차 대수가 있어도 불가일 수 있다. 단지 매물은 빠지기도 한다', alias='isParkingPossible')

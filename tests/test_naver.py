@@ -418,6 +418,35 @@ def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -
     assert includes is not None and len(includes) == 1
 
 
+@pytest.mark.parametrize(
+    ('registration', 'expected'),
+    [
+        # 매물이 0대·불가인데 대장에 8대가 있으면 웹이 '주차 8대' 를 그린다
+        ({'parkingInfo': {'totalParkingCount': 8, 'parkingCountPerHousehold': 0.5}}, '불가 (총 8대, 세대당 0.5대)'),
+        ({'parkingInfo': {'totalParkingCount': 0, 'parkingCountPerHousehold': 0}}, '불가 (총 0대)'),
+        # 대장에 주차 값이 없으면 웹도 '주차 N대' 칸을 그리지 않아 가능 여부만 낸다
+        ({'coordinates': None}, '불가'),
+    ],
+)
+def test_detail_building_registration_parking_fills_in_zero_listing_count(registration: dict, expected: str) -> None:
+    key = _ok({
+        'key': {'pnu': '1162010200102550134'}, 'type': {'realEstateType': 'C01', 'tradeType': 'B2'},
+        'address': {'legalDivisionNumber': '1162010200', 'jibun': '255-134'},
+    })
+    basic = load('article_basic_info_v1')
+    basic['result']['detailInfo']['facilityInfo'].update({'totalParkingCount': 0, 'isParkingPossible': False})
+    basic['result'].pop('communalComplexInfo', None)
+    requests: list[httpx.Request] = []
+    overrides = {'/article/key': key, '/article/basicInfo': basic, '/complex/buildingRegistration': _ok(registration)}
+    with make_path_client(requests, overrides) as client:
+        detail = get_listing(client, '1000000001')
+    assert detail.parking == expected
+    registry_requests = [request for request in requests if request.url.path.endswith('/complex/buildingRegistration')]
+    assert len(registry_requests) == 1
+    assert registry_requests[0].url.params['pnu'] == '1162010200102550134'
+    assert registry_requests[0].url.params['realEstateType'] == 'C01'
+
+
 # --- 빌라 단지 (연립·다세대) -------------------------------------------------
 
 def make_path_client(requests: list[httpx.Request], overrides: dict[str, dict]) -> NaverClient:

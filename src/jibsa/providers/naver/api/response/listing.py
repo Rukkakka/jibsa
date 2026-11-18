@@ -8,6 +8,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverCoordinatesModel,
     NaverFacilityInfoModel,
     NaverListVerificationInfoModel,
+    NaverParkingInfoModel,
     NaverPropertyTaxModel,
     NaverResponseModel,
     NaverSchoolModel,
@@ -151,6 +152,10 @@ class NaverArticleKeyIdsModel(ResponseModel):
     building_number: Annotated[
         int | None,
         Field(description='건물 번호', alias='buildingNumber')
+    ] = None
+    pnu: Annotated[
+        str | None,
+        Field(description='필지 고유번호 (19자리). 건축물대장 조회(complex/buildingRegistration)에 쓴다')
     ] = None
 
 
@@ -565,8 +570,21 @@ class NaverEducationBuildingSchoolV1ResponseModel(NaverResponseModel[list[NaverS
     """`GET /front-api/v1/education/building/school` 응답."""
 
 
+class NaverBuildingRegistrationModel(ResponseModel):
+    """건축물대장 요약. 주차(parkingInfo)만 읽고 나머지(좌표·주소·용도·세대 수 등)는 내보내지 않아 extra 로 둔다."""
+
+    parking_info: Annotated[
+        NaverParkingInfoModel | None,
+        Field(description='건축물대장의 주차 (총 대수, 세대당 대수)', alias='parkingInfo')
+    ] = None
+
+
 class NaverArticleKeyV1ResponseModel(NaverResponseModel[NaverArticleKeyModel]):
     """`GET /front-api/v1/article/key` 응답."""
+
+
+class NaverComplexBuildingRegistrationV1ResponseModel(NaverResponseModel[NaverBuildingRegistrationModel]):
+    """`GET /front-api/v1/complex/buildingRegistration` 응답."""
 
 
 class NaverArticleBasicInfoV1ResponseModel(NaverResponseModel[NaverArticleBasicInfoModel]):
