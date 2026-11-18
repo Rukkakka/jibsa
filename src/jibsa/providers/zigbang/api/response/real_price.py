@@ -63,6 +63,34 @@ class ZigbangRtPriceModel(ResponseModel):
         bool | None,
         Field(description='신고 뒤 해제(취소)된 거래', alias='isCancellation')
     ] = None
+    dong_name: Annotated[
+        str | None,
+        Field(description="동 ('132' 처럼 '동' 없이 온다). 키는 늘 있고 값은 매매에만 온다 (전월세는 null)", alias='dongName')
+    ] = None
+    is_registration: Annotated[
+        bool | None,
+        Field(description='등기까지 마무리된 거래 (매매만, 2023년 1월 이후 계약부터 표시, 참일 때만 키가 온다)', alias='isRegistration')
+    ] = None
+    is_new_highest: Annotated[
+        bool | None,
+        Field(description='최근 3년 이내 가장 높은 거래가를 경신한 거래 (매매·전세, 참일 때만 키가 온다)', alias='isNewHighest')
+    ] = None
+    is_new_lowest: Annotated[
+        bool | None,
+        Field(description='최근 3년 이내 가장 낮은 거래가를 경신한 거래 (매매·전세, 참일 때만 키가 온다)', alias='isNewLowest')
+    ] = None
+    pyn_price: Annotated[
+        int | None,
+        Field(description='공급면적 3.3㎡당 가격 (만원, 직방이 계산해 반올림한 값, 매매만)', alias='pynPrice')
+    ] = None
+    charter_rate: Annotated[
+        float | None,
+        Field(description='전세가율 (0~1 비율, 자르지 않은 값). 전세이고 평형을 지정한 조회에서만 온다', alias='charterRate')
+    ] = None
+    offer_price_diff: Annotated[
+        int | None,
+        Field(description='분양가 대비 차액 (만원, 양수면 거래가가 분양가보다 높다). 분양권 매매에서만 온다', alias='offerPriceDiff')
+    ] = None
 
 
 class ZigbangDanjisRtPricesResponseModel(ResponseModel):

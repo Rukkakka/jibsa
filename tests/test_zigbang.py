@@ -32,6 +32,7 @@ from jibsa.providers.zigbang.api.response.listing import (
     ZigbangItemCatalogsItemsResponseModel,
     ZigbangItemsDetailV1ResponseModel,
 )
+from jibsa.providers.zigbang.api.response.stay import ZigbangGuestItemsResponseModel
 from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
@@ -49,11 +50,16 @@ from jibsa.providers.zigbang.service.common import (
 from jibsa.providers.zigbang.service.complex import search_station_complexes
 from jibsa.providers.zigbang.service.detail import get_any_listing
 from jibsa.providers.zigbang.service.listing import (
+    apt_item_to_listing,
     detail_to_listing,
     search_listings,
 )
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import resolve_region_scope
+from jibsa.providers.zigbang.service.stay import (
+    STAY_REFUND_RULES,
+    stay_detail_to_listing,
+)
 from jibsa.providers.zigbang.service.store import (
     ZigbangStoreConditions,
     search_store_listings,
@@ -400,8 +406,6 @@ def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> No
 
 def test_apt_listing_kind_from_item_type() -> None:
     from jibsa.providers.zigbang.service.common import ZigbangAptListing
-    from jibsa.providers.zigbang.service.listing import apt_item_to_listing
-
     # 신규분양 카드는 출처가 coalition 이라 coalition- 줄이 되고, 분양가가 집주인 호가로 읽히지 않게 종류를 알린다
     card = load('locals_item_catalogs')['list'][0]
     card['itemIdList'] = [{'itemSource': 'coalition', 'itemId': 3000009}]
@@ -436,8 +440,6 @@ def test_apt_listing_kind_from_item_type() -> None:
 
 
 def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
-    from jibsa.providers.zigbang.service.listing import apt_item_to_listing
-
     apt = ZigbangItemCatalogsItemsResponseModel.model_validate(load('item_catalogs_items')).item
     apt.manage_cost = ZigbangAptManageCostModel(type='unconfirmed')
     detail = apt_item_to_listing(apt, 'zigbang')
@@ -448,6 +450,58 @@ def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
 def test_non_apt_detail_omits_apt_only_fields() -> None:
     dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
     assert 'complex_name' not in dumped and 'supply_area_m2' not in dumped and 'listing_kind' not in dumped
+
+
+def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
+    # 목록 줄은 평형 ID·이름(평 기준)을 붙이고, 확인일·실매물·위반 건축물은 상세·묶음에만 있다
+    card = load('locals_item_catalogs')['list'][0]
+    line = catalog_to_listing(ZigbangItemCatalogModel.model_validate(card), '서울특별시')
+    assert line is not None and (line.pyeong_id, line.pyeong_name) == (8001, '33A')
+    dumped = line.model_dump()
+    assert 'confirmed_at' not in dumped and 'actual_listing_checked' not in dumped
+
+    # 직방 매물: 값이 그대로 나오고 확인 시각은 한국 날짜가 된다
+    item = load('item_catalogs_items')['item']
+    item.update({
+        'roomTypeInfo': {'danjiRoomTypeId': 8001, 'roomTypeTitle': {'m2': '110A', 'p': '33A'}, 'floorPlanImageUrl': 'plan.png'},
+        'effectivenessUpdatedAt': '2026-01-02T23:59:59+09:00', 'isActualItemChecked': True, 'hasViolations': False,
+    })
+    detail = apt_item_to_listing(ZigbangItemCatalogsItemsResponseModel.model_validate({'item': item}).item, 'zigbang').model_dump()
+    assert (detail['pyeong_id'], detail['pyeong_name']) == (8001, '33A')
+    assert detail['confirmed_at'] == '2026-01-02' and detail['actual_listing_checked'] is True
+    assert detail['non_compliant_building'] is False and detail['residence_type'] == item['realType']
+    assert 'plan.png' not in json.dumps(detail, ensure_ascii=False)
+
+    # 제휴 매물은 위반 건축물·중개대상물 종류 키가 없어 모름(null), 평형 정보가 없어도 키는 나온다
+    for key in ('hasViolations', 'realType', 'roomTypeInfo', 'effectivenessUpdatedAt', 'isActualItemChecked'):
+        item.pop(key)
+    partner = apt_item_to_listing(ZigbangItemCatalogsItemsResponseModel.model_validate({'item': item}).item, 'coalition').model_dump()
+    for key in ('non_compliant_building', 'residence_type', 'pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked'):
+        assert key in partner and partner[key] is None
+
+
+def test_non_apt_detail_has_no_new_apt_keys() -> None:
+    dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
+    for key in ('pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+        assert key not in dumped
+
+
+def test_apt_no_new_sale_sends_false_on_every_page() -> None:
+    seen: list[dict[str, str]] = []
+    fixture = load('locals_item_catalogs')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json=dict(fixture, count=100, list=[fixture['list'][0]] * int(request.url.params['limit'])))
+
+    region = ZigbangRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
+    with make_client(handler) as client:
+        first = search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=40)
+        search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=20, start=first.next_position)
+        assert len(seen) == 3 and all(params['includeOfferItem'] == 'false' for params in seen)
+        seen.clear()
+        search_apt_listings(client, region, limit=20)
+        assert len(seen) == 1 and 'includeOfferItem' not in seen[0]
 
 
 # --- 상가 --------------------------------------------------------------------
@@ -518,6 +572,73 @@ def test_stay_detail_not_reviewed_is_unavailable() -> None:
 
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
         get_any_listing(client, 'stay-5001')
+
+
+def stay_output(**changes) -> dict:
+    data = load('guest_items')
+    data.update(changes)
+    detail = ZigbangGuestItemsResponseModel.model_validate(data)
+    return stay_detail_to_listing(detail).model_dump(mode='json')
+
+
+def test_stay_pet_option_moves_to_pet_allowed() -> None:
+    pet = {'category': 'PET_FRIENDLY', 'optionName': 'PET_ALLOWED'}
+    options = [{'category': 'BASIC', 'optionName': 'WIFI'}, pet, {'category': 'BASIC', 'optionName': 'TV'}]
+    allowed = stay_output(itemOptions=options, petCleaningFee=0)
+    assert allowed['options'] == ['와이파이', 'TV']
+    assert allowed['pet_allowed'] is True
+    assert allowed['pet_cleaning_fee_manwon'] == 0
+    assert allowed['pet_cleaning_fee_manwon'] is not None
+    denied = stay_output(itemOptions=options[:1] + options[2:], petCleaningFee=0)
+    assert denied['pet_allowed'] is False
+    assert 'pet_cleaning_fee_manwon' not in denied
+    # 반려동물 가능인데 청소비를 주지 않으면 모름(null)
+    unknown = stay_output(itemOptions=[pet])
+    assert unknown['pet_cleaning_fee_manwon'] is None
+    assert unknown['options'] == []
+
+
+def test_stay_pet_fields_without_option_list_or_with_fee_when_denied() -> None:
+    data = load('guest_items')
+    data.pop('itemOptions', None)
+    data['petCleaningFee'] = 0
+    unknown = stay_detail_to_listing(ZigbangGuestItemsResponseModel.model_validate(data)).model_dump(mode='json')
+    # 직방이 옵션 목록을 주지 않으면 모름(null). 청소비는 키가 남는다
+    assert unknown['pet_allowed'] is None
+    assert unknown['options'] is None
+    assert unknown['pet_cleaning_fee_manwon'] is None
+    # 동반 불가여도 웹처럼 추가 청소비가 0 보다 크면 낸다
+    denied = stay_output(itemOptions=[{'category': 'BASIC', 'optionName': 'WIFI'}], petCleaningFee=50000)
+    assert denied['pet_allowed'] is False
+    assert denied['pet_cleaning_fee_manwon'] == 5
+
+
+def test_stay_parking_count_is_not_applicable_when_unavailable() -> None:
+    unavailable = stay_output(parkingType='UNAVAILABLE', parkingCount=None)
+    assert 'parking_count' not in unavailable
+    assert 'parking_method' not in unavailable
+    unknown = stay_output(parkingType='LIMITED')
+    assert unknown['parking_count'] is None
+    assert unknown['parking_method'] is None
+    known = stay_output(parkingType='AVAILABLE', parkingCount=2, parkingMethod='MECHANICAL')
+    assert known['parking_count'] == 2
+    assert known['parking_method'] == '기계식'
+
+
+def test_stay_refund_rules_follow_policy_code() -> None:
+    strict = stay_output(refundPolicy='STRICT')
+    assert [(rule['when'], rule['penalty']) for rule in strict['refund_rules']] == list(STAY_REFUND_RULES['STRICT'])
+    assert stay_output(refundPolicy='NEW_POLICY')['refund_rules'] is None
+    assert stay_output(refundPolicy=None)['refund_rules'] is None
+
+
+def test_stay_unavailable_periods_empty_schedule_is_empty_list() -> None:
+    assert stay_output(schedules=[])['unavailable_periods'] == []
+    blocked = {'scheduleType': 'BLOCKED', 'startDate': '2099-01-01', 'endDate': '2099-01-10'}
+    assert stay_output(schedules=[blocked])['unavailable_periods'] == [
+        {'start': '2099-01-01', 'end': '2099-01-10', 'kind': '막힘'},
+    ]
+    assert stay_output()['unavailable_periods'] is None
 
 
 # --- 아파트 제휴(집주인·신규분양) 매물 ---------------------------------------------
@@ -767,6 +888,96 @@ def test_real_price_empty_pyeongs_checks_danji(danji_status: int, expected: str 
             assert error.value.code == 'NOT_FOUND'
         else:
             assert get_real_prices(client, 'apt-100').returned == expected
+
+
+def _tx(deal_type: str, **extra) -> dict:
+    return {
+        'rtId': 1, 'rtDealDate': '26. 1. 2', 'rtFloor': 3, 'rtArea': '84.0', 'rtDealType': deal_type,
+        'rtPrice': 10000, 'dongName': None, 'areaInfos': [{'m2': '111Z', 'p': '99Z'}], 'isNew': False,
+        'isCancellation': False, **extra,
+    }
+
+
+def _real_prices(transactions: list[dict], trade_type: str, requests: list | None = None) -> dict:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+        pyeongs = {'1': [{'m2': '111Z', 'p': '99Z'}]}
+        return httpx.Response(200, json={'data': transactions, 'hasNext': False, 'areaInfos': pyeongs})
+
+    with make_client(handler) as client:
+        return json.loads(get_real_prices(client, 'apt-100', trade_type=trade_type).model_dump_json())
+
+
+def test_real_price_sale_registered_null_without_mark() -> None:
+    # 등기 표시가 없으면 false 가 아니라 null (2023년 전 계약인지 등기 전인지 모른다), 신고가는 표시가 없으면 false
+    plain, marked = _real_prices([
+        _tx('sales', dongName='000', pynPrice=1111),
+        _tx('sales', isRegistration=True, isNewHighest=True),
+    ], '매매')['transactions']
+    assert plain['registered'] is None
+    assert plain['new_high'] is False
+    assert plain['new_low'] is False
+    assert plain['dong'] == '000'
+    assert plain['price_per_pyeong_manwon'] == 1111
+    assert marked['registered'] is True
+    assert marked['new_high'] is True
+    # 동·평당가는 직방이 안 줘도 모름(null) 으로 키가 남는다
+    assert marked['dong'] is None
+    assert marked['price_per_pyeong_manwon'] is None
+    assert 'jeonse_ratio' not in plain
+    assert 'offer_price_diff_manwon' not in plain
+
+
+def test_real_price_monthly_rent_has_no_sale_only_keys() -> None:
+    rent = _real_prices([_tx('rent', rtPriceRent=10, dongName='000', pynPrice=1)], '월세')['transactions'][0]
+    for key in ('dong', 'registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
+        assert key not in rent
+    charter = _real_prices([_tx('charter')], '전세')['transactions'][0]
+    assert charter['new_high'] is False
+    assert 'dong' not in charter
+    assert 'registered' not in charter
+
+
+def test_real_price_jeonse_ratio_only_for_charter_with_value() -> None:
+    with_ratio, without = _real_prices([_tx('charter', charterRate=0.123456789), _tx('charter')], '전세')['transactions']
+    assert with_ratio['jeonse_ratio'] == 0.123456789
+    assert 'jeonse_ratio' not in without
+    # 분양가 대비 차액은 0 이어도 값이 있으면 낸다
+    sale = _real_prices([_tx('sales', offerPriceDiff=0)], '매매')['transactions'][0]
+    assert sale['offer_price_diff_manwon'] == 0
+
+
+def test_real_price_all_requests_deal_type_all_and_keeps_order() -> None:
+    requests: list[httpx.Request] = []
+    result = _real_prices([_tx('rent', rtPriceRent=10), _tx('sales'), _tx('charter')], '전체', requests)
+    assert [request.url.params['dealType'] for request in requests if request.url.path.endswith('/rt-prices')] == ['all']
+    assert result['trade_type'] == '전체'
+    assert [transaction['trade_type'] for transaction in result['transactions']] == ['월세', '매매', '전세']
+    # 거래마다 유형이 맨 앞에 오고 유형별 필드 규칙은 그대로다
+    assert list(result['transactions'][0])[0] == 'trade_type'
+    assert 'new_high' not in result['transactions'][0]
+    assert 'new_high' in result['transactions'][1]
+    # 매매·전세·월세 조회는 거래마다 유형을 내지 않는다
+    assert 'trade_type' not in _real_prices([_tx('sales')], '매매')['transactions'][0]
+
+
+def test_real_price_all_drops_unknown_deal_type_and_notes_it() -> None:
+    # 모르는 거래 유형(낯선 값·null)은 빼고 [제외] 로 알린다 (limit 로 잘릴 자리의 거래는 세지 않는다)
+    def handler(request: httpx.Request) -> httpx.Response:
+        transactions = [_tx('sales'), _tx('lease'), _tx(None), _tx('charter')]
+        return httpx.Response(200, json={'data': transactions, 'hasNext': False, 'areaInfos': {'1': [{'m2': '111Z', 'p': '99Z'}]}})
+
+    with make_client(handler) as client:
+        result = get_real_prices(client, 'apt-100', trade_type='전체')
+        capped = get_real_prices(client, 'apt-100', trade_type='전체', limit=1)
+    assert [transaction.trade_type for transaction in result.transactions] == ['매매', '전세']
+    assert '[제외] 거래 유형을 읽지 못한 실거래 2건을 뺐습니다. jibsa 업데이트가 필요할 수 있습니다' in result.notes
+    assert not any(text.startswith('[제외]') for text in capped.notes)
+    # 분양권은 차액을 안 줘도 키를 null 로 두고, 입주권은 값이 없으면 키를 뺀다
+    presale = _real_prices([_tx('sales', offerType='분양권'), _tx('sales', offerType='입주권')], '매매')['transactions']
+    assert presale[0]['offer_price_diff_manwon'] is None
+    assert 'offer_price_diff_manwon' not in presale[1]
 
 
 def _search_items(*names: tuple[str, str]) -> dict:

@@ -45,8 +45,10 @@
    짝 함수(동·역·단지·`regions`)도 본다. 예: `providers/naver/service/region.py:359`·`:1064` (동·단지만 고치고 역·`regions` 가
    첫 쪽만 봤다, 2026-11-17).
 5. **누락값과 0.** 실패·모름은 `null`, 해당 없음은 키 삭제, 정말 빈 것만 `[]` 인가. `or`·`or 0`·`or inf`·`if not x` 로 0 과
-   모름을 섞지 않는가. 날짜·층 자리의 `'-'`·빈 글자를 그대로 내지 않는가. 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가
-   돌려주는 값을 본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17).
+   모름을 섞지 않는가. 날짜·층·이름·시각 자리와 `LABELS.get(raw or '', raw)` 같은 라벨 표 찾기에서 `'-'`·빈 글자를 그대로
+   내지 않는가 (`.get` 의 두 번째 인자가 빈 글자를 돌려준다). 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가 돌려주는 값을
+   본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17),
+   `providers/zigbang/service/stay.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17).
    언제: `+` 줄에 `or `·`if not `·`else None`·기본값 `[]`·값을 돌려주는 `except` 가 있을 때, 출력 필드를 더하거나 바꾼 diff.
 6. **서버 값 한 칸이 결과 전체를 깨뜨림.** 서버 글자·목록·헤더를 `int()`·`[0]`·`del`·`.encode` 로 바로 다루지 않는가 (그 칸만
    `null`·건너뛰기여야 한다). 확인: diff 의 그 호출과 Optional 아닌 list 필드에 빈 글자·'-'·null·소수를 넣어 본다.
@@ -99,6 +101,9 @@
     갈래가 있는지 본다. 예: `providers/naver/service/complex.py` `_pyeong_details` (3년 요약 조회 실패를 거래 없음으로 보고
     5년 요약에 `since` 를 붙였다, 2026-11-18).
     언제: 결과가 비면 다른 조건으로 다시 묻는 대체 조회를 더한 diff.
+17. **키가 없으면 `[]` 로 채우는 목록에서 계산한 값.** 응답 모델이 키가 없을 때 `[]` 를 채우는 목록(`default_factory=list`)에 `any`·`in`·개수를 계산하면, 목록을 받지 못한 모름이 '없음·불가(`false`·`0`)' 로 바뀐다. 같은 출력의 그 목록 필드를 `sent_or_none` 으로 `null` 로 낸다면 거기서 계산한 값도 `null` 인가. 확인: `any(`·`len(` 이 도는 응답 목록이 보냈는지(`model_fields_set`)를 먼저 가르는지 본다.
+    예: `providers/zigbang/service/stay.py:935` 의 `pet_allowed` 계산 줄 (2026-11-17).
+    언제: 응답 목록 필드에 `any(`·`in`·`len(` 을 걸어 출력 필드(bool·수)를 정하는 `+` 줄.
 
 ## `contract` 출력 계약
 
@@ -164,6 +169,9 @@
     설명이 'YYYY-MM-DD 아니면 `null`' 인 필드에는 `iso_date` 를 쓴다. 확인: 날짜 필드를 채우는 줄이 어느 함수를 부르는지와
     Field 설명을 대 본다. 예: `providers/naver/service/common.py` `confirmed_at` (2026-11-18).
     언제: 날짜 필드를 더한 diff.
+15. **유형을 모르면 줄을 통째로 버리는 변환.** `… | None` 을 돌려주는 변환 함수가 모르는 유형에 `None` 을 주고 호출부가 그 줄을 빼면, 버린 수를 세어 `[제외]` 로 알리는가 (다방 `_unknown_trade_note`). 알리지 않으면 거래가 말없이 사라진다. 확인: 변환 결과가 `None` 일 때 건너뛰기로 끝나는 자리마다 센 수가 notes 에 가는지 본다 (`--limit` 으로 어차피 잘릴 자리는 세지 않아도 된다).
+    예: `providers/zigbang/service/real_price.py:369` 의 `unknown` 을 세는 줄 (`--trade 전체`, 2026-11-17).
+    언제: 변환 함수가 `None` 을 돌려주는 갈래를 더하거나 그 결과로 줄을 빼는 diff.
 
 ## `web` 웹 대응
 
@@ -195,6 +203,12 @@
    확인: 번들에서 그 필드를 그리는 식을 찾아 `||`·삼항·유형 분기를 본다. 예: `providers/naver/service/real_price.py:112`
    (전세 갱신의 종전 월세), `providers/naver/service/listing.py:1027` (난방은 매물 값 `||` 단지 값, 2026-11-17).
    언제: 출력 필드의 출처를 바꾸거나 새 엔드포인트로 값을 채우는 diff, 거래 유형별로 키를 빼거나 내는 `+` 줄.
+8. **웹 번들을 견주는 감시가 번들 모양에 기대거나 일부만 견주는가.** 매니페스트·조각 배열의 첫 항목처럼 순서에 기대지 않고
+   이름으로 고르는가, jibsa 가 웹에서 옮긴 값(코드·행뿐 아니라 이름표처럼 출력에 나가는 글자)을 모두 견주는가. 웹이 다시
+   배포해 순서만 바뀌면 고장으로 잘못 알리고, 견주지 않은 값이 바뀌면 정상으로 남는다. 확인: 정규식의 비포획 그룹과 `[0]` 을
+   보고, 공유 조각이 앞에 오는 배열과 값 하나를 바꾼 번들 글자를 넣어 본다. 예: `scripts/monitor/api_check.py` 의
+   `check_zigbang_stay_refund_rules` (`pages[0]`, 정책 이름표 `유연` 을 견주지 않음, 2026-11-17).
+   언제: `scripts/monitor/` 에 웹 번들·매니페스트를 읽는 검사를 더하거나 바꾼 diff.
 
 ## `requests` 요청 수·차단 위험
 

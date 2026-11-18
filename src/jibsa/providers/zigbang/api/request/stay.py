@@ -25,7 +25,7 @@ ZigbangStayBuildingType = Literal[
     'GOSIWON', 'PENSION', 'SHAREHOUSE', 'GUESTHOUSE', 'RESIDENTIAL_HOTEL',
 ]
 ZigbangStayDiscountType = Literal['LONG_TERM', 'INSTANT']
-ZigbangStayFloorType = Literal['BASEMENT', 'FIRST', 'ROOFTOP']
+ZigbangStayFloorType = Literal['BASEMENT', 'FIRST', 'FLOOR_2_10', 'FLOOR_10_PLUS', 'ROOFTOP']
 ZigbangStayOption = Literal[
     'AIR_CONDITIONER', 'BED', 'GAS_RANGE', 'INDUCTION', 'REFRIGERATOR', 'SINK', 'TV',
     'WASHING_MACHINE', 'WIFI', 'AIR_PURIFIER', 'WATER_PURIFIER', 'CLOSET', 'COFFEE_MACHINE', 'DESK',
@@ -163,7 +163,7 @@ class ZigbangGuestItemsFiltersRequestParameterModel(ZigbangStayDatesMixin):
     ] = None
     floor_types: Annotated[
         list[ZigbangStayFloorType],
-        Field(description='층 (OR). BASEMENT 지하, FIRST 1층, ROOFTOP 옥탑', alias='floorTypes')
+        Field(description='층 (OR). BASEMENT 지하, FIRST 1층, FLOOR_2_10 2-10층, FLOOR_10_PLUS 11층 이상, ROOFTOP 옥탑', alias='floorTypes')
     ] = []
 
 

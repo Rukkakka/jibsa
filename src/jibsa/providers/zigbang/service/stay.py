@@ -67,6 +67,7 @@ from jibsa.providers.zigbang.service.common import (
     ZigbangRegion,
     drop_unused_scope,
     sent_or_none,
+    text_or_none,
     unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.region import (
@@ -137,9 +138,13 @@ STAY_OPTION_LABELS: dict[str, str] = {
 STAY_OPTION_BY_LABEL: dict[str, ZigbangStayOption] = {
     label: code for code, label in STAY_OPTION_LABELS.items()  # type: ignore[misc]
 }
+# 직방 웹 층 필터의 다섯 선택지 (2026-11-17). 10층 매물은 2-10층에 들고, 11층이상의 코드는 FLOOR_10_PLUS 다
+# (FLOOR_11_OVER 는 서버가 400 을 준다)
 STAY_FLOOR_TYPE_BY_LABEL: dict[str, ZigbangStayFloorType] = {
     '지하': 'BASEMENT',
     '1층': 'FIRST',
+    '2-10층': 'FLOOR_2_10',
+    '11층이상': 'FLOOR_10_PLUS',
     '옥탑': 'ROOFTOP',
 }
 STAY_DISCOUNT_TYPE_BY_LABEL: dict[str, ZigbangStayDiscountType] = {
@@ -150,6 +155,47 @@ STAY_REFUND_POLICY_LABELS: dict[str, str] = {
     'FLEXIBLE': '유연',
     'STANDARD': '표준',
     'STRICT': '엄격',
+}
+# 위약금 표. 직방 응답은 정책 이름(refundPolicy)만 주고 표는 웹 번들(`RefundPolicySection`)에 고정돼 있어 옮겨 적은 것이다
+# (2026-11-17). 직방이 표를 바꾸면 주 1회 감시(`scripts/monitor/api_check.py` 의 `WEEKLY_CHECKS`)가 알린다. 값은 (취소 시점,
+# 위약금) 다섯 쌍이고 글자는 웹 표기 그대로다
+STAY_REFUND_RULES: dict[str, tuple[tuple[str, str], ...]] = {
+    'FLEXIBLE': (
+        ('입주 14일전', '없음'),
+        ('입주 7일전', '임대료의 15%'),
+        ('입주 3일전', '임대료의 30%'),
+        ('입주 1일전', '임대료의 40%'),
+        ('입주 당일 이후', '취소불가'),
+    ),
+    'STANDARD': (
+        ('입주 14일전', '임대료의 10%'),
+        ('입주 7일전', '임대료의 30%'),
+        ('입주 3일전', '임대료의 40%'),
+        ('입주 1일전', '임대료의 50%'),
+        ('입주 당일 이후', '취소불가'),
+    ),
+    'STRICT': (
+        ('입주 14일전', '임대료의 20%'),
+        ('입주 7일전', '임대료의 50%'),
+        ('입주 3일전', '임대료의 60%'),
+        ('입주 1일전', '임대료의 70%'),
+        ('입주 당일 이후', '취소불가'),
+    ),
+}
+STAY_PARKING_METHOD_LABELS: dict[str, str] = {
+    'SELF': '자주식',
+    'MECHANICAL': '기계식',
+}
+# 입주·퇴실 방식 (웹 표기. 모르는 코드는 웹도 그대로 쓴다)
+STAY_CHECK_METHOD_LABELS: dict[str, str] = {
+    'SELF': '비대면',
+    'MEET': '임대인 대면',
+    'KEYBOX': '키박스',
+}
+# 달력에서 막힌 날의 종류. 웹이 날짜를 막는 일정 종류(STAY_UNAVAILABLE_SCHEDULES)가 이 표의 키라 한쪽만 고치지 않는다
+STAY_SCHEDULE_KIND_LABELS: dict[str, str] = {
+    'RESERVED': '예약',
+    'BLOCKED': '막힘',
 }
 STAY_GEOHASH_PRECISION: int = 5
 # 결과가 limit 보다 많을 때 좁히라고 권할 조건. 주 단위 단기임대에는 거래 유형·매물 유형 옵션이 없다
@@ -176,8 +222,8 @@ STAY_SORT_ORDERS: dict[StaySort, str] = {
 STAY_SUBWAY_RADIUS_KM: float = 1.0
 # 웹 날짜 고르기 창이 받는 가장 늦은 마지막 날은 입주일 + 83일이다 (번들 `getMaxCheckOut`)
 STAY_MAX_CHECK_OUT_DAYS: int = 83
-# 웹이 날짜를 막는 일정 종류 (번들 `isUnavailableSchedule`)
-STAY_UNAVAILABLE_SCHEDULES: frozenset[str] = frozenset({'RESERVED', 'BLOCKED'})
+# 웹이 날짜를 막는 일정 종류 (번들 `isUnavailableSchedule`). 이름 표(STAY_SCHEDULE_KIND_LABELS)의 키와 같아 표를 고치면 따라간다
+STAY_UNAVAILABLE_SCHEDULES: frozenset[str] = frozenset(STAY_SCHEDULE_KIND_LABELS)
 
 
 def stay_item_url(stay_id: int | str) -> str:
@@ -212,6 +258,36 @@ class ZigbangStayListing(Listing):
     def not_applicable_fields(self) -> frozenset[str]:
         # 요금이 주 단위라 월세·월 관리비가 해당 없다
         return super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
+
+
+class ZigbangStayRefundRule(BaseModel):
+    """위약금 표의 한 행. 직방 웹 위약금 정보 표와 같다."""
+
+    when: Annotated[
+        str,
+        Field(description="취소 시점 (예: '입주 7일전')")
+    ]
+    penalty: Annotated[
+        str,
+        Field(description="위약금 (예: '임대료의 30%', '없음', '취소불가')")
+    ]
+
+
+class ZigbangStayUnavailablePeriod(BaseModel):
+    """예약할 수 없는 기간 하나."""
+
+    start: Annotated[
+        str,
+        Field(description='시작일 (YYYY-MM-DD)')
+    ]
+    end: Annotated[
+        str,
+        Field(description='끝날 (YYYY-MM-DD, 이 날까지 막힌다)')
+    ]
+    kind: Annotated[
+        str,
+        Field(description="종류 ('예약' 다른 손님이 예약함, '막힘' 임대인이 막음)")
+    ]
 
 
 class ZigbangStayListingDetail(ListingDetail):
@@ -253,6 +329,61 @@ class ZigbangStayListingDetail(ListingDetail):
         str | None,
         Field(description='환불 정책 (유연, 표준, 엄격. 직방 웹 위약금 정보의 이름)')
     ] = None
+    refund_rules: Annotated[
+        list[ZigbangStayRefundRule] | None,
+        Field(description='위약금 표 (취소 시점별 위약금 5행, 직방 웹 위약금 정보 표와 같다). 정책을 모르거나 표에 없는 정책이면 null')
+    ] = None
+    kitchen_count: Annotated[
+        int | None,
+        Field(description='주방 수. 0 이면 0')
+    ] = None
+    living_room_count: Annotated[
+        int | None,
+        Field(description='거실 수. 0 이면 0')
+    ] = None
+    parking_count: Annotated[
+        int | None,
+        Field(description='주차 대수. 주차 불가면 키가 없고, 가능한데 직방이 대수를 주지 않으면 null')
+    ] = None
+    parking_method: Annotated[
+        str | None,
+        Field(description="주차 방식 ('자주식', '기계식'). 주차 불가면 키가 없고, 직방이 주지 않으면 null")
+    ] = None
+    pet_allowed: Annotated[
+        bool | None,
+        Field(description=(
+            '반려동물 동반 가능 여부 (직방 웹 옵션의 반려동물 분류. options 에는 들어 있지 않다). '
+            '직방이 옵션 목록을 주지 않으면 null (직방 웹은 이때 동반 불가로 그린다)'
+        ))
+    ] = None
+    pet_cleaning_fee_manwon: Annotated[
+        float | None,
+        Field(description=(
+            '반려동물을 데려올 때 추가 청소비 (만원). 직방 웹은 동반 가능 여부와 상관없이 0 보다 크면 보여 준다. '
+            '동반 가능이면 0 이면 0, 직방이 주지 않으면 null. 동반 불가면 0 보다 클 때만 값이 있고 아니면 키가 없다. '
+            '동반 가능 여부를 모를 때(pet_allowed null)는 0 보다 크면 그 값, 아니면 null'
+        ))
+    ] = None
+    check_in_time: Annotated[
+        str | None,
+        Field(description="입주 시각 ('15:00')")
+    ] = None
+    check_out_time: Annotated[
+        str | None,
+        Field(description="퇴실 시각 ('11:00')")
+    ] = None
+    check_in_method: Annotated[
+        str | None,
+        Field(description="입주 방식 ('비대면', '임대인 대면', '키박스')")
+    ] = None
+    check_out_method: Annotated[
+        str | None,
+        Field(description="퇴실 방식 ('비대면', '임대인 대면', '키박스')")
+    ] = None
+    unavailable_periods: Annotated[
+        list[ZigbangStayUnavailablePeriod] | None,
+        Field(description='예약할 수 없는 기간 (예약됐거나 임대인이 막은 날, 직방이 1년 뒤까지 준다). 없으면 [], 직방이 일정을 주지 않으면 null')
+    ] = None
 
     available: Annotated[
         bool | None,
@@ -269,7 +400,12 @@ class ZigbangStayListingDetail(ListingDetail):
         # 넣어(model_copy) model_fields_set 에 든다
         if 'available' not in self.model_fields_set:
             fields = fields | {'available'}
-        return fields
+        # 주차 불가면 대수·방식이, 반려동물 동반 불가이면서 추가 청소비가 없거나 0 이면 그 청소비가 해당 없다.
+        # stay_detail_to_listing 이 해당 없으면 값을 넣지 않아 model_fields_set 에 들지 않는다 (모를 때는 None 을 넣어 든다)
+        return fields | {
+            name for name in ('parking_count', 'parking_method', 'pet_cleaning_fee_manwon')
+            if name not in self.model_fields_set
+        }
 
 
 class ZigbangStaySearchResult(BaseModel):
@@ -755,13 +891,66 @@ def stay_parking(detail: ZigbangGuestItemsResponseModel) -> str | None:
     return f'{available} ({fee})' if fee and detail.parking_type in ('AVAILABLE', 'LIMITED') else available
 
 
+def stay_refund_rules(refund_policy: str | None) -> list[ZigbangStayRefundRule] | None:
+    """정책 코드의 위약금 표. 코드가 없거나 표에 없으면 None (웹은 표준 표를 보여 주지만 모르는 정책을 표준이라고 단정하지 않는다)."""
+    rules = STAY_REFUND_RULES.get(refund_policy or '')
+    return None if rules is None else [ZigbangStayRefundRule(when=when, penalty=penalty) for when, penalty in rules]
+
+
+def stay_unavailable_periods(schedules: list[ZigbangStayScheduleModel] | None) -> list[ZigbangStayUnavailablePeriod] | None:
+    """웹 달력이 막는 일정(예약·막힘)을 기간으로. 일정이 없으면 [], 직방이 일정을 주지 않았으면 None.
+
+    날짜가 없거나 틀렸거나 끝날이 첫날보다 앞인 일정은 웹처럼 아무 날도 막지 않아 뺀다 (`_schedule_dates`). 날짜는 `date` 로 읽은 값의 YYYY-MM-DD 로 낸다.
+    """
+    if schedules is None:
+        return None
+    periods = []
+    for schedule in schedules:
+        if schedule.schedule_type not in STAY_UNAVAILABLE_SCHEDULES or (covered := _schedule_dates(schedule)) is None:
+            continue
+        first, last = covered
+        periods.append(ZigbangStayUnavailablePeriod(
+            start=first.isoformat(),
+            end=last.isoformat(),
+            kind=STAY_SCHEDULE_KIND_LABELS.get(schedule.schedule_type or '', schedule.schedule_type or ''),
+        ))
+    return periods
+
+
+def _stay_label(labels: dict[str, str], raw: str | None) -> str | None:
+    """직방 코드를 한국어 이름으로 바꾼다. 빈 글자는 모름(None), 표에 없는 코드는 원래 코드를 그대로 낸다."""
+    code = text_or_none(raw)
+    return labels.get(code, code) if code else None
+
+
 def stay_detail_to_listing(
     detail: ZigbangGuestItemsResponseModel,
     registered_at: str | None = None,
 ) -> ZigbangStayListingDetail:
-    """단기임대 상세를 `ZigbangStayListingDetail` 로 바꾼다. 사진·본문·호스트 정보는 옮기지 않는다."""
+    """단기임대 상세를 `ZigbangStayListingDetail` 로 바꾼다. 사진·본문·호스트 정보는 옮기지 않는다.
+
+    웹 옵션 목록은 반려동물 분류(PET_FRIENDLY)를 빼고 세고 '반려동물 동반 가능/불가' 로 따로 보여 주므로, `options` 에서
+    빼고 `pet_allowed` 로 옮긴다 (직방이 옵션 목록 `itemOptions` 를 주지 않았으면 모름 None). 주차 불가의 대수·방식은 해당
+    없어 값을 넣지 않는다. 추가 청소비는 웹이 동반 가능 여부와 상관없이 0 보다 크면 보여 주므로, 동반 가능이면 직방 값(0 이면
+    0), 동반 불가·모름이면 0 보다 클 때 그 값을 내고 아니면 동반 불가는 값을 넣지 않고(`not_applicable_fields` 가 키를 뺀다)
+    모름은 None 을 넣는다.
+    """
     manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon(detail.weekly_manage_cost)
     includes = detail.manage_cost_includes
+    # 리뷰 오탐 (2026-11-17): optionName 은 보지 않는다. 직방 웹(AdditionalInfoSection·OptionSection)도 category 만 본다
+    pet_allowed = (
+        None if sent_or_none(detail, 'item_options', []) is None
+        else any(option.category == 'PET_FRIENDLY' for option in detail.item_options)
+    )
+    conditional: dict[str, Any] = {}
+    if detail.parking_type != 'UNAVAILABLE':
+        conditional['parking_count'] = detail.parking_count
+        conditional['parking_method'] = _stay_label(STAY_PARKING_METHOD_LABELS, detail.parking_method)
+    pet_cleaning_fee = won_to_manwon(detail.pet_cleaning_fee)
+    if pet_allowed or (pet_cleaning_fee is not None and pet_cleaning_fee > 0):
+        conditional['pet_cleaning_fee_manwon'] = pet_cleaning_fee
+    elif pet_allowed is None:
+        conditional['pet_cleaning_fee_manwon'] = None
     return ZigbangStayListingDetail(
         source='zigbang',
         id=f'stay-{detail.id}',
@@ -783,7 +972,10 @@ def stay_detail_to_listing(
         elevator=detail.has_elevator,
         options=sent_or_none(
             detail, 'item_options',
-            [STAY_OPTION_LABELS.get(option.option_name, option.option_name) for option in detail.item_options],
+            [
+                STAY_OPTION_LABELS.get(option.option_name, option.option_name)
+                for option in detail.item_options if option.category != 'PET_FRIENDLY'
+            ],
         ),
         manage_cost_includes=None if includes is None else [
             {'gas': '가스', 'water': '수도', 'electricity': '전기'}.get(key, key)
@@ -801,7 +993,17 @@ def stay_detail_to_listing(
         max_contract_weeks=detail.max_contract_weeks,
         max_guests=detail.max_guests,
         duplex=detail.is_duplex,
-        refund_policy=STAY_REFUND_POLICY_LABELS.get(detail.refund_policy or '', detail.refund_policy),
+        refund_policy=_stay_label(STAY_REFUND_POLICY_LABELS, detail.refund_policy),
+        refund_rules=stay_refund_rules(detail.refund_policy),
+        kitchen_count=detail.kitchen_count,
+        living_room_count=detail.living_room_count,
+        pet_allowed=pet_allowed,
+        check_in_time=text_or_none(detail.checkin_time),
+        check_out_time=text_or_none(detail.checkout_time),
+        check_in_method=_stay_label(STAY_CHECK_METHOD_LABELS, detail.checkin_method),
+        check_out_method=_stay_label(STAY_CHECK_METHOD_LABELS, detail.checkout_method),
+        unavailable_periods=stay_unavailable_periods(detail.schedules),
+        **conditional,
     )
 
 

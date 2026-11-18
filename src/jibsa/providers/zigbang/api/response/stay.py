@@ -319,6 +319,42 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
         str | None,
         Field(description='주차비 (PAID, FREE)', alias='parkingFee')
     ] = None
+    parking_count: Annotated[
+        int | None,
+        Field(description='주차 대수. 가능·제한적 가능인데 없는 매물도 있고 불가면 없다', alias='parkingCount')
+    ] = None
+    parking_method: Annotated[
+        str | None,
+        Field(description='주차 방식 (SELF 자주식, MECHANICAL 기계식). 없을 수 있다', alias='parkingMethod')
+    ] = None
+    kitchen_count: Annotated[
+        int | None,
+        Field(description='주방 수 (0 도 온다)', alias='kitchenCount')
+    ] = None
+    living_room_count: Annotated[
+        int | None,
+        Field(description='거실 수 (0 도 온다)', alias='livingRoomCount')
+    ] = None
+    pet_cleaning_fee: Annotated[
+        int | None,
+        Field(description='반려동물을 데려올 때 추가 청소비 (원). 반려동물 가능인데 0 인 매물도 있다', alias='petCleaningFee')
+    ] = None
+    checkin_time: Annotated[
+        str | None,
+        Field(description="입주(체크인) 시각 ('15:00')", alias='checkinTime')
+    ] = None
+    checkout_time: Annotated[
+        str | None,
+        Field(description="퇴실(체크아웃) 시각 ('11:00')", alias='checkoutTime')
+    ] = None
+    checkin_method: Annotated[
+        str | None,
+        Field(description='입주 방식 (SELF 비대면, MEET 임대인 대면, KEYBOX 키박스)', alias='checkinMethod')
+    ] = None
+    checkout_method: Annotated[
+        str | None,
+        Field(description='퇴실 방식 (SELF 비대면, MEET 임대인 대면, KEYBOX 키박스)', alias='checkoutMethod')
+    ] = None
     description: Annotated[
         str | None,
         Field(description='호스트가 쓴 상세 설명')

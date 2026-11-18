@@ -11,6 +11,7 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemPinModel,
     ZigbangItemSectionModel,
     ZigbangLatLngModel,
+    ZigbangRoomTypeTitleModel,
     ZigbangSubwayBriefModel,
 )
 
@@ -722,6 +723,19 @@ class ZigbangAptManageCostModel(ResponseModel):
         return None
 
 
+class ZigbangAptRoomTypeInfoModel(ResponseModel):
+    """아파트 매물 상세의 평형 정보. 이 밖에 평면도 그림 주소(`floorPlanImageUrl`)가 오지만 쓰지 않는다 (사진은 내보내지 않는다)."""
+
+    danji_room_type_id: Annotated[
+        int | None,
+        Field(description='평형 ID. 단지 정보(complex)의 pyeongs[].id·--pyeong 값과 같다', alias='danjiRoomTypeId')
+    ] = None
+    room_type_title: Annotated[
+        ZigbangRoomTypeTitleModel | None,
+        Field(description='평형 이름 (m2 는 공급면적 ㎡ 기준, p 는 평 기준)', alias='roomTypeTitle')
+    ] = None
+
+
 class ZigbangAptItemModel(ResponseModel):
     """아파트 매물 상세 본문 (직방·제휴 매물).
 
@@ -832,6 +846,26 @@ class ZigbangAptItemModel(ResponseModel):
     manage_cost: Annotated[
         ZigbangAptManageCostModel | None,
         Field(description='관리비', alias='manageCost')
+    ] = None
+    room_type_info: Annotated[
+        ZigbangAptRoomTypeInfoModel | None,
+        Field(description='평형 정보 (평형 ID·이름)', alias='roomTypeInfo')
+    ] = None
+    effectiveness_updated_at: Annotated[
+        str | None,
+        Field(description="매물 확인 시각 (ISO 8601, +09:00. 예: 2026-11-16T11:49:20+09:00). 웹은 이것으로 '2주 전 확인' 을 만든다", alias='effectivenessUpdatedAt')
+    ] = None
+    is_actual_item_checked: Annotated[
+        bool | None,
+        Field(description="직방 웹의 '실매물 확인' 배지", alias='isActualItemChecked')
+    ] = None
+    has_violations: Annotated[
+        bool | None,
+        Field(description='위반 건축물 여부. 제휴 매물은 키가 없다', alias='hasViolations')
+    ] = None
+    real_type: Annotated[
+        str | None,
+        Field(description='중개대상물 종류 (예: 아파트). 제휴 매물은 키가 없다', alias='realType')
     ] = None
 
 

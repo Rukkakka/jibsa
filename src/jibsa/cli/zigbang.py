@@ -660,6 +660,10 @@ def search_apt_command(
     supply_area_max: Annotated[
         float | None, typer.Option(min=0, help='공급면적 상한 (㎡). 직방 서버에서 거른다'),
     ] = None,
+    no_new_sale: Annotated[
+        bool,
+        typer.Option('--no-new-sale', help='신규분양 매물을 빼고 본다 (직방 웹의 "신규 분양 포함" 을 끈 목록)'),
+    ] = False,
     next_: NextOption = None,
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
@@ -676,6 +680,9 @@ def search_apt_command(
         jibsa zigbang search listings apt 역삼동 --trade 전세 --area-min 59
         jibsa zigbang search listings apt 강남역 --trade 전세
         jibsa zigbang search listings apt 역삼동 --supply-area-min 80 --supply-area-max 110
+        jibsa zigbang search listings apt 파주시 --no-new-sale
+
+    --no-new-sale 은 신규분양 매물(listing_kind 신규분양)을 빼고 total 도 그만큼 준다. 단지 매물(--complex)에는 없다.
 
     결과에 next 가 있으면 같은 지역·조건에 --next <결과의 next 값> 을 붙여 이어 받는다.
     """
@@ -708,6 +715,7 @@ def search_apt_command(
             area_max_m2=area_max,
             supply_area_min_m2=supply_area_min,
             supply_area_max_m2=supply_area_max,
+            exclude_new_sale=no_new_sale,
         )
         if lat is not None and lng is not None:
             district = apt_dong_at(client, lat, lng)
@@ -781,7 +789,7 @@ def complex_listings_command(
     ] = None,
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복하거나 쉼표로 구분 (OR)')
+        typer.Option('--pyeong', metavar='<int>', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만. 아파트 매물의 pyeong_id 와 같은 번호). 반복하거나 쉼표로 구분 (OR)')
     ] = None,
     limit: Annotated[int | None, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수. 기본 아파트 20, 오피스텔 15')] = None,
     deposit_min: DepositMinOption = None,
@@ -1182,25 +1190,26 @@ def real_price_command(
         str,
         typer.Argument(help='아파트 단지 ID (search locations 결과의 complexes[].complex_id, search listings apt·listing의 complex_id, 예: apt-68579)'),
     ],
-    trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세 중 하나')] = '매매',
+    trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세, 전체 중 하나. 전체는 매매와 전월세를 계약일 최신 순으로 한 목록에 주고, 거래마다 trade_type 이 붙는다')] = '매매',
     pyeong: Annotated[
         int | None,
-        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id). 기본 전체 평형')
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id, 아파트 매물의 pyeong_id 와 같은 번호). 기본 전체 평형')
     ] = None,
     # 기본 120건(약 4~5천 토큰)이지만 낮추지 않는다. 에이전트는 대개 가이드의 '처음에는 작게' 를 따라 --limit 을 직접 준다
     # (2026-10-23 에이전트 검증: 당근 실거래를 부른 sonnet 2명 모두 --limit 8 을 줬다. 직방 실거래는 부르지 않았다)
     limit: Annotated[int, typer.Option(min=1, max=REAL_PRICE_MAX_LIMIT, help='최대 거래 수')] = 120,
     pretty: PrettyOption = None,
 ) -> None:
-    """아파트 단지 실거래가 (국토부 신고 기준, 최근 계약 순). cancelled: true 는 해제된 거래.
+    """아파트 단지 실거래가 (국토부 신고 기준, 최근 계약 순, 매매·전세·월세 또는 전체). cancelled: true 는 해제된 거래.
 
     예: jibsa zigbang real-price apt-68579 --trade 매매
         jibsa zigbang real-price apt-68579 --trade 전세 --pyeong 400085 --limit 10
+        jibsa zigbang real-price apt-68579 --trade 전체 --limit 10
     """
     _require_complex_id(complex_id)
     trade_types = split_csv([trade], REAL_PRICE_TRADE_TYPES, '--trade')
     if len(trade_types) != 1:
-        raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세 중 하나)', param_hint='--trade')
+        raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세, 전체 중 하나)', param_hint='--trade')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_real_prices(client, complex_id.strip(), trade_type=trade_types[0], pyeong_id=pyeong, limit=limit)
         emit(result, pretty, notes=result.notes)
