@@ -947,7 +947,7 @@ def search_command(
     ] = None,
     entrance: Annotated[
         list[str] | None,
-        typer.Option('--entrance', help=f"단지 현관 구조: {', '.join(ENTRANCE_CODE_BY_NAME)}. 단지가 없는 빌라 대부분이 빠진다")
+        typer.Option('--entrance', help=f"현관 구조: {', '.join(ENTRANCE_CODE_BY_NAME)}. 현관 구조가 등록된 매물만 걸려 등록되지 않은 매물이 빠진다 (단지가 아닌 빌라도 등록돼 있으면 나온다)")
     ] = None,
     building_age_min: Annotated[int | None, typer.Option(min=0, help='사용승인 후 지난 햇수 하한 (년). 5면 5년 이상')] = None,
     building_age_max: Annotated[int | None, typer.Option(min=0, help='사용승인 후 지난 햇수 상한 (년). 5 면 5년 이내 건물')] = None,

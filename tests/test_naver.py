@@ -28,6 +28,8 @@ from jibsa.providers.naver.service.region import (
 )
 from jibsa.providers.naver.service.search import (
     COMPLEX_FILTER_NOTE,
+    ENTRANCE_FILTER_NOTE,
+    ENTRANCE_WITH_COMPLEX_FILTER_NOTE,
     ONE_ROOM_SHAPE_NOTE,
     NaverListingConditions,
     search_area,
@@ -315,8 +317,10 @@ def test_search_area_sends_extended_filters() -> None:
     assert filter_['approvalElapsedYear'] == {'min': 5, 'max': 19}
     # 역세권은 사이트처럼 하한 0 을 함께 보낸다
     assert filter_['walkingMinuteToSubwayStation'] == {'min': 0, 'max': 8}
-    # 단지 정보 필터는 단지가 없는 빌라를, 원룸 구조는 구조를 입력하지 않은 매물을 빼므로 둘 다 알린다
+    # 세대수·주차는 단지가 없는 빌라를, 현관 구조·원룸 구조는 그 값을 입력하지 않은 매물을 빼므로 모두 알린다
     assert COMPLEX_FILTER_NOTE in result.notes
+    assert ENTRANCE_WITH_COMPLEX_FILTER_NOTE in result.notes
+    assert ENTRANCE_FILTER_NOTE not in result.notes
     assert ONE_ROOM_SHAPE_NOTE in result.notes
 
 

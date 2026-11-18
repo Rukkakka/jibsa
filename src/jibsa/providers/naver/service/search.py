@@ -151,8 +151,16 @@ PARKING_CODE_BY_NAME: dict[str, NaverParkingType] = {
     '전기차충전': 'PKF03',
 }
 COMPLEX_FILTER_NOTE: str = note(
-    '제외', '세대수·단지 주차·현관 구조는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다',
+    '제외', '세대수·단지 주차는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다',
 )
+# 현관 구조는 단지 여부가 아니라 매물에 현관 구조가 등록됐는지로 걸린다 (2026-11-17 실측: 연남동 빌라 --entrance 계단식에
+# 단지가 아닌 빌라 2661884425·2661802815·2661884583 이 남고, --household-min·--parking 에는 셋 다 빠졌다)
+ENTRANCE_FILTER_NOTE: str = note(
+    '제외', '현관 구조가 등록된 매물만 걸려, 등록되지 않은 매물은 빠졌습니다 (단지가 아닌 빌라도 등록돼 있으면 나옵니다)',
+)
+# 세대수·단지 주차 조건과 함께면 단지 아닌 매물은 그 조건이 이미 빼므로 ENTRANCE_FILTER_NOTE 의 괄호 말을 뺀다 (2026-11-17 실측:
+# 연남동 -t 빌라 --entrance 계단식 --household-min 1 32건 중 5건을 열어 보니 모두 단지 매물이었다)
+ENTRANCE_WITH_COMPLEX_FILTER_NOTE: str = note('제외', '현관 구조가 등록된 매물만 걸려, 등록되지 않은 매물은 빠졌습니다')
 BOUNDED_PAGE_SIZE: int = 30
 MAX_BOUNDED_PAGE_REQUESTS: int = 10
 # 동 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
@@ -477,7 +485,8 @@ class NaverListingConditions(NaverTradeConditions):
     """지도 매물 검색 조건 (search listings). 금액은 만원, 면적은 ㎡.
 
     모두 서버 필터로 보내고 받은 뒤 다시 거르지 않는다 (`listing_filter_of`). 목록 안의 여러 값은 시설·단지 주차만
-    모두 해당(AND)이고 나머지는 하나라도 해당(OR)이다. 세대수·단지 주차·현관 구조는 단지로 등록된 매물에만 있다.
+    모두 해당(AND)이고 나머지는 하나라도 해당(OR)이다. 세대수·단지 주차는 단지로 등록된 매물에만 있고, 현관 구조는
+    등록된 매물(단지가 아닌 빌라 포함)에만 걸린다.
     """
 
     property_types: Annotated[
@@ -554,7 +563,7 @@ class NaverListingConditions(NaverTradeConditions):
     ] = []
     entrances: Annotated[
         list[str],
-        Field(description='단지 현관 구조 (ENTRANCE_CODE_BY_NAME)')
+        Field(description='현관 구조 (ENTRANCE_CODE_BY_NAME)')
     ] = []
     building_age_min: Annotated[
         int | None,
@@ -640,7 +649,8 @@ def search_area(
     조건은 모두 서버 필터로 보내 조건에 맞는 매물만 받고, 받은 뒤 다시 거르지 않는다
     (2026-10-10 실측: 가격 조건 4종 118건과 단지 매물 38건 모두 조건 안). 서버는 키 이름이 틀리면 조용히
     무시하므로, 필터 키를 바꿀 때는 원본 응답이 조건 안인지 live 테스트로 확인한다. 금액은 만원으로 받아 원으로 바꿔 보낸다.
-    세대수·단지 주차·현관 구조는 단지로 등록된 매물에만 있어, 주면 단지가 없는 빌라 대부분이 빠진다 (`notes` 로 알린다).
+    세대수·단지 주차는 단지로 등록된 매물에만 있어 주면 단지가 없는 빌라 대부분이 빠지고, 현관 구조는 등록되지 않은
+    매물이 빠진다 (둘 다 `notes` 로 알린다).
 
     Args:
         conditions: 매물 조건 (`NaverListingConditions`). 비면 주거용 전체.
@@ -652,11 +662,13 @@ def search_area(
     filter_ = listing_filter_of(conditions)
     # 서버 필터가 특정 매물 유형을 통째로 빼는 조건은 notes 로 알린다 (결과는 다시 거르지 않는다)
     filter_notes: list[str] = []
-    if (
-        conditions.household_min is not None or conditions.household_max is not None
-        or conditions.parking or conditions.entrances
-    ):
+    has_complex_filter = (
+        conditions.household_min is not None or conditions.household_max is not None or bool(conditions.parking)
+    )
+    if has_complex_filter:
         filter_notes.append(COMPLEX_FILTER_NOTE)
+    if conditions.entrances:
+        filter_notes.append(ENTRANCE_WITH_COMPLEX_FILTER_NOTE if has_complex_filter else ENTRANCE_FILTER_NOTE)
     if conditions.one_room_shapes:
         filter_notes.append(ONE_ROOM_SHAPE_NOTE)
     sort_type = SORT_TYPE_BY_NAME[sort]

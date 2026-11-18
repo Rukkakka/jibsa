@@ -56,7 +56,7 @@ NaverParkingType = Literal['PKF01', 'PKF02', 'PKF03']
 """단지 주차 PKF01 세대당 1대 이상, PKF02 세대당 1.5대 이상, PKF03 전기차충전소. 여러 개면 모두 해당."""
 
 NaverEntranceType = Literal['10', '20', '30']
-"""단지 현관 구조 10 계단식, 20 복도식, 30 복합식 (사이트 ARTICLE_ENTRANCE_TYPE, 2026-10-10 확인).
+"""현관 구조 10 계단식, 20 복도식, 30 복합식 (사이트 ARTICLE_ENTRANCE_TYPE, 2026-10-10 확인).
 매물 상세의 facilityInfo.entranceType 으로 거른다. 같은 단지라도 pyeongList 의 entranceType 과 다를 수 있다
 (평형은 전부 계단식인 단지 매물이 복도식·복합식 필터에 걸린다)."""
 
@@ -283,7 +283,7 @@ class NaverArticleFilterModel(RequestModel):
     ] = []
     entrance_types: Annotated[
         list[NaverEntranceType],
-        Field(description='단지 현관 구조', alias='entranceTypes')
+        Field(description='현관 구조. 등록된 매물만 걸린다 (단지가 아닌 매물 포함)', alias='entranceTypes')
     ] = []
     walking_minute_to_subway_station: Annotated[
         NaverRangeModel | None,
