@@ -140,9 +140,9 @@ class NaverAutocompletePageModel(ResponseModel, Generic[T]):
         Field(description='전체 결과 수', alias='totalCount')
     ] = None
     items: Annotated[
-        list[T],
-        Field(description='결과 목록', alias='list')
-    ] = []
+        list[T] | None,
+        Field(description='결과 목록. 서버가 null 로 줄 수 있어 읽는 쪽이 `or []` 로 후보 없음으로 본다', alias='list')
+    ] = None
 
 
 class NaverAutocompleteLegalDivisionModel(ResponseModel):
@@ -221,6 +221,27 @@ class NaverAutocompleteComplexModel(ResponseModel):
     ] = None
 
 
+class NaverAutocompleteRedevelopmentAreaModel(ResponseModel):
+    """재개발 구역 자동완성 결과. 좌표도 오지만 쓰지 않는다."""
+
+    redevelopment_area_number: Annotated[
+        int,
+        Field(description='재개발 구역 번호', alias='redevelopmentAreaNumber')
+    ]
+    name: Annotated[
+        str,
+        Field(description='구역 이름 (예: 성수전략정비구역제3지구)')
+    ]
+    legal_division_name: Annotated[
+        str | None,
+        Field(description='구역이 있는 법정동 전체 이름 (예: 서울시 용산구 한남동)', alias='legalDivisionName')
+    ] = None
+    legal_division_number: Annotated[
+        str | None,
+        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
+    ] = None
+
+
 class NaverSearchAutocompleteLegalDivisionsV1ResponseModel(
     NaverResponseModel[NaverAutocompletePageModel[NaverAutocompleteLegalDivisionModel]]
 ):
@@ -237,6 +258,12 @@ class NaverSearchAutocompleteComplexesV1ResponseModel(
     NaverResponseModel[NaverAutocompletePageModel[NaverAutocompleteComplexModel]]
 ):
     """`GET /front-api/v1/search/autocomplete/complexes` 응답."""
+
+
+class NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel(
+    NaverResponseModel[NaverAutocompletePageModel[NaverAutocompleteRedevelopmentAreaModel]]
+):
+    """`GET /front-api/v1/search/autocomplete/redevelopmentAreas` 응답."""
 
 
 class NaverMapsSearchAddressV1ResponseModel(NaverResponseModel[NaverAddressSearchModel]):

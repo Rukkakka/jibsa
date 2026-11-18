@@ -148,6 +148,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 네이버 `complex` 에 평형 묶음 `pyeong_groups[]`(`name`·`representative_pyeong`(대표 평형 번호)·`households`·`pyeong_numbers`)와 `real-price --group`(그 평형이 든 묶음의 거래를 함께 받음, 결과에 `pyeong_group`). 평형이 많은 단지에서 평수로 평형을 고를 수 있다. `pyeong_groups` 는 `--pyeong` 과 상관없이 요청 1회를 더 해 붙이고 빌라 단지는 키가 없다 (묶음이 없으면 `[]`, 조회 실패면 `null`). `--group` 은 묶음 안 모든 평형의 거래가 섞여 오고 거래마다 평형을 알 수 없으며 `--period` 와 함께 쓸 수 없다. 묶음이 없는 단지(없는 단지 번호이거나 단지형 빌라처럼 평형 묶음이 없는 단지. 네이버 응답으로 둘을 가를 수 없다)와 묶음에 없는 평형 번호는 `NOT_FOUND` 다 (#345)
 - 네이버 `complex --pyeong`(하나만 줄 때)에 평당 호가 `price_per_pyeong`(`{sale, jeonse}` 각 `manwon_per_pyeong`·`as_of`·동·구·시 평균 `regions[]`, 만원/평). 공급 평수 기준 네이버 매물 호가의 주간 값이라 실거래 평당가가 아니다. 월세는 네이버가 주지 않아 키가 없고, 아파트·오피스텔·재건축·분양권·오피스텔분양권 단지만 있다(단지 유형을 모르면 `null`). 추가 요청이 최대 6회에서 최대 8회로 늘어난다 (#346)
 - 네이버 `listing` 에 주변 개발 예정 `nearby_development`(`rail[]`: 근처에 생길 지하철역의 `station`·`line`·`opens`·`distance_m`·`walking_minutes`, `area[]`: 개발 지구의 `name`·`type`·`step`·`period`). 근처에 없으면 `rail`·`area` 가 `[]`, 조회에 실패하면 `null` 이다. 모든 매물 유형에 붙고 요청이 1회 더 든다 (#344)
+- 네이버 `redevelopment` 와 `search listings --redevelopment` 가 구역 번호 외에 구역 이름(`성수전략정비구역제3지구`)도 받음. 이름이 정확히 같은 구역이 하나이거나 후보가 하나뿐일 때 정하고(이름이 다른 한 곳이면 `[참고]` 로 어느 구역인지 알림), 맞는 구역이 없으면 `NOT_FOUND`(단지 이름과 같다), 그 밖에는 `REGION_AMBIGUOUS` 로 후보의 구역 번호를 알린다. 같은 구역이 법정동마다 따로 등록돼 이름이 같은 후보가 여럿인 경우(한남제3재정비촉진구역)가 여기 든다. 이름으로 주면 요청이 1회 더 든다 (#347)
 
 ### 변경
 

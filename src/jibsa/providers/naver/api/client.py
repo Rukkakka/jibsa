@@ -80,6 +80,7 @@ from jibsa.providers.naver.api.request.region import (
     NaverMapsSearchAddressV1RequestParameterModel,
     NaverSearchAutocompleteComplexesV1RequestParameterModel,
     NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel,
+    NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel,
     NaverSearchAutocompleteSubwayStationsV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.school import (
@@ -160,6 +161,7 @@ from jibsa.providers.naver.api.response.region import (
     NaverMapsSearchAddressV1ResponseModel,
     NaverSearchAutocompleteComplexesV1ResponseModel,
     NaverSearchAutocompleteLegalDivisionsV1ResponseModel,
+    NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel,
     NaverSearchAutocompleteSubwayStationsV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.school import (
@@ -299,6 +301,7 @@ class NaverClient(BaseHTTPClient):
     complex_pyeong_groups_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeongGroups'
     complex_pyeong_real_price_group_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeong/realPrice/group'
     development_article_v1_endpoint: ClassVar[str] = '/front-api/v1/development/article'
+    search_autocomplete_redevelopment_areas_v1_endpoint: ClassVar[str] = '/front-api/v1/search/autocomplete/redevelopmentAreas'
 
     source_name: ClassVar[str] = 'naver'
     default_rate_limit: ClassVar[dict[str, object]] = {
@@ -2031,4 +2034,35 @@ class NaverClient(BaseHTTPClient):
         """Async variant of `run_request_development_article_v1`."""
         return await self._aget(
             self.development_article_v1_endpoint, parameter, NaverDevelopmentArticleV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_search_autocomplete_redevelopment_areas_v1(
+        self,
+        parameter: NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel
+    ) -> NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel:
+        """Autocomplete redevelopment area names via `GET /front-api/v1/search/autocomplete/redevelopmentAreas`.
+
+        `result` 는 `{hasNextPage, totalCount, list[]}` 이고 항목은 구역 번호(`redevelopmentAreaNumber`)·이름·법정동 이름·
+        코드다 (좌표도 오지만 쓰지 않는다). `size` 를 빼면 서버 기본 5건이 오고, 없는 이름은 `totalCount: 0`·`list: []` 다
+        (2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `keyword`, `page`, `size`.
+
+        Returns:
+            NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel: 재개발 구역 자동완성 한 페이지.
+        """
+        return self._get(
+            self.search_autocomplete_redevelopment_areas_v1_endpoint, parameter, NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_search_autocomplete_redevelopment_areas_v1(
+        self,
+        parameter: NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel
+    ) -> NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel:
+        """Async variant of `run_request_search_autocomplete_redevelopment_areas_v1`."""
+        return await self._aget(
+            self.search_autocomplete_redevelopment_areas_v1_endpoint, parameter, NaverSearchAutocompleteRedevelopmentAreasV1ResponseModel
         )

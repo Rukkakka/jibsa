@@ -33,6 +33,7 @@ from jibsa.providers.naver.service.region import (
     WIDE_REGION_NOTE_MARK,
     legal_division_code_at,
     resolve_complex_number,
+    resolve_redevelopment_number,
     resolve_search_region,
 )
 from jibsa.providers.naver.service.school import list_school_complexes
@@ -872,6 +873,47 @@ def test_complex_name_picks_only_unique_exact_match(items: list[dict], total: in
             assert exc.value.code == 'REGION_AMBIGUOUS'
             assert exc.value.details['candidate_count'] == total
             assert exc.value.details['candidates'][0].startswith(f'{items[0]["complexName"]} (')
+
+
+def _redevelopment_item(number: int, name: str, dong: str) -> dict:
+    return {
+        'redevelopmentAreaNumber': number, 'name': name,
+        'legalDivisionName': f'서울시 용산구 {dong}', 'legalDivisionNumber': '1117013000',
+    }
+
+
+@pytest.mark.parametrize(
+    'items,expected',
+    [
+        # 이름이 정확히 같은 구역이 하나면 그 번호다 (이름이 비슷한 구역이 더 있어도, 후보를 다 받았을 때)
+        ([_redevelopment_item(1, '한남3구역', '한남동'), _redevelopment_item(2, '한남3구역 일부', '보광동')], 1),
+        # 같은 이름이 법정동마다 번호를 달리해 여럿 오면 하나를 고르지 않고 후보를 알린다 (한남제3재정비촉진구역
+        # 10017678 한남동·1000208 보광동, 2026-11-18 실측)
+        ([_redevelopment_item(10017678, '한남3구역', '한남동'), _redevelopment_item(1000208, '한남3구역', '보광동')], None),
+    ],
+)
+def test_redevelopment_name_picks_only_unique_exact_match(items: list[dict], expected: int | None) -> None:
+    body = _ok({'hasNextPage': False, 'totalCount': len(items), 'list': items})
+    with make_path_client([], {'/search/autocomplete/redevelopmentAreas': body}) as client:
+        if expected is not None:
+            assert resolve_redevelopment_number(client, '한남3구역') == (expected, [])
+        else:
+            with pytest.raises(JibsaError) as exc:
+                resolve_redevelopment_number(client, '한남3구역')
+            assert exc.value.code == 'REGION_AMBIGUOUS'
+            assert exc.value.details['candidate_count'] == 2
+            assert exc.value.details['candidates'][0] == '한남3구역 (서울특별시 용산구 한남동, 구역 번호 10017678)'
+            assert '10017678' in (exc.value.hint or '')
+
+
+@pytest.mark.parametrize('items', [[], None])
+def test_redevelopment_name_without_candidates_is_not_found(items: list | None) -> None:
+    # 후보 목록이 비어도 null 이어도 후보 없음이다. 단지 이름(`resolve_complex_number`)과 같은 NOT_FOUND 로 낸다
+    body = _ok({'hasNextPage': False, 'totalCount': 0, 'list': items})
+    with make_path_client([], {'/search/autocomplete/redevelopmentAreas': body}) as client, pytest.raises(JibsaError) as exc:
+        resolve_redevelopment_number(client, '없는구역')
+    assert exc.value.code == 'NOT_FOUND'
+    assert exc.value.message == "'없는구역' 에 해당하는 네이버 재개발 구역을 찾지 못했습니다"
 
 
 def _ga_dong_address(full_address: str, code: str) -> dict:

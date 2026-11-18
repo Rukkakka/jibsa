@@ -15,11 +15,11 @@
 | `listing` | 매물 기본 정보 → 단지 유형·단지형 빌라면 단지 정보(현관이 비면 평형 정보도), 건축물대장 유형이고 매물 주차 대수가 0·없고 pnu 가 있으면 건축물대장 1회, 교통·학교, 중개보수(직거래 제외 모든 거래 유형. 직거래인지 모르면 요청 안 함)·세금(매매), 개발 예정(`development/article`, 유형과 상관없이 늘 1회) 부가 조회. 최대 11회 | `listing` |
 | `real-price` | 단지·평형별 실거래 페이지, `--period` 면 기간 목록 1회 (빌라는 페이지를 기간 시작일까지), `--group` 이면 평형 묶음 1회 → 묶음 실거래 페이지 | `real_price` |
 | `market-price` | 단지 해석 → 기관별 주간 시세 기간 목록 1회 | `market_price` |
-| `redevelopment` | 구역 기본 정보 → 구역 매물 통계 | `redevelopment` |
+| `redevelopment` | (이름이면 재개발 구역 자동완성 1회로 번호 해석 →) 구역 기본 정보 → 구역 매물 통계 | `redevelopment` |
 | `regions` | 시·도 목록 → 시·도면 하위 목록, 아니면 자동완성 → 시·군·구 하위 목록 | `region` |
 | `school` | 학교 상세, `--complex` 면 배정 동 (단지 번호만이면 빌라 여부 확인 1회, 빌라면 단지가 있는지 확인 1회 더), `--complexes` 면 배정 단지 20곳마다 1회 (최대 5회) | `school` |
 | `search redevelopment` | 지역 해석(시 이름이면 구가 있는지 확인 1회) → 동·시·군·구 경계 또는 반경 재개발 구역 목록·마커 | `redevelopment` |
-| `search listings --redevelopment` | 구역 번호 → 재개발 매물 페이지 | `redevelopment` |
+| `search listings --redevelopment` | 구역 번호(이름이면 재개발 구역 자동완성 1회로 해석) → 재개발 매물 페이지 | `redevelopment` |
 | `trend` | 법정동 코드 해석(`전국` 은 해석 없이 전국 코드, 시 이름이면 구가 있는지 확인 1회) → 매물 수·평당 호가·거래 건수 3종 조회 | `trend` |
 
 ## 소스 고유 구현
@@ -146,7 +146,7 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - `article/tax` 는 면제되는 항목도 null 이 아니라 0 으로 준다 (85㎡ 이하 취득 농특세, 종부세 대상 아님. 헬리오시티 39·85·111·150㎡·일신동 빌라 2건, 2026-10-11 실측). 그래서 세금 합계(`_sum_manwon`)에서 일부 항목만 null 인 경우는 실제 응답에 없다.
 - 재검토 후 넣지 않은 엔드포인트: `complex/asking-price`(단지 매물 목록과 같은 정보), `article/boundedArticlesCount`(검색의 `total_count` 와 같음), `search/articles`(`listing` 과 같고 중개사·본문이 섞임), `legalDivision/infoList`, `complex/villa/asking-price`(빈 결과), `complex/villa/realPriceAround`(파라미터를 찾지 못해 400).
 
-## 평당가·평형 묶음·개발 예정·학교 배정 단지 엔드포인트 메모
+## 평당가·평형 묶음·개발 예정·학교 배정 단지·재개발 이름 엔드포인트 메모
 
 (2026-11-18 실측, 모두 로그인 없이 200)
 
@@ -155,6 +155,7 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - `complex/pyeong/realPrice/group` 은 묶음 실거래를 준다. 평형 번호를 `pyeongTypeNumbers[]=19&pyeongTypeNumbers[]=16` 처럼 키에 `[]` 를 붙여 반복하고, 웹은 `[대표 번호, …나머지 번호순]` 으로 보낸다 (`_find_pyeong_group`). 응답은 `complex/v2/pyeong/realPrice` 와 같은 모양이라 같은 `NaverRealPriceListModel` 을 쓴다. 거래마다 어느 평형인지는 오지 않는다.
 - `development/article`(`articleNumber`)은 `result.railList[]`(역·노선 이름·개통 예정 연도 `openDate`·거리 m·도보 분)와 `jiguList[]`(이름·유형·단계·기간 `period`, 기간은 없을 수 있다)를 준다. 좌표도 오지만 읽지 않는다. 원룸은 `{"railList": [], "jiguList": []}` 로 온다. `stationId`·`railId`·지구의 `id`·`step` 의 자료형은 실측으로 가리지 못해 `int | str | None` 으로 받는다. 웹 `ArticleMain`(청크 c29992b834_0l4pkwg0qhg2t)은 매물 유형 조건 없이 부르고 두 목록이 비면 칸을 그리지 않는다.
 - `education/complex/pages`(`schoolCode`·`size`·`page`·`sortType`)는 학교에 배정되는 단지를 준다. `sortType` 은 `DISTANCE`·`HOUSEHOLD_COUNT` 만 받고 그 밖은 400 이다 (웹 enum `ELEMENTARY_SCHOOL_SORT_TYPE`). 항목은 단지 정보·매물 수·호가 범위(원, 매물이 없으면 `{}`)와 배정 동(`isAllBuildingAssigned`·`convertedBuildingNameGroups`)이다. 끝 쪽을 넘긴 쪽(page=9)은 `list: []`·`hasNextPage: false`·`totalCount: 0` 이라 총수는 첫 쪽에서만 믿는다. `hasNextPage` 가 null 이면 첫 쪽 `totalCount` 가 받은 수보다 클 때 더 있는 것으로 보고 이어 받으며(쪽 요청 상한 5회 안), 상한에 걸려 `--limit` 에 못 미치면 `--limit` 을 권하지 않는 안내를 따로 낸다. 빌라가 `villaInfo` 로 올 경우에 대비해 그 칸도 받는다 (오는지는 확인하지 못했다: 2026-11-18 인천일신초 E100000875 에 배정되는 빌라 가람아트빌 673573 이 목록에 없었다).
+- `search/autocomplete/redevelopmentAreas`(`keyword`·`page`·`size`)는 `{hasNextPage, totalCount, list[]}` 를 주고 항목은 구역 번호(`redevelopmentAreaNumber`)·이름·법정동 이름·코드다 (좌표도 오지만 읽지 않는다). `size` 를 빼면 서버 기본 5건이 오고, 없는 이름은 `totalCount: 0`·`list: []` 다. 한남제3재정비촉진구역은 한남동 10017678·보광동 1000208 로 법정동마다 따로 와서 이름이 정확히 같은 후보가 둘이다 (`resolve_redevelopment_number`).
 
 ## API 변경 시 점검
 
@@ -221,6 +222,7 @@ client의 action별 endpoint/docstring → request 별칭·필터 → response �
 
 ### 지역·재개발·동향 (`regions`·`search redevelopment`·`redevelopment`·`trend`)
 
+- **재개발 구역 이름을 하나로 정해지면 묻지 않기.** 웹 검색창은 재개발 구역 자동완성을 `size` 없이(서버 기본 5건) 보여 주고 '더보기' 로 다음 쪽을 보며 사람이 고른다. `redevelopment`·`search listings --redevelopment` 는 구역 이름을 받아 `size=10&page=0` 한 쪽만 받고 다음 쪽은 부르지 않는다 (단지 이름과 같다). 후보 전체가 첫 쪽에 다 들어와 다음 쪽이 없을 때(`hasNextPage` 가 true 가 아니고 `totalCount` 가 받은 수보다 크지 않을 때)만 이름이 정확히 같은 구역이 하나이거나 후보가 하나뿐일 때 그 구역으로 정하고(이름이 다르면 `[참고]`), 그 밖에는 고르지 않고 `REGION_AMBIGUOUS` 로 후보와 구역 번호를 알린다. 네이버는 한 사업 구역을 법정동마다 따로 등록해 같은 이름이 번호를 달리해 여럿 온다 (한남제3재정비촉진구역: 한남동 10017678·보광동 1000208, 2026-11-18 실측). 사람이 고르는 웹처럼 하나를 임의로 고르지 않고 번호로 다시 부르게 하므로 웹에서 고를 수 있는 구역만 쓰고 사실이 어긋나지 않는다 (`resolve_redevelopment_number`).
 - **`search redevelopment` 기본 정렬 매물수순 (그대로 두기로 함).** 웹 기본은 세대수순(`DEFAULT_REDEVELOPMENT_LIST_SORT_TYPE`)이다. 웹에서 정렬을 매물수순으로 바꾸면 같은 목록이라 웹에서 고를 수 있는 기본값이다 (2026-11-16 번들 chunk `2yfs4ldfbaxvg`).
 - **`search redevelopment` 기본 거래 유형 (그대로 두기로 함).** `--trade` 를 주지 않으면 매매·전세·월세(A1·B1·B2, `NaverArticleFilterModel` 기본값)를 보낸다. 웹 기본은 매매·전세(A1·B1)다. 거래 유형은 구역을 거르지 않고 매물수순 순서에만 영향을 주며, 웹 지도 필터에서 월세를 더 고르면 같은 요청이다. 순서가 갈리는 사례는 재현하지 못했다 (본 구역 14곳에 월세 매물이 없었다, 2026-11-16).
 - **`search redevelopment --trade`.** 서버는 거래 유형으로 구역을 거르지 않는다 (매매·전세로 불러도 그 거래 0건 구역이 온다). jibsa 는 `article_counts` 로 그 구역을 빼고 `notes` 로 알린다. 받은 구역의 부분집합이라 웹에 없는 조건으로 좁히기다 ([재개발·추이 엔드포인트 메모](#재개발추이-엔드포인트-메모), 2026-11-16).

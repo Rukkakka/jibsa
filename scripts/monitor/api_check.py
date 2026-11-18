@@ -226,6 +226,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step('재개발 구역', ('naver', 'redevelopment'), ('{redevelopment}',), 'redevelopment_number'),
         Step('재개발 구역 매물', NAVER_LISTINGS, ('--redevelopment', '{redevelopment}', '--limit', '2'), 'listings'),
+        # 구역 이름은 재개발 자동완성(search/autocomplete/redevelopmentAreas)으로 번호를 찾는다. 이름이 하나로 정해지는 구역이어야
+        # 한다 (한남제3재정비촉진구역은 한남동·보광동에 번호가 둘이라 REGION_AMBIGUOUS, 2026-11-18)
+        Step('재개발 구역 이름 성수전략정비구역제3지구', ('naver', 'redevelopment'), ('성수전략정비구역제3지구',), 'redevelopment_number'),
     ),
     'daangn': (
         # 웹 지도 검색창처럼 지역(searchRegion)·역·대학·학교·단지 검색을 한꺼번에 부른다

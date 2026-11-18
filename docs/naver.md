@@ -16,8 +16,8 @@
 | `market-price` | 단지 평형별 **기관 시세 추이** | 단지 이름 또는 번호 | `real-price` |
 | `listing` | 매물 하나 **상세** | 매물 ID | `school` |
 | `search redevelopment` | 지역의 재개발 구역 | 지역 또는 좌표 | `redevelopment`, `search listings --redevelopment` |
-| `redevelopment` | 재개발 구역 하나의 정보 | 구역 번호 | `search listings --redevelopment` |
-| `search listings --redevelopment` | 구역 안 현재 매물 | 구역 번호 | `listing` |
+| `redevelopment` | 재개발 구역 하나의 정보 | 구역 번호 또는 이름 | `search listings --redevelopment` |
+| `search listings --redevelopment` | 구역 안 현재 매물 | 구역 번호 또는 이름 | `listing` |
 | `trend` | 동·구·전국 아파트 주간 추이 | 지역·좌표 또는 `전국` | — |
 | `regions` | 시·도·구의 **하위 지역** 목록 | 시·도 또는 시·군·구 이름 | `search listings`, `search complexes`, `trend` |
 | `school` | 초등학교 하나 **상세**, 그 학교에 배정되는 **단지** | 학교 코드 | `complex`, `search listings --complex` (`--complexes` 의 단지) |
@@ -43,7 +43,7 @@
 
 **무엇을 넣느냐에 따라 찾는 방식이 다르다**
 
-재개발 구역 매물은 `search listings --redevelopment <구역 번호>`로 찾는다. 지원 옵션은 8절에 있다.
+재개발 구역 매물은 `search listings --redevelopment <구역 번호 또는 이름>`로 찾는다. 지원 옵션은 8절에 있다.
 
 특정 단지의 매물은 `search listings --complex <단지 이름 또는 번호>`로 찾는다. 지역·좌표와 함께 사용할 수 없다. `--complex` 모드의 지원 옵션은 4절에 있다.
 
@@ -354,7 +354,7 @@ jibsa naver search redevelopment 한강진역 --radius 1 --trade 매매 --sort �
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
-| `--redevelopment` | 1 이상의 구역 번호 | 필수 |
+| `--redevelopment` | 구역 번호(1 이상) 또는 구역 이름 (`성수전략정비구역제3지구`). 이름 해석은 [11절](#11-redevelopment--재개발-구역-하나) | 필수 |
 | `--trade` | 매매·전세·월세·단기임대. 반복·쉼표 가능 | 미지정 |
 | `--deposit-min/max` | 보증금·전세금, 0 이상 만원 | 미지정 |
 | `--rent-min/max` | 월세, 0 이상 만원 | 미지정 |
@@ -366,21 +366,22 @@ jibsa naver search redevelopment 한강진역 --radius 1 --trade 매매 --sort �
 
 ```bash
 jibsa naver search listings --redevelopment 9000001 --trade 매매 --price-max 300000
+jibsa naver search listings --redevelopment 성수전략정비구역제3지구 --trade 매매
 ```
 
 구역 번호는 문법 설명용 가상 값이다. `search redevelopment`의 실제 결과를 사용한다.
 
 **반환값**
 
-`redevelopment_number`, `total`, `returned`, `listings`를 준다 (매물 모양은 지역 검색과 같아 `badges` 도 있다). 매물의 `id`를 `listing`에 넘긴다.
+`redevelopment_number`(이름으로 줬으면 찾은 구역의 번호), `total`, `returned`, `listings`를 준다 (매물 모양은 지역 검색과 같아 `badges` 도 있다). 매물의 `id`를 `listing`에 넘긴다.
 
 **오류와 대응**
 
-지역·좌표·`--complex`·`--pyeong`·`--dong`과 함께 사용하거나 유형·면적·방·관리비·시설 등 이 표에 없는 지역 검색 조건을 지정하면 `INVALID_ARGUMENT`다. 하한이 상한보다 큰 가격 범위와 가까운순 정렬도 입력 오류다. 조회 실패는 에러의 `code`·`hint`를 확인한다.
+지역·좌표·`--complex`·`--pyeong`·`--dong`과 함께 사용하거나 유형·면적·방·관리비·시설 등 이 표에 없는 지역 검색 조건을 지정하면 `INVALID_ARGUMENT`다. 하한이 상한보다 큰 가격 범위와 가까운순 정렬도 입력 오류다. 이름이 여러 구역에 맞으면 `REGION_AMBIGUOUS`, 맞는 구역이 없으면 `NOT_FOUND` 다 ([11절](#11-redevelopment--재개발-구역-하나)과 같다). 조회 실패는 에러의 `code`·`hint`를 확인한다.
 
 **주의사항**
 
-재개발 매물은 건물이 아니라 대지지분 단위라 `area_m2`·`area_pyeong` 키가 없고(해당 없음), 층이 없는 매물은 `floor`·`building_floor`가 `null`이다 (면적은 원 사이트에서, 목록·`listing` 상세 모두 같다). 가격 조건은 서버 필터이며 명시하지 않은 거래 유형을 가격 조건에 맞게 추론하면 `notes`로 알린다. 가격순은 네이버 기준이므로 여러 거래 유형의 가격을 같은 척도로 단정하지 않는다 (거래 유형이 여럿이면 `notes` 로 알린다). 페이지 요청 예산 때문에 한도보다 적게 반환될 수 있다. 예산을 다 쓴 결과는 구역 전체를 끝까지 조회한 결과가 아니다.
+구역 이름을 주면 이름을 번호로 바꾸는 구역 검색 요청이 1회 더 든다. 이름이 다른 구역 하나로 정했으면 `notes` 에 `[참고]` 로 어느 구역인지 알린다. 재개발 매물은 건물이 아니라 대지지분 단위라 `area_m2`·`area_pyeong` 키가 없고(해당 없음), 층이 없는 매물은 `floor`·`building_floor`가 `null`이다 (면적은 원 사이트에서, 목록·`listing` 상세 모두 같다). 가격 조건은 서버 필터이며 명시하지 않은 거래 유형을 가격 조건에 맞게 추론하면 `notes`로 알린다. 가격순은 네이버 기준이므로 여러 거래 유형의 가격을 같은 척도로 단정하지 않는다 (거래 유형이 여럿이면 `notes` 로 알린다). 페이지 요청 예산 때문에 한도보다 적게 반환될 수 있다. 예산을 다 쓴 결과는 구역 전체를 끝까지 조회한 결과가 아니다.
 
 ## 9. `trend` — 동네 아파트 주간 추이
 
@@ -453,13 +454,14 @@ jibsa naver market-price 개포자이 --pyeong 1 --period 3년
 
 | 인자·옵션 | 허용값·의미 | 기본값 |
 | --- | --- | --- |
-| `REDEVELOPMENT_NUMBER` | 구역 번호 (`search redevelopment` 결과의 `redevelopment_number`) | 필수 |
+| `REDEVELOPMENT` | 구역 번호 (`search redevelopment` 결과의 `redevelopment_number`) 또는 구역 이름 (`성수전략정비구역제3지구`) | 필수 |
 | `--trade` | 매매·전세·월세·단기임대. 반복·쉼표 가능. 주면 매물 수·호가 범위를 그 거래만으로 센다 | 미지정 (전체) |
 
 **사용 예시**
 
 ```bash
 jibsa naver redevelopment 9000001 --trade 매매
+jibsa naver redevelopment 성수전략정비구역제3지구
 ```
 
 구역 번호는 문법 설명용 가상 값이다.
@@ -470,11 +472,13 @@ jibsa naver redevelopment 9000001 --trade 매매
 
 **오류와 대응**
 
-없는 구역 번호는 `NOT_FOUND`, 잘못된 거래 유형은 `INVALID_ARGUMENT`다.
+없는 구역 번호는 `NOT_FOUND`, 잘못된 거래 유형은 `INVALID_ARGUMENT`다. 이름에 맞는 구역이 없으면 `NOT_FOUND`(단지 이름과 같다), 이름이 여러 구역에 맞으면 `REGION_AMBIGUOUS` 다 (아래 구역 이름).
 
 **주의사항**
 
-요청 2회다. 조합 연락처와 구역 좌표는 내보내지 않는다. 매물 목록은 `search listings --redevelopment` 로 본다. `--trade` 를 주면 `notes` 로 그 거래만 센 값이라고 알린다.
+요청 2회다 (이름으로 주면 구역 검색 1회 추가). 조합 연락처와 구역 좌표는 내보내지 않는다. 매물 목록은 `search listings --redevelopment` 로 본다. `--trade` 를 주면 `notes` 로 그 거래만 센 값이라고 알린다.
+
+구역 이름은 네이버 검색창의 재개발 구역 검색으로 찾는다 (`search listings --redevelopment` 도 같다). 후보는 첫 쪽 10건만 받고 다음 쪽은 부르지 않는다. 다음 쪽이 없을 때(네이버가 다음 쪽이 있다고 하지 않고 후보 전체 수 `candidate_count` 가 10건 안일 때) 그중 이름이 정확히 같은 구역이 하나이거나 후보가 하나뿐일 때만 그 구역으로 찾고 (이름이 다른 한 곳이면 `notes` 로 어느 구역인지 알린다), 그 밖에는 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`, `"이름 (주소, 구역 번호 N)"` 꼴)와 `candidate_count` 를 알린다. 네이버는 같은 사업 구역을 법정동마다 따로 등록하기도 해 이름이 같은 구역이 번호를 달리해 여럿 올 수 있다 (한남제3재정비촉진구역: 한남동과 보광동에 각각 다른 구역 번호). 이때는 후보의 구역 번호로 다시 부른다. 이름에 맞는 구역이 하나도 없으면 `NOT_FOUND`(단지 이름과 같다)이고 `hint` 가 `search redevelopment <동 이름>` 으로 구역 목록을 보라고 알린다.
 
 ## 12. `regions` — 하위 지역 목록
 
