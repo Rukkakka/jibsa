@@ -30,7 +30,10 @@ from jibsa.cli.paging import (
     decode_next,
     encode_next,
 )
-from jibsa.core.errors import RegionNotFoundError
+from jibsa.core.errors import (
+    RegionAmbiguousError,
+    RegionNotFoundError,
+)
 from jibsa.core.geo import DEFAULT_RADIUS_KM
 from jibsa.core.korean import (
     is_district_code,
@@ -645,6 +648,60 @@ def redevelopment_command(
         )
 
 
+def _trend_district(
+    client: NaverClient,
+    query: str | None,
+    lat: float | None,
+    lng: float | None,
+) -> tuple[str, str | None, list[str]]:
+    """trend 가 추이를 볼 법정동 코드, 그 이름, 안내. 이름·좌표로 지역을 찾고 리·주소·역·좌표는 그 자리의 법정동으로 바꾼다.
+
+    구 있는 시(성남시)는 네이버가 시 코드의 추이를 매물 수·거래 수 모두 0 으로 줘서(2026-11-18 실측) 구 이름을 알리며
+    REGION_AMBIGUOUS 로 멈춘다. 이름이 시일 때만 구가 있는지 묻는 요청 1회가 는다.
+    """
+    region, kind, notes = _resolve_location(client, query, lat, lng, None, radius_search=False)
+    districts = _districts_of_city(client, region, kind)
+    if districts:
+        # 리뷰 오탐 (2026-11-18): message 는 REGION_AMBIGUOUS 공통 문구('… 해당하는 곳이 N곳'), 시 → 구 안내는 hint 가 한다
+        raise RegionAmbiguousError(
+            query or region.name,
+            candidates=districts,
+            total=len(districts),
+            hint=(
+                '구가 있는 시는 네이버가 시 전체 추이를 주지 않습니다. 구를 골라 다시 부르세요 '
+                f"(예: jibsa naver trend '{districts[0]}')"
+            ),
+        )
+    if districts is None:
+        notes.append(note(
+            '실패',
+            f"'{region.name}': 구가 있는 시인지 확인하지 못했습니다. 구가 있는 시면 네이버가 시 추이를 0 으로 주니, "
+            f"값이 모두 0 이면 jibsa naver regions '{region.name}' 로 구 이름을 보고 구 이름으로 다시 부르세요",
+        ))
+    division: str | None
+    code, division = region.legal_division_code, normalize_address(region.address or region.name)
+    # 리 코드(…21)는 네이버가 매물 수·호가·거래를 모두 0 으로 준다 (장현리 매물 0, 같은 진접읍 1,394, 2026-10-10)
+    ri = is_ri_code(code)
+    if ri or kind == '주소':
+        # 번지·도로명 주소는 이름이 법정동 이름이 아니라서('역삼동 719-28'), 리는 추이가 없어서 그 자리의
+        # 법정동으로 찾는다. 좌표로 찾으면 리 자리는 읍·면 코드가 온다 (장현리 → 진접읍 4136025300)
+        code = None
+    # 단지는 자동완성이 준 단지의 법정동 코드를 그대로 써 좌표 조회를 아끼지만, 역·좌표처럼 그 자리의 동 추이라고 알린다
+    at_spot = code is None or kind == '단지'
+    if code is None:
+        # 역·행정동·좌표는 법정동 코드가 없어 그 자리의 법정동으로 본다
+        found = legal_division_code_at(client, region.lat, region.lng)
+        if found is None:
+            # 입력이 틀린 게 아니라 그 자리에 법정동이 없는 것이다 (바다 좌표 35.5,125.8 → searchByCoordinate 빈 결과, 2026-10-10)
+            raise RegionNotFoundError(region.name, hint="동·구 이름(예: '역삼동')으로 다시 주세요")
+        code, division = found[0], normalize_address(found[1])
+    if ri:
+        notes.append(note('범위', f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다"))
+    elif at_spot:
+        notes.append(note('범위', f"'{region.name}' 자리의 법정동({division}) 추이입니다"))
+    return code, division, notes
+
+
 @app.command('trend')
 def trend_command(
     query: Annotated[
@@ -678,28 +735,8 @@ def trend_command(
         pyeong_range = check_choice(pyeong_range, TREND_PYEONG_RANGES, '--pyeong-range')
 
     with handle_errors(SOURCE), NaverClient() as client:
-        region, kind, notes = _resolve_location(client, query, lat, lng, None, radius_search=False)
         division: str | None
-        code, division = region.legal_division_code, normalize_address(region.address or region.name)
-        # 리 코드(…21)는 네이버가 매물 수·호가·거래를 모두 0 으로 준다 (장현리 매물 0, 같은 진접읍 1,394, 2026-10-10)
-        ri = is_ri_code(code)
-        if ri or kind == '주소':
-            # 번지·도로명 주소는 이름이 법정동 이름이 아니라서('역삼동 719-28'), 리는 추이가 없어서 그 자리의
-            # 법정동으로 찾는다. 좌표로 찾으면 리 자리는 읍·면 코드가 온다 (장현리 → 진접읍 4136025300)
-            code = None
-        # 단지는 자동완성이 준 단지의 법정동 코드를 그대로 써 좌표 조회를 아끼지만, 역·좌표처럼 그 자리의 동 추이라고 알린다
-        at_spot = code is None or kind == '단지'
-        if code is None:
-            # 역·행정동·좌표는 법정동 코드가 없어 그 자리의 법정동으로 본다
-            found = legal_division_code_at(client, region.lat, region.lng)
-            if found is None:
-                # 입력이 틀린 게 아니라 그 자리에 법정동이 없는 것이다 (바다 좌표 35.5,125.8 → searchByCoordinate 빈 결과, 2026-10-10)
-                raise RegionNotFoundError(region.name, hint="동·구 이름(예: '역삼동')으로 다시 주세요")
-            code, division = found[0], normalize_address(found[1])
-        if ri:
-            notes.append(note('범위', f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다"))
-        elif at_spot:
-            notes.append(note('범위', f"'{region.name}' 자리의 법정동({division}) 추이입니다"))
+        code, division, notes = _trend_district(client, query, lat, lng)
         trend = get_district_trend(client, code, trade_type=trade, period=period, pyeong_range=pyeong_range)
         if trend.trade_count is not None:
             # 거래는 계약 주에 세어지는데 신고가 계약 뒤 30일 안이라 최근 주일수록 덜 모였다. 안내가 없으면 줄어드는 끝을
