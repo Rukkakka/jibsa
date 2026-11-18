@@ -138,9 +138,13 @@ STAY_OPTION_LABELS: dict[str, str] = {
 STAY_OPTION_BY_LABEL: dict[str, ZigbangStayOption] = {
     label: code for code, label in STAY_OPTION_LABELS.items()  # type: ignore[misc]
 }
+# 직방 웹 층 필터의 다섯 선택지 (2026-11-17). 10층 매물은 2-10층에 들고, 11층이상의 코드는 FLOOR_10_PLUS 다
+# (FLOOR_11_OVER 는 서버가 400 을 준다)
 STAY_FLOOR_TYPE_BY_LABEL: dict[str, ZigbangStayFloorType] = {
     '지하': 'BASEMENT',
     '1층': 'FIRST',
+    '2-10층': 'FLOOR_2_10',
+    '11층이상': 'FLOOR_10_PLUS',
     '옥탑': 'ROOFTOP',
 }
 STAY_DISCOUNT_TYPE_BY_LABEL: dict[str, ZigbangStayDiscountType] = {

@@ -267,7 +267,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 | `--option` | 옵션: 에어컨, 침대, 가스레인지, 인덕션, 냉장고, 싱크대, TV, 세탁기, 와이파이, 공기청정기, 정수기, 옷장, 커피머신, 책상, 식탁, 식기세척기, 건조기, 전기포트, 전자레인지, 전기밥솥, 소파, 토스터, 화장대, 욕조, 비데, 케이블TV, CCTV, 도어락, 빨래건조대, 관리사무소, OTT, 청소기, 발코니. 반복하거나 쉼표로 구분 (AND) | 미지정 |
 | `--parking` | 주차 가능 매물만 | 꺼짐 |
 | `--elevator` | 엘리베이터 있는 매물만 | 꺼짐 |
-| `--floor` | 층: 지하, 1층, 옥탑. 반복하거나 쉼표로 구분 (OR) | 미지정 |
+| `--floor` | 층: 지하, 1층, 2-10층, 11층이상, 옥탑. 반복하거나 쉼표로 구분 (OR). 10층은 2-10층에 든다 | 미지정 |
 | `--check-in` | 입주 희망일 (YYYY-MM-DD). --check-out 과 함께 | 미지정 |
 | `--check-out` | 마지막으로 머무는 날 (YYYY-MM-DD). 직방은 이 날까지 이용일로 센다 (4주 = 11-01~11-28). --check-in 과 함께 | 미지정 |
 | `--flexibility` | 일정을 앞뒤로 며칠까지 유연하게 볼지 (--check-in 과 함께) 범위: 0~30. | 미지정 |
@@ -579,7 +579,7 @@ jibsa zigbang search complexes 강남역 --limit 10
 | 관리비 (만원) | `--manage-cost-min/max`, `--no-manage-cost` | — | `--manage-cost-min/max` (요약에서 거름) | — |
 | 면적 (㎡) | `--area-min/max` (전용), `--area-pyeong-min/max` (평, 함께 주면 둘 다 만족) | `--area-min/max` (전용, 받은 뒤 거름), `--supply-area-min/max` (공급, 서버에서) | `--area-min/max` (상한은 미만) | `--area-min/max` (전용) |
 | 방 | `--room` 오픈형원룸, 분리형원룸, 복층형원룸, 투룸, 쓰리룸, 포룸이상 (OR) | — | — | `--rooms` 1~3 (정확히), 4 (4개 이상) |
-| 층 | `--floor` 지상, 반지하, 옥탑방, 1층 (OR) | — | `--first-floor` | `--floor` 지하, 1층, 옥탑 (OR) |
+| 층 | `--floor` 지상, 반지하, 옥탑방, 1층 (OR) | — | `--first-floor` | `--floor` 지하, 1층, 2-10층, 11층이상, 옥탑 (OR) |
 | 욕실 | `--bathroom` 1, 2 (정확히), 3 (3개 이상) | — | — | — |
 | 정렬 | — | — | — | `--sort recommended` 직방 추천순 (기본), `price` 주당 임대료+관리비 낮은 순, `newest` 최근 등록순, `distance` 역에서 가까운 순 (`--radius` 없는 역 이름 검색만) |
 | 옵션 (AND) | `--option` 에어컨, 냉장고, 세탁기, 가스레인지, 인덕션, 전자레인지, 책상, 책장, 침대, 옷장, 신발장, 싱크대 | — | — | `--option` 에어컨, 침대, 세탁기, 와이파이, 건조기, 정수기 등 32종 (`jibsa zigbang search listings stay --help`) |

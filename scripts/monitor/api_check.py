@@ -176,6 +176,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단기임대 날짜 상세', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'id'),
         # 역 이름은 직방 단기임대 역 검색, --radius 를 주면 지도 핀이다
         Step('단기임대 역 검색 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--limit', '2'), 'listings'),
+        # 층 조건은 서버가 받는 floor 인자로 보낸다
+        Step('단기임대 층 조건 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--floor', '2-10층', '--limit', '2'), 'listings'),
         Step('단기임대 지도 반경 강남역', ('zigbang', 'search', 'listings', 'stay'), ('강남역', '--radius', '1', '--limit', '2'), 'listings'),
     ),
     'naver': (
