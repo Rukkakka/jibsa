@@ -105,6 +105,14 @@ class NaverVillaRealPriceModel(ResponseModel):
         bool | None,
         Field(description='계약갱신요구권 사용 여부 (전월세)', alias='isRenewRequestRight')
     ] = None
+    already_deposit: Annotated[
+        int | None,
+        Field(description='갱신 계약의 종전 보증금 (원). 갱신이 아니면 0', alias='alreadyDeposit')
+    ] = None
+    already_monthly_deposit: Annotated[
+        int | None,
+        Field(description='갱신 계약의 종전 월세 (원). 아파트(`alreadyMonthlyRent`)와 키 이름이 다르다. 갱신이 아니면 0', alias='alreadyMonthlyDeposit')
+    ] = None
 
 
 class NaverVillaRealPricePageModel(ResponseModel):

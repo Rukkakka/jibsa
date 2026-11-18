@@ -8,6 +8,7 @@ from jibsa.providers.naver.api.response.common import (
     NaverCoordinatesModel,
     NaverFacilityInfoModel,
     NaverListVerificationInfoModel,
+    NaverParkingInfoModel,
     NaverPropertyTaxModel,
     NaverResponseModel,
     NaverSchoolModel,
@@ -151,6 +152,10 @@ class NaverArticleKeyIdsModel(ResponseModel):
     building_number: Annotated[
         int | None,
         Field(description='건물 번호', alias='buildingNumber')
+    ] = None
+    pnu: Annotated[
+        str | None,
+        Field(description='필지 고유번호 (19자리). 건축물대장 조회(complex/buildingRegistration)에 쓴다')
     ] = None
 
 
@@ -358,6 +363,10 @@ class NaverArticleDetailInfoModel(ResponseModel):
         bool | None,
         Field(description='직거래 매물인지. 네이버 웹은 직거래 매물에 중개보수 칸을 그리지 않는다 (2026-11-17 확인, 토지 2661679787)', alias='isDirectTrade')
     ] = None
+    is_safe_lessor_of_hug: Annotated[
+        bool | None,
+        Field(description='HUG(주택도시보증공사) 안심임대인 여부. 목록의 같은 이름 필드(articleDetail.isSafeLessorOfHug)와 같다. 참이면 확인 배지 뒤에 HUG 안심임대인 배지를 붙인다', alias='isSafeLessorOfHug')
+    ] = None
 
 
 class NaverDetailInfoModel(ResponseModel):
@@ -561,8 +570,21 @@ class NaverEducationBuildingSchoolV1ResponseModel(NaverResponseModel[list[NaverS
     """`GET /front-api/v1/education/building/school` 응답."""
 
 
+class NaverBuildingRegistrationModel(ResponseModel):
+    """건축물대장 요약. 주차(parkingInfo)만 읽고 나머지(좌표·주소·용도·세대 수 등)는 내보내지 않아 extra 로 둔다."""
+
+    parking_info: Annotated[
+        NaverParkingInfoModel | None,
+        Field(description='건축물대장의 주차 (총 대수, 세대당 대수)', alias='parkingInfo')
+    ] = None
+
+
 class NaverArticleKeyV1ResponseModel(NaverResponseModel[NaverArticleKeyModel]):
     """`GET /front-api/v1/article/key` 응답."""
+
+
+class NaverComplexBuildingRegistrationV1ResponseModel(NaverResponseModel[NaverBuildingRegistrationModel]):
+    """`GET /front-api/v1/complex/buildingRegistration` 응답."""
 
 
 class NaverArticleBasicInfoV1ResponseModel(NaverResponseModel[NaverArticleBasicInfoModel]):

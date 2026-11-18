@@ -13,10 +13,10 @@ from pydantic import (
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     SAME_AREA_PYEONG_TRADES_NOTE,
+    months_ago,
     normalize_date,
     note,
     won_to_manwon_exact,
-    years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.real_price import (
@@ -29,7 +29,7 @@ from jibsa.providers.naver.api.response.real_price import (
     NaverVillaRealPriceModel,
 )
 from jibsa.providers.naver.service.common import (
-    PERIOD_YEARS_BY_NAME,
+    PERIOD_MONTHS_BY_NAME,
     TRADE_CODE_BY_NAME,
     check_pyeong_numbers,
     kst_today,
@@ -103,15 +103,17 @@ class NaverRealPrice(BaseModel):
         # 갱신 계약은 전월세에만 있다
         if self.trade_type == '매매':
             data.pop('renewal', None)
-        # 종전 보증금·월세는 갱신 계약에만 있다 (갱신이 아니거나 모르면 해당 없음). 빌라 단지 실거래는 값 출처가 없어
-        # 두 필드를 넘기지 않으므로(model_fields_set 에 없음) 갱신이어도 내지 않는다
+        # 종전 보증금·월세는 갱신 계약에만 있다 (갱신이 아니거나 모르면 해당 없음)
+        # 둘 다 0 이거나 없으면 웹은 '기존 …' 을 그리지 않는다 (빌라 실거래 표 `alreadyDeposit || alreadyMonthlyDeposit`, 2026-11-18
+        # 번들 청크 1un70f33iojlw). '종전 0원' 으로 읽히지 않게 두 키를 지운다 (2026-11-18 사용자 결정, 아파트도 같은 규칙)
+        no_previous = not (self.previous_deposit_manwon or self.previous_rent_manwon)
         # 리뷰 오탐 (2026-11-17): isRenew 가 null 이면 종전 금액을 지우는 것은 웹과 같다 (웹도 isRenew 가 참일 때만 '기존 …' 을 그린다)
         # 전세 행은 종전 월세도 없다 (웹 실거래 행의 '기존 …' 은 getPriceLabel 로 그려 전세면 보증금만, 월세·단기임대일 때만
         # '보증금/월세' 를 그린다, 2026-11-17 번들 확인). 전세 갱신은 종전 월세로 대부분 0 이 오므로 rent_manwon 처럼 뺀다
         for field in ('previous_deposit_manwon', 'previous_rent_manwon'):
             if field == 'previous_rent_manwon' and 'rent_manwon' in NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type, frozenset()):
                 data.pop(field, None)
-            elif self.trade_type == '매매' or self.renewal is not True or field not in self.model_fields_set:
+            elif self.trade_type == '매매' or self.renewal is not True or no_previous:
                 data.pop(field, None)
         return data
 
@@ -137,7 +139,7 @@ class NaverRealPriceResult(BaseModel):
     ]
     period: Annotated[
         str | None,
-        Field(description='--period 로 준 기간 (1년, 3년, 5년). 주지 않았으면 키가 없다')
+        Field(description='--period 로 준 기간 (3개월, 1년, 3년, 5년). 주지 않았으면 키가 없다')
     ] = None
     since: Annotated[
         str | None,
@@ -197,8 +199,11 @@ def _villa_real_price(item: NaverVillaRealPriceModel, trade_type: str) -> NaverR
         # 빌라는 갱신 계약 여부 대신 계약갱신요구권 사용 여부만 준다. 썼으면 갱신이지만,
         # 안 썼어도 합의 갱신일 수 있어 그때는 모름(None)이다
         renewal=True if item.is_renew_request_right else None,
-        # 종전 보증금·월세는 빌라 단지 응답에 오는지 확인하지 못했다 (값 출처가 없다). 일부러 넘기지 않아
-        # drop_not_applicable 이 renewal 이 True 여도 두 키를 지운다
+        # 종전 보증금·월세: 빌라 실거래 행에도 alreadyDeposit·alreadyMonthlyDeposit(아파트의 alreadyMonthlyRent 와 키 이름이
+        # 다르다)가 오고, 웹 빌라 실거래 표는 isRenewRequestRight 행에 '기존 …' 으로 보여 준다 (2026-11-18 번들 청크
+        # 1un70f33iojlw). drop_not_applicable 이 아파트와 같은 규칙(갱신 전세·월세만, 전세는 종전 월세 삭제)으로 키를 지운다
+        previous_deposit_manwon=won_to_manwon_exact(item.already_deposit),
+        previous_rent_manwon=won_to_manwon_exact(item.already_monthly_deposit),
     )
 
 
@@ -218,7 +223,7 @@ def get_real_prices(
     (1~2회 추가) 빌라 단지면 빌라 단지 실거래가로 다시 묻는다. 아파트 단지면 거래가 없는 평형으로 보고 0건이다.
 
     Args:
-        period: `PERIOD_YEARS_BY_NAME` 의 이름. 주면 `pages` 대신 그 기간 안 거래를 모두 받는다
+        period: `PERIOD_MONTHS_BY_NAME` 의 이름. 주면 `pages` 대신 그 기간 안 거래를 모두 받는다
             (아파트 단지는 1회 호출).
         today: 기간의 기준일. Defaults to 오늘(한국 시간).
 
@@ -325,7 +330,7 @@ def _get_real_prices_in_period(
 
     기간 목록은 빌라 단지에 거래가 있어도 빈 목록을 준다 (서진빌라 전세 4건, 2026-10-10 확인).
     """
-    since = years_ago(today, PERIOD_YEARS_BY_NAME[period])
+    since = months_ago(today, PERIOD_MONTHS_BY_NAME[period])
     items = unwrap(
         client.run_request_complex_pyeong_real_price_list_v1(
             NaverComplexPyeongRealPriceListV1RequestParameterModel(

@@ -44,8 +44,8 @@ from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
     PageScan,
     area_scope,
+    boundary_filter,
     bounding_box,
-    dong_filter,
     group_sort_notes,
     listing_keeper,
     pagination_notes,
@@ -99,7 +99,7 @@ class NaverRedevelopmentArea(BaseModel):
     ] = None
     legal_division: Annotated[
         str | None,
-        Field(description='구역 대표 위치의 법정동 (예: 서울시 용산구 보광동). 동 경계로 찾으면 그 동')
+        Field(description='구역 대표 위치의 법정동 (예: 서울시 용산구 보광동). 동 경계로 찾으면 그 동, 시·군·구 경계로 찾으면 그 시·군·구 (목록이 구역의 동을 주지 않는다)')
     ] = None
     households: Annotated[
         int | None,
@@ -111,7 +111,7 @@ class NaverRedevelopmentArea(BaseModel):
     ] = None
     distance_km: Annotated[
         float | None,
-        Field(description='검색 중심에서 구역 대표 위치까지 거리 (km). 동 경계로 찾으면 좌표를 받지 않아 null')
+        Field(description='검색 중심에서 구역 대표 위치까지 거리 (km). 동·시·군·구 경계로 찾으면 좌표를 받지 않아 null')
     ] = None
     article_counts: Annotated[
         dict[str, int] | None,
@@ -136,7 +136,7 @@ class NaverRedevelopmentAreasResult(BaseModel):
 
     total: Annotated[
         int,
-        Field(description='서버 집계 구역 수 (동이면 동 안, 반경이면 반경을 감싸는 지도 범위 안. limit 적용 전)')
+        Field(description='서버 집계 구역 수 (동·시·군·구면 그 경계 안, 반경이면 반경을 감싸는 지도 범위 안. limit 적용 전)')
     ]
     returned: Annotated[
         int,
@@ -188,12 +188,15 @@ def list_redevelopment_areas(
 ) -> NaverRedevelopmentAreasResult:
     """지역 안 재개발 구역 (사업 단계·세대수·매물 수·매매 호가).
 
-    `legal_division_code` 를 주면 그 법정동 안 구역(legalDivisionList), 아니면 반경 안 구역이다. 반경이면
-    목록에 좌표가 없어 마커(1회)로 구역 위치를 받아 반경 밖·위치를 모르는 구역을 뺀다. 30곳씩 받고
-    요청은 `MAX_REDEVELOPMENT_PAGE_REQUESTS` 회에서 멈춘다.
+    `legal_division_code` 를 주면 그 법정동·시·군·구 안 구역(legalDivisionList), 아니면 반경 안 구역이다. 코드가 시·군·구면
+    시·군·구 경계(GUN), 아니면 읍·면·동 경계(EUP)다 (`boundary_filter`).
+    반경이면 목록에 좌표가 없어 마커(1회)로 구역 위치를 받아 반경 밖·위치를 모르는 구역을 뺀다. 30곳씩 받고
+    요청은 `MAX_REDEVELOPMENT_PAGE_REQUESTS` 회에서 멈춘다. 구역은 구역 번호로만 중복을 가른다. 이름이 같은 다른 번호
+    구역이 있어(금호제16구역 1000210·19625, 2026-11-18 성동구) 이름으로 합치지 않는다.
 
     Args:
-        legal_division_name: 동 경계로 찾을 때 결과의 legal_division 에 넣을 동 이름.
+        legal_division_name: 동·시·군·구 경계로 찾을 때 결과의 legal_division 에 넣을 이름. 시·군·구 경계의
+            목록은 구역마다의 법정동(`legalDivisionAddress`)을 주지 않아 모든 구역에 같은 이름이 들어간다.
         trade_types: 거래 유형 이름. 주면 그 거래 매물이 1건 이상인 구역만 남긴다. 서버는 tradeTypes 로 구역을 거르지
             않고(hasArticle 을 켜도 같다) 매물수순 정렬 순서만 바꾸므로, 받은 뒤 매물 수로 거르고 뺀 수를 `notes` 로
             알린다 (한강진역 1.5km: 단기임대만 줘도 매매만 있는 7곳이 그대로, 2026-10-10). 없으면 거르지 않는다.
@@ -206,7 +209,7 @@ def list_redevelopment_areas(
     pins: dict[int, NaverRedevelopmentAreaPinModel] = {}
     box = bounding_box(lat, lng, radius_km)
     if legal_division_code is not None:
-        filter_ = dong_filter(filter_, legal_division_code)
+        filter_ = boundary_filter(filter_, legal_division_code)
     else:
         markers = unwrap(
             client.run_request_complex_redevelopment_area_markers_v1(

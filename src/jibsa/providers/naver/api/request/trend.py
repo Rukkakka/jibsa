@@ -23,7 +23,7 @@ class NaverLegalDivisionTrendRequestParameterModel(RequestModel):
 
     legal_division_number: Annotated[
         str,
-        Field(pattern=r'^\d{10}$', description='법정동 코드 (동·구)', alias='legalDivisionNumber')
+        Field(pattern=r'^\d{10}$', description='법정동 코드 (동·구·시·도, 전국은 0000000000)', alias='legalDivisionNumber')
     ]
     real_estate_type_code: Annotated[
         Literal['A01'],

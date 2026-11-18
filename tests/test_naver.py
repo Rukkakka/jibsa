@@ -1,20 +1,27 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import httpx
 import pytest
 
 from jibsa.core.errors import JibsaError
+from jibsa.core.listing import (
+    months_ago,
+    years_ago,
+)
 from jibsa.providers.naver.api.client import (
     NaverClient,
     should_retry_naver,
 )
+from jibsa.providers.naver.api.response.common import NaverComplexArticlePriceModel
 from jibsa.providers.naver.api.response.search import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
 from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
     article_info_to_listing,
+    rent_asking_range,
 )
 from jibsa.providers.naver.service.listing import (
     get_listing,
@@ -22,6 +29,7 @@ from jibsa.providers.naver.service.listing import (
 )
 from jibsa.providers.naver.service.real_price import get_real_prices
 from jibsa.providers.naver.service.region import (
+    WIDE_REGION_NOTE_MARK,
     legal_division_code_at,
     resolve_complex_number,
     resolve_search_region,
@@ -392,6 +400,52 @@ def test_detail_move_in_within_and_after_keep_the_bound() -> None:
     # 꼴만 맞고 없는 날짜는 날짜로 읽지 않고 받은 글자 그대로 둔다 ('0000-00 초순' 을 내지 않는다, 2026-11-17 리뷰)
     assert label('EARLY', '0000-00-00') == '0000-00-00'
     assert label('MV002', '2026-02-30') == '2026-02-30'
+
+
+def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -> None:
+    # 웹은 항목별형의 합계에 정액·실비를 가리지 않고 모든 항목 금액을 더한다. 포함 항목은 정액 항목만 남긴다
+    from jibsa.providers.naver.api.response.listing import (
+        NaverArticleMaintenanceFeeModel,
+    )
+    from jibsa.providers.naver.service.listing import _manage_cost
+
+    fee = NaverArticleMaintenanceFeeModel.model_validate({'typeCode': '01', 'fixDetailList': [
+        {'type': '01', 'unitType': '01', 'amount': 100000},
+        {'type': '11', 'unitType': '02', 'amount': 30000},
+        {'type': '12', 'unitType': '02'},
+    ]})
+    manage_cost, includes = _manage_cost(fee)
+    assert manage_cost == 13.0
+    assert includes is not None and len(includes) == 1
+
+
+@pytest.mark.parametrize(
+    ('registration', 'expected'),
+    [
+        # 매물이 0대·불가인데 대장에 8대가 있으면 웹이 '주차 8대' 를 그린다
+        ({'parkingInfo': {'totalParkingCount': 8, 'parkingCountPerHousehold': 0.5}}, '불가 (총 8대, 세대당 0.5대)'),
+        ({'parkingInfo': {'totalParkingCount': 0, 'parkingCountPerHousehold': 0}}, '불가 (총 0대)'),
+        # 대장에 주차 값이 없으면 웹도 '주차 N대' 칸을 그리지 않아 가능 여부만 낸다
+        ({'coordinates': None}, '불가'),
+    ],
+)
+def test_detail_building_registration_parking_fills_in_zero_listing_count(registration: dict, expected: str) -> None:
+    key = _ok({
+        'key': {'pnu': '1100000000100010000'}, 'type': {'realEstateType': 'C01', 'tradeType': 'B2'},
+        'address': {'legalDivisionNumber': '1162010200', 'jibun': '255-134'},
+    })
+    basic = load('article_basic_info_v1')
+    basic['result']['detailInfo']['facilityInfo'].update({'totalParkingCount': 0, 'isParkingPossible': False})
+    basic['result'].pop('communalComplexInfo', None)
+    requests: list[httpx.Request] = []
+    overrides = {'/article/key': key, '/article/basicInfo': basic, '/complex/buildingRegistration': _ok(registration)}
+    with make_path_client(requests, overrides) as client:
+        detail = get_listing(client, '1000000001')
+    assert detail.parking == expected
+    registry_requests = [request for request in requests if request.url.path.endswith('/complex/buildingRegistration')]
+    assert len(registry_requests) == 1
+    assert registry_requests[0].url.params['pnu'] == '1100000000100010000'
+    assert registry_requests[0].url.params['realEstateType'] == 'C01'
 
 
 # --- 빌라 단지 (연립·다세대) -------------------------------------------------
@@ -988,3 +1042,85 @@ def test_named_dong_with_next_page_is_checked_by_full_name(same_name: list[str],
         else:
             region, kind, _ = resolve_search_region(client, '신흥')
             assert (region.legal_division_code, kind) == (expected, '동')
+
+
+@pytest.mark.parametrize(
+    'city,code,sub_regions,has_district',
+    [
+        # 구 있는 시: 시·도 아래 목록에 시 코드와 앞 네 자리가 같은 구가 있다 (시 코드 + GUN 은 오류 없이 0건이라 경계로 찾지 않는다)
+        (
+            '성남시', '4113000000',
+            [('4113100000', '경기도 성남시 수정구'), ('4113500000', '경기도 성남시 분당구'), ('4131000000', '경기도 구리시')],
+            True,
+        ),
+        # 구 없는 시: 같은 네 자리의 다른 곳이 없어 시·군·구 경계다
+        ('구리시', '4131000000', [('4113500000', '경기도 성남시 분당구'), ('4131000000', '경기도 구리시')], False),
+        # 시 자신도 그 시의 구도 없는 목록(빈 목록 포함)은 구가 있는지 모르는 것이라 경계로 찾지 않는다
+        ('구리시', '4131000000', [], None),
+    ],
+)
+def test_city_name_is_boundary_only_when_it_has_no_district(
+    city: str, code: str, sub_regions: list[tuple[str, str]], has_district: bool | None,
+) -> None:
+    from jibsa.cli.naver import _area_location
+
+    sub_info = _ok([
+        {'legalDivisionNumber': number, 'legalDivisionName': name, 'legalDivisionLevelType': 'GUN'}
+        for number, name in sub_regions
+    ])
+    requests: list[httpx.Request] = []
+    overrides = {'/maps-search/address': _address_list([f'경기도 {city}'], code), '/legalDivision/subInfoList': sub_info}
+    with make_path_client(requests, overrides) as client:
+        region, notes, boundary_code, scope = _area_location(client, city, None, None, None)
+    assert _paths(requests).count('/legalDivision/subInfoList') == 1
+    if has_district:
+        assert (boundary_code, scope) == (None, {'radius_km': 1.0})
+        # 구 이름은 시 이름을 붙여 줘야 그대로 찾을 수 있다 ('남구' 만으로는 REGION_AMBIGUOUS)
+        assert any('구가 있는 시' in text and '(성남시 수정구, 성남시 분당구)' in text for text in notes)
+        assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
+    elif has_district is None:
+        assert (boundary_code, scope) == (None, {'radius_km': 1.0})
+        # 이유가 다른 넓은 지역 안내는 [실패] 안내로 대신한다
+        assert sum('[실패]' in text for text in notes) == 1
+        assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
+    else:
+        assert (boundary_code, scope) == (code, {'boundary': city})
+
+
+# --- 호가 짝·기간 --------------------------------------------------------------
+
+
+def test_rent_asking_range_pairs_deposit_with_rent_of_the_first_listing() -> None:
+    # 헬리오시티 111515 (2026-11-18): 보증금 낮은 첫 매물의 월세가 보증금 높은 첫 매물의 월세보다 크다
+    price = NaverComplexArticlePriceModel.model_validate({
+        'rentMonthlyLeaseMinPrice': 50000000, 'rentMonthlyMinPrice': 4200000,
+        'rentMonthlyLeaseMaxPrice': 7000000000, 'rentMonthlyMaxPrice': 2400000,
+    })
+    result = rent_asking_range(price, 'monthly')
+    assert result is not None
+    assert (result.lowest.deposit_manwon, result.lowest.rent_manwon) == (5000, 420)
+    assert (result.highest.deposit_manwon, result.highest.rent_manwon) == (700000, 240)
+    # 단기임대 매물이 없으면 단기 키가 오지 않는다
+    assert rent_asking_range(price, 'short') is None
+
+
+def test_rent_asking_range_empties_a_pair_whose_deposit_and_rent_are_both_zero() -> None:
+    # 한 짝의 보증금·월세가 모두 0 이면 서버가 비운 짝이라 보증금 0 을 내지 않는다
+    price = NaverComplexArticlePriceModel.model_validate({
+        'rentMonthlyLeaseMinPrice': 0, 'rentMonthlyMinPrice': 0,
+        'rentMonthlyLeaseMaxPrice': 100000000, 'rentMonthlyMaxPrice': 1000000,
+    })
+    result = rent_asking_range(price, 'monthly')
+    assert result is not None
+    assert (result.lowest.deposit_manwon, result.lowest.rent_manwon) == (None, None)
+    assert (result.highest.deposit_manwon, result.highest.rent_manwon) == (10000.0, 100.0)
+
+
+def test_months_ago_clamps_to_month_end_and_matches_years_ago() -> None:
+    assert months_ago(date(2026, 5, 31), 3) == '2026-02-28'
+    assert months_ago(date(2026, 1, 31), 3) == '2025-10-31'
+    assert months_ago(date(2024, 5, 31), 3) == '2024-02-29'
+    # 1년·3년·5년은 기존 years_ago 와 같은 날이다 (2월 29일 포함)
+    for today in (date(2024, 2, 29), date(2026, 11, 18)):
+        for years in (1, 3, 5):
+            assert months_ago(today, years * 12) == years_ago(today, years)

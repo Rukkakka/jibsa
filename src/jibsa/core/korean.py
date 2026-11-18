@@ -61,6 +61,12 @@ def is_dong_code(legal_division_code: str | None) -> bool:
     return len(code) == 10 and code[5:8] != '000' and code[8:] == '00'
 
 
+def is_district_code(legal_division_code: str | None) -> bool:
+    """10자리 법정동 코드가 시·군·구인지 (1120000000, 시 아래 구 4113100000). 시·도(1100000000)와 읍·면·동·리는 아니다."""
+    code = legal_division_code or ''
+    return len(code) == 10 and code[2:5] != '000' and code[5:] == '00000'
+
+
 def is_ri_code(legal_division_code: str | None) -> bool:
     """10자리 법정동 코드가 리인지 (끝 두 자리가 00 이 아님)."""
     code = legal_division_code or ''
