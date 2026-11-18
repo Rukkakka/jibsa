@@ -709,6 +709,41 @@ def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopm
     }
 
 
+def complex_row_fields(
+    *,
+    type_code: str | None,
+    households: int | None,
+    dong_count: int | None,
+    use_approval_date: str | None,
+    counts: NaverComplexArticleCountModel | None,
+    prices: NaverComplexArticlePriceModel | None,
+) -> dict[str, Any]:
+    """단지 한 곳의 공통 칸을 만든다: 단지 유형·세대수·동 수·사용승인일·거래 유형별 매물 수·매매·전세 호가 범위·월세·단기임대 호가 짝.
+
+    지역 단지 목록(`search complexes`)·단지 요약(`complex`)이 같은 값을 같은 식으로 내도록 한 곳에 둔다.
+    호출부는 각 모델 생성자에 `**` 로 풀어 넣는다 (각 모델의 필드 순서와 `address`·`distance_km`·`url`·`assigned_dongs` 같은 자기 칸은
+    호출부가 정한다). `counts`·`prices` 가 없으면(서버가 주지 않음) 그 칸은 `None`(모름)이다. 단지 요약의 두 값은 응답 모델이 빈 모델로 채워
+    `None` 갈래에 닿지 않는다.
+
+    Args:
+        type_code: 단지 유형 코드. 표에 없는 코드는 코드 그대로 내고, 빈 글자는 모름(None)이다.
+        dong_count: 동 수. 단지 목록 항목은 `buildingCount`, 단지 정보는 `dongCount` 라 호출부가 맞는 쪽을 넘긴다.
+        use_approval_date: 사용승인일 (YYYYMMDD).
+    """
+    return {
+        # 빈 글자는 단지 유형을 모르는 것이라 None 이다 (`complex` 의 시세 판정이 빈 글자를 모름으로 읽는 것과 같다)
+        'property_type': PROPERTY_NAME_BY_CODE.get(type_code or '', type_code or None),
+        'households': households,
+        'dong_count': dong_count,
+        'approved_at': normalize_date(use_approval_date),
+        'article_counts': trade_article_counts(counts) if counts is not None else None,
+        'sale_asking_range_manwon': won_to_manwon_range(prices.deal_min_price, prices.deal_max_price) if prices is not None else None,
+        'jeonse_asking_range_manwon': won_to_manwon_range(prices.rent_min_price, prices.rent_max_price) if prices is not None else None,
+        'monthly_asking': rent_asking_range(prices, 'monthly'),
+        'short_term_asking': rent_asking_range(prices, 'short'),
+    }
+
+
 def raise_missing_pyeongs(
     complex_number: int,
     pyeong_numbers: list[int] | None,

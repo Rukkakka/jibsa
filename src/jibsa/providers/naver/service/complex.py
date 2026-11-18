@@ -44,23 +44,20 @@ from jibsa.providers.naver.service.common import (
     MARKET_PRICE_PROVIDER_NAMES,
     MONTHLY_ASKING_DESCRIPTION,
     OFFICETEL_CODE,
-    PROPERTY_NAME_BY_CODE,
     SHORT_TERM_ASKING_DESCRIPTION,
     NaverAssignedSchool,
     NaverRentAskingRange,
     assigned_schools,
+    complex_row_fields,
     complex_url,
     kst_today,
     manwon_range,
     pyeong_list,
     raise_missing_pyeongs,
-    rent_asking_range,
     resolve_dong_numbers,
     result_or_none,
-    trade_article_counts,
     unwrap,
     villa_by_complex_response,
-    won_to_manwon_range,
 )
 
 from typing import (
@@ -586,29 +583,28 @@ def get_complex(
     summary = NaverComplexSummary(
         complex_number=complex_number,
         name=complex_.name,
-        property_type=PROPERTY_NAME_BY_CODE.get(complex_.type or '', complex_.type),
         address=normalize_address(
             join_address(address.city, address.division, address.sector, address.jibun)
         ) if address else None,
         road_address=normalize_address(
             join_address(address.city, address.division, address.road_name)
         ) if address and address.road_name else None,
-        households=complex_.total_household_number,
-        dong_count=complex_.dong_count,
-        approved_at=normalize_date(complex_.use_approval_date),
         construction_company=complex_.construction_company,
         parking_per_household=complex_.parking_info.parking_count_per_household if complex_.parking_info else None,
         floor_area_ratio=complex_.building_ratio_info.floor_area_ratio if complex_.building_ratio_info else None,
-        article_counts=trade_article_counts(counts),
-        sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price),
-        jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price),
-        monthly_asking=rent_asking_range(prices, 'monthly'),
-        short_term_asking=rent_asking_range(prices, 'short'),
         pyeongs=[_pyeong(pyeong, complex_.type == OFFICETEL_CODE) for pyeong in pyeongs],
         schools=None if schools is None else assigned_schools(schools),
         reconstruction=reconstruction,
         url=complex_url(complex_number),
         notes=notes,
+        **complex_row_fields(
+            type_code=complex_.type,
+            households=complex_.total_household_number,
+            dong_count=complex_.dong_count,
+            use_approval_date=complex_.use_approval_date,
+            counts=counts,
+            prices=prices,
+        ),
         **pyeong_details,
     )
     summary._pyeong_scoped = bool(pyeong_details)

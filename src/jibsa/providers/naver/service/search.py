@@ -12,7 +12,6 @@ from jibsa.core.listing import (
     Listing,
     join_address,
     normalize_address,
-    normalize_date,
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -50,7 +49,6 @@ from jibsa.providers.naver.service.common import (
     EXCLUDED_REASON,
     MONTHLY_ASKING_DESCRIPTION,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
-    PROPERTY_NAME_BY_CODE,
     RADIUS_EXCLUDED_REASON,
     SEARCH_CODES_BY_PROPERTY,
     SHORT_TERM_ASKING_DESCRIPTION,
@@ -65,18 +63,16 @@ from jibsa.providers.naver.service.common import (
     boundary_filter,
     bounded_precision,
     bounding_box,
+    complex_row_fields,
     complex_url,
     cursor_position,
     group_sort_notes,
     listing_keeper,
     pagination_notes,
     price_sort_notes,
-    rent_asking_range,
     resume_cursor,
     scan_pages,
-    trade_article_counts,
     unwrap,
-    won_to_manwon_range,
 )
 
 from typing import (
@@ -311,25 +307,22 @@ def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) 
     if info is None:
         return None
     coordinates = info.address.coordinates if info.address else None
-    counts = entry.article_count_info
-    prices = entry.article_price_info
     return NaverAreaComplex(
         complex_number=info.complex_number,
         name=info.name,
-        property_type=PROPERTY_NAME_BY_CODE.get(info.type or '', info.type),
         address=_complex_list_address(info.address),
-        households=info.total_household_number,
-        dong_count=info.building_count,
-        approved_at=normalize_date(info.use_approval_date),
         distance_km=round(
             haversine_km(center[0], center[1], coordinates.y_coordinate, coordinates.x_coordinate), 2,
         ) if coordinates else None,
-        article_counts=trade_article_counts(counts) if counts else None,
-        sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price) if prices else None,
-        jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price) if prices else None,
-        monthly_asking=rent_asking_range(prices, 'monthly'),
-        short_term_asking=rent_asking_range(prices, 'short'),
         url=complex_url(info.complex_number),
+        **complex_row_fields(
+            type_code=info.type,
+            households=info.total_household_number,
+            dong_count=info.building_count,
+            use_approval_date=info.use_approval_date,
+            counts=entry.article_count_info,
+            prices=entry.article_price_info,
+        ),
     )
 
 
