@@ -129,7 +129,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   - 아직 반올림하는 소스: 네이버·다방·당근은 공용 `won_to_manwon`(0.1만원 = 1,000원 단위 반올림)을 써서
     [#257](https://github.com/Rukkakka/jibsa/issues/257) 에서 맞춘다. `won_to_manwon` 은 그 뒤 지우니 새 코드는 쓰지 않는다.
 - 면적은 `area_m2` + `area_pyeong`, 날짜는 한국 날짜 `YYYY-MM-DD` (`normalize_date`).
-- 층(`floor`)은 `normalize_floor` 로 표기를 맞춘다 (지하 `지하1`, 반지하, 저·중·고 → 저층·중층·고층). `Listing` 출력에는 `floor` 바로 뒤에 숫자 `floor_number` 가 붙는다 (지하는 음수, 몇 층인지 모르면 `null`).
+- 층(`floor`)은 `normalize_floor` 로 표기를 맞춘다 (지하 `지하1`, 반지하, 저·중·고 → 저층·중층·고층). `Listing` 출력에는 `floor` 바로 뒤에 숫자 `floor_number` 가 붙는다 (지하는 음수, 몇 층인지 모르면 `null`). 매물 유형에 층 칸이 없어 `floor` 가 해당 없음(키 없음)이면 `floor_number` 도 없다.
 - 주소의 시·도는 정식 명칭(`서울특별시`, `강원특별자치도`)으로 맞춘다. `Listing.address` 는 검증기가
   `normalize_address` 를 거치므로 provider 가 따로 부르지 않아도 된다. 단지 정보처럼 `Listing` 밖의 주소는 직접 부른다.
 

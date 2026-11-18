@@ -488,6 +488,39 @@ def test_list_complex_articles_stops_when_cursor_stalls() -> None:
     assert any('중복' in note for note in result.notes)
 
 
+# --- 매물 상세 중개보수·세금·시설 글자 ------------------------------------------
+
+
+@pytest.mark.parametrize(('real_estate_type', 'absent', 'present', 'taxes_requested'), [
+    # 토지는 웹에 방·층·난방·시설 칸이 없고 세금은 취득세만 그린다
+    ('E03', {'room_count', 'floor', 'floor_number', 'options', 'property_tax_manwon'}, {'acquisition_tax_manwon'}, True),
+    ('A01', set(), {'room_count', 'floor', 'options', 'property_tax_manwon', 'acquisition_tax_manwon'}, True),
+    # 원룸은 매매여도 세금 칸이 없어 세금을 조회하지 않는다
+    ('C01', {'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'}, {'room_count'}, False),
+])
+def test_detail_drops_fields_the_web_does_not_draw_by_type(
+    real_estate_type: str, absent: set[str], present: set[str], taxes_requested: bool,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = load(ROUTES[request.url.path])
+        if request.url.path.endswith('/key'):
+            body['result']['type']['realEstateType'] = real_estate_type
+        return httpx.Response(200, json=body)
+
+    client = NaverClient()
+    client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
+    with client:
+        dumped = get_listing(client, '1000000001').model_dump(mode='json')
+    assert not absent & set(dumped)
+    assert present <= set(dumped)
+    assert ('/article/tax' in _paths(requests)) is taxes_requested
+
+
+
+
 # --- 매매 매물 중개보수·세금 -------------------------------------------------
 
 

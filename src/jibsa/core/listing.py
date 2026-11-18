@@ -687,8 +687,12 @@ class Listing(BaseModel):
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for field in self.not_applicable_fields():
+        not_applicable = self.not_applicable_fields()
+        for field in not_applicable:
             data.pop(field, None)
+        # 층이 해당 없는 매물(네이버 토지 등)은 층 숫자도 해당 없다
+        if 'floor' in not_applicable:
+            return data
         # 층이 '3'·'지하1'·'중층' 처럼 섞여 와 층으로 거르거나 정렬하기 어려워 숫자를 floor 바로 뒤에 붙인다
         return insert_after(data, 'floor', 'floor_number', floor_number(self.floor))
 

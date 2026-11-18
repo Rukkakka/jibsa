@@ -56,6 +56,7 @@ from jibsa.providers.naver.api.response.listing import (
 )
 from jibsa.providers.naver.service.common import (
     COMPLEX_SORT_TYPE_BY_NAME,
+    NOT_APPLICABLE_FIELDS_BY_TYPE,
     OFFICETEL_CODE,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PROPERTY_NAME_BY_CODE,
@@ -203,6 +204,39 @@ MAX_COMPLEX_ARTICLE_PAGE_REQUESTS: int = 5
 SALE_ONLY_FIELDS: frozenset[str] = frozenset({
     'agent_fee_manwon', 'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon',
 })
+# 매매 매물 상세에만 붙이는 세금 필드 (요청을 아끼려고 전월세는 세금을 조회하지 않는다. 원룸·고시원과 일반분양권이 아닌 분양권은
+# 웹에 세금 칸이 없어 매매여도 조회하지 않는다. 분양권은 분양 상태를 모르면 칸이 있는지 몰라 요청하지 않고 모름(null)으로 둔다)
+SALE_TAX_FIELDS: frozenset[str] = frozenset({
+    'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon',
+})
+# 세금 칸이 없는 매물 유형 (원룸 C01·고시원 G01). 웹 getArticleTaxExposeInfo (2026-11-17 번들 대조, 청크 0n-xsnd22pdxz) 는
+# 이 둘에 세금 칸을 그리지 않는다
+NO_TAX_TYPES: frozenset[str] = frozenset({'C01', 'G01'})
+# 분양권(B01)·오피스텔분양권(B02). 웹 getArticleTaxExposeInfo 는 이 둘이면 매매이면서 분양권 상태(preSaleStatusType)가
+# 일반분양권('10')일 때만 세금 칸을 그린다 (2026-11-17 번들 대조, 둔촌동 분양권 2661144592 '10'·2659804873 '20')
+PRE_SALE_TYPES: frozenset[str] = frozenset({'B01', 'B02'})
+GENERAL_PRE_SALE_STATUS: str = '10'
+# 세 세금을 모두 그리는 매매 유형 (아파트 A01·재건축 A04·빌라 단지 A05~A07). 그 밖의 유형은 취득세만 그린다. 일반분양권이
+# 아닌 분양권 매매는 세금 칸이 없어, 분양 상태를 모르는 분양권 매매는 칸이 있는지 몰라 요청하지 않는다 (`_draws_sale_taxes`)
+# 리뷰 오탐 (2026-11-17): A05~A07 은 common.VILLA_COMPLEX_CODES 와 코드가 같지만 규칙이 다르다 (그쪽은 학교 조회 itemType=villa 를 물을 단지형 빌라, 이쪽은 웹 getArticleTaxExposeInfo 가 세 세금을 모두 그리는 유형). 합치면 한쪽 변경이 다른 쪽에 번진다
+ALL_TAX_TYPES: frozenset[str] = frozenset({'A01', 'A04', 'A05', 'A06', 'A07'})
+
+
+def _draws_sale_taxes(trade_type: str, real_estate_type: str | None, pre_sale_status_type: str | None) -> bool | None:
+    """이 매물에 네이버 웹이 세금 칸을 그리는지 (세금 요청과 키 제거가 같은 조건을 쓰도록 한 곳에 둔다). 칸이 있는지 모르면 None.
+
+    매매가 아니거나 원룸·고시원이면 없다. 분양권(B01·B02)은 웹 getArticleTaxExposeInfo(청크 0n-xsnd22pdxz)가 매매이면서
+    분양권 상태(preSaleStatusType)가 일반분양권('10')일 때만 세금 칸을 그려서, 상태가 없으면 칸이 없다. 그래서 상태를 모르는
+    분양권 매매는 칸이 있다고도 없다고도 단정하지 않으려고 요청하지 않고 모름(None)으로 둔다 (직거래 여부를 모를 때 중개보수를
+    요청하지 않는 것과 같은 기준). 빈 글자도 None 과 같게 본다. 상태가 일반분양권이 아니면 없다.
+    """
+    if trade_type != '매매' or real_estate_type in NO_TAX_TYPES:
+        return False
+    if real_estate_type in PRE_SALE_TYPES:
+        if not pre_sale_status_type:
+            return None
+        return pre_sale_status_type == GENERAL_PRE_SALE_STATUS
+    return True
 
 
 def _sum_manwon(*amounts: int | None) -> float | None:
@@ -215,14 +249,16 @@ def _sum_manwon(*amounts: int | None) -> float | None:
     return won_to_manwon(sum(known)) if known else None
 
 
-def _sale_costs(client: NaverClient, article_number: str) -> dict[str, float | None]:
-    """매매 매물의 중개보수·세금 (2회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다."""
+def _sale_costs(client: NaverClient, article_number: str, with_taxes: bool) -> dict[str, float | None]:
+    """매매 매물의 중개보수·세금. 세금은 웹이 세금 칸을 그리는 매물(`with_taxes`)만 조회한다 (1~2회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다."""
     costs: dict[str, float | None] = dict.fromkeys(SALE_ONLY_FIELDS)
     fee = result_or_none(lambda: client.run_request_article_agent_fee_v1(
         NaverArticleAgentFeeV1RequestParameterModel(article_number=article_number)
     ))
     if fee is not None and fee.fee is not None:
         costs['agent_fee_manwon'] = won_to_manwon(fee.fee)
+    if not with_taxes:
+        return costs
     tax = result_or_none(lambda: client.run_request_article_tax_v1(
         NaverArticleTaxV1RequestParameterModel(article_number=article_number)
     ))
@@ -331,15 +367,15 @@ class NaverListingDetail(ListingDetail):
     ] = None
     acquisition_tax_manwon: Annotated[
         float | None,
-        Field(description='취득세 합계 (만원, 취득세 + 지방교육세 + 농어촌특별세. 네이버 계산. 매매만)')
+        Field(description='취득세 합계 (만원, 취득세 + 지방교육세 + 농어촌특별세. 네이버 계산. 매매만. 분양 상태를 모르는 분양권 매매는 요청하지 않아 null)')
     ] = None
     property_tax_manwon: Annotated[
         float | None,
-        Field(description='연 재산세 합계 (만원, 재산세 + 지방교육세 + 도시지역분. 공시가 기준 네이버 계산. 매매만)')
+        Field(description='연 재산세 합계 (만원, 재산세 + 지방교육세 + 도시지역분. 공시가 기준 네이버 계산. 아파트·재건축·단지형 빌라(A01·A04·A05~A07) 매매만)')
     ] = None
     comprehensive_real_estate_tax_manwon: Annotated[
         float | None,
-        Field(description='연 종합부동산세 합계 (만원, 종부세 + 농어촌특별세. 공시가 기준 네이버 계산. 매매만)')
+        Field(description='연 종합부동산세 합계 (만원, 종부세 + 농어촌특별세. 공시가 기준 네이버 계산. 아파트·재건축·단지형 빌라(A01·A04·A05~A07) 매매만)')
     ] = None
     # 상세 출력에서 가장 긴 필드지만 매물 하나에 한 번이라 줄이지 않는다. 통근을 따질 때 버스만 닿는 동네가 있다
     # (2026-10-23 실측: 강남역 근처 원룸 상세 1,078자 중 381자, 약 120토큰)
@@ -355,6 +391,14 @@ class NaverListingDetail(ListingDetail):
         bool,
         Field(exclude=True, description='배정 학교를 조회하는 매물인지 (단지·동 번호가 있음). schools 가 해당 없는지 가리는 데만 쓴다')
     ] = False
+    pre_sale_status_type: Annotated[
+        str | None,
+        Field(exclude=True, description="분양권 상태 코드 ('10' 일반분양권). 분양권 매매의 세금 칸이 해당 없는지 가리는 데만 쓴다. 모르면 null")
+    ] = None
+    real_estate_type: Annotated[
+        str | None,
+        Field(exclude=True, description='네이버 매물 유형 코드 (A01 …). 유형마다 웹에 없는 칸을 가리는 데만 쓴다')
+    ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
         # 단지에 속하지 않는 매물(빌라 등)은 단지·동·평형 번호가 원래 없다.
@@ -367,9 +411,18 @@ class NaverListingDetail(ListingDetail):
         # 네이버는 오피스텔에만 계약면적을 준다 (다른 유형은 상세의 supplySpace 가 공급면적).
         if self.property_type != '오피스텔':
             fields = fields | {'contract_area_m2'}
-        # 세금·중개보수는 매매 매물만 조회한다
+        # 유형마다 웹이 칸을 그리지 않는 필드 (토지의 방 수·층 등)
+        fields = fields | NOT_APPLICABLE_FIELDS_BY_TYPE.get(self.real_estate_type or '', frozenset())
+        # 세금·중개보수는 매매 매물만 조회한다. 원룸·고시원·일반분양권이 아닌 분양권은
+        # 세금 칸이 없고, 세 세금을 모두 그리는 유형 밖의 매매는 취득세만 그린다. 분양 상태를 모르는 분양권 매매는 요청하지 않아
+        # 칸이 있는지 몰라서, 취득세는 null 로 남긴다 (모름)
         if self.trade_type != '매매':
             fields = fields | SALE_ONLY_FIELDS
+        draws_taxes = _draws_sale_taxes(self.trade_type, self.real_estate_type, self.pre_sale_status_type)
+        if draws_taxes is False:
+            fields = fields | SALE_TAX_FIELDS
+        elif self.real_estate_type not in ALL_TAX_TYPES:
+            fields = fields | (SALE_TAX_FIELDS - {'acquisition_tax_manwon'})
         return fields
 
 
@@ -645,7 +698,8 @@ def _complex_approved_at(client: NaverClient, complex_number: int | None, key: N
 def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     """매물 상세: key → basicInfo → maintenanceFee → 좌표의 법정동 → 단지 (최대 5회 호출, 단지는 필요할 때만).
 
-    매매 매물은 중개보수(agentFee)·세금(tax)을 더 조회한다 (2회 더). 주변 교통(지하철·버스)은 늘,
+    매매 매물은 중개보수(agentFee)·세금(tax)을 더 조회한다 (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은
+    세금을 조회하지 않는다) (1~2회 더). 주변 교통(지하철·버스)은 늘,
     배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더, 최대 9회).
 
     중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 지번 주소는 좌표로 얻은
@@ -691,13 +745,15 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     parking = _parking_label(facility, complex_number is not None)
 
     facility_codes = (facility.life + facility.security + facility.etc + facility.aircon) if facility else []
+    real_estate_type = key.type.real_estate_type
+    pre_sale_status_type = detail.pre_sale_status_type if detail else None
 
     return NaverListingDetail(
         source='naver',
         id=article_number,
         url=article_url(article_number),
         trade_type=trade_type,
-        property_type=PROPERTY_NAME_BY_CODE.get(key.type.real_estate_type, key.type.real_estate_type),
+        property_type=PROPERTY_NAME_BY_CODE.get(real_estate_type, real_estate_type),
         room_type=_room_type(space, detail.shape if detail else None),
         title=title or None,
         price_manwon=won_to_manwon(price.price) if price and trade_type == '매매' else None,
@@ -726,6 +782,8 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         complex_name=complex_info.complex_name if complex_info else None,
         dong=complex_info.dong_name if complex_info else None,
         pyeong_number=key.key.pyeong_type_number if key.key else None,
+        pre_sale_status_type=pre_sale_status_type,
+        real_estate_type=real_estate_type,
         supply_area_m2=None if is_officetel else listed_area,
         contract_area_m2=listed_area if is_officetel else None,
         room_count=space.room_count if space else None,
@@ -747,7 +805,11 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
             if code != 'ELEVATOR'
         ] if facility is not None else None,
         loan_manwon=_loan_manwon(price),
-        **(_sale_costs(client, article_number) if trade_type == '매매' else {}),
+        # 세금은 웹이 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다
+        **(
+            _sale_costs(client, article_number, _draws_sale_taxes(trade_type, real_estate_type, pre_sale_status_type) is True)
+            if trade_type == '매매' else {}
+        ),
         **_surroundings(client, article_number, key),
     )
 

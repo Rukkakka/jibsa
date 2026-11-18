@@ -354,6 +354,10 @@ class NaverDetailInfoModel(ResponseModel):
         NaverArticleDetailInfoModel | None,
         Field(description='본문 정보', alias='articleDetailInfo')
     ] = None
+    pre_sale_status_type: Annotated[
+        str | None,
+        Field(description="분양권 상태 코드. '10' 일반분양권. 네이버 웹은 분양권(B01·B02) 매매에서 이 값이 '10' 일 때만 세금 칸을 그린다 (2026-11-17 둔촌동 분양권 2661144592 '10'·2659804873 '20', 번들 getArticleTaxExposeInfo)", alias='preSaleStatusType')
+    ] = None
     moving_in_info: Annotated[
         NaverMovingInInfoModel | None,
         Field(description='입주 가능일', alias='movingInInfo')

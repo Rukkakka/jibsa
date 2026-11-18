@@ -228,6 +228,30 @@ class NaverAssignedSchool(BaseModel):
     ] = None
 
 
+# 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
+# 목록(`NaverListing`)이 함께 쓴다. 목록 모델에 없는 필드 이름은 출력에서 그냥 지나간다.
+# 2026-11-17 네이버 웹 번들 대조: 기본 정보 칸은 청크 0n-xsnd22pdxz 의 getBasicInfoSpaceTarget·면적 함수, 건축물 정보
+# ArticleBuildingInfo 는 isBuildingRegistrationType 유형만, 시설 ArticleFacilityInfo 는 토지_임야(E03) 만 제외 (청크 0l4pkwg0qhg2t)
+NOT_APPLICABLE_FIELDS_BY_TYPE: dict[str, frozenset[str]] = {
+    # 토지
+    'E03': frozenset({
+        'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
+        'supply_area_m2', 'approved_at', 'parking', 'elevator', 'options',
+    }),
+    # 고시원: 시설 칸은 있어 elevator·options 는 남긴다
+    'G01': frozenset({
+        'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
+        'supply_area_m2', 'approved_at', 'parking', 'loan_manwon',
+    }),
+    # 재개발
+    'F01': frozenset({'room_count', 'bathroom_count', 'room_type', 'area_m2', 'area_pyeong', 'supply_area_m2'}),
+    # 사무실·상가·지식산업센터: 웹은 방/욕실 대신 '화장실 수' 만 그린다 (bathroom_count 는 남긴다)
+    **dict.fromkeys(('D01', 'D02', 'E04'), frozenset({'room_count', 'room_type'})),
+    # 건물·상가건물·숙박·공장창고·기타: 웹은 해당층 대신 지상/지하 층수만 그리고 공급면적 칸이 없다 (building_floor 는 그대로)
+    **dict.fromkeys(('D03', 'D04', 'E01', 'E02', 'Z00'), frozenset({'room_count', 'room_type', 'floor', 'supply_area_m2'})),
+}
+
+
 class NaverListing(Listing):
     """네이버 목록 매물. 같은 집을 중개사 여럿이 올려 네이버가 한 매물로 묶었으면 묶음의 중개사 수와 호가 범위가 붙는다.
 
@@ -253,9 +277,18 @@ class NaverListing(Listing):
         list[float | None] | None,
         Field(description='묶음의 월세 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
     ] = None
+    real_estate_type: Annotated[
+        str | None,
+        Field(exclude=True, description='네이버 매물 유형 코드 (A01 …). 유형마다 웹에 없는 칸을 가리는 데만 쓴다')
+    ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
-        return super().not_applicable_fields() | {name for name in GROUP_FIELDS if getattr(self, name) is None}
+        # 유형마다 웹이 칸을 그리지 않는 필드 (토지의 방 수·층·면적 등). 값을 모르는 null 이 아니라 키째 뺀다
+        return (
+            super().not_applicable_fields()
+            | {name for name in GROUP_FIELDS if getattr(self, name) is None}
+            | NOT_APPLICABLE_FIELDS_BY_TYPE.get(self.real_estate_type or '', frozenset())
+        )
 
 
 # 묶음이 아니거나 중개사마다 호가가 같으면 해당 없는(키를 빼는) 필드
@@ -465,6 +498,7 @@ def article_info_to_listing(
         distance_km=distance,
         registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
         approved_at=building_approved_at(info.building_info),
+        real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )
 

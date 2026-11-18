@@ -90,6 +90,12 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - 상세 `detailInfo.shape` 는 원룸 구조 코드('10' 오픈형, '20' 분리형)이고 지도 필터 `oneRoomShapeTypes` 와 같다. 방이 여럿인 매물도 '20' 으로 오므로 `room_type` 은 방 수(`spaceInfo.roomCount`)를 먼저 보고, 방 1개일 때만 `spaceInfo.duplex`(복층)와 `shape` 로 정한다 (`_room_type`).
 - `oneRoomShapeTypes` 는 `shape` 가 있는 매물만 건다. 단지 매물(아파트 A01·오피스텔 A02·단지형 빌라 A06·재건축 A04·분양권 B01 확인)은 `shape` 키가 없어 오픈형·분리형 어느 쪽이든 모두 빠진다 (역삼동 방 1개: 아파트 435건·오피스텔 2,074건 → 0건, 대치동 재건축 1,024건 → 0건). 원룸·빌라·상가주택 등도 중개사가 구조를 입력하지 않으면 `shape` 가 null 이라 빠진다 (역삼동 원룸 전세 35건 → 26건, 상가주택 73건 → 11건). `shape` 가 있는 매물은 필터와 상세가 일치한다. 서버 필터라 다시 거르지 않고, 구조 조건을 주면 유형과 무관하게 `ONE_ROOM_SHAPE_NOTE` 로 알린다.
 
+## 매물 상세 응답 메모
+
+(2026-11-17 웹 번들·화면 대조)
+
+- 상세에서 유형마다 웹에 칸이 없는 필드는 키를 지운다 (`service/common.py` 의 `NOT_APPLICABLE_FIELDS_BY_TYPE`. 목록 매물 `NaverListing` 도 같은 표로 뺀다). 웹 `ArticleMain` 은 기본 정보 칸을 유형으로 고르고(`getBasicInfoSpaceTarget`·면적 함수, 청크 0n-xsnd22pdxz), 건축물 정보(`ArticleBuildingInfo`: 사용승인일·난방·현관·주차)는 `isBuildingRegistrationType` 유형에만, 시설(`ArticleFacilityInfo`)은 토지가 아닐 때만 붙인다 (청크 0l4pkwg0qhg2t). (리뷰 오탐 (2026-11-17): 단지 유형 `ArticleComplexInfo`·단지형 빌라 `ArticleVillaBuildingInfo` 도 난방 칸이 있어 `heating` 키를 지우지 않는다. 청크 0l4pkwg0qhg2t) 그래서 토지(E03)·고시원(G01)은 방·층·전용/공급면적·난방 등 칸이 없고 (토지는 면적 칸으로 대지면적 `sizeInfo.landSpace` 한 칸만 그리고 jibsa 는 대지면적 필드가 없다. 고시원은 면적 칸이 없다, 번들 면적 함수 `E_`), 비주거 8종은 방/욕실 대신 '화장실 수' 만, D03·D04·E01·E02·Z00 은 해당층 대신 지상/지하 층수만 그리고 공급면적 칸이 없다. 세금은 `getArticleTaxExposeInfo` 대로 재산세·종부세가 A01·A04·A05·A06·A07 매매만, 원룸(C01)·고시원(G01)은 세금 칸이 없어 `article/tax` 를 부르지 않는다 (2026-11-17 번들 대조, 토지 2662289059·건물 2662255256·사무실 2662006979·재개발 2659842435 실측). 분양권(B01·B02)은 웹이 일반분양권(`detailInfo.preSaleStatusType` '10')일 때만 세금 칸을 그려, 다른 값이면 `article/tax` 를 부르지 않고 세 키를 지운다 (둔촌동 분양권 2661144592 '10'·2659804873 '20'). 상태가 없거나 빈 글자면 웹 규칙(getArticleTaxExposeInfo 는 '10' 일 때만 칸을 그림)으로는 칸이 없지만 상태를 읽지 못했을 수도 있어 칸이 있는지 알 수 없다고 보고, 요청하지 않고 `acquisition_tax_manwon` 을 `null`(모름)로 둔다 (재산세·종부세 키는 없다. 직거래인지 모를 때 중개보수를 요청하지 않는 것과 같은 기준이다, `_draws_sale_taxes`).
+
 ## 재개발·추이 엔드포인트 메모
 
 (2026-10-10 실측)
@@ -182,5 +188,4 @@ client의 action별 endpoint/docstring → request 별칭·필터 → response �
 사례를 찾지 못해 웹과 같은지 가리지 못했다 (2026-11-16 대조). 다음 대조 때 실제 응답으로 본다.
 
 - 동 자동완성 후보에 검색어의 `○가` 동과 이름이 다른 동이 섞인 응답: `○가` 처리(`_check_ga_dongs`)로 가지 않아 `○가` 동을 고르라는 `hint` 없이 받은 후보 그대로의 일반 `REGION_AMBIGUOUS` 다. 그런 검색어를 찾지 못했다.
-- `listing` 세금: 웹 번들(`getArticleTaxExposeInfo`)은 재산세·종부세를 아파트·재건축·단지형 빌라(A05·A06·A07) 매매에만, 오피스텔·빌라(C02)·단독·다가구(C03)·상가주택 등은 취득세만 보여 주고 원룸(C01)은 세금을 보이지 않는다. jibsa 는 모든 매매에 `article/tax` 를 받아 응답대로 낸다. 오피스텔은 응답에 취득세만 와서 웹과 같았고, 원룸·빌라(C02) 매매에 서버가 웹이 숨기는 세금 값을 주는지는 보지 못했다.
 - `listing` 관리비 정액 항목(typeCode '01'): 웹 번들(`getMaintenanceFeeLabel`)은 `fixDetailList` 금액을 정액·실비 가리지 않고 더하고, jibsa 는 정액(unitType '01') 항목만 더한다. 실비 항목에 금액이 오는 응답을 보지 못해 합계가 갈리는지 가리지 못했다.
