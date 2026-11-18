@@ -1,10 +1,15 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import httpx
 import pytest
 
 from jibsa.core.errors import JibsaError
+from jibsa.core.listing import (
+    months_ago,
+    years_ago,
+)
 from jibsa.providers.naver.api.client import (
     NaverClient,
     should_retry_naver,
@@ -1005,3 +1010,16 @@ def test_named_dong_with_next_page_is_checked_by_full_name(same_name: list[str],
         else:
             region, kind, _ = resolve_search_region(client, '신흥')
             assert (region.legal_division_code, kind) == (expected, '동')
+
+
+# --- 호가 짝·기간 --------------------------------------------------------------
+
+
+def test_months_ago_clamps_to_month_end_and_matches_years_ago() -> None:
+    assert months_ago(date(2026, 5, 31), 3) == '2026-02-28'
+    assert months_ago(date(2026, 1, 31), 3) == '2025-10-31'
+    assert months_ago(date(2024, 5, 31), 3) == '2024-02-29'
+    # 1년·3년·5년은 기존 years_ago 와 같은 날이다 (2월 29일 포함)
+    for today in (date(2024, 2, 29), date(2026, 11, 18)):
+        for years in (1, 3, 5):
+            assert months_ago(today, years * 12) == years_ago(today, years)

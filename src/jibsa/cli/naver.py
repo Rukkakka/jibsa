@@ -43,7 +43,7 @@ from jibsa.providers.naver.service.common import (
     ENTRANCE_CODE_BY_NAME,
     MAX_LIST_LIMIT,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
-    PERIOD_YEARS_BY_NAME,
+    PERIOD_MONTHS_BY_NAME,
     SEARCH_CODES_BY_PROPERTY,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
@@ -633,7 +633,7 @@ def real_price_command(
     ] = None,
     period: Annotated[
         str | None,
-        typer.Option('--period', help=f"기간: {', '.join(PERIOD_YEARS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다")
+        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다")
     ] = None,
     pretty: PrettyOption = None,
 ) -> None:
@@ -645,7 +645,7 @@ def real_price_command(
     if len(trade_types) != 1:
         raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세 중 하나)', param_hint='--trade')
     if period is not None:
-        period = check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
+        period = check_choice(period, PERIOD_MONTHS_BY_NAME, '--period')
         if pages is not None:
             raise typer.BadParameter('--period 와 --pages 는 함께 쓸 수 없습니다. 기간이면 --period 만 주세요', param_hint='--pages')
     with handle_errors(SOURCE), NaverClient() as client:
@@ -664,7 +664,7 @@ def market_price_command(
     pyeong: Annotated[int, typer.Option('--pyeong', min=1, help='평형 번호 (평형 ID, 평수 아님; complex 결과의 pyeongs[].number)')],
     period: Annotated[
         str,
-        typer.Option('--period', help=f"기간: {', '.join(PERIOD_YEARS_BY_NAME)}")
+        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}")
     ] = '1년',
     pretty: PrettyOption = None,
 ) -> None:
@@ -674,7 +674,7 @@ def market_price_command(
 
     예: jibsa naver market-price 개포자이 --pyeong 1 --period 3년
     """
-    period = check_choice(period, PERIOD_YEARS_BY_NAME, '--period')
+    period = check_choice(period, PERIOD_MONTHS_BY_NAME, '--period')
     with handle_errors(SOURCE), NaverClient() as client:
         complex_number, villa, notes = _complex_number(client, complex_)
         emit(get_market_price_history(client, complex_number, pyeong, period=period, villa=villa), pretty, notes=notes)

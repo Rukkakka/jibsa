@@ -9,9 +9,9 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    months_ago,
     normalize_date,
     won_to_manwon_exact,
-    years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.market_price import (
@@ -19,7 +19,7 @@ from jibsa.providers.naver.api.request.market_price import (
 )
 from jibsa.providers.naver.service.common import (
     MARKET_PRICE_PROVIDER_NAMES,
-    PERIOD_YEARS_BY_NAME,
+    PERIOD_MONTHS_BY_NAME,
     check_pyeong_numbers,
     complex_url,
     kst_today,
@@ -97,7 +97,7 @@ class NaverMarketPriceHistory(BaseModel):
     ]
     period: Annotated[
         str,
-        Field(description='기간 (1년, 3년, 5년)')
+        Field(description='기간 (3개월, 1년, 3년, 5년)')
     ]
     since: Annotated[
         str,
@@ -125,7 +125,7 @@ def get_market_price_history(
     """평형의 기관별(한국부동산원·KB부동산·부동산뱅크) 주별 시세를 기간만큼 받는다 (1회 호출).
 
     Args:
-        period: `PERIOD_YEARS_BY_NAME` 의 이름.
+        period: `PERIOD_MONTHS_BY_NAME` 의 이름.
         villa: 빌라 단지인지 (`resolve_complex_number` 결과). 알면 시세가 0건일 때 평형 확인에서 단지 정보를 묻지 않는다.
         today: 기간의 기준일. Defaults to 오늘(한국 시간).
 
@@ -133,7 +133,7 @@ def get_market_price_history(
         JibsaError: 시세가 0건인데 평형 번호가 그 단지에 없으면 NOT_FOUND.
     """
     today = today or kst_today()
-    since = years_ago(today, PERIOD_YEARS_BY_NAME[period])
+    since = months_ago(today, PERIOD_MONTHS_BY_NAME[period])
     items = unwrap(
         client.run_request_complex_market_price_list_v1(
             NaverComplexMarketPriceListV1RequestParameterModel(

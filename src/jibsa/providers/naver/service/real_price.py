@@ -13,10 +13,10 @@ from pydantic import (
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     SAME_AREA_PYEONG_TRADES_NOTE,
+    months_ago,
     normalize_date,
     note,
     won_to_manwon_exact,
-    years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.real_price import (
@@ -29,7 +29,7 @@ from jibsa.providers.naver.api.response.real_price import (
     NaverVillaRealPriceModel,
 )
 from jibsa.providers.naver.service.common import (
-    PERIOD_YEARS_BY_NAME,
+    PERIOD_MONTHS_BY_NAME,
     TRADE_CODE_BY_NAME,
     check_pyeong_numbers,
     kst_today,
@@ -139,7 +139,7 @@ class NaverRealPriceResult(BaseModel):
     ]
     period: Annotated[
         str | None,
-        Field(description='--period 로 준 기간 (1년, 3년, 5년). 주지 않았으면 키가 없다')
+        Field(description='--period 로 준 기간 (3개월, 1년, 3년, 5년). 주지 않았으면 키가 없다')
     ] = None
     since: Annotated[
         str | None,
@@ -223,7 +223,7 @@ def get_real_prices(
     (1~2회 추가) 빌라 단지면 빌라 단지 실거래가로 다시 묻는다. 아파트 단지면 거래가 없는 평형으로 보고 0건이다.
 
     Args:
-        period: `PERIOD_YEARS_BY_NAME` 의 이름. 주면 `pages` 대신 그 기간 안 거래를 모두 받는다
+        period: `PERIOD_MONTHS_BY_NAME` 의 이름. 주면 `pages` 대신 그 기간 안 거래를 모두 받는다
             (아파트 단지는 1회 호출).
         today: 기간의 기준일. Defaults to 오늘(한국 시간).
 
@@ -330,7 +330,7 @@ def _get_real_prices_in_period(
 
     기간 목록은 빌라 단지에 거래가 있어도 빈 목록을 준다 (서진빌라 전세 4건, 2026-10-10 확인).
     """
-    since = years_ago(today, PERIOD_YEARS_BY_NAME[period])
+    since = months_ago(today, PERIOD_MONTHS_BY_NAME[period])
     items = unwrap(
         client.run_request_complex_pyeong_real_price_list_v1(
             NaverComplexPyeongRealPriceListV1RequestParameterModel(

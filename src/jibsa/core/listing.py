@@ -1,4 +1,5 @@
 import re
+from calendar import monthrange
 from collections.abc import Sequence
 from datetime import (
     date,
@@ -243,6 +244,17 @@ def years_ago(today: date, years: int) -> str:
         return today.replace(year=today.year - years).isoformat()
     except ValueError:
         return today.replace(year=today.year - years, day=28).isoformat()
+
+
+def months_ago(today: date, months: int) -> str:
+    """`months` 개월 전 같은 날 (그 달에 없는 날이면 그 달 말일). 실거래·시세 기간(`--period`)의 시작일이다.
+
+    12 의 배수는 `years_ago` 와 같은 날을 준다 (2월 29일 → 평년 2월 28일).
+    """
+    index = today.year * 12 + today.month - 1 - months
+    year, month = divmod(index, 12)
+    month += 1
+    return today.replace(year=year, month=month, day=min(today.day, monthrange(year, month)[1])).isoformat()
 
 
 def normalize_date(value: str | None) -> str | None:

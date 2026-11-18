@@ -1112,8 +1112,8 @@ def price_filter_of(conditions: NaverTradeConditions) -> dict[str, int]:
     }
 
 
-# real-price·market-price 의 --period
-PERIOD_YEARS_BY_NAME: dict[str, int] = {'1년': 1, '3년': 3, '5년': 5}
+# real-price·market-price 의 --period (이름 → 달 수). 웹 실거래·시세 기간 선택지는 startDate 로 보내는 3개월·3년·5년이고 1년은 jibsa 가 더한 값이다
+PERIOD_MONTHS_BY_NAME: dict[str, int] = {'3개월': 3, '1년': 12, '3년': 36, '5년': 60}
 
 
 def bounding_box(lat: float, lng: float, radius_km: float) -> NaverBoundingBoxModel:
