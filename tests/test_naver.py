@@ -64,10 +64,17 @@ ROUTES = {
     '/front-api/v1/article/boundedArticles': 'article_clustered_articles_v1',
     '/front-api/v1/legalDivision/articleCountWeeklyInfo': 'legal_division_article_count_weekly_info_v1',
     '/front-api/v1/legalDivision/realTradeCountWeeklyList': 'legal_division_real_trade_count_weekly_list_v1',
+    '/front-api/v1/development/article': 'development_article_v1',
+}
+# 픽스처 파일 없이 코드로 둔 응답. 근처 개발 예정은 두 목록이 모두 빈 매물이 많다 (원룸, 2026-11-18 실측)
+INLINE_RESPONSES = {
+    'development_article_v1': {'isSuccess': True, 'detailCode': 'success', 'result': {'railList': [], 'jiguList': []}},
 }
 
 
 def load(name: str) -> dict:
+    if name in INLINE_RESPONSES:
+        return INLINE_RESPONSES[name]
     return json.loads((FIXTURES / f'{name}.json').read_text(encoding='utf-8'))
 
 

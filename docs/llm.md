@@ -102,7 +102,7 @@
 - 지역 인자가 구·군·구 없는 시 이름(`성동구`, `구리시`)이면 `--radius` 없이는 그 구·군·시 전체(`boundary`)를 찾는다 (`search listings`·`search complexes`·`search redevelopment`. `search listings` 는 매물이 많으면 `has_more`·`next` 로 나눠 본다). 구가 있는 시(`성남시`)는 시 전체로 찾을 수 없어 중심 반경이니 `성남시 분당구` 처럼 구 이름을 준다 (`notes` 가 구 이름을 알린다). `trend` 도 구가 있는 시 이름은 `REGION_AMBIGUOUS` 로 멈추니(네이버가 시 추이를 0 으로 준다) `trend '성남시 분당구'` 처럼 구 이름으로 부른다. `trend 전국` 은 전국 추이다.
 - `complex`·`search complexes` 의 `monthly_asking`·`short_term_asking` 은 월세 최저·최고가 아니라 가격 낮은 순 첫 매물과 높은 순 첫 매물의 (보증금, 월세) 짝이다. `lowest` 의 월세가 `highest` 보다 클 수 있다 (`5000/420 ~ 700000/240`). 월세 범위로 읽지 않는다.
 - `complex --pyeong` 의 `real_price_summary.sale`·`jeonse` 에 `since` 키가 있으면 3년 안 거래가 없어 5년 기준으로 받은 요약이고(이때 `average_3m_manwon` 은 `null`) 조회에 실패한 유형은 `null` 이다. `average_3m_manwon` 은 최근 3개월 평균이다.
-- `school --complexes` 의 단지 `assigned_dongs` 가 `null` 이면 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데 네이버가 어느 동인지(동 묶음)를 주지 않은 것이다.
+- 상세의 `nearby_development`(근처에 생길 지하철역 `rail`·개발 지구 `area`)는 `[]` 면 없는 것이고 `null` 이면 모름(조회 실패, 또는 네이버가 그 목록을 비워 줌)이다. `school --complexes` 의 단지 `assigned_dongs` 가 `null` 이면 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데 네이버가 어느 동인지(동 묶음)를 주지 않은 것이다.
 - `알 수 없는 값 (HT009)`·`알 수 없는 시설 (…)`·`알 수 없는 항목 (…)` 은 네이버가 값을 줬는데 jibsa 가 그 코드를 읽지 못한 것이다 (`null` 과 다르다). 뜻을 짐작해 옮기지 말고 jibsa 가 읽지 못한 값이라고 그대로 알린다. 대개 네이버가 새 코드를 더했는데 jibsa 표가 아직 모르는 경우라, 뜻이 필요하면 `url` 의 네이버 화면에서 확인해 보라고 권한다 (화면이 그 코드를 그리는지는 보장하지 않는다).
 
 ### 당근

@@ -52,6 +52,7 @@ from jibsa.providers.naver.api.request.listing import (
     NaverComplexBuildingRegistrationV1RequestParameterModel,
     NaverComplexVillaArticleListV1RequestPayloadModel,
     NaverDataServiceTransportV1RequestParameterModel,
+    NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.market_price import (
@@ -128,6 +129,7 @@ from jibsa.providers.naver.api.response.listing import (
     NaverComplexBuildingRegistrationV1ResponseModel,
     NaverComplexVillaArticleListV1ResponseModel,
     NaverDataServiceTransportV1ResponseModel,
+    NaverDevelopmentArticleV1ResponseModel,
     NaverEducationBuildingSchoolV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.market_price import (
@@ -287,6 +289,7 @@ class NaverClient(BaseHTTPClient):
     education_school_v1_endpoint: ClassVar[str] = '/front-api/v1/education/school'
     education_complex_school_allocation_dongs_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/school/allocation-dongs'
     education_complex_pages_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/pages'
+    development_article_v1_endpoint: ClassVar[str] = '/front-api/v1/development/article'
 
     source_name: ClassVar[str] = 'naver'
     default_rate_limit: ClassVar[dict[str, object]] = {
@@ -1893,4 +1896,35 @@ class NaverClient(BaseHTTPClient):
         """Async variant of `run_request_education_complex_pages_v1`."""
         return await self._aget(
             self.education_complex_pages_v1_endpoint, parameter, NaverEducationComplexPagesV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_development_article_v1(
+        self,
+        parameter: NaverDevelopmentArticleV1RequestParameterModel
+    ) -> NaverDevelopmentArticleV1ResponseModel:
+        """Fetch planned developments near a listing via `GET /front-api/v1/development/article`.
+
+        `result.railList[]` 는 근처 예정 지하철역(역·노선 이름, 개통 예정 연도 `openDate`, 거리 m, 도보 분)이고
+        `result.jiguList[]` 는 근처 개발 지구(이름·유형·단계·기간 `period`, 기간은 없을 수 있다)다. 좌표도 오지만 쓰지 않는다.
+        둘 다 빈 매물이 많다 (원룸 `{"railList": [], "jiguList": []}`, 2026-11-18 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `article_number`.
+
+        Returns:
+            NaverDevelopmentArticleV1ResponseModel: 근처 예정 지하철역·개발 지구.
+        """
+        return self._get(
+            self.development_article_v1_endpoint, parameter, NaverDevelopmentArticleV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_development_article_v1(
+        self,
+        parameter: NaverDevelopmentArticleV1RequestParameterModel
+    ) -> NaverDevelopmentArticleV1ResponseModel:
+        """Async variant of `run_request_development_article_v1`."""
+        return await self._aget(
+            self.development_article_v1_endpoint, parameter, NaverDevelopmentArticleV1ResponseModel
         )

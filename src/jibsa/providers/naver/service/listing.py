@@ -7,7 +7,13 @@ from decimal import (
 )
 
 from httpx import HTTPStatusError
-from pydantic import Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
@@ -42,6 +48,7 @@ from jibsa.providers.naver.api.request.listing import (
     NaverComplexBuildingRegistrationV1RequestParameterModel,
     NaverComplexVillaArticleListV1RequestPayloadModel,
     NaverDataServiceTransportV1RequestParameterModel,
+    NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.response.common import (
@@ -56,6 +63,7 @@ from jibsa.providers.naver.api.response.listing import (
     NaverArticleKeyModel,
     NaverArticleMaintenanceFeeModel,
     NaverCommunalComplexInfoModel,
+    NaverDevelopmentArticleModel,
     NaverMovingInInfoModel,
     NaverPriceInfoModel,
     NaverSpaceInfoModel,
@@ -482,6 +490,115 @@ def _surroundings(client: NaverClient, article_number: str, key: NaverArticleKey
     return result
 
 
+class NaverNearbyRail(BaseModel):
+    """매물 근처에 생길 지하철역 한 곳. 좌표·ID 는 담지 않는다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    station: Annotated[
+        str | None,
+        Field(description="역 이름 (서버 글자 그대로, 개통 예정 연도가 붙는다: '탄천역(2027년예정)')")
+    ] = None
+    line: Annotated[
+        str | None,
+        Field(description="노선 이름 (서버 글자 그대로: '위례신사선(예정)')")
+    ] = None
+    opens: Annotated[
+        str | None,
+        Field(description="개통 예정 연도 (서버 글자 그대로: '2027'). 없으면 null")
+    ] = None
+    distance_m: Annotated[
+        int | None,
+        Field(description='매물에서의 거리 (m)')
+    ] = None
+    walking_minutes: Annotated[
+        int | None,
+        Field(description='도보 시간 (분)')
+    ] = None
+
+
+class NaverNearbyArea(BaseModel):
+    """매물 근처 개발 지구 한 곳. 사업 기간이 없으면 `period` 키를 뺀다 (웹도 그 줄을 그리지 않는다)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str | None,
+        Field(description='개발 지구 이름. 빈 글자나 없으면 null')
+    ] = None
+    type: Annotated[
+        str | None,
+        Field(description="사업 종류 ('재개발' 등, 서버 글자 그대로). 빈 글자나 없으면 null")
+    ] = None
+    step: Annotated[
+        int | str | None,
+        Field(description='사업 단계 (서버 값 그대로). 빈 글자나 없으면 null')
+    ] = None
+    period: Annotated[
+        str | None,
+        Field(description="사업 기간 ('2010-07-14~2027-12-31', 서버 글자 그대로). 없으면 키를 뺀다")
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def drop_missing_period(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.period is None:
+            data.pop('period', None)
+        return data
+
+
+class NaverNearbyDevelopment(BaseModel):
+    """매물 근처의 개발 예정 (네이버 웹 상세의 '주변 개발 예정'). 두 목록이 모두 빌 수 있다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    rail: Annotated[
+        list[NaverNearbyRail] | None,
+        Field(description='근처 예정 지하철역. 없으면 [], 네이버가 이 목록만 비워(null) 주면 null(모름)')
+    ] = []
+    area: Annotated[
+        list[NaverNearbyArea] | None,
+        Field(description='근처 개발 지구. 없으면 [], 네이버가 이 목록만 비워(null) 주면 null(모름)')
+    ] = []
+
+
+def _nearby_development(client: NaverClient, article_number: str) -> NaverNearbyDevelopment | None:
+    """매물 근처의 예정 지하철역·개발 지구 (1회 호출). 웹은 매물 유형과 상관없이 늘 부른다. 조회가 실패하면 모름(None)이다."""
+    development: NaverDevelopmentArticleModel | None = result_or_none(lambda: client.run_request_development_article_v1(
+        NaverDevelopmentArticleV1RequestParameterModel(article_number=article_number)
+    ))
+    if development is None:
+        return None
+    return NaverNearbyDevelopment(
+        rail=[
+            NaverNearbyRail(
+                station=rail.station_name or None,
+                line=rail.rail_name or None,
+                opens=rail.open_date or None,
+                distance_m=rail.distance,
+                walking_minutes=rail.walking_time,
+            )
+            for rail in development.rail_list
+        ] if development.rail_list is not None else None,
+        area=[
+            NaverNearbyArea(
+                name=area.name or None,
+                type=area.type_name or None,
+                # 단계는 숫자일 수 있어 `or None` 이면 0 이 모름으로 바뀐다. 빈 글자만 모름(None)으로 본다
+                step=None if area.step == '' else area.step,
+                period=area.period or None,
+            )
+            for area in development.jigu_list
+        ] if development.jigu_list is not None else None,
+    )
+
+
 class NaverListingDetail(ListingDetail):
     """상세 조회로 보강한 네이버 매물. 단지 번호로 실거래가·단지 정보를 이어서 조회할 수 있다."""
 
@@ -574,6 +691,10 @@ class NaverListingDetail(ListingDetail):
     schools: Annotated[
         list[NaverAssignedSchool] | None,
         Field(description='배정 초등학교. 조회 실패면 null. 단지·동 번호가 없는 매물은 네이버가 주지 않아 키를 뺀다')
+    ] = None
+    nearby_development: Annotated[
+        NaverNearbyDevelopment | None,
+        Field(description='주변 개발 예정 (예정 지하철역 rail, 개발 지구 area). 네이버 웹은 모든 매물 상세에 그린다. 서버가 빈 목록을 주면 각각 []. 조회 실패면 null')
     ] = None
     has_school_lookup: Annotated[
         bool,
@@ -1153,7 +1274,7 @@ def _facility_values(
 
 
 def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
-    """매물 상세: key → basicInfo → maintenanceFee → 좌표의 법정동 → 단지 (최대 6회 호출, 단지는 필요할 때만).
+    """매물 상세: key → basicInfo → maintenanceFee → 좌표의 법정동 → 단지·중개보수·세금·교통·학교·개발 예정 (최대 11회 호출, 단지부터는 필요할 때만).
 
     단지는 아파트·오피스텔·재건축·분양권이면 단지 정보(`/complex`)를, 단지형 빌라면 `/complex/villa` 를 늘 받아 난방·주차를 웹처럼
     단지 값으로 채우고, 거기에 아파트·오피스텔·재건축·분양권은 매물에 현관 구조가 없을 때
@@ -1162,16 +1283,17 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
 
     중개보수(agentFee)는 직거래가 아니면(직거래이거나 직거래인지 모를 때는 조회하지 않는다) 모든 거래 유형에서, 세금(tax)은 매매 매물만 더 조회한다
     (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은 조회하지 않는다) (1회 더, 매매는 2회 더). 주변 교통(지하철·버스)은 늘,
-    배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더, 최대 10회).
+    배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더). 주변 개발 예정(`development/article`)은 유형과 상관없이 늘
+    1회 더 조회한다 (웹도 모든 매물 상세에 그린다). 최대 11회.
     건축물대장 유형(원룸·빌라 등 15개)은 매물 주차 대수가 0 이거나 없고 article/key 에 pnu 가 있을 때만 건축물대장(`/complex/buildingRegistration`)을
-    1회 더 조회하고, 그 대수와 세대당 대수로 주차를 채운다 (`_facility_values`). 이 유형은 단지 정보를 받아도 1회뿐이라 최대 10회를 넘지 않는다.
+    1회 더 조회하고, 그 대수와 세대당 대수로 주차를 채운다 (`_facility_values`). 이 유형은 단지 정보를 받아도 1회뿐이라 최대 11회를 넘지 않는다.
 
     중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 지번 주소는 좌표로 얻은
     법정동 이름과 article/key 의 지번을 합쳐 만든다. 사용승인일은 단지 유형(아파트·오피스텔·재건축·분양권)이면 단지 정보(`/complex`)의
     날짜만 쓰고(웹처럼 매물 날짜는 보지 않는다), 단지형 빌라와 그 밖의 유형은 상세의 건물 날짜(facilityInfo)를 쓰되 없으면 단지형 빌라는
     동 목록(buildingList), 그 밖의 유형은 단지 정보에서 받는다.
 
-    key·basicInfo 밖의 부가 조회(관리비·법정동·단지·중개보수·세금·교통·학교)는 실패하면 그 값만 모름(None)이다.
+    key·basicInfo 밖의 부가 조회(관리비·법정동·단지·중개보수·세금·교통·학교·개발 예정)는 실패하면 그 값만 모름(None)이다.
 
     Raises:
         ListingUnavailableError: 없거나 내려간 매물이거나, 모르는 거래 유형·매물 유형 코드일 때
@@ -1292,7 +1414,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         confirmed_at=iso_date(verification.article_confirm_date) if verification else None,
         loan_manwon=_loan_manwon(price),
         # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
-        # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교)
+        # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교, 개발 예정)
         **(
             {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None} if is_direct_trade is None
             else {} if is_direct_trade
@@ -1303,6 +1425,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
             if _draws_sale_taxes(trade_type, real_estate_type, pre_sale_status_type) is True else {}
         ),
         **_surroundings(client, article_number, key),
+        nearby_development=_nearby_development(client, article_number),
     )
 
 

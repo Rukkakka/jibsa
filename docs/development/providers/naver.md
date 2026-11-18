@@ -12,7 +12,7 @@
 | `search complexes` | 지역 해석(시 이름이면 구가 있는지 확인 1회) → 동·시·군·구 경계 단지 목록 또는 반경 단지 목록·마커 | `search` |
 | `complex` | 이름/번호 해석 → 기본 정보·통계·평형·학교, 재건축 단지면 사업 단계, 선택 평형 부가 정보 | `complex` |
 | `search listings --complex` | 단지 해석 → 동·평형 검증 → 단지 매물 페이지 | `listing` |
-| `listing` | 매물 기본 정보 → 단지 유형·단지형 빌라면 단지 정보(현관이 비면 평형 정보도), 건축물대장 유형이고 매물 주차 대수가 0·없고 pnu 가 있으면 건축물대장 1회, 교통·학교, 중개보수(직거래 제외 모든 거래 유형. 직거래인지 모르면 요청 안 함)·세금(매매) 부가 조회 | `listing` |
+| `listing` | 매물 기본 정보 → 단지 유형·단지형 빌라면 단지 정보(현관이 비면 평형 정보도), 건축물대장 유형이고 매물 주차 대수가 0·없고 pnu 가 있으면 건축물대장 1회, 교통·학교, 중개보수(직거래 제외 모든 거래 유형. 직거래인지 모르면 요청 안 함)·세금(매매), 개발 예정(`development/article`, 유형과 상관없이 늘 1회) 부가 조회. 최대 11회 | `listing` |
 | `real-price` | 단지·평형별 실거래 페이지, `--period` 면 기간 목록 1회 (빌라는 페이지를 기간 시작일까지) | `real_price` |
 | `market-price` | 단지 해석 → 기관별 주간 시세 기간 목록 1회 | `market_price` |
 | `redevelopment` | 구역 기본 정보 → 구역 매물 통계 | `redevelopment` |
@@ -27,7 +27,7 @@
 모든 응답이 `{isSuccess, detailCode, message, result}` 봉투다
  (`NaverResponseModel[T]`). service 는 `unwrap()` 으로 `result` 를 꺼내고, 실패면 `JibsaError`
  (`NOT_FOUND` / `UPSTREAM_ERROR`)를 던진다. 실패 봉투는 HTTP 상태와 별도로 검사한다. 금액은 원 단위라
- `won_to_manwon`로 원 단위까지 만원으로 바꾸고, 글자로 쓸 때는 `format_manwon` 을 쓴다 ([금액·단위](../output-contract.md#금액단위)). 가장 차단이 잦은 소스라 요청 수를 늘리는 변경(매물마다 추가 조회 등)은 피한다.
+ `won_to_manwon`로 원 단위까지 만원으로 바꾸고, 글자로 쓸 때는 `format_manwon` 을 쓴다 ([금액·단위](../output-contract.md#금액단위)). 가장 차단이 잦은 소스라 요청 수를 늘리는 변경(매물마다 추가 조회 등)은 피한다. 늘리려면 사용자와 정한다 (예: `listing` 의 개발 예정은 웹이 모든 매물 상세에 그려 1회 늘리기로 했다. 2026-11-18).
  429 는 봇 차단이라 일반 재시도 대상이 아니다. `should_retry_naver`는 5xx 와 `RETRYABLE_TRANSPORT_ERRORS`(timeout·연결 실패 등)만 재시도한다.
 
 빌라 단지(A05·A06·A07)인지는 명령 맨 앞에서 한 번에 정하지 않고, 아파트 쪽 응답이 비었을 때 그 자리에서 정한다 (`villa_by_complex_response` docstring). 맨 앞에서 정하면 단지 종류를 모를 때마다(대부분 아파트) 요청이 1회 늘기 때문이다. 판별이 여러 곳에 흩어진 것은 이 때문이며, 한 번 빌라로 정해지면 빌라 엔드포인트의 실패 응답은 0건이 아니라 에러로 낸다. 단지 매물 목록은 아파트·빌라 모두 없는 단지 번호에도 빈 성공 응답을 줘서(2026-10-23 실측: 99999999 와 헬리오시티 111515 의 빌라 목록이 같은 `totalCount: 0`), 단지 번호만 받아 종류를 모른 채 0건이면 단지 정보(아파트 → 빌라)로 단지가 있는지 확인한다 (`_raise_if_missing_complex`). 빌라 단지에 거래·동이 없을 때 빌라 엔드포인트는 실패가 아니라 빈 목록을 주고(서진빌라 724112 월세 실거래 0건), 아파트 동 목록(`complex/buildingList`)도 빌라 단지에 `result=null` 이 아니라 빈 목록을 준다 (2026-10-10 실측).
@@ -146,10 +146,11 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - `article/tax` 는 면제되는 항목도 null 이 아니라 0 으로 준다 (85㎡ 이하 취득 농특세, 종부세 대상 아님. 헬리오시티 39·85·111·150㎡·일신동 빌라 2건, 2026-10-11 실측). 그래서 세금 합계(`_sum_manwon`)에서 일부 항목만 null 인 경우는 실제 응답에 없다.
 - 재검토 후 넣지 않은 엔드포인트: `complex/asking-price`(단지 매물 목록과 같은 정보), `article/boundedArticlesCount`(검색의 `total_count` 와 같음), `search/articles`(`listing` 과 같고 중개사·본문이 섞임), `legalDivision/infoList`, `complex/villa/asking-price`(빈 결과), `complex/villa/realPriceAround`(파라미터를 찾지 못해 400).
 
-## 학교 배정 단지 엔드포인트 메모
+## 개발 예정·학교 배정 단지 엔드포인트 메모
 
 (2026-11-18 실측, 모두 로그인 없이 200)
 
+- `development/article`(`articleNumber`)은 `result.railList[]`(역·노선 이름·개통 예정 연도 `openDate`·거리 m·도보 분)와 `jiguList[]`(이름·유형·단계·기간 `period`, 기간은 없을 수 있다)를 준다. 좌표도 오지만 읽지 않는다. 원룸은 `{"railList": [], "jiguList": []}` 로 온다. `stationId`·`railId`·지구의 `id`·`step` 의 자료형은 실측으로 가리지 못해 `int | str | None` 으로 받는다. 웹 `ArticleMain`(청크 c29992b834_0l4pkwg0qhg2t)은 매물 유형 조건 없이 부르고 두 목록이 비면 칸을 그리지 않는다.
 - `education/complex/pages`(`schoolCode`·`size`·`page`·`sortType`)는 학교에 배정되는 단지를 준다. `sortType` 은 `DISTANCE`·`HOUSEHOLD_COUNT` 만 받고 그 밖은 400 이다 (웹 enum `ELEMENTARY_SCHOOL_SORT_TYPE`). 항목은 단지 정보·매물 수·호가 범위(원, 매물이 없으면 `{}`)와 배정 동(`isAllBuildingAssigned`·`convertedBuildingNameGroups`)이다. 끝 쪽을 넘긴 쪽(page=9)은 `list: []`·`hasNextPage: false`·`totalCount: 0` 이라 총수는 첫 쪽에서만 믿는다. `hasNextPage` 가 null 이면 첫 쪽 `totalCount` 가 받은 수보다 클 때 더 있는 것으로 보고 이어 받으며(쪽 요청 상한 5회 안), 상한에 걸려 `--limit` 에 못 미치면 `--limit` 을 권하지 않는 안내를 따로 낸다. 빌라가 `villaInfo` 로 올 경우에 대비해 그 칸도 받는다 (오는지는 확인하지 못했다: 2026-11-18 인천일신초 E100000875 에 배정되는 빌라 가람아트빌 673573 이 목록에 없었다).
 
 ## API 변경 시 점검
@@ -187,6 +188,7 @@ client의 action별 endpoint/docstring → request 별칭·필터 → response �
 - **가격 조건만 주면 거래 유형 좁히기.** `--trade` 없이 월세 조건만 주면 월세·단기임대, 매매가만 주면 매매, 보증금만 주면 전세·월세·단기임대로 좁히고 `[거래]` 로 알린다 (`infer_trade_types`). 웹은 고른 거래 유형에 맞는 가격 필터만 보여 주고 보낸다. 좁힌 거래 유형과 가격 조건은 웹에서도 고를 수 있는 조합이다 (2026-11-16 번들 `getPriceFilterVisibility`).
 - **`area_pyeong` 자릿수.** 웹은 평을 소수 둘째 자리(`sizeToPyeong(size, 2)`, 23.23㎡ → 7.03평)로, jibsa 는 `m2_to_pyeong` 으로 소수 첫째 자리(7.0)로 낸다. `area_m2` 를 그대로 주고 덧붙인 환산이고, 평·면적·거리는 줄여 내도 된다고 정했다 (#259) (2026-11-16 번들 `Ee`).
 - **입주 시기 표기.** 웹은 '2026년 12월 01일 이내입주'·'… 이후입주' 로, jibsa `move_in` 은 `2026-12-01 이내`·`2026-12-01 이후` 로 낸다 (`MOVING_IN_BOUND_LABELS`). 같은 코드(MV002·MV003)와 날짜를 날짜 꼴만 바꿔 쓴 것이라 뜻이 같다 (2026-11-16 번들 `getMovingInDateLabel`·`ARTICLE_MOVING_IN_TYPE`).
+- **주변 개발 예정을 늘 붙이고 빈 칸은 `[]`.** 웹 상세 `ArticleMain`(청크 c29992b834_0l4pkwg0qhg2t)은 매물 유형 조건 없이 `development/article` 을 부르고 예정 역·개발 지구 두 목록이 모두 비면 칸을 그리지 않는다. jibsa `nearby_development` 는 같은 요청 값을 유형과 상관없이 모든 상세에 붙이고, 빈 목록은 칸을 그리지 않는 대신 `rail`·`area` 의 `[]` 로 낸다 (키를 지우면 '근처에 없음' 과 '조회 실패(`null`)' 를 가를 수 없다). 역·노선·사업 종류는 서버 글자를 가공하지 않고(역 이름에 `(2027년예정)` 이 붙어 온다), `step` 은 웹이 '사업 단계 {step}' 으로 값을 그대로 그려 가공하지 않는다. 사업 기간이 없는 지구는 웹이 그 줄을 그리지 않아 `period` 키를 뺀다 (2026-11-18 실측·번들 대조).
 
 ### 단지 (`search complexes`·`complex`·`real-price`·`market-price`·`school`)
 
