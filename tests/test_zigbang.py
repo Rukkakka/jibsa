@@ -841,6 +841,24 @@ def test_real_price_all_requests_deal_type_all_and_keeps_order() -> None:
     assert 'trade_type' not in _real_prices([_tx('sales')], '매매')['transactions'][0]
 
 
+def test_real_price_all_drops_unknown_deal_type_and_notes_it() -> None:
+    # 모르는 거래 유형(낯선 값·null)은 빼고 [제외] 로 알린다 (limit 로 잘릴 자리의 거래는 세지 않는다)
+    def handler(request: httpx.Request) -> httpx.Response:
+        transactions = [_tx('sales'), _tx('lease'), _tx(None), _tx('charter')]
+        return httpx.Response(200, json={'data': transactions, 'hasNext': False, 'areaInfos': {'1': [{'m2': '111Z', 'p': '99Z'}]}})
+
+    with make_client(handler) as client:
+        result = get_real_prices(client, 'apt-100', trade_type='전체')
+        capped = get_real_prices(client, 'apt-100', trade_type='전체', limit=1)
+    assert [transaction.trade_type for transaction in result.transactions] == ['매매', '전세']
+    assert '[제외] 거래 유형을 읽지 못한 실거래 2건을 뺐습니다. jibsa 업데이트가 필요할 수 있습니다' in result.notes
+    assert not any(text.startswith('[제외]') for text in capped.notes)
+    # 분양권은 차액을 안 줘도 키를 null 로 두고, 입주권은 값이 없으면 키를 뺀다
+    presale = _real_prices([_tx('sales', offerType='분양권'), _tx('sales', offerType='입주권')], '매매')['transactions']
+    assert presale[0]['offer_price_diff_manwon'] is None
+    assert 'offer_price_diff_manwon' not in presale[1]
+
+
 def _search_items(*names: tuple[str, str]) -> dict:
     return {'success': True, 'items': [
         {'id': index + 1, 'type': 'address', 'name': name, 'description': f'서울특별시 {district} {name}',

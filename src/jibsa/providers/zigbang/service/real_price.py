@@ -15,6 +15,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
     NOT_APPLICABLE_PRICE_FIELDS,
+    UPDATE_MAYBE_NEEDED,
     TradeType,
     normalize_date,
     normalize_floor,
@@ -322,6 +323,8 @@ def get_real_prices(
 
     직방은 전세·월세를 한데 묶어 줘서(`rent`), 한쪽만 고르면 받은 뒤에 거르고 쪽을 더 넘긴다.
     '전체' 는 직방이 매매와 전월세를 계약일 최신 순으로 합쳐 주는 순서 그대로(`all`) 낸다 (거래마다 유형을 붙인다).
+    거래 유형을 모르는 거래(`rtDealType` 이 모르는 값·null·없음)는 어느 조회에서든 빼고 `[제외]` 로 알린다
+    (`--limit` 에서 이미 잘린 뒤의 거래는 어차피 보이지 않아 세지 않는다).
     `REAL_PRICE_MAX_PAGES` 쪽(최근 1200건)에서 멈추고, 그래도 모자라면 본 범위를 `notes` 로 알린다.
     갱신 계약 여부는 직방이 주지 않는다.
 
@@ -339,6 +342,7 @@ def get_real_prices(
     all_types = trade_type == '전체'
     transactions: list[ZigbangRealPrice] = []
     has_next = False
+    unknown = 0
     page = 0
     while len(transactions) < limit and page < REAL_PRICE_MAX_PAGES:
         if pyeong_id is None:
@@ -359,7 +363,11 @@ def get_real_prices(
         has_next = response.has_next
         for transaction in response.transactions:
             real_price = rt_price_to_real_price(transaction, show_trade_type=all_types)
-            if real_price is not None and (all_types or real_price.trade_type == trade_type):
+            if real_price is None:
+                # 이미 limit 건을 모았으면 이 거래는 어차피 잘려 안 보일 자리라 세지 않는다
+                if len(transactions) < limit:
+                    unknown += 1
+            elif all_types or real_price.trade_type == trade_type:
                 transactions.append(real_price)
         if not has_next or not response.transactions:
             break
@@ -396,6 +404,8 @@ def get_real_prices(
         ))
     else:
         notes.append(note('일부', f'더 조회할 실거래가가 있습니다. 더 오래된 거래는 직방에서 직접 확인하세요: {url}'))
+    if unknown:
+        notes.append(note('제외', f'거래 유형을 읽지 못한 실거래 {unknown}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
     return ZigbangRealPriceResult(
         complex_id=complex_id,
         trade_type=trade_type,
