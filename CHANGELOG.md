@@ -178,6 +178,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ### 수정
 
+- 당근 `search commute` 등 매물 목록에서 매물 하나의 인근 역(`subwayStations`·`nearbySubwayStations`)이 `null` 로 오면 검색 전체가 `PARSE_ERROR` 로 실패하던 것을 그 매물만 역 정보 없이 내게 고침 (#331)
 - 네이버 `listing` 의 매매 매물을 네이버가 중개보수 '개별확인' 으로 보여 주면 `agent_fee_manwon` 이 금액 대신 `null` 임 (예전에는 금액이 나갔다. 네이버 웹은 그 매물에 금액을 보여 주지 않는다). 그런 매물은 `agent_fee_individual_check_required` 가 `true` 다 (#304)
 - 네이버 `complex --pyeong` 의 `market_prices[].sale_average_manwon` 과 `market-price` 의 `points[].sale_manwon`·`jeonse_manwon` 이 기관이 시세를 0 으로 주면 `0.0` 이던 것을 `null` 로 냄 (같은 항목의 시세 범위처럼 0 을 시세 없음으로 본다. `complex` 화면도 0 이면 시세를 그리지 않는다). 두 명령의 `jeonse_ratio_percent` 도 기관이 0 을 줘 둘 다 0 이면 `[0, 0]` 대신 `null` 이다 (#309)
 - 네이버 `listing` 의 단지형 빌라 `parking` 이 매물 주차 대수가 0 이거나 없으면 단지 값을 씀 (`가능 (단지 전체 0대)` → `가능 (단지 전체 8대, 세대당 0.5대)`, 가능 여부를 모르면 `단지 전체 8대 (세대당 0.5대)`. 네이버 웹은 매물 대수가 0 보다 크지 않으면 단지 주차 정보를 그린다) (#305)

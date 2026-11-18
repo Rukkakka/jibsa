@@ -142,10 +142,10 @@ APT_HEADERS: dict[str, str] = {
     **PLATFORM_HEADERS,
     'sdk-version': '0.128.0',
 }
-# 단기임대 API (`stay-apis`). 웹 단기임대 SDK 가 자기 버전을 붙인다 (2026-11-12 실측 zigbang-stay-sdk:0.11.0). 감시는 위와 같다
+# 단기임대 API (`stay-apis`). 웹 단기임대 SDK 가 자기 버전을 붙인다 (2026-11-18 실측 zigbang-stay-sdk:0.12.0, 0.11.0 에서 올랐다). 감시는 위와 같다
 STAY_HEADERS: dict[str, str] = {
     **PLATFORM_HEADERS,
-    'sdk-version': 'zigbang-stay-sdk:0.11.0',
+    'sdk-version': 'zigbang-stay-sdk:0.12.0',
 }
 
 
