@@ -29,6 +29,7 @@ from jibsa.providers.naver.service.listing import (
 )
 from jibsa.providers.naver.service.real_price import get_real_prices
 from jibsa.providers.naver.service.region import (
+    WIDE_REGION_NOTE_MARK,
     legal_division_code_at,
     resolve_complex_number,
     resolve_search_region,
@@ -1041,6 +1042,49 @@ def test_named_dong_with_next_page_is_checked_by_full_name(same_name: list[str],
         else:
             region, kind, _ = resolve_search_region(client, '신흥')
             assert (region.legal_division_code, kind) == (expected, '동')
+
+
+@pytest.mark.parametrize(
+    'city,code,sub_regions,has_district',
+    [
+        # 구 있는 시: 시·도 아래 목록에 시 코드와 앞 네 자리가 같은 구가 있다 (시 코드 + GUN 은 오류 없이 0건이라 경계로 찾지 않는다)
+        (
+            '성남시', '4113000000',
+            [('4113100000', '경기도 성남시 수정구'), ('4113500000', '경기도 성남시 분당구'), ('4131000000', '경기도 구리시')],
+            True,
+        ),
+        # 구 없는 시: 같은 네 자리의 다른 곳이 없어 시·군·구 경계다
+        ('구리시', '4131000000', [('4113500000', '경기도 성남시 분당구'), ('4131000000', '경기도 구리시')], False),
+        # 시 자신도 그 시의 구도 없는 목록(빈 목록 포함)은 구가 있는지 모르는 것이라 경계로 찾지 않는다
+        ('구리시', '4131000000', [], None),
+    ],
+)
+def test_city_name_is_boundary_only_when_it_has_no_district(
+    city: str, code: str, sub_regions: list[tuple[str, str]], has_district: bool | None,
+) -> None:
+    from jibsa.cli.naver import _area_location
+
+    sub_info = _ok([
+        {'legalDivisionNumber': number, 'legalDivisionName': name, 'legalDivisionLevelType': 'GUN'}
+        for number, name in sub_regions
+    ])
+    requests: list[httpx.Request] = []
+    overrides = {'/maps-search/address': _address_list([f'경기도 {city}'], code), '/legalDivision/subInfoList': sub_info}
+    with make_path_client(requests, overrides) as client:
+        region, notes, boundary_code, scope = _area_location(client, city, None, None, None)
+    assert _paths(requests).count('/legalDivision/subInfoList') == 1
+    if has_district:
+        assert (boundary_code, scope) == (None, {'radius_km': 1.0})
+        # 구 이름은 시 이름을 붙여 줘야 그대로 찾을 수 있다 ('남구' 만으로는 REGION_AMBIGUOUS)
+        assert any('구가 있는 시' in text and '(성남시 수정구, 성남시 분당구)' in text for text in notes)
+        assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
+    elif has_district is None:
+        assert (boundary_code, scope) == (None, {'radius_km': 1.0})
+        # 이유가 다른 넓은 지역 안내는 [실패] 안내로 대신한다
+        assert sum('[실패]' in text for text in notes) == 1
+        assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
+    else:
+        assert (boundary_code, scope) == (code, {'boundary': city})
 
 
 # --- 호가 짝·기간 --------------------------------------------------------------

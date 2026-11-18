@@ -20,7 +20,10 @@ from jibsa.core.geo import (
     haversine_km,
 )
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
-from jibsa.core.korean import particle
+from jibsa.core.korean import (
+    is_district_code,
+    particle,
+)
 from jibsa.core.listing import (
     KST,
     NEXT_HINT,
@@ -376,7 +379,7 @@ class NaverListingsResult(BaseModel):
 
     total: Annotated[
         int,
-        Field(description='서버 집계 매물 수. search 는 반경을 감싸는 사각형 안, 동 경계로 찾았으면 동 안 정확한 수 (조건 적용 후, limit 적용 전)')
+        Field(description='서버 집계 매물 수. search 는 반경을 감싸는 사각형 안, 동·시·군·구 경계로 찾았으면 그 경계 안 정확한 수 (조건 적용 후, limit 적용 전)')
     ]
     returned: Annotated[
         int,
@@ -1026,13 +1029,18 @@ RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또�
 RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
 
 
-def dong_filter(filter_: NaverArticleFilterModel, legal_division_code: str) -> NaverArticleFilterModel:
-    """동 경계 검색 필터. 법정동 코드 하나를 읍·면·동 단위로 넣는다 (동 매물·단지·재개발 구역 목록이 같은 꼴을 받는다)."""
-    return filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': 'EUP'})
+def boundary_filter(filter_: NaverArticleFilterModel, legal_division_code: str) -> NaverArticleFilterModel:
+    """경계 검색 필터. 법정동 코드 하나를 넣는다. 시·군·구 코드면 시·군·구 단위(GUN), 아니면 읍·면·동 단위(EUP)다.
+
+    동 매물·단지·재개발 구역 목록이 같은 꼴을 받는다 (성동구 + GUN 도 같은 API 다, 2026-11-18 실측). 단위는 코드로 정한다
+    (`is_district_code`). 리 코드는 `is_dong_code` 가 아니라서 `not is_dong_code` 로 가르면 시·군·구로 잘못 읽힌다.
+    """
+    unit = 'GUN' if is_district_code(legal_division_code) else 'EUP'
+    return filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': unit})
 
 
 class AreaScope(NamedTuple):
-    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
+    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동·시·군·구 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
 
     scope: str  # pagination_notes 의 scope ('전부'·'없습니다' 가 어느 범위인지)
     total_basis: str  # pagination_notes 의 total_basis
@@ -1041,7 +1049,7 @@ class AreaScope(NamedTuple):
 
 
 def area_scope(legal_division_code: str | None, radius_km: float) -> AreaScope:
-    """동 코드가 있으면 동 경계, 없으면 반경 검색의 안내 말."""
+    """법정동 코드가 있으면 동·시·군·구 경계, 없으면 반경 검색의 안내 말."""
     if legal_division_code is not None:
         return AreaScope(scope='', total_basis='', narrow='조건·지역', narrow_action='조건을 좁혀')
     return AreaScope(
