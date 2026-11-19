@@ -125,13 +125,18 @@ const investigate = i => {
 phase('조사')
 // 소스끼리는 동시에. 같은 소스는 동시에 SAME_SOURCE_MAX 명까지 돌리고 남은 범위는 그 뒤에 돌린다 (요청 수는
 // jibsa 요청 제한기가 프로세스끼리 합쳐서 세지만, 조사원이 직접 여는 브라우저는 세지 않는다).
+// 자리 SAME_SOURCE_MAX 개가 남은 범위를 하나씩 꺼내 간다. 셋씩 잘라 돌리면 한 번에 띄운 셋이 모두 끝나야 다음을 띄워,
+// 먼저 끝난 자리가 가장 늦은 조사원을 기다렸다 (2026-11-19 implement-bundles 실측: 당근 C·D 가 끝난 뒤 E 가 B 를 기다림)
 const reports = []
 await parallel(Object.values(bySource).map(same => async () => {
-  for (let k = 0; k < same.length; k += SAME_SOURCE_MAX) {
-    const batch = same.slice(k, k + SAME_SOURCE_MAX)
-    const rs = await parallel(batch.map(i => () => investigate(i)))
-    batch.forEach((i, j) => { reports[i] = rs[j] })
+  let next = 0
+  const lane = async () => {
+    while (next < same.length) {
+      const i = same[next++]
+      reports[i] = await investigate(i)
+    }
   }
+  await parallel(Array.from({ length: Math.min(SAME_SOURCE_MAX, same.length) }, () => lane))
 }))
 
 const results = targets.map((t, i) => ({ source: t.source, name: nameOf(i), scope: t.scope, ok: Boolean(reports[i]), ...(reports[i] || {}) }))
