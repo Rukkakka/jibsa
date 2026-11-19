@@ -113,7 +113,8 @@ README는 로고·배지·기능 요약·빠른 시작(가상 매물 출력 예�
 
 커밋 전에 **[docs/development/workflow.md](docs/development/workflow.md)** 를 읽는다. 요약:
 **커밋 전에 `.github/ISSUE_TEMPLATE/` 템플릿으로 이슈를 연다.** `main` 에 직접 커밋하지 않고
-`<type>/<slug>` 브랜치에서 `Refs #12` 로 이슈를 달아 커밋한다. 모든 변경은 PR 템플릿을 채운 PR 로
+`<type>/<slug>` 브랜치를 따서 **커밋하기 전에 빈 채로 push 한 뒤** (브랜치를 처음 push 할 때 함께 올라간 커밋은 이슈에
+보이지 않는다) `Refs #12` 로 이슈를 달아 커밋한다. 모든 변경은 PR 템플릿을 채운 PR 로
 들어가고, 이슈는 PR 본문(`Closes #12`)에서 닫는다. 커밋 하나에 관심사 하나, `git add -A` 금지.
 사용자에게 보이는 변경은 그 PR 에서 `CHANGELOG.md` 에 적는다. 버전 올리기·태그·GitHub Release 는
 [docs/development/release.md](docs/development/release.md) 를 따른다.

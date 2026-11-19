@@ -10,9 +10,9 @@ effort: high
 
 1. **준비 확인.** `git fetch origin` 으로 원격을 새로 받은 뒤 `git branch --show-current`·`git status`·`git rev-list --left-right --count main...origin/main`. 지금 브랜치가 `main` 이 아니거나, 작업 트리에 릴리스와 상관없는 변경이 있거나, `main` 이 원격과 다르면(앞서거나 뒤처짐) 알리고 멈춘다.
 2. **버전 정하기.** `CHANGELOG.md` 의 `## Unreleased` 를 읽고 release.md "번호 붙이는 법" 표로 항목마다 자리를 정해 다음 버전을 제안한다 (`$ARGUMENTS` 가 있으면 그것과 견준다). `Unreleased` 가 비어 있으면 멈춘다.
-3. **이슈와 브랜치** (허락 뒤). 🧹 잡무 템플릿으로 이슈를 열고 `git switch -c chore/release-X.Y.Z main` 으로 `main` 에서 브랜치를 딴다 (`docs/development/workflow.md`).
+3. **이슈와 브랜치** (허락 뒤). 🧹 잡무 템플릿으로 이슈를 열고 `git switch -c chore/release-X.Y.Z main` 으로 `main` 에서 브랜치를 따고, 커밋하기 전에 `git push -u origin chore/release-X.Y.Z` 로 빈 채로 올린다 (`docs/development/workflow.md` "모든 커밋은 이슈에서 시작한다" 2단계. 커밋과 함께 처음 올리면 릴리스 이슈에 커밋이 보이지 않는다).
 4. **버전 올리기 커밋** (허락 뒤). 한 커밋으로 `pyproject.toml` 의 `version` 을 올리고, `## Unreleased` 를 `## X.Y.Z — YYYY-MM-DD` 로 바꾼 뒤 그 위에 빈 `## Unreleased` 를 둔다. 커밋 메시지와 `Refs #이슈` 는 workflow.md 를 따른다.
-5. **푸시와 PR** (허락 뒤). 브랜치를 `git push -u origin chore/release-X.Y.Z` 로 올리고, PR 템플릿을 채워 연다. 머지는 사용자가 하거나 시킬 때 한다.
+5. **푸시와 PR** (허락 뒤). 버전 올리기 커밋을 `git push` 로 올리고, PR 템플릿을 채워 연다. 머지는 사용자가 하거나 시킬 때 한다.
 6. **태그** (머지 뒤, 허락 뒤). 머지된 `main` 에만 단다.
 
    ```
