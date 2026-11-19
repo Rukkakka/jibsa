@@ -53,7 +53,10 @@
 6. **서버 값 한 칸이 결과 전체를 깨뜨림.** 서버 글자·목록·헤더를 `int()`·`[0]`·`del`·`.encode` 로 바로 다루지 않는가 (그 칸만
    `null`·건너뛰기여야 한다). 확인: diff 의 그 호출과 Optional 아닌 list 필드에 빈 글자·'-'·null·소수를 넣어 본다.
    예: `providers/daangn/service/compare.py:533` (연월 `int()` 로 비교 전체가 PARSE_ERROR).
-   언제: 서버 값에 `int(`·`float(`·`[0]`·`del `·`.split(`·`.encode` 를 바로 쓰는 `+` 줄, `api/response/` 의 필드 자료형을 바꾼 diff.
+   언제: 서버 값에 `int(`·`float(`·`[0]`·`del `·`.split(`·`.encode` 를 바로 쓰는 `+` 줄, `api/response/` 의 필드 자료형을 바꾸거나
+   응답 모델을 새로 더한 diff (나눗셈·평균으로 나오는 값(원/평 등)을 `int` 로 받으면 소수 한 행에 ValidationError 가 나고, 덤
+   조회면 `result_or_empty` 가 삼켜 목록 전체가 `null` 이 된다: `providers/naver/api/response/real_price.py`
+   `NaverVillaPyeongPriceModel.pyeong_price`, 2026-11-19). 한 필드를 이 이유로 `float` 로 바꿨으면 같은 응답 모델 파일들의 다른 평균·나눗셈 필드(`average*`·`avg*`·`*AverageFee`)도 함께 본다 (2026-11-19 네이버 빌라 real-price 리뷰: 평당 호가 둘만 바꾸고 평균 관리비·시세 평균·실거래 평균·주간 평균 매물 수를 `int` 로 남김). 개수 평균은 출력 모델도 `int | float` 로 바꿔야 하고, `float` 만 쓰면 정수가 `1006.0` 으로 나가 출력이 바뀐다.
 7. **지운 줄이 받던 입력.** `git diff` 의 `-` 줄이 받던 꼴(더 짧은 날짜, 다른 구분자, 빈 값)을 `+` 줄도 받는가. 고친 코드가
    예전보다 정보를 버리면 퇴보다. 확인: 지운 분기와 새 분기에 같은 입력을 넣어 비교한다.
    예: `providers/naver/service/listing.py:129` (연월만 온 날짜의 '초순' 이 빠졌다, 2026-11-16).
@@ -209,6 +212,12 @@
    보고, 공유 조각이 앞에 오는 배열과 값 하나를 바꾼 번들 글자를 넣어 본다. 예: `scripts/monitor/api_check.py` 의
    `check_zigbang_stay_refund_rules` (`pages[0]`, 정책 이름표 `유연` 을 견주지 않음, 2026-11-17).
    언제: `scripts/monitor/` 에 웹 번들·매니페스트를 읽는 검사를 더하거나 바꾼 diff.
+9. **웹 지도 크기로 잡는 범위를 한 곳에서 잰 도(°)로 고정하지 않았나.** 웹이 지도(픽셀 크기·줌)의 범위를 보내면 경도 폭은
+   위도와 상관없이 같지만 위도 폭은 메르카토르라 위도마다 다르다 (같은 388×200px 지도의 위도 폭이 서울 37.47° 에서 0.001703°,
+   제주 33.5° 에서 0.0017893°). 한 단지에서 잰 도 값을 상수로 두면 다른 위도에서 웹과 범위가 어긋난다. 확인: 상수가 실측한
+   도 값인지, 픽셀·축척으로 단지 위도에서 계산하는지 보고, 위도가 다른 두 곳을 넣어 위도 폭을 견준다. 예:
+   `providers/naver/service/real_price.py` `_web_map_box` (빌라 주변 실거래 기본 범위가 572549 에서 잰 도 상수였다, 2026-11-19).
+   언제: 웹 지도 범위(`top`·`bottom`·`left`·`right`, bounds)를 흉내 내는 기본값을 더하거나 바꾼 diff.
 
 ## `requests` 요청 수·차단 위험
 
@@ -282,8 +291,10 @@
    dict(`assigned_complexes`)면 키 이름이 바뀌어 안쪽 목록이 빈 채로 와도 정상으로 본다. 그 명령이 정상이면 비지 않는 목록
    (`assigned_complexes.complexes`)을 가리킨다. 확인: 새 `Step` 의 기대 칸이 정상 응답에서 늘 비지 않는 값인지, 그 값을 만드는
    응답 키가 바뀌면 빈 값(`[]`·`{}`·null)이 되는지 본다. 예: `scripts/monitor/api_check.py:214` (네이버 `school --complexes`
-   단계가 바깥 dict 만 봤다, 2026-11-18).
-   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸을 바꾼 diff.
+   단계가 바깥 dict 만 봤다, 2026-11-18). 명령 하나가 덤 엔드포인트를 여럿 부르면 덤마다 그 값을 기대 칸으로 보는 `Step` 이
+   있는가도 본다. 덤 조회는 실패하면 `null` 로만 남아, 다른 덤을 보는 단계로는 못 잡는다 (네이버 빌라 `real-price` 가
+   `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19).
+   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
 
 ## 지적하지 말 것
 
