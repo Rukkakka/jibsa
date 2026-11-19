@@ -59,7 +59,7 @@ class NaverWeeklyCount(BaseModel):
         Field(description='그 주 첫날 (YYYY-MM-DD)')
     ] = None
     count: Annotated[
-        int | None,
+        int | float | None,
         Field(description='건수')
     ] = None
 
@@ -89,7 +89,7 @@ class NaverListingCountTrend(BaseModel):
     )
 
     period_average: Annotated[
-        int | None,
+        int | float | None,
         Field(description='기간 평균 매물 수')
     ] = None
     latest: Annotated[
@@ -139,7 +139,7 @@ class NaverTradeCountTrend(BaseModel):
     )
 
     period_average: Annotated[
-        int | None,
+        int | float | None,
         Field(description='기간 평균 주간 거래 건수')
     ] = None
     latest: Annotated[

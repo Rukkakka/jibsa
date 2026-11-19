@@ -27,16 +27,16 @@ class NaverComplexMaintenanceFeeModel(ResponseModel):
         Field(description='가장 최근 달 관리비', alias='yearMonthFee')
     ] = None
     month_average_fee: Annotated[
-        int | None,
-        Field(description='월평균 관리비', alias='monthAverageFee')
+        float | None,
+        Field(description='월평균 관리비. 평균이라 소수로 와도 받는다', alias='monthAverageFee')
     ] = None
     summer_average_fee: Annotated[
-        int | None,
-        Field(description='여름 평균 관리비', alias='summerAverageFee')
+        float | None,
+        Field(description='여름 평균 관리비. 평균이라 소수로 와도 받는다', alias='summerAverageFee')
     ] = None
     winter_average_fee: Annotated[
-        int | None,
-        Field(description='겨울 평균 관리비 (난방비 때문에 높다)', alias='winterAverageFee')
+        float | None,
+        Field(description='겨울 평균 관리비 (난방비 때문에 높다). 평균이라 소수로 와도 받는다', alias='winterAverageFee')
     ] = None
 
 
@@ -56,12 +56,12 @@ class NaverMarketPriceModel(ResponseModel):
         Field(description='매매 시세 범위', alias='dealPriceRange')
     ] = None
     deal_average_price: Annotated[
-        int | None,
-        Field(description='매매 시세 평균', alias='dealAveragePrice')
+        float | None,
+        Field(description='매매 시세 평균. 평균이라 소수로 와도 받는다', alias='dealAveragePrice')
     ] = None
     lease_average_price: Annotated[
-        int | None,
-        Field(description='전세 시세 평균', alias='leaseAveragePrice')
+        float | None,
+        Field(description='전세 시세 평균. 평균이라 소수로 와도 받는다', alias='leaseAveragePrice')
     ] = None
     deposit_price_range: Annotated[
         NaverPriceRangeModel | None,
@@ -114,8 +114,8 @@ class NaverRealPriceSummaryModel(ResponseModel):
         Field(description='최고가 거래', alias='maxPrice')
     ] = None
     avg_price: Annotated[
-        int | None,
-        Field(description='평균가 (매매는 매매가, 전세는 보증금)', alias='avgPrice')
+        float | None,
+        Field(description='평균가 (매매는 매매가, 전세는 보증금). 평균이라 소수로 와도 받는다', alias='avgPrice')
     ] = None
 
 
@@ -240,8 +240,8 @@ class NaverLegalDivisionPricePerPyeongModel(ResponseModel):
     """지역(시·구·동)의 평당 호가 (원). 평형이 속한 지역을 큰 단위부터 서울시(SI)·송파구(GUN)·가락동(EUP) 순으로 준다."""
 
     price_per_pyeong: Annotated[
-        int | None,
-        Field(description='평당 호가 (원)', alias='pricePerPyeong')
+        float | None,
+        Field(description='평당 호가 (원). 평균이라 소수로 와도 받는다', alias='pricePerPyeong')
     ] = None
     first_day_of_week: Annotated[
         str | None,
@@ -269,8 +269,8 @@ class NaverComplexPyeongPriceModel(ResponseModel):
     """평형의 평당 호가. 월세(B2)나 없는 값은 `pricePerPyeong` 키가 없고 목록이 비어 온다."""
 
     price_per_pyeong: Annotated[
-        int | None,
-        Field(description='평당 호가 (원, 공급 평수 기준, 매물 호가 기준 주간값)', alias='pricePerPyeong')
+        float | None,
+        Field(description='평당 호가 (원, 공급 평수 기준, 매물 호가 기준 주간값). 나눗셈 값이라 소수로 와도 받는다', alias='pricePerPyeong')
     ] = None
     legal_division_price_per_pyeong_list: Annotated[
         list[NaverLegalDivisionPricePerPyeongModel] | None,
