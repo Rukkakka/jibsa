@@ -1138,6 +1138,42 @@ def test_city_name_is_boundary_only_when_it_has_no_district(
         assert (boundary_code, scope) == (code, {'boundary': city})
 
 
+@pytest.mark.parametrize(
+    'sub_info,expected',
+    [
+        # 시·군·구가 하나뿐인 시·도(세종)는 그 시·군·구(GUN) 경계 전체다
+        (_ok([{'legalDivisionNumber': '3611000000', 'legalDivisionName': '세종시', 'legalDivisionLevelType': 'GUN'}]), 'boundary'),
+        # 시·군·구가 여럿이면 지금처럼 시·도 중심 반경이고 넓은 지역 안내가 그대로다
+        (_ok([
+            {'legalDivisionNumber': '4111000000', 'legalDivisionName': '경기도 수원시', 'legalDivisionLevelType': 'GUN'},
+            {'legalDivisionNumber': '4113000000', 'legalDivisionName': '경기도 성남시', 'legalDivisionLevelType': 'GUN'},
+        ]), 'wide'),
+        # 조회가 실패하면 반경으로 찾고 넓은 지역 안내 대신 [실패] 로 알린다
+        ({'isSuccess': False, 'detailCode': 'INTERNAL_ERROR'}, 'failed'),
+    ],
+)
+def test_province_name_is_boundary_only_when_it_has_a_single_district(sub_info: dict, expected: str) -> None:
+    from jibsa.cli.naver import _area_location
+
+    requests: list[httpx.Request] = []
+    overrides = {'/maps-search/address': _address_list(['세종특별자치시'], '3600000000'), '/legalDivision/subInfoList': sub_info}
+    with make_path_client(requests, overrides) as client:
+        region, notes, boundary_code, scope = _area_location(client, '세종시', None, None, None)
+        radius_code = _area_location(client, '세종시', None, None, 1.0)[2]
+    assert radius_code is None  # --radius 를 주면 시·군·구를 묻지 않고 반경이다
+    assert _paths(requests).count('/legalDivision/subInfoList') == 1
+    if expected == 'boundary':
+        assert (boundary_code, scope) == ('3611000000', {'boundary': region.name})
+        assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
+    elif expected == 'wide':
+        assert (boundary_code, scope) == (None, {'radius_km': 1.0})
+        assert any(WIDE_REGION_NOTE_MARK in text for text in notes)
+    else:
+        assert (boundary_code, scope) == (None, {'radius_km': 1.0})
+        assert sum('[실패]' in text for text in notes) == 1
+        assert not any(WIDE_REGION_NOTE_MARK in text for text in notes)
+
+
 # --- 학교 배정 단지 ----------------------------------------------------------
 
 

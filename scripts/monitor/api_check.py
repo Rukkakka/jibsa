@@ -189,6 +189,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('매물 구 전체 성동구', NAVER_LISTINGS, ('성동구', '--limit', '2'), 'listings'),
         # 구 없는 시는 하위 지역 목록 1회로 구가 없는지 본 뒤 시 경계 전체(GUN)로 찾는다
         Step('매물 시 전체 구리시', NAVER_LISTINGS, ('구리시', '--limit', '2'), 'listings'),
+        # 시·군·구가 하나뿐인 시·도(세종)는 하위 지역 목록 1회로 확인한 뒤 그 시·군·구 경계(GUN)로 찾는다
+        Step('매물 시·도 전체 세종', NAVER_LISTINGS, ('세종시', '--limit', '2'), 'listings'),
         Step('단지 목록 구 전체 성동구', ('naver', 'search', 'complexes'), ('성동구', '--limit', '1'), 'complexes'),
         Step('재개발 구역 구 전체 성동구', ('naver', 'search', 'redevelopment'), ('성동구', '--limit', '1'), 'areas'),
         Step(
