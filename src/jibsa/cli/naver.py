@@ -828,7 +828,7 @@ def trend_command(
                 '실거래는 계약 뒤 30일 안에 신고해 최근 4주쯤의 trade_count 는 신고가 덜 모여 적게 나옵니다 '
                 '(마지막 주 0건도 거래가 없었다는 뜻이 아닐 수 있습니다). 거래 흐름은 한 달 넘게 지난 주로 보세요',
             ))
-        emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes)
+        emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes + trend.notes)
 
 
 @app.command('real-price')
@@ -988,7 +988,7 @@ def school_command(
             complex_number, villa, notes = _complex_number(client, complex_)
         school = get_school(client, school_code, complex_number=complex_number, villa=villa)
         if not complexes:
-            emit(school, pretty, notes=notes)
+            emit(school, pretty, notes=notes + school.notes)
             return
         assigned = list_school_complexes(
             client, school_code, sort=sort, limit=SCHOOL_COMPLEX_DEFAULT_LIMIT if limit is None else limit,
@@ -996,7 +996,7 @@ def school_command(
         emit(
             {**school.model_dump(mode='json'), 'assigned_complexes': assigned.model_dump(mode='json')},
             pretty,
-            notes=notes + assigned.notes,
+            notes=notes + school.notes + assigned.notes,
         )
 
 
@@ -1011,7 +1011,8 @@ def listing_command(
     if NUMBER_PATTERN.fullmatch(item_id) is None:
         raise typer.BadParameter('매물 ID 는 숫자입니다 (search listings 결과의 id)', param_hint='ITEM_ID')
     with handle_errors(SOURCE), NaverClient() as client:
-        emit(get_listing(client, item_id), pretty)
+        detail = get_listing(client, item_id)
+        emit(detail, pretty, notes=detail.notes)
 
 
 def _listing_conditions(

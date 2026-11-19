@@ -8,6 +8,7 @@ import pytest
 from jibsa.cli.app import run
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    UPDATE_MAYBE_NEEDED,
     months_ago,
     years_ago,
 )
@@ -15,7 +16,10 @@ from jibsa.providers.naver.api.client import (
     NaverClient,
     should_retry_naver,
 )
-from jibsa.providers.naver.api.response.common import NaverComplexArticlePriceModel
+from jibsa.providers.naver.api.response.common import (
+    NaverComplexArticlePriceModel,
+    NaverResponseModel,
+)
 from jibsa.providers.naver.api.response.search import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
@@ -23,6 +27,8 @@ from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
     article_info_to_listing,
     rent_asking_range,
+    result_or_empty,
+    result_or_none,
 )
 from jibsa.providers.naver.service.listing import (
     get_listing,
@@ -1309,10 +1315,13 @@ def test_complex_pyeong_groups_null_result_is_empty_but_failure_is_unknown() -> 
 
     # 성공인데 result 가 null 이면 real-price --group 과 같게 묶음 없음([])이고, 조회 실패(isSuccess false)만 모름(null)이다
     with make_path_client([], {'/complex/pyeongGroups': _ok(None)}) as client:
-        assert _pyeong_groups(client, 100001) == []
+        assert _pyeong_groups(client, 100001, []) == []
     failure = {'isSuccess': False, 'detailCode': 'ERROR', 'result': {}}
     with make_path_client([], {'/complex/pyeongGroups': failure}) as client:
-        assert _pyeong_groups(client, 100001) is None
+        notes: list[str] = []
+        assert _pyeong_groups(client, 100001, notes) is None
+    # 실패는 [실패] 안내로 알린다 (isSuccess false 는 거절이라 업데이트 안내가 붙는다)
+    assert len(notes) == 1 and notes[0].startswith('[실패] ') and 'pyeong_groups' in notes[0]
 
 
 def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() -> None:
@@ -1326,7 +1335,7 @@ def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() ->
     ]
     with make_path_client([], {'/complex/pyeongGroups': _ok(groups)}) as client:
         # complex: 그 묶음만 pyeong_numbers 가 null(모름)이다
-        assert [group.pyeong_numbers for group in _pyeong_groups(client, 100001) or []] == [None, [2, 3]]
+        assert [group.pyeong_numbers for group in _pyeong_groups(client, 100001, []) or []] == [None, [2, 3]]
         # real-price --group: 번호를 모르는 묶음은 건너뛰고 번호가 든 묶음에서 짝을 찾는다
         group, request_numbers = _find_pyeong_group(client, 100001, 2)
         assert (group.name, group.pyeong_numbers, request_numbers) == ('40평', [2, 3], [3, 2])
@@ -1348,10 +1357,41 @@ def test_price_per_pyeong_null_region_list_keeps_the_price() -> None:
     assert (trade.manwon_per_pyeong, trade.as_of, trade.regions) == (15000, None, None)
     # 성공인데 result 가 null 이면 평당가를 주지 않은 것이라 키를 빼고(월세와 같다), 조회 실패만 null(모름)이다
     with make_path_client([], {'/complex/pyeongPrice/pyeongType': _ok(None)}) as client:
-        assert _price_per_pyeong(client, 100001, 1, 'A01') == {}
+        assert _price_per_pyeong(client, 100001, 1, 'A01', []) == {}
     failure = {'isSuccess': False, 'detailCode': 'ERROR', 'result': {}}
     with make_path_client([], {'/complex/pyeongPrice/pyeongType': failure}) as client:
-        assert _price_per_pyeong(client, 100001, 1, 'A01') == {'sale': None, 'jeonse': None}
+        assert _price_per_pyeong(client, 100001, 1, 'A01', []) == {'sale': None, 'jeonse': None}
+
+
+def _raise(exc: Exception):
+    def request() -> NaverResponseModel[int]:
+        raise exc
+
+    return request
+
+
+@pytest.mark.parametrize(('exc', 'needs_update'), [
+    (httpx.ConnectError('연결 실패'), False),
+    (httpx.HTTPStatusError('서버 오류', request=httpx.Request('GET', 'https://x'), response=httpx.Response(503)), False),
+    (httpx.HTTPStatusError('거절', request=httpx.Request('GET', 'https://x'), response=httpx.Response(403)), True),
+    (ValueError('응답 형식'), True),
+])
+def test_optional_lookup_failure_note(exc: Exception, needs_update: bool) -> None:
+    # 일시 장애(5xx·연결 실패)는 업데이트 안내 없이, 거절(4xx)·응답 형식 변경은 업데이트 안내를 붙인다 (매일 감시가 둘을 가른다)
+    notes: list[str] = []
+    assert result_or_none(_raise(exc), notes=notes, what='관리비', unknown='모름(null)으로 낸 칸: fee') is None
+    # 같은 실패를 거듭 불러도 안내는 하나다
+    assert result_or_none(_raise(exc), notes=notes, what='관리비', unknown='모름(null)으로 낸 칸: fee') is None
+    assert len(notes) == 1 and notes[0].startswith('[실패] ') and (UPDATE_MAYBE_NEEDED in notes[0]) is needs_update
+
+
+def test_result_or_empty_is_success_false_notes_update_hint() -> None:
+    notes: list[str] = []
+    response = NaverResponseModel[list[int]].model_validate({'isSuccess': False, 'detailCode': 'ERROR'})
+    assert result_or_empty(lambda: response, list, notes=notes, what='관리비', unknown='모름(null)으로 낸 칸: fee') is None
+    assert len(notes) == 1 and notes[0].startswith('[실패] ') and UPDATE_MAYBE_NEEDED in notes[0]
+    # notes 가 None 이면 호출부가 스스로 알리는 것이라 안내를 더하지 않는다
+    assert result_or_empty(lambda: response, list, notes=None, what='관리비', unknown='') is None
 
 
 # --- 사용법 오류 ----------------------------------------------------------------

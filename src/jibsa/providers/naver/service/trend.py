@@ -183,6 +183,10 @@ class NaverDistrictTrend(BaseModel):
         NaverTradeCountTrend | None,
         Field(description='주간 실거래 건수. 조회 실패면 null')
     ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
+    ] = []
 
 
 def get_district_trend(
@@ -215,15 +219,16 @@ def get_district_trend(
     }
     # 동·구뿐 아니라 시·도 코드(서울 1100000000, 2026-10-10)와 전국 코드도 세 엔드포인트가 200 으로 답한다. 429 는 응답 훅이
     # RateLimitedError 로 바꿔 result_or_none 이 삼키지 않으므로, 셋 다 실패한 UPSTREAM_ERROR 는 일시 장애다
+    notes: list[str] = []
     counts = result_or_none(lambda: client.run_request_legal_division_article_count_weekly_info_v1(
         NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel(**query)
-    ))
+    ), notes=notes, what='매물 수 추이', unknown='모름(null)으로 낸 칸: listing_count')
     prices = result_or_none(lambda: client.run_request_legal_division_pyeong_price_weekly_list_v1(
         NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel(**query)
-    ))
+    ), notes=notes, what='평당가 추이', unknown='모름(null)으로 낸 칸: price_per_pyeong')
     trades = result_or_none(lambda: client.run_request_legal_division_real_trade_count_weekly_list_v1(
         NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel(**query)
-    ))
+    ), notes=notes, what='실거래 수 추이', unknown='모름(null)으로 낸 칸: trade_count')
     if counts is None and prices is None and trades is None:
         raise JibsaError(
             code='UPSTREAM_ERROR',
@@ -257,4 +262,5 @@ def get_district_trend(
             latest=trades.latest_weekly_trade_count,
             weekly=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.trade_count) for point in trades.weekly_counts],
         ),
+        notes=notes,
     )

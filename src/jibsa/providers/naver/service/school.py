@@ -158,6 +158,10 @@ class NaverSchoolDetail(BaseModel):
         list[str] | None,
         Field(description="그 단지에서 이 학교에 배정되는 동 (예: '101동~105동'). 전체 배정이면 ['전체 동']. --complex 를 주지 않았으면 키가 없고, 조회 실패이거나 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데 네이버가 어느 동인지(동 묶음) 주지 않으면 null (일부 동만 배정된 단지와 배정되지 않은 단지가 같은 모양이다)")
     ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
+    ] = []
     url: Annotated[
         str,
         Field(description='학교 페이지 URL')
@@ -219,6 +223,7 @@ def get_school(
     )
     all_assigned: bool | None = None
     assigned: list[str] | None = None
+    notes: list[str] = []
     if complex_number is not None:
         if villa is None:
             # 배정 동은 빌라 단지를 complex 로 물어도 villa 로 물어도 false·[] 라 (가람아트빌 673573 ↔ E100000875,
@@ -235,7 +240,7 @@ def get_school(
             NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel(
                 complex_number=complex_number, school_code=school_code, item_type='villa' if villa else 'complex',
             )
-        ))
+        ), notes=notes, what='배정 동', unknown='모름(null)으로 낸 칸: all_dongs_assigned, assigned_dongs')
         if allocation is not None:
             all_assigned = allocation.is_all_building_assigned
             assigned = _assigned_dongs(all_assigned, allocation.converted_building_name_groups)
@@ -267,6 +272,7 @@ def get_school(
         complex_number=complex_number,
         all_dongs_assigned=all_assigned,
         assigned_dongs=assigned,
+        notes=notes,
         url=school_url(school.school_code),
     )
 
