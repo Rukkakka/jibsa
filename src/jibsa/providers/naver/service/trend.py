@@ -19,12 +19,12 @@ from jibsa.providers.naver.api.request.trend import (
     NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel,
     NaverTrendOffset,
 )
-from jibsa.providers.naver.service.common import result_or_none
-
-from typing import (
-    Annotated,
-    Literal,
+from jibsa.providers.naver.service.common import (
+    SALE_JEONSE_CODE_BY_NAME,
+    result_or_none,
 )
+
+from typing import Annotated
 
 
 TREND_PERIOD_BY_NAME: dict[str, NaverTrendOffset] = {
@@ -33,10 +33,6 @@ TREND_PERIOD_BY_NAME: dict[str, NaverTrendOffset] = {
     '1년': 'P-1Y',
     '3년': 'P-3Y',
     '5년': 'P-5Y',
-}
-TREND_TRADE_CODE_BY_NAME: dict[str, Literal['A1', 'B1']] = {
-    '매매': 'A1',
-    '전세': 'B1',
 }
 # 평형대 하한 (평)과 폭. 사이트처럼 10평 단위로 하한~하한+10 평
 TREND_PYEONG_RANGES: tuple[int, ...] = (10, 20, 30, 40, 50)
@@ -59,7 +55,7 @@ class NaverWeeklyCount(BaseModel):
         Field(description='그 주 첫날 (YYYY-MM-DD)')
     ] = None
     count: Annotated[
-        int | None,
+        int | float | None,
         Field(description='건수')
     ] = None
 
@@ -89,7 +85,7 @@ class NaverListingCountTrend(BaseModel):
     )
 
     period_average: Annotated[
-        int | None,
+        int | float | None,
         Field(description='기간 평균 매물 수')
     ] = None
     latest: Annotated[
@@ -139,7 +135,7 @@ class NaverTradeCountTrend(BaseModel):
     )
 
     period_average: Annotated[
-        int | None,
+        int | float | None,
         Field(description='기간 평균 주간 거래 건수')
     ] = None
     latest: Annotated[
@@ -183,6 +179,10 @@ class NaverDistrictTrend(BaseModel):
         NaverTradeCountTrend | None,
         Field(description='주간 실거래 건수. 조회 실패면 null')
     ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
+    ] = []
 
 
 def get_district_trend(
@@ -199,7 +199,7 @@ def get_district_trend(
 
     Args:
         legal_division_code: 법정동 코드 10자리. 전국은 `NATIONWIDE_CODE`.
-        trade_type: `TREND_TRADE_CODE_BY_NAME` 의 이름 (매매, 전세).
+        trade_type: `SALE_JEONSE_CODE_BY_NAME` 의 이름 (매매, 전세).
         period: `TREND_PERIOD_BY_NAME` 의 이름.
         pyeong_range: 평형대 하한 (`TREND_PYEONG_RANGES`). 주면 하한~하한+`TREND_PYEONG_RANGE_WIDTH` 평만.
 
@@ -208,22 +208,23 @@ def get_district_trend(
     """
     query = {
         'legal_division_number': legal_division_code,
-        'trade_type': TREND_TRADE_CODE_BY_NAME[trade_type],
+        'trade_type': SALE_JEONSE_CODE_BY_NAME[trade_type],
         'offset': TREND_PERIOD_BY_NAME[period],
         'pyeong_range_lower': pyeong_range,
         'pyeong_range_upper': None if pyeong_range is None else pyeong_range + TREND_PYEONG_RANGE_WIDTH,
     }
     # 동·구뿐 아니라 시·도 코드(서울 1100000000, 2026-10-10)와 전국 코드도 세 엔드포인트가 200 으로 답한다. 429 는 응답 훅이
     # RateLimitedError 로 바꿔 result_or_none 이 삼키지 않으므로, 셋 다 실패한 UPSTREAM_ERROR 는 일시 장애다
+    notes: list[str] = []
     counts = result_or_none(lambda: client.run_request_legal_division_article_count_weekly_info_v1(
         NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel(**query)
-    ))
+    ), notes=notes, what='매물 수 추이', unknown='모름(null)으로 낸 칸: listing_count')
     prices = result_or_none(lambda: client.run_request_legal_division_pyeong_price_weekly_list_v1(
         NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel(**query)
-    ))
+    ), notes=notes, what='평당가 추이', unknown='모름(null)으로 낸 칸: price_per_pyeong')
     trades = result_or_none(lambda: client.run_request_legal_division_real_trade_count_weekly_list_v1(
         NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel(**query)
-    ))
+    ), notes=notes, what='실거래 수 추이', unknown='모름(null)으로 낸 칸: trade_count')
     if counts is None and prices is None and trades is None:
         raise JibsaError(
             code='UPSTREAM_ERROR',
@@ -257,4 +258,5 @@ def get_district_trend(
             latest=trades.latest_weekly_trade_count,
             weekly=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.trade_count) for point in trades.weekly_counts],
         ),
+        notes=notes,
     )

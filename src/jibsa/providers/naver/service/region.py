@@ -1093,7 +1093,10 @@ def city_district_names(client: NaverClient, code: str) -> list[str] | None:
     """
     # 리뷰 오탐 (2026-11-18): 시 코드 앞 두 자리는 네이버 시·도 코드와 같다 (강원 51·전북 52·전남광주 12 모두 시·도 목록과 같은 새 코드, 전주·목포·춘천 실측)
     sido_code = code[:2] + '00000000'
-    sub_regions = result_or_none(lambda: _sub_regions_response(client, 'GUN', sido_code))
+    # 실패하면 CLI(`cli/naver.py` `_area_location`)가 반경으로 찾았다는 [실패] 안내를 이미 낸다
+    sub_regions = result_or_none(
+        lambda: _sub_regions_response(client, 'GUN', sido_code), notes=None, what='시·군·구 목록', unknown='',
+    )
     if sub_regions is None:
         return None
     districts = _city_districts(sub_regions, code)
@@ -1114,7 +1117,10 @@ def only_district_of_province(client: NaverClient, sido_code: str) -> tuple[str,
     세종은 시·군·구가 '세종시' 3611000000 하나뿐이라 그 시·군·구 경계가 곧 세종 전체다 (`list_regions` 와 같은 판정이다).
     그 코드를 `legalDivisionArticleList` 의 시·군·구(GUN)에 넣으면 세종 전체 매물이 온다 (2026-11-19 실측).
     """
-    children = result_or_none(lambda: _sub_regions_response(client, 'GUN', sido_code))
+    # 실패하면 CLI(`cli/naver.py` `_area_location`)가 반경으로 찾았다는 [실패] 안내를 이미 낸다
+    children = result_or_none(
+        lambda: _sub_regions_response(client, 'GUN', sido_code), notes=None, what='시·군·구 목록', unknown='',
+    )
     if children is None:
         return 'unknown'
     only = _only_district(children)

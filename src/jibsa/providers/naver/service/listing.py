@@ -396,17 +396,22 @@ def _sum_manwon(*amounts: int | None) -> float | None:
     return won_to_manwon(sum(known)) if known else None
 
 
-def _agent_fee(client: NaverClient, article_number: str) -> dict[str, Any]:
+def _agent_fee(client: NaverClient, article_number: str, notes: list[str]) -> dict[str, Any]:
     """중개보수 상한(`agent_fee_manwon`, 만원)과 '개별확인' 여부 (1회 호출). 직거래가 아니면 모든 거래 유형에서 조회한다 (웹도 월세 매물에 '최대 28만원' 을 보여 준다).
 
     네이버 웹은 `isIndividualCheckRequired` 가 참이면 금액 대신 '개별확인' 을 그리므로 금액은 None 이고 여부가 True 다.
-    플래그가 없거나 거짓이면 웹도 금액을 그린다. 조회가 실패하면 둘 다 모름(None)이다.
+    플래그가 없거나 거짓이면 웹도 금액을 그린다. 조회가 실패하면 둘 다 모름(None)이고 `notes` 에 `[실패]` 안내를 붙인다.
     금액(fee)이 비어 오고 플래그가 참이 아니면 agent_fee_manwon 만 None 이고 여부는 False 다. 웹(ArticleRealtorFee)도
     그때 '개별확인' 이 아니라 금액 줄을 그린다 (리뷰 오탐, 2026-11-17).
     """
-    fee = result_or_none(lambda: client.run_request_article_agent_fee_v1(
-        NaverArticleAgentFeeV1RequestParameterModel(article_number=article_number)
-    ))
+    fee = result_or_none(
+        lambda: client.run_request_article_agent_fee_v1(
+            NaverArticleAgentFeeV1RequestParameterModel(article_number=article_number)
+        ),
+        notes=notes,
+        what='중개보수',
+        unknown='모름(null)으로 낸 칸: agent_fee_manwon, agent_fee_individual_check_required',
+    )
     if fee is None:
         return {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None}
     individual = fee.is_individual_check_required is True
@@ -416,12 +421,30 @@ def _agent_fee(client: NaverClient, article_number: str) -> dict[str, Any]:
     }
 
 
-def _sale_taxes(client: NaverClient, article_number: str) -> dict[str, float | None]:
-    """매매 매물의 세금 (1회 호출). 조회가 실패하면 그 값만 모름(None)으로 둔다."""
+def _sale_taxes(
+    client: NaverClient,
+    article_number: str,
+    real_estate_type: str,
+    notes: list[str],
+) -> dict[str, float | None]:
+    """매매 매물의 세금 (1회 호출). 조회가 실패하면 그 값만 모름(None)으로 두고 `notes` 에 `[실패]` 안내를 붙인다.
+
+    안내에 적는 칸은 출력에 남는 칸이다. 세 세금을 모두 그리는 유형(`ALL_TAX_TYPES`) 밖은 취득세만 남고 나머지 둘은 키를 뺀다
+    (`NaverListingDetail.not_applicable_fields`).
+    """
     costs: dict[str, float | None] = dict.fromkeys(SALE_TAX_FIELDS)
-    tax = result_or_none(lambda: client.run_request_article_tax_v1(
-        NaverArticleTaxV1RequestParameterModel(article_number=article_number)
-    ))
+    unknown = (
+        '모름(null)으로 낸 칸: acquisition_tax_manwon, property_tax_manwon, comprehensive_real_estate_tax_manwon'
+        if real_estate_type in ALL_TAX_TYPES else '모름(null)으로 낸 칸: acquisition_tax_manwon'
+    )
+    tax = result_or_none(
+        lambda: client.run_request_article_tax_v1(
+            NaverArticleTaxV1RequestParameterModel(article_number=article_number)
+        ),
+        notes=notes,
+        what='세금',
+        unknown=unknown,
+    )
     if tax is not None:
         if tax.acquisition_tax is not None:
             acquisition = tax.acquisition_tax
@@ -453,16 +476,22 @@ def _subway_label(station: NaverTransportSubwayModel) -> str | None:
     return f"{station.station_name} ({', '.join(parts)})" if parts else station.station_name
 
 
-def _surroundings(client: NaverClient, article_number: str, key: NaverArticleKeyModel) -> dict[str, Any]:
+def _surroundings(client: NaverClient, article_number: str, key: NaverArticleKeyModel, notes: list[str]) -> dict[str, Any]:
     """매물 주변의 지하철역·버스 노선·배정 초등학교 (1~2회 호출).
 
     학교는 사이트처럼 단지·동 번호가 있는 매물만 묻는다 (`has_school_lookup`. 없으면 출력에서 키를 뺀다).
-    조회가 실패하거나 교통이 통째로 비어 있으면 그 값만 모름(None)으로 둔다.
+    조회가 실패하거나 교통이 통째로 비어 있으면 그 값만 모름(None)으로 둔다. 조회가 실패했을 때만 `notes` 에 `[실패]` 안내를 붙인다
+    (교통이 비어 온 것은 실패가 아니다).
     """
     result: dict[str, Any] = {'nearby_subways': None, 'bus_routes': None, 'schools': None, 'has_school_lookup': False}
-    transport = result_or_none(lambda: client.run_request_data_service_transport_v1(
-        NaverDataServiceTransportV1RequestParameterModel(item_id=int(article_number))
-    ))
+    transport = result_or_none(
+        lambda: client.run_request_data_service_transport_v1(
+            NaverDataServiceTransportV1RequestParameterModel(item_id=int(article_number))
+        ),
+        notes=notes,
+        what='교통 정보',
+        unknown='모름(null)으로 낸 칸: nearby_subways, bus_routes',
+    )
     # 역도 버스도 없으면 네이버에 교통 정보가 없는 매물이다 (역삼동 단지형 빌라에서 둘 다 빈 목록,
     # 2026-10-09 확인). 주변에 정말 아무것도 없다는 뜻이 아니라 모름(None)으로 둔다
     if transport is not None and (transport.subway_list or transport.bus_list):
@@ -478,13 +507,18 @@ def _surroundings(client: NaverClient, article_number: str, key: NaverArticleKey
     if ids is None or not ids.complex_number or not ids.building_number:
         return result
     result['has_school_lookup'] = True
-    schools = result_or_none(lambda: client.run_request_education_building_school_v1(
-        NaverEducationBuildingSchoolV1RequestParameterModel(
-            item_type='villa' if key.type.real_estate_type in VILLA_COMPLEX_CODES else 'complex',
-            complex_number=ids.complex_number,
-            building_number=ids.building_number,
-        )
-    ))
+    schools = result_or_none(
+        lambda: client.run_request_education_building_school_v1(
+            NaverEducationBuildingSchoolV1RequestParameterModel(
+                item_type='villa' if key.type.real_estate_type in VILLA_COMPLEX_CODES else 'complex',
+                complex_number=ids.complex_number,
+                building_number=ids.building_number,
+            )
+        ),
+        notes=notes,
+        what='주변 학교',
+        unknown='모름(null)으로 낸 칸: schools',
+    )
     if schools is not None:
         result['schools'] = assigned_schools(schools)
     return result
@@ -568,11 +602,16 @@ class NaverNearbyDevelopment(BaseModel):
     ] = []
 
 
-def _nearby_development(client: NaverClient, article_number: str) -> NaverNearbyDevelopment | None:
-    """매물 근처의 예정 지하철역·개발 지구 (1회 호출). 웹은 매물 유형과 상관없이 늘 부른다. 조회가 실패하면 모름(None)이다."""
-    development: NaverDevelopmentArticleModel | None = result_or_none(lambda: client.run_request_development_article_v1(
-        NaverDevelopmentArticleV1RequestParameterModel(article_number=article_number)
-    ))
+def _nearby_development(client: NaverClient, article_number: str, notes: list[str]) -> NaverNearbyDevelopment | None:
+    """매물 근처의 예정 지하철역·개발 지구 (1회 호출). 웹은 매물 유형과 상관없이 늘 부른다. 조회가 실패하면 모름(None)이고 `notes` 에 `[실패]` 안내를 붙인다."""
+    development: NaverDevelopmentArticleModel | None = result_or_none(
+        lambda: client.run_request_development_article_v1(
+            NaverDevelopmentArticleV1RequestParameterModel(article_number=article_number)
+        ),
+        notes=notes,
+        what='주변 개발 예정',
+        unknown='모름(null)으로 낸 칸: nearby_development',
+    )
     if development is None:
         return None
     return NaverNearbyDevelopment(
@@ -716,6 +755,10 @@ class NaverListingDetail(ListingDetail):
         str | None,
         Field(exclude=True, description='네이버 매물 유형 코드 (A01 …). 유형마다 웹에 없는 칸을 가리는 데만 쓴다')
     ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
+    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         # 단지에 속하지 않는 매물(빌라 등)은 단지·동·평형 번호가 원래 없다.
@@ -1048,21 +1091,38 @@ def _parking_label(facility: NaverFacilityInfoModel | None, in_complex: bool) ->
     return parking_label(facility.is_parking_possible, count_text)
 
 
-def _complex_overview(client: NaverClient, complex_number: int | None, real_estate_type: str) -> NaverComplexModel | None:
+def _complex_overview(
+    client: NaverClient,
+    complex_number: int | None,
+    real_estate_type: str,
+    notes: list[str],
+) -> NaverComplexModel | None:
     """난방·주차·사용승인일에 쓸 단지 정보. 단지 유형은 `/complex`, 단지형 빌라는 `/complex/villa` 를 한 번 받는다 (1회).
 
-    그 밖의 유형이거나 단지 번호가 없으면 요청하지 않고 None, 조회가 실패해도 None 이다 (그 값만 모름).
+    그 밖의 유형이거나 단지 번호가 없으면 요청하지 않고 None, 조회가 실패해도 None 이다 (그 값만 모름). 실패하면 `notes` 에 `[실패]` 안내를
+    붙인다. 안내에 적는 칸은 단지 값이 없어 달라지는 칸이다: 단지 유형은 사용승인일·주차가 null, 난방·난방 연료는 매물 값만 남고,
+    단지형 빌라는 난방·난방 연료가 null, 주차는 매물 값만 남는다 (사용승인일은 동 목록을 따로 받아 그대로다, `_facility_values`·`_complex_approved_at`).
     """
     if complex_number is None:
         return None
     if real_estate_type in COMPLEX_INFO_TYPES:
-        return result_or_none(lambda: client.run_request_complex_v1(
-            NaverComplexV1RequestParameterModel(complex_number=complex_number)
-        ))
+        return result_or_none(
+            lambda: client.run_request_complex_v1(
+                NaverComplexV1RequestParameterModel(complex_number=complex_number)
+            ),
+            notes=notes,
+            what='단지 정보',
+            unknown='단지 값 없이 낸 칸: approved_at, heating, heating_fuel, parking',
+        )
     if real_estate_type in VILLA_COMPLEX_CODES:
-        return result_or_none(lambda: client.run_request_complex_villa_v1(
-            NaverComplexVillaV1RequestParameterModel(complex_number=complex_number)
-        ))
+        return result_or_none(
+            lambda: client.run_request_complex_villa_v1(
+                NaverComplexVillaV1RequestParameterModel(complex_number=complex_number)
+            ),
+            notes=notes,
+            what='단지 정보',
+            unknown='단지 값 없이 낸 칸: heating, heating_fuel, parking',
+        )
     return None
 
 
@@ -1071,8 +1131,9 @@ def _complex_approved_at(
     complex_number: int | None,
     key: NaverArticleKeyModel,
     complex_: NaverComplexModel | None,
+    notes: list[str],
 ) -> str | None:
-    """단지의 사용승인일 (YYYY-MM-DD). 단지 유형은 늘, 그 밖의 유형은 매물 상세에 건물 날짜가 없을 때만 부른다 (`get_listing`).
+    """단지의 사용승인일 (YYYY-MM-DD). 단지 유형은 늘, 그 밖의 유형은 매물 상세에 건물 날짜가 없을 때만 부른다 (`get_listing`. 사용승인일 칸이 없는 토지·고시원은 부르지 않는다).
 
     단지 유형(`COMPLEX_INFO_TYPES`)은 `_complex_overview` 가 받은 단지 정보(`complex_`)의 날짜를 쓴다 (같은 요청을 두 번 하지 않는다).
     빌라 단지(A05·A06·A07)는 아파트 단지 엔드포인트가 result=null 이라 빌라 동 목록에서 매물의 동
@@ -1080,7 +1141,8 @@ def _complex_approved_at(
     있고(진명하이츠 등), 동마다 날짜가 다른 단지도 있어서다 (성재하이빌 에이동 2003-08-11·비동
     2003-09-05, 2026-10-09 확인).
 
-    단지 번호가 없거나 단지 조회가 실패하면(단지가 아닌 매물 등) 모름(None)이다.
+    단지 번호가 없거나 단지 조회가 실패하면(단지가 아닌 매물 등) 모름(None)이다. 이 함수가 보내는 조회가 실패하면 `notes` 에 `[실패]` 안내를 붙인다
+    (단지 유형이 쓰는 `complex_` 의 실패 안내는 `_complex_overview` 가 붙인다).
     """
     if complex_number is None:
         return None
@@ -1088,16 +1150,26 @@ def _complex_approved_at(
         building_number = key.key.building_number if key.key else None
         if building_number is None:
             return None
-        buildings = result_or_none(lambda: client.run_request_complex_villa_building_list_v1(
-            NaverComplexVillaBuildingListV1RequestParameterModel(complex_number=complex_number)
-        ))
+        buildings = result_or_none(
+            lambda: client.run_request_complex_villa_building_list_v1(
+                NaverComplexVillaBuildingListV1RequestParameterModel(complex_number=complex_number)
+            ),
+            notes=notes,
+            what='사용승인일',
+            unknown='모름(null)으로 낸 칸: approved_at',
+        )
         building = next((item for item in buildings or [] if item.number == building_number), None)
         return normalize_date(building.use_approval_date) if building is not None else None
     if key.type.real_estate_type in COMPLEX_INFO_TYPES:
         return normalize_date(complex_.use_approval_date) if complex_ is not None else None
-    other_complex = result_or_none(lambda: client.run_request_complex_v1(
-        NaverComplexV1RequestParameterModel(complex_number=complex_number)
-    ))
+    other_complex = result_or_none(
+        lambda: client.run_request_complex_v1(
+            NaverComplexV1RequestParameterModel(complex_number=complex_number)
+        ),
+        notes=notes,
+        what='사용승인일',
+        unknown='모름(null)으로 낸 칸: approved_at',
+    )
     return normalize_date(other_complex.use_approval_date) if other_complex is not None else None
 
 
@@ -1148,17 +1220,23 @@ def _floor_per_household(per_household: float | None) -> float | None:
     return float(Decimal(str(per_household)).quantize(Decimal('0.01'), rounding=ROUND_FLOOR)) or None
 
 
-def _registered_parking_count(client: NaverClient, key: NaverArticleKeyModel) -> _ParkingCount | None:
+def _registered_parking_count(client: NaverClient, key: NaverArticleKeyModel, notes: list[str]) -> _ParkingCount | None:
     """건축물대장의 총 주차 대수와 세대당 대수 (1회 호출). pnu 가 없거나 조회가 실패하거나 대장에 대수가 없으면 모름(None)이다.
+    조회가 실패했을 때만 `notes` 에 `[실패]` 안내를 붙인다 (pnu 가 없거나 대수가 없는 것은 실패가 아니다).
 
     웹(ArticleBuildingInfo)은 pnu 가 없으면 이 요청을 보내지 않는다 (`enabled: !!pnu`). 0 대도 대수라 그대로 돌려준다.
     """
     pnu = key.key.pnu if key.key else None
     if not pnu:
         return None
-    registration = result_or_none(lambda: client.run_request_complex_building_registration_v1(
-        NaverComplexBuildingRegistrationV1RequestParameterModel(pnu=pnu, real_estate_type=key.type.real_estate_type)
-    ))
+    registration = result_or_none(
+        lambda: client.run_request_complex_building_registration_v1(
+            NaverComplexBuildingRegistrationV1RequestParameterModel(pnu=pnu, real_estate_type=key.type.real_estate_type)
+        ),
+        notes=notes,
+        what='건축물대장 주차 대수',
+        unknown='주차 대수 없이 낸 칸: parking',
+    )
     info = registration.parking_info if registration else None
     if info is None or info.total_parking_count is None:
         return None
@@ -1169,6 +1247,7 @@ def _building_parking(
     client: NaverClient,
     key: NaverArticleKeyModel,
     facility: NaverFacilityInfoModel | None,
+    notes: list[str],
 ) -> str | None:
     """건축물대장 유형(`BUILDING_REGISTRATION_TYPES`)의 주차 ('가능 (총 8대, 세대당 0.5대)', 가능 여부를 모르면 '총 8대 (세대당 0.5대)').
 
@@ -1179,7 +1258,7 @@ def _building_parking(
     if facility is not None and facility.total_parking_count:
         parking = _ParkingCount(facility.total_parking_count, _floor_per_household(facility.parking_count_per_household))
     else:
-        registered = _registered_parking_count(client, key)
+        registered = _registered_parking_count(client, key, notes)
         if registered is None:
             return parking_label(possible)
         parking = registered
@@ -1198,6 +1277,7 @@ def _facility_values(
     facility: NaverFacilityInfoModel | None,
     complex_number: int | None,
     complex_: NaverComplexModel | None,
+    notes: list[str],
 ) -> _FacilityValues:
     """난방·난방 연료·현관 구조·주차. 웹 화면이 매물 유형마다 값을 가져오는 곳이 달라 같은 곳에서 가져온다 (0~1회 호출).
 
@@ -1222,6 +1302,7 @@ def _facility_values(
       pnu 는 article/key 의 key.pnu 고, 없으면 웹도 요청하지 않는다. 원룸 2661724695 는 매물이 0대·불가이고 대장이 0대라 웹이 '주차 0대',
       2661862868 은 매물이 8대라 대장을 부르지 않는다. 대장 조회가 실패하거나 대수가 없으면 대수는 모름이라 가능 여부만 낸다 (`_building_parking`).
     그 밖의 유형은 매물 값 그대로다. 단지 조회(`complex_`)가 실패하면 그 값만 모름이다 (단지형 빌라 주차는 매물 값으로 되돌린다).
+    이 함수가 보내는 조회(평형·건축물대장)가 실패하면 `notes` 에 `[실패]` 안내를 붙인다 (`complex_` 의 실패 안내는 `_complex_overview` 가 붙인다).
     """
     real_estate_type = key.type.real_estate_type
     system = facility.heating_and_cooling_system_type if facility else None
@@ -1234,9 +1315,14 @@ def _facility_values(
     if complex_number is not None and real_estate_type in COMPLEX_INFO_TYPES:
         pyeong_number = key.key.pyeong_type_number if key.key else None
         if not entrance and pyeong_number:
-            pyeong = result_or_none(lambda: client.run_request_complex_pyeong_v1(
-                NaverComplexPyeongV1RequestParameterModel(complex_number=complex_number, pyeong_type_number=pyeong_number)
-            ))
+            pyeong = result_or_none(
+                lambda: client.run_request_complex_pyeong_v1(
+                    NaverComplexPyeongV1RequestParameterModel(complex_number=complex_number, pyeong_type_number=pyeong_number)
+                ),
+                notes=notes,
+                what='현관 구조',
+                unknown='모름(null)으로 낸 칸: entrance',
+            )
             entrance = pyeong.entrance_type if pyeong else None
         return _FacilityValues(
             heating=_coded_label(HEATING_LABELS, system or complex_system),
@@ -1259,7 +1345,7 @@ def _facility_values(
         )
     # 건축물대장 유형은 웹이 매물 대수가 0 이어도 쓰지 않고 대장 대수만 '주차 N대' 로 그린다. 대장에 대수가 없으면 칸이 없어 가능 여부만 낸다 ('총 0대' 를 내지 않는다)
     parking = (
-        _building_parking(client, key, facility)
+        _building_parking(client, key, facility, notes)
         if real_estate_type in BUILDING_REGISTRATION_TYPES
         # 여기 오는 유형 중 단지 번호가 있는 것은 토지·고시원뿐이고 둘은 나중에 parking 키를 지운다 (common.py). 그래서 단지 안이 아니다
         # (근거: 2026-11-18 가산동·신림동 목록 160건과 지식산업센터 2662172371 에는 단지 번호가 없었다)
@@ -1279,7 +1365,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     단지는 아파트·오피스텔·재건축·분양권이면 단지 정보(`/complex`)를, 단지형 빌라면 `/complex/villa` 를 늘 받아 난방·주차를 웹처럼
     단지 값으로 채우고, 거기에 아파트·오피스텔·재건축·분양권은 매물에 현관 구조가 없을 때
     평형(`/complex/pyeong`), 단지형 빌라는 건물 날짜가 없을 때 동 목록(buildingList)을 더 받는다 (1~2회, `_facility_values`).
-    그 밖의 유형은 단지 번호가 있고 건물 날짜가 없을 때만 단지 정보를 받는다.
+    그 밖의 유형은 단지 번호가 있고 건물 날짜가 없을 때만 단지 정보를 받는다 (사용승인일 칸이 없는 토지·고시원은 받지 않는다).
 
     중개보수(agentFee)는 직거래가 아니면(직거래이거나 직거래인지 모를 때는 조회하지 않는다) 모든 거래 유형에서, 세금(tax)은 매매 매물만 더 조회한다
     (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은 조회하지 않는다) (1회 더, 매매는 2회 더). 주변 교통(지하철·버스)은 늘,
@@ -1293,7 +1379,8 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     날짜만 쓰고(웹처럼 매물 날짜는 보지 않는다), 단지형 빌라와 그 밖의 유형은 상세의 건물 날짜(facilityInfo)를 쓰되 없으면 단지형 빌라는
     동 목록(buildingList), 그 밖의 유형은 단지 정보에서 받는다.
 
-    key·basicInfo 밖의 부가 조회(관리비·법정동·단지·중개보수·세금·교통·학교·개발 예정)는 실패하면 그 값만 모름(None)이다.
+    key·basicInfo 밖의 부가 조회(관리비·법정동·단지·중개보수·세금·교통·학교·개발 예정)는 실패하면 그 값만 모름(None)이고, 실패한 조회마다
+    결과 `notes` 에 `[실패]` 안내가 붙는다 (같은 안내는 한 번만).
 
     Raises:
         ListingUnavailableError: 없거나 내려간 매물이거나, 모르는 거래 유형·매물 유형 코드일 때
@@ -1301,9 +1388,15 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     """
     key, trade_type = _article_key(client, article_number)
     basic = _article_basic(client, article_number, key)
-    fee = result_or_none(lambda: client.run_request_article_maintenance_fee_v1(
-        NaverArticleMaintenanceFeeV1RequestParameterModel(article_number=article_number)
-    ))
+    notes: list[str] = []
+    fee = result_or_none(
+        lambda: client.run_request_article_maintenance_fee_v1(
+            NaverArticleMaintenanceFeeV1RequestParameterModel(article_number=article_number)
+        ),
+        notes=notes,
+        what='관리비',
+        unknown='모름(null)으로 낸 칸: manage_cost_manwon, manage_cost_includes',
+    )
 
     price = basic.price_info
     detail = basic.detail_info
@@ -1325,7 +1418,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     listed_area = size.supply_space if size else None
     coordinates = article.coordinates if article else None
 
-    address = _jibun_address(client, key, coordinates)
+    address = _jibun_address(client, key, coordinates, notes)
 
     # communalComplexInfo 는 단지 매물에만 오고, 오면 complexNumber 가 article/key 의 단지 번호와 같다. 단지가 없는
     # 매물은 둘 다 비어 있다 (단독·다가구·빌라·원룸·단지형 빌라·오피스텔·아파트 10건, 2026-10-10 확인)
@@ -1338,14 +1431,18 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     is_direct_trade = article.is_direct_trade if article else None
     pre_sale_status_type = detail.pre_sale_status_type if detail else None
     # 단지 유형은 단지 정보를 한 번 받아 사용승인일·난방·주차가, 단지형 빌라는 난방·주차가 함께 쓴다 (단지형 빌라 사용승인일은 동 목록을 따로 받는다) (요청 순서: 법정동, 단지, 동 목록·평형, 건축물대장, agentFee ...)
-    complex_ = _complex_overview(client, complex_number, real_estate_type)
+    complex_ = _complex_overview(client, complex_number, real_estate_type, notes)
     if complex_number is not None and real_estate_type in COMPLEX_INFO_TYPES:
         # 웹(ArticleComplexInfo)은 단지 유형의 사용승인일을 단지 정보(useApprovalDate)에서만 그리고 매물 facilityInfo 날짜는 보지 않는다.
         # 단지 조회가 실패해 complex_ 가 None 이면 모름이다 (매물 날짜로 대신하지 않는다)
-        approved_at = _complex_approved_at(client, complex_number, key, complex_)
+        approved_at = _complex_approved_at(client, complex_number, key, complex_, notes)
+    elif 'approved_at' in NOT_APPLICABLE_FIELDS_BY_TYPE.get(real_estate_type or '', frozenset()):
+        # 토지·고시원은 사용승인일 칸이 없어(출력에서 키를 뺀다) 받을 값이 없다. 단지 조회를 부르면 요청만 쓰고, 실패하면
+        # 출력에 없는 칸을 모름이라고 안내하게 된다 (2026-11-19 사용자 결정)
+        approved_at = None
     else:
-        approved_at = building_approved_at(facility) or _complex_approved_at(client, complex_number, key, complex_)
-    facility_values = _facility_values(client, key, facility, complex_number, complex_)
+        approved_at = building_approved_at(facility) or _complex_approved_at(client, complex_number, key, complex_, notes)
+    facility_values = _facility_values(client, key, facility, complex_number, complex_, notes)
 
     return NaverListingDetail(
         source='naver',
@@ -1418,14 +1515,15 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         **(
             {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None} if is_direct_trade is None
             else {} if is_direct_trade
-            else _agent_fee(client, article_number)
+            else _agent_fee(client, article_number, notes)
         ),
         **(
-            _sale_taxes(client, article_number)
+            _sale_taxes(client, article_number, real_estate_type, notes)
             if _draws_sale_taxes(trade_type, real_estate_type, pre_sale_status_type) is True else {}
         ),
-        **_surroundings(client, article_number, key),
-        nearby_development=_nearby_development(client, article_number),
+        **_surroundings(client, article_number, key, notes),
+        nearby_development=_nearby_development(client, article_number, notes),
+        notes=notes,
     )
 
 
@@ -1502,8 +1600,9 @@ def _jibun_address(
     client: NaverClient,
     key: NaverArticleKeyModel,
     coordinates: NaverCoordinatesModel | None,
+    notes: list[str],
 ) -> str | None:
-    """좌표로 얻은 법정동 이름과 article/key 의 지번을 합친 주소. 좌표가 없거나 법정동 조회가 실패하면 None.
+    """좌표로 얻은 법정동 이름과 article/key 의 지번을 합친 주소. 좌표가 없거나 법정동 조회가 실패하면 None (실패하면 `notes` 에 `[실패]` 안내).
 
     article/key 에는 법정동 코드만 있고 이름이 없어 좌표로 이름을 찾는다. 좌표로 찾은 동이 article/key 의 동과 달라
     옆 동 이름에 지번이 붙는 일은 실측으로 없었다 (2026-10-12 실측: 서울 중구 회현동·예장동·남학동, 종로구 운니동·낙원동·
@@ -1511,12 +1610,17 @@ def _jibun_address(
     """
     if coordinates is None:
         return None
-    division = result_or_none(lambda: client.run_request_legal_division_search_by_coordinate_v1(
-        NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(
-            latitude=coordinates.y_coordinate,
-            longitude=coordinates.x_coordinate,
-        )
-    ))
+    division = result_or_none(
+        lambda: client.run_request_legal_division_search_by_coordinate_v1(
+            NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(
+                latitude=coordinates.y_coordinate,
+                longitude=coordinates.x_coordinate,
+            )
+        ),
+        notes=notes,
+        what='지번 주소',
+        unknown='모름(null)으로 낸 칸: address',
+    )
     if division is None:
         return None
     return join_address(

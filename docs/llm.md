@@ -104,6 +104,7 @@
 - `complex --pyeong` 의 `real_price_summary.sale`·`jeonse` 에 `since` 키가 있으면 3년 안 거래가 없어 5년 기준으로 받은 요약이고(이때 `average_3m_manwon` 은 `null`) 조회에 실패한 유형은 `null` 이다. `average_3m_manwon` 은 최근 3개월 평균이다.
 - `complex` 의 `pyeong_groups[]` 는 비슷한 평형을 묶은 목록이다. 평형이 많은 단지는 묶음의 `representative_pyeong`(대표 평형 번호)을 `--pyeong` 에 넣고, `pyeong_numbers` 는 묶음에 든 평형 번호들이다 (대표 번호가 첫 항목이 아닐 수 있다). `real-price --pyeong N --group` 은 그 묶음의 모든 평형 거래가 섞여 와서 거래마다 평형을 알 수 없고 `--period` 와 함께 못 쓴다.
 - `complex --pyeong` 하나의 `price_per_pyeong`(매매·전세, 월세 없음)은 공급 평수 기준 네이버 매물 호가의 주간 값이다. 실거래 평당가가 아니니 실거래는 `real_price_summary`·`real-price` 로 본다.
+- 빌라 단지 `naver real-price` 는 `price_per_pyeong_trades`(최근 5년 신고 거래의 평당가, 매매·전세만, 호가가 아니다)와 `nearby_transactions`(단지 둘레 범위 안 거래, 범위는 `--around-km 0.1~1.0`)도 준다. 주변 거래는 네이버가 10건까지만 주고 단지 이름이 없어 `same_complex: true` 만 이 단지 거래다. 아파트 단지에는 두 키가 없고 `--around-km` 도 쓸 수 없다. `null` 은 조회 실패(또는 단지 좌표를 모름)이고 `[]`·`trades: []` 는 거래 없음이다.
 - 상세의 `nearby_development`(근처에 생길 지하철역 `rail`·개발 지구 `area`)는 `[]` 면 없는 것이고 `null` 이면 모름(조회 실패, 또는 네이버가 그 목록을 비워 줌)이다. `school --complexes` 의 단지 `assigned_dongs` 가 `null` 이면 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데 네이버가 어느 동인지(동 묶음)를 주지 않은 것이다.
 - `알 수 없는 값 (HT009)`·`알 수 없는 시설 (…)`·`알 수 없는 항목 (…)` 은 네이버가 값을 줬는데 jibsa 가 그 코드를 읽지 못한 것이다 (`null` 과 다르다). 뜻을 짐작해 옮기지 말고 jibsa 가 읽지 못한 값이라고 그대로 알린다. 대개 네이버가 새 코드를 더했는데 jibsa 표가 아직 모르는 경우라, 뜻이 필요하면 `url` 의 네이버 화면에서 확인해 보라고 권한다 (화면이 그 코드를 그리는지는 보장하지 않는다).
 

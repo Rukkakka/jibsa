@@ -16,12 +16,12 @@ class NaverWeeklyPointModel(ResponseModel):
         Field(description='그 주 첫날 (YYYY-MM-DD)', alias='firstDayOfWeek')
     ] = None
     average_count: Annotated[
-        int | None,
-        Field(description='그 주 평균 매물 수', alias='averageCount')
+        int | float | None,
+        Field(description='그 주 평균 매물 수. 평균이라 소수로 와도 받는다', alias='averageCount')
     ] = None
     average_pyeong_price: Annotated[
-        int | None,
-        Field(description='그 주 평균 평당 호가 (원)', alias='averagePyeongPrice')
+        float | None,
+        Field(description='그 주 평균 평당 호가 (원). 평균이라 소수로 와도 받는다', alias='averagePyeongPrice')
     ] = None
     trade_count: Annotated[
         int | None,
@@ -33,8 +33,8 @@ class NaverArticleCountWeeklyInfoModel(ResponseModel):
     """동네 주간 매물 수."""
 
     period_average_count: Annotated[
-        int | None,
-        Field(description='기간 평균 매물 수', alias='periodAverageCount')
+        int | float | None,
+        Field(description='기간 평균 매물 수. 평균이라 소수로 와도 받는다', alias='periodAverageCount')
     ] = None
     min_weekly_count: Annotated[
         int | None,
@@ -62,8 +62,8 @@ class NaverRealTradeCountWeeklyModel(ResponseModel):
     """동네 주간 실거래 건수."""
 
     period_average_trade_count: Annotated[
-        int | None,
-        Field(description='기간 평균 주간 거래 건수', alias='periodAverageTradeCount')
+        int | float | None,
+        Field(description='기간 평균 주간 거래 건수. 평균이라 소수로 와도 받는다', alias='periodAverageTradeCount')
     ] = None
     latest_weekly_trade_count: Annotated[
         int | None,

@@ -7,6 +7,7 @@ from datetime import (
     datetime,
 )
 
+from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -27,6 +28,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     KST,
     NEXT_HINT,
+    UPDATE_MAYBE_NEEDED,
     Listing,
     format_manwon,
     iso_date,
@@ -89,6 +91,8 @@ TRADE_CODE_BY_NAME: dict[str, str] = {
     '단기임대': 'B3',
 }
 TRADE_NAME_BY_CODE: dict[str, str] = {code: name for name, code in TRADE_CODE_BY_NAME.items()}
+# 매매·전세만 받는 조회의 거래 유형 이름 → 코드 (동네 추이·빌라 평당 실거래가. 네이버가 월세 값은 주지 않는다)
+SALE_JEONSE_CODE_BY_NAME: dict[str, Literal['A1', 'B1']] = {'매매': 'A1', '전세': 'B1'}
 OFFICETEL_CODE: str = 'A02'
 # 지도 검색에 보내는 매물 유형 코드. 네이버는 단지로 등록된 빌라를 C02 가 아닌 A05(연립 단지)·A06(다세대 단지)로
 # 따로 분류해, C02 만 보내면 빌라의 약 30% 가 빠진다 (역삼동 1km: C02 1124건, A05 33건, A06 408건).
@@ -417,25 +421,82 @@ MARKET_PRICE_PROVIDER_NAMES: dict[str, str] = {'kab': '한국부동산원', 'kbs
 OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = OPTIONAL_LOOKUP_BASE_ERRORS
 
 
-def result_or_none(request: Callable[[], NaverResponseModel[T]]) -> T | None:
-    """부가 정보 조회. 실패하면 그 값만 모름(None)으로 둔다 (매물 상세·단지 요약 전체를 실패시키지 않는다)."""
+def lookup_failure_note(exc: Exception | None, what: str, unknown: str) -> str:
+    """덤 조회를 받지 못한 `[실패]` 안내. 실패 이유마다 다음 행동이 달라(업데이트·다시 시도) 이유를 넣는다.
+
+    다방 `_lookup_failure_note` 와 같은 갈래다. 네이버가 거절(4xx·`isSuccess` false)했거나 응답 형식이 바뀌면 업데이트 안내를 붙여
+    매일 감시가 고장으로 보고, 서버 오류(5xx)·연결 실패·시간 초과는 사이트가 바뀐 것이 아니라 붙이지 않는다 (감시는 확인 못 함).
+    요청 제한 `RateLimitedError` 는 덤 조회가 잡지 않아 여기 오지 않는다.
+
+    Args:
+        exc: 실패 예외. `None` 이면 `isSuccess` 가 false 였던 것이다.
+        what: 받지 못한 조회 이름 ('관리비').
+        unknown: 그 실패로 모름이 된 칸 (끝에 마침표 없음). '모름(null)으로 낸 칸: a, b' 꼴로 써 영어 필드 이름 뒤에 조사가 붙지 않게 한다.
+    """
+    if exc is None or isinstance(exc, ValueError) or (isinstance(exc, HTTPStatusError) and exc.response.status_code < 500):
+        return note('실패', f'네이버가 {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {unknown}. {UPDATE_MAYBE_NEEDED}')
+    return note('실패', f'네이버 {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
+
+
+def _add_failure_note(notes: list[str] | None, exc: Exception | None, what: str, unknown: str) -> None:
+    """`[실패]` 안내를 notes 에 더한다. notes 가 None 이면 호출부가 스스로 알리는 것이라 아무것도 안 하고, 같은 안내는 한 번만 낸다.
+
+    한 명령에서 같은 조회를 여러 번 부르는 자리(평형마다 등)가 있어 같은 글자를 거듭 붙이지 않는다.
+    """
+    if notes is None:
+        return
+    text = lookup_failure_note(exc, what, unknown)
+    if text not in notes:
+        notes.append(text)
+
+
+def result_or_none(
+    request: Callable[[], NaverResponseModel[T]],
+    *,
+    notes: list[str] | None,
+    what: str,
+    unknown: str,
+) -> T | None:
+    """부가 정보 조회. 실패하면 그 값만 모름(None)으로 두고 `notes` 에 `[실패]` 안내를 붙인다 (매물 상세·단지 요약 전체를 실패시키지 않는다).
+
+    `isSuccess` 는 보지 않는다 (예외만 실패로 본다).
+
+    Args:
+        notes: 안내를 붙일 목록. `None` 은 호출부가 실패를 스스로 알린다는 뜻이다 (지역 해석).
+        what: 조회 이름 ('관리비'). `lookup_failure_note` 를 보라.
+        unknown: 모름이 된 칸 ('모름(null)으로 낸 칸: a, b').
+    """
     try:
         return request().result
-    except OPTIONAL_LOOKUP_ERRORS:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        _add_failure_note(notes, exc, what, unknown)
         return None
 
 
-def result_or_empty(request: Callable[[], NaverResponseModel[T]], empty: Callable[[], T]) -> T | None:
-    """부가 정보 조회. 실패하면(예외·`isSuccess` false) 모름(None), 성공했는데 `result` 가 null 이면 네이버가 주지 않은 것이라 `empty()`.
+def result_or_empty(
+    request: Callable[[], NaverResponseModel[T]],
+    empty: Callable[[], T],
+    *,
+    notes: list[str] | None,
+    what: str,
+    unknown: str,
+) -> T | None:
+    """부가 정보 조회. 실패하면(예외·`isSuccess` false) 모름(None)이고 `notes` 에 `[실패]` 안내를 붙인다. 성공했는데 `result` 가 null 이면 네이버가 주지 않은 것이라 `empty()`.
 
     `result_or_none` 은 둘을 모두 None 으로 합쳐, 성공 응답을 '조회 실패(모름)' 로 내게 된다. 서버가 빈 목록·빈 객체를 주는 자리에
     `result: null` 이 와도 그 빈 응답과 같게 읽을 때 쓴다 (`empty` 는 `list` 나 빈 모델 클래스처럼 빈 값을 만드는 호출 가능한 것).
+
+    Args:
+        notes: 안내를 붙일 목록. `None` 은 호출부가 실패를 스스로 알린다는 뜻이다.
+        what: 조회 이름. unknown: 모름이 된 칸. `result_or_none` 과 같다.
     """
     try:
         response = request()
-    except OPTIONAL_LOOKUP_ERRORS:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        _add_failure_note(notes, exc, what, unknown)
         return None
     if not response.is_success:
+        _add_failure_note(notes, None, what, unknown)
         return None
     return empty() if response.result is None else response.result
 

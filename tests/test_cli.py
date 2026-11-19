@@ -43,6 +43,7 @@ def stderr_error(capsys: pytest.CaptureFixture[str]) -> dict:
         ['naver', 'real-price', '100001', '--pyeong', '1', '--trade', '매매,전세'],  # 하나만 받는 옵션에 여러 값
         ['naver', 'real-price', '100001', '--pyeong', '1', '--period', '2년'],         # 없는 기간
         ['naver', 'real-price', '100001', '--pyeong', '1', '--period', '1년', '--pages', '2'],  # 기간과 페이지를 함께
+        ['naver', 'real-price', '100001', '--pyeong', '1', '--group', '--around-km', '0.5'],  # 아파트 묶음과 빌라 주변 실거래를 함께
         ['naver', 'market-price', '100001', '--pyeong', '1', '--period', '10년'],
         ['daangn', 'search', 'listings'],                                        # 동 이름도 좌표도 없음
         ['daangn', 'search', 'listings', '역삼동', '--lat', '37.5', '--lng', '127.0'],  # 동 이름과 좌표를 함께

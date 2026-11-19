@@ -64,7 +64,9 @@ from jibsa.providers.naver.api.request.real_price import (
     NaverComplexPyeongRealPriceGroupV1RequestParameterModel,
     NaverComplexPyeongRealPriceListV1RequestParameterModel,
     NaverComplexPyeongRealPriceV2RequestParameterModel,
+    NaverComplexVillaRealPriceAroundV1RequestParameterModel,
     NaverComplexVillaRealPricePageV1RequestParameterModel,
+    NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.redevelopment import (
     NaverComplexRedevelopmentAreaArticleListV1RequestPayloadModel,
@@ -145,7 +147,9 @@ from jibsa.providers.naver.api.response.real_price import (
     NaverComplexPyeongRealPriceGroupV1ResponseModel,
     NaverComplexPyeongRealPriceListV1ResponseModel,
     NaverComplexPyeongRealPriceV2ResponseModel,
+    NaverComplexVillaRealPriceAroundV1ResponseModel,
     NaverComplexVillaRealPricePageV1ResponseModel,
+    NaverComplexVillaRealPricePyeongPriceV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.redevelopment import (
     NaverComplexRedevelopmentAreaArticleListV1ResponseModel,
@@ -254,6 +258,8 @@ class NaverClient(BaseHTTPClient):
     complex_villa_building_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/villa/buildingList'
     complex_villa_article_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/villa/article/list'
     complex_villa_real_price_page_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/villa/realPricePage'
+    complex_villa_real_price_pyeong_price_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/villa/realPricePyeongPrice'
+    complex_villa_real_price_around_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/villa/realPriceAround'
     complex_holding_tax_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/holdingTax'
     complex_maintenance_fee_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/maintenanceFee'
     complex_market_price_recent_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/marketPrice/recent'
@@ -831,6 +837,75 @@ class NaverClient(BaseHTTPClient):
     ) -> NaverComplexVillaRealPricePageV1ResponseModel:
         """Async variant of `run_request_complex_villa_real_price_page_v1`."""
         return await self._aget(self.complex_villa_real_price_page_v1_endpoint, parameter, NaverComplexVillaRealPricePageV1ResponseModel)
+
+    @naver_retry
+    def run_request_complex_villa_real_price_pyeong_price_v1(
+        self,
+        parameter: NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel
+    ) -> NaverComplexVillaRealPricePyeongPriceV1ResponseModel:
+        """Fetch villa 단지 per-pyeong actual transaction prices via `GET /front-api/v1/complex/villa/realPricePyeongPrice`.
+
+        웹 빌라 단지 실거래 탭(`ComplexVillaTransactionPricePerPyeong`)의 '평당 실거래가' 칸이다 (매매·전세만 그린다). `result` 는
+        `[{tradeDate, pyeongPrice}]` 이고 `pyeongPrice` 는 원/평(서버가 만원 자리로 반올림한 값으로 보인다)이다. 웹은 `startDate`
+        를 오늘의 5년 전으로 보낸다. 572549 전세 평형 4 는 5건이고 `real-price --period 5년` 의 5건과 날짜·금액이 같으며, 매매는
+        0건(`result: []`)이었다 (2026-11-18·19 실측, 로그인 없이 200).
+
+        Args:
+            parameter: `complex_number`, `trade_type`(A1·B1), `start_date`, `pyeong_type_number`(선택).
+
+        Returns:
+            NaverComplexVillaRealPricePyeongPriceV1ResponseModel: 계약일과 평당 실거래가 (원/평).
+        """
+        return self._get(
+            self.complex_villa_real_price_pyeong_price_v1_endpoint, parameter, NaverComplexVillaRealPricePyeongPriceV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_villa_real_price_pyeong_price_v1(
+        self,
+        parameter: NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel
+    ) -> NaverComplexVillaRealPricePyeongPriceV1ResponseModel:
+        """Async variant of `run_request_complex_villa_real_price_pyeong_price_v1`."""
+        return await self._aget(
+            self.complex_villa_real_price_pyeong_price_v1_endpoint, parameter, NaverComplexVillaRealPricePyeongPriceV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_complex_villa_real_price_around_v1(
+        self,
+        parameter: NaverComplexVillaRealPriceAroundV1RequestParameterModel
+    ) -> NaverComplexVillaRealPriceAroundV1ResponseModel:
+        """Fetch 빌라 actual transactions in a map box via `GET /front-api/v1/complex/villa/realPriceAround`.
+
+        웹 빌라 단지 실거래 탭(`ComplexVillaTransactionPriceForAround`)의 '주변 실거래가' 칸이다. 지도 범위 네 값(`top`·`bottom`·
+        `left`·`right`)과 `zoom` 이 모두 필요하다 (2026-11-19 실측: zoom 16 이면 결과가 오고 14 면 0건, 빼면 400). 웹은 단지
+        좌표(`GET complex/villa` 의 `coordinates`)를 가운데로 작은 지도(388×200px, zoom 16) 범위를 한 번 잡는다 (위도 폭 0.001703°,
+        경도 폭 0.0041628°). 넓힌 범위도 zoom 16 으로 되고(0.5km·1km 사각형 모두 10건) 서버는 범위 안 거래를 **10건까지만** 준다
+        (고르는 기준은 확실하지 않다: 0.5km 의 가장 오래된 계약 2025-09-02, 1km 는 2024-07-31). `pyeongTypeNumber` 를 주면 서버가
+        비슷한 면적까지 함께 준다. `result.aroundRealPriceList[]` 는 건물마다 `complexInfo`(건물 유형·좌표 `coordinatesDto`,
+        단지 번호·이름은 없다)와 `realPriceList[]`(`contractDate`·`exclusiveArea`·`completionYearMonth`·글자 `floor`·
+        `isRenewRequestRight`·`price{dealPrice, deposit, monthlyRent}` 원)이다. 웹 범위에서 온 묶음은 그 단지 자신이다 (좌표가
+        가운데와 같다). 572549 로 로그인 없이 200 이다.
+
+        Args:
+            parameter: `complex_number`, `trade_type`, 범위 네 값, `zoom`, `pyeong_type_number`(선택).
+
+        Returns:
+            NaverComplexVillaRealPriceAroundV1ResponseModel: 건물별 거래 묶음 (금액 원).
+        """
+        return self._get(
+            self.complex_villa_real_price_around_v1_endpoint, parameter, NaverComplexVillaRealPriceAroundV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_complex_villa_real_price_around_v1(
+        self,
+        parameter: NaverComplexVillaRealPriceAroundV1RequestParameterModel
+    ) -> NaverComplexVillaRealPriceAroundV1ResponseModel:
+        """Async variant of `run_request_complex_villa_real_price_around_v1`."""
+        return await self._aget(
+            self.complex_villa_real_price_around_v1_endpoint, parameter, NaverComplexVillaRealPriceAroundV1ResponseModel
+        )
 
     # --- 주변 (교통·학교) -----------------------------------------------------
 
