@@ -181,7 +181,9 @@ const runLane = async (lane, phaseTitle) => {
 }
 
 // 소스 하나: first 묶음을 차례로 먼저 돌리고(실패하면 나머지는 그 결과에 기대므로 건너뛴다), 나머지는 서로 기대지 않아
-// SAME_SOURCE_MAX 개씩 동시에 돌린다. 하나가 실패해도 나머지는 이어 간다.
+// 동시에 SAME_SOURCE_MAX 개까지 돌린다. 하나가 실패해도 나머지는 이어 간다.
+// 자리 SAME_SOURCE_MAX 개가 남은 묶음을 하나씩 꺼내 간다. 셋씩 잘라 돌리면 한 번에 띄운 셋이 모두 끝나야 다음을 띄워,
+// 먼저 끝난 자리가 가장 늦은 묶음을 기다렸다 (2026-11-19 실측: 당근 C·D 가 끝난 뒤 E 가 가장 큰 B 를 기다림)
 const runSource = async source => {
   const mine = bundles.filter(b => b.source === source)
   const firsts = mine.filter(b => b.first)
@@ -191,10 +193,11 @@ const runSource = async source => {
     return false
   }
   let ok = true
-  for (let i = 0; i < rest.length; i += SAME_SOURCE_MAX) {
-    const rs = await parallel(rest.slice(i, i + SAME_SOURCE_MAX).map(b => () => runOne(b, '소스별 구현')))
-    ok = rs.every(Boolean) && ok
+  let next = 0
+  const lane = async () => {
+    while (next < rest.length) ok = (await runOne(rest[next++], '소스별 구현')) && ok
   }
+  if (rest.length) await parallel(Array.from({ length: Math.min(SAME_SOURCE_MAX, rest.length) }, () => lane))
   return ok
 }
 
