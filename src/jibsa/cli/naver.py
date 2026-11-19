@@ -852,7 +852,7 @@ def real_price_command(
         float | None,
         typer.Option(
             '--around-km', min=0.1, max=1.0,
-            help='빌라 단지의 주변 실거래 범위 (km, 단지 중심에서 사방으로). 빼면 네이버 웹 작은 지도 크기(서울에서 남북 약 190m·동서 약 365m, 남쪽일수록 조금 넓다). 아파트 단지에는 쓸 수 없다. --group 과 함께 쓸 수 없다',
+            help='빌라 단지의 주변 실거래 범위 (km, 단지 중심에서 사방으로). 빼면 네이버 웹 작은 지도 크기(서울에서 남북 약 188m·동서 약 365m, 남쪽일수록 조금 넓다). 아파트 단지에는 쓸 수 없다. --group 과 함께 쓸 수 없다',
         )
     ] = None,
     pretty: PrettyOption = None,

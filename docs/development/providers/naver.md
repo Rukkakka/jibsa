@@ -150,7 +150,7 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 - `article/tax` 는 면제되는 항목도 null 이 아니라 0 으로 준다 (85㎡ 이하 취득 농특세, 종부세 대상 아님. 헬리오시티 39·85·111·150㎡·일신동 빌라 2건, 2026-10-11 실측). 그래서 세금 합계(`_sum_manwon`)에서 일부 항목만 null 인 경우는 실제 응답에 없다.
 - 재검토 후 넣지 않은 엔드포인트: `complex/asking-price`(단지 매물 목록과 같은 정보), `article/boundedArticlesCount`(검색의 `total_count` 와 같음), `search/articles`(`listing` 과 같고 중개사·본문이 섞임), `legalDivision/infoList`, `complex/villa/asking-price`(빈 결과).
 
-## 평당가·평형 묶음·개발 예정·학교 배정 단지·재개발 이름 엔드포인트 메모
+## 평당가·평형 묶음·개발 예정·학교 배정 단지·재개발 이름·빌라 실거래 엔드포인트 메모
 
 (2026-11-18 실측, 모두 로그인 없이 200)
 
