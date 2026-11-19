@@ -5,7 +5,7 @@
 
 명령마다 셋으로 나눈다 (docs/development/README.md '매일 API 감시').
 
-- 정상: exit 0 이고 정한 칸(`Step.expect`)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`)은 비어도 정상
+- 정상: exit 0 이고 정한 칸(`Step.expect`, `Step.also_expect` 가 있으면 그 칸까지)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`)은 비어도 정상
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
   깨졌다는 안내(`UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED`). 결과가 0건일 리 없는 곳(역삼동·강남역·강남구 등)만 찾아서,
   비어 있으면 사이트가 바뀐 것으로 본다
@@ -86,6 +86,8 @@ class Step:
             (다방 청약 일정).
         empty_ok: 빈 목록도 사이트의 평소 답인 칸이면 True. 비어 있어도 정상이다 (당근 인기 급상승 단지. 동으로 부를 때 이른
             아침에 자주 비었다).
+        also_expect: expect 와 함께 값이 있어야 정상인 칸. 같은 명령 결과의 다른 덤 조회 칸을 한 번 불러 같이 본다 (네이버 빌라
+            단지 주변 실거래·평당 실거래가).
     """
 
     label: str
@@ -95,6 +97,7 @@ class Step:
     captures: tuple[Capture, ...] = ()
     may_be_empty: bool = False
     empty_ok: bool = False
+    also_expect: tuple[str, ...] = ()
 
 
 # 명령 하나가 요청 제한 대기(최대 60초)를 몇 번 거쳐도 끝날 시간
@@ -219,8 +222,13 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'transactions'),
         # 빌라 단지 실거래는 평당 실거래가(complex/villa/realPricePyeongPrice)·단지 좌표(complex/villa)·주변 실거래
         # (complex/villa/realPriceAround)를 더 부른다. 아무 빌라 단지나 고르면 거래가 없어 빈 목록이 정상일 수 있어, 거래가 있는
-        # 단지형 빌라를 고정한다 (네오스빌 572549 평형 4 전세: 2026-11-19 평당가 5건·주변 10건). 기대 칸은 주변 거래 목록이다
-        Step('빌라 단지 실거래 네오스빌', ('naver', 'real-price'), ('572549', '--pyeong', '4', '--trade', '전세'), 'nearby_transactions.trades'),
+        # 단지형 빌라를 고정한다 (네오스빌 572549 평형 4 전세: 2026-11-19 평당가 5건·주변 10건). 기대 칸은 주변 거래 목록과
+        # 평당 실거래가 목록이다 (평당 실거래가가 요청 거절·형식 변경으로 실패하면 안내의 업데이트 문구로 잡히지만, 서버가 빈
+        # 목록을 주면 이 칸으로만 잡힌다. 같은 명령을 두 번 부르지 않게 also_expect 로 함께 본다)
+        Step(
+            '빌라 단지 실거래 네오스빌', ('naver', 'real-price'), ('572549', '--pyeong', '4', '--trade', '전세'),
+            'nearby_transactions.trades', also_expect=('price_per_pyeong_trades',),
+        ),
         Step('평형 시세', ('naver', 'market-price'), ('{complex}', '--pyeong', '{pyeong}'), 'providers'),
         Step('학교', ('naver', 'school'), ('{school}',), 'school_code'),
         # 학교는 그 단지가 배정된 학교라 목록이 비면 고장이다 (dict 만 보면 키 이름이 바뀌어 빈 목록이 돼도 못 잡는다)
@@ -654,20 +662,22 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
         ]
         if degraded:
             return StepResult(BROKEN, f'대체 경로로 돌았거나 일부를 받지 못함: {degraded[0][:200]}', data)
+        for field in (step.expect, *step.also_expect):
+            field_value = _value(data, field)
+            if not _present(field_value):
+                # 칸이 아예 없거나 목록이 아니면 응답 형식이 바뀐 것이라 empty_ok 여도 아래에서 고장으로 본다
+                if step.empty_ok and field_value == []:
+                    return StepResult(OK, '0건 (빈 목록도 정상인 칸)', data)
+                # 하루 비었다고 고장으로 보지 않는다. 계속 비면 사흘 연속 확인 못 함(api-blocked)으로 알린다
+                if step.may_be_empty:
+                    return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data)
+                # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
+                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약)
+                failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
+                if failed is not None:
+                    return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data)
+                return StepResult(BROKEN, f'{field} 칸이 비어 있음', data)
         value = _value(data, step.expect)
-        if not _present(value):
-            # 칸이 아예 없거나 목록이 아니면 응답 형식이 바뀐 것이라 empty_ok 여도 아래에서 고장으로 본다
-            if step.empty_ok and value == []:
-                return StepResult(OK, '0건 (빈 목록도 정상인 칸)', data)
-            # 하루 비었다고 고장으로 보지 않는다. 계속 비면 사흘 연속 확인 못 함(api-blocked)으로 알린다
-            if step.may_be_empty:
-                return StepResult(UNKNOWN, f'{step.expect} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data)
-            # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
-            # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약)
-            failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
-            if failed is not None:
-                return StepResult(UNKNOWN, f'{step.expect} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data)
-            return StepResult(BROKEN, f'{step.expect} 칸이 비어 있음', data)
         return StepResult(OK, f'{len(value)}건' if isinstance(value, list) else f'{step.expect} 있음', data)
     error = _error(done.stderr)
     if error is None:
