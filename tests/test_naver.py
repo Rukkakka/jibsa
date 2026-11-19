@@ -1363,6 +1363,115 @@ def test_price_per_pyeong_null_region_list_keeps_the_price() -> None:
         assert _price_per_pyeong(client, 100001, 1, 'A01', []) == {'sale': None, 'jeonse': None}
 
 
+# --- 빌라 단지 실거래 두 칸 (평당 실거래가·주변 실거래) ---------------------------------
+
+VILLA_CENTER = {'xCoordinate': 127.0301, 'yCoordinate': 37.5001}
+
+
+def _around_trade(date_: str | None, area: float, completion: str | None, floor: str | None, price: dict | None, renew: bool = False) -> dict:
+    return {
+        'contractDate': date_, 'exclusiveArea': area, 'completionYearMonth': completion, 'floor': floor,
+        'isRenewRequestRight': renew, 'price': price,
+    }
+
+
+def _villa_overrides(*, coordinates: dict | None = VILLA_CENTER, **extra: dict) -> dict[str, dict]:
+    """가상 빌라 단지 100002 가 실거래 두 칸까지 묻는 요청마다 가짜 응답을 준다. 아파트 목록·평형 목록은 비어 와 빌라로 정해진다."""
+    deposit = {'dealPrice': 0, 'deposit': 250_000_000, 'monthlyRent': 0}
+    around = {'aroundRealPriceList': [
+        {
+            'complexInfo': {'realEstateType': 'A06', 'coordinatesDto': VILLA_CENTER},
+            'realPriceList': [
+                _around_trade('2026-09-05', 40.5, '20120315', '2', deposit),
+                _around_trade('2026-09-18', 30.2, '20120315', '4', deposit, renew=True),
+            ],
+        },
+        # 단지 번호는 오지 않고 좌표만 온다. 다른 건물(약 350m 남쪽): 같은 계약일이면 준공연도가 큰 쪽이 앞이다
+        {
+            'complexInfo': {'realEstateType': 'A05', 'coordinatesDto': {'xCoordinate': 127.0307, 'yCoordinate': 37.4970}},
+            'realPriceList': [_around_trade('2026-09-18', 30.2, '20170501', '3', deposit)],
+        },
+        # 건물 정보·층·금액·준공 연월이 비어 와도 깨지지 않고, 거리·같은 단지 여부는 모름이다
+        {'complexInfo': None, 'realPriceList': [_around_trade('2020-01-01', 20.0, None, '-', None)]},
+        {'complexInfo': {'realEstateType': None, 'coordinatesDto': {}}, 'realPriceList': None},
+    ]}
+    return {
+        '/complex/v2/pyeong/realPrice': _ok({'list': [], 'hasNextPage': False}),
+        '/complex/pyeongList': _ok([]),
+        '/complex/villa/pyeongList': _ok([{'number': 4, 'name': '29A'}]),
+        '/complex/villa/realPricePage': _ok({'totalCount': 0, 'hasNextPage': False, 'realPriceList': []}),
+        '/complex/villa/realPricePyeongPrice': _ok([
+            {'tradeDate': '2026-09-30', 'pyeongPrice': 18_500_000},
+            {'tradeDate': None, 'pyeongPrice': None},
+        ]),
+        '/complex/villa': _ok({'name': '예시빌라', 'coordinates': coordinates}),
+        '/complex/villa/realPriceAround': _ok(around),
+        **extra,
+    }
+
+
+def test_villa_real_price_adds_per_pyeong_and_sorted_nearby_trades() -> None:
+    requests: list[httpx.Request] = []
+    with make_path_client(requests, _villa_overrides()) as client:
+        data = get_real_prices(client, 100002, 4, trade_type='전세', today=date(2026, 11, 19)).model_dump(mode='json')
+    # 평당 실거래가는 서버 순서 그대로다 (모르는 칸은 null)
+    assert data['price_per_pyeong_trades'] == [
+        {'trade_date': '2026-09-30', 'manwon_per_pyeong': 1850}, {'trade_date': None, 'manwon_per_pyeong': None},
+    ]
+    nearby = data['nearby_transactions']
+    # 웹 작은 지도 크기 (위도 37.5 에서 위도 폭 약 0.001702°·경도 폭 0.0041628°)
+    assert nearby['range'] == {'north_south_m': 188, 'east_west_m': 365}
+    # 계약일 내림차순 → 준공연도 내림차순 → 전용면적 내림차순
+    assert [(trade['contract_date'], trade['built_year']) for trade in nearby['trades']] == [
+        ('2026-09-18', 2017), ('2026-09-18', 2012), ('2026-09-05', 2012), ('2020-01-01', None),
+    ]
+    other, same, _, unknown = nearby['trades']
+    assert (same['same_complex'], same['distance_m'], same['renewal']) == (True, 0, True)
+    assert other['same_complex'] is False and 300 < other['distance_m'] < 400 and other['renewal'] is None
+    # 전세 거래에 없는 가격 키는 빼고, 층이 '-' 이거나 금액이 비면 null 이다
+    assert other['deposit_manwon'] == 25000 and not {'price_manwon', 'rent_manwon', 'trade_type'} & set(other)
+    assert (unknown['floor'], unknown['deposit_manwon'], unknown['distance_m'], unknown['same_complex']) == (None, None, None, None)
+    # 요청: 아파트 실거래·평형 둘(아파트·빌라)·빌라 실거래 + 평당 1 + 좌표 1 + 주변 1. 주변은 웹처럼 줌 16 과 평형·거래 유형을 보낸다
+    assert _paths(requests)[-3:] == ['/complex/villa/realPricePyeongPrice', '/complex/villa', '/complex/villa/realPriceAround']
+    assert len(requests) == 7
+    assert requests[-3].url.params['startDate'] == '2021-11-19'
+    assert (requests[-1].url.params['zoom'], requests[-1].url.params['pyeongTypeNumber'], requests[-1].url.params['tradeType']) == ('16', '4', 'B1')
+
+
+def test_villa_around_km_sends_the_box_and_monthly_has_no_per_pyeong_key() -> None:
+    requests: list[httpx.Request] = []
+    with make_path_client(requests, _villa_overrides()) as client:
+        data = get_real_prices(client, 100002, 4, trade_type='월세', around_km=0.5).model_dump(mode='json')
+    # 월세는 웹이 평당 실거래가 칸을 그리지 않아 키가 없고 요청도 하지 않는다. 주변 실거래는 그대로 있다
+    assert 'price_per_pyeong_trades' not in data
+    assert '/complex/villa/realPricePyeongPrice' not in _paths(requests)
+    assert data['nearby_transactions']['range'] == {'north_south_m': 1000, 'east_west_m': 1000}
+    params = requests[-1].url.params
+    assert abs(float(params['top']) - float(params['bottom']) - 0.5 * 2 / 110.574) < 1e-6
+    assert 'deposit_manwon' in data['nearby_transactions']['trades'][0] and 'rent_manwon' in data['nearby_transactions']['trades'][0]
+
+
+def test_villa_trade_info_failure_is_unknown_and_empty_is_empty() -> None:
+    failure = {'isSuccess': False, 'detailCode': 'ERROR', 'result': {}}
+    # 평당 실거래가 조회 실패와 단지 좌표를 모름은 null 이다 (성공한 빈 응답과 다르다)
+    with make_path_client([], _villa_overrides(coordinates=None, **{'/complex/villa/realPricePyeongPrice': failure})) as client:
+        result = get_real_prices(client, 100002, 4, trade_type='매매')
+    data = result.model_dump(mode='json')
+    assert data['price_per_pyeong_trades'] is None and data['nearby_transactions'] is None
+    # 실패한 평당 실거래가만 [실패] 안내를 남긴다 (isSuccess false 라 업데이트 안내가 붙는다). 단지 좌표가 성공인데 없는 것은 실패가 아니라 안내가 없다
+    failure_notes = [text for text in result.notes if text.startswith('[실패] ')]
+    assert len(failure_notes) == 1 and '평당 실거래가' in failure_notes[0] and UPDATE_MAYBE_NEEDED in failure_notes[0]
+    assert not any('단지 좌표' in text for text in result.notes)
+    # 성공한 빈 응답은 [] 이다 (result 가 null 이어도 같다). 매매 거래에는 갱신 키가 없다
+    empty = {
+        '/complex/villa/realPricePyeongPrice': _ok(None),
+        '/complex/villa/realPriceAround': _ok({'aroundRealPriceList': None}),
+    }
+    with make_path_client([], _villa_overrides(**empty)) as client:
+        data = get_real_prices(client, 100002, 4, trade_type='매매').model_dump(mode='json')
+    assert data['price_per_pyeong_trades'] == [] and data['nearby_transactions']['trades'] == []
+
+
 def _raise(exc: Exception):
     def request() -> NaverResponseModel[int]:
         raise exc
@@ -1392,6 +1501,17 @@ def test_result_or_empty_is_success_false_notes_update_hint() -> None:
     assert len(notes) == 1 and notes[0].startswith('[실패] ') and UPDATE_MAYBE_NEEDED in notes[0]
     # notes 가 None 이면 호출부가 스스로 알리는 것이라 안내를 더하지 않는다
     assert result_or_empty(lambda: response, list, notes=None, what='관리비', unknown='') is None
+
+
+def test_real_price_around_km_is_rejected_for_apartment_complex() -> None:
+    requests: list[httpx.Request] = []
+    with make_client(requests) as client, pytest.raises(JibsaError) as exc:
+        get_real_prices(client, 100001, 1, pages=3, around_km=0.5)
+    # 아파트 첫 쪽으로 단지 종류가 정해진 직후 막아 더 받지 않는다. 옵션을 빼면 성공한다
+    assert exc.value.code == 'INVALID_ARGUMENT' and exc.value.hint == '옵션을 빼고 다시 부르세요'
+    assert len(requests) == 1
+    with make_client() as client:
+        assert 'nearby_transactions' not in get_real_prices(client, 100001, 1).model_dump(mode='json')
 
 
 # --- 사용법 오류 ----------------------------------------------------------------

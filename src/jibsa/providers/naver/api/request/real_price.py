@@ -49,6 +49,64 @@ class NaverComplexVillaRealPricePageV1RequestParameterModel(NaverComplexPyeongRe
     ] = 10
 
 
+class NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel(NaverComplexRequestParameterModel):
+    """`GET /front-api/v1/complex/villa/realPricePyeongPrice` 쿼리. 빌라 단지의 평당 실거래가.
+
+    웹 빌라 단지 실거래 탭은 `startDate` 를 오늘의 5년 전으로 보내고, 평형을 고르면 `pyeongTypeNumber` 를 붙인다.
+    월세(B2)는 웹이 이 칸을 그리지 않아 묻지 않는다.
+    """
+
+    pyeong_type_number: Annotated[
+        int | None,
+        Field(gt=0, description='평형 번호 (pyeongList 의 number). 빼면 단지 전체', alias='pyeongTypeNumber')
+    ] = None
+    trade_type: Annotated[
+        Literal['A1', 'B1'],
+        Field(description='거래 유형 (A1 매매, B1 전세)', alias='tradeType')
+    ]
+    start_date: Annotated[
+        str,
+        Field(pattern=r'^\d{4}-\d{2}-\d{2}$', description='시작일 (YYYY-MM-DD). 웹은 오늘의 5년 전', alias='startDate')
+    ]
+
+
+class NaverComplexVillaRealPriceAroundV1RequestParameterModel(NaverComplexRequestParameterModel):
+    """`GET /front-api/v1/complex/villa/realPriceAround` 쿼리. 지도 범위 안 빌라 실거래.
+
+    범위 네 값과 `zoom` 이 모두 필요하다 (2026-11-19 실측: zoom 16 이면 결과가 오고 14 면 0건, 빼면 400). 서버는 범위 안
+    거래를 10건까지만 준다. `pyeongTypeNumber` 를 주면 그 평형과 비슷한 면적의 거래까지 함께 준다.
+    """
+
+    pyeong_type_number: Annotated[
+        int | None,
+        Field(gt=0, description='평형 번호 (pyeongList 의 number). 빼면 단지 전체', alias='pyeongTypeNumber')
+    ] = None
+    trade_type: Annotated[
+        Literal['A1', 'B1', 'B2'],
+        Field(description='거래 유형 (A1 매매, B1 전세, B2 월세)', alias='tradeType')
+    ]
+    top: Annotated[
+        float,
+        Field(ge=-90, le=90, description='범위의 북쪽 위도')
+    ]
+    bottom: Annotated[
+        float,
+        Field(ge=-90, le=90, description='범위의 남쪽 위도')
+    ]
+    left: Annotated[
+        float,
+        Field(ge=-180, le=180, description='범위의 서쪽 경도')
+    ]
+    right: Annotated[
+        float,
+        Field(ge=-180, le=180, description='범위의 동쪽 경도')
+    ]
+    zoom: Annotated[
+        int,
+        Field(ge=1, le=22, description='지도 줌. 웹이 16 을 보낸다. 14 는 같은 범위에도 0건이다')
+    ] = 16
+
+
 class NaverComplexPyeongRealPriceListV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
     """`GET /front-api/v1/complex/pyeong/realPrice/list` 쿼리. 기간 안 실거래를 페이지 없이 다 준다.
 

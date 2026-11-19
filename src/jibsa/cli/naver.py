@@ -50,6 +50,7 @@ from jibsa.providers.naver.service.common import (
     MAX_LIST_LIMIT,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     PERIOD_MONTHS_BY_NAME,
+    SALE_JEONSE_CODE_BY_NAME,
     SEARCH_CODES_BY_PROPERTY,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
@@ -108,7 +109,6 @@ from jibsa.providers.naver.service.trend import (
     NATIONWIDE_NAME,
     TREND_PERIOD_BY_NAME,
     TREND_PYEONG_RANGES,
-    TREND_TRADE_CODE_BY_NAME,
     get_district_trend,
 )
 
@@ -786,7 +786,7 @@ def trend_command(
     lng: Annotated[float | None, typer.Option(help='경도 (그 자리의 법정동)')] = None,
     trade: Annotated[
         str,
-        typer.Option('--trade', help=f"거래 유형: {', '.join(TREND_TRADE_CODE_BY_NAME)} (네이버가 월세 추이는 주지 않는다)")
+        typer.Option('--trade', help=f"거래 유형: {', '.join(SALE_JEONSE_CODE_BY_NAME)} (네이버가 월세 추이는 주지 않는다)")
     ] = '매매',
     period: Annotated[
         str,
@@ -806,7 +806,7 @@ def trend_command(
     예: jibsa naver trend 전국
     """
     _require_location(query, lat, lng)
-    trade = check_choice(trade, TREND_TRADE_CODE_BY_NAME, '--trade')
+    trade = check_choice(trade, SALE_JEONSE_CODE_BY_NAME, '--trade')
     period = check_choice(period, TREND_PERIOD_BY_NAME, '--period')
     if pyeong_range is not None:
         pyeong_range = check_choice(pyeong_range, TREND_PYEONG_RANGES, '--pyeong-range')
@@ -842,19 +842,30 @@ def real_price_command(
     ] = None,
     period: Annotated[
         str | None,
-        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다. --group 과 함께 쓸 수 없다")
+        typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}. 주면 페이지 대신 그 기간 안 거래를 모두 준다. --pages·--group 과 함께 쓸 수 없다")
     ] = None,
     group: Annotated[
         bool,
-        typer.Option('--group', help='같은 평형 묶음(complex 결과의 pyeong_groups)의 실거래를 함께 준다. 거래마다 평형은 알 수 없다. --period 와 함께 쓸 수 없다')
+        typer.Option('--group', help='같은 평형 묶음(complex 결과의 pyeong_groups)의 실거래를 함께 준다. 거래마다 평형은 알 수 없다. --period·--around-km 과 함께 쓸 수 없다')
     ] = False,
+    around_km: Annotated[
+        float | None,
+        typer.Option(
+            '--around-km', min=0.1, max=1.0,
+            help='빌라 단지의 주변 실거래 범위 (km, 단지 중심에서 사방으로). 빼면 네이버 웹 작은 지도 크기(서울에서 남북 약 190m·동서 약 365m, 남쪽일수록 조금 넓다). 아파트 단지에는 쓸 수 없다. --group 과 함께 쓸 수 없다',
+        )
+    ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """평형별 실거래가 (국토부 신고 기준, 최근 순).
+    """평형별 실거래가 (국토부 신고 기준, 최근 순). 빌라 단지는 웹 빌라 실거래 탭의 두 칸도 준다: 최근 5년 평당 실거래가(매매·전세)와 주변 실거래(범위 안 10건까지).
+
+    요청은 아파트 단지 1회+쪽 수(거래가 없으면 단지 종류 확인 1~2회 더)이고, 빌라 단지는 평당 실거래가 1회(월세는 없음)·단지 좌표 1회·주변 실거래 1회가 더 든다.
 
     예: jibsa naver real-price 12345 --pyeong 2 --trade 전세 --period 3년
     예: jibsa naver real-price 12345 --pyeong 2 --group --pages 2
+    예: jibsa naver real-price 572549 --pyeong 4 --trade 전세 --around-km 0.5
     """
+    require_finite('--around-km', around_km)
     trade_types = split_csv([trade], ('매매', '전세', '월세'), '--trade')
     if len(trade_types) != 1:
         raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세 중 하나)', param_hint='--trade')
@@ -864,9 +875,13 @@ def real_price_command(
             raise typer.BadParameter('--period 와 --pages 는 함께 쓸 수 없습니다. 기간이면 --period 만 주세요', param_hint='--pages')
         if group:
             raise typer.BadParameter('--group 과 --period 는 함께 쓸 수 없습니다. 묶음 실거래는 --pages 로 페이지를 넘기세요', param_hint='--group')
+    if group and around_km is not None:
+        # 평형 묶음은 아파트 단지에만 있고 주변 실거래는 빌라 단지에만 있어, 어느 단지에도 함께 쓸 수 없다
+        raise typer.BadParameter('--group 은 아파트 단지, --around-km 은 빌라 단지에만 쓸 수 있어 함께 쓸 수 없습니다. 하나만 주세요', param_hint='--around-km')
     with handle_errors(SOURCE), NaverClient() as client:
         result = get_real_prices(
             client, complex_number, pyeong, trade_type=trade_types[0], pages=pages or 1, period=period, group=group,
+            around_km=around_km,
         )
         emit(result, pretty, notes=result.notes)
 

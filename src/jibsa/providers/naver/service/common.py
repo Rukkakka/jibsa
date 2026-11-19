@@ -91,6 +91,8 @@ TRADE_CODE_BY_NAME: dict[str, str] = {
     '단기임대': 'B3',
 }
 TRADE_NAME_BY_CODE: dict[str, str] = {code: name for name, code in TRADE_CODE_BY_NAME.items()}
+# 매매·전세만 받는 조회의 거래 유형 이름 → 코드 (동네 추이·빌라 평당 실거래가. 네이버가 월세 값은 주지 않는다)
+SALE_JEONSE_CODE_BY_NAME: dict[str, Literal['A1', 'B1']] = {'매매': 'A1', '전세': 'B1'}
 OFFICETEL_CODE: str = 'A02'
 # 지도 검색에 보내는 매물 유형 코드. 네이버는 단지로 등록된 빌라를 C02 가 아닌 A05(연립 단지)·A06(다세대 단지)로
 # 따로 분류해, C02 만 보내면 빌라의 약 30% 가 빠진다 (역삼동 1km: C02 1124건, A05 33건, A06 408건).

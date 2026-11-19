@@ -217,6 +217,10 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'transactions'),
         # 평형 묶음(complex/pyeongGroups)으로 같은 묶음 평형의 실거래를 함께 받는다 (complex/pyeong/realPrice/group)
         Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'transactions'),
+        # 빌라 단지 실거래는 평당 실거래가(complex/villa/realPricePyeongPrice)·단지 좌표(complex/villa)·주변 실거래
+        # (complex/villa/realPriceAround)를 더 부른다. 아무 빌라 단지나 고르면 거래가 없어 빈 목록이 정상일 수 있어, 거래가 있는
+        # 단지형 빌라를 고정한다 (네오스빌 572549 평형 4 전세: 2026-11-19 평당가 5건·주변 10건). 기대 칸은 주변 거래 목록이다
+        Step('빌라 단지 실거래 네오스빌', ('naver', 'real-price'), ('572549', '--pyeong', '4', '--trade', '전세'), 'nearby_transactions.trades'),
         Step('평형 시세', ('naver', 'market-price'), ('{complex}', '--pyeong', '{pyeong}'), 'providers'),
         Step('학교', ('naver', 'school'), ('{school}',), 'school_code'),
         # 학교는 그 단지가 배정된 학교라 목록이 비면 고장이다 (dict 만 보면 키 이름이 바뀌어 빈 목록이 돼도 못 잡는다)

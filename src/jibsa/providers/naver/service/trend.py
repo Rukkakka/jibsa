@@ -19,12 +19,12 @@ from jibsa.providers.naver.api.request.trend import (
     NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel,
     NaverTrendOffset,
 )
-from jibsa.providers.naver.service.common import result_or_none
-
-from typing import (
-    Annotated,
-    Literal,
+from jibsa.providers.naver.service.common import (
+    SALE_JEONSE_CODE_BY_NAME,
+    result_or_none,
 )
+
+from typing import Annotated
 
 
 TREND_PERIOD_BY_NAME: dict[str, NaverTrendOffset] = {
@@ -33,10 +33,6 @@ TREND_PERIOD_BY_NAME: dict[str, NaverTrendOffset] = {
     '1년': 'P-1Y',
     '3년': 'P-3Y',
     '5년': 'P-5Y',
-}
-TREND_TRADE_CODE_BY_NAME: dict[str, Literal['A1', 'B1']] = {
-    '매매': 'A1',
-    '전세': 'B1',
 }
 # 평형대 하한 (평)과 폭. 사이트처럼 10평 단위로 하한~하한+10 평
 TREND_PYEONG_RANGES: tuple[int, ...] = (10, 20, 30, 40, 50)
@@ -203,7 +199,7 @@ def get_district_trend(
 
     Args:
         legal_division_code: 법정동 코드 10자리. 전국은 `NATIONWIDE_CODE`.
-        trade_type: `TREND_TRADE_CODE_BY_NAME` 의 이름 (매매, 전세).
+        trade_type: `SALE_JEONSE_CODE_BY_NAME` 의 이름 (매매, 전세).
         period: `TREND_PERIOD_BY_NAME` 의 이름.
         pyeong_range: 평형대 하한 (`TREND_PYEONG_RANGES`). 주면 하한~하한+`TREND_PYEONG_RANGE_WIDTH` 평만.
 
@@ -212,7 +208,7 @@ def get_district_trend(
     """
     query = {
         'legal_division_number': legal_division_code,
-        'trade_type': TREND_TRADE_CODE_BY_NAME[trade_type],
+        'trade_type': SALE_JEONSE_CODE_BY_NAME[trade_type],
         'offset': TREND_PERIOD_BY_NAME[period],
         'pyeong_range_lower': pyeong_range,
         'pyeong_range_upper': None if pyeong_range is None else pyeong_range + TREND_PYEONG_RANGE_WIDTH,
