@@ -76,6 +76,7 @@ from jibsa.providers.naver.service.region import (
     city_district_names,
     legal_division_code_at,
     list_regions,
+    only_district_of_province,
     resolve_complex_number,
     resolve_redevelopment_number,
     resolve_search_region,
@@ -111,7 +112,10 @@ from jibsa.providers.naver.service.trend import (
     get_district_trend,
 )
 
-from typing import Annotated
+from typing import (
+    Annotated,
+    Literal,
+)
 
 
 SOURCE: str = 'naver'
@@ -173,6 +177,10 @@ def _split_dongs(values: list[str] | None) -> list[str]:
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내. 동과 시·군·구 경계 검색이 함께 쓴다
 WHOLE_BOUNDARY_NOTE: str = note('범위', '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
+# 시·군·구가 하나뿐인 시·도(세종)를 그 시·군·구 경계로 찾았다는 안내. 시·도 코드는 경계로 보낼 수 없어 그 아래 하나뿐인 시·군·구를 쓴다
+SOLE_DISTRICT_NOTE: str = note(
+    '범위', '시·군·구가 {district} 하나뿐이라 {name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)',
+)
 # 반경 없이 시·군·구 경계 전체(GUN)로 찾는 지역 이름의 끝말. 구·군은 바로 경계로 찾는다. 시는 구가 없을 때만 경계로 찾는다.
 # 구 있는 시(성남시 4113000000)는 시 코드 + GUN 이 오류 없이 0건이라 코드·이름만으로 구 없는 시(구리시 4131000000)와 가를 수
 # 없다 (2026-11-18 실측). 그래서 시는 `city_district_names` 로 구가 있는지 본다 (요청 1회)
@@ -365,6 +373,26 @@ def _boundary_unit(
     return '시·군·구', []
 
 
+def _is_province_region(region: NaverRegion, kind: str) -> bool:
+    """시·도 이름인가. 종류가 '지역'이고 법정동 코드 앞 두 자리 뒤가 모두 0 이다 (3600000000, `_wide_region_unit` 과 같은 판정)."""
+    code = region.legal_division_code
+    return kind == '지역' and code is not None and len(code) == 10 and code[2:] == '0' * 8
+
+
+def _sole_district(
+    client: NaverClient, region: NaverRegion, kind: str, radius: float | None,
+) -> tuple[str, str] | None | Literal['unknown']:
+    """반경을 주지 않은 시·도 이름이 시·군·구 하나뿐인 시·도(세종)면 그 (시·군·구 코드, 이름), 조회가 실패하면 'unknown', 그 밖은 None.
+
+    시·도 이름일 때만 `only_district_of_province` 로 묻는다 (요청 1회). 서울·경기도처럼 시·군·구가 여럿이면 None 이라 지금처럼
+    중심 반경으로 찾는다.
+    """
+    code = region.legal_division_code
+    if radius is not None or code is None or not _is_province_region(region, kind):
+        return None
+    return only_district_of_province(client, code)
+
+
 def _search_scope(region: NaverRegion, whole: bool, radius: float | None) -> dict[str, object]:
     """어디를 찾았는지. 경계로 찾았으면 boundary(동·시·군·구 이름), 아니면 radius_km 다 (직방 search 와 같다)."""
     return {'boundary': region.name} if whole else {'radius_km': radius or DEFAULT_RADIUS_KM}
@@ -384,9 +412,27 @@ def _area_location(
     동·구·군과 구 없는 시 이름이고 반경을 주지 않았으면 그 경계 안 전체를 찾아 법정동 코드를 주고(단위는 코드로 정해진다,
     `boundary_filter`), 아니면 코드가 None 이라 반경 안을 찾는다. 구 있는 시(성남시)는 시 전체로 찾을 수 없어 반경으로 찾고
     구 이름을 알린다. 구가 있는 시인지 확인하지 못해도 반경으로 찾고 그 사실을 알린다 (이름이 시일 때만 요청 1회 늘어난다).
+    시·도 이름은 시·군·구가 하나뿐인 시·도(세종)면 그 시·군·구 경계 전체로 찾는다 (이름이 시·도일 때만 요청 1회 늘어난다).
+    서울·경기도처럼 시·군·구가 여럿이면 중심 반경이고, 하나뿐인지 확인하지 못해도 반경으로 찾고 그 사실을 알린다.
     범위는 결과에 붙이는 boundary 또는 radius_km 다 (`_search_scope`).
     """
     region, kind, notes = _resolve_location(client, query, lat, lng, radius, listing_search=listing_search)
+    sole = _sole_district(client, region, kind, radius)
+    if isinstance(sole, tuple):
+        # 시·군·구가 하나뿐인 시·도(세종)는 그 시·군·구 경계가 시·도 전체다. 지역 해석의 '시·도 단위의 넓은 지역이라 … 반경 안만
+        # 검색했습니다' 안내는 경계로 찾으면 맞지 않아 뺀다. 결과 범위의 이름은 사용자가 준 이름이다
+        district_code, district_name = sole
+        notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+        notes.append(SOLE_DISTRICT_NOTE.format(name=region.name, district=district_name))
+        return region, notes, district_code, _search_scope(region, True, radius)
+    if sole == 'unknown':
+        notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+        notes.append(note(
+            '실패',
+            f"'{query}': 시·도 아래 시·군·구를 확인하지 못해 시·도 전체 대신 중심({region.address or region.name})에서 "
+            f"반경 {DEFAULT_RADIUS_KM:g}km 안만 찾았습니다. 동·역 이름으로 좁혀 검색하세요",
+        ))
+        return region, notes, None, _search_scope(region, False, radius)
     unit, city_districts = _boundary_unit(client, region, kind, radius)
     if unit is None:
         if city_districts is None:
@@ -469,7 +515,7 @@ def complex_command(
 def complexes_command(
     query: Annotated[
         str | None,
-        typer.Argument(help="주소·동·구·역·단지 이름 (예: 역삼동, 성동구, 강남역, '역삼동 719-28'). 동·구·군·구 없는 시 이름이면 그 경계 안 단지 전체. --lat/--lng 를 주면 생략")
+        typer.Argument(help="주소·동·구·역·단지 이름 (예: 역삼동, 성동구, 강남역, '역삼동 719-28'). 동·구·군·구 없는 시·세종 이름이면 그 경계 안 단지 전체. --lat/--lng 를 주면 생략")
     ] = None,
     lat: Annotated[float | None, typer.Option(help='중심 위도')] = None,
     lng: Annotated[float | None, typer.Option(help='중심 경도')] = None,
@@ -479,7 +525,7 @@ def complexes_command(
     ] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동·구·군·구 없는 시 이름으로 찾았을 때 주면 경계 전체 대신 그 중심 반경으로 찾는다')
+        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동·구·군·구 없는 시·세종 이름으로 찾았을 때 주면 경계 전체 대신 그 중심 반경으로 찾는다')
     ] = None,
     sort: Annotated[
         str,
@@ -495,7 +541,7 @@ def complexes_command(
 ) -> None:
     """지역 안 단지 목록 (세대수·준공일·매물 수·호가 범위). 결과의 complex_number 를 complex·search listings --complex 에 넘긴다.
 
-    위치는 naver search listings 와 같이 찾는다. 동·구·군·구 없는 시 이름이면 그 경계 안 단지 전체(boundary), 그 밖은 반경 안(radius_km)이다.
+    위치는 naver search listings 와 같이 찾는다. 동·구·군·구 없는 시·세종 이름이면 그 경계 안 단지 전체(boundary), 그 밖은 반경 안(radius_km)이다.
 
     예: jibsa naver search complexes 역삼동 --sort 세대수순
     """
@@ -624,13 +670,13 @@ def _search_redevelopment_listings(
 def redevelopment_command(
     query: Annotated[
         str | None,
-        typer.Argument(help='주소·동·구·역·단지 이름 (예: 한남동, 성동구, 한강진역). 동·구·군·구 없는 시 이름이면 그 경계 안 구역 전체. --lat/--lng 를 주면 생략')
+        typer.Argument(help='주소·동·구·역·단지 이름 (예: 한남동, 성동구, 한강진역). 동·구·군·구 없는 시·세종 이름이면 그 경계 안 구역 전체. --lat/--lng 를 주면 생략')
     ] = None,
     lat: Annotated[float | None, typer.Option(help='중심 위도')] = None,
     lng: Annotated[float | None, typer.Option(help='중심 경도')] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동·구·군·구 없는 시 이름으로 찾았을 때 주면 경계 전체 대신 그 중심 반경으로 찾는다')
+        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동·구·군·구 없는 시·세종 이름으로 찾았을 때 주면 경계 전체 대신 그 중심 반경으로 찾는다')
     ] = None,
     trade: Annotated[
         list[str] | None,
@@ -645,9 +691,9 @@ def redevelopment_command(
 ) -> None:
     """지역 안 재개발 구역 (사업 단계·세대수·거래 유형별 매물 수·매매 호가). 결과의 redevelopment_number 를 search listings --redevelopment 에 넘긴다.
 
-    위치는 naver search listings 와 같이 찾는다. 동·구·군·구 없는 시 이름이면 그 경계 안 구역 전체(boundary), 그 밖은 반경 안(radius_km)이다.
+    위치는 naver search listings 와 같이 찾는다. 동·구·군·구 없는 시·세종 이름이면 그 경계 안 구역 전체(boundary), 그 밖은 반경 안(radius_km)이다.
     네이버는 한 구역을 법정동마다 따로 등록하기도 해 같은 이름이 여러 번 나올 수 있다 (구역 번호 redevelopment_number 로
-    구분한다. 반경 결과는 legal_division 도 다르지만 동·구·군·구 없는 시 경계 결과의 legal_division 은 모두 그 경계다).
+    구분한다. 반경 결과는 legal_division 도 다르지만 동·구·군·구 없는 시·세종 경계 결과의 legal_division 은 모두 그 경계다).
 
     예: jibsa naver search redevelopment 한남동
     """
@@ -1069,7 +1115,7 @@ def _listing_conditions(
 def search_command(
     query: Annotated[
         str | None,
-        typer.Argument(help="주소·동·구·역·단지 이름 (예: '역삼동 719-28', 테헤란로 152, 역삼동, 성동구, 강남역, 개포자이). 동·구·군·구 없는 시 이름이면 그 경계 전체를 찾는다. --lat/--lng 를 주면 생략")
+        typer.Argument(help="주소·동·구·역·단지 이름 (예: '역삼동 719-28', 테헤란로 152, 역삼동, 성동구, 강남역, 개포자이). 동·구·군·구 없는 시·세종 이름이면 그 경계 전체를 찾는다. --lat/--lng 를 주면 생략")
     ] = None,
     complex_: Annotated[str | None, typer.Option('--complex', help='단지 이름 또는 번호. 지역·좌표와 함께 사용할 수 없다')] = None,
     redevelopment: Annotated[
@@ -1090,7 +1136,7 @@ def search_command(
     ] = None,
     radius: Annotated[
         float | None,
-        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 밖 매물은 뺀다. 동·구·군·구 없는 시 이름으로 찾았을 때 주면 경계 전체 대신 그 중심 반경으로 찾는다')
+        typer.Option(min=0.1, max=3.0, help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 반경 밖 매물은 뺀다. 동·구·군·구 없는 시·세종 이름으로 찾았을 때 주면 경계 전체 대신 그 중심 반경으로 찾는다')
     ] = None,
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     deposit_min: DepositMinOption = None,
@@ -1168,9 +1214,9 @@ def search_command(
     fields: FieldsOption = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을, 동·구·군·구 없는 시 이름은 그 경계 전체를 네이버 정렬(기본 랭킹순)로 찾는다.
+    """매물을 조회한다. 주소·역·단지는 그 지점 반경 안을, 동·구·군·구 없는 시·세종 이름은 그 경계 전체를 네이버 정렬(기본 랭킹순)로 찾는다.
 
-    결과에 boundary(동·구·군·구 없는 시 이름)가 있으면 그 법정동·시·군·구 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
+    결과에 boundary(동·구·군·구 없는 시·세종 이름)가 있으면 그 법정동·시·군·구 경계 안 매물이고 전체 수(total)도 정확하다. radius_km 가 있으면
     그 반경 안이다 (zigbang search 와 같다). 같은 이름의 동·주소가 여러 곳이면 REGION_AMBIGUOUS 로 멈추니 시·구를 붙여 다시 검색한다.
     '○가' 로 나뉜 동의 앞 이름(성수동 → 성수동1가·성수동2가)이나 여러 단지에 맞는 단지 이름도 REGION_AMBIGUOUS 로 후보를 알린다.
     결과의 title 에 단지명이 들어 있다.
@@ -1264,7 +1310,7 @@ def search_command(
                 fields_source=result,
             )
             return
-        # 동·구·군·구 없는 시 이름이면 그 경계 전체를 찾는다. 반경을 직접 주면 그 뜻대로 중심 반경으로 찾는다.
+        # 동·구·군·구 없는 시·세종 이름이면 그 경계 전체를 찾는다. 반경을 직접 주면 그 뜻대로 중심 반경으로 찾는다.
         # '○가' 로 나뉜 동(성수동)은 위치 해석에서 REGION_AMBIGUOUS 로 멈춰 동 경계는 늘 동 하나다 (네이버 웹도 동 하나씩 연다)
         region, notes, code, scope = _area_location(client, query, lat, lng, radius, listing_search=True)
         result = search_area(

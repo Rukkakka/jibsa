@@ -1103,6 +1103,24 @@ def city_district_names(client: NaverClient, code: str) -> list[str] | None:
     return None if '' in names else names
 
 
+def _only_district(children: list[NaverLegalDivisionInfoModel]) -> NaverLegalDivisionInfoModel | None:
+    """시·도 아래 시·군·구 목록이 시·군·구 하나뿐이면 그것. 세종특별자치시가 그렇다 (시·군·구가 세종시 하나뿐)."""
+    return children[0] if len(children) == 1 and children[0].legal_division_level_type == 'GUN' else None
+
+
+def only_district_of_province(client: NaverClient, sido_code: str) -> tuple[str, str] | None | Literal['unknown']:
+    """시·도 법정동 코드(3600000000) 아래 시·군·구가 하나뿐이면 그 (법정동 코드, 이름), 여럿이면 None, 조회가 실패하면 'unknown' (요청 1회).
+
+    세종은 시·군·구가 '세종시' 3611000000 하나뿐이라 그 시·군·구 경계가 곧 세종 전체다 (`list_regions` 와 같은 판정이다).
+    그 코드를 `legalDivisionArticleList` 의 시·군·구(GUN)에 넣으면 세종 전체 매물이 온다 (2026-11-19 실측).
+    """
+    children = result_or_none(lambda: _sub_regions_response(client, 'GUN', sido_code))
+    if children is None:
+        return 'unknown'
+    only = _only_district(children)
+    return None if only is None else (only.legal_division_number, only.legal_division_name or only.legal_division_number)
+
+
 def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionList:
     """지역 하나의 바로 아래 지역 (2~3회 호출). 지역을 주지 않으면 시·도 전체 (1회 호출).
 
@@ -1133,10 +1151,10 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
             f"{name} 의 하위 지역입니다. 네이버 시·도 목록에는 옛 이름 '{query}' 대신 {name} 만 있습니다"
             + (f'. {FORMER_PROVINCE_NAME_HINTS[query]}' if query in FORMER_PROVINCE_NAME_HINTS else '')
         ] if query in FORMER_PROVINCE_NAMES else []
-        if len(children) == 1 and children[0].legal_division_level_type == 'GUN':
+        only = _only_district(children)
+        if only is not None:
             # 세종은 시·군·구가 '세종시' 하나뿐이고 그 이름이 시·도 별칭('세종시' → 세종특별자치시)이라, 시·군·구 목록을 주면
             # 'regions 세종시' 가 다시 같은 목록을 준다 (2026-10-11 실측). 하나뿐이면 그 아래 읍·면·동을 준다 (요청 1회 더)
-            only = children[0]
             return NaverRegionList(
                 parent=name,
                 parent_code=only.legal_division_number,
