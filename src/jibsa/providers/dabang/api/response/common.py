@@ -19,7 +19,11 @@ T = TypeVar('T')
 
 def _round_meters(value: Any) -> Any:
     """거리는 정수(m)로 온다 (2026-11-14 단지 38곳 학교, 어린이집 329곳·유치원 89곳 모두). 소수로 와도 단지 정보 전체가 파싱
-    에러로 끝나지 않게 반올림해 받는다."""
+    에러로 끝나지 않게 반올림해 받는다.
+
+    웹이 역·반려동물·카셰어링 거리를 그리는 함수 `x`(distance-km-m 청크)는 `e>=1e3 ? (e/1e3).toFixed(2)+'km' : e+'m'` 로 반올림
+    없이 서버 값을 쓰고, 다방이 이 셋을 JSON 정수로 줘서(2026-11-20 확인) 이 검증기는 정수에는 아무것도 바꾸지 않는다.
+    """
     return round(value) if isinstance(value, float) else value
 
 
@@ -288,8 +292,9 @@ class DabangComplexInfoModel(ResponseModel):
         """웹은 빈 글자('')면 '-' 로 쓴다 (complex 청크). 숫자로 읽지 못하는 글자('', '-' 등)는 모름(None)으로 받는다.
         정수로 온다 (2026-11-14 단지 38곳 모두).
         """
-        # 리뷰 오탐 (2026-11-14): 이 칸은 단위 없는 정수(또는 빈 글자)로 오고 웹이 '건' 을 붙이므로 단위 글자를 읽는 service
-        # count_of 와 읽는 법이 다르다.
+        # 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): api 층은 service 를 import 하지 않아 단위 글자를 읽는 count_of 를 쓸 수
+        # 없다. 웹(complex 청크)도 `recentDealCount===''?'-'` 뒤 `Number` 로 읽어 숫자가 아니면 '-' 라 '12건' 같은 글자는 웹에서도
+        # '-' 다 — 엄격한 이 검증기가 웹과 맞다. 이 칸은 JSON 정수로 온다.
         if isinstance(value, str):
             digits = value.replace(',', '').strip()
             return int(digits) if digits.isdigit() else None

@@ -16,14 +16,14 @@ from jibsa.core.errors import (
 )
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
-    UPDATE_MAYBE_NEEDED,
+    join_address,
+    js_round,
     normalize_address,
     normalize_date,
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.compare import (
-    DaangnComplexCompareRequestPayloadModel,
     DaangnComplexesByOriginalComplexIdsRequestPayloadModel,
     DaangnComplexRegionRequestPayloadModel,
     DaangnNearbyComplexesRequestPayloadModel,
@@ -37,21 +37,24 @@ from jibsa.providers.daangn.api.response.compare import (
     DaangnComplexCardModel,
 )
 from jibsa.providers.daangn.service.common import (
-    APARTMENT_COMPLEX_TYPES,
     COMPLEX_TYPE_LABELS,
     DaangnRegion,
+    code_label,
+    compare_column,
     complex_not_found,
     complex_url,
-    js_round,
+    is_year_month,
+    most_households,
+    pyeong_groups,
     truncation_notes,
     unwrap_graphql,
+    web_minutes,
 )
 
 from typing import (
     Annotated,
     Any,
     Literal,
-    NamedTuple,
 )
 
 
@@ -415,11 +418,11 @@ def _subways(rows: list[DaangnCompareSubwayModel]) -> list[DaangnCompareSubway]:
             continue
         key = (row.station_nm, row.simple_line_nm)
         subway = merged.setdefault(key, DaangnCompareSubway(station=f'{row.station_nm}역', line=row.simple_line_nm))
-        value = int(row.data_value) if row.data_value and row.data_value.isdigit() else None
+        value = row.data_value
         if row.data_type == 'DISTANCE':
-            subway.distance_m = value
+            subway.distance_m = js_round(value) if value is not None else None
         elif row.data_type == 'WALKING':
-            subway.walk_minutes = value
+            subway.walk_minutes = web_minutes(value) if value is not None else None
     return list(merged.values())
 
 
@@ -440,7 +443,7 @@ def _trade(
 
 def _top_info(group: DaangnCompareAreaGroupModel) -> DaangnComparePyInfoModel | None:
     """묶음에서 세대수가 가장 많은 평형 (같으면 앞 평형, 웹 compare 의 `$`)."""
-    return max(group.py_infos, key=lambda info: info.ptp_tot_hseh_cnt or 0) if group.py_infos else None
+    return most_households(group.py_infos, lambda info: info.ptp_tot_hseh_cnt)
 
 
 def _select_pyeong(
@@ -450,6 +453,8 @@ def _select_pyeong(
     가장 많은 평형의 전용면적 정수가 목표와 가장 가까운 묶음 (같으면 대표 묶음, 그다음 세대수 많은 묶음). 그 묶음에서 세대수가
     가장 많은 평형이다."""
     supply, groups = pyeong_groups(column)
+    # 대표 묶음은 평형이 있는 묶음 중에서 고른다. 인기 급상승 단지(`list_trending_complexes`)는 웹 식이 달라 평형이 없는 묶음까지
+    # 포함한 묶음 전체에서 대표 묶음을 고른다 (합치지 않는다)
     tops = [(group, info) for group in groups if (info := _top_info(group)) is not None]
     if not tops:
         return None
@@ -485,6 +490,7 @@ def _compare_pyeong(column: DaangnCompareComplexModel, target_m2: float | None) 
     if selected is None or danji is None:
         return None
     supply, group, chosen = selected
+    # 리뷰 오탐 (2026-11-19): 웹 compare 의 ge 도 평형 코드가 null 이면 바로 null 이라 칸을 비운다 (번들 compare-C6ozJ7Nu.js 대조)
     found = next(
         (
             (candidate, item) for candidate in danji.exclusive_area_groups for item in candidate.py_infos
@@ -529,12 +535,14 @@ def _compare_pyeong(column: DaangnCompareComplexModel, target_m2: float | None) 
 def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None) -> DaangnComplexComparison:
     danji = complex_.proptier_danji
     building = next((edge.node for edge in complex_.buildings.edges if edge.node), None) if complex_.buildings else None
-    # 웹(managementCost `g`)처럼 달이 1~12 로 읽히는 달만 평균 낸다. 숫자가 아닌 연월은 웹이 NaN 으로 읽어 건너뛰니 jibsa 도
-    # 건너뛴다 (int 로 바꾸면 ValueError 로 비교 전체가 PARSE_ERROR 였다. 2026-11-12 리뷰. 같은 날 실측 14곳은 모두 6자리 숫자)
+    # 웹(managementCost `g`·`_`)처럼 달이 1~12 로 읽히는 달만 평균 낸다. 숫자가 아닌 연월은 웹이 NaN 으로 읽어 건너뛰니 jibsa 도
+    # 건너뛴다 (int 로 바꾸면 ValueError 로 비교 전체가 PARSE_ERROR 였다. 2026-11-12 리뷰. 같은 날 실측 14곳은 모두 6자리 숫자).
+    # ㎡당 관리비가 null 인 달은 빼지 않는다. 웹은 연월의 달이 1~12 면 값이 null 이어도 배열에 넣고 `reduce((e,t)=>e+t,0)` 로 더해
+    # (JS 에서 null 은 0) 개수로 나눠 `Math.round` 하므로, null 인 달은 0 으로 더하고 개수에도 센다. 모든 달이 null 이면 합 0 / 개수
+    # 로 0 이다 (웹도 '0원'). 실측(2026-11-20, 단지 5곳 57달)에는 null 이 없었지만 서버가 줄 수 있는 값이라 웹 식에 맞춘다
     costs = [
         cost for cost in (complex_.kapt.monthly_management_costs_per_square_meter if complex_.kapt else [])
-        if cost.year_month and len(cost.year_month) == 6 and cost.year_month.isdecimal()
-        and 1 <= int(cost.year_month[4:6]) <= 12 and cost.cost_per_square_meter is not None
+        if is_year_month(cost.year_month)
     ]
     months = sorted(cost.year_month or '' for cost in costs)
     per_m2 = js_round(sum(cost.cost_per_square_meter or 0 for cost in costs) / len(costs)) if costs else None
@@ -542,7 +550,7 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None) ->
     return DaangnComplexComparison(
         complex_id=complex_.original_id,
         name=complex_.name,
-        type=COMPLEX_TYPE_LABELS.get(complex_.type or '', complex_.type),
+        type=code_label(COMPLEX_TYPE_LABELS, complex_.type),
         address=normalize_address(building.road_address or building.jibun_address) if building else None,
         approved_at=normalize_date(danji.build_date) if danji else None,
         buildings=danji.tot_dong_cnt if danji else None,
@@ -552,6 +560,9 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None) ->
         max_floor=danji.max_floor if danji else None,
         listing_count=complex_.live_article_count.total if complex_.live_article_count else None,
         asking=_asking_prices(complex_),
+        # 리뷰 오탐 (2026-11-19, 근거 고침 2026-11-20): 원 단위까지 내는 값이다 (AGENTS.md 금액 규칙). 웹 표시(managementCost `v`)는
+        # 1만원 이상이면 `Math.round(e/1e4)` 만원 정수, 그 아래는 `Math.round(e)` 원이라 jibsa 값과 소수 아래가 다르다. 이 차이는
+        # 개발 가이드 daangn.md 의 '웹과 다른 점' 절(관리비 항목)에 적는다 (단지 비교 설명은 같은 가이드 '단지·실거래' 절)
         manage_cost_manwon=(
             round(per_m2 * pyeong.exclusive_area_m2 / 10000, 4)
             if per_m2 is not None and pyeong is not None and pyeong.exclusive_area_m2 else None
@@ -562,137 +573,17 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None) ->
         # 단지 공공 정보가 없으면 학교·역·면적 묶음은 모른다 (null). `complex_to_summary` 와 같다.
         # 2026-10-11 실측: 화곡동·역삼동·이도2동의 소규모 아파트·오피스텔·도시형 15곳 모두 있었다
         schools=[
-            DaangnCompareSchool(name=school.school.sch_nm if school.school else None, distance_m=school.distance, walk_minutes=school.working_time)
+            DaangnCompareSchool(
+                name=school.school.sch_nm if school.school else None,
+                distance_m=js_round(school.distance) if school.distance is not None else None,
+                walk_minutes=web_minutes(school.working_time) if school.working_time is not None else None,
+            )
             for school in danji.assigned_schools
         ] if danji else None,
         subways=_subways(danji.subway_info) if danji else None,
         pyeong=pyeong,
         url=complex_url(complex_.original_id),
     )
-
-
-def compare_column(client: DaangnClient, complex_id: int) -> DaangnCompareComplexModel:
-    """단지 비교 칸 (`ComplexCompareColumnQuery`, 요청 1회, 약 78KB). 평형 묶음·평형 타입 코드·노드 ID 도 여기서 받는다.
-
-    Raises:
-        JibsaError: 없는 단지면 NOT_FOUND.
-    """
-    response = client.run_request_complex_compare(DaangnComplexCompareRequestPayloadModel(original_id=str(complex_id)))
-    output = response.data.complex_by_original_id if response.data else None
-    found = output.complex if output else None
-    if found is None and not response.errors:
-        raise complex_not_found(complex_id)
-    return unwrap_graphql(response, found, '단지 비교')
-
-
-class DaangnPyeongChoice(NamedTuple):
-    """실거래·시세 그래프를 거를 평형. 공급 평형(아파트형)이면 평형 타입 코드를, 아니면 전용면적 묶음을 보낸다."""
-
-    pyeong: int | None
-    area_group: int | None
-    ptp_cds: list[int] | None
-
-
-def pyeong_groups(column: DaangnCompareComplexModel) -> tuple[bool, list[DaangnCompareAreaGroupModel]]:
-    """단지의 평형 묶음과, 그것이 공급 평 묶음인지. 당근 웹처럼 아파트형 단지(아파트·주상복합·재개발)에 공급 평 묶음이 있으면
-    그것으로, 아니면 전용면적 묶음으로 평형을 고른다 (utils `n()`, 2026-11-12 번들 대조)."""
-    danji = column.proptier_danji
-    if danji is None:
-        return False, []
-    supply = column.type in APARTMENT_COMPLEX_TYPES and bool(danji.supply_pyeong_area_groups)
-    return supply, danji.supply_pyeong_area_groups if supply else danji.exclusive_area_groups
-
-
-def _supply_choice(column: DaangnCompareComplexModel, group: DaangnCompareAreaGroupModel) -> DaangnPyeongChoice:
-    """공급 평 묶음의 평형 타입 코드로 고른 평형.
-
-    평형을 주지 않은 `price-trend` 의 대표 평형도 이 에러로 끝낸다. 모든 평형 평균으로 물러서는 길은 두지 않았다: 2026-11-12
-    실측 아파트·주상복합 14곳의 공급 평 묶음에 모두 타입 코드가 있어 한 번도 돌지 않을 코드이고, 생기면 에러가 원인을 알린다
-    (2026-11-12 리뷰에서 물러서라고 했으나 그대로 둔다).
-
-    Raises:
-        JibsaError: 묶음에 평형 타입 코드가 하나도 없을 때 (UPSTREAM_ERROR). 빈 코드로 보내면 평형을 거르지 않은 전체
-            평형 값에 그 평형 이름이 붙는다 (2026-11-12 리뷰).
-    """
-    ptp_cds = [info.ptp_cd for info in group.py_infos if info.ptp_cd is not None]
-    if not ptp_cds:
-        raise JibsaError(
-            code='UPSTREAM_ERROR',
-            message=f'당근 단지 {column.original_id} 의 {group.label}평 묶음에 평형 타입 코드가 없어 그 평형만 고를 수 없습니다',
-            hint=f'응답 형식이 바뀌었을 수 있습니다. {UPDATE_MAYBE_NEEDED}',
-        )
-    return DaangnPyeongChoice(group.label, None, ptp_cds)
-
-
-def choose_pyeong(
-    column: DaangnCompareComplexModel,
-    *,
-    pyeong: int | None = None,
-    area_group: int | None = None,
-    representative: bool = False,
-) -> DaangnPyeongChoice | None:
-    """`--pyeong`·`--area` 로 평형을 고른다. 둘 다 없고 `representative` 면 웹처럼 대표 평형 묶음(없으면 첫 묶음)이다.
-
-    None 이면 평형으로 거르지 않는다 (real-price 는 모든 평형의 거래, price-trend 는 웹처럼 그래프 없음). 평형 묶음이 없거나 대표
-    묶음에 평형 값(`label`)이 없으면 고를 평형을 알 수 없어 None 이다. 예전에는 값 없는 평형을 골라 거르지 않으면서 '대표
-    평형(None㎡)' 이라고 알렸다 (2026-11-12 리뷰. 실측 응답에서 label 이 빈 묶음은 아직 보지 못했다).
-
-    Raises:
-        JibsaError: 평형 묶음이 없는 단지에 `pyeong`·`area_group` 을, 아파트형이 아닌 단지에 `pyeong` 을, 아파트형(공급 평
-            묶음) 단지에 `area_group` 을 주거나, 단지에 없는 평형·묶음이면 INVALID_ARGUMENT. 고른 공급 평 묶음에 평형 타입
-            코드가 없으면 UPSTREAM_ERROR.
-    """
-    supply, groups = pyeong_groups(column)
-    if (pyeong is not None or area_group is not None) and not any(group.label is not None for group in groups):
-        # 고를 묶음이 없으면 아래 '있는 평형' 안내가 빈 목록이라 다시 줄 값이 없었다 (2026-11-12 리뷰). 웹도 평형 탭이 없어
-        # 고를 수 없다. 옵션을 빼면 real-price 는 전체 평형이지만 price-trend 는 웹처럼 그래프가 없어 명령마다 알린다
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f'당근에 단지 {column.original_id} 의 평형 묶음 정보가 없어 평형을 고를 수 없습니다',
-            hint='real-price 는 --pyeong·--area 를 빼면 모든 평형의 거래를 봅니다. price-trend 는 당근 웹처럼 이런 단지의 시세 그래프가 없습니다',
-        )
-    if pyeong is not None:
-        if not supply:
-            raise JibsaError(
-                code='INVALID_ARGUMENT',
-                message=f'아파트형이 아닌 단지 {column.original_id} 에는 공급 평형(--pyeong)이 없습니다',
-                hint=f'jibsa daangn complex {column.original_id} 의 pyeongs[].area_group 을 --area 로 주세요',
-            )
-        group = next((group for group in groups if group.label == pyeong), None)
-        if group is None:
-            labels = ', '.join(f'{group.label}평' for group in groups if group.label is not None)
-            raise JibsaError(
-                code='INVALID_ARGUMENT',
-                message=f'단지 {column.original_id} 에 {pyeong}평 묶음이 없습니다',
-                hint=f'있는 평형: {labels} (jibsa daangn complex {column.original_id} 의 pyeongs[].pyeong)',
-            )
-        return _supply_choice(column, group)
-    if area_group is not None:
-        if supply:
-            # 웹은 공급 평 묶음이 있는 단지에서는 늘 평형 타입 코드(ptpCds)로만 묻고 전용면적 묶음을 섞지 않는다
-            # (ComplexTopicPanel `jd` 의 `s`). 84㎡ 묶음은 32평·33평을 함께 가져 웹의 32평 목록과 달랐다 (2026-11-12 번들 대조)
-            labels = ', '.join(f'{group.label}평' for group in groups if group.label is not None)
-            raise JibsaError(
-                code='INVALID_ARGUMENT',
-                message=f'아파트형 단지 {column.original_id} 에서는 당근 웹처럼 공급 평형(--pyeong)으로만 고릅니다',
-                hint=f'--area 대신 --pyeong 을 주세요. 있는 평형: {labels} (jibsa daangn complex {column.original_id} 의 pyeongs[].pyeong)',
-            )
-        if all(group.label != area_group for group in groups):
-            labels = ', '.join(f'{group.label}㎡' for group in groups if group.label is not None)
-            raise JibsaError(
-                code='INVALID_ARGUMENT',
-                message=f'단지 {column.original_id} 에 전용 {area_group}㎡ 묶음이 없습니다',
-                hint=f'있는 묶음: {labels} (jibsa daangn complex {column.original_id} 의 pyeongs[].area_group)',
-            )
-        return DaangnPyeongChoice(None, area_group, None)
-    if not representative or not groups:
-        return None
-    chosen = next((group for group in groups if group.is_representative), groups[0])
-    if chosen.label is None:
-        return None
-    if supply:
-        return _supply_choice(column, chosen)
-    return DaangnPyeongChoice(None, chosen.label, None)
 
 
 def compare_complexes(client: DaangnClient, complex_ids: list[int], *, area_m2: float | None = None) -> DaangnCompareResult:
@@ -808,33 +699,46 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
     수 있다고 `notes` 로 알린다. 단지 카드도 ID 를 한 번에 보낸다.
 
     Raises:
-        JibsaError: 없는 단지 (NOT_FOUND), 동을 모르는 단지 (REGION_NOT_FOUND), 그 밖의 GraphQL 에러.
+        JibsaError: 없는 단지 (NOT_FOUND), 동을 모르는 단지 (REGION_NOT_FOUND), 기타 유형 단지 (INVALID_ARGUMENT), 그 밖의 GraphQL 에러.
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때.
     """
     region_response = client.run_request_complex_region(DaangnComplexRegionRequestPayloadModel(complex_id=str(complex_id)))
-    output = unwrap_graphql(
-        region_response, region_response.data.complex_by_original_id if region_response.data else None, '단지 지역'
-    )
+    outer = region_response.data.complex_by_original_id if region_response.data else None
+    # 바깥이 null 인 것도 안의 단지가 null 인 것과 같은 없는 단지다 (`compare_column` 과 같다). GraphQL errors 가 있으면 그 에러가 먼저다
+    if outer is None and not region_response.errors:
+        raise complex_not_found(complex_id)
+    output = unwrap_graphql(region_response, outer, '단지 지역', conditions=False)
     if output.complex is None:
         raise complex_not_found(complex_id)
     dong = output.complex.region
     # 웹도 기타 유형(ETC)이거나 동을 모르는 단지는 같은 동 단지를 부르지 않는다. 이 쿼리도 region.depth 를 준다 (2026-11-12 실측:
     # 헬리오시티 → 가락동 depth 3. 리뷰가 depth 가 늘 None 이라 모든 단지가 실패한다고 했으나 오탐)
-    if dong is None or dong.original_id is None or dong.depth != 3 or output.complex.type == 'ETC':
+    if dong is None or dong.original_id is None or dong.depth != 3 or not dong.name3:
         raise RegionNotFoundError(f'단지 {complex_id} 의 동', hint='jibsa daangn search complexes <동 이름> 으로 찾으세요')
+    full_name = join_address(dong.name1, dong.name2, dong.name3)
+    if output.complex.type == 'ETC':
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=(
+                f'단지 {complex_id} 의 유형이 기타라 같은 동 단지 목록이 없습니다 (당근 웹도 기타 유형 단지에는 같은 동 단지를 보여 주지 않습니다)'
+            ),
+            hint=f"그 동의 단지는 jibsa daangn search complexes '{full_name}' 으로 찾으세요",
+        )
     region = DaangnRegion(name1=dong.name1 or '', name2=dong.name2 or '', name3=dong.name3 or '', region_id=dong.original_id)
     response = client.run_request_nearby_complexes(
         DaangnNearbyComplexesRequestPayloadModel(region3_id=region.region_id, first=NEARBY_COMPLEXES_MAX)
     )
-    nodes = unwrap_graphql(response, response.data.complexes if response.data else None, '같은 동 단지')
+    nodes = unwrap_graphql(response, response.data.complexes if response.data else None, '같은 동 단지', conditions=False)
     # 더 있을 수 있다는 안내라 [일부] 다. 지금은 가장 큰 동도 상한에 닿지 않지만 (2026-11-10 실측: 화곡동 705곳) 동이 커지면
-    # 나온다 (2026-11-10 리뷰: 태그가 없어 [참고] 로 나갈 뻔했다). 동 이름 뒤 '로도' 는 '화곡동 로도' 처럼 틀려 '명령으로'
-    # 로 조사를 고정한다 (particle 은 ㄹ 받침 예외로 '으로/로' 를 받지 않는다)
+    # 나온다 (2026-11-10 리뷰: 태그가 없어 [참고] 로 나갈 뻔했다). 동 이름은 같은 이름의 동이 REGION_AMBIGUOUS 가 되지 않게
+    # 시·구·동 전체 이름을 작은따옴표로 감싸고 조사는 '명령에' 로 고정한다. `search complexes` 도 `--limit` 최대가 같은 1200 이라
+    # 나머지를 받으려면 조건으로 좁혀야 한다
     capped_notes = (
         [note(
             '일부',
             f'당근에서 같은 동 단지를 {NEARBY_COMPLEXES_MAX}곳까지만 받아 더 있을 수 있습니다. '
-            f'나머지는 jibsa daangn search complexes {region.name3} 명령으로 찾아보세요',
+            f"나머지는 jibsa daangn search complexes '{join_address(region.name1, region.name2, region.name3)}' 명령에 조건"
+            '(--type·--trade·가격·--area-min/--area-max·세대수 등)을 줘 좁혀 찾으세요',
         )]
         if len(nodes.edges) >= NEARBY_COMPLEXES_MAX else []
     )
@@ -844,8 +748,9 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
         if edge.node and edge.node.original_id != str(complex_id) and edge.node.type != 'ETC'
     ]
     cards: list[DaangnComplexCardModel] = []
-    # 웹(300곳)보다 많아도 한 번에 보낸다 (2026-11-12 실측: 화곡동 강서힐스테이트 → 705곳 카드가 한 번에 모두 왔다. 리뷰가 서버가
-    # 목록을 자를 수 있다고 했으나 오탐)
+    # 웹(300곳)보다 많아도 한 번에 보낸다 (리뷰 오탐 2026-11-12, 근거 고침 2026-11-20. 실측(2026-11-20): 서로 다른 단지 ID 1097개를
+    # 보내 카드 1097개가 모두 왔고, 중복 ID 로 채운 1250개도 모두 왔다. ID 수는 `first=1200` 으로 막혀 서버가 자를 일이 없다.
+    # 2026-11-12 에는 화곡동 강서힐스테이트 705곳이 한 번에 모두 왔다)
     if ids:
         cards_response = client.run_request_complexes_by_original_complex_ids(
             DaangnComplexesByOriginalComplexIdsRequestPayloadModel(original_ids=ids)
@@ -854,12 +759,13 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
             cards_response,
             cards_response.data.complexes_by_original_complex_ids if cards_response.data else None,
             '단지 카드',
+            conditions=False,
         )
     nearby = [
         DaangnNearbyComplex(
             complex_id=card.original_id,
             name=card.name,
-            type=COMPLEX_TYPE_LABELS.get(card.type or '', card.type),
+            type=code_label(COMPLEX_TYPE_LABELS, card.type),
             households=card.proptier_danji.total_tot_hseh_cnt if card.proptier_danji else None,
             listing_counts={
                 '매매': card.live_article_count.buy if card.live_article_count else None,

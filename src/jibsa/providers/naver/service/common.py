@@ -7,7 +7,6 @@ from datetime import (
     datetime,
 )
 
-from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -28,11 +27,11 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     KST,
     NEXT_HINT,
-    UPDATE_MAYBE_NEEDED,
     Listing,
     format_manwon,
     iso_date,
     join_address,
+    lookup_failure_note,
     m2_to_pyeong,
     more_hint,
     normalize_date,
@@ -421,31 +420,22 @@ MARKET_PRICE_PROVIDER_NAMES: dict[str, str] = {'kab': '한국부동산원', 'kbs
 OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = OPTIONAL_LOOKUP_BASE_ERRORS
 
 
-def lookup_failure_note(exc: Exception | None, what: str, unknown: str) -> str:
-    """덤 조회를 받지 못한 `[실패]` 안내. 실패 이유마다 다음 행동이 달라(업데이트·다시 시도) 이유를 넣는다.
+def add_failure_note(notes: list[str] | None, exc: Exception | None, what: str, unknown: str) -> None:
+    """`[실패]` 안내를 notes 에 더한다. notes 가 None 이면 호출부가 스스로 알리는 것이라 아무것도 안 하고, 같은 안내는 한 번만 낸다.
 
-    다방 `_lookup_failure_note` 와 같은 갈래다. 네이버가 거절(4xx·`isSuccess` false)했거나 응답 형식이 바뀌면 업데이트 안내를 붙여
-    매일 감시가 고장으로 보고, 서버 오류(5xx)·연결 실패·시간 초과는 사이트가 바뀐 것이 아니라 붙이지 않는다 (감시는 확인 못 함).
-    요청 제한 `RateLimitedError` 는 덤 조회가 잡지 않아 여기 오지 않는다.
+    한 명령에서 같은 조회를 여러 번 부르는 자리(평형마다 등)가 있어 같은 글자를 거듭 붙이지 않는다.
+
+    갈래(네이버가 거절(4xx·`isSuccess` false)했거나 응답 형식이 바뀌면 업데이트 안내, 서버 오류·연결 실패면 붙이지 않음)와
+    문구는 core/listing.py 의 `lookup_failure_note` 다. 요청 제한 `RateLimitedError` 는 덤 조회가 잡지 않아 여기 오지 않는다.
 
     Args:
         exc: 실패 예외. `None` 이면 `isSuccess` 가 false 였던 것이다.
         what: 받지 못한 조회 이름 ('관리비').
         unknown: 그 실패로 모름이 된 칸 (끝에 마침표 없음). '모름(null)으로 낸 칸: a, b' 꼴로 써 영어 필드 이름 뒤에 조사가 붙지 않게 한다.
     """
-    if exc is None or isinstance(exc, ValueError) or (isinstance(exc, HTTPStatusError) and exc.response.status_code < 500):
-        return note('실패', f'네이버가 {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {unknown}. {UPDATE_MAYBE_NEEDED}')
-    return note('실패', f'네이버 {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
-
-
-def _add_failure_note(notes: list[str] | None, exc: Exception | None, what: str, unknown: str) -> None:
-    """`[실패]` 안내를 notes 에 더한다. notes 가 None 이면 호출부가 스스로 알리는 것이라 아무것도 안 하고, 같은 안내는 한 번만 낸다.
-
-    한 명령에서 같은 조회를 여러 번 부르는 자리(평형마다 등)가 있어 같은 글자를 거듭 붙이지 않는다.
-    """
     if notes is None:
         return
-    text = lookup_failure_note(exc, what, unknown)
+    text = lookup_failure_note(exc, '네이버', what, unknown)
     if text not in notes:
         notes.append(text)
 
@@ -463,13 +453,13 @@ def result_or_none(
 
     Args:
         notes: 안내를 붙일 목록. `None` 은 호출부가 실패를 스스로 알린다는 뜻이다 (지역 해석).
-        what: 조회 이름 ('관리비'). `lookup_failure_note` 를 보라.
+        what: 조회 이름 ('관리비'). core/listing.py 의 `lookup_failure_note` 를 보라.
         unknown: 모름이 된 칸 ('모름(null)으로 낸 칸: a, b').
     """
     try:
         return request().result
     except OPTIONAL_LOOKUP_ERRORS as exc:
-        _add_failure_note(notes, exc, what, unknown)
+        add_failure_note(notes, exc, what, unknown)
         return None
 
 
@@ -493,10 +483,10 @@ def result_or_empty(
     try:
         response = request()
     except OPTIONAL_LOOKUP_ERRORS as exc:
-        _add_failure_note(notes, exc, what, unknown)
+        add_failure_note(notes, exc, what, unknown)
         return None
     if not response.is_success:
-        _add_failure_note(notes, None, what, unknown)
+        add_failure_note(notes, None, what, unknown)
         return None
     return empty() if response.result is None else response.result
 

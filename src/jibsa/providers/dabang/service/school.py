@@ -443,7 +443,8 @@ def _services(values: list[str] | None) -> list[str] | None:
     return [value.strip() for value in values if value.strip()]
 
 
-# 리뷰 오탐 (2026-11-14): 통학 차량 수는 단위 없는 정수 글자('2')로 와서 단위 글자를 읽는 common.count_of 와 읽는 법이 다르다
+# 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): 단위 글자를 짐작하는 common.count_of 와 달리 숫자만 있는 글자만 받아, 꼴이 바뀌면
+# (예: 1~2) 첫 숫자로 짐작하지 않고 모름(null)으로 둔다. 웹(school 청크 `Ue`)은 글자를 그대로 보인다
 def _vehicles(value: str | None) -> int | None:
     text = (value or '').strip()
     return int(text) if text.isdecimal() else None

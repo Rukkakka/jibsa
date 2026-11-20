@@ -13,6 +13,7 @@ from jibsa.cli.app import (
     app,
     joined_name_args,
     joined_options_arg,
+    repeated_option,
     run,
 )
 from jibsa.core.browser import BrowserTransport
@@ -171,6 +172,50 @@ def test_joined_options_are_caught_without_blocking_plain_values(arg: str, joine
 def test_split_name_is_joined_but_option_values_and_ids_are_not(argv: list[str], expected: list[str] | None) -> None:
     cli = typer.main.get_command(app)
     assert joined_name_args(argv, cli) == (expected or argv)
+
+
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['daangn', 'real-price', '1', '--trade', '전세', '--trade', '월세'],
+        ['daangn', 'real-price', '1', '--trade=전세', '--trade', '월세'],
+    ],
+)
+def test_repeated_single_value_option_is_rejected_before_request(
+    argv: list[str],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Click 은 값 하나만 받는 옵션을 두 번 주면 마지막 값만 쓴다. 에이전트는 둘 다 받았다고 읽으므로 요청 전에 막는다
+    def unexpected_request(*args, **kwargs) -> None:
+        raise AssertionError('반복된 옵션 검증에서 HTTP 요청을 보내면 안 됩니다')
+
+    monkeypatch.setattr(httpx.Client, 'send', unexpected_request)
+    assert run(argv) == 2
+    error = stderr_error(capsys)
+    assert error['code'] == 'INVALID_ARGUMENT'
+    assert '--trade' in error['message']
+
+
+@pytest.mark.parametrize(
+    ('argv', 'expected'),
+    [
+        # 반복을 받는 옵션(multiple)과 켜고 끄는 옵션은 세지 않는다
+        (['daangn', 'search', 'listings', '역삼동', '-t', '원룸', '-t', '투룸', '--trade', '월세', '--trade', '전세'], None),
+        (['daangn', 'real-price', '1', '--pretty', '--compact', '--pretty'], None),
+        # `--limit=10` 꼴도 같은 옵션으로 센다
+        (['daangn', 'search', 'listings', '역삼동', '--limit', '5', '--limit=10'], ('jibsa daangn search listings', '--limit')),
+        # 값을 붙여 쓴 짧은 옵션(`-t아파트`)도 같은 옵션으로 센다. 반복을 받는 옵션(multiple)은 세지 않는다
+        (['dabang', 'search', 'complexes', '역삼동', '-t아파트', '-t오피스텔'], ('jibsa dabang search complexes', '--type')),
+        (['dabang', 'search', 'complexes', '역삼동', '--type', '아파트', '-t오피스텔'], ('jibsa dabang search complexes', '--type')),
+        (['daangn', 'search', 'listings', '역삼동', '-t원룸', '-t투룸'], None),
+        # 모르는 옵션을 만나면 거기서 멈추고 Click 이 알리게 둔다
+        (['daangn', 'real-price', '1', '--trade', '전세', '--foo', '--trade', '월세'], None),
+    ],
+)
+def test_repeated_option_ignores_repeatable_options_and_flags(argv: list[str], expected: tuple[str, str] | None) -> None:
+    cli = typer.main.get_command(app)
+    assert repeated_option(argv, cli) == expected
 
 
 def test_jibsa_invalid_argument_exits_2_with_own_hint(capsys: pytest.CaptureFixture[str]) -> None:

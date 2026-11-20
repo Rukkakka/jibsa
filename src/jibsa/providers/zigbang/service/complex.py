@@ -47,9 +47,9 @@ from jibsa.providers.zigbang.service.common import (
     DANJI_CATALOG_PAGE_SIZE,
     MAX_LIST_LIMIT,
     NEAREST_SCHOOLS,
+    OPTIONAL_LOOKUP_ERRORS,
     ROOM_TYPE_FILTER_BY_LABEL,
     SALES_TYPE_BY_TRADE,
-    SCHOOL_LOOKUP_ERRORS,
     TRADE_BY_APT_TRAN_TYPE,
     ComplexKind,
     ZigbangRoomConditions,
@@ -399,7 +399,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
     )
     try:
         schools = danji_schools(client.run_request_danjis_schools(ZigbangDanjisSchoolsRequestParameterModel(danji_id=number)))
-    except SCHOOL_LOOKUP_ERRORS:
+    except OPTIONAL_LOOKUP_ERRORS:
         # 학군을 못 받아도 단지 정보는 돌려준다 (모름)
         schools = None
     return ZigbangComplex(
@@ -753,7 +753,7 @@ def search_station_complexes(client: ZigbangClient, query: str, *, limit: int = 
     lookup_failed = False
     try:
         station = client.run_request_subways(ZigbangSubwaysRequestParameterModel(subway_id=place.subway_id))
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         lookup_failed = True
         notes.append(note(
             '실패',

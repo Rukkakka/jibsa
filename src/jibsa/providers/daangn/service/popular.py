@@ -9,6 +9,7 @@ from pydantic import (
 from jibsa.core.listing import (
     Listing,
     listing_as,
+    note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.popular import (
@@ -87,7 +88,7 @@ def list_popular_listings(
             limit=limit,
         )
     )
-    ranking = unwrap_graphql(response, response.data.get_view_ranking_articles if response.data else None, '인기 매물')
+    ranking = unwrap_graphql(response, response.data.get_view_ranking_articles if response.data else None, '인기 매물', conditions=False)
     articles = ranking.articles[:limit]
     # 순위는 그 동이 속한 구 안이라 카드는 모두 그 구 매물이다. 구 이름은 그 동의 시·도로 미리 채워 시·도를 따로 찾지 않는다
     # (`search_dong` 과 같다). 예전에는 카드마다 구 이름으로 찾아 여러 시·도에 있는 구 이름이면 그 이름 검색을 끝까지 받았다
@@ -109,14 +110,14 @@ def list_popular_listings(
         # 순위 범위는 동이 속한 구다. 세종은 시·군·구가 없어(name2 '') 그 동 안에서만 매긴다 (2026-10-11 실측: 새롬동 7건·
         # 아름동 4건·반곡동 1건·소담동 0건이 모두 그 동 매물. 자곡동은 강남구 다른 동 매물 28건)
         notes=[
-            f'순위는 {region.name2} 전체 조회수 기준입니다' if region.name2
-            else f'구가 없는 지역이라 순위는 {region.name3} 안 조회수 기준입니다'
+            note('범위', f'순위는 {region.name2} 전체 조회수 기준입니다') if region.name2
+            else note('범위', f'구가 없는 지역이라 순위는 {region.name3} 안 조회수 기준입니다')
         ]
         # 서버가 순위를 limit 건에서 잘라 주므로 limit 건을 다 받았으면 뒤 순위가 남아 있다 (2026-10-14 실측: 역삼동
         # --limit 30 에서 30건을 받고 1건을 빼자 '더 조회할 매물이 없습니다' 라고 했다)
         + listing_budget_notes(
             limit, len(articles), len(listings), max_limit=POPULAR_MAX_LIMIT,
-            has_more=len(articles) >= limit and limit < POPULAR_MAX_LIMIT,
+            has_more=len(articles) >= limit and limit < POPULAR_MAX_LIMIT, narrow=None,
         )
         # 아는 거래(매매·전세·월세·단기임대·연세)가 없는 매물만 빠진다. 예전에는 연세를 빼 제주 순위가 크게 비었다 (2026-11-12 실측:
         # 연동 30위 중 12건이 연세만 있어 빠졌다)

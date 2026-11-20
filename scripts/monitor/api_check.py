@@ -201,7 +201,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('article', 'listings', 'id'), Capture('dong_next', '', 'next')),
         ),
         Step('매물 동 전체 이어 받기 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2', '--next', '{dong_next}'), 'listings'),
-        Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id'),
+        # address 는 매물 법정동 코드로 법정동 이름을 받는 덤 조회(legalDivision/infoList)라, 실패해도 id 는 있고 address 만
+        # null + [실패] 다. id 만 보면 그 고장을 정상으로 넘긴다 (2026-11-20 리뷰)
+        Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id', also_expect=('address',)),
         Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('near_next', '', 'next'),)),
         # 반경 검색은 지도 범위 목록(boundedArticles)의 커서로 이어 받는다
         Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),
@@ -320,7 +322,16 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--previous-days', '--limit', '3'),
             'transactions',
         ),
-        Step('동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes'),
+        # 구 후기 페이지 한 번에 단지·동별·건물별 후기 수가 함께 온다 (2026-11-20, 같은 HTML 저장소의 세 목록)
+        Step(
+            '동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes',
+            also_expect=('dongs', 'top_buildings'),
+        ),
+        # 동을 주면 구 페이지가 아니라 동 후기 페이지(`/map/{시도}/{구}/{동}/reviews`)를 읽는다
+        Step(
+            '동네 후기 역삼동', ('daangn', 'region-reviews'), ('역삼동', '--top', '3'), 'top_complexes',
+            also_expect=('top_buildings',),
+        ),
         # empty_ok 를 붙이지 않는다. {complex}(역삼래미안 10697092)는 20곳을 준다 (2026-11-11 실측). 비면 필드 이름이 바뀌어
         # 빈 목록이 된 것일 가능성이 커 고장으로 본다
         Step(

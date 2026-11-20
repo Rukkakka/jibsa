@@ -23,9 +23,11 @@ from jibsa.core.listing import (
     NEXT_HINT,
     Listing,
     ListingDetail,
+    LookupFailures,
     TradeType,
     limit_notes,
     listing_as,
+    lookup_failure_reason,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
@@ -51,6 +53,7 @@ from jibsa.providers.dabang.service.common import (
     LISTING_NUMBER_PATTERN,
     MAX_LIST_LIMIT,
     OFFICETEL_TYPE,
+    OPTIONAL_LOOKUP_ERRORS,
     SOURCE,
     ZOOM_BY_SEARCH_TYPE,
     DabangListing,
@@ -231,7 +234,7 @@ class DabangListingDetail(ListingDetail):
             fields = fields | {'complex_id'}
         # 다방은 계약면적을 오피스텔에만 주고 다른 유형은 0 으로 준다 (2026-11-13 실측: 상세 46건 중 오피스텔 5건만 값이 있다).
         # 오피스텔인데 값이 없으면 해당 없음이 아니라 모름(null)이라 키를 둔다 (공급면적과 같다)
-        if self.contract_area_m2 is None and not self.property_type.startswith(OFFICETEL_TYPE):
+        if self.contract_area_m2 is None and (self.property_type is None or not self.property_type.startswith(OFFICETEL_TYPE)):
             fields = fields | {'contract_area_m2'}
         # 세입자 낀 매물·LH 전세임대는 웹이 거래 유형과 상관없이 표시만 보고 보여 준다. 해당 없는 거래는 키를 빼되 다방이
         # 표시를 붙였으면 웹처럼 둔다
@@ -682,11 +685,18 @@ def attach_details(
     목록 칸에는 사용승인일이 없어 `--built-within`(연도로 센다) 결과를 날짜로 따지려면 매물마다 상세를 열어야 했다
     (2026-10-31 에이전트 검증: opus 두 번 모두 역삼동 원룸 17건의 상세를 하나씩 불렀다). 상세에서 내려간 매물은 뺀다
     (만료 매물은 내보내지 않는다). 31번째부터는 사용승인일·건물 용도를 모름(null)으로 둔다.
+
+    상세 한 건이 만료 말고 다른 이유로 실패해도(요청 제한·서버 오류·응답 형식 변경, `OPTIONAL_LOOKUP_ERRORS`) 이미 받은 목록을
+    버리지 않는다 (2026-11-19 리뷰). 그 매물은 목록 값 그대로 두고 사용승인일·건물 용도만 31번째부터와 같이 모름(null)이며,
+    `[실패]` 안내 하나에 건수와 이유(거절·응답 형식 변경이 한 건이라도 있으면 그 이유(요청 제한도 왔으면 덧붙임), 없으면
+    요청 제한, 없으면 첫 실패 이유. `LookupFailures`)를 적는다. 요청 제한이면 다음 요청도 같은
+    제한에 걸리므로 (앞에 다른 실패가 있었어도) 남은 매물은 요청하지 않고 같이 목록 값으로 둔다.
     `built_within_years` 를 주면 오늘 기준 그 햇수가 넘은 매물을 승인일과 함께 `notes` 로 짚는다 (빼지는 않는다. 서버 필터
     결과라 다시 거르지 않는다). 연도 기준 안내만 보고 2016-02 승인 건물을 '10년 이내' 로 추천한 일이 있었다 (2026-10-31 재검증).
     """
     listings: list[Listing] = []
     gone = 0
+    failures = LookupFailures()
     for index, listing in enumerate(result.listings):
         if not isinstance(listing, DabangListing):
             listings.append(listing)
@@ -694,10 +704,19 @@ def attach_details(
         if index >= DETAILS_MAX:
             listings.append(listing_as(DabangDetailedListing, listing))
             continue
+        if failures.stopped:
+            # 요청 제한에 걸렸으면 다음 요청도 같은 제한에 걸린다
+            failures.skip()
+            listings.append(listing_as(DabangDetailedListing, listing))
+            continue
         try:
             detail = get_listing(client, listing.id)
         except ListingUnavailableError:
             gone += 1
+            continue
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            failures.add(exc)
+            listings.append(listing_as(DabangDetailedListing, listing))
             continue
         dated = listing.model_copy(update={'approved_at': detail.approved_at or listing.approved_at})
         listings.append(listing_as(DabangDetailedListing, dated, residence_type=detail.residence_type))
@@ -705,6 +724,12 @@ def attach_details(
     if gone:
         # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
         notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
+    reason = failures.reason(lambda exc: lookup_failure_reason(exc, '다방', '매물 상세'))
+    if reason is not None:
+        notes.append(note(
+            '실패',
+            f'매물 {failures.count}건의 상세(사용승인일·건물 용도)를 받지 못해 목록 값만 넣었습니다: {reason}',
+        ))
     if len(result.listings) > DETAILS_MAX:
         notes.append(f'사용승인일·건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
     if built_within_years is not None:

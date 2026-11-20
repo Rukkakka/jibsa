@@ -764,9 +764,10 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
             rent_count=lease_by_month[row.date].monthly_volume if row.date in lease_by_month else None,
             # 웹 갭 그래프는 전세가율이 0 이면 '-' 로 쓴다 (`leaseRate||'-'`). 0% 전세가율은 없으니 모름(None)으로 둔다
             lease_rate_percent=gap_by_month[row.date].lease_rate or None if row.date in gap_by_month else None,
-            # 리뷰 오탐 (2026-11-13): 평균이 없는 달에 갭이 큰 숫자로 나온다는 지적. 다방은 매매·전세 평균이 0 인 달에
-            # rangeAveragePrice 를 null 로 줘서(58291f8906fa7d73a08581a073c4 평형 111596 은 36달 모두 null) 서버 값을
-            # 그대로 내도 모름이 숫자로 나오지 않는다
+            # 리뷰 오탐 (2026-11-13, 근거 고침 2026-11-20): 평균이 없는 달에 갭이 큰 숫자로 나온다는 지적. 웹 갭 그래프 툴팁
+            # (ic_24_cook_gray600 청크)은 그 달 gap.statistics 의 rangeAveragePrice 를 그대로 그리고(price-unit 청크 `S` 는 숫자가
+            # 아니면 '-'), 한쪽 평균만 없는 달에도 서버가 갭을 null 로 준다 (2026-11-20 은마 817: 202601 매매 null·전세 70212 →
+            # 갭 null, 202611 매매 307750·전세 null → 갭 null). 서버 값을 그대로 내도 모름이 숫자로 나오지 않는다
             gap_manwon=gap_by_month[row.date].range_average_price if row.date in gap_by_month else None,
         )
         for row in sale.statistics

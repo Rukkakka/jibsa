@@ -82,9 +82,9 @@ ITEMS_LIST_BATCH_SIZE: int = 15
 # 웹 목록이 섹션을 잇는 순서: VIP → 안심추천 → 안심일반 → 추천(원룸 목록은 '이 지역 오피스텔') → 일반 (2026-11-15 번들 `_app` 의
 # `createSectionsToUpdate`·`loadItemsV2`. 실측: 강남역 3km 지도 칸 18곳 모두 다섯 섹션을 이 순서로 주고 빈 섹션도 ids [] 로 둔다)
 SECTION_ORDER: tuple[str, ...] = ('VIP', 'PREMIUM_RECOMMEND', 'PREMIUM', 'RECOMMEND', 'NORMAL')
-# 학군은 덤이라 이 실패들은 학군만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`: 네트워크·상태 코드,
-# 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 학군 차례의 요청 제한을 더한다
-SCHOOL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
+# 덤 조회(학군·건물 ID·`--details` 상세)는 이 실패들을 그 칸만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`:
+# 네트워크·상태 코드, 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 요청 제한을 더한다
+OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 # 매물 목록 명령의 --limit 최대값. CLI 옵션의 max 와 상한 안내(`apt_pagination_notes`)가 함께 쓴다
 MAX_LIST_LIMIT: int = 120
 ROOM_TYPE_BY_CODE: dict[str, str] = {

@@ -221,7 +221,7 @@ class ZigbangStoreSearchResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='일부만 보여 준다·공실이 따로 있다는 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='일부만 보여 준다·업종 조건이 있을 때 공실을 뺐다는 [제외] 안내. CLI 가 notice 아래에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -505,8 +505,9 @@ def search_store_listings(
     사무실(`key_money_manwon` 키 없음)도 빠지므로, 권리금만 아니면 다른 가격 조건에 맞던 수를 `notes` 로 알린다.
     직방 목록 앞의 후보를 조회
     상한(max(limit * SCAN_FACTOR, MIN_SCAN_PINS))까지 확인하며, 전체 후보를 확인하지 못하면 안내한다.
-    업종 조건을 걸면 직방이 그 업종과 무관한 범위 안 공실을 따로 주는데, 업종 조건을
-    지키도록 공실은 빼고 몇 건인지 `notes` 로 알린다.
+    직방은 '이 지역 비어있는 상가' 묶음을 따로 줄 수 있다. 업종 조건이 없으면 웹처럼 공실 묶음의 핀을 일반 묶음 핀
+    뒤에 이어 붙이고(같은 ID 는 처음 것만) 이후는 일반 매물과 같게 처리한다. 업종 조건이 있으면 업종 조건을
+    지키도록 공실은 빼고 몇 건인지 `[제외]` 안내로 알린다.
 
     Raises:
         JibsaError: `dongs` 에 법정동 코드가 없는 동이 있을 때 (`store_region_codes`).
@@ -540,18 +541,26 @@ def search_store_listings(
             area_max_m2=conditions.area_max_m2,
         )
     )
-    # 직방 목록 순서대로 매물 ID → 좌표
+    # 직방 목록 순서대로 매물 ID → 좌표. 일반 묶음 전부 다음에 (업종 조건이 없을 때만) 공실 묶음을 잇는다
     pins: dict[int, tuple[float, float]] = {}
     vacant: set[int] = set()
     for section in response.sections:
-        # 공실 묶음은 업종 조건을 걸 때만 찬다. 업종 조건이 없으면 비어 와서 안내 없이 빼는 매물이 없다 (2026-10-18 실측:
-        # 성수역 0.3km 업종 조건 없이 일반 묶음 393건, 공실 묶음 0건). 2026-10-18 리뷰 오탐 확인. 공실 묶음도 범위 안
-        # 매물만 온다 (2026-11-15 실측: 역삼역 1000m 카페/커피 공실 970건)
         if section.title == STORE_VACANT_SECTION:
             vacant.update(location.item_id for location in section.item_locations)
             continue
         for location in section.item_locations:
             pins.setdefault(location.item_id, (location.lat, location.lng))
+    if not business_conditions:
+        # 웹(번들 청크 4726 `HomeStoreListScreenModel.loadItems`)은 업종 조건과 상관없이 '이 지역 상가' 와 '이 지역
+        # 비어있는 상가' 두 묶음을 `n.concat(r)` 로 이어 붙여 공실을 일반 매물 뒤에 보여 준다. 업종 조건이 없을 때 공실 묶음이
+        # 오는 것은 아직 실측된 적이 없어(2026-10-18 성수역 0.3km 일반 393건·공실 0건, 2026-11-20 업종 없이 일반 2598건·공실 0건)
+        # 지금 응답에서는 출력이 바뀌지 않는 웹 맞춤이다 (사용자 결정 2026-11-20). 이후 처리는 일반 매물과 같다.
+        # 업종 조건이 있으면 업종 조건을 지키려고 공실을 넣지 않는다 (개발 가이드 '웹과 다른 점' 의 상가 공실). 공실 묶음도
+        # 범위 안 매물만 온다 (2026-11-15 실측: 역삼역 1000m 카페/커피 공실 970건)
+        for section in response.sections:
+            if section.title == STORE_VACANT_SECTION:
+                for location in section.item_locations:
+                    pins.setdefault(location.item_id, (location.lat, location.lng))
 
     scan_cap = max(limit * SCAN_FACTOR, MIN_SCAN_PINS)
     candidates = list(pins)[:scan_cap]
@@ -635,13 +644,14 @@ def search_store_listings(
             '(직방이 사무실에는 권리금을 주지 않습니다). 사무실도 보려면 권리금 조건 없이 검색하세요',
         ))
     if business_conditions and vacant:
-        # [제외] 가 아니라 [참고] 다. 공실은 업종 조건에 맞는 매물을 뺀 것이 아니라 직방이 업종과 무관하게 따로 주는 묶음이다
-        # (2026-11-10 리뷰가 [제외] 라고 했으나 오탐. 실측: 성수역 0.5km --business 카페/커피 는 카페 5건과 '이 지역 비어있는
-        # 상가' 23건. 업종 조건 없이 찾는 법은 안내에 있다)
-        notes.append(
-            f"업종 조건과 별개로 {'동' if dongs else '반경'} 안에 비어 있는 상가가 {len(vacant)}건 있습니다. "
-            '공실도 보려면 --business 없이 다시 검색하세요'
-        )
+        # [제외] 다: 직방이 업종과 무관하게 따로 준 공실을 업종 조건을 지키려고 결과에서 뺐다 (받은 것 중 뺀 매물이 있다,
+        # output-contract 의 [제외] 정의, 사용자 결정 2026-11-20). 2026-11-10 리뷰가 [제외] 라고 했고 [참고] 로 뒀던 것을 고쳤다
+        # (실측: 성수역 0.5km --business 카페/커피 는 카페 5건과 '이 지역 비어있는 상가' 23건)
+        notes.append(note(
+            '제외',
+            f"업종 조건과 별개로 {'동' if dongs else '반경'} 안의 비어 있는 상가 {len(vacant)}건은 업종 조건에 맞는지 몰라 뺐습니다. "
+            '공실도 보려면 --business 없이 다시 검색하세요',
+        ))
     return ZigbangStoreSearchResult(
         region=region,
         radius_km=None if dongs else radius_km,

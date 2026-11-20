@@ -8,6 +8,10 @@ ADMIN_DONG_NUMBER: str = r'제?\d{1,2}(?:[.·]\d{1,2})*'
 # 이름 부분은 한글만 받는다. 숫자가 섞이면 '○가' 법정동(성수1가1동 → 성수동1가)이나 띄어 쓴 건물 동 번호(래미안 101동)라
 # 번호를 떼도 법정동이 아니다. '○가동'(금호2·3가동)은 '가' 로 끝나 맞지 않는다
 ADMIN_DONG_PATTERN: re.Pattern[str] = re.compile(rf'([가-힣]+?){ADMIN_DONG_NUMBER}동')
+# 당근 노선 이름 ('서울2호선'·'신분당선'·'공항철도'·'용인경전철'·'GTX-A', 2026-11-13 역 검색 실측 37개 노선이 모두 맞는다).
+# 역 이름 앞 낱말을 노선으로 읽을 때 쓴다: 띄어 쓴 `--station` 값의 뒤 낱말을 이을지(`cli/app.py`), 당근 `find_station` 이 앞
+# 낱말을 노선으로 볼지(`station_argument`). 두 곳에 같은 정규식을 따로 두었다가 여기로 모았다 (2026-11-19)
+LINE_NAME_PATTERN: re.Pattern[str] = re.compile(r'GTX-[A-Z]|\S+(?:선|철도|전철)')
 
 
 def particle(word: str, pair: str) -> str:

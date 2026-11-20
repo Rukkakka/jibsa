@@ -106,7 +106,7 @@ class DaangnKaptCostModel(ResponseModel):
         Field(description='연월 (YYYYMM)', alias='yearMonth')
     ] = None
     cost_per_square_meter: Annotated[
-        int | None,
+        LooseFloat,
         Field(description='㎡당 관리비 (원)', alias='costPerSquareMeter')
     ] = None
 
@@ -137,11 +137,11 @@ class DaangnAssignedSchoolModel(ResponseModel):
     """배정 학교와 거리."""
 
     distance: Annotated[
-        int | None,
+        LooseFloat,
         Field(description='거리 (m)')
     ] = None
     working_time: Annotated[
-        int | None,
+        LooseFloat,
         Field(description='도보 (분)', alias='workingTime')
     ] = None
     school: Annotated[
@@ -166,8 +166,8 @@ class DaangnCompareSubwayModel(ResponseModel):
         Field(description='DISTANCE(m) / WALKING(분)', alias='dataType')
     ] = None
     data_value: Annotated[
-        str | None,
-        Field(description='값 (문자열)', alias='dataValue')
+        LooseFloat,
+        Field(description='값 (서버는 글자로 준다. 숫자로 읽지 못하면 None)', alias='dataValue')
     ] = None
 
 

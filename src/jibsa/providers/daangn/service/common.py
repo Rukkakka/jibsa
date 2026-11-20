@@ -8,8 +8,8 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from math import floor
 
+from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -31,6 +31,7 @@ from jibsa.core.listing import (
     ListingStatus,
     TradeType,
     join_address,
+    js_round,
     m2_to_pyeong,
     more_hint,
     normalize_date,
@@ -38,6 +39,7 @@ from jibsa.core.listing import (
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
+from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import (
     DaangnAmountRangeModel,
     DaangnBoundsLocationFilterModel,
@@ -53,6 +55,9 @@ from jibsa.providers.daangn.api.request.common import (
     DaangnSubSalesType,
     DaangnTradeType,
 )
+from jibsa.providers.daangn.api.request.compare import (
+    DaangnComplexCompareRequestPayloadModel,
+)
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
     DaangnCoordinateModel,
@@ -60,6 +65,10 @@ from jibsa.providers.daangn.api.response.common import (
     DaangnPageInfoModel,
     DaangnRegionComplexNodeModel,
     DaangnTradeModel,
+)
+from jibsa.providers.daangn.api.response.compare import (
+    DaangnCompareAreaGroupModel,
+    DaangnCompareComplexModel,
 )
 
 from typing import (
@@ -203,6 +212,8 @@ COMMUTE_STATION_MAX_LIMIT: int = LISTING_MAX_LIMIT
 # 단지 목록(search complexes, search locations 의 단지 후보, school 의 배정 단지)의 --limit 최대값.
 # CLI 옵션의 max 와 `list_region_complexes`·`search_complexes`·`get_school` 의 상한 안내가 함께 쓴다
 COMPLEX_LIST_MAX_LIMIT: int = 1200
+# 단지 비교에 넣는 단지 수 상한. 당근 웹 비교 화면이 10곳까지다 ('최대 10개까지 비교할 수 있어요', 예전에는 5)
+COMPARE_MAX_COMPLEXES: int = 10
 # 지역 단지 목록 (웹 지도 단지 탭): 단지 유형·거래 유형·정렬 라벨 → 당근 값
 COMPLEX_TYPE_FILTER_BY_LABEL: dict[str, DaangnComplexType] = {'아파트': 'APARTMENT', '오피스텔': 'OFFICETEL'}
 # 단지마다 보여 줄 최근 실거래 수 (당근은 10건을 준다)
@@ -304,7 +315,7 @@ class FeedQueryRejectedError(JibsaError):
         super().__init__(
             code='UPSTREAM_ERROR',
             message=f'당근 {what} API 가 바뀌어(웹 쿼리 해시 거절) 조회할 수 없습니다 ({codes})',
-            hint='jibsa 업데이트가 필요합니다. 그동안 다른 소스(직방·네이버)를 쓰세요',
+            hint=f'{UPDATE_NEEDED}. 그동안 같은 조회가 다른 소스(직방·네이버·다방)에 있으면 그 소스를 쓰세요',
         )
 
 
@@ -337,6 +348,7 @@ def trades_preferred_first(article: DaangnArticleModel) -> list[DaangnTradeModel
 
     웹 목록(`services2` 의 `Fo`)의 후보 BORROW·BUY·MONTH·SHORT·YEAR 와 같다. 예전에는 제주 연세(YEAR)를 표현하지 않아
     빼서, 연세가 대표인 매물은 웹과 다른 거래를 보여 주고 연세만 있는 매물은 목록에서 빠졌다 (2026-11-13 연세 지원).
+    유형(`type`)이 null 인 거래도 모르는 유형처럼 뺀다 (그런 거래만 있는 매물은 `no_trade_notes` 가 알린다).
     """
     known = [trade for trade in article.trades if trade.type in TRADE_TYPE_BY_TRADE]
     return sorted(known, key=lambda trade: not trade.preferred)
@@ -348,15 +360,39 @@ def _preferred_trade(article: DaangnArticleModel) -> DaangnTradeModel | None:
 
 
 def floor_of(article: DaangnArticleModel) -> str | None:
-    """해당 층. 작성자가 층을 저층·중층·고층으로만 밝혔으면(숫자 층은 비어 있다) 그 표기를 쓴다."""
-    if article.is_ambiguous_floor and article.ambiguous_floor:
-        return AMBIGUOUS_FLOOR_LABELS.get(article.ambiguous_floor, article.ambiguous_floor)
+    """해당 층. 작성자가 층을 저층·중층·고층으로만 밝혔으면(숫자 층은 비어 있다) 그 표기를 쓴다.
+
+    저·중·고층 코드가 비었거나 '-' 면(`code_label` 이 None) 숫자 층을 본다 (`FloorText` 가 빈 글자·'-' 를 None 으로 받는다). 둘 다 모르면 None(모름)이다.
+    결과는 `Listing.floor` 검증기(`normalize_floor`)가 '-1' → '지하1' 처럼 다시 맞춘다.
+    """
+    if article.is_ambiguous_floor:
+        label = code_label(AMBIGUOUS_FLOOR_LABELS, article.ambiguous_floor)
+        if label is not None:
+            return label
     return article.floor
 
 
-def property_type_of(article: DaangnArticleModel) -> str:
-    sales_type = article.sales_type.type if article.sales_type else 'UNKNOWN'
-    return PROPERTY_TYPE_BY_SALES_TYPE.get(sales_type, sales_type)
+def code_label(labels: Mapping[str, str], code: str | None) -> str | None:
+    """서버 코드를 한국어 라벨로. 빈 글자·'-'·None 은 모름(None), 표에 없는 코드는 원래 코드 그대로.
+
+    `labels.get(code or '', code)` 로 쓰면 당근이 '' 나 '-' 로 비워 준 값이 그대로 나가 모름(null)이 아니라 빈 값이 된다.
+    표에 없는 코드는 당근이 새 값을 올린 것이라 버리지 않고 원래 코드를 낸다.
+
+    Args:
+        labels: 서버 코드 → 라벨 표.
+        code: 서버가 준 코드.
+    """
+    stripped = (code or '').strip()
+    if stripped in ('', '-'):
+        return None
+    return labels.get(stripped, stripped)
+
+
+def property_type_of(article: DaangnArticleModel) -> str | None:
+    """작성자가 고른 매물 유형. `salesTypeV3` 나 그 `type` 이 null·빈 글자·'-' 이면 유형을 모르는 것이라 None(모름)이다. 표에 없는 코드는 원래 코드 그대로."""
+    if article.sales_type is None:
+        return None
+    return code_label(PROPERTY_TYPE_BY_SALES_TYPE, article.sales_type.type)
 
 
 def room_type_of(article: DaangnArticleModel) -> str | None:
@@ -393,7 +429,8 @@ def article_to_listing(
     fallback_title: str | None = None,
     trade: DaangnTradeModel | None = None,
 ) -> Listing | None:
-    """Article 하나를 공통 `Listing` 으로 바꾼다. 거래 조건이 없으면 None.
+    """Article 하나를 공통 `Listing` 으로 바꾼다. 거래 조건이 없거나 모르는 거래 유형(`type` 이 null 이거나 `TRADE_TYPE_BY_TRADE` 에
+    없음)이면 None.
 
     `trade` 를 주지 않으면 대표(preferred) 조건을 쓴다. 금액은 원래 만원 단위다.
     제목은 목록과 상세가 같도록 작성자 소개(`addressInfo`) → 건물 이름 →
@@ -401,7 +438,8 @@ def article_to_listing(
     `DaangnNearbyListing` 으로 준다 (거리를 모르면 null).
     """
     trade = trade or _preferred_trade(article)
-    if trade is None:
+    trade_type = TRADE_TYPE_BY_TRADE.get(trade.type or '') if trade is not None else None
+    if trade is None or trade_type is None:
         return None
 
     # 주소를 숨긴 매물(isHideAddress)의 공개 좌표는 실제 위치가 아니어서 거리를 재지 않는다 (null, `hidden_location_notes`).
@@ -415,16 +453,17 @@ def article_to_listing(
         distance = round(haversine_km(center[0], center[1], lat, lng), 2)
 
     region = article.region
+    # 지번 주소가 빈 글자·'-' 로 오면 비어 있는 것이라 지역 이름으로 채운다. 지역도 없으면 빈 글자·'-' 가 아니라 모름(None)이다
     address = article.public_jibun_address
-    if address is None and region is not None:
-        address = join_address(region.name1, region.name2, region.name3)
+    if address is None or address.strip() in ('', '-'):
+        address = join_address(region.name1, region.name2, region.name3) if region is not None else None
 
     model = Listing if center is None else DaangnNearbyListing
     return model(
         source='daangn',
         id=article.original_id,
         url=article_url(article.original_id),
-        trade_type=TRADE_TYPE_BY_TRADE[trade.type],
+        trade_type=trade_type,
         status=LISTING_STATUS_BY_STATUS.get(article.status or ''),
         property_type=property_type_of(article),
         room_type=room_type_of(article),
@@ -629,7 +668,7 @@ def trade_of(article: DaangnArticleModel, conditions: DaangnListingConditions) -
 def no_trade_notes(articles: Iterable[DaangnArticleModel]) -> list[str]:
     """받은 매물 중 jibsa 가 아는 거래(`TRADE_TYPE_BY_TRADE`)가 없어 뺀 매물을 알린다 (`trade_of` 가 None).
 
-    거래 조건이 비었거나 당근이 새 거래 유형만 올린 매물이다. 웹 목록(`Fo`)의 후보 다섯(매매·전세·월세·단기임대·연세)을 모두
+    거래 조건이 비었거나 당근이 새 거래 유형(유형이 null 인 거래 포함)만 올린 매물이다. 웹 목록(`Fo`)의 후보 다섯(매매·전세·월세·단기임대·연세)을 모두
     다뤄 지금은 나오지 않는다 (2026-11-13 연세 지원 전에는 제주 연세만 올린 매물이 여기로 빠졌다: 노형동 40건 중 13건).
     거래 조건을 못 골라 뺀 매물은 사유를 알린다 (AGENTS.md). 예산 안내(`listing_budget_notes`)의 사유 목록만으로는 서버
     조건에 맞는 매물이 왜 빠졌는지 알 수 없었다 (2026-11-12 리뷰). 거래 불가 매물은 거기서 세므로 여기서 세지 않는다.
@@ -645,24 +684,25 @@ def no_trade_notes(articles: Iterable[DaangnArticleModel]) -> list[str]:
     )]
 
 
-def js_round(value: float) -> int:
-    """JS `Math.round` 처럼 .5 를 늘 올려 반올림한다. 당근 웹과 숫자를 맞출 때 쓴다.
-
-    Python `round` 는 .5 를 짝수로 보내 (2.5 → 2) 웹과 1 씩 달라진다.
-    """
-    return floor(value + 0.5)
+def web_minutes(walk: float) -> int:
+    """웹의 분 표기·비교 (`Math.round`). 표기는 최소 1분이다 (ComplexSchoolSection `L`: `Math.max(1, Math.round(e))`)."""
+    return max(1, js_round(walk))
 
 
 T = TypeVar('T')
 
 
-def unwrap_graphql(response: DaangnGraphQLResponseModel, value: T | None, what: str) -> T:
+def unwrap_graphql(response: DaangnGraphQLResponseModel, value: T | None, what: str, *, conditions: bool) -> T:
     """GraphQL 응답에서 결과(`value`, 응답의 `data` 에서 꺼낸 값)를 꺼낸다.
 
     Args:
         response: GraphQL 응답.
         value: `response.data` 에서 꺼낸 결과. 없으면 None.
         what: 에러 메시지에 쓸 조회 이름 (예: '매물 피드').
+        conditions: 그 조회의 요청 변수에 사용자가 고른 매물 조건(`propertyFilter`)이나 단지 조건(`complex_filter_of` 가 만든
+            필터)이 들어가면 True. 웹 기본 종류처럼 jibsa 가 채운 값은 세지 않는다. 호출하는 쪽이 사용자 조건에서 바로 만든
+            필터로 판정한다(`is_empty_property_filter`, `has_complex_conditions`). 잘못된 조건 조합도 이유 없이 GraphQL 에러로
+            와서, True 일 때만 조건을 줄이라고 권한다.
 
     Raises:
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때 (웹이 쿼리를 바꿈).
@@ -676,7 +716,7 @@ def unwrap_graphql(response: DaangnGraphQLResponseModel, value: T | None, what: 
         raise JibsaError(
             code='UPSTREAM_ERROR',
             message=f'당근 {what} 조회가 실패했습니다' + (f': {message}' if message else ''),
-            hint='조건을 줄여(층·방 개수·사용승인일 등) 다시 시도하거나, 잠시 뒤 다시 시도하세요',
+            hint='조건을 줄여 다시 시도하거나, 잠시 뒤 다시 시도하세요' if conditions else '잠시 뒤 다시 시도하세요',
         )
     return value
 
@@ -696,7 +736,9 @@ def partial_failure_note(exc: Exception, what: str, missing: str) -> str:
     """덤으로 받는 조회가 실패했을 때 `notes` 에 붙일 안내. 이미 받은 결과는 버리지 않고 이 안내만 붙인다.
 
     주된 결과를 받는 조회가 실패하면 쓰지 않고 에러로 끝낸다. 실패 이유마다 다음 행동이 달라
-    (업데이트·기다리기·다시 시도) 이유를 문구에 넣는다.
+    (업데이트·기다리기·다시 시도) 이유를 문구에 넣는다. 거절(4xx)은 사이트가 바뀌었거나 막은 것이라 기다려도 풀리지 않아
+    업데이트 안내를 붙인다 (직방·다방 `lookup_failure_reason` 과 같은 갈래, 2026-11-20 사용자 결정).
+    업데이트 안내를 붙이는 갈래는 `needs_update` 와 같다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 
     Args:
         exc: 조회가 낸 예외 (`OPTIONAL_LOOKUP_ERRORS` 중 하나).
@@ -717,7 +759,31 @@ def partial_failure_note(exc: Exception, what: str, missing: str) -> str:
             f'당근 {what} 응답이 예상한 형식이 아니라 {missing} 받지 못했습니다. '
             f'차단 페이지이거나 API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'
         )
+    # core _is_rejected 와 같은 기준 (4xx 는 거절)
+    if isinstance(exc, HTTPStatusError) and exc.response.status_code < 500:
+        return (
+            f'당근이 {what} 요청을 거절해(HTTP {exc.response.status_code}) {missing} 받지 못했습니다. '
+            f'API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'
+        )
     return f'당근 {what} 요청이 실패해 {missing} 받지 못했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요'
+
+
+def needs_update(exc: Exception) -> bool:
+    """덤 조회 실패에 업데이트 안내를 붙이는지. `partial_failure_note` 가 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 를 붙이는 갈래와 같다.
+
+    참: 해시 거절(`FeedQueryRejectedError`)·GraphQL 에러(`UPSTREAM_ERROR`)·응답 형식 변경(`ValueError`)·4xx. 거짓: 요청 제한,
+    그 밖의 `JibsaError`, 서버 오류(5xx)·연결 실패. `LookupFailures` 가 안내 이유를 고르는 데 쓴다.
+    한쪽을 바꾸면 `partial_failure_note` 도 바꾼다.
+    """
+    if isinstance(exc, FeedQueryRejectedError):
+        return True
+    if isinstance(exc, RateLimitedError):
+        return False
+    if isinstance(exc, JibsaError):
+        return exc.code == 'UPSTREAM_ERROR'
+    if isinstance(exc, ValueError):
+        return True
+    return isinstance(exc, HTTPStatusError) and exc.response.status_code < 500
 
 
 def next_cursor(page_info: DaangnPageInfoModel | None, after: str | None, *, received: int) -> str | None:
@@ -736,8 +802,9 @@ def next_cursor(page_info: DaangnPageInfoModel | None, after: str | None, *, rec
     Args:
         page_info: 방금 받은 쪽의 페이지 정보.
         after: 그 쪽을 요청할 때 쓴 커서.
-        received: 그 쪽에서 받은 쓸 수 있는 항목 수. node 가 null 인 edge 는 세지 않는다. 호출부마다 edge 수와 node 수를 섞어 넘기면 같은 쪽을 한쪽은 빈 쪽으로 멈추고 한쪽은 계속 받는다
-            (2026-11-10 리뷰. 그날 실측 응답에는 null node 가 없었다: 헬리오시티 단지 후보 2쪽).
+        received: 그 쪽에서 받은 쓸 수 있는 항목 수. node 가 null 인 edge 는 세지 않고, 매물 목록(`connection_edges`)은 node 안의
+            `article` 이 null 인 edge 도 세지 않는다. 호출부마다 edge 수와 node 수를 섞어 넘기면 같은 쪽을 한쪽은 빈 쪽으로 멈추고 한쪽은
+            계속 받는다 (2026-11-10 리뷰. 그날 실측 응답에는 null node 가 없었다: 헬리오시티 단지 후보 2쪽).
     """
     if not received or page_info is None or not page_info.end_cursor or page_info.end_cursor == after:
         return None
@@ -786,11 +853,18 @@ def cursor_stopped_note(subject: str, received: str) -> str:
     )
 
 
-class DaangnListingEdge(Protocol):
-    """매물 목록의 edge (`connection_edges`). node 가 null 인 edge 는 받은 항목으로 세지 않는다 (`next_cursor`)."""
+class DaangnListingNode(Protocol):
+    """매물 목록 edge 의 node (`connection_edges`). 매물은 `article` 에 든다."""
 
     @property
-    def node(self) -> object | None: ...
+    def article(self) -> object | None: ...
+
+
+class DaangnListingEdge(Protocol):
+    """매물 목록의 edge (`connection_edges`). node 가 null 이거나 node 의 `article` 이 null 인 edge 는 받은 항목으로 세지 않는다 (`next_cursor`)."""
+
+    @property
+    def node(self) -> DaangnListingNode | None: ...
 
 
 _EdgeT_co = TypeVar('_EdgeT_co', covariant=True)
@@ -801,7 +875,7 @@ class DaangnListingConnection(Protocol[_EdgeT_co]):
     """쪽마다 `edges`·`pageInfo` 를 주는 매물 목록 (`connection_edges`). 동·지도 범위 피드와 역·대학 주변 매물이 이 꼴이다."""
 
     @property
-    def edges(self) -> Sequence[_EdgeT_co]: ...
+    def edges(self) -> Sequence[_EdgeT_co] | None: ...
 
     @property
     def page_info(self) -> DaangnPageInfoModel | None: ...
@@ -830,7 +904,11 @@ def connection_edges(
     """매물 목록을 `page_size` 건씩 `limit` 건까지 이어 받는다. 동·지도 범위·역·대학 주변 목록과 출퇴근 역별 매물이 함께 쓴다.
 
     받은 edge 수로 예산을 세고 뺄 매물을 채우지 않는다. 다음이 있다면서 빈 쪽·커서 없음·같은 커서 되풀이를 주면 다른 목록처럼
-    (`next_cursor`) 멈추고 `stopped` 로 알린다. 예전에는 그 커서를 그대로 돌려줘, 빈 쪽 뒤에도 같은 자리의 `next` 가 나와
+    (`next_cursor`) 멈추고 `stopped` 로 알린다. 앞 쪽이 다음이 있다고 해서 이어 받은 쪽(`--next` 로 받은 첫 쪽도 포함)이
+    페이지 정보나 edges 없이(null) 오면 그 쪽을 세지 않고 멈춘다. 목록 끝은 늘 hasNextPage=False 로 오므로(`next_cursor`) 응답이 바뀐
+    것이고, 다른 목록의 `stalled_page` 와 같은 기준이다 (2026-11-19 리뷰·재현: 동 목록 둘째 쪽만 pageInfo null 로 바꾸니 40건·
+    has_more false 로 '이 40건이 전부' 라고 했다. 그 동은 6584건). 첫 쪽(`after` 없음)의 페이지 정보가 null 이면 서버가 더 있다고
+    한 적이 없어 끝으로 본다. 예전에는 그 커서를 그대로 돌려줘, 빈 쪽 뒤에도 같은 자리의 `next` 가 나와
     `--next` 로 따라가면 같은 빈 쪽·같은 `next` 가 되풀이됐다 (2026-11-12 리뷰. 실측 응답의 끝 쪽은 늘 hasNextPage=False 였다:
     역삼동 토지 매매 1만원 이하 0건은 edges 0·커서 없음·False). 예전에는 동·지도 범위 목록과 역·대학 주변 목록이 같은 반복문을
     따로 두었다 (2026-11-12 리뷰).
@@ -853,15 +931,25 @@ def connection_edges(
     while len(edges) < limit:
         size = min(page_size, limit - len(edges))
         page = fetch(size, cursor)
-        edges += page.edges
         page_info = page.page_info
+        page_edges = page.edges
+        # 이어 받은 쪽의 pageInfo·edges 가 null 이면 앞 쪽이 다음이 있다고 했는데 이 쪽을 주지 않은 것이라 같은 기준으로 멈춘다
+        if cursor is not None and (page_info is None or page_edges is None):
+            return ConnectionEdges(edges, True, None, True)
+        if page_edges is None:
+            # 첫 쪽의 edges 가 null 이면 목록이 비었는지 모른다. 빈 목록으로 바꾸지 않고 응답이 바뀐 것으로 본다 (PARSE_ERROR).
+            # 출퇴근 역별 매물은 이 전에 `_station_articles` 가 역 하나의 모름으로 받아 이곳에 오지 않는다
+            raise ValueError('매물 목록의 첫 쪽에 edges 가 없습니다 (null)')
+        edges += page_edges
         server_more = bool(page_info and page_info.has_next_page)
-        has_more = server_more or (full_page_more is not None and len(page.edges) >= size and full_page_more(edges))
+        has_more = server_more or (full_page_more is not None and len(page_edges) >= size and full_page_more(edges))
         if not has_more:
             return ConnectionEdges(edges, False, None, False)
-        # node 가 null 인 edge 는 세지 않는다 (`next_cursor`). edge 수를 넘기면 node 가 모두 null 인 쪽도 받은 쪽으로 보아 멈추지
-        # 않고, 결과 0건에 이어 받기(next)가 나왔다 (2026-11-12 검증: 역삼역 역 주변 목록의 node 를 모두 null 로 바꾼 실측 응답)
-        cursor = next_cursor(page_info, cursor, received=sum(1 for edge in page.edges if edge.node is not None))
+        # 매물이 든 edge(`node.article` 이 있는 것)만 센다 (`next_cursor`). edge 수나 node 수를 넘기면 매물이 모두 null 인 쪽도 받은
+        # 쪽으로 보아 멈추지 않고, 결과 0건에 이어 받기(next)가 나왔다 (2026-11-12 검증: 역삼역 역 주변 목록의 node 를 모두 null
+        # 로 바꾼 실측 응답. 2026-11-19 리뷰·재현: node 는 있고 article 만 null 인 쪽도 같았다)
+        received = sum(1 for edge in page_edges if edge.node is not None and edge.node.article is not None)
+        cursor = next_cursor(page_info, cursor, received=received)
         if cursor is None:
             # 서버는 더 없다고 했는데 꽉 찬 쪽으로 짐작한 것(`full_page_more`)이면 커서가 없어도 멈춤이 아니라 끝이다
             return ConnectionEdges(edges, server_more, None, server_more)
@@ -899,6 +987,7 @@ def listing_budget_notes(
     *,
     max_limit: int,
     has_more: bool,
+    narrow: str | None,
     eligible: int | None = None,
     narrowable: bool = True,
     resumable: bool = False,
@@ -912,6 +1001,8 @@ def listing_budget_notes(
     Args:
         max_limit: 그 명령의 `--limit` 최대값. 이미 최대값이면 늘리라고 하지 않는다 (`limit_notes` 와 같이 기본값 없이 받는다.
             인기 매물은 30, 나머지는 120).
+        narrow: 더 있을 때 좁히라고 권할 것 (`more_hint` 의 `narrow`). 그 명령에 있는 옵션만 적는다. 좁혀도 남은 매물을 볼 수
+            없는 명령(인기 매물은 조건이 `-t` 하나뿐이다)은 None 으로 주어 `--limit` 만 말하게 한다.
         narrowable: `--limit`·필터로 더 받을 수 있는지. 단지 매물처럼 다음 페이지를 이어 받지 못해 멈췄을 때는 limit 을
             늘리거나 필터를 걸어도 더 받지 못해 False 로 주어 그 안내를 붙이지 않는다.
         resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
@@ -940,11 +1031,12 @@ def listing_budget_notes(
     if has_more and resumable:
         notes.append(note('일부', f'더 있습니다. {NEXT_HINT}'))
     elif has_more and (limit >= max_limit or inspected >= limit):
-        # 좁힐 것에 지역·범위를 붙이지 않는다. 단지 매물·출퇴근 역별 매물은 좁힐 범위가 없고, 인기 매물은 --limit 이 최대값보다
-        # 작을 때만 더 있다고 해 늘리면 된다. 매물 검색(동·지도·역·대학)은 더 있으면 늘 next 로 이어 받게 해 이 안내는 이어 받기가
+        # 좁힐 것(`narrow`)에 지역·범위를 붙이지 않는다. 단지 매물·출퇴근 역별 매물은 좁힐 범위가 없고, 인기 매물은 조건이 -t 하나뿐이라
+        # 좁혀도 남은 순위를 볼 수 없어 narrow 를 None 으로 받아 --limit 만 말한다 (--limit 이 최대값보다 작을 때만 더 있다고 해
+        # 늘리면 된다). 매물 검색(동·지도·역·대학)은 더 있으면 늘 next 로 이어 받게 해 이 안내는 이어 받기가
         # 깨졌을 때(피드 시각을 못 읽음·커서를 잃음·목록이 커서 없이 다음이 있다고 함)만 나간다 (2026-11-11 리뷰·실측: 역삼역·역삼동
         # --limit 3 모두 next 를 줬다)
-        notes.append(note('일부', more_hint(limit, max_limit, '조건')))
+        notes.append(note('일부', more_hint(limit, max_limit, narrow)))
     return notes
 
 
@@ -1002,6 +1094,56 @@ def complex_not_found(complex_id: str | int) -> JibsaError:
     )
 
 
+def compare_column(client: DaangnClient, complex_id: int) -> DaangnCompareComplexModel:
+    """단지 비교 칸 (`ComplexCompareColumnQuery`, 요청 1회, 약 78KB). 평형 묶음·평형 타입 코드·노드 ID 도 여기서 받는다.
+
+    단지 비교(`compare`)와 평형을 고르는 실거래·시세 추이(`real-price`·`price-trend`)가 같이 쓴다.
+
+    Raises:
+        JibsaError: 없는 단지면 NOT_FOUND.
+    """
+    response = client.run_request_complex_compare(DaangnComplexCompareRequestPayloadModel(original_id=str(complex_id)))
+    output = response.data.complex_by_original_id if response.data else None
+    found = output.complex if output else None
+    if found is None and not response.errors:
+        raise complex_not_found(complex_id)
+    return unwrap_graphql(response, found, '단지 비교', conditions=False)
+
+
+def uses_supply_pyeong(complex_type: str | None, supply_groups: Sequence[object]) -> bool:
+    """평형을 공급 평 묶음으로 고르는 단지인지. 당근 웹처럼 아파트형 단지(아파트·주상복합·재개발)에 공급 평 묶음이 있으면 그것으로,
+    아니면 전용면적 묶음으로 고른다 (utils `n()`, 2026-11-12 번들 대조). 단지 평형 목록(`complex_pyeongs`)과 비교·실거래의
+    평형 고르기(`pyeong_groups`)가 같이 쓴다."""
+    return complex_type in APARTMENT_COMPLEX_TYPES and bool(supply_groups)
+
+
+def pyeong_groups(column: DaangnCompareComplexModel) -> tuple[bool, list[DaangnCompareAreaGroupModel]]:
+    """단지의 평형 묶음과, 그것이 공급 평 묶음인지 (`uses_supply_pyeong`). 단지 비교와 실거래·시세 추이의 평형 고르기가 같이 쓴다."""
+    danji = column.proptier_danji
+    if danji is None:
+        return False, []
+    supply = uses_supply_pyeong(column.type, danji.supply_pyeong_area_groups)
+    return supply, danji.supply_pyeong_area_groups if supply else danji.exclusive_area_groups
+
+
+def most_households(infos: Sequence[T], households: Callable[[T], int | None]) -> T | None:
+    """평형 목록에서 세대수가 가장 많은 평형 (같으면 앞 평형, 웹 reduce 도 더 클 때만 바꾼다). 없으면 None.
+
+    비교 화면(`_top_info`)과 인기 급상승 단지(`list_trending_complexes`)가 같이 쓴다. 두 응답 모델의 세대수 칸 이름이 달라 칸을 함수로 받는다.
+    세대수를 모르는 평형은 0 으로 센다.
+    """
+    return max(infos, key=lambda info: households(info) or 0) if infos else None
+
+
+def is_year_month(value: str | None) -> bool:
+    """연월이 'YYYYMM' 꼴이고 달이 1~12 인지. 단지 비교 관리비와 시세 추이가 같이 쓴다.
+
+    당근이 값 없음을 빈 문자열이나 '-' 로 주기도 해 그런 값은 거짓이다. 공백은 지우지 않는다 (' 202601' 을 맞는 꼴로 보면
+    뒤에서 달 번호를 틀리게 읽는다).
+    """
+    return value is not None and len(value) == 6 and value.isdecimal() and 1 <= int(value[4:6]) <= 12
+
+
 def station_name(name: str) -> str:
     """'역' 까지 붙인 역 이름 ('역삼' → '역삼역'). 노선 꼬리('양평역(경의중앙선)')가 있으면 꼬리 앞 이름을 본다.
 
@@ -1022,6 +1164,11 @@ def walk_minutes_to(article: DaangnArticleModel, name: str) -> int | None:
 
     역 주변 매물(`search_station`, 찾은 역 이름)과 출퇴근 매물(`_commute_listings`, 출퇴근 경로의 역 이름)이 같이 쓴다. 예전에는
     두 곳이 같은 식을 따로 두었다 (2026-11-12 리뷰).
+
+    리뷰 오탐 (2026-11-19, 근거 고침 2026-11-20): 인근 역은 이름으로 첫 일치만 쓴다 (`next(...)`). 서버는 같은 역을 이름 하나에
+    노선 여럿으로 묶어 주므로 (인근 역 모델의 `line_number` 가 목록이다. 신촌역 사례) 한 역이 이름이 겹쳐 둘로 오지 않는다.
+    이름이 같은 다른 역(양평역 5호선·경의중앙선)은 서로 멀어 한 매물 카드의 인근 역에 함께 오지 않을 것이라는 건 추론이다.
+    덧붙임 근거: 2026-11-20 양평역 매물 171장에서 같은 이름이 두 번 나온 카드는 0장이었다.
     """
     return next(
         (item.duration_minutes for item in article.subway_stations if item.station and item.station.station_name == name),
@@ -1077,12 +1224,12 @@ class DaangnRegionComplex(BaseModel):
         Field(description='당근 단지 ID (complex·items·real-price 에 넘긴다)')
     ]
     name: Annotated[
-        str,
-        Field(description='단지 이름')
+        str | None,
+        Field(description='단지 이름. 당근이 주지 않으면 null')
     ]
     property_type: Annotated[
         str | None,
-        Field(description='단지 유형 (아파트, 오피스텔, 주상복합 ...). 모르면 null')
+        Field(description='단지 유형 (아파트, 오피스텔, 주상복합 ...). 당근이 주지 않으면 null, 표에 없는 코드는 원래 코드')
     ] = None
     households: Annotated[
         int | None,
@@ -1097,16 +1244,19 @@ class DaangnRegionComplex(BaseModel):
         Field(description='당근에 올라온 거래 유형별 현재 매물 수 (매매·전세·월세)')
     ]
     recent_trades: Annotated[
-        list[DaangnRecentTrade],
-        Field(description=f'요청한 거래 유형의 최근 실거래 (최근 계약 순, 최대 {COMPLEX_RECENT_TRADES}건, 학교 배정 단지는 1건). 계약일·층은 없다')
+        list[DaangnRecentTrade] | None,
+        Field(description=(
+            f'요청한 거래 유형의 최근 실거래 (최근 계약 순, 최대 {COMPLEX_RECENT_TRADES}건, 학교 배정 단지는 1건). 계약일·층은 없다. '
+            '당근이 실거래 연결(transactions)이나 그 목록(edges)을 null 로 주면 null (모름), 거래가 없으면 []'
+        ))
     ] = []
     near_station: Annotated[
         bool | None,
         Field(description='역에서 가까운 단지인지 (당근 기준). 모르면 null')
     ] = None
     has_reviews: Annotated[
-        bool,
-        Field(description='거주 후기가 있는지. 내용은 url 의 단지 페이지에서 본다')
+        bool | None,
+        Field(description='거주 후기가 있는지. 후기 요약이 없고 당근이 후기 연결(livedReviews)이나 그 목록(edges)을 null 로 주면 null (모름). 내용은 url 의 단지 페이지에서 본다')
     ]
     url: Annotated[
         str,
@@ -1114,13 +1264,17 @@ class DaangnRegionComplex(BaseModel):
     ]
 
 
-def _recent_trades(node: DaangnRegionComplexNodeModel, trade_type: str, max_trades: int) -> list[DaangnRecentTrade]:
+def _recent_trades(node: DaangnRegionComplexNodeModel, trade_type: str, max_trades: int) -> list[DaangnRecentTrade] | None:
     """단지 카드의 최근 실거래에서 요청한 거래 유형만 골라 앞에서부터 `max_trades` 건.
 
-    전월세는 전세·월세가 섞여 오므로 월세가 0 이면 전세로 본다. 해제(취소)된 매매는 뺀다.
+    전월세는 전세·월세가 섞여 오므로 월세가 0 이면 전세로 본다. 해제(취소)된 매매는 뺀다. 당근이 실거래 연결(`transactions`)이나
+    그 목록(`edges`)을 null 로 주면 거래가 없는 것이 아니라 모름이라 None 이다 (빈 목록 `[]` 은 거래가 없다).
     """
+    if node.transactions is None or node.transactions.edges is None:
+        return None
+    edges = node.transactions.edges
     trades: list[DaangnRecentTrade] = []
-    for edge in node.transactions.edges if node.transactions else []:
+    for edge in edges:
         transaction = edge.node
         if transaction is None or transaction.deal_canceled:
             continue
@@ -1148,6 +1302,19 @@ def _recent_trades(node: DaangnRegionComplexNodeModel, trade_type: str, max_trad
     return trades
 
 
+def _has_reviews(node: DaangnRegionComplexNodeModel) -> bool | None:
+    """단지 카드에 거주 후기가 있는지. 후기 요약이 있으면 있다.
+
+    요약이 없을 때 후기 연결(`livedReviews`)이나 그 목록(`edges`)을 당근이 null 로 주면 없는 것이 아니라 모름(None)이다.
+    지역 단지 쿼리는 두 키를 모두 요청하므로(`region_complex_of` 주석) 키가 빠져 null 이 되는 일은 없고, 서버가 null 로 준 것이다.
+    """
+    if node.lived_review_summary is not None:
+        return True
+    if node.lived_reviews is None or node.lived_reviews.edges is None:
+        return None
+    return bool(node.lived_reviews.edges)
+
+
 def region_complex_of(
     node: DaangnRegionComplexNodeModel, trade_type: str, max_trades: int = COMPLEX_RECENT_TRADES,
 ) -> DaangnRegionComplex:
@@ -1155,13 +1322,17 @@ def region_complex_of(
 
     최근 실거래는 `max_trades` 건까지다. 당근 웹 단지 카드(ComplexListItem)는 취소되지 않은 첫 1건만 보여 주는데, 지역 단지
     목록은 더 많이 보여 주는 jibsa 개선으로 3건을 두고(2026-11-12 사용자 결정), 학교 배정 단지는 웹처럼 1건이다.
+
+    단지 ID 가 없는 카드는 가리킬 수 없어, 부르는 쪽이 먼저 걸러 이 함수에 넘기지 않는다 (`node.original_id` 가 None 이면 ValueError).
     """
+    if node.original_id is None:
+        raise ValueError('단지 ID 가 없는 단지 카드는 걸러서 넘겨야 합니다')
     danji = node.danji
     counts = node.live_article_count
     return DaangnRegionComplex(
         complex_id=node.original_id,
         name=node.name,
-        property_type=COMPLEX_TYPE_LABELS.get(node.type or '', node.type),
+        property_type=code_label(COMPLEX_TYPE_LABELS, node.type),
         households=danji.households if danji else None,
         approved_at=normalize_date(danji.build_date) if danji else None,
         listing_counts={
@@ -1171,7 +1342,9 @@ def region_complex_of(
         },
         recent_trades=_recent_trades(node, trade_type, max_trades),
         near_station=node.near_station,
-        has_reviews=bool(node.lived_reviews and node.lived_reviews.edges) or node.lived_review_summary is not None,
+        # 리뷰 오탐 (2026-11-19): 지역 단지 쿼리는 모두 livedReviews·livedReviewSummary 를 받는다 (school 배정 단지·search complexes
+        # 클러스터·좌표 목록에서 model_fields_set 로 확인)
+        has_reviews=_has_reviews(node),
         url=complex_url(node.original_id),
     )
 

@@ -78,6 +78,7 @@ from jibsa.providers.naver.api.request.redevelopment import (
 )
 from jibsa.providers.naver.api.request.region import (
     NaverLegalDivisionInfoListByLevelV1RequestParameterModel,
+    NaverLegalDivisionInfoListV1RequestParameterModel,
     NaverLegalDivisionSubInfoListV1RequestParameterModel,
     NaverMapsSearchAddressV1RequestParameterModel,
     NaverSearchAutocompleteComplexesV1RequestParameterModel,
@@ -161,6 +162,7 @@ from jibsa.providers.naver.api.response.redevelopment import (
 )
 from jibsa.providers.naver.api.response.region import (
     NaverLegalDivisionInfoListByLevelV1ResponseModel,
+    NaverLegalDivisionInfoListV1ResponseModel,
     NaverLegalDivisionSubInfoListV1ResponseModel,
     NaverMapsSearchAddressV1ResponseModel,
     NaverSearchAutocompleteComplexesV1ResponseModel,
@@ -299,6 +301,7 @@ class NaverClient(BaseHTTPClient):
     complex_pyeong_real_price_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/pyeong/realPrice/list'
     complex_market_price_list_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/marketPrice/list'
     legal_division_info_list_by_level_v1_endpoint: ClassVar[str] = '/front-api/v1/legalDivision/infoListByLevel'
+    legal_division_info_list_v1_endpoint: ClassVar[str] = '/front-api/v1/legalDivision/infoList'
     legal_division_sub_info_list_v1_endpoint: ClassVar[str] = '/front-api/v1/legalDivision/subInfoList'
     education_school_v1_endpoint: ClassVar[str] = '/front-api/v1/education/school'
     education_complex_school_allocation_dongs_v1_endpoint: ClassVar[str] = '/front-api/v1/education/complex/school/allocation-dongs'
@@ -1883,6 +1886,29 @@ class NaverClient(BaseHTTPClient):
     ) -> NaverLegalDivisionInfoListByLevelV1ResponseModel:
         """Async variant of `run_request_legal_division_info_list_by_level_v1`."""
         return await self._aget(self.legal_division_info_list_by_level_v1_endpoint, parameter, NaverLegalDivisionInfoListByLevelV1ResponseModel)
+
+    @naver_retry
+    def run_request_legal_division_info_list_v1(
+        self,
+        parameter: NaverLegalDivisionInfoListV1RequestParameterModel
+    ) -> NaverLegalDivisionInfoListV1ResponseModel:
+        """Look up regions by 법정동 코드 via `GET /front-api/v1/legalDivision/infoList`.
+
+        Args:
+            parameter: `legal_division_numbers` (법정동 코드, 웹은 쉼표로 여럿을 보내지만 jibsa 는 하나만 보낸다).
+
+        Returns:
+            NaverLegalDivisionInfoListV1ResponseModel: 법정동 코드별 지역 정보. 매물 화면의 위치 칸이 쓰는 `regionName` (시·도 이름 포함 전체 이름) 이 있다.
+        """
+        return self._get(self.legal_division_info_list_v1_endpoint, parameter, NaverLegalDivisionInfoListV1ResponseModel)
+
+    @naver_retry
+    async def arun_request_legal_division_info_list_v1(
+        self,
+        parameter: NaverLegalDivisionInfoListV1RequestParameterModel
+    ) -> NaverLegalDivisionInfoListV1ResponseModel:
+        """Async variant of `run_request_legal_division_info_list_v1`."""
+        return await self._aget(self.legal_division_info_list_v1_endpoint, parameter, NaverLegalDivisionInfoListV1ResponseModel)
 
     @naver_retry
     def run_request_legal_division_sub_info_list_v1(

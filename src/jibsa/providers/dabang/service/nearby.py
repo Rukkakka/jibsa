@@ -12,7 +12,11 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import box_around
-from jibsa.core.listing import normalize_address
+from jibsa.core.listing import (
+    js_round,
+    js_to_fixed,
+    normalize_address,
+)
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import DabangOneTwoFiltersModel
 from jibsa.providers.dabang.api.request.nearby import (
@@ -115,8 +119,8 @@ class DabangNearPlace(BaseModel):
         Field(description='이름 (치안은 다방이 이름을 주지 않아 null)')
     ] = None
     distance_m: Annotated[
-        int | None,
-        Field(description='거리 (m, 직선, 다방 값)')
+        int | float | None,
+        Field(description='거리 (m, 직선, 다방 값). 1m 미만은 소수 한 자리 (웹과 같다)')
     ] = None
 
 
@@ -349,6 +353,16 @@ def _car_share(client: DabangClient, target: DabangCarShareTarget, target_id: st
     ])
 
 
+def _web_distance(distance: float) -> int | float:
+    """웹이 시설 거리를 보여 주는 식과 같게 맞춘다 (distance-km-m 청크 `d`: `e<1 ? parseFloat(e.toFixed(1)) : Math.round(e)`).
+    1m 미만은 소수 한 자리, 그 위는 .5 를 올려 정수로 만든다. Python `round` 는 .5 를 짝수로 보내 웹과 1 씩 달라지고
+    `f'{x:.1f}'`·`Decimal(str(x))` 도 JS `toFixed(1)` 과 어긋나는 값이 있어(0.25 → 웹 0.3, 0.15 → 웹 0.1) 소수 한 자리는 공용
+    `js_to_fixed` 로 맞춘다 (2026-11-20 리뷰: 예전 `Decimal(str(x))` 는 0.15 를 0.2 로 냈다)."""
+    if distance < 1:
+        return float(js_to_fixed(distance, 1))
+    return js_round(distance)
+
+
 def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list[DabangNearPlaces]:
     """종류마다 다방 거리 값으로 가까운 순 `NEAR_PLACES_PER_TYPE` 곳. 편의 종류는 거리순으로 오지만 어린이집은 섞여 와
     (2026-11-13 실측: 역삼동 매물 어린이집 6곳) 거리로 다시 세운다. 거리를 모르는 시설은 뒤로 보낸다."""
@@ -357,11 +371,12 @@ def _nearest(groups: list[DabangNearGroupModel], labels: dict[str, str]) -> list
         label = labels.get(group.query)
         if label is None or not group.pois:
             continue
-        # 리뷰 오탐 (2026-11-14): 시설 거리는 소수로 온다 (실측 88.58277413). 정밀한 거리로 세운 뒤 내보낼 때만 반올림하려고
-        # 역·반려동물·카셰어링처럼 `Meters` 로 받지 않는다. 먼저 반올림하면 같은 m 의 두 곳이 서버 순서를 따른다
+        # 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): 시설 거리는 소수로 온다 (실측 88.58277413). 정밀한 거리로 세운 뒤 내보낼
+        # 때만 웹 `d` 식(`_web_distance`)으로 반올림하려고 역·반려동물·카셰어링처럼 `Meters` 로 받지 않는다. 먼저 반올림하면
+        # 같은 m 의 두 곳이 서버 순서를 따른다
         pois = sorted(group.pois, key=_by_distance)
         result.append(DabangNearPlaces(type=label, places=[
-            DabangNearPlace(name=poi.name, distance_m=None if poi.distance is None else round(poi.distance))
+            DabangNearPlace(name=poi.name, distance_m=None if poi.distance is None else _web_distance(poi.distance))
             for poi in pois[:NEAR_PLACES_PER_TYPE]
         ]))
     return result

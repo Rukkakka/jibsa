@@ -785,10 +785,9 @@ def check_scope_name(query: str, *, metric_label: str, unit: Literal['동', '단
     Raises:
         JibsaError: 동 범위를 받지 않는 순위에 동 이름을 줄 때 (INVALID_ARGUMENT).
     """
-    # 리뷰 오탐 (2026-11-14): resolve_scope(dong=False) 와 겹치는 검사가 아니다. resolve_scope 는 동 이름을 REGION_NOT_FOUND 로
-    # 막아 있는 동을 못 찾았다고 알리고 --unit 단지 를 권하지 못한다. 동 모양 검사를 resolve_scope 로 옮길 수도 없다: search sales
-    # 가 같은 함수를 dong=False 로 불러 RegionNotFoundError 를 받으면 동·역 장소 검색으로 넘어가서, 동 이름에 INVALID_ARGUMENT 를
-    # 던지면 search sales 역삼동 이 막힌다
+    # 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): resolve_scope(dong=False) 와 겹치는 검사가 아니다. resolve_scope 는 동 이름을
+    # REGION_NOT_FOUND 로 막아 있는 동을 못 찾았다고 알리고 --unit 단지 를 권하지 못한다. 안내(hint)를 만들려면 지표·단위·빌라
+    # 순위 여부가 필요한데 resolve_scope 는 이것들을 받지 않아 여기 따로 둔다
     words = query.split()
     if words and not takes_dong_scope(metric_label, unit) and DONG_NAME_PATTERN.fullmatch(words[-1]):
         raise _dong_scope_error(metric_label, query.strip(), room=is_room_ranking(complex_types))

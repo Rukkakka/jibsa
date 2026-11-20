@@ -15,7 +15,10 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import haversine_km
-from jibsa.core.http import error_body
+from jibsa.core.http import (
+    OPTIONAL_LOOKUP_BASE_ERRORS,
+    error_body,
+)
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
@@ -26,6 +29,7 @@ from jibsa.core.listing import (
     more_hint,
     note,
 )
+from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
@@ -199,6 +203,9 @@ HOUSEHOLDS_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d[\d,]*)\s*세대')
 YEARS_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d+)\s*년차')
 # 다방 층 글자 → jibsa 표기 (normalize_floor 가 맞추는 직방 표기). 다방은 반지하를 '반지층' 으로 쓴다 (2026-10-25 역삼동 목록)
 FLOOR_LABELS: dict[str, str] = {'반지층': '반지하'}
+# 덤 조회(최근 실거래 요약·대출 계산 조건·`--details` 의 매물 상세)가 실패해도 이미 받은 결과는 돌려줄 예외. 세 소스 공통 범위에
+# 요청 제한(분당 상한 대기·429 쿨다운)을 더한다. 받아 둔 단지 정보·매물 목록까지 버리지 않는다 (당근 `OPTIONAL_LOOKUP_ERRORS` 와 같은 뜻)
+OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 
 
 def listing_url(room_id: str) -> str:
@@ -341,14 +348,14 @@ class DabangListing(Listing):
             fields = fields | {'short_lease'}
         if self.complex_name is None and not is_complex_type(self.property_type):
             fields = fields | {'complex_name'}
-        if self.supply_area_m2 is None and not self.property_type.startswith(APARTMENT_TYPE):
+        if self.supply_area_m2 is None and (self.property_type is None or not self.property_type.startswith(APARTMENT_TYPE)):
             fields = fields | {'supply_area_m2'}
         return fields
 
 
-def is_complex_type(property_type: str) -> bool:
-    """단지가 있는 유형인지 ('오피스텔', '오피스텔(분리형)', '아파트')."""
-    return property_type.startswith(COMPLEX_PROPERTY_TYPES)
+def is_complex_type(property_type: str | None) -> bool:
+    """단지가 있는 유형인지 ('오피스텔', '오피스텔(분리형)', '아파트'). 유형이 없으면(None) 아니다."""
+    return property_type is not None and property_type.startswith(COMPLEX_PROPERTY_TYPES)
 
 
 def property_label(room_type_name: str | None, kind: ListingKind) -> tuple[str, bool]:

@@ -12,9 +12,9 @@ class NaverRealPriceModel(ResponseModel):
     """실거래 한 건 (원)."""
 
     trade_date: Annotated[
-        str,
-        Field(description='계약일 (YYYY-MM-DD)', alias='tradeDate')
-    ]
+        str | None,
+        Field(description='계약일 (YYYY-MM-DD). 네이버가 null 을 주기도 한다', alias='tradeDate')
+    ] = None
     floor: Annotated[
         int | None,
         Field(description='층')
@@ -74,9 +74,9 @@ class NaverVillaRealPriceModel(ResponseModel):
     """빌라 단지 실거래 한 건 (원). 아파트(`NaverRealPriceModel`)와 키 이름이 일부 다르다."""
 
     trade_date: Annotated[
-        str,
-        Field(description='계약일 (YYYY-MM-DD)', alias='tradeDate')
-    ]
+        str | None,
+        Field(description='계약일 (YYYY-MM-DD). 네이버가 null 을 주기도 한다', alias='tradeDate')
+    ] = None
     floor: Annotated[
         int | None,
         Field(description='층')

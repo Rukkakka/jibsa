@@ -291,9 +291,9 @@ class DaangnPriceChartPointModel(ResponseModel):
     """월별 평균 실거래가 한 점. 거래가 없는 달은 오지 않는다. 금액은 **원** 단위다 (다른 당근 API 와 다르다)."""
 
     year_month: Annotated[
-        str,
-        Field(description="계약 연월 (YYYYMM, 예: '202608')", alias='yearMonth')
-    ]
+        str | None,
+        Field(description="계약 연월 (YYYYMM, 예: '202608'). 값이 없으면 null·빈 문자열·'-' 로 올 수 있다", alias='yearMonth')
+    ] = None
     average_amount: Annotated[
         float | None,
         Field(description='그 달 실거래 평균가 (원). 전세는 보증금', alias='averageAmount')
@@ -325,8 +325,8 @@ class DaangnPriceChartModel(ResponseModel):
     """단지 시세 차트."""
 
     average_points: Annotated[
-        list[DaangnPriceChartPointModel],
-        Field(description='월별 평균 (오래된 달부터)', alias='averagePoints')
+        list[DaangnPriceChartPointModel] | None,
+        Field(description='월별 평균 (오래된 달부터). null 이면 그래프 자료를 주지 않은 것 (모름)', alias='averagePoints')
     ] = []
     latest_kb_sale: Annotated[
         DaangnKbSaleSummaryModel | None,

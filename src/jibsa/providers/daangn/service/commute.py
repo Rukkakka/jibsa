@@ -12,6 +12,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NOTE_KINDS,
+    UPDATE_MAYBE_NEEDED,
     Listing,
     listing_as,
     note,
@@ -20,6 +21,7 @@ from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import (
     DaangnCoordinateInputModel,
     DaangnPropertyFilterModel,
+    is_empty_property_filter,
 )
 from jibsa.providers.daangn.api.request.commute import (
     DaangnCommuteStationArticleConnectionRequestPayloadModel,
@@ -175,8 +177,8 @@ class DaangnCommuteStationListings(BaseModel):
         Field(description='이 역에서 반환한 매물 수')
     ]
     listings: Annotated[
-        list[DaangnCommuteListing],
-        Field(description='이 역 주변 매물 (당근이 준 순서)')
+        list[DaangnCommuteListing] | None,
+        Field(description='이 역 주변 매물 (당근이 준 순서). 당근이 이 역의 매물 목록을 주지 않으면 null (빈 목록 []과 다르다. 모름이다)')
     ]
 
 
@@ -256,7 +258,10 @@ def search_commute(
     notes = (
         reach.notes + no_trade_notes(found.articles_by_id.values()) + complex_building_notes(shown) + hidden_location_notes(shown)
     )
-    if reach.unknown_times:
+    # 서버가 준 역이 모두 지하철 시간을 모르는 경우. 일부만 모르면 아래 두 안내가 맞고, 모두 모르면 '시간 안에 역이 없다' 가 아니라
+    # '시간을 몰라 확인할 수 없다' 이므로 두 안내를 이 하나로 바꾼다 (둘째 안내가 역이 아예 없다고 읽혔다, 2026-11-19 리뷰)
+    all_unknown = reach.unknown_time_count > 0 and not reach.offered
+    if reach.unknown_time_count and not all_unknown:
         # 받은 매물을 뺀 것이 아니라 찾을 역을 줄인 것이라 [제외] 가 아니라 [범위] 다 (아래 역 수 안내와 같다)
         notes.append(note('범위', '지하철 시간을 모르는 역은 --max-minutes 조건을 확인할 수 없어 제외했습니다'))
     if not stations:
@@ -270,17 +275,23 @@ def search_commute(
             part for part in ('·'.join(workplace.lines), station_name(station_base_name(nearest.station_name))) if part
         )
         nearby = f"회사 역({workplace_label}) 주변은 jibsa daangn search listings --station '{workplace_label}' 으로 보세요"
-        if reach.offered:
-            # 상한 밖(또는 지하철 시간을 모르는 역)에는 조건에 맞는 매물이 있는 역이 있다
+        if all_unknown:
+            message = (
+                f'당근이 준 역 {reach.unknown_time_count}곳 모두 지하철 시간을 몰라 --max-minutes 안인지 확인할 수 없습니다. {nearby}'
+            )
+        elif reach.offered:
+            # 상한 밖에는 조건에 맞는 매물이 있는 역이 있다 (지하철 시간을 모르는 역은 세지 않는다)
             message = (
                 f'지하철 {max_minutes}분 안에는 조건에 맞는 매물이 있는 역이 없습니다. '
                 + ('더 먼 역은 --max-minutes 를 늘리고, ' if max_minutes < COMMUTE_SERVER_MAX_MINUTES else '')
                 + nearby
             )
         else:
+            # 조건을 하나도 주지 않았으면 넓힐 조건이 없다
+            widen = '' if is_empty_property_filter(property_filter) else '조건을 넓히거나, '
             message = (
                 f'회사 역에서 지하철 {COMMUTE_SERVER_MAX_MINUTES}분 안에 조건에 맞는 매물이 있는 역이 없습니다 (당근은 조건에 맞는 '
-                f'매물이 있는 역만 줍니다). 조건을 넓히거나, {nearby}'
+                f'매물이 있는 역만 줍니다). {widen}{nearby}'
             )
         notes.append(note('범위', message))
     if len(stations) > len(searched):
@@ -294,7 +305,17 @@ def search_commute(
     groups: list[DaangnCommuteStationListings] = []
     # 역마다 같은 안내('더 보려면 --limit 을 늘리거나…')가 역 수만큼 되풀이되지 않게 안내 문장마다 역을 모은다
     station_notes: dict[str, list[str]] = {}
+    unknown_names: list[str] = []
     for name, minutes, transfers, route in searched:
+        if name in found.unknown_stations:
+            # 당근이 이 역의 매물 목록을 주지 않았다. 없다([])는 뜻이 아니라 모름(null)이라 --limit 안내 대신 알린다
+            unknown_names.append(name)
+            groups.append(DaangnCommuteStationListings(
+                station_name=name, subway_minutes=minutes, transfers=transfers, route=route,
+                one_way_minutes=minutes + workplace.walk_minutes if workplace.walk_minutes is not None else None,
+                inspected=0, returned=0, listings=None,
+            ))
+            continue
         station_listings = [listing for listing in listings if listing.commute_station == name]
         inspected = found.inspected_by_station[name]
         groups.append(DaangnCommuteStationListings(
@@ -306,13 +327,18 @@ def search_commute(
         stopped = name in found.stopped_stations
         for text in listing_budget_notes(
             limit, inspected, len(station_listings), max_limit=COMMUTE_STATION_MAX_LIMIT, has_more=found.has_more_by_station[name],
-            narrowable=not stopped,
+            narrow='조건', narrowable=not stopped,
         ) + ([note('일부', cursor_stopped_note('역 주변 매물', f'{inspected}건'))] if stopped else []):
             station_notes.setdefault(text, []).append(name)
     notes += [
         _station_note(f'찾아본 {len(searched)}곳 모두' if len(names) == len(searched) > 1 else '·'.join(names), text)
         for text, names in station_notes.items()
     ]
+    if unknown_names:
+        notes.append(note(
+            '실패',
+            f"당근이 {'·'.join(unknown_names)} 주변 매물 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}",
+        ))
     return DaangnCommuteResult(
         workplace_station=workplace,
         max_minutes=max_minutes,
@@ -335,6 +361,9 @@ class _Station(NamedTuple):
     route: list[DaangnCommuteLeg] | None
 
 
+# 리뷰 오탐 (2026-11-19, 근거 고침 2026-11-20): 노선 꼬리가 붙은 역(양평역(경의중앙선))의 이름 비교가 어긋나도 틀린 경로는 나가지
+# 않는다. 꼬리가 어긋나면 `stops[-1][0] != station_name(boarding)` 이라 `_route` 가 None(모름)을 준다 (실측: 왕십리역 60분 447곳
+# 중 꼬리 역 2곳은 waypoint 이름에도 꼬리가 같이 와 route 가 채워졌다)
 def _route(waypoints: list[DaangnCommuteWaypointModel], workplace: str, boarding: str) -> list[DaangnCommuteLeg] | None:
     """`commuteStations` 의 경로(`routeWaypoints`)를 타는 역(`boarding`)에서 회사 역(`workplace`)으로 가는 구간으로. 모양이 다르면 None.
 
@@ -375,10 +404,14 @@ class _Reachable(NamedTuple):
 
     stations: list[_Station]
     notes: list[str]
-    # 지하철 시간을 모르는 역이 있었는지
-    unknown_times: bool
-    # 시간 상한과 상관없이 서버가 준 역(조건에 맞는 매물이 있는 역)이 있었는지
+    # 지하철 시간을 모르는 역 수 (서버가 준 역 중)
+    unknown_time_count: int
+    # 시간 상한과 상관없이 서버가 시간을 알려 준 역(조건에 맞는 매물이 있는 역)이 있었는지. 시간을 모르는 역은 상한을 늘려도 들어오지 않아 세지 않는다
     offered: bool
+
+
+class _StationArticlesUnknown(Exception):
+    """역 하나의 첫 쪽에 매물 목록(edges)이 없다 (`_station_articles`). 빈 목록이 아니라 모름이라 그 역만 알리고 다음 역으로 간다."""
 
 
 class _StationArticles(NamedTuple):
@@ -391,6 +424,8 @@ class _StationArticles(NamedTuple):
     has_more_by_station: dict[str, bool]
     # 다음이 있다면서 이어 받을 쪽을 주지 않아 멈춘 역 (`connection_edges` 의 stopped)
     stopped_stations: set[str]
+    # 당근이 첫 쪽의 매물 목록(edges)을 주지 않아 매물을 모르는 역
+    unknown_stations: set[str]
 
 
 def _workplace_station(
@@ -411,16 +446,16 @@ def _workplace_station(
         raise JibsaError(
             code='NOT_FOUND',
             message='회사 위치 근처에서 지하철역을 찾지 못했습니다',
-            hint='지하철역이 있는 위치로 다시 찾거나, jibsa daangn search listings --lat <위도> --lng <경도> 로 회사 주변 지도 범위를 찾으세요',
+            hint=f'지하철역이 있는 위치로 다시 찾거나, jibsa daangn search listings --lat {lat} --lng {lng} 로 회사 주변 지도 범위를 찾으세요',
         )
-    nearest = unwrap_graphql(response, nearest, '가까운 역')
+    nearest = unwrap_graphql(response, nearest, '가까운 역', conditions=False)
     walk = nearest.walking_minutes_to_station
     if walk is not None and walk > COMMUTE_MAX_WALK_TO_STATION:
         # 예전에는 도보 60분이 넘어도 그 역으로 찾았다. 웹은 이때 출퇴근 목록을 열지 않는다 (#215)
         raise JibsaError(
             code='NOT_FOUND',
             message=f'회사 위치에서 걸어서 {COMMUTE_MAX_WALK_TO_STATION}분 안에 지하철역이 없습니다 (가장 가까운 {station_name(nearest.station_name)}까지 {walk}분)',
-            hint='지하철역이 있는 위치로 다시 찾거나, jibsa daangn search listings --lat <위도> --lng <경도> 로 회사 주변 지도 범위를 찾으세요',
+            hint=f'지하철역이 있는 위치로 다시 찾거나, jibsa daangn search listings --lat {lat} --lng {lng} 로 회사 주변 지도 범위를 찾으세요',
         )
     workplace = DaangnCommuteStation(
         name=nearest.station_name,
@@ -456,16 +491,18 @@ def _reachable_stations(
     )
     reachable: list[DaangnCommuteReachableStationModel] = unwrap_graphql(
         response, response.data.commute_stations if response.data else None, '출퇴근 역',
+        conditions=not is_empty_property_filter(property_filter),
     )
     reachable = [node for node in reachable if node.station]
-    unknown_station_times = any(node.duration_minutes is None for node in reachable)
+    unknown_time_count = sum(1 for node in reachable if node.duration_minutes is None)
     timed = sorted(
         (node for node in reachable if node.duration_minutes is not None and node.duration_minutes <= max_minutes),
         key=lambda node: node.duration_minutes or 0,
     )
-    # 역 이름이 곧 역 키다. 같은 이름 역도 서버가 노선 꼬리로 이름을 갈라 주고(2026-11-13 왕십리역 실측: 서울5호선 '양평역' 34분,
-    # 경의중앙선 '양평역(경의중앙선)' 58분. 강남·여의도·왕십리 응답 모두 겹치는 이름 0), 역 주변 매물 쿼리도 이름 하나만 받는다.
-    # 이름으로 겹침을 지우면 두 역이 합쳐진다는 2026-11-13 리뷰 지적은 오탐
+    # 역 이름이 곧 역 키다. 이름으로 겹침을 지우면 두 역이 합쳐진다는 2026-11-13 리뷰 지적은 오탐 (근거 고침 2026-11-20): 다음 단계의
+    # 역 주변 매물 요청이 역 이름 하나만 받아(request/commute.py 의 station_name) 이름이 같은 두 역을 따로 조회할 길이 없다. 같은 이름이면
+    # 같은 요청이라, 시간순으로 세운 뒤 setdefault 로 가장 짧은 시간의 경로 하나를 남기는 것이 그 요청과 맞다. 서버는 같은 이름 역을
+    # 노선 꼬리로 갈라 준다 (2026-11-13 왕십리역: 서울5호선 '양평역' 34분, 경의중앙선 '양평역(경의중앙선)' 58분)
     first_routes: dict[str, _Station] = {}
     for node in timed:
         assert node.station is not None and node.duration_minutes is not None
@@ -483,7 +520,7 @@ def _reachable_stations(
             f'당근 출퇴근 지도는 지하철 {COMMUTE_SERVER_MAX_MINUTES}분 안 역까지만 줍니다. '
             f'--max-minutes {max_minutes} 이어도 {COMMUTE_SERVER_MAX_MINUTES}분까지의 역만 찾았습니다',
         ))
-    return _Reachable(list(first_routes.values()), feed_notes, unknown_station_times, offered=bool(reachable))
+    return _Reachable(list(first_routes.values()), feed_notes, unknown_time_count, offered=any(node.duration_minutes is not None for node in reachable))
 
 
 def _station_articles(
@@ -493,11 +530,13 @@ def _station_articles(
     limit: int,
 ) -> _StationArticles:
     """역마다 주변 매물을 `limit` 건까지 받는다."""
+    filtered = not is_empty_property_filter(property_filter)
     articles_by_id: dict[str, DaangnArticleModel] = {}
     ids_by_station: dict[str, list[str]] = {}
     inspected_by_station: dict[str, int] = {}
     has_more_by_station: dict[str, bool] = {}
     stopped_stations: set[str] = set()
+    unknown_stations: set[str] = set()
     for station in searched:
         # 역마다 받은 매물 수로 예산을 세고, 100건씩 다음 페이지를 이어 받는다
         def fetch(size: int, after: str | None) -> DaangnCommuteStationArticleConnectionModel:
@@ -509,13 +548,22 @@ def _station_articles(
                     property_filter=property_filter,
                 )
             )
-            return unwrap_graphql(
+            connection = unwrap_graphql(
                 response,
                 response.data.commute_station_article_connection if response.data else None,
                 '역 주변 매물',
+                conditions=filtered,
             )
+            # 첫 쪽의 목록이 null 이면 이 역의 매물은 모름이다. 이어 받는 쪽은 `connection_edges` 가 멈춤으로 본다
+            if connection.edges is None and after is None:
+                raise _StationArticlesUnknown
+            return connection
 
-        edges, has_more, _, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE)
+        try:
+            edges, has_more, _, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE)
+        except _StationArticlesUnknown:
+            unknown_stations.add(station[0])
+            continue
         inspected_by_station[station[0]] = len(edges)
         has_more_by_station[station[0]] = has_more
         if stopped:
@@ -527,7 +575,9 @@ def _station_articles(
                 seen.add(article.original_id)
                 articles_by_id.setdefault(article.original_id, article)
                 ids_by_station.setdefault(station[0], []).append(article.original_id)
-    return _StationArticles(articles_by_id, ids_by_station, inspected_by_station, has_more_by_station, stopped_stations)
+    return _StationArticles(
+        articles_by_id, ids_by_station, inspected_by_station, has_more_by_station, stopped_stations, unknown_stations,
+    )
 
 
 def _commute_listings(

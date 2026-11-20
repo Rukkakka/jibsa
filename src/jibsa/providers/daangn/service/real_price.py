@@ -23,6 +23,7 @@ from jibsa.core.listing import (
     KST,
     NOT_APPLICABLE_PRICE_FIELDS,
     UPDATE_MAYBE_NEEDED,
+    js_to_fixed,
     normalize_address,
     normalize_date,
     normalize_floor,
@@ -48,6 +49,10 @@ from jibsa.providers.daangn.api.response.common import (
     DaangnPageInfoModel,
     DaangnTransactionModel,
 )
+from jibsa.providers.daangn.api.response.compare import (
+    DaangnCompareAreaGroupModel,
+    DaangnCompareComplexModel,
+)
 from jibsa.providers.daangn.api.response.real_price import (
     DaangnComplexTransactionsModel,
     DaangnPriceChartModel,
@@ -58,18 +63,18 @@ from jibsa.providers.daangn.service.common import (
     OPTIONAL_LOOKUP_ERRORS,
     T,
     article_url,
+    code_label,
+    compare_column,
     complex_not_found,
     complex_url,
     cursor_stopped_note,
+    is_year_month,
     next_cursor,
     partial_failure_note,
+    pyeong_groups,
     stalled_page,
     truncation_notes,
     unwrap_graphql,
-)
-from jibsa.providers.daangn.service.compare import (
-    choose_pyeong,
-    compare_column,
 )
 from jibsa.providers.daangn.service.region import (
     DaangnRealsaleRegion,
@@ -87,11 +92,14 @@ from typing import (
 
 
 logger = logging.getLogger(__name__)
-RENT_TYPE_BY_TRADE_TYPE: dict[str, str] = {'전세': 'BORROW', '월세': 'MONTHLY'}
+# 매매 실거래의 소유 구분 (서버 ownership). 분양권·입주권만 라벨이 있고, 일반 거래(REGISTERED_OWNER)는 분양권이 아니라 해당 없음이다
 PRESALE_LABELS: dict[str, str] = {'PRE_SALE_RIGHT': '분양권', 'PRE_SALE_OWNER': '입주권'}
+NOT_PRESALE_OWNERSHIP: str = 'REGISTERED_OWNER'
 # 전월세 계약 종류 (서버 contractType·leaseContractType). 웹 배지(ComplexTopicPanel `pd`)는 RENEWAL 을 '재계약', 갱신요구권을 쓴
 # 계약(useRenewalOfContractRight)을 '갱신' 으로 따로 보여 준다
 CONTRACT_TYPE_LABELS: dict[str, str] = {'NEW': '신규', 'RENEWAL': '재계약'}
+# 매매 실거래의 거래 방식 (서버 transactionType)
+DEAL_TYPE_LABELS: dict[str, str] = {'DIRECT': '직거래', 'BROKERED': '중개거래'}
 # '직전 최고가 대비' 비율의 소수 자릿수 (`previous_high_change_percent`). 웹 카드는 정수로 보여 준다
 PREVIOUS_HIGH_PERCENT_DIGITS: int = 2
 # 실거래 한 번에 받는 수와, 전세·월세를 골라 내느라 전월세를 넘겨 보는 최대 페이지 (최근 1200건)
@@ -158,15 +166,19 @@ class DaangnRealPrice(BaseModel):
     ] = None
     registered: Annotated[
         bool | None,
-        Field(description='등기까지 마친 거래 (매매만)')
+        Field(description='등기까지 마친 거래 (매매만). 당근이 등기일을 주지 않은 거래는 false')
     ] = None
     presale: Annotated[
         str | None,
-        Field(description='분양권 / 입주권 거래 (매매만, 해당할 때만 키가 있다)')
+        Field(description='분양권 / 입주권 거래 (매매만). 일반 거래(소유 구분 REGISTERED_OWNER)는 키가 없고, 당근이 소유 구분을 주지 않았으면 null (모름), 표에 없는 코드는 원래 코드')
     ] = None
+    not_presale: Annotated[
+        bool,
+        Field(exclude=True, description='분양권·입주권이 아닌 일반 거래인지 (소유 구분 REGISTERED_OWNER). presale 키를 빼는 데만 쓰고 출력하지 않는다')
+    ] = False
     contract_type: Annotated[
         str | None,
-        Field(description="계약 종류 (전월세만): '신규' / '재계약' (당근 웹 배지 '재계약'). 재계약은 새 계약보다 낮게 잡히는 경우가 많다. 당근이 주지 않으면 null")
+        Field(description="계약 종류 (전월세만): '신규' / '재계약' (당근 웹 배지 '재계약'). 재계약은 새 계약보다 낮게 잡히는 경우가 많다. 당근이 주지 않으면 null, 표에 없는 코드는 원래 코드")
     ] = None
     renewal_right: Annotated[
         bool | None,
@@ -181,7 +193,7 @@ class DaangnRealPrice(BaseModel):
             fields |= {'contract_type', 'renewal_right'}
         else:
             fields |= {'cancelled', 'registered', 'presale'}
-        if self.presale is None:
+        if self.not_presale:
             fields.add('presale')
         for field in fields:
             data.pop(field, None)
@@ -204,8 +216,8 @@ class DaangnRealPriceBaseResult(BaseModel):
         Field(description='반환한 거래 수')
     ]
     has_more: Annotated[
-        bool,
-        Field(description='더 오래된 거래가 더 있는지 (--years 를 줬으면 그 기간 안에서)')
+        bool | None,
+        Field(description='더 오래된 거래가 더 있는지 (--years 를 줬으면 그 기간 안에서). 당근이 거래 목록을 주지 않았으면 null (모름)')
     ]
     since: Annotated[
         str | None,
@@ -216,8 +228,8 @@ class DaangnRealPriceBaseResult(BaseModel):
         Field(description='--month 로 준 계약 연월 (YYYY-MM). 그 달 거래만이다. 주지 않았으면 키가 없다')
     ] = None
     transactions: Annotated[
-        list[DaangnRealPrice],
-        Field(description='최근 계약 순 실거래')
+        list[DaangnRealPrice] | None,
+        Field(description='최근 계약 순 실거래. 거래가 없으면 [], 당근이 거래 목록을 주지 않았으면 null (모름)')
     ]
     notes: Annotated[
         list[str],
@@ -282,19 +294,21 @@ def _trade_date(node: DaangnTransactionModel) -> str | None:
 
 
 def contract_type_of(contract_type: str | None) -> str | None:
-    """전월세 계약 종류(서버 `contractType`·`leaseContractType`)를 한국어 라벨로. 모르는 값·없음은 None.
+    """전월세 계약 종류(서버 `contractType`·`leaseContractType`)를 한국어 라벨로. 없음은 None, 표에 없는 코드는 원래 코드.
 
     웹 배지(ComplexTopicPanel `pd`)와 1:1 이다: `RENEWAL` → 재계약, 갱신요구권(`useRenewalOfContractRight`)은 따로
     `renewal_right` 로 낸다 (예전 `renewal` 은 둘을 합쳐 True 로 냈다, #215). 지역 실거래는 계약 종류 없이 오기도 하고, 같은
     거래가 단지 실거래에 NEW·RENEWAL 로 두 번 있기도 하다 (2026-10-10 실측: 봉천동·신림동 등 전월세 약 600건 중 14건이 계약
     종류 없음).
     """
-    return CONTRACT_TYPE_LABELS.get(contract_type or '')
+    return code_label(CONTRACT_TYPE_LABELS, contract_type)
 
 
 def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> DaangnRealPrice:
     """실거래 한 건을 `DaangnRealPrice` 로 바꾼다. 금액은 원래 만원이다."""
     buy = trade_type == '매매'
+    # 소유 구분: 일반 거래(REGISTERED_OWNER)는 분양권이 아니라 해당 없음(키 삭제)이고, 비었거나 '-' 면 모름(null)이다
+    not_presale = (node.ownership or '').strip() == NOT_PRESALE_OWNERSHIP
     return DaangnRealPrice(
         trade_type=trade_type,
         trade_date=_trade_date(node),
@@ -304,16 +318,18 @@ def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> 
         deposit_manwon=None if buy else node.deposit,
         rent_manwon=node.monthly_rent if trade_type == '월세' else None,
         cancelled=node.deal_canceled if buy else None,
-        registered=node.registrated_at is not None if buy else None,
-        presale=PRESALE_LABELS.get(node.ownership or '') if buy else None,
+        # 등기일이 있어야 등기를 마친 거래라 빈 글자·'-' 는 등기 전이다
+        registered=(node.registrated_at or '').strip() not in ('', '-') if buy else None,
+        presale=None if not buy or not_presale else code_label(PRESALE_LABELS, node.ownership),
+        not_presale=buy and not_presale,
         contract_type=None if buy else contract_type_of(node.contract_type),
         renewal_right=None if buy else node.use_renewal_of_contract_right,
     )
 
 
 TransactionFetch = Callable[[int, str | None], DaangnComplexTransactionsModel]
-# (받을 수, 커서) → (한 페이지의 거래, 페이지 정보)
-PageFetch = Callable[[int, str | None], tuple[list[T], DaangnPageInfoModel | None]]
+# (받을 수, 커서) → (한 페이지의 거래, 페이지 정보). 당근이 그 페이지를 주지 않았으면(연결이나 edges 가 null) 거래가 None 이다
+PageFetch = Callable[[int, str | None], tuple[list[T] | None, DaangnPageInfoModel | None]]
 
 
 class _Collected(NamedTuple, Generic[T]):
@@ -326,6 +342,22 @@ class _Collected(NamedTuple, Generic[T]):
     reached_since: bool
     # 받은 원본 거래 수 (기간·거래 유형으로 고르기 전)
     scanned: int
+    # 당근이 첫 쪽을 주지 않아(연결이나 edges 가 null) 거래가 없는 것이 아니라 모르는지. 그렇다면 items·has_more 는 모름이라 뜻이 없다
+    unknown: bool = False
+
+
+def _site_note(url: str) -> str:
+    """`--limit` 을 늘려도 받을 수 없는 거래를 당근 웹에서 보라는 말 (`_collect_pages` 의 `site`)."""
+    return f'당근에서 직접 확인하세요: {url}'
+
+
+def _is_rent_type(monthly_rent: int | None, trade_type: str) -> bool:
+    """전월세 거래가 고른 유형(전세·월세)인지. 당근이 전세·월세를 섞어 주므로 웹 카드가 전세·월세 표시를 가르는 월세로 가른다.
+
+    월세가 0 보다 크면 월세, 아니면(0·없음) 전세다. 단지·매물 실거래와 지역 실거래가 같은 식을 쓴다 (서버 `type` 은 보지 않는다).
+    """
+    monthly = (monthly_rent or 0) > 0
+    return monthly if trade_type == '월세' else not monthly
 
 
 def _collect_pages(
@@ -334,7 +366,7 @@ def _collect_pages(
     trade_type: str,
     limit: int,
     *,
-    url: str,
+    site: str,
     remaining: str = '더 오래된 거래가 남아 있습니다',
     since: str | None = None,
     date_of: Callable[[T], str | None] | None = None,
@@ -345,11 +377,12 @@ def _collect_pages(
     `matches` 로 고른다. 커서가 반복되거나 다음 페이지가 비면 안내하고 멈춘다.
 
     Args:
-        fetch: (받을 수, 커서) → (한 페이지의 거래, 페이지 정보).
+        fetch: (받을 수, 커서) → (한 페이지의 거래, 페이지 정보). 당근이 그 페이지를 주지 않았으면 거래를 None 으로 준다.
         matches: 검색한 거래 유형의 거래인지.
         trade_type: 매매, 전세, 월세.
         limit: 최대 거래 수.
-        url: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때 확인하라고 안내할 당근 페이지.
+        site: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때 안내 끝에 붙일 말. 당근 웹에서 볼 수 있는 거래면 그 페이지로 보내고
+            (`_site_note`), 웹에도 없는 거래면 보낼 곳이 없으니 더 받을 수 없다고 알린다.
         remaining: 그 안내의 앞말 (예: '더 오래된 거래가 남아 있습니다'). `since` 의 기간 시작일에 닿기 전에 멈췄으면 쓰지
             않고 받지 못한 기간을 알린다.
         since: 이날(YYYY-MM-DD)보다 앞선 거래는 빼고, 그런 거래가 나온 페이지에서 멈춘다. 당근은 기간을 받지 않아
@@ -358,7 +391,7 @@ def _collect_pages(
 
     Returns:
         거래, 더 있는지, 안내와 함께 기간 시작일 앞에서 멈췄는지·받은 원본 거래 수 (`_Collected`). 뒤의 둘은 빈 결과의
-        까닭을 가르는 데 쓴다 (`_empty_result_note`).
+        까닭을 가르는 데 쓴다 (`_empty_result_note`). 첫 쪽을 주지 않았으면 `unknown` 이 True 인 빈 결과다.
     """
     buy = trade_type == '매매'
     collected: list[T] = []
@@ -374,7 +407,14 @@ def _collect_pages(
     notes: list[str] = []
     for pages in range(1, REAL_PRICE_MAX_PAGES + 1):
         size = min(REAL_PRICE_PAGE_SIZE, limit - len(collected)) if buy else REAL_PRICE_PAGE_SIZE
-        nodes, page_info = fetch(size, after)
+        fetched, page_info = fetch(size, after)
+        if fetched is None:
+            if after is None:
+                # 첫 쪽부터 주지 않았으면 거래가 없는 것이 아니라 모르는 것이다 (빈 결과로 내면 '없음' 으로 읽힌다)
+                return _Collected([], False, [], False, 0, unknown=True)
+            # 이어 받는 쪽을 주지 않았으면 페이지 정보가 없는 쪽과 같게 다룬다 (아래 stalled_page 가 멈춤 안내를 붙이고 멈춘다)
+            fetched, page_info = [], None
+        nodes = fetched
         server_more = bool(page_info and page_info.has_next_page)
         # 커서가 되풀이되거나 페이지 정보가 없으면(stalled_page) 그 쪽을 세기 전에 멈춘다. 거래에는 ID 가 없어 단지 목록처럼 같은 쪽을 걸러 낼 수 없다. 아래
         # next_cursor 도 되풀이를 보지만 그때는 이미 그 쪽을 센 뒤라 여기서 먼저 본다 (2026-11-10 리뷰가 두 검사가 겹친다고
@@ -417,7 +457,6 @@ def _collect_pages(
         # 실측: 헬리오시티 월세 --limit 1200 에 이 안내의 '더 오래된 거래는 당근 사이트에서 확인하세요' 와 [일부] 의 '당근에서
         # 직접 확인하세요: URL' 이 함께 나왔다. 커서가 멈추면 멈춤 안내의 '나머지는 당근에서 확인하세요' 까지 세 번이었다)
         notes.append(note('참고', f'최근 전월세 실거래 {scanned}건 중 {trade_type} {len(collected)}건입니다'))
-    site = f'당근에서 직접 확인하세요: {url}'
     if since is not None and not reached_since:
         # 기간 시작일에 닿기 전에 멈췄으면(24쪽 상한·--limit 최대값·쪽 멈춤) 남은 거래는 기간 안이다. '더 오래된 거래가 남아
         # 있습니다' 는 기간보다 오래된 거래로 읽혀, 에이전트가 2026-01-10 까지 받은 결과를 '최근 1년' 이라고 전했다 (2026-11-11
@@ -475,23 +514,24 @@ def _collect_transactions(
         remaining: 남은 거래 안내의 앞말 (`_collect_pages`). 한 달만 받으면 '더 오래된' 이 아니라 그 달 거래가 남았다고 한다.
 
     Returns:
-        모은 거래와 안내 (`_collect_pages`).
+        모은 거래와 안내 (`_collect_pages`). 당근이 첫 쪽의 거래 연결(또는 그 `edges`)을 주지 않았으면 `unknown` 이 True 다.
     """
     buy = trade_type == '매매'
 
-    def page(size: int, after: str | None) -> tuple[list[DaangnTransactionModel], DaangnPageInfoModel | None]:
+    def page(size: int, after: str | None) -> tuple[list[DaangnTransactionModel] | None, DaangnPageInfoModel | None]:
         transactions = fetch(size, after)
         connection = transactions.buy_transactions if buy else transactions.borrow_transactions
-        if connection is None:
-            return [], None
+        # 연결이나 edges 가 null 이면 거래가 0건인 것(edges []) 과 달라 모름이다 (`_collect_pages`)
+        if connection is None or connection.edges is None:
+            return None, None
         return [edge.node for edge in connection.edges if edge.node], connection.page_info
 
     return _collect_pages(
         page,
-        lambda node: buy or node.type == RENT_TYPE_BY_TRADE_TYPE[trade_type],
+        lambda node: buy or _is_rent_type(node.monthly_rent, trade_type),
         trade_type,
         limit,
-        url=url,
+        site=_site_note(url),
         remaining=remaining,
         since=since,
         date_of=_trade_date,
@@ -521,6 +561,106 @@ def _empty_result_note(found: _Collected[DaangnTransactionModel], trade_type: st
     return None
 
 
+class DaangnPyeongChoice(NamedTuple):
+    """실거래·시세 그래프를 거를 평형. 공급 평형(아파트형)이면 평형 타입 코드를, 아니면 전용면적 묶음을 보낸다."""
+
+    pyeong: int | None
+    area_group: int | None
+    ptp_cds: list[int] | None
+
+
+def _supply_choice(column: DaangnCompareComplexModel, group: DaangnCompareAreaGroupModel) -> DaangnPyeongChoice:
+    """공급 평 묶음의 평형 타입 코드로 고른 평형.
+
+    평형을 주지 않은 `price-trend` 의 대표 평형도 이 에러로 끝낸다. 모든 평형 평균으로 물러서는 길은 두지 않았다: 2026-11-12
+    실측 아파트·주상복합 14곳의 공급 평 묶음에 모두 타입 코드가 있어 한 번도 돌지 않을 코드이고, 생기면 에러가 원인을 알린다
+    (2026-11-12 리뷰에서 물러서라고 했으나 그대로 둔다).
+
+    Raises:
+        JibsaError: 묶음에 평형 타입 코드가 하나도 없을 때 (UPSTREAM_ERROR). 빈 코드로 보내면 평형을 거르지 않은 전체
+            평형 값에 그 평형 이름이 붙는다 (2026-11-12 리뷰).
+    """
+    ptp_cds = [info.ptp_cd for info in group.py_infos if info.ptp_cd is not None]
+    if not ptp_cds:
+        raise JibsaError(
+            code='UPSTREAM_ERROR',
+            message=f'당근 단지 {column.original_id} 의 {group.label}평 묶음에 평형 타입 코드가 없어 그 평형만 고를 수 없습니다',
+            hint=f'응답 형식이 바뀌었을 수 있습니다. {UPDATE_MAYBE_NEEDED}',
+        )
+    return DaangnPyeongChoice(group.label, None, ptp_cds)
+
+
+def choose_pyeong(
+    column: DaangnCompareComplexModel,
+    *,
+    pyeong: int | None = None,
+    area_group: int | None = None,
+    representative: bool = False,
+) -> DaangnPyeongChoice | None:
+    """`--pyeong`·`--area` 로 평형을 고른다. 둘 다 없고 `representative` 면 웹처럼 대표 평형 묶음(없으면 첫 묶음)이다.
+
+    None 이면 평형으로 거르지 않는다 (real-price 는 모든 평형의 거래, price-trend 는 웹처럼 그래프 없음). 평형 묶음이 없거나 대표
+    묶음에 평형 값(`label`)이 없으면 고를 평형을 알 수 없어 None 이다. 예전에는 값 없는 평형을 골라 거르지 않으면서 '대표
+    평형(None㎡)' 이라고 알렸다 (2026-11-12 리뷰. 실측 응답에서 label 이 빈 묶음은 아직 보지 못했다).
+
+    Raises:
+        JibsaError: 평형 묶음이 없는 단지에 `pyeong`·`area_group` 을, 아파트형이 아닌 단지에 `pyeong` 을, 아파트형(공급 평
+            묶음) 단지에 `area_group` 을 주거나, 단지에 없는 평형·묶음이면 INVALID_ARGUMENT. 고른 공급 평 묶음에 평형 타입
+            코드가 없으면 UPSTREAM_ERROR.
+    """
+    supply, groups = pyeong_groups(column)
+    if (pyeong is not None or area_group is not None) and not any(group.label is not None for group in groups):
+        # 고를 묶음이 없으면 아래 '있는 평형' 안내가 빈 목록이라 다시 줄 값이 없었다 (2026-11-12 리뷰). 웹도 평형 탭이 없어
+        # 고를 수 없다. 옵션을 빼면 real-price 는 전체 평형이지만 price-trend 는 웹처럼 그래프가 없어 명령마다 알린다
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f'당근에 단지 {column.original_id} 의 평형 묶음 정보가 없어 평형을 고를 수 없습니다',
+            hint='real-price 는 --pyeong·--area 를 빼면 모든 평형의 거래를 봅니다. price-trend 는 당근 웹처럼 이런 단지의 시세 그래프가 없습니다',
+        )
+    if pyeong is not None:
+        if not supply:
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message=f'아파트형이 아닌 단지 {column.original_id} 에는 공급 평형(--pyeong)이 없습니다',
+                hint=f'jibsa daangn complex {column.original_id} 의 pyeongs[].area_group 을 --area 로 주세요',
+            )
+        group = next((group for group in groups if group.label == pyeong), None)
+        if group is None:
+            labels = ', '.join(f'{group.label}평' for group in groups if group.label is not None)
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message=f'단지 {column.original_id} 에 {pyeong}평 묶음이 없습니다',
+                hint=f'있는 평형: {labels} (jibsa daangn complex {column.original_id} 의 pyeongs[].pyeong)',
+            )
+        return _supply_choice(column, group)
+    if area_group is not None:
+        if supply:
+            # 웹은 공급 평 묶음이 있는 단지에서는 늘 평형 타입 코드(ptpCds)로만 묻고 전용면적 묶음을 섞지 않는다
+            # (ComplexTopicPanel `jd` 의 `s`). 84㎡ 묶음은 32평·33평을 함께 가져 웹의 32평 목록과 달랐다 (2026-11-12 번들 대조)
+            labels = ', '.join(f'{group.label}평' for group in groups if group.label is not None)
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message=f'아파트형 단지 {column.original_id} 에서는 당근 웹처럼 공급 평형(--pyeong)으로만 고릅니다',
+                hint=f'--area 대신 --pyeong 을 주세요. 있는 평형: {labels} (jibsa daangn complex {column.original_id} 의 pyeongs[].pyeong)',
+            )
+        if all(group.label != area_group for group in groups):
+            labels = ', '.join(f'{group.label}㎡' for group in groups if group.label is not None)
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message=f'단지 {column.original_id} 에 전용 {area_group}㎡ 묶음이 없습니다',
+                hint=f'있는 묶음: {labels} (jibsa daangn complex {column.original_id} 의 pyeongs[].area_group)',
+            )
+        return DaangnPyeongChoice(None, area_group, None)
+    if not representative or not groups:
+        return None
+    chosen = next((group for group in groups if group.is_representative), groups[0])
+    if chosen.label is None:
+        return None
+    if supply:
+        return _supply_choice(column, chosen)
+    return DaangnPyeongChoice(None, chosen.label, None)
+
+
 def get_real_prices(
     client: DaangnClient,
     complex_id: int,
@@ -542,7 +682,8 @@ def get_real_prices(
     `pyeong` 은 당근 웹처럼 아파트형 단지의 공급 평형 묶음이고 그 평형 타입 코드(ptpCds)로 거른다 (단지 비교 칸 요청 1회 더).
     웹은 `exclusiveUseAreaGroup: 84` 같은 전용면적 묶음을 아파트형에 쓰지 않아 jibsa 도 막는다. 84㎡ 묶음은 32평·33평이 섞여
     웹의 32평 목록과 달랐다 (2026-11-12 실측: 헬리오시티 매매 50건 중 28건이 33평, #215). `area_group` 은 아파트형이 아닌 단지의
-    전용면적 묶음이다.
+    전용면적 묶음이다. 당근이 거래 연결(또는 그 `edges`)을 null 로 주면 거래가 0건인 것이 아니라 모름이라 `transactions`·`has_more` 를
+    null 로 내고 알린다 (정말 0건이면 `[]`).
 
     Raises:
         JibsaError: 없는 단지면 NOT_FOUND, 아파트형 단지에 `area_group` 을 주거나 단지에 없는 평형·묶음이면 INVALID_ARGUMENT,
@@ -570,7 +711,7 @@ def get_real_prices(
             )
         )
         result = unwrap_graphql(
-            response, response.data.complex_by_original_id if response.data else None, '실거래가'
+            response, response.data.complex_by_original_id if response.data else None, '실거래가', conditions=False
         )
         if result.complex is None:
             raise complex_not_found(complex_id)
@@ -584,8 +725,11 @@ def get_real_prices(
         remaining=f'{month} 의 거래가 더 남아 있습니다' if month else '더 오래된 거래가 남아 있습니다',
     )
     notes = found.notes
+    # 당근이 거래 목록을 주지 않았으면 거래가 0건인 것이 아니라 모름이라 transactions·has_more 를 null 로 낸다.
     # 단지 실거래는 빈 결과에 '없다' 고 단정하지 않지만, 기간 앞·다른 유형에 거래가 있으면 매물 실거래처럼 알린다
-    if (empty := _empty_result_note(found, trade_type, since)) is not None:
+    if found.unknown:
+        notes.append(note('실패', f'당근이 이 단지의 {trade_type} 거래 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
+    elif (empty := _empty_result_note(found, trade_type, since)) is not None:
         notes.append(empty)
     return DaangnRealPriceResult(
         complex_id=str(complex_id),
@@ -593,10 +737,10 @@ def get_real_prices(
         area_group=area_group,
         pyeong=pyeong,
         returned=len(found.items),
-        has_more=found.has_more,
+        has_more=None if found.unknown else found.has_more,
         since=since,
         month=month,
-        transactions=[transaction_to_real_price(node, trade_type) for node in found.items],
+        transactions=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
         url=complex_url(complex_id),
         notes=notes,
     )
@@ -652,7 +796,7 @@ class DaangnPriceTrendSummary(BaseModel):
     ]
     change_percent: Annotated[
         float,
-        Field(description='첫 거래 달 대비 마지막 거래 달 변화율 (%, 오르면 양수)')
+        Field(description='첫 거래 달 대비 마지막 거래 달 변화율 (%, 소수 첫째 자리, 오르면 양수). 당근 웹 시세 그래프와 같은 반올림이다')
     ]
     change_manwon: Annotated[
         float,
@@ -726,7 +870,7 @@ class DaangnPriceTrendResult(BaseModel):
     ]
     recent_average_manwon: Annotated[
         float | None,
-        Field(description='최근 3개월(이번 달과 그 전 3개월) 거래 수 가중 평균 (만원). 없으면 12개월 안 마지막 거래 달. 그것도 없으면 null')
+        Field(description='최근 3개월(이번 달과 그 전 3개월) 거래 수 가중 평균 (만원). 없으면 12개월 안 마지막 거래 달. 그것도 없거나 당근이 시세 그래프를 주지 않았으면 null')
     ] = None
     recent_transactions: Annotated[
         int | None,
@@ -737,16 +881,16 @@ class DaangnPriceTrendResult(BaseModel):
         Field(description='이 평형의 최근 KB 매매 시세 (하위~상위 평균가, 조사 기준일). 당근이 주지 않으면 null')
     ] = None
     total_transactions: Annotated[
-        int,
-        Field(description='points 기간의 거래 수')
+        int | None,
+        Field(description='points 기간의 거래 수. 당근이 시세 그래프를 주지 않으면 null (모름)')
     ]
     summary: Annotated[
         DaangnPriceTrendSummary | None,
-        Field(description='기간 안 첫·마지막 거래 달 비교. 거래 달이 둘이 안 되면 null')
+        Field(description='기간 안 첫·마지막 거래 달 비교. 거래 달이 둘이 안 되거나 당근이 시세 그래프를 주지 않았으면 null')
     ] = None
     points: Annotated[
-        list[DaangnPricePoint],
-        Field(description='월별 평균 (오래된 달부터). 거래가 없는 달은 빠진다. 평형 묶음이 없는 단지는 당근 웹처럼 그래프가 없어 []')
+        list[DaangnPricePoint] | None,
+        Field(description='월별 평균 (오래된 달부터). 거래가 없는 달은 빠진다. 평형 묶음이 없는 단지는 당근 웹처럼 그래프가 없어 []. 당근이 시세 그래프를 주지 않았으면 null (모름)')
     ]
     url: Annotated[
         str,
@@ -754,7 +898,7 @@ class DaangnPriceTrendResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='평균의 한계, 평형·기간 안내. CLI 가 결과 위에 붙인다')
+        Field(exclude=True, description='평균의 한계, 평형·기간 안내, 시세 그래프를 받지 못한 안내. CLI 가 결과 위에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -784,6 +928,19 @@ def _weighted(points: list[tuple[float, int]]) -> tuple[float, int] | None:
     return round(sum(average * transactions for average, transactions in points) / count, 4), count
 
 
+def _web_change_percent(start: float, end: float) -> float:
+    """첫 거래 달 대비 마지막 거래 달 변화율 (%, 소수 첫째 자리). 당근 웹 시세 그래프와 같은 계산·반올림이다.
+
+    웹(usePriceChartFragment `b`, 2026-11-19 번들)은 `r = 끝 - 시작; i = r / 시작 * 100; Math.abs(i).toFixed(1)` 에 상승·하락
+    부호를 붙인다. Python `round`(은행가 반올림)가 아니라 공용 `js_to_fixed`(JS `toFixed` 와 같은 반올림)로 맞춘다 (1.25 → 1.3).
+    웹은 차이가 500만원 미만이거나 0.0 이면 변화율을 보여 주지 않지만 jibsa 는 값을 계속 낸다.
+    """
+    change = (end - start) / start * 100
+    rounded = js_to_fixed(abs(change), 1)
+    # 0.0 으로 반올림되면 부호를 붙이지 않는다 (-0.0 이 되지 않게)
+    return float(-rounded) if change < 0 and rounded else float(rounded)
+
+
 def get_price_trend(
     client: DaangnClient,
     complex_id: int,
@@ -801,7 +958,9 @@ def get_price_trend(
     바꿨다 (#215, 2026-11-12 사용자 결정). 고를 평형이 없는 단지(평형 묶음이 없거나 대표 묶음에 평형 값이 없다)는 웹처럼 그래프를
     받지 않고 빈 `points` 를 준다 (요청 1회). 기간은 웹 탭(1년·3년·전체)이고, 오늘(한국 날짜)이 든 달과 그 전 N개월의 거래 달을
     `points` 로 준다. 변화율은 웹(PriceChart `Z`)처럼 기간 안 첫 거래 달과 마지막 거래 달 평균을 견준다. 예전에는 마지막 거래 달
-    까지 3개월과 N년 전 3개월을 가중 평균해 웹과 숫자가 달랐다 (2026-11-12 실측: 헬리오시티 32평 1년, 웹 -0.6%).
+    까지 3개월과 N년 전 3개월을 가중 평균해 웹과 숫자가 달랐다 (2026-11-12 실측: 헬리오시티 32평 1년, 웹 -0.6%). 변화율의 반올림은
+    웹처럼 `toFixed(1)` 이다 (`_web_change_percent`). 당근이 시세 그래프를 주지 않으면(`priceChart` null) 거래 달이 없는 것이 아니라
+    모름이라 `points`·`total_transactions` 를 null 로 내고 알린다.
 
     Raises:
         JibsaError: 없는 단지면 NOT_FOUND, 고를 수 없는 평형이면 INVALID_ARGUMENT, 그 밖의 GraphQL 에러면 UPSTREAM_ERROR.
@@ -840,15 +999,27 @@ def get_price_trend(
             exclusive_use_area=DaangnExclusiveUseAreaModel(min=group, max=group + 1) if group is not None else None,
         )
     )
-    node = unwrap_graphql(response, response.data.node if response.data else None, '시세 그래프')
+    node = unwrap_graphql(response, response.data.node if response.data else None, '시세 그래프', conditions=False)
+    # 그래프를 주지 않았으면(null) 거래가 있는 달이 0개인 것이 아니라 모름이다. 그래프가 왔는데 거래 달이 없으면 points 는 []
+    # 점 목록(averagePoints)이 null 인 것도 그래프를 주지 않은 것과 같은 모름이다 ([] 는 거래 달 0개)
+    chart = node.price_chart
+    no_graph = chart is None or chart.average_points is None
+    chart_points = (chart.average_points if chart else None) or []
 
     monthly: dict[int, tuple[float, int]] = {}
-    for point in node.price_chart.average_points if node.price_chart else []:
+    no_month = 0
+    for point in chart_points:
         average = won_to_manwon(point.average_amount)
         # 평균 0 은 실제 거래가가 아니라 빈 값으로 본다. 넣으면 변화율이 0 으로 나뉜다
         # (실제 응답에서는 아직 보지 못한 방어 코드)
         if average and point.transaction_count:
-            monthly[_month_index(point.year_month)] = (average, point.transaction_count)
+            year_month = point.year_month
+            # 연월이 없거나 꼴이 틀린 점(null·''·'-' 등)은 어느 달인지 몰라 뺀다 (int 로 읽다 명령 전체가 실패하지 않게).
+            # 당근 웹 시세 그래프도 달을 모르는 점은 그리지 못할 것이다 (jibsa 가 웹으로 확인하지는 않았다)
+            if year_month is None or not is_year_month(year_month):
+                no_month += 1
+                continue
+            monthly[_month_index(year_month)] = (average, point.transaction_count)
 
     # 실거래 달은 한국 날짜라 컴퓨터 시간대와 상관없이 한국 시간으로 센다 (UTC 컴퓨터는 매달 1일 0~9시에 지난달이 된다)
     today = today or datetime.now(KST).date()
@@ -871,7 +1042,9 @@ def get_price_trend(
         # 단지 전체를 물었는데 웹 기본값으로 평형 하나만 본 것이라 [범위] 다 (search listings --university 의 기본 종류와 같다)
         notes.append(note('범위', f'평형을 정하지 않아 당근 웹처럼 대표 평형({chosen})으로 봅니다. 다른 평형은 {option} 으로 주세요'))
     summary = None
-    if len(shown) < 2:
+    if no_graph:
+        notes.append(note('실패', f'당근이 이 평형의 시세 그래프 자료를 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
+    elif len(shown) < 2:
         # '전체' 탭은 15년(PRICE_TREND_PERIODS)이라 '최근 전체 동안' 이 되지 않게 기간을 풀어 쓴다
         span = f'전체 기간(최근 {PRICE_TREND_PERIODS[period] // 12}년)' if period == '전체' else f'최근 {period}'
         notes.append(note(
@@ -888,7 +1061,7 @@ def get_price_trend(
             end_month=_month_label(last_index),
             end_average_manwon=end[0],
             months=last_index - first,
-            change_percent=round((end[0] / start[0] - 1) * 100, 1),
+            change_percent=_web_change_percent(start[0], end[0]),
             change_manwon=round(end[0] - start[0], 4),
         )
         if min(start[1], end[1]) < PRICE_TREND_FEW_TRANSACTIONS:
@@ -901,6 +1074,8 @@ def get_price_trend(
         notes.append(f'마지막 거래가 {_month_label(shown[-1])} 에 있어 최근 시세와 다를 수 있습니다')
     if shown:
         notes.append('월별 평균은 그 달 실거래 평균이라 거래가 적은 달(transaction_count)은 튈 수 있습니다')
+    if no_month:
+        notes.append(note('제외', f'당근이 연월을 주지 않은 시세 점 {no_month}개는 뺐습니다'))
     return DaangnPriceTrendResult(
         complex_id=str(complex_id),
         trade_type=trade_type,
@@ -909,10 +1084,10 @@ def get_price_trend(
         period=cast(Literal['1년', '3년', '전체'], period),
         recent_average_manwon=recent[0] if recent else None,
         recent_transactions=recent[1] if recent else None,
-        kb_sale=kb_sale_of(node.price_chart),
-        total_transactions=sum(monthly[index][1] for index in shown),
+        kb_sale=kb_sale_of(chart),
+        total_transactions=sum(monthly[index][1] for index in shown) if not no_graph else None,
         summary=summary,
-        points=points,
+        points=points if not no_graph else None,
         url=complex_url(complex_id),
         notes=notes,
     )
@@ -930,7 +1105,8 @@ def get_listing_real_prices(
     """매물이 있는 건물(단지)의 비슷한 면적 실거래가를 최근 계약 순으로 모은다 (`_collect_transactions`).
 
     `years` 는 `get_real_prices` 와 같다. 당근이 매물의 건물을 찾은 경우에만 거래가 온다. 오피스텔·아파트는 대개 있고 빌라·주택은 대부분
-    없어, 없으면 그 이유를 `notes` 로 알린다. 거래가 기간 앞이나 다른 유형(전세·월세)에만 있어 비었으면 그렇게 알린다.
+    없어, 없으면 그 이유를 `notes` 로 알린다. 거래가 기간 앞이나 다른 유형(전세·월세)에만 있어 비었으면 그렇게 알린다. 당근이 거래
+    연결(또는 그 `edges`)을 null 로 주면 모름이라 `transactions`·`has_more` 를 null 로 내고 알린다 (`get_real_prices` 와 같다).
 
     Raises:
         ListingUnavailableError: 없거나 지워진 매물.
@@ -955,6 +1131,7 @@ def get_listing_real_prices(
             response,
             response.data.article_by_original_article_id if response.data else None,
             '매물 실거래가',
+            conditions=False,
         )
 
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
@@ -968,7 +1145,11 @@ def get_listing_real_prices(
     # '최근 전월세 실거래 N건 중 전세 0건' [참고] 가 이미 알리는데, 같은 결과에 '없습니다' 가 붙으면 에이전트가 없다고 전한다
     # (2026-11-11 리뷰). 기간 앞이나 다른 유형에 거래가 있으면 그 까닭을 알리고(`_empty_result_note`), 거래를 하나도 받지
     # 못했을 때만 건물을 찾지 못한 경우를 알린다
-    if (empty := _empty_result_note(found, trade_type, since)) is not None:
+    # 당근이 거래 목록을 주지 않았으면(연결이나 edges 가 null) 모름이라 transactions·has_more 를 null 로 낸다. 연결이 있고 비어
+    # 있을 때(edges [])의 아래 '없습니다' 안내와 다르다
+    if found.unknown:
+        notes.append(note('실패', f'당근이 이 건물의 {trade_type} 거래 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
+    elif (empty := _empty_result_note(found, trade_type, since)) is not None:
         notes.append(empty)
     elif not found.items and not found.has_more:
         notes.append(
@@ -979,9 +1160,9 @@ def get_listing_real_prices(
         listing_id=str(original_id),
         trade_type=trade_type,
         returned=len(found.items),
-        has_more=found.has_more,
+        has_more=None if found.unknown else found.has_more,
         since=since,
-        transactions=[transaction_to_real_price(node, trade_type) for node in found.items],
+        transactions=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
         url=article_url(original_id),
         notes=notes,
     )
@@ -1061,7 +1242,7 @@ class DaangnRegionRealPrice(BaseModel):
     ] = None
     contract_type: Annotated[
         str | None,
-        Field(description="계약 종류 (전월세만): '신규' / '재계약' (당근 웹 카드 배지 '갱신' 은 재계약이다). 당근이 주지 않으면 null. 갱신요구권 사용 여부는 지역 피드에 없다")
+        Field(description="계약 종류 (전월세만): '신규' / '재계약' (당근 웹 카드 배지 '갱신' 은 재계약이다). 당근이 주지 않으면 null, 표에 없는 코드는 원래 코드. 갱신요구권 사용 여부는 지역 피드에 없다")
     ] = None
     is_new_high: Annotated[
         bool | None,
@@ -1213,10 +1394,7 @@ def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, n
         deposit_manwon=None if buy else realsale.deposit,
         rent_manwon=realsale.month_rent_fee if trade_type == '월세' else None,
         cancelled=realsale.cancel,
-        deal_type=(
-            {'DIRECT': '직거래', 'BROKERED': '중개거래'}.get(realsale.transaction_type or '', realsale.transaction_type)
-            if buy else None
-        ),
+        deal_type=code_label(DEAL_TYPE_LABELS, realsale.transaction_type) if buy else None,
         contract_type=None if buy else contract_type_of(realsale.lease_contract_type),
         is_new_high=(bool(insight and insight.is_new_high) and not cancelled) if buy else None,
         previous_high_manwon=insight.previous_max_price if buy and insight else None,
@@ -1242,7 +1420,7 @@ def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> 
                 new_high_input=DaangnRealsaleSummaryInputModel(region_id=region_id),
             )
         )
-        data = unwrap_graphql(response, response.data, '실거래 요약')
+        data = unwrap_graphql(response, response.data, '실거래 요약', conditions=False)
     except OPTIONAL_LOOKUP_ERRORS as exc:
         logger.warning('daangn realsale summary failed (%s); continuing without summary', exc)
         notes.append(note('실패', partial_failure_note(exc, '실거래 요약', '공개일 요약을')))
@@ -1266,8 +1444,20 @@ def _realsale_matches(item: DaangnRealsaleFeedItemModel, trade_type: str) -> boo
         return False
     if trade_type == '매매':
         return True
-    monthly = (realsale.month_rent_fee or 0) > 0
-    return monthly if trade_type == '월세' else not monthly
+    return _is_rent_type(realsale.month_rent_fee, trade_type)
+
+
+def _region_site_note(region: DaangnRealsaleRegion, trade_type: str, *, new_high: bool, previous_days: bool) -> str:
+    """지역 실거래를 `--limit` 을 늘려도 더 받지 못할 때 안내 끝에 붙일 말 (`_collect_pages` 의 `site`).
+
+    당근 웹 지역 실거래 화면은 매매(신고가는 가장 최근 공개일)만 보여 주고 전월세와 이전 공개일 신고가(`--previous-days`)는 웹에
+    없다 (개발 가이드 지역 실거래 절). 웹에서 볼 수 있는 조회만 웹으로 보내고, 웹에 없는 조회는 보낼 곳이 없다. 구는 동 이름으로
+    좁혀 다시 조회하면 더 받는다.
+    """
+    narrow = region.level == '구'
+    if trade_type == '매매' and not (new_high and previous_days):
+        return ('동 이름으로 좁혀 다시 조회하거나 ' if narrow else '') + _site_note('https://realty.daangn.com/')
+    return '동 이름으로 좁혀 다시 조회하세요' if narrow else '이 조건의 남은 거래는 당근 웹에도 없어 더 받을 수 없습니다'
 
 
 def get_region_real_prices(
@@ -1312,7 +1502,7 @@ def get_region_real_prices(
                 )
             )
             return unwrap_graphql(
-                response, response.data.realsale_new_high_feed if response.data else None, '신고가'
+                response, response.data.realsale_new_high_feed if response.data else None, '신고가', conditions=False
             )
         feed_response = client.run_request_realsale_feed(
             DaangnRealsaleFeedRequestPayloadModel(
@@ -1325,7 +1515,7 @@ def get_region_real_prices(
                 ),
             )
         )
-        return unwrap_graphql(feed_response, feed_response.data.realsale_feed if feed_response.data else None, '지역 실거래')
+        return unwrap_graphql(feed_response, feed_response.data.realsale_feed if feed_response.data else None, '지역 실거래', conditions=False)
 
     def page(count: int, cursor: str | None) -> tuple[list[DaangnRealsaleFeedItemModel], DaangnPageInfoModel | None]:
         feed = fetch(count, cursor)
@@ -1333,7 +1523,8 @@ def get_region_real_prices(
 
     found = _collect_pages(
         page, lambda item: _realsale_matches(item, trade_type), trade_type, limit,
-        url='https://realty.daangn.com/', remaining='추가 거래가 남아 있습니다',
+        site=_region_site_note(region, trade_type, new_high=new_high, previous_days=previous_days),
+        remaining='추가 거래가 남아 있습니다',
     )
     collected = found.items
     notes += found.notes

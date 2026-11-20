@@ -229,11 +229,12 @@ def resolve_places(
     def unpicked(place: DabangPlace, count: int) -> DabangPlace:
         """`only` 와 다른 종류의 후보가 여럿일 때 돌려주는 첫 후보에는 사용자가 준 이름을 붙인다. 부른 쪽 에러 문구에 고르지도
         않은 첫 후보 이름('역 이름이 아닙니다: 성수동1가')이 아니라 준 이름('성수동')이 찍히게 한다."""
-        # 리뷰 오탐 (2026-11-14): 이름을 바꾼 place 가 조회·출력에 쓰이는 일은 없다. only 를 주는 네 곳(neighborhood·
-        # popular-listings·_dong_scope·station-prices)이 모두 돌려받은 종류를 바로 INVALID_ARGUMENT 로 거절한다. 종류 에러를 여기서
-        # 내면 부른 쪽마다 다른 문구·hint(동네정보는 역 둘레 안내, 범위는 범위 hint)를 잃는다. 종류 검사(동이면서 gid 있음)가
-        # resolve_dong 과 _dong_scope 에 한 줄씩 있는 것도 같은 이유로 둔다: 거절 문구·hint 가 호출마다 달라 합치려면 문구를 인자로
-        # 받는 함수가 되고 조건 한 줄만 아낀다
+        # 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): 이름을 바꾼 place 가 조회·출력에 쓰이는 일은 없다. only 를 주는 곳은
+        # resolve_dong·_dong_scope·CLI station-prices 셋이고 모두 돌려받은 종류를 바로 INVALID_ARGUMENT 로 거절한다 (resolve_dong
+        # 을 쓰는 명령은 neighborhood·popular-listings·hot-places·search schools 넷). 종류 에러를 여기서 내면 부른 쪽마다 다른
+        # 문구·hint(동네정보는 역 둘레 안내, 범위는 범위 hint)를 잃는다. 종류 검사(동이면서 gid 있음)가 resolve_dong 과
+        # _dong_scope 에 한 줄씩 있는 것도 같은 이유로 둔다: 거절 문구·hint 가 호출마다 달라 합치려면 문구를 인자로 받는 함수가
+        # 되고 조건 한 줄만 아낀다
         return place.model_copy(update={'name': text}) if count > 1 else place
 
     if last.endswith('역') and stations:
