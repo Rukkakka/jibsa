@@ -1,7 +1,10 @@
+// 2026-11-20: 당근 리뷰 지적을 이 워크플로로 고친 뒤 /review-diff 에서 17건이 나왔다. 대부분 주 에이전트가 쓴 지시서의 빈틈이었고,
+// 작업자가 보고에 적은 경고를 흘려들인 것도 있었다. 그래서 띄우기 전 지시서 검사 결과(briefCheck)를 필수로 하고,
+// 작업자 보고에 지시대로 했지만 걸리는 점을 적는 칸(concerns)을 따로 둔다
 export const meta = {
   name: 'implement-bundles',
-  description: '사용자가 허락한 구현 계획의 묶음을 coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
-  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
+  description: '사용자가 허락한 구현 계획의 묶음을 지시서 검사 결과(briefCheck)가 있을 때만 coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
+  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), briefCheck: 주 에이전트가 brief-checker 결과를 지적마다 처리한 기록 파일의 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
     { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지, 소스끼리는 동시에' },
@@ -67,6 +70,11 @@ const baseline = typeof a.baseline === 'string' ? a.baseline.trim() : ''
 if (!baseline) {
   problems.push('고치기 전 출력을 저장한 경로(baseline)가 없다. 바뀔 명령과 바뀌면 안 되는 명령의 지금 출력을 scratchpad 에 먼저 저장하고 그 경로를 넘긴다')
 }
+// 지시서 검사(brief-checker)를 먼저 돌렸는지도 같다. 워크플로는 파일을 열 수 없어 경로가 있는지만 본다
+const briefCheck = typeof a.briefCheck === 'string' ? a.briefCheck.trim() : ''
+if (!briefCheck) {
+  problems.push('띄우기 전 지시서 검사 결과(briefCheck)가 없다. brief-checker 를 먼저 돌리고, 지적마다 지시서를 고쳤거나 그대로 둔 이유를 적은 scratchpad 파일 경로를 넘긴다 (docs/development/agents.md "띄우기 전 지시서 검사")')
+}
 if (a.docs != null && !(typeof a.docs === 'object' && typeof a.docs.brief === 'string' && a.docs.brief.trim())) {
   problems.push('docs 를 넘겼는데 지시서(docs.brief)가 비었다')
 }
@@ -91,7 +99,7 @@ if (problems.length) {
     started: false,
     reason: 'bad-bundles',
     problems,
-    next: 'problems 를 고쳐서 다시 부른다. 동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스)·공통 묶음(여러 소스)으로 뺀다. baseline 이 없으면 고치기 전 출력을 먼저 저장한다.',
+    next: 'problems 를 고쳐서 다시 부른다. 동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스)·공통 묶음(여러 소스)으로 뺀다. baseline 이 없으면 고치기 전 출력을 먼저 저장하고, briefCheck 가 없으면 brief-checker 를 돌려 지적을 처리한 기록을 남긴다.',
   }
 }
 
@@ -122,9 +130,14 @@ const REPORT = {
       items: { type: 'object', properties: { what: { type: 'string', description: '지시서는 무엇이었고 실제로는 어떻게 했는지' }, why: { type: 'string' } }, required: ['what', 'why'] },
     },
     notDone: { type: 'array', items: { type: 'object', properties: { what: { type: 'string' }, why: { type: 'string' } }, required: ['what', 'why'] } },
+    concerns: {
+      type: 'array',
+      description: '지시대로 했지만 걸리는 점. 지시서의 사실·기준이 틀렸거나 더 나은 방법이 있어 보이는 곳, 지시서가 정하지 않은 경우(빈 글자·순서·상한·실패 순서 등)에서 동작이 의심되는 곳을 적는다. 지시서를 따랐어도 적는다 (deviations 는 지시서와 다르게 한 것, notDone 은 하지 않은 것이다). "영향 없다" 같은 판단을 적으면 근거(돌린 명령·grep 결과)를 함께 적는다. 없으면 빈 목록',
+      items: { type: 'object', properties: { what: { type: 'string', description: '무엇이 걸리는지 (파일:줄)' }, why: { type: 'string', description: '왜 걸리는지, 어떤 입력에서 무엇이 나오는지' }, suggestion: { type: 'string', description: '어떻게 하면 좋을지' } }, required: ['what', 'why'] },
+    },
     othersToTouch: { type: 'array', items: { type: 'string' }, description: '네 files 밖이라 고치지 않은 곳: "파일 — 고칠 내용" (문서, CHANGELOG, 감시 목록 GROUPS 등)' },
   },
-  required: ['changed', 'checks', 'selfChecks', 'deviations', 'notDone', 'othersToTouch'],
+  required: ['changed', 'checks', 'selfChecks', 'deviations', 'notDone', 'concerns', 'othersToTouch'],
 }
 
 const allFiles = [...new Set(bundles.flatMap(b => b.files.map(norm)))]
@@ -140,6 +153,7 @@ const coderPrompt = b => [
   `다른 묶음이 동시에 다른 파일을 고칠 수 있다: ${allFiles.filter(f => !b.files.map(norm).includes(f)).join(', ') || '없음'}. ruff·mypy 오류가 네 파일 밖에서 나면 고치지 말고 보고에 적는다.`,
   b.first ? '같은 소스의 다른 묶음이 이 묶음이 만드는 함수·상수를 쓴다. 지시서에 정한 이름·인자·뜻을 바꾸지 않는다.' : '',
   '지시서대로 할 수 없거나 다르게 하는 편이 맞아 보이면 docs/development/agents.md 의 "지시서와 다르게 할 때" 문단을 따른다. 그 문단의 작은 차이는 deviations 에, 하지 않은 것은 notDone 에 적는다.',
+  '지시대로 했지만 걸리는 점(지시서가 틀렸거나 정하지 않은 경우의 의심)은 concerns 에 적는다. 주 에이전트가 하나씩 답한다.',
   a.workerLiveChecks !== true
     ? '실제 조회(.venv/bin/jibsa)는 하지 않는다. 주 에이전트가 묶음을 띄우기 전에 남긴 출력과 고친 뒤 출력을 비교한다 (docs/development/agents.md "검증 분담"). 검증은 ruff·mypy·바꾼 부분 테스트만 한다.'
     : b.source === 'common'
@@ -216,6 +230,7 @@ if (commonOk) {
 
 const list = bundles.map(b => results[b.name])
 const othersToTouch = list.flatMap(r => (r.report ? r.report.othersToTouch || [] : []).map(t => `${t} (묶음 ${r.name})`))
+const concerns = list.flatMap(r => (r.report ? r.report.concerns || [] : []).map(c => `${r.name} — ${c.what} (${c.why})`))
 let docsReport = null
 if (docs && lanesOk) {
   phase('문서')
@@ -227,7 +242,7 @@ if (docs && lanesOk) {
     docs.brief,
     '',
     '구현 보고:',
-    ...list.map(r => `- ${r.name} (${r.source}): ${(r.report.changed || []).map(c => `${c.file} — ${c.what}`).join('; ')}${(r.report.deviations || []).length ? ` (지시서와 다르게 한 것: ${r.report.deviations.map(d => `${d.what} — 이유: ${d.why}`).join('; ')})` : ''}`),
+    ...list.map(r => `- ${r.name} (${r.source}): ${(r.report.changed || []).map(c => `${c.file} — ${c.what}`).join('; ')}${(r.report.deviations || []).length ? ` (지시서와 다르게 한 것: ${r.report.deviations.map(d => `${d.what} — 이유: ${d.why}`).join('; ')})` : ''}${(r.report.concerns || []).length ? ` (걸리는 점: ${r.report.concerns.map(c => `${c.what} — ${c.why}`).join('; ')})` : ''}`),
     '',
     '묶음들이 손대지 않고 넘긴 곳:',
     ...(othersToTouch.length ? othersToTouch.map(t => `- ${t}`) : ['- 없음']),
@@ -248,18 +263,21 @@ if (docs && lanesOk) {
 }
 
 const done = list.filter(r => r.status === 'done').length
-const needsAttention = list.filter(r => r.report && (r.report.notDone || []).length).map(r => r.name)
-if (needsAttention.length) log(`못 한 것이 남은 묶음: ${needsAttention.join(', ')}`)
+const needsAttention = list.filter(r => r.report && ((r.report.notDone || []).length || (r.report.concerns || []).length)).map(r => r.name)
+if (needsAttention.length) log(`못 한 것이나 걸리는 점이 남은 묶음: ${needsAttention.join(', ')}`)
+if (concerns.length) log(`작업자가 적은 걸리는 점 ${concerns.length}건 (주 에이전트가 하나씩 답한다)`)
 const deviated = list.filter(r => r.report && (r.report.deviations || []).length).map(r => r.name)
 if (deviated.length) log(`지시서와 다르게 한 것이 있는 묶음: ${deviated.join(', ')} (받아들일지 주 에이전트가 정해 사용자에게 알린다)`)
 if (!docs && othersToTouch.length) log(`문서 단계가 없어 주 에이전트가 처리할 곳 ${othersToTouch.length}건`)
-log(`묶음 ${done}/${list.length} 완료${docs ? `, 문서 ${docsReport ? '완료' : '안 함'}` : ''}. 최종 검증은 주 에이전트가 한다 (지시서 항목 대조, 같은 명령의 지금 출력을 ${baseline} 와 비교)`)
+log(`묶음 ${done}/${list.length} 완료${docs ? `, 문서 ${docsReport ? '완료' : '안 함'}` : ''}. 최종 검증은 주 에이전트가 한다 (지시서 항목 대조, 같은 명령의 지금 출력을 ${baseline} 와 비교, 지시서 검사 기록 ${briefCheck})`)
 return {
   started: true,
   baseline,
+  briefCheck,
   allReturned: done === list.length && (!docs || Boolean(docsReport)),
   needsAttention,
   deviated,
+  concerns,
   othersToTouch,
   bundles: list,
   docs: docsReport,

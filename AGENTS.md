@@ -63,7 +63,7 @@ CLI 직접 조회나 원본 응답으로 확인한다.
 - [code-style.md](docs/development/code-style.md) — 문자열, import 순서, pydantic 선언, 타입 힌트, docstring, 테스트 코드 형식
 - [workflow.md](docs/development/workflow.md) — 이슈 → 브랜치 → 커밋 → PR 절차
 - [release.md](docs/development/release.md) — 버전 번호 규칙, CHANGELOG 쓰는 법, 릴리스·태그·GitHub Release 절차
-- [agents.md](docs/development/agents.md) — 서브에이전트에 일을 나눠 맡기는 방식 (나눌지 정하기, 역할, 지시서, 검증 분담, 동시 실행, 코드 리뷰 절차)
+- [agents.md](docs/development/agents.md) — 서브에이전트에 일을 나눠 맡기는 방식 (나눌지 정하기, 역할, 지시서, 띄우기 전 지시서 검사, 검증 분담, 동시 실행, 코드 리뷰 절차)
 - [review-checklist.md](docs/development/review-checklist.md) — 코드 리뷰 관점별로 지난 리뷰에서 나온 버그 패턴과 지적하지 말 것 (고친 사람도 끝내기 전에 대 본다)
 
 소스별 개발 가이드 (`docs/development/providers/`) — 그 소스에만 있는 구현·예외
