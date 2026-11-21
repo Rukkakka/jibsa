@@ -129,7 +129,7 @@ class ZigbangRealPrice(BaseModel):
     ] = None
     dong: Annotated[
         str | None,
-        Field(description="동 ('132' 처럼 '동' 없이 직방 글자 그대로, 매매만). 직방이 주지 않으면 null. 전월세는 직방이 동을 주지 않아 키가 없다")
+        Field(description="동 ('132' 처럼 '동' 없이 직방 글자 그대로, 모든 거래). 직방이 주지 않으면 null (지금까지 본 전월세는 늘 null)")
     ] = None
     registered: Annotated[
         bool | None,
@@ -172,10 +172,10 @@ class ZigbangRealPrice(BaseModel):
             fields |= {'category', 'cancelled', 'presale'}
         if self.presale is None:
             fields.add('presale')
-        # 동·등기·평당가는 직방이 매매에만 주고, 신고가·신저가는 월세에는 주지 않는다. 전세가율은 전세에 값이 있을 때만 키를 둔다.
+        # 등기·평당가는 직방이 매매에만 주고(동은 웹이 전월세에도 그려 모든 거래에 낸다), 신고가·신저가는 월세에는 주지 않는다. 전세가율은 전세에 값이 있을 때만 키를 둔다.
         # 분양가 대비 차액은 분양권이면 값이 없어도 모름(null)으로 키를 두고, 그 밖에는 값이 있을 때만 둔다
         if self.trade_type != '매매':
-            fields |= {'dong', 'registered', 'price_per_pyeong_manwon'}
+            fields |= {'registered', 'price_per_pyeong_manwon'}
         if self.trade_type == '월세':
             fields |= {'new_high', 'new_low'}
         if self.trade_type != '전세' or self.jeonse_ratio is None:

@@ -942,11 +942,13 @@ def test_real_price_sale_registered_null_without_mark() -> None:
 
 def test_real_price_monthly_rent_has_no_sale_only_keys() -> None:
     rent = _real_prices([_tx('rent', rtPriceRent=10, dongName='000', pynPrice=1)], '월세')['transactions'][0]
-    for key in ('dong', 'registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
+    for key in ('registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
         assert key not in rent
+    # 동은 웹이 전월세에도 그려 모든 거래에 낸다 (직방이 주지 않으면 null)
+    assert rent['dong'] == '000'
     charter = _real_prices([_tx('charter')], '전세')['transactions'][0]
     assert charter['new_high'] is False
-    assert 'dong' not in charter
+    assert charter['dong'] is None
     assert 'registered' not in charter
 
 
