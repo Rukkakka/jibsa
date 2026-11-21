@@ -9,7 +9,7 @@
 | 명령 | 하는 일 | 무엇을 넣나 | 다음에 쓰는 곳 |
 | --- | --- | --- | --- |
 | `search locations` | 지역·단지 후보 찾기 | 지역·역·학교·단지 이름 | `search listings`, `complex`, `search listings --complex` |
-| `search complexes` | 역 주변 아파트 단지 목록 | 역 이름 | `complex`, `search listings --complex` |
+| `search complexes` | 역·학교·동·구 주변 아파트 단지 목록 | 역·학교·동·구 이름 | `complex`, `search listings --complex` |
 | `search listings room` | 원룸·빌라·오피스텔 매물 찾기 | 지역 또는 좌표 | `listing` |
 | `search listings apt` | 아파트 매물 찾기 | 동·구 (역·학교·좌표는 그 위치가 속한 동) | `complex`, `search listings --complex`, `listing`, `catalog` |
 | `search listings store` | 상가·사무실 매물 찾기 | 지역 또는 좌표 | `listing` |
@@ -26,7 +26,7 @@
 지역에서 집 찾기   search listings room / apt / store / stay → listing
 단지 골라 집 찾기  search locations → complex → search listings --complex → listing
                             └→ real-price (아파트)
-역 주변 아파트     search complexes → complex / search listings --complex → listing
+역·학교·동 단지    search complexes → complex / search listings --complex → listing
 아파트 묶음 가격   search listings apt / --complex (is_price_range: true) → catalog
 ```
 
@@ -66,7 +66,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 
 **주의사항**
 
-`results[]`는 지역 후보, `complexes[]`는 아파트·오피스텔 후보다. `complexes[].complex_id`를 `complex`·`search listings --complex`에 넘긴다. 이름·별칭이 비슷한 다른 단지가 섞일 수 있으므로 주소·세대수로 고른다. `--limit`은 두 후보 목록에 각각 적용한다. 역 주변 아파트 단지 목록은 [`search complexes`](#11-search-complexes--역-주변-아파트-단지)로 본다.
+`results[]`는 지역 후보, `complexes[]`는 아파트·오피스텔 후보다. `complexes[].complex_id`를 `complex`·`search listings --complex`에 넘긴다. 이름·별칭이 비슷한 다른 단지가 섞일 수 있으므로 주소·세대수로 고른다. `--limit`은 두 후보 목록에 각각 적용한다. 역·학교·동·구 주변 아파트 단지 목록은 [`search complexes`](#11-search-complexes--역학교동구-주변-아파트-단지)로 본다.
 
 ## 2. `search listings room` — 원룸·빌라·오피스텔 매물 찾기
 
@@ -115,7 +115,7 @@ jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-
 
 **오류와 대응**
 
-옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다. 같은 이름의 동·구가 여러 곳이면(신사동 → 은평구·강남구) 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다. 직방은 전체 주소(`서울특별시 강남구 신사동`)로는 동을 찾지 못하니 `강남구 신사동` 처럼 구 이름을 앞에 붙여 다시 찾는다. 같은 이름의 역·학교(양평역 → 영등포구·양평군)도 첫 곳으로 찾지 않고 `REGION_AMBIGUOUS` 다. `hint` 대로 구 이름(`영등포구 양평역`)이나, 후보가 모두 같은 구면 동 이름(`창천동 신촌역`)을 앞에 붙여 다시 찾는다. 같은 이름의 구(중구)는 시·도 이름(`서울특별시 중구`)을 붙인다. 붙인 낱말이 주소에 든 후보가 하나뿐이면 그 후보로 찾고, `hint` 의 예는 늘 후보 하나로 가려지는 검색어다. 목록 옵션에 없는 값이나 다른 소스의 옵션을 옮겨 쓰면(`--option 반려동물가능`, `--facility 엘리베이터`, `--bathroom 1개`) 에러 `hint` 가 맞는 옵션(`--condition 반려동물`, `--condition 엘리베이터`, `--bathroom 1`)이나 직방에 그 조건이 없다는 것(`--deal`, `--sort`)을 알려 준다. `--next` 가 다른 지역·조건의 값이면 `INVALID_ARGUMENT` 다.
+옵션 충돌·범위 위반·지원하지 않는 유형/거래 조합은 `INVALID_ARGUMENT`. 지역 미발견은 `REGION_NOT_FOUND`. 직방은 행정동(`역삼1동`)을 모르므로 행정동 이름이면 힌트에 법정동 이름(`역삼동`)을 알려 준다. 같은 이름의 동·구가 여러 곳이면(신사동 → 은평구·강남구) 고르지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다. 직방은 전체 주소(`서울특별시 강남구 신사동`)로는 동을 찾지 못하니 `강남구 신사동` 처럼 구 이름을 앞에 붙여 다시 찾는다. 같은 이름의 역·학교(양평역 → 영등포구·양평군)도 첫 곳으로 찾지 않고 `REGION_AMBIGUOUS` 다. `hint` 대로 구 이름(`영등포구 양평역`)이나, 후보가 모두 같은 구면 동 이름(`창천동 신촌역`)을 앞에 붙여 다시 찾는다. 같은 이름의 구(중구)는 시·도 이름(`서울특별시 중구`)을 붙인다. 붙인 낱말이 주소에 든 후보가 하나뿐이면 그 후보로 찾고, `hint` 의 예는 늘 후보 하나로 가려지는 검색어다. 목록 옵션에 없는 값이나 다른 소스의 옵션을 옮겨 쓰면(`--option 반려동물가능`, `--facility 엘리베이터`, `--bathroom 1개`) 에러 `hint` 가 맞는 옵션(`--condition 반려동물`, `--condition 엘리베이터`, `--bathroom 1`)이나 직방에 그 조건이 없다는 것(`--deal`, `--sort`)을 알려 준다. `--next` 가 다른 지역·조건의 값이면 `INVALID_ARGUMENT` 다. 직방이 고른 동·구·역·학교의 좌표를 주지 않으면 그 좌표가 검색 중심이라, 같은 이름의 다른 후보로 넘어가지 않고 `UPSTREAM_ERROR`(직방이 '…' 의 좌표를 주지 않아 검색 중심으로 쓸 수 없습니다)다. `hint` 가 같은 곳의 다른 이름(동·역 이름)으로 찾으라고 알린다.
 
 **주의사항**
 
@@ -171,7 +171,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 
 **반환값**
 
-`region`(찾은 동·구), `local_code`(조회한 직방 지역 코드 하나), `total`, `returned`, `has_more`(받지 않은 매물이 남았는지), `next`(더 있을 때만), `listings`를 준다. 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 직방 목록 순서로 앞 결과 다음부터 받는다. 거리(`distance_km`)는 없다.
+`region`(찾은 동·구. 이름으로 찾았는데 직방이 좌표를 주지 않았으면 `lat`·`lng` 가 `null`), `local_code`(조회한 직방 지역 코드 하나), `total`, `returned`, `has_more`(받지 않은 매물이 남았는지), `next`(더 있을 때만), `listings`를 준다. 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 직방 목록 순서로 앞 결과 다음부터 받는다. 거리(`distance_km`)는 없다.
 
 매물 한 줄은 같은 호·거래 유형을 올린 여러 매물을 직방 웹 카드처럼 묶은 것이다 (`listing_count` 는 묶인 매물 수). `listing_ids` 에 그중 `listing` 으로 상세를 볼 수 있는 ID 가 모두 오고, `id` 는 그 맨 앞이다 (직방이 준 순서 그대로라, 직방 웹 카드가 대표로 보여 주는 매물이다. 제휴 매물이면 `coalition-123`). 줄의 제목(`title`)·층(`floor`)·`listing_kind` 는 `id` 매물의 값이다. `url` 은 직방 웹 카드를 누르면 가는 그 호의 묶음 화면(중개사별 매물 목록)이다. 묶인 매물끼리 가격이 다르면 `is_price_range: true` 이고, 이때 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다. 매물별 가격은 `catalog_id` 를 [`catalog`](#10-catalog--아파트-같은-호-묶음의-매물-전부)에 넘겨 한 번에 본다 (`listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). 직방이 호 ID 를 주지 않은 줄은 `catalog_id` 가 `null` 이고 `url` 은 `id` 매물의 직방 웹 페이지다. 이때 묶음은 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 하나씩 본다.
 
@@ -181,11 +181,11 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 
 **오류와 대응**
 
-지원하지 않는 필터·면적 범위 위반은 `INVALID_ARGUMENT`. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 직방이 따로 보여 주는 지역 여럿에 걸리는 이름도 합치지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다: 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동 → 성수동1가·성수동2가)과 구가 있는 시(성남시 → 분당구·수정구·중원구, '시' 를 뺀 '성남' 도 같다). `hint` 대로 `성수동1가`·`성남시 분당구` 처럼 하나를 골라 다시 찾는다. 시·도(서울·경기도)와 행정동처럼 동·구 목록이 없는 이름은 `REGION_NOT_FOUND` 이니 구·동 이름으로 찾는다.
+지원하지 않는 필터·면적 범위 위반은 `INVALID_ARGUMENT`. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 직방이 따로 보여 주는 지역 여럿에 걸리는 이름도 합치지 않고 `REGION_AMBIGUOUS` 로 후보(`candidates`)를 알린다: 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동 → 성수동1가·성수동2가)과 구가 있는 시(성남시 → 분당구·수정구·중원구, '시' 를 뺀 '성남' 도 같다). `hint` 대로 `성수동1가`·`성남시 분당구` 처럼 하나를 골라 다시 찾는다. 시·도(서울·경기도)와 행정동처럼 동·구 목록이 없는 이름은 `REGION_NOT_FOUND` 이니 구·동 이름으로 찾는다 (행정동 이름이면 `hint` 가 법정동 이름으로 찾으라고 알린다). 동·구 이름은 법정동 코드로 찾고 좌표를 쓰지 않아 직방이 좌표를 주지 않은 동·구도 찾는다 (`region` 의 `lat`·`lng` 만 `null`). 역·학교 이름은 그 좌표로 위치가 속한 동을 찾으므로 직방이 좌표를 주지 않으면 `UPSTREAM_ERROR` 이고 `hint` 가 같은 곳의 다른 이름(동 이름)으로 찾으라고 알린다. `--lat/--lng` 는 준 좌표를 쓴다.
 
 **주의사항**
 
-동·구 이름이면 그 동·구 하나의 직방 지역 목록을 직방 순서 그대로 준다 (빠짐 없음, `total` 은 그 목록의 수, 거리 없음). 직방 웹 기본 화면(신규 분양 포함)처럼 지역 목록 맨 앞에 신규분양 매물이 섞여 올 수 있고, 이 매물도 `total`·`--limit`·`--next` 자리에 센다. 신규분양을 빼고 보려면 `--no-new-sale` 을 준다: 신규분양 매물(`listing_kind: "신규분양"`)이 빠지고 `total` 도 그만큼 줄며, 이어 받을 때(`--next`)도 같은 옵션을 줘야 한다 (다르면 `INVALID_ARGUMENT`). 동·구 지역 목록에만 있는 옵션이라 단지 매물(`search listings --complex`)에는 없다 (직방 단지 목록이 이 값을 무시한다). 역·학교 이름(동·구가 아닌 이름)이나 좌표를 주면 직방 웹 아파트 지도의 '○○동 주변 매물보기' 처럼 그 위치가 속한 동의 목록을 준다 (강남역 → 역삼동). 그 위치에서 가까운 순이 아니고 이웃 동은 빠지며, 어느 동을 찾았는지 `notes` 의 `[범위]` 로 알린다. 역 주변 아파트 단지는 [`search complexes`](#11-search-complexes--역-주변-아파트-단지)로 본다. 리(양근리)는 직방 지역 목록이 받지 않아 상위 읍·면(양평읍) 전체를 찾고 `notes` 로 알리니 결과의 `address` 로 위치를 확인한다. 같은 이름의 동이 따로 있으면(당산동) 그 동만 찾고 빠진 `○가` 동을 `notes` 로 알린다. 직방 지역 목록은 그 동 단지를 먼저 주고 이웃 동 단지를 이어서 주며, `total` 도 이웃 동까지 센 수다. 아파트가 없는 작은 동은 처음부터 이웃 동 단지다 (2026-10-10 실측: 문래동1가 목록은 모두 대림동·영등포동 단지. 2026-11-11 실측: 대치동 전세 `total` 391 에 대치동 매물은 1·2쪽의 52건, 3쪽부터 이웃 동만). 이웃 동이 대부분인 쪽이면 `notes` 가 이어 받아도 그 동 매물이 거의 없다고 알린다. 동 이름으로 찾았는데 다른 동 단지가 섞이면 몇 건이 어느 동인지 `notes` 로 알리니 결과의 `address` 로 동을 확인한다 (구 단위 검색은 알리지 않는다).
+동·구 이름이면 그 동·구 하나의 직방 지역 목록을 직방 순서 그대로 준다 (빠짐 없음, `total` 은 그 목록의 수, 거리 없음). 직방 웹 기본 화면(신규 분양 포함)처럼 지역 목록 맨 앞에 신규분양 매물이 섞여 올 수 있고, 이 매물도 `total`·`--limit`·`--next` 자리에 센다. 신규분양을 빼고 보려면 `--no-new-sale` 을 준다: 신규분양 매물(`listing_kind: "신규분양"`)이 빠지고 `total` 도 그만큼 줄며, 이어 받을 때(`--next`)도 같은 옵션을 줘야 한다 (다르면 `INVALID_ARGUMENT`). 동·구 지역 목록에만 있는 옵션이라 단지 매물(`search listings --complex`)에는 없다 (직방 단지 목록이 이 값을 무시한다). 역·학교 이름(동·구가 아닌 이름)이나 좌표를 주면 직방 웹 아파트 지도의 '○○동 주변 매물보기' 처럼 그 위치가 속한 동의 목록을 준다 (강남역 → 역삼동). 그 위치에서 가까운 순이 아니고 이웃 동은 빠지며, 어느 동을 찾았는지 `notes` 의 `[범위]` 로 알린다. 역 주변 단지와 학교 배정단지는 [`search complexes`](#11-search-complexes--역학교동구-주변-아파트-단지)로 보라고 `notes` 가 알린다. 학교는 그 명령이 찾는 학교(학교 코드가 있고 `NL_` 로 시작하지 않으며 학교 ID 가 양수인 학교, 곧 직방 웹이 배정단지 목록을 보여 주는 학교)에만 권하고, 목록이 없는 학교는 그 명령이 `INVALID_ARGUMENT` 라 권하지 않는다. 권하는 검색어는 `영등포구 양평역` 처럼 사용자가 앞에 붙인 구·동 낱말을 그대로 살려, 권한 명령을 그대로 불러도 같은 곳을 찾는다. 리(양근리)는 직방 지역 목록이 받지 않아 상위 읍·면(양평읍) 전체를 찾고 `notes` 로 알리니 결과의 `address` 로 위치를 확인한다. 같은 이름의 동이 따로 있으면(당산동) 그 동만 찾고 빠진 `○가` 동을 `notes` 로 알린다. 직방 지역 목록은 그 동 단지를 먼저 주고 이웃 동 단지를 이어서 주며, `total` 도 이웃 동까지 센 수다. 아파트가 없는 작은 동은 처음부터 이웃 동 단지다 (2026-10-10 실측: 문래동1가 목록은 모두 대림동·영등포동 단지. 2026-11-11 실측: 대치동 전세 `total` 391 에 대치동 매물은 1·2쪽의 52건, 3쪽부터 이웃 동만). 이웃 동이 대부분인 쪽이면 `notes` 가 이어 받아도 그 동 매물이 거의 없다고 알린다. 동 이름으로 찾았는데 다른 동 단지가 섞이면 몇 건이 어느 동인지 `notes` 로 알리니 결과의 `address` 로 동을 확인한다 (구 단위 검색은 알리지 않는다).
 
 직방 아파트 API 는 방 구조·층·욕실·옵션·관리비 조건이 없어 이 명령에도 없다. 거래 유형은 매매·전세·월세이며 단기임대는 지원하지 않는다.
 
@@ -232,7 +232,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 **오류와 대응**
 
-임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 동 안을 찾을 때 직방이 그 동의 법정동 코드를 주지 않으면 `REGION_NOT_SUPPORTED` 이니 `hint` 대로 `--radius` 를 준다.
+임대·매매 가격 조건 충돌, 면적 상한 이하 하한, 0 이하 `--area-max`(상한이 미만이라 맞는 매물이 없다) 등 잘못된 범위는 조회 전에 `INVALID_ARGUMENT`. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 동 안을 찾을 때 직방이 그 동의 법정동 코드를 주지 않으면 `REGION_NOT_SUPPORTED` 이니 `hint` 대로 `--radius` 를 준다. 직방이 고른 곳의 좌표를 주지 않으면 `search listings room` 처럼 `UPSTREAM_ERROR` 다.
 
 **주의사항**
 
@@ -288,7 +288,7 @@ jibsa zigbang search listings stay 강남역 --check-in 2026-11-02 --check-out 2
 
 **오류와 대응**
 
-날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`. `--sort distance` 를 좌표나 `--radius` 와 함께 주면 요청 전에, 역이 아닌 이름(동·구·학교)과 함께 주면 지역 검색 1회 뒤에 `INVALID_ARGUMENT` 다. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)과 구가 있는 시(성남시)도 합치지 않고 `REGION_AMBIGUOUS` 로 후보를 알리니 `hint` 대로 `성수동1가`·`성남시 분당구` 처럼 하나를 골라 다시 찾는다.
+날짜 누락·역전, 7~84일 밖의 기간, 허용되지 않는 옵션 값은 `INVALID_ARGUMENT`. `--sort distance` 를 좌표나 `--radius` 와 함께 주면 요청 전에, 역이 아닌 이름(동·구·학교)과 함께 주면 지역 검색 1회 뒤에 `INVALID_ARGUMENT` 다. 같은 이름의 동·구·역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 같은 이름의 동 없이 `○동N가` 로만 나뉜 동(성수동)과 구가 있는 시(성남시)도 합치지 않고 `REGION_AMBIGUOUS` 로 후보를 알리니 `hint` 대로 `성수동1가`·`성남시 분당구` 처럼 하나를 골라 다시 찾는다. 직방이 고른 곳의 좌표를 주지 않으면 `search listings room` 처럼 `UPSTREAM_ERROR` 다.
 
 **주의사항**
 
@@ -327,7 +327,7 @@ ID 접두사·형식 위반은 `INVALID_ARGUMENT`, 없는 단지·건물은 `NOT
 
 **주의사항**
 
-단지 이름 대신 ID를 넣는다. 단지 ID 는 `search locations <단지 이름>` 결과의 `complexes[].complex_id`, 역 주변 단지 `search complexes <역 이름>` 결과의 `complexes[].complex_id`, `search listings apt`·`search listings room` 오피스텔 결과와 아파트 상세의 `complex_id` 에서 얻는다. 아파트 단지와 오피스텔 건물은 번호 체계가 달라 `apt-`·`officetel-` 을 붙인다.
+단지 이름 대신 ID를 넣는다. 단지 ID 는 `search locations <단지 이름>` 결과의 `complexes[].complex_id`, 역·학교·동·구 주변 단지 `search complexes <이름>` 결과의 `complexes[].complex_id`, `search listings apt`·`search listings room` 오피스텔 결과와 아파트 상세의 `complex_id` 에서 얻는다. 아파트 단지와 오피스텔 건물은 번호 체계가 달라 `apt-`·`officetel-` 을 붙인다.
 
 `pyeongs[].id`는 `search listings --complex`·`real-price`의 `--pyeong`에 넣는 평형 ID이며 평수가 아니다. 후기는 본문을 내보내지 않고, 후기가 있으면 단지 페이지에서 보라고 `notes` 로 알린다. 관리사무소 연락처는 출력하지 않는다.
 
@@ -531,32 +531,48 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 
 `is_price_range: true` 인 줄의 가격은 묶음 최저가라, 매물별 가격은 이 명령 한 번으로 본다 (20건마다 요청 1회). 같은 매물을 `listing_ids` 로 하나씩 `listing` 하면 매물마다 요청 2회다. 묶음이 120건을 넘으면 앞 120건만 받고 `[일부]` 로 알린다. 받는 사이 묶음이 줄어 직방이 다음 쪽을 주지 않으면 받은 데까지 내고 `[일부]` 로 알린다 (`has_more: true`, 다시 부르면 지금 묶음을 받는다). 직방이 묶음 매물 수를 알려 주지 않으면(`total: null`) 쪽이 가득 찬 동안 120건까지 받고, 120건에 닿아 멈췄는데 마지막 쪽이 가득 찼을 때만 `has_more: true` 와 `[일부]` 로 알린다. 직방·제휴 밖 출처처럼 상세를 볼 수 없는 매물은 `listing_ids` 와 같이 빼고 `[제외]` 로 알린다 (`total` 에는 센다).
 
-## 11. `search complexes` — 역 주변 아파트 단지
+## 11. `search complexes` — 역·학교·동·구 주변 아파트 단지
 
-역에서 1.5km 안의 아파트 단지를 직방 웹 아파트 지도의 '<역> 주변단지' 목록과 같은 순서(조회수 순)로 준다. 가까운 순이 아니다.
+역·학교·동·구 하나의 아파트 단지를 직방 웹 아파트 지도의 단지 목록('<역> 주변단지'·'<학교> 배정단지'·동 화면의 최근입주)을 직방 웹 그대로 준다. 역·학교는 기본이 조회수 순이고 가까운 순이 아니다. 최근입주·시세급변동은 순서가 아니라 그 조건에 든 단지만 담은 목록이라 그 곳의 전체 단지 목록이 아니다 (`total` 도 그 수).
 
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
-| `QUERY` | 역 이름 (예: 강남역). 동·구 이름은 받지 않는다 | 필수 |
+| `QUERY` | 역·학교·동·구 이름 (예: 강남역, 해누리중학교, 가락동, 송파구). 이름 끝이 '역' 이면 역(역에서 1.5km 안), '학교' 면 초·중·고등학교(대학교는 찾지 못한다), 그 밖은 동·구다 | 필수 |
+| `--order` | 직방 웹 탭: 인기(많이 본 순), 최근입주(곧 입주하거나 최근 1년 안 입주한 단지만), 시세급변동(1주간 시세가 급변동한 단지만), 평당가(평당 가격이 높은 순). 동·구는 최근입주만 받는다 | 역·학교 인기, 동·구 최근입주 |
 | `--limit` | 받을 단지 수 범위: 1~120. | 20 |
 
 **사용 예시**
 
 ```bash
 jibsa zigbang search complexes 강남역 --limit 10
+jibsa zigbang search complexes 해누리중학교 --order 평당가
+jibsa zigbang search complexes 가락동
 ```
 
 **반환값**
 
-`station`(찾은 역 이름), `station_address`(역 주소), `total`(1.5km 안 단지 수, 직방이 주지 않으면 `null`), `returned`, `has_more`, `complexes`를 준다. 단지마다 `complex_id`(`apt-…`), `name`, `address`(지번), `households`(세대수), `distance_m`(역에서의 거리, m), `url`(직방 단지 페이지)이 있다. 단지 좌표는 주지 않는다. 직방 역 주변 단지 정보에 없는 단지는 빼지 않고 `name`·`address`·`households`·`distance_m` 을 `null` 로 두고 `notes` 로 알린다. 역 주변 단지 정보를 받지 못하면(요청 실패) 순서·수는 그대로 내고 모든 단지의 그 필드를 `null` 로 두어 `[실패]` 로 알린다. `total` 이 `null` 이면 `--limit` 만큼 꽉 찼을 때 `has_more: true` 다 (더 있을 수 있음).
+`place`(찾은 이름), `place_type`(`역`·`학교`·`동`·`구`, 시·군은 `구`, 리는 상위 읍·면이라 `동`), `place_address`(찾은 곳의 주소), `total`(고른 목록(`--order`)의 단지 수, 역은 1.5km 안. 직방이 주지 않으면 `null`), `returned`, `has_more`, `complexes`를 준다. 단지마다 `complex_id`(`apt-…`), `name`, `address`, `households`(세대수), `distance_m`, `url`(직방 단지 페이지), `highlight`가 있다. 단지 좌표는 주지 않는다.
+
+- `total`: 최근입주·시세급변동은 그 조건에 든 단지만 담아 그 곳의 전체 단지 수가 아니다 (2026-11-20 실측: 강남역 인기 112곳·최근입주 2곳·시세급변동 55곳, 가락동 최근입주 1곳). 동·구는 최근입주 목록뿐이라 `total` 이 그 동·구의 전체 단지 수가 아니다. 역·학교 주변 단지 전체에서 가까운 곳을 고르려면 `--order` 를 빼고(인기) `--limit` 을 늘려 받아 `distance_m` 으로 고른다.
+
+- `address`: 역은 지번 주소, 학교·동·구는 직방 단지 카드의 구·동까지의 주소(예: `송파구 가락동`)다.
+- `distance_m`: 역·학교에서의 거리(m)다. 학교는 직방이 거리를 '462m'·'1.1km' 같은 글자로만 줘서 그 글자를 m 정수로 바꾼 값이다. 동·구는 거리가 없어 키가 없다.
+- `highlight`: 직방 웹 단지 카드의 둘째 줄을 그 글자 그대로 낸다. `--order` 마다 뜻이 다르다. 인기는 지역 순위(예: `가락동 1위 · 송파구 1위`), 최근입주는 입주 시기(예: `2026. 1 입주`), 시세급변동은 1주 시세 변동률(예: `-3.23%`), 평당가는 평당 가격(예: `14,758만 / 3.3㎡`)이다. 카드를 받지 못했거나 직방이 주지 않으면 `null`.
+
+직방 역·학교 주변 단지 정보에 없는 단지는 빼지 않고 역은 `name`·`address`·`households`·`distance_m`, 학교는 `name`·`households`·`distance_m` 을 `null` 로 두고 `notes` 로 알린다. 단지 카드에 없는 단지는 `highlight`(학교는 `address`, 동·구는 `name`·`address`·`households` 도)를 `null` 로 두고 알린다. 주변 단지 정보나 카드를 받지 못하면(요청 실패) 순서·수는 그대로 내고 그 값을 `null` 로 두어 `[실패]` 로 알린다. `total` 이 `null` 이면 `--limit` 만큼 꽉 찼을 때 `has_more: true` 다 (더 있을 수 있음).
 
 **오류와 대응**
 
-검색 결과에 그 이름의 역이 없으면(동·구 등) 같은 이름의 동이 여러 곳이어도 `INVALID_ARGUMENT` 이고 `hint` 가 단지를 찾는 다른 길(`search locations <단지 이름>`, `search listings apt <동>` 결과의 `complex_id`)을 알린다. 같은 이름의 역은 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 못 찾은 이름은 `REGION_NOT_FOUND`.
+- 이름 끝이 '역' 인데 직방 지역 검색 결과가 하나도 없으면 `REGION_NOT_FOUND`, 결과는 있는데 그 이름의 역이 없으면(직방이 역 ID 를 0 이하로 준 역 포함) `INVALID_ARGUMENT` 다. 둘 다 `hint` 가 역 이름 전체나 학교·동·구 예시를 알린다 (이 명령에는 `--lat/--lng` 가 없어 좌표 옵션은 권하지 않는다).
+- 학교 이름으로 초·중·고등학교를 찾지 못하면(대학교 포함) `REGION_NOT_FOUND`. 직방 웹이 배정단지 목록을 보여 주지 않는 학교(학교 코드가 없거나 `NL_` 로 시작하거나 학교 ID 가 0 이하인 학교)는 `INVALID_ARGUMENT` 다. 직방이 학교 ID 를 주지 않은 응답은 형식 오류라 `PARSE_ERROR` 다.
+- 직방이 단지 수만 주고 단지 ID 목록을 주지 않으면 `UPSTREAM_ERROR` 다 (잠시 뒤 다시 부르고, 계속되면 jibsa 업데이트가 필요할 수 있다).
+- 동·구에 `--order 최근입주` 가 아닌 값을 주면 `INVALID_ARGUMENT` 이고 지역을 찾기 전에 막는다. 시·도 이름(서울·경기도)도 `INVALID_ARGUMENT` 이니 구·동 이름을 준다.
+- 같은 이름의 역·학교·동·구는 [`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기)처럼 `REGION_AMBIGUOUS` 이고, 구가 있는 시(성남시)와 `○가` 로 나뉜 동(성수동)도 합치지 않고 `REGION_AMBIGUOUS` 로 후보를 알린다. 못 찾은 동·구는 `REGION_NOT_FOUND` 이고, 행정동 이름(`화곡제1동`)이면 `hint` 가 법정동 이름으로 찾으라고 알린다 ([`search listings apt`](#3-search-listings-apt--아파트-매물-찾기)와 같다).
+- `--order` 에 없는 값은 `INVALID_ARGUMENT`.
 
 **주의사항**
 
-순서는 조회수 순이라 가까운 단지는 `distance_m` 으로 고른다. 이어 받기(`--next`)는 없고, 단지가 `--limit` 보다 많으면 `[일부]` 로 알리니 `--limit` 을 늘린다 (요청은 `--limit` 과 상관없이 역 찾기 1회와 단지 요청 2회). 분양·분양 예정 단지도 직방 웹처럼 함께 나온다. 단지의 매물은 `complex_id` 를 [`search listings --complex`](#7-search-listings---complex--단지건물-안-매물-목록)에, 단지 정보는 [`complex`](#6-complex--단지건물-하나-정보)에 넘긴다. 역 이름으로 아파트 매물을 찾는 [`search listings apt <역 이름>`](#3-search-listings-apt--아파트-매물-찾기)은 역 주변 단지가 아니라 역이 속한 동의 목록이다.
+순서는 `--order` 탭의 직방 웹 목록 순서라 역·학교도 가까운 순이 아니니 가까운 단지는 `distance_m` 으로 고른다. `notes` 가 어느 웹 목록인지 알리고, 최근입주·시세급변동이면 '…만 담아 그 곳의 전체 단지가 아닙니다' 를, 그 가운데 역·학교는 `--order` 를 빼고(인기) `--limit` 을 늘려 받아 `distance_m` 으로 고르라는 말도 덧붙인다. 동·구는 직방 웹 지역 화면에 최근입주 목록뿐이라 다른 순서는 받지 않는다. 리(양근리)는 직방 지역 목록이 받지 않아 상위 읍·면(양평읍)의 목록이라 `place` 는 찾은 이름 그대로이고 순서 안내의 이름은 읍·면이며, 단지 `address` 가 읍·면까지라 리 안의 단지를 가를 수 없다고 `[범위]` 로 알린다 (단지 위치는 `url` 의 단지 페이지에서 확인). 학교 목록에는 직방 웹 학교 화면 하단의 '학군배정 정보는 지역에 따라 실제 배정과 다소 차이가 있을 수 있습니다' 가 `notes` 로 붙으니 최종 배정은 교육청 학구도로 확인한다. 이어 받기(`--next`)는 없고, 단지가 `--limit` 보다 많으면 `[일부]` 로 알리니 `--limit` 을 늘린다 (안내는 역을 '주변 단지 N곳 중 앞 M곳', 학교를 '배정단지 N곳 중 앞 M곳', 동·구를 '단지 N곳 중 앞 M곳' 으로 부르고, 최근입주·시세급변동이면 앞에 순서 이름을 붙여 어느 목록의 수인지 밝힌다: '시세급변동 주변 단지 …'). 요청은 이름 찾기 1회, 단지 ID 1회, 역·학교는 주변 단지 정보 1회, 그리고 단지 카드가 받는 단지 15곳마다 1회라 `--limit` 이 크면 늘어난다 (동·구는 주변 단지 정보가 없다). 역·학교·동·구는 좌표를 쓰지 않아 직방이 그 곳의 좌표를 주지 않아도 찾는다. 분양·분양 예정 단지도 직방 웹처럼 함께 나온다. 단지의 매물은 `complex_id` 를 [`search listings --complex`](#7-search-listings---complex--단지건물-안-매물-목록)에, 단지 정보는 [`complex`](#6-complex--단지건물-하나-정보)에 넘긴다. 역 이름으로 아파트 매물을 찾는 [`search listings apt <역 이름>`](#3-search-listings-apt--아파트-매물-찾기)은 역 주변 단지가 아니라 역이 속한 동의 목록이다.
 
 ## 검색 명령 비교
 

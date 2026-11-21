@@ -58,8 +58,8 @@ from jibsa.providers.zigbang.service.common.apt import (
 from jibsa.providers.zigbang.service.common.base import (
     DIRECTION_LABELS,
     MAX_LIST_LIMIT,
+    ZigbangAptRegion,
     ZigbangListingDetail,
-    ZigbangRegion,
     apt_complex_id,
     text_or_none,
     unavailable_on_404,
@@ -97,8 +97,8 @@ class ZigbangAptSearchResult(BaseModel):
     )
 
     region: Annotated[
-        ZigbangRegion,
-        Field(description='검색한 지역')
+        ZigbangAptRegion,
+        Field(description='검색한 동·구. 좌표(lat·lng)는 이름으로 찾았는데 직방이 주지 않았으면 모름(null)')
     ]
     local_code: Annotated[
         str,
@@ -135,7 +135,7 @@ class ZigbangAptSearchResult(BaseModel):
 APT_DONG_GEOHASH_PRECISION: int = 10
 
 
-def apt_dong_at(client: ZigbangClient, lat: float, lng: float) -> ZigbangRegion:
+def apt_dong_at(client: ZigbangClient, lat: float, lng: float) -> ZigbangAptRegion:
     """좌표가 속한 동을 찾는다 (요청 1회). 역 이름·좌표로 아파트를 찾을 때 그 동의 지역 목록을 보게 한다.
 
     웹 아파트 지도의 '○○동 주변 매물보기' 처럼 `GET /apt/locals/polygon` 이 준 동이다 (2026-11-15 캡처). 검색 중심은
@@ -153,7 +153,7 @@ def apt_dong_at(client: ZigbangClient, lat: float, lng: float) -> ZigbangRegion:
             f'{lat}, {lng}',
             hint="아파트는 동·구 단위로 조회합니다. 동 이름(예: '역삼동')이나 구 이름(예: '강남구')으로 검색하세요",
         )
-    return ZigbangRegion(name=response.name or code, lat=lat, lng=lng, legal_division_code=f'{code}00')
+    return ZigbangAptRegion(name=response.name or code, lat=lat, lng=lng, legal_division_code=f'{code}00')
 
 
 def area_matches(listing: Listing, area_min_m2: float | None, area_max_m2: float | None) -> bool:
@@ -233,13 +233,13 @@ class ZigbangAptConditions(RequestModel):
 
 def search_apt_listings(
     client: ZigbangClient,
-    region: ZigbangRegion,
+    region: ZigbangAptRegion,
     *,
     conditions: ZigbangAptConditions | None = None,
     limit: int = 20,
     start: dict[str, Any] | None = None,
 ) -> ZigbangAptSearchResult:
-    """지역(동·구 하나) 안의 아파트 매물을 직방이 보여 주는 순서로 `limit` 건 조회한다.
+    """지역(동·구 하나) 안의 아파트 매물을 직방이 보여 주는 순서로 `limit` 건 조회한다. 지역 코드(`legal_division_code`)로만 찾아 좌표는 쓰지 않는다.
 
     웹 지역 매물 화면(`/home/apt/items/{지역 코드}`)이 부르는 지역 목록(`/apt/locals/{코드}/item-catalogs`)과 같다
     (2026-11-15 캡처). 반경 검색이 아니라 거리가 없다. 거래 유형·가격(만원) 조건은 서버에서 거른다. 면적은 다른 유형과

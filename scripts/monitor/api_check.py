@@ -153,6 +153,20 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('아파트 역이 속한 동 강남역', APT, ('강남역', '--limit', '2'), 'listings'),
         # 역 주변 단지는 웹 '주변단지' 목록(/apt/danjis/ids, 조회수 순)에 역 주변 단지 정보(/apt/subways/{id})의 거리를 붙인다
         Step('역 주변 아파트 단지 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--limit', '3'), 'complexes'),
+        # 학교·동·구는 같은 단지 ID 목록 API(/apt/danjis/ids)에 type 만 바꿔 보내고(school·local), 이름·주소·세대수·둘째 줄은 단지 카드
+        # (/apt/danjis/details)에서 받는다. 학교는 주변 단지 정보(/apt/schools/{학교 코드}), 동·구는 지역 해석을 더 부른다
+        Step('학교 배정 아파트 단지 해누리중학교', ('zigbang', 'search', 'complexes'), ('해누리중학교', '--limit', '3'), 'complexes'),
+        # 최근입주 목록은 곧 입주 예정이거나 최근 1년 내 입주한 단지만 담아 사이트가 정상이어도 빌 수 있다 (2026-11-20 실측: 가락동 1곳·송파구 4곳)
+        Step(
+            '동 최근입주 아파트 단지 가락동', ('zigbang', 'search', 'complexes'), ('가락동', '--limit', '3'), 'complexes',
+            may_be_empty=True,
+        ),
+        Step(
+            '구 최근입주 아파트 단지 송파구', ('zigbang', 'search', 'complexes'), ('송파구', '--limit', '3'), 'complexes',
+            may_be_empty=True,
+        ),
+        # --order 는 순서 탭(order=areaPrice 등)을 서버에 보내는 경로다
+        Step('역 주변 아파트 단지 평당가 순 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--order', '평당가', '--limit', '3'), 'complexes'),
         Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),
         Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),
         # 전체는 서버 거래 유형 all 을 보내 매매와 전월세를 한 목록으로 받는다 (거래마다 trade_type)

@@ -123,6 +123,43 @@ class ZigbangRegion(BaseModel):
     ] = None
 
 
+class ZigbangAptRegion(BaseModel):
+    """아파트를 찾는 동·구 하나 (search listings apt 의 region, search complexes 의 동·구).
+
+    아파트는 반경이 아니라 지역 코드로 찾아 좌표를 쓰지 않는다. 그래서 `ZigbangRegion` 과 달리 직방이 검색 결과에 좌표를
+    주지 않아도 만들 수 있고, 그때 좌표는 모름(null)이다. 출력 필드와 순서는 `ZigbangRegion` 과 같다.
+    """
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    name: Annotated[
+        str,
+        Field(description='동·구 이름')
+    ]
+    address: Annotated[
+        str | None,
+        Field(description='전체 주소')
+    ] = None
+    lat: Annotated[
+        float | None,
+        Field(description='중심 위도. 이름으로 찾았는데 직방이 좌표를 주지 않았으면 모름(null)')
+    ]
+    lng: Annotated[
+        float | None,
+        Field(description='중심 경도. 이름으로 찾았는데 직방이 좌표를 주지 않았으면 모름(null)')
+    ]
+    local3: Annotated[
+        str | None,
+        Field(exclude=True, description='읍·면·동 검색 맥락. 리를 상위 읍·면으로 찾을 때 쓰며 출력하지 않는다')
+    ] = None
+    legal_division_code: Annotated[
+        str | None,
+        Field(description='법정동코드 (10자리)')
+    ] = None
+
+
 class ZigbangListing(Listing):
     """직방 원룸·오피스텔·빌라 매물. 오피스텔은 건물 ID 를 붙여 그 건물 매물을 이어서 볼 수 있다."""
 

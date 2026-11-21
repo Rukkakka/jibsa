@@ -53,6 +53,15 @@ class ZigbangSearchSourceModel(ResponseModel):
         str | None,
         Field(description='사용승인일 (YYYYMMDD, 단지 결과만)', alias='사용승인일')
     ] = None
+    school_code: Annotated[
+        str | None,
+        Field(
+            description=(
+                "학교 코드 (학교 결과만, 예: 'B100006434'). 웹 학교 화면 `/home/apt/schools/{학교코드}` 의 코드이고 학교 정보 조회에 넘긴다. "
+                '결과의 `id`(예: 1056)는 단지 ID 목록 조회에 넘기는 학교 ID 로 서로 다르다 (2026-11-19 실측: 아파트 서비스 검색의 해누리중학교)'
+            )
+        )
+    ] = None
 
 
 class ZigbangSearchItemModel(ResponseModel):

@@ -34,7 +34,9 @@ from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.complex.search import (
+    ZigbangDanjisDetailsRequestParameterModel,
     ZigbangDanjisIdsRequestParameterModel,
+    ZigbangSchoolsRequestParameterModel,
     ZigbangSubwaysRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.real_price import (
@@ -91,7 +93,9 @@ from jibsa.providers.zigbang.api.response.complex.detail import (
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex.search import (
+    ZigbangDanjisDetailsResponseModel,
     ZigbangDanjisIdsResponseModel,
+    ZigbangSchoolsResponseModel,
     ZigbangSubwaysResponseModel,
 )
 from jibsa.providers.zigbang.api.response.real_price import (
@@ -172,9 +176,8 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음, 상가,
-    단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는
-    헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음, 학교·역/학교/동 주변 단지 카드, 상가, 단기임대(stay-apis.zigbang.com)를
+    조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
     엔드포인트 action id 는 버전 앞의 서비스 접두(`/house/property`, `/apt`)와 경로
@@ -218,6 +221,8 @@ class ZigbangClient(BaseHTTPClient):
     item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}'
     danjis_ids_endpoint: ClassVar[str] = '/apt/danjis/ids'
+    danjis_details_endpoint: ClassVar[str] = '/apt/danjis/details'
+    schools_endpoint: ClassVar[str] = '/apt/schools/{school_code}'
     subways_endpoint: ClassVar[str] = '/apt/subways/{subway_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
     bls_school_zones_v1_endpoint: ClassVar[str] = '/house/property/v1/bls/{pnu}/school_zones'
@@ -855,13 +860,16 @@ class ZigbangClient(BaseHTTPClient):
         self,
         parameter: ZigbangDanjisIdsRequestParameterModel
     ) -> ZigbangDanjisIdsResponseModel:
-        """List apartment complex IDs around a station via `GET /apt/danjis/ids`.
+        """List apartment complex IDs around a station, school or dong via `GET /apt/danjis/ids`.
 
         Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도의 '<역> 주변단지' 패널(조회수 순 5곳)과
-        더보기 화면(`limit` 없이 모두)이 부른다 (2026-11-15 캡처·번들 `getAPTTypedListIds`). 쪽 넘김은 없다.
+        더보기 화면(`limit` 없이 모두)이 부른다 (2026-11-15 캡처·번들 `getAPTTypedListIds`). 쪽 넘김은 없다. 학교 화면
+        (`/home/apt/schools/{학교코드}`)은 `type=school`, 동 화면(`/home/apt/locals/{법정동코드}`)의 최근입주 패널은
+        `type=local&order=newest` 로 부른다 (2026-11-19 캡처). 로그인이 필요 없다. 학교 `id` 에 학교 코드를 넣으면 500 이다.
 
         Args:
-            parameter: `type`(subway)·`id`(역 ID)·`order`(viewCount)·`limit`·`serviceType` 배열.
+            parameter: `type`(subway·school·local)·`id`(역 ID·학교 ID·법정동 코드)·`order`(viewCount·newest·priceChange·areaPrice)·
+                `limit`·`serviceType` 배열.
 
         Returns:
             ZigbangDanjisIdsResponseModel: 주변 단지 전체 수(`count`)와 요청한 순서의 단지 ID.
@@ -887,6 +895,83 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangDanjisIdsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_details(
+        self,
+        parameter: ZigbangDanjisDetailsRequestParameterModel
+    ) -> ZigbangDanjisDetailsResponseModel:
+        """Fetch apartment complex cards via `GET /apt/danjis/details`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단지 더보기 화면이 `danjis/ids` 로 받은 ID 를 15곳씩 보내
+        카드(이름·구동·세대수·탭별 둘째 줄)를 그린다 (2026-11-19 캡처). 로그인이 필요 없다.
+
+        Args:
+            parameter: `apts` (단지 ID 1~15개)와 `danjis/ids` 요청과 같은 `type`·`id`·`order`.
+
+        Returns:
+            ZigbangDanjisDetailsResponseModel: 단지 카드. 둘째 줄(`desc2`)은 `order` 탭마다 뜻이 다르다.
+        """
+        response = self._client.get(
+            url=self.danjis_details_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisDetailsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_details(
+        self,
+        parameter: ZigbangDanjisDetailsRequestParameterModel
+    ) -> ZigbangDanjisDetailsResponseModel:
+        """Async variant of `run_request_danjis_details`."""
+        response = await self._async_client.get(
+            url=self.danjis_details_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisDetailsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_schools(
+        self,
+        parameter: ZigbangSchoolsRequestParameterModel
+    ) -> ZigbangSchoolsResponseModel:
+        """Fetch a school and the apartment complexes around it via `GET /apt/schools/{schoolCode}`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도에서 학교를 고르면(`/home/apt/schools/{학교코드}`)
+        부른다 (2026-11-19 캡처). 학교 코드는 지역 검색 학교 결과의 `_source.school_code` 다 (결과의 `id` 는 다른 값이다).
+        로그인이 필요 없다.
+
+        Args:
+            parameter: `school_code` (경로)와 `genderNullable` (웹은 늘 true).
+
+        Returns:
+            ZigbangSchoolsResponseModel: 학교 정보(`detail.id` 는 단지 ID 목록 조회에 넘기는 학교 ID)와 주변 단지 (가까운 순).
+        """
+        response = self._client.get(
+            url=self.schools_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangSchoolsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_schools(
+        self,
+        parameter: ZigbangSchoolsRequestParameterModel
+    ) -> ZigbangSchoolsResponseModel:
+        """Async variant of `run_request_schools`."""
+        response = await self._async_client.get(
+            url=self.schools_endpoint.format(school_code=parameter.school_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangSchoolsResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis_rt_prices(

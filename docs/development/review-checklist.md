@@ -107,6 +107,9 @@
 17. **키가 없으면 `[]` 로 채우는 목록에서 계산한 값.** 응답 모델이 키가 없을 때 `[]` 를 채우는 목록(`default_factory=list`)에 `any`·`in`·개수를 계산하면, 목록을 받지 못한 모름이 '없음·불가(`false`·`0`)' 로 바뀐다. 같은 출력의 그 목록 필드를 `sent_or_none` 으로 `null` 로 낸다면 거기서 계산한 값도 `null` 인가. 확인: `any(`·`len(` 이 도는 응답 목록이 보냈는지(`model_fields_set`)를 먼저 가르는지 본다.
     예: `providers/zigbang/service/stay/detail.py` `stay_detail_to_listing` 의 `pet_allowed` 계산 줄 (2026-11-17).
     언제: 응답 목록 필드에 `any(`·`in`·`len(` 을 걸어 출력 필드(bool·수)를 정하는 `+` 줄.
+18. **좌표를 쓰지 않는 경로가 좌표를 요구하지 않는가.** 같은 해석 함수의 결과(`ZigbangRegion`)를 좌표를 쓰는 경로(room·store·stay 의 검색 중심)와 쓰지 않는 경로(아파트 동·구, `search complexes`)가 함께 쓰면, 쓰지 않는 쪽도 좌표 없는 후보에서 에러가 난다. 확인: 그 경로가 실제로 읽는 칸(법정동 코드·이름·주소)이 무엇인지 보고, 좌표가 없는 후보를 넣어 본다.
+    예: `providers/zigbang/service/region.py` `resolve_apt_region` (아파트 동·구가 `region_from_search_item` 의 좌표 검사를 거쳐 좌표 없는 후보에서 `UPSTREAM_ERROR` 였다, 2026-11-21).
+    언제: 지역·역·학교 해석 함수를 고치거나 새 경로가 부르게 한 diff, 같은 명령 안에서 경로마다 쓰는 칸이 다른 해석.
 
 ## `contract` 출력 계약
 
@@ -120,13 +123,13 @@
    예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`, `providers/zigbang/service/region.py:77`
    (같은 이름 구 '중구' 에 '구 이름을 붙이라' 고 했고, 좌표를 받지 않는 `search complexes` 에 `--lat/--lng` 를 권했다. 후보 하나로
    가려지는 예시만 들게 했다, 2026-11-16).
-   언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄, 여러 명령이 함께 쓰는 hint 를 새 명령이 부르게 한 diff.
+   언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄, 여러 명령이 함께 쓰는 hint 를 새 명령이 부르게 한 diff, 기본 hint 가 `--lat/--lng` 를 권하는 `RegionNotFoundError` 를 좌표 옵션이 없는 명령이 hint 를 넘기지 않고 던지게 한 diff (`providers/zigbang/service/region.py` `resolve_station`, 2026-11-21).
 3. **notes 태그.** 더 있음 `[일부]`, 뺀 것 `[제외]`, 찾은 범위가 다름 `[범위]`, 덤 조회 실패 `[실패]` 가 맞게 붙었는가 (맨
    문자열은 `[참고]` 로 나간다, [docs/common.md](../common.md)). 예: `providers/daangn/service/commute.py:260`.
    언제: `notes` 에 문자열을 더하는 `+` 줄.
-4. **한 결과 안 안내끼리.** "전부입니다" 와 `[일부]`, 같은 안내 여러 번, '곳'·'건' 섞임이 함께 나오지 않는가. 확인: 여러 갈래가
+4. **한 결과 안 안내끼리.** "전부입니다" 와 `[일부]`, 같은 안내 여러 번, '곳'·'건' 섞임이 함께 나오지 않는가. 같은 목록을 안내마다 다른 이름으로 부르지도 않는가 (학교의 순서 안내는 '배정단지', `[일부]` 안내는 '주변 단지'). 확인: 여러 갈래가
    함께 참이 되는 입력을 찾는다. 예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
-   언제: 한 결과에 안내를 붙이는 갈래가 둘 이상인 함수를 바꾼 diff.
+   언제: 한 결과에 안내를 붙이는 갈래가 둘 이상인 함수를 바꾼 diff, 같은 목록을 가리키는 안내 문구(순서 안내·`[일부]` 안내)를 따로 쓰거나 고친 diff (`providers/zigbang/service/complex/search.py` `SCOPE_NAME_BY_PLACE_TYPE`, 2026-11-21).
 5. **에러 code·hint 가 원인과 맞는가.** 첫 화면 5xx 를 "스펙 변경" 으로, 형식 오류 400 을 "없는 ID" 로, 정상 0건을 에러로 알리지
    않는가. 감시·에이전트가 hint 문구가 아니라 `code`·`blocked` 같은 필드로 가르는가. 예: `cli/output.py:375`.
    언제: 에러 클래스·`code`·hint 를 고르는 갈래나 `raise ...Error(` 를 더하거나 바꾼 diff.
@@ -175,6 +178,9 @@
 15. **유형을 모르면 줄을 통째로 버리는 변환.** `… | None` 을 돌려주는 변환 함수가 모르는 유형에 `None` 을 주고 호출부가 그 줄을 빼면, 버린 수를 세어 `[제외]` 로 알리는가 (다방 `_unknown_trade_note`). 알리지 않으면 거래가 말없이 사라진다. 확인: 변환 결과가 `None` 일 때 건너뛰기로 끝나는 자리마다 센 수가 notes 에 가는지 본다 (`--limit` 으로 어차피 잘릴 자리는 세지 않아도 된다).
     예: `providers/zigbang/service/real_price.py:369` 의 `unknown` 을 세는 줄 (`--trade 전체`, 2026-11-17).
     언제: 변환 함수가 `None` 을 돌려주는 갈래를 더하거나 그 결과로 줄을 빼는 diff.
+16. **다른 명령을 권하는 안내가 사용자가 붙인 앞 낱말을 버리지 않는가.** 같은 이름을 가리려고 사용자가 앞에 붙인 구·동 낱말(`영등포구 양평역`)을 빼고 찾은 이름(`양평역`)만 권하면, 권한 명령을 그대로 불렀을 때 `REGION_AMBIGUOUS` 가 난다. 확인: 안내에 든 명령을 그대로 불러 같은 곳을 찾는지 본다.
+    예: `cli/zigbang.py` `search listings apt` 의 '역 주변 단지는 jibsa zigbang search complexes 양평역' (2026-11-20).
+    언제: 안내·`hint` 가 다른 명령과 그 검색어를 글로 알리는 `+` 줄 (그 명령이 같은 이름 가림을 하는 경우).
 
 ## `web` 웹 대응
 
@@ -292,7 +298,9 @@
    응답 키가 바뀌면 빈 값(`[]`·`{}`·null)이 되는지 본다. 예: `scripts/monitor/api_check.py:214` (네이버 `school --complexes`
    단계가 바깥 dict 만 봤다, 2026-11-18). 명령 하나가 덤 엔드포인트를 여럿 부르면 덤마다 그 값을 기대 칸으로 보는 `Step` 이
    있는가도 본다. 덤 조회는 실패하면 `null` 로만 남아, 다른 덤을 보는 단계로는 못 잡는다 (네이버 빌라 `real-price` 가
-   `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19).
+   `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19). 반대로 사이트가
+   정상이어도 빌 수 있는 값을 기대 칸으로 걸면 고장 알림이 거짓으로 난다: 조건으로 고른 목록(최근입주)은
+   `may_be_empty` 로 두거나 그 대상을 피해 고른다 (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주, 2026-11-20).
    언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
 
 ## 지적하지 말 것

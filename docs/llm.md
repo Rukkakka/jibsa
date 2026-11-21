@@ -30,7 +30,7 @@
 | 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 `search listings room`·`villa`·`officetel`·`apt` 에 `--condition 단기임대`) |
 | 회사 통근 기준 | `daangn search commute --station <회사 역> --max-minutes 30` (통근 시간 조건은 당근만 있다. 다른 소스는 결과의 역 이름으로 그 역 주변을 찾는다) |
 | 매물 하나 상세 | `<소스> listing <id>` |
-| 단지 찾기 | `zigbang search locations <이름>` · 역 주변 아파트 단지 `zigbang search complexes <역>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
+| 단지 찾기 | `zigbang search locations <이름>` · 역·학교·동·구 주변 아파트 단지 `zigbang search complexes <역·학교·동·구>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
 | 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 이 집 또는 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
 | 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
@@ -87,6 +87,7 @@
 - `real-price` 의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이다 (직방은 2023년 1월 이후 계약만 표시). `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니고, `jeonse_ratio` 는 0~1 비율이다. `--trade 전체` 는 매매와 전월세를 최신 순으로 섞어 주니 전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있다.
 - `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 가 주지 않는다 (주당 금액 × 주 수가 아니다). `listing stay-… --check-in … --check-out …` 은 그 기간에 예약할 수 있는지 `available` 만 주고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일). `stay --sort distance` 는 `--radius` 없는 역 이름 검색에서만 된다 (기본은 직방 추천순). 상세의 반려동물은 `options` 가 아니라 `pet_allowed`(추가 청소비 `pet_cleaning_fee_manwon`)로 보고, 위약금은 `refund_rules` 다 (웹에 고정된 표라 계약 전 `url` 에서 확인).
 - `store` 권리금 `0` 은 무권리, `null` 은 모름이다. 사무실은 권리금이 해당 없음이라 `key_money_manwon` 키가 없을 수 있고, 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠진다.
+- `search complexes` 는 역뿐 아니라 학교(`해누리중학교`)·동·구 이름도 받고 이름 끝 글자로 가른다. `--order`(인기·최근입주·시세급변동·평당가)와 줄마다 `highlight`(웹 카드 둘째 줄, 순서마다 뜻이 다르다)가 있고, 동·구는 최근입주 목록뿐이며 `distance_m` 키가 없다. 순서는 가까운 순이 아니다. 최근입주·시세급변동은 순서가 아니라 그 조건에 든 단지만 담은 목록이라 `total` 도 그 수이고 그 곳의 전체 단지 수가 아니다 (역·학교 주변 단지 전체는 `--order` 를 빼고 `--limit` 을 늘려 받아 `distance_m` 으로 고른다).
 - 상세 `residence_type` 이 `근린생활시설` 이면 전입신고·전세대출이 막힐 수 있고, `다가구` 면 선순위 보증금을 확인하라고 알린다. 목록에서 보려면 `room` 에 `--details` (매물마다 요청 1회 더).
 
 ### 네이버

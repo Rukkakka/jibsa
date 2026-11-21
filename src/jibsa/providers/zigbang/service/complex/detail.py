@@ -333,10 +333,12 @@ def search_regions_and_complexes(
     Returns:
         (지역 결과, 단지 후보). 지역 결과에는 단지가 없다.
     """
-    officetel_items = search_regions(client, query, service_type='오피스텔')
+    # 후보 목록이라 하나를 고르지 않고 좌표(`search locations` 가 지역마다 lat·lng 로 낸다)를 그대로 내보낸다. 좌표 없는 후보는
+    # 위치를 줄 수 없어 지금처럼 뺀다
+    officetel_items = search_regions(client, query, service_type='오피스텔', require_coordinates=True)
     regions = [item for item in officetel_items if item.type not in COMPLEX_KIND_BY_SEARCH_TYPE]
     candidates: dict[str, ZigbangComplexCandidate] = {}
-    for item in [*search_regions(client, query, service_type='아파트'), *officetel_items]:
+    for item in [*search_regions(client, query, service_type='아파트', require_coordinates=True), *officetel_items]:
         candidate = complex_candidate_of(item)
         if candidate is not None:
             candidates.setdefault(candidate.complex_id, candidate)

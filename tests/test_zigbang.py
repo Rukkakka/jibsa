@@ -16,6 +16,7 @@ from jibsa.core.geo import (
 )
 from jibsa.core.listing import (
     NEXT_HINT,
+    UPDATE_MAYBE_NEEDED,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.apt import (
@@ -33,6 +34,7 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
+from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ResponseModel,
 )
@@ -51,18 +53,30 @@ from jibsa.providers.zigbang.service.apt import (
 )
 from jibsa.providers.zigbang.service.common.apt import catalog_to_listing
 from jibsa.providers.zigbang.service.common.base import (
+    ZigbangAptRegion,
     ZigbangRegion,
 )
 from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
     summary_to_listing,
 )
-from jibsa.providers.zigbang.service.complex.search import search_station_complexes
+from jibsa.providers.zigbang.service.complex.search import (
+    complex_order_of,
+    distance_m_of,
+    place_complex_of,
+    search_place_complexes,
+)
 from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import (
+    divided_region_error,
+    region_scope_items,
     resolve_apt_region,
     resolve_region_scope,
+    resolve_school,
+    resolve_station,
+    search_regions,
+    settled_item,
 )
 from jibsa.providers.zigbang.service.room.detail import (
     detail_to_listing,
@@ -505,7 +519,7 @@ def test_apt_no_new_sale_sends_false_on_every_page() -> None:
         seen.append(dict(request.url.params))
         return httpx.Response(200, json=dict(fixture, count=100, list=[fixture['list'][0]] * int(request.url.params['limit'])))
 
-    region = ZigbangRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
+    region = ZigbangAptRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
     with make_client(handler) as client:
         first = search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=40)
         search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=20, start=first.next_position)
@@ -774,7 +788,7 @@ def test_apt_supply_area_region_does_not_refill_filtered_results() -> None:
         return httpx.Response(200, json=data)
 
     with make_client(handler) as client:
-        result = search_apt_listings(client, ZigbangRegion(
+        result = search_apt_listings(client, ZigbangAptRegion(
             name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100',
         ), conditions=ZigbangAptConditions(supply_area_min_m2=80, supply_area_max_m2=110, area_max_m2=60), limit=1)
     assert offsets == [0]
@@ -870,7 +884,7 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
         return httpx.Response(200, json=dict(fixture, count=200, list=[fixture['list'][0]] * size))
 
     with make_client(handler) as client:
-        result = search_apt_listings(client, ZigbangRegion(
+        result = search_apt_listings(client, ZigbangAptRegion(
             name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100',
         ), conditions=ZigbangAptConditions(area_max_m2=0), limit=limit)
     assert calls == [(offset, 20) for offset in range(0, limit, 20)]
@@ -1088,11 +1102,94 @@ def test_same_name_station_asks_unless_query_picks_one(query: str, expected: str
             assert region.address == expected
 
 
-# --- 역 주변 단지 -------------------------------------------------------------
+def test_same_name_station_without_coordinates_still_counts_as_a_candidate() -> None:
+    # 좌표 없는 같은 이름 역을 먼저 버리면 남은 한 곳을 묻지 않고 고른다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _station_items('첫째동', '둘째동')
+        del payload['items'][1]['lat'], payload['items'][1]['lng']
+        return httpx.Response(200, json=payload)
 
-def test_station_complexes_keep_view_count_order_and_add_distance() -> None:
-    # 순서·수는 웹 주변단지 목록(/apt/danjis/ids, 조회수 순) 그대로다. 거리는 역 주변 단지 정보(거리순)에서 붙이고 다시 세우지
-    # 않는다. 주변 단지 정보에 없는 단지는 빼지 않고 이름·거리를 모름으로 둔다
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            resolve_station(client, '가상역')
+    assert caught.value.code == 'REGION_AMBIGUOUS'
+
+
+def test_chosen_region_without_coordinates_is_reported_not_skipped() -> None:
+    # 고른 곳에 좌표가 없으면 다른 후보로 넘어가거나 좌표를 채우지 않고 알린다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _search_items(('가상동', '가상구'))
+        del payload['items'][0]['lat'], payload['items'][0]['lng']
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            resolve_region_scope(client, '가상동')
+    assert caught.value.code == 'UPSTREAM_ERROR' and "'가상동'" in caught.value.message
+
+
+def test_apt_region_and_complex_places_do_not_need_coordinates() -> None:
+    # 아파트 동·구와 search complexes 의 동·역은 법정동 코드·역 ID·이름·주소만 쓰므로 직방이 좌표를 주지 않아도 찾는다.
+    # 좌표를 쓰는 검색 중심(room·store·stay)은 위 테스트처럼 그대로 UPSTREAM_ERROR 다
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == '/v2/search':
+            payload = _station_items('가상동') if request.url.params['q'] == '가상역' else _search_items(('가상동', '가상구'))
+            for item in payload['items']:
+                del item['lat'], item['lng']
+            return httpx.Response(200, json=payload)
+        if request.url.path == '/apt/danjis/ids':
+            return httpx.Response(200, json={'count': 1, 'ids': [1001]})
+        if request.url.path == '/apt/subways/1':
+            return httpx.Response(200, json={'id': 1, 'name': '가상역', 'aptList': []})
+        assert request.url.path == '/apt/danjis/details'
+        return httpx.Response(200, json={'apts': []})
+
+    with make_client(handler) as client:
+        region, _ = resolve_apt_region(client, '가상동')
+        dong = search_place_complexes(client, '가상동', limit=1)
+        station = search_place_complexes(client, '가상역', limit=1)
+        with pytest.raises(JibsaError) as caught:
+            resolve_region_scope(client, '가상동')
+    assert region.model_dump() == {
+        'name': '가상동', 'address': '서울특별시 가상구 가상동', 'lat': None, 'lng': None, 'legal_division_code': '1120000100',
+    }
+    assert [(result.place, result.place_type) for result in (dong, station)] == [('가상동', '동'), ('가상역', '역')]
+    assert caught.value.code == 'UPSTREAM_ERROR'
+
+
+def test_divided_dongs_are_decided_from_search_results_even_without_coordinates() -> None:
+    # 어느 동인지 묻기(단기임대)는 좌표를 쓰지 않으므로, 동 하나에 좌표가 없어도 지역으로 바꾸기 전에 후보를 정해 묻는다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _search_items(('성수동1가', '성동구'), ('성수동2가', '성동구'))
+        del payload['items'][0]['lat'], payload['items'][0]['lng']
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        items = search_regions(client, '성수동')
+    best, split_items = region_scope_items('성수동', items)
+    assert (best.name, [item.name for item in split_items]) == ('성수동1가', ['성수동1가', '성수동2가'])
+    error = divided_region_error('성수동', split_items)
+    assert error.details['candidates'] == ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가']
+
+
+def test_duplicate_result_of_the_same_place_picks_the_one_with_coordinates() -> None:
+    # 직방이 이름·종류·주소가 같은 결과를 둘 주면 같은 곳이다. 첫 결과에만 좌표가 없으면 좌표 있는 쪽을 고른다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _search_items(('가상동', '가상구'), ('가상동', '가상구'))
+        del payload['items'][0]['lat'], payload['items'][0]['lng']
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        items = search_regions(client, '가상동')
+    chosen = settled_item('가상동', items, items[0])
+    assert (chosen.id, chosen.lat) == (2, items[1].lat) and chosen.lat is not None
+
+
+# --- 역·학교·동·구 주변 단지 (search complexes) --------------------------------
+
+def test_station_complexes_keep_view_count_order_and_add_distance_and_card() -> None:
+    # 순서·수는 웹 주변단지 목록(/apt/danjis/ids, 조회수 순) 그대로다. 이름·주소·세대수·거리는 역 주변 단지 정보(거리순)에서, 둘째 줄은
+    # 단지 카드(/apt/danjis/details)에서 붙이고 다시 세우지 않는다. 두 곳에 없는 단지는 빼지 않고 값을 모름으로 둔다
     requested: list[httpx.URL] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1104,25 +1201,91 @@ def test_station_complexes_keep_view_count_order_and_add_distance() -> None:
                 {'id': 1001, 'name': '[가상] 가까운단지', '구주소': '서울시 가상구 가상동 000-1', 'household': '1,000세대', 'distanceNum': 100},
                 {'id': 1003, 'name': '[가상] 먼단지', '구주소': '서울시 가상구 가상동 000-3', 'household': '세대수 모름', 'distanceNum': 300},
             ]})
+        if request.url.path == '/apt/danjis/details':
+            return httpx.Response(200, json={'apts': [
+                {'id': 1003, 'name': '[가상] 먼단지', 'desc1': '가상구 가상동 · 500세대', 'desc2': '가상동 2위 · 가상구 2위'},
+                {'id': 1001, 'name': '[가상] 가까운단지', 'desc1': '가상구 가상동 · 1,000세대', 'desc2': '가상동 1위 · 가상구 1위'},
+            ]})
         assert request.url.path == '/apt/danjis/ids'
         return httpx.Response(200, json={'count': 5, 'ids': [1003, 1001, 1009]})
 
     with make_client(handler) as client:
-        result = search_station_complexes(client, '가상역', limit=3)
+        result = search_place_complexes(client, '가상역', limit=3)
 
-    # 순서·수를 주는 본 조회를 덤 조회(/apt/subways)보다 먼저 부른다
-    assert [url.path for url in requested[1:]] == ['/apt/danjis/ids', '/apt/subways/1']
+    # 순서·수를 주는 본 조회를 덤 조회(/apt/subways, /apt/danjis/details)보다 먼저 부른다
+    assert [url.path for url in requested[1:]] == ['/apt/danjis/ids', '/apt/subways/1', '/apt/danjis/details']
     assert dict(requested[1].params) == {
         'type': 'subway', 'id': '1', 'order': 'viewCount', 'limit': '3',
         'serviceType[0]': 'apt', 'serviceType[1]': 'offer', 'serviceType[2]': 'preOffer',
     }
-    assert [(c.complex_id, c.name, c.households, c.distance_m) for c in result.complexes] == [
-        ('apt-1003', '[가상] 먼단지', None, 300),
-        ('apt-1001', '[가상] 가까운단지', 1000, 100),
-        ('apt-1009', None, None, None),
+    assert (result.place, result.place_type, result.place_address) == ('가상역', '역', '서울특별시 가상구 가상동')
+    assert [(c.complex_id, c.name, c.households, c.distance_m, c.highlight) for c in result.complexes] == [
+        ('apt-1003', '[가상] 먼단지', None, 300, '가상동 2위 · 가상구 2위'),
+        ('apt-1001', '[가상] 가까운단지', 1000, 100, '가상동 1위 · 가상구 1위'),
+        ('apt-1009', None, None, None, None),
     ]
     assert result.complexes[1].address == '서울특별시 가상구 가상동 000-1'
     assert (result.total, result.returned, result.has_more) == (5, 3, True)
+
+
+@pytest.mark.parametrize('text,expected', [
+    ('462m', 462),
+    ('1.1km', 1100),
+    # 읽지 못하면 모름 (웹 학교 응답에는 숫자 거리가 없다)
+    ('', None),
+    ('가까움', None),
+    (None, None),
+])
+def test_school_distance_text_becomes_meters(text: str | None, expected: int | None) -> None:
+    assert distance_m_of(text) == expected
+
+
+def test_region_complexes_only_take_newest_order_and_drop_distance_key() -> None:
+    # 웹 지역 화면에는 최근입주 목록뿐이라 동·구는 다른 순서를 받지 않고, 지역을 찾기 전에 막는다. 기본도 동·구만 최근입주다
+    with pytest.raises(JibsaError) as caught:
+        complex_order_of('동·구', '인기')
+    assert caught.value.code == 'INVALID_ARGUMENT'
+    assert complex_order_of('동·구', None) == complex_order_of('동·구', '최근입주') == '최근입주'
+    assert complex_order_of('역', None) == complex_order_of('학교', None) == '인기'
+    # 동·구 줄에는 거리가 없다 (해당 없음이라 키 삭제). 이름·주소·세대수는 카드 첫째 줄에서 온다
+    card = ZigbangDanjiCardModel.model_validate(
+        {'id': 88494, 'name': '[가상] 단지', 'desc1': '송파구 가락동 · 1,179세대', 'desc2': '2026. 1 입주'},
+    )
+    region_line = place_complex_of(88494, '동', None, card).model_dump()
+    assert 'distance_m' not in region_line
+    assert (region_line['name'], region_line['address'], region_line['households'], region_line['highlight']) == (
+        '[가상] 단지', '송파구 가락동', 1179, '2026. 1 입주',
+    )
+    # 역 줄은 주변 단지 정보를 못 받아도 distance_m 이 모름(null)으로 남는다
+    assert place_complex_of(88494, '역', None, card).model_dump()['distance_m'] is None
+
+
+def test_complexes_stop_when_upstream_gives_count_without_ids() -> None:
+    # 단지 수만 주고 목록이 없으면 '앞 0곳입니다. --limit 을 늘리세요' 같은 소용없는 안내를 내지 않고 멈춘다. 덤 조회도 부르지 않는다
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == '/v2/search':
+            return httpx.Response(200, json=_station_items('가상동'))
+        assert request.url.path == '/apt/danjis/ids'
+        return httpx.Response(200, json={'count': 5, 'ids': None})
+
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            search_place_complexes(client, '가상역', limit=3)
+    assert caught.value.code == 'UPSTREAM_ERROR' and UPDATE_MAYBE_NEEDED in (caught.value.hint or '')
+
+
+def test_same_name_school_without_coordinates_still_counts_as_a_candidate() -> None:
+    # search complexes 의 학교 경로는 학교 ID 만 쓰고 좌표는 쓰지 않는다. 좌표 없는 같은 이름 학교를 먼저 버리면 남은 한 곳을 묻지 않고 고른다
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={'success': True, 'items': [
+            {'id': 1, 'type': 'school', 'name': '가상초등학교', 'description': '서울특별시 가상구 가상동', 'lat': 37.5, 'lng': 127.0},
+            {'id': 2, 'type': 'school', 'name': '가상초등학교', 'description': '부산광역시 가상구 가상동'},
+        ]})
+
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            resolve_school(client, '가상초등학교')
+    assert caught.value.code == 'REGION_AMBIGUOUS'
 
 
 # --- 단기임대 -------------------------------------------------------------------
