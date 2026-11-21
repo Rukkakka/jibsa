@@ -64,9 +64,12 @@ MANWON_PER_EOK: int = 10000
 # - 네이버 중복 묶음: notes 가 가리키는 중개사 수·호가 범위. 2026-10-31 재검증: --fields price_manwon,…
 #   으로 고르자 묶음 범위(30억~33억)가 빠져 notes 가 가리키는 33억 호가를 보지 못하고 최고 호가를 32억으로 답했다
 # - 직방 아파트 묶음: 빠지면 가격이 묶음 최저가인지 모르고 매물별 가격을 볼 묶음 ID 도 없다. 신규분양이면 가격이 분양가인지도 모른다
+# - 직방 상가 공실 묶음: 빠지면 `--business` 결과 뒤쪽 공실 줄을 업종 매물과 가를 수 없는데 [참고] 안내는 이 키를 읽으라고 한다
+#   (2026-11-20 리뷰 재현: --fields id,business,rent_manwon 에 키가 없었다)
 ALWAYS_FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     '네이버 중복 묶음': ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon'),
     '직방 아파트 묶음': ('is_price_range', 'catalog_id', 'listing_ids', 'listing_count', 'listing_kind'),
+    '직방 상가 공실 묶음': ('vacant_section',),
 }
 # 다음 명령에 넘길 id 와 묶음 필드. 당근 주변 동 표시(in_regions)는 동 검색이 그 동 매물만 주게 되어 없앴다 (#215)
 ALWAYS_FIELDS: frozenset[str] = frozenset({'id'}).union(*ALWAYS_FIELD_GROUPS.values())

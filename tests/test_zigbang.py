@@ -88,7 +88,9 @@ from jibsa.providers.zigbang.service.stay.detail import (
 )
 from jibsa.providers.zigbang.service.stay.search import stay_marker_order
 from jibsa.providers.zigbang.service.store import (
+    STORE_VACANT_SECTION,
     ZigbangStoreConditions,
+    ZigbangStoreSearchResult,
     search_store_listings,
     store_detail_to_listing,
     store_summary_to_listing,
@@ -768,6 +770,45 @@ def test_store_price_filter_batches_and_cap(
     assert result.price_matched_in_radius == len(expected_ids)
     assert any('후보 조회 상한' in note for note in result.notes) is capped
     assert any('전체 가격 조건 일치 수는 모릅니다' in note for note in result.notes) is (count == 70)
+
+
+def _store_vacant_search(businesses: list[str] | None) -> tuple[ZigbangStoreSearchResult, list[dict]]:
+    base = load('store_article_stores_list_v2')[0]
+    # 공실 묶음이 응답에서 앞에 와도 업종 묶음 뒤에 이어지고, 두 묶음에 같은 ID(3)가 있으면 앞 것만 둔다
+    pins = [
+        {'title': STORE_VACANT_SECTION, 'item_locations': [
+            {'item_id': item_id, 'lat': 37.5, 'lng': 127.03} for item_id in (3, 4)
+        ]},
+        {'title': '이 지역 카페 추천 상가', 'item_locations': [
+            {'item_id': item_id, 'lat': 37.5, 'lng': 127.03} for item_id in (1, 2, 3)
+        ]},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/stores/list'):
+            ids = json.loads(request.content)['item_ids']
+            return httpx.Response(200, json=[{**base, 'item_id': item_id} for item_id in ids])
+        return httpx.Response(200, json=pins)
+
+    region = ZigbangRegion(name='center', lat=37.5, lng=127.03)
+    with make_client(handler) as client:
+        result = search_store_listings(client, region, conditions=ZigbangStoreConditions(businesses=businesses or []))
+    return result, [item.model_dump() for item in result.listings]
+
+
+def test_store_business_search_appends_vacant_section_after_business_items() -> None:
+    result, listings = _store_vacant_search(['카페/커피'])
+    assert [item['id'] for item in listings] == ['store-1', 'store-2', 'store-3', 'store-4']
+    assert [item['vacant_section'] for item in listings] == [False, False, False, True]
+    assert result.total == 4
+    assert any('vacant_section true' in note for note in result.notes)
+
+
+def test_store_search_without_business_still_marks_vacant_section() -> None:
+    # 업종 조건 없이도 공실 묶음이 오면 표시 없이 섞지 않는다 (실측으로는 업종 조건이 없으면 공실 묶음이 빈다)
+    result, listings = _store_vacant_search(None)
+    assert [item['vacant_section'] for item in listings] == [False, False, False, True]
+    assert any('일반 매물 3건' in note for note in result.notes)
 
 
 # --- 역 반경 전용 API --------------------------------------------------------

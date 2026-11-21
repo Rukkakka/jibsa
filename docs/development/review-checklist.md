@@ -115,9 +115,9 @@
 
 1. **안내를 따르면 되는가 (모든 모드에서).** `--limit` 이 이미 최대값인데 늘리라고 하지 않는가. 좁히라고 권하는 것('지역'·
    '반경'·평형)이 그 명령·검색 방식에 실제로 있는가. 한 명령의 여러 모드(`--complex`·`--redevelopment` 등)가 같은 hint 표를
-   쓰면, 그 hint 가 권하는 옵션을 모든 모드가 받는가. 확인: `more_hint`·`pagination_notes`·`UsageHints` 의 값을 그 모드의 옵션
-   검사와 대조한다. 예: `core/listing.py:333`, `cli/naver.py:991` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16).
-   언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff.
+   쓰면, 그 hint 가 권하는 옵션을 모든 모드가 받는가. 조건과 상관없이 섞이는 묶음(직방 상가의 공실 줄)이 `total` 에 들면 그 조건은 좁혀도 그 줄이 줄지 않으니 권하지 않는다. 확인: `more_hint`·`pagination_notes`·`UsageHints` 의 값을 그 모드의 옵션
+   검사와 대조한다. 예: `core/listing.py:333`, `cli/naver.py:991` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16), `providers/zigbang/service/store.py` `STORE_VACANT_NARROW` (공실 묶음이 있는데 업종을 좁히라고 권함, 2026-11-21).
+   언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff, 조건과 상관없는 묶음을 `total` 에 넣은 diff.
 2. **예시 이름과 권하는 명령.** hint 의 예시·명령을 그대로 넣으면 그 명령이 받는가 (동을 받지 않는 명령에 동 이름, 여전히 모호한
    예시, 필수 옵션을 빼라는 안내). 확인: 예시를 그 명령의 인자 검사·resolver 에 넣어 따라간다.
    예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`, `providers/zigbang/service/region.py:77`
