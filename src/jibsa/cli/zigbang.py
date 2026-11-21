@@ -45,7 +45,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.stay import (
+from jibsa.providers.zigbang.api.request.stay.search import (
     ZigbangGuestItemsFiltersRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
@@ -53,39 +53,31 @@ from jibsa.providers.zigbang.service.apt import (
     APT_TRADE_TYPES,
     ZigbangAptConditions,
     apt_dong_at,
-    resolve_apt_region,
+    get_catalog,
     search_apt_listings,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     COMPLEX_ID_PATTERN,
+    MAX_LIST_LIMIT,
+    ZigbangBoundary,
+    ZigbangRegion,
+)
+from jibsa.providers.zigbang.service.common.room import (
     CONDITIONS,
     FLOOR_FILTERS,
-    MAX_LIST_LIMIT,
     OPTION_FILTERS,
     ROOM_TYPES,
     TRADE_TYPES,
-    ZigbangBoundary,
-    ZigbangRegion,
     ZigbangRoomConditions,
     room_filter_of,
 )
-from jibsa.providers.zigbang.service.complex import (
+from jibsa.providers.zigbang.service.complex.detail import (
     get_complex,
     list_complex_listings,
     search_regions_and_complexes,
-    search_station_complexes,
 )
-from jibsa.providers.zigbang.service.detail import get_any_listing
-from jibsa.providers.zigbang.service.listing import (
-    DETAILS_MAX,
-    GEOHASH_PRECISION,
-    PROPERTY_TYPES,
-    attach_building_use,
-    get_catalog,
-    search_listings,
-    unsearchable_note,
-    unsearchable_types,
-)
+from jibsa.providers.zigbang.service.complex.search import search_station_complexes
+from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import (
     REAL_PRICE_MAX_LIMIT,
     REAL_PRICE_TRADE_TYPES,
@@ -98,13 +90,23 @@ from jibsa.providers.zigbang.service.region import (
     dong_boundary,
     merge_dong_boundaries,
     merged_dong_region,
+    resolve_apt_region,
     resolve_region_scope,
     resolve_region_with_notes,
     search_regions,
     wide_area_note,
     wide_boundary_note,
 )
-from jibsa.providers.zigbang.service.stay import (
+from jibsa.providers.zigbang.service.room.search import (
+    DETAILS_MAX,
+    GEOHASH_PRECISION,
+    PROPERTY_TYPES,
+    attach_building_use,
+    search_listings,
+    unsearchable_note,
+    unsearchable_types,
+)
+from jibsa.providers.zigbang.service.stay.search import (
     STAY_BUILDING_TYPE_BY_LABEL,
     STAY_DISCOUNT_TYPE_BY_LABEL,
     STAY_FLOOR_TYPE_BY_LABEL,

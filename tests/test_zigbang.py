@@ -14,52 +14,65 @@ from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
 )
-from jibsa.core.listing import NEXT_HINT
+from jibsa.core.listing import (
+    NEXT_HINT,
+)
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.apt import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.listing import (
+from jibsa.providers.zigbang.api.request.room.search import (
     ZigbangItemsVillasV1RequestParameterModel,
+)
+from jibsa.providers.zigbang.api.response.apt import (
+    ZigbangAptManageCostModel,
+    ZigbangItemCatalogsItemsResponseModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemCatalogModel,
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
-from jibsa.providers.zigbang.api.response.listing import (
-    ZigbangAptManageCostModel,
-    ZigbangItemCatalogsItemsResponseModel,
+from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay import ZigbangGuestItemsResponseModel
+from jibsa.providers.zigbang.api.response.stay.detail import (
+    ZigbangGuestItemsResponseModel,
+)
+from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
 from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.apt import (
     ZigbangAptConditions,
+    apt_item_to_listing,
     search_apt_listings,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.apt import catalog_to_listing
+from jibsa.providers.zigbang.service.common.base import (
     ZigbangRegion,
+)
+from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
-    catalog_to_listing,
     summary_to_listing,
 )
-from jibsa.providers.zigbang.service.complex import search_station_complexes
-from jibsa.providers.zigbang.service.detail import get_any_listing
-from jibsa.providers.zigbang.service.listing import (
-    apt_item_to_listing,
-    detail_to_listing,
-    search_listings,
-)
+from jibsa.providers.zigbang.service.complex.search import search_station_complexes
+from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import get_real_prices
-from jibsa.providers.zigbang.service.region import resolve_region_scope
-from jibsa.providers.zigbang.service.stay import (
+from jibsa.providers.zigbang.service.region import (
+    resolve_apt_region,
+    resolve_region_scope,
+)
+from jibsa.providers.zigbang.service.room.detail import (
+    detail_to_listing,
+)
+from jibsa.providers.zigbang.service.room.search import search_listings
+from jibsa.providers.zigbang.service.stay.detail import (
     STAY_REFUND_RULES,
     stay_detail_to_listing,
 )
+from jibsa.providers.zigbang.service.stay.search import stay_marker_order
 from jibsa.providers.zigbang.service.store import (
     ZigbangStoreConditions,
     search_store_listings,
@@ -250,7 +263,7 @@ def test_search_listings_follows_section_order_and_keeps_radius() -> None:
 
 def test_closed_items_are_excluded() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.zigbang.service.listing import get_listing
+    from jibsa.providers.zigbang.service.room.detail import get_listing
 
     summaries = load('items_list_v1')
     summaries['items'][0]['status'] = False
@@ -276,7 +289,7 @@ def test_closed_items_are_excluded() -> None:
 
 def test_items_without_status_are_excluded() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.zigbang.service.listing import get_listing
+    from jibsa.providers.zigbang.service.room.detail import get_listing
 
     summaries = load('items_list_v1')
     del summaries['items'][0]['status']
@@ -381,14 +394,12 @@ def apt_detail_handler(apt_response: httpx.Response, requested: list[str]):
 
 
 def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> None:
-    from jibsa.providers.zigbang.service.listing import get_listing
-
     # 아파트 매물은 웹 아파트 화면처럼 아파트 상세 하나로 만든다. 주거 상세의 404 를 내려간 매물로 읽으면
     # 살아 있는 아파트 매물이 모두 LISTING_UNAVAILABLE 이 된다 (2026-11-14 실측)
     requested: list[str] = []
     handler = apt_detail_handler(httpx.Response(200, json=load('item_catalogs_items')), requested)
     with make_client(handler) as client:
-        dumped = get_listing(client, 1000001).model_dump()
+        dumped = get_any_listing(client, '1000001').model_dump()
     assert [line.split('?')[0] for line in requested] == [
         '/house/property/v1/items/1000001/detail', '/apt/item-catalogs/items/1000001',
     ]
@@ -401,11 +412,11 @@ def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> No
     # 아파트 상세도 404 면 내려간 매물이다
     handler = apt_detail_handler(httpx.Response(404, json={'code': 404, 'message': 'not found item'}), [])
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
-        get_listing(client, 1000001)
+        get_any_listing(client, '1000001')
 
 
 def test_apt_listing_kind_from_item_type() -> None:
-    from jibsa.providers.zigbang.service.common import ZigbangAptListing
+    from jibsa.providers.zigbang.service.common.apt import ZigbangAptListing
     # 신규분양 카드는 출처가 coalition 이라 coalition- 줄이 되고, 분양가가 집주인 호가로 읽히지 않게 종류를 알린다
     card = load('locals_item_catalogs')['list'][0]
     card['itemIdList'] = [{'itemSource': 'coalition', 'itemId': 3000009}]
@@ -779,7 +790,7 @@ def test_apt_supply_area_region_does_not_refill_filtered_results() -> None:
     ('open', 'closed', 200), ('open', None, 200), ('open', 'open', 404),
 ])
 def test_new_house_detail_unavailable(primary_status: str | None, legacy_status: str | None, http_status: int) -> None:
-    from jibsa.providers.zigbang.service.listing import get_listing
+    from jibsa.providers.zigbang.service.room.detail import get_listing
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1011,8 +1022,6 @@ def test_ga_dong_scope(query: str, items: list[tuple[str, str]], split: list[str
     ('성수동', [('성수동1가', '성동구'), ('성수동2가', '성동구')], ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가']),
 ])
 def test_apt_region_divided_into_several_lists_is_ambiguous(query: str, items: list[tuple[str, str]], candidates: list[str]) -> None:
-    from jibsa.providers.zigbang.service.apt import resolve_apt_region
-
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_search_items(*items))
 
@@ -1036,9 +1045,6 @@ def test_store_dong_codes_never_send_a_code_the_server_does_not_know() -> None:
 
 def test_stay_marker_order_breaks_ties_like_web_map_list() -> None:
     # 웹 지도 목록(sortStayMarkers): 추천순은 점수 높은 순·같으면 ID 큰 순, 가격순·최신순은 같은 값끼리 추천순 규칙
-    from jibsa.providers.zigbang.api.response.stay import ZigbangStayMarkerModel
-    from jibsa.providers.zigbang.service.stay import stay_marker_order
-
     markers = [
         ZigbangStayMarkerModel.model_validate(dict(id=item_id, lat=37.5, lng=127.03, weeklyPrice=price, reviewedAt=at, totalScore=score))
         for item_id, price, at, score in [

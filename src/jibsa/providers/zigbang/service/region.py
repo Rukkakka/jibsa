@@ -1,4 +1,4 @@
-"""지역·역·좌표 해석과 동 경계 (search locations, 모든 검색의 지역 해석)."""
+"""지역·역·좌표 해석과 동 경계, 아파트 동·구 지역 해석 (search locations, 모든 검색의 지역 해석)."""
 
 import re
 
@@ -14,10 +14,14 @@ from jibsa.core.geo import (
 )
 from jibsa.core.korean import (
     is_dong_code,
+    is_ri_code,
     legal_dong_hint,
     quoted,
 )
-from jibsa.core.listing import note
+from jibsa.core.listing import (
+    normalize_address,
+    note,
+)
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.region import (
     ZigbangLocalPolygonV2RequestParameterModel,
@@ -25,10 +29,9 @@ from jibsa.providers.zigbang.api.request.region import (
     ZigbangSearchV2RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     ZigbangBoundary,
     ZigbangRegion,
-    region_from_search_item,
 )
 
 
@@ -55,6 +58,22 @@ def search_regions(
         for item in response.items
         if item.lat is not None and item.lng is not None
     ]
+
+
+def region_from_search_item(item: ZigbangSearchItemModel) -> ZigbangRegion:
+    return ZigbangRegion(
+        name=item.name,
+        # 설명은 정식 시·도 이름으로 오지만 세종 학교는 '세종특별자치시  반곡동' 처럼 공백이 두 칸이라 정규화한다 (2026-10-11)
+        address=normalize_address(item.description),
+        search_type=item.type,
+        local1=normalize_address(item.source.local1) if item.source and item.source.local1 else None,
+        local2=item.source.local2 if item.source else None,
+        local3=item.source.local3 if item.source else None,
+        subway_id=item.id if item.type == 'subway' and item.id > 0 else None,
+        lat=item.lat,
+        lng=item.lng,
+        legal_division_code=item.source.legal_division_code if item.source else None,
+    )
 
 
 def _prefix_words(address: str, name: str) -> list[tuple[str, str]]:
@@ -391,6 +410,77 @@ def divided_region_error(query: str, parts: list[ZigbangRegion]) -> RegionAmbigu
         len(parts),
         hint=f"'{first}' 처럼 {unit} 주세요",
     )
+
+
+def local_code_of(legal_division_code: str) -> str:
+    """법정동코드 10자리를 직방 아파트 지역 코드로 줄인다.
+
+    직방은 시·군·구 5자리, 읍·면·동 8자리로 찾는다. 10자리를 그대로 보내면 에러 없이 0건이다. 리(10자리 끝 두
+    자리가 00 이 아님)는 읍·면 8자리로 올린다 (2026-10-11 실측: 양근리 4183025021 은 0건, 양평읍 41830250 은 88건).
+    시·도 2자리도 에러 없이 늘 0건이라 (2026-10-11 실측: 11·41·26·36 모두 0건, 강남구 11680 은 1683건)
+    `resolve_apt_region` 이 시·도를 `RegionNotFoundError` 로 거절해 여기에는 오지 않는다. 구가 있는 시의 시 코드(성남시
+    41130)도 0건이라 (2026-11-15 실측) `resolve_apt_region` 이 어느 구인지 묻는다 (`city_gu_items`).
+    """
+    if legal_division_code.endswith('00000000'):
+        return legal_division_code[:2]
+    if legal_division_code.endswith('00000'):
+        return legal_division_code[:5]
+    return legal_division_code[:8]
+
+
+def resolve_apt_region(
+    client: ZigbangClient,
+    query: str,
+    *,
+    items: list[ZigbangSearchItemModel] | None = None,
+) -> tuple[ZigbangRegion, list[str]]:
+    """아파트 검색 지역(동·구 하나)과 결과에 붙일 안내를 찾는다. 아파트는 반경이 아니라 동·구 단위로 조회한다.
+
+    웹 지역 매물 화면(`/home/apt/items/{지역 코드}`)은 지역 코드 하나의 목록만 보여 준다 (2026-11-15 캡처). 그래서
+    '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)이나 구가 있는 시(성남시 → 분당구·수정구·중원구)는 목록을 합치지 않고
+    어느 동·구인지 묻는다. `items` 는 같은 검색어로 이미 받은 `search_regions` 결과다. 주면 지역 검색을 다시 하지 않는다.
+
+    Returns:
+        (검색할 동·구, 안내).
+
+    Raises:
+        RegionNotFoundError: 법정동코드가 있는 지역 결과가 없거나(역 이름만 준 경우 등) 시·도일 때. 직방 지역 목록은
+            시·도 코드에 늘 0건이다 (`local_code_of`).
+        RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때 (`settled_item`), '○가' 로만 나뉜 동이거나 구가 있는
+            시일 때 (`divided_region_error`).
+    """
+    items = search_regions(client, query) if items is None else items
+    best = best_region_item(query, items, require_code=True)
+    # 같은 이름 동·구는 room·store·stay 와 같이 검색어 앞 낱말로 가리고, 가려지지 않으면 묻는다
+    best = settled_item(query, items, best) if best is not None else None
+    code = best.source.legal_division_code if best and best.source else None
+    if best is None or code is None or code.endswith('00000000'):
+        # 행정동(역삼1동)은 직방 지역 검색이 0건이라(2026-10-11 실측: 역삼1동·화곡제1동·상계3.4동·월곡1동) CLI 의 위치
+        # 찾기가 행정동 힌트를 낸다. 역 이름이면 CLI 가 이 에러를 잡아 그 위치가 속한 동(`apt_dong_at`)으로 찾는다
+        raise RegionNotFoundError(
+            query,
+            hint="아파트는 동·구 단위로 조회합니다. 동 이름(예: '역삼동')이나 구 이름(예: '강남구'), 역 이름(예: '강남역')으로 다시 검색하세요",
+        )
+    # 구 단위로 조회해 넓은 지역 안내(wide_area_note)는 붙이지 않는다
+    notes: list[str] = []
+    gus = city_gu_items(query, items, best)
+    if gus:
+        raise divided_region_error(query, [region_from_search_item(item) for item in gus])
+    # 지역 결과는 모두 법정동코드가 있어 (2026-10-11 실측: '○가' 동 145건·그 밖의 지역 25건) 형제 동은 코드로 다시 거르지 않는다
+    siblings = ga_dong_siblings(query, items, best)
+    split = ga_dong_split(query, siblings, best)
+    if split:
+        raise divided_region_error(query, [region_from_search_item(item) for item in split])
+    if is_ri_code(code):
+        # 리는 읍·면 지역 목록으로 찾는다 (local_code_of). 지역 결과의 local3 이 그 읍·면이다 (2026-10-11 실측: 양근리 → 양평읍)
+        town = best.source.local3 if best.source and best.source.local3 else '읍·면'
+        notes.append(note(
+            '범위',
+            f"{quoted(query, '은/는')} 리 단위라 직방 아파트 목록이 받지 않아 상위 {town} 전체 매물을 찾았습니다. "
+            'address 로 위치를 확인하세요',
+        ))
+    split_note = ga_dong_note(query, siblings, best)
+    return region_from_search_item(best), notes + ([split_note] if split_note else [])
 
 
 def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -> ZigbangBoundary | None:

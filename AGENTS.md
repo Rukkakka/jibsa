@@ -20,7 +20,7 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 | `core/schema.py` | `RequestModel` (`extra='forbid'`) / `ResponseModel` (`extra='allow'`) |
 | `core/geo.py` | geohash·거리 계산, 한국 좌표 범위, 기본 검색 반경 |
 | `core/korean.py` | 한글 이름 뒤 조사 고르기 (`particle`, `quoted`), 행정동 검색어에 법정동 힌트 (`legal_dong_hint`), 법정동 코드 단위 (`is_dong_code`, `is_ri_code`) |
-| `providers/<source>/` | `api/` 아래층 (`client.py` · `request/` · `response/`, 당근은 `relay.py` · `parser.py` 도) → `service/` 윗층. request·response·service 는 같은 이름의 기능별 모듈 ([모듈 구성](docs/development/provider-conventions.md#모듈-구성)) |
+| `providers/<source>/` | `api/` 아래층 (`client.py` · `request/` · `response/`, 당근은 `relay.py` · `parser.py` 도) → `service/` 윗층. request·response·service 는 같은 이름의 기능별 모듈 (기능이 여러 모듈이면 기능 이름 폴더, [모듈 구성](docs/development/provider-conventions.md#모듈-구성)) |
 
 소스별 비공식 API 의 엔드포인트·필드 의미는 각 provider 의 `api/client.py` docstring 과
 `api/response/` 모델 설명에 있다. 엔드포인트를 추가·수정하기 전에 먼저 읽고, 응답 형태는

@@ -45,7 +45,7 @@ from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
     ZigbangRegion,
     drop_unused_scope,

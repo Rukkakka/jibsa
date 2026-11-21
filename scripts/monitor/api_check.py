@@ -875,7 +875,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
         번들을 받지 못하면 확인 못 함, 표를 못 찾았거나(번들 구조가 바뀜) 웹 표·이름표(유연·표준·엄격)가 jibsa 와 다르면 고장.
     """
     from jibsa.providers.zigbang.api.client import ZigbangClient
-    from jibsa.providers.zigbang.service.stay import (
+    from jibsa.providers.zigbang.service.stay.detail import (
         STAY_REFUND_POLICY_LABELS,
         STAY_REFUND_RULES,
     )
@@ -929,7 +929,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
             **step, 'status': BROKEN,
             'detail': (
                 f"웹 위약금 표가 jibsa 와 다름 ({'; '.join(diffs)}). "
-                'zigbang service/stay.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
+                'zigbang service/stay/detail.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
             ),
         }
     return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(STAY_REFUND_RULES)} 정책 {sum(len(rows) for rows in STAY_REFUND_RULES.values())}행)"}

@@ -3,7 +3,9 @@
 from pydantic import Field
 
 from jibsa.core.schema import ResponseModel
-from jibsa.providers.zigbang.api.response.common import ZigbangRoomTypeTitleModel
+from jibsa.providers.zigbang.api.response.common import (
+    ZigbangRoomTypeTitleModel,
+)
 
 from typing import Annotated
 

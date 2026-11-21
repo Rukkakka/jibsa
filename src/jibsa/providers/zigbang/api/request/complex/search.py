@@ -1,4 +1,4 @@
-"""요청 모델: 아파트 단지·오피스텔 건물 정보와 단지 매물 목록, 역 주변 단지 (complex, search listings --complex, search complexes)."""
+"""요청 모델: 역·학교·동·구 주변 아파트 단지 (search complexes)."""
 
 
 from pydantic import (
@@ -8,11 +8,7 @@ from pydantic import (
 )
 
 from jibsa.core.schema import RequestModel
-from jibsa.providers.zigbang.api.request.common import (
-    ZigbangItemsFiltersRequestParameterModel,
-    ZigbangOfficetelOrderMixin,
-    _index_arrays,
-)
+from jibsa.providers.zigbang.api.request.common import _index_arrays
 
 from typing import (
     Annotated,
@@ -23,27 +19,6 @@ from typing import (
 
 # 아파트 단지 목록의 단지 종류. 웹은 늘 셋을 모두 보낸다 (2026-11-15 번들 `getAPTTypedListIds`: apt·offer(분양)·preOffer(분양 예정))
 ZigbangDanjiServiceType = Literal['apt', 'offer', 'preOffer']
-
-
-class ZigbangItemsOfficetelsBuildingV1RequestParameterModel(ZigbangItemsFiltersRequestParameterModel, ZigbangOfficetelOrderMixin):
-    """`GET /house/property/v1/items/officetels/{buildingId}` 경로 + 쿼리.
-
-    건물 안의 매물. 가격·관리비는 만원이고 상세 조건은 지도 목록과 같다.
-    """
-
-    building_id: Annotated[
-        int,
-        Field(gt=0, exclude=True, description='오피스텔 건물 ID (검색 결과의 id). 경로에 들어가며 쿼리로는 보내지 않는다')
-    ]
-
-
-class ZigbangDanjisSchoolsRequestParameterModel(RequestModel):
-    """`GET /apt/danjis/{danjiId}/schools` 경로. 아파트 단지의 학군."""
-
-    danji_id: Annotated[
-        int,
-        Field(gt=0, exclude=True, description='단지 ID. 경로에 들어간다')
-    ]
 
 
 class ZigbangSubwaysRequestParameterModel(RequestModel):

@@ -30,7 +30,7 @@ from jibsa.providers.zigbang.api.response.real_price import (
     ZigbangDanjisRtPricesResponseModel,
     ZigbangRtPriceModel,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     apt_danji_url,
     fetch_danji,
     parse_complex_id,

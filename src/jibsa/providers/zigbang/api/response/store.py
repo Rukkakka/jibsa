@@ -3,7 +3,9 @@
 from pydantic import Field
 
 from jibsa.core.schema import ResponseModel
-from jibsa.providers.zigbang.api.response.common import ZigbangSubwayBriefModel
+from jibsa.providers.zigbang.api.response.common import (
+    ZigbangSubwayBriefModel,
+)
 
 from typing import Annotated
 

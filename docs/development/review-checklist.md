@@ -23,7 +23,7 @@
    언제: 쪽을 넘기는 루프(커서·offset·`has_next`·`hasMore`)나 그 `break` 를 바꾼 diff.
 2. **"더 있음" 을 무엇으로 정하나.** `has_more`·`[일부]` 는 받은(확인한) 수 `inspected`·`received` 로 정한다. 뺀 뒤 돌려준 수나
    뺀 것까지 센 `total` 과 견주지 않는다. 확인: "다 받고 1건 뺌" 과 "limit 에 닿고 1건 뺌" 으로 따라간다.
-   예: `providers/zigbang/service/common.py:613`.
+   예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
    언제: `has_more`·`[일부]`·`inspected`·`received`·`total` 을 정하는 줄이나 결과를 빼는(거르는) 줄을 바꾼 diff.
 3. **덜 받은 것을 "전부·없음" 으로 단정.** 첫 쪽·상한·멈춘 목록의 수를 전체 수로 쓰거나, 남았는데 "없습니다"·"이 N건이 전부"
    라고 하지 않는가 ('이상'·`[일부]`·`null` 로 알린다). 확인: 수·'없'·'전부' 가 든 안내마다 그 수가 끝까지 받은 수인지 본다.
@@ -48,7 +48,7 @@
    모름을 섞지 않는가. 날짜·층·이름·시각 자리와 `LABELS.get(raw or '', raw)` 같은 라벨 표 찾기에서 `'-'`·빈 글자를 그대로
    내지 않는가 (`.get` 의 두 번째 인자가 빈 글자를 돌려준다). 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가 돌려주는 값을
    본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17),
-   `providers/zigbang/service/stay.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17).
+   `providers/zigbang/service/stay/detail.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17).
    언제: `+` 줄에 `or `·`if not `·`else None`·기본값 `[]`·값을 돌려주는 `except` 가 있을 때, 출력 필드를 더하거나 바꾼 diff.
 6. **서버 값 한 칸이 결과 전체를 깨뜨림.** 서버 글자·목록·헤더를 `int()`·`[0]`·`del`·`.encode` 로 바로 다루지 않는가 (그 칸만
    `null`·건너뛰기여야 한다). 확인: diff 의 그 호출과 Optional 아닌 list 필드에 빈 글자·'-'·null·소수를 넣어 본다.
@@ -78,12 +78,12 @@
     이어 내며 겹침을 한 호출 안에서만 빼면, `--next` 의 다음 쪽에 앞 쪽 매물이 다시 나오고, 목록마다의 자리를 더한 수가 서로 다른
     매물 수(`total`)를 넘어 더 있는데도 `[일부]` 가 사라진다. 커서 하나로 이은 쪽은 겹치지 않아 해당 없다 (아래 "지적하지 말 것"
     3). 확인: 겹치는 두 목록으로 이어 받기를 끝까지 따라가 쪽마다 앞 쪽과 같은 ID 수와 `offset + returned` 를 `total` 과 견준다.
-    예: `providers/zigbang/service/listing.py:1113` (받기 전에 앞 목록의 ID 를 뒤 목록에서 뺐다, 2026-11-16).
+    예: `providers/zigbang/service/room/search.py` 의 `_collect_pins` (받기 전에 앞 목록의 ID 를 뒤 목록에서 뺐다, 2026-11-16).
     언제: 목록·종류 여럿을 한 결과로 잇고 이어 받기 표에 목록마다의 자리를 두는 diff.
 12. **묶음 한 줄의 대표 값과 고른 `id`.** 서버가 여러 매물을 한 줄로 묶어 줄 때 그 줄의 종류·제목·층 같은 필드는 묶음 안 어느
     매물의 값인지 보고, `id` 를 서버와 다른 순서(출처 우선 등)로 고르면 `id` 와 그 필드가 다른 매물을 가리킨다. 확인: 섞인 묶음의
     원본 응답에서 목록 순서와 대표 필드를 대 보고, 줄의 필드를 `id` 상세와 견준다.
-    예: `providers/zigbang/service/common.py:690` (직방 먼저 고른 `id` 가 중개사인데 `listing_kind` 는 집주인, 2026-11-17).
+    예: `providers/zigbang/service/common/apt.py` 의 `catalog_to_listing` (직방 먼저 고른 `id` 가 중개사인데 `listing_kind` 는 집주인, 2026-11-17).
     언제: 묶음·카탈로그 줄에 필드를 더하거나 묶인 ID 중 대표를 고르는 순서를 정·바꾸는 diff.
 13. **해당 없음으로 키를 뺀 필드에 조건을 걸 때.** 키를 뺀 매물도 내부 값은 `None` 이라 `in_range` 같은 거르기가 '모름' 처럼
     조용히 뺀다. 그 조건으로 뺀 해당 없음 매물을 `[제외]` 로 알리거나 문서에 적었는가. 확인: 키를 빼는 조건(`not_applicable_fields`)과
@@ -105,7 +105,7 @@
     5년 요약에 `since` 를 붙였다, 2026-11-18).
     언제: 결과가 비면 다른 조건으로 다시 묻는 대체 조회를 더한 diff.
 17. **키가 없으면 `[]` 로 채우는 목록에서 계산한 값.** 응답 모델이 키가 없을 때 `[]` 를 채우는 목록(`default_factory=list`)에 `any`·`in`·개수를 계산하면, 목록을 받지 못한 모름이 '없음·불가(`false`·`0`)' 로 바뀐다. 같은 출력의 그 목록 필드를 `sent_or_none` 으로 `null` 로 낸다면 거기서 계산한 값도 `null` 인가. 확인: `any(`·`len(` 이 도는 응답 목록이 보냈는지(`model_fields_set`)를 먼저 가르는지 본다.
-    예: `providers/zigbang/service/stay.py:935` 의 `pet_allowed` 계산 줄 (2026-11-17).
+    예: `providers/zigbang/service/stay/detail.py` `stay_detail_to_listing` 의 `pet_allowed` 계산 줄 (2026-11-17).
     언제: 응답 목록 필드에 `any(`·`in`·`len(` 을 걸어 출력 필드(bool·수)를 정하는 `+` 줄.
 
 ## `contract` 출력 계약
@@ -125,7 +125,7 @@
    문자열은 `[참고]` 로 나간다, [docs/common.md](../common.md)). 예: `providers/daangn/service/commute.py:260`.
    언제: `notes` 에 문자열을 더하는 `+` 줄.
 4. **한 결과 안 안내끼리.** "전부입니다" 와 `[일부]`, 같은 안내 여러 번, '곳'·'건' 섞임이 함께 나오지 않는가. 확인: 여러 갈래가
-   함께 참이 되는 입력을 찾는다. 예: `providers/zigbang/service/common.py:611`.
+   함께 참이 되는 입력을 찾는다. 예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
    언제: 한 결과에 안내를 붙이는 갈래가 둘 이상인 함수를 바꾼 diff.
 5. **에러 code·hint 가 원인과 맞는가.** 첫 화면 5xx 를 "스펙 변경" 으로, 형식 오류 400 을 "없는 ID" 로, 정상 0건을 에러로 알리지
    않는가. 감시·에이전트가 hint 문구가 아니라 `code`·`blocked` 같은 필드로 가르는가. 예: `cli/output.py:375`.
@@ -144,7 +144,7 @@
    언제: 묶음·매물 목록에 가격 해석을 바꾸는 필드를 더하는 diff.
 9. **코드를 말로 바꾸는 표에서 모르는 코드.** `.get(코드)` 로 모르는 코드를 `None` 으로 버리면 '서버가 주지 않음(null)' 으로
    읽힌다. 다른 표처럼 `.get(코드, 코드)` 로 원본을 남기거나, 버린다면 설명에 적었는가. 확인: 새 이름표 dict 를 쓰는 `.get(`
-   의 두 번째 인자와 Field 설명의 null 뜻을 대 본다. 예: `providers/zigbang/service/common.py:570` (2026-11-17).
+   의 두 번째 인자와 Field 설명의 null 뜻을 대 본다. 예: `providers/zigbang/service/common/apt.py` `apt_listing_kind` (2026-11-17).
    언제: 서버 코드 → 한국어 이름표 dict 를 새로 두거나 값을 더하는 diff.
 10. **같은 매물을 내는 목록·상세가 해당 없음과 모름을 같게 내는가.** 상세에서 키를 빼는(해당 없음) 필드를 목록 모델도 같은 표로
     빼는지, 목록이 `null` 로 내지 않는지 본다. 확인: 같은 매물 하나를 목록과 상세로 불러 같은 필드가 키 없음·`null` 로 갈리는지 비교한다.
@@ -282,8 +282,7 @@
    `.claude/agents/coder.md:22` (2026-11-17 에는 이 규칙을 네 곳에 다른 말로 적어 `first` 묶음 이름만 막는 곳과 다른 묶음이 부르는
    이름까지 막는 곳이 갈렸고, `doc-writer` 를 Sonnet 고정에 넣으며 바로 위 "종합 문서는 Opus" 를 남겼다).
    언제: `.claude/`·`CLAUDE.md`·`AGENTS.md`·`docs/development/agents.md` 를 고친 diff.
-7. **같은 소스의 기능 모듈끼리 import 하지 않기.** `service/` 의 기능 모듈이 다른 기능 모듈의 심볼을 가져다 쓰지 않는가
-   (같이 쓰게 되면 `common` 으로 옮긴다, [provider-conventions.md](provider-conventions.md#service-모듈을-나누는-기준) 기준 3).
+7. **같은 소스의 기능 모듈끼리 import 하지 않기.** `service/` 의 새 import 가 [provider-conventions.md](provider-conventions.md#service-모듈을-나누는-기준) 기준 3 의 import 방향을 따르는가.
    확인: diff 의 `+from jibsa.providers.<source>.service.<기능>` 줄. 예: 네이버 `service/complex.py` 가 `service/market_price.py` 의
    `jeonse_ratio_range` 를 가져다 썼다 (2026-11-18).
    언제: `service/` 에 새 import 를 더한 diff.

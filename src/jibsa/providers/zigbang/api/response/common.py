@@ -7,7 +7,9 @@ from pydantic import (
     model_validator,
 )
 
-from jibsa.core.schema import ResponseModel
+from jibsa.core.schema import (
+    ResponseModel,
+)
 
 from typing import (
     Annotated,
@@ -530,41 +532,3 @@ class ZigbangDanjisResponseModel(ResponseModel):
         int | None,
         Field(description='거주 후기 수. 후기 본문(resident_review)은 내보내지 않는다', alias='review_cnt')
     ] = None
-
-
-# ---------------------------------------------------------------------------
-# GET /apt/danjis/{danjiId}/item-catalogs
-# ---------------------------------------------------------------------------
-
-class ZigbangDanjiRoomTypeModel(ResponseModel):
-    """단지 평형."""
-
-    id: Annotated[
-        int,
-        Field(description='평형 ID (danjiRoomTypeIds 조건 값)')
-    ]
-    room_type_title: Annotated[
-        ZigbangRoomTypeTitleModel | None,
-        Field(description='평형 이름', alias='roomTypeTitle')
-    ] = None
-
-
-class ZigbangDanjisItemCatalogsResponseModel(ResponseModel):
-    """단지 하나의 아파트 매물 카탈로그 응답. 카탈로그 모양은 지역 목록과 같다."""
-
-    total_count: Annotated[
-        int,
-        Field(description='조건에 맞는 카탈로그 수 (페이지 무관)', alias='totalCount')
-    ] = 0
-    count_by_tran_type: Annotated[
-        dict[str, int],
-        Field(description='거래 유형(trade·charter·rental)별 카탈로그 수. 거래 유형 조건을 반영한다', alias='itemCountPerTranType')
-    ] = {}
-    room_types: Annotated[
-        list[ZigbangDanjiRoomTypeModel],
-        Field(description='단지의 평형 목록', alias='danjiRoomTypes')
-    ] = []
-    catalogs: Annotated[
-        list[ZigbangItemCatalogModel],
-        Field(description='이번 페이지의 카탈로그', alias='list')
-    ] = []

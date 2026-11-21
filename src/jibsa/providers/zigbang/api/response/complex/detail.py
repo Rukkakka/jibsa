@@ -1,12 +1,14 @@
-"""응답 모델: 아파트 단지·오피스텔 건물 정보와 단지 매물 목록, 역 주변 단지 (complex, search listings --complex, search complexes)."""
+"""응답 모델: 아파트 단지·오피스텔 건물 정보와 단지 매물 목록, 평형·학군 (complex, search listings --complex)."""
 
 from pydantic import Field
 
 from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
+    ZigbangItemCatalogModel,
     ZigbangItemPinModel,
     ZigbangItemSectionModel,
+    ZigbangRoomTypeTitleModel,
 )
 
 from typing import Annotated
@@ -121,63 +123,38 @@ class ZigbangDanjisSchoolsResponseModel(ResponseModel):
 
 
 # ---------------------------------------------------------------------------
-# GET /apt/subways/{subwayId}
+# GET /apt/danjis/{danjiId}/item-catalogs
 # ---------------------------------------------------------------------------
 
-class ZigbangSubwayAptModel(ResponseModel):
-    """역 주변 아파트 단지 하나. 단지 좌표(`lat`·`lng`)도 오지만 읽지 않는다."""
+class ZigbangDanjiRoomTypeModel(ResponseModel):
+    """단지 평형."""
 
     id: Annotated[
         int,
-        Field(description='단지 ID')
+        Field(description='평형 ID (danjiRoomTypeIds 조건 값)')
     ]
-    name: Annotated[
-        str | None,
-        Field(description='단지 이름')
-    ] = None
-    old_address: Annotated[
-        str | None,
-        Field(description="지번 주소 (예: '서울시 서초구 서초동 1319-13', 시·도를 줄여 준다)", alias='구주소')
-    ] = None
-    household: Annotated[
-        str | None,
-        Field(description="세대수 문구 (예: '38세대')")
-    ] = None
-    distance_num: Annotated[
-        int | None,
-        Field(description='역에서의 거리 (m)', alias='distanceNum')
+    room_type_title: Annotated[
+        ZigbangRoomTypeTitleModel | None,
+        Field(description='평형 이름', alias='roomTypeTitle')
     ] = None
 
 
-class ZigbangSubwaysResponseModel(ResponseModel):
-    """역 정보와 역에서 1.5km 안 아파트 단지 (거리순, 2026-11-15 실측: 강남역 112곳)."""
+class ZigbangDanjisItemCatalogsResponseModel(ResponseModel):
+    """단지 하나의 아파트 매물 카탈로그 응답. 카탈로그 모양은 지역 목록과 같다."""
 
-    id: Annotated[
+    total_count: Annotated[
         int,
-        Field(description='역 ID')
-    ]
-    name: Annotated[
-        str | None,
-        Field(description='역 이름')
-    ] = None
-    apt_list: Annotated[
-        list[ZigbangSubwayAptModel],
-        Field(description='역 주변 단지 (가까운 순)', alias='aptList')
+        Field(description='조건에 맞는 카탈로그 수 (페이지 무관)', alias='totalCount')
+    ] = 0
+    count_by_tran_type: Annotated[
+        dict[str, int],
+        Field(description='거래 유형(trade·charter·rental)별 카탈로그 수. 거래 유형 조건을 반영한다', alias='itemCountPerTranType')
+    ] = {}
+    room_types: Annotated[
+        list[ZigbangDanjiRoomTypeModel],
+        Field(description='단지의 평형 목록', alias='danjiRoomTypes')
     ] = []
-
-
-# ---------------------------------------------------------------------------
-# GET /apt/danjis/ids
-# ---------------------------------------------------------------------------
-
-class ZigbangDanjisIdsResponseModel(ResponseModel):
-    """주변 단지 ID 를 요청한 순서(조회수 순)로."""
-
-    count: Annotated[
-        int | None,
-        Field(description='주변 단지 전체 수 (limit 적용 전)')
-    ] = None
-    ids: Annotated[
-        list[int],
-        Field(description='단지 ID (요청한 순서)')
+    catalogs: Annotated[
+        list[ZigbangItemCatalogModel],
+        Field(description='이번 페이지의 카탈로그', alias='list')
     ] = []

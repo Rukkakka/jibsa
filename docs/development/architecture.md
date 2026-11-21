@@ -10,7 +10,7 @@ jibsa 의 계층 구조와, 명령 하나가 실행될 때 요청이 흐르는 �
 
 ```
 cli/                 Typer 명령. 인자 검증 → service 호출 → emit / handle_errors
- └─ providers/<source>/service/     여러 엔드포인트를 묶어 Listing 으로 정규화 (기능별 모듈)
+ └─ providers/<source>/service/     여러 엔드포인트를 묶어 Listing 으로 정규화 (기능별 모듈, 여러 모듈이면 기능 이름 폴더)
      └─ providers/<source>/api/        소스 API 그대로: client.py (엔드포인트 하나 = 메서드 하나, run_request_*),
                                         request/·response/ 모델
          └─ core/http.py BaseHTTPClient   httpx 클라이언트 + 요청 제한 훅

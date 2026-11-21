@@ -11,13 +11,22 @@ providers/<source>/
 ├── api/              # 아래층: 소스 API 를 그대로 옮긴 것. service 를 가져다 쓰지 않는다
 │   ├── __init__.py   # 안내 docstring 만
 │   ├── client.py     # <Source>Client(BaseHTTPClient) + run_request_* / arun_request_*
-│   ├── request/      # 요청 파라미터·본문 모델 (service 와 같은 모듈 이름, 기준 7)
-│   └── response/     # 응답 모델 (최상위 + 중첩 모델 모두, service 와 같은 모듈 이름, 기준 7)
+│   ├── request/      # 요청 파라미터·본문 모델 (service 와 같은 모양, 기능 폴더 포함, 기준 7)
+│   └── response/     # 응답 모델 (최상위 + 중첩 모델 모두, service 와 같은 모양, 기준 7)
 └── service/          # 윗층: api 를 조합해 Listing 으로 정규화
     ├── __init__.py   # 모듈 안내 docstring 만 (re-export 없음)
-    ├── common.py     # 두 모듈 이상이 쓰는 결과 모델·URL·안내 문구·상수
+    ├── common.py     # 여러 기능이 쓰는 결과 모델·URL·안내 문구·상수 (1,000줄 전까지)
+    ├── common/       # common.py 가 1,000줄을 넘을 때 common.py 대신 두는 패키지 (직방, 기준 2)
+    │   ├── __init__.py # 패키지 안내 docstring 만 (re-export 없음)
+    │   ├── base.py   # 기본 공용 (지역·URL·ID·결과 모델 등)
+    │   └── <주제>.py # 한 주제의 모듈들만 쓰는 공용 (직방 room·apt)
     ├── region.py     # 지역 이름·좌표 해석
-    └── <기능>.py      # CLI 명령 묶음 하나 (listing, complex, real_price …)
+    ├── <기능>.py      # 한 파일로 충분한 기능 하나 (CLI 명령 묶음 하나: real_price, store …)
+    └── <기능>/        # 한 기능이 여러 모듈이면 기능 이름 폴더 (직방 room·stay·complex, 기준 1)
+        ├── __init__.py # 안내 docstring 만 (re-export 없음)
+        ├── base.py   # 그 폴더의 검색·상세가 같이 쓰는 것
+        ├── search.py # 검색
+        └── detail.py # 상세
 ```
 
 - jibsa 에는 `dto.py` 가 없다. 중첩·공통 응답 모델(`ZigbangItemPinModel`,
@@ -30,22 +39,37 @@ providers/<source>/
 
 ### service 모듈을 나누는 기준
 
-1. **모듈 하나는 CLI 명령 묶음 하나를 맡는다.** 명령 이름만 알면 고칠 파일을 찾을 수 있게 한다. 그 기능의 결과 모델·변환
+1. **기능 하나는 CLI 명령 묶음 하나를 맡는다.** 명령 이름만 알면 고칠 파일을 찾을 수 있게 한다. 한 파일로 충분한 기능은
+   파일 하나로 두고, 여러 모듈로 나뉘면 그 기능 이름의 폴더로 묶어 안을 `search`(검색)·`detail`(상세)·`base`(둘이 같이
+   쓰는 것)로 나눈다 (직방 `room/`·`stay/`·`complex/`, 안에 안내만 있는 `__init__.py`). 그 기능의 결과 모델·변환
    함수·안내 문구는 같은 모듈에 둔다. 소스별 명령 ↔ 모듈 대응은 각 소스 개발 가이드의 '명령과 요청 흐름' 표에 있다
    ([직방](providers/zigbang.md#명령과-요청-흐름)·[네이버](providers/naver.md#명령과-요청-흐름)·[당근](providers/daangn.md#명령과-요청-흐름)·[다방](providers/dabang.md#명령과-요청-흐름)).
-2. **두 모듈 이상이 쓰는 심볼은 `common` 에 둔다.** 한 모듈만 쓰면 그 모듈에 둔다.
-3. **import 는 `common` → `region` → 기능 모듈 → 분기 모듈 방향으로만 한다.** 기능 모듈끼리는 서로 가져다 쓰지 않는다.
-   두 기능 모듈이 같이 쓰게 되면 그 심볼을 `common` 으로 옮긴다 (기준 2). 분기 모듈(직방 `detail`: `listing` 명령의 ID
-   분기)만 기능 모듈을 가져다 쓴다.
-4. **모듈이 1,000줄을 넘으면 기능을 다시 나눈다** (당근 `complex` 에서 비교·주변 단지를 `compare` 로 뺐다).
-5. **새 명령은 맞는 모듈에 넣는다.** 맞는 모듈이 없으면 새 모듈을 만들고 소스 문서의 표에 한 줄 추가한다.
-6. CLI 와 테스트는 하위 모듈에서 바로 가져온다 (`from jibsa.providers.zigbang.service.stay import ...`).
+2. **여러 기능이 쓰는 심볼은 `common` 에 둔다.** 한 모듈만 쓰면 그 모듈에, 한 기능 폴더 안의 모듈끼리만 쓰면 그 폴더의
+   `base.py` 에 둔다. `common.py` 가 1,000줄을 넘으면
+   `service/common/` 패키지로 바꾸고 주제별 모듈로 나눈다. 기본은 `base.py` 이고, 주제 모듈의 이름은 그 공용을 쓰는 기능
+   이름을 따른다. 한 주제의 모듈들만 쓰는 심볼이 그 주제 모듈로 가고, 주제를 넘어 쓰는 심볼은 `base` 에 남는다.
+   `__init__.py` 는 안내 docstring 만 둔다. 직방은 `common.base`(지역·URL·ID·안내·상세 결과 모델), `common.room`(원룸·빌라·오피스텔
+   목록 공용), `common.apt`(아파트 목록·묶음 공용)으로 나눴다. 기능 모듈 `apt.py` 와 공용
+   `common/apt.py` 처럼 이름이 같아도 경로로 가른다.
+3. **import 는 `common.base` → `common.<주제>` → `region` → 기능 모듈 → 입구 모듈 방향으로만 한다** (`common.py` 하나인 소스는
+   `common` → `region` → …). 기능 폴더 안은 `base` → `search`·`detail` 이다. 기능 모듈끼리는 서로 가져다 쓰지 않고,
+   같은 폴더의 `search` 와 `detail` 도 서로 가져다 쓰지 않는다. 두 기능 모듈이 같이 쓰게 되면 그 심볼을 공용으로
+   옮긴다 (한 주제 안이면 `common.<주제>`, 한 기능 폴더 안이면 그 폴더의 `base`, 기준 2). `common/` 의 주제 모듈은 `base` 만
+   가져다 쓰고 서로는 가져다 쓰지 않는다. 둘이 같이 쓰면 `base` 에 둔다. 입구 모듈(직방 `listing`: `listing` 명령의 ID 분기)만
+   기능 모듈을 가져다 쓴다.
+4. **모듈이 1,000줄을 넘으면 기능을 다시 나눈다** (당근 `complex` 에서 비교·주변 단지를 `compare` 로 뺐다). 여러 모듈이 쓰는
+   `common` 은 기능이 아니라 주제로 나눈다 (기준 2).
+5. **새 명령은 맞는 모듈에 넣는다.** 맞는 모듈이 없으면 새 모듈을 만들고(기능이 폴더면 그 안의 `search`·`detail`) 소스 문서의
+   표에 한 줄 추가한다.
+6. CLI 와 테스트는 하위 모듈에서 바로 가져온다 (`from jibsa.providers.zigbang.service.stay.search import ...`).
    테스트가 상수를 바꿔 끼울 때(`monkeypatch.setattr`)도 그 상수를 쓰는 함수가 있는 모듈을 고친다.
-7. **요청·응답 모델(`request/`·`response/`)은 service 와 같은 모듈 이름으로 나눈다.** 엔드포인트의 요청·응답 모델은
-   그 엔드포인트를 부르는 service 모듈과 같은 이름의 모듈에 둔다 (`service/stay.py` 가 부르면 `request/stay.py`·
-   `response/stay.py`). 그래서 기능 하나를 고칠 때 같은 이름의 세 파일만 보면 된다.
-   - 두 기능 이상이 부르는 엔드포인트의 모델, 여러 기능의 모델이 같이 쓰는 중첩 모델, 기반 모델은 `common` 에 둔다.
-     그래서 기능 모듈은 같은 패키지의 `common` 만 가져다 쓴다.
+7. **요청·응답 모델(`request/`·`response/`)은 service 와 같은 모양으로 나눈다.** 엔드포인트의 요청·응답 모델은
+   그 엔드포인트를 부르는 service 모듈과 같은 경로의 모듈에 둔다 (`service/stay/search.py` 가 부르면
+   `request/stay/search.py`·`response/stay/search.py`). 그래서 기능 하나를 고칠 때 같은 경로의 세 파일만 보면 된다.
+   - 한 기능 폴더 안에서만 같이 쓰는 모델(검색·상세가 같이 쓰는 요청·요약 모델 등)은 그 폴더의 `base.py` 에 두고, 여러 기능이
+     부르는 엔드포인트의 모델, 여러 기능의 모델이 같이 쓰는 중첩 모델, 기반 모델은 `common` 에 둔다.
+     그래서 기능 모듈은 같은 패키지(`request/`·`response/`)의 `common` 과 자기 폴더의 `base` 만 가져다 쓴다. 주제별로 나누는
+     `common/` 패키지는 service 에만 있고 `request/`·`response/` 의 공용은 `common.py` 하나다.
    - service 가 부르지 않는 엔드포인트(라이브러리용)는 경로가 같은 기능 모듈에 둔다.
    - 모듈이 작아도(모델 하나여도) 같은 이름으로 둔다. `client.py` 는 클래스 하나라 나누지 않는다.
 
@@ -215,7 +239,7 @@ def run_request_items_onerooms_v1(
 - 입력 검사(범위·라벨·조합)는 CLI 에서 한다 (`split_csv`, `validate_ranges`, `typer.BadParameter`). 에러 문구와 exit
   code 가 출력 계약이라, 검사를 모델로 옮겨 경로를 바꾸지 않는다. 모델은 `handle_errors` 안에서 만든다. 모델이 조합을
   검사하는 소스는 그 소스 개발 가이드에 적는다.
-- 여러 모듈이 쓰는 모델은 `service/common.py`, 한 기능만 쓰면 그 모듈에 둔다 ([나누는 기준](#service-모듈을-나누는-기준)).
+- 여러 기능이 쓰는 모델은 `service/common.py`(`common/` 패키지로 나눈 소스는 그 주제 모듈 `common/<주제>.py`, 주제를 넘어 쓰면 `common/base.py`), 한 기능만 쓰면 그 모듈에(기능 폴더 안에서만 쓰면 그 폴더의 `base.py`) 둔다 ([나누는 기준](#service-모듈을-나누는-기준)).
 - 소스마다 다른 점(필드 이름, 일부 명령만 받는 조건)은 그 소스 개발 가이드에 적는다.
 - CLI 옵션 별칭 중 네 소스가 도움말까지 똑같이 쓰는 것(`PrettyOption`, 보증금·월세·매매가 하한·상한)은 `cli/options.py`
   에 둔다. 도움말이 다르면 각 소스 CLI 에 둔다.
@@ -332,7 +356,7 @@ jibsa 는 사이트를 대체하는 도구가 아니라, 사이트가 로그인 
 
 1. 실제 응답을 확인하고, 엔드포인트 설명과 필드 의미는 별도 문서 대신 `api/client.py` docstring 과
    `api/response/` 모델에 적는다.
-2. 그 엔드포인트를 부를 기능의 `api/request/<기능>.py` / `api/response/<기능>.py` 에 모델([기준 7](#service-모듈을-나누는-기준)),
+2. 그 엔드포인트를 부를 기능의 `api/request/<기능>.py` / `api/response/<기능>.py` (기능이 폴더면 `<기능>/search.py` 처럼 service 와 같은 경로)에 모델([기준 7](#service-모듈을-나누는-기준)),
    `api/client.py` 에 ClassVar + sync/async 메서드.
 3. 필요하면 [나누는 기준](#service-모듈을-나누는-기준)에 맞는 service 모듈에서 조합한다. 자주 쓰는 공개 진입점이면
    provider `__init__.py` 에 re-export 한다 (`service/__init__.py` 에는 하지 않는다).
