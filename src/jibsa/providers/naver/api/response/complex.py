@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
+    NaverBaseResponseModel,
     NaverComplexArticleStatsModel,
     NaverPriceRangeModel,
     NaverPropertyTaxModel,
@@ -15,7 +15,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import Annotated
 
 
-class NaverComplexMaintenanceFeeModel(ResponseModel):
+class NaverComplexMaintenanceFeeModel(NaverBaseResponseModel):
     """평형의 월 관리비 (원). 관리비 자료가 없는 단지는 빈 객체라 모두 None 이다."""
 
     year_month: Annotated[
@@ -40,7 +40,7 @@ class NaverComplexMaintenanceFeeModel(ResponseModel):
     ] = None
 
 
-class NaverMarketPriceModel(ResponseModel):
+class NaverMarketPriceModel(NaverBaseResponseModel):
     """한 시세 제공처의 최신 시세 (원). 함께 오는 중개사 이름·전화(realtors)는 쓰지 않는다."""
 
     cp: Annotated[
@@ -73,7 +73,7 @@ class NaverMarketPriceModel(ResponseModel):
     ] = None
 
 
-class NaverRealPriceSummaryTradeModel(ResponseModel):
+class NaverRealPriceSummaryTradeModel(NaverBaseResponseModel):
     """실거래 요약의 최저·최고 거래 한 건 (원)."""
 
     trade_date: Annotated[
@@ -102,7 +102,7 @@ class NaverRealPriceSummaryTradeModel(ResponseModel):
     ] = None
 
 
-class NaverRealPriceSummaryModel(ResponseModel):
+class NaverRealPriceSummaryModel(NaverBaseResponseModel):
     """기간 안 실거래 최저·최고·평균. 거래가 없으면 빈 객체라 모두 None 이다."""
 
     min_price: Annotated[
@@ -119,7 +119,7 @@ class NaverRealPriceSummaryModel(ResponseModel):
     ] = None
 
 
-class NaverReconstructionStepModel(ResponseModel):
+class NaverReconstructionStepModel(NaverBaseResponseModel):
     """재건축 사업 단계 하나. 아직 거치지 않은 단계는 날짜가 없다."""
 
     step_type: Annotated[
@@ -132,7 +132,7 @@ class NaverReconstructionStepModel(ResponseModel):
     ] = None
 
 
-class NaverComplexReconstructionModel(ResponseModel):
+class NaverComplexReconstructionModel(NaverBaseResponseModel):
     """재건축 단지의 사업 정보."""
 
     construction_company: Annotated[
@@ -157,7 +157,7 @@ class NaverComplexReconstructionModel(ResponseModel):
     ] = None
 
 
-class NaverDeclaredValueModel(ResponseModel):
+class NaverDeclaredValueModel(NaverBaseResponseModel):
     """공시가격 (원)."""
 
     base_date: Annotated[
@@ -174,7 +174,7 @@ class NaverDeclaredValueModel(ResponseModel):
     ] = None
 
 
-class NaverHoldingTaxRangeModel(ResponseModel):
+class NaverHoldingTaxRangeModel(NaverBaseResponseModel):
     """보유세 한쪽 끝 (최소 또는 최대 공시가 기준)."""
 
     property_tax: Annotated[
@@ -187,7 +187,7 @@ class NaverHoldingTaxRangeModel(ResponseModel):
     ] = None
 
 
-class NaverHoldingTaxModel(ResponseModel):
+class NaverHoldingTaxModel(NaverBaseResponseModel):
     """보유세 범위 (원, 1주택 기준 추정)."""
 
     min: Annotated[
@@ -236,7 +236,7 @@ class NaverComplexReconstructionV1ResponseModel(NaverResponseModel[NaverComplexR
     """`GET /front-api/v1/complex/reconstruction` 응답."""
 
 
-class NaverLegalDivisionPricePerPyeongModel(ResponseModel):
+class NaverLegalDivisionPricePerPyeongModel(NaverBaseResponseModel):
     """지역(시·구·동)의 평당 호가 (원). 평형이 속한 지역을 큰 단위부터 서울시(SI)·송파구(GUN)·가락동(EUP) 순으로 준다."""
 
     price_per_pyeong: Annotated[
@@ -265,7 +265,7 @@ class NaverLegalDivisionPricePerPyeongModel(ResponseModel):
     ] = None
 
 
-class NaverComplexPyeongPriceModel(ResponseModel):
+class NaverComplexPyeongPriceModel(NaverBaseResponseModel):
     """평형의 평당 호가. 월세(B2)나 없는 값은 `pricePerPyeong` 키가 없고 목록이 비어 온다."""
 
     price_per_pyeong: Annotated[

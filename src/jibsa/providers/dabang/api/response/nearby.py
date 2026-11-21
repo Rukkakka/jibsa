@@ -1,7 +1,7 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
     DabangV5ResponseModel,
     Meters,
 )
@@ -9,7 +9,7 @@ from jibsa.providers.dabang.api.response.common import (
 from typing import Annotated
 
 
-class DabangNearLineModel(ResponseModel):
+class DabangNearLineModel(DabangBaseResponseModel):
     """역 노선."""
 
     name: Annotated[
@@ -18,7 +18,7 @@ class DabangNearLineModel(ResponseModel):
     ] = None
 
 
-class DabangNearStationModel(ResponseModel):
+class DabangNearStationModel(DabangBaseResponseModel):
     """가까운 지하철역 하나."""
 
     name: Annotated[
@@ -35,7 +35,7 @@ class DabangNearStationModel(ResponseModel):
     ] = []
 
 
-class DabangNearStationsModel(ResponseModel):
+class DabangNearStationsModel(DabangBaseResponseModel):
     """반경 안 지하철역."""
 
     list_: Annotated[
@@ -48,7 +48,7 @@ class DabangNearStationsModel(ResponseModel):
     ] = None
 
 
-class DabangNearRoutesModel(ResponseModel):
+class DabangNearRoutesModel(DabangBaseResponseModel):
     """반경 안 버스 노선 (노선마다 첫·막차, 배차가 오지만 jibsa 는 수만 쓴다)."""
 
     list_: Annotated[
@@ -61,7 +61,7 @@ class DabangNearRoutesModel(ResponseModel):
     ] = None
 
 
-class DabangTransitNearResultModel(ResponseModel):
+class DabangTransitNearResultModel(DabangBaseResponseModel):
     """매물·단지 둘레 교통 `result`."""
 
     subway: Annotated[
@@ -78,7 +78,7 @@ class DabangTransitNearV5ResponseModel(DabangV5ResponseModel[DabangTransitNearRe
     """`GET /api/v5/transit/near/{target}` 응답."""
 
 
-class DabangNearPoiModel(ResponseModel):
+class DabangNearPoiModel(DabangBaseResponseModel):
     """가까운 시설 하나 (좌표도 오지만 모델에 두지 않는다)."""
 
     name: Annotated[
@@ -91,7 +91,7 @@ class DabangNearPoiModel(ResponseModel):
     ] = None
 
 
-class DabangNearGroupModel(ResponseModel):
+class DabangNearGroupModel(DabangBaseResponseModel):
     """시설 종류 하나. `query` 는 카카오 장소 분류와 같은 코드(MT1·CS2·CE7·BK9·PM9·PO3·SW8)와 다방 코드(BS·POLICE·CCTV·NS·KS·
     ES·MS·HS)다. 웹 이름표는 distance-km-m 청크에 있다 (2026-11-13: BS 버스, SW8 지하철역, MT1 마트, CS2 편의점, CE7 카페,
     BK9 은행, PM9 약국, PO3 관공서, POLICE 치안, CCTV, NS 어린이집, KS 유치원, ES 초등학교, MS 중학교, HS 고등학교).
@@ -108,7 +108,7 @@ class DabangNearGroupModel(ResponseModel):
     ] = []
 
 
-class DabangNearResultModel(ResponseModel):
+class DabangNearResultModel(DabangBaseResponseModel):
     """가까운 시설 `result`."""
 
     convenience: Annotated[
@@ -129,7 +129,7 @@ class DabangNearV5ResponseModel(DabangV5ResponseModel[DabangNearResultModel]):
     """`GET /api/v5/{target}/{target_id}/near` 응답."""
 
 
-class DabangPetPlaceModel(ResponseModel):
+class DabangPetPlaceModel(DabangBaseResponseModel):
     """반려동물 장소 하나. 전화(`phone`)도 오지만 모델에 두지 않는다."""
 
     name: Annotated[
@@ -150,7 +150,7 @@ class DabangPetPlaceModel(ResponseModel):
     ] = None
 
 
-class DabangPetPlaceGroupModel(ResponseModel):
+class DabangPetPlaceGroupModel(DabangBaseResponseModel):
     """반려동물 장소 종류 하나 (웹 '펫세권' 탭)."""
 
     query: Annotated[
@@ -167,7 +167,7 @@ class DabangPetPlaceGroupModel(ResponseModel):
     ] = None
 
 
-class DabangPetPlacesResultModel(ResponseModel):
+class DabangPetPlacesResultModel(DabangBaseResponseModel):
     """반려동물 장소 `result`."""
 
     radius: Annotated[
@@ -184,7 +184,7 @@ class DabangPetPlacesV5ResponseModel(DabangV5ResponseModel[DabangPetPlacesResult
     """`GET /api/v5/pet-places` 응답."""
 
 
-class DabangCarShareZoneModel(ResponseModel):
+class DabangCarShareZoneModel(DabangBaseResponseModel):
     """카셰어링 존 하나."""
 
     zone_type: Annotated[
@@ -205,7 +205,7 @@ class DabangCarShareZoneModel(ResponseModel):
     ] = None
 
 
-class DabangCarShareZoneResultModel(ResponseModel):
+class DabangCarShareZoneResultModel(DabangBaseResponseModel):
     """카셰어링 존 `result`."""
 
     radius: Annotated[
@@ -222,7 +222,7 @@ class DabangPublicDataCarShareZoneV5ResponseModel(DabangV5ResponseModel[DabangCa
     """`GET /api/v5/public-data/{target}/car-share-zone` 응답."""
 
 
-class DabangAveragePriceModel(ResponseModel):
+class DabangAveragePriceModel(DabangBaseResponseModel):
     """역(또는 동) 둘레 평균 매물가 한 칸. 웹은 '평균 매물가' 로 보여 준다 (지금 올라온 매물 가격의 평균, map 청크).
 
     Args:
@@ -250,7 +250,7 @@ class DabangAveragePriceModel(ResponseModel):
     ] = None
 
 
-class DabangMarkerStationModel(ResponseModel):
+class DabangMarkerStationModel(DabangBaseResponseModel):
     """지도 집계의 역 표시 하나."""
 
     id: Annotated[
@@ -271,7 +271,7 @@ class DabangMarkerStationModel(ResponseModel):
     ] = None
 
 
-class DabangMarkersResultModel(ResponseModel):
+class DabangMarkersResultModel(DabangBaseResponseModel):
     """지도 집계 `result` (동·칸·단지 표시도 오지만 jibsa 는 역 표시만 쓴다)."""
 
     subway_list: Annotated[

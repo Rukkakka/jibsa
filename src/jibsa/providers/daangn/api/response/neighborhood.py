@@ -2,8 +2,10 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.daangn.api.response.common import DaangnGraphQLResponseModel
+from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
+    DaangnGraphQLResponseModel,
+)
 
 from typing import Annotated
 
@@ -12,14 +14,14 @@ from typing import Annotated
 # POST realty.kr.karrotmarket.com/graphql — 좋은 동네 추천, 인기 단지·매물
 # ---------------------------------------------------------------------------
 
-class DaangnLivableSigunguModel(ResponseModel):
+class DaangnLivableSigunguModel(DaangnBaseResponseModel):
     """추천 지역 시·군·구."""
 
     code: Annotated[str, Field(description='SGIS 시·군·구 코드 (예: 11230)')]
     name: Annotated[str, Field(description='이름 (예: 강남구)')]
 
 
-class DaangnLivableSidoModel(ResponseModel):
+class DaangnLivableSidoModel(DaangnBaseResponseModel):
     """추천 지역 시·도."""
 
     code: Annotated[str, Field(description='SGIS 시·도 코드 (예: 11)')]
@@ -30,7 +32,7 @@ class DaangnLivableSidoModel(ResponseModel):
     ] = []
 
 
-class DaangnLivableRegionScopesDataModel(ResponseModel):
+class DaangnLivableRegionScopesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     livable_region_scopes: Annotated[
@@ -48,7 +50,7 @@ class DaangnLivableRegionScopesResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnRecommendedNeighborhoodModel(ResponseModel):
+class DaangnRecommendedNeighborhoodModel(DaangnBaseResponseModel):
     """추천 동 하나. 동은 행정동이다 (예: 역삼1동)."""
 
     sgg_nm: Annotated[
@@ -73,7 +75,7 @@ class DaangnRecommendedNeighborhoodModel(ResponseModel):
     ] = None
 
 
-class DaangnRecommendNeighborhoodsDataModel(ResponseModel):
+class DaangnRecommendNeighborhoodsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     recommend_neighborhoods: Annotated[

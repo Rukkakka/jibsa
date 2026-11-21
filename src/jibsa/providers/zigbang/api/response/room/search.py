@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangBaseResponseModel,
     ZigbangItemPinModel,
     ZigbangItemSectionModel,
     ZigbangLatLngModel,
@@ -16,7 +16,7 @@ from typing import Annotated
 # GET /house/property/v1/items/{onerooms|officetels|villas}
 # ---------------------------------------------------------------------------
 
-class ZigbangSubwayLineModel(ResponseModel):
+class ZigbangSubwayLineModel(ZigbangBaseResponseModel):
     """지하철 노선."""
 
     name: Annotated[
@@ -29,7 +29,7 @@ class ZigbangSubwayLineModel(ResponseModel):
     ] = None
 
 
-class ZigbangSubwayModel(ResponseModel):
+class ZigbangSubwayModel(ZigbangBaseResponseModel):
     """타일 안의 지하철역."""
 
     id: Annotated[
@@ -50,7 +50,7 @@ class ZigbangSubwayModel(ResponseModel):
     ] = []
 
 
-class ZigbangItemsResponseModel(ResponseModel):
+class ZigbangItemsResponseModel(ZigbangBaseResponseModel):
     """geohash 타일 매물 목록 응답 (원룸·오피스텔·빌라 공통)."""
 
     items: Annotated[

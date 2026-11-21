@@ -1,21 +1,21 @@
 """응답 모델: 아파트 매물 검색 (search listings apt), 아파트 매물 상세 (listing), 매물 묶음과 호 정보 (catalog)."""
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangBaseResponseModel,
     ZigbangItemCatalogModel,
     ZigbangRoomTypeTitleModel,
 )
 
-from typing import Annotated, Any
+from typing import Annotated
 
 
 # ---------------------------------------------------------------------------
 # GET /apt/locals/{localCode}/item-catalogs
 # ---------------------------------------------------------------------------
 
-class ZigbangLocalsItemCatalogsResponseModel(ResponseModel):
+class ZigbangLocalsItemCatalogsResponseModel(ZigbangBaseResponseModel):
     """지역 아파트 매물 카탈로그 응답."""
 
     local_code: Annotated[
@@ -48,7 +48,7 @@ class ZigbangLocalsItemCatalogsResponseModel(ResponseModel):
 # GET /apt/locals/polygon
 # ---------------------------------------------------------------------------
 
-class ZigbangLocalsPolygonResponseModel(ResponseModel):
+class ZigbangLocalsPolygonResponseModel(ZigbangBaseResponseModel):
     """geohash 칸 중심이 속한 동 (예: `{code: '11650108', name: '서초동', geojson: null}`). 경계(geojson)는 읽지 않는다."""
 
     code: Annotated[
@@ -65,7 +65,7 @@ class ZigbangLocalsPolygonResponseModel(ResponseModel):
 # GET /apt/item-catalogs/items/{itemId}
 # ---------------------------------------------------------------------------
 
-class ZigbangAptManageCostAmountModel(ResponseModel):
+class ZigbangAptManageCostAmountModel(ZigbangBaseResponseModel):
     """아파트 관리비 금액과 항목."""
 
     monthly_cost: Annotated[
@@ -90,7 +90,7 @@ class ZigbangAptManageCostAmountModel(ResponseModel):
     ] = None
 
 
-class ZigbangAptManageCostModel(ResponseModel):
+class ZigbangAptManageCostModel(ZigbangBaseResponseModel):
     """아파트 관리비. `type` 에 따라 금액이 `fixedManageCost` 나 `etcManageCost` 에 온다."""
 
     type: Annotated[
@@ -116,7 +116,7 @@ class ZigbangAptManageCostModel(ResponseModel):
         return None
 
 
-class ZigbangAptRoomTypeInfoModel(ResponseModel):
+class ZigbangAptRoomTypeInfoModel(ZigbangBaseResponseModel):
     """아파트 매물 상세의 평형 정보. 이 밖에 평면도 그림 주소(`floorPlanImageUrl`)가 오지만 쓰지 않는다 (사진은 내보내지 않는다)."""
 
     danji_room_type_id: Annotated[
@@ -129,7 +129,7 @@ class ZigbangAptRoomTypeInfoModel(ResponseModel):
     ] = None
 
 
-class ZigbangAptItemModel(ResponseModel):
+class ZigbangAptItemModel(ZigbangBaseResponseModel):
     """아파트 매물 상세 본문 (직방·제휴 매물).
 
     웹 아파트 매물 화면이 부르는 유일한 상세다 (주거 상세·`/v3/items` 는 아파트에 404). 직방 매물의 층은
@@ -270,7 +270,7 @@ class ZigbangAptItemModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemCatalogsItemsResponseModel(ResponseModel):
+class ZigbangItemCatalogsItemsResponseModel(ZigbangBaseResponseModel):
     """아파트 매물 상세 응답."""
 
     item: Annotated[
@@ -283,7 +283,7 @@ class ZigbangItemCatalogsItemsResponseModel(ResponseModel):
 # GET /apt/item-catalogs/{areaHoId}
 # ---------------------------------------------------------------------------
 
-class ZigbangItemCatalogsResponseModel(ResponseModel):
+class ZigbangItemCatalogsResponseModel(ZigbangBaseResponseModel):
     """같은 호·거래 유형의 아파트 매물 묶음 한 쪽 (웹 묶음 화면). 매물마다 아파트 상세(`/apt/item-catalogs/items`)와 같은 꼴이다.
 
     이 밖에 묶음의 가격 범위(`depositMin`·`depositMax`·`rentMin`·`rentMax`)와 근처 중개사무소(`acceptedLocalAgents`, 이름·대표자·주소)가
@@ -303,18 +303,12 @@ class ZigbangItemCatalogsResponseModel(ResponseModel):
         Field(description='이 쪽의 매물 (서버 순서 그대로 웹이 보여 준다). null 이면 빈 목록')
     ] = []
 
-    @field_validator('items', mode='before')
-    @classmethod
-    def null_items_as_empty(cls, value: Any) -> Any:
-        """null 은 빈 쪽으로 받는다. 매물이 없다는 모양이라 응답 형식 오류(PARSE_ERROR)로 끝내지 않는다."""
-        return [] if value is None else value
-
 
 # ---------------------------------------------------------------------------
 # GET /apt/item-catalogs/{areaHoId}/ho-info
 # ---------------------------------------------------------------------------
 
-class ZigbangHoPriceModel(ResponseModel):
+class ZigbangHoPriceModel(ZigbangBaseResponseModel):
     """호의 직방 시세 하나 (매매 또는 전세)."""
 
     price: Annotated[
@@ -327,7 +321,7 @@ class ZigbangHoPriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangHoZigbangPriceModel(ResponseModel):
+class ZigbangHoZigbangPriceModel(ZigbangBaseResponseModel):
     """호의 직방 시세. 호 ID(`areahoId`)는 읽지 않는다."""
 
     trade: Annotated[
@@ -340,7 +334,7 @@ class ZigbangHoZigbangPriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangHoPublicPriceModel(ResponseModel):
+class ZigbangHoPublicPriceModel(ZigbangBaseResponseModel):
     """공시가격 한 해."""
 
     year: Annotated[
@@ -357,7 +351,7 @@ class ZigbangHoPublicPriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangHoPresalePriceModel(ResponseModel):
+class ZigbangHoPresalePriceModel(ZigbangBaseResponseModel):
     """호의 분양가 (키 이름이 한글이다). 금액은 **만원**이다."""
 
     ho: Annotated[
@@ -381,7 +375,7 @@ class ZigbangHoPresalePriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangHoPriceInfoModel(ResponseModel):
+class ZigbangHoPriceInfoModel(ZigbangBaseResponseModel):
     """호의 가격 정보. 시세 변동 차트 여부(`hasRtPrices`)는 읽지 않는다."""
 
     zigbang_price: Annotated[
@@ -398,7 +392,7 @@ class ZigbangHoPriceInfoModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemCatalogsHoInfoResponseModel(ResponseModel):
+class ZigbangItemCatalogsHoInfoResponseModel(ZigbangBaseResponseModel):
     """아파트 매물 묶음의 호 정보. 단지·동·면적·관리비·VR·평면도 같은 이 밖의 키는 읽지 않는다 (사진·좌표는 내보내지 않는다)."""
 
     price_info: Annotated[

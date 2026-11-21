@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangBaseResponseModel,
     ZigbangSearchItemModel,
 )
 
@@ -19,7 +19,7 @@ GeoJsonPoint = Annotated[list[float], Field(min_length=2)]
 # GET /v2/search
 # ---------------------------------------------------------------------------
 
-class ZigbangSearchV2ResponseModel(ResponseModel):
+class ZigbangSearchV2ResponseModel(ZigbangBaseResponseModel):
     """지역/역/단지 검색 응답."""
 
     success: Annotated[
@@ -36,7 +36,7 @@ class ZigbangSearchV2ResponseModel(ResponseModel):
 # GET /v2/local/polygon
 # ---------------------------------------------------------------------------
 
-class ZigbangGeoJsonModel(ResponseModel):
+class ZigbangGeoJsonModel(ZigbangBaseResponseModel):
     """행정구역 경계 (GeoJSON)."""
 
     type: Annotated[
@@ -49,7 +49,7 @@ class ZigbangGeoJsonModel(ResponseModel):
     ] = []
 
 
-class ZigbangLocalPolygonV2ResponseModel(ResponseModel):
+class ZigbangLocalPolygonV2ResponseModel(ZigbangBaseResponseModel):
     """geohash 칸 중심이 속한 행정구역과 경계."""
 
     code: Annotated[

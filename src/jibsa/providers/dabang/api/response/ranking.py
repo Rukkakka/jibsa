@@ -1,12 +1,14 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.dabang.api.response.common import DabangV5ResponseModel
+from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
+    DabangV5ResponseModel,
+)
 
 from typing import Annotated
 
 
-class DabangFluctuationModel(ResponseModel):
+class DabangFluctuationModel(DabangBaseResponseModel):
     """앞 기간 대비 순위 변동 (type: UP·DOWN·STEADY·NEW)."""
 
     type: Annotated[
@@ -19,7 +21,7 @@ class DabangFluctuationModel(ResponseModel):
     ] = None
 
 
-class DabangWatchRankingItemModel(ResponseModel):
+class DabangWatchRankingItemModel(DabangBaseResponseModel):
     """조회 순위 한 칸. 단지면 `complexId`·`complexName`·`address`, 동이면 `dongCode`·`dongName`·`stateName` 이다."""
 
     rank: Annotated[
@@ -60,7 +62,7 @@ class DabangWatchRankingItemModel(ResponseModel):
     ] = None
 
 
-class DabangWatchRankingsResultModel(ResponseModel):
+class DabangWatchRankingsResultModel(DabangBaseResponseModel):
     """조회 순위 `result`."""
 
     format_base_period: Annotated[
@@ -77,7 +79,7 @@ class DabangRealTimeWatchRankingsV5ResponseModel(DabangV5ResponseModel[DabangWat
     """`GET /api/v5/real-time-watch-rankings/{unit}` 응답."""
 
 
-class DabangTradeRankingItemModel(ResponseModel):
+class DabangTradeRankingItemModel(DabangBaseResponseModel):
     """거래 순위 한 칸."""
 
     rank: Annotated[
@@ -102,7 +104,7 @@ class DabangTradeRankingItemModel(ResponseModel):
     ] = None
 
 
-class DabangTradeRankingsResultModel(ResponseModel):
+class DabangTradeRankingsResultModel(DabangBaseResponseModel):
     """거래 순위 `result`."""
 
     format_base_period: Annotated[
@@ -119,7 +121,7 @@ class DabangRealPriceTradeRankingsComplexV5ResponseModel(DabangV5ResponseModel[D
     """`GET /api/v5/real-price/trade/rankings/complex` 응답."""
 
 
-class DabangRegionRankingItemModel(ResponseModel):
+class DabangRegionRankingItemModel(DabangBaseResponseModel):
     """범위 안 순위 한 칸. 값은 항목마다 다른 글자 키로 온다: `formattedPrice`('61.1억'), `formattedCount`('27개',
     '6,702세대', '86,513명'), `formattedPercentage`('133.3%', 진학률 '2%'), `formattedAge`('44년 6개월'),
     `formattedChangeRate`('+0.8%'), `formattedScore`('19점'). 동네정보 '매물정보' 랭킹의 거래량만 `formattedVolume`('266개')이다.
@@ -227,7 +229,7 @@ class DabangRegionRankingItemModel(ResponseModel):
     ] = None
 
 
-class DabangRegionRankingPageModel(ResponseModel):
+class DabangRegionRankingPageModel(DabangBaseResponseModel):
     """순위 한 쪽."""
 
     list_: Annotated[
@@ -244,7 +246,7 @@ class DabangRegionRankingPageModel(ResponseModel):
     ] = None
 
 
-class DabangRegionRankingResultModel(ResponseModel):
+class DabangRegionRankingResultModel(DabangBaseResponseModel):
     """범위 안 순위 `result`."""
 
     ranking: Annotated[

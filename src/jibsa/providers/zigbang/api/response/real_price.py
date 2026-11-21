@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangBaseResponseModel,
     ZigbangRoomTypeTitleModel,
 )
 
@@ -14,7 +14,7 @@ from typing import Annotated
 # GET /apt/danjis/{danjiId}/rt-prices, /apt/danjis/{danjiId}/room-types/{danjiRoomTypeId}/rt-prices
 # ---------------------------------------------------------------------------
 
-class ZigbangRtPriceModel(ResponseModel):
+class ZigbangRtPriceModel(ZigbangBaseResponseModel):
     """실거래 한 건. 금액은 **만원** 이다."""
 
     rt_id: Annotated[
@@ -95,7 +95,7 @@ class ZigbangRtPriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjisRtPricesResponseModel(ResponseModel):
+class ZigbangDanjisRtPricesResponseModel(ZigbangBaseResponseModel):
     """단지 실거래가 한 쪽 (최근 계약 순)."""
 
     transactions: Annotated[

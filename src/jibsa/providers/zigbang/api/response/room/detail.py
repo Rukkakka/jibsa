@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
+    ZigbangBaseResponseModel,
     ZigbangLatLngModel,
     ZigbangSubwayBriefModel,
 )
@@ -20,7 +20,7 @@ from typing import Annotated
 # GET /v3/items/{itemId}
 # ---------------------------------------------------------------------------
 
-class ZigbangAgentModel(ResponseModel):
+class ZigbangAgentModel(ZigbangBaseResponseModel):
     """매물을 올린 중개사무소 요약."""
 
     agent_title: Annotated[
@@ -45,7 +45,7 @@ class ZigbangAgentModel(ResponseModel):
     ] = None
 
 
-class ZigbangRealtorModel(ResponseModel):
+class ZigbangRealtorModel(ZigbangBaseResponseModel):
     """중개사 상세."""
 
     office_title: Annotated[
@@ -70,7 +70,7 @@ class ZigbangRealtorModel(ResponseModel):
     ] = None
 
 
-class ZigbangDetailFloorModel(ResponseModel):
+class ZigbangDetailFloorModel(ZigbangBaseResponseModel):
     """층 정보."""
 
     floor: Annotated[
@@ -83,7 +83,7 @@ class ZigbangDetailFloorModel(ResponseModel):
     ] = None
 
 
-class ZigbangDetailAreaModel(ResponseModel):
+class ZigbangDetailAreaModel(ZigbangBaseResponseModel):
     """상세 면적."""
 
     exclusive_m2: Annotated[
@@ -96,7 +96,7 @@ class ZigbangDetailAreaModel(ResponseModel):
     ] = None
 
 
-class ZigbangManageCostModel(ResponseModel):
+class ZigbangManageCostModel(ZigbangBaseResponseModel):
     """관리비."""
 
     amount: Annotated[
@@ -113,7 +113,7 @@ class ZigbangManageCostModel(ResponseModel):
     ] = []
 
 
-class ZigbangItemDetailModel(ResponseModel):
+class ZigbangItemDetailModel(ZigbangBaseResponseModel):
     """매물 상세 본문."""
 
     item_id: Annotated[
@@ -230,7 +230,7 @@ class ZigbangItemDetailModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsV3ResponseModel(ResponseModel):
+class ZigbangItemsV3ResponseModel(ZigbangBaseResponseModel):
     """매물 풀 상세 응답."""
 
     item: Annotated[
@@ -259,7 +259,7 @@ class ZigbangItemsV3ResponseModel(ResponseModel):
 # GET /house/property/v1/bls/{pnu}/school_zones
 # ---------------------------------------------------------------------------
 
-class ZigbangBlSchoolModel(ResponseModel):
+class ZigbangBlSchoolModel(ZigbangBaseResponseModel):
     """건물 주변 학교 하나."""
 
     name: Annotated[
@@ -272,7 +272,7 @@ class ZigbangBlSchoolModel(ResponseModel):
     ] = None
 
 
-class ZigbangBlSchoolZoneModel(ResponseModel):
+class ZigbangBlSchoolZoneModel(ZigbangBaseResponseModel):
     """통학구역·학교군."""
 
     zone_name: Annotated[
@@ -281,7 +281,7 @@ class ZigbangBlSchoolZoneModel(ResponseModel):
     ] = None
 
 
-class ZigbangBlSchoolLevelModel(ResponseModel):
+class ZigbangBlSchoolLevelModel(ZigbangBaseResponseModel):
     """학교급(초·중·고) 하나의 학구·학교군과 학교."""
 
     school_zone: Annotated[
@@ -294,7 +294,7 @@ class ZigbangBlSchoolLevelModel(ResponseModel):
     ] = None
 
 
-class ZigbangBlsSchoolZonesV1ResponseModel(ResponseModel):
+class ZigbangBlsSchoolZonesV1ResponseModel(ZigbangBaseResponseModel):
     """원룸·빌라·오피스텔 건물(필지)의 학군. 학구 밖 주변 학교(nearbySchools)는 읽지 않는다."""
 
     elementary: Annotated[
@@ -315,7 +315,7 @@ class ZigbangBlsSchoolZonesV1ResponseModel(ResponseModel):
 # GET /v2/bls/{pnu}/rts
 # ---------------------------------------------------------------------------
 
-class ZigbangBlsRtModel(ResponseModel):
+class ZigbangBlsRtModel(ZigbangBaseResponseModel):
     """건물(필지)의 실거래 한 건. 필지 번호(`pnu`)는 읽지 않는다. 금액은 **만원**이다."""
 
     deal_date: Annotated[
@@ -352,7 +352,7 @@ class ZigbangBlsRtModel(ResponseModel):
     ] = None
 
 
-class ZigbangBlsRtsV2ResponseModel(ResponseModel):
+class ZigbangBlsRtsV2ResponseModel(ZigbangBaseResponseModel):
     """건물(필지) 하나의 실거래 목록 (최근 거래부터. 2026-11-19 실측: 한 건물 42건, 거래가 없는 필지는 빈 목록)."""
 
     rts: Annotated[

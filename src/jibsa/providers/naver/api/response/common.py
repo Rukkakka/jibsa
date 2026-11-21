@@ -2,10 +2,14 @@
 
 from pydantic import (
     Field,
+    ValidatorFunctionWrapHandler,
     model_validator,
 )
 
-from jibsa.core.schema import ResponseModel
+from jibsa.core.schema import (
+    ResponseModel,
+    validate_dropping_nulls,
+)
 
 from typing import (
     Annotated,
@@ -18,7 +22,16 @@ from typing import (
 T = TypeVar('T')
 
 
-class NaverResponseModel(ResponseModel, Generic[T]):
+class NaverBaseResponseModel(ResponseModel):
+    """네이버 응답 모델의 기반. 목록 칸의 null 은 키가 없는 것과 같게, 객체 목록 안의 null 원소는 빼고 `null_items` 로 센다 (`validate_dropping_nulls`)."""
+
+    @model_validator(mode='wrap')
+    @classmethod
+    def null_lists_as_missing(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        return validate_dropping_nulls(cls, data, handler)
+
+
+class NaverResponseModel(NaverBaseResponseModel, Generic[T]):
     """모든 front-api 응답의 봉투. 실제 데이터는 `result`.
 
     금액 필드는 모두 **원** 단위 정수다 (직방·당근은 만원).
@@ -51,7 +64,7 @@ class NaverResponseModel(ResponseModel, Generic[T]):
         return data
 
 
-class NaverCoordinatesModel(ResponseModel):
+class NaverCoordinatesModel(NaverBaseResponseModel):
     """좌표. x 가 경도, y 가 위도."""
 
     x_coordinate: Annotated[
@@ -64,7 +77,7 @@ class NaverCoordinatesModel(ResponseModel):
     ]
 
 
-class NaverComplexAddressModel(ResponseModel):
+class NaverComplexAddressModel(NaverBaseResponseModel):
     """단지 주소."""
 
     legal_division_number: Annotated[
@@ -97,7 +110,7 @@ class NaverComplexAddressModel(ResponseModel):
     ] = None
 
 
-class NaverParkingInfoModel(ResponseModel):
+class NaverParkingInfoModel(NaverBaseResponseModel):
     """주차."""
 
     total_parking_count: Annotated[
@@ -110,7 +123,7 @@ class NaverParkingInfoModel(ResponseModel):
     ] = None
 
 
-class NaverBuildingRatioInfoModel(ResponseModel):
+class NaverBuildingRatioInfoModel(NaverBaseResponseModel):
     """용적률·건폐율."""
 
     floor_area_ratio: Annotated[
@@ -123,7 +136,7 @@ class NaverBuildingRatioInfoModel(ResponseModel):
     ] = None
 
 
-class NaverHeatingAndCoolingInfoModel(ResponseModel):
+class NaverHeatingAndCoolingInfoModel(NaverBaseResponseModel):
     """단지의 난방 방식·연료 (`/complex`·`/complex/villa` 의 heatingAndCoolingInfo). 코드 뜻은 `NaverFacilityInfoModel` 과 같다."""
 
     heating_and_cooling_system_type: Annotated[
@@ -136,7 +149,7 @@ class NaverHeatingAndCoolingInfoModel(ResponseModel):
     ] = None
 
 
-class NaverComplexModel(ResponseModel):
+class NaverComplexModel(NaverBaseResponseModel):
     """단지 종합정보."""
 
     name: Annotated[
@@ -204,7 +217,7 @@ class NaverComplexModel(ResponseModel):
     ] = None
 
 
-class NaverComplexArticleCountModel(ResponseModel):
+class NaverComplexArticleCountModel(NaverBaseResponseModel):
     """거래 유형별 매물 수."""
 
     deal_count: Annotated[
@@ -225,7 +238,7 @@ class NaverComplexArticleCountModel(ResponseModel):
     ] = 0
 
 
-class NaverComplexArticlePriceModel(ResponseModel):
+class NaverComplexArticlePriceModel(NaverBaseResponseModel):
     """호가 범위 (원).
 
     월세·단기임대는 보증금과 월세가 짝이다. Min 짝은 가격 낮은 순 첫 매물의 (보증금, 월세), Max 짝은 가격 높은 순 첫 매물의
@@ -283,7 +296,7 @@ class NaverComplexArticlePriceModel(ResponseModel):
     ] = None
 
 
-class NaverComplexArticleStatsModel(ResponseModel):
+class NaverComplexArticleStatsModel(NaverBaseResponseModel):
     """단지 매물 통계: 거래 유형별 매물 수와 호가 범위."""
 
     count: Annotated[
@@ -296,7 +309,7 @@ class NaverComplexArticleStatsModel(ResponseModel):
     ] = Field(default_factory=NaverComplexArticlePriceModel)
 
 
-class NaverBuildingModel(ResponseModel):
+class NaverBuildingModel(NaverBaseResponseModel):
     """단지의 동 한 개. 좌표도 오지만 쓰지 않는다."""
 
     number: Annotated[
@@ -313,7 +326,7 @@ class NaverBuildingModel(ResponseModel):
     ] = None
 
 
-class NaverPriceRangeModel(ResponseModel):
+class NaverPriceRangeModel(NaverBaseResponseModel):
     """시세 범위 (하한 floor, 상한 ceiling)."""
 
     floor: Annotated[
@@ -326,7 +339,7 @@ class NaverPriceRangeModel(ResponseModel):
     ] = None
 
 
-class NaverSchoolModel(ResponseModel):
+class NaverSchoolModel(NaverBaseResponseModel):
     """배정 초등학교 한 곳. 좌표도 오지만 쓰지 않는다."""
 
     code: Annotated[
@@ -363,7 +376,7 @@ class NaverSchoolModel(ResponseModel):
     ] = None
 
 
-class NaverPyeongModel(ResponseModel):
+class NaverPyeongModel(NaverBaseResponseModel):
     """평형 한 개."""
 
     number: Annotated[
@@ -412,7 +425,7 @@ class NaverPyeongModel(ResponseModel):
     ] = None
 
 
-class NaverPyeongGroupTypeModel(ResponseModel):
+class NaverPyeongGroupTypeModel(NaverBaseResponseModel):
     """평형 묶음에 든 평형 하나. 평형 목록(`pyeongList`, `NaverPyeongModel`)의 평형과 같은 키(면적·방 수 등)에 이름 구분·VR 여부가 더 온다.
 
     jibsa 는 묶음의 평형 번호만 쓴다. `NaverPyeongModel` 을 이어받지 않는다: 그 필수 칸(`number`·`name`)이 서버에서 비어 와도
@@ -437,7 +450,7 @@ class NaverPyeongGroupTypeModel(ResponseModel):
     ] = None
 
 
-class NaverPyeongGroupModel(ResponseModel):
+class NaverPyeongGroupModel(NaverBaseResponseModel):
     """평형 묶음 하나 ('33평' 묶음에 61A·61B 등). 사이트는 평형이 많은 단지를 대표 평수로 묶어 보여 준다."""
 
     representative_pyeong_name: Annotated[
@@ -458,7 +471,7 @@ class NaverPyeongGroupModel(ResponseModel):
     ] = None
 
 
-class NaverPropertyTaxModel(ResponseModel):
+class NaverPropertyTaxModel(NaverBaseResponseModel):
     """재산세 (원)."""
 
     property_tax: Annotated[
@@ -475,7 +488,7 @@ class NaverPropertyTaxModel(ResponseModel):
     ] = None
 
 
-class NaverTotalRealEstateTaxModel(ResponseModel):
+class NaverTotalRealEstateTaxModel(NaverBaseResponseModel):
     """종합부동산세 (원)."""
 
     total_real_estate_tax: Annotated[
@@ -488,7 +501,7 @@ class NaverTotalRealEstateTaxModel(ResponseModel):
     ] = None
 
 
-class NaverLegalDivisionModel(ResponseModel):
+class NaverLegalDivisionModel(NaverBaseResponseModel):
     """좌표가 속한 법정동."""
 
     legal_division_number: Annotated[
@@ -513,11 +526,11 @@ class NaverLegalDivisionModel(ResponseModel):
     ] = None
 
 
-class NaverFacilityInfoModel(ResponseModel):
+class NaverFacilityInfoModel(NaverBaseResponseModel):
     """시설.
 
     생활·보안·기타·냉방 시설 목록은 고른 것이 없으면 null 이 아니라 빈 목록으로 온다 (2026-10-14 실측: 신림동 원룸 상세
-    `"security": []`). 그래서 목록 필드는 None 을 받지 않는다.
+    `"security": []`). 그래서 목록 필드는 None 을 받지 않고, 혹시 null 이 와도 기반 모델이 키가 없는 것과 같게 읽는다.
     """
 
     life: Annotated[
@@ -585,7 +598,7 @@ class NaverFacilityInfoModel(ResponseModel):
     ] = None
 
 
-class NaverListSpaceInfoModel(ResponseModel):
+class NaverListSpaceInfoModel(NaverBaseResponseModel):
     """목록의 면적."""
 
     supply_space: Annotated[
@@ -602,7 +615,7 @@ class NaverListSpaceInfoModel(ResponseModel):
     ] = None
 
 
-class NaverListFloorDetailModel(ResponseModel):
+class NaverListFloorDetailModel(NaverBaseResponseModel):
     """목록의 층."""
 
     target_floor: Annotated[
@@ -615,7 +628,7 @@ class NaverListFloorDetailModel(ResponseModel):
     ] = None
 
 
-class NaverListArticleDetailModel(ResponseModel):
+class NaverListArticleDetailModel(NaverBaseResponseModel):
     """목록의 매물 설명."""
 
     direction: Annotated[
@@ -640,7 +653,7 @@ class NaverListArticleDetailModel(ResponseModel):
     ] = None
 
 
-class NaverListAddressModel(ResponseModel):
+class NaverListAddressModel(NaverBaseResponseModel):
     """목록의 주소."""
 
     city: Annotated[
@@ -661,7 +674,7 @@ class NaverListAddressModel(ResponseModel):
     ] = None
 
 
-class NaverListPriceInfoModel(ResponseModel):
+class NaverListPriceInfoModel(NaverBaseResponseModel):
     """목록의 가격 (원)."""
 
     deal_price: Annotated[
@@ -686,7 +699,7 @@ class NaverListPriceInfoModel(ResponseModel):
     ] = None
 
 
-class NaverListBrokerInfoModel(ResponseModel):
+class NaverListBrokerInfoModel(NaverBaseResponseModel):
     """목록의 중개 정보."""
 
     brokerage_name: Annotated[
@@ -699,7 +712,7 @@ class NaverListBrokerInfoModel(ResponseModel):
     ] = None
 
 
-class NaverListVerificationInfoModel(ResponseModel):
+class NaverListVerificationInfoModel(NaverBaseResponseModel):
     """목록의 확인 정보."""
 
     verification_type: Annotated[
@@ -716,7 +729,7 @@ class NaverListVerificationInfoModel(ResponseModel):
     ] = None
 
 
-class NaverListMediaModel(ResponseModel):
+class NaverListMediaModel(NaverBaseResponseModel):
     """목록의 대표 사진."""
 
     image_url: Annotated[
@@ -729,7 +742,7 @@ class NaverListMediaModel(ResponseModel):
     ] = None
 
 
-class NaverListBuildingInfoModel(ResponseModel):
+class NaverListBuildingInfoModel(NaverBaseResponseModel):
     """건물 정보. 날짜는 `naver complex` 의 사용승인일(useApprovalDate)과 같다."""
 
     building_conjunction_date: Annotated[
@@ -746,7 +759,7 @@ class NaverListBuildingInfoModel(ResponseModel):
     ] = None
 
 
-class NaverArticleInfoModel(ResponseModel):
+class NaverArticleInfoModel(NaverBaseResponseModel):
     """목록의 매물 한 건."""
 
     article_number: Annotated[
@@ -811,7 +824,7 @@ class NaverArticleInfoModel(ResponseModel):
     ] = None
 
 
-class NaverMinMaxPriceModel(ResponseModel):
+class NaverMinMaxPriceModel(NaverBaseResponseModel):
     """최저·최고 가격 (원)."""
 
     min_price: Annotated[
@@ -824,7 +837,7 @@ class NaverMinMaxPriceModel(ResponseModel):
     ] = None
 
 
-class NaverRepresentativePriceInfoModel(ResponseModel):
+class NaverRepresentativePriceInfoModel(NaverBaseResponseModel):
     """중복 묶음의 거래별 호가 범위 (원). 그 묶음의 거래가 아닌 가격은 0~0 으로 온다."""
 
     deal_price: Annotated[
@@ -841,7 +854,7 @@ class NaverRepresentativePriceInfoModel(ResponseModel):
     ] = None
 
 
-class NaverDuplicatedArticleInfoModel(ResponseModel):
+class NaverDuplicatedArticleInfoModel(NaverBaseResponseModel):
     """같은 매물을 여러 중개사가 올린 묶음. 원본은 매우 커서(묶인 매물 전부) 수와 호가 범위만 남긴다."""
 
     realtor_count: Annotated[
@@ -858,7 +871,7 @@ class NaverDuplicatedArticleInfoModel(ResponseModel):
     ] = None
 
 
-class NaverArticleListItemModel(ResponseModel):
+class NaverArticleListItemModel(NaverBaseResponseModel):
     """목록 항목: 대표 매물 + 중복 묶음."""
 
     representative_article_info: Annotated[
@@ -871,7 +884,7 @@ class NaverArticleListItemModel(ResponseModel):
     ] = None
 
 
-class NaverArticlePageModel(ResponseModel):
+class NaverArticlePageModel(NaverBaseResponseModel):
     """커서 페이지."""
 
     total_count: Annotated[
@@ -905,7 +918,7 @@ class NaverComplexListAddressModel(NaverComplexAddressModel):
     ] = None
 
 
-class NaverComplexListInfoModel(ResponseModel):
+class NaverComplexListInfoModel(NaverBaseResponseModel):
     """단지 목록의 단지 정보 (아파트·오피스텔은 complexInfo, 빌라 단지는 villaInfo 로 같은 모양)."""
 
     complex_number: Annotated[
@@ -938,7 +951,7 @@ class NaverComplexListInfoModel(ResponseModel):
     ] = None
 
 
-class NaverComplexListEntryModel(ResponseModel):
+class NaverComplexListEntryModel(NaverBaseResponseModel):
     """단지 목록 한 곳의 본문. 대표 사진·주민 댓글(mostRecentComment)도 오지만 쓰지 않는다."""
 
     complex_info: Annotated[
@@ -959,7 +972,7 @@ class NaverComplexListEntryModel(ResponseModel):
     ] = None
 
 
-class NaverComplexListItemModel(ResponseModel):
+class NaverComplexListItemModel(NaverBaseResponseModel):
     """단지 목록 항목. type 이 COMPLEX 면 complex, VILLA 면 villa 에 본문이 있다."""
 
     type: Annotated[
@@ -976,7 +989,7 @@ class NaverComplexListItemModel(ResponseModel):
     ] = None
 
 
-class NaverComplexListPageModel(ResponseModel):
+class NaverComplexListPageModel(NaverBaseResponseModel):
     """단지 목록 커서 페이지."""
 
     total_count: Annotated[
@@ -1001,7 +1014,7 @@ class NaverComplexListPageModel(ResponseModel):
     ] = []
 
 
-class NaverRedevelopmentAreaInfoModel(ResponseModel):
+class NaverRedevelopmentAreaInfoModel(NaverBaseResponseModel):
     """재개발 구역 기본 정보."""
 
     redevelopment_area_number: Annotated[
@@ -1022,7 +1035,7 @@ class NaverRedevelopmentAreaInfoModel(ResponseModel):
     ] = None
 
 
-class NaverRedevelopmentAreaPriceModel(ResponseModel):
+class NaverRedevelopmentAreaPriceModel(NaverBaseResponseModel):
     """구역 매물의 호가 범위 (원). 그 거래 유형 매물이 없으면 키가 오지 않는다."""
 
     deal_min_price: Annotated[
@@ -1035,7 +1048,7 @@ class NaverRedevelopmentAreaPriceModel(ResponseModel):
     ] = None
 
 
-class NaverRedevelopmentAreaCountModel(ResponseModel):
+class NaverRedevelopmentAreaCountModel(NaverBaseResponseModel):
     """구역 매물 수 (거래 유형별)."""
 
     deal_count: Annotated[
@@ -1056,7 +1069,7 @@ class NaverRedevelopmentAreaCountModel(ResponseModel):
     ] = 0
 
 
-class NaverRedevelopmentAreaItemModel(ResponseModel):
+class NaverRedevelopmentAreaItemModel(NaverBaseResponseModel):
     """재개발 구역 목록의 구역 한 곳. 좌표는 오지 않아 마커(redevelopmentArea/markers)로 받는다."""
 
     info: Annotated[
@@ -1073,7 +1086,7 @@ class NaverRedevelopmentAreaItemModel(ResponseModel):
     ] = None
 
 
-class NaverRedevelopmentAreaPageModel(ResponseModel):
+class NaverRedevelopmentAreaPageModel(NaverBaseResponseModel):
     """재개발 구역 목록 커서 페이지."""
 
     total_count: Annotated[

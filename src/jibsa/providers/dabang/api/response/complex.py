@@ -1,7 +1,7 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
     DabangRoomListResponseModel,
     DabangV5ResponseModel,
 )
@@ -9,7 +9,7 @@ from jibsa.providers.dabang.api.response.common import (
 from typing import Annotated
 
 
-class DabangComplexListRealPriceModel(ResponseModel):
+class DabangComplexListRealPriceModel(DabangBaseResponseModel):
     """단지 목록의 최근 실거래 글 ('31억 3,000', 만원)."""
 
     sale: Annotated[
@@ -22,7 +22,7 @@ class DabangComplexListRealPriceModel(ResponseModel):
     ] = None
 
 
-class DabangComplexListRoomCountModel(ResponseModel):
+class DabangComplexListRoomCountModel(DabangBaseResponseModel):
     """단지 목록의 거래 유형별 매물 수."""
 
     total_count: Annotated[
@@ -43,7 +43,7 @@ class DabangComplexListRoomCountModel(ResponseModel):
     ] = None
 
 
-class DabangComplexListItemModel(ResponseModel):
+class DabangComplexListItemModel(DabangBaseResponseModel):
     """단지 지도 목록의 단지 하나. 매물이 없는 단지도 온다 (`roomCount.totalCount: 0`, 2026-10-25 실측).
 
     Args:
@@ -88,7 +88,7 @@ class DabangComplexListItemModel(ResponseModel):
     ] = None
 
 
-class DabangComplexListResultModel(ResponseModel):
+class DabangComplexListResultModel(DabangBaseResponseModel):
     """단지 지도 목록 `result` (24곳씩)."""
 
     list_: Annotated[
@@ -113,7 +113,7 @@ class DabangRoomListCategoryComplexV5ResponseModel(DabangRoomListResponseModel):
     """`GET /api/v5/room-list/category/{category}/complex` 응답 (단지 하나의 매물)."""
 
 
-class DabangLatelyPriceModel(ResponseModel):
+class DabangLatelyPriceModel(DabangBaseResponseModel):
     """단지 요약의 최근 실거래 한 건 (글자로 온다)."""
 
     format_price: Annotated[
@@ -134,7 +134,7 @@ class DabangLatelyPriceModel(ResponseModel):
     ] = None
 
 
-class DabangComplexSummaryResultModel(ResponseModel):
+class DabangComplexSummaryResultModel(DabangBaseResponseModel):
     """단지 요약 `result`."""
 
     sell_lately_price: Annotated[
@@ -151,7 +151,7 @@ class DabangComplexSummaryV5ResponseModel(DabangV5ResponseModel[DabangComplexSum
     """`GET /api/v5/complex/{complex_type}/summary` 응답."""
 
 
-class DabangComplexLoanCalcConditionResultModel(ResponseModel):
+class DabangComplexLoanCalcConditionResultModel(DabangBaseResponseModel):
     """단지 대출 계산 조건 `result`. 금리 두 값(`saleLoanInterestRate`·`leaseLoanInterestRate`)은 다방 계산기의 기본값이라 두지
     않는다."""
 

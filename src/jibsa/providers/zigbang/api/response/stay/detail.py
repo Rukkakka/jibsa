@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
+from jibsa.providers.zigbang.api.response.common import ZigbangBaseResponseModel
 from jibsa.providers.zigbang.api.response.stay.base import (
     ZigbangStayDiscountModel,
     ZigbangStayItemSummaryModel,
@@ -15,7 +15,7 @@ from typing import Annotated
 # GET stay-apis.zigbang.com/guest/items/{itemId}
 # ---------------------------------------------------------------------------
 
-class ZigbangStayOptionModel(ResponseModel):
+class ZigbangStayOptionModel(ZigbangBaseResponseModel):
     """단기임대 옵션."""
 
     category: Annotated[
@@ -28,7 +28,7 @@ class ZigbangStayOptionModel(ResponseModel):
     ]
 
 
-class ZigbangStayStationModel(ResponseModel):
+class ZigbangStayStationModel(ZigbangBaseResponseModel):
     """단기임대 매물 인근 역."""
 
     id: Annotated[
@@ -45,7 +45,7 @@ class ZigbangStayStationModel(ResponseModel):
     ] = None
 
 
-class ZigbangStayScheduleModel(ResponseModel):
+class ZigbangStayScheduleModel(ZigbangBaseResponseModel):
     """단기임대 매물의 일정. 웹 날짜 고르기 창이 예약된·막힌 날을 이것으로 막는다."""
 
     schedule_type: Annotated[
@@ -62,7 +62,7 @@ class ZigbangStayScheduleModel(ResponseModel):
     ] = None
 
 
-class ZigbangGuestItemsResponseModel(ResponseModel):
+class ZigbangGuestItemsResponseModel(ZigbangBaseResponseModel):
     """단기임대 매물 상세. 금액은 **원** 단위다."""
 
     id: Annotated[
@@ -250,7 +250,7 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
 # GET stay-apis.zigbang.com/guest/items/{itemId}/reviews
 # ---------------------------------------------------------------------------
 
-class ZigbangStayReviewSummaryModel(ResponseModel):
+class ZigbangStayReviewSummaryModel(ZigbangBaseResponseModel):
     """단기임대 후기 요약."""
 
     average_rating: Annotated[
@@ -263,7 +263,7 @@ class ZigbangStayReviewSummaryModel(ResponseModel):
     ] = None
 
 
-class ZigbangGuestItemsReviewsResponseModel(ResponseModel):
+class ZigbangGuestItemsReviewsResponseModel(ZigbangBaseResponseModel):
     """단기임대 후기 응답. 후기 목록(`reviews`)은 글·닉네임·사진이 들어 있어 읽지 않는다 (요약만 쓴다)."""
 
     summary: Annotated[
@@ -276,7 +276,7 @@ class ZigbangGuestItemsReviewsResponseModel(ResponseModel):
 # GET stay-apis.zigbang.com/guest/items/host/{hostId}
 # ---------------------------------------------------------------------------
 
-class ZigbangGuestItemsHostResponseModel(ResponseModel):
+class ZigbangGuestItemsHostResponseModel(ZigbangBaseResponseModel):
     """같은 임대인의 다른 단기임대 매물. 항목은 요약(`by-ids`)과 키가 같다 (좋아요 여부(`isFavorite`)는 읽지 않는다)."""
 
     items: Annotated[

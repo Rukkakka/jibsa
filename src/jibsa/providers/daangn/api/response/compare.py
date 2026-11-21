@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
     DaangnCompareRegionModel,
     DaangnGraphQLResponseModel,
     DaangnLiveArticleCountModel,
@@ -19,7 +19,7 @@ from typing import Annotated
 # POST realty.kr.karrotmarket.com/graphql — 단지 비교 (complexByOriginalId 비교 칸), 같은 동 단지
 # ---------------------------------------------------------------------------
 
-class DaangnCompareTradeModel(ResponseModel):
+class DaangnCompareTradeModel(DaangnBaseResponseModel):
     """호가 매물의 거래 조건 (금액만)."""
 
     typename: Annotated[
@@ -40,7 +40,7 @@ class DaangnCompareTradeModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareArticleModel(ResponseModel):
+class DaangnCompareArticleModel(DaangnBaseResponseModel):
     """호가 매물 하나 (거래 조건만)."""
 
     trades: Annotated[
@@ -49,7 +49,7 @@ class DaangnCompareArticleModel(ResponseModel):
     ] = []
 
 
-class DaangnCompareArticleEdgeModel(ResponseModel):
+class DaangnCompareArticleEdgeModel(DaangnBaseResponseModel):
     """호가 매물 edge."""
 
     node: Annotated[
@@ -58,7 +58,7 @@ class DaangnCompareArticleEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareArticleConnectionModel(ResponseModel):
+class DaangnCompareArticleConnectionModel(DaangnBaseResponseModel):
     """호가 매물 연결 (아파트 매물 앞 30건)."""
 
     edges: Annotated[
@@ -67,7 +67,7 @@ class DaangnCompareArticleConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnCompareBuildingModel(ResponseModel):
+class DaangnCompareBuildingModel(DaangnBaseResponseModel):
     """단지 건물."""
 
     road_address: Annotated[
@@ -80,7 +80,7 @@ class DaangnCompareBuildingModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareBuildingEdgeModel(ResponseModel):
+class DaangnCompareBuildingEdgeModel(DaangnBaseResponseModel):
     """건물 edge."""
 
     node: Annotated[
@@ -89,7 +89,7 @@ class DaangnCompareBuildingEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareBuildingConnectionModel(ResponseModel):
+class DaangnCompareBuildingConnectionModel(DaangnBaseResponseModel):
     """건물 연결."""
 
     edges: Annotated[
@@ -98,7 +98,7 @@ class DaangnCompareBuildingConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnKaptCostModel(ResponseModel):
+class DaangnKaptCostModel(DaangnBaseResponseModel):
     """월별 ㎡당 관리비 (K-apt)."""
 
     year_month: Annotated[
@@ -111,7 +111,7 @@ class DaangnKaptCostModel(ResponseModel):
     ] = None
 
 
-class DaangnKaptModel(ResponseModel):
+class DaangnKaptModel(DaangnBaseResponseModel):
     """공동주택 관리정보 (K-apt). 없는 단지면 null."""
 
     monthly_management_costs_per_square_meter: Annotated[
@@ -120,7 +120,7 @@ class DaangnKaptModel(ResponseModel):
     ] = []
 
 
-class DaangnCompareSchoolModel(ResponseModel):
+class DaangnCompareSchoolModel(DaangnBaseResponseModel):
     """배정 학교."""
 
     sch_nm: Annotated[
@@ -133,7 +133,7 @@ class DaangnCompareSchoolModel(ResponseModel):
     ] = None
 
 
-class DaangnAssignedSchoolModel(ResponseModel):
+class DaangnAssignedSchoolModel(DaangnBaseResponseModel):
     """배정 학교와 거리."""
 
     distance: Annotated[
@@ -150,7 +150,7 @@ class DaangnAssignedSchoolModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareSubwayModel(ResponseModel):
+class DaangnCompareSubwayModel(DaangnBaseResponseModel):
     """주변 역 정보 한 줄. 같은 역이 거리(DISTANCE)·도보(WALKING) 두 줄로 온다."""
 
     station_nm: Annotated[
@@ -171,7 +171,7 @@ class DaangnCompareSubwayModel(ResponseModel):
     ] = None
 
 
-class DaangnKbPriceModel(ResponseModel):
+class DaangnKbPriceModel(DaangnBaseResponseModel):
     """KB 시세 (만원)."""
 
     sale_std_price: Annotated[
@@ -216,7 +216,7 @@ class DaangnKbPriceModel(ResponseModel):
     ] = None
 
 
-class DaangnKbPriceEdgeModel(ResponseModel):
+class DaangnKbPriceEdgeModel(DaangnBaseResponseModel):
     """KB 시세 edge."""
 
     node: Annotated[
@@ -225,7 +225,7 @@ class DaangnKbPriceEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnKbPriceConnectionModel(ResponseModel):
+class DaangnKbPriceConnectionModel(DaangnBaseResponseModel):
     """KB 시세 연결 (최신 1건)."""
 
     edges: Annotated[
@@ -234,7 +234,7 @@ class DaangnKbPriceConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnCompareRealsaleModel(ResponseModel):
+class DaangnCompareRealsaleModel(DaangnBaseResponseModel):
     """평형 최근 실거래 (만원)."""
 
     trade_price: Annotated[
@@ -259,7 +259,7 @@ class DaangnCompareRealsaleModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareRealsaleEdgeModel(ResponseModel):
+class DaangnCompareRealsaleEdgeModel(DaangnBaseResponseModel):
     """실거래 edge."""
 
     node: Annotated[
@@ -268,7 +268,7 @@ class DaangnCompareRealsaleEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareRealsaleConnectionModel(ResponseModel):
+class DaangnCompareRealsaleConnectionModel(DaangnBaseResponseModel):
     """실거래 연결 (매매 1건·전월세 5건, 최근 순)."""
 
     edges: Annotated[
@@ -277,7 +277,7 @@ class DaangnCompareRealsaleConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnComparePyInfoModel(ResponseModel):
+class DaangnComparePyInfoModel(DaangnBaseResponseModel):
     """평형 하나와 시세·실거래."""
 
     ptp_cd: Annotated[
@@ -314,7 +314,7 @@ class DaangnComparePyInfoModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareAreaGroupModel(ResponseModel):
+class DaangnCompareAreaGroupModel(DaangnBaseResponseModel):
     """평형 묶음. 전용면적 묶음(예: 59㎡)이나 공급 평 묶음(예: 24평)이다."""
 
     label: Annotated[
@@ -335,7 +335,7 @@ class DaangnCompareAreaGroupModel(ResponseModel):
     ] = []
 
 
-class DaangnCompareDanjiModel(ResponseModel):
+class DaangnCompareDanjiModel(DaangnBaseResponseModel):
     """단지 공공 정보 (proptier)."""
 
     build_date: Annotated[
@@ -380,7 +380,7 @@ class DaangnCompareDanjiModel(ResponseModel):
     ] = []
 
 
-class DaangnCompareComplexModel(ResponseModel):
+class DaangnCompareComplexModel(DaangnBaseResponseModel):
     """비교 칸의 단지. 후기 요약 글(`livedReviewSummary`)은 읽지 않는다."""
 
     id: Annotated[
@@ -429,7 +429,7 @@ class DaangnCompareComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareOutputModel(ResponseModel):
+class DaangnCompareOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과."""
 
     complex: Annotated[
@@ -438,7 +438,7 @@ class DaangnCompareOutputModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexCompareDataModel(ResponseModel):
+class DaangnComplexCompareDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complex_by_original_id: Annotated[
@@ -456,7 +456,7 @@ class DaangnComplexCompareResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnNearbyComplexNodeModel(ResponseModel):
+class DaangnNearbyComplexNodeModel(DaangnBaseResponseModel):
     """같은 동 단지 (이름·유형만)."""
 
     original_id: Annotated[
@@ -473,7 +473,7 @@ class DaangnNearbyComplexNodeModel(ResponseModel):
     ] = None
 
 
-class DaangnNearbyComplexEdgeModel(ResponseModel):
+class DaangnNearbyComplexEdgeModel(DaangnBaseResponseModel):
     """같은 동 단지 edge."""
 
     node: Annotated[
@@ -482,7 +482,7 @@ class DaangnNearbyComplexEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnNearbyComplexesModel(ResponseModel):
+class DaangnNearbyComplexesModel(DaangnBaseResponseModel):
     """같은 동 단지 연결 (한 번에 전부, 2026-10-10 실측: 역삼동 255곳)."""
 
     edges: Annotated[
@@ -491,7 +491,7 @@ class DaangnNearbyComplexesModel(ResponseModel):
     ] = []
 
 
-class DaangnNearbyComplexesDataModel(ResponseModel):
+class DaangnNearbyComplexesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complexes: Annotated[
@@ -509,7 +509,7 @@ class DaangnNearbyComplexesResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnComplexCardDanjiModel(ResponseModel):
+class DaangnComplexCardDanjiModel(DaangnBaseResponseModel):
     """단지 카드의 공공 정보."""
 
     total_tot_hseh_cnt: Annotated[
@@ -518,7 +518,7 @@ class DaangnComplexCardDanjiModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexCardModel(ResponseModel):
+class DaangnComplexCardModel(DaangnBaseResponseModel):
     """단지 카드 (세대수·현재 매물 수)."""
 
     original_id: Annotated[
@@ -543,7 +543,7 @@ class DaangnComplexCardModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexesByOriginalComplexIdsDataModel(ResponseModel):
+class DaangnComplexesByOriginalComplexIdsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complexes_by_original_complex_ids: Annotated[
@@ -561,7 +561,7 @@ class DaangnComplexesByOriginalComplexIdsResponseModel(DaangnGraphQLResponseMode
     ] = None
 
 
-class DaangnComplexRegionComplexModel(ResponseModel):
+class DaangnComplexRegionComplexModel(DaangnBaseResponseModel):
     """단지 페이지의 단지 (유형·지역만 읽는다)."""
 
     original_id: Annotated[
@@ -578,7 +578,7 @@ class DaangnComplexRegionComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexRegionOutputModel(ResponseModel):
+class DaangnComplexRegionOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 complex 가 null 이다."""
 
     complex: Annotated[
@@ -587,7 +587,7 @@ class DaangnComplexRegionOutputModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexRegionDataModel(ResponseModel):
+class DaangnComplexRegionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complex_by_original_id: Annotated[

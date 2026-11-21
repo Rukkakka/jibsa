@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
+    NaverBaseResponseModel,
     NaverCoordinatesModel,
     NaverResponseModel,
     T,
@@ -15,7 +15,7 @@ from typing import (
 )
 
 
-class NaverAddressElementsModel(ResponseModel):
+class NaverAddressElementsModel(NaverBaseResponseModel):
     """주소 구성 요소."""
 
     sido: Annotated[
@@ -48,7 +48,7 @@ class NaverAddressElementsModel(ResponseModel):
     ] = None
 
 
-class NaverAddressModel(ResponseModel):
+class NaverAddressModel(NaverBaseResponseModel):
     """주소 검색 결과 한 곳."""
 
     full_address: Annotated[
@@ -73,7 +73,7 @@ class NaverAddressModel(ResponseModel):
     ] = None
 
 
-class NaverAddressListModel(ResponseModel):
+class NaverAddressListModel(NaverBaseResponseModel):
     """지번 또는 도로명 주소 결과."""
 
     total_count: Annotated[
@@ -86,7 +86,7 @@ class NaverAddressListModel(ResponseModel):
     ] = []
 
 
-class NaverAddressSearchModel(ResponseModel):
+class NaverAddressSearchModel(NaverBaseResponseModel):
     """maps-search/address 결과. 못 찾으면 type 과 두 목록이 모두 null 이다."""
 
     type: Annotated[
@@ -103,7 +103,7 @@ class NaverAddressSearchModel(ResponseModel):
     ] = None
 
 
-class NaverLegalDivisionInfoModel(ResponseModel):
+class NaverLegalDivisionInfoModel(NaverBaseResponseModel):
     """지역 목록의 지역 하나 (시·도 목록, 하위 지역 목록)."""
 
     legal_division_number: Annotated[
@@ -128,7 +128,7 @@ class NaverLegalDivisionInfoModel(ResponseModel):
     ] = None
 
 
-class NaverAutocompletePageModel(ResponseModel, Generic[T]):
+class NaverAutocompletePageModel(NaverBaseResponseModel, Generic[T]):
     """자동완성 결과 한 페이지. 사이트 검색창과 같은 순서로 온다."""
 
     has_next_page: Annotated[
@@ -145,7 +145,7 @@ class NaverAutocompletePageModel(ResponseModel, Generic[T]):
     ] = None
 
 
-class NaverAutocompleteLegalDivisionModel(ResponseModel):
+class NaverAutocompleteLegalDivisionModel(NaverBaseResponseModel):
     """법정동 자동완성 결과. 시·구 단위도 온다 ('강남구' → 강남구 자신과 그 아래 동들)."""
 
     legal_division_number: Annotated[
@@ -166,7 +166,7 @@ class NaverAutocompleteLegalDivisionModel(ResponseModel):
     ] = None
 
 
-class NaverSubwayLineModel(ResponseModel):
+class NaverSubwayLineModel(NaverBaseResponseModel):
     """지하철 노선."""
 
     name: Annotated[
@@ -175,7 +175,7 @@ class NaverSubwayLineModel(ResponseModel):
     ]
 
 
-class NaverAutocompleteSubwayStationModel(ResponseModel):
+class NaverAutocompleteSubwayStationModel(NaverBaseResponseModel):
     """지하철역 자동완성 결과."""
 
     station_name: Annotated[
@@ -192,7 +192,7 @@ class NaverAutocompleteSubwayStationModel(ResponseModel):
     ] = []
 
 
-class NaverAutocompleteComplexModel(ResponseModel):
+class NaverAutocompleteComplexModel(NaverBaseResponseModel):
     """단지 자동완성 결과."""
 
     complex_number: Annotated[
@@ -221,7 +221,7 @@ class NaverAutocompleteComplexModel(ResponseModel):
     ] = None
 
 
-class NaverAutocompleteRedevelopmentAreaModel(ResponseModel):
+class NaverAutocompleteRedevelopmentAreaModel(NaverBaseResponseModel):
     """재개발 구역 자동완성 결과. 좌표도 오지만 쓰지 않는다."""
 
     redevelopment_area_number: Annotated[

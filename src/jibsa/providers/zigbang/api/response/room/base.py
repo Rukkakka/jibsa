@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
+    ZigbangBaseResponseModel,
     ZigbangLatLngModel,
     ZigbangSubwayBriefModel,
 )
@@ -17,7 +17,7 @@ from typing import Annotated
 # ---------------------------------------------------------------------------
 
 # 가격·단지 요약 모델은 기존 상세(`GET /v3/items/{itemId}`, detail.py)도 쓴다 (base → detail 방향으로만 가져다 쓴다)
-class ZigbangDetailPriceModel(ResponseModel):
+class ZigbangDetailPriceModel(ZigbangBaseResponseModel):
     """상세 가격 (만원)."""
 
     deposit: Annotated[
@@ -34,7 +34,7 @@ class ZigbangDetailPriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangV3DanjiModel(ResponseModel):
+class ZigbangV3DanjiModel(ZigbangBaseResponseModel):
     """상세 응답의 단지(오피스텔 건물) 요약. 아파트는 이 상세가 404 라 여기서 받지 않는다."""
 
     id: Annotated[
@@ -47,7 +47,7 @@ class ZigbangV3DanjiModel(ResponseModel):
     ] = None
 
 
-class ZigbangStructuredOptionModel(ResponseModel):
+class ZigbangStructuredOptionModel(ZigbangBaseResponseModel):
     """코드와 표시 이름을 갖는 옵션·관리비 항목."""
 
     name: Annotated[
@@ -60,7 +60,7 @@ class ZigbangStructuredOptionModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1AddressModel(ResponseModel):
+class ZigbangItemsDetailV1AddressModel(ZigbangBaseResponseModel):
     """주거 상세의 주소 묶음."""
 
     origin: Annotated[
@@ -77,7 +77,7 @@ class ZigbangItemsDetailV1AddressModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1ResidenceModel(ResponseModel):
+class ZigbangItemsDetailV1ResidenceModel(ZigbangBaseResponseModel):
     """주거 상세의 면적·층·입주·주차 정보. null 입주일의 의미는 확정하지 않는다."""
 
     room_type: Annotated[
@@ -150,7 +150,7 @@ class ZigbangItemsDetailV1ResidenceModel(ResponseModel):
     ] = None
 
 
-class ZigbangManageCostEntryModel(ResponseModel):
+class ZigbangManageCostEntryModel(ZigbangBaseResponseModel):
     """정액 관리비의 항목 하나: 일반(공용) 관리비(`normalManageCost`) 또는 사용료 항목(전기·수도·가스·난방·인터넷·TV)."""
 
     type: Annotated[
@@ -163,7 +163,7 @@ class ZigbangManageCostEntryModel(ResponseModel):
     ] = None
 
 
-class ZigbangManageCostUsageFeeModel(ResponseModel):
+class ZigbangManageCostUsageFeeModel(ZigbangBaseResponseModel):
     """정액 관리비의 사용료 항목들. 키가 빠진 항목은 웹이 해당 없음(not_applicable)으로 본다."""
 
     total_amount: Annotated[
@@ -196,7 +196,7 @@ class ZigbangManageCostUsageFeeModel(ResponseModel):
     ] = None
 
 
-class ZigbangEtcManageCostModel(ResponseModel):
+class ZigbangEtcManageCostModel(ZigbangBaseResponseModel):
     """정액 관리비의 기타 관리비."""
 
     is_unknown: Annotated[
@@ -213,7 +213,7 @@ class ZigbangEtcManageCostModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1ManageCostDetailModel(ResponseModel):
+class ZigbangItemsDetailV1ManageCostDetailModel(ZigbangBaseResponseModel):
     """주거 상세 관리비의 부과 방식별 내역. 웹 매물 화면은 `type` 에 따라 관리비 항목을 다르게 보여 준다.
 
     `FixedManageCost` 는 일반(공용) 관리비·사용료 항목(정액·실비·해당 없음·미제공)·기타 관리비로 나눠 주고,
@@ -272,7 +272,7 @@ class ZigbangItemsDetailV1ManageCostDetailModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1ManageCostModel(ResponseModel):
+class ZigbangItemsDetailV1ManageCostModel(ZigbangBaseResponseModel):
     """주거 상세 관리비. amount는 만원, fee는 원이다.
 
     `include` 는 실비로 따로 내는 항목도 포함으로 담는다 (2026-11-15 실측: 매물 51161523 은 include 에 전기·수도·가스가
@@ -301,7 +301,7 @@ class ZigbangItemsDetailV1ManageCostModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1MetaModel(ResponseModel):
+class ZigbangItemsDetailV1MetaModel(ZigbangBaseResponseModel):
     """주거 상세의 매물 부가 정보. 조회수·갱신 시각·중개사 번호 같은 이 밖의 키는 읽지 않는다."""
 
     badges: Annotated[
@@ -319,7 +319,7 @@ class ZigbangItemsDetailV1MetaModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1NearbyPoiModel(ResponseModel):
+class ZigbangItemsDetailV1NearbyPoiModel(ZigbangBaseResponseModel):
     """주변 시설 하나. 가까운 시설이 없으면 `exists` 가 false 이고 나머지 키가 없다 (예: {"exists": false, "poiType": "지하철역"})."""
 
     exists: Annotated[
@@ -344,7 +344,7 @@ class ZigbangItemsDetailV1NearbyPoiModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1DistributionModel(ResponseModel):
+class ZigbangItemsDetailV1DistributionModel(ZigbangBaseResponseModel):
     """새벽·로켓 배송 같은 배송 서비스 업체 하나. 배송 종류(`kinds`)는 읽지 않는다."""
 
     company_name: Annotated[
@@ -353,7 +353,7 @@ class ZigbangItemsDetailV1DistributionModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1NeighborhoodsModel(ResponseModel):
+class ZigbangItemsDetailV1NeighborhoodsModel(ZigbangBaseResponseModel):
     """주거 상세의 주변 정보. 생활 편의 설명(`amenities`)은 읽지 않는다."""
 
     nearby_pois: Annotated[
@@ -366,7 +366,7 @@ class ZigbangItemsDetailV1NeighborhoodsModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1ItemModel(ResponseModel):
+class ZigbangItemsDetailV1ItemModel(ZigbangBaseResponseModel):
     """주거 상세 본문. 사진·본문·중개사 정보는 정규화하지 않는다."""
 
     # id·address·residence 는 내려간 매물을 포함해 모든 유형에서 온다 (없는 매물은 200 대신 404).
@@ -428,7 +428,7 @@ class ZigbangItemsDetailV1ItemModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsDetailV1ResponseModel(ResponseModel):
+class ZigbangItemsDetailV1ResponseModel(ZigbangBaseResponseModel):
     """새 주거 상세 응답."""
 
     item: Annotated[

@@ -37,6 +37,7 @@ from jibsa.core.listing import (
     more_hint,
     normalize_date,
     note,
+    null_items_note,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -466,11 +467,31 @@ def result_or_none(
         what: 조회 이름 ('관리비'). `lookup_failure_note` 를 보라.
         unknown: 모름이 된 칸 ('모름(null)으로 낸 칸: a, b').
     """
+    return result_with_null_items(request, notes=notes, what=what, unknown=unknown)[0]
+
+
+def result_with_null_items(
+    request: Callable[[], NaverResponseModel[T]],
+    *,
+    notes: list[str] | None,
+    what: str,
+    unknown: str,
+) -> tuple[T, int] | tuple[None, int]:
+    """`result_or_none` 와 같되, `result` 가 객체 목록일 때 그 목록에서 빈 항목(null)을 빼고 읽은 수도 돌려준다.
+
+    목록이 `result` 자리라 `result_or_none` 은 봉투를 버리면서 뺀 수도 버린다. 그 목록으로 계산하거나 자리를 세는 호출부가 쓴다.
+    조회가 실패했거나 `result` 가 비었으면 `(None, 0)` 이다. 반환형이 `tuple[T | None, int]` 가 아닌 것은 mypy 가 그 꼴이면 T 를
+    `T | None` 으로 잘못 풀어 호출부가 타입 오류를 내서다.
+    """
     try:
-        return request().result
+        response = request()
     except OPTIONAL_LOOKUP_ERRORS as exc:
         _add_failure_note(notes, exc, what, unknown)
-        return None
+        return None, 0
+    result = response.result
+    if result is None:
+        return None, 0
+    return result, response.null_items('result')
 
 
 def result_or_empty(
@@ -1030,7 +1051,11 @@ class PageScan(BaseModel):
     ]
     received: Annotated[
         int,
-        Field(description='지금까지 받은 항목 수 (할당량을 쓴 만큼)')
+        Field(description='지금까지 받은 항목 수 (할당량을 쓴 만큼). 빈 항목(null)이라 빼고 읽은 자리도 서버가 센 자리라 들어 있다')
+    ] = 0
+    null_items: Annotated[
+        int,
+        Field(description='받은 쪽에서 빈 항목(null)이라 빼고 읽은 수 (`received` 에 이미 들어 있다). 있으면 `scan_null_items_notes` 로 알린다')
     ] = 0
     page_requests: Annotated[
         int,
@@ -1085,7 +1110,8 @@ def scan_pages(
     """`fetch(size, seed, last_info)` 로 페이지를 차례로 받아 항목마다 `keep(item)` 을 부른다.
 
     할당량(`scan.limit`)은 받은 개수로 센다. 받은 뒤 `keep` 이 버린 항목은 센 채로 두어 다시 채우지 않는다
-    (docs/development/output-contract.md 의 개수 상한). 할당량을 다 쓰거나, 다음 페이지가 없거나, 처음 보는 항목이
+    (docs/development/output-contract.md 의 개수 상한). 빈 항목(null)이라 빼고 읽은 자리도 서버가 센 자리라 센다
+    (`scan.null_items`). 할당량을 다 쓰거나, 다음 페이지가 없거나, 처음 보는 항목이
     없는 페이지(커서가 멈춤)가 오거나, `fetch` 가 None 을 주면 멈춘다. 받을 게 남았는데 요청이
     `scan.max_requests` 에 닿으면 `scan.truncated` 를 켠다. 다음 요청에는 앞 페이지의 seed·lastInfo 를 넘긴다
     (seed 가 빠지면 랭킹순이 페이지마다 다시 섞인다).
@@ -1110,7 +1136,10 @@ def scan_pages(
         if page is None:
             scan.cursor = None
             return
-        scan.received += len(page.items)
+        # 빈 항목(null)을 뺐어도 서버는 그 자리를 센 쪽이라 받은 수에 더한다 (쪽 넘김이 일찍 멈추거나 같은 매물을 다시 받지 않게)
+        dropped = page.null_items('items')
+        scan.received += len(page.items) + dropped
+        scan.null_items += dropped
         scan.total = page.total_count
         new_ids = {keep(item) for item in page.items} - {None} - scan.seen
         scan.seen |= new_ids
@@ -1121,6 +1150,18 @@ def scan_pages(
         # (단지 매물·동 전체·최신순·지도 칸 매물(clusteredArticles)·재개발 구역·단지 목록 6종 22쪽, 2026-10-10 확인)
         seed, last_info = page.seed, page.last_info
         scan.cursor = (seed, last_info)
+
+
+def scan_null_items_notes(scan: PageScan, what: str) -> list[str]:
+    """`scan_pages` 가 빈 항목(null)을 빼고 읽었으면 그 안내 한 줄. 없으면 빈 목록.
+
+    받은 수(`scan.received`)에는 뺀 자리가 이미 들어 있어 쪽 넘김 판정은 맞다. 이 안내는 받은 매물·단지가 서버가 센 수보다 적게
+    보이는 까닭을 알린다.
+
+    Args:
+        what: 사이트 이름을 붙인 목록 이름 ('네이버 단지 매물').
+    """
+    return [null_items_note(what, scan.null_items)] if scan.null_items else []
 
 
 def listing_keeper(
@@ -1196,6 +1237,7 @@ def pagination_notes(
     resumed: bool = False,
     scope: str = '',
     total_basis: str = '',
+    null_items: int = 0,
     narrow: str,
 ) -> list[str]:
     """조회 예산과 실제 제외 결과에 맞춰 추가 조회 없이 안내한다.
@@ -1214,13 +1256,15 @@ def pagination_notes(
         total_basis: `total` 이 정확한 범위의 수가 아니면 그 범위 (반경 검색은 `RADIUS_TOTAL_BASIS`). 주면 '약 N건(범위)' 으로
             쓴다. 반경 검색에 '조건에 맞는 매물이 1197건' 이라고 하면 사각형 모서리까지 센 수를 반경 안의 수로 읽는다
             (2026-11-11 LLM 사용 시험: 합정역 1km 상가).
+        null_items: `inspected` 에 든 빈 항목(null) 수 (`PageScan.null_items`). 서버가 센 자리라 `inspected` 에는 들어 있어 남은 매물을 셀 때 쓰지만,
+            중복·거래 유형으로 뺀 수에서는 뺀다 (빈 항목은 따로 안내하므로 그 이유로 뺐다고 하지 않는다).
         narrow: 더 남았을 때 좁히라고 권할 것 (`more_hint`). 동·구 검색은 '조건·지역', 반경 검색은 '조건·반경', 단지·재개발
             구역 하나의 매물은 좁힐 지역이 없어 그 매물의 조건만 준다 (2026-11-10 리뷰·실측: 헬리오시티 111515 2,257건
             --limit 120 에 '조건·지역을 좁히세요'). 기본값을 두지 않는다. 두었더니 재개발 구역 반경 검색이 값을 빠뜨려
             '조건·지역' 이 나갔다 (2026-11-10 리뷰).
     """
     notes: list[str] = []
-    excluded = min(inspected, limit) - returned
+    excluded = min(inspected - null_items, limit) - returned
     # 단지·구역은 다른 소스처럼 '곳' 으로 센다 (2026-11-10 리뷰: 재개발 구역이 '전체 45건 중 2건입니다')
     unit = '곳' if subject in ('단지', '구역') else '건'
     # 이어 받을 수 있거나, 요청 상한에서 멈췄거나, 서버 수가 받은 수보다 많으면 더 받을 매물이 남았다. 이어 받은 결과의 total 은

@@ -57,6 +57,7 @@ from jibsa.providers.zigbang.service.common.room import (
     SALES_TYPE_BY_TRADE,
     ZigbangRoomConditions,
     excluded_notes,
+    pin_null_notes,
     room_filter_of,
     section_ordered_ids,
     summary_to_listing,
@@ -263,6 +264,8 @@ class _ScopePins(NamedTuple):
     oneroom_cells: dict[int, str]
     # 앞 종류 목록에도 있어 그 종류 목록에서 뺀 매물 수 (원룸 목록의 '이 지역 오피스텔' 은 오피스텔 목록에도 있다)
     overlaps: dict[ZigbangPropertyType, int]
+    # 핀·섹션 목록에서 빈 항목(null)을 빼고 읽었다는 안내 (없으면 빈 목록)
+    null_notes: list[str]
 
 
 def search_listings(
@@ -353,7 +356,8 @@ def search_listings(
         for kind in types
         for item_id in scan.ids_by_type[kind][starts[kind]:starts[kind] + shares[kind]]
     ]
-    summaries = {summary.item_id: summary for summary in tradeable_summaries(client, ids)}
+    tradeable = tradeable_summaries(client, ids)
+    summaries = {summary.item_id: summary for summary in tradeable.items}
     # 요약 응답 순서에 기대지 않고 고른 순서로 세운다. 원룸 목록에 섞여 온 원룸형 오피스텔도 그대로 둔다
     listings: list[Listing] = [
         summary_to_listing(summaries[item_id], scan.distances.get(item_id), scan.buildings.get(item_id))
@@ -365,6 +369,7 @@ def search_listings(
 
     return _search_result(
         region, listings, scan, notes, starts=starts, shares=shares, limit=limit, radius_km=radius_km, boundary=boundary,
+        summary_nulls=tradeable.null_items,
     )
 
 
@@ -491,6 +496,7 @@ def _collect_pins(
     """
     scan = _ScopePins(
         ids_by_type={}, distances={}, buildings={}, oneroom_query=queries.get('원룸'), oneroom_cells={}, overlaps={},
+        null_notes=[],
     )
     claimed: set[int] = set()
 
@@ -516,6 +522,7 @@ def _collect_pins(
                     scan.buildings[pin.id] = pin.building_id
                 if property_type == '원룸' and geohash is not None:
                     scan.oneroom_cells[pin.id] = geohash
+        scan.null_notes.extend(pin_null_notes(f'직방 {property_type} 지도 매물 핀·섹션', [response for _, response in responses]))
         ordered = section_ordered_ids([response for _, response in responses], in_scope)
         ids = [item_id for item_id in ordered if item_id not in claimed]
         scan.ids_by_type[property_type] = ids
@@ -607,18 +614,22 @@ def _search_result(
     limit: int,
     radius_km: float,
     boundary: ZigbangBoundary | None,
+    summary_nulls: int = 0,
 ) -> ZigbangSearchResult:
     """범위 안 매물 수와 조회 한도·제외 안내를 붙여 결과를 만든다.
 
     `shares` 는 종류마다 이번에 요약을 받은 자리 수다. 종류별 목록이 서로 겹치지 않아(`_collect_pins`) 자리를 더한 수가 곧
     받은 매물 수다. 범위(동 경계·반경) 안에 아직 요약을 받지 않은 자리가 남은 종류가 있으면 종류마다 다음 자리를 이어 받을
-    위치로 붙인다.
+    위치로 붙인다. `summary_nulls` 는 요약 응답에서 빈 항목으로 뺀 수로, 제외 안내에 이유를 보탠다.
     """
     in_scope = sum(len(ids) for ids in scan.ids_by_type.values())
     offsets = {kind: starts[kind] + share for kind, share in shares.items()}
     has_more = any(offsets[kind] < len(scan.ids_by_type[kind]) for kind in offsets)
     taken = sum(shares.values())
-    notes = notes + excluded_notes(limit, taken, len(listings), order='직방 목록 순으로 앞의', has_more=has_more)
+    notes = notes + excluded_notes(
+        limit, taken, len(listings), order='직방 목록 순으로 앞의', has_more=has_more, null_items=summary_nulls,
+    )
+    notes += scan.null_notes
     # 핀 수는 거래 불가를 요약에서 거르기 전이라 근사값이다. 이어 받은 자리는 종류별 자리를 더한 수다
     notes += limit_notes(
         in_scope, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow='조건·반경' if boundary is None else '조건·지역',

@@ -1,10 +1,15 @@
 from pydantic import (
     BeforeValidator,
     Field,
+    ValidatorFunctionWrapHandler,
     field_validator,
+    model_validator,
 )
 
-from jibsa.core.schema import ResponseModel
+from jibsa.core.schema import (
+    ResponseModel,
+    validate_dropping_nulls,
+)
 
 from typing import (
     Annotated,
@@ -26,7 +31,16 @@ def _round_meters(value: Any) -> Any:
 Meters = Annotated[int | None, BeforeValidator(_round_meters)]
 
 
-class DabangV5ResponseModel(ResponseModel, Generic[T]):
+class DabangBaseResponseModel(ResponseModel):
+    """다방 응답 모델의 기반. 목록 칸의 null 은 키가 없는 것과 같게, 객체 목록 안의 null 원소는 빼고 `null_items` 로 센다 (`validate_dropping_nulls`)."""
+
+    @model_validator(mode='wrap')
+    @classmethod
+    def null_lists_as_missing(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        return validate_dropping_nulls(cls, data, handler)
+
+
+class DabangV5ResponseModel(DabangBaseResponseModel, Generic[T]):
     """새 방식(`/api/v5/`) 응답의 봉투 `{code, msg, result, responseTime}`. 실제 데이터는 `result`.
 
     실패는 HTTP 상태(400·403·500)로 오므로 200 안의 실패는 보지 못했다 (2026-10-25 실측). 400 본문은
@@ -47,7 +61,7 @@ class DabangV5ResponseModel(ResponseModel, Generic[T]):
     ] = None
 
 
-class DabangLocationModel(ResponseModel):
+class DabangLocationModel(DabangBaseResponseModel):
     """좌표 (`{"lat": …, "lng": …}`)."""
 
     lat: Annotated[
@@ -60,7 +74,7 @@ class DabangLocationModel(ResponseModel):
     ]
 
 
-class DabangRoomItemModel(ResponseModel):
+class DabangRoomItemModel(DabangBaseResponseModel):
     """매물 지도 목록의 매물 한 칸. 가격·층·면적·관리비가 숫자 없이 글자로만 온다 (상세에는 숫자가 있다).
 
     Args:
@@ -128,7 +142,7 @@ class DabangRoomItemModel(ResponseModel):
     ] = None
 
 
-class DabangPremiumGroupModel(ResponseModel):
+class DabangPremiumGroupModel(DabangBaseResponseModel):
     """`premiumList` 한 칸: 광고하는 중개사 하나와 그 매물 (중개사 정보는 모델에 두지 않는다)."""
 
     room_list: Annotated[
@@ -137,7 +151,7 @@ class DabangPremiumGroupModel(ResponseModel):
     ] = []
 
 
-class DabangRoomListResultModel(ResponseModel):
+class DabangRoomListResultModel(DabangBaseResponseModel):
     """매물 목록 `result`. 한 쪽은 24건까지이고 `total`·`hasMore` 는 일반 목록(`roomList`) 기준이다 (역삼동 원룸 423건 =
     17쪽×24 + 15 로 18쪽이 `hasMore: false`, 19쪽은 빈 목록, 2026-10-25 실측). 다음 쪽이 있어도 23건만 올 때가 있어
     (2026-11-13 웹 캡처: 아파트 강남역 1쪽) 받은 수로 마지막 쪽을 가리지 않는다. 광고(`premiumList`)는 따로 온다.
@@ -173,7 +187,7 @@ class DabangRoomListResponseModel(DabangV5ResponseModel[DabangRoomListResultMode
     """매물 목록 응답 (지도 목록과 단지 매물 목록이 같은 모양)."""
 
 
-class DabangComplexInfoModel(ResponseModel):
+class DabangComplexInfoModel(DabangBaseResponseModel):
     """단지 상세의 단지 (`complex`).
 
     `buildCovRatio`·`floorAreaIndex` 는 이름과 값이 뒤바뀌어 온다: `buildCovRatio` 가 용적률, `floorAreaIndex` 가 건폐율이다
@@ -279,7 +293,10 @@ class DabangComplexInfoModel(ResponseModel):
     ] = None
     hash_tags: Annotated[
         list[str],
-        Field(description="단지 꼬리표 ('입주 48년차', '대치역 도보 7분', '초품아')", alias='hashTags')
+        Field(
+            description="단지 꼬리표 ('입주 48년차', '대치역 도보 7분', '초품아'). 웹은 `hashTags?.length` 로 없으면 꼬리표 칸을 그리지 않는다. null 도 빈 목록으로 받는다",
+            alias='hashTags',
+        )
     ] = []
 
     @field_validator('recent_deal_count', mode='before')
@@ -295,14 +312,8 @@ class DabangComplexInfoModel(ResponseModel):
             return int(digits) if digits.isdigit() else None
         return value
 
-    @field_validator('hash_tags', mode='before')
-    @classmethod
-    def null_tags_are_empty(cls, value: Any) -> Any:
-        """웹은 `hashTags?.length` 로 없으면 꼬리표 칸을 그리지 않는다. null 도 빈 목록으로 받는다."""
-        return [] if value is None else value
 
-
-class DabangComplexSpaceModel(ResponseModel):
+class DabangComplexSpaceModel(DabangBaseResponseModel):
     """단지의 평형 하나.
 
     Args:
@@ -348,7 +359,7 @@ class DabangComplexSpaceModel(ResponseModel):
     ] = None
 
 
-class DabangAreaAveragePriceModel(ResponseModel):
+class DabangAreaAveragePriceModel(DabangBaseResponseModel):
     """평당 평균가 비교 한 칸 (이 단지·동·구, 만원)."""
 
     scope: Annotated[
@@ -365,7 +376,7 @@ class DabangAreaAveragePriceModel(ResponseModel):
     ] = None
 
 
-class DabangComplexSchoolModel(ResponseModel):
+class DabangComplexSchoolModel(DabangBaseResponseModel):
     """단지 근처 학교 하나. 초등학교의 `hakgudoName` 은 통학구역(배정 학구), 중·고등학교는 학교군 이름이다.
 
     수는 글자로 온다: `avgStudentsPerClass` '24명', 중학교 `totalEnterSpecialHighSchool` '11명'(특목고 진학)·
@@ -412,7 +423,7 @@ class DabangComplexSchoolModel(ResponseModel):
     ] = None
 
 
-class DabangComplexChildcareModel(ResponseModel):
+class DabangComplexChildcareModel(DabangBaseResponseModel):
     """단지 근처 어린이집·유치원 하나. 거리순으로 온다 (2026-11-13 단지 20곳 어린이집 422곳·유치원 71곳 모두).
 
     어린이집은 `type`(국공립·민간·직장·가정·협동), 유치원은 `establishDivide`(공립·사립)에 설립 유형이 온다. 교사당 아동 수는
@@ -445,7 +456,7 @@ class DabangComplexChildcareModel(ResponseModel):
     ] = None
 
 
-class DabangComplexEducationModel(ResponseModel):
+class DabangComplexEducationModel(DabangBaseResponseModel):
     """단지 근처 보육·교육 시설 (웹 '주변 보육/교육시설' 탭: 어린이집·유치원·초·중·고).
 
     목록은 늘 오고 시설이 없으면 `[]` 다 (2026-11-14 단지 38곳, 어린이집 없는 6곳·유치원 없는 2곳도 `[]`). `null` 로 오면 그 목록은
@@ -475,7 +486,7 @@ class DabangComplexEducationModel(ResponseModel):
     ] = []
 
 
-class DabangComplexRegionModel(ResponseModel):
+class DabangComplexRegionModel(DabangBaseResponseModel):
     """단지가 있는 동."""
 
     full_name: Annotated[
@@ -484,7 +495,7 @@ class DabangComplexRegionModel(ResponseModel):
     ] = None
 
 
-class DabangComplexResultModel(ResponseModel):
+class DabangComplexResultModel(DabangBaseResponseModel):
     """단지 상세 `result`. 사진(`complex.images`)·평면도·광고 중개사(`premiumNearAgents`)도 오지만 모델에 두지 않는다."""
 
     complex: Annotated[

@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
+from jibsa.providers.zigbang.api.response.common import ZigbangBaseResponseModel
 
 from typing import Annotated
 
@@ -11,7 +11,7 @@ from typing import Annotated
 # GET stay-apis.zigbang.com/guest/items/by-ids (검색·상세·임대인의 다른 방이 같이 쓴다)
 # ---------------------------------------------------------------------------
 
-class ZigbangStayAddressModel(ResponseModel):
+class ZigbangStayAddressModel(ZigbangBaseResponseModel):
     """단기임대 매물 주소 (동까지)."""
 
     local1: Annotated[
@@ -32,7 +32,7 @@ class ZigbangStayAddressModel(ResponseModel):
     ] = None
 
 
-class ZigbangStayDiscountModel(ResponseModel):
+class ZigbangStayDiscountModel(ZigbangBaseResponseModel):
     """단기임대 할인 조건."""
 
     discount_type: Annotated[
@@ -61,7 +61,7 @@ class ZigbangStayDiscountModel(ResponseModel):
     ] = None
 
 
-class ZigbangStayItemSummaryModel(ResponseModel):
+class ZigbangStayItemSummaryModel(ZigbangBaseResponseModel):
     """단기임대 매물 요약. 금액은 **원** 단위다."""
 
     id: Annotated[
@@ -126,7 +126,7 @@ class ZigbangStayItemSummaryModel(ResponseModel):
     ] = None
 
 
-class ZigbangGuestItemsByIdsResponseModel(ResponseModel):
+class ZigbangGuestItemsByIdsResponseModel(ZigbangBaseResponseModel):
     """단기임대 매물 요약 배치 응답. 내려간 매물은 빠진다."""
 
     items: Annotated[

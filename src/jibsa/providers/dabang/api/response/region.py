@@ -5,8 +5,8 @@ from pydantic import (
 )
 
 from jibsa.core.geo import MultiPolygon
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
     DabangLocationModel,
     DabangV5ResponseModel,
 )
@@ -17,7 +17,7 @@ from typing import (
 )
 
 
-class DabangLocRegionModel(ResponseModel):
+class DabangLocRegionModel(DabangBaseResponseModel):
     """장소 검색의 동 하나. 시·군·구는 오지 않는다 ('강남구' 를 찾으면 강남구의 동들이 온다, 2026-10-25 실측).
 
     Args:
@@ -50,7 +50,7 @@ class DabangLocRegionModel(ResponseModel):
     ] = None
 
 
-class DabangLocLineModel(ResponseModel):
+class DabangLocLineModel(DabangBaseResponseModel):
     """역의 노선 하나."""
 
     full_name: Annotated[
@@ -59,7 +59,7 @@ class DabangLocLineModel(ResponseModel):
     ] = None
 
 
-class DabangLocSubwayModel(ResponseModel):
+class DabangLocSubwayModel(DabangBaseResponseModel):
     """장소 검색의 역 하나.
 
     Args:
@@ -92,7 +92,7 @@ class DabangLocSubwayModel(ResponseModel):
     ] = None
 
 
-class DabangLocUnivModel(ResponseModel):
+class DabangLocUnivModel(DabangBaseResponseModel):
     """장소 검색의 대학 하나."""
 
     id: Annotated[
@@ -109,7 +109,7 @@ class DabangLocUnivModel(ResponseModel):
     ] = None
 
 
-class DabangLocComplexModel(ResponseModel):
+class DabangLocComplexModel(DabangBaseResponseModel):
     """장소 검색의 단지 하나 (아파트·오피스텔)."""
 
     id: Annotated[
@@ -134,7 +134,7 @@ class DabangLocComplexModel(ResponseModel):
     ] = None
 
 
-class DabangLocSaleModel(ResponseModel):
+class DabangLocSaleModel(DabangBaseResponseModel):
     """장소 검색의 분양 단지 하나."""
 
     id: Annotated[
@@ -155,7 +155,7 @@ class DabangLocSaleModel(ResponseModel):
     ] = None
 
 
-class DabangLocSearchResultModel(ResponseModel):
+class DabangLocSearchResultModel(DabangBaseResponseModel):
     """장소 검색 `result`."""
 
     region_list: Annotated[
@@ -184,7 +184,7 @@ class DabangLocSearchV5ResponseModel(DabangV5ResponseModel[DabangLocSearchResult
     """`GET /api/v5/loc/search` 응답."""
 
 
-class DabangGeojsonRegionResponseModel(ResponseModel):
+class DabangGeojsonRegionResponseModel(DabangBaseResponseModel):
     """동 경계 파일. 응답은 GeoJSON geometry 하나다 (역삼동은 `MultiPolygon`, 2026-10-25 실측). `Polygon` 이 와도
     `MultiPolygon` 좌표로 맞춘다.
 
@@ -210,7 +210,7 @@ class DabangGeojsonRegionResponseModel(ResponseModel):
         return value
 
 
-class DabangRegionModel(ResponseModel):
+class DabangRegionModel(DabangBaseResponseModel):
     """다방 지역 하나 (시·도·시·군·구). 시·도·시·군·구 목록은 중심 좌표(`location`)를 비워 준다 (2026-11-13 캡처).
 
     Args:

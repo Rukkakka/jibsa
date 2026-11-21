@@ -21,6 +21,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
+    null_items_note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.complex.detail import (
@@ -46,6 +47,7 @@ from jibsa.providers.zigbang.service.common.apt import (
     APT_TRAN_TYPE_BY_TRADE,
     TRADE_BY_APT_TRAN_TYPE,
     apt_pagination_notes,
+    catalog_null_notes,
     catalog_to_listing,
 )
 from jibsa.providers.zigbang.service.common.base import (
@@ -68,6 +70,7 @@ from jibsa.providers.zigbang.service.common.room import (
     SALES_TYPE_BY_TRADE,
     ZigbangRoomConditions,
     excluded_notes,
+    pin_null_notes,
     room_filter_of,
     section_ordered_ids,
     summary_to_listing,
@@ -726,6 +729,9 @@ def list_complex_listings(
     거른다. 평형은 아파트만 있다. 관리비·방 구조·면적·층·욕실·옵션·시설 조건은 오피스텔만 받으며
     건물 API 에 그대로 보내 서버에서 거른다.
 
+    응답 목록에 빈 항목(null)이 섞여 오면 빼고 읽되 아파트는 직방 offset 이 그 자리도 세므로 받은 수(`offset`·`inspected`)에 더해 센다.
+    오피스텔 건물은 핀·섹션의 빈 항목을 `[제외]` 로만 알린다 (`catalog_null_notes`·`pin_null_notes`).
+
     Raises:
         JibsaError: 단지 ID 형식이 맞지 않거나, 오피스텔에 평형 조건을 줬거나,
             아파트에 오피스텔 전용 조건을 줬을 때 (INVALID_ARGUMENT).
@@ -768,6 +774,11 @@ def list_complex_listings(
     total = 0
     offset = 0
     inspected = 0
+    # 목록에서 뺀 빈 항목 수와, 카탈로그의 묶인 매물 ID 목록에서 뺀 빈 항목 수 (`catalog_null_notes`)
+    dropped_catalogs = 0
+    dropped_id_lists = 0
+    # 평형 목록(`danjiRoomTypes`)에서 뺀 빈 항목 수. 평형 ID 를 확인할 수 없을 때만 안내한다
+    dropped_room_types = 0
     seen: set[str] = set()
     while inspected < limit:
         page_size = min(DANJI_CATALOG_PAGE_SIZE, limit - inspected)
@@ -787,28 +798,40 @@ def list_complex_listings(
             )
         )
         if offset == 0:
-            _check_pyeong_ids(complex_id, response, pyeong_ids)
+            if response.null_items('room_types'):
+                # 평형 목록에서 빈 항목을 뺐으면 준 평형 ID 가 그 항목이었을 수 있어 단지에 있는지 확인하지 않는다
+                dropped_room_types = response.null_items('room_types') if pyeong_ids else 0
+            else:
+                _check_pyeong_ids(complex_id, response, pyeong_ids)
         total = response.total_count
-        inspected += len(response.catalogs)
+        # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빈 항목을 빼고 읽었어도 받은 자리 수에 더해야 같은 매물을 다시 받거나 일찍 멈추지 않는다
+        received = len(response.catalogs) + response.null_items('catalogs')
+        dropped_catalogs += response.null_items('catalogs')
+        dropped_id_lists += sum(catalog.null_items('item_id_list') for catalog in response.catalogs)
+        inspected += received
         for catalog in response.catalogs:
             listing = catalog_to_listing(catalog, local1)
             if listing is not None and listing.id not in seen:
                 seen.add(listing.id)
                 listings.append(listing)
-        offset += len(response.catalogs)
-        if not response.catalogs or offset >= total:
+        offset += received
+        if not received or offset >= total:
             break
     listings = listings[:limit]
+    notes = apt_pagination_notes(
+        # 단지 하나라 지역 대신 단지 매물의 조건만 좁히라고 한다 (오피스텔 건물·다방 단지 매물과 같다)
+        len(listings), limit, inspected, has_more=offset < total, narrow='거래 유형·평형·가격 조건',
+    ) + catalog_null_notes('직방 단지', dropped_catalogs, dropped_id_lists)
+    if dropped_room_types:
+        # 평형 ID 가 단지에 있는지 볼 수 없어 확인하지 않고 그 평형으로 찾았다
+        notes.append(null_items_note('직방 단지 평형', dropped_room_types))
     return ZigbangComplexListingsResult(
         complex_id=complex_id,
         total=total,
         returned=len(listings),
         has_more=offset < total,
         listings=listings,
-        # 단지 하나라 지역 대신 단지 매물의 조건만 좁히라고 한다 (오피스텔 건물·다방 단지 매물과 같다)
-        notes=apt_pagination_notes(
-            len(listings), limit, inspected, has_more=offset < total, narrow='거래 유형·평형·가격 조건',
-        ),
+        notes=notes,
     )
 
 
@@ -866,7 +889,8 @@ def _list_officetel_building_listings(
     ids = section_ordered_ids([response])
     # 조회 예산은 요약을 받는 매물 수다. 받은 뒤 뺀 매물은 다시 채우지 않는다
     scanned = ids[:limit]
-    summaries = {summary.item_id: summary for summary in tradeable_summaries(client, scanned)}
+    tradeable = tradeable_summaries(client, scanned)
+    summaries = {summary.item_id: summary for summary in tradeable.items}
     # 요약 응답 순서에 기대지 않고 섹션 순서로 세운다
     listings: list[Listing] = [
         summary_to_listing(summaries[item_id], building_id=building_id) for item_id in scanned if item_id in summaries
@@ -882,7 +906,10 @@ def _list_officetel_building_listings(
         listings=listings,
         notes=(
             # 아래 [일부] 안내의 '직방 목록 순으로' 와 같은 말로 쓴다 (한 응답에 '순서로'·'순으로' 가 섞였다, 2026-11-10 리뷰)
-            excluded_notes(limit, len(scanned), len(listings), order='직방 목록 순으로 앞의', has_more=has_more)
+            excluded_notes(
+                limit, len(scanned), len(listings), order='직방 목록 순으로 앞의', has_more=has_more,
+                null_items=tradeable.null_items,
+            )
             # 요약을 받은 핀 수(inspected)로 limit 에 닿았는지 본다. 받은 뒤 거래 불가로 뺀 만큼 다시 채우지 않아, 돌려준 수로
             # 보면 1건만 빠져도 안내가 사라진다. 단지 하나라 지역·반경 대신 단지 매물의 조건만 좁히라고 한다. 오피스텔 건물에는
             # 평형 조건이 없어(--pyeong 은 INVALID_ARGUMENT) 오피스텔에만 있는 방 구조·면적 조건을 권한다 (2026-11-10 실측:
@@ -891,5 +918,6 @@ def _list_officetel_building_listings(
                 total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order='직방 목록',
                 narrow='거래 유형·방 구조·면적·가격 조건', inspected=len(scanned), has_more=has_more,
             )
+            + pin_null_notes('직방 오피스텔 건물 매물 핀·섹션', [response])
         ),
     )

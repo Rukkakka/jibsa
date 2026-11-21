@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
+    NaverBaseResponseModel,
     NaverCoordinatesModel,
     NaverFacilityInfoModel,
     NaverListVerificationInfoModel,
@@ -18,7 +18,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import Annotated
 
 
-class NaverTransportSubwayLineModel(ResponseModel):
+class NaverTransportSubwayLineModel(NaverBaseResponseModel):
     """역의 노선 한 개. 노선마다 도보 거리가 따로 온다 (출구가 달라서)."""
 
     name: Annotated[
@@ -35,7 +35,7 @@ class NaverTransportSubwayLineModel(ResponseModel):
     ] = None
 
 
-class NaverTransportSubwayModel(ResponseModel):
+class NaverTransportSubwayModel(NaverBaseResponseModel):
     """가까운 지하철역 한 개."""
 
     station_name: Annotated[
@@ -48,7 +48,7 @@ class NaverTransportSubwayModel(ResponseModel):
     ] = []
 
 
-class NaverTransportBusModel(ResponseModel):
+class NaverTransportBusModel(NaverBaseResponseModel):
     """한 종류의 버스 노선들."""
 
     type_name: Annotated[
@@ -61,7 +61,7 @@ class NaverTransportBusModel(ResponseModel):
     ] = []
 
 
-class NaverTransportModel(ResponseModel):
+class NaverTransportModel(NaverBaseResponseModel):
     """data-service/transport 결과. 가까운 지하철역과 주변 정류장의 버스 노선."""
 
     subway_list: Annotated[
@@ -74,7 +74,7 @@ class NaverTransportModel(ResponseModel):
     ] = []
 
 
-class NaverAcquisitionTaxModel(ResponseModel):
+class NaverAcquisitionTaxModel(NaverBaseResponseModel):
     """취득세 (원)."""
 
     acquisition_tax: Annotated[
@@ -91,7 +91,7 @@ class NaverAcquisitionTaxModel(ResponseModel):
     ] = None
 
 
-class NaverArticleTaxModel(ResponseModel):
+class NaverArticleTaxModel(NaverBaseResponseModel):
     """매물 가격 기준 세금 추정 (원). 사이트가 보여 주는 네이버 계산값이다."""
 
     acquisition_tax: Annotated[
@@ -108,7 +108,7 @@ class NaverArticleTaxModel(ResponseModel):
     ] = None
 
 
-class NaverFeeRatioModel(ResponseModel):
+class NaverFeeRatioModel(NaverBaseResponseModel):
     """중개보수 요율 범위 (%)."""
 
     min: Annotated[
@@ -121,7 +121,7 @@ class NaverFeeRatioModel(ResponseModel):
     ] = None
 
 
-class NaverArticleAgentFeeModel(ResponseModel):
+class NaverArticleAgentFeeModel(NaverBaseResponseModel):
     """매물 가격 기준 중개보수 (원)."""
 
     fee: Annotated[
@@ -138,7 +138,7 @@ class NaverArticleAgentFeeModel(ResponseModel):
     ] = None
 
 
-class NaverArticleKeyIdsModel(ResponseModel):
+class NaverArticleKeyIdsModel(NaverBaseResponseModel):
     """매물의 연관 키."""
 
     complex_number: Annotated[
@@ -159,7 +159,7 @@ class NaverArticleKeyIdsModel(ResponseModel):
     ] = None
 
 
-class NaverArticleTypeModel(ResponseModel):
+class NaverArticleTypeModel(NaverBaseResponseModel):
     """매물 유형 코드 쌍."""
 
     real_estate_type: Annotated[
@@ -172,7 +172,7 @@ class NaverArticleTypeModel(ResponseModel):
     ]
 
 
-class NaverArticleKeyAddressModel(ResponseModel):
+class NaverArticleKeyAddressModel(NaverBaseResponseModel):
     """매물의 법정동 코드와 지번."""
 
     legal_division_number: Annotated[
@@ -185,7 +185,7 @@ class NaverArticleKeyAddressModel(ResponseModel):
     ] = None
 
 
-class NaverArticleKeyModel(ResponseModel):
+class NaverArticleKeyModel(NaverBaseResponseModel):
     """article/key 결과."""
 
     key: Annotated[
@@ -202,7 +202,7 @@ class NaverArticleKeyModel(ResponseModel):
     ] = None
 
 
-class NaverPriceInfoModel(ResponseModel):
+class NaverPriceInfoModel(NaverBaseResponseModel):
     """상세 가격 (원). 매매는 `price`, 전세·월세는 `warrantyAmount`/`rentAmount` 로 온다."""
 
     price: Annotated[
@@ -239,7 +239,7 @@ class NaverPriceInfoModel(ResponseModel):
     ] = None
 
 
-class NaverFloorInfoModel(ResponseModel):
+class NaverFloorInfoModel(NaverBaseResponseModel):
     """층 정보."""
 
     target_floor: Annotated[
@@ -252,7 +252,7 @@ class NaverFloorInfoModel(ResponseModel):
     ] = None
 
 
-class NaverSpaceInfoModel(ResponseModel):
+class NaverSpaceInfoModel(NaverBaseResponseModel):
     """상세의 공간 정보."""
 
     floor_info: Annotated[
@@ -281,7 +281,7 @@ class NaverSpaceInfoModel(ResponseModel):
     ] = None
 
 
-class NaverSizeInfoModel(ResponseModel):
+class NaverSizeInfoModel(NaverBaseResponseModel):
     """면적."""
 
     supply_space: Annotated[
@@ -298,7 +298,7 @@ class NaverSizeInfoModel(ResponseModel):
     ] = None
 
 
-class NaverMovingInInfoModel(ResponseModel):
+class NaverMovingInInfoModel(NaverBaseResponseModel):
     """입주 가능일."""
 
     moving_in_type: Annotated[
@@ -320,7 +320,7 @@ class NaverMovingInInfoModel(ResponseModel):
     ] = None
 
 
-class NaverArticleDetailInfoModel(ResponseModel):
+class NaverArticleDetailInfoModel(NaverBaseResponseModel):
     """상세 본문 정보."""
 
     article_name: Annotated[
@@ -369,7 +369,7 @@ class NaverArticleDetailInfoModel(ResponseModel):
     ] = None
 
 
-class NaverDetailInfoModel(ResponseModel):
+class NaverDetailInfoModel(NaverBaseResponseModel):
     """basicInfo 의 detailInfo."""
 
     facility_info: Annotated[
@@ -409,7 +409,7 @@ class NaverDetailInfoModel(ResponseModel):
     ] = None
 
 
-class NaverCommunalComplexInfoModel(ResponseModel):
+class NaverCommunalComplexInfoModel(NaverBaseResponseModel):
     """매물이 속한 단지."""
 
     complex_number: Annotated[
@@ -426,7 +426,7 @@ class NaverCommunalComplexInfoModel(ResponseModel):
     ] = None
 
 
-class NaverArticleBasicInfoModel(ResponseModel):
+class NaverArticleBasicInfoModel(NaverBaseResponseModel):
     """매물 상세."""
 
     price_info: Annotated[
@@ -443,7 +443,7 @@ class NaverArticleBasicInfoModel(ResponseModel):
     ] = None
 
 
-class NaverAgentPhoneModel(ResponseModel):
+class NaverAgentPhoneModel(NaverBaseResponseModel):
     """중개사 연락처."""
 
     brokerage: Annotated[
@@ -452,7 +452,7 @@ class NaverAgentPhoneModel(ResponseModel):
     ] = None
 
 
-class NaverArticleAgentModel(ResponseModel):
+class NaverArticleAgentModel(NaverBaseResponseModel):
     """중개사."""
 
     brokerage_name: Annotated[
@@ -477,7 +477,7 @@ class NaverArticleAgentModel(ResponseModel):
     ] = None
 
 
-class NaverEtcDetailModel(ResponseModel):
+class NaverEtcDetailModel(NaverBaseResponseModel):
     """관리비 합계 금액과 포함 항목 (typeCode '02' 의 etcDetail, '04' 의 fixNonDetailList)."""
 
     amount: Annotated[
@@ -494,7 +494,7 @@ class NaverEtcDetailModel(ResponseModel):
     ] = None
 
 
-class NaverFixDetailModel(ResponseModel):
+class NaverFixDetailModel(NaverBaseResponseModel):
     """항목별 관리비 (typeCode '01' 의 fixDetailList 한 줄)."""
 
     type: Annotated[
@@ -511,7 +511,7 @@ class NaverFixDetailModel(ResponseModel):
     ] = None
 
 
-class NaverUncheckDetailModel(ResponseModel):
+class NaverUncheckDetailModel(NaverBaseResponseModel):
     """관리비를 확인할 수 없는 사유 (typeCode '03' 의 uncheckDetail)."""
 
     type: Annotated[
@@ -524,7 +524,7 @@ class NaverUncheckDetailModel(ResponseModel):
     ] = None
 
 
-class NaverArticleMaintenanceFeeModel(ResponseModel):
+class NaverArticleMaintenanceFeeModel(NaverBaseResponseModel):
     """관리비."""
 
     type_code: Annotated[
@@ -566,7 +566,7 @@ class NaverDataServiceTransportV1ResponseModel(NaverResponseModel[NaverTransport
     """`GET /front-api/v1/data-service/transport` 응답."""
 
 
-class NaverDevelopmentRailModel(ResponseModel):
+class NaverDevelopmentRailModel(NaverBaseResponseModel):
     """매물 근처에 생길 지하철역 한 곳. 좌표도 오지만 쓰지 않는다."""
 
     station_id: Annotated[
@@ -599,7 +599,7 @@ class NaverDevelopmentRailModel(ResponseModel):
     ] = None
 
 
-class NaverDevelopmentJiguModel(ResponseModel):
+class NaverDevelopmentJiguModel(NaverBaseResponseModel):
     """매물 근처 개발 지구 한 곳."""
 
     id: Annotated[
@@ -624,7 +624,7 @@ class NaverDevelopmentJiguModel(ResponseModel):
     ] = None
 
 
-class NaverDevelopmentArticleModel(ResponseModel):
+class NaverDevelopmentArticleModel(NaverBaseResponseModel):
     """매물 근처 개발 예정. 두 목록 모두 빈 매물이 많다 (원룸은 `{"railList": [], "jiguList": []}`)."""
 
     # 한 목록이 null 로 와도 다른 목록까지 모름이 되지 않게 None 을 받는다 (service 가 그 목록만 null 로 낸다)
@@ -642,7 +642,7 @@ class NaverEducationBuildingSchoolV1ResponseModel(NaverResponseModel[list[NaverS
     """`GET /front-api/v1/education/building/school` 응답."""
 
 
-class NaverBuildingRegistrationModel(ResponseModel):
+class NaverBuildingRegistrationModel(NaverBaseResponseModel):
     """건축물대장 요약. 주차(parkingInfo)만 읽고 나머지(좌표·주소·용도·세대 수 등)는 내보내지 않아 extra 로 둔다."""
 
     parking_info: Annotated[

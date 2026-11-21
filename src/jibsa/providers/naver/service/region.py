@@ -24,6 +24,7 @@ from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
     normalize_address,
     note,
+    null_items_note,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -52,7 +53,7 @@ from jibsa.providers.naver.api.response.region import (
 )
 from jibsa.providers.naver.service.common import (
     VILLA_COMPLEX_CODES,
-    result_or_none,
+    result_with_null_items,
     unwrap,
 )
 
@@ -134,7 +135,7 @@ def _collect_matching(
     fetch: Callable[[int], NaverAutocompletePageModel[AutocompleteItemT]],
     first: NaverAutocompletePageModel[AutocompleteItemT],
     matches: Callable[[AutocompleteItemT], bool],
-) -> tuple[list[AutocompleteItemT], bool]:
+) -> tuple[list[AutocompleteItemT], bool, int]:
     """자동완성 첫 쪽 뒤로 이름이 맞는 후보가 이어지면 다음 쪽을 더 받아 모은다 (웹 검색창의 '더보기' 와 같은 요청).
 
     법정동·역 자동완성은 이름이 맞는 곳을 앞에, 이름 일부만 맞는 곳을 뒤에 준다 (2026-11-17 실측: '중구' 첫 쪽 5곳이 모두
@@ -148,21 +149,23 @@ def _collect_matching(
         matches: 이름이 맞는 후보인지.
 
     Returns:
-        tuple[list, bool]: 받은 후보 전체 (사이트 순서), 이름이 맞는 후보가 아직 남았을 수 있는지 (쪽 상한에 닿았거나
-            다음 쪽이 있다면서 빈 쪽을 줬을 때).
+        tuple[list, bool, int]: 받은 후보 전체 (사이트 순서), 이름이 맞는 후보가 아직 남았을 수 있는지 (쪽 상한에 닿았거나
+            다음 쪽이 있다면서 빈 쪽을 줬을 때), 빈 항목(null)이라 빼고 읽은 수 (받은 수를 셀 때 더한다).
     """
     items = list(first.items or [])
+    dropped = first.null_items('items')
     page = first
     pages = 1
-    while items and matches(items[-1]) and _has_more(page.total_count, page.has_next_page, len(items)):
+    while items and matches(items[-1]) and _has_more(page.total_count, page.has_next_page, len(items) + dropped):
         if pages >= MAX_AUTOCOMPLETE_PAGES:
-            return items, True
+            return items, True, dropped
         page = fetch(pages)
         pages += 1
         if not page.items:
-            return items, True
+            return items, True, dropped
         items.extend(page.items)
-    return items, False
+        dropped += page.null_items('items')
+    return items, False, dropped
 
 
 def _wide_region_unit(code: str | None) -> str:
@@ -222,9 +225,11 @@ def _find_legal_division(
     if not items:
         return None
     # 자동완성은 한 쪽에 다섯 곳만 줘서 다음 쪽이 있으면 전체 수(totalCount)로 센다 ('송정' 은 첫 쪽 다섯 곳이 모두
-    # 송정동이고 totalCount 14, 2026-10-11). totalCount 는 '중앙동1가' 같은 비슷한 이름도 세어 조금 많을 수 있다
-    more = _has_more(page.total_count, page.has_next_page, len(items))
-    notes: list[str] = []
+    # 송정동이고 totalCount 14, 2026-10-11). totalCount 는 '중앙동1가' 같은 비슷한 이름도 세어 조금 많을 수 있다.
+    # 빈 항목(null)이라 뺀 자리도 서버가 센 자리라 받은 수에 더한다
+    dropped = page.null_items('items')
+    more = _has_more(page.total_count, page.has_next_page, len(items) + dropped)
+    notes: list[str] = [null_items_note('네이버 법정동 자동완성', dropped)] if dropped else []
     # 이름은 끝 단어로 맞춘다. 검색어 전체('수정구 신흥')로 만들면 비교하는 끝 단어('신흥동')와 늘 달라 이름이 안 맞는다
     words = query.split()
     query_word = words[-1]
@@ -300,6 +305,7 @@ def _find_legal_division(
         reuse = page if len(words) == 1 and (query_word == ga_base or not more) else None
         _check_ga_dongs(
             client, query, ga_base, best.legal_division_number, normalize_address(best.legal_division_name), page=reuse,
+            notes=notes,
         )
     # 단위는 GUN·EUP 만 온다. 서울·경기도 같은 시·도는 그 안의 구(GUN)로 오고, 리는 자동완성에 나오지 않는다
     # (검색어 16개, 2026-10-09 확인). 그래서 EUP 가 아니면 시·군·구로 본다.
@@ -356,13 +362,15 @@ def _find_subway_station(
     items = page.items or []
     if not items:
         return None
+    # 빈 항목(null)이라 뺀 자리도 서버가 센 자리라 다음 쪽이 남았는지 셀 때 받은 수에 더한다
+    dropped = page.null_items('items')
     names = (query, f'{query}역')
     named = next((item for item in items if item.station_name in names), None)
     if named is None:
         _stop_unless_only(
             query,
             [_station_label(item) for item in items],
-            _has_more(page.total_count, page.has_next_page, len(items)),
+            _has_more(page.total_count, page.has_next_page, len(items) + dropped),
             page.total_count,
             hint=f"후보의 역 이름 그대로 다시 검색하세요 (예: '{items[0].station_name}')",
         )
@@ -372,7 +380,7 @@ def _find_subway_station(
         best = named
         notes = []
         name = named.station_name
-        collected, incomplete = _collect_matching(fetch, page, lambda item: item.station_name == name)
+        collected, incomplete, dropped = _collect_matching(fetch, page, lambda item: item.station_name == name)
         same = [item for item in collected if item.station_name == name]
         if len(same) >= 2 or incomplete:
             raise RegionAmbiguousError(
@@ -381,6 +389,8 @@ def _find_subway_station(
                 None if incomplete else len(same),
                 hint='역 이름만으로는 고를 수 없어 후보에 붙은 --lat/--lng 로 다시 검색하세요',
             )
+    if dropped:
+        notes.append(null_items_note('네이버 역 자동완성', dropped))
     if best.coordinates is None:
         # 후보를 다른 곳으로 바꾸지 않는다 (웹에서 사람이 고르는 것을 임의로 고르는 것이라). `_find_complex` 와 같다
         raise JibsaError(
@@ -400,15 +410,15 @@ def _find_subway_station(
 def _search_complexes(
     client: NaverClient,
     keyword: str,
-) -> tuple[list[NaverAutocompleteComplexModel], int | None, bool | None]:
-    """단지 이름 자동완성 첫 페이지(10건)와 전체 수(totalCount)·다음 쪽 여부(hasNextPage). 사이트 검색창과 같은 요청·순서다."""
+) -> tuple[list[NaverAutocompleteComplexModel], int | None, bool | None, int]:
+    """단지 이름 자동완성 첫 페이지(10건)와 전체 수(totalCount)·다음 쪽 여부(hasNextPage)·빈 항목(null)이라 빼고 읽은 수. 사이트 검색창과 같은 요청·순서다."""
     page = unwrap(
         client.run_request_search_autocomplete_complexes_v1(
             NaverSearchAutocompleteComplexesV1RequestParameterModel(keyword=keyword)
         ),
         '단지 검색',
     )
-    return page.items or [], page.total_count, page.has_next_page
+    return page.items or [], page.total_count, page.has_next_page, page.null_items('items')
 
 
 def _complex_label(item: NaverAutocompleteComplexModel) -> str:
@@ -467,6 +477,7 @@ def _pick_complex(
     total: int | None,
     has_next_page: bool | None,
     hint: Callable[[NaverAutocompleteComplexModel], str],
+    dropped: int = 0,
 ) -> tuple[NaverAutocompleteComplexModel, list[str]]:
     """단지 이름 자동완성 후보에서 단지 하나와 안내를 고른다. 고를 수 없으면 후보를 알린다.
 
@@ -486,14 +497,16 @@ def _pick_complex(
         has_next_page: 자동완성의 다음 쪽 여부 (hasNextPage).
         hint: 후보가 여럿일 때 다시 묻는 법을 만드는 함수 (부르는 명령마다 다르다). 예로 들 단지 후보를 받는다.
             정확히 같은 이름의 후보가 있으면 그중 첫 곳, 없으면 첫 후보다 (이름이 다른 단지를 예로 들지 않게).
+        dropped: 빈 항목(null)이라 빼고 읽은 후보 수. 서버가 센 자리라 다음 쪽이 남았는지 셀 때 받은 수에 더하고, 있으면 안내를 붙인다.
 
     Raises:
         RegionAmbiguousError: 다음 쪽이 남았거나, 이름이 정확히 같은 후보가 여럿이거나, 정확히 같은 이름 없이 후보가 여럿일 때.
     """
     exact = [item for item in items if item.complex_name == query]
-    has_more = _has_more(total, has_next_page, len(items))
+    has_more = _has_more(total, has_next_page, len(items) + dropped)
+    null_notes = [null_items_note('네이버 단지 자동완성', dropped)] if dropped else []
     if not has_more and len(exact) == 1:
-        return exact[0], []
+        return exact[0], null_notes
     # 후보가 여럿이거나 다음 쪽이 남았으면 여기서 멈춘다 (받은 후보를 모두 알린다). 돌아오면 후보가 하나뿐이다
     _stop_unless_only(
         query,
@@ -504,7 +517,7 @@ def _pick_complex(
         shown=len(items),
     )
     only = items[0]
-    return only, [note('참고', f"'{query}': 단지 이름으로 {_complex_label(only)} 단지를 찾았습니다")]
+    return only, [*null_notes, note('참고', f"'{query}': 단지 이름으로 {_complex_label(only)} 단지를 찾았습니다")]
 
 
 def _find_complex(
@@ -521,7 +534,7 @@ def _find_complex(
         RegionAmbiguousError: 단지를 하나로 정할 수 없을 때.
         JibsaError: 정한 단지에 좌표가 없으면 REGION_NOT_FOUND (단지는 찾았지만 위치로 쓸 수 없다).
     """
-    found, total, has_next_page = _search_complexes(client, query)
+    found, total, has_next_page, dropped = _search_complexes(client, query)
     if not found:
         return None
 
@@ -537,7 +550,7 @@ def _find_complex(
             f'(예: jibsa naver complex {item.complex_number})'
         )
 
-    best, notes = _pick_complex(query, found, total, has_next_page, hint=ambiguous_hint)
+    best, notes = _pick_complex(query, found, total, has_next_page, hint=ambiguous_hint, dropped=dropped)
     if best.coordinates is None:
         # 단지는 찾았으니 '지역을 찾지 못했습니다' 와 단지 이름으로 다시 검색하라는 힌트(같은 에러가 되풀이된다)를 주지 않는다
         listings = (
@@ -598,6 +611,7 @@ def _check_ga_dongs(
     address: str | None,
     *,
     page: NaverAutocompletePageModel[NaverAutocompleteLegalDivisionModel] | None = None,
+    notes: list[str] | None = None,
 ) -> None:
     """'○가' 동의 앞 이름(성수동 → 성수동1가·성수동2가)으로 찾았을 때 '○가' 동이 둘 이상이면 고르지 않고 멈춘다.
 
@@ -618,6 +632,8 @@ def _check_ga_dongs(
         address: 찾은 '○가' 동의 전체 주소. 하위 지역 목록은 동 이름만 줘('성수동2가') 후보 주소의 시·구를 여기서 붙인다.
         page: 앞 이름(`base`)으로 이미 받은 법정동 자동완성 쪽. 주면 다시 부르지 않고 이 쪽을 쓴다.
             Defaults to None (앞 이름으로 부른다).
+        notes: 여기서 받은 자동완성 쪽에서 빈 항목(null)을 빼고 읽었을 때 안내를 붙일 목록 (받아 온 `page` 는 부른 쪽이 알린다).
+            Defaults to None (안내하지 않는다).
 
     Raises:
         RegionAmbiguousError: '○가' 동이 둘 이상이거나, 한 곳뿐인데 자동완성 다음 쪽이 남았을 때 (candidate_count null).
@@ -641,13 +657,16 @@ def _check_ga_dongs(
             ),
             '지역 검색',
         )
+        if notes is not None and page.null_items('items'):
+            notes.append(null_items_note('네이버 법정동 자동완성', page.null_items('items')))
     page_items = page.items or []
     for item in page_items:
         add(item.legal_division_number, normalize_address(item.legal_division_name))
     if found_address:
         add(code, found_address)
-    # 다음 쪽이 남았는지는 다른 자동완성 판정과 같게 본다 (hasNextPage 가 비어도 totalCount 가 받은 수보다 크면 남았다)
-    more = _has_more(page.total_count, page.has_next_page, len(page_items))
+    # 다음 쪽이 남았는지는 다른 자동완성 판정과 같게 본다 (hasNextPage 가 비어도 totalCount 가 받은 수보다 크면 남았다).
+    # 빈 항목(null)이라 뺀 자리도 서버가 센 자리라 받은 수에 더한다
+    more = _has_more(page.total_count, page.has_next_page, len(page_items) + page.null_items('items'))
     if more:
         for sub in _sub_regions(client, 'EUP', code[:5] + '00000'):
             add(sub.legal_division_number, f'{parent} {_last_word(sub.legal_division_name or "")}'.strip())
@@ -708,6 +727,7 @@ def _find_address(
         raise RegionAmbiguousError(
             query, [item.full_address for item in items[:MAX_CANDIDATE_NOTES] if item.full_address], total,
         )
+    notes: list[str] = []
     item = items[0]
     elements = item.address_elements or NaverAddressElementsModel()
     code = elements.bcode or None
@@ -730,9 +750,8 @@ def _find_address(
         # 주소 검색은 '성수동' 에 성수동1가 한 곳만 주고 2가가 있다는 것은 알리지 않는다 (2026-10-15 실측)
         # ga_base 는 is_dong_code(code) 일 때만 채운다
         assert code is not None
-        _check_ga_dongs(client, query, ga_base, code, item.full_address)
+        _check_ga_dongs(client, query, ga_base, code, item.full_address, notes=notes)
     full_address = item.full_address or query
-    notes: list[str] = []
     if (item.item_level or 0) >= ADDRESS_LOT_ITEM_LEVEL or elements.jibun or elements.build_number:
         kind, name = '주소', full_address
     elif is_dong_code(code) and not elements.ri:
@@ -856,7 +875,7 @@ def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | 
         JibsaError: 단지를 찾지 못하면 NOT_FOUND.
         RegionAmbiguousError: 후보가 여럿이라 정할 수 없을 때. 후보에 단지 번호를 붙여 번호로 다시 묻게 한다.
     """
-    items, total, has_next_page = _search_complexes(client, name)
+    items, total, has_next_page, dropped = _search_complexes(client, name)
     if not items:
         raise JibsaError(
             code='NOT_FOUND',
@@ -872,6 +891,7 @@ def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | 
         has_next_page,
         # 단지 이름을 받는 명령(complex·market-price·school·search listings --complex)이 함께 써서 예시에 명령을 적지 않는다
         hint=lambda example: f'단지 이름 대신 후보의 단지 번호를 주세요 (예: {example.complex_number})',
+        dropped=dropped,
     )
     return best.complex_number, complex_is_villa(best.type), notes
 
@@ -928,9 +948,12 @@ def resolve_redevelopment_number(client: NaverClient, name: str) -> tuple[int, l
             '구역 번호로 조회하세요 (예: jibsa naver search redevelopment 한남동)',
         )
     exact = [item for item in items if item.name == name]
-    more = _has_more(page.total_count, page.has_next_page, len(items))
+    # 빈 항목(null)이라 뺀 자리도 서버가 센 자리라 받은 수에 더한다
+    dropped = page.null_items('items')
+    more = _has_more(page.total_count, page.has_next_page, len(items) + dropped)
+    null_notes = [null_items_note('네이버 재개발 구역 자동완성', dropped)] if dropped else []
     if not more and len(exact) == 1:
-        return exact[0].redevelopment_area_number, []
+        return exact[0].redevelopment_area_number, null_notes
     # 후보가 여럿이거나 다음 쪽이 남았으면 여기서 멈춘다. 돌아오면 후보가 하나뿐이다. 예시는 정확히 같은 이름의 후보가 있으면 그중
     # 첫 곳이다 (이름이 다른 구역을 예로 들지 않게)
     _stop_unless_only(
@@ -942,7 +965,9 @@ def resolve_redevelopment_number(client: NaverClient, name: str) -> tuple[int, l
         shown=len(items),
     )
     only = items[0]
-    return only.redevelopment_area_number, [note('참고', f"'{name}': 구역 이름으로 {_redevelopment_label(only)} 구역을 찾았습니다")]
+    return only.redevelopment_area_number, [
+        *null_notes, note('참고', f"'{name}': 구역 이름으로 {_redevelopment_label(only)} 구역을 찾았습니다"),
+    ]
 
 
 def legal_division_code_at(client: NaverClient, lat: float, lng: float) -> tuple[str, str | None] | None:
@@ -1068,6 +1093,17 @@ def _sub_regions(client: NaverClient, level: Literal['GUN', 'EUP'], code: str) -
     return unwrap(_sub_regions_response(client, level, code), '하위 지역')
 
 
+def _sub_regions_with_null_items(
+    client: NaverClient, level: Literal['GUN', 'EUP'], code: str,
+) -> tuple[list[NaverLegalDivisionInfoModel], int]:
+    """하위 지역 목록과, 그 목록에서 빈 항목(null)을 빼고 읽은 수. 실패하면 예외다.
+
+    목록이 하나뿐인지·구가 몇 곳인지로 판단하는 호출부가 쓴다 (빼고 읽었으면 하나뿐이라고 단정하지 않는다).
+    """
+    response = _sub_regions_response(client, level, code)
+    return unwrap(response, '하위 지역'), response.null_items('result')
+
+
 def _city_districts(sub_regions: list[NaverLegalDivisionInfoModel], city_code: str) -> list[NaverLegalDivisionInfoModel]:
     """시·도 아래 시·군·구 목록에서 그 시(코드 `city_code`)의 구. 코드 앞 네 자리가 같고 시 자신이 아닌 곳이다."""
     return [
@@ -1086,7 +1122,8 @@ def city_district_names(client: NaverClient, code: str) -> list[str] | None:
 
     구 이름은 시 이름을 붙여 준다 ('경기도 성남시 분당구' → 성남시 분당구). '남구' 처럼 같은 이름의 구가 여럿인 이름(남구 6곳)은
     REGION_AMBIGUOUS 라 시 이름을 붙인다. 하위 지역 조회가 실패하거나 고른 구 중 이름이 빈 곳이 있으면 None 이다 (구가 있는지·
-    이름을 모름). 빈 이름을 빼면 모두 빈 경우가 [] ('구 없는 시') 와 섞이므로 빼지 않는다.
+    이름을 모름). 빈 이름을 빼면 모두 빈 경우가 [] ('구 없는 시') 와 섞이므로 빼지 않는다. 시·군·구 목록에서 빈 항목(null)을 빼고
+    읽었으면 빠진 곳이 구일 수 있어 구가 있는지·이름을 모른다 (None).
 
     구 없는 시(구리시 4131000000)는 그 목록에 자기 코드로 있고 구 있는 시는 자기 코드 없이 구로만 있다. 그래서 고른 구가 없고
     목록에 시 자신(`legal_division_number == code`)도 없으면(빈 목록 포함) 구가 있는지 모르는 것이라 None 이다.
@@ -1094,10 +1131,11 @@ def city_district_names(client: NaverClient, code: str) -> list[str] | None:
     # 리뷰 오탐 (2026-11-18): 시 코드 앞 두 자리는 네이버 시·도 코드와 같다 (강원 51·전북 52·전남광주 12 모두 시·도 목록과 같은 새 코드, 전주·목포·춘천 실측)
     sido_code = code[:2] + '00000000'
     # 실패하면 CLI(`cli/naver.py` `_area_location`)가 반경으로 찾았다는 [실패] 안내를 이미 낸다
-    sub_regions = result_or_none(
+    sub_regions, dropped = result_with_null_items(
         lambda: _sub_regions_response(client, 'GUN', sido_code), notes=None, what='시·군·구 목록', unknown='',
     )
-    if sub_regions is None:
+    # 빈 항목(null)을 뺐으면 빠진 곳이 구일 수 있어 구가 있는지·이름을 모른다 (CLI 가 모를 때의 안내를 낸다)
+    if sub_regions is None or dropped:
         return None
     districts = _city_districts(sub_regions, code)
     if not districts and not any(item.legal_division_number == code for item in sub_regions):
@@ -1114,14 +1152,16 @@ def _only_district(children: list[NaverLegalDivisionInfoModel]) -> NaverLegalDiv
 def only_district_of_province(client: NaverClient, sido_code: str) -> tuple[str, str] | None | Literal['unknown']:
     """시·도 법정동 코드(3600000000) 아래 시·군·구가 하나뿐이면 그 (법정동 코드, 이름), 여럿이면 None, 조회가 실패하면 'unknown' (요청 1회).
 
-    세종은 시·군·구가 '세종시' 3611000000 하나뿐이라 그 시·군·구 경계가 곧 세종 전체다 (`list_regions` 와 같은 판정이다).
+    세종은 시·군·구가 '세종시' 3611000000 하나뿐이라 그 시·군·구 경계가 곧 세종 전체다 (`list_regions` 와 같은 판정이다). 시·군·구
+    목록에서 빈 항목(null)을 빼고 읽었으면 하나뿐인지 모르므로 조회가 실패한 것과 같게 'unknown' 이다.
     그 코드를 `legalDivisionArticleList` 의 시·군·구(GUN)에 넣으면 세종 전체 매물이 온다 (2026-11-19 실측).
     """
     # 실패하면 CLI(`cli/naver.py` `_area_location`)가 반경으로 찾았다는 [실패] 안내를 이미 낸다
-    children = result_or_none(
+    children, dropped = result_with_null_items(
         lambda: _sub_regions_response(client, 'GUN', sido_code), notes=None, what='시·군·구 목록', unknown='',
     )
-    if children is None:
+    # 빈 항목(null)을 뺐으면 빠진 곳이 시·군·구일 수 있어 하나뿐인지 모른다 (조회 실패와 같게 CLI 가 모를 때의 안내를 낸다)
+    if children is None or dropped:
         return 'unknown'
     only = _only_district(children)
     return None if only is None else (only.legal_division_number, only.legal_division_name or only.legal_division_number)
@@ -1152,12 +1192,15 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         name = province.city_full_name or province.legal_division_name
         # _find_province 가 둘 중 하나의 이름으로 찾았다
         assert name is not None
-        children = _sub_regions(client, 'GUN', province.legal_division_number)
+        children, dropped = _sub_regions_with_null_items(client, 'GUN', province.legal_division_number)
         notes = [
             f"{name} 의 하위 지역입니다. 네이버 시·도 목록에는 옛 이름 '{query}' 대신 {name} 만 있습니다"
             + (f'. {FORMER_PROVINCE_NAME_HINTS[query]}' if query in FORMER_PROVINCE_NAME_HINTS else '')
         ] if query in FORMER_PROVINCE_NAMES else []
-        only = _only_district(children)
+        if dropped:
+            notes.append(null_items_note('네이버 시·군·구 목록', dropped))
+        # 빈 항목(null)을 뺐으면 빠진 곳이 시·군·구일 수 있어 하나뿐이라고 단정하지 않는다
+        only = None if dropped else _only_district(children)
         if only is not None:
             # 세종은 시·군·구가 '세종시' 하나뿐이고 그 이름이 시·도 별칭('세종시' → 세종특별자치시)이라, 시·군·구 목록을 주면
             # 'regions 세종시' 가 다시 같은 목록을 준다 (2026-10-11 실측). 하나뿐이면 그 아래 읍·면·동을 준다 (요청 1회 더)
@@ -1194,7 +1237,8 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
 
     # 자동완성은 한 쪽에 다섯 곳만 줘서 첫 쪽이 모두 이름이 맞으면 같은 이름이 다음 쪽에 더 있을 수 있다 ('중구' 는 첫 쪽
     # 5곳이 모두 중구, 2026-11-17). 첫 쪽 수를 전체로 말하지 않게 이름이 맞는 곳이 끝날 때까지 다음 쪽을 받는다
-    items, incomplete = _collect_matching(fetch, fetch(0), is_exact)
+    items, incomplete, dropped = _collect_matching(fetch, fetch(0), is_exact)
+    null_notes = [null_items_note('네이버 법정동 자동완성', dropped)] if dropped else []
     exact = [item for item in items if is_exact(item)]
     if not exact:
         # 구가 있는 시는 시 자신 대신 그 아래 구가 온다 ('성남시' → 경기도 성남시 수정구 …). 시·도 목록에서
@@ -1223,7 +1267,7 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         # 시의 구는 코드로 고른다 (`_city_districts`). 시 코드는 구 코드 앞 네 자리 + '000000' 이다 (4113100000 → 4113000000)
         sub_regions = _sub_regions(client, 'GUN', under.legal_division_number[:2] + '00000000')
         entries = [_region_entry(item) for item in _city_districts(sub_regions, under.legal_division_number[:4] + '000000')]
-        return NaverRegionList(parent=' '.join(parent), regions=entries)
+        return NaverRegionList(parent=' '.join(parent), regions=entries, notes=null_notes)
 
     # 시·군·구를 먼저 본다 (하위 지역이 있는 쪽)
     exact.sort(key=lambda item: item.legal_division_level_type != 'GUN')
@@ -1240,7 +1284,7 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
             query, candidates, None if incomplete else len(same),
             hint=f"시·도 이름을 붙여 다시 주세요 (예: '{candidates[0]}')",
         )
-    notes = []
+    notes = null_notes
     if best.legal_division_level_type != 'GUN':
         raise JibsaError(
             code='NOT_FOUND',

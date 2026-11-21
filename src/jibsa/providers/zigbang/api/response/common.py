@@ -3,12 +3,14 @@
 from pydantic import (
     Field,
     ValidationError,
+    ValidatorFunctionWrapHandler,
     field_validator,
     model_validator,
 )
 
 from jibsa.core.schema import (
     ResponseModel,
+    validate_dropping_nulls,
 )
 
 from typing import (
@@ -19,10 +21,27 @@ from typing import (
 
 
 # ---------------------------------------------------------------------------
+# 직방 응답 모델의 기반 모델
+# ---------------------------------------------------------------------------
+
+class ZigbangBaseResponseModel(ResponseModel):
+    """직방 응답 모델의 기반. 목록 칸의 null 은 키가 없는 것과 같게, 객체 목록 안의 null 원소는 빼고 `null_items` 로 센다.
+
+    키가 없을 때와 같아서 기본값 `[]` 칸은 빈 목록, `sent_or_none`·`model_fields_set` 으로 키가 왔는지 보는 칸은 모름이다
+    (`validate_dropping_nulls`).
+    """
+
+    @model_validator(mode='wrap')
+    @classmethod
+    def null_lists_as_missing(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        return validate_dropping_nulls(cls, data, handler)
+
+
+# ---------------------------------------------------------------------------
 # 여러 엔드포인트가 같이 쓰는 중첩 모델 (검색 결과·지도 핀·좌표)
 # ---------------------------------------------------------------------------
 
-class ZigbangSearchSourceModel(ResponseModel):
+class ZigbangSearchSourceModel(ZigbangBaseResponseModel):
     """검색 결과의 원본 색인 문서. 결과 type 에 따라 채워지는 필드가 다르다."""
 
     local1: Annotated[
@@ -64,7 +83,7 @@ class ZigbangSearchSourceModel(ResponseModel):
     ] = None
 
 
-class ZigbangSearchItemModel(ResponseModel):
+class ZigbangSearchItemModel(ZigbangBaseResponseModel):
     """검색 결과 한 건 (지역·지하철역·학교·단지 등)."""
 
     id: Annotated[
@@ -97,7 +116,7 @@ class ZigbangSearchItemModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemSectionModel(ResponseModel):
+class ZigbangItemSectionModel(ZigbangBaseResponseModel):
     """노출 구역별 매물 ID 묶음."""
 
     type: Annotated[
@@ -110,7 +129,7 @@ class ZigbangItemSectionModel(ResponseModel):
     ] = []
 
 
-class ZigbangItemPinModel(ResponseModel):
+class ZigbangItemPinModel(ZigbangBaseResponseModel):
     """지도 핀 하나. 상세 정보 없이 ID 와 좌표만 담긴다."""
 
     id: Annotated[
@@ -135,7 +154,7 @@ class ZigbangItemPinModel(ResponseModel):
     ] = None
 
 
-class ZigbangLatLngModel(ResponseModel):
+class ZigbangLatLngModel(ZigbangBaseResponseModel):
     """좌표."""
 
     lat: Annotated[
@@ -152,7 +171,7 @@ class ZigbangLatLngModel(ResponseModel):
 # POST /house/property/v1/items/list
 # ---------------------------------------------------------------------------
 
-class ZigbangAreaModel(ResponseModel):
+class ZigbangAreaModel(ZigbangBaseResponseModel):
     """면적. ㎡ 와 평을 함께 준다."""
 
     m2: Annotated[
@@ -165,7 +184,7 @@ class ZigbangAreaModel(ResponseModel):
     ] = None
 
 
-class ZigbangAddressOriginModel(ResponseModel):
+class ZigbangAddressOriginModel(ZigbangBaseResponseModel):
     """행정 주소."""
 
     local1: Annotated[
@@ -200,7 +219,7 @@ def badge_codes_or_none(value: Any) -> list[str] | None:
     return None
 
 
-class ZigbangWebItemSummaryModel(ResponseModel):
+class ZigbangWebItemSummaryModel(ZigbangBaseResponseModel):
     """웹 목록 카드가 쓰는 매물 요약 한 건 (`itemSummaries`, camelCase). 관리비(`fee`)와 배지(`badges`)만 읽는다."""
 
     id: Annotated[
@@ -223,7 +242,7 @@ class ZigbangWebItemSummaryModel(ResponseModel):
         return badge_codes_or_none(value)
 
 
-class ZigbangItemSummaryModel(ResponseModel):
+class ZigbangItemSummaryModel(ZigbangBaseResponseModel):
     """매물 요약 한 건 (snake_case 필드 응답)."""
 
     item_id: Annotated[
@@ -348,7 +367,7 @@ class ZigbangItemSummaryModel(ResponseModel):
         return self.web_badges if self.web_badges is not None else self.badges
 
 
-class ZigbangItemsListV1ResponseModel(ResponseModel):
+class ZigbangItemsListV1ResponseModel(ZigbangBaseResponseModel):
     """매물 요약 배치 응답.
 
     `items` (snake_case) 와 `itemSummaries` (camelCase) 가 같은 매물을 다른
@@ -378,7 +397,7 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
     def readable_summaries(cls, value: Any) -> Any:
         """관리비를 실을 수 있는 요약만 받는다. 관리비 한 칸 때문에 배치 전체(검색 요약·상세의 등록일)를 읽지 못하면 안 된다.
 
-        목록이 아니면(null 등) 빈 목록, `ZigbangWebItemSummaryModel` 이 읽지 못하는 항목(ID 가 정수가 아니거나 관리비가
+        목록이 아니면 빈 목록(null 은 기반 모델이 먼저 키를 지워 기본값 `[]` 가 된다), `ZigbangWebItemSummaryModel` 이 읽지 못하는 항목(ID 가 정수가 아니거나 관리비가
         숫자·null 이 아닌 '', '-' 등)은 빼서 그 매물은 `items` 의 `manage_cost` 로 돌아간다. 배지 칸은 목록이 아니면 모델이 None 으로
         받아 관리비를 잃지 않는다. 형식 규칙은 모델 한 곳에 둔다.
         """
@@ -405,7 +424,7 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
         return self
 
 
-class ZigbangSubwayBriefModel(ResponseModel):
+class ZigbangSubwayBriefModel(ZigbangBaseResponseModel):
     """매물 인근 지하철역."""
 
     id: Annotated[
@@ -422,7 +441,7 @@ class ZigbangSubwayBriefModel(ResponseModel):
     ] = None
 
 
-class ZigbangRoomTypeTitleModel(ResponseModel):
+class ZigbangRoomTypeTitleModel(ZigbangBaseResponseModel):
     """아파트 평형 이름."""
 
     m2: Annotated[
@@ -435,7 +454,7 @@ class ZigbangRoomTypeTitleModel(ResponseModel):
     ] = None
 
 
-class ZigbangCatalogItemIdModel(ResponseModel):
+class ZigbangCatalogItemIdModel(ZigbangBaseResponseModel):
     """카탈로그에 묶인 실제 매물 ID."""
 
     item_source: Annotated[
@@ -448,7 +467,7 @@ class ZigbangCatalogItemIdModel(ResponseModel):
     ]
 
 
-class ZigbangItemCatalogModel(ResponseModel):
+class ZigbangItemCatalogModel(ZigbangBaseResponseModel):
     """아파트 매물 카탈로그 한 건. 같은 호·거래 유형의 매물(중개사별)을 하나로 묶는다."""
 
     area_ho_id: Annotated[
@@ -533,7 +552,7 @@ class ZigbangItemCatalogModel(ResponseModel):
 # GET /apt/danjis/{danjiId}
 # ---------------------------------------------------------------------------
 
-class ZigbangDanjiRankPlaceModel(ResponseModel):
+class ZigbangDanjiRankPlaceModel(ZigbangBaseResponseModel):
     """단지가 속한 구·동 안에서의 순위 하나."""
 
     name: Annotated[
@@ -550,7 +569,7 @@ class ZigbangDanjiRankPlaceModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjiRankModel(ResponseModel):
+class ZigbangDanjiRankModel(ZigbangBaseResponseModel):
     """단지 상세의 순위 (`순위`). 웹 단지 화면이 보여 주는 구·동 순위와 조회수·실거래가 순위.
 
     `-1` 은 순위 없음이다 (2026-11-19 단지 38487 표본에는 없었다). 해석은 service 가 한다.
@@ -574,7 +593,7 @@ class ZigbangDanjiRankModel(ResponseModel):
     ] = None
 
 
-class ZigbangRelatedDanjiModel(ResponseModel):
+class ZigbangRelatedDanjiModel(ZigbangBaseResponseModel):
     """관련 단지 하나. 좌표·사진·매물 수·관련도(lat·lng·imageUrl·itemCount·relatedRank)는 읽지 않는다."""
 
     id: Annotated[
@@ -611,7 +630,7 @@ class ZigbangRelatedDanjiModel(ResponseModel):
 ZigbangRelatedDanjiList = list[ZigbangRelatedDanjiModel]
 
 
-class ZigbangRelateDanjiModel(ResponseModel):
+class ZigbangRelateDanjiModel(ZigbangBaseResponseModel):
     """단지 상세의 관련 단지 (`relateDanji`). 이 밖에 전체 수(`total`)가 오지만 읽지 않는다."""
 
     list: Annotated[
@@ -620,7 +639,7 @@ class ZigbangRelateDanjiModel(ResponseModel):
     ] = None
 
 
-class ZigbangLandTradePermitDayModel(ResponseModel):
+class ZigbangLandTradePermitDayModel(ZigbangBaseResponseModel):
     """토지거래허가 일별 건수 하나."""
 
     date: Annotated[
@@ -637,7 +656,7 @@ class ZigbangLandTradePermitDayModel(ResponseModel):
     ] = None
 
 
-class ZigbangLandTradePermitModel(ResponseModel):
+class ZigbangLandTradePermitModel(ZigbangBaseResponseModel):
     """단지 상세의 토지거래허가 (`landTradePermit`). 이 밖에 오늘 건수(`todayCount`)가 오지만 읽지 않는다 (`dailyCounts` 의 오늘 줄과 같다)."""
 
     daily_counts: Annotated[
@@ -646,7 +665,7 @@ class ZigbangLandTradePermitModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjisResponseModel(ResponseModel):
+class ZigbangDanjisResponseModel(ZigbangBaseResponseModel):
     """아파트 단지 정보. 직방이 한글 키로 주는 값이 많다."""
 
     id: Annotated[

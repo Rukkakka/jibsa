@@ -682,7 +682,7 @@ def search_schools(
         result = client.run_request_region_info_school_regional_v5(DabangRegionInfoSchoolRegionalV5RequestParameterModel(
             level=REGIONAL_PATH_BY_LEVEL[level], region_gid=gid, school_establishment_type=establishment_type, page=page,
         )).result
-        return DabangPage(result.list_ or [], result.total, bool(result.has_more)) if result else None
+        return DabangPage(result.list_ or [], result.total, bool(result.has_more), result.null_items('list_')) if result else None
 
     pages = fetch_pages(fetch, limit, page_size=REGION_INFO_PAGE_LIMIT, max_limit=REGION_INFO_MAX_LIMIT)
     labels: dict[str, str] = {value: label for label, value in establishment_labels(level).items()}

@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
     DaangnCoordinateModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
@@ -17,7 +17,7 @@ from typing import Annotated
 # POST realty.kr.karrotmarket.com/graphql — getRegionByCoordinate
 # ---------------------------------------------------------------------------
 
-class DaangnGetRegionByCoordinateDataModel(ResponseModel):
+class DaangnGetRegionByCoordinateDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     get_region_by_coordinate: Annotated[
@@ -56,7 +56,7 @@ class DaangnSearchRegionNodeModel(DaangnRegionModel):
     ] = None
 
 
-class DaangnSearchRegionEdgeModel(ResponseModel):
+class DaangnSearchRegionEdgeModel(DaangnBaseResponseModel):
     """지역 연결의 edge."""
 
     node: Annotated[
@@ -65,7 +65,7 @@ class DaangnSearchRegionEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchRegionConnectionModel(ResponseModel):
+class DaangnSearchRegionConnectionModel(DaangnBaseResponseModel):
     """지역 연결."""
 
     edges: Annotated[
@@ -78,7 +78,7 @@ class DaangnSearchRegionConnectionModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchRegionDataModel(ResponseModel):
+class DaangnSearchRegionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_region: Annotated[
@@ -96,7 +96,7 @@ class DaangnSearchRegionResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnSchoolPoiModel(ResponseModel):
+class DaangnSchoolPoiModel(DaangnBaseResponseModel):
     """대학 검색 결과 하나 (캠퍼스 하나)."""
 
     id: Annotated[
@@ -121,7 +121,7 @@ class DaangnSchoolPoiModel(ResponseModel):
     ] = None
 
 
-class DaangnSchoolPoiEdgeModel(ResponseModel):
+class DaangnSchoolPoiEdgeModel(DaangnBaseResponseModel):
     """대학 연결의 edge."""
 
     node: Annotated[
@@ -130,7 +130,7 @@ class DaangnSchoolPoiEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnSchoolPoiConnectionModel(ResponseModel):
+class DaangnSchoolPoiConnectionModel(DaangnBaseResponseModel):
     """대학 연결."""
 
     edges: Annotated[
@@ -139,7 +139,7 @@ class DaangnSchoolPoiConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnSearchSchoolPoisDataModel(ResponseModel):
+class DaangnSearchSchoolPoisDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_school_pois: Annotated[
@@ -161,7 +161,7 @@ class DaangnSearchSchoolPoisResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — 역 검색
 # ---------------------------------------------------------------------------
 
-class DaangnSubwayStationPoiModel(ResponseModel):
+class DaangnSubwayStationPoiModel(DaangnBaseResponseModel):
     """역 검색 결과 하나. 역 이름에 '역' 이 붙지 않는다 (예: 역삼)."""
 
     id: Annotated[
@@ -182,7 +182,7 @@ class DaangnSubwayStationPoiModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchSubwayStationPoisDataModel(ResponseModel):
+class DaangnSearchSubwayStationPoisDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_subway_station_pois: Annotated[
@@ -204,7 +204,7 @@ class DaangnSearchSubwayStationPoisResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — 주소 검색 (searchAddress) 과 주소 → 좌표 (unitByAddress)
 # ---------------------------------------------------------------------------
 
-class DaangnAddressModel(ResponseModel):
+class DaangnAddressModel(DaangnBaseResponseModel):
     """도로명 주소 검색 결과 하나 (웹 검색창 주소 칸의 한 줄: 도로명 주소, 아래에 지번 주소)."""
 
     region_address: Annotated[
@@ -225,7 +225,7 @@ class DaangnAddressModel(ResponseModel):
     ] = None
 
 
-class DaangnAddressEdgeModel(ResponseModel):
+class DaangnAddressEdgeModel(DaangnBaseResponseModel):
     """주소 연결의 edge."""
 
     node: Annotated[
@@ -234,7 +234,7 @@ class DaangnAddressEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnAddressConnectionModel(ResponseModel):
+class DaangnAddressConnectionModel(DaangnBaseResponseModel):
     """주소 연결."""
 
     edges: Annotated[
@@ -247,7 +247,7 @@ class DaangnAddressConnectionModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchAddressDataModel(ResponseModel):
+class DaangnSearchAddressDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_address: Annotated[
@@ -265,7 +265,7 @@ class DaangnSearchAddressResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnUnitPlaceModel(ResponseModel):
+class DaangnUnitPlaceModel(DaangnBaseResponseModel):
     """주소에 있는 단지(`PropComplex`) 또는 건물(`PropBuilding`). 단지는 `name`, 건물은 `buildingName` 으로 온다."""
 
     id: Annotated[
@@ -290,7 +290,7 @@ class DaangnUnitPlaceModel(ResponseModel):
     ] = None
 
 
-class DaangnUnitModel(ResponseModel):
+class DaangnUnitModel(DaangnBaseResponseModel):
     """주소의 위치. 웹은 `location`, 없으면 단지·건물 좌표를 쓴다 (MapShell `_s`)."""
 
     location: Annotated[
@@ -307,7 +307,7 @@ class DaangnUnitModel(ResponseModel):
     ] = None
 
 
-class DaangnUnitByAddressOutputModel(ResponseModel):
+class DaangnUnitByAddressOutputModel(DaangnBaseResponseModel):
     """`unitByAddress` 결과. 주소를 못 찾으면 `unit` 이 null 이다."""
 
     unit: Annotated[
@@ -316,7 +316,7 @@ class DaangnUnitByAddressOutputModel(ResponseModel):
     ] = None
 
 
-class DaangnUnitByAddressDataModel(ResponseModel):
+class DaangnUnitByAddressDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     unit_by_address: Annotated[

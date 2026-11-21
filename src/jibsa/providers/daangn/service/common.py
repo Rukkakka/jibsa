@@ -35,6 +35,7 @@ from jibsa.core.listing import (
     more_hint,
     normalize_date,
     note,
+    null_items_note,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
@@ -806,6 +807,8 @@ class DaangnListingConnection(Protocol[_EdgeT_co]):
     @property
     def page_info(self) -> DaangnPageInfoModel | None: ...
 
+    def null_items(self, *names: str) -> int: ...
+
 
 class ConnectionEdges(NamedTuple, Generic[EdgeT]):
     """`connection_edges` 가 이어 받은 매물 목록."""
@@ -826,6 +829,7 @@ def connection_edges(
     *,
     after: str | None = None,
     full_page_more: Callable[[list[EdgeT]], bool] | None = None,
+    notes: list[str] | None = None,
 ) -> ConnectionEdges[EdgeT]:
     """매물 목록을 `page_size` 건씩 `limit` 건까지 이어 받는다. 동·지도 범위·역·대학 주변 목록과 출퇴근 역별 매물이 함께 쓴다.
 
@@ -844,28 +848,41 @@ def connection_edges(
             받는다). 동 목록이 매물이 남았는데 false 를 줘서 쓴다 (`search_dong`). 없으면 서버 값을 따른다. 다음 쪽을 받기 전에
             물어, 더 없다는 것을 아는 호출부가 빈 쪽을 받지 않게 한다 (2026-11-12 리뷰: 예전에는 쪽이 꽉 차면 늘 다음 쪽을 받고
             끝난 뒤에 '더 있음' 을 바로잡아, 매물이 딱 20건인 동의 --limit 40 이 빈 쪽을 한 번 더 받았다).
+        notes: 빈 edge(null)를 빼고 읽었으면 그 안내를 덧붙일 목록. 없으면 안내하지 않는다.
 
     Returns:
         받은 edge, 서버에 더 있는지, 다음 쪽 커서, 멈췄는지 (`ConnectionEdges`).
     """
     edges: list[EdgeT] = []
     cursor, has_more = after, False
+    null_edges = 0
+
+    def finish(more: bool, next_after: str | None, stopped: bool) -> ConnectionEdges[EdgeT]:
+        if null_edges and notes is not None:
+            notes.append(null_items_note('당근 매물', null_edges))
+        return ConnectionEdges(edges, more, next_after, stopped)
+
     while len(edges) < limit:
         size = min(page_size, limit - len(edges))
         page = fetch(size, cursor)
         edges += page.edges
+        # 서버는 빈 edge(null)도 한 자리로 세어 `size` 만큼 준다. 빼고 읽은 수를 더해야 꽉 찬 쪽을 알아본다
+        page_null_edges = page.null_items('edges')
+        null_edges += page_null_edges
         page_info = page.page_info
         server_more = bool(page_info and page_info.has_next_page)
-        has_more = server_more or (full_page_more is not None and len(page.edges) >= size and full_page_more(edges))
+        has_more = server_more or (
+            full_page_more is not None and len(page.edges) + page_null_edges >= size and full_page_more(edges)
+        )
         if not has_more:
-            return ConnectionEdges(edges, False, None, False)
+            return finish(False, None, False)
         # node 가 null 인 edge 는 세지 않는다 (`next_cursor`). edge 수를 넘기면 node 가 모두 null 인 쪽도 받은 쪽으로 보아 멈추지
         # 않고, 결과 0건에 이어 받기(next)가 나왔다 (2026-11-12 검증: 역삼역 역 주변 목록의 node 를 모두 null 로 바꾼 실측 응답)
         cursor = next_cursor(page_info, cursor, received=sum(1 for edge in page.edges if edge.node is not None))
         if cursor is None:
             # 서버는 더 없다고 했는데 꽉 찬 쪽으로 짐작한 것(`full_page_more`)이면 커서가 없어도 멈춤이 아니라 끝이다
-            return ConnectionEdges(edges, server_more, None, server_more)
-    return ConnectionEdges(edges, has_more, cursor, False)
+            return finish(server_more, None, server_more)
+    return finish(has_more, cursor, False)
 
 
 def truncation_notes(

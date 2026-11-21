@@ -240,6 +240,48 @@ def test_notes_come_first_and_vanish_when_empty(capsys: pytest.CaptureFixture[st
     assert list(json.loads(capsys.readouterr().out)) == ['returned']
 
 
+def test_dropped_null_items_get_a_note_even_in_display_lists(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # 근처 학교처럼 보여 주기만 하는 목록은 서비스가 세지 않아 소스 안내(null_items_note)가 없다. 거기서 뺀 빈 항목도 결과가
+    # 알려야 한다 (예전에는 PARSE_ERROR 라 매일 감시가 알았다). 집계는 명령마다 0 에서 시작한다
+    import jibsa.cli.zigbang as zigbang_cli
+    from jibsa.core.listing import null_items_note
+    from jibsa.providers.zigbang.api.response.room.detail import (
+        ZigbangBlsSchoolZonesV1ResponseModel,
+    )
+    from jibsa.providers.zigbang.service.common.base import ZigbangListingDetail
+
+    school ={'name': '가상초등학교', 'distance': 300}
+    source_notes: list[str] = []
+    schools: list[dict | None] = []
+
+    def fake_listing(*args: object, **kwargs: object) -> ZigbangListingDetail:
+        ZigbangBlsSchoolZonesV1ResponseModel.model_validate({'elementary': {'schools': schools}})
+        return ZigbangListingDetail(
+            source='zigbang', id='1', url='https://example.com/1', trade_type='월세', property_type='원룸', notes=source_notes,
+        )
+
+    monkeypatch.setattr(zigbang_cli, 'get_any_listing', fake_listing)
+
+    def notes_of_one_command() -> list[str]:
+        assert run(['zigbang', 'listing', '1', '--pretty']) == 0
+        return json.loads(capsys.readouterr().out).get('notes', [])
+
+    schools[:] = [None, school]
+    assert notes_of_one_command() == [
+        '[제외] 직방 응답의 목록에 빈 항목 1개가 와서 빼고 읽었습니다. jibsa 업데이트가 필요할 수 있습니다',
+    ]
+    # 같은 프로세스의 다음 명령은 앞 명령이 뺀 수를 물려받지 않는다
+    schools[:] = [school]
+    assert notes_of_one_command() == []
+    # 소스가 이미 빈 항목 안내를 붙인 결과에는 공통 안내를 겹쳐 붙이지 않는다
+    schools[:] = [None, school]
+    source_notes[:] = [null_items_note('직방 관리비 항목', 1, ('manage_cost_includes',))]
+    assert notes_of_one_command() == source_notes
+
+
 @pytest.mark.parametrize('value,text', [
     (440000, '44억 원'),
     (119700, '11억 9,700만 원'),

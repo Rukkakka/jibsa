@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
+from jibsa.providers.zigbang.api.response.common import ZigbangBaseResponseModel
 
 from typing import Annotated
 
@@ -11,7 +11,7 @@ from typing import Annotated
 # GET /apt/subways/{subwayId}
 # ---------------------------------------------------------------------------
 
-class ZigbangSubwayAptModel(ResponseModel):
+class ZigbangSubwayAptModel(ZigbangBaseResponseModel):
     """역 주변 아파트 단지 하나. 단지 좌표(`lat`·`lng`)도 오지만 읽지 않는다."""
 
     id: Annotated[
@@ -36,7 +36,7 @@ class ZigbangSubwayAptModel(ResponseModel):
     ] = None
 
 
-class ZigbangSubwaysResponseModel(ResponseModel):
+class ZigbangSubwaysResponseModel(ZigbangBaseResponseModel):
     """역 정보와 역에서 1.5km 안 아파트 단지 (거리순, 2026-11-15 실측: 강남역 112곳)."""
 
     id: Annotated[
@@ -57,7 +57,7 @@ class ZigbangSubwaysResponseModel(ResponseModel):
 # GET /apt/danjis/ids
 # ---------------------------------------------------------------------------
 
-class ZigbangDanjisIdsResponseModel(ResponseModel):
+class ZigbangDanjisIdsResponseModel(ZigbangBaseResponseModel):
     """주변 단지 ID 를 요청한 순서(`order` 로 고른 직방 웹 목록 순서)로."""
 
     count: Annotated[
@@ -74,7 +74,7 @@ class ZigbangDanjisIdsResponseModel(ResponseModel):
 # GET /apt/danjis/details
 # ---------------------------------------------------------------------------
 
-class ZigbangDanjiCardModel(ResponseModel):
+class ZigbangDanjiCardModel(ZigbangBaseResponseModel):
     """웹 단지 목록 카드 하나. 사진(`image`)은 읽지 않는다."""
 
     id: Annotated[
@@ -105,7 +105,7 @@ class ZigbangDanjiCardModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjisDetailsResponseModel(ResponseModel):
+class ZigbangDanjisDetailsResponseModel(ZigbangBaseResponseModel):
     """요청한 단지 ID 의 카드 (2026-11-19 표본 둘은 요청한 ID 순서였다)."""
 
     apts: Annotated[
@@ -118,7 +118,7 @@ class ZigbangDanjisDetailsResponseModel(ResponseModel):
 # GET /apt/schools/{schoolCode}
 # ---------------------------------------------------------------------------
 
-class ZigbangSchoolDetailModel(ResponseModel):
+class ZigbangSchoolDetailModel(ZigbangBaseResponseModel):
     """학교 정보. 전화·홈페이지·좌표·학생 수·급식 같은 이 밖의 키는 읽지 않는다."""
 
     id: Annotated[
@@ -135,7 +135,7 @@ class ZigbangSchoolDetailModel(ResponseModel):
     ] = None
 
 
-class ZigbangSchoolAptModel(ResponseModel):
+class ZigbangSchoolAptModel(ZigbangBaseResponseModel):
     """학교 주변 아파트 단지 하나."""
 
     apartment_id: Annotated[
@@ -156,7 +156,7 @@ class ZigbangSchoolAptModel(ResponseModel):
     ] = None
 
 
-class ZigbangSchoolsResponseModel(ResponseModel):
+class ZigbangSchoolsResponseModel(ZigbangBaseResponseModel):
     """학교 정보와 학교 주변 아파트 단지 (가까운 순). 시세 구간(`price`)은 읽지 않는다."""
 
     detail: Annotated[

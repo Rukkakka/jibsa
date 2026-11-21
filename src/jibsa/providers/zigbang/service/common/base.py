@@ -58,9 +58,11 @@ ACTUAL_LISTING_CHECKED_DESCRIPTION: str = (
     "직방 웹의 '실매물 확인' 꼬리표. 직방이 뜻을 설명하지 않는다. 직방 배지에 ITEM_VERIFICATION 이 있으면 true, 배지를 받았는데 없으면 false "
     '(확인 실패 ITEM_VERIFICATION_FAILED 도 false), 직방이 배지를 주지 않으면 null'
 )
+# 아파트 목록 줄(`common.apt` 의 `ZigbangAptListing`)과 상세가 함께 쓰는 매물 종류 필드 설명. 종류 코드 표(`APT_LISTING_KIND_LABELS`)는 `common.apt` 에 있다
 APT_LISTING_KIND_DESCRIPTION: str = (
     '매물 종류: 신규분양(분양 매물, 가격은 분양가)·집주인(집주인이 내놓은 매물)·중개사(중개사무소가 등록한 매물). '
-    '모르는 코드는 직방 코드 그대로, 직방이 주지 않으면 null (묶음 줄은 묶음 맨 앞 매물이 상세를 볼 수 없는 출처라 id 가 맨 앞 매물이 아닐 때도 null)'
+    '모르는 코드는 직방 코드 그대로, 직방이 주지 않으면 null (묶음 줄은 묶음 맨 앞 매물이 상세를 볼 수 없는 출처라 id 가 맨 앞 매물이 아닐 때도 null. '
+    '묶인 매물 ID 목록에 직방이 빈 항목을 줘 맨 앞 매물을 알 수 없을 때도 null)'
 )
 # 아파트 매물 줄·상세가 함께 쓰는 평형 필드 설명. 이름 규칙은 real-price 의 pyeong_name(평 기준)과 같다
 APT_PYEONG_ID_DESCRIPTION: str = (
@@ -379,7 +381,7 @@ class ZigbangListingDetail(ListingDetail):
         list[str] | None,
         Field(description=(
             "관리비에 들지 않는 항목 (웹 '관리비 미포함 항목', 예: 전기·수도·가스·난방·인터넷·TV·기타 관리비). 원룸·빌라·오피스텔은 웹 순서"
-            '(`manage_cost_includes` 와 같다), 아파트는 직방 응답 순서. 없으면 [], 직방이 주지 않거나 관리비를 확인할 수 없으면 null. '
+            '(`manage_cost_includes` 와 같다), 아파트는 직방 응답 순서. 없으면 [], 직방이 주지 않거나 관리비를 확인할 수 없거나 직방이 빈 항목을 줘 셀 수 없으면 null. '
             '원룸·빌라·오피스텔에서 관리비가 없거나 정액 관리비가 항목별 내역을 알린 매물은 웹이 미포함 항목을 보여 주지 않아 []'
         ))
     ] = None
@@ -408,7 +410,7 @@ class ZigbangListingDetail(ListingDetail):
     notes: Annotated[
         list[str],
         Field(exclude=True, description=(
-            '덤 조회(건물 학군·건물 실거래) 실패 안내. CLI 가 결과 위에 붙인다'
+            '덤 조회(건물 학군·건물 실거래) 실패 안내와, 직방이 빈 항목을 줘 모름(null)으로 둔 칸의 [제외] 안내. CLI 가 결과 위에 붙인다'
         ))
     ] = []
 

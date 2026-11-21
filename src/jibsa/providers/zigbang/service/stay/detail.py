@@ -19,6 +19,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     normalize_date,
     note,
+    null_items_note,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -206,7 +207,8 @@ class ZigbangStayListingDetail(ListingDetail):
         bool | None,
         Field(description=(
             '반려동물 동반 가능 여부 (직방 웹 옵션의 반려동물 분류. options 에는 들어 있지 않다). '
-            '직방이 옵션 목록을 주지 않으면 null (직방 웹은 이때 동반 불가로 그린다)'
+            '직방이 옵션 목록을 주지 않으면 null (직방 웹은 이때 동반 불가로 그린다). 직방이 옵션 목록에 빈 항목을 줘 반려동물 분류가 '
+            '없다고 단정할 수 없을 때도 null'
         ))
     ] = None
     pet_cleaning_fee_manwon: Annotated[
@@ -235,7 +237,7 @@ class ZigbangStayListingDetail(ListingDetail):
     ] = None
     unavailable_periods: Annotated[
         list[ZigbangStayUnavailablePeriod] | None,
-        Field(description='예약할 수 없는 기간 (예약됐거나 임대인이 막은 날, 직방이 1년 뒤까지 준다). 없으면 [], 직방이 일정을 주지 않으면 null')
+        Field(description='예약할 수 없는 기간 (예약됐거나 임대인이 막은 날, 직방이 1년 뒤까지 준다). 없으면 [], 직방이 일정을 주지 않거나 빈 항목을 줘 셀 수 없으면 null')
     ] = None
 
     available: Annotated[
@@ -243,7 +245,7 @@ class ZigbangStayListingDetail(ListingDetail):
         Field(description=(
             '입주일·마지막 날을 줬을 때 그 기간을 예약할 수 있는지. 직방 웹 날짜 고르기 창 규칙 그대로, 입주일이 오늘 이후이고 '
             '기간이 최소 계약 주(min_contract_weeks) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약된·막힌 날이 없고 '
-            '마지막 날이 막힌 날이 아니면 true. 직방이 일정을 주지 않으면 null'
+            '마지막 날이 막힌 날이 아니면 true. 직방이 일정을 주지 않거나 빈 항목을 줘 셀 수 없으면 null'
         ))
     ] = None
     review_count: Annotated[
@@ -262,19 +264,19 @@ class ZigbangStayListingDetail(ListingDetail):
         Field(description=(
             f"같은 임대인의 다른 단기임대 매물 (직방 웹 상세 맨 아래 '임대인의 다른 방', 지금 매물 제외). 직방 순서(검수 시각 늦은 순) "
             f'그대로 앞 {STAY_HOST_OTHER_LIMIT}건이고 전체 수는 host_other_listing_count 다. 없으면 [], 임대인을 모르거나 조회가 '
-            '실패했거나 직방이 목록을 주지 않아 있는지 알 수 없으면 null'
+            '실패했거나 직방이 목록을 주지 않거나 빈 항목만 줘 있는지 알 수 없으면 null'
         ))
     ] = None
     host_other_listing_count: Annotated[
         int | None,
         Field(description=(
             '임대인의 다른 매물 전체 수 (host_other_listings 보다 많을 수 있다). 다른 방이 없으면 0, 임대인을 모르거나 조회가 '
-            '실패했거나 직방이 수를 주지 않으면 null'
+            '실패했거나 직방이 수를 주지 않거나 빈 항목을 줘 셀 수 없으면 null'
         ))
     ] = None
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='후기 요약·임대인의 다른 방 조회가 실패했다는 안내. CLI 가 결과 위에 붙인다')
+        Field(exclude=True, description='후기 요약·임대인의 다른 방 조회가 실패했다는 안내와, 직방이 빈 항목을 줘 모름(null)으로 둔 칸의 안내. CLI 가 결과 위에 붙인다')
     ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
@@ -356,10 +358,12 @@ def stay_detail_to_listing(
     manage_cost = 0.0 if detail.is_weekly_manage_cost_absent else won_to_manwon(detail.weekly_manage_cost)
     includes = detail.manage_cost_includes
     # 리뷰 오탐 (2026-11-17): optionName 은 보지 않는다. 직방 웹(AdditionalInfoSection·OptionSection)도 category 만 본다
-    pet_allowed = (
-        None if sent_or_none(detail, 'item_options', []) is None
-        else any(option.category == 'PET_FRIENDLY' for option in detail.item_options)
-    )
+    pet_allowed: bool | None = None
+    if sent_or_none(detail, 'item_options', []) is not None:
+        # 옵션 목록에서 빈 항목(null)을 뺐으면 반려동물 분류가 그 항목이었을 수 있어 분류가 없다고 동반 불가로 단정하지 않는다
+        pet_allowed = True if any(option.category == 'PET_FRIENDLY' for option in detail.item_options) else (
+            None if detail.null_items('item_options') else False
+        )
     conditional: dict[str, Any] = {}
     if detail.parking_type != 'UNAVAILABLE':
         conditional['parking_count'] = detail.parking_count
@@ -420,7 +424,8 @@ def stay_detail_to_listing(
         check_out_time=text_or_none(detail.checkout_time),
         check_in_method=_stay_label(STAY_CHECK_METHOD_LABELS, detail.checkin_method),
         check_out_method=_stay_label(STAY_CHECK_METHOD_LABELS, detail.checkout_method),
-        unavailable_periods=stay_unavailable_periods(detail.schedules),
+        # 일정에서 빈 항목(null)을 뺐으면 그 항목이 예약된·막힌 날이었을 수 있어 예약할 수 없는 기간을 모른다
+        unavailable_periods=None if detail.null_items('schedules') else stay_unavailable_periods(detail.schedules),
         **conditional,
     )
 
@@ -456,7 +461,8 @@ def get_stay_listing(
     그 값만 null 로 두고 `notes` 에 `[실패]` 안내를 붙여 상세는 돌려준다 (임대인 ID 가 없어 요청하지 않은 다른 방은 안내가 없다, 3회).
 
     입주일·마지막 날(`check_in`·`check_out`)을 주면 상세의 일정(`schedules`)으로 그 기간을 예약할 수 있는지(`available`)를
-    웹 날짜 고르기 창 규칙대로 붙인다 (`stay_range_available`, 요청이 늘지 않는다). 그 기간의 총비용은 웹이 로그인했을 때만
+    웹 날짜 고르기 창 규칙대로 붙인다 (`stay_range_available`, 요청이 늘지 않는다). 일정 목록에 빈 항목(null)이 섞여 와서 뺐으면
+    그 항목이 막힌 날이었을 수 있어 `available`·`unavailable_periods` 는 null 이고 `[제외]` 로 알린다 (`_stay_null_notes`). 그 기간의 총비용은 웹이 로그인했을 때만
     요금 계산(`price-calculation`)을 불러 보여 주어 내지 않는다 (2026-11-15 웹: 로그인하지 않으면 날짜를 골라도 주당 금액만).
 
     Raises:
@@ -482,14 +488,35 @@ def get_stay_listing(
     listing = stay_detail_to_listing(detail, summary.reviewed_at if summary else None)
     reviews, review_notes = _stay_reviews(client, item_id)
     host_others, host_notes = _stay_host_others(client, item_id, detail.host_id)
-    notes = review_notes + host_notes
+    notes = review_notes + host_notes + _stay_null_notes(detail, listing, with_period=period is not None)
     listing = listing.model_copy(update={**reviews, **host_others, 'notes': notes})
     if period is None:
         return listing
-    available = None if detail.schedules is None else stay_range_available(
+    # 일정에서 빈 항목(null)을 뺐으면 그 항목이 예약된·막힌 날이었을 수 있어 예약 가능 여부를 모른다
+    available = None if detail.schedules is None or detail.null_items('schedules') else stay_range_available(
         detail.schedules, detail.min_contract_weeks, period.check_in, period.check_out, datetime.now(KST).date(),
     )
     return listing.model_copy(update={'available': available})
+
+
+def _stay_null_notes(detail: ZigbangGuestItemsResponseModel, listing: ZigbangStayListingDetail, *, with_period: bool) -> list[str]:
+    """상세의 일정·옵션 목록에서 빈 항목(null)을 빼고 읽어 칸을 모름(null)으로 둔 안내. 그런 칸이 없으면 빈 목록이다.
+
+    일정(`schedules`)에서 뺐으면 `unavailable_periods` 와 (날짜를 줬으면) `available` 을 모르고, 옵션(`itemOptions`)에서 뺐는데 반려동물
+    분류를 찾지 못했으면 `pet_allowed` 를 모른다 (찾았으면 그 목록은 늘어놓기만 해 안내하지 않는다). `listing` 은 `stay_detail_to_listing` 의 결과다.
+    """
+    notes: list[str] = []
+    if dropped := detail.null_items('schedules'):
+        notes.append(null_items_note(
+            '직방 단기임대 예약 일정', dropped, ('unavailable_periods', 'available') if with_period else ('unavailable_periods',),
+        ))
+    if (dropped := detail.null_items('item_options')) and listing.pet_allowed is None:
+        # 반려동물 동반 가능 여부를 모를 때 추가 청소비는 0 보다 크면 그 값이고 아니면 null 이다 (`pet_cleaning_fee_manwon`)
+        notes.append(null_items_note(
+            '직방 단기임대 옵션', dropped,
+            ('pet_allowed', 'pet_cleaning_fee_manwon') if listing.pet_cleaning_fee_manwon is None else ('pet_allowed',),
+        ))
+    return notes
 
 
 def _stay_reviews(client: ZigbangClient, item_id: int) -> tuple[dict[str, Any], list[str]]:
@@ -539,7 +566,15 @@ def _stay_host_others(client: ZigbangClient, item_id: int, host_id: int | None) 
     notes: list[str] = []
     # 직방이 수를 주지 않아도 다른 방이 하나도 없으면 0 이다 (목록 자체를 모르면 수도 모른다)
     if count is None and items is not None and not items:
-        count = 0
+        if dropped := response.null_items('items'):
+            # 목록에서 빈 항목(null)을 빼서 비었을 뿐 다른 방이 없는 것인지 알 수 없다. 없음([])·0 이 아니라 둘 다 모름이다.
+            # 직방이 준 수(total_count)가 있으면 그 값이 맞아 이 분기에 오지 않는다
+            notes.append(null_items_note(
+                '직방 임대인의 다른 방', dropped, ('host_other_listings', 'host_other_listing_count'),
+            ))
+            items = None
+        else:
+            count = 0
     return dict(
         host_other_listings=None if items is None else [stay_summary_to_listing(summary) for summary in items[:STAY_HOST_OTHER_LIMIT]],
         host_other_listing_count=count,

@@ -15,6 +15,7 @@ from jibsa.core.listing import (
     Listing,
     listing_as,
     note,
+    null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import (
@@ -254,7 +255,8 @@ def search_commute(
     region = region_or_none(client, lat, lng) if found.articles_by_id else None
     listings, shown = _commute_listings(client, found, searched, conditions, (lat, lng), region)
     notes = (
-        reach.notes + no_trade_notes(found.articles_by_id.values()) + complex_building_notes(shown) + hidden_location_notes(shown)
+        reach.notes + found.notes + no_trade_notes(found.articles_by_id.values()) + complex_building_notes(shown)
+        + hidden_location_notes(shown)
     )
     if reach.unknown_times:
         # 받은 매물을 뺀 것이 아니라 찾을 역을 줄인 것이라 [제외] 가 아니라 [범위] 다 (아래 역 수 안내와 같다)
@@ -391,6 +393,8 @@ class _StationArticles(NamedTuple):
     has_more_by_station: dict[str, bool]
     # 다음이 있다면서 이어 받을 쪽을 주지 않아 멈춘 역 (`connection_edges` 의 stopped)
     stopped_stations: set[str]
+    # 역 주변 매물 목록에서 빈 edge 를 빼고 읽은 안내 (역 이름을 붙였다)
+    notes: list[str]
 
 
 def _workplace_station(
@@ -467,16 +471,26 @@ def _reachable_stations(
     # 경의중앙선 '양평역(경의중앙선)' 58분. 강남·여의도·왕십리 응답 모두 겹치는 이름 0), 역 주변 매물 쿼리도 이름 하나만 받는다.
     # 이름으로 겹침을 지우면 두 역이 합쳐진다는 2026-11-13 리뷰 지적은 오탐
     first_routes: dict[str, _Station] = {}
+    dropped_waypoints = 0
     for node in timed:
         assert node.station is not None and node.duration_minutes is not None
+        # 경유역 목록에서 빈 항목을 빼고 읽었으면 어느 역이 빠졌는지 몰라 경로를 짐작하지 않는다 (null)
+        dropped = node.null_items('route_waypoints')
+        dropped_waypoints += dropped
         first_routes.setdefault(
             node.station.station_name,
             _Station(
                 node.station.station_name, node.duration_minutes, node.transfer_count,
-                _route(node.route_waypoints, nearest.station_name, node.station.station_name),
+                None if dropped else _route(node.route_waypoints, nearest.station_name, node.station.station_name),
             ),
         )
     feed_notes: list[str] = []
+    # 갈 수 있는 역 목록에서 빈 항목을 뺐으면 가까운 역을 고르는 목록이 모자란다. 값은 그대로 두고 알리기만 한다
+    dropped_stations = response.data.null_items('commute_stations') if response.data else 0
+    if dropped_stations:
+        feed_notes.append(null_items_note('당근 출퇴근 역', dropped_stations))
+    if dropped_waypoints:
+        feed_notes.append(null_items_note('당근 출퇴근 경로 역', dropped_waypoints, ('route',)))
     if max_minutes > COMMUTE_SERVER_MAX_MINUTES:
         feed_notes.append(note(
             '범위',
@@ -498,6 +512,7 @@ def _station_articles(
     inspected_by_station: dict[str, int] = {}
     has_more_by_station: dict[str, bool] = {}
     stopped_stations: set[str] = set()
+    notes: list[str] = []
     for station in searched:
         # 역마다 받은 매물 수로 예산을 세고, 100건씩 다음 페이지를 이어 받는다
         def fetch(size: int, after: str | None) -> DaangnCommuteStationArticleConnectionModel:
@@ -515,7 +530,9 @@ def _station_articles(
                 '역 주변 매물',
             )
 
-        edges, has_more, _, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE)
+        edge_notes: list[str] = []
+        edges, has_more, _, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE, notes=edge_notes)
+        notes += [_station_note(station[0], text) for text in edge_notes]
         inspected_by_station[station[0]] = len(edges)
         has_more_by_station[station[0]] = has_more
         if stopped:
@@ -527,7 +544,7 @@ def _station_articles(
                 seen.add(article.original_id)
                 articles_by_id.setdefault(article.original_id, article)
                 ids_by_station.setdefault(station[0], []).append(article.original_id)
-    return _StationArticles(articles_by_id, ids_by_station, inspected_by_station, has_more_by_station, stopped_stations)
+    return _StationArticles(articles_by_id, ids_by_station, inspected_by_station, has_more_by_station, stopped_stations, notes)
 
 
 def _commute_listings(

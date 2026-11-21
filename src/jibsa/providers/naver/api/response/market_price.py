@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
+    NaverBaseResponseModel,
     NaverPriceRangeModel,
     NaverResponseModel,
 )
@@ -11,7 +11,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import Annotated
 
 
-class NaverMarketPriceHistoryModel(ResponseModel):
+class NaverMarketPriceHistoryModel(NaverBaseResponseModel):
     """한 시세 제공처의 기간 안 주별 시세 (원). 키는 시세 기준일 (YYYY-MM-DD)."""
 
     cp: Annotated[

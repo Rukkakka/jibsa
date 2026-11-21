@@ -71,6 +71,7 @@ from jibsa.providers.naver.service.common import (
     pagination_notes,
     price_sort_notes,
     resume_cursor,
+    scan_null_items_notes,
     scan_pages,
     unwrap,
 )
@@ -405,8 +406,9 @@ def list_area_complexes(
     notes += pagination_notes(
         total, len(result), limit, inspected, subject='단지', truncated=truncated,
         excluded_reason=EXCLUDED_REASON if legal_division_code is not None else RADIUS_EXCLUDED_REASON,
-        scope=area.scope, total_basis=area.total_basis, narrow=area.narrow,
+        scope=area.scope, total_basis=area.total_basis, null_items=scan.null_items, narrow=area.narrow,
     )
+    notes += scan_null_items_notes(scan, '네이버 지역 단지')
     return NaverAreaComplexesResult(total=total, returned=len(result), complexes=result, notes=notes)
 
 
@@ -489,8 +491,9 @@ def _search_listing_pages(
         total, len(result), limit, inspected, truncated=truncated,
         excluded_reason=EXCLUDED_REASON if by_boundary else RADIUS_EXCLUDED_REASON,
         resumable=next_position is not None, resumed=start is not None,
-        scope=area.scope, total_basis=area.total_basis, narrow=area.narrow,
+        scope=area.scope, total_basis=area.total_basis, null_items=scan.null_items, narrow=area.narrow,
     )
+    notes += scan_null_items_notes(scan, '네이버 매물')
     return NaverListingsResult(
         total=total, returned=len(result), has_more=next_position is not None, next_position=next_position,
         listings=result, notes=notes,

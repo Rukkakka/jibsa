@@ -74,6 +74,7 @@ from jibsa.providers.dabang.service.common import (
     fetch_pages,
     fetch_stop_notes,
     filters_of,
+    first_space_notes,
     floor_label,
     household_count,
     manwon_from_text,
@@ -298,7 +299,7 @@ def search_complexes(
             category=category, search_type=search_type, filters=filters, code=code, id=place_id, bbox=bbox,
             zoom=ZOOM_BY_SEARCH_TYPE[search_type], page=page,
         )).result
-        return None if result is None else DabangPage(result.list_, result.total, bool(result.has_more))
+        return None if result is None else DabangPage(result.list_, result.total, bool(result.has_more), result.null_items('list_'))
 
     # limit 은 받은 단지 수로 센다. 다른 동이라 뺀 단지만큼 다음 쪽을 더 받지 않는다 (매물 목록과 같다)
     pages = fetch_pages(fetch, limit)
@@ -879,7 +880,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         nurseries=nurseries,
         kindergartens=kindergartens,
         url=complex_url(info.complex_id),
-        notes=notes + sale_notes + lease_notes,
+        notes=notes + sale_notes + lease_notes + first_space_notes(result),
     )
 
 

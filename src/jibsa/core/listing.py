@@ -351,6 +351,8 @@ NOTE_KINDS: tuple[str, ...] = get_args(NoteKind)
 # 단정하지 못하면 MAYBE 를 쓰고, 감시는 주된 조회의 PARSE_ERROR·상태 없는 UPSTREAM_ERROR 처럼 둘 다 고장으로 센다
 UPDATE_NEEDED: str = 'jibsa 업데이트가 필요합니다'
 UPDATE_MAYBE_NEEDED: str = 'jibsa 업데이트가 필요할 수 있습니다'
+# 빈 항목 안내(`null_items_note`·`null_items_total_note`)가 같이 쓰는 문구. 결과 notes 에 이미 빈 항목 안내가 있는지 이 말로 가른다
+NULL_ITEMS_PHRASE: str = '개가 와서 빼고 읽었습니다'
 # 이어 받을 수 있는 결과의 [일부] 안내 끝말. 예전 '결과의 next 를 --next 로 주세요' 는 --next 만 붙이라는 말로 읽혀,
 # 값 없이 붙인 호출이 "Option '--next' requires an argument." 로 막혔다 (2026-11-10)
 NEXT_HINT: str = '이어 보려면 같은 명령에 --next <결과의 next 값> 을 붙이세요'
@@ -359,6 +361,36 @@ NEXT_HINT: str = '이어 보려면 같은 명령에 --next <결과의 next 값> 
 def note(kind: NoteKind, text: str) -> str:
     """종류 태그를 붙인 안내 (`'[일부] 조건에 맞는 매물 ...'`). 태그 없이 둔 안내는 출력할 때 [참고] 가 붙는다 (`tagged_notes`)."""
     return f'[{kind}] {text}'
+
+
+def null_items_note(what: str, count: int, unknown: Sequence[str] = ()) -> str:
+    """사이트가 객체 목록 안에 빈 항목(null)을 줘서 빼고 읽었다는 안내. 그 목록으로 계산한 값을 모를 때 이 안내를 함께 낸다.
+
+    응답 모델이 목록 칸의 null 원소를 빼고 그 수를 센다 (`ResponseModel.null_items`). 서비스는 그 목록으로 세거나 계산한 값을
+    틀린 채로 내지 않고 null 로 두거나 목록 길이에 뺀 수를 더해 센 뒤, 이 안내로 알린다. 끝말이 `UPDATE_MAYBE_NEEDED` 라
+    매일 API 감시(scripts/monitor/api_check.py)가 이런 응답을 고장으로 알린다.
+
+    Args:
+        what: 사이트 이름을 붙인 목록 이름 (예: '직방 단지 매물', '네이버 관리비 항목').
+        count: 빼고 읽은 빈 항목 수.
+        unknown: 그 때문에 알 수 없어 null 로 둔 출력 칸 이름. 비면 그 문장을 쓰지 않는다 (자리를 세는 값만 바로잡은 경우).
+    """
+    names = ', '.join(unknown)
+    unknown_text = f' {names} 값은 알 수 없어 null 입니다.' if names else ''
+    return note('제외', f'{what} 목록에 빈 항목 {count}{NULL_ITEMS_PHRASE}.{unknown_text} {UPDATE_MAYBE_NEEDED}')
+
+
+def null_items_total_note(site: str, count: int) -> str:
+    """응답 어디에서든 빈 항목(null) `count` 개를 빼고 읽었다는 공통 안내. 어느 목록인지는 말하지 않는다.
+
+    계산에 쓰지 않고 보여 주기만 하는 목록도 조용히 빼지 않게, 명령이 뺀 수의 합이 0 보다 크고 결과 notes 에 `null_items_note` 가
+    없을 때 `cli.output.emit` 이 붙인다 (`core.schema.null_item_tally`). 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API 감시가 알린다.
+
+    Args:
+        site: 사이트 이름 ('직방', '네이버', '당근', '다방').
+        count: 응답에서 빼고 읽은 빈 항목 수.
+    """
+    return null_items_note(f'{site} 응답의', count)
 
 
 def more_hint(limit: int, max_limit: int, narrow: str | None) -> str:
@@ -750,7 +782,7 @@ class ListingDetail(Listing):
     ] = None
     manage_cost_includes: Annotated[
         list[str] | None,
-        Field(description='관리비 포함 항목. 소스가 알려 주지 않으면 null')
+        Field(description='관리비 포함 항목. 소스가 알려 주지 않거나 소스가 빈 항목을 줘 셀 수 없으면 null')
     ] = None
     nearby_subways: Annotated[
         list[str] | None,

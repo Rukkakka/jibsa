@@ -40,6 +40,7 @@ from jibsa.providers.zigbang.api.response.complex.detail import (
 )
 from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
 from jibsa.providers.zigbang.api.response.room.base import (
+    ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
 )
 from jibsa.providers.zigbang.api.response.room.detail import (
@@ -51,6 +52,7 @@ from jibsa.providers.zigbang.api.response.stay.detail import (
 )
 from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
 from jibsa.providers.zigbang.api.response.store import (
+    ZigbangStoreArticleStoresV2ResponseModel,
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
 )
@@ -64,6 +66,7 @@ from jibsa.providers.zigbang.service.common.base import (
     ZigbangAptRegion,
     ZigbangRegion,
     failure_update_hint,
+    sent_or_none,
 )
 from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
@@ -1523,3 +1526,50 @@ def test_stay_detail_drops_review_rating_when_no_reviews() -> None:
     assert rated['review_rating'] == 4.75
     failed = ZigbangStayListingDetail(**base, review_count=None, review_rating=None).model_dump()
     assert failed['review_count'] is None and failed['review_rating'] is None
+
+
+def test_null_list_fields_read_as_missing_keys() -> None:
+    # 실제 응답으로 재현하지 못하는 null. 목록 칸의 null 은 키가 없는 것과 같다: 기본값 [] 칸은 빈 목록, 키로 모름을 가르는 칸은 모름
+    assert ZigbangStoreArticleStoresV2ResponseModel.model_validate({'sections': None}).sections == []
+    manage = ZigbangItemsDetailV1ManageCostModel.model_validate({'include': [], 'exclude': None})
+    assert sent_or_none(manage, 'includes', []) == [] and sent_or_none(manage, 'excludes', []) is None
+    assert detail_to_listing(_room_detail(options=None)).options is None
+
+
+def test_apt_region_offset_counts_dropped_null_catalogs() -> None:
+    # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빼고 읽어도 받은 자리 수에 더해야 이어 받기가 같은 매물을 다시 받지 않는다
+    fixture = load('locals_item_catalogs')
+    body = dict(fixture, count=100, list=[fixture['list'][0], None, fixture['list'][0], None, None])
+    region = ZigbangAptRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
+    with make_client(lambda request: httpx.Response(200, json=body)) as client:
+        result = search_apt_listings(client, region, limit=5)
+    assert result.next_position == {'code': '11680101', 'offset': 5}
+    assert any('빈 항목 3개' in note for note in result.notes)
+
+
+def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
+    # 예약 일정에서 빈 항목(null)을 뺐으면 그 항목이 막힌 날이었을 수 있어 예약 가능 여부·막힌 기간은 '가능·없음' 이 아니라 모름이다
+    detail = load('guest_items')
+    blocked = {'scheduleType': 'BLOCKED', 'startDate': '2099-01-01', 'endDate': '2099-01-10'}
+    schedules: list = [None, blocked]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/by-ids'):
+            return httpx.Response(200, json={'items': []})
+        if request.url.path.endswith('/reviews'):
+            return httpx.Response(200, json={'summary': {'reviewCount': 0, 'averageRating': 0}})
+        if '/host/' in request.url.path:
+            return httpx.Response(200, json={'items': [], 'totalCount': 0})
+        return httpx.Response(200, json=dict(detail, schedules=schedules))
+
+    with make_client(handler) as client:
+        dropped = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
+    data = dropped.model_dump(mode='json')
+    assert data['available'] is None and data['unavailable_periods'] is None
+    assert any('빈 항목 1개' in note and 'available' in note for note in dropped.notes)
+    # 빈 항목이 없으면 평소처럼 값이 나온다
+    schedules.remove(None)
+    with make_client(handler) as client:
+        kept = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
+    data = kept.model_dump(mode='json')
+    assert data['available'] is True and len(data['unavailable_periods']) == 1

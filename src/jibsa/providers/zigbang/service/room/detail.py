@@ -16,6 +16,7 @@ from jibsa.core.listing import (
     normalize_date,
     normalize_floor,
     note,
+    null_items_note,
     parking_label,
     won_to_manwon,
 )
@@ -241,7 +242,8 @@ def manage_cost_excludes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
     응답 `exclude` 에 항목이 있어도 빈 목록이다 (실측 50815925: 웹은 '관리비 없음' 뿐이고 '미포함' 글자가 없는데 `exclude` 에 8개 항목이 있었다).
     그리는 경우에 응답에 `exclude` 키가 빠졌으면 빈 목록이 아니라 모름(None)이다. 확인 불가(`UnknownManageCost`)는 부르는 쪽이 거른다.
     """
-    listed = sent_or_none(manage, 'excludes', _ordered_names(manage.excludes))
+    # 별도 항목 목록에서 빈 항목(null)을 뺐으면 빠진 항목을 알 수 없어 목록을 내지 않는다 (모름)
+    listed = None if manage.null_items('excludes') else sent_or_none(manage, 'excludes', _ordered_names(manage.excludes))
     detail = manage.detail
     if detail is None:
         # `manage_cost_includes` 처럼 웹(`!manageCost.amount`)의 금액으로 본다
@@ -306,8 +308,11 @@ def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
     (`void 0===e.hasInformed` 는 null 이 아니다) 항목별로 본다. `detail` 이 없고 관리비 금액도 없으면(0·null) 웹은
     '관리비 없음' 만 보여 주고 항목을 그리지 않아 빈 목록이다. 정액 관리비의 항목도 웹 순서다
     (일반(공용) 관리비, 사용료, 기타 관리비). 확인 불가(`UnknownManageCost`)는 부르는 쪽(`detail_to_listing`)이 거른다.
+    응답 `include` 에서 빈 항목(null)을 뺐고 그 목록으로 낼 때는 빠진 항목을 알 수 없어 None 이다 (`manage_cost_excludes` 도 같다).
     """
-    listed = sent_or_none(manage, 'includes', _ordered_names(manage.includes))
+    # 포함 항목 목록에서 빈 항목(null)을 뺐으면 빠진 항목을 알 수 없어 목록을 내지 않는다 (모름). 정액 관리비를 항목별 내역으로 만들 때는
+    # 이 목록을 쓰지 않아 영향이 없다
+    listed = None if manage.null_items('includes') else sent_or_none(manage, 'includes', _ordered_names(manage.includes))
     detail = manage.detail
     if detail is None:
         # 웹(`!manageCost.amount`)처럼 `amount` 로 본다. `amount` 가 비고(0·null) `fee` 만 있는 매물은 `detail_to_listing` 이 먼저 모름으로 뺀다
@@ -330,6 +335,26 @@ def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
         # 아래 줄의 이름표로 description 을 쓴다 (실측 50893092: '주차비 5,000원')
         includes.append(etc.description or ETC_MANAGE_COST_LABEL)
     return includes
+
+
+def _manage_cost_null_notes(
+    manage: ZigbangItemsDetailV1ManageCostModel | None,
+    includes: list[str] | None,
+    excludes: list[str] | None,
+) -> list[str]:
+    """관리비 포함·미포함 항목 목록에서 빈 항목(null)을 빼서 그 칸을 모름(null)으로 둔 안내. 그런 칸이 없으면 빈 목록이다.
+
+    `includes`·`excludes` 는 `manage_cost_includes`·`manage_cost_excludes` 의 결과다. 빈 항목을 뺐어도 항목별 내역으로 만든 값은 모름이
+    아니라 안내하지 않는다 (결과가 None 일 때만 센다).
+    """
+    if manage is None:
+        return []
+    dropped = {
+        'manage_cost_includes': manage.null_items('includes') if includes is None else 0,
+        'manage_cost_excludes': manage.null_items('excludes') if excludes is None else 0,
+    }
+    unknown = tuple(name for name, count in dropped.items() if count)
+    return [null_items_note('직방 관리비 항목', sum(dropped.values()), unknown)] if unknown else []
 
 
 def _manage_cost_manwon(manage: ZigbangItemsDetailV1ManageCostModel) -> float | None:
@@ -398,6 +423,8 @@ def detail_to_listing(
         text = legacy.parking_available_text
         parking = parking_label(LEGACY_PARKING_AVAILABLE.get(text)) or text
 
+    includes = manage_cost_includes(manage) if manage else None
+    excludes = manage_cost_excludes(manage) if manage else None
     detail = ZigbangListingDetail(
         source='zigbang',
         id=str(item.id),
@@ -425,7 +452,7 @@ def detail_to_listing(
         parking=parking,
         elevator=residence.elevator,
         options=sent_or_none(item, 'options', [option.name for option in item.options if option.name]),
-        manage_cost_includes=manage_cost_includes(manage) if manage else None,
+        manage_cost_includes=includes,
         nearby_subways=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
@@ -442,9 +469,10 @@ def detail_to_listing(
         hug_lessor=badge_flag(badges, HUG_BADGE),
         nearby_facilities=nearby_facilities(item.neighborhoods),
         delivery_services=delivery_services(item.neighborhoods),
-        manage_cost_excludes=manage_cost_excludes(manage) if manage else None,
+        manage_cost_excludes=excludes,
         manage_cost_period=manage_cost_period(manage.detail) if manage else None,
         manage_cost_method=manage_cost_method(manage.detail) if manage else None,
+        notes=_manage_cost_null_notes(manage, includes, excludes),
     )
     if item.service_type == '오피스텔':
         return detail.model_copy(update={

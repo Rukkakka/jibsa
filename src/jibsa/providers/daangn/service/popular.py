@@ -9,6 +9,7 @@ from pydantic import (
 from jibsa.core.listing import (
     Listing,
     listing_as,
+    null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.popular import (
@@ -40,8 +41,8 @@ class DaangnRankedListing(Listing):
     """조회수 순위 매물."""
 
     rank: Annotated[
-        int,
-        Field(description='조회수 순위 (거래 불가로 뺀 매물 자리는 비운다)')
+        int | None,
+        Field(description='조회수 순위 (거래 불가로 뺀 매물 자리는 비운다). 당근이 빈 항목을 줘 셀 수 없으면 null')
     ]
 
 
@@ -89,6 +90,8 @@ def list_popular_listings(
     )
     ranking = unwrap_graphql(response, response.data.get_view_ranking_articles if response.data else None, '인기 매물')
     articles = ranking.articles[:limit]
+    # 서버는 빈 항목(null)도 한 순위로 세어 limit 건까지 준다. 빼고 읽은 수를 받은 자리에 더하고, 순위는 자리를 알 수 없어 모두 모른다 (null)
+    dropped = ranking.null_items('articles')
     # 순위는 그 동이 속한 구 안이라 카드는 모두 그 구 매물이다. 구 이름은 그 동의 시·도로 미리 채워 시·도를 따로 찾지 않는다
     # (`search_dong` 과 같다). 예전에는 카드마다 구 이름으로 찾아 여러 시·도에 있는 구 이름이면 그 이름 검색을 끝까지 받았다
     # (2026-11-13 리뷰·실측: '서울 중구 명동2가' 가 요청 5회. 도움말은 2회). 세종은 구가 없어(name2 '') `with_center_sido` 가 채운다
@@ -100,7 +103,7 @@ def list_popular_listings(
             continue
         listing = article_to_listing(with_center_sido(client, article, region, sido_cache), None)
         if listing is not None:
-            listings.append(listing_as(DaangnRankedListing, listing, rank=rank))
+            listings.append(listing_as(DaangnRankedListing, listing, rank=None if dropped else rank))
             shown.append(article)
     return DaangnPopularListingsResult(
         region=region,
@@ -115,11 +118,12 @@ def list_popular_listings(
         # 서버가 순위를 limit 건에서 잘라 주므로 limit 건을 다 받았으면 뒤 순위가 남아 있다 (2026-10-14 실측: 역삼동
         # --limit 30 에서 30건을 받고 1건을 빼자 '더 조회할 매물이 없습니다' 라고 했다)
         + listing_budget_notes(
-            limit, len(articles), len(listings), max_limit=POPULAR_MAX_LIMIT,
-            has_more=len(articles) >= limit and limit < POPULAR_MAX_LIMIT,
+            limit, len(articles) + dropped, len(listings), max_limit=POPULAR_MAX_LIMIT,
+            has_more=len(articles) + dropped >= limit and limit < POPULAR_MAX_LIMIT,
         )
         # 아는 거래(매매·전세·월세·단기임대·연세)가 없는 매물만 빠진다. 예전에는 연세를 빼 제주 순위가 크게 비었다 (2026-11-12 실측:
         # 연동 30위 중 12건이 연세만 있어 빠졌다)
         + no_trade_notes(articles)
-        + complex_building_notes(shown),
+        + complex_building_notes(shown)
+        + ([null_items_note('당근 인기 매물', dropped, ('rank',))] if dropped else []),
     )

@@ -13,6 +13,7 @@ from jibsa.core.listing import (
     limit_notes,
     listing_as,
     normalize_address,
+    null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
@@ -375,6 +376,10 @@ class DabangNeighborhood(BaseModel):
         list[DabangCategoryRank],
         Field(description='학교·편의·교통·안전 종류마다 합계·구성과 전국·시도·구 순위 (--ranks 일 때만)')
     ] = []
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='빈 항목 안내')
+    ] = []
     topics: Annotated[
         list[str],
         Field(exclude=True, description='고른 주제')
@@ -395,6 +400,17 @@ class DabangNeighborhood(BaseModel):
         return data
 
 
+def _dropped_types(result: DabangRegionInfoSummaryResultModel) -> int:
+    """매물 유형 목록(`_type_counts` 가 읽는 두 목록)에서 뺀 빈 항목 수."""
+    return result.null_items('distribution_detail_list', 'distribution_list')
+
+
+def _dropped_type_notes(result: DabangRegionInfoSummaryResultModel | None, topic: str, field: str) -> list[str]:
+    """유형 목록에서 빈 항목을 뺐으면 그 주제의 합계(`<field>.total`)를 모른다는 안내."""
+    dropped = 0 if result is None else _dropped_types(result)
+    return [null_items_note(f'다방 동네정보 {topic} 유형별', dropped, (f'{field}.total',))] if dropped else []
+
+
 def _type_counts(result: DabangRegionInfoSummaryResultModel) -> DabangCountStats:
     details: list[DabangDistributionModel] = result.distribution_detail_list or result.distribution_list or []
     by_type = []
@@ -407,7 +423,8 @@ def _type_counts(result: DabangRegionInfoSummaryResultModel) -> DabangCountStats
             lease=parts.get('전세'),
             sale=parts.get('매매'),
         ))
-    total = sum(item.total or 0 for item in by_type) if by_type else None
+    # 빈 항목을 뺐으면 그 유형의 수를 몰라 합계를 낼 수 없다 (받은 유형만 더하면 적은 합계가 완전한 값처럼 나간다)
+    total = sum(item.total or 0 for item in by_type) if by_type and not _dropped_types(result) else None
     return DabangCountStats(total=total, by_type=by_type, rank=_rank(result.ranking_group))
 
 
@@ -464,6 +481,7 @@ def get_neighborhood(
     chosen = list(topics or NEIGHBORHOOD_TOPICS)
     data: dict[str, Any] = {}
     months: list[str | None] = []
+    notes: list[str] = []
 
     def summary(
         topic: DabangRegionInfoSummaryTopic | DabangRegionInfoCountTopic, summary_type: str | None = None,
@@ -485,9 +503,11 @@ def get_neighborhood(
     if '매물' in chosen:
         result = summary('room', 'ROOM_COUNT')
         data['listings'] = None if result is None else _type_counts(result)
+        notes += _dropped_type_notes(result, '매물', 'listings')
     if '거래' in chosen:
         result = summary('room', 'TRADE_VOLUME')
         data['trades'] = None if result is None else _type_counts(result)
+        notes += _dropped_type_notes(result, '거래', 'trades')
     if '시세' in chosen:
         result = summary('real-estate', 'AVERAGE_PRICE')
         data['prices'] = None if result is None else DabangPriceStats(
@@ -542,6 +562,7 @@ def get_neighborhood(
         topics=chosen,
         ranks=rank_list,
         with_ranks=ranks,
+        notes=notes,
         **data,
     )
 
@@ -550,8 +571,8 @@ class DabangRankedListing(DabangListing):
     """동 안 인기 매물 (순위가 붙은 다방 매물)."""
 
     rank: Annotated[
-        int,
-        Field(description='다방 선호도(조회수·찜수·문의수를 합친 점수) 순위. 1이 가장 높다')
+        int | None,
+        Field(description='다방 선호도(조회수·찜수·문의수를 합친 점수) 순위. 1이 가장 높다. 다방이 빈 항목을 줘 그 쪽의 순위를 셀 수 없으면 null')
     ]
 
 
@@ -604,7 +625,7 @@ def get_popular_listings(
     labels = building_types or list(POPULAR_BUILDING_BY_LABEL)
     kind: ListingKind | None = POPULAR_KIND_BY_BUILDING[labels[0]] if len(labels) == 1 else None
     listings: list[Listing] = []
-    received = unreadable = 0
+    received = unreadable = dropped = 0
     total: int | None = None
     has_more = False
     page = 1
@@ -625,6 +646,9 @@ def get_popular_listings(
             break
         total = result.total if total is None else total
         rows = result.list_[:limit - received]
+        # 이 쪽에서 빈 항목을 뺐으면 어느 자리가 빠졌는지 몰라 쪽 안 순위를 셀 수 없다 (다음 쪽은 쪽 번호로 세어 영향이 없다)
+        page_dropped = result.null_items('list_')
+        dropped += page_dropped
         for index, item in enumerate(rows):
             received += 1
             item_kind = kind or POPULAR_KIND_BY_ROOM_TYPE.get((item.room_type_name or '').partition('•')[0].strip(), 'villa')
@@ -635,7 +659,9 @@ def get_popular_listings(
                 continue
             # 순위는 받은 수가 아니라 읽은 쪽과 칸으로 센다. 다방이 한 쪽을 덜 채워도 다음 쪽은 (page - 1) × 쪽 크기 번째부터라
             # 받은 수로 세면 그 뒤 순위가 앞으로 당겨진다
-            listings.append(listing_as(DabangRankedListing, listing, rank=(page - 1) * page_size + index + 1))
+            listings.append(listing_as(
+                DabangRankedListing, listing, rank=None if page_dropped else (page - 1) * page_size + index + 1,
+            ))
         # 잘라 낸 줄이 있으면 더 있고, 빈 쪽이면 hasMore 가 와도 더 없다 (`more_after`)
         has_more = more_after(bool(result.has_more), len(result.list_), cut=len(result.list_) - len(rows))
         if not result.has_more or not result.list_:
@@ -643,6 +669,8 @@ def get_popular_listings(
         page += 1
     notes: list[str] = []
     notes += unreadable_note(unreadable)
+    if dropped:
+        notes.append(null_items_note('다방 인기 매물', dropped, ('rank',)))
     # 동 하나(resolve_dong)의 순위라 좁힐 지역이 없어 이 명령의 -t·--trade 만 권한다 (2026-11-10 리뷰·실측: 역삼동 --limit 100
     # 600건에 '조건·지역을 좁히세요'). 이미 하나씩 골랐으면 더 좁힐 조건이 없어 권하지 않고, 한쪽만 골랐으면 다른 쪽만 권한다
     one_building = len(building_types or []) == 1
@@ -745,7 +773,7 @@ def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, l
         if result is None:
             return None
         month.append(_month(result.update_date))
-        return DabangPage(result.list_ or [], result.total, bool(result.has_more))
+        return DabangPage(result.list_ or [], result.total, bool(result.has_more), result.null_items('list_'))
 
     pages = fetch_pages(fetch, limit, page_size=REGION_INFO_PAGE_LIMIT, max_limit=REGION_INFO_MAX_LIMIT)
     places = [

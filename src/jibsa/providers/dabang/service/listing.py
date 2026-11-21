@@ -30,6 +30,7 @@ from jibsa.core.listing import (
     move_in_label,
     normalize_date,
     note,
+    null_items_note,
     parking_label,
     won_to_manwon,
     years_ago,
@@ -164,6 +165,10 @@ class DabangListingDetail(ListingDetail):
         float | None,
         Field(description='계약면적 (㎡, 공급 + 주차장 등 기타 공용. 다방이 오피스텔에 주는 값). 오피스텔에만 키가 있고 모르면 null')
     ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='빈 항목 안내')
+    ] = []
     with_tenant: Annotated[
         bool,
         Field(description='세입자를 끼고 파는 매매 (다방 기 보증금/월세 표시). 매매만')
@@ -269,7 +274,7 @@ class DabangListPosition(BaseModel):
     ] = 0
     received: Annotated[
         int,
-        Field(ge=0, description="앞 결과들까지 받은 매물 수. '[일부] N번째부터' 안내에만 쓴다")
+        Field(ge=0, description="앞 결과들까지 받은 칸 수 (다방이 빈 항목으로 줘서 뺀 칸 포함). '[일부] N번째부터' 안내에만 쓴다")
     ] = 0
     bbox: Annotated[
         DabangBboxModel | None,
@@ -464,7 +469,7 @@ def search_listings(
         collected.append(listing)
     has_more = pages.has_more
     next_position = DabangListPosition(
-        page=pages.page, skip=pages.skip, received=resume.received + len(pages.rows), bbox=bbox,
+        page=pages.page, skip=pages.skip, received=resume.received + len(pages.rows) + pages.dropped_used, bbox=bbox,
     ) if has_more else None
     # 더 받을 매물이 없으면 '다시 채우지 않음' 이라 하지 않는다. 그 말에 더 있는지 헷갈렸다 (2026-11-11 LLM 사용 시험: 반곡동
     # 아파트 7건 중 다른 동 4건을 빼고 has_more false)
@@ -476,6 +481,8 @@ def search_listings(
     notes += unreadable_note(unreadable)
     notes += duplicate_note(duplicate)
     notes += premium_note(premium)
+    if pages.dropped:
+        notes.append(null_items_note('다방 매물', pages.dropped))
     notes += limit_notes(
         pages.total, len(collected), limit, max_limit=MAX_LIST_LIMIT, narrow=f"조건·{'반경' if radius_km is not None else '지역'}",
         order='다방 목록', approximate=approximate, inspected=len(pages.rows), offset=resume.received,
@@ -516,6 +523,8 @@ class _ManageCost(NamedTuple):
     manwon: float | None
     includes: list[str] | None
     excludes: list[str] | None
+    # 정액관리비 항목 목록에서 뺀 빈 항목 수 (뺐으면 포함·실비 항목을 모른다)
+    dropped: int = 0
 
 
 def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
@@ -536,6 +545,10 @@ def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
     fixed_items = room.maintenance_fixed_fee_charge_detail_list
     detail_type = room.maintenance_charge_detail_type
     if charge == FIXED_FEE_CHARGE and (not detail_type or detail_type == ITEMIZED_FIXED_FEE_DETAIL_TYPE):
+        dropped = room.null_items('maintenance_fixed_fee_charge_detail_list')
+        if dropped:
+            # 뺀 항목이 포함인지 실비인지 모르니 받은 항목만으로 포함·실비 목록을 만들면 틀린 목록이 완전한 값처럼 나간다
+            return _ManageCost(cost, None, None, dropped)
         if not fixed_items:
             return _ManageCost(cost, None, None)
         # 항목마다 정액(관리비에 듦)·실비(따로 냄)로 온다. 공용(F01)은 실비로 와도 웹이 금액과 함께 보여 주고 관리비 합계에 넣어
@@ -620,6 +633,7 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
     # 웹은 이 표시들이 없으면(null) 없는 것으로 보고 아무것도 보여 주지 않는다 (safety-option-chunk 의 `?? false`). 위반건축물만
     # null 이면 그 줄을 감추고 true·false 를 '해당'·'해당없음' 으로 보여 준다 (room-chunk, 2026-11-13)
     with_tenant = bool(room.is_take_tenant)
+    notes = [null_items_note('다방 관리비 항목', manage.dropped, ('manage_cost_includes', 'manage_cost_excludes'))] if manage.dropped else []
     return DabangListingDetail(
         source=SOURCE,
         id=room.id,
@@ -666,6 +680,7 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         short_lease_term=room.short_lease_str,
         complex_id=room.complex_id,
         listing_number=room.seq,
+        notes=notes,
         **_price_fields(room, trade_type),
     )
 

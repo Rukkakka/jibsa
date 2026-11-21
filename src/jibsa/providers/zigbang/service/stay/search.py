@@ -23,6 +23,7 @@ from jibsa.core.listing import (
     limit_notes,
     normalize_address,
     note,
+    null_items_note,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -387,7 +388,9 @@ def _search_stay_by_markers(
     boundary: ZigbangBoundary | None,
 ) -> ZigbangStaySearchResult:
     """반경(또는 동 경계) 안 지도 핀을 웹 지도 목록 순서로 세워 앞 `limit` 개의 요약을 받는다. `total` 은 범위 안 핀 수다."""
-    pins = _stay_pins(client, region, scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION), filters, boundary)
+    pins, dropped = _stay_pins(
+        client, region, scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION), filters, boundary,
+    )
     if boundary is None:
         # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받지 않고 뺀다 (반올림 없이 잰 거리)
         pins = {item_id: pin for item_id, pin in pins.items() if pin[1] <= radius_km}
@@ -398,6 +401,8 @@ def _search_stay_by_markers(
         len(pins), len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f"{STAY_NARROW}·{'지역' if boundary else '반경'}",
         order=STAY_SORT_ORDERS[sort], inspected=len(head), has_more=has_more,
     )
+    if dropped:
+        notes.append(null_items_note('직방 단기임대 지도 핀', dropped))
     return ZigbangStaySearchResult(
         region=region,
         radius_km=None if boundary else radius_km,
@@ -476,22 +481,25 @@ def _stay_pins(
     hashes: list[str],
     filters: dict[str, Any],
     boundary: ZigbangBoundary | None,
-) -> dict[int, tuple[ZigbangStayMarkerModel, float]]:
+) -> tuple[dict[int, tuple[ZigbangStayMarkerModel, float]], int]:
     """지도 칸마다 단기임대 핀을 받아 매물 ID → (핀, 검색 중심에서 거리)로 모은다. 동 경계 밖 핀은 뺀다.
 
-    핀 좌표는 요약(by-ids) 좌표와 같아 (2026-11-15 실측 71건) 핀으로 범위를 정하고 거리를 잰다.
+    핀 좌표는 요약(by-ids) 좌표와 같아 (2026-11-15 실측 71건) 핀으로 범위를 정하고 거리를 잰다. 핀 목록에서 빈 항목(null)을 빼고
+    읽은 수를 함께 돌려준다 (받은 칸 전부의 합).
     """
     pins: dict[int, tuple[ZigbangStayMarkerModel, float]] = {}
+    dropped = 0
     for geohash in hashes:
         response = _stay_search_call(
             client.run_request_guest_items_markers,
             ZigbangGuestItemsMarkersRequestParameterModel(geohash=geohash, **filters),
         )
+        dropped += response.null_items('markers')
         for marker in response.markers:
             if outside_boundary(boundary, marker.lat, marker.lng):
                 continue
             pins[marker.id] = (marker, haversine_km(region.lat, region.lng, marker.lat, marker.lng))
-    return pins
+    return pins, dropped
 
 
 def _stay_summaries(

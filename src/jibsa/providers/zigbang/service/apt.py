@@ -26,6 +26,7 @@ from jibsa.core.listing import (
     move_in_label,
     normalize_date,
     note,
+    null_items_note,
     parking_label,
     won_to_manwon,
 )
@@ -54,6 +55,7 @@ from jibsa.providers.zigbang.service.common.apt import (
     apt_listing_id,
     apt_listing_kind,
     apt_pagination_notes,
+    catalog_null_notes,
     catalog_to_listing,
     parse_catalog_id,
 )
@@ -255,7 +257,8 @@ def search_apt_listings(
     무시해 (2026-11-17 실측) 거기에는 넣지 않는다.
 
     `start` 는 이어 받기(`--next`) 위치다. 앞서 받은 수(`offset`)부터 직방 offset 으로 받는다. 지역 목록은 같은 이름이면
-    같은 순서로 나온다 (resolve_apt_region).
+    같은 순서로 나온다 (resolve_apt_region). 응답 목록에 빈 항목(null)이 섞여 오면 빼고 읽되, 직방 offset 은 그 자리도 세므로 받은
+    수(`offset`·`inspected`)에 더해 센다 (`catalog_null_notes` 가 알린다).
 
     Raises:
         JibsaError: 이어 받기 표의 지역 코드(`code`)가 다시 찾은 지역과 다르거나 표 모양이 예전 것일 때 (INVALID_ARGUMENT).
@@ -279,6 +282,9 @@ def search_apt_listings(
             raise apt_resume_changed_error()
         offset = int(start['offset'])
     inspected = 0
+    # 목록에서 뺀 빈 항목 수와, 카탈로그의 묶인 매물 ID 목록에서 뺀 빈 항목 수 (`catalog_null_notes`)
+    dropped_catalogs = 0
+    dropped_id_lists = 0
     filter_area = conditions.area_min_m2 is not None or conditions.area_max_m2 is not None
     while inspected < limit and not done:
         response = client.run_request_locals_item_catalogs(
@@ -300,17 +306,21 @@ def search_apt_listings(
             )
         )
         total = response.count
-        inspected += len(response.catalogs)
+        # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빈 항목을 빼고 읽었어도 받은 자리 수에 더해야 같은 매물을 다시 받거나 일찍 멈추지 않는다
+        received = len(response.catalogs) + response.null_items('catalogs')
+        dropped_catalogs += response.null_items('catalogs')
+        dropped_id_lists += sum(catalog.null_items('item_id_list') for catalog in response.catalogs)
+        inspected += received
         for catalog in response.catalogs:
             listing = catalog_to_listing(catalog, response.local1)
             if listing is not None and area_matches(listing, conditions.area_min_m2, conditions.area_max_m2):
                 listings.append(listing)
-        offset += len(response.catalogs)
-        done = not response.catalogs or offset >= response.count
+        offset += received
+        done = not received or offset >= response.count
     has_more = not done
     notes = apt_pagination_notes(
         len(listings), limit, inspected, has_more=has_more, resumable=has_more, resumed=start is not None, narrow='조건·지역',
-    )
+    ) + catalog_null_notes('직방 지역 아파트', dropped_catalogs, dropped_id_lists)
     if filter_area:
         # 받은 원본(limit 건) 안에서만 거르므로 맞는 매물이 더 있어도 적게 나온다 (2026-10-09 실측: 대치동
         # 전용 150㎡ 이상이 20건 중 2건, 공급 190㎡ 이상 서버 조건으로는 20건 중 19건)
@@ -613,6 +623,9 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
     처럼 빼고 그 수를 `[제외]` 로 알린다 (2026-11-15 헬리오시티·은마 묶음 270건은 모두 직방·제휴였다). 거래 유형은 묶음 ID 의
     것을 쓴다 (매물의 `tranType` 이 비어도 웹 묶음 화면처럼 빼지 않는다).
 
+    쪽의 매물 목록에 빈 항목(null)이 섞여 오면 빼고 읽되 받은 수(`received`)·쪽이 가득 찼는지에는 더해 센다 (빈 항목만 온 쪽은 빈 쪽이
+    아니다). 빈 항목은 `[제외]` 로 따로 알리고 '상세를 볼 수 없는 출처' 수에 섞지 않는다.
+
     받는 도중 직방이 다음 쪽을 주지 않으면(받는 사이 묶음이 줄어 404, 또는 빈 쪽) 받은 데까지 내고 `[일부]` 로 알린다.
     직방이 `itemCount` 를 주지 않으면(`total` null) 쪽이 가득(`CATALOG_PAGE_SIZE`) 찬 동안 상한까지 받고, 덜 찬 쪽이나
     404·빈 쪽이 오면 끝으로 본다. `(최대 N건)` 안내는 상한에 닿아 멈췄을 때만이다.
@@ -631,6 +644,8 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
     catalog_id = apt_catalog_id(area_ho_id, tran_type)
     listings: list[ZigbangListingDetail] = []
     received = 0
+    # 쪽의 매물 목록에서 뺀 빈 항목(null) 수. 직방 offset·쪽 수는 빈 항목도 한 자리로 센다
+    dropped = 0
     total: int | None = None
     last_page_full = False
     cut_short = False
@@ -647,7 +662,8 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
             # 알린 수에 못 미쳤으면 받는 사이 묶음이 줄어 뒤 쪽이 없어졌다. 수를 모르면 끝까지 받은 것으로 본다. 받은 데까지 낸다
             cut_short = total is not None
             break
-        if not page.items:
+        page_count = len(page.items) + page.null_items('items')
+        if not page_count:
             if not received:
                 # 첫 쪽이 200 빈 목록이어도 404 와 같은 빈 묶음이다 (itemCount 와 상관없이)
                 raise _empty_catalog_error(catalog_id)
@@ -655,8 +671,9 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
             cut_short = total is not None
             break
         total = page.item_count
-        received += len(page.items)
-        last_page_full = len(page.items) >= CATALOG_PAGE_SIZE
+        received += page_count
+        dropped += page.null_items('items')
+        last_page_full = page_count >= CATALOG_PAGE_SIZE
         for apt in page.items:
             if (source := apt_item_source(apt.item_source)) is not None:
                 listings.append(apt_item_to_listing(apt, source, trade_type))
@@ -668,10 +685,14 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
         if received >= min(total, MAX_LIST_LIMIT):
             break
     notes: list[str] = []
-    if received > len(listings):
+    # 빈 항목은 출처를 알 수 없어 '상세를 볼 수 없는 출처' 로 세지 않고 따로 알린다
+    skipped = received - dropped - len(listings)
+    if skipped > 0:
         notes.append(note(
-            '제외', f'묶음 매물 {received}건 중 상세를 볼 수 없는 출처 {received - len(listings)}건을 뺐습니다',
+            '제외', f'묶음 매물 {received - dropped}건 중 상세를 볼 수 없는 출처 {skipped}건을 뺐습니다',
         ))
+    if dropped:
+        notes.append(null_items_note('직방 묶음 매물', dropped))
     if total is None:
         has_more = received >= MAX_LIST_LIMIT and last_page_full
     else:

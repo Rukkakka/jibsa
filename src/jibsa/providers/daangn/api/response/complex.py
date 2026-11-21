@@ -5,9 +5,9 @@ from pydantic import (
     model_validator,
 )
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
+    DaangnBaseResponseModel,
     DaangnCompareRegionModel,
     DaangnGraphQLResponseModel,
     DaangnLiveArticleCountModel,
@@ -27,7 +27,7 @@ from typing import (
 # GET realty.daangn.com/complexes/{originalId} (SSR Relay 스토어)
 # ---------------------------------------------------------------------------
 
-class DaangnPyInfoModel(ResponseModel):
+class DaangnPyInfoModel(DaangnBaseResponseModel):
     """평형 하나."""
 
     ptp_cd: Annotated[
@@ -56,7 +56,7 @@ class DaangnPyInfoModel(ResponseModel):
     ] = None
 
 
-class DaangnAreaGroupModel(ResponseModel):
+class DaangnAreaGroupModel(DaangnBaseResponseModel):
     """평형 묶음 (웹의 평형 탭 하나). 전용면적 묶음이나 공급 평 묶음이다. 같은 묶음에 평형이 여러 개일 수 있다."""
 
     label: Annotated[
@@ -77,7 +77,7 @@ class DaangnAreaGroupModel(ResponseModel):
     ] = []
 
 
-class DaangnSubwayInfoModel(ResponseModel):
+class DaangnSubwayInfoModel(DaangnBaseResponseModel):
     """단지에서 가까운 지하철역."""
 
     station_name: Annotated[
@@ -94,7 +94,7 @@ class DaangnSubwayInfoModel(ResponseModel):
     ] = None
 
 
-class DaangnSchoolModel(ResponseModel):
+class DaangnSchoolModel(DaangnBaseResponseModel):
     """학교."""
 
     @model_validator(mode='before')
@@ -121,7 +121,7 @@ class DaangnSchoolModel(ResponseModel):
     ] = None
 
 
-class DaangnNearbySchoolModel(ResponseModel):
+class DaangnNearbySchoolModel(DaangnBaseResponseModel):
     """단지 주변 학교 (배정 초등학교, 가까운 중·고등학교)."""
 
     school: Annotated[
@@ -150,7 +150,7 @@ class DaangnNearbySchoolModel(ResponseModel):
     ] = None
 
 
-class DaangnDoroAddrModel(ResponseModel):
+class DaangnDoroAddrModel(DaangnBaseResponseModel):
     """단지 주소. 시·도가 '서울' 처럼 줄여 온다."""
 
     road_address: Annotated[
@@ -163,7 +163,7 @@ class DaangnDoroAddrModel(ResponseModel):
     ] = None
 
 
-class DaangnProptierDanjiModel(ResponseModel):
+class DaangnProptierDanjiModel(DaangnBaseResponseModel):
     """단지 상세 (공공 데이터). 관리사무소 전화(`managementPhone`)도 오지만 내보내지 않는다."""
 
     households: Annotated[
@@ -240,7 +240,7 @@ class DaangnProptierDanjiModel(ResponseModel):
     ] = []
 
 
-class DaangnComplexModel(ResponseModel):
+class DaangnComplexModel(DaangnBaseResponseModel):
     """`__typename == "PropComplex"` 레코드를 참조까지 펼친 것 (단지 페이지)."""
 
     original_id: Annotated[
@@ -285,7 +285,7 @@ class DaangnComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexesResponseModel(ResponseModel):
+class DaangnComplexesResponseModel(DaangnBaseResponseModel):
     """단지 페이지에서 추출한 단지. 없는 단지면 페이지가 404 다."""
 
     complex: Annotated[
@@ -298,7 +298,7 @@ class DaangnComplexesResponseModel(ResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — searchComplexes
 # ---------------------------------------------------------------------------
 
-class DaangnBuildingModel(ResponseModel):
+class DaangnBuildingModel(DaangnBaseResponseModel):
     """단지의 건물 (동) 하나."""
 
     road_address: Annotated[
@@ -311,7 +311,7 @@ class DaangnBuildingModel(ResponseModel):
     ] = None
 
 
-class DaangnBuildingEdgeModel(ResponseModel):
+class DaangnBuildingEdgeModel(DaangnBaseResponseModel):
     """건물 연결의 edge."""
 
     node: Annotated[
@@ -320,7 +320,7 @@ class DaangnBuildingEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnBuildingConnectionModel(ResponseModel):
+class DaangnBuildingConnectionModel(DaangnBaseResponseModel):
     """건물 연결."""
 
     edges: Annotated[
@@ -329,7 +329,7 @@ class DaangnBuildingConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnSearchComplexNodeModel(ResponseModel):
+class DaangnSearchComplexNodeModel(DaangnBaseResponseModel):
     """이름으로 찾은 단지."""
 
     original_id: Annotated[
@@ -350,7 +350,7 @@ class DaangnSearchComplexNodeModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchComplexEdgeModel(ResponseModel):
+class DaangnSearchComplexEdgeModel(DaangnBaseResponseModel):
     """단지 검색 연결의 edge."""
 
     node: Annotated[
@@ -359,7 +359,7 @@ class DaangnSearchComplexEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchComplexesModel(ResponseModel):
+class DaangnSearchComplexesModel(DaangnBaseResponseModel):
     """`searchComplexes` 연결. 이름이 비슷한 순이며 전국 단지가 섞인다."""
 
     edges: Annotated[
@@ -372,7 +372,7 @@ class DaangnSearchComplexesModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchComplexesDataModel(ResponseModel):
+class DaangnSearchComplexesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_complexes: Annotated[
@@ -390,7 +390,7 @@ class DaangnSearchComplexesResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnTrendingRealsaleNodeModel(ResponseModel):
+class DaangnTrendingRealsaleNodeModel(DaangnBaseResponseModel):
     """인기 단지 평형의 최근 매매가."""
 
     trade_price: Annotated[
@@ -399,7 +399,7 @@ class DaangnTrendingRealsaleNodeModel(ResponseModel):
     ] = None
 
 
-class DaangnTrendingRealsaleEdgeModel(ResponseModel):
+class DaangnTrendingRealsaleEdgeModel(DaangnBaseResponseModel):
     """실거래 edge."""
 
     node: Annotated[
@@ -408,7 +408,7 @@ class DaangnTrendingRealsaleEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnTrendingRealsaleConnectionModel(ResponseModel):
+class DaangnTrendingRealsaleConnectionModel(DaangnBaseResponseModel):
     """실거래 연결 (최근 1건)."""
 
     edges: Annotated[
@@ -417,7 +417,7 @@ class DaangnTrendingRealsaleConnectionModel(ResponseModel):
     ] = []
 
 
-class DaangnTrendingPyInfoModel(ResponseModel):
+class DaangnTrendingPyInfoModel(DaangnBaseResponseModel):
     """인기 단지 평형."""
 
     households: Annotated[
@@ -434,7 +434,7 @@ class DaangnTrendingPyInfoModel(ResponseModel):
     ] = None
 
 
-class DaangnTrendingAreaGroupModel(ResponseModel):
+class DaangnTrendingAreaGroupModel(DaangnBaseResponseModel):
     """인기 단지 전용면적 묶음."""
 
     is_representative: Annotated[
@@ -447,7 +447,7 @@ class DaangnTrendingAreaGroupModel(ResponseModel):
     ] = []
 
 
-class DaangnTrendingDanjiModel(ResponseModel):
+class DaangnTrendingDanjiModel(DaangnBaseResponseModel):
     """인기 단지 공공 정보."""
 
     exclusive_area_groups: Annotated[
@@ -456,7 +456,7 @@ class DaangnTrendingDanjiModel(ResponseModel):
     ] = []
 
 
-class DaangnTrendingComplexModel(ResponseModel):
+class DaangnTrendingComplexModel(DaangnBaseResponseModel):
     """인기 급상승 단지. 사진(`imagesV2`)은 읽지 않는다."""
 
     original_id: Annotated[
@@ -489,7 +489,7 @@ class DaangnTrendingComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnTrendingComplexesDataModel(ResponseModel):
+class DaangnTrendingComplexesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     trending_complexes: Annotated[
@@ -511,7 +511,7 @@ class DaangnTrendingComplexesResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — complexByOriginalId { complex { articles } } (단지 매물 목록)
 # ---------------------------------------------------------------------------
 
-class DaangnArticleEdgeModel(ResponseModel):
+class DaangnArticleEdgeModel(DaangnBaseResponseModel):
     """매물 연결 edge."""
 
     node: Annotated[
@@ -520,7 +520,7 @@ class DaangnArticleEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleConnectionModel(ResponseModel):
+class DaangnArticleConnectionModel(DaangnBaseResponseModel):
     """매물 연결."""
 
     edges: Annotated[
@@ -533,7 +533,7 @@ class DaangnArticleConnectionModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexArticlesComplexModel(ResponseModel):
+class DaangnComplexArticlesComplexModel(DaangnBaseResponseModel):
     """단지 (매물 연결만 받는다)."""
 
     articles: Annotated[
@@ -542,7 +542,7 @@ class DaangnComplexArticlesComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexArticlesOutputModel(ResponseModel):
+class DaangnComplexArticlesOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 `complex` 가 null 이다."""
 
     complex: Annotated[
@@ -551,7 +551,7 @@ class DaangnComplexArticlesOutputModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexArticlesDataModel(ResponseModel):
+class DaangnComplexArticlesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complex_by_original_id: Annotated[
@@ -573,7 +573,7 @@ class DaangnComplexArticlesResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — complexByClusterId (동·구 단지 목록)
 # ---------------------------------------------------------------------------
 
-class DaangnRegionComplexEdgeModel(ResponseModel):
+class DaangnRegionComplexEdgeModel(DaangnBaseResponseModel):
     """지역 단지 목록의 edge."""
 
     node: Annotated[
@@ -582,7 +582,7 @@ class DaangnRegionComplexEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnRegionComplexesModel(ResponseModel):
+class DaangnRegionComplexesModel(DaangnBaseResponseModel):
     """지역 단지 목록 연결. 요청한 정렬 순이다."""
 
     edges: Annotated[
@@ -595,7 +595,7 @@ class DaangnRegionComplexesModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexByClusterIdDataModel(ResponseModel):
+class DaangnComplexByClusterIdDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complex_by_cluster_id: Annotated[
@@ -617,7 +617,7 @@ class DaangnComplexByClusterIdResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — searchComplexes (지도 범위 단지 목록, 카드는 동·구 단지 목록과 같다)
 # ---------------------------------------------------------------------------
 
-class DaangnSearchComplexesViewportDataModel(ResponseModel):
+class DaangnSearchComplexesViewportDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_complexes: Annotated[

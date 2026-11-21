@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
+from jibsa.providers.zigbang.api.response.common import ZigbangBaseResponseModel
 
 from typing import Annotated
 
@@ -11,7 +11,7 @@ from typing import Annotated
 # GET stay-apis.zigbang.com/guest/items/markers
 # ---------------------------------------------------------------------------
 
-class ZigbangStayMarkerModel(ResponseModel):
+class ZigbangStayMarkerModel(ZigbangBaseResponseModel):
     """단기임대 매물 위치 핀. 웹 지도 목록은 화면 안 핀을 이 값들로 세운다 (번들 `sortStayMarkers`)."""
 
     id: Annotated[
@@ -57,7 +57,7 @@ class ZigbangStayMarkerModel(ResponseModel):
     ] = None
 
 
-class ZigbangGuestItemsSearchResponseModel(ResponseModel):
+class ZigbangGuestItemsSearchResponseModel(ZigbangBaseResponseModel):
     """지역·역·학교 조건에 맞는 단기임대 ID 목록. 요청한 정렬(`sort`) 순서이고, 웹 검색 결과 목록이 이 순서 그대로다."""
 
     item_ids: Annotated[
@@ -74,7 +74,7 @@ class ZigbangGuestItemsSearchResponseModel(ResponseModel):
     ]
 
 
-class ZigbangGuestItemsMarkersResponseModel(ResponseModel):
+class ZigbangGuestItemsMarkersResponseModel(ZigbangBaseResponseModel):
     """단기임대 매물 위치 응답."""
 
     markers: Annotated[

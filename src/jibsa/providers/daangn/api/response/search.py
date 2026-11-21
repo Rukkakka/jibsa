@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
+    DaangnBaseResponseModel,
     DaangnCommuteStationArticleConnectionModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
@@ -17,7 +17,7 @@ from typing import Annotated
 # POST realty.kr.karrotmarket.com/graphql — articleFeed
 # ---------------------------------------------------------------------------
 
-class DaangnArticleFeedCardModel(ResponseModel):
+class DaangnArticleFeedCardModel(DaangnBaseResponseModel):
     """피드 카드 한 장. 실제로는 늘 매물 카드(ARTICLE)에 매물이 있다.
 
     광고 카드처럼 article 이 null 인 카드는 보지 못했고 웹도 `e.node.article.region.name3` 를 검사 없이 읽는다 (2026-10-11
@@ -34,7 +34,7 @@ class DaangnArticleFeedCardModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleFeedEdgeModel(ResponseModel):
+class DaangnArticleFeedEdgeModel(DaangnBaseResponseModel):
     """피드 연결의 edge."""
 
     node: Annotated[
@@ -49,7 +49,7 @@ class DaangnArticleFeedEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleFeedModel(ResponseModel):
+class DaangnArticleFeedModel(DaangnBaseResponseModel):
     """`articleFeed` 연결. 최근 게시 순이다."""
 
     edges: Annotated[
@@ -62,7 +62,7 @@ class DaangnArticleFeedModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleFeedDataModel(ResponseModel):
+class DaangnArticleFeedDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     article_feed: Annotated[
@@ -84,7 +84,7 @@ class DaangnArticleFeedResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — articlesCount
 # ---------------------------------------------------------------------------
 
-class DaangnArticlesCountDataModel(ResponseModel):
+class DaangnArticlesCountDataModel(DaangnBaseResponseModel):
     """GraphQL `data`. 웹 쿼리가 루트 필드에 `count` 별칭을 붙인다."""
 
     count: Annotated[
@@ -106,7 +106,7 @@ class DaangnArticlesCountResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — articleByClusterId (지도 동 클러스터 매물 목록)
 # ---------------------------------------------------------------------------
 
-class DaangnArticleByClusterIdDataModel(ResponseModel):
+class DaangnArticleByClusterIdDataModel(DaangnBaseResponseModel):
     """GraphQL `data`. 동 피드와 같은 연결 타입(ArticleFeedConnection)이다."""
 
     article_by_cluster_id: Annotated[
@@ -128,7 +128,7 @@ class DaangnArticleByClusterIdResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — articleClusters (지도 지역 거품의 매물 수)
 # ---------------------------------------------------------------------------
 
-class DaangnArticleClusterModel(ResponseModel):
+class DaangnArticleClusterModel(DaangnBaseResponseModel):
     """지도 지역 거품 하나."""
 
     original_id: Annotated[
@@ -145,7 +145,7 @@ class DaangnArticleClusterModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleClustersDataModel(ResponseModel):
+class DaangnArticleClustersDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     article_clusters: Annotated[
@@ -167,7 +167,7 @@ class DaangnArticleClustersResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — subwayStationArticleConnection / universityArticleConnection (역·대학 주변 매물)
 # ---------------------------------------------------------------------------
 
-class DaangnSubwayStationArticleConnectionDataModel(ResponseModel):
+class DaangnSubwayStationArticleConnectionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`. 출퇴근 역 매물과 같은 연결 타입(CommuteArticleConnection)이다."""
 
     subway_station_article_connection: Annotated[
@@ -185,7 +185,7 @@ class DaangnSubwayStationArticleConnectionResponseModel(DaangnGraphQLResponseMod
     ] = None
 
 
-class DaangnUniversityArticleConnectionDataModel(ResponseModel):
+class DaangnUniversityArticleConnectionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`. 역 주변 매물과 같은 연결 타입(CommuteArticleConnection)이다 (2026-11-11 실측)."""
 
     university_article_connection: Annotated[

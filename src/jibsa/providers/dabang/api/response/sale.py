@@ -1,18 +1,58 @@
 from pydantic import (
     Field,
+    PrivateAttr,
     RootModel,
+    ValidatorFunctionWrapHandler,
+    model_validator,
 )
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.dabang.api.response.common import DabangV5ResponseModel
+from jibsa.core.schema import add_null_item_tally
+from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
+    DabangV5ResponseModel,
+)
 
 from typing import (
     Annotated,
     Any,
+    Generic,
+    TypeVar,
 )
 
 
-class DabangSaleItemModel(ResponseModel):
+T = TypeVar('T')
+
+
+class DabangRootListModel(RootModel[list[T]], Generic[T]):
+    """봉투 없이 목록 하나가 오는 응답의 기반. 목록 안의 null 원소는 빼고 그 수를 `null_items` 로 센다.
+
+    `ResponseModel.null_items` 는 모델 칸의 목록만 다뤄 루트 목록에는 닿지 않아, 같은 규칙(빼고 읽고, 계산하는 쪽이 뺀 수를
+    알게 한다)을 여기서 따로 붙인다. 원소가 `None` 일 수 있는 자료형이 아니라 모델이어야 뺄 수 있다.
+    """
+
+    # 목록에서 뺀 null 원소의 수
+    _null_items: int = PrivateAttr(default=0)
+
+    @model_validator(mode='wrap')
+    @classmethod
+    def drop_null_items(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        dropped = 0
+        if isinstance(data, list) and None in data:
+            kept = [item for item in data if item is not None]
+            data, dropped = kept, len(data) - len(kept)
+        result = handler(data)
+        if dropped:
+            result._null_items = dropped
+            # 명령 전체의 합에도 더한다 (`null_item_tally`)
+            add_null_item_tally(dropped)
+        return result
+
+    def null_items(self) -> int:
+        """목록에서 null 원소를 빼고 읽은 수."""
+        return self._null_items
+
+
+class DabangSaleItemModel(DabangBaseResponseModel):
     """분양 지도 목록의 단지 하나. 좌표·동 번호는 오지 않는다 (2026-10-25 실측).
 
     Args:
@@ -63,7 +103,7 @@ class DabangSaleItemModel(ResponseModel):
     ] = None
 
 
-class DabangSaleListResultModel(ResponseModel):
+class DabangSaleListResultModel(DabangBaseResponseModel):
     """분양 지도 목록 `result`. `recommendList` 는 범위와 상관없는 추천 칸이라 쓰지 않는다 (서울 범위에 부산 단지, 2026-10-25)."""
 
     sale_list: Annotated[
@@ -88,7 +128,7 @@ class DabangSaleListCategoryBboxV5ResponseModel(DabangV5ResponseModel[DabangSale
     """`GET /api/v5/sale-list/category/bbox` 응답."""
 
 
-class DabangSaleInLotsPriceInfoModel(ResponseModel):
+class DabangSaleInLotsPriceInfoModel(DabangBaseResponseModel):
     """분양가 범위와 평당가 (만원 글자)."""
 
     price_str: Annotated[
@@ -105,7 +145,7 @@ class DabangSaleInLotsPriceInfoModel(ResponseModel):
     ] = None
 
 
-class DabangSubscriptionSpaceModel(ResponseModel):
+class DabangSubscriptionSpaceModel(DabangBaseResponseModel):
     """청약 결과의 평형 하나 (웹 '청약결과' 표: 평형명·분양/총세대·경쟁률·당첨가점·분양가)."""
 
     space_name: Annotated[
@@ -130,7 +170,7 @@ class DabangSubscriptionSpaceModel(ResponseModel):
     ] = None
 
 
-class DabangSubscriptionResultModel(ResponseModel):
+class DabangSubscriptionResultModel(DabangBaseResponseModel):
     """청약 결과 (`subscriptionResult`, 안쪽 키는 snake_case). 청약 전이면 `subscriptionResult` 가 null 이다 (2026-11-13 실측)."""
 
     min_winning_point_str: Annotated[
@@ -147,7 +187,7 @@ class DabangSubscriptionResultModel(ResponseModel):
     ] = None
 
 
-class DabangSaleInLotsModel(ResponseModel):
+class DabangSaleInLotsModel(DabangBaseResponseModel):
     """분양 상세의 단지 (`saleInLots`). 키는 snake_case 다. 상담 전화(`contact`)·사진·좌표는 모델에 두지 않는다.
 
     `provider_name` 은 시공사, `constructor_name` 은 시행사다 (2026-10-25 실측: LH 신혼희망타운의 provider_name 이
@@ -252,7 +292,7 @@ class DabangSaleInLotsModel(ResponseModel):
     ] = None
 
 
-class DabangSaleScheduleModel(ResponseModel):
+class DabangSaleScheduleModel(DabangBaseResponseModel):
     """분양 일정 한 단계."""
 
     type_str: Annotated[
@@ -269,7 +309,7 @@ class DabangSaleScheduleModel(ResponseModel):
     ] = None
 
 
-class DabangSaleSpaceModel(ResponseModel):
+class DabangSaleSpaceModel(DabangBaseResponseModel):
     """분양 평형 하나."""
 
     space_name: Annotated[
@@ -294,7 +334,7 @@ class DabangSaleSpaceModel(ResponseModel):
     ] = None
 
 
-class DabangSaleInLotsDetail2V3ResponseModel(ResponseModel):
+class DabangSaleInLotsDetail2V3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/sale-in-lots/detail2` 응답. 봉투 없이 온다. 중개사(`agents`)·추천 단지·매물도 오지만 모델에 두지 않는다."""
 
     sale_in_lots: Annotated[
@@ -315,7 +355,7 @@ class DabangSaleInLotsDetail2V3ResponseModel(ResponseModel):
     ] = None
 
 
-class DabangSaleScheduleEntryModel(ResponseModel):
+class DabangSaleScheduleEntryModel(DabangBaseResponseModel):
     """청약 일정 한 줄 ('[청약접수] 인천 … (~10/27)')."""
 
     id: Annotated[
@@ -328,7 +368,7 @@ class DabangSaleScheduleEntryModel(ResponseModel):
     ] = None
 
 
-class DabangSaleScheduleTypeModel(ResponseModel):
+class DabangSaleScheduleTypeModel(DabangBaseResponseModel):
     """하루 일정의 종류 묶음 ('접수 16건')."""
 
     type: Annotated[
@@ -345,7 +385,7 @@ class DabangSaleScheduleTypeModel(ResponseModel):
     ] = []
 
 
-class DabangSaleScheduleDayModel(ResponseModel):
+class DabangSaleScheduleDayModel(DabangBaseResponseModel):
     """청약 일정 하루."""
 
     date: Annotated[
@@ -362,11 +402,11 @@ class DabangSaleScheduleDayModel(ResponseModel):
     ] = []
 
 
-class DabangSaleInLotsListScheduleV3ResponseModel(RootModel[list[DabangSaleScheduleDayModel]]):
+class DabangSaleInLotsListScheduleV3ResponseModel(DabangRootListModel[DabangSaleScheduleDayModel]):
     """`GET /api/3/sale-in-lots/list/schedule` 응답 (날 목록, 봉투 없음)."""
 
 
-class DabangSaleInLotsRowModel(ResponseModel):
+class DabangSaleInLotsRowModel(DabangBaseResponseModel):
     """분양 지역 목록(`list/search3`)·청약 일정 하루 표(`list/schedule/search`)의 한 줄에 공통인 칸. 키는 snake_case 다.
 
     웹 목록 표는 단계·건물유형·공급유형·단지명/주소/일정·분양가(`price_str`)·세대수(`lots_household_num`)·전용면적을
@@ -449,7 +489,7 @@ class DabangSaleScheduleTableRowModel(DabangSaleInLotsRowModel):
     ] = None
 
 
-class DabangSaleInLotsListSearch3V3ResponseModel(ResponseModel):
+class DabangSaleInLotsListSearch3V3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/sale-in-lots/list/search3` 응답 (봉투 없음).
 
     `features` 는 분양 홈 위쪽의 추천 단지 칸(home 청크 `features`)과 같은 꼴이고 웹 지역 목록은 그리지 않는다
@@ -475,7 +515,7 @@ class DabangSaleInLotsListSearch3V3ResponseModel(ResponseModel):
     ] = None
 
 
-class DabangSaleInLotsListScheduleSearchV3ResponseModel(RootModel[list[DabangSaleScheduleTableRowModel]]):
+class DabangSaleInLotsListScheduleSearchV3ResponseModel(DabangRootListModel[DabangSaleScheduleTableRowModel]):
     """`GET /api/3/sale-in-lots/list/schedule/search` 응답 (그 날 일정의 분양 단지, 봉투 없음).
 
     요약(`list/schedule`)의 그 날 일정과 같은 단지가 같은 순서로 온다 (2026-11-13 캡처: 11-16 24건, 분양 ID 와 종류 번호가

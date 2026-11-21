@@ -777,7 +777,7 @@ def _university_candidates(client: DaangnClient, query: str, notes: list[str]) -
     당근 대학 검색은 다음 쪽을 주지 않는다. 알리지 않으면 잘린 목록이 전부로 읽혀 뒤의 캠퍼스·대학원이 당근에 없다고 볼 수 있다
     (2026-11-13 리뷰: 20곳만 받던 때 고려대학교 23곳 중 치의학대학원 안암캠퍼스 등 3곳이 알림 없이 빠졌다).
     """
-    pois, cut = search_universities(client, query)
+    pois, cut = search_universities(client, query, notes)
     if cut:
         notes.append(note(
             '일부',

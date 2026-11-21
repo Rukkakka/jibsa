@@ -2,13 +2,15 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.naver.api.response.common import NaverResponseModel
+from jibsa.providers.naver.api.response.common import (
+    NaverBaseResponseModel,
+    NaverResponseModel,
+)
 
 from typing import Annotated
 
 
-class NaverWeeklyPointModel(ResponseModel):
+class NaverWeeklyPointModel(NaverBaseResponseModel):
     """동네 주간 추이의 한 주. 지표에 따라 averageCount·averagePyeongPrice·tradeCount 중 하나가 온다."""
 
     first_day_of_week: Annotated[
@@ -29,7 +31,7 @@ class NaverWeeklyPointModel(ResponseModel):
     ] = None
 
 
-class NaverArticleCountWeeklyInfoModel(ResponseModel):
+class NaverArticleCountWeeklyInfoModel(NaverBaseResponseModel):
     """동네 주간 매물 수."""
 
     period_average_count: Annotated[
@@ -58,7 +60,7 @@ class NaverArticleCountWeeklyInfoModel(ResponseModel):
     ] = []
 
 
-class NaverRealTradeCountWeeklyModel(ResponseModel):
+class NaverRealTradeCountWeeklyModel(NaverBaseResponseModel):
     """동네 주간 실거래 건수."""
 
     period_average_trade_count: Annotated[

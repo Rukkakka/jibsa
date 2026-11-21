@@ -14,7 +14,10 @@ from jibsa.providers.daangn.api.parser import (
     parse_complexes_html,
 )
 from jibsa.providers.daangn.api.relay import resolve
-from jibsa.providers.daangn.api.response.common import DaangnArticleModel
+from jibsa.providers.daangn.api.response.common import (
+    DaangnArticleModel,
+    DaangnSubwayStationModel,
+)
 from jibsa.providers.daangn.service.common import (
     DaangnListingConditions,
     article_to_listing,
@@ -1370,3 +1373,49 @@ def test_article_null_subway_stations_are_empty_lists():
     article = DaangnArticleModel.model_validate({'id': 'a', 'originalId': '1', 'subwayStations': None, 'nearbySubwayStations': None})
     assert article.subway_stations == []
     assert article.nearby_subway_stations == []
+
+
+def test_null_list_fields_read_as_missing_keys():
+    # 목록 칸이 null 로 와도 키가 없을 때와 같은 빈 목록으로 읽는다. 실제 응답으로는 재현할 수 없는 값이다
+    station = DaangnSubwayStationModel.model_validate({'stationName': '역삼', 'lineNumber': None})
+    assert station.line_number == []
+    assert station.station_name == '역삼'
+
+
+def test_null_items_make_computed_values_unknown() -> None:
+    # 목록 안 빈 원소(null)를 빼고 읽은 응답은 실제로 온 적이 없어 가짜 응답으로만 만든다. 그 목록으로 센 값은 모름(null)이고
+    # [제외] 안내가 붙으며, 서버가 자리로 세는 값(인기 매물 has_more)은 뺀 수를 더해 센다
+    from datetime import date
+
+    from jibsa.providers.daangn.service.common import DaangnRegion
+    from jibsa.providers.daangn.service.popular import list_popular_listings
+    from jibsa.providers.daangn.service.real_price import get_price_trend
+
+    def trend(points: list[dict | None]):
+        compare = {'data': {'complexByOriginalId': {'complex': {
+            'id': 'node1', 'originalId': '1', 'type': 'OFFICETEL',
+            'proptierDanji': {'exclusiveAreaGroups': [{'label': 59, 'isRepresentative': True, 'totalCnt': 10, 'pyInfos': [{'ptpCd': 1}]}]},
+        }}}}
+        chart = {'data': {'node': {'id': 'node1', 'priceChart': {'averagePoints': points}}}}
+        client = make_graphql_client({DaangnClient.complex_compare_query_id: compare, DaangnClient.complex_price_chart_query_id: chart})
+        return get_price_trend(client, 1, today=date(2026, 11, 21))
+
+    point = {'yearMonth': '202610', 'averageAmount': 100000000, 'transactionCount': 2}
+    later = {'yearMonth': '202611', 'averageAmount': 110000000, 'transactionCount': 3}
+    normal = trend([point, later])
+    assert normal.total_transactions == 5 and normal.summary is not None
+    assert not any('빈 항목' in note for note in normal.notes)
+    dropped = trend([point, None, later])
+    assert [item.year_month for item in dropped.points] == ['2026-10', '2026-11']
+    assert (dropped.total_transactions, dropped.summary, dropped.recent_average_manwon, dropped.recent_transactions) == (None, None, None, None)
+    assert sum(note.startswith('[제외]') and '빈 항목 1개' in note and UPDATE_MAYBE_NEEDED in note for note in dropped.notes) == 1
+
+    article = _yeoksam_articles()[0].model_dump(by_alias=True)
+    ranking = {'data': {'getViewRankingArticles': {'articles': [article, None]}}}
+    client = make_graphql_client({DaangnClient.get_view_ranking_articles_query_id: ranking})
+    region = DaangnRegion(name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035)
+    popular = list_popular_listings(client, region, limit=2)
+    # 받은 매물은 1건이지만 서버는 빈 자리까지 limit(2) 건을 줬으니 뒤 순위가 남아 있다. 순위는 자리를 몰라 null 이다
+    assert [listing.rank for listing in popular.listings] == [None]
+    assert any(note.startswith('[일부]') for note in popular.notes)
+    assert any(note.startswith('[제외]') and '빈 항목 1개' in note for note in popular.notes)

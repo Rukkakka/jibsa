@@ -13,10 +13,12 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     normalize_date,
     note,
+    null_items_note,
     won_to_manwon,
 )
 from jibsa.core.schema import (
     RequestModel,
+    ResponseModel,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
@@ -39,6 +41,7 @@ from jibsa.providers.zigbang.service.common.base import (
 
 from typing import (
     Annotated,
+    NamedTuple,
     Protocol,
 )
 
@@ -310,17 +313,42 @@ def section_ordered_ids(
     return list(dict.fromkeys([*(item_id for kind in order for item_id in by_section[kind]), *unsectioned]))
 
 
-def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangItemSummaryModel]:
+def pin_null_notes(what: str, responses: Iterable[ResponseModel]) -> list[str]:
+    """핀(`items`)·섹션(`sections`) 목록에서 빈 항목(null)을 빼고 읽었으면 그 안내, 없으면 빈 목록. `section_ordered_ids` 로 세운 목록을 쓰는 곳이 부른다.
+
+    빈 항목은 어느 섹션·어느 매물인지 알 수 없어 그 매물이 목록에서 빠졌을 수 있다. 목록 순서·수(`total`)는 받은 핀·섹션으로 센 값이라
+    빠진 만큼 모자랄 수 있다고만 알린다.
+
+    Args:
+        what: 사이트 이름을 붙인 목록 이름 (예: '직방 지도 매물 핀·섹션').
+        responses: 핀과 섹션을 준 응답들 (지도 칸 여럿이면 칸마다).
+    """
+    dropped = sum(response.null_items('items', 'sections') for response in responses)
+    return [null_items_note(what, dropped)] if dropped else []
+
+
+class TradeableSummaries(NamedTuple):
+    """`tradeable_summaries` 의 결과: 거래 중인 요약 목록과, 요약 응답에서 뺀 빈 항목(null)의 수."""
+
+    items: list[ZigbangItemSummaryModel]
+    null_items: int
+
+
+def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> TradeableSummaries:
     """`ids` 의 요약을 15개씩 받아 거래 중인 전세·월세·매매(단기임대 포함)만 준다. 뺀 매물은 다시 채우지 않는다.
 
     받은 뒤에는 거래 불가와 지원하지 않는 거래 종류만 뺀다. 유형·거래 유형·방 구조는 서버가 걸었으므로 다시 거르지
     않는다 (2026-10-10 실측: 원룸·빌라·오피스텔 월세·전세·단기임대와 방 구조 조건 200건, 오피스텔 건물 3곳 34건 모두 조건 안).
+    요약 응답의 `items` 에서 빈 항목(null)을 빼고 읽은 수는 `null_items` 로 함께 준다. 빈 항목은 어느 매물인지 알 수 없어
+    거래 불가로 뺀 것과 이유가 다르므로 `excluded_notes` 가 따로 밝힌다.
     """
     summaries: list[ZigbangItemSummaryModel] = []
+    dropped = 0
     for start in range(0, len(ids), ITEMS_LIST_BATCH_SIZE):
         batch = ids[start:start + ITEMS_LIST_BATCH_SIZE]
         requested = set(batch)
         response = client.run_request_items_list_v1(ZigbangItemsListV1RequestPayloadModel(item_ids=batch))
+        dropped += response.null_items('items')
         for summary in response.items:
             # 방어용. 실측으로는 요청한 매물만 오지만(2026-10-10 오피스텔 건물 8곳 108건), 끼어 온 매물은 뺀다
             if summary.item_id not in requested:
@@ -329,11 +357,12 @@ def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> list[ZigbangIt
             if summary.status is not True or summary.sales_type not in ('전세', '월세', '매매'):
                 continue
             summaries.append(summary)
-    return summaries
+    return TradeableSummaries(summaries, dropped)
 
 
 def excluded_notes(
     limit: int, inspected: int, returned: int, *, order: str = '직방 목록 순으로 앞의', has_more: bool = True,
+    null_items: int = 0,
 ) -> list[str]:
     """요약을 받은 뒤 뺀 매물이 있어 `limit` 보다 적게 돌려줄 때의 안내. 뺀 만큼 다시 조회하지 않는다.
 
@@ -341,11 +370,15 @@ def excluded_notes(
         order: 요약을 받은 매물을 고른 기준. 원룸·빌라·오피스텔 목록과 건물 매물 목록 모두 직방 목록 순이다.
         has_more: 결과의 `has_more`. 더 받을 매물이 없으면 다시 채우지 않는다는 말 대신 더 받을 매물이 없다고 한다 (당근
             `listing_budget_notes` 와 같다).
+        null_items: 요약 응답에서 빈 항목(null)으로 뺀 수 (`tradeable_summaries`). 0보다 크면 뺀 이유에 보탠다.
     """
     if returned >= limit or inspected <= returned:
         return []
+    reason = '거래 불가·지원하지 않는 거래 종류를'
+    if null_items:
+        reason = f'거래 불가·지원하지 않는 거래 종류와 직방이 빈 항목으로 준 매물 {null_items}건을'
     return [note(
         '제외',
-        f'{order} 매물 {inspected}건 중 거래 불가·지원하지 않는 거래 종류를 빼고 {returned}건입니다 '
+        f'{order} 매물 {inspected}건 중 {reason} 빼고 {returned}건입니다 '
         + ('(뺀 만큼 다시 채우지 않음)' if has_more else '(더 받을 매물 없음)'),
     )]

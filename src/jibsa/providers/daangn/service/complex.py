@@ -24,6 +24,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
+    null_items_note,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -50,6 +51,7 @@ from jibsa.providers.daangn.api.response.common import (
     DaangnTradeModel,
 )
 from jibsa.providers.daangn.api.response.complex import (
+    DaangnAreaGroupModel,
     DaangnComplexModel,
     DaangnNearbySchoolModel,
     DaangnProptierDanjiModel,
@@ -171,7 +173,7 @@ class DaangnPyeong(BaseModel):
     ] = None
     household_count: Annotated[
         int | None,
-        Field(description='세대수. 당근이 묶음별로만 주므로 한 묶음에 평형이 여럿이면 null')
+        Field(description='세대수. 당근이 묶음별로만 주므로 한 묶음에 평형이 여럿이면 null. 당근이 빈 항목을 줘 셀 수 없으면 null')
     ] = None
     pyeong: Annotated[
         int | None,
@@ -402,6 +404,12 @@ def _school(item: DaangnNearbySchoolModel, assigned: bool = False) -> str | None
     return f'{item.school.name} ({", ".join(details)})' if details else item.school.name
 
 
+def _pyeong_groups(complex_type: str | None, danji: DaangnProptierDanjiModel) -> tuple[bool, list[DaangnAreaGroupModel]]:
+    """단지 평형을 묶는 평형 묶음과, 그것이 공급 평 묶음인지 (`complex_pyeongs`)."""
+    supply = complex_type in APARTMENT_COMPLEX_TYPES and bool(danji.supply_pyeong_area_groups)
+    return supply, danji.supply_pyeong_area_groups if supply else danji.area_groups
+
+
 def complex_pyeongs(complex_type: str | None, danji: DaangnProptierDanjiModel) -> list[DaangnPyeong]:
     """단지 평형 목록. 당근 웹처럼 아파트형 단지는 공급 평 묶음으로, 그 밖은 전용면적 묶음으로 묶는다 (utils `n()`).
 
@@ -413,8 +421,7 @@ def complex_pyeongs(complex_type: str | None, danji: DaangnProptierDanjiModel) -
     exclusive_by_code = {
         info.ptp_cd: group.label for group in danji.area_groups for info in group.py_infos if info.ptp_cd is not None
     }
-    supply = complex_type in APARTMENT_COMPLEX_TYPES and bool(danji.supply_pyeong_area_groups)
-    groups = danji.supply_pyeong_area_groups if supply else danji.area_groups
+    supply, groups = _pyeong_groups(complex_type, danji)
     return [
         DaangnPyeong(
             exclusive_m2=info.exclusive_area,
@@ -423,7 +430,8 @@ def complex_pyeongs(complex_type: str | None, danji: DaangnProptierDanjiModel) -
             supply_pyeong=m2_to_pyeong(info.supply_area),
             room_count=info.room_count,
             bathroom_count=info.bathroom_count,
-            household_count=group.total_count if len(group.py_infos) == 1 else None,
+            # 평형에서 빈 항목을 뺐으면 묶음의 평형이 하나였는지 알 수 없어 세대수도 모른다 (null)
+            household_count=group.total_count if len(group.py_infos) == 1 and not group.null_items('py_infos') else None,
             pyeong=group.label if supply else None,
             representative=bool(group.is_representative),
             area_group=(exclusive_by_code.get(info.ptp_cd) if info.ptp_cd is not None else None) if supply else group.label,
@@ -450,6 +458,15 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
     heating = ', '.join(value for value in (danji.heating_method, danji.heating_fuel) if value) if danji else ''
     review_count = complex_.lived_review_count
     url = complex_url(complex_.original_id)
+    notes = [
+        f'이 단지에 거주 후기 {review_count}개가 있습니다. 후기 내용은 당근 단지 페이지({url})에서 확인하세요'
+    ] if review_count else []
+    # 평형이 하나뿐인 묶음에서 빈 항목을 빼고 읽었으면 그 묶음의 세대수를 모른다 (`complex_pyeongs`)
+    dropped = sum(
+        group.null_items('py_infos') for group in _pyeong_groups(complex_.type, danji)[1] if len(group.py_infos) == 1
+    ) if danji else 0
+    if dropped:
+        notes.append(null_items_note('당근 단지 평형', dropped, ('pyeongs 의 household_count',)))
     return DaangnComplex(
         complex_id=complex_.original_id,
         name=complex_.name,
@@ -477,9 +494,7 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
         schools=[school for school in schools if school] if danji else None,
         review_count=review_count,
         url=url,
-        notes=[
-            f'이 단지에 거주 후기 {review_count}개가 있습니다. 후기 내용은 당근 단지 페이지({url})에서 확인하세요'
-        ] if review_count else [],
+        notes=notes,
     )
 
 
@@ -813,6 +828,8 @@ def _collect_complexes(
     seen: set[str] = set()
     after: str | None = None
     inspected = 0
+    # 서버는 빈 edge(null)도 한 자리로 세므로 빼고 읽은 수를 받은 자리에 더한다
+    null_edges = 0
     has_more = False
     stopped = False
     while inspected < limit:
@@ -820,7 +837,8 @@ def _collect_complexes(
         if stalled_page(connection.page_info, after):
             stopped = True
             break
-        inspected += len(connection.edges)
+        null_edges += connection.null_items('edges')
+        inspected += len(connection.edges) + connection.null_items('edges')
         nodes = [edge.node for edge in connection.edges if edge.node]
         for node in nodes:
             complex_ = region_complex_of(node, trade_type)
@@ -847,6 +865,8 @@ def _collect_complexes(
         # 멈추지 않고 더 남았으면 --limit 에 닿은 것이다 (루프는 inspected >= limit 일 때만 has_more 를 남기고 끝난다).
         # 같은 단지가 두 번 오면 한 번만 넣어 limit 보다 적을 수 있어, 숫자는 보여 준 수로 쓴다
         notes.append(note('일부', f'단지가 더 있어 앞 {len(complexes)}곳만 보여 줍니다. ' + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, narrow)))
+    if null_edges:
+        notes.append(null_items_note('당근 지역 단지', null_edges))
     if sort.startswith('입주'):
         notes.append(MOVE_IN_SORT_NOTE)
     notes += complex_list_notes(complexes)
@@ -1032,6 +1052,8 @@ def list_complex_listings(
     # (2026-11-10 리뷰. 출퇴근 역 목록도 이름으로 센다)
     received_ids: set[str] = set()
     received: list[DaangnArticleModel] = []
+    # 서버는 빈 edge(null)도 한 자리로 세므로 빼고 읽은 수를 받은 자리에 더한다
+    null_edges = 0
     has_more = False
     stopped = False
     for _ in range(COMPLEX_LISTINGS_MAX_PAGES):
@@ -1053,7 +1075,9 @@ def list_complex_listings(
         if stalled_page(connection.page_info if connection else None, after):
             stopped = True
             break
-        inspected += len(connection.edges) if connection else 0
+        if connection:
+            null_edges += connection.null_items('edges')
+            inspected += len(connection.edges) + connection.null_items('edges')
         articles = [edge.node for edge in connection.edges if edge.node] if connection else []
         received_ids.update(article.original_id for article in articles)
         received += articles
@@ -1106,7 +1130,8 @@ def list_complex_listings(
                 [note('일부', cursor_stopped_note('단지 매물', f'{len(received_ids)}건') + '. 나머지는 url 의 단지 페이지에서 확인하세요')]
                 if stopped else []
             )
-            + complex_building_notes(shown),
+            + complex_building_notes(shown)
+            + ([null_items_note('당근 단지 매물', null_edges)] if null_edges else []),
     )
 
 
@@ -1120,7 +1145,7 @@ class DaangnTrendingComplex(BaseModel):
         extra='forbid',
     )
 
-    rank: Annotated[int, Field(description='순위')]
+    rank: Annotated[int | None, Field(description='순위. 당근이 빈 항목을 줘 셀 수 없으면 null')]
     complex_id: Annotated[str, Field(description='단지 ID')]
     name: Annotated[
         str | None,
@@ -1144,11 +1169,11 @@ class DaangnTrendingComplex(BaseModel):
     ] = None
     representative_area_m2: Annotated[
         float | None,
-        Field(description='대표 평형 전용면적 (㎡)')
+        Field(description='대표 평형 전용면적 (㎡). 당근이 빈 항목을 줘 셀 수 없으면 null')
     ] = None
     recent_sale_manwon: Annotated[
         int | None,
-        Field(description='대표 평형 최근 매매가 (만원)')
+        Field(description='대표 평형 최근 매매가 (만원). 당근이 빈 항목을 줘 셀 수 없으면 null')
     ] = None
 
 
@@ -1217,20 +1242,29 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
         DaangnTrendingComplexesRequestPayloadModel(region_id='ALL' if region.region_id is None else str(region.region_id))
     )
     found = unwrap_graphql(response, response.data.trending_complexes if response.data else None, '인기 단지')
+    # 목록에서 빈 항목을 빼고 읽었으면 순위를 매길 자리를 알 수 없어 순위는 모두 모른다 (null)
+    dropped_complexes = response.data.null_items('trending_complexes') if response.data else 0
+    dropped_pyeongs = 0
     complexes: list[DaangnTrendingComplex] = []
     for rank, item in enumerate(found, start=1):
-        groups = item.proptier_danji.exclusive_area_groups if item.proptier_danji else []
+        danji = item.proptier_danji
+        groups = danji.exclusive_area_groups if danji else []
         group = next((group for group in groups if group.is_representative), groups[0] if groups else None)
         infos = group.py_infos if group else []
         # max 는 같은 값이면 앞 것을 준다 (웹 reduce 도 더 클 때만 바꾼다)
         info = max(infos, key=lambda py: py.households or 0) if infos else None
+        # 대표 묶음·대표 평형을 고르는 목록에서 빈 항목을 빼고 읽었으면 고른 평형이 웹의 대표 평형이 아닐 수 있어 모른다 (null)
+        dropped = (danji.null_items('exclusive_area_groups') if danji else 0) + (group.null_items('py_infos') if group else 0)
+        if dropped:
+            info = None
+            dropped_pyeongs += dropped
         sale = next(
             (edge.node.trade_price for edge in info.sale_realsale.edges if edge.node),
             None,
         ) if info and info.sale_realsale else None
         approval = APPROVAL_DATE_PATTERN.search(item.approval_date_text or '')
         complexes.append(DaangnTrendingComplex(
-            rank=rank,
+            rank=None if dropped_complexes else rank,
             complex_id=item.original_id,
             name=item.name,
             type=COMPLEX_TYPE_LABELS.get(item.type or '', item.type),
@@ -1247,4 +1281,8 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
         f'당근이 {region.name} 인기 급상승 단지를 주지 않았습니다. 단지가 없다는 뜻은 아닙니다. 때에 따라 달라 나중에 다시 부르면 '
         '나올 수 있고, 지역 단지 목록은 jibsa daangn search complexes <동·구> 에서 봅니다'
     ]
+    if dropped_complexes:
+        notes.append(null_items_note('당근 인기 급상승 단지', dropped_complexes, ('rank',)))
+    if dropped_pyeongs:
+        notes.append(null_items_note('당근 인기 단지 평형', dropped_pyeongs, ('representative_area_m2', 'recent_sale_manwon')))
     return DaangnTrendingComplexesResult(region=region, returned=len(complexes), complexes=complexes, notes=notes)

@@ -447,7 +447,7 @@ jibsa daangn price-trend 100001 --pyeong 32 --trade 매매 --period 3년
 
 **반환값**
 
-`complex_id`, `trade_type`, `pyeong`(아파트형) 또는 `area_group`, `period`, `recent_average_manwon`·`recent_transactions`(웹 그래프 머리의 최근 3개월 평균과 거래 수), `kb_sale`(이 평형의 최근 KB 매매 시세: `low_manwon` 하위~`high_manwon` 상위 평균가와 조사 기준일 `survey_date`. 웹 그래프의 KB 시세 띠. 당근이 주지 않으면 `null`), `total_transactions`, `summary`(`start_month`·`start_average_manwon`·`end_month`·`end_average_manwon`·`months`·`change_percent`·`change_manwon`), `points`, `url`을 준다. `points`는 거래가 있는 달만 포함한다. `kb_sale` 은 전세 그래프에도 매매 시세가 온다 (KB 전세·월세 시세는 `compare` 의 `pyeong` 에 있다). 평형 묶음 정보가 없는 단지는 당근 웹처럼 시세 그래프가 없어(웹은 '아직 등록된 실거래가가 없어요') `pyeong`·`area_group` 이 없고 `points: []`·`total_transactions: 0`, `summary`·`recent_average_manwon`·`recent_transactions`·`kb_sale` 은 `null` 이며 `notes` 로 알린다.
+`complex_id`, `trade_type`, `pyeong`(아파트형) 또는 `area_group`, `period`, `recent_average_manwon`·`recent_transactions`(웹 그래프 머리의 최근 3개월 평균과 거래 수), `kb_sale`(이 평형의 최근 KB 매매 시세: `low_manwon` 하위~`high_manwon` 상위 평균가와 조사 기준일 `survey_date`. 웹 그래프의 KB 시세 띠. 당근이 주지 않으면 `null`), `total_transactions`, `summary`(`start_month`·`start_average_manwon`·`end_month`·`end_average_manwon`·`months`·`change_percent`·`change_manwon`), `points`, `url`을 준다. `points`는 거래가 있는 달만 포함한다. `kb_sale` 은 전세 그래프에도 매매 시세가 온다 (KB 전세·월세 시세는 `compare` 의 `pyeong` 에 있다). 평형 묶음 정보가 없는 단지는 당근 웹처럼 시세 그래프가 없어(웹은 '아직 등록된 실거래가가 없어요') `pyeong`·`area_group` 이 없고 `points: []`·`total_transactions: 0`, `summary`·`recent_average_manwon`·`recent_transactions`·`kb_sale` 은 `null` 이며 `notes` 로 알린다. 당근이 월별 목록에 빈 항목을 섞어 보내 빼고 읽었으면 그 목록으로 센 `total_transactions`(숫자가 아니라 `null`)·`summary`·`recent_average_manwon`·`recent_transactions` 가 `null`(모름)이고 `[제외]` 로 알린다 (`points` 는 받은 대로).
 
 **오류와 대응**
 
@@ -479,7 +479,7 @@ jibsa daangn school B100000749
 
 **반환값**
 
-`school`(`school_code` 포함), `total_complexes`(필터 후·한도 전), `returned`, `complexes`(당근 웹 학교 화면과 같은 순서), `url`을 준다.
+`school`(`school_code` 포함), `total_complexes`(필터 후·한도 전. 당근이 배정 단지 목록에 빈 항목을 섞어 보내 빼고 읽었으면 셀 수 없어 `null`, `[제외]` 로 알린다), `returned`, `complexes`(당근 웹 학교 화면과 같은 순서), `url`을 준다.
 
 **오류와 대응**
 
@@ -653,7 +653,7 @@ jibsa daangn nearby-complexes 10697092 --limit 20
 
 **반환값**
 
-`complex_id`, `region`(동), `total`, `returned`, `sort`(늘 `세대수`), `complexes[]`(`complex_id`, `name`, `type`, `households`, `listing_counts`: 매매·전세·월세별 현재 매물 수).
+`complex_id`, `region`(동), `total`(당근이 단지 카드 목록에 빈 항목을 섞어 보내 빼고 읽었으면 셀 수 없어 `null`, `[제외]` 로 알린다), `returned`, `sort`(늘 `세대수`), `complexes[]`(`complex_id`, `name`, `type`, `households`, `listing_counts`: 매매·전세·월세별 현재 매물 수).
 
 **오류와 대응**
 
@@ -708,7 +708,7 @@ jibsa daangn trending-complexes 강남구
 
 **반환값**
 
-`region`(`name`, `region_id`(전국은 `null`), `level`: `전국`·`시도`·`구`), `returned`, `complexes[]`(`rank`, `complex_id`, `name`, `type`, `address`, `households`, `approved_at`, 대표 평형 전용면적, 대표 평형 최근 매매가. 매매가가 0 으로 오면 당근 웹처럼 보여 주지 않아 `null`).
+`region`(`name`, `region_id`(전국은 `null`), `level`: `전국`·`시도`·`구`), `returned`, `complexes[]`(`rank`, `complex_id`, `name`, `type`, `address`, `households`, `approved_at`, 대표 평형 전용면적, 대표 평형 최근 매매가. 매매가가 0 으로 오면 당근 웹처럼 보여 주지 않아 `null`). 당근이 목록에 빈 항목을 섞어 보내 빼고 읽었으면 순위를 셀 수 없어 모든 `rank` 가 `null` 이고, 대표 묶음·평형 목록에서 뺐으면 그 단지의 대표 평형 전용면적·최근 매매가도 `null` 이다 (`[제외]` 로 알린다).
 
 **오류와 대응**
 
@@ -736,7 +736,7 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 
 **반환값**
 
-`region`, `returned`, `listings[]`(공통 매물 필드 + 조회수 순위 `rank`).
+`region`, `returned`, `listings[]`(공통 매물 필드 + 조회수 순위 `rank`. 당근이 목록에 빈 항목을 섞어 보내 빼고 읽었으면 순위를 셀 수 없어 모든 `rank` 가 `null` 이고 `[제외]` 로 알린다).
 
 **주의사항**
 
@@ -811,7 +811,7 @@ jibsa daangn real-price --help
 | --- | --- | --- |
 | 당근 | `other_trades` | 보여 주는 조건 외에 함께 올라온 거래 조건 (만원, 예: `["전세 20000", "월세 1000/50", "연세 1000/1400"]`. 연세는 보증금/1년치). 없으면 `[]`. 기본은 대표 조건을 보여 주고 `listing --trade` 로 고른다 |
 | 당근 연세 | `yearly_rent_manwon` | 연세 (만원, 1년치를 한 번에 낸다. 월세가 아니다). `trade_type: 연세` 에만 있고 그때 `rent_manwon` 은 키가 없다. 보증금은 `deposit_manwon` |
-| 당근 | `manage_cost_excludes` | 관리비와 따로 내는 항목 (쓴 만큼 내는 전기·수도 등, 예: `["전기", "수도"]`). `manage_cost_includes` 는 관리비에 들어 있는 항목(예: `["공용"]`). 작성자가 항목을 밝히지 않았으면 둘 다 `null` |
+| 당근 | `manage_cost_excludes` | 관리비와 따로 내는 항목 (쓴 만큼 내는 전기·수도 등, 예: `["전기", "수도"]`). `manage_cost_includes` 는 관리비에 들어 있는 항목(예: `["공용"]`). 작성자가 항목을 밝히지 않았거나 당근이 항목 목록에 빈 항목을 섞어 보내 빼고 읽었으면 둘 다 `null` (뒤의 경우 `[제외]` 로 알린다) |
 | 당근 | `broker_fee_manwon` | 보여 주는 거래 조건의 중개보수 (만원, 부가세 포함). 당근이 법정 상한 요율로 계산한 값이라 실제는 협의로 더 낮을 수 있다. 직거래 매물은 키가 없다 |
 | 당근 상가 | `key_money_manwon`, `key_money_negotiable` | 권리금 (만원, 직방 상가와 같은 이름)과 협의 가능 여부. `null` 은 작성자가 밝히지 않음. 협의 가능이면 권리금이 `1` 처럼 자리만 채운 값이기도 해서 금액을 그대로 믿지 않는다. 상가가 아니면 키가 없다 |
 | 당근 | `watch_count` | 당근에서 이 매물을 관심 목록에 넣은 사람 수 (조회수가 아니다) |
@@ -841,7 +841,7 @@ jibsa daangn real-price --help
 | `parking_count`, `parking_per_household` | 총 주차 대수, 세대당 주차 대수 |
 | `floor_area_ratio`, `building_coverage_ratio` | 용적률·건폐율 (%) |
 | `listing_count` | 당근에 올라온 이 단지의 현재 주거용 매물 수 |
-| `pyeongs` | 평형: 전용·공급면적(㎡·평), 방·욕실 수, 세대수 (한 묶음에 평형이 여럿이면 `null`), 전용면적 묶음 `area_group` (아파트형이 아닌 단지만 `--area` 에 넘긴다), 아파트형 단지의 공급 평형 묶음 `pyeong` (`--pyeong` 에 넘긴다), 대표 평형 `representative` |
+| `pyeongs` | 평형: 전용·공급면적(㎡·평), 방·욕실 수, 세대수 (한 묶음에 평형이 여럿이면 `null`, 평형이 하나뿐인 묶음이어도 당근이 평형 목록에 빈 항목을 섞어 보내 빼고 읽었으면 `null`), 전용면적 묶음 `area_group` (아파트형이 아닌 단지만 `--area` 에 넘긴다), 아파트형 단지의 공급 평형 묶음 `pyeong` (`--pyeong` 에 넘긴다), 대표 평형 `representative` |
 | `nearby_subways` | 가까운 역 (예: `"신사역 (신분당선, 도보 4분)"`) |
 | `schools` | 배정 초등학교와 당근 웹 학군 카드의 중·고등학교 2곳씩. 이 단지 주민이 많이 다니는 순, 같으면 도보 순 (예: `"서울논현초등학교 (배정, 도보 16분)"`) |
 | `review_count` | 거주 후기 수. 내용은 `url` 의 단지 페이지에서 본다 |
@@ -865,7 +865,7 @@ jibsa daangn real-price --help
 
 ### 통근 매물 (`search commute`)
 
-타는 역과 그 역에서 회사 역까지 지하철 시간(분)·환승 횟수·편도 시간·경로는 매물마다 붙지 않고 매물이 들어 있는 역 묶음(`stations[]` 의 `station_name`·`subway_minutes`·`transfers`·`one_way_minutes`·`route`)에 있다. `route[]` 는 출근 방향 구간 목록이다. 구간마다 타는 역(`from_station`)에서 내리는 역(`to_station`)까지 한 노선(`line`)으로 가고, 첫 구간은 묶음의 `station_name` 에서 시작해 마지막 구간은 회사 역(`workplace_station`)에서 끝난다. 구간 수는 환승 + 1 이다 (예: 남부터미널역 → 교대역 서울3호선, 교대역 → 강남역 서울2호선). 당근 웹 역 상세는 같은 역·노선을 회사 역부터 그린다. 당근이 경로를 주지 않았거나 경로 모양이 달라 읽을 수 없으면 `null` 이다.
+타는 역과 그 역에서 회사 역까지 지하철 시간(분)·환승 횟수·편도 시간·경로는 매물마다 붙지 않고 매물이 들어 있는 역 묶음(`stations[]` 의 `station_name`·`subway_minutes`·`transfers`·`one_way_minutes`·`route`)에 있다. `route[]` 는 출근 방향 구간 목록이다. 구간마다 타는 역(`from_station`)에서 내리는 역(`to_station`)까지 한 노선(`line`)으로 가고, 첫 구간은 묶음의 `station_name` 에서 시작해 마지막 구간은 회사 역(`workplace_station`)에서 끝난다. 구간 수는 환승 + 1 이다 (예: 남부터미널역 → 교대역 서울3호선, 교대역 → 강남역 서울2호선). 당근 웹 역 상세는 같은 역·노선을 회사 역부터 그린다. 당근이 경로를 주지 않았거나 경로 모양이 달라 읽을 수 없거나, 경유역 목록에 빈 항목이 섞여 와서 빼고 읽었으면 `null` 이다.
 
 | 필드 | 뜻 |
 |---|---|

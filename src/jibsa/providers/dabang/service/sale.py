@@ -24,6 +24,7 @@ from jibsa.core.listing import (
     more_hint,
     normalize_address,
     note,
+    null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.sale import (
@@ -286,7 +287,8 @@ def _sale_list_notes(pages: DabangPages[Any], limit: int, *, in_box: bool, narro
     seen = f'범위 사각형 안 분양 단지{among} 다방 목록 순 앞 {received}곳을 봤습니다' if in_box else (
         f'분양 단지{among} 다방 목록 순 앞 {received}곳입니다'
     )
-    return more_list_notes(pages, limit, seen=seen, max_limit=MAX_LIST_LIMIT, narrow=narrow)
+    dropped = [null_items_note('다방 분양 단지', pages.dropped)] if pages.dropped else []
+    return dropped + more_list_notes(pages, limit, seen=seen, max_limit=MAX_LIST_LIMIT, narrow=narrow)
 
 
 def search_sales(
@@ -337,7 +339,9 @@ def search_sales(
         result = client.run_request_sale_list_category_bbox_v5(
             DabangSaleListCategoryBboxV5RequestParameterModel(filters=filters, bbox=bbox, page=page)
         ).result
-        return None if result is None else DabangPage(result.sale_list, result.total, bool(result.has_more))
+        if result is None:
+            return None
+        return DabangPage(result.sale_list, result.total, bool(result.has_more), result.null_items('sale_list'))
 
     # 쪽 수는 limit 을 24건으로 나눠 정하지 않고 limit 이 찰 때까지 받는다 (`fetch_pages`). limit 은 받은 단지 수로 센다
     pages = fetch_pages(fetch, limit)
@@ -378,7 +382,9 @@ def _search_region_sales(
         if page == 1:
             recommended = len(result.features or [])
         # 줄 목록이 null 이면 빈 쪽이라 거기서 멈춘다
-        return DabangPage(result.sale_in_lotses or [], result.total, bool(result.has_more))
+        return DabangPage(
+            result.sale_in_lotses or [], result.total, bool(result.has_more), result.null_items('sale_in_lotses'),
+        )
 
     # 지역 목록의 쪽 크기는 분양 검색 요청의 값이다 (지도 목록은 매물 목록과 같은 기본값)
     pages = fetch_pages(fetch, limit, page_size=SALE_SEARCH_PAGE_SIZE)
@@ -800,8 +806,8 @@ class DabangSaleSchedule(BaseModel):
         Field(description='끝 날')
     ]
     total: Annotated[
-        int,
-        Field(description='기간 안 일정 수 (--region 으로 거르기 전)')
+        int | None,
+        Field(description='기간 안 일정 수 (--region 으로 거르기 전). 다방이 빈 항목을 줘 셀 수 없으면 null')
     ]
     returned: Annotated[
         int,
@@ -846,19 +852,26 @@ def get_sale_schedule(
         )
     details = details or wanted is not None
     end = start + timedelta(days=days - 1)
-    result = client.run_request_sale_in_lots_list_schedule_v3(
+    schedule = client.run_request_sale_in_lots_list_schedule_v3(
         DabangSaleInLotsListScheduleV3RequestParameterModel(from_date=start, to_date=end)
-    ).root
+    )
+    day_rows = schedule.root
     rows: list[DabangSaleScheduleItem] = []
     # rows 와 같은 순서로, 그 줄을 그 날 분양 단지 표와 맞춰 봤는지 (표를 받았고 분양 ID·종류가 모두 있을 때). 출력 필드는 아니다
     matched_lookup: list[bool] = []
-    total = sum(len(group.schedules) for day in result for group in day.schedule_by_type)
+    # 날·종류 묶음·일정 어느 층에서든 빈 항목을 뺐으면 일정 수를 셀 수 없다 (받은 줄만 세면 적은 수가 완전한 값처럼 나간다)
+    dropped = schedule.null_items() + sum(
+        day.null_items('schedule_by_type') + sum(group.null_items('schedules') for group in day.schedule_by_type) for day in day_rows
+    )
+    total = None if dropped else sum(len(group.schedules) for day in day_rows for group in day.schedule_by_type)
+    # 그 날 분양 단지 표(상세)에서 뺀 빈 항목 수
+    table_dropped = 0
     unknown = 0
     requests = 0
     # 지역으로 거르다 limit 을 넘겨 멈춘 날과 그 앞날까지 본 일정 수 (멈추지 않으면 None)
     stopped_at: str | None = None
     seen = 0
-    for day in result:
+    for day in day_rows:
         entries = [(group, entry) for group in day.schedule_by_type for entry in group.schedules]
         if wanted is not None and entries and len(rows) > limit:
             stopped_at = day.date
@@ -871,6 +884,7 @@ def get_sale_schedule(
                 DabangSaleInLotsListScheduleSearchV3RequestParameterModel(from_date=date.fromisoformat(day.date))
             )
             requests += 1
+            table_dropped += response.null_items()
             sales = {}
             for row in response.root:
                 # 분양 ID·종류 번호가 없는 줄은 요약 줄과 맞출 수 없어 넣지 않는다 (그 줄과 맞출 요약 줄은 sale 이 null)
@@ -921,10 +935,12 @@ def get_sale_schedule(
         # 맞춰 보지 못했으니 다방이 두 목록의 꼴을 바꾼 신호가 아니다 (업데이트 안내를 붙이지 않는다)
         notes.append(note('참고', f'{unchecked}건은 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 sale 이 null 입니다'))
     if wanted is not None and stopped_at is None:
-        notes.append(note('참고', f"주소의 시·도가 '{region}' 인 일정만 남겼습니다 ({total}건 중 {len(rows)}건)"))
+        among = f'{total}건 중 ' if total is not None else ''
+        notes.append(note('참고', f"주소의 시·도가 '{region}' 인 일정만 남겼습니다 ({among}{len(rows)}건)"))
     elif wanted is not None:
+        seen_count = f'{seen}건' if not dropped else '일정'
         notes.append(note('참고', (
-            f"주소의 시·도가 '{region}' 인 일정만 남겼습니다 ({stopped_at} 전날까지 본 {seen}건 중 {len(rows)}건). "
+            f"주소의 시·도가 '{region}' 인 일정만 남겼습니다 ({stopped_at} 전날까지 본 {seen_count} 중 {len(rows)}건). "
             f'--limit 을 넘겨 {stopped_at}부터는 보지 않았습니다'
         )))
     if unknown:
@@ -934,12 +950,16 @@ def get_sale_schedule(
         ))
     if len(rows) > limit:
         # --limit 이 이미 최대값이면 늘리라고 하지 않는다 (2026-11-10 리뷰). 멈췄으면 뒷날을 보지 않아 남은 수를 모른다
-        at_least = '' if stopped_at is None else '적어도 '
+        at_least = '' if stopped_at is None and not dropped else '적어도 '
         notes.append(note(
             '일부',
             f'일정 {at_least}{len(rows)}건 중 앞 {limit}건입니다. '
             + more_hint(limit, SALE_SCHEDULE_MAX_LIMIT, '기간(--days)·지역(--region) 조건'),
         ))
+    if dropped:
+        notes.append(null_items_note('다방 청약 일정', dropped, ('total',)))
+    if table_dropped:
+        notes.append(null_items_note('다방 분양 단지 표', table_dropped))
     return DabangSaleSchedule(
         from_date=start.isoformat(), to_date=end.isoformat(), total=total, returned=len(shown), schedules=shown, notes=notes,
     )

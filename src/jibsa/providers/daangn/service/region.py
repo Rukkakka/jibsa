@@ -32,6 +32,7 @@ from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
     join_address,
     note,
+    null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import DaangnCoordinateInputModel
@@ -859,13 +860,16 @@ class DaangnUniversity(BaseModel):
     ]
 
 
-def search_universities(client: DaangnClient, name: str) -> tuple[list[DaangnSchoolPoiModel], bool]:
+def search_universities(
+    client: DaangnClient, name: str, notes: list[str] | None = None,
+) -> tuple[list[DaangnSchoolPoiModel], bool]:
     """대학 이름으로 캠퍼스 후보와 뒤에 더 있을 수 있는지 (`searchSchoolPois`, 요청 1회). 웹 검색창의 대학 칸이다. 좌표가 없는
     곳은 뺀다.
 
     웹의 이 쿼리는 다음 쪽을 받을 수 없어 서버가 받는 50곳(`UNIVERSITY_CANDIDATES`)을 한 번에 받는다 (웹 검색창은 4곳). 50곳이 다
     오면 뒤에 더 있을 수 있다. 예전에는 20곳만 받아 고려대학교(23곳)의 치의학대학원 안암캠퍼스 등 3곳이 알림 없이 빠졌다
-    (2026-11-13 리뷰·실측).
+    (2026-11-13 리뷰·실측). 서버는 빈 항목(null)도 한 곳으로 세어 50곳까지 주므로, 빼고 읽은 수를 받은 자리에 더해 50곳이 다 왔는지
+    본다. `notes` 를 주면 빈 항목을 뺐을 때 그 안내를 덧붙인다.
     """
     response = client.run_request_search_school_pois(
         DaangnSearchSchoolPoisRequestPayloadModel(
@@ -874,7 +878,10 @@ def search_universities(client: DaangnClient, name: str) -> tuple[list[DaangnSch
     )
     connection = unwrap_graphql(response, response.data.search_school_pois if response.data else None, '대학 검색')
     pois = [edge.node for edge in connection.edges if edge.node and coordinate_point(edge.node.coordinate) is not None]
-    return pois, len(connection.edges) >= UNIVERSITY_CANDIDATES
+    dropped = connection.null_items('edges')
+    if dropped and notes is not None:
+        notes.append(null_items_note('당근 대학', dropped))
+    return pois, len(connection.edges) + dropped >= UNIVERSITY_CANDIDATES
 
 
 def university_label(poi: DaangnSchoolPoiModel) -> str:

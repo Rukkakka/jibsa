@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
     DaangnCoordinateModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
@@ -17,7 +17,7 @@ from typing import Annotated
 # POST realty.kr.karrotmarket.com/graphql — complexByOriginalId (단지 근처 어린이집·유치원, complex_schools)
 # ---------------------------------------------------------------------------
 
-class DaangnSchoolSurveyResultModel(ResponseModel):
+class DaangnSchoolSurveyResultModel(DaangnBaseResponseModel):
     """당근 학교·어린이집 설문. 웹 쿼리가 응답 수(`responseCount`)를 `reviewCount` 로 받는다."""
 
     review_count: Annotated[
@@ -26,7 +26,7 @@ class DaangnSchoolSurveyResultModel(ResponseModel):
     ] = None
 
 
-class DaangnNearbyPreschoolModel(ResponseModel):
+class DaangnNearbyPreschoolModel(DaangnBaseResponseModel):
     """단지 근처 어린이집·유치원 하나 (`ProptierPreschool`). 어린이집·유치원 구분은 오지 않는다."""
 
     # 필수로 둔다. 웹도 null 검사 없이 키로 쓰고, 빠지면 응답 형식이 바뀐 것이라 한 곳만 빼고 넘기지 않고 PARSE_ERROR 로
@@ -53,7 +53,7 @@ class DaangnNearbyPreschoolModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexSchoolsDanjiModel(ResponseModel):
+class DaangnComplexSchoolsDanjiModel(DaangnBaseResponseModel):
     """단지의 학군 정보 (`proptierDanji`). 배정 초등학교·중·고등학교도 오지만 읽지 않는다."""
 
     coordinate: Annotated[
@@ -72,7 +72,7 @@ class DaangnComplexSchoolsDanjiModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexSchoolsComplexModel(ResponseModel):
+class DaangnComplexSchoolsComplexModel(DaangnBaseResponseModel):
     """단지 (좌표와 학군 정보만 받는다)."""
 
     coordinate: Annotated[
@@ -85,7 +85,7 @@ class DaangnComplexSchoolsComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexSchoolsOutputModel(ResponseModel):
+class DaangnComplexSchoolsOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 `complex` 가 null 이다."""
 
     complex: Annotated[
@@ -94,7 +94,7 @@ class DaangnComplexSchoolsOutputModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexSchoolsDataModel(ResponseModel):
+class DaangnComplexSchoolsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complex_by_original_id: Annotated[
@@ -112,7 +112,7 @@ class DaangnComplexSchoolsResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnPreschoolRegionModel(ResponseModel):
+class DaangnPreschoolRegionModel(DaangnBaseResponseModel):
     """어린이집·유치원이 있는 구·동."""
 
     name2: Annotated[
@@ -125,7 +125,7 @@ class DaangnPreschoolRegionModel(ResponseModel):
     ] = None
 
 
-class DaangnPreschoolSurveyResultModel(ResponseModel):
+class DaangnPreschoolSurveyResultModel(DaangnBaseResponseModel):
     """어린이집·유치원 상세의 당근 설문 (`surveyResult`). 목록 쿼리와 달리 `responseCount` 이름 그대로 온다."""
 
     response_count: Annotated[
@@ -134,7 +134,7 @@ class DaangnPreschoolSurveyResultModel(ResponseModel):
     ] = None
 
 
-class DaangnPreschoolModel(ResponseModel):
+class DaangnPreschoolModel(DaangnBaseResponseModel):
     """어린이집·유치원 상세. 전화번호·홈페이지는 학교 정보처럼 내보내지 않아 읽지 않는다."""
 
     school_nm: Annotated[
@@ -195,7 +195,7 @@ class DaangnPreschoolModel(ResponseModel):
     ] = None
 
 
-class DaangnPreschoolByNoDataModel(ResponseModel):
+class DaangnPreschoolByNoDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     preschool_by_no: Annotated[
@@ -217,7 +217,7 @@ class DaangnPreschoolByNoResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — searchSchools, schoolByCode (학교·배정 단지)
 # ---------------------------------------------------------------------------
 
-class DaangnSchoolSearchNodeModel(ResponseModel):
+class DaangnSchoolSearchNodeModel(DaangnBaseResponseModel):
     """이름으로 찾은 학교. 좌표는 있는지만 본다 (웹 검색창은 좌표 없는 학교를 뺀다)."""
 
     sch_cd: Annotated[
@@ -238,7 +238,7 @@ class DaangnSchoolSearchNodeModel(ResponseModel):
     ] = None
 
 
-class DaangnSchoolSearchEdgeModel(ResponseModel):
+class DaangnSchoolSearchEdgeModel(DaangnBaseResponseModel):
     """학교 검색 연결의 edge."""
 
     node: Annotated[
@@ -247,7 +247,7 @@ class DaangnSchoolSearchEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnSchoolSearchModel(ResponseModel):
+class DaangnSchoolSearchModel(DaangnBaseResponseModel):
     """`searchSchools` 연결. 전국 학교가 섞인다 ('중앙초등학교' 는 20곳이 넘는다)."""
 
     edges: Annotated[
@@ -260,7 +260,7 @@ class DaangnSchoolSearchModel(ResponseModel):
     ] = None
 
 
-class DaangnSearchSchoolsDataModel(ResponseModel):
+class DaangnSearchSchoolsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     search_schools: Annotated[
@@ -278,7 +278,7 @@ class DaangnSearchSchoolsResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnSchoolDetailModel(ResponseModel):
+class DaangnSchoolDetailModel(DaangnBaseResponseModel):
     """학교 정보 (학교알리미 공시 기준)와 배정 단지. 전화·홈페이지·급식·통학버스 등은 쓰지 않는다."""
 
     sch_cd: Annotated[
@@ -331,7 +331,7 @@ class DaangnSchoolDetailModel(ResponseModel):
     ] = None
 
 
-class DaangnSchoolByCodeDataModel(ResponseModel):
+class DaangnSchoolByCodeDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     school_by_code: Annotated[

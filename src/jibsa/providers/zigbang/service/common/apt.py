@@ -13,6 +13,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     more_hint,
     note,
+    null_items_note,
 )
 from jibsa.providers.zigbang.api.request.common import (
     ZigbangAptItemSource,
@@ -174,7 +175,8 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
     매물의 값이라, 응답 순서를 지켜야 `id` 가 그 값들과 같은 매물을 가리키기 때문이다 (2026-11-17 실측: 서패동(41480119)
     묶음 `itemIdList: [coalition 254486, zigbang 50026248]` 에 `itemType: partner`·숫자 층·제목이 모두 제휴 매물 것이었다).
     응답 맨 앞이 상세를 볼 수 없는 출처라 `id` 가 맨 앞 매물이 아니면 묶음 `itemType` 은 `id` 매물의 종류가 아니므로
-    `listing_kind` 는 null(모름)이다.
+    `listing_kind` 는 null(모름)이다. `itemIdList` 에 빈 항목(null)이 와서 뺐을 때도 같다 (빈 항목이 맨 앞이었는지 알 수 없다,
+    `catalog_null_notes` 가 안내한다).
 
     `isPriceRange` 가 true 면 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다 (웹 카드는 '최저가 ~').
     웹 카드는 가격 범위와 상관없이 누르면 그 호의 묶음 화면으로 가므로(2026-11-15 번들 ItemCard_AptItemCatalogCard 의
@@ -199,8 +201,9 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         return None
     item_id, item_source = entries[0]
     listing_ids = [apt_listing_id(*entry) for entry in entries]
-    # 묶음 종류는 응답 맨 앞 매물의 값이라, 그 매물이 id 가 아니면(상세를 볼 수 없는 출처) id 매물의 종류를 모른다
-    leads_bundle = apt_item_source(catalog.item_id_list[0].item_source) is not None
+    # 묶음 종류는 응답 맨 앞 매물의 값이라, 그 매물이 id 가 아니면(상세를 볼 수 없는 출처) id 매물의 종류를 모른다.
+    # 빈 항목을 빼고 읽었으면 지금 맨 앞이 응답 맨 앞인지 알 수 없어 마찬가지로 모른다
+    leads_bundle = apt_item_source(catalog.item_id_list[0].item_source) is not None and not catalog.null_items('item_id_list')
     is_sale = trade_type == '매매'
     return ZigbangAptListing(
         source='zigbang',
@@ -231,6 +234,25 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         pyeong_id=catalog.danji_room_type_id,
         pyeong_name=text_or_none(catalog.room_type_title.p) if catalog.room_type_title else None,
     )
+
+
+def catalog_null_notes(what: str, dropped_catalogs: int, dropped_id_lists: int) -> list[str]:
+    """아파트 매물 카탈로그 목록(`list`)과 카탈로그의 묶인 매물 ID 목록(`itemIdList`)에서 빈 항목(null)을 빼고 읽었을 때의 안내.
+
+    목록에서 뺀 빈 항목(`dropped_catalogs`)은 받은 자리 수(offset·inspected)에 더해 셌다는 안내이고, 묶인 매물 ID 목록에서 뺀 빈
+    항목(`dropped_id_lists`)은 그 묶음의 맨 앞 매물을 알 수 없어 `listing_kind` 를 모름(null)으로 뒀다는 안내다. 둘 다 없으면 빈 목록이다.
+
+    Args:
+        what: 사이트 이름을 붙인 목록 이름 (예: '직방 지역 아파트'). 뒤에 ' 매물'·' 묶음의 매물 ID' 가 붙는다.
+        dropped_catalogs: 카탈로그 목록에서 뺀 빈 항목 수 (받은 쪽 전부의 합).
+        dropped_id_lists: 카탈로그의 묶인 매물 ID 목록에서 뺀 빈 항목 수 (받은 카탈로그 전부의 합).
+    """
+    notes: list[str] = []
+    if dropped_catalogs:
+        notes.append(null_items_note(f'{what} 매물', dropped_catalogs))
+    if dropped_id_lists:
+        notes.append(null_items_note(f'{what} 묶음의 매물 ID', dropped_id_lists, ('listing_kind',)))
+    return notes
 
 
 def apt_pagination_notes(

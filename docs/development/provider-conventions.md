@@ -32,6 +32,20 @@ providers/<source>/
 - jibsa 에는 `dto.py` 가 없다. 중첩·공통 응답 모델(`ZigbangItemPinModel`,
   `NaverResponseModel[T]` 등)도 `response/` 에 둔다 (여러 기능이 쓰면 `response/common.py`). 공통 베이스는 최상위
   모델보다 위에 둔다.
+- 소스마다 `api/response/common.py` 에 기반 응답 모델 `<Source>BaseResponseModel(ResponseModel)` 을 두고 그 소스의 모든
+  응답 모델이 물려받는다 (응답 봉투 `NaverResponseModel[T]`·`DabangV5ResponseModel[T]`·`DaangnGraphQLResponseModel` 도 이
+  기반 모델 위에 있다). 새 응답 모델도 `ResponseModel` 이 아니라 이 기반 모델을 물려받는다. 기반 모델의 wrap 검증기
+  (`core/schema.py` 의 `validate_dropping_nulls`)가 목록 칸의 null 을 키가 없는 것으로 읽는 규칙(`drop_null_lists`)과 객체 목록 안의
+  null 원소를 빼고 칸마다 세는 규칙(`drop_null_items`)을 부른다. 키가 없을 때와 같아서 기본값이 `[]` 인
+  칸은 빈 목록이 되고, 키가 왔는지(`model_fields_set`, 직방 `sent_or_none`)로 모름을 가르는 칸은 모름이 된다. `| None` 칸은
+  기본값이 목록이어도 건드리지 않아 null 이 그대로 모름(`None`)이다 (다방 단지 학교·어린이집, 네이버 재개발 역·지구). 이 규칙을 쓸지는
+  소스마다 정한다 (소스 API 는 따로 바뀌어, 한 소스가 null 에 다른 뜻을 실으면 그 소스의 기반 모델만 고친다).
+- 객체 목록 안의 null 원소(`[{…}, null]`)는 빼고 읽어 조회가 `PARSE_ERROR` 로 끝나지 않게 하고, 그 칸에서 뺀 수는 `null_items('칸 이름')` 으로
+  읽는다 (이름을 주지 않으면 모든 칸의 합). 원소가 객체가 아닌 목록(`list[int]` 등)의 null 은 건드리지 않는다. **그 목록으로 합계·평균·개수·순위·
+  대표 고르기를 하거나 쪽 넘김·`--limit` 자리를 세는 코드는 `null_items` 를 본다**: 계산한 값은 `null`(모름)로 두어 빼고 센 적은 값이 완전한
+  값처럼 나가지 않게 하고, 자리를 세는 값은 `len(목록)` 에 뺀 수를 더해 (빈 항목도 서버가 센 한 자리다) 같은 항목을 다시 받거나 덜 받지
+  않게 하며, 뺀 것은 `null_items_note`(`core/listing.py`)로 `[제외]` 안내를 붙인다. 이 안내의 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API
+  감시가 그런 응답을 고장으로 알린다. 목록을 그대로 보여 주기만 하면 뺀 것만으로 값이 틀리지 않아 `null_items` 를 보지 않아도 되고 자리별 안내도 만들지 않아도 된다: 명령 하나 동안 뺀 수는 `core.schema` 가 합으로 모으고(`reset_null_item_tally`·`add_null_item_tally`·`null_item_tally`, 기반 모델의 검증기와 루트 목록 모델 `DabangRootListModel` 이 더한다. 집계는 `handle_errors` 가 명령 시작에 0 으로 돌린다), `emit` 이 그 합이 0 보다 큰데 결과 `notes` 에 빈 항목 안내가 없으면 어느 목록인지 말하지 않는 공통 안내(`null_items_total_note`) 한 줄을 붙인다. 소스가 `null_items_note` 로 자리별 안내를 이미 붙였으면 공통 안내는 붙지 않는다.
 - service 결과 모델(`ZigbangSearchResult`, `NaverComplexSummary`, `<Source>ListingDetail` 등)은
   CLI 출력용이므로 그 기능의 service 모듈에 두고 `BaseModel` + `extra='forbid'` 로 만든다.
 - HTML 파싱처럼 소스 고유의 응답 처리 단계가 있으면 `api/` 안의 별도 모듈로 뺀다 (당근의 `api/relay.py`, `api/parser.py`).
@@ -195,8 +209,8 @@ def run_request_items_onerooms_v1(
 
 ## 요청·응답 모델
 
-- 요청 모델은 `core.schema.RequestModel` (`extra='forbid'`), 응답 모델은 `ResponseModel` (`extra='allow'`) 을
-  상속한다. 둘 다 `validate_by_name=True` 라 코드에서는 필드 이름으로 만든다. 비공식 API 가 예고 없이 필드를
+- 요청 모델은 `core.schema.RequestModel` (`extra='forbid'`), 응답 모델은 `ResponseModel` (`extra='allow'`) 을 소스의
+  기반 응답 모델(`<Source>BaseResponseModel`, [모듈 구성](#모듈-구성))을 거쳐 상속한다. 둘 다 `validate_by_name=True` 라 코드에서는 필드 이름으로 만든다. 비공식 API 가 예고 없이 필드를
   더하므로 응답 모델은 모르는 필드를 버리지 않는다.
 - 응답 필드는 **소스가 빠뜨릴 수 있으면 `X | None = None`** 으로 둔다. 실제 응답에서 늘 오는 것을
   확인한 필드만 필수로 한다. 비공식 API 라 엄격한 필수 필드는 파싱 실패로 이어진다.

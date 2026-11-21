@@ -2,13 +2,15 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.daangn.api.response.common import DaangnArticleModel
+from jibsa.providers.daangn.api.response.common import (
+    DaangnArticleModel,
+    DaangnBaseResponseModel,
+)
 
 from typing import Annotated
 
 
-class DaangnArticlesResponseModel(ResponseModel):
+class DaangnArticlesResponseModel(DaangnBaseResponseModel):
     """상세 페이지에서 추출한 매물."""
 
     title: Annotated[

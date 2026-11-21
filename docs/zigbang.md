@@ -175,7 +175,7 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 
 매물 한 줄은 같은 호·거래 유형을 올린 여러 매물을 직방 웹 카드처럼 묶은 것이다 (`listing_count` 는 묶인 매물 수). `listing_ids` 에 그중 `listing` 으로 상세를 볼 수 있는 ID 가 모두 오고, `id` 는 그 맨 앞이다 (직방이 준 순서 그대로라, 직방 웹 카드가 대표로 보여 주는 매물이다. 제휴 매물이면 `coalition-123`). 줄의 제목(`title`)·층(`floor`)·`listing_kind` 는 `id` 매물의 값이다. `url` 은 직방 웹 카드를 누르면 가는 그 호의 묶음 화면(중개사별 매물 목록)이다. 묶인 매물끼리 가격이 다르면 `is_price_range: true` 이고, 이때 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다. 매물별 가격은 `catalog_id` 를 [`catalog`](#10-catalog--아파트-같은-호-묶음의-매물-전부)에 넘겨 한 번에 본다 (`listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). 직방이 호 ID 를 주지 않은 줄은 `catalog_id` 가 `null` 이고 `url` 은 `id` 매물의 직방 웹 페이지다. 이때 묶음은 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 하나씩 본다.
 
-`listing_kind` 는 `id` 매물이 어떤 종류인지 알린다. `신규분양`(분양 매물, 가격은 분양가)·`집주인`(집주인이 내놓은 매물)·`중개사`(중개사무소가 등록한 매물) 중 하나이고, 처음 보는 종류는 직방 코드 그대로, 직방이 주지 않거나 `id` 매물의 종류를 알 수 없으면 `null` 이다. `--fields` 로 필드를 골라도 늘 나온다. 아파트 매물에만 있는 키라 원룸·빌라·오피스텔·상가·단기임대 출력에는 없다. `coalition-` ID 줄에는 집주인이 내놓은 매물과 신규분양 매물이 함께 있어 `listing_kind` 로 가른다. 신규분양 줄은 `floor` 가 `null` 이다.
+`listing_kind` 는 `id` 매물이 어떤 종류인지 알린다. `신규분양`(분양 매물, 가격은 분양가)·`집주인`(집주인이 내놓은 매물)·`중개사`(중개사무소가 등록한 매물) 중 하나이고, 처음 보는 종류는 직방 코드 그대로, 직방이 주지 않거나 `id` 매물의 종류를 알 수 없으면(묶인 매물 ID 목록에 빈 항목이 섞여 와서 맨 앞 매물을 알 수 없을 때 포함) `null` 이다. `--fields` 로 필드를 골라도 늘 나온다. 아파트 매물에만 있는 키라 원룸·빌라·오피스텔·상가·단기임대 출력에는 없다. `coalition-` ID 줄에는 집주인이 내놓은 매물과 신규분양 매물이 함께 있어 `listing_kind` 로 가른다. 신규분양 줄은 `floor` 가 `null` 이다.
 
 줄마다 `pyeong_id`(평형 ID)와 `pyeong_name`(평 기준 평형 이름, 예: `34A`)이 있고, 직방이 주지 않으면 `null` 이다. `pyeong_id` 는 `complex` 의 `pyeongs[].id` 와 같은 번호라 같은 단지의 그 평형 매물은 `search listings --complex <단지> --pyeong <pyeong_id>`, 실거래는 `real-price <단지> --pyeong <pyeong_id>` 에 그대로 넘긴다 (평수가 아니다).
 
@@ -228,7 +228,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 **반환값**
 
-`region`, `boundary`(동 안을 찾았을 때) 또는 `radius_km`, `total`, `returned`, `has_more`, `listings`; 가격 조건 사용 시 `inspected_in_radius`, `price_matched_in_radius`도 준다. `listings` 는 직방 목록 순서 그대로이고 거리순이 아니다. 직방이 이 지역 비어있는 상가(공실) 묶음을 주면 `total` 은 (업종 조건과 상관없이) 업종(또는 일반) 매물 수와 아래 공실 묶음 줄 수를 합친 수다. `distance_km` 는 검색 중심에서 잰 거리라 가까운 매물은 그 값으로 고른다. 이어 받기(`--next`)는 없어 더 보려면 `--limit`·조건·범위를 바꾼다.
+`region`, `boundary`(동 안을 찾았을 때) 또는 `radius_km`, `total`, `returned`, `has_more`, `listings`; 가격 조건 사용 시 `inspected_in_radius`, `price_matched_in_radius`도 준다. `listings` 는 직방 목록 순서 그대로이고 거리순이 아니다. 직방이 이 지역 비어있는 상가(공실) 묶음을 주면 `total` 은 (업종 조건과 상관없이) 업종(또는 일반) 매물 수와 아래 공실 묶음 줄 수를 합친 수다. 직방이 준 위치 묶음 목록에 빈 항목이 섞여 와서 빼고 읽었으면 `total` 은 `null`(모름)이고 `[제외]` 로 알린다. `distance_km` 는 검색 중심에서 잰 거리라 가까운 매물은 그 값으로 고른다. 이어 받기(`--next`)는 없어 더 보려면 `--limit`·조건·범위를 바꾼다.
 
 **오류와 대응**
 
@@ -242,7 +242,7 @@ jibsa zigbang search listings store 성수동 --trade 임대 --first-floor --bus
 
 가격 조건(`--deposit-*`, `--rent-*`, `--price-*`, `--manage-cost-*`, `--key-money-*`)은 모두 만원이고 하한·상한을 포함하며, 조합하면 모든 조건을 만족해야 한다. 보증금·월세·권리금 조건은 임대, 매매가 조건은 매매로 자동 좁히며, 서로 섞거나 `--trade` 와 충돌하면 `INVALID_ARGUMENT` 이다. 월세 조건은 월세 매물에만 적용하고 관리비 조건은 임대·매매 모두에 쓸 수 있다. `--area-max`는 지정 면적 미만이다.
 
-가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 직방 목록 앞의 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. 권리금 조건(`--key-money-*`)을 걸면 권리금 키가 없는 사무실(해당 없음)도 제외하고, 확인한 후보에서 그렇게 뺀 건수를 `[제외]` 로 알린다. `total` 은 가격 적용 전 범위 안 직방 목록의 매물 수다. 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000`
+가격은 서버 조건이 아니라 요약을 받은 뒤 거르고, 직방 목록 앞의 후보부터 `max(--limit × 5, 60)`건까지만 확인한다 (`--limit` 을 늘리면 더 확인한다). 조건을 건 금액이 `null` 이면 제외한다. 권리금 조건(`--key-money-*`)을 걸면 권리금 키가 없는 사무실(해당 없음)도 제외하고, 확인한 후보에서 그렇게 뺀 건수를 `[제외]` 로 알린다. `total` 은 가격 적용 전 범위 안 직방 목록의 매물 수다 (`null` 이면 안내가 `total` 을 말하지 않고 미확인 후보 수에 '이상' 을 붙인다). 가격 조건이 있으면 `inspected_in_radius`(가격을 확인한 후보 수)와 `price_matched_in_radius`(그중 거래 가능하고 가격 조건에 맞는 수)를 함께 준다. 일부만 확인했으면 `notes` 로 알리며, 이때 전체 중 가격이 맞는 수는 모른다. 예: `jibsa zigbang search listings store 역삼동 --deposit-max 5000 --rent-max 300 --key-money-max 3000`
 
 상세는 결과의 `store-…` ID를 그대로 `listing`에 넘긴다.
 
@@ -432,7 +432,7 @@ jibsa zigbang real-price apt-68579 --trade 전체 --limit 20
 
 **반환값**
 
-단지·평형·거래 유형, `returned`, `has_more`, `transactions`, `url`을 준다. 거래의 `pyeong_name` 은 공급 평 기준 평형 이름(`34A`)이다. 실거래 신고에는 전용면적만 있어 같은 전용면적의 평형이 여럿이면 직방도 어느 평형인지 몰라 후보를 모두 주는데, 이때 `pyeong_name` 은 `"32A 외 4"` 처럼 첫 후보와 나머지 수이고 `pyeong_names` 에 후보 전부가 응답 순서로 온다 (후보가 하나면 `pyeong_names` 키가 없고, 직방이 후보를 주지 않은 거래는 `pyeong_name`·`pyeong_names` 모두 `null` 이다). 직방이 평 이름을 주지 않은 후보는 `pyeong_names` 에서 `null` 이고, 그것이 첫 후보면 `pyeong_name` 도 `null` 이다.
+단지·평형·거래 유형, `returned`, `has_more`, `transactions`, `url`을 준다. 거래의 `pyeong_name` 은 공급 평 기준 평형 이름(`34A`)이다. 실거래 신고에는 전용면적만 있어 같은 전용면적의 평형이 여럿이면 직방도 어느 평형인지 몰라 후보를 모두 주는데, 이때 `pyeong_name` 은 `"32A 외 4"` 처럼 첫 후보와 나머지 수이고 `pyeong_names` 에 후보 전부가 응답 순서로 온다 (후보가 하나면 `pyeong_names` 키가 없고, 직방이 후보를 주지 않은 거래는 `pyeong_name`·`pyeong_names` 모두 `null` 이다). 직방이 평 이름을 주지 않은 후보는 `pyeong_names` 에서 `null` 이고, 그것이 첫 후보면 `pyeong_name` 도 `null` 이다. 후보 목록에 빈 항목이 섞여 와서 빼고 읽었으면 후보가 몇인지 알 수 없어 `pyeong_name` 이 `null` 이고 `pyeong_names` 는 받은 후보 그대로이며 (후보가 하나여도 키가 남는다) `[제외]` 로 알린다.
 
 거래마다 직방 웹 실거래 탭이 보여 주는 아래 값도 있다. 그 거래 유형에 없는 값은 키가 없고, 있는 유형인데 직방이 주지 않으면 `null` 이다.
 
@@ -489,7 +489,7 @@ jibsa zigbang listing store-123
 
 가격·면적·방 구조·방향·입주일·관리비·주차·시설 등의 구조화 정보를 준다. 매물 유형별로 제공 필드가 다르다.
 
-원룸·빌라·오피스텔의 `manage_cost_includes` 는 직방 웹 매물 화면의 관리비 항목과 같다. 정액 관리비에서 항목별 내역을 알린 매물은 관리비 금액에 든 항목만(금액이 있는 일반(공용) 관리비·정액 사용료·기타 관리비) 들고, 실비로 따로 내는 전기·가스 등은 빠진다. 실비 관리비나 항목별 내역을 알리지 않은 매물은 웹처럼 직방이 준 포함 항목 그대로라 실비로 내는 항목도 들 수 있다. 관리비 내역이 없고 금액이 0원이거나 없으면 웹이 '관리비 없음' 만 보여 주어 `manage_cost_manwon` 은 `0`, `manage_cost_includes` 는 `[]` 이다. 직방이 준 두 관리비 칸이 서로 어긋나면(웹은 '관리비 없음' 인데 원 단위 금액이 있음) 금액·항목 모두 `null`(모름)이다. 직방 웹이 '관리비 확인 불가' 로 보여 주는 매물은 `manage_cost_manwon`·`manage_cost_includes` 모두 `null`(모름)이다. 관리비 금액은 원 단위까지다 (원룸·빌라·오피스텔·아파트 모두).
+원룸·빌라·오피스텔의 `manage_cost_includes` 는 직방 웹 매물 화면의 관리비 항목과 같다. 정액 관리비에서 항목별 내역을 알린 매물은 관리비 금액에 든 항목만(금액이 있는 일반(공용) 관리비·정액 사용료·기타 관리비) 들고, 실비로 따로 내는 전기·가스 등은 빠진다. 실비 관리비나 항목별 내역을 알리지 않은 매물은 웹처럼 직방이 준 포함 항목 그대로라 실비로 내는 항목도 들 수 있다. 관리비 내역이 없고 금액이 0원이거나 없으면 웹이 '관리비 없음' 만 보여 주어 `manage_cost_manwon` 은 `0`, `manage_cost_includes` 는 `[]` 이다. 직방이 준 두 관리비 칸이 서로 어긋나면(웹은 '관리비 없음' 인데 원 단위 금액이 있음) 금액·항목 모두 `null`(모름)이다. 직방 웹이 '관리비 확인 불가' 로 보여 주는 매물은 `manage_cost_manwon`·`manage_cost_includes` 모두 `null`(모름)이다. 관리비 금액은 원 단위까지다 (원룸·빌라·오피스텔·아파트 모두). 직방이 관리비 포함·미포함 항목 목록에 빈 항목을 섞어 보내 빼고 읽었으면, 그 목록을 그대로 쓰는 칸(`manage_cost_includes`·`manage_cost_excludes`)은 `null`(모름)이고 `[제외]` 로 알린다 (항목별 내역으로 만든 값은 그대로다).
 
 원룸·빌라·오피스텔·아파트(제휴 매물 포함) 상세에는 직방 웹 매물 화면이 보여 주는 아래 값이 공통으로 있다. 직방이 주지 않으면 `null` 이다.
 
@@ -499,7 +499,7 @@ jibsa zigbang listing store-123
 | `actual_listing_checked` | 웹의 '실매물 확인' 꼬리표가 붙은 매물인지. 원룸·빌라·오피스텔은 직방 배지 목록에 `ITEM_VERIFICATION` 이 있으면 `true`, 배지 목록을 받았는데 없으면 `false` (확인 실패 `ITEM_VERIFICATION_FAILED` 도 `false`), 아파트는 직방이 준 값 그대로 | 직방이 배지·값을 주지 않으면 `null` |
 | `non_compliant_building` | 웹 매물 정보의 '위반건축물 여부' 해당(`true`)·해당 없음(`false`) | 직방이 주지 않으면(제휴 매물 등) `null` |
 | `hug_lessor` | 웹의 'HUG안심임대인' 꼬리표. 원룸·빌라·오피스텔은 직방 배지 목록에 `HUG` 가 있으면 `true`, 배지 목록을 받았는데 없으면 `false`, 아파트는 직방이 준 값 그대로 | 직방이 배지·값을 주지 않으면 `null` |
-| `manage_cost_excludes` | 웹 '관리비 미포함 항목' (예: 전기·수도·가스·난방·인터넷·TV·기타 관리비). 원룸·빌라·오피스텔은 `manage_cost_includes` 와 같은 웹 순서, 아파트는 직방이 준 순서 | 없으면 `[]`. 직방이 주지 않거나, 관리비 금액·항목이 모름(`null`)이 되는 경우(웹의 '관리비 확인 불가', 직방이 준 두 관리비 칸이 어긋남)면 `null`. 다만 원룸·빌라·오피스텔에서 관리비 없음이거나 정액 관리비의 항목별 내역을 알린 매물은 웹이 미포함 항목을 보여 주지 않아 직방이 항목을 줘도 안 줘도 `[]` 다 (위 `null` 이 되는 경우는 그대로 `null`). |
+| `manage_cost_excludes` | 웹 '관리비 미포함 항목' (예: 전기·수도·가스·난방·인터넷·TV·기타 관리비). 원룸·빌라·오피스텔은 `manage_cost_includes` 와 같은 웹 순서, 아파트는 직방이 준 순서 | 없으면 `[]`. 직방이 주지 않거나, 관리비 금액·항목이 모름(`null`)이 되는 경우(웹의 '관리비 확인 불가', 직방이 준 두 관리비 칸이 어긋남)면 `null`. 다만 원룸·빌라·오피스텔에서 관리비 없음이거나 정액 관리비의 항목별 내역을 알린 매물은 웹이 미포함 항목을 보여 주지 않아 직방이 항목을 줘도 안 줘도 `[]` 다 (위 `null` 이 되는 경우는 그대로 `null`). 직방이 준 항목 목록에서 빈 항목을 빼고 읽어 그 목록을 그대로 쓰는 경우도 `null` 이다 |
 | `manage_cost_period` | 관리비 부과 기준 (`직전 월 관리비 기준`·`최근 3개월 관리비 평균`·`최근 1년 관리비 평균`, 또는 중개사가 직접 쓴 글자). 아파트는 기타 관리비가 있는 매물에만 직방이 주는 문구 그대로 (웹은 기타 관리비의 '상세보기' 창에 보여 준다) | 직방이 주지 않거나 jibsa 표에 없는 코드면 `null`. 관리비 금액·항목이 모름이 되는 경우(위 `manage_cost_excludes` 와 같다)도 `null` |
 | `manage_cost_method` | 관리비 부과 방식 (웹 문구 그대로, 예: `관리규약에 따라 부과해요.`. 중개사가 직접 쓴 글자도 있다). 아파트는 기타 관리비가 있는 매물에만 직방이 주는 문구 그대로 | 직방이 주지 않거나 jibsa 표에 없는 코드면 `null`. 방식 코드로 정하는 것은 실비(정액이 아닌) 관리비뿐이다. 정액 관리비는 웹처럼 방식 코드를 읽지 않고, 항목별 내역을 알리지 않았으면 `중개 의뢰인이 세부내역을 고지하지 않아 전세입자 등을 통해 추정된 관리비를 안내해요.` 를, 내역을 알렸으면 `null` 을 낸다. 관리비 금액·항목이 모름이 되는 경우도 `null` |
 
@@ -527,7 +527,7 @@ jibsa zigbang listing store-123
 
 `actual_listing_checked` 가 무엇을 확인한 것인지는 직방이 설명하지 않는다. 꼬리표가 있다는 사실만 전하고 매물이 지금 거래 가능하다는 보증으로 읽지 않는다 (확인은 `url` 의 원 사이트에서). `confirmed_at` 은 매물 상세·묶음 매물에만 있고 목록 줄에는 없다.
 
-`--check-in`·`--check-out`은 `stay-…` 전용이고 함께 지정한다. `--check-out` 은 나가는 날이 아니라 마지막으로 머무는 날이다 (직방은 이 날까지 이용일로 센다). 날짜를 주면 직방 웹 날짜 고르기 창이 막는 규칙대로 그 기간을 예약할 수 있는지 `available` 을 붙인다 (요청이 늘지 않는다): 입주일이 오늘(한국 날짜) 이후이고, 기간이 그 매물의 최소 계약 주(`min_contract_weeks`) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약됐거나 막힌 날이 없고 마지막 날이 막힌 날이 아니면 `true` 다. 직방이 일정을 주지 않으면 `null` 이다. 최소 계약은 매물마다 달라 1주보다 긴 매물도 있다. 그 기간의 총비용(청소비·직방 이용료·할인을 더한 금액)은 직방이 로그인한 사용자에게만 계산해 보여 줘서 주지 않는다. 청소비·보증금·할인 조건은 상세의 `cleaning_fee_manwon`·`deposit_manwon`·`discounts` 로 본다. 직방의 예약 달력 API(`guest/items/{id}/calendar`)는 로그인해야 열려 쓰지 않는다. 예약할 수 없는 기간은 로그인 없이 오는 상세 응답의 일정으로 `unavailable_periods` 에 낸다.
+`--check-in`·`--check-out`은 `stay-…` 전용이고 함께 지정한다. `--check-out` 은 나가는 날이 아니라 마지막으로 머무는 날이다 (직방은 이 날까지 이용일로 센다). 날짜를 주면 직방 웹 날짜 고르기 창이 막는 규칙대로 그 기간을 예약할 수 있는지 `available` 을 붙인다 (요청이 늘지 않는다): 입주일이 오늘(한국 날짜) 이후이고, 기간이 그 매물의 최소 계약 주(`min_contract_weeks`) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약됐거나 막힌 날이 없고 마지막 날이 막힌 날이 아니면 `true` 다. 직방이 일정을 주지 않으면 `null` 이다. 일정 목록에 빈 항목이 섞여 와서 빼고 읽었으면 그 항목이 막힌 날이었을 수 있어 `available` 도 `unavailable_periods` 도 `null` 이고 `[제외]` 로 알린다. 최소 계약은 매물마다 달라 1주보다 긴 매물도 있다. 그 기간의 총비용(청소비·직방 이용료·할인을 더한 금액)은 직방이 로그인한 사용자에게만 계산해 보여 줘서 주지 않는다. 청소비·보증금·할인 조건은 상세의 `cleaning_fee_manwon`·`deposit_manwon`·`discounts` 로 본다. 직방의 예약 달력 API(`guest/items/{id}/calendar`)는 로그인해야 열려 쓰지 않는다. 예약할 수 없는 기간은 로그인 없이 오는 상세 응답의 일정으로 `unavailable_periods` 에 낸다.
 
 ```bash
 jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29
@@ -539,20 +539,20 @@ jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29
 | --- | --- | --- |
 | `kitchen_count`·`living_room_count` | 주방·거실 수 | 없으면 `0`. 직방이 주지 않으면 `null` |
 | `parking_count`·`parking_method` | 주차 대수, 주차 방식 (`자주식`·`기계식`) | `parking` 이 `불가` 면 두 키가 없다. 가능한데 직방이 대수·방식을 주지 않으면 `null` |
-| `pet_allowed` | 반려동물 동반 가능 여부 (`true`·`false`) | 키는 늘 있다. 직방이 옵션 목록을 주지 않으면 `null` (모름이다. 직방 웹은 이때 동반 불가로 그리지만 jibsa 는 동반 불가로 단정하지 않는다) |
+| `pet_allowed` | 반려동물 동반 가능 여부 (`true`·`false`) | 키는 늘 있다. 직방이 옵션 목록을 주지 않거나 옵션 목록에 빈 항목이 섞여 와서 빼고 읽었는데 반려동물 분류를 찾지 못하면 `null` (모름이다. 직방 웹은 이때 동반 불가로 그리지만 jibsa 는 동반 불가로 단정하지 않는다) |
 | `pet_cleaning_fee_manwon` | 반려동물을 데려올 때 추가 청소비 (만원). 직방 웹처럼 동반 가능 여부와 상관없이 0 보다 크면 나온다 | 동반 가능이면 추가 청소비가 없을 때 `0`, 직방이 주지 않으면 `null`. 동반 불가면 0 보다 클 때만 값이 있고 아니면 키가 없다. 동반 가능 여부를 모르면(`pet_allowed` 가 `null`) 0 보다 클 때 그 값, 아니면 `null` |
 | `check_in_time`·`check_out_time` | 입주·퇴실 시각 (`"15:00"`) | 직방이 주지 않으면 `null` |
 | `check_in_method`·`check_out_method` | 입주·퇴실 방식 (`비대면`·`임대인 대면`·`키박스`, 모르는 값은 직방 코드 그대로) | 직방이 주지 않으면 `null` |
-| `unavailable_periods` | 예약할 수 없는 기간 목록 (`start`·`end`·`kind`). `start`·`end` 는 `YYYY-MM-DD` 이고 `end` 는 그날까지 막힌다는 뜻이고 `kind` 는 `예약`(다른 손님)·`막힘`(임대인). 직방이 1년 뒤까지 준다 | 막힌 기간이 없으면 `[]`, 직방이 일정을 주지 않으면 `null` |
+| `unavailable_periods` | 예약할 수 없는 기간 목록 (`start`·`end`·`kind`). `start`·`end` 는 `YYYY-MM-DD` 이고 `end` 는 그날까지 막힌다는 뜻이고 `kind` 는 `예약`(다른 손님)·`막힘`(임대인). 직방이 1년 뒤까지 준다 | 막힌 기간이 없으면 `[]`, 직방이 일정을 주지 않거나 일정 목록에서 빈 항목을 빼고 읽었으면 `null` |
 | `refund_rules` | 위약금 표 (`refund_policy` 에 해당하는 5행, 행마다 `when`·`penalty`. 예: `입주 7일전`·`임대료의 30%`) | 정책을 모르거나 표에 없는 정책이면 `null` |
 | `review_count` | 후기 수 (웹 상세의 후기 배지) | 후기가 없으면 `0`, 후기를 받지 못했으면 `null` |
 | `review_rating` | 평균 평점 (직방 원값. 웹은 소수 첫째 자리로 반올림해 '★ 4.8' 로 그린다). 청결·위치 같은 항목별 점수는 직방이 주지 않는다 | 후기가 없으면(`review_count` 0) 키가 없다. 후기를 받지 못했으면 `null` |
-| `host_other_listings` | 같은 임대인의 다른 단기임대 (웹 상세 맨 아래 '임대인의 다른 방', 지금 보는 매물 제외). 직방 순서 그대로 앞 10건이고 줄은 `search listings stay` 의 매물 줄과 같다. 임대료·관리비를 `weekly_rent_manwon`·`weekly_manage_cost_manwon` 으로 나눠 낸다 | 다른 방이 없으면 `[]`, 임대인을 모르거나 받지 못했거나 직방이 목록을 주지 않았으면 `null` |
-| `host_other_listing_count` | 임대인의 다른 매물 전체 수 (`host_other_listings` 보다 많을 수 있다) | 임대인을 모르거나 받지 못했거나 직방이 수·목록을 주지 않았으면 `null` (수는 주지 않았어도 다른 방이 없는 빈 목록이면 `0`) |
+| `host_other_listings` | 같은 임대인의 다른 단기임대 (웹 상세 맨 아래 '임대인의 다른 방', 지금 보는 매물 제외). 직방 순서 그대로 앞 10건이고 줄은 `search listings stay` 의 매물 줄과 같다. 임대료·관리비를 `weekly_rent_manwon`·`weekly_manage_cost_manwon` 으로 나눠 낸다 | 다른 방이 없으면 `[]`, 임대인을 모르거나 받지 못했거나 직방이 목록을 주지 않았으면 `null`. 직방이 수를 주지 않고 목록이 빈 채 빈 항목을 빼고 읽었어도(다른 방이 없는 것인지 알 수 없다) `null` |
+| `host_other_listing_count` | 임대인의 다른 매물 전체 수 (`host_other_listings` 보다 많을 수 있다) | 임대인을 모르거나 받지 못했거나 직방이 수·목록을 주지 않았으면 `null` (수는 주지 않았어도 다른 방이 없는 빈 목록이면 `0`, 빈 항목을 빼서 빈 목록이 된 것이면 `null`) |
 
 단기임대 상세는 매물 상세·노출 시작일 요약에 후기 요약과 임대인의 다른 방을 더해 요청이 4회다 (임대인 ID 를 직방이 주지 않거나 0 이하이면 다른 방은 부르지 않아 3회이고 `host_other_listings`·`host_other_listing_count` 는 `null` 이다). 후기와 다른 방은 덤이라 받지 못하면 그 값만 `null` 이고 상세는 내며, `notes` 에 `[실패]` 안내가 붙는다 (임대인 ID 가 없거나 0 이하라 부르지 않은 다른 방은 안내가 없다). 후기 글·작성자와 임대인 이름·소개는 내지 않는다 (`url` 의 원 사이트에서).
 
-`options` 에는 반려동물이 들어 있지 않다. 직방 웹은 반려동물을 옵션 목록 밖의 '반려동물 동반 가능/불가' 줄로 따로 보여 주므로 `pet_allowed` 로 본다 (직방이 옵션 목록을 주지 않아 `null` 이면 모름이다). `refund_rules` 는 직방이 응답에 정책 이름만 주고 표는 웹 화면에 고정해 둔 것을 옮긴 값이다. 직방도 '위약금 규정은 임대인 설정에 따라 달라질 수 있다' 고 알리니, 계약 전에 `url` 의 원 사이트에서 위약금을 확인한다.
+`options` 에는 반려동물이 들어 있지 않다. 직방 웹은 반려동물을 옵션 목록 밖의 '반려동물 동반 가능/불가' 줄로 따로 보여 주므로 `pet_allowed` 로 본다 (`null` 이면 모름이다). `refund_rules` 는 직방이 응답에 정책 이름만 주고 표는 웹 화면에 고정해 둔 것을 옮긴 값이다. 직방도 '위약금 규정은 임대인 설정에 따라 달라질 수 있다' 고 알리니, 계약 전에 `url` 의 원 사이트에서 위약금을 확인한다.
 
 ## 10. `catalog` — 아파트 같은 호 묶음의 매물 전부
 
@@ -706,6 +706,8 @@ jibsa zigbang search complexes 가락동
 
 덤 조회(호 정보·후기·임대인의 다른 방·건물 학군·건물 실거래·단지 학군·평형 정보·주변 단지 정보·단지 카드·원룸 목록에 섞인 오피스텔의 건물 ID)가 실패하면 그 값만 `null` 이고 명령은 성공하며 `notes` 의 `[실패]` 가 알린다. 직방이 예상한 형식과 다른 응답을 줘 실패했을 때만 안내 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙고 (매일 감시가 이 문구로 고장을 잡는다), 요청 제한·서버 오류·연결 실패는 잠깐의 실패라 붙지 않는다.
 
+직방이 목록 안에 빈 항목(null)을 보내면 그 항목을 빼고 읽고 `[제외]` 로 알린다 (안내 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙고 매일 감시가 고장으로 잡는다). 직방은 빈 항목도 한 자리로 세므로 이어 받는 자리와 받은 수에 센다. 그 목록으로 계산한 값은 틀린 수를 내지 않고 `null`(모름)이다: 상가 `total`, 단기임대 `available`·`unavailable_periods`·`pet_allowed`·`host_other_listings`·`host_other_listing_count`, 실거래 `pyeong_name`, 원룸·빌라·오피스텔 `manage_cost_includes`·`manage_cost_excludes`, 아파트 `listing_kind` (각 명령 절에 있다).
+
 ## 요청 제한과 도움말
 
 요청 제한 정책과 `jibsa limits` 사용법은 [공통 사용 규칙](https://github.com/Rukkakka/jibsa/blob/main/docs/common.md#요청-제한과-limits)에 있다.
@@ -732,7 +734,7 @@ jibsa zigbang search listings room --help
 | 직방 원룸·빌라·오피스텔 (`search listings room`, `search listings --complex officetel-…`, `listing`) | `hug_lessor`, `actual_listing_checked`, `nearby_facilities`, `delivery_services`, `building_trades` | 목록 줄과 상세의 HUG 안심임대인·실매물 확인 꼬리표(`true`·`false`, 직방이 배지 목록을 주지 않으면 `null`), 상세의 주변 생활 시설·배송 업체 이름·같은 건물(필지) 실거래. 앞의 둘은 상세에서도 같은 값이고, 뒤의 셋은 상세에만 있다. 값이 없을 때(`null`·`[]`)와 상세 공통 값(`confirmed_at`·`non_compliant_building`·`manage_cost_*`)은 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
 | 직방 아파트 (`search listings apt`, `search listings --complex`) | `complex_id`, `complex_name`, `supply_area_m2`, `is_price_range`, `catalog_id`, `listing_ids`, `listing_count`, `listing_kind`, `pyeong_id`, `pyeong_name` | 단지 ID(`zigbang complex`·`search listings --complex` 에 넘긴다), 단지명·동, 공급면적(㎡), 같은 호를 올린 매물끼리 가격이 달라 가격이 묶음 최저가인지, 묶음 ID(`zigbang catalog` 에 넘긴다), 상세를 볼 수 있는 묶인 매물 ID 전부, 같은 호를 올린 매물(중개사) 수, 매물 종류(신규분양·집주인·중개사, 신규분양이면 가격은 분양가, 처음 보는 종류는 직방 코드 그대로, 모르면 `null`), 평형 ID(`--pyeong` 에 넘긴다)와 평 기준 평형 이름(모르면 `null`). `is_price_range`·`catalog_id`·`listing_ids`·`listing_count` 는 목록에만 있고 (`listing_kind` 와 함께 `--fields` 로 골라도 늘 나온다) ([`search listings apt`](#3-search-listings-apt--아파트-매물-찾기) 반환값), `complex_id`·`complex_name`·`supply_area_m2`·`listing_kind`·`pyeong_id`·`pyeong_name` 은 아파트 `listing` 상세와 `catalog` 매물에도 있고, 상세·`catalog` 에는 `zzim_count` 와 원룸·빌라·오피스텔 상세와 같은 공통 값(`confirmed_at`·`actual_listing_checked`·`non_compliant_building`·`hug_lessor`·`manage_cost_excludes`·`manage_cost_period`·`manage_cost_method`)도 있다. 아파트 상세에서 비는 값은 [`listing`](#9-listing--매물-하나-상세)에 있다 |
 | 직방 상가 (`search listings store`) | `business`, `key_money_manwon`, `vacant_section` | 업종(현재·직전, 공실이면 `기타`), 권리금(만원, 업종이 사무실이고 직방이 주지 않으면 키가 없다), 이 지역 비어있는 상가 묶음에서 온 줄인지(공실 묶음이 있거나 `--business` 를 줄 때만 있고 `--fields` 로 골라도 늘 나온다. [`search listings store`](#4-search-listings-store--상가사무실-매물-찾기) 주의사항). 상세는 `recommended_business`·`vacancy`·`lease_unit`·`interior`·`toilet`·`heating` 도 준다. 직방 상가에는 방 정보가 없어 `room_type`(목록·상세)과 `room_count`·`bathroom_count`·`direction`·`move_in`·`options`·`manage_cost_includes`(상세) 키가 없다 |
-| 직방 단기임대 (`search listings stay`) | `weekly_rent_manwon`, `weekly_manage_cost_manwon`, `room_count`, `bathroom_count`, `discounts` | 주당 임대료·관리비(만원), 방·욕실 수, 할인 조건(예: `"4주 이상 10% 할인"`, `"오늘부터 1일 이내 입주 시 7만원 할인"`. 직방 웹 상세처럼 장기계약은 주 수·할인율·주당 임대료가 모두 있을 때, 즉시입주는 금액이 있을 때만 나온다. 주당 임대료가 없거나 0 이면 장기계약 할인이 있어도 빠지므로, 이때 `discounts` 가 `[]` 여도 할인이 없다는 뜻은 아니다. 즉시입주 할인 금액은 원 단위까지 만원으로 써 2,500원이면 `"오늘 입주 시 0.25만원 할인"` 이다. 그 기간에 실제로 깎이는 금액은 직방이 로그인해야 계산해 보여 줘서 주지 않는다). 요금이 주 단위라 `rent_manwon`·`manage_cost_manwon` 키가 없다. 상세는 `review_count`·`review_rating`(후기 수·평균 평점)과 `host_other_listings`·`host_other_listing_count`(임대인의 다른 방 앞 10건과 전체 수)도 준다 ([`listing`](#9-listing--매물-하나-상세) 표). 상세는 `deposit_manwon`·`cleaning_fee_manwon`·`min_contract_weeks`·`max_contract_weeks`·`max_guests`·`duplex`·`refund_policy`(유연·표준·엄격), `parking`(`가능`·`가능 (유료)`·`가능 (무료)`·`제한적 가능`·`제한적 가능 (유료)`·`제한적 가능 (무료)`·`불가`) 도 준다. 상세에 `--check-in/--check-out` 을 주면 그 기간을 예약할 수 있는지 `available`(직방 일정이 없으면 `null`)이 붙는다. 상세에는 주방·거실 수(`kitchen_count`·`living_room_count`), 주차 대수·방식(`parking_count`·`parking_method`), 반려동물 동반(`pet_allowed`·`pet_cleaning_fee_manwon`), 입·퇴실 시각·방식(`check_in_time`·`check_out_time`·`check_in_method`·`check_out_method`), 예약 불가 기간(`unavailable_periods`), 위약금 표(`refund_rules`)도 있다. 값이 없을 때(키 없음·`null`·`0`)는 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
+| 직방 단기임대 (`search listings stay`) | `weekly_rent_manwon`, `weekly_manage_cost_manwon`, `room_count`, `bathroom_count`, `discounts` | 주당 임대료·관리비(만원), 방·욕실 수, 할인 조건(예: `"4주 이상 10% 할인"`, `"오늘부터 1일 이내 입주 시 7만원 할인"`. 직방 웹 상세처럼 장기계약은 주 수·할인율·주당 임대료가 모두 있을 때, 즉시입주는 금액이 있을 때만 나온다. 주당 임대료가 없거나 0 이면 장기계약 할인이 있어도 빠지므로, 이때 `discounts` 가 `[]` 여도 할인이 없다는 뜻은 아니다. 즉시입주 할인 금액은 원 단위까지 만원으로 써 2,500원이면 `"오늘 입주 시 0.25만원 할인"` 이다. 그 기간에 실제로 깎이는 금액은 직방이 로그인해야 계산해 보여 줘서 주지 않는다). 요금이 주 단위라 `rent_manwon`·`manage_cost_manwon` 키가 없다. 상세는 `review_count`·`review_rating`(후기 수·평균 평점)과 `host_other_listings`·`host_other_listing_count`(임대인의 다른 방 앞 10건과 전체 수)도 준다 ([`listing`](#9-listing--매물-하나-상세) 표). 상세는 `deposit_manwon`·`cleaning_fee_manwon`·`min_contract_weeks`·`max_contract_weeks`·`max_guests`·`duplex`·`refund_policy`(유연·표준·엄격), `parking`(`가능`·`가능 (유료)`·`가능 (무료)`·`제한적 가능`·`제한적 가능 (유료)`·`제한적 가능 (무료)`·`불가`) 도 준다. 상세에 `--check-in/--check-out` 을 주면 그 기간을 예약할 수 있는지 `available`(직방 일정이 없거나 일정 목록에서 빈 항목을 빼고 읽었으면 `null`)이 붙는다. 상세에는 주방·거실 수(`kitchen_count`·`living_room_count`), 주차 대수·방식(`parking_count`·`parking_method`), 반려동물 동반(`pet_allowed`·`pet_cleaning_fee_manwon`), 입·퇴실 시각·방식(`check_in_time`·`check_out_time`·`check_in_method`·`check_out_method`), 예약 불가 기간(`unavailable_periods`), 위약금 표(`refund_rules`)도 있다. 값이 없을 때(키 없음·`null`·`0`)는 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
 
 ## 매물 해석 시 주의사항
 

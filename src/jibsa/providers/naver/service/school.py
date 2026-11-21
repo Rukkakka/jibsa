@@ -13,6 +13,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
+    null_items_note,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -400,6 +401,7 @@ def list_school_complexes(
     총수도 모르면 더 받지 않고 받은 것이 `limit` 안일 때 `has_more` 가 null 이다.
     쪽 요청 상한(`MAX_SCHOOL_COMPLEX_PAGE_REQUESTS`)에 닿아 멈췄는데 받은 수가 `limit` 에 못 미치면 (네이버가 쪽을 20곳보다 짧게 줄 때)
     `--limit` 을 늘려도 같은 쪽 수에서 멈추니 늘리라고 하지 않고 받은 수와 상한을 알린다. 단지 정보가 없는 항목은 건너뛰고 `[제외]` 로 알린다.
+    목록 안의 빈 항목(null)은 빼고 읽되 서버가 센 자리라 받은 수·쪽이 비었는지 셀 때 더하고, `[제외]` 로 알린다.
 
     Args:
         sort: 정렬 (`SCHOOL_COMPLEX_SORT_TYPE_BY_NAME` 의 이름).
@@ -410,6 +412,9 @@ def list_school_complexes(
     """
     sort_type = SCHOOL_COMPLEX_SORT_TYPE_BY_NAME[sort]
     items: list[NaverSchoolComplexItemModel] = []
+    # 빈 항목(null)이라 빼고 읽은 수. 서버는 그 자리도 단지로 센 쪽이라 받은 수·쪽이 비었는지 셀 때 더한다
+    dropped = 0
+    received = 0
     total: int | None = None
     more: bool | None = False
     for page_number in range(MAX_SCHOOL_COMPLEX_PAGE_REQUESTS):
@@ -422,34 +427,39 @@ def list_school_complexes(
             '학교 배정 단지',
         )
         page_items = page.items or []
+        page_dropped = page.null_items('items')
+        dropped += page_dropped
+        # 빈 항목(null)만 온 쪽은 서버가 단지가 든 쪽으로 센다 (빈 쪽이 아니다)
+        page_slots = len(page_items) + page_dropped
         if page_number == 0:
             total = page.total_count
         items += page_items
+        received = len(items) + dropped
         more = page.has_next_page
         if more is None and total is not None:
             # hasNextPage 를 주지 않아도 첫 쪽 총수가 받은 수보다 크면 더 있는 것이다. 총수도 모르면 이어 받을 근거가 없어 모름(None)으로 멈춘다
-            more = total > len(items)
+            more = total > received
         # 빈 쪽은 더 있다는 말을 믿지 않고 멈춘다 (빈 쪽을 요청 상한까지 되풀이해 받지 않는다)
-        if not more or not page_items or len(items) >= limit:
+        if not more or not page_slots or received >= limit:
             break
     complexes = [row for row in (_school_complex(item) for item in items[:limit]) if row is not None]
     skipped = min(len(items), limit) - len(complexes)
     # 마지막으로 받은 쪽에 limit 을 넘겨 받은 단지가 있어도 남은 것이다. 남은 근거가 없으면 hasNextPage·총수 그대로 (null 은 모름)
-    has_more = True if more or len(items) > limit else more
+    has_more = True if more or received > limit else more
     # 위 break 조건에 하나도 걸리지 않고 쪽 요청 상한에서 끝났다 (받은 수가 limit 에 못 미치게 쪽이 짧았다)
-    request_capped = bool(more) and bool(page_items) and len(items) < limit
+    request_capped = bool(more) and bool(page_slots) and received < limit
     notes: list[str] = []
     if skipped:
         notes.append(note('제외', f'네이버가 단지 정보를 주지 않은 {skipped}곳은 뺐습니다'))
-    if more and not page_items:
+    if more and not page_slots:
         # 더 있다면서 빈 쪽을 줘 멈췄다. --limit 을 늘려도 같은 빈 쪽에서 멈추니 늘리라고 하지 않는다
-        notes.append(note('일부', f'네이버가 더 있다면서 빈 쪽을 줘 {len(items)}곳까지만 받았습니다'))
+        notes.append(note('일부', f'네이버가 더 있다면서 빈 쪽을 줘 {received}곳까지만 받았습니다'))
     elif request_capped:
         # --limit 을 늘려도 같은 쪽 수에서 멈추니 늘리라고 하지 않는다 (`limit` 이 최대값이어도 '최대값은 100' 이 맞지 않다)
         total_text = f' (학교에 배정되는 단지는 {total}곳)' if total is not None else ''
         notes.append(note(
             '일부',
-            f'네이버가 쪽을 짧게 줘 요청 상한({MAX_SCHOOL_COMPLEX_PAGE_REQUESTS}쪽)까지 {len(items)}곳만 받았습니다{total_text}',
+            f'네이버가 쪽을 짧게 줘 요청 상한({MAX_SCHOOL_COMPLEX_PAGE_REQUESTS}쪽)까지 {received}곳만 받았습니다{total_text}',
         ))
     elif has_more:
         shown = f'학교에 배정되는 단지가 {total}곳 있고, 그중' if total is not None else '학교에 배정되는 단지 중'
@@ -457,6 +467,8 @@ def list_school_complexes(
             '일부',
             f'{shown} {len(complexes)}곳만 보여 줍니다. {more_hint(limit, MAX_SCHOOL_COMPLEX_LIMIT, None)}',
         ))
+    if dropped:
+        notes.append(null_items_note('네이버 학교 배정 단지', dropped))
     return NaverSchoolComplexesResult(
         total=total, returned=len(complexes), has_more=has_more, complexes=complexes, notes=notes,
     )

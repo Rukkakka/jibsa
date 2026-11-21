@@ -15,9 +15,9 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 | `core/http.py` | `BaseHTTPClient` — httpx 클라이언트 수명주기, 재시도 술어, `raise_for_status` |
 | `core/browser.py` | `BrowserTransport` — httpx 요청을 사이트 첫 화면을 연 Chromium(scrapling) 안의 fetch 로 보낸다. 쿠키 남기기, `jibsa install-browser` |
 | `core/ratelimit.py` | 프로세스 간 공유 요청 제한 (`RateLimiter`, `RateLimitedError`) |
-| `core/listing.py` | 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 날짜, 주소) |
+| `core/listing.py` | 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 날짜, 주소), 빈 항목을 뺐다는 `[제외]` 안내 `null_items_note` |
 | `core/errors.py` | `JibsaError` 계열 — CLI 가 `{"error": {...}}` 로 내보내는 에러 |
-| `core/schema.py` | `RequestModel` (`extra='forbid'`) / `ResponseModel` (`extra='allow'`) |
+| `core/schema.py` | `RequestModel` (`extra='forbid'`) / `ResponseModel` (`extra='allow'`), 목록 칸 null 을 키 없음으로 읽는 `drop_null_lists` 와 객체 목록 안 null 원소를 빼고 칸마다 세는 `drop_null_items`·`null_items` (소스 기반 응답 모델이 wrap 검증기 `validate_dropping_nulls` 로 부른다. `| None` 칸의 null 은 모름으로 둔다) |
 | `core/geo.py` | geohash·거리 계산, 한국 좌표 범위, 기본 검색 반경 |
 | `core/korean.py` | 한글 이름 뒤 조사 고르기 (`particle`, `quoted`), 행정동 검색어에 법정동 힌트 (`legal_dong_hint`), 법정동 코드 단위 (`is_dong_code`, `is_ri_code`) |
 | `providers/<source>/` | `api/` 아래층 (`client.py` · `request/` · `response/`, 당근은 `relay.py` · `parser.py` 도) → `service/` 윗층. request·response·service 는 같은 이름의 기능별 모듈 (기능이 여러 모듈이면 기능 이름 폴더, [모듈 구성](docs/development/provider-conventions.md#모듈-구성)) |

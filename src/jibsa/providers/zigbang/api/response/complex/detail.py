@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangAddressOriginModel,
+    ZigbangBaseResponseModel,
     ZigbangItemCatalogModel,
     ZigbangItemPinModel,
     ZigbangItemSectionModel,
@@ -18,7 +18,7 @@ from typing import Annotated
 # GET /house/property/v1/items/officetels/{buildingId}
 # ---------------------------------------------------------------------------
 
-class ZigbangOfficetelBuildingModel(ResponseModel):
+class ZigbangOfficetelBuildingModel(ZigbangBaseResponseModel):
     """오피스텔 건물 정보."""
 
     id: Annotated[
@@ -55,7 +55,7 @@ class ZigbangOfficetelBuildingModel(ResponseModel):
     ] = None
 
 
-class ZigbangItemsOfficetelsBuildingV1ResponseModel(ResponseModel):
+class ZigbangItemsOfficetelsBuildingV1ResponseModel(ZigbangBaseResponseModel):
     """오피스텔 건물 하나의 매물 핀과 건물 정보. 핀 모양은 지도 목록과 같다."""
 
     items: Annotated[
@@ -79,7 +79,7 @@ class ZigbangItemsOfficetelsBuildingV1ResponseModel(ResponseModel):
 # GET /apt/danjis/{danjiId}/schools
 # ---------------------------------------------------------------------------
 
-class ZigbangDanjiSchoolModel(ResponseModel):
+class ZigbangDanjiSchoolModel(ZigbangBaseResponseModel):
     """단지 주변 학교 하나."""
 
     name: Annotated[
@@ -92,7 +92,7 @@ class ZigbangDanjiSchoolModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjiSchoolLevelModel(ResponseModel):
+class ZigbangDanjiSchoolLevelModel(ZigbangBaseResponseModel):
     """학교급(초·중·고) 하나의 학구·학교군과 학교."""
 
     zone_name: Annotated[
@@ -105,7 +105,7 @@ class ZigbangDanjiSchoolLevelModel(ResponseModel):
     ] = []
 
 
-class ZigbangDanjisSchoolsResponseModel(ResponseModel):
+class ZigbangDanjisSchoolsResponseModel(ZigbangBaseResponseModel):
     """아파트 단지의 학군. 통학구역·학교군 밖 주변 학교(etcList)는 읽지 않는다."""
 
     elementary: Annotated[
@@ -126,7 +126,7 @@ class ZigbangDanjisSchoolsResponseModel(ResponseModel):
 # GET /apt/danjis/{danjiId}/item-catalogs
 # ---------------------------------------------------------------------------
 
-class ZigbangDanjiRoomTypeAreaModel(ResponseModel):
+class ZigbangDanjiRoomTypeAreaModel(ZigbangBaseResponseModel):
     """평형의 면적 (㎡·평 모두 숫자). 매물 요약의 면적(`ZigbangAreaModel`)은 평이 문자열이라 따로 둔다."""
 
     m2: Annotated[
@@ -139,7 +139,7 @@ class ZigbangDanjiRoomTypeAreaModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjiRoomTypeManageCostModel(ResponseModel):
+class ZigbangDanjiRoomTypeManageCostModel(ZigbangBaseResponseModel):
     """평형의 월 관리비 (**만원**). 이 밖에 개별난방 여부(`개별난방`)가 오지만 읽지 않는다."""
 
     average: Annotated[
@@ -156,7 +156,7 @@ class ZigbangDanjiRoomTypeManageCostModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjiRoomTypePriceModel(ResponseModel):
+class ZigbangDanjiRoomTypePriceModel(ZigbangBaseResponseModel):
     """평형의 직방 시세 범위 (매매 `sales_price`·전세 `rent_price`). 금액은 **만원**, 평당 값은 만원/3.3㎡ 다."""
 
     min: Annotated[
@@ -181,7 +181,7 @@ class ZigbangDanjiRoomTypePriceModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjiRoomTypeModel(ResponseModel):
+class ZigbangDanjiRoomTypeModel(ZigbangBaseResponseModel):
     """단지 평형. 매물 목록(`danjiRoomTypes`)은 `id`·`room_type_title` 만 주고, 평형 조회(`room_types`)는 모두 준다.
 
     분양가·평면도 그림·공시가격·유형 구분 등 이 밖의 키는 읽지 않는다.
@@ -241,7 +241,7 @@ class ZigbangDanjiRoomTypeModel(ResponseModel):
     ] = None
 
 
-class ZigbangDanjisItemCatalogsResponseModel(ResponseModel):
+class ZigbangDanjisItemCatalogsResponseModel(ZigbangBaseResponseModel):
     """단지 하나의 아파트 매물 카탈로그 응답. 카탈로그 모양은 지역 목록과 같다."""
 
     total_count: Annotated[
@@ -266,7 +266,7 @@ class ZigbangDanjisItemCatalogsResponseModel(ResponseModel):
 # GET /apt/danjis/{danjiId}/room_types
 # ---------------------------------------------------------------------------
 
-class ZigbangDanjisRoomTypesResponseModel(ResponseModel):
+class ZigbangDanjisRoomTypesResponseModel(ZigbangBaseResponseModel):
     """단지의 평형 목록과 단지 평균 시세. 금액은 **만원**이고 평당 값은 만원/3.3㎡ 다.
 
     분양예정 단지는 `room_types` 가 빈 목록이고 평균도 null 이다 (2026-11-19 실측: 헬리오시티 38487 은 평형 30개, 가락미륭재건축

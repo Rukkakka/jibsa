@@ -22,6 +22,7 @@ from jibsa.core.listing import (
     normalize_date,
     normalize_floor,
     note,
+    null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.real_price import (
@@ -51,6 +52,7 @@ from jibsa.providers.dabang.service.common import (
     complex_url,
     error_message,
     fetch_complex,
+    first_space_notes,
     listing_url,
     more_after,
     primary_space_of,
@@ -320,10 +322,10 @@ def _fetch_complex_space(fetch: Callable[[], T], complex_id: str, space_seq: int
         raise
 
 
-def primary_space(client: DabangClient, complex_id: str, *, verb: str) -> tuple[int, str]:
-    """`--pyeong` 을 안 준 조회의 (평형 번호, 대표 평형으로 조회했다는 안내) (단지 상세 1회).
+def primary_space(client: DabangClient, complex_id: str, *, verb: str) -> tuple[int, list[str]]:
+    """`--pyeong` 을 안 준 조회의 (평형 번호, 대표 평형으로 조회했다는 안내들) (단지 상세 1회).
 
-    다방이 대표를 주지 않으면(없거나 0) 웹처럼 첫 평형을 고른다.
+    다방이 대표를 주지 않으면(없거나 0) 웹처럼 첫 평형을 고른다. 그때 평형 목록에서 빈 항목을 뺐으면 그 안내가 더 붙는다.
 
     Args:
         verb: 안내 끝말 ('찾았습니다'·'비교했습니다').
@@ -341,7 +343,7 @@ def primary_space(client: DabangClient, complex_id: str, *, verb: str) -> tuple[
         )
     seq, from_dabang = chosen
     name = next((space.pyeong_type for space in result.spaces or [] if space.space_seq == seq), None)
-    return seq, primary_space_note(name or str(seq), seq, verb=verb, from_dabang=from_dabang)
+    return seq, [primary_space_note(name or str(seq), seq, verb=verb, from_dabang=from_dabang), *first_space_notes(result)]
 
 
 def primary_space_note(name: str, space_seq: int, *, verb: str, from_dabang: bool) -> str:
@@ -369,6 +371,8 @@ class _Page(NamedTuple):
     histories: list[DabangRealPriceHistoryModel]
     total: int | None
     has_more: bool
+    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목 수
+    dropped: int = 0
 
 
 class _Collected(NamedTuple):
@@ -376,6 +380,7 @@ class _Collected(NamedTuple):
     total: int | None
     has_more: bool
     unknown: int
+    dropped: int
 
 
 def _page_size(limit: int) -> int:
@@ -393,22 +398,25 @@ def _collect(fetch: Callable[[int, int], _Page | None], limit: int, *, area_kind
     prices: list[DabangRealPrice] = []
     total: int | None = None
     has_more = False
-    received = unknown = 0
+    received = unknown = dropped = 0
     page_size = _page_size(limit)
     for page in range(1, REAL_PRICE_MAX_PAGES + 1):
         fetched = fetch(page, page_size)
         if fetched is None:
             break
         total = fetched.total if total is None else total
+        dropped += fetched.dropped
         page_rows = fetched.histories[:limit - received]
         received += len(page_rows)
         rows = [_real_price(row, area_kind=area_kind) for row in page_rows]
         prices += [price for price in rows if price is not None]
         unknown += rows.count(None)
-        has_more = more_after(fetched.has_more, len(fetched.histories), cut=len(fetched.histories) - len(page_rows))
-        if not fetched.has_more or not fetched.histories or received >= limit:
+        # 빈 항목만 온 쪽은 빈 쪽이 아니다 (빈 항목은 뺀 칸이라 limit 으로 세지 않아 다음 쪽 번호는 어긋나지 않는다)
+        slots = len(fetched.histories) + fetched.dropped
+        has_more = more_after(fetched.has_more, slots, cut=len(fetched.histories) - len(page_rows))
+        if not fetched.has_more or not slots or received >= limit:
             break
-    return _Collected(prices, total, has_more, unknown)
+    return _Collected(prices, total, has_more, unknown, dropped)
 
 
 def get_real_prices(
@@ -427,8 +435,8 @@ def get_real_prices(
     """
     notes: list[str] = []
     if space_seq is None:
-        space_seq, space_note = primary_space(client, complex_id, verb='찾았습니다')
-        notes.append(space_note)
+        space_seq, space_notes = primary_space(client, complex_id, verb='찾았습니다')
+        notes += space_notes
     from_month, to_month = period_months(years)
 
     def fetch(page: int, page_size: int) -> _Page | None:
@@ -440,9 +448,11 @@ def get_real_prices(
             complex_id,
             space_seq,
         )
-        return _Page(result.list_, result.total, bool(result.has_more)) if result else None
+        return _Page(result.list_, result.total, bool(result.has_more), result.null_items('list_')) if result else None
 
     collected = _collect(fetch, limit)
+    if collected.dropped:
+        notes.append(null_items_note('다방 실거래', collected.dropped))
     return DabangRealPriceResult(
         complex_id=complex_id,
         space_seq=space_seq,
@@ -575,11 +585,13 @@ def get_listing_real_prices(
 
     def fetch(page: int, page_size: int) -> _Page | None:
         result = first if page == 1 else history(page, page_size)
-        return None if result is None else _Page(result.histories, result.total, bool(result.has_more))
+        return None if result is None else _Page(result.histories, result.total, bool(result.has_more), result.null_items('histories'))
 
     collected = _collect(fetch, limit, area_kind=area_kind)
     basis, scope_notes = _listing_scope(scope, building)
     notes += scope_notes + _unknown_trade_note(collected.unknown)
+    if collected.dropped:
+        notes.append(null_items_note('다방 실거래', collected.dropped))
     return DabangRealPriceResult(
         listing_id=listing_id,
         trade=trade,
@@ -736,8 +748,8 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     """
     notes: list[str] = []
     if space_seq is None:
-        space_seq, space_note = primary_space(client, complex_id, verb='찾았습니다')
-        notes.append(space_note)
+        space_seq, space_notes = primary_space(client, complex_id, verb='찾았습니다')
+        notes += space_notes
     result = _fetch_complex_space(
         lambda: client.run_request_real_price_complex_charts_v5(
             DabangRealPriceComplexChartsV5RequestParameterModel(complex_id=complex_id, space_seq=space_seq)
@@ -771,6 +783,9 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
         )
         for row in sale.statistics
     ]
+    # 달 목록을 매매 쪽으로 만들어서 거기서 빈 항목을 뺐으면 그 달이 목록에서 빠졌다
+    if dropped := sale.null_items('statistics'):
+        notes.append(null_items_note('다방 시세 흐름 매매 월별', dropped))
     gap = result.gap.recent_info if result.gap else None
     year = result.year_price
     return DabangPriceTrend(
@@ -912,8 +927,8 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
     """
     notes: list[str] = []
     if space_seq is None:
-        space_seq, space_note = primary_space(client, complex_id, verb='비교했습니다')
-        notes.append(space_note)
+        space_seq, space_notes = primary_space(client, complex_id, verb='비교했습니다')
+        notes += space_notes
     result = _fetch_complex_space(
         lambda: client.run_request_real_price_complex_price_per_py_v5(
             DabangRealPriceComplexPricePerPyV5RequestParameterModel(complex_id=complex_id, space_seq=space_seq)

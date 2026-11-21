@@ -11,7 +11,10 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import won_to_manwon
+from jibsa.core.listing import (
+    null_items_note,
+    won_to_manwon,
+)
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.trend import (
     NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel,
@@ -22,6 +25,7 @@ from jibsa.providers.naver.api.request.trend import (
 from jibsa.providers.naver.service.common import (
     SALE_JEONSE_CODE_BY_NAME,
     result_or_none,
+    result_with_null_items,
 )
 
 from typing import Annotated
@@ -119,7 +123,7 @@ class NaverPriceTrend(BaseModel):
 
     latest_manwon: Annotated[
         float | None,
-        Field(description='최근 주 평균 평당 호가 (만원)')
+        Field(description='최근 주 평균 평당 호가 (만원). 네이버가 주간 목록에 빈 항목을 줘 최근 주를 알 수 없으면 null')
     ] = None
     weekly: Annotated[
         list[NaverWeeklyPrice],
@@ -219,7 +223,7 @@ def get_district_trend(
     counts = result_or_none(lambda: client.run_request_legal_division_article_count_weekly_info_v1(
         NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel(**query)
     ), notes=notes, what='매물 수 추이', unknown='모름(null)으로 낸 칸: listing_count')
-    prices = result_or_none(lambda: client.run_request_legal_division_pyeong_price_weekly_list_v1(
+    prices, price_nulls = result_with_null_items(lambda: client.run_request_legal_division_pyeong_price_weekly_list_v1(
         NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel(**query)
     ), notes=notes, what='평당가 추이', unknown='모름(null)으로 낸 칸: price_per_pyeong')
     trades = result_or_none(lambda: client.run_request_legal_division_real_trade_count_weekly_list_v1(
@@ -235,6 +239,9 @@ def get_district_trend(
         NaverWeeklyPrice(week_start=point.first_day_of_week, price_per_pyeong_manwon=won_to_manwon(point.average_pyeong_price))
         for point in prices or []
     ]
+    if price_nulls:
+        # 빈 항목을 뺀 목록의 마지막 주가 서버의 마지막 주가 아닐 수 있어 최근 주는 모름이다 (받은 주들은 그대로 둔다)
+        notes.append(null_items_note('네이버 평당가 추이', price_nulls, ('price_per_pyeong.latest_manwon',)))
     return NaverDistrictTrend(
         trade_type=trade_type,
         period=period,
@@ -250,7 +257,7 @@ def get_district_trend(
         price_per_pyeong=None if prices is None else NaverPriceTrend(
             # 주간 목록 3종은 모두 오래된 주부터 온다. 매물 수·거래 건수의 서버 최신값(latest...)도 마지막 주와 같다
             # (2026-10-14 실측: 역삼동 52주 3종 모두 오름차순, latestWeeklyCount = 마지막 주 averageCount)
-            latest_manwon=price_weekly[-1].price_per_pyeong_manwon if price_weekly else None,
+            latest_manwon=None if price_nulls or not price_weekly else price_weekly[-1].price_per_pyeong_manwon,
             weekly=price_weekly,
         ),
         trade_count=None if trades is None else NaverTradeCountTrend(
