@@ -1,4 +1,4 @@
-"""요청 모델: 아파트 매물 검색 (search listings apt), 아파트 매물 상세 (listing), 매물 묶음 (catalog)."""
+"""요청 모델: 아파트 매물 검색 (search listings apt), 아파트 매물 상세 (listing), 매물 묶음과 호 정보 (catalog)."""
 
 
 from pydantic import (
@@ -166,3 +166,12 @@ class ZigbangItemCatalogsRequestParameterModel(RequestModel):
             alias='firstItemSource'
         )
     ] = 'coalition'
+
+
+class ZigbangItemCatalogsHoInfoRequestParameterModel(RequestModel):
+    """`GET /apt/item-catalogs/{areaHoId}/ho-info` 경로. 아파트 매물 묶음의 호 정보 (직방 시세·공시가격·분양가)."""
+
+    area_ho_id: Annotated[
+        int,
+        Field(gt=0, exclude=True, description='호 ID (목록 카탈로그의 areaHoId). 경로에 들어간다')
+    ]

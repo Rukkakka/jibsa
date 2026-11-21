@@ -1312,7 +1312,8 @@ def catalog_command(
 ) -> None:
     """같은 호를 여러 중개사가 올린 아파트 매물 묶음(직방 웹 묶음 화면)의 매물 전부. 매물마다 가격·관리비·입주일 등 listing 상세와 같은 필드.
 
-    검색 결과의 is_price_range 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (20건마다 요청 1회).
+    검색 결과의 is_price_range 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (매물은 20건마다 요청 1회,
+    다 받은 뒤 호 정보 요청 1회를 더 해 호의 직방시세·공시가격·분양가를 붙인다. 호 정보를 못 받으면 그 값만 null 이고 [실패] 로 알린다).
 
     예: jibsa zigbang catalog 8260358-trade --fields id,price_manwon,floor,move_in
     """

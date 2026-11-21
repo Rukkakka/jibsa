@@ -139,16 +139,25 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '아파트 동 목록 역삼동', APT, ('역삼동', '--limit', '2'), 'listings',
             (
                 Capture('apt', 'listings', 'complex_id', prefix='apt-'), Capture('apt_listing', 'listings', 'id'),
-                # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
-                Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),
                 Capture('apt_next', '', 'next'),
             ),
         ),
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
         # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다
-        Step('아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings'),
+        # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다. 호 묶음은 여기서 고른다: 신규분양 호는 직방시세가
+        # 없어(2026-11-20 리뷰 실측: 서패동 분양 묶음 19034254-trade 는 시세 null·[실패] 안내 없음) 아래 단계가 고장으로 잘못 알린다.
+        # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
+        Step(
+            '아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings',
+            (Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),),
+        ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
-        Step('아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings'),
+        # 호 정보(item_catalogs/ho-info)는 덤이라 실패해도 값이 null 로 남고 명령은 성공한다. 직방은 시세가 없는 호에 0 을 주기도 해
+        # jibsa 가 null 로 낸다(service/apt.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다.
+        Step(
+            '아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings',
+            also_expect=('estimated_sale_price_manwon',), may_be_empty=True,
+        ),
         # 역 이름은 그 역이 속한 동을 찾아(/apt/locals/polygon) 그 동의 지역 목록을 준다
         Step('아파트 역이 속한 동 강남역', APT, ('강남역', '--limit', '2'), 'listings'),
         # 역 주변 단지는 웹 '주변단지' 목록(/apt/danjis/ids, 조회수 순)에 역 주변 단지 정보(/apt/subways/{id})의 거리를 붙인다

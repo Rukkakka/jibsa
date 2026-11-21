@@ -43,7 +43,7 @@ WEB_PATH_BY_SERVICE_TYPE: dict[str, str] = {
     '오피스텔': 'officetel',
     '빌라': 'villa',
 }
-# 학군·건물 실거래 같은 덤 조회는 이 실패들을 그 값만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`:
+# 학군·건물 실거래·호 정보 같은 덤 조회는 이 실패들을 그 값만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`:
 # 네트워크·상태 코드, 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 덤 차례의 요청 제한을 더한다
 SCHOOL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 # 매물 목록 명령의 --limit 최대값. CLI 옵션의 max 와 상한 안내(`common.apt` 의 `apt_pagination_notes`)가 함께 쓴다

@@ -32,6 +32,7 @@ from jibsa.core.listing import (
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.apt import (
+    ZigbangItemCatalogsHoInfoRequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
     ZigbangItemCatalogsRequestParameterModel,
     ZigbangLocalsItemCatalogsRequestParameterModel,
@@ -40,6 +41,7 @@ from jibsa.providers.zigbang.api.request.apt import (
 from jibsa.providers.zigbang.api.request.common import ZigbangAptItemSource
 from jibsa.providers.zigbang.api.response.apt import (
     ZigbangAptItemModel,
+    ZigbangHoPriceInfoModel,
 )
 from jibsa.providers.zigbang.service.common.apt import (
     APT_TRAN_TYPE_BY_TRADE,
@@ -58,6 +60,7 @@ from jibsa.providers.zigbang.service.common.apt import (
 from jibsa.providers.zigbang.service.common.base import (
     DIRECTION_LABELS,
     MAX_LIST_LIMIT,
+    SCHOOL_LOOKUP_ERRORS,
     ZigbangAptRegion,
     ZigbangListingDetail,
     apt_complex_id,
@@ -447,8 +450,29 @@ def apt_item_to_listing(
     )
 
 
+class ZigbangPublicPrice(BaseModel):
+    """호의 공시가격 한 해."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    year: Annotated[
+        int,
+        Field(description='공시 연도')
+    ]
+    price_manwon: Annotated[
+        float | None,
+        Field(description='공시가격 (만원, 직방이 원 단위로 준 값을 환산). 0 이거나 직방이 주지 않으면 null (모름)')
+    ] = None
+    change_rate: Annotated[
+        float | None,
+        Field(description='전년 대비 변동률 (%, 부호 있음. 예: 26.9, -28, 0. 웹은 절댓값과 색으로 그린다). 직방이 주지 않으면 null')
+    ] = None
+
+
 class ZigbangCatalogResult(BaseModel):
-    """같은 호·거래 유형의 아파트 매물 묶음 (catalog)."""
+    """같은 호·거래 유형의 아파트 매물 묶음 (catalog). 호의 직방시세·공시가격·분양가(호 정보)도 함께 준다."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -487,8 +511,62 @@ class ZigbangCatalogResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='뺀 매물·일부만 받았다는 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description=(
+            '뺀 매물·일부만 받았다는 안내와, 호 정보를 받지 못해 직방시세·공시가격·분양가를 모른다는 [실패] 안내. '
+            'CLI 가 notice 아래에 붙인다'
+        ))
     ] = []
+    estimated_sale_price_manwon: Annotated[
+        float | None,
+        Field(description=(
+            "이 호의 직방시세® 매매가 (만원. 웹 묶음 화면 '시세 정보' 탭). 직방이 실거래를 분석해 낸 추정값이라 호가·실거래가가 아니다. "
+            '직방이 주지 않거나 0 이면 null'
+        ))
+    ] = None
+    estimated_sale_price_per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description='직방시세® 매매 평당가 (만원, 3.3㎡당). 직방이 주지 않거나 0 이면 null')
+    ] = None
+    estimated_jeonse_price_manwon: Annotated[
+        float | None,
+        Field(description='이 호의 직방시세® 전세가 (만원). 추정값이다. 직방이 주지 않거나 0 이면 null')
+    ] = None
+    estimated_jeonse_price_per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description='직방시세® 전세 평당가 (만원, 3.3㎡당). 직방이 주지 않거나 0 이면 null')
+    ] = None
+    public_prices: Annotated[
+        list[ZigbangPublicPrice] | None,
+        Field(description='공시가격 (직방 응답 순서, 최근 해부터). 공시가격이 없으면 [], 호 정보를 받지 못했거나 직방이 주지 않으면 null')
+    ] = None
+    presale_price_manwon: Annotated[
+        float | None,
+        Field(description=(
+            "이 호의 분양가 (만원, 직방 `ho분양가`). 웹은 이 값이 있으면 이 값을 '이 매물 분양가' 로 보여 준다 (`ho분양가 ?? roomType분양가`). "
+            '직방이 주지 않거나 0 이면 null'
+        ))
+    ] = None
+    presale_average_price_manwon: Annotated[
+        float | None,
+        Field(description=(
+            "같은 타입의 평균 분양가 (만원, 직방 `averageHo분양가`). 웹은 호 분양가(`presale_price_manwon`)가 있을 때만 "
+            "'이 매물과 같은 타입의 평균 분양가는 …입니다' 로 함께 보여 준다. 직방이 주지 않거나 0 이면 null"
+        ))
+    ] = None
+    presale_type_price_manwon: Annotated[
+        float | None,
+        Field(description=(
+            "이 호가 속한 타입(평형)의 분양가 (만원, 직방 `roomType분양가`). 웹은 호 분양가가 없을 때 이 값을 '이 매물 분양가' 로 보여 주고 "
+            "'호 분양가 정보를 확인할 수 없어서 이 타입의 평균 분양가를 표시합니다' 를 붙인다. 직방이 주지 않거나 0 이면 null"
+        ))
+    ] = None
+    presale_price_per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description=(
+            '분양가 평당가 (만원, 3.3㎡당, 직방 `pyeongPrice`). 웹이 이 매물 분양가로 보여 주는 값(호 분양가가 있으면 그 호, 없으면 타입 분양가)의 '
+            '평당가다 (2026-11-19 표본 12966062: 타입 분양가 88,560 ÷ 공급 32.7평 = 2,712, 호 분양가는 null). 직방이 주지 않거나 0 이면 null'
+        ))
+    ] = None
 
 
 def _empty_catalog_error(catalog_id: str) -> JibsaError:
@@ -504,6 +582,27 @@ def _empty_catalog_error(catalog_id: str) -> JibsaError:
     )
 
 
+def _known_price(value: float | None) -> float | None:
+    """호 정보의 금액. 직방은 값이 없는 호에 0 을 주기도 해 0 도 값이 없는 것(None)으로 본다 (0만원 시세·분양가·공시가격은 없다)."""
+    return value or None
+
+
+def catalog_public_prices(price_info: ZigbangHoPriceInfoModel | None) -> list[ZigbangPublicPrice] | None:
+    """호의 공시가격을 응답 순서(최근 해부터) 그대로 낸다. 공시가격(원)은 만원으로 환산한다.
+
+    호 정보나 그 안의 `publicPrices` 가 없거나 null 이면 빈 목록이 아니라 모름(None)이다. 공시가격이 없는 호는 빈 목록이다.
+    금액이 0 원인 해는 항목을 빼지 않고 금액만 모름(None)으로 낸다 (공시가격 0원은 실제 값이 아니다).
+    """
+    if price_info is None or price_info.public_prices is None:
+        return None
+    return [
+        ZigbangPublicPrice(
+            year=price.year, price_manwon=won_to_manwon(_known_price(price.price)), change_rate=price.compare_price_rate,
+        )
+        for price in price_info.public_prices
+    ]
+
+
 def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
     """같은 호를 올린 아파트 매물 묶음의 매물을 웹 묶음 화면과 같은 API(`/apt/item-catalogs/{areaHoId}`)로 받는다.
 
@@ -516,6 +615,10 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
     받는 도중 직방이 다음 쪽을 주지 않으면(받는 사이 묶음이 줄어 404, 또는 빈 쪽) 받은 데까지 내고 `[일부]` 로 알린다.
     직방이 `itemCount` 를 주지 않으면(`total` null) 쪽이 가득(`CATALOG_PAGE_SIZE`) 찬 동안 상한까지 받고, 덜 찬 쪽이나
     404·빈 쪽이 오면 끝으로 본다. `(최대 N건)` 안내는 상한에 닿아 멈췄을 때만이다.
+
+    매물을 다 받은 뒤 호 정보(`/apt/item-catalogs/{areaHoId}/ho-info`) 1회를 더 받아 웹 묶음 화면 '시세 정보' 탭의 직방시세·공시가격·
+    분양가를 붙인다. 덤 조회라 실패하면(`SCHOOL_LOOKUP_ERRORS`) 그 값들만 모름(null)으로 두고 `[실패]` 로 알린다. 요청은 매물
+    `CATALOG_PAGE_SIZE` 건에 1회씩과 호 정보 1회다.
 
     Raises:
         JibsaError: 묶음 ID 형식이 아닐 때 (INVALID_ARGUMENT). 묶음에 매물이 없을 때 (LISTING_UNAVAILABLE, reason
@@ -590,6 +693,21 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
             '일부',
             f'묶음 매물 {total}건 중 앞 {received}건만 받았습니다 (최대 {MAX_LIST_LIMIT}건). 나머지는 url 의 직방 묶음 화면에서 보세요',
         ))
+    # 호 정보는 덤이라 매물을 다 받은 뒤에 부르고, 못 받아도 받은 매물은 낸다
+    price_info: ZigbangHoPriceInfoModel | None = None
+    try:
+        price_info = client.run_request_item_catalogs_ho_info(
+            ZigbangItemCatalogsHoInfoRequestParameterModel(area_ho_id=area_ho_id)
+        ).price_info
+    except SCHOOL_LOOKUP_ERRORS as exc:
+        notes.append(note(
+            '실패',
+            f'직방 호 정보를 받지 못해({type(exc).__name__}) 직방시세·공시가격·분양가를 모릅니다 (url 의 직방 묶음 화면에서 확인)',
+        ))
+    zigbang_price = price_info.zigbang_price if price_info else None
+    sale = zigbang_price.trade if zigbang_price else None
+    jeonse = zigbang_price.charter if zigbang_price else None
+    presale = price_info.presale if price_info else None
     return ZigbangCatalogResult(
         catalog_id=catalog_id,
         url=apt_catalog_url(area_ho_id, tran_type),
@@ -599,4 +717,13 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
         has_more=has_more,
         listings=listings,
         notes=notes,
+        estimated_sale_price_manwon=_known_price(sale.price if sale else None),
+        estimated_sale_price_per_pyeong_manwon=_known_price(sale.pyeong_price if sale else None),
+        estimated_jeonse_price_manwon=_known_price(jeonse.price if jeonse else None),
+        estimated_jeonse_price_per_pyeong_manwon=_known_price(jeonse.pyeong_price if jeonse else None),
+        public_prices=catalog_public_prices(price_info),
+        presale_price_manwon=_known_price(presale.ho if presale else None),
+        presale_average_price_manwon=_known_price(presale.average_ho if presale else None),
+        presale_type_price_manwon=_known_price(presale.room_type if presale else None),
+        presale_price_per_pyeong_manwon=_known_price(presale.pyeong_price if presale else None),
     )

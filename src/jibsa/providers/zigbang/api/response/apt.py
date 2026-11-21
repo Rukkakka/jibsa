@@ -1,4 +1,4 @@
-"""응답 모델: 아파트 매물 검색 (search listings apt), 아파트 매물 상세 (listing), 매물 묶음 (catalog)."""
+"""응답 모델: 아파트 매물 검색 (search listings apt), 아파트 매물 상세 (listing), 매물 묶음과 호 정보 (catalog)."""
 
 from pydantic import Field, field_validator
 
@@ -308,3 +308,100 @@ class ZigbangItemCatalogsResponseModel(ResponseModel):
     def null_items_as_empty(cls, value: Any) -> Any:
         """null 은 빈 쪽으로 받는다. 매물이 없다는 모양이라 응답 형식 오류(PARSE_ERROR)로 끝내지 않는다."""
         return [] if value is None else value
+
+
+# ---------------------------------------------------------------------------
+# GET /apt/item-catalogs/{areaHoId}/ho-info
+# ---------------------------------------------------------------------------
+
+class ZigbangHoPriceModel(ResponseModel):
+    """호의 직방 시세 하나 (매매 또는 전세)."""
+
+    price: Annotated[
+        int | None,
+        Field(description='시세 (만원)')
+    ] = None
+    pyeong_price: Annotated[
+        int | float | None,
+        Field(description='평당 시세 (만원/3.3㎡)', alias='pyeongPrice')
+    ] = None
+
+
+class ZigbangHoZigbangPriceModel(ResponseModel):
+    """호의 직방 시세. 호 ID(`areahoId`)는 읽지 않는다."""
+
+    trade: Annotated[
+        ZigbangHoPriceModel | None,
+        Field(description='매매 시세')
+    ] = None
+    charter: Annotated[
+        ZigbangHoPriceModel | None,
+        Field(description='전세 시세')
+    ] = None
+
+
+class ZigbangHoPublicPriceModel(ResponseModel):
+    """공시가격 한 해."""
+
+    year: Annotated[
+        int,
+        Field(description='공시 연도')
+    ]
+    price: Annotated[
+        int | None,
+        Field(description='공시가격 (**원** 단위, 예: 2077000000). 다른 금액 필드와 단위가 다르다')
+    ] = None
+    compare_price_rate: Annotated[
+        int | float | None,
+        Field(description='전년 대비 변동률 (%, 부호 있음. 예: 26.9, -28, 0)', alias='comparePriceRate')
+    ] = None
+
+
+class ZigbangHoPresalePriceModel(ResponseModel):
+    """호의 분양가 (키 이름이 한글이다). 금액은 **만원**이다."""
+
+    ho: Annotated[
+        int | None,
+        Field(description='그 호의 분양가 (만원). 2026-11-19 표본은 null', alias='ho분양가')
+    ] = None
+    average_ho: Annotated[
+        int | float | None,
+        Field(description='호 평균 분양가 (만원, 키 averageHo분양가). 2026-11-19 표본은 null', alias='averageHo분양가')
+    ] = None
+    room_type: Annotated[
+        int | float | None,
+        Field(description='이 호가 속한 타입(평형)의 분양가 (만원). 웹은 호 분양가가 없을 때 이 값을 보여 준다 (2026-11-19 표본 12966062 는 88560)', alias='roomType분양가')
+    ] = None
+    pyeong_price: Annotated[
+        int | float | None,
+        Field(
+            description='평당 분양가 (만원/3.3㎡). 웹이 보여 주는 분양가(`ho분양가 ?? roomType분양가`)의 평당가다 (표본 12966062: 88560 ÷ 공급 32.7평 = 2712)',
+            alias='pyeongPrice'
+        )
+    ] = None
+
+
+class ZigbangHoPriceInfoModel(ResponseModel):
+    """호의 가격 정보. 시세 변동 차트 여부(`hasRtPrices`)는 읽지 않는다."""
+
+    zigbang_price: Annotated[
+        ZigbangHoZigbangPriceModel | None,
+        Field(description='직방 시세', alias='zigbangPrice')
+    ] = None
+    public_prices: Annotated[
+        list[ZigbangHoPublicPriceModel] | None,
+        Field(description='공시가격 (최근 해부터. 2026-11-19 표본은 2026~2022 다섯 해). 키가 없거나 null 이면 None (모름)', alias='publicPrices')
+    ] = None
+    presale: Annotated[
+        ZigbangHoPresalePriceModel | None,
+        Field(description='분양가', alias='분양가')
+    ] = None
+
+
+class ZigbangItemCatalogsHoInfoResponseModel(ResponseModel):
+    """아파트 매물 묶음의 호 정보. 단지·동·면적·관리비·VR·평면도 같은 이 밖의 키는 읽지 않는다 (사진·좌표는 내보내지 않는다)."""
+
+    price_info: Annotated[
+        ZigbangHoPriceInfoModel | None,
+        Field(description='가격 정보 (직방 시세·공시가격·분양가)', alias='priceInfo')
+    ] = None
