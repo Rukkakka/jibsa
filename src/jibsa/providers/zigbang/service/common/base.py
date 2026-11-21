@@ -9,6 +9,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
 )
 
 from jibsa.core.errors import (
@@ -18,6 +20,7 @@ from jibsa.core.errors import (
 from jibsa.core.geo import MultiPolygon
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.listing import (
+    NOT_APPLICABLE_PRICE_FIELDS,
     Listing,
     ListingDetail,
 )
@@ -40,11 +43,19 @@ WEB_PATH_BY_SERVICE_TYPE: dict[str, str] = {
     '오피스텔': 'officetel',
     '빌라': 'villa',
 }
-# 학군은 덤이라 이 실패들은 학군만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`: 네트워크·상태 코드,
-# 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 학군 차례의 요청 제한을 더한다
+# 학군·건물 실거래 같은 덤 조회는 이 실패들을 그 값만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`:
+# 네트워크·상태 코드, 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 덤 차례의 요청 제한을 더한다
 SCHOOL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 # 매물 목록 명령의 --limit 최대값. CLI 옵션의 max 와 상한 안내(`common.apt` 의 `apt_pagination_notes`)가 함께 쓴다
 MAX_LIST_LIMIT: int = 120
+# 목록 줄(`ZigbangListing`)과 상세가 함께 쓰는 HUG안심임대인·실매물 확인 필드 설명. 배지 코드는 `common.room` 의 `HUG_BADGE`·`VERIFICATION_BADGE`
+HUG_LESSOR_DESCRIPTION: str = (
+    "HUG 안심임대인 (웹의 'HUG안심임대인' 꼬리표). 직방 배지에 HUG 가 있으면 true, 배지를 받았는데 없으면 false, 직방이 배지를 주지 않으면 null"
+)
+ACTUAL_LISTING_CHECKED_DESCRIPTION: str = (
+    "직방 웹의 '실매물 확인' 꼬리표. 직방이 뜻을 설명하지 않는다. 직방 배지에 ITEM_VERIFICATION 이 있으면 true, 배지를 받았는데 없으면 false "
+    '(확인 실패 ITEM_VERIFICATION_FAILED 도 false), 직방이 배지를 주지 않으면 null'
+)
 APT_LISTING_KIND_DESCRIPTION: str = (
     '매물 종류: 신규분양(분양 매물, 가격은 분양가)·집주인(집주인이 내놓은 매물)·중개사(중개사무소가 등록한 매물). '
     '모르는 코드는 직방 코드 그대로, 직방이 주지 않으면 null (묶음 줄은 묶음 맨 앞 매물이 상세를 볼 수 없는 출처라 id 가 맨 앞 매물이 아닐 때도 null)'
@@ -58,9 +69,8 @@ APT_PYEONG_NAME_DESCRIPTION: str = '평형 이름 (평 기준, 예: 34A. complex
 # 없는 유형은 키를 뺀다. 찜 수는 웹 www 의 원룸·빌라·오피스텔 화면에 보이지 않아 아파트만이다. 아파트 학군은 단지 정보
 # (zigbang complex)에서 주고, 아파트 상세 응답에는 주변 시설·배송 업체가 없다
 COMPLEX_DETAIL_FIELDS: frozenset[str] = frozenset({'complex_id', 'complex_name'})
-APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({
-    'supply_area_m2', 'listing_kind', 'pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked', 'non_compliant_building',
-})
+APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2', 'listing_kind', 'pyeong_id', 'pyeong_name', 'zzim_count'})
+ROOM_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'schools', 'nearby_facilities', 'delivery_services', 'building_trades'})
 # 방향 코드 → 라벨. 주거 상세(`room.detail`)와 아파트 상세(`apt`)가 함께 쓴다
 DIRECTION_LABELS: dict[str, str] = {
     'N': '북향',
@@ -167,6 +177,14 @@ class ZigbangListing(Listing):
         str | None,
         Field(description='오피스텔 건물 ID (예: officetel-20227, 오피스텔만). zigbang complex·items 에 넘긴다')
     ] = None
+    hug_lessor: Annotated[
+        bool | None,
+        Field(description=HUG_LESSOR_DESCRIPTION)
+    ] = None
+    actual_listing_checked: Annotated[
+        bool | None,
+        Field(description=ACTUAL_LISTING_CHECKED_DESCRIPTION)
+    ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
@@ -196,8 +214,83 @@ class ZigbangBoundary(BaseModel):
     ]
 
 
+class ZigbangNearbyFacility(BaseModel):
+    """주변 생활 시설 하나 (웹 상세의 '주변 생활 시설' 그림에 그려지는 시설)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    type: Annotated[
+        str | None,
+        Field(description='시설 종류 (지하철역·버스정류장·편의점·카페·약국·세탁소·대형마트. 직방이 준 글자 그대로). 직방이 종류를 주지 않으면 null')
+    ] = None
+    minutes: Annotated[
+        int,
+        Field(description='걸리는 시간 (분). 웹처럼 직방이 준 초를 분으로 반올림하고 (.5분은 올림) 0분이 되면 1분으로 쓴다')
+    ]
+    transport: Annotated[
+        str,
+        Field(description='이동 수단 (도보·차)')
+    ]
+    distance_m: Annotated[
+        int | float | None,
+        Field(description='거리 (m). 웹은 거리를 그리지 않고 분만 그린다. 직방이 주지 않으면 null')
+    ] = None
+
+
+class ZigbangBuildingTrade(BaseModel):
+    """건물(필지)의 실거래 한 건 (만원, 국토부 신고 기준). 거래 유형에 없는 가격 필드는 출력에서 뺀다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    trade_date: Annotated[
+        str | None,
+        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null')
+    ] = None
+    trade_type: Annotated[
+        str | None,
+        Field(description='거래 유형 (매매·전세·월세). 직방이 모르는 값을 주면 null (그때는 가격 필드를 직방이 준 대로 모두 낸다)')
+    ] = None
+    floor: Annotated[
+        str | None,
+        Field(description="층 (예 '4', '지하1'). 직방이 주지 않으면 null")
+    ] = None
+    price_manwon: Annotated[
+        float | None,
+        Field(description='매매가 (만원). 매매만 있고 다른 유형은 키가 없다')
+    ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='보증금·전세금 (만원). 전세·월세만 있고 매매는 키가 없다')
+    ] = None
+    rent_manwon: Annotated[
+        float | None,
+        Field(description='월세 (만원). 월세만 있고 매매·전세는 키가 없다')
+    ] = None
+    exclusive_area_m2: Annotated[
+        float | None,
+        Field(description='전용면적 (㎡). 직방이 주지 않으면 null')
+    ] = None
+    land_area_m2: Annotated[
+        float | None,
+        Field(description='대지권면적 (㎡). 직방이 주지 않으면 null')
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # 거래 유형을 모르면(None) 뺄 가격 필드가 없다
+        for field in NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type or '', frozenset()):
+            data.pop(field, None)
+        return data
+
+
 class ZigbangListingDetail(ListingDetail):
-    """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, 아파트 전용 필드(`APT_ONLY_DETAIL_FIELDS`)는 아파트에만 있다."""
+    """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, 아파트 전용 필드(`APT_ONLY_DETAIL_FIELDS`)는 아파트에만,
+    원룸·빌라·오피스텔 전용 필드(`ROOM_ONLY_DETAIL_FIELDS`)는 아파트를 뺀 유형에만 있다."""
 
     residence_type: Annotated[
         str | None,
@@ -245,22 +338,82 @@ class ZigbangListingDetail(ListingDetail):
     ] = None
     confirmed_at: Annotated[
         str | None,
-        Field(description="직방이 매물을 마지막으로 확인한 날짜 (YYYY-MM-DD, 한국 시간. 아파트만). 웹 매물 화면은 이 시각으로 '2주 전 확인' 처럼 상대 표기를 보여 준다. 모르면 null")
+        Field(description=(
+            "직방이 매물을 마지막으로 확인한 날짜 (YYYY-MM-DD, 한국 시간). 웹 매물 화면은 이 시각으로 아파트는 '2주 전 확인', 원룸·빌라·오피스텔은 "
+            "개요의 '33일 전' 같은 상대 표기를 보여 준다. 직방 응답의 아파트는 effectivenessUpdatedAt, 원룸·빌라·오피스텔은 meta.statusCheckedAt 이다. 모르면 null"
+        ))
     ] = None
     actual_listing_checked: Annotated[
         bool | None,
-        Field(description="직방 웹의 '실매물 확인' 배지 (아파트만). 직방이 뜻을 설명하지 않는다. 모르면 null")
+        Field(description=ACTUAL_LISTING_CHECKED_DESCRIPTION + ' (아파트는 직방이 준 isActualItemChecked 그대로)')
     ] = None
     non_compliant_building: Annotated[
         bool | None,
-        Field(description='위반 건축물 여부 (아파트만. 웹 매물 화면의 위반 건축물 해당·해당없음). 직방이 주지 않으면(제휴 매물) null')
+        Field(description="위반 건축물 여부 (웹 매물 정보의 '위반건축물 여부': true 해당, false 해당 없음). 직방이 주지 않으면(제휴 매물 등) null")
     ] = None
+    hug_lessor: Annotated[
+        bool | None,
+        Field(description=HUG_LESSOR_DESCRIPTION + ' (아파트는 직방이 준 isHugLessor 그대로)')
+    ] = None
+    zzim_count: Annotated[
+        int | None,
+        Field(description='찜 수 (웹 하트 옆 숫자, 아파트만. 0 이면 웹은 숫자를 그리지 않지만 0 그대로 낸다). 직방이 주지 않으면 null')
+    ] = None
+    nearby_facilities: Annotated[
+        list[ZigbangNearbyFacility] | None,
+        Field(description=(
+            "주변 생활 시설 (원룸·빌라·오피스텔만, 웹의 '주변 생활 시설'). 가까운 시설이 있는 종류만 도보 시설을 걸리는 시간 순으로, 그다음 차 시설을 "
+            '같은 순으로 낸다 (웹 그림의 순서). 가까운 시설이 하나도 없으면 [], 직방이 주변 정보를 주지 않으면 null'
+        ))
+    ] = None
+    delivery_services: Annotated[
+        list[str] | None,
+        Field(description=(
+            "이 주소로 배송하는 업체 이름 (원룸·빌라·오피스텔만, 웹의 '이 지역은 하루 배송권이에요'. 예: 쿠팡·SSG·마켓컬리). 직방 응답 순서. "
+            '배송 업체가 없으면 [] (웹은 이 칸을 숨긴다), 직방이 주변 정보를 주지 않으면 null'
+        ))
+    ] = None
+    manage_cost_excludes: Annotated[
+        list[str] | None,
+        Field(description=(
+            "관리비에 들지 않는 항목 (웹 '관리비 미포함 항목', 예: 전기·수도·가스·난방·인터넷·TV·기타 관리비). 원룸·빌라·오피스텔은 웹 순서"
+            '(`manage_cost_includes` 와 같다), 아파트는 직방 응답 순서. 없으면 [], 직방이 주지 않거나 관리비를 확인할 수 없으면 null. '
+            '원룸·빌라·오피스텔에서 관리비가 없거나 정액 관리비가 항목별 내역을 알린 매물은 웹이 미포함 항목을 보여 주지 않아 []'
+        ))
+    ] = None
+    manage_cost_period: Annotated[
+        str | None,
+        Field(description=(
+            "관리비 부과 기준 (예: '직전 월 관리비 기준', '최근 3개월 관리비 평균', '최근 1년 관리비 평균', 또는 중개사가 직접 쓴 글자). "
+            '직방이 주지 않거나 표에 없는 코드면 null'
+        ))
+    ] = None
+    manage_cost_method: Annotated[
+        str | None,
+        Field(description=(
+            "관리비 부과 방식 (웹 문구 그대로, 예: '관리규약에 따라 부과해요.', 또는 중개사가 직접 쓴 글자). 실비 관리비만 직방의 방식 코드로 정하고, "
+            '직방이 주지 않거나 표에 없는 코드면 null. 정액 관리비는 방식 코드를 읽지 않고 웹처럼 정한다: 항목별 내역을 알리지 않았으면 '
+            "('중개 의뢰인이 세부내역을 고지하지 않아 전세입자 등을 통해 추정된 관리비를 안내해요.')를 내고, 내역을 알렸으면 null"
+        ))
+    ] = None
+    building_trades: Annotated[
+        list[ZigbangBuildingTrade] | None,
+        Field(description=(
+            '건물(필지) 실거래 (원룸·빌라·오피스텔만, 웹의 건물 실거래가). 직방이 준 거래 전부를 계약일 최신순으로 낸다 (웹은 3건만 보이고 더보기로 5건씩 연다). '
+            '필지가 없거나 조회에 실패하면 null, 거래가 없으면 []'
+        ))
+    ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description=(
+            '덤 조회(건물 학군·건물 실거래) 실패 안내. CLI 가 결과 위에 붙인다'
+        ))
+    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
-        # 아파트 학군은 단지 정보(zigbang complex)에서 준다
         if self.property_type == '아파트':
-            fields = fields | {'schools'}
+            fields = fields | ROOM_ONLY_DETAIL_FIELDS
         if self.property_type not in ('아파트', '오피스텔'):
             fields = fields | COMPLEX_DETAIL_FIELDS
         if self.property_type != '아파트':

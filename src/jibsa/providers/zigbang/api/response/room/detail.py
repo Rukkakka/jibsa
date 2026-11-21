@@ -1,4 +1,4 @@
-"""응답 모델: 원룸·빌라·오피스텔 매물 상세 (listing): 기존 상세, 건물 학군 (새 주거 상세는 base)."""
+"""응답 모델: 원룸·빌라·오피스텔 매물 상세 (listing): 기존 상세, 건물 학군, 건물 실거래 (새 주거 상세는 base)."""
 
 from pydantic import Field
 
@@ -289,9 +289,9 @@ class ZigbangBlSchoolLevelModel(ResponseModel):
         Field(description='통학구역·학교군', alias='schoolZone')
     ] = None
     schools: Annotated[
-        list[ZigbangBlSchoolModel],
-        Field(description='통학구역·학교군 안의 학교')
-    ] = []
+        list[ZigbangBlSchoolModel] | None,
+        Field(description='통학구역·학교군 안의 학교. 키가 없거나 null 이면 None (학교 없음으로 본다)')
+    ] = None
 
 
 class ZigbangBlsSchoolZonesV1ResponseModel(ResponseModel):
@@ -308,4 +308,54 @@ class ZigbangBlsSchoolZonesV1ResponseModel(ResponseModel):
     high: Annotated[
         ZigbangBlSchoolLevelModel | None,
         Field(description='고등학교 (학교군)')
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# GET /v2/bls/{pnu}/rts
+# ---------------------------------------------------------------------------
+
+class ZigbangBlsRtModel(ResponseModel):
+    """건물(필지)의 실거래 한 건. 필지 번호(`pnu`)는 읽지 않는다. 금액은 **만원**이다."""
+
+    deal_date: Annotated[
+        str | None,
+        Field(description='거래일 (YYYY-MM-DD)', alias='거래일')
+    ] = None
+    sales_type: Annotated[
+        str | None,
+        Field(description='거래 유형 (매매·전세·월세)')
+    ] = None
+    sale_price: Annotated[
+        int | None,
+        Field(description='매매금액 (만원). 매매가 아니면 null', alias='매매금액')
+    ] = None
+    deposit: Annotated[
+        int | None,
+        Field(description='보증금액 (만원). 매매면 null', alias='보증금액')
+    ] = None
+    monthly_rent: Annotated[
+        int | None,
+        Field(description='월세금액 (만원). 전세는 0, 매매는 null', alias='월세금액')
+    ] = None
+    exclusive_area: Annotated[
+        float | None,
+        Field(description='전용면적 (㎡)', alias='전용면적')
+    ] = None
+    land_area: Annotated[
+        float | None,
+        Field(description='대지권면적 (㎡). 2026-11-19 표본에서는 모두 null', alias='대지권면적')
+    ] = None
+    floor: Annotated[
+        int | None,
+        Field(description='층')
+    ] = None
+
+
+class ZigbangBlsRtsV2ResponseModel(ResponseModel):
+    """건물(필지) 하나의 실거래 목록 (최근 거래부터. 2026-11-19 실측: 한 건물 42건, 거래가 없는 필지는 빈 목록)."""
+
+    rts: Annotated[
+        list[ZigbangBlsRtModel] | None,
+        Field(description='실거래. 거래가 없는 필지는 빈 목록이고, 키가 없거나 null 이면 None (모름)')
     ] = None

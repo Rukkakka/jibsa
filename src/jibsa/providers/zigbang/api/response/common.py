@@ -190,8 +190,18 @@ class ZigbangAddressOriginModel(ResponseModel):
     ] = None
 
 
+def badge_codes_or_none(value: Any) -> list[str] | None:
+    """배지 코드 목록. 문자열 목록이 아니면 None (모름).
+
+    배지는 꼬리표 두 칸에만 쓰는 덤 값이라, 읽지 못해도 그 요약(`items`)이나 웹 관리비(`itemSummaries`)까지 잃지 않게 한다.
+    """
+    if isinstance(value, list) and all(isinstance(code, str) for code in value):
+        return value
+    return None
+
+
 class ZigbangWebItemSummaryModel(ResponseModel):
-    """웹 목록 카드가 쓰는 매물 요약 한 건 (`itemSummaries`, camelCase). 관리비(`fee`)만 읽는다."""
+    """웹 목록 카드가 쓰는 매물 요약 한 건 (`itemSummaries`, camelCase). 관리비(`fee`)와 배지(`badges`)만 읽는다."""
 
     id: Annotated[
         int,
@@ -201,6 +211,16 @@ class ZigbangWebItemSummaryModel(ResponseModel):
         float | None,
         Field(description="월 관리비 (**원** 단위). 0 이면 웹이 '관리비 없음', null 이면 빈칸으로 보여 준다")
     ] = None
+    badges: Annotated[
+        list[str] | None,
+        Field(description="웹 목록 카드의 배지 코드 (예: 'ITEM_VERIFICATION', 'RECOMMEND'). 키가 없거나 목록이 아니면 None (모름)")
+    ] = None
+
+    @field_validator('badges', mode='before')
+    @classmethod
+    def list_or_none(cls, value: Any) -> Any:
+        """문자열 목록이 아니면 None (모름). 배지 한 칸을 읽지 못해 이 요약을 버리면(`readable_summaries`) 관리비까지 잃는다."""
+        return badge_codes_or_none(value)
 
 
 class ZigbangItemSummaryModel(ResponseModel):
@@ -266,6 +286,10 @@ class ZigbangItemSummaryModel(ResponseModel):
         float | None,
         Field(description='웹 목록 카드의 관리비 (`itemSummaries[].fee`, **원** 단위). 같은 매물이 `itemSummaries` 에 있을 때만 응답 모델이 싣는다', exclude=True)
     ] = None
+    web_badges: Annotated[
+        list[str] | None,
+        Field(description='웹 목록 카드의 배지 (`itemSummaries[].badges`). 같은 매물이 `itemSummaries` 에 있고 배지가 목록일 때만 응답 모델이 싣는다', exclude=True)
+    ] = None
     location: Annotated[
         ZigbangLatLngModel | None,
         Field(description='좌표 (흐린 좌표)')
@@ -294,6 +318,23 @@ class ZigbangItemSummaryModel(ResponseModel):
         bool | None,
         Field(description='노출 중 여부')
     ] = None
+    badges: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "배지 코드 (예: 'ITEM_VERIFICATION'). 코드의 뜻 표는 아직 모른다. 2026-11-19 실측 220건에는 키가 늘 있었고 [] 162·ITEM_VERIFICATION 58 이었다. "
+                '키가 없으면 None (모름). 웹 목록 카드는 `itemSummaries[].badges`(여기에 `RECOMMEND` 가 더 붙는다)가 목록이면 그것을 읽고(`web_badges`), '
+                '키가 없거나 목록이 아닐 때만 이 칸을 읽는다 (`listed_badges`). 2026-11-20 실측 강남역 60·신림역 120건: `itemSummaries` 에 키가 없는 15건은 '
+                '이 칸에도 ITEM_VERIFICATION 이 없어 웹 카드처럼 꼬리표가 없었다'
+            )
+        )
+    ] = None
+
+    @field_validator('badges', mode='before')
+    @classmethod
+    def badge_list_or_none(cls, value: Any) -> Any:
+        """문자열 목록이 아니면 None (모름). 이 모델을 읽지 못하면 요약 배치 전체(검색 목록)가 PARSE_ERROR 다."""
+        return badge_codes_or_none(value)
 
     @property
     def listed_manage_cost(self) -> float | str | None:
@@ -301,14 +342,20 @@ class ZigbangItemSummaryModel(ResponseModel):
         # 속성에 대입한 필드도 model_fields_set 에 든다. 실은 값이 null 이어도 웹 값이라 manage_cost 로 넘어가지 않는다
         return self.web_fee if 'web_fee' in self.model_fields_set else self.manage_cost
 
+    @property
+    def listed_badges(self) -> list[str] | None:
+        """목록 줄의 꼬리표에 쓸 배지 코드. 웹 목록 카드처럼 `web_badges` 를 실었으면 그 값, 싣지 않았으면 `badges`."""
+        return self.web_badges if self.web_badges is not None else self.badges
+
 
 class ZigbangItemsListV1ResponseModel(ResponseModel):
     """매물 요약 배치 응답.
 
     `items` (snake_case) 와 `itemSummaries` (camelCase) 가 같은 매물을 다른
     모양으로 담는다. 정규화에는 필드가 더 많은 `items` 를 쓰되, 웹 목록 카드가 보여 주는 관리비는
-    `itemSummaries[].fee` 다 (관리비 0원 매물이 `items` 의 `manage_cost` 에서는 null 이다, 2026-11-15 실측).
-    같은 ID 의 요약에 `fee` 를 실어 주므로(`web_fee`) 호출하는 쪽은 `items` 의 `listed_manage_cost` 만 본다. 토큰이
+    `itemSummaries[].fee` 다 (관리비 0원 매물이 `items` 의 `manage_cost` 에서는 null 이다, 2026-11-15 실측). 꼬리표의 배지도
+    웹 카드는 `itemSummaries[].badges` 를 읽는다. 같은 ID 의 요약에 `fee`·`badges` 를 실어 주므로(`web_fee`·`web_badges`) 호출하는
+    쪽은 `items` 의 `listed_manage_cost`·`listed_badges` 만 본다. 토큰이
     잘못되거나 없어도 같은 결과가 200 으로 온다 (2026-10-11 실측: 가짜 토큰·토큰 없음 모두
     정상 요약. 상세·`/v3/items`·단지·단기임대 검색도 같다). jibsa 는 로그인하지 않은 웹처럼 토큰 없이 부른다.
     """
@@ -319,7 +366,7 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
     ] = []
     item_summaries: Annotated[
         list[ZigbangWebItemSummaryModel],
-        Field(description='웹 목록 카드가 쓰는 매물 요약 (camelCase). 관리비를 `items` 에 실어 주는 데만 쓴다', alias='itemSummaries')
+        Field(description='웹 목록 카드가 쓰는 매물 요약 (camelCase). 관리비·배지를 `items` 에 실어 주는 데만 쓴다', alias='itemSummaries')
     ] = []
     total_count: Annotated[
         int,
@@ -332,7 +379,8 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
         """관리비를 실을 수 있는 요약만 받는다. 관리비 한 칸 때문에 배치 전체(검색 요약·상세의 등록일)를 읽지 못하면 안 된다.
 
         목록이 아니면(null 등) 빈 목록, `ZigbangWebItemSummaryModel` 이 읽지 못하는 항목(ID 가 정수가 아니거나 관리비가
-        숫자·null 이 아닌 '', '-' 등)은 빼서 그 매물은 `items` 의 `manage_cost` 로 돌아간다. 형식 규칙은 모델 한 곳에 둔다.
+        숫자·null 이 아닌 '', '-' 등)은 빼서 그 매물은 `items` 의 `manage_cost` 로 돌아간다. 배지 칸은 목록이 아니면 모델이 None 으로
+        받아 관리비를 잃지 않는다. 형식 규칙은 모델 한 곳에 둔다.
         """
         if not isinstance(value, list):
             return []
@@ -345,12 +393,15 @@ class ZigbangItemsListV1ResponseModel(ResponseModel):
         return summaries
 
     @model_validator(mode='after')
-    def attach_web_fee(self) -> Self:
-        """같은 ID 의 `items` 요약에 웹 목록의 관리비(`fee`)를 실어 준다."""
-        fee_by_id = {summary.id: summary.fee for summary in self.item_summaries}
+    def attach_web_card(self) -> Self:
+        """같은 ID 의 `items` 요약에 웹 목록 카드의 관리비(`fee`)와, 목록으로 온 배지(`badges`)를 실어 준다."""
+        card_by_id = {summary.id: summary for summary in self.item_summaries}
         for summary in self.items:
-            if summary.item_id in fee_by_id:
-                summary.web_fee = fee_by_id[summary.item_id]
+            card = card_by_id.get(summary.item_id)
+            if card is not None:
+                summary.web_fee = card.fee
+                if card.badges is not None:
+                    summary.web_badges = card.badges
         return self
 
 

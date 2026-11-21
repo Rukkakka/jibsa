@@ -60,6 +60,7 @@ from jibsa.providers.zigbang.service.common.base import (
     COMPLEX_ID_PATTERN,
     MAX_LIST_LIMIT,
     ZigbangBoundary,
+    ZigbangListingDetail,
     ZigbangRegion,
 )
 from jibsa.providers.zigbang.service.common.room import (
@@ -1295,10 +1296,9 @@ def listing_command(
     if (check_in is None) != (check_out is None):
         raise typer.BadParameter('--check-in 과 --check-out 은 함께 주세요', param_hint='--check-in')
     with handle_errors(SOURCE), ZigbangClient() as client:
-        emit(
-            get_any_listing(client, item_id, check_in=check_in, check_out=check_out),
-            pretty,
-        )
+        result = get_any_listing(client, item_id, check_in=check_in, check_out=check_out)
+        # 주거(원룸·빌라·오피스텔·아파트) 상세는 덤 조회(학군·건물 실거래) 실패 안내를 notes 로 갖는다
+        emit(result, pretty, notes=result.notes if isinstance(result, ZigbangListingDetail) else None)
 
 
 @app.command('catalog')

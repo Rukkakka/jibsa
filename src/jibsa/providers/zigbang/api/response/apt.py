@@ -80,6 +80,14 @@ class ZigbangAptManageCostAmountModel(ResponseModel):
         list[str] | None,
         Field(description='관리비 별도 항목', alias='excludeItems')
     ] = None
+    period_basis: Annotated[
+        str | None,
+        Field(description="관리비 산출 기준 문구 (예: '최근 3개월 관리비 평균'). 기타 관리비(etcManageCost)에만 온다", alias='periodBasis')
+    ] = None
+    cost_basis_description: Annotated[
+        str | None,
+        Field(description='관리비 부과 방식 설명 (웹 문구 그대로). 기타 관리비(etcManageCost)에만 온다', alias='costBasisDescription')
+    ] = None
 
 
 class ZigbangAptManageCostModel(ResponseModel):
@@ -251,6 +259,14 @@ class ZigbangAptItemModel(ResponseModel):
     real_type: Annotated[
         str | None,
         Field(description='중개대상물 종류 (예: 아파트). 제휴 매물은 키가 없다', alias='realType')
+    ] = None
+    is_hug_lessor: Annotated[
+        bool | None,
+        Field(description='HUG 임대인 여부 (직방 필드 isHugLessor 그대로. 2026-11-19 표본 51262299 는 false). 키가 없으면 None (모름)', alias='isHugLessor')
+    ] = None
+    zzim_count: Annotated[
+        int | None,
+        Field(description='찜 수. 키가 없으면 None (모름)', alias='zzimCount')
     ] = None
 
 

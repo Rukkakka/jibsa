@@ -51,6 +51,7 @@ from jibsa.providers.zigbang.api.request.room.base import (
     ZigbangItemsDetailV1RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.room.detail import (
+    ZigbangBlsRtsV2RequestParameterModel,
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemsV3RequestParameterModel,
 )
@@ -110,6 +111,7 @@ from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ResponseModel,
 )
 from jibsa.providers.zigbang.api.response.room.detail import (
+    ZigbangBlsRtsV2ResponseModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemsV3ResponseModel,
 )
@@ -176,8 +178,9 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음, 학교·역/학교/동 주변 단지 카드, 상가, 단기임대(stay-apis.zigbang.com)를
-    조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음, 학교·역/학교/동 주변 단지 카드, 상가,
+    단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은
+    대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
     엔드포인트 action id 는 버전 앞의 서비스 접두(`/house/property`, `/apt`)와 경로
@@ -226,6 +229,7 @@ class ZigbangClient(BaseHTTPClient):
     subways_endpoint: ClassVar[str] = '/apt/subways/{subway_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
     bls_school_zones_v1_endpoint: ClassVar[str] = '/house/property/v1/bls/{pnu}/school_zones'
+    bls_rts_v2_endpoint: ClassVar[str] = '/v2/bls/{pnu}/rts'
     danjis_item_catalogs_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/item-catalogs'
     danjis_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/rt-prices'
     danjis_room_types_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/room-types/{room_type_id}/rt-prices'
@@ -561,8 +565,8 @@ class ZigbangClient(BaseHTTPClient):
             parameter: `item_id` (경로).
 
         Returns:
-            ZigbangItemsDetailV1ResponseModel: 주소·면적·층·입주일·관리비(부과 방식별 내역 포함)·옵션과 인근 지하철역.
-                입주일(`moveInAt`)은 null 일 수 있다.
+            ZigbangItemsDetailV1ResponseModel: 주소·면적·층·입주일·관리비(부과 방식별 내역과 기준 포함)·옵션과 인근 지하철역,
+                배지·주변 시설·배송 업체. 입주일(`moveInAt`)은 null 일 수 있다.
         """
         response = self._client.get(
             url=self.items_detail_v1_endpoint.format(item_id=parameter.item_id),
@@ -1107,6 +1111,37 @@ class ZigbangClient(BaseHTTPClient):
         response = await self._async_client.get(url=self.bls_school_zones_v1_endpoint.format(pnu=parameter.pnu), headers=PLATFORM_HEADERS)
         raise_for_status(response=response)
         return ZigbangBlsSchoolZonesV1ResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_bls_rts_v2(
+        self,
+        parameter: ZigbangBlsRtsV2RequestParameterModel
+    ) -> ZigbangBlsRtsV2ResponseModel:
+        """Fetch the real transactions of a building lot via `GET /v2/bls/{pnu}/rts`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 원룸·빌라·오피스텔 매물 화면의 건물 실거래다. 옛 API
+        클라이언트처럼 `Accept` 만 붙이고 플랫폼 헤더는 붙이지 않는다 (2026-11-19 웹 캡처). 로그인이 필요 없다. 거래가 없는
+        필지는 빈 목록이다.
+
+        Args:
+            parameter: `pnu` (경로, 19자리).
+
+        Returns:
+            ZigbangBlsRtsV2ResponseModel: 실거래 (최근 거래부터, 금액은 만원).
+        """
+        response = self._client.get(url=self.bls_rts_v2_endpoint.format(pnu=parameter.pnu))
+        raise_for_status(response=response)
+        return ZigbangBlsRtsV2ResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_bls_rts_v2(
+        self,
+        parameter: ZigbangBlsRtsV2RequestParameterModel
+    ) -> ZigbangBlsRtsV2ResponseModel:
+        """Async variant of `run_request_bls_rts_v2`."""
+        response = await self._async_client.get(url=self.bls_rts_v2_endpoint.format(pnu=parameter.pnu))
+        raise_for_status(response=response)
+        return ZigbangBlsRtsV2ResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis_item_catalogs(

@@ -1,4 +1,4 @@
-"""원룸·빌라·오피스텔 매물 상세 (listing): 새 주거 상세 + 등록일·단기임대 요약과 건물 학군 덤 (아파트 상세는 apt, ID 분기는 listing)."""
+"""원룸·빌라·오피스텔 매물 상세 (listing): 새 주거 상세 + 등록일·단기임대 요약과 건물 학군·건물 실거래 덤 (아파트 상세는 apt, ID 분기는 listing)."""
 
 from collections.abc import Callable
 
@@ -10,9 +10,12 @@ from jibsa.core.errors import (
 )
 from jibsa.core.http import error_body
 from jibsa.core.listing import (
+    iso_date,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
+    normalize_floor,
+    note,
     parking_label,
     won_to_manwon,
 )
@@ -24,16 +27,23 @@ from jibsa.providers.zigbang.api.request.room.base import (
     ZigbangItemsDetailV1RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.room.detail import (
+    ZigbangBlsRtsV2RequestParameterModel,
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemsV3RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.room.base import (
+    ZigbangItemsDetailV1ManageCostDetailModel,
     ZigbangItemsDetailV1ManageCostModel,
+    ZigbangItemsDetailV1NearbyPoiModel,
+    ZigbangItemsDetailV1NeighborhoodsModel,
     ZigbangItemsDetailV1ResponseModel,
     ZigbangManageCostEntryModel,
     ZigbangManageCostUsageFeeModel,
+    ZigbangStructuredOptionModel,
 )
 from jibsa.providers.zigbang.api.response.room.detail import (
+    ZigbangBlsRtModel,
+    ZigbangBlsRtsV2ResponseModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemDetailModel,
 )
@@ -41,14 +51,20 @@ from jibsa.providers.zigbang.service.common.base import (
     DIRECTION_LABELS,
     NEAREST_SCHOOLS,
     SCHOOL_LOOKUP_ERRORS,
+    ZigbangBuildingTrade,
     ZigbangListingDetail,
+    ZigbangNearbyFacility,
     item_url,
     officetel_complex_id,
     school_label,
     sent_or_none,
+    text_or_none,
     unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.common.room import (
+    HUG_BADGE,
+    VERIFICATION_BADGE,
+    badge_flag,
     trade_type_of,
 )
 from jibsa.providers.zigbang.service.region import to_int
@@ -78,6 +94,31 @@ MANAGE_COST_ORDER: dict[str, int] = {
 }
 FIXED_MANAGE_COST_TYPE: str = 'FixedManageCost'
 UNKNOWN_MANAGE_COST_TYPE: str = 'UnknownManageCost'
+# 관리비 부과 기준(`manageCostCriteria`)·부과 방식(`basis`) 코드 → 웹 문구 (2026-11-19 번들 `_app` 의 코드표 그대로). 코드 '04'(기준)·'07'(방식)은
+# 중개사가 직접 쓴 글자(`manageCostCriteriaEtcDescription`·`basisEtcDescription`)를 웹이 그대로 보여 준다. 표에 없는 코드는 모름(null)으로 둔다
+MANAGE_COST_PERIOD_LABELS: dict[str, str] = {
+    '01': '직전 월 관리비 기준',
+    '02': '최근 3개월 관리비 평균',
+    '03': '최근 1년 관리비 평균',
+}
+MANAGE_COST_PERIOD_ETC_CODE: str = '04'
+MANAGE_COST_METHOD_LABELS: dict[str, str] = {
+    '01': '관리규약에 따라 부과해요.',
+    '02': '공용관리비는 면적/세대별로 부과하고, 사용료는 사용량에 따라 부과해요.',
+    '03': '전체 사용량을 세대수로 나누어 부과해요.',
+    '04': '세대별 사용량(별도 계량기)에 따라 부과해요.',
+    '05': '중개 의뢰인이 세부내역을 고지하지 않아 전세입자 등을 통해 추정된 관리비를 안내해요.',
+    '06': '관리비 월 10만원 미만이에요.',
+}
+MANAGE_COST_METHOD_ETC_CODE: str = '07'
+# 정액 관리비가 항목별 내역을 알리지 않았을 때 웹이 보여 주는 설명의 방식 코드 (`renderManageCostData` 가 `I.gW["05"]` 를 쓴다)
+MANAGE_COST_UNINFORMED_CODE: str = '05'
+# 주변 시설의 이동 수단. 웹(`mapTransportType`)은 'car' 만 차로 보고 'foot' 과 모르는 값은 도보로 그린다
+CAR_TRANSPORT: str = 'car'
+WALKING_LABEL: str = '도보'
+CAR_LABEL: str = '차'
+# 건물 실거래의 거래 유형 (직방 `sales_type`). 그 밖의 값이면 거래 유형을 모름(null)으로 둔다
+BUILDING_TRADE_TYPES: tuple[str, ...] = ('매매', '전세', '월세')
 
 
 def _distance_text(meters: int | None) -> str | None:
@@ -92,17 +133,84 @@ def building_schools(response: ZigbangBlsSchoolZonesV1ResponseModel) -> list[str
     if response.elementary:
         labels += [
             school_label(school.name, '배정', _distance_text(school.distance))
-            for school in response.elementary.schools
+            for school in response.elementary.schools or []
         ]
     for level in (response.middle, response.high):
         if level:
             zone = level.school_zone.zone_name if level.school_zone else None
-            nearest = sorted(level.schools, key=lambda school: school.distance if school.distance is not None else 10**9)
+            nearest = sorted(level.schools or [], key=lambda school: school.distance if school.distance is not None else 10**9)
             labels += [
                 school_label(school.name, zone, _distance_text(school.distance))
                 for school in nearest[:NEAREST_SCHOOLS]
             ]
     return [label for label in labels if label]
+
+
+def _facility_minutes(time_taken: int | float | None) -> int:
+    """웹 `resolveMinute` (`Math.round((timeTaken||1)/60)||1`)와 같은 분. 초를 분으로 반올림하되 .5분은 올리고 (Python `round` 는 짝수로
+    보낸다) 0분이면 1분이다. `floor(초 / 60 + 0.5)` 를 정수 나눗셈으로 계산한다. 초가 소수로 와도 같은 값이고 (`//` 는 실수여도 버림이다)
+    몫이 `1.0` 꼴이라 `int` 로 바꾼다."""
+    return int((2 * (time_taken or 1) + 60) // 120) or 1
+
+
+def _facility(poi: ZigbangItemsDetailV1NearbyPoiModel, transport: str) -> ZigbangNearbyFacility:
+    return ZigbangNearbyFacility(
+        type=poi.poi_type,
+        minutes=_facility_minutes(poi.time_taken),
+        transport=transport,
+        distance_m=poi.distance,
+    )
+
+
+def nearby_facilities(neighborhoods: ZigbangItemsDetailV1NeighborhoodsModel | None) -> list[ZigbangNearbyFacility] | None:
+    """주변 생활 시설을 웹 '주변 생활 시설' 그림(`useRequestFacilities`·`FacilitiesAroundWalkingArea`, 2026-11-19 번들)과 같은 순서로 낸다.
+
+    웹은 `nearbyPois` 를 걸리는 시간 오름차순(시간이 없으면 0, 같으면 응답 순서)으로 세우고, 가까운 시설이 있는(`exists`) 것만 도보
+    묶음 먼저 그다음 차 묶음으로 그린다. 이동 수단이 'car' 가 아니면 도보다 (`mapTransportType`). 주변 정보 묶음이나 그 안의
+    `nearbyPois` 가 없거나(키 없음·null) 모르면 모름(None)이고, 있는데 가까운 시설이 하나도 없으면 빈 목록이다.
+    """
+    if neighborhoods is None or neighborhoods.nearby_pois is None:
+        return None
+    existing = sorted((poi for poi in neighborhoods.nearby_pois if poi.exists), key=lambda poi: poi.time_taken or 0)
+    return [
+        *(_facility(poi, WALKING_LABEL) for poi in existing if poi.transport != CAR_TRANSPORT),
+        *(_facility(poi, CAR_LABEL) for poi in existing if poi.transport == CAR_TRANSPORT),
+    ]
+
+
+def delivery_services(neighborhoods: ZigbangItemsDetailV1NeighborhoodsModel | None) -> list[str] | None:
+    """이 주소로 배송하는 업체 이름 (웹 '이 지역은 하루 배송권이에요', `DeliveryServices`). 응답 순서, 이름이 빈 업체는 뺀다.
+
+    주변 정보 묶음이 없으면 모름(None), 묶음은 있는데 업체 목록이 없으면 빈 목록이다 (웹은 이 칸을 숨긴다).
+    """
+    if neighborhoods is None:
+        return None
+    return [service.company_name for service in neighborhoods.distributions or [] if service.company_name]
+
+
+def _building_trade(trade: ZigbangBlsRtModel) -> ZigbangBuildingTrade:
+    trade_type = trade.sales_type if trade.sales_type in BUILDING_TRADE_TYPES else None
+    return ZigbangBuildingTrade(
+        trade_date=iso_date(trade.deal_date),
+        trade_type=trade_type,
+        # 지하층이 음수로 올 수 있어 실거래(real-price)·매물 층과 같은 표기('지하1')로 맞춘다
+        floor=None if trade.floor is None else normalize_floor(str(trade.floor)),
+        price_manwon=trade.sale_price,
+        deposit_manwon=trade.deposit,
+        rent_manwon=trade.monthly_rent,
+        exclusive_area_m2=trade.exclusive_area,
+        land_area_m2=trade.land_area,
+    )
+
+
+def building_real_trades(response: ZigbangBlsRtsV2ResponseModel) -> list[ZigbangBuildingTrade] | None:
+    """건물(필지) 실거래를 응답 순서(계약일 최신순) 그대로 모두 낸다 (웹은 3건 뒤 더보기 5건씩, 날짜는 연·월만, 면적은 정수로 버려 그린다).
+
+    응답에 `rts` 키가 없거나 null 이면 빈 목록이 아니라 모름(None)이다. 거래가 없는 필지는 빈 목록이다.
+    """
+    if response.rts is None:
+        return None
+    return [_building_trade(trade) for trade in response.rts]
 
 
 def _usage_fee_items(usage: ZigbangManageCostUsageFeeModel | None) -> list[tuple[str, ZigbangManageCostEntryModel]]:
@@ -111,6 +219,79 @@ def _usage_fee_items(usage: ZigbangManageCostUsageFeeModel | None) -> list[tuple
         (label, (entry_of(usage) if usage else None) or ZigbangManageCostEntryModel(type='not_applicable'))
         for label, entry_of in USAGE_FEES
     ]
+
+
+def _ordered_names(entries: list[ZigbangStructuredOptionModel]) -> list[str]:
+    """관리비 항목 이름을 웹 순서(`MANAGE_COST_ORDER`)로 세운다. 이 이름이 아니면 원래 순서대로 뒤에 둔다 (정렬은 안정이다)."""
+    return sorted(
+        (entry.name for entry in entries if entry.name),
+        key=lambda name: MANAGE_COST_ORDER.get(name, len(MANAGE_COST_ORDER)),
+    )
+
+
+def manage_cost_excludes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[str] | None:
+    """관리비에 들지 않는 항목 (웹 '관리비 미포함 항목'). 웹이 그 줄을 그리는 경우에만 응답 값을 낸다. 순서는 웹(`getLegacyManageCostData`)처럼
+    `manage_cost_includes` 와 같다.
+
+    2026-11-20 웹 번들: `renderManageCostData`(chunks/274)는 관리비 내역(`detail`)이 없고 금액(`amount`)이 0·null 이면 '관리비 없음' 만 돌려주고
+    `getLegacyManageCostData` 를 부르지 않아 미포함 항목이 없다. `ManageCost`(chunks/246)는 '관리비 미포함 항목' 줄을 일반(`generalCost`)·
+    사용료(`usageCosts`)·기타(`otherCost`) 관리비가 모두 없을 때만 그려, 정액이고 항목별 내역을 알리면(사용료 여섯 항목) 그리지 않는다.
+    그리는 경우는 내역 없이 금액만 있을 때, 정액인데 내역을 알리지 않았을 때(`_fixed_cost_uninformed`), 실비일 때다. 그리지 않는 경우는
+    응답 `exclude` 에 항목이 있어도 빈 목록이다 (실측 50815925: 웹은 '관리비 없음' 뿐이고 '미포함' 글자가 없는데 `exclude` 에 8개 항목이 있었다).
+    그리는 경우에 응답에 `exclude` 키가 빠졌으면 빈 목록이 아니라 모름(None)이다. 확인 불가(`UnknownManageCost`)는 부르는 쪽이 거른다.
+    """
+    listed = sent_or_none(manage, 'excludes', _ordered_names(manage.excludes))
+    detail = manage.detail
+    if detail is None:
+        # `manage_cost_includes` 처럼 웹(`!manageCost.amount`)의 금액으로 본다
+        return listed if manage.amount else []
+    if detail.type == FIXED_MANAGE_COST_TYPE and not _fixed_cost_uninformed(detail):
+        return []
+    return listed
+
+
+def manage_cost_period(detail: ZigbangItemsDetailV1ManageCostDetailModel | None) -> str | None:
+    """관리비 부과 기준 문구 (웹 `getManageCostCriteria`). 코드 '04' 는 중개사가 직접 쓴 글자이고, 코드가 없거나 표에 없으면 모름(None)이다."""
+    if detail is None or detail.manage_cost_criteria is None:
+        return None
+    if detail.manage_cost_criteria == MANAGE_COST_PERIOD_ETC_CODE:
+        return text_or_none(detail.manage_cost_criteria_etc)
+    return MANAGE_COST_PERIOD_LABELS.get(detail.manage_cost_criteria)
+
+
+def _fixed_cost_uninformed(detail: ZigbangItemsDetailV1ManageCostDetailModel) -> bool:
+    """정액 관리비(`FixedManageCost`)가 항목별 내역을 알리지 않았는지. 웹 `renderManageCostData` 의 `!1===hasInformed||void 0===hasInformed&&!f` 와 같다.
+
+    `hasInformed` 가 false 면 알리지 않은 것이다. 키가 아예 없을 때(`void 0`)는 사용료 여섯 항목(`_usage_fee_items`)이 모두 미제공·해당 없음이면
+    알리지 않은 것이다 (`f`: 정액·실비 항목이 하나라도 있으면 알린 것). `hasInformed` 가 null 이면 웹은 알린 것으로 본다 (`void 0` 이 아니다).
+    """
+    if detail.type != FIXED_MANAGE_COST_TYPE:
+        return False
+    if detail.has_informed is False:
+        return True
+    return 'has_informed' not in detail.model_fields_set and all(
+        entry.type in ('unknown', 'not_applicable') for _, entry in _usage_fee_items(detail.usage_fee)
+    )
+
+
+def manage_cost_method(detail: ZigbangItemsDetailV1ManageCostDetailModel | None) -> str | None:
+    """관리비 부과 방식 문구 (웹 관리비 설명, `renderManageCostData`). 코드 '07' 은 중개사가 직접 쓴 글자이고, 코드가 없거나 표에 없으면 모름(None)이다.
+
+    웹은 정액 관리비(`FixedManageCost`)에는 방식 코드(`basis`)를 읽지 않는다: 항목별 내역을 알리지 않았으면 코드 '05' 의 설명을 보여 줘
+    그 문구를 내고 (`_fixed_cost_uninformed`), 내역을 알렸으면 방식 설명 대신 '정액관리비' 이름표를 보여 줘 모름(None)이다.
+    그래서 정액 관리비에 `basis` 가 와도 읽지 않는다. 정액이 아닌 관리비(실비)만 방식 코드의 문구를 낸다.
+    """
+    if detail is None:
+        return None
+    if detail.type == FIXED_MANAGE_COST_TYPE:
+        if _fixed_cost_uninformed(detail):
+            return MANAGE_COST_METHOD_LABELS[MANAGE_COST_UNINFORMED_CODE]
+        return None
+    if detail.basis is None:
+        return None
+    if detail.basis == MANAGE_COST_METHOD_ETC_CODE:
+        return text_or_none(detail.basis_etc)
+    return MANAGE_COST_METHOD_LABELS.get(detail.basis)
 
 
 def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[str] | None:
@@ -125,10 +306,7 @@ def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
     '관리비 없음' 만 보여 주고 항목을 그리지 않아 빈 목록이다. 정액 관리비의 항목도 웹 순서다
     (일반(공용) 관리비, 사용료, 기타 관리비). 확인 불가(`UnknownManageCost`)는 부르는 쪽(`detail_to_listing`)이 거른다.
     """
-    listed = sent_or_none(manage, 'includes', sorted(
-        (entry.name for entry in manage.includes if entry.name),
-        key=lambda name: MANAGE_COST_ORDER.get(name, len(MANAGE_COST_ORDER)),
-    ))
+    listed = sent_or_none(manage, 'includes', _ordered_names(manage.includes))
     detail = manage.detail
     if detail is None:
         # 웹(`!manageCost.amount`)처럼 `amount` 로 본다. `amount` 가 비고(0·null) `fee` 만 있는 매물은 `detail_to_listing` 이 먼저 모름으로 뺀다
@@ -138,11 +316,9 @@ def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
     # = include. 실비 매물 6건 모두 두 목록의 항목은 같고 이름만 다름)
     if detail.type != FIXED_MANAGE_COST_TYPE:
         return listed
+    if _fixed_cost_uninformed(detail):
+        return listed
     usage = _usage_fee_items(detail.usage_fee)
-    if detail.has_informed is False:
-        return listed
-    if 'has_informed' not in detail.model_fields_set and all(entry.type in ('unknown', 'not_applicable') for _, entry in usage):
-        return listed
     includes: list[str] = []
     if detail.normal_manage_cost and (detail.normal_manage_cost.amount or 0) > 0:
         includes.append(NORMAL_MANAGE_COST_LABEL)
@@ -186,7 +362,9 @@ def detail_to_listing(
     입주일(`moveInAt`)이 null 이면 기존 상세(`/v3/items`, `legacy`)의 입주 문구로 보완하고, 그때는 주차도
     기존 상세의 문구를 쓴다. 상세 응답에는 등록일이 없어 요약 응답의 `reg_date` 를 `registered_at` 으로 받는다.
     없으면 모름(None). 단기임대 여부도 상세 응답에는 없어 요약 응답(`trade_type_of`)에서 `short_term` 으로 받는다.
-    관리비가 확인 불가(`UnknownManageCost`)면 웹처럼 금액도 항목도 모름(None)이다. 금액은 `_manage_cost_manwon` 이 정한다.
+    관리비가 확인 불가(`UnknownManageCost`)면 웹처럼 금액도 항목도 부과 기준·방식도 모름(None)이다. 금액은 `_manage_cost_manwon` 이 정한다.
+    확인 시각·실매물 확인·HUG 안심임대인은 웹처럼 `meta` 의 `statusCheckedAt`·`badges` 로 정한다 (`badge_flag`). 건물 실거래(`building_trades`)는
+    요청이 더 필요해 부르는 쪽(`get_listing`)이 붙인다.
     """
     item = response.item
     residence = item.residence
@@ -200,6 +378,8 @@ def detail_to_listing(
         # 몰라 틀릴 수 있는 금액을 내지 않고 금액도 항목도 모름(None)이다 (2026-11-15 사용자 결정)
         manage = None
     manage_cost = _manage_cost_manwon(manage) if manage is not None else None
+    meta = item.meta
+    badges = meta.badges if meta else None
     origin = item.address.origin
     address = origin.full_text if origin else None
     if item.address.jibun and origin and origin.local1:
@@ -255,6 +435,15 @@ def detail_to_listing(
         total_parking_count=residence.total_parking_count,
         household_count=residence.household_count,
         direction_criterion=residence.direction_criterion,
+        confirmed_at=iso_date(meta.status_checked_at) if meta else None,
+        actual_listing_checked=badge_flag(badges, VERIFICATION_BADGE),
+        non_compliant_building=residence.non_compliant_building,
+        hug_lessor=badge_flag(badges, HUG_BADGE),
+        nearby_facilities=nearby_facilities(item.neighborhoods),
+        delivery_services=delivery_services(item.neighborhoods),
+        manage_cost_excludes=manage_cost_excludes(manage) if manage else None,
+        manage_cost_period=manage_cost_period(manage.detail) if manage else None,
+        manage_cost_method=manage_cost_method(manage.detail) if manage else None,
     )
     if item.service_type == '오피스텔':
         return detail.model_copy(update={
@@ -266,7 +455,8 @@ def detail_to_listing(
 
 def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | None:
     """숫자 ID 매물의 상세를 조회한다. 원룸·빌라·오피스텔은 새 주거 상세 + 등록일·단기임대 요약이고, 입주일이 null 이면
-    기존 상세 1회, 필지가 있으면 건물 학군 1회를 더한다 (학군은 실패하면 모름).
+    기존 상세 1회, 필지가 있으면 건물 학군 1회와 건물 실거래 1회를 더한다 (둘 다 덤이라 실패하면(요청 제한 포함) 그 값만 모름(null)이고
+    `notes` 에 `[실패]` 안내가 붙는다. 필지가 없어 부르지 않은 값은 안내가 없다).
 
     새 주거 상세는 아파트 매물에 본문 code 가 `APT_DETAIL_NOT_SUPPORTED_CODE` 인 404 를 준다. 그때는 아파트 상세를 부르지 않고
     None 을 돌려준다. 웹 아파트 매물 화면처럼 아파트 상세 1회로 만드는 일은 분기 모듈 `listing` 의 `get_listing`(라이브러리 입구,
@@ -324,19 +514,35 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | N
     )
     summary = next((summary for summary in summaries.items if summary.item_id == item_id), None)
     schools = None
+    building_trades = None
+    lookup_notes: list[str] = []
     pnu = structured.item.address.pnu
     if pnu:
         try:
             schools = building_schools(client.run_request_bls_school_zones_v1(
                 ZigbangBlsSchoolZonesV1RequestParameterModel(pnu=pnu)
             ))
-        except SCHOOL_LOOKUP_ERRORS:
+        except SCHOOL_LOOKUP_ERRORS as exc:
             # 학군을 못 받아도 매물 상세는 돌려준다 (모름)
-            schools = None
+            lookup_notes.append(note(
+                '실패',
+                f'직방 건물 학군 정보를 받지 못해({type(exc).__name__}) schools 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+            ))
+        try:
+            # 웹 `loadRestOfDetailData` 는 유형과 상관없이 필지의 실거래를 부른다
+            building_trades = building_real_trades(client.run_request_bls_rts_v2(
+                ZigbangBlsRtsV2RequestParameterModel(pnu=pnu)
+            ))
+        except SCHOOL_LOOKUP_ERRORS as exc:
+            # 건물 실거래도 덤이라 못 받으면(404 포함) 모름이다
+            lookup_notes.append(note(
+                '실패',
+                f'직방 건물 실거래 정보를 받지 못해({type(exc).__name__}) building_trades 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+            ))
     detail = detail_to_listing(
         structured,
         legacy=legacy.item if legacy else None,
         registered_at=summary.reg_date if summary else None,
         short_term=summary is not None and trade_type_of(summary) == '단기임대',
     )
-    return detail if schools is None else detail.model_copy(update={'schools': schools})
+    return detail.model_copy(update={'schools': schools, 'building_trades': building_trades, 'notes': detail.notes + lookup_notes})

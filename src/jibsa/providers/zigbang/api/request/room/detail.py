@@ -1,4 +1,4 @@
-"""요청 모델: 원룸·빌라·오피스텔 매물 상세 (listing): 기존 상세, 건물 학군."""
+"""요청 모델: 원룸·빌라·오피스텔 매물 상세 (listing): 기존 상세, 건물 학군, 건물 실거래."""
 
 
 from pydantic import Field
@@ -26,6 +26,15 @@ class ZigbangItemsV3RequestParameterModel(RequestModel):
 
 class ZigbangBlsSchoolZonesV1RequestParameterModel(RequestModel):
     """`GET /house/property/v1/bls/{pnu}/school_zones` 경로. 원룸·빌라·오피스텔 건물(필지)의 학군."""
+
+    pnu: Annotated[
+        str,
+        Field(pattern=r'^\d{19}$', exclude=True, description='필지 고유번호 (19자리, 매물 상세의 pnu). 경로에 들어간다')
+    ]
+
+
+class ZigbangBlsRtsV2RequestParameterModel(RequestModel):
+    """`GET /v2/bls/{pnu}/rts` 경로. 원룸·빌라·오피스텔 건물(필지)의 실거래."""
 
     pnu: Annotated[
         str,

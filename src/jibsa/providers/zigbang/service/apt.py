@@ -385,8 +385,9 @@ def apt_item_to_listing(
     화면도 지번을 보여 주지 않는다 (2026-11-15 웹 캡처: 단지 API 도 부르지 않는다). 지번은 단지(`complex_id`)에서 본다.
     등록일·인근 역·엘리베이터·방 구조·세대수는 이 응답에 없어 모름(None)이다. 건축물 용도(`residence_type`)는 `realType`(중개대상물 종류, 예 '아파트')이고 제휴 매물은 키가 없어 모름(None)이다.
     평형(`roomTypeInfo`)은 ID·이름(평 기준)으로 내고, 확인 시각(`effectivenessUpdatedAt`)은 웹의 '2주 전 확인' 대신 한국 날짜로 낸다.
-    실매물 확인 배지·위반 건축물 여부는 직방이 준 bool 그대로다 (위반 건축물은 제휴 매물에 키가 없어 모름(None)). 총 주차 대수(`parkingCount`)는 제휴 매물에 오지 않아 모름(None)이다. 관리비는
-    확인 불가거나 모르는 종류거나 0원이면 모름(None)이다. 옵션은 아파트 상세에 옵션 칸이 없어 (2026-10-11 실측 19건) 모름(None)으로 둔다.
+    실매물 확인 배지·위반 건축물 여부·HUG 안심임대인·찜 수는 직방이 준 값 그대로다 (위반 건축물은 제휴 매물에 키가 없어 모름(None)). 총 주차 대수(`parkingCount`)는 제휴 매물에 오지 않아 모름(None)이다. 관리비는
+    확인 불가거나 모르는 종류거나 0원이면 모름(None)이다. 관리비 미포함 항목·부과 기준(`periodBasis`)·부과 방식(`costBasisDescription`)은 관리비 금액과
+    같은 칸의 값을 직방 응답 순서·문구 그대로 낸다 (웹은 기타 관리비의 '상세보기' 창에 보여 준다). 옵션은 아파트 상세에 옵션 칸이 없어 (2026-10-11 실측 19건) 모름(None)으로 둔다.
 
     Raises:
         ListingUnavailableError: `trade_type` 을 주지 않았는데 응답의 거래 유형을 모를 때 (UNKNOWN_TRADE_TYPE).
@@ -438,6 +439,11 @@ def apt_item_to_listing(
         actual_listing_checked=apt.is_actual_item_checked,
         non_compliant_building=apt.has_violations,
         residence_type=text_or_none(apt.real_type),
+        hug_lessor=apt.is_hug_lessor,
+        zzim_count=apt.zzim_count,
+        manage_cost_excludes=cost.exclude_items if cost else None,
+        manage_cost_period=text_or_none(cost.period_basis) if cost else None,
+        manage_cost_method=text_or_none(cost.cost_basis_description) if cost else None,
     )
 
 

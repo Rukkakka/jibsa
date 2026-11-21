@@ -91,6 +91,10 @@ CONDITION_FIELD_BY_LABEL: dict[str, str] = {
     '전기차충전': 'ev_station',
 }
 CONDITIONS: tuple[str, ...] = tuple(CONDITION_FIELD_BY_LABEL)
+# 원룸·빌라·오피스텔 매물 요약·상세의 배지 코드. 웹은 배지 목록에 이 코드가 정확히 있는지로 꼬리표를 붙인다 (2026-11-19 번들
+# `useVerifiedItemTag`·`useLessorHugTag`). 'ITEM_VERIFICATION_FAILED' 는 실매물 확인이 아니다
+VERIFICATION_BADGE: str = 'ITEM_VERIFICATION'
+HUG_BADGE: str = 'HUG'
 
 
 def trade_type_of(summary: ZigbangItemSummaryModel) -> str:
@@ -101,6 +105,14 @@ def trade_type_of(summary: ZigbangItemSummaryModel) -> str:
     if summary.sales_type == '월세' and summary.contract == SHORT_TERM_CONTRACT:
         return '단기임대'
     return summary.sales_type
+
+
+def badge_flag(badges: list[str] | None, code: str) -> bool | None:
+    """배지 목록에 `code` 가 정확히 있는지. 목록을 받지 못했으면(None) 모름(None), 빈 목록이면 없다(False).
+
+    웹 꼬리표(`useVerifiedItemTag` 의 실매물 확인, `useLessorHugTag` 의 HUG안심임대인)가 같은 식(`badges.includes`)이다.
+    """
+    return None if badges is None else code in badges
 
 
 def summary_to_listing(
@@ -115,7 +127,8 @@ def summary_to_listing(
     null 이면 모름. 금액은 원 단위까지 낸다. 웹 카드는 0.1만원 아래를 버려 보여 준다 (_app 번들 toManWonText
     `Math.floor(fee/1e4*10)/10`, 375,700원 → 37.5, jibsa 37.57). 면적은 `size_m2`
     (공급면적) 대신 `전용면적` 을 쓴다. 단기임대는 `trade_type_of` 로 구분한다.
-    요약에는 오피스텔 건물 ID 가 없어 지도 핀의 `buildingId` 를 `building_id` 로 받는다.
+    요약에는 오피스텔 건물 ID 가 없어 지도 핀의 `buildingId` 를 `building_id` 로 받는다. HUG 안심임대인·실매물 확인은 웹 목록 카드처럼
+    카드의 배지 목록(`listed_badges`: `itemSummaries[].badges`, 키가 없으면 `items[].badges`)으로 정한다 (`badge_flag`).
     """
     is_sale = summary.sales_type == '매매'
     # `size_m2` 는 공급면적이라(오피스텔은 전용의 2배 넘게 나오기도 한다) 전용면적을 우선한다.
@@ -151,6 +164,8 @@ def summary_to_listing(
         distance_km=None if distance_km is None else round(distance_km, 2),
         registered_at=normalize_date(summary.reg_date),
         complex_id=officetel_complex_id(building_id) if building_id else None,
+        hug_lessor=badge_flag(summary.listed_badges, HUG_BADGE),
+        actual_listing_checked=badge_flag(summary.listed_badges, VERIFICATION_BADGE),
     )
 
 

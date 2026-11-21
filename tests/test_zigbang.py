@@ -38,6 +38,10 @@ from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCard
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ResponseModel,
 )
+from jibsa.providers.zigbang.api.response.room.detail import (
+    ZigbangBlsRtsV2ResponseModel,
+    ZigbangBlsSchoolZonesV1ResponseModel,
+)
 from jibsa.providers.zigbang.api.response.stay.detail import (
     ZigbangGuestItemsResponseModel,
 )
@@ -79,6 +83,8 @@ from jibsa.providers.zigbang.service.region import (
     settled_item,
 )
 from jibsa.providers.zigbang.service.room.detail import (
+    building_real_trades,
+    building_schools,
     detail_to_listing,
 )
 from jibsa.providers.zigbang.service.room.search import search_listings
@@ -474,11 +480,6 @@ def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
     assert detail.room_count == 3
 
 
-def test_non_apt_detail_omits_apt_only_fields() -> None:
-    dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
-    assert 'complex_name' not in dumped and 'supply_area_m2' not in dumped and 'listing_kind' not in dumped
-
-
 def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
     # 목록 줄은 평형 ID·이름(평 기준)을 붙이고, 확인일·실매물·위반 건축물은 상세·묶음에만 있다
     card = load('locals_item_catalogs')['list'][0]
@@ -507,10 +508,14 @@ def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
         assert key in partner and partner[key] is None
 
 
-def test_non_apt_detail_has_no_new_apt_keys() -> None:
+def test_non_apt_detail_omits_apt_only_keys_and_has_web_checks() -> None:
     dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
-    for key in ('pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+    # 평형·찜 수·공급면적·매물 종류는 아파트에만 있어 키가 없다
+    for key in ('complex_name', 'pyeong_id', 'pyeong_name', 'zzim_count', 'supply_area_m2', 'listing_kind'):
         assert key not in dumped
+    # 확인일·실매물·위반 건축물은 원룸·빌라·오피스텔 상세에도 나온다 (값은 모를 수 있어 null)
+    for key in ('confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+        assert key in dumped
 
 
 def test_apt_no_new_sale_sends_false_on_every_page() -> None:
@@ -1327,6 +1332,105 @@ def test_same_name_school_without_coordinates_still_counts_as_a_candidate() -> N
         with pytest.raises(JibsaError) as caught:
             resolve_school(client, '가상초등학교')
     assert caught.value.code == 'REGION_AMBIGUOUS'
+
+
+# --- 원룸·빌라·오피스텔 상세 보강 -----------------------------------------------
+
+def _room_detail(**item_extra: object) -> ZigbangItemsDetailV1ResponseModel:
+    item: dict = {
+        'id': 1000001, 'status': 'open', 'salesType': '월세', 'serviceType': '원룸', 'title': '[가상] 000-N',
+        'address': {'pnu': '1111111111111111111'}, 'residence': {'sizeM2': 20.0},
+    }
+    return ZigbangItemsDetailV1ResponseModel.model_validate({'item': {**item, **item_extra}})
+
+
+def test_nearby_facilities_follow_web_order_and_minutes() -> None:
+    # 웹은 걸리는 시간 순(같으면 응답 순서)으로 세워 도보를 먼저, 그다음 차를 그린다. 이동 수단을 모르는 값('walk')은 도보다.
+    # 분은 Math.round((초||1)/60)||1 이다: 150초 → 3분 (Python round 는 2.5 를 2 로 보낸다), 30초 → 1분, 0초 → 1분
+    pois = [
+        {'exists': True, 'poiType': '대형마트', 'distance': 900, 'transport': 'car', 'timeTaken': 60},
+        {'exists': True, 'poiType': '약국', 'distance': 200, 'transport': 'foot', 'timeTaken': 150},
+        {'exists': False, 'poiType': '지하철역'},
+        {'exists': True, 'poiType': '카페', 'distance': 50, 'transport': 'foot', 'timeTaken': 90},
+        {'exists': True, 'poiType': '편의점', 'distance': 10, 'transport': 'foot', 'timeTaken': 30},
+        {'exists': True, 'poiType': '세탁소', 'distance': 5, 'transport': 'walk', 'timeTaken': 0},
+    ]
+    detail = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': pois}))
+    dumped = detail.model_dump(mode='json')['nearby_facilities']
+    assert [(f['type'], f['minutes'], f['transport']) for f in dumped] == [
+        ('세탁소', 1, '도보'), ('편의점', 1, '도보'), ('카페', 2, '도보'), ('약국', 3, '도보'), ('대형마트', 1, '차'),
+    ]
+    assert dumped[0]['distance_m'] == 5
+    # 주변 정보가 없으면 모름, 있는데 가까운 시설이 없으면 빈 목록이고 배송 업체 키가 없으면 빈 목록이다
+    assert detail_to_listing(_room_detail()).nearby_facilities is None
+    empty = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': [{'exists': False, 'poiType': '카페'}]}))
+    assert empty.nearby_facilities == [] and empty.delivery_services == []
+
+
+def test_badges_set_hug_lessor_and_actual_listing_checked() -> None:
+    # 웹은 badges.includes('HUG')·includes('ITEM_VERIFICATION') 로 꼬리표를 붙인다 (ITEM_VERIFICATION_FAILED 는 아니다).
+    # 배지 목록이 [] 면 false, 키가 없으면 모름이다. 목록 줄과 상세가 같은 값을 낸다
+    cases = [
+        (['HUG', 'ITEM_VERIFICATION'], True, True),
+        (['ITEM_VERIFICATION_FAILED'], False, False),
+        ([], False, False),
+        (None, None, None),
+    ]
+    for badges, hug, verified in cases:
+        detail = detail_to_listing(_room_detail(meta={'badges': badges} if badges is not None else {}))
+        summary = {'item_id': 1000001, 'sales_type': '월세', 'service_type': '원룸', **({'badges': badges} if badges is not None else {})}
+        line = summary_to_listing(ZigbangItemSummaryModel.model_validate(summary))
+        assert (detail.hug_lessor, detail.actual_listing_checked) == (hug, verified)
+        assert (line.hug_lessor, line.actual_listing_checked) == (hug, verified)
+
+    # 웹 목록 카드는 itemSummaries[].badges 가 목록이면 그것을 읽는다 (items[].badges 에 없는 값이 올 수 있다). 목록이 아니면 그 칸을 모름으로 받아
+    # (관리비를 잃지 않는다) items[].badges 를 읽고, 같은 매물이 itemSummaries 에 없어도 items[].badges 를 읽는다
+    base = {'sales_type': '월세', 'service_type': '원룸'}
+    response = ZigbangItemsListV1ResponseModel.model_validate({
+        'items': [
+            {'item_id': 1, **base, 'badges': []},
+            {'item_id': 2, **base, 'badges': ['ITEM_VERIFICATION']},
+            {'item_id': 3, **base, 'badges': ['ITEM_VERIFICATION']},
+        ],
+        'itemSummaries': [
+            {'id': 1, 'fee': 0, 'badges': ['ITEM_VERIFICATION', 'RECOMMEND']},
+            {'id': 2, 'fee': 10000, 'badges': 'ITEM_VERIFICATION'},
+        ],
+    })
+    lines = [summary_to_listing(summary) for summary in response.items]
+    assert [line.actual_listing_checked for line in lines] == [True, True, True]
+    assert [line.manage_cost_manwon for line in lines] == [0, 1, None]
+
+
+def test_null_values_in_room_detail_responses_are_unknown_not_errors() -> None:
+    # 실제 응답으로 재현하지 못하는 null. 칸 하나 때문에 상세 전체(exists)나 덤 하나(rts·학교 목록)를 잃지 않는다.
+    # exists 가 null 이면 시설이 없는 것으로 보고 그 시설만 뺀다
+    detail = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': [{'exists': None, 'poiType': '카페'}]}))
+    assert detail.nearby_facilities == []
+    # rts 가 null 이면 키가 없을 때처럼 모름이고, 학교 목록이 null 이면 그 학교급은 학교가 없다
+    assert building_real_trades(ZigbangBlsRtsV2ResponseModel.model_validate({'rts': None})) is None
+    assert building_schools(ZigbangBlsSchoolZonesV1ResponseModel.model_validate({'elementary': {'schools': None}})) == []
+
+
+def test_building_trades_drop_price_keys_by_trade_type() -> None:
+    rts = ZigbangBlsRtsV2ResponseModel.model_validate({'rts': [
+        {'거래일': '2026-08-17', 'sales_type': '전세', '매매금액': None, '보증금액': 38000, '월세금액': 0, '전용면적': 53.72, 'floor': 4},
+        {'거래일': '2026-08-17', 'sales_type': '매매', '매매금액': 58500, '보증금액': None, '월세금액': None, '전용면적': 53.72, 'floor': -1},
+        {'거래일': '2026-01-15', 'sales_type': '월세', '매매금액': None, '보증금액': 34000, '월세금액': 55, '전용면적': 53.72, 'floor': 4},
+        {'거래일': '2026-01-01', 'sales_type': '증여', '매매금액': 1, '보증금액': None, '월세금액': None, '전용면적': None, 'floor': None},
+    ]})
+    trades = building_real_trades(rts)
+    assert trades is not None
+    dumped = [trade.model_dump(mode='json') for trade in trades]
+    assert 'price_manwon' not in dumped[0] and 'rent_manwon' not in dumped[0] and dumped[0]['deposit_manwon'] == 38000
+    assert 'deposit_manwon' not in dumped[1] and 'rent_manwon' not in dumped[1] and dumped[1]['price_manwon'] == 58500
+    assert dumped[1]['floor'] == '지하1'
+    assert 'price_manwon' not in dumped[2] and dumped[2]['rent_manwon'] == 55
+    # 모르는 거래 유형은 가격 키를 그대로 두고 유형을 모름(null)으로 둔다
+    assert dumped[3]['trade_type'] is None and {'price_manwon', 'deposit_manwon', 'rent_manwon'} <= set(dumped[3])
+    # 거래가 없는 필지는 빈 목록, rts 키가 없으면 모름
+    assert building_real_trades(ZigbangBlsRtsV2ResponseModel.model_validate({'rts': []})) == []
+    assert building_real_trades(ZigbangBlsRtsV2ResponseModel.model_validate({})) is None
 
 
 # --- 단기임대 -------------------------------------------------------------------

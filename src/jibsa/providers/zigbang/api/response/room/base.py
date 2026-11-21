@@ -144,6 +144,10 @@ class ZigbangItemsDetailV1ResidenceModel(ResponseModel):
         str | None,
         Field(description='입주 추가 설명', alias='moveInDateExtra')
     ] = None
+    non_compliant_building: Annotated[
+        bool | None,
+        Field(description='위반(불법) 건축물 여부 (2026-11-19 표본 5건 모두 false). 키가 없으면 None (모름)', alias='nonCompliantBuilding')
+    ] = None
 
 
 class ZigbangManageCostEntryModel(ResponseModel):
@@ -242,7 +246,25 @@ class ZigbangItemsDetailV1ManageCostDetailModel(ResponseModel):
     ] = None
     manage_cost_criteria: Annotated[
         str | None,
-        Field(description='관리비 기준 코드', alias='manageCostCriteria')
+        Field(description="관리비 기준 코드 ('01'~'04'. 2026-11-19 표본에는 01·02·04). 웹 문구는 service 의 `MANAGE_COST_PERIOD_LABELS`", alias='manageCostCriteria')
+    ] = None
+    manage_cost_criteria_etc: Annotated[
+        str | None,
+        Field(
+            description="관리비 기준을 직접 적은 문구. 표본에서는 기준 코드 '04' 와 함께만 왔다 (예: '수도,인터넷수신,tv방송', 2026-11-19 시골 매물 50617324)",
+            alias='manageCostCriteriaEtcDescription'
+        )
+    ] = None
+    basis: Annotated[
+        str | None,
+        Field(description="관리비 산정 근거 코드 ('01'~'07'. 2026-11-19 표본에는 01·02·07, 정액 관리비는 키가 없다). 웹 문구는 service 의 `MANAGE_COST_METHOD_LABELS`")
+    ] = None
+    basis_etc: Annotated[
+        str | None,
+        Field(
+            description="산정 근거를 직접 적은 문구. 표본에서는 근거 코드 '07' 과 함께만 왔다 (예: '인터넷,엘리베이터,수도세,', 2026-11-19 시골 매물 50617324)",
+            alias='basisEtcDescription'
+        )
     ] = None
     avg_manage_cost: Annotated[
         float | None,
@@ -276,6 +298,71 @@ class ZigbangItemsDetailV1ManageCostModel(ResponseModel):
     detail: Annotated[
         ZigbangItemsDetailV1ManageCostDetailModel | None,
         Field(description='부과 방식별 내역. 관리비가 없는 매물은 null')
+    ] = None
+
+
+class ZigbangItemsDetailV1MetaModel(ResponseModel):
+    """주거 상세의 매물 부가 정보. 조회수·갱신 시각·중개사 번호 같은 이 밖의 키는 읽지 않는다."""
+
+    badges: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "배지 코드 (예: 'ITEM_VERIFICATION', 'ITEM_VERIFICATION_FAILED', 'HUG'). 코드의 뜻 표는 아직 모른다. "
+                '2026-11-19 표본 5건은 [] 4건·ITEM_VERIFICATION 1건이다. 키가 없으면 None (모름)'
+            )
+        )
+    ] = None
+    status_checked_at: Annotated[
+        str | None,
+        Field(description='매물 상태를 마지막으로 확인한 시각 (UTC ISO 8601, 예: 2026-11-19T02:43:39.000Z)', alias='statusCheckedAt')
+    ] = None
+
+
+class ZigbangItemsDetailV1NearbyPoiModel(ResponseModel):
+    """주변 시설 하나. 가까운 시설이 없으면 `exists` 가 false 이고 나머지 키가 없다 (예: {"exists": false, "poiType": "지하철역"})."""
+
+    exists: Annotated[
+        bool | None,
+        Field(description='가까운 시설이 있는지. 키가 없거나 null 이면 없는 것으로 본다 (거리·시간이 있어도 시설이 있다고 하지 않는다)')
+    ] = False
+    poi_type: Annotated[
+        str | None,
+        Field(description='시설 종류 (예: 지하철역·세탁소·카페·약국·대형마트)', alias='poiType')
+    ] = None
+    distance: Annotated[
+        int | float | None,
+        Field(description='거리 (m). 시설이 없으면 키가 없다')
+    ] = None
+    transport: Annotated[
+        str | None,
+        Field(description="이동 수단 ('foot' 도보, 'car' 차). 시설이 없으면 키가 없다")
+    ] = None
+    time_taken: Annotated[
+        int | float | None,
+        Field(description='걸리는 시간 (초). 시설이 없으면 키가 없다', alias='timeTaken')
+    ] = None
+
+
+class ZigbangItemsDetailV1DistributionModel(ResponseModel):
+    """새벽·로켓 배송 같은 배송 서비스 업체 하나. 배송 종류(`kinds`)는 읽지 않는다."""
+
+    company_name: Annotated[
+        str | None,
+        Field(description='업체 이름 (예: 쿠팡, SSG, 마켓컬리)', alias='companyName')
+    ] = None
+
+
+class ZigbangItemsDetailV1NeighborhoodsModel(ResponseModel):
+    """주거 상세의 주변 정보. 생활 편의 설명(`amenities`)은 읽지 않는다."""
+
+    nearby_pois: Annotated[
+        list[ZigbangItemsDetailV1NearbyPoiModel] | None,
+        Field(description='주변 시설. 없는 시설도 `exists: false` 로 들어 있다. 키가 없거나 null 이면 None (모름)', alias='nearbyPois')
+    ] = None
+    distributions: Annotated[
+        list[ZigbangItemsDetailV1DistributionModel] | None,
+        Field(description='이 주소로 배송하는 업체. 키가 없으면 None (2026-11-19 표본: 시골 매물 50617324 만 키가 없었다)')
     ] = None
 
 
@@ -331,6 +418,14 @@ class ZigbangItemsDetailV1ItemModel(ResponseModel):
         list[ZigbangStructuredOptionModel],
         Field(description='옵션')
     ] = []
+    meta: Annotated[
+        ZigbangItemsDetailV1MetaModel | None,
+        Field(description='배지·상태 확인 시각')
+    ] = None
+    neighborhoods: Annotated[
+        ZigbangItemsDetailV1NeighborhoodsModel | None,
+        Field(description='주변 시설·배송 업체')
+    ] = None
 
 
 class ZigbangItemsDetailV1ResponseModel(ResponseModel):
