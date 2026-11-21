@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidationError,
     model_serializer,
 )
 
@@ -21,6 +22,7 @@ from jibsa.core.geo import MultiPolygon
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    UPDATE_MAYBE_NEEDED,
     Listing,
     ListingDetail,
 )
@@ -428,6 +430,16 @@ def item_url(service_type: str | None, item_id: int) -> str:
 
 # 학교군 안 중·고등학교는 10곳 넘게 오기도 해 가까운 곳만 (당근과 같은 수)
 NEAREST_SCHOOLS: int = 2
+
+
+def failure_update_hint(exc: Exception) -> str:
+    """덤 조회 [실패] 안내 끝에 붙일 말. 응답이 예상한 형식과 달라(pydantic ValidationError) 실패했으면 업데이트 문구를 붙여 매일 API 감시가 고장으로 잡게 하고, 그 밖(요청 제한·서버 오류·연결 실패)은 잠깐 실패일 수 있어 빈 글자다.
+
+    응답 모델 검증 오류는 client 의 `run_request_*` 가 감싸지 않고 그대로 올리므로 예외를 바로 알아본다.
+    """
+    if isinstance(exc, ValidationError):
+        return f'. 직방 응답이 예상한 형식과 달라 {UPDATE_MAYBE_NEEDED}'
+    return ''
 
 
 def text_or_none(value: str | None) -> str | None:

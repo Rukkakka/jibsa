@@ -64,6 +64,7 @@ from jibsa.providers.zigbang.service.common.base import (
     ZigbangAptRegion,
     ZigbangListingDetail,
     apt_complex_id,
+    failure_update_hint,
     text_or_none,
     unavailable_on_404,
 )
@@ -702,7 +703,7 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
     except SCHOOL_LOOKUP_ERRORS as exc:
         notes.append(note(
             '실패',
-            f'직방 호 정보를 받지 못해({type(exc).__name__}) 직방시세·공시가격·분양가를 모릅니다 (url 의 직방 묶음 화면에서 확인)',
+            f'직방 호 정보를 받지 못해({type(exc).__name__}) 직방시세·공시가격·분양가를 모릅니다 (url 의 직방 묶음 화면에서 확인){failure_update_hint(exc)}',
         ))
     zigbang_price = price_info.zigbang_price if price_info else None
     sale = zigbang_price.trade if zigbang_price else None

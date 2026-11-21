@@ -63,6 +63,7 @@ from jibsa.providers.zigbang.service.common.apt import catalog_to_listing
 from jibsa.providers.zigbang.service.common.base import (
     ZigbangAptRegion,
     ZigbangRegion,
+    failure_update_hint,
 )
 from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
@@ -1504,6 +1505,14 @@ def test_stay_host_others_skips_non_positive_host_id() -> None:
         values, notes = _stay_host_others(client, 1, 0)
     assert values == {'host_other_listings': None, 'host_other_listing_count': None}
     assert notes == []
+
+
+def test_failure_update_hint_only_for_response_format_errors() -> None:
+    # 응답 형식 오류만 업데이트 문구로 매일 감시가 고장으로 잡게 하고, 연결 실패 같은 잠깐 실패는 붙이지 않는다
+    with pytest.raises(ValidationError) as info:
+        ZigbangItemsListV1ResponseModel.model_validate({'items': 'x'})
+    assert UPDATE_MAYBE_NEEDED in failure_update_hint(info.value)
+    assert failure_update_hint(httpx.ConnectError('연결 실패')) == ''
 
 
 def test_stay_detail_drops_review_rating_when_no_reviews() -> None:

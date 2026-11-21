@@ -154,7 +154,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         # 호 정보(item_catalogs/ho-info)는 덤이라 실패해도 값이 null 로 남고 명령은 성공한다. 직방은 시세가 없는 호에 0 을 주기도 해
-        # jibsa 가 null 로 낸다(service/apt.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다.
+        # jibsa 가 null 로 낸다(service/apt.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다. 응답 형식이 바뀌어 호
+        # 정보를 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
         Step(
             '아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings',
             also_expect=('estimated_sale_price_manwon',), may_be_empty=True,
@@ -178,7 +179,8 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # --order 는 순서 탭(order=areaPrice 등)을 서버에 보내는 경로다
         Step('역 주변 아파트 단지 평당가 순 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--order', '평당가', '--limit', '3'), 'complexes'),
         # 평형 정보(danjis/{id}/room-types)는 덤이라 실패해도 명령은 성공한다. 그 칸(단지 직방시세 범위)은 직방이 정상 단지에도 시세를
-        # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이다.
+        # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이고,
+        # 응답 형식이 바뀌어 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
         Step(
             '아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),),
             also_expect=('estimated_sale_price_min_manwon',), may_be_empty=True,
@@ -672,7 +674,7 @@ def _run_step(step: Step, values: dict[str, str]) -> StepResult:
 def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
     # 결과는 나오지만 고쳐야 한다는 안내. 지역 검색이 바뀌었을 수 있어 대체 경로로 찾았거나(직방 단기임대가 지역 대신 지도로),
     # 덤 조회(단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했거나(당근
-    # partial_failure_note, 다방 단지 최근 실거래 요약), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
+    # partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 응답 형식 오류), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
     # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
     # 만든다) 여기서 가져온다
     from jibsa.core.listing import (
@@ -703,7 +705,7 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
                 if step.may_be_empty:
                     return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data)
                 # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
-                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약)
+                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 응답 형식 오류)
                 failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
                 if failed is not None:
                     return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data)

@@ -48,6 +48,7 @@ from jibsa.providers.zigbang.service.common.base import (
     ZigbangListing,
     ZigbangRegion,
     drop_unused_scope,
+    failure_update_hint,
     officetel_complex_id,
     unavailable_on_404,
 )
@@ -360,7 +361,7 @@ def search_listings(
         if item_id in summaries
     ]
     if scan.oneroom_query is not None and '오피스텔' not in queries:
-        _fill_officetel_complex_ids(client, listings, scan, subway_id=subway_id, radius_km=radius_km)
+        notes += _fill_officetel_complex_ids(client, listings, scan, subway_id=subway_id, radius_km=radius_km)
 
     return _search_result(
         region, listings, scan, notes, starts=starts, shares=shares, limit=limit, radius_km=radius_km, boundary=boundary,
@@ -530,8 +531,11 @@ def _fill_officetel_complex_ids(
     *,
     subway_id: int | None,
     radius_km: float,
-) -> None:
-    """원룸 목록에 섞여 온 오피스텔의 `complex_id` 를 같은 범위·조건의 오피스텔 목록으로 채운다."""
+) -> list[str]:
+    """원룸 목록에 섞여 온 오피스텔의 `complex_id` 를 같은 범위·조건의 오피스텔 목록으로 채운다.
+
+    오피스텔 목록(덤)을 받지 못하면 채우지 못한 `complex_id` 는 모름(null)이고 `[실패]` 안내를 돌려준다.
+    """
     # 원룸 목록 핀에는 건물 ID 가 없다 (2026-10-10 실측: 역삼동 468건 모두 null, 요약에도 없음).
     # 같은 범위·조건의 오피스텔 목록은 건물 ID 를 주고 섞여 온 오피스텔과 모두 겹쳤다 (286건)
     missing = [
@@ -539,7 +543,7 @@ def _fill_officetel_complex_ids(
         if isinstance(listing, ZigbangListing) and listing.property_type == '오피스텔' and listing.complex_id is None
     ]
     if not missing or scan.oneroom_query is None:
-        return
+        return []
     sales_types, type_filters = scan.oneroom_query
     # 빠진 매물이 있던 칸만 받는다 (2026-10-11 실측: 역삼동 원룸 5km 11칸 중 건물 ID 를 채운 칸은 1칸,
     # 오피스텔 13건 모두 그 칸에서 채움)
@@ -549,13 +553,18 @@ def _fill_officetel_complex_ids(
             client, geohashes=cells, subway_id=subway_id, radius_km=radius_km,
             sales_types=sales_types, type_filters=type_filters,
         )
-    except BUILDING_LOOKUP_ERRORS:
+    except BUILDING_LOOKUP_ERRORS as exc:
         # 건물 ID 는 덤이라 못 받으면 모름(null)으로 둔다
-        buildings = {}
+        return [note(
+            '실패',
+            f'직방 오피스텔 목록을 받지 못해({type(exc).__name__}) 원룸 목록에 섞인 오피스텔 {len(missing)}건의 complex_id 를 '
+            f'모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
+        )]
     for listing in missing:
         building_id = buildings.get(int(listing.id))
         if building_id:
             listing.complex_id = officetel_complex_id(building_id)
+    return []
 
 
 def _type_share_note(

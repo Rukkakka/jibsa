@@ -54,6 +54,7 @@ from jibsa.providers.zigbang.service.common.base import (
     ZigbangBuildingTrade,
     ZigbangListingDetail,
     ZigbangNearbyFacility,
+    failure_update_hint,
     item_url,
     officetel_complex_id,
     school_label,
@@ -526,7 +527,7 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | N
             # 학군을 못 받아도 매물 상세는 돌려준다 (모름)
             lookup_notes.append(note(
                 '실패',
-                f'직방 건물 학군 정보를 받지 못해({type(exc).__name__}) schools 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+                f'직방 건물 학군 정보를 받지 못해({type(exc).__name__}) schools 값을 모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
             ))
         try:
             # 웹 `loadRestOfDetailData` 는 유형과 상관없이 필지의 실거래를 부른다
@@ -537,7 +538,7 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | N
             # 건물 실거래도 덤이라 못 받으면(404 포함) 모름이다
             lookup_notes.append(note(
                 '실패',
-                f'직방 건물 실거래 정보를 받지 못해({type(exc).__name__}) building_trades 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+                f'직방 건물 실거래 정보를 받지 못해({type(exc).__name__}) building_trades 값을 모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
             ))
     detail = detail_to_listing(
         structured,

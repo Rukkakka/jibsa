@@ -42,6 +42,7 @@ from jibsa.providers.zigbang.service.common.base import (
     SCHOOL_LOOKUP_ERRORS,
     apt_complex_id,
     apt_danji_url,
+    failure_update_hint,
     household_count,
     text_or_none,
 )
@@ -524,7 +525,7 @@ def search_place_complexes(
         except SCHOOL_LOOKUP_ERRORS as exc:
             notes.append(note(
                 '실패',
-                f'직방 {place.place_type} 주변 단지 정보를 받지 못해({type(exc).__name__}) 단지 {around_fields}를 모릅니다 (url 의 단지 페이지에서 확인)',
+                f'직방 {place.place_type} 주변 단지 정보를 받지 못해({type(exc).__name__}) 단지 {around_fields}를 모릅니다 (url 의 단지 페이지에서 확인){failure_update_hint(exc)}',
             ))
         else:
             place_name = around_name or place.name
@@ -540,7 +541,7 @@ def search_place_complexes(
     if card_error is not None:
         notes.append(note(
             '실패',
-            f'직방 단지 카드를 받지 못해({type(card_error).__name__}) 받지 못한 단지는 {card_fields} 값을 모릅니다 (url 의 단지 페이지에서 확인)',
+            f'직방 단지 카드를 받지 못해({type(card_error).__name__}) 받지 못한 단지는 {card_fields} 값을 모릅니다 (url 의 단지 페이지에서 확인){failure_update_hint(card_error)}',
         ))
     elif missing:
         notes.append(note('참고', f'{missing}곳은 직방 단지 카드에 없어 {card_fields} 값을 모릅니다 (url 의 단지 페이지에서 확인)'))

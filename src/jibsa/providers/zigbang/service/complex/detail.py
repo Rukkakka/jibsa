@@ -56,6 +56,7 @@ from jibsa.providers.zigbang.service.common.base import (
     apt_complex_id,
     apt_danji_url,
     complex_not_found,
+    failure_update_hint,
     fetch_danji,
     household_count,
     parse_complex_id,
@@ -425,7 +426,7 @@ class ZigbangComplex(BaseModel):
     ] = None
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='후기가 있다는 안내와, 평형 정보를 받지 못해 그 값을 모른다는 [실패] 안내. CLI 가 결과 위에 붙인다')
+        Field(exclude=True, description='후기가 있다는 안내와, 학군·평형 정보를 받지 못해 그 값을 모른다는 [실패] 안내. CLI 가 결과 위에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -616,14 +617,14 @@ def _fetch_room_types(
         return None, [note(
             '실패',
             f'직방 평형 정보를 받지 못해({type(exc).__name__}) 평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 '
-            f'(url 의 직방 단지 페이지에서 확인)',
+            f'(url 의 직방 단지 페이지에서 확인){failure_update_hint(exc)}',
         )]
 
 
 def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
     """단지 정보와 지금 올라온 매물 수를 모은다 (아파트 4회: 단지·매물 수·학군·평형 정보, 오피스텔 1회 호출).
 
-    평형 정보(`room_types`, 평형 목록(매물 목록 응답의 `danjiRoomTypes`, 출처·순서는 그대로)에 면적·관리비·직방시세를
+    학군과 평형 정보(`room_types`, 평형 목록(매물 목록 응답의 `danjiRoomTypes`, 출처·순서는 그대로)에 면적·관리비·직방시세를
     붙인다)는 덤 조회라, 실패하면 그 값만 모름(null)이고 `[실패]` 안내가 붙는다. 순위·관련 단지·토지거래허가는 단지 정보 응답에 있어
     요청이 늘지 않는다.
 
@@ -657,11 +658,17 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
     catalogs = client.run_request_danjis_item_catalogs(
         ZigbangDanjisItemCatalogsRequestParameterModel(danji_id=number, limit=1)
     )
+    school_notes: list[str] = []
     try:
         schools = danji_schools(client.run_request_danjis_schools(ZigbangDanjisSchoolsRequestParameterModel(danji_id=number)))
-    except SCHOOL_LOOKUP_ERRORS:
+    except SCHOOL_LOOKUP_ERRORS as exc:
         # 학군을 못 받아도 단지 정보는 돌려준다 (모름)
         schools = None
+        school_notes = [note(
+            '실패',
+            f'직방 단지 학군 정보를 받지 못해({type(exc).__name__}) schools 값을 모릅니다 (url 의 직방 단지 페이지에서 확인)'
+            f'{failure_update_hint(exc)}',
+        )]
     room_info, lookup_notes = _fetch_room_types(client, number)
     details = {room_type.id: room_type for room_type in room_info.room_types or []} if room_info else {}
     return ZigbangComplex(
@@ -696,7 +703,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         rank=complex_rank_of(danji.rank),
         related_complexes=_related_complexes_of(danji.relate_danji),
         land_trade_permits=_land_trade_permits_of(danji.land_trade_permit),
-        notes=lookup_notes + (
+        notes=school_notes + lookup_notes + (
             [f'이 단지에 거주 후기 {danji.review_count}개가 있습니다. 후기 내용은 직방 단지 페이지({apt_danji_url(number)})에서 확인하세요']
             if danji.review_count else []
         ),

@@ -186,9 +186,9 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 상가,
-    단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는
-    헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호
+    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
+    조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
     엔드포인트 action id 는 버전 앞의 서비스 접두(`/house/property`, `/apt`)와 경로
