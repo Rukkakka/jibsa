@@ -29,8 +29,18 @@ class ZigbangStayMarkerModel(ResponseModel):
     weekly_price: Annotated[
         int | None,
         Field(
-            description='주당 임대료+관리비 (만원, 만원 미만 버림. 2026-11-15 실측 71건 모두). 웹 지도 목록 가격순의 기준',
+            description='주당 임대료+관리비 (만원, 만원 미만 버림. 2026-11-15 실측 71건 모두). 웹 지도 목록 가격순은 `weekly_total_price` 로 센다',
             alias='weeklyPrice'
+        )
+    ] = None
+    weekly_total_price: Annotated[
+        int | float | None,
+        Field(
+            description=(
+                '주당 임대료+관리비 (**원**, 반올림 없음). `weekly_price` 는 이 값을 만원 미만 버린 것이다 '
+                '(2026-11-19 표본 1,608건 모두 weeklyTotalPrice // 10000 == weeklyPrice). 웹은 숫자면 정수가 아니어도 이 값으로 가격순을 센다'
+            ),
+            alias='weeklyTotalPrice'
         )
     ] = None
     has_discount: Annotated[

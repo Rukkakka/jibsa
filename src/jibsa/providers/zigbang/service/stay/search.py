@@ -410,18 +410,26 @@ def _search_stay_by_markers(
     )
 
 
+def _marker_weekly_total_won(marker: ZigbangStayMarkerModel) -> int | float:
+    """웹 지도 목록 가격순의 비교 값 (번들 `getWeeklyTotalPrice`). 핀이 준 주당 합계(원)가 있으면 그 값, 없으면 만원 단위 `weeklyPrice` 를 원으로."""
+    if marker.weekly_total_price is not None:
+        return marker.weekly_total_price
+    return (marker.weekly_price or 0) * 10000
+
+
 def stay_marker_order(markers: list[ZigbangStayMarkerModel], sort: StaySort) -> list[int]:
     """지도 핀을 웹 지도 목록 순서로 세운 매물 ID (번들 `sortStayMarkers`).
 
-    추천순은 `totalScore` 높은 순, 같으면 ID 큰 순이다 (`compareRecommended`). 가격순은 `weeklyPrice`(주당 임대료+관리비,
-    만원 미만 버림) 낮은 순, 최신순은 `reviewedAt` 늦은 순(문자열 비교)이고, 둘 다 같은 값이면 추천순 규칙을 따른다.
-    역 가까운 순은 역 기준점이 없으면 웹도 추천순으로 바꾸는데, 지도 경로에서는 `search_stay_listings` 가 먼저 막는다.
-    값이 없으면 점수·가격은 0, 등록 시각은 가장 이른 것으로 본다 (2026-11-15 실측: 핀 2,313개 모두 값이 있었다).
+    추천순은 `totalScore` 높은 순, 같으면 ID 큰 순이다 (`compareRecommended`). 가격순은 `weeklyTotalPrice`(주당 임대료+관리비,
+    원)가 숫자이면 그 값, 아니면 `weeklyPrice`(만원 미만 버림) × 10000 으로 낮은 순이고 (`getWeeklyTotalPrice`), 최신순은
+    `reviewedAt` 늦은 순(문자열 비교)이다. 둘 다 같은 값이면 추천순 규칙을 따른다. 역 가까운 순은 역 기준점이 없으면 웹도
+    추천순으로 바꾸는데, 지도 경로에서는 `search_stay_listings` 가 먼저 막는다. 값이 없으면 점수·가격은 0, 등록 시각은 가장
+    이른 것으로 본다 (2026-11-19 실측: 핀 1,608개 모두 weeklyTotalPrice 가 있었고 weeklyPrice 는 그 값을 만원 미만 버린 것이었다).
     """
     # 정렬은 안정적이라(reverse=True 여도) 추천순으로 먼저 세운 뒤 기준 값으로 다시 세우면 같은 값끼리 추천순이 남는다
     ranked = sorted(markers, key=lambda marker: (-(marker.total_score or 0), -marker.id))
     if sort == 'price':
-        ranked.sort(key=lambda marker: marker.weekly_price or 0)
+        ranked.sort(key=_marker_weekly_total_won)
     elif sort == 'newest':
         ranked.sort(key=lambda marker: marker.reviewed_at or '', reverse=True)
     return [marker.id for marker in ranked]

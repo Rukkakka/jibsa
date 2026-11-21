@@ -1121,3 +1121,20 @@ def test_station_complexes_keep_view_count_order_and_add_distance() -> None:
     ]
     assert result.complexes[1].address == '서울특별시 가상구 가상동 000-1'
     assert (result.total, result.returned, result.has_more) == (5, 3, True)
+
+
+# --- 단기임대 -------------------------------------------------------------------
+
+def test_stay_marker_order_price_uses_weekly_total_price_then_recommended() -> None:
+    # 웹 지도 목록 가격순은 weeklyTotalPrice(원)로 견준다. 같은 만원 단위(weeklyPrice 39) 안에서도 399,000원이 390,000원보다 뒤다
+    # 합계가 없는 핀은 weeklyPrice × 10000 으로 견주고, 같은 값끼리는 추천순(점수 높은 순)이 남는다
+    markers = [
+        ZigbangStayMarkerModel.model_validate(dict(id=item_id, lat=37.5, lng=127.03, weeklyPrice=price, weeklyTotalPrice=total, totalScore=score))
+        for item_id, price, total, score in [
+            (1, 39, 399000, 0.9),
+            (2, 39, 390000, 0.1),
+            (3, 39, None, 0.5),
+            (4, 40, 400000, 0.5),
+        ]
+    ]
+    assert stay_marker_order(markers, 'price') == [3, 2, 1, 4]
