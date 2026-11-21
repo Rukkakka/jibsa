@@ -1,8 +1,10 @@
-"""지역·역·좌표 해석과 동 경계 (search locations, 모든 검색의 지역 해석)."""
+"""지역·역·좌표 해석과 동 경계, 아파트 동·구 지역 해석 (search locations, 모든 검색의 지역 해석)."""
 
 import re
+from collections.abc import Sequence
 
 from jibsa.core.errors import (
+    JibsaError,
     RegionAmbiguousError,
     RegionNotFoundError,
 )
@@ -14,10 +16,14 @@ from jibsa.core.geo import (
 )
 from jibsa.core.korean import (
     is_dong_code,
+    is_ri_code,
     legal_dong_hint,
     quoted,
 )
-from jibsa.core.listing import note
+from jibsa.core.listing import (
+    normalize_address,
+    note,
+)
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.region import (
     ZigbangLocalPolygonV2RequestParameterModel,
@@ -25,15 +31,24 @@ from jibsa.providers.zigbang.api.request.region import (
     ZigbangSearchV2RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
+    ZigbangAptRegion,
     ZigbangBoundary,
     ZigbangRegion,
-    region_from_search_item,
 )
 
+from typing import Literal
+
+
+# 검색어가 가리키는 곳의 종류. `search complexes` 가 검색어 끝 글자로 가른다 (`query_place_kind`)
+QueryPlaceKind = Literal['역', '학교', '동·구']
 
 # room·store·stay 의 --radius 최대. room·stay 의 동 경계 검색도 이 원보다 지도 칸이 많으면 반경으로 바꾼다 (wide_boundary_note)
 MAX_RADIUS_KM: float = 5.0
+
+# 역 이름으로 역을 찾지 못했을 때 `search complexes` 가 권하는 말 (지역 검색 0건의 REGION_NOT_FOUND 와 역 결과 없음의 INVALID_ARGUMENT 가 같이 쓴다).
+# 이 명령에는 좌표 옵션이 없어 기본 안내(--lat/--lng)를 쓰지 않는다
+STATION_QUERY_HINT: str = "역 이름 전체를 주세요 (예: 강남역). 학교는 '해누리중학교', 동·구는 '가락동'·'송파구' 처럼 주세요"
 
 
 def search_regions(
@@ -41,20 +56,90 @@ def search_regions(
     query: str,
     *,
     service_type: ZigbangSearchServiceType = '원룸',
+    require_coordinates: bool = False,
 ) -> list[ZigbangSearchItemModel]:
-    """`/v2/search` 결과 중 좌표가 있는 것만 돌려준다.
+    """`/v2/search` 결과를 돌려준다 (`require_coordinates` 가 True 면 좌표가 있는 것만).
 
     기본(원룸)으로 찾으면 지역·역·학교·대학교가 나오고, 아파트 단지는 `service_type='아파트'`, 오피스텔 건물은
     `service_type='오피스텔'` 로 따로 찾아야 나온다 (2026-10-10 실측: 원룸으로는 헬리오시티·래미안대치팰리스 0건).
+    지역 해석은 같은 이름 후보를 빠짐없이 세려고 좌표 없는 결과도 거르지 않는다. 먼저 버리면 `settled_item` 이 남은 한 곳을
+    묻지 않고 고른다. 같은 곳(종류·이름·주소가 같은 결과)이 둘 이상이면 좌표 있는 쪽을 고르고(`_located_first`), 고른 곳에
+    좌표가 없으면 좌표를 쓰는 경로의 `region_from_search_item` 이 알린다 (아파트 동·구와 search complexes 의 역·학교·동·구는
+    좌표를 쓰지 않아 멈추지 않는다). 좌표를 그대로 내보내는 후보 목록(`search_regions_and_complexes`)만 True 로 불러 좌표 없는
+    후보를 뺀다.
     """
     response = client.run_request_search_v2(
         ZigbangSearchV2RequestParameterModel(q=query, service_type=service_type)
     )
-    return [
-        item
-        for item in response.items
-        if item.lat is not None and item.lng is not None
-    ]
+    return [item for item in response.items if not require_coordinates or _has_coordinates(item)]
+
+
+def _has_coordinates(item: ZigbangSearchItemModel) -> bool:
+    return item.lat is not None and item.lng is not None
+
+
+def _same_place(first: ZigbangSearchItemModel, second: ZigbangSearchItemModel) -> bool:
+    """종류·이름·주소(설명)가 같은 결과는 직방이 같은 곳을 중복으로 준 것이다. 후보를 셀 때도 하나로 본다 (`settled_item`)."""
+    return (first.type, first.name, first.description) == (second.type, second.name, second.description)
+
+
+def _located_first(
+    candidates: list[ZigbangSearchItemModel],
+    chosen: ZigbangSearchItemModel,
+) -> ZigbangSearchItemModel:
+    """`chosen` 과 같은 곳(`_same_place`)의 결과 가운데 좌표가 있는 첫 결과. 없으면 `chosen` 이다.
+
+    같은 곳이 중복으로 오면 첫 결과에만 좌표가 없을 수 있다. 첫 결과를 그대로 고르면 좌표가 있는 같은 곳이 뒤에 있는데도
+    `region_from_search_item` 이 좌표 없음으로 멈춘다. 주소가 다른 후보는 다른 곳이라 넘어가지 않는다.
+    """
+    return next((item for item in candidates if _same_place(item, chosen) and _has_coordinates(item)), chosen)
+
+
+def region_from_search_item(item: ZigbangSearchItemModel) -> ZigbangRegion:
+    """검색 결과 하나를 검색 중심 지역으로 바꾼다. 좌표를 쓰는 검색(room·store·stay, 아파트의 역·학교 위치)이 부른다.
+
+    좌표를 쓰지 않는 아파트·단지 경로는 `apt_region_from_search_item`·검색 결과 그대로를 쓴다.
+
+    Raises:
+        JibsaError: 좌표가 없을 때 (`UPSTREAM_ERROR`). 좌표 없이 (0, 0) 으로 채우면 반경·경계가 엉뚱해지고, 다른 후보로
+            조용히 넘어가면 같은 이름 후보 중 하나를 임의로 고르게 된다.
+    """
+    if item.lat is None or item.lng is None:
+        name = item.name or normalize_address(item.description) or ''
+        raise JibsaError(
+            code='UPSTREAM_ERROR',
+            message=f"직방이 '{name}' 의 좌표를 주지 않아 검색 중심으로 쓸 수 없습니다",
+            hint='같은 곳의 다른 이름(동·역 이름)으로 찾으세요',
+        )
+    return ZigbangRegion(
+        name=item.name,
+        # 설명은 정식 시·도 이름으로 오지만 세종 학교는 '세종특별자치시  반곡동' 처럼 공백이 두 칸이라 정규화한다 (2026-10-11)
+        address=normalize_address(item.description),
+        search_type=item.type,
+        local1=normalize_address(item.source.local1) if item.source and item.source.local1 else None,
+        local2=item.source.local2 if item.source else None,
+        local3=item.source.local3 if item.source else None,
+        subway_id=item.id if item.type == 'subway' and item.id > 0 else None,
+        lat=item.lat,
+        lng=item.lng,
+        legal_division_code=item.source.legal_division_code if item.source else None,
+    )
+
+
+def apt_region_from_search_item(item: ZigbangSearchItemModel) -> ZigbangAptRegion:
+    """검색 결과 하나를 아파트를 찾는 동·구로 바꾼다. `region_from_search_item` 과 달리 좌표가 없어도 멈추지 않는다.
+
+    아파트(지역 목록·단지 목록)는 법정동 코드로 찾아 좌표를 쓰지 않는다. 좌표가 없으면 출력의 좌표만 모름(null)이다.
+    """
+    located = _has_coordinates(item)
+    return ZigbangAptRegion(
+        name=item.name,
+        address=normalize_address(item.description),
+        lat=item.lat if located else None,
+        lng=item.lng if located else None,
+        local3=item.source.local3 if item.source else None,
+        legal_division_code=item.source.legal_division_code if item.source else None,
+    )
 
 
 def _prefix_words(address: str, name: str) -> list[tuple[str, str]]:
@@ -86,23 +171,26 @@ def _retry_hint(same: list[ZigbangSearchItemModel], name: str) -> str:
     for item in same:
         for word, unit in _prefix_words(item.description or '', name):
             example = f'{word} {name}'
-            if _qualified_item(example, same) is item:
+            qualified = _qualified_item(example, same)
+            if qualified is not None and _same_place(qualified, item):
                 return f"'{example}' 처럼 {unit} 이름을 앞에 붙여 다시 검색하세요"
     return '후보(candidates) 주소의 시·도·구·동 이름을 앞에 붙여 다시 검색하세요'
 
 
 def _qualified_item(query: str, same: list[ZigbangSearchItemModel]) -> ZigbangSearchItemModel | None:
-    """같은 이름 후보 가운데 검색어의 앞 낱말(구·동 이름)이 주소에 모두 든 곳이 하나뿐이면 그 후보(첫 결과). 아니면 None.
+    """같은 이름 후보 가운데 검색어의 앞 낱말(구·동 이름)이 주소에 모두 든 곳이 하나뿐이면 그 후보. 아니면 None.
 
     직방은 '신촌동 신촌역' 에도 서대문구 창천동·신촌동의 두 신촌역을 함께 준다 (2026-11-15 실측). 사용자가 붙인 낱말로
-    가릴 수 있으면 임의로 고르는 것이 아니라 그 후보로 찾는다. 주소까지 같은 결과는 같은 곳으로 본다 (`settled_item` 도
-    주소로 후보를 센다).
+    가릴 수 있으면 임의로 고르는 것이 아니라 그 후보로 찾는다. 주소까지 같은 결과는 같은 곳으로 보고(`settled_item` 도
+    주소로 후보를 센다) 첫 결과를 고르되 좌표가 없으면 좌표 있는 같은 곳을 고른다 (`_located_first`).
     """
     qualifiers = query.split()[:-1]
     if not qualifiers:
         return None
     matched = [item for item in same if all(word in (item.description or '').split() for word in qualifiers)]
-    return matched[0] if matched and len({item.description for item in matched}) == 1 else None
+    if not matched or len({item.description for item in matched}) != 1:
+        return None
+    return _located_first(matched, matched[0])
 
 
 def settled_item(
@@ -112,7 +200,8 @@ def settled_item(
 ) -> ZigbangSearchItemModel:
     """고른 곳과 이름·종류가 같은 후보 가운데 검색할 곳 하나를 정한다. 여러 곳이면 고르지 않고 멈춘다.
 
-    검색어 앞 낱말로 후보 하나가 가려지면(`_qualified_item`) 그 후보, 같은 이름·같은 종류 후보가 한 곳이면 `best` 다.
+    검색어 앞 낱말로 후보 하나가 가려지면(`_qualified_item`) 그 후보, 같은 이름·같은 종류 후보가 한 곳이면 `best` 다. 그
+    한 곳이 같은 주소로 중복해 오면 좌표 있는 쪽을 돌려준다 (`_located_first`).
     이름이 비슷하기만 한 결과(세종 → 세종동·세종로)나 종류가 다른 결과(신사동 → 신사역)는 세지 않는다.
 
     첫 곳으로 찾으면 엉뚱한 곳의 결과가 조용히 나온다 (2026-10-15 실측: 신사동은 직방 첫 곳이 은평구. 2026-11-15 실측:
@@ -130,7 +219,7 @@ def settled_item(
         return qualified
     addresses = list(dict.fromkeys(item.description for item in same if item.description))
     if len(addresses) < 2:
-        return best
+        return _located_first(same, best)
     raise RegionAmbiguousError(query, addresses, len(addresses), hint=_retry_hint(same, best.name or query))
 
 
@@ -164,8 +253,9 @@ def resolve_region_with_notes(
     `items` 는 같은 검색어로 이미 받은 `search_regions` 결과다. 주면 지역 검색을 다시 하지 않는다.
 
     Raises:
-        RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
+        RegionNotFoundError: 결과가 하나도 없을 때.
         RegionAmbiguousError: 같은 이름·같은 종류의 후보(동·구·역·학교)가 여러 곳일 때 (`settled_item`).
+        JibsaError: 고른 곳에 좌표가 없을 때 (`region_from_search_item`).
     """
     region, split_note, _ = resolve_region_scope(client, query, items=items)
     wide_note = wide_area_note(query, region, radius_km)
@@ -208,61 +298,118 @@ def best_region_item(
     return regions[0]
 
 
+def region_scope_items(
+    query: str,
+    items: list[ZigbangSearchItemModel],
+) -> tuple[ZigbangSearchItemModel, list[ZigbangSearchItemModel]]:
+    """검색 결과만으로 검색 중심으로 쓸 곳과 함께 찾을 '○가' 동을 정한다. 요청도 좌표도 쓰지 않는다.
+
+    어느 곳인지만 묻고 끝나는 쪽(단기임대의 '어느 동인지' 묻기)이 좌표 없는 후보에 막히지 않고 `divided_region_error` 를 낼 수
+    있게, 지역(`ZigbangRegion`)으로 바꾸기 전의 검색 결과를 준다. `resolve_region_scope` 가 이 결과를 지역으로 바꾼다.
+
+    Returns:
+        (고른 결과, 함께 찾을 '○가' 동 결과 (없으면 [])).
+
+    Raises:
+        RegionNotFoundError: 결과가 하나도 없을 때.
+        RegionAmbiguousError: 같은 이름·같은 종류의 후보(동·구·역·학교)가 여러 곳일 때 (`settled_item`).
+    """
+    if not items:
+        raise RegionNotFoundError(query, hint=legal_dong_hint(query))
+    # 같은 이름 후보가 여럿이어도 검색어 앞 낱말로 하나가 가려지면 그 후보가 검색 중심이다 ('신촌동 신촌역')
+    best = settled_item(query, items, best_region_item(query, items) or items[0])
+    return best, ga_dong_split(query, ga_dong_siblings(query, items, best), best)
+
+
 def resolve_region_scope(
     client: ZigbangClient,
     query: str,
     *,
     items: list[ZigbangSearchItemModel] | None = None,
-) -> tuple[ZigbangRegion, str | None, list[ZigbangRegion]]:
+) -> tuple[ZigbangRegion, str | None, list[ZigbangSearchItemModel]]:
     """`resolve_region_with_notes` 와 같되 넓은 지역 안내 없이, '○가' 로 나뉜 동의 안내와 동들을 따로 준다.
 
     같은 이름의 동 없이 '<검색어>N가' 로만 나뉜 동(성수동 → 성수동1가·2가)이면 그 동들을 준다 (첫 동이 검색 중심).
     동 안을 찾는 쪽은 그 동들을 함께 찾고 안내를 빼며, 그 밖에는 안내만 붙인다. 넓은 지역 안내(`wide_area_note`)는
     넣지 않아, 반경으로 찾는 쪽이 붙인다.
 
-    어느 동이 함께 걸리는지는 `best_region_item`·`ga_dong_siblings`·`ga_dong_split`·`ga_dong_note` 만 판단한다
+    어느 동이 함께 걸리는지는 `region_scope_items`·`ga_dong_siblings`·`ga_dong_note` 만 판단한다
     (`resolve_apt_region` 도 같은 헬퍼를 쓴다). 그 동들을 어떻게 다룰지는 명령마다 다르다: room 은 지도 칸의 핀을 합친
     경계로 좁히고, store 는 서버에 동 코드를 함께 보내며, 지역 하나의 목록만 있는 apt·stay 는 합치지 않고 어느 동인지
     묻는다 (`divided_region_error`).
 
     Returns:
-        (검색 중심, ○가 안내 또는 None, 합칠 ○가 동 (없으면 [])).
+        (검색 중심, ○가 안내 또는 None, 합칠 ○가 동의 검색 결과 (없으면 [])). ○가 동은 좌표가 필요한 쪽(반경 없이 동 안을
+        찾는 room·store)만 `region_from_search_item` 으로 바꾼다. 반경으로 찾을 때는 쓰지 않는데, 미리 바꾸면 쓰지 않을 동의
+        좌표가 없다는 에러가 났다 (2026-11-20 리뷰).
 
     Raises:
-        RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
+        RegionNotFoundError: 결과가 하나도 없을 때.
         RegionAmbiguousError: 같은 이름·같은 종류의 후보(동·구·역·학교)가 여러 곳일 때 (`settled_item`).
+        JibsaError: 고른 곳에 좌표가 없을 때 (`region_from_search_item`).
     """
     items = search_regions(client, query) if items is None else items
-    if not items:
-        raise RegionNotFoundError(query, hint=legal_dong_hint(query))
-    # 같은 이름 후보가 여럿이어도 검색어 앞 낱말로 하나가 가려지면 그 후보가 검색 중심이다 ('신촌동 신촌역')
-    best = settled_item(query, items, best_region_item(query, items) or items[0])
-    siblings = ga_dong_siblings(query, items, best)
-    split = ga_dong_split(query, siblings, best)
+    best, split = region_scope_items(query, items)
     return (
         region_from_search_item(best),
-        ga_dong_note(query, siblings, best),
-        [region_from_search_item(item) for item in split],
+        ga_dong_note(query, ga_dong_siblings(query, items, best), best),
+        split,
     )
 
 
-def resolve_station(client: ZigbangClient, query: str) -> ZigbangRegion | None:
-    """역 이름을 역 하나로 바꾼다 (역만 받는 명령: search complexes). 검색어(마지막 낱말)와 이름이 같은 역이 없으면 None.
+def query_place_kind(query: str) -> QueryPlaceKind:
+    """검색어(마지막 낱말)의 끝 글자로 역('…역')·학교('…학교')·그 밖(동·구)을 가른다.
+
+    `search complexes` 가 무엇의 주변 단지인지 정하려고 쓴다. 이름을 찾아보기 전에 정해야 지역 검색을 한 번만 부르고, 동·구에
+    받지 않는 조건을 요청 전에 막을 수 있다.
+    """
+    name = _dong_name(query)
+    if name.endswith('역'):
+        return '역'
+    if name.endswith('학교'):
+        return '학교'
+    return '동·구'
+
+
+def resolve_station(client: ZigbangClient, query: str) -> ZigbangSearchItemModel | None:
+    """역 이름을 역 검색 결과 하나로 바꾼다 (search complexes 의 역 경로). 검색어(마지막 낱말)와 이름이 같은 역이 없으면 None.
 
     다른 검색처럼 지역(address) 결과를 먼저 고르면, 동 이름('신사동')에 같은 이름 동의 `REGION_AMBIGUOUS` 를 내고 그 힌트
     ('은평구 신사동')를 따르면 '역이 아닙니다' 가 됐다 (2026-11-16 리뷰). 역 결과만 보고, 같은 이름 역이 여럿이면 다른
-    검색과 같이 멈춘다 ('창천동 신촌역' 은 검색어 앞 낱말로 가린다).
+    검색과 같이 멈춘다 ('창천동 신촌역' 은 검색어 앞 낱말로 가린다). 이 경로는 역 ID·이름·주소만 써서 지역(`ZigbangRegion`)으로
+    바꾸지 않는다. 직방이 좌표를 주지 않은 역도 찾는다.
 
     Raises:
-        RegionNotFoundError: 좌표가 있는 결과가 하나도 없을 때.
+        RegionNotFoundError: 결과가 하나도 없을 때 (`STATION_QUERY_HINT`. 이 명령에는 좌표 옵션이 없다).
         RegionAmbiguousError: 같은 이름의 역이 여러 곳일 때 (`settled_item`).
     """
     items = search_regions(client, query)
     if not items:
-        raise RegionNotFoundError(query, hint=legal_dong_hint(query))
+        raise RegionNotFoundError(query, hint=STATION_QUERY_HINT)
     name = _dong_name(query)
     station = next((item for item in items if item.type == 'subway' and item.name == name), None)
-    return region_from_search_item(settled_item(query, items, station)) if station else None
+    return settled_item(query, items, station) if station else None
+
+
+def resolve_school(client: ZigbangClient, query: str) -> ZigbangSearchItemModel:
+    """학교 이름을 학교 하나로 바꾼다 (search complexes 의 학교 경로). 검색어(마지막 낱말)와 이름이 같은 학교를 찾는다.
+
+    학교 화면 코드(`source.school_code`)는 '아파트' 서비스로 찾은 결과에 있어 (2026-11-19 실측: 해누리중학교) 그 서비스로 찾는다.
+    같은 이름 학교가 여러 곳이면 다른 검색처럼 멈춘다 (`settled_item`, 검색어 앞 낱말로 한 곳이 가려지면 그 학교).
+    결과의 `id` 는 단지 목록(`danjis/ids`)에 넘기는 학교 ID 이고 학교 코드와 다르다. 아파트 서비스 검색에는 대학교가 나오지
+    않아(`search_regions_and_complexes`) 대학교 이름은 찾지 못한다. 좌표 없는 같은 이름 학교도 후보로 센다 (`search_regions` 는
+    좌표를 거르지 않는다). 학교 ID 만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
+
+    Raises:
+        RegionNotFoundError: 그 이름의 초·중·고등학교가 없을 때.
+        RegionAmbiguousError: 같은 이름의 학교가 여러 곳일 때 (`settled_item`).
+    """
+    items = search_regions(client, query, service_type='아파트')
+    name = _dong_name(query)
+    school = next((item for item in items if item.type == 'school' and item.name == name), None)
+    if school is None:
+        raise RegionNotFoundError(query, hint="초등학교·중학교·고등학교 이름 전체를 주세요 (예: '해누리중학교'). 대학교는 받지 않습니다")
+    return settled_item(query, items, school)
 
 
 def ga_dong_siblings(
@@ -274,17 +421,23 @@ def ga_dong_siblings(
 
     '○가' 동은 이름이 검색어와 달라 `settled_item` 의 같은 이름 검사에 걸리지 않는데, 첫 후보만 찾으면
     나머지 '○가' 가 조용히 빠진다 (2026-10-10 실측: 성수동은 1가만 찾아 2가 상가 217건이 빠짐).
+    이름·주소가 같은 중복 결과는 한 동으로 줄이고 좌표 있는 쪽을 남긴다 (`_located_first`, 순서는 처음 나온 자리). 줄이지
+    않으면 room·store 가 같은 동을 두 번 합치거나 좌표 없는 쪽에 멈춘다.
     """
     name = _dong_name(query)
     if best.type != 'address' or not name.endswith('동') or not best.description:
         return []
     parent = best.description.rsplit(' ', 1)[0]
     pattern = re.compile(rf'{re.escape(name)}\d+가')
-    return [
+    matched = [
         item for item in items
         if item.type == 'address' and item.name and pattern.fullmatch(item.name)
         and item.description and item.description.rsplit(' ', 1)[0] == parent
     ]
+    unique: dict[tuple[str, str | None], ZigbangSearchItemModel] = {}
+    for item in matched:
+        unique.setdefault((item.name, item.description), _located_first(matched, item))
+    return list(unique.values())
 
 
 def ga_dong_split(
@@ -297,8 +450,17 @@ def ga_dong_split(
     return [] if best.name == _dong_name(query) or best not in siblings else siblings
 
 
-def ga_dong_note(query: str, siblings: list[ZigbangSearchItemModel], best: ZigbangSearchItemModel) -> str | None:
-    """'○가' 동이 검색에서 빠졌다는 안내. 나뉜 동이 없으면 None."""
+def ga_dong_note(
+    query: str,
+    siblings: list[ZigbangSearchItemModel],
+    best: ZigbangSearchItemModel,
+    *,
+    radius_hint: bool = True,
+) -> str | None:
+    """'○가' 동이 검색에서 빠졌다는 안내. 나뉜 동이 없으면 None.
+
+    `radius_hint` 는 '--radius' 를 권할지다. 그 옵션이 없는 명령(search listings apt·search complexes)은 False 로 부른다.
+    """
     names = [item.name for item in siblings if item.name]
     others = [name for name in names if name != best.name]
     if not others:
@@ -312,7 +474,7 @@ def ga_dong_note(query: str, siblings: list[ZigbangSearchItemModel], best: Zigba
         return note(
             '범위',
             f'이번 검색은 {best.name}만 찾았습니다. {span(others)}는 따로 있는 동이라 빠졌습니다. '
-            '함께 보려면 각각 검색하거나 --radius 로 위치 기준으로 찾으세요',
+            + ('함께 보려면 각각 검색하거나 --radius 로 위치 기준으로 찾으세요' if radius_hint else '함께 보려면 각각 검색하세요'),
         )
     return note(
         '범위', f"{quoted(query, '은/는')} {span(names)}로 나뉘어 있어 {best.name}를 기준으로 찾았습니다. 다른 곳도 보려면 각각 검색하세요",
@@ -350,10 +512,14 @@ def city_gu_items(
     ]
 
 
-def city_gu_regions(query: str, items: list[ZigbangSearchItemModel]) -> list[ZigbangRegion]:
-    """구가 있는 시(성남시)면 그 시의 구들 (검색 중심 구가 먼저). 아니면 []. 검색 중심은 `resolve_region_scope` 와 같이 고른다."""
+def city_gu_search_items(query: str, items: list[ZigbangSearchItemModel]) -> list[ZigbangSearchItemModel]:
+    """구가 있는 시(성남시)면 그 시의 구 검색 결과들 (검색 중심 구가 먼저). 아니면 []. 검색 중심은 `resolve_region_scope` 와 같이 고른다.
+
+    지역(`ZigbangRegion`)으로 바꾸지 않는다. 좌표 없는 구가 섞여도 어느 구인지 묻는 에러(`divided_region_error`)가 좌표 에러로
+    바뀌지 않고, 에러가 필요 없는 검색에서는 좌표를 보지 않는다.
+    """
     best = best_region_item(query, items)
-    return [region_from_search_item(item) for item in city_gu_items(query, items, best)] if best else []
+    return city_gu_items(query, items, best) if best else []
 
 
 def merged_dong_region(
@@ -374,7 +540,17 @@ def merged_dong_region(
     })
 
 
-def divided_region_error(query: str, parts: list[ZigbangRegion]) -> RegionAmbiguousError:
+def _name_and_address(part: ZigbangRegion | ZigbangSearchItemModel) -> tuple[str, str | None]:
+    """후보의 이름과 주소. 검색 결과는 `region_from_search_item` 과 같은 주소(정규화한 설명)를 쓴다."""
+    if isinstance(part, ZigbangRegion):
+        return part.name, part.address
+    return part.name, normalize_address(part.description)
+
+
+def divided_region_error(
+    query: str,
+    parts: Sequence[ZigbangRegion | ZigbangSearchItemModel],
+) -> RegionAmbiguousError:
     """검색어가 직방이 따로 보여 주는 지역 여럿에 걸릴 때의 에러: '○가' 로 나뉜 동(성수동 → 성수동1가·2가), 구가 있는 시
     (성남시 → 분당구·수정구·중원구).
 
@@ -382,15 +558,96 @@ def divided_region_error(query: str, parts: list[ZigbangRegion]) -> RegionAmbigu
     (2026-11-15 실측: 아파트 성남시 코드 41130 은 0건, 단기임대 검색창은 성수동1가·2가를 따로 준다), 목록 여럿을 합친
     순서·수는 웹에 없어 합치지 않고 어느 곳인지 묻는다. 지도 칸의 핀을 좁히는 room, 동 코드 여럿을 서버가 한 번에 받는
     store 는 합친 범위로 찾는다.
+
+    `parts` 는 이름·주소만 쓴다. 좌표 없는 후보가 섞여도 묻는 에러가 좌표 에러(`region_from_search_item`)로 바뀌지 않게
+    지역으로 바꾸기 전의 검색 결과(`ZigbangSearchItemModel`)도 받는다.
     """
-    first = parts[0].name if parts else query
+    labels = [_name_and_address(part) for part in parts]
+    first = labels[0][0] if labels else query
     unit = '구 이름까지' if first.split()[-1].endswith('구') else '동 이름을 정확히'
     return RegionAmbiguousError(
         query,
-        [part.address or part.name for part in parts],
+        [address or name for name, address in labels],
         len(parts),
         hint=f"'{first}' 처럼 {unit} 주세요",
     )
+
+
+def local_code_of(legal_division_code: str) -> str:
+    """법정동코드 10자리를 직방 아파트 지역 코드로 줄인다.
+
+    직방은 시·군·구 5자리, 읍·면·동 8자리로 찾는다. 10자리를 그대로 보내면 에러 없이 0건이다. 리(10자리 끝 두
+    자리가 00 이 아님)는 읍·면 8자리로 올린다 (2026-10-11 실측: 양근리 4183025021 은 0건, 양평읍 41830250 은 88건).
+    시·도 2자리도 에러 없이 늘 0건이라 (2026-10-11 실측: 11·41·26·36 모두 0건, 강남구 11680 은 1683건)
+    `resolve_apt_region` 이 시·도를 `RegionNotFoundError` 로 거절해 여기에는 오지 않는다. 구가 있는 시의 시 코드(성남시
+    41130)도 0건이라 (2026-11-15 실측) `resolve_apt_region` 이 어느 구인지 묻는다 (`city_gu_items`).
+    """
+    if legal_division_code.endswith('00000000'):
+        return legal_division_code[:2]
+    if legal_division_code.endswith('00000'):
+        return legal_division_code[:5]
+    return legal_division_code[:8]
+
+
+def resolve_apt_region(
+    client: ZigbangClient,
+    query: str,
+    *,
+    items: list[ZigbangSearchItemModel] | None = None,
+    ri_check: str = 'address 로 위치를 확인하세요',
+) -> tuple[ZigbangAptRegion, list[str]]:
+    """아파트 검색 지역(동·구 하나)과 결과에 붙일 안내를 찾는다. 아파트는 반경이 아니라 동·구 단위로 조회한다.
+
+    웹 지역 매물 화면(`/home/apt/items/{지역 코드}`)은 지역 코드 하나의 목록만 보여 준다 (2026-11-15 캡처). 그래서
+    '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)이나 구가 있는 시(성남시 → 분당구·수정구·중원구)는 목록을 합치지 않고
+    어느 동·구인지 묻는다. `items` 는 같은 검색어로 이미 받은 `search_regions` 결과다. 주면 지역 검색을 다시 하지 않는다.
+    `ri_check` 는 리로 찾았을 때 [범위] 안내 끝에 붙이는, 어디서 위치를 확인하는지 알리는 문장이다 (위치를 확인할 칸이 명령마다
+    달라 부르는 쪽이 바꿔 넘긴다).
+
+    법정동 코드만 쓰고 좌표는 쓰지 않아, 직방이 좌표를 주지 않은 동·구도 찾는다 (`apt_region_from_search_item`. 좌표는 모름).
+
+    Returns:
+        (검색할 동·구, 안내).
+
+    Raises:
+        RegionNotFoundError: 법정동코드가 있는 지역 결과가 없거나(역 이름만 준 경우 등) 시·도일 때. 직방 지역 목록은
+            시·도 코드에 늘 0건이다 (`local_code_of`). 행정동 이름이면 법정동으로 찾으라는 힌트가 붙는다 (`legal_dong_hint`).
+        RegionAmbiguousError: 같은 이름의 동·구가 여러 곳일 때 (`settled_item`), '○가' 로만 나뉜 동이거나 구가 있는
+            시일 때 (`divided_region_error`).
+    """
+    items = search_regions(client, query) if items is None else items
+    best = best_region_item(query, items, require_code=True)
+    # 같은 이름 동·구는 room·store·stay 와 같이 검색어 앞 낱말로 가리고, 가려지지 않으면 묻는다
+    best = settled_item(query, items, best) if best is not None else None
+    code = best.source.legal_division_code if best and best.source else None
+    if best is None or code is None or code.endswith('00000000'):
+        # 행정동(역삼1동)은 직방 지역 검색이 0건이라(2026-10-11 실측: 역삼1동·화곡제1동·상계3.4동·월곡1동) 법정동으로 찾으라는
+        # 힌트를 낸다. search listings apt 와 search complexes 가 같은 힌트를 내도록 여기서 정한다. 역 이름이면 CLI 가 이 에러를
+        # 잡아 그 위치가 속한 동(`apt_dong_at`)으로 찾는다
+        raise RegionNotFoundError(
+            query,
+            hint=legal_dong_hint(query)
+            or "아파트는 동·구 단위로 조회합니다. 동 이름(예: '역삼동')이나 구 이름(예: '강남구'), 역 이름(예: '강남역')으로 다시 검색하세요",
+        )
+    # 구 단위로 조회해 넓은 지역 안내(wide_area_note)는 붙이지 않는다
+    notes: list[str] = []
+    gus = city_gu_items(query, items, best)
+    if gus:
+        raise divided_region_error(query, gus)
+    # 지역 결과는 모두 법정동코드가 있어 (2026-10-11 실측: '○가' 동 145건·그 밖의 지역 25건) 형제 동은 코드로 다시 거르지 않는다
+    siblings = ga_dong_siblings(query, items, best)
+    split = ga_dong_split(query, siblings, best)
+    if split:
+        raise divided_region_error(query, split)
+    if is_ri_code(code):
+        # 리는 읍·면 지역 목록으로 찾는다 (local_code_of). 지역 결과의 local3 이 그 읍·면이다 (2026-10-11 실측: 양근리 → 양평읍)
+        town = best.source.local3 if best.source and best.source.local3 else '읍·면'
+        notes.append(note(
+            '범위',
+            f"{quoted(query, '은/는')} 리 단위라 직방이 리로는 찾지 않아 상위 {town} 전체에서 찾았습니다. {ri_check}",
+        ))
+    split_note = ga_dong_note(query, siblings, best, radius_hint=False)
+    return apt_region_from_search_item(best), notes + ([split_note] if split_note else [])
 
 
 def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -> ZigbangBoundary | None:

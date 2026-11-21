@@ -87,6 +87,18 @@ service 가 부르지 않는 엔드포인트(`article/agent`, `complex/holdingTa
 
 세대수(`householdNumber`)·단지 주차(`parkingTypes`)는 단지 매물만 남기고, 현관 구조(`entranceTypes`)는 단지 여부와 상관없이 현관 구조가 등록된 매물을 남긴다. 그래서 안내도 `COMPLEX_FILTER_NOTE`·`ENTRANCE_FILTER_NOTE` 로 나눈다. 둘을 함께 주면 세대수·주차 조건이 단지 아닌 매물을 이미 빼므로 현관 안내는 '단지가 아닌 빌라도 나온다' 는 괄호 말을 뺀 `ENTRANCE_WITH_COMPLEX_FILTER_NOTE` 다 (2026-11-17 연남동 빌라 297건: `--entrance 계단식` 102건에 단지가 아닌 빌라 2661884425·2661802815·2661884583 이 남고, `--household-min 1` 78건·`--parking 세대당1대` 14건에는 셋 다 빠졌으며 표본 3건은 모두 단지 매물).
 
+### 목록 안 빈 항목 (`null_items`)
+
+- 네이버가 객체 목록 안에 null 원소를 주면 기반 모델 `NaverBaseResponseModel` 이 빼고 칸마다 센다 (`page.null_items('items')`). 공통 규칙(계산한 값은 null, 자리 세기는 뺀 수를 더함, `[제외]` 안내)은 [모듈 구성](../provider-conventions.md#모듈-구성)에 있고, 네이버의 자리별 처리는 아래와 같다. 안내는 `null_items_note` 라 끝말이 `UPDATE_MAYBE_NEEDED` 다.
+  - **봉투 `result` 목록**: `result_with_null_items`(`service/common.py`)가 `result` 와 뺀 수를 함께 돌려준다. `result_or_none` 은 이것에 위임하고 뺀 수는 쓰지 않아, `result` 가 목록이고 그 목록으로 계산하거나 자리를 세는 호출부(동향의 평당가 주간 목록, 시·군·구 목록)만 `result_with_null_items` 를 부른다.
+  - **매물·단지·구역 목록 쪽 넘김(`scan_pages`)**: `PageScan.null_items` 에 뺀 수를 모으고 `received` 는 뺀 자리를 더해 센다 (네이버 서버는 빈 항목도 한 자리로 센다). 쪽 넘김·남은 매물 판정이 같은 자리를 다시 받거나 일찍 멈추지 않는다. 안내는 `scan_null_items_notes`(지역 단지·매물·재개발 구역·구역 매물은 `search.py`·`redevelopment.py`, 단지 매물은 `listing.py` 의 `list_complex_articles`)이고, `pagination_notes(null_items=scan.null_items)` 가 뺀 자리를 '중복·거래 유형으로 뺀 수' 에서 빼 빈 항목을 그 사유로 안내하지 않는다. 첫 쪽이 빈 항목만 와도 빈 쪽으로 보지 않아 빌라 목록을 다시 묻지 않는다.
+  - **관리비(`listing`)**: 항목별형 `fixDetailList` 에서 뺐으면 합계 `manage_cost_manwon` 과 `manage_cost_includes` 가 둘 다 null 이다 (`_manage_cost`).
+  - **동향(`trend`)**: 평당가 주간 목록에서 뺐으면 `price_per_pyeong.latest_manwon` 이 null 이고 `weekly` 는 받은 대로 둔다 (`get_district_trend`).
+  - **실거래(`real-price`)**: 아파트 쪽·빌라 쪽·기간 조회에서 빈 항목만 온 쪽을 빈 쪽으로 보지 않아 멈추지 않고(빌라 판정·`break` 조건), 주변 실거래는 상한(`AROUND_TRADES_LIMIT`) 판정에 뺀 수를 더한다 (`_nearby_transactions`).
+  - **학교 배정 단지(`school`)**: `total`·받은 수·상한·쪽이 비었는지·안내 숫자를 뺀 수를 더해 센다 (`list_school_complexes`).
+  - **이름 해석(`service/region.py`)**: 단지·구역·법정동·역 자동완성의 `_has_more` 를 `len(items)` 에 뺀 수를 더해 부른다 (`_collect_matching` 은 뺀 수를 함께 돌려주고 `_search_complexes` 는 네 번째 값으로 돌려준다). 시·군·구 목록에서 뺐으면 빠진 곳이 구일 수 있어 `city_district_names` 는 None, `only_district_of_province` 는 `'unknown'` 이고 `list_regions` 는 '하나뿐' 이라고 단정하지 않는다. `cli/naver.py` 의 시 구 확인·시·도 하나뿐 확인은 빈 항목이라서 모르는 경우에도 조회가 실패했을 때와 같은 기존 '확인하지 못해 반경으로 찾았다' 안내를 낸다. 자리별 빈 항목 안내는 없지만(붙이려면 service 반환형을 늘려야 한다) 뺀 수는 명령 전체 집계에 들어 공통 안내(`null_items_total_note`)가 붙는다.
+- 손대지 않은 자리: 평형 목록으로 빌라·없는 평형을 판정하는 곳(`pyeong_list`·`check_pyeong_numbers`·`resolve_dong_numbers`)과 그 `NOT_FOUND` 는 에러 경로·흐름 판단이라 빈 목록 그대로 둔다. 보여 주기만 하는 목록(주변 개발 `rail`·`area`, 교통·학교, `weekly` 목록, 평당가 `rows`)과 `_subway_label` 의 `min(minutes)` 도 값이 틀리지 않아 그대로다 (뺐으면 공통 안내가 알린다). `scan_pages` 의 '처음 보는 항목이 없으면 멈춤' 판정과 이름 해석의 후보 수(`len(same)`)는 서버 자리 세기가 아니라 읽은 항목 기준이고, 빈 항목만 온 쪽에서만 달라지는 극단이라 그대로 둔다.
+
 ## 원룸 구조 메모
 
 (2026-10-10 실측)

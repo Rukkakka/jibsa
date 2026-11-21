@@ -1,8 +1,8 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.dabang.api.response.common import (
     DabangAreaAveragePriceModel,
+    DabangBaseResponseModel,
     DabangV5ResponseModel,
     Meters,
 )
@@ -10,7 +10,7 @@ from jibsa.providers.dabang.api.response.common import (
 from typing import Annotated
 
 
-class DabangRealPriceHistoryModel(ResponseModel):
+class DabangRealPriceHistoryModel(DabangBaseResponseModel):
     """실거래 한 건 (만원, 국토부 신고 기준).
 
     매매는 `tradePrice`, 전세는 `deposit`, 월세는 `deposit`·`monthlyPrice` 에 온다. `isRelease` 는 해제된 거래다.
@@ -76,7 +76,7 @@ class DabangRealPriceHistoryModel(ResponseModel):
     ] = None
 
 
-class DabangRealPriceComplexHistoriesResultModel(ResponseModel):
+class DabangRealPriceComplexHistoriesResultModel(DabangBaseResponseModel):
     """단지 실거래 `result`."""
 
     list_: Annotated[
@@ -97,7 +97,7 @@ class DabangRealPriceComplexHistoriesV5ResponseModel(DabangV5ResponseModel[Daban
     """`GET /api/v5/real-price/complex/histories` 응답."""
 
 
-class DabangRealPriceHousePageModel(ResponseModel):
+class DabangRealPriceHousePageModel(DabangBaseResponseModel):
     """매물 실거래 한 쪽."""
 
     histories: Annotated[
@@ -114,7 +114,7 @@ class DabangRealPriceHousePageModel(ResponseModel):
     ] = None
 
 
-class DabangRealPriceHouseScopeModel(ResponseModel):
+class DabangRealPriceHouseScopeModel(DabangBaseResponseModel):
     """매물 실거래를 모은 범위와 건물 유형.
 
     `historyBaseType` 이 `JIBUN` 이면 이 집(같은 지번) 거래, `DONG` 이면 같은 동의 같은 건물 유형 거래다. 웹은 그대로
@@ -174,7 +174,7 @@ class DabangRealPriceHouseInitV5ResponseModel(DabangV5ResponseModel[DabangRealPr
     """`GET /api/v5/real-price/house/init` 응답."""
 
 
-class DabangChartStatisticModel(ResponseModel):
+class DabangChartStatisticModel(DabangBaseResponseModel):
     """시세 흐름의 한 달 (만원). 거래가 없는 달도 앞 달 평균을 이어 준다 (`volume: 0`)."""
 
     date: Annotated[
@@ -199,7 +199,7 @@ class DabangChartStatisticModel(ResponseModel):
     ] = None
 
 
-class DabangChartPerSpaceModel(ResponseModel):
+class DabangChartPerSpaceModel(DabangBaseResponseModel):
     """평형의 최근 평균 (만원)."""
 
     average_price: Annotated[
@@ -212,7 +212,7 @@ class DabangChartPerSpaceModel(ResponseModel):
     ] = None
 
 
-class DabangChartSeriesModel(ResponseModel):
+class DabangChartSeriesModel(DabangBaseResponseModel):
     """매매 또는 전월세 시세 흐름."""
 
     statistics: Annotated[
@@ -225,7 +225,7 @@ class DabangChartSeriesModel(ResponseModel):
     ] = None
 
 
-class DabangChartGapRecentModel(ResponseModel):
+class DabangChartGapRecentModel(DabangBaseResponseModel):
     """최근 매매·전세 평균과 차이, 전세가율."""
 
     trade_average_price: Annotated[
@@ -255,7 +255,7 @@ class DabangChartGapStatisticModel(DabangChartGapRecentModel):
     ] = None
 
 
-class DabangChartGapModel(ResponseModel):
+class DabangChartGapModel(DabangBaseResponseModel):
     """매매·전세 차이."""
 
     statistics: Annotated[
@@ -268,7 +268,7 @@ class DabangChartGapModel(ResponseModel):
     ] = None
 
 
-class DabangHighLowModel(ResponseModel):
+class DabangHighLowModel(DabangBaseResponseModel):
     """기간 안 최고·최저 (만원)."""
 
     highest: Annotated[
@@ -281,7 +281,7 @@ class DabangHighLowModel(ResponseModel):
     ] = None
 
 
-class DabangYearPriceRangeModel(ResponseModel):
+class DabangYearPriceRangeModel(DabangBaseResponseModel):
     """1년·3년 최고·최저."""
 
     one_year: Annotated[
@@ -294,7 +294,7 @@ class DabangYearPriceRangeModel(ResponseModel):
     ] = None
 
 
-class DabangYearPriceModel(ResponseModel):
+class DabangYearPriceModel(DabangBaseResponseModel):
     """매매·전세 1년·3년 최고·최저."""
 
     sale: Annotated[
@@ -307,7 +307,7 @@ class DabangYearPriceModel(ResponseModel):
     ] = None
 
 
-class DabangRealPriceComplexChartsResultModel(ResponseModel):
+class DabangRealPriceComplexChartsResultModel(DabangBaseResponseModel):
     """시세 흐름 `result`. `leaseMonthly` 의 평균가는 전세 평균이다 (`perSpace` 가 `gap.recentInfo.leaseAveragePrice` 와 같다,
     2026-10-25 실측: 26000 = 26000).
     """
@@ -334,7 +334,7 @@ class DabangRealPriceComplexChartsV5ResponseModel(DabangV5ResponseModel[DabangRe
     """`GET /api/v5/real-price/complex/charts` 응답."""
 
 
-class DabangNearComplexModel(ResponseModel):
+class DabangNearComplexModel(DabangBaseResponseModel):
     """반경 1km 주변 단지 하나 (평당가 비교). 좌표(`location`)도 오지만 모델에 두지 않는다.
 
     웹은 이름과 `complexDesc`('입주 37년차 · 120세대'), 평당가를 그리고 평당가가 없으면 빈 칸이다 (complex 청크 `nn`,
@@ -375,7 +375,7 @@ class DabangNearComplexModel(ResponseModel):
     ] = None
 
 
-class DabangNearComplexesModel(ResponseModel):
+class DabangNearComplexesModel(DabangBaseResponseModel):
     """주변 단지 (매매·전월세 탭). 서버 순서는 평당가가 있는 단지를 가까운 순으로 앞에, 없는 단지를 그 뒤에 둔다
     (2026-11-14 실측: 은마 30평대 매매 10곳)."""
 
@@ -389,7 +389,7 @@ class DabangNearComplexesModel(ResponseModel):
     ] = None
 
 
-class DabangRealPriceComplexPricePerPyResultModel(ResponseModel):
+class DabangRealPriceComplexPricePerPyResultModel(DabangBaseResponseModel):
     """평형대 평당가 비교 `result`. `pyeongRangeTabName` 이 비면 웹은 'N평대 비교' 탭을 그리지 않고 '전체 평형 비교'(단지 상세의
     `areaAveragePrice`)만 보여 준다 (complex 청크 `Ut`)."""
 

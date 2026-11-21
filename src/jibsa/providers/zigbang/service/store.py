@@ -29,6 +29,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     more_hint,
     note,
+    null_items_note,
     parking_label,
 )
 from jibsa.core.schema import RequestModel
@@ -45,7 +46,7 @@ from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
     ZigbangRegion,
     drop_unused_scope,
@@ -68,6 +69,9 @@ STORE_TRADE_TYPES: tuple[ZigbangStoreSalesType, ...] = ('임대', '매매')
 STORE_NARROW: str = '거래 유형·업종·가격 조건'
 # 그중 서버가 거르는 조건. 가격 조건은 받은 뒤 거르므로 후보 조회 상한에 걸렸을 때는 이것만 권한다
 STORE_SERVER_NARROW: str = '거래 유형·업종'
+# 이 지역 비어있는 상가(공실) 묶음이 있을 때의 위 두 문구. 공실 줄은 업종과 상관없어 업종 조건으로 줄지 않으니 업종은 권하지 않는다
+STORE_VACANT_NARROW: str = '거래 유형·가격 조건'
+STORE_VACANT_SERVER_NARROW: str = '거래 유형'
 # 웹 상가 업종 필터의 대분류와 업종. 대분류 이름을 주면 그 안의 업종 전체다 (웹의 '전체').
 STORE_BUSINESSES_BY_CATEGORY: dict[str, tuple[str, ...]] = {
     '휴게음식점': ('베이커리', '카페/커피', '패스트푸드/피자', '분식', '치킨/닭요리'),
@@ -123,13 +127,21 @@ class ZigbangStoreListing(Listing):
         float | None,
         Field(description='권리금 (만원). 0 이면 무권리. 업종이 사무실이고 직방이 주지 않으면 키가 없다')
     ] = None
+    vacant_section: Annotated[
+        bool | None,
+        Field(description="직방 '이 지역 비어있는 상가' 묶음에서 온 줄이면 true (업종과 상관없는 공실), 업종(또는 일반) 묶음이면 false. 공실 묶음이 해당 없으면 키가 없다")
+    ] = None
 
     def not_applicable_fields(self) -> frozenset[str]:
-        return (
+        fields = (
             super().not_applicable_fields()
             | STORE_NOT_APPLICABLE_FIELDS
             | _store_not_applicable_key_money(self.business, self.key_money_manwon)
         )
+        # 업종 조건도 공실 묶음도 없으면 어느 묶음인지 가릴 일이 없어 해당 없다
+        if self.vacant_section is None:
+            fields |= {'vacant_section'}
+        return fields
 
 
 class ZigbangStoreListingDetail(ListingDetail):
@@ -196,8 +208,11 @@ class ZigbangStoreSearchResult(BaseModel):
         Field(description="반경 대신 법정동 코드로 그 안을 찾은 동 이름 (여럿이면 '·' 로 잇는다). 반경으로 찾았으면 키가 없다")
     ] = None
     total: Annotated[
-        int,
-        Field(description='반경(또는 동) 안 직방 목록의 매물 수. 가격 필터 적용 전')
+        int | None,
+        Field(description=(
+            '반경(또는 동) 안 직방 목록의 매물 수 (직방이 이 지역 비어있는 상가 공실 묶음을 주면 업종 조건과 상관없이 공실 포함). 가격 필터 적용 전. '
+            '직방이 위치 묶음 목록에 빈 항목을 줘 셀 수 없으면 null'
+        ))
     ]
     inspected_in_radius: Annotated[
         int | None,
@@ -221,7 +236,7 @@ class ZigbangStoreSearchResult(BaseModel):
     ]
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='일부만 보여 준다·공실이 따로 있다는 안내. CLI 가 notice 아래에 붙인다')
+        Field(exclude=True, description='일부만 보여 준다·공실 묶음을 이었다는 안내. CLI 가 notice 아래에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -310,6 +325,7 @@ def store_summary_to_listing(
     distance_km: float | None = None,
     lat: float | None = None,
     lng: float | None = None,
+    vacant_section: bool | None = None,
 ) -> ZigbangStoreListing:
     trade_type = store_trade(summary)
     return ZigbangStoreListing(
@@ -332,6 +348,7 @@ def store_summary_to_listing(
         distance_km=None if distance_km is None else round(distance_km, 2),
         business=summary.business,
         key_money_manwon=summary.key_money,
+        vacant_section=vacant_section,
     )
 
 
@@ -505,8 +522,11 @@ def search_store_listings(
     사무실(`key_money_manwon` 키 없음)도 빠지므로, 권리금만 아니면 다른 가격 조건에 맞던 수를 `notes` 로 알린다.
     직방 목록 앞의 후보를 조회
     상한(max(limit * SCAN_FACTOR, MIN_SCAN_PINS))까지 확인하며, 전체 후보를 확인하지 못하면 안내한다.
-    업종 조건을 걸면 직방이 그 업종과 무관한 범위 안 공실을 따로 주는데, 업종 조건을
-    지키도록 공실은 빼고 몇 건인지 `notes` 로 알린다.
+    업종 조건을 걸면 직방이 그 업종과 무관한 범위 안 공실을 '이 지역 비어있는 상가' 묶음으로 따로 주는데, 웹 지도 목록처럼
+    업종 매물 뒤에 그 묶음을 잇는다 (`HomeStoreListScreenModel`: 칸마다 일반 ID 를 앞에, 공실 ID 를 뒤에 이어 요약을
+    받는다). 공실 묶음에서 온 줄은 `vacant_section` 이 true 다. 두 묶음에 같은 ID 가 있으면 앞 것만 둔다.
+    위치 묶음 목록에 빈 항목(null)이 섞여 오면 빼고 읽되 그 묶음의 매물을 몰라 `total` 은 null 이고, 묶음 안 위치 목록의 빈 항목은
+    `[제외]` 로만 알린다 (`_store_null_notes`).
 
     Raises:
         JibsaError: `dongs` 에 법정동 코드가 없는 동이 있을 때 (`store_region_codes`).
@@ -540,18 +560,26 @@ def search_store_listings(
             area_max_m2=conditions.area_max_m2,
         )
     )
+    # 위치 묶음(섹션)에서 빈 항목(null)을 뺐으면 그 묶음의 매물을 몰라 전체 수(total)를 알 수 없다. 묶음 안 위치 목록에서 뺀 빈 항목은
+    # 그 매물이 목록에서 빠졌을 수 있다고만 알린다
+    dropped_sections = response.null_items('sections')
+    dropped_locations = sum(section.null_items('item_locations') for section in response.sections)
     # 직방 목록 순서대로 매물 ID → 좌표
     pins: dict[int, tuple[float, float]] = {}
     vacant: set[int] = set()
-    for section in response.sections:
-        # 공실 묶음은 업종 조건을 걸 때만 찬다. 업종 조건이 없으면 비어 와서 안내 없이 빼는 매물이 없다 (2026-10-18 실측:
-        # 성수역 0.3km 업종 조건 없이 일반 묶음 393건, 공실 묶음 0건). 2026-10-18 리뷰 오탐 확인. 공실 묶음도 범위 안
-        # 매물만 온다 (2026-11-15 실측: 역삼역 1000m 카페/커피 공실 970건)
-        if section.title == STORE_VACANT_SECTION:
-            vacant.update(location.item_id for location in section.item_locations)
-            continue
-        for location in section.item_locations:
-            pins.setdefault(location.item_id, (location.lat, location.lng))
+    # 업종 묶음 뒤에 공실 묶음을 잇는다. 공실 묶음은 업종 조건을 걸 때만 차고(2026-10-18 실측: 성수역 0.3km 업종 조건
+    # 없이 일반 묶음 393건, 공실 묶음 0건), 그 업종 묶음에 든 매물을 뺀 범위 안 공실이라 두 묶음은 겹치지 않는다
+    # (2026-11-19 실측: 역삼역 500m 카페/커피 일반 23·공실 332, 겹침 0). 그래도 겹치면 앞(업종 묶음) 것만 둔다
+    for vacant_pass in (False, True):
+        for section in response.sections:
+            if (section.title == STORE_VACANT_SECTION) != vacant_pass:
+                continue
+            for location in section.item_locations:
+                if location.item_id in pins:
+                    continue
+                pins[location.item_id] = (location.lat, location.lng)
+                if vacant_pass:
+                    vacant.add(location.item_id)
 
     scan_cap = max(limit * SCAN_FACTOR, MIN_SCAN_PINS)
     candidates = list(pins)[:scan_cap]
@@ -577,7 +605,13 @@ def search_store_listings(
             if summary is None or summary.status != 'open':
                 continue
             lat, lng = pins[item_id]
-            listing = store_summary_to_listing(summary, haversine_km(region.lat, region.lng, lat, lng), lat, lng)
+            listing = store_summary_to_listing(
+                summary,
+                haversine_km(region.lat, region.lng, lat, lng),
+                lat,
+                lng,
+                vacant_section=(item_id in vacant) if (business_conditions or vacant) else None,
+            )
             # 거래 유형은 서버가 걸었으므로 다시 거르지 않는다 (2026-10-10 실측: 역삼역·성수동 임대·매매 662건 모두 조건 안)
             if not _store_price_matches(listing, bounds):
                 if (
@@ -595,13 +629,18 @@ def search_store_listings(
     # 0.2km 범위 안 35건을 한 묶음에 다 받고 3건만 주며 has_more false 였다)
     cut = listings[limit:]
     listings = listings[:limit]
-    total = len(pins)
-    has_more = inspected < total or bool(cut)
+    pin_count = len(pins)
+    total: int | None = None if dropped_sections else pin_count
+    has_more = inspected < pin_count or bool(cut)
     area = '지역' if dongs else '반경'
+    # 공실 줄은 업종과 상관없어 업종 조건으로 줄지 않는다. 공실 묶음이 있으면 업종 조건은 권하지 않는다
+    narrow = STORE_VACANT_NARROW if vacant else STORE_NARROW
+    server_narrow = STORE_VACANT_SERVER_NARROW if vacant else STORE_SERVER_NARROW
     if filter_price:
         notes = [
-            f'가격 조건은 요약을 받은 뒤 거릅니다. total({total}건)은 가격 적용 전 직방 목록의 매물 수이고, '
-            f'그중 앞의 {inspected}건의 요약을 요청해 거래 가능하고 가격 조건에 맞는 {matched}건을 확인했습니다'
+            '가격 조건은 요약을 받은 뒤 거릅니다. '
+            + (f'total({total}건)은 가격 적용 전 직방 목록의 매물 수이고, 그중 앞의' if total is not None else '직방 목록 앞의')
+            + f' {inspected}건의 요약을 요청해 거래 가능하고 가격 조건에 맞는 {matched}건을 확인했습니다'
         ]
         # 가격 조건이 있으면 limit_notes 의 [일부] 를 쓰지 않으므로, 더 있다는 안내와 다음 할 일을 여기서 붙인다. 후보 조회
         # 상한도 --limit 에 비례해(SCAN_FACTOR) --limit 을 늘리면 더 확인한다 (2026-11-10 리뷰·실측: 성수역 0.2km --rent-max
@@ -609,23 +648,23 @@ def search_store_listings(
         # 후보 조회 상한에서 멈췄으면 가격 조건은 권하지 않는다. 가격은 직방 목록 앞의 후보를 상한까지 고른 뒤 거르므로, 좁혀도
         # 같은 후보만 다시 보고 일치 수만 준다. 미확인 후보에 닿는 건 --limit(상한이 비례)과 서버가 거르는 조건·범위다
         # (2026-11-11 리뷰·실측: 성수역 0.8km --limit 5 를 --rent-max 50 에서 30 으로 좁혀도 같은 60건만 보고 242건이 미확인)
-        capped = inspected < total and len(listings) < limit
-        hint = more_hint(limit, MAX_LIST_LIMIT, f'{STORE_SERVER_NARROW if capped else STORE_NARROW}·{area}')
-        if inspected < total:
+        capped = inspected < pin_count and len(listings) < limit
+        hint = more_hint(limit, MAX_LIST_LIMIT, f'{server_narrow if capped else narrow}·{area}')
+        if inspected < pin_count:
             notes.append(note(
                 '일부',
                 f"{'후보 조회 상한' if capped else '결과 개수 제한'}으로 직방 목록 앞의 후보 {inspected}건만 조회했습니다 "
                 # 상한이 --limit 에 비례한다는 말이 없으면 '--limit 을 늘리라' 와 따로 정해진 상한으로 읽혀 늘리지 않았다
                 # (2026-11-11 LLM 사용 시험: 성수역 --rent-max 50 --limit 20 의 '조회 상한 100건' 에 --limit 대신 반경만 좁힘)
                 f'(조회 상한은 --limit 의 {SCAN_FACTOR}배·최소 {MIN_SCAN_PINS}건이라 {scan_cap}건, '
-                f'미확인 후보 {total - inspected}건). 전체 가격 조건 일치 수는 모릅니다. {hint}',
+                f"미확인 후보 {pin_count - inspected}건{'' if total is not None else ' 이상'}). 전체 가격 조건 일치 수는 모릅니다. {hint}",
             ))
         elif has_more:
             # 위 분기가 아니면 has_more 는 확인한 일치 매물이 --limit 에 잘렸다는 뜻이다
             notes.append(note('일부', f'확인한 가격 조건 일치 매물 중 직방 목록 앞의 {len(listings)}건만 보여 줍니다. {hint}'))
     else:
         notes = limit_notes(
-            total, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{STORE_NARROW}·{area}', order='직방 목록',
+            total, len(listings), limit, max_limit=MAX_LIST_LIMIT, narrow=f'{narrow}·{area}', order='직방 목록',
             inspected=inspected, has_more=has_more,
         )
     if office_no_key_money:
@@ -634,14 +673,15 @@ def search_store_listings(
             f'권리금 조건을 걸어 확인한 후보 중 권리금이 해당 없는 사무실 {office_no_key_money}건을 뺐습니다 '
             '(직방이 사무실에는 권리금을 주지 않습니다). 사무실도 보려면 권리금 조건 없이 검색하세요',
         ))
-    if business_conditions and vacant:
-        # [제외] 가 아니라 [참고] 다. 공실은 업종 조건에 맞는 매물을 뺀 것이 아니라 직방이 업종과 무관하게 따로 주는 묶음이다
-        # (2026-11-10 리뷰가 [제외] 라고 했으나 오탐. 실측: 성수역 0.5km --business 카페/커피 는 카페 5건과 '이 지역 비어있는
-        # 상가' 23건. 업종 조건 없이 찾는 법은 안내에 있다)
-        notes.append(
-            f"업종 조건과 별개로 {'동' if dongs else '반경'} 안에 비어 있는 상가가 {len(vacant)}건 있습니다. "
-            '공실도 보려면 --business 없이 다시 검색하세요'
-        )
+    if vacant and total is not None:
+        # 공실 묶음은 업종 조건에 맞는 매물이 아니라 직방이 업종과 무관하게 따로 주는 묶음이라 [참고] 로 알린다.
+        # 이번 쪽에 공실 줄이 없어도 total 에는 들어 있으니 늘 알린다. total 을 모를 때는 이 수의 짜임을 말할 수 없어 알리지 않는다
+        base = '업종 매물' if business_conditions else '일반 매물'
+        notes.append(note(
+            '참고',
+            f'total({total}건)은 {base} {total - len(vacant)}건과 그 뒤에 직방 웹처럼 이어 주는 이 지역 비어있는 상가'
+            f'(업종과 상관없는 공실, vacant_section true) {len(vacant)}건을 합친 수입니다. 공실 줄은 업종 조건으로 줄지 않습니다',
+        ))
     return ZigbangStoreSearchResult(
         region=region,
         radius_km=None if dongs else radius_km,
@@ -652,8 +692,21 @@ def search_store_listings(
         returned=len(listings),
         has_more=has_more,
         listings=listings,
-        notes=scope_notes + notes,
+        notes=scope_notes + notes + _store_null_notes(dropped_sections, dropped_locations),
     )
+
+
+def _store_null_notes(dropped_sections: int, dropped_locations: int) -> list[str]:
+    """상가 위치 응답의 묶음(섹션)·위치 목록에서 빈 항목(null)을 빼고 읽었을 때의 안내. 둘 다 없으면 빈 목록이다.
+
+    묶음에서 뺐으면 그 묶음의 매물 수를 몰라 `total` 이 null 이고, 위치에서 뺐으면 그 매물이 목록에서 빠졌을 수 있다.
+    """
+    notes: list[str] = []
+    if dropped_sections:
+        notes.append(null_items_note('직방 상가 위치 묶음', dropped_sections, ('total',)))
+    if dropped_locations:
+        notes.append(null_items_note('직방 상가 위치', dropped_locations))
+    return notes
 
 
 def store_detail_to_listing(response: ZigbangStoreArticleStoreV2ResponseModel) -> ZigbangStoreListingDetail:

@@ -34,6 +34,7 @@ from jibsa.core.listing import (
     months_ago,
     normalize_date,
     note,
+    null_items_note,
     won_to_manwon,
     years_ago,
 )
@@ -551,25 +552,30 @@ def _get_real_prices_by_page(
 
     transactions: list[NaverRealPrice] = []
     villa = False
+    # 빈 항목(null)이라 빼고 읽은 수. 서버는 그 자리도 거래로 센 쪽이라 쪽이 비었는지 볼 때 더한다
+    dropped = 0
     for page in range(pages):
         result = unwrap(fetch_page(page), '실거래가')
+        page_dropped = result.null_items('items')
+        dropped += page_dropped
+        empty = not result.items and not page_dropped
         if page == 0:
             # 아파트 목록이 비어 오면 평형 번호를 확인하면서 단지 종류를 정한다. 묶음으로 받을 때는 그 평형이 든 묶음을 이미
             # 찾았으니 빌라 단지가 아니다 (빌라 단지는 묶음을 찾는 데서 에러). 목록이 비지 않았으면 아파트 단지다
             villa = (
-                not result.items and pyeong_group is None
+                empty and pyeong_group is None
                 and check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True)
             )
             # 아파트 단지에는 주변 실거래 범위가 없어 더 받기 전에 막는다 (거래 없는 아파트 평형도 단지 종류는 정해졌다)
             _require_villa_for_around_km(around_km, villa)
             if villa:
-                transactions, _ = _villa_real_prices(
+                transactions, _, dropped = _villa_real_prices(
                     client, complex_number, pyeong_number, trade_type=trade_type, size=REAL_PRICE_PAGE_SIZE, max_pages=pages,
                 )
                 break
-        if not result.items:
+        if empty:
             break
-        transactions.extend(_real_price(item, trade_type) for item in result.items)
+        transactions.extend(_real_price(item, trade_type) for item in result.items or [])
         if result.has_next_page is False:
             break
     # 네이버는 같은 거래를 면적이 다른 평형 여러 곳에 함께 주기도 하고 거래마다 면적은 주지 않아 가려낼 수 없다
@@ -581,6 +587,8 @@ def _get_real_prices_by_page(
         notes.append(PYEONG_GROUP_TRADES_NOTE)
     elif transactions and not villa:
         notes.append(SAME_AREA_PYEONG_TRADES_NOTE)
+    if dropped:
+        notes.append(null_items_note('네이버 실거래', dropped))
     real_prices = NaverRealPriceResult(
         complex_number=complex_number,
         pyeong_number=pyeong_number,
@@ -648,16 +656,17 @@ def _villa_real_prices(
     size: int,
     max_pages: int,
     since: str | None = None,
-) -> tuple[list[NaverRealPrice], bool]:
+) -> tuple[list[NaverRealPrice], bool, int]:
     """빌라 단지 실거래를 최근 순으로 `max_pages` 쪽까지 받는다. `since` 를 주면 그보다 오래된 거래가 나온 쪽에서 멈춘다.
 
     `check_pyeong_numbers` 로 빌라 단지임을 정한 뒤에만 부른다. 빌라 단지에 그 거래가 없으면 서버는 실패가 아니라
     빈 목록을 주므로(서진빌라 724112 월세: isSuccess true·0건, 2026-10-10) 실패 응답은 0건으로 보지 않고 에러로 낸다.
 
     Returns:
-        tuple[list[NaverRealPrice], bool]: 거래, 쪽 수 상한에 걸려 멈췄는지 (더 있을 수 있음).
+        tuple[list[NaverRealPrice], bool, int]: 거래, 쪽 수 상한에 걸려 멈췄는지 (더 있을 수 있음), 빈 항목(null)이라 빼고 읽은 수.
     """
     transactions: list[NaverRealPrice] = []
+    dropped = 0
     for page in range(max_pages):
         result = unwrap(
             client.run_request_complex_villa_real_price_page_v1(
@@ -671,14 +680,16 @@ def _villa_real_prices(
             ),
             '실거래가',
         )
+        page_dropped = result.null_items('items')
+        dropped += page_dropped
         recent = [_villa_real_price(item, trade_type) for item in result.items]
         kept = recent if since is None else [item for item in recent if item.trade_date >= since]
         transactions.extend(kept)
         # 마지막 쪽을 넘겨도 result=null 이 아니라 빈 목록이 와서(hasNextPage false) unwrap 이 에러를 내지
-        # 않는다 (2026-10-09 확인)
-        if len(kept) < len(recent) or not result.items or result.has_next_page is False:
-            return transactions, False
-    return transactions, True
+        # 않는다 (2026-10-09 확인). 빈 항목(null)만 온 쪽은 비지 않은 쪽이다 (서버가 그 자리를 거래로 센다)
+        if len(kept) < len(recent) or (not result.items and not page_dropped) or result.has_next_page is False:
+            return transactions, False, dropped
+    return transactions, True, dropped
 
 
 def _get_real_prices_in_period(
@@ -700,26 +711,28 @@ def _get_real_prices_in_period(
         tuple[NaverRealPriceResult, bool]: 결과, 빌라 단지인지.
     """
     since = months_ago(today, PERIOD_MONTHS_BY_NAME[period])
-    items = unwrap(
-        client.run_request_complex_pyeong_real_price_list_v1(
-            NaverComplexPyeongRealPriceListV1RequestParameterModel(
-                complex_number=complex_number,
-                pyeong_type_number=pyeong_number,
-                trade_type=TRADE_CODE_BY_NAME[trade_type],
-                start_date=since,
-                end_date=today.isoformat(),
-            )
-        ),
-        '실거래가',
+    response = client.run_request_complex_pyeong_real_price_list_v1(
+        NaverComplexPyeongRealPriceListV1RequestParameterModel(
+            complex_number=complex_number,
+            pyeong_type_number=pyeong_number,
+            trade_type=TRADE_CODE_BY_NAME[trade_type],
+            start_date=since,
+            end_date=today.isoformat(),
+        )
     )
+    items = unwrap(response, '실거래가')
+    # 빈 항목(null)이라 빼고 읽은 수. 서버는 그 자리도 거래로 센 목록이라 목록이 비었는지 볼 때 더한다
+    dropped = response.null_items('result')
     transactions = [_real_price(item, trade_type) for item in items]
     notes: list[str] = [SAME_AREA_PYEONG_TRADES_NOTE] if transactions else []
     # 목록이 비어 오면 평형 번호를 확인하면서 단지 종류를 정한다. 비지 않았으면 아파트 단지다
-    villa = not transactions and check_pyeong_numbers(client, complex_number, [pyeong_number], pyeong_required=True)
+    villa = not transactions and not dropped and check_pyeong_numbers(
+        client, complex_number, [pyeong_number], pyeong_required=True,
+    )
     # 아파트 단지에는 주변 실거래 범위가 없어 빌라 실거래를 받기 전에 막는다
     _require_villa_for_around_km(around_km, villa)
     if villa:
-        transactions, truncated = _villa_real_prices(
+        transactions, truncated, dropped = _villa_real_prices(
             client, complex_number, pyeong_number,
             trade_type=trade_type, size=VILLA_PERIOD_PAGE_SIZE, max_pages=MAX_VILLA_PERIOD_PAGES, since=since,
         )
@@ -729,6 +742,8 @@ def _get_real_prices_in_period(
                 f'빌라 단지 실거래를 {MAX_VILLA_PERIOD_PAGES * VILLA_PERIOD_PAGE_SIZE}건까지만 받았습니다. '
                 '기간 안 거래가 더 있을 수 있으니 --period 를 줄여 보세요',
             ))
+    if dropped:
+        notes.append(null_items_note('네이버 실거래', dropped))
     real_prices = NaverRealPriceResult(
         complex_number=complex_number,
         pyeong_number=pyeong_number,
@@ -857,7 +872,10 @@ def _nearby_transactions(
     if around is None:
         return None, notes
     trades: list[NaverNearbyTrade] = []
+    # 빈 항목(null)이라 빼고 읽은 수. 서버는 그 자리도 거래로 세어 10건까지 주므로 상한에 닿았는지 볼 때 더한다
+    dropped = around.null_items('bundles')
     for bundle in around.bundles or []:
+        dropped += bundle.null_items('trades')
         point = None if bundle.complex_info is None else bundle.complex_info.coordinates
         distance_m = (
             None if point is None or point.x_coordinate is None or point.y_coordinate is None
@@ -868,8 +886,10 @@ def _nearby_transactions(
         )
     # 웹 표(`ComplexVillaTransactionPriceForAround`)와 같은 순서. 값이 없는 칸은 가장 뒤로 보낸다
     trades.sort(key=lambda trade: (trade.contract_date or '', trade.built_year or 0, trade.area_m2 or 0), reverse=True)
-    if len(trades) >= AROUND_TRADES_LIMIT:
+    if len(trades) + dropped >= AROUND_TRADES_LIMIT:
         notes.append(NEARBY_TRADES_LIMIT_NOTE)
+    if dropped:
+        notes.append(null_items_note('네이버 주변 실거래', dropped))
     box_range = NaverNearbyRange(
         north_south_m=round((north - south) * KM_PER_LAT_DEGREE * 1000),
         east_west_m=round((east - west) * KM_PER_LAT_DEGREE * cos(radians(lat)) * 1000),

@@ -8,6 +8,10 @@ from httpx import (
 )
 
 from jibsa.providers.dabang.api.client import DabangClient
+from jibsa.providers.dabang.api.response.common import (
+    DabangComplexEducationModel,
+    DabangRoomListResultModel,
+)
 from jibsa.providers.dabang.api.response.ranking import DabangRegionRankingItemModel
 from jibsa.providers.dabang.service.common import (
     DabangPlace,
@@ -18,12 +22,19 @@ from jibsa.providers.dabang.service.common import (
 )
 from jibsa.providers.dabang.service.complex import list_complex_listings
 from jibsa.providers.dabang.service.listing import search_listings
+from jibsa.providers.dabang.service.neighborhood import (
+    get_neighborhood,
+    get_popular_listings,
+)
 from jibsa.providers.dabang.service.ranking import (
     ValueKind,
     _entry,
     get_region_ranking,
 )
-from jibsa.providers.dabang.service.region import DabangScope
+from jibsa.providers.dabang.service.region import (
+    DabangDong,
+    DabangScope,
+)
 
 
 # --- price text ---
@@ -190,6 +201,52 @@ def test_region_ranking_sends_complex_type_like_the_web(
         )
     assert queries[0].get('complexType') == sent
     assert result.complex_type == shown
+
+
+# --- null lists ---
+
+
+def test_null_list_fields_read_as_missing_keys() -> None:
+    # 서버가 비운 목록 칸에 null 을 주면 조회 전체가 파싱 에러로 끝나지 않고 키가 없을 때처럼 빈 목록이 된다.
+    # 실제 응답으로는 재현되지 않아 null 을 직접 넣는다
+    result = DabangRoomListResultModel.model_validate({'roomList': None, 'premiumList': None, 'total': 0})
+    assert result.room_list == [] and result.premium_list == []
+    # `| None` 칸은 null 이 모름이라 빈 목록으로 바꾸지 않는다 (단지 학교·어린이집)
+    assert DabangComplexEducationModel.model_validate({'nurserySchool': None}).nursery_school is None
+
+
+def test_null_items_make_computed_values_unknown() -> None:
+    # 다방이 객체 목록 안에 빈 항목(null)을 섞어 주면 빼고 읽되, 그 목록으로 계산한 값은 받은 것만으로 낸 틀린 값이 되지 않고
+    # 모름(null)이다. 실제 응답으로는 재현되지 않아 null 을 직접 넣는다
+    def room(number: int) -> dict[str, str]:
+        return {
+            'id': f'{number:024x}',
+            'roomTypeName': '원룸',
+            'roomDesc': '3층, 20m², 관리비 5만',
+            'priceTypeName': '월세',
+            'priceTitle': '1000/50',
+        }
+
+    def handler(request: Request) -> Response:
+        if request.url.path.endswith('/room/regional/summary'):
+            return Response(200, json={'code': 200, 'result': {'distributionList': [
+                {'name': '아파트', 'value': 3}, None, {'name': '오피스텔', 'value': 2},
+            ]}})
+        return Response(200, json={'code': 200, 'result': {'list': [room(1), None, room(2)], 'total': 3, 'hasMore': False}})
+
+    client = DabangClient()
+    client.__dict__['_client'] = Client(base_url=client.base_url, transport=MockTransport(handler))
+    dong = DabangDong(DabangPlace(kind='dong', name='[가상]동', lat=37.5, lng=127.0, code='00000001', gid=1), 1)
+    with client:
+        neighborhood = get_neighborhood(client, dong, ['매물'])
+        popular = get_popular_listings(client, dong, building_types=[], trade_types=[], limit=3)
+    # 유형별 합계: 뺀 유형의 수를 몰라 받은 유형만 더한 5 를 내지 않고 null 이다
+    assert neighborhood.listings is not None and neighborhood.listings.total is None
+    assert [item.type for item in neighborhood.listings.by_type] == ['아파트', '오피스텔']
+    assert any(text.startswith('[제외]') and 'listings.total' in text for text in neighborhood.notes)
+    # 인기 매물 순위: 빈 항목을 뺀 쪽은 어느 자리가 빠졌는지 몰라 순위를 셀 수 없다 (받은 순서로 1·2 를 매기면 틀린다)
+    assert [listing.rank for listing in popular.listings] == [None, None]
+    assert any(text.startswith('[제외]') and 'rank' in text for text in popular.notes)
 
 
 # --- missing ID ---

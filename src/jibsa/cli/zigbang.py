@@ -45,7 +45,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.stay import (
+from jibsa.providers.zigbang.api.request.stay.search import (
     ZigbangGuestItemsFiltersRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
@@ -53,39 +53,36 @@ from jibsa.providers.zigbang.service.apt import (
     APT_TRADE_TYPES,
     ZigbangAptConditions,
     apt_dong_at,
-    resolve_apt_region,
+    get_catalog,
     search_apt_listings,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     COMPLEX_ID_PATTERN,
+    MAX_LIST_LIMIT,
+    ZigbangBoundary,
+    ZigbangListingDetail,
+    ZigbangRegion,
+)
+from jibsa.providers.zigbang.service.common.room import (
     CONDITIONS,
     FLOOR_FILTERS,
-    MAX_LIST_LIMIT,
     OPTION_FILTERS,
     ROOM_TYPES,
     TRADE_TYPES,
-    ZigbangBoundary,
-    ZigbangRegion,
     ZigbangRoomConditions,
     room_filter_of,
 )
-from jibsa.providers.zigbang.service.complex import (
+from jibsa.providers.zigbang.service.complex.detail import (
     get_complex,
     list_complex_listings,
     search_regions_and_complexes,
-    search_station_complexes,
 )
-from jibsa.providers.zigbang.service.detail import get_any_listing
-from jibsa.providers.zigbang.service.listing import (
-    DETAILS_MAX,
-    GEOHASH_PRECISION,
-    PROPERTY_TYPES,
-    attach_building_use,
-    get_catalog,
-    search_listings,
-    unsearchable_note,
-    unsearchable_types,
+from jibsa.providers.zigbang.service.complex.search import (
+    COMPLEX_ORDERS,
+    school_has_assigned_complexes,
+    search_place_complexes,
 )
+from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import (
     REAL_PRICE_MAX_LIMIT,
     REAL_PRICE_TRADE_TYPES,
@@ -93,18 +90,31 @@ from jibsa.providers.zigbang.service.real_price import (
 )
 from jibsa.providers.zigbang.service.region import (
     MAX_RADIUS_KM,
-    city_gu_regions,
+    city_gu_search_items,
     divided_region_error,
     dong_boundary,
     merge_dong_boundaries,
     merged_dong_region,
+    region_from_search_item,
+    region_scope_items,
+    resolve_apt_region,
     resolve_region_scope,
     resolve_region_with_notes,
     search_regions,
     wide_area_note,
     wide_boundary_note,
 )
-from jibsa.providers.zigbang.service.stay import (
+from jibsa.providers.zigbang.service.room.search import (
+    DETAILS_MAX,
+    GEOHASH_PRECISION,
+    PROPERTY_TYPES,
+    attach_building_use,
+    search_listings,
+    unsearchable_note,
+    unsearchable_types,
+)
+from jibsa.providers.zigbang.service.stay.detail import ZigbangStayListingDetail
+from jibsa.providers.zigbang.service.stay.search import (
     STAY_BUILDING_TYPE_BY_LABEL,
     STAY_DISCOUNT_TYPE_BY_LABEL,
     STAY_FLOOR_TYPE_BY_LABEL,
@@ -225,7 +235,7 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 
 app = typer.Typer(
     help=(
-        '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역 주변 단지 search complexes, complex, '
+        '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역·학교·동·구 주변 단지 search complexes, complex, '
         'search listings --complex, real-price), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
@@ -292,10 +302,12 @@ def _scope(
     if lat is not None and lng is not None:
         region, notes = _region(client, query, lat, lng, radius_km)
         return region, notes, None, radius_km
-    region, split_note, split = resolve_region_scope(client, query or '', items=items)
+    region, split_note, split_items = resolve_region_scope(client, query or '', items=items)
     notes = []
     boundary = None
     if radius is None:
+        # '○가' 동의 좌표는 동 안을 찾을 때만 쓴다 (반경 검색은 쓰지 않아 좌표가 없어도 막히지 않게 여기서 바꾼다)
+        split = [region_from_search_item(item) for item in split_items]
         # '○가' 로만 나뉜 동(성수동 → 성수동1가·2가)은 경계를 합쳐 그 안의 핀을 모두 찾는다 (room, stay 의 지도 대체 경로)
         boundary = merge_dong_boundaries(client, split) if split else dong_boundary(client, region)
         if split and boundary is not None:
@@ -337,10 +349,12 @@ def _store_scope(
     if lat is not None and lng is not None:
         region, notes = _region(client, query, lat, lng, radius_km)
         return region, notes, None, radius_km
-    region, split_note, split = resolve_region_scope(client, query or '')
+    region, split_note, split_items = resolve_region_scope(client, query or '')
     notes = []
     dongs: list[ZigbangRegion] | None = None
     if radius is None and is_dong_code(region.legal_division_code):
+        # '○가' 동의 좌표는 동 안을 찾을 때만 쓴다 (반경 검색은 쓰지 않아 좌표가 없어도 막히지 않게 여기서 바꾼다)
+        split = [region_from_search_item(item) for item in split_items]
         dongs = split or [region]
         if split:
             region = merged_dong_region(region, split)
@@ -426,7 +440,7 @@ def _room_conditions(
 
 search_app = typer.Typer(
     help=(
-        '직방 장소 후보(locations), 역 주변 아파트 단지(complexes)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), '
+        '직방 장소 후보(locations), 역·학교·동·구 주변 아파트 단지(complexes)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), '
         '상가·사무실(store), 단기임대 서비스(stay). '
         '상세는 결과의 id 로 jibsa zigbang listing <id>'
     ),
@@ -486,19 +500,37 @@ def locations_command(
 
 @search_app.command('complexes')
 def complexes_command(
-    query: Annotated[str, typer.Argument(help='역 이름 (예: 강남역). 동·구 이름은 받지 않는다')],
+    query: Annotated[str, typer.Argument(help='역·학교·동·구 이름 (예: 강남역, 해누리중학교, 가락동)')],
+    order: Annotated[
+        str | None,
+        typer.Option(
+            '--order',
+            help=(
+                f"직방 웹 탭: {', '.join(COMPLEX_ORDERS)}. 최근입주·시세급변동은 그 조건에 든 단지만 담는다 (total 도 그 수). "
+                '기본 역·학교는 인기, 동·구는 최근입주 (동·구는 최근입주만 받는다)'
+            )
+        )
+    ] = None,
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 단지 수 (최대 {MAX_LIST_LIMIT}곳)')] = 20,
     pretty: PrettyOption = None,
 ) -> None:
-    """역 주변(1.5km) 아파트 단지를 직방 웹 아파트 지도의 '<역> 주변단지' 순서(조회수 순)로 준다.
+    """역·학교·동·구 주변 아파트 단지를 직방 웹 아파트 지도의 단지 목록(--order 탭) 그대로 준다.
 
-    가까운 순이 아니다. 단지마다 역에서의 거리(distance_m)가 있으니 가까운 단지는 그 값으로 고른다.
-    단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는 jibsa zigbang complex <complex_id>.
+    이름 끝이 '역' 이면 역(1.5km 안 '<역> 주변단지'), '학교' 면 학교('<학교> 배정단지'), 그 밖은 동·구다. 목록은 --order
+    탭(인기·최근입주·시세급변동·평당가)으로 고르고 가까운 순이 아니다. 최근입주·시세급변동은 순서가 아니라 그 조건에 든 단지만
+    담은 목록이라 total 도 그 수이고 그 곳의 전체 단지 수가 아니다. 역·학교는 단지마다 거리(distance_m)가 있으니 가까운
+    단지는 그 값으로 고른다. 동·구는 웹 지역 화면에 최근입주 목록뿐이라 --order 는 최근입주만 받고 거리가 없다. highlight 는
+    웹 단지 카드 둘째 줄이고 --order 마다 뜻이 다르다 (인기는 지역 순위, 최근입주는 입주 시기, 시세급변동은 1주 변동률,
+    평당가는 평당가). 단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는
+    jibsa zigbang complex <complex_id>.
 
     예: jibsa zigbang search complexes 강남역 --limit 10
+        jibsa zigbang search complexes 해누리중학교 --order 평당가
+        jibsa zigbang search complexes 가락동
     """
+    chosen_order = check_choice(order, COMPLEX_ORDERS, '--order') if order is not None else None
     with handle_errors(SOURCE), ZigbangClient() as client:
-        result = search_station_complexes(client, query, limit=limit)
+        result = search_place_complexes(client, query, order=chosen_order, limit=limit)
         emit(result, pretty, notes=result.notes)
 
 
@@ -731,22 +763,40 @@ def search_apt_command(
             except RegionNotFoundError:
                 # 동·구가 아닌 곳(역·학교)은 웹 아파트 지도처럼 그 위치가 속한 동의 목록으로 찾는다. 반경 안 단지의 매물을 거리순으로
                 # 잇는 목록은 웹에 없다 (2026-11-15 캡처: 역을 고르면 주변 단지 목록과 지도 가운데 동의 매물 목록만 있다).
-                # 지역(시·도, 행정동처럼 결과가 없는 이름)은 동 이름으로 다시 찾으라는 에러를 그대로 낸다
-                place, _, _ = resolve_region_scope(client, query or '', items=items)
-                if place.search_type == 'address':
+                # 지역(시·도, 행정동처럼 결과가 없는 이름)은 동 이름으로 다시 찾으라는 에러를 그대로 낸다. 좌표를 보지 않으므로
+                # 좌표 없는 시·도가 좌표 에러(UPSTREAM_ERROR)로 바뀌지 않게, 지역으로 바꾸기 전의 검색 결과로 먼저 가른다
+                place_item, _ = region_scope_items(query or '', items)
+                if place_item.type == 'address':
                     raise
+                place = region_from_search_item(place_item)
                 district = apt_dong_at(client, place.lat, place.lng)
+                complexes_command_text = f'jibsa zigbang search complexes {_complexes_query(query, place.name)}'
+                # search complexes 가 찾는 역·학교만 권한다. 배정단지 목록이 없는 학교(학교 코드가 없거나 'NL_' 로 시작)는 그 명령이
+                # INVALID_ARGUMENT 라 권하지 않는다 (`school_has_assigned_complexes`)
                 notes = [note(
                     '범위',
                     f"{quoted(query or '', '은/는')} 동·구가 아니라 그 위치가 속한 {district.name}의 아파트 목록을 찾았습니다 "
                     f"(직방 웹 지도의 '{district.name} 주변 매물보기'). {place.name}에서 가까운 순이 아니고 이웃 동은 빠집니다"
                     + (
-                        f'. 역 주변 단지는 jibsa zigbang search complexes {query}'
-                        if place.search_type == 'subway' else ''
+                        f'. 역 주변 단지는 {complexes_command_text}'
+                        if place.subway_id is not None
+                        else f'. 학교 배정단지는 {complexes_command_text}'
+                        if place.search_type == 'school' and school_has_assigned_complexes(place_item) else ''
                     ),
                 )]
         result = search_apt_listings(client, district, conditions=conditions, limit=limit, start=position)
         emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
+
+
+def _complexes_query(query: str | None, place_name: str) -> str:
+    """`search complexes` 에 권할 검색어. 검색어 끝 낱말이 찾은 곳의 이름이면 그 검색어 전체다.
+
+    사용자가 구·동 낱말을 붙여 같은 이름의 역·학교 중 하나를 가렸으면('영등포구 양평역') 이름만 권하면 그 명령이 어느 곳인지
+    다시 묻고 멈춘다 (REGION_AMBIGUOUS). 공백이 있으면 작은따옴표로 감싼다.
+    """
+    words = (query or '').split()
+    chosen = ' '.join(words) if words and words[-1] == place_name else place_name
+    return f"'{chosen}'" if len(chosen.split()) > 1 else chosen
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:
@@ -769,7 +819,7 @@ def complex_command(
     complex_id: ComplexIdArgument,
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보와 지금 올라온 매물 수. 아파트는 거래 유형별 매물 수와 평형 목록(search listings --complex --pyeong 값)도 준다.
+    """단지 정보와 지금 올라온 매물 수. 아파트는 거래 유형별 매물 수와 평형 목록(search listings --complex --pyeong 값), 평형별 면적·관리비·직방시세, 단지 직방시세·순위·함께 보면 좋은 단지·토지거래허가도 준다.
 
     예: jibsa zigbang complex apt-68579
     """
@@ -924,7 +974,9 @@ def store_command(
             '--business',
             help=(
                 '업종 또는 업종 대분류 (예: 카페/커피, 편의점/슈퍼, 휴게음식점). 반복하거나 쉼표로 구분 (OR). '
-                '대분류는 휴게음식점, 일반음식/주류점, 스포츠/마사지/오락, 판매업, 기타'
+                '대분류는 휴게음식점, 일반음식/주류점, 스포츠/마사지/오락, 판매업, 기타. '
+                '결과 뒤에 직방 웹처럼 이 지역 비어있는 상가(업종과 상관없는 공실, vacant_section true) 줄이 이어지고 total 에 든다. '
+                '업종 조건으로 공실 줄은 줄지 않는다'
             )
         )
     ] = None,
@@ -949,6 +1001,9 @@ def store_command(
     """상가·사무실을 직방 목록 순서 그대로 조회한다 (거리순 아님, 거리는 distance_km). 가격은 요약을 받은 뒤 거른다. 모르는 금액은 제외한다.
 
     동 이름을 주고 --radius 를 주지 않으면 그 동 안을, 역·구 이름·좌표·--radius 는 중심에서 반경 안을 찾는다.
+
+    직방이 이 지역 비어있는 상가(업종과 상관없는 공실) 묶음을 주면 직방 웹처럼 결과 뒤에 그 줄(vacant_section true)이 이어지고
+    total 에 든다 (업종 조건이 없어도). 업종 조건으로 공실 줄은 줄지 않으니 업종 매물만 보려면 vacant_section 이 false 인 줄을 읽는다.
 
     상세는 결과의 id(store-123) 로 jibsa zigbang listing <id>.
 
@@ -1096,24 +1151,27 @@ def stay_command(
     floors = split_csv(floor, tuple(STAY_FLOOR_TYPE_BY_LABEL), '--floor')
     with handle_errors(SOURCE), ZigbangClient() as client:
         radius_km = radius or DEFAULT_RADIUS_KM
-        split: list[ZigbangRegion] = []
-        gus: list[ZigbangRegion] = []
         split_note: str | None = None
         items: list[ZigbangSearchItemModel] | None = None
+        # 이름으로 찾고 --radius 를 주지 않았으면 직방 단기임대 검색(역·학교·동·구)의 결과를 그대로 받는다
+        by_name = lat is None and radius is None
+        whole_address = False
         if lat is not None and lng is not None:
             region, notes = _region(client, query, lat, lng, radius_km)
         else:
             items = search_regions(client, query or '')
-            region, split_note, split = resolve_region_scope(client, query or '', items=items)
+            if by_name:
+                # 어느 동·구인지 묻는 것은 좌표를 쓰지 않는다. 지역으로 바꾸기 전의 검색 결과로 먼저 판단해, 좌표 없는 동이 섞여도
+                # 묻는 에러가 좌표 에러(UPSTREAM_ERROR)로 바뀌지 않게 한다
+                best, split_items = region_scope_items(query or '', items)
+                whole_address = best.type == 'address' and bool(best.source and best.source.local1)
+                if whole_address and (divided := split_items or city_gu_search_items(query or '', items)):
+                    # '○가' 로 나뉜 동(성수동 → 성수동1가·2가)과 구가 있는 시(성남시)는 직방 검색창이 동·구를 따로 준다. 지역 검색
+                    # 여럿을 합친 순서·수는 웹에 없어 합치지 않고 어느 곳인지 묻는다 (2026-11-15 실측: 성수동2가 검색에 성수동1가
+                    # 매물도 온다)
+                    raise divided_region_error(query or '', divided)
+            region, split_note, _ = resolve_region_scope(client, query or '', items=items)
             notes = []
-            gus = city_gu_regions(query or '', items)
-        # 이름으로 찾고 --radius 를 주지 않았으면 직방 단기임대 검색(역·학교·동·구)의 결과를 그대로 받는다
-        by_name = lat is None and radius is None
-        whole_address = by_name and region.search_type == 'address' and bool(region.local1)
-        if whole_address and (split or gus):
-            # '○가' 로 나뉜 동(성수동 → 성수동1가·2가)과 구가 있는 시(성남시)는 직방 검색창이 동·구를 따로 준다. 지역 검색 여럿을
-            # 합친 순서·수는 웹에 없어 합치지 않고 어느 곳인지 묻는다 (2026-11-15 실측: 성수동2가 검색에 성수동1가 매물도 온다)
-            raise divided_region_error(query or '', split or gus)
         if split_note:
             notes.append(split_note)
         if whole_address and is_ri_code(region.legal_division_code) and region.local3:
@@ -1239,10 +1297,9 @@ def listing_command(
     if (check_in is None) != (check_out is None):
         raise typer.BadParameter('--check-in 과 --check-out 은 함께 주세요', param_hint='--check-in')
     with handle_errors(SOURCE), ZigbangClient() as client:
-        emit(
-            get_any_listing(client, item_id, check_in=check_in, check_out=check_out),
-            pretty,
-        )
+        result = get_any_listing(client, item_id, check_in=check_in, check_out=check_out)
+        # 주거(원룸·빌라·오피스텔·아파트)·단기임대 상세는 덤 조회(학군·건물 실거래, 후기·임대인의 다른 방) 실패 안내를 notes 로 갖는다
+        emit(result, pretty, notes=result.notes if isinstance(result, ZigbangListingDetail | ZigbangStayListingDetail) else None)
 
 
 @app.command('catalog')
@@ -1256,7 +1313,8 @@ def catalog_command(
 ) -> None:
     """같은 호를 여러 중개사가 올린 아파트 매물 묶음(직방 웹 묶음 화면)의 매물 전부. 매물마다 가격·관리비·입주일 등 listing 상세와 같은 필드.
 
-    검색 결과의 is_price_range 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (20건마다 요청 1회).
+    검색 결과의 is_price_range 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (매물은 20건마다 요청 1회,
+    다 받은 뒤 호 정보 요청 1회를 더 해 호의 직방시세·공시가격·분양가를 붙인다. 호 정보를 못 받으면 그 값만 null 이고 [실패] 로 알린다).
 
     예: jibsa zigbang catalog 8260358-trade --fields id,price_manwon,floor,move_in
     """

@@ -1,7 +1,7 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
     DabangRoomItemModel,
     DabangV5ResponseModel,
 )
@@ -9,7 +9,7 @@ from jibsa.providers.dabang.api.response.common import (
 from typing import Annotated
 
 
-class DabangRankingGroupModel(ResponseModel):
+class DabangRankingGroupModel(DabangBaseResponseModel):
     """동네정보 요약의 순위 ('60위' 처럼 글자로 온다). 구는 `cityName` 이다."""
 
     formatted_national_rank: Annotated[
@@ -34,7 +34,7 @@ class DabangRankingGroupModel(ResponseModel):
     ] = None
 
 
-class DabangCompositionModel(ResponseModel):
+class DabangCompositionModel(DabangBaseResponseModel):
     """요약 칸의 거래 유형별 수 (매매·전세·월세)."""
 
     name: Annotated[
@@ -47,7 +47,7 @@ class DabangCompositionModel(ResponseModel):
     ] = None
 
 
-class DabangDistributionModel(ResponseModel):
+class DabangDistributionModel(DabangBaseResponseModel):
     """요약의 칸 하나 (매물정보·시세정보는 매물 유형, 학군·편의·교통·안전은 그 종류의 시설·설립 구분).
 
     매물수·거래량은 `value` 와 `compositionList`(거래 유형별), 평균가는 `salePrice`·`leasePrice`(만원)다. 학군·편의·교통·안전은
@@ -84,7 +84,7 @@ class DabangDistributionModel(ResponseModel):
     ] = []
 
 
-class DabangPopulationGroupModel(ResponseModel):
+class DabangPopulationGroupModel(DabangBaseResponseModel):
     """인구 요약의 성별·연령 칸 하나."""
 
     gender_type_name: Annotated[
@@ -105,7 +105,7 @@ class DabangPopulationGroupModel(ResponseModel):
     ] = None
 
 
-class DabangRegionInfoSummaryResultModel(ResponseModel):
+class DabangRegionInfoSummaryResultModel(DabangBaseResponseModel):
     """동네정보 요약 `result`. 매물정보·시세정보는 `distributionList`·`distributionDetailList`, 인구는 `totalCount` 와
     성별·연령 목록, 학군·편의·교통·안전은 그 종류의 합계 `formattedTotalCount`('3,276')와 `distributionList` 가 온다. 모두
     `rankingGroup`(전국·시도·구 순위)과 기준 달 `updateDate`('26.10')가 있다.
@@ -149,7 +149,7 @@ class DabangRegionInfoRegionalSummaryV5ResponseModel(DabangV5ResponseModel[Daban
     """`GET /api/v5/region-info/{topic}/regional/summary` 응답."""
 
 
-class DabangCountModel(ResponseModel):
+class DabangCountModel(DabangBaseResponseModel):
     """시설·학교 수 한 칸. 수는 '1,074개' 처럼 글자로 온다. 이름 키는 시설(`facilityName`)·설립(`establishmentTypeName`)·
     학원 종류(`academyTypeName`) 중 하나다.
     """
@@ -172,7 +172,7 @@ class DabangCountModel(ResponseModel):
     ] = None
 
 
-class DabangCountGroupModel(ResponseModel):
+class DabangCountGroupModel(DabangBaseResponseModel):
     """시설·학교 묶음 하나. 묶음 이름 키는 탭마다 다르다 (`amenityTypeName`·`mobilityTypeName`·`lifeSafetyTypeName`·
     `schoolTypeName`).
     """
@@ -199,7 +199,7 @@ class DabangCountGroupModel(ResponseModel):
     ] = []
 
 
-class DabangAcademyCountModel(ResponseModel):
+class DabangAcademyCountModel(DabangBaseResponseModel):
     """학원 종류별 수."""
 
     count_list: Annotated[
@@ -208,7 +208,7 @@ class DabangAcademyCountModel(ResponseModel):
     ] = []
 
 
-class DabangRegionInfoCountResultModel(ResponseModel):
+class DabangRegionInfoCountResultModel(DabangBaseResponseModel):
     """동네정보 수 `result`. 편의·교통·안전은 `facilityCountList`, 학군은 `schoolCountList`·`academyCount` 다."""
 
     facility_count_list: Annotated[
@@ -229,7 +229,7 @@ class DabangRegionInfoRegionalCountV5ResponseModel(DabangV5ResponseModel[DabangR
     """`GET /api/v5/region-info/{topic}/regional/count` 응답."""
 
 
-class DabangPopularRoomResultModel(ResponseModel):
+class DabangPopularRoomResultModel(DabangBaseResponseModel):
     """인기 매물 `result`. 매물 칸은 목록 칸과 같은 꼴이지만 동 번호·좌표가 없다."""
 
     list_: Annotated[
@@ -250,7 +250,7 @@ class DabangRegionInfoRoomRegionalPopularRoomV5ResponseModel(DabangV5ResponseMod
     """`GET /api/v5/region-info/room/regional/popular-room` 응답."""
 
 
-class DabangHotPlaceModel(ResponseModel):
+class DabangHotPlaceModel(DabangBaseResponseModel):
     """핫플레이스 식당 하나. 사진 주소(`thumbnail`)와 요리 종류 코드(`cuisineType`, 웹은 사진이 없을 때 아이콘만 고른다)도 오지만
     모델에 두지 않는다.
     """
@@ -273,7 +273,7 @@ class DabangHotPlaceModel(ResponseModel):
     ] = None
 
 
-class DabangHotPlacesResultModel(ResponseModel):
+class DabangHotPlacesResultModel(DabangBaseResponseModel):
     """핫플레이스 `result`."""
 
     update_date: Annotated[

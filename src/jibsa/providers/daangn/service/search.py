@@ -279,7 +279,8 @@ def _around_listings(
     있다. 받은 매물이 없으면 묻지 않는다. `region`·`sidos` 는 앞 결과가 찾은 동과 시·도다 (주면 다시 찾지 않는다). 예전에는 두
     검색이 이 흐름을 따로 두었다 (2026-11-12 리뷰).
     """
-    edges, has_more, cursor, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE, after=after)
+    edge_notes: list[str] = []
+    edges, has_more, cursor, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE, after=after, notes=edge_notes)
     articles = [edge.node.article for edge in edges if edge.node and edge.node.article]
     if region is None and articles:
         region = region_or_none(client, *center)
@@ -293,7 +294,7 @@ def _around_listings(
             {'after': cursor, 'region': region.model_dump() if region else None, 'sidos': sido_cache_rows(sido_cache)}
             if resumable else None
         ),
-        notes=_listing_notes(
+        notes=edge_notes + _listing_notes(
             limit, articles, [article for article, _ in converted],
             has_more=has_more, resumable=resumable, resumed=after is not None, stopped=stopped,
         ),
@@ -403,7 +404,7 @@ def search_dong(
     # 26건인데 20건 쪽이 false 이고 커서로 이어 받으면 나머지가 왔다. 인제군 기린면 15건은 1·5건 쪽이 true, 7·14건 쪽이 false 로
     # 들쭉날쭉했다). 당근 웹도 이 값을 믿어 목록이 20건에서 멈추는데, 당근 버그라 따르지 않는다 (2026-11-12 사용자 결정)
     edges, has_more, cursor, stopped = connection_edges(
-        fetch, limit, FEED_PAGE_SIZE, after=after, full_page_more=full_page_more,
+        fetch, limit, FEED_PAGE_SIZE, after=after, full_page_more=full_page_more, notes=notes,
     )
     articles = [edge.node.article for edge in edges if edge.node and edge.node.article]
     count()
@@ -637,12 +638,12 @@ def search_map_area(
 
     # 지도 범위 목록(`articleFeed`)은 동 목록과 달리 `hasNextPage` 가 맞아 꽉 찬 쪽으로 짐작하지 않는다 (2026-11-12 실측: 홍천군
     # 내면 둘레 줌 10 은 20건씩 true 로 이어지고, 줌 12 는 13건 = 매물 수 13)
-    edges, has_more, cursor, stopped = connection_edges(fetch, limit, FEED_PAGE_SIZE, after=after)
+    notes: list[str] = []
+    edges, has_more, cursor, stopped = connection_edges(fetch, limit, FEED_PAGE_SIZE, after=after, notes=notes)
     articles = [edge.node.article for edge in edges if edge.node and edge.node.article]
 
     # 매물 수·동 이름은 안내와 시·도 채우기에만 쓰여 못 받아도 매물은 보여 준다. 본 조회 뒤에 묻는다 (덤 조회가 첫 요청이
     # 되면 첫 화면 실패를 삼키고 본 조회가 브라우저를 다시 띄운다. 2026-11-10 리뷰)
-    notes: list[str] = []
     resumed = after is not None
     if total is None and not resumed:
         total = count_listings(client, bounds, property_filter, notes=notes, resolution=resolution)

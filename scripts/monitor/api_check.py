@@ -137,23 +137,54 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step(
             '아파트 동 목록 역삼동', APT, ('역삼동', '--limit', '2'), 'listings',
-            (
-                Capture('apt', 'listings', 'complex_id', prefix='apt-'), Capture('apt_listing', 'listings', 'id'),
-                # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
-                Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),
-                Capture('apt_next', '', 'next'),
-            ),
+            (Capture('apt_listing', 'listings', 'id'), Capture('apt_next', '', 'next')),
         ),
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
-        # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다
-        Step('아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings'),
+        # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다. 호 묶음은 여기서 고른다: 신규분양 호는 직방시세가
+        # 없어(2026-11-20 리뷰 실측: 서패동 분양 묶음 19034254-trade 는 시세 null·[실패] 안내 없음) 아래 단계가 고장으로 잘못 알린다.
+        # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
+        # 단지(`{apt}`)도 여기서 고른다: 신규분양 카드도 `apt-` 단지 ID 를 갖고 그 단지는 단지 직방시세가 없다(2026-11-20 리뷰 실측:
+        # 서패동 신규분양 카드의 apt-94091 은 estimated_sale_price_min_manwon 이 null 이고 [실패] 안내가 없다)
+        Step(
+            '아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings',
+            (
+                Capture('apt', 'listings', 'complex_id', prefix='apt-'),
+                Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),
+            ),
+        ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
-        Step('아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings'),
+        # 호 정보(item_catalogs/ho-info)는 덤이라 실패해도 값이 null 로 남고 명령은 성공한다. 직방은 시세가 없는 호에 0 을 주기도 해
+        # jibsa 가 null 로 낸다(service/apt.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다. 응답 형식이 바뀌어 호
+        # 정보를 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
+        Step(
+            '아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings',
+            also_expect=('estimated_sale_price_manwon',), may_be_empty=True,
+        ),
         # 역 이름은 그 역이 속한 동을 찾아(/apt/locals/polygon) 그 동의 지역 목록을 준다
         Step('아파트 역이 속한 동 강남역', APT, ('강남역', '--limit', '2'), 'listings'),
         # 역 주변 단지는 웹 '주변단지' 목록(/apt/danjis/ids, 조회수 순)에 역 주변 단지 정보(/apt/subways/{id})의 거리를 붙인다
         Step('역 주변 아파트 단지 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--limit', '3'), 'complexes'),
-        Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),
+        # 학교·동·구는 같은 단지 ID 목록 API(/apt/danjis/ids)에 type 만 바꿔 보내고(school·local), 이름·주소·세대수·둘째 줄은 단지 카드
+        # (/apt/danjis/details)에서 받는다. 학교는 주변 단지 정보(/apt/schools/{학교 코드}), 동·구는 지역 해석을 더 부른다
+        Step('학교 배정 아파트 단지 해누리중학교', ('zigbang', 'search', 'complexes'), ('해누리중학교', '--limit', '3'), 'complexes'),
+        # 최근입주 목록은 곧 입주 예정이거나 최근 1년 내 입주한 단지만 담아 사이트가 정상이어도 빌 수 있다 (2026-11-20 실측: 가락동 1곳·송파구 4곳)
+        Step(
+            '동 최근입주 아파트 단지 가락동', ('zigbang', 'search', 'complexes'), ('가락동', '--limit', '3'), 'complexes',
+            may_be_empty=True,
+        ),
+        Step(
+            '구 최근입주 아파트 단지 송파구', ('zigbang', 'search', 'complexes'), ('송파구', '--limit', '3'), 'complexes',
+            may_be_empty=True,
+        ),
+        # --order 는 순서 탭(order=areaPrice 등)을 서버에 보내는 경로다
+        Step('역 주변 아파트 단지 평당가 순 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--order', '평당가', '--limit', '3'), 'complexes'),
+        # 평형 정보(danjis/{id}/room-types)는 덤이라 실패해도 명령은 성공한다. 그 칸(단지 직방시세 범위)은 직방이 정상 단지에도 시세를
+        # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이고,
+        # 응답 형식이 바뀌어 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
+        Step(
+            '아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),),
+            also_expect=('estimated_sale_price_min_manwon',), may_be_empty=True,
+        ),
         Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),
         # 전체는 서버 거래 유형 all 을 보내 매매와 전월세를 한 목록으로 받는다 (거래마다 trade_type)
         Step('아파트 실거래가 전체', ('zigbang', 'real-price'), ('{apt}', '--trade', '전체', '--limit', '3'), 'transactions'),
@@ -174,7 +205,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단기임대 지역 강남구', ('zigbang', 'search', 'listings', 'stay'), ('강남구', '--limit', '2'), 'listings',
             (Capture('stay', 'listings', 'id'),),
         ),
-        Step('단기임대 상세', ZIGBANG_LISTING, ('{stay}',), 'id'),
+        # 후기 수(guest/items/reviews)는 덤이라 실패해도 null 로 남고 명령은 성공한다. 후기가 없으면 0 이라 값이 있다. 임대인의 다른 방
+        # 수(host_other_listing_count)는 임대인 ID 가 없거나 0 이하면 안내 없이 null 이라 정상에서도 비므로 기대 칸으로 걸지 않는다
+        Step('단기임대 상세', ZIGBANG_LISTING, ('{stay}',), 'id', also_expect=('review_count',)),
         # 날짜를 주면 상세의 막힌 날짜(schedules)로 예약 가능 여부를 붙인다. 예약된 기간이면 false 라 값 대신 상세가 오는지만 본다
         Step('단기임대 날짜 상세', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'id'),
         # 역 이름은 직방 단기임대 역 검색, --radius 를 주면 지도 핀이다
@@ -641,7 +674,7 @@ def _run_step(step: Step, values: dict[str, str]) -> StepResult:
 def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
     # 결과는 나오지만 고쳐야 한다는 안내. 지역 검색이 바뀌었을 수 있어 대체 경로로 찾았거나(직방 단기임대가 지역 대신 지도로),
     # 덤 조회(단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했거나(당근
-    # partial_failure_note, 다방 단지 최근 실거래 요약), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
+    # partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 응답 형식 오류), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
     # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
     # 만든다) 여기서 가져온다
     from jibsa.core.listing import (
@@ -672,7 +705,7 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
                 if step.may_be_empty:
                     return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data)
                 # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
-                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약)
+                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 응답 형식 오류)
                 failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
                 if failed is not None:
                     return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data)
@@ -875,7 +908,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
         번들을 받지 못하면 확인 못 함, 표를 못 찾았거나(번들 구조가 바뀜) 웹 표·이름표(유연·표준·엄격)가 jibsa 와 다르면 고장.
     """
     from jibsa.providers.zigbang.api.client import ZigbangClient
-    from jibsa.providers.zigbang.service.stay import (
+    from jibsa.providers.zigbang.service.stay.detail import (
         STAY_REFUND_POLICY_LABELS,
         STAY_REFUND_RULES,
     )
@@ -929,7 +962,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
             **step, 'status': BROKEN,
             'detail': (
                 f"웹 위약금 표가 jibsa 와 다름 ({'; '.join(diffs)}). "
-                'zigbang service/stay.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
+                'zigbang service/stay/detail.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
             ),
         }
     return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(STAY_REFUND_RULES)} 정책 {sum(len(rows) for rows in STAY_REFUND_RULES.values())}행)"}

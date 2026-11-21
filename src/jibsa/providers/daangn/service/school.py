@@ -15,6 +15,7 @@ from jibsa.core.listing import (
     more_hint,
     normalize_address,
     note,
+    null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.school import (
@@ -119,8 +120,8 @@ class DaangnSchoolResult(BaseModel):
         Field(description='학교')
     ]
     total_complexes: Annotated[
-        int,
-        Field(description='조건에 맞는 배정 단지 수 (limit 적용 전)')
+        int | None,
+        Field(description='조건에 맞는 배정 단지 수 (limit 적용 전). 당근이 빈 항목을 줘 셀 수 없으면 null')
     ]
     returned: Annotated[
         int,
@@ -269,6 +270,8 @@ def get_school(
         and (household_min is None or (node.danji is not None and (node.danji.households or 0) >= household_min))
     ]
     complexes = [region_complex_of(node, '매매', max_trades=1) for node in nodes]
+    # 배정 단지 목록에서 빈 항목을 뺐으면 단지 수를 알 수 없다 (null). 안내 문장의 수도 뺀다
+    dropped = detail.null_items('assigned_complexes')
 
     if detail.sch_type != 'ELEMENTARY':
         notes.append('배정 단지는 초등학교에만 있습니다. 중·고등학교는 학교군으로 배정돼 단지 목록이 없습니다')
@@ -276,16 +279,20 @@ def get_school(
         notes.append('당근에 이 학교의 배정 단지 정보가 없습니다')
     elif not complexes:
         # 안내가 없으면 배정 단지가 없는 학교와 구별되지 않았다 (2026-11-12 리뷰)
+        count = '' if dropped else f' {len(detail.assigned_complexes)}곳'
         notes.append(note(
             '참고',
-            f'배정 단지 {len(detail.assigned_complexes)}곳 중 단지 유형(-t)·세대수(--household-min) 조건에 맞는 곳이 없습니다',
+            f'배정 단지{count} 중 단지 유형(-t)·세대수(--household-min) 조건에 맞는 곳이 없습니다',
         ))
     elif len(complexes) > limit:
+        count = '' if dropped else f' {len(complexes)}곳'
         notes.append(note(
             '일부',
-            f'배정 단지 {len(complexes)}곳 중 당근 순서로 앞 {limit}곳만 보여 줍니다. '
+            f'배정 단지{count} 중 당근 순서로 앞 {limit}곳만 보여 줍니다. '
             + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, '단지 유형(-t)·세대수(--household-min) 조건'),
         ))
+    if dropped:
+        notes.append(null_items_note('당근 배정 단지', dropped, ('total_complexes',)))
     shown = complexes[:limit]
     return DaangnSchoolResult(
         school=DaangnSchool(
@@ -300,7 +307,7 @@ def get_school(
             students_per_teacher=detail.tch_std_cnt,
             stats_year=detail.student_std_date,
         ),
-        total_complexes=len(complexes),
+        total_complexes=None if dropped else len(complexes),
         returned=len(shown),
         complexes=shown,
         url=school_url(detail.sch_cd),
@@ -429,16 +436,20 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
     rows.sort(key=lambda row: (-(row[1].resident_count or 0), row[0] is None, row[0] or 0))
     preschools = [summary for _, summary in rows]
     notes: list[str] = []
+    # 서버는 빈 항목(null)도 한 자리로 세어 20곳까지 준다. 빼고 읽은 수를 받은 자리에 더한다
+    dropped = danji.null_items('nearby_preschools') if danji else 0
     if nearby is None:
         notes.append(note('참고', '당근이 이 단지 근처 어린이집·유치원 정보를 주지 않았습니다. 시설이 없다는 뜻은 아닙니다'))
-    elif not preschools:
+    elif not preschools and not dropped:
         notes.append(note('참고', f'당근에 이 단지에서 {PRESCHOOL_SERVER_RADIUS_KM:g}km 안 어린이집·유치원이 없습니다'))
-    elif len(preschools) >= PRESCHOOL_SERVER_MAX:
+    elif len(preschools) + dropped >= PRESCHOOL_SERVER_MAX:
         notes.append(note(
             '일부',
             f'당근은 단지에서 {PRESCHOOL_SERVER_RADIUS_KM:g}km 안의 어린이집·유치원을 가까운 순으로 {PRESCHOOL_SERVER_MAX}곳까지만 '
             '줍니다. 더 먼 시설은 당근에 목록이 없습니다',
         ))
+    if dropped:
+        notes.append(null_items_note('당근 어린이집·유치원', dropped))
     return DaangnPreschoolsResult(
         complex_id=str(complex_id),
         returned=len(preschools),

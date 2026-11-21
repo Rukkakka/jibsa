@@ -1,12 +1,14 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.dabang.api.response.common import DabangV5ResponseModel
+from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
+    DabangV5ResponseModel,
+)
 
 from typing import Annotated
 
 
-class DabangEducationV3ResponseModel(ResponseModel):
+class DabangEducationV3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/education/{level}/{school_code}` 응답 (옛 방식이라 봉투 없이 snake_case).
 
     학급당·교원당 학생 수와 방과후 프로그램 수는 이 학교 값과 시·도(`_state`)·시·군·구(`_city`) 평균이 함께 온다.
@@ -173,7 +175,7 @@ class DabangEducationV3ResponseModel(ResponseModel):
     ] = None
 
 
-class DabangNurseryEducationV3ResponseModel(ResponseModel):
+class DabangNurseryEducationV3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/education/nursery-school/{school_code}` 응답 (옛 방식이라 봉투 없이 snake_case, 어린이집정보공개포털 공시).
 
     `class_0`~`class_5`·혼합반·특수는 반 이름별 원아 수이고 `total_class` 가 그 합(총 원아 수)이다. 웹 '원아구성' 은
@@ -316,7 +318,7 @@ class DabangNurseryEducationV3ResponseModel(ResponseModel):
     ] = None
 
 
-class DabangKinderEducationV3ResponseModel(ResponseModel):
+class DabangKinderEducationV3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/education/kinder-school/{school_code}` 응답 (옛 방식이라 봉투 없이 snake_case, 유치원알리미 공시).
 
     교육비(`avg_base_cost`·`avg_care_cost`, 원 단위 월 평균)도 오지만 모델에 두지 않는다. 웹은 '지원금을 제외한 실제 학부모에게
@@ -420,7 +422,7 @@ class DabangKinderEducationV3ResponseModel(ResponseModel):
     ] = None
 
 
-class DabangRegionalAdvancementModel(ResponseModel):
+class DabangRegionalAdvancementModel(DabangBaseResponseModel):
     """동 안 학교 목록의 진학률 한 갈래 (중·고등학교). 웹은 '과고 1%' 꼴 꼬리표로 그리고 0 보다 크면 강조한다."""
 
     advancement_type_name: Annotated[
@@ -433,7 +435,7 @@ class DabangRegionalAdvancementModel(ResponseModel):
     ] = None
 
 
-class DabangRegionalSchoolModel(ResponseModel):
+class DabangRegionalSchoolModel(DabangBaseResponseModel):
     """동 안 학교·유치원·어린이집 하나. 좌표·전화는 오지 않는다 (2026-11-14 실측).
 
     `schoolCode` 는 상세(`3/education/{단계}/{코드}`)의 코드와 같다. 웹도 이 코드로 상세를 연다 (school-regional 청크 `W`).
@@ -461,7 +463,7 @@ class DabangRegionalSchoolModel(ResponseModel):
     ] = None
 
 
-class DabangRegionalSchoolResultModel(ResponseModel):
+class DabangRegionalSchoolResultModel(DabangBaseResponseModel):
     """동 안 학교 목록 `result` (30곳씩). 쪽이 끝나면 `list` 가 비고 `total` 은 그대로 온다 (2026-11-14 실측)."""
 
     list_: Annotated[

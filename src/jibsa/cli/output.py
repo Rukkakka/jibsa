@@ -37,14 +37,20 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
+    NULL_ITEMS_PHRASE,
     SHARED_TRADE_TYPES,
     Listing,
     insert_after,
     listing_field_names,
     note,
+    null_items_total_note,
     tagged_notes,
 )
-from jibsa.core.schema import is_request_validation_error
+from jibsa.core.schema import (
+    is_request_validation_error,
+    null_item_tally,
+    reset_null_item_tally,
+)
 
 from typing import (
     Any,
@@ -55,6 +61,16 @@ from typing import (
 )
 
 
+# 소스 이름 -> 안내에 쓰는 사이트 이름. 응답에서 뺀 빈 항목의 공통 안내(`null_items_total_note`)에 쓴다
+SITE_NAMES: dict[str, str] = {
+    'zigbang': '직방',
+    'naver': '네이버',
+    'daangn': '당근',
+    'dabang': '다방',
+}
+# 지금 도는 명령의 소스. `handle_errors` 가 명령이 도는 동안만 정해 두고, `emit` 이 읽는다 (명령 코드 85곳이 소스를 다시 넘기지 않게).
+# 명령 밖에서 부른 `emit` 은 소스를 몰라 공통 안내를 붙이지 않는다
+_command_source: str | None = None
 # 출력 좌표의 소수 자리. 일곱째 자리가 약 1cm 라 원본 정밀도를 잃지 않는다
 COORDINATE_DECIMALS: int = 7
 # 1억 (만원). 이만큼 이상 금액이 있으면 notes 에 억 환산 예시를 붙인다 (`manwon_note`)
@@ -64,9 +80,12 @@ MANWON_PER_EOK: int = 10000
 # - 네이버 중복 묶음: notes 가 가리키는 중개사 수·호가 범위. 2026-10-31 재검증: --fields price_manwon,…
 #   으로 고르자 묶음 범위(30억~33억)가 빠져 notes 가 가리키는 33억 호가를 보지 못하고 최고 호가를 32억으로 답했다
 # - 직방 아파트 묶음: 빠지면 가격이 묶음 최저가인지 모르고 매물별 가격을 볼 묶음 ID 도 없다. 신규분양이면 가격이 분양가인지도 모른다
+# - 직방 상가 공실 묶음: 빠지면 `--business` 결과 뒤쪽 공실 줄을 업종 매물과 가를 수 없는데 [참고] 안내는 이 키를 읽으라고 한다
+#   (2026-11-20 리뷰 재현: --fields id,business,rent_manwon 에 키가 없었다)
 ALWAYS_FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     '네이버 중복 묶음': ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon'),
     '직방 아파트 묶음': ('is_price_range', 'catalog_id', 'listing_ids', 'listing_count', 'listing_kind'),
+    '직방 상가 공실 묶음': ('vacant_section',),
 }
 # 다음 명령에 넘길 id 와 묶음 필드. 당근 주변 동 표시(in_regions)는 동 검색이 그 동 매물만 주게 되어 없앴다 (#215)
 ALWAYS_FIELDS: frozenset[str] = frozenset({'id'}).union(*ALWAYS_FIELD_GROUPS.values())
@@ -267,7 +286,7 @@ def emit(
     늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 를 이미 dict 로 만들어 넘기면(네이버처럼 지역·범위를 앞에 붙이는 명령)
     매물 모델을 알 수 없으니, 이 명령에 없는 필드를 알리는 안내(`missing_fields_note`)를 위해 원래 결과를 `fields_source` 로 준다.
     출력에 연세(`yearly_rent_manwon`)나 1억 이상 금액이 있으면 그 값으로 만든 읽는 법(`yearly_rent_note`·`manwon_note`)을
-    `notes` 끝에 붙인다.
+    `notes` 끝에 붙인다. 명령이 응답에서 빈 항목을 뺐는데 `notes` 에 빈 항목 안내가 없으면 공통 안내도 붙인다 (`_null_items_tally_note`).
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -284,6 +303,8 @@ def emit(
         notes = [*(notes or []), yearly]
     if money := manwon_note(payload):
         notes = [*(notes or []), money]
+    if dropped := _null_items_tally_note(notes):
+        notes = [*(notes or []), dropped]
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if next_token is not None and isinstance(payload, dict):
@@ -291,6 +312,19 @@ def emit(
     if notes:
         payload = {'notes': tagged_notes(notes), **payload}
     typer.echo(_dumps(_tidy_numbers(payload), pretty))
+
+
+def _null_items_tally_note(notes: list[str] | None) -> str | None:
+    """이 명령이 응답에서 빈 항목을 뺐는데 결과 notes 에 빈 항목 안내가 아직 없으면 공통 안내 (`null_items_total_note`).
+
+    계산에 쓰는 자리는 소스가 `null_items_note` 로 따로 알리므로 겹쳐 붙이지 않는다. 보여 주기만 하는 목록처럼 안내 없이
+    빼는 자리가 있어도 뺀 것을 늘 알린다. 명령 밖(`handle_errors` 밖)에서 부른 `emit` 은 소스를 몰라 붙이지 않는다.
+    """
+    site = SITE_NAMES.get(_command_source or '')
+    count = null_item_tally()
+    if site is None or count <= 0 or any(NULL_ITEMS_PHRASE in text for text in notes or []):
+        return None
+    return null_items_total_note(site, count)
 
 
 def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
@@ -331,7 +365,11 @@ def handle_errors(source: str) -> Generator[None, None, None]:
 
     LLM 이 실패 원인을 읽고 다음 행동(재시도, 조건 수정)을 고를 수 있도록
     코드와 힌트를 함께 남긴다. 예상하지 못한 예외도 traceback 대신 INTERNAL_ERROR 로 쓴다.
+    명령이 시작할 때 응답에서 뺀 빈 항목의 합을 0 으로 돌리고, 명령이 도는 동안 `emit` 이 그 소스를 읽을 수 있게 정해 둔다.
     """
+    global _command_source
+    reset_null_item_tally()
+    _command_source = source
     try:
         yield
     except JibsaError as exc:
@@ -442,6 +480,8 @@ def handle_errors(source: str) -> Generator[None, None, None]:
             source=source,
         )
         raise typer.Exit(code=1)
+    finally:
+        _command_source = None
 
 
 class UsageHints(NamedTuple):

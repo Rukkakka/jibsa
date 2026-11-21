@@ -16,6 +16,7 @@ from jibsa.core.listing import (
     more_hint,
     normalize_address,
     note,
+    null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
@@ -903,8 +904,11 @@ def get_region_ranking(
     total: int | None = None
     base_month: str | None = None
     has_more = False
+    # 다방이 순위 목록에 섞어 줘서 뺀 빈 항목 수. 뺀 자리도 서버의 순위 칸이라 limit 을 채웠는지 셀 때 더한다 (빼고 센 수로
+    # 첫 쪽이 찼는지 보면 limit 이 한도보다 작을 때 다음 쪽을 한도 크기로 물어 첫 쪽 뒤 순위를 건너뛴다)
+    dropped = 0
     page = 1
-    while len(entries) < limit:
+    while len(entries) + dropped < limit:
         # 쪽 크기를 바꾸면 쪽 번호가 어긋나 둘째 쪽부터는 한도(page_limit)로 받는다. limit 이 한도보다 크면 첫 쪽도 한도다
         result = fetch(page, min(page_limit, limit - len(entries)) if page == 1 else page_limit)
         ranking = result.ranking if result else None
@@ -913,12 +917,14 @@ def get_region_ranking(
         total = ranking.total if total is None else total
         base_month = base_month or _month(result.formatted_price_date)
         rows = [_entry(row, spec.kind) for row in ranking.list_]
+        page_dropped = ranking.null_items('list_')
+        dropped += page_dropped
         taken = rows[:limit - len(entries)]
         entries += taken
         # 둘째 쪽부터는 한도만큼 받아 limit 에 맞춰 자르므로, 자른 줄이 있으면 서버 hasMore 가 false 여도 더 있다
         # (2026-10-25 실측: 울산 동 84곳을 --limit 70 으로 받으면 둘째 쪽 34곳 중 20곳만 넣는다). 빈 쪽이면 hasMore 가 와도 더 없다
-        has_more = more_after(bool(ranking.has_more), len(rows), cut=len(rows) - len(taken))
-        if not ranking.has_more or not ranking.list_:
+        has_more = more_after(bool(ranking.has_more), len(rows) + page_dropped, cut=len(rows) - len(taken))
+        if not ranking.has_more or not (ranking.list_ or page_dropped):
             break
         page += 1
     # 다방은 값이 없는 줄을 '-' 로 준다 (2026-10-25 실측: 세종 동 평균가 33곳 중 8곳). 다른 줄에 값이 있는 칸은 이 항목에
@@ -946,6 +952,8 @@ def get_region_ranking(
             if limit >= REGION_RANKING_MAX_LIMIT:
                 more += '. 반대쪽 끝은 --order 를 바꿔 보세요'
         notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. {more}'))
+    if dropped:
+        notes.append(null_items_note('다방 순위', dropped))
     # 학원수·진학률 순위는 상위 지역을 시·도까지만 준다 (2026-10-25 실측: 전국 외국어 학원 1위 '신사동' area '서울')
     if scope.kind not in ('district', 'dong') and any(entry.area and ' ' not in entry.area for entry in entries):
         notes.append(note('참고', 'area 가 시·도까지만 와서 같은 이름의 동은 어느 시·군·구인지 알 수 없습니다. 범위를 시·군·구로 주면 그 안의 동만 나옵니다'))

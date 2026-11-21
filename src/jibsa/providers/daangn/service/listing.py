@@ -10,6 +10,7 @@ from jibsa.core.listing import (
     listing_as,
     move_in_label,
     note,
+    null_items_note,
     parking_label,
     won_to_manwon,
 )
@@ -102,7 +103,7 @@ class DaangnListingDetail(ListingDetail):
     ] = []
     manage_cost_excludes: Annotated[
         list[str] | None,
-        Field(description='관리비와 따로 내는 항목 (쓴 만큼 내는 전기·수도 등). 소스가 알려 주지 않으면 null')
+        Field(description='관리비와 따로 내는 항목 (쓴 만큼 내는 전기·수도 등). 소스가 알려 주지 않으면 null. 당근이 빈 항목을 줘 셀 수 없어도 null')
     ] = None
     key_money_manwon: Annotated[
         float | None,
@@ -202,10 +203,11 @@ def _manage_cost_items(article: DaangnArticleModel) -> tuple[list[str] | None, l
     중개사 매물은 항목마다 정액(FIXED, 관리비에 포함)·쓴 만큼(USED, 따로 냄)을 밝히고, 없음(NONE)·
     확인 필요(NEED_TO_CHECK)는 어느 쪽에도 넣지 않는다. 항목을 밝히지 않은 매물
     (`manageCostDetailIsDisclosed: false`)도 껍데기 항목이 오므로 모름으로 둔다. 직거래 매물은
-    포함 항목 목록과 미포함 항목 목록(`excludeManageCostOption`)을 따로 준다.
+    포함 항목 목록과 미포함 항목 목록(`excludeManageCostOption`)을 따로 준다. 항목 목록에서 빈 항목(null)을 빼고 읽었으면
+    어느 항목이 빠졌는지 몰라 포함·미포함 모두 모름이다 (`[]` 로 두면 '없음' 으로 읽힌다).
     """
     options = article.manage_cost_options
-    if options is None or article.manage_cost_detail_is_disclosed is False:
+    if options is None or article.manage_cost_detail_is_disclosed is False or article.null_items('manage_cost_options'):
         return None, None
     if article.manage_cost_charge_type is not None:
         includes = [_manage_cost_label(item) for item in options if item.pay_option == 'FIXED']
@@ -304,6 +306,10 @@ def detail_to_listing(
     move_in = move_in_label(article.move_in_date, negotiable=bool(article.move_in_date_negotiable))
 
     manage_cost_includes, manage_cost_excludes = _manage_cost_items(article)
+    if article.null_items('manage_cost_options'):
+        notes.append(null_items_note(
+            '당근 관리비 항목', article.null_items('manage_cost_options'), ('manage_cost_includes', 'manage_cost_excludes'),
+        ))
     direct_deal = article.writer_type is not None and article.writer_type != 'BROKER'
 
     return listing_as(

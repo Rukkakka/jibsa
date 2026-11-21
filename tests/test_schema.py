@@ -3,9 +3,26 @@ import importlib
 import pkgutil
 from pathlib import Path
 
-from pydantic import BaseModel
+import pytest
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
+    model_validator,
+)
 
 import jibsa
+from jibsa.core.listing import null_items_note
+from jibsa.core.schema import (
+    ResponseModel,
+    validate_dropping_nulls,
+)
+
+from typing import (
+    Annotated,
+    Any,
+)
 
 
 SOURCE = Path(jibsa.__file__).parent
@@ -72,3 +89,51 @@ def test_aliased_models_accept_field_names() -> None:
         and not model.model_config.get('validate_by_name')
     ]
     assert rejecting == []
+
+
+# --- 목록 안 null 원소 (core/schema.py validate_dropping_nulls, core/listing.py null_items_note) ---
+
+def test_null_items_in_model_lists_are_dropped_and_counted() -> None:
+    class Item(ResponseModel):
+        name: Annotated[str, Field(description='이름')]
+
+    class Base(ResponseModel):
+        @model_validator(mode='wrap')
+        @classmethod
+        def drop_nulls(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+            return validate_dropping_nulls(cls, data, handler)
+
+    class Inner(Base):
+        rows: Annotated[list[Item], Field(description='행', alias='rowList')] = []
+
+    class Outer(Base):
+        items: Annotated[list[Item], Field(description='항목')] = []
+        maybe: Annotated[list[Item] | None, Field(description='없을 수 있는 목록')] = None
+        numbers: Annotated[list[int], Field(description='숫자 목록')] = []
+        inner: Annotated[Inner | None, Field(description='중첩 모델')] = None
+
+    data = {'items': [{'name': 'a'}, None, {'name': 'b'}, None], 'inner': {'rowList': [None, {'name': 'c'}]}}
+    outer = Outer.model_validate(data)
+    assert [item.name for item in outer.items] == ['a', 'b']
+    # 중첩 모델은 자기 칸만 센다. 바깥 모델의 합계에 안쪽 칸이 들어가지 않는다
+    assert (outer.null_items('items'), outer.null_items('items', 'maybe'), outer.null_items()) == (2, 2, 2)
+    assert outer.inner is not None
+    assert [row.name for row in outer.inner.rows] == ['c']
+    assert (outer.inner.null_items('rows'), outer.inner.null_items('items')) == (1, 0)
+    # 입력 dict 는 제자리에서 바꾸지 않는다
+    assert data['items'] == [{'name': 'a'}, None, {'name': 'b'}, None]
+
+    # 칸 자체가 null 이면 그대로 모름이고, 뺄 것이 없으면 센 수 0 에 읽은 칸 집합도 그대로다
+    assert Outer.model_validate({'maybe': None}).maybe is None
+    clean = Outer.model_validate({'items': [{'name': 'a'}]})
+    assert (clean.null_items(), clean.model_fields_set) == (0, {'items'})
+    # 숫자 목록은 순서가 뜻일 수 있어 null 을 빼지 않고 지금처럼 검증 오류다
+    with pytest.raises(ValidationError):
+        Outer.model_validate({'numbers': [1, None, 3]})
+
+    # 빼고 읽었다는 안내 글 (끝말은 매일 API 감시가 찾는 UPDATE_MAYBE_NEEDED)
+    assert null_items_note('네이버 관리비 항목', 1, ('manage_cost_manwon', 'manage_cost_includes')) == (
+        '[제외] 네이버 관리비 항목 목록에 빈 항목 1개가 와서 빼고 읽었습니다. '
+        'manage_cost_manwon, manage_cost_includes 값은 알 수 없어 null 입니다. jibsa 업데이트가 필요할 수 있습니다'
+    )
+    assert null_items_note('직방 단지 매물', 2).endswith('빼고 읽었습니다. jibsa 업데이트가 필요할 수 있습니다')

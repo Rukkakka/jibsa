@@ -134,7 +134,8 @@ token: Annotated[
 ```
 
 - 모델 설정은 `model_config = ConfigDict(extra='forbid')` 를 기본으로 한다. 응답 모델만 `ResponseModel` 을
-  상속해 `extra='allow'`.
+  상속해 `extra='allow'`. 응답 모델은 `ResponseModel` 을 바로 상속하지 않고 그 소스의 기반 응답 모델(`<Source>BaseResponseModel`)을
+  상속한다 ([모듈 구성](provider-conventions.md#모듈-구성)).
 - 고정 선택지는 `Literal` 별칭으로 모듈 위에 정의한다 (`Source`, `TradeType`, `ZigbangSalesType`).
 
 ## 5. 타입 힌트

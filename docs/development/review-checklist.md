@@ -23,7 +23,7 @@
    언제: 쪽을 넘기는 루프(커서·offset·`has_next`·`hasMore`)나 그 `break` 를 바꾼 diff.
 2. **"더 있음" 을 무엇으로 정하나.** `has_more`·`[일부]` 는 받은(확인한) 수 `inspected`·`received` 로 정한다. 뺀 뒤 돌려준 수나
    뺀 것까지 센 `total` 과 견주지 않는다. 확인: "다 받고 1건 뺌" 과 "limit 에 닿고 1건 뺌" 으로 따라간다.
-   예: `providers/zigbang/service/common.py:613`.
+   예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
    언제: `has_more`·`[일부]`·`inspected`·`received`·`total` 을 정하는 줄이나 결과를 빼는(거르는) 줄을 바꾼 diff.
 3. **덜 받은 것을 "전부·없음" 으로 단정.** 첫 쪽·상한·멈춘 목록의 수를 전체 수로 쓰거나, 남았는데 "없습니다"·"이 N건이 전부"
    라고 하지 않는가 ('이상'·`[일부]`·`null` 로 알린다). 확인: 수·'없'·'전부' 가 든 안내마다 그 수가 끝까지 받은 수인지 본다.
@@ -48,7 +48,7 @@
    모름을 섞지 않는가. 날짜·층·이름·시각 자리와 `LABELS.get(raw or '', raw)` 같은 라벨 표 찾기에서 `'-'`·빈 글자를 그대로
    내지 않는가 (`.get` 의 두 번째 인자가 빈 글자를 돌려준다). 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가 돌려주는 값을
    본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17),
-   `providers/zigbang/service/stay.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17).
+   `providers/zigbang/service/stay/detail.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17).
    언제: `+` 줄에 `or `·`if not `·`else None`·기본값 `[]`·값을 돌려주는 `except` 가 있을 때, 출력 필드를 더하거나 바꾼 diff.
 6. **서버 값 한 칸이 결과 전체를 깨뜨림.** 서버 글자·목록·헤더를 `int()`·`[0]`·`del`·`.encode` 로 바로 다루지 않는가 (그 칸만
    `null`·건너뛰기여야 한다). 확인: diff 의 그 호출과 Optional 아닌 list 필드에 빈 글자·'-'·null·소수를 넣어 본다.
@@ -78,12 +78,12 @@
     이어 내며 겹침을 한 호출 안에서만 빼면, `--next` 의 다음 쪽에 앞 쪽 매물이 다시 나오고, 목록마다의 자리를 더한 수가 서로 다른
     매물 수(`total`)를 넘어 더 있는데도 `[일부]` 가 사라진다. 커서 하나로 이은 쪽은 겹치지 않아 해당 없다 (아래 "지적하지 말 것"
     3). 확인: 겹치는 두 목록으로 이어 받기를 끝까지 따라가 쪽마다 앞 쪽과 같은 ID 수와 `offset + returned` 를 `total` 과 견준다.
-    예: `providers/zigbang/service/listing.py:1113` (받기 전에 앞 목록의 ID 를 뒤 목록에서 뺐다, 2026-11-16).
+    예: `providers/zigbang/service/room/search.py` 의 `_collect_pins` (받기 전에 앞 목록의 ID 를 뒤 목록에서 뺐다, 2026-11-16).
     언제: 목록·종류 여럿을 한 결과로 잇고 이어 받기 표에 목록마다의 자리를 두는 diff.
 12. **묶음 한 줄의 대표 값과 고른 `id`.** 서버가 여러 매물을 한 줄로 묶어 줄 때 그 줄의 종류·제목·층 같은 필드는 묶음 안 어느
     매물의 값인지 보고, `id` 를 서버와 다른 순서(출처 우선 등)로 고르면 `id` 와 그 필드가 다른 매물을 가리킨다. 확인: 섞인 묶음의
     원본 응답에서 목록 순서와 대표 필드를 대 보고, 줄의 필드를 `id` 상세와 견준다.
-    예: `providers/zigbang/service/common.py:690` (직방 먼저 고른 `id` 가 중개사인데 `listing_kind` 는 집주인, 2026-11-17).
+    예: `providers/zigbang/service/common/apt.py` 의 `catalog_to_listing` (직방 먼저 고른 `id` 가 중개사인데 `listing_kind` 는 집주인, 2026-11-17).
     언제: 묶음·카탈로그 줄에 필드를 더하거나 묶인 ID 중 대표를 고르는 순서를 정·바꾸는 diff.
 13. **해당 없음으로 키를 뺀 필드에 조건을 걸 때.** 키를 뺀 매물도 내부 값은 `None` 이라 `in_range` 같은 거르기가 '모름' 처럼
     조용히 뺀다. 그 조건으로 뺀 해당 없음 매물을 `[제외]` 로 알리거나 문서에 적었는가. 확인: 키를 빼는 조건(`not_applicable_fields`)과
@@ -105,28 +105,37 @@
     5년 요약에 `since` 를 붙였다, 2026-11-18).
     언제: 결과가 비면 다른 조건으로 다시 묻는 대체 조회를 더한 diff.
 17. **키가 없으면 `[]` 로 채우는 목록에서 계산한 값.** 응답 모델이 키가 없을 때 `[]` 를 채우는 목록(`default_factory=list`)에 `any`·`in`·개수를 계산하면, 목록을 받지 못한 모름이 '없음·불가(`false`·`0`)' 로 바뀐다. 같은 출력의 그 목록 필드를 `sent_or_none` 으로 `null` 로 낸다면 거기서 계산한 값도 `null` 인가. 확인: `any(`·`len(` 이 도는 응답 목록이 보냈는지(`model_fields_set`)를 먼저 가르는지 본다.
-    예: `providers/zigbang/service/stay.py:935` 의 `pet_allowed` 계산 줄 (2026-11-17).
+    예: `providers/zigbang/service/stay/detail.py` `stay_detail_to_listing` 의 `pet_allowed` 계산 줄 (2026-11-17).
     언제: 응답 목록 필드에 `any(`·`in`·`len(` 을 걸어 출력 필드(bool·수)를 정하는 `+` 줄.
+18. **모델 전체에 거는 검증기가 `| None` 칸까지 바꾸지 않는가.** 기반 응답 모델의 검증기(`validate_dropping_nulls` 가 부르는 `drop_null_lists`)가 기본값이 목록인 칸의 null 을 지우면, `list | None = []` 처럼 null 을 모름으로 읽는 칸의 모름이 없음(`[]`)으로 바뀐다. 확인: 검증기가 고르는 칸의 조건에 `| None` 을 받는 칸이 빠지는지, 그 칸을 읽는 서비스가 `None` 과 `[]` 를 가르는지 본다.
+    예: `core/schema.py` `drop_null_lists` (다방 단지 학교·어린이집, 네이버 재개발 역·지구의 모름이 `[]` 가 되었다, 2026-11-20).
+    언제: 응답 모델 전체에 걸리는 검증기·기반 모델의 필드 처리를 더하거나 고친 diff.
+19. **좌표를 쓰지 않는 경로가 좌표를 요구하지 않는가.** 같은 해석 함수의 결과(`ZigbangRegion`)를 좌표를 쓰는 경로(room·store·stay 의 검색 중심)와 쓰지 않는 경로(아파트 동·구, `search complexes`)가 함께 쓰면, 쓰지 않는 쪽도 좌표 없는 후보에서 에러가 난다. 확인: 그 경로가 실제로 읽는 칸(법정동 코드·이름·주소)이 무엇인지 보고, 좌표가 없는 후보를 넣어 본다.
+    예: `providers/zigbang/service/region.py` `resolve_apt_region` (아파트 동·구가 `region_from_search_item` 의 좌표 검사를 거쳐 좌표 없는 후보에서 `UPSTREAM_ERROR` 였다, 2026-11-21).
+    언제: 지역·역·학교 해석 함수를 고치거나 새 경로가 부르게 한 diff, 같은 명령 안에서 경로마다 쓰는 칸이 다른 해석.
+20. **응답 객체 목록의 길이·합으로 계산하거나 자리를 세는 코드가 뺀 빈 항목을 보는가.** 기반 모델이 목록 안 null 원소를 빼고 칸마다 센다 (`null_items`). 그 목록으로 합계·평균·개수·순위·대표 고르기를 하는 코드는 계산한 값을 `null`(모름)로 두고, 쪽 넘김·`--limit` 자리를 세는 코드는 `len(목록)` 에 뺀 수를 더하며, 둘 다 `null_items_note` 로 `[제외]` 안내를 붙인다. 안 보면 적은 합계가 완전한 값처럼 나가거나 다음 쪽에서 같은 항목을 다시 받는다. 확인: 목록 길이를 쓰는 `len(`·`sum(`·`enumerate(`·`[0]`·`== 1`·빈 쪽 판정마다 빈 항목 하나를 섞은 응답을 넣어 본다. 목록을 그대로 보여 주기만 하면 보지 않아도 되고, 자리별 안내가 없어도 `emit` 의 공통 안내(`null_items_total_note`)가 뺀 수를 알리니 자리별 안내를 요구하지 않는다.
+    예: `providers/dabang/service/neighborhood.py` `_type_counts` (유형 목록에서 빈 항목을 뺀 합계는 모름이다, 2026-11-21).
+    언제: 응답 모델의 객체 목록 칸(`list[Model]`)을 읽는 `+` 줄에 `len(`·`sum(`·`enumerate(`·`[0]`·`== 1` 이 든 diff, 쪽 넘김 루프.
 
 ## `contract` 출력 계약
 
 1. **안내를 따르면 되는가 (모든 모드에서).** `--limit` 이 이미 최대값인데 늘리라고 하지 않는가. 좁히라고 권하는 것('지역'·
    '반경'·평형)이 그 명령·검색 방식에 실제로 있는가. 한 명령의 여러 모드(`--complex`·`--redevelopment` 등)가 같은 hint 표를
-   쓰면, 그 hint 가 권하는 옵션을 모든 모드가 받는가. 확인: `more_hint`·`pagination_notes`·`UsageHints` 의 값을 그 모드의 옵션
-   검사와 대조한다. 예: `core/listing.py:333`, `cli/naver.py:991` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16).
-   언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff.
+   쓰면, 그 hint 가 권하는 옵션을 모든 모드가 받는가. 조건과 상관없이 섞이는 묶음(직방 상가의 공실 줄)이 `total` 에 들면 그 조건은 좁혀도 그 줄이 줄지 않으니 권하지 않는다. 확인: `more_hint`·`pagination_notes`·`UsageHints` 의 값을 그 모드의 옵션
+   검사와 대조한다. 예: `core/listing.py:333`, `cli/naver.py:991` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16), `providers/zigbang/service/store.py` `STORE_VACANT_NARROW` (공실 묶음이 있는데 업종을 좁히라고 권함, 2026-11-21).
+   언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff, 조건과 상관없는 묶음을 `total` 에 넣은 diff.
 2. **예시 이름과 권하는 명령.** hint 의 예시·명령을 그대로 넣으면 그 명령이 받는가 (동을 받지 않는 명령에 동 이름, 여전히 모호한
    예시, 필수 옵션을 빼라는 안내). 확인: 예시를 그 명령의 인자 검사·resolver 에 넣어 따라간다.
    예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`, `providers/zigbang/service/region.py:77`
    (같은 이름 구 '중구' 에 '구 이름을 붙이라' 고 했고, 좌표를 받지 않는 `search complexes` 에 `--lat/--lng` 를 권했다. 후보 하나로
    가려지는 예시만 들게 했다, 2026-11-16).
-   언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄, 여러 명령이 함께 쓰는 hint 를 새 명령이 부르게 한 diff.
+   언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄, 여러 명령이 함께 쓰는 hint 를 새 명령이 부르게 한 diff, 기본 hint 가 `--lat/--lng` 를 권하는 `RegionNotFoundError` 를 좌표 옵션이 없는 명령이 hint 를 넘기지 않고 던지게 한 diff (`providers/zigbang/service/region.py` `resolve_station`, 2026-11-21).
 3. **notes 태그.** 더 있음 `[일부]`, 뺀 것 `[제외]`, 찾은 범위가 다름 `[범위]`, 덤 조회 실패 `[실패]` 가 맞게 붙었는가 (맨
    문자열은 `[참고]` 로 나간다, [docs/common.md](../common.md)). 예: `providers/daangn/service/commute.py:260`.
    언제: `notes` 에 문자열을 더하는 `+` 줄.
-4. **한 결과 안 안내끼리.** "전부입니다" 와 `[일부]`, 같은 안내 여러 번, '곳'·'건' 섞임이 함께 나오지 않는가. 확인: 여러 갈래가
-   함께 참이 되는 입력을 찾는다. 예: `providers/zigbang/service/common.py:611`.
-   언제: 한 결과에 안내를 붙이는 갈래가 둘 이상인 함수를 바꾼 diff.
+4. **한 결과 안 안내끼리.** "전부입니다" 와 `[일부]`, 같은 안내 여러 번, '곳'·'건' 섞임이 함께 나오지 않는가. 같은 목록을 안내마다 다른 이름으로 부르지도 않는가 (학교의 순서 안내는 '배정단지', `[일부]` 안내는 '주변 단지'). 확인: 여러 갈래가
+   함께 참이 되는 입력을 찾는다. 예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
+   언제: 한 결과에 안내를 붙이는 갈래가 둘 이상인 함수를 바꾼 diff, 같은 목록을 가리키는 안내 문구(순서 안내·`[일부]` 안내)를 따로 쓰거나 고친 diff (`providers/zigbang/service/complex/search.py` `SCOPE_NAME_BY_PLACE_TYPE`, 2026-11-21).
 5. **에러 code·hint 가 원인과 맞는가.** 첫 화면 5xx 를 "스펙 변경" 으로, 형식 오류 400 을 "없는 ID" 로, 정상 0건을 에러로 알리지
    않는가. 감시·에이전트가 hint 문구가 아니라 `code`·`blocked` 같은 필드로 가르는가. 예: `cli/output.py:375`.
    언제: 에러 클래스·`code`·hint 를 고르는 갈래나 `raise ...Error(` 를 더하거나 바꾼 diff.
@@ -144,7 +153,7 @@
    언제: 묶음·매물 목록에 가격 해석을 바꾸는 필드를 더하는 diff.
 9. **코드를 말로 바꾸는 표에서 모르는 코드.** `.get(코드)` 로 모르는 코드를 `None` 으로 버리면 '서버가 주지 않음(null)' 으로
    읽힌다. 다른 표처럼 `.get(코드, 코드)` 로 원본을 남기거나, 버린다면 설명에 적었는가. 확인: 새 이름표 dict 를 쓰는 `.get(`
-   의 두 번째 인자와 Field 설명의 null 뜻을 대 본다. 예: `providers/zigbang/service/common.py:570` (2026-11-17).
+   의 두 번째 인자와 Field 설명의 null 뜻을 대 본다. 예: `providers/zigbang/service/common/apt.py` `apt_listing_kind` (2026-11-17).
    언제: 서버 코드 → 한국어 이름표 dict 를 새로 두거나 값을 더하는 diff.
 10. **같은 매물을 내는 목록·상세가 해당 없음과 모름을 같게 내는가.** 상세에서 키를 빼는(해당 없음) 필드를 목록 모델도 같은 표로
     빼는지, 목록이 `null` 로 내지 않는지 본다. 확인: 같은 매물 하나를 목록과 상세로 불러 같은 필드가 키 없음·`null` 로 갈리는지 비교한다.
@@ -175,6 +184,9 @@
 15. **유형을 모르면 줄을 통째로 버리는 변환.** `… | None` 을 돌려주는 변환 함수가 모르는 유형에 `None` 을 주고 호출부가 그 줄을 빼면, 버린 수를 세어 `[제외]` 로 알리는가 (다방 `_unknown_trade_note`). 알리지 않으면 거래가 말없이 사라진다. 확인: 변환 결과가 `None` 일 때 건너뛰기로 끝나는 자리마다 센 수가 notes 에 가는지 본다 (`--limit` 으로 어차피 잘릴 자리는 세지 않아도 된다).
     예: `providers/zigbang/service/real_price.py:369` 의 `unknown` 을 세는 줄 (`--trade 전체`, 2026-11-17).
     언제: 변환 함수가 `None` 을 돌려주는 갈래를 더하거나 그 결과로 줄을 빼는 diff.
+16. **다른 명령을 권하는 안내가 사용자가 붙인 앞 낱말을 버리지 않는가.** 같은 이름을 가리려고 사용자가 앞에 붙인 구·동 낱말(`영등포구 양평역`)을 빼고 찾은 이름(`양평역`)만 권하면, 권한 명령을 그대로 불렀을 때 `REGION_AMBIGUOUS` 가 난다. 확인: 안내에 든 명령을 그대로 불러 같은 곳을 찾는지 본다.
+    예: `cli/zigbang.py` `search listings apt` 의 '역 주변 단지는 jibsa zigbang search complexes 양평역' (2026-11-20).
+    언제: 안내·`hint` 가 다른 명령과 그 검색어를 글로 알리는 `+` 줄 (그 명령이 같은 이름 가림을 하는 경우).
 
 ## `web` 웹 대응
 
@@ -218,6 +230,11 @@
    도 값인지, 픽셀·축척으로 단지 위도에서 계산하는지 보고, 위도가 다른 두 곳을 넣어 위도 폭을 견준다. 예:
    `providers/naver/service/real_price.py` `_web_map_box` (빌라 주변 실거래 기본 범위가 572549 에서 잰 도 상수였다, 2026-11-19).
    언제: 웹 지도 범위(`top`·`bottom`·`left`·`right`, bounds)를 흉내 내는 기본값을 더하거나 바꾼 diff.
+10. **웹이 어떤 조건에서 칸을 숨기면 같은 응답의 다른 칸에도 그 조건을 똑같이 적용했는가.** 관리비 없음이면 웹은 '관리비 없음' 만 그리고
+   미포함 항목 줄을 그리지 않는데, 포함 항목만 그 조건을 따르고 미포함 항목은 응답 그대로 내면 같은 매물에서 두 칸이 어긋난다.
+   확인: 웹 렌더 함수가 그 조건에서 돌려주는 값에 그 칸이 있는지 번들로 본다.
+   예: `providers/zigbang/service/room/detail.py:232` `manage_cost_excludes` (포함 항목만 관리비 없음을 `[]` 로 보고 미포함은 응답 그대로 냈다, 2026-11-20 직방 리뷰).
+   언제: 웹이 값을 숨기거나 바꿔 그리는 조건(관리비 없음·확인 불가·유형 분기)을 옮긴 `+` 줄, 같은 응답의 칸 여럿 중 일부에만 그 조건을 건 diff.
 
 ## `requests` 요청 수·차단 위험
 
@@ -282,8 +299,7 @@
    `.claude/agents/coder.md:22` (2026-11-17 에는 이 규칙을 네 곳에 다른 말로 적어 `first` 묶음 이름만 막는 곳과 다른 묶음이 부르는
    이름까지 막는 곳이 갈렸고, `doc-writer` 를 Sonnet 고정에 넣으며 바로 위 "종합 문서는 Opus" 를 남겼다).
    언제: `.claude/`·`CLAUDE.md`·`AGENTS.md`·`docs/development/agents.md` 를 고친 diff.
-7. **같은 소스의 기능 모듈끼리 import 하지 않기.** `service/` 의 기능 모듈이 다른 기능 모듈의 심볼을 가져다 쓰지 않는가
-   (같이 쓰게 되면 `common` 으로 옮긴다, [provider-conventions.md](provider-conventions.md#service-모듈을-나누는-기준) 기준 3).
+7. **같은 소스의 기능 모듈끼리 import 하지 않기.** `service/` 의 새 import 가 [provider-conventions.md](provider-conventions.md#service-모듈을-나누는-기준) 기준 3 의 import 방향을 따르는가.
    확인: diff 의 `+from jibsa.providers.<source>.service.<기능>` 줄. 예: 네이버 `service/complex.py` 가 `service/market_price.py` 의
    `jeonse_ratio_range` 를 가져다 썼다 (2026-11-18).
    언제: `service/` 에 새 import 를 더한 diff.
@@ -293,8 +309,11 @@
    응답 키가 바뀌면 빈 값(`[]`·`{}`·null)이 되는지 본다. 예: `scripts/monitor/api_check.py:214` (네이버 `school --complexes`
    단계가 바깥 dict 만 봤다, 2026-11-18). 명령 하나가 덤 엔드포인트를 여럿 부르면 덤마다 그 값을 기대 칸으로 보는 `Step` 이
    있는가도 본다. 덤 조회는 실패하면 `null` 로만 남아, 다른 덤을 보는 단계로는 못 잡는다 (네이버 빌라 `real-price` 가
-   `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19).
-   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
+   `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19). 반대로 사이트가
+   정상이어도 빌 수 있는 값을 기대 칸으로 걸면 고장 알림이 거짓으로 난다: 조건으로 고른 목록(최근입주), 시세 0 을 `null` 로
+   내는 값, 신규분양처럼 값이 없는 대상을 고를 수 있는 `Capture` 는 `may_be_empty` 로 두거나 그 대상을 피해 고른다
+   (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주·`catalog` 직방시세·`{apt}` Capture, 2026-11-20). 안내 없이 `null` 이 되는 조건이 있는 값(단기임대 `host_other_listing_count` 는 임대인 ID 가 없으면 안내 없이 `null`)이나 정상 단지에도 `null` 일 수 있는 값(직방 `complex` 단지 직방시세, 2026-11-21)도 `also_expect` 에 걸지 않는다.
+   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸(`expect`·`also_expect`)을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
 
 ## 지적하지 말 것
 
@@ -322,3 +341,4 @@
    (`providers/daangn/service/compare.py:611`).
 9. **꺼진 상태가 정상인 기능 스위치의 기본값.** 한 호출부만 켜고 나머지는 꺼야 맞는 bool(`listing_search`)은 `design` 2 가
    아니다. 지금 호출부는 모두 맞고, 틀리려면 호출부가 바뀌어야 한다. 예: `providers/naver/service/region.py:761`.
+10. **"응답 모델 칸의 자료형이 바뀌면 그 응답을 같이 읽는 다른 명령까지 `PARSE_ERROR` 가 된다".** 글자 칸에 숫자가 오는 것처럼 응답 형식이 바뀌는 일은 [매일 API 감시](README.md#매일-api-감시)가 잡는 고장이라 칸마다 받는 형식을 미리 넓혀 두지 않는다 ([코드 리뷰](agents.md#코드-리뷰) 2단계). 서버가 소수·0 처럼 지금 값의 연장을 줄 수 있는 칸(`correctness` 6)과는 다르다. 예: 직방 단지 상세 `relateDanji`·`landTradePermit` (2026-11-21).

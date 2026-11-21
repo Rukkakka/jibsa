@@ -871,7 +871,8 @@ def listing_command(
             param_hint='LISTING_REF',
         )
     with handle_errors(SOURCE), DabangClient() as client:
-        emit(get_listing(client, value), pretty)
+        detail = get_listing(client, value)
+        emit(detail, pretty, notes=detail.notes)
 
 
 @app.command('complex')
@@ -1088,7 +1089,7 @@ def neighborhood_command(
             client, query, subject='동네정보', elsewhere='jibsa dabang station-prices <역> 이나 search listings',
         )
         result = get_neighborhood(client, dong, topics, ranks=ranks)
-        emit(result, pretty)
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('hot-places')

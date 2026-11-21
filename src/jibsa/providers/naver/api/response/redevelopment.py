@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
+    NaverBaseResponseModel,
     NaverBuildingRatioInfoModel,
     NaverComplexArticleStatsModel,
     NaverCoordinatesModel,
@@ -15,7 +15,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import Annotated
 
 
-class NaverRedevelopmentModel(ResponseModel):
+class NaverRedevelopmentModel(NaverBaseResponseModel):
     """재개발 구역 하나의 기본 정보. 조합 전화번호와 좌표도 오지만 쓰지 않는다."""
 
     name: Annotated[
@@ -44,7 +44,7 @@ class NaverRedevelopmentModel(ResponseModel):
     ] = None
 
 
-class NaverRedevelopmentAreaPinModel(ResponseModel):
+class NaverRedevelopmentAreaPinModel(NaverBaseResponseModel):
     """재개발 구역 지도 마커. 반경 안인지 가리는 데만 쓰고 좌표는 출력하지 않는다."""
 
     redevelopment_area_number: Annotated[
@@ -61,7 +61,7 @@ class NaverRedevelopmentAreaPinModel(ResponseModel):
     ] = None
 
 
-class NaverRedevelopmentAreaMarkersModel(ResponseModel):
+class NaverRedevelopmentAreaMarkersModel(NaverBaseResponseModel):
     """재개발 구역 마커 목록. 페이지 없이 사각형 안을 다 준다."""
 
     total_count: Annotated[

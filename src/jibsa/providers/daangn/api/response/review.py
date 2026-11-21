@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
 )
@@ -19,7 +19,7 @@ from typing import (
 # livedReviewsByRegion. 후기 본문·요약 글은 읽지 않는다 (개수만 쓰고 원 사이트로 안내한다).
 # ---------------------------------------------------------------------------
 
-class DaangnReviewComplexModel(ResponseModel):
+class DaangnReviewComplexModel(DaangnBaseResponseModel):
     """구에서 거주 후기가 많은 단지."""
 
     original_id: Annotated[
@@ -40,7 +40,7 @@ class DaangnReviewComplexModel(ResponseModel):
     ] = None
 
 
-class DaangnMapReviewsResponseModel(ResponseModel):
+class DaangnMapReviewsResponseModel(DaangnBaseResponseModel):
     """구의 동네 후기 페이지에서 추출한 것 (후기 많은 순 단지 20곳)."""
 
     complexes: Annotated[
@@ -49,7 +49,7 @@ class DaangnMapReviewsResponseModel(ResponseModel):
     ] = []
 
 
-class DaangnLivedReviewsConnectionModel(ResponseModel):
+class DaangnLivedReviewsConnectionModel(DaangnBaseResponseModel):
     """동네 후기 연결. 본문은 읽지 않고 있는지만 본다."""
 
     edges: Annotated[
@@ -62,7 +62,7 @@ class DaangnLivedReviewsConnectionModel(ResponseModel):
     ] = None
 
 
-class DaangnReviewRegionModel(ResponseModel):
+class DaangnReviewRegionModel(DaangnBaseResponseModel):
     """후기 목록 쿼리에 함께 오는 지역 (`reviewRegion: regionByOriginalRegionId`)."""
 
     lived_review_count: Annotated[
@@ -71,7 +71,7 @@ class DaangnReviewRegionModel(ResponseModel):
     ] = None
 
 
-class DaangnLivedReviewsByRegionDataModel(ResponseModel):
+class DaangnLivedReviewsByRegionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     lived_reviews_by_region: Annotated[

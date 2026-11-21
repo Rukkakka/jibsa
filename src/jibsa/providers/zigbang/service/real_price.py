@@ -20,6 +20,7 @@ from jibsa.core.listing import (
     normalize_date,
     normalize_floor,
     note,
+    null_items_note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.real_price import (
@@ -30,7 +31,7 @@ from jibsa.providers.zigbang.api.response.real_price import (
     ZigbangDanjisRtPricesResponseModel,
     ZigbangRtPriceModel,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.base import (
     apt_danji_url,
     fetch_danji,
     parse_complex_id,
@@ -75,6 +76,13 @@ class ZigbangRealPrice(BaseModel):
         bool,
         Field(exclude=True, description='거래마다 trade_type 을 맨 앞에 낼지 (전체 조회만 참, 거래 유형이 거래마다 달라서)')
     ] = False
+    dropped_candidates: Annotated[
+        int,
+        Field(exclude=True, description=(
+            '평형 후보 목록(areaInfos)에서 뺀 빈 항목(null) 수. 0 보다 크면 후보 수를 몰라 pyeong_name 은 null 이고, '
+            '후보가 하나만 남아도 pyeong_names 키를 지우지 않는다. 결과의 안내(notes)를 만드는 데 쓴다'
+        ))
+    ] = 0
 
     trade_date: Annotated[
         str | None,
@@ -88,12 +96,16 @@ class ZigbangRealPrice(BaseModel):
         str | None,
         Field(description=(
             '평형 이름 (공급면적 평 기준, 예: 34A). 후보가 여럿이면 "32A 외 4" '
-            '(같은 전용면적의 평형이 여럿이라 어느 평형인지 직방도 모른다). 직방이 후보를 주지 않거나 첫 후보의 평 이름을 주지 않으면 null (후보는 pyeong_names)'
+            '(같은 전용면적의 평형이 여럿이라 어느 평형인지 직방도 모른다). 직방이 후보를 주지 않거나 첫 후보의 평 이름을 주지 않거나 '
+            '빈 항목을 줘 셀 수 없으면 null (후보는 pyeong_names)'
         ))
     ] = None
     pyeong_names: Annotated[
         list[str | None] | None,
-        Field(description='평형 후보 이름 전부 (응답 순서, 직방이 평 이름을 주지 않은 후보는 null). 후보가 하나면 키가 없고, 직방이 후보를 주지 않으면 null')
+        Field(description=(
+            '평형 후보 이름 전부 (응답 순서, 직방이 평 이름을 주지 않은 후보는 null). 후보가 하나면 키가 없고, 직방이 후보를 주지 않으면 null. '
+            '직방이 후보 목록에 빈 항목을 줘 뺐으면 받은 후보만 담고 하나여도 키를 둔다 (후보가 정말 하나인지 알 수 없다)'
+        ))
     ] = None
     floor: Annotated[
         str | None,
@@ -129,7 +141,7 @@ class ZigbangRealPrice(BaseModel):
     ] = None
     dong: Annotated[
         str | None,
-        Field(description="동 ('132' 처럼 '동' 없이 직방 글자 그대로, 매매만). 직방이 주지 않으면 null. 전월세는 직방이 동을 주지 않아 키가 없다")
+        Field(description="동 ('132' 처럼 '동' 없이 직방 글자 그대로, 모든 거래). 직방이 주지 않으면 null (지금까지 본 전월세는 늘 null)")
     ] = None
     registered: Annotated[
         bool | None,
@@ -172,18 +184,18 @@ class ZigbangRealPrice(BaseModel):
             fields |= {'category', 'cancelled', 'presale'}
         if self.presale is None:
             fields.add('presale')
-        # 동·등기·평당가는 직방이 매매에만 주고, 신고가·신저가는 월세에는 주지 않는다. 전세가율은 전세에 값이 있을 때만 키를 둔다.
+        # 등기·평당가는 직방이 매매에만 주고(동은 웹이 전월세에도 그려 모든 거래에 낸다), 신고가·신저가는 월세에는 주지 않는다. 전세가율은 전세에 값이 있을 때만 키를 둔다.
         # 분양가 대비 차액은 분양권이면 값이 없어도 모름(null)으로 키를 두고, 그 밖에는 값이 있을 때만 둔다
         if self.trade_type != '매매':
-            fields |= {'dong', 'registered', 'price_per_pyeong_manwon'}
+            fields |= {'registered', 'price_per_pyeong_manwon'}
         if self.trade_type == '월세':
             fields |= {'new_high', 'new_low'}
         if self.trade_type != '전세' or self.jeonse_ratio is None:
             fields.add('jeonse_ratio')
         if self.offer_price_diff_manwon is None and self.presale != '분양권':
             fields.add('offer_price_diff_manwon')
-        # 후보가 하나면 해당 없음이라 키를 지운다. 후보를 주지 않았으면(None) 모름이라 null 로 둔다
-        if self.pyeong_names is not None and len(self.pyeong_names) == 1:
+        # 후보가 하나면 해당 없음이라 키를 지운다. 후보를 주지 않았으면(None) 모름이라 null 로 둔다. 빈 항목을 뺐으면 하나인지 알 수 없어 둔다
+        if self.pyeong_names is not None and len(self.pyeong_names) == 1 and not self.dropped_candidates:
             fields.add('pyeong_names')
         for field in fields:
             data.pop(field, None)
@@ -257,12 +269,17 @@ def rt_price_to_real_price(transaction: ZigbangRtPriceModel, *, show_trade_type:
     # 후보 수로 '107A㎡외4' 처럼 보여 준다. areaInfos 전부를 후보로 세고 평 이름이 빈 후보 자리는 모름(None)으로 남겨, 수와
     # 첫 후보를 웹(getTypeOrPrice·getType)과 맞춘다. 후보가 없으면(빈 목록) 직방이 후보를 주지 않은 것이라 pyeong_names 는 null
     names = [info.p or None for info in transaction.area_infos]
+    # 후보 목록에서 빈 항목(null)을 뺐으면 후보 수를 몰라 '외 N' 을 만들지 않는다. 받은 후보(pyeong_names)는 그대로 낸다
+    dropped = transaction.null_items('area_infos')
     return ZigbangRealPrice(
         trade_type=trade_type,
         show_trade_type=show_trade_type,
+        dropped_candidates=dropped,
         trade_date=rt_deal_date(transaction.deal_date),
         area_m2=transaction.area_m2,
-        pyeong_name=(f'{names[0]} 외 {len(names) - 1}' if len(names) > 1 else names[0]) if names and names[0] else None,
+        pyeong_name=None if dropped else (
+            (f'{names[0]} 외 {len(names) - 1}' if len(names) > 1 else names[0]) if names and names[0] else None
+        ),
         pyeong_names=names or None,
         # 매물 목록·상세(Listing 검증기)와 당근 실거래가처럼 지하층을 '지하1' 로 맞춘다
         floor=None if transaction.floor is None else normalize_floor(str(transaction.floor)),
@@ -326,7 +343,8 @@ def get_real_prices(
     거래 유형을 모르는 거래(`rtDealType` 이 모르는 값·null·없음)는 어느 조회에서든 빼고 `[제외]` 로 알린다
     (`--limit` 에서 이미 잘린 뒤의 거래는 어차피 보이지 않아 세지 않는다).
     `REAL_PRICE_MAX_PAGES` 쪽(최근 1200건)에서 멈추고, 그래도 모자라면 본 범위를 `notes` 로 알린다.
-    갱신 계약 여부는 직방이 주지 않는다.
+    갱신 계약 여부는 직방이 주지 않는다. 거래 목록·평형 후보 목록(`areaInfos`)에 빈 항목(null)이 섞여 오면 빼고 읽고 `[제외]` 로 알린다
+    (후보에서 뺐으면 후보 수를 몰라 `pyeong_name` 은 null).
 
     Raises:
         JibsaError: 단지 ID 형식이 맞지 않거나 오피스텔 건물·없는 평형일 때 (INVALID_ARGUMENT), 없는 단지일 때 (NOT_FOUND).
@@ -343,6 +361,8 @@ def get_real_prices(
     transactions: list[ZigbangRealPrice] = []
     has_next = False
     unknown = 0
+    # 쪽의 거래 목록에서 뺀 빈 항목(null) 수 (받은 쪽 전부의 합)
+    dropped_transactions = 0
     page = 0
     while len(transactions) < limit and page < REAL_PRICE_MAX_PAGES:
         if pyeong_id is None:
@@ -361,6 +381,7 @@ def get_real_prices(
             _check_real_price_scope(client, complex_id, number, response, pyeong_id)
         page += 1
         has_next = response.has_next
+        dropped_transactions += response.null_items('transactions')
         for transaction in response.transactions:
             real_price = rt_price_to_real_price(transaction, show_trade_type=all_types)
             if real_price is None:
@@ -369,7 +390,8 @@ def get_real_prices(
                     unknown += 1
             elif all_types or real_price.trade_type == trade_type:
                 transactions.append(real_price)
-        if not has_next or not response.transactions:
+        # 빈 항목만 온 쪽을 빈 쪽으로 보고 멈추지 않는다
+        if not has_next or not (response.transactions or response.null_items('transactions')):
             break
     notes: list[str] = []
     if deal_type == 'rent' and has_next and len(transactions) < limit:
@@ -406,6 +428,10 @@ def get_real_prices(
         notes.append(note('일부', f'더 조회할 실거래가가 있습니다. 더 오래된 거래는 직방에서 직접 확인하세요: {url}'))
     if unknown:
         notes.append(note('제외', f'거래 유형을 읽지 못한 실거래 {unknown}건을 뺐습니다. {UPDATE_MAYBE_NEEDED}'))
+    if dropped_transactions:
+        notes.append(null_items_note('직방 실거래', dropped_transactions))
+    if dropped_candidates := sum(transaction.dropped_candidates for transaction in transactions):
+        notes.append(null_items_note('직방 실거래 평형 후보', dropped_candidates, ('pyeong_name',)))
     return ZigbangRealPriceResult(
         complex_id=complex_id,
         trade_type=trade_type,

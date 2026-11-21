@@ -14,54 +14,103 @@ from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
 )
-from jibsa.core.listing import NEXT_HINT
+from jibsa.core.listing import (
+    NEXT_HINT,
+    UPDATE_MAYBE_NEEDED,
+)
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.apt import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.listing import (
+from jibsa.providers.zigbang.api.request.room.search import (
     ZigbangItemsVillasV1RequestParameterModel,
 )
+from jibsa.providers.zigbang.api.response.apt import (
+    ZigbangAptManageCostModel,
+    ZigbangItemCatalogsItemsResponseModel,
+)
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangDanjiRankModel,
     ZigbangItemCatalogModel,
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
-from jibsa.providers.zigbang.api.response.listing import (
-    ZigbangAptManageCostModel,
-    ZigbangItemCatalogsItemsResponseModel,
+from jibsa.providers.zigbang.api.response.complex.detail import (
+    ZigbangDanjiRoomTypeModel,
+)
+from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
+from jibsa.providers.zigbang.api.response.room.base import (
+    ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay import ZigbangGuestItemsResponseModel
+from jibsa.providers.zigbang.api.response.room.detail import (
+    ZigbangBlsRtsV2ResponseModel,
+    ZigbangBlsSchoolZonesV1ResponseModel,
+)
+from jibsa.providers.zigbang.api.response.stay.detail import (
+    ZigbangGuestItemsResponseModel,
+)
+from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
 from jibsa.providers.zigbang.api.response.store import (
+    ZigbangStoreArticleStoresV2ResponseModel,
     ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.apt import (
     ZigbangAptConditions,
+    apt_item_to_listing,
     search_apt_listings,
 )
-from jibsa.providers.zigbang.service.common import (
+from jibsa.providers.zigbang.service.common.apt import catalog_to_listing
+from jibsa.providers.zigbang.service.common.base import (
+    ZigbangAptRegion,
     ZigbangRegion,
+    failure_update_hint,
+    sent_or_none,
+)
+from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
-    catalog_to_listing,
     summary_to_listing,
 )
-from jibsa.providers.zigbang.service.complex import search_station_complexes
-from jibsa.providers.zigbang.service.detail import get_any_listing
-from jibsa.providers.zigbang.service.listing import (
-    apt_item_to_listing,
-    detail_to_listing,
-    search_listings,
+from jibsa.providers.zigbang.service.complex.detail import (
+    complex_rank_of,
+    pyeong_of,
 )
+from jibsa.providers.zigbang.service.complex.search import (
+    complex_order_of,
+    distance_m_of,
+    place_complex_of,
+    search_place_complexes,
+)
+from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import get_real_prices
-from jibsa.providers.zigbang.service.region import resolve_region_scope
-from jibsa.providers.zigbang.service.stay import (
+from jibsa.providers.zigbang.service.region import (
+    divided_region_error,
+    region_scope_items,
+    resolve_apt_region,
+    resolve_region_scope,
+    resolve_school,
+    resolve_station,
+    search_regions,
+    settled_item,
+)
+from jibsa.providers.zigbang.service.room.detail import (
+    building_real_trades,
+    building_schools,
+    detail_to_listing,
+)
+from jibsa.providers.zigbang.service.room.search import search_listings
+from jibsa.providers.zigbang.service.stay.detail import (
     STAY_REFUND_RULES,
+    ZigbangStayListingDetail,
+    _stay_host_others,
     stay_detail_to_listing,
 )
+from jibsa.providers.zigbang.service.stay.search import stay_marker_order
 from jibsa.providers.zigbang.service.store import (
+    STORE_VACANT_SECTION,
     ZigbangStoreConditions,
+    ZigbangStoreSearchResult,
     search_store_listings,
     store_detail_to_listing,
     store_summary_to_listing,
@@ -250,7 +299,7 @@ def test_search_listings_follows_section_order_and_keeps_radius() -> None:
 
 def test_closed_items_are_excluded() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.zigbang.service.listing import get_listing
+    from jibsa.providers.zigbang.service.room.detail import get_listing
 
     summaries = load('items_list_v1')
     summaries['items'][0]['status'] = False
@@ -276,7 +325,7 @@ def test_closed_items_are_excluded() -> None:
 
 def test_items_without_status_are_excluded() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.zigbang.service.listing import get_listing
+    from jibsa.providers.zigbang.service.room.detail import get_listing
 
     summaries = load('items_list_v1')
     del summaries['items'][0]['status']
@@ -381,14 +430,12 @@ def apt_detail_handler(apt_response: httpx.Response, requested: list[str]):
 
 
 def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> None:
-    from jibsa.providers.zigbang.service.listing import get_listing
-
     # 아파트 매물은 웹 아파트 화면처럼 아파트 상세 하나로 만든다. 주거 상세의 404 를 내려간 매물로 읽으면
     # 살아 있는 아파트 매물이 모두 LISTING_UNAVAILABLE 이 된다 (2026-11-14 실측)
     requested: list[str] = []
     handler = apt_detail_handler(httpx.Response(200, json=load('item_catalogs_items')), requested)
     with make_client(handler) as client:
-        dumped = get_listing(client, 1000001).model_dump()
+        dumped = get_any_listing(client, '1000001').model_dump()
     assert [line.split('?')[0] for line in requested] == [
         '/house/property/v1/items/1000001/detail', '/apt/item-catalogs/items/1000001',
     ]
@@ -401,11 +448,11 @@ def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> No
     # 아파트 상세도 404 면 내려간 매물이다
     handler = apt_detail_handler(httpx.Response(404, json={'code': 404, 'message': 'not found item'}), [])
     with make_client(handler) as client, pytest.raises(ListingUnavailableError):
-        get_listing(client, 1000001)
+        get_any_listing(client, '1000001')
 
 
 def test_apt_listing_kind_from_item_type() -> None:
-    from jibsa.providers.zigbang.service.common import ZigbangAptListing
+    from jibsa.providers.zigbang.service.common.apt import ZigbangAptListing
     # 신규분양 카드는 출처가 coalition 이라 coalition- 줄이 되고, 분양가가 집주인 호가로 읽히지 않게 종류를 알린다
     card = load('locals_item_catalogs')['list'][0]
     card['itemIdList'] = [{'itemSource': 'coalition', 'itemId': 3000009}]
@@ -447,11 +494,6 @@ def test_apt_manage_cost_unconfirmed_is_unknown() -> None:
     assert detail.room_count == 3
 
 
-def test_non_apt_detail_omits_apt_only_fields() -> None:
-    dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
-    assert 'complex_name' not in dumped and 'supply_area_m2' not in dumped and 'listing_kind' not in dumped
-
-
 def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
     # 목록 줄은 평형 ID·이름(평 기준)을 붙이고, 확인일·실매물·위반 건축물은 상세·묶음에만 있다
     card = load('locals_item_catalogs')['list'][0]
@@ -480,10 +522,14 @@ def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
         assert key in partner and partner[key] is None
 
 
-def test_non_apt_detail_has_no_new_apt_keys() -> None:
+def test_non_apt_detail_omits_apt_only_keys_and_has_web_checks() -> None:
     dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
-    for key in ('pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+    # 평형·찜 수·공급면적·매물 종류는 아파트에만 있어 키가 없다
+    for key in ('complex_name', 'pyeong_id', 'pyeong_name', 'zzim_count', 'supply_area_m2', 'listing_kind'):
         assert key not in dumped
+    # 확인일·실매물·위반 건축물은 원룸·빌라·오피스텔 상세에도 나온다 (값은 모를 수 있어 null)
+    for key in ('confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+        assert key in dumped
 
 
 def test_apt_no_new_sale_sends_false_on_every_page() -> None:
@@ -494,7 +540,7 @@ def test_apt_no_new_sale_sends_false_on_every_page() -> None:
         seen.append(dict(request.url.params))
         return httpx.Response(200, json=dict(fixture, count=100, list=[fixture['list'][0]] * int(request.url.params['limit'])))
 
-    region = ZigbangRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
+    region = ZigbangAptRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
     with make_client(handler) as client:
         first = search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=40)
         search_apt_listings(client, region, conditions=ZigbangAptConditions(exclude_new_sale=True), limit=20, start=first.next_position)
@@ -745,6 +791,45 @@ def test_store_price_filter_batches_and_cap(
     assert any('전체 가격 조건 일치 수는 모릅니다' in note for note in result.notes) is (count == 70)
 
 
+def _store_vacant_search(businesses: list[str] | None) -> tuple[ZigbangStoreSearchResult, list[dict]]:
+    base = load('store_article_stores_list_v2')[0]
+    # 공실 묶음이 응답에서 앞에 와도 업종 묶음 뒤에 이어지고, 두 묶음에 같은 ID(3)가 있으면 앞 것만 둔다
+    pins = [
+        {'title': STORE_VACANT_SECTION, 'item_locations': [
+            {'item_id': item_id, 'lat': 37.5, 'lng': 127.03} for item_id in (3, 4)
+        ]},
+        {'title': '이 지역 카페 추천 상가', 'item_locations': [
+            {'item_id': item_id, 'lat': 37.5, 'lng': 127.03} for item_id in (1, 2, 3)
+        ]},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/stores/list'):
+            ids = json.loads(request.content)['item_ids']
+            return httpx.Response(200, json=[{**base, 'item_id': item_id} for item_id in ids])
+        return httpx.Response(200, json=pins)
+
+    region = ZigbangRegion(name='center', lat=37.5, lng=127.03)
+    with make_client(handler) as client:
+        result = search_store_listings(client, region, conditions=ZigbangStoreConditions(businesses=businesses or []))
+    return result, [item.model_dump() for item in result.listings]
+
+
+def test_store_business_search_appends_vacant_section_after_business_items() -> None:
+    result, listings = _store_vacant_search(['카페/커피'])
+    assert [item['id'] for item in listings] == ['store-1', 'store-2', 'store-3', 'store-4']
+    assert [item['vacant_section'] for item in listings] == [False, False, False, True]
+    assert result.total == 4
+    assert any('vacant_section true' in note for note in result.notes)
+
+
+def test_store_search_without_business_still_marks_vacant_section() -> None:
+    # 업종 조건 없이도 공실 묶음이 오면 표시 없이 섞지 않는다 (실측으로는 업종 조건이 없으면 공실 묶음이 빈다)
+    result, listings = _store_vacant_search(None)
+    assert [item['vacant_section'] for item in listings] == [False, False, False, True]
+    assert any('일반 매물 3건' in note for note in result.notes)
+
+
 # --- 역 반경 전용 API --------------------------------------------------------
 
 
@@ -763,7 +848,7 @@ def test_apt_supply_area_region_does_not_refill_filtered_results() -> None:
         return httpx.Response(200, json=data)
 
     with make_client(handler) as client:
-        result = search_apt_listings(client, ZigbangRegion(
+        result = search_apt_listings(client, ZigbangAptRegion(
             name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100',
         ), conditions=ZigbangAptConditions(supply_area_min_m2=80, supply_area_max_m2=110, area_max_m2=60), limit=1)
     assert offsets == [0]
@@ -779,7 +864,7 @@ def test_apt_supply_area_region_does_not_refill_filtered_results() -> None:
     ('open', 'closed', 200), ('open', None, 200), ('open', 'open', 404),
 ])
 def test_new_house_detail_unavailable(primary_status: str | None, legacy_status: str | None, http_status: int) -> None:
-    from jibsa.providers.zigbang.service.listing import get_listing
+    from jibsa.providers.zigbang.service.room.detail import get_listing
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -859,7 +944,7 @@ def test_apt_budget_counts_received_catalogs_before_filtering(limit: int) -> Non
         return httpx.Response(200, json=dict(fixture, count=200, list=[fixture['list'][0]] * size))
 
     with make_client(handler) as client:
-        result = search_apt_listings(client, ZigbangRegion(
+        result = search_apt_listings(client, ZigbangAptRegion(
             name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100',
         ), conditions=ZigbangAptConditions(area_max_m2=0), limit=limit)
     assert calls == [(offset, 20) for offset in range(0, limit, 20)]
@@ -931,11 +1016,13 @@ def test_real_price_sale_registered_null_without_mark() -> None:
 
 def test_real_price_monthly_rent_has_no_sale_only_keys() -> None:
     rent = _real_prices([_tx('rent', rtPriceRent=10, dongName='000', pynPrice=1)], '월세')['transactions'][0]
-    for key in ('dong', 'registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
+    for key in ('registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
         assert key not in rent
+    # 동은 웹이 전월세에도 그려 모든 거래에 낸다 (직방이 주지 않으면 null)
+    assert rent['dong'] == '000'
     charter = _real_prices([_tx('charter')], '전세')['transactions'][0]
     assert charter['new_high'] is False
-    assert 'dong' not in charter
+    assert charter['dong'] is None
     assert 'registered' not in charter
 
 
@@ -1011,8 +1098,6 @@ def test_ga_dong_scope(query: str, items: list[tuple[str, str]], split: list[str
     ('성수동', [('성수동1가', '성동구'), ('성수동2가', '성동구')], ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가']),
 ])
 def test_apt_region_divided_into_several_lists_is_ambiguous(query: str, items: list[tuple[str, str]], candidates: list[str]) -> None:
-    from jibsa.providers.zigbang.service.apt import resolve_apt_region
-
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=_search_items(*items))
 
@@ -1036,9 +1121,6 @@ def test_store_dong_codes_never_send_a_code_the_server_does_not_know() -> None:
 
 def test_stay_marker_order_breaks_ties_like_web_map_list() -> None:
     # 웹 지도 목록(sortStayMarkers): 추천순은 점수 높은 순·같으면 ID 큰 순, 가격순·최신순은 같은 값끼리 추천순 규칙
-    from jibsa.providers.zigbang.api.response.stay import ZigbangStayMarkerModel
-    from jibsa.providers.zigbang.service.stay import stay_marker_order
-
     markers = [
         ZigbangStayMarkerModel.model_validate(dict(id=item_id, lat=37.5, lng=127.03, weeklyPrice=price, reviewedAt=at, totalScore=score))
         for item_id, price, at, score in [
@@ -1080,11 +1162,94 @@ def test_same_name_station_asks_unless_query_picks_one(query: str, expected: str
             assert region.address == expected
 
 
-# --- 역 주변 단지 -------------------------------------------------------------
+def test_same_name_station_without_coordinates_still_counts_as_a_candidate() -> None:
+    # 좌표 없는 같은 이름 역을 먼저 버리면 남은 한 곳을 묻지 않고 고른다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _station_items('첫째동', '둘째동')
+        del payload['items'][1]['lat'], payload['items'][1]['lng']
+        return httpx.Response(200, json=payload)
 
-def test_station_complexes_keep_view_count_order_and_add_distance() -> None:
-    # 순서·수는 웹 주변단지 목록(/apt/danjis/ids, 조회수 순) 그대로다. 거리는 역 주변 단지 정보(거리순)에서 붙이고 다시 세우지
-    # 않는다. 주변 단지 정보에 없는 단지는 빼지 않고 이름·거리를 모름으로 둔다
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            resolve_station(client, '가상역')
+    assert caught.value.code == 'REGION_AMBIGUOUS'
+
+
+def test_chosen_region_without_coordinates_is_reported_not_skipped() -> None:
+    # 고른 곳에 좌표가 없으면 다른 후보로 넘어가거나 좌표를 채우지 않고 알린다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _search_items(('가상동', '가상구'))
+        del payload['items'][0]['lat'], payload['items'][0]['lng']
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            resolve_region_scope(client, '가상동')
+    assert caught.value.code == 'UPSTREAM_ERROR' and "'가상동'" in caught.value.message
+
+
+def test_apt_region_and_complex_places_do_not_need_coordinates() -> None:
+    # 아파트 동·구와 search complexes 의 동·역은 법정동 코드·역 ID·이름·주소만 쓰므로 직방이 좌표를 주지 않아도 찾는다.
+    # 좌표를 쓰는 검색 중심(room·store·stay)은 위 테스트처럼 그대로 UPSTREAM_ERROR 다
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == '/v2/search':
+            payload = _station_items('가상동') if request.url.params['q'] == '가상역' else _search_items(('가상동', '가상구'))
+            for item in payload['items']:
+                del item['lat'], item['lng']
+            return httpx.Response(200, json=payload)
+        if request.url.path == '/apt/danjis/ids':
+            return httpx.Response(200, json={'count': 1, 'ids': [1001]})
+        if request.url.path == '/apt/subways/1':
+            return httpx.Response(200, json={'id': 1, 'name': '가상역', 'aptList': []})
+        assert request.url.path == '/apt/danjis/details'
+        return httpx.Response(200, json={'apts': []})
+
+    with make_client(handler) as client:
+        region, _ = resolve_apt_region(client, '가상동')
+        dong = search_place_complexes(client, '가상동', limit=1)
+        station = search_place_complexes(client, '가상역', limit=1)
+        with pytest.raises(JibsaError) as caught:
+            resolve_region_scope(client, '가상동')
+    assert region.model_dump() == {
+        'name': '가상동', 'address': '서울특별시 가상구 가상동', 'lat': None, 'lng': None, 'legal_division_code': '1120000100',
+    }
+    assert [(result.place, result.place_type) for result in (dong, station)] == [('가상동', '동'), ('가상역', '역')]
+    assert caught.value.code == 'UPSTREAM_ERROR'
+
+
+def test_divided_dongs_are_decided_from_search_results_even_without_coordinates() -> None:
+    # 어느 동인지 묻기(단기임대)는 좌표를 쓰지 않으므로, 동 하나에 좌표가 없어도 지역으로 바꾸기 전에 후보를 정해 묻는다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _search_items(('성수동1가', '성동구'), ('성수동2가', '성동구'))
+        del payload['items'][0]['lat'], payload['items'][0]['lng']
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        items = search_regions(client, '성수동')
+    best, split_items = region_scope_items('성수동', items)
+    assert (best.name, [item.name for item in split_items]) == ('성수동1가', ['성수동1가', '성수동2가'])
+    error = divided_region_error('성수동', split_items)
+    assert error.details['candidates'] == ['서울특별시 성동구 성수동1가', '서울특별시 성동구 성수동2가']
+
+
+def test_duplicate_result_of_the_same_place_picks_the_one_with_coordinates() -> None:
+    # 직방이 이름·종류·주소가 같은 결과를 둘 주면 같은 곳이다. 첫 결과에만 좌표가 없으면 좌표 있는 쪽을 고른다
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = _search_items(('가상동', '가상구'), ('가상동', '가상구'))
+        del payload['items'][0]['lat'], payload['items'][0]['lng']
+        return httpx.Response(200, json=payload)
+
+    with make_client(handler) as client:
+        items = search_regions(client, '가상동')
+    chosen = settled_item('가상동', items, items[0])
+    assert (chosen.id, chosen.lat) == (2, items[1].lat) and chosen.lat is not None
+
+
+# --- 역·학교·동·구 주변 단지 (search complexes) --------------------------------
+
+def test_station_complexes_keep_view_count_order_and_add_distance_and_card() -> None:
+    # 순서·수는 웹 주변단지 목록(/apt/danjis/ids, 조회수 순) 그대로다. 이름·주소·세대수·거리는 역 주변 단지 정보(거리순)에서, 둘째 줄은
+    # 단지 카드(/apt/danjis/details)에서 붙이고 다시 세우지 않는다. 두 곳에 없는 단지는 빼지 않고 값을 모름으로 둔다
     requested: list[httpx.URL] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1096,22 +1261,315 @@ def test_station_complexes_keep_view_count_order_and_add_distance() -> None:
                 {'id': 1001, 'name': '[가상] 가까운단지', '구주소': '서울시 가상구 가상동 000-1', 'household': '1,000세대', 'distanceNum': 100},
                 {'id': 1003, 'name': '[가상] 먼단지', '구주소': '서울시 가상구 가상동 000-3', 'household': '세대수 모름', 'distanceNum': 300},
             ]})
+        if request.url.path == '/apt/danjis/details':
+            return httpx.Response(200, json={'apts': [
+                {'id': 1003, 'name': '[가상] 먼단지', 'desc1': '가상구 가상동 · 500세대', 'desc2': '가상동 2위 · 가상구 2위'},
+                {'id': 1001, 'name': '[가상] 가까운단지', 'desc1': '가상구 가상동 · 1,000세대', 'desc2': '가상동 1위 · 가상구 1위'},
+            ]})
         assert request.url.path == '/apt/danjis/ids'
         return httpx.Response(200, json={'count': 5, 'ids': [1003, 1001, 1009]})
 
     with make_client(handler) as client:
-        result = search_station_complexes(client, '가상역', limit=3)
+        result = search_place_complexes(client, '가상역', limit=3)
 
-    # 순서·수를 주는 본 조회를 덤 조회(/apt/subways)보다 먼저 부른다
-    assert [url.path for url in requested[1:]] == ['/apt/danjis/ids', '/apt/subways/1']
+    # 순서·수를 주는 본 조회를 덤 조회(/apt/subways, /apt/danjis/details)보다 먼저 부른다
+    assert [url.path for url in requested[1:]] == ['/apt/danjis/ids', '/apt/subways/1', '/apt/danjis/details']
     assert dict(requested[1].params) == {
         'type': 'subway', 'id': '1', 'order': 'viewCount', 'limit': '3',
         'serviceType[0]': 'apt', 'serviceType[1]': 'offer', 'serviceType[2]': 'preOffer',
     }
-    assert [(c.complex_id, c.name, c.households, c.distance_m) for c in result.complexes] == [
-        ('apt-1003', '[가상] 먼단지', None, 300),
-        ('apt-1001', '[가상] 가까운단지', 1000, 100),
-        ('apt-1009', None, None, None),
+    assert (result.place, result.place_type, result.place_address) == ('가상역', '역', '서울특별시 가상구 가상동')
+    assert [(c.complex_id, c.name, c.households, c.distance_m, c.highlight) for c in result.complexes] == [
+        ('apt-1003', '[가상] 먼단지', None, 300, '가상동 2위 · 가상구 2위'),
+        ('apt-1001', '[가상] 가까운단지', 1000, 100, '가상동 1위 · 가상구 1위'),
+        ('apt-1009', None, None, None, None),
     ]
     assert result.complexes[1].address == '서울특별시 가상구 가상동 000-1'
     assert (result.total, result.returned, result.has_more) == (5, 3, True)
+
+
+@pytest.mark.parametrize('text,expected', [
+    ('462m', 462),
+    ('1.1km', 1100),
+    # 읽지 못하면 모름 (웹 학교 응답에는 숫자 거리가 없다)
+    ('', None),
+    ('가까움', None),
+    (None, None),
+])
+def test_school_distance_text_becomes_meters(text: str | None, expected: int | None) -> None:
+    assert distance_m_of(text) == expected
+
+
+def test_region_complexes_only_take_newest_order_and_drop_distance_key() -> None:
+    # 웹 지역 화면에는 최근입주 목록뿐이라 동·구는 다른 순서를 받지 않고, 지역을 찾기 전에 막는다. 기본도 동·구만 최근입주다
+    with pytest.raises(JibsaError) as caught:
+        complex_order_of('동·구', '인기')
+    assert caught.value.code == 'INVALID_ARGUMENT'
+    assert complex_order_of('동·구', None) == complex_order_of('동·구', '최근입주') == '최근입주'
+    assert complex_order_of('역', None) == complex_order_of('학교', None) == '인기'
+    # 동·구 줄에는 거리가 없다 (해당 없음이라 키 삭제). 이름·주소·세대수는 카드 첫째 줄에서 온다
+    card = ZigbangDanjiCardModel.model_validate(
+        {'id': 88494, 'name': '[가상] 단지', 'desc1': '송파구 가락동 · 1,179세대', 'desc2': '2026. 1 입주'},
+    )
+    region_line = place_complex_of(88494, '동', None, card).model_dump()
+    assert 'distance_m' not in region_line
+    assert (region_line['name'], region_line['address'], region_line['households'], region_line['highlight']) == (
+        '[가상] 단지', '송파구 가락동', 1179, '2026. 1 입주',
+    )
+    # 역 줄은 주변 단지 정보를 못 받아도 distance_m 이 모름(null)으로 남는다
+    assert place_complex_of(88494, '역', None, card).model_dump()['distance_m'] is None
+
+
+def test_complexes_stop_when_upstream_gives_count_without_ids() -> None:
+    # 단지 수만 주고 목록이 없으면 '앞 0곳입니다. --limit 을 늘리세요' 같은 소용없는 안내를 내지 않고 멈춘다. 덤 조회도 부르지 않는다
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == '/v2/search':
+            return httpx.Response(200, json=_station_items('가상동'))
+        assert request.url.path == '/apt/danjis/ids'
+        return httpx.Response(200, json={'count': 5, 'ids': None})
+
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            search_place_complexes(client, '가상역', limit=3)
+    assert caught.value.code == 'UPSTREAM_ERROR' and UPDATE_MAYBE_NEEDED in (caught.value.hint or '')
+
+
+def test_same_name_school_without_coordinates_still_counts_as_a_candidate() -> None:
+    # search complexes 의 학교 경로는 학교 ID 만 쓰고 좌표는 쓰지 않는다. 좌표 없는 같은 이름 학교를 먼저 버리면 남은 한 곳을 묻지 않고 고른다
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={'success': True, 'items': [
+            {'id': 1, 'type': 'school', 'name': '가상초등학교', 'description': '서울특별시 가상구 가상동', 'lat': 37.5, 'lng': 127.0},
+            {'id': 2, 'type': 'school', 'name': '가상초등학교', 'description': '부산광역시 가상구 가상동'},
+        ]})
+
+    with make_client(handler) as client:
+        with pytest.raises(JibsaError) as caught:
+            resolve_school(client, '가상초등학교')
+    assert caught.value.code == 'REGION_AMBIGUOUS'
+
+
+# --- 단지 정보 (complex) --------------------------------------------------------
+
+def test_complex_rank_minus_one_and_zero_prices_are_unknown() -> None:
+    both = {'local2': {'name': '송파구', 'rank': 1, 'total': 10}, 'local3': {'name': '가락동', 'rank': 1, 'total': 3}}
+    # -1 은 웹이 '순위 없음' 으로 그리는 값이다
+    rank = complex_rank_of(ZigbangDanjiRankModel.model_validate({**both, 'viewCountRank': 7, 'tradePriceRank': -1}))
+    assert rank is not None and (rank.region, rank.price_rank, rank.popularity_rank) == ('가락동', None, 7)
+    # 웹은 구·동 순위 중 하나라도 없으면 절을 그리지 않는다
+    assert complex_rank_of(ZigbangDanjiRankModel.model_validate({'local3': both['local3'], 'viewCountRank': 7})) is None
+    # 0 인 시세·관리비는 웹이 '시세없음'·'-' 로 그리므로 모름(null)이다. 빠진 평형이면 새 값이 모두 null 이다
+    detail = ZigbangDanjiRoomTypeModel.model_validate({
+        'id': 1, '총세대수': 731, '현관구조': '', 'manage_cost': {'관리비': 0, '여름관리비': 0, '겨울관리비': 45},
+        'sales_price': {'min': 0, 'per_area': 10533}, 'rent_price': {'min': 145000, 'per_area': 0}, '거래가능시점': '20160601',
+    })
+    pyeong = pyeong_of(ZigbangDanjiRoomTypeModel.model_validate({'id': 1}), detail).model_dump()
+    assert (pyeong['manage_cost_manwon'], pyeong['manage_cost_summer_manwon'], pyeong['manage_cost_winter_manwon']) == (None, None, 45)
+    assert (pyeong['estimated_sale_price_manwon'], pyeong['estimated_sale_price_per_pyeong_manwon']) == (None, 10533)
+    assert (pyeong['estimated_jeonse_price_manwon'], pyeong['estimated_jeonse_price_per_pyeong_manwon']) == (145000, None)
+    assert (pyeong['households'], pyeong['entrance_type'], pyeong['resale_available_from']) == (731, None, '2016-06-01')
+    assert pyeong_of(ZigbangDanjiRoomTypeModel.model_validate({'id': 1}), None).model_dump()['households'] is None
+
+
+# --- 원룸·빌라·오피스텔 상세 보강 -----------------------------------------------
+
+def _room_detail(**item_extra: object) -> ZigbangItemsDetailV1ResponseModel:
+    item: dict = {
+        'id': 1000001, 'status': 'open', 'salesType': '월세', 'serviceType': '원룸', 'title': '[가상] 000-N',
+        'address': {'pnu': '1111111111111111111'}, 'residence': {'sizeM2': 20.0},
+    }
+    return ZigbangItemsDetailV1ResponseModel.model_validate({'item': {**item, **item_extra}})
+
+
+def test_nearby_facilities_follow_web_order_and_minutes() -> None:
+    # 웹은 걸리는 시간 순(같으면 응답 순서)으로 세워 도보를 먼저, 그다음 차를 그린다. 이동 수단을 모르는 값('walk')은 도보다.
+    # 분은 Math.round((초||1)/60)||1 이다: 150초 → 3분 (Python round 는 2.5 를 2 로 보낸다), 30초 → 1분, 0초 → 1분
+    pois = [
+        {'exists': True, 'poiType': '대형마트', 'distance': 900, 'transport': 'car', 'timeTaken': 60},
+        {'exists': True, 'poiType': '약국', 'distance': 200, 'transport': 'foot', 'timeTaken': 150},
+        {'exists': False, 'poiType': '지하철역'},
+        {'exists': True, 'poiType': '카페', 'distance': 50, 'transport': 'foot', 'timeTaken': 90},
+        {'exists': True, 'poiType': '편의점', 'distance': 10, 'transport': 'foot', 'timeTaken': 30},
+        {'exists': True, 'poiType': '세탁소', 'distance': 5, 'transport': 'walk', 'timeTaken': 0},
+    ]
+    detail = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': pois}))
+    dumped = detail.model_dump(mode='json')['nearby_facilities']
+    assert [(f['type'], f['minutes'], f['transport']) for f in dumped] == [
+        ('세탁소', 1, '도보'), ('편의점', 1, '도보'), ('카페', 2, '도보'), ('약국', 3, '도보'), ('대형마트', 1, '차'),
+    ]
+    assert dumped[0]['distance_m'] == 5
+    # 주변 정보가 없으면 모름, 있는데 가까운 시설이 없으면 빈 목록이고 배송 업체 키가 없으면 빈 목록이다
+    assert detail_to_listing(_room_detail()).nearby_facilities is None
+    empty = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': [{'exists': False, 'poiType': '카페'}]}))
+    assert empty.nearby_facilities == [] and empty.delivery_services == []
+
+
+def test_badges_set_hug_lessor_and_actual_listing_checked() -> None:
+    # 웹은 badges.includes('HUG')·includes('ITEM_VERIFICATION') 로 꼬리표를 붙인다 (ITEM_VERIFICATION_FAILED 는 아니다).
+    # 배지 목록이 [] 면 false, 키가 없으면 모름이다. 목록 줄과 상세가 같은 값을 낸다
+    cases = [
+        (['HUG', 'ITEM_VERIFICATION'], True, True),
+        (['ITEM_VERIFICATION_FAILED'], False, False),
+        ([], False, False),
+        (None, None, None),
+    ]
+    for badges, hug, verified in cases:
+        detail = detail_to_listing(_room_detail(meta={'badges': badges} if badges is not None else {}))
+        summary = {'item_id': 1000001, 'sales_type': '월세', 'service_type': '원룸', **({'badges': badges} if badges is not None else {})}
+        line = summary_to_listing(ZigbangItemSummaryModel.model_validate(summary))
+        assert (detail.hug_lessor, detail.actual_listing_checked) == (hug, verified)
+        assert (line.hug_lessor, line.actual_listing_checked) == (hug, verified)
+
+    # 웹 목록 카드는 itemSummaries[].badges 가 목록이면 그것을 읽는다 (items[].badges 에 없는 값이 올 수 있다). 목록이 아니면 그 칸을 모름으로 받아
+    # (관리비를 잃지 않는다) items[].badges 를 읽고, 같은 매물이 itemSummaries 에 없어도 items[].badges 를 읽는다
+    base = {'sales_type': '월세', 'service_type': '원룸'}
+    response = ZigbangItemsListV1ResponseModel.model_validate({
+        'items': [
+            {'item_id': 1, **base, 'badges': []},
+            {'item_id': 2, **base, 'badges': ['ITEM_VERIFICATION']},
+            {'item_id': 3, **base, 'badges': ['ITEM_VERIFICATION']},
+        ],
+        'itemSummaries': [
+            {'id': 1, 'fee': 0, 'badges': ['ITEM_VERIFICATION', 'RECOMMEND']},
+            {'id': 2, 'fee': 10000, 'badges': 'ITEM_VERIFICATION'},
+        ],
+    })
+    lines = [summary_to_listing(summary) for summary in response.items]
+    assert [line.actual_listing_checked for line in lines] == [True, True, True]
+    assert [line.manage_cost_manwon for line in lines] == [0, 1, None]
+
+
+def test_null_values_in_room_detail_responses_are_unknown_not_errors() -> None:
+    # 실제 응답으로 재현하지 못하는 null. 칸 하나 때문에 상세 전체(exists)나 덤 하나(rts·학교 목록)를 잃지 않는다.
+    # exists 가 null 이면 시설이 없는 것으로 보고 그 시설만 뺀다
+    detail = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': [{'exists': None, 'poiType': '카페'}]}))
+    assert detail.nearby_facilities == []
+    # rts 가 null 이면 키가 없을 때처럼 모름이고, 학교 목록이 null 이면 그 학교급은 학교가 없다
+    assert building_real_trades(ZigbangBlsRtsV2ResponseModel.model_validate({'rts': None})) is None
+    assert building_schools(ZigbangBlsSchoolZonesV1ResponseModel.model_validate({'elementary': {'schools': None}})) == []
+
+
+def test_building_trades_drop_price_keys_by_trade_type() -> None:
+    rts = ZigbangBlsRtsV2ResponseModel.model_validate({'rts': [
+        {'거래일': '2026-08-17', 'sales_type': '전세', '매매금액': None, '보증금액': 38000, '월세금액': 0, '전용면적': 53.72, 'floor': 4},
+        {'거래일': '2026-08-17', 'sales_type': '매매', '매매금액': 58500, '보증금액': None, '월세금액': None, '전용면적': 53.72, 'floor': -1},
+        {'거래일': '2026-01-15', 'sales_type': '월세', '매매금액': None, '보증금액': 34000, '월세금액': 55, '전용면적': 53.72, 'floor': 4},
+        {'거래일': '2026-01-01', 'sales_type': '증여', '매매금액': 1, '보증금액': None, '월세금액': None, '전용면적': None, 'floor': None},
+    ]})
+    trades = building_real_trades(rts)
+    assert trades is not None
+    dumped = [trade.model_dump(mode='json') for trade in trades]
+    assert 'price_manwon' not in dumped[0] and 'rent_manwon' not in dumped[0] and dumped[0]['deposit_manwon'] == 38000
+    assert 'deposit_manwon' not in dumped[1] and 'rent_manwon' not in dumped[1] and dumped[1]['price_manwon'] == 58500
+    assert dumped[1]['floor'] == '지하1'
+    assert 'price_manwon' not in dumped[2] and dumped[2]['rent_manwon'] == 55
+    # 모르는 거래 유형은 가격 키를 그대로 두고 유형을 모름(null)으로 둔다
+    assert dumped[3]['trade_type'] is None and {'price_manwon', 'deposit_manwon', 'rent_manwon'} <= set(dumped[3])
+    # 거래가 없는 필지는 빈 목록, rts 키가 없으면 모름
+    assert building_real_trades(ZigbangBlsRtsV2ResponseModel.model_validate({'rts': []})) == []
+    assert building_real_trades(ZigbangBlsRtsV2ResponseModel.model_validate({})) is None
+
+
+# --- 단기임대 -------------------------------------------------------------------
+
+def test_stay_marker_order_price_uses_weekly_total_price_then_recommended() -> None:
+    # 웹 지도 목록 가격순은 weeklyTotalPrice(원)로 견준다. 같은 만원 단위(weeklyPrice 39) 안에서도 399,000원이 390,000원보다 뒤다
+    # 합계가 없는 핀은 weeklyPrice × 10000 으로 견주고, 같은 값끼리는 추천순(점수 높은 순)이 남는다
+    markers = [
+        ZigbangStayMarkerModel.model_validate(dict(id=item_id, lat=37.5, lng=127.03, weeklyPrice=price, weeklyTotalPrice=total, totalScore=score))
+        for item_id, price, total, score in [
+            (1, 39, 399000, 0.9),
+            (2, 39, 390000, 0.1),
+            (3, 39, None, 0.5),
+            (4, 40, 400000, 0.5),
+        ]
+    ]
+    assert stay_marker_order(markers, 'price') == [3, 2, 1, 4]
+
+
+def test_stay_host_others_without_items_is_unknown() -> None:
+    # 실제 응답으로 재현하지 못하는 빈 응답. 목록 키가 없거나 null 이면 '다른 방 없음' 이 아니라 모름이다
+    def run(body: dict) -> dict:
+        with make_client(lambda request: httpx.Response(200, json=body)) as client:
+            values, notes = _stay_host_others(client, 1, 2)
+        assert notes == []
+        return values
+
+    assert run({}) == {'host_other_listings': None, 'host_other_listing_count': None}
+    assert run({'items': None, 'totalCount': 3}) == {'host_other_listings': None, 'host_other_listing_count': 3}
+    assert run({'items': []}) == {'host_other_listings': [], 'host_other_listing_count': 0}
+
+
+def test_stay_host_others_skips_non_positive_host_id() -> None:
+    # 요청 모델의 host_id 는 gt=0 이라 0 이하를 넣으면 ValidationError 로 '받지 못해' 로 잘못 알렸다. 부르지 않고 모름이다 (안내 없음)
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError('임대인 ID 가 0 이하면 요청을 보내지 않아야 한다')
+
+    with make_client(refuse) as client:
+        values, notes = _stay_host_others(client, 1, 0)
+    assert values == {'host_other_listings': None, 'host_other_listing_count': None}
+    assert notes == []
+
+
+def test_failure_update_hint_only_for_response_format_errors() -> None:
+    # 응답 형식 오류만 업데이트 문구로 매일 감시가 고장으로 잡게 하고, 연결 실패 같은 잠깐 실패는 붙이지 않는다
+    with pytest.raises(ValidationError) as info:
+        ZigbangItemsListV1ResponseModel.model_validate({'items': 'x'})
+    assert UPDATE_MAYBE_NEEDED in failure_update_hint(info.value)
+    assert failure_update_hint(httpx.ConnectError('연결 실패')) == ''
+
+
+def test_stay_detail_drops_review_rating_when_no_reviews() -> None:
+    base = dict(source='zigbang', id='stay-1', url='https://www.zigbang.com/stay/item/1', trade_type='단기임대', property_type='원룸')
+    none = ZigbangStayListingDetail(**base, review_count=0, review_rating=None).model_dump()
+    assert none['review_count'] == 0 and 'review_rating' not in none
+    rated = ZigbangStayListingDetail(**base, review_count=3, review_rating=4.75).model_dump()
+    assert rated['review_rating'] == 4.75
+    failed = ZigbangStayListingDetail(**base, review_count=None, review_rating=None).model_dump()
+    assert failed['review_count'] is None and failed['review_rating'] is None
+
+
+def test_null_list_fields_read_as_missing_keys() -> None:
+    # 실제 응답으로 재현하지 못하는 null. 목록 칸의 null 은 키가 없는 것과 같다: 기본값 [] 칸은 빈 목록, 키로 모름을 가르는 칸은 모름
+    assert ZigbangStoreArticleStoresV2ResponseModel.model_validate({'sections': None}).sections == []
+    manage = ZigbangItemsDetailV1ManageCostModel.model_validate({'include': [], 'exclude': None})
+    assert sent_or_none(manage, 'includes', []) == [] and sent_or_none(manage, 'excludes', []) is None
+    assert detail_to_listing(_room_detail(options=None)).options is None
+
+
+def test_apt_region_offset_counts_dropped_null_catalogs() -> None:
+    # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빼고 읽어도 받은 자리 수에 더해야 이어 받기가 같은 매물을 다시 받지 않는다
+    fixture = load('locals_item_catalogs')
+    body = dict(fixture, count=100, list=[fixture['list'][0], None, fixture['list'][0], None, None])
+    region = ZigbangAptRegion(name='가상동', lat=37.5, lng=127.03, legal_division_code='1168010100')
+    with make_client(lambda request: httpx.Response(200, json=body)) as client:
+        result = search_apt_listings(client, region, limit=5)
+    assert result.next_position == {'code': '11680101', 'offset': 5}
+    assert any('빈 항목 3개' in note for note in result.notes)
+
+
+def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
+    # 예약 일정에서 빈 항목(null)을 뺐으면 그 항목이 막힌 날이었을 수 있어 예약 가능 여부·막힌 기간은 '가능·없음' 이 아니라 모름이다
+    detail = load('guest_items')
+    blocked = {'scheduleType': 'BLOCKED', 'startDate': '2099-01-01', 'endDate': '2099-01-10'}
+    schedules: list = [None, blocked]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/by-ids'):
+            return httpx.Response(200, json={'items': []})
+        if request.url.path.endswith('/reviews'):
+            return httpx.Response(200, json={'summary': {'reviewCount': 0, 'averageRating': 0}})
+        if '/host/' in request.url.path:
+            return httpx.Response(200, json={'items': [], 'totalCount': 0})
+        return httpx.Response(200, json=dict(detail, schedules=schedules))
+
+    with make_client(handler) as client:
+        dropped = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
+    data = dropped.model_dump(mode='json')
+    assert data['available'] is None and data['unavailable_periods'] is None
+    assert any('빈 항목 1개' in note and 'available' in note for note in dropped.notes)
+    # 빈 항목이 없으면 평소처럼 값이 나온다
+    schedules.remove(None)
+    with make_client(handler) as client:
+        kept = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
+    data = kept.model_dump(mode='json')
+    assert data['available'] is True and len(data['unavailable_periods']) == 1

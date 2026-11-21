@@ -2,8 +2,10 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.zigbang.api.response.common import ZigbangSubwayBriefModel
+from jibsa.providers.zigbang.api.response.common import (
+    ZigbangBaseResponseModel,
+    ZigbangSubwayBriefModel,
+)
 
 from typing import Annotated
 
@@ -12,7 +14,7 @@ from typing import Annotated
 # POST /v2/store/article/stores
 # ---------------------------------------------------------------------------
 
-class ZigbangStoreLocationModel(ResponseModel):
+class ZigbangStoreLocationModel(ZigbangBaseResponseModel):
     """상가 위치 핀."""
 
     item_id: Annotated[
@@ -29,7 +31,7 @@ class ZigbangStoreLocationModel(ResponseModel):
     ]
 
 
-class ZigbangStoreSectionModel(ResponseModel):
+class ZigbangStoreSectionModel(ZigbangBaseResponseModel):
     """상가 위치 묶음.
 
     '이 지역 상가' 는 조건에 맞는 상가, '이 지역 비어있는 상가' 는 업종 조건을 걸었을 때
@@ -46,7 +48,7 @@ class ZigbangStoreSectionModel(ResponseModel):
     ] = []
 
 
-class ZigbangStoreArticleStoresV2ResponseModel(ResponseModel):
+class ZigbangStoreArticleStoresV2ResponseModel(ZigbangBaseResponseModel):
     """상가 위치 응답. 최상위가 배열이라 `sections` 로 감싸 검증한다."""
 
     sections: Annotated[
@@ -59,7 +61,7 @@ class ZigbangStoreArticleStoresV2ResponseModel(ResponseModel):
 # POST /v2/store/article/stores/list, GET /v2/store/article/stores/{itemId}
 # ---------------------------------------------------------------------------
 
-class ZigbangStoreSummaryModel(ResponseModel):
+class ZigbangStoreSummaryModel(ZigbangBaseResponseModel):
     """상가 요약 한 건. 금액은 모두 **만원** 이다."""
 
     item_id: Annotated[
@@ -197,7 +199,7 @@ class ZigbangStoreDetailModel(ZigbangStoreSummaryModel):
     ] = None
 
 
-class ZigbangStoreArticleStoresListV2ResponseModel(ResponseModel):
+class ZigbangStoreArticleStoresListV2ResponseModel(ZigbangBaseResponseModel):
     """상가 요약 배치 응답. 최상위가 배열이라 `items` 로 감싸 검증한다."""
 
     items: Annotated[
@@ -206,7 +208,7 @@ class ZigbangStoreArticleStoresListV2ResponseModel(ResponseModel):
     ] = []
 
 
-class ZigbangStoreArticleStoreV2ResponseModel(ResponseModel):
+class ZigbangStoreArticleStoreV2ResponseModel(ZigbangBaseResponseModel):
     """상가 상세 응답."""
 
     item: Annotated[

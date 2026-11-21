@@ -25,6 +25,7 @@ from jibsa.core.listing import (
     move_in_label,
     normalize_date,
     note,
+    null_items_note,
     parking_label,
     with_negotiable,
     won_to_manwon,
@@ -99,6 +100,7 @@ from jibsa.providers.naver.service.common import (
     price_sort_notes,
     resolve_dong_numbers,
     result_or_none,
+    scan_null_items_notes,
     scan_pages,
     unknown_code_label,
     unwrap,
@@ -924,7 +926,8 @@ def list_complex_articles(
         )
         if not villa:
             page = unwrap(client.run_request_complex_article_list_v1(payload), '단지 매물')
-            if villa is False or not first or page.items:
+            # 빈 항목(null)만 온 쪽도 서버는 매물이 든 쪽으로 센다 (비었다고 보고 빌라 목록을 다시 묻지 않는다)
+            if villa is False or not first or page.items or page.null_items('items'):
                 return page
             if pyeong_numbers:
                 # 평형 번호가 틀려도 0건이 온다. 평형 번호를 확인하면서 단지 종류를 정해, 아파트면 빌라 목록을 묻지 않는다.
@@ -965,8 +968,9 @@ def list_complex_articles(
     notes += group_sort_notes(sort_type, result)
     # 단지 하나라 지역 대신 단지 매물의 조건만 좁히라고 한다 (직방·다방 단지 매물과 같다)
     notes += pagination_notes(
-        total, len(result), limit, inspected, truncated=truncated, narrow='거래 유형·평형·동·가격 조건',
+        total, len(result), limit, inspected, truncated=truncated, null_items=scan.null_items, narrow='거래 유형·평형·동·가격 조건',
     )
+    notes += scan_null_items_notes(scan, '네이버 단지 매물')
     return NaverListingsResult(
         total=total,
         returned=len(result),
@@ -1041,7 +1045,7 @@ def _manage_cost_item_label(code: str) -> str:
     return MANAGE_COST_ITEM_LABELS.get(code) or unknown_code_label('항목', code)
 
 
-def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | None, list[str] | None]:
+def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None, notes: list[str]) -> tuple[float | None, list[str] | None]:
     """월 관리비(만원)와 관리비에 포함된 항목. 모르면 None.
 
     합계형(typeCode '02')은 etcDetail, 정액 합계형('04')은 같은 모양의 fixNonDetailList 의 금액과 포함 항목(categoryList)을
@@ -1057,6 +1061,7 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
     이라 모름이다. 그래서 금액은 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
     중 하나만 오고 나머지는 null 이라(신림동 월세 29건: '04' 18·'02' 10·'01' 1, 2026-10-11) 객체가 있는지만 본다.
     금액 없는 빈 etcDetail 이 다른 키와 함께 오는 응답은 없었다.
+    항목별형 목록에서 빈 항목(null)을 빼고 읽었으면 합계도 포함 항목도 모자랄 수 있어 둘 다 모름(None)이고 `notes` 에 `[제외]` 안내를 붙인다.
     """
     if fee is None:
         return None, None
@@ -1065,6 +1070,10 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None) -> tuple[float | N
         codes = summary.category_list
         includes = None if codes is None else [_manage_cost_item_label(code) for code in codes]
         return won_to_manwon(summary.amount), includes
+    dropped = fee.null_items('fix_detail_list')
+    if dropped:
+        notes.append(null_items_note('네이버 관리비 항목', dropped, ('manage_cost_manwon', 'manage_cost_includes')))
+        return None, None
     if fee.fix_detail_list:
         fixed = [item for item in fee.fix_detail_list if item.unit_type == '01' and item.amount is not None]
         includes = [_manage_cost_item_label(item.type) for item in fixed if item.amount and item.type]
@@ -1409,7 +1418,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
 
     title = _listing_title(complex_info, article)
     move_in = _move_in_label(moving)
-    manage_cost, manage_cost_includes = _manage_cost(fee)
+    manage_cost, manage_cost_includes = _manage_cost(fee, notes)
 
     exclusive = size.exclusive_space if size else None
     # 상세의 supplySpace 는 오피스텔이면 계약면적이다 (평형표의 contractArea 와 같고 supplyArea 보다 크다).

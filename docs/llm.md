@@ -8,7 +8,7 @@
 - 결과는 stdout 에 JSON 하나, 에러는 stderr 에 `{"error": {"code", "message", "hint", ...}}`. exit 0 성공, 1 실행 에러, 2 입력 오류. 터미널(PTY)이라 JSON 이 들여쓰기로 나오면 명령 끝에 `--compact` 를 붙인다.
 - 금액은 소스와 상관없이 **만원**(`*_manwon`)이다. 사용자에게는 억·만 원으로 옮겨 쓴다 (만원 숫자를 그대로 옮겨 적으면 자리를 틀리기 쉽다): `1000` = 1,000만 원, `10000` = 1억 원, `119700` = 11억 9,700만 원, `210000` = 21억 원. 면적은 `area_m2`(전용)·`area_pyeong`.
 - **키 없음** = 그 거래에 해당 없음 (`--fields` 로 고르지 않은 필드는 빼고), **`null`** = 모름 (0·없음이 아니다), **`[]`** = 알려 줬는데 비어 있음. 관리비가 `null` 이면 월세와 더하지 말고 `listing` 상세를 본다.
-- `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물이 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패 또는 대체 경로로 찾음(사용자에게 알린다), `[참고]` 그 밖.
+- `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물이 있다(목록에 빈 항목이 섞여 와서 뺐다는 안내면 그 목록으로 센 합계·순위·예약 가능 같은 값은 `null` 이니 0·없음으로 읽지 않는다), `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패 또는 대체 경로로 찾음(사용자에게 알린다), `[참고]` 그 밖.
 - `--limit` 은 들여다볼 개수라 뺀 매물만큼 `returned` 가 적을 수 있다. 처음에는 작게 잡고, 한 번에 매물 50건 이하로 본다 (100건이면 4만 자가 넘어 잘린다). `search commute` 는 역마다 `--limit` 건(최대 10역)이라 역당 5건 이하로 시작한다.
 - 매물 목록의 `has_more` 가 `true` 이고 `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 이어 받는다 (`--limit`·`--fields` 는 바꿔도 된다, 하루 동안 쓴다). `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 가 없으면 `notes` 대로 `--limit` 을 늘리거나(최대값 전까지) 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다.
 - 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않고, 받은 글자 그대로 옮긴다 (ID 로 주소를 만들거나 경로를 고치지 않는다). `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`, 직방 `catalog`)에만 있고 상세 `listing` 에는 없다.
@@ -30,7 +30,7 @@
 | 단기임대 | 주 단위는 `zigbang search listings stay <지역> --check-in … --check-out …` · 월 단위 매물은 직방 `search listings room`·네이버·당근 `search listings` 에 `--trade 단기임대` (다방은 `search listings room`·`villa`·`officetel`·`apt` 에 `--condition 단기임대`) |
 | 회사 통근 기준 | `daangn search commute --station <회사 역> --max-minutes 30` (통근 시간 조건은 당근만 있다. 다른 소스는 결과의 역 이름으로 그 역 주변을 찾는다) |
 | 매물 하나 상세 | `<소스> listing <id>` |
-| 단지 찾기 | `zigbang search locations <이름>` · 역 주변 아파트 단지 `zigbang search complexes <역>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
+| 단지 찾기 | `zigbang search locations <이름>` · 역·학교·동·구 주변 아파트 단지 `zigbang search complexes <역·학교·동·구>` · `daangn search locations <이름>` · `dabang search locations <이름>` · `naver complex <이름>` · 지역 안 목록 `naver search complexes <지역>` · `daangn search complexes <동·구>` · `dabang search complexes <동·역>` |
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
 | 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 이 집 또는 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
 | 시세·가격 흐름 | `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
@@ -85,8 +85,11 @@
 - 아파트 줄의 `listing_kind` 가 `신규분양` 이면 가격은 분양가다. `coalition-` ID 에는 집주인 매물뿐 아니라 신규분양도 있고, 지역 목록 앞쪽에 신규분양이 섞여 올 수 있어, 빼려면 `search listings apt` 에 `--no-new-sale` 을 준다 (동·구 목록만, 단지 매물에는 없다).
 - 아파트 줄·상세의 `pyeong_id` 는 평형 ID 라 `search listings --complex <단지> --pyeong <pyeong_id>` 와 `real-price <단지> --pyeong <pyeong_id>` 에 그대로 넘겨 같은 평형의 매물·실거래를 잇는다.
 - `real-price` 의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이다 (직방은 2023년 1월 이후 계약만 표시). `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니고, `jeonse_ratio` 는 0~1 비율이다. `--trade 전체` 는 매매와 전월세를 최신 순으로 섞어 주니 전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있다.
-- `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 가 주지 않는다 (주당 금액 × 주 수가 아니다). `listing stay-… --check-in … --check-out …` 은 그 기간에 예약할 수 있는지 `available` 만 주고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일). `stay --sort distance` 는 `--radius` 없는 역 이름 검색에서만 된다 (기본은 직방 추천순). 상세의 반려동물은 `options` 가 아니라 `pet_allowed`(추가 청소비 `pet_cleaning_fee_manwon`)로 보고, 위약금은 `refund_rules` 다 (웹에 고정된 표라 계약 전 `url` 에서 확인).
-- `store` 권리금 `0` 은 무권리, `null` 은 모름이다. 사무실은 권리금이 해당 없음이라 `key_money_manwon` 키가 없을 수 있고, 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠진다.
+- `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 가 주지 않는다 (주당 금액 × 주 수가 아니다). `listing stay-… --check-in … --check-out …` 은 그 기간에 예약할 수 있는지 `available` 만 주고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일). `stay --sort distance` 는 `--radius` 없는 역 이름 검색에서만 된다 (기본은 직방 추천순). 상세의 반려동물은 `options` 가 아니라 `pet_allowed`(추가 청소비 `pet_cleaning_fee_manwon`)로 보고, 위약금은 `refund_rules` 다 (웹에 고정된 표라 계약 전 `url` 에서 확인). 상세에는 후기 수·평점(`review_count`·`review_rating`)과 임대인의 다른 방(`host_other_listings` 앞 10건, 전체 수 `host_other_listing_count`)도 있다.
+- `store` 권리금 `0` 은 무권리, `null` 은 모름이다. 사무실은 권리금이 해당 없음이라 `key_money_manwon` 키가 없을 수 있고, 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠진다. `--business` 를 주면 결과 뒤쪽에 업종과 상관없는 공실 줄(`vacant_section: true`)이 이어 섞여 나오고 `total` 에도 그 공실 수가 든다(웹도 그렇다). 업종 매물만 읽으려면 `vacant_section` 이 `false` 인 줄만 본다.
+- `search complexes` 는 역뿐 아니라 학교(`해누리중학교`)·동·구 이름도 받고 이름 끝 글자로 가른다. `--order`(인기·최근입주·시세급변동·평당가)와 줄마다 `highlight`(웹 카드 둘째 줄, 순서마다 뜻이 다르다)가 있고, 동·구는 최근입주 목록뿐이며 `distance_m` 키가 없다. 순서는 가까운 순이 아니다. 최근입주·시세급변동은 순서가 아니라 그 조건에 든 단지만 담은 목록이라 `total` 도 그 수이고 그 곳의 전체 단지 수가 아니다 (역·학교 주변 단지 전체는 `--order` 를 빼고 `--limit` 을 늘려 받아 `distance_m` 으로 고른다).
+- `complex`·`catalog` 의 `estimated_*`(직방시세)는 직방이 실거래를 분석한 추정값이라 호가도 실거래가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물의 거래이고, `actual_listing_checked: false` 에는 확인 실패도 든다.
+- 원룸·빌라·오피스텔 상세의 `manage_cost_excludes: []` 는 '모두 포함' 이 아니다. 관리비가 없거나 정액 관리비가 항목별 내역을 알린 매물은 웹이 미포함 항목을 보여 주지 않아 `[]` 이니, 관리비에 든 항목은 `manage_cost_includes` 로만 본다.
 - 상세 `residence_type` 이 `근린생활시설` 이면 전입신고·전세대출이 막힐 수 있고, `다가구` 면 선순위 보증금을 확인하라고 알린다. 목록에서 보려면 `room` 에 `--details` (매물마다 요청 1회 더).
 
 ### 네이버

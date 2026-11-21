@@ -2,16 +2,16 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
+    DaangnBaseResponseModel,
     DaangnGraphQLResponseModel,
 )
 
 from typing import Annotated
 
 
-class DaangnViewRankingModel(ResponseModel):
+class DaangnViewRankingModel(DaangnBaseResponseModel):
     """조회수 순위 매물 목록."""
 
     articles: Annotated[
@@ -20,7 +20,7 @@ class DaangnViewRankingModel(ResponseModel):
     ] = []
 
 
-class DaangnGetViewRankingArticlesDataModel(ResponseModel):
+class DaangnGetViewRankingArticlesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     get_view_ranking_articles: Annotated[

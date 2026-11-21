@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
     DaangnComplexRefModel,
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
@@ -20,7 +20,7 @@ from typing import Annotated
 # POST realty.kr.karrotmarket.com/graphql — complexByOriginalId (단지 실거래가)
 # ---------------------------------------------------------------------------
 
-class DaangnComplexTransactionsModel(ResponseModel):
+class DaangnComplexTransactionsModel(DaangnBaseResponseModel):
     """단지의 실거래 연결 두 개 (웹 쿼리의 별칭)."""
 
     buy_transactions: Annotated[
@@ -33,7 +33,7 @@ class DaangnComplexTransactionsModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexByOriginalIdModel(ResponseModel):
+class DaangnComplexByOriginalIdModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 `complex` 가 null 이다."""
 
     complex: Annotated[
@@ -42,7 +42,7 @@ class DaangnComplexByOriginalIdModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexByOriginalIdDataModel(ResponseModel):
+class DaangnComplexByOriginalIdDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     complex_by_original_id: Annotated[
@@ -64,7 +64,7 @@ class DaangnComplexByOriginalIdResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — articleByOriginalArticleId (매물 실거래가)
 # ---------------------------------------------------------------------------
 
-class DaangnArticleByOriginalArticleIdDataModel(ResponseModel):
+class DaangnArticleByOriginalArticleIdDataModel(DaangnBaseResponseModel):
     """GraphQL `data`. 실거래 연결 모양은 단지 실거래가와 같다."""
 
     article_by_original_article_id: Annotated[
@@ -86,7 +86,7 @@ class DaangnArticleByOriginalArticleIdResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — realsaleFeed / realsaleNewHighFeed (지역 실거래)
 # ---------------------------------------------------------------------------
 
-class DaangnRealsaleModel(ResponseModel):
+class DaangnRealsaleModel(DaangnBaseResponseModel):
     """지역 피드의 실거래 한 건. 금액은 **만원**, 날짜는 YYYYMMDD 문자열."""
 
     id: Annotated[
@@ -135,7 +135,7 @@ class DaangnRealsaleModel(ResponseModel):
     ] = None
 
 
-class DaangnPriceInsightModel(ResponseModel):
+class DaangnPriceInsightModel(DaangnBaseResponseModel):
     """이전 최고가와의 비교 (매매)."""
 
     previous_max_price: Annotated[
@@ -152,7 +152,7 @@ class DaangnPriceInsightModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleFeedItemModel(ResponseModel):
+class DaangnRealsaleFeedItemModel(DaangnBaseResponseModel):
     """지역 실거래 피드 한 칸."""
 
     realsale: Annotated[
@@ -181,7 +181,7 @@ class DaangnRealsaleFeedItemModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleFeedEdgeModel(ResponseModel):
+class DaangnRealsaleFeedEdgeModel(DaangnBaseResponseModel):
     """지역 실거래 피드 edge."""
 
     node: Annotated[
@@ -190,7 +190,7 @@ class DaangnRealsaleFeedEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleFeedModel(ResponseModel):
+class DaangnRealsaleFeedModel(DaangnBaseResponseModel):
     """지역 실거래 피드 연결."""
 
     edges: Annotated[
@@ -203,7 +203,7 @@ class DaangnRealsaleFeedModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleFeedDataModel(ResponseModel):
+class DaangnRealsaleFeedDataModel(DaangnBaseResponseModel):
     """GraphQL `data` (`realsaleFeed`)."""
 
     realsale_feed: Annotated[
@@ -221,7 +221,7 @@ class DaangnRealsaleFeedResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnRealsaleNewHighFeedDataModel(ResponseModel):
+class DaangnRealsaleNewHighFeedDataModel(DaangnBaseResponseModel):
     """GraphQL `data` (`realsaleNewHighFeed`)."""
 
     realsale_new_high_feed: Annotated[
@@ -239,7 +239,7 @@ class DaangnRealsaleNewHighFeedResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnRealsaleFeedSummaryModel(ResponseModel):
+class DaangnRealsaleFeedSummaryModel(DaangnBaseResponseModel):
     """지역 실거래 화면 머리의 매매 요약 (`realsaleFeedSummary`)."""
 
     data_date: Annotated[
@@ -252,7 +252,7 @@ class DaangnRealsaleFeedSummaryModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleNewHighSummaryModel(ResponseModel):
+class DaangnRealsaleNewHighSummaryModel(DaangnBaseResponseModel):
     """지역 실거래 화면 머리의 신고가 요약 (`realsaleNewHighFeedSummary`)."""
 
     new_high_count: Annotated[
@@ -261,7 +261,7 @@ class DaangnRealsaleNewHighSummaryModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleFeedSummaryDataModel(ResponseModel):
+class DaangnRealsaleFeedSummaryDataModel(DaangnBaseResponseModel):
     """GraphQL `data` (`realsaleFeedSummary` + `realsaleNewHighFeedSummary`)."""
 
     realsale_feed_summary: Annotated[
@@ -287,7 +287,7 @@ class DaangnRealsaleFeedSummaryResponseModel(DaangnGraphQLResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — node(id:) { priceChart } (단지 시세 차트)
 # ---------------------------------------------------------------------------
 
-class DaangnPriceChartPointModel(ResponseModel):
+class DaangnPriceChartPointModel(DaangnBaseResponseModel):
     """월별 평균 실거래가 한 점. 거래가 없는 달은 오지 않는다. 금액은 **원** 단위다 (다른 당근 API 와 다르다)."""
 
     year_month: Annotated[
@@ -304,7 +304,7 @@ class DaangnPriceChartPointModel(ResponseModel):
     ] = None
 
 
-class DaangnKbSaleSummaryModel(ResponseModel):
+class DaangnKbSaleSummaryModel(DaangnBaseResponseModel):
     """시세 차트에 붙는 최근 KB 매매 시세 (`latestKbSale`). 금액은 **원** 단위다 (2026-11-12 실측: 역삼래미안 27억~29.1억)."""
 
     survey_base_date: Annotated[
@@ -321,7 +321,7 @@ class DaangnKbSaleSummaryModel(ResponseModel):
     ] = None
 
 
-class DaangnPriceChartModel(ResponseModel):
+class DaangnPriceChartModel(DaangnBaseResponseModel):
     """단지 시세 차트."""
 
     average_points: Annotated[
@@ -334,7 +334,7 @@ class DaangnPriceChartModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexPriceChartNodeModel(ResponseModel):
+class DaangnComplexPriceChartNodeModel(DaangnBaseResponseModel):
     """시세 그래프를 받은 단지 노드."""
 
     id: Annotated[
@@ -347,7 +347,7 @@ class DaangnComplexPriceChartNodeModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexPriceChartDataModel(ResponseModel):
+class DaangnComplexPriceChartDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     node: Annotated[

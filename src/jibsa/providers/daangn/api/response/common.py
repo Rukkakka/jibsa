@@ -3,9 +3,14 @@
 from pydantic import (
     BeforeValidator,
     Field,
+    ValidatorFunctionWrapHandler,
+    model_validator,
 )
 
-from jibsa.core.schema import ResponseModel
+from jibsa.core.schema import (
+    ResponseModel,
+    validate_dropping_nulls,
+)
 
 from typing import (
     Annotated,
@@ -37,16 +42,20 @@ def _to_str(v: Any) -> Any:
     return str(int(number)) if number.is_integer() else str(number)
 
 
-def _none_to_list(v: Any) -> Any:
-    """목록 칸이 null 로 오면 빈 목록으로 받는다. 매물 하나의 칸이 비어 와도 검색 전체가 PARSE_ERROR 로 깨지지 않게 한다."""
-    return [] if v is None else v
-
-
 LooseFloat = Annotated[float | None, BeforeValidator(_to_float)]
 FloorText = Annotated[str | None, BeforeValidator(_to_str)]
 
 
-class DaangnCoordinateModel(ResponseModel):
+class DaangnBaseResponseModel(ResponseModel):
+    """당근 응답 모델의 기반. 목록 칸의 null 은 키가 없는 것과 같게, 객체 목록 안의 null 원소는 빼고 `null_items` 로 센다 (`validate_dropping_nulls`)."""
+
+    @model_validator(mode='wrap')
+    @classmethod
+    def null_lists_as_missing(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        return validate_dropping_nulls(cls, data, handler)
+
+
+class DaangnCoordinateModel(DaangnBaseResponseModel):
     """좌표. 스토어에는 문자열로 들어 있다."""
 
     lat: Annotated[
@@ -59,7 +68,7 @@ class DaangnCoordinateModel(ResponseModel):
     ] = None
 
 
-class DaangnRegionModel(ResponseModel):
+class DaangnRegionModel(DaangnBaseResponseModel):
     """매물이 속한 지역."""
 
     name1: Annotated[
@@ -88,7 +97,7 @@ class DaangnRegionModel(ResponseModel):
     ] = None
 
 
-class DaangnSalesTypeModel(ResponseModel):
+class DaangnSalesTypeModel(DaangnBaseResponseModel):
     """매물 용도."""
 
     type: Annotated[
@@ -97,7 +106,7 @@ class DaangnSalesTypeModel(ResponseModel):
     ]
 
 
-class DaangnTradeModel(ResponseModel):
+class DaangnTradeModel(DaangnBaseResponseModel):
     """거래 조건. 금액은 모두 **만원**."""
 
     typename: Annotated[
@@ -140,7 +149,7 @@ class DaangnTradeModel(ResponseModel):
     ] = None
 
 
-class DaangnSubwayStationModel(ResponseModel):
+class DaangnSubwayStationModel(DaangnBaseResponseModel):
     """지하철역."""
 
     station_name: Annotated[
@@ -153,7 +162,7 @@ class DaangnSubwayStationModel(ResponseModel):
     ] = []
 
 
-class DaangnNearBySubwayStationModel(ResponseModel):
+class DaangnNearBySubwayStationModel(DaangnBaseResponseModel):
     """인근 지하철역과 도보 시간."""
 
     station: Annotated[
@@ -166,7 +175,7 @@ class DaangnNearBySubwayStationModel(ResponseModel):
     ] = None
 
 
-class DaangnNearbySubwayStationEdgeModel(ResponseModel):
+class DaangnNearbySubwayStationEdgeModel(DaangnBaseResponseModel):
     """주변 지하철역 연결의 edge (상세 페이지에만). 역 이름에 '역' 이 붙지 않는다 (예: 역삼)."""
 
     node: Annotated[
@@ -175,7 +184,7 @@ class DaangnNearbySubwayStationEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnImageModel(ResponseModel):
+class DaangnImageModel(DaangnBaseResponseModel):
     """매물 사진."""
 
     thumbnail: Annotated[
@@ -184,7 +193,7 @@ class DaangnImageModel(ResponseModel):
     ] = None
 
 
-class DaangnBizProfileModel(ResponseModel):
+class DaangnBizProfileModel(DaangnBaseResponseModel):
     """중개사무소 비즈프로필. 목록 페이지에서는 이름이 비어 있다."""
 
     original_id: Annotated[
@@ -217,7 +226,7 @@ class DaangnBizProfileModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleOptionModel(ResponseModel):
+class DaangnArticleOptionModel(DaangnBaseResponseModel):
     """옵션 한 항목 (상세 페이지에만)."""
 
     name: Annotated[
@@ -230,7 +239,7 @@ class DaangnArticleOptionModel(ResponseModel):
     ] = None
 
 
-class DaangnManageCostOptionModel(ResponseModel):
+class DaangnManageCostOptionModel(DaangnBaseResponseModel):
     """관리비 항목 한 건 (상세 페이지에만).
 
     중개사 매물(`manageCostChargeType` 있음)은 법정 표기라 `payOption` 이 FIXED(정액, 관리비에 포함)·
@@ -256,7 +265,7 @@ class DaangnManageCostOptionModel(ResponseModel):
     ] = None
 
 
-class DaangnBrokerCommissionModel(ResponseModel):
+class DaangnBrokerCommissionModel(DaangnBaseResponseModel):
     """거래 조건별 중개보수 (상세 페이지에만). 당근이 법정 상한 요율로 계산한 값이며 **원** 단위 문자열이다.
 
     직거래 매물에도 계산값이 붙어 온다.
@@ -280,7 +289,7 @@ class DaangnBrokerCommissionModel(ResponseModel):
     ] = None
 
 
-class DaangnComplexRefModel(ResponseModel):
+class DaangnComplexRefModel(DaangnBaseResponseModel):
     """매물이 속한 단지 (아파트·오피스텔 등). 목록 피드에는 `originalId` 가 없고 상세 페이지에만 있다."""
 
     original_id: Annotated[
@@ -297,7 +306,7 @@ class DaangnComplexRefModel(ResponseModel):
     ] = None
 
 
-class DaangnArticleModel(ResponseModel):
+class DaangnArticleModel(DaangnBaseResponseModel):
     """`__typename == "Article"` 레코드를 참조까지 펼친 것.
 
     GraphQL 매물 목록 카드(동·지도 범위·역·대학 주변·출퇴근·단지 매물)와 상세(articles) 페이지가 같은 타입을 쓰지만
@@ -390,12 +399,10 @@ class DaangnArticleModel(ResponseModel):
     # PARSE_ERROR 였다 (#331, 같은 날 다시 부르니 정상이라 어떤 값이었는지는 못 봤다)
     subway_stations: Annotated[
         list[DaangnNearBySubwayStationModel],
-        BeforeValidator(_none_to_list),
         Field(description='인근 지하철역 (도보 시간 포함). 상세 페이지에서는 비어 있기도 하다', alias='subwayStations')
     ] = []
     nearby_subway_stations: Annotated[
         list[DaangnNearbySubwayStationEdgeModel],
-        BeforeValidator(_none_to_list),
         Field(description='주변 지하철역 이름 (상세 페이지에만). subwayStations 가 비어도 채워져 있기도 하다', alias='nearbySubwayStations')
     ] = []
     images: Annotated[
@@ -512,7 +519,7 @@ class DaangnArticleModel(ResponseModel):
 # POST realty.kr.karrotmarket.com/graphql — 공통
 # ---------------------------------------------------------------------------
 
-class DaangnGraphQLErrorModel(ResponseModel):
+class DaangnGraphQLErrorModel(DaangnBaseResponseModel):
     """GraphQL 에러 한 건. 잘못된 조건에도 이유 없이 "알 수 없는 오류" 가 온다."""
 
     message: Annotated[
@@ -525,7 +532,7 @@ class DaangnGraphQLErrorModel(ResponseModel):
     ] = None
 
 
-class DaangnGraphQLResponseModel(ResponseModel):
+class DaangnGraphQLResponseModel(DaangnBaseResponseModel):
     """GraphQL 응답 공통. 실패도 HTTP 200 에 `errors` 로 온다."""
 
     errors: Annotated[
@@ -534,7 +541,7 @@ class DaangnGraphQLResponseModel(ResponseModel):
     ] = []
 
 
-class DaangnPageInfoModel(ResponseModel):
+class DaangnPageInfoModel(DaangnBaseResponseModel):
     """커서 페이지 정보."""
 
     end_cursor: Annotated[
@@ -547,7 +554,7 @@ class DaangnPageInfoModel(ResponseModel):
     ] = None
 
 
-class DaangnLiveArticleCountModel(ResponseModel):
+class DaangnLiveArticleCountModel(DaangnBaseResponseModel):
     """단지의 현재 매물 수."""
 
     total: Annotated[
@@ -556,7 +563,7 @@ class DaangnLiveArticleCountModel(ResponseModel):
     ] = None
 
 
-class DaangnTransactionModel(ResponseModel):
+class DaangnTransactionModel(DaangnBaseResponseModel):
     """국토부 실거래 한 건. 매매(`TransactionBuy`)와 전월세(`TransactionRent`)가 필드를 나눠 쓴다. 금액은 **만원**."""
 
     typename: Annotated[
@@ -625,7 +632,7 @@ class DaangnTransactionModel(ResponseModel):
     ] = None
 
 
-class DaangnTransactionEdgeModel(ResponseModel):
+class DaangnTransactionEdgeModel(DaangnBaseResponseModel):
     """실거래 연결의 edge."""
 
     node: Annotated[
@@ -634,7 +641,7 @@ class DaangnTransactionEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnTransactionConnectionModel(ResponseModel):
+class DaangnTransactionConnectionModel(DaangnBaseResponseModel):
     """실거래 연결. 최근 계약 순이다."""
 
     edges: Annotated[
@@ -647,7 +654,7 @@ class DaangnTransactionConnectionModel(ResponseModel):
     ] = None
 
 
-class DaangnRealsaleDanjiModel(ResponseModel):
+class DaangnRealsaleDanjiModel(DaangnBaseResponseModel):
     """거래가 난 건물·단지 (공공 데이터). 빌라 같은 소규모 건물도 있다."""
 
     name: Annotated[
@@ -664,7 +671,7 @@ class DaangnRealsaleDanjiModel(ResponseModel):
     ] = None
 
 
-class DaangnCommuteArticleModel(ResponseModel):
+class DaangnCommuteArticleModel(DaangnBaseResponseModel):
     """역·대학 주변·출퇴근 역별 매물 카드 (CommuteArticleConnection). 상태·거래 조건이 다 있어 다시 받지 않고 그대로 쓴다.
 
     예전에 카드를 다시 받던 `articlesByOriginalArticleIds` 와 필드·값이 같았다 (2026-10-11 실측: 역삼역·합정역 20건씩).
@@ -676,7 +683,7 @@ class DaangnCommuteArticleModel(ResponseModel):
     ] = None
 
 
-class DaangnCommuteArticleEdgeModel(ResponseModel):
+class DaangnCommuteArticleEdgeModel(DaangnBaseResponseModel):
     """역 주변 매물 edge."""
 
     node: Annotated[
@@ -685,7 +692,7 @@ class DaangnCommuteArticleEdgeModel(ResponseModel):
     ] = None
 
 
-class DaangnCommuteStationArticleConnectionModel(ResponseModel):
+class DaangnCommuteStationArticleConnectionModel(DaangnBaseResponseModel):
     """역 주변 매물 연결."""
 
     edges: Annotated[
@@ -698,7 +705,7 @@ class DaangnCommuteStationArticleConnectionModel(ResponseModel):
     ] = None
 
 
-class DaangnCompareRegionModel(ResponseModel):
+class DaangnCompareRegionModel(DaangnBaseResponseModel):
     """단지 지역."""
 
     name1: Annotated[
@@ -715,7 +722,7 @@ class DaangnCompareRegionModel(ResponseModel):
     ] = None
 
 
-class DaangnTradeArticleCountModel(ResponseModel):
+class DaangnTradeArticleCountModel(DaangnBaseResponseModel):
     """단지의 거래 유형별 현재 매물 수."""
 
     buy: Annotated[
@@ -732,7 +739,7 @@ class DaangnTradeArticleCountModel(ResponseModel):
     ] = None
 
 
-class DaangnLivedReviewPreviewModel(ResponseModel):
+class DaangnLivedReviewPreviewModel(DaangnBaseResponseModel):
     """단지 목록 카드의 거주 후기 미리보기. 본문은 내보내지 않으므로 있는지만 본다."""
 
     edges: Annotated[
@@ -741,7 +748,7 @@ class DaangnLivedReviewPreviewModel(ResponseModel):
     ] = []
 
 
-class DaangnRegionComplexNodeModel(ResponseModel):
+class DaangnRegionComplexNodeModel(DaangnBaseResponseModel):
     """지역 단지 목록의 단지 카드."""
 
     original_id: Annotated[

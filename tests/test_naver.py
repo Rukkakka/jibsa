@@ -18,8 +18,10 @@ from jibsa.providers.naver.api.client import (
 )
 from jibsa.providers.naver.api.response.common import (
     NaverComplexArticlePriceModel,
+    NaverFacilityInfoModel,
     NaverResponseModel,
 )
+from jibsa.providers.naver.api.response.listing import NaverDevelopmentArticleModel
 from jibsa.providers.naver.api.response.search import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
@@ -430,7 +432,7 @@ def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -
         {'type': '11', 'unitType': '02', 'amount': 30000},
         {'type': '12', 'unitType': '02'},
     ]})
-    manage_cost, includes = _manage_cost(fee)
+    manage_cost, includes = _manage_cost(fee, [])
     assert manage_cost == 13.0
     assert includes is not None and len(includes) == 1
 
@@ -1563,3 +1565,32 @@ def test_months_ago_clamps_to_month_end_and_matches_years_ago() -> None:
     for today in (date(2024, 2, 29), date(2026, 11, 18)):
         for years in (1, 3, 5):
             assert months_ago(today, years * 12) == years_ago(today, years)
+
+
+def test_null_list_fields_read_as_missing_keys() -> None:
+    # 서버가 목록 칸에 null 을 줘도 ValidationError 로 조회 전체가 깨지지 않고, 키가 없을 때와 같은 빈 목록이 된다
+    facility = NaverFacilityInfoModel.model_validate({'life': None, 'security': ['CCTV'], 'etc': None})
+    assert (facility.life, facility.security, facility.etc, facility.aircon) == ([], ['CCTV'], [], [])
+    # `| None` 칸은 null 이 모름이라 빈 목록으로 바꾸지 않는다 (재개발 역·지구)
+    assert NaverDevelopmentArticleModel.model_validate({'railList': None}).rail_list is None
+
+
+def test_null_items_make_computed_values_unknown() -> None:
+    # 목록 안에 빈 항목(null)이 와서 뺐으면 그 목록으로 계산한 값을 완전한 값처럼 내지 않고 모름(null)으로 두며 [제외] 로 알린다.
+    # 실제로 온 적이 없는 응답이라 가짜 응답으로만 확인한다
+    fee = _ok({'typeCode': '01', 'fixDetailList': [
+        {'type': '01', 'unitType': '01', 'amount': 100000}, None, {'type': '11', 'unitType': '02'},
+    ]})
+    with make_path_client([], {'/article/maintenanceFee': fee}) as client:
+        detail = get_listing(client, '1000000001')
+    assert (detail.manage_cost_manwon, detail.manage_cost_includes) == (None, None)
+    assert any(note.startswith('[제외] 네이버 관리비 항목 목록에 빈 항목 1개') for note in detail.notes)
+
+    weekly = _ok([{'firstDayOfWeek': '2026-11-02', 'averagePyeongPrice': 50_000_000}, None])
+    with make_path_client([], {'/legalDivision/pyeongPriceWeeklyList': weekly}) as client:
+        trend = get_district_trend(client, '1100010100')
+    assert trend.price_per_pyeong is not None
+    # 받은 주는 그대로 두고 최근 주만 모른다 (빈 항목이 마지막 주였는지 알 수 없다)
+    assert [week.week_start for week in trend.price_per_pyeong.weekly] == ['2026-11-02']
+    assert trend.price_per_pyeong.latest_manwon is None
+    assert any(note.startswith('[제외] 네이버 평당가 추이 목록에 빈 항목 1개') for note in trend.notes)

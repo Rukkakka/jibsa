@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.daangn.api.response.common import (
+    DaangnBaseResponseModel,
     DaangnCommuteStationArticleConnectionModel,
     DaangnGraphQLResponseModel,
 )
@@ -16,7 +16,7 @@ from typing import Annotated
 # commuteStationArticleConnection)
 # ---------------------------------------------------------------------------
 
-class DaangnNearestCommuteStationModel(ResponseModel):
+class DaangnNearestCommuteStationModel(DaangnBaseResponseModel):
     """회사에서 가장 가까운 역."""
 
     station_name: Annotated[
@@ -33,7 +33,7 @@ class DaangnNearestCommuteStationModel(ResponseModel):
     ] = None
 
 
-class DaangnNearestCommuteStationDataModel(ResponseModel):
+class DaangnNearestCommuteStationDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     nearest_commute_station: Annotated[
@@ -51,7 +51,7 @@ class DaangnNearestCommuteStationResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnCommuteStationModel(ResponseModel):
+class DaangnCommuteStationModel(DaangnBaseResponseModel):
     """`commuteStations` 항목의 역 (`DaangnCommuteReachableStationModel.station`)."""
 
     station_name: Annotated[
@@ -64,7 +64,7 @@ class DaangnCommuteStationModel(ResponseModel):
     ] = []
 
 
-class DaangnCommuteWaypointModel(ResponseModel):
+class DaangnCommuteWaypointModel(DaangnBaseResponseModel):
     """경로의 역 하나 (회사 역·갈아타는 역·타는 역)."""
 
     station_name: Annotated[
@@ -77,7 +77,7 @@ class DaangnCommuteWaypointModel(ResponseModel):
     ] = None
 
 
-class DaangnCommuteReachableStationModel(ResponseModel):
+class DaangnCommuteReachableStationModel(DaangnBaseResponseModel):
     """회사 역에서 지하철로 갈 수 있는 역."""
 
     duration_minutes: Annotated[
@@ -98,7 +98,7 @@ class DaangnCommuteReachableStationModel(ResponseModel):
     ] = None
 
 
-class DaangnCommuteStationsDataModel(ResponseModel):
+class DaangnCommuteStationsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     commute_stations: Annotated[
@@ -116,7 +116,7 @@ class DaangnCommuteStationsResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-class DaangnCommuteStationArticleConnectionDataModel(ResponseModel):
+class DaangnCommuteStationArticleConnectionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
     commute_station_article_connection: Annotated[

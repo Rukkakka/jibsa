@@ -2,9 +2,9 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
+    NaverBaseResponseModel,
     NaverComplexListPageModel,
     NaverCoordinatesModel,
     NaverResponseModel,
@@ -13,7 +13,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import Annotated
 
 
-class NaverClusterModel(ResponseModel):
+class NaverClusterModel(NaverBaseResponseModel):
     """지도 클러스터."""
 
     cluster_id: Annotated[
@@ -30,7 +30,7 @@ class NaverClusterModel(ResponseModel):
     ]
 
 
-class NaverClustersModel(ResponseModel):
+class NaverClustersModel(NaverBaseResponseModel):
     """지도 클러스터 목록."""
 
     total_count: Annotated[

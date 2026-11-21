@@ -1,7 +1,9 @@
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.dabang.api.response.common import DabangRoomListResponseModel
+from jibsa.providers.dabang.api.response.common import (
+    DabangBaseResponseModel,
+    DabangRoomListResponseModel,
+)
 
 from typing import Annotated
 
@@ -10,7 +12,7 @@ class DabangRoomListCategoryV5ResponseModel(DabangRoomListResponseModel):
     """`GET /api/v5/room-list/category/{category}/{search_type}` 응답."""
 
 
-class DabangNamedModel(ResponseModel):
+class DabangNamedModel(DabangBaseResponseModel):
     """옵션·보안 시설 한 칸 (`{"seq": 7, "name": "냉장고"}`)."""
 
     name: Annotated[
@@ -19,7 +21,7 @@ class DabangNamedModel(ResponseModel):
     ]
 
 
-class DabangMaintenanceEtcDetailModel(ResponseModel):
+class DabangMaintenanceEtcDetailModel(DabangBaseResponseModel):
     """관리비 세부 (`maintenance_etc_fee_charge_detail`). 정액관리비가 10만원 미만이거나 세부를 알리지 않은 매물
     (`maintenance_charge_detail_type` 의 `BELOW_FIXED_FEE_THRESHOLD`·`ABOVE_FIXED_FEE_THRESHOLD_NO_DETAILS`)과 기타부과
     (`ETC_FEE_CHARGE`) 매물에 온다. 웹 상세보기는 '포함 항목' 만 보여 준다 (safety-option-chunk `E` 의 `g`, 2026-11-13).
@@ -34,7 +36,7 @@ class DabangMaintenanceEtcDetailModel(ResponseModel):
     ] = None
 
 
-class DabangMaintenanceFixedDetailModel(ResponseModel):
+class DabangMaintenanceFixedDetailModel(DabangBaseResponseModel):
     """정액관리비 세부 항목 하나 (`maintenance_fixed_fee_charge_detail_list`). 정액관리비가 10만원 이상이고 항목마다 적은 매물
     (`maintenance_charge_detail_type: ABOVE_FIXED_FEE_THRESHOLD`)에 온다.
 
@@ -55,7 +57,7 @@ class DabangMaintenanceFixedDetailModel(ResponseModel):
     ] = None
 
 
-class DabangNewRoomDetailRoomModel(ResponseModel):
+class DabangNewRoomDetailRoomModel(DabangBaseResponseModel):
     """상세의 매물 (`room`). 응답 키는 snake_case 다 (웹이 받은 뒤 camelCase 로 바꾼다).
 
     가격은 `price_info` 에 `[보증금 또는 매매가, 월세, 거래 유형]` 숫자(만원)로 온다 (월세 `[[1000, 63, 0]]`, 매매
@@ -253,7 +255,7 @@ class DabangNewRoomDetailRoomModel(ResponseModel):
     ] = None
 
 
-class DabangNewRoomDetailV3ResponseModel(ResponseModel):
+class DabangNewRoomDetailV3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/new-room/detail` 응답. 봉투 없이 바로 온다. 중개사(`agent`·`contact`)·사진(`image_list`)·같은 중개사의
     다른 매물(`other_rooms`)도 오지만 모델에 두지 않는다. 없는 매물은 400 `{"msg": "존재하지 않는 매물입니다."}` 다.
     """
@@ -264,7 +266,7 @@ class DabangNewRoomDetailV3ResponseModel(ResponseModel):
     ]
 
 
-class DabangRoomGetRoomIdV3ResponseModel(ResponseModel):
+class DabangRoomGetRoomIdV3ResponseModel(DabangBaseResponseModel):
     """`GET /api/3/room/get-room-id` 응답 (매물번호 → 매물 ID)."""
 
     room_id: Annotated[

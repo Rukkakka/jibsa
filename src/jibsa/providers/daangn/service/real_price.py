@@ -27,6 +27,7 @@ from jibsa.core.listing import (
     normalize_date,
     normalize_floor,
     note,
+    null_items_note,
     won_to_manwon,
     years_ago,
 )
@@ -70,6 +71,7 @@ from jibsa.providers.daangn.service.common import (
 from jibsa.providers.daangn.service.compare import (
     choose_pyeong,
     compare_column,
+    pyeong_null_items,
 )
 from jibsa.providers.daangn.service.region import (
     DaangnRealsaleRegion,
@@ -726,23 +728,23 @@ class DaangnPriceTrendResult(BaseModel):
     ]
     recent_average_manwon: Annotated[
         float | None,
-        Field(description='최근 3개월(이번 달과 그 전 3개월) 거래 수 가중 평균 (만원). 없으면 12개월 안 마지막 거래 달. 그것도 없으면 null')
+        Field(description='최근 3개월(이번 달과 그 전 3개월) 거래 수 가중 평균 (만원). 없으면 12개월 안 마지막 거래 달. 그것도 없으면 null. 당근이 빈 항목을 줘 셀 수 없어도 null')
     ] = None
     recent_transactions: Annotated[
         int | None,
-        Field(description='recent_average_manwon 의 거래 수')
+        Field(description='recent_average_manwon 의 거래 수. 당근이 빈 항목을 줘 셀 수 없으면 null')
     ] = None
     kb_sale: Annotated[
         DaangnKbSale | None,
         Field(description='이 평형의 최근 KB 매매 시세 (하위~상위 평균가, 조사 기준일). 당근이 주지 않으면 null')
     ] = None
     total_transactions: Annotated[
-        int,
-        Field(description='points 기간의 거래 수')
+        int | None,
+        Field(description='points 기간의 거래 수. 당근이 빈 항목을 줘 셀 수 없으면 null')
     ]
     summary: Annotated[
         DaangnPriceTrendSummary | None,
-        Field(description='기간 안 첫·마지막 거래 달 비교. 거래 달이 둘이 안 되면 null')
+        Field(description='기간 안 첫·마지막 거래 달 비교. 거래 달이 둘이 안 되면 null. 당근이 빈 항목을 줘 셀 수 없어도 null')
     ] = None
     points: Annotated[
         list[DaangnPricePoint],
@@ -809,6 +811,9 @@ def get_price_trend(
     """
     column = compare_column(client, complex_id)
     choice = choose_pyeong(column, pyeong=pyeong, area_group=area_group, representative=True)
+    # 평형을 정하지 않아 대표 평형을 골랐을 때 그 후보 목록에서 빈 항목을 빼고 읽었으면 고른 평형이 웹의 대표 평형이 아닐 수 있다
+    dropped_pyeongs = pyeong_null_items(column) if pyeong is None and area_group is None else 0
+    pyeong_notes = [null_items_note('당근 대표 평형 후보', dropped_pyeongs)] if dropped_pyeongs else []
     if choice is None:
         # 웹 단지 화면 가격 칸(ComplexTopicPanel)은 고른 평형(`k`)이 없으면 그래프를 그리지 않고 '아직 등록된 실거래가가 없어요'
         # 만 보여 준다 (`xe=…&&k!=null`). 예전에는 평형 거르기 없이 그래프를 받아 모든 평형을 섞은 평균을 냈다 (2026-11-12 번들 대조)
@@ -822,7 +827,7 @@ def get_price_trend(
             notes=[note(
                 '참고',
                 "당근에 이 단지 평형 묶음 정보가 없어 당근 웹도 시세 그래프 없이 '아직 등록된 실거래가가 없어요' 로 보여 줍니다",
-            )],
+            )] + pyeong_notes,
         )
     if column.id is None:
         raise JibsaError(
@@ -841,6 +846,8 @@ def get_price_trend(
         )
     )
     node = unwrap_graphql(response, response.data.node if response.data else None, '시세 그래프')
+    # 달 목록에서 빈 항목을 빼고 읽은 수. 어느 달이 빠졌는지 몰라 달 목록으로 계산한 값은 모른다 (null)
+    dropped = node.price_chart.null_items('average_points') if node.price_chart else 0
 
     monthly: dict[int, tuple[float, int]] = {}
     for point in node.price_chart.average_points if node.price_chart else []:
@@ -871,7 +878,11 @@ def get_price_trend(
         # 단지 전체를 물었는데 웹 기본값으로 평형 하나만 본 것이라 [범위] 다 (search listings --university 의 기본 종류와 같다)
         notes.append(note('범위', f'평형을 정하지 않아 당근 웹처럼 대표 평형({chosen})으로 봅니다. 다른 평형은 {option} 으로 주세요'))
     summary = None
-    if len(shown) < 2:
+    if dropped:
+        notes.append(null_items_note(
+            '당근 시세 그래프 월별 평균', dropped, ('total_transactions', 'summary', 'recent_average_manwon', 'recent_transactions'),
+        ))
+    elif len(shown) < 2:
         # '전체' 탭은 15년(PRICE_TREND_PERIODS)이라 '최근 전체 동안' 이 되지 않게 기간을 풀어 쓴다
         span = f'전체 기간(최근 {PRICE_TREND_PERIODS[period] // 12}년)' if period == '전체' else f'최근 {period}'
         notes.append(note(
@@ -897,7 +908,7 @@ def get_price_trend(
                 f'비교한 달의 거래가 적어({_month_label(first)} {start[1]}건, {_month_label(last_index)} {end[1]}건) 변화율이 실제 '
                 '시세 변화와 크게 다를 수 있습니다. points 의 흐름을 함께 보세요',
             ))
-    if shown and this_month - shown[-1] >= PRICE_TREND_STALE_MONTHS:
+    if shown and not dropped and this_month - shown[-1] >= PRICE_TREND_STALE_MONTHS:
         notes.append(f'마지막 거래가 {_month_label(shown[-1])} 에 있어 최근 시세와 다를 수 있습니다')
     if shown:
         notes.append('월별 평균은 그 달 실거래 평균이라 거래가 적은 달(transaction_count)은 튈 수 있습니다')
@@ -907,14 +918,14 @@ def get_price_trend(
         pyeong=choice.pyeong,
         area_group=choice.area_group,
         period=cast(Literal['1년', '3년', '전체'], period),
-        recent_average_manwon=recent[0] if recent else None,
-        recent_transactions=recent[1] if recent else None,
+        recent_average_manwon=recent[0] if recent and not dropped else None,
+        recent_transactions=recent[1] if recent and not dropped else None,
         kb_sale=kb_sale_of(node.price_chart),
-        total_transactions=sum(monthly[index][1] for index in shown),
+        total_transactions=None if dropped else sum(monthly[index][1] for index in shown),
         summary=summary,
         points=points,
         url=complex_url(complex_id),
-        notes=notes,
+        notes=notes + pyeong_notes,
     )
 
 

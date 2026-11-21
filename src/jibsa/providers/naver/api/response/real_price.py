@@ -2,13 +2,15 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
-from jibsa.providers.naver.api.response.common import NaverResponseModel
+from jibsa.providers.naver.api.response.common import (
+    NaverBaseResponseModel,
+    NaverResponseModel,
+)
 
 from typing import Annotated
 
 
-class NaverRealPriceModel(ResponseModel):
+class NaverRealPriceModel(NaverBaseResponseModel):
     """실거래 한 건 (원)."""
 
     trade_date: Annotated[
@@ -57,7 +59,7 @@ class NaverRealPriceModel(ResponseModel):
     ] = None
 
 
-class NaverRealPriceListModel(ResponseModel):
+class NaverRealPriceListModel(NaverBaseResponseModel):
     """실거래 목록."""
 
     items: Annotated[
@@ -70,7 +72,7 @@ class NaverRealPriceListModel(ResponseModel):
     ] = None
 
 
-class NaverVillaRealPriceModel(ResponseModel):
+class NaverVillaRealPriceModel(NaverBaseResponseModel):
     """빌라 단지 실거래 한 건 (원). 아파트(`NaverRealPriceModel`)와 키 이름이 일부 다르다."""
 
     trade_date: Annotated[
@@ -115,7 +117,7 @@ class NaverVillaRealPriceModel(ResponseModel):
     ] = None
 
 
-class NaverVillaRealPricePageModel(ResponseModel):
+class NaverVillaRealPricePageModel(NaverBaseResponseModel):
     """빌라 단지 실거래 한 페이지."""
 
     total_count: Annotated[
@@ -132,7 +134,7 @@ class NaverVillaRealPricePageModel(ResponseModel):
     ] = []
 
 
-class NaverVillaPyeongPriceModel(ResponseModel):
+class NaverVillaPyeongPriceModel(NaverBaseResponseModel):
     """빌라 단지 평당 실거래가 한 건 (원/평). 지금은 만원 자리로 떨어지는 값이 오지만 소수로 와도 받는다."""
 
     trade_date: Annotated[
@@ -145,7 +147,7 @@ class NaverVillaPyeongPriceModel(ResponseModel):
     ] = None
 
 
-class NaverVillaAroundCoordinatesModel(ResponseModel):
+class NaverVillaAroundCoordinatesModel(NaverBaseResponseModel):
     """주변 실거래 묶음(건물)의 좌표. `NaverCoordinatesModel` 과 달리 칸이 비어 와도 받는다."""
 
     x_coordinate: Annotated[
@@ -158,7 +160,7 @@ class NaverVillaAroundCoordinatesModel(ResponseModel):
     ] = None
 
 
-class NaverVillaAroundComplexInfoModel(ResponseModel):
+class NaverVillaAroundComplexInfoModel(NaverBaseResponseModel):
     """주변 실거래 묶음의 건물 정보. 단지 번호·이름은 오지 않는다."""
 
     real_estate_type: Annotated[
@@ -171,7 +173,7 @@ class NaverVillaAroundComplexInfoModel(ResponseModel):
     ] = None
 
 
-class NaverVillaAroundPriceModel(ResponseModel):
+class NaverVillaAroundPriceModel(NaverBaseResponseModel):
     """주변 실거래의 금액 (원)."""
 
     deal_price: Annotated[
@@ -188,7 +190,7 @@ class NaverVillaAroundPriceModel(ResponseModel):
     ] = None
 
 
-class NaverVillaAroundTradeModel(ResponseModel):
+class NaverVillaAroundTradeModel(NaverBaseResponseModel):
     """주변 실거래 한 건. 빌라 단지 실거래(`NaverVillaRealPriceModel`)와 달리 면적·준공 연월을 주고 층은 글자로 온다."""
 
     contract_date: Annotated[
@@ -217,7 +219,7 @@ class NaverVillaAroundTradeModel(ResponseModel):
     ] = None
 
 
-class NaverVillaAroundBundleModel(ResponseModel):
+class NaverVillaAroundBundleModel(NaverBaseResponseModel):
     """주변 실거래 묶음: 한 건물의 거래들."""
 
     complex_info: Annotated[
@@ -230,7 +232,7 @@ class NaverVillaAroundBundleModel(ResponseModel):
     ] = None
 
 
-class NaverVillaAroundModel(ResponseModel):
+class NaverVillaAroundModel(NaverBaseResponseModel):
     """범위 안 주변 실거래. 서버는 모두 합쳐 10건까지만 준다."""
 
     bundles: Annotated[

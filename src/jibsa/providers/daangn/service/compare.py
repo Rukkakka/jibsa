@@ -20,6 +20,7 @@ from jibsa.core.listing import (
     normalize_address,
     normalize_date,
     note,
+    null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.compare import (
@@ -603,6 +604,21 @@ def pyeong_groups(column: DaangnCompareComplexModel) -> tuple[bool, list[DaangnC
     return supply, danji.supply_pyeong_area_groups if supply else danji.exclusive_area_groups
 
 
+def pyeong_null_items(column: DaangnCompareComplexModel) -> int:
+    """대표 평형을 고르는 목록(평형 묶음과 그 안의 평형)에서 빈 항목을 빼고 읽은 수.
+
+    그 목록에서 대표 묶음(`is_representative` 없으면 첫 묶음)과 묶음의 세대수 최다 평형을 고르므로, 빈 항목을 뺐으면 고른 평형이
+    웹의 대표 평형이 아닐 수 있다. 호출부가 `null_items_note` 로 알린다.
+    """
+    danji = column.proptier_danji
+    if danji is None:
+        return 0
+    groups = danji.supply_pyeong_area_groups + danji.exclusive_area_groups
+    return danji.null_items('supply_pyeong_area_groups', 'exclusive_area_groups') + sum(
+        group.null_items('py_infos') for group in groups
+    )
+
+
 def _supply_choice(column: DaangnCompareComplexModel, group: DaangnCompareAreaGroupModel) -> DaangnPyeongChoice:
     """공급 평 묶음의 평형 타입 코드로 고른 평형.
 
@@ -721,6 +737,7 @@ def compare_complexes(client: DaangnClient, complex_ids: list[int], *, area_m2: 
         if index == 0 and target is None and comparison.pyeong is not None and comparison.pyeong.exclusive_area_m2:
             target = comparison.pyeong.exclusive_area_m2
     first = complexes[0].pyeong if complexes else None
+    dropped = sum(pyeong_null_items(column) for column in columns)
     basis = (
         f'전용 {_compared_area(area_m2)}와 가장 비슷한 평형' if area_m2 is not None
         else f'첫 단지는 대표 평형, 나머지는 그 전용면적 {_compared_area(first.exclusive_area_m2)}와 가장 비슷한 평형'
@@ -740,7 +757,7 @@ def compare_complexes(client: DaangnClient, complex_ids: list[int], *, area_m2: 
                 'asking 은 당근에 올라온 아파트 매물 앞 30건의 거래 유형별 평균 호가입니다 (0원 제외, 월세는 보증금 평균). '
                 '실제 거래가는 pyeong 의 recent_sale·recent_jeonse·recent_monthly 를 보세요',
             ),
-        ],
+        ] + ([null_items_note('당근 대표 평형 후보', dropped)] if dropped else []),
     )
 
 
@@ -785,7 +802,10 @@ class DaangnNearbyComplexesResult(BaseModel):
 
     complex_id: Annotated[str, Field(description='기준 단지 ID')]
     region: Annotated[DaangnRegion, Field(description='기준 단지가 있는 동')]
-    total: Annotated[int, Field(description='기준 단지를 뺀 같은 동 단지 수 (limit 적용 전). 1200곳에서 잘리면 notes 로 알린다')]
+    total: Annotated[
+        int | None,
+        Field(description='기준 단지를 뺀 같은 동 단지 수 (limit 적용 전). 1200곳에서 잘리면 notes 로 알린다. 당근이 빈 항목을 줘 셀 수 없으면 null')
+    ]
     returned: Annotated[int, Field(description='반환한 단지 수')]
     sort: Annotated[str, Field(description="정렬. 늘 '세대수' (많은 순. jibsa 정렬이며 웹 검색 엔진용 본문은 단지 ID 순 10곳이다)")]
     complexes: Annotated[list[DaangnNearbyComplex], Field(description='세대수 많은 순 단지')]
@@ -827,6 +847,8 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
         DaangnNearbyComplexesRequestPayloadModel(region3_id=region.region_id, first=NEARBY_COMPLEXES_MAX)
     )
     nodes = unwrap_graphql(response, response.data.complexes if response.data else None, '같은 동 단지')
+    # 서버는 빈 edge(null)도 한 자리로 세어 `NEARBY_COMPLEXES_MAX` 까지 준다. 빼고 읽은 수를 받은 자리에 더한다
+    null_edges = nodes.null_items('edges')
     # 더 있을 수 있다는 안내라 [일부] 다. 지금은 가장 큰 동도 상한에 닿지 않지만 (2026-11-10 실측: 화곡동 705곳) 동이 커지면
     # 나온다 (2026-11-10 리뷰: 태그가 없어 [참고] 로 나갈 뻔했다). 동 이름 뒤 '로도' 는 '화곡동 로도' 처럼 틀려 '명령으로'
     # 로 조사를 고정한다 (particle 은 ㄹ 받침 예외로 '으로/로' 를 받지 않는다)
@@ -836,7 +858,7 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
             f'당근에서 같은 동 단지를 {NEARBY_COMPLEXES_MAX}곳까지만 받아 더 있을 수 있습니다. '
             f'나머지는 jibsa daangn search complexes {region.name3} 명령으로 찾아보세요',
         )]
-        if len(nodes.edges) >= NEARBY_COMPLEXES_MAX else []
+        if len(nodes.edges) + null_edges >= NEARBY_COMPLEXES_MAX else []
     )
     # 웹 `to` 처럼 기준 단지와 기타 유형(ETC) 단지는 뺀다
     ids = [
@@ -844,6 +866,7 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
         if edge.node and edge.node.original_id != str(complex_id) and edge.node.type != 'ETC'
     ]
     cards: list[DaangnComplexCardModel] = []
+    null_cards = 0
     # 웹(300곳)보다 많아도 한 번에 보낸다 (2026-11-12 실측: 화곡동 강서힐스테이트 → 705곳 카드가 한 번에 모두 왔다. 리뷰가 서버가
     # 목록을 자를 수 있다고 했으나 오탐)
     if ids:
@@ -855,6 +878,8 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
             cards_response.data.complexes_by_original_complex_ids if cards_response.data else None,
             '단지 카드',
         )
+        # 단지 카드 목록에서 빈 항목을 뺐으면 같은 동 단지 수를 알 수 없다 (null)
+        null_cards = cards_response.data.null_items('complexes_by_original_complex_ids') if cards_response.data else 0
     nearby = [
         DaangnNearbyComplex(
             complex_id=card.original_id,
@@ -870,12 +895,17 @@ def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int =
         for card in cards
     ]
     nearby.sort(key=lambda item: (item.households is None, -(item.households or 0)))
+    null_notes = [
+        null_items_note(what, count, unknown)
+        for what, count, unknown in (('당근 같은 동 단지', null_edges, ()), ('당근 단지 카드', null_cards, ('total',)))
+        if count
+    ]
     return DaangnNearbyComplexesResult(
         complex_id=str(complex_id),
         region=region,
-        total=len(nearby),
+        total=None if null_cards else len(nearby),
         returned=min(len(nearby), limit),
         sort='세대수',
         complexes=nearby[:limit],
-        notes=capped_notes + truncation_notes(len(nearby), limit, subject='단지', unit='곳', max_limit=NEARBY_COMPLEXES_MAX),
+        notes=capped_notes + truncation_notes(len(nearby), limit, subject='단지', unit='곳', max_limit=NEARBY_COMPLEXES_MAX) + null_notes,
     )

@@ -25,6 +25,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     more_hint,
     note,
+    null_items_note,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.dabang.api.client import DabangClient
@@ -610,6 +611,8 @@ class DabangPage(NamedTuple, Generic[T]):
     total: int | None
     # 서버 hasMore (다음 쪽이 있는지)
     has_more: bool
+    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목(null) 수. 뺀 자리도 서버의 칸이라 빈 쪽인지 가를 때와 이어 받을 위치를 셀 때 더한다
+    dropped: int = 0
 
 
 class DabangPages(NamedTuple, Generic[T]):
@@ -632,6 +635,10 @@ class DabangPages(NamedTuple, Generic[T]):
     page_size: int
     # 이번 호출의 쪽 수 상한 (`max_fetch_pages`)
     max_pages: int
+    # 받은 쪽들에서 뺀 빈 항목 수 (안내용, 쪽 중간에서 멈춘 쪽의 몫도 든다)
+    dropped: int = 0
+    # 그중 다 쓴 쪽의 몫. 쪽 중간에서 멈춘 쪽은 이어 받을 때 같은 쪽을 다시 받아 그때 세므로 뺀다 (받은 칸 수를 셀 때)
+    dropped_used: int = 0
 
 
 def more_after(server_has_more: bool, rows: int, *, cut: int = 0) -> bool:
@@ -643,7 +650,7 @@ def more_after(server_has_more: bool, rows: int, *, cut: int = 0) -> bool:
 
     Args:
         server_has_more: 서버가 준 hasMore.
-        rows: 그 쪽에 온 줄 수.
+        rows: 그 쪽에 온 줄 수. 빈 항목(null)만 와서 뺀 쪽은 빈 쪽이 아니라 뺀 수까지 더해 준다.
         cut: limit 에 맞춰 잘라 내고 쓰지 않은 줄 수. Defaults to 0.
     """
     return cut > 0 or (server_has_more and rows > 0)
@@ -654,8 +661,9 @@ def room_list_page(result: DabangRoomListResultModel) -> tuple[DabangPage[Dabang
 
     광고는 첫 쪽에만 와서 쪽마다 더해도 같은 광고를 두 번 세지 않는다 (2026-10-28 실측: 역삼동 원룸 1~3쪽 광고 8·0·0건).
     """
-    premium = sum(len(group.room_list) for group in result.premium_list)
-    return DabangPage(result.room_list, result.total, bool(result.has_more)), premium
+    # 광고 칸에서 뺀 빈 항목도 광고가 있던 자리라 광고 수에 센다
+    premium = sum(len(group.room_list) + group.null_items('room_list') for group in result.premium_list)
+    return DabangPage(result.room_list, result.total, bool(result.has_more), result.null_items('room_list')), premium
 
 
 def max_fetch_pages(page_size: int, max_limit: int) -> int:
@@ -687,7 +695,8 @@ def fetch_pages(
     23건). 그래서 쪽 수를 `limit` 을 쪽 크기로 나눠 정하지 않고 `limit` 이 찰 때까지 받으며(상한 `max_fetch_pages`), 이어 받을
     위치도 받은 수로 셈하지 않고 읽은 쪽과 그 쪽에서 쓴 칸으로 둔다. 다음 쪽은 서버 hasMore 로만 본다. 받은 수가 쪽 크기보다
     적다고 끝내면 남은 것을 놓친다. 빈 쪽이면 hasMore 가 와도 더 묻지 않는다 (빈 쪽을 상한까지 묻고 '다방에 더 있음' 이라고
-    잘못 알리지 않게).
+    잘못 알리지 않게). 다방이 목록에 섞어 줘서 뺀 빈 항목(`DabangPage.dropped`)은 `limit` 의 줄로 세지 않는다. 다만 서버의
+    칸이라 빈 쪽을 가를 때와 이어 받은 위치의 칸 수(`DabangPages.dropped_used`)에는 더한다.
 
     Args:
         fetch: 쪽 번호 → 그 쪽. 결과가 없으면(`result` 가 null) None 이고 거기서 멈춘다 (has_more 는 그 전 값. 처음 물은 쪽이면
@@ -707,6 +716,7 @@ def fetch_pages(
     has_more = page > 1 or skip > 0
     capped = False
     cut_short = False
+    dropped = dropped_used = 0
     for _ in range(max_pages):
         got = fetch(page)
         if got is None:
@@ -714,6 +724,7 @@ def fetch_pages(
             break
         if total is None:
             total = got.total
+        dropped += got.dropped
         remaining = got.rows[skip:]
         taken = remaining[:limit - len(rows)]
         rows += taken
@@ -722,14 +733,16 @@ def fetch_pages(
             skip += len(taken)
             has_more = True
             break
-        # 쪽을 다 썼다 (앞 결과가 쓴 칸보다 쪽이 짧아졌으면 남은 칸이 없다). 다음에는 다음 쪽 처음부터 받는다
-        has_more = more_after(got.has_more, len(got.rows))
+        # 쪽을 다 썼다 (앞 결과가 쓴 칸보다 쪽이 짧아졌으면 남은 칸이 없다). 다음에는 다음 쪽 처음부터 받는다. 빈 항목만 온 쪽은
+        # 빈 쪽이 아니다
+        dropped_used += got.dropped
+        has_more = more_after(got.has_more, len(got.rows) + got.dropped)
         page, skip = page + 1, 0
         if not has_more or len(rows) >= limit:
             break
     else:
         capped = True
-    return DabangPages(rows, total, has_more, capped, cut_short, page, skip, page_size, max_pages)
+    return DabangPages(rows, total, has_more, capped, cut_short, page, skip, page_size, max_pages, dropped, dropped_used)
 
 
 def fetch_stop_notes(
@@ -822,7 +835,8 @@ def region_info_list_notes(pages: DabangPages[Any], limit: int, *, subject: str,
     """
     # 다방이 total 을 null 로 줘도 hasMore 면 알린다 (2026-11-14 리뷰)
     among = f'{pages.total}곳 중 ' if pages.total is not None else ''
-    return more_list_notes(
+    dropped = [null_items_note(f'다방 {subject}', pages.dropped)] if pages.dropped else []
+    return dropped + more_list_notes(
         pages, limit, seen=f'{subject} {among}다방 목록 순으로 앞 {len(pages.rows)}곳입니다',
         max_limit=REGION_INFO_MAX_LIMIT, narrow=narrow,
     )
@@ -920,6 +934,21 @@ def primary_space_of(result: DabangComplexResultModel) -> tuple[int, bool] | Non
     if primary is not None and primary > 0:
         return primary, True
     return result.spaces[0].space_seq, False
+
+
+def first_space_notes(result: DabangComplexResultModel) -> list[str]:
+    """대표 평형을 다방이 주지 않아 첫 평형(`primary_space_of`)으로 대신하는데 평형 목록에서 빈 항목을 뺐으면 그 안내.
+
+    뺀 항목이 다방 웹의 첫 평형일 수 있어 고른 평형이 웹과 다를 수 있다. 다방이 대표 평형을 줬거나 뺀 것이 없으면 빈 목록이다.
+    """
+    dropped = result.null_items('spaces')
+    primary = result.primary_space_seq
+    if not dropped or (primary is not None and primary > 0):
+        return []
+    return [
+        null_items_note('다방 단지 평형', dropped),
+        note('참고', '다방이 대표 평형을 주지 않아 평형 목록의 첫 평형을 골랐지만, 뺀 빈 항목이 다방 웹의 첫 평형이었다면 웹과 다른 평형입니다'),
+    ]
 
 
 class DabangAreaPrice(BaseModel):

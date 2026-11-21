@@ -2,8 +2,8 @@
 
 from pydantic import Field
 
-from jibsa.core.schema import ResponseModel
 from jibsa.providers.naver.api.response.common import (
+    NaverBaseResponseModel,
     NaverComplexArticleCountModel,
     NaverComplexArticlePriceModel,
     NaverComplexListInfoModel,
@@ -13,7 +13,7 @@ from jibsa.providers.naver.api.response.common import (
 from typing import Annotated
 
 
-class NaverSchoolStudentModel(ResponseModel):
+class NaverSchoolStudentModel(NaverBaseResponseModel):
     """학교 학생 공시."""
 
     base_date: Annotated[
@@ -34,7 +34,7 @@ class NaverSchoolStudentModel(ResponseModel):
     ] = None
 
 
-class NaverRegionStudentModel(ResponseModel):
+class NaverRegionStudentModel(NaverBaseResponseModel):
     """시·구 평균 학생 수 (비교용)."""
 
     region_name: Annotated[
@@ -51,7 +51,7 @@ class NaverRegionStudentModel(ResponseModel):
     ] = None
 
 
-class NaverSchoolDetailModel(ResponseModel):
+class NaverSchoolDetailModel(NaverBaseResponseModel):
     """학교 상세 (학교알리미 공시). 전화·홈페이지·좌표·학구도 경계(vertexes)도 오지만 쓰지 않는다."""
 
     school_code: Annotated[
@@ -96,7 +96,7 @@ class NaverSchoolDetailModel(ResponseModel):
     ] = None
 
 
-class NaverSchoolAllocationDongsModel(ResponseModel):
+class NaverSchoolAllocationDongsModel(NaverBaseResponseModel):
     """단지에서 그 학교에 배정되는 동."""
 
     is_all_building_assigned: Annotated[
@@ -109,7 +109,7 @@ class NaverSchoolAllocationDongsModel(ResponseModel):
     ] = None
 
 
-class NaverSchoolComplexItemModel(ResponseModel):
+class NaverSchoolComplexItemModel(NaverBaseResponseModel):
     """학교에 배정되는 단지 한 곳. 단지 정보·매물 수·호가 범위는 단지 목록(`legalDivisionComplexList`)의 항목과 같은 모양이다."""
 
     complex_info: Annotated[
@@ -142,7 +142,7 @@ class NaverSchoolComplexItemModel(ResponseModel):
     ] = None
 
 
-class NaverSchoolComplexPageModel(ResponseModel):
+class NaverSchoolComplexPageModel(NaverBaseResponseModel):
     """학교에 배정되는 단지 한 페이지.
 
     끝 쪽을 넘긴 페이지(예: page=9)는 `list: []`·`hasNextPage: false`·`totalCount: 0` 으로 온다 (2026-11-18 실측).
