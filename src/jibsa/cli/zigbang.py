@@ -818,7 +818,7 @@ def complex_command(
     complex_id: ComplexIdArgument,
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보와 지금 올라온 매물 수. 아파트는 거래 유형별 매물 수와 평형 목록(search listings --complex --pyeong 값)도 준다.
+    """단지 정보와 지금 올라온 매물 수. 아파트는 거래 유형별 매물 수와 평형 목록(search listings --complex --pyeong 값), 평형별 면적·관리비·직방시세, 단지 직방시세·순위·함께 보면 좋은 단지·토지거래허가도 준다.
 
     예: jibsa zigbang complex apt-68579
     """

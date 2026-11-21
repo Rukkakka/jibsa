@@ -31,6 +31,7 @@ from jibsa.providers.zigbang.api.request.common import (
 )
 from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
+    ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
@@ -92,6 +93,7 @@ from jibsa.providers.zigbang.api.response.common import (
 )
 from jibsa.providers.zigbang.api.response.complex.detail import (
     ZigbangDanjisItemCatalogsResponseModel,
+    ZigbangDanjisRoomTypesResponseModel,
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
@@ -180,7 +182,7 @@ STAY_HEADERS: dict[str, str] = {
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
-    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음과 호 정보, 학교·역/학교/동 주변 단지 카드, 상가,
+    로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 상가,
     단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은
     대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
@@ -228,6 +230,7 @@ class ZigbangClient(BaseHTTPClient):
     danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}'
     danjis_ids_endpoint: ClassVar[str] = '/apt/danjis/ids'
     danjis_details_endpoint: ClassVar[str] = '/apt/danjis/details'
+    danjis_room_types_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/room_types'
     schools_endpoint: ClassVar[str] = '/apt/schools/{school_code}'
     subways_endpoint: ClassVar[str] = '/apt/subways/{subway_id}'
     danjis_schools_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/schools'
@@ -839,7 +842,7 @@ class ZigbangClient(BaseHTTPClient):
             parameter: `danji_id` (경로).
 
         Returns:
-            ZigbangDanjisResponseModel: 단지 이름·주소·세대수·사용승인일·시공사 등.
+            ZigbangDanjisResponseModel: 단지 이름·주소·세대수·사용승인일·시공사, 구·동 순위, 관련 단지, 토지거래허가 일별 건수 등.
         """
         response = self._client.get(
             url=self.danjis_endpoint.format(danji_id=parameter.danji_id),
@@ -976,6 +979,42 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangDanjisDetailsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_room_types(
+        self,
+        parameter: ZigbangDanjisRoomTypesRequestParameterModel
+    ) -> ZigbangDanjisRoomTypesResponseModel:
+        """Fetch the floor plans of an apartment complex via `GET /apt/danjis/{danjiId}/room_types`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단지 화면의 평형 정보(공급·전용면적, 방·욕실, 관리비, 직방 시세)다
+        (2026-11-19 웹 대조 조사). 경로가 하이픈이 아니라 밑줄이다. 로그인이 필요 없다. 분양예정 단지는 평형이 빈 목록이다.
+
+        Args:
+            parameter: `danji_id` (경로).
+
+        Returns:
+            ZigbangDanjisRoomTypesResponseModel: 평형 목록과 단지 평균 시세 (만원, 평당은 만원/3.3㎡).
+        """
+        response = self._client.get(
+            url=self.danjis_room_types_endpoint.format(danji_id=parameter.danji_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisRoomTypesResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_room_types(
+        self,
+        parameter: ZigbangDanjisRoomTypesRequestParameterModel
+    ) -> ZigbangDanjisRoomTypesResponseModel:
+        """Async variant of `run_request_danjis_room_types`."""
+        response = await self._async_client.get(
+            url=self.danjis_room_types_endpoint.format(danji_id=parameter.danji_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisRoomTypesResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_schools(

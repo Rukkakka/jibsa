@@ -316,10 +316,32 @@ jibsa zigbang complex apt-68579
 
 **반환값**
 
-- 아파트: 사용승인일·세대수·동 수·시공사·주차·용적률·난방, 거래 유형별 매물 수(`article_counts`), 평형 목록(`pyeongs`), 학군(`schools`, 배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩), 거주 후기 수(`review_count`)
+- 아파트: 사용승인일·세대수·동 수·시공사·주차·용적률·난방, 거래 유형별 매물 수(`article_counts`), 평형 목록(`pyeongs`, 평형마다 면적·세대수·방·욕실·현관 구조·관리비·전매제한 해제일·직방시세), 단지 직방시세(`estimated_*`), 단지 순위(`rank`), 함께 보면 좋은 단지(`related_complexes`), 토지거래허가(`land_trade_permits`), 학군(`schools`, 배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩), 거주 후기 수(`review_count`)
 - 오피스텔 건물: 세대수·층수·준공 연월(`completed_at`)·엘리베이터와 매물 수. `elevator` 는 있다고 확인될 때만 `true` 이고 그 밖에는 `null` 이다 (직방 건물 정보의 '없음'은 엘리베이터가 있는 고층 건물에도 붙어 믿을 수 없다). 정확한 값은 그 건물 매물의 `listing` 상세 `elevator` 로 본다
 
 직방이 주는 정보가 달라 한쪽에만 있는 필드는 키가 없다.
+
+아파트 `pyeongs[]` 에는 `id`·`name`·`pyeong_name` 말고 직방 웹 단지 화면의 평형 정보가 아래처럼 있다. 직방 평형 정보를 받지 못했거나 그 평형이 없으면 모두 `null` 이다.
+
+| 필드 | 뜻 | 값이 없을 때 |
+| --- | --- | --- |
+| `supply_area_m2`·`supply_area_pyeong` | 공급면적 (㎡·평). 웹은 단위를 눌러 바꿔 보이지만 jibsa 는 둘 다 낸다 | `null` |
+| `exclusive_area_m2`·`exclusive_area_pyeong` | 전용면적 (㎡·평) | `null` |
+| `households` | 그 평형의 세대수 (웹 평형 이름 옆 괄호) | `null` |
+| `room_count`·`bathroom_count` | 방·욕실 수 | `null` |
+| `entrance_type` | 현관 구조 (직방 글자 그대로, 예: `계단식`·`복도식`) | `null` |
+| `manage_cost_manwon`·`manage_cost_summer_manwon`·`manage_cost_winter_manwon` | 평균·여름(6~8월)·겨울(12~2월) 월 관리비 (만원, 직방 값 그대로). 웹 안내는 'K-apt 최소 3개월~최대 24개월 평균' | `0` 이거나 직방이 주지 않으면 `null` (웹은 평균이 이러면 여름·겨울이 든 줄 전체를 숨기고 여름·겨울이 이러면 `-` 로 그린다. jibsa 는 평균이 `null` 이어도 직방이 준 여름·겨울 값은 낸다) |
+| `resale_available_from` | 전매제한이 풀려 매매할 수 있는 날 (`YYYY-MM-DD`). 이미 지난 날도 그대로 낸다 (웹은 오늘 뒤일 때만 안내한다) | 직방이 주지 않으면 `null` |
+| `estimated_sale_price_manwon`·`estimated_sale_price_per_pyeong_manwon` | 직방시세 매매 (만원)와 평당 가격 (만원/3.3㎡, 공급면적 평 기준) | `0` 이거나 없으면 `null` (웹의 '시세없음') |
+| `estimated_jeonse_price_manwon`·`estimated_jeonse_price_per_pyeong_manwon` | 직방시세 전세 (만원)와 평당 가격 | `0` 이거나 없으면 `null` |
+
+단지에는 직방시세 `estimated_sale_price_min_manwon`·`estimated_sale_price_max_manwon`(매매 범위, 웹 전체 탭의 '매매 18억 8,000 ~ 61억 1,000'), `estimated_sale_price_per_pyeong_manwon`·`estimated_jeonse_price_per_pyeong_manwon`(단지 평균 평당 가격, 만원/3.3㎡)도 있고 평형 정보를 받지 못했거나 `0` 이거나 없으면 `null` 이다. 이 값들과 아래 단지 값은 아파트에만 있고 오피스텔 건물에는 키가 없다.
+
+| 필드 | 뜻 | 값이 없을 때 |
+| --- | --- | --- |
+| `rank` | 웹 '<동>에서 이 단지의 랭킹은?' 절: `region`(웹 제목 속 동 이름), `price_rank`(웹 '시세 N위', 직방은 실거래가 순위로 준다), `popularity_rank`(웹 '인기순 N위', 직방은 조회수 순위로 준다) | 직방이 구 순위나 동 순위 중 하나라도 주지 않으면 웹이 절을 숨기므로 `null`. 순위 없음(직방 `-1`)은 `price_rank`·`popularity_rank` 가 `null` |
+| `related_complexes` | 웹 '함께 보면 좋은 단지'. `complex_id`·`name`·`households`·`address`(동까지) | 직방이 주지 않으면 `null`, 없으면 `[]`. 직방이 id 를 주지 않은 줄은 그 줄의 `complex_id` 만 `null` |
+| `land_trade_permits` | 최근 7일 토지거래허가 일별 건수 (`date`·`count`, 직방 순서). 웹은 총 0건이면 절을 숨기지만 일별 건수를 그대로 낸다 | 직방이 주지 않으면 `null` |
 
 **오류와 대응**
 
@@ -330,6 +352,8 @@ ID 접두사·형식 위반은 `INVALID_ARGUMENT`, 없는 단지·건물은 `NOT
 단지 이름 대신 ID를 넣는다. 단지 ID 는 `search locations <단지 이름>` 결과의 `complexes[].complex_id`, 역·학교·동·구 주변 단지 `search complexes <이름>` 결과의 `complexes[].complex_id`, `search listings apt`·`search listings room` 오피스텔 결과와 아파트 상세의 `complex_id` 에서 얻는다. 아파트 단지와 오피스텔 건물은 번호 체계가 달라 `apt-`·`officetel-` 을 붙인다.
 
 `pyeongs[].id`는 `search listings --complex`·`real-price`의 `--pyeong`에 넣는 평형 ID이며 평수가 아니다. 후기는 본문을 내보내지 않고, 후기가 있으면 단지 페이지에서 보라고 `notes` 로 알린다. 관리사무소 연락처는 출력하지 않는다.
+
+`estimated_*` 는 직방시세다. 직방이 실거래를 분석해 낸 추정값이라 실거래가도 호가도 아니다. 실제 거래는 [`real-price`](#8-real-price--아파트-실거래가), 지금 올라온 값은 `search listings --complex` 로 본다. 아파트는 단지 정보·매물 수·학군에 평형 정보 조회가 더해 요청이 4회이고 (오피스텔 건물은 1회), 평형 정보는 덤이라 받지 못하면 평형별 면적·관리비·직방시세와 단지 직방시세만 `null` 이 되고 `notes` 의 `[실패]` 가 알린다. 순위·함께 보면 좋은 단지·토지거래허가는 단지 정보에 있어 요청이 늘지 않는다.
 
 ## 7. `search listings --complex` — 단지·건물 안 매물 목록
 
@@ -708,6 +732,6 @@ jibsa zigbang search listings room --help
 
 상세 `residence_type`에 `다가구`가 들어가면(`다가구`·`다가구주택`·`다가구용단독주택`) 건물 전체의 다른 세입자 선순위 보증금도 계약 전 확인한다. `근린생활시설`이 들어가면(`제2종근린생활시설` 등, 이른바 근생 원룸) 주거용 건물이 아니라 전입신고·전세대출·전세보증보험이 막힐 수 있으니 계약 전 확인한다. 등록일·입주일·주차는 조회 유형에 따라 제공 여부가 다르며 `null`을 없다고 해석하지 않는다.
 
-`estimated_*`(`catalog` 의 호 직방시세)는 직방이 실거래를 분석해 낸 추정값이라 실거래가도 호가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물(필지)의 실거래이고, `actual_listing_checked: false` 는 확인 실패도 포함한다. 실거래의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이고, `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니며, `jeonse_ratio` 는 0~1 비율이다 ([`real-price`](#8-real-price--아파트-실거래가) 표). 단기임대 반려동물은 `options` 가 아니라 `pet_allowed` 로 보고 (`null` 은 동반 불가가 아니라 모름), 위약금 표(`refund_rules`)는 직방 웹에 고정된 표라 임대인 설정에 따라 다를 수 있으니 계약 전 `url` 에서 확인한다.
+`estimated_*`(`complex` 의 평형·단지 직방시세, `catalog` 의 호 직방시세)는 직방이 실거래를 분석해 낸 추정값이라 실거래가도 호가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물(필지)의 실거래이고, `actual_listing_checked: false` 는 확인 실패도 포함한다. 실거래의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이고, `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니며, `jeonse_ratio` 는 0~1 비율이다 ([`real-price`](#8-real-price--아파트-실거래가) 표). 단기임대 반려동물은 `options` 가 아니라 `pet_allowed` 로 보고 (`null` 은 동반 불가가 아니라 모름), 위약금 표(`refund_rules`)는 직방 웹에 고정된 표라 임대인 설정에 따라 다를 수 있으니 계약 전 `url` 에서 확인한다.
 
 상가 권리금은 `0`이면 무권리, `null`이면 모름이다 (업종이 사무실이고 직방이 주지 않으면 키가 없다). 단기임대의 주당 가격과 월세를 직접 비교하지 않는다. 주당 금액 × 주 수는 기간 비용이 아니고(청소비·직방 이용료가 더해진다), 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 는 주지 않는다.

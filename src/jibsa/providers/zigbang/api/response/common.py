@@ -533,6 +533,119 @@ class ZigbangItemCatalogModel(ResponseModel):
 # GET /apt/danjis/{danjiId}
 # ---------------------------------------------------------------------------
 
+class ZigbangDanjiRankPlaceModel(ResponseModel):
+    """단지가 속한 구·동 안에서의 순위 하나."""
+
+    name: Annotated[
+        str | None,
+        Field(description="구·동 이름 (예: '송파구', '가락동')")
+    ] = None
+    rank: Annotated[
+        int | None,
+        Field(description='그 구·동 안의 순위 (1 이 가장 높다)')
+    ] = None
+    total: Annotated[
+        int | None,
+        Field(description='순위를 매긴 그 구·동의 단지 수')
+    ] = None
+
+
+class ZigbangDanjiRankModel(ResponseModel):
+    """단지 상세의 순위 (`순위`). 웹 단지 화면이 보여 주는 구·동 순위와 조회수·실거래가 순위.
+
+    `-1` 은 순위 없음이다 (2026-11-19 단지 38487 표본에는 없었다). 해석은 service 가 한다.
+    """
+
+    local2: Annotated[
+        ZigbangDanjiRankPlaceModel | None,
+        Field(description='구(시·군·구) 안의 순위')
+    ] = None
+    local3: Annotated[
+        ZigbangDanjiRankPlaceModel | None,
+        Field(description='동(읍·면·동) 안의 순위')
+    ] = None
+    view_count_rank: Annotated[
+        int | None,
+        Field(description='조회수 순위', alias='viewCountRank')
+    ] = None
+    trade_price_rank: Annotated[
+        int | None,
+        Field(description='실거래가 순위', alias='tradePriceRank')
+    ] = None
+
+
+class ZigbangRelatedDanjiModel(ResponseModel):
+    """관련 단지 하나. 좌표·사진·매물 수·관련도(lat·lng·imageUrl·itemCount·relatedRank)는 읽지 않는다."""
+
+    id: Annotated[
+        int | None,
+        Field(description='단지 ID. 키가 없으면 None (모름)')
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='단지 이름')
+    ] = None
+    date_text: Annotated[
+        str | None,
+        Field(description="입주 연차 문구 (예: '19년차')", alias='dateText')
+    ] = None
+    household: Annotated[
+        str | None,
+        Field(description="세대수 문구 (예: '6,864세대')")
+    ] = None
+    local1: Annotated[
+        str | None,
+        Field(description='시/도')
+    ] = None
+    local2: Annotated[
+        str | None,
+        Field(description='시/군/구')
+    ] = None
+    local3: Annotated[
+        str | None,
+        Field(description='읍/면/동')
+    ] = None
+
+
+# 응답 키 이름이 `list` 라 필드도 `list` 로 두는데, 클래스 안에서는 대입이 먼저 평가돼 필드가 내장 `list` 를 가려 `list[...]` 를 쓸 수 없다
+ZigbangRelatedDanjiList = list[ZigbangRelatedDanjiModel]
+
+
+class ZigbangRelateDanjiModel(ResponseModel):
+    """단지 상세의 관련 단지 (`relateDanji`). 이 밖에 전체 수(`total`)가 오지만 읽지 않는다."""
+
+    list: Annotated[
+        ZigbangRelatedDanjiList | None,
+        Field(description='관련 단지. 키가 없거나 null 이면 None (모름), 없으면 []')
+    ] = None
+
+
+class ZigbangLandTradePermitDayModel(ResponseModel):
+    """토지거래허가 일별 건수 하나."""
+
+    date: Annotated[
+        str | None,
+        Field(description='날짜 (YYYY-MM-DD). 키가 없으면 None (모름)')
+    ] = None
+    count: Annotated[
+        int | None,
+        Field(description='그날의 토지거래허가 건수')
+    ] = None
+    is_today: Annotated[
+        bool | None,
+        Field(description='오늘 날짜인지', alias='isToday')
+    ] = None
+
+
+class ZigbangLandTradePermitModel(ResponseModel):
+    """단지 상세의 토지거래허가 (`landTradePermit`). 이 밖에 오늘 건수(`todayCount`)가 오지만 읽지 않는다 (`dailyCounts` 의 오늘 줄과 같다)."""
+
+    daily_counts: Annotated[
+        list[ZigbangLandTradePermitDayModel] | None,
+        Field(description='일별 건수 (2026-11-19 표본은 최근 7일, 오래된 날부터). 키가 없거나 null 이면 None (모름)', alias='dailyCounts')
+    ] = None
+
+
 class ZigbangDanjisResponseModel(ResponseModel):
     """아파트 단지 정보. 직방이 한글 키로 주는 값이 많다."""
 
@@ -591,4 +704,16 @@ class ZigbangDanjisResponseModel(ResponseModel):
     review_count: Annotated[
         int | None,
         Field(description='거주 후기 수. 후기 본문(resident_review)은 내보내지 않는다', alias='review_cnt')
+    ] = None
+    rank: Annotated[
+        ZigbangDanjiRankModel | None,
+        Field(description='순위 (구·동 안의 순위, 조회수·실거래가 순위)', alias='순위')
+    ] = None
+    relate_danji: Annotated[
+        ZigbangRelateDanjiModel | None,
+        Field(description='관련 단지', alias='relateDanji')
+    ] = None
+    land_trade_permit: Annotated[
+        ZigbangLandTradePermitModel | None,
+        Field(description='토지거래허가 일별 건수', alias='landTradePermit')
     ] = None

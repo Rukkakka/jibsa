@@ -88,7 +88,7 @@
 - `stay` 요금은 주 단위(`weekly_rent_manwon`)라 월세와 바로 비교하지 않는다. 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 가 주지 않는다 (주당 금액 × 주 수가 아니다). `listing stay-… --check-in … --check-out …` 은 그 기간에 예약할 수 있는지 `available` 만 주고, `--check-out` 은 **마지막으로 머무는 날**이다 (7~84일). `stay --sort distance` 는 `--radius` 없는 역 이름 검색에서만 된다 (기본은 직방 추천순). 상세의 반려동물은 `options` 가 아니라 `pet_allowed`(추가 청소비 `pet_cleaning_fee_manwon`)로 보고, 위약금은 `refund_rules` 다 (웹에 고정된 표라 계약 전 `url` 에서 확인).
 - `store` 권리금 `0` 은 무권리, `null` 은 모름이다. 사무실은 권리금이 해당 없음이라 `key_money_manwon` 키가 없을 수 있고, 권리금 조건(`--key-money-*`)을 걸면 이런 사무실은 빠진다. `--business` 를 주면 결과 뒤쪽에 업종과 상관없는 공실 줄(`vacant_section: true`)이 이어 섞여 나오고 `total` 에도 그 공실 수가 든다(웹도 그렇다). 업종 매물만 읽으려면 `vacant_section` 이 `false` 인 줄만 본다.
 - `search complexes` 는 역뿐 아니라 학교(`해누리중학교`)·동·구 이름도 받고 이름 끝 글자로 가른다. `--order`(인기·최근입주·시세급변동·평당가)와 줄마다 `highlight`(웹 카드 둘째 줄, 순서마다 뜻이 다르다)가 있고, 동·구는 최근입주 목록뿐이며 `distance_m` 키가 없다. 순서는 가까운 순이 아니다. 최근입주·시세급변동은 순서가 아니라 그 조건에 든 단지만 담은 목록이라 `total` 도 그 수이고 그 곳의 전체 단지 수가 아니다 (역·학교 주변 단지 전체는 `--order` 를 빼고 `--limit` 을 늘려 받아 `distance_m` 으로 고른다).
-- `catalog` 의 `estimated_*`(직방시세)는 직방이 실거래를 분석한 추정값이라 호가도 실거래가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물의 거래이고, `actual_listing_checked: false` 에는 확인 실패도 든다.
+- `complex`·`catalog` 의 `estimated_*`(직방시세)는 직방이 실거래를 분석한 추정값이라 호가도 실거래가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물의 거래이고, `actual_listing_checked: false` 에는 확인 실패도 든다.
 - 원룸·빌라·오피스텔 상세의 `manage_cost_excludes: []` 는 '모두 포함' 이 아니다. 관리비가 없거나 정액 관리비가 항목별 내역을 알린 매물은 웹이 미포함 항목을 보여 주지 않아 `[]` 이니, 관리비에 든 항목은 `manage_cost_includes` 로만 본다.
 - 상세 `residence_type` 이 `근린생활시설` 이면 전입신고·전세대출이 막힐 수 있고, `다가구` 면 선순위 보증금을 확인하라고 알린다. 목록에서 보려면 `room` 에 `--details` (매물마다 요청 1회 더).
 

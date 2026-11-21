@@ -15,22 +15,30 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     Listing,
+    iso_date,
     join_address,
     limit_notes,
     normalize_address,
     normalize_date,
+    note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
+    ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangDanjiRankModel,
+    ZigbangLandTradePermitModel,
+    ZigbangRelateDanjiModel,
     ZigbangSearchItemModel,
 )
 from jibsa.providers.zigbang.api.response.complex.detail import (
+    ZigbangDanjiRoomTypeModel,
     ZigbangDanjisItemCatalogsResponseModel,
+    ZigbangDanjisRoomTypesResponseModel,
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
@@ -45,9 +53,11 @@ from jibsa.providers.zigbang.service.common.base import (
     NEAREST_SCHOOLS,
     SCHOOL_LOOKUP_ERRORS,
     ComplexKind,
+    apt_complex_id,
     apt_danji_url,
     complex_not_found,
     fetch_danji,
+    household_count,
     parse_complex_id,
     school_label,
     text_or_none,
@@ -70,6 +80,7 @@ from jibsa.providers.zigbang.service.region import (
 from typing import (
     Annotated,
     Any,
+    TypeVar,
 )
 
 
@@ -104,6 +115,8 @@ PROPERTY_TYPE_BY_COMPLEX_KIND: dict[ComplexKind, str] = {
 APT_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({
     'dong_count', 'approved_at', 'construction_company', 'parking_per_household',
     'floor_area_ratio', 'heating', 'article_counts', 'pyeongs', 'review_count', 'schools',
+    'estimated_sale_price_min_manwon', 'estimated_sale_price_max_manwon', 'estimated_sale_price_per_pyeong_manwon',
+    'estimated_jeonse_price_per_pyeong_manwon', 'rank', 'related_complexes', 'land_trade_permits',
 })
 OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_at', 'elevator'})
 DANJI_CATALOG_PAGE_SIZE: int = 50
@@ -166,6 +179,133 @@ class ZigbangPyeong(BaseModel):
         str | None,
         Field(description='평형 이름 (공급면적 평 기준, 예: 34A)')
     ] = None
+    supply_area_m2: Annotated[
+        float | None,
+        Field(description='공급면적 (㎡). 직방 평형 정보를 받지 못했거나 그 평형이 없으면 모름(null)')
+    ] = None
+    supply_area_pyeong: Annotated[
+        float | None,
+        Field(description='공급면적 (평). 직방이 준 값 그대로')
+    ] = None
+    exclusive_area_m2: Annotated[
+        float | None,
+        Field(description='전용면적 (㎡)')
+    ] = None
+    exclusive_area_pyeong: Annotated[
+        float | None,
+        Field(description='전용면적 (평). 직방이 준 값 그대로')
+    ] = None
+    households: Annotated[
+        int | None,
+        Field(description='그 평형의 세대수 (웹 평형 이름 옆 괄호, 예: 107A㎡ (731세대))')
+    ] = None
+    room_count: Annotated[
+        int | None,
+        Field(description='방 수')
+    ] = None
+    bathroom_count: Annotated[
+        int | None,
+        Field(description='욕실 수')
+    ] = None
+    entrance_type: Annotated[
+        str | None,
+        Field(description="현관 구조 (직방 글자 그대로, 예: '계단식'·'복도식'). 직방이 주지 않으면 null")
+    ] = None
+    manage_cost_manwon: Annotated[
+        int | float | None,
+        Field(description='평균 월 관리비 (만원, 직방 정수 그대로). 웹 안내: K-apt 최소 3개월~최대 24개월 평균. 0 이거나 직방이 주지 않으면 null (웹은 이때 관리비 줄을 숨긴다)')
+    ] = None
+    manage_cost_summer_manwon: Annotated[
+        int | float | None,
+        Field(description='여름(6~8월) 월 관리비 (만원). 0 이거나 직방이 주지 않으면 null (웹은 이때 -)')
+    ] = None
+    manage_cost_winter_manwon: Annotated[
+        int | float | None,
+        Field(description='겨울(12~2월) 월 관리비 (만원). 0 이거나 직방이 주지 않으면 null (웹은 이때 -)')
+    ] = None
+    resale_available_from: Annotated[
+        str | None,
+        Field(description='전매제한이 풀려 매매할 수 있는 날 (직방 거래가능시점, YYYY-MM-DD). 이미 지난 날도 그대로 낸다 (웹은 오늘 뒤일 때만 안내). 직방이 주지 않으면 null')
+    ] = None
+    estimated_sale_price_manwon: Annotated[
+        int | float | None,
+        Field(description='직방시세 매매 (만원, 직방 시세 범위의 최저값. 2026-11-19 표본 30개 평형은 최저 = 최고). 실거래를 머신러닝으로 분석한 직방 추정값이고 실거래 평균이 아니다. 0 이거나 없으면 null (웹 시세없음)')
+    ] = None
+    estimated_sale_price_per_pyeong_manwon: Annotated[
+        int | float | None,
+        Field(description='직방시세 매매의 평당 가격 (만원/3.3㎡, 공급면적 평 기준). 0 이거나 없으면 null')
+    ] = None
+    estimated_jeonse_price_manwon: Annotated[
+        int | float | None,
+        Field(description='직방시세 전세 (만원). 직방 추정값이고 실거래 평균이 아니다. 0 이거나 없으면 null (웹 전세 시세없음)')
+    ] = None
+    estimated_jeonse_price_per_pyeong_manwon: Annotated[
+        int | float | None,
+        Field(description='직방시세 전세의 평당 가격 (만원/3.3㎡, 공급면적 평 기준). 0 이거나 없으면 null')
+    ] = None
+
+
+class ZigbangComplexRank(BaseModel):
+    """단지 순위. 직방 웹 단지 화면의 '<동>에서 이 단지의 랭킹은?' 절."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    region: Annotated[
+        str | None,
+        Field(description='웹 제목 속 동 이름 (예: 가락동)')
+    ]
+    price_rank: Annotated[
+        int | None,
+        Field(description="웹 '시세 N위' 의 N (직방은 실거래가 순위로 준다). 순위 없음이면 null")
+    ]
+    popularity_rank: Annotated[
+        int | None,
+        Field(description="웹 '인기순 N위' 의 N (직방은 조회수 순위로 준다). 순위 없음이면 null")
+    ]
+
+
+class ZigbangRelatedComplex(BaseModel):
+    """직방 웹 단지 화면의 '함께 보면 좋은 단지' 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    complex_id: Annotated[
+        str | None,
+        Field(description='단지 ID (zigbang complex·search listings --complex 에 넘긴다). 직방이 ID 를 주지 않으면 모름(null)')
+    ]
+    name: Annotated[
+        str | None,
+        Field(description='단지 이름')
+    ]
+    households: Annotated[
+        int | None,
+        Field(description='세대수')
+    ]
+    address: Annotated[
+        str | None,
+        Field(description='동까지의 주소')
+    ]
+
+
+class ZigbangLandTradePermitDay(BaseModel):
+    """토지거래허가 일별 건수 하나."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    date: Annotated[
+        str | None,
+        Field(description='날짜 (YYYY-MM-DD). 직방이 준 날짜를 읽지 못하면 모름(null)')
+    ]
+    count: Annotated[
+        int | None,
+        Field(description='그날의 토지거래허가 건수. 직방이 주지 않으면 모름(null)')
+    ]
 
 
 class ZigbangComplex(BaseModel):
@@ -255,9 +395,37 @@ class ZigbangComplex(BaseModel):
         str,
         Field(description='단지 페이지 URL')
     ]
+    estimated_sale_price_min_manwon: Annotated[
+        int | None,
+        Field(description='단지 직방시세 매매 최저 (만원, 아파트만). 웹 전체 탭 "매매 18억 8,000 ~ 61억 1,000" 의 앞. 직방 추정값이고 실거래 평균이 아니다. 평형 정보를 받지 못했거나 0 이거나 없으면 null')
+    ] = None
+    estimated_sale_price_max_manwon: Annotated[
+        int | None,
+        Field(description='단지 직방시세 매매 최고 (만원, 아파트만). 웹 전체 탭 범위의 뒤. 0 이거나 없으면 null')
+    ] = None
+    estimated_sale_price_per_pyeong_manwon: Annotated[
+        int | float | None,
+        Field(description='단지 평균 직방시세 매매의 평당 가격 (만원/3.3㎡, 아파트만). 웹 전체 탭 "평균 1억 235/3.3㎡". 0 이거나 없으면 null')
+    ] = None
+    estimated_jeonse_price_per_pyeong_manwon: Annotated[
+        int | float | None,
+        Field(description='단지 평균 직방시세 전세의 평당 가격 (만원/3.3㎡, 아파트만). 0 이거나 없으면 null')
+    ] = None
+    rank: Annotated[
+        ZigbangComplexRank | None,
+        Field(description="단지 순위 (아파트만, 웹 '<동>에서 이 단지의 랭킹은?'). 직방이 구·동 순위를 주지 않으면 웹이 절을 숨기므로 null")
+    ] = None
+    related_complexes: Annotated[
+        list[ZigbangRelatedComplex] | None,
+        Field(description="웹 '함께 보면 좋은 단지' (아파트만, 직방이 준 순서). 직방이 주지 않으면 모름(null), 없으면 []")
+    ] = None
+    land_trade_permits: Annotated[
+        list[ZigbangLandTradePermitDay] | None,
+        Field(description="최근 7일 토지거래허가 일별 건수 (아파트만, 직방이 준 순서). 웹 '토지거래허가 총 N건 (최근 7일)' 과 날짜별 그래프. 직방이 주지 않으면 모름(null)")
+    ] = None
     notes: Annotated[
         list[str],
-        Field(exclude=True, description='후기가 있다는 안내. CLI 가 결과 위에 붙인다')
+        Field(exclude=True, description='후기가 있다는 안내와, 평형 정보를 받지 못해 그 값을 모른다는 [실패] 안내. CLI 가 결과 위에 붙인다')
     ] = []
 
     @model_serializer(mode='wrap')
@@ -360,8 +528,104 @@ def _fetch_building(
         raise
 
 
+NumberT = TypeVar('NumberT', bound=float)
+
+
+def _positive_or_none(value: NumberT | None) -> NumberT | None:
+    """0 이하이거나 빠진 값은 모름(None). 웹이 0 을 '시세없음'·'-' 로 그리고 관리비 줄을 숨기는 값에 쓴다 (평형 시세·관리비)."""
+    return value if value is not None and value > 0 else None
+
+
+def pyeong_of(room_type: ZigbangDanjiRoomTypeModel, detail: ZigbangDanjiRoomTypeModel | None) -> ZigbangPyeong:
+    """단지 매물 목록의 평형(`room_type`: 목록의 출처·순서)에 평형 정보 조회(`detail`: 같은 ID)의 값을 붙인다. 없으면 새 값은 모름(null)."""
+    title = room_type.room_type_title
+    supply = detail.supply_area if detail else None
+    exclusive = detail.exclusive_area if detail else None
+    cost = detail.manage_cost if detail else None
+    sales = detail.sales_price if detail else None
+    rent = detail.rent_price if detail else None
+    return ZigbangPyeong(
+        id=room_type.id,
+        name=title.m2 if title else None,
+        pyeong_name=text_or_none(title.p) if title else None,
+        supply_area_m2=supply.m2 if supply else None,
+        supply_area_pyeong=supply.p if supply else None,
+        exclusive_area_m2=exclusive.m2 if exclusive else None,
+        exclusive_area_pyeong=exclusive.p if exclusive else None,
+        households=detail.household_count if detail else None,
+        room_count=detail.room_count if detail else None,
+        bathroom_count=detail.bathroom_count if detail else None,
+        entrance_type=text_or_none(detail.entrance_type) if detail else None,
+        # 웹 ManageCost 는 평균 관리비가 0 이나 null 이면 여름·겨울이 든 줄 전체를 숨기고, 평균이 있을 때 여름·겨울이 0 이나 null 이면 '-' 로
+        # 그린다 (2026-11-19 번들). jibsa 는 평균이 없어도 직방이 준 여름·겨울 값을 내므로 셋을 따로 거른다 (웹과 다른 점, 소스 가이드)
+        manage_cost_manwon=_positive_or_none(cost.average) if cost else None,
+        manage_cost_summer_manwon=_positive_or_none(cost.summer) if cost else None,
+        manage_cost_winter_manwon=_positive_or_none(cost.winter) if cost else None,
+        resale_available_from=iso_date(detail.resale_available_from) if detail else None,
+        estimated_sale_price_manwon=_positive_or_none(sales.min) if sales else None,
+        estimated_sale_price_per_pyeong_manwon=_positive_or_none(sales.per_area) if sales else None,
+        estimated_jeonse_price_manwon=_positive_or_none(rent.min) if rent else None,
+        estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(rent.per_area) if rent else None,
+    )
+
+
+def complex_rank_of(rank: ZigbangDanjiRankModel | None) -> ZigbangComplexRank | None:
+    """단지 상세의 순위를 웹 '<동>에서 이 단지의 랭킹은?' 절 값으로. 웹처럼 구·동 순위 중 하나라도 없으면 None.
+
+    웹은 `!순위 || !순위.local2 || !순위.local3` 이면 절을 그리지 않는다 (2026-11-19 번들 `Components_Rank`). 순위 값 -1 은
+    웹이 '순위 없음' 으로 그리는 값이다.
+    """
+    if rank is None or rank.local2 is None or rank.local3 is None:
+        return None
+    return ZigbangComplexRank(
+        region=text_or_none(rank.local3.name),
+        price_rank=None if rank.trade_price_rank == -1 else rank.trade_price_rank,
+        popularity_rank=None if rank.view_count_rank == -1 else rank.view_count_rank,
+    )
+
+
+def _related_complexes_of(related: ZigbangRelateDanjiModel | None) -> list[ZigbangRelatedComplex] | None:
+    """단지 상세의 관련 단지('함께 보면 좋은 단지')를 직방이 준 순서대로. 목록을 주지 않았으면(키 없음·null) 모름(None), 빈 목록이면 []."""
+    if related is None or related.list is None:
+        return None
+    return [
+        ZigbangRelatedComplex(
+            complex_id=apt_complex_id(item.id) if item.id is not None else None,
+            name=item.name,
+            households=household_count(item.household),
+            address=normalize_address(join_address(item.local1, item.local2, item.local3)),
+        )
+        for item in related.list
+    ]
+
+
+def _land_trade_permits_of(permit: ZigbangLandTradePermitModel | None) -> list[ZigbangLandTradePermitDay] | None:
+    """단지 상세의 최근 7일 토지거래허가 일별 건수를 직방이 준 순서대로. 일별 건수를 주지 않았으면(키 없음·null) 모름(None)."""
+    if permit is None or permit.daily_counts is None:
+        return None
+    return [ZigbangLandTradePermitDay(date=iso_date(day.date), count=day.count) for day in permit.daily_counts]
+
+
+def _fetch_room_types(
+    client: ZigbangClient, danji_id: int,
+) -> tuple[ZigbangDanjisRoomTypesResponseModel | None, list[str]]:
+    """평형 정보 조회(덤)를 받는다. 실패(요청 제한 포함)하면 None 과 `[실패]` 안내를 준다."""
+    try:
+        return client.run_request_danjis_room_types(ZigbangDanjisRoomTypesRequestParameterModel(danji_id=danji_id)), []
+    except SCHOOL_LOOKUP_ERRORS as exc:
+        return None, [note(
+            '실패',
+            f'직방 평형 정보를 받지 못해({type(exc).__name__}) 평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 '
+            f'(url 의 직방 단지 페이지에서 확인)',
+        )]
+
+
 def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
-    """단지 정보와 지금 올라온 매물 수를 모은다 (아파트 3회: 단지·매물 수·학군, 오피스텔 1회 호출).
+    """단지 정보와 지금 올라온 매물 수를 모은다 (아파트 4회: 단지·매물 수·학군·평형 정보, 오피스텔 1회 호출).
+
+    평형 정보(`room_types`, 평형 목록(매물 목록 응답의 `danjiRoomTypes`, 출처·순서는 그대로)에 면적·관리비·직방시세를
+    붙인다)는 덤 조회라, 실패하면 그 값만 모름(null)이고 `[실패]` 안내가 붙는다. 순위·관련 단지·토지거래허가는 단지 정보 응답에 있어
+    요청이 늘지 않는다.
 
     Raises:
         JibsaError: 단지 ID 형식이 맞지 않거나 (INVALID_ARGUMENT) 없는 단지일 때 (NOT_FOUND).
@@ -398,6 +662,8 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
     except SCHOOL_LOOKUP_ERRORS:
         # 학군을 못 받아도 단지 정보는 돌려준다 (모름)
         schools = None
+    room_info, lookup_notes = _fetch_room_types(client, number)
+    details = {room_type.id: room_type for room_type in room_info.room_types or []} if room_info else {}
     return ZigbangComplex(
         complex_id=complex_id,
         name=danji.name,
@@ -419,20 +685,21 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             trade: catalogs.count_by_tran_type.get(tran_type)
             for tran_type, trade in TRADE_BY_APT_TRAN_TYPE.items()
         },
-        pyeongs=[
-            ZigbangPyeong(
-                id=room_type.id,
-                name=room_type.room_type_title.m2 if room_type.room_type_title else None,
-                pyeong_name=text_or_none(room_type.room_type_title.p) if room_type.room_type_title else None,
-            )
-            for room_type in catalogs.room_types
-        ],
+        pyeongs=[pyeong_of(room_type, details.get(room_type.id)) for room_type in catalogs.room_types],
         schools=schools,
         review_count=danji.review_count,
         url=apt_danji_url(number),
-        notes=[
-            f'이 단지에 거주 후기 {danji.review_count}개가 있습니다. 후기 내용은 직방 단지 페이지({apt_danji_url(number)})에서 확인하세요'
-        ] if danji.review_count else [],
+        estimated_sale_price_min_manwon=_positive_or_none(room_info.min_sales_price) if room_info else None,
+        estimated_sale_price_max_manwon=_positive_or_none(room_info.max_sales_price) if room_info else None,
+        estimated_sale_price_per_pyeong_manwon=_positive_or_none(room_info.average_sales_price) if room_info else None,
+        estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(room_info.average_rent_price) if room_info else None,
+        rank=complex_rank_of(danji.rank),
+        related_complexes=_related_complexes_of(danji.relate_danji),
+        land_trade_permits=_land_trade_permits_of(danji.land_trade_permit),
+        notes=lookup_notes + (
+            [f'이 단지에 거주 후기 {danji.review_count}개가 있습니다. 후기 내용은 직방 단지 페이지({apt_danji_url(number)})에서 확인하세요']
+            if danji.review_count else []
+        ),
     )
 
 

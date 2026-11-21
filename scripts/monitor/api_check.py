@@ -137,19 +137,20 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step(
             '아파트 동 목록 역삼동', APT, ('역삼동', '--limit', '2'), 'listings',
-            (
-                Capture('apt', 'listings', 'complex_id', prefix='apt-'), Capture('apt_listing', 'listings', 'id'),
-                Capture('apt_next', '', 'next'),
-            ),
+            (Capture('apt_listing', 'listings', 'id'), Capture('apt_next', '', 'next')),
         ),
         Step('아파트 이어 받기 역삼동', APT, ('역삼동', '--limit', '2', '--next', '{apt_next}'), 'listings'),
-        # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다
         # 신규분양 빼기는 다른 서버 인자(includeOfferItem=false)를 보내는 경로다. 호 묶음은 여기서 고른다: 신규분양 호는 직방시세가
         # 없어(2026-11-20 리뷰 실측: 서패동 분양 묶음 19034254-trade 는 시세 null·[실패] 안내 없음) 아래 단계가 고장으로 잘못 알린다.
         # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
+        # 단지(`{apt}`)도 여기서 고른다: 신규분양 카드도 `apt-` 단지 ID 를 갖고 그 단지는 단지 직방시세가 없다(2026-11-20 리뷰 실측:
+        # 서패동 신규분양 카드의 apt-94091 은 estimated_sale_price_min_manwon 이 null 이고 [실패] 안내가 없다)
         Step(
             '아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings',
-            (Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),),
+            (
+                Capture('apt', 'listings', 'complex_id', prefix='apt-'),
+                Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),
+            ),
         ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         # 호 정보(item_catalogs/ho-info)는 덤이라 실패해도 값이 null 로 남고 명령은 성공한다. 직방은 시세가 없는 호에 0 을 주기도 해
@@ -176,7 +177,12 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         # --order 는 순서 탭(order=areaPrice 등)을 서버에 보내는 경로다
         Step('역 주변 아파트 단지 평당가 순 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--order', '평당가', '--limit', '3'), 'complexes'),
-        Step('아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),)),
+        # 평형 정보(danjis/{id}/room-types)는 덤이라 실패해도 명령은 성공한다. 그 칸(단지 직방시세 범위)은 직방이 정상 단지에도 시세를
+        # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이다.
+        Step(
+            '아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),),
+            also_expect=('estimated_sale_price_min_manwon',), may_be_empty=True,
+        ),
         Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),
         # 전체는 서버 거래 유형 all 을 보내 매매와 전월세를 한 목록으로 받는다 (거래마다 trade_type)
         Step('아파트 실거래가 전체', ('zigbang', 'real-price'), ('{apt}', '--trade', '전체', '--limit', '3'), 'transactions'),

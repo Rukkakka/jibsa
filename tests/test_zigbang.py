@@ -30,9 +30,13 @@ from jibsa.providers.zigbang.api.response.apt import (
     ZigbangItemCatalogsItemsResponseModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
+    ZigbangDanjiRankModel,
     ZigbangItemCatalogModel,
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
+)
+from jibsa.providers.zigbang.api.response.complex.detail import (
+    ZigbangDanjiRoomTypeModel,
 )
 from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
 from jibsa.providers.zigbang.api.response.room.base import (
@@ -63,6 +67,10 @@ from jibsa.providers.zigbang.service.common.base import (
 from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
     summary_to_listing,
+)
+from jibsa.providers.zigbang.service.complex.detail import (
+    complex_rank_of,
+    pyeong_of,
 )
 from jibsa.providers.zigbang.service.complex.search import (
     complex_order_of,
@@ -1332,6 +1340,28 @@ def test_same_name_school_without_coordinates_still_counts_as_a_candidate() -> N
         with pytest.raises(JibsaError) as caught:
             resolve_school(client, '가상초등학교')
     assert caught.value.code == 'REGION_AMBIGUOUS'
+
+
+# --- 단지 정보 (complex) --------------------------------------------------------
+
+def test_complex_rank_minus_one_and_zero_prices_are_unknown() -> None:
+    both = {'local2': {'name': '송파구', 'rank': 1, 'total': 10}, 'local3': {'name': '가락동', 'rank': 1, 'total': 3}}
+    # -1 은 웹이 '순위 없음' 으로 그리는 값이다
+    rank = complex_rank_of(ZigbangDanjiRankModel.model_validate({**both, 'viewCountRank': 7, 'tradePriceRank': -1}))
+    assert rank is not None and (rank.region, rank.price_rank, rank.popularity_rank) == ('가락동', None, 7)
+    # 웹은 구·동 순위 중 하나라도 없으면 절을 그리지 않는다
+    assert complex_rank_of(ZigbangDanjiRankModel.model_validate({'local3': both['local3'], 'viewCountRank': 7})) is None
+    # 0 인 시세·관리비는 웹이 '시세없음'·'-' 로 그리므로 모름(null)이다. 빠진 평형이면 새 값이 모두 null 이다
+    detail = ZigbangDanjiRoomTypeModel.model_validate({
+        'id': 1, '총세대수': 731, '현관구조': '', 'manage_cost': {'관리비': 0, '여름관리비': 0, '겨울관리비': 45},
+        'sales_price': {'min': 0, 'per_area': 10533}, 'rent_price': {'min': 145000, 'per_area': 0}, '거래가능시점': '20160601',
+    })
+    pyeong = pyeong_of(ZigbangDanjiRoomTypeModel.model_validate({'id': 1}), detail).model_dump()
+    assert (pyeong['manage_cost_manwon'], pyeong['manage_cost_summer_manwon'], pyeong['manage_cost_winter_manwon']) == (None, None, 45)
+    assert (pyeong['estimated_sale_price_manwon'], pyeong['estimated_sale_price_per_pyeong_manwon']) == (None, 10533)
+    assert (pyeong['estimated_jeonse_price_manwon'], pyeong['estimated_jeonse_price_per_pyeong_manwon']) == (145000, None)
+    assert (pyeong['households'], pyeong['entrance_type'], pyeong['resale_available_from']) == (731, None, '2016-06-01')
+    assert pyeong_of(ZigbangDanjiRoomTypeModel.model_validate({'id': 1}), None).model_dump()['households'] is None
 
 
 # --- 원룸·빌라·오피스텔 상세 보강 -----------------------------------------------

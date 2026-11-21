@@ -306,7 +306,7 @@
    `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19). 반대로 사이트가
    정상이어도 빌 수 있는 값을 기대 칸으로 걸면 고장 알림이 거짓으로 난다: 조건으로 고른 목록(최근입주), 시세 0 을 `null` 로
    내는 값, 신규분양처럼 값이 없는 대상을 고를 수 있는 `Capture` 는 `may_be_empty` 로 두거나 그 대상을 피해 고른다
-   (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주·`catalog` 직방시세, 2026-11-20).
+   (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주·`catalog` 직방시세·`{apt}` Capture, 2026-11-20). 정상 단지에도 `null` 일 수 있는 값(직방 `complex` 단지 직방시세, 2026-11-21)도 `also_expect` 에 걸지 않는다.
    언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸(`expect`·`also_expect`)을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
 
 ## 지적하지 말 것
@@ -335,3 +335,4 @@
    (`providers/daangn/service/compare.py:611`).
 9. **꺼진 상태가 정상인 기능 스위치의 기본값.** 한 호출부만 켜고 나머지는 꺼야 맞는 bool(`listing_search`)은 `design` 2 가
    아니다. 지금 호출부는 모두 맞고, 틀리려면 호출부가 바뀌어야 한다. 예: `providers/naver/service/region.py:761`.
+10. **"응답 모델 칸의 자료형이 바뀌면 그 응답을 같이 읽는 다른 명령까지 `PARSE_ERROR` 가 된다".** 글자 칸에 숫자가 오는 것처럼 응답 형식이 바뀌는 일은 [매일 API 감시](README.md#매일-api-감시)가 잡는 고장이라 칸마다 받는 형식을 미리 넓혀 두지 않는다 ([코드 리뷰](agents.md#코드-리뷰) 2단계). 서버가 소수·0 처럼 지금 값의 연장을 줄 수 있는 칸(`correctness` 6)과는 다르다. 예: 직방 단지 상세 `relateDanji`·`landTradePermit` (2026-11-21).
