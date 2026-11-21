@@ -203,7 +203,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단기임대 지역 강남구', ('zigbang', 'search', 'listings', 'stay'), ('강남구', '--limit', '2'), 'listings',
             (Capture('stay', 'listings', 'id'),),
         ),
-        Step('단기임대 상세', ZIGBANG_LISTING, ('{stay}',), 'id'),
+        # 후기 수(guest/items/reviews)는 덤이라 실패해도 null 로 남고 명령은 성공한다. 후기가 없으면 0 이라 값이 있다. 임대인의 다른 방
+        # 수(host_other_listing_count)는 임대인 ID 가 없거나 0 이하면 안내 없이 null 이라 정상에서도 비므로 기대 칸으로 걸지 않는다
+        Step('단기임대 상세', ZIGBANG_LISTING, ('{stay}',), 'id', also_expect=('review_count',)),
         # 날짜를 주면 상세의 막힌 날짜(schedules)로 예약 가능 여부를 붙인다. 예약된 기간이면 false 라 값 대신 상세가 오는지만 본다
         Step('단기임대 날짜 상세', ZIGBANG_LISTING, ('{stay}', '--check-in', '{check_in}', '--check-out', '{check_out}'), 'id'),
         # 역 이름은 직방 단기임대 역 검색, --radius 를 주면 지도 핀이다

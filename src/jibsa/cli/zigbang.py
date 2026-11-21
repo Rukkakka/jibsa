@@ -113,6 +113,7 @@ from jibsa.providers.zigbang.service.room.search import (
     unsearchable_note,
     unsearchable_types,
 )
+from jibsa.providers.zigbang.service.stay.detail import ZigbangStayListingDetail
 from jibsa.providers.zigbang.service.stay.search import (
     STAY_BUILDING_TYPE_BY_LABEL,
     STAY_DISCOUNT_TYPE_BY_LABEL,
@@ -1297,8 +1298,8 @@ def listing_command(
         raise typer.BadParameter('--check-in 과 --check-out 은 함께 주세요', param_hint='--check-in')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_any_listing(client, item_id, check_in=check_in, check_out=check_out)
-        # 주거(원룸·빌라·오피스텔·아파트) 상세는 덤 조회(학군·건물 실거래) 실패 안내를 notes 로 갖는다
-        emit(result, pretty, notes=result.notes if isinstance(result, ZigbangListingDetail) else None)
+        # 주거(원룸·빌라·오피스텔·아파트)·단기임대 상세는 덤 조회(학군·건물 실거래, 후기·임대인의 다른 방) 실패 안내를 notes 로 갖는다
+        emit(result, pretty, notes=result.notes if isinstance(result, ZigbangListingDetail | ZigbangStayListingDetail) else None)
 
 
 @app.command('catalog')

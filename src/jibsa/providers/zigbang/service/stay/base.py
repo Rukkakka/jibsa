@@ -19,7 +19,7 @@ from jibsa.providers.zigbang.service.common.base import sent_or_none
 from typing import Annotated
 
 
-# 단기임대 검색 결과 줄(`ZigbangStayListing`)과 상세가 같이 쓰는 것, 검색 조건과 상세가 같이 쓰는 이름표.
+# 단기임대 검색 결과 줄(`ZigbangStayListing`)과 상세의 '임대인의 다른 방' 이 같이 쓰는 것, 검색 조건과 상세가 같이 쓰는 이름표.
 # 방 종류 표시 이름은 목록 줄·상세와 검색 조건(`service/stay/search.py` 의 STAY_BUILDING_TYPE_BY_LABEL)이 같이 쓴다
 STAY_BUILDING_TYPE_LABELS: dict[str, str] = {
     'OFFICETEL': '오피스텔',

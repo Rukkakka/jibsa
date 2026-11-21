@@ -8,7 +8,7 @@ from typing import Annotated
 
 
 # ---------------------------------------------------------------------------
-# GET stay-apis.zigbang.com/guest/items/by-ids (검색·상세가 같이 쓴다)
+# GET stay-apis.zigbang.com/guest/items/by-ids (검색·상세·임대인의 다른 방이 같이 쓴다)
 # ---------------------------------------------------------------------------
 
 class ZigbangStayAddressModel(ResponseModel):

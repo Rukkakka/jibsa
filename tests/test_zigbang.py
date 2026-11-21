@@ -98,6 +98,8 @@ from jibsa.providers.zigbang.service.room.detail import (
 from jibsa.providers.zigbang.service.room.search import search_listings
 from jibsa.providers.zigbang.service.stay.detail import (
     STAY_REFUND_RULES,
+    ZigbangStayListingDetail,
+    _stay_host_others,
     stay_detail_to_listing,
 )
 from jibsa.providers.zigbang.service.stay.search import stay_marker_order
@@ -1478,3 +1480,37 @@ def test_stay_marker_order_price_uses_weekly_total_price_then_recommended() -> N
         ]
     ]
     assert stay_marker_order(markers, 'price') == [3, 2, 1, 4]
+
+
+def test_stay_host_others_without_items_is_unknown() -> None:
+    # 실제 응답으로 재현하지 못하는 빈 응답. 목록 키가 없거나 null 이면 '다른 방 없음' 이 아니라 모름이다
+    def run(body: dict) -> dict:
+        with make_client(lambda request: httpx.Response(200, json=body)) as client:
+            values, notes = _stay_host_others(client, 1, 2)
+        assert notes == []
+        return values
+
+    assert run({}) == {'host_other_listings': None, 'host_other_listing_count': None}
+    assert run({'items': None, 'totalCount': 3}) == {'host_other_listings': None, 'host_other_listing_count': 3}
+    assert run({'items': []}) == {'host_other_listings': [], 'host_other_listing_count': 0}
+
+
+def test_stay_host_others_skips_non_positive_host_id() -> None:
+    # 요청 모델의 host_id 는 gt=0 이라 0 이하를 넣으면 ValidationError 로 '받지 못해' 로 잘못 알렸다. 부르지 않고 모름이다 (안내 없음)
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError('임대인 ID 가 0 이하면 요청을 보내지 않아야 한다')
+
+    with make_client(refuse) as client:
+        values, notes = _stay_host_others(client, 1, 0)
+    assert values == {'host_other_listings': None, 'host_other_listing_count': None}
+    assert notes == []
+
+
+def test_stay_detail_drops_review_rating_when_no_reviews() -> None:
+    base = dict(source='zigbang', id='stay-1', url='https://www.zigbang.com/stay/item/1', trade_type='단기임대', property_type='원룸')
+    none = ZigbangStayListingDetail(**base, review_count=0, review_rating=None).model_dump()
+    assert none['review_count'] == 0 and 'review_rating' not in none
+    rated = ZigbangStayListingDetail(**base, review_count=3, review_rating=4.75).model_dump()
+    assert rated['review_rating'] == 4.75
+    failed = ZigbangStayListingDetail(**base, review_count=None, review_rating=None).model_dump()
+    assert failed['review_count'] is None and failed['review_rating'] is None

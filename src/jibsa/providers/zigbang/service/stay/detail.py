@@ -1,4 +1,4 @@
-"""단기임대 상세 (listing stay-*): 상세·예약 가능 여부."""
+"""단기임대 상세 (listing stay-*): 상세·후기 요약·임대인의 다른 방·예약 가능 여부."""
 
 from datetime import (
     date,
@@ -18,6 +18,7 @@ from jibsa.core.listing import (
     ListingDetail,
     m2_to_pyeong,
     normalize_date,
+    note,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -27,13 +28,16 @@ from jibsa.providers.zigbang.api.request.stay.base import (
     validate_stay_dates,
 )
 from jibsa.providers.zigbang.api.request.stay.detail import (
+    ZigbangGuestItemsHostRequestParameterModel,
     ZigbangGuestItemsRequestParameterModel,
+    ZigbangGuestItemsReviewsRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.stay.detail import (
     ZigbangGuestItemsResponseModel,
     ZigbangStayScheduleModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
+    SCHOOL_LOOKUP_ERRORS,
     sent_or_none,
     text_or_none,
     unavailable_on_404,
@@ -41,8 +45,10 @@ from jibsa.providers.zigbang.service.common.base import (
 from jibsa.providers.zigbang.service.stay.base import (
     STAY_BUILDING_TYPE_LABELS,
     STAY_OPTION_LABELS,
+    ZigbangStayListing,
     stay_discounts,
     stay_item_url,
+    stay_summary_to_listing,
 )
 
 from typing import (
@@ -98,6 +104,8 @@ STAY_SCHEDULE_KIND_LABELS: dict[str, str] = {
     'RESERVED': '예약',
     'BLOCKED': '막힘',
 }
+# 상세에 싣는 '임대인의 다른 방' 수. 웹은 모두 받아 가로 카드로 보여 주지만 jibsa 는 앞쪽만 내고 전체 수를 따로 알린다
+STAY_HOST_OTHER_LIMIT: int = 10
 # 웹 날짜 고르기 창이 받는 가장 늦은 마지막 날은 입주일 + 83일이다 (번들 `getMaxCheckOut`)
 STAY_MAX_CHECK_OUT_DAYS: int = 83
 # 웹이 날짜를 막는 일정 종류 (번들 `isUnavailableSchedule`). 이름 표(STAY_SCHEDULE_KIND_LABELS)의 키와 같아 표를 고치면 따라간다
@@ -237,9 +245,42 @@ class ZigbangStayListingDetail(ListingDetail):
             '마지막 날이 막힌 날이 아니면 true. 직방이 일정을 주지 않으면 null'
         ))
     ] = None
+    review_count: Annotated[
+        int | None,
+        Field(description='후기 수 (직방 웹 상세의 후기 배지). 후기가 없으면 0, 후기 조회가 실패했으면 null')
+    ] = None
+    review_rating: Annotated[
+        float | None,
+        Field(description=(
+            "평균 평점 (직방 원값, 웹은 소수 첫째 자리로 반올림해 '★ 4.8' 로 보여 준다). 항목별 점수(청결·위치 등)는 직방에 없다. "
+            '후기가 없으면(review_count 0) 키가 없고, 후기 조회가 실패했으면 null'
+        ))
+    ] = None
+    host_other_listings: Annotated[
+        list[ZigbangStayListing] | None,
+        Field(description=(
+            f"같은 임대인의 다른 단기임대 매물 (직방 웹 상세 맨 아래 '임대인의 다른 방', 지금 매물 제외). 직방 순서(검수 시각 늦은 순) "
+            f'그대로 앞 {STAY_HOST_OTHER_LIMIT}건이고 전체 수는 host_other_listing_count 다. 없으면 [], 임대인을 모르거나 조회가 '
+            '실패했거나 직방이 목록을 주지 않아 있는지 알 수 없으면 null'
+        ))
+    ] = None
+    host_other_listing_count: Annotated[
+        int | None,
+        Field(description=(
+            '임대인의 다른 매물 전체 수 (host_other_listings 보다 많을 수 있다). 다른 방이 없으면 0, 임대인을 모르거나 조회가 '
+            '실패했거나 직방이 수를 주지 않으면 null'
+        ))
+    ] = None
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='후기 요약·임대인의 다른 방 조회가 실패했다는 안내. CLI 가 결과 위에 붙인다')
+    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
+        # 후기가 없으면 평점도 없다 (직방은 평균 0 을 주지만 웹도 평점을 그리지 않는다)
+        if self.review_count == 0:
+            fields = fields | {'review_rating'}
         # 날짜를 주지 않은 조회에는 예약 가능 여부가 해당 없다. 날짜를 주면 get_stay_listing 이 모를 때(None)도 값을
         # 넣어(model_copy) model_fields_set 에 든다
         if 'available' not in self.model_fields_set:
@@ -408,7 +449,10 @@ def get_stay_listing(
     check_in: str | None = None,
     check_out: str | None = None,
 ) -> ZigbangStayListingDetail:
-    """단기임대 매물 하나의 상세를 조회한다 (상세 + 노출 시작일용 요약, 2회 호출).
+    """단기임대 매물 하나의 상세를 조회한다 (상세 + 노출 시작일용 요약 + 후기 요약 + 임대인의 다른 방, 4회 호출).
+
+    후기 요약(`review_count`·`review_rating`)과 임대인의 다른 방(`host_other_listings`)은 덤이라 조회가 실패하면(요청 제한 포함)
+    그 값만 null 로 두고 `notes` 에 `[실패]` 안내를 붙여 상세는 돌려준다 (임대인 ID 가 없어 요청하지 않은 다른 방은 안내가 없다, 3회).
 
     입주일·마지막 날(`check_in`·`check_out`)을 주면 상세의 일정(`schedules`)으로 그 기간을 예약할 수 있는지(`available`)를
     웹 날짜 고르기 창 규칙대로 붙인다 (`stay_range_available`, 요청이 늘지 않는다). 그 기간의 총비용은 웹이 로그인했을 때만
@@ -435,12 +479,70 @@ def get_stay_listing(
     )
     summary = next((summary for summary in summaries.items if summary.id == item_id), None)
     listing = stay_detail_to_listing(detail, summary.reviewed_at if summary else None)
+    reviews, review_notes = _stay_reviews(client, item_id)
+    host_others, host_notes = _stay_host_others(client, item_id, detail.host_id)
+    notes = review_notes + host_notes
+    listing = listing.model_copy(update={**reviews, **host_others, 'notes': notes})
     if period is None:
         return listing
     available = None if detail.schedules is None else stay_range_available(
         detail.schedules, detail.min_contract_weeks, period.check_in, period.check_out, datetime.now(KST).date(),
     )
     return listing.model_copy(update={'available': available})
+
+
+def _stay_reviews(client: ZigbangClient, item_id: int) -> tuple[dict[str, Any], list[str]]:
+    """후기 수·평균 평점 (웹 상세 후기 배지의 `fetchItemReviewSummary` 와 같은 호출). 조회가 실패하면 둘 다 null 이고 `[실패]` 안내를 함께 준다.
+
+    없는 매물도 200 에 빈 응답이라 상세로 매물이 있는 것을 확인한 뒤에만 부른다. 후기 글·작성자·사진은 읽지 않는다.
+    """
+    try:
+        response = client.run_request_guest_items_reviews(ZigbangGuestItemsReviewsRequestParameterModel(item_id=item_id, limit=1))
+    except SCHOOL_LOOKUP_ERRORS as exc:
+        # 후기를 못 받아도 매물 상세는 돌려준다 (모름)
+        return dict(review_count=None, review_rating=None), [note(
+            '실패',
+            f'직방 후기 정보를 받지 못해({type(exc).__name__}) review_count·review_rating 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+        )]
+    summary = response.summary
+    count = summary.review_count if summary else None
+    # 후기가 없으면(0) 평점 키는 not_applicable_fields 가 뺀다. 값은 직방 원값 그대로 둔다
+    return dict(review_count=count, review_rating=summary.average_rating if summary and count else None), []
+
+
+def _stay_host_others(client: ZigbangClient, item_id: int, host_id: int | None) -> tuple[dict[str, Any], list[str]]:
+    """같은 임대인의 다른 방 (웹 상세 맨 아래 '임대인의 다른 방', 지금 매물 제외). 앞 `STAY_HOST_OTHER_LIMIT` 건과 전체 수.
+
+    임대인 ID 가 없거나 0 이하면 부르지 않고 둘 다 null 이다 (안내 없음). 조회가 실패하면(없는 임대인의 404 포함) 둘 다 null 이고 `[실패]` 안내를
+    함께 준다. 서버 순서(검수 시각 늦은 순)를 그대로 낸다. 응답에 목록이 없거나 null 이면 `host_other_listings` 는 null 이고
+    (모름), 전체 수는 직방이 준 값 그대로다.
+
+    내려간 방(status false)은 서버가 목록과 totalCount 에서 뺀다 (2026-11-20 실측: 임대인 4747 의 4120, 1556 의 1200 이 빠졌다).
+    웹 상세 화면도 이 응답을 거르지 않고 그대로 그려(번들 useGuestHostItems·StayItemDetailScreen) 상태를 다시 보지 않는다.
+    """
+    if host_id is None or host_id <= 0:
+        return dict(host_other_listings=None, host_other_listing_count=None), []
+    try:
+        response = client.run_request_guest_items_host(ZigbangGuestItemsHostRequestParameterModel(
+            host_id=host_id, exclude_item_id=item_id, page=1, limit=STAY_HOST_OTHER_LIMIT,
+        ))
+    except SCHOOL_LOOKUP_ERRORS as exc:
+        # 다른 방을 못 받아도 매물 상세는 돌려준다 (모름)
+        return dict(host_other_listings=None, host_other_listing_count=None), [note(
+            '실패',
+            f'직방 임대인의 다른 방 정보를 받지 못해({type(exc).__name__}) host_other_listings·host_other_listing_count 값을 모릅니다 '
+            f'(url 의 직방 페이지에서 확인)',
+        )]
+    items = response.items
+    count = response.total_count
+    notes: list[str] = []
+    # 직방이 수를 주지 않아도 다른 방이 하나도 없으면 0 이다 (목록 자체를 모르면 수도 모른다)
+    if count is None and items is not None and not items:
+        count = 0
+    return dict(
+        host_other_listings=None if items is None else [stay_summary_to_listing(summary) for summary in items[:STAY_HOST_OTHER_LIMIT]],
+        host_other_listing_count=count,
+    ), notes
 
 
 def stay_range_available(

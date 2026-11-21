@@ -69,7 +69,9 @@ from jibsa.providers.zigbang.api.request.stay.base import (
     ZigbangGuestItemsByIdsRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.stay.detail import (
+    ZigbangGuestItemsHostRequestParameterModel,
     ZigbangGuestItemsRequestParameterModel,
+    ZigbangGuestItemsReviewsRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.stay.search import (
     ZigbangGuestItemsMarkersRequestParameterModel,
@@ -131,7 +133,9 @@ from jibsa.providers.zigbang.api.response.stay.base import (
     ZigbangGuestItemsByIdsResponseModel,
 )
 from jibsa.providers.zigbang.api.response.stay.detail import (
+    ZigbangGuestItemsHostResponseModel,
     ZigbangGuestItemsResponseModel,
+    ZigbangGuestItemsReviewsResponseModel,
 )
 from jibsa.providers.zigbang.api.response.stay.search import (
     ZigbangGuestItemsMarkersResponseModel,
@@ -183,8 +187,8 @@ class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
     로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호 묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 상가,
-    단기임대(stay-apis.zigbang.com)를 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은
-    대부분 **만원** 단위로 오지만,
+    단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을 조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는
+    헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
     엔드포인트 action id 는 버전 앞의 서비스 접두(`/house/property`, `/apt`)와 경로
@@ -247,6 +251,8 @@ class ZigbangClient(BaseHTTPClient):
     guest_items_markers_endpoint: ClassVar[str] = '/guest/items/markers'
     guest_items_by_ids_endpoint: ClassVar[str] = '/guest/items/by-ids'
     guest_items_endpoint: ClassVar[str] = '/guest/items/{item_id}'
+    guest_items_reviews_endpoint: ClassVar[str] = '/guest/items/{item_id}/reviews'
+    guest_items_host_endpoint: ClassVar[str] = '/guest/items/host/{host_id}'
     items_detail_v1_endpoint: ClassVar[str] = '/house/property/v1/items/{item_id}/detail'
     items_v3_endpoint: ClassVar[str] = '/v3/items/{item_id}'
 
@@ -1539,7 +1545,7 @@ class ZigbangClient(BaseHTTPClient):
             parameter: `item_id` (경로).
 
         Returns:
-            ZigbangGuestItemsResponseModel: 단기임대 매물 상세 (금액은 원 단위).
+            ZigbangGuestItemsResponseModel: 단기임대 매물 상세 (금액은 원 단위. `hostId` 로 임대인의 다른 방을 찾는다).
         """
         response = self._client.get(
             url=self.stay_base_url + self.guest_items_endpoint.format(item_id=parameter.item_id),
@@ -1560,6 +1566,83 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangGuestItemsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_guest_items_reviews(
+        self,
+        parameter: ZigbangGuestItemsReviewsRequestParameterModel
+    ) -> ZigbangGuestItemsReviewsResponseModel:
+        """Fetch the review summary of a short-term stay via `GET stay-apis.zigbang.com/guest/items/{itemId}/reviews`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단기임대 상세 화면의 후기·평점이다 (2026-11-19 웹 대조
+        조사). 로그인이 필요 없다. 없는 매물도 200 에 후기 0건 요약이 오고, `limit` 이 51 이상이면 400 이다 (2026-11-19 실측).
+        후기 글·닉네임·사진은 읽지 않는다.
+
+        Args:
+            parameter: `item_id` (경로) plus `limit` (1~50).
+
+        Returns:
+            ZigbangGuestItemsReviewsResponseModel: 평균 평점과 후기 수 요약.
+        """
+        response = self._client.get(
+            url=self.stay_base_url + self.guest_items_reviews_endpoint.format(item_id=parameter.item_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=STAY_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangGuestItemsReviewsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_guest_items_reviews(
+        self,
+        parameter: ZigbangGuestItemsReviewsRequestParameterModel
+    ) -> ZigbangGuestItemsReviewsResponseModel:
+        """Async variant of `run_request_guest_items_reviews`."""
+        response = await self._async_client.get(
+            url=self.stay_base_url + self.guest_items_reviews_endpoint.format(item_id=parameter.item_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=STAY_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangGuestItemsReviewsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_guest_items_host(
+        self,
+        parameter: ZigbangGuestItemsHostRequestParameterModel
+    ) -> ZigbangGuestItemsHostResponseModel:
+        """List the other short-term stays of a host via `GET stay-apis.zigbang.com/guest/items/host/{hostId}`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단기임대 상세 화면의 임대인의 다른 방이다 (2026-11-19 웹 대조
+        조사). 로그인이 필요 없다. 없는 임대인은 404 ('임대인을 찾을 수 없습니다') 다 (2026-11-19 실측).
+
+        Args:
+            parameter: `host_id` (경로) plus `excludeItemId`, `page`, `limit` (1~50).
+
+        Returns:
+            ZigbangGuestItemsHostResponseModel: 임대인의 매물 요약(`by-ids` 와 같은 꼴)과 전체 수.
+        """
+        response = self._client.get(
+            url=self.stay_base_url + self.guest_items_host_endpoint.format(host_id=parameter.host_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=STAY_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangGuestItemsHostResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_guest_items_host(
+        self,
+        parameter: ZigbangGuestItemsHostRequestParameterModel
+    ) -> ZigbangGuestItemsHostResponseModel:
+        """Async variant of `run_request_guest_items_host`."""
+        response = await self._async_client.get(
+            url=self.stay_base_url + self.guest_items_host_endpoint.format(host_id=parameter.host_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=STAY_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangGuestItemsHostResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_items_subways_onerooms_v1(

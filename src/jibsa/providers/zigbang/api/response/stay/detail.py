@@ -1,10 +1,11 @@
-"""응답 모델: 단기임대 상세 (listing stay-*)."""
+"""응답 모델: 단기임대 상세·후기·임대인의 다른 방 (listing stay-*)."""
 
 from pydantic import Field
 
 from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.response.stay.base import (
     ZigbangStayDiscountModel,
+    ZigbangStayItemSummaryModel,
 )
 
 from typing import Annotated
@@ -75,6 +76,10 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
     check_status: Annotated[
         str | None,
         Field(description="검수 상태 ('COMPLETE' 이면 검수 완료)", alias='checkStatus')
+    ] = None
+    host_id: Annotated[
+        int | None,
+        Field(description='임대인 ID. 임대인의 다른 방 조회(`/guest/items/host/{hostId}`)에 넘긴다. 키가 없으면 None (모름)', alias='hostId')
     ] = None
     title: Annotated[
         str | None,
@@ -238,4 +243,47 @@ class ZigbangGuestItemsResponseModel(ResponseModel):
             '예약된·막힌 일정. 로그인 없이 온다 (2026-11-15 실측: 4114 는 BLOCKED 2026-11-11~2026-12-02 하나이고 웹 달력이 그 '
             '날짜를 막았다). 키가 없으면 None (모름)'
         ))
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# GET stay-apis.zigbang.com/guest/items/{itemId}/reviews
+# ---------------------------------------------------------------------------
+
+class ZigbangStayReviewSummaryModel(ResponseModel):
+    """단기임대 후기 요약."""
+
+    average_rating: Annotated[
+        float | None,
+        Field(description='평균 평점. 후기가 없으면 0 (2026-11-19 표본 28건 모두 0)', alias='averageRating')
+    ] = None
+    review_count: Annotated[
+        int | None,
+        Field(description='후기 수. 후기가 없으면 0', alias='reviewCount')
+    ] = None
+
+
+class ZigbangGuestItemsReviewsResponseModel(ResponseModel):
+    """단기임대 후기 응답. 후기 목록(`reviews`)은 글·닉네임·사진이 들어 있어 읽지 않는다 (요약만 쓴다)."""
+
+    summary: Annotated[
+        ZigbangStayReviewSummaryModel | None,
+        Field(description='평점·후기 수 요약. 없는 매물도 200 에 후기 0 건 요약이 온다 (2026-11-19 실측)')
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# GET stay-apis.zigbang.com/guest/items/host/{hostId}
+# ---------------------------------------------------------------------------
+
+class ZigbangGuestItemsHostResponseModel(ResponseModel):
+    """같은 임대인의 다른 단기임대 매물. 항목은 요약(`by-ids`)과 키가 같다 (좋아요 여부(`isFavorite`)는 읽지 않는다)."""
+
+    items: Annotated[
+        list[ZigbangStayItemSummaryModel] | None,
+        Field(description='이 쪽의 매물 요약 (금액은 원 단위). 키가 없거나 null 이면 None (모름)')
+    ] = None
+    total_count: Annotated[
+        int | None,
+        Field(description='임대인의 매물 수 (쪽과 상관없는 전체. 2026-11-19 임대인 5436 은 93, 1쪽 5건·limit 없이 93건)', alias='totalCount')
     ] = None
