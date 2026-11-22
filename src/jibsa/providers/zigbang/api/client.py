@@ -55,6 +55,9 @@ from jibsa.providers.zigbang.api.request.local.info import (
     ZigbangLocalsTotalPeopleTimeRequestParameterModel,
     ZigbangLocalsTradingVolumeChartRequestParameterModel,
 )
+from jibsa.providers.zigbang.api.request.local.trades import (
+    ZigbangLocalsTradingHistoriesRequestParameterModel,
+)
 from jibsa.providers.zigbang.api.request.real_price import (
     ZigbangDanjisRoomTypesRtPricesRequestParameterModel,
     ZigbangDanjisRtPricesRequestParameterModel,
@@ -132,6 +135,9 @@ from jibsa.providers.zigbang.api.response.local.info import (
     ZigbangLocalsTotalHouseholdsTimeResponseModel,
     ZigbangLocalsTotalPeopleTimeResponseModel,
     ZigbangLocalsTradingVolumeChartResponseModel,
+)
+from jibsa.providers.zigbang.api.response.local.trades import (
+    ZigbangLocalsTradingHistoriesResponseModel,
 )
 from jibsa.providers.zigbang.api.response.real_price import (
     ZigbangDanjisRoomTypesRtPricesResponseModel,
@@ -215,7 +221,7 @@ class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
     로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호
-    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 지역 정보·거래량·평당가 추이·인구, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
+    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 지역 정보·거래량·평당가 추이·인구·최근 실거래, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
     조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
@@ -261,6 +267,7 @@ class ZigbangClient(BaseHTTPClient):
     locals_pyn_chart_price_endpoint: ClassVar[str] = '/apt/locals/pyn-chart-price'
     locals_total_people_time_endpoint: ClassVar[str] = '/apt/locals/{local_code}/total_people_time'
     locals_total_households_time_endpoint: ClassVar[str] = '/apt/locals/{local_code}/total_households_time'
+    locals_trading_histories_endpoint: ClassVar[str] = '/apt/locals/trading-histories'
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
     item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     item_catalogs_ho_info_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}/ho-info'
@@ -943,6 +950,44 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangLocalsTotalHouseholdsTimeResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals_trading_histories(
+        self,
+        parameter: ZigbangLocalsTradingHistoriesRequestParameterModel
+    ) -> ZigbangLocalsTradingHistoriesResponseModel:
+        """List the recent real transactions of a region via `GET /apt/locals/trading-histories`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 지역 정보 화면의 '최근 실거래' 목록이다. 응답이 `data` 봉투에 싸여 온다.
+        `page=0` 은 서버 500 이고 끝 쪽을 넘기면 빈 목록이다. 로그인이 필요 없다.
+
+        Args:
+            parameter: `page`, `localCd`, `dealType`, `sortSpec`, `periodType`, `limit`.
+
+        Returns:
+            ZigbangLocalsTradingHistoriesResponseModel: 이번 쪽의 실거래(금액은 만원)와 기간 안 전체 건수.
+        """
+        response = self._client.get(
+            url=self.locals_trading_histories_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTradingHistoriesResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_trading_histories(
+        self,
+        parameter: ZigbangLocalsTradingHistoriesRequestParameterModel
+    ) -> ZigbangLocalsTradingHistoriesResponseModel:
+        """Async variant of `run_request_locals_trading_histories`."""
+        response = await self._async_client.get(
+            url=self.locals_trading_histories_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTradingHistoriesResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_item_catalogs_items(

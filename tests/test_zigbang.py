@@ -47,6 +47,7 @@ from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangDanjisRoomTypesPriceChartResponseModel,
 )
 from jibsa.providers.zigbang.api.response.local.info import ZigbangLocalPriceModel
+from jibsa.providers.zigbang.api.response.local.trades import ZigbangLocalTradeModel
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
@@ -97,6 +98,9 @@ from jibsa.providers.zigbang.service.complex.trend import (
 from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.local import (
     info as region_info,
+)
+from jibsa.providers.zigbang.service.local import (
+    trades as region_trades,
 )
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import (
@@ -1590,7 +1594,38 @@ def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
     assert data['available'] is True and len(data['unavailable_periods']) == 1
 
 
-# --- 지역 화면 (region-info) ------------------------
+# --- 지역 화면 (region-info·region-trades) ------------------------
+
+def _trade(**fields: object) -> ZigbangLocalTradeModel:
+    base = {
+        'areaDanjiId': 1, 'areaDanjiName': '[가상]단지', 'roomType': '84A', 'rtDealDate': '2026-11-03', 'local': '가상동',
+        'isNewHighest': False, 'isNewLowest': False, 'isContractRenewal': False, 'rtPrice': 90000,
+    }
+    return ZigbangLocalTradeModel.model_validate({**base, **fields})
+
+
+def test_trade_row_keys_by_trade_and_presale() -> None:
+    sale = {
+        'prevRtPriceGap': 500, 'prevRtPriceGapRate': 0.8, 'marketPriceGap': 0, 'marketPriceGapRate': 0, 'isNoMarketPriceGap': False,
+        'publicPriceGap': 0, 'publicPriceGapRate': 0, 'isNoPublicPriceGap': True, 'offerPriceGap': 0, 'offerPriceGapRate': 0, 'isNoOfferPriceGap': True,
+    }
+    row = region_trades._trade_of(_trade(**sale), '매매', '구').model_dump(mode='json')
+    # 직방시세가 있는데 0 이면 진짜 0, 공시가격이 없으면 null. 분양권·입주권이 아니면 분양가 대비·presale 키가 없다. 매매에는 갱신 키가 없다
+    assert (row['market_price_diff_manwon'], row['public_price_diff_manwon'], row['prev_diff_manwon']) == (0, None, 500)
+    assert not {'presale', 'offer_price_diff_manwon', 'renewal', 'deposit_manwon', 'rent_manwon'} & row.keys() and row['dong'] == '가상동'
+
+    # 분양권: 직방시세 없음(null), 분양가 대비 키가 있다. 입주권은 직전 거래 대비 키가 없다. 동 단위는 dong 키가 없다
+    presale = {**sale, 'offerType': '분양권', 'isNoMarketPriceGap': True, 'offerPriceGap': 2138, 'offerPriceGapRate': 1.1, 'isNoOfferPriceGap': False}
+    row = region_trades._trade_of(_trade(**presale), '매매', '동').model_dump(mode='json')
+    assert (row['presale'], row['market_price_diff_manwon'], row['offer_price_diff_manwon']) == ('분양권', None, 2138) and 'dong' not in row
+    row = region_trades._trade_of(_trade(**{**presale, 'offerType': '입주권'}), '매매', '구').model_dump(mode='json')
+    assert row['presale'] == '입주권' and 'prev_diff_manwon' not in row
+
+    # 월세는 응답에 신고가·갱신이 와도 키를 내지 않고 보증금·월세만 낸다
+    row = region_trades._trade_of(_trade(monthlyRentPrice=410, isContractRenewal=True), '월세', '구').model_dump(mode='json')
+    assert (row['deposit_manwon'], row['rent_manwon']) == (90000, 410)
+    assert not {'price_manwon', 'new_high', 'new_low', 'renewal', 'prev_diff_manwon', 'market_price_diff_manwon'} & row.keys()
+
 
 def test_region_info_price_tabs_and_population_period() -> None:
     prices = [

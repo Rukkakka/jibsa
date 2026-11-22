@@ -188,6 +188,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '지역 정보 구 송파구', ('zigbang', 'region-info'), ('송파구',), 'estimated_prices',
             also_expect=('population.people', 'population.households'),
         ),
+        Step('지역 실거래 송파구', ('zigbang', 'region-trades'), ('송파구', '--period', '30일', '--limit', '3'), 'trades'),
         # 평형 정보(danjis/{id}/room-types)는 덤이라 실패해도 명령은 성공한다. 그 칸(단지 직방시세 범위)은 직방이 정상 단지에도 시세를
         # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이고,
         # 응답 형식이 바뀌어 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다

@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import typer
 
 from jibsa.cli.options import (
@@ -93,9 +95,16 @@ from jibsa.providers.zigbang.service.complex.trend import (
     get_pyeong_price_trend,
 )
 from jibsa.providers.zigbang.service.listing import get_any_listing
+from jibsa.providers.zigbang.service.local.base import LOCAL_TRADES
 from jibsa.providers.zigbang.service.local.info import (
     PRICE_RANGES,
     get_region_info,
+)
+from jibsa.providers.zigbang.service.local.trades import (
+    DEFAULT_TRADE_LIMIT,
+    SORT_SPEC_BY_TRADE,
+    TRADE_PERIODS,
+    get_region_trades,
 )
 from jibsa.providers.zigbang.service.real_price import (
     REAL_PRICE_MAX_LIMIT,
@@ -250,7 +259,7 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 app = typer.Typer(
     help=(
         '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역·학교·동·구 주변 단지 search complexes, complex, '
-        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), 동·구 지역 화면(지역 정보 region-info), '
+        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), 동·구 지역 화면(지역 정보 region-info, 최근 실거래 region-trades), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
@@ -1373,6 +1382,11 @@ RegionQueryArgument = Annotated[
 ]
 
 
+def _sort_help(sorts_by_trade: Mapping[str, Mapping[str, object]]) -> str:
+    """`--sort` 도움말. 정렬은 거래 유형마다 다르고 각 거래의 첫 정렬이 기본이다 (웹 이름 그대로, 빈칸 없이도 받는다)."""
+    return '; '.join(f"{trade}: {', '.join(sorts)}" for trade, sorts in sorts_by_trade.items())
+
+
 @app.command('region-info')
 def region_info_command(
     query: RegionQueryArgument,
@@ -1394,6 +1408,36 @@ def region_info_command(
     chosen_range = check_choice(price_range, PRICE_RANGES, '--range')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_region_info(client, query, price_range=chosen_range)
+        emit(result, pretty, notes=result.notes)
+
+
+@app.command('region-trades')
+def region_trades_command(
+    query: RegionQueryArgument,
+    trade: Annotated[str, typer.Option('--trade', help=f"{', '.join(LOCAL_TRADES)} 중 하나")] = '매매',
+    period: Annotated[str, typer.Option('--period', help=f"등록 기간: {', '.join(TRADE_PERIODS)} (7일 = 웹 최근 일주일)")] = '오늘',
+    sort: Annotated[
+        str | None,
+        typer.Option('--sort', help=f'정렬 (거래마다 다르고 첫 정렬이 기본, 빈칸 없이도 받는다). {_sort_help(SORT_SPEC_BY_TRADE)}')
+    ] = None,
+    limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 실거래 수 (최대 {MAX_LIST_LIMIT}건)')] = DEFAULT_TRADE_LIMIT,
+    pretty: PrettyOption = None,
+) -> None:
+    """동·구의 최근 실거래 (직방 웹 지역 화면 '실거래', 등록일 기준 목록이라 계약일 순이 아니다).
+
+    직방 웹은 10건씩 넘겨 보지만 여기서는 --limit 건을 한 번에 받는다 (요청은 지역 검색과 실거래 2회). 정렬마다 웹이 보여 주는 비교가 다르지만
+    같은 응답의 비교(직전 거래·직방시세·공시가격·분양가·전세가 대비)를 모두 준다. 직방은 매일 낮 12시에 그날 실거래를 반영해 그 전에는
+    오늘이 비고 updated_today 가 false 다. 오늘 등록된 거래가 없으면 --period 로 기간을 넓힌다.
+    구 단위 조회는 줄마다 dong 이 있다.
+
+    예: jibsa zigbang region-trades 송파구 --period 7일 --limit 10
+        jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --period 30일
+    """
+    chosen_trade = check_choice(trade, LOCAL_TRADES, '--trade')
+    chosen_period = check_choice(period, TRADE_PERIODS, '--period')
+    # 정렬 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_region_trades(client, query, trade=chosen_trade, period=chosen_period, sort=sort, limit=limit)
         emit(result, pretty, notes=result.notes)
 
 

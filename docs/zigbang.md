@@ -20,7 +20,8 @@
 | `listing` | 매물 하나 상세 | 매물 ID | — |
 | `catalog` | 아파트 같은 호 묶음의 매물 전부와 매물마다의 가격·상세 | 묶음 ID (`catalog_id`) | `listing` |
 | `price-trend` | 아파트 단지·평형의 월별 직방시세 추이 | 아파트 단지 ID (평형은 `--pyeong`) | — |
-| `region-info` | 동·구 지역 정보 (단지·세대 수, 평형대별 직방시세, 거래량, 평당가 추이, 구는 인구·세대) | 동·구 이름 | `search complexes` |
+| `region-info` | 동·구 지역 정보 (단지·세대 수, 평형대별 직방시세, 거래량, 평당가 추이, 구는 인구·세대) | 동·구 이름 | `region-trades`, `search complexes` |
+| `region-trades` | 동·구의 최근 등록 실거래 | 동·구 이름 | `complex`, `real-price` |
 
 ### 보통 이렇게 이어서 쓴다
 
@@ -30,6 +31,7 @@
                             └→ real-price (아파트)
 역·학교·동 단지    search complexes → complex / search listings --complex → listing
 아파트 묶음 가격   search listings apt / --complex (is_price_range: true) → catalog
+동·구 시세·실거래  region-info / region-trades → complex / real-price
 단지 시세 추이     complex → price-trend (아파트, 평형은 --pyeong)
 ```
 
@@ -712,7 +714,7 @@ jibsa zigbang region-info 가락동 --range 30평대
 
 **반환값**
 
-`region`, `complexes`, `households`, `estimated_sale_price_min_manwon`, `estimated_sale_price_max_manwon`, `estimated_prices`, `monthly_volumes`, `price_trend`, `price_movement`, 구는 `population` 을 준다. `region` 은 `name`(직방 지역 정보의 이름, 예: `성남시 분당구`)·`level`(`동`·`구`, 시·군·구는 `구`)·`address`·`code`(직방 지역 코드)다.
+`region`, `complexes`, `households`, `estimated_sale_price_min_manwon`, `estimated_sale_price_max_manwon`, `estimated_prices`, `monthly_volumes`, `price_trend`, `price_movement`, 구는 `population` 을 준다. `region` 은 `name`(직방 지역 정보의 이름, 예: `성남시 분당구`)·`level`(`동`·`구`, 시·군·구는 `구`)·`address`·`code`(직방 지역 코드)이고 `region-trades` 도 같은 모양이다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
@@ -726,11 +728,64 @@ jibsa zigbang region-info 가락동 --range 30평대
 
 **오류와 대응**
 
-`--range` 허용값 밖은 지역을 찾기 전에 `INVALID_ARGUMENT`. 시·도 이름(서울·경기도)은 `INVALID_ARGUMENT` 이니 구·동 이름을 준다. 못 찾은 이름은 `REGION_NOT_FOUND` 이고 `hint` 가 동·구 이름을 주라고 알린다 (역·학교·단지 이름은 받지 않는다). 같은 이름의 동·구, 구가 있는 시(성남시), `○가` 로 나뉜 동(성수동)은 [`search listings apt`](#3-search-listings-apt--아파트-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 리는 상위 읍·면으로 찾고 `[범위]` 로 알린다. 지역 정보 조회가 404 여서 동·구는 찾았는데 직방에 그 지역 정보가 없으면 `NOT_FOUND`(`직방에 '<지역 이름>' 지역 정보가 없습니다`)이고 `hint` 가 이웃 동·구 이름(동이면 그 동이 속한 구)으로 다시 부르라고 알린다.
+`--range` 허용값 밖은 지역을 찾기 전에 `INVALID_ARGUMENT`. 시·도 이름(서울·경기도)은 `INVALID_ARGUMENT` 이니 구·동 이름을 준다. 못 찾은 이름은 `REGION_NOT_FOUND` 이고 `hint` 가 동·구 이름을 주라고 알린다 (역·학교·단지 이름은 받지 않는다). 같은 이름의 동·구, 구가 있는 시(성남시), `○가` 로 나뉜 동(성수동)은 [`search listings apt`](#3-search-listings-apt--아파트-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 리는 상위 읍·면으로 찾고 `[범위]` 로 알린다. 지역 정보 조회가 404 여서 동·구는 찾았는데 직방에 그 지역 정보가 없으면 `NOT_FOUND`(`직방에 '<지역 이름>' 지역 정보가 없습니다`)이고 `hint` 가 이웃 동·구 이름(동이면 그 동이 속한 구)으로 다시 부르라고 알린다. 이 오류는 `region-info` 의 지역 정보 조회에서만 나고 `region-trades` 의 지역 해석 오류에는 없다.
 
 **주의사항**
 
-요청은 지역 검색 1회, 지역 정보 1회, 거래량·평당가 추이 각 1회로 동 4회, 구는 인구·세대가 더해 6회다. 거래량·평당가 추이·인구·세대는 덤 조회라 하나가 실패하면 그 값만 `null` 이고 `[실패]` 로 알린다 (예외 없이 끝났어도 직방이 목록을 주지 않으면 같은 `[실패]` 에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다). 평당가 추이 줄이 1개 이하이면 웹은 그래프 대신 '직방 시세가 있는 아파트 단지가 없습니다' 를 보여 주고, jibsa 는 `[참고]` 로 알린다. 직방시세(`estimated_*`, `price_trend`)는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다. 실거래는 [`real-price`](#8-real-price--아파트-실거래가)로 본다. 이 값들은 동·구 하나의 것이라 구 안의 동 비교는 동마다 부른다.
+요청은 지역 검색 1회, 지역 정보 1회, 거래량·평당가 추이 각 1회로 동 4회, 구는 인구·세대가 더해 6회다. 거래량·평당가 추이·인구·세대는 덤 조회라 하나가 실패하면 그 값만 `null` 이고 `[실패]` 로 알린다 (예외 없이 끝났어도 직방이 목록을 주지 않으면 같은 `[실패]` 에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다). 평당가 추이 줄이 1개 이하이면 웹은 그래프 대신 '직방 시세가 있는 아파트 단지가 없습니다' 를 보여 주고, jibsa 는 `[참고]` 로 알린다. 직방시세(`estimated_*`, `price_trend`)는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다. 실거래는 [`region-trades`](#14-region-trades--동구-최근-실거래)나 [`real-price`](#8-real-price--아파트-실거래가)로 본다. 이 값들은 동·구 하나의 것이라 구 안의 동 비교는 동마다 부른다.
+
+## 14. `region-trades` — 동·구 최근 실거래
+
+동·구에 최근 **등록된** 아파트 실거래를 본다 (직방 웹 지역 화면 '실거래'). 계약일 순이 아니라 등록일 기준 목록이다. 금액은 만원이다.
+
+| 인자·옵션 | 설명·허용값 | 기본값 |
+| --- | --- | --- |
+| `QUERY` | 동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다 | 필수 |
+| `--trade` | 매매, 전세, 월세 중 하나 | 매매 |
+| `--period` | 등록 기간: 오늘, 어제, 7일(웹 '최근 일주일'), 15일, 30일 | 오늘 |
+| `--sort` | 정렬 (웹 이름 그대로, 빈칸 없이도 받는다). 매매: 최신 등록순, 가격 낮은순, 가격 높은순, 시세 비교순, 공시가격 대비 낮은순. 전세: 최신 등록순, 가격 낮은순, 가격 높은순, 전세가 비교순. 월세: 최신 등록순, 월세 높은순, 보증금 높은순. 거래 유형에 없는 정렬은 `INVALID_ARGUMENT` | 그 거래의 첫 정렬(최신 등록순) |
+| `--limit` | 받을 실거래 수. 범위: 1~120. | 20 |
+
+**사용 예시**
+
+```bash
+jibsa zigbang region-trades 송파구 --period 7일 --limit 10
+jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --period 30일
+```
+
+**반환값**
+
+`region`, `trade_type`, `period`, `sort`, `registered_period`, `updated_today`, `total`, `returned`, `has_more`, `trades` 를 준다. `registered_period` 는 직방이 준 기간·등록 건수 문구(예: `10. 23 ~ 11. 22 등록 238건`)로, 직방이 주지 않거나 오늘 등록분이 아직 반영 전이면 `null` 이다. `updated_today` 는 직방이 오늘 등록된 실거래를 반영했는지(`true`/`false`)이고 `--period 오늘` 일 때만 있으며 다른 기간은 키가 없다 (직방이 주지 않으면 `null`). `total` 은 기간 안 등록된 실거래 전체 건수다 (`--limit` 적용 전, 직방이 주지 않으면 `null`). `has_more` 는 받지 않은 실거래가 남았는지다 (이어 받기는 없고 `--limit` 을 늘린다). 직방이 `--limit` 보다 적게 주었으면 `total` 이 더 커도 더 받을 수 없어 `false` 이고 `[참고]` 로 알린다.
+
+거래 줄(`trades[]`)의 값은 아래와 같다. 그 거래 유형에 없는 값은 키가 없고, 있는 유형인데 직방이 주지 않으면 `null` 이다.
+
+| 필드 | 있는 거래 | 뜻 | 값이 없을 때 |
+| --- | --- | --- | --- |
+| `complex_id`·`complex_name` | 모두 | 단지 ID(`apt-…`, `complex`·`real-price`·`search listings --complex` 에 넘긴다)와 이름 | `null` |
+| `dong` | 모두 | 줄의 동 (직방이 준 local, 예: `가락동`) | 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 구 단위인데 직방이 주지 않으면 `null` |
+| `area_type` | 모두 | 평형 이름 (웹 `{평형 이름}㎡`) | `null` |
+| `contract_date` | 모두 | 계약일 (`YYYY-MM-DD`). 목록은 계약일 순이 아니다 | 읽지 못하면 `null` |
+| `presale` | 모두 | 분양권·입주권 거래 ([`real-price`](#8-real-price--아파트-실거래가)의 `presale` 과 같다) | 해당할 때만 키가 있다 |
+| `price_manwon` | 매매 | 매매가 | — |
+| `deposit_manwon` | 전세·월세 | 보증금·전세금 | — |
+| `rent_manwon` | 월세 | 월세 | — |
+| `prev_diff_manwon`·`prev_diff_rate_percent` | 매매·전세 | 직전 거래 대비 차액(만원)·변동률(%). `0` 은 웹 '차이 없음' | 직방이 칸을 주지 않으면 `null` (웹 '직전거래 없음'). 입주권 줄은 웹이 그리지 않아 키가 없다. 입주 전 계약 전세 줄도 웹이 그리지 않아 `null` |
+| `market_price_diff_manwon`·`market_price_diff_rate_percent` | 매매 | 직방시세 대비 차액·변동률 | 분양권·입주권이거나 직방시세가 없으면 `null` (웹 '직방시세 없음'). 직방시세가 있는데 `0` 이면 진짜 `0` |
+| `public_price_diff_manwon`·`public_price_diff_rate_percent` | 매매 | 공시가격 대비 차액·변동률 | 공시가격이 없으면 `null` (웹 '공시가격 업데이트 예정'). 있는데 `0` 이면 진짜 `0` |
+| `offer_price_diff_manwon`·`offer_price_diff_rate_percent` | 분양권·입주권 매매 | 분양가 대비 차액·변동률 ([`real-price`](#8-real-price--아파트-실거래가)의 `offer_price_diff_manwon` 과 같은 규칙) | 직방이 값을 주지 않으면 `null`. 그 밖의 줄은 키가 없다 |
+| `jeonse_price_diff_manwon`·`jeonse_price_diff_rate_percent` | 전세 | 웹 '전세가 비교' 차액·변동률. 갱신 거래(`renewal`)는 이전 전세가 대비, 아니면 2년 전 평균 전세가 대비다 | 입주 전 계약 거래(`pre_move_in_contract`)는 웹이 차액을 그리지 않아 `null` |
+| `pre_move_in_contract`·`renewal` | 전세 | 입주 전 계약 거래, 갱신 계약 (웹 배지) | 직방이 칸을 주지 않으면 `false` |
+| `new_high`·`new_low` | 매매·전세 | 신고가·신저가 배지 | 직방이 칸을 주지 않으면 `false`. 월세는 키가 없다 |
+
+월세 줄은 직방이 신고가·신저가·갱신·비교 칸을 줘도 웹이 그리지 않아 키를 내지 않는다. 웹은 정렬마다 비교 한 가지만 그리지만 jibsa 는 같은 응답의 비교(직전 거래·직방시세·공시가격·분양가·전세가 대비)를 모두 낸다.
+
+**오류와 대응**
+
+`--trade`·`--period` 허용값 밖, 그 거래 유형에 없는 `--sort` 는 지역을 찾기 전에 `INVALID_ARGUMENT` 이고 `hint` 가 그 거래의 정렬 이름을 알린다. 지역 해석 오류(시·도·못 찾음·같은 이름)는 [`region-info`](#13-region-info--동구-지역-정보)와 같다.
+
+**주의사항**
+
+기본 기간이 오늘이라 등록된 거래가 없어 비기 쉽다. 그러면 `--period 30일` 처럼 기간을 넓힌다. 직방은 매일 낮 12시에 그날 등록된 실거래를 반영하므로 그 전에는 오늘이 비고 `updated_today` 가 `false`, `registered_period` 가 `null` 이며 `[참고]` 가 아직 반영 전이라고 알리고 어제 등록분은 `--period 어제` 로 보라고 권한다 (이때는 '이 기간에 등록된 실거래가 없습니다' 안내를 붙이지 않는다). 0건이면 `trades` 가 `[]` 이고 `[참고]` 가 기간을 넓히라고 알린다. 조건에 맞는 실거래가 `--limit` 보다 많아 `--limit` 건을 채워 받았으면 `[일부]` 로 알린다 (직방이 `--limit` 보다 적게 주면 `total` 이 더 커도 `[일부]` 가 아니라 `[참고]` 가 목록과 `total` 이 어긋난다고 알린다). 요청은 지역 검색 1회와 실거래 1회다 (직방 웹은 10건씩 넘겨 받지만 여기서는 `--limit` 건을 한 번에 받는다).
 
 ## 검색 명령 비교
 
@@ -761,7 +816,7 @@ jibsa zigbang region-info 가락동 --range 30평대
 
 ## 조회 한도
 
-아파트 검색(동·구·`--complex apt-…`)의 `--limit`은 기본 20·최대 120이다. 요청당 동·구는 최대 20건, `--complex`는 최대 50건이며 실제 받은 원본 개수로 조회 예산을 센다. 중복·거래 불가·조건 불일치로 제외한 만큼 추가 조회하지 않는다. 결과 부족 및 최대값 도달 시 안내한다. 원룸 검색과 오피스텔 단지 검색도 기본 15·최대 120이며 같은 방식으로 직방 목록 순으로 확인한 매물 수로 예산을 세고 제외한 만큼 채우지 않는다 (원룸 검색에서 종류가 여럿이면 종류별로 나눈다). 상가는 가격 조건을 서버가 받지 않아 직방 목록 앞의 후보를 `max(limit × 5, 60)`건까지 확인해 결과를 채운다 (채우지 않으면 가격 조건을 건 검색이 거의 비어 온다). 단기임대는 기본 15·최대 120이고, 고른 순서의 앞 `limit`건만 요약을 받는다. `search locations`은 후보 목록 각각 기본 120·최대 1200, `search complexes` 는 기본 20·최대 120, `real-price`는 기본 120·최대 1200이다. `catalog` 는 묶음 매물을 20건마다 요청 1회로 앞 120건까지 받고 호 정보를 1회 더 받는다.
+아파트 검색(동·구·`--complex apt-…`)의 `--limit`은 기본 20·최대 120이다. 요청당 동·구는 최대 20건, `--complex`는 최대 50건이며 실제 받은 원본 개수로 조회 예산을 센다. 중복·거래 불가·조건 불일치로 제외한 만큼 추가 조회하지 않는다. 결과 부족 및 최대값 도달 시 안내한다. 원룸 검색과 오피스텔 단지 검색도 기본 15·최대 120이며 같은 방식으로 직방 목록 순으로 확인한 매물 수로 예산을 세고 제외한 만큼 채우지 않는다 (원룸 검색에서 종류가 여럿이면 종류별로 나눈다). 상가는 가격 조건을 서버가 받지 않아 직방 목록 앞의 후보를 `max(limit × 5, 60)`건까지 확인해 결과를 채운다 (채우지 않으면 가격 조건을 건 검색이 거의 비어 온다). 단기임대는 기본 15·최대 120이고, 고른 순서의 앞 `limit`건만 요약을 받는다. `search locations`은 후보 목록 각각 기본 120·최대 1200, `search complexes` 는 기본 20·최대 120, `region-trades` 는 기본 20·최대 120, `real-price`는 기본 120·최대 1200이다. `catalog` 는 묶음 매물을 20건마다 요청 1회로 앞 120건까지 받고 호 정보를 1회 더 받는다.
 
 `--limit`은 최종 출력 개수의 상한이며 API 요청 한 번의 크기를 뜻하지 않는다. 유형마다 조회 방식·서버 필터·후처리·요청 상한이 달라 결과가 부족할 수 있다. 일부 조회·범위 밖 결과·지원하지 않는 유형은 `notes`를 확인한다. CLI에 `--offset`·`--cursor`는 없다. 새 검색에서 같은 목록·순서를 보장하지 않는다.
 

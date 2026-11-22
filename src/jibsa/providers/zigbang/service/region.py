@@ -287,7 +287,7 @@ def best_region_item(
     `require_code` 면 법정동코드가 있는 지역만 본다 (아파트 지역 목록은 코드로 부른다).
     """
     name = _dong_name(query)
-    # 리뷰 오탐 (2026-11-22): 지역 화면 명령(region-info)이 역·학교·단지 이름을 첫 지역 결과의 다른 동으로
+    # 리뷰 오탐 (2026-11-22): 지역 화면 명령(region-info·region-trades)이 역·학교·단지 이름을 첫 지역 결과의 다른 동으로
     # 바꾼다는 지적. 직방 지역 검색은 이름이 검색어로 시작하는 결과만 줘서 '잠실역'·'서울역'·'잠실중학교' 는 address 없이 역·학교만 오고
     # '잠실' 은 잠실동과 역·학교가 온다 (2026-11-22 실측). 그래서 완전한 역·학교 이름에 다른 동이 섞이지 않는다
     regions = [
@@ -663,7 +663,7 @@ def resolve_apt_area(
     sido_hint: str,
     not_found_hint: str | None = None,
 ) -> tuple[ZigbangAptRegion, Literal['동', '구'], str, list[str]]:
-    """동·구 하나를 찾고 그 단위와 직방 지역 코드를 함께 준다 (`search complexes` 의 동·구, 지역 화면 명령 `region-info`).
+    """동·구 하나를 찾고 그 단위와 직방 지역 코드를 함께 준다 (`search complexes` 의 동·구, 지역 화면 명령 `region-info`·`region-trades`).
 
     아파트 지역 해석(`resolve_apt_region`)과 같다: 같은 이름 동·구, '○가' 동, 구가 있는 시는 묻고, 리는 상위 읍·면으로 찾는다. 시·도 이름은
     에러(INVALID_ARGUMENT)로 알린다 (직방 지역 목록은 시·도 코드에 늘 0건이다 (`local_code_of`)). 서버가 시·도 코드를 받는 화면(지역 정보)이
