@@ -302,8 +302,9 @@ class DaangnClient(BaseHTTPClient):
     )
     # ComplexSchoolListPanel-*.js 의 ComplexSchoolListPanelQuery (단지 근처 학교·어린이집, 2026-11-v58)
     complex_schools_query_id: ClassVar[str] = '94fe92d51a7ff59c79d2d17b050ab144c8eada7d40e933e69f660ef5a6ee4b20'
-    # ComplexTopicPanelQuery-*.js 의 PreschoolDetailPanelQuery (어린이집·유치원 상세, 2026-11-v58)
-    preschool_by_no_query_id: ClassVar[str] = '893707bfdc3578256c583daead160165736afc5b23579003885a7ba194f16738'
+    # ComplexTopicPanelQuery-*.js 의 PreschoolDetailPanelQuery (어린이집·유치원 상세, 2026-11-v106). v106 에서 region.name1(시·도)이
+    # 더해졌다. 웹은 동 이름이 없을 때 페이지 제목 문구에만 쓰고, jibsa 는 시·도까지 든 address 를 내므로 읽지 않는다
+    preschool_by_no_query_id: ClassVar[str] = '314a797c2f9b387e3ec79e12e0684eb07c46f8672fbc6cda3ba86b9a27149fa7'
     # compare-*.js 의 ComplexCompareColumnQuery (단지 비교 칸)
     complex_compare_query_id: ClassVar[str] = '74b409fd6cc63f290120fe7ea8bca376653d37db0cf977a4227f1b2d5233ff0f'
     # ComplexTopicPanelQuery-*.js 의 ComplexNearbySectionQuery (같은 동 단지, 2026-11-v58)
