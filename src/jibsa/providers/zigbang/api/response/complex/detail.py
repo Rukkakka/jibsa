@@ -140,9 +140,12 @@ class ZigbangDanjisItemCatalogsResponseModel(ZigbangBaseResponseModel):
         Field(description='거래 유형(trade·charter·rental)별 카탈로그 수. 거래 유형 조건을 반영한다', alias='itemCountPerTranType')
     ] = {}
     room_types: Annotated[
-        list[ZigbangDanjiRoomTypeModel],
-        Field(description='단지의 평형 목록', alias='danjiRoomTypes')
-    ] = []
+        list[ZigbangDanjiRoomTypeModel] | None,
+        Field(
+            description='단지의 평형 목록. 평형이 아직 없는 단지는 빈 목록이고, 키가 없거나 null 이면 None (모름. 빈 목록과 가르려고 기본값을 [] 로 두지 않는다)',
+            alias='danjiRoomTypes',
+        )
+    ] = None
     catalogs: Annotated[
         list[ZigbangItemCatalogModel],
         Field(description='이번 페이지의 카탈로그', alias='list')

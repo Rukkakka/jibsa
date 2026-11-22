@@ -327,7 +327,7 @@ jibsa zigbang complex apt-68579
 
 직방이 주는 정보가 달라 한쪽에만 있는 필드는 키가 없다.
 
-아파트 `pyeongs[]` 에는 `id`·`name`·`pyeong_name` 말고 직방 웹 단지 화면의 평형 정보가 아래처럼 있다. 직방 평형 정보를 받지 못했거나 그 평형이 없으면 모두 `null` 이다.
+아파트 `pyeongs[]` 에는 `id`·`name`·`pyeong_name` 말고 직방 웹 단지 화면의 평형 정보가 아래처럼 있다. 직방 평형 정보를 받지 못했거나 그 평형이 없으면 모두 `null` 이다. 평형이 아직 없는 단지(분양예정)는 `pyeongs` 가 `[]` 이고, 직방이 평형 목록 자체를 주지 않으면 `pyeongs` 가 `null` 이며 `[참고]` 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
@@ -406,7 +406,7 @@ jibsa zigbang search listings --complex apt-68579 --trade 전세 --pyeong 400085
 
 **주의사항**
 
-`apt-…` 또는 `officetel-…` ID를 받는다. 기본은 거래 유형 전체다. 공통 조건은 `--trade`, 가격(`--deposit-*`, `--rent-*`, `--price-*`)이다. `--pyeong`은 아파트 전용 평형 ID이며 반복하거나 쉼표로 준 값은 OR다. 단지에 없는 평형 ID 를 주면 0건 대신 `INVALID_ARGUMENT` 이니 `complex` 결과의 `pyeongs[].id` 를 쓴다. 아파트에는 단기임대가 없어, 아파트 단지에 단기임대만 주면 입력 오류이고 다른 거래 유형과 함께 주면 단기임대를 빼고 찾은 뒤 `notes` 로 알린다.
+`apt-…` 또는 `officetel-…` ID를 받는다. 기본은 거래 유형 전체다. 공통 조건은 `--trade`, 가격(`--deposit-*`, `--rent-*`, `--price-*`)이다. `--pyeong`은 아파트 전용 평형 ID이며 반복하거나 쉼표로 준 값은 OR다. 단지에 없는 평형 ID 를 주면 0건 대신 `INVALID_ARGUMENT` 이니 `complex` 결과의 `pyeongs[].id` 를 쓴다. 직방이 단지 평형 목록을 주지 않으면 평형 ID 를 확인하지 못한 채 그 평형으로 찾고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'). 아파트에는 단기임대가 없어, 아파트 단지에 단기임대만 주면 입력 오류이고 다른 거래 유형과 함께 주면 단기임대를 빼고 찾은 뒤 `notes` 로 알린다.
 
 오피스텔은 `search listings room` 과 같은 관리비·방 구조·면적(전용 ㎡·평)·층·욕실·옵션·시설 조건도 서버에서 적용한다. 이 조건을 아파트 ID와 함께 쓰거나, `--no-manage-cost`와 관리비 범위를 함께 쓰면 `INVALID_ARGUMENT`다.
 
