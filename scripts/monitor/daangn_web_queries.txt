@@ -1,5 +1,5 @@
 # 당근 웹 번들의 GraphQL 쿼리 이름. 주간 API 감시(check_daangn_queries)가 여기 없는 웹 쿼리를 새로 생긴 쿼리로 알린다.
-# `python scripts/monitor/api_check.py daangn-queries` 가 다시 쓴다 (2026-11-13 웹 번들)
+# `python scripts/monitor/api_check.py daangn-queries` 가 다시 쓴다 (2026-11-23 웹 번들)
 AdPerformanceDialogQuery
 AddComplexBottomSheetQuery
 AddComplexBottomSheetRefetchQuery
@@ -115,6 +115,7 @@ HomePolicyScheduleSectionQuery
 HomePopularLivedReviewSectionQuery
 HomeSeoLinksSectionDongQuery
 HomeSeoLinksSectionRegionQuery
+HomeSeoLinksSectionSubwayQuery
 HomeSeoLinksSectionUniversityQuery
 HomeTrendingComplexSectionListQuery
 LandTitleHistoryPanelPaginationQuery
@@ -141,7 +142,6 @@ MyRealtyPanelWatchComplexPaginationQuery
 MyRealtyPanelWatchComplexQuery
 NaverGapNudgePanelQuery
 NaverGapNudgeSectionQuery
-NavigationRecentViewsQuery
 NearComplexChipsQuery
 NearbyBrokerListQuery
 NearbyPlaceDebugSectionQuery
@@ -203,6 +203,7 @@ cashChargeAdvertisementQuery
 chatArticleDetailQuery
 chatBrokerageDraftDetailQuery
 chatCsChatPageQuery
+cityUniversityLinksQuery
 coordinateFinderQuery
 debugUserStateQuery
 dongLandingLookupCityQuery
