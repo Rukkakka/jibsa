@@ -191,6 +191,15 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 평형별 실거래는 다른 API 다. 고른 평형에 거래가 없을 수 있어 거래 칸 대신 평형 칸을 본다. API 가 바뀌면 첫 응답의 평형
         # 목록 확인(`_check_real_price_scope`)이 NOT_FOUND 를 내 고장으로 잡힌다
         Step('아파트 평형 실거래가', ('zigbang', 'real-price'), ('{apt}', '--pyeong', '{apt_pyeong}', '--limit', '3'), 'pyeong_id'),
+        # 시세 추이는 단지 줄(`lines`)이 기대 칸이다. 비교 후보(comparable_complexes)는 비교할 만한 단지가 없는 단지도 정상이라 보지
+        # 않고, `may_be_empty` 는 Step 전체에 걸려 `lines` 가 빈 고장도 가리므로 걸지 않는다. 평형 추이(--pyeong)는 다른 API 라
+        # 따로 부르고, 고른 평형에 거래·시세가 없어 달 목록이 빌 수 있어 평형 칸을 기대 칸으로 본다
+        # 리뷰 오탐 (2026-11-22): 시세가 없는 단지(apt-90913·apt-94457)도 구 줄(kind '구')은 와서 lines 가 비지 않는다. 그래서 '아파트 단지' 처럼 may_be_empty 를 걸지 않는다
+        Step('아파트 시세 추이', ('zigbang', 'price-trend'), ('{apt}',), 'lines'),
+        Step(
+            '아파트 평형 시세 추이', ('zigbang', 'price-trend'), ('{apt}', '--pyeong', '{apt_pyeong}', '--period', '최근1년'), 'pyeong_id',
+            also_expect=('months',), may_be_empty=True,
+        ),
         Step('아파트 단지 매물', ZIGBANG_LISTINGS, ('--complex', '{apt}', '--limit', '2'), 'listings'),
         Step('오피스텔 건물', ('zigbang', 'complex'), ('{officetel}',), 'name'),
         Step('오피스텔 건물 매물', ZIGBANG_LISTINGS, ('--complex', '{officetel}', '--limit', '2'), 'listings'),

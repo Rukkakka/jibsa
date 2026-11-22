@@ -434,13 +434,19 @@ def item_url(service_type: str | None, item_id: int) -> str:
 NEAREST_SCHOOLS: int = 2
 
 
+# 응답 형식이 달라 값을 모를 때 안내 끝 문장. 매일 API 감시가 이 안의 UPDATE_MAYBE_NEEDED 로 고장을 잡는다
+UNEXPECTED_FORMAT_TEXT: str = f'직방 응답이 예상한 형식과 달라 {UPDATE_MAYBE_NEEDED}'
+# 본 조회 목록을 주지 않아 UPSTREAM_ERROR 로 멈출 때의 hint
+UPSTREAM_RETRY_HINT: str = f'잠시 뒤 다시 시도하세요. 계속되면 직방 API 가 바뀐 것일 수 있어 {UPDATE_MAYBE_NEEDED}'
+
+
 def failure_update_hint(exc: Exception) -> str:
     """덤 조회 [실패] 안내 끝에 붙일 말. 응답이 예상한 형식과 달라(pydantic ValidationError) 실패했으면 업데이트 문구를 붙여 매일 API 감시가 고장으로 잡게 하고, 그 밖(요청 제한·서버 오류·연결 실패)은 잠깐 실패일 수 있어 빈 글자다.
 
     응답 모델 검증 오류는 client 의 `run_request_*` 가 감싸지 않고 그대로 올리므로 예외를 바로 알아본다.
     """
     if isinstance(exc, ValidationError):
-        return f'. 직방 응답이 예상한 형식과 달라 {UPDATE_MAYBE_NEEDED}'
+        return f'. {UNEXPECTED_FORMAT_TEXT}'
     return ''
 
 

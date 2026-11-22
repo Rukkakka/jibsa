@@ -29,9 +29,11 @@ from jibsa.providers.zigbang.api.request.common import (
     ZigbangDanjisRequestParameterModel,
     ZigbangItemsListV1RequestPayloadModel,
 )
+from jibsa.providers.zigbang.api.request.complex.base import (
+    ZigbangDanjisRoomTypesRequestParameterModel,
+)
 from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
-    ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
@@ -40,6 +42,11 @@ from jibsa.providers.zigbang.api.request.complex.search import (
     ZigbangDanjisIdsRequestParameterModel,
     ZigbangSchoolsRequestParameterModel,
     ZigbangSubwaysRequestParameterModel,
+)
+from jibsa.providers.zigbang.api.request.complex.trend import (
+    ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel,
+    ZigbangDanjisPriceChartRequestParameterModel,
+    ZigbangDanjisRoomTypesPriceChartRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.real_price import (
     ZigbangDanjisRoomTypesRtPricesRequestParameterModel,
@@ -93,9 +100,11 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangDanjisResponseModel,
     ZigbangItemsListV1ResponseModel,
 )
+from jibsa.providers.zigbang.api.response.complex.base import (
+    ZigbangDanjisRoomTypesResponseModel,
+)
 from jibsa.providers.zigbang.api.response.complex.detail import (
     ZigbangDanjisItemCatalogsResponseModel,
-    ZigbangDanjisRoomTypesResponseModel,
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
@@ -104,6 +113,11 @@ from jibsa.providers.zigbang.api.response.complex.search import (
     ZigbangDanjisIdsResponseModel,
     ZigbangSchoolsResponseModel,
     ZigbangSubwaysResponseModel,
+)
+from jibsa.providers.zigbang.api.response.complex.trend import (
+    ZigbangDanjisPriceChartRelatedDanjisResponseModel,
+    ZigbangDanjisPriceChartResponseModel,
+    ZigbangDanjisRoomTypesPriceChartResponseModel,
 )
 from jibsa.providers.zigbang.api.response.real_price import (
     ZigbangDanjisRoomTypesRtPricesResponseModel,
@@ -187,7 +201,7 @@ class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
     로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호
-    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
+    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
     조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
@@ -243,6 +257,9 @@ class ZigbangClient(BaseHTTPClient):
     danjis_item_catalogs_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/item-catalogs'
     danjis_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/rt-prices'
     danjis_room_types_rt_prices_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/room-types/{room_type_id}/rt-prices'
+    danjis_price_chart_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/price-chart'
+    danjis_price_chart_related_danjis_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/price-chart/related-danjis'
+    danjis_room_types_price_chart_endpoint: ClassVar[str] = '/apt/danjis/{danji_id}/room-types/{room_type_id}/price-chart'
     items_officetels_building_v1_endpoint: ClassVar[str] = '/house/property/v1/items/officetels/{building_id}'
     store_article_stores_v2_endpoint: ClassVar[str] = '/v2/store/article/stores'
     store_article_stores_list_v2_endpoint: ClassVar[str] = '/v2/store/article/stores/list'
@@ -1135,6 +1152,118 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangDanjisRoomTypesRtPricesResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_price_chart(
+        self,
+        parameter: ZigbangDanjisPriceChartRequestParameterModel
+    ) -> ZigbangDanjisPriceChartResponseModel:
+        """Fetch the Zigbang price trend of a complex via `GET /apt/danjis/{danjiId}/price-chart`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단지 화면의 직방시세 그래프(기간 탭 최근1년·최근3년·전체)다.
+        '+ 단지 비교하기' 는 `addDanjiIds[0]=…` 로 비교 단지를 붙이고, 응답에 그 단지들과 같은 구의 줄이 더해진다. 없는 단지도 200 에
+        빈 목록이 온다. 로그인이 필요 없다.
+
+        Args:
+            parameter: `danji_id` (경로), `period`, 선택으로 `addDanjiIds`.
+
+        Returns:
+            ZigbangDanjisPriceChartResponseModel: 줄(단지·비교 단지·구)마다 월별 시세(만원/3.3㎡)와 그래프 범위.
+        """
+        response = self._client.get(
+            url=self.danjis_price_chart_endpoint.format(danji_id=parameter.danji_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisPriceChartResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_price_chart(
+        self,
+        parameter: ZigbangDanjisPriceChartRequestParameterModel
+    ) -> ZigbangDanjisPriceChartResponseModel:
+        """Async variant of `run_request_danjis_price_chart`."""
+        response = await self._async_client.get(
+            url=self.danjis_price_chart_endpoint.format(danji_id=parameter.danji_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisPriceChartResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_price_chart_related_danjis(
+        self,
+        parameter: ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel
+    ) -> ZigbangDanjisPriceChartRelatedDanjisResponseModel:
+        """List the complexes to compare in the price chart via `GET /apt/danjis/{danjiId}/price-chart/related-danjis`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단지 화면의 '+ 단지 비교하기' 가 고르는 후보다. 로그인이 필요 없다.
+
+        Args:
+            parameter: `danji_id` (경로).
+
+        Returns:
+            ZigbangDanjisPriceChartRelatedDanjisResponseModel: 비교 후보 단지 (이름·입주 연차·세대수·주소).
+        """
+        response = self._client.get(
+            url=self.danjis_price_chart_related_danjis_endpoint.format(danji_id=parameter.danji_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisPriceChartRelatedDanjisResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_price_chart_related_danjis(
+        self,
+        parameter: ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel
+    ) -> ZigbangDanjisPriceChartRelatedDanjisResponseModel:
+        """Async variant of `run_request_danjis_price_chart_related_danjis`."""
+        response = await self._async_client.get(
+            url=self.danjis_price_chart_related_danjis_endpoint.format(danji_id=parameter.danji_id),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisPriceChartRelatedDanjisResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_danjis_room_types_price_chart(
+        self,
+        parameter: ZigbangDanjisRoomTypesPriceChartRequestParameterModel
+    ) -> ZigbangDanjisRoomTypesPriceChartResponseModel:
+        """Fetch the monthly price trend of one floor plan via `GET /apt/danjis/{danjiId}/room-types/{danjiRoomTypeId}/price-chart`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 단지 화면에서 평형 탭을 고르면 나오는 평형 그래프다. 서버는 평형 ID 가
+        그 단지 것인지 보지 않는다 (없는 ID 는 200 에 빈 `list`, 다른 단지의 평형 ID 도 그 평형의 값을 준다). 로그인이 필요 없다.
+
+        Args:
+            parameter: `danji_id`·`room_type_id` (경로), `dealType`, `period`.
+
+        Returns:
+            ZigbangDanjisRoomTypesPriceChartResponseModel: 거래 탭별(`trade`·`deposit`) 월별 시세·거래 건수(만원)와 그래프 범위.
+        """
+        response = self._client.get(
+            url=self.danjis_room_types_price_chart_endpoint.format(danji_id=parameter.danji_id, room_type_id=parameter.room_type_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisRoomTypesPriceChartResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_danjis_room_types_price_chart(
+        self,
+        parameter: ZigbangDanjisRoomTypesPriceChartRequestParameterModel
+    ) -> ZigbangDanjisRoomTypesPriceChartResponseModel:
+        """Async variant of `run_request_danjis_room_types_price_chart`."""
+        response = await self._async_client.get(
+            url=self.danjis_room_types_price_chart_endpoint.format(danji_id=parameter.danji_id, room_type_id=parameter.room_type_id),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangDanjisRoomTypesPriceChartResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_danjis_schools(

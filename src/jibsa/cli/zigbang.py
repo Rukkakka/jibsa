@@ -12,6 +12,7 @@ from jibsa.cli.options import (
 )
 from jibsa.cli.output import (
     ChangedUsage,
+    HintedUsageError,
     UsageHints,
     check_choice,
     emit,
@@ -81,6 +82,15 @@ from jibsa.providers.zigbang.service.complex.search import (
     COMPLEX_ORDERS,
     school_has_assigned_complexes,
     search_place_complexes,
+)
+from jibsa.providers.zigbang.service.complex.trend import (
+    DEFAULT_PRICE_TREND_PERIOD,
+    DEFAULT_PYEONG_TREND_TRADE,
+    MAX_COMPARE_DANJIS,
+    PRICE_TREND_PERIODS,
+    PYEONG_TREND_TRADES,
+    get_price_trend,
+    get_pyeong_price_trend,
 )
 from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import (
@@ -236,7 +246,7 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 app = typer.Typer(
     help=(
         '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역·학교·동·구 주변 단지 search complexes, complex, '
-        'search listings --complex, real-price), '
+        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
@@ -1271,6 +1281,86 @@ def real_price_command(
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_real_prices(client, complex_id.strip(), trade_type=trade_types[0], pyeong_id=pyeong, limit=limit)
         emit(result, pretty, notes=result.notes)
+
+
+def _compare_ids(values: list[str] | None) -> list[str]:
+    """`--compare apt-1 --compare apt-2` 와 `--compare apt-1,apt-2` 를 모두 받아 단지 ID 목록으로 만든다 (형식만 본다)."""
+    ids: list[str] = []
+    for value in values or []:
+        for part in value.split(','):
+            if part.strip():
+                _require_complex_id(part, param_hint='--compare')
+                ids.append(part.strip())
+    return ids
+
+
+@app.command('price-trend')
+def price_trend_command(
+    complex_id: Annotated[
+        str,
+        typer.Argument(help='아파트 단지 ID (complex 결과의 complex_id, 예: apt-38487). 오피스텔은 시세 추이가 없다'),
+    ],
+    period: Annotated[
+        str,
+        typer.Option('--period', help=f"기간 (웹 기간 탭): {', '.join(PRICE_TREND_PERIODS)}")
+    ] = DEFAULT_PRICE_TREND_PERIOD,
+    compare: Annotated[
+        list[str] | None,
+        typer.Option(
+            '--compare',
+            metavar='<complex_id>',
+            help=(
+                f'함께 볼 비교 단지 ID (결과의 comparable_complexes 에 있는 단지만). 반복하거나 쉼표로 구분, 최대 {MAX_COMPARE_DANJIS}곳 '
+                '(웹은 1곳). --pyeong 과 함께 못 쓴다'
+            )
+        )
+    ] = None,
+    pyeong: Annotated[
+        int | None,
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id). 주면 그 평형의 월별 시세·거래 추이를 준다 (단지 추이 대신)')
+    ] = None,
+    trade: Annotated[
+        str | None,
+        typer.Option('--trade', help=f"평형 추이의 거래 탭: {', '.join(PYEONG_TREND_TRADES)} (기본 {DEFAULT_PYEONG_TREND_TRADE}). --pyeong 과 함께 쓴다")
+    ] = None,
+    pretty: PrettyOption = None,
+) -> None:
+    """아파트 단지의 직방시세 추이 (직방 웹 단지 화면 직방시세 그래프 '3.3㎡ 당 평균가격').
+
+    직방시세는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다 (실거래는 real-price). 기본은 단지의 매매 직방시세 평당가(만원/3.3㎡)를
+    월별로 보여 주는 줄 (조회 단지와 그 구. 직방시세가 없는 단지는 구 줄만)이고 --compare 로 비교 단지를 더 붙인다. 줄은 직방이 단지 ID 오름차순으로 주고 구를 끝에 붙여
+    첫 줄이 조회 단지가 아닐 수 있으니 줄의 kind 로 가른다. 비교할 만한 단지는 결과의 comparable_complexes 에 있다 (웹 '단지 비교하기'
+    후보). 요청은 2회 (그래프, 비교 후보). 후보는 덤 조회라 실패하면 comparable_complexes 만 null 이지만, --compare 를 주면 후보를 먼저 받아
+    그 안에서만 고르게 해서(웹과 같다) 후보 조회가 실패하면 에러다.
+
+    --pyeong 을 주면 그 평형의 월별 직방시세와 거래(최저·최고가·건수·전달 대비 변화)를 --trade 탭(전체·매매·전월세)으로 보여 준다
+    (요청 2회: 단지 평형 정보로 평형 확인, 평형 시세 그래프). 거래 점·전세가율은 내지 않는다.
+
+    예: jibsa zigbang price-trend apt-38487
+        jibsa zigbang price-trend apt-38487 --period 최근1년 --compare apt-16629
+        jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
+    """
+    _require_complex_id(complex_id)
+    chosen_period = check_choice(period, PRICE_TREND_PERIODS, '--period')
+    chosen_trade = check_choice(trade, PYEONG_TREND_TRADES, '--trade') if trade is not None else None
+    compare_ids = _compare_ids(compare)
+    if pyeong is not None and compare_ids:
+        raise HintedUsageError('--compare 와 --pyeong 은 함께 쓸 수 없습니다', '단지끼리 견주려면 --pyeong 을 빼세요')
+    if chosen_trade is not None and pyeong is None:
+        raise HintedUsageError('--trade 는 평형 추이(--pyeong)에만 있습니다', '--trade 는 --pyeong 과 함께 씁니다 (평형 ID 는 complex 결과의 pyeongs[].id)')
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        if pyeong is not None:
+            pyeong_result = get_pyeong_price_trend(
+                client,
+                complex_id.strip(),
+                pyeong,
+                period=chosen_period,
+                trade=chosen_trade or DEFAULT_PYEONG_TREND_TRADE,
+            )
+            emit(pyeong_result, pretty, notes=pyeong_result.notes)
+        else:
+            result = get_price_trend(client, complex_id.strip(), period=chosen_period, compare=compare_ids)
+            emit(result, pretty, notes=result.notes)
 
 
 @app.command('listing')

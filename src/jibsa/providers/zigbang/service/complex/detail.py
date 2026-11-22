@@ -24,9 +24,11 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
+from jibsa.providers.zigbang.api.request.complex.base import (
+    ZigbangDanjisRoomTypesRequestParameterModel,
+)
 from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
-    ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
@@ -36,10 +38,12 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangRelateDanjiModel,
     ZigbangSearchItemModel,
 )
-from jibsa.providers.zigbang.api.response.complex.detail import (
+from jibsa.providers.zigbang.api.response.complex.base import (
     ZigbangDanjiRoomTypeModel,
-    ZigbangDanjisItemCatalogsResponseModel,
     ZigbangDanjisRoomTypesResponseModel,
+)
+from jibsa.providers.zigbang.api.response.complex.detail import (
+    ZigbangDanjisItemCatalogsResponseModel,
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
@@ -55,12 +59,10 @@ from jibsa.providers.zigbang.service.common.base import (
     NEAREST_SCHOOLS,
     SCHOOL_LOOKUP_ERRORS,
     ComplexKind,
-    apt_complex_id,
     apt_danji_url,
     complex_not_found,
     failure_update_hint,
     fetch_danji,
-    household_count,
     parse_complex_id,
     school_label,
     text_or_none,
@@ -75,6 +77,10 @@ from jibsa.providers.zigbang.service.common.room import (
     section_ordered_ids,
     summary_to_listing,
     tradeable_summaries,
+)
+from jibsa.providers.zigbang.service.complex.base import (
+    ZigbangRelatedComplex,
+    related_complex_of,
 )
 from jibsa.providers.zigbang.service.region import (
     search_regions,
@@ -267,31 +273,6 @@ class ZigbangComplexRank(BaseModel):
     popularity_rank: Annotated[
         int | None,
         Field(description="웹 '인기순 N위' 의 N (직방은 조회수 순위로 준다). 순위 없음이면 null")
-    ]
-
-
-class ZigbangRelatedComplex(BaseModel):
-    """직방 웹 단지 화면의 '함께 보면 좋은 단지' 하나."""
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    complex_id: Annotated[
-        str | None,
-        Field(description='단지 ID (zigbang complex·search listings --complex 에 넘긴다). 직방이 ID 를 주지 않으면 모름(null)')
-    ]
-    name: Annotated[
-        str | None,
-        Field(description='단지 이름')
-    ]
-    households: Annotated[
-        int | None,
-        Field(description='세대수')
-    ]
-    address: Annotated[
-        str | None,
-        Field(description='동까지의 주소')
     ]
 
 
@@ -592,15 +573,7 @@ def _related_complexes_of(related: ZigbangRelateDanjiModel | None) -> list[Zigba
     """단지 상세의 관련 단지('함께 보면 좋은 단지')를 직방이 준 순서대로. 목록을 주지 않았으면(키 없음·null) 모름(None), 빈 목록이면 []."""
     if related is None or related.list is None:
         return None
-    return [
-        ZigbangRelatedComplex(
-            complex_id=apt_complex_id(item.id) if item.id is not None else None,
-            name=item.name,
-            households=household_count(item.household),
-            address=normalize_address(join_address(item.local1, item.local2, item.local3)),
-        )
-        for item in related.list
-    ]
+    return [related_complex_of(item) for item in related.list]
 
 
 def _land_trade_permits_of(permit: ZigbangLandTradePermitModel | None) -> list[ZigbangLandTradePermitDay] | None:

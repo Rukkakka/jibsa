@@ -35,10 +35,16 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
-from jibsa.providers.zigbang.api.response.complex.detail import (
+from jibsa.providers.zigbang.api.response.complex.base import (
     ZigbangDanjiRoomTypeModel,
+    ZigbangDanjisRoomTypesResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
+from jibsa.providers.zigbang.api.response.complex.trend import (
+    ZigbangDanjisPriceChartRelatedDanjisResponseModel,
+    ZigbangDanjisPriceChartResponseModel,
+    ZigbangDanjisRoomTypesPriceChartResponseModel,
+)
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
@@ -81,6 +87,10 @@ from jibsa.providers.zigbang.service.complex.search import (
     distance_m_of,
     place_complex_of,
     search_place_complexes,
+)
+from jibsa.providers.zigbang.service.complex.trend import (
+    get_price_trend,
+    get_pyeong_price_trend,
 )
 from jibsa.providers.zigbang.service.listing import get_any_listing
 from jibsa.providers.zigbang.service.real_price import get_real_prices
@@ -1573,3 +1583,129 @@ def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
         kept = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
     data = kept.model_dump(mode='json')
     assert data['available'] is True and len(data['unavailable_periods']) == 1
+
+
+# --- 시세 추이 (price-trend) -------------------------------------------
+
+def _chart_line(label: str, prices: list[int]) -> dict:
+    return {
+        'label': label,
+        'type': 'sale',
+        'data': [{'date': f'2026-{month:02d}-01', 'price': price} for month, price in enumerate(prices, start=1)],
+    }
+
+
+class _FakePriceTrendClient:
+    """직방 시세 추이 조회를 표본 모양의 가짜 응답으로 돌려주는 client."""
+
+    def __init__(self, *, lines: list[dict], related: list[dict], room_types: list[int] | None = None, months: dict | None = None) -> None:
+        self.lines = lines
+        self.related = related
+        self.room_types = room_types or []
+        self.months = months or {}
+        self.calls: list[str] = []
+
+    def run_request_danjis_price_chart(self, parameter):
+        self.calls.append(f'chart {parameter.danji_id} {parameter.add_danji_ids}')
+        return ZigbangDanjisPriceChartResponseModel.model_validate({'list': self.lines})
+
+    def run_request_danjis_price_chart_related_danjis(self, parameter):
+        self.calls.append('related')
+        return ZigbangDanjisPriceChartRelatedDanjisResponseModel.model_validate({'list': self.related})
+
+    def run_request_danjis_room_types(self, parameter):
+        self.calls.append('room_types')
+        return ZigbangDanjisRoomTypesResponseModel.model_validate({'room_types': [{'id': rt} for rt in self.room_types]})
+
+    def run_request_danjis_room_types_price_chart(self, parameter):
+        self.calls.append(f'rt_chart {parameter.deal_type}')
+        return ZigbangDanjisRoomTypesPriceChartResponseModel.model_validate({'list': self.months})
+
+
+RELATED_COMPLEXES = [
+    {'id': 900002, 'name': '가짜파크', 'household': '6,864세대', 'local1': '서울특별시', 'local2': '송파구', 'local3': '신천동'},
+    {'id': 900003, 'name': '가짜포레', 'household': '12,032세대', 'local1': '서울특별시', 'local2': '강동구', 'local3': '둔촌동'},
+]
+
+
+def test_price_trend_line_kinds_follow_name_not_position() -> None:
+    # 조회 900001 + 비교 900002: 직방은 ID 오름차순으로 줘 첫 줄이 비교 단지다
+    client = _FakePriceTrendClient(
+        lines=[_chart_line('가짜파크', [100, 0]), _chart_line('가짜헬리', [200, 210]), _chart_line('송파구', [300, 310])], related=RELATED_COMPLEXES,
+    )
+    result = get_price_trend(client, 'apt-900001', compare=['apt-900002'])  # type: ignore[arg-type]
+    dumped = result.model_dump()
+    assert [(line['name'], line['kind'], line.get('complex_id')) for line in dumped['lines']] == [
+        ('가짜파크', '비교 단지', 'apt-900002'), ('가짜헬리', '단지', None), ('송파구', '구', None),
+    ]
+    # 0 은 점을 남기고 값만 null
+    assert dumped['lines'][0]['points'] == [
+        {'month': '2026-01', 'price_per_pyeong_manwon': 100}, {'month': '2026-02', 'price_per_pyeong_manwon': None},
+    ]
+    assert client.calls == ['related', 'chart 900001 [900002]']
+    # 조회 단지가 비교보다 작으면 조회 단지가 첫 줄이다. 비교 둘은 이름으로 찾는다
+    client = _FakePriceTrendClient(
+        lines=[_chart_line('가짜헬리', [1, 2]), _chart_line('가짜파크', [3, 4]), _chart_line('가짜포레', [5, 6]), _chart_line('송파구', [7, 8])], related=RELATED_COMPLEXES,
+    )
+    result = get_price_trend(client, 'apt-1000', compare=['apt-900003', 'apt-900002'])  # type: ignore[arg-type]
+    assert [(line.kind, line.complex_id) for line in result.lines or []] == [
+        ('단지', None), ('비교 단지', 'apt-900002'), ('비교 단지', 'apt-900003'), ('구', None),
+    ]
+    # 줄 수가 맞지 않으면 판정하지 않는다 (kind null, complex_id 키 없음)
+    client = _FakePriceTrendClient(
+        lines=[_chart_line('가짜헬리', [1]), _chart_line('가짜파크', [2]), _chart_line('송파구', [3])], related=RELATED_COMPLEXES,
+    )
+    result = get_price_trend(client, 'apt-900001')  # type: ignore[arg-type]
+    assert result.lines is not None and result.lines[0].kind is None and 'complex_id' not in result.model_dump()['lines'][0]
+    assert not any('구 줄만' in text for text in result.notes)
+    # 직방시세가 없는 단지는 조회 단지 줄 없이 구 줄만 온다 (2026-11-22 실측)
+    client = _FakePriceTrendClient(lines=[_chart_line('송파구', [1])], related=RELATED_COMPLEXES)
+    result = get_price_trend(client, 'apt-900001')  # type: ignore[arg-type]
+    assert result.lines is not None and result.lines[0].kind == '구'
+    assert any('구 줄만 있습니다' in text for text in result.notes)
+    # 후보에 없는 단지는 요청 전에 후보를 보여 주며 막는다
+    client = _FakePriceTrendClient(lines=[], related=RELATED_COMPLEXES)
+    with pytest.raises(JibsaError) as error:
+        get_price_trend(client, 'apt-900001', compare=['apt-5'])  # type: ignore[arg-type]
+    assert 'apt-900002 가짜파크' in (error.value.hint or '') and client.calls == ['related']
+
+
+def test_pyeong_price_trend_zero_months_and_month_merge() -> None:
+    months = {
+        'trade': [
+            # 입주 전: 시세·최저·최고·변화가 모두 0, 건수만 양수
+            {'date': '2018-11-01', 'min_price': 0, 'max_price': 0, 'average_price': 0, 'volume': 3, 'monthly_gap': {'price': 0, 'volume': 3}},
+            {'date': '2018-12-01', 'min_price': 285000, 'max_price': 300000, 'average_price': 292000, 'volume': 2, 'monthly_gap': {'price': 0, 'volume': -1}},
+            # 거래 0건인 달: 직방이 최저·최고에 시세를 채워 준다
+            {'date': '2019-01-01', 'min_price': 292000, 'max_price': 292000, 'average_price': 292000, 'volume': 0, 'monthly_gap': {'price': 5000, 'volume': -2}},
+        ],
+        'deposit': [
+            {'date': '2018-12-01', 'min_price': 90000, 'max_price': 120000, 'average_price': 100000, 'volume': 4, 'rent_volume': 0, 'monthly_gap': {'price': -1000}},
+            {'date': '2019-02-01', 'min_price': 95000, 'max_price': 95000, 'average_price': 95000, 'volume': 0, 'rent_volume': 0, 'monthly_gap': {'price': 0}},
+        ],
+    }
+    client = _FakePriceTrendClient(lines=[], related=[], room_types=[900004], months=months)
+    result = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='전체')  # type: ignore[arg-type]
+    dumped = {month['month']: month for month in result.model_dump()['months']}
+    assert list(dumped) == ['2018-11', '2018-12', '2019-01', '2019-02']
+    assert dumped['2018-11']['sale'] == {
+        'estimated_price_manwon': None, 'min_price_manwon': None, 'max_price_manwon': None, 'count': 3, 'change_manwon': None,
+    }
+    assert dumped['2018-11']['jeonse_wolse'] is None
+    # 변화 0 은 시세가 있는 달에서는 진짜 0
+    assert dumped['2018-12']['sale']['change_manwon'] == 0 and dumped['2018-12']['sale']['min_price_manwon'] == 285000
+    assert dumped['2018-12']['jeonse_wolse']['wolse_count'] == 0
+    assert dumped['2019-01']['sale']['count'] == 0 and dumped['2019-01']['sale']['min_price_manwon'] is None
+    assert dumped['2019-01']['sale']['estimated_price_manwon'] == 292000
+    # 전월세만 있는 달은 sale 이 null, 전세·월세 모두 0건이면 최저·최고가 null
+    assert dumped['2019-02']['sale'] is None and dumped['2019-02']['jeonse_wolse']['min_price_manwon'] is None
+    # 거래 탭을 고르면 다른 탭의 키가 없다
+    only_sale = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='매매').model_dump()['months']  # type: ignore[arg-type]
+    assert all('jeonse_wolse' not in month and 'sale' in month for month in only_sale)
+    only_rent = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='전월세').model_dump()['months']  # type: ignore[arg-type]
+    assert all('sale' not in month and 'jeonse_wolse' in month for month in only_rent)
+    # 다른 단지의 평형 ID 는 평형 시세를 부르기 전에 막는다
+    client = _FakePriceTrendClient(lines=[], related=[], room_types=[1, 2], months=months)
+    with pytest.raises(JibsaError):
+        get_pyeong_price_trend(client, 'apt-900001', 999)  # type: ignore[arg-type]
+    assert client.calls == ['room_types']

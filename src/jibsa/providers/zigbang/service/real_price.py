@@ -237,7 +237,7 @@ class ZigbangRealPriceResult(BaseModel):
     ]
     url: Annotated[
         str,
-        Field(description='단지 페이지 URL (시세 그래프는 여기서 본다)')
+        Field(description='단지 페이지 URL (시세 추이는 `jibsa zigbang price-trend <complex_id>` 로 본다)')
     ]
     notes: Annotated[
         list[str],
