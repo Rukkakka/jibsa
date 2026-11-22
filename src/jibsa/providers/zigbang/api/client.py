@@ -211,7 +211,7 @@ PLATFORM_HEADERS: dict[str, str] = {
 }
 # 아파트 API (`/apt`). 웹 아파트 SDK 가 자기 버전을 붙여, 직방 웹이 새로 배포되면 값이 바뀐다 (2026-11-12 실측 0.128.0). 서버는
 # 이 값을 보지 않아(같은 날 실측: 지금 값·옛 값·헤더 없음이 같은 결과) 낡아도 고장은 나지 않지만 웹과 헤더가 달라진다. 매일 API 감시가
-# 첫 화면 _app 번들의 값과 대조해 바뀌면 고장으로 알린다 (`scripts/monitor/api_check.py` 의 `check_zigbang_sdk_versions`)
+# 첫 화면 _app 번들의 값과 대조해 바뀌면 경고로 알린다 (`scripts/monitor/api_check.py` 의 `check_zigbang_sdk_versions`)
 APT_HEADERS: dict[str, str] = {
     **PLATFORM_HEADERS,
     'sdk-version': '0.128.0',

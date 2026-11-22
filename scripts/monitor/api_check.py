@@ -3,7 +3,7 @@
 매일 실행은 `DAILY_GROUPS`(직방·당근·다방)만 돈다. 네이버는 GitHub 러너에서 응답을 받지 못해 매일 실행에서 빼고, 필요할 때 로컬에서
 `run naver` 로 돌린다.
 
-명령마다 셋으로 나눈다 (docs/development/README.md '매일 API 감시').
+명령마다 넷으로 나눈다 (docs/development/README.md '매일 API 감시'). 고장은 jibsa 가 실제로 안 될 때만 쓴다 (2026-11-23 사용자 결정).
 
 - 정상: exit 0 이고 정한 칸(`Step.expect`, `Step.also_expect` 가 있으면 그 칸까지)에 값이 있음. 빈 목록도 사이트의 평소 답인 칸(`Step.empty_ok`)은 비어도 정상
 - 고장: 응답 형식 오류·서버 거절·내부 오류 같은 에러, 정한 칸이 비어 있음, JSON 이 아닌 출력, 대체 경로로 돌았거나 덤 조회가
@@ -13,6 +13,9 @@
   주지 않아 건너뛴 명령,
   사이트가 빈 목록을 줄 때가 있는 칸(`Step.may_be_empty`)이 빔, 덤 조회가 잠깐 실패해(업데이트 문구 없는 `[실패]`) 정한 칸이
   빔. 사이트가 바뀐 것인지 알 수 없다
+- 경고: 주 1회 검사(웹 값 대조)에서 jibsa 가 웹에서 옮겨 적은 값이 지금 웹과 다르거나, 검사가 번들에서 값을 찾지 못함(번들 구조가
+  바뀜·검사 코드 오류). jibsa 는 아직 동작한다. 실행은 성공으로 끝나고 `api-warning` 이슈로 알린다. 직방 위약금 표가 웹과 다른
+  것은 출력이 틀린 것이라 고장이다
 
     python scripts/monitor/api_check.py run zigbang --out result-zigbang.json
     python scripts/monitor/api_check.py report result-*.json [--issues] [--dry-run]
@@ -20,8 +23,9 @@
 새 CLI 명령이나 매물을 찾는 새 방식(다른 API 를 쓰는 경로)을 만들면 GROUPS 에 넣는다. tests/test_cli.py 가 CLI 명령 목록과 대조한다.
 
 명령 말고 따로 보는 것: jibsa 가 웹 번들에서 옮겨 적은 값이 지금 웹 번들에도 있는지. 서버가 옛 값도 받으면 명령은 정상으로
-돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·직방 단기임대 위약금 표(상세 화면 번들 조각)·당근 GraphQL 쿼리(해시가 바뀜·사라짐·이름만 바뀜·새로 생김)·다방 API 버전을
-주 1회(`WEEKLY_CHECKS`, 한국 시간 월요일 또는 `--weekly`) 본다. 당근 새 쿼리의 기준 목록은 `daangn_web_queries.txt` 이고
+돌아 명령 감시로는 알 수 없다. 직방 SDK 버전·직방 단기임대 위약금 표(상세 화면 번들 조각)·당근 GraphQL 쿼리(해시가 바뀜·사라짐·이름만
+바뀜·새로 생김)·다방 API 버전을 주 1회(`WEEKLY_CHECKS`, 한국 시간 월요일 또는 `--weekly`) 본다. 다르면 경고이고 직방 위약금 표가
+다른 것만 고장이다. 당근 새 쿼리의 기준 목록은 `daangn_web_queries.txt` 이고
 살펴본 뒤 `daangn-queries` 로 다시 쓴다.
 
     python scripts/monitor/api_check.py run daangn --out result-daangn.json --weekly
@@ -588,7 +592,8 @@ WEEKLY_CHECK_WEEKDAY: int = 0
 OK: str = 'ok'
 BROKEN: str = 'broken'
 UNKNOWN: str = 'unknown'
-STATUS_LABELS: dict[str, str] = {OK: '✅ 정상', BROKEN: '❌ 고장', UNKNOWN: '⚠️ 확인 못 함'}
+WARN: str = 'warn'
+STATUS_LABELS: dict[str, str] = {OK: '✅ 정상', BROKEN: '❌ 고장', UNKNOWN: '⚠️ 확인 못 함', WARN: '🟡 경고'}
 # 사이트가 바뀐 것인지 알 수 없는 에러. 그 밖의 에러 코드(PARSE_ERROR, INTERNAL_ERROR, NOT_FOUND, REGION_NOT_FOUND 등)는 고장이다.
 # BROWSER_UNAVAILABLE 은 일부러 넣지 않는다. 조회 잡이 바로 앞 단계에서 install-browser 로 Chromium 을 받아 한 번 띄워 봤으므로,
 # 그 뒤 명령에서 못 띄우면 사이트가 아니라 jibsa(브라우저 쪽) 고장이고 사용자도 같이 막힌다 (2026-11-10 재검토)
@@ -599,6 +604,7 @@ UNKNOWN_CODES: frozenset[str] = frozenset({'RATE_LIMITED', 'NETWORK_ERROR', GONE
 
 BROKEN_LABEL: str = 'api-broken'
 BLOCKED_LABEL: str = 'api-blocked'
+WARNING_LABEL: str = 'api-warning'
 # 같은 소스가 이만큼 연속한 날 확인 못 함이면 알린다 (오늘 포함, 날마다 그날 마지막 실행으로 본다)
 BLOCKED_STREAK: int = 3
 WORKFLOW_FILE: str = 'api-monitor.yml'
@@ -776,7 +782,7 @@ def _read_web(step: dict[str, str], source: Any, collect: Callable[[Any, Any], A
     등)만 브라우저가 첫 화면을 연 뒤 한 번 더 받는다.
 
     Returns:
-        (`collect` 결과, None). 번들을 받지 못했으면 (None, 확인 못 함 줄), 검사 코드가 틀렸으면 (None, 고장 줄).
+        (`collect` 결과, None). 번들을 받지 못했으면 (None, 확인 못 함 줄), 검사 코드가 틀렸으면 (None, 경고 줄).
     """
     import httpx
 
@@ -795,11 +801,11 @@ def _read_web(step: dict[str, str], source: Any, collect: Callable[[Any, Any], A
     except (httpx.HTTPError, JibsaError) as exc:
         print(f'{type(exc).__name__}: {exc}')
         return None, {**step, 'status': UNKNOWN, 'detail': f'번들을 받지 못함: {type(exc).__name__}: {str(exc)[:150]}'}
-    # 그 밖의 예외는 이 검사 코드가 틀린 것이라 확인 못 함으로 숨기지 않고 고장으로 알린다. 올리지 않는 것은 올리면 결과 파일을
-    # 못 써 앞 명령 결과까지 잃기 때문이다
+    # 그 밖의 예외는 이 검사 코드가 틀린 것이다. jibsa 가 아니라 감시 검사가 낡은 것이라 고장이 아니라 경고로 알린다 (확인 못 함은
+    # 사흘 연속일 때만 알려 묻힌다). 올리지 않는 것은 올리면 결과 파일을 못 써 앞 명령 결과까지 잃기 때문이다
     except Exception as exc:
         print(f'{type(exc).__name__}: {exc}')
-        return None, {**step, 'status': BROKEN, 'detail': f'검사 코드 오류: {type(exc).__name__}: {str(exc)[:150]}'}
+        return None, {**step, 'status': WARN, 'detail': f'검사 코드 오류: {type(exc).__name__}: {str(exc)[:150]}'}
     finally:
         print('::endgroup::', flush=True)
 
@@ -811,7 +817,7 @@ def check_web_values(
     """jibsa 가 웹 번들에서 옮겨 적은 값(직방 `sdk-version`, 다방 버전)이 지금 웹 번들의 값과 같은지 본다.
 
     서버가 옛 값도 받아 값이 낡아도 명령 감시는 정상인 것들이다. 그래도 요청은 사이트 웹이 지금 보내는 값이어야 해서, 웹이 새로
-    배포해 값이 바뀌면 고장으로 알려 jibsa 값을 갱신하게 한다. 번들은 `_read_web` 이 받는다.
+    배포해 값이 바뀌면 경고로 알려 jibsa 값을 갱신하게 한다. 번들은 `_read_web` 이 받는다.
 
     Args:
         step: 결과 줄의 `label`·`command`.
@@ -821,7 +827,7 @@ def check_web_values(
         fix: 값이 다를 때 알림 끝에 붙일 고칠 곳.
 
     Returns:
-        번들을 받지 못하면 확인 못 함, 어떤 이름의 값을 하나도 찾지 못했으면(번들 구조가 바뀜) 고장, jibsa 값이 웹 값에 없으면 고장.
+        번들을 받지 못하면 확인 못 함, 어떤 이름의 값을 하나도 찾지 못했으면(번들 구조가 바뀜) 경고, jibsa 값이 웹 값에 없으면 경고.
     """
     web, failed = _read_web(step, source, collect)
     if failed is not None:
@@ -829,12 +835,12 @@ def check_web_values(
     unseen = [name for name in dict.fromkeys(key for _, key, _ in ours) if not web.get(name)]
     if unseen:
         return {
-            **step, 'status': BROKEN,
+            **step, 'status': WARN,
             'detail': f"첫 화면 번들에서 찾지 못함: {', '.join(unseen)} (번들 구조가 바뀌었을 수 있음)",
         }
     stale = [f"{label} {value} → 웹 {', '.join(sorted(web[key]))}" for label, key, value in ours if value not in web[key]]
     if stale:
-        return {**step, 'status': BROKEN, 'detail': f"웹 번들에 jibsa 값이 없음 ({'; '.join(stale)}). {fix}"}
+        return {**step, 'status': WARN, 'detail': f"웹 번들에 jibsa 값이 없음 ({'; '.join(stale)}). {fix}"}
     return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(value for _, _, value in ours)})"}
 
 
@@ -942,7 +948,8 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
     그 화면이 부르는 조각들이다 (2026-11-17 실측: 조각 5건).
 
     Returns:
-        번들을 받지 못하면 확인 못 함, 표를 못 찾았거나(번들 구조가 바뀜) 웹 표·이름표(유연·표준·엄격)가 jibsa 와 다르면 고장.
+        번들을 받지 못하면 확인 못 함, 표를 못 찾았으면(번들 구조가 바뀜) 경고, 웹 표·이름표(유연·표준·엄격)가 jibsa 와
+        다르면 고장 (jibsa 가 틀린 위약금을 내보낸다).
     """
     from jibsa.providers.zigbang.api.client import ZigbangClient
     from jibsa.providers.zigbang.service.stay.detail import (
@@ -990,7 +997,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
     web_table, web_labels = web
     if not web_table:
         return {
-            **step, 'status': BROKEN,
+            **step, 'status': WARN,
             'detail': '단기임대 상세 화면 번들에서 위약금 표를 찾지 못함 (번들 구조가 바뀌었을 수 있음)',
         }
     diffs = _zigbang_stay_refund_diff(STAY_REFUND_RULES, web_table, STAY_REFUND_POLICY_LABELS, web_labels)
@@ -1093,7 +1100,8 @@ def check_daangn_queries() -> dict[str, str]:
       데 쓴다 (예: 어린이집이 `EducationPoiLayerQuery` 에서 `ComplexSchoolListPanelQuery` 로 옮겨 감). 웹에만 있는 기능은 jibsa 에
       넣지 않아도 된다. 살펴본 뒤 `daangn-queries` 로 기준 목록을 다시 쓴다.
 
-    하나라도 있으면 고장으로 알려 `api-broken` 이슈를 연다 (열려 있으면 댓글).
+    하나라도 있으면 경고로 알려 `api-warning` 이슈를 연다 (열려 있으면 댓글). 서버가 옛 해시를 받는 동안
+    명령은 돌기 때문이다.
     """
     from jibsa.providers.daangn.api.client import DaangnClient
 
@@ -1102,7 +1110,7 @@ def check_daangn_queries() -> dict[str, str]:
     if failed is not None:
         return failed
     if not web:
-        return {**step, 'status': BROKEN, 'detail': '번들에서 GraphQL 쿼리를 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
+        return {**step, 'status': WARN, 'detail': '번들에서 GraphQL 쿼리를 찾지 못함 (번들 구조가 바뀌었을 수 있음)'}
     names_by_hash = {query_id: name for name, query_ids in web.items() for query_id in query_ids}
     changed: list[str] = []
     gone: list[str] = []
@@ -1131,7 +1139,7 @@ def check_daangn_queries() -> dict[str, str]:
             '`api_check.py daangn-queries` 로 기준 목록을 다시 쓴다',
         )
     if problems:
-        return {**step, 'status': BROKEN, 'detail': ' / '.join(problems)}
+        return {**step, 'status': WARN, 'detail': ' / '.join(problems)}
     return {
         **step, 'status': OK,
         'detail': f'웹과 같음 (jibsa 쿼리 {len(DaangnClient.web_query_names)}개, 웹 쿼리 {len(web)}개)',
@@ -1175,7 +1183,8 @@ def run_group(name: str, *, weekly: bool = False) -> dict[str, Any]:
     목록에 매물이 하나뿐이면 다시 부르지 못해 확인 못 함으로 둔다. 두 번 확인해 내려간 값은 기억해 두고, 뒤 명령이
     그 값을 쓰면 부르지 않고 확인 못 함으로 건너뛴다 (같은 값과 같은 예비 매물로 요청이 또 늘지 않게).
 
-    `weekly` 이거나 오늘이 `WEEKLY_CHECK_WEEKDAY` 면 명령 뒤에 `WEEKLY_CHECKS` 도 돈다.
+    `weekly` 이거나 오늘이 `WEEKLY_CHECK_WEEKDAY` 면 명령 뒤에 `WEEKLY_CHECKS` 도 돈다. 결과의 `weekly_checked` 는 이번에 그 소스의
+    주 1회 검사를 돌렸고 번들을 받지 못한(확인 못 함) 줄이 없어 웹 값을 모두 확인했을 때만 True 다.
     """
     check_in = _today() + datetime.timedelta(days=STAY_CHECK_IN_DAYS)
     values: dict[str, str] = {'check_in': check_in.isoformat(), 'check_out': (check_in + datetime.timedelta(days=6)).isoformat()}
@@ -1223,15 +1232,23 @@ def run_group(name: str, *, weekly: bool = False) -> dict[str, Any]:
                 values[capture.name] = found[0]
                 spares[capture.name] = found[1:]
         steps.append({'label': step.label, 'command': line, 'status': result.status, 'detail': result.detail})
+    weekly_checked = False
     if weekly or _today().weekday() == WEEKLY_CHECK_WEEKDAY:
-        steps += [check() for check in WEEKLY_CHECKS.get(name, ())]
-    return {'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps}
+        checks = [check() for check in WEEKLY_CHECKS.get(name, ())]
+        steps += checks
+        weekly_checked = bool(checks) and all(step['status'] != UNKNOWN for step in checks)
+    return {
+        'group': name, 'date': _today().isoformat(), 'status': _overall([step['status'] for step in steps]), 'steps': steps,
+        'weekly_checked': weekly_checked,
+    }
 
 
 def _overall(statuses: list[str]) -> str:
-    if BROKEN in statuses:
-        return BROKEN
-    return UNKNOWN if UNKNOWN in statuses else OK
+    # 확인 못 함을 경고보다 앞에 둔다. 사흘 연속 확인 못 함 셈(`_update_issues`)이 소스 판정 UNKNOWN 으로 세기 때문이다
+    for status in (BROKEN, UNKNOWN, WARN):
+        if status in statuses:
+            return status
+    return OK
 
 
 # --- 결과 정리 ---
@@ -1300,12 +1317,19 @@ def _previous_reports(days: int) -> list[dict[str, Any]]:
 
 
 def _update_issues(results: list[dict[str, Any]], dry_run: bool) -> None:
-    """고장은 api-broken, 사흘 연속 확인 못 함은 api-blocked 이슈로 알린다. 다시 모두 괜찮아지면 닫는다."""
+    """고장은 api-broken, 경고는 api-warning, 사흘 연속 확인 못 함은 api-blocked 이슈로 알린다.
+
+    api-broken 은 모든 소스 판정이 정상이거나 경고일 때, api-blocked 는 확인 못 함이 없을 때 닫는다. api-warning 은 경고 줄이 없고
+    모든 매일 소스가 주 1회 검사로 웹 값을 모두 확인했을 때(`weekly_checked`)만 닫는다. 예약 실행은 월요일에만 그 검사를 돌아, 검사가
+    돌지 않았거나 번들을 받지 못한 날 경고가 없는 것은 해결된 것이 아니다.
+    """
     table, link = _table(results), _run_link()
     statuses = {result['group']: result['status'] for result in results}
     broken = [group for group, status in statuses.items() if status == BROKEN]
     _gh('label', 'create', BROKEN_LABEL, '--color', 'd73a4a', '--description', '매일 API 감시가 찾은 고장', '--force', write=True, dry_run=dry_run)
     _gh('label', 'create', BLOCKED_LABEL, '--color', 'fbca04', '--description', '매일 API 감시가 며칠째 확인하지 못함', '--force', write=True, dry_run=dry_run)
+    _gh('label', 'create', WARNING_LABEL, '--color', 'fef2c0', '--description', '매일 API 감시의 경고 (웹 값이 바뀌었지만 아직 동작)', '--force',
+        write=True, dry_run=dry_run)
 
     number = _open_issue(BROKEN_LABEL)
     if broken:
@@ -1315,8 +1339,25 @@ def _update_issues(results: list[dict[str, Any]], dry_run: bool) -> None:
                 write=True, dry_run=dry_run)
         else:
             _gh('issue', 'comment', str(number), '--body', body, write=True, dry_run=dry_run)
-    elif number is not None and all(status == OK for status in statuses.values()):
-        _gh('issue', 'close', str(number), '--comment', f'{_today()} 감시에서 모두 정상이다{link}', write=True, dry_run=dry_run)
+    elif number is not None and all(status in (OK, WARN) for status in statuses.values()):
+        _gh('issue', 'close', str(number), '--comment', f'{_today()} 감시에서 고장·확인 못 함이 없다{link}', write=True, dry_run=dry_run)
+
+    warn_results = [{**result, 'steps': [step for step in result['steps'] if step['status'] == WARN]} for result in results]
+    warn_results = [result for result in warn_results if result['steps']]
+    warned = [result['group'] for result in warn_results]
+    number = _open_issue(WARNING_LABEL)
+    if warned:
+        body = (f"{_today()} 감시에서 경고: {', '.join(warned)}{link}\n\n{_table(warn_results)}\n\n"
+                '웹 값이 바뀌었지만 jibsa 는 아직 동작한다. 서버가 옛 값을 거절하면 그 값을 쓰는 명령이 고장으로 잡힌다. '
+                '알려 준 웹 값으로 jibsa 를 맞춘다 (`/api-broken`).')
+        if number is None:
+            _gh('issue', 'create', '--label', WARNING_LABEL, '--title', f"API 감시: 경고 ({', '.join(warned)})", '--body', body,
+                write=True, dry_run=dry_run)
+        else:
+            _gh('issue', 'comment', str(number), '--body', body, write=True, dry_run=dry_run)
+    # 옛 결과 파일에는 weekly_checked 가 없어 False 로 본다
+    elif number is not None and all(result.get('weekly_checked', False) for result in results if result['group'] in DAILY_GROUPS):
+        _gh('issue', 'close', str(number), '--comment', f'{_today()} 주 1회 검사에서 경고가 없다{link}', write=True, dry_run=dry_run)
 
     previous = [{result['group']: result['status'] for result in report['results']} for report in _previous_reports(BLOCKED_STREAK - 1)]
     streak = [
@@ -1333,8 +1374,21 @@ def _update_issues(results: list[dict[str, Any]], dry_run: bool) -> None:
         _gh('issue', 'close', str(number), '--comment', f'{_today()} 감시에서 확인 못 함이 없다{link}', write=True, dry_run=dry_run)
 
 
+def _clip(text: str, limit: int = 1000) -> str:
+    """실행 화면 경고 표시가 너무 길지 않게 `limit` 자까지만 남긴다 (넘으면 앞 `limit - 1` 자 + `…`)."""
+    return text if len(text) <= limit else f'{text[:limit - 1]}…'
+
+
+def _escape_annotation(text: str) -> str:
+    """GitHub 워크플로 명령의 message 에서 쓰는 이스케이프 (`%` 를 맨 먼저 바꾼다)."""
+    return text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+
+
 def report(paths: list[str], *, issues: bool, dry_run: bool) -> int:
-    """소스별 결과 파일을 모아 표를 남기고, 고장이 있으면 1 을 돌려준다 (실행이 실패로 끝나 GitHub 이 메일로 알린다)."""
+    """소스별 결과 파일을 모아 표를 남기고, 고장이 있으면 1 을 돌려준다 (실행이 실패로 끝나 GitHub 이 메일로 알린다).
+
+    경고(🟡)만 있으면 0 이고 실행 화면에 경고 표시(`::warning::`)를 단다.
+    """
     found = {}
     for path in paths:
         # 결과 파일이 하나도 없으면 셸이 글롭(result-*.json)을 그대로 넘긴다
@@ -1347,13 +1401,18 @@ def report(paths: list[str], *, issues: bool, dry_run: bool) -> int:
     # 하고, 하루짜리 일시 실패면 다음 날 실행이 모두 정상일 때 고장 이슈를 스스로 닫는다 (2026-11-10 재검토)
     results = [
         found.get(group) or {
-            'group': group, 'status': BROKEN,
+            'group': group, 'status': BROKEN, 'weekly_checked': False,
             'steps': [{'label': '조회 잡', 'command': '-', 'status': BROKEN, 'detail': '결과 파일 없음 (조회 잡 실패)'}],
         }
         for group in [*DAILY_GROUPS, *(group for group in found if group not in DAILY_GROUPS)]
     ]
     text = f'## API 감시 {_today()}\n\n{_table(results)}\n'
     print(text)
+    for result in results:
+        for step in result['steps']:
+            if step['status'] == WARN:
+                message = _escape_annotation(_clip(f"{step['label']}: {step['detail']}"))
+                print(f"::warning title=API 감시 경고 ({result['group']})::{message}")
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
         with open(summary, 'a', encoding='utf-8') as file:
@@ -1376,7 +1435,7 @@ def main() -> int:
     )
     collect = commands.add_parser('report', help='결과 파일을 모아 표를 남기고 이슈를 고친다')
     collect.add_argument('paths', nargs='*')
-    collect.add_argument('--issues', action='store_true', help='고장·연속 확인 못 함을 이슈로 알린다 (예약·수동 실행만)')
+    collect.add_argument('--issues', action='store_true', help='고장·경고·연속 확인 못 함을 이슈로 알린다 (예약·수동 실행만)')
     collect.add_argument('--dry-run', action='store_true', help='이슈·라벨을 바꾸지 않고 보낼 gh 명령만 출력한다')
     options = parser.parse_args()
     if options.action == 'run':
