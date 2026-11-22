@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -45,6 +46,7 @@ from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangDanjisPriceChartResponseModel,
     ZigbangDanjisRoomTypesPriceChartResponseModel,
 )
+from jibsa.providers.zigbang.api.response.local.info import ZigbangLocalPriceModel
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
@@ -93,6 +95,9 @@ from jibsa.providers.zigbang.service.complex.trend import (
     get_pyeong_price_trend,
 )
 from jibsa.providers.zigbang.service.listing import get_any_listing
+from jibsa.providers.zigbang.service.local import (
+    info as region_info,
+)
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import (
     divided_region_error,
@@ -1583,6 +1588,30 @@ def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
         kept = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
     data = kept.model_dump(mode='json')
     assert data['available'] is True and len(data['unavailable_periods']) == 1
+
+
+# --- 지역 화면 (region-info) ------------------------
+
+def test_region_info_price_tabs_and_population_period() -> None:
+    prices = [
+        ZigbangLocalPriceModel.model_validate(item)
+        for item in (
+            {'area': '30', 'salesPrice': 5000, 'minSalesPrice': 1, 'maxSalesPrice': 2, 'rentPrice': 2000},
+            {'area': '0', 'salesPrice': 0, 'rentPrice': 2000},
+            {'area': '10', 'salesPrice': 4000, 'rentPrice': 0},
+            {'area': '20', 'rentPrice': 2000},
+            {'area': 'total', 'salesPrice': 5400, 'minSalesPrice': 7500, 'maxSalesPrice': 95000, 'rentPrice': 2400},
+        )
+    ]
+    # 웹 탭처럼 평균 평당가가 0 인 평형대만 빼고 (값이 없는 칸은 남긴다), 전체 먼저 작은 평형대 순이다
+    result = region_info._estimated_prices(prices)
+    assert result is not None and [item.range for item in result] == ['전체', '20평대', '30평대']
+    assert result[1].sale_price_per_pyeong_manwon is None
+    assert region_info._sale_price_bounds(prices) == (7500, 95000)
+    assert region_info._description_counts('4,923 단지 · 1,876,379 세대') == (4923, 1876379) and region_info._description_counts('') == (None, None)
+    # 인구 그래프 기간: 끝은 지난달, 시작은 그 5년 전 같은 달 (2026-11-19 캡처 202110~202610)
+    assert region_info.population_period(date(2026, 11, 22)) == ('202110', '202610')
+    assert region_info.population_period(date(2027, 1, 5)) == ('202112', '202612')
 
 
 # --- 시세 추이 (price-trend) -------------------------------------------

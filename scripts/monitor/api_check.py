@@ -178,6 +178,16 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         # --order 는 순서 탭(order=areaPrice 등)을 서버에 보내는 경로다
         Step('역 주변 아파트 단지 평당가 순 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--order', '평당가', '--limit', '3'), 'complexes'),
+        # 지역 화면(동·구)은 평형대별 시세(/apt/locals/{코드} 응답의 price 칸)를 기대 칸으로 보고, 지역 거래량·평당 추이는 덤 조회라 같이 본다.
+        # 인구·세대는 구에서만 받는 덤이다 (동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 키가 없다)
+        Step(
+            '지역 정보 동 가락동', ('zigbang', 'region-info'), ('가락동',), 'estimated_prices',
+            also_expect=('monthly_volumes', 'price_trend.lines'),
+        ),
+        Step(
+            '지역 정보 구 송파구', ('zigbang', 'region-info'), ('송파구',), 'estimated_prices',
+            also_expect=('population.people', 'population.households'),
+        ),
         # 평형 정보(danjis/{id}/room-types)는 덤이라 실패해도 명령은 성공한다. 그 칸(단지 직방시세 범위)은 직방이 정상 단지에도 시세를
         # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이고,
         # 응답 형식이 바뀌어 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다

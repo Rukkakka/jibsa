@@ -93,6 +93,10 @@ from jibsa.providers.zigbang.service.complex.trend import (
     get_pyeong_price_trend,
 )
 from jibsa.providers.zigbang.service.listing import get_any_listing
+from jibsa.providers.zigbang.service.local.info import (
+    PRICE_RANGES,
+    get_region_info,
+)
 from jibsa.providers.zigbang.service.real_price import (
     REAL_PRICE_MAX_LIMIT,
     REAL_PRICE_TRADE_TYPES,
@@ -246,7 +250,7 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 app = typer.Typer(
     help=(
         '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역·학교·동·구 주변 단지 search complexes, complex, '
-        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), '
+        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), 동·구 지역 화면(지역 정보 region-info), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
@@ -1361,6 +1365,36 @@ def price_trend_command(
         else:
             result = get_price_trend(client, complex_id.strip(), period=chosen_period, compare=compare_ids)
             emit(result, pretty, notes=result.notes)
+
+
+RegionQueryArgument = Annotated[
+    str,
+    typer.Argument(help='동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다'),
+]
+
+
+@app.command('region-info')
+def region_info_command(
+    query: RegionQueryArgument,
+    price_range: Annotated[
+        str,
+        typer.Option('--range', help=f"평당가 추이 그래프의 평형대: {', '.join(PRICE_RANGES)}. 평형대별 시세(estimated_prices)는 늘 모든 평형대다")
+    ] = '전체',
+    pretty: PrettyOption = None,
+) -> None:
+    """동·구의 지역 정보 (직방 웹 지역정보 화면): 단지·세대 수, 평형대별 직방시세, 월별 거래량, 평당가 추이, 구는 인구·세대도.
+
+    직방시세(estimated_prices)는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다. 평당가 추이(price_trend)는 웹 그래프처럼 평당가 높은
+    단지 최대 3개와 그 지역 줄이고 --range 로 평형대를 고른다. 요청은 지역 검색과 지역 정보에 거래량·평당가 추이를 더해 동 4회, 구는
+    인구·세대까지 6회다. 거래량·평당가 추이·인구·세대는 덤 조회라 하나가 실패하면 그 값만 null 이고 [실패] 로 알린다.
+
+    예: jibsa zigbang region-info 송파구
+        jibsa zigbang region-info 가락동 --range 30평대
+    """
+    chosen_range = check_choice(price_range, PRICE_RANGES, '--range')
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_region_info(client, query, price_range=chosen_range)
+        emit(result, pretty, notes=result.notes)
 
 
 @app.command('listing')

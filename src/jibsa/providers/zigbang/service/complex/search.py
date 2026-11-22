@@ -10,13 +10,8 @@ from pydantic import (
     model_serializer,
 )
 
-from jibsa.core.errors import (
-    JibsaError,
-    RegionNotFoundError,
-)
+from jibsa.core.errors import JibsaError
 from jibsa.core.korean import (
-    is_district_code,
-    is_dong_code,
     is_ri_code,
     quoted,
 )
@@ -49,13 +44,10 @@ from jibsa.providers.zigbang.service.common.base import (
 from jibsa.providers.zigbang.service.region import (
     STATION_QUERY_HINT,
     QueryPlaceKind,
-    best_region_item,
-    local_code_of,
     query_place_kind,
-    resolve_apt_region,
+    resolve_apt_area,
     resolve_school,
     resolve_station,
-    search_regions,
 )
 
 from typing import (
@@ -346,33 +338,20 @@ def _school_place(client: ZigbangClient, query: str) -> _ComplexPlace:
 
 def _region_place(client: ZigbangClient, query: str) -> _ComplexPlace:
     """동·구 하나를 찾는다. 아파트 지역 해석(`resolve_apt_region`)과 같다: 같은 이름 동·구, ○가 동, 구가 있는 시는 묻는다."""
-    items = search_regions(client, query)
-    try:
-        region, notes = resolve_apt_region(
-            client,
-            query,
-            items=items,
-            ri_check='단지 address 는 읍·면까지라 리 안의 단지를 가를 수 없습니다 (url 의 단지 페이지에서 확인)',
-        )
-    except RegionNotFoundError:
-        best = best_region_item(query, items, require_code=True)
-        code = best.source.legal_division_code if best and best.source else None
-        if code is not None and not (is_district_code(code) or is_dong_code(code) or is_ri_code(code)):
-            raise JibsaError(
-                code='INVALID_ARGUMENT',
-                message=f"{quoted(query, '은/는')} 시·도 이름이라 단지를 찾을 수 없습니다 (동·구 단위로 조회합니다)",
-                hint="구나 동 이름을 주세요 (예: '송파구', '가락동'). 역·학교 이름도 받습니다 (예: '강남역', '해누리중학교')",
-            ) from None
-        raise
-    if region.legal_division_code is None:
-        raise RegionNotFoundError(region.name)
+    region, place_type, local_code, notes = resolve_apt_area(
+        client,
+        query,
+        ri_check='단지 address 는 읍·면까지라 리 안의 단지를 가를 수 없습니다 (url 의 단지 페이지에서 확인)',
+        sido_message='시·도 이름이라 단지를 찾을 수 없습니다 (동·구 단위로 조회합니다)',
+        sido_hint="구나 동 이름을 주세요 (예: '송파구', '가락동'). 역·학교 이름도 받습니다 (예: '강남역', '해누리중학교')",
+    )
     return _ComplexPlace(
-        place_type='구' if is_district_code(region.legal_division_code) else '동',
+        place_type=place_type,
         name=region.name,
         # 리는 읍·면 목록으로 찾아 웹 목록 이름도 그 읍·면이다 (`resolve_apt_region` 의 리 안내와 같은 local3)
         list_name=(region.local3 or region.name) if is_ri_code(region.legal_division_code) else region.name,
         address=region.address,
-        place_id=int(local_code_of(region.legal_division_code)),
+        place_id=int(local_code),
         subway_id=None,
         school_code=None,
         notes=notes,

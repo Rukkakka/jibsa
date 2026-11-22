@@ -48,6 +48,13 @@ from jibsa.providers.zigbang.api.request.complex.trend import (
     ZigbangDanjisPriceChartRequestParameterModel,
     ZigbangDanjisRoomTypesPriceChartRequestParameterModel,
 )
+from jibsa.providers.zigbang.api.request.local.info import (
+    ZigbangLocalsPynChartPriceRequestParameterModel,
+    ZigbangLocalsRequestParameterModel,
+    ZigbangLocalsTotalHouseholdsTimeRequestParameterModel,
+    ZigbangLocalsTotalPeopleTimeRequestParameterModel,
+    ZigbangLocalsTradingVolumeChartRequestParameterModel,
+)
 from jibsa.providers.zigbang.api.request.real_price import (
     ZigbangDanjisRoomTypesRtPricesRequestParameterModel,
     ZigbangDanjisRtPricesRequestParameterModel,
@@ -118,6 +125,13 @@ from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisResponseModel,
     ZigbangDanjisPriceChartResponseModel,
     ZigbangDanjisRoomTypesPriceChartResponseModel,
+)
+from jibsa.providers.zigbang.api.response.local.info import (
+    ZigbangLocalsPynChartPriceResponseModel,
+    ZigbangLocalsResponseModel,
+    ZigbangLocalsTotalHouseholdsTimeResponseModel,
+    ZigbangLocalsTotalPeopleTimeResponseModel,
+    ZigbangLocalsTradingVolumeChartResponseModel,
 )
 from jibsa.providers.zigbang.api.response.real_price import (
     ZigbangDanjisRoomTypesRtPricesResponseModel,
@@ -201,7 +215,7 @@ class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
     로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호
-    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
+    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 지역 정보·거래량·평당가 추이·인구, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
     조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
@@ -242,6 +256,11 @@ class ZigbangClient(BaseHTTPClient):
     items_list_v1_endpoint: ClassVar[str] = '/house/property/v1/items/list'
     locals_item_catalogs_endpoint: ClassVar[str] = '/apt/locals/{local_code}/item-catalogs'
     locals_polygon_endpoint: ClassVar[str] = '/apt/locals/polygon'
+    locals_endpoint: ClassVar[str] = '/apt/locals/{local_code}'
+    locals_trading_volume_chart_endpoint: ClassVar[str] = '/apt/locals/trading-volume-chart'
+    locals_pyn_chart_price_endpoint: ClassVar[str] = '/apt/locals/pyn-chart-price'
+    locals_total_people_time_endpoint: ClassVar[str] = '/apt/locals/{local_code}/total_people_time'
+    locals_total_households_time_endpoint: ClassVar[str] = '/apt/locals/{local_code}/total_households_time'
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
     item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     item_catalogs_ho_info_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}/ho-info'
@@ -735,6 +754,195 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangLocalsPolygonResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals(
+        self,
+        parameter: ZigbangLocalsRequestParameterModel
+    ) -> ZigbangLocalsResponseModel:
+        """Fetch the region information of a dong, gu or si/do via `GET /apt/locals/{localCode}`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도의 지역 정보 화면(`/home/apt/locals/{코드}`)이 부른다
+        (2026-11-19 캡처). 코드는 동 8자리·구 5자리·시도 2자리다. 구가 있는 시(예: 41130)의 5자리 코드는 404 'INVALID LOCAL ID' 다.
+        로그인이 필요 없다.
+
+        Args:
+            parameter: `local_code` (경로).
+
+        Returns:
+            ZigbangLocalsResponseModel: 지역 이름·주소·행정 단계·단지 수·세대수·평균 평당가(만원/3.3㎡)와 평형대별 시세.
+        """
+        response = self._client.get(
+            url=self.locals_endpoint.format(local_code=parameter.local_code),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals(
+        self,
+        parameter: ZigbangLocalsRequestParameterModel
+    ) -> ZigbangLocalsResponseModel:
+        """Async variant of `run_request_locals`."""
+        response = await self._async_client.get(
+            url=self.locals_endpoint.format(local_code=parameter.local_code),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals_trading_volume_chart(
+        self,
+        parameter: ZigbangLocalsTradingVolumeChartRequestParameterModel
+    ) -> ZigbangLocalsTradingVolumeChartResponseModel:
+        """Fetch the monthly trade counts of a region via `GET /apt/locals/trading-volume-chart`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 지역 정보 화면의 거래량 그래프다. 응답이 `data` 봉투에 싸여 온다.
+        로그인이 필요 없다.
+
+        Args:
+            parameter: `localCd` (지역 코드).
+
+        Returns:
+            ZigbangLocalsTradingVolumeChartResponseModel: 월별 매매·전세·월세 건수 (2026-11-22 표본은 37개월).
+        """
+        response = self._client.get(
+            url=self.locals_trading_volume_chart_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTradingVolumeChartResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_trading_volume_chart(
+        self,
+        parameter: ZigbangLocalsTradingVolumeChartRequestParameterModel
+    ) -> ZigbangLocalsTradingVolumeChartResponseModel:
+        """Async variant of `run_request_locals_trading_volume_chart`."""
+        response = await self._async_client.get(
+            url=self.locals_trading_volume_chart_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTradingVolumeChartResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals_pyn_chart_price(
+        self,
+        parameter: ZigbangLocalsPynChartPriceRequestParameterModel
+    ) -> ZigbangLocalsPynChartPriceResponseModel:
+        """Fetch the price per 3.3㎡ trend of a region via `GET /apt/locals/pyn-chart-price`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 지역 정보 화면의 평당가 그래프다 (평형 탭마다 `pynAreaType` 이 다르다).
+        응답이 `data` 봉투에 싸여 온다. 구가 있는 시의 5자리 코드는 404 다. 로그인이 필요 없다.
+
+        Args:
+            parameter: `localCd` (지역 코드)와 `pynAreaType` (평형 탭).
+
+        Returns:
+            ZigbangLocalsPynChartPriceResponseModel: 단지·지역 줄의 월별 평당가(만원/3.3㎡)와 시세 흐름.
+        """
+        response = self._client.get(
+            url=self.locals_pyn_chart_price_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsPynChartPriceResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_pyn_chart_price(
+        self,
+        parameter: ZigbangLocalsPynChartPriceRequestParameterModel
+    ) -> ZigbangLocalsPynChartPriceResponseModel:
+        """Async variant of `run_request_locals_pyn_chart_price`."""
+        response = await self._async_client.get(
+            url=self.locals_pyn_chart_price_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsPynChartPriceResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals_total_people_time(
+        self,
+        parameter: ZigbangLocalsTotalPeopleTimeRequestParameterModel
+    ) -> ZigbangLocalsTotalPeopleTimeResponseModel:
+        """Fetch the monthly population by age of a region via `GET /apt/locals/{localCode}/total_people_time`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 지역 정보 화면의 인구 그래프다. 최상위가 배열이고 동 코드면 빈 배열이다.
+        로그인이 필요 없다.
+
+        Args:
+            parameter: `local_code` (경로)와 `startDate`·`endDate` (YYYYMM).
+
+        Returns:
+            ZigbangLocalsTotalPeopleTimeResponseModel: 월별 전체·연령대별 인구(명). 항목은 `.root`.
+        """
+        response = self._client.get(
+            url=self.locals_total_people_time_endpoint.format(local_code=parameter.local_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTotalPeopleTimeResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_total_people_time(
+        self,
+        parameter: ZigbangLocalsTotalPeopleTimeRequestParameterModel
+    ) -> ZigbangLocalsTotalPeopleTimeResponseModel:
+        """Async variant of `run_request_locals_total_people_time`."""
+        response = await self._async_client.get(
+            url=self.locals_total_people_time_endpoint.format(local_code=parameter.local_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTotalPeopleTimeResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals_total_households_time(
+        self,
+        parameter: ZigbangLocalsTotalHouseholdsTimeRequestParameterModel
+    ) -> ZigbangLocalsTotalHouseholdsTimeResponseModel:
+        """Fetch the monthly households by size of a region via `GET /apt/locals/{localCode}/total_households_time`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 지역 정보 화면의 세대 그래프다. 최상위가 배열이고 동 코드면 빈 배열이다.
+        로그인이 필요 없다.
+
+        Args:
+            parameter: `local_code` (경로)와 `startDate`·`endDate` (YYYYMM).
+
+        Returns:
+            ZigbangLocalsTotalHouseholdsTimeResponseModel: 월별 전체·가구원 수별 세대(세대). 항목은 `.root`.
+        """
+        response = self._client.get(
+            url=self.locals_total_households_time_endpoint.format(local_code=parameter.local_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTotalHouseholdsTimeResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_total_households_time(
+        self,
+        parameter: ZigbangLocalsTotalHouseholdsTimeRequestParameterModel
+    ) -> ZigbangLocalsTotalHouseholdsTimeResponseModel:
+        """Async variant of `run_request_locals_total_households_time`."""
+        response = await self._async_client.get(
+            url=self.locals_total_households_time_endpoint.format(local_code=parameter.local_code),
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsTotalHouseholdsTimeResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_item_catalogs_items(
