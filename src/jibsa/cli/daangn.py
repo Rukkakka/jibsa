@@ -44,6 +44,7 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import (
+    UPDATE_NEEDED,
     Listing,
     note,
 )
@@ -52,6 +53,7 @@ from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.service.common import (
     BUILDING_APPROVAL_FILTER_BY_LABEL,
     COMMUTE_STATION_MAX_LIMIT,
+    COMPARE_MAX_COMPLEXES,
     COMPLEX_LIST_MAX_LIMIT,
     COMPLEX_TYPE_FILTER_BY_LABEL,
     DEAL_FILTER_BY_LABEL,
@@ -127,27 +129,31 @@ from jibsa.providers.daangn.service.region import (
     DaangnArea,
     DaangnStation,
     DaangnUniversity,
+    LocationMissingError,
     SimilarAreasError,
     find_address,
     find_station,
     find_university,
+    has_location,
     map_query_rejected_error,
     region_by_coordinate,
     resolve_area,
     resolve_dong,
     same_station_notes,
+    same_university_notes,
     search_areas,
     search_stations,
     search_universities,
+    station_argument,
     station_label,
     university_label,
 )
 from jibsa.providers.daangn.service.review import (
-    TOP_COMPLEXES_MAX,
+    TOP_DEFAULT,
+    TOP_MAX,
     get_region_reviews,
 )
 from jibsa.providers.daangn.service.school import (
-    COMPARE_MAX_COMPLEXES,
     SCHOOL_CANDIDATE_LIMIT,
     get_preschool,
     get_school,
@@ -264,7 +270,7 @@ ListingPropertyTypeOption = Annotated[
 ]
 TradeOption = Annotated[
     list[str] | None,
-    typer.Option('--trade', help='매매, 전세, 월세, 단기임대, 연세 (1년치 월세를 한 번에 내는 제주 거래). 기본 전체'),
+    typer.Option('--trade', help='매매, 전세, 월세, 단기임대, 연세 (1년치 월세를 한 번에 내는 제주 거래). 반복하거나 쉼표로 구분. 기본 전체'),
 ]
 # 연세 범위 (웹은 제주에서만 연세 칩·연세 범위를 보여 주지만 서버는 어느 지역에서나 받는다)
 YearlyRentMinOption = Annotated[int | None, typer.Option(min=0, help='연세 하한 (만원, 1년치). --trade 연세 와 함께')]
@@ -285,16 +291,17 @@ RoomCountOption = Annotated[
 ]
 StructureOption = Annotated[
     list[str] | None,
-    typer.Option('--structure', help=f"방 구조: {', '.join(STRUCTURE_FILTER_BY_LABEL)}. -t 원룸 과 함께"),
+    typer.Option('--structure', help=f"방 구조: {', '.join(STRUCTURE_FILTER_BY_LABEL)}. 반복하거나 쉼표로 구분. -t 원룸 과 함께"),
 ]
-# search complexes 의 단지 사용승인일도 같다
+# 한 값만 받는다. 반복은 공통 층 `repeated_option` 이 막고, 여기서는 쉼표로 둘 이상 준 것만 막는다. search complexes 의 단지
+# 사용승인일도 같다
 ApprovalOption = Annotated[
     str | None,
     typer.Option('--approval', help=f"사용승인일: {', '.join(BUILDING_APPROVAL_FILTER_BY_LABEL)} 중 하나"),
 ]
 DealOption = Annotated[
     str | None,
-    typer.Option('--deal', help=f"거래 방식: {', '.join(DEAL_FILTER_BY_LABEL)} (직거래 = 집주인이 직접 올린 매물)"),
+    typer.Option('--deal', help=f"거래 방식: {', '.join(DEAL_FILTER_BY_LABEL)} 중 하나 (직거래 = 집주인이 직접 올린 매물)"),
 ]
 ExtraOption = Annotated[
     list[str] | None,
@@ -380,6 +387,11 @@ COMPLEX_CONDITION_IN_COMMUTE: str = (
 # 한 번도 없던 --city·--expand 를 '없앴습니다'·'뺐습니다' 라고 했다 (2026-11-12 리뷰)
 COMMUTE_HINTS: UsageHints = LISTING_HINTS._replace(by_option={
     **CONDITION_OPTION_HINTS,
+    # 매물 검색의 --sort 안내(동·지도 범위는 최근 순, 역·대학 주변은 당근 목록 순)는 통근 검색의 순서와 다르다 (2026-11-19 리뷰)
+    '--sort': (
+        '당근 출퇴근 검색은 지하철 시간이 짧은 역부터(같으면 당근 순서) 주고, 역 안의 매물은 당근이 준 순서 그대로라 '
+        '정렬 옵션이 없습니다'
+    ),
     '--city': f'통근 검색에는 --city 가 없습니다. 회사 위치의 {SAME_NAME_REGION_HINT}',
     '--expand': '통근 검색에는 --expand 가 없습니다. 어느 역까지 넣을지는 --max-minutes(회사 역까지 지하철 시간)로 정합니다',
     # 매물 검색의 --radius 안내(--zoom 으로 범위)는 통근 검색에 --zoom 이 없어 맞지 않는다 (2026-11-12 리뷰). 매물 검색에도
@@ -402,6 +414,17 @@ COMPLEX_COMMANDS_HINT: str = (
 COMPLEX_NAME_SEARCH_HINT: str = '단지 이름이면 jibsa daangn search locations <단지 이름> 으로 단지 ID 를 찾으세요'
 
 
+def _complex_guide(query: str, found: str) -> str:
+    """지역 힌트 뒤에 덧붙이는 단지 안내 (`_complex_name_hint`). 이름에 `query` 가 든 단지(`found`)가 있으면 그 단지와 단지 명령을, 없으면 찾는 법을 준다.
+
+    부분 일치한 단지(`_complexes_named`)라 단지 이름이라고 단정하지 않는다. 단정하면서 원래 힌트(리 이름 안내·행정동 안내·다른 입력)를
+    통째로 바꿨다 (2026-11-19 리뷰·실측: search listings 서울숲).
+    """
+    if not found:
+        return COMPLEX_NAME_SEARCH_HINT
+    return f"단지 이름이면 이름에 {quoted(query, '이/가')} 들어간 단지: {found}. {COMPLEX_COMMANDS_HINT}"
+
+
 @contextmanager
 def _complex_name_hint(
     client: DaangnClient, query: str, *, station_alternative: str = '', station_hint: str = '',
@@ -412,14 +435,16 @@ def _complex_name_hint(
     전에는 '동·구 이름으로 다시 찾으라' 만 알려 에이전트가 단지 ID 를 찾는 데 호출을 한 번 더 썼다 (2026-10-31 재검증:
     search complexes 헬리오시티 → REGION_NOT_FOUND → search locations 헬리오시티). 지역을 못 찾았거나 비슷한 지역만 있을
     때만 단지 후보를 3곳 묻는다 (요청 1회). 단지 검색이 실패하면 `search_complexes` 가 None(모름)을 주고, `_complexes_named` 가
-    빈 목록처럼 받아(`or []`) 원래 힌트에 찾는 법만 붙인다.
+    빈 목록처럼 받아(`or []`) 원래 힌트에 찾는 법만 붙인다. 이름이 같은 지역이 있지만 모두 쓸 수 없을 때(`LocationMissingError`)는 단지 이름이
+    아니라 지역 이름이므로 단지 후보를 찾지 않고 그 에러를 그대로 내보낸다.
 
     역 이름은 단지 이름이라고 하지 않고 역이라고 알린다. 이름에 역 이름이 들어간 단지(강남역우정에쉐르)가 있어 '강남역' 을
     '단지 이름입니다' 라고 했다 (2026-11-11 LLM 사용 시험: search complexes 강남역). 그런 단지는 뒤에 덧붙인다.
 
     비슷한 지역만 있을 때(`SimilarAreasError`)도 단지 후보를 묻는다. 지역 검색이 단지 이름에 엉뚱한 지역을 비슷하다고 주어
     단지 힌트가 빠졌다 (2026-11-12 리뷰·실측: search complexes 은마 → 충청남도 홍성군 은하면만 권했다). 이때는 '역삼' → 역삼동
-    처럼 지역을 찾던 이름일 수도 있어 단지 이름이라고 하지 않고, 지역 후보는 두고 단지 후보를 뒤에 덧붙인다.
+    처럼 지역을 찾던 이름일 수도 있어 단지 이름이라고 하지 않고, 지역 후보는 두고 단지 후보를 뒤에 덧붙인다. 비슷한 지역도 없을 때도
+    같다 (`_complex_guide`). 이름에 든 단지가 있다고 단지 이름이라고 단정하면 원래 힌트(리 이름·행정동 안내)를 잃는다.
 
     Args:
         station_alternative: 역 이름일 때 덧붙일 다른 방법 (단지 목록은 다방·네이버의 역 반경 단지 목록). 마침표 없이 준다.
@@ -430,10 +455,10 @@ def _complex_name_hint(
         yield
     except SimilarAreasError as exc:
         found = _complexes_named(client, query)
-        exc.hint = f"{(exc.hint or '').rstrip('.')}. " + (
-            f"단지 이름이면 이름에 {quoted(query, '이/가')} 들어간 단지: {found}. {COMPLEX_COMMANDS_HINT}" if found
-            else COMPLEX_NAME_SEARCH_HINT
-        )
+        exc.hint = f"{(exc.hint or '').rstrip('.')}. {_complex_guide(query, found)}"
+        raise
+    except LocationMissingError:
+        # 이름이 같은 지역이 있지만 고를 수 없는 것이라 단지 이름이 아니다. 바꾼 message·hint 를 그대로 내보낸다
         raise
     except RegionNotFoundError as exc:
         found = _complexes_named(client, query)
@@ -446,11 +471,7 @@ def _complex_name_hint(
             if found:
                 hint += f". 이름에 {quoted(query, '이/가')} 들어간 단지: {found}. {COMPLEX_COMMANDS_HINT}"
             raise RegionNotFoundError(query, hint=hint) from None
-        if not found:
-            raise RegionNotFoundError(query, hint=f"{(exc.hint or '').rstrip('.')}. {COMPLEX_NAME_SEARCH_HINT}") from None
-        raise RegionNotFoundError(
-            query, hint=f"{quoted(query, '은/는')} 동·구가 아니라 단지 이름입니다: {found}. {COMPLEX_COMMANDS_HINT}",
-        ) from None
+        raise RegionNotFoundError(query, hint=f"{(exc.hint or '').rstrip('.')}. {_complex_guide(query, found)}") from None
 
 
 def _station_named(client: DaangnClient, name: str) -> DaangnStation:
@@ -458,7 +479,7 @@ def _station_named(client: DaangnClient, name: str) -> DaangnStation:
 
     Raises:
         RegionNotFoundError: 이름이 같은 지하철역이 없을 때. 전에는 두 명령이 힌트를 따로 써 출퇴근 검색에는 역 후보를 보는
-            법이 빠져 있었다 (2026-11-12 리뷰).
+            법이 빠져 있었다 (2026-11-12 리뷰). 고른 첫 역에 위치 정보가 없으면 `find_station` 이 같은 계열의 에러로 알린다.
     """
     found = find_station(client, name)
     if found is None:
@@ -728,28 +749,48 @@ def region_command(
             try:
                 region = region_by_coordinate(client, lat, lng)
             except FeedQueryRejectedError:
-                raise map_query_rejected_error('search locations') from None
+                raise map_query_rejected_error('search locations', by='좌표') from None
             emit({'lat': lat, 'lng': lng, 'results': [region.model_dump()]}, pretty)
             return
         # 좌표가 없으면 _require_one_place 가 이름을 요구했다
         assert keyword is not None
         query = ' '.join(keyword.split())
+        if not query:
+            # 공백만 준 검색어는 요청 모델이 영어 메시지(INVALID_ARGUMENT)로 막는다. 다른 지역 이름 입력처럼 못 찾음과 사용법을 알린다
+            # (`resolve_area` 의 빈 이름과 같다, 2026-11-19 리뷰)
+            raise RegionNotFoundError(
+                keyword,
+                hint="지역·역·대학·학교·단지 이름(예: '역삼동', '강남구', '역삼역', '연세대학교', '은마')으로 다시 주세요",
+            )
         # 웹 검색창처럼 검색어를 통째로 보낸다. 지역 검색은 띄어 쓴 이름도 받아 resolve_area(마지막 낱말로 찾고 앞 낱말로 좁힘)와
         # 같은 곳을 준다 (2026-11-12 실측: '강남구 신사동' → 서울특별시 강남구 신사동 1곳. 2026-11-12 리뷰 오탐)
-        results = [_area_result(area) for area in search_areas(client, query)]
-        # 지역 칸 말고는 덤 후보라, 한 칸이 실패해도 다른 칸과 받은 후보는 돌려주고 notes 로 알린다 (search_complexes 와 같다).
-        # 실패한 칸은 '후보 없음'([]) 이 아니라 모름(null) 이다. 요청 제한은 다음 칸도 같은 제한에 걸리므로 바로 올린다
+        areas, more_areas, unusable_areas = search_areas(client, query)
+        results = [_area_result(area) for area in areas]
         notes: list[str] = []
-        stations = _optional_section(notes, '역 검색', '역 후보를', lambda: [
-            {'name': station_label(station)} for station in search_stations(client, query)
-        ])
+        if more_areas:
+            # 지역 검색은 100곳씩 받고 이 명령은 첫 쪽만 준다. 알리지 않으면 잘린 목록이 전부로 읽혀 찾는 지역이 당근에 없다고 볼 수
+            # 있다 ('중구' 는 222곳, 2026-11-19 리뷰·실측). 대학·학교 칸의 안내와 같은 [일부] 다
+            notes.append(note('일부', f'지역 후보는 앞 {len(results) + unusable_areas}곳만 받았습니다. 시·도나 구 이름을 붙여 좁히세요'))
+        if unusable_areas:
+            notes.append(note('제외', f'위치·ID·시·도 이름이 없거나 단계를 몰라 이름으로 찾을 수 없는 지역 후보 {unusable_areas}곳은 뺐습니다'))
+        # 지역 칸 말고는 덤 후보라, 한 칸이 실패해도 다른 칸과 받은 후보는 돌려주고 notes 로 알린다 (search_complexes 와 같다).
+        # 실패한 칸은 '후보 없음'([]) 이 아니라 모름(null) 이다. 요청 제한도 실패로 보고 그 칸을 null 로 두며, 다음 칸도 같은 제한에
+        # 걸리므로 요청하지 않고 같은 이유로 알린다 (`_optional_section`). 요청 제한을 올리면 받은 지역 칸까지 잃었다 (2026-11-19 리뷰)
+        limited: list[RateLimitedError] = []
+        stations = _optional_section(notes, limited, '역 검색', '역 후보를', lambda: _station_candidates(client, query, notes))
         # 대학 칸도 검색어를 통째로 보낸다 (웹 검색창과 같다). --university(find_university)는 첫 낱말로 찾아 맞추지만, 통째로
         # 보내도 캠퍼스까지 붙인 이름을 찾아 두 길이 같은 캠퍼스를 준다 (2026-11-12 실측: '연세대학교 신촌캠퍼스'·'서울대학교
         # 관악캠퍼스' → 그 캠퍼스 1곳씩. 2026-11-12 리뷰 오탐)
-        universities = _optional_section(notes, '대학 검색', '대학 후보를', lambda: _university_candidates(client, query, notes))
-        schools = _optional_section(notes, '학교 검색', '학교 후보를', lambda: _school_candidates(client, query, notes))
-        found_complexes = search_complexes(client, query, limit=limit, notes=notes)
-        complexes = None if found_complexes is None else [candidate.model_dump() for candidate in found_complexes]
+        universities = _optional_section(
+            notes, limited, '대학 검색', '대학 후보를', lambda: _university_candidates(client, query, notes),
+        )
+        schools = _optional_section(notes, limited, '학교 검색', '학교 후보를', lambda: _school_candidates(client, query, notes))
+        if limited:
+            notes.append(note('실패', partial_failure_note(limited[0], '단지 검색', '단지 후보를')))
+            complexes = None
+        else:
+            found_complexes = search_complexes(client, query, limit=limit, notes=notes)
+            complexes = None if found_complexes is None else [candidate.model_dump() for candidate in found_complexes]
         emit({
             'keyword': query,
             'results': results,
@@ -772,18 +813,23 @@ def _area_result(area: DaangnArea) -> dict[str, Any]:
 
 
 def _university_candidates(client: DaangnClient, query: str, notes: list[str]) -> list[dict[str, Any]]:
-    """`search locations` 의 대학 칸. 대학 검색이 받는 수(`UNIVERSITY_CANDIDATES`)만큼 다 와 잘렸을 수 있으면 `notes` 로 알린다.
+    """`search locations` 의 대학 칸. 대학 검색이 받는 수(`UNIVERSITY_CANDIDATES`)만큼 다 와 잘렸을 수 있으면 `notes` 로 알린다. 위치 정보가
+    없어 뺀 캠퍼스가 있으면 그것도 알린다.
 
     당근 대학 검색은 다음 쪽을 주지 않는다. 알리지 않으면 잘린 목록이 전부로 읽혀 뒤의 캠퍼스·대학원이 당근에 없다고 볼 수 있다
     (2026-11-13 리뷰: 20곳만 받던 때 고려대학교 23곳 중 치의학대학원 안암캠퍼스 등 3곳이 알림 없이 빠졌다).
     """
-    pois, cut = search_universities(client, query, notes)
+    found, cut = search_universities(client, query, notes)
     if cut:
         notes.append(note(
             '일부',
             f'{quoted(query, "이/가")} 들어간 대학이 {UNIVERSITY_CANDIDATES}곳보다 많을 수 있어 당근 순서로 앞 {UNIVERSITY_CANDIDATES}곳만 '
             '봤습니다. 찾는 캠퍼스·대학원이 없으면 그 이름까지 붙여 다시 찾으세요',
         ))
+    # 위치 정보가 없는 캠퍼스는 --university(`find_university`)가 그 주변을 찾을 수 없어 역 칸과 같이 뺀다 (`_station_candidates`)
+    pois = [poi for poi in found if has_location(poi)]
+    if len(pois) < len(found):
+        notes.append(note('제외', f'위치 정보가 없는 캠퍼스 {len(found) - len(pois)}곳은 --university 로 찾을 수 없어 뺐습니다'))
     return [
         {'name': university_label(poi), **({'address': poi.jibun_address} if poi.jibun_address else {})}
         for poi in pois
@@ -808,19 +854,41 @@ def _school_candidates(client: DaangnClient, query: str, notes: list[str]) -> li
     ]
 
 
-def _optional_section(
-    notes: list[str], what: str, subject: str, fetch: Callable[[], list[dict[str, Any]]],
-) -> list[dict[str, Any]] | None:
-    """`search locations` 의 덤 칸 하나. 실패하면(요청 제한 제외) None(모름)과 그 이유를 `notes` 에 남긴다.
+def _station_candidates(client: DaangnClient, query: str, notes: list[str]) -> list[dict[str, Any]]:
+    """`search locations` 의 역 칸. 위치 정보가 없는 역은 뺀다. `--station`(`find_station`)이 그 역의 주변을 찾을 수 없어서다.
 
-    빈 목록으로 두면 그 이름의 역·대학·학교가 없다는 뜻으로 읽혀 None 이다 (값이 없을 때의 규칙, 2026-11-12 리뷰).
+    뺀 역이 있으면 `notes` 로 알린다. 알리지 않으면 이 목록의 역이 `--station` 에서 찾히지 않는 까닭을 모른다 (2026-11-19 리뷰).
+    대학 칸(`_university_candidates`)도 같다.
     """
+    found = search_stations(client, query)
+    located = [station for station in found if has_location(station)]
+    if len(located) < len(found):
+        notes.append(note('제외', f'위치 정보가 없는 역 {len(found) - len(located)}곳은 --station 으로 찾을 수 없어 뺐습니다'))
+    return [{'name': station_label(station)} for station in located]
+
+
+def _optional_section(
+    notes: list[str],
+    limited: list[RateLimitedError],
+    what: str,
+    subject: str,
+    fetch: Callable[[], list[dict[str, Any]]],
+) -> list[dict[str, Any]] | None:
+    """`search locations` 의 덤 칸 하나. 실패하면 None(모름)과 그 이유를 `notes` 에 남긴다.
+
+    빈 목록으로 두면 그 이름의 역·대학·학교가 없다는 뜻으로 읽혀 None 이다 (값이 없을 때의 규칙, 2026-11-12 리뷰). 요청 제한도 다른
+    실패와 같다 (단지 칸 `search_complexes` 와 같은 결과 모양). 앞 칸이 요청 제한에 걸렸으면(`limited`) 이 칸도 같은 제한에 걸리므로
+    요청하지 않고 같은 이유로 알린다. 요청 제한에 걸리면 그 예외를 `limited` 에 남겨 다음 칸에 알린다.
+    """
+    if limited:
+        notes.append(note('실패', partial_failure_note(limited[0], what, subject)))
+        return None
     try:
         return fetch()
-    except RateLimitedError:
-        raise
     except OPTIONAL_LOOKUP_ERRORS as exc:
         logger.warning('daangn %s failed (%s); continuing without it', what, exc)
+        if isinstance(exc, RateLimitedError):
+            limited.append(exc)
         notes.append(note('실패', partial_failure_note(exc, what, subject)))
         return None
 
@@ -978,19 +1046,21 @@ def search_command(
         map_zoom: int,
         place_notes: list[str],
         *,
+        by: str,
         region: DaangnRegion | None = None,
         after: str | None = None,
         total: int | None = None,
         found_address: DaangnAddress | None = None,
         sidos: list[list[str]] | None = None,
     ) -> None:
+        # `by` 는 지도 범위 쿼리가 거절됐을 때 에러 문구에 쓸 입력의 종류다 ('좌표'·'구 이름'·'주소')
         try:
             map_result = search_map_area(
                 client, center_lat, center_lng, zoom=map_zoom, conditions=conditions, limit=limit, region=region,
                 after=after, total=total, address=found_address, sidos=sidos,
             )
         except FeedQueryRejectedError:
-            raise map_query_rejected_error('search listings') from None
+            raise map_query_rejected_error('search listings', by=by) from None
         scope = [] if after is not None else [note(
             '범위',
             f'당근 웹 지도 화면(데스크톱, 줌 {map_zoom}, 가로 {map_result.width_km:g}km × 세로 {map_result.height_km:g}km) 안 '
@@ -1012,8 +1082,10 @@ def search_command(
         found_region = DaangnRegion.model_validate(position['region']) if position.get('region') else None
         sidos = position.get('sidos')
         if mode == 'map':
+            # 이어 받는 쪽은 처음 준 입력이 구 이름인지 좌표인지 알 수 없다 (이어 받기 표에 주소만 남는다)
             emit_map(
-                float(position['lat']), float(position['lng']), int(position['zoom']), [], region=found_region,
+                float(position['lat']), float(position['lng']), int(position['zoom']), [],
+                by='주소' if position.get('address') else '지도 범위', region=found_region,
                 after=str(position['after']), total=position.get('total'),
                 found_address=DaangnAddress.model_validate(position['address']) if position.get('address') else None,
                 sidos=sidos,
@@ -1059,7 +1131,7 @@ def search_command(
             emit_listings(complex_result, common_notes + complex_result.notes, None)
             return
         if lat is not None and lng is not None:
-            emit_map(lat, lng, zoom or POINT_ZOOM, [])
+            emit_map(lat, lng, zoom or POINT_ZOOM, [], by='좌표')
             return
         if address is not None:
             # 웹 검색창 주소 모드처럼 후보 하나의 좌표를 받아 그 자리의 지도 화면 범위 목록이다 (좌표 검색과 같은 줌)
@@ -1067,7 +1139,7 @@ def search_command(
             emit_map(found_address.lat, found_address.lng, zoom or POINT_ZOOM, [note(
                 '범위',
                 f'{found_address.label} 의 좌표를 가운데에 둔 지도 화면 범위입니다',
-            )], found_address=found_address)
+            )], by='주소', found_address=found_address)
             return
         if station is not None:
             found_station = _station_named(client, station)
@@ -1084,11 +1156,12 @@ def search_command(
                 '범위',
                 f'{found_university.name} 주변 매물을 당근 웹 대학 페이지의 목록 순서로 줍니다 (범위는 당근이 정한다. '
                 'distance_km 는 대학까지의 직선거리)',
-            )] + university_result.notes, _university_resume(found_university))
+            )] + same_university_notes(found_university) + university_result.notes, _university_resume(found_university))
             return
         # _require_one_target 이 나머지는 지역 이름을 요구했다
         assert region is not None
-        with _complex_name_hint(client, region, station_hint=f"역 주변 매물은 --station '{region}' 으로 찾습니다"):
+        # 역 이름은 `--station` 이 읽는 꼴로 준다 ('서울 강남역' 은 '서울' 을 노선으로 읽어 못 찾는다, `station_argument`)
+        with _complex_name_hint(client, region, station_hint=f"역 주변 매물은 --station '{station_argument(region)}' 으로 찾습니다"):
             area = resolve_area(client, region, other_inputs=OTHER_PLACE_INPUTS)
         if area.level == '동':
             # 동인지 구인지는 이름을 찾아야 알아(--zoom 은 구 이름에 쓴다) 지역을 찾은 뒤에 막는다. 이름 모양('…동')으로 짐작하지
@@ -1106,7 +1179,7 @@ def search_command(
             '범위',
             f'{area.full_name}{particle(area.full_name, "은/는")} 구라 웹 지도의 구 화면처럼 구 중심의 지도 범위로 찾았습니다. '
             '범위가 사각형이라 이웃 구 매물도 섞이고 구 전체가 다 들어가지 않을 수 있습니다. 동 하나는 동 이름으로 찾으세요',
-        )], region=district)
+        )], by='구 이름', region=district)
 
 
 @app.command('listing')
@@ -1266,7 +1339,7 @@ def region_real_price_command(
 def commute_command(
     workplace: Annotated[
         str | None,
-        typer.Argument(help="회사가 있는 동·구 이름 (예: 역삼동, '강남구 신사동'). 그 중심을 회사 위치로 본다. 역은 --station, 대학은 --university, 좌표는 --lat/--lng")
+        typer.Argument(help="회사가 있는 동·구 이름 (예: 역삼동, '강남구 신사동'). 그 중심을 회사 위치로 본다. 역은 --station, 대학은 --university, 도로명 주소는 --address, 좌표는 --lat/--lng")
     ] = None,
     station: Annotated[
         str | None,
@@ -1342,13 +1415,15 @@ def commute_command(
         elif university is not None:
             found_university = find_university(client, university)
             lat, lng = found_university.lat, found_university.lng
-            notes.append(note('범위', f"{quoted(found_university.name, '을/를')} 회사 위치로 보았습니다"))
+            notes += same_university_notes(found_university) + [
+                note('범위', f"{quoted(found_university.name, '을/를')} 회사 위치로 보았습니다"),
+            ]
         elif address is not None:
             found_address = find_address(client, address)
             lat, lng = found_address.lat, found_address.lng
             notes.append(note('범위', f'{found_address.label} 의 좌표를 회사 위치로 보았습니다'))
         elif workplace is not None:
-            with _complex_name_hint(client, workplace, station_hint=f"회사 근처 역이면 --station '{workplace}' 으로 주세요"):
+            with _complex_name_hint(client, workplace, station_hint=f"회사 근처 역이면 --station '{station_argument(workplace)}' 으로 주세요"):
                 area = resolve_area(client, workplace, other_inputs=OTHER_PLACE_INPUTS)
             lat, lng = area.lat, area.lng
             notes.append(note('범위', f'{area.full_name} 중심(당근 지역 검색의 중심 좌표)을 회사 위치로 보았습니다'))
@@ -1367,7 +1442,7 @@ def commute_command(
             raise JibsaError(
                 code='UPSTREAM_ERROR',
                 message='당근 출퇴근 API 가 바뀌어(웹 쿼리 해시 거절) 출퇴근 검색을 할 수 없습니다',
-                hint='jibsa daangn search listings --station <역 이름> 으로 역 주변을 찾으세요. jibsa 업데이트가 필요합니다',
+                hint=f'jibsa daangn search listings --station <역 이름> 으로 역 주변을 찾으세요. {UPDATE_NEEDED}',
             ) from None
         if with_manage_cost and any(listing.manage_cost_manwon is None for listing in result.listings):
             notes.append(_manage_cost_filtered_note('jibsa daangn listing <id> 로 봅니다'))
@@ -1377,10 +1452,13 @@ def commute_command(
 @app.command('region-reviews')
 def region_reviews_command(
     region: Annotated[str, typer.Argument(help=REGION_ARGUMENT_HELP)],
-    top: Annotated[int, typer.Option(min=1, max=TOP_COMPLEXES_MAX, help='후기 많은 단지 수 (당근 구 후기 페이지의 20곳까지)')] = TOP_COMPLEXES_MAX,
+    top: Annotated[
+        int,
+        typer.Option(min=1, max=TOP_MAX, help='후기 많은 단지·건물 수 (동은 그 동의 단지·건물, 구의 단지는 당근 구 후기 페이지의 20곳까지)'),
+    ] = TOP_DEFAULT,
     pretty: PrettyOption = None,
 ) -> None:
-    """동네 거주 후기가 있는지·몇 개인지와 후기 많은 단지. 후기 내용은 url 의 원 사이트에서."""
+    """동네 거주 후기가 있는지·몇 개인지와 후기 많은 단지·건물, 구는 동별 후기 수. 후기 내용은 url 의 원 사이트에서."""
     with handle_errors(SOURCE), DaangnClient() as client, _complex_name_hint(client, region):
         result = get_region_reviews(client, region, top=top)
         emit(result, pretty, notes=result.notes)
@@ -1401,7 +1479,7 @@ def complexes_command(
     ] = None,
     trade: Annotated[
         str | None,
-        typer.Option('--trade', help='매매, 전세, 월세 중 하나. 가격 조건과 단지마다 붙는 최근 실거래의 거래 유형. 기본 매매 (웹처럼 주지 않으면 거래 유형을 단지 조건으로 보내지 않는다)')
+        typer.Option('--trade', help='매매, 전세, 월세 중 하나. 가격 조건과 단지마다 붙는 최근 실거래의 거래 유형. 기본 매매. 주지 않아도 매매가 조건(--price-min·--price-max)이 있으면 기본 매매를 단지 조건으로 보내고, 매매가 조건도 없으면 거래 유형을 단지 조건으로 보내지 않는다. 보증금·월세 조건은 --trade 전세·월세 와 함께 준다')
     ] = None,
     deposit_min: Annotated[int | None, typer.Option(min=0, help='보증금/전세금 하한 (만원, 전세·월세. 과거 실거래 기준)')] = None,
     deposit_max: Annotated[int | None, typer.Option(min=0, help='보증금/전세금 상한 (만원, 전세·월세. 과거 실거래 기준)')] = None,
@@ -1409,8 +1487,8 @@ def complexes_command(
     rent_max: Annotated[int | None, typer.Option(min=0, help='월세 상한 (만원, 월세. 과거 실거래 기준)')] = None,
     price_min: Annotated[int | None, typer.Option(min=0, help='매매가 하한 (만원, 매매. 과거 실거래 기준)')] = None,
     price_max: Annotated[int | None, typer.Option(min=0, help='매매가 상한 (만원, 매매. 과거 실거래 기준)')] = None,
-    area_min: Annotated[float | None, typer.Option(min=0, help='전용면적 하한 (㎡, 1평=3.3㎡)')] = None,
-    area_max: Annotated[float | None, typer.Option(min=0, help='전용면적 상한 (㎡)')] = None,
+    area_min: Annotated[float | None, typer.Option(min=0, help='전용면적 하한 (㎡, 1평=3.3㎡). 단지마다 붙는 최근 실거래(recent_trades)도 이 면적으로 거른다')] = None,
+    area_max: Annotated[float | None, typer.Option(min=0, help='전용면적 상한 (㎡). 단지마다 붙는 최근 실거래(recent_trades)도 이 면적으로 거른다')] = None,
     approval: ApprovalOption = None,
     household_min: Annotated[int | None, typer.Option(min=0, help='세대수 하한')] = None,
     household_max: Annotated[int | None, typer.Option(min=0, help='세대수 상한')] = None,
@@ -1479,7 +1557,7 @@ def complexes_command(
                     client, lat, lng, zoom=zoom or POINT_ZOOM, conditions=conditions, sort=sorts[0], limit=limit,
                 )
             except FeedQueryRejectedError:
-                raise map_query_rejected_error('search complexes') from None
+                raise map_query_rejected_error('search complexes', by='좌표') from None
             emit(result, pretty, notes=[note(
                 '범위',
                 f'당근 웹 지도 화면(데스크톱, 줌 {result.zoom}, 가로 {result.width_km:g}km × 세로 {result.height_km:g}km) 안 단지를 '
@@ -1668,7 +1746,8 @@ def good_neighborhoods_command(
 
     예: jibsa daangn good-neighborhoods --lifestyle 직장인자취 --region 서울
     """
-    lifestyles = split_csv([lifestyle], tuple(LIFESTYLE_INDICATORS), '--lifestyle')
+    # 반복은 공통 층 `repeated_option` 이 막고, 여기서는 쉼표로 둘 이상 준 것만 막는다
+    lifestyles = split_csv([lifestyle] if lifestyle else None, tuple(LIFESTYLE_INDICATORS), '--lifestyle')
     if len(lifestyles) != 1:
         raise typer.BadParameter(f"라이프스타일은 하나만 받습니다 ({', '.join(LIFESTYLE_INDICATORS)} 중 하나)", param_hint='--lifestyle')
     regions = [name for item in region or [] for name in item.split(',') if name.strip()]
@@ -1714,8 +1793,8 @@ def popular_listings_command(
 
     예: jibsa daangn popular-listings 역삼동 -t 원룸
     """
-    # 하나만 받지만 목록으로 받는다. 한 값 옵션은 -t 원룸 -t 투룸 처럼 반복하면 Click 이 에러 없이 마지막 값만 남겨 투룸 순위만
-    # 줬다 (2026-11-12 리뷰. 당근의 다른 명령 -t 는 반복을 받는다)
+    # 하나만 받지만 목록으로 받는다. 한 값 옵션을 두 번 주면 공통 층 `repeated_option`(cli/app.py)이 요청 전에 막지만 list 옵션은
+    # 세지 않아, 두 개 이상이 이 함수까지 와 아래 전용 문구로 알릴 수 있다 (2026-11-12 리뷰, 2026-11-20 고침. 당근의 다른 명령 -t 는 반복을 받는다)
     property_types = split_csv(property_type, POPULAR_PROPERTY_TYPES, '--type')
     if len(property_types) > 1:
         # 웹 순위 화면은 URL 로 종류 하나만 받아 부른다 (salesTypes:[종류]). 여러 종류를 한 순위로 섞어 보여 주는 화면은 없다
@@ -1724,4 +1803,4 @@ def popular_listings_command(
         result = list_popular_listings(
             client, resolve_dong(client, dong), property_type=property_types[0] if property_types else None, limit=limit,
         )
-        emit(result, pretty, notes=property_type_notes(property_types) + result.notes, fields=fields)
+        emit(result, pretty, notes=result.notes, fields=fields)

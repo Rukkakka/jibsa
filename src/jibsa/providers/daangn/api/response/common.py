@@ -1,5 +1,7 @@
 """여러 기능이 같이 쓰는 응답 모델 (중첩·봉투·기반 모델)."""
 
+from math import isfinite
+
 from pydantic import (
     BeforeValidator,
     Field,
@@ -19,26 +21,44 @@ from typing import (
 
 
 def _to_float(v: Any) -> Any:
-    """스토어의 숫자는 문자열('29.75', '3.0')로 오기도 해서 float 로 바꾼다. 빈 문자열은 None."""
+    """스토어의 숫자는 문자열('29.75', '3.0')로 오기도 해서 float 로 바꾼다. 빈 문자열은 None.
+
+    유한하지 않은 수('NaN'·'Infinity'·'-inf' 글자, 파이썬 nan·inf)도 모름(None)이다. 그대로 두면 출력 JSON 이 `NaN` 으로
+    깨진다 (`jibsa.cli.output._dumps`).
+    """
     if isinstance(v, str):
         v = v.strip()
         if not v:
             return None
         try:
-            return float(v)
+            v = float(v)
         except ValueError:
             return None
+    if isinstance(v, float) and not isfinite(v):
+        return None
     return v
 
 
 def _to_str(v: Any) -> Any:
-    """층 정보는 '3.0' 처럼 오므로 정수면 '3' 으로 다듬는다."""
-    if v is None or v == '':
+    """층 글자를 다듬는다. '3.0' 처럼 오면 정수일 때 '3' 으로 바꾼다.
+
+    앞뒤 공백을 지운 글자가 빈 글자나 '-' 면 모름(None)이다. '-' 를 그대로 두면 `Listing.floor` 검증기의 `normalize_floor` 가
+    돌려줘 층 칸에 '-' 가 나간다. 당근이 층을 '-' 로 비워 주는 것은 실측이 아니라 코드상 가능성이다. '-1'·'-0.5' 처럼
+    숫자로 읽히는 글자는 지하층이라 그대로 다듬는다.
+    """
+    if v is None:
         return None
+    if isinstance(v, str):
+        v = v.strip()
+        if v in ('', '-'):
+            return None
     try:
         number = float(v)
     except (TypeError, ValueError):
         return str(v)
+    # 'NaN'·'Infinity' 같은 글자는 float 로 읽혀 'nan'·'inf' 층이 되므로 모름이다 (`_to_float` 와 같은 규칙)
+    if not isfinite(number):
+        return None
     return str(int(number)) if number.is_integer() else str(number)
 
 
@@ -101,9 +121,9 @@ class DaangnSalesTypeModel(DaangnBaseResponseModel):
     """매물 용도."""
 
     type: Annotated[
-        str,
-        Field(description='APART, OFFICETEL, OFFICE, STORE, OPEN_ONE_ROOM, SPLIT_ONE_ROOM, TWO_ROOM, HOUSE ...')
-    ]
+        str | None,
+        Field(description='APART, OFFICETEL, OFFICE, STORE, OPEN_ONE_ROOM, SPLIT_ONE_ROOM, TWO_ROOM, HOUSE ... null 이면 매물 유형을 모른다')
+    ] = None
 
 
 class DaangnTradeModel(DaangnBaseResponseModel):
@@ -114,9 +134,9 @@ class DaangnTradeModel(DaangnBaseResponseModel):
         Field(description='MonthTrade / BuyTrade / BorrowTrade / ShortTrade / YearTrade', alias='__typename')
     ] = None
     type: Annotated[
-        str,
-        Field(description='MONTH(월세), BUY(매매), BORROW(전세), SHORT(단기임대), YEAR(연세, 제주)')
-    ]
+        str | None,
+        Field(description='MONTH(월세), BUY(매매), BORROW(전세), SHORT(단기임대), YEAR(연세, 제주). null 이거나 이 밖의 값이면 jibsa 가 모르는 거래 유형이다')
+    ] = None
     preferred: Annotated[
         bool | None,
         Field(description='대표 거래 조건 여부')
@@ -230,9 +250,9 @@ class DaangnArticleOptionModel(DaangnBaseResponseModel):
     """옵션 한 항목 (상세 페이지에만)."""
 
     name: Annotated[
-        str,
-        Field(description='옵션 코드 (PARKING, WASHER, AIRCON, PET, MORTGAGE ...)')
-    ]
+        str | None,
+        Field(description='옵션 코드 (PARKING, WASHER, AIRCON, PET, MORTGAGE ...). null·빈 글자·- 면 어느 옵션인지 모르는 항목이라 jibsa 는 건너뛴다')
+    ] = None
     value: Annotated[
         str | None,
         Field(description='YES / NO / DONT_KNOW')
@@ -248,9 +268,12 @@ class DaangnManageCostOptionModel(DaangnBaseResponseModel):
     """
 
     option: Annotated[
-        str,
-        Field(description='COMMON(공용), ELECTRIC, WATERWORKS, GAS, BOILER, INTERNET, TV, PARKING, CLEANING, ELEVATOR, ETC')
-    ]
+        str | None,
+        Field(description=(
+            'COMMON(공용), ELECTRIC, WATERWORKS, GAS, BOILER, INTERNET, TV, PARKING, CLEANING, ELEVATOR, ETC. '
+            'null·빈 글자·- 면 어느 항목인지 모르는 항목이라 직접 입력한 이름(customOptionName)이 있을 때만 그 이름으로 쓰고 없으면 jibsa 는 건너뛴다'
+        ))
+    ] = None
     pay_option: Annotated[
         str | None,
         Field(description='FIXED / USED / NONE / NEED_TO_CHECK', alias='payOption')
@@ -261,7 +284,7 @@ class DaangnManageCostOptionModel(DaangnBaseResponseModel):
     ] = None
     custom_option_name: Annotated[
         str | None,
-        Field(description='ETC 항목의 직접 입력 이름', alias='customOptionName')
+        Field(description='ETC 항목의 직접 입력 이름. null·빈 글자·- 면 직접 입력 이름이 없는 것으로 보고 jibsa 는 코드 라벨을 쓴다', alias='customOptionName')
     ] = None
 
 
@@ -395,8 +418,10 @@ class DaangnArticleModel(DaangnBaseResponseModel):
             alias='isHideAddress',
         )
     ] = None
-    # null 은 빈 목록으로 받는다. 2026-11-18 API 감시에서 출퇴근 검색의 매물 하나가 목록이 아닌 subwayStations 를 줘 검색 전체가
-    # PARSE_ERROR 였다 (#331, 같은 날 다시 부르니 정상이라 어떤 값이었는지는 못 봤다)
+    # 목록 칸(trades·images·options·subwayStations·nearbySubwayStations)의 null 은 빈 목록으로 받는다. 매물 하나의 칸 하나가
+    # 비어 와도 검색 전체가 PARSE_ERROR 로 깨지면 안 된다. 2026-11-18 API 감시에서 출퇴근 검색의 매물 하나가 목록이 아닌
+    # subwayStations 를 줘 검색 전체가 PARSE_ERROR 였다 (#331, 같은 날 다시 부르니 정상이라 어떤 값이었는지는 못 봤다).
+    # 2026-11-19 리뷰·재현: 나머지 목록 칸과 역의 lineNumber 도 null 이면 같았다
     subway_stations: Annotated[
         list[DaangnNearBySubwayStationModel],
         Field(description='인근 지하철역 (도보 시간 포함). 상세 페이지에서는 비어 있기도 하다', alias='subwayStations')
@@ -450,8 +475,8 @@ class DaangnArticleModel(DaangnBaseResponseModel):
         Field(description='관리비 항목 (상세 페이지에만)', alias='includeManageCostOptionV3')
     ] = None
     exclude_manage_cost_options: Annotated[
-        list[str] | None,
-        Field(description='관리비에 포함되지 않는 항목 코드 (직거래 매물, 상세 페이지에만)', alias='excludeManageCostOption')
+        list[str | None] | None,
+        Field(description='관리비에 포함되지 않는 항목 코드 (직거래 매물, 상세 페이지에만). 항목 코드가 null 일 수 있다', alias='excludeManageCostOption')
     ] = None
     premium_money: Annotated[
         LooseFloat,
@@ -537,7 +562,7 @@ class DaangnGraphQLResponseModel(DaangnBaseResponseModel):
 
     errors: Annotated[
         list[DaangnGraphQLErrorModel],
-        Field(description='에러. 없으면 []')
+        Field(description='에러. 없으면 []. null 로 와도 에러가 없다는 뜻이라 []')
     ] = []
 
 
@@ -645,9 +670,9 @@ class DaangnTransactionConnectionModel(DaangnBaseResponseModel):
     """실거래 연결. 최근 계약 순이다."""
 
     edges: Annotated[
-        list[DaangnTransactionEdgeModel],
-        Field(description='거래')
-    ] = []
+        list[DaangnTransactionEdgeModel] | None,
+        Field(description='거래. null 이거나 키가 없으면 거래 목록을 모르는 것이고(0건이면 []), 빈 목록으로 바꾸지 않는다')
+    ] = None
     page_info: Annotated[
         DaangnPageInfoModel | None,
         Field(description='페이지 정보', alias='pageInfo')
@@ -696,9 +721,9 @@ class DaangnCommuteStationArticleConnectionModel(DaangnBaseResponseModel):
     """역 주변 매물 연결."""
 
     edges: Annotated[
-        list[DaangnCommuteArticleEdgeModel],
-        Field(description='매물')
-    ] = []
+        list[DaangnCommuteArticleEdgeModel] | None,
+        Field(description='매물. 당근이 주지 않으면 null (빈 목록 []과 다르다. 모름이다)')
+    ] = None
     page_info: Annotated[
         DaangnPageInfoModel | None,
         Field(description='페이지 정보', alias='pageInfo')
@@ -743,22 +768,22 @@ class DaangnLivedReviewPreviewModel(DaangnBaseResponseModel):
     """단지 목록 카드의 거주 후기 미리보기. 본문은 내보내지 않으므로 있는지만 본다."""
 
     edges: Annotated[
-        list[dict[str, Any]],
-        Field(description='후기 (웹은 1건만 받는다)')
-    ] = []
+        list[dict[str, Any]] | None,
+        Field(description='후기 (웹은 1건만 받는다). null 이거나 키가 없으면 후기가 있는지 모르는 것이고(없으면 []), 빈 목록으로 바꾸지 않는다')
+    ] = None
 
 
 class DaangnRegionComplexNodeModel(DaangnBaseResponseModel):
     """지역 단지 목록의 단지 카드."""
 
     original_id: Annotated[
-        str,
-        Field(description='숫자 단지 ID', alias='originalId')
-    ]
+        str | None,
+        Field(description='숫자 단지 ID. 당근이 주지 않으면 null (그 단지는 가리킬 수 없어 결과에서 뺀다)', alias='originalId')
+    ] = None
     name: Annotated[
-        str,
-        Field(description='단지 이름')
-    ]
+        str | None,
+        Field(description='단지 이름. 당근이 주지 않으면 null')
+    ] = None
     type: Annotated[
         str | None,
         Field(description='APARTMENT, OFFICETEL, MIXED_USE ...')

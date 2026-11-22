@@ -8,6 +8,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
     iso_date,
+    lookup_failure_note,
     more_hint,
     note,
     null_items_note,
@@ -24,11 +25,10 @@ from jibsa.providers.zigbang.api.response.local.ranking import (
     ZigbangLocalsDanjiRankingResponseModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
     UPSTREAM_RETRY_HINT,
     apt_complex_id,
-    failure_update_hint,
     text_or_none,
 )
 from jibsa.providers.zigbang.service.local.base import (
@@ -347,7 +347,7 @@ def _collect_pages(
                 sort_type=sort_type,
                 tran_type=tran_type,
             ))
-        except SCHOOL_LOOKUP_ERRORS as exc:
+        except OPTIONAL_LOOKUP_ERRORS as exc:
             if first is None:
                 raise
             return _RankingPages(first, rows, received, dropped, False, (page, exc))
@@ -406,13 +406,13 @@ def get_region_ranking(
     if pages.failure is not None:
         failed_page, exc = pages.failure
         if exc is None:
-            failure_text = (
-                f'직방이 단지 랭킹 {failed_page}쪽 목록을 주지 않아 앞 {len(rankings)}곳까지만 냅니다. '
-                f'{UNEXPECTED_FORMAT_TEXT}'
-            )
+            notes.append(note(
+                '실패',
+                f'직방이 단지 랭킹 {failed_page}쪽 목록을 주지 않았습니다. {UNEXPECTED_FORMAT_TEXT}. '
+                f'앞 {len(rankings)}곳까지만 냅니다',
+            ))
         else:
-            failure_text = f'직방 단지 랭킹 {failed_page}쪽을 받지 못해({type(exc).__name__}) 앞 {len(rankings)}곳까지만 냅니다{failure_update_hint(exc)}'
-        notes.append(note('실패', failure_text))
+            notes.append(lookup_failure_note(exc, '직방', f'단지 랭킹 {failed_page}쪽', f'앞 {len(rankings)}곳까지만 냅니다'))
     if total is not None and total > RANKING_MAX_RANKS:
         notes.append(note('참고', f"직방 웹처럼 {RANKING_MAX_RANKS}위까지만 봅니다 (웹 '단지 랭킹은 100위까지만 제공됩니다')"))
     if not cut and total is not None and pages.exhausted and pages.received < cap:

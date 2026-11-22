@@ -11,9 +11,9 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.korean import particle
 from jibsa.core.listing import (
     KST,
+    lookup_failure_note,
     note,
     null_items_note,
 )
@@ -34,9 +34,8 @@ from jibsa.providers.zigbang.api.response.local.info import (
     ZigbangMarketPriceMovementModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
-    failure_update_hint,
     text_or_none,
 )
 from jibsa.providers.zigbang.service.local.base import (
@@ -411,19 +410,15 @@ def population_period(today: date) -> tuple[str, str]:
 
 
 def _lookup_failure(what: str, exc: Exception, unknown: str) -> str:
-    """덤 조회 실패 안내 (`service/complex/detail.py` 의 평형 정보 덤 조회와 같은 꼴)."""
-    return note(
-        '실패',
-        f'직방 {what}{particle(what, "을/를")} 받지 못해({type(exc).__name__}) {unknown} 값을 모릅니다 '
-        f'(직방 웹 지역 정보 화면에서 확인){failure_update_hint(exc)}',
-    )
+    """덤 조회 실패 안내. 갈래별 문장은 공통 함수 `lookup_failure_note` 가 정한다."""
+    return lookup_failure_note(exc, '직방', what, f'{unknown} 값을 모릅니다 (직방 웹 지역 정보 화면에서 확인)')
 
 
 def _missing_list(what: str, unknown: str) -> str:
     """덤 조회가 예외 없이 끝났는데 직방이 목록을 주지 않았다는 `[실패]` 안내. 정상 응답은 늘 목록을 주므로 응답 형식이 바뀐 것이다."""
     return note(
         '실패',
-        f'직방이 {what} 주지 않아 {unknown} 값을 모릅니다 (직방 웹 지역 정보 화면에서 확인). {UNEXPECTED_FORMAT_TEXT}',
+        f'직방이 {what} 주지 않았습니다. {UNEXPECTED_FORMAT_TEXT}. {unknown} 값을 모릅니다 (직방 웹 지역 정보 화면에서 확인)',
     )
 
 
@@ -543,7 +538,7 @@ def get_region_info(
         volume = client.run_request_locals_trading_volume_chart(
             ZigbangLocalsTradingVolumeChartRequestParameterModel(local_code=area.code)
         )
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         notes.append(_lookup_failure('지역 거래량', exc, 'monthly_volumes'))
     else:
         months = volume.data.months if volume.data is not None else None
@@ -565,7 +560,7 @@ def get_region_info(
         trend = client.run_request_locals_pyn_chart_price(
             ZigbangLocalsPynChartPriceRequestParameterModel(local_code=area.code, pyn_area_type=price_range)
         )
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         notes.append(_lookup_failure('지역 평당가 추이', exc, 'price_trend·price_movement'))
     else:
         if trend.data is None:
@@ -586,7 +581,7 @@ def get_region_info(
             people_response = client.run_request_locals_total_people_time(
                 ZigbangLocalsTotalPeopleTimeRequestParameterModel(local_code=area.code, start_date=start_date, end_date=end_date)
             )
-        except SCHOOL_LOOKUP_ERRORS as exc:
+        except OPTIONAL_LOOKUP_ERRORS as exc:
             notes.append(_lookup_failure('지역 인구', exc, 'population.people'))
         else:
             people = _population_months(people_response)
@@ -594,7 +589,7 @@ def get_region_info(
             households_response = client.run_request_locals_total_households_time(
                 ZigbangLocalsTotalHouseholdsTimeRequestParameterModel(local_code=area.code, start_date=start_date, end_date=end_date)
             )
-        except SCHOOL_LOOKUP_ERRORS as exc:
+        except OPTIONAL_LOOKUP_ERRORS as exc:
             notes.append(_lookup_failure('지역 세대', exc, 'population.households'))
         else:
             households = _household_months(households_response)

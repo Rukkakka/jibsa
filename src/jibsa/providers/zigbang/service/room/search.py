@@ -21,8 +21,11 @@ from jibsa.core.errors import (
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     Listing,
+    LookupFailures,
     limit_notes,
     listing_as,
+    lookup_failure_note,
+    lookup_failure_reason,
     normalize_date,
     note,
 )
@@ -43,12 +46,11 @@ from jibsa.providers.zigbang.api.response.common import ZigbangItemPinModel
 from jibsa.providers.zigbang.api.response.room.search import ZigbangItemsResponseModel
 from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     ZigbangBoundary,
     ZigbangListing,
     ZigbangRegion,
     drop_unused_scope,
-    failure_update_hint,
     officetel_complex_id,
     unavailable_on_404,
 )
@@ -79,8 +81,6 @@ from typing import (
 ZigbangPropertyType = Literal['원룸', '오피스텔', '빌라']
 
 PROPERTY_TYPES: tuple[ZigbangPropertyType, ...] = ('원룸', '오피스텔', '빌라')
-# 원룸 검색 오피스텔의 건물 ID 보완도 덤이라 같은 실패는 건물 ID 만 모름으로 둔다
-BUILDING_LOOKUP_ERRORS: tuple[type[Exception], ...] = SCHOOL_LOOKUP_ERRORS
 GEOHASH_PRECISION: int = 5
 # 방 하나짜리 구조. 원룸 유형은 이 구조만 서버에 요청한다 (직방 원룸 목록에는 투룸 오피스텔도 섞여 온다)
 # 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
@@ -560,12 +560,11 @@ def _fill_officetel_complex_ids(
             client, geohashes=cells, subway_id=subway_id, radius_km=radius_km,
             sales_types=sales_types, type_filters=type_filters,
         )
-    except BUILDING_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         # 건물 ID 는 덤이라 못 받으면 모름(null)으로 둔다
-        return [note(
-            '실패',
-            f'직방 오피스텔 목록을 받지 못해({type(exc).__name__}) 원룸 목록에 섞인 오피스텔 {len(missing)}건의 complex_id 를 '
-            f'모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
+        return [lookup_failure_note(
+            exc, '직방', '오피스텔 목록',
+            f'원룸 목록에 섞인 오피스텔 {len(missing)}건의 complex_id 를 모릅니다 (url 의 직방 페이지에서 확인)',
         )]
     for listing in missing:
         building_id = buildings.get(int(listing.id))
@@ -657,10 +656,17 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
     목록 API 는 건물 용도·사용승인일을 주지 않는다 (2026-10-15 실측: `items/list` 요약에 용도 필드 없음). 근린생활시설·고시원처럼
     전입신고가 막힐 수 있는 매물을 상세를 하나씩 열지 않고 고르게 한다. 사용승인일도 같은 상세에 있어 함께 채운다
     (2026-10-31 에이전트 검증: 직방에는 연식 조건이 없어 '10년 이내' 를 확인하려고 상세를 8회씩 따로 불렀다).
-    앞 `DETAILS_MAX` 건만 보고, 상세에서 거래가 끝난 매물은 뺀다 (만료 매물은 내보내지 않는다).
+    앞 `DETAILS_MAX` 건만 보고, 상세에서 거래가 끝난 매물(404·`status` 가 open 이 아님)은 뺀다 (만료 매물은 내보내지 않는다).
+    그 밖의 덤 조회 실패(`OPTIONAL_LOOKUP_ERRORS`: 네트워크·상태 코드·응답 형식 오류·요청 제한)는 그 매물을 목록 값 그대로 두고
+    건물 용도는 모름(null)으로 둔다. 상세 한 건 때문에 이미 받은 목록 전체를 버리지 않는다 (2026-11-19 리뷰). 요청 제한이면
+    다음 요청도 같은 제한에 걸리므로 (앞에 다른 실패가 있었어도) 남은 매물의 상세는 요청하지 않고 같게 둔다. 못 붙인 매물 수와
+    이유(거절·응답 형식 변경이 한 건이라도 있으면 그 이유(요청 제한도 왔으면 덧붙임), 없으면 요청 제한, 없으면 첫 실패 이유.
+    `LookupFailures`)는 `[실패]` 안내 하나로 알린다. 업데이트 문구는 다른 직방 덤 조회와 같은 공통 기준이다 (`is_rejected`).
     """
     listings: list[Listing] = []
     gone = 0
+    # 상세를 못 붙인 매물 수(실패한 것 + 요청 제한 뒤라 요청하지 않은 것)와 안내할 이유
+    failures = LookupFailures()
     for index, listing in enumerate(result.listings):
         if not isinstance(listing, ZigbangListing):
             listings.append(listing)
@@ -671,6 +677,10 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
             # --details 의 31번째가 null, 앞 30건은 용도가 붙음)
             listings.append(listing_as(ZigbangDetailedListing, listing))
             continue
+        if failures.stopped:
+            failures.skip()
+            listings.append(listing_as(ZigbangDetailedListing, listing))
+            continue
         try:
             with unavailable_on_404(listing.id):
                 item = client.run_request_items_detail_v1(
@@ -678,6 +688,10 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
                 ).item
         except ListingUnavailableError:
             gone += 1
+            continue
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            failures.add(exc)
+            listings.append(listing_as(ZigbangDetailedListing, listing))
             continue
         if item.status != 'open':
             gone += 1
@@ -690,6 +704,12 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
     if gone:
         # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다
         notes.append(note('제외', f'{gone}건은 상세를 보니 거래가 끝나 뺐습니다 (앞 안내의 건수는 빼기 전 기준)'))
+    reason = failures.reason(lambda exc: lookup_failure_reason(exc, '직방', '매물 상세'))
+    if reason is not None:
+        notes.append(note(
+            '실패',
+            f'매물 {failures.count}건의 상세(건물 용도·사용승인일)를 받지 못해 목록 값만 넣었습니다: {reason}',
+        ))
     if len(result.listings) > DETAILS_MAX:
         notes.append(f'건물 용도·사용승인일(--details)은 앞 {DETAILS_MAX}건에만 붙였습니다')
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})

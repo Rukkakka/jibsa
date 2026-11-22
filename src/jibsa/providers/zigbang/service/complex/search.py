@@ -18,6 +18,7 @@ from jibsa.core.korean import (
 )
 from jibsa.core.listing import (
     iso_date,
+    lookup_failure_note,
     more_hint,
     normalize_address,
     note,
@@ -40,11 +41,10 @@ from jibsa.providers.zigbang.api.response.complex.search import (
 )
 from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     UPSTREAM_RETRY_HINT,
     apt_complex_id,
     apt_danji_url,
-    failure_update_hint,
     household_count,
     text_or_none,
 )
@@ -703,9 +703,9 @@ def _school_around(response: ZigbangSchoolsResponseModel) -> tuple[str | None, d
 
 def _station_failure_note(exc: Exception) -> str:
     """역 주변 단지 정보(`subways`)를 받지 못했다는 [실패] 안내."""
-    return note(
-        '실패',
-        f'직방 역 주변 단지 정보를 받지 못해({type(exc).__name__}) 단지 {AROUND_FIELDS_BY_PLACE_TYPE["역"]}를 모릅니다 (url 의 단지 페이지에서 확인){failure_update_hint(exc)}',
+    return lookup_failure_note(
+        exc, '직방', '역 주변 단지 정보',
+        f'단지 {AROUND_FIELDS_BY_PLACE_TYPE["역"]}를 모릅니다 (url 의 단지 페이지에서 확인)',
     )
 
 
@@ -729,7 +729,7 @@ def _danji_cards(
                 order=order,
             ))
             cards.update({card.id: card for card in response.apts or []})
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         return cards, exc
     return cards, None
 
@@ -839,7 +839,7 @@ def search_place_complexes(
         # 역은 단지가 있을 때만 주변 단지 정보를 받는다 (덤)
         try:
             around_name, around = _station_around(client, place.subway_id)
-        except SCHOOL_LOOKUP_ERRORS as exc:
+        except OPTIONAL_LOOKUP_ERRORS as exc:
             notes.append(_station_failure_note(exc))
         else:
             around_loaded = True
@@ -856,9 +856,8 @@ def search_place_complexes(
     card_fields = CARD_FIELDS_BY_PLACE_TYPE[place.place_type]
     missing = sum(1 for danji_id in ids if danji_id not in cards)
     if card_error is not None:
-        notes.append(note(
-            '실패',
-            f'직방 단지 카드를 받지 못해({type(card_error).__name__}) 받지 못한 단지는 {card_fields} 값을 모릅니다 (url 의 단지 페이지에서 확인){failure_update_hint(card_error)}',
+        notes.append(lookup_failure_note(
+            card_error, '직방', '단지 카드', f'받지 못한 단지는 {card_fields} 값을 모릅니다 (url 의 단지 페이지에서 확인)',
         ))
     elif missing:
         notes.append(note('참고', f'{missing}곳은 직방 단지 카드에 없어 {card_fields} 값을 모릅니다 (url 의 단지 페이지에서 확인)'))

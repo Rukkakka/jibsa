@@ -10,7 +10,6 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
-    ValidationError,
     model_serializer,
 )
 
@@ -45,9 +44,9 @@ WEB_PATH_BY_SERVICE_TYPE: dict[str, str] = {
     '오피스텔': 'officetel',
     '빌라': 'villa',
 }
-# 학군·건물 실거래·호 정보 같은 덤 조회는 이 실패들을 그 값만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`:
-# 네트워크·상태 코드, 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 덤 차례의 요청 제한을 더한다
-SCHOOL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
+# 덤 조회(학군·건물 ID·--details 상세 등)는 이 실패들을 그 칸만 모름으로 둔다. 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`:
+# 네트워크·상태 코드, 차단 페이지·응답 형식 변경·19자리가 아닌 pnu)에 요청 제한을 더한다
+OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 # 매물 목록 명령의 --limit 최대값. CLI 옵션의 max 와 상한 안내(`common.apt` 의 `apt_pagination_notes`)가 함께 쓴다
 MAX_LIST_LIMIT: int = 120
 # 목록 줄(`ZigbangListing`)과 상세가 함께 쓰는 HUG안심임대인·실매물 확인 필드 설명. 배지 코드는 `common.room` 의 `HUG_BADGE`·`VERIFICATION_BADGE`
@@ -438,16 +437,6 @@ NEAREST_SCHOOLS: int = 2
 UNEXPECTED_FORMAT_TEXT: str = f'직방 응답이 예상한 형식과 달라 {UPDATE_MAYBE_NEEDED}'
 # 본 조회 목록을 주지 않아 UPSTREAM_ERROR 로 멈출 때의 hint
 UPSTREAM_RETRY_HINT: str = f'잠시 뒤 다시 시도하세요. 계속되면 직방 API 가 바뀐 것일 수 있어 {UPDATE_MAYBE_NEEDED}'
-
-
-def failure_update_hint(exc: Exception) -> str:
-    """덤 조회 [실패] 안내 끝에 붙일 말. 응답이 예상한 형식과 달라(pydantic ValidationError) 실패했으면 업데이트 문구를 붙여 매일 API 감시가 고장으로 잡게 하고, 그 밖(요청 제한·서버 오류·연결 실패)은 잠깐 실패일 수 있어 빈 글자다.
-
-    응답 모델 검증 오류는 client 의 `run_request_*` 가 감싸지 않고 그대로 올리므로 예외를 바로 알아본다.
-    """
-    if isinstance(exc, ValidationError):
-        return f'. {UNEXPECTED_FORMAT_TEXT}'
-    return ''
 
 
 def text_or_none(value: str | None) -> str | None:

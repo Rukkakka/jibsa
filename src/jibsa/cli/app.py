@@ -51,6 +51,7 @@ from jibsa.cli.output import (
 )
 from jibsa.core.browser import install_chromium
 from jibsa.core.errors import JibsaError
+from jibsa.core.korean import LINE_NAME_PATTERN
 from jibsa.core.ratelimit import state_dir
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.dabang.api.client import DabangClient
@@ -92,8 +93,6 @@ NAME_ARGUMENTS: frozenset[str] = frozenset({
 # 함께 줄 수 없는 옵션만 둔다 (당근 search listings·search commute). 뒤 낱말을 위치 인자로 보면 둘을 함께 준 것이 되어 막혔다
 # (2026-11-12 리뷰·실측: '--address 테헤란로 152' 가 주소 '테헤란로' 와 지역 '152' 로 나뉘어 '함께 줄 수 없습니다')
 NAME_OPTIONS: frozenset[str] = frozenset({'station', 'university', 'address'})
-# 당근 노선 이름 ('서울2호선'·'신분당선'·'공항철도'·'용인경전철'·'GTX-A', 2026-11-13 역 검색 실측 37개 노선이 모두 맞는다)
-LINE_NAME_PATTERN: re.Pattern[str] = re.compile(r'GTX-[A-Z]|\S+(?:선|철도|전철)')
 # 이름 옵션 가운데 뒤 낱말을 이을 앞 낱말의 모양을 아는 것. 역 이름 값은 노선 이름 뒤에 역 이름 하나가 와서('서울5호선 양평역',
 # '경의중앙선·서울5호선 양평', 당근 `find_station`), 지금까지 이은 마지막 낱말이 노선 이름일 때만 다음 낱말을 잇는다. 이으면
 # '--station 강남역 역삼동' 이 역 '강남역 역삼동' 을 한 번 찾은 뒤 없는 역이라고 했다 (2026-11-12 리뷰). 예전에는 '역' 으로 끝나는지만
@@ -453,6 +452,15 @@ def run(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     args = joined_name_args(args, cli)
+    if (repeated := repeated_option(args, cli)) is not None:
+        command, option = repeated
+        emit_error(
+            'INVALID_ARGUMENT',
+            f'한 번만 받는 옵션이 두 번 왔습니다: {option}',
+            f"값 하나만 주세요. 여러 값을 받는 옵션은 '{command} --help' 에 '반복' 이나 '쉼표' 로 적혀 있습니다",
+            command=command,
+        )
+        return 2
     try:
         result = cli.main(args=args, prog_name='jibsa', standalone_mode=False)
     except NoArgsIsHelpError as exc:
@@ -559,13 +567,54 @@ def joined_name_args(args: Sequence[str], cli: Command) -> list[str]:
     return [joined.get(position, arg) for position, arg in enumerate(args) if position not in dropped]
 
 
+def repeated_option(args: Sequence[str], cli: Command) -> tuple[str, str] | None:
+    """값 하나만 받는 옵션이 같은 명령에서 두 번 온 것의 (명령 경로, 옵션 이름). 없으면 None.
+
+    Click 은 `multiple` 이 아닌 옵션을 두 번 주면 에러 없이 마지막 값만 쓴다. `real-price --trade 전세 --trade 월세` 가
+    월세만 주는데 에이전트는 둘 다 받았다고 읽는다 (2026-11-19 당근 리뷰 N1·N2). 옵션마다 막지 않고 2026-11-20 공통 층 한 곳으로
+    옮겼다. 같은 옵션인지는 명령 함수 인자 이름으로 가려 `-t` 와 `--type`, `--trade=전세` 와 `--trade 전세` 를 같게 본다.
+    반복을 받는 옵션(`multiple`)과 켜고 끄는 옵션(`--pretty`/`--compact`)·세는 옵션은 세지 않는다. 하위 명령으로 내려가면 새로
+    센다. 모르는 옵션이나 `--` 를 만나면 거기서 멈추고 Click 이 알리게 둔다 (`joined_name_args` 와 같다).
+    """
+    command, path = cli, ['jibsa']
+    seen: set[str] = set()
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if isinstance(command, TyperGroup) and arg in command.commands:
+            command = command.commands[arg]
+            path.append(arg)
+            seen = set()
+            index += 1
+        elif arg.startswith('-') and len(arg) > 1:
+            width = _option_width(command, arg)
+            if width is None:
+                return None
+            name = _option_name(command, arg)
+            param = next((p for p in command.params if isinstance(p, TyperOption) and p.name == name), None)
+            if param is not None and param.name is not None and not (param.multiple or param.is_flag or param.count):
+                if param.name in seen:
+                    return ' '.join(path), next((opt for opt in param.opts if opt.startswith('--')), param.opts[0])
+                seen.add(param.name)
+            index += width
+        elif isinstance(command, TyperGroup):
+            return None
+        else:
+            index += 1
+    return None
+
+
 def _option_name(command: Command, arg: str) -> str | None:
-    """옵션 인자 `arg`(`--address`, `--address=테헤란로`)의 명령 함수 인자 이름. 모르는 옵션이면 None."""
+    """옵션 인자 `arg`(`--address`, `--address=테헤란로`, 값을 붙여 쓴 짧은 옵션 `-t원룸`)의 명령 함수 인자 이름. 모르는 옵션이면 None.
+
+    정확히 맞는 옵션을 먼저 찾고, 없을 때만 붙여 쓴 짧은 옵션으로 읽는다 (`_option_width` 와 같은 판정).
+    """
     name = arg.partition('=')[0]
-    return next(
-        (param.name for param in command.params if isinstance(param, TyperOption) and name in (*param.opts, *param.secondary_opts)),
-        None,
-    )
+    params = [param for param in command.params if isinstance(param, TyperOption)]
+    exact = next((param.name for param in params if name in (*param.opts, *param.secondary_opts)), None)
+    if exact is not None:
+        return exact
+    return next((param.name for param in params if not name.startswith('--') and name[:2] in param.opts), None)
 
 
 def _option_width(command: Command, arg: str) -> int | None:

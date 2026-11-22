@@ -128,6 +128,31 @@ class NaverLegalDivisionInfoModel(NaverBaseResponseModel):
     ] = None
 
 
+class NaverLegalDivisionInfoListItemModel(NaverBaseResponseModel):
+    """`legalDivision/infoList` 의 법정동 하나. 서버가 어느 칸이든 비워 줄 수 있어 모두 선택이다."""
+
+    legal_division_number: Annotated[
+        str | None,
+        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
+    ] = None
+    legal_division_name: Annotated[
+        str | None,
+        Field(description='그 단위 이름만 (예: 용문면)', alias='legalDivisionName')
+    ] = None
+    legal_division_level_type: Annotated[
+        str | None,
+        Field(description='단위 (SI 시·도, GUN 시·군·구, EUP 읍·면·동)', alias='legalDivisionLevelType')
+    ] = None
+    region_name: Annotated[
+        str | None,
+        Field(description='시·도부터 이은 전체 이름 (예: 경기도 양평군 용문면, 서울시 중구 무교동). 웹 매물 화면의 위치 칸이 쓴다', alias='regionName')
+    ] = None
+    full_address: Annotated[
+        str | None,
+        Field(description='전체 주소', alias='fullAddress')
+    ] = None
+
+
 class NaverAutocompletePageModel(NaverBaseResponseModel, Generic[T]):
     """자동완성 결과 한 페이지. 사이트 검색창과 같은 순서로 온다."""
 
@@ -276,3 +301,7 @@ class NaverLegalDivisionInfoListByLevelV1ResponseModel(NaverResponseModel[list[N
 
 class NaverLegalDivisionSubInfoListV1ResponseModel(NaverResponseModel[list[NaverLegalDivisionInfoModel]]):
     """`GET /front-api/v1/legalDivision/subInfoList` 응답."""
+
+
+class NaverLegalDivisionInfoListV1ResponseModel(NaverResponseModel[dict[str, NaverLegalDivisionInfoListItemModel]]):
+    """`GET /front-api/v1/legalDivision/infoList` 응답. `result` 는 법정동 코드를 키로 하는 사전이다."""

@@ -106,8 +106,8 @@ class NaverRealPrice(BaseModel):
     ]
 
     trade_date: Annotated[
-        str,
-        Field(description='계약일')
+        str | None,
+        Field(description="계약일 (YYYY-MM-DD). 네이버가 주지 않았거나 빈 값·'-' 로 주면 null")
     ]
     floor: Annotated[
         int | None,
@@ -415,7 +415,7 @@ def _web_map_box(lat: float, lng: float) -> tuple[float, float, float, float]:
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
     return NaverRealPrice(
         trade_type=trade_type,
-        trade_date=normalize_date(item.trade_date) or item.trade_date,
+        trade_date=normalize_date(item.trade_date),
         floor=item.floor,
         price_manwon=won_to_manwon(item.deal_price),
         deposit_manwon=won_to_manwon(item.deposit),
@@ -431,7 +431,7 @@ def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
 def _villa_real_price(item: NaverVillaRealPriceModel, trade_type: str) -> NaverRealPrice:
     return NaverRealPrice(
         trade_type=trade_type,
-        trade_date=normalize_date(item.trade_date) or item.trade_date,
+        trade_date=normalize_date(item.trade_date),
         floor=item.floor,
         price_manwon=won_to_manwon(item.deal_price),
         deposit_manwon=won_to_manwon(item.deposit),
@@ -683,7 +683,10 @@ def _villa_real_prices(
         page_dropped = result.null_items('items')
         dropped += page_dropped
         recent = [_villa_real_price(item, trade_type) for item in result.items]
-        kept = recent if since is None else [item for item in recent if item.trade_date >= since]
+        # 계약일을 모르는 거래(None)는 서버가 준 거래라 남기되, 기간 안인지 알 수 없으므로 멈춤 판정(`len(kept) < len(recent)`)
+        # 에는 세지 않는다 (모르는 날짜 하나 때문에 다음 쪽의 기간 안 거래를 놓치지 않게). 그래서 멈춤은 날짜가 있고 `since`
+        # 보다 오래된 거래가 있을 때만 일어나고, 한 쪽이 전부 계약일 모름이면 멈추지 않고 쪽 수 상한까지 가서 truncated 로 끝난다
+        kept = recent if since is None else [item for item in recent if item.trade_date is None or item.trade_date >= since]
         transactions.extend(kept)
         # 마지막 쪽을 넘겨도 result=null 이 아니라 빈 목록이 와서(hasNextPage false) unwrap 이 에러를 내지
         # 않는다 (2026-10-09 확인). 빈 항목(null)만 온 쪽은 비지 않은 쪽이다 (서버가 그 자리를 거래로 센다)

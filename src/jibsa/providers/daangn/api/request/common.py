@@ -10,6 +10,7 @@ from pydantic import (
 )
 
 from jibsa.core.korean import particle
+from jibsa.core.listing import js_to_fixed
 from jibsa.core.schema import RequestModel
 
 from typing import (
@@ -57,11 +58,14 @@ def _validate_area_household(
 
 
 def _area_text(value: float | None) -> str | None:
-    # 면적은 문자열로 보내야 한다. 숫자로 보내면 "알 수 없는 오류" 가 난다. 1e+06 같은 지수 표기도 서버가
-    # 숫자로 읽는다 (2026-10-10 실측: --area-max 999999·1000000·1234567 결과 수가 같았다). 유효숫자 6자리라 1만㎡ 미만은
-    # 소수 둘째 자리까지 그대로 가고(84.95 → '84.95'), 그보다 큰 값이 반올림돼도 결과 수가 같아 경계가 바뀌지 않는다.
-    # 2026-10-18 리뷰 오탐 확인
-    return None if value is None else f'{value:g}'
+    # 면적은 문자열로 보내야 한다. 숫자로 보내면 "알 수 없는 오류" 가 난다. 웹과 같은 꼴이다: 웹은 면적 필터 상태를
+    # `toSquareMeter(..).toFixed(2)` 글자로 만들고(PriceFiltersSection 청크), 매물 필터와 단지 필터(complexFilter 청크 `p` 의
+    # `minArea:e.minArea`)가 같은 글자를 그대로 보낸다. 그래서 소수 둘째 자리 고정이다 (84.95 → '84.95', 84.9 → '84.90',
+    # 1000000 → '1000000.00'). 예전 `:g` 는 유효숫자 6자리라 1만㎡ 이상이면 소수 첫째 자리 이하가 반올림됐다 (12345.67 → '12345.7',
+    # 123456.7 → '123457'). 같은 청크의 `f`(숫자 Number, 한쪽이 없으면 0 / 2^53-1)는 단지 최근 실거래의 전용면적 범위라
+    # `DaangnExclusiveUseAreaModel` 이 숫자로 보낸다 (2026-10-18 리뷰 오탐, 근거 고침 2026-11-20)
+    # `.2f` 가 아닌 이유: 정확히 반인 이진 값을 짝수로 보내 `toFixed` 와 다르다 (84.125 → 웹 '84.13'. 2026-11-20 리뷰)
+    return None if value is None else str(js_to_fixed(value, 2))
 
 
 class DaangnAmountRangeModel(RequestModel):
@@ -119,11 +123,11 @@ class DaangnPropertyFilterModel(RequestModel):
     ] = None
     min_area: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 하한 (㎡)', alias='minArea')
+        Field(ge=0, description='유형별 면적 하한 (㎡): 일반 매물 전용면적, 주택·건물·공장 연면적, 토지 대지면적', alias='minArea')
     ] = None
     max_area: Annotated[
         float | None,
-        Field(ge=0, description='전용면적 상한 (㎡)', alias='maxArea')
+        Field(ge=0, description='유형별 면적 상한 (㎡): 일반 매물 전용면적, 주택·건물·공장 연면적, 토지 대지면적', alias='maxArea')
     ] = None
     area_unit: Annotated[
         Literal['SQUARE_METER'] | None,

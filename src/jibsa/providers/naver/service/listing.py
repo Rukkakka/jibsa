@@ -23,6 +23,7 @@ from jibsa.core.listing import (
     join_address,
     m2_to_pyeong,
     move_in_label,
+    normalize_address,
     normalize_date,
     note,
     null_items_note,
@@ -36,7 +37,6 @@ from jibsa.providers.naver.api.request.common import (
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
-    NaverLegalDivisionSearchByCoordinateV1RequestParameterModel,
     NaverRealEstateType,
 )
 from jibsa.providers.naver.api.request.listing import (
@@ -52,10 +52,12 @@ from jibsa.providers.naver.api.request.listing import (
     NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
 )
+from jibsa.providers.naver.api.request.region import (
+    NaverLegalDivisionInfoListV1RequestParameterModel,
+)
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
     NaverComplexModel,
-    NaverCoordinatesModel,
     NaverFacilityInfoModel,
 )
 from jibsa.providers.naver.api.response.listing import (
@@ -86,6 +88,7 @@ from jibsa.providers.naver.service.common import (
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
+    add_failure_note,
     article_url,
     assigned_schools,
     building_approved_at,
@@ -99,6 +102,7 @@ from jibsa.providers.naver.service.common import (
     price_filter_of,
     price_sort_notes,
     resolve_dong_numbers,
+    result_or_empty,
     result_or_none,
     scan_null_items_notes,
     scan_pages,
@@ -346,6 +350,12 @@ BUILDING_SUB_NAME_BUILDING_TYPES: dict[str, frozenset[str]] = {
     'C02': frozenset({'C0202', 'C0203'}),
     'C03': frozenset({'C0302'}),
 }
+# 웹 매물 화면의 위치 칸(ArticleBuildingInfo, 번들 청크 0l4pkwg0qhg2t)은 매물 유형이 이 표에 있으면 지번을 articleDetailInfo.isJibunAddressExposed
+# 가 true 일 때만 보인다 (없으면 숨김). 표에 없는 유형은 건물 세부 유형이 단독(C0301)일 때만 그 값을 따르고 나머지는 늘 보인다
+JIBUN_EXPOSURE_REAL_ESTATE_TYPES: frozenset[str] = frozenset({
+    'D01', 'D02', 'D03', 'D04', 'E01', 'E02', 'E03', 'E04', 'F01', 'Z00', 'C04', 'C06',
+})
+JIBUN_EXPOSURE_BUILDING_TYPE: str = 'C0301'
 COMPLEX_PAGE_SIZE: int = 30
 # 단지 매물 목록 요청 상한 (빌라 단지로 다시 묻는 1회 포함). limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로
 # 빠져도 그만큼 다시 받지 않는다
@@ -910,8 +920,11 @@ def list_complex_articles(
         # 경우라 따로 알리지 않는다
         if last_info is not None and not isinstance(last_info, list):
             return None
-        # 다음 쪽이 있는 동안의 lastInfo 는 빈 리스트로 오지 않아, 비었으면 첫 쪽이다 (2026-10-19 실측: 헬리오시티 단지 번호로
-        # 랭킹순 4쪽·최신순 월세 4쪽 모두 값이 든 리스트). 2026-10-19 리뷰 오탐 확인
+        # lastInfo 가 비었으면 첫 쪽으로 본다. 리뷰 오탐 (2026-10-19, 근거 고침 2026-11-20): 첫 쪽 요청은 jibsa 가 `last_info=[]` 로
+        # 보내므로, 서버가 다음 커서로 [] 를 줬다면 다음 요청은 서버에게도 첫 쪽 요청과 같다. 같은 쪽이 다시 오면 새 매물 번호가 없어
+        # `scan_pages` 가 멈추고 (common.py `new_ids` 가 비면 중단), 빈 쪽이어도 멈춘다. 그래서 어떤 응답에서도 끝없이 돌거나 중복이
+        # 나오지 않고, 드는 것은 빌라 목록 요청 한 번 정도다. 2026-10-19 실측은 덧붙임이다 (헬리오시티 단지 번호로 랭킹순 4쪽·최신순
+        # 월세 4쪽 모두 값이 든 리스트)
         first = not last_info
         payload = NaverComplexArticleListV1RequestPayloadModel(
             complex_number=complex_number,
@@ -1369,7 +1382,7 @@ def _facility_values(
 
 
 def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
-    """매물 상세: key → basicInfo → maintenanceFee → 좌표의 법정동 → 단지·중개보수·세금·교통·학교·개발 예정 (최대 11회 호출, 단지부터는 필요할 때만).
+    """매물 상세: key → basicInfo → maintenanceFee → 법정동 코드의 지역 이름 → 단지·중개보수·세금·교통·학교·개발 예정 (최대 11회 호출, 단지부터는 필요할 때만).
 
     단지는 아파트·오피스텔·재건축·분양권이면 단지 정보(`/complex`)를, 단지형 빌라면 `/complex/villa` 를 늘 받아 난방·주차를 웹처럼
     단지 값으로 채우고, 거기에 아파트·오피스텔·재건축·분양권은 매물에 현관 구조가 없을 때
@@ -1383,8 +1396,9 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     건축물대장 유형(원룸·빌라 등 15개)은 매물 주차 대수가 0 이거나 없고 article/key 에 pnu 가 있을 때만 건축물대장(`/complex/buildingRegistration`)을
     1회 더 조회하고, 그 대수와 세대당 대수로 주차를 채운다 (`_facility_values`). 이 유형은 단지 정보를 받아도 1회뿐이라 최대 11회를 넘지 않는다.
 
-    중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 지번 주소는 좌표로 얻은
-    법정동 이름과 article/key 의 지번을 합쳐 만든다. 사용승인일은 단지 유형(아파트·오피스텔·재건축·분양권)이면 단지 정보(`/complex`)의
+    중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 주소는 웹 위치 칸처럼 article/key 의 법정동 코드로 받은
+    지역 이름(`legalDivision/infoList`)에 리와 지번을 붙여 만든다 (`_jibun_address`). 이 조회는 article/key 에 법정동 코드가 있으면 좌표와
+    상관없이 1회다 (전에는 좌표가 없으면 0회). 사용승인일은 단지 유형(아파트·오피스텔·재건축·분양권)이면 단지 정보(`/complex`)의
     날짜만 쓰고(웹처럼 매물 날짜는 보지 않는다), 단지형 빌라와 그 밖의 유형은 상세의 건물 날짜(facilityInfo)를 쓰되 없으면 단지형 빌라는
     동 목록(buildingList), 그 밖의 유형은 단지 정보에서 받는다.
 
@@ -1427,7 +1441,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     listed_area = size.supply_space if size else None
     coordinates = article.coordinates if article else None
 
-    address = _jibun_address(client, key, coordinates, notes)
+    address = _jibun_address(client, key, article, notes)
 
     # communalComplexInfo 는 단지 매물에만 오고, 오면 complexNumber 가 article/key 의 단지 번호와 같다. 단지가 없는
     # 매물은 둘 다 비어 있다 (단독·다가구·빌라·원룸·단지형 빌라·오피스텔·아파트 10건, 2026-10-10 확인)
@@ -1605,34 +1619,51 @@ def _listing_title(
     return title
 
 
+def _is_jibun_shown(real_estate_type: str, article: NaverArticleDetailInfoModel | None) -> bool:
+    """주소에 지번을 붙일지. 웹 위치 칸(ArticleBuildingInfo, 번들 청크 0l4pkwg0qhg2t)과 같은 규칙이다.
+
+    `JIBUN_EXPOSURE_REAL_ESTATE_TYPES` 유형은 `isJibunAddressExposed` 를, 그 밖의 유형은 건물 세부 유형이 단독(C0301)일 때만 그 값을
+    따르고 나머지는 늘 보인다. 상세(articleDetailInfo)나 `isJibunAddressExposed` 가 없으면 숨기는 쪽이고, 건물 세부 유형이 없으면 단독이 아니다.
+    """
+    exposed = bool(article.is_jibun_address_exposed) if article else False
+    building_type = article.building_type if article else None
+    if real_estate_type in JIBUN_EXPOSURE_REAL_ESTATE_TYPES or building_type == JIBUN_EXPOSURE_BUILDING_TYPE:
+        return exposed
+    return True
+
+
 def _jibun_address(
     client: NaverClient,
     key: NaverArticleKeyModel,
-    coordinates: NaverCoordinatesModel | None,
+    article: NaverArticleDetailInfoModel | None,
     notes: list[str],
 ) -> str | None:
-    """좌표로 얻은 법정동 이름과 article/key 의 지번을 합친 주소. 좌표가 없거나 법정동 조회가 실패하면 None (실패하면 `notes` 에 `[실패]` 안내).
+    """웹 위치 칸과 같게 만든 주소: article/key 의 법정동 코드로 받은 지역 이름 + 리 + 지번(보일 때만).
 
-    article/key 에는 법정동 코드만 있고 이름이 없어 좌표로 이름을 찾는다. 좌표로 찾은 동이 article/key 의 동과 달라
-    옆 동 이름에 지번이 붙는 일은 실측으로 없었다 (2026-10-12 실측: 서울 중구 회현동·예장동·남학동, 종로구 운니동·낙원동·
-    경운동 등 원룸·빌라·단독·다가구 20건 모두 두 법정동 코드가 같음). 2026-10-12 리뷰 오탐 확인
+    웹은 좌표가 아니라 매물의 법정동 코드로 `legalDivision/infoList` 를 불러 `regionName` 을 얻고 `[regionName, address.li, 지번]` 을
+    공백으로 잇는다 (`_is_jibun_shown`). 같은 방법을 쓰므로 경계 근처 매물에 옆 동 이름이 붙지 않고, 읍·면 매물의 리가 빠지지 않는다.
+    article/key 에 주소나 법정동 코드가 없으면 None 이다 (요청 없음). 있으면 좌표와 상관없이 1회 요청한다. 조회가 실패하거나
+    응답에 그 코드의 이름이 없으면 None 이고 `notes` 에 `[실패]` 안내가 붙는다.
     """
-    if coordinates is None:
+    address = key.address
+    if address is None or not address.legal_division_number:
         return None
-    division = result_or_none(
-        lambda: client.run_request_legal_division_search_by_coordinate_v1(
-            NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(
-                latitude=coordinates.y_coordinate,
-                longitude=coordinates.x_coordinate,
-            )
+    unknown = '모름(null)으로 낸 칸: address'
+    divisions = result_or_empty(
+        lambda: client.run_request_legal_division_info_list_v1(
+            NaverLegalDivisionInfoListV1RequestParameterModel(legal_division_numbers=address.legal_division_number)
         ),
+        dict,
         notes=notes,
         what='지번 주소',
-        unknown='모름(null)으로 낸 칸: address',
+        unknown=unknown,
     )
-    if division is None:
+    if divisions is None:
         return None
-    return join_address(
-        division.legal_division_name,
-        key.address.jibun if key.address else None,
-    )
+    division = divisions.get(address.legal_division_number)
+    if division is None or not division.region_name:
+        # 성공 응답인데 그 코드의 이름이 없다. 거절·형식 변경과 같게 알린다
+        add_failure_note(notes, None, '지번 주소', unknown)
+        return None
+    jibun = address.jibun if _is_jibun_shown(key.type.real_estate_type, article) else None
+    return normalize_address(join_address(division.region_name, address.li, jibun))

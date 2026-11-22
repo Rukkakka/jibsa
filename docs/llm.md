@@ -8,7 +8,7 @@
 - 결과는 stdout 에 JSON 하나, 에러는 stderr 에 `{"error": {"code", "message", "hint", ...}}`. exit 0 성공, 1 실행 에러, 2 입력 오류. 터미널(PTY)이라 JSON 이 들여쓰기로 나오면 명령 끝에 `--compact` 를 붙인다.
 - 금액은 소스와 상관없이 **만원**(`*_manwon`)이다. 사용자에게는 억·만 원으로 옮겨 쓴다 (만원 숫자를 그대로 옮겨 적으면 자리를 틀리기 쉽다): `1000` = 1,000만 원, `10000` = 1억 원, `119700` = 11억 9,700만 원, `210000` = 21억 원. 면적은 `area_m2`(전용)·`area_pyeong`.
 - **키 없음** = 그 거래에 해당 없음 (`--fields` 로 고르지 않은 필드는 빼고), **`null`** = 모름 (0·없음이 아니다), **`[]`** = 알려 줬는데 비어 있음. 관리비가 `null` 이면 월세와 더하지 말고 `listing` 상세를 본다.
-- `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물이 있다(목록에 빈 항목이 섞여 와서 뺐다는 안내면 그 목록으로 센 합계·순위·예약 가능 같은 값은 `null` 이니 0·없음으로 읽지 않는다), `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패 또는 대체 경로로 찾음(사용자에게 알린다), `[참고]` 그 밖.
+- `notes` 는 꼭 읽는다. 앞의 종류: `[일부]` 더 받을 게 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 뺀 매물·후보가 있다(목록에 빈 항목이 섞여 와서 뺐다는 안내면 그 목록으로 센 합계·순위·예약 가능 같은 값은 `null` 이니 0·없음으로 읽지 않는다), `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 좁혔다, `[실패]` 덤 조회 실패 또는 대체 경로로 찾음(사용자에게 알린다), `[참고]` 그 밖.
 - `--limit` 은 들여다볼 개수라 뺀 매물만큼 `returned` 가 적을 수 있다. 처음에는 작게 잡고, 한 번에 매물 50건 이하로 본다 (100건이면 4만 자가 넘어 잘린다). `search commute` 는 역마다 `--limit` 건(최대 10역)이라 역당 5건 이하로 시작한다.
 - 매물 목록의 `has_more` 가 `true` 이고 `next` 가 있으면 **같은 명령·지역·조건에 `--next <next>` 만 붙여** 이어 받는다 (`--limit`·`--fields` 는 바꿔도 된다, 하루 동안 쓴다). `--limit` 을 늘려 다시 부르면 앞 매물을 또 받는다. `next` 가 없으면 `notes` 대로 `--limit` 을 늘리거나(최대값 전까지) 가격·면적·거래 유형이나 더 좁은 지역으로 나눠 찾는다.
 - 후보를 훑을 때는 `--fields id,title,deposit_manwon,rent_manwon,manage_cost_manwon,area_m2,floor,address,url` 처럼 필요한 필드만 받는다 (출력이 절반쯤 준다). 사용자에게 줄 링크인 `url` 은 빼지 않고, 받은 글자 그대로 옮긴다 (ID 로 주소를 만들거나 경로를 고치지 않는다). `--fields` 는 매물 목록 명령(`search listings …`·`search commute`·`popular-listings`, 직방 `catalog`)에만 있고 상세 `listing` 에는 없다.
@@ -34,7 +34,7 @@
 | 단지 정보 | `<소스> complex <ID>` (네이버는 이름도 된다) |
 | 실거래가 | `zigbang real-price apt-…` · `naver real-price <단지 번호> --pyeong <평형 번호>` (평형 하나씩만 주어 단지 전체는 직방·당근으로 보고, 네이버는 평형을 정해 볼 때 쓴다. 전용면적이 같은 평형끼리 거래가 겹친다) · `daangn real-price <단지 ID>` (단지 없는 건물은 `--item <매물 ID>`) · `dabang real-price <단지 ID>` (단지 없는 매물은 `--listing <매물 ID>`, 이 집 또는 그 동의 같은 건물 유형 거래) · 동·구 단위 `daangn region-real-price <동·구>` (신고가는 `--new-high`, 웹처럼 최근 공개일 하루치라 비면 `--previous-days`) |
 | 시세·가격 흐름 | `zigbang price-trend apt-…` (직방시세 월별 추이, 평형은 `--pyeong <pyeongs[].id>`) · `naver market-price <단지> --pyeong <평형 번호>` (기관 시세) · `naver trend <동·구>` (아파트 주간) · `daangn price-trend <단지 ID>` (평형 하나, 기본 대표 평형) · `dabang price-trend <단지 ID> --pyeong <space_seq>` (월별 실거래 평균) |
-| 학교 | `zigbang search complexes <학교 이름>` (배정단지와 학교 정보 `school`) · `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서, 그 학교에 배정되는 단지는 `--complexes`) · `daangn school <학교 이름\|school_code>` (배정 단지, 여러 곳이면 `candidates` 의 `school_code` 로) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) · 동 안 학교·유치원·어린이집 목록 `dabang search schools <동> --level <단계>` · 단지 근처 어린이집·유치원 `daangn preschools <단지 ID>` (지역·역 이름으로는 찾지 않는다) · 다방 어린이집·유치원 상세 `dabang school <code> --level 어린이집`·`유치원` (`dabang complex` 의 `nurseries[]`·`kindergartens[]` 의 `code`) |
+| 학교 | `zigbang search complexes <학교 이름>` (배정단지와 학교 정보 `school`) · `naver school <school_code>` (`complex`·`listing` 의 `schools[]` 에서, 그 학교에 배정되는 단지는 `--complexes`) · `daangn school <학교 이름\|school_code>` (배정 단지, 여러 곳이거나 이름이 같은 학교가 더 있을 수 있다는 `REGION_AMBIGUOUS` 면 `candidates` 의 `school_code` 로) · `dabang school <school_code> --level <level>` (`dabang complex` 의 `schools[]` 에서, 중학교 특목고·자사고 진학률, 고등학교 대학 진학률) · 동 안 학교·유치원·어린이집 목록 `dabang search schools <동> --level <단계>` · 단지 근처 어린이집·유치원 `daangn preschools <단지 ID>` (지역·역 이름으로는 찾지 않는다) · 다방 어린이집·유치원 상세 `dabang school <code> --level 어린이집`·`유치원` (`dabang complex` 의 `nurseries[]`·`kindergartens[]` 의 `code`) |
 | 재개발 | `naver search redevelopment <지역>` → `naver redevelopment <구역 번호 또는 이름>` → `naver search listings --redevelopment <구역 번호 또는 이름>` |
 | 단지 비교 | `daangn compare <ID> <ID> …` (최대 10곳, 비슷한 크기 평형끼리) · `daangn nearby-complexes <ID>` · 평형대 평당가와 1km 안 단지 `dabang nearby-complexes <ID>` |
 | 동네 고르기 | `zigbang region-info <동·구>` (단지·세대 수, 평형대 직방시세, 거래량, 평당가 추이, 구는 인구) · `zigbang region-trades <동·구> --period 30일` (최근 등록 실거래) · `daangn good-neighborhoods --lifestyle …` · `region-reviews <동>` · `trending-complexes [시·도·구]` (조회 급상승, 빼면 전국) · `popular-listings <동>` (모두 `daangn`) · 동 요약 숫자와 순위 `dabang neighborhood <동>` (학교·편의·교통·안전 순위는 `--ranks`) · `dabang popular-listings <동>` · 미쉐린·블루리본 식당 `dabang hot-places <동>` |
@@ -117,7 +117,12 @@
 - 동 이름 검색은 그 동 매물만 최근 게시 순이다. 구·좌표 검색은 지도 화면 사각형이라 이웃 동·구 매물도 섞인다. `status: 예약중` 은 계약이 깨질 수 있어 나오는 매물이라 사용자에게 예약중이라고 알린다.
 - `--trade` 없이 금액 조건만 주면 당근 웹처럼 다른 거래 유형도 나온다 (`--rent-max` 만 주면 전세·매매도). 한 거래 유형만 볼 때는 `--trade` 를 함께 준다.
 - 제주에는 연세(`trade_type: 연세`)가 많다. 1년치 월세를 한 번에 내는 거래라 `yearly_rent_manwon` 은 월세가 아니다 (`1400` = 1년에 1,400만 원, `rent_manwon` 키는 없다). 연세만 찾으려면 `--trade 연세 --yearly-rent-max <만원>` (`--rent-*` 는 받지 않는다). 제주에서 월세를 찾는 사용자에게는 연세 매물도 있다고 알린다.
-- 목록에는 관리비·등록일·번지가 없다 (`null`). 필요하면 `--details` 로 상세를 붙인다 (매물마다 요청 1회 더).
+- 목록에는 관리비·등록일·번지가 없다 (`null`). 필요하면 `--details` 로 상세를 붙인다 (매물마다 요청 1회 더). `[실패]` 안내가 붙은 매물은 상세를 받지 못해 그 칸이 여전히 `null`(모름)이다.
+- `property_type` 이 `null` 이면 당근이 유형을 주지 않은 매물이다. 단지·학교·실거래의 유형 글자도 당근이 주지 않으면 `null` 이고, 모르는 코드는 영문 원래 코드가 나오니 뜻을 짐작해 옮기지 않는다. `presale`·`price-trend` 의 `points`·`school` 의 `complexes`·`region-reviews` 의 `has_reviews`·`top_complexes`·`top_buildings`·`dongs`·`real-price` 의 `transactions`·`has_more`·단지 카드의 `has_reviews`·`recent_trades`·`listing` 의 `manage_cost_includes`·`manage_cost_excludes` 가 `null` 이면 당근이 주지 않은 것이지 없는 것이 아니다 (없으면 `[]` 나 `false`).
+- `complex` 의 `nearby_subways` 는 도보 분이 짧은 순이라 첫 항목이 가장 가까운 역이다 (같은 역도 노선마다 따로 나온다). `--deal`·`--approval`·`--lifestyle` 은 하나만 받아 되풀이하면 `INVALID_ARGUMENT` 다.
+- `region-reviews` 는 입력한 동·구 기준이다. 동을 주면 `top_complexes`(후기 있는 단지)·`top_buildings`(후기 있는 건물, 이름이 `null` 이면 주소로 알아본다)가 그 동 것이고(동 후기 페이지가 단지 유형을 주지 않아 `property_type` 은 늘 `null`), 구를 주면 구 기준에 동별 후기 수 `dongs` 가 더해진다. `--top`(기본 20, 최대 500)은 단지와 건물 수이고 구의 단지는 당근 구 후기 페이지가 20곳까지만 줘 `notes` 가 동 이름으로 다시 보라고 한다. 단지 `name` 은 당근이 주지 않으면 `null` 이다.
+- `--station` 에 노선을 붙일 때는 당근 노선 이름(`서울2호선`·`신분당선`, 같은 이름 역 안내에 나온 그대로)만 쓴다. `2호선` 처럼 숫자만 쓴 노선은 당근 이름이 아니라 못 찾으니 빼고 역 이름만 준다 (`--station '강남역'`).
+- `--station`·`--university` 후보에 `(위치 정보 없음)` 이 붙으면 그 후보로는 찾을 수 없다. `search locations` 의 `stations`·`universities` 는 그런 후보를 빼고 `[제외]` 로 알린다.
 - `--station` 검색은 매물마다 역까지 도보 `walk_minutes` 를, `search commute` 는 매물마다 `walk_to_station_minutes`, 역 묶음마다 편도 `one_way_minutes`(지하철 + 회사 도보)를 준다. 문 앞까지는 둘을 더한다. `--max-minutes` 는 총 통근 시간이 아니라 역 사이 지하철 시간 상한이다 (60분까지).
 - 거래 조건이 여럿인 매물은 `trade_type` 과 `other_trades` 로 온다. 그 조건의 상세는 `listing <id> --trade <trade_type>`.
 - `search complexes` 의 가격 조건은 과거 실거래 기준이다 (그 가격의 현재 매물은 `search listings --complex`). `good-neighborhoods` 의 `dong` 은 행정동이라 매물은 법정동 이름으로 찾는다.
@@ -150,7 +155,7 @@
 
 | code | 할 일 |
 | --- | --- |
-| `INVALID_ARGUMENT` | `hint` 의 옵션대로 고친다. 없으면 `message` 와 `--help` 를 본다 |
+| `INVALID_ARGUMENT` | `hint` 의 옵션대로 고친다. 없으면 `message` 와 `--help` 를 본다. `한 번만 받는 옵션이 두 번 왔습니다` 면 그 옵션을 한 번만 주고 다시 부른다 |
 | `REGION_NOT_FOUND` · `REGION_AMBIGUOUS` | `hint` 대로 다시 찾는다. 같은 이름이 여러 곳이면 이름 앞에 구·시·도를 붙이고(`'강남구 신사동'`·`'서울 중구'`), `REGION_AMBIGUOUS` 는 `candidates` 에서 고른다. 좌표(`--lat`·`--lng`)는 그 명령이 받을 때만 쓴다 |
 | `REGION_NOT_SUPPORTED` · `UPSTREAM_ERROR` · `PARSE_ERROR` | 다른 소스를 쓴다. 뒤의 둘은 사용자에게 `uv tool upgrade jibsa` 를 권한다. 단 `hint` 가 사이트 장애(첫 화면 서버 오류)를 가리키면 업데이트를 권하지 않고 잠시 뒤 한 번만 다시 부르고, `blocked: true`(사이트가 접속을 막음)면 업데이트를 권하지 않고 다른 소스만 쓴다 |
 | `NOT_FOUND` | 단지·학교·평형·재개발 구역 ID 나 이름을 같은 소스의 결과에서 그대로 옮겼는지 본다 |

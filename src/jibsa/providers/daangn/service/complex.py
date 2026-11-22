@@ -32,6 +32,7 @@ from jibsa.providers.daangn.api.request.common import (
     DaangnComplexFilterModel,
     DaangnComplexTradeType,
     DaangnExclusiveUseAreaModel,
+    is_empty_property_filter,
 )
 from jibsa.providers.daangn.api.request.complex import (
     DaangnComplexArticlesInputModel,
@@ -60,7 +61,6 @@ from jibsa.providers.daangn.api.response.complex import (
     DaangnSubwayInfoModel,
 )
 from jibsa.providers.daangn.service.common import (
-    APARTMENT_COMPLEX_TYPES,
     BUILDING_APPROVAL_FILTER_BY_LABEL,
     COMPLEX_LIST_MAX_LIMIT,
     COMPLEX_LISTING_DEFAULT_SALES_TYPES,
@@ -74,16 +74,17 @@ from jibsa.providers.daangn.service.common import (
     DaangnRegionComplex,
     amount_range,
     article_to_listing,
+    code_label,
     complex_building_notes,
     complex_list_notes,
     complex_not_found,
     complex_url,
     cursor_stopped_note,
     is_available,
-    js_round,
     label_codes,
     listing_budget_notes,
     map_view_bounds,
+    most_households,
     next_cursor,
     no_trade_notes,
     partial_failure_note,
@@ -92,6 +93,8 @@ from jibsa.providers.daangn.service.common import (
     station_name,
     trade_of,
     unwrap_graphql,
+    uses_supply_pyeong,
+    web_minutes,
 )
 from jibsa.providers.daangn.service.region import (
     DaangnArea,
@@ -278,7 +281,7 @@ class DaangnComplex(BaseModel):
     ] = []
     nearby_subways: Annotated[
         list[str] | None,
-        Field(description='가까운 지하철역 (예: 신사역 (신분당선, 도보 4분)). 단지 공공 정보가 없으면 null')
+        Field(description='가까운 지하철역 (예: 신사역 (신분당선, 도보 4분)). 도보 시간이 짧은 순 (당근 웹 단지 화면 가까운 역 순서). 단지 공공 정보가 없으면 null')
     ] = []
     schools: Annotated[
         list[str] | None,
@@ -326,9 +329,18 @@ class DaangnComplexCandidate(BaseModel):
 def _subway(item: DaangnSubwayInfoModel) -> str:
     details = [item.line_name] if item.line_name else []
     if item.walking_time_min is not None:
-        details.append(f'도보 {round(item.walking_time_min)}분')
+        details.append(f'도보 {web_minutes(item.walking_time_min)}분')
     name = station_name(item.station_name or '')
     return f'{name} ({", ".join(details)})' if details else name
+
+
+def _web_subway_order(items: list[DaangnSubwayInfoModel]) -> list[DaangnSubwayInfoModel]:
+    """당근 웹 단지 화면 '가까운 역' 순서 (`Ye`): 도보 시간이 짧은 순 (모르면 뒤). 같으면 서버 순서를 지킨다 (안정 정렬).
+
+    웹은 같을 때 거리도 견주지만 jibsa 가 받는 단지 응답의 역(`DaangnSubwayInfoModel`)에는 거리 칸이 없다. 웹과 달리 같은 이름 역을 합치거나 앞 2곳으로 자르지 않고
+    (역, 노선)마다 모두 낸다.
+    """
+    return sorted(items, key=lambda item: _or_inf(item.walking_time_min))
 
 
 def _school_walk(item: DaangnNearbySchoolModel, assigned: bool) -> float | None:
@@ -344,11 +356,6 @@ def _school_distance(item: DaangnNearbySchoolModel, assigned: bool) -> float | N
 def _or_inf(value: float | None) -> float:
     """모르는 값(None)을 맨 뒤로 보내는 정렬 키. 0 은 그대로 둔다 (웹 `R` 의 `?? 2**53-1`)."""
     return inf if value is None else value
-
-
-def _web_minutes(walk: float) -> int:
-    """웹의 분 표기·비교 (`Math.round`). 표기는 최소 1분이다 (ComplexSchoolSection `L`: `Math.max(1, Math.round(e))`)."""
-    return max(1, js_round(walk))
 
 
 def _resident_count(item: DaangnNearbySchoolModel) -> int:
@@ -374,7 +381,7 @@ def _web_school_card(items: list[DaangnNearbySchoolModel]) -> list[DaangnNearbyS
     """
     ordered = _web_school_order(items, assigned=False)
     walks = {id(item): _school_walk(item, False) for item in ordered}
-    near = {id(item) for item in ordered if (walk := walks[id(item)]) is not None and _web_minutes(walk) <= 20}
+    near = {id(item) for item in ordered if (walk := walks[id(item)]) is not None and web_minutes(walk) <= 20}
     if not near and ordered:
         # 웹 `[...e].sort(G).slice(0,1)`: 시간, 같으면 거리 순 (모르면 뒤). 모두 모르면 안정 정렬이라 첫 학교. 웹 비교(`R`)는
         # `e ?? 2**53-1` 이라 0 분·0 m 도 값이다. `or inf` 로 두면 거리 0 이 '모름' 이 됐다 (2026-11-12 리뷰, 웹 배포 2026-11-v73 번들 대조)
@@ -386,7 +393,7 @@ def _web_school_card(items: list[DaangnNearbySchoolModel]) -> list[DaangnNearbyS
         or _resident_count(item) > 0
         or (
             len(items) <= 5 and item.allocation_method == '자동'
-            and (walk := walks[id(item)]) is not None and _web_minutes(walk) <= 40
+            and (walk := walks[id(item)]) is not None and web_minutes(walk) <= 40
         )
     ]
     return kept[:NEAREST_SCHOOLS]
@@ -398,7 +405,7 @@ def _school(item: DaangnNearbySchoolModel, assigned: bool = False) -> str | None
     details = ['배정'] if assigned else []
     walk = _school_walk(item, assigned)
     if walk is not None:
-        details.append(f'도보 {_web_minutes(walk)}분')
+        details.append(f'도보 {web_minutes(walk)}분')
     if _resident_count(item) > 0:
         details.append(f'이 단지 {_resident_count(item)}명 이상')
     return f'{item.school.name} ({", ".join(details)})' if details else item.school.name
@@ -406,7 +413,7 @@ def _school(item: DaangnNearbySchoolModel, assigned: bool = False) -> str | None
 
 def _pyeong_groups(complex_type: str | None, danji: DaangnProptierDanjiModel) -> tuple[bool, list[DaangnAreaGroupModel]]:
     """단지 평형을 묶는 평형 묶음과, 그것이 공급 평 묶음인지 (`complex_pyeongs`)."""
-    supply = complex_type in APARTMENT_COMPLEX_TYPES and bool(danji.supply_pyeong_area_groups)
+    supply = uses_supply_pyeong(complex_type, danji.supply_pyeong_area_groups)
     return supply, danji.supply_pyeong_area_groups if supply else danji.area_groups
 
 
@@ -470,7 +477,7 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
     return DaangnComplex(
         complex_id=complex_.original_id,
         name=complex_.name,
-        property_type=COMPLEX_TYPE_LABELS.get(complex_.type or '', complex_.type),
+        property_type=code_label(COMPLEX_TYPE_LABELS, complex_.type),
         address=normalize_address(
             address.jibun_address if address and address.jibun_address
             else join_address(region.name1, region.name2, region.name3) if region else None
@@ -490,7 +497,7 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
         listing_count=complex_.live_article_count.total if complex_.live_article_count else None,
         # 단지 공공 정보가 없으면 평형·역·학교는 모른다 (null). 2026-10-10 실측: 아파트·오피스텔·주상복합·도시형 13곳 모두 있었다
         pyeongs=sorted(pyeongs, key=lambda pyeong: pyeong.exclusive_m2 or 0) if danji else None,
-        nearby_subways=[_subway(item) for item in danji.subways if item.station_name] if danji else None,
+        nearby_subways=[_subway(item) for item in _web_subway_order(danji.subways) if item.station_name] if danji else None,
         schools=[school for school in schools if school] if danji else None,
         review_count=review_count,
         url=url,
@@ -521,7 +528,7 @@ def _candidate(node: DaangnSearchComplexNodeModel) -> DaangnComplexCandidate:
     address = address or next((building.road_address for building in buildings if building.road_address), None)
     return DaangnComplexCandidate(
         complex_id=node.original_id,
-        property_type=COMPLEX_TYPE_LABELS.get(node.type or '', node.type),
+        property_type=code_label(COMPLEX_TYPE_LABELS, node.type),
         name=node.name,
         address=normalize_address(address),
     )
@@ -555,7 +562,7 @@ def search_complexes(
                     after=after,
                 )
             )
-            result = unwrap_graphql(response, response.data.search_complexes if response.data else None, '단지 검색')
+            result = unwrap_graphql(response, response.data.search_complexes if response.data else None, '단지 검색', conditions=False)
         except OPTIONAL_LOOKUP_ERRORS as exc:
             logger.warning('daangn complex search failed after %d candidates (%s)', len(candidates), exc)
             received = f'단지 후보는 {len(candidates)}곳까지만 받았습니다. ' if candidates else ''
@@ -643,9 +650,11 @@ class DaangnComplexConditions(RequestModel):
         list[str],
         Field(description='단지 유형 (COMPLEX_TYPE_FILTER_BY_LABEL). 비면 전체 (도시형 생활주택도 섞인다)')
     ] = []
+    # 리뷰 오탐 (2026-11-20): CLI(search complexes)는 --trade 없이 보증금·월세 조건을 막지만, 이 설명은 라이브러리로 직접 부를 때의
+    # 동작이다 (complex.py 의 조건 만들기와 맞다)
     trade_type: Annotated[
         str | None,
-        Field(description='가격 조건과 단지마다 붙는 최근 실거래의 거래 유형 (매매·전세·월세). 없으면 매매로 보여 주되 필터로는 보내지 않는다')
+        Field(description='가격 조건과 단지마다 붙는 최근 실거래의 거래 유형 (매매·전세·월세). 없으면 매매로 보여 주고, 필터로는 가격 조건(보증금·월세·매매가 중 하나)이 있을 때만 기본 매매를 보낸다')
     ] = None
     deposit_min: Annotated[
         int | None,
@@ -730,6 +739,11 @@ def complex_filter_of(conditions: DaangnComplexConditions) -> DaangnComplexFilte
     )
 
 
+def has_complex_conditions(conditions: DaangnComplexConditions) -> bool:
+    """사용자가 단지 조건을 하나라도 줬는지 (기본값 모델과 견준다). 에러 hint 가 조건을 줄이라고 권할지 정한다."""
+    return conditions != DaangnComplexConditions()
+
+
 def list_region_complexes(
     client: DaangnClient,
     query: str,
@@ -760,6 +774,7 @@ def list_region_complexes(
     trade_type = conditions.trade_type or DEFAULT_COMPLEX_TRADE_TYPE
     region, notes = resolve_realsale_region(client, query)
     complex_filter = complex_filter_of(conditions)
+    filtered = has_complex_conditions(conditions)
     exclusive_use_area = _exclusive_use_area(conditions)
 
     def fetch(first: int, after: str | None) -> DaangnRegionComplexesModel:
@@ -776,7 +791,7 @@ def list_region_complexes(
                 exclusive_use_area=exclusive_use_area,
             )
         )
-        return unwrap_graphql(response, response.data.complex_by_cluster_id if response.data else None, '지역 단지 목록')
+        return unwrap_graphql(response, response.data.complex_by_cluster_id if response.data else None, '지역 단지 목록', conditions=filtered)
 
     complexes, has_more = _collect_complexes(fetch, trade_type, limit, sort, notes, narrow='지역·단지 유형·세대수·가격 조건')
     return DaangnRegionComplexesResult(
@@ -830,6 +845,8 @@ def _collect_complexes(
     inspected = 0
     # 서버는 빈 edge(null)도 한 자리로 세므로 빼고 읽은 수를 받은 자리에 더한다
     null_edges = 0
+    # 당근이 단지 ID 를 주지 않아 뺀 단지 수. 받은 수(inspected)에는 세어 예산은 그대로다
+    no_id_count = 0
     has_more = False
     stopped = False
     while inspected < limit:
@@ -841,6 +858,9 @@ def _collect_complexes(
         inspected += len(connection.edges) + connection.null_items('edges')
         nodes = [edge.node for edge in connection.edges if edge.node]
         for node in nodes:
+            if node.original_id is None:
+                no_id_count += 1
+                continue
             complex_ = region_complex_of(node, trade_type)
             if complex_.complex_id not in seen:
                 seen.add(complex_.complex_id)
@@ -865,6 +885,8 @@ def _collect_complexes(
         # 멈추지 않고 더 남았으면 --limit 에 닿은 것이다 (루프는 inspected >= limit 일 때만 has_more 를 남기고 끝난다).
         # 같은 단지가 두 번 오면 한 번만 넣어 limit 보다 적을 수 있어, 숫자는 보여 준 수로 쓴다
         notes.append(note('일부', f'단지가 더 있어 앞 {len(complexes)}곳만 보여 줍니다. ' + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, narrow)))
+    if no_id_count:
+        notes.append(note('제외', f'당근이 단지 ID 를 주지 않은 {no_id_count}곳은 뺐습니다'))
     if null_edges:
         notes.append(null_items_note('당근 지역 단지', null_edges))
     if sort.startswith('입주'):
@@ -945,6 +967,7 @@ def list_bounds_complexes(
     conditions = conditions or DaangnComplexConditions()
     trade_type = conditions.trade_type or DEFAULT_COMPLEX_TRADE_TYPE
     complex_filter = complex_filter_of(conditions)
+    filtered = has_complex_conditions(conditions)
     exclusive_use_area = _exclusive_use_area(conditions)
     bounds, width_km, height_km = map_view_bounds(lat, lng, zoom)
     notes: list[str] = []
@@ -963,7 +986,7 @@ def list_bounds_complexes(
                 exclusive_use_area=exclusive_use_area,
             )
         )
-        return unwrap_graphql(response, response.data.search_complexes if response.data else None, '지도 범위 단지 목록')
+        return unwrap_graphql(response, response.data.search_complexes if response.data else None, '지도 범위 단지 목록', conditions=filtered)
 
     complexes, has_more = _collect_complexes(fetch, trade_type, limit, sort, notes, narrow='범위(--zoom)·단지 유형·세대수·가격 조건')
     # 동 이름은 결과 표시에만 쓰여 못 찾아도 단지는 보여 준다. 본 조회 뒤에 묻는다 (덤 조회가 첫 요청이 되면 첫 화면 실패를 삼킨다).
@@ -1039,6 +1062,7 @@ def list_complex_listings(
             hint='단지 하나의 매물이라 세대수·주차대수는 이미 정해져 있습니다. 그 조건을 빼고 다시 찾으세요',
         )
     property_filter = conditions.property_filter
+    filtered = not is_empty_property_filter(property_filter)  # 사용자 조건 없음 (아래에서 기본 종류를 채우기 전 값)
     if not conditions.property_types:
         # 웹 단지 매물 패널은 종류를 고르지 않으면 늘 주거 5종(아파트·주택·오피스텔·원룸·투룸)을 보낸다 (`ComplexArticleListPanel`
         # 의 `F`, 단지 페이지 SEO 본문도 같다). 빈 목록(전체)으로 부르는 경로가 없어 상가·사무실 등은 -t 로 골랐을 때만 온다
@@ -1056,6 +1080,7 @@ def list_complex_listings(
     null_edges = 0
     has_more = False
     stopped = False
+    page_capped = False
     for _ in range(COMPLEX_LISTINGS_MAX_PAGES):
         response = client.run_request_complex_articles(
             DaangnComplexArticlesRequestPayloadModel(
@@ -1066,7 +1091,7 @@ def list_complex_listings(
             )
         )
         result = unwrap_graphql(
-            response, response.data.complex_by_original_id if response.data else None, '단지 매물'
+            response, response.data.complex_by_original_id if response.data else None, '단지 매물', conditions=filtered
         )
         if result.complex is None:
             raise complex_not_found(complex_id)
@@ -1096,15 +1121,19 @@ def list_complex_listings(
         # 다음 페이지가 있다면서 빈 쪽을 주거나 커서가 없거나 되풀이되면 멈춘다 (next_cursor). --limit 을 늘려도 더 받지 못하니
         # 아래의 --limit 안내 대신 멈췄다고 알린다 (2026-11-10 리뷰: 같은 커서를 되풀이하면 같은 쪽을 6번 받고 '--limit 의
         # 최대값은 120입니다' 라고 했고, 커서가 비면 안내 없이 has_more 만 true 였다). 마지막 허용 쪽(6쪽)에서도 본다. 다음이
-        # 있다면서 커서를 주지 않는 것은 몇 쪽째든 응답이 바뀐 것이라 멈춤 안내(업데이트 문구)가 맞다. 실제로는 서버가 first 만큼
-        # 주어(COMPLEX_PAGE_SIZE 주석) 6쪽째에 inspected 가 --limit 최대 120 에 닿아 위에서 먼저 끝난다 (2026-11-10 리뷰가 6쪽째
-        # 멈춤이 --limit 안내를 가린다고 했으나 오탐. 실측: 헬리오시티 10667600 1쪽 20건·hasNextPage true, 쪽 상한만 1로 낮춰
-        # 커서를 지우면 멈춤 안내와 단지 페이지 안내, 그대로면 --limit 안내)
+        # 있다면서 커서를 주지 않는 것은 몇 쪽째든 응답이 바뀐 것이라 멈춤 안내(업데이트 문구)가 맞다. 서버가 쪽마다 first 만큼
+        # 주면(COMPLEX_PAGE_SIZE 주석) 6쪽째에 inspected 가 --limit 최대 120 에 닿아 위에서 먼저 끝난다. 하지만 서버가 first 보다 적게
+        # 주면 쪽 상한(for 가 break 없이 끝남)에 먼저 닿아 inspected < limit 이고 has_more 인 채 끝나, 아래 '더 있음' 안내의
+        # 조건(limit >= max_limit 또는 inspected >= limit)이 거짓이라 안내 없이 has_more 만 true 였다. 그래서 쪽 상한은
+        # `stopped` 와 같은 갈래로 보아 따로 알린다 (`page_capped`. 2026-11-10 리뷰의 6쪽째 멈춤 지적은 first 만큼 줄 때만 오탐이었다)
         cursor = next_cursor(page_info, after, received=len(articles))
         if cursor is None:
             stopped = True
             break
         after = cursor
+    else:
+        # break 없이 끝났으면 쪽 상한에 닿은 것이다. 닿기 전 끝 조건(--limit 만큼 받음·다음 없음·pageInfo 없음)은 모두 break 다
+        page_capped = True
 
     # 카드에는 시·도가 없어 단지가 있는 동을 지역 검색으로 한 번 채운다 (with_sido)
     sido_cache: dict[tuple[str, str], str | None] = {}
@@ -1122,13 +1151,21 @@ def list_complex_listings(
         listings=listings,
         url=complex_url(complex_id),
         notes=listing_budget_notes(
-            limit, inspected, len(listings), max_limit=LISTING_MAX_LIMIT, has_more=has_more, eligible=len(matched),
-            narrowable=not stopped,
+            limit, inspected, len(listings), max_limit=LISTING_MAX_LIMIT, has_more=has_more, narrow='조건',
+            eligible=len(matched), narrowable=not (stopped or page_capped), dropped=null_edges,
         )
             + no_trade_notes(received)
             + (
                 [note('일부', cursor_stopped_note('단지 매물', f'{len(received_ids)}건') + '. 나머지는 url 의 단지 페이지에서 확인하세요')]
                 if stopped else []
+            )
+            + (
+                [note(
+                    '일부',
+                    f'단지 매물 {len(received_ids)}건을 받고 쪽 수 상한({COMPLEX_LISTINGS_MAX_PAGES}쪽)에 닿아 멈췄습니다. '
+                    '--limit 을 늘려도 더 받지 못합니다. 나머지는 url 의 단지 페이지에서 확인하세요',
+                )]
+                if page_capped else []
             )
             + complex_building_notes(shown)
             + ([null_items_note('당근 단지 매물', null_edges)] if null_edges else []),
@@ -1241,7 +1278,7 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
     response = client.run_request_trending_complexes(
         DaangnTrendingComplexesRequestPayloadModel(region_id='ALL' if region.region_id is None else str(region.region_id))
     )
-    found = unwrap_graphql(response, response.data.trending_complexes if response.data else None, '인기 단지')
+    found = unwrap_graphql(response, response.data.trending_complexes if response.data else None, '인기 단지', conditions=False)
     # 목록에서 빈 항목을 빼고 읽었으면 순위를 매길 자리를 알 수 없어 순위는 모두 모른다 (null)
     dropped_complexes = response.data.null_items('trending_complexes') if response.data else 0
     dropped_pyeongs = 0
@@ -1249,10 +1286,10 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
     for rank, item in enumerate(found, start=1):
         danji = item.proptier_danji
         groups = danji.exclusive_area_groups if danji else []
+        # 대표 묶음은 평형이 없는 묶음까지 포함한 묶음 전체에서 고른다 (웹 MapShell `zu`). 단지 비교(`_select_pyeong`)는 웹 식이
+        # 달라 평형이 있는 묶음 중에서 고른다 (합치지 않는다)
         group = next((group for group in groups if group.is_representative), groups[0] if groups else None)
-        infos = group.py_infos if group else []
-        # max 는 같은 값이면 앞 것을 준다 (웹 reduce 도 더 클 때만 바꾼다)
-        info = max(infos, key=lambda py: py.households or 0) if infos else None
+        info = most_households(group.py_infos if group else [], lambda py: py.households)
         # 대표 묶음·대표 평형을 고르는 목록에서 빈 항목을 빼고 읽었으면 고른 평형이 웹의 대표 평형이 아닐 수 있어 모른다 (null)
         dropped = (danji.null_items('exclusive_area_groups') if danji else 0) + (group.null_items('py_infos') if group else 0)
         if dropped:
@@ -1267,7 +1304,7 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
             rank=None if dropped_complexes else rank,
             complex_id=item.original_id,
             name=item.name,
-            type=COMPLEX_TYPE_LABELS.get(item.type or '', item.type),
+            type=code_label(COMPLEX_TYPE_LABELS, item.type),
             address=normalize_address(join_address(item.region.name1, item.region.name2)) if item.region else None,
             households=item.households,
             approved_at='-'.join(approval.groups()) if approval else None,

@@ -18,6 +18,7 @@ from jibsa.core.listing import (
     iso_date,
     join_address,
     limit_notes,
+    lookup_failure_note,
     normalize_address,
     normalize_date,
     note,
@@ -56,12 +57,11 @@ from jibsa.providers.zigbang.service.common.apt import (
 from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
     NEAREST_SCHOOLS,
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
     ComplexKind,
     apt_danji_url,
     complex_not_found,
-    failure_update_hint,
     fetch_danji,
     parse_complex_id,
     school_label,
@@ -589,11 +589,10 @@ def _fetch_room_types(
     """평형 정보 조회(덤)를 받는다. 실패(요청 제한 포함)하면 None 과 `[실패]` 안내를 준다."""
     try:
         return client.run_request_danjis_room_types(ZigbangDanjisRoomTypesRequestParameterModel(danji_id=danji_id)), []
-    except SCHOOL_LOOKUP_ERRORS as exc:
-        return None, [note(
-            '실패',
-            f'직방 평형 정보를 받지 못해({type(exc).__name__}) 평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 '
-            f'(url 의 직방 단지 페이지에서 확인){failure_update_hint(exc)}',
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        return None, [lookup_failure_note(
+            exc, '직방', '평형 정보',
+            '평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 (url 의 직방 단지 페이지에서 확인)',
         )]
 
 
@@ -637,13 +636,11 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
     school_notes: list[str] = []
     try:
         schools = danji_schools(client.run_request_danjis_schools(ZigbangDanjisSchoolsRequestParameterModel(danji_id=number)))
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         # 학군을 못 받아도 단지 정보는 돌려준다 (모름)
         schools = None
-        school_notes = [note(
-            '실패',
-            f'직방 단지 학군 정보를 받지 못해({type(exc).__name__}) schools 값을 모릅니다 (url 의 직방 단지 페이지에서 확인)'
-            f'{failure_update_hint(exc)}',
+        school_notes = [lookup_failure_note(
+            exc, '직방', '단지 학군 정보', 'schools 값을 모릅니다 (url 의 직방 단지 페이지에서 확인)',
         )]
     room_info, lookup_notes = _fetch_room_types(client, number)
     details = {room_type.id: room_type for room_type in room_info.room_types or []} if room_info else {}

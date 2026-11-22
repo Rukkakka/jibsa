@@ -181,7 +181,11 @@ class NaverArticleKeyAddressModel(NaverBaseResponseModel):
     ] = None
     jibun: Annotated[
         str | None,
-        Field(description='지번 (예: 12-2)')
+        Field(description='지번 (예: 12-2). 지번을 숨기는 유형(상가·사무실·토지 등)의 매물은 null 이다 (2026-11-20 실측 15건)')
+    ] = None
+    li: Annotated[
+        str | None,
+        Field(description='리 이름. 읍·면 매물만 온다')
     ] = None
 
 
@@ -358,6 +362,10 @@ class NaverArticleDetailInfoModel(NaverBaseResponseModel):
     building_type: Annotated[
         str | None,
         Field(description='건물 세부 유형 코드 (C0203 빌라, C0201 다세대, C0101 일반원룸 ...). 단지 매물은 키가 없다 (2026-11-17 확인)', alias='buildingType')
+    ] = None
+    is_jibun_address_exposed: Annotated[
+        bool | None,
+        Field(description='지번 주소를 보여도 되는지. 없으면 숨기는 쪽이다 (웹 위치 칸이 같게 읽는다)', alias='isJibunAddressExposed')
     ] = None
     is_direct_trade: Annotated[
         bool | None,
