@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -35,10 +36,24 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
-from jibsa.providers.zigbang.api.response.complex.detail import (
+from jibsa.providers.zigbang.api.response.complex.base import (
     ZigbangDanjiRoomTypeModel,
+    ZigbangDanjisRoomTypesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
+from jibsa.providers.zigbang.api.response.complex.search import (
+    ZigbangDanjiCardModel,
+    ZigbangSchoolDetailModel,
+)
+from jibsa.providers.zigbang.api.response.complex.trend import (
+    ZigbangDanjisPriceChartRelatedDanjisResponseModel,
+    ZigbangDanjisPriceChartResponseModel,
+    ZigbangDanjisRoomTypesPriceChartResponseModel,
+)
+from jibsa.providers.zigbang.api.response.local.info import ZigbangLocalPriceModel
+from jibsa.providers.zigbang.api.response.local.ranking import (
+    ZigbangLocalsDanjiRankingResponseModel,
+)
+from jibsa.providers.zigbang.api.response.local.trades import ZigbangLocalTradeModel
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
@@ -80,9 +95,24 @@ from jibsa.providers.zigbang.service.complex.search import (
     complex_order_of,
     distance_m_of,
     place_complex_of,
+    school_info_of,
     search_place_complexes,
 )
+from jibsa.providers.zigbang.service.complex.trend import (
+    get_price_trend,
+    get_pyeong_price_trend,
+)
 from jibsa.providers.zigbang.service.listing import get_any_listing
+from jibsa.providers.zigbang.service.local import (
+    info as region_info,
+)
+from jibsa.providers.zigbang.service.local import (
+    ranking as region_ranking,
+)
+from jibsa.providers.zigbang.service.local import (
+    trades as region_trades,
+)
+from jibsa.providers.zigbang.service.local.base import ZigbangLocalArea
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import (
     divided_region_error,
@@ -1573,3 +1603,300 @@ def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
         kept = get_any_listing(client, 'stay-5001', check_in='2099-06-01', check_out='2099-06-10')
     data = kept.model_dump(mode='json')
     assert data['available'] is True and len(data['unavailable_periods']) == 1
+
+
+# --- 지역 화면 (region-info·region-trades·region-ranking) ------------------------
+
+def _area(level: str) -> ZigbangLocalArea:
+    return ZigbangLocalArea(
+        region=ZigbangAptRegion(name='가상구', address='가상특별시 가상구', lat=None, lng=None, legal_division_code='0000000000'),
+        level=level,  # type: ignore[arg-type]
+        code='00000' if level == '구' else '00000000',
+        notes=[],
+    )
+
+
+def _ranking_page(page: int, count: int, size: int = 10, null_at: tuple[int, ...] = ()) -> dict:
+    rows: list[dict | None] = [
+        {
+            'areaDanjiId': page * 100 + index,
+            'areaDanjiName': f'[가상]단지{page}-{index}',
+            'volume': 5,
+            'rankingNumber': (page - 1) * 10 + index + 1,
+            'local': '가상동',
+            '사용승인일': '20000101',
+            '총세대수': 100,
+        }
+        for index in range(size)
+    ]
+    for index in null_at:
+        rows[index] = None
+    return {
+        'startDate': '2026-10-31T15:00:00.000Z',
+        'endDate': '2026-11-21T15:00:00.367Z',
+        'updatedDate': '2026-11-22T00:00:00.367Z',
+        'count': count,
+        'list': rows,
+    }
+
+
+class _FakeRankingClient:
+    def __init__(self, pages: dict[int, dict | Exception]) -> None:
+        self.pages = pages
+        self.calls: list[int] = []
+
+    def run_request_locals_danji_ranking(self, parameter):  # noqa: ANN001, ANN201
+        self.calls.append(parameter.page)
+        page = self.pages[parameter.page]
+        if isinstance(page, Exception):
+            raise page
+        return ZigbangLocalsDanjiRankingResponseModel.model_validate(page)
+
+
+def _run_ranking(monkeypatch: pytest.MonkeyPatch, pages: dict[int, dict | Exception], *, limit: int, level: str = '구', sort: str | None = None):
+    monkeypatch.setattr(region_ranking, 'resolve_local_area', lambda client, query: _area(level))
+    client = _FakeRankingClient(pages)
+    return client, region_ranking.get_region_ranking(client, '가상구', sort=sort, limit=limit)  # type: ignore[arg-type]
+
+
+def test_ranking_pages_stop_and_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    # limit 25 → 3쪽. 2쪽의 빈 항목도 한 자리로 세고 [:limit] 로 자른다. 100위가 넘는 순위 수는 웹처럼 100위까지라고 알린다
+    pages = {1: _ranking_page(1, 150), 2: _ranking_page(2, 150, null_at=(3,)), 3: _ranking_page(3, 150)}
+    client, result = _run_ranking(monkeypatch, pages, limit=25)
+    assert client.calls == [1, 2, 3]
+    assert result.returned == 25 and result.has_more is True
+    assert any('빈 항목 1' in text for text in result.notes) and any('100위까지만' in text for text in result.notes)
+    dumped = result.model_dump(mode='json')
+    # UTC 15시 이후는 한국 날짜로 다음 날이다. 거래량 정렬은 시작일·갱신 시각이 있고 구 단위라 줄마다 dong 이 있다
+    assert (dumped['start_date'], dumped['end_date'], dumped['updated_at']) == ('2026-11-01', '2026-11-22', '2026-11-22 09:00')
+    assert dumped['rankings'][0]['dong'] == '가상동' and 'price_manwon' not in dumped['rankings'][0]
+
+    # 100위까지만: 순위 수가 150 이어도 10쪽에서 멈추고 더 있다고 하지 않는다
+    client, result = _run_ranking(monkeypatch, {page: _ranking_page(page, 150) for page in range(1, 11)}, limit=100)
+    assert client.calls == list(range(1, 11)) and result.returned == 100 and result.has_more is False
+
+    # 순위 수가 8 이면 한 쪽에서 끝난다. 인기 순위는 갱신 시각이 없고, 동 단위는 dong 키가 없다
+    client, result = _run_ranking(monkeypatch, {1: _ranking_page(1, 8, size=8)}, limit=10, level='동', sort='인기단지순')
+    dumped = result.model_dump(mode='json')
+    assert client.calls == [1] and result.has_more is False and 'updated_at' not in dumped and 'start_date' in dumped
+    assert 'dong' not in dumped['rankings'][0]
+
+    # 3쪽이 실패하면 받은 쪽까지 내고 [실패] 로 알린다. 1쪽 실패는 에러 그대로다
+    failing = {1: _ranking_page(1, 77), 2: _ranking_page(2, 77), 3: httpx.ReadTimeout('가상 시간 초과')}
+    client, result = _run_ranking(monkeypatch, failing, limit=30)
+    assert client.calls == [1, 2, 3] and result.returned == 20 and result.has_more is True
+    assert any(text.startswith('[실패] 직방 단지 랭킹 3쪽') for text in result.notes)
+    with pytest.raises(httpx.ReadTimeout):
+        _run_ranking(monkeypatch, {1: httpx.ReadTimeout('가상 시간 초과')}, limit=10)
+
+
+def _trade(**fields: object) -> ZigbangLocalTradeModel:
+    base = {
+        'areaDanjiId': 1, 'areaDanjiName': '[가상]단지', 'roomType': '84A', 'rtDealDate': '2026-11-03', 'local': '가상동',
+        'isNewHighest': False, 'isNewLowest': False, 'isContractRenewal': False, 'rtPrice': 90000,
+    }
+    return ZigbangLocalTradeModel.model_validate({**base, **fields})
+
+
+def test_trade_row_keys_by_trade_and_presale() -> None:
+    sale = {
+        'prevRtPriceGap': 500, 'prevRtPriceGapRate': 0.8, 'marketPriceGap': 0, 'marketPriceGapRate': 0, 'isNoMarketPriceGap': False,
+        'publicPriceGap': 0, 'publicPriceGapRate': 0, 'isNoPublicPriceGap': True, 'offerPriceGap': 0, 'offerPriceGapRate': 0, 'isNoOfferPriceGap': True,
+    }
+    row = region_trades._trade_of(_trade(**sale), '매매', '구').model_dump(mode='json')
+    # 직방시세가 있는데 0 이면 진짜 0, 공시가격이 없으면 null. 분양권·입주권이 아니면 분양가 대비·presale 키가 없다. 매매에는 갱신 키가 없다
+    assert (row['market_price_diff_manwon'], row['public_price_diff_manwon'], row['prev_diff_manwon']) == (0, None, 500)
+    assert not {'presale', 'offer_price_diff_manwon', 'renewal', 'deposit_manwon', 'rent_manwon'} & row.keys() and row['dong'] == '가상동'
+
+    # 분양권: 직방시세 없음(null), 분양가 대비 키가 있다. 입주권은 직전 거래 대비 키가 없다. 동 단위는 dong 키가 없다
+    presale = {**sale, 'offerType': '분양권', 'isNoMarketPriceGap': True, 'offerPriceGap': 2138, 'offerPriceGapRate': 1.1, 'isNoOfferPriceGap': False}
+    row = region_trades._trade_of(_trade(**presale), '매매', '동').model_dump(mode='json')
+    assert (row['presale'], row['market_price_diff_manwon'], row['offer_price_diff_manwon']) == ('분양권', None, 2138) and 'dong' not in row
+    row = region_trades._trade_of(_trade(**{**presale, 'offerType': '입주권'}), '매매', '구').model_dump(mode='json')
+    assert row['presale'] == '입주권' and 'prev_diff_manwon' not in row
+
+    # 월세는 응답에 신고가·갱신이 와도 키를 내지 않고 보증금·월세만 낸다
+    row = region_trades._trade_of(_trade(monthlyRentPrice=410, isContractRenewal=True), '월세', '구').model_dump(mode='json')
+    assert (row['deposit_manwon'], row['rent_manwon']) == (90000, 410)
+    assert not {'price_manwon', 'new_high', 'new_low', 'renewal', 'prev_diff_manwon', 'market_price_diff_manwon'} & row.keys()
+
+
+def test_region_info_price_tabs_and_population_period() -> None:
+    prices = [
+        ZigbangLocalPriceModel.model_validate(item)
+        for item in (
+            {'area': '30', 'salesPrice': 5000, 'minSalesPrice': 1, 'maxSalesPrice': 2, 'rentPrice': 2000},
+            {'area': '0', 'salesPrice': 0, 'rentPrice': 2000},
+            {'area': '10', 'salesPrice': 4000, 'rentPrice': 0},
+            {'area': '20', 'rentPrice': 2000},
+            {'area': 'total', 'salesPrice': 5400, 'minSalesPrice': 7500, 'maxSalesPrice': 95000, 'rentPrice': 2400},
+        )
+    ]
+    # 웹 탭처럼 평균 평당가가 0 인 평형대만 빼고 (값이 없는 칸은 남긴다), 전체 먼저 작은 평형대 순이다
+    result = region_info._estimated_prices(prices)
+    assert result is not None and [item.range for item in result] == ['전체', '20평대', '30평대']
+    assert result[1].sale_price_per_pyeong_manwon is None
+    assert region_info._sale_price_bounds(prices) == (7500, 95000)
+    assert region_info._description_counts('4,923 단지 · 1,876,379 세대') == (4923, 1876379) and region_info._description_counts('') == (None, None)
+    # 인구 그래프 기간: 끝은 지난달, 시작은 그 5년 전 같은 달 (2026-11-19 캡처 202110~202610)
+    assert region_info.population_period(date(2026, 11, 22)) == ('202110', '202610')
+    assert region_info.population_period(date(2027, 1, 5)) == ('202112', '202612')
+
+
+# --- 시세 추이 (price-trend)·학교 정보 -------------------------------------------
+
+def _chart_line(label: str, prices: list[int]) -> dict:
+    return {
+        'label': label,
+        'type': 'sale',
+        'data': [{'date': f'2026-{month:02d}-01', 'price': price} for month, price in enumerate(prices, start=1)],
+    }
+
+
+class _FakePriceTrendClient:
+    """직방 시세 추이 조회를 표본 모양의 가짜 응답으로 돌려주는 client."""
+
+    def __init__(self, *, lines: list[dict], related: list[dict], room_types: list[int] | None = None, months: dict | None = None) -> None:
+        self.lines = lines
+        self.related = related
+        self.room_types = room_types or []
+        self.months = months or {}
+        self.calls: list[str] = []
+
+    def run_request_danjis_price_chart(self, parameter):
+        self.calls.append(f'chart {parameter.danji_id} {parameter.add_danji_ids}')
+        return ZigbangDanjisPriceChartResponseModel.model_validate({'list': self.lines})
+
+    def run_request_danjis_price_chart_related_danjis(self, parameter):
+        self.calls.append('related')
+        return ZigbangDanjisPriceChartRelatedDanjisResponseModel.model_validate({'list': self.related})
+
+    def run_request_danjis_room_types(self, parameter):
+        self.calls.append('room_types')
+        return ZigbangDanjisRoomTypesResponseModel.model_validate({'room_types': [{'id': rt} for rt in self.room_types]})
+
+    def run_request_danjis_room_types_price_chart(self, parameter):
+        self.calls.append(f'rt_chart {parameter.deal_type}')
+        return ZigbangDanjisRoomTypesPriceChartResponseModel.model_validate({'list': self.months})
+
+
+RELATED_COMPLEXES = [
+    {'id': 900002, 'name': '가짜파크', 'household': '6,864세대', 'local1': '서울특별시', 'local2': '송파구', 'local3': '신천동'},
+    {'id': 900003, 'name': '가짜포레', 'household': '12,032세대', 'local1': '서울특별시', 'local2': '강동구', 'local3': '둔촌동'},
+]
+
+
+def test_price_trend_line_kinds_follow_name_not_position() -> None:
+    # 조회 900001 + 비교 900002: 직방은 ID 오름차순으로 줘 첫 줄이 비교 단지다
+    client = _FakePriceTrendClient(
+        lines=[_chart_line('가짜파크', [100, 0]), _chart_line('가짜헬리', [200, 210]), _chart_line('송파구', [300, 310])], related=RELATED_COMPLEXES,
+    )
+    result = get_price_trend(client, 'apt-900001', compare=['apt-900002'])  # type: ignore[arg-type]
+    dumped = result.model_dump()
+    assert [(line['name'], line['kind'], line.get('complex_id')) for line in dumped['lines']] == [
+        ('가짜파크', '비교 단지', 'apt-900002'), ('가짜헬리', '단지', None), ('송파구', '구', None),
+    ]
+    # 0 은 점을 남기고 값만 null
+    assert dumped['lines'][0]['points'] == [
+        {'month': '2026-01', 'price_per_pyeong_manwon': 100}, {'month': '2026-02', 'price_per_pyeong_manwon': None},
+    ]
+    assert client.calls == ['related', 'chart 900001 [900002]']
+    # 조회 단지가 비교보다 작으면 조회 단지가 첫 줄이다. 비교 둘은 이름으로 찾는다
+    client = _FakePriceTrendClient(
+        lines=[_chart_line('가짜헬리', [1, 2]), _chart_line('가짜파크', [3, 4]), _chart_line('가짜포레', [5, 6]), _chart_line('송파구', [7, 8])], related=RELATED_COMPLEXES,
+    )
+    result = get_price_trend(client, 'apt-1000', compare=['apt-900003', 'apt-900002'])  # type: ignore[arg-type]
+    assert [(line.kind, line.complex_id) for line in result.lines or []] == [
+        ('단지', None), ('비교 단지', 'apt-900002'), ('비교 단지', 'apt-900003'), ('구', None),
+    ]
+    # 줄 수가 맞지 않으면 판정하지 않는다 (kind null, complex_id 키 없음)
+    client = _FakePriceTrendClient(
+        lines=[_chart_line('가짜헬리', [1]), _chart_line('가짜파크', [2]), _chart_line('송파구', [3])], related=RELATED_COMPLEXES,
+    )
+    result = get_price_trend(client, 'apt-900001')  # type: ignore[arg-type]
+    assert result.lines is not None and result.lines[0].kind is None and 'complex_id' not in result.model_dump()['lines'][0]
+    assert not any('구 줄만' in text for text in result.notes)
+    # 직방시세가 없는 단지는 조회 단지 줄 없이 구 줄만 온다 (2026-11-22 실측)
+    client = _FakePriceTrendClient(lines=[_chart_line('송파구', [1])], related=RELATED_COMPLEXES)
+    result = get_price_trend(client, 'apt-900001')  # type: ignore[arg-type]
+    assert result.lines is not None and result.lines[0].kind == '구'
+    assert any('구 줄만 있습니다' in text for text in result.notes)
+    # 후보에 없는 단지는 요청 전에 후보를 보여 주며 막는다
+    client = _FakePriceTrendClient(lines=[], related=RELATED_COMPLEXES)
+    with pytest.raises(JibsaError) as error:
+        get_price_trend(client, 'apt-900001', compare=['apt-5'])  # type: ignore[arg-type]
+    assert 'apt-900002 가짜파크' in (error.value.hint or '') and client.calls == ['related']
+
+
+def test_pyeong_price_trend_zero_months_and_month_merge() -> None:
+    months = {
+        'trade': [
+            # 입주 전: 시세·최저·최고·변화가 모두 0, 건수만 양수
+            {'date': '2018-11-01', 'min_price': 0, 'max_price': 0, 'average_price': 0, 'volume': 3, 'monthly_gap': {'price': 0, 'volume': 3}},
+            {'date': '2018-12-01', 'min_price': 285000, 'max_price': 300000, 'average_price': 292000, 'volume': 2, 'monthly_gap': {'price': 0, 'volume': -1}},
+            # 거래 0건인 달: 직방이 최저·최고에 시세를 채워 준다
+            {'date': '2019-01-01', 'min_price': 292000, 'max_price': 292000, 'average_price': 292000, 'volume': 0, 'monthly_gap': {'price': 5000, 'volume': -2}},
+        ],
+        'deposit': [
+            {'date': '2018-12-01', 'min_price': 90000, 'max_price': 120000, 'average_price': 100000, 'volume': 4, 'rent_volume': 0, 'monthly_gap': {'price': -1000}},
+            {'date': '2019-02-01', 'min_price': 95000, 'max_price': 95000, 'average_price': 95000, 'volume': 0, 'rent_volume': 0, 'monthly_gap': {'price': 0}},
+        ],
+    }
+    client = _FakePriceTrendClient(lines=[], related=[], room_types=[900004], months=months)
+    result = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='전체')  # type: ignore[arg-type]
+    dumped = {month['month']: month for month in result.model_dump()['months']}
+    assert list(dumped) == ['2018-11', '2018-12', '2019-01', '2019-02']
+    assert dumped['2018-11']['sale'] == {
+        'estimated_price_manwon': None, 'min_price_manwon': None, 'max_price_manwon': None, 'count': 3, 'change_manwon': None,
+    }
+    assert dumped['2018-11']['jeonse_wolse'] is None
+    # 변화 0 은 시세가 있는 달에서는 진짜 0
+    assert dumped['2018-12']['sale']['change_manwon'] == 0 and dumped['2018-12']['sale']['min_price_manwon'] == 285000
+    assert dumped['2018-12']['jeonse_wolse']['wolse_count'] == 0
+    assert dumped['2019-01']['sale']['count'] == 0 and dumped['2019-01']['sale']['min_price_manwon'] is None
+    assert dumped['2019-01']['sale']['estimated_price_manwon'] == 292000
+    # 전월세만 있는 달은 sale 이 null, 전세·월세 모두 0건이면 최저·최고가 null
+    assert dumped['2019-02']['sale'] is None and dumped['2019-02']['jeonse_wolse']['min_price_manwon'] is None
+    # 거래 탭을 고르면 다른 탭의 키가 없다
+    only_sale = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='매매').model_dump()['months']  # type: ignore[arg-type]
+    assert all('jeonse_wolse' not in month and 'sale' in month for month in only_sale)
+    only_rent = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='전월세').model_dump()['months']  # type: ignore[arg-type]
+    assert all('sale' not in month and 'jeonse_wolse' in month for month in only_rent)
+    # 다른 단지의 평형 ID 는 평형 시세를 부르기 전에 막는다
+    client = _FakePriceTrendClient(lines=[], related=[], room_types=[1, 2], months=months)
+    with pytest.raises(JibsaError):
+        get_pyeong_price_trend(client, 'apt-900001', 999)  # type: ignore[arg-type]
+    assert client.calls == ['room_types']
+
+
+def test_school_info_text_numbers_and_advancement() -> None:
+    middle = ZigbangSchoolDetailModel.model_validate({
+        'id': 1, 'name': '가짜중학교', 'stage': 'middle', 'sullib': '공립', 'gender': '공학', 'local2': '송파구',
+        'foundationDate': '2019-03-01', 'class': '28', 'localClass': 'abc', 'expense': '1077702', 'localExpense': 443151,
+        'meal': '4590', 'mealLocal': '', 'mealType': '직영', 'freshman': 237, 'localFreshman': '175', 'all': 846,
+        'manPercent': '52', 'womanPercent': 'nan', 'local': 627.89, 'localIncrease': 0,
+        'onlyMiddleNew': {'special': None, 'normal': None, 'etc': None},
+        'onlyHighNew': {'highCategory': '일반고'},
+    })
+    dumped = school_info_of(middle).model_dump()
+    assert dumped['level'] == '중학교' and dumped['students_per_class'] == 28 and dumped['district_students_per_class'] is None
+    assert dumped['tuition_manwon'] == 107.7702 and dumped['district_tuition_manwon'] == 44.3151
+    assert dumped['meal_cost_manwon'] == 0.459 and dumped['district_meal_cost_manwon'] is None
+    assert dumped['female_percent'] is None and dumped['male_percent'] == 52
+    assert dumped['district_freshmen_change_percent'] == 0 and dumped['district_avg_students'] == 627.89
+    assert dumped['founded_on'] == '2019-03-01'
+    # 중학교: 진학 현황 칸이 모두 비면 null, 고등학교 구분은 키가 없다
+    assert dumped['advancement'] is None and 'high_school_type' not in dumped
+    # 고등학교: 0 은 값이라 진학 현황이 남고 고등학교 구분이 있다
+    high = ZigbangSchoolDetailModel.model_validate({
+        'id': 2, 'stage': 'high', 'onlyHighNew': {'normaluniv': 0, 'highCategory': '일반고'},
+    })
+    dumped = school_info_of(high).model_dump()
+    assert dumped['advancement'] == {
+        'university': 0, 'university_percent': None, 'college': None, 'college_percent': None, 'other': None, 'other_percent': None,
+    }
+    assert dumped['high_school_type'] == '일반고'
+    # 초등학교: 진학 현황·고등학교 구분 키가 없고, 모르는 학교급은 원문을 남긴다
+    elementary = school_info_of(ZigbangSchoolDetailModel.model_validate({'id': 3, 'stage': 'elementary'})).model_dump()
+    assert 'advancement' not in elementary and 'high_school_type' not in elementary
+    assert school_info_of(ZigbangSchoolDetailModel.model_validate({'id': 4, 'stage': 'special'})).model_dump()['level'] == 'special'

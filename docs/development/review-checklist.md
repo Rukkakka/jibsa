@@ -22,8 +22,12 @@
    (pageInfo null 에 조용히 끝나 일부를 전부처럼 냄), `providers/daangn/service/real_price.py:385` (마지막 쪽을 되풀이로 봄).
    언제: 쪽을 넘기는 루프(커서·offset·`has_next`·`hasMore`)나 그 `break` 를 바꾼 diff.
 2. **"더 있음" 을 무엇으로 정하나.** `has_more`·`[일부]` 는 받은(확인한) 수 `inspected`·`received` 로 정한다. 뺀 뒤 돌려준 수나
-   뺀 것까지 센 `total` 과 견주지 않는다. 확인: "다 받고 1건 뺌" 과 "limit 에 닿고 1건 뺌" 으로 따라간다.
-   예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
+   뺀 것까지 센 `total` 과 견주지 않는다. 서버가 준 총수(`total`·`count`)가 받은 수보다 커도 서버가 더 줄 것이 없으면(마지막 쪽이
+   모자람, 요청한 수보다 적게 옴) 더 있음이 아니다 (총수와 목록이 어긋난 것을 `[참고]` 로 알린다). 확인: "다 받고 1건 뺌" 과
+   "limit 에 닿고 1건 뺌", "총수 15·받은 수 13·마지막 쪽 3건" 으로 따라간다.
+   예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`, `providers/zigbang/service/local/ranking.py`
+   `get_region_ranking`·`providers/zigbang/service/local/trades.py` `get_region_trades` (순위 수·실거래 수가 받은 수보다 크면
+   끝까지 받았는데도 '--limit 을 늘리세요' `[일부]`, 2026-11-22).
    언제: `has_more`·`[일부]`·`inspected`·`received`·`total` 을 정하는 줄이나 결과를 빼는(거르는) 줄을 바꾼 diff.
 3. **덜 받은 것을 "전부·없음" 으로 단정.** 첫 쪽·상한·멈춘 목록의 수를 전체 수로 쓰거나, 남았는데 "없습니다"·"이 N건이 전부"
    라고 하지 않는가 ('이상'·`[일부]`·`null` 로 알린다). 확인: 수·'없'·'전부' 가 든 안내마다 그 수가 끝까지 받은 수인지 본다.
@@ -48,7 +52,9 @@
    모름을 섞지 않는가. 날짜·층·이름·시각 자리와 `LABELS.get(raw or '', raw)` 같은 라벨 표 찾기에서 `'-'`·빈 글자를 그대로
    내지 않는가 (`.get` 의 두 번째 인자가 빈 글자를 돌려준다). 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가 돌려주는 값을
    본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17),
-   `providers/zigbang/service/stay/detail.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17).
+   `providers/zigbang/service/stay/detail.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17),
+   `providers/zigbang/service/complex/trend.py` `_compare_candidates` (비교 후보 목록 null 을 `or []` 로 읽어 '후보를 주지 않는 단지'
+   `INVALID_ARGUMENT` 를 냈다. 같은 함수의 비교 없는 갈래는 같은 null 을 모름으로 읽었다, 2026-11-22).
    언제: `+` 줄에 `or `·`if not `·`else None`·기본값 `[]`·값을 돌려주는 `except` 가 있을 때, 출력 필드를 더하거나 바꾼 diff.
 6. **서버 값 한 칸이 결과 전체를 깨뜨림.** 서버 글자·목록·헤더를 `int()`·`[0]`·`del`·`.encode` 로 바로 다루지 않는가 (그 칸만
    `null`·건너뛰기여야 한다). 확인: diff 의 그 호출과 Optional 아닌 list 필드에 빈 글자·'-'·null·소수를 넣어 본다.
@@ -116,6 +122,9 @@
 20. **응답 객체 목록의 길이·합으로 계산하거나 자리를 세는 코드가 뺀 빈 항목을 보는가.** 기반 모델이 목록 안 null 원소를 빼고 칸마다 센다 (`null_items`). 그 목록으로 합계·평균·개수·순위·대표 고르기를 하는 코드는 계산한 값을 `null`(모름)로 두고, 쪽 넘김·`--limit` 자리를 세는 코드는 `len(목록)` 에 뺀 수를 더하며, 둘 다 `null_items_note` 로 `[제외]` 안내를 붙인다. 안 보면 적은 합계가 완전한 값처럼 나가거나 다음 쪽에서 같은 항목을 다시 받는다. 확인: 목록 길이를 쓰는 `len(`·`sum(`·`enumerate(`·`[0]`·`== 1`·빈 쪽 판정마다 빈 항목 하나를 섞은 응답을 넣어 본다. 목록을 그대로 보여 주기만 하면 보지 않아도 되고, 자리별 안내가 없어도 `emit` 의 공통 안내(`null_items_total_note`)가 뺀 수를 알리니 자리별 안내를 요구하지 않는다.
     예: `providers/dabang/service/neighborhood.py` `_type_counts` (유형 목록에서 빈 항목을 뺀 합계는 모름이다, 2026-11-21).
     언제: 응답 모델의 객체 목록 칸(`list[Model]`)을 읽는 `+` 줄에 `len(`·`sum(`·`enumerate(`·`[0]`·`== 1` 이 든 diff, 쪽 넘김 루프.
+21. **쪽 넘김 중간 실패를 같게 다루는가.** 2쪽 이후를 받지 못한 갈래가 요청 예외와 응답 형식 오류(목록 칸 null)를 같게 다루는가. 예외만 받은 쪽까지 내고 목록 null 은 에러로 올리면 앞 쪽 결과를 버리고, 문서가 약속한 "받은 데까지 `[실패]`" 와 어긋난다. 확인: 쪽 반복에서 `first`(1쪽)가 있을 때 응답 목록이 None 인 갈래를 따라간다.
+    예: `providers/zigbang/service/local/ranking.py` `_collect_pages` (2026-11-22).
+    언제: 쪽을 차례로 받으며 중간 실패를 `[실패]` 로 넘기는 diff.
 
 ## `contract` 출력 계약
 
@@ -312,7 +321,7 @@
    `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19). 반대로 사이트가
    정상이어도 빌 수 있는 값을 기대 칸으로 걸면 고장 알림이 거짓으로 난다: 조건으로 고른 목록(최근입주), 시세 0 을 `null` 로
    내는 값, 신규분양처럼 값이 없는 대상을 고를 수 있는 `Capture` 는 `may_be_empty` 로 두거나 그 대상을 피해 고른다
-   (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주·`catalog` 직방시세·`{apt}` Capture, 2026-11-20). 안내 없이 `null` 이 되는 조건이 있는 값(단기임대 `host_other_listing_count` 는 임대인 ID 가 없으면 안내 없이 `null`)이나 정상 단지에도 `null` 일 수 있는 값(직방 `complex` 단지 직방시세, 2026-11-21)도 `also_expect` 에 걸지 않는다.
+   (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주·`catalog` 직방시세·`{apt}` Capture, 2026-11-20). 안내 없이 `null` 이 되는 조건이 있는 값(단기임대 `host_other_listing_count` 는 임대인 ID 가 없으면 안내 없이 `null`)이나 정상 단지에도 `null` 일 수 있는 값(직방 `complex` 단지 직방시세, 2026-11-21)도 `also_expect` 에 걸지 않는다. 기간 기본값으로 부르는 단계도 감시 시각에 빌 수 있다: 등록 기준 '이번달' 집계(한국 날짜 기준)는 매달 1일 새벽(감시 04:17)에 비어 거짓 고장을 낼 수 있어 지난 기간(지난달·30일)으로 부른다 (`scripts/monitor/api_check.py` 의 직방 `region-ranking`, 2026-11-22).
    언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸(`expect`·`also_expect`)을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
 
 ## 지적하지 말 것

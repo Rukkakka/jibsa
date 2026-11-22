@@ -118,8 +118,81 @@ class ZigbangDanjisDetailsResponseModel(ZigbangBaseResponseModel):
 # GET /apt/schools/{schoolCode}
 # ---------------------------------------------------------------------------
 
+class ZigbangSchoolMiddleOutcomeModel(ZigbangBaseResponseModel):
+    """중학교의 고등학교 진학 현황 (`onlyMiddleNew`). 웹 '고등학교 진학 현황' 이 특목고·일반고·기타 인원과 비율을 보여 준다.
+
+    2026-11-22 표본 중학교 둘은 모두 null 이었다 (비율 칸은 표본에 없지만 웹 코드가 읽는다). 인원(명)·비율(%)이 숫자인지 글자인지 정해지지 않아 넓게 받는다.
+    """
+
+    special: Annotated[
+        int | float | str | None,
+        Field(description='특목고 진학 인원 (명)')
+    ] = None
+    special_percent: Annotated[
+        int | float | str | None,
+        Field(description='특목고 진학 비율 (%)', alias='specialPercent')
+    ] = None
+    normal: Annotated[
+        int | float | str | None,
+        Field(description='일반고 진학 인원 (명)')
+    ] = None
+    normal_percent: Annotated[
+        int | float | str | None,
+        Field(description='일반고 진학 비율 (%)', alias='normalPercent')
+    ] = None
+    etc: Annotated[
+        int | float | str | None,
+        Field(description='기타 진학 인원 (명)')
+    ] = None
+    etc_percent: Annotated[
+        int | float | str | None,
+        Field(description='기타 진학 비율 (%)', alias='etcPercent')
+    ] = None
+
+
+class ZigbangSchoolHighOutcomeModel(ZigbangBaseResponseModel):
+    """고등학교의 대학 진학 현황 (`onlyHighNew`). 웹 '대학교 진학 현황' 이 일반대·전문대·기타 인원과 비율을 보여 준다.
+
+    2026-11-22 표본에서는 인원·비율이 모두 null 이고 `highCategory` 만 있었다. 인원(명)·비율(%)이 숫자인지 글자인지 정해지지 않아 넓게 받는다.
+    """
+
+    normaluniv: Annotated[
+        int | float | str | None,
+        Field(description='일반대 진학 인원 (명)')
+    ] = None
+    normaluniv_percent: Annotated[
+        int | float | str | None,
+        Field(description='일반대 진학 비율 (%)', alias='normalunivPercent')
+    ] = None
+    college: Annotated[
+        int | float | str | None,
+        Field(description='전문대 진학 인원 (명)')
+    ] = None
+    college_percent: Annotated[
+        int | float | str | None,
+        Field(description='전문대 진학 비율 (%)', alias='collegePercent')
+    ] = None
+    etc: Annotated[
+        int | float | str | None,
+        Field(description='기타 진학 인원 (명)')
+    ] = None
+    etc_percent: Annotated[
+        int | float | str | None,
+        Field(description='기타 진학 비율 (%)', alias='etcPercent')
+    ] = None
+    high_category: Annotated[
+        str | None,
+        Field(description="고등학교 구분 (예: '일반고')", alias='highCategory')
+    ] = None
+
+
 class ZigbangSchoolDetailModel(ZigbangBaseResponseModel):
-    """학교 정보. 전화·홈페이지·좌표·학생 수·급식 같은 이 밖의 키는 읽지 않는다."""
+    """학교 정보. 웹 학교 화면(`SchoolsDetailScreen`)이 보여 주는 학생 수·입학생·학급·학비·급식비와 같은 구 평균, 진학 현황을 읽는다.
+
+    전화·홈페이지·주소·좌표·기준 연도(`year`)·학교 자체의 입학생 증감(`increase`, 웹이 그리지 않는다)은 읽지 않는다. 숫자가 글자로 오는 칸이 섞여
+    (2026-11-22 표본: `class` '28', `expense` '1077702', `manPercent` '71' 은 글자, `all`·`freshman`·`local` 은 숫자) 숫자 칸은 모두
+    `int | float | str` 로 받고 service 가 바꾼다. 같은 구 평균 칸은 웹이 '{구} 평균' 으로 보여 주는 값이다.
+    """
 
     id: Annotated[
         int,
@@ -132,6 +205,98 @@ class ZigbangSchoolDetailModel(ZigbangBaseResponseModel):
     school_code: Annotated[
         str | None,
         Field(description="학교 코드 (예: 'B100006434'). 웹 학교 화면 주소의 코드", alias='schoolCode')
+    ] = None
+    stage: Annotated[
+        str | None,
+        Field(description="학교급 ('elementary' 초등, 'middle' 중, 'high' 고)")
+    ] = None
+    sullib: Annotated[
+        str | None,
+        Field(description="설립 구분 (예: '공립')")
+    ] = None
+    gender: Annotated[
+        str | None,
+        Field(description="남녀 구분 (예: '공학')")
+    ] = None
+    foundation_date: Annotated[
+        str | None,
+        Field(description='설립일 (YYYY-MM-DD)', alias='foundationDate')
+    ] = None
+    local2: Annotated[
+        str | None,
+        Field(description="학교가 있는 구 (같은 구 평균의 구. 예: '송파구')")
+    ] = None
+    all: Annotated[
+        int | float | str | None,
+        Field(description='전체 학생 수 (명)')
+    ] = None
+    man_percent: Annotated[
+        int | float | str | None,
+        Field(description='남학생 비율 (%)', alias='manPercent')
+    ] = None
+    woman_percent: Annotated[
+        int | float | str | None,
+        Field(description='여학생 비율 (%)', alias='womanPercent')
+    ] = None
+    local: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 학교의 평균 학생 수 (명, 소수로 온다)')
+    ] = None
+    local_man_percent: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 남학생 비율 (%)', alias='localManPercent')
+    ] = None
+    local_woman_percent: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 여학생 비율 (%)', alias='localWomanPercent')
+    ] = None
+    freshman: Annotated[
+        int | float | str | None,
+        Field(description='입학생 수 (명)')
+    ] = None
+    local_freshman: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 입학생 수 (명)', alias='localFreshman')
+    ] = None
+    local_increase: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 입학생의 전년 대비 증감 (%, 음수는 감소)', alias='localIncrease')
+    ] = None
+    class_: Annotated[
+        int | float | str | None,
+        Field(description='학급당 학생 수 (명). 응답 키는 `class`', alias='class')
+    ] = None
+    local_class: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 학급당 학생 수 (명)', alias='localClass')
+    ] = None
+    expense: Annotated[
+        int | float | str | None,
+        Field(description='학비 (원). 연간인지 월인지는 웹이 적지 않아 모른다')
+    ] = None
+    local_expense: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 학비 (원)', alias='localExpense')
+    ] = None
+    meal: Annotated[
+        int | float | str | None,
+        Field(description='급식비 (원). 1식인지 기간 합인지는 웹이 적지 않아 모른다')
+    ] = None
+    meal_type: Annotated[
+        str | None,
+        Field(description="급식 방식 ('직영'·'일부위탁')", alias='mealType')
+    ] = None
+    meal_local: Annotated[
+        int | float | str | None,
+        Field(description='같은 구 평균 급식비 (원)', alias='mealLocal')
+    ] = None
+    only_middle_new: Annotated[
+        ZigbangSchoolMiddleOutcomeModel | None,
+        Field(description='중학교의 고등학교 진학 현황. 고등학교 표본에도 모든 칸이 null 인 채로 왔다 (2026-11-22)', alias='onlyMiddleNew')
+    ] = None
+    only_high_new: Annotated[
+        ZigbangSchoolHighOutcomeModel | None,
+        Field(description='고등학교의 대학 진학 현황. 중학교 표본에도 모든 칸이 null 인 채로 왔다 (2026-11-22)', alias='onlyHighNew')
     ] = None
 
 

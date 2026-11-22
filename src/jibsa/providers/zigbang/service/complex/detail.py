@@ -24,9 +24,11 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
+from jibsa.providers.zigbang.api.request.complex.base import (
+    ZigbangDanjisRoomTypesRequestParameterModel,
+)
 from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
-    ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangDanjisSchoolsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
@@ -36,10 +38,11 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangRelateDanjiModel,
     ZigbangSearchItemModel,
 )
-from jibsa.providers.zigbang.api.response.complex.detail import (
+from jibsa.providers.zigbang.api.response.complex.base import (
     ZigbangDanjiRoomTypeModel,
-    ZigbangDanjisItemCatalogsResponseModel,
     ZigbangDanjisRoomTypesResponseModel,
+)
+from jibsa.providers.zigbang.api.response.complex.detail import (
     ZigbangDanjisSchoolsResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
@@ -54,13 +57,12 @@ from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
     NEAREST_SCHOOLS,
     SCHOOL_LOOKUP_ERRORS,
+    UNEXPECTED_FORMAT_TEXT,
     ComplexKind,
-    apt_complex_id,
     apt_danji_url,
     complex_not_found,
     failure_update_hint,
     fetch_danji,
-    household_count,
     parse_complex_id,
     school_label,
     text_or_none,
@@ -75,6 +77,10 @@ from jibsa.providers.zigbang.service.common.room import (
     section_ordered_ids,
     summary_to_listing,
     tradeable_summaries,
+)
+from jibsa.providers.zigbang.service.complex.base import (
+    ZigbangRelatedComplex,
+    related_complex_of,
 )
 from jibsa.providers.zigbang.service.region import (
     search_regions,
@@ -270,31 +276,6 @@ class ZigbangComplexRank(BaseModel):
     ]
 
 
-class ZigbangRelatedComplex(BaseModel):
-    """직방 웹 단지 화면의 '함께 보면 좋은 단지' 하나."""
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    complex_id: Annotated[
-        str | None,
-        Field(description='단지 ID (zigbang complex·search listings --complex 에 넘긴다). 직방이 ID 를 주지 않으면 모름(null)')
-    ]
-    name: Annotated[
-        str | None,
-        Field(description='단지 이름')
-    ]
-    households: Annotated[
-        int | None,
-        Field(description='세대수')
-    ]
-    address: Annotated[
-        str | None,
-        Field(description='동까지의 주소')
-    ]
-
-
 class ZigbangLandTradePermitDay(BaseModel):
     """토지거래허가 일별 건수 하나."""
 
@@ -384,8 +365,8 @@ class ZigbangComplex(BaseModel):
         Field(description='거래 유형별 매물 수 (아파트만). 직방이 주지 않은 유형은 모름(null)')
     ] = {}
     pyeongs: Annotated[
-        list[ZigbangPyeong],
-        Field(description='평형 목록 (아파트만)')
+        list[ZigbangPyeong] | None,
+        Field(description='평형 목록 (아파트만). 평형이 아직 없는 단지는 [], 직방이 평형 목록을 주지 않았으면 null')
     ] = []
     schools: Annotated[
         list[str] | None,
@@ -592,15 +573,7 @@ def _related_complexes_of(related: ZigbangRelateDanjiModel | None) -> list[Zigba
     """단지 상세의 관련 단지('함께 보면 좋은 단지')를 직방이 준 순서대로. 목록을 주지 않았으면(키 없음·null) 모름(None), 빈 목록이면 []."""
     if related is None or related.list is None:
         return None
-    return [
-        ZigbangRelatedComplex(
-            complex_id=apt_complex_id(item.id) if item.id is not None else None,
-            name=item.name,
-            households=household_count(item.household),
-            address=normalize_address(join_address(item.local1, item.local2, item.local3)),
-        )
-        for item in related.list
-    ]
+    return [related_complex_of(item) for item in related.list]
 
 
 def _land_trade_permits_of(permit: ZigbangLandTradePermitModel | None) -> list[ZigbangLandTradePermitDay] | None:
@@ -674,6 +647,10 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         )]
     room_info, lookup_notes = _fetch_room_types(client, number)
     details = {room_type.id: room_type for room_type in room_info.room_types or []} if room_info else {}
+    pyeong_notes: list[str] = []
+    if catalogs.room_types is None:
+        # 평형 목록(매물 목록 응답의 danjiRoomTypes)이 없으면 모름이라, 평형이 없는 단지([])와 가른다
+        pyeong_notes.append(note('참고', f'직방이 단지 평형 목록을 주지 않아 pyeongs 를 모릅니다. {UNEXPECTED_FORMAT_TEXT}'))
     return ZigbangComplex(
         complex_id=complex_id,
         name=danji.name,
@@ -695,7 +672,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             trade: catalogs.count_by_tran_type.get(tran_type)
             for tran_type, trade in TRADE_BY_APT_TRAN_TYPE.items()
         },
-        pyeongs=[pyeong_of(room_type, details.get(room_type.id)) for room_type in catalogs.room_types],
+        pyeongs=None if catalogs.room_types is None else [pyeong_of(room_type, details.get(room_type.id)) for room_type in catalogs.room_types],
         schools=schools,
         review_count=danji.review_count,
         url=apt_danji_url(number),
@@ -706,7 +683,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         rank=complex_rank_of(danji.rank),
         related_complexes=_related_complexes_of(danji.relate_danji),
         land_trade_permits=_land_trade_permits_of(danji.land_trade_permit),
-        notes=school_notes + lookup_notes + (
+        notes=school_notes + lookup_notes + pyeong_notes + (
             [f'이 단지에 거주 후기 {danji.review_count}개가 있습니다. 후기 내용은 직방 단지 페이지({apt_danji_url(number)})에서 확인하세요']
             if danji.review_count else []
         ),
@@ -779,6 +756,8 @@ def list_complex_listings(
     dropped_id_lists = 0
     # 평형 목록(`danjiRoomTypes`)에서 뺀 빈 항목 수. 평형 ID 를 확인할 수 없을 때만 안내한다
     dropped_room_types = 0
+    # 직방이 평형 목록을 주지 않아(모름) 평형 ID 를 확인하지 못했는지
+    room_types_unknown = False
     seen: set[str] = set()
     while inspected < limit:
         page_size = min(DANJI_CATALOG_PAGE_SIZE, limit - inspected)
@@ -798,11 +777,14 @@ def list_complex_listings(
             )
         )
         if offset == 0:
-            if response.null_items('room_types'):
+            if response.room_types is None:
+                # 평형 목록이 없으면(모름) 평형이 없는 단지(빈 목록)와 달라, 확인하지 않고 그 평형으로 찾은 뒤 알린다
+                room_types_unknown = bool(pyeong_ids)
+            elif response.null_items('room_types'):
                 # 평형 목록에서 빈 항목을 뺐으면 준 평형 ID 가 그 항목이었을 수 있어 단지에 있는지 확인하지 않는다
                 dropped_room_types = response.null_items('room_types') if pyeong_ids else 0
             else:
-                _check_pyeong_ids(complex_id, response, pyeong_ids)
+                _check_pyeong_ids(complex_id, response.room_types, pyeong_ids)
         total = response.total_count
         # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빈 항목을 빼고 읽었어도 받은 자리 수에 더해야 같은 매물을 다시 받거나 일찍 멈추지 않는다
         received = len(response.catalogs) + response.null_items('catalogs')
@@ -825,6 +807,11 @@ def list_complex_listings(
     if dropped_room_types:
         # 평형 ID 가 단지에 있는지 볼 수 없어 확인하지 않고 그 평형으로 찾았다
         notes.append(null_items_note('직방 단지 평형', dropped_room_types))
+    if room_types_unknown:
+        notes.append(note(
+            '참고',
+            f'직방이 단지 평형 목록을 주지 않아 --pyeong 평형 ID 가 이 단지의 것인지 확인하지 못했습니다. {UNEXPECTED_FORMAT_TEXT}',
+        ))
     return ZigbangComplexListingsResult(
         complex_id=complex_id,
         total=total,
@@ -835,17 +822,17 @@ def list_complex_listings(
     )
 
 
-def _check_pyeong_ids(complex_id: str, response: ZigbangDanjisItemCatalogsResponseModel, pyeong_ids: list[int] | None) -> None:
+def _check_pyeong_ids(complex_id: str, room_types: list[ZigbangDanjiRoomTypeModel], pyeong_ids: list[int] | None) -> None:
     """단지에 없는 평형이면 0건 대신 에러로 알린다. 단지 매물 목록은 없는 평형에도 빈 성공을 준다.
 
     평형 조건을 줘도 응답의 평형 목록(danjiRoomTypes)은 단지 전체라 첫 페이지로 확인한다 (2026-10-12 실측:
     apt-68579 에 평형 999 를 주면 0건과 평형 30개, 조건 없이도 같은 30개). 평형 목록이 비어 오면(평형이 아직 없는
-    단지) 확인하지 않는다.
+    단지) 확인하지 않는다. 평형 목록이 없을 때(모름)는 부르는 쪽이 부르지 않고 알린다.
 
     Raises:
         JibsaError: 단지에 없는 평형 (INVALID_ARGUMENT).
     """
-    known = {room_type.id for room_type in response.room_types}
+    known = {room_type.id for room_type in room_types}
     unknown = [pyeong_id for pyeong_id in pyeong_ids or [] if pyeong_id not in known]
     if known and unknown:
         raise JibsaError(

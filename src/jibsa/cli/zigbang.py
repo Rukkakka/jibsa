@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import typer
 
 from jibsa.cli.options import (
@@ -12,6 +14,7 @@ from jibsa.cli.options import (
 )
 from jibsa.cli.output import (
     ChangedUsage,
+    HintedUsageError,
     UsageHints,
     check_choice,
     emit,
@@ -82,7 +85,34 @@ from jibsa.providers.zigbang.service.complex.search import (
     school_has_assigned_complexes,
     search_place_complexes,
 )
+from jibsa.providers.zigbang.service.complex.trend import (
+    DEFAULT_PRICE_TREND_PERIOD,
+    DEFAULT_PYEONG_TREND_TRADE,
+    MAX_COMPARE_DANJIS,
+    PRICE_TREND_PERIODS,
+    PYEONG_TREND_TRADES,
+    get_price_trend,
+    get_pyeong_price_trend,
+)
 from jibsa.providers.zigbang.service.listing import get_any_listing
+from jibsa.providers.zigbang.service.local.base import LOCAL_TRADES
+from jibsa.providers.zigbang.service.local.info import (
+    PRICE_RANGES,
+    get_region_info,
+)
+from jibsa.providers.zigbang.service.local.ranking import (
+    DEFAULT_RANKING_LIMIT,
+    RANKING_MAX_RANKS,
+    RANKING_PERIODS,
+    SORT_TYPE_BY_TRADE,
+    get_region_ranking,
+)
+from jibsa.providers.zigbang.service.local.trades import (
+    DEFAULT_TRADE_LIMIT,
+    SORT_SPEC_BY_TRADE,
+    TRADE_PERIODS,
+    get_region_trades,
+)
 from jibsa.providers.zigbang.service.real_price import (
     REAL_PRICE_MAX_LIMIT,
     REAL_PRICE_TRADE_TYPES,
@@ -236,7 +266,7 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 app = typer.Typer(
     help=(
         '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역·학교·동·구 주변 단지 search complexes, complex, '
-        'search listings --complex, real-price), '
+        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), 동·구 지역 화면(지역 정보 region-info, 최근 실거래 region-trades, 단지 랭킹 region-ranking), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
@@ -521,7 +551,8 @@ def complexes_command(
     담은 목록이라 total 도 그 수이고 그 곳의 전체 단지 수가 아니다. 역·학교는 단지마다 거리(distance_m)가 있으니 가까운
     단지는 그 값으로 고른다. 동·구는 웹 지역 화면에 최근입주 목록뿐이라 --order 는 최근입주만 받고 거리가 없다. highlight 는
     웹 단지 카드 둘째 줄이고 --order 마다 뜻이 다르다 (인기는 지역 순위, 최근입주는 입주 시기, 시세급변동은 1주 변동률,
-    평당가는 평당가). 단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는
+    평당가는 평당가). 학교는 결과 맨 끝의 school 에 학교 정보(학생 수·입학생·학급·학비·급식비와 같은 구 평균, 진학 현황)가 붙고 배정단지가
+    없어도 나온다. 단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는
     jibsa zigbang complex <complex_id>.
 
     예: jibsa zigbang search complexes 강남역 --limit 10
@@ -1270,6 +1301,188 @@ def real_price_command(
         raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세, 전체 중 하나)', param_hint='--trade')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_real_prices(client, complex_id.strip(), trade_type=trade_types[0], pyeong_id=pyeong, limit=limit)
+        emit(result, pretty, notes=result.notes)
+
+
+def _compare_ids(values: list[str] | None) -> list[str]:
+    """`--compare apt-1 --compare apt-2` 와 `--compare apt-1,apt-2` 를 모두 받아 단지 ID 목록으로 만든다 (형식만 본다)."""
+    ids: list[str] = []
+    for value in values or []:
+        for part in value.split(','):
+            if part.strip():
+                _require_complex_id(part, param_hint='--compare')
+                ids.append(part.strip())
+    return ids
+
+
+@app.command('price-trend')
+def price_trend_command(
+    complex_id: Annotated[
+        str,
+        typer.Argument(help='아파트 단지 ID (complex 결과의 complex_id, 예: apt-38487). 오피스텔은 시세 추이가 없다'),
+    ],
+    period: Annotated[
+        str,
+        typer.Option('--period', help=f"기간 (웹 기간 탭): {', '.join(PRICE_TREND_PERIODS)}")
+    ] = DEFAULT_PRICE_TREND_PERIOD,
+    compare: Annotated[
+        list[str] | None,
+        typer.Option(
+            '--compare',
+            metavar='<complex_id>',
+            help=(
+                f'함께 볼 비교 단지 ID (결과의 comparable_complexes 에 있는 단지만). 반복하거나 쉼표로 구분, 최대 {MAX_COMPARE_DANJIS}곳 '
+                '(웹은 1곳). --pyeong 과 함께 못 쓴다'
+            )
+        )
+    ] = None,
+    pyeong: Annotated[
+        int | None,
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id). 주면 그 평형의 월별 시세·거래 추이를 준다 (단지 추이 대신)')
+    ] = None,
+    trade: Annotated[
+        str | None,
+        typer.Option('--trade', help=f"평형 추이의 거래 탭: {', '.join(PYEONG_TREND_TRADES)} (기본 {DEFAULT_PYEONG_TREND_TRADE}). --pyeong 과 함께 쓴다")
+    ] = None,
+    pretty: PrettyOption = None,
+) -> None:
+    """아파트 단지의 직방시세 추이 (직방 웹 단지 화면 직방시세 그래프 '3.3㎡ 당 평균가격').
+
+    직방시세는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다 (실거래는 real-price). 기본은 단지의 매매 직방시세 평당가(만원/3.3㎡)를
+    월별로 보여 주는 줄 (조회 단지와 그 구. 직방시세가 없는 단지는 구 줄만)이고 --compare 로 비교 단지를 더 붙인다. 줄은 직방이 단지 ID 오름차순으로 주고 구를 끝에 붙여
+    첫 줄이 조회 단지가 아닐 수 있으니 줄의 kind 로 가른다. 비교할 만한 단지는 결과의 comparable_complexes 에 있다 (웹 '단지 비교하기'
+    후보). 요청은 2회 (그래프, 비교 후보). 후보는 덤 조회라 실패하면 comparable_complexes 만 null 이지만, --compare 를 주면 후보를 먼저 받아
+    그 안에서만 고르게 해서(웹과 같다) 후보 조회가 실패하면 에러다.
+
+    --pyeong 을 주면 그 평형의 월별 직방시세와 거래(최저·최고가·건수·전달 대비 변화)를 --trade 탭(전체·매매·전월세)으로 보여 준다
+    (요청 2회: 단지 평형 정보로 평형 확인, 평형 시세 그래프). 거래 점·전세가율은 내지 않는다.
+
+    예: jibsa zigbang price-trend apt-38487
+        jibsa zigbang price-trend apt-38487 --period 최근1년 --compare apt-16629
+        jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
+    """
+    _require_complex_id(complex_id)
+    chosen_period = check_choice(period, PRICE_TREND_PERIODS, '--period')
+    chosen_trade = check_choice(trade, PYEONG_TREND_TRADES, '--trade') if trade is not None else None
+    compare_ids = _compare_ids(compare)
+    if pyeong is not None and compare_ids:
+        raise HintedUsageError('--compare 와 --pyeong 은 함께 쓸 수 없습니다', '단지끼리 견주려면 --pyeong 을 빼세요')
+    if chosen_trade is not None and pyeong is None:
+        raise HintedUsageError('--trade 는 평형 추이(--pyeong)에만 있습니다', '--trade 는 --pyeong 과 함께 씁니다 (평형 ID 는 complex 결과의 pyeongs[].id)')
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        if pyeong is not None:
+            pyeong_result = get_pyeong_price_trend(
+                client,
+                complex_id.strip(),
+                pyeong,
+                period=chosen_period,
+                trade=chosen_trade or DEFAULT_PYEONG_TREND_TRADE,
+            )
+            emit(pyeong_result, pretty, notes=pyeong_result.notes)
+        else:
+            result = get_price_trend(client, complex_id.strip(), period=chosen_period, compare=compare_ids)
+            emit(result, pretty, notes=result.notes)
+
+
+RegionQueryArgument = Annotated[
+    str,
+    typer.Argument(help='동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다'),
+]
+
+
+def _sort_help(sorts_by_trade: Mapping[str, Mapping[str, object]]) -> str:
+    """`--sort` 도움말. 정렬은 거래 유형마다 다르고 각 거래의 첫 정렬이 기본이다 (웹 이름 그대로, 빈칸 없이도 받는다)."""
+    return '; '.join(f"{trade}: {', '.join(sorts)}" for trade, sorts in sorts_by_trade.items())
+
+
+@app.command('region-info')
+def region_info_command(
+    query: RegionQueryArgument,
+    price_range: Annotated[
+        str,
+        typer.Option('--range', help=f"평당가 추이 그래프의 평형대: {', '.join(PRICE_RANGES)}. 평형대별 시세(estimated_prices)는 늘 모든 평형대다")
+    ] = '전체',
+    pretty: PrettyOption = None,
+) -> None:
+    """동·구의 지역 정보 (직방 웹 지역정보 화면): 단지·세대 수, 평형대별 직방시세, 월별 거래량, 평당가 추이, 구는 인구·세대도.
+
+    직방시세(estimated_prices)는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다. 평당가 추이(price_trend)는 웹 그래프처럼 평당가 높은
+    단지 최대 3개와 그 지역 줄이고 --range 로 평형대를 고른다. 요청은 지역 검색과 지역 정보에 거래량·평당가 추이를 더해 동 4회, 구는
+    인구·세대까지 6회다. 거래량·평당가 추이·인구·세대는 덤 조회라 하나가 실패하면 그 값만 null 이고 [실패] 로 알린다.
+
+    예: jibsa zigbang region-info 송파구
+        jibsa zigbang region-info 가락동 --range 30평대
+    """
+    chosen_range = check_choice(price_range, PRICE_RANGES, '--range')
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_region_info(client, query, price_range=chosen_range)
+        emit(result, pretty, notes=result.notes)
+
+
+@app.command('region-trades')
+def region_trades_command(
+    query: RegionQueryArgument,
+    trade: Annotated[str, typer.Option('--trade', help=f"{', '.join(LOCAL_TRADES)} 중 하나")] = '매매',
+    period: Annotated[str, typer.Option('--period', help=f"등록 기간: {', '.join(TRADE_PERIODS)} (7일 = 웹 최근 일주일)")] = '오늘',
+    sort: Annotated[
+        str | None,
+        typer.Option('--sort', help=f'정렬 (거래마다 다르고 첫 정렬이 기본, 빈칸 없이도 받는다). {_sort_help(SORT_SPEC_BY_TRADE)}')
+    ] = None,
+    limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 실거래 수 (최대 {MAX_LIST_LIMIT}건)')] = DEFAULT_TRADE_LIMIT,
+    pretty: PrettyOption = None,
+) -> None:
+    """동·구의 최근 실거래 (직방 웹 지역 화면 '실거래', 등록일 기준 목록이라 계약일 순이 아니다).
+
+    직방 웹은 10건씩 넘겨 보지만 여기서는 --limit 건을 한 번에 받는다 (요청은 지역 검색과 실거래 2회). 정렬마다 웹이 보여 주는 비교가 다르지만
+    같은 응답의 비교(직전 거래·직방시세·공시가격·분양가·전세가 대비)를 모두 준다. 직방은 매일 낮 12시에 그날 실거래를 반영해 그 전에는
+    오늘이 비고 updated_today 가 false 다. 오늘 등록된 거래가 없으면 --period 로 기간을 넓힌다.
+    구 단위 조회는 줄마다 dong 이 있다.
+
+    예: jibsa zigbang region-trades 송파구 --period 7일 --limit 10
+        jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --period 30일
+    """
+    chosen_trade = check_choice(trade, LOCAL_TRADES, '--trade')
+    chosen_period = check_choice(period, TRADE_PERIODS, '--period')
+    # 정렬 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_region_trades(client, query, trade=chosen_trade, period=chosen_period, sort=sort, limit=limit)
+        emit(result, pretty, notes=result.notes)
+
+
+@app.command('region-ranking')
+def region_ranking_command(
+    query: RegionQueryArgument,
+    trade: Annotated[str, typer.Option('--trade', help=f"{', '.join(LOCAL_TRADES)} 중 하나")] = '매매',
+    sort: Annotated[
+        str | None,
+        typer.Option('--sort', help=f'순위 기준 (거래마다 다르고 첫 기준이 기본, 빈칸 없이도 받는다). {_sort_help(SORT_TYPE_BY_TRADE)}')
+    ] = None,
+    period: Annotated[
+        str,
+        typer.Option('--period', help=f"집계 기간: {', '.join(RANKING_PERIODS)}. 시세·평당가·전세가율 순위는 기간과 상관없이 시세 기준일 순위다")
+    ] = '이번달',
+    limit: Annotated[
+        int,
+        typer.Option(min=1, max=RANKING_MAX_RANKS, help=f'받을 단지 수 (최대 {RANKING_MAX_RANKS}곳. 직방 웹도 {RANKING_MAX_RANKS}위까지만 보여 준다)')
+    ] = DEFAULT_RANKING_LIMIT,
+    pretty: PrettyOption = None,
+) -> None:
+    """동·구의 단지 랭킹 (직방 웹 지역 화면 '단지랭킹'): 거래량·하락률·상승률·시세·평당가·인기·전세가율 순위.
+
+    웹 랭킹 화면처럼 10건씩 쪽을 넘겨 받아(요청은 지역 검색 1회와 ceil(--limit / 10) 쪽) 앞 --limit 곳을 준다. 서버는 200위까지 주지만
+    웹이 100위까지만 보여 줘 101위부터는 받지 않는다. 같은 순위가 여럿일 수 있다 (1·1·1·4). 정렬마다 줄에 오는 값이 다르다:
+    거래량(trade_count), 하락·상승률(price_manwon·diff_manwon·change_rate_percent), 시세(estimated_price_manwon), 평당가
+    (estimated_price_per_pyeong_manwon), 인기(view_count), 전세가율(jeonse_rate_percent·gap_manwon). 구 단위 조회는 줄마다 dong 이 있다.
+
+    예: jibsa zigbang region-ranking 송파구
+        jibsa zigbang region-ranking 송파구 --sort 하락률높은순 --period 지난달
+        jibsa zigbang region-ranking 가락동 --trade 전세 --sort 전세가율높은순 --limit 20
+    """
+    chosen_trade = check_choice(trade, LOCAL_TRADES, '--trade')
+    chosen_period = check_choice(period, RANKING_PERIODS, '--period')
+    # 순위 기준 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_region_ranking(client, query, trade=chosen_trade, sort=sort, period=chosen_period, limit=limit)
         emit(result, pretty, notes=result.notes)
 
 

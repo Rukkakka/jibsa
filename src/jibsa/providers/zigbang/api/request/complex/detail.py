@@ -1,4 +1,4 @@
-"""요청 모델: 아파트 단지·오피스텔 건물 정보와 단지 매물 목록, 평형·학군 (complex, search listings --complex)."""
+"""요청 모델: 아파트 단지·오피스텔 건물 정보와 단지 매물 목록·학군 (complex, search listings --complex)."""
 
 
 from pydantic import (
@@ -35,15 +35,6 @@ class ZigbangItemsOfficetelsBuildingV1RequestParameterModel(ZigbangItemsFiltersR
 
 class ZigbangDanjisSchoolsRequestParameterModel(RequestModel):
     """`GET /apt/danjis/{danjiId}/schools` 경로. 아파트 단지의 학군."""
-
-    danji_id: Annotated[
-        int,
-        Field(gt=0, exclude=True, description='단지 ID. 경로에 들어간다')
-    ]
-
-
-class ZigbangDanjisRoomTypesRequestParameterModel(RequestModel):
-    """`GET /apt/danjis/{danjiId}/room_types` 경로. 아파트 단지의 평형(공급·전용면적·방·관리비·시세). 경로가 하이픈이 아니라 밑줄이다."""
 
     danji_id: Annotated[
         int,

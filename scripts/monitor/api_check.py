@@ -166,7 +166,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('역 주변 아파트 단지 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--limit', '3'), 'complexes'),
         # 학교·동·구는 같은 단지 ID 목록 API(/apt/danjis/ids)에 type 만 바꿔 보내고(school·local), 이름·주소·세대수·둘째 줄은 단지 카드
         # (/apt/danjis/details)에서 받는다. 학교는 주변 단지 정보(/apt/schools/{학교 코드}), 동·구는 지역 해석을 더 부른다
-        Step('학교 배정 아파트 단지 해누리중학교', ('zigbang', 'search', 'complexes'), ('해누리중학교', '--limit', '3'), 'complexes'),
+        # 학교 정보(`school`)는 배정단지를 찾으려고 먼저 받는 학교 조회(/apt/schools/{학교 코드})의 같은 응답이라 본 조회 칸이다 (실패하면 명령이 에러)
+        Step(
+            '학교 배정 아파트 단지 해누리중학교', ('zigbang', 'search', 'complexes'), ('해누리중학교', '--limit', '3'), 'complexes',
+            also_expect=('school',),
+        ),
         # 최근입주 목록은 곧 입주 예정이거나 최근 1년 내 입주한 단지만 담아 사이트가 정상이어도 빌 수 있다 (2026-11-20 실측: 가락동 1곳·송파구 4곳)
         Step(
             '동 최근입주 아파트 단지 가락동', ('zigbang', 'search', 'complexes'), ('가락동', '--limit', '3'), 'complexes',
@@ -178,6 +182,19 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         # --order 는 순서 탭(order=areaPrice 등)을 서버에 보내는 경로다
         Step('역 주변 아파트 단지 평당가 순 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--order', '평당가', '--limit', '3'), 'complexes'),
+        # 지역 화면(동·구)은 평형대별 시세(/apt/locals/{코드} 응답의 price 칸)를 기대 칸으로 보고, 지역 거래량·평당 추이는 덤 조회라 같이 본다.
+        # 인구·세대는 구에서만 받는 덤이다 (동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 키가 없다)
+        Step(
+            '지역 정보 동 가락동', ('zigbang', 'region-info'), ('가락동',), 'estimated_prices',
+            also_expect=('monthly_volumes', 'price_trend.lines'),
+        ),
+        Step(
+            '지역 정보 구 송파구', ('zigbang', 'region-info'), ('송파구',), 'estimated_prices',
+            also_expect=('population.people', 'population.households'),
+        ),
+        Step('지역 실거래 송파구', ('zigbang', 'region-trades'), ('송파구', '--period', '30일', '--limit', '3'), 'trades'),
+        # 랭킹(거래량순)은 실거래 등록 기준이라 기본 기간(이번달)은 매달 1일 새벽(감시 시각)에 비어 고장으로 잡힐 수 있어 지난달로 부른다
+        Step('지역 단지 랭킹 송파구', ('zigbang', 'region-ranking'), ('송파구', '--period', '지난달', '--limit', '3'), 'rankings'),
         # 평형 정보(danjis/{id}/room-types)는 덤이라 실패해도 명령은 성공한다. 그 칸(단지 직방시세 범위)은 직방이 정상 단지에도 시세를
         # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이고,
         # 응답 형식이 바뀌어 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
@@ -191,6 +208,15 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 평형별 실거래는 다른 API 다. 고른 평형에 거래가 없을 수 있어 거래 칸 대신 평형 칸을 본다. API 가 바뀌면 첫 응답의 평형
         # 목록 확인(`_check_real_price_scope`)이 NOT_FOUND 를 내 고장으로 잡힌다
         Step('아파트 평형 실거래가', ('zigbang', 'real-price'), ('{apt}', '--pyeong', '{apt_pyeong}', '--limit', '3'), 'pyeong_id'),
+        # 시세 추이는 단지 줄(`lines`)이 기대 칸이다. 비교 후보(comparable_complexes)는 비교할 만한 단지가 없는 단지도 정상이라 보지
+        # 않고, `may_be_empty` 는 Step 전체에 걸려 `lines` 가 빈 고장도 가리므로 걸지 않는다. 평형 추이(--pyeong)는 다른 API 라
+        # 따로 부르고, 고른 평형에 거래·시세가 없어 달 목록이 빌 수 있어 평형 칸을 기대 칸으로 본다
+        # 리뷰 오탐 (2026-11-22): 시세가 없는 단지(apt-90913·apt-94457)도 구 줄(kind '구')은 와서 lines 가 비지 않는다. 그래서 '아파트 단지' 처럼 may_be_empty 를 걸지 않는다
+        Step('아파트 시세 추이', ('zigbang', 'price-trend'), ('{apt}',), 'lines'),
+        Step(
+            '아파트 평형 시세 추이', ('zigbang', 'price-trend'), ('{apt}', '--pyeong', '{apt_pyeong}', '--period', '최근1년'), 'pyeong_id',
+            also_expect=('months',), may_be_empty=True,
+        ),
         Step('아파트 단지 매물', ZIGBANG_LISTINGS, ('--complex', '{apt}', '--limit', '2'), 'listings'),
         Step('오피스텔 건물', ('zigbang', 'complex'), ('{officetel}',), 'name'),
         Step('오피스텔 건물 매물', ZIGBANG_LISTINGS, ('--complex', '{officetel}', '--limit', '2'), 'listings'),

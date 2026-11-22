@@ -15,6 +15,7 @@ from jibsa.core.geo import (
     in_multipolygon,
 )
 from jibsa.core.korean import (
+    is_district_code,
     is_dong_code,
     is_ri_code,
     legal_dong_hint,
@@ -286,6 +287,9 @@ def best_region_item(
     `require_code` 면 법정동코드가 있는 지역만 본다 (아파트 지역 목록은 코드로 부른다).
     """
     name = _dong_name(query)
+    # 리뷰 오탐 (2026-11-22): 지역 화면 명령(region-info·region-trades·region-ranking)이 역·학교·단지 이름을 첫 지역 결과의 다른 동으로
+    # 바꾼다는 지적. 직방 지역 검색은 이름이 검색어로 시작하는 결과만 줘서 '잠실역'·'서울역'·'잠실중학교' 는 address 없이 역·학교만 오고
+    # '잠실' 은 잠실동과 역·학교가 온다 (2026-11-22 실측). 그래서 완전한 역·학교 이름에 다른 동이 섞이지 않는다
     regions = [
         item for item in items
         if item.type == 'address' and (not require_code or (item.source and item.source.legal_division_code))
@@ -396,9 +400,10 @@ def resolve_school(client: ZigbangClient, query: str) -> ZigbangSearchItemModel:
 
     학교 화면 코드(`source.school_code`)는 '아파트' 서비스로 찾은 결과에 있어 (2026-11-19 실측: 해누리중학교) 그 서비스로 찾는다.
     같은 이름 학교가 여러 곳이면 다른 검색처럼 멈춘다 (`settled_item`, 검색어 앞 낱말로 한 곳이 가려지면 그 학교).
-    결과의 `id` 는 단지 목록(`danjis/ids`)에 넘기는 학교 ID 이고 학교 코드와 다르다. 아파트 서비스 검색에는 대학교가 나오지
+    결과의 `id` 는 학교 목록 번호이고 학교 코드와 다르다. 직방이 이 번호를 다시 매기는 일이 있어 배정단지 목록에는 쓰지 않고,
+    부르는 쪽이 학교 코드로 학교 정보를 받아 그 `detail.id` 를 쓴다 (웹 학교 화면과 같다). 아파트 서비스 검색에는 대학교가 나오지
     않아(`search_regions_and_complexes`) 대학교 이름은 찾지 못한다. 좌표 없는 같은 이름 학교도 후보로 센다 (`search_regions` 는
-    좌표를 거르지 않는다). 학교 ID 만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
+    좌표를 거르지 않는다). 학교 코드만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
 
     Raises:
         RegionNotFoundError: 그 이름의 초·중·고등학교가 없을 때.
@@ -648,6 +653,58 @@ def resolve_apt_region(
         ))
     split_note = ga_dong_note(query, siblings, best, radius_hint=False)
     return apt_region_from_search_item(best), notes + ([split_note] if split_note else [])
+
+
+def resolve_apt_area(
+    client: ZigbangClient,
+    query: str,
+    *,
+    ri_check: str,
+    sido_message: str,
+    sido_hint: str,
+    not_found_hint: str | None = None,
+) -> tuple[ZigbangAptRegion, Literal['동', '구'], str, list[str]]:
+    """동·구 하나를 찾고 그 단위와 직방 지역 코드를 함께 준다 (`search complexes` 의 동·구, 지역 화면 명령 `region-info`·`region-trades`·`region-ranking`).
+
+    아파트 지역 해석(`resolve_apt_region`)과 같다: 같은 이름 동·구, '○가' 동, 구가 있는 시는 묻고, 리는 상위 읍·면으로 찾는다. 시·도 이름은
+    에러(INVALID_ARGUMENT)로 알린다 (직방 지역 목록은 시·도 코드에 늘 0건이다 (`local_code_of`)). 서버가 시·도 코드를 받는 화면(지역 정보·
+    랭킹)이 있어도 웹 지역 화면이 시·도를 보여 주는지 확인하지 못해 이 함수는 시·도를 받지 않는다.
+
+    Args:
+        ri_check: 리로 찾았을 때 [범위] 안내 끝에 붙는 문장 (`resolve_apt_region` 의 `ri_check`).
+        sido_message: 시·도 이름일 때 에러 message 에서 `quoted(query, '은/는')` 뒤에 붙는 말.
+        sido_hint: 시·도 이름일 때 에러 hint.
+        not_found_hint: 주면 지역을 찾지 못했을 때(`RegionNotFoundError`) hint 를 이 말로 바꾼다. `resolve_apt_region` 의 일반 hint 는 역 이름으로
+            다시 찾으라고 해, 역·학교 이름을 받지 않는 명령에는 맞지 않다. 행정동 이름이라 법정동으로 찾으라는 hint(`legal_dong_hint`)는
+            그 명령에도 맞아 바꾸지 않는다.
+
+    Returns:
+        (찾은 동·구, 단위('구' 는 시·군·구, 리는 읍·면이라 '동'), 직방 지역 코드 (`local_code_of`), 안내).
+
+    Raises:
+        JibsaError: 시·도 이름일 때 (INVALID_ARGUMENT).
+        RegionNotFoundError: 법정동코드가 있는 지역을 찾지 못했을 때.
+        RegionAmbiguousError: 같은 이름의 동·구가 여럿이거나, '○가' 로만 나뉜 동·구가 있는 시일 때.
+    """
+    items = search_regions(client, query)
+    try:
+        region, notes = resolve_apt_region(client, query, items=items, ri_check=ri_check)
+    except RegionNotFoundError:
+        best = best_region_item(query, items, require_code=True)
+        sido_code = best.source.legal_division_code if best and best.source else None
+        if sido_code is not None and not (is_district_code(sido_code) or is_dong_code(sido_code) or is_ri_code(sido_code)):
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message=f"{quoted(query, '은/는')} {sido_message}",
+                hint=sido_hint,
+            ) from None
+        if not_found_hint is not None and legal_dong_hint(query) is None:
+            raise RegionNotFoundError(query, hint=not_found_hint) from None
+        raise
+    if region.legal_division_code is None:
+        raise RegionNotFoundError(region.name)
+    code = region.legal_division_code
+    return region, '구' if is_district_code(code) else '동', local_code_of(code), notes
 
 
 def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -> ZigbangBoundary | None:
