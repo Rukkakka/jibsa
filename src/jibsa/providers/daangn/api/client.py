@@ -180,7 +180,8 @@ class DaangnClient(BaseHTTPClient):
     매물 실거래가(매물이 있는 건물의 비슷한 면적 거래)는 `articleByOriginalArticleId`, 동·구의 최근
     실거래와 신고가는 `realsaleFeed`·`realsaleNewHighFeed`, 출퇴근 검색은 `nearestCommuteStation`
     (회사 → 가까운 역), `commuteStations` (그 역에서 갈 수 있는 역 전부), `commuteStationArticleConnection`
-    (역 주변 매물), 동네 후기는 구의 후기 페이지(`/map/{name1}/{name2}/reviews`, 후기 많은 단지)와
+    (역 주변 매물), 동네 후기는 구의 후기 페이지(`/map/{name1}/{name2}/reviews`)와 동의 후기 페이지
+    (`/map/{name1}/{name2}/{name3}/reviews`)의 스토어(후기 많은 단지·동별 후기 수·건물별 후기 수)와
     `livedReviewsByRegion` (후기 유무와 지역 후기 수) 를 쓴다. 후기 페이지는
     경로 세그먼트를 이어 `map_reviews` 로 부른다. 단지 매물 목록도 루트 필드가 단지
     실거래가와 같은 `complexByOriginalId` 라 `complex_articles` 로 부른다. 동·구 단지 목록(웹 지도 단지 탭)은
@@ -221,6 +222,7 @@ class DaangnClient(BaseHTTPClient):
     articles_endpoint: ClassVar[str] = '/articles/{original_id}'
     complexes_endpoint: ClassVar[str] = '/complexes/{original_id}'
     map_reviews_endpoint: ClassVar[str] = '/map/{name1}/{name2}/reviews'
+    map_dong_reviews_endpoint: ClassVar[str] = '/map/{name1}/{name2}/{name3}/reviews'
     graphql_endpoint: ClassVar[str] = '/graphql'
     # 아래 해시는 웹 번들에서 꺼냈다. 주석은 웹의 쿼리 이름과 번들 파일이고, 괄호 안의 2026-11 표시는 그 해시를 꺼냈거나
     # 다시 꺼내 맞춘 번들이다. 2026-11-v58·2026-11-v73 은 웹 배포 이름(번들 주소 `…/realty-web/2026-11-v73-cf23fe5/…` 의
@@ -1680,6 +1682,10 @@ class DaangnClient(BaseHTTPClient):
         return DaangnGetViewRankingArticlesResponseModel.model_validate(response.json())
 
     def _map_reviews_path(self, parameter: DaangnMapReviewsRequestParameterModel) -> str:
+        if parameter.name3:
+            return self.map_dong_reviews_endpoint.format(
+                name1=quote(parameter.name1), name2=quote(parameter.name2), name3=quote(parameter.name3)
+            )
         return self.map_reviews_endpoint.format(name1=quote(parameter.name1), name2=quote(parameter.name2))
 
     @daangn_retry
@@ -1687,23 +1693,36 @@ class DaangnClient(BaseHTTPClient):
         self,
         parameter: DaangnMapReviewsRequestParameterModel
     ) -> DaangnMapReviewsResponseModel:
-        """Fetch a district's neighborhood review page via `GET /map/{name1}/{name2}/reviews`.
+        """Fetch a district's or dong's neighborhood review page via `GET /map/{name1}/{name2}[/{name3}]/reviews`.
 
-        Same retry behaviour as `run_request_articles`. 구가 없는 시(세종)는 404 로
-        `ResponseStatusError` 가 난다.
+        Same retry behaviour as `run_request_articles`. 후기 페이지가 없으면 404 로 `ResponseStatusError` 가 난다.
+
+        구 후기 페이지(`name3` 없음)와 동 후기 페이지(`name3` 있음)는 스토어 `client:root` 에 같은 모양의 목록을 싣는다. 키에
+        그 지역 ID 가 들어 있어 `parameter.region_id` 의 것만 읽는다.
+
+        - `complexes(first:N,input:{"regionId":ID,"sort":"LIVED_REVIEW_COUNT_DESC"})`: 후기 많은 순 단지. 구 페이지는 N=20,
+          동 페이지는 N=500 이고 후기가 없는 단지(null·0)도 뒤에 온다. 세종처럼 구가 없는 시의 동 페이지는 구 페이지 모양이라 N=20.
+        - `livedReviewDongPagesByRegion(regionId:ID)`: 후기가 있는 동과 동별 후기 수 (후기 많은 순, 개수 제한 없음). 구 페이지에만
+          있고, 구가 없는 시(세종)의 동 페이지는 빈 배열이다. 동 이름은 같은 스토어의 `Region` 레코드(`originalId` ↔ `name3`)에 있다.
+        - `livedReviewBuildingPagesByRegion(regionId:ID)`: 후기가 있는 건물과 건물별 후기 수 (후기 많은 순, 같으면 건물 ID 순,
+          개수 제한 없음). 건물 이름은 없을 수 있다.
+
+        웹은 이 목록들을 검색엔진용 `sr-only` 목록으로 그린다 (동별·건물 목록은 자르지 않고, 단지는 후기가 있는 것만).
+        같은 스토어의 후기 본문·작성자·이미지는 읽지 않는다.
 
         Args:
-            parameter: `name1`, `name2` (시도/구).
+            parameter: `name1`, `name2` (시도/구), 동 후기 페이지면 `name3`, 읽을 지역 `region_id`.
 
         Returns:
-            DaangnMapReviewsResponseModel: 후기 많은 단지 20곳과 단지별 후기 수.
+            DaangnMapReviewsResponseModel: 후기 많은 단지와 단지별 후기 수, 동별·건물별 후기 수.
 
         Raises:
             RelayStoreNotFoundError: 페이지에 스토어가 없을 때 (구조 변경).
+            RelayRecordNotFoundError: 스토어에 그 지역의 단지 목록이 없을 때 (구조 변경).
         """
         response = self._client.get(url=self._map_reviews_path(parameter), extensions=PAGE_REQUEST_EXTENSIONS)
         raise_for_status(response=response)
-        return parse_map_reviews_html(response.text)
+        return parse_map_reviews_html(response.text, parameter.region_id)
 
     @daangn_retry
     async def arun_request_map_reviews(
@@ -1713,7 +1732,7 @@ class DaangnClient(BaseHTTPClient):
         """Async variant of `run_request_map_reviews`."""
         response = await self._async_client.get(url=self._map_reviews_path(parameter), extensions=PAGE_REQUEST_EXTENSIONS)
         raise_for_status(response=response)
-        return parse_map_reviews_html(response.text)
+        return parse_map_reviews_html(response.text, parameter.region_id)
 
     @daangn_retry
     def run_request_lived_reviews_by_region(

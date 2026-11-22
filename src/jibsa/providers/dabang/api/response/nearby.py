@@ -27,7 +27,7 @@ class DabangNearStationModel(DabangBaseResponseModel):
     ]
     distance: Annotated[
         Meters,
-        Field(description='거리 (m). 소수로 온다 (2026-11-14 실측: 88.58277413). 역은 다방 순서 그대로 내 반올림해 받는다')
+        Field(description='거리 (m). 정수로 온다 (2026-11-20 실측: 은마 transit/near 역·버스 정류장 모두 int, 소수는 주변 시설 near 의 pois 만). 웹(distance-km-m 청크 x)도 반올림 없이 그대로 보인다. 소수로 와도 단지 정보 전체가 깨지지 않게 Meters 로 받는다')
     ] = None
     line_list: Annotated[
         list[DabangNearLineModel],

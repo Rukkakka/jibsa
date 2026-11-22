@@ -11,11 +11,11 @@ from jibsa.core.errors import (
 from jibsa.core.http import error_body
 from jibsa.core.listing import (
     iso_date,
+    lookup_failure_note,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
     normalize_floor,
-    note,
     null_items_note,
     parking_label,
     won_to_manwon,
@@ -51,11 +51,10 @@ from jibsa.providers.zigbang.api.response.room.detail import (
 from jibsa.providers.zigbang.service.common.base import (
     DIRECTION_LABELS,
     NEAREST_SCHOOLS,
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     ZigbangBuildingTrade,
     ZigbangListingDetail,
     ZigbangNearbyFacility,
-    failure_update_hint,
     item_url,
     officetel_complex_id,
     school_label,
@@ -505,8 +504,9 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | N
                 ZigbangItemsDetailV1RequestParameterModel(item_id=item_id)
             )
         except HTTPStatusError as exc:
-            # 리뷰 오탐 (2026-11-15): 주거 상세는 아파트 매물에 200 을 주지 않고 이 code 의 404 만 준다 (실측 51174606·51183455).
-            # 200 이 오면 엔드포인트 동작이 바뀐 것이라(매일 API 감시가 볼 일) 아파트 여부를 다시 확인하는 가드는 두지 않는다
+            # 리뷰 오탐 (2026-11-15, 근거 고침 2026-11-20): 서버가 매물 유형으로 거부하는 예외를 준다 (2026-11-20 재현: 아파트
+            # 51270731 → 404 code ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED, metadata.serviceType '아파트'). 200 이 와도
+            # detail_to_listing 이 아파트 전용 칸이 빠진 상세를 낼 뿐 틀린 값을 내지 않아 아파트 여부를 다시 확인하는 가드는 두지 않는다
             if exc.response.status_code != 404 or (error_body(exc) or {}).get('code') != APT_DETAIL_NOT_SUPPORTED_CODE:
                 raise
             structured = None
@@ -551,22 +551,20 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | N
             schools = building_schools(client.run_request_bls_school_zones_v1(
                 ZigbangBlsSchoolZonesV1RequestParameterModel(pnu=pnu)
             ))
-        except SCHOOL_LOOKUP_ERRORS as exc:
+        except OPTIONAL_LOOKUP_ERRORS as exc:
             # 학군을 못 받아도 매물 상세는 돌려준다 (모름)
-            lookup_notes.append(note(
-                '실패',
-                f'직방 건물 학군 정보를 받지 못해({type(exc).__name__}) schools 값을 모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
+            lookup_notes.append(lookup_failure_note(
+                exc, '직방', '건물 학군 정보', 'schools 값을 모릅니다 (url 의 직방 페이지에서 확인)',
             ))
         try:
             # 웹 `loadRestOfDetailData` 는 유형과 상관없이 필지의 실거래를 부른다
             building_trades = building_real_trades(client.run_request_bls_rts_v2(
                 ZigbangBlsRtsV2RequestParameterModel(pnu=pnu)
             ))
-        except SCHOOL_LOOKUP_ERRORS as exc:
+        except OPTIONAL_LOOKUP_ERRORS as exc:
             # 건물 실거래도 덤이라 못 받으면(404 포함) 모름이다
-            lookup_notes.append(note(
-                '실패',
-                f'직방 건물 실거래 정보를 받지 못해({type(exc).__name__}) building_trades 값을 모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
+            lookup_notes.append(lookup_failure_note(
+                exc, '직방', '건물 실거래 정보', 'building_trades 값을 모릅니다 (url 의 직방 페이지에서 확인)',
             ))
     detail = detail_to_listing(
         structured,

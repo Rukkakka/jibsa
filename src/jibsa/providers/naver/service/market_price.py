@@ -38,8 +38,8 @@ class NaverMarketPricePoint(BaseModel):
     )
 
     base_date: Annotated[
-        str,
-        Field(description='시세 기준일 (YYYY-MM-DD)')
+        str | None,
+        Field(description="시세 기준일 (YYYY-MM-DD). 네이버가 날짜 자리를 빈 값·'-' 로 주면 null")
     ]
     sale_manwon: Annotated[
         float | None,
@@ -151,6 +151,8 @@ def get_market_price_history(
         check_pyeong_numbers(client, complex_number, [pyeong_number], villa=villa, pyeong_required=True)
     providers: list[NaverMarketPriceSeries] = []
     for item in items:
+        # dates 는 dict 키라 None 은 없고 ''·'-' 만 올 수 있다 (base_date null 이 된다). 정렬은 원 글자 키로 하므로 그런 점은
+        # 맨 앞에 온다. 점은 빼지 않는다 (이 결과에는 notes 가 없어 뺀 것을 알릴 곳이 없다)
         dates = sorted(set(item.deal_prices) | set(item.deposit_prices))
         if not dates:
             continue
@@ -158,7 +160,7 @@ def get_market_price_history(
             provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
             points=[
                 NaverMarketPricePoint(
-                    base_date=normalize_date(day) or day,
+                    base_date=normalize_date(day),
                     # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (complex --pyeong 의 _market_price 와 같다)
                     sale_manwon=won_to_manwon(item.deal_prices.get(day)) or None,
                     sale_range_manwon=manwon_range(item.deal_price_ranges.get(day)),

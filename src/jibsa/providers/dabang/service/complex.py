@@ -1,5 +1,4 @@
 """단지 (search complexes · complex · search listings --complex)."""
-from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -13,18 +12,15 @@ from jibsa.core.geo import (
     DEFAULT_RADIUS_KM,
     box_around,
 )
-from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
-from jibsa.core.korean import particle
 from jibsa.core.listing import (
-    UPDATE_MAYBE_NEEDED,
     limit_notes,
+    lookup_failure_note,
     m2_to_pyeong,
     normalize_address,
     normalize_date,
     note,
     won_to_manwon,
 )
-from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
     DabangAptFiltersModel,
@@ -55,6 +51,7 @@ from jibsa.providers.dabang.api.response.complex import (
 from jibsa.providers.dabang.service.common import (
     COMPLEX_KIND_BY_TYPE,
     MAX_LIST_LIMIT,
+    OPTIONAL_LOOKUP_ERRORS,
     ZOOM_BY_SEARCH_TYPE,
     ComplexKind,
     DabangAreaPrice,
@@ -113,9 +110,6 @@ NURSERY_ESTABLISHMENT_LABELS: dict[str, str] = {'국공립': '공공'}
 KINDER_ESTABLISHMENT_LABELS: dict[str, str] = {'공립': '국공립'}
 # 요약 면적('115.54㎡')과 평형표 면적이 같은지 볼 때 허용하는 차 (둘 다 소수 둘째 자리라 반올림 차만 둔다)
 AREA_MATCH_TOLERANCE_M2: float = 0.01
-# 덤 조회(최근 실거래 요약)가 실패해도 단지 정보는 돌려줄 예외. 세 소스 공통 범위에 요청 제한(분당 상한 대기·429 쿨다운)을
-# 더한다. 받아 둔 단지 정보까지 버리지 않는다 (당근 `OPTIONAL_LOOKUP_ERRORS` 와 같은 뜻)
-OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 
 
 class ComplexSort(NamedTuple):
@@ -764,23 +758,6 @@ def _category_of(result: DabangComplexResultModel) -> DabangComplexCategory:
     return 'officetel' if result.complex.complex_type == 'OFFICETEL' else 'apt'
 
 
-def _lookup_failure_note(exc: Exception, what: str, unknown: str) -> str:
-    """덤 조회(최근 실거래 요약·대출 계산 조건)를 받지 못한 안내. 실패 이유마다 다음 행동이 달라(업데이트·다시 시도) 이유를 넣는다.
-
-    다방이 요청을 거절했거나(4xx) 응답 형식이 바뀌면 업데이트 안내를 붙인다 (매일 감시가 고장으로 본다). 요청 제한·서버
-    오류(5xx)·연결 실패는 사이트가 바뀐 것이 아니라 붙이지 않는다 (감시는 확인 못 함으로 본다).
-
-    Args:
-        what: 받지 못한 것 ('최근 실거래 요약').
-        unknown: 모름(null)이 된 칸과 다음 할 일 (끝에 마침표 없음).
-    """
-    if isinstance(exc, RateLimitedError):
-        return note('실패', f"요청 제한에 걸려 {what}{particle(what, '을/를')} 받지 못했습니다 ({exc.message}). {unknown}")
-    if isinstance(exc, ValueError) or (isinstance(exc, HTTPStatusError) and exc.response.status_code < 500):
-        return note('실패', f'다방이 {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {unknown}. {UPDATE_MAYBE_NEEDED}')
-    return note('실패', f'다방 {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
-
-
 def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     """단지 정보 (요청 3회: 단지 상세 + 최근 실거래 요약 + 대출 계산 조건). 사진·관리사무소 전화·광고 중개사는 옮기지 않는다.
 
@@ -797,7 +774,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         ).result
     except OPTIONAL_LOOKUP_ERRORS as exc:
         summary = None
-        notes.append(_lookup_failure_note(exc, '최근 실거래 요약', 'recent_sale·recent_lease 는 모름(null)입니다. 실거래는 real-price 로 보세요'))
+        notes.append(lookup_failure_note(exc, '다방', '최근 실거래 요약', 'recent_sale·recent_lease 는 모름(null)입니다. 실거래는 real-price 로 보세요'))
     # 웹 단지 화면이 단지 상세 바로 뒤에 부르는 대출 계산 조건이다 (complex 청크 `je`). 금리는 다방 계산기 기본값이라 내지 않는다
     try:
         loan = client.run_request_complex_loan_calc_condition_v5(
@@ -805,7 +782,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         ).result
     except OPTIONAL_LOOKUP_ERRORS as exc:
         loan = None
-        notes.append(_lookup_failure_note(exc, '대출 계산 조건', 'overheated_district 는 모름(null)입니다'))
+        notes.append(lookup_failure_note(exc, '다방', '대출 계산 조건', 'overheated_district 는 모름(null)입니다'))
     else:
         # 요청은 성공했는데 result 나 is_overheated_district 를 주지 않은 경우 (예외일 때의 안내와 겹치지 않게 else)
         if loan is None or loan.is_overheated_district is None:

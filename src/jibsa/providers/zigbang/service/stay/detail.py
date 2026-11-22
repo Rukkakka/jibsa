@@ -16,9 +16,9 @@ from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
     KST,
     ListingDetail,
+    lookup_failure_note,
     m2_to_pyeong,
     normalize_date,
-    note,
     null_items_note,
     won_to_manwon,
 )
@@ -38,8 +38,7 @@ from jibsa.providers.zigbang.api.response.stay.detail import (
     ZigbangStayScheduleModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
-    SCHOOL_LOOKUP_ERRORS,
-    failure_update_hint,
+    OPTIONAL_LOOKUP_ERRORS,
     sent_or_none,
     text_or_none,
     unavailable_on_404,
@@ -526,11 +525,10 @@ def _stay_reviews(client: ZigbangClient, item_id: int) -> tuple[dict[str, Any], 
     """
     try:
         response = client.run_request_guest_items_reviews(ZigbangGuestItemsReviewsRequestParameterModel(item_id=item_id, limit=1))
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         # 후기를 못 받아도 매물 상세는 돌려준다 (모름)
-        return dict(review_count=None, review_rating=None), [note(
-            '실패',
-            f'직방 후기 정보를 받지 못해({type(exc).__name__}) review_count·review_rating 값을 모릅니다 (url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
+        return dict(review_count=None, review_rating=None), [lookup_failure_note(
+            exc, '직방', '후기 정보', 'review_count·review_rating 값을 모릅니다 (url 의 직방 페이지에서 확인)',
         )]
     summary = response.summary
     count = summary.review_count if summary else None
@@ -554,12 +552,11 @@ def _stay_host_others(client: ZigbangClient, item_id: int, host_id: int | None) 
         response = client.run_request_guest_items_host(ZigbangGuestItemsHostRequestParameterModel(
             host_id=host_id, exclude_item_id=item_id, page=1, limit=STAY_HOST_OTHER_LIMIT,
         ))
-    except SCHOOL_LOOKUP_ERRORS as exc:
+    except OPTIONAL_LOOKUP_ERRORS as exc:
         # 다른 방을 못 받아도 매물 상세는 돌려준다 (모름)
-        return dict(host_other_listings=None, host_other_listing_count=None), [note(
-            '실패',
-            f'직방 임대인의 다른 방 정보를 받지 못해({type(exc).__name__}) host_other_listings·host_other_listing_count 값을 모릅니다 '
-            f'(url 의 직방 페이지에서 확인){failure_update_hint(exc)}',
+        return dict(host_other_listings=None, host_other_listing_count=None), [lookup_failure_note(
+            exc, '직방', '임대인의 다른 방 정보',
+            'host_other_listings·host_other_listing_count 값을 모릅니다 (url 의 직방 페이지에서 확인)',
         )]
     items = response.items
     count = response.total_count

@@ -1,5 +1,14 @@
 
-from jibsa.core.listing import Listing, ListingDetail, normalize_date
+import httpx
+import pytest
+
+from jibsa.core.listing import (
+    Listing,
+    ListingDetail,
+    lookup_failure_note,
+    normalize_date,
+)
+from jibsa.core.ratelimit import RateLimitedError
 
 
 def listing(trade_type: str, **values: object) -> Listing:
@@ -64,6 +73,24 @@ def test_normalize_date_drops_time_in_kst() -> None:
     # 연월만 있는 값은 날짜로 지어내지 않는다 (예전 정규식은 '202411' 을 2024-01-01 로 읽었다)
     assert normalize_date('202411') == '202411'
     assert normalize_date('2024.11') == '2024.11'
+    # 소스가 값이 없다는 표시로 주는 '-' 는 날짜 칸에 나가지 않는다
+    assert normalize_date('-') is None
+    assert normalize_date(' - ') is None
+    assert normalize_date('') is None
+
+
+@pytest.mark.parametrize(
+    ('exc', 'expected'),
+    [
+        (RateLimitedError('dabang', 5, 'cooldown'), '[실패] 요청 제한에 걸려 매물 상세를 받지 못했습니다. dabang 요청이 429 로 차단되어 쿨다운 중입니다. 5초 뒤 다시 시도하세요. 모름 칸'),
+        (ValueError('x'), '[실패] 다방이 매물 상세 요청을 거절했거나 응답 형식이 바뀌었습니다. jibsa 업데이트가 필요할 수 있습니다. 모름 칸'),
+        (None, '[실패] 다방이 매물 상세 요청을 거절했거나 응답 형식이 바뀌었습니다. jibsa 업데이트가 필요할 수 있습니다. 모름 칸'),
+        (httpx.HTTPStatusError('서버 오류', request=httpx.Request('GET', 'https://x'), response=httpx.Response(503)), '[실패] 다방 매물 상세 요청이 실패했습니다 (HTTPStatusError). 잠시 뒤 다시 시도하세요. 모름 칸'),
+    ],
+)
+def test_lookup_failure_note_branches(exc: Exception | None, expected: str) -> None:
+    # 무슨 일 → 할 일 → 모름이 된 칸 순서이고 모름이 된 칸이 늘 끝이다
+    assert lookup_failure_note(exc, '다방', '매물 상세', '모름 칸') == expected
 
 
 def test_limit_notes_only_when_more_than_returned() -> None:

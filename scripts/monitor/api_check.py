@@ -260,7 +260,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             (Capture('article', 'listings', 'id'), Capture('dong_next', '', 'next')),
         ),
         Step('매물 동 전체 이어 받기 역삼동', NAVER_LISTINGS, ('역삼동', '--limit', '2', '--next', '{dong_next}'), 'listings'),
-        Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id'),
+        # address 는 매물 법정동 코드로 법정동 이름을 받는 덤 조회(legalDivision/infoList)라, 실패해도 id 는 있고 address 만
+        # null + [실패] 다. id 만 보면 그 고장을 정상으로 넘긴다 (2026-11-20 리뷰)
+        Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id', also_expect=('address',)),
         Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('near_next', '', 'next'),)),
         # 반경 검색은 지도 범위 목록(boundedArticles)의 커서로 이어 받는다
         Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),
@@ -379,7 +381,16 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--previous-days', '--limit', '3'),
             'transactions',
         ),
-        Step('동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes'),
+        # 구 후기 페이지 한 번에 단지·동별·건물별 후기 수가 함께 온다 (2026-11-20, 같은 HTML 저장소의 세 목록)
+        Step(
+            '동네 후기 강남구', ('daangn', 'region-reviews'), ('강남구', '--top', '3'), 'top_complexes',
+            also_expect=('dongs', 'top_buildings'),
+        ),
+        # 동을 주면 구 페이지가 아니라 동 후기 페이지(`/map/{시도}/{구}/{동}/reviews`)를 읽는다
+        Step(
+            '동네 후기 역삼동', ('daangn', 'region-reviews'), ('역삼동', '--top', '3'), 'top_complexes',
+            also_expect=('top_buildings',),
+        ),
         # empty_ok 를 붙이지 않는다. {complex}(역삼래미안 10697092)는 20곳을 준다 (2026-11-11 실측). 비면 필드 이름이 바뀌어
         # 빈 목록이 된 것일 가능성이 커 고장으로 본다
         Step(
@@ -700,7 +711,7 @@ def _run_step(step: Step, values: dict[str, str]) -> StepResult:
 def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
     # 결과는 나오지만 고쳐야 한다는 안내. 지역 검색이 바뀌었을 수 있어 대체 경로로 찾았거나(직방 단기임대가 지역 대신 지도로),
     # 덤 조회(단지 후보·매물 수·역 검색 등)의 쿼리가 거절되거나 응답 형식이 바뀌어 그 값만 받지 못했거나(당근
-    # partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 응답 형식 오류), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
+    # partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 거절·응답 형식 오류), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
     # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
     # 만든다) 여기서 가져온다
     from jibsa.core.listing import (
@@ -731,7 +742,7 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
                 if step.may_be_empty:
                     return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (사이트가 빈 목록을 줄 때가 있음)', data)
                 # 덤 조회가 요청 제한·서버 오류·연결 실패로 그 칸만 못 받았다. 응답 형식이 바뀌었거나 요청이 거절된 실패는 안내에
-                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 응답 형식 오류)
+                # 업데이트 문구가 있어 위에서 고장으로 본다 (당근 partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 거절·응답 형식 오류)
                 failed = next((note for note in data.get('notes') or [] if isinstance(note, str) and note.startswith('[실패] ')), None)
                 if failed is not None:
                     return StepResult(UNKNOWN, f'{field} 칸이 비어 있음 (덤 조회 실패: {failed[:200]})', data)

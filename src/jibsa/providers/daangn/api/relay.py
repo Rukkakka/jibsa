@@ -13,8 +13,10 @@ from typing import Any
 # 그 전에는 JS 문자열로 이스케이프한 JSON `window.RELAY_STORE = "..."` 였다)
 TSR_ROUTER_MARKER: str = '$_TSR.router=($R=>'
 # seroval 이 데이터에 쓰는 문법만 읽는다: 문자열, `$R[n]=` 등록과 `$R[n]` 참조, 숫자, `!0`·`!1`(참·거짓), 이름(null 등), 기호.
-# 무한·NaN 을 쓰는 `1/0`·`0/0` 은 읽지 않는다. 라우터 상태에 그런 값이 오지 않는다 (2026-10-18 실측: 역삼동 지도 페이지
-# 라우터 상태에 `1/0`·`0/0`·`new` 모두 없음). 2026-10-18 리뷰 오탐 확인
+# 무한·NaN 을 쓰는 `1/0`·`0/0` 과 `new` 는 읽지 않는다. 리뷰 오탐 (2026-10-18, 근거 고침 2026-11-20): relayRecords 는 GraphQL JSON 에서
+# 와 NaN·Infinity 가 없다. 혹시 다른 식이 오면 조용히 틀리지 않고 `RelayStoreNotFoundError`(PARSE_ERROR)로 드러나 매일 감시가
+# 잡는다. 덧붙임 (2026-11-20 실제로 읽는 페이지: 매물 4700642, 단지 10667600, 강남구 후기, 화곡동 후기): `1/0`·`0/0`·`new`·
+# `NaN`·`Infinity` 0개, 모두 파싱됨
 SEROVAL_TOKEN_PATTERN: re.Pattern[str] = re.compile(
     r'\s*(?:'
     r'(?P<string>"[^"\\]*(?:\\.[^"\\]*)*")'
@@ -178,8 +180,11 @@ def _js_string(raw: str) -> str:
     text = JS_ESCAPE_PATTERN.sub(_js_escape, raw)
     if any('\ud800' <= char <= '\udfff' for char in text):
         # 서로게이트 쌍으로 이스케이프한 글자(`😀` 같은 이모지)를 한 글자로 합친다. 짝 없는 서로게이트면 decode 가 실패하지만,
-        # seroval 은 한글 같은 글자를 `\u` 로 이스케이프하지 않고 글자 그대로 실어 그런 이스케이프가 오지 않는다 (2026-10-18 실측:
-        # 역삼동 지도 페이지 라우터 상태에 `\u` 이스케이프 0개). 2026-10-18 리뷰 오탐 확인
+        # 리뷰 오탐 (2026-10-18, 근거 고침 2026-11-20): seroval 의 문자열 직렬화는 `"`·`\`·줄바꿈류·`<`·U+2028·U+2029 만 이스케이프하고
+        # 서로게이트(U+D800-DFFF)는 일부러 이스케이프하지 않는다 (seroval 저장소 packages/seroval/src/core/string.ts 의
+        # `escapeCharCode`, 2026-11-20 확인). 그래서 `\ud83d` 꼴은 오지 않고, 짝 없는 서로게이트는 UTF-8 로 보낼 수 없어 서버가 U+FFFD
+        # 로 바꾼다. 2026-11-20 역삼동 후기 페이지(1.3MB)의 `\u` 이스케이프는 `\u0026` 하나였고 이모지 3개는 그대로 실렸다 (매물
+        # 페이지도 `\u` 30개 모두 &)
         text = text.encode('utf-16', 'surrogatepass').decode('utf-16')
     return text
 

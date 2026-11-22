@@ -113,8 +113,10 @@ class DabangRegionInfoSchoolRegionalV5RequestParameterModel(RequestModel):
         Field(ge=1, description='쪽 번호')
     ] = 1
 
-    # 리뷰 오탐 (2026-11-14): CLI 라벨 검사·service 표와 겹쳐 보이지만, 요청 모델은 서버가 거절할 와이어 값을 막는 층이다
-    # (provider-conventions '서버가 거절할 조합은 요청 모델에서 막는다'). CLI 로는 닿지 않는다
+    # 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): CLI 라벨 검사·service 표와 겹쳐 보이지만 요청 모델이 막는 층이다. 서버는 그
+    # 단계에 없는 설립 구분을 거절하지 않고 무시해 거르지 않은 목록을 준다 (2026-11-20 regionGid 10063 초등학교: 조건 없음 →
+    # total 2, PUBLIC → 2, PRIVATE → 0 으로 서버가 거른다, HOME → 2 로 걸러지지 않은 전체). 조용히 틀린 결과가 되므로 요청
+    # 모델에서 막는다 (provider-conventions 의 안 되는 것). CLI 로는 닿지 않는다
     @model_validator(mode='after')
     def establishment_matches_level(self) -> Self:
         # 가정·직장·협동은 어린이집 탭에만 있다

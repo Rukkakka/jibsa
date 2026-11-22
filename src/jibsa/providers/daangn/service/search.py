@@ -91,9 +91,9 @@ FEED_PAGE_SIZE: int = 20
 REGION_CLUSTER_ZOOM: int = 12
 
 
-def unwrap_feed(response: DaangnArticleFeedResponseModel) -> DaangnArticleFeedModel:
-    """GraphQL 응답에서 피드를 꺼낸다 (`unwrap_graphql`)."""
-    return unwrap_graphql(response, response.data.article_feed if response.data else None, '매물 피드')
+def unwrap_feed(response: DaangnArticleFeedResponseModel, *, conditions: bool) -> DaangnArticleFeedModel:
+    """GraphQL 응답에서 피드를 꺼낸다 (`unwrap_graphql`). `conditions` 는 요청에 사용자가 고른 매물 조건이 들어갔는지다."""
+    return unwrap_graphql(response, response.data.article_feed if response.data else None, '매물 피드', conditions=conditions)
 
 
 def count_listings(
@@ -121,7 +121,9 @@ def count_listings(
     )
     try:
         response = client.run_request_articles_count(payload)
-        return unwrap_graphql(response, response.data.count if response.data else None, '매물 수')
+        return unwrap_graphql(
+            response, response.data.count if response.data else None, '매물 수', conditions=not is_empty_property_filter(property_filter),
+        )
     except OPTIONAL_LOOKUP_ERRORS as exc:
         _count_failed(notes, exc, 'articlesCount', '조건에 맞는 전체 매물 수를')
         return None
@@ -239,10 +241,13 @@ def _listing_notes(
     `stopped` 는 목록이 다음이 있다면서 이어 받을 쪽을 주지 않아 멈췄는지다 (`connection_edges`). --limit 을 늘려도 같은
     자리에서 멈춰 --limit 안내 대신 멈췄다고 알린다.
     """
-    stopped_notes = [note('일부', cursor_stopped_note('매물 목록', f'{len(articles)}건'))] if stopped else []
+    # `articles` 는 이번 호출에서 받은 수라, 이어 받은 쪽이면 앞 결과를 뺀 '이번 쪽' 의 수로 말한다. 그냥 'N건에서 멈췄습니다' 면
+    # 앞 결과에서 40건을 받았어도 이어 받은 첫 쪽이 비어 '0건에서 멈췄습니다' 로 읽힌다 (`listing_budget_notes` 도 resumed 를 가른다)
+    received = f'앞 결과에 이어 받은 이번 쪽 {len(articles)}건' if resumed else f'{len(articles)}건'
+    stopped_notes = [note('일부', cursor_stopped_note('매물 목록', received))] if stopped else []
     return (
         listing_budget_notes(
-            limit, len(articles), len(shown), max_limit=LISTING_MAX_LIMIT, has_more=has_more,
+            limit, len(articles), len(shown), max_limit=LISTING_MAX_LIMIT, has_more=has_more, narrow='조건',
             narrowable=not stopped, resumable=resumable, resumed=resumed,
         )
         + stopped_notes
@@ -280,7 +285,7 @@ def _around_listings(
     검색이 이 흐름을 따로 두었다 (2026-11-12 리뷰).
     """
     edge_notes: list[str] = []
-    edges, has_more, cursor, stopped = connection_edges(fetch, limit, STATION_PAGE_SIZE, after=after, notes=edge_notes)
+    edges, has_more, cursor, stopped, _ = connection_edges(fetch, limit, STATION_PAGE_SIZE, after=after, notes=edge_notes)
     articles = [edge.node.article for edge in edges if edge.node and edge.node.article]
     if region is None and articles:
         region = region_or_none(client, *center)
@@ -325,7 +330,10 @@ def count_dong_listings(
     )
     try:
         response = client.run_request_article_clusters(payload)
-        clusters = unwrap_graphql(response, response.data.article_clusters if response.data else None, '지역 거품')
+        clusters = unwrap_graphql(
+            response, response.data.article_clusters if response.data else None, '지역 거품',
+            conditions=not is_empty_property_filter(property_filter),
+        )
     except OPTIONAL_LOOKUP_ERRORS as exc:
         _count_failed(notes, exc, 'articleClusters', '조건에 맞는 동 매물 수를')
         return None
@@ -365,6 +373,7 @@ def search_dong(
     conditions = conditions or DaangnListingConditions()
     property_filter = conditions.property_filter
     region = area.as_region()
+    filtered = not is_empty_property_filter(property_filter)
 
     def fetch(size: int, after: str | None) -> DaangnArticleFeedModel:
         response = client.run_request_article_by_cluster_id(
@@ -374,7 +383,7 @@ def search_dong(
                 input=DaangnArticleByClusterIdInputModel(cluster_id=f'REGION:{area.region_id}', property_filter=property_filter),
             )
         )
-        return unwrap_graphql(response, response.data.article_by_cluster_id if response.data else None, '동 매물')
+        return unwrap_graphql(response, response.data.article_by_cluster_id if response.data else None, '동 매물', conditions=filtered)
 
     notes: list[str] = []
     resumed = after is not None
@@ -403,7 +412,7 @@ def search_dong(
     # 동 목록(`articleByClusterId`)은 매물이 남았는데도 `hasNextPage` 를 false 로 준다 (2026-11-12 실측: 홍천군 내면은 거품
     # 26건인데 20건 쪽이 false 이고 커서로 이어 받으면 나머지가 왔다. 인제군 기린면 15건은 1·5건 쪽이 true, 7·14건 쪽이 false 로
     # 들쭉날쭉했다). 당근 웹도 이 값을 믿어 목록이 20건에서 멈추는데, 당근 버그라 따르지 않는다 (2026-11-12 사용자 결정)
-    edges, has_more, cursor, stopped = connection_edges(
+    edges, has_more, cursor, stopped, _ = connection_edges(
         fetch, limit, FEED_PAGE_SIZE, after=after, full_page_more=full_page_more, notes=notes,
     )
     articles = [edge.node.article for edge in edges if edge.node and edge.node.article]
@@ -493,6 +502,7 @@ def search_station(
     """
     conditions = conditions or DaangnListingConditions()
     property_filter = conditions.property_filter
+    filtered = not is_empty_property_filter(property_filter)
 
     def fetch(size: int, after: str | None) -> DaangnCommuteStationArticleConnectionModel:
         response = client.run_request_subway_station_article_connection(
@@ -507,6 +517,7 @@ def search_station(
             response,
             response.data.subway_station_article_connection if response.data else None,
             '역 주변 매물',
+            conditions=filtered,
         )
 
     found = _around_listings(
@@ -622,6 +633,7 @@ def search_map_area(
     """
     conditions = conditions or DaangnListingConditions()
     property_filter = conditions.property_filter
+    filtered = not is_empty_property_filter(property_filter)
     bounds, width_km, height_km = map_view_bounds(lat, lng, zoom)
     resolution = map_resolution(zoom)
 
@@ -634,12 +646,12 @@ def search_map_area(
                     location_filter=bounds, property_filter=property_filter, resolution=resolution,
                 ),
             )
-        ))
+        ), conditions=filtered)
 
     # 지도 범위 목록(`articleFeed`)은 동 목록과 달리 `hasNextPage` 가 맞아 꽉 찬 쪽으로 짐작하지 않는다 (2026-11-12 실측: 홍천군
     # 내면 둘레 줌 10 은 20건씩 true 로 이어지고, 줌 12 는 13건 = 매물 수 13)
     notes: list[str] = []
-    edges, has_more, cursor, stopped = connection_edges(fetch, limit, FEED_PAGE_SIZE, after=after, notes=notes)
+    edges, has_more, cursor, stopped, _ = connection_edges(fetch, limit, FEED_PAGE_SIZE, after=after, notes=notes)
     articles = [edge.node.article for edge in edges if edge.node and edge.node.article]
 
     # 매물 수·동 이름은 안내와 시·도 채우기에만 쓰여 못 받아도 매물은 보여 준다. 본 조회 뒤에 묻는다 (덤 조회가 첫 요청이
@@ -651,8 +663,9 @@ def search_map_area(
     # 것으로 읽힌다 (2026-11-12 리뷰·실측: 역삼동 좌표 토지 매매 1만원 이하 0건에 region null). 역·대학 주변 목록은 동을 시·도
     # 채우기에만 써 매물이 없으면 묻지 않는다. 앞 쪽에서 못 찾았으면 이어 받는 쪽도 다시 묻고, 또 실패하면 그 쪽의 region 도
     # null 이라 실패 안내를 그 쪽에도 붙인다. 범위·집계 안내처럼 첫 쪽에만 붙이면 뒤 쪽의 null 이 '당근이 위치를 못 찾음' 으로
-    # 읽힌다. 동을 못 찾는 것은 사실상 조회 실패뿐이다. 바닷가 앞바다 좌표도 바다에 닿은 동을 준다 (2026-11-12 리뷰 오탐에 실측:
-    # 해운대 앞바다 35.12,129.19 → 중동, 35.08,129.20 → 용호동, 영종도 앞 37.45,126.40 → 을왕동)
+    # 읽힌다. 동을 못 찾거나 조회가 실패하면 `region_or_none` 이 region 을 null 로 두고 `[실패]` 안내를 붙인다 (`notes` 를 넘긴다.
+    # 못 찾은 경우의 `UnsupportedRegionError` 도 `JibsaError` 라 `OPTIONAL_LOOKUP_ERRORS` 에 잡힌다). 그래서 null 이 안내 없이
+    # 나가는 길은 없다 (2026-11-12 리뷰 오탐, 근거 고침 2026-11-20)
     if region is None:
         region = region_or_none(client, lat, lng, notes=notes)
 
@@ -741,7 +754,7 @@ def search_university(
     """
     conditions = conditions or DaangnListingConditions()
     property_filter = conditions.property_filter
-    default_types = is_empty_property_filter(property_filter)
+    default_types = is_empty_property_filter(property_filter)  # 사용자 조건 없음 (아래에서 기본 종류를 채우기 전 값)
     if default_types:
         # 웹 대학 페이지는 지도 필터가 하나도 없을 때만 원룸·투룸·오피스텔을 기본으로 보낸다 (MapShell `Ff` 의 `??ke`, 조건이
         # 하나라도 있으면 그 필터 그대로). 역 주변 목록은 빈 필터(전체)가 기본이라 다르다 (2026-11-12 번들 대조)
@@ -760,6 +773,7 @@ def search_university(
             response,
             response.data.university_article_connection if response.data else None,
             '대학 주변 매물',
+            conditions=not default_types,
         )
 
     found = _around_listings(

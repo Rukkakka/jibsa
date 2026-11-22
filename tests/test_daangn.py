@@ -574,8 +574,8 @@ def test_property_filter_uses_daangn_web_codes() -> None:
         'monthlyPay': {'maxAmount': 70},
         'monthlyPayIncludesManageCost': True,
         # 면적은 문자열로 보내야 하고 단위가 꼭 있어야 한다
-        'minArea': '20',
-        'maxArea': '33.5',
+        'minArea': '20.00',
+        'maxArea': '33.50',
         'areaUnit': 'SQUARE_METER',
         'floor': ['SEMI_BASEMENT', 'TENTH_OR_MORE'],
         'roomCounts': ['TWO'],

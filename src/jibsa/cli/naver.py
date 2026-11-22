@@ -1187,11 +1187,11 @@ def search_command(
     ] = None,
     facility: Annotated[
         list[str] | None,
-        typer.Option('--facility', help=f"시설: {', '.join(FACILITY_CODE_BY_NAME)}. 여러 개면 모두 갖춘 매물만")
+        typer.Option('--facility', help=f"시설: {', '.join(FACILITY_CODE_BY_NAME)}. 반복하거나 쉼표로 구분. 여러 개면 모두 갖춘 매물만")
     ] = None,
     one_room_shape: Annotated[
         list[str] | None,
-        typer.Option('--one-room-shape', help=f"원룸 구조: {', '.join(ONE_ROOM_SHAPE_CODE_BY_NAME)}. 분리형에는 방이 여럿인 매물도 들어가니 원룸만 보려면 --room 원룸 과 함께. 구조를 입력한 매물만 걸려 아파트·오피스텔·단지형 빌라는 모두, 다른 매물도 일부 빠진다")
+        typer.Option('--one-room-shape', help=f"원룸 구조: {', '.join(ONE_ROOM_SHAPE_CODE_BY_NAME)}. 반복하거나 쉼표로 구분. 분리형에는 방이 여럿인 매물도 들어가니 원룸만 보려면 --room 원룸 과 함께. 구조를 입력한 매물만 걸려 아파트·오피스텔·단지형 빌라는 모두, 다른 매물도 일부 빠진다")
     ] = None,
     move_in: Annotated[
         list[str] | None,
@@ -1206,11 +1206,11 @@ def search_command(
     household_max: Annotated[int | None, typer.Option(min=0, help='단지 세대수 상한. 단지가 없는 빌라 대부분이 빠진다')] = None,
     parking: Annotated[
         list[str] | None,
-        typer.Option('--parking', help=f"단지 주차: {', '.join(PARKING_CODE_BY_NAME)}. 여러 개면 모두 해당. 단지가 없는 빌라 대부분이 빠진다")
+        typer.Option('--parking', help=f"단지 주차: {', '.join(PARKING_CODE_BY_NAME)}. 반복하거나 쉼표로 구분. 여러 개면 모두 해당. 단지가 없는 빌라 대부분이 빠진다")
     ] = None,
     entrance: Annotated[
         list[str] | None,
-        typer.Option('--entrance', help=f"현관 구조: {', '.join(ENTRANCE_CODE_BY_NAME)}. 현관 구조가 등록된 매물만 걸려 등록되지 않은 매물이 빠진다 (단지가 아닌 빌라도 등록돼 있으면 나온다)")
+        typer.Option('--entrance', help=f"현관 구조: {', '.join(ENTRANCE_CODE_BY_NAME)}. 반복하거나 쉼표로 구분. 현관 구조가 등록된 매물만 걸려 등록되지 않은 매물이 빠진다 (단지가 아닌 빌라도 등록돼 있으면 나온다)")
     ] = None,
     building_age_min: Annotated[int | None, typer.Option(min=0, help='사용승인 후 지난 햇수 하한 (년). 5면 5년 이상')] = None,
     building_age_max: Annotated[int | None, typer.Option(min=0, help='사용승인 후 지난 햇수 상한 (년). 5 면 5년 이내 건물')] = None,

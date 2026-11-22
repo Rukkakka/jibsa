@@ -1,13 +1,23 @@
+import math
 import re
 from calendar import monthrange
-from collections.abc import Sequence
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 from datetime import (
     date,
     datetime,
     timedelta,
     timezone,
 )
+from decimal import (
+    ROUND_HALF_UP,
+    Context,
+    Decimal,
+)
 
+from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -19,6 +29,7 @@ from pydantic import (
 
 from jibsa.core.geo import within_radius
 from jibsa.core.korean import particle
+from jibsa.core.ratelimit import RateLimitedError
 
 from typing import (
     Annotated,
@@ -140,6 +151,26 @@ def format_manwon(value: float | int) -> str:
     return f'{round(value, 4):.4f}'.rstrip('0').rstrip('.')
 
 
+def js_round(value: float) -> int:
+    """JS `Math.round` 처럼 .5 를 늘 올려 반올림한다. 사이트 웹(JS Math.round)과 숫자를 맞출 때 쓴다.
+
+    Python `round` 는 .5 를 짝수로 보내 (2.5 → 2) 웹과 1 씩 달라진다.
+    """
+    return math.floor(value + 0.5)
+
+
+def js_to_fixed(value: float, digits: int) -> Decimal:
+    """JS `Number.prototype.toFixed(digits)` 처럼 소수 `digits` 자리로 반올림한다. 사이트 웹과 숫자를 맞출 때 쓴다.
+
+    `toFixed` 는 float 의 정확한 이진 값으로 반올림하고 정확히 반이면 0 에서 먼 쪽으로 올린다. 그래서 정확한 값(`Decimal(value)`)을
+    `ROUND_HALF_UP` 으로 맞춘다. Python `f'{x:.2f}'`·`round` 는 정확히 반인 값을 짝수로 보내고(84.125 → 84.12, 웹 84.13),
+    `Decimal(str(x))` 는 이진 값이 반보다 조금 작은 소수를 올린다(0.15 → 0.2, 웹 0.1. 0.15 의 이진 값은 0.1499…) (2026-11-20 리뷰:
+    다방 거리·당근 면적이 따로 흉내 내다 어긋났다). 기본 정밀도(28자리)면 1e26 부터 `InvalidOperation` 이라 float 최댓값(약 1.8e308)도
+    담게 넉넉히 준다. JS 는 1e21 이상을 지수 표기로 내지만 jibsa 는 소수 자리를 그대로 낸다. 유한한 값만 받는다.
+    """
+    return Decimal(value).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP, context=Context(prec=400))
+
+
 @overload
 def normalize_address(address: str) -> str: ...
 @overload
@@ -251,10 +282,13 @@ def normalize_date(value: str | None) -> str | None:
     시간대가 없으면 한국 시간으로 보고, UTC(`...Z`)는 한국 시간으로 바꾼 뒤 날짜를
     뽑는다 (UTC 15시 이후는 한국 날짜로 다음 날). 읽을 수 없으면 앞뒤 공백만 지운
     원래 값을 돌려준다 (정보를 버리지 않는다). 연월만 있는 값(`202411`, `2024.11`)도 그대로 둔다.
+    소스가 값이 없다는 표시로 주는 `-` 는 값이 아니라 None 이다 (빈 글자도 None).
     """
     if value is None:
         return None
     text = value.strip()
+    if text == '-':
+        return None
     match = DATE_DIGITS_PATTERN.match(text)
     if match is not None:
         year, month, day = (int(part) for part in match.groups() if part is not None)
@@ -342,7 +376,7 @@ def in_range(value: float | None, minimum: float | None, maximum: float | None) 
 
 
 # 결과 notes 의 종류. 안내 앞에 '[일부] ' 처럼 붙여 LLM 이 문장을 다 읽지 않고도 무엇을 알리는지 가른다 (docs/llm.md).
-# 일부: 더 받을 매물이 있다 / 범위: 찾은 범위가 요청과 다르다 / 제외: 받은 것 중 뺀 매물이 있다 / 모호: 이름이 여러 곳이라
+# 일부: 더 받을 매물이 있다 / 범위: 찾은 범위가 요청과 다르다 / 제외: 받은 것 중 뺀 매물·후보가 있다 / 모호: 이름이 여러 곳이라
 # 하나를 골랐다 / 거래: 거래 유형을 짐작해 좁혔다 / 실패: 덤 조회가 실패했거나 대체 경로로 찾았다 / 참고: 그 밖에 읽을 때 알 것
 NoteKind = Literal['일부', '범위', '제외', '모호', '거래', '실패', '참고']
 NOTE_KINDS: tuple[str, ...] = get_args(NoteKind)
@@ -393,7 +427,112 @@ def null_items_total_note(site: str, count: int) -> str:
     return null_items_note(f'{site} 응답의', count)
 
 
-def more_hint(limit: int, max_limit: int, narrow: str | None) -> str:
+def is_rejected(exc: Exception | None) -> bool:
+    """덤 조회 실패가 거절·형식 변경인지: ValueError, 4xx, `exc` 가 None(`isSuccess` false). 서버 오류(5xx)·연결 실패는 아니다.
+
+    참이면 업데이트 안내를 붙여 매일 API 감시가 고장으로 잡는다. 네 소스가 같은 기준을 쓴다 (네이버·다방·직방은 `lookup_failure_note`·
+    `lookup_failure_reason`, 당근 `needs_update` 는 이 기준에 당근만의 실패를 더한다).
+    """
+    return exc is None or isinstance(exc, ValueError) or (isinstance(exc, HTTPStatusError) and exc.response.status_code < 500)
+
+
+def lookup_failure_reason(exc: Exception, site: str, what: str) -> str:
+    """덤 조회 실패의 이유 한 구절 (`note('실패', ...)` 문장 뒤에 이어 쓴다). 실패 이유마다 다음 행동이 달라 이유를 넣는다.
+
+    사이트가 요청을 거절했거나(4xx) 응답 형식이 바뀌면 업데이트 안내를 붙인다 (매일 감시가 고장으로 본다). 요청 제한·서버
+    오류(5xx)·연결 실패는 사이트가 바뀐 것이 아니라 붙이지 않는다 (감시는 확인 못 함으로 본다).
+
+    Args:
+        site: 사이트 이름 ('다방', '직방'). 조사는 끝 글자에 맞춘다.
+        what: 받지 못한 것 ('매물 상세').
+    """
+    if isinstance(exc, RateLimitedError):
+        return f'요청 제한에 걸렸습니다. {exc.message}'
+    if is_rejected(exc):
+        return f"{site}{particle(site, '이/가')} {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {UPDATE_MAYBE_NEEDED}"
+    return f'{site} {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요'
+
+
+def lookup_failure_note(exc: Exception | None, site: str, what: str, unknown: str) -> str:
+    """덤 조회를 받지 못한 `[실패]` 안내. 무슨 일 → 할 일 → 모름이 된 칸 순서라 모름이 된 칸이 늘 끝이다.
+
+    갈래는 `lookup_failure_reason` 과 같다 (거절·형식 변경이면 업데이트 안내, 요청 제한·서버 오류·연결 실패면 붙이지 않는다).
+
+    Args:
+        exc: 실패 예외. `None` 이면 응답이 `isSuccess` false 였던 것이라 거절로 본다 (네이버).
+        site: 사이트 이름 ('다방', '네이버'). 조사는 끝 글자에 맞춘다.
+        what: 받지 못한 조회 이름 ('최근 실거래 요약').
+        unknown: 그 실패로 모름이 된 칸과 다음 할 일 (끝에 마침표 없음).
+    """
+    if isinstance(exc, RateLimitedError):
+        return note('실패', f"요청 제한에 걸려 {what}{particle(what, '을/를')} 받지 못했습니다. {exc.message}. {unknown}")
+    if is_rejected(exc):
+        return note(
+            '실패',
+            f"{site}{particle(site, '이/가')} {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {UPDATE_MAYBE_NEEDED}. {unknown}",
+        )
+    return note('실패', f'{site} {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
+
+
+class LookupFailures:
+    """덤 조회를 여러 번 하는 반복(`--details` 등)의 실패를 모아 안내 이유를 고른다.
+
+    이유는 실패 순서가 아니라 다음 할 일로 고른다 (업데이트 필요 > 요청 제한 > 서버 오류·연결 실패). 예전에는 첫 실패만
+    알려 5xx 다음 403 이면 '잠시 뒤' 만 나가 매일 감시가 거절을 놓쳤다 (2026-11-20 리뷰·사용자 결정). 종류마다 첫 예외만
+    남긴다. `needs_update` 는 소스가 업데이트 안내를 붙이는 갈래와 같게 넘긴다 (기본은 `lookup_failure_reason` 의 갈래, 당근은
+    `needs_update`).
+
+    Attributes:
+        count: 실패한 수 + 요청 제한 뒤라 요청하지 않은 수.
+    """
+
+    def __init__(self, needs_update: Callable[[Exception], bool] = is_rejected) -> None:
+        self._needs_update = needs_update
+        self.count = 0
+        self._rate_limited: RateLimitedError | None = None
+        self._update_needed: Exception | None = None
+        self._other: Exception | None = None
+
+    def add(self, exc: Exception) -> None:
+        """실패 하나를 센다. 종류(요청 제한·업데이트 필요·그 밖)마다 첫 예외만 남긴다."""
+        self.count += 1
+        if isinstance(exc, RateLimitedError):
+            if self._rate_limited is None:
+                self._rate_limited = exc
+        elif self._needs_update(exc):
+            if self._update_needed is None:
+                self._update_needed = exc
+        elif self._other is None:
+            self._other = exc
+
+    def skip(self) -> None:
+        """요청 제한 뒤라 요청하지 않은 매물을 센다."""
+        self.count += 1
+
+    @property
+    def stopped(self) -> bool:
+        """요청 제한이 왔는지. 참이면 부르는 쪽이 남은 매물을 요청하지 않는다 (다음 요청도 같은 제한에 걸린다)."""
+        return self._rate_limited is not None
+
+    def reason(self, describe: Callable[[Exception], str]) -> str | None:
+        """안내 이유 (`describe` 로 만든 문장). 실패가 없으면 None.
+
+        업데이트 필요가 있으면 그 이유 (요청 제한도 왔으면 덧붙임), 없으면 요청 제한, 없으면 그 밖의 첫 실패 이유다.
+        업데이트가 필요하면 그 밖의 실패(5xx 등)는 말하지 않는다.
+        """
+        if self._update_needed is not None:
+            text = describe(self._update_needed)
+            if self._rate_limited is not None:
+                text += f'. 요청 제한에도 걸려 그 뒤로는 요청하지 않았습니다. {self._rate_limited.message}'
+            return text
+        if self._rate_limited is not None:
+            return describe(self._rate_limited)
+        if self._other is not None:
+            return describe(self._other)
+        return None
+
+
+def more_hint(limit: int, max_limit: int, narrow: str | None, *, option: str = '--limit') -> str:
     """결과가 더 남았을 때 더 보는 법 (끝에 마침표 없음). `--limit` 이 이미 최대값이면 늘리라고 하지 않는다.
 
     늘리면 옵션 검사에서 `INVALID_ARGUMENT` 로 막힌다. 소스마다 따로 쓰던 '--limit 의 최대값은 N입니다…' 를 여기 모은다.
@@ -405,15 +544,16 @@ def more_hint(limit: int, max_limit: int, narrow: str | None) -> str:
         max_limit: 그 명령의 `--limit` 최대값.
         narrow: 좁히라고 권할 것. 그 명령에 있는 옵션만 적는다 (예: '조건·반경', '거래 유형·업종·가격 조건·지역').
             None 이면 좁힐 조건을 권하지 않고 `--limit` 만 말한다 (다방 동네정보 목록처럼 좁힐 옵션을 이미 골랐을 때).
+        option: 개수를 정하는 옵션 이름. 당근 `region-reviews` 는 `--limit` 이 없고 `--top` 이다 (2026-11-20).
     """
     if narrow is None:
         if limit >= max_limit:
-            return f'--limit 의 최대값은 {max_limit}입니다'
-        return '더 보려면 --limit 을 늘리세요'
+            return f'{option} 의 최대값은 {max_limit}입니다'
+        return f'더 보려면 {option} 을 늘리세요'
     target = f"{narrow}{particle(narrow, '을/를')}"
     if limit >= max_limit:
-        return f'--limit 의 최대값은 {max_limit}입니다. 더 보려면 {target} 좁히세요'
-    return f'더 보려면 --limit 을 늘리거나 {target} 좁히세요'
+        return f'{option} 의 최대값은 {max_limit}입니다. 더 보려면 {target} 좁히세요'
+    return f'더 보려면 {option} 을 늘리거나 {target} 좁히세요'
 
 
 # 평형 하나를 묻는 실거래(네이버·다방)는 국토부 신고에 평형 타입이 없어 전용면적이 같은 평형끼리 같은 거래를 준다.
@@ -569,7 +709,7 @@ class Listing(BaseModel):
         trade_type: 거래 유형.
         status: 거래 상태 ('판매중', '예약중'). 예약 상태를 알려 주는 소스(당근)만 채운다. 그 밖의 소스는 해당 없음이라
             출력에서 키를 뺀다. Defaults to None.
-        property_type: 매물 유형 (원룸, 오피스텔, 빌라, 아파트 ...).
+        property_type: 매물 유형 (원룸, 오피스텔, 빌라, 아파트 ...). 소스가 유형을 주지 않으면 null.
         room_type: 방 구조 (오픈형원룸 ... 포룸이상). 소스가 알려줄 때만.
             Defaults to None.
         title: 매물 한 줄 제목. Defaults to None.
@@ -619,8 +759,8 @@ class Listing(BaseModel):
         Field(description='거래 상태 (판매중, 예약중). 예약중은 계약이 깨질 수 있어 내보낸다. 예약 상태가 없는 소스는 키를 뺀다')
     ] = None
     property_type: Annotated[
-        str,
-        Field(description='매물 유형 (원룸, 오피스텔, 빌라, 아파트 ...)')
+        str | None,
+        Field(description='매물 유형 (원룸, 오피스텔, 빌라, 아파트 ...). 소스가 유형을 주지 않으면 null')
     ]
     room_type: Annotated[
         str | None,

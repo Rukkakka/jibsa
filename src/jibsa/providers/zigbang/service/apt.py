@@ -22,6 +22,7 @@ from jibsa.core.listing import (
     in_range,
     iso_date,
     join_address,
+    lookup_failure_note,
     m2_to_pyeong,
     move_in_label,
     normalize_date,
@@ -62,11 +63,10 @@ from jibsa.providers.zigbang.service.common.apt import (
 from jibsa.providers.zigbang.service.common.base import (
     DIRECTION_LABELS,
     MAX_LIST_LIMIT,
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     ZigbangAptRegion,
     ZigbangListingDetail,
     apt_complex_id,
-    failure_update_hint,
     text_or_none,
     unavailable_on_404,
 )
@@ -631,7 +631,7 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
     404·빈 쪽이 오면 끝으로 본다. `(최대 N건)` 안내는 상한에 닿아 멈췄을 때만이다.
 
     매물을 다 받은 뒤 호 정보(`/apt/item-catalogs/{areaHoId}/ho-info`) 1회를 더 받아 웹 묶음 화면 '시세 정보' 탭의 직방시세·공시가격·
-    분양가를 붙인다. 덤 조회라 실패하면(`SCHOOL_LOOKUP_ERRORS`) 그 값들만 모름(null)으로 두고 `[실패]` 로 알린다. 요청은 매물
+    분양가를 붙인다. 덤 조회라 실패하면(`OPTIONAL_LOOKUP_ERRORS`) 그 값들만 모름(null)으로 두고 `[실패]` 로 알린다. 요청은 매물
     `CATALOG_PAGE_SIZE` 건에 1회씩과 호 정보 1회다.
 
     Raises:
@@ -721,10 +721,9 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
         price_info = client.run_request_item_catalogs_ho_info(
             ZigbangItemCatalogsHoInfoRequestParameterModel(area_ho_id=area_ho_id)
         ).price_info
-    except SCHOOL_LOOKUP_ERRORS as exc:
-        notes.append(note(
-            '실패',
-            f'직방 호 정보를 받지 못해({type(exc).__name__}) 직방시세·공시가격·분양가를 모릅니다 (url 의 직방 묶음 화면에서 확인){failure_update_hint(exc)}',
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        notes.append(lookup_failure_note(
+            exc, '직방', '호 정보', '직방시세·공시가격·분양가를 모릅니다 (url 의 직방 묶음 화면에서 확인)',
         ))
     zigbang_price = price_info.zigbang_price if price_info else None
     sale = zigbang_price.trade if zigbang_price else None

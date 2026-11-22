@@ -7,11 +7,14 @@ from pydantic import (
 )
 
 from jibsa.core.errors import (
+    JibsaError,
     RegionAmbiguousError,
     RegionNotFoundError,
 )
 from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
+    UPDATE_MAYBE_NEEDED,
+    UPDATE_NEEDED,
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -125,7 +128,14 @@ def _region_codes(client: DaangnClient, names: list[str]) -> list[tuple[str, str
     response = client.run_request_livable_region_scopes(
         DaangnLivableRegionScopesRequestPayloadModel(base_year=NEIGHBORHOOD_BASE_YEAR)
     )
-    scopes = unwrap_graphql(response, response.data.livable_region_scopes if response.data else None, '추천 지역')
+    scopes = unwrap_graphql(response, response.data.livable_region_scopes if response.data else None, '추천 지역', conditions=False)
+    if not scopes:
+        # 기준 연도의 지역 목록이 비어 오면 어떤 이름을 줘도 찾지 못한다 (기본값 '서울' 도). 이름 문제가 아니라 jibsa 가 고정한 연도·API 문제다
+        raise JibsaError(
+            code='UPSTREAM_ERROR',
+            message=f'당근 좋은 동네 추천의 지역 목록이 비어 왔습니다 (기준 연도 {NEIGHBORHOOD_BASE_YEAR})',
+            hint=UPDATE_NEEDED,
+        )
     codes: list[tuple[str, str]] = []
     for name in names:
         words = name.split()
@@ -175,7 +185,7 @@ def recommend_neighborhoods(
     (최대 50)·지역 없으면 전국이었다 (#215, 2026-11-12 번들 대조). 동 상세(후기 요약 글)는 jibsa 원칙대로 읽지 않는다.
 
     Raises:
-        JibsaError: 지역 이름이 여러 곳 (REGION_AMBIGUOUS), 없음 (REGION_NOT_FOUND), GraphQL 에러 (UPSTREAM_ERROR).
+        JibsaError: 지역 이름이 여러 곳 (REGION_AMBIGUOUS), 없음 (REGION_NOT_FOUND), GraphQL 에러·지역 목록이 빔 (UPSTREAM_ERROR).
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때.
     """
     indicators = LIFESTYLE_INDICATORS[lifestyle]
@@ -193,7 +203,7 @@ def recommend_neighborhoods(
             )
         )
     )
-    found = unwrap_graphql(response, response.data.recommend_neighborhoods if response.data else None, '좋은 동네 추천')
+    found = unwrap_graphql(response, response.data.recommend_neighborhoods if response.data else None, '좋은 동네 추천', conditions=False)
     neighborhoods = [
         DaangnNeighborhood(
             rank=item.rank,
@@ -204,17 +214,19 @@ def recommend_neighborhoods(
         )
         for item in found[:NEIGHBORHOOD_LIMIT]
     ]
+    notes = [] if regions else [note(
+        '범위',
+        f'--region 을 주지 않아 당근 웹 첫 화면처럼 {NEIGHBORHOOD_DEFAULT_REGION}에서 찾았습니다. 당근 웹에는 전국 순위가 없습니다. '
+        '다른 곳은 --region 으로 주세요 (여러 곳도 된다)',
+    )]
+    if not neighborhoods:
+        # 웹은 지역을 고르면 늘 5곳을 받는다. 지역 코드는 찾았는데 0곳이면 응답이 바뀐 것이다
+        notes.append(note('실패', f'당근이 추천 동네를 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
     return DaangnNeighborhoodsResult(
         lifestyle=lifestyle,
         indicators=[label for _, label, _ in indicators],
         regions=[label for _, label in codes],
         returned=len(neighborhoods),
         neighborhoods=neighborhoods,
-        notes=(
-            [] if regions else [note(
-                '범위',
-                f'--region 을 주지 않아 당근 웹 첫 화면처럼 {NEIGHBORHOOD_DEFAULT_REGION}에서 찾았습니다. 당근 웹에는 전국 순위가 없습니다. '
-                '다른 곳은 --region 으로 주세요 (여러 곳도 된다)',
-            )]
-        ) + ['dong 은 행정동(예: 역삼1동)입니다. 매물은 법정동 이름(예: 역삼동)으로 search listings 에서 찾으세요'],
+        notes=notes + ['dong 은 행정동(예: 역삼1동)입니다. 매물은 법정동 이름(예: 역삼동)으로 search listings 에서 찾으세요'],
     )

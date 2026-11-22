@@ -7,6 +7,7 @@ from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
     ListingDetail,
     ListingT,
+    LookupFailures,
     listing_as,
     move_in_label,
     note,
@@ -27,9 +28,13 @@ from jibsa.providers.daangn.api.response.listing import DaangnArticlesResponseMo
 from jibsa.providers.daangn.service.common import (
     COMPLEX_TYPE_LABELS,
     MONTHLY_TRADES,
+    OPTIONAL_LOOKUP_ERRORS,
     TRADE_TYPE_BY_TRADE,
     article_to_listing,
+    code_label,
     is_available,
+    needs_update,
+    partial_failure_note,
     station_name,
     trades_preferred_first,
 )
@@ -144,7 +149,7 @@ class DaangnListingDetail(ListingDetail):
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
-        if self.property_type != '상가' and self.key_money_manwon is None:
+        if self.property_type is not None and self.property_type != '상가' and self.key_money_manwon is None:
             fields = fields | {'key_money_manwon', 'key_money_negotiable'}
         if self.direct_deal:
             fields = fields | {'broker_fee_manwon'}
@@ -159,7 +164,8 @@ def _describe_trade(trade: DaangnTradeModel) -> str:
     당근은 거래 유형마다 금액을 늘 주어 None 을 따로 다루지 않는다 (2026-10-11 실측: 역삼역·신림역·오산역 주변 매물
     580건의 거래 600개 모두 매매가·보증금·월세가 있었다).
     """
-    label = TRADE_TYPE_BY_TRADE.get(trade.type, trade.type)
+    # 이 표기는 아는 거래(`trades_preferred_first`)에만 쓰지만 `type` 이 null 일 수 있는 모델이라 빈 글자로 받는다
+    label = TRADE_TYPE_BY_TRADE.get(trade.type or '', '')
     if trade.type == 'BUY':
         return f'{label} {trade.price}'
     if trade.type in MONTHLY_TRADES:
@@ -191,10 +197,29 @@ def _nearby_subways(article: DaangnArticleModel) -> list[str]:
     return [station_name(name) for name in dict.fromkeys(names)]
 
 
-def _manage_cost_label(option: DaangnManageCostOptionModel) -> str:
-    if option.option == 'ETC' and option.custom_option_name:
-        return option.custom_option_name
-    return MANAGE_COST_OPTION_LABELS.get(option.option, option.option)
+def _manage_cost_label(option: DaangnManageCostOptionModel) -> str | None:
+    """관리비 항목 하나의 이름. 직접 입력한 이름은 항목 코드가 'ETC' 이거나 코드를 모를 때(null·빈 글자·'-') 쓴다.
+
+    직접 입력한 이름은 앞뒤 공백을 지우고, 비었거나 '-' 면 없는 것으로 본다 (코드 라벨을 낸다).
+    코드를 모르는데 직접 입력한 이름도 없으면 어느 항목인지 몰라 None 이다. 표에 없는 코드는 원래 코드 그대로.
+    """
+    label = code_label(MANAGE_COST_OPTION_LABELS, option.option)
+    custom_name = (option.custom_option_name or '').strip()
+    if custom_name not in ('', '-') and (option.option == 'ETC' or label is None):
+        return custom_name
+    return label
+
+
+def _known_labels(labels: list[str | None]) -> list[str] | None:
+    """항목 이름들에서 아는 것만 남긴다. 항목이 처음부터 없으면 [], 있는데 이름을 하나도 모르면 None(모름)이다."""
+    if not labels:
+        return []
+    return [label for label in labels if label is not None] or None
+
+
+def _manage_cost_labels(options: list[DaangnManageCostOptionModel]) -> list[str] | None:
+    """관리비 항목들의 이름 (`_known_labels`). 이름을 모르는 항목(`_manage_cost_label` 이 None)은 건너뛴다."""
+    return _known_labels([_manage_cost_label(item) for item in options])
 
 
 def _manage_cost_items(article: DaangnArticleModel) -> tuple[list[str] | None, list[str] | None]:
@@ -205,16 +230,25 @@ def _manage_cost_items(article: DaangnArticleModel) -> tuple[list[str] | None, l
     (`manageCostDetailIsDisclosed: false`)도 껍데기 항목이 오므로 모름으로 둔다. 직거래 매물은
     포함 항목 목록과 미포함 항목 목록(`excludeManageCostOption`)을 따로 준다. 항목 목록에서 빈 항목(null)을 빼고 읽었으면
     어느 항목이 빠졌는지 몰라 포함·미포함 모두 모름이다 (`[]` 로 두면 '없음' 으로 읽힌다).
+
+    한 쪽에 들어갈 항목이 있는데 이름을 하나도 모르면(코드가 빈 글자·'-') 그 쪽은 None(모름)이고, 일부만 알면 아는 이름 목록이다.
+    그 쪽에 들어갈 항목이 처음부터 없으면 [].
+
+    직거래 미포함 목록이 null(또는 키 없음)이면 당근이 알려 주지 않은 것이라 모름(None)이다. 항목이 없으면 당근이 []
+    로 준다 (2026-11-20 실측: 역삼동 직거래 3건의 상세 스토어 `Article` 이 모두 키를 주고 null 은 없었다. 항목 없는 매물
+    4661752·4151723 은 `[]`, 있는 매물 3643410 은 `["WATERWORKS", "ELECTRIC", "INTERNET", "GAS"]`).
     """
     options = article.manage_cost_options
     if options is None or article.manage_cost_detail_is_disclosed is False or article.null_items('manage_cost_options'):
         return None, None
     if article.manage_cost_charge_type is not None:
-        includes = [_manage_cost_label(item) for item in options if item.pay_option == 'FIXED']
-        excludes = [_manage_cost_label(item) for item in options if item.pay_option == 'USED']
+        includes = _manage_cost_labels([item for item in options if item.pay_option == 'FIXED'])
+        excludes = _manage_cost_labels([item for item in options if item.pay_option == 'USED'])
         return includes, excludes
-    excludes = [MANAGE_COST_OPTION_LABELS.get(code, code) for code in article.exclude_manage_cost_options or []]
-    return [_manage_cost_label(item) for item in options], excludes
+    excludes = None
+    if article.exclude_manage_cost_options is not None:
+        excludes = _known_labels([code_label(MANAGE_COST_OPTION_LABELS, code) for code in article.exclude_manage_cost_options])
+    return _manage_cost_labels(options), excludes
 
 
 def _broker_fee_manwon(article: DaangnArticleModel, trade: DaangnTradeModel) -> float | None:
@@ -275,7 +309,7 @@ def detail_to_listing(
     trade = trades[0] if trades else None
     notes: list[str] = []
     if trade_type is not None and trade is not None:
-        wanted = next((item for item in trades if TRADE_TYPE_BY_TRADE[item.type] == trade_type), None)
+        wanted = next((item for item in trades if TRADE_TYPE_BY_TRADE.get(item.type or '') == trade_type), None)
         if wanted is None:
             shown = f'이 매물에는 {trade_type} 조건이 없어 대표 조건({_describe_trade(trade)})을 보여 줍니다'
             # 거래가 하나뿐이면 other_trades 가 비어 있어 그쪽을 보라고 하지 않는다 (2026-11-11 실측: 4998393 월세 하나)
@@ -288,16 +322,22 @@ def detail_to_listing(
     # 거래 조건이 없으면 article_to_listing 이 None 을 줘 위에서 끝났다
     assert trade is not None
 
-    option_values = {option.name: option.value for option in article.options}
+    # 이름이 null·빈 글자·'-' 인 옵션은 어느 옵션인지 몰라 건너뛴다. 이름은 앞뒤 공백을 지워 읽는다
+    option_values = {
+        name: option.value
+        for option in article.options
+        if (name := (option.name or '').strip()) not in ('', '-')
+    }
 
     parking = None
-    # 주차 대수를 먼저 봐도 작성자가 불가(NO)로 올린 매물을 가능으로 바꾸지 않는다. 불가인데 대수가 있는 매물은 보지 못했다
-    # (2026-10-18 실측: 역삼동 상세 12건 중 YES 11건(대수 있음 9건), NO 1건(대수 없음)). 2026-10-18 리뷰 오탐 확인
-    if option_values.get('PARKING') == 'YES' or (article.available_total_parking_spots or 0) > 0:
-        spots = article.available_total_parking_spots
-        parking = parking_label(True, f'{spots}대' if spots else None)
-    elif option_values.get('PARKING') == 'NO':
+    # 작성자가 고른 불가는 주차 대수가 있어도 뒤집지 않는다 (2026-11-20 리뷰: 불가인데 대수가 있으면 가능으로 냈다.
+    # 당근 웹도 작성자 옵션으로 불가를 보여 준다는 분석이 있으나 jibsa 가 웹으로 확인하지는 않았다)
+    spots = article.available_total_parking_spots
+    parking_option = option_values.get('PARKING')
+    if parking_option == 'NO':
         parking = parking_label(False)
+    elif parking_option == 'YES' or (spots or 0) > 0:
+        parking = parking_label(True, f'{spots}대' if spots else None)
 
     elevator = None
     if option_values.get('ELEVATOR') in ('YES', 'NO'):
@@ -317,7 +357,7 @@ def detail_to_listing(
         base,
         room_count=article.room_count,
         bathroom_count=article.bathroom_count,
-        direction=DIRECTION_LABELS.get(article.building_orientation or '', article.building_orientation),
+        direction=code_label(DIRECTION_LABELS, article.building_orientation),
         move_in=move_in,
         parking=parking,
         elevator=elevator,
@@ -338,7 +378,7 @@ def detail_to_listing(
         complex_id=article.complex.original_id if article.complex else None,
         complex_name=article.complex.name if article.complex and article.complex.original_id else None,
         complex_type=(
-            COMPLEX_TYPE_LABELS.get(article.complex.type or '', article.complex.type)
+            code_label(COMPLEX_TYPE_LABELS, article.complex.type)
             if article.complex and article.complex.original_id else None
         ),
         direct_deal=direct_deal,
@@ -377,11 +417,20 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
     유형·가격으로 바꾸고 알린다. 목록의 가격을 두면 없어진 조건을 보여 주고, 상세의 안내(`notes`)도 목록에는 실리지 않았다
     (2026-11-12 리뷰. 예전에는 TRADE_NOT_OFFERED 에러라 뺐다).
 
+    그 밖의 덤 조회 실패(`OPTIONAL_LOOKUP_ERRORS`: 네트워크·상태 코드·응답 형식 오류·요청 제한)는 그 매물을 목록 값 그대로 두고
+    상세로 채우는 칸은 목록이 아는 값 그대로(모르면 null)로 둔다. 상세 한 건 때문에 이미 받은 목록(최대 120건)을 버리지 않는다
+    (2026-11-19 리뷰). 요청 제한이면 다음 요청도 같은 제한에 걸리므로 남은 매물의 상세는 요청하지 않고 목록 값 그대로 둔다.
+    상세를 못 붙인 매물(실패한 것과 요청하지 않은 것)은 `[실패]` 안내 하나로 수를 알린다 (직방·다방 `--details` 와 같다).
+    이유는 거절·응답 형식 변경이 한 건이라도 있으면 그 이유(요청 제한도 왔으면 덧붙임), 없으면 요청 제한, 없으면 첫 실패 이유다
+    (`LookupFailures`. 직방·다방과 같다).
+
     Returns:
         (채운 매물, 안내).
     """
     kept: list[ListingT] = []
     gone = 0
+    # 상세를 못 붙인 매물 수(실패한 것 + 요청 제한 뒤라 요청하지 않은 것)와 안내 이유. 업데이트 안내를 붙이는 갈래는 partial_failure_note 와 같다
+    failures = LookupFailures(needs_update=needs_update)
     # 목록의 거래 조건이 상세에서 없어져 대표 조건으로 바꾼 매물 ID, 그중 다른 조건(other_trades)이 남은 매물이 있는지
     retraded: list[str] = []
     other_trades_left = False
@@ -389,10 +438,18 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
         if index >= DETAILS_MAX:
             kept.append(listing)
             continue
+        if failures.stopped:
+            failures.skip()
+            kept.append(listing)
+            continue
         try:
             detail = get_listing(client, int(listing.id), listing.trade_type)
         except ListingUnavailableError:
             gone += 1
+            continue
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            failures.add(exc)
+            kept.append(listing)
             continue
         update = {
             'manage_cost_manwon': detail.manage_cost_manwon,
@@ -429,6 +486,11 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
             '제외',
             f'{gone}건은 상세를 보니 거래가 끝났거나 볼 수 없는 매물(숨김·노출 제한·비활성 중개소)이라 뺐습니다 (앞 안내의 건수는 빼기 전 기준)',
         ))
+    reason = failures.reason(
+        lambda exc: partial_failure_note(exc, '매물 상세', f'매물 {failures.count}건의 상세(관리비·등록일·번지·사용승인일·방 구조)를')
+    )
+    if reason is not None:
+        notes.append(note('실패', reason + '. 그 매물은 목록 값만 넣었습니다'))
     if len(listings) > DETAILS_MAX:
         # 직방의 같은 안내('건물 용도(--details)는 앞 N건에만')와 같은 [참고] 다
         notes.append(note('참고', f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다'))

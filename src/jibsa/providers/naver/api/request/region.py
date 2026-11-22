@@ -19,6 +19,18 @@ class NaverLegalDivisionInfoListByLevelV1RequestParameterModel(RequestModel):
     ] = 'SI'
 
 
+class NaverLegalDivisionInfoListV1RequestParameterModel(RequestModel):
+    """`GET /front-api/v1/legalDivision/infoList` 쿼리. 법정동 코드로 지역 이름을 찾는다 (매물 상세 화면의 위치 칸이 쓴다).
+
+    웹은 쉼표로 여러 코드를 보낼 수 있지만 jibsa 는 매물 하나의 코드 하나만 보낸다.
+    """
+
+    legal_division_numbers: Annotated[
+        str,
+        Field(pattern=r'^\d{10}$', description='법정동 코드 (10자리)', alias='legalDivisionNumbers')
+    ]
+
+
 class NaverLegalDivisionSubInfoListV1RequestParameterModel(RequestModel):
     """`GET /front-api/v1/legalDivision/subInfoList` 쿼리. 지역 하나의 바로 아래 지역.
 

@@ -36,7 +36,10 @@ from jibsa.providers.naver.service.listing import (
     get_listing,
     list_complex_articles,
 )
-from jibsa.providers.naver.service.real_price import get_real_prices
+from jibsa.providers.naver.service.real_price import (
+    MAX_VILLA_PERIOD_PAGES,
+    get_real_prices,
+)
 from jibsa.providers.naver.service.region import (
     WIDE_REGION_NOTE_MARK,
     legal_division_code_at,
@@ -62,6 +65,7 @@ ROUTES = {
     '/front-api/v1/complex/pyeong': 'complex_pyeong_v1',
     '/front-api/v1/complex/v2/pyeong/realPrice': 'complex_pyeong_real_price_v2',
     '/front-api/v1/legalDivision/searchByCoordinate': 'legal_division_search_by_coordinate_v1',
+    '/front-api/v1/legalDivision/infoList': 'legal_division_info_list_v1',
     '/front-api/v1/data-service/transport': 'data_service_transport_v1',
     '/front-api/v1/education/building/school': 'education_building_school_v1',
     '/front-api/v1/article/key': 'article_key_v1',
@@ -675,7 +679,7 @@ def test_sale_cost_lookup_failure_is_unknown() -> None:
 
 def test_detail_optional_lookup_failure_is_unknown() -> None:
     # 관리비·법정동·단지 조회가 HTTP 오류가 아닌 이유(응답 모양이 바뀜)로 실패해도 상세는 내보내고 그 값만 모름이다
-    broken = ('/article/maintenanceFee', '/legalDivision/searchByCoordinate', '/complex')
+    broken = ('/article/maintenanceFee', '/legalDivision/infoList', '/complex')
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.removeprefix('/front-api/v1') in broken:
@@ -688,6 +692,30 @@ def test_detail_optional_lookup_failure_is_unknown() -> None:
         detail = get_listing(client, '1000000001')
     assert (detail.manage_cost_manwon, detail.address) == (None, None)
     assert detail.price_manwon is not None
+
+
+@pytest.mark.parametrize(
+    ('real_estate_type', 'detail_info', 'li', 'expected'),
+    [
+        # 웹 위치 칸 규칙: 지번 노출 표의 유형은 isJibunAddressExposed 가 없으면 숨기고 true 면 보인다
+        ('D02', {}, None, '서울특별시 강남구 개포동'),
+        ('D02', {'isJibunAddressExposed': True}, None, '서울특별시 강남구 개포동 100-1'),
+        ('C02', {}, None, '서울특별시 강남구 개포동 100-1'),
+        # 단독(C0301)은 표에 없는 유형이어도 노출 값을 따른다
+        ('C03', {'buildingType': 'C0301'}, None, '서울특별시 강남구 개포동'),
+        # 리는 지번 앞에 붙는다
+        ('C02', {}, '다문리', '서울특별시 강남구 개포동 다문리 100-1'),
+    ],
+)
+def test_detail_address_follows_web_jibun_rule(real_estate_type: str, detail_info: dict, li: str | None, expected: str) -> None:
+    key = load('article_key_v1')
+    key['result']['type']['realEstateType'] = real_estate_type
+    if li:
+        key['result']['address']['li'] = li
+    basic = load('article_basic_info_v1')
+    basic['result']['detailInfo']['articleDetailInfo'].update(detail_info)
+    with make_path_client([], {'/article/key': key, '/article/basicInfo': basic}) as client:
+        assert get_listing(client, '1000000001').address == expected
 
 
 def test_detail_transport_error_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1438,6 +1466,23 @@ def test_villa_real_price_adds_per_pyeong_and_sorted_nearby_trades() -> None:
     assert len(requests) == 7
     assert requests[-3].url.params['startDate'] == '2021-11-19'
     assert (requests[-1].url.params['zoom'], requests[-1].url.params['pyeongTypeNumber'], requests[-1].url.params['tradeType']) == ('16', '4', 'B1')
+
+
+def test_villa_period_keeps_unknown_trade_date_and_does_not_stop_on_it() -> None:
+    # 계약일이 '-' 인 거래는 결과에 trade_date null 로 남고, 기간보다 오래된 거래로 치지 않아 쪽 넘김을 멈추지 않는다
+    deposit = {'dealPrice': 0, 'deposit': 250_000_000, 'monthlyRent': 0}
+    page = _ok({'totalCount': 99, 'hasNextPage': True, 'realPriceList': [
+        {'tradeDate': '-', 'floor': 3, **deposit},
+        {'tradeDate': '2026-09-05', 'floor': 2, **deposit},
+    ]})
+    requests: list[httpx.Request] = []
+    # 기간 조회는 아파트 단지 기간 목록을 먼저 묻고, 비어 오면 빌라로 넘어간다
+    overrides = _villa_overrides(**{'/complex/villa/realPricePage': page, '/complex/pyeong/realPrice/list': _ok([])})
+    with make_path_client(requests, overrides) as client:
+        result = get_real_prices(client, 100002, 4, trade_type='전세', period='1년', today=date(2026, 11, 19))
+    assert _paths(requests).count('/complex/villa/realPricePage') == MAX_VILLA_PERIOD_PAGES
+    assert [trade.trade_date for trade in result.transactions[:2]] == [None, '2026-09-05']
+    assert any(text.startswith('[일부]') for text in result.notes)
 
 
 def test_villa_around_km_sends_the_box_and_monthly_has_no_per_pyeong_key() -> None:

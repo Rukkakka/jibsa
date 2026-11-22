@@ -13,6 +13,7 @@ from jibsa.core.korean import particle
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     iso_date,
+    lookup_failure_note,
     note,
     null_items_note,
 )
@@ -36,11 +37,10 @@ from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangRoomTypePriceMonthModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
-    SCHOOL_LOOKUP_ERRORS,
+    OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
     UPSTREAM_RETRY_HINT,
     apt_complex_id,
-    failure_update_hint,
     parse_complex_id,
     text_or_none,
 )
@@ -549,19 +549,18 @@ def get_price_trend(
             related = client.run_request_danjis_price_chart_related_danjis(
                 ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel(danji_id=number)
             )
-        except SCHOOL_LOOKUP_ERRORS as exc:
-            notes.append(note(
-                '실패',
-                f'직방 비교 단지 후보를 받지 못해({type(exc).__name__}) comparable_complexes 값을 모릅니다 '
-                f'(직방 웹 단지 화면의 단지 비교하기에서 확인){failure_update_hint(exc)}',
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            notes.append(lookup_failure_note(
+                exc, '직방', '비교 단지 후보',
+                'comparable_complexes 값을 모릅니다 (직방 웹 단지 화면의 단지 비교하기에서 확인)',
             ))
     comparable = None if related is None or related.danjis is None else [related_complex_of(item) for item in related.danjis]
     if related is not None and related.danjis is None:
         # 덤 조회가 예외 없이 끝났는데 목록이 없으면 후보가 없는 것([])이 아니라 응답 형식이 바뀐 것이다 (예외 실패와 같은 [실패])
         notes.append(note(
             '실패',
-            '직방이 비교 단지 후보 목록을 주지 않아 comparable_complexes 값을 모릅니다 '
-            f'(직방 웹 단지 화면의 단지 비교하기에서 확인). {UNEXPECTED_FORMAT_TEXT}',
+            f'직방이 비교 단지 후보 목록을 주지 않았습니다. {UNEXPECTED_FORMAT_TEXT}. '
+            'comparable_complexes 값을 모릅니다 (직방 웹 단지 화면의 단지 비교하기에서 확인)',
         ))
 
     lines: list[ZigbangComplexPriceLine] | None = None
