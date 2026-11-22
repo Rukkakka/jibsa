@@ -47,6 +47,9 @@ from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangDanjisRoomTypesPriceChartResponseModel,
 )
 from jibsa.providers.zigbang.api.response.local.info import ZigbangLocalPriceModel
+from jibsa.providers.zigbang.api.response.local.ranking import (
+    ZigbangLocalsDanjiRankingResponseModel,
+)
 from jibsa.providers.zigbang.api.response.local.trades import ZigbangLocalTradeModel
 from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ManageCostModel,
@@ -100,8 +103,12 @@ from jibsa.providers.zigbang.service.local import (
     info as region_info,
 )
 from jibsa.providers.zigbang.service.local import (
+    ranking as region_ranking,
+)
+from jibsa.providers.zigbang.service.local import (
     trades as region_trades,
 )
+from jibsa.providers.zigbang.service.local.base import ZigbangLocalArea
 from jibsa.providers.zigbang.service.real_price import get_real_prices
 from jibsa.providers.zigbang.service.region import (
     divided_region_error,
@@ -1594,7 +1601,90 @@ def test_stay_schedule_with_dropped_null_makes_available_unknown() -> None:
     assert data['available'] is True and len(data['unavailable_periods']) == 1
 
 
-# --- 지역 화면 (region-info·region-trades) ------------------------
+# --- 지역 화면 (region-info·region-trades·region-ranking) ------------------------
+
+def _area(level: str) -> ZigbangLocalArea:
+    return ZigbangLocalArea(
+        region=ZigbangAptRegion(name='가상구', address='가상특별시 가상구', lat=None, lng=None, legal_division_code='0000000000'),
+        level=level,  # type: ignore[arg-type]
+        code='00000' if level == '구' else '00000000',
+        notes=[],
+    )
+
+
+def _ranking_page(page: int, count: int, size: int = 10, null_at: tuple[int, ...] = ()) -> dict:
+    rows: list[dict | None] = [
+        {
+            'areaDanjiId': page * 100 + index,
+            'areaDanjiName': f'[가상]단지{page}-{index}',
+            'volume': 5,
+            'rankingNumber': (page - 1) * 10 + index + 1,
+            'local': '가상동',
+            '사용승인일': '20000101',
+            '총세대수': 100,
+        }
+        for index in range(size)
+    ]
+    for index in null_at:
+        rows[index] = None
+    return {
+        'startDate': '2026-10-31T15:00:00.000Z',
+        'endDate': '2026-11-21T15:00:00.367Z',
+        'updatedDate': '2026-11-22T00:00:00.367Z',
+        'count': count,
+        'list': rows,
+    }
+
+
+class _FakeRankingClient:
+    def __init__(self, pages: dict[int, dict | Exception]) -> None:
+        self.pages = pages
+        self.calls: list[int] = []
+
+    def run_request_locals_danji_ranking(self, parameter):  # noqa: ANN001, ANN201
+        self.calls.append(parameter.page)
+        page = self.pages[parameter.page]
+        if isinstance(page, Exception):
+            raise page
+        return ZigbangLocalsDanjiRankingResponseModel.model_validate(page)
+
+
+def _run_ranking(monkeypatch: pytest.MonkeyPatch, pages: dict[int, dict | Exception], *, limit: int, level: str = '구', sort: str | None = None):
+    monkeypatch.setattr(region_ranking, 'resolve_local_area', lambda client, query: _area(level))
+    client = _FakeRankingClient(pages)
+    return client, region_ranking.get_region_ranking(client, '가상구', sort=sort, limit=limit)  # type: ignore[arg-type]
+
+
+def test_ranking_pages_stop_and_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    # limit 25 → 3쪽. 2쪽의 빈 항목도 한 자리로 세고 [:limit] 로 자른다. 100위가 넘는 순위 수는 웹처럼 100위까지라고 알린다
+    pages = {1: _ranking_page(1, 150), 2: _ranking_page(2, 150, null_at=(3,)), 3: _ranking_page(3, 150)}
+    client, result = _run_ranking(monkeypatch, pages, limit=25)
+    assert client.calls == [1, 2, 3]
+    assert result.returned == 25 and result.has_more is True
+    assert any('빈 항목 1' in text for text in result.notes) and any('100위까지만' in text for text in result.notes)
+    dumped = result.model_dump(mode='json')
+    # UTC 15시 이후는 한국 날짜로 다음 날이다. 거래량 정렬은 시작일·갱신 시각이 있고 구 단위라 줄마다 dong 이 있다
+    assert (dumped['start_date'], dumped['end_date'], dumped['updated_at']) == ('2026-11-01', '2026-11-22', '2026-11-22 09:00')
+    assert dumped['rankings'][0]['dong'] == '가상동' and 'price_manwon' not in dumped['rankings'][0]
+
+    # 100위까지만: 순위 수가 150 이어도 10쪽에서 멈추고 더 있다고 하지 않는다
+    client, result = _run_ranking(monkeypatch, {page: _ranking_page(page, 150) for page in range(1, 11)}, limit=100)
+    assert client.calls == list(range(1, 11)) and result.returned == 100 and result.has_more is False
+
+    # 순위 수가 8 이면 한 쪽에서 끝난다. 인기 순위는 갱신 시각이 없고, 동 단위는 dong 키가 없다
+    client, result = _run_ranking(monkeypatch, {1: _ranking_page(1, 8, size=8)}, limit=10, level='동', sort='인기단지순')
+    dumped = result.model_dump(mode='json')
+    assert client.calls == [1] and result.has_more is False and 'updated_at' not in dumped and 'start_date' in dumped
+    assert 'dong' not in dumped['rankings'][0]
+
+    # 3쪽이 실패하면 받은 쪽까지 내고 [실패] 로 알린다. 1쪽 실패는 에러 그대로다
+    failing = {1: _ranking_page(1, 77), 2: _ranking_page(2, 77), 3: httpx.ReadTimeout('가상 시간 초과')}
+    client, result = _run_ranking(monkeypatch, failing, limit=30)
+    assert client.calls == [1, 2, 3] and result.returned == 20 and result.has_more is True
+    assert any(text.startswith('[실패] 직방 단지 랭킹 3쪽') for text in result.notes)
+    with pytest.raises(httpx.ReadTimeout):
+        _run_ranking(monkeypatch, {1: httpx.ReadTimeout('가상 시간 초과')}, limit=10)
+
 
 def _trade(**fields: object) -> ZigbangLocalTradeModel:
     base = {

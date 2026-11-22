@@ -55,6 +55,9 @@ from jibsa.providers.zigbang.api.request.local.info import (
     ZigbangLocalsTotalPeopleTimeRequestParameterModel,
     ZigbangLocalsTradingVolumeChartRequestParameterModel,
 )
+from jibsa.providers.zigbang.api.request.local.ranking import (
+    ZigbangLocalsDanjiRankingRequestParameterModel,
+)
 from jibsa.providers.zigbang.api.request.local.trades import (
     ZigbangLocalsTradingHistoriesRequestParameterModel,
 )
@@ -135,6 +138,9 @@ from jibsa.providers.zigbang.api.response.local.info import (
     ZigbangLocalsTotalHouseholdsTimeResponseModel,
     ZigbangLocalsTotalPeopleTimeResponseModel,
     ZigbangLocalsTradingVolumeChartResponseModel,
+)
+from jibsa.providers.zigbang.api.response.local.ranking import (
+    ZigbangLocalsDanjiRankingResponseModel,
 )
 from jibsa.providers.zigbang.api.response.local.trades import (
     ZigbangLocalsTradingHistoriesResponseModel,
@@ -221,7 +227,7 @@ class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
     로그인 없이 원룸·오피스텔·빌라 매물 목록, 요약, 상세, 건물 실거래와 지역 검색과 역 반경 매물, 아파트 지역 매물·좌표가 속한 동·상세·같은 호
-    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 지역 정보·거래량·평당가 추이·인구·최근 실거래, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
+    묶음과 호 정보, 단지 평형·학교·역/학교/동 주변 단지 카드, 지역 정보·거래량·평당가 추이·인구·최근 실거래·단지 랭킹, 단지 직방시세 추이, 상가, 단기임대(stay-apis.zigbang.com)의 매물·후기·임대인의 다른 방을
     조회한다. 로그인하지 않은 웹처럼 토큰 없이 부르고, 웹이 API 묶음마다 붙이는 헤더(`PLATFORM_HEADERS`·`APT_HEADERS`·`STAY_HEADERS`)를 붙인다. 금액은 대부분 **만원** 단위로 오지만,
     원룸·빌라 요약 응답의 `manage_cost`, 아파트 상세의 관리비, 단기임대 응답의 금액은 원 단위다.
 
@@ -268,6 +274,7 @@ class ZigbangClient(BaseHTTPClient):
     locals_total_people_time_endpoint: ClassVar[str] = '/apt/locals/{local_code}/total_people_time'
     locals_total_households_time_endpoint: ClassVar[str] = '/apt/locals/{local_code}/total_households_time'
     locals_trading_histories_endpoint: ClassVar[str] = '/apt/locals/trading-histories'
+    locals_danji_ranking_endpoint: ClassVar[str] = '/apt/locals/danji/ranking'
     item_catalogs_items_endpoint: ClassVar[str] = '/apt/item-catalogs/items/{item_id}'
     item_catalogs_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}'
     item_catalogs_ho_info_endpoint: ClassVar[str] = '/apt/item-catalogs/{area_ho_id}/ho-info'
@@ -988,6 +995,44 @@ class ZigbangClient(BaseHTTPClient):
         )
         raise_for_status(response=response)
         return ZigbangLocalsTradingHistoriesResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    def run_request_locals_danji_ranking(
+        self,
+        parameter: ZigbangLocalsDanjiRankingRequestParameterModel
+    ) -> ZigbangLocalsDanjiRankingResponseModel:
+        """List the apartment complex ranking of a region via `GET /apt/locals/danji/ranking`.
+
+        Same retry behaviour as `run_request_items_onerooms_v1`. 웹 지역 정보 화면의 단지 랭킹이다. 봉투가 없다. `limit` 은 10 까지,
+        200위를 넘는 쪽은 서버가 400 으로 거절한다. 로그인이 필요 없다.
+
+        Args:
+            parameter: `page`, `limit`, `bjdCode`, `viewPeriod`, `sortType`, `tranType`.
+
+        Returns:
+            ZigbangLocalsDanjiRankingResponseModel: 집계 기간·전체 순위 수와 이번 쪽의 단지 순위.
+        """
+        response = self._client.get(
+            url=self.locals_danji_ranking_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsDanjiRankingResponseModel.model_validate(response.json())
+
+    @zigbang_retry
+    async def arun_request_locals_danji_ranking(
+        self,
+        parameter: ZigbangLocalsDanjiRankingRequestParameterModel
+    ) -> ZigbangLocalsDanjiRankingResponseModel:
+        """Async variant of `run_request_locals_danji_ranking`."""
+        response = await self._async_client.get(
+            url=self.locals_danji_ranking_endpoint,
+            params=parameter.model_dump(by_alias=True, exclude_none=True),
+            headers=APT_HEADERS
+        )
+        raise_for_status(response=response)
+        return ZigbangLocalsDanjiRankingResponseModel.model_validate(response.json())
 
     @zigbang_retry
     def run_request_item_catalogs_items(

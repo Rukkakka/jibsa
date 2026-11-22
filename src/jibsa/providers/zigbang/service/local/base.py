@@ -1,4 +1,4 @@
-"""직방 service 지역 화면 공통: 동·구 해석, 결과 머리(`region`), 해당 없는 키를 빼는 결과·줄 기반 모델, 거래 유형·정렬 이름 찾기 (region-info·region-trades)."""
+"""직방 service 지역 화면 공통: 동·구 해석, 결과 머리(`region`), 해당 없는 키를 빼는 결과·줄 기반 모델, 거래 유형·정렬 이름 찾기 (region-info·region-trades·region-ranking)."""
 
 from pydantic import (
     BaseModel,
@@ -26,14 +26,14 @@ SortValueT = TypeVar('SortValueT')
 LocalLevel = Literal['동', '구']
 LocalTrade = Literal['매매', '전세', '월세']
 LOCAL_TRADES: tuple[LocalTrade, ...] = ('매매', '전세', '월세')
-# 지역 화면 명령이 같은 말로 동·구를 찾는다. 서버는 시·도 코드(2자리)도 받지만 웹 지역 화면이 시·도를 보여 주는지 확인하지 못해 받지 않는다
+# 세 명령이 같은 말로 동·구를 찾는다. 서버는 시·도 코드(2자리)도 받지만 웹 지역 화면이 시·도를 보여 주는지 확인하지 못해 받지 않는다
 LOCAL_SIDO_MESSAGE: str = '시·도 이름이라 조회할 수 없습니다 (동·구 단위로 조회합니다)'
 LOCAL_SIDO_HINT: str = "구나 동 이름을 주세요 (예: '송파구', '가락동')"
 # 지역 해석의 일반 hint 는 역 이름으로 다시 찾으라고 하지만 이 명령들은 역·학교·단지 이름을 받지 않는다
 LOCAL_NOT_FOUND_HINT: str = "동·구 이름을 주세요 (예: '송파구', '가락동'). 역·학교·단지 이름은 받지 않습니다"
-# region-info·region-trades 가 같이 쓴다 (두 명령 모두 직방 웹 지역 화면의 값이다)
+# region-info·region-trades·region-ranking 이 같이 쓴다 (세 명령 모두 직방 웹 지역 화면의 값이다)
 LOCAL_RI_CHECK: str = '직방 지역 화면은 읍·면 단위입니다'
-# 줄의 동(`dong`) 필드 설명. 실거래 줄이 쓴다
+# 줄의 동(`dong`) 필드 설명. 실거래·랭킹 줄이 같이 쓴다
 LOCAL_DONG_DESCRIPTION: str = (
     "줄이 속한 동 (직방이 준 local, 예: '가락동'). 구 단위 조회에만 있고 동 단위 조회는 서버가 빈 글자를 줘 키가 없다. "
     '구 단위인데 직방이 주지 않으면 null'

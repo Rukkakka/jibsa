@@ -20,8 +20,9 @@
 | `listing` | 매물 하나 상세 | 매물 ID | — |
 | `catalog` | 아파트 같은 호 묶음의 매물 전부와 매물마다의 가격·상세 | 묶음 ID (`catalog_id`) | `listing` |
 | `price-trend` | 아파트 단지·평형의 월별 직방시세 추이 | 아파트 단지 ID (평형은 `--pyeong`) | — |
-| `region-info` | 동·구 지역 정보 (단지·세대 수, 평형대별 직방시세, 거래량, 평당가 추이, 구는 인구·세대) | 동·구 이름 | `region-trades`, `search complexes` |
+| `region-info` | 동·구 지역 정보 (단지·세대 수, 평형대별 직방시세, 거래량, 평당가 추이, 구는 인구·세대) | 동·구 이름 | `region-trades`, `region-ranking`, `search complexes` |
 | `region-trades` | 동·구의 최근 등록 실거래 | 동·구 이름 | `complex`, `real-price` |
+| `region-ranking` | 동·구의 단지 랭킹 (거래량·상승률·하락률·시세·평당가·인기·전세가율) | 동·구 이름 | `complex`, `search listings --complex` |
 
 ### 보통 이렇게 이어서 쓴다
 
@@ -31,7 +32,7 @@
                             └→ real-price (아파트)
 역·학교·동 단지    search complexes → complex / search listings --complex → listing
 아파트 묶음 가격   search listings apt / --complex (is_price_range: true) → catalog
-동·구 시세·실거래  region-info / region-trades → complex / real-price
+동·구 시세·실거래  region-info / region-trades / region-ranking → complex / real-price
 단지 시세 추이     complex → price-trend (아파트, 평형은 --pyeong)
 ```
 
@@ -714,7 +715,7 @@ jibsa zigbang region-info 가락동 --range 30평대
 
 **반환값**
 
-`region`, `complexes`, `households`, `estimated_sale_price_min_manwon`, `estimated_sale_price_max_manwon`, `estimated_prices`, `monthly_volumes`, `price_trend`, `price_movement`, 구는 `population` 을 준다. `region` 은 `name`(직방 지역 정보의 이름, 예: `성남시 분당구`)·`level`(`동`·`구`, 시·군·구는 `구`)·`address`·`code`(직방 지역 코드)이고 `region-trades` 도 같은 모양이다.
+`region`, `complexes`, `households`, `estimated_sale_price_min_manwon`, `estimated_sale_price_max_manwon`, `estimated_prices`, `monthly_volumes`, `price_trend`, `price_movement`, 구는 `population` 을 준다. `region` 은 `name`(직방 지역 정보의 이름, 예: `성남시 분당구`)·`level`(`동`·`구`, 시·군·구는 `구`)·`address`·`code`(직방 지역 코드)이고 `region-trades`·`region-ranking` 도 같은 모양이다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
@@ -728,7 +729,7 @@ jibsa zigbang region-info 가락동 --range 30평대
 
 **오류와 대응**
 
-`--range` 허용값 밖은 지역을 찾기 전에 `INVALID_ARGUMENT`. 시·도 이름(서울·경기도)은 `INVALID_ARGUMENT` 이니 구·동 이름을 준다. 못 찾은 이름은 `REGION_NOT_FOUND` 이고 `hint` 가 동·구 이름을 주라고 알린다 (역·학교·단지 이름은 받지 않는다). 같은 이름의 동·구, 구가 있는 시(성남시), `○가` 로 나뉜 동(성수동)은 [`search listings apt`](#3-search-listings-apt--아파트-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 리는 상위 읍·면으로 찾고 `[범위]` 로 알린다. 지역 정보 조회가 404 여서 동·구는 찾았는데 직방에 그 지역 정보가 없으면 `NOT_FOUND`(`직방에 '<지역 이름>' 지역 정보가 없습니다`)이고 `hint` 가 이웃 동·구 이름(동이면 그 동이 속한 구)으로 다시 부르라고 알린다. 이 오류는 `region-info` 의 지역 정보 조회에서만 나고 `region-trades` 의 지역 해석 오류에는 없다.
+`--range` 허용값 밖은 지역을 찾기 전에 `INVALID_ARGUMENT`. 시·도 이름(서울·경기도)은 `INVALID_ARGUMENT` 이니 구·동 이름을 준다. 못 찾은 이름은 `REGION_NOT_FOUND` 이고 `hint` 가 동·구 이름을 주라고 알린다 (역·학교·단지 이름은 받지 않는다). 같은 이름의 동·구, 구가 있는 시(성남시), `○가` 로 나뉜 동(성수동)은 [`search listings apt`](#3-search-listings-apt--아파트-매물-찾기)처럼 `REGION_AMBIGUOUS` 다. 리는 상위 읍·면으로 찾고 `[범위]` 로 알린다. 지역 정보 조회가 404 여서 동·구는 찾았는데 직방에 그 지역 정보가 없으면 `NOT_FOUND`(`직방에 '<지역 이름>' 지역 정보가 없습니다`)이고 `hint` 가 이웃 동·구 이름(동이면 그 동이 속한 구)으로 다시 부르라고 알린다. 이 오류는 `region-info` 의 지역 정보 조회에서만 나고 `region-trades`·`region-ranking` 의 지역 해석 오류에는 없다.
 
 **주의사항**
 
@@ -787,6 +788,57 @@ jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --pe
 
 기본 기간이 오늘이라 등록된 거래가 없어 비기 쉽다. 그러면 `--period 30일` 처럼 기간을 넓힌다. 직방은 매일 낮 12시에 그날 등록된 실거래를 반영하므로 그 전에는 오늘이 비고 `updated_today` 가 `false`, `registered_period` 가 `null` 이며 `[참고]` 가 아직 반영 전이라고 알리고 어제 등록분은 `--period 어제` 로 보라고 권한다 (이때는 '이 기간에 등록된 실거래가 없습니다' 안내를 붙이지 않는다). 0건이면 `trades` 가 `[]` 이고 `[참고]` 가 기간을 넓히라고 알린다. 조건에 맞는 실거래가 `--limit` 보다 많아 `--limit` 건을 채워 받았으면 `[일부]` 로 알린다 (직방이 `--limit` 보다 적게 주면 `total` 이 더 커도 `[일부]` 가 아니라 `[참고]` 가 목록과 `total` 이 어긋난다고 알린다). 요청은 지역 검색 1회와 실거래 1회다 (직방 웹은 10건씩 넘겨 받지만 여기서는 `--limit` 건을 한 번에 받는다).
 
+## 15. `region-ranking` — 동·구 단지 랭킹
+
+동·구의 단지 랭킹을 본다 (직방 웹 지역 화면 '단지랭킹'). 직방 웹처럼 100위까지만 준다. 금액은 만원이다.
+
+| 인자·옵션 | 설명·허용값 | 기본값 |
+| --- | --- | --- |
+| `QUERY` | 동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다 | 필수 |
+| `--trade` | 매매, 전세, 월세 중 하나 | 매매 |
+| `--sort` | 순위 기준 (웹 이름 그대로, 빈칸 없이도 받는다). 매매: 거래량 많은순, 하락률 높은순, 상승률 높은순, 시세 높은순, 평당가 높은순, 인기 단지순. 전세: 거래량 많은순, 하락률 높은순, 상승률 높은순, 시세 높은순, 전세가율 높은순. 월세: 거래량 많은순뿐. 거래 유형에 없는 기준은 `INVALID_ARGUMENT` | 그 거래의 첫 기준(거래량 많은순) |
+| `--period` | 집계 기간: 이번주, 지난주, 이번달, 지난달, 올해, 작년. 시세·평당가·전세가율 순위는 기간과 상관없이 시세 기준일 순위다 | 이번달 |
+| `--limit` | 받을 단지 수. 범위: 1~100. | 10 |
+
+**사용 예시**
+
+```bash
+jibsa zigbang region-ranking 송파구
+jibsa zigbang region-ranking 송파구 --sort 하락률높은순 --period 지난달
+jibsa zigbang region-ranking 가락동 --trade 전세 --sort 전세가율높은순 --limit 20
+```
+
+**반환값**
+
+`region`, `trade_type`, `sort`, `period`, `start_date`, `end_date`, `updated_at`, `total`, `returned`, `has_more`, `rankings` 를 준다. 날짜는 직방이 UTC 로 주는 값을 한국 날짜·시각으로 바꾼 것이다. `total` 은 직방이 준 순위 수(`count`)로 서버가 200 에서 막아 실제 단지가 더 많을 수 있고, 웹은 100위까지만 보여 준다. `has_more` 는 웹이 보여 주는 100위 안에 받지 않은 단지가 남았는지다. 마지막 쪽이 10건보다 적어 목록이 끝났으면 `total` 이 받은 수보다 커도 `false` 다.
+
+| 필드 | 뜻 | 값이 없을 때 |
+| --- | --- | --- |
+| `start_date` | 집계 시작일 (거래량·하락률·상승률·인기 기준만) | 시세·평당가·전세가율은 키가 없다. 읽지 못하면 `null` |
+| `end_date` | 집계 끝 날짜. 시세·평당가·전세가율은 직방 시세 기준일이다 | 읽지 못하면 `null` |
+| `updated_at` | 갱신 시각 (`YYYY-MM-DD HH:MM`, 한국 시간. 거래량·하락률·상승률 기준만) | 시세·평당가·전세가율·인기는 키가 없다. 읽지 못하면 `null` |
+
+줄(`rankings[]`)에는 공통으로 `rank`(순위)·`complex_id`(`apt-…`)·`complex_name`·`dong` 이 있고, 같은 순위가 여럿일 수 있다 (1·1·1·4 처럼 다음 순위가 건너뛴다). `dong` 은 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 기준마다 나머지 칸이 다르고, 그 기준에 없는 칸은 키가 없다.
+
+| `--sort` | 줄의 칸 |
+| --- | --- |
+| 거래량 많은순 | `trade_count`(기간 안 거래 건수), `approved_at`(사용승인일), `households`(총세대수) |
+| 하락률 높은순·상승률 높은순 | `contract_date`(가장 최근 계약일), `price_manwon`(매매)·`deposit_manwon`(전세), `diff_manwon`(직전 거래 대비 차액), `change_rate_percent`(변동률 %), `area_type`(평형 이름). 사용승인일·총세대수는 직방이 주지 않는다 |
+| 시세 높은순 | `estimated_price_manwon`(직방시세. 단지에서 가장 시세가 높은 타입 기준), `approved_at`, `households` |
+| 평당가 높은순 | `estimated_price_per_pyeong_manwon`(직방시세 기준 평당가, 만원/3.3㎡), `approved_at`, `households` |
+| 인기 단지순 | `view_count`(기간 안 조회수), `approved_at`, `households` |
+| 전세가율 높은순 | `jeonse_rate_percent`(직방 매매 시세 대비 전세 시세 비율 %), `gap_manwon`(매매·전세 시세 차이), `approved_at`, `households` |
+
+칸 하나를 직방이 주지 않으면 `null` 이다.
+
+**오류와 대응**
+
+`--trade`·`--period` 허용값 밖, 그 거래 유형에 없는 `--sort`, `--limit` 범위 밖은 지역을 찾기 전에 `INVALID_ARGUMENT` 다. 지역 해석 오류는 [`region-info`](#13-region-info--동구-지역-정보)와 같다. 1쪽 요청이 실패하면 에러 그대로이고, 1쪽에서 직방이 목록을 주지 않으면 `UPSTREAM_ERROR`(`직방이 단지 랭킹 목록을 주지 않았습니다`)다. 2쪽부터 요청이 실패하거나 직방이 그 쪽 목록을 주지 않으면 받은 데까지 내고 `[실패]` 로 알린다 (목록을 주지 않은 쪽은 `직방이 단지 랭킹 N쪽 목록을 주지 않아 앞 M곳까지만 냅니다` 에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다).
+
+**주의사항**
+
+직방 웹 랭킹 화면처럼 100위까지만 받는다 (`--limit` 최대 100, 서버는 200위까지 주지만 웹이 100위까지만 보여 준다). 10건마다 요청 1회라 요청은 지역 검색 1회와 `--limit` 10건당 1회다 (직방이 준 순위 수가 `--limit` 보다 적으면 그만큼 줄어든다). 단지가 `--limit` 보다 많아 `--limit` 에 닿아 잘랐으면 `[일부]` 로 알리고 (목록이 먼저 끝났으면 `total` 이 더 커도 `[일부]` 가 아니라 `[참고]` 가 순위 수와 목록이 어긋난다고 알린다), 100위를 넘는 단지가 있으면 `[참고]` 로 알린다. 직방이 단지를 하나도 주지 않으면 `rankings` 가 `[]` 이고 `[참고]` 로 알린다. 직방시세(`estimated_*`)는 직방이 실거래를 분석한 추정값이지 실거래가가 아니다.
+
 ## 검색 명령 비교
 
 ### 검색 범위
@@ -816,7 +868,7 @@ jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --pe
 
 ## 조회 한도
 
-아파트 검색(동·구·`--complex apt-…`)의 `--limit`은 기본 20·최대 120이다. 요청당 동·구는 최대 20건, `--complex`는 최대 50건이며 실제 받은 원본 개수로 조회 예산을 센다. 중복·거래 불가·조건 불일치로 제외한 만큼 추가 조회하지 않는다. 결과 부족 및 최대값 도달 시 안내한다. 원룸 검색과 오피스텔 단지 검색도 기본 15·최대 120이며 같은 방식으로 직방 목록 순으로 확인한 매물 수로 예산을 세고 제외한 만큼 채우지 않는다 (원룸 검색에서 종류가 여럿이면 종류별로 나눈다). 상가는 가격 조건을 서버가 받지 않아 직방 목록 앞의 후보를 `max(limit × 5, 60)`건까지 확인해 결과를 채운다 (채우지 않으면 가격 조건을 건 검색이 거의 비어 온다). 단기임대는 기본 15·최대 120이고, 고른 순서의 앞 `limit`건만 요약을 받는다. `search locations`은 후보 목록 각각 기본 120·최대 1200, `search complexes` 는 기본 20·최대 120, `region-trades` 는 기본 20·최대 120, `real-price`는 기본 120·최대 1200이다. `catalog` 는 묶음 매물을 20건마다 요청 1회로 앞 120건까지 받고 호 정보를 1회 더 받는다.
+아파트 검색(동·구·`--complex apt-…`)의 `--limit`은 기본 20·최대 120이다. 요청당 동·구는 최대 20건, `--complex`는 최대 50건이며 실제 받은 원본 개수로 조회 예산을 센다. 중복·거래 불가·조건 불일치로 제외한 만큼 추가 조회하지 않는다. 결과 부족 및 최대값 도달 시 안내한다. 원룸 검색과 오피스텔 단지 검색도 기본 15·최대 120이며 같은 방식으로 직방 목록 순으로 확인한 매물 수로 예산을 세고 제외한 만큼 채우지 않는다 (원룸 검색에서 종류가 여럿이면 종류별로 나눈다). 상가는 가격 조건을 서버가 받지 않아 직방 목록 앞의 후보를 `max(limit × 5, 60)`건까지 확인해 결과를 채운다 (채우지 않으면 가격 조건을 건 검색이 거의 비어 온다). 단기임대는 기본 15·최대 120이고, 고른 순서의 앞 `limit`건만 요약을 받는다. `search locations`은 후보 목록 각각 기본 120·최대 1200, `search complexes` 는 기본 20·최대 120, `region-trades` 는 기본 20·최대 120, `region-ranking` 은 기본 10·최대 100(직방 웹이 100위까지만 보여 준다), `real-price`는 기본 120·최대 1200이다. `catalog` 는 묶음 매물을 20건마다 요청 1회로 앞 120건까지 받고 호 정보를 1회 더 받는다.
 
 `--limit`은 최종 출력 개수의 상한이며 API 요청 한 번의 크기를 뜻하지 않는다. 유형마다 조회 방식·서버 필터·후처리·요청 상한이 달라 결과가 부족할 수 있다. 일부 조회·범위 밖 결과·지원하지 않는 유형은 `notes`를 확인한다. CLI에 `--offset`·`--cursor`는 없다. 새 검색에서 같은 목록·순서를 보장하지 않는다.
 

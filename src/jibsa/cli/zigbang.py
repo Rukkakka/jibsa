@@ -100,6 +100,13 @@ from jibsa.providers.zigbang.service.local.info import (
     PRICE_RANGES,
     get_region_info,
 )
+from jibsa.providers.zigbang.service.local.ranking import (
+    DEFAULT_RANKING_LIMIT,
+    RANKING_MAX_RANKS,
+    RANKING_PERIODS,
+    SORT_TYPE_BY_TRADE,
+    get_region_ranking,
+)
 from jibsa.providers.zigbang.service.local.trades import (
     DEFAULT_TRADE_LIMIT,
     SORT_SPEC_BY_TRADE,
@@ -259,7 +266,7 @@ CHANGED_USAGE: dict[str, ChangedUsage] = {
 app = typer.Typer(
     help=(
         '직방: 매물 찾기(search listings room·apt·store·stay), 지역·단지(search locations, 역·학교·동·구 주변 단지 search complexes, complex, '
-        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), 동·구 지역 화면(지역 정보 region-info, 최근 실거래 region-trades), '
+        'search listings --complex, real-price, 단지 직방시세 추이 price-trend), 동·구 지역 화면(지역 정보 region-info, 최근 실거래 region-trades, 단지 랭킹 region-ranking), '
         '상세(listing, 아파트 같은 호 묶음 catalog) '
         '(로그인 불필요, 금액은 만원 단위)'
     ),
@@ -1438,6 +1445,43 @@ def region_trades_command(
     # 정렬 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_region_trades(client, query, trade=chosen_trade, period=chosen_period, sort=sort, limit=limit)
+        emit(result, pretty, notes=result.notes)
+
+
+@app.command('region-ranking')
+def region_ranking_command(
+    query: RegionQueryArgument,
+    trade: Annotated[str, typer.Option('--trade', help=f"{', '.join(LOCAL_TRADES)} 중 하나")] = '매매',
+    sort: Annotated[
+        str | None,
+        typer.Option('--sort', help=f'순위 기준 (거래마다 다르고 첫 기준이 기본, 빈칸 없이도 받는다). {_sort_help(SORT_TYPE_BY_TRADE)}')
+    ] = None,
+    period: Annotated[
+        str,
+        typer.Option('--period', help=f"집계 기간: {', '.join(RANKING_PERIODS)}. 시세·평당가·전세가율 순위는 기간과 상관없이 시세 기준일 순위다")
+    ] = '이번달',
+    limit: Annotated[
+        int,
+        typer.Option(min=1, max=RANKING_MAX_RANKS, help=f'받을 단지 수 (최대 {RANKING_MAX_RANKS}곳. 직방 웹도 {RANKING_MAX_RANKS}위까지만 보여 준다)')
+    ] = DEFAULT_RANKING_LIMIT,
+    pretty: PrettyOption = None,
+) -> None:
+    """동·구의 단지 랭킹 (직방 웹 지역 화면 '단지랭킹'): 거래량·하락률·상승률·시세·평당가·인기·전세가율 순위.
+
+    웹 랭킹 화면처럼 10건씩 쪽을 넘겨 받아(요청은 지역 검색 1회와 ceil(--limit / 10) 쪽) 앞 --limit 곳을 준다. 서버는 200위까지 주지만
+    웹이 100위까지만 보여 줘 101위부터는 받지 않는다. 같은 순위가 여럿일 수 있다 (1·1·1·4). 정렬마다 줄에 오는 값이 다르다:
+    거래량(trade_count), 하락·상승률(price_manwon·diff_manwon·change_rate_percent), 시세(estimated_price_manwon), 평당가
+    (estimated_price_per_pyeong_manwon), 인기(view_count), 전세가율(jeonse_rate_percent·gap_manwon). 구 단위 조회는 줄마다 dong 이 있다.
+
+    예: jibsa zigbang region-ranking 송파구
+        jibsa zigbang region-ranking 송파구 --sort 하락률높은순 --period 지난달
+        jibsa zigbang region-ranking 가락동 --trade 전세 --sort 전세가율높은순 --limit 20
+    """
+    chosen_trade = check_choice(trade, LOCAL_TRADES, '--trade')
+    chosen_period = check_choice(period, RANKING_PERIODS, '--period')
+    # 순위 기준 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
+    with handle_errors(SOURCE), ZigbangClient() as client:
+        result = get_region_ranking(client, query, trade=chosen_trade, sort=sort, period=chosen_period, limit=limit)
         emit(result, pretty, notes=result.notes)
 
 

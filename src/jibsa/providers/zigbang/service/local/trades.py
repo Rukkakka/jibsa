@@ -377,7 +377,7 @@ def get_region_trades(
         # 하루 단위 기간(오늘·어제)은 더 좁힐 수 없다
         narrow = None if period in ('오늘', '어제') else '--period 기간'
         head = (
-            # 보여 준 수(returned)로 센다. 뺀 빈 항목은 [제외] 가 알린다
+            # 보여 준 수(returned)로 센다 (region-ranking 과 같다). 뺀 빈 항목은 [제외] 가 알린다
             f'조건에 맞는 실거래 {total}건 중 {len(trades)}건입니다' if total is not None
             else f'실거래 {len(trades)}건을 받았습니다. 직방이 전체 건수를 주지 않아 더 있을 수 있습니다'
         )
