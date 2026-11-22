@@ -551,7 +551,8 @@ def complexes_command(
     담은 목록이라 total 도 그 수이고 그 곳의 전체 단지 수가 아니다. 역·학교는 단지마다 거리(distance_m)가 있으니 가까운
     단지는 그 값으로 고른다. 동·구는 웹 지역 화면에 최근입주 목록뿐이라 --order 는 최근입주만 받고 거리가 없다. highlight 는
     웹 단지 카드 둘째 줄이고 --order 마다 뜻이 다르다 (인기는 지역 순위, 최근입주는 입주 시기, 시세급변동은 1주 변동률,
-    평당가는 평당가). 단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는
+    평당가는 평당가). 학교는 결과 맨 끝의 school 에 학교 정보(학생 수·입학생·학급·학비·급식비와 같은 구 평균, 진학 현황)가 붙고 배정단지가
+    없어도 나온다. 단지 매물은 결과의 complex_id 로 jibsa zigbang search listings --complex <complex_id>, 단지 정보는
     jibsa zigbang complex <complex_id>.
 
     예: jibsa zigbang search complexes 강남역 --limit 10

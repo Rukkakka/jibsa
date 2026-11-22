@@ -40,7 +40,10 @@ from jibsa.providers.zigbang.api.response.complex.base import (
     ZigbangDanjiRoomTypeModel,
     ZigbangDanjisRoomTypesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.search import ZigbangDanjiCardModel
+from jibsa.providers.zigbang.api.response.complex.search import (
+    ZigbangDanjiCardModel,
+    ZigbangSchoolDetailModel,
+)
 from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisResponseModel,
     ZigbangDanjisPriceChartResponseModel,
@@ -92,6 +95,7 @@ from jibsa.providers.zigbang.service.complex.search import (
     complex_order_of,
     distance_m_of,
     place_complex_of,
+    school_info_of,
     search_place_complexes,
 )
 from jibsa.providers.zigbang.service.complex.trend import (
@@ -1739,7 +1743,7 @@ def test_region_info_price_tabs_and_population_period() -> None:
     assert region_info.population_period(date(2027, 1, 5)) == ('202112', '202612')
 
 
-# --- 시세 추이 (price-trend) -------------------------------------------
+# --- 시세 추이 (price-trend)·학교 정보 -------------------------------------------
 
 def _chart_line(label: str, prices: list[int]) -> dict:
     return {
@@ -1863,3 +1867,36 @@ def test_pyeong_price_trend_zero_months_and_month_merge() -> None:
     with pytest.raises(JibsaError):
         get_pyeong_price_trend(client, 'apt-900001', 999)  # type: ignore[arg-type]
     assert client.calls == ['room_types']
+
+
+def test_school_info_text_numbers_and_advancement() -> None:
+    middle = ZigbangSchoolDetailModel.model_validate({
+        'id': 1, 'name': '가짜중학교', 'stage': 'middle', 'sullib': '공립', 'gender': '공학', 'local2': '송파구',
+        'foundationDate': '2019-03-01', 'class': '28', 'localClass': 'abc', 'expense': '1077702', 'localExpense': 443151,
+        'meal': '4590', 'mealLocal': '', 'mealType': '직영', 'freshman': 237, 'localFreshman': '175', 'all': 846,
+        'manPercent': '52', 'womanPercent': 'nan', 'local': 627.89, 'localIncrease': 0,
+        'onlyMiddleNew': {'special': None, 'normal': None, 'etc': None},
+        'onlyHighNew': {'highCategory': '일반고'},
+    })
+    dumped = school_info_of(middle).model_dump()
+    assert dumped['level'] == '중학교' and dumped['students_per_class'] == 28 and dumped['district_students_per_class'] is None
+    assert dumped['tuition_manwon'] == 107.7702 and dumped['district_tuition_manwon'] == 44.3151
+    assert dumped['meal_cost_manwon'] == 0.459 and dumped['district_meal_cost_manwon'] is None
+    assert dumped['female_percent'] is None and dumped['male_percent'] == 52
+    assert dumped['district_freshmen_change_percent'] == 0 and dumped['district_avg_students'] == 627.89
+    assert dumped['founded_on'] == '2019-03-01'
+    # 중학교: 진학 현황 칸이 모두 비면 null, 고등학교 구분은 키가 없다
+    assert dumped['advancement'] is None and 'high_school_type' not in dumped
+    # 고등학교: 0 은 값이라 진학 현황이 남고 고등학교 구분이 있다
+    high = ZigbangSchoolDetailModel.model_validate({
+        'id': 2, 'stage': 'high', 'onlyHighNew': {'normaluniv': 0, 'highCategory': '일반고'},
+    })
+    dumped = school_info_of(high).model_dump()
+    assert dumped['advancement'] == {
+        'university': 0, 'university_percent': None, 'college': None, 'college_percent': None, 'other': None, 'other_percent': None,
+    }
+    assert dumped['high_school_type'] == '일반고'
+    # 초등학교: 진학 현황·고등학교 구분 키가 없고, 모르는 학교급은 원문을 남긴다
+    elementary = school_info_of(ZigbangSchoolDetailModel.model_validate({'id': 3, 'stage': 'elementary'})).model_dump()
+    assert 'advancement' not in elementary and 'high_school_type' not in elementary
+    assert school_info_of(ZigbangSchoolDetailModel.model_validate({'id': 4, 'stage': 'special'})).model_dump()['level'] == 'special'

@@ -400,9 +400,10 @@ def resolve_school(client: ZigbangClient, query: str) -> ZigbangSearchItemModel:
 
     학교 화면 코드(`source.school_code`)는 '아파트' 서비스로 찾은 결과에 있어 (2026-11-19 실측: 해누리중학교) 그 서비스로 찾는다.
     같은 이름 학교가 여러 곳이면 다른 검색처럼 멈춘다 (`settled_item`, 검색어 앞 낱말로 한 곳이 가려지면 그 학교).
-    결과의 `id` 는 단지 목록(`danjis/ids`)에 넘기는 학교 ID 이고 학교 코드와 다르다. 아파트 서비스 검색에는 대학교가 나오지
+    결과의 `id` 는 학교 목록 번호이고 학교 코드와 다르다. 직방이 이 번호를 다시 매기는 일이 있어 배정단지 목록에는 쓰지 않고,
+    부르는 쪽이 학교 코드로 학교 정보를 받아 그 `detail.id` 를 쓴다 (웹 학교 화면과 같다). 아파트 서비스 검색에는 대학교가 나오지
     않아(`search_regions_and_complexes`) 대학교 이름은 찾지 못한다. 좌표 없는 같은 이름 학교도 후보로 센다 (`search_regions` 는
-    좌표를 거르지 않는다). 학교 ID 만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
+    좌표를 거르지 않는다). 학교 코드만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
 
     Raises:
         RegionNotFoundError: 그 이름의 초·중·고등학교가 없을 때.

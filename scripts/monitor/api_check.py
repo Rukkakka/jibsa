@@ -166,7 +166,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('역 주변 아파트 단지 강남역', ('zigbang', 'search', 'complexes'), ('강남역', '--limit', '3'), 'complexes'),
         # 학교·동·구는 같은 단지 ID 목록 API(/apt/danjis/ids)에 type 만 바꿔 보내고(school·local), 이름·주소·세대수·둘째 줄은 단지 카드
         # (/apt/danjis/details)에서 받는다. 학교는 주변 단지 정보(/apt/schools/{학교 코드}), 동·구는 지역 해석을 더 부른다
-        Step('학교 배정 아파트 단지 해누리중학교', ('zigbang', 'search', 'complexes'), ('해누리중학교', '--limit', '3'), 'complexes'),
+        # 학교 정보(`school`)는 배정단지를 찾으려고 먼저 받는 학교 조회(/apt/schools/{학교 코드})의 같은 응답이라 본 조회 칸이다 (실패하면 명령이 에러)
+        Step(
+            '학교 배정 아파트 단지 해누리중학교', ('zigbang', 'search', 'complexes'), ('해누리중학교', '--limit', '3'), 'complexes',
+            also_expect=('school',),
+        ),
         # 최근입주 목록은 곧 입주 예정이거나 최근 1년 내 입주한 단지만 담아 사이트가 정상이어도 빌 수 있다 (2026-11-20 실측: 가락동 1곳·송파구 4곳)
         Step(
             '동 최근입주 아파트 단지 가락동', ('zigbang', 'search', 'complexes'), ('가락동', '--limit', '3'), 'complexes',

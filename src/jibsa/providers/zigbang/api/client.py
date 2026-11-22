@@ -1231,7 +1231,7 @@ class ZigbangClient(BaseHTTPClient):
 
         Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도의 '<역> 주변단지' 패널(조회수 순 5곳)과
         더보기 화면(`limit` 없이 모두)이 부른다 (2026-11-15 캡처·번들 `getAPTTypedListIds`). 쪽 넘김은 없다. 학교 화면
-        (`/home/apt/schools/{학교코드}`)은 `type=school`, 동 화면(`/home/apt/locals/{법정동코드}`)의 최근입주 패널은
+        (`/home/apt/schools/{학교코드}`)은 학교 상세 응답의 `detail.id` 로 `type=school`, 동 화면(`/home/apt/locals/{법정동코드}`)의 최근입주 패널은
         `type=local&order=newest` 로 부른다 (2026-11-19 캡처). 로그인이 필요 없다. 학교 `id` 에 학교 코드를 넣으면 500 이다.
 
         Args:
@@ -1345,7 +1345,8 @@ class ZigbangClient(BaseHTTPClient):
         """Fetch a school and the apartment complexes around it via `GET /apt/schools/{schoolCode}`.
 
         Same retry behaviour as `run_request_items_onerooms_v1`. 웹 아파트 지도에서 학교를 고르면(`/home/apt/schools/{학교코드}`)
-        부른다 (2026-11-19 캡처). 학교 코드는 지역 검색 학교 결과의 `_source.school_code` 다 (결과의 `id` 는 다른 값이다).
+        부른다 (2026-11-19 캡처). 학교 코드는 지역 검색 학교 결과의 `_source.school_code` 다 (결과의 `id` 는 다른 값이고, 직방이 학교 번호를
+        다시 매기면서(2026-11) 학교 상세의 `detail.id` 와 어긋날 수 있어 쓰지 않는다).
         로그인이 필요 없다.
 
         Args:
