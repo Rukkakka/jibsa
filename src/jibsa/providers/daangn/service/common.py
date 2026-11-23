@@ -329,7 +329,7 @@ def is_available(article: DaangnArticleModel) -> bool:
 
     비활성 중개소 매물은 여기서 보지 않는다. 목록 카드의 `bizProfile` 에는 중개소 상태가 없고(id·badges 만) 상세 SSR 에만
     `status` 가 있다 (2026-11-11 실측). 당근 웹도 목록에는 그 매물을 그대로 보여 주고 상세에서만 "비활성화된 중개소의
-    매물이에요" 로 막아, jibsa 도 웹처럼 상세(`listing`·`--details`)에서만 막는다 (`listing._inactive_broker`). 목록에서 막으려면
+    매물이에요" 로 막아, jibsa 도 웹처럼 상세(`listing`·`--details`)에서만 막는다 (`listing.detail_to_listing`). 목록에서 막으려면
     매물마다 상세를 받아야 해 요청이 매물 수만큼 늘고 웹과도 달라진다 (2026-11-11 사용자 결정).
     """
     return (
@@ -353,11 +353,6 @@ def trades_preferred_first(article: DaangnArticleModel) -> list[DaangnTradeModel
     """
     known = [trade for trade in article.trades if trade.type in TRADE_TYPE_BY_TRADE]
     return sorted(known, key=lambda trade: not trade.preferred)
-
-
-def _preferred_trade(article: DaangnArticleModel) -> DaangnTradeModel | None:
-    trades = trades_preferred_first(article)
-    return trades[0] if trades else None
 
 
 def floor_of(article: DaangnArticleModel) -> str | None:
@@ -438,7 +433,9 @@ def article_to_listing(
     `fallback_title`(상세 페이지의 자동 요약) 순으로 고른다. `center` 를 주면 거리를 재고
     `DaangnNearbyListing` 으로 준다 (거리를 모르면 null).
     """
-    trade = trade or _preferred_trade(article)
+    if trade is None:
+        trades = trades_preferred_first(article)
+        trade = trades[0] if trades else None
     trade_type = TRADE_TYPE_BY_TRADE.get(trade.type or '') if trade is not None else None
     if trade is None or trade_type is None:
         return None
@@ -1171,7 +1168,7 @@ def pyeong_null_items(column: DaangnCompareComplexModel) -> int:
 def most_households(infos: Sequence[T], households: Callable[[T], int | None]) -> T | None:
     """평형 목록에서 세대수가 가장 많은 평형 (같으면 앞 평형, 웹 reduce 도 더 클 때만 바꾼다). 없으면 None.
 
-    비교 화면(`_top_info`)과 인기 급상승 단지(`list_trending_complexes`)가 같이 쓴다. 두 응답 모델의 세대수 칸 이름이 달라 칸을 함수로 받는다.
+    비교 화면(`compare._select_pyeong`)과 인기 급상승 단지(`list_trending_complexes`)가 같이 쓴다. 두 응답 모델의 세대수 칸 이름이 달라 칸을 함수로 받는다.
     세대수를 모르는 평형은 0 으로 센다.
     """
     return max(infos, key=lambda info: households(info) or 0) if infos else None
@@ -1344,19 +1341,6 @@ def _recent_trades(node: DaangnRegionComplexNodeModel, trade_type: str, max_trad
     return trades
 
 
-def _has_reviews(node: DaangnRegionComplexNodeModel) -> bool | None:
-    """단지 카드에 거주 후기가 있는지. 후기 요약이 있으면 있다.
-
-    요약이 없을 때 후기 연결(`livedReviews`)이나 그 목록(`edges`)을 당근이 null 로 주면 없는 것이 아니라 모름(None)이다.
-    지역 단지 쿼리는 두 키를 모두 요청하므로(`region_complex_of` 주석) 키가 빠져 null 이 되는 일은 없고, 서버가 null 로 준 것이다.
-    """
-    if node.lived_review_summary is not None:
-        return True
-    if node.lived_reviews is None or node.lived_reviews.edges is None:
-        return None
-    return bool(node.lived_reviews.edges)
-
-
 def region_complex_of(
     node: DaangnRegionComplexNodeModel, trade_type: str, max_trades: int = COMPLEX_RECENT_TRADES,
 ) -> DaangnRegionComplex:
@@ -1371,6 +1355,17 @@ def region_complex_of(
         raise ValueError('단지 ID 가 없는 단지 카드는 걸러서 넘겨야 합니다')
     danji = node.danji
     counts = node.live_article_count
+    # 단지 카드에 거주 후기가 있는지. 후기 요약이 있으면 있다. 요약이 없을 때 후기 연결(`livedReviews`)이나 그 목록(`edges`)을
+    # 당근이 null 로 주면 없는 것이 아니라 모름(None)이다. 리뷰 오탐 (2026-11-19): 지역 단지 쿼리는 두 키를 모두 요청하므로
+    # (school 배정 단지·search complexes 클러스터·좌표 목록에서 model_fields_set 로 확인) 키가 빠져 null 이 되는 일은 없고,
+    # 서버가 null 로 준 것이다.
+    has_reviews: bool | None
+    if node.lived_review_summary is not None:
+        has_reviews = True
+    elif node.lived_reviews is None or node.lived_reviews.edges is None:
+        has_reviews = None
+    else:
+        has_reviews = bool(node.lived_reviews.edges)
     return DaangnRegionComplex(
         complex_id=node.original_id,
         name=node.name,
@@ -1384,9 +1379,7 @@ def region_complex_of(
         },
         recent_trades=_recent_trades(node, trade_type, max_trades),
         near_station=node.near_station,
-        # 리뷰 오탐 (2026-11-19): 지역 단지 쿼리는 모두 livedReviews·livedReviewSummary 를 받는다 (school 배정 단지·search complexes
-        # 클러스터·좌표 목록에서 model_fields_set 로 확인)
-        has_reviews=_has_reviews(node),
+        has_reviews=has_reviews,
         url=complex_url(node.original_id),
     )
 

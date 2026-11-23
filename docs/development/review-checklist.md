@@ -345,9 +345,12 @@
    긴 흐름의 한 단계)는 [함수와 추상화](code-style.md#9-함수와-추상화)에 있다.
    확인: 새 `def` 이름으로 grep 해 부르는 곳을 세고, docstring 을 뺀 본문 줄 수와 부르는 함수에 합친 결과의 줄 수를 본다.
    함수를 합쳐 지운 diff 면, 주석으로 옮긴 docstring 의 이유가 부르는 함수 docstring 에 이미 있는지 보고 한 곳으로 모은다.
+   옮긴 주석이 바로 아래 조건과 맞는지도 본다 (옛 docstring 의 빠짐이 그대로 옮겨 온다).
    예: `cli/naver.py:376` `_is_province_region` (한 곳에서만 부르는 3줄 판정, 2026-11-23 규칙을 둘 때 본 예).
    `core/browser.py` `raise_if_entry_failed` (`_fresh_error` 를 합치며 같은 이유가 docstring 과 주석에 근거 날짜를 나눠 두 번
-   적혔다, 2026-11-23 리뷰).
+   적혔다, 2026-11-23 리뷰). `providers/daangn/service/region.py` `_search_area_page` (`_area_of` docstring 을 옮긴 주석이
+   바로 아래 조건의 시·도 이름 빠짐을 적지 않았다, 2026-11-23 리뷰). 같은 파일 `resolve_area` 의 `dong_hint` 주석
+   (`_same_dong_hint` docstring 을 옮긴 주석이 쓸 수 있는 동의 빈 구 이름을 견주는 것을 빠뜨렸다, 2026-11-23 리뷰).
    언제: 함수·클래스를 새로 더하거나, 한 곳에서만 부르던 함수를 부르는 자리에 합친 diff.
 
 ## `convention` 규약 위반

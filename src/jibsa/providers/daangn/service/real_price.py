@@ -916,33 +916,8 @@ class DaangnPriceTrendResult(BaseModel):
         return data
 
 
-def _month_index(year_month: str) -> int:
-    """'YYYYMM' 을 달 번호로 바꾼다 (달끼리 빼면 개월 수)."""
-    return int(year_month[:4]) * 12 + int(year_month[4:6]) - 1
-
-
 def _month_label(index: int) -> str:
     return f'{index // 12:04d}-{index % 12 + 1:02d}'
-
-
-def _weighted(points: list[tuple[float, int]]) -> tuple[float, int] | None:
-    count = sum(transactions for _, transactions in points)
-    if count == 0:
-        return None
-    return round(sum(average * transactions for average, transactions in points) / count, 4), count
-
-
-def _web_change_percent(start: float, end: float) -> float:
-    """첫 거래 달 대비 마지막 거래 달 변화율 (%, 소수 첫째 자리). 당근 웹 시세 그래프와 같은 계산·반올림이다.
-
-    웹(usePriceChartFragment `b`, 2026-11-19 번들)은 `r = 끝 - 시작; i = r / 시작 * 100; Math.abs(i).toFixed(1)` 에 상승·하락
-    부호를 붙인다. Python `round`(은행가 반올림)가 아니라 공용 `js_to_fixed`(JS `toFixed` 와 같은 반올림)로 맞춘다 (1.25 → 1.3).
-    웹은 차이가 500만원 미만이거나 0.0 이면 변화율을 보여 주지 않지만 jibsa 는 값을 계속 낸다.
-    """
-    change = (end - start) / start * 100
-    rounded = js_to_fixed(abs(change), 1)
-    # 0.0 으로 반올림되면 부호를 붙이지 않는다 (-0.0 이 되지 않게)
-    return float(-rounded) if change < 0 and rounded else float(rounded)
 
 
 def get_price_trend(
@@ -963,7 +938,7 @@ def get_price_trend(
     받지 않고 빈 `points` 를 준다 (요청 1회). 기간은 웹 탭(1년·3년·전체)이고, 오늘(한국 날짜)이 든 달과 그 전 N개월의 거래 달을
     `points` 로 준다. 변화율은 웹(PriceChart `Z`)처럼 기간 안 첫 거래 달과 마지막 거래 달 평균을 견준다. 예전에는 마지막 거래 달
     까지 3개월과 N년 전 3개월을 가중 평균해 웹과 숫자가 달랐다 (2026-11-12 실측: 헬리오시티 32평 1년, 웹 -0.6%). 변화율의 반올림은
-    웹처럼 `toFixed(1)` 이다 (`_web_change_percent`). 당근이 시세 그래프를 주지 않으면(`priceChart` null) 거래 달이 없는 것이 아니라
+    계산 자리 주석에 있다. 당근이 시세 그래프를 주지 않으면(`priceChart` null) 거래 달이 없는 것이 아니라
     모름이라 `points`·`total_transactions` 를 null 로 내고 알린다. 거래가 있는데 연월이나 평균 가격이 없는 점은 빼고 알리며, 어느 달의
     얼마인지 몰라 `total_transactions`·`summary`·`recent_*` 도 빈 항목을 뺐을 때처럼 null 이다.
 
@@ -1031,7 +1006,8 @@ def get_price_trend(
         if not average or year_month is None or not is_year_month(year_month):
             unreadable += 1
             continue
-        monthly[_month_index(year_month)] = (average, point.transaction_count)
+        # 'YYYYMM' 을 달 번호로 바꾼다 (달끼리 빼면 개월 수)
+        monthly[int(year_month[:4]) * 12 + int(year_month[4:6]) - 1] = (average, point.transaction_count)
 
     # 실거래 달은 한국 날짜라 컴퓨터 시간대와 상관없이 한국 시간으로 센다 (UTC 컴퓨터는 매달 1일 0~9시에 지난달이 된다)
     today = today or datetime.now(KST).date()
@@ -1042,7 +1018,12 @@ def get_price_trend(
         DaangnPricePoint(year_month=_month_label(index), average_manwon=monthly[index][0], transaction_count=monthly[index][1])
         for index in shown
     ]
-    recent = _weighted([value for index, value in monthly.items() if index >= this_month - PRICE_TREND_RECENT_MONTHS])
+    # 최근 N개월 거래 수로 가중 평균한 평균가와 거래 수. 거래가 없으면 None
+    recent_points = [value for index, value in monthly.items() if index >= this_month - PRICE_TREND_RECENT_MONTHS]
+    recent_count = sum(transactions for _, transactions in recent_points)
+    recent: tuple[float, int] | None = (
+        round(sum(average * transactions for average, transactions in recent_points) / recent_count, 4), recent_count,
+    ) if recent_count else None
     if recent is None:
         last = max((index for index in monthly if index >= this_month - 12), default=None)
         recent = monthly[last] if last is not None else None
@@ -1074,13 +1055,20 @@ def get_price_trend(
     else:
         first, last_index = shown[0], shown[-1]
         start, end = monthly[first], monthly[last_index]
+        # 변화율은 웹 식이다 (usePriceChartFragment `b`, 2026-11-19 번들: `r = 끝 - 시작; i = r / 시작 * 100; Math.abs(i).toFixed(1)` 에 상승·하락
+        # 부호). Python `round`(은행가 반올림)가 아니라 공용 `js_to_fixed`(JS `toFixed` 와 같은 반올림)로 맞춘다 (1.25 → 1.3).
+        # 웹은 차이가 500만원 미만이거나 0.0 이면 변화율을 보여 주지 않지만 jibsa 는 값을 계속 낸다
+        change = (end[0] - start[0]) / start[0] * 100
+        rounded = js_to_fixed(abs(change), 1)
+        # 0.0 으로 반올림되면 부호를 붙이지 않는다 (-0.0 이 되지 않게)
+        change_percent = float(-rounded) if change < 0 and rounded else float(rounded)
         summary = DaangnPriceTrendSummary(
             start_month=_month_label(first),
             start_average_manwon=start[0],
             end_month=_month_label(last_index),
             end_average_manwon=end[0],
             months=last_index - first,
-            change_percent=_web_change_percent(start[0], end[0]),
+            change_percent=change_percent,
             change_manwon=round(end[0] - start[0], 4),
         )
         if min(start[1], end[1]) < PRICE_TREND_FEW_TRANSACTIONS:
@@ -1461,32 +1449,6 @@ def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> 
     )
 
 
-def _realsale_matches(item: DaangnRealsaleFeedItemModel, trade_type: str) -> bool:
-    """고를 거래인지. 매매·전월세는 서버가 `tradeType` 으로 거르고 신고가는 매매만 오므로 거래 종류는 다시 보지 않는다.
-
-    서버가 섞어 주는 전월세에서 전세·월세만 직접 가른다 (2026-10-11 실측: SALE 피드 172건·BORROW 피드 293건 모두 요청한 종류).
-    """
-    realsale = item.realsale
-    if realsale is None:
-        return False
-    if trade_type == '매매':
-        return True
-    return _is_rent_type(realsale.month_rent_fee, trade_type)
-
-
-def _region_site_note(region: DaangnRealsaleRegion, trade_type: str, *, new_high: bool, previous_days: bool) -> str:
-    """지역 실거래를 `--limit` 을 늘려도 더 받지 못할 때 안내 끝에 붙일 말 (`_collect_pages` 의 `site`).
-
-    당근 웹 지역 실거래 화면은 매매(신고가는 가장 최근 공개일)만 보여 주고 전월세와 이전 공개일 신고가(`--previous-days`)는 웹에
-    없다 (개발 가이드 지역 실거래 절). 웹에서 볼 수 있는 조회만 웹으로 보내고, 웹에 없는 조회는 보낼 곳이 없다. 구는 동 이름으로
-    좁혀 다시 조회하면 더 받는다.
-    """
-    narrow = region.level == '구'
-    if trade_type == '매매' and not (new_high and previous_days):
-        return ('동 이름으로 좁혀 다시 조회하거나 ' if narrow else '') + _site_note('https://realty.daangn.com/')
-    return '동 이름으로 좁혀 다시 조회하세요' if narrow else '이 조건의 남은 거래는 당근 웹에도 없어 더 받을 수 없습니다'
-
-
 def get_region_real_prices(
     client: DaangnClient,
     query: str,
@@ -1548,9 +1510,21 @@ def get_region_real_prices(
         feed = fetch(count, cursor)
         return [edge.node for edge in feed.edges if edge.node], feed.page_info
 
+    # 웹에 있는 조회(docstring 의 매매·가장 최근 공개일 신고가)만 당근 웹으로 안내하고, 웹에 없는 조회는 더 받을 수 없다고
+    # 알린다 (개발 가이드 지역 실거래 절). 구는 동 이름으로 좁히면 더 받는다
+    narrow = region.level == '구'
+    if buy and not (new_high and previous_days):
+        site = ('동 이름으로 좁혀 다시 조회하거나 ' if narrow else '') + _site_note('https://realty.daangn.com/')
+    else:
+        site = '동 이름으로 좁혀 다시 조회하세요' if narrow else '이 조건의 남은 거래는 당근 웹에도 없어 더 받을 수 없습니다'
+    # 매매·전월세는 서버가 `tradeType` 으로 거르고 신고가는 매매만 와 거래 종류를 다시 보지 않는다 (2026-10-11 실측: SALE 피드 172건·BORROW 피드 293건 모두 요청한 종류)
     found = _collect_pages(
-        page, lambda item: _realsale_matches(item, trade_type), trade_type, limit,
-        site=_region_site_note(region, trade_type, new_high=new_high, previous_days=previous_days),
+        page,
+        lambda item: item.realsale is not None and (
+            buy or _is_rent_type(item.realsale.month_rent_fee, trade_type)
+        ),
+        trade_type, limit,
+        site=site,
         remaining='추가 거래가 남아 있습니다',
     )
     collected = found.items

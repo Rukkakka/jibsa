@@ -197,19 +197,6 @@ def _nearby_subways(article: DaangnArticleModel) -> list[str]:
     return [station_name(name) for name in dict.fromkeys(names)]
 
 
-def _manage_cost_label(option: DaangnManageCostOptionModel) -> str | None:
-    """관리비 항목 하나의 이름. 직접 입력한 이름은 항목 코드가 'ETC' 이거나 코드를 모를 때(null·빈 글자·'-') 쓴다.
-
-    직접 입력한 이름은 앞뒤 공백을 지우고, 비었거나 '-' 면 없는 것으로 본다 (코드 라벨을 낸다).
-    코드를 모르는데 직접 입력한 이름도 없으면 어느 항목인지 몰라 None 이다. 표에 없는 코드는 원래 코드 그대로.
-    """
-    label = code_label(MANAGE_COST_OPTION_LABELS, option.option)
-    custom_name = (option.custom_option_name or '').strip()
-    if custom_name not in ('', '-') and (option.option == 'ETC' or label is None):
-        return custom_name
-    return label
-
-
 def _known_labels(labels: list[str | None]) -> list[str] | None:
     """항목 이름들에서 아는 것만 남긴다. 항목이 처음부터 없으면 [], 있는데 이름을 하나도 모르면 None(모름)이다."""
     if not labels:
@@ -218,8 +205,19 @@ def _known_labels(labels: list[str | None]) -> list[str] | None:
 
 
 def _manage_cost_labels(options: list[DaangnManageCostOptionModel]) -> list[str] | None:
-    """관리비 항목들의 이름 (`_known_labels`). 이름을 모르는 항목(`_manage_cost_label` 이 None)은 건너뛴다."""
-    return _known_labels([_manage_cost_label(item) for item in options])
+    """관리비 항목들의 이름 (`_known_labels`). 이름을 모르는 항목은 건너뛴다."""
+    labels: list[str | None] = []
+    for option in options:
+        # 항목 하나의 이름. 직접 입력한 이름은 항목 코드가 'ETC' 이거나 코드를 모를 때(null·빈 글자·'-') 쓴다.
+        # 직접 입력한 이름은 앞뒤 공백을 지우고, 비었거나 '-' 면 없는 것으로 본다 (코드 라벨을 낸다).
+        # 코드를 모르는데 직접 입력한 이름도 없으면 어느 항목인지 몰라 None 이다. 표에 없는 코드는 원래 코드 그대로.
+        label = code_label(MANAGE_COST_OPTION_LABELS, option.option)
+        custom_name = (option.custom_option_name or '').strip()
+        if custom_name not in ('', '-') and (option.option == 'ETC' or label is None):
+            labels.append(custom_name)
+        else:
+            labels.append(label)
+    return _known_labels(labels)
 
 
 def _manage_cost_items(article: DaangnArticleModel) -> tuple[list[str] | None, list[str] | None]:
@@ -251,26 +249,6 @@ def _manage_cost_items(article: DaangnArticleModel) -> tuple[list[str] | None, l
     return _manage_cost_labels(options), excludes
 
 
-def _broker_fee_manwon(article: DaangnArticleModel, trade: DaangnTradeModel) -> float | None:
-    """보여 주는 거래 조건의 중개보수 (부가세 포함, 만원)."""
-    commission = next(
-        (item for item in article.broker_commissions or [] if item.trade_type == trade.type),
-        None,
-    )
-    return won_to_manwon(commission.total) if commission else None
-
-
-def _inactive_broker(article: DaangnArticleModel) -> bool:
-    """비활성 중개소의 매물인지. 당근 웹 상세는 `bizProfile.status !== 'ACTIVE'` 면 "비활성화된 중개소의 매물이에요" 로 막는다.
-
-    상세에서만 본다. 목록 카드의 `bizProfile` 에는 상태가 없어(id·badges 만) 웹도 목록에는 그 매물을 보여 주고 상세에서만
-    막는다. 목록에서 막으려면 매물마다 상세를 받아야 해 요청이 매물 수만큼 늘고 웹 목록과도 달라진다 (2026-11-11 사용자 결정,
-    `is_available` 참고). 그래서 jibsa 도 `listing` 과 `--details` 에서만 뺀다. 상태 키가 없으면(직거래 매물·응답이 바뀜) 막지
-    않는다. 웹은 키가 없어도 막지만, 응답 모양이 바뀌었을 때 중개사 매물 상세가 모두 막히는 것보다 낫다.
-    """
-    return article.biz_profile is not None and article.biz_profile.status not in (None, 'ACTIVE')
-
-
 def detail_to_listing(
     response: DaangnArticlesResponseModel,
     trade_type: str | None = None,
@@ -286,7 +264,7 @@ def detail_to_listing(
 
     Raises:
         ListingUnavailableError: 거래 완료·숨김·노출 제한 매물이거나(목록에서 빠지는 매물과 같다), 비활성 중개소의 매물이거나
-            (reason BIZ_PROFILE_INACTIVE, `_inactive_broker`), 아는 거래 조건(월세·전세·매매·단기임대·연세)이 없을 때
+            (reason BIZ_PROFILE_INACTIVE), 아는 거래 조건(월세·전세·매매·단기임대·연세)이 없을 때
             (reason NO_TRADE_INFO). 예약중 매물은 막지 않고 `status` 로 알린다. 연세만 있는 제주 매물은 예전에 여기서
             NO_TRADE_INFO 로 막혔다 (2026-11-13 연세 지원 전: 웹에서는 판매중인 5014421).
     """
@@ -303,7 +281,10 @@ def detail_to_listing(
             status=article.status,
             reason=article.invisible_reason or restriction or ('HIDDEN' if article.is_hide else None),
         )
-    if _inactive_broker(article):
+    # 비활성 중개소 매물. 당근 웹 상세는 `bizProfile.status !== 'ACTIVE'` 면 "비활성화된 중개소의 매물이에요" 로 막는다.
+    # 상태 키가 없으면(직거래 매물·응답이 바뀜) 막지 않는다. 웹은 키가 없어도 막지만, 응답 모양이 바뀌었을 때 중개사 매물
+    # 상세가 모두 막히는 것보다 낫다. 목록에서 막지 않는 이유는 `common.is_available` docstring 에 있다.
+    if article.biz_profile is not None and article.biz_profile.status not in (None, 'ACTIVE'):
         raise ListingUnavailableError('daangn', article.original_id, status=article.status, reason='BIZ_PROFILE_INACTIVE')
     trades = trades_preferred_first(article)
     trade = trades[0] if trades else None
@@ -352,6 +333,11 @@ def detail_to_listing(
         ))
     direct_deal = article.writer_type is not None and article.writer_type != 'BROKER'
 
+    # 보여 주는 거래 조건의 중개보수 (부가세 포함, 만원)
+    commission = None if direct_deal else next(
+        (item for item in article.broker_commissions or [] if item.trade_type == trade.type),
+        None,
+    )
     return listing_as(
         DaangnListingDetail,
         base,
@@ -373,7 +359,7 @@ def detail_to_listing(
         nearby_subways=_nearby_subways(article),
         key_money_manwon=article.premium_money,
         key_money_negotiable=article.premium_money_negotiable,
-        broker_fee_manwon=None if direct_deal else _broker_fee_manwon(article, trade),
+        broker_fee_manwon=won_to_manwon(commission.total) if commission else None,
         watch_count=article.watch_count,
         complex_id=article.complex.original_id if article.complex else None,
         complex_name=article.complex.name if article.complex and article.complex.original_id else None,

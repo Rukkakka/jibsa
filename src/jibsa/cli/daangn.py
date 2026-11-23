@@ -765,7 +765,17 @@ def region_command(
         # 웹 검색창처럼 검색어를 통째로 보낸다. 지역 검색은 띄어 쓴 이름도 받아 resolve_area(마지막 낱말로 찾고 앞 낱말로 좁힘)와
         # 같은 곳을 준다 (2026-11-12 실측: '강남구 신사동' → 서울특별시 강남구 신사동 1곳. 2026-11-12 리뷰 오탐)
         areas, more_areas, unusable_areas = search_areas(client, query)
-        results = [_area_result(area) for area in areas]
+        # 지역 후보 하나. 비어 있는 시·군·구(시·도·세종 동)·동(시·도·구)은 해당 없음이라 키를 뺀다
+        results = [
+            {
+                'level': area.level,
+                'name1': area.name1,
+                **({'name2': area.name2} if area.name2 else {}),
+                **({'name3': area.name3} if area.name3 else {}),
+                'region_id': area.region_id,
+            }
+            for area in areas
+        ]
         notes: list[str] = []
         if more_areas:
             # 지역 검색은 100곳씩 받고 이 명령은 첫 쪽만 준다. 알리지 않으면 잘린 목록이 전부로 읽혀 찾는 지역이 당근에 없다고 볼 수
@@ -799,17 +809,6 @@ def region_command(
             'schools': schools,
             'complexes': complexes,
         }, pretty, notes=notes)
-
-
-def _area_result(area: DaangnArea) -> dict[str, Any]:
-    """지역 후보 하나. 비어 있는 시·군·구(시·도·세종 동)·동(시·도·구)은 해당 없음이라 키를 뺀다."""
-    return {
-        'level': area.level,
-        'name1': area.name1,
-        **({'name2': area.name2} if area.name2 else {}),
-        **({'name3': area.name3} if area.name3 else {}),
-        'region_id': area.region_id,
-    }
 
 
 def _university_candidates(client: DaangnClient, query: str, notes: list[str]) -> list[dict[str, Any]]:
