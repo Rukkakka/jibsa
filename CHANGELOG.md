@@ -235,6 +235,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ### 수정
 
+- 요청 제한 상태 파일(`<state_dir>/ratelimit/<소스>.json`)에 실수로 바꿀 수 없을 만큼 큰 정수(약 1.8×10³⁰⁸ 이상)가 들어 있으면 그 소스의 모든 명령과 `jibsa limits`·`jibsa limits --reset` 이 `INTERNAL_ERROR`(OverflowError)로 실패하던 것을 고침. 이제 그 값은 깨진 값으로 버린다. 브라우저 쿠키 상태 파일(`<state_dir>/browser/<소스>.json`)의 첫 화면 연 시각이 그런 정수일 때도 그 소스의 모든 명령이 같은 에러로 실패하고 `limits --reset` 으로도 풀리지 않던 것을, 이제 첫 화면을 다시 열게 고침
 - 당근 `search commute` 등 매물 목록에서 매물 하나의 인근 역(`subwayStations`·`nearbySubwayStations`)이 `null` 로 오면 검색 전체가 `PARSE_ERROR` 로 실패하던 것을 그 매물만 역 정보 없이 내게 고침 (#331)
 - 네이버 `listing` 의 매매 매물을 네이버가 중개보수 '개별확인' 으로 보여 주면 `agent_fee_manwon` 이 금액 대신 `null` 임 (예전에는 금액이 나갔다. 네이버 웹은 그 매물에 금액을 보여 주지 않는다). 그런 매물은 `agent_fee_individual_check_required` 가 `true` 다 (#304)
 - 네이버 `complex --pyeong` 의 `market_prices[].sale_average_manwon` 과 `market-price` 의 `points[].sale_manwon`·`jeonse_manwon` 이 기관이 시세를 0 으로 주면 `0.0` 이던 것을 `null` 로 냄 (같은 항목의 시세 범위처럼 0 을 시세 없음으로 본다. `complex` 화면도 0 이면 시세를 그리지 않는다). 두 명령의 `jeonse_ratio_percent` 도 기관이 0 을 줘 둘 다 0 이면 `[0, 0]` 대신 `null` 이다 (#309)

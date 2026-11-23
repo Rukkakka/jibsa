@@ -138,6 +138,20 @@ class RateLimitPolicy(BaseModel):
     ] = True
 
 
+def _is_time(value: Any) -> bool:
+    """상태 파일에서 읽은 값을 시각으로 쓸 수 있는지. 숫자이고 유한한 실수로 바꿀 수 있어야 한다.
+
+    약 1.8×10³⁰⁸ 이상인 정수는 실수로 바꿀 수 없어 `isfinite` 가 OverflowError 를 낸다. 잡지 않으면 깨진 값을 버리려던 정리가
+    그 소스의 모든 요청과 `limits`·`limits --reset` 을 INTERNAL_ERROR 로 실패시켰다 (2026-11-23 리뷰·재현).
+    """
+    if not isinstance(value, (int, float)):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
+
+
 def state_dir() -> Path:
     """상태 파일 디렉터리. `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`."""
     override = os.environ.get('JIBSA_STATE_DIR')
@@ -229,11 +243,11 @@ class RateLimiter:
         state: dict[str, Any] = {}
         if isinstance(data, dict):
             blocked_until = data.get('blocked_until')
-            if isinstance(blocked_until, (int, float)) and isfinite(blocked_until):
+            if _is_time(blocked_until):
                 state['blocked_until'] = blocked_until
             recent = data.get('recent')
             if isinstance(recent, list):
-                state['recent'] = [slot for slot in recent if isinstance(slot, (int, float)) and isfinite(slot)]
+                state['recent'] = [slot for slot in recent if _is_time(slot)]
         # 슬롯은 예약한 때부터 max_wait 안에만 잡힌다. 그보다 먼 미래 슬롯은 시계가 뒤로 갔거나(NTP 보정·VM 복원) 손으로 고친
         # 값이라 버린다 (2026-10-11 실측: recent 에 1시간 뒤 슬롯 하나로 직방 요청이 '3600초 뒤' RATE_LIMITED). 쿨다운
         # (blocked_until)은 서버 Retry-After 만큼 길 수 있어 상한을 몰라 그대로 둔다. 풀려면 limits --reset

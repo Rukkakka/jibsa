@@ -56,6 +56,9 @@ def test_entry_page_reopens_after_refresh_window_or_without_ready_cookie() -> No
     assert usable_cookies(saved(-60, nnb), ENTRY, 'NNB', NOW) is None
     assert usable_cookies(saved(60, [{'name': 'NNB', 'expires': NOW - 1}]), ENTRY, 'NNB', NOW) is None
     assert usable_cookies({}, ENTRY, 'NNB', NOW) is None
+    # 실수로 바꿀 수 없을 만큼 큰 정수도 터지지 않고 다시 연다 (빼면 OverflowError 로 그 소스의 모든 명령이 실패했다)
+    huge = {'opened_at': int('1' + '0' * 400), 'page_url': 'https://fin.land.naver.com/map', 'cookies': nnb}
+    assert usable_cookies(huge, ENTRY, 'NNB', NOW) is None
     # 업데이트로 첫 화면 출처가 바뀌면 옛 주소로 띄우지 않는다 (띄우면 다른 출처로 보고 명령이 실패했다)
     assert usable_cookies(saved(60, nnb, 'https://m.land.naver.com/map'), ENTRY, 'NNB', NOW) is None
 

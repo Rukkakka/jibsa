@@ -545,7 +545,9 @@ def usable_cookies(
     요청(네이버 18~22건)이 더 나가지만 `RateLimiter.record` 로 세어 요청 제한은 지킨다. 실측으로는 2초 안에 생긴다.
     """
     opened_at, page_url, cookies = state.get('opened_at'), state.get('page_url'), state.get('cookies')
-    if not isinstance(opened_at, (int, float)) or not 0 <= now - opened_at < REFRESH_SECONDS:
+    # 빼지 않고 비교만 한다. 상태 파일에 실수로 바꿀 수 없을 만큼 큰 정수가 있으면 `now - opened_at` 이 OverflowError 를
+    # 내 그 소스의 모든 명령이 INTERNAL_ERROR 로 실패했다 (2026-11-23 리뷰·재현). 비교는 크기와 상관없이 터지지 않는다
+    if not isinstance(opened_at, (int, float)) or not now - REFRESH_SECONDS < opened_at <= now:
         return None
     if not isinstance(page_url, str) or not isinstance(cookies, list) or _origin(page_url) != _origin(entry_url):
         return None
