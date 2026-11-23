@@ -115,12 +115,6 @@ def _redact_text(value: str) -> str:
     return SENSITIVE_TEXT_PATTERN.sub(r'\1<redacted>', value)
 
 
-def _safe_request_url(url: object) -> str:
-    parts = urlsplit(str(url))
-    netloc = parts.netloc.rsplit('@', 1)[-1]
-    return urlunsplit((parts.scheme, netloc, parts.path, '', ''))
-
-
 class ResponseStatusError(HTTPStatusError):
     """`HTTPStatusError` whose message carries a truncated response body."""
 
@@ -135,7 +129,11 @@ def _request_origin(exc: HTTPStatusError) -> str:
         request = exc.request
     except RuntimeError:
         return '<unknown request>'
-    return f'{request.method} {_safe_request_url(request.url)}'
+    # 주소의 사용자 정보(@ 앞)·쿼리·조각은 에러 문구에 남기지 않는다
+    parts = urlsplit(str(request.url))
+    netloc = parts.netloc.rsplit('@', 1)[-1]
+    url = urlunsplit((parts.scheme, netloc, parts.path, '', ''))
+    return f'{request.method} {url}'
 
 
 def _body_preview(response: Response, limit: int = BODY_PREVIEW_LIMIT) -> str:

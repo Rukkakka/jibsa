@@ -42,7 +42,7 @@ message=f"'{query}' 에 해당하는 지역을 찾지 못했습니다"
 - 프로젝트 import 는 ruff(isort)가 모듈 이름순으로 정렬한다. `jibsa.core.*` → `jibsa.providers.<source>.api.*`
   (`client` → `request.*` → `response.*`) → `jibsa.providers.<source>.service.*` 는 이름순이면서 의존 깊이 순이다.
 - 절대 import (`from jibsa...`) 를 쓴다. 패키지 `__init__.py` 의 re-export 만 상대 import (`from .client import ...`).
-- 순환 import 를 피하려고 함수 안에서 import 할 때는 이유를 주석으로 남긴다 (`RateLimiter._retry_after` 참고).
+- 순환 import 를 피하려고 함수 안에서 import 할 때는 이유를 주석으로 남긴다 (`RateLimiter.on_rate_limited` 참고).
 
 ```python
 from collections.abc import Callable

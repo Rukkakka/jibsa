@@ -109,7 +109,13 @@ def geohashes_covering(
     (고정 9×9 격자일 때 정밀도 6·반경 4km 에서 중심 0.16km 옆 셀까지 빠졌다).
     """
     cells = _cells_in_box(*box_around(lat, lng, radius_km), precision)
-    return [cell for cell in cells if _cell_distance_km(lat, lng, cell) <= radius_km]
+    covering: list[str] = []
+    for cell in cells:
+        south, north, west, east = geohash_bounds(cell)
+        # 점에서 칸까지의 가장 가까운 거리 (점이 칸 안이면 0)
+        if haversine_km(lat, lng, min(max(lat, south), north), min(max(lng, west), east)) <= radius_km:
+            covering.append(cell)
+    return covering
 
 
 def _cells_in_box(south: float, north: float, west: float, east: float, precision: int) -> list[str]:
@@ -161,12 +167,6 @@ def geohashes_touching(polygons: 'MultiPolygon', precision: int) -> list[str]:
                     cells[cell] = None
                     break
     return list(cells)
-
-
-def _cell_distance_km(lat: float, lng: float, geohash: str) -> float:
-    """점에서 geohash 칸까지의 가장 가까운 거리 (점이 칸 안이면 0)."""
-    south, north, west, east = geohash_bounds(geohash)
-    return haversine_km(lat, lng, min(max(lat, south), north), min(max(lng, west), east))
 
 
 def in_korea(lat: float, lng: float) -> bool:

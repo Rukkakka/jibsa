@@ -8,7 +8,7 @@ pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 �
     python scripts/ci/browser_check.py
 
 1. 첫 화면을 열고, 그 안에서 보낸 요청(GET·POST)이 데이터와 쿠키를 받아 오는지. 1MB 넘는 본문을 브라우저 안에 두었다가 나눠
-   받는지(`_read_body`), 응답 헤더가 늦거나 본문이 멈추면 timeout 에 맞춰 `ReadTimeout` 으로 끝나는지, 본문이 멈춘 429 는
+   받는지(`BrowserTransport._handle_request`), 응답 헤더가 늦거나 본문이 멈추면 timeout 에 맞춰 `ReadTimeout` 으로 끝나는지, 본문이 멈춘 429 는
    429 로 알아보는지도 본다. 실제 소스 응답은 1초 안팎·1MB 미만이라 이 경로들은 여기서만 돈다
 2. 다시 띄우면 첫 화면을 열지 않고 남긴 쿠키로 바로 요청하는지
 3. 다른 출처가 CORS 없이 준 429 를 Retry-After 와 함께 429 로 알아보는지. 브라우저는 이런 응답을 가려 fetch 가 이유 없이

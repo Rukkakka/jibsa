@@ -60,25 +60,24 @@ NextOption = Annotated[
 ]
 
 
-def _option_values(value: Any) -> Any:
-    """목록 옵션 값을 `split_csv` 가 읽는 모양으로 맞춘다 (쉼표로 나누고 공백·빈 값·중복을 뺀 뒤 정렬한다).
-
-    `-t 원룸,오피스텔` 과 `-t 원룸 -t 오피스텔` 은 같은 조건인데 원문 그대로 비교하면 다르다며 막았다 (앞·지금 값이 똑같이
-    '원룸,오피스텔' 로 보여 무엇을 고칠지 알 수 없었다, 2026-10-23 리뷰). 목록 옵션(유형·거래·층·옵션·평형 등)은 모두
-    고른 값의 집합이라 순서만 바꿔 적은 `-t 오피스텔,원룸` 도 같은 검색으로 본다.
-    """
-    if not isinstance(value, (list, tuple)):
-        return value
-    parts: list[Any] = []
-    for item in value:
-        parts += [part.strip() for part in item.split(',')] if isinstance(item, str) else [item]
-    return sorted({part for part in parts if part != ''}, key=str)
-
-
 def _search() -> tuple[str, dict[str, Any]]:
     """지금 명령과 그 지역·조건. 값은 표에 저장했다 읽은 것과 같게(튜플은 목록으로) 맞춰 비교한다."""
     context = get_current_context()
-    params = {key: _option_values(value) for key, value in context.params.items() if key not in RESUMABLE_PARAMS}
+    params: dict[str, Any] = {}
+    for key, value in context.params.items():
+        if key in RESUMABLE_PARAMS:
+            continue
+        if not isinstance(value, (list, tuple)):
+            params[key] = value
+            continue
+        # 목록 옵션 값을 `split_csv` 가 읽는 모양으로 맞춘다 (쉼표로 나누고 공백·빈 값·중복을 뺀 뒤 정렬한다).
+        # `-t 원룸,오피스텔` 과 `-t 원룸 -t 오피스텔` 은 같은 조건인데 원문 그대로 비교하면 다르다며 막았다 (앞·지금 값이 똑같이
+        # '원룸,오피스텔' 로 보여 무엇을 고칠지 알 수 없었다, 2026-10-23 리뷰). 목록 옵션(유형·거래·층·옵션·평형 등)은 모두
+        # 고른 값의 집합이라 순서만 바꿔 적은 `-t 오피스텔,원룸` 도 같은 검색으로 본다
+        parts: list[Any] = []
+        for item in value:
+            parts += [part.strip() for part in item.split(',')] if isinstance(item, str) else [item]
+        params[key] = sorted({part for part in parts if part != ''}, key=str)
     return context.command_path, json.loads(json.dumps(params, ensure_ascii=False, default=str))
 
 
@@ -113,16 +112,6 @@ def _differences(saved: dict[str, Any], current: dict[str, Any]) -> list[str]:
     ]
 
 
-def _prune(directory: Path, now: float) -> None:
-    """하루 지난 표와 쓰다 남은 임시 파일을 지운다. 못 지워도(다른 프로세스가 먼저 지움 등) 이어 받기와 상관없다."""
-    for path in directory.iterdir():
-        try:
-            if now - path.stat().st_mtime > NEXT_TTL_SECONDS:
-                path.unlink()
-        except OSError:
-            pass
-
-
 def _version() -> str:
     """표를 만든·읽는 jibsa (`jibsa --version` 한 줄, 개발·로컬 설치는 코드 지문까지. `build_text`). git 주소 설치는 커밋까지 붙어
     릴리스 사이의 코드도 가른다."""
@@ -151,7 +140,14 @@ def encode_next(position: dict[str, Any] | None) -> str | None:
     directory = _directory()
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        _prune(directory, time.time())
+        # 하루 지난 표와 쓰다 남은 임시 파일을 지운다. 못 지워도(다른 프로세스가 먼저 지움 등) 이어 받기와 상관없다
+        now = time.time()
+        for path in directory.iterdir():
+            try:
+                if now - path.stat().st_mtime > NEXT_TTL_SECONDS:
+                    path.unlink()
+            except OSError:
+                pass
         write_text_atomic(directory / f'{token}.json', raw)
     except OSError as exc:
         raise StateDirError(state_dir(), exc) from exc

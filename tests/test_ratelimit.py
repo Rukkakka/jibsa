@@ -69,6 +69,15 @@ def test_recorded_outside_requests_count_toward_budget() -> None:
     assert exc.value.reason == 'budget'
 
 
+def test_huge_integer_in_state_file_is_dropped_not_crashing() -> None:
+    broken = limiter(min_interval=0)
+    huge = '1' + '0' * 400
+    broken.path.parent.mkdir(parents=True, exist_ok=True)
+    broken.path.write_text(f'{{"blocked_until": {huge}, "recent": [{huge}, 5]}}', encoding='utf-8')
+    assert broken.status()['requests_last_minute'] == 0
+    broken.reset()
+
+
 def test_cooldown_blocks_until_expiry() -> None:
     cooled = limiter(min_interval=0, cooldown=60)
     cooled.block()

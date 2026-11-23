@@ -14,7 +14,7 @@ CLI 는 명령마다 새 프로세스라 브라우저도 매번 빈 쿠키로 �
 브라우저 일은 transport 마다 띄운 전용 스레드 하나에서 받은 차례대로 한다 (`_BrowserThread`). patchright 동기 API 는
 asyncio 이벤트 루프 안에서 부를 수 없지만 이 스레드에는 루프가 돌지 않아, 동기 `BrowserTransport` 는 어느 스레드·루프에서
 불려도 이 스레드에 일을 넘기고 기다린다. 비동기 `AsyncBrowserTransport` 는 동기 transport 를 감싸 같은 일을 넘기고 `await` 로
-기다린다 (`BrowserTransport._acall`). 그래서 흐름(`_open_page`·요청 보내기)은 한 벌이고, 동시에 온 요청도 이
+기다린다 (`AsyncBrowserTransport.handle_async_request`). 그래서 흐름(`_open_page`·요청 보내기)은 한 벌이고, 동시에 온 요청도 이
 스레드가 차례로 해 잠금이 없다. 예전에는 비동기 흐름을 patchright 비동기 API 로 따로 두어 고칠 때마다 함께 맞추고 동시성
 잠금(`asyncio.Lock`)을 따로 두었다 (2026-11-10 리뷰로 합침). CLI 와 매일 API 감시는 동기 transport 만 쓴다. 비동기 쪽은
 CI 의 브라우저 확인(`scripts/ci/browser_check.py` 5번)이 가짜 사이트로 띄워 보고, 실제 사이트는 고친 사람이 `AsyncClient` 로
@@ -155,7 +155,7 @@ NAVIGATION_EXTENSION: str = 'jibsa_navigation'
 DECODED_RESPONSE_HEADERS: frozenset[str] = frozenset({'content-encoding', 'content-length', 'transfer-encoding'})
 # 서버에 묻지 않고 탭을 띄울 때 돌려주는 빈 페이지 (`_fulfill_blank`). 아이콘을 data: 로 두어 favicon 요청이 나가지 않는다
 BLANK_PAGE_HTML: str = '<link rel="icon" href="data:,">'
-# 본문이 이보다 크면 evaluate 한 번에 돌려주지 않고 브라우저 안에 두었다가 이만큼씩 나눠 읽는다 (`_read_body`). patchright 는
+# 본문이 이보다 크면 evaluate 한 번에 돌려주지 않고 브라우저 안에 두었다가 이만큼씩 나눠 읽는다 (`_handle_request`). patchright 는
 # evaluate 결과가 크면 넘기는 시간이 크기보다 훨씬 빨리 는다. 같은 본문(97MB, 네트워크 없이 브라우저 안에서 만든 것)을 한 번에 넘기면
 # 44초, 1MB 씩이면 2.2초, 4MB 씩 2.7초, 16MB 씩 8.4초였다 (2026-11-11 로컬 실측). jibsa 소스 응답은 작아(1초 안팎) 평소엔 한 번에
 # 돌려주는 쪽만 탄다
@@ -230,7 +230,7 @@ FETCH_SCRIPT: str = """async ({url, method, headers, body, timeoutMs, inlineByte
     clearTimeout(timer);
   }
 }"""
-# `FETCH_SCRIPT` 가 브라우저 안에 둔 본문(bodyId)의 [start, end) 바이트를 base64 로 돌려준다 (`_read_body`). 본문이 없으면(그 사이
+# `FETCH_SCRIPT` 가 브라우저 안에 둔 본문(bodyId)의 [start, end) 바이트를 base64 로 돌려준다 (`_handle_request`). 본문이 없으면(그 사이
 # 격리 세계가 바뀜) 이유가 보이게 던져 `ConnectError` 메시지에 실린다. 그냥 읽으면 `Cannot read properties of undefined` 로만
 # 보였다 (2026-11-12 로컬 실측. 같은 실측에서 3MB 본문을 세 번에 나눠 읽는 동안 전역은 유지됐다)
 BODY_SLICE_SCRIPT: str = """async ([bodyId, start, end]) => {
@@ -284,20 +284,6 @@ ENTRY_BLOCKED_STATUSES: frozenset[int] = frozenset({401, 403, 451})
 # 않는다 (`_BrowserState._failure_key`)
 _FailureKey = tuple[str, str | None, tuple[tuple[str, str], ...] | None, bool]
 _failed_entries: dict[_FailureKey, tuple[float, Exception]] = {}
-
-
-def _fresh_error(error: Exception) -> Exception:
-    """기억해 둔 에러(`_failed_entries`)와 같은 종류·속성의 새 객체. `__init__` 을 거치지 않는다.
-
-    같은 객체를 다시 던지면 앞에서 붙은 `__context__` 가 남아 traceback 에 관계없는 에러가 이어지고, 여러 스레드가 함께
-    던지면 `__traceback__` 이 섞였다 (2026-11-10 리뷰: 스레드 2개 4만 번에 1번). `copy.copy` 는 `args` 로 `__init__` 을 다시
-    불러 인자가 다른 JibsaError 서브클래스(code·message…)에서 TypeError 가 난다.
-    """
-    fresh = BaseException.__new__(type(error), *error.args)
-    fresh.__dict__.update(error.__dict__)
-    fresh.__cause__ = error.__cause__
-    fresh.__suppress_context__ = error.__suppress_context__
-    return fresh
 
 
 class EntryOpenError(Exception):
@@ -377,13 +363,6 @@ def _playwright_timeout_error() -> type[Exception]:
     return PlaywrightTimeoutError
 
 
-def _log_load_timeout(entry_url: str) -> None:
-    logger.info(
-        '첫 화면(%s) load 가 %g초 안에 끝나지 않아 기다리지 않고 넘어갑니다 (사이트 밖 스크립트가 늦을 수 있음)',
-        entry_url, ENTRY_LOAD_TIMEOUT_MS / 1000,
-    )
-
-
 def _first_line(error: Exception) -> str:
     return (str(error).splitlines() or [''])[0]
 
@@ -393,23 +372,6 @@ def _missing_libraries_hint() -> str:
         f"리눅스는 Chromium 이 쓰는 시스템 라이브러리가 없으면 'sudo {sys.executable} -m patchright install-deps chromium' "
         "을 한 번 실행한 뒤 'jibsa install-browser' 로 확인하세요"
     )
-
-
-def _browser_error(error: Exception) -> BrowserUnavailableError | None:
-    """Chromium 이 없거나 시스템 라이브러리가 없어 못 띄운 에러면 설치 안내가 든 jibsa 에러, 아니면 None."""
-    text = str(error)
-    if "Executable doesn't exist" in text:
-        return BrowserUnavailableError(
-            message='브라우저로 요청할 수 없습니다: Chromium 이 설치되어 있지 않습니다',
-            hint="'jibsa install-browser' 로 Chromium 을 설치하세요 (jibsa 를 업데이트한 뒤에도 한 번 실행합니다)",
-        )
-    # Playwright 계열이 시스템 라이브러리가 없을 때 내는 문구 (사전 검사 문구, 실행 파일의 동적 링크 실패)
-    if 'missing dependencies' in text or 'error while loading shared libraries' in text:
-        return BrowserUnavailableError(
-            message='브라우저로 요청할 수 없습니다: Chromium 에 필요한 시스템 라이브러리가 없습니다',
-            hint=_missing_libraries_hint(),
-        )
-    return None
 
 
 def _launch_error(error: Exception) -> BrowserUnavailableError:
@@ -432,7 +394,20 @@ def _launch_error(error: Exception) -> BrowserUnavailableError:
                 'message 의 원인을 사용자에게 알리세요'
             ),
         )
-    return _browser_error(error) or BrowserUnavailableError(
+    # Chromium 이 없거나 시스템 라이브러리가 없어 못 띄운 에러면 설치 안내가 든 jibsa 에러를 내고, 아니면 아래 일반 에러를 낸다
+    text = str(error)
+    if "Executable doesn't exist" in text:
+        return BrowserUnavailableError(
+            message='브라우저로 요청할 수 없습니다: Chromium 이 설치되어 있지 않습니다',
+            hint="'jibsa install-browser' 로 Chromium 을 설치하세요 (jibsa 를 업데이트한 뒤에도 한 번 실행합니다)",
+        )
+    # Playwright 계열이 시스템 라이브러리가 없을 때 내는 문구 (사전 검사 문구, 실행 파일의 동적 링크 실패)
+    if 'missing dependencies' in text or 'error while loading shared libraries' in text:
+        return BrowserUnavailableError(
+            message='브라우저로 요청할 수 없습니다: Chromium 에 필요한 시스템 라이브러리가 없습니다',
+            hint=_missing_libraries_hint(),
+        )
+    return BrowserUnavailableError(
         message=f'Chromium 을 띄우지 못했습니다: {_first_line(error)}',
         hint=_missing_libraries_hint() if sys.platform.startswith('linux') else (
             "'jibsa install-browser' 로 Chromium 을 다시 받아 띄워 보세요. 같은 에러면 message 의 원인"
@@ -555,21 +530,6 @@ def _load_state(source: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _save_state(source: str, state: dict[str, Any]) -> None:
-    """쿠키 상태를 남긴다. 쿠키는 다음 명령을 빠르게 할 뿐이라 못 써도 명령은 실패시키지 않는다."""
-    path = _state_path(source)
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(path, json.dumps(state))
-    except OSError as error:
-        logger.warning('브라우저 쿠키를 남기지 못했습니다 (%s): %s', path, error)
-
-
-def _discard_state(source: str) -> None:
-    with suppress(OSError):
-        _state_path(source).unlink()
-
-
 def usable_cookies(
     state: Mapping[str, Any], entry_url: str, ready_cookie: str | None, now: float
 ) -> list[dict[str, Any]] | None:
@@ -585,7 +545,9 @@ def usable_cookies(
     요청(네이버 18~22건)이 더 나가지만 `RateLimiter.record` 로 세어 요청 제한은 지킨다. 실측으로는 2초 안에 생긴다.
     """
     opened_at, page_url, cookies = state.get('opened_at'), state.get('page_url'), state.get('cookies')
-    if not isinstance(opened_at, (int, float)) or not 0 <= now - opened_at < REFRESH_SECONDS:
+    # 빼지 않고 비교만 한다. 상태 파일에 실수로 바꿀 수 없을 만큼 큰 정수가 있으면 `now - opened_at` 이 OverflowError 를
+    # 내 그 소스의 모든 명령이 INTERNAL_ERROR 로 실패했다 (2026-11-23 리뷰·재현). 비교는 크기와 상관없이 터지지 않는다
+    if not isinstance(opened_at, (int, float)) or not now - REFRESH_SECONDS < opened_at <= now:
         return None
     if not isinstance(page_url, str) or not isinstance(cookies, list) or _origin(page_url) != _origin(entry_url):
         return None
@@ -747,20 +709,6 @@ def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState'
     return session
 
 
-def _is_main_document(response: 'PageResponse') -> bool:
-    """첫 화면 탭의 main frame 문서 응답인지 (iframe 광고 문서는 아니다). 드라이버에 묻지 않는 속성만 본다.
-
-    `response` 이벤트 리스너 안에서 부르므로 예외를 내지 않는다 (`count_preflight` 와 같은 이유). patchright 의 `request.frame`
-    은 서비스 워커 요청과 frame 이 생기기 전에 보낸 이동 요청(새 창의 첫 이동)에서 Error 를 낸다. 첫 화면 탭에서는 생기지 않지만
-    (`session_options` 의 서비스 워커 주석) 생기면 main frame 문서가 아니라고 본다 (2026-11-10 리뷰).
-    """
-    request = response.request
-    try:
-        return request.is_navigation_request() and request.frame.parent_frame is None
-    except _playwright_error():
-        return False
-
-
 # route 가 하나라도 걸린 탭에서는 patchright 가 CORS 사전 요청(OPTIONS)을 서버에 보내지 않고 브라우저 안에서 허용(204)으로
 # 답하고 HTTP 캐시도 끈다 (patchright coreBundle.js `needsRequestInterception`). 실제 Chrome 과 달리 직방·당근 API 에
 # OPTIONS 없이 본 요청만 가므로, route 는 빈 탭 띄우기(`_fulfill_blank`)에만 잠깐 쓰고 모두 걷는다. 첫 화면의 정적 파일은
@@ -837,19 +785,6 @@ def _fetch_arguments(
         'timeoutMs': timeout * 1000,
         'inlineBytes': BODY_CHUNK_BYTES,
     }, timeout
-
-
-def _read_body(page: 'Page', body_id: str, size: int) -> bytes:
-    """`FETCH_SCRIPT` 가 브라우저 안에 둔 큰 본문을 `BODY_CHUNK_BYTES` 씩 읽고 브라우저 안의 것은 지운다."""
-    try:
-        return b''.join(
-            base64.b64decode(page.evaluate(BODY_SLICE_SCRIPT, [body_id, start, min(start + BODY_CHUNK_BYTES, size)]))
-            for start in range(0, size, BODY_CHUNK_BYTES)
-        )
-    finally:
-        # 읽다 실패해도 지운다. 탭이 이미 닫혔으면 본문도 함께 사라졌다
-        with suppress(_playwright_error()):
-            page.evaluate(BODY_DROP_SCRIPT, body_id)
 
 
 class _FailedFetch(NamedTuple):
@@ -1063,7 +998,7 @@ def _to_response(
     return Response(
         status_code=result['status'],
         headers=_response_headers(_fetched_headers(result, page_headers)),
-        # 큰 본문은 `_handle_request` 가 조각으로 읽어 `content` 에 넣었다 (`_read_body`)
+        # 큰 본문은 `_handle_request` 가 조각으로 읽어 `content` 에 넣었다
         content=result['content'] if 'content' in result else base64.b64decode(result['body']),
         request=request,
     )
@@ -1305,12 +1240,22 @@ class _BrowserState:
         """이 소스의 첫 화면이 `FAILED_ENTRY_MEMORY_SECONDS` 안에 다시 열어도 같은 이유로 실패했으면 그 에러를 다시 낸다.
 
         같은 소스라도 proxy(주지 않았으면 환경 변수 프록시)·verify 가 다른 클라이언트는 따로 본다 (`_failure_key`). 프록시를
-        고쳐 새로 만든 클라이언트가 앞 클라이언트의 ProxyError 를 받았다 (2026-11-09 리뷰). 같은 예외 객체를 그대로 다시 던지면 던질 때마다 traceback 에 프레임이 이어 붙어
-        길어지고(2026-11-09 확인: 2·4·6개) 앞에서 붙은 `__context__` 도 남아, 같은 내용의 새 객체로 던진다 (`_fresh_error`).
+        고쳐 새로 만든 클라이언트가 앞 클라이언트의 ProxyError 를 받았다 (2026-11-09 리뷰). 기억해 둔 예외 객체가 아니라 같은
+        내용의 새 객체로 던진다 (이유는 본문 주석).
         """
         failed = _failed_entries.get(self._failure_key())
         if failed is not None and time.monotonic() - failed[0] < FAILED_ENTRY_MEMORY_SECONDS:
-            raise _fresh_error(failed[1])
+            error = failed[1]
+            # 기억해 둔 에러(`_failed_entries`)와 같은 종류·속성의 새 객체를 `__init__` 을 거치지 않고 만들어 던진다. 같은 객체를
+            # 다시 던지면 던질 때마다 traceback 에 프레임이 이어 붙어 길어지고(2026-11-09 확인: 2·4·6개), 앞에서 붙은
+            # `__context__` 가 남아 관계없는 에러가 이어지며, 여러 스레드가 함께 던지면 `__traceback__` 이 섞였다 (2026-11-10 리뷰:
+            # 스레드 2개 4만 번에 1번). `copy.copy` 는 `args` 로 `__init__` 을 다시 불러 인자가 다른 JibsaError 서브클래스
+            # (code·message…)에서 TypeError 가 난다
+            fresh = BaseException.__new__(type(error), *error.args)
+            fresh.__dict__.update(error.__dict__)
+            fresh.__cause__ = error.__cause__
+            fresh.__suppress_context__ = error.__suppress_context__
+            raise fresh
 
     def remember_if_fatal(self, error: Exception) -> None:
         """첫 화면을 띄우다 난 에러 중 재시도하지 않는 것(시간 초과·다른 출처·차단 화면·프록시·Chromium)을 기억한다.
@@ -1345,16 +1290,21 @@ class _BrowserState:
             self.discard = True
 
     def save(self, cookies: Sequence[Mapping[str, Any]]) -> None:
-        """쿠키 상태를 남긴다 (`_save_state`).
+        """쿠키 상태를 남긴다. 쿠키는 다음 명령을 빠르게 할 뿐이라 못 써도 명령은 실패시키지 않는다.
 
         페이지가 받은 쿠키를 모두 남긴다. 광고·분석용 제3자 쿠키도 들어 있지만(2026-11-10 실측: 직방 37개 중 23개, 다방
         23개 중 13개) 남긴 쿠키로 띄우면 빈 페이지라 그 호스트로 요청이 나가지 않아 어디로도 보내지지 않는다 (같은 날 실측:
         직방 명령 하나에서 나간 요청은 서버에 묻지 않는 첫 화면 주소의 빈 페이지와 `apis.zigbang.com` 뿐). 로그인 없는 익명
         방문자 쿠키라 거르지 않고, 상태 폴더의 다른 파일처럼 기본 권한으로 쓴다.
         """
-        _save_state(self.options.source, {
-            'opened_at': self.opened_at, 'page_url': self.page_url, 'cookies': [dict(cookie) for cookie in cookies],
-        })
+        path = _state_path(self.options.source)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_text_atomic(path, json.dumps({
+                'opened_at': self.opened_at, 'page_url': self.page_url, 'cookies': [dict(cookie) for cookie in cookies],
+            }))
+        except OSError as error:
+            logger.warning('브라우저 쿠키를 남기지 못했습니다 (%s): %s', path, error)
 
     def discard_saved(self, opened_at: float) -> None:
         """남긴 쿠키를 버린다. 파일의 첫 화면 시각이 `opened_at` 보다 늦으면 다른 프로세스가 새로 연 것이라 두고 간다.
@@ -1365,7 +1315,8 @@ class _BrowserState:
         current_opened_at = _load_state(self.options.source).get('opened_at')
         if isinstance(current_opened_at, (int, float)) and current_opened_at > opened_at:
             return
-        _discard_state(self.options.source)
+        with suppress(OSError):
+            _state_path(self.options.source).unlink()
 
     def finish(self, cookies: Sequence[Mapping[str, Any]] | None) -> None:
         """첫 화면을 연 뒤 페이지 JS 가 더 부른 요청을 요청 제한에 남기고, 쿠키를 남기거나 버린다.
@@ -1437,7 +1388,7 @@ class _BrowserThread:
     def _run(self) -> None:
         while (job := self._jobs.get()) is not None:
             function, args, future = job
-            # 차례를 기다리는 사이 취소된 일(비동기 요청의 `asyncio.wait_for` 시간 초과 등, `BrowserTransport._acall`)은 돌리지
+            # 차례를 기다리는 사이 취소된 일(비동기 요청의 `asyncio.wait_for` 시간 초과 등, `AsyncBrowserTransport.handle_async_request`)은 돌리지
             # 않는다. 돌리면 아무도 기다리지 않는 요청을 사이트로 보내고, 취소된 Future 에 결과를 넣다 InvalidStateError 로 이
             # 스레드가 끝난다. 돌기 시작한 일은 취소되지 않는다
             if future.set_running_or_notify_cancel():
@@ -1480,7 +1431,7 @@ class BrowserTransport(BaseTransport):
         self._page: Page | None = None
         # 탭마다 CORS 에 막힌 응답 기록
         self._blocked: dict[Page, _BlockedResponses] = {}
-        # 브라우저 일을 하는 스레드 (`_call`). 첫 브라우저 일 때 띄운다
+        # 브라우저 일을 하는 스레드. 첫 브라우저 일 때 `_submit` 이 띄운다
         self._thread: _BrowserThread | None = None
         # `_thread`·`_closed` 와 일 넣기를 함께 지킨다. 넣기를 잠금 밖에서 하면 다른 스레드의 close 가 넣은 끝 표시 뒤에 들어가
         # 영영 돌지 않고 기다림이 멈췄다 (2026-11-10 리뷰)
@@ -1506,31 +1457,6 @@ class BrowserTransport(BaseTransport):
                 self._thread = _BrowserThread()
             thread = self._thread
             return None if threading.get_ident() == thread.ident else thread.submit(function, *args)
-
-    def _call(self, function: Callable[..., _R], *args: Any) -> _R:
-        """브라우저 일을 브라우저 스레드에서 부르고 끝나기를 기다린다 (`_submit`, `_wait`)."""
-        future = self._submit(function, *args)
-        if future is None:
-            return function(*args)
-        return self._wait(future)
-
-    async def _acall(self, function: Callable[..., _R], *args: Any) -> _R:
-        """`_call` 의 비동기판 (`AsyncBrowserTransport`). 브라우저 스레드의 일을 이벤트 루프를 막지 않고 기다린다.
-
-        기다리다 취소되면(`asyncio.wait_for` 시간 초과 등) Ctrl+C 를 받은 `_wait` 처럼 하던 브라우저 일은 그대로 두고 바로
-        돌아가고, 그 뒤의 `close` 는 그 일이 아직 돌고 있으면 기다리지 않는다 (`_abandon`). 아직 차례를 기다리던 일은 돌리지
-        않는다 (`_BrowserThread._run`). 작업 스레드(`asyncio.to_thread`)에서 `_call` 로 기다리면 취소돼도 그 스레드가 브라우저
-        일을 끝까지 기다려, 닫기와 `asyncio.run` 이 그만큼(첫 화면 최대 40초) 늦었다 (2026-11-10 리뷰: 8초 걸리는 첫 화면에서
-        `aclose` 8.04초).
-        """
-        future = self._submit(function, *args)
-        if future is None:
-            return function(*args)
-        try:
-            return await asyncio.wrap_future(future)
-        except asyncio.CancelledError:
-            self._abandon(future)
-            raise
 
     def _wait(self, future: 'Future[_R]') -> _R:
         """브라우저 스레드의 일이 끝나기를 기다린다. Ctrl+C 를 `WAIT_POLL_SECONDS` 마다 확인한다.
@@ -1600,7 +1526,16 @@ class BrowserTransport(BaseTransport):
 
         def on_entry_response(response: 'PageResponse') -> None:
             if response.status == 429:
-                state.on_entry_rate_limited(response.url, response.headers.get('retry-after'), _is_main_document(response))
+                # 첫 화면 탭의 main frame 문서 응답인지 본다 (iframe 광고 문서는 아니다). 드라이버에 묻지 않는 속성만 본다.
+                # `response` 이벤트 리스너 안이라 예외를 내지 않는다 (`count_preflight` 와 같은 이유). patchright 의 `request.frame`
+                # 은 서비스 워커 요청과 frame 이 생기기 전에 보낸 이동 요청(새 창의 첫 이동)에서 Error 를 낸다. 첫 화면 탭에서는
+                # 생기지 않지만 (`session_options` 의 서비스 워커 주석) 생기면 main frame 문서가 아니라고 본다 (2026-11-10 리뷰)
+                request = response.request
+                try:
+                    main_document = request.is_navigation_request() and request.frame.parent_frame is None
+                except _playwright_error():
+                    main_document = False
+                state.on_entry_rate_limited(response.url, response.headers.get('retry-after'), main_document)
 
         try:
             self._session.start()
@@ -1658,7 +1593,10 @@ class BrowserTransport(BaseTransport):
                     try:
                         page.wait_for_load_state('load', timeout=ENTRY_LOAD_TIMEOUT_MS)
                     except _playwright_timeout_error():
-                        _log_load_timeout(state.options.entry_url)
+                        logger.info(
+                            '첫 화면(%s) load 가 %g초 안에 끝나지 않아 기다리지 않고 넘어갑니다 (사이트 밖 스크립트가 늦을 수 있음)',
+                            state.options.entry_url, ENTRY_LOAD_TIMEOUT_MS / 1000,
+                        )
                 cookies = context.cookies()
                 deadline = time.monotonic() + READY_COOKIE_TIMEOUT_SECONDS
                 # 시간 안에 다 심지 않아도 멈추지 않고 이 쿠키로 요청한다. ready_cookie 가 없으면 남긴 쿠키는 다음 명령이 쓰지
@@ -1707,7 +1645,11 @@ class BrowserTransport(BaseTransport):
         return page
 
     def handle_request(self, request: Request) -> Response:
-        return self._call(self._handle_request, request)
+        # 브라우저 일을 브라우저 스레드에서 부르고 끝나기를 기다린다 (`_submit`, `_wait`)
+        future = self._submit(self._handle_request, request)
+        if future is None:
+            return self._handle_request(request)
+        return self._wait(future)
 
     def _handle_request(self, request: Request) -> Response:
         # 모든 요청을 첫 화면 탭에서 보낸다. 예전에는 첫 화면 출처의 CORS 를 허용하지 않는 호스트(당근 옛 지역 API)를 그 주소의
@@ -1733,11 +1675,24 @@ class BrowserTransport(BaseTransport):
                 ):
                     page.wait_for_timeout(BLOCKED_RESPONSE_POLL_MS)
                 if 'bodyId' in result:
-                    result['content'] = _read_body(page, result.pop('bodyId'), result['size'])
+                    # `FETCH_SCRIPT` 가 브라우저 안에 둔 큰 본문을 `BODY_CHUNK_BYTES` 씩 읽고 브라우저 안의 것은 지운다
+                    body_id = result.pop('bodyId')
+                    size = result['size']
+                    try:
+                        result['content'] = b''.join(
+                            base64.b64decode(
+                                page.evaluate(BODY_SLICE_SCRIPT, [body_id, start, min(start + BODY_CHUNK_BYTES, size)])
+                            )
+                            for start in range(0, size, BODY_CHUNK_BYTES)
+                        )
+                    finally:
+                        # 읽다 실패해도 지운다. 탭이 이미 닫혔으면 본문도 함께 사라졌다
+                        with suppress(_playwright_error()):
+                            page.evaluate(BODY_DROP_SCRIPT, body_id)
             finally:
                 page.remove_listener('response', on_page_response)
         except _playwright_error() as error:
-            # 탭·브라우저가 닫혔으면 다시 써도 같은 에러다. 큰 본문을 나눠 읽다(`_read_body`) 본문이 없어졌으면 탭은 살아 있어도
+            # 탭·브라우저가 닫혔으면 다시 써도 같은 에러다. 큰 본문을 나눠 읽다가 본문이 없어졌으면 탭은 살아 있어도
             # 페이지가 다른 곳으로 넘어가 evaluate 세계가 바뀐 것이라, 이 탭이 아직 첫 화면인지 알 수 없다. 어느 쪽이든 닫고 재시도에서
             # 남긴 쿠키로 다시 띄운다 (2026-11-12 리뷰에서 검토하고 그대로 둠)
             self._close()
@@ -1792,7 +1747,7 @@ class BrowserTransport(BaseTransport):
 class AsyncBrowserTransport(AsyncBaseTransport):
     """`BrowserTransport` 의 비동기판 (`AsyncClient` 용). 감싼 동기 transport 의 브라우저 스레드에 일을 넘기고 `await` 로 기다린다.
 
-    흐름(첫 화면 열기·요청 보내기)은 동기 transport 와 한 벌이다 (`BrowserTransport._acall`). 동시에 보낸 요청
+    흐름(첫 화면 열기·요청 보내기)은 동기 transport 와 한 벌이다 (`AsyncBrowserTransport.handle_async_request`). 동시에 보낸 요청
     (`asyncio.gather`)은 브라우저 스레드가 받은 차례대로 하나씩 보낸다. 예전에는 같은 흐름을 patchright 비동기 API 로 따로 두어
     고칠 때마다 함께 맞춰야 했고(리뷰에서 찾은 버그도 두 벌에 함께 있었다) 동시성 잠금을 따로 두었다 (2026-11-10 리뷰로 합침).
     탭이 하나라 차례로 보내도 요청 제한 간격(0.5초) 때문에 실제 요청에서는 차이가 없다 (같은 날 가짜 사이트 실측: 8건, 응답
@@ -1813,7 +1768,20 @@ class AsyncBrowserTransport(AsyncBaseTransport):
         # 비동기 본문(async iterator)은 브라우저 스레드에서 sync read() 로 읽을 수 없어 먼저 읽어 둔다. 읽은 본문은
         # `_fetch_arguments` 가 쓴다
         await request.aread()
-        return await self._sync._acall(self._sync._handle_request, request)
+        # `BrowserTransport.handle_request` 의 비동기판이다. 브라우저 스레드의 일을 이벤트 루프를 막지 않고 기다린다.
+        # 기다리다 취소되면(`asyncio.wait_for` 시간 초과 등) Ctrl+C 를 받은 `_wait` 처럼 하던 브라우저 일은 그대로 두고 바로
+        # 돌아가고, 그 뒤의 `close` 는 그 일이 아직 돌고 있으면 기다리지 않는다 (`_abandon`). 아직 차례를 기다리던 일은 돌리지
+        # 않는다 (`_BrowserThread._run`). 작업 스레드(`asyncio.to_thread`)에서 `BrowserTransport.handle_request` 로 기다리면
+        # 취소돼도 그 스레드가 브라우저 일을 끝까지 기다려, 닫기와 `asyncio.run` 이 그만큼(첫 화면 최대 40초) 늦었다
+        # (2026-11-10 리뷰: 8초 걸리는 첫 화면에서 `aclose` 8.04초)
+        future = self._sync._submit(self._sync._handle_request, request)
+        if future is None:
+            return self._sync._handle_request(request)
+        try:
+            return await asyncio.wrap_future(future)
+        except asyncio.CancelledError:
+            self._sync._abandon(future)
+            raise
 
     async def aclose(self) -> None:
         # 닫기는 브라우저 스레드가 쿠키를 남기고 브라우저를 닫을 때까지 기다리므로 작업 스레드에서 해 이벤트 루프를 막지 않는다
