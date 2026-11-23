@@ -4,7 +4,7 @@
 export const meta = {
   name: 'implement-bundles',
   description: '사용자가 허락한 구현 계획의 묶음을 지시서 검사 결과(briefCheck)가 있을 때만 coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
-  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: high|xhigh }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), briefCheck: 주 에이전트가 brief-checker 결과를 지적마다 처리한 기록 파일의 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
+  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: medium|high }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), briefCheck: 주 에이전트가 brief-checker 결과를 지적마다 처리한 기록 파일의 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
     { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
     { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지, 소스끼리는 동시에' },
@@ -20,9 +20,9 @@ const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
 // 네이버도 같은 상한이다. 예전에는 하나씩 돌렸는데, 2026-11-16 에 조사원 셋을 동시에 돌려 429 가 없어 풀었다 (그 절에 실측).
 const SAME_SOURCE_MAX = 3
 // 코드·문서 작업자 모델. 얽힌 일에도 올리지 않고, 얽힘은 주 에이전트가 지시서에서 푼다 (CLAUDE.md, 2026-11-16 사용자 결정).
-// 더 생각해야 하는 묶음은 effort 를 xhigh 로 올린다
+// 평소 effort 는 medium 이고, 더 생각해야 하는 묶음만 high 로 올린다
 const MODEL = 'sonnet'
-const EFFORTS = ['high', 'xhigh']
+const EFFORTS = ['medium', 'high']
 
 let a = args
 // args 가 JSON 문자열로, 때로는 문자열이 한 번 더 감싸여 올 수 있어 객체가 될 때까지 푼다. 읽지 못하면 묶음 없이 불린 것과
@@ -105,7 +105,7 @@ if (problems.length) {
 
 for (const b of bundles) {
   if (b.model && b.model !== MODEL) log(`묶음 ${b.name}: 작업자는 ${MODEL} 고정이라 ${b.model} 대신 ${MODEL} 으로 돌린다`)
-  if (b.effort && !EFFORTS.includes(b.effort)) log(`묶음 ${b.name}: effort ${b.effort} 대신 high 로 돌린다`)
+  if (b.effort && !EFFORTS.includes(b.effort)) log(`묶음 ${b.name}: effort ${b.effort} 대신 medium 으로 돌린다`)
 }
 if (docs && docs.model && docs.model !== MODEL) log(`문서 작업자는 ${MODEL} 고정이라 ${docs.model} 대신 ${MODEL} 으로 돌린다`)
 
@@ -175,7 +175,7 @@ const runOne = async (b, phaseTitle) => {
     phase: phaseTitle,
     agentType: 'coder',
     model: MODEL,
-    effort: EFFORTS.includes(b.effort) ? b.effort : 'high',
+    effort: EFFORTS.includes(b.effort) ? b.effort : 'medium',
     schema: REPORT,
   })
   results[b.name] = { name: b.name, source: b.source, status: r ? 'done' : 'failed', report: r }
@@ -255,7 +255,7 @@ if (docs && lanesOk) {
     phase: '문서',
     agentType: 'doc-writer',
     model: MODEL,
-    effort: EFFORTS.includes(docs.effort) ? docs.effort : 'high',
+    effort: EFFORTS.includes(docs.effort) ? docs.effort : 'medium',
   })
   if (!docsReport) log('문서 작업자가 결과를 내지 못했다')
 } else if (docs) {

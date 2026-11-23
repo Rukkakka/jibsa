@@ -13,11 +13,11 @@ effort: high
    - 그 한도에 들어가지 않을 만큼 넓으면 명령이 겹치지 않게 영역별 범위로 나눠 조사원을 여럿 둔다. 같은 소스의 조사원도 동시에 돌린다 (동시에 셋까지. `docs/development/agents.md` "동시에 띄울 때"). 같은 범위를 두 번 넣지 않는다.
    - 어떻게 돌릴지(소스, 범위, 조사원 수)를 알린다. 사용자가 `/web-parity` 를 직접 쳤으면 바로 돌리고, 치지 않았는데 이 명령을 골랐으면 허락받은 뒤 돌린다 (Opus 조사원이라 비용이 크다).
 2. **조사 돌리기.** 웹 캡처는 출력이 커서 주 에이전트가 직접 하지 않고 조사원에게 맡긴다. 브라우저 조사라 모델은 Opus 만 쓴다.
-   - **조사원 하나:** `web-parity-investigator` 를 Agent 로 하나 띄운다 (`model: opus`, effort 는 xhigh, 명령 하나·옵션 몇 개처럼 범위가 좁으면 high). 지시서는 `docs/development/agents.md` "맡길 때 지시서에 넣는 것" 대로 쓰고, 확인할 것은 가설이 아니라 질문으로 준다.
+   - **조사원 하나:** `web-parity-investigator` 를 Agent 로 하나 띄운다 (`model: opus`, effort 는 high, 명령 하나·옵션 몇 개처럼 범위가 좁으면 medium). 지시서는 `docs/development/agents.md` "맡길 때 지시서에 넣는 것" 대로 쓰고, 확인할 것은 가설이 아니라 질문으로 준다.
    - **조사원 둘 이상 (소스 둘 이상, 또는 한 소스를 범위로 나눔):** `web-parity-panel` 워크플로(`.claude/workflows/web-parity-panel.js`)를 부른다. `targets` 하나가 조사원 하나이고 모두 동시에 돈다 (같은 소스는 동시에 셋까지, 넘으면 남은 범위는 그 뒤에). 같은 소스에 같은 범위가 두 번 들어가면 아무것도 띄우지 않는다.
 
      ```
-     args: { targets: [ { source: "zigbang", scope: "범위", effort?: "xhigh" | "high" }, ... ] }
+     args: { targets: [ { source: "zigbang", scope: "범위", effort?: "high" | "medium" }, ... ] }
      ```
 
      Workflow 도구가 없는 환경에서는 조사원마다 Agent 를 하나씩 한 번에 띄운다 (같은 소스는 동시에 셋까지).
