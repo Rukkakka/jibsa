@@ -318,11 +318,12 @@ def emit(
     typer.echo(_dumps(_tidy_numbers(payload), pretty))
 
 
-def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
+def emit_error(code: str, message: str, hint: str | None = None, /, details: dict[str, Any] | None = None, **extra: Any) -> None:
     """`{"error": {...}}` 를 stderr 에 쓴다. 터미널이면 들여쓰기, 아니면 한 줄.
 
     `code`·`message`·`hint` 는 위치 인자로만 받아, `JibsaError.details` 에 같은 이름의 키가 있어도 인자가 겹쳐
     (TypeError) 에러 JSON 대신 traceback 으로 끝나지 않는다. 겹친 키는 앞의 세 값을 덮어쓰지 않는다.
+    `details` 는 `JibsaError.details` 라 None 도 null 로 싣는다 (모름, 예: `candidate_count`). 다른 키워드 값은 None 이면 뺀다.
     """
     error: dict[str, Any] = {'code': code, 'message': message}
     if hint:
@@ -331,6 +332,7 @@ def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any
         key: value for key, value in extra.items()
         if value is not None and key not in ('code', 'message', 'hint')
     })
+    error.update({key: value for key, value in (details or {}).items() if key not in ('code', 'message', 'hint')})
     # 들여쓰기는 stdout 이 아니라 에러를 쓰는 stderr 가 터미널인지로 정한다 (`jibsa ... | jq` 도 에러는 터미널에 보인다)
     typer.echo(_dumps({'error': error}, sys.stderr.isatty()), err=True)
 
@@ -350,7 +352,7 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         yield
     except JibsaError as exc:
         # 다른 소스 때문에 난 에러(지역 조회를 맡은 직방의 요청 제한 등)는 details 의 source 가 이긴다
-        emit_error(exc.code, exc.message, exc.hint, **{'source': source, **exc.details})
+        emit_error(exc.code, exc.message, exc.hint, source=source, details=exc.details)
         # 조회 중에야 알 수 있는 입력 오류(오피스텔에 평형 조건 등)도 사용법 오류와 같은 exit code 2 로 맞춘다
         raise typer.Exit(code=2 if exc.code == 'INVALID_ARGUMENT' else 1)
     except ValidationError as exc:
@@ -624,9 +626,13 @@ def split_ints(values: list[str] | None, option: str) -> list[int] | None:
     return result or None
 
 
-def _number_text(value: float) -> str:
-    # 면적처럼 소수인 값만 줄여 쓴다. 금액(int)에 :g 를 쓰면 1000000 이 1e+06 이 된다
-    return f'{value:g}' if isinstance(value, float) else str(value)
+def number_text(value: float) -> str:
+    """옵션 값을 에러 문구에 쓴다 (범위 검사, `--next` 조건 비교).
+
+    면적·좌표처럼 소수인 값은 받은 그대로 쓰고 정수인 소수(33.0)만 '.0' 을 뗀다. :g 는 유효숫자 6자리라 33.0579001 과
+    33.0579002 가 똑같이 보였다 (2026-11-23 리뷰). 금액(int)에 :g 를 쓰면 1000000 이 1e+06 이 된다.
+    """
+    return str(value).removesuffix('.0') if isinstance(value, float) else str(value)
 
 
 def require_finite(option: str, value: float | None) -> None:
@@ -647,7 +653,7 @@ def validate_ranges(*ranges: tuple[str, float | None, float | None]) -> None:
             require_finite(f'--{name}-min / --{name}-max', value)
         if low is not None and high is not None and low > high:
             raise typer.BadParameter(
-                f'--{name}-min({_number_text(low)}) 이 --{name}-max({_number_text(high)}) 보다 큽니다',
+                f'--{name}-min({number_text(low)}) 이 --{name}-max({number_text(high)}) 보다 큽니다',
                 param_hint=f'--{name}-min',
             )
 

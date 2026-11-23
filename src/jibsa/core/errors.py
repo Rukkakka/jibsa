@@ -96,5 +96,10 @@ class ListingUnavailableError(JibsaError):
             code='LISTING_UNAVAILABLE',
             message=f'현재 거래할 수 없는 {source} 매물입니다: {listing_id}' + (f' ({detail})' if detail else ' (없거나 내려간 매물)'),
             hint=hint,
-            details={'listing_id': str(listing_id), 'listing_status': status, 'reason': reason},
+            # 상태값·사유가 없으면 키를 뺀다 (없는 ID 면 상태가 해당 없음이다. emit_error 는 details 의 None 을 null(모름)로 싣는다)
+            details={
+                key: value
+                for key, value in {'listing_id': str(listing_id), 'listing_status': status, 'reason': reason}.items()
+                if value is not None
+            },
         )

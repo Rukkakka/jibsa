@@ -40,6 +40,7 @@ from jibsa.cli import (
     naver,
     zigbang,
 )
+from jibsa.cli.options import PrettyOption
 from jibsa.cli.output import (
     ChangedUsage,
     UsageHints,
@@ -164,10 +165,7 @@ def limits_command(
         list[str] | None,
         typer.Option('--reset', help='쿨다운·요청 기록을 지울 소스 (zigbang, naver, daangn, dabang). 반복하거나 쉼표로 구분')
     ] = None,
-    pretty: Annotated[
-        bool | None,
-        typer.Option('--pretty/--compact', help='JSON 들여쓰기'),
-    ] = None,
+    pretty: PrettyOption = None,
 ) -> None:
     """소스별 요청 제한 상태 (쿨다운 남은 시간, 최근 1분 요청 수, 정책).
 
@@ -195,10 +193,7 @@ def limits_command(
 
 @app.command('install-browser')
 def install_browser_command(
-    pretty: Annotated[
-        bool | None,
-        typer.Option('--pretty/--compact', help='JSON 들여쓰기'),
-    ] = None,
+    pretty: PrettyOption = None,
 ) -> None:
     """jibsa 가 사이트에 요청할 때 쓰는 Chromium 을 내려받고 실제로 한 번 띄워 본다.
 

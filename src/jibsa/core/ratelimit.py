@@ -63,7 +63,7 @@ class RateLimitedError(JibsaError):
             hint = '쿨다운 중에는 요청을 보내지 않습니다. 그동안 다른 소스를 쓰세요'
         else:
             message = f'{source} 분당 요청 상한에 도달했습니다. {seconds}초 뒤 다시 시도하세요'
-            hint = '조회 범위(--limit, --radius)를 줄이거나 잠시 뒤 다시 시도하세요'
+            hint = '조회 범위를 줄이거나 잠시 뒤 다시 시도하세요'
         super().__init__(
             code='RATE_LIMITED',
             message=message,

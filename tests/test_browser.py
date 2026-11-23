@@ -89,7 +89,7 @@ def test_entry_429_cooldown_follows_retry_after() -> None:
     state.on_entry_rate_limited('https://ad.doubleclick.net/pixel', '3600', main_document=False)
     state.on_entry_rate_limited('https://apis.zigbang.com/v2/app/notice', '600', main_document=False)
     with pytest.raises(RateLimitedError) as caught:
-        state.finish_entry(200)
+        state.finish_entry(200, None)
     assert 590 < caught.value.retry_after <= 600
 
 
@@ -99,16 +99,34 @@ def test_entry_server_error_keeps_saved_visitor_cookies() -> None:
     # 5xx 는 사이트 장애라 그 첫 화면의 쿠키로 덮지도, 다시 넣은 방문자 쿠키를 버리지도 않는다 (버리면 재시도가 새 NNB 를 받았다)
     assert not state.keeps_entry_cookies(503)
     with pytest.raises(HTTPStatusError):
-        state.finish_entry(503)
+        state.finish_entry(503, None)
     assert state.leave_saved and not state.discard
     # 차단 화면(4xx)은 거부된 방문자라 남기지 않고 옛 쿠키도 버린다. 429 는 쿨다운 뒤 풀렸는지 보려고 남긴다
     state.reset()
     state.page_url = ENTRY
     assert not state.keeps_entry_cookies(403)
     with pytest.raises(EntryPageError):
-        state.finish_entry(403)
+        state.finish_entry(403, None)
     assert state.discard
     assert state.keeps_entry_cookies(429) and state.keeps_entry_cookies(200)
+
+
+def test_entry_server_error_beyond_retry_cap_stops() -> None:
+    # 재시도 대기 상한(60초)보다 오래 쉬라는 5xx 는 다시 열지 않는다. 60초 뒤 다시 열면 장애 중인 사이트에 서버가 정한
+    # 시간보다 일찍 첫 화면 요청을 20건쯤 다시 보냈다 (2026-11-23 리뷰)
+    state = _BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB'))
+    state.page_url = ENTRY
+    with pytest.raises(EntryPageError) as caught:
+        state.finish_entry(503, '300')
+    assert caught.value.code == 'UPSTREAM_ERROR'
+    assert caught.value.details == {'status': 503, 'retry_after_seconds': 300}
+    # docs/llm.md 가 사이트 장애를 가리키는 hint 에는 업데이트를 권하지 않게 한다
+    assert caught.value.hint is not None and '사이트 장애' in caught.value.hint
+    assert state.leave_saved and not state.discard
+    state.reset()
+    state.page_url = ENTRY
+    with pytest.raises(HTTPStatusError):
+        state.finish_entry(503, '60')
 
 
 # --- proxy ------------------------------------------------------------------
