@@ -57,8 +57,6 @@ from jibsa.providers.daangn.api.response.complex import (
     DaangnNearbySchoolModel,
     DaangnProptierDanjiModel,
     DaangnRegionComplexesModel,
-    DaangnSearchComplexNodeModel,
-    DaangnSubwayInfoModel,
 )
 from jibsa.providers.daangn.service.common import (
     BUILDING_APPROVAL_FILTER_BY_LABEL,
@@ -326,23 +324,6 @@ class DaangnComplexCandidate(BaseModel):
     ] = None
 
 
-def _subway(item: DaangnSubwayInfoModel) -> str:
-    details = [item.line_name] if item.line_name else []
-    if item.walking_time_min is not None:
-        details.append(f'도보 {web_minutes(item.walking_time_min)}분')
-    name = station_name(item.station_name or '')
-    return f'{name} ({", ".join(details)})' if details else name
-
-
-def _web_subway_order(items: list[DaangnSubwayInfoModel]) -> list[DaangnSubwayInfoModel]:
-    """당근 웹 단지 화면 '가까운 역' 순서 (`Ye`): 도보 시간이 짧은 순 (모르면 뒤). 같으면 서버 순서를 지킨다 (안정 정렬).
-
-    웹은 같을 때 거리도 견주지만 jibsa 가 받는 단지 응답의 역(`DaangnSubwayInfoModel`)에는 거리 칸이 없다. 웹과 달리 같은 이름 역을 합치거나 앞 2곳으로 자르지 않고
-    (역, 노선)마다 모두 낸다.
-    """
-    return sorted(items, key=lambda item: _or_inf(item.walking_time_min))
-
-
 def _school_walk(item: DaangnNearbySchoolModel, assigned: bool) -> float | None:
     """웹이 쓰는 도보 시간. 배정 학교는 walkingTimeMin 이 없으면 길찾기 시간(workingTime)이다 (ComplexSchoolSection `Re`)."""
     return item.walking_time_min if item.walking_time_min is not None or not assigned else item.working_time
@@ -474,6 +455,20 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
     ) if danji else 0
     if dropped:
         notes.append(null_items_note('당근 단지 평형', dropped, ('pyeongs 의 household_count',)))
+    # 당근 웹 단지 화면 '가까운 역' 순서 (`Ye`): 도보 시간이 짧은 순 (모르면 뒤). 같으면 서버 순서를 지킨다 (안정 정렬).
+    # 웹은 같을 때 거리도 견주지만 jibsa 가 받는 단지 응답의 역(`DaangnSubwayInfoModel`)에는 거리 칸이 없다. 웹과 달리 같은 이름 역을 합치거나
+    # 앞 2곳으로 자르지 않고 (역, 노선)마다 모두 낸다.
+    nearby_subways: list[str] | None = None
+    if danji:
+        nearby_subways = []
+        for subway_item in sorted(danji.subways, key=lambda subway: _or_inf(subway.walking_time_min)):
+            if not subway_item.station_name:
+                continue
+            details = [subway_item.line_name] if subway_item.line_name else []
+            if subway_item.walking_time_min is not None:
+                details.append(f'도보 {web_minutes(subway_item.walking_time_min)}분')
+            name = station_name(subway_item.station_name)
+            nearby_subways.append(f'{name} ({", ".join(details)})' if details else name)
     return DaangnComplex(
         complex_id=complex_.original_id,
         name=complex_.name,
@@ -497,7 +492,7 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
         listing_count=complex_.live_article_count.total if complex_.live_article_count else None,
         # 단지 공공 정보가 없으면 평형·역·학교는 모른다 (null). 2026-10-10 실측: 아파트·오피스텔·주상복합·도시형 13곳 모두 있었다
         pyeongs=sorted(pyeongs, key=lambda pyeong: pyeong.exclusive_m2 or 0) if danji else None,
-        nearby_subways=[_subway(item) for item in _web_subway_order(danji.subways) if item.station_name] if danji else None,
+        nearby_subways=nearby_subways,
         schools=[school for school in schools if school] if danji else None,
         review_count=review_count,
         url=url,
@@ -520,18 +515,6 @@ def get_complex(client: DaangnClient, complex_id: int) -> DaangnComplex:
     if response.complex is None:
         raise complex_not_found(complex_id)
     return complex_to_summary(response.complex)
-
-
-def _candidate(node: DaangnSearchComplexNodeModel) -> DaangnComplexCandidate:
-    buildings = [edge.node for edge in (node.buildings.edges if node.buildings else []) if edge.node]
-    address = next((building.jibun_address for building in buildings if building.jibun_address), None)
-    address = address or next((building.road_address for building in buildings if building.road_address), None)
-    return DaangnComplexCandidate(
-        complex_id=node.original_id,
-        property_type=code_label(COMPLEX_TYPE_LABELS, node.type),
-        name=node.name,
-        address=normalize_address(address),
-    )
 
 
 def search_complexes(
@@ -576,7 +559,16 @@ def search_complexes(
         inspected += len(nodes)
         for node in nodes:
             if node.original_id not in seen:
-                candidates.append(_candidate(node))
+                buildings = [edge.node for edge in (node.buildings.edges if node.buildings else []) if edge.node]
+                # 건물의 지번 주소를 먼저, 없으면 도로명 주소를 쓴다
+                address = next((building.jibun_address for building in buildings if building.jibun_address), None)
+                address = address or next((building.road_address for building in buildings if building.road_address), None)
+                candidates.append(DaangnComplexCandidate(
+                    complex_id=node.original_id,
+                    property_type=code_label(COMPLEX_TYPE_LABELS, node.type),
+                    name=node.name,
+                    address=normalize_address(address),
+                ))
                 seen.add(node.original_id)
         page = result.page_info
         # 서버가 first 보다 많이 주면 자른 만큼을 '더 있음' 으로 센다 (COMPLEX_PAGE_SIZE 주석)

@@ -102,7 +102,19 @@ class _SerovalReader:
         if (ref := match.group('ref')) is not None:
             index = int(ref)
             if match.group('assign'):
-                return self._assign(index)
+                # `$R[n]=…` 대입
+                assigned = self._next()
+                assigned_punct = assigned.group('punct')
+                if assigned_punct == '{':
+                    target: dict[str, Any] = {}
+                    self.refs[index] = target
+                    return self._object(target)
+                if assigned_punct == '[':
+                    items: list[Any] = []
+                    self.refs[index] = items
+                    return self._array(items)
+                self.refs[index] = assigned_value = self.value(assigned)
+                return assigned_value
             if index not in self.refs:
                 raise self._error(f'unknown reference $R[{index}]')
             return self.refs[index]
@@ -125,20 +137,6 @@ class _SerovalReader:
         if punct == '[':
             return self._array([])
         raise self._error(f'unexpected {punct!r}')
-
-    def _assign(self, index: int) -> Any:
-        match = self._next()
-        punct = match.group('punct')
-        if punct == '{':
-            target: dict[str, Any] = {}
-            self.refs[index] = target
-            return self._object(target)
-        if punct == '[':
-            items: list[Any] = []
-            self.refs[index] = items
-            return self._array(items)
-        self.refs[index] = value = self.value(match)
-        return value
 
     def _object(self, target: dict[str, Any]) -> dict[str, Any]:
         match = self._next()

@@ -191,29 +191,6 @@ def relay_id(region: DaangnRegionModel) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _area_of(node: DaangnSearchRegionNodeModel) -> DaangnArea | None:
-    """지역 검색 결과를 `DaangnArea` 로. 단계·ID·중심이 빠진 결과는 쓰지 않는다 (실측에는 없었다).
-
-    쓰지 않는 지역도 웹 검색창에는 후보로 보이므로 `_AreaPage.unusable` 에 남겨 이름이 같은 지역 수에 센다 (`resolve_area`).
-    """
-    level = AREA_LEVEL_BY_DEPTH.get(node.depth or 0)
-    center = coordinate_point(node.center_coordinate)
-    if level is None or node.original_id is None or center is None or not node.name1:
-        return None
-    zoom = MAP_LEVEL_BASE - (node.map_view_default_zoom_level or DEFAULT_MAP_VIEW_LEVEL)
-    return DaangnArea(
-        level=level,
-        name1=node.name1,
-        name2=node.name2 or '',
-        name3=node.name3 or '',
-        region_id=node.original_id,
-        lat=center[0],
-        lng=center[1],
-        zoom=zoom,
-        node_id=relay_id(node),
-    )
-
-
 class _AreaPage(NamedTuple):
     """지역 검색 한 쪽 (`_search_area_page`)."""
 
@@ -245,14 +222,30 @@ def _search_area_page(client: DaangnClient, query: str, after: str | None = None
     cursor = next_cursor(page, after, received=received) if more else None
     areas: list[DaangnArea] = []
     unusable: list[DaangnSearchRegionNodeModel] = []
+    # 단계·ID·중심·시·도 이름이 빠진 결과는 쓰지 않는다 (실측에는 없었다)
     for edge in connection.edges:
-        if edge.node is None:
+        node = edge.node
+        if node is None:
             continue
-        area = _area_of(edge.node)
-        if area is None:
-            unusable.append(edge.node)
-        else:
-            areas.append(area)
+        level = AREA_LEVEL_BY_DEPTH.get(node.depth or 0)
+        center = coordinate_point(node.center_coordinate)
+        if level is None or node.original_id is None or center is None or not node.name1:
+            unusable.append(node)
+            continue
+        zoom = MAP_LEVEL_BASE - (node.map_view_default_zoom_level or DEFAULT_MAP_VIEW_LEVEL)
+        areas.append(
+            DaangnArea(
+                level=level,
+                name1=node.name1,
+                name2=node.name2 or '',
+                name3=node.name3 or '',
+                region_id=node.original_id,
+                lat=center[0],
+                lng=center[1],
+                zoom=zoom,
+                node_id=relay_id(node),
+            )
+        )
     return _AreaPage(areas, cursor, more, stalled_page(page, after), unusable)
 
 
@@ -281,7 +274,7 @@ def _remaining_areas(client: DaangnClient, query: str, first: _AreaPage) -> tupl
 
     끝까지 받지 못한 것은 쪽 수 상한에 닿았거나 서버가 다음 쪽이 있다고 했는데 커서가 멈춘 것이다 (`_AreaPage.more`). 예전에는
     받은 목록만 돌려줘, 받는 쪽은 상한에 걸린 동 수를 전체 수로 알렸고 (`resolve_area`), 끝까지 받았는지 함께 받으려던 시·도
-    채우기(`_district_sido`)는 목록을 둘로 풀다 실패해 받은 쪽을 버렸다 (2026-11-13 리뷰·실측: '중구' 나머지 122곳).
+    채우기(`sido_of` 의 구 이름 찾기)는 목록을 둘로 풀다 실패해 받은 쪽을 버렸다 (2026-11-13 리뷰·실측: '중구' 나머지 122곳).
 
     앞 쪽이 되풀이된 쪽(같은 커서 되풀이·pageInfo 없음, `_AreaPage.stalled`)은 더하기 전에 멈춘다. 예전에는 더한 뒤 멈춰 같은 동이
     두 번 후보에 들었다 (2026-11-19 리뷰). 멈춘 것은 끝까지 받지 못한 것으로 돌려준다.
@@ -319,11 +312,6 @@ def place_in(place: str, *texts: str | None) -> bool:
     return bool(parts) and all(matches(part) for part in parts)
 
 
-def _is_sido(area: DaangnArea, name: str) -> bool:
-    """`name` 이 이 시·도의 이름(정식 명칭·줄임말·옛 이름)인지. 시 이름이기도 한 줄임말('광주시')은 시·도로 보지 않는다."""
-    return area.level == '시도' and name not in CITY_NAMES_NOT_SIDO and SIDO_OFFICIAL_NAMES.get(name, name) == area.name1
-
-
 def _ambiguous(query: str, areas: list[DaangnArea], hint: str, unusable: int = 0) -> RegionAmbiguousError:
     """같은 이름 지역이 여럿이라는 에러. 후보에는 쓸 수 있는 지역만 넣고, 수에는 쓸 수 없는(위치·ID·시·도 이름이 없거나 단계를 모르는) 같은 이름 지역(`unusable`)도 센다."""
     return RegionAmbiguousError(
@@ -336,40 +324,11 @@ def _is_district_named(name2: str, last: str) -> bool:
     return name2 == last or name2.endswith(f' {last}')
 
 
-def _same_name_unusable(
-    nodes: list[DaangnSearchRegionNodeModel], context: list[str], last: str,
-) -> tuple[list[DaangnSearchRegionNodeModel], int]:
-    """쓸 수 없어(위치·ID·시·도 이름이 없거나 단계를 몰라) `DaangnArea` 가 되지 못한 지역 가운데 이름이 같은 (동 노드 목록, 구 수). 앞에 붙인 시·도·구도 맞는 것만 센다 (`resolve_area`).
-
-    웹 검색창은 그 지역도 후보로 보여 주므로 같은 이름 수에 센다. 단계(depth)가 빠졌을 수 있어 이름 칸으로 가른다 (동은 name3, 구는
-    name3 없이 name2).
-    """
-    in_context = [node for node in nodes if _in_context(node, context)]
-    dongs = [node for node in in_context if node.name3 == last]
-    districts = sum(1 for node in in_context if not node.name3 and node.name2 and _is_district_named(node.name2, last))
-    return dongs, districts
-
-
 def _with_unusable(error: JibsaError, unusable: int) -> JibsaError:
     """같은 이름인데 쓸 수 없어(위치·ID·시·도 이름이 없거나 단계를 몰라) 고를 수 없는 지역이 있으면 그 수를 에러 message 끝에 붙인다 (`resolve_area`)."""
     if unusable:
         error.message += f' (위치·ID·시·도 이름이 없거나 단계를 몰라 고를 수 없는 같은 이름 지역 {unusable}곳)'
     return error
-
-
-def _same_dong_hint(dongs: list[DaangnArea], last: str, unusable_dongs: list[DaangnSearchRegionNodeModel]) -> str:
-    """이름이 같은 동이 여러 곳일 때 그대로 다시 넣으면 찾히는 이름을 예로 드는 힌트 (`resolve_area`).
-
-    구 이름이 모두 다르면 구만 붙인 이름('강남구 신사동'), 구 이름까지 같은 동이 있으면 시·도도 붙인 이름(후보 이름 그대로)을 예로
-    든다. 예전에는 늘 구만 붙여, 서울·대구 중구에 다 있는 태평로2가는 예시 '중구 태평로2가' 를 다시 넣어도 또 모호했다
-    (2026-11-13 리뷰·실측). 쓸 수 없는(위치·ID·시·도 이름이 없거나 단계를 모르는) 같은 이름 동(`unusable_dongs`)의 구 이름도 견준다. 빼면 쓸 수 있는 동만으로는
-    구 이름이 다르다며 구만 붙인 예시를 들어, 그 예시를 넣어도 같은 에러가 또 난다 (2026-11-20 리뷰). 구 이름이 없는 지역은 견주지 않는다.
-    """
-    top = dongs[0]
-    districts = [area.name2 for area in dongs] + [node.name2 for node in unusable_dongs if node.name2]
-    if len(set(districts)) == len(districts):
-        return f"구를 붙여 다시 주세요 (예: '{top.name2 or top.name1} {last}')"
-    return f"구 이름도 같은 곳이 있어 시·도와 구를 붙여 다시 주세요 (예: '{top.full_name}')"
 
 
 def _dong_not_accepted(query: str, dongs: list[DaangnArea], unusable_dongs: list[DaangnSearchRegionNodeModel]) -> JibsaError:
@@ -457,7 +416,7 @@ def resolve_area(
     시·도('서울'), 구가 있는 시('수원시'), 세종은 그 아래 구(구를 받지 않는 명령은 동)를 골라 다시 묻는다. 후보는 그대로 다시
     넣으면 찾히는 이름이다. `sejong_whole` 이면 세종은 시 전체를 준다 (지역 실거래). 이름이 같은 곳이 없으면 비슷한 지역을
     후보로 알린다. 안내는 이 명령이 받는 단계(`levels`)와 입력(`other_inputs`)만 권한다. 쓸 수 없는(위치·ID·시·도 이름이 없거나 단계를 모르는) 지역도 같은
-    이름 수에 세어(`_same_name_unusable`), 쓸 수 있는 하나를 말없이 고르지 않고 후보에는 쓸 수 있는 지역만 넣어 알린다
+    이름 수에 세어, 쓸 수 있는 하나를 말없이 고르지 않고 후보에는 쓸 수 있는 지역만 넣어 알린다
     (동을 받지 않는 명령은 쓸 수 없는 같은 이름 동의 구도 후보에 넣는다. 다시 넣으면 구 단계로 찾는다). 쓸 수 있는 같은 이름 동·구가 하나도 없고
     쓸 수 없는 것만 있으면 '없다' 거나 비슷한 지역을 권하지 않고, 이름이 같은 지역이 있지만 고를 수 없다고 알린다
     (동을 받지 않는 명령에 같은 이름 동이 있으면 그 구를 권한다).
@@ -490,16 +449,30 @@ def resolve_area(
     districts = [area for area in areas if area.level == '구' and _is_district_named(area.name2, last)]
     # 쓸 수 없는(위치·ID·시·도 이름이 없거나 단계를 모르는) 지역도 웹 검색창에는 후보로 보이니 같은 이름 수에 센다. 그것을 빼고 세면 이름이 같은 곳이 둘인데 하나뿐이라며
     # 쓸 수 있는 하나를 말없이 고른다 (2026-11-19 리뷰). 쓸 수 있는 같은 이름 지역이 없어도 쓸 수 없는 것만 있으면 '없다' 거나 비슷한 지역을
-    # 권하지 않고 이름이 같은 지역이 있지만 고를 수 없다고 알린다 (아래 `LocationMissingError`, 역·대학·주소와 같다)
-    unusable_dongs, unusable_districts = _same_name_unusable(first.unusable, context, last)
+    # 권하지 않고 이름이 같은 지역이 있지만 고를 수 없다고 알린다 (아래 `LocationMissingError`, 역·대학·주소와 같다). 앞에 붙인
+    # 시·도·구도 맞는 것만 세고(`_in_context`), 단계(depth)가 빠졌을 수 있어 이름 칸으로 가른다 (동은 name3, 구는 name3 없이 name2)
+    in_context = [node for node in first.unusable if _in_context(node, context)]
+    unusable_dongs = [node for node in in_context if node.name3 == last]
+    unusable_districts = sum(1 for node in in_context if not node.name3 and node.name2 and _is_district_named(node.name2, last))
 
     if dongs:
         if len(dongs) + len(unusable_dongs) > 1 and '동' not in levels:
             raise _with_unusable(_dong_not_accepted(query, dongs, unusable_dongs), len(unusable_dongs))
         if len(dongs) + len(unusable_dongs) > 1:
-            raise _with_unusable(
-                _ambiguous(query, dongs, _same_dong_hint(dongs, last, unusable_dongs), len(unusable_dongs)), len(unusable_dongs),
-            )
+            # 이름이 같은 동이 여러 곳일 때 그대로 다시 넣으면 찾히는 이름을 예로 드는 힌트. 구 이름이 모두 다르면 구만 붙인
+            # 이름('강남구 신사동'), 구 이름까지 같은 동이 있으면 시·도도 붙인 이름(후보 이름 그대로)을 예로 든다. 예전에는 늘 구만
+            # 붙여, 서울·대구 중구에 다 있는 태평로2가는 예시 '중구 태평로2가' 를 다시 넣어도 또 모호했다 (2026-11-13 리뷰·실측).
+            # 쓸 수 없는(위치·ID·시·도 이름이 없거나 단계를 모르는) 같은 이름 동(`unusable_dongs`)의 구 이름도 견준다. 빼면 쓸 수
+            # 있는 동만으로는 구 이름이 다르다며 구만 붙인 예시를 들어, 그 예시를 넣어도 같은 에러가 또 난다 (2026-11-20 리뷰). 쓸
+            # 수 없는 동 가운데 구 이름이 없는 것은 견주지 않는다. 쓸 수 있는 동은 구 이름이 없어도('') 견주어, 둘 이상이면 시·도를
+            # 붙인 이름을 든다
+            top = dongs[0]
+            dong_districts = [area.name2 for area in dongs] + [node.name2 for node in unusable_dongs if node.name2]
+            if len(set(dong_districts)) == len(dong_districts):
+                dong_hint = f"구를 붙여 다시 주세요 (예: '{top.name2 or top.name1} {last}')"
+            else:
+                dong_hint = f"구 이름도 같은 곳이 있어 시·도와 구를 붙여 다시 주세요 (예: '{top.full_name}')"
+            raise _with_unusable(_ambiguous(query, dongs, dong_hint, len(unusable_dongs)), len(unusable_dongs))
         # 동을 받지 않는 명령(인기 급상승 단지)에 동 하나를 주면 부르는 쪽이 그 구를 권한다 (`trending_region_of`)
         return dongs[0]
     if districts:
@@ -520,7 +493,7 @@ def resolve_area(
         # 리뷰 오탐 (2026-11-20, 근거 고침 2026-11-20): 쓸 수 없는(위치·ID·시·도 이름이 없거나 단계를 모르는) 같은 이름 구가 섞여도 고치지 않는다. 예시는
         # `districts[0].name1` 로 시·도를 붙이고, 다시 넣을 때 `_in_context` 가 쓸 수 없는 노드도 시·도로 거른다. 그래서 같은
         # 시·도 안에 이름이 같은 구 레코드가 둘 있을 때만 또 모호한데, 현재 행정구역에는 그런 구가 없다 (포항 남·북구는 경북, 대구
-        # 남·북구는 대구. 시 낱말로 `place_in` 이 name2 앞부분을 맞추는 경우도 같다). 동 갈래(`_same_dong_hint`)와 갈리는 이유:
+        # 남·북구는 대구. 시 낱말로 `place_in` 이 name2 앞부분을 맞추는 경우도 같다). 동 갈래(위 `dong_hint`)와 갈리는 이유:
         # 동 이름은 한 시·도 안에서도 겹쳐 시·도만 붙여서는 못 가르지만, 구 이름이 겹치는 곳('중구')은 시·도 사이다
         if len(districts) + unusable_districts > 1:
             raise _with_unusable(
@@ -539,7 +512,14 @@ def resolve_area(
             f"{quoted(query, '과/와')} 이름이 같은 지역이 {unusable_count}곳 있지만, 당근이 위치·ID·시·도 이름을 주지 않거나 단계를 몰라 고를 수 없습니다",
             hint=f'이웃한 {_level_words(levels)} 이름으로 찾으세요' + (f'. {other_inputs}' if other_inputs else ''),
         )
-    sido = next((area for area in areas if _is_sido(area, last)), None)
+    # `last` 가 이 시·도의 이름(정식 명칭·줄임말·옛 이름)인지 본다. 시 이름이기도 한 줄임말('광주시')은 시·도로 보지 않는다
+    sido = next(
+        (
+            area for area in areas
+            if area.level == '시도' and last not in CITY_NAMES_NOT_SIDO and SIDO_OFFICIAL_NAMES.get(last, last) == area.name1
+        ),
+        None,
+    )
     if sido is not None and '시도' in levels:
         return sido
     # 시·도·세종·구가 있는 시의 아래 동은 지역 검색 첫 쪽에 온 것만 후보로 든다 (에러 길에서 수백 곳을 다 받지 않는다. '서울' 은
@@ -672,11 +652,13 @@ def sido_of(
     먼저 구 이름으로 찾아 그 이름의 구가 전국에 하나면 그 시·도로 그 구의 동을 모두 채운다 (구마다 한 번). 지역 검색은
     시·도·구를 동보다 앞에 주어 같은 이름의 구가 첫 쪽에 다 온다 (`search_areas`, 2026-11-12 실측: 서초구·분당구는 구 1곳,
     중구는 대구·대전·부산·서울·울산 5곳, 남구는 5곳). 같은 이름의 구가 여러 시·도에 있으면 그 구 이름 검색을 끝까지 받아
-    그 구들의 동마다 시·도를 정한다 (`_district_sido`). 끝까지 받지 못했거나 그 검색에 없는 동은 동 이름으로 찾는다
-    (`_dong_sido`). 구·동 이름이 같은 동이 여러 시·도에 있으면 지역 검색 결과 가운데 카드와 지역 ID 가 같은 곳의 시·도다
-    (2026-11-12 실측: '중구 태평로2가' 카드의 ID 는 서울 중구 태평로2가와 같고 대구 중구 태평로2가와 다르다). 예전에는 그런
-    동을 고르지 않고 시·도 없이 냈다. 예전에는 동마다 찾아 이웃 구 매물이 많은 구 검색이 한 쪽에 요청을 8번 더 보냈다
-    (2026-11-12 리뷰·실측: 강남구 --limit 40 의 서초구 5개 동·관악·성동·광진구 동).
+    그 구들의 동마다 시·도를 정한다. 끝까지 받지 못했으면(요청 제한·멈춘 쪽·쪽 수 상한) 받지 못한 쪽에 이름이 같은 동이
+    있을 수 있어 채우지 않는다. 그때와 그 검색에 없는 동은 동 이름으로 찾는다. 구·동 이름이 같은 동이 여러 시·도에 있으면
+    지역 검색 결과 가운데 카드와 지역 ID 가 같은 곳의 시·도다 (2026-11-12 실측: '중구 태평로2가' 카드의 ID 는 서울 중구
+    태평로2가와 같고 대구 중구 태평로2가와 다르다). 예전에는 그런 동을 고르지 않고 시·도 없이 냈다. 예전에는 동마다 찾아
+    이웃 구 매물이 많은 구 검색이 한 쪽에 요청을 8번 더 보냈고 (2026-11-12 리뷰·실측: 강남구 --limit 40 의 서초구 5개 동·
+    관악·성동·광진구 동), 같은 이름 구의 동이 많은 화면에서도 요청이 동 수만큼 늘었다 (2026-11-12 실측: 서울 중구 명동2가
+    가운데 줌 15 의 20건에 중구 동이 12곳).
 
     캐시 칸: 구는 (구 이름, ''), 동은 (구 이름, 동 이름), 이름으로 가리지 못한 동은 (`RELAY_ID_KEY`, 지역 ID). 동 캐시는 동
     이름이 늘 있어(`with_sido`) 구 캐시와 겹치지 않는다. 이름으로 가리지 못한 동의 (구, 동) 칸은 None 이다.
@@ -688,12 +670,36 @@ def sido_of(
         return key in cache or (id_key is not None and id_key in cache)
 
     if not known():
-        district = _district_sido(client, name2, cache) if name2 else None
+        district: str | None = None
+        if name2:
+            # 구 이름 검색은 그 구 아래 동을 모두 준다 (`resolve_area` 의 구 아래 동 세기와 같다)
+            district_key = (name2, '')
+            if district_key not in cache:
+                cache[district_key] = None
+                try:
+                    first = _search_area_page(client, name2)
+                    sidos = {area.name1 for area in first.areas if area.level == '구' and area.name2 == name2}
+                    if len(sidos) == 1:
+                        cache[district_key] = sidos.pop()
+                    elif sidos:
+                        rest, complete = _remaining_areas(client, name2, first)
+                        if complete:
+                            _fill_dong_sidos(cache, name2, first.areas + rest)
+                except OPTIONAL_LOOKUP_ERRORS:
+                    pass
+            district = cache[district_key]
         if district is not None:
             cache[key] = district
-        # 같은 이름의 구가 여러 시·도에 있으면 `_district_sido` 가 그 구들의 동을 이미 채웠다
+        # 같은 이름의 구가 여러 시·도에 있으면 위 구 이름 찾기가 그 구들의 동을 이미 채웠다
         elif not known():
-            _dong_sido(client, name2, name3, cache)
+            # 동 이름 검색은 비슷한 이름까지 합쳐도 첫 쪽(100곳)에 다 온다 (`search_areas`). 찾지 못하거나 실패하면(요청 제한 포함)
+            # (구, 동) 칸을 None 으로 두어 같은 조회에서 다시 찾지 않는다
+            try:
+                areas, _, _ = search_areas(client, name3)
+            except OPTIONAL_LOOKUP_ERRORS:
+                areas = []
+            _fill_dong_sidos(cache, name2, [area for area in areas if area.name3 == name3])
+            cache.setdefault(key, None)
     return cache.get(key) or (cache.get(id_key) if id_key is not None else None)
 
 
@@ -703,7 +709,7 @@ def sido_cache_rows(cache: dict[tuple[str, str], str | None]) -> list[list[str]]
 
     찾은 것만 담는다. None 은 실패(요청 제한 포함)와 시·도가 여럿인 구를 가리지 못해, 담으면 실패한 곳을 다음 쪽에서도 다시
     찾지 않는다 (2026-11-12 리뷰: 구 검색의 다음 쪽이 앞 쪽에서 찾은 구의 시·도를 다시 찾았다). 같은 이름 구의 동은 한꺼번에
-    채워(`_district_sido`) 그 동들도 담겨, 다음 쪽이 그 구 이름 검색을 다시 받지 않는다. 이름으로 가리지 못한 동은 지역 ID 칸이
+    채워(`sido_of`) 그 동들도 담겨, 다음 쪽이 그 구 이름 검색을 다시 받지 않는다. 이름으로 가리지 못한 동은 지역 ID 칸이
     담겨 다음 쪽도 그 ID 로 찾는다 (`sido_of`).
     """
     return [[name2, name3, sido] for (name2, name3), sido in cache.items() if sido is not None]
@@ -712,47 +718,6 @@ def sido_cache_rows(cache: dict[tuple[str, str], str | None]) -> list[list[str]]
 def sido_cache_from_rows(rows: list[list[str]] | None) -> dict[tuple[str, str], str | None]:
     """이어 받기 표의 시·도 캐시 줄(`sido_cache_rows`)을 캐시로 되돌린다. 없으면 빈 캐시."""
     return {(name2, name3): sido for name2, name3, sido in rows or []}
-
-
-def _district_sido(client: DaangnClient, name2: str, cache: dict[tuple[str, str], str | None]) -> str | None:
-    """구 이름이 전국에 하나면 그 시·도 (`sido_of`). 여러 시·도에 있거나 찾지 못하면 None. 구마다 한 번만 찾는다.
-
-    여러 시·도에 있으면 그 구 이름 검색의 나머지 쪽도 받아(`_remaining_areas`) 그 구들의 동마다 시·도를 캐시에 채운다
-    (`_fill_dong_sidos`). 구 이름 검색은 그 구 아래 동을 모두 준다 (`resolve_area` 의 구 아래 동 세기와 같다). 동마다 찾으면 같은
-    이름 구의 동이 많은 화면에서 요청이 동 수만큼 는다 (2026-11-12 실측: 서울 중구 명동2가 가운데 줌 15 의 20건에 중구 동이
-    12곳). 끝까지 받지 못하면(요청 제한·멈춘 쪽·쪽 수 상한) 받지 못한 쪽에 이름이 같은 동이 있을 수 있어 채우지 않고, `sido_of`
-    가 동 이름으로 찾는다.
-    """
-    key = (name2, '')
-    if key in cache:
-        return cache[key]
-    cache[key] = None
-    try:
-        first = _search_area_page(client, name2)
-        sidos = {area.name1 for area in first.areas if area.level == '구' and area.name2 == name2}
-        if len(sidos) == 1:
-            cache[key] = sidos.pop()
-        elif sidos:
-            rest, complete = _remaining_areas(client, name2, first)
-            if complete:
-                _fill_dong_sidos(cache, name2, first.areas + rest)
-    except OPTIONAL_LOOKUP_ERRORS:
-        pass
-    return cache[key]
-
-
-def _dong_sido(client: DaangnClient, name2: str, name3: str, cache: dict[tuple[str, str], str | None]) -> None:
-    """동 이름으로 지역 검색해 그 구·동의 시·도를 캐시에 채운다 (`_fill_dong_sidos`, `sido_of`).
-
-    동 이름 검색은 비슷한 이름까지 합쳐도 첫 쪽(100곳)에 다 온다 (`search_areas`). 찾지 못하거나 실패하면(요청 제한 포함) (구, 동)
-    칸을 None 으로 두어 같은 조회에서 다시 찾지 않는다.
-    """
-    try:
-        areas, _, _ = search_areas(client, name3)
-    except OPTIONAL_LOOKUP_ERRORS:
-        areas = []
-    _fill_dong_sidos(cache, name2, [area for area in areas if area.name3 == name3])
-    cache.setdefault((name2, name3), None)
 
 
 def _fill_dong_sidos(cache: dict[tuple[str, str], str | None], name2: str, areas: list[DaangnArea]) -> None:

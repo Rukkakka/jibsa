@@ -529,14 +529,6 @@ class DaangnPreschoolsResult(BaseModel):
     ] = []
 
 
-def _web_distance_m(origin: tuple[float, float], target: tuple[float, float]) -> int:
-    """당근 웹(services2 의 하버사인, 반지름 6371km)과 같은 미터 거리를 JS `Math.round` 처럼 반올림한 정수.
-
-    공통 `haversine_km` 의 기본 반지름(6371.0088km)으로는 미터 경계에서 어린이집 순서가 웹과 어긋날 수 있어 웹 반지름을 준다.
-    """
-    return js_round(haversine_km(*origin, *target, radius_km=WEB_EARTH_RADIUS_KM) * 1000)
-
-
 def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsResult:
     """단지 근처 어린이집·유치원을 당근 단지 화면(학군 → 유치원 탭)과 같은 목록·순서로 준다 (`complexByOriginalId`, 요청 1회).
 
@@ -564,7 +556,9 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
     rows: list[tuple[int | None, DaangnPreschoolSummary]] = []
     for preschool in nearby or []:
         target = coordinate_point(preschool.coordinate)
-        meters = _web_distance_m(origin, target) if origin and target else None
+        # 웹과 같은 미터 거리를 JS `Math.round` 처럼 반올림한다. 공통 `haversine_km` 의 기본 반지름(6371.0088km)으로는 미터 경계에서
+        # 어린이집 순서가 웹과 어긋날 수 있어 웹 반지름을 준다
+        meters = js_round(haversine_km(*origin, *target, radius_km=WEB_EARTH_RADIUS_KM) * 1000) if origin and target else None
         rows.append((meters, DaangnPreschoolSummary(
             id=str(preschool.pre_school_no),
             name=preschool.school_nm,

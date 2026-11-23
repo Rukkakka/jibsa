@@ -17,10 +17,6 @@ from jibsa.providers.daangn.api.response.review import DaangnMapReviewsResponseM
 from typing import Any
 
 
-def _article(store: RelayStore, record: dict[str, Any]) -> DaangnArticleModel:
-    return DaangnArticleModel.model_validate(resolve(store, record))
-
-
 def parse_articles_html(html: str, original_id: int) -> DaangnArticlesResponseModel:
     """상세 페이지 HTML 에서 매물 하나를 꺼낸다. 제목은 JSON-LD 의 Product.name.
 
@@ -48,7 +44,7 @@ def parse_articles_html(html: str, original_id: int) -> DaangnArticlesResponseMo
     )
     return DaangnArticlesResponseModel(
         title=title,
-        article=_article(store, record),
+        article=DaangnArticleModel.model_validate(resolve(store, record)),
     )
 
 
@@ -108,20 +104,6 @@ def _ref_count(value: Any) -> int:
     return len(refs) if isinstance(refs, list) else 0
 
 
-def _dong_names(store: RelayStore) -> dict[str, str]:
-    """동 후기 줄의 `regionId` → 동 이름. 스토어의 `Region` 레코드(`originalId` ↔ `name3`)로 푼다.
-
-    `originalId` 가 없는 `Region` 레코드도 섞여 있고, 구·시도 레코드의 `name3` 은 빈 글자다.
-    """
-    names: dict[str, str] = {}
-    for record in records_of_type(store, 'Region'):
-        original_id = record.get('originalId')
-        name3 = record.get('name3')
-        if original_id is not None and isinstance(name3, str) and name3:
-            names[str(original_id)] = name3
-    return names
-
-
 def parse_map_reviews_html(html: str, region_id: int) -> DaangnMapReviewsResponseModel:
     """구·동의 동네 후기 페이지 HTML 에서 후기 많은 단지·동별·건물별 후기 수를 꺼낸다. 후기 본문·작성자·이미지는 읽지 않는다.
 
@@ -150,7 +132,14 @@ def parse_map_reviews_html(html: str, region_id: int) -> DaangnMapReviewsRespons
     dong_records = _ref_records(store, dong_ref, depth=1)
     dongs: list[dict[str, Any]] | None = None
     if dong_records is not None:
-        names = _dong_names(store)
+        # 동 후기 줄의 `regionId` → 동 이름. 스토어의 `Region` 레코드(`originalId` ↔ `name3`)로 푼다.
+        # `originalId` 가 없는 `Region` 레코드도 섞여 있고, 구·시도 레코드의 `name3` 은 빈 글자다.
+        names: dict[str, str] = {}
+        for region_record in records_of_type(store, 'Region'):
+            original_id = region_record.get('originalId')
+            name3 = region_record.get('name3')
+            if original_id is not None and isinstance(name3, str) and name3:
+                names[str(original_id)] = name3
         dongs = [
             {
                 'regionId': record['regionId'],

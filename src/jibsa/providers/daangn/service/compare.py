@@ -442,11 +442,6 @@ def _trade(
     )
 
 
-def _top_info(group: DaangnCompareAreaGroupModel) -> DaangnComparePyInfoModel | None:
-    """묶음에서 세대수가 가장 많은 평형 (같으면 앞 평형, 웹 compare 의 `$`)."""
-    return most_households(group.py_infos, lambda info: info.ptp_tot_hseh_cnt)
-
-
 def _select_pyeong(
     column: DaangnCompareComplexModel, target_m2: float | None,
 ) -> tuple[bool, DaangnCompareAreaGroupModel, DaangnComparePyInfoModel] | None:
@@ -456,7 +451,11 @@ def _select_pyeong(
     supply, groups = pyeong_groups(column)
     # 대표 묶음은 평형이 있는 묶음 중에서 고른다. 인기 급상승 단지(`list_trending_complexes`)는 웹 식이 달라 평형이 없는 묶음까지
     # 포함한 묶음 전체에서 대표 묶음을 고른다 (합치지 않는다)
-    tops = [(group, info) for group in groups if (info := _top_info(group)) is not None]
+    # 묶음마다 세대수가 가장 많은 평형 (웹 compare 의 `$`)
+    tops = [
+        (group, info) for group in groups
+        if (info := most_households(group.py_infos, lambda py_info: py_info.ptp_tot_hseh_cnt)) is not None
+    ]
     if not tops:
         return None
     if target_m2 is None:
