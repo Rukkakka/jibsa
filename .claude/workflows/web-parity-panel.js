@@ -8,7 +8,7 @@ export const meta = {
 }
 
 const SOURCES = ['zigbang', 'naver', 'daangn', 'dabang']
-const EFFORTS = ['high', 'xhigh']  // 브라우저 조작이 든 조사라 모델은 Opus 만 쓴다 (CLAUDE.md)
+const EFFORTS = ['medium', 'high']  // 브라우저 조작이 든 조사라 모델은 Opus 만 쓴다. effort 는 medium~high (CLAUDE.md)
 // 동시 실행 상한(SAME_SOURCE_MAX)은 두 워크플로(web-parity-panel·implement-bundles)와
 // docs/development/agents.md "동시에 띄울 때" 를 같이 고친다. 워크플로 스크립트는 다른 파일을 불러올 수 없어 파일마다 둔다.
 // 두 파일의 상한이 다르거나 한 파일만 소스별 예외를 두면 tests/test_cli.py::test_workflow_concurrency_limits_match 가 실패한다.
@@ -89,7 +89,7 @@ const FINDINGS = {
 
 targets.forEach((t, i) => {
   if (t.model && t.model !== 'opus') log(`조사원 ${nameOf(i)}: 브라우저 조사라 ${t.model} 대신 opus 로 돌린다`)
-  if (t.effort && !EFFORTS.includes(t.effort)) log(`조사원 ${nameOf(i)}: effort ${t.effort} 대신 xhigh 로 돌린다`)
+  if (t.effort && !EFFORTS.includes(t.effort)) log(`조사원 ${nameOf(i)}: effort ${t.effort} 대신 high 로 돌린다`)
 })
 
 // agent() 가 예외를 던져도 그 조사원만 실패로 두고 이어 간다.
@@ -116,7 +116,7 @@ const investigate = i => {
       phase: '조사',
       agentType: 'web-parity-investigator',
       model: 'opus',
-      effort: EFFORTS.includes(t.effort) ? t.effort : 'xhigh',
+      effort: EFFORTS.includes(t.effort) ? t.effort : 'high',
       schema: FINDINGS,
     },
   )

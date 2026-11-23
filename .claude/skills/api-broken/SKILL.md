@@ -15,7 +15,7 @@ effort: high
    - `api-warning` 이슈는 명령이 아직 정상인 것이 보통이라 멈추지 않는다. jibsa 값을 웹의 새 값으로 바꿔 부른 결과와 지금 값의 결과를 견주어 응답 필드가 바뀌었는지 본다 (당근 해시면 같은 변수로 옛 해시·새 해시 응답을 견준다). 당근에서 새로 생긴 쿼리는 jibsa 가 쓰는 기능이 옮겨 갔는지 보고, 아니면 `api_check.py daangn-queries` 로 기준 목록을 다시 쓰는 계획만 낸다.
    - `RATE_LIMITED`·`blocked` 면 고장이 아니라 확인 못 함이다. 요청 제한이 풀린 뒤 다시 본다.
 3. **원인 찾기.** 그 소스 가이드(`docs/development/providers/<소스>.md`) "API 변경 시 점검" 의 순서대로 client → request → response → service → CLI 를 본다.
-   - 고장 난 소스가 하나면 직접 찾는다. 웹이 지금 쓰는 API·해시·헤더·필드를 캡처해야 하면 출력이 커서 `web-parity-investigator` 하나에 맡긴다 (Opus high, 질문: "이 명령이 왜 깨졌나. 웹이 지금 보내는 요청·응답과 jibsa 의 것이 어디서 다른가").
+   - 고장 난 소스가 하나면 직접 찾는다. 웹이 지금 쓰는 API·해시·헤더·필드를 캡처해야 하면 출력이 커서 `web-parity-investigator` 하나에 맡긴다 (Opus medium, 질문: "이 명령이 왜 깨졌나. 웹이 지금 보내는 요청·응답과 jibsa 의 것이 어디서 다른가").
    - 둘 이상이면 소스마다 조사원 하나를 한 번에 띄운다 (한 소스에 조사원이 더 필요하면 같은 소스는 동시에 셋까지. `docs/development/agents.md` "동시에 띄울 때").
 4. **보고와 계획.** AGENTS.md 작업 절차대로 쉬운 말로 설명하고 허락을 받는다.
    - 원인과 근거 (재현 명령, 응답의 핵심 필드, 웹 값)

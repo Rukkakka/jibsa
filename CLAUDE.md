@@ -9,19 +9,20 @@ AGENTS.md에서 연결한 공통 규약과 소스별 개발 가이드도 작업 
 
 운용 규칙은 [docs/development/agents.md](docs/development/agents.md) 다. 아래는 Claude Code 에만 해당하는 값이다.
 
-- 모델은 일에 맞춰 고른다. **최소선은 Sonnet `effort: high`** 고 Haiku 는 쓰지 않는다. 범위가 좁고 지시서가 구체적인 수정·API
-  찔러 보기·데이터 대조, 파일을 넓게 읽어 찾기만 하는 조사는 Sonnet high, 여러 사실을 판단해 종합하는 조사·브라우저 조작이 든
-  조사는 Opus high, 그중 종합할 사실이 많으면 Opus xhigh. 웹 대조 조사는 명령 여럿을
-  판정해 종합할 사실이 많으므로 xhigh, 명령 하나·옵션 몇 개처럼 범위가 좁거나 질문이 하나(감시 고장 원인 등)면 high 다.
+- 모델은 일에 맞춰 고른다. **effort 는 Sonnet·Opus 모두 medium 부터 high 까지**이고, 평소에는 medium, 더 생각해야 하는 일만 high 다.
+  xhigh 는 쓰지 않고 Haiku 도 쓰지 않는다 (2026-11-23 사용자 결정). 범위가 좁고 지시서가 구체적인 수정·API
+  찔러 보기·데이터 대조, 파일을 넓게 읽어 찾기만 하는 조사는 Sonnet medium, 여러 사실을 판단해 종합하는 조사·브라우저 조작이 든
+  조사는 Opus medium, 그중 종합할 사실이 많으면 Opus high. 웹 대조 조사는 명령 여럿을
+  판정해 종합할 사실이 많으므로 high, 명령 하나·옵션 몇 개처럼 범위가 좁거나 질문이 하나(감시 고장 원인 등)면 medium 이다.
   다만 구현 묶음(`implement-bundles`)의 코드·문서 작업자와 혼자 띄우는 `coder`·`doc-writer` 는 판단이 얽힌 일이어도 Sonnet 으로
   고정한다. 얽힘은 계획을 세운 주 에이전트가
   지시서에서 풀고([맡길 때 지시서에 넣는 것](docs/development/agents.md#맡길-때-지시서에-넣는-것)), 더 생각해야 하는 묶음은 effort 를
-  xhigh 로 올린다. 웹 대조 조사원은 결과가 곧 판단(아직 모르는 어긋남 찾기)이라 지시서로 대신할 수 없어 위 기준대로 Opus 를
-  쓴다. 변경분 코드 리뷰는 리뷰어 하나만 띄우고(`/review-diff`), 모델은 변경의 복잡도로 간단하면 Sonnet high, 중간이면 Opus high, 복잡하면
-  Opus xhigh 로 한다 (2026-11-16 사용자 결정: 리뷰어를 여럿 띄우면 저마다 diff·주변 코드를 읽어 Sonnet 으로도 토큰이 너무 많이
+  medium 에서 high 로 올린다. 웹 대조 조사원은 결과가 곧 판단(아직 모르는 어긋남 찾기)이라 지시서로 대신할 수 없어 위 기준대로 Opus 를
+  쓴다. 변경분 코드 리뷰는 리뷰어 하나만 띄우고(`/review-diff`), 모델은 변경의 복잡도로 간단하면 Sonnet medium, 중간이면 Opus medium, 복잡하면
+  Opus high 로 한다 (2026-11-16 사용자 결정: 리뷰어를 여럿 띄우면 저마다 diff·주변 코드를 읽어 Sonnet 으로도 토큰이 너무 많이
   들었다. 한 명이면 Opus 로 해도 된다). 한 소스의 코드 전체 리뷰(`/review`)는 명령 묶음마다 리뷰어 하나이고 모두 Opus high 다
-  (2026-11-19 사용자 결정: 리뷰어마다 읽는 파일이 달라 diff 리뷰처럼 곱으로 늘지 않는다). 지적이 다섯 건을 넘을 때 띄우는 검증자 하나는 Sonnet high 다 (지적마다 그 자리를 열고
-  CLI 를 1~2번 부르는 구체적인 일이다). 띄우기 전 지시서 검사(`brief-checker`)도 Sonnet high 다 (체크리스트 질문에 답하는 구체적인 일이다). 판단은 지난 리뷰에서 나온 패턴을 쌓은 [리뷰 체크리스트](docs/development/review-checklist.md)로 돕는다.
+  (2026-11-19 사용자 결정: 리뷰어마다 읽는 파일이 달라 diff 리뷰처럼 곱으로 늘지 않는다. 2026-11-23 effort 를 한 단계 내릴 때도 소스 코드 전체를 읽는 무거운 리뷰라 high 로 남겼다). 지적이 다섯 건을 넘을 때 띄우는 검증자 하나는 Sonnet medium 이다 (지적마다 그 자리를 열고
+  CLI 를 1~2번 부르는 구체적인 일이다). 띄우기 전 지시서 검사(`brief-checker`)도 Sonnet medium 이다 (체크리스트 질문에 답하는 구체적인 일이다). 판단은 지난 리뷰에서 나온 패턴을 쌓은 [리뷰 체크리스트](docs/development/review-checklist.md)로 돕는다.
   이 기준은 여기에만 두고 에이전트 정의에는 옮겨 적지 않는다 (명령은 이 기준으로 그 일의 값을 정해 적는다). 정의된 에이전트(`claude-code-guide` 등)도 기본 모델이 낮을 수 있으니 띄울 때 `model` 을 명시한다.
 - 미리 정의한 역할은 `.claude/agents/` 에 있다: `web-parity-investigator`(웹 대조 조사, 읽기 전용), `coder`(코드 작업),
   `doc-writer`(문서 작업), `reviewer`(한 맥락에서 리뷰 지적 모으기, 읽기 전용), `review-verifier`(리뷰 지적 재검증, 읽기 전용), `brief-checker`(띄우기 전 지시서 검사, 읽기 전용).
