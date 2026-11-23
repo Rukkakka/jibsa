@@ -286,7 +286,7 @@ def emit(
     늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 를 이미 dict 로 만들어 넘기면(네이버처럼 지역·범위를 앞에 붙이는 명령)
     매물 모델을 알 수 없으니, 이 명령에 없는 필드를 알리는 안내(`missing_fields_note`)를 위해 원래 결과를 `fields_source` 로 준다.
     출력에 연세(`yearly_rent_manwon`)나 1억 이상 금액이 있으면 그 값으로 만든 읽는 법(`yearly_rent_note`·`manwon_note`)을
-    `notes` 끝에 붙인다. 명령이 응답에서 빈 항목을 뺐는데 `notes` 에 빈 항목 안내가 없으면 공통 안내도 붙인다 (`_null_items_tally_note`).
+    `notes` 끝에 붙인다. 명령이 응답에서 빈 항목을 뺐는데 `notes` 에 빈 항목 안내가 없으면 공통 안내도 붙인다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -303,8 +303,12 @@ def emit(
         notes = [*(notes or []), yearly]
     if money := manwon_note(payload):
         notes = [*(notes or []), money]
-    if dropped := _null_items_tally_note(notes):
-        notes = [*(notes or []), dropped]
+    # 빈 항목 공통 안내(`null_items_total_note`): 계산에 쓰는 자리는 소스가 `null_items_note` 로 따로 알리므로 겹쳐 붙이지 않는다. 보여 주기만 하는 목록처럼 안내 없이
+    # 빼는 자리가 있어도 뺀 것을 늘 알린다. 명령 밖(`handle_errors` 밖)에서 부른 `emit` 은 소스를 몰라 붙이지 않는다
+    site = SITE_NAMES.get(_command_source or '')
+    count = null_item_tally()
+    if site is not None and count > 0 and not any(NULL_ITEMS_PHRASE in text for text in notes or []):
+        notes = [*(notes or []), null_items_total_note(site, count)]
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if next_token is not None and isinstance(payload, dict):
@@ -312,19 +316,6 @@ def emit(
     if notes:
         payload = {'notes': tagged_notes(notes), **payload}
     typer.echo(_dumps(_tidy_numbers(payload), pretty))
-
-
-def _null_items_tally_note(notes: list[str] | None) -> str | None:
-    """이 명령이 응답에서 빈 항목을 뺐는데 결과 notes 에 빈 항목 안내가 아직 없으면 공통 안내 (`null_items_total_note`).
-
-    계산에 쓰는 자리는 소스가 `null_items_note` 로 따로 알리므로 겹쳐 붙이지 않는다. 보여 주기만 하는 목록처럼 안내 없이
-    빼는 자리가 있어도 뺀 것을 늘 알린다. 명령 밖(`handle_errors` 밖)에서 부른 `emit` 은 소스를 몰라 붙이지 않는다.
-    """
-    site = SITE_NAMES.get(_command_source or '')
-    count = null_item_tally()
-    if site is None or count <= 0 or any(NULL_ITEMS_PHRASE in text for text in notes or []):
-        return None
-    return null_items_total_note(site, count)
 
 
 def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any) -> None:
@@ -342,21 +333,6 @@ def emit_error(code: str, message: str, hint: str | None = None, /, **extra: Any
     })
     # 들여쓰기는 stdout 이 아니라 에러를 쓰는 stderr 가 터미널인지로 정한다 (`jibsa ... | jq` 도 에러는 터미널에 보인다)
     typer.echo(_dumps({'error': error}, sys.stderr.isatty()), err=True)
-
-
-def _validation_message(error: Any) -> str:
-    """요청 모델 검증 오류 문구. 검증 함수가 던진 ValueError 는 pydantic 이 붙이는 'Value error, ' 를 뗀다."""
-    if error.get('type') == 'value_error' and 'error' in error.get('ctx', {}):
-        return str(error['ctx']['error'])
-    return error['msg']
-
-
-def _usage_hint() -> str:
-    """사용법 오류(jibsa.cli.app.run)와 같은 '<명령> --help' 힌트. 명령 밖이면 일반 문구."""
-    context = get_current_context(silent=True)
-    if context is None:
-        return '옵션 값을 확인하세요'
-    return f"'{context.command_path} --help' 로 사용법을 확인하세요"
 
 
 @contextmanager
@@ -389,10 +365,18 @@ def handle_errors(source: str) -> Generator[None, None, None]:
                 source=source,
             )
             raise typer.Exit(code=1)
+        # 사용법 오류(jibsa.cli.app.run)와 같은 '<명령> --help' 힌트. 명령 밖이면 일반 문구
+        context = get_current_context(silent=True)
         emit_error(
             'INVALID_ARGUMENT',
-            '; '.join(_validation_message(error) for error in exc.errors()),
-            _usage_hint(),
+            # 요청 모델 검증 오류 문구. 검증 함수가 던진 ValueError 는 pydantic 이 붙이는 'Value error, ' 를 뗀다
+            '; '.join(
+                str(error['ctx']['error'])
+                if error.get('type') == 'value_error' and 'error' in error.get('ctx', {})
+                else error['msg']
+                for error in exc.errors()
+            ),
+            '옵션 값을 확인하세요' if context is None else f"'{context.command_path} --help' 로 사용법을 확인하세요",
             source=source,
         )
         # 사용법 오류와 같은 종류라 exit code 도 2 로 맞춘다.

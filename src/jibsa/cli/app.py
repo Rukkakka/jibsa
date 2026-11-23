@@ -691,30 +691,43 @@ def foreign_usage_hint(exc: UsageError, command: str, args: Sequence[str], cli: 
         return None
     long_name = next((name for name in names if name.startswith('--')), names[0])
     if hints is None:
-        return _own_options_hint(cli, command, long_name)
-    hint = hints.hint(long_name, _option_value(args, names))
+        # 소스 밖 명령(guide·limits)과 루트는 None
+        source = command.split()[1:2]
+        found = _find_command(cli, command)
+        if not source or source[0] not in SOURCE_COMMANDS or found is None:
+            return None
+        options = [
+            next((name for name in param.opts if name.startswith('--')), param.opts[0])
+            for param in found.params
+            if param.param_type_name == 'option'
+        ]
+        return f"{command} 에는 {long_name} 옵션이 없습니다. 이 명령의 옵션: {', '.join(options)}. '{command} --help' 로 사용법을 확인하세요"
+    # `args` 에서 옵션(`names` 중 하나)에 준 마지막 값. `--옵션=값` 과 `--옵션 값` 을 모두 본다. 값이 없으면 None
+    option_value = None
+    for index, arg in enumerate(args):
+        name, equals, inline = arg.partition('=')
+        if name not in names:
+            continue
+        if equals:
+            option_value = inline
+        elif index + 1 < len(args) and not args[index + 1].startswith('-'):
+            option_value = args[index + 1]
+    hint = hints.hint(long_name, option_value)
     if hint or not isinstance(exc, NoSuchOption):
         return hint
-    elsewhere = [path for path in USAGE_HINTS if path != command and _has_option(cli, path, long_name)]
+    elsewhere: list[str] = []
+    for path in USAGE_HINTS:
+        if path == command:
+            continue
+        # `path`(`jibsa naver search listings`) 명령에 `long_name` 이 있는지 본다
+        target = _find_command(cli, path)
+        if target is not None and any(long_name in param.opts for param in target.params):
+            elsewhere.append(path)
     # 하위 명령과 같은 옵션을 받는 그룹(직방 search listings --complex)은 하위 명령만 알린다
     elsewhere = [path for path in elsewhere if not any(other.startswith(f'{path} ') for other in elsewhere)]
     if not elsewhere:
         return None
     return f"{long_name} 옵션은 {', '.join(elsewhere)} 에 있습니다. '{command} --help' 로 사용법을 확인하세요"
-
-
-def _own_options_hint(cli: Command, command: str, option: str) -> str | None:
-    """안내 표가 없는 소스 명령에 없는 옵션을 줬을 때, 이 명령의 옵션을 알린다. 소스 밖 명령(guide·limits)과 루트는 None."""
-    source = command.split()[1:2]
-    found = _find_command(cli, command)
-    if not source or source[0] not in SOURCE_COMMANDS or found is None:
-        return None
-    options = [
-        next((name for name in param.opts if name.startswith('--')), param.opts[0])
-        for param in found.params
-        if param.param_type_name == 'option'
-    ]
-    return f"{command} 에는 {option} 옵션이 없습니다. 이 명령의 옵션: {', '.join(options)}. '{command} --help' 로 사용법을 확인하세요"
 
 
 def changed_usage_hint(exc: UsageError, command: str) -> str | None:
@@ -772,32 +785,12 @@ def subcommand_hint(exc: UsageError) -> str | None:
     return f"{hint}. '{context.command_path} --help' 로 사용법을 확인하세요"
 
 
-def _option_value(args: Sequence[str], names: Sequence[str]) -> str | None:
-    """`args` 에서 옵션(`names` 중 하나)에 준 마지막 값. `--옵션=값` 과 `--옵션 값` 을 모두 본다. 값이 없으면 None."""
-    value = None
-    for index, arg in enumerate(args):
-        name, equals, inline = arg.partition('=')
-        if name not in names:
-            continue
-        if equals:
-            value = inline
-        elif index + 1 < len(args) and not args[index + 1].startswith('-'):
-            value = args[index + 1]
-    return value
-
-
 def _find_command(cli: Command, path: str) -> Command | None:
     """`path`(`jibsa naver search listings`) 의 명령. 없으면 None."""
     command: Command | None = cli
     for name in path.split()[1:]:
         command = command.commands.get(name) if isinstance(command, TyperGroup) else None
     return command
-
-
-def _has_option(cli: Command, path: str, option: str) -> bool:
-    """`path`(`jibsa naver search listings`) 명령에 `option` 이 있는지."""
-    command = _find_command(cli, path)
-    return command is not None and any(option in param.opts for param in command.params)
 
 
 def main() -> None:

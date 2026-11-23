@@ -29,7 +29,6 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 
 from typing import (
-    IO,
     Annotated,
     Any,
 )
@@ -139,25 +138,6 @@ class RateLimitPolicy(BaseModel):
     ] = True
 
 
-def _clean_state(data: Any) -> dict[str, Any]:
-    """읽은 상태에서 숫자가 아닌 시각을 버린다.
-
-    손으로 고쳤거나 깨진 값(`null`, 문자열)이 `float()` 에서 터지면 그 소스의 모든 요청과 `limits --reset` 까지
-    PARSE_ERROR·INTERNAL_ERROR('다른 소스를 쓰세요')로 실패했다 (2026-10-11 실측: `{"recent": ["abc"]}`).
-    다음에 쓸 때 정리된 상태로 덮어쓴다.
-    """
-    if not isinstance(data, dict):
-        return {}
-    state: dict[str, Any] = {}
-    blocked_until = data.get('blocked_until')
-    if isinstance(blocked_until, (int, float)) and isfinite(blocked_until):
-        state['blocked_until'] = blocked_until
-    recent = data.get('recent')
-    if isinstance(recent, list):
-        state['recent'] = [slot for slot in recent if isinstance(slot, (int, float)) and isfinite(slot)]
-    return state
-
-
 def state_dir() -> Path:
     """상태 파일 디렉터리. `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`."""
     override = os.environ.get('JIBSA_STATE_DIR')
@@ -166,25 +146,6 @@ def state_dir() -> Path:
     cache_home = os.environ.get('XDG_CACHE_HOME')
     base = Path(cache_home) if cache_home else Path.home() / '.cache'
     return base / 'jibsa'
-
-
-def _lock_file(file: IO[str]) -> None:
-    """상태 파일 잠금을 잡는다. 다른 프로세스가 잡고 있으면 풀릴 때까지 기다린다."""
-    if sys.platform == 'win32':
-        # Windows 에는 fcntl 이 없다. 잠금 파일 첫 바이트를 잠그고, 실패하면 1초 간격으로 10번 다시 시도한 뒤 OSError 를 낸다.
-        # 잠금은 슬롯을 예약하는 짧은 순간만 잡으므로 그 안에 풀린다
-        file.seek(0)
-        msvcrt.locking(file.fileno(), msvcrt.LK_LOCK, 1)
-    else:
-        fcntl.flock(file, fcntl.LOCK_EX)
-
-
-def _unlock_file(file: IO[str]) -> None:
-    if sys.platform == 'win32':
-        file.seek(0)
-        msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        fcntl.flock(file, fcntl.LOCK_UN)
 
 
 def replace_file(tmp: Path, path: Path) -> None:
@@ -250,7 +211,7 @@ class RateLimiter:
         쓰기는 임시 파일을 바꿔치기해 원자적이라 잠그지 않고 읽어도 반쯤 쓴 파일을 보지 않는다.
         """
         try:
-            state = _clean_state(json.loads(self.path.read_text(encoding='utf-8')))
+            data = json.loads(self.path.read_text(encoding='utf-8'))
         except FileNotFoundError as exc:
             # 경로 중간이 파일이면 macOS·Linux 는 NotADirectoryError 를 내지만 Windows 는 FileNotFoundError 를 내서 아직 기록이
             # 없는 것과 구분되지 않는다. 그 경로에는 상태를 쓸 수 없으니 같은 상태 디렉터리 오류로 본다
@@ -262,6 +223,17 @@ class RateLimiter:
             return {}
         except OSError as exc:
             raise StateDirError(state_dir(), exc) from exc
+        # 손으로 고쳤거나 깨진 값(`null`, 문자열)이 `float()` 에서 터지면 그 소스의 모든 요청과 `limits --reset` 까지
+        # PARSE_ERROR·INTERNAL_ERROR('다른 소스를 쓰세요')로 실패했다 (2026-10-11 실측: `{"recent": ["abc"]}`).
+        # 그래서 숫자가 아닌 시각을 버린다. 다음에 쓸 때 정리된 상태로 덮어쓴다
+        state: dict[str, Any] = {}
+        if isinstance(data, dict):
+            blocked_until = data.get('blocked_until')
+            if isinstance(blocked_until, (int, float)) and isfinite(blocked_until):
+                state['blocked_until'] = blocked_until
+            recent = data.get('recent')
+            if isinstance(recent, list):
+                state['recent'] = [slot for slot in recent if isinstance(slot, (int, float)) and isfinite(slot)]
         # 슬롯은 예약한 때부터 max_wait 안에만 잡힌다. 그보다 먼 미래 슬롯은 시계가 뒤로 갔거나(NTP 보정·VM 복원) 손으로 고친
         # 값이라 버린다 (2026-10-11 실측: recent 에 1시간 뒤 슬롯 하나로 직방 요청이 '3600초 뒤' RATE_LIMITED). 쿨다운
         # (blocked_until)은 서버 Retry-After 만큼 길 수 있어 상한을 몰라 그대로 둔다. 풀려면 limits --reset
@@ -280,7 +252,14 @@ class RateLimiter:
             raise StateDirError(state_dir(), exc) from exc
         with lock:
             try:
-                _lock_file(lock)
+                # 상태 파일 잠금을 잡는다. 다른 프로세스가 잡고 있으면 풀릴 때까지 기다린다
+                if sys.platform == 'win32':
+                    # Windows 에는 fcntl 이 없다. 잠금 파일 첫 바이트를 잠그고, 실패하면 1초 간격으로 10번 다시 시도한 뒤 OSError 를 낸다.
+                    # 잠금은 슬롯을 예약하는 짧은 순간만 잡으므로 그 안에 풀린다
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+                else:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
             except OSError as exc:
                 # 잠금을 지원하지 않는 파일 시스템(NFS·SMB 의 ENOLCK 등)도 모든 소스에서 같이 실패한다
                 raise StateDirError(state_dir(), exc) from exc
@@ -292,7 +271,11 @@ class RateLimiter:
                 except OSError as exc:
                     raise StateDirError(state_dir(), exc) from exc
             finally:
-                _unlock_file(lock)
+                if sys.platform == 'win32':
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
 
     def reserve(self) -> float:
         """다음 요청 슬롯을 예약하고 그때까지 기다릴 초를 돌려준다.
@@ -397,13 +380,6 @@ class RateLimiter:
             'policy': self.policy.model_dump(),
         }
 
-    def _retry_after(self, response: Response) -> float | None:
-        # core.http 의 파서를 쓰되 순환 import 를 피하려고 여기서 가져온다.
-        from jibsa.core.http import retry_after_seconds
-
-        header = response.headers.get('Retry-After')
-        return retry_after_seconds(header) if header else None
-
     def on_rate_limited(self, response: Response) -> None:
         """429 응답이면 쿨다운을 걸고 곧바로 `RateLimitedError` 를 낸다.
 
@@ -414,7 +390,11 @@ class RateLimiter:
         """
         if response.status_code != 429 or not self.policy.enabled:
             return
-        blocked_until = self.block(self._retry_after(response))
+        # core.http 의 파서를 쓰되 순환 import 를 피하려고 여기서 가져온다.
+        from jibsa.core.http import retry_after_seconds
+
+        header = response.headers.get('Retry-After')
+        blocked_until = self.block(retry_after_seconds(header) if header else None)
         raise RateLimitedError(self.source, blocked_until - time.time(), 'cooldown')
 
     def event_hooks(self) -> dict[str, list[Callable[..., None]]]:

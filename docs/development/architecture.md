@@ -158,7 +158,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   ([BaseHTTPClient](#basehttpclient) 의 `timeout`). 본문은 브라우저 안에서 조각마다 읽어 그 사이를 잰다 (`FETCH_SCRIPT`).
   본문이 멈춰도 3xx 이상이면 받은 상태·헤더로 본문 없는 응답을 만든다. 그래야 429 는 요청 제한이 `Retry-After` 로 쿨다운을 건다.
   요청 하나 전체의 상한은 httpx 처럼 두지 않는다.
-- 큰 본문: 1MB(`BODY_CHUNK_BYTES`)보다 큰 응답 본문은 브라우저 안에 두었다가 1MB 씩 나눠 파이썬으로 옮긴다 (`_read_body`).
+- 큰 본문: 1MB(`BODY_CHUNK_BYTES`)보다 큰 응답 본문은 브라우저 안에 두었다가 1MB 씩 나눠 파이썬으로 옮긴다 (`BrowserTransport._handle_request`).
   patchright 의 evaluate 결과는 클수록 넘기는 시간이 훨씬 빨리 늘어, 97MB 를 한 번에 넘기면 44초, 1MB 씩이면 2초쯤 걸렸다.
   jibsa 소스 응답은 1MB 미만이라 이 경로와 본문 조각 사이 시간 초과는 CI 의 `브라우저 확인`에서만 돈다.
 - 남긴 쿠키 버리기: 우리 요청이 `browser_discard_statuses`(기본 403)를 받으면 버려 다음 명령이 첫 화면부터 연다.
@@ -207,7 +207,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   이유로 못 띄우면 재시도 없이 `BROWSER_UNAVAILABLE` 이다. 힌트는 늘 붙인다 (리눅스는 시스템 라이브러리 설치, 드라이버 실행
   실패는 jibsa 재설치, 그 밖은 `jibsa install-browser` 로 다시 받아 띄워 보기).
 - 브라우저 일은 늘 transport 마다 띄운 전용 데몬 스레드 하나에서 차례로 한다 (`_BrowserThread`). 비동기
-  `AsyncBrowserTransport` 도 동기 transport 를 감싸 같은 스레드에 일을 넘기고 `await` 로 기다린다 (`_acall`. 흐름이 한 벌이고
+  `AsyncBrowserTransport` 도 동기 transport 를 감싸 같은 스레드에 일을 넘기고 `await` 로 기다린다 (`AsyncBrowserTransport.handle_async_request`. 흐름이 한 벌이고
   동시에 보낸 요청도 차례로 나간다. 기다리다 취소되면 Ctrl+C 처럼 하던 일을 기다리지 않는다). 따로 스레드를 두는 것은
   patchright 동기 API 가 asyncio 이벤트 루프 안에서 불리지 못하고, 부를 때마다 자기 asyncio 루프를 그 스레드의 '도는 루프'로
   남기며, 한 번 띄운 브라우저는 띄운 스레드에서만 다룰 수 있기 때문이다. 부른 스레드에는 아무것도 남지 않아 CLI 메인 스레드·asyncio 루프 안(Jupyter)·여러 작업 스레드 어디서 같은
