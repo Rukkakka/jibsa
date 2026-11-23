@@ -664,7 +664,7 @@ def search_map_area(
     # 채우기에만 써 매물이 없으면 묻지 않는다. 앞 쪽에서 못 찾았으면 이어 받는 쪽도 다시 묻고, 또 실패하면 그 쪽의 region 도
     # null 이라 실패 안내를 그 쪽에도 붙인다. 범위·집계 안내처럼 첫 쪽에만 붙이면 뒤 쪽의 null 이 '당근이 위치를 못 찾음' 으로
     # 읽힌다. 동을 못 찾거나 조회가 실패하면 `region_or_none` 이 region 을 null 로 두고 `[실패]` 안내를 붙인다 (`notes` 를 넘긴다.
-    # 못 찾은 경우의 `UnsupportedRegionError` 도 `JibsaError` 라 `OPTIONAL_LOOKUP_ERRORS` 에 잡힌다). 그래서 null 이 안내 없이
+    # 못 찾은 경우의 에러도 `JibsaError` 라 `OPTIONAL_LOOKUP_ERRORS` 에 잡힌다). 그래서 null 이 안내 없이
     # 나가는 길은 없다 (2026-11-12 리뷰 오탐, 근거 고침 2026-11-20)
     if region is None:
         region = region_or_none(client, lat, lng, notes=notes)

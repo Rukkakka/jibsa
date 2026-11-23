@@ -22,7 +22,6 @@ from jibsa.core.errors import (
     JibsaError,
     RegionAmbiguousError,
     RegionNotFoundError,
-    UnsupportedRegionError,
 )
 from jibsa.core.korean import (
     LINE_NAME_PATTERN,
@@ -745,7 +744,7 @@ def region_by_coordinate(client: DaangnClient, lat: float, lng: float) -> Daangn
     """좌표가 속한 당근 동을 찾는다 (`getRegionByCoordinate`).
 
     Raises:
-        UnsupportedRegionError: 좌표가 동에 속하지 않을 때 (바다 등).
+        JibsaError: 좌표가 동에 속하지 않을 때 (바다 등, REGION_NOT_FOUND).
         FeedQueryRejectedError: 쿼리 해시가 거절됐을 때 (웹이 쿼리를 바꿈).
         JibsaError: 그 밖의 GraphQL 에러 (UPSTREAM_ERROR).
     """
@@ -756,11 +755,10 @@ def region_by_coordinate(client: DaangnClient, lat: float, lng: float) -> Daangn
     )
     found = response.data.get_region_by_coordinate if response.data else None
     if not response.errors and (found is None or found.depth != 3 or not found.name3 or found.original_id is None):
-        raise UnsupportedRegionError(
+        raise JibsaError(
             code='REGION_NOT_FOUND',
             message=f'좌표 ({lat}, {lng}) 가 속한 당근 동을 찾지 못했습니다',
             hint='육지 안의 좌표를 주거나 동 이름으로 검색하세요',
-            skip_note=f'daangn 은 좌표 ({lat}, {lng}) 가 속한 동을 찾지 못해 건너뛰었습니다',
         )
     region = unwrap_graphql(response, found, '좌표 지역', conditions=False)
     return DaangnRegion(

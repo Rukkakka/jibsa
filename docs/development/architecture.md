@@ -42,7 +42,7 @@ cli/                 Typer 명령. 인자 검증 → service 호출 → emit / h
 `core/http.py` 의 `BaseHTTPClient(BaseModel, ABC)` 가 모든 provider client 의 기반이다.
 pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩토리** 역할을 함께 한다.
 
-- 공통 필드: `url_schema`, `verify`, `proxy`, `timeout`, `rate_limit`. `extra='forbid'` 라 오타 난 설정은 생성 시점에 실패한다.
+- 공통 필드: `verify`, `proxy`, `timeout`, `rate_limit`. `extra='forbid'` 라 오타 난 설정은 생성 시점에 실패한다.
   UA 는 브라우저가 맡아 필드가 없다. `verify`·`proxy` 는 브라우저에 넘긴다. `verify` 는 Chromium 이 받는 켜기·끄기만 받는다
   (Chromium 은 인증서 파일을 받지 않고 내장 목록과 OS 에 설치된 인증서를 믿는다). `timeout` 은 응답 헤더가 올 때까지(연결 포함)와
   본문 조각 사이 간격의 제한이다. httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`).

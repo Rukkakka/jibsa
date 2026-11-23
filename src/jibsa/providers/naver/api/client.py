@@ -20,6 +20,7 @@ from jibsa.core.http import (
     raise_for_status,
     wait_retry_after,
 )
+from jibsa.core.ratelimit import RateLimitPolicy
 from jibsa.providers.naver.api.request.common import (
     NaverComplexBuildingListV1RequestParameterModel,
     NaverComplexPyeongGroupsV1RequestParameterModel,
@@ -238,7 +239,7 @@ class NaverClient(BaseHTTPClient):
         rate_limit: 요청 제한 정책. Defaults to 1초 간격·분당 60회·429 후 5분 쿨다운.
 
     Attributes:
-        base_url: `url_schema` 와 `host` 로 만든 베이스 URL.
+        base_url: `host` 로 만든 https 베이스 URL.
 
     Example:
         >>> with NaverClient() as client:
@@ -313,17 +314,17 @@ class NaverClient(BaseHTTPClient):
     search_autocomplete_redevelopment_areas_v1_endpoint: ClassVar[str] = '/front-api/v1/search/autocomplete/redevelopmentAreas'
 
     source_name: ClassVar[str] = 'naver'
-    default_rate_limit: ClassVar[dict[str, object]] = {
-        'min_interval': 1.0,
+    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy(
+        min_interval=1.0,
         # 첫 화면이 스스로 부르는 사이트 API(18~22건, 30분에 한 번, core/browser.py)와 우리 요청을 합친 수에 건다. 남긴 쿠키로만
         # 보내는 명령은 우리 요청만 분당 60건(1초 간격의 최대)까지 나간다. 예전 상한은 30이었지만, 브라우저로 1분 창 60건을 10분
         # 이어 보내도 429 가 없었다 (2026-11-09 실측, docs/development/providers/naver.md '브라우저 요청')
-        'max_per_minute': 60,
+        max_per_minute=60,
         # 네이버는 429 에 Retry-After 를 주지 않아 차단이 얼마나 가는지 모른다 (예전 15분도 첫 코드의 초깃값이지 잰 값이 아니다).
         # 쿨다운 뒤 첫 명령은 첫 화면을 연 지 30분 안이면 남긴 쿠키로 요청 1건만 보내 풀렸는지 본다. 30분이 지났으면 첫 화면부터
         # 다시 여는데, 아직 막혀 있으면 문서가 429 라 그 1건에서 멈추고, API 만 막혀 있으면 첫 화면 요청(18~22건)이 나간다
-        'cooldown': 300,
-    }
+        cooldown=300,
+    )
 
     browser_entry_url: ClassVar[str] = 'https://fin.land.naver.com/'
     # 네이버 브라우저 식별 쿠키 (400일). 첫 화면 JS 가 load 뒤에 심는다 (2026-11-09 실측)
@@ -333,10 +334,7 @@ class NaverClient(BaseHTTPClient):
 
     @property
     def base_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.host
-        )
+        return create_base_url(self.host)
 
     @property
     def base_header(self) -> dict[str, str]:

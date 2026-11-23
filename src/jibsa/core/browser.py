@@ -680,10 +680,18 @@ def _origin(url: str) -> tuple[str, str]:
     return parts.scheme, parts.netloc
 
 
-def _preflight_url(event: Mapping[str, Any]) -> str | None:
-    """CDP `Network.requestWillBeSent` 가 CORS 사전 요청(OPTIONS)이면 그 주소 (`_BlockedResponses._on_request` 와 같은 표식)."""
-    initiator = event.get('initiator') or {}
-    return event['request']['url'] if initiator.get('type') == 'preflight' else None
+def _count_preflights(session: 'CDPSession', state: '_BrowserState') -> None:
+    """CDP 세션의 `Network.requestWillBeSent` 중 CORS 사전 요청(OPTIONS)을 요청 제한에 센다 (`_BrowserState.count_preflight`).
+
+    사전 요청 표식은 `_BlockedResponses._on_request` 와 같다. `Network.enable` 은 부르는 쪽이 보낸다.
+    """
+
+    def on_request(event: dict[str, Any]) -> None:
+        initiator = event.get('initiator') or {}
+        if initiator.get('type') == 'preflight':
+            state.count_preflight(event['request']['url'])
+
+    session.on('Network.requestWillBeSent', on_request)
 
 
 def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState') -> 'CDPSession':
@@ -697,13 +705,8 @@ def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState'
         with suppress(_playwright_error()):
             session.send('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'BlockedByClient'})
 
-    def on_request(event: dict[str, Any]) -> None:
-        url = _preflight_url(event)
-        if url is not None:
-            state.count_preflight(url)
-
     session.on('Fetch.requestPaused', fail)
-    session.on('Network.requestWillBeSent', on_request)
+    _count_preflights(session, state)
     session.send('Fetch.enable', {'patterns': list(BLOCKED_FETCH_PATTERNS)})
     session.send('Network.enable')
     return session
@@ -1372,7 +1375,7 @@ class _BrowserThread:
     스레드에는 아무것도 남지 않아 CLI 메인 스레드, asyncio 루프 안(Jupyter), 여러 작업 스레드 어디서 불러도 같다.
     예전에는 CLI 메인 스레드에서 바로 부르고 남은 루프를 asyncio 비공개 함수(`_set_running_loop`)로 걷어 냈다.
 
-    데몬 스레드라 프로세스가 끝날 때 기다리지 않는다. Ctrl+C 로 끊긴 명령은 하던 브라우저 일(첫 화면 최대 40초)을 기다리지
+    데몬 스레드라 프로세스가 끝날 때 기다리지 않는다. Ctrl+C 로 끊긴 명령은 하던 브라우저 일(첫 화면이면 Chromium 띄우기에 문서 40초·load 10초·쿠키 5초까지)을 기다리지
     않고 바로 끝나고, 드라이버(node)는 파이프가 끊기면 Chromium 을 닫고 끝난다.
     """
 
@@ -1440,11 +1443,12 @@ class BrowserTransport(BaseTransport):
         # 기다리다 Ctrl+C·비동기 취소로 끊긴 브라우저 일 (`_abandon`). 그중 아직 도는 일이 있으면 `close` 가 기다리지 않는다
         self._abandoned: list[Future[Any]] = []
 
-    def _submit(self, function: Callable[..., _R], *args: Any) -> 'Future[_R] | None':
+    def _submit(self, function: Callable[..., _R], *args: Any) -> 'Future[_R]':
         """브라우저 일을 이 transport 의 브라우저 스레드(`_BrowserThread`)에 넣는다.
 
-        브라우저 스레드 안에서 다시 불렸으면 넣지 않고 None 을 돌려줘 부르는 쪽이 바로 부르게 한다. 넣으면 자기를 기다려
-        멈춘다 (2026-11-09 실측).
+        브라우저 스레드는 `_handle_request`·`_close` 만 돌리고 둘 다 요청을 다시 보내지 않아, 이 함수를 브라우저 스레드에서
+        부르는 일은 없다. 예전 `_call` 이 모든 브라우저 일을 이 길로 넘길 때는 자기를 기다려 멈춘 적이 있어(2026-11-09 실측)
+        그때는 막아 두었다 (2026-11-23 리뷰로 지움).
 
         Raises:
             RuntimeError: 닫은 뒤에 불렸을 때. httpx 가 닫힌 클라이언트에 내는 것과 같다. 여러 스레드가 같이 쓰다 한 스레드가
@@ -1455,8 +1459,7 @@ class BrowserTransport(BaseTransport):
                 raise RuntimeError('닫힌 클라이언트로는 요청할 수 없습니다 (브라우저를 이미 닫았습니다)')
             if self._thread is None:
                 self._thread = _BrowserThread()
-            thread = self._thread
-            return None if threading.get_ident() == thread.ident else thread.submit(function, *args)
+            return self._thread.submit(function, *args)
 
     def _wait(self, future: 'Future[_R]') -> _R:
         """브라우저 스레드의 일이 끝나기를 기다린다. Ctrl+C 를 `WAIT_POLL_SECONDS` 마다 확인한다.
@@ -1498,14 +1501,7 @@ class BrowserTransport(BaseTransport):
         blocked = _BlockedResponses()
         session = context.new_cdp_session(page)
         blocked.listen(session)
-        state = self._state
-
-        def on_request(event: dict[str, Any]) -> None:
-            url = _preflight_url(event)
-            if url is not None:
-                state.count_preflight(url)
-
-        session.on('Network.requestWillBeSent', on_request)
+        _count_preflights(session, self._state)
         session.send('Network.enable')
         self._blocked[page] = blocked
 
@@ -1646,10 +1642,7 @@ class BrowserTransport(BaseTransport):
 
     def handle_request(self, request: Request) -> Response:
         # 브라우저 일을 브라우저 스레드에서 부르고 끝나기를 기다린다 (`_submit`, `_wait`)
-        future = self._submit(self._handle_request, request)
-        if future is None:
-            return self._handle_request(request)
-        return self._wait(future)
+        return self._wait(self._submit(self._handle_request, request))
 
     def _handle_request(self, request: Request) -> Response:
         # 모든 요청을 첫 화면 탭에서 보낸다. 예전에는 첫 화면 출처의 CORS 를 허용하지 않는 호스트(당근 옛 지역 API)를 그 주소의
@@ -1713,11 +1706,10 @@ class BrowserTransport(BaseTransport):
             self._closed = True
             if thread is None:
                 return
-            future = None if threading.get_ident() == thread.ident else thread.submit(self._close)
+            # 브라우저 스레드에서 `close` 를 부르는 곳은 없다 (`_submit` 과 같다. 2026-11-23 리뷰로 재진입 갈래를 지움)
+            future = thread.submit(self._close)
             thread.stop()
-        if future is None:
-            self._close()
-        elif not any(not job.done() for job in self._abandoned):
+        if not any(not job.done() for job in self._abandoned):
             self._wait(future)
 
     def _close(self) -> None:
@@ -1772,11 +1764,9 @@ class AsyncBrowserTransport(AsyncBaseTransport):
         # 기다리다 취소되면(`asyncio.wait_for` 시간 초과 등) Ctrl+C 를 받은 `_wait` 처럼 하던 브라우저 일은 그대로 두고 바로
         # 돌아가고, 그 뒤의 `close` 는 그 일이 아직 돌고 있으면 기다리지 않는다 (`_abandon`). 아직 차례를 기다리던 일은 돌리지
         # 않는다 (`_BrowserThread._run`). 작업 스레드(`asyncio.to_thread`)에서 `BrowserTransport.handle_request` 로 기다리면
-        # 취소돼도 그 스레드가 브라우저 일을 끝까지 기다려, 닫기와 `asyncio.run` 이 그만큼(첫 화면 최대 40초) 늦었다
+        # 취소돼도 그 스레드가 브라우저 일을 끝까지 기다려, 닫기와 `asyncio.run` 이 그만큼(첫 화면이면 Chromium 띄우기에 문서 40초·load 10초·쿠키 5초까지) 늦었다
         # (2026-11-10 리뷰: 8초 걸리는 첫 화면에서 `aclose` 8.04초)
         future = self._sync._submit(self._sync._handle_request, request)
-        if future is None:
-            return self._sync._handle_request(request)
         try:
             return await asyncio.wrap_future(future)
         except asyncio.CancelledError:

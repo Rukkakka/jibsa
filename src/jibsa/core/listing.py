@@ -27,7 +27,6 @@ from pydantic import (
     model_serializer,
 )
 
-from jibsa.core.geo import within_radius
 from jibsa.core.korean import particle
 from jibsa.core.ratelimit import RateLimitedError
 
@@ -322,7 +321,7 @@ def iso_date(value: str | None) -> str | None:
 
 
 def move_in_label(value: str | None, *, negotiable: bool = False) -> str | None:
-    """입주 가능일을 세 소스가 같은 꼴로 쓴다: 날짜는 `YYYY-MM-DD`, 날짜 없이 바로면 `즉시입주`, 협의 가능하면
+    """입주 가능일을 모든 소스가 같은 꼴로 쓴다: 날짜는 `YYYY-MM-DD`, 날짜 없이 바로면 `즉시입주`, 협의 가능하면
     뒤에 ` (협의 가능)`.
 
     직방 옛 상세 API 의 문장('즉시 입주 가능 (협의 가능)', '2026.10.15 이후 입주 가능 (입주협의)')도 받는다. 괄호 안이
@@ -358,7 +357,7 @@ def with_negotiable(label: str, negotiable: bool | None) -> str:
 
 
 def parking_label(available: bool | None, detail: str | None = None) -> str | None:
-    """주차를 세 소스가 같은 꼴로 쓴다: `가능`·`불가`, 대수가 있으면 괄호로 붙인다 (`가능 (총 4대)`). 가능 여부를 모르면 대수만."""
+    """주차를 모든 소스가 같은 꼴로 쓴다: `가능`·`불가`, 대수가 있으면 괄호로 붙인다 (`가능 (총 4대)`). 가능 여부를 모르면 대수만."""
     status = None if available is None else '가능' if available else '불가'
     if status and detail:
         return f'{status} ({detail})'
@@ -368,7 +367,7 @@ def parking_label(available: bool | None, detail: str | None = None) -> str | No
 def in_range(value: float | None, minimum: float | None, maximum: float | None) -> bool:
     """범위 조건에 맞는지. 조건이 있는데 값을 모르면 맞지 않는다고 본다 (서버가 받지 않아 받은 뒤 거르는 조건에 쓴다).
 
-    직방(면적·공급면적·상가 조건)과 당근(필터 API 대체 조회의 가격·면적)이 같은 규칙으로 거르게 한 곳에 둔다.
+    직방 아파트·상가(면적·공급면적·상가 조건)가 같은 규칙으로 거르게 한 곳에 둔다.
     """
     if minimum is None and maximum is None:
         return True
@@ -436,13 +435,14 @@ def is_rejected(exc: Exception | None) -> bool:
     return exc is None or isinstance(exc, ValueError) or (isinstance(exc, HTTPStatusError) and exc.response.status_code < 500)
 
 
-def lookup_failure_reason(exc: Exception, site: str, what: str) -> str:
+def lookup_failure_reason(exc: Exception | None, site: str, what: str) -> str:
     """덤 조회 실패의 이유 한 구절 (`note('실패', ...)` 문장 뒤에 이어 쓴다). 실패 이유마다 다음 행동이 달라 이유를 넣는다.
 
     사이트가 요청을 거절했거나(4xx) 응답 형식이 바뀌면 업데이트 안내를 붙인다 (매일 감시가 고장으로 본다). 요청 제한·서버
     오류(5xx)·연결 실패는 사이트가 바뀐 것이 아니라 붙이지 않는다 (감시는 확인 못 함으로 본다).
 
     Args:
+        exc: 실패 예외. None 이면 응답이 isSuccess false 였던 것이라 거절로 본다 (네이버).
         site: 사이트 이름 ('다방', '직방'). 조사는 끝 글자에 맞춘다.
         what: 받지 못한 것 ('매물 상세').
     """
@@ -456,7 +456,8 @@ def lookup_failure_reason(exc: Exception, site: str, what: str) -> str:
 def lookup_failure_note(exc: Exception | None, site: str, what: str, unknown: str) -> str:
     """덤 조회를 받지 못한 `[실패]` 안내. 무슨 일 → 할 일 → 모름이 된 칸 순서라 모름이 된 칸이 늘 끝이다.
 
-    갈래는 `lookup_failure_reason` 과 같다 (거절·형식 변경이면 업데이트 안내, 요청 제한·서버 오류·연결 실패면 붙이지 않는다).
+    요청 제한이 아니면 `lookup_failure_reason` 의 문장에 모름이 된 칸을 잇는다. 요청 제한만 따로 쓰는 것은 reason 이 받지 못한 것을 말하는 앞 문장 뒤에
+    이어 쓰는 구절이라 무엇을 받지 못했는지 넣지 않기 때문이다.
 
     Args:
         exc: 실패 예외. `None` 이면 응답이 `isSuccess` false 였던 것이라 거절로 본다 (네이버).
@@ -466,12 +467,7 @@ def lookup_failure_note(exc: Exception | None, site: str, what: str, unknown: st
     """
     if isinstance(exc, RateLimitedError):
         return note('실패', f"요청 제한에 걸려 {what}{particle(what, '을/를')} 받지 못했습니다. {exc.message}. {unknown}")
-    if is_rejected(exc):
-        return note(
-            '실패',
-            f"{site}{particle(site, '이/가')} {what} 요청을 거절했거나 응답 형식이 바뀌었습니다. {UPDATE_MAYBE_NEEDED}. {unknown}",
-        )
-    return note('실패', f'{site} {what} 요청이 실패했습니다 ({type(exc).__name__}). 잠시 뒤 다시 시도하세요. {unknown}')
+    return note('실패', f'{lookup_failure_reason(exc, site, what)}. {unknown}')
 
 
 class LookupFailures:
@@ -590,11 +586,10 @@ def limit_notes(
     narrow: str | None,
     order: str = '검색 중심에서 가까운',
     approximate: bool = False,
-    basis: str = '',
-    inspected: int | None = None,
+    inspected: int,
     offset: int = 0,
     resumable: bool = False,
-    has_more: bool | None = None,
+    has_more: bool | None,
 ) -> list[str]:
     """조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려줄 때의 안내.
 
@@ -616,24 +611,23 @@ def limit_notes(
             `apt_pagination_notes` 와 같다, 2026-11-11 리뷰). None 이면 좁힐 조건을 권하지 않는다 (좁힐 옵션을 이미 모두 골랐을 때).
         order: 돌려준 매물을 고른 기준. 뒤에 '순으로' 를 붙여 쓴다 (예: '검색 중심에서 가까운', '최근 게시된', '다방 목록').
         approximate: `total` 이 근사값이면 True ('약 N건').
-        basis: `total` 이 어떤 조건까지 적용한 수인지 덧붙일 말 (예: '가격 조건 적용 전').
-        inspected: 요약을 받아 확인한 매물 수 (조회 예산). 주면 `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
+        inspected: 요약을 받아 확인한 매물 수 (조회 예산). `returned` 대신 이 값으로 `limit` 에 닿았는지 본다.
             받은 뒤 거래 불가로 뺀 매물만큼 다시 채우지 않으므로, 1건만 빠져도 `returned < limit` 이 되어 안내가
             사라지던 문제를 막는다 (직방 역삼동 원룸 --limit 15 에서 1건이 빠지면 '약 660건' 안내가 없었다).
         offset: 이어 받은 검색(`--next`)에서 앞서 받은 매물 수. 몇 번째부터인지 알린다.
         resumable: 결과의 `next` 로 이어 받을 수 있으면 True. --limit 을 늘리라는 대신 next 를 쓰라고 권한다.
         has_more: 결과의 `has_more`. False 면 안내하지 않는다. `total` 은 거래 불가로 빼기 전 수라 `returned` 와 견주면, 범위 안
             매물을 다 받고 1건만 빠져도 '더 보려면 --limit 을 늘리라' 고 했다 (직방 동 경계 안 15건을 --limit 15 로 다 받고 1건이
-            빠진 경우, 2026-10-23 리뷰).
+            빠진 경우, 2026-10-23 리뷰). `max_limit` 처럼 빠뜨리지 않게 기본값 없이 받는다.
     """
-    if (returned if inspected is None else inspected) < limit or has_more is False:
+    if inspected < limit or has_more is False:
         return []
     if total is None or total <= offset + returned:
         return []
     # 전체 수를 먼저 말하고 그중 몇 건을 보여 주는지 잇는다. 예전 '약 41건 중 검색 중심에서 가까운 1건입니다' 는 무엇이
     # 1건인지 바로 와닿지 않았다 (2026-11-10). 1건만 준 까닭으로 --limit 을 들지 않는다: 확인한 뒤 뺀 매물이 있으면
     # '--limit 15 라 14건' 처럼 어긋나고, 이어 받을 수 있는 검색에서 next 대신 --limit 을 늘려 처음부터 다시 찾게 한다
-    found = f"조건에 맞는 매물이 {'약 ' if approximate else ''}{total}건" + (f'({basis})' if basis else '')
+    found = f"조건에 맞는 매물이 {'약 ' if approximate else ''}{total}건"
     start = f'{offset + 1}번째부터 ' if offset else ''
     if returned:
         shown = f"{found} 있고, 그중 {order} 순으로 {start}{returned}건{'을' if offset else '만'} 보여 줍니다"
@@ -644,41 +638,6 @@ def limit_notes(
     if resumable:
         return [note('일부', f'{shown}. {NEXT_HINT}')]
     return [note('일부', f'{shown}. {more_hint(limit, max_limit, narrow)}')]
-
-
-def beyond_radius_notes(
-    listings: Sequence['Listing'], radius_km: float, *, resumed: bool = False,
-) -> list[str]:
-    """반경 안 매물이 모자라 반경 밖 매물까지 함께 돌려줄 때의 안내.
-
-    반경 검색은 반경을 덮는 지도 칸 단위로 받아 오므로 반경 밖 매물도 받는다. 반경 안 매물이
-    `limit` 보다 적으면 그 매물도 버리지 않고 가까운 순으로 이어 보여 준다 ("1km 안에는 없고
-    가장 가까운 게 1.1km" 를 0건 대신 알 수 있게).
-
-    Args:
-        resumed: 이어 받기(`--next`)로 받은 결과면 True. 반경 안 매물 수는 이번 결과만 센 것이라 '남은' 매물이라 한다
-            (앞 결과에서 받은 반경 안 매물은 세지 않는다).
-    """
-    distances = [listing.distance_km for listing in listings if listing.distance_km is not None]
-    beyond = [distance for distance in distances if not within_radius(distance, radius_km)]
-    if not beyond:
-        return []
-    # 거리를 모르는 매물(distance_km=None)은 반경 안으로 세지 않는다
-    inside = len(distances) - len(beyond)
-    # 소수 한 자리로 깎으면 반경 0.1km 밖의 0.13km 가 '최대 0.1km' 로 보여 반경 안처럼 읽힌다
-    farthest = f'{round(max(beyond), 2):g}km'
-    # 반경을 덮는 직방 지도 칸에서 받은 것이라 반경 밖은 칸 모서리 쪽만 들어온다. '가까운 매물' 이라 하면 반경 밖을
-    # 빠짐없이 가까운 순으로 고른 줄 안다
-    found = f'반경을 덮어 받은 범위의 반경 밖 매물 {len(beyond)}건(최대 {farthest})'
-    partial = '반경 밖은 받은 범위의 일부라 더 보려면 --radius 를 늘리세요'
-    remaining = '남은 매물 중 ' if resumed else ''
-    if inside == 0:
-        return [note(
-            '범위', f'{remaining}반경 {radius_km:g}km 안에는 조건에 맞는 매물이 없어 {found}을 보여 줍니다. {partial}',
-        )]
-    return [note(
-        '범위', f'{remaining}반경 {radius_km:g}km 안에 조건에 맞는 매물이 {inside}건뿐이라 {found}도 함께 보여 줍니다. {partial}',
-    )]
 
 
 class Listing(BaseModel):
@@ -696,7 +655,7 @@ class Listing(BaseModel):
     - 해당 없음 (그 거래 유형에 원래 없는 항목, 예: 월세의 `price_manwon`): 키를 뺀다
     - 모름 (해당은 되지만 소스가 알려 주지 않은 항목): `null`
 
-    목록에서 소스가 늘 주지 않는 필드(직방·당근 `approved_at`, 당근 `manage_cost_manwon`·`registered_at`, 네이버
+    목록에서 소스가 늘 주지 않는 필드(당근 `manage_cost_manwon`·`registered_at`, 네이버
     `room_type`)도 키를 빼지 않고 `null` 이다. 키를 빼면 해당 없음으로 읽혀 관리비 없는 매물로 셈한다 (`null` 이면 상세를
     보라고 docs/llm.md 가 이른다). 결과 전체가 같은 값인 `source`·`trade_type` 도 소스를 섞어 비교할 때 매물 하나만 보고
     읽도록 남긴다. 출력을 줄이는 길은 `--fields` 다 (2026-10-23 실측: 직방 room 30건 14,424자 → docs/llm.md 권장 9필드
@@ -730,7 +689,7 @@ class Listing(BaseModel):
         lng: 경도. 거리 계산용이며 출력하지 않는다. Defaults to None.
         distance_km: 검색 중심점에서의 거리(km). Defaults to None.
         registered_at: 등록·노출 시작일 (YYYY-MM-DD). Defaults to None.
-        approved_at: 사용승인일 (YYYY-MM-DD). 목록에서는 네이버만 준다.
+        approved_at: 사용승인일 (YYYY-MM-DD).
             Defaults to None.
     """
 
@@ -872,7 +831,7 @@ class ListingDetail(Listing):
 
     사진, 본문, 중개사 연락처, 도로명 주소, 조회수는 담지 않는다.
 
-    `move_in`·`parking` 은 세 소스가 같은 꼴이다 (`move_in_label`·`parking_label`: '2026-10-24', '즉시입주',
+    `move_in`·`parking` 은 모든 소스가 같은 꼴이다 (`move_in_label`·`parking_label`: '2026-10-24', '즉시입주',
     뒤에 ' (협의 가능)' / '가능', '불가', '가능 (총 4대)'). 네이버 `move_in` 만 '2026-12-01 이내'·'2026-12-01 이후'·
     '2026-11 초순'(중순·하순도)도 쓴다. 네이버 단지 유형(아파트·오피스텔·재건축·분양권) `parking` 만 가능·불가 없이 단지 대수
     `'단지 전체 N대 (세대당 M대)'` 다 (웹 칸에 주차가능여부가 없어 `parking_label` 을 쓰지 않는다). `nearby_subways` 는 소스 표기대로라 괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).

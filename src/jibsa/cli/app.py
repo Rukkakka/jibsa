@@ -243,11 +243,14 @@ def guide_command(
         topic = check_choice(topic, GUIDE_TOPICS, 'TOPIC')
     # 파일이 없는 깨진 설치와 없는 절도 에러 JSON 으로 낸다
     with handle_errors('guide'):
-        text = read_guide(GUIDE_TOPICS[topic] if topic else GUIDE_FILE)
+        if topic is None:
+            typer.echo(read_guide(), nl=False)
+            return
+        text = read_guide(GUIDE_TOPICS[topic])
         query = ' '.join(section or []).strip()
         if query:
-            text = guide_section(text, query, topic or 'llm')
-        elif topic and not whole:
+            text = guide_section(text, query, topic)
+        elif not whole:
             text = guide_contents(text, topic)
         typer.echo(text, nl=False)
 

@@ -21,6 +21,7 @@ from jibsa.core.http import (
     should_retry_idempotent,
     wait_retry_after,
 )
+from jibsa.core.ratelimit import RateLimitPolicy
 from jibsa.providers.dabang.api.request.common import (
     DabangComplexV5RequestParameterModel,
 )
@@ -216,7 +217,7 @@ class DabangClient(BaseHTTPClient):
         rate_limit: 요청 제한 정책. Defaults to 0.5초 간격·분당 60회·429 후 5분 쿨다운.
 
     Attributes:
-        base_url: `url_schema` 와 `host` 로 만든 베이스 URL.
+        base_url: `host` 로 만든 https 베이스 URL.
         geojson_base_url: 동 경계 파일 베이스 URL.
 
     Example:
@@ -266,11 +267,11 @@ class DabangClient(BaseHTTPClient):
     sale_in_lots_list_search3_v3_endpoint: ClassVar[str] = '/api/3/sale-in-lots/list/search3'
 
     source_name: ClassVar[str] = 'dabang'
-    default_rate_limit: ClassVar[dict[str, object]] = {
-        'min_interval': 0.5,
-        'max_per_minute': 60,
-        'cooldown': 300,
-    }
+    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy(
+        min_interval=0.5,
+        max_per_minute=60,
+        cooldown=300,
+    )
 
     browser_entry_url: ClassVar[str] = 'https://www.dabangapp.com/'
     # 다방 API 는 쿠키 없이도 응답하고, 첫 화면에서 다방이 심는 쿠키는 분석·광고용뿐이라 기다릴 쿠키가 없다 (2026-11-09 실측)
@@ -286,17 +287,11 @@ class DabangClient(BaseHTTPClient):
 
     @property
     def base_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.host
-        )
+        return create_base_url(self.host)
 
     @property
     def geojson_base_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.geojson_host
-        )
+        return create_base_url(self.geojson_host)
 
     @property
     def base_header(self) -> dict[str, str]:

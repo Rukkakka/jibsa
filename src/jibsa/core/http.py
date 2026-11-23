@@ -56,7 +56,6 @@ from typing import (
     Annotated,
     Any,
     ClassVar,
-    Literal,
     TypeVar,
 )
 
@@ -76,6 +75,8 @@ RETRYABLE_TRANSPORT_ERRORS: tuple[type[TransportError], ...] = (TimeoutException
 
 BODY_PREVIEW_LIMIT: int = 2048
 RETRY_BODY_PREVIEW_LIMIT: int = 200
+RETRY_DEFAULT_WAIT_SECONDS: float = 1.0
+RETRY_MAX_WAIT_SECONDS: float = 60.0
 SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r'(token|secret|password|passwd|api[-_]?key|access[-_]?key|'
     r'private[-_]?key|service[-_]?key|authorization|cookie|credential)',
@@ -92,8 +93,9 @@ SENSITIVE_TEXT_PATTERN: re.Pattern[str] = re.compile(
 _T = TypeVar('_T', bound='BaseHTTPClient')
 
 
-def create_base_url(schema: Literal['https', 'http'], host: str) -> str:
-    return f'{schema}://{host}'
+def create_base_url(host: str) -> str:
+    """`https://<host>`. 요청은 https 첫 화면을 연 브라우저가 보내 http 는 혼합 콘텐츠로 막혀 스킴은 https 하나다."""
+    return f'https://{host}'
 
 
 def _redact_json(value: object) -> object:
@@ -136,7 +138,7 @@ def _request_origin(exc: HTTPStatusError) -> str:
     return f'{request.method} {url}'
 
 
-def _body_preview(response: Response, limit: int = BODY_PREVIEW_LIMIT) -> str:
+def _body_preview(response: Response, limit: int) -> str:
     """Render a response body short enough to sit inside an exception message.
 
     A body that was never read raises rather than returning text, so every
@@ -164,7 +166,7 @@ def _body_preview(response: Response, limit: int = BODY_PREVIEW_LIMIT) -> str:
     return body
 
 
-def raise_for_status(response: Response, limit: int = BODY_PREVIEW_LIMIT) -> None:
+def raise_for_status(response: Response) -> None:
     """`Response.raise_for_status` that keeps the error body in the message.
 
     비공식 API 는 거절 사유를 본문에만 담아 보내므로(예: 직방의 "원룸의 경우 매매
@@ -182,7 +184,7 @@ def raise_for_status(response: Response, limit: int = BODY_PREVIEW_LIMIT) -> Non
         raise ResponseStatusError(
             f'{_request_origin(exc)} -> '
             f'{response.status_code} {response.reason_phrase}\n'
-            f'Response body: {_body_preview(response, limit)}',
+            f'Response body: {_body_preview(response, BODY_PREVIEW_LIMIT)}',
             request=exc.request,
             response=exc.response,
         ) from None
@@ -197,17 +199,14 @@ def error_body(exc: HTTPStatusError) -> dict[str, Any] | None:
     return body if isinstance(body, dict) else None
 
 
-def describe_failed_attempt(
-    exc: BaseException | None,
-    limit: int = RETRY_BODY_PREVIEW_LIMIT,
-) -> str:
+def describe_failed_attempt(exc: BaseException | None) -> str:
     """Render a failed attempt as one line for the retry log."""
     if exc is None:
         return '<no exception recorded>'
     if not isinstance(exc, HTTPStatusError):
         return f'{type(exc).__name__}: {exc}'
 
-    body = ' '.join(_body_preview(exc.response, limit).split())
+    body = ' '.join(_body_preview(exc.response, RETRY_BODY_PREVIEW_LIMIT).split())
     return (
         f'{_request_origin(exc)} -> '
         f'{exc.response.status_code} {exc.response.reason_phrase} '
@@ -220,18 +219,6 @@ def should_retry_idempotent(exc: BaseException) -> bool:
         code = exc.response.status_code
         return code >= 500 or code == 429
     return isinstance(exc, RETRYABLE_TRANSPORT_ERRORS)
-
-
-def should_retry_non_idempotent(exc: BaseException) -> bool:
-    """상태를 바꾸는 호출용 재시도 술어. 지금은 조회만 있어 쓰는 곳이 없지만 일부러 남겨 둔다.
-
-    재시도 규약(docs/development/provider-conventions.md '재시도')이 상태를 바꾸는 호출에 이 술어를 쓰라고 정해 두었다.
-    timeout·transport 오류는 서버에 이미 닿았을 수 있어 다시 보내지 않는다.
-    """
-    if isinstance(exc, HTTPStatusError):
-        code = exc.response.status_code
-        return code >= 500 or code == 429
-    return False
 
 
 def retry_after_seconds(header: str) -> float | None:
@@ -253,41 +240,35 @@ def retry_after_seconds(header: str) -> float | None:
 
     try:
         deadline = parsedate_to_datetime(header)
-    except (TypeError, ValueError):
-        return None
-    if deadline is None:
+    except ValueError:
         return None
     if deadline.tzinfo is None:
         deadline = deadline.replace(tzinfo=timezone.utc)
     return (deadline - datetime.now(timezone.utc)).total_seconds()
 
 
-def wait_retry_after(
-    retry_state: RetryCallState,
-    default: float = 1.0,
-    maximum: float = 60.0,
-) -> float:
-    """Honour a rate-limit `Retry-After` header, capped at `maximum` seconds.
+def wait_retry_after(retry_state: RetryCallState) -> float:
+    """Honour a rate-limit `Retry-After` header, capped at 60 seconds.
 
-    Waits `default` seconds when the failure carries no usable header.
+    Waits 1 second when the failure carries no usable header.
     """
     outcome = retry_state.outcome
     if outcome is None:
-        return default
+        return RETRY_DEFAULT_WAIT_SECONDS
 
     exc = outcome.exception()
     if not isinstance(exc, HTTPStatusError):
-        return default
+        return RETRY_DEFAULT_WAIT_SECONDS
 
     header = exc.response.headers.get('Retry-After')
     if not header:
-        return default
+        return RETRY_DEFAULT_WAIT_SECONDS
 
     seconds = retry_after_seconds(header)
     if seconds is None:
-        return default
+        return RETRY_DEFAULT_WAIT_SECONDS
 
-    return min(max(seconds, 0.0), maximum)
+    return min(max(seconds, 0.0), RETRY_MAX_WAIT_SECONDS)
 
 
 def log_retry_before_sleep(retry_state: RetryCallState) -> None:
@@ -312,10 +293,6 @@ class BaseHTTPClient(BaseModel, ABC):
     `host` and build `_client` / `_async_client` with ``@cached_property``.
 
     Args:
-        url_schema: `base_url` 의 스킴. 요청은 https 첫 화면을 연 브라우저가 보내 http 요청은 브라우저가 혼합 콘텐츠로
-            막으므로 'https' 만 받는다. 서브클래스의 호스트 필드(`host` 등)를 바꾸면 `browser_api_hosts` 는
-            따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 요청은 첫 화면 탭에서 보내므로 호스트를 다른 출처로
-            바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다. Defaults to 'https'.
         verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
             내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
         proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
@@ -334,12 +311,14 @@ class BaseHTTPClient(BaseModel, ABC):
             `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다.
         browser_ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
         browser_api_hosts: 첫 화면이 보낸 요청을 요청 제한에 셀 사이트 API 호스트. 비면 `browser_entry_url` 의 호스트.
-            호스트 필드에서 만드는 property 라, 호스트 필드를 바꿔도 맞는다 (서브클래스가 덮어쓴다).
+            호스트 필드에서 만드는 property 라, 호스트 필드를 바꿔도 맞는다 (서브클래스가 덮어쓴다). 서브클래스의 호스트
+            필드(`host` 등)를 바꾸면 `browser_api_hosts` 는 따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 요청은
+            첫 화면 탭에서 보내므로 호스트를 다른 출처로 바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다.
         browser_discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태.
     """
 
     source_name: ClassVar[str] = 'default'
-    default_rate_limit: ClassVar[dict[str, object]] = {}
+    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy()
     browser_entry_url: ClassVar[str] = ''
     browser_ready_cookie: ClassVar[str | None] = None
     browser_discard_statuses: ClassVar[frozenset[int]] = DISCARD_STATE_STATUSES
@@ -347,8 +326,6 @@ class BaseHTTPClient(BaseModel, ABC):
     model_config = ConfigDict(
         extra='forbid',
     )
-
-    url_schema: Literal['https'] = 'https'
 
     verify: bool = True
 
@@ -363,7 +340,7 @@ class BaseHTTPClient(BaseModel, ABC):
 
     @cached_property
     def rate_limiter(self) -> RateLimiter:
-        policy = self.rate_limit or RateLimitPolicy(**self.default_rate_limit)
+        policy = self.rate_limit or self.default_rate_limit
         return RateLimiter(self.source_name, policy)
 
     def rate_limit_hooks(self) -> dict[str, list[Callable[..., None]]]:
@@ -430,8 +407,8 @@ class BaseHTTPClient(BaseModel, ABC):
 
     async def aclose(self) -> None:
         """
-        Close the async client and the sync client too. 동기 클라이언트의 브라우저는 브라우저 스레드가 앞의 일(첫 화면이면 최대
-        40초)을 마친 뒤 닫아(`core/browser.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
+        Close the async client and the sync client too. 동기 클라이언트의 브라우저는 브라우저 스레드가 앞의 일(첫 화면이면 Chromium 띄우기에 문서
+        40초·load 10초·쿠키 5초까지)을 마친 뒤 닫아(`core/browser.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
         """
         async_client: AsyncClient | None = self.__dict__.pop('_async_client', None)
         if async_client is not None:
