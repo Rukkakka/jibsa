@@ -333,6 +333,12 @@
    `ci.yml` 의 `DOC_PATTERN` 에 드는지 보고 lint 단계의 `pytest` 명령과 대조한다.
    예: `.github/workflows/ci.yml:102` (`test_workflow_args_parsing_blocks_match` 가 빠져 있었다, 2026-11-16).
    언제: `.claude/`·`docs/` 를 읽는 테스트를 `tests/` 에 더한 diff.
+5. **한 번만 쓰는 짧은 함수·구현이 하나뿐인 추상화.** 새 함수(비공개 포함)가 한 곳에서만 불리면서 본문이 10줄 이하가 아닌가,
+   새 기반 클래스·Protocol·설정 dict 에 실제 갈래가 둘 이상인가, 일어날 수 없는 경우를 처리하는 갈래가 없는가. 기준과
+   예외(콜백처럼 함수를 넘기는 자리, 긴 흐름의 한 단계)는 [함수와 추상화](code-style.md#9-함수와-추상화)에 있다.
+   확인: 새 `def` 이름으로 grep 해 부르는 곳을 세고, docstring 을 뺀 본문 줄 수를 본다.
+   예: `cli/naver.py:376` `_is_province_region` (한 곳에서만 부르는 3줄 판정, 2026-11-23 규칙을 둘 때 본 예).
+   언제: 함수·클래스를 새로 더한 diff.
 
 ## `convention` 규약 위반
 
