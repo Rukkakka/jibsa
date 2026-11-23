@@ -11,7 +11,6 @@ from jibsa.core.errors import (
     JibsaError,
     RegionAmbiguousError,
     RegionNotFoundError,
-    UnsupportedRegionError,
 )
 from jibsa.core.geo import MultiPolygon
 from jibsa.core.korean import (
@@ -179,7 +178,7 @@ def resolve_places(
     Raises:
         RegionAmbiguousError: 이름이 같은 동이 여러 시·구에 있을 때, '○가' 로 나뉜 동·같은 이름의 역·앞부분이 맞는 대학이
             여럿일 때.
-        UnsupportedRegionError: 시·군·구 이름일 때 (다방은 시·군·구 전체를 찾지 못한다).
+        JibsaError: 시·군·구 이름일 때 (다방은 시·군·구 전체를 찾지 못한다, REGION_NOT_SUPPORTED).
         RegionNotFoundError: 찾지 못했을 때.
     """
     text = query.strip()
@@ -296,11 +295,10 @@ def resolve_places(
             hint = "역 이름(예: '강남역')으로 주세요"
         else:
             hint = f"그 안의 동 이름(예: '{example}')이나 역 이름으로 찾거나, --lat/--lng 와 --radius 로 반경을 주세요"
-        raise UnsupportedRegionError(
+        raise JibsaError(
             code='REGION_NOT_SUPPORTED',
             message=f"다방은 시·군·구 전체를 찾지 못합니다: '{text}'",
             hint=hint,
-            skip_note=f"다방은 시·군·구 전체를 찾지 못해 {text}{particle(text, '을/를')} 건너뛰었습니다",
         )
     raise RegionNotFoundError(text, hint=legal_dong_hint(text) or REGION_HINT)
 
@@ -424,13 +422,12 @@ def _district_scope(state_name_: str, state_code: str, city: DabangRegionModel) 
     )
 
 
-def _city_with_gu_error(text: str, example: str) -> UnsupportedRegionError:
+def _city_with_gu_error(text: str, example: str) -> JibsaError:
     """구가 있는 시 전체('성남시')를 범위로 받지 않는다는 에러. `example` 은 구를 붙인 이름 ('성남시 분당구')."""
-    return UnsupportedRegionError(
+    return JibsaError(
         code='REGION_NOT_SUPPORTED',
         message=f"다방은 구가 있는 시 전체를 범위로 받지 않습니다: '{text}'",
         hint=f"구 이름을 붙여 주세요 (예: '{example}')",
-        skip_note=f'{text} 는 구가 있는 시라 건너뛰었습니다',
     )
 
 
@@ -442,7 +439,7 @@ def _pick_city(cities: list[DabangRegionModel], words: list[str], text: str) -> 
 
     Raises:
         RegionAmbiguousError: 마지막 낱말만 맞는 시·군·구가 그 시·도에 여럿일 때.
-        UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
+        JibsaError: 구가 있는 시일 때 ('성남시', REGION_NOT_SUPPORTED).
     """
     name = ' '.join(words)
     exact = [city for city in cities if city.name == name]
@@ -498,7 +495,7 @@ def find_scope(client: DabangClient, query: str) -> tuple[DabangScope | None, Da
 
     Raises:
         RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구').
-        UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
+        JibsaError: 구가 있는 시일 때 ('성남시', REGION_NOT_SUPPORTED).
     """
     text = query.strip()
     words = text.split()
@@ -534,7 +531,7 @@ def resolve_scope(
 
     Raises:
         RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구'), 동 이름이 여러 곳일 때.
-        UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
+        JibsaError: 구가 있는 시일 때 ('성남시', REGION_NOT_SUPPORTED).
         RegionNotFoundError: 범위로 알아볼 수 없는 이름일 때.
         JibsaError: `dong` 인데 동이 아니라 역·대학 이름일 때 (INVALID_ARGUMENT).
     """

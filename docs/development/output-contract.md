@@ -32,7 +32,8 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   `listing_id` 는 `listing` 에 넘길 수 있는 매물 ID 만 싣는다. 매물이 아닌 묶음 ID(직방 `catalog` 의 빈 묶음)는 `catalog_id` 로 싣는다.
   LLM 이 hint 를 보고 재시도·옵션 수정·소스 변경을 고르므로, 새 에러에는 구체적인 hint 를 단다.
 - 애플리케이션 에러는 `core.errors.JibsaError` (또는 서브클래스)로 던진다. 추가 필드는 `details` 에
-  넣으면 에러 JSON 에 평탄하게 실린다.
+  넣으면 에러 JSON 에 평탄하게 실린다. 값이 없을 때도 출력 규칙과 같다: `details` 의 `None` 은 `null`(모름, 예: 후보를 다 세지
+  못한 `candidate_count`)로 실리고, 해당 없음이면 그 키를 `details` 에 넣지 않는다 (`ListingUnavailableError` 의 상태·사유).
 - CLI 명령은 본문을 `with handle_errors(SOURCE):` 로 감싼다. 예외 → 코드 매핑:
 
 | 예외 | code | exit |

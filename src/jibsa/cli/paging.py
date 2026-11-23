@@ -26,7 +26,10 @@ from pathlib import Path
 import typer
 from typer._click.globals import get_current_context
 
-from jibsa.cli.output import HintedBadParameter
+from jibsa.cli.output import (
+    HintedBadParameter,
+    number_text,
+)
 from jibsa.core.ratelimit import (
     StateDirError,
     state_dir,
@@ -53,7 +56,7 @@ NextOption = Annotated[
     typer.Option(
         '--next',
         help=(
-            '앞 결과의 next 값. 지역·조건을 그대로 두고 주면 받은 매물 다음부터 이어 받는다 (--limit 은 바꿀 수 있다). '
+            '앞 결과의 next 값. 지역·조건을 그대로 두고 주면 받은 매물 다음부터 이어 받는다 (--limit·--fields 와, 있으면 --details 는 바꿀 수 있다). '
             '같은 컴퓨터·같은 jibsa 버전에서 하루 동안 쓸 수 있다'
         ),
     ),
@@ -93,7 +96,7 @@ def _shown(value: Any) -> str:
         return '켬'
     if isinstance(value, list):
         return ','.join(map(str, value))
-    return f'{value:g}' if isinstance(value, float) else str(value)
+    return number_text(value)
 
 
 def _differences(saved: dict[str, Any], current: dict[str, Any]) -> list[str]:
@@ -203,10 +206,13 @@ def decode_next(token: str | None) -> dict[str, Any] | None:
         )
     differences = _differences(params, current_params)
     if differences:
+        # 바꿀 수 있는 옵션은 이 명령에 있는 것만 든다. 네이버 `search listings`·직방 `search listings apt` 에는 --details 가
+        # 없어, 모든 명령에 같이 적으면 따라 할 수 없는 안내였다 (2026-11-23 리뷰)
+        names = {param.name for param in get_current_context().command.params}
+        changeable = '·'.join(f'--{name}' for name in ('limit', 'details', 'fields') if name in names)
         raise HintedBadParameter(
             '앞 검색과 지역·조건이 다릅니다: ' + '; '.join(differences),
             '--next',
-            'next 를 받은 검색과 지역·조건을 똑같이 주세요 (--limit·--details·--fields 는 바꿀 수 있습니다). '
-            '새 조건으로 찾으려면 --next 를 빼세요',
+            f'next 를 받은 검색과 지역·조건을 똑같이 주세요 ({changeable} 는 바꿀 수 있습니다). 새 조건으로 찾으려면 --next 를 빼세요',
         )
     return position

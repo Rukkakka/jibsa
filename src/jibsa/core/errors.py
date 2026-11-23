@@ -69,23 +69,6 @@ class RegionAmbiguousError(JibsaError):
         )
 
 
-class UnsupportedRegionError(JibsaError):
-    """소스가 그 지역을 다루지 않을 때.
-
-    명령에서는 에러로 보고한다. `skip_note` 는 여러 소스를 함께 찾을 때 그 소스를 건너뛴 안내로 쓰려고 둔 값이다.
-
-    Args:
-        code: 에러 코드 (REGION_NOT_FOUND, REGION_NOT_SUPPORTED).
-        message: 사람이 읽는 설명.
-        hint: 다음에 시도할 행동.
-        skip_note: 이 소스를 건너뛰었다고 알릴 안내 (안내와 힌트를 한 문장에).
-    """
-
-    def __init__(self, code: str, message: str, hint: str, skip_note: str) -> None:
-        super().__init__(code=code, message=message, hint=hint)
-        self.skip_note = skip_note
-
-
 class ListingUnavailableError(JibsaError):
     """매물이 없거나, 내려갔거나, 거래 완료·숨김 상태이거나, 거래 조건이 없을 때.
 
@@ -113,5 +96,10 @@ class ListingUnavailableError(JibsaError):
             code='LISTING_UNAVAILABLE',
             message=f'현재 거래할 수 없는 {source} 매물입니다: {listing_id}' + (f' ({detail})' if detail else ' (없거나 내려간 매물)'),
             hint=hint,
-            details={'listing_id': str(listing_id), 'listing_status': status, 'reason': reason},
+            # 상태값·사유가 없으면 키를 뺀다 (없는 ID 면 상태가 해당 없음이다. emit_error 는 details 의 None 을 null(모름)로 싣는다)
+            details={
+                key: value
+                for key, value in {'listing_id': str(listing_id), 'listing_status': status, 'reason': reason}.items()
+                if value is not None
+            },
         )

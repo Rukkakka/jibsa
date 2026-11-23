@@ -308,7 +308,7 @@ class EntryStatusError(HTTPStatusError, EntryOpenError):
 
 
 class EntryPageError(JibsaError, EntryOpenError):
-    """사이트 첫 화면을 제대로 열지 못했다 (시간 초과는 NETWORK_ERROR, 차단 응답·다른 출처로 넘어감은 UPSTREAM_ERROR).
+    """사이트 첫 화면을 제대로 열지 못했다 (시간 초과·프록시가 사이트를 거절함·인증서 오류는 NETWORK_ERROR, 차단 응답·다른 출처로 넘어감·60초 넘게 기다리라는 5xx 는 UPSTREAM_ERROR).
 
     재시도하지 않는다. 다시 열면 브라우저를 새로 띄우고 첫 화면 요청을 20건쯤 또 보내며, 시간 초과면 40초를 또 기다린다.
     소스별로 `FAILED_ENTRY_MEMORY_SECONDS` 동안 기억한다 (`_BrowserState.remember_if_fatal`). 전송 오류(`HTTPError`)가 아닌
@@ -410,7 +410,7 @@ def _launch_error(error: Exception) -> BrowserUnavailableError:
     return BrowserUnavailableError(
         message=f'Chromium 을 띄우지 못했습니다: {_first_line(error)}',
         hint=_missing_libraries_hint() if sys.platform.startswith('linux') else (
-            "'jibsa install-browser' 로 Chromium 을 다시 받아 띄워 보세요. 같은 에러면 message 의 원인"
+            "'jibsa install-browser' 로 설치와 실행을 확인하세요. 같은 에러면 message 의 원인"
             '(보안 프로그램이 실행을 막았는지 등)을 사용자에게 알리세요'
         ),
     )
@@ -680,10 +680,18 @@ def _origin(url: str) -> tuple[str, str]:
     return parts.scheme, parts.netloc
 
 
-def _preflight_url(event: Mapping[str, Any]) -> str | None:
-    """CDP `Network.requestWillBeSent` 가 CORS 사전 요청(OPTIONS)이면 그 주소 (`_BlockedResponses._on_request` 와 같은 표식)."""
-    initiator = event.get('initiator') or {}
-    return event['request']['url'] if initiator.get('type') == 'preflight' else None
+def _count_preflights(session: 'CDPSession', state: '_BrowserState') -> None:
+    """CDP 세션의 `Network.requestWillBeSent` 중 CORS 사전 요청(OPTIONS)을 요청 제한에 센다 (`_BrowserState.count_preflight`).
+
+    사전 요청 표식은 `_BlockedResponses._on_request` 와 같다. `Network.enable` 은 부르는 쪽이 보낸다.
+    """
+
+    def on_request(event: dict[str, Any]) -> None:
+        initiator = event.get('initiator') or {}
+        if initiator.get('type') == 'preflight':
+            state.count_preflight(event['request']['url'])
+
+    session.on('Network.requestWillBeSent', on_request)
 
 
 def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState') -> 'CDPSession':
@@ -697,13 +705,8 @@ def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState'
         with suppress(_playwright_error()):
             session.send('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'BlockedByClient'})
 
-    def on_request(event: dict[str, Any]) -> None:
-        url = _preflight_url(event)
-        if url is not None:
-            state.count_preflight(url)
-
     session.on('Fetch.requestPaused', fail)
-    session.on('Network.requestWillBeSent', on_request)
+    _count_preflights(session, state)
     session.send('Fetch.enable', {'patterns': list(BLOCKED_FETCH_PATTERNS)})
     session.send('Network.enable')
     return session
@@ -1151,18 +1154,21 @@ class _BrowserState:
         if seconds is not None:
             self.entry_retry_after = max(self.entry_retry_after or 0.0, seconds)
 
-    def finish_entry(self, status: int | None) -> None:
+    def finish_entry(self, status: int | None, retry_after: str | None) -> None:
         """첫 화면 요청을 요청 제한에 남기고, 첫 화면이 제대로 열리지 않았으면 멈춘다.
 
         쿠키는 4xx·다른 출처면 버리고(거부된 방문자), 5xx 면 남긴 파일을 그대로 두고(`leave_saved`), 429 면 남긴다.
 
         첫 화면 요청은 미리 슬롯을 잡지 않고 연 뒤에 센다. 몇 건일지 열어 보기 전에는 모르고(네이버 18~22건), 사람이 페이지를
         열 때 나가는 묶음과 같다. 그래서 첫 화면을 새로 여는 명령(소스마다 30분에 한 번, 남긴 쿠키를 버린 뒤)은 분당 상한을
-        그 묶음만큼 넘을 수 있고, 이어지는 우리 요청이 그만큼 기다린다. 쿨다운은 요청 제한 훅이 슬롯을 기다린 뒤에도 다시
-        보므로(`RateLimiter.acquire`) 첫 화면이 쿨다운 중인 사이트로 나가지는 않는다.
+        그 묶음만큼 넘을 수 있고, 이어지는 우리 요청이 그만큼 기다린다. 쿨다운은 요청 제한 훅이 슬롯을 잡을 때 보고,
+        슬롯을 기다렸으면 기다린 뒤에도 다시 본다(`RateLimiter.acquire`). 기다리지 않았으면 Chromium 을 띄우는 몇 초 사이에 다른
+        프로세스가 건 쿨다운은 보지 못해 첫 화면과 그 요청 한 건이 나갈 수 있고, 그다음 요청부터 막힌다. 드물고 나가는 양이 사람이
+        한 번 여는 것과 같아 코드로 막지 않았다 (2026-11-23 리뷰).
 
         Args:
             status: 새로 연 첫 화면 문서의 HTTP 상태. 남긴 쿠키로 띄웠으면 None.
+            retry_after: 새로 연 첫 화면 문서의 Retry-After 헤더. 없거나 남긴 쿠키로 띄웠으면 None.
 
         Raises:
             RateLimitedError: 첫 화면 문서나 그 페이지의 사이트 API 요청이 429 를 받았고 요청 제한이 켜져 있을 때. 쿨다운은
@@ -1170,14 +1176,15 @@ class _BrowserState:
                 429 면 아래 HTTPStatusError), 우리 요청이 받는 429 를 보통 재시도가 다룬다 (`RateLimiter.on_rate_limited`
                 와 같다). 직방처럼 첫 화면 호스트가 `api_hosts` 에 없어도 문서의 429 는 센다.
             EntryStatusError: 첫 화면 문서가 5xx(또는 요청 제한을 끈 429)일 때. HTTPStatusError 라 재시도한다.
-            EntryPageError: 첫 화면 문서가 그 밖의 4xx 일 때 (차단 화면 등, UPSTREAM_ERROR). HTTPStatusError 로 내면 404·빈
+            EntryPageError: 첫 화면 문서가 5xx(또는 요청 제한을 끈 429)인데 `Retry-After` 가 재시도 대기 상한(60초)보다 길
+                때 (UPSTREAM_ERROR, 429 는 RATE_LIMITED. `retry_after_seconds` 를 붙인다). 첫 화면 문서가 그 밖의 4xx 일 때
+                (차단 화면 등, UPSTREAM_ERROR). HTTPStatusError 로 내면 404·빈
                 403 을 '없는 ID'로 읽는 호출부(다방 `is_missing_id`, 직방 `unavailable_on_404` 등)가 차단을 없는 매물로 알린다.
                 첫 화면이 다른 출처(로그인·보안 확인 화면 등)로 넘어갔을 때도 (UPSTREAM_ERROR). 그 페이지에서 보내는 요청은
                 출처가 달라 CORS 로 막히므로, 남겨 두면 다음 명령들도 실패한다.
         """
         self.routed_at_open = self.routed
-        if self.options.rate_limiter is not None:
-            self.options.rate_limiter.record(self.routed)
+        self.record_entry_requests()
         # 429 면 쿠키를 버리지 않는다. `DISCARD_STATE_STATUSES` 에 429 를 넣지 않은 것과 같은 이유로, 쿨다운 뒤 첫 명령이 남긴
         # 쿠키로 요청 1건만 보내 풀렸는지 본다. 버리면 아직 막혀 있을지 모르는 사이트에 첫 화면 요청을 20건쯤 다시 보낸다
         # (2026-11-09 리뷰: 첫 화면 API 하나가 429 인 것처럼 꾸미니 쿠키가 지워졌다). `ready_cookie` 를 못 받았으면 남긴
@@ -1191,10 +1198,40 @@ class _BrowserState:
                 # 사이트 장애라 방문자를 거부한 것이 아니다. 버리면 다시 넣은 방문자 쿠키(네이버 NNB 등)까지 지워 재시도가
                 # 새 방문자로 열었다 (2026-11-10 로컬 실측: 503 한 번에 vid=old 를 지우고 재시도가 vid=new 를 받음)
                 self.leave_saved = True
+            # 순환 import 를 피하려고 여기서 가져온다 (core.http 가 이 모듈을 불러온다)
+            from jibsa.core.http import (
+                RETRY_MAX_WAIT_SECONDS,
+                retry_after_seconds,
+            )
+
+            wait = retry_after_seconds(retry_after) if retry_after else None
+            if wait is not None and wait > RETRY_MAX_WAIT_SECONDS:
+                # 재시도는 상한(60초)까지만 쉬어, 더 오래 기다리라는 사이트에 첫 화면 요청(20건쯤)을 그보다 일찍 다시 보냈다.
+                # 다시 열지 않고 멈춘다 (2026-11-23 리뷰)
+                seconds = int(wait + 0.999)
+                raise EntryPageError(
+                    code='RATE_LIMITED' if status == 429 else 'UPSTREAM_ERROR',
+                    message=(
+                        f'{self.options.source} 첫 화면({self.options.entry_url}) 응답이 HTTP {status} 이고 '
+                        f'{seconds}초 뒤에 다시 오라고 합니다'
+                    ),
+                    # 5xx 는 `handle_errors` 의 첫 화면 5xx hint 처럼 사이트 장애라고 밝힌다. docs/llm.md 가 UPSTREAM_ERROR 에
+                    # 업데이트를 권하되 hint 가 사이트 장애를 가리키면 권하지 않게 한다
+                    hint=(
+                        f'사이트 첫 화면이 서버 오류를 줬습니다. 사이트 장애일 수 있으니 {seconds}초가 지난 뒤 다시 부르고, '
+                        '그사이에는 다른 소스를 쓰세요'
+                        if status >= 500 else f'{seconds}초가 지난 뒤 다시 부르고, 그사이에는 다른 소스를 쓰세요'
+                    ),
+                    details={'status': status, 'retry_after_seconds': seconds},
+                )
             request = Request('GET', self.options.entry_url)
+            # 문서의 Retry-After 를 실어 재시도(`wait_retry_after`)가 그만큼 쉬게 한다. 싣지 않으면 1초 간격으로 첫 화면을 다시 열었다 (2026-11-23 리뷰)
+            # ASCII 가 아닌 값은 httpx 가 헤더로 받지 않아(UnicodeEncodeError) 싣지 않고 1초 쉰다 (같은 날 리뷰)
+            headers = {'Retry-After': retry_after} if retry_after and retry_after.isascii() else None
             raise EntryStatusError(
                 f'첫 화면({self.options.entry_url}) 응답이 HTTP {status} 입니다',
-                request=request, response=Response(status, request=request),
+                request=request,
+                response=Response(status, headers=headers, request=request),
             )
         if status is not None and status >= 400:
             self.discard = True
@@ -1231,10 +1268,18 @@ class _BrowserState:
             return False
         return _origin(self.page_url) == _origin(self.options.entry_url)
 
-    def abort_entry(self) -> None:
-        """첫 화면을 열다 실패했을 때(`finish_entry` 전) 그때까지 페이지가 보낸 사이트 API 요청을 요청 제한에 남긴다."""
-        if self.options.rate_limiter is not None:
+    def record_entry_requests(self) -> None:
+        """첫 화면을 열며 페이지가 보낸 사이트 API 요청을 요청 제한에 남긴다. 연 뒤(`finish_entry`)와 열다 실패했을 때 부른다.
+
+        남기지 못해도(상태 폴더 오류) 경고만 남긴다. 에러를 내면 그 뒤의 판정(429 쿨다운 저장, 5xx 재시도, 4xx 차단)이나 열다
+        난 원래 에러(시간 초과 등)를 덮었다 (2026-11-23 리뷰: 429 첫 화면에 쿨다운이 남지 않고 INTERNAL_ERROR 로 끝났다).
+        """
+        if self.options.rate_limiter is None:
+            return
+        try:
             self.options.rate_limiter.record(self.routed)
+        except (StateDirError, OSError) as error:
+            logger.warning('첫 화면 요청을 요청 제한에 남기지 못했습니다: %s', error)
 
     def raise_if_entry_failed(self) -> None:
         """이 소스의 첫 화면이 `FAILED_ENTRY_MEMORY_SECONDS` 안에 다시 열어도 같은 이유로 실패했으면 그 에러를 다시 낸다.
@@ -1258,13 +1303,16 @@ class _BrowserState:
             raise fresh
 
     def remember_if_fatal(self, error: Exception) -> None:
-        """첫 화면을 띄우다 난 에러 중 재시도하지 않는 것(시간 초과·다른 출처·차단 화면·프록시·Chromium)을 기억한다.
+        """첫 화면을 띄우다 난 에러 중 재시도하지 않는 것(시간 초과·다른 출처·차단 화면·60초 넘게 기다리라는 5xx·프록시·Chromium)을 기억한다.
 
         재시도하는 실패(ConnectError, 5xx HTTPStatusError)는 기억하지 않는다. 429 쿨다운은 요청 제한 상태 파일이 기억한다.
+        상태 폴더 오류(`StateDirError`: 잠금·바꿔치기 경합 등)도 다시 열면 풀릴 수 있어 기억하지 않는다 (2026-11-23 리뷰).
         덤 조회가 이 실패를 삼키면(`OPTIONAL_LOOKUP_BASE_ERRORS` 는 ProxyError 를, 당근은 JibsaError 도 잡는다) 기억하지 않을 때
         다음 요청이 다시 연다. `EntryPageError`·`BROWSER_UNAVAILABLE` 은 JibsaError 다.
         """
-        if isinstance(error, ProxyError) or (isinstance(error, JibsaError) and not isinstance(error, RateLimitedError)):
+        if isinstance(error, ProxyError) or (
+            isinstance(error, JibsaError) and not isinstance(error, (RateLimitedError, StateDirError))
+        ):
             _failed_entries[self._failure_key()] = (time.monotonic(), error)
 
     def _failure_key(self) -> _FailureKey:
@@ -1372,7 +1420,7 @@ class _BrowserThread:
     스레드에는 아무것도 남지 않아 CLI 메인 스레드, asyncio 루프 안(Jupyter), 여러 작업 스레드 어디서 불러도 같다.
     예전에는 CLI 메인 스레드에서 바로 부르고 남은 루프를 asyncio 비공개 함수(`_set_running_loop`)로 걷어 냈다.
 
-    데몬 스레드라 프로세스가 끝날 때 기다리지 않는다. Ctrl+C 로 끊긴 명령은 하던 브라우저 일(첫 화면 최대 40초)을 기다리지
+    데몬 스레드라 프로세스가 끝날 때 기다리지 않는다. Ctrl+C 로 끊긴 명령은 하던 브라우저 일(첫 화면이면 Chromium 띄우기에 문서 40초·load 10초·쿠키 5초까지)을 기다리지
     않고 바로 끝나고, 드라이버(node)는 파이프가 끊기면 Chromium 을 닫고 끝난다.
     """
 
@@ -1440,11 +1488,12 @@ class BrowserTransport(BaseTransport):
         # 기다리다 Ctrl+C·비동기 취소로 끊긴 브라우저 일 (`_abandon`). 그중 아직 도는 일이 있으면 `close` 가 기다리지 않는다
         self._abandoned: list[Future[Any]] = []
 
-    def _submit(self, function: Callable[..., _R], *args: Any) -> 'Future[_R] | None':
+    def _submit(self, function: Callable[..., _R], *args: Any) -> 'Future[_R]':
         """브라우저 일을 이 transport 의 브라우저 스레드(`_BrowserThread`)에 넣는다.
 
-        브라우저 스레드 안에서 다시 불렸으면 넣지 않고 None 을 돌려줘 부르는 쪽이 바로 부르게 한다. 넣으면 자기를 기다려
-        멈춘다 (2026-11-09 실측).
+        브라우저 스레드는 `_handle_request`·`_close` 만 돌리고 둘 다 요청을 다시 보내지 않아, 이 함수를 브라우저 스레드에서
+        부르는 일은 없다. 예전 `_call` 이 모든 브라우저 일을 이 길로 넘길 때는 자기를 기다려 멈춘 적이 있어(2026-11-09 실측)
+        그때는 막아 두었다 (2026-11-23 리뷰로 지움).
 
         Raises:
             RuntimeError: 닫은 뒤에 불렸을 때. httpx 가 닫힌 클라이언트에 내는 것과 같다. 여러 스레드가 같이 쓰다 한 스레드가
@@ -1455,8 +1504,7 @@ class BrowserTransport(BaseTransport):
                 raise RuntimeError('닫힌 클라이언트로는 요청할 수 없습니다 (브라우저를 이미 닫았습니다)')
             if self._thread is None:
                 self._thread = _BrowserThread()
-            thread = self._thread
-            return None if threading.get_ident() == thread.ident else thread.submit(function, *args)
+            return self._thread.submit(function, *args)
 
     def _wait(self, future: 'Future[_R]') -> _R:
         """브라우저 스레드의 일이 끝나기를 기다린다. Ctrl+C 를 `WAIT_POLL_SECONDS` 마다 확인한다.
@@ -1498,14 +1546,7 @@ class BrowserTransport(BaseTransport):
         blocked = _BlockedResponses()
         session = context.new_cdp_session(page)
         blocked.listen(session)
-        state = self._state
-
-        def on_request(event: dict[str, Any]) -> None:
-            url = _preflight_url(event)
-            if url is not None:
-                state.count_preflight(url)
-
-        session.on('Network.requestWillBeSent', on_request)
+        _count_preflights(session, self._state)
         session.send('Network.enable')
         self._blocked[page] = blocked
 
@@ -1522,6 +1563,7 @@ class BrowserTransport(BaseTransport):
         )
         from_saved = cookies is not None
         entry_status: int | None = None
+        entry_document_retry_after: str | None = None
         self._session = StealthySession(**state.session_options())
 
         def on_entry_response(response: 'PageResponse') -> None:
@@ -1584,6 +1626,7 @@ class BrowserTransport(BaseTransport):
                 response = page.goto(state.options.entry_url, wait_until='domcontentloaded', timeout=ENTRY_TIMEOUT_MS)
                 opening_entry = False
                 entry_status = response.status if response else None
+                entry_document_retry_after = response.headers.get('retry-after') if response else None
                 # 첫 화면 문서가 4xx·5xx 면 load·ready_cookie 를 기다리지 않고 바로 `finish_entry` 로 멈춘다. 기다리면 그동안
                 # 막힌 사이트에 페이지 요청이 더 나가고, 오류 화면이 심지 않는 ready_cookie 를 5초 기다렸다 (2026-11-10 로컬
                 # 실측: 503 첫 화면이 ready_cookie 가 있으면 5.6초, 없으면 0.5초에 실패). 첫 화면 API 가 429 를 받았을
@@ -1620,7 +1663,7 @@ class BrowserTransport(BaseTransport):
             self._watch_blocked(context, page)
         except BaseException as error:
             self._close()
-            state.abort_entry()
+            state.record_entry_requests()
             if not isinstance(error, _playwright_error()):
                 raise
             raise _entry_error(error, state.options.entry_url, opening_entry) from error
@@ -1636,7 +1679,7 @@ class BrowserTransport(BaseTransport):
             # 명령이 끝날 때(`close`) 그때의 쿠키로 다시 남긴다
             state.save(cookies)
         try:
-            state.finish_entry(entry_status)
+            state.finish_entry(entry_status, entry_document_retry_after)
         except BaseException:
             self._close()
             raise
@@ -1646,10 +1689,7 @@ class BrowserTransport(BaseTransport):
 
     def handle_request(self, request: Request) -> Response:
         # 브라우저 일을 브라우저 스레드에서 부르고 끝나기를 기다린다 (`_submit`, `_wait`)
-        future = self._submit(self._handle_request, request)
-        if future is None:
-            return self._handle_request(request)
-        return self._wait(future)
+        return self._wait(self._submit(self._handle_request, request))
 
     def _handle_request(self, request: Request) -> Response:
         # 모든 요청을 첫 화면 탭에서 보낸다. 예전에는 첫 화면 출처의 CORS 를 허용하지 않는 호스트(당근 옛 지역 API)를 그 주소의
@@ -1713,11 +1753,10 @@ class BrowserTransport(BaseTransport):
             self._closed = True
             if thread is None:
                 return
-            future = None if threading.get_ident() == thread.ident else thread.submit(self._close)
+            # 브라우저 스레드에서 `close` 를 부르는 곳은 없다 (`_submit` 과 같다. 2026-11-23 리뷰로 재진입 갈래를 지움)
+            future = thread.submit(self._close)
             thread.stop()
-        if future is None:
-            self._close()
-        elif not any(not job.done() for job in self._abandoned):
+        if not any(not job.done() for job in self._abandoned):
             self._wait(future)
 
     def _close(self) -> None:
@@ -1772,11 +1811,9 @@ class AsyncBrowserTransport(AsyncBaseTransport):
         # 기다리다 취소되면(`asyncio.wait_for` 시간 초과 등) Ctrl+C 를 받은 `_wait` 처럼 하던 브라우저 일은 그대로 두고 바로
         # 돌아가고, 그 뒤의 `close` 는 그 일이 아직 돌고 있으면 기다리지 않는다 (`_abandon`). 아직 차례를 기다리던 일은 돌리지
         # 않는다 (`_BrowserThread._run`). 작업 스레드(`asyncio.to_thread`)에서 `BrowserTransport.handle_request` 로 기다리면
-        # 취소돼도 그 스레드가 브라우저 일을 끝까지 기다려, 닫기와 `asyncio.run` 이 그만큼(첫 화면 최대 40초) 늦었다
+        # 취소돼도 그 스레드가 브라우저 일을 끝까지 기다려, 닫기와 `asyncio.run` 이 그만큼(첫 화면이면 Chromium 띄우기에 문서 40초·load 10초·쿠키 5초까지) 늦었다
         # (2026-11-10 리뷰: 8초 걸리는 첫 화면에서 `aclose` 8.04초)
         future = self._sync._submit(self._sync._handle_request, request)
-        if future is None:
-            return self._sync._handle_request(request)
         try:
             return await asyncio.wrap_future(future)
         except asyncio.CancelledError:

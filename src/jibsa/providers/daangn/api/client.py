@@ -20,6 +20,7 @@ from jibsa.core.http import (
     should_retry_idempotent,
     wait_retry_after,
 )
+from jibsa.core.ratelimit import RateLimitPolicy
 from jibsa.core.schema import RequestModel
 from jibsa.providers.daangn.api.parser import (
     parse_articles_html,
@@ -211,7 +212,7 @@ class DaangnClient(BaseHTTPClient):
         rate_limit: 요청 제한 정책. Defaults to 0.5초 간격·분당 60회·429 후 5분 쿨다운.
 
     Attributes:
-        base_url: `url_schema` 와 `host` 로 만든 베이스 URL.
+        base_url: `host` 로 만든 https 베이스 URL.
         graphql_url: GraphQL 의 절대 URL.
 
     Example:
@@ -372,11 +373,11 @@ class DaangnClient(BaseHTTPClient):
     }
 
     source_name: ClassVar[str] = 'daangn'
-    default_rate_limit: ClassVar[dict[str, object]] = {
-        'min_interval': 0.5,
-        'max_per_minute': 60,
-        'cooldown': 300,
-    }
+    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy(
+        min_interval=0.5,
+        max_per_minute=60,
+        cooldown=300,
+    )
 
     # 당근 웹 지도 화면이다 (Referer 가 자연스럽다). 기다릴 쿠키가 없어 load 직후 떠나므로 첫 화면이 부르는 사이트
     # API 는 load 까지의 GraphQL 2건이다 (2026-11-10 실측: 홈도 1건. 페이지를 그대로 두면 10초에 94건이라, 예전에 적었던
@@ -393,17 +394,11 @@ class DaangnClient(BaseHTTPClient):
 
     @property
     def base_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.host
-        )
+        return create_base_url(self.host)
 
     @property
     def graphql_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.graphql_host
-        ) + self.graphql_endpoint
+        return create_base_url(self.graphql_host) + self.graphql_endpoint
 
     @property
     def browser_api_hosts(self) -> frozenset[str]:

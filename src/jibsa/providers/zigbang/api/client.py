@@ -18,6 +18,7 @@ from jibsa.core.http import (
     should_retry_idempotent,
     wait_retry_after,
 )
+from jibsa.core.ratelimit import RateLimitPolicy
 from jibsa.providers.zigbang.api.request.apt import (
     ZigbangItemCatalogsHoInfoRequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
@@ -247,7 +248,7 @@ class ZigbangClient(BaseHTTPClient):
         rate_limit: 요청 제한 정책. Defaults to 0.2초 간격·분당 120회·429 후 2분 쿨다운.
 
     Attributes:
-        base_url: `url_schema` 와 `host` 로 만든 API 베이스 URL.
+        base_url: `host` 로 만든 https API 베이스 URL.
         stay_base_url: 단기임대 API 베이스 URL.
 
     Example:
@@ -307,11 +308,11 @@ class ZigbangClient(BaseHTTPClient):
     items_v3_endpoint: ClassVar[str] = '/v3/items/{item_id}'
 
     source_name: ClassVar[str] = 'zigbang'
-    default_rate_limit: ClassVar[dict[str, object]] = {
-        'min_interval': 0.2,
-        'max_per_minute': 120,
-        'cooldown': 120,
-    }
+    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy(
+        min_interval=0.2,
+        max_per_minute=120,
+        cooldown=120,
+    )
 
     browser_entry_url: ClassVar[str] = 'https://www.zigbang.com/'
     # 직방 API 는 다른 출처(apis·stay-apis)라 원래 쿠키 없이 응답해 기다릴 쿠키가 없다. 두 호스트 모두
@@ -324,10 +325,7 @@ class ZigbangClient(BaseHTTPClient):
 
     @property
     def base_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.host
-        )
+        return create_base_url(self.host)
 
     @property
     def browser_api_hosts(self) -> frozenset[str]:
@@ -336,10 +334,7 @@ class ZigbangClient(BaseHTTPClient):
 
     @property
     def stay_base_url(self) -> str:
-        return create_base_url(
-            schema=self.url_schema,
-            host=self.stay_host
-        )
+        return create_base_url(self.stay_host)
 
     @property
     def base_header(self) -> dict[str, str]:

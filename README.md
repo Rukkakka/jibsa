@@ -158,13 +158,14 @@ jibsa 는 사이트 화면을 실제로 연 Chromium 으로 요청해, 헤더·�
 
 ## 설정
 
-로그인·API 키·설정 파일은 없다. 환경 변수 세 개만 쓴다.
+로그인·API 키·설정 파일은 없다. 환경 변수는 아래만 쓴다.
 
 | 환경 변수 | 하는 일 |
 | --- | --- |
 | `JIBSA_STATE_DIR` | 요청 제한 상태, 매물 검색 이어 받기 표, 사이트가 브라우저에 심은 쿠키를 둘 디렉터리. 기본은 `~/.cache/jibsa`. 기본 위치에 쓸 수 없는 환경(샌드박스 등)이면 쓸 수 있는 폴더로 바꾼다 |
 | `XDG_CACHE_HOME` | 설정해 두었으면 그 아래 `jibsa` 를 쓴다 (`JIBSA_STATE_DIR` 이 우선) |
 | `PYTHONUTF8` | Windows 에서 `1` 로 설정한다 (아래) |
+| `HTTPS_PROXY`·`ALL_PROXY`·`NO_PROXY` (소문자도) | 프록시를 거쳐야 하는 환경에서 jibsa 가 띄우는 브라우저가 쓸 프록시. `HTTPS_PROXY` 가 없으면 `ALL_PROXY` 를 쓰고, `NO_PROXY` 는 프록시를 거치지 않을 호스트(쉼표로 구분, `example.com` 은 하위 도메인까지, `*` 면 프록시를 쓰지 않음)다. `HTTPS_PROXY`·`ALL_PROXY` 가 없으면 브라우저가 OS 프록시 설정을 따른다. http·https·socks4·socks5 를 받고, 아이디·비밀번호가 있는 SOCKS 프록시는 받지 않는다 |
 
 ### Windows 에서 쓸 때
 

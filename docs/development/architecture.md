@@ -42,7 +42,7 @@ cli/                 Typer 명령. 인자 검증 → service 호출 → emit / h
 `core/http.py` 의 `BaseHTTPClient(BaseModel, ABC)` 가 모든 provider client 의 기반이다.
 pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩토리** 역할을 함께 한다.
 
-- 공통 필드: `url_schema`, `verify`, `proxy`, `timeout`, `rate_limit`. `extra='forbid'` 라 오타 난 설정은 생성 시점에 실패한다.
+- 공통 필드: `verify`, `proxy`, `timeout`, `rate_limit`. `extra='forbid'` 라 오타 난 설정은 생성 시점에 실패한다.
   UA 는 브라우저가 맡아 필드가 없다. `verify`·`proxy` 는 브라우저에 넘긴다. `verify` 는 Chromium 이 받는 켜기·끄기만 받는다
   (Chromium 은 인증서 파일을 받지 않고 내장 목록과 OS 에 설치된 인증서를 믿는다). `timeout` 은 응답 헤더가 올 때까지(연결 포함)와
   본문 조각 사이 간격의 제한이다. httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`).
@@ -90,8 +90,9 @@ jibsa 프로세스가 하나의 상태 파일을 공유**한다. LLM 이 명령�
   보낸 우리 요청 중 사이트 API 호스트로 간 것만 보낼 때 세어 빼므로, 다른 호스트로 간 요청이나 실패한 요청 때문에 어긋나지 않는다.
 - 첫 화면 요청은 미리 슬롯을 잡지 않고 연 뒤에 센다. 몇 건일지 열기 전에는 모르고(네이버 18~22건), 사람이 페이지를 열 때
   나가는 묶음과 같기 때문이다. 그래서 첫 화면을 새로 여는 명령(소스마다 30분에 한 번, 남긴 쿠키를 버린 뒤)은 분당 상한을 그
-  묶음만큼 넘을 수 있고, 이어지는 우리 요청이 그만큼 기다린다. 일부러 둔 것이다. 쿨다운은 훅이 슬롯을 기다린 뒤에도 다시 보므로
-  (`RateLimiter.acquire`) 첫 화면이 쿨다운 중인 사이트로 나가지는 않는다.
+  묶음만큼 넘을 수 있고, 이어지는 우리 요청이 그만큼 기다린다. 일부러 둔 것이다. 쿨다운은 훅이 슬롯을 잡을 때 보고, 슬롯을 기다렸으면 기다린 뒤에도 다시 본다
+  (`RateLimiter.acquire`). 기다리지 않았으면 Chromium 을 띄우는 몇 초 사이에 다른 프로세스가 건 쿨다운은 보지 못해 첫 화면과 그 요청 한 건이
+  나갈 수 있고, 그다음 요청부터 막힌다. 드물고 나가는 양이 사람이 한 번 여는 것과 같아 코드로 막지 않았다.
 
 소스별 기본 정책 값은 각 client 의 `default_rate_limit` ClassVar 에 있다. 사용자에게 보여 주는 정책 표는
 [공통 사용 규칙](../common.md#요청-제한과-limits)에 있으니, 정책을 바꾸면 그 표도 함께 고친다.
@@ -166,7 +167,9 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   문서나 첫 화면의 사이트 API 가 429 면 쿨다운(`RateLimitedError`, 첫 화면 호스트가 `browser_api_hosts` 에 없어도)이고 같은
   이유로 쿠키는 남긴다 (`browser_ready_cookie` 를 못 받았으면 다음 명령이 쓰지 않고 다시 연다). 그 밖에는 그 첫 화면의 쿠키를
   남기지 않는다 (`keeps_entry_cookies`): 5xx 면 재시도하는 `HTTPStatusError` 이고 옛 쿠키 파일은 그대로 둔다 (사이트 장애라
-  방문자 쿠키를 버리지 않는다. 다음 시도가 그 쿠키를 넣고 다시 연다). 그 밖의 4xx 나 다른 출처(로그인·보안 확인 화면 등)로
+  방문자 쿠키를 버리지 않는다. 다음 시도가 그 쿠키를 넣고 다시 연다). 재시도는 문서의 `Retry-After` 만큼 쉬고, 그 값이 재시도
+  대기 상한(60초)보다 길면 다시 열지 않고 `EntryPageError`(`UPSTREAM_ERROR`, `retry_after_seconds`)로 멈춘다 (60초 뒤
+  다시 열면 서버가 정한 시간보다 일찍 첫 화면 요청을 20건쯤 다시 보낸다). 그 밖의 4xx 나 다른 출처(로그인·보안 확인 화면 등)로
   넘어가면 `EntryPageError`(`JibsaError`, `UPSTREAM_ERROR`)이고 옛 쿠키 파일도 버린다 (거부된 방문자). 401·403·451 은 접속 차단이라
   `blocked: true` 를 붙인다 (`ENTRY_BLOCKED_STATUSES`. 업데이트로 풀리지 않음을 에이전트와 매일 감시가 이 필드로 안다). 4xx 를
   `HTTPStatusError` 로 내지 않는 것은 404·빈 403 을 '없는 ID'로 읽는 호출부(다방 `is_missing_id`, 직방 `unavailable_on_404`
@@ -205,7 +208,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   `--verbose` 일 때만 보이고, 파이프로 읽으면 stderr 에 에러 JSON 만 간다 (실패 원인은 에러의 `output`).
   Chromium 이 없거나 시스템 라이브러리가 없거나 patchright 드라이버를 실행하지 못하거나(`OSError`, 설치가 깨짐 등) 그 밖의
   이유로 못 띄우면 재시도 없이 `BROWSER_UNAVAILABLE` 이다. 힌트는 늘 붙인다 (리눅스는 시스템 라이브러리 설치, 드라이버 실행
-  실패는 jibsa 재설치, 그 밖은 `jibsa install-browser` 로 다시 받아 띄워 보기).
+  실패는 jibsa 재설치, 그 밖은 `jibsa install-browser` 로 설치와 실행 확인).
 - 브라우저 일은 늘 transport 마다 띄운 전용 데몬 스레드 하나에서 차례로 한다 (`_BrowserThread`). 비동기
   `AsyncBrowserTransport` 도 동기 transport 를 감싸 같은 스레드에 일을 넘기고 `await` 로 기다린다 (`AsyncBrowserTransport.handle_async_request`. 흐름이 한 벌이고
   동시에 보낸 요청도 차례로 나간다. 기다리다 취소되면 Ctrl+C 처럼 하던 일을 기다리지 않는다). 따로 스레드를 두는 것은

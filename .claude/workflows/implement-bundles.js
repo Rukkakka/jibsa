@@ -3,10 +3,10 @@
 // 작업자 보고에 지시대로 했지만 걸리는 점을 적는 칸(concerns)을 따로 둔다
 export const meta = {
   name: 'implement-bundles',
-  description: '사용자가 허락한 구현 계획의 묶음을 지시서 검사 결과(briefCheck)가 있을 때만 coder 로 돌리고(공통 묶음 먼저, 소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 같은 소스도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
-  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다), effort?: medium|high }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), briefCheck: 주 에이전트가 brief-checker 결과를 지적마다 처리한 기록 파일의 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
+  description: '사용자가 허락한 구현 계획의 묶음을 지시서 검사 결과(briefCheck)가 있을 때만 coder 로 돌리고(공통 묶음을 소스별 묶음보다 먼저, 공통·소스마다 first 묶음 먼저, 나머지는 파일이 겹치지 않아 공통끼리·같은 소스끼리도 동시에 셋까지), 모두 끝나면 doc-writer 하나가 문서를 맞춘다. git 쓰기는 하지 않는다',
+  whenToUse: '사용자가 "implement-bundles 로 구현한다" 고 적힌 구현 계획을 허락했을 때만 주 에이전트가 부른다 (AGENTS.md 작업 절차, CLAUDE.md). args: { bundles: [{ name, source: zigbang|naver|daangn|dabang|common, files: [고칠 파일], brief: 지시서, first?: true(같은 소스의 다른 묶음이 기대는 묶음, 먼저 돈다. 공통 묶음끼리도 같다), effort?: medium|high }], baseline: 주 에이전트가 묶음을 띄우기 전에 바뀔 명령·바뀌면 안 되는 명령의 출력을 저장한 scratchpad 경로(없으면 시작하지 않는다), briefCheck: 주 에이전트가 brief-checker 결과를 지적마다 처리한 기록 파일의 scratchpad 경로(없으면 시작하지 않는다), docs?: { brief, files?, effort? }, workerLiveChecks?: true(작업자도 실제 조회 1회. 기본은 주 에이전트가 고치기 전·후 비교를 해서 작업자는 하지 않는다) }. 작업자·문서 작업자 모델은 sonnet 고정이라 지시서에는 docs/development/agents.md "맡길 때 지시서에 넣는 것" 의 항목을 적고 문서에 들어갈 사실도 적는다 (CLAUDE.md). 작업자는 자기 files 만 고치고 CHANGELOG·docs/llm.md·감시 목록 같은 공용 파일은 보고만 한다. args 없이 불렸으면 아무것도 띄우지 않는다.',
   phases: [
-    { title: '공통 구현', detail: '소스에 매이지 않은 묶음, 차례로 먼저' },
+    { title: '공통 구현', detail: '소스에 매이지 않은 묶음을 소스별 묶음보다 먼저. first 묶음을 차례로 먼저, 나머지는 동시에 셋까지' },
     { title: '소스별 구현', detail: '소스마다 first 묶음을 차례로 먼저, 나머지는 같은 소스도 동시에 셋까지, 소스끼리는 동시에' },
     { title: '문서', detail: '모든 묶음이 끝난 뒤 doc-writer 하나' },
   ],
@@ -80,13 +80,14 @@ if (a.docs != null && !(typeof a.docs === 'object' && typeof a.docs.brief === 's
 }
 const docs = a.docs != null ? a.docs : null
 
-// 동시에 돌 수 있는 두 묶음이 같은 파일을 고치면 거절한다. 공통 묶음은 먼저 차례로, 문서는 마지막이라 겹쳐도 된다. 소스끼리는
-// 동시에 돌아 서로 다른 소스의 두 묶음은 언제든 겹칠 수 있다. 같은 소스 안에서는 first 묶음이 차례로 먼저 끝난 뒤 나머지가
-// 동시에 돌아, first 가 아닌 두 묶음만 겹칠 수 있다.
-const sourced = bundles.filter(b => b && SOURCES.includes(b.source) && Array.isArray(b.files))
+// 동시에 돌 수 있는 두 묶음이 같은 파일을 고치면 거절한다. 공통 묶음은 소스별 묶음보다 먼저 다 끝나고 문서는 마지막이라, 공통
+// 묶음과 소스별 묶음, 문서는 겹쳐도 된다. 소스끼리는 동시에 돌아 서로 다른 소스의 두 묶음은 언제든 겹칠 수 있다. 같은 소스(공통
+// 묶음끼리도) 안에서는 first 묶음이 차례로 먼저 끝난 뒤 나머지가 동시에 돌아, first 가 아닌 두 묶음만 겹칠 수 있다.
+const scheduled = bundles.filter(b => b && (SOURCES.includes(b.source) || b.source === 'common') && Array.isArray(b.files))
 const overlap = []
-for (const [i, x] of sourced.entries()) {
-  for (const y of sourced.slice(i + 1)) {
+for (const [i, x] of scheduled.entries()) {
+  for (const y of scheduled.slice(i + 1)) {
+    if ((x.source === 'common') !== (y.source === 'common')) continue
     if (x.source === y.source && (x.first || y.first)) continue
     const shared = x.files.map(norm).filter(f => y.files.map(norm).includes(f))
     if (shared.length) overlap.push(`${shared.join(', ')} (${x.name}·${y.name})`)
@@ -99,7 +100,7 @@ if (problems.length) {
     started: false,
     reason: 'bad-bundles',
     problems,
-    next: 'problems 를 고쳐서 다시 부른다. 동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스)·공통 묶음(여러 소스)으로 뺀다. baseline 이 없으면 고치기 전 출력을 먼저 저장하고, briefCheck 가 없으면 brief-checker 를 돌려 지적을 처리한 기록을 남긴다.',
+    next: 'problems 를 고쳐서 다시 부른다. 동시에 도는 묶음이 같은 파일을 고치면 묶음을 합치거나, 다른 묶음이 기대는 쪽을 first 묶음(같은 소스, 공통 묶음끼리도)·공통 묶음(여러 소스)으로 뺀다. baseline 이 없으면 고치기 전 출력을 먼저 저장하고, briefCheck 가 없으면 brief-checker 를 돌려 지적을 처리한 기록을 남긴다.',
   }
 }
 
@@ -151,7 +152,7 @@ const coderPrompt = b => [
   '위 고칠 파일만 고친다. 그 밖의 파일은 열어 보기만 한다. 네 정의가 같은 작업에서 고치라는 문서·CHANGELOG·docs/llm.md·scripts/monitor/api_check.py 의 GROUPS 도',
   '고칠 파일에 없으면 고치지 말고 othersToTouch 에 "파일 — 고칠 내용" 으로 적는다. 다른 묶음과 같은 파일을 덮어쓰지 않기 위해서다.',
   `다른 묶음이 동시에 다른 파일을 고칠 수 있다: ${allFiles.filter(f => !b.files.map(norm).includes(f)).join(', ') || '없음'}. ruff·mypy 오류가 네 파일 밖에서 나면 고치지 말고 보고에 적는다.`,
-  b.first ? '같은 소스의 다른 묶음이 이 묶음이 만드는 함수·상수를 쓴다. 지시서에 정한 이름·인자·뜻을 바꾸지 않는다.' : '',
+  b.first ? '같은 소스(공통 묶음이면 다른 공통 묶음)의 다른 묶음이 이 묶음이 만드는 함수·상수를 쓴다. 지시서에 정한 이름·인자·뜻을 바꾸지 않는다.' : '',
   '지시서대로 할 수 없거나 다르게 하는 편이 맞아 보이면 docs/development/agents.md 의 "지시서와 다르게 할 때" 문단을 따른다. 그 문단의 작은 차이는 deviations 에, 하지 않은 것은 notDone 에 적는다.',
   '지시대로 했지만 걸리는 점(지시서가 틀렸거나 정하지 않은 경우의 의심)은 concerns 에 적는다. 주 에이전트가 하나씩 답한다.',
   a.workerLiveChecks !== true
@@ -194,35 +195,37 @@ const runLane = async (lane, phaseTitle) => {
   return true
 }
 
-// 소스 하나: first 묶음을 차례로 먼저 돌리고(실패하면 나머지는 그 결과에 기대므로 건너뛴다), 나머지는 서로 기대지 않아
-// 동시에 SAME_SOURCE_MAX 개까지 돌린다. 하나가 실패해도 나머지는 이어 간다.
+// 소스 하나(공통 묶음도 소스 하나처럼): first 묶음을 차례로 먼저 돌리고(실패하면 나머지는 그 결과에 기대므로 건너뛴다),
+// 나머지는 서로 기대지 않아 동시에 SAME_SOURCE_MAX 개까지 돌린다. 하나가 실패해도 나머지는 이어 간다.
 // 자리 SAME_SOURCE_MAX 개가 남은 묶음을 하나씩 꺼내 간다. 셋씩 잘라 돌리면 한 번에 띄운 셋이 모두 끝나야 다음을 띄워,
 // 먼저 끝난 자리가 가장 늦은 묶음을 기다렸다 (2026-11-19 실측: 당근 C·D 가 끝난 뒤 E 가 가장 큰 B 를 기다림)
-const runSource = async source => {
+const runSource = async (source, phaseTitle) => {
   const mine = bundles.filter(b => b.source === source)
   const firsts = mine.filter(b => b.first)
   const rest = mine.filter(b => !b.first)
-  if (firsts.length && !(await runLane(firsts, '소스별 구현'))) {
+  if (firsts.length && !(await runLane(firsts, phaseTitle))) {
     log(`${source}: first 묶음이 실패해 나머지 묶음(${rest.map(b => b.name).join(', ') || '없음'})은 시작하지 않았다`)
     return false
   }
   let ok = true
   let next = 0
   const lane = async () => {
-    while (next < rest.length) ok = (await runOne(rest[next++], '소스별 구현')) && ok
+    while (next < rest.length) ok = (await runOne(rest[next++], phaseTitle)) && ok
   }
   if (rest.length) await parallel(Array.from({ length: Math.min(SAME_SOURCE_MAX, rest.length) }, () => lane))
   return ok
 }
 
+// 공통 묶음도 소스 묶음처럼 first 만 차례로 먼저 돌리고 나머지는 동시에 돌린다. 예전에는 공통 묶음을 모두 차례로 돌려,
+// 파일이 겹치지 않는 공통 묶음 둘이 앞 묶음을 기다렸다 (2026-11-23 core·cli 정리: 요청 계층·모델 출력 묶음). 소스별 묶음은
+// 공통 묶음이 모두 끝나고 하나도 실패하지 않았을 때만 시작한다
 phase('공통 구현')
-const common = bundles.filter(b => b.source === 'common')
-const commonOk = common.length ? await runLane(common, '공통 구현') : true
+const commonOk = bundles.some(b => b.source === 'common') ? await runSource('common', '공통 구현') : true
 
 let lanesOk = commonOk
 if (commonOk) {
   phase('소스별 구현')
-  const oks = await parallel(SOURCES.filter(s => bundles.some(b => b.source === s)).map(s => () => runSource(s)))
+  const oks = await parallel(SOURCES.filter(s => bundles.some(b => b.source === s)).map(s => () => runSource(s, '소스별 구현')))
   lanesOk = oks.every(ok => ok === true)
 } else {
   log('공통 묶음이 실패해 소스별 묶음을 시작하지 않았다')

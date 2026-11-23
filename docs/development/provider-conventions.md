@@ -134,7 +134,7 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
 - `BaseHTTPClient` 를 상속하고 다음을 선언한다.
   - 엔드포인트 ClassVar 들
   - `source_name: ClassVar[str]` — 요청 제한 상태 파일 이름. `Source` Literal 값과 같게.
-  - `default_rate_limit: ClassVar[dict[str, object]]` — `RateLimitPolicy` 필드
+  - `default_rate_limit: ClassVar[RateLimitPolicy]` — 소스 기본 요청 제한 정책
   - `host: str` 필드와 `base_url` property (`create_base_url` 사용)
   - `base_header` property — 사이트 웹 코드가 모든 요청에 붙이는 헤더만 (실측 날짜와 함께). API 묶음마다 다른 헤더는
     요청마다 `headers=` 로 붙이고, 웹이 붙이지 않는 헤더는 넣지 않는다. UA·Origin·Referer 는 브라우저가 붙인다
@@ -192,7 +192,7 @@ def run_request_items_onerooms_v1(
 ```
 
 - **재시도.** 조회 전용이면 POST 라도 `should_retry_idempotent` (5xx/429 + 다시 보내면 나을 수 있는 전송 오류 `RETRYABLE_TRANSPORT_ERRORS`).
-  상태를 바꾸는 호출이 생기면 `should_retry_non_idempotent`. jibsa 에는 현재 조회만 있다.
+  jibsa 에는 조회만 있다 (사용자 대신 상태를 바꾸는 호출은 넣지 않는다, AGENTS.md "로그인 없는 기능만").
   네이버는 예외다 ([네이버 개발 가이드](providers/naver.md)).
 - **상태 코드에 뜻을 붙일 때.** 재시도 술어나 service 가 특정 상태를 소스 고유 뜻으로 읽으면(다방 학교 상세의 500)
   첫 화면 5xx(`EntryStatusError`)를 먼저 거른다 ([브라우저 요청](architecture.md#브라우저-요청)).
@@ -233,7 +233,7 @@ def run_request_items_onerooms_v1(
 - **만료 판정은 service 에서 한다.** 목록은 거래 불가 매물을 건너뛰고, 상세는
   `ListingUnavailableError(source, id, status=..., reason=...)` 를 던진다. 404 도
   `ListingUnavailableError` 로 바꾼다.
-- 지역을 찾지 못하면 `RegionNotFoundError`, 소스가 그 지역을 다루지 않으면 `UnsupportedRegionError`.
+- 지역을 찾지 못하면 `RegionNotFoundError`, 소스가 그 지역을 다루지 않으면 `JibsaError` (code `REGION_NOT_SUPPORTED`, 당근의 동에 속하지 않는 좌표는 `REGION_NOT_FOUND`).
 - 원 사이트 URL 은 `article_url()` / `item_url()` 같은 헬퍼로 만든다.
 - 요청 수를 늘리는 변경은 요청 제한 상한과 함께 검토한다.
 - 목록 페이지 루프는 받은 개수로 할당량을 세고, 받은 뒤 뺀 매물은 다시 채우지 않는다
