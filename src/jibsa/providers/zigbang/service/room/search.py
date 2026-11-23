@@ -172,44 +172,6 @@ def unsearchable_note(types: list[str]) -> str:
     )
 
 
-# 유형별 분기를 (요청 모델, 메서드) 표로 묶지 않는다. 표로 두면 타입 검사가 요청 모델과 메서드 짝을 확인하지 못한다.
-# _fetch_subway_pins 도 같다
-def _fetch_pins(
-    client: ZigbangClient,
-    property_type: ZigbangPropertyType,
-    **parameter: object,
-) -> ZigbangItemsResponseModel:
-    if property_type == '원룸':
-        return client.run_request_items_onerooms_v1(
-            ZigbangItemsOneroomsV1RequestParameterModel(**parameter)
-        )
-    if property_type == '오피스텔':
-        return client.run_request_items_officetels_v1(
-            ZigbangItemsOfficetelsV1RequestParameterModel(**parameter)
-        )
-    return client.run_request_items_villas_v1(
-        ZigbangItemsVillasV1RequestParameterModel(**parameter)
-    )
-
-
-def _fetch_subway_pins(
-    client: ZigbangClient,
-    property_type: ZigbangPropertyType,
-    **parameter: object,
-) -> ZigbangItemsResponseModel:
-    if property_type == '원룸':
-        return client.run_request_items_subways_onerooms_v1(
-            ZigbangItemsSubwaysOneroomsV1RequestParameterModel(**parameter)
-        )
-    if property_type == '오피스텔':
-        return client.run_request_items_subways_officetels_v1(
-            ZigbangItemsSubwaysOfficetelsV1RequestParameterModel(**parameter)
-        )
-    return client.run_request_items_subways_villas_v1(
-        ZigbangItemsSubwaysVillasV1RequestParameterModel(**parameter)
-    )
-
-
 def _scope_pins(
     client: ZigbangClient,
     property_type: ZigbangPropertyType,
@@ -221,30 +183,37 @@ def _scope_pins(
     type_filters: dict[str, object],
 ) -> Iterator[tuple[str | None, ZigbangItemsResponseModel]]:
     """검색 범위의 핀을 (지도 칸, 응답) 으로 하나씩 받는다. 역 검색이면 역 API 를 한 번 부르고 칸은 None 이다."""
+    # 유형별 분기를 (요청 모델, 메서드) 표로 묶지 않는다. 표로 두면 타입 검사가 요청 모델과 메서드 짝을 확인하지 못한다
+    response: ZigbangItemsResponseModel
     if subway_id is not None:
-        yield None, _fetch_subway_pins(
-            client, property_type, subway_id=subway_id, radius=radius_km, sales_types=sales_types, **type_filters,
-        )
+        if property_type == '원룸':
+            response = client.run_request_items_subways_onerooms_v1(ZigbangItemsSubwaysOneroomsV1RequestParameterModel(
+                subway_id=subway_id, radius=radius_km, sales_types=sales_types, **type_filters,
+            ))
+        elif property_type == '오피스텔':
+            response = client.run_request_items_subways_officetels_v1(ZigbangItemsSubwaysOfficetelsV1RequestParameterModel(
+                subway_id=subway_id, radius=radius_km, sales_types=sales_types, **type_filters,
+            ))
+        else:
+            response = client.run_request_items_subways_villas_v1(ZigbangItemsSubwaysVillasV1RequestParameterModel(
+                subway_id=subway_id, radius=radius_km, sales_types=sales_types, **type_filters,
+            ))
+        yield None, response
         return
     for geohash in geohashes:
-        yield geohash, _fetch_pins(client, property_type, geohash=geohash, sales_types=sales_types, **type_filters)
-
-
-def _officetel_building_ids(
-    client: ZigbangClient,
-    *,
-    geohashes: list[str],
-    subway_id: int | None,
-    radius_km: float,
-    sales_types: list[ZigbangSalesType],
-    type_filters: dict[str, object],
-) -> dict[int, int]:
-    """원룸 검색과 같은 조건의 오피스텔 핀에서 매물 ID → 건물 ID 를 받는다."""
-    responses = _scope_pins(
-        client, '오피스텔', geohashes=geohashes, subway_id=subway_id, radius_km=radius_km,
-        sales_types=sales_types, type_filters=type_filters,
-    )
-    return {pin.id: pin.building_id for _, response in responses for pin in response.items if pin.building_id}
+        if property_type == '원룸':
+            response = client.run_request_items_onerooms_v1(ZigbangItemsOneroomsV1RequestParameterModel(
+                geohash=geohash, sales_types=sales_types, **type_filters,
+            ))
+        elif property_type == '오피스텔':
+            response = client.run_request_items_officetels_v1(ZigbangItemsOfficetelsV1RequestParameterModel(
+                geohash=geohash, sales_types=sales_types, **type_filters,
+            ))
+        else:
+            response = client.run_request_items_villas_v1(ZigbangItemsVillasV1RequestParameterModel(
+                geohash=geohash, sales_types=sales_types, **type_filters,
+            ))
+        yield geohash, response
 
 
 # 유형 하나의 (거래 유형 필터, 요청 필드)
@@ -341,7 +310,23 @@ def search_listings(
     queries, notes = _type_queries(conditions, property_types, requested_types)
     types = list(queries)
     # 핀을 받기 전에 본다. 표가 틀리면 요청 없이 멈춘다
-    starts = _start_offsets(start, types)
+    # 이어 받기 표(`--next`)에서 종류마다 다음에 받을 자리를 꺼낸다. 표가 없으면 모두 0 이다. 예전 `{'offset': n}` 표도 아래 에러에 걸린다
+    starts: dict[ZigbangPropertyType, int]
+    if start is None:
+        starts = {kind: 0 for kind in types}
+    else:
+        offsets = start.get('offsets')
+        if not (
+            isinstance(offsets, dict)
+            and set(offsets) == set(types)
+            and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in offsets.values())
+        ):
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message='이어 받기 표(--next)의 위치가 이 검색의 매물 종류와 맞지 않아 이어 받을 수 없습니다',
+                hint='--next 없이 같은 지역·조건으로 다시 검색하세요',
+            )
+        starts = {kind: offsets[kind] for kind in types}
     geohashes = [] if subway_id is not None else scope_geohashes(region, radius_km, boundary, GEOHASH_PRECISION)
     scan = _collect_pins(
         client, region, queries, geohashes=geohashes, subway_id=subway_id, radius_km=radius_km, boundary=boundary,
@@ -373,53 +358,13 @@ def search_listings(
     )
 
 
-def _type_query(
-    property_type: ZigbangPropertyType,
-    conditions: ZigbangRoomConditions,
-    requested_types: list[ZigbangPropertyType],
-    filters: dict[str, object],
-    notes: list[str],
-) -> _TypeQuery | None:
-    """유형 하나의 (거래 유형 필터, 요청 필드). 그 유형은 조회할 게 없으면 None 이고 직접 찾은 유형이면 `notes` 에 알린다."""
-    all_sales_types = [SALES_TYPE_BY_TRADE[trade] for trade in conditions.trade_types]
-    sales_types = all_sales_types
-    type_rooms = list(conditions.room_types)
-    if property_type == '빌라' and type_rooms and all(room in ONE_ROOM_STRUCTURES for room in type_rooms):
-        # 직방 빌라 목록은 투룸 이상뿐이라 원룸형 구조만 주면 늘 0건이다 (2026-10-10 실측: 3개 동 빌라
-        # 135건 모두 투룸 이상, 원룸형 조건 0건). 빌라 건물의 원룸은 직방이 원룸 목록에 둔다
-        if '빌라' in requested_types:
-            notes.append(note(
-                '범위',
-                '직방 빌라 목록은 투룸 이상만 있어 --room 의 원룸형 조건으로는 조회하지 않았습니다. '
-                '빌라(다세대·다가구) 건물의 원룸은 -t 원룸으로 찾으세요',
-            ))
-        return None
-    if property_type == '원룸':
-        sales_types = [sales_type for sales_type in all_sales_types if sales_type != '매매']
-        if conditions.trade_types and not sales_types:
-            # 원룸에 매매만 요청하면 해당 유형은 조회할 게 없다.
-            return None
-        # 원룸 목록은 투룸 오피스텔까지 섞어 주므로 방 하나짜리 구조만 요청한다
-        type_rooms = [room for room in type_rooms or ONE_ROOM_STRUCTURES if room in ONE_ROOM_STRUCTURES]
-        if not type_rooms:
-            if '원룸' in requested_types:
-                notes.append(note('범위', '원룸은 방 하나짜리(오픈형·분리형·복층형)만 찾아 --room 의 투룸 이상 조건으로는 조회하지 않았습니다'))
-            return None
-    type_filters = {**filters, 'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in type_rooms]}
-    # 방 1개짜리 아파트는 여기서 찾지 않는다는 안내는 원룸을 찾을 때마다 나와 docs/llm.md 로 옮겼다
-    if property_type == '오피스텔':
-        # 섞지 않은 순서로 받아 이어 받기의 자리가 흔들리지 않게 한다 (search_listings docstring)
-        type_filters['without_random'] = True
-    return sales_types, type_filters
-
-
 def _type_queries(
     conditions: ZigbangRoomConditions,
     property_types: list[ZigbangPropertyType],
     requested_types: list[ZigbangPropertyType],
 ) -> tuple[dict[ZigbangPropertyType, _TypeQuery], list[str]]:
     """조회할 종류마다 (거래 유형 필터, 요청 필드) 를 요청한 종류 순서로, 조회하지 않는 종류의 안내와 함께 만든다."""
-    # 방 구조는 유형마다 달라 _type_query 에서 넣는다
+    # 방 구조는 유형마다 달라 아래 반복에서 넣는다
     filters: dict[str, object] = {
         'deposit_min': conditions.deposit_min,
         'deposit_max': conditions.deposit_max,
@@ -431,34 +376,40 @@ def _type_queries(
     }
     notes: list[str] = []
     queries: dict[ZigbangPropertyType, _TypeQuery] = {}
+    # 조회할 게 없는 유형은 건너뛰고, 사용자가 직접 고른 유형(`requested_types`)이면 `notes` 에 알린다 (원룸에 매매만 준 것은
+    # `unsearchable_note` 가 알린다)
     for property_type in property_types:
-        query = _type_query(property_type, conditions, requested_types, filters, notes)
-        if query is not None:
-            queries[property_type] = query
+        all_sales_types = [SALES_TYPE_BY_TRADE[trade] for trade in conditions.trade_types]
+        sales_types = all_sales_types
+        type_rooms = list(conditions.room_types)
+        if property_type == '빌라' and type_rooms and all(room in ONE_ROOM_STRUCTURES for room in type_rooms):
+            # 직방 빌라 목록은 투룸 이상뿐이라 원룸형 구조만 주면 늘 0건이다 (2026-10-10 실측: 3개 동 빌라
+            # 135건 모두 투룸 이상, 원룸형 조건 0건). 빌라 건물의 원룸은 직방이 원룸 목록에 둔다
+            if '빌라' in requested_types:
+                notes.append(note(
+                    '범위',
+                    '직방 빌라 목록은 투룸 이상만 있어 --room 의 원룸형 조건으로는 조회하지 않았습니다. '
+                    '빌라(다세대·다가구) 건물의 원룸은 -t 원룸으로 찾으세요',
+                ))
+            continue
+        if property_type == '원룸':
+            sales_types = [sales_type for sales_type in all_sales_types if sales_type != '매매']
+            if conditions.trade_types and not sales_types:
+                # 원룸에 매매만 요청하면 해당 유형은 조회할 게 없다.
+                continue
+            # 원룸 목록은 투룸 오피스텔까지 섞어 주므로 방 하나짜리 구조만 요청한다
+            type_rooms = [room for room in type_rooms or ONE_ROOM_STRUCTURES if room in ONE_ROOM_STRUCTURES]
+            if not type_rooms:
+                if '원룸' in requested_types:
+                    notes.append(note('범위', '원룸은 방 하나짜리(오픈형·분리형·복층형)만 찾아 --room 의 투룸 이상 조건으로는 조회하지 않았습니다'))
+                continue
+        type_filters = {**filters, 'room_types': [ROOM_TYPE_FILTER_BY_LABEL[room] for room in type_rooms]}
+        # 방 1개짜리 아파트는 여기서 찾지 않는다는 안내는 원룸을 찾을 때마다 나와 docs/llm.md 로 옮겼다
+        if property_type == '오피스텔':
+            # 섞지 않은 순서로 받아 이어 받기의 자리가 흔들리지 않게 한다 (search_listings docstring)
+            type_filters['without_random'] = True
+        queries[property_type] = (sales_types, type_filters)
     return queries, notes
-
-
-def _start_offsets(start: dict[str, Any] | None, types: list[ZigbangPropertyType]) -> dict[ZigbangPropertyType, int]:
-    """이어 받기 표(`--next`)에서 종류마다 다음에 받을 자리를 꺼낸다. 표가 없으면 모두 0 이다.
-
-    Raises:
-        JibsaError: 표의 종류가 이번 검색의 종류와 다르거나 모양이 틀릴 때 (INVALID_ARGUMENT). 예전 `{'offset': n}` 표도
-            여기 걸린다.
-    """
-    if start is None:
-        return {kind: 0 for kind in types}
-    offsets = start.get('offsets')
-    if (
-        isinstance(offsets, dict)
-        and set(offsets) == set(types)
-        and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in offsets.values())
-    ):
-        return {kind: offsets[kind] for kind in types}
-    raise JibsaError(
-        code='INVALID_ARGUMENT',
-        message='이어 받기 표(--next)의 위치가 이 검색의 매물 종류와 맞지 않아 이어 받을 수 없습니다',
-        hint='--next 없이 같은 지역·조건으로 다시 검색하세요',
-    )
 
 
 def _split_limit(limit: int, remaining: list[int]) -> list[int]:
@@ -556,10 +507,12 @@ def _fill_officetel_complex_ids(
     # 오피스텔 13건 모두 그 칸에서 채움)
     cells = sorted({scan.oneroom_cells[int(listing.id)] for listing in missing if int(listing.id) in scan.oneroom_cells})
     try:
-        buildings = _officetel_building_ids(
-            client, geohashes=cells, subway_id=subway_id, radius_km=radius_km,
+        # 원룸 검색과 같은 조건의 오피스텔 핀에서 매물 ID → 건물 ID 를 받는다
+        responses = _scope_pins(
+            client, '오피스텔', geohashes=cells, subway_id=subway_id, radius_km=radius_km,
             sales_types=sales_types, type_filters=type_filters,
         )
+        buildings = {pin.id: pin.building_id for _, response in responses for pin in response.items if pin.building_id}
     except OPTIONAL_LOOKUP_ERRORS as exc:
         # 건물 ID 는 덤이라 못 받으면 모름(null)으로 둔다
         return [lookup_failure_note(
@@ -571,35 +524,6 @@ def _fill_officetel_complex_ids(
         if building_id:
             listing.complex_id = officetel_complex_id(building_id)
     return []
-
-
-def _type_share_note(
-    scan: _ScopePins,
-    starts: dict[ZigbangPropertyType, int],
-    shares: dict[ZigbangPropertyType, int],
-) -> str:
-    """종류 여럿을 찾았을 때 종류마다 범위 안 몇 건 중 목록의 몇 번째 자리를 받았는지 한 줄로 알린다."""
-    parts: list[str] = []
-    for kind, share in shares.items():
-        found = len(scan.ids_by_type[kind])
-        first, last = starts[kind] + 1, starts[kind] + share
-        if not found:
-            parts.append(f'{kind} 0건')
-        elif not share:
-            parts.append(f'{kind} 약 {found}건 중 0건')
-        elif first == last:
-            parts.append(f'{kind} 약 {found}건 중 1건 ({first}번째)')
-        else:
-            parts.append(f'{kind} 약 {found}건 중 {share}건 ({first}~{last}번째)')
-    overlaps = [f'{kind} {count}건' for kind, count in scan.overlaps.items() if count]
-    return note(
-        '참고',
-        '직방은 매물 종류마다 목록이 따로라 --limit 을 종류별로 나눠 각 목록 순서대로 받았습니다: ' + ', '.join(parts)
-        + (
-            f". 앞 종류 목록에도 있는 매물({', '.join(overlaps)}, 원룸 목록의 '이 지역 오피스텔')은 앞 종류에서만 세고 냅니다"
-            if overlaps else ''
-        ),
-    )
 
 
 def _search_result(
@@ -636,7 +560,28 @@ def _search_result(
         has_more=has_more,
     )
     if len(shares) > 1:
-        notes.append(_type_share_note(scan, starts, shares))
+        # 종류 여럿을 찾았을 때 종류마다 범위 안 몇 건 중 목록의 몇 번째 자리를 받았는지 한 줄로 알린다
+        parts: list[str] = []
+        for kind, share in shares.items():
+            found = len(scan.ids_by_type[kind])
+            first, last = starts[kind] + 1, starts[kind] + share
+            if not found:
+                parts.append(f'{kind} 0건')
+            elif not share:
+                parts.append(f'{kind} 약 {found}건 중 0건')
+            elif first == last:
+                parts.append(f'{kind} 약 {found}건 중 1건 ({first}번째)')
+            else:
+                parts.append(f'{kind} 약 {found}건 중 {share}건 ({first}~{last}번째)')
+        overlaps = [f'{kind} {count}건' for kind, count in scan.overlaps.items() if count]
+        notes.append(note(
+            '참고',
+            '직방은 매물 종류마다 목록이 따로라 --limit 을 종류별로 나눠 각 목록 순서대로 받았습니다: ' + ', '.join(parts)
+            + (
+                f". 앞 종류 목록에도 있는 매물({', '.join(overlaps)}, 원룸 목록의 '이 지역 오피스텔')은 앞 종류에서만 세고 냅니다"
+                if overlaps else ''
+            ),
+        ))
     return ZigbangSearchResult(
         region=region,
         radius_km=radius_km if boundary is None else None,

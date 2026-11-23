@@ -17,7 +17,6 @@ from jibsa.core.errors import (
 from jibsa.core.geo import encode_geohash
 from jibsa.core.korean import is_dong_code
 from jibsa.core.listing import (
-    Listing,
     TradeType,
     in_range,
     iso_date,
@@ -86,15 +85,6 @@ LOCAL_CATALOG_PAGE_SIZE: int = 20
 CATALOG_PAGE_SIZE: int = 20
 
 
-def apt_resume_changed_error() -> JibsaError:
-    """이어 받기(`--next`) 표의 지역이 다시 찾은 지역과 다를 때. 처음부터 다시 주면 앞 결과와 겹치는데 알 수 없다."""
-    return JibsaError(
-        code='INVALID_ARGUMENT',
-        message='앞 결과 뒤로 직방 지역 검색 결과가 바뀌어 이어 받을 수 없습니다',
-        hint='--next 없이 같은 지역·조건으로 다시 검색하세요',
-    )
-
-
 class ZigbangAptSearchResult(BaseModel):
     """아파트 지역 매물 검색 결과."""
 
@@ -160,25 +150,6 @@ def apt_dong_at(client: ZigbangClient, lat: float, lng: float) -> ZigbangAptRegi
             hint="아파트는 동·구 단위로 조회합니다. 동 이름(예: '역삼동')이나 구 이름(예: '강남구')으로 검색하세요",
         )
     return ZigbangAptRegion(name=response.name or code, lat=lat, lng=lng, legal_division_code=f'{code}00')
-
-
-def area_matches(listing: Listing, area_min_m2: float | None, area_max_m2: float | None) -> bool:
-    """전용면적 조건에 맞는지. 조건이 있는데 면적을 모르면 맞지 않는다고 본다."""
-    return in_range(listing.area_m2, area_min_m2, area_max_m2)
-
-
-def _validate_apt_supply_area(minimum: float | None, maximum: float | None) -> None:
-    """잘못된 공급면적 범위는 HTTP 요청 전에 거절한다."""
-    if any(value is not None and value < 0 for value in (minimum, maximum)):
-        raise JibsaError(
-            code='INVALID_ARGUMENT', message='공급면적은 0 이상이어야 합니다',
-            hint='--supply-area-min/max 에 ㎡ 단위의 0 이상 값을 주세요',
-        )
-    if minimum is not None and maximum is not None and minimum > maximum:
-        raise JibsaError(
-            code='INVALID_ARGUMENT', message='공급면적 상한은 하한 이상이어야 합니다',
-            hint='--supply-area-min/max 범위를 확인하세요',
-        )
 
 
 class ZigbangAptConditions(RequestModel):
@@ -261,10 +232,25 @@ def search_apt_listings(
     수(`offset`·`inspected`)에 더해 센다 (`catalog_null_notes` 가 알린다).
 
     Raises:
-        JibsaError: 이어 받기 표의 지역 코드(`code`)가 다시 찾은 지역과 다르거나 표 모양이 예전 것일 때 (INVALID_ARGUMENT).
+        JibsaError: 공급면적이 0 미만이거나 상한이 하한보다 작을 때, 이어 받기 표의 지역 코드(`code`)가 다시 찾은 지역과
+            다르거나 표 모양이 예전 것일 때 (INVALID_ARGUMENT).
     """
     conditions = conditions or ZigbangAptConditions()
-    _validate_apt_supply_area(conditions.supply_area_min_m2, conditions.supply_area_max_m2)
+    # 잘못된 공급면적 범위는 HTTP 요청 전에 거절한다
+    if any(value is not None and value < 0 for value in (conditions.supply_area_min_m2, conditions.supply_area_max_m2)):
+        raise JibsaError(
+            code='INVALID_ARGUMENT', message='공급면적은 0 이상이어야 합니다',
+            hint='--supply-area-min/max 에 ㎡ 단위의 0 이상 값을 주세요',
+        )
+    if (
+        conditions.supply_area_min_m2 is not None
+        and conditions.supply_area_max_m2 is not None
+        and conditions.supply_area_min_m2 > conditions.supply_area_max_m2
+    ):
+        raise JibsaError(
+            code='INVALID_ARGUMENT', message='공급면적 상한은 하한 이상이어야 합니다',
+            hint='--supply-area-min/max 범위를 확인하세요',
+        )
     if region.legal_division_code is None:
         raise RegionNotFoundError(region.name)
     local_code = local_code_of(region.legal_division_code)
@@ -279,7 +265,12 @@ def search_apt_listings(
     if start is not None:
         # 다른 동의 offset 으로 받거나, 처음부터 다시 줘도 알 수 없다. 여러 동을 합치던 예전 표(codes)도 여기서 막는다
         if start.get('code') != local_code:
-            raise apt_resume_changed_error()
+            # 이어 받기 표의 지역이 다시 찾은 지역과 다르다. 처음부터 다시 주면 앞 결과와 겹치는데 알 수 없다
+            raise JibsaError(
+                code='INVALID_ARGUMENT',
+                message='앞 결과 뒤로 직방 지역 검색 결과가 바뀌어 이어 받을 수 없습니다',
+                hint='--next 없이 같은 지역·조건으로 다시 검색하세요',
+            )
         offset = int(start['offset'])
     inspected = 0
     # 목록에서 뺀 빈 항목 수와, 카탈로그의 묶인 매물 ID 목록에서 뺀 빈 항목 수 (`catalog_null_notes`)
@@ -313,7 +304,8 @@ def search_apt_listings(
         inspected += received
         for catalog in response.catalogs:
             listing = catalog_to_listing(catalog, response.local1)
-            if listing is not None and area_matches(listing, conditions.area_min_m2, conditions.area_max_m2):
+            # 전용면적 조건이 있는데 면적을 모르면 맞지 않는다고 본다
+            if listing is not None and in_range(listing.area_m2, conditions.area_min_m2, conditions.area_max_m2):
                 listings.append(listing)
         offset += received
         done = not received or offset >= response.count

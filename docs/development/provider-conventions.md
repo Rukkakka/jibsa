@@ -248,8 +248,8 @@ def run_request_items_onerooms_v1(
 - "어떤 매물인지"(거래 유형·가격·면적·층·옵션 …)만 담는다. 지역·반경·`limit`·정렬처럼 "어디서 몇 개 찾을지"는 함수
   인자로 따로 받는다.
 - 목록 필드의 기본값은 `[]`(조건 없음)다. service 함수의 `conditions` 는 키워드 전용이고 `None` 이면 빈 조건이다.
-- 요청 필드로 바꾸는 함수는 `<무엇>_filter_of(conditions)` 로 짓는다 (`room_filter_of`, `listing_filter_of`,
-  `price_filter_of`, `complex_filter_of`). 같은 조건을 여러 요청이 쓰면 이 함수를 같이 쓴다.
+- 요청 필드로 바꾸는 함수는 `<무엇>_filter_of(conditions)` 로 짓는다 (`room_filter_of`, `price_filter_of`,
+  `complex_filter_of`). 같은 조건을 여러 요청이 쓰면 이 함수를 같이 쓴다.
 - 입력 검사(범위·라벨·조합)는 CLI 에서 한다 (`split_csv`, `validate_ranges`, `typer.BadParameter`). 에러 문구와 exit
   code 가 출력 계약이라, 검사를 모델로 옮겨 경로를 바꾸지 않는다. 모델은 `handle_errors` 안에서 만든다. 모델이 조합을
   검사하는 소스는 그 소스 개발 가이드에 적는다.

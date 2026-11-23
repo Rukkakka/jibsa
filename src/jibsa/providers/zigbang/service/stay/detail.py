@@ -310,12 +310,6 @@ def stay_parking(detail: ZigbangGuestItemsResponseModel) -> str | None:
     return f'{available} ({fee})' if fee and detail.parking_type in ('AVAILABLE', 'LIMITED') else available
 
 
-def stay_refund_rules(refund_policy: str | None) -> list[ZigbangStayRefundRule] | None:
-    """정책 코드의 위약금 표. 코드가 없거나 표에 없으면 None (웹은 표준 표를 보여 주지만 모르는 정책을 표준이라고 단정하지 않는다)."""
-    rules = STAY_REFUND_RULES.get(refund_policy or '')
-    return None if rules is None else [ZigbangStayRefundRule(when=when, penalty=penalty) for when, penalty in rules]
-
-
 def stay_unavailable_periods(schedules: list[ZigbangStayScheduleModel] | None) -> list[ZigbangStayUnavailablePeriod] | None:
     """웹 달력이 막는 일정(예약·막힘)을 기간으로. 일정이 없으면 [], 직방이 일정을 주지 않았으면 None.
 
@@ -372,6 +366,8 @@ def stay_detail_to_listing(
         conditional['pet_cleaning_fee_manwon'] = pet_cleaning_fee
     elif pet_allowed is None:
         conditional['pet_cleaning_fee_manwon'] = None
+    # 정책 코드의 위약금 표. 코드가 없거나 표에 없으면 None (웹은 표준 표를 보여 주지만 모르는 정책을 표준이라고 단정하지 않는다)
+    refund_table = STAY_REFUND_RULES.get(detail.refund_policy or '')
     return ZigbangStayListingDetail(
         source='zigbang',
         id=f'stay-{detail.id}',
@@ -415,7 +411,9 @@ def stay_detail_to_listing(
         max_guests=detail.max_guests,
         duplex=detail.is_duplex,
         refund_policy=_stay_label(STAY_REFUND_POLICY_LABELS, detail.refund_policy),
-        refund_rules=stay_refund_rules(detail.refund_policy),
+        refund_rules=None if refund_table is None else [
+            ZigbangStayRefundRule(when=when, penalty=penalty) for when, penalty in refund_table
+        ],
         kitchen_count=detail.kitchen_count,
         living_room_count=detail.living_room_count,
         pet_allowed=pet_allowed,
@@ -461,7 +459,7 @@ def get_stay_listing(
 
     입주일·마지막 날(`check_in`·`check_out`)을 주면 상세의 일정(`schedules`)으로 그 기간을 예약할 수 있는지(`available`)를
     웹 날짜 고르기 창 규칙대로 붙인다 (`stay_range_available`, 요청이 늘지 않는다). 일정 목록에 빈 항목(null)이 섞여 와서 뺐으면
-    그 항목이 막힌 날이었을 수 있어 `available`·`unavailable_periods` 는 null 이고 `[제외]` 로 알린다 (`_stay_null_notes`). 그 기간의 총비용은 웹이 로그인했을 때만
+    그 항목이 막힌 날이었을 수 있어 `available`·`unavailable_periods` 는 null 이고 `[제외]` 로 알린다. 그 기간의 총비용은 웹이 로그인했을 때만
     요금 계산(`price-calculation`)을 불러 보여 주어 내지 않는다 (2026-11-15 웹: 로그인하지 않으면 날짜를 골라도 주당 금액만).
 
     Raises:
@@ -485,9 +483,76 @@ def get_stay_listing(
     )
     summary = next((summary for summary in summaries.items if summary.id == item_id), None)
     listing = stay_detail_to_listing(detail, summary.reviewed_at if summary else None)
-    reviews, review_notes = _stay_reviews(client, item_id)
-    host_others, host_notes = _stay_host_others(client, item_id, detail.host_id)
-    notes = review_notes + host_notes + _stay_null_notes(detail, listing, with_period=period is not None)
+    # 후기 수·평균 평점 (웹 상세 후기 배지의 `fetchItemReviewSummary` 와 같은 호출). 없는 매물도 200 에 빈 응답이라 상세로 매물이
+    # 있는 것을 확인한 뒤에만 부른다. 후기 글·작성자·사진은 읽지 않는다.
+    reviews: dict[str, Any]
+    review_notes: list[str] = []
+    try:
+        review_response = client.run_request_guest_items_reviews(ZigbangGuestItemsReviewsRequestParameterModel(item_id=item_id, limit=1))
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        reviews = dict(review_count=None, review_rating=None)
+        review_notes = [lookup_failure_note(
+            exc, '직방', '후기 정보', 'review_count·review_rating 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+        )]
+    else:
+        review_summary = review_response.summary
+        review_count = review_summary.review_count if review_summary else None
+        # 후기가 없으면(0) 평점 키는 not_applicable_fields 가 뺀다. 값은 직방 원값 그대로 둔다
+        reviews = dict(
+            review_count=review_count, review_rating=review_summary.average_rating if review_summary and review_count else None,
+        )
+    # 같은 임대인의 다른 방 (웹 상세 맨 아래 '임대인의 다른 방', 지금 매물 제외). 앞 `STAY_HOST_OTHER_LIMIT` 건과 전체 수다.
+    # 임대인 ID 가 없거나 0 이하면 부르지 않고 둘 다 null 이다 (안내 없음). 서버 순서(검수 시각 늦은 순)를 그대로 낸다.
+    # 응답에 목록이 없거나 null 이면 `host_other_listings` 는 null 이고 (모름), 전체 수는 직방이 준 값 그대로다.
+    # 내려간 방(status false)은 서버가 목록과 totalCount 에서 뺀다 (2026-11-20 실측: 임대인 4747 의 4120, 1556 의 1200 이 빠졌다).
+    # 웹 상세 화면도 이 응답을 거르지 않고 그대로 그려(번들 useGuestHostItems·StayItemDetailScreen) 상태를 다시 보지 않는다.
+    host_others: dict[str, Any]
+    host_notes: list[str] = []
+    if detail.host_id is None or detail.host_id <= 0:
+        host_others = dict(host_other_listings=None, host_other_listing_count=None)
+    else:
+        try:
+            host_response = client.run_request_guest_items_host(ZigbangGuestItemsHostRequestParameterModel(
+                host_id=detail.host_id, exclude_item_id=item_id, page=1, limit=STAY_HOST_OTHER_LIMIT,
+            ))
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            # 다른 방을 못 받아도 매물 상세는 돌려준다 (모름)
+            host_others = dict(host_other_listings=None, host_other_listing_count=None)
+            host_notes = [lookup_failure_note(
+                exc, '직방', '임대인의 다른 방 정보',
+                'host_other_listings·host_other_listing_count 값을 모릅니다 (url 의 직방 페이지에서 확인)',
+            )]
+        else:
+            host_items = host_response.items
+            host_count = host_response.total_count
+            # 직방이 수를 주지 않아도 다른 방이 하나도 없으면 0 이다 (목록 자체를 모르면 수도 모른다)
+            if host_count is None and host_items is not None and not host_items:
+                if dropped := host_response.null_items('items'):
+                    # 목록에서 빈 항목(null)을 빼서 비었을 뿐 다른 방이 없는 것인지 알 수 없다. 없음([])·0 이 아니라 둘 다 모름이다.
+                    # 직방이 준 수(total_count)가 있으면 그 값이 맞아 이 분기에 오지 않는다
+                    host_notes.append(null_items_note(
+                        '직방 임대인의 다른 방', dropped, ('host_other_listings', 'host_other_listing_count'),
+                    ))
+                    host_items = None
+                else:
+                    host_count = 0
+            host_others = dict(
+                host_other_listings=None if host_items is None else [stay_summary_to_listing(summary) for summary in host_items[:STAY_HOST_OTHER_LIMIT]],
+                host_other_listing_count=host_count,
+            )
+    null_notes: list[str] = []
+    if dropped := detail.null_items('schedules'):
+        null_notes.append(null_items_note(
+            '직방 단기임대 예약 일정', dropped, ('unavailable_periods', 'available') if period is not None else ('unavailable_periods',),
+        ))
+    # 옵션(`itemOptions`)에서 빈 항목을 뺐는데 반려동물 분류를 찾지 못했으면 `pet_allowed` 를 모른다 (찾았으면 그 목록은 늘어놓기만 해 안내하지 않는다)
+    if (dropped := detail.null_items('item_options')) and listing.pet_allowed is None:
+        # 반려동물 동반 가능 여부를 모를 때 추가 청소비는 0 보다 크면 그 값이고 아니면 null 이다 (`pet_cleaning_fee_manwon`)
+        null_notes.append(null_items_note(
+            '직방 단기임대 옵션', dropped,
+            ('pet_allowed', 'pet_cleaning_fee_manwon') if listing.pet_cleaning_fee_manwon is None else ('pet_allowed',),
+        ))
+    notes = review_notes + host_notes + null_notes
     listing = listing.model_copy(update={**reviews, **host_others, 'notes': notes})
     if period is None:
         return listing
@@ -496,86 +561,6 @@ def get_stay_listing(
         detail.schedules, detail.min_contract_weeks, period.check_in, period.check_out, datetime.now(KST).date(),
     )
     return listing.model_copy(update={'available': available})
-
-
-def _stay_null_notes(detail: ZigbangGuestItemsResponseModel, listing: ZigbangStayListingDetail, *, with_period: bool) -> list[str]:
-    """상세의 일정·옵션 목록에서 빈 항목(null)을 빼고 읽어 칸을 모름(null)으로 둔 안내. 그런 칸이 없으면 빈 목록이다.
-
-    일정(`schedules`)에서 뺐으면 `unavailable_periods` 와 (날짜를 줬으면) `available` 을 모르고, 옵션(`itemOptions`)에서 뺐는데 반려동물
-    분류를 찾지 못했으면 `pet_allowed` 를 모른다 (찾았으면 그 목록은 늘어놓기만 해 안내하지 않는다). `listing` 은 `stay_detail_to_listing` 의 결과다.
-    """
-    notes: list[str] = []
-    if dropped := detail.null_items('schedules'):
-        notes.append(null_items_note(
-            '직방 단기임대 예약 일정', dropped, ('unavailable_periods', 'available') if with_period else ('unavailable_periods',),
-        ))
-    if (dropped := detail.null_items('item_options')) and listing.pet_allowed is None:
-        # 반려동물 동반 가능 여부를 모를 때 추가 청소비는 0 보다 크면 그 값이고 아니면 null 이다 (`pet_cleaning_fee_manwon`)
-        notes.append(null_items_note(
-            '직방 단기임대 옵션', dropped,
-            ('pet_allowed', 'pet_cleaning_fee_manwon') if listing.pet_cleaning_fee_manwon is None else ('pet_allowed',),
-        ))
-    return notes
-
-
-def _stay_reviews(client: ZigbangClient, item_id: int) -> tuple[dict[str, Any], list[str]]:
-    """후기 수·평균 평점 (웹 상세 후기 배지의 `fetchItemReviewSummary` 와 같은 호출). 조회가 실패하면 둘 다 null 이고 `[실패]` 안내를 함께 준다.
-
-    없는 매물도 200 에 빈 응답이라 상세로 매물이 있는 것을 확인한 뒤에만 부른다. 후기 글·작성자·사진은 읽지 않는다.
-    """
-    try:
-        response = client.run_request_guest_items_reviews(ZigbangGuestItemsReviewsRequestParameterModel(item_id=item_id, limit=1))
-    except OPTIONAL_LOOKUP_ERRORS as exc:
-        # 후기를 못 받아도 매물 상세는 돌려준다 (모름)
-        return dict(review_count=None, review_rating=None), [lookup_failure_note(
-            exc, '직방', '후기 정보', 'review_count·review_rating 값을 모릅니다 (url 의 직방 페이지에서 확인)',
-        )]
-    summary = response.summary
-    count = summary.review_count if summary else None
-    # 후기가 없으면(0) 평점 키는 not_applicable_fields 가 뺀다. 값은 직방 원값 그대로 둔다
-    return dict(review_count=count, review_rating=summary.average_rating if summary and count else None), []
-
-
-def _stay_host_others(client: ZigbangClient, item_id: int, host_id: int | None) -> tuple[dict[str, Any], list[str]]:
-    """같은 임대인의 다른 방 (웹 상세 맨 아래 '임대인의 다른 방', 지금 매물 제외). 앞 `STAY_HOST_OTHER_LIMIT` 건과 전체 수.
-
-    임대인 ID 가 없거나 0 이하면 부르지 않고 둘 다 null 이다 (안내 없음). 조회가 실패하면(없는 임대인의 404 포함) 둘 다 null 이고 `[실패]` 안내를
-    함께 준다. 서버 순서(검수 시각 늦은 순)를 그대로 낸다. 응답에 목록이 없거나 null 이면 `host_other_listings` 는 null 이고
-    (모름), 전체 수는 직방이 준 값 그대로다.
-
-    내려간 방(status false)은 서버가 목록과 totalCount 에서 뺀다 (2026-11-20 실측: 임대인 4747 의 4120, 1556 의 1200 이 빠졌다).
-    웹 상세 화면도 이 응답을 거르지 않고 그대로 그려(번들 useGuestHostItems·StayItemDetailScreen) 상태를 다시 보지 않는다.
-    """
-    if host_id is None or host_id <= 0:
-        return dict(host_other_listings=None, host_other_listing_count=None), []
-    try:
-        response = client.run_request_guest_items_host(ZigbangGuestItemsHostRequestParameterModel(
-            host_id=host_id, exclude_item_id=item_id, page=1, limit=STAY_HOST_OTHER_LIMIT,
-        ))
-    except OPTIONAL_LOOKUP_ERRORS as exc:
-        # 다른 방을 못 받아도 매물 상세는 돌려준다 (모름)
-        return dict(host_other_listings=None, host_other_listing_count=None), [lookup_failure_note(
-            exc, '직방', '임대인의 다른 방 정보',
-            'host_other_listings·host_other_listing_count 값을 모릅니다 (url 의 직방 페이지에서 확인)',
-        )]
-    items = response.items
-    count = response.total_count
-    notes: list[str] = []
-    # 직방이 수를 주지 않아도 다른 방이 하나도 없으면 0 이다 (목록 자체를 모르면 수도 모른다)
-    if count is None and items is not None and not items:
-        if dropped := response.null_items('items'):
-            # 목록에서 빈 항목(null)을 빼서 비었을 뿐 다른 방이 없는 것인지 알 수 없다. 없음([])·0 이 아니라 둘 다 모름이다.
-            # 직방이 준 수(total_count)가 있으면 그 값이 맞아 이 분기에 오지 않는다
-            notes.append(null_items_note(
-                '직방 임대인의 다른 방', dropped, ('host_other_listings', 'host_other_listing_count'),
-            ))
-            items = None
-        else:
-            count = 0
-    return dict(
-        host_other_listings=None if items is None else [stay_summary_to_listing(summary) for summary in items[:STAY_HOST_OTHER_LIMIT]],
-        host_other_listing_count=count,
-    ), notes
 
 
 def stay_range_available(

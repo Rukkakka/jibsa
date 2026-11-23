@@ -34,7 +34,6 @@ from jibsa.providers.dabang.api.request.neighborhood import (
     DabangSchoolSummaryType,
 )
 from jibsa.providers.dabang.api.response.neighborhood import (
-    DabangCountGroupModel,
     DabangCountModel,
     DabangDistributionModel,
     DabangHotPlaceModel,
@@ -428,35 +427,12 @@ def _type_counts(result: DabangRegionInfoSummaryResultModel) -> DabangCountStats
     return DabangCountStats(total=total, by_type=by_type, rank=_rank(result.ranking_group))
 
 
-def _counts(groups: list[DabangCountGroupModel]) -> dict[str, dict[str, int | None]]:
-    result: dict[str, dict[str, int | None]] = {}
-    for group in groups:
-        name = group.amenity_type_name or group.mobility_type_name or group.life_safety_type_name or group.school_type_name
-        if name:
-            result[name] = _count_items(group.count_list)
-    return result
-
-
 def _count_items(items: list[DabangCountModel]) -> dict[str, int | None]:
     return {
         label: count_of(item.formatted_count)
         for item in items
         if (label := item.facility_name or item.establishment_type_name or item.academy_type_name)
     }
-
-
-def _population(result: DabangRegionInfoSummaryResultModel) -> DabangPopulation:
-    genders = {group.gender_type_name: group.count for group in result.gender_distribution_list}
-    return DabangPopulation(
-        total=result.total_count,
-        male=genders.get('남성'),
-        female=genders.get('여성'),
-        ages=[
-            DabangAgeGroup(age=group.age_type_name or '', count=group.count, percent=group.percent)
-            for group in result.age_distribution_list
-        ],
-        rank=_rank(result.ranking_group),
-    )
 
 
 def _month(update_date: str | None) -> str | None:
@@ -519,7 +495,20 @@ def get_neighborhood(
         )
     if '인구' in chosen:
         result = summary('population')
-        data['population'] = None if result is None else _population(result)
+        if result is None:
+            data['population'] = None
+        else:
+            genders = {group.gender_type_name: group.count for group in result.gender_distribution_list}
+            data['population'] = DabangPopulation(
+                total=result.total_count,
+                male=genders.get('남성'),
+                female=genders.get('여성'),
+                ages=[
+                    DabangAgeGroup(age=group.age_type_name or '', count=group.count, percent=group.percent)
+                    for group in result.age_distribution_list
+                ],
+                rank=_rank(result.ranking_group),
+            )
     for topic, api_topic in COUNT_TOPIC_BY_LABEL.items():
         if topic not in chosen:
             continue
@@ -529,7 +518,11 @@ def get_neighborhood(
         if counts is None:
             data[FIELD_BY_TOPIC[topic]] = None
             continue
-        values = _counts(counts.facility_count_list or counts.school_count_list)
+        values: dict[str, dict[str, int | None]] = {}
+        for group in counts.facility_count_list or counts.school_count_list:
+            name = group.amenity_type_name or group.mobility_type_name or group.life_safety_type_name or group.school_type_name
+            if name:
+                values[name] = _count_items(group.count_list)
         if counts.academy_count is not None:
             values['학원'] = _count_items(counts.academy_count.count_list)
         data[FIELD_BY_TOPIC[topic]] = values

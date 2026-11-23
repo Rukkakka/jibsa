@@ -89,7 +89,7 @@ SORT_TYPE_BY_TRADE: dict[LocalTrade, dict[str, ZigbangDanjiRankingSortType]] = {
     '월세': {'거래량 많은순': 'volume_desc'},
 }
 # 정렬마다 줄에 오는 칸 (2026-11-22 표본: 정렬 일곱 가지를 모두 불렀다). 거래량·시세·평당가·인기·전세가율은 사용승인일·총세대수가 오고, 하락률·상승률은
-# 직전 거래 대비 값이 오며 사용승인일·총세대수는 오지 않는다. 하락·상승률의 가격 칸은 거래 유형이 정한다 (`_present_fields`)
+# 직전 거래 대비 값이 오며 사용승인일·총세대수는 오지 않는다. 하락·상승률의 가격 칸은 거래 유형이 정한다 (`_rank_of`)
 RATE_FIELDS: frozenset[str] = frozenset({'contract_date', 'diff_manwon', 'change_rate_percent', 'area_type'})
 RANK_FIELDS_BY_SORT: dict[ZigbangDanjiRankingSortType, frozenset[str]] = {
     'volume_desc': frozenset({'trade_count', 'approved_at', 'households'}),
@@ -255,28 +255,6 @@ class _RankingPages(NamedTuple):
     failure: tuple[int, Exception | None] | None
 
 
-def _kst_minute(value: str | None) -> str | None:
-    """서버의 UTC 일시('2026-11-22T00:00:00.367Z')를 한국 시간 'YYYY-MM-DD HH:MM' 으로. 읽지 못하면 None."""
-    if value is None:
-        return None
-    try:
-        moment = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
-    except ValueError:
-        return None
-    if moment.tzinfo is None:
-        # 시간대가 없으면 한국 시간으로 본다 (`normalize_date` 와 같다)
-        moment = moment.replace(tzinfo=KST)
-    return moment.astimezone(KST).strftime('%Y-%m-%d %H:%M')
-
-
-def _present_fields(sort_type: ZigbangDanjiRankingSortType, trade: LocalTrade) -> frozenset[str]:
-    """정렬·거래 유형에서 줄에 키가 있는 칸. 하락·상승률의 가격 칸은 매매가 `price_manwon`, 전세가 `deposit_manwon` 이다."""
-    fields = RANK_FIELDS_BY_SORT[sort_type]
-    if sort_type in ('decrease_rate_desc', 'increase_rate_desc'):
-        return fields | {'price_manwon' if trade == '매매' else 'deposit_manwon'}
-    return fields
-
-
 def _rank_of(
     item: ZigbangDanjiRankingModel,
     sort_type: ZigbangDanjiRankingSortType,
@@ -284,6 +262,10 @@ def _rank_of(
     level: LocalLevel,
 ) -> ZigbangDanjiRank:
     """랭킹 한 줄을 만든다. 그 정렬에 오지 않는 칸과 동 단위 조회의 동은 키를 뺀다 (`not_applicable`)."""
+    # 정렬·거래 유형에서 줄에 키가 있는 칸. 하락·상승률의 가격 칸은 매매가 `price_manwon`, 전세가 `deposit_manwon` 이다
+    present = RANK_FIELDS_BY_SORT[sort_type]
+    if sort_type in ('decrease_rate_desc', 'increase_rate_desc'):
+        present = present | {'price_manwon' if trade == '매매' else 'deposit_manwon'}
     return ZigbangDanjiRank(
         rank=item.ranking_number,
         complex_id=None if item.area_danji_id is None else apt_complex_id(item.area_danji_id),
@@ -303,15 +285,7 @@ def _rank_of(
         view_count=item.view_count,
         jeonse_rate_percent=item.charter_rate,
         gap_manwon=item.gap,
-        not_applicable=(SORT_ONLY_FIELDS - _present_fields(sort_type, trade)) | dong_not_applicable(level),
-    )
-
-
-def _upstream_error() -> JibsaError:
-    return JibsaError(
-        code='UPSTREAM_ERROR',
-        message='직방이 단지 랭킹 목록을 주지 않았습니다',
-        hint=UPSTREAM_RETRY_HINT,
+        not_applicable=(SORT_ONLY_FIELDS - present) | dong_not_applicable(level),
     )
 
 
@@ -353,7 +327,11 @@ def _collect_pages(
             return _RankingPages(first, rows, received, dropped, False, (page, exc))
         if response.rankings is None:
             if first is None:
-                raise _upstream_error()
+                raise JibsaError(
+                    code='UPSTREAM_ERROR',
+                    message='직방이 단지 랭킹 목록을 주지 않았습니다',
+                    hint=UPSTREAM_RETRY_HINT,
+                )
             return _RankingPages(first, rows, received, dropped, False, (page, None))
         if first is None:
             first = response
@@ -426,6 +404,18 @@ def get_region_ranking(
         )
         # 쪽을 받지 못한 때는 --limit 을 늘려도 같은 곳에서 멈출 수 있어 더 보는 법 대신 실패 안내를 따른다
         notes.append(note('일부', head if pages.failure is not None else f'{head}. {more_hint(limit, RANKING_MAX_RANKS, None)}'))
+    # 서버의 UTC 일시('2026-11-22T00:00:00.367Z')를 한국 시간 'YYYY-MM-DD HH:MM' 으로. 읽지 못하면 None
+    updated_at: str | None = None
+    if pages.first.updated_date is not None:
+        try:
+            moment = datetime.fromisoformat(pages.first.updated_date.strip().replace('Z', '+00:00'))
+        except ValueError:
+            pass
+        else:
+            if moment.tzinfo is None:
+                # 시간대가 없으면 한국 시간으로 본다 (`normalize_date` 와 같다)
+                moment = moment.replace(tzinfo=KST)
+            updated_at = moment.astimezone(KST).strftime('%Y-%m-%d %H:%M')
     return ZigbangRegionRankingResult(
         region=local_region_of(area),
         trade_type=trade,
@@ -433,7 +423,7 @@ def get_region_ranking(
         period=period,
         start_date=iso_date(pages.first.start_date),
         end_date=iso_date(pages.first.end_date),
-        updated_at=_kst_minute(pages.first.updated_date),
+        updated_at=updated_at,
         total=total,
         returned=len(rankings),
         has_more=has_more,

@@ -106,13 +106,6 @@ class ZigbangStayListing(Listing):
         return super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
 
 
-def _discount_amount_text(amount_won: float | None) -> str | None:
-    """할인 금액(원)을 'N만원' 으로 (반올림 없이 원 단위까지, 2,500원 → '0.25만원'). 금액이 없거나 0 이하면 None (할인이 아니다)."""
-    if not amount_won or amount_won <= 0:
-        return None
-    return f'{format_manwon(won_to_manwon(amount_won) or 0)}만원'
-
-
 def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | None) -> str | None:
     """할인 조건 한 줄. 웹 상세(`DiscountDetailList`)가 그리지 않는 할인은 None.
 
@@ -128,7 +121,11 @@ def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | N
             return None
         return f'{weeks}주 이상 {rate:g}% 할인'
     if discount.discount_type == 'INSTANT':
-        amount = _discount_amount_text(discount.discount_amount)
+        # 할인 금액(원)을 'N만원' 으로 (반올림 없이 원 단위까지, 2,500원 → '0.25만원'). 금액이 없거나 0 이하면 None (할인이 아니다)
+        amount = (
+            None if not discount.discount_amount or discount.discount_amount <= 0
+            else f'{format_manwon(won_to_manwon(discount.discount_amount) or 0)}만원'
+        )
         if amount is None:
             # 리뷰 오탐 (2026-11-15): --discount 즉시 결과에서 즉시 할인이 빠지지 않는다. 웹이 금액 없는 즉시 할인을 숨기고,
             # 실측 강남역 --discount 즉시 의 즉시 할인 27건은 모두 금액(discountAmount)이 있었다 (할인율만 있는 것 0건)

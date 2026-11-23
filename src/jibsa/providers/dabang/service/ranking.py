@@ -40,7 +40,6 @@ from jibsa.providers.dabang.api.request.ranking import (
     DabangWatchBaseOn,
 )
 from jibsa.providers.dabang.api.response.ranking import (
-    DabangFluctuationModel,
     DabangRegionRankingItemModel,
     DabangRegionRankingResultModel,
 )
@@ -258,13 +257,6 @@ def _manwon(text: str | None) -> float | None:
     return None if amount is None else sign * amount
 
 
-def _change(fluctuation: DabangFluctuationModel | None) -> str | None:
-    if fluctuation is None or fluctuation.type is None:
-        return None
-    label = FLUCTUATION_LABELS.get(fluctuation.type, fluctuation.type)
-    return f'{label} {fluctuation.rank}' if fluctuation.type in ('UP', 'DOWN') and fluctuation.rank else label
-
-
 class DabangWatchRanking(BaseModel):
     """조회 순위 한 칸. 단지면 단지 필드, 동이면 동 필드가 있다."""
 
@@ -371,7 +363,12 @@ def get_watch_rankings(
                 address=normalize_address(row.address) if unit == '단지' else row.state_name,
                 legal_division_code=legal_division_code(row.dong_code) if row.dong_code else None,
                 view_count=row.watch_count,
-                change=_change(row.fluctuation),
+                change=(
+                    None if row.fluctuation is None or row.fluctuation.type is None
+                    else f'{FLUCTUATION_LABELS.get(row.fluctuation.type, row.fluctuation.type)} {row.fluctuation.rank}'
+                    if row.fluctuation.type in ('UP', 'DOWN') and row.fluctuation.rank
+                    else FLUCTUATION_LABELS.get(row.fluctuation.type, row.fluctuation.type)
+                ),
             )
             for row in rows
         ],
@@ -761,20 +758,6 @@ def takes_dong_scope(metric_label: str, unit: Literal['동', '단지']) -> bool:
     return unit == '단지' and not isinstance(METRIC_BY_LABEL[metric_label], InfoMetricSpec)
 
 
-def _dong_scope_error(metric_label: str, name: str, *, room: bool) -> JibsaError:
-    info = isinstance(METRIC_BY_LABEL[metric_label], InfoMetricSpec)
-    what = f'{metric_label} 순위는 동네정보 항목이라' if info else '동 안의 동 순위는 없어'
-    # 빌라 순위('매물정보' 탭)는 동 순위만 있어 --unit 단지 를 권하면 따른 뒤 다시 막힌다 (2026-11-14 리뷰)
-    return JibsaError(
-        code='INVALID_ARGUMENT',
-        message=f'{what} 동 범위({name})를 받지 않습니다',
-        hint=(
-            "시·군·구 이름(예: '강남구')을 범위로 주세요" if info or room
-            else "동 안 단지 순위는 --unit 단지 를 주고, 동 순위는 시·군·구 이름(예: '강남구')을 범위로 주세요"
-        ),
-    )
-
-
 def check_scope_name(query: str, *, metric_label: str, unit: Literal['동', '단지'], complex_types: list[str]) -> None:
     """동 범위를 받지 않는 순위(동 순위·동네정보)에 동 모양의 이름이 오면 장소 검색 없이 막는다. 동이 아닌 이름(역·오타)은
     `resolve_scope(dong=False)` 가 요청 없이 REGION_NOT_FOUND 로 막는다 (동을 찾게 두면 요청 1회 뒤 동 이름을 권하는 안내가 나가,
@@ -791,7 +774,17 @@ def check_scope_name(query: str, *, metric_label: str, unit: Literal['동', '단
     # 순위 여부가 필요한데 resolve_scope 는 이것들을 받지 않아 여기 따로 둔다
     words = query.split()
     if words and not takes_dong_scope(metric_label, unit) and DONG_NAME_PATTERN.fullmatch(words[-1]):
-        raise _dong_scope_error(metric_label, query.strip(), room=is_room_ranking(complex_types))
+        info = isinstance(METRIC_BY_LABEL[metric_label], InfoMetricSpec)
+        what = f'{metric_label} 순위는 동네정보 항목이라' if info else '동 안의 동 순위는 없어'
+        # 빌라 순위('매물정보' 탭)는 동 순위만 있어 --unit 단지 를 권하면 따른 뒤 다시 막힌다 (2026-11-14 리뷰)
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message=f'{what} 동 범위({query.strip()})를 받지 않습니다',
+            hint=(
+                "시·군·구 이름(예: '강남구')을 범위로 주세요" if info or is_room_ranking(complex_types)
+                else "동 안 단지 순위는 --unit 단지 를 주고, 동 순위는 시·군·구 이름(예: '강남구')을 범위로 주세요"
+            ),
+        )
 
 
 def get_region_ranking(

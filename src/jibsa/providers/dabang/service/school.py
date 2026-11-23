@@ -28,8 +28,6 @@ from jibsa.providers.dabang.api.request.school import (
 )
 from jibsa.providers.dabang.api.response.school import (
     DabangEducationV3ResponseModel,
-    DabangKinderEducationV3ResponseModel,
-    DabangNurseryEducationV3ResponseModel,
     DabangRegionalSchoolModel,
 )
 from jibsa.providers.dabang.service.common import (
@@ -443,52 +441,6 @@ def _services(values: list[str] | None) -> list[str] | None:
     return [value.strip() for value in values if value.strip()]
 
 
-# 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): 단위 글자를 짐작하는 common.count_of 와 달리 숫자만 있는 글자만 받아, 꼴이 바뀌면
-# (예: 1~2) 첫 숫자로 짐작하지 않고 모름(null)으로 둔다. 웹(school 청크 `Ue`)은 글자를 그대로 보인다
-def _vehicles(value: str | None) -> int | None:
-    text = (value or '').strip()
-    return int(text) if text.isdecimal() else None
-
-
-def _nursery(school_code: str, nursery: DabangNurseryEducationV3ResponseModel) -> DabangChildcareDetail:
-    return DabangChildcareDetail(
-        school_code=school_code,
-        level='어린이집',
-        name=nursery.name,
-        establishment=nursery.type,
-        address=normalize_address(nursery.address),
-        stats_period=_stats_period(nursery.base_date),
-        operating_hours=nursery.operating_time,
-        school_bus=nursery.schoolbus,
-        children_total=nursery.total_class,
-        children=_groups(nursery, NURSERY_GROUPS),
-        teachers=_teachers(nursery, NURSERY_TEACHERS),
-        children_per_teacher=nursery.child_per_teacher,
-        services=_services(nursery.provide_service),
-        url=nursery.link_url,
-    )
-
-
-def _kinder(school_code: str, kinder: DabangKinderEducationV3ResponseModel) -> DabangChildcareDetail:
-    return DabangChildcareDetail(
-        school_code=school_code,
-        level='유치원',
-        name=kinder.name,
-        establishment=kinder.establish_divide,
-        address=normalize_address(kinder.road_address),
-        stats_period=_stats_period(kinder.base_date),
-        operating_hours=kinder.operating_hour,
-        school_bus_vehicles=_vehicles(kinder.commute_school_car),
-        homepage=kinder.homepage or None,
-        children_total=kinder.total_current,
-        children=_groups(kinder, KINDER_GROUPS),
-        teachers=_teachers(kinder, KINDER_TEACHERS),
-        children_per_teacher=kinder.child_per_teacher,
-        services=_services(kinder.provide_service),
-        url=kinder.link_url,
-    )
-
-
 def get_school(client: DabangClient, school_code: str, level: EducationLevel) -> DabangSchoolDetail | DabangChildcareDetail:
     """학교·유치원·어린이집 하나의 공시 (요청 1회). 전화·좌표는 옮기지 않는다 (학교는 홈페이지도).
 
@@ -503,7 +455,22 @@ def get_school(client: DabangClient, school_code: str, level: EducationLevel) ->
             level,
             school_code,
         )
-        return _nursery(school_code, nursery)
+        return DabangChildcareDetail(
+            school_code=school_code,
+            level='어린이집',
+            name=nursery.name,
+            establishment=nursery.type,
+            address=normalize_address(nursery.address),
+            stats_period=_stats_period(nursery.base_date),
+            operating_hours=nursery.operating_time,
+            school_bus=nursery.schoolbus,
+            children_total=nursery.total_class,
+            children=_groups(nursery, NURSERY_GROUPS),
+            teachers=_teachers(nursery, NURSERY_TEACHERS),
+            children_per_teacher=nursery.child_per_teacher,
+            services=_services(nursery.provide_service),
+            url=nursery.link_url,
+        )
     if level == '유치원':
         kinder = _fetch_education(
             lambda: client.run_request_education_kinder_school_v3(
@@ -512,7 +479,26 @@ def get_school(client: DabangClient, school_code: str, level: EducationLevel) ->
             level,
             school_code,
         )
-        return _kinder(school_code, kinder)
+        # 리뷰 오탐 (2026-11-14, 근거 고침 2026-11-20): 단위 글자를 짐작하는 common.count_of 와 달리 숫자만 있는 글자만 받아, 꼴이 바뀌면
+        # (예: 1~2) 첫 숫자로 짐작하지 않고 모름(null)으로 둔다. 웹(school 청크 `Ue`)은 글자를 그대로 보인다
+        vehicles_text = (kinder.commute_school_car or '').strip()
+        return DabangChildcareDetail(
+            school_code=school_code,
+            level='유치원',
+            name=kinder.name,
+            establishment=kinder.establish_divide,
+            address=normalize_address(kinder.road_address),
+            stats_period=_stats_period(kinder.base_date),
+            operating_hours=kinder.operating_hour,
+            school_bus_vehicles=int(vehicles_text) if vehicles_text.isdecimal() else None,
+            homepage=kinder.homepage or None,
+            children_total=kinder.total_current,
+            children=_groups(kinder, KINDER_GROUPS),
+            teachers=_teachers(kinder, KINDER_TEACHERS),
+            children_per_teacher=kinder.child_per_teacher,
+            services=_services(kinder.provide_service),
+            url=kinder.link_url,
+        )
     school_level: SchoolLevel = level
     school = _fetch_education(
         lambda: client.run_request_education_v3(
@@ -647,21 +633,6 @@ class DabangSchoolListResult(BaseModel):
     ] = []
 
 
-def _regional_school(row: DabangRegionalSchoolModel, level: EducationLevel, labels: dict[str, str]) -> DabangRegionalSchool:
-    # 웹 목록 칩도 같은 표로 바꾸고 모르는 값은 빈 칩이다 (school-regional 청크 `f`). labels 는 다방 값 → 설립 구분 이름
-    return DabangRegionalSchool(
-        school_code=row.school_code,
-        level=level,
-        name=row.school_name,
-        establishment=labels.get(row.school_establishment_type or ''),
-        address=normalize_address(row.address),
-        advancement=None if row.advancement_list is None else [
-            DabangRegionalAdvancement(destination=item.advancement_type_name, percent=item.advancement_percentage)
-            for item in row.advancement_list
-        ],
-    )
-
-
 def search_schools(
     client: DabangClient,
     dong: DabangDong,
@@ -686,8 +657,22 @@ def search_schools(
         return DabangPage(result.list_ or [], result.total, bool(result.has_more), result.null_items('list_')) if result else None
 
     pages = fetch_pages(fetch, limit, page_size=REGION_INFO_PAGE_LIMIT, max_limit=REGION_INFO_MAX_LIMIT)
+    # 웹 목록 칩도 같은 표로 바꾸고 모르는 값은 빈 칩이다 (school-regional 청크 `f`). labels 는 다방 값 → 설립 구분 이름
     labels: dict[str, str] = {value: label for label, value in establishment_labels(level).items()}
-    schools = [_regional_school(row, level, labels) for row in pages.rows]
+    schools = [
+        DabangRegionalSchool(
+            school_code=row.school_code,
+            level=level,
+            name=row.school_name,
+            establishment=labels.get(row.school_establishment_type or ''),
+            address=normalize_address(row.address),
+            advancement=None if row.advancement_list is None else [
+                DabangRegionalAdvancement(destination=item.advancement_type_name, percent=item.advancement_percentage)
+                for item in row.advancement_list
+            ],
+        )
+        for row in pages.rows
+    ]
     # 좁힐 옵션을 아직 고르지 않았을 때만 좁히라고 권한다
     narrow = '설립 구분(--establishment) 조건' if establishment is None else None
     notes = region_info_list_notes(pages, limit, subject=f'{place.name} {level}', narrow=narrow)

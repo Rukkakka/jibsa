@@ -37,6 +37,7 @@ from jibsa.core.errors import (
 from jibsa.core.geo import DEFAULT_RADIUS_KM
 from jibsa.core.korean import (
     is_district_code,
+    is_province_code,
     is_ri_code,
 )
 from jibsa.core.listing import (
@@ -373,26 +374,6 @@ def _boundary_unit(
     return '시·군·구', []
 
 
-def _is_province_region(region: NaverRegion, kind: str) -> bool:
-    """시·도 이름인가. 종류가 '지역'이고 법정동 코드 앞 두 자리 뒤가 모두 0 이다 (3600000000, `_wide_region_unit` 과 같은 판정)."""
-    code = region.legal_division_code
-    return kind == '지역' and code is not None and len(code) == 10 and code[2:] == '0' * 8
-
-
-def _sole_district(
-    client: NaverClient, region: NaverRegion, kind: str, radius: float | None,
-) -> tuple[str, str] | None | Literal['unknown']:
-    """반경을 주지 않은 시·도 이름이 시·군·구 하나뿐인 시·도(세종)면 그 (시·군·구 코드, 이름), 조회가 실패하면 'unknown', 그 밖은 None.
-
-    시·도 이름일 때만 `only_district_of_province` 로 묻는다 (요청 1회). 서울·경기도처럼 시·군·구가 여럿이면 None 이라 지금처럼
-    중심 반경으로 찾는다.
-    """
-    code = region.legal_division_code
-    if radius is not None or code is None or not _is_province_region(region, kind):
-        return None
-    return only_district_of_province(client, code)
-
-
 def _search_scope(region: NaverRegion, whole: bool, radius: float | None) -> dict[str, object]:
     """어디를 찾았는지. 경계로 찾았으면 boundary(동·시·군·구 이름), 아니면 radius_km 다 (직방 search 와 같다)."""
     return {'boundary': region.name} if whole else {'radius_km': radius or DEFAULT_RADIUS_KM}
@@ -417,7 +398,12 @@ def _area_location(
     범위는 결과에 붙이는 boundary 또는 radius_km 다 (`_search_scope`).
     """
     region, kind, notes = _resolve_location(client, query, lat, lng, radius, listing_search=listing_search)
-    sole = _sole_district(client, region, kind, radius)
+    code = region.legal_division_code
+    # 반경을 주지 않은 시·도 이름일 때만 묻는다. `sole` 은 시·군·구가 하나뿐인 시·도(세종)면 그 (시·군·구 코드, 이름), 여럿이면
+    # (서울·경기도) None, 조회가 실패하면 'unknown' 이다. 시·도 이름은 종류가 '지역'이고 법정동 코드가 시·도 코드다 (3600000000)
+    sole: tuple[str, str] | None | Literal['unknown'] = None
+    if radius is None and code is not None and kind == '지역' and is_province_code(code):
+        sole = only_district_of_province(client, code)
     if isinstance(sole, tuple):
         # 시·군·구가 하나뿐인 시·도(세종)는 그 시·군·구 경계가 시·도 전체다. 지역 해석의 '시·도 단위의 넓은 지역이라 … 반경 안만
         # 검색했습니다' 안내는 경계로 찾으면 맞지 않아 뺀다. 결과 범위의 이름은 사용자가 준 이름이다

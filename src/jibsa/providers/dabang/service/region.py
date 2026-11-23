@@ -345,19 +345,15 @@ def dong_boundary(client: DabangClient, code: str) -> MultiPolygon:
     return client.run_request_geojson_region(DabangGeojsonRegionRequestParameterModel(code=code)).coordinates
 
 
-def _covering_bbox(boundary: MultiPolygon) -> DabangBboxModel:
-    """경계를 덮는 지도 범위."""
-    points = [point for polygon in boundary for ring in polygon for point in ring]
-    lats = [point[1] for point in points]
-    lngs = [point[0] for point in points]
-    return bbox_of(min(lats), max(lats), min(lngs), max(lngs))
-
-
 def dong_bbox(client: DabangClient, place: DabangPlace) -> DabangBboxModel:
     """동 경계를 덮는 지도 범위 (경계 요청 1회). 동 검색이 없는 아파트 목록과 지도 범위만 받는 단지·분양 목록에 쓴다."""
     # 동 코드는 장소 검색 응답 값이다. 늘 8자리라 요청 모델의 꼴(8자리)을 벗어나지 않아 따로 막지 않는다 (core/schema.py,
     # 2026-10-26 실측: 중구·신사동·효자동·성수동 장소 검색의 동 61곳 모두 8자리)
-    return _covering_bbox(dong_boundary(client, place.code or ''))
+    boundary = dong_boundary(client, place.code or '')
+    points = [point for polygon in boundary for ring in polygon for point in ring]
+    lats = [point[1] for point in points]
+    lngs = [point[0] for point in points]
+    return bbox_of(min(lats), max(lats), min(lngs), max(lngs))
 
 
 NATIONAL_NAMES: frozenset[str] = frozenset({'전국', '전체', '대한민국'})
@@ -489,18 +485,11 @@ def is_district_word(word: str) -> bool:
     return bool(DISTRICT_PATTERN.fullmatch(word)) and not word.endswith('입구')
 
 
-def is_scope_name(query: str) -> bool:
-    """전국·시·도·시·군·구 이름처럼 보이는지 ('전국', '서울', '경기도', '강남구', '성남시 분당구'). 마지막 낱말로 본다."""
-    text = query.strip()
-    words = text.split()
-    return is_national_or_state(text) or bool(words and is_district_word(words[-1]))
-
-
 def find_scope(client: DabangClient, query: str) -> tuple[DabangScope | None, DabangLocSearchResultModel | None]:
     """범위(전국·시·도·시·군·구) 이름이면 그 범위, 동·역·대학 이름이면 None (분양 지역 목록으로 찾을지 고른다).
 
     이름 모양(○구·○군·○시)만으로는 시·군·구인지 알 수 없다. 범위로 찾지 못한 이름은 None 으로 돌려 동·역으로 다시 찾게 한다
-    (2026-10-25 실측: '홍대입구' 가 REGION_NOT_FOUND 로 끝났다. '입구' 로 끝나는 역 이름은 이제 `is_scope_name` 이 먼저 거른다).
+    (2026-10-25 실측: '홍대입구' 가 REGION_NOT_FOUND 로 끝났다. '입구' 로 끝나는 역 이름은 이제 `is_district_word` 가 시·군·구로 보지 않아 먼저 거른다).
 
     Returns:
         (범위, 장소 검색 결과). 시·도 없는 시·군·구 모양 이름은 여기서 장소 검색을 한 번 받아 `resolve_scope` 에 주고, 범위로
@@ -511,9 +500,11 @@ def find_scope(client: DabangClient, query: str) -> tuple[DabangScope | None, Da
         RegionAmbiguousError: 시·군·구 이름이 여러 시·도에 있을 때 ('중구').
         UnsupportedRegionError: 구가 있는 시일 때 ('성남시').
     """
-    if not is_scope_name(query):
-        return None, None
     text = query.strip()
+    words = text.split()
+    # 전국·시·도·시·군·구 이름처럼 보이는지 ('전국', '서울', '경기도', '강남구', '성남시 분당구'). 마지막 낱말로 본다
+    if not (is_national_or_state(text) or bool(words and is_district_word(words[-1]))):
+        return None, None
     # 전국은 요청 없이, 시·도는 시·도 목록 1회. 찾지 못한 시·도 이름은 동·역으로 넘기지 않고 에러로 둔다
     if is_national_or_state(text):
         return resolve_scope(client, text), None

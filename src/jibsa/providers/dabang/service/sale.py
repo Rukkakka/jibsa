@@ -251,28 +251,6 @@ def _in_lots_fields(item: DabangSaleInLotsRowModel) -> dict[str, Any]:
     }
 
 
-def _region_summary(item: DabangSaleInLotsItemModel) -> DabangSaleSummary:
-    """지역 목록(`list/search3`)의 한 줄."""
-    return DabangSaleSummary(
-        sale_id=item.id,
-        name=item.building_name,
-        **_in_lots_fields(item),
-        next_schedule=item.title,
-        url=sale_url(item.id),
-    )
-
-
-def _search_filters(
-    building_types: list[str] | None, states: list[str] | None, supply_types: list[str] | None,
-) -> DabangSaleInLotsSearchFiltersModel:
-    """지역 목록 필터. 고르지 않은 항목은 웹 초기값처럼 빈 목록(전체)으로 보낸다."""
-    return DabangSaleInLotsSearchFiltersModel(
-        building_type=[SALE_BUILDING_TYPE_NUMBERS[SALE_BUILDING_TYPE_BY_LABEL[label]] for label in building_types or []],
-        state=[SALE_STATE_NUMBERS[SALE_STATE_BY_LABEL[label]] for label in states or []],
-        supply_type=[SALE_SUPPLY_TYPE_NUMBERS[SALE_SUPPLY_BY_LABEL[label]] for label in supply_types or []],
-    )
-
-
 def _sale_list_notes(pages: DabangPages[Any], limit: int, *, in_box: bool, narrow_end: str) -> list[str]:
     """분양 목록(지도·지역)의 [일부] 안내.
 
@@ -317,7 +295,13 @@ def search_sales(
         dong: 동 (경계 사각형).
     """
     if scope is not None:
-        return _search_region_sales(client, scope, _search_filters(building_types, states, supply_types), limit)
+        # 지역 목록 필터. 고르지 않은 항목은 웹 초기값처럼 빈 목록(전체)으로 보낸다
+        region_filters = DabangSaleInLotsSearchFiltersModel(
+            building_type=[SALE_BUILDING_TYPE_NUMBERS[SALE_BUILDING_TYPE_BY_LABEL[label]] for label in building_types or []],
+            state=[SALE_STATE_NUMBERS[SALE_STATE_BY_LABEL[label]] for label in states or []],
+            supply_type=[SALE_SUPPLY_TYPE_NUMBERS[SALE_SUPPLY_BY_LABEL[label]] for label in supply_types or []],
+        )
+        return _search_region_sales(client, scope, region_filters, limit)
     notes: list[str] = []
     prefixes: list[str] = []
     if dong is not None:
@@ -394,7 +378,13 @@ def _search_region_sales(
     notes += _sale_list_notes(pages, limit, in_box=False, narrow_end='지역')
     return DabangSaleListResult(
         scope=scope.name if scope.kind == 'national' else f'{scope.name} 안', total=pages.total, returned=len(pages.rows),
-        has_more=pages.has_more, sales=[_region_summary(item) for item in pages.rows], notes=notes,
+        has_more=pages.has_more, sales=[
+            DabangSaleSummary(
+                sale_id=item.id, name=item.building_name, **_in_lots_fields(item), next_schedule=item.title, url=sale_url(item.id),
+            )
+            for item in pages.rows
+        ],
+        notes=notes,
     )
 
 
@@ -823,10 +813,6 @@ class DabangSaleSchedule(BaseModel):
     ] = []
 
 
-def _schedule_sale(item: DabangSaleScheduleTableRowModel) -> DabangSaleScheduleSale:
-    return DabangSaleScheduleSale(**_in_lots_fields(item))
-
-
 def get_sale_schedule(
     client: DabangClient, *, start: date, days: int, region: str | None = None, details: bool = False, limit: int,
 ) -> DabangSaleSchedule:
@@ -913,7 +899,7 @@ def get_sale_schedule(
                     continue
             rows.append(DabangSaleScheduleItem(
                 date=day.date, kind=kind, region=where, text=text, sale_id=entry.id,
-                sale=None if found is None else _schedule_sale(found), fetched=sales is not None,
+                sale=None if found is None else DabangSaleScheduleSale(**_in_lots_fields(found)), fetched=sales is not None,
             ))
             matched_lookup.append(looked_up)
     shown = rows[:limit]

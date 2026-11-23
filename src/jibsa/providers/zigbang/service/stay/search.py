@@ -190,7 +190,7 @@ def stay_distance_sort_error() -> JibsaError:
 
 
 class ZigbangStayConditions(RequestModel):
-    """단기임대 매물 조건 (search listings stay). 주당 요금은 만원, 면적은 ㎡. 라벨은 `stay_filter_of` 가 서버 코드로 바꾼다."""
+    """단기임대 매물 조건 (search listings stay). 주당 요금은 만원, 면적은 ㎡. 라벨은 `search_stay_listings` 가 서버 코드로 바꾼다."""
 
     weekly_price_min: Annotated[
         int | None,
@@ -258,28 +258,6 @@ class ZigbangStayConditions(RequestModel):
     ] = None
 
 
-def stay_filter_of(conditions: ZigbangStayConditions) -> dict[str, Any]:
-    """단기임대 조건을 지도 핀·검색 API 요청 필드로 바꾼다."""
-    return dict(
-        weekly_price_min=conditions.weekly_price_min,
-        weekly_price_max=conditions.weekly_price_max,
-        room_count=conditions.room_count,
-        building_types=[STAY_BUILDING_TYPE_BY_LABEL[label] for label in conditions.building_types],
-        size_min_m2=conditions.area_min_m2,
-        size_max_m2=conditions.area_max_m2,
-        discount_types=[STAY_DISCOUNT_TYPE_BY_LABEL[label] for label in conditions.discounts],
-        pet_allowed=conditions.pet_allowed or None,
-        is_duplex=conditions.duplex,
-        options=[STAY_OPTION_BY_LABEL[label] for label in conditions.options],
-        has_parking=conditions.parking or None,
-        has_elevator=conditions.elevator or None,
-        floor_types=[STAY_FLOOR_TYPE_BY_LABEL[label] for label in conditions.floors],
-        check_in_date=conditions.check_in,
-        check_out_date=conditions.check_out,
-        flexibility=conditions.flexibility,
-    )
-
-
 def search_stay_listings(
     client: ZigbangClient,
     region: ZigbangRegion,
@@ -309,7 +287,7 @@ def search_stay_listings(
 
     Raises:
         JibsaError: 역 이름 검색이 아닌데 `distance` 를 줬을 때 (INVALID_ARGUMENT, 매물 요청을 보내기 전에).
-        RegionNotFoundError: 검색 API 가 지역을 찾지 못했을 때 (2026-10 의 세종의 동, `_stay_region_search`).
+        RegionNotFoundError: 검색 API 가 지역을 찾지 못했을 때 (2026-10 의 세종의 동, `_search_stay_by_search_api`).
     """
     check_stay_sort(sort)
     if sort == 'distance' and not (use_search_api and region.search_type == 'subway'):
@@ -317,8 +295,43 @@ def search_stay_listings(
         # 추천순으로 바꾼다 (2026-11-15 실측·번들 `sortStayMarkers`)
         raise stay_distance_sort_error()
     conditions = conditions or ZigbangStayConditions()
-    filters = stay_filter_of(conditions)
-    context = _stay_search_context(region, sort, filters, whole_address) if use_search_api else None
+    # 단기임대 조건을 지도 핀·검색 API 요청 필드로 바꾼다
+    filters: dict[str, Any] = dict(
+        weekly_price_min=conditions.weekly_price_min,
+        weekly_price_max=conditions.weekly_price_max,
+        room_count=conditions.room_count,
+        building_types=[STAY_BUILDING_TYPE_BY_LABEL[label] for label in conditions.building_types],
+        size_min_m2=conditions.area_min_m2,
+        size_max_m2=conditions.area_max_m2,
+        discount_types=[STAY_DISCOUNT_TYPE_BY_LABEL[label] for label in conditions.discounts],
+        pet_allowed=conditions.pet_allowed or None,
+        is_duplex=conditions.duplex,
+        options=[STAY_OPTION_BY_LABEL[label] for label in conditions.options],
+        has_parking=conditions.parking or None,
+        has_elevator=conditions.elevator or None,
+        floor_types=[STAY_FLOOR_TYPE_BY_LABEL[label] for label in conditions.floors],
+        check_in_date=conditions.check_in,
+        check_out_date=conditions.check_out,
+        flexibility=conditions.flexibility,
+    )
+    # 이름으로 찾은 지역의 검색 API 요청. 검색 API 가 받지 않는 지역(좌표·시·도 없는 주소)이거나, 동·구인데 지역 검색으로
+    # 찾으라는 표시(`whole_address`)가 없으면 지도 핀으로 찾는다
+    context: ZigbangGuestItemsSearchRequestParameterModel | None = None
+    if (
+        use_search_api
+        and region.search_type in {'address', 'subway', 'school', 'university'}
+        and (region.search_type != 'address' or (region.local1 and whole_address))
+    ):
+        context = ZigbangGuestItemsSearchRequestParameterModel(
+            type=region.search_type,
+            sort=STAY_SERVER_SORTS[sort],
+            local1=region.local1 if region.search_type == 'address' else None,
+            local2=region.local2 if region.search_type == 'address' else None,
+            local3=region.local3 if region.search_type == 'address' else None,
+            lat=region.lat if region.search_type != 'address' else None,
+            lng=region.lng if region.search_type != 'address' else None,
+            **filters,
+        )
     if context is not None:
         return _search_stay_by_search_api(client, region, context, conditions, sort=sort, limit=limit)
     return _search_stay_by_markers(
@@ -339,7 +352,26 @@ def _search_stay_by_search_api(
 
     by-ids 가 빼는 매물(그사이 내려간 매물)은 다시 채우지 않는다. 검색 ID 에는 위치가 없어 `distance_km` 는 요약 좌표로 잰다.
     """
-    ids = list(dict.fromkeys(_stay_region_search(client, context, _searched_area(context) or region.name)))
+    # 세종의 동은 local1·local2 를 어떻게 줘도 REGION_NOT_FOUND 였다 (2026-10-11 실측: 반곡동을 세종특별자치시·세종시 ×
+    # 세종·없음·세종시 조합 모두 400, 세종특별자치시 전체·양평읍·역삼동·치평동은 200). 2026-11-10 에는 반곡동·어진동·나성동
+    # 모두 local1=세종특별자치시·local2=세종 으로 200 이라 이 경로를 타지 않는다. 다시 막힐 수 있어 남겨 두며, 지역을 찾지 못했다는
+    # 400 은 소스 장애(UPSTREAM_ERROR)로 보이지 않게 `RegionNotFoundError` 로 바꾸고 CLI 가 지도 칸(동 경계·반경) 검색으로
+    # 다시 찾는다. 이 경로를 타면 직방이 바뀐 것이라 CLI 의 대체 경로 안내에 업데이트 문구가 붙는다.
+    try:
+        found_ids = _stay_search_call(client.run_request_guest_items_search, context).item_ids
+    except HTTPStatusError as exc:
+        body = _stay_400_body(exc)
+        if body is None or body.get('error') != 'REGION_NOT_FOUND':
+            raise
+        # `normalize_address` 로 세종의 겹친 시 이름을 뺀다. 직방은 세종의 동을 local1 '세종특별자치시'·local2 '세종'·local3
+        # '반곡동' 으로 줘서, 그대로 이으면(`join_address`) '세종특별자치시 세종 반곡동' 이 된다 (2026-11-10 리뷰·실측. 직방 지역
+        # 검색의 주소는 '세종특별자치시 반곡동'). 앞 조각으로 시작하는 조각을 빼던 것을 `normalize_address` 로 바꿨다 (2026-11-11
+        # 리뷰: local2 가 '세종시' 로 오면 빼지 못했다)
+        raise RegionNotFoundError(
+            normalize_address(join_address(context.local1, context.local2, context.local3)) or region.name,
+            hint='--radius 로 반경 검색하세요',
+        ) from None
+    ids = list(dict.fromkeys(found_ids))
     head = ids[:limit]
     listings = [
         stay_summary_to_listing(
@@ -388,9 +420,21 @@ def _search_stay_by_markers(
     boundary: ZigbangBoundary | None,
 ) -> ZigbangStaySearchResult:
     """반경(또는 동 경계) 안 지도 핀을 웹 지도 목록 순서로 세워 앞 `limit` 개의 요약을 받는다. `total` 은 범위 안 핀 수다."""
-    pins, dropped = _stay_pins(
-        client, region, scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION), filters, boundary,
-    )
+    # 지도 칸마다 단기임대 핀을 받아 매물 ID → (핀, 검색 중심에서 거리)로 모은다. 동 경계 밖 핀은 뺀다.
+    # 핀 좌표는 요약(by-ids) 좌표와 같아 (2026-11-15 실측 71건) 핀으로 범위를 정하고 거리를 잰다. 핀 목록에서 빈 항목(null)을 빼고
+    # 읽은 수를 함께 센다 (받은 칸 전부의 합).
+    pins: dict[int, tuple[ZigbangStayMarkerModel, float]] = {}
+    dropped = 0
+    for geohash in scope_geohashes(region, radius_km, boundary, STAY_GEOHASH_PRECISION):
+        response = _stay_search_call(
+            client.run_request_guest_items_markers,
+            ZigbangGuestItemsMarkersRequestParameterModel(geohash=geohash, **filters),
+        )
+        dropped += response.null_items('markers')
+        for marker in response.markers:
+            if outside_boundary(boundary, marker.lat, marker.lng):
+                continue
+            pins[marker.id] = (marker, haversine_km(region.lat, region.lng, marker.lat, marker.lng))
     if boundary is None:
         # 지도 칸은 반경보다 넓어 반경 밖 핀은 요약을 받지 않고 뺀다 (반올림 없이 잰 거리)
         pins = {item_id: pin for item_id, pin in pins.items() if pin[1] <= radius_km}
@@ -438,68 +482,6 @@ def stay_marker_order(markers: list[ZigbangStayMarkerModel], sort: StaySort) -> 
     elif sort == 'newest':
         ranked.sort(key=lambda marker: marker.reviewed_at or '', reverse=True)
     return [marker.id for marker in ranked]
-
-
-def _stay_search_context(
-    region: ZigbangRegion,
-    sort: StaySort,
-    filters: dict[str, Any],
-    whole_address: bool,
-) -> ZigbangGuestItemsSearchRequestParameterModel | None:
-    """이름으로 찾은 지역의 검색 API 요청. 검색 API 가 받지 않는 지역(좌표·시·도 없는 주소)이거나, 동·구인데 지역 검색으로
-    찾으라는 표시(`whole_address`)가 없으면 None."""
-    if region.search_type not in {'address', 'subway', 'school', 'university'}:
-        return None
-    if region.search_type == 'address' and not (region.local1 and whole_address):
-        return None
-    return ZigbangGuestItemsSearchRequestParameterModel(
-        type=region.search_type,
-        sort=STAY_SERVER_SORTS[sort],
-        local1=region.local1 if region.search_type == 'address' else None,
-        local2=region.local2 if region.search_type == 'address' else None,
-        local3=region.local3 if region.search_type == 'address' else None,
-        lat=region.lat if region.search_type != 'address' else None,
-        lng=region.lng if region.search_type != 'address' else None,
-        **filters,
-    )
-
-
-def _searched_area(context: ZigbangGuestItemsSearchRequestParameterModel) -> str | None:
-    """검색 API 에 보낸 지역 (local1~3, 주소 검색이 아니면 None). 지역을 못 찾았다는 에러에 이 이름을 댄다.
-
-    `normalize_address` 로 세종의 겹친 시 이름을 뺀다. 직방은 세종의 동을 local1 '세종특별자치시'·local2 '세종'·local3
-    '반곡동' 으로 줘서, 그대로 이으면(`join_address`) '세종특별자치시 세종 반곡동' 이 된다 (2026-11-10 리뷰·실측. 직방 지역
-    검색의 주소는 '세종특별자치시 반곡동'). 앞 조각으로 시작하는 조각을 빼던 것을 이 함수로 바꿨다 (2026-11-11 리뷰: local2 가
-    '세종시' 로 오면 빼지 못했다).
-    """
-    return normalize_address(join_address(context.local1, context.local2, context.local3))
-
-
-def _stay_pins(
-    client: ZigbangClient,
-    region: ZigbangRegion,
-    hashes: list[str],
-    filters: dict[str, Any],
-    boundary: ZigbangBoundary | None,
-) -> tuple[dict[int, tuple[ZigbangStayMarkerModel, float]], int]:
-    """지도 칸마다 단기임대 핀을 받아 매물 ID → (핀, 검색 중심에서 거리)로 모은다. 동 경계 밖 핀은 뺀다.
-
-    핀 좌표는 요약(by-ids) 좌표와 같아 (2026-11-15 실측 71건) 핀으로 범위를 정하고 거리를 잰다. 핀 목록에서 빈 항목(null)을 빼고
-    읽은 수를 함께 돌려준다 (받은 칸 전부의 합).
-    """
-    pins: dict[int, tuple[ZigbangStayMarkerModel, float]] = {}
-    dropped = 0
-    for geohash in hashes:
-        response = _stay_search_call(
-            client.run_request_guest_items_markers,
-            ZigbangGuestItemsMarkersRequestParameterModel(geohash=geohash, **filters),
-        )
-        dropped += response.null_items('markers')
-        for marker in response.markers:
-            if outside_boundary(boundary, marker.lat, marker.lng):
-                continue
-            pins[marker.id] = (marker, haversine_km(region.lat, region.lng, marker.lat, marker.lng))
-    return pins, dropped
 
 
 def _stay_summaries(
@@ -564,25 +546,3 @@ def _stay_search_call(call: Callable[[StayParameter], StayResponse], parameter: 
                 f'{STAY_SEARCH_MIN_DAYS}~{STAY_SEARCH_MAX_DAYS}일로 주세요 (1주 = 11-02~11-08)'
             ),
         ) from None
-
-
-def _stay_region_search(
-    client: ZigbangClient,
-    context: ZigbangGuestItemsSearchRequestParameterModel,
-    name: str,
-) -> list[int]:
-    """단기임대 검색 API 로 매물 ID 를 받는다. 지역을 찾지 못했다는 400 은 `RegionNotFoundError` 로 바꾼다.
-
-    세종의 동은 local1·local2 를 어떻게 줘도 REGION_NOT_FOUND 였다 (2026-10-11 실측: 반곡동을 세종특별자치시·세종시 ×
-    세종·없음·세종시 조합 모두 400, 세종특별자치시 전체·양평읍·역삼동·치평동은 200). 2026-11-10 에는 반곡동·어진동·나성동
-    모두 local1=세종특별자치시·local2=세종 으로 200 이라 이 경로를 타지 않는다. 다시 막힐 수 있어 남겨 두며, 소스
-    장애(UPSTREAM_ERROR)로 보이지 않게 바꾸고 CLI 가 지도 칸(동 경계·반경) 검색으로 다시 찾는다. 이 경로를 타면 직방이
-    바뀐 것이라 CLI 의 대체 경로 안내에 업데이트 문구가 붙는다.
-    """
-    try:
-        return _stay_search_call(client.run_request_guest_items_search, context).item_ids
-    except HTTPStatusError as exc:
-        body = _stay_400_body(exc)
-        if body is None or body.get('error') != 'REGION_NOT_FOUND':
-            raise
-        raise RegionNotFoundError(name, hint='--radius 로 반경 검색하세요') from None

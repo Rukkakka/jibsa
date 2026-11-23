@@ -34,13 +34,9 @@ from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
-    ZigbangDanjiRankModel,
-    ZigbangLandTradePermitModel,
-    ZigbangRelateDanjiModel,
     ZigbangSearchItemModel,
 )
 from jibsa.providers.zigbang.api.response.complex.base import (
-    ZigbangDanjiRoomTypeModel,
     ZigbangDanjisRoomTypesResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex.detail import (
@@ -130,11 +126,6 @@ APT_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({
 })
 OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_at', 'elevator'})
 DANJI_CATALOG_PAGE_SIZE: int = 50
-
-
-def officetel_building_url(building_id: int) -> str:
-    # 웹은 건물 ID 를 이 경로의 area_danji_id 자리에 넣는다
-    return f'https://www.zigbang.com/home/officetel/danjis/{building_id}/items'
 
 
 class ZigbangComplexCandidate(BaseModel):
@@ -521,81 +512,6 @@ def _positive_or_none(value: NumberT | None) -> NumberT | None:
     return value if value is not None and value > 0 else None
 
 
-def pyeong_of(room_type: ZigbangDanjiRoomTypeModel, detail: ZigbangDanjiRoomTypeModel | None) -> ZigbangPyeong:
-    """단지 매물 목록의 평형(`room_type`: 목록의 출처·순서)에 평형 정보 조회(`detail`: 같은 ID)의 값을 붙인다. 없으면 새 값은 모름(null)."""
-    title = room_type.room_type_title
-    supply = detail.supply_area if detail else None
-    exclusive = detail.exclusive_area if detail else None
-    cost = detail.manage_cost if detail else None
-    sales = detail.sales_price if detail else None
-    rent = detail.rent_price if detail else None
-    return ZigbangPyeong(
-        id=room_type.id,
-        name=title.m2 if title else None,
-        pyeong_name=text_or_none(title.p) if title else None,
-        supply_area_m2=supply.m2 if supply else None,
-        supply_area_pyeong=supply.p if supply else None,
-        exclusive_area_m2=exclusive.m2 if exclusive else None,
-        exclusive_area_pyeong=exclusive.p if exclusive else None,
-        households=detail.household_count if detail else None,
-        room_count=detail.room_count if detail else None,
-        bathroom_count=detail.bathroom_count if detail else None,
-        entrance_type=text_or_none(detail.entrance_type) if detail else None,
-        # 웹 ManageCost 는 평균 관리비가 0 이나 null 이면 여름·겨울이 든 줄 전체를 숨기고, 평균이 있을 때 여름·겨울이 0 이나 null 이면 '-' 로
-        # 그린다 (2026-11-19 번들). jibsa 는 평균이 없어도 직방이 준 여름·겨울 값을 내므로 셋을 따로 거른다 (웹과 다른 점, 소스 가이드)
-        manage_cost_manwon=_positive_or_none(cost.average) if cost else None,
-        manage_cost_summer_manwon=_positive_or_none(cost.summer) if cost else None,
-        manage_cost_winter_manwon=_positive_or_none(cost.winter) if cost else None,
-        resale_available_from=iso_date(detail.resale_available_from) if detail else None,
-        estimated_sale_price_manwon=_positive_or_none(sales.min) if sales else None,
-        estimated_sale_price_per_pyeong_manwon=_positive_or_none(sales.per_area) if sales else None,
-        estimated_jeonse_price_manwon=_positive_or_none(rent.min) if rent else None,
-        estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(rent.per_area) if rent else None,
-    )
-
-
-def complex_rank_of(rank: ZigbangDanjiRankModel | None) -> ZigbangComplexRank | None:
-    """단지 상세의 순위를 웹 '<동>에서 이 단지의 랭킹은?' 절 값으로. 웹처럼 구·동 순위 중 하나라도 없으면 None.
-
-    웹은 `!순위 || !순위.local2 || !순위.local3` 이면 절을 그리지 않는다 (2026-11-19 번들 `Components_Rank`). 순위 값 -1 은
-    웹이 '순위 없음' 으로 그리는 값이다.
-    """
-    if rank is None or rank.local2 is None or rank.local3 is None:
-        return None
-    return ZigbangComplexRank(
-        region=text_or_none(rank.local3.name),
-        price_rank=None if rank.trade_price_rank == -1 else rank.trade_price_rank,
-        popularity_rank=None if rank.view_count_rank == -1 else rank.view_count_rank,
-    )
-
-
-def _related_complexes_of(related: ZigbangRelateDanjiModel | None) -> list[ZigbangRelatedComplex] | None:
-    """단지 상세의 관련 단지('함께 보면 좋은 단지')를 직방이 준 순서대로. 목록을 주지 않았으면(키 없음·null) 모름(None), 빈 목록이면 []."""
-    if related is None or related.list is None:
-        return None
-    return [related_complex_of(item) for item in related.list]
-
-
-def _land_trade_permits_of(permit: ZigbangLandTradePermitModel | None) -> list[ZigbangLandTradePermitDay] | None:
-    """단지 상세의 최근 7일 토지거래허가 일별 건수를 직방이 준 순서대로. 일별 건수를 주지 않았으면(키 없음·null) 모름(None)."""
-    if permit is None or permit.daily_counts is None:
-        return None
-    return [ZigbangLandTradePermitDay(date=iso_date(day.date), count=day.count) for day in permit.daily_counts]
-
-
-def _fetch_room_types(
-    client: ZigbangClient, danji_id: int,
-) -> tuple[ZigbangDanjisRoomTypesResponseModel | None, list[str]]:
-    """평형 정보 조회(덤)를 받는다. 실패(요청 제한 포함)하면 None 과 `[실패]` 안내를 준다."""
-    try:
-        return client.run_request_danjis_room_types(ZigbangDanjisRoomTypesRequestParameterModel(danji_id=danji_id)), []
-    except OPTIONAL_LOOKUP_ERRORS as exc:
-        return None, [lookup_failure_note(
-            exc, '직방', '평형 정보',
-            '평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 (url 의 직방 단지 페이지에서 확인)',
-        )]
-
-
 def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
     """단지 정보와 지금 올라온 매물 수를 모은다 (아파트 4회: 단지·매물 수·학군·평형 정보, 오피스텔 1회 호출).
 
@@ -626,7 +542,8 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             elevator=True if building.elevator else None,
             # 매물이 없으면 itemCount 0 이 온다 (2026-10-10 실측 29곳). 빠지면 0 이 아니라 모름이다
             listing_count=building.item_count,
-            url=officetel_building_url(number),
+            # 웹은 건물 ID 를 이 경로의 area_danji_id 자리에 넣는다
+            url=f'https://www.zigbang.com/home/officetel/danjis/{number}/items',
         )
 
     danji = fetch_danji(client, complex_id, number)
@@ -642,12 +559,57 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         school_notes = [lookup_failure_note(
             exc, '직방', '단지 학군 정보', 'schools 값을 모릅니다 (url 의 직방 단지 페이지에서 확인)',
         )]
-    room_info, lookup_notes = _fetch_room_types(client, number)
+    # 평형 정보 조회(덤). 실패(요청 제한 포함)하면 모름(None)과 `[실패]` 안내
+    room_info: ZigbangDanjisRoomTypesResponseModel | None
+    lookup_notes: list[str] = []
+    try:
+        room_info = client.run_request_danjis_room_types(ZigbangDanjisRoomTypesRequestParameterModel(danji_id=number))
+    except OPTIONAL_LOOKUP_ERRORS as exc:
+        room_info = None
+        lookup_notes = [lookup_failure_note(
+            exc, '직방', '평형 정보',
+            '평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 (url 의 직방 단지 페이지에서 확인)',
+        )]
     details = {room_type.id: room_type for room_type in room_info.room_types or []} if room_info else {}
     pyeong_notes: list[str] = []
     if catalogs.room_types is None:
         # 평형 목록(매물 목록 응답의 danjiRoomTypes)이 없으면 모름이라, 평형이 없는 단지([])와 가른다
         pyeong_notes.append(note('참고', f'직방이 단지 평형 목록을 주지 않아 pyeongs 를 모릅니다. {UNEXPECTED_FORMAT_TEXT}'))
+    pyeongs: list[ZigbangPyeong] | None = None
+    if catalogs.room_types is not None:
+        pyeongs = []
+        for room_type in catalogs.room_types:
+            # 평형 정보 조회(`detail`)의 값은 같은 ID 로 붙이고, 없으면 새 값은 모름(null)이다
+            detail = details.get(room_type.id)
+            title = room_type.room_type_title
+            supply = detail.supply_area if detail else None
+            exclusive = detail.exclusive_area if detail else None
+            cost = detail.manage_cost if detail else None
+            sales = detail.sales_price if detail else None
+            rent = detail.rent_price if detail else None
+            pyeongs.append(ZigbangPyeong(
+                id=room_type.id,
+                name=title.m2 if title else None,
+                pyeong_name=text_or_none(title.p) if title else None,
+                supply_area_m2=supply.m2 if supply else None,
+                supply_area_pyeong=supply.p if supply else None,
+                exclusive_area_m2=exclusive.m2 if exclusive else None,
+                exclusive_area_pyeong=exclusive.p if exclusive else None,
+                households=detail.household_count if detail else None,
+                room_count=detail.room_count if detail else None,
+                bathroom_count=detail.bathroom_count if detail else None,
+                entrance_type=text_or_none(detail.entrance_type) if detail else None,
+                # 웹 ManageCost 는 평균 관리비가 0 이나 null 이면 여름·겨울이 든 줄 전체를 숨기고, 평균이 있을 때 여름·겨울이 0 이나 null 이면 '-' 로
+                # 그린다 (2026-11-19 번들). jibsa 는 평균이 없어도 직방이 준 여름·겨울 값을 내므로 셋을 따로 거른다 (웹과 다른 점, 소스 가이드)
+                manage_cost_manwon=_positive_or_none(cost.average) if cost else None,
+                manage_cost_summer_manwon=_positive_or_none(cost.summer) if cost else None,
+                manage_cost_winter_manwon=_positive_or_none(cost.winter) if cost else None,
+                resale_available_from=iso_date(detail.resale_available_from) if detail else None,
+                estimated_sale_price_manwon=_positive_or_none(sales.min) if sales else None,
+                estimated_sale_price_per_pyeong_manwon=_positive_or_none(sales.per_area) if sales else None,
+                estimated_jeonse_price_manwon=_positive_or_none(rent.min) if rent else None,
+                estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(rent.per_area) if rent else None,
+            ))
     return ZigbangComplex(
         complex_id=complex_id,
         name=danji.name,
@@ -669,7 +631,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             trade: catalogs.count_by_tran_type.get(tran_type)
             for tran_type, trade in TRADE_BY_APT_TRAN_TYPE.items()
         },
-        pyeongs=None if catalogs.room_types is None else [pyeong_of(room_type, details.get(room_type.id)) for room_type in catalogs.room_types],
+        pyeongs=pyeongs,
         schools=schools,
         review_count=danji.review_count,
         url=apt_danji_url(number),
@@ -677,9 +639,27 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         estimated_sale_price_max_manwon=_positive_or_none(room_info.max_sales_price) if room_info else None,
         estimated_sale_price_per_pyeong_manwon=_positive_or_none(room_info.average_sales_price) if room_info else None,
         estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(room_info.average_rent_price) if room_info else None,
-        rank=complex_rank_of(danji.rank),
-        related_complexes=_related_complexes_of(danji.relate_danji),
-        land_trade_permits=_land_trade_permits_of(danji.land_trade_permit),
+        # 단지 상세의 순위를 웹 '<동>에서 이 단지의 랭킹은?' 절 값으로 낸다. 웹처럼 구·동 순위 중 하나라도 없으면 None 이다.
+        # 웹은 `!순위 || !순위.local2 || !순위.local3` 이면 절을 그리지 않는다 (2026-11-19 번들 `Components_Rank`).
+        # 순위 값 -1 은 웹이 '순위 없음' 으로 그리는 값이다
+        rank=(
+            None if danji.rank is None or danji.rank.local2 is None or danji.rank.local3 is None
+            else ZigbangComplexRank(
+                region=text_or_none(danji.rank.local3.name),
+                price_rank=None if danji.rank.trade_price_rank == -1 else danji.rank.trade_price_rank,
+                popularity_rank=None if danji.rank.view_count_rank == -1 else danji.rank.view_count_rank,
+            )
+        ),
+        # 관련 단지('함께 보면 좋은 단지')를 직방이 준 순서대로. 목록을 주지 않았으면(키 없음·null) 모름(None), 빈 목록이면 []
+        related_complexes=(
+            None if danji.relate_danji is None or danji.relate_danji.list is None
+            else [related_complex_of(item) for item in danji.relate_danji.list]
+        ),
+        # 최근 7일 토지거래허가 일별 건수를 직방이 준 순서대로. 일별 건수를 주지 않았으면(키 없음·null) 모름(None)
+        land_trade_permits=(
+            None if danji.land_trade_permit is None or danji.land_trade_permit.daily_counts is None
+            else [ZigbangLandTradePermitDay(date=iso_date(day.date), count=day.count) for day in danji.land_trade_permit.daily_counts]
+        ),
         notes=school_notes + lookup_notes + pyeong_notes + (
             [f'이 단지에 거주 후기 {danji.review_count}개가 있습니다. 후기 내용은 직방 단지 페이지({apt_danji_url(number)})에서 확인하세요']
             if danji.review_count else []
@@ -708,7 +688,7 @@ def list_complex_listings(
 
     Raises:
         JibsaError: 단지 ID 형식이 맞지 않거나, 오피스텔에 평형 조건을 줬거나,
-            아파트에 오피스텔 전용 조건을 줬을 때 (INVALID_ARGUMENT).
+            아파트에 오피스텔 전용 조건을 줬거나, 단지에 없는 평형 ID 를 줬을 때 (INVALID_ARGUMENT).
             없는 단지일 때 (NOT_FOUND).
     """
     conditions = conditions or ZigbangRoomConditions()
@@ -781,7 +761,18 @@ def list_complex_listings(
                 # 평형 목록에서 빈 항목을 뺐으면 준 평형 ID 가 그 항목이었을 수 있어 단지에 있는지 확인하지 않는다
                 dropped_room_types = response.null_items('room_types') if pyeong_ids else 0
             else:
-                _check_pyeong_ids(complex_id, response.room_types, pyeong_ids)
+                # 단지에 없는 평형이면 0건 대신 에러로 알린다. 단지 매물 목록은 없는 평형에도 빈 성공을 준다.
+                # 평형 조건을 줘도 응답의 평형 목록(danjiRoomTypes)은 단지 전체라 첫 페이지로 확인한다 (2026-10-12 실측:
+                # apt-68579 에 평형 999 를 주면 0건과 평형 30개, 조건 없이도 같은 30개). 평형 목록이 비어 오면(평형이 아직 없는
+                # 단지) 확인하지 않는다
+                known = {room_type.id for room_type in response.room_types}
+                unknown = [pyeong_id for pyeong_id in pyeong_ids or [] if pyeong_id not in known]
+                if known and unknown:
+                    raise JibsaError(
+                        code='INVALID_ARGUMENT',
+                        message=f"{complex_id} 단지에 없는 평형 ID 입니다: {', '.join(map(str, unknown))}",
+                        hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
+                    )
         total = response.total_count
         # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빈 항목을 빼고 읽었어도 받은 자리 수에 더해야 같은 매물을 다시 받거나 일찍 멈추지 않는다
         received = len(response.catalogs) + response.null_items('catalogs')
@@ -817,26 +808,6 @@ def list_complex_listings(
         listings=listings,
         notes=notes,
     )
-
-
-def _check_pyeong_ids(complex_id: str, room_types: list[ZigbangDanjiRoomTypeModel], pyeong_ids: list[int] | None) -> None:
-    """단지에 없는 평형이면 0건 대신 에러로 알린다. 단지 매물 목록은 없는 평형에도 빈 성공을 준다.
-
-    평형 조건을 줘도 응답의 평형 목록(danjiRoomTypes)은 단지 전체라 첫 페이지로 확인한다 (2026-10-12 실측:
-    apt-68579 에 평형 999 를 주면 0건과 평형 30개, 조건 없이도 같은 30개). 평형 목록이 비어 오면(평형이 아직 없는
-    단지) 확인하지 않는다. 평형 목록이 없을 때(모름)는 부르는 쪽이 부르지 않고 알린다.
-
-    Raises:
-        JibsaError: 단지에 없는 평형 (INVALID_ARGUMENT).
-    """
-    known = {room_type.id for room_type in room_types}
-    unknown = [pyeong_id for pyeong_id in pyeong_ids or [] if pyeong_id not in known]
-    if known and unknown:
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f"{complex_id} 단지에 없는 평형 ID 입니다: {', '.join(map(str, unknown))}",
-            hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
-        )
 
 
 def _list_officetel_building_listings(

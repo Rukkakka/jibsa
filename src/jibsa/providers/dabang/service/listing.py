@@ -505,23 +505,6 @@ def search_listings(
     )
 
 
-def _price_fields(room: DabangNewRoomDetailRoomModel, trade_type: TradeType) -> dict[str, float]:
-    """`price_info` 에서 그 거래 유형 칸의 금액. 칸은 [보증금 또는 매매가, 월세, 거래 유형 코드] 다.
-
-    맞는 칸이 없으면 금액을 모름(null)으로 둔다. 다른 거래 유형 칸의 금액을 이 거래의 가격으로 내지 않는다
-    (2026-10-26 실측: 역삼동 빌라 월세 1건·전세 2건 모두 거래 유형 코드가 맞는 칸 하나뿐).
-    """
-    code = room.selling_type
-    entry = next((row for row in room.price_info if len(row) >= 3 and int(row[2]) == code), None)
-    if entry is None:
-        return {}
-    if trade_type == '월세':
-        return {'deposit_manwon': entry[0], 'rent_manwon': entry[1]}
-    if trade_type == '전세':
-        return {'deposit_manwon': entry[0]}
-    return {'price_manwon': entry[0]}
-
-
 class _ManageCost(NamedTuple):
     manwon: float | None
     includes: list[str] | None
@@ -570,18 +553,6 @@ def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
         return _ManageCost(cost, None if codes is None else [MANAGE_ITEM_LABELS.get(code, code) for code in codes], None)
     # 확인불가는 웹도 항목을 보여 주지 않는다
     return _ManageCost(cost, None, None)
-
-
-def _tenant_prices(title: str | None) -> dict[str, float | None]:
-    """세입자 낀 매매의 기존 보증금/월세 글('20억', '1억/50')을 만원으로. 읽지 못하면 둘 다 None (모름)."""
-    # 리뷰 오탐 (2026-11-14): 금액 글자 읽기는 manwon_from_text 하나가 맡고 여기는 거래 유형 없이 조각 수로 보증금/월세를
-    # 정해(읽지 못하면 두 키 null) listing_prices(거래 유형별, 못 읽으면 None)와 계약이 다르다.
-    values = [manwon_from_text(part) for part in (title or '').split('/')]
-    if len(values) == 1 and values[0] is not None:
-        return {'tenant_deposit_manwon': values[0]}
-    if len(values) == 2 and None not in values:
-        return {'tenant_deposit_manwon': values[0], 'tenant_rent_manwon': values[1]}
-    return {'tenant_deposit_manwon': None, 'tenant_rent_manwon': None}
 
 
 def resolve_listing_id(client: DabangClient, listing_ref: str) -> str:
@@ -637,6 +608,30 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
     # null 이면 그 줄을 감추고 true·false 를 '해당'·'해당없음' 으로 보여 준다 (room-chunk, 2026-11-13)
     with_tenant = bool(room.is_take_tenant)
     notes = [null_items_note('다방 관리비 항목', manage.dropped, ('manage_cost_includes', 'manage_cost_excludes'))] if manage.dropped else []
+    # 세입자 낀 매매의 기존 보증금/월세 글('20억', '1억/50')을 만원으로. 읽지 못하면 둘 다 None (모름)이고, with_tenant 가 거짓이면 글을 읽지 않는다.
+    # 리뷰 오탐 (2026-11-14): 이 계산은 금액 글자 읽기를 manwon_from_text 하나에 맡기고 거래 유형 없이 조각 수로 보증금/월세를
+    # 정해(읽지 못하면 두 키 null) listing_prices(거래 유형별, 못 읽으면 None)와 계약이 다르다.
+    tenant_prices: dict[str, float | None] = {}
+    if with_tenant:
+        tenant_values = [manwon_from_text(part) for part in (room.take_tenant_price_title or '').split('/')]
+        if len(tenant_values) == 1 and tenant_values[0] is not None:
+            tenant_prices = {'tenant_deposit_manwon': tenant_values[0]}
+        elif len(tenant_values) == 2 and None not in tenant_values:
+            tenant_prices = {'tenant_deposit_manwon': tenant_values[0], 'tenant_rent_manwon': tenant_values[1]}
+        else:
+            tenant_prices = {'tenant_deposit_manwon': None, 'tenant_rent_manwon': None}
+    # `price_info` 에서 그 거래 유형 칸의 금액. 칸은 [보증금 또는 매매가, 월세, 거래 유형 코드] 다.
+    # 맞는 칸이 없으면 금액을 모름(null)으로 둔다. 다른 거래 유형 칸의 금액을 이 거래의 가격으로 내지 않는다
+    # (2026-10-26 실측: 역삼동 빌라 월세 1건·전세 2건 모두 거래 유형 코드가 맞는 칸 하나뿐).
+    price_entry = next((row for row in room.price_info if len(row) >= 3 and int(row[2]) == room.selling_type), None)
+    prices: dict[str, float] = {}
+    if price_entry is not None:
+        if trade_type == '월세':
+            prices = {'deposit_manwon': price_entry[0], 'rent_manwon': price_entry[1]}
+        elif trade_type == '전세':
+            prices = {'deposit_manwon': price_entry[0]}
+        else:
+            prices = {'price_manwon': price_entry[0]}
     return DabangListingDetail(
         source=SOURCE,
         id=room.id,
@@ -656,7 +651,7 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         # 다른 유형은 계약면적을 0 으로 준다. 웹은 오피스텔에 '전용/계약면적' 으로 보여 준다 (room-chunk)
         contract_area_m2=room.contract_size or None,
         with_tenant=with_tenant,
-        **(_tenant_prices(room.take_tenant_price_title) if with_tenant else {}),
+        **tenant_prices,
         lh_lease=bool(room.is_lh_lease),
         leasehold_registration=bool(room.is_leasehold),
         unregistered_building=bool(room.is_new_construction),
@@ -684,7 +679,7 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         complex_id=room.complex_id,
         listing_number=room.seq,
         notes=notes,
-        **_price_fields(room, trade_type),
+        **prices,
     )
 
 

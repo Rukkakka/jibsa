@@ -54,7 +54,6 @@ from jibsa.providers.naver.api.request.common import (
     NaverRealEstateType,
 )
 from jibsa.providers.naver.api.response.common import (
-    NaverArticleInfoModel,
     NaverArticleListItemModel,
     NaverArticlePageModel,
     NaverComplexArticleCountModel,
@@ -593,24 +592,6 @@ def known_floor(value: str | None) -> str | None:
     return None if value in (None, '', '0', '-') else value
 
 
-def _floor(info: NaverArticleInfoModel) -> tuple[str | None, str | None]:
-    """목록 매물의 해당 층·전체 층. floorDetailInfo 가 있으면 그것만 본다.
-
-    floorDetailInfo 가 '0'/null 인데 floorInfo 가 '-1/3' 인 매물은 건물 전체를 파는 단독·다가구(C03)·상가건물(D04)이고,
-    floorInfo 는 해당 층/전체 층이 아니라 지하~지상 범위다 (봉천동 120건 중 7건, 상세도 층·전체 층 모두 null, 2026-10-11).
-    그래서 floorInfo 로 대신 채우지 않는다.
-    """
-    detail = info.article_detail
-    if detail is None:
-        return None, None
-    if detail.floor_detail_info is not None:
-        return known_floor(detail.floor_detail_info.target_floor), known_floor(detail.floor_detail_info.total_floor)
-    if detail.floor_info and '/' in detail.floor_info:
-        target, total = detail.floor_info.split('/', 1)
-        return known_floor(target), known_floor(total)
-    return known_floor(detail.floor_info), None
-
-
 def building_approved_at(
     building: NaverListBuildingInfoModel | NaverFacilityInfoModel | None,
 ) -> str | None:
@@ -640,7 +621,22 @@ def article_info_to_listing(
     trade_type = TRADE_NAME_BY_CODE.get(info.trade_type)
     if trade_type is None:
         return None
-    floor, building_floor = _floor(info)
+    # 목록 매물의 해당 층·전체 층. floorDetailInfo 가 있으면 그것만 본다.
+    # floorDetailInfo 가 '0'/null 인데 floorInfo 가 '-1/3' 인 매물은 건물 전체를 파는 단독·다가구(C03)·상가건물(D04)이고,
+    # floorInfo 는 해당 층/전체 층이 아니라 지하~지상 범위다 (봉천동 120건 중 7건, 상세도 층·전체 층 모두 null, 2026-10-11).
+    # 그래서 floorInfo 로 대신 채우지 않는다.
+    floor: str | None = None
+    building_floor: str | None = None
+    detail = info.article_detail
+    if detail is not None:
+        if detail.floor_detail_info is not None:
+            floor = known_floor(detail.floor_detail_info.target_floor)
+            building_floor = known_floor(detail.floor_detail_info.total_floor)
+        elif detail.floor_info and '/' in detail.floor_info:
+            target, total = detail.floor_info.split('/', 1)
+            floor, building_floor = known_floor(target), known_floor(total)
+        else:
+            floor = known_floor(detail.floor_info)
 
     lat = lng = None
     address = None

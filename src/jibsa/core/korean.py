@@ -59,6 +59,12 @@ def legal_dong_hint(query: str) -> str | None:
     )
 
 
+def is_province_code(legal_division_code: str | None) -> bool:
+    """10자리 법정동 코드가 시·도인지 (1100000000, 세종 3600000000). 앞 두 자리 뒤가 모두 0 이다."""
+    code = legal_division_code or ''
+    return len(code) == 10 and code[2:] == '0' * 8
+
+
 def is_dong_code(legal_division_code: str | None) -> bool:
     """10자리 법정동 코드가 읍·면·동인지. 시·도·시·군·구(1168000000)와 리(끝 두 자리가 00 이 아님)는 아니다."""
     code = legal_division_code or ''

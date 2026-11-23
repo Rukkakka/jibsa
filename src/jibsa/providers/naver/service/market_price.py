@@ -161,7 +161,7 @@ def get_market_price_history(
             points=[
                 NaverMarketPricePoint(
                     base_date=normalize_date(day),
-                    # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (complex --pyeong 의 _market_price 와 같다)
+                    # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (complex --pyeong 의 `_pyeong_details` 와 같다)
                     sale_manwon=won_to_manwon(item.deal_prices.get(day)) or None,
                     sale_range_manwon=manwon_range(item.deal_price_ranges.get(day)),
                     jeonse_manwon=won_to_manwon(item.deposit_prices.get(day)) or None,

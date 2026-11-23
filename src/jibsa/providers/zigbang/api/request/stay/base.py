@@ -27,11 +27,6 @@ STAY_SEARCH_MIN_DAYS: int = 7
 STAY_SEARCH_MAX_DAYS: int = 84
 
 
-def stay_days(check_in: str, check_out: str) -> int:
-    """이용 일수. 직방은 --check-out 을 마지막으로 머무는 날로 보고 이용일에 센다 (11-02~11-08 = 7일)."""
-    return (date.fromisoformat(check_out) - date.fromisoformat(check_in)).days + 1
-
-
 def validate_stay_dates(check_in: str, check_out: str) -> None:
     """입주일·마지막 날이 실제 날짜이고, 입주일이 한국 날짜로 오늘 이후이며, 마지막 날이 입주일보다 뒤인지 본다.
 
@@ -50,15 +45,6 @@ def validate_stay_dates(check_in: str, check_out: str) -> None:
         raise ValueError('입주일은 한국 날짜 기준 오늘 이후여야 합니다')
     if end <= start:
         raise ValueError('마지막으로 머무는 날(--check-out)은 입주일보다 뒤여야 합니다')
-
-
-def _validate_stay_search_period(check_in: str, check_out: str) -> None:
-    days = stay_days(check_in, check_out)
-    if not STAY_SEARCH_MIN_DAYS <= days <= STAY_SEARCH_MAX_DAYS:
-        raise ValueError(
-            f'단기임대 검색 기간은 입주일과 마지막 날을 포함해 {STAY_SEARCH_MIN_DAYS}~{STAY_SEARCH_MAX_DAYS}일'
-            f'(1~12주)이어야 합니다 (지금 {days}일). 예: 1주 = 2026-11-02~2026-11-08'
-        )
 
 
 class ZigbangStayDatesMixin(RequestModel):
@@ -86,7 +72,13 @@ class ZigbangStayDatesMixin(RequestModel):
             raise ValueError('일정 유연성은 입주일·퇴거일과 함께 써야 합니다')
         if self.check_in_date is not None and self.check_out_date is not None:
             validate_stay_dates(self.check_in_date, self.check_out_date)
-            _validate_stay_search_period(self.check_in_date, self.check_out_date)
+            # 이용 일수. 직방은 --check-out 을 마지막으로 머무는 날로 보고 이용일에 센다 (11-02~11-08 = 7일)
+            days = (date.fromisoformat(self.check_out_date) - date.fromisoformat(self.check_in_date)).days + 1
+            if not STAY_SEARCH_MIN_DAYS <= days <= STAY_SEARCH_MAX_DAYS:
+                raise ValueError(
+                    f'단기임대 검색 기간은 입주일과 마지막 날을 포함해 {STAY_SEARCH_MIN_DAYS}~{STAY_SEARCH_MAX_DAYS}일'
+                    f'(1~12주)이어야 합니다 (지금 {days}일). 예: 1주 = 2026-11-02~2026-11-08'
+                )
         return self
 
 

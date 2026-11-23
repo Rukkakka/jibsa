@@ -16,6 +16,7 @@ from jibsa.core.errors import (
 )
 from jibsa.core.korean import (
     is_dong_code,
+    is_province_code,
     particle,
     quoted,
 )
@@ -117,15 +118,6 @@ def _station_label(station: NaverAutocompleteSubwayStationModel) -> str:
     return f'{station.station_name}({lines})' if lines else station.station_name
 
 
-def _station_candidate(station: NaverAutocompleteSubwayStationModel) -> str:
-    """같은 이름 역 후보 글. 역 이름·노선이 같은 역이 따로 와서('시청역(1호선)' 이 대전·부산) 좌표로 다시 찾게 한다."""
-    if station.coordinates is None:
-        return f'{_station_label(station)} (좌표 없음)'
-    # 받은 좌표를 그대로 쓴다. ':g' 는 유효숫자 6자리라 경도가 소수 셋째 자리(최대 약 44m 오차)로 잘린다
-    lat, lng = _lat_lng(station.coordinates)
-    return f'{_station_label(station)} --lat {lat} --lng {lng}'
-
-
 AutocompleteItemT = TypeVar('AutocompleteItemT')
 # 이름이 맞는 후보를 모으려고 받는 자동완성 쪽 수 (첫 쪽 포함). 법정동·역은 한 쪽 5곳이라 15곳까지 본다
 MAX_AUTOCOMPLETE_PAGES: int = 3
@@ -168,14 +160,6 @@ def _collect_matching(
     return items, False, dropped
 
 
-def _wide_region_unit(code: str | None) -> str:
-    """넓은 지역 안내의 단위. 법정동 코드 앞 두 자리 뒤가 모두 0 이면 시·도다.
-
-    주소 검색은 시·도 이름(서울, 전라남도)도 지역 하나로 준다 (서울 bcode 1100000000, 시·군·구 칸 빈 값, 2026-10-10).
-    """
-    return '시·도' if code and len(code) == 10 and code[2:] == '0' * 8 else '시·군·구'
-
-
 # 시·도·시·군·구 이름에 붙이는 '[범위] … 단위의 넓은 지역이라 중심에서 반경 … 안만 검색했습니다' 안내(`_wide_region_note`)의 토막.
 # 시·군·구 경계 전체로 찾으면 맞지 않는 안내라 CLI 가 이 토막으로 그 안내를 찾아 뺀다 (`_area_location`)
 WIDE_REGION_NOTE_MARK: str = '단위의 넓은 지역이라'
@@ -183,9 +167,11 @@ WIDE_REGION_NOTE_MARK: str = '단위의 넓은 지역이라'
 
 def _wide_region_note(query: str, code: str | None, center: str, radius_km: float) -> str:
     """시·도·시·군·구 이름이라 넓어서 중심 반경 안만 찾았다는 안내. `WIDE_REGION_NOTE_MARK` 를 품는다."""
+    # 주소 검색은 시·도 이름(서울, 전라남도)도 지역 하나로 준다 (서울 bcode 1100000000, 시·군·구 칸 빈 값, 2026-10-10)
+    unit = '시·도' if is_province_code(code) else '시·군·구'
     return note(
         '범위',
-        f"'{query}': {_wide_region_unit(code)} {WIDE_REGION_NOTE_MARK} 중심({center})에서 "
+        f"'{query}': {unit} {WIDE_REGION_NOTE_MARK} 중심({center})에서 "
         f'반경 {radius_km:g}km 안만 검색했습니다. 동·역 이름으로 좁혀 검색하세요',
     )
 
@@ -383,9 +369,18 @@ def _find_subway_station(
         collected, incomplete, dropped = _collect_matching(fetch, page, lambda item: item.station_name == name)
         same = [item for item in collected if item.station_name == name]
         if len(same) >= 2 or incomplete:
+            # 같은 이름 역 후보 글
+            candidates: list[str] = []
+            for candidate_station in same[:MAX_CANDIDATE_NOTES]:
+                if candidate_station.coordinates is None:
+                    candidates.append(f'{_station_label(candidate_station)} (좌표 없음)')
+                else:
+                    # 받은 좌표를 그대로 쓴다. ':g' 는 유효숫자 6자리라 경도가 소수 셋째 자리(최대 약 44m 오차)로 잘린다
+                    station_lat, station_lng = _lat_lng(candidate_station.coordinates)
+                    candidates.append(f'{_station_label(candidate_station)} --lat {station_lat} --lng {station_lng}')
             raise RegionAmbiguousError(
                 query,
-                [_station_candidate(item) for item in same[:MAX_CANDIDATE_NOTES]],
+                candidates,
                 None if incomplete else len(same),
                 hint='역 이름만으로는 고를 수 없어 후보에 붙은 --lat/--lng 로 다시 검색하세요',
             )
@@ -1093,17 +1088,6 @@ def _sub_regions(client: NaverClient, level: Literal['GUN', 'EUP'], code: str) -
     return unwrap(_sub_regions_response(client, level, code), '하위 지역')
 
 
-def _sub_regions_with_null_items(
-    client: NaverClient, level: Literal['GUN', 'EUP'], code: str,
-) -> tuple[list[NaverLegalDivisionInfoModel], int]:
-    """하위 지역 목록과, 그 목록에서 빈 항목(null)을 빼고 읽은 수. 실패하면 예외다.
-
-    목록이 하나뿐인지·구가 몇 곳인지로 판단하는 호출부가 쓴다 (빼고 읽었으면 하나뿐이라고 단정하지 않는다).
-    """
-    response = _sub_regions_response(client, level, code)
-    return unwrap(response, '하위 지역'), response.null_items('result')
-
-
 def _city_districts(sub_regions: list[NaverLegalDivisionInfoModel], city_code: str) -> list[NaverLegalDivisionInfoModel]:
     """시·도 아래 시·군·구 목록에서 그 시(코드 `city_code`)의 구. 코드 앞 네 자리가 같고 시 자신이 아닌 곳이다."""
     return [
@@ -1192,7 +1176,9 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         name = province.city_full_name or province.legal_division_name
         # _find_province 가 둘 중 하나의 이름으로 찾았다
         assert name is not None
-        children, dropped = _sub_regions_with_null_items(client, 'GUN', province.legal_division_number)
+        # 하위 지역 목록과, 그 목록에서 빈 항목(null)을 빼고 읽은 수. 실패하면 예외다
+        response = _sub_regions_response(client, 'GUN', province.legal_division_number)
+        children, dropped = unwrap(response, '하위 지역'), response.null_items('result')
         notes = [
             f"{name} 의 하위 지역입니다. 네이버 시·도 목록에는 옛 이름 '{query}' 대신 {name} 만 있습니다"
             + (f'. {FORMER_PROVINCE_NAME_HINTS[query]}' if query in FORMER_PROVINCE_NAME_HINTS else '')
