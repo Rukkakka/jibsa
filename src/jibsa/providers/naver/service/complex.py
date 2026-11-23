@@ -40,7 +40,6 @@ from jibsa.providers.naver.api.request.complex import (
 from jibsa.providers.naver.api.response.common import NaverPyeongModel
 from jibsa.providers.naver.api.response.complex import (
     NaverComplexPyeongPriceModel,
-    NaverMarketPriceModel,
     NaverRealPriceSummaryModel,
     NaverRealPriceSummaryTradeModel,
 )
@@ -750,20 +749,6 @@ def get_complex(
     return summary
 
 
-def _market_price(item: NaverMarketPriceModel) -> NaverMarketPrice:
-    # 함께 오는 중개사 이름·전화(realtors)는 옮기지 않는다
-    return NaverMarketPrice(
-        provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
-        base_date=normalize_date(item.base_date),
-        # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다)
-        sale_average_manwon=won_to_manwon(item.deal_average_price) if item.deal_average_price else None,
-        sale_range_manwon=manwon_range(item.deal_price_range),
-        jeonse_average_manwon=won_to_manwon(item.lease_average_price) if item.lease_average_price else None,
-        jeonse_range_manwon=manwon_range(item.deposit_price_range),
-        jeonse_ratio_percent=manwon_range(item.lease_per_deal_rate, scale=False),
-    )
-
-
 def _real_price_extreme(trade: NaverRealPriceSummaryTradeModel | None, jeonse: bool) -> NaverRealPriceExtreme | None:
     if trade is None:
         return None
@@ -805,50 +790,35 @@ def _price_per_pyeong(
         return None
     prices: dict[str, NaverPricePerPyeong | None] = {}
     for key, trade_type in PRICE_PER_PYEONG_TRADE_TYPES.items():
-        result = _price_per_pyeong_result(client, complex_number, pyeong_number, trade_type, key, notes)
+        # 성공인데 result 가 null 이면 빈 객체(월세처럼 평당가를 주지 않음)와 같게 읽어 그 거래 유형의 키를 뺀다. 조회 실패만 None(모름)이다
+        result = result_or_empty(lambda: client.run_request_complex_pyeong_price_pyeong_type_v1(
+            NaverComplexPyeongPricePyeongTypeV1RequestParameterModel(
+                complex_number=complex_number, pyeong_type_number=pyeong_number, trade_type=trade_type,
+            )
+        ), NaverComplexPyeongPriceModel, notes=notes, what=f'{TRADE_NAME_BY_CODE[trade_type]} 평당 호가',
+            unknown=f'모름(null)으로 낸 칸: price_per_pyeong.{key}')
         if result is None:
             # 조회 실패(모름)다. 평당가가 없는 것(키 삭제)과 섞지 않는다
             prices[key] = None
         elif result.price_per_pyeong:
-            prices[key] = _price_per_pyeong_trade(result)
-    return prices
-
-
-def _price_per_pyeong_result(
-    client: NaverClient,
-    complex_number: int,
-    pyeong_number: int,
-    trade_type: Literal['A1', 'B1'],
-    key: str,
-    notes: list[str],
-) -> NaverComplexPyeongPriceModel | None:
-    # 성공인데 result 가 null 이면 빈 객체(월세처럼 평당가를 주지 않음)와 같게 읽어 그 거래 유형의 키를 뺀다. 조회 실패만 None(모름)이다
-    return result_or_empty(lambda: client.run_request_complex_pyeong_price_pyeong_type_v1(
-        NaverComplexPyeongPricePyeongTypeV1RequestParameterModel(
-            complex_number=complex_number, pyeong_type_number=pyeong_number, trade_type=trade_type,
-        )
-    ), NaverComplexPyeongPriceModel, notes=notes, what=f'{TRADE_NAME_BY_CODE[trade_type]} 평당 호가',
-        unknown=f'모름(null)으로 낸 칸: price_per_pyeong.{key}')
-
-
-def _price_per_pyeong_trade(result: NaverComplexPyeongPriceModel) -> NaverPricePerPyeong:
-    # 서버 목록은 큰 단위부터(서울시·송파구·가락동)라 웹 막대 순서(동·구·시)로 뒤집는다. 목록을 주지 않으면(null)
-    # 평당가는 그대로 내고 지역·기준일만 모름(None)이다
-    regions = None if result.legal_division_price_per_pyeong_list is None else list(reversed(result.legal_division_price_per_pyeong_list))
-    dates = [date_ for date_ in (iso_date(region.first_day_of_week) for region in regions or []) if date_]
-    return NaverPricePerPyeong(
-        manwon_per_pyeong=won_to_manwon(result.price_per_pyeong),
-        as_of=max(dates) if dates else None,
-        regions=None if regions is None else [
-            NaverPricePerPyeongRegion(
-                name=region.legal_division_name,
-                level=PRICE_PER_PYEONG_LEVEL_LABELS.get(region.legal_division_level_type or '', region.legal_division_level_type),
-                # 평당가 0 은 없음으로 본다 (시세 평균·범위와 같은 규칙)
-                manwon_per_pyeong=won_to_manwon(region.price_per_pyeong) if region.price_per_pyeong else None,
+            # 서버 목록은 큰 단위부터(서울시·송파구·가락동)라 웹 막대 순서(동·구·시)로 뒤집는다. 목록을 주지 않으면(null)
+            # 평당가는 그대로 내고 지역·기준일만 모름(None)이다
+            regions = None if result.legal_division_price_per_pyeong_list is None else list(reversed(result.legal_division_price_per_pyeong_list))
+            dates = [date_ for date_ in (iso_date(region.first_day_of_week) for region in regions or []) if date_]
+            prices[key] = NaverPricePerPyeong(
+                manwon_per_pyeong=won_to_manwon(result.price_per_pyeong),
+                as_of=max(dates) if dates else None,
+                regions=None if regions is None else [
+                    NaverPricePerPyeongRegion(
+                        name=region.legal_division_name,
+                        level=PRICE_PER_PYEONG_LEVEL_LABELS.get(region.legal_division_level_type or '', region.legal_division_level_type),
+                        # 평당가 0 은 없음으로 본다 (시세 평균·범위와 같은 규칙)
+                        manwon_per_pyeong=won_to_manwon(region.price_per_pyeong) if region.price_per_pyeong else None,
+                    )
+                    for region in regions
+                ],
             )
-            for region in regions
-        ],
-    )
+    return prices
 
 
 def _pyeong_details(
@@ -928,7 +898,20 @@ def _pyeong_details(
         )
     details: dict[str, Any] = {
         'pyeong_maintenance_fee': maintenance,
-        'market_prices': None if market is None else [_market_price(item) for item in market],
+        # 함께 오는 중개사 이름·전화(realtors)는 옮기지 않는다
+        'market_prices': None if market is None else [
+            NaverMarketPrice(
+                provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
+                base_date=normalize_date(item.base_date),
+                # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다)
+                sale_average_manwon=won_to_manwon(item.deal_average_price) if item.deal_average_price else None,
+                sale_range_manwon=manwon_range(item.deal_price_range),
+                jeonse_average_manwon=won_to_manwon(item.lease_average_price) if item.lease_average_price else None,
+                jeonse_range_manwon=manwon_range(item.deposit_price_range),
+                jeonse_ratio_percent=manwon_range(item.lease_per_deal_rate, scale=False),
+            )
+            for item in market
+        ],
         'real_price_summary': NaverRealPriceSummary(
             since=since,
             sale=sale_summary,

@@ -19,7 +19,7 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 | `core/errors.py` | `JibsaError` 계열 — CLI 가 `{"error": {...}}` 로 내보내는 에러 |
 | `core/schema.py` | `RequestModel` (`extra='forbid'`) / `ResponseModel` (`extra='allow'`), 목록 칸 null 을 키 없음으로 읽는 `drop_null_lists` 와 객체 목록 안 null 원소를 빼고 칸마다 세는 `drop_null_items`·`null_items` (소스 기반 응답 모델이 wrap 검증기 `validate_dropping_nulls` 로 부른다. `| None` 칸의 null 은 모름으로 둔다) |
 | `core/geo.py` | geohash·거리 계산, 한국 좌표 범위, 기본 검색 반경 |
-| `core/korean.py` | 한글 이름 뒤 조사 고르기 (`particle`, `quoted`), 행정동 검색어에 법정동 힌트 (`legal_dong_hint`), 법정동 코드 단위 (`is_dong_code`, `is_ri_code`) |
+| `core/korean.py` | 한글 이름 뒤 조사 고르기 (`particle`, `quoted`), 행정동 검색어에 법정동 힌트 (`legal_dong_hint`), 법정동 코드 단위 (`is_province_code`, `is_district_code`, `is_dong_code`, `is_ri_code`) |
 | `providers/<source>/` | `api/` 아래층 (`client.py` · `request/` · `response/`, 당근은 `relay.py` · `parser.py` 도) → `service/` 윗층. request·response·service 는 같은 이름의 기능별 모듈 (기능이 여러 모듈이면 기능 이름 폴더, [모듈 구성](docs/development/provider-conventions.md#모듈-구성)) |
 
 소스별 비공식 API 의 엔드포인트·필드 의미는 각 provider 의 `api/client.py` docstring 과

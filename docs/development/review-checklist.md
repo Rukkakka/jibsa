@@ -42,7 +42,7 @@
    - 여럿일 때 일찍 멈춰 빠뜨리지 않는가, 에러에 합친 이름이 아니라 실패한 이름을 대는가.
    - 여러 단어 검색어('수정구 신흥')에서 전체와 끝 단어를 섞어 비교하지 않는가.
    - 멈추는 데만 쓰던 결과("여럿이면 멈춘다")를 고르는 데("하나뿐이면 고른다")에도 쓰게 바꿨으면, 그 하나가 고르려는 것과 같은
-     곳인지 대조하는가. 다른 자료(주소 검색 ↔ 자동완성)의 한 건은 다른 곳일 수 있다. 예: `providers/naver/service/region.py:221`
+     곳인지 대조하는가. 다른 자료(주소 검색 ↔ 자동완성)의 한 건은 다른 곳일 수 있다. 예: `providers/naver/service/region.py:269`
      (bcode 대조 없이 주소 검색 1건으로 자동완성 동을 골랐다, 2026-11-16).
    - "다 봤는지" 플래그로 고르는 판정에 `or` 로 붙은 다른 조건(후보가 하나뿐)이 그 플래그를 건너뛰지 않는가. 예:
      `providers/daangn/service/school.py` `resolve_school` (`len(candidates) == 1 or (len(exact) == 1 and checked)` 가 다음 쪽을 확인하지
@@ -52,15 +52,15 @@
      '비슷한 지역' 으로 내려갔다, 2026-11-22).
 
    확인: 후보 목록에 걸린 `len(...) == 1`·`break`·`next(...)`·`[0]` 자리마다 그 목록이 어디서 왔는지 거슬러 본다.
-   예: `providers/naver/service/region.py:162`·`:191`·`:170` (2026-11-16), `providers/daangn/service/school.py:204`.
+   예: `providers/naver/service/region.py:225`·`:231`·`:254` (2026-11-16), `providers/daangn/service/school.py:204`.
    언제: 후보 목록에 `len(...) == 1`·`next(`·`[0]`·`break` 가 걸린 `+` 줄, 또는 이름·주소로 후보를 고르거나 거르는 줄,
    `> 1` 로 멈추던 결과에 `== 1` 갈래를 더한 diff. 한 자동완성 판정(다음 쪽·좌표 없는 후보)을 고친 diff 면 같은 자동완성을 쓰는
-   짝 함수(동·역·단지·`regions`)도 본다. 예: `providers/naver/service/region.py:359`·`:1064` (동·단지만 고치고 역·`regions` 가
+   짝 함수(동·역·단지·`regions`)도 본다. 예: `providers/naver/service/region.py:369`·`:1226` (동·단지만 고치고 역·`regions` 가
    첫 쪽만 봤다, 2026-11-17).
 5. **누락값과 0.** 실패·모름은 `null`, 해당 없음은 키 삭제, 정말 빈 것만 `[]` 인가. `or`·`or 0`·`or inf`·`if not x` 로 0 과
    모름을 섞지 않는가. 날짜·층·이름·시각 자리와 `LABELS.get(raw or '', raw)` 같은 라벨 표 찾기에서 `'-'`·빈 글자를 그대로
    내지 않는가 (`.get` 의 두 번째 인자가 빈 글자를 돌려준다). 확인: 새 `or ...`·truthiness·기본값 `[]`·except 가 돌려주는 값을
-   본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:560` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17),
+   본다. 예: `cli/daangn.py:816` (실패한 칸을 `[]` 로), `providers/naver/service/listing.py:1003` ('-', 2026-11-16), 같은 파일 `get_listing` 의 `bool(article and article.is_direct_trade)` (직거래 여부를 모를 때를 '직거래 아님' 으로 보고 중개보수를 냈다, 2026-11-17),
    `providers/zigbang/service/stay/detail.py` 의 `stay_detail_to_listing` (입·퇴실 방식·주차 방식 빈 글자, 2026-11-17),
    `providers/zigbang/service/complex/trend.py` `_compare_candidates` (비교 후보 목록 null 을 `or []` 로 읽어 '후보를 주지 않는 단지'
    `INVALID_ARGUMENT` 를 냈다. 같은 함수의 비교 없는 갈래는 같은 null 을 모름으로 읽었다, 2026-11-22).
@@ -74,20 +74,20 @@
    `NaverVillaPyeongPriceModel.pyeong_price`, 2026-11-19). 한 필드를 이 이유로 `float` 로 바꿨으면 같은 응답 모델 파일들의 다른 평균·나눗셈 필드(`average*`·`avg*`·`*AverageFee`)도 함께 본다 (2026-11-19 네이버 빌라 real-price 리뷰: 평당 호가 둘만 바꾸고 평균 관리비·시세 평균·실거래 평균·주간 평균 매물 수를 `int` 로 남김). 개수 평균은 출력 모델도 `int | float` 로 바꿔야 하고, `float` 만 쓰면 정수가 `1006.0` 으로 나가 출력이 바뀐다.
 7. **지운 줄이 받던 입력.** `git diff` 의 `-` 줄이 받던 꼴(더 짧은 날짜, 다른 구분자, 빈 값)을 `+` 줄도 받는가. 고친 코드가
    예전보다 정보를 버리면 퇴보다. 확인: 지운 분기와 새 분기에 같은 입력을 넣어 비교한다.
-   예: `providers/naver/service/listing.py:129` (연월만 온 날짜의 '초순' 이 빠졌다, 2026-11-16).
+   예: `providers/naver/service/listing.py:151` (연월만 온 날짜의 '초순' 이 빠졌다, 2026-11-16).
    언제: 파싱·분기·검사의 `-` 줄을 다른 코드로 바꾼 diff (지우기만 한 줄도).
 8. **`--next` 로 이어 받을 때.** 첫 쪽 전용 안내를 되풀이하지 않는가, 앞 쪽의 모름(total None, 실패)을 이어 쓰지 않는가, 이어
    받은 첫 쪽이 비거나 null 일 때 "다 받음" 으로 끝내지 않는가. 확인: `resumed` 갈래마다 첫 쪽·이어 받은 쪽을 따라간다.
-   예: `providers/daangn/service/search.py:381`, `providers/dabang/service/common.py:705`.
+   예: `providers/daangn/service/search.py:381`, `providers/dabang/service/common.py:709`.
    언제: `resumed`·`--next`·커서 이어 받기(`cli/paging.py` 포함)를 건드리거나, 첫 쪽에만 붙는 안내를 더한 diff.
 9. **실패·취소 경로 (주로 `core/`).** 예외·Ctrl+C·다른 프로세스와 겹칠 때 브라우저·잠금·쿠키 파일을 정리하는가, 다른 프로세스가
    새로 쓴 파일을 덮지 않는가, 잠깐의 실패에 오래 남는 상태를 만들지 않는가. 예: `core/browser.py:1363`·`:1630`.
    언제: `core/` 의 `try`·`except`·`finally`·잠금·파일 쓰기·브라우저 열고 닫기를 바꾼 diff.
 10. **공백뿐이거나 앞뒤 공백이 붙은 사용자 입력.** 앞뒤 공백을 떼지 않으면 이름 비교(`==`·`endswith`)가 어긋나 맞는 후보를
-    못 찾는다 (웹 검색창은 trim 해서 보낸다). 예: `providers/naver/service/region.py:812` ('파크리오 ' 가 후보 3곳으로 멈췄다,
+    못 찾는다 (웹 검색창은 trim 해서 보낸다). 예: `providers/naver/service/region.py:839` ('파크리오 ' 가 후보 3곳으로 멈췄다,
     2026-11-17). 위치·이름 인자는 `min_length=1` 을 공백(`' '`)으로 지나므로 `.split()[-1]`·`[0]` 이 IndexError
     (INTERNAL_ERROR)가 된다. 서버가 빈 응답을 줘서 지금 안 닿는 것은 막는 이유가 아니다. 확인: `' '` 를 넣어 그 줄까지 따라간다.
-    예: `providers/naver/service/region.py:172` (`words[-1]`, 요청 전에 `:740` 에서 INVALID_ARGUMENT 로 막았다, 2026-11-16).
+    예: `providers/naver/service/region.py:221` (`words[-1]`, 요청 전에 `:843` 에서 INVALID_ARGUMENT 로 막았다, 2026-11-16).
     언제: 사용자 검색어에 `.split()`·인덱스를 쓰는 줄을 조건 밖으로 옮기거나 새로 더한 diff.
 11. **목록 여럿을 이어 낼 때 쪽 사이 겹침과 자리.** 서로 겹치는 목록(직방 원룸 목록의 '이 지역 오피스텔' 과 오피스텔 목록)을
     이어 내며 겹침을 한 호출 안에서만 빼면, `--next` 의 다음 쪽에 앞 쪽 매물이 다시 나오고, 목록마다의 자리를 더한 수가 서로 다른
@@ -103,11 +103,11 @@
 13. **해당 없음으로 키를 뺀 필드에 조건을 걸 때.** 키를 뺀 매물도 내부 값은 `None` 이라 `in_range` 같은 거르기가 '모름' 처럼
     조용히 뺀다. 그 조건으로 뺀 해당 없음 매물을 `[제외]` 로 알리거나 문서에 적었는가. 확인: 키를 빼는 조건(`not_applicable_fields`)과
     같은 필드의 거르기 함수를 나란히 보고, 그 매물이 있는 범위에 조건을 걸어 notes 를 본다.
-    예: `providers/zigbang/service/store.py:587` (권리금 조건에 사무실이 말없이 빠졌다, 2026-11-17).
+    예: `providers/zigbang/service/store.py:556` (권리금 조건에 사무실이 말없이 빠졌다, 2026-11-17).
     언제: `not_applicable_fields` 에 값에 따라 빠지는 키를 더하는 diff, 또는 그런 필드에 거르기 조건을 더하는 diff.
 14. **모르는 값을 같은 diff 안에서 같은 기준으로 다루는가.** 값이 `None`·빈 글자일 때 한 곳은 '요청하지 않음', 다른 곳은 '요청함' 이거나
     한 필드는 키를 빼고 다른 필드는 `null` 로 두지 않는가 (같은 모름을 요청할지·키를 뺄지로 갈라 쓰지 않는다). 확인: 같은 입력(상태 `None`,
-    `''`)을 요청 조건·키 제거 조건·출력 값 세 곳에 넣어 같은 결론인지 본다. 예: `providers/naver/service/listing.py:351`
+    `''`)을 요청 조건·키 제거 조건·출력 값 세 곳에 넣어 같은 결론인지 본다. 예: `providers/naver/service/listing.py:383`
     (`_draws_sale_taxes`, 분양 상태를 모를 때 요청 조건과 키 제거 조건이 한 판정을 쓰게 했다, 2026-11-17).
     언제: 직거래 여부·분양 상태처럼 '있는지 모르는' 값으로 요청이나 키 제거를 정하는 `+` 줄, 같은 값을 읽는 조건이 둘 이상 생긴 diff.
 15. **0 을 `null` 로 바꾸면 같은 점의 파생 값도.** 시세 평균·범위의 0 을 시세 없음으로 바꾸면서 같은 점의 전세가율 같은 파생
@@ -163,11 +163,11 @@
 1. **안내를 따르면 되는가 (모든 모드에서).** `--limit` 이 이미 최대값인데 늘리라고 하지 않는가. 좁히라고 권하는 것('지역'·
    '반경'·평형)이 그 명령·검색 방식에 실제로 있는가. 한 명령의 여러 모드(`--complex`·`--redevelopment` 등)가 같은 hint 표를
    쓰면, 그 hint 가 권하는 옵션을 모든 모드가 받는가. 조건과 상관없이 섞이는 묶음(직방 상가의 공실 줄)이 `total` 에 들면 그 조건은 좁혀도 그 줄이 줄지 않으니 권하지 않는다. 확인: `more_hint`·`pagination_notes`·`UsageHints` 의 값을 그 모드의 옵션
-   검사와 대조한다. 예: `core/listing.py:333`, `cli/naver.py:991` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16), `providers/zigbang/service/store.py` `STORE_VACANT_NARROW` (공실 묶음이 있는데 업종을 좁히라고 권함, 2026-11-21).
+   검사와 대조한다. 예: `core/listing.py:535`, `cli/naver.py:1239` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16), `providers/zigbang/service/store.py` `STORE_VACANT_NARROW` (공실 묶음이 있는데 업종을 좁히라고 권함, 2026-11-21).
    언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff, 조건과 상관없는 묶음을 `total` 에 넣은 diff.
 2. **예시 이름과 권하는 명령.** hint 의 예시·명령을 그대로 넣으면 그 명령이 받는가 (동을 받지 않는 명령에 동 이름, 여전히 모호한
    예시, 필수 옵션을 빼라는 안내). 확인: 예시를 그 명령의 인자 검사·resolver 에 넣어 따라간다.
-   예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`, `providers/zigbang/service/region.py:77`
+   예: `providers/daangn/service/region.py:300`, `providers/daangn/service/commute.py:268`, `providers/zigbang/service/region.py:174`
    (같은 이름 구 '중구' 에 '구 이름을 붙이라' 고 했고, 좌표를 받지 않는 `search complexes` 에 `--lat/--lng` 를 권했다. 후보 하나로
    가려지는 예시만 들게 했다, 2026-11-16).
    언제: hint·notes·에러 message 에 `jibsa ` 명령이나 예시 이름이 든 `+` 줄, 여러 명령이 함께 쓰는 hint 를 새 명령이 부르게 한 diff, 기본 hint 가 `--lat/--lng` 를 권하는 `RegionNotFoundError` 를 좌표 옵션이 없는 명령이 hint 를 넘기지 않고 던지게 한 diff (`providers/zigbang/service/region.py` `resolve_station`, 2026-11-21).
@@ -207,7 +207,7 @@
    언제: 서버 코드 → 한국어 이름표 dict 를 새로 두거나 값을 더하는 diff.
 10. **같은 매물을 내는 목록·상세가 해당 없음과 모름을 같게 내는가.** 상세에서 키를 빼는(해당 없음) 필드를 목록 모델도 같은 표로
     빼는지, 목록이 `null` 로 내지 않는지 본다. 확인: 같은 매물 하나를 목록과 상세로 불러 같은 필드가 키 없음·`null` 로 갈리는지 비교한다.
-    예: `providers/naver/service/common.py:309` (`NaverListing.not_applicable_fields`, 토지 목록에 방 수·층이 `null` 로 나갔다, 2026-11-17).
+    예: `providers/naver/service/common.py:340` (`NaverListing.not_applicable_fields`, 토지 목록에 방 수·층이 `null` 로 나갔다, 2026-11-17).
     언제: 상세 모델의 해당 없음 규칙(`not_applicable_fields`·유형별 표)을 더하거나 고친 diff, 같은 매물을 내는 목록 모델이 따로 있는 소스.
 11. **문서에 적은 값의 뜻을 응답 키·번들 상수로.** 문서·Field description 이 적은 값의 뜻(빈 목록이 무엇을 뜻하는지, 날짜가
    어느 날짜인지)이 그 필드를 채우는 응답 키와 번들 상수(코드 표)의 모든 값과 맞는가. 확인: 필드를 채우는 줄의 응답 키를 보고,
@@ -232,7 +232,7 @@
     Field 설명을 대 본다. 예: `providers/naver/service/common.py` `confirmed_at` (2026-11-18).
     언제: 날짜 필드를 더한 diff.
 15. **유형을 모르면 줄을 통째로 버리는 변환.** `… | None` 을 돌려주는 변환 함수가 모르는 유형에 `None` 을 주고 호출부가 그 줄을 빼면, 버린 수를 세어 `[제외]` 로 알리는가 (다방 `_unknown_trade_note`). 알리지 않으면 거래가 말없이 사라진다. 확인: 변환 결과가 `None` 일 때 건너뛰기로 끝나는 자리마다 센 수가 notes 에 가는지 본다 (`--limit` 으로 어차피 잘릴 자리는 세지 않아도 된다).
-    예: `providers/zigbang/service/real_price.py:369` 의 `unknown` 을 세는 줄 (`--trade 전체`, 2026-11-17).
+    예: `providers/zigbang/service/real_price.py:374` 의 `unknown` 을 세는 줄 (`--trade 전체`, 2026-11-17).
     언제: 변환 함수가 `None` 을 돌려주는 갈래를 더하거나 그 결과로 줄을 빼는 diff.
 16. **다른 명령을 권하는 안내가 사용자가 붙인 앞 낱말을 버리지 않는가.** 같은 이름을 가리려고 사용자가 앞에 붙인 구·동 낱말(`영등포구 양평역`)을 빼고 찾은 이름(`양평역`)만 권하면, 권한 명령을 그대로 불렀을 때 `REGION_AMBIGUOUS` 가 난다. 확인: 안내에 든 명령을 그대로 불러 같은 곳을 찾는지 본다.
     예: `cli/zigbang.py` `search listings apt` 의 '역 주변 단지는 jibsa zigbang search complexes 양평역' (2026-11-20).
@@ -268,14 +268,14 @@
    언제: 응답 필드를 출력에 새로 내거나 내는 범위(거래 유형·매물 유형)를 넓힌 diff.
 6. **칸을 붙이는 조건.** 웹이 그 칸(컴포넌트)을 붙이는 조건(매물 유형 목록, `!isDirectTrade` 같은 플래그)을 확인했는가. 조건
    밖의 매물에 값이나 `null` 을 내지 않고 키를 지우는가 (칸이 없으면 해당 없음). 확인: 번들에서 그 칸을 그리는 컴포넌트를 찾고,
-   부모가 그것을 붙이는 조건식과 유형별 칸 목록 함수를 본다. 예: `providers/naver/service/common.py:255`
+   부모가 그것을 붙이는 조건식과 유형별 칸 목록 함수를 본다. 예: `providers/naver/service/common.py:282`
    `NOT_APPLICABLE_FIELDS_BY_TYPE` (토지에 방 수·난방을 `null` 로 냈다), `is_direct_trade` (직거래에 중개보수를 냈다, 2026-11-17).
    칸이 없는 매물이어도 웹이 받는 같은 상세 응답의 값을 같은 이름표로 옮기는 것은 키를 지우지 않아도 되지만, 그때는 그 소스 가이드 '웹과 다른 점' 에 적는다 (네이버 단지형 빌라·단지 번호가 없는 단지 유형의 현관 구조·주차, 2026-11-18). 방 수처럼 개념상 해당하지 않는 필드는 지금대로 키를 지운다.
    언제: 상세 출력 필드를 새로 내거나, 여러 매물 유형·거래 유형에 같은 필드를 내는 diff.
 7. **칸이 거래·매물 유형마다 다르거나 단지 값으로 채우는가.** 웹이 거래 유형마다 칸을 다르게 그리는지(`getPriceLabel` 은 전세면 보증금만),
    매물 값이 비면 단지 값으로 채우는지(`매물 || 단지`)를 확인했는가. 값을 한 곳에서만 가져오거나 모든 유형에 같은 칸을 내지 않는다.
-   확인: 번들에서 그 필드를 그리는 식을 찾아 `||`·삼항·유형 분기를 본다. 예: `providers/naver/service/real_price.py:112`
-   (전세 갱신의 종전 월세), `providers/naver/service/listing.py:1027` (난방은 매물 값 `||` 단지 값, 2026-11-17).
+   확인: 번들에서 그 필드를 그리는 식을 찾아 `||`·삼항·유형 분기를 본다. 예: `providers/naver/service/real_price.py:159`
+   (전세 갱신의 종전 월세), `providers/naver/service/listing.py:1247` (난방은 매물 값 `||` 단지 값, 2026-11-17).
    언제: 출력 필드의 출처를 바꾸거나 새 엔드포인트로 값을 채우는 diff, 거래 유형별로 키를 빼거나 내는 `+` 줄.
 8. **웹 번들을 견주는 감시가 번들 모양에 기대거나 일부만 견주는가.** 매니페스트·조각 배열의 첫 항목처럼 순서에 기대지 않고
    이름으로 고르는가, jibsa 가 웹에서 옮긴 값(코드·행뿐 아니라 이름표처럼 출력에 나가는 글자)을 모두 견주는가. 웹이 다시
@@ -287,19 +287,19 @@
    위도와 상관없이 같지만 위도 폭은 메르카토르라 위도마다 다르다 (같은 388×200px 지도의 위도 폭이 서울 37.47° 에서 0.001703°,
    제주 33.5° 에서 0.0017893°). 한 단지에서 잰 도 값을 상수로 두면 다른 위도에서 웹과 범위가 어긋난다. 확인: 상수가 실측한
    도 값인지, 픽셀·축척으로 단지 위도에서 계산하는지 보고, 위도가 다른 두 곳을 넣어 위도 폭을 견준다. 예:
-   `providers/naver/service/real_price.py` `_web_map_box` (빌라 주변 실거래 기본 범위가 572549 에서 잰 도 상수였다, 2026-11-19).
+   `providers/naver/service/real_price.py` 의 `get_real_prices` 안 웹 지도 범위 계산 (빌라 주변 실거래 기본 범위가 572549 에서 잰 도 상수였다, 2026-11-19).
    언제: 웹 지도 범위(`top`·`bottom`·`left`·`right`, bounds)를 흉내 내는 기본값을 더하거나 바꾼 diff.
 10. **웹이 어떤 조건에서 칸을 숨기면 같은 응답의 다른 칸에도 그 조건을 똑같이 적용했는가.** 관리비 없음이면 웹은 '관리비 없음' 만 그리고
    미포함 항목 줄을 그리지 않는데, 포함 항목만 그 조건을 따르고 미포함 항목은 응답 그대로 내면 같은 매물에서 두 칸이 어긋난다.
    확인: 웹 렌더 함수가 그 조건에서 돌려주는 값에 그 칸이 있는지 번들로 본다.
-   예: `providers/zigbang/service/room/detail.py:232` `manage_cost_excludes` (포함 항목만 관리비 없음을 `[]` 로 보고 미포함은 응답 그대로 냈다, 2026-11-20 직방 리뷰).
+   예: `providers/zigbang/service/room/detail.py:225` `manage_cost_excludes` (포함 항목만 관리비 없음을 `[]` 로 보고 미포함은 응답 그대로 냈다, 2026-11-20 직방 리뷰).
    언제: 웹이 값을 숨기거나 바꿔 그리는 조건(관리비 없음·확인 불가·유형 분기)을 옮긴 `+` 줄, 같은 응답의 칸 여럿 중 일부에만 그 조건을 건 diff.
 
 ## `requests` 요청 수·차단 위험
 
 1. **이미 아는 것을 다시 묻지 않는가.** 앞 결과·캐시·방금 받은 응답으로 아는 값을 다시 묻거나, 답이 같을 두 번째 요청을 보내지
    않는가. 확인: 루프·후속 검사 안의 resolve·search 호출이 결과를 바꿀 입력이 실제로 있는지 따진다.
-   예: `providers/daangn/service/region.py:557`, `providers/naver/service/region.py:226` (같은 자동완성 재호출, 2026-11-16).
+   예: `providers/daangn/service/region.py:557`, `providers/naver/service/region.py:291` (같은 자동완성 재호출, 2026-11-16).
    언제: 루프·후속 검사 안에 resolve·search·client 호출이 든 `+` 줄.
 2. **결과가 정해진 뒤의 요청.** 더 없음을 알면서 빈 쪽을 한 번 더 받거나, 빈 쪽의 hasMore 를 믿고 쪽 상한까지 묻지 않는가.
    예: `providers/daangn/service/common.py:845`.
@@ -308,7 +308,7 @@
    실패(요청 제한 포함)해도 받은 결과를 버리지 않는가. 예: `providers/daangn/service/search.py:113`.
    언제: 수 세기·이름 찾기 같은 덤 조회를 더하거나 순서를 바꾼 diff.
 4. **요청 전에 막을 수 있는 입력.** 결과와 상관없이 막힐 입력을 요청 뒤에 막지 않는가 (이름 모양으로 짐작해야만 막을 수 있으면
-   아래 "지적하지 말 것"). 예: `providers/dabang/service/ranking.py:780`.
+   아래 "지적하지 말 것"). 예: `providers/dabang/service/ranking.py:763`.
    언제: 입력 검사·에러를 요청 뒤에 두는 `+` 줄.
 5. **transport 밖 요청과 서버 신호 (`core/`).** CORS 사전 요청·redirect·첫 화면도 세는가, `Retry-After` 보다 짧게 쉬지 않는가,
    429 에 쿠키를 버려 첫 화면 요청을 다시 쏟지 않는가. 예: `core/browser.py:1197`·`:1248`.
@@ -317,10 +317,12 @@
 ## `design` 구조·중복·단순화
 
 1. **같은 규칙 두 벌.** 같은 판정식·문구·흐름·필터가 다른 함수·파일에 또 있는가, 이미 있는 helper 를 다시 만들었는가.
-   확인: 새 함수·식·문구의 핵심 낱말로 grep 한다. 예: `core/listing.py:333`, `providers/daangn/service/common.py:834`,
-   `providers/naver/service/common.py:824` (동 경계/반경 갈래가 세 함수에 따로 있었다, 2026-11-16). 공통 함수가 생긴 뒤에도 한 소스가 손으로
+   확인: 새 함수·식·문구의 핵심 낱말로 grep 한다. 예: `core/listing.py:535`, `providers/daangn/service/common.py:834`,
+   `providers/naver/service/common.py:1203` (동 경계/반경 갈래가 세 함수에 따로 있었다, 2026-11-16). 공통 함수가 생긴 뒤에도 한 소스가 손으로
    쓴 문장을 남기면 그 소스만 갈래(요청 제한의 대기 시간 등)가 빠진다. 예: 직방 덤 조회 `[실패]` 14곳이 `core/listing.py` `lookup_failure_note`
-   대신 `({type(exc).__name__})` 문장이라 요청 제한에 대기 시간이 없었다 (2026-11-22).
+   대신 `({type(exc).__name__})` 문장이라 요청 제한에 대기 시간이 없었다 (2026-11-22). `core/korean.py` `is_province_code` 를 더하며
+   직방 `providers/zigbang/service/region.py` 의 `endswith('00000000')` 두 곳을 놓쳤고, `AGENTS.md` 구조 표의 `core/korean.py` 칸에도
+   이름을 넣지 않았다 (2026-11-23 리뷰).
    언제: 새 함수·상수·문구·필터·갈래를 더한 diff, `core/` 에 여러 소스용 함수를 더하거나 바꾼 diff (그 일을 하는 소스별 문장을 grep 한다).
 2. **호출부마다 달라야 할 인자에 기본값.** `narrow`·`max_limit` 처럼 호출부마다 값이 달라야 맞는 인자에 기본값을 두면 빠뜨려도
    조용히 틀린다. 설정을 dict 로 `**` 풀어 넘기지 않는다. 예: `providers/naver/service/common.py` `pagination_notes` 의 `narrow`.
@@ -371,7 +373,7 @@
 2. **조사.** 이름 뒤 조사는 `particle` 로 고르고, '으로/로' 처럼 받지 않는 쌍은 문장을 바꾼다. 예: `providers/daangn/service/compare.py:831`.
    언제: f-string 의 `{이름}` 바로 뒤에 조사('이'·'가'·'을'·'를'·'은'·'는'·'으로'·'로')가 붙은 `+` 줄.
 3. **바뀐 동작 근처의 주석·docstring.** 동작을 바꾼 diff 면 그 함수 docstring·주변 주석(요청 수, 예시, `리뷰 오탐` 주석)이 새
-   동작과 맞는가. 예: `providers/naver/service/common.py:136` 위 주석 (단지 모드에도 붙는 hint 를 지역 검색에만 붙인다고 적었다, 2026-11-16).
+   동작과 맞는가. 예: `providers/naver/service/common.py:161` 위 주석 (단지 모드에도 붙는 hint 를 지역 검색에만 붙인다고 적었다, 2026-11-16).
    언제: 동작을 바꾼 diff 에서 그 함수의 docstring·주석이 함께 바뀌지 않았을 때.
 4. **금액을 줄이지 않기.** 금액은 만원이고 반올림·버림·올림 없이 원 단위까지 낸다 ([금액·단위](output-contract.md#금액단위)). 금액
    필드·라벨·안내 문구에 `round`·`floor`·`:g`·`.1f` 나 반올림하는 식을 새로 쓰지 않았는가
@@ -415,14 +417,14 @@
 
 1. **"비슷한 두 함수·검사를 합쳐라".** 입력 형식, 실패 시 계약(키 하나 null 이냐 둘 이냐), 예산 세는 법, 층의 책임, 검사 시점,
    호출마다 다른 에러 문구가 달라서 따로 둔 것은 합치면 출력이 바뀌거나 갈래 인자가 붙은 함수가 된다. 그 차이가 주석에 있으면
-   지적하지 않는다 (없으면 `design` 1 대로 지적한다). 예: `providers/dabang/service/school.py:446`, `core/schema.py:37`.
+   지적하지 않는다 (없으면 `design` 1 대로 지적한다). 예: `providers/dabang/service/school.py:482`, `core/schema.py:37`.
 2. **닿지 않는 경로의 틀린 값.** 모든 호출부가 돌려받은 값을 바로 거절하거나, 값이 Literal 고정이라 받침이 늘 있거나, 앞 상한에
    먼저 닿아 그 갈래에 가지 않으면 오탐이다. 지적하기 전에 그 갈래에 닿는 입력을 하나 댈 수 있어야 한다.
    예: `providers/dabang/service/region.py:232`, `providers/daangn/service/complex.py:1076`.
 3. **"받은 결과를 `[:limit]` 로 잘라라 / 쪽 사이 중복을 지워라".** 서버가 `first` 만큼만 주고, 자르면 커서가 잘린 매물 뒤를
    가리켜 빠진다. 커서로 이어진 쪽끼리는 겹치지 않는다. 예: `providers/daangn/service/search.py:208`.
 4. **"0 과 null, null 과 키 삭제를 통일하라".** 웹이 0 을 그리는 법('0원' 이냐 '정보 없음' 이냐)이 칸마다 다르고, 웹이 그릴 수
-   있는 칸인데 값만 없으면 해당 없음이 아니라 모름(`null`)이다. 예: `providers/dabang/service/real_price.py:895`.
+   있는 칸인데 값만 없으면 해당 없음이 아니라 모름(`null`)이다. 예: `providers/dabang/service/real_price.py:854`.
 5. **"요청 전에 막아라" (이름을 찾아봐야 종류를 아는 경우).** 동인지 구인지 모양으로 짐작해 막으면 잘못 막는다.
    예: `cli/daangn.py:1095`.
 6. **"이름으로 중복을 지우면 다른 역이 합쳐진다".** 서버가 같은 이름 역을 노선 꼬리로 갈라 주고 이름이 곧 키다.
@@ -432,12 +434,12 @@
    오지 않는다는 것은 코드로 막힌 것이 아니라 추론이다. 출퇴근 경로 `_route` 는 노선 꼬리가 어긋나 처음·끝 역 이름이 맞지 않으면
    None(모름)을 줘 틀린 경로가 나가지 않는다 (`providers/daangn/service/common.py`, `providers/daangn/service/commute.py`).
 7. **응답 필드 표기·정밀도.** 엔드포인트마다 snake_case·camelCase 가 다르고(`providers/dabang/api/response/sale.py:471`), 거리를
-   소수로 받는 것은 정렬 뒤 출력할 때만 웹 `d` 식(`_web_distance`)으로 반올림하려는 것이다 (`providers/dabang/service/nearby.py:377`).
+   소수로 받는 것은 정렬 뒤 출력할 때만 웹 `d` 식(`_nearest` 의 `distance_m`)으로 반올림하려는 것이다 (`providers/dabang/service/nearby.py:375`).
 8. **검토하고 그대로 둔 설계.** `proxy=''` 를 잘못된 주소로 보기, 요청 하나 전체에 시간 상한 없음, 탭이 닫히면 닫고 다시 띄우기
    (`core/browser.py:671`·`:818`·`:1739`), 평형 코드가 없을 때 전체 평균으로 물러서지 않기
    (`providers/daangn/service/compare.py:508`).
 9. **꺼진 상태가 정상인 기능 스위치의 기본값.** 한 호출부만 켜고 나머지는 꺼야 맞는 bool(`listing_search`)은 `design` 2 가
-   아니다. 지금 호출부는 모두 맞고, 틀리려면 호출부가 바뀌어야 한다. 예: `providers/naver/service/region.py:761`.
+   아니다. 지금 호출부는 모두 맞고, 틀리려면 호출부가 바뀌어야 한다. 예: `providers/naver/service/region.py:788`.
 10. **"응답 모델 칸의 자료형이 바뀌면 그 응답을 같이 읽는 다른 명령까지 `PARSE_ERROR` 가 된다".** 글자 칸에 숫자가 오는 것처럼 응답 형식이 바뀌는 일은 [매일 API 감시](README.md#매일-api-감시)가 잡는 고장이라 칸마다 받는 형식을 미리 넓혀 두지 않는다 ([코드 리뷰](agents.md#코드-리뷰) 2단계). 서버가 소수·0 처럼 지금 값의 연장을 줄 수 있는 칸(`correctness` 6)과는 다르다. 예: 직방 단지 상세 `relateDanji`·`landTradePermit` (2026-11-21).
 11. **웹이 만원 정수로만 보여 주는 금액을 원 단위로 반올림하는 식을 웹 `Math.round` 와 견주지 않는다.** 금액은 원 단위까지 내는
     것이 규약이고(`convention` 4), 견줄 웹 값이 없다. 예: `providers/daangn/service/compare.py` 관리비 (2026-11-19 리뷰 오탐).

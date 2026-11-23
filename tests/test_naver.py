@@ -1375,15 +1375,13 @@ def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() ->
 
 
 def test_price_per_pyeong_null_region_list_keeps_the_price() -> None:
-    from jibsa.providers.naver.api.response.complex import NaverComplexPyeongPriceModel
-    from jibsa.providers.naver.service.complex import (
-        _price_per_pyeong,
-        _price_per_pyeong_trade,
-    )
+    from jibsa.providers.naver.service.complex import _price_per_pyeong
 
     # 지역 목록이 null 이어도 평당가는 그대로 내고 지역·기준일만 모름(null)이다
-    result = NaverComplexPyeongPriceModel.model_validate({'pricePerPyeong': 150000000, 'legalDivisionPricePerPyeongList': None})
-    trade = _price_per_pyeong_trade(result)
+    null_regions = _ok({'pricePerPyeong': 150000000, 'legalDivisionPricePerPyeongList': None})
+    with make_path_client([], {'/complex/pyeongPrice/pyeongType': null_regions}) as client:
+        trade = _price_per_pyeong(client, 100001, 1, 'A01', [])['sale']
+    assert trade is not None
     assert (trade.manwon_per_pyeong, trade.as_of, trade.regions) == (15000, None, None)
     # 성공인데 result 가 null 이면 평당가를 주지 않은 것이라 키를 빼고(월세와 같다), 조회 실패만 null(모름)이다
     with make_path_client([], {'/complex/pyeongPrice/pyeongType': _ok(None)}) as client:

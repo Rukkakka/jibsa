@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
@@ -31,13 +31,11 @@ from jibsa.providers.zigbang.api.response.apt import (
     ZigbangItemCatalogsItemsResponseModel,
 )
 from jibsa.providers.zigbang.api.response.common import (
-    ZigbangDanjiRankModel,
     ZigbangItemCatalogModel,
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
 from jibsa.providers.zigbang.api.response.complex.base import (
-    ZigbangDanjiRoomTypeModel,
     ZigbangDanjisRoomTypesResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex.search import (
@@ -68,8 +66,6 @@ from jibsa.providers.zigbang.api.response.stay.detail import (
 from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
 from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoresV2ResponseModel,
-    ZigbangStoreArticleStoreV2ResponseModel,
-    ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.apt import (
     ZigbangAptConditions,
@@ -87,8 +83,8 @@ from jibsa.providers.zigbang.service.common.room import (
     summary_to_listing,
 )
 from jibsa.providers.zigbang.service.complex.detail import (
-    complex_rank_of,
-    pyeong_of,
+    ZigbangComplex,
+    get_complex,
 )
 from jibsa.providers.zigbang.service.complex.search import (
     complex_order_of,
@@ -132,7 +128,6 @@ from jibsa.providers.zigbang.service.room.search import search_listings
 from jibsa.providers.zigbang.service.stay.detail import (
     STAY_REFUND_RULES,
     ZigbangStayListingDetail,
-    _stay_host_others,
     stay_detail_to_listing,
 )
 from jibsa.providers.zigbang.service.stay.search import stay_marker_order
@@ -140,9 +135,8 @@ from jibsa.providers.zigbang.service.store import (
     STORE_VACANT_SECTION,
     ZigbangStoreConditions,
     ZigbangStoreSearchResult,
+    get_store_listing,
     search_store_listings,
-    store_detail_to_listing,
-    store_summary_to_listing,
 )
 
 
@@ -583,8 +577,8 @@ def test_apt_no_new_sale_sends_false_on_every_page() -> None:
 
 
 def test_store_detail_drops_contact_and_photos() -> None:
-    response = ZigbangStoreArticleStoreV2ResponseModel.model_validate(load('store_article_store_v2'))
-    detail = store_detail_to_listing(response).model_dump()
+    with make_client(lambda request: httpx.Response(200, json=load('store_article_store_v2'))) as client:
+        detail = get_store_listing(client, 4000001).model_dump()
     assert detail['id'] == 'store-4000001'
     assert detail['building_floor'] == '5' and detail['elevator'] is True
     assert detail['nearby_subways'] == ['가상역 (2호선)']
@@ -598,16 +592,25 @@ def test_store_detail_drops_contact_and_photos() -> None:
     ('카페/커피', None, True),
 ])
 def test_store_office_key_money_key_dropped_only_when_missing(business: str, key_money: int | None, has_key: bool) -> None:
-    summary = ZigbangStoreSummaryModel.model_validate(load('store_article_stores_list_v2')[0])
-    summary = summary.model_copy(update={'business': business, 'key_money': key_money})
-    listing = store_summary_to_listing(summary).model_dump(mode='json')
+    summary = dict(load('store_article_stores_list_v2')[0], 업종=business, 권리금액=key_money)
+    pins = [{'title': '이 지역 상가', 'item_locations': [{'item_id': summary['item_id'], 'lat': 37.5, 'lng': 127.03}]}]
+
+    def search_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/stores/list'):
+            return httpx.Response(200, json=[summary])
+        return httpx.Response(200, json=pins)
+
+    region = ZigbangRegion(name='center', lat=37.5, lng=127.03)
+    with make_client(search_handler) as client:
+        listing = search_store_listings(client, region).listings[0].model_dump(mode='json')
     assert ('key_money_manwon' in listing) is has_key
     if has_key:
         assert listing['key_money_manwon'] == key_money
     data = load('store_article_store_v2')
     data['item']['업종'] = business
     data['item']['권리금액'] = key_money
-    detail = store_detail_to_listing(ZigbangStoreArticleStoreV2ResponseModel.model_validate(data)).model_dump(mode='json')
+    with make_client(lambda request: httpx.Response(200, json=data)) as client:
+        detail = get_store_listing(client, 4000001).model_dump(mode='json')
     assert ('key_money_manwon' in detail) is has_key
 
 
@@ -619,7 +622,8 @@ def test_store_trade_follows_sales_title_then_rent(sales_title: str | None, rent
     data = load('store_article_store_v2')
     data['item']['sales_title'] = sales_title
     data['item']['월세금액'] = rent
-    detail = store_detail_to_listing(ZigbangStoreArticleStoreV2ResponseModel.model_validate(data)).model_dump(mode='json')
+    with make_client(lambda request: httpx.Response(200, json=data)) as client:
+        detail = get_store_listing(client, 4000001).model_dump(mode='json')
     assert detail['trade_type'] == expected
     if expected == '월세':
         assert detail['rent_manwon'] == rent
@@ -1380,23 +1384,43 @@ def test_same_name_school_without_coordinates_still_counts_as_a_candidate() -> N
 # --- 단지 정보 (complex) --------------------------------------------------------
 
 def test_complex_rank_minus_one_and_zero_prices_are_unknown() -> None:
+    def get_apt_complex(room_types: list[dict], **danji_extra: object) -> ZigbangComplex:
+        def handler(request: httpx.Request) -> httpx.Response:
+            path = request.url.path
+            if path.endswith('/room_types'):
+                return httpx.Response(200, json={'room_types': room_types})
+            if path.endswith('/item-catalogs'):
+                return httpx.Response(200, json={'danjiRoomTypes': [{'id': 1}]})
+            if path.endswith('/schools'):
+                return httpx.Response(200, json={})
+            return httpx.Response(200, json={**load('danjis'), **danji_extra})
+
+        with make_client(handler) as client:
+            return get_complex(client, 'apt-9001')
+
     both = {'local2': {'name': '송파구', 'rank': 1, 'total': 10}, 'local3': {'name': '가락동', 'rank': 1, 'total': 3}}
     # -1 은 웹이 '순위 없음' 으로 그리는 값이다
-    rank = complex_rank_of(ZigbangDanjiRankModel.model_validate({**both, 'viewCountRank': 7, 'tradePriceRank': -1}))
+    rank = get_apt_complex([], **{'순위': {**both, 'viewCountRank': 7, 'tradePriceRank': -1}}).rank
     assert rank is not None and (rank.region, rank.price_rank, rank.popularity_rank) == ('가락동', None, 7)
     # 웹은 구·동 순위 중 하나라도 없으면 절을 그리지 않는다
-    assert complex_rank_of(ZigbangDanjiRankModel.model_validate({'local3': both['local3'], 'viewCountRank': 7})) is None
+    assert get_apt_complex([], **{'순위': {'local3': both['local3'], 'viewCountRank': 7}}).rank is None
     # 0 인 시세·관리비는 웹이 '시세없음'·'-' 로 그리므로 모름(null)이다. 빠진 평형이면 새 값이 모두 null 이다
-    detail = ZigbangDanjiRoomTypeModel.model_validate({
+    detail = {
         'id': 1, '총세대수': 731, '현관구조': '', 'manage_cost': {'관리비': 0, '여름관리비': 0, '겨울관리비': 45},
         'sales_price': {'min': 0, 'per_area': 10533}, 'rent_price': {'min': 145000, 'per_area': 0}, '거래가능시점': '20160601',
-    })
-    pyeong = pyeong_of(ZigbangDanjiRoomTypeModel.model_validate({'id': 1}), detail).model_dump()
+    }
+
+    def complex_pyeong(room_types: list[dict]) -> dict:
+        pyeongs = get_apt_complex(room_types).pyeongs
+        assert pyeongs is not None
+        return pyeongs[0].model_dump()
+
+    pyeong = complex_pyeong([detail])
     assert (pyeong['manage_cost_manwon'], pyeong['manage_cost_summer_manwon'], pyeong['manage_cost_winter_manwon']) == (None, None, 45)
     assert (pyeong['estimated_sale_price_manwon'], pyeong['estimated_sale_price_per_pyeong_manwon']) == (None, 10533)
     assert (pyeong['estimated_jeonse_price_manwon'], pyeong['estimated_jeonse_price_per_pyeong_manwon']) == (145000, None)
     assert (pyeong['households'], pyeong['entrance_type'], pyeong['resale_available_from']) == (731, None, '2016-06-01')
-    assert pyeong_of(ZigbangDanjiRoomTypeModel.model_validate({'id': 1}), None).model_dump()['households'] is None
+    assert complex_pyeong([{'id': 2}])['households'] is None
 
 
 # --- 원룸·빌라·오피스텔 상세 보강 -----------------------------------------------
@@ -1515,13 +1539,29 @@ def test_stay_marker_order_price_uses_weekly_total_price_then_recommended() -> N
     assert stay_marker_order(markers, 'price') == [3, 2, 1, 4]
 
 
+def stay_listing_with_host(host_id: int, host_body: dict | None) -> dict:
+    # 상세·요약·후기는 비어 있어도 되는 응답을 주고 임대인의 다른 방 경로만 `host_body` 로 갈라 낸다 (None 이면 그 경로 요청은 틀린 것이다)
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if '/host/' in path:
+            assert host_body is not None, '임대인 ID 가 0 이하면 요청을 보내지 않아야 한다'
+            return httpx.Response(200, json=host_body)
+        if path.endswith('/reviews'):
+            return httpx.Response(200, json={})
+        if path.endswith('/by-ids'):
+            return httpx.Response(200, json={'items': []})
+        return httpx.Response(200, json=dict(load('guest_items'), hostId=host_id))
+
+    with make_client(handler) as client:
+        return get_any_listing(client, 'stay-5001').model_dump()
+
+
 def test_stay_host_others_without_items_is_unknown() -> None:
     # 실제 응답으로 재현하지 못하는 빈 응답. 목록 키가 없거나 null 이면 '다른 방 없음' 이 아니라 모름이다
     def run(body: dict) -> dict:
-        with make_client(lambda request: httpx.Response(200, json=body)) as client:
-            values, notes = _stay_host_others(client, 1, 2)
-        assert notes == []
-        return values
+        listing = stay_listing_with_host(2, body)
+        assert listing.get('notes', []) == []
+        return {key: listing.get(key) for key in ('host_other_listings', 'host_other_listing_count')}
 
     assert run({}) == {'host_other_listings': None, 'host_other_listing_count': None}
     assert run({'items': None, 'totalCount': 3}) == {'host_other_listings': None, 'host_other_listing_count': 3}
@@ -1530,13 +1570,9 @@ def test_stay_host_others_without_items_is_unknown() -> None:
 
 def test_stay_host_others_skips_non_positive_host_id() -> None:
     # 요청 모델의 host_id 는 gt=0 이라 0 이하를 넣으면 ValidationError 로 '받지 못해' 로 잘못 알렸다. 부르지 않고 모름이다 (안내 없음)
-    def refuse(request: httpx.Request) -> httpx.Response:
-        raise AssertionError('임대인 ID 가 0 이하면 요청을 보내지 않아야 한다')
-
-    with make_client(refuse) as client:
-        values, notes = _stay_host_others(client, 1, 0)
-    assert values == {'host_other_listings': None, 'host_other_listing_count': None}
-    assert notes == []
+    listing = stay_listing_with_host(0, None)
+    assert (listing['host_other_listings'], listing['host_other_listing_count']) == (None, None)
+    assert listing.get('notes', []) == []
 
 
 def test_stay_detail_drops_review_rating_when_no_reviews() -> None:
@@ -1712,7 +1748,7 @@ def test_trade_row_keys_by_trade_and_presale() -> None:
     assert not {'price_manwon', 'new_high', 'new_low', 'renewal', 'prev_diff_manwon', 'market_price_diff_manwon'} & row.keys()
 
 
-def test_region_info_price_tabs_and_population_period() -> None:
+def test_region_info_price_tabs_and_population_period(monkeypatch: pytest.MonkeyPatch) -> None:
     prices = [
         ZigbangLocalPriceModel.model_validate(item)
         for item in (
@@ -1730,8 +1766,28 @@ def test_region_info_price_tabs_and_population_period() -> None:
     assert region_info._sale_price_bounds(prices) == (7500, 95000)
     assert region_info._description_counts('4,923 단지 · 1,876,379 세대') == (4923, 1876379) and region_info._description_counts('') == (None, None)
     # 인구 그래프 기간: 끝은 지난달, 시작은 그 5년 전 같은 달 (2026-11-19 캡처 202110~202610)
-    assert region_info.population_period(date(2026, 11, 22)) == ('202110', '202610')
-    assert region_info.population_period(date(2027, 1, 5)) == ('202112', '202612')
+    monkeypatch.setattr(region_info, 'resolve_local_area', lambda client, query: _area('구'))
+    periods = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(('/total_people_time', '/total_households_time')):
+            periods.append((request.url.params['startDate'], request.url.params['endDate']))
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json={})
+
+    today = [date(2026, 11, 22)]
+
+    class FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(today[0].year, today[0].month, today[0].day)
+
+    monkeypatch.setattr(region_info, 'datetime', FakeDatetime)
+    for today[0], expected in ((date(2026, 11, 22), ('202110', '202610')), (date(2027, 1, 5), ('202112', '202612'))):
+        periods.clear()
+        with make_client(handler) as client:
+            region_info.get_region_info(client, '가상구')
+        assert periods == [expected, expected]
 
 
 # --- 시세 추이 (price-trend)·학교 정보 -------------------------------------------

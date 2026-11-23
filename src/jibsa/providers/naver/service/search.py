@@ -39,7 +39,6 @@ from jibsa.providers.naver.api.request.search import (
 )
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
-    NaverComplexListAddressModel,
     NaverComplexListItemModel,
     NaverComplexListPageModel,
     NaverResponseModel,
@@ -291,15 +290,6 @@ class NaverAreaComplexesResult(BaseModel):
     ] = []
 
 
-def _complex_list_address(address: NaverComplexListAddressModel | None) -> str | None:
-    """단지 목록의 sector 는 '서울시 강남구 역삼동' 처럼 시·구까지 붙어 온다 (단지 정보 API 는 동만)."""
-    if address is None:
-        return None
-    sector = address.sector or ''
-    base = sector if ' ' in sector else join_address(address.city, address.division, sector)
-    return normalize_address(join_address(base, address.jibun))
-
-
 def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) -> NaverAreaComplex | None:
     entry = item.complex or item.villa
     if entry is None:
@@ -308,10 +298,16 @@ def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) 
     if info is None:
         return None
     coordinates = info.address.coordinates if info.address else None
+    address = None
+    if info.address is not None:
+        # 단지 목록의 sector 는 '서울시 강남구 역삼동' 처럼 시·구까지 붙어 온다 (단지 정보 API 는 동만)
+        sector = info.address.sector or ''
+        base = sector if ' ' in sector else join_address(info.address.city, info.address.division, sector)
+        address = normalize_address(join_address(base, info.address.jibun))
     return NaverAreaComplex(
         complex_number=info.complex_number,
         name=info.name,
-        address=_complex_list_address(info.address),
+        address=address,
         distance_km=round(
             haversine_km(center[0], center[1], coordinates.y_coordinate, coordinates.x_coordinate), 2,
         ) if coordinates else None,
@@ -503,7 +499,7 @@ def _search_listing_pages(
 class NaverListingConditions(NaverTradeConditions):
     """지도 매물 검색 조건 (search listings). 금액은 만원, 면적은 ㎡.
 
-    모두 서버 필터로 보내고 받은 뒤 다시 거르지 않는다 (`listing_filter_of`). 목록 안의 여러 값은 시설·단지 주차만
+    모두 서버 필터로 보내고 받은 뒤 다시 거르지 않는다 (`search_area`). 목록 안의 여러 값은 시설·단지 주차만
     모두 해당(AND)이고 나머지는 하나라도 해당(OR)이다. 세대수·단지 주차는 단지로 등록된 매물에만 있고, 현관 구조는
     등록된 매물(단지가 아닌 빌라 포함)에만 걸린다.
     """
@@ -602,9 +598,40 @@ class NaverListingConditions(NaverTradeConditions):
     ] = False
 
 
-def listing_filter_of(conditions: NaverListingConditions) -> NaverArticleFilterModel:
-    """지도 매물 검색 조건을 네이버 매물 필터로 바꾼다. 금액은 원으로 바꿔 보낸다."""
-    return NaverArticleFilterModel(
+def search_area(
+    client: NaverClient,
+    lat: float,
+    lng: float,
+    *,
+    conditions: NaverListingConditions | None = None,
+    radius_km: float = 1.0,
+    sort: str = '랭킹순',
+    legal_division_code: str | None = None,
+    limit: int = 30,
+    start: dict[str, Any] | None = None,
+) -> NaverListingsResult:
+    """좌표 반경 안이나 법정동·시·군·구 안의 매물을 네이버 정렬 순서 그대로 모은다.
+
+    `legal_division_code` 를 주면 그 동·시·군·구 경계 안 목록, 아니면 반경을 감싼 사각형 안 목록에서 반경 밖 매물을 뺀다
+    (`_search_listing_pages`). 둘 다 네이버 웹 지도의 매물 목록이 쓰는 API 이고, 네이버 정렬에는
+    거리순이 없어 결과도 `distance_km` 순이 아니다. 받은 매물 수가 `limit` 에 닿거나 요청 상한에 닿으면 멈추고,
+    받은 뒤 뺀 매물만큼 다시 채우지 않는다.
+
+    조건은 모두 서버 필터로 보내 조건에 맞는 매물만 받고, 받은 뒤 다시 거르지 않는다
+    (2026-10-10 실측: 가격 조건 4종 118건과 단지 매물 38건 모두 조건 안). 서버는 키 이름이 틀리면 조용히
+    무시하므로, 필터 키를 바꿀 때는 원본 응답이 조건 안인지 live 테스트로 확인한다. 금액은 만원으로 받아 원으로 바꿔 보낸다.
+    세대수·단지 주차는 단지로 등록된 매물에만 있어 주면 단지가 없는 빌라 대부분이 빠지고, 현관 구조는 등록되지 않은
+    매물이 빠진다 (둘 다 `notes` 로 알린다).
+
+    Args:
+        conditions: 매물 조건 (`NaverListingConditions`). 비면 주거용 전체.
+        sort: 정렬 (`SORT_TYPE_BY_NAME` 의 이름).
+        legal_division_code: 법정동 코드. 주면 반경 대신 그 경계 전체를 찾고 `lat`/`lng` 는 거리 계산에만 쓴다.
+        start: 이어 받기(`--next`) 위치로, 앞 결과의 `next_position` 이다. 결과의 `next_position` 은 더 받을 게 남았을 때만 있다.
+    """
+    conditions = conditions or NaverListingConditions()
+    # 지도 매물 검색 조건을 네이버 매물 필터로 바꾼다. 금액은 원으로 바꿔 보낸다
+    filter_ = NaverArticleFilterModel(
         # 비우면 단기임대(B3)까지 전체. 직방·당근과 같이 거래 유형을 주지 않으면 모두 보여 준다
         trade_types=[TRADE_CODE_BY_NAME[trade] for trade in conditions.trade_types or TRADE_CODE_BY_NAME],
         real_estate_types=[
@@ -644,41 +671,6 @@ def listing_filter_of(conditions: NaverListingConditions) -> NaverArticleFilterM
             _filter_range(0, conditions.subway_minutes) if conditions.subway_minutes is not None else None
         ),
     )
-
-
-def search_area(
-    client: NaverClient,
-    lat: float,
-    lng: float,
-    *,
-    conditions: NaverListingConditions | None = None,
-    radius_km: float = 1.0,
-    sort: str = '랭킹순',
-    legal_division_code: str | None = None,
-    limit: int = 30,
-    start: dict[str, Any] | None = None,
-) -> NaverListingsResult:
-    """좌표 반경 안이나 법정동·시·군·구 안의 매물을 네이버 정렬 순서 그대로 모은다.
-
-    `legal_division_code` 를 주면 그 동·시·군·구 경계 안 목록, 아니면 반경을 감싼 사각형 안 목록에서 반경 밖 매물을 뺀다
-    (`_search_listing_pages`). 둘 다 네이버 웹 지도의 매물 목록이 쓰는 API 이고, 네이버 정렬에는
-    거리순이 없어 결과도 `distance_km` 순이 아니다. 받은 매물 수가 `limit` 에 닿거나 요청 상한에 닿으면 멈추고,
-    받은 뒤 뺀 매물만큼 다시 채우지 않는다.
-
-    조건은 모두 서버 필터로 보내 조건에 맞는 매물만 받고, 받은 뒤 다시 거르지 않는다
-    (2026-10-10 실측: 가격 조건 4종 118건과 단지 매물 38건 모두 조건 안). 서버는 키 이름이 틀리면 조용히
-    무시하므로, 필터 키를 바꿀 때는 원본 응답이 조건 안인지 live 테스트로 확인한다. 금액은 만원으로 받아 원으로 바꿔 보낸다.
-    세대수·단지 주차는 단지로 등록된 매물에만 있어 주면 단지가 없는 빌라 대부분이 빠지고, 현관 구조는 등록되지 않은
-    매물이 빠진다 (둘 다 `notes` 로 알린다).
-
-    Args:
-        conditions: 매물 조건 (`NaverListingConditions`). 비면 주거용 전체.
-        sort: 정렬 (`SORT_TYPE_BY_NAME` 의 이름).
-        legal_division_code: 법정동 코드. 주면 반경 대신 그 경계 전체를 찾고 `lat`/`lng` 는 거리 계산에만 쓴다.
-        start: 이어 받기(`--next`) 위치로, 앞 결과의 `next_position` 이다. 결과의 `next_position` 은 더 받을 게 남았을 때만 있다.
-    """
-    conditions = conditions or NaverListingConditions()
-    filter_ = listing_filter_of(conditions)
     # 서버 필터가 특정 매물 유형을 통째로 빼는 조건은 notes 로 알린다 (결과는 다시 거르지 않는다)
     filter_notes: list[str] = []
     has_complex_filter = (

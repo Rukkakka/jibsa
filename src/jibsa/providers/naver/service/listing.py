@@ -65,7 +65,6 @@ from jibsa.providers.naver.api.response.listing import (
     NaverArticleDetailInfoModel,
     NaverArticleKeyModel,
     NaverArticleMaintenanceFeeModel,
-    NaverCommunalComplexInfoModel,
     NaverDevelopmentArticleModel,
     NaverMovingInInfoModel,
     NaverPriceInfoModel,
@@ -245,7 +244,7 @@ ENTRANCE_LABELS: dict[str, str] = {code: name for name, code in ENTRANCE_CODE_BY
 # `VILLA_COMPLEX_CODES`)는 다른 화면(ArticleVillaBuildingInfo)이라 규칙이 다르다 (`_facility_values`)
 COMPLEX_INFO_TYPES: frozenset[str] = frozenset({'A01', 'A02', 'A04', 'B01', 'B02'})
 # 웹이 건축물 정보 칸을 그리는 건축물대장 유형 15개 (웹 isBuildingRegistrationType, 2026-11-18 번들 청크 0l4pkwg0qhg2t 의
-# ArticleBuildingInfo, 번들 REAL_ESTATE_TYPE 대조). 매물에 주차 대수가 없을 때 건축물대장 대수로 채우는 유형이다 (`_registered_parking_count`)
+# ArticleBuildingInfo, 번들 REAL_ESTATE_TYPE 대조). 매물에 주차 대수가 없을 때 건축물대장 대수로 채우는 유형이다 (`_building_parking`)
 BUILDING_REGISTRATION_TYPES: frozenset[str] = frozenset({
     'C01', 'C02', 'C03', 'C04', 'C06',
     'D01', 'D02', 'D03', 'D04', 'D05',
@@ -820,37 +819,6 @@ def _coded_label(labels: dict[str, str], code: str | None) -> str | None:
     return labels.get(code) or unknown_code_label('값', code)
 
 
-def _direction_label(space: NaverSpaceInfoModel | None) -> str | None:
-    """방향 ('남향', 기준이 있으면 '남향 (거실 기준)').
-
-    표에 없는 코드는 괄호를 한 번만 써서 '알 수 없는 값 (XY, 거실 기준)' 으로 낸다.
-    """
-    direction = _coded_label(DIRECTION_BY_CODE, space.direction if space else None)
-    if direction is None or space is None or not space.direction_standard:
-        return direction
-    if space.direction not in DIRECTION_BY_CODE:
-        return unknown_code_label('값', f'{space.direction}, {space.direction_standard}')
-    return f'{direction} ({space.direction_standard})'
-
-
-def _building_name(article: NaverArticleDetailInfoModel | None, real_estate_type: str) -> str | None:
-    """웹 제목의 건물 이름. 건물 이름이 없으면 None.
-
-    건물 하위 이름은 매물 유형이 C01·D05 이거나 (유형, 건물 세부 유형)이 `BUILDING_SUB_NAME_BUILDING_TYPES` 의 짝일 때만
-    띄어 붙이고, 그 밖에는 건물 이름만 쓴다.
-    """
-    if article is None:
-        return None
-    name = (article.non_complex_building_name or '').strip()
-    if not name:
-        return None
-    sub_name = (article.non_complex_building_sub_name or '').strip()
-    joins_sub_name = real_estate_type in BUILDING_SUB_NAME_REAL_ESTATE_TYPES or (
-        article.building_type in BUILDING_SUB_NAME_BUILDING_TYPES.get(real_estate_type, frozenset())
-    )
-    return f'{name} {sub_name}' if sub_name and joins_sub_name else name
-
-
 def _room_type(space: NaverSpaceInfoModel | None, shape: str | None) -> str | None:
     """상세의 방 구조. 방 수로 투룸·쓰리룸·포룸이상을 가리고, 방 1개면 복층 여부와 원룸 구조(shape)로 정한다.
 
@@ -889,7 +857,7 @@ def list_complex_articles(
     동 목록을 조회했으면 단지 종류를 이미 알아 다시 묻지 않는다). 요청은 `MAX_COMPLEX_ARTICLE_PAGE_REQUESTS` 회에서
     멈추고 `notes` 로 알린다. 처음 보는 매물이 없는 페이지가 오면 커서가 멈춘 것으로 보고 끝낸다.
     평형 번호를 주었는데 0건이면 평형 목록으로 번호를 확인한다 (1~2회 추가, 아파트로 정해지면 빌라 목록은 묻지 않는다).
-    단지 종류를 모른 채 0건이면 단지 정보로 단지가 있는지 확인한다 (1~2회 추가, `_raise_if_missing_complex`).
+    단지 종류를 모른 채 0건이면 단지 정보로 단지가 있는지 확인한다 (1~2회 추가).
 
     Raises:
         JibsaError: 평형 번호가 그 단지에 없거나, 단지 번호가 아파트·빌라 단지 어디에도 없으면 NOT_FOUND.
@@ -967,7 +935,11 @@ def list_complex_articles(
         # 첫 페이지가 빌 때 fetch 안에서 이미 확인했다
         check_pyeong_numbers(client, complex_number, pyeong_numbers, villa=villa)
     elif not inspected and not known_at_start and not pyeong_numbers:
-        _raise_if_missing_complex(client, complex_number)
+        # 아파트 단지 정보를 먼저 묻고, 빈 결과면 빌라 단지 정보를 묻는다. 단지 매물 목록은 아파트·빌라 모두 없는 단지 번호에도
+        # 빈 성공 응답을 줘서, 매물이 없는 단지와 구분되지 않는다 (2026-10-23 실측: 빌라 목록이 99999999 와 아파트 단지
+        # 헬리오시티 111515 에 똑같이 `totalCount: 0`).
+        if villa_by_complex_response(client.run_request_complex_v1(NaverComplexV1RequestParameterModel(complex_number=complex_number))):
+            unwrap(client.run_request_complex_villa_v1(NaverComplexVillaV1RequestParameterModel(complex_number=complex_number)), '단지')
 
     notes: list[str] = []
     if truncated:
@@ -992,17 +964,6 @@ def list_complex_articles(
         listings=result,
         notes=notes,
     )
-
-
-def _raise_if_missing_complex(client: NaverClient, complex_number: int) -> None:
-    """단지 번호가 아파트·빌라 단지 어디에도 없으면 NOT_FOUND. 아파트 단지 정보를 먼저 묻고, 빈 결과면 빌라 단지 정보를 묻는다.
-
-    단지 매물 목록은 아파트·빌라 모두 없는 단지 번호에도 빈 성공 응답을 줘서, 매물이 없는 단지와 구분되지 않는다
-    (2026-10-23 실측: 빌라 목록이 99999999 와 아파트 단지 헬리오시티 111515 에 똑같이 `totalCount: 0`). 평형 번호를 주었으면
-    평형 목록 확인(`check_pyeong_numbers`)이 같은 일을 한다.
-    """
-    if villa_by_complex_response(client.run_request_complex_v1(NaverComplexV1RequestParameterModel(complex_number=complex_number))):
-        unwrap(client.run_request_complex_villa_v1(NaverComplexVillaV1RequestParameterModel(complex_number=complex_number)), '단지')
 
 
 def _loan_manwon(price: NaverPriceInfoModel | None) -> float | None:
@@ -1242,29 +1203,6 @@ def _floor_per_household(per_household: float | None) -> float | None:
     return float(Decimal(str(per_household)).quantize(Decimal('0.01'), rounding=ROUND_FLOOR)) or None
 
 
-def _registered_parking_count(client: NaverClient, key: NaverArticleKeyModel, notes: list[str]) -> _ParkingCount | None:
-    """건축물대장의 총 주차 대수와 세대당 대수 (1회 호출). pnu 가 없거나 조회가 실패하거나 대장에 대수가 없으면 모름(None)이다.
-    조회가 실패했을 때만 `notes` 에 `[실패]` 안내를 붙인다 (pnu 가 없거나 대수가 없는 것은 실패가 아니다).
-
-    웹(ArticleBuildingInfo)은 pnu 가 없으면 이 요청을 보내지 않는다 (`enabled: !!pnu`). 0 대도 대수라 그대로 돌려준다.
-    """
-    pnu = key.key.pnu if key.key else None
-    if not pnu:
-        return None
-    registration = result_or_none(
-        lambda: client.run_request_complex_building_registration_v1(
-            NaverComplexBuildingRegistrationV1RequestParameterModel(pnu=pnu, real_estate_type=key.type.real_estate_type)
-        ),
-        notes=notes,
-        what='건축물대장 주차 대수',
-        unknown='주차 대수 없이 낸 칸: parking',
-    )
-    info = registration.parking_info if registration else None
-    if info is None or info.total_parking_count is None:
-        return None
-    return _ParkingCount(info.total_parking_count, _floor_per_household(info.parking_count_per_household))
-
-
 def _building_parking(
     client: NaverClient,
     key: NaverArticleKeyModel,
@@ -1280,10 +1218,23 @@ def _building_parking(
     if facility is not None and facility.total_parking_count:
         parking = _ParkingCount(facility.total_parking_count, _floor_per_household(facility.parking_count_per_household))
     else:
-        registered = _registered_parking_count(client, key, notes)
-        if registered is None:
+        # 건축물대장 조회가 실패했을 때만 `notes` 에 `[실패]` 안내를 붙인다 (pnu 가 없거나 대장에 대수가 없는 것은 실패가 아니다).
+        # 웹(ArticleBuildingInfo)은 pnu 가 없으면 이 요청을 보내지 않는다 (`enabled: !!pnu`). 0 대도 대수라 그대로 쓴다.
+        pnu = key.key.pnu if key.key else None
+        registration = None
+        if pnu:
+            registration = result_or_none(
+                lambda: client.run_request_complex_building_registration_v1(
+                    NaverComplexBuildingRegistrationV1RequestParameterModel(pnu=pnu, real_estate_type=key.type.real_estate_type)
+                ),
+                notes=notes,
+                what='건축물대장 주차 대수',
+                unknown='주차 대수 없이 낸 칸: parking',
+            )
+        info = registration.parking_info if registration else None
+        if info is None or info.total_parking_count is None:
             return parking_label(possible)
-        parking = registered
+        parking = _ParkingCount(info.total_parking_count, _floor_per_household(info.parking_count_per_household))
     # 웹 건축물 정보(ArticleBuildingInfo)는 '주차 N대' 하나뿐이라 매물 대수도 '단지 전체' 없이 늘 '총' 이다
     detail = f'총 {parking.total}대'
     if parking.per_household is not None:
@@ -1430,7 +1381,14 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     facility = detail.facility_info if detail else None
     complex_info = basic.communal_complex_info
 
-    title = _listing_title(complex_info, article)
+    # 단지 이름(없으면 매물 이름)·동과 매물 특징으로 제목을 만든다
+    title_parts = [
+        (complex_info.complex_name if complex_info else None) or (article.article_name if article else None),
+        dong_label(complex_info.dong_name) if complex_info and complex_info.dong_name else None,
+    ]
+    title = ' '.join(part for part in title_parts if part)
+    if article and article.article_feature_description:
+        title = f'{title} · {article.article_feature_description}' if title else article.article_feature_description
     move_in = _move_in_label(moving)
     manage_cost, manage_cost_includes = _manage_cost(fee, notes)
 
@@ -1467,6 +1425,27 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         approved_at = building_approved_at(facility) or _complex_approved_at(client, complex_number, key, complex_, notes)
     facility_values = _facility_values(client, key, facility, complex_number, complex_, notes)
 
+    # 웹 제목의 건물 이름. 건물 이름이 없으면 None. 건물 하위 이름은 매물 유형이 C01·D05 이거나
+    # (유형, 건물 세부 유형)이 `BUILDING_SUB_NAME_BUILDING_TYPES` 의 짝일 때만 띄어 붙이고, 그 밖에는 건물 이름만 쓴다.
+    building_name: str | None = None
+    if article is not None:
+        name = (article.non_complex_building_name or '').strip()
+        if name:
+            sub_name = (article.non_complex_building_sub_name or '').strip()
+            joins_sub_name = real_estate_type in BUILDING_SUB_NAME_REAL_ESTATE_TYPES or (
+                article.building_type in BUILDING_SUB_NAME_BUILDING_TYPES.get(real_estate_type, frozenset())
+            )
+            building_name = f'{name} {sub_name}' if sub_name and joins_sub_name else name
+
+    # 방향 ('남향', 기준이 있으면 '남향 (거실 기준)'). 표에 없는 코드는 괄호를 한 번만 써서 '알 수 없는 값 (XY, 거실 기준)' 으로 낸다
+    direction = _coded_label(DIRECTION_BY_CODE, space.direction if space else None)
+    if direction is not None and space is not None and space.direction_standard:
+        direction = (
+            unknown_code_label('값', f'{space.direction}, {space.direction_standard}')
+            if space.direction not in DIRECTION_BY_CODE
+            else f'{direction} ({space.direction_standard})'
+        )
+
     return NaverListingDetail(
         source='naver',
         id=article_number,
@@ -1501,7 +1480,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         complex_name=complex_info.complex_name if complex_info else None,
         dong=complex_info.dong_name if complex_info else None,
         pyeong_number=key.key.pyeong_type_number if key.key else None,
-        building_name=_building_name(article, real_estate_type),
+        building_name=building_name,
         building_type=_coded_label(BUILDING_TYPE_LABELS, article.building_type if article else None),
         has_article_detail=article is not None,
         is_direct_trade=is_direct_trade is True,
@@ -1511,7 +1490,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         contract_area_m2=listed_area if is_officetel else None,
         room_count=space.room_count if space else None,
         bathroom_count=space.bath_room_count if space else None,
-        direction=_direction_label(space),
+        direction=direction,
         move_in=move_in,
         parking=facility_values.parking,
         # 엘리베이터는 중개사가 고르는 기타시설(etc) 항목 하나라 없으면 고르지 않은 것인지 없는 것인지 모른다. 그래서 False 를
@@ -1604,34 +1583,6 @@ def _article_basic(client: NaverClient, article_number: str, key: NaverArticleKe
     return basic_response.result
 
 
-def _listing_title(
-    complex_info: NaverCommunalComplexInfoModel | None,
-    article: NaverArticleDetailInfoModel | None,
-) -> str:
-    """단지 이름(없으면 매물 이름)·동과 매물 특징으로 제목을 만든다."""
-    title_parts = [
-        (complex_info.complex_name if complex_info else None) or (article.article_name if article else None),
-        dong_label(complex_info.dong_name) if complex_info and complex_info.dong_name else None,
-    ]
-    title = ' '.join(part for part in title_parts if part)
-    if article and article.article_feature_description:
-        title = f'{title} · {article.article_feature_description}' if title else article.article_feature_description
-    return title
-
-
-def _is_jibun_shown(real_estate_type: str, article: NaverArticleDetailInfoModel | None) -> bool:
-    """주소에 지번을 붙일지. 웹 위치 칸(ArticleBuildingInfo, 번들 청크 0l4pkwg0qhg2t)과 같은 규칙이다.
-
-    `JIBUN_EXPOSURE_REAL_ESTATE_TYPES` 유형은 `isJibunAddressExposed` 를, 그 밖의 유형은 건물 세부 유형이 단독(C0301)일 때만 그 값을
-    따르고 나머지는 늘 보인다. 상세(articleDetailInfo)나 `isJibunAddressExposed` 가 없으면 숨기는 쪽이고, 건물 세부 유형이 없으면 단독이 아니다.
-    """
-    exposed = bool(article.is_jibun_address_exposed) if article else False
-    building_type = article.building_type if article else None
-    if real_estate_type in JIBUN_EXPOSURE_REAL_ESTATE_TYPES or building_type == JIBUN_EXPOSURE_BUILDING_TYPE:
-        return exposed
-    return True
-
-
 def _jibun_address(
     client: NaverClient,
     key: NaverArticleKeyModel,
@@ -1641,7 +1592,7 @@ def _jibun_address(
     """웹 위치 칸과 같게 만든 주소: article/key 의 법정동 코드로 받은 지역 이름 + 리 + 지번(보일 때만).
 
     웹은 좌표가 아니라 매물의 법정동 코드로 `legalDivision/infoList` 를 불러 `regionName` 을 얻고 `[regionName, address.li, 지번]` 을
-    공백으로 잇는다 (`_is_jibun_shown`). 같은 방법을 쓰므로 경계 근처 매물에 옆 동 이름이 붙지 않고, 읍·면 매물의 리가 빠지지 않는다.
+    공백으로 잇는다 (지번을 붙일지는 아래 주석). 같은 방법을 쓰므로 경계 근처 매물에 옆 동 이름이 붙지 않고, 읍·면 매물의 리가 빠지지 않는다.
     article/key 에 주소나 법정동 코드가 없으면 None 이다 (요청 없음). 있으면 좌표와 상관없이 1회 요청한다. 조회가 실패하거나
     응답에 그 코드의 이름이 없으면 None 이고 `notes` 에 `[실패]` 안내가 붙는다.
     """
@@ -1665,5 +1616,14 @@ def _jibun_address(
         # 성공 응답인데 그 코드의 이름이 없다. 거절·형식 변경과 같게 알린다
         add_failure_note(notes, None, '지번 주소', unknown)
         return None
-    jibun = address.jibun if _is_jibun_shown(key.type.real_estate_type, article) else None
+    # 주소에 지번을 붙일지. 웹 위치 칸(ArticleBuildingInfo, 번들 청크 0l4pkwg0qhg2t)과 같은 규칙이다.
+    # `JIBUN_EXPOSURE_REAL_ESTATE_TYPES` 유형은 `isJibunAddressExposed` 를, 그 밖의 유형은 건물 세부 유형이 단독(C0301)일 때만 그 값을
+    # 따르고 나머지는 늘 보인다. 상세(articleDetailInfo)나 `isJibunAddressExposed` 가 없으면 숨기는 쪽이고, 건물 세부 유형이 없으면 단독이 아니다.
+    building_type = article.building_type if article else None
+    jibun_shown = (
+        (bool(article.is_jibun_address_exposed) if article else False)
+        if key.type.real_estate_type in JIBUN_EXPOSURE_REAL_ESTATE_TYPES or building_type == JIBUN_EXPOSURE_BUILDING_TYPE
+        else True
+    )
+    jibun = address.jibun if jibun_shown else None
     return normalize_address(join_address(division.region_name, address.li, jibun))

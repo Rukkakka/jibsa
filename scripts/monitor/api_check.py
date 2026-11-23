@@ -210,7 +210,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 전체는 서버 거래 유형 all 을 보내 매매와 전월세를 한 목록으로 받는다 (거래마다 trade_type)
         Step('아파트 실거래가 전체', ('zigbang', 'real-price'), ('{apt}', '--trade', '전체', '--limit', '3'), 'transactions'),
         # 평형별 실거래는 다른 API 다. 고른 평형에 거래가 없을 수 있어 거래 칸 대신 평형 칸을 본다. API 가 바뀌면 첫 응답의 평형
-        # 목록 확인(`_check_real_price_scope`)이 NOT_FOUND 를 내 고장으로 잡힌다
+        # 목록 확인(`get_real_prices` 의 첫 쪽 확인)이 NOT_FOUND 를 내 고장으로 잡힌다
         Step('아파트 평형 실거래가', ('zigbang', 'real-price'), ('{apt}', '--pyeong', '{apt_pyeong}', '--limit', '3'), 'pyeong_id'),
         # 시세 추이는 단지 줄(`lines`)이 기대 칸이다. 비교 후보(comparable_complexes)는 비교할 만한 단지가 없는 단지도 정상이라 보지
         # 않고, `may_be_empty` 는 Step 전체에 걸려 `lines` 가 빈 고장도 가리므로 걸지 않는다. 평형 추이(--pyeong)는 다른 API 라

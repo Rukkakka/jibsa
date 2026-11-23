@@ -57,8 +57,6 @@ from jibsa.providers.naver.api.response.real_price import (
     NaverRealPriceModel,
     NaverVillaAroundModel,
     NaverVillaAroundPriceModel,
-    NaverVillaAroundTradeModel,
-    NaverVillaRealPriceModel,
 )
 from jibsa.providers.naver.service.common import (
     PERIOD_MONTHS_BY_NAME,
@@ -399,19 +397,6 @@ NEARBY_TRADES_LIMIT_NOTE: str = note(
 )
 
 
-def _web_map_box(lat: float, lng: float) -> tuple[float, float, float, float]:
-    """웹 주변 실거래 칸이 단지 좌표(`lat`, `lng`)를 가운데로 잡는 작은 지도의 범위를 (남, 북, 서, 동) 도로 준다.
-
-    경도 폭은 위도와 상관없이 같고, 위도 폭은 메르카토르 투영이라 위도마다 다르다.
-    """
-    half_lng = AROUND_WEB_MAP_WIDTH_PX / 2 * AROUND_WEB_DEGREES_PER_PX
-    half_y = AROUND_WEB_MAP_HEIGHT_PX / 2 * radians(AROUND_WEB_DEGREES_PER_PX)
-    y = log(tan(pi / 4 + radians(lat) / 2))
-    south = degrees(2 * atan(exp(y - half_y)) - pi / 2)
-    north = degrees(2 * atan(exp(y + half_y)) - pi / 2)
-    return south, north, lng - half_lng, lng + half_lng
-
-
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
     return NaverRealPrice(
         trade_type=trade_type,
@@ -425,25 +410,6 @@ def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
         renewal=item.is_renew,
         previous_deposit_manwon=won_to_manwon(item.already_deposit),
         previous_rent_manwon=won_to_manwon(item.already_monthly_rent),
-    )
-
-
-def _villa_real_price(item: NaverVillaRealPriceModel, trade_type: str) -> NaverRealPrice:
-    return NaverRealPrice(
-        trade_type=trade_type,
-        trade_date=normalize_date(item.trade_date),
-        floor=item.floor,
-        price_manwon=won_to_manwon(item.deal_price),
-        deposit_manwon=won_to_manwon(item.deposit),
-        rent_manwon=won_to_manwon(item.monthly_rent),
-        category=item.trade_category,
-        cancelled=item.is_canceled,
-        renewal=_renewal_by_right(item.is_renew_request_right),
-        # 종전 보증금·월세: 빌라 실거래 행에도 alreadyDeposit·alreadyMonthlyDeposit(아파트의 alreadyMonthlyRent 와 키 이름이
-        # 다르다)가 오고, 웹 빌라 실거래 표는 isRenewRequestRight 행에 '기존 …' 으로 보여 준다 (2026-11-18 번들 청크
-        # 1un70f33iojlw). drop_not_applicable 이 아파트와 같은 규칙(갱신 전세·월세만, 전세는 종전 월세 삭제)으로 키를 지운다
-        previous_deposit_manwon=won_to_manwon(item.already_deposit),
-        previous_rent_manwon=won_to_manwon(item.already_monthly_deposit),
     )
 
 
@@ -494,7 +460,119 @@ def get_real_prices(
             client, complex_number, pyeong_number, trade_type=trade_type, pages=pages, group=group, around_km=around_km,
         )
     if villa:
-        _add_villa_trade_info(client, result, around_km=around_km, today=today)
+        # 두 조회(평당 실거래가, 주변 실거래)는 `--period`·`--pages` 와 상관없다 (웹 칸도 실거래 목록과 따로 부른다)
+        # 빌라 단지 평당 실거래가를 받는 거래 유형. 웹은 매매·전세일 때만 이 칸을 그리고 월세면 칸이 없다 (청크 b042d8aace_1okty1145x932, 2026-11-18)
+        if result.trade_type in SALE_JEONSE_CODE_BY_NAME:
+            # 시작일은 오늘의 5년 전이다 (웹과 같다). 조회가 실패하면 모름(None)이고 `[실패]` 안내를 붙인다. 거래가 없으면 `[]` 이고, 성공인데 `result` 가 null 이어도 거래 없음(`[]`)이다
+            rows = result_or_empty(
+                lambda: client.run_request_complex_villa_real_price_pyeong_price_v1(
+                    NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel(
+                        complex_number=result.complex_number,
+                        pyeong_type_number=result.pyeong_number,
+                        trade_type=SALE_JEONSE_CODE_BY_NAME[result.trade_type],
+                        start_date=years_ago(today, PRICE_PER_PYEONG_YEARS),
+                    )
+                ),
+                list,
+                notes=result.notes,
+                what='평당 실거래가',
+                unknown='모름(null)으로 낸 칸: price_per_pyeong_trades',
+            )
+            result.price_per_pyeong_trades = None if rows is None else [
+                NaverRealPricePerPyeong(trade_date=iso_date(row.trade_date), manwon_per_pyeong=won_to_manwon(row.pyeong_price))
+                for row in rows
+            ]
+            result._price_per_pyeong_scoped = True
+        # 단지 둘레 주변 실거래 (단지 좌표 1회 + 주변 실거래 1회). 단지 좌표를 모르거나 조회가 실패하면 모름(None)이다
+        complex_ = result_or_none(
+            lambda: client.run_request_complex_villa_v1(
+                NaverComplexVillaV1RequestParameterModel(complex_number=result.complex_number)
+            ),
+            notes=result.notes,
+            what='단지 좌표',
+            unknown='모름(null)으로 낸 칸: nearby_transactions',
+        )
+        center = None if complex_ is None else complex_.coordinates
+        result.nearby_transactions = None
+        if center is not None:
+            lat, lng = center.y_coordinate, center.x_coordinate
+            # 범위는 단지 좌표를 가운데로 `around_km` 을 주면 그 반경을 감싼 사각형(`box_around`), 아니면 웹 작은 지도 크기다
+            if around_km is not None:
+                south, north, west, east = box_around(lat, lng, around_km)
+            else:
+                # 웹 주변 실거래 칸이 단지 좌표를 가운데로 잡는 작은 지도의 범위를 (남, 북, 서, 동) 도로 구한다. 경도 폭은 위도와
+                # 상관없이 같고, 위도 폭은 메르카토르 투영이라 위도마다 다르다
+                half_lng = AROUND_WEB_MAP_WIDTH_PX / 2 * AROUND_WEB_DEGREES_PER_PX
+                half_y = AROUND_WEB_MAP_HEIGHT_PX / 2 * radians(AROUND_WEB_DEGREES_PER_PX)
+                y = log(tan(pi / 4 + radians(lat) / 2))
+                south = degrees(2 * atan(exp(y - half_y)) - pi / 2)
+                north = degrees(2 * atan(exp(y + half_y)) - pi / 2)
+                west, east = lng - half_lng, lng + half_lng
+            around = result_or_empty(
+                lambda: client.run_request_complex_villa_real_price_around_v1(
+                    NaverComplexVillaRealPriceAroundV1RequestParameterModel(
+                        complex_number=result.complex_number,
+                        pyeong_type_number=result.pyeong_number,
+                        trade_type=TRADE_CODE_BY_NAME[result.trade_type],
+                        top=north,
+                        bottom=south,
+                        left=west,
+                        right=east,
+                        zoom=AROUND_ZOOM,
+                    )
+                ),
+                NaverVillaAroundModel,
+                notes=result.notes,
+                what='주변 실거래',
+                unknown='모름(null)으로 낸 칸: nearby_transactions',
+            )
+            if around is not None:
+                trades: list[NaverNearbyTrade] = []
+                # 빈 항목(null)이라 빼고 읽은 수. 서버는 그 자리도 거래로 세어 10건까지 주므로 상한에 닿았는지 볼 때 더한다
+                dropped = around.null_items('bundles')
+                for bundle in around.bundles or []:
+                    dropped += bundle.null_items('trades')
+                    point = None if bundle.complex_info is None else bundle.complex_info.coordinates
+                    distance_m = (
+                        None if point is None or point.x_coordinate is None or point.y_coordinate is None
+                        else round(haversine_km(lat, lng, point.y_coordinate, point.x_coordinate) * 1000)
+                    )
+                    for trade in bundle.trades or []:
+                        price = trade.price or NaverVillaAroundPriceModel()
+                        floor = (trade.floor or '').strip()
+                        completion = (trade.completion_year_month or '').strip()
+                        trades.append(NaverNearbyTrade(
+                            trade_type=result.trade_type,
+                            contract_date=iso_date(trade.contract_date),
+                            area_m2=trade.exclusive_area,
+                            # 준공 연월일(`20100628`)의 연도. 앞 네 자리가 숫자가 아니거나 0000 이면 모름(None)이다
+                            built_year=(
+                                (int(completion[:4]) or None)
+                                if len(completion) >= 4 and completion[:4].isascii() and completion[:4].isdigit() else None
+                            ),
+                            floor=None if floor in ('', '-') else floor,
+                            price_manwon=won_to_manwon(price.deal_price),
+                            deposit_manwon=won_to_manwon(price.deposit),
+                            rent_manwon=won_to_manwon(price.monthly_rent),
+                            renewal=_renewal_by_right(trade.is_renew_request_right),
+                            distance_m=distance_m,
+                            # 네이버가 건물 번호를 주지 않아 단지 좌표와 같은 점인지로 가린다. 좌표의 소수 자릿수가 달라도(6~7자리) 같게 보도록
+                            # 반올림한 거리가 0(0.5m 안)이면 같은 건물이다
+                            same_complex=None if distance_m is None else distance_m == 0,
+                        ))
+                # 건물마다 묶어 오는 거래를 한 목록으로 폈다. 웹 표(`ComplexVillaTransactionPriceForAround`)와 같은 순서(계약일 →
+                # 준공연도 → 전용면적이 큰 순)로 세우고 값이 없는 칸은 가장 뒤로 보낸다
+                trades.sort(key=lambda trade: (trade.contract_date or '', trade.built_year or 0, trade.area_m2 or 0), reverse=True)
+                if len(trades) + dropped >= AROUND_TRADES_LIMIT:
+                    result.notes.append(NEARBY_TRADES_LIMIT_NOTE)
+                if dropped:
+                    result.notes.append(null_items_note('네이버 주변 실거래', dropped))
+                box_range = NaverNearbyRange(
+                    north_south_m=round((north - south) * KM_PER_LAT_DEGREE * 1000),
+                    east_west_m=round((east - west) * KM_PER_LAT_DEGREE * cos(radians(lat)) * 1000),
+                )
+                result.nearby_transactions = NaverNearbyTransactions(range=box_range, trades=trades)
+        result._nearby_scoped = True
     return result
 
 
@@ -682,7 +760,25 @@ def _villa_real_prices(
         )
         page_dropped = result.null_items('items')
         dropped += page_dropped
-        recent = [_villa_real_price(item, trade_type) for item in result.items]
+        recent = [
+            NaverRealPrice(
+                trade_type=trade_type,
+                trade_date=normalize_date(item.trade_date),
+                floor=item.floor,
+                price_manwon=won_to_manwon(item.deal_price),
+                deposit_manwon=won_to_manwon(item.deposit),
+                rent_manwon=won_to_manwon(item.monthly_rent),
+                category=item.trade_category,
+                cancelled=item.is_canceled,
+                renewal=_renewal_by_right(item.is_renew_request_right),
+                # 종전 보증금·월세: 빌라 실거래 행에도 alreadyDeposit·alreadyMonthlyDeposit(아파트의 alreadyMonthlyRent 와 키 이름이
+                # 다르다)가 오고, 웹 빌라 실거래 표는 isRenewRequestRight 행에 '기존 …' 으로 보여 준다 (2026-11-18 번들 청크
+                # 1un70f33iojlw). drop_not_applicable 이 아파트와 같은 규칙(갱신 전세·월세만, 전세는 종전 월세 삭제)으로 키를 지운다
+                previous_deposit_manwon=won_to_manwon(item.already_deposit),
+                previous_rent_manwon=won_to_manwon(item.already_monthly_deposit),
+            )
+            for item in result.items
+        ]
         # 계약일을 모르는 거래(None)는 서버가 준 거래라 남기되, 기간 안인지 알 수 없으므로 멈춤 판정(`len(kept) < len(recent)`)
         # 에는 세지 않는다 (모르는 날짜 하나 때문에 다음 쪽의 기간 안 거래를 놓치지 않게). 그래서 멈춤은 날짜가 있고 `since`
         # 보다 오래된 거래가 있을 때만 일어나고, 한 쪽이 전부 계약일 모름이면 멈추지 않고 쪽 수 상한까지 가서 truncated 로 끝난다
@@ -757,172 +853,3 @@ def _get_real_prices_in_period(
         notes=notes,
     )
     return real_prices, villa
-
-
-def _add_villa_trade_info(
-    client: NaverClient,
-    result: NaverRealPriceResult,
-    *,
-    around_km: float | None,
-    today: date,
-) -> None:
-    """빌라 단지 실거래 결과에 웹 빌라 실거래 탭의 두 칸을 붙인다 (평당 실거래가 매매·전세 1회, 단지 좌표 1회, 주변 실거래 1회).
-
-    평당 실거래가는 웹이 매매·전세일 때만 그리고 월세면 칸이 없어 월세는 키를 두지 않고 묻지도 않는다.
-    두 조회는 `--period`·`--pages` 와 상관없다 (웹 칸도 실거래 목록과 따로 부른다).
-    """
-    # 빌라 단지 평당 실거래가를 받는 거래 유형. 웹은 매매·전세일 때만 이 칸을 그리고 월세면 칸이 없다 (청크 b042d8aace_1okty1145x932, 2026-11-18)
-    if result.trade_type in SALE_JEONSE_CODE_BY_NAME:
-        result.price_per_pyeong_trades = _price_per_pyeong_trades(
-            client, result.complex_number, result.pyeong_number,
-            trade_type=result.trade_type, today=today, notes=result.notes,
-        )
-        result._price_per_pyeong_scoped = True
-    result.nearby_transactions, notes = _nearby_transactions(
-        client, result.complex_number, result.pyeong_number, trade_type=result.trade_type, around_km=around_km,
-    )
-    result._nearby_scoped = True
-    result.notes.extend(notes)
-
-
-def _price_per_pyeong_trades(
-    client: NaverClient,
-    complex_number: int,
-    pyeong_number: int,
-    *,
-    trade_type: str,
-    today: date,
-    notes: list[str],
-) -> list[NaverRealPricePerPyeong] | None:
-    """평형의 최근 5년 평당 실거래가 (1회 호출, 서버 순서). 조회가 실패하면 모름(None), 거래가 없으면 `[]`.
-
-    시작일은 `--period` 와 상관없이 오늘의 5년 전이다 (웹과 같다). 성공인데 `result` 가 null 이어도 거래 없음(`[]`)이다.
-    조회가 실패하면 `notes` 에 `[실패]` 안내를 붙인다.
-    """
-    rows = result_or_empty(
-        lambda: client.run_request_complex_villa_real_price_pyeong_price_v1(
-            NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel(
-                complex_number=complex_number,
-                pyeong_type_number=pyeong_number,
-                trade_type=SALE_JEONSE_CODE_BY_NAME[trade_type],
-                start_date=years_ago(today, PRICE_PER_PYEONG_YEARS),
-            )
-        ),
-        list,
-        notes=notes,
-        what='평당 실거래가',
-        unknown='모름(null)으로 낸 칸: price_per_pyeong_trades',
-    )
-    if rows is None:
-        return None
-    return [
-        NaverRealPricePerPyeong(trade_date=iso_date(row.trade_date), manwon_per_pyeong=won_to_manwon(row.pyeong_price))
-        for row in rows
-    ]
-
-
-def _nearby_transactions(
-    client: NaverClient,
-    complex_number: int,
-    pyeong_number: int,
-    *,
-    trade_type: str,
-    around_km: float | None,
-) -> tuple[NaverNearbyTransactions | None, list[str]]:
-    """단지 둘레 주변 실거래 (단지 좌표 1회 + 주변 실거래 1회). 단지 좌표를 모르거나 조회가 실패하면 모름(None)이다.
-
-    범위는 단지 좌표를 가운데로 `around_km` 을 주면 그 반경을 감싼 사각형(`box_around`), 아니면 웹 작은 지도 크기다.
-    건물마다 묶어 오는 거래를 한 목록으로 펴 웹 표처럼 계약일 → 준공연도 → 전용면적이 큰 순으로 세운다.
-
-    Returns:
-        tuple[NaverNearbyTransactions | None, list[str]]: 주변 실거래, 결과에 붙일 안내 (조회 실패 `[실패]` 안내 포함).
-    """
-    notes: list[str] = []
-    complex_ = result_or_none(
-        lambda: client.run_request_complex_villa_v1(
-            NaverComplexVillaV1RequestParameterModel(complex_number=complex_number)
-        ),
-        notes=notes,
-        what='단지 좌표',
-        unknown='모름(null)으로 낸 칸: nearby_transactions',
-    )
-    center = None if complex_ is None else complex_.coordinates
-    if center is None:
-        return None, notes
-    lat, lng = center.y_coordinate, center.x_coordinate
-    south, north, west, east = (
-        box_around(lat, lng, around_km) if around_km is not None
-        else _web_map_box(lat, lng)
-    )
-    around = result_or_empty(
-        lambda: client.run_request_complex_villa_real_price_around_v1(
-            NaverComplexVillaRealPriceAroundV1RequestParameterModel(
-                complex_number=complex_number,
-                pyeong_type_number=pyeong_number,
-                trade_type=TRADE_CODE_BY_NAME[trade_type],
-                top=north,
-                bottom=south,
-                left=west,
-                right=east,
-                zoom=AROUND_ZOOM,
-            )
-        ),
-        NaverVillaAroundModel,
-        notes=notes,
-        what='주변 실거래',
-        unknown='모름(null)으로 낸 칸: nearby_transactions',
-    )
-    if around is None:
-        return None, notes
-    trades: list[NaverNearbyTrade] = []
-    # 빈 항목(null)이라 빼고 읽은 수. 서버는 그 자리도 거래로 세어 10건까지 주므로 상한에 닿았는지 볼 때 더한다
-    dropped = around.null_items('bundles')
-    for bundle in around.bundles or []:
-        dropped += bundle.null_items('trades')
-        point = None if bundle.complex_info is None else bundle.complex_info.coordinates
-        distance_m = (
-            None if point is None or point.x_coordinate is None or point.y_coordinate is None
-            else round(haversine_km(lat, lng, point.y_coordinate, point.x_coordinate) * 1000)
-        )
-        trades.extend(
-            _nearby_trade(trade, trade_type, distance_m) for trade in bundle.trades or []
-        )
-    # 웹 표(`ComplexVillaTransactionPriceForAround`)와 같은 순서. 값이 없는 칸은 가장 뒤로 보낸다
-    trades.sort(key=lambda trade: (trade.contract_date or '', trade.built_year or 0, trade.area_m2 or 0), reverse=True)
-    if len(trades) + dropped >= AROUND_TRADES_LIMIT:
-        notes.append(NEARBY_TRADES_LIMIT_NOTE)
-    if dropped:
-        notes.append(null_items_note('네이버 주변 실거래', dropped))
-    box_range = NaverNearbyRange(
-        north_south_m=round((north - south) * KM_PER_LAT_DEGREE * 1000),
-        east_west_m=round((east - west) * KM_PER_LAT_DEGREE * cos(radians(lat)) * 1000),
-    )
-    return NaverNearbyTransactions(range=box_range, trades=trades), notes
-
-
-def _nearby_trade(item: NaverVillaAroundTradeModel, trade_type: str, distance_m: int | None) -> NaverNearbyTrade:
-    price = item.price or NaverVillaAroundPriceModel()
-    floor = (item.floor or '').strip()
-    return NaverNearbyTrade(
-        trade_type=trade_type,
-        contract_date=iso_date(item.contract_date),
-        area_m2=item.exclusive_area,
-        built_year=_built_year(item.completion_year_month),
-        floor=None if floor in ('', '-') else floor,
-        price_manwon=won_to_manwon(price.deal_price),
-        deposit_manwon=won_to_manwon(price.deposit),
-        rent_manwon=won_to_manwon(price.monthly_rent),
-        renewal=_renewal_by_right(item.is_renew_request_right),
-        distance_m=distance_m,
-        # 네이버가 건물 번호를 주지 않아 단지 좌표와 같은 점인지로 가린다. 좌표의 소수 자릿수가 달라도(6~7자리) 같게 보도록
-        # 반올림한 거리가 0(0.5m 안)이면 같은 건물이다
-        same_complex=None if distance_m is None else distance_m == 0,
-    )
-
-
-def _built_year(completion: str | None) -> int | None:
-    """준공 연월일(`20100628`)의 연도. 앞 네 자리가 숫자가 아니거나 0000 이면 모름(None)이다."""
-    text = (completion or '').strip()
-    if len(text) < 4 or not text[:4].isascii() or not text[:4].isdigit():
-        return None
-    return int(text[:4]) or None

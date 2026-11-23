@@ -301,33 +301,6 @@ def rt_price_to_real_price(transaction: ZigbangRtPriceModel, *, show_trade_type:
     )
 
 
-def _check_real_price_scope(
-    client: ZigbangClient,
-    complex_id: str,
-    danji_id: int,
-    response: ZigbangDanjisRtPricesResponseModel,
-    pyeong_id: int | None,
-) -> None:
-    """없는 단지·평형이면 0건 대신 에러로 알린다. 실거래 API 는 없는 단지에도 빈 성공을 준다.
-
-    없는 단지는 평형 정보가 비어 오고, 거래가 없는 단지도 평형 정보는 온다 (2026-10-10 실측: 없는 단지 2곳
-    0개, 실제 단지 3곳 8~30개, 2028년 입주 예정 단지 8개). 평형을 지정해도 단지 전체 평형이 온다.
-    평형이 아직 없는 새 단지일 수도 있어, 비었을 때만 단지 정보로 있는지 확인한다 (요청 1회, 없으면 NOT_FOUND).
-
-    Raises:
-        JibsaError: 없는 단지 (NOT_FOUND), 단지에 없는 평형 (INVALID_ARGUMENT).
-    """
-    if not response.pyeongs:
-        fetch_danji(client, complex_id, danji_id)
-        return
-    if pyeong_id is not None and str(pyeong_id) not in response.pyeongs:
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f'{complex_id} 단지에 없는 평형 ID 입니다: {pyeong_id}',
-            hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
-        )
-
-
 def get_real_prices(
     client: ZigbangClient,
     complex_id: str,
@@ -378,7 +351,18 @@ def get_real_prices(
                 )
             )
         if page == 0:
-            _check_real_price_scope(client, complex_id, number, response, pyeong_id)
+            # 없는 단지·평형이면 0건 대신 에러로 알린다. 실거래 API 는 없는 단지에도 빈 성공을 준다.
+            # 없는 단지는 평형 정보가 비어 오고, 거래가 없는 단지도 평형 정보는 온다 (2026-10-10 실측: 없는 단지 2곳
+            # 0개, 실제 단지 3곳 8~30개, 2028년 입주 예정 단지 8개). 평형을 지정해도 단지 전체 평형이 온다.
+            # 평형이 아직 없는 새 단지일 수도 있어, 비었을 때만 단지 정보로 있는지 확인한다 (요청 1회, 없으면 NOT_FOUND)
+            if not response.pyeongs:
+                fetch_danji(client, complex_id, number)
+            elif pyeong_id is not None and str(pyeong_id) not in response.pyeongs:
+                raise JibsaError(
+                    code='INVALID_ARGUMENT',
+                    message=f'{complex_id} 단지에 없는 평형 ID 입니다: {pyeong_id}',
+                    hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
+                )
         page += 1
         has_next = response.has_next
         dropped_transactions += response.null_items('transactions')

@@ -43,7 +43,6 @@ from jibsa.providers.zigbang.api.request.store import (
     ZigbangStoreSalesType,
 )
 from jibsa.providers.zigbang.api.response.store import (
-    ZigbangStoreArticleStoreV2ResponseModel,
     ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
@@ -320,38 +319,6 @@ def store_businesses(names: list[str]) -> list[ZigbangStoreBusinessModel]:
     ]
 
 
-def store_summary_to_listing(
-    summary: ZigbangStoreSummaryModel,
-    distance_km: float | None = None,
-    lat: float | None = None,
-    lng: float | None = None,
-    vacant_section: bool | None = None,
-) -> ZigbangStoreListing:
-    trade_type = store_trade(summary)
-    return ZigbangStoreListing(
-        source='zigbang',
-        id=f'store-{summary.item_id}',
-        url=store_url(summary.item_id),
-        trade_type=trade_type,
-        property_type='상가',
-        title=summary.title,
-        price_manwon=summary.sales_price if trade_type == '매매' else None,
-        deposit_manwon=None if trade_type == '매매' else summary.deposit,
-        rent_manwon=summary.rent if trade_type == '월세' else None,
-        manage_cost_manwon=summary.manage_cost,
-        area_m2=summary.size_m2,
-        area_pyeong=m2_to_pyeong(summary.size_m2),
-        floor=store_floor(summary.floor),
-        address=join_address(summary.local1, summary.local2, summary.local3),
-        lat=lat,
-        lng=lng,
-        distance_km=None if distance_km is None else round(distance_km, 2),
-        business=summary.business,
-        key_money_manwon=summary.key_money,
-        vacant_section=vacant_section,
-    )
-
-
 def store_price_trade(
     trade: ZigbangStoreSalesType,
     bounds: dict[str, tuple[int | None, int | None]],
@@ -526,7 +493,7 @@ def search_store_listings(
     업종 매물 뒤에 그 묶음을 잇는다 (`HomeStoreListScreenModel`: 칸마다 일반 ID 를 앞에, 공실 ID 를 뒤에 이어 요약을
     받는다). 공실 묶음에서 온 줄은 `vacant_section` 이 true 다. 두 묶음에 같은 ID 가 있으면 앞 것만 둔다.
     위치 묶음 목록에 빈 항목(null)이 섞여 오면 빼고 읽되 그 묶음의 매물을 몰라 `total` 은 null 이고, 묶음 안 위치 목록의 빈 항목은
-    `[제외]` 로만 알린다 (`_store_null_notes`).
+    `[제외]` 로만 알린다.
 
     Raises:
         JibsaError: `dongs` 에 법정동 코드가 없는 동이 있을 때 (`store_region_codes`).
@@ -605,11 +572,27 @@ def search_store_listings(
             if summary is None or summary.status != 'open':
                 continue
             lat, lng = pins[item_id]
-            listing = store_summary_to_listing(
-                summary,
-                haversine_km(region.lat, region.lng, lat, lng),
-                lat,
-                lng,
+            trade_type = store_trade(summary)
+            listing = ZigbangStoreListing(
+                source='zigbang',
+                id=f'store-{summary.item_id}',
+                url=store_url(summary.item_id),
+                trade_type=trade_type,
+                property_type='상가',
+                title=summary.title,
+                price_manwon=summary.sales_price if trade_type == '매매' else None,
+                deposit_manwon=None if trade_type == '매매' else summary.deposit,
+                rent_manwon=summary.rent if trade_type == '월세' else None,
+                manage_cost_manwon=summary.manage_cost,
+                area_m2=summary.size_m2,
+                area_pyeong=m2_to_pyeong(summary.size_m2),
+                floor=store_floor(summary.floor),
+                address=join_address(summary.local1, summary.local2, summary.local3),
+                lat=lat,
+                lng=lng,
+                distance_km=round(haversine_km(region.lat, region.lng, lat, lng), 2),
+                business=summary.business,
+                key_money_manwon=summary.key_money,
                 vacant_section=(item_id in vacant) if (business_conditions or vacant) else None,
             )
             # 거래 유형은 서버가 걸었으므로 다시 거르지 않는다 (2026-10-10 실측: 역삼역·성수동 임대·매매 662건 모두 조건 안)
@@ -682,6 +665,12 @@ def search_store_listings(
             f'total({total}건)은 {base} {total - len(vacant)}건과 그 뒤에 직방 웹처럼 이어 주는 이 지역 비어있는 상가'
             f'(업종과 상관없는 공실, vacant_section true) {len(vacant)}건을 합친 수입니다. 공실 줄은 업종 조건으로 줄지 않습니다',
         ))
+    null_notes: list[str] = []
+    if dropped_sections:
+        null_notes.append(null_items_note('직방 상가 위치 묶음', dropped_sections, ('total',)))
+    if dropped_locations:
+        # 위치 목록에서 뺐으면 그 매물이 목록에서 빠졌을 수 있다
+        null_notes.append(null_items_note('직방 상가 위치', dropped_locations))
     return ZigbangStoreSearchResult(
         region=region,
         radius_km=None if dongs else radius_km,
@@ -692,25 +681,23 @@ def search_store_listings(
         returned=len(listings),
         has_more=has_more,
         listings=listings,
-        notes=scope_notes + notes + _store_null_notes(dropped_sections, dropped_locations),
+        notes=scope_notes + notes + null_notes,
     )
 
 
-def _store_null_notes(dropped_sections: int, dropped_locations: int) -> list[str]:
-    """상가 위치 응답의 묶음(섹션)·위치 목록에서 빈 항목(null)을 빼고 읽었을 때의 안내. 둘 다 없으면 빈 목록이다.
+def get_store_listing(client: ZigbangClient, item_id: int) -> ZigbangStoreListingDetail:
+    """상가 매물 하나의 상세를 조회한다. 연락처·사진·본문은 옮기지 않는다.
 
-    묶음에서 뺐으면 그 묶음의 매물 수를 몰라 `total` 이 null 이고, 위치에서 뺐으면 그 매물이 목록에서 빠졌을 수 있다.
+    Raises:
+        ListingUnavailableError: 없는 매물(404)이거나 상태가 open 이 아닐 때.
     """
-    notes: list[str] = []
-    if dropped_sections:
-        notes.append(null_items_note('직방 상가 위치 묶음', dropped_sections, ('total',)))
-    if dropped_locations:
-        notes.append(null_items_note('직방 상가 위치', dropped_locations))
-    return notes
-
-
-def store_detail_to_listing(response: ZigbangStoreArticleStoreV2ResponseModel) -> ZigbangStoreListingDetail:
-    """상가 상세를 `ZigbangStoreListingDetail` 로 바꾼다. 연락처·사진·본문은 옮기지 않는다."""
+    listing_id = f'store-{item_id}'
+    with unavailable_on_404(listing_id):
+        response = client.run_request_store_article_store_v2(
+            ZigbangStoreArticleStoreV2RequestParameterModel(item_id=item_id)
+        )
+    if response.item.status != 'open':
+        raise ListingUnavailableError('zigbang', listing_id, status=response.item.status)
     item = response.item
     trade_type = store_trade(item)
     elevator = {'있음': True, '없음': False}.get(item.elevator or '')
@@ -747,19 +734,3 @@ def store_detail_to_listing(response: ZigbangStoreArticleStoreV2ResponseModel) -
         toilet=item.toilet,
         heating=item.heating,
     )
-
-
-def get_store_listing(client: ZigbangClient, item_id: int) -> ZigbangStoreListingDetail:
-    """상가 매물 하나의 상세를 조회한다.
-
-    Raises:
-        ListingUnavailableError: 없는 매물(404)이거나 상태가 open 이 아닐 때.
-    """
-    listing_id = f'store-{item_id}'
-    with unavailable_on_404(listing_id):
-        response = client.run_request_store_article_store_v2(
-            ZigbangStoreArticleStoreV2RequestParameterModel(item_id=item_id)
-        )
-    if response.item.status != 'open':
-        raise ListingUnavailableError('zigbang', listing_id, status=response.item.status)
-    return store_detail_to_listing(response)

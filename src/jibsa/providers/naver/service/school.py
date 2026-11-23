@@ -60,13 +60,6 @@ MAX_SCHOOL_COMPLEX_LIMIT: int = SCHOOL_COMPLEX_PAGE_SIZE * MAX_SCHOOL_COMPLEX_PA
 ALL_DONGS_LABEL: str = '전체 동'
 
 
-def _is_villa_complex(client: NaverClient, complex_number: int) -> bool:
-    """단지 종류를 모를 때 아파트 단지 정보를 1회 물어 빌라 단지인지 정한다 (`villa_by_complex_response`)."""
-    return villa_by_complex_response(
-        client.run_request_complex_v1(NaverComplexV1RequestParameterModel(complex_number=complex_number))
-    )
-
-
 class NaverSchoolRegionAverage(BaseModel):
     """시·도 또는 시·군·구 평균 (학교와 비교용)."""
 
@@ -181,13 +174,6 @@ def school_url(school_code: str) -> str:
     return f'https://fin.land.naver.com/schools/elementary/{school_code}'
 
 
-def _dong_group_label(names: list[str]) -> str:
-    """사이트처럼 묶음의 첫~끝 동으로 ('101', '105' → '101동~105동'). 건물 이름('가람아트빌라')에는 '동' 을 붙이지 않는다."""
-    def with_dong(name: str) -> str:
-        return name if name.endswith('동') else dong_label(name)
-    return with_dong(names[0]) if len(names) == 1 else f'{with_dong(names[0])}~{with_dong(names[-1])}'
-
-
 def _assigned_dongs(is_all_assigned: bool | None, groups: list[list[str]] | None) -> list[str] | None:
     """사이트(`formatAssignedDong`)처럼 배정 동 글자를. 전체 배정이면 ['전체 동'], 아니면 묶음마다 첫~끝 동 ('101동~105동').
 
@@ -197,7 +183,16 @@ def _assigned_dongs(is_all_assigned: bool | None, groups: list[list[str]] | None
     """
     if is_all_assigned:
         return [ALL_DONGS_LABEL]
-    labels = [_dong_group_label(group) for group in groups or [] if group]
+
+    # 건물 이름('가람아트빌라')에는 '동' 을 붙이지 않는다
+    def with_dong(name: str) -> str:
+        return name if name.endswith('동') else dong_label(name)
+
+    labels = [
+        with_dong(group[0]) if len(group) == 1 else f'{with_dong(group[0])}~{with_dong(group[-1])}'
+        for group in groups or []
+        if group
+    ]
     return labels or None
 
 
@@ -229,7 +224,9 @@ def get_school(
         if villa is None:
             # 배정 동은 빌라 단지를 complex 로 물어도 villa 로 물어도 false·[] 라 (가람아트빌 673573 ↔ E100000875,
             # 2026-10-11) 평형 확인처럼 응답을 보고 나중에 정할 수 없어 단지 종류를 먼저 정한다
-            villa = _is_villa_complex(client, complex_number)
+            villa = villa_by_complex_response(
+                client.run_request_complex_v1(NaverComplexV1RequestParameterModel(complex_number=complex_number))
+            )
             # 없는 단지 번호도 아파트 단지 정보가 빈 결과라 빌라로 보이고, 배정 동은 배정 안 된 단지와 같은
             # false·[] 로 와서 구분되지 않는다 (99999999 ↔ 헬리오시티 111515, 2026-10-11). 빌라 단지 정보로 확인한다
             if villa:

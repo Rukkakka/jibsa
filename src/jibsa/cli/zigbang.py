@@ -801,7 +801,12 @@ def search_apt_command(
                     raise
                 place = region_from_search_item(place_item)
                 district = apt_dong_at(client, place.lat, place.lng)
-                complexes_command_text = f'jibsa zigbang search complexes {_complexes_query(query, place.name)}'
+                # `search complexes` 에 권할 검색어. 검색어 끝 낱말이 찾은 곳의 이름이면 그 검색어 전체다. 사용자가 구·동 낱말을 붙여 같은
+                # 이름의 역·학교 중 하나를 가렸으면('영등포구 양평역') 이름만 권하면 그 명령이 어느 곳인지 다시 묻고 멈춘다
+                # (REGION_AMBIGUOUS). 공백이 있으면 작은따옴표로 감싼다
+                words = (query or '').split()
+                chosen = ' '.join(words) if words and words[-1] == place.name else place.name
+                complexes_command_text = 'jibsa zigbang search complexes ' + (f"'{chosen}'" if len(chosen.split()) > 1 else chosen)
                 # search complexes 가 찾는 역·학교만 권한다. 배정단지 목록이 없는 학교(학교 코드가 없거나 'NL_' 로 시작)는 그 명령이
                 # INVALID_ARGUMENT 라 권하지 않는다 (`school_has_assigned_complexes`)
                 notes = [note(
@@ -817,17 +822,6 @@ def search_apt_command(
                 )]
         result = search_apt_listings(client, district, conditions=conditions, limit=limit, start=position)
         emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
-
-
-def _complexes_query(query: str | None, place_name: str) -> str:
-    """`search complexes` 에 권할 검색어. 검색어 끝 낱말이 찾은 곳의 이름이면 그 검색어 전체다.
-
-    사용자가 구·동 낱말을 붙여 같은 이름의 역·학교 중 하나를 가렸으면('영등포구 양평역') 이름만 권하면 그 명령이 어느 곳인지
-    다시 묻고 멈춘다 (REGION_AMBIGUOUS). 공백이 있으면 작은따옴표로 감싼다.
-    """
-    words = (query or '').split()
-    chosen = ' '.join(words) if words and words[-1] == place_name else place_name
-    return f"'{chosen}'" if len(chosen.split()) > 1 else chosen
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:
@@ -1252,7 +1246,7 @@ def stay_command(
         except RegionNotFoundError as exc:
             if not whole_address:
                 raise
-            # 단기임대 지역 검색이 동을 찾지 못하면(2026-10 의 세종의 동, _stay_region_search) room·store 처럼 동 경계(넓거나
+            # 단기임대 지역 검색이 동을 찾지 못하면(2026-10 의 세종의 동, _search_stay_by_search_api) room·store 처럼 동 경계(넓거나
             # 없으면 반경) 안 지도 칸으로 다시 찾는다
             missing = exc.query
             region, notes, boundary, radius_km = _scope(client, query, lat, lng, radius, STAY_GEOHASH_PRECISION, items=items)
@@ -1304,17 +1298,6 @@ def real_price_command(
         emit(result, pretty, notes=result.notes)
 
 
-def _compare_ids(values: list[str] | None) -> list[str]:
-    """`--compare apt-1 --compare apt-2` 와 `--compare apt-1,apt-2` 를 모두 받아 단지 ID 목록으로 만든다 (형식만 본다)."""
-    ids: list[str] = []
-    for value in values or []:
-        for part in value.split(','):
-            if part.strip():
-                _require_complex_id(part, param_hint='--compare')
-                ids.append(part.strip())
-    return ids
-
-
 @app.command('price-trend')
 def price_trend_command(
     complex_id: Annotated[
@@ -1364,7 +1347,13 @@ def price_trend_command(
     _require_complex_id(complex_id)
     chosen_period = check_choice(period, PRICE_TREND_PERIODS, '--period')
     chosen_trade = check_choice(trade, PYEONG_TREND_TRADES, '--trade') if trade is not None else None
-    compare_ids = _compare_ids(compare)
+    # `--compare apt-1 --compare apt-2` 와 `--compare apt-1,apt-2` 를 모두 받는다 (형식만 본다)
+    compare_ids: list[str] = []
+    for value in compare or []:
+        for part in value.split(','):
+            if part.strip():
+                _require_complex_id(part, param_hint='--compare')
+                compare_ids.append(part.strip())
     if pyeong is not None and compare_ids:
         raise HintedUsageError('--compare 와 --pyeong 은 함께 쓸 수 없습니다', '단지끼리 견주려면 --pyeong 을 빼세요')
     if chosen_trade is not None and pyeong is None:

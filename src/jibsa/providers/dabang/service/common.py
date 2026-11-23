@@ -640,7 +640,7 @@ class DabangPages(NamedTuple, Generic[T]):
     skip: int
     # 그 목록의 한 쪽 크기
     page_size: int
-    # 이번 호출의 쪽 수 상한 (`max_fetch_pages`)
+    # 이번 호출의 쪽 수 상한 (`fetch_pages` 가 쪽 크기와 --limit 최대값으로 정한다)
     max_pages: int
     # 받은 쪽들에서 뺀 빈 항목 수 (안내용, 쪽 중간에서 멈춘 쪽의 몫도 든다)
     dropped: int = 0
@@ -673,20 +673,6 @@ def room_list_page(result: DabangRoomListResultModel) -> tuple[DabangPage[Dabang
     return DabangPage(result.room_list, result.total, bool(result.has_more), result.null_items('room_list')), premium
 
 
-def max_fetch_pages(page_size: int, max_limit: int) -> int:
-    """목록마다 한 번에 따라갈 쪽 수 상한 (`fetch_pages`).
-
-    쪽은 쪽 크기보다 짧을 수 있어(2026-11-14 강남역 아파트 반경 3km 6~8쪽 22·22·21건) --limit 이 찰 때까지 다음 쪽을 받되,
-    끝없이 묻지 않게 --limit 최대값을 꽉 찬 쪽으로 채우는 쪽 수의 두 배에서 멈춘다. 멈췄는데 다방에 더 있으면
-    `fetch_stop_notes` 로 알린다.
-
-    Args:
-        page_size: 그 목록의 한 쪽 크기.
-        max_limit: 그 명령의 --limit 최대값.
-    """
-    return 2 * ceil(max_limit / page_size)
-
-
 def fetch_pages(
     fetch: Callable[[int], DabangPage[T] | None],
     limit: int,
@@ -699,7 +685,7 @@ def fetch_pages(
     """다방 목록(매물·단지 매물·단지·분양, 동네정보 학교·핫플레이스)을 `page` 쪽의 `skip` 칸 뒤부터 `limit` 줄이 찰 때까지 다음 쪽으로 따라간다.
 
     다방 목록은 번호 쪽 넘김이고 한 쪽이 늘 `PAGE_SIZE` 건은 아니다 (2026-11-13 웹 캡처: 아파트 강남역 1쪽 23건, 대치동 2쪽
-    23건). 그래서 쪽 수를 `limit` 을 쪽 크기로 나눠 정하지 않고 `limit` 이 찰 때까지 받으며(상한 `max_fetch_pages`), 이어 받을
+    23건). 그래서 쪽 수를 `limit` 을 쪽 크기로 나눠 정하지 않고 `limit` 이 찰 때까지 받으며(상한은 아래 `max_pages`), 이어 받을
     위치도 받은 수로 셈하지 않고 읽은 쪽과 그 쪽에서 쓴 칸으로 둔다. 다음 쪽은 서버 hasMore 로만 본다. 받은 수가 쪽 크기보다
     적다고 끝내면 남은 것을 놓친다. 빈 쪽이면 hasMore 가 와도 더 묻지 않는다 (빈 쪽을 상한까지 묻고 '다방에 더 있음' 이라고
     잘못 알리지 않게). 다방이 목록에 섞어 줘서 뺀 빈 항목(`DabangPage.dropped`)은 `limit` 의 줄로 세지 않는다. 다만 서버의
@@ -714,7 +700,10 @@ def fetch_pages(
         page_size: 그 목록의 한 쪽 크기 (동네정보 목록은 30줄). Defaults to `PAGE_SIZE`.
         max_limit: 그 명령의 --limit 최대값. 쪽 수 상한을 정한다. Defaults to `MAX_LIST_LIMIT`.
     """
-    max_pages = max_fetch_pages(page_size, max_limit)
+    # 쪽은 쪽 크기보다 짧을 수 있어(2026-11-14 강남역 아파트 반경 3km 6~8쪽 22·22·21건) --limit 이 찰 때까지 다음 쪽을 받되,
+    # 끝없이 묻지 않게 --limit 최대값을 꽉 찬 쪽으로 채우는 쪽 수의 두 배에서 멈춘다. 멈췄는데 다방에 더 있으면
+    # `fetch_stop_notes` 로 알린다
+    max_pages = 2 * ceil(max_limit / page_size)
     rows: list[T] = []
     total: int | None = None
     # 이어 받는 위치(1쪽 처음이 아님)는 앞 결과가 다방에 더 있다고 했을 때만 만든다. 그래서 처음 물은 쪽이 None 이면 처음 부른

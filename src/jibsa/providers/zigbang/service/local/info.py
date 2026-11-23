@@ -1,7 +1,7 @@
 """동·구의 지역 정보 (region-info): 단지·세대 수, 평형대별 직방시세, 월별 거래량, 평당가 추이, 구의 인구·세대."""
 
 import re
-from datetime import date, datetime
+from datetime import datetime
 
 from httpx import HTTPStatusError
 from pydantic import (
@@ -29,9 +29,6 @@ from jibsa.providers.zigbang.api.request.local.info import (
 from jibsa.providers.zigbang.api.response.local.info import (
     ZigbangLocalPriceModel,
     ZigbangLocalsPynChartPriceDataModel,
-    ZigbangLocalsTotalHouseholdsTimeResponseModel,
-    ZigbangLocalsTotalPeopleTimeResponseModel,
-    ZigbangMarketPriceMovementModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
     OPTIONAL_LOOKUP_ERRORS,
@@ -399,16 +396,6 @@ def _year_month(value: int | None) -> str | None:
     return f'{year:04d}-{month:02d}'
 
 
-def population_period(today: date) -> tuple[str, str]:
-    """웹 인구 그래프와 같은 요청 기간 (시작, 끝) YYYYMM. 끝은 지난달이고 시작은 그 5년 전 같은 달이다 (`POPULATION_YEARS`)."""
-    last_month = today.year * 12 + today.month - 2
-    start_month = last_month - POPULATION_YEARS * 12
-    return (
-        f'{start_month // 12}{start_month % 12 + 1:02d}',
-        f'{last_month // 12}{last_month % 12 + 1:02d}',
-    )
-
-
 def _lookup_failure(what: str, exc: Exception, unknown: str) -> str:
     """덤 조회 실패 안내. 갈래별 문장은 공통 함수 `lookup_failure_note` 가 정한다."""
     return lookup_failure_note(exc, '직방', what, f'{unknown} 값을 모릅니다 (직방 웹 지역 정보 화면에서 확인)')
@@ -420,13 +407,6 @@ def _missing_list(what: str, unknown: str) -> str:
         '실패',
         f'직방이 {what} 주지 않았습니다. {UNEXPECTED_FORMAT_TEXT}. {unknown} 값을 모릅니다 (직방 웹 지역 정보 화면에서 확인)',
     )
-
-
-def _price_movement(info: ZigbangMarketPriceMovementModel | None) -> ZigbangPriceMovement | None:
-    """주 수와 흐름이 모두 있어야 낸다. 웹은 둘 중 하나라도 없거나 주 수가 0 이면 그리지 않는다 (번들 `components_PriceTrendText` 의 `!t||!n`)."""
-    if info is None or not info.updown_week_count or not info.updown_sign:
-        return None
-    return ZigbangPriceMovement(weeks=info.updown_week_count, direction=info.updown_sign)
 
 
 def _price_trend(
@@ -468,38 +448,6 @@ def _price_trend(
             ],
         ))
     return ZigbangPriceTrend(range=price_range, lines=lines), notes
-
-
-def _population_months(response: ZigbangLocalsTotalPeopleTimeResponseModel) -> list[ZigbangPopulationMonth]:
-    return [
-        ZigbangPopulationMonth(
-            month=_year_month(item.yearmonth),
-            total=item.age_all,
-            age_0_9=item.age_0_9,
-            age_10_19=item.age_10_19,
-            age_20_29=item.age_20_29,
-            age_30_39=item.age_30_39,
-            age_40_49=item.age_40_49,
-            age_50_59=item.age_50_59,
-            age_60_over=item.age_60_69,
-        )
-        for item in response.root
-    ]
-
-
-def _household_months(response: ZigbangLocalsTotalHouseholdsTimeResponseModel) -> list[ZigbangHouseholdMonth]:
-    return [
-        ZigbangHouseholdMonth(
-            month=_year_month(item.yearmonth),
-            total=item.people_all,
-            one=item.people_1,
-            two=item.people_2,
-            three=item.people_3,
-            four=item.people_4,
-            five_plus=item.people_5_,
-        )
-        for item in response.root
-    ]
 
 
 def get_region_info(
@@ -570,11 +518,22 @@ def get_region_info(
                 notes.append(_missing_list('지역 평당가 추이 줄 목록을', 'price_trend'))
             price_trend, trend_notes = _price_trend(trend.data, price_range, text_or_none(local.name))
             notes.extend(trend_notes)
-            price_movement = _price_movement(trend.data.market_price_movement_info)
+            # 주 수와 흐름이 모두 있어야 낸다. 웹은 둘 중 하나라도 없거나 주 수가 0 이면 그리지 않는다 (번들 `components_PriceTrendText` 의 `!t||!n`)
+            movement = trend.data.market_price_movement_info
+            price_movement = (
+                None
+                if movement is None or not movement.updown_week_count or not movement.updown_sign
+                else ZigbangPriceMovement(weeks=movement.updown_week_count, direction=movement.updown_sign)
+            )
 
     population: ZigbangRegionPopulation | None = None
     if area.level == '구':
-        start_date, end_date = population_period(datetime.now(KST).date())
+        # 웹 인구 그래프와 같은 요청 기간 YYYYMM. 끝은 지난달(한국 시간)이고 시작은 그 5년 전 같은 달이다 (`POPULATION_YEARS`)
+        today = datetime.now(KST).date()
+        last_month = today.year * 12 + today.month - 2
+        start_month = last_month - POPULATION_YEARS * 12
+        start_date = f'{start_month // 12}{start_month % 12 + 1:02d}'
+        end_date = f'{last_month // 12}{last_month % 12 + 1:02d}'
         people: list[ZigbangPopulationMonth] | None = None
         households: list[ZigbangHouseholdMonth] | None = None
         try:
@@ -584,7 +543,20 @@ def get_region_info(
         except OPTIONAL_LOOKUP_ERRORS as exc:
             notes.append(_lookup_failure('지역 인구', exc, 'population.people'))
         else:
-            people = _population_months(people_response)
+            people = [
+                ZigbangPopulationMonth(
+                    month=_year_month(item.yearmonth),
+                    total=item.age_all,
+                    age_0_9=item.age_0_9,
+                    age_10_19=item.age_10_19,
+                    age_20_29=item.age_20_29,
+                    age_30_39=item.age_30_39,
+                    age_40_49=item.age_40_49,
+                    age_50_59=item.age_50_59,
+                    age_60_over=item.age_60_69,
+                )
+                for item in people_response.root
+            ]
         try:
             households_response = client.run_request_locals_total_households_time(
                 ZigbangLocalsTotalHouseholdsTimeRequestParameterModel(local_code=area.code, start_date=start_date, end_date=end_date)
@@ -592,7 +564,18 @@ def get_region_info(
         except OPTIONAL_LOOKUP_ERRORS as exc:
             notes.append(_lookup_failure('지역 세대', exc, 'population.households'))
         else:
-            households = _household_months(households_response)
+            households = [
+                ZigbangHouseholdMonth(
+                    month=_year_month(item.yearmonth),
+                    total=item.people_all,
+                    one=item.people_1,
+                    two=item.people_2,
+                    three=item.people_3,
+                    four=item.people_4,
+                    five_plus=item.people_5_,
+                )
+                for item in households_response.root
+            ]
         population = ZigbangRegionPopulation(people=people, households=households)
 
     complexes, households_count = _description_counts(local.description)

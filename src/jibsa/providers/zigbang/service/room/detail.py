@@ -11,6 +11,7 @@ from jibsa.core.errors import (
 from jibsa.core.http import error_body
 from jibsa.core.listing import (
     iso_date,
+    js_round,
     lookup_failure_note,
     m2_to_pyeong,
     move_in_label,
@@ -43,7 +44,6 @@ from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangStructuredOptionModel,
 )
 from jibsa.providers.zigbang.api.response.room.detail import (
-    ZigbangBlsRtModel,
     ZigbangBlsRtsV2ResponseModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemDetailModel,
@@ -147,17 +147,11 @@ def building_schools(response: ZigbangBlsSchoolZonesV1ResponseModel) -> list[str
     return [label for label in labels if label]
 
 
-def _facility_minutes(time_taken: int | float | None) -> int:
-    """웹 `resolveMinute` (`Math.round((timeTaken||1)/60)||1`)와 같은 분. 초를 분으로 반올림하되 .5분은 올리고 (Python `round` 는 짝수로
-    보낸다) 0분이면 1분이다. `floor(초 / 60 + 0.5)` 를 정수 나눗셈으로 계산한다. 초가 소수로 와도 같은 값이고 (`//` 는 실수여도 버림이다)
-    몫이 `1.0` 꼴이라 `int` 로 바꾼다."""
-    return int((2 * (time_taken or 1) + 60) // 120) or 1
-
-
 def _facility(poi: ZigbangItemsDetailV1NearbyPoiModel, transport: str) -> ZigbangNearbyFacility:
+    # 분은 웹 `resolveMinute` (`Math.round((timeTaken||1)/60)||1`)와 같다. 초를 분으로 반올림하되 .5분은 올리고 0분이면 1분이다
     return ZigbangNearbyFacility(
         type=poi.poi_type,
-        minutes=_facility_minutes(poi.time_taken),
+        minutes=js_round((poi.time_taken or 1) / 60) or 1,
         transport=transport,
         distance_m=poi.distance,
     )
@@ -189,21 +183,6 @@ def delivery_services(neighborhoods: ZigbangItemsDetailV1NeighborhoodsModel | No
     return [service.company_name for service in neighborhoods.distributions or [] if service.company_name]
 
 
-def _building_trade(trade: ZigbangBlsRtModel) -> ZigbangBuildingTrade:
-    trade_type = trade.sales_type if trade.sales_type in BUILDING_TRADE_TYPES else None
-    return ZigbangBuildingTrade(
-        trade_date=iso_date(trade.deal_date),
-        trade_type=trade_type,
-        # 지하층이 음수로 올 수 있어 실거래(real-price)·매물 층과 같은 표기('지하1')로 맞춘다
-        floor=None if trade.floor is None else normalize_floor(str(trade.floor)),
-        price_manwon=trade.sale_price,
-        deposit_manwon=trade.deposit,
-        rent_manwon=trade.monthly_rent,
-        exclusive_area_m2=trade.exclusive_area,
-        land_area_m2=trade.land_area,
-    )
-
-
 def building_real_trades(response: ZigbangBlsRtsV2ResponseModel) -> list[ZigbangBuildingTrade] | None:
     """건물(필지) 실거래를 응답 순서(계약일 최신순) 그대로 모두 낸다 (웹은 3건 뒤 더보기 5건씩, 날짜는 연·월만, 면적은 정수로 버려 그린다).
 
@@ -211,7 +190,20 @@ def building_real_trades(response: ZigbangBlsRtsV2ResponseModel) -> list[Zigbang
     """
     if response.rts is None:
         return None
-    return [_building_trade(trade) for trade in response.rts]
+    return [
+        ZigbangBuildingTrade(
+            trade_date=iso_date(trade.deal_date),
+            trade_type=trade.sales_type if trade.sales_type in BUILDING_TRADE_TYPES else None,
+            # 지하층이 음수로 올 수 있어 실거래(real-price)·매물 층과 같은 표기('지하1')로 맞춘다
+            floor=None if trade.floor is None else normalize_floor(str(trade.floor)),
+            price_manwon=trade.sale_price,
+            deposit_manwon=trade.deposit,
+            rent_manwon=trade.monthly_rent,
+            exclusive_area_m2=trade.exclusive_area,
+            land_area_m2=trade.land_area,
+        )
+        for trade in response.rts
+    ]
 
 
 def _usage_fee_items(usage: ZigbangManageCostUsageFeeModel | None) -> list[tuple[str, ZigbangManageCostEntryModel]]:
@@ -336,44 +328,6 @@ def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
     return includes
 
 
-def _manage_cost_null_notes(
-    manage: ZigbangItemsDetailV1ManageCostModel | None,
-    includes: list[str] | None,
-    excludes: list[str] | None,
-) -> list[str]:
-    """관리비 포함·미포함 항목 목록에서 빈 항목(null)을 빼서 그 칸을 모름(null)으로 둔 안내. 그런 칸이 없으면 빈 목록이다.
-
-    `includes`·`excludes` 는 `manage_cost_includes`·`manage_cost_excludes` 의 결과다. 빈 항목을 뺐어도 항목별 내역으로 만든 값은 모름이
-    아니라 안내하지 않는다 (결과가 None 일 때만 센다).
-    """
-    if manage is None:
-        return []
-    dropped = {
-        'manage_cost_includes': manage.null_items('includes') if includes is None else 0,
-        'manage_cost_excludes': manage.null_items('excludes') if excludes is None else 0,
-    }
-    unknown = tuple(name for name, count in dropped.items() if count)
-    return [null_items_note('직방 관리비 항목', sum(dropped.values()), unknown)] if unknown else []
-
-
-def _manage_cost_manwon(manage: ZigbangItemsDetailV1ManageCostModel) -> float | None:
-    """주거 상세 관리비 금액 (만원). 웹 매물 화면의 관리비 절이 그리는 금액을 원 단위까지 낸다.
-
-    내역이 있으면 웹(`renderManageCostData`, 2026-11-15 번들)처럼 정액 `totalAmount`·실비 `avgManageCost`(원)다. 웹은 `fee` 를
-    읽지 않고, 내역이 없으면 `amount` × 10000 원을 그린다. `amount`(만원)는 직방이 0.1만원 아래를 버린 값이라(실측 51105591:
-    amount 37.5, fee 375700) 그때는 목록 카드처럼 원 단위 `fee` 를 쓴다 (개발 가이드 "웹과 다른 점"). 원 단위 금액이 없을 때만
-    `amount` 다. 내역이 없고 금액도 없으면(0·null) 웹은 '관리비 없음' 이라 0 이다 (포함 항목도 빈 목록, `manage_cost_includes`).
-    """
-    detail = manage.detail
-    if detail is not None:
-        won = detail.total_amount if detail.type == FIXED_MANAGE_COST_TYPE else detail.avg_manage_cost
-        if won is not None:
-            return won_to_manwon(won)
-    if manage.fee is not None:
-        return won_to_manwon(manage.fee)
-    return (manage.amount or 0) if detail is None else manage.amount
-
-
 def detail_to_listing(
     response: ZigbangItemsDetailV1ResponseModel,
     *,
@@ -387,7 +341,7 @@ def detail_to_listing(
     입주일(`moveInAt`)이 null 이면 기존 상세(`/v3/items`, `legacy`)의 입주 문구로 보완하고, 그때는 주차도
     기존 상세의 문구를 쓴다. 상세 응답에는 등록일이 없어 요약 응답의 `reg_date` 를 `registered_at` 으로 받는다.
     없으면 모름(None). 단기임대 여부도 상세 응답에는 없어 요약 응답(`trade_type_of`)에서 `short_term` 으로 받는다.
-    관리비가 확인 불가(`UnknownManageCost`)면 웹처럼 금액도 항목도 부과 기준·방식도 모름(None)이다. 금액은 `_manage_cost_manwon` 이 정한다.
+    관리비가 확인 불가(`UnknownManageCost`)면 웹처럼 금액도 항목도 부과 기준·방식도 모름(None)이다. 금액은 본문의 `manage_cost` 계산이 정한다.
     확인 시각·실매물 확인·HUG 안심임대인은 웹처럼 `meta` 의 `statusCheckedAt`·`badges` 로 정한다 (`badge_flag`). 건물 실거래(`building_trades`)는
     요청이 더 필요해 부르는 쪽(`get_listing`)이 붙인다.
     """
@@ -402,7 +356,23 @@ def detail_to_listing(
         # 내역이 없으면 웹은 `amount` 만 보고(0·null) '관리비 없음' 으로 보여 주는데 `fee` 에는 금액이 있다. 어느 쪽이 맞는지
         # 몰라 틀릴 수 있는 금액을 내지 않고 금액도 항목도 모름(None)이다 (2026-11-15 사용자 결정)
         manage = None
-    manage_cost = _manage_cost_manwon(manage) if manage is not None else None
+    # 주거 상세 관리비 금액 (만원). 웹 매물 화면의 관리비 절이 그리는 금액을 원 단위까지 낸다.
+    # 내역이 있으면 웹(`renderManageCostData`, 2026-11-15 번들)처럼 정액 `totalAmount`·실비 `avgManageCost`(원)다. 웹은 `fee` 를
+    # 읽지 않고, 내역이 없으면 `amount` × 10000 원을 그린다. `amount`(만원)는 직방이 0.1만원 아래를 버린 값이라(실측 51105591:
+    # amount 37.5, fee 375700) 그때는 목록 카드처럼 원 단위 `fee` 를 쓴다 (개발 가이드 "웹과 다른 점"). 원 단위 금액이 없을 때만
+    # `amount` 다. 내역이 없고 금액도 없으면(0·null) 웹은 '관리비 없음' 이라 0 이다 (포함 항목도 빈 목록, `manage_cost_includes`)
+    manage_cost: float | None = None
+    if manage is not None:
+        manage_detail = manage.detail
+        won = None
+        if manage_detail is not None:
+            won = manage_detail.total_amount if manage_detail.type == FIXED_MANAGE_COST_TYPE else manage_detail.avg_manage_cost
+        if won is not None:
+            manage_cost = won_to_manwon(won)
+        elif manage.fee is not None:
+            manage_cost = won_to_manwon(manage.fee)
+        else:
+            manage_cost = (manage.amount or 0) if manage_detail is None else manage.amount
     meta = item.meta
     badges = meta.badges if meta else None
     origin = item.address.origin
@@ -424,6 +394,18 @@ def detail_to_listing(
 
     includes = manage_cost_includes(manage) if manage else None
     excludes = manage_cost_excludes(manage) if manage else None
+    # 관리비 포함·미포함 항목 목록에서 빈 항목(null)을 빼서 그 칸을 모름(null)으로 둔 안내. 그런 칸이 없으면 빈 목록이다.
+    # `includes`·`excludes` 는 `manage_cost_includes`·`manage_cost_excludes` 의 결과다. 빈 항목을 뺐어도 항목별 내역으로 만든 값은 모름이
+    # 아니라 안내하지 않는다 (결과가 None 일 때만 센다)
+    cost_notes: list[str] = []
+    if manage is not None:
+        dropped = {
+            'manage_cost_includes': manage.null_items('includes') if includes is None else 0,
+            'manage_cost_excludes': manage.null_items('excludes') if excludes is None else 0,
+        }
+        unknown = tuple(name for name, count in dropped.items() if count)
+        if unknown:
+            cost_notes = [null_items_note('직방 관리비 항목', sum(dropped.values()), unknown)]
     detail = ZigbangListingDetail(
         source='zigbang',
         id=str(item.id),
@@ -471,7 +453,7 @@ def detail_to_listing(
         manage_cost_excludes=excludes,
         manage_cost_period=manage_cost_period(manage.detail) if manage else None,
         manage_cost_method=manage_cost_method(manage.detail) if manage else None,
-        notes=_manage_cost_null_notes(manage, includes, excludes),
+        notes=cost_notes,
     )
     if item.service_type == '오피스텔':
         return detail.model_copy(update={

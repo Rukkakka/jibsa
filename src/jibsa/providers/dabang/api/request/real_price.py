@@ -25,11 +25,6 @@ REAL_PRICE_PAGE_LIMIT: int = 50
 DabangRealPriceSearchType = Literal['SALE', 'LEASE']
 
 
-def months_between(from_month: str, to_month: str) -> int:
-    """`YYYYMM` 두 달 사이를 양 끝을 포함해 센다 (202311~202610 → 36)."""
-    return (int(to_month[:4]) - int(from_month[:4])) * 12 + int(to_month[4:]) - int(from_month[4:]) + 1
-
-
 class DabangRealPriceMonthsModel(RequestModel):
     """실거래 조회 기간 (단지 실거래·매물 실거래·매물 실거래 첫 화면이 같이 받는다).
 
@@ -49,7 +44,8 @@ class DabangRealPriceMonthsModel(RequestModel):
 
     @model_validator(mode='after')
     def period_within_limit(self) -> Self:
-        months = months_between(self.from_date, self.to_date)
+        # `YYYYMM` 두 달 사이를 양 끝을 포함해 센다 (202311~202610 → 36)
+        months = (int(self.to_date[:4]) - int(self.from_date[:4])) * 12 + int(self.to_date[4:]) - int(self.from_date[4:]) + 1
         if months < 1:
             raise ValueError(f'시작 달({self.from_date})이 끝 달({self.to_date})보다 늦습니다')
         if months > REAL_PRICE_MAX_MONTHS:

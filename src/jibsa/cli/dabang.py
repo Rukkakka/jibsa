@@ -147,7 +147,6 @@ from jibsa.providers.dabang.service.school import (
 
 from typing import (
     Annotated,
-    Any,
     Literal,
 )
 
@@ -351,11 +350,6 @@ def _place(client: DabangClient, query: str | None, lat: float | None, lng: floa
     return resolve_places(client, query or '')
 
 
-def _place_state(place: DabangPlace) -> dict[str, Any]:
-    """이어 받기 표에 남길 위치. 출력하지 않는 다방 번호(동 코드·동 번호·역 번호)도 넣어야 장소 검색 없이 이어 받는다."""
-    return {**place.model_dump(), 'code': place.code, 'gid': place.gid, 'place_id': place.place_id, 'radius_m': place.radius_m}
-
-
 def _search(
     kind: ListingKind,
     *,
@@ -479,7 +473,10 @@ def _search(
         )
         next_position = None
         if result.next_position is not None:
-            next_position = {'list': result.next_position.model_dump(mode='json'), 'place': _place_state(place)}
+            next_position = {'list': result.next_position.model_dump(mode='json'), 'place': {
+                # 이어 받기 표에 남길 위치. 출력하지 않는 다방 번호(동 코드·동 번호·역 번호)도 넣어야 장소 검색 없이 이어 받는다
+                **place.model_dump(), 'code': place.code, 'gid': place.gid, 'place_id': place.place_id, 'radius_m': place.radius_m,
+            }}
         if details:
             result = attach_details(client, result, built_within_years=built_within)
         emit(result, pretty, notes=trade_notes + result.notes, next_token=encode_next(next_position), fields=fields)

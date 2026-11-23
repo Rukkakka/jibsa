@@ -480,12 +480,12 @@ def _number(value: int | float | str | None) -> int | float | None:
     return number
 
 
-def _advancement_of(
-    detail: ZigbangSchoolDetailModel,
-    stage: str | None,
-) -> ZigbangMiddleAdvancement | ZigbangHighAdvancement | None:
-    """학교급에 맞는 진학 현황. 중학교는 `onlyMiddleNew`, 고등학교는 `onlyHighNew` 를 읽는다. 칸이 모두 비었거나(0 은 값이다) 학교급이 그 둘이 아니면 None."""
-    advancement: ZigbangMiddleAdvancement | ZigbangHighAdvancement
+def school_info_of(detail: ZigbangSchoolDetailModel) -> ZigbangSchoolInfo:
+    """학교 조회(`schools`)의 `detail` 을 웹 학교 화면 값으로. 못 읽은 숫자 칸은 모름(null)이고 학비·급식비는 원 단위 값을 만원으로 바꾼다 (반올림하지 않는다)."""
+    stage = text_or_none(detail.stage)
+    high_category = detail.only_high_new.high_category if detail.only_high_new is not None else None
+    # 학교급에 맞는 진학 현황. 중학교는 `onlyMiddleNew`, 고등학교는 `onlyHighNew` 를 읽는다. 칸이 모두 비었거나(0 은 값이다) 학교급이 그 둘이 아니면 None
+    advancement: ZigbangMiddleAdvancement | ZigbangHighAdvancement | None = None
     if stage == 'middle' and detail.only_middle_new is not None:
         middle = detail.only_middle_new
         advancement = ZigbangMiddleAdvancement(
@@ -506,15 +506,8 @@ def _advancement_of(
             other=_number(high.etc),
             other_percent=_number(high.etc_percent),
         )
-    else:
-        return None
-    return None if all(value is None for value in advancement.model_dump().values()) else advancement
-
-
-def school_info_of(detail: ZigbangSchoolDetailModel) -> ZigbangSchoolInfo:
-    """학교 조회(`schools`)의 `detail` 을 웹 학교 화면 값으로. 못 읽은 숫자 칸은 모름(null)이고 학비·급식비는 원 단위 값을 만원으로 바꾼다 (반올림하지 않는다)."""
-    stage = text_or_none(detail.stage)
-    high_category = detail.only_high_new.high_category if detail.only_high_new is not None else None
+    if advancement is not None and all(value is None for value in advancement.model_dump().values()):
+        advancement = None
     return ZigbangSchoolInfo(
         stage=stage,
         name=text_or_none(detail.name),
@@ -541,19 +534,8 @@ def school_info_of(detail: ZigbangSchoolDetailModel) -> ZigbangSchoolInfo:
         meal_cost_manwon=won_to_manwon(_number(detail.meal)),
         meal_type=text_or_none(detail.meal_type),
         district_meal_cost_manwon=won_to_manwon(_number(detail.meal_local)),
-        advancement=_advancement_of(detail, stage),
+        advancement=advancement,
     )
-
-
-def _card_summary(desc1: str | None) -> tuple[str | None, int | None]:
-    """단지 카드 첫째 줄('송파구 가락동 · 179세대')을 (주소, 세대수) 로 나눈다. 읽지 못한 쪽은 None."""
-    text = (desc1 or '').strip()
-    head, separator, tail = text.rpartition(' · ')
-    if separator and household_count(tail) is not None:
-        return text_or_none(normalize_address(head)), household_count(tail)
-    if household_count(text) is not None:
-        return None, household_count(text)
-    return text_or_none(normalize_address(text)), None
 
 
 def complex_order_of(kind: QueryPlaceKind, order: ZigbangComplexOrder | None) -> ZigbangComplexOrder:
@@ -677,38 +659,6 @@ def _region_place(client: ZigbangClient, query: str) -> _ComplexPlace:
     )
 
 
-def _station_around(client: ZigbangClient, subway_id: int) -> tuple[str | None, dict[int, _AroundComplex]]:
-    """역의 주변 단지 정보를 받는다 (요청 1회). 이름과 단지 ID 별 이름·주소·세대수·거리를 준다."""
-    station = client.run_request_subways(ZigbangSubwaysRequestParameterModel(subway_id=subway_id))
-    return station.name, {
-        apt.id: _AroundComplex(
-            name=apt.name,
-            address=normalize_address(apt.old_address),
-            households=household_count(apt.household),
-            distance_m=apt.distance_num,
-        )
-        for apt in station.apt_list or []
-    }
-
-
-def _school_around(response: ZigbangSchoolsResponseModel) -> tuple[str | None, dict[int, _AroundComplex]]:
-    """학교 상세(`schools`)의 배정단지에서 단지 ID 별 이름·세대수·거리를 꺼낸다 (요청 없음). 학교 쪽에는 주소가 없다."""
-    return response.detail.name if response.detail else None, {
-        apt.apartment_id: _AroundComplex(
-            name=apt.name, address=None, households=household_count(apt.household), distance_m=distance_m_of(apt.distance),
-        )
-        for apt in response.apt_list or []
-    }
-
-
-def _station_failure_note(exc: Exception) -> str:
-    """역 주변 단지 정보(`subways`)를 받지 못했다는 [실패] 안내."""
-    return lookup_failure_note(
-        exc, '직방', '역 주변 단지 정보',
-        f'단지 {AROUND_FIELDS_BY_PLACE_TYPE["역"]}를 모릅니다 (url 의 단지 페이지에서 확인)',
-    )
-
-
 def _danji_cards(
     client: ZigbangClient,
     ids: list[int],
@@ -745,7 +695,15 @@ def place_complex_of(
     이름·주소·세대수·거리는 역이 주변 단지 정보에서, 학교가 주소만 카드에서, 동·구는 주변 단지 정보가 없어 이름·주소·세대수를
     카드에서 받는다 (동·구 줄에는 거리가 없다). 둘째 줄(highlight)은 늘 카드다.
     """
-    card_address, card_households = _card_summary(card.desc1 if card else None)
+    # 단지 카드 첫째 줄('송파구 가락동 · 179세대')을 (주소, 세대수) 로 나눈다. 읽지 못한 쪽은 None
+    card_text = ((card.desc1 if card else None) or '').strip()
+    head, separator, tail = card_text.rpartition(' · ')
+    if separator and household_count(tail) is not None:
+        card_address, card_households = text_or_none(normalize_address(head)), household_count(tail)
+    elif household_count(card_text) is not None:
+        card_address, card_households = None, household_count(card_text)
+    else:
+        card_address, card_households = text_or_none(normalize_address(card_text)), None
     if place_type in AROUND_PLACE_TYPES:
         name = around.name if around else None
         # 학교 주변 단지 정보에는 주소가 없어 학교만 카드의 주소다. 역은 주변 단지 정보에 없으면 모름이다
@@ -831,16 +789,34 @@ def search_place_complexes(
     around_name: str | None = None
     around_loaded = False
     if school_response is not None and school_response.detail is not None:
-        # 학교는 본 조회로 받은 학교 상세에서 꺼낸다 (배정단지가 없어도 학교 정보는 낸다)
-        around_name, around = _school_around(school_response)
+        # 학교는 본 조회로 받은 학교 상세에서 꺼낸다 (요청 없음. 배정단지가 없어도 학교 정보는 낸다)
+        around_name = school_response.detail.name
+        around = {
+            apt.apartment_id: _AroundComplex(
+                name=apt.name, address=None, households=household_count(apt.household), distance_m=distance_m_of(apt.distance),
+            )
+            for apt in school_response.apt_list or []
+        }
         school = school_info_of(school_response.detail)
         around_loaded = True
     elif ids and place.subway_id is not None:
         # 역은 단지가 있을 때만 주변 단지 정보를 받는다 (덤)
         try:
-            around_name, around = _station_around(client, place.subway_id)
+            station = client.run_request_subways(ZigbangSubwaysRequestParameterModel(subway_id=place.subway_id))
+            around_name, around = station.name, {
+                apt.id: _AroundComplex(
+                    name=apt.name,
+                    address=normalize_address(apt.old_address),
+                    households=household_count(apt.household),
+                    distance_m=apt.distance_num,
+                )
+                for apt in station.apt_list or []
+            }
         except OPTIONAL_LOOKUP_ERRORS as exc:
-            notes.append(_station_failure_note(exc))
+            notes.append(lookup_failure_note(
+                exc, '직방', '역 주변 단지 정보',
+                f'단지 {AROUND_FIELDS_BY_PLACE_TYPE["역"]}를 모릅니다 (url 의 단지 페이지에서 확인)',
+            ))
         else:
             around_loaded = True
     if around_loaded:

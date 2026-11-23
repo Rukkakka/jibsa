@@ -490,19 +490,6 @@ def _month_of(date_text: str | None) -> str | None:
     return date[:7] if date else None
 
 
-def _price_line(line: ZigbangDanjiPriceChartLineModel, kind: _LineKind) -> ZigbangComplexPriceLine:
-    return ZigbangComplexPriceLine(
-        name=text_or_none(line.label),
-        kind=kind.kind,
-        complex_id=kind.complex_id,
-        points=None if line.data is None else [
-            # 웹은 0 을 그리지 않는 '값 없음' 으로 본다. 점은 남기고 값만 모름이다
-            ZigbangComplexPricePoint(month=_month_of(point.date), price_per_pyeong_manwon=None if point.price == 0 else point.price)
-            for point in line.data
-        ],
-    )
-
-
 def get_price_trend(
     client: ZigbangClient,
     complex_id: str,
@@ -567,7 +554,19 @@ def get_price_trend(
     dropped_lines = chart.null_items('lines')
     if chart.lines is not None:
         kinds = _line_kinds(chart.lines, candidates, dropped_lines)
-        lines = [_price_line(line, kind) for line, kind in zip(chart.lines, kinds)]
+        lines = [
+            ZigbangComplexPriceLine(
+                name=text_or_none(line.label),
+                kind=kind.kind,
+                complex_id=kind.complex_id,
+                points=None if line.data is None else [
+                    # 웹은 0 을 그리지 않는 '값 없음' 으로 본다. 점은 남기고 값만 모름이다
+                    ZigbangComplexPricePoint(month=_month_of(point.date), price_per_pyeong_manwon=None if point.price == 0 else point.price)
+                    for point in line.data
+                ],
+            )
+            for line, kind in zip(chart.lines, kinds)
+        ]
         if dropped_lines:
             notes.append(null_items_note('직방 시세 추이 줄', dropped_lines, ('lines[].kind',)))
         dropped_points = sum(line.null_items('data') for line in chart.lines)
@@ -643,25 +642,8 @@ def _gap_price(item: ZigbangRoomTypePriceMonthModel) -> int | float | None:
     return item.monthly_gap.price if item.monthly_gap else None
 
 
-def _sale_of(item: ZigbangRoomTypePriceMonthModel) -> ZigbangPyeongSale:
-    """한 달 매매 기록. 직방시세(average_price)가 0 인 달은 웹이 그리지 않는 '값 없음' 이라 값 칸이 모두 모름이고, 거래가 0건인 달은 최저·최고가만 모름이다.
-
-    입주 전 달은 average·min·max·monthly_gap.price 가 모두 0 이고 건수만 양수다 (2026-11-22 표본). 거래가 0건인 달은 직방이 min·max 에
-    시세 값을 채워 주는데 그 달에 거래가 있었던 것처럼 읽히지 않게 거래 범위를 비운다. 건수는 0 도 진짜 값이다.
-    """
-    no_price = item.average_price == 0
-    no_trades = item.volume == 0
-    return ZigbangPyeongSale(
-        estimated_price_manwon=None if no_price else item.average_price,
-        min_price_manwon=None if no_price or no_trades else item.min_price,
-        max_price_manwon=None if no_price or no_trades else item.max_price,
-        count=item.volume,
-        change_manwon=None if no_price else _gap_price(item),
-    )
-
-
 def _jeonse_wolse_of(item: ZigbangRoomTypePriceMonthModel) -> ZigbangPyeongJeonseWolse:
-    """한 달 전월세 기록. 0 처리는 `_sale_of` 와 같고, 거래 건수는 전세와 월세를 합쳐 0건인지 본다 (둘 다 모르면 0건이라 하지 않는다)."""
+    """한 달 전월세 기록. 0 처리는 매매(`_merge_months`)와 같고, 거래 건수는 전세와 월세를 합쳐 0건인지 본다 (둘 다 모르면 0건이라 하지 않는다)."""
     no_price = item.average_price == 0
     # 리뷰 오탐 (2026-11-22): 월세 건수만 모를 때 전세 0건이면 최저·최고가를 null(모름)로 둔다. 건수를 모르는 달의 값은 직방이 거래 없는 달을 채운
     # 값일 수 있어 그대로 내지 않는다 (docs/zigbang.md 평형 추이 '아는 것의 합이 0')
@@ -687,7 +669,19 @@ def _merge_months(
     by_month: dict[str, ZigbangPyeongPriceMonth] = {}
     for item in sales:
         month = _month_of(item.date)
-        row = ZigbangPyeongPriceMonth(trade=trade, month=month, sale=_sale_of(item), jeonse_wolse=None)
+        # 한 달 매매 기록. 직방시세(average_price)가 0 인 달은 웹이 그리지 않는 '값 없음' 이라 값 칸이 모두 모름이고, 거래가 0건인 달은 최저·최고가만 모름이다.
+        # 입주 전 달은 average·min·max·monthly_gap.price 가 모두 0 이고 건수만 양수다 (2026-11-22 표본). 거래가 0건인 달은 직방이 min·max 에
+        # 시세 값을 채워 주는데 그 달에 거래가 있었던 것처럼 읽히지 않게 거래 범위를 비운다. 건수는 0 도 진짜 값이다.
+        no_price = item.average_price == 0
+        no_trades = item.volume == 0
+        sale = ZigbangPyeongSale(
+            estimated_price_manwon=None if no_price else item.average_price,
+            min_price_manwon=None if no_price or no_trades else item.min_price,
+            max_price_manwon=None if no_price or no_trades else item.max_price,
+            count=item.volume,
+            change_manwon=None if no_price else _gap_price(item),
+        )
+        row = ZigbangPyeongPriceMonth(trade=trade, month=month, sale=sale, jeonse_wolse=None)
         rows.append(row)
         if month is not None:
             by_month.setdefault(month, row)

@@ -286,29 +286,8 @@ def _month(value: str) -> str:
 BUILDING_VIEW_LABELS: dict[str, str] = {'DETACHED': '단독·다가구', 'MULTIPLEX': '다세대·연립', 'APARTMENT': '아파트', 'OFFICETEL': '오피스텔'}
 
 
-def _complex_error(exc: HTTPStatusError, complex_id: str, space_seq: int) -> JibsaError | None:
-    """단지 실거래·시세 흐름의 없는 단지·평형을 NOT_FOUND·INVALID_ARGUMENT 로 바꾼다 (아니면 None).
-
-    다방은 없는 단지·평형에 400 과 사유를 준다 (2026-10-25 실측: 평형 1 → '존재하지 않는 평형 정보입니다.',
-    없는 단지 → histories '존재하지 않는 단지입니다.'·charts '존재하지 않는 단지 정보입니다.'). 단지 ID 가 쿼리로 가서 403 은
-    없는 단지가 아니라 다방 주소가 바뀐 것이다 (`is_missing_id`).
-    """
-    if exc.response.status_code != 400:
-        return None
-    message = error_message(exc) or ''
-    if '평형' in message:
-        return JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f'이 단지에 없는 평형 번호입니다: {space_seq}',
-            hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].space_seq 를 주세요',
-        )
-    if '단지' in message:
-        return complex_not_found(complex_id)
-    return None
-
-
 def _fetch_complex_space(fetch: Callable[[], T], complex_id: str, space_seq: int) -> T:
-    """단지 평형 요청 하나. 없는 단지·평형이라는 다방 오류를 NOT_FOUND·INVALID_ARGUMENT 로 바꾼다 (`_complex_error`).
+    """단지 평형 요청 하나. 없는 단지·평형이라는 다방 오류를 NOT_FOUND·INVALID_ARGUMENT 로 바꾼다.
 
     Raises:
         JibsaError: 없는 단지·평형일 때. 다른 HTTP 오류는 그대로 올린다.
@@ -316,9 +295,19 @@ def _fetch_complex_space(fetch: Callable[[], T], complex_id: str, space_seq: int
     try:
         return fetch()
     except HTTPStatusError as exc:
-        error = _complex_error(exc, complex_id, space_seq)
-        if error is not None:
-            raise error from None
+        # 다방은 없는 단지·평형에 400 과 사유를 준다 (2026-10-25 실측: 평형 1 → '존재하지 않는 평형 정보입니다.',
+        # 없는 단지 → histories '존재하지 않는 단지입니다.'·charts '존재하지 않는 단지 정보입니다.'). 단지 ID 가 쿼리로 가서 403 은
+        # 없는 단지가 아니라 다방 주소가 바뀐 것이다 (`is_missing_id`).
+        if exc.response.status_code == 400:
+            message = error_message(exc) or ''
+            if '평형' in message:
+                raise JibsaError(
+                    code='INVALID_ARGUMENT',
+                    message=f'이 단지에 없는 평형 번호입니다: {space_seq}',
+                    hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].space_seq 를 주세요',
+                ) from None
+            if '단지' in message:
+                raise complex_not_found(complex_id) from None
         raise
 
 
