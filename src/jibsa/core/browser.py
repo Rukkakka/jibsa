@@ -1382,7 +1382,12 @@ class _BrowserState:
         """
         extra = self.routed - self.routed_at_open - self.ours
         if extra > 0 and self.options.rate_limiter is not None:
-            self.options.rate_limiter.record(extra)
+            try:
+                self.options.rate_limiter.record(extra)
+            except (StateDirError, OSError) as error:
+                # 남기지 못해도 아래 쿠키 버리기는 한다. 올리면 `_close` 가 경고만 남기고 403 으로 정한 버리기를 건너뛰어, 거부된
+                # 쿠키를 다음 명령들이 30분 동안 이어 썼다 (2026-11-24 확인, `record_entry_requests` 와 같은 처리)
+                logger.warning('첫 화면 뒤 페이지 요청을 요청 제한에 남기지 못했습니다: %s', error)
         if self.discard:
             self.discard_saved(self.opened_at)
             return
