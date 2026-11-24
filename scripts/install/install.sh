@@ -87,9 +87,22 @@ main() {
     bin=$("$uv" tool dir --bin)
     jibsa="$bin/jibsa"
     [ -x "$jibsa" ] || fail "jibsa 를 찾지 못했다: $jibsa"
-    if ! "$uv" tool update-shell; then
-        printf '셸 설정 파일에 PATH 를 넣지 못했다. 쓰는 셸의 설정 파일(~/.zshrc, ~/.bashrc 등)에 아래 줄을 직접 넣는다\n'
-        printf '    export PATH="%s:$PATH"\n' "$bin"
+    # 셸 설정 파일에는 이미 넣었는데 이 창의 PATH 에만 없으면(같은 창에서 다시 실행했을 때) uv 는 'already up-to-date' 로
+    # 실패한다 (2026-11-24 uv 0.13.0 확인). 넣지 못한 것이 아니라 새 터미널부터 잡히는 것이라 직접 넣으라고 하지 않는다.
+    # 셸을 알 수 없는 등 그 밖의 실패만 직접 넣는 줄을 보인다
+    if shell_out=$("$uv" tool update-shell 2>&1); then
+        [ -z "$shell_out" ] || printf '%s\n' "$shell_out"
+    else
+        case $shell_out in
+            *'already up-to-date'*)
+                printf '셸 설정 파일에는 이미 PATH 가 들어 있다 (새 터미널부터 잡힌다)\n'
+                ;;
+            *)
+                printf '%s\n' "$shell_out" >&2
+                printf '셸 설정 파일에 PATH 를 넣지 못했다. 쓰는 셸의 설정 파일(~/.zshrc, ~/.bashrc 등)에 아래 줄을 직접 넣는다\n'
+                printf '    export PATH="%s:$PATH"\n' "$bin"
+                ;;
+        esac
     fi
 
     step '4/5 브라우저(Chromium) 설치 (이미 있으면 건너뛴다)'
