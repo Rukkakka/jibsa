@@ -94,6 +94,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 라이브러리로 쓸 때: `DaangnClient.run_request_map_reviews` 에 넘기는 `DaangnMapReviewsRequestParameterModel` 에 읽을 지역 ID `region_id` 가 필수가 됨 (후기 페이지 스토어에 다른 지역 목록이 섞여 이 ID 의 것만 읽는다). `name1`·`name2` 만 주던 쪽은 `region_id` 를 더한다 (#393)
 - 당근 `compare` 의 배정 학교·주변 역 `distance_m`·`walk_minutes` 가 정수로 반올림하지 않고 당근 비교 화면처럼 값 그대로라 소수일 수 있음 (0 이면 0분). 읽는 쪽이 정수만 온다고 보았다면 소수도 받도록 고친다 (#393)
 - 사이트 첫 화면이 서버 오류(5xx, 또는 요청 제한을 끈 429)와 `Retry-After` 를 주면 그 시간만큼 쉬고 다시 엶 (전에는 1초 뒤 다시 열었다). 60초보다 길면 다시 열지 않고 `UPSTREAM_ERROR`(429 는 `RATE_LIMITED`)로 멈추며, `retry_after_seconds` 와 `hint` 가 몇 초 뒤에 다시 부를지 알림. CLI 의 `code` 는 전과 같다. 라이브러리로 쓸 때 이 경우 transport 가 `EntryStatusError`(`httpx.HTTPStatusError`) 대신 `EntryPageError`(`JibsaError`)를 던지니, `HTTPStatusError` 로 첫 화면 5xx 를 잡던 쪽은 `JibsaError` 도 잡는다 (#419, #423)
+- 사이트 첫 화면이 본문 없이 4xx·5xx 를 주면 연결 오류로 보고 브라우저를 새로 띄워 첫 화면을 세 번 연 뒤 `NETWORK_ERROR`("네트워크 상태를 확인")로 알리던 것을, 본문이 있을 때와 같게 판정함: 4xx 는 `UPSTREAM_ERROR`(401·403·451 은 `blocked: true`), 429 는 쿨다운(`RATE_LIMITED`), 5xx 는 `Retry-After` 만큼 쉬고 다시 연 뒤 `UPSTREAM_ERROR`. 이 경우를 `NETWORK_ERROR` 로 받아 다시 부르던 쪽은 `code`·`blocked` 대로 다른 소스를 쓰거나 쿨다운을 기다린다. 라이브러리로 쓸 때 transport 가 던지던 `EntryConnectError`(`httpx.ConnectError`)는 `EntryPageError`·`RateLimitedError`(`JibsaError`)나 `EntryStatusError`(`httpx.HTTPStatusError`)가 된다 (#426)
 
 ### 추가
 

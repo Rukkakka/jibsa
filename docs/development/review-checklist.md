@@ -157,6 +157,13 @@
     다른 상태 파일도 함께 본다. 확인: 그 칸에 `1` 뒤에 0 을 400개 붙인 정수를 넣고 명령을 불러 본다.
     예: `core/ratelimit.py` `_is_time`, `core/browser.py` `usable_cookies` (`opened_at`, 요청 제한 쪽만 고치고 빠졌다, 2026-11-23).
     언제: 상태 파일을 읽는 코드나 거기서 읽은 시각·수를 계산하는 `+` 줄.
+25. **브라우저 이동 실패가 숨긴 상태 코드.** 첫 화면 문서의 4xx·5xx 판정을 `page.goto` 가 돌려준 응답에만 기대지 않는가. Chromium 은
+    본문 없는 4xx·5xx 문서에서 goto 를 `net::ERR_HTTP_RESPONSE_CODE_FAILURE` 로 실패시켜 응답을 돌려주지 않는다. 그 갈래에서 판정만 맞추고
+    정리를 빠뜨리기도 쉽다: `_close` 는 컨텍스트가 있을 때만 쿠키 정리(`finish`)를 하고, `discard_saved` 는 첫 화면 시각(`opened_at`)이
+    0 이면 옛 쿠키 파일을 지우지 않는다. 확인: 가짜 첫 화면이 `Content-Length: 0` 으로 403·429·503 을 주게 하고 에러 종류·쿨다운·옛 쿠키
+    파일이 본문 있는 경우와 같은지 본다 (`scripts/ci/browser_check.py` 7번). 예: `core/browser.py:1694` `_launch` 의 except 갈래 (그때 연결
+    오류로 보고 첫 화면을 세 번 다시 연 뒤 `NETWORK_ERROR` 로 냈고 쿨다운·차단 판정이 빠졌다, 2026-11-24).
+    언제: 첫 화면 문서 상태로 판정하는 코드나 `goto`·`_entry_error`·`_launch` 의 예외 처리를 바꾼 diff.
 
 ## `contract` 출력 계약
 

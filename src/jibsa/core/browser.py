@@ -267,6 +267,9 @@ CERT_HINT: str = (
 )
 # 브라우저가 인증서를 믿지 못한 Chromium 네트워크 오류(앞부분). 첫 화면(`_entry_error`)과 우리 요청(`_to_response`)에 같이 쓴다
 CERT_NET_ERROR: str = 'net::ERR_CERT_'
+# 본문 없는 4xx·5xx 문서에서 Chromium 이 이동(goto)을 실패시키는 오류. 응답을 돌려주지 않아 `_launch` 가 `response` 이벤트로 받아 둔
+# 문서 상태로 판정한다
+HTTP_RESPONSE_CODE_NET_ERROR: str = 'net::ERR_HTTP_RESPONSE_CODE_FAILURE'
 # fetch 가 실패했을 때 그 요청의 CDP 이벤트(`_BlockedResponses`)를 기다리는 시간. evaluate 결과보다 10ms 안쪽으로 늦게 왔다
 # (2026-11-09 로컬 실측: 동기·비동기 각 30번, 바로 보면 6·10번이 아직 없었고 10ms 한 번 기다리면 모두 왔다)
 BLOCKED_RESPONSE_WAIT_SECONDS: float = 1.0
@@ -437,6 +440,9 @@ def _entry_error(error: Exception, entry_url: str, opening_entry: bool) -> Excep
     브라우저가 멈춘 것이라 다른 연결 실패처럼 재시도하는 `EntryConnectError` 다. 재시도는 브라우저를 새로 띄운다. 첫 화면
     시간 초과로 내면 60초 동안 기억돼(`remember_if_fatal`) 다시 띄우면 됐을 실패를 '첫 화면을 40초 안에 열지 못했다'로 잘못
     알렸다 (2026-11-10 리뷰).
+
+    본문 없는 4xx·5xx 첫 화면 문서(`HTTP_RESPONSE_CODE_NET_ERROR`)는 `_launch` 가 받아 둔 문서 상태로 `finish_entry` 를 불러
+    판정하므로 보통 여기로 오지 않는다. 받아 둔 문서가 없을 때만 마지막 줄의 `EntryConnectError` 가 된다.
     """
     line = _first_line(error)
     if isinstance(error, _playwright_timeout_error()):
@@ -1571,18 +1577,27 @@ class BrowserTransport(BaseTransport):
         entry_document_retry_after: str | None = None
         self._session = StealthySession(**state.session_options())
 
+        # 첫 화면 탭의 main frame 문서가 받은 마지막 4xx·5xx (상태, Retry-After). 본문 없는 4xx·5xx 문서면 goto 가 응답을 돌려주지 않고
+        # 실패해(`HTTP_RESPONSE_CODE_NET_ERROR`) 이 값으로 첫 화면을 판정한다 (아래 `except` 갈래). 리다이렉트 뒤의 문서면 마지막 것이 남는다
+        failed_document: list[tuple[int, str | None]] = []
+
         def on_entry_response(response: 'PageResponse') -> None:
+            if response.status < 400:
+                return
+            # 첫 화면 탭의 main frame 문서 응답인지 본다 (iframe 광고 문서는 아니다). 드라이버에 묻지 않는 속성만 본다.
+            # `response` 이벤트 리스너 안이라 예외를 내지 않는다 (`count_preflight` 와 같은 이유). patchright 의 `request.frame`
+            # 은 서비스 워커 요청과 frame 이 생기기 전에 보낸 이동 요청(새 창의 첫 이동)에서 Error 를 낸다. 첫 화면 탭에서는
+            # 생기지 않지만 (`session_options` 의 서비스 워커 주석) 생기면 main frame 문서가 아니라고 본다 (2026-11-10 리뷰)
+            request = response.request
+            try:
+                main_document = request.is_navigation_request() and request.frame.parent_frame is None
+            except _playwright_error():
+                main_document = False
+            retry_after = response.headers.get('retry-after')
+            if main_document:
+                failed_document[:] = [(response.status, retry_after)]
             if response.status == 429:
-                # 첫 화면 탭의 main frame 문서 응답인지 본다 (iframe 광고 문서는 아니다). 드라이버에 묻지 않는 속성만 본다.
-                # `response` 이벤트 리스너 안이라 예외를 내지 않는다 (`count_preflight` 와 같은 이유). patchright 의 `request.frame`
-                # 은 서비스 워커 요청과 frame 이 생기기 전에 보낸 이동 요청(새 창의 첫 이동)에서 Error 를 낸다. 첫 화면 탭에서는
-                # 생기지 않지만 (`session_options` 의 서비스 워커 주석) 생기면 main frame 문서가 아니라고 본다 (2026-11-10 리뷰)
-                request = response.request
-                try:
-                    main_document = request.is_navigation_request() and request.frame.parent_frame is None
-                except _playwright_error():
-                    main_document = False
-                state.on_entry_rate_limited(response.url, response.headers.get('retry-after'), main_document)
+                state.on_entry_rate_limited(response.url, retry_after, main_document)
 
         try:
             self._session.start()
@@ -1667,6 +1682,28 @@ class BrowserTransport(BaseTransport):
             page.unroute_all(behavior=UNROUTE_BEHAVIOR)
             self._watch_blocked(context, page)
         except BaseException as error:
+            if (
+                opening_entry and failed_document and isinstance(error, _playwright_error())
+                and HTTP_RESPONSE_CODE_NET_ERROR in _first_line(error)
+            ):
+                # 본문 없는 4xx·5xx 첫 화면 문서라 goto 가 응답 대신 오류를 냈다. 받아 둔 문서 상태로 본문이 있을 때와 같이
+                # 판정한다 (403 은 `blocked`·옛 쿠키 버리기, 429 는 쿨다운, 5xx 는 Retry-After 대로 재시도). 판정하지 않으면
+                # 연결 오류(`EntryConnectError`)로 보고 브라우저를 새로 띄워 첫 화면을 세 번 열고 `NETWORK_ERROR` 로 안내했다
+                # (2026-11-24 확인: 가짜 첫 화면으로 재현). `finish_entry` 가 첫 화면 요청을 요청 제한에 남기므로
+                # (`record_entry_requests`) 따로 부르지 않는다. `_context` 를 `_close` 보다 먼저 둔다: `_close` 는 컨텍스트가
+                # 있을 때만 `finish` 를 불러 `finish_entry` 가 켠 `discard` 대로 옛 쿠키 파일을 지우는데, 두지 않으면 거부된
+                # 방문자 쿠키 파일이 남는다. `opened_at` 도 둔다: 새로 여는 갈래는 goto 가 성공한 뒤에야 넣어 여기서는 0 이고,
+                # 0 이면 `discard_saved` 가 옛 쿠키 파일을 다른 프로세스가 새로 연 것으로 여겨 지우지 않는다. 쿠키는 남기지
+                # 않는다 (본문이 없어 첫 화면 JS 가 돌지 않았고 `page_url` 이 비어 `finish` 가 남기지 않는다). `finish_entry` 는
+                # 상태가 400 이상이면 모든 갈래에서 예외를 내므로 이 갈래는 늘 아래 `raise` 로 끝난다
+                status, retry_after = failed_document[0]
+                self._context = context
+                state.opened_at = time.time()
+                try:
+                    state.finish_entry(status, retry_after)
+                except BaseException as entry_error:
+                    self._close()
+                    raise entry_error from error
             self._close()
             state.record_entry_requests()
             if not isinstance(error, _playwright_error()):
@@ -1678,7 +1715,8 @@ class BrowserTransport(BaseTransport):
         if not from_saved and state.keeps_entry_cookies(entry_status):
             # 새로 연 첫 화면의 쿠키는 확인(`finish_entry`) 전에 바로 남긴다. 같은 명령 안에서 새로 만든 같은 소스 클라이언트가
             # 첫 화면을 다시 열지 않게 하고, 429 로 멈춰도 쿨다운 뒤 남긴 쿠키로 요청 1건만 보내 풀렸는지
-            # 보게 한다. 확인 뒤에 남겼을 때는 쿠키 파일이 없던 상태(첫 실행, 403 으로 버린 뒤)에서 429 로 멈추면 `finish` 가
+            # 보게 한다 (본문 없는 429 첫 화면은 goto 가 실패해 위 `except` 갈래로 가므로 쿠키를 남기지 않는다). 확인 뒤에
+            # 남겼을 때는 쿠키 파일이 없던 상태(첫 실행, 403 으로 버린 뒤)에서 429 로 멈추면 `finish` 가
             # 파일이 없다고 남기지 않았다 (2026-11-10 리뷰). 4xx·5xx·다른 출처면 남기지 않는다 (`keeps_entry_cookies`). 4xx·다른
             # 출처는 `finish_entry` 가 discard 를 켜 `_close` 가 옛 파일을 지우고, 5xx 는 옛 파일을 그대로 둔다(`leave_saved`).
             # 명령이 끝날 때(`close`) 그때의 쿠키로 다시 남긴다
