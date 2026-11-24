@@ -245,6 +245,7 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 에러 JSON 의 `candidate_count` 를 모를 때(후보가 다 세어지지 않음) 키째 빼던 것을 문서대로 `null` 로 냄 (예: `jibsa daangn search listings --address 테헤란로`)
 - `--next` 의 조건이 다르다는 에러와 범위 옵션 순서 에러(`--area-min` 이 `--area-max` 보다 큼 등)가 소수를 유효숫자 6자리로 줄여 앞·지금 값이 똑같이 보이던 것을 받은 값 그대로 씀 (`--lat (앞: 37.497942, 지금: 37.497943)`)
 - `--next` 의 조건이 다르다는 에러의 `hint` 가 `--details` 가 없는 명령(네이버 `search listings`, 직방 `search listings apt`)에도 `--details` 를 바꿀 수 있다고 하던 것을 그 명령에 있는 옵션만 적게 고침
+- 사이트가 준 4xx·5xx 본문을 에러 `message` 에 실을 때, 따옴표 친 키(HTML 안 JSON 의 `"accessToken":"…"`, JS 문자열 안의 `\"token\":\"…\"`)의 값, 공백이 든 따옴표 값의 뒤 토막, `Authorization: <스킴> …` 의 값, `Cookie:` 의 두 번째 쌍부터를 가리지 못하던 것을 고침 (#424)
 - 상태 폴더(`JIBSA_STATE_DIR`)의 잠깐 난 오류(잠금 경합 등)를 첫 화면 실패로 60초 동안 기억해 같은 프로세스의 다음 요청까지 실패시키던 것과, 첫 화면을 열다 실패했을 때 그 오류가 원래 에러를 덮던 것을 고침
 - 요청 제한 상태 파일(`<state_dir>/ratelimit/<소스>.json`)에 실수로 바꿀 수 없을 만큼 큰 정수(약 1.8×10³⁰⁸ 이상)가 들어 있으면 그 소스의 모든 명령과 `jibsa limits`·`jibsa limits --reset` 이 `INTERNAL_ERROR`(OverflowError)로 실패하던 것을 고침. 이제 그 값은 깨진 값으로 버린다. 브라우저 쿠키 상태 파일(`<state_dir>/browser/<소스>.json`)의 첫 화면 연 시각이 그런 정수일 때도 그 소스의 모든 명령이 같은 에러로 실패하고 `limits --reset` 으로도 풀리지 않던 것을, 이제 첫 화면을 다시 열게 고침
 - 당근 `search commute` 등 매물 목록에서 매물 하나의 인근 역(`subwayStations`·`nearbySubwayStations`)이 `null` 로 오면 검색 전체가 `PARSE_ERROR` 로 실패하던 것을 그 매물만 역 정보 없이 내게 고침 (#331)
