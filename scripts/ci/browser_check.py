@@ -3,7 +3,7 @@
 pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 운영체제마다 달라지는 브라우저 쪽(Chromium 띄우기, 브라우저 안의
 요청, 막힌 응답 알아보기, Ctrl+C, 끝난 뒤 프로세스 정리)은 여기서 본다. 실제 사이트에는 요청하지 않는다. 이 컴퓨터에 웹 서버
 두 개를 띄운다: 첫 화면과 데이터를 주는 사이트(entry)와, 다른 출처에서 CORS 없이 429 를 주는 사이트(blocked). 상태 폴더는
-임시 폴더라 실제 쿠키·요청 제한 기록을 건드리지 않는다. CI 는 한 줄 설치 스크립트로 설치한 jibsa 의 Python 으로 돌린다.
+임시 폴더라 실제 쿠키·요청 제한 기록을 건드리지 않고, 끝나면 지운다. CI 는 한 줄 설치 스크립트로 설치한 jibsa 의 Python 으로 돌린다.
 
     python scripts/ci/browser_check.py
 
@@ -29,8 +29,10 @@ pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 �
 """
 import _thread
 import asyncio
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,8 +47,12 @@ from http.server import (
 from urllib.parse import urlsplit
 
 
-# 실제 쿠키·요청 제한 기록 대신 임시 폴더를 쓴다 (jibsa 는 부를 때마다 이 환경 변수를 읽는다)
-os.environ.setdefault('JIBSA_STATE_DIR', tempfile.mkdtemp(prefix='jibsa-browser-check-'))
+# 실제 쿠키·요청 제한 기록 대신 임시 폴더를 쓴다 (jibsa 는 부를 때마다 이 환경 변수를 읽는다).
+# 환경 변수가 없을 때만 만들고 끝날 때 지운다. `--interrupt-child` 자식은 부모의 환경 변수를 물려받아 만들지 않으므로 정리는 만든 프로세스만 한다
+if 'JIBSA_STATE_DIR' not in os.environ:
+    _state_dir = tempfile.mkdtemp(prefix='jibsa-browser-check-')
+    os.environ['JIBSA_STATE_DIR'] = _state_dir
+    atexit.register(shutil.rmtree, _state_dir, ignore_errors=True)
 
 from httpx import (  # noqa: E402
     AsyncClient,
