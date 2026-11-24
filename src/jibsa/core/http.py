@@ -130,6 +130,10 @@ def _redact_text(value: str) -> str:
     return SENSITIVE_TEXT_PATTERN.sub(r'\g<head>\g<quote><redacted>\g<quote>', value)
 
 
+def strip_userinfo(netloc: str) -> str:
+    """주소의 `netloc` 에서 사용자 정보(`user:pass@`)를 뗀 `호스트[:포트]`. 에러 문구에 싣는 주소에 쓴다."""
+    return netloc.rsplit('@', 1)[-1]
+
 
 class ResponseStatusError(HTTPStatusError):
     """`HTTPStatusError` whose message carries a truncated response body."""
@@ -147,8 +151,7 @@ def _request_origin(exc: HTTPStatusError) -> str:
         return '<unknown request>'
     # 주소의 사용자 정보(@ 앞)·쿼리·조각은 에러 문구에 남기지 않는다
     parts = urlsplit(str(request.url))
-    netloc = parts.netloc.rsplit('@', 1)[-1]
-    url = urlunsplit((parts.scheme, netloc, parts.path, '', ''))
+    url = urlunsplit((parts.scheme, strip_userinfo(parts.netloc), parts.path, '', ''))
     return f'{request.method} {url}'
 
 

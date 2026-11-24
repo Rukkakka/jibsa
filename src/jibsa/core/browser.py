@@ -1187,7 +1187,7 @@ class _BrowserState:
                 (차단 화면 등, UPSTREAM_ERROR). HTTPStatusError 로 내면 404·빈
                 403 을 '없는 ID'로 읽는 호출부(다방 `is_missing_id`, 직방 `unavailable_on_404` 등)가 차단을 없는 매물로 알린다.
                 첫 화면이 다른 출처(로그인·보안 확인 화면 등)로 넘어갔을 때도 (UPSTREAM_ERROR). 그 페이지에서 보내는 요청은
-                출처가 달라 CORS 로 막히므로, 남겨 두면 다음 명령들도 실패한다.
+                출처가 달라 CORS 로 막히므로, 남겨 두면 다음 명령들도 실패한다. message 에는 넘어간 곳의 출처만 싣는다.
         """
         self.routed_at_open = self.routed
         self.record_entry_requests()
@@ -1256,10 +1256,17 @@ class _BrowserState:
             )
         if _origin(self.page_url) != _origin(self.options.entry_url):
             self.discard = True
+            # 순환 import 를 피하려고 여기서 가져온다 (core.http 가 이 모듈을 불러온다)
+            from jibsa.core.http import strip_userinfo
+
+            # 넘어간 주소의 경로·쿼리·사용자 정보에 토큰이 실릴 수 있어 출처(스킴·호스트·포트)만 싣는다 (2026-11-24 확인)
+            parts = urlsplit(self.page_url)
+            host = strip_userinfo(parts.netloc)
+            shown = f'{parts.scheme}://{host}' if host else f'{parts.scheme}:'
             raise EntryPageError(
                 code='UPSTREAM_ERROR',
-                message=f'{self.options.source} 첫 화면이 다른 출처로 넘어갔습니다: {self.page_url}',
-                hint='사이트가 보안 확인·로그인 화면으로 넘겼을 수 있습니다. 다른 소스를 쓰세요',
+                message=f'{self.options.source} 첫 화면이 다른 출처({shown})로 넘어갔습니다',
+                hint='사이트가 보안 확인·로그인 화면으로 넘겼거나 첫 화면 주소가 바뀌었을 수 있습니다. 다른 소스를 쓰세요',
             )
 
     def keeps_entry_cookies(self, status: int | None) -> bool:

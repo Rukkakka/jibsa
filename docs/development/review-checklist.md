@@ -247,6 +247,16 @@
 17. **에러 `details` 의 None 을 빼지 않는가.** `details` 의 None 은 모름이라 출력에 `null` 로 남아야 한다 ([에러](output-contract.md#에러)). 확인: None 이 들어갈 수 있는 details 를 던지는 에러를 `handle_errors` 안에서 던져 stderr JSON 에 그 키가 `null` 로 있는지 본다.
     예: `cli/output.py` `emit_error` (2026-11-23 core 리뷰: `emit_error` 가 키워드 값의 None 을 빼 `RegionAmbiguousError(total=None)` 의 `candidate_count` 가 키째 빠졌다. 지금은 `details=` 로 따로 받아 None 을 싣는다).
     언제: 에러 details 에 None 일 수 있는 값을 넣거나 `emit_error`·`handle_errors` 를 고칠 때.
+18. **에러에 싣는 서버 글자에서 비밀 값을 가리는가.** 에러 message·hint·details 에 서버가 준 본문이나 주소(`page.url`, 리다이렉트 주소)를
+    실으면 토큰이 나갈 수 있다. 본문은 `core/http.py` 의 가리기를 거치게 하고([요청 메서드](provider-conventions.md#요청-메서드) 의
+    `raise_for_status`), 주소는 출처(스킴·호스트·포트)만 싣는다. 가리기 패턴은 글 모양마다 따로 빠진다: 키를 감싼 따옴표
+    (`"accessToken":"…"`, JS 문자열 안의 `\"token\":\"…\"`·`\\\"token\\\"`), 값의 모양(공백·`;` 가 든 따옴표 값, `[`·`{`·`(` 로 시작하는 값),
+    헤더 꼴(`Authorization: <스킴> …`, `Cookie: a=1; b=2`). 한 꼴을 잡으려고 값에서 끊는 글자를 늘리면 다른 꼴이 다시 나간다. 확인: 그
+    꼴들을 본문으로 준 500 에 `raise_for_status` 를 불러 보고(`tests/test_http.py`), 패턴을 바꿨으면 같은 입력을 옛 패턴(`git show HEAD:`)에도
+    돌려 전에 가리던 값이 나가지 않는지 견준다. 주소는 다른 출처의 `?token=secret` 주소로 302 하는 가짜 첫 화면의 에러를 본다
+    (`scripts/ci/browser_check.py` 8번). 예: `core/http.py:92` `SENSITIVE_TEXT_PATTERN`, `core/browser.py:1257` `finish_entry` 다른 출처 갈래
+    (그때 따옴표 친 키의 값과 넘어간 주소의 쿼리가 message 에 그대로 나갔고, 고치며 값을 따옴표 앞에서 끊자 `token=["…"]` 이 다시 나갔다, 2026-11-24).
+    언제: `SENSITIVE_*`·`_redact_*`·`_body_preview` 를 바꾼 diff, 서버 본문·`page.url`·`response.url`·리다이렉트 주소를 에러 문자열이나 로그에 넣는 `+` 줄.
 
 ## `web` 웹 대응
 

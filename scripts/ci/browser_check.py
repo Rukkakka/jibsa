@@ -27,6 +27,8 @@ pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 �
 7. 첫 화면 문서가 본문 없이 403·429·503 이면 Chromium 이 이동을 실패시켜 응답을 주지 않는데, 그래도 본문 있을 때와 같이
    판정하는지 (403 차단 `blocked`·429 쿨다운이 Retry-After 를 따름·503 재시도 에러에 Retry-After) 와 403 뒤 옛 쿠키 파일을
    지우는지. 이 확인은 사이트를 모드마다 따로 띄운다
+8. 첫 화면이 다른 출처로 넘어가면 에러 message 에 그 출처만 싣고 경로·쿼리(토큰)는 싣지 않는지. 이 확인은 첫 화면 사이트와
+   넘어갈 로그인 사이트를 따로 띄운다
 
 하나라도 틀리면 exit 1 이다.
 """
@@ -221,9 +223,10 @@ class CountingEntryHandler(EntryHandler):
 
 
 class EmptyEntryHandler(EntryHandler):
-    """첫 화면 문서를 본문 없이 4xx·5xx 로 주는 사이트 (7번 확인)."""
+    """첫 화면 문서를 본문 없이 4xx·5xx 로 주거나 다른 출처의 토큰 실린 주소로 넘기는 사이트 (7·8번 확인)."""
 
     mode: str = ''
+    other_url: str = ''
 
     def do_GET(self) -> None:
         self._count()
@@ -235,6 +238,16 @@ class EmptyEntryHandler(EntryHandler):
             self._send(429, b'', 'text/html', {'Retry-After': '600'})
         elif self.mode == 'empty-503':
             self._send(503, b'', 'text/html', {'Retry-After': '7'})
+        elif self.mode == 'redirect':
+            self._send(302, b'', 'text/html', {'Location': f'{self.other_url}login?token=secret-token&next=1'})
+
+
+class LoginHandler(EntryHandler):
+    """다른 출처의 로그인 화면 (8번 확인의 넘어간 곳)."""
+
+    def do_GET(self) -> None:
+        self._count()
+        self._send(200, b'<html><body>login</body></html>', 'text/html')
 
 
 class CorsApiHandler(QuietHandler):
@@ -379,8 +392,8 @@ def check_request_counts() -> None:
         print(f'     첫 화면 사이트 {entry.counts}, 다른 출처 API {api.counts}', flush=True)
 
 
-def empty_entry_site(mode: str) -> Site:
-    return Site(type('EmptyEntry', (EmptyEntryHandler,), {'mode': mode}))
+def empty_entry_site(mode: str, other_url: str = '') -> Site:
+    return Site(type('EmptyEntry', (EmptyEntryHandler,), {'mode': mode, 'other_url': other_url}))
 
 
 def entry_error(checker: Client, url: str) -> Exception | None:
@@ -440,6 +453,20 @@ def check_bodyless_entry() -> None:
     with suppress(Exception), checker:
         checker.get(f'{site.url}api/data')
     check(not path.exists(), '7. 본문 없는 403 첫 화면 뒤 옛 쿠키 파일을 지움')
+
+
+def check_other_origin_entry() -> None:
+    other = Site(LoginHandler)
+    entry = empty_entry_site('redirect', other.url)
+    with client('browser-check-other-origin', entry.url) as checker:
+        error = entry_error(checker, f'{entry.url}api/data')
+    message = str(error)
+    shown = urlsplit(other.url).netloc
+    check(
+        isinstance(error, EntryPageError) and error.code == 'UPSTREAM_ERROR' and shown in message
+        and not any(word in message for word in ('token', 'secret', '/login')),
+        f'8. 다른 출처로 넘어간 첫 화면의 message 에 출처만 실음 ({describe(error)})',
+    )
 
 
 def browser_processes() -> dict[int, str]:
@@ -523,6 +550,7 @@ def main() -> None:
     check_async_requests(entry)
     check_request_counts()
     check_bodyless_entry()
+    check_other_origin_entry()
     if failures:
         print(f'\n{len(failures)}개 실패', flush=True)
         sys.exit(1)

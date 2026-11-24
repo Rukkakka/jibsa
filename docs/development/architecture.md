@@ -171,7 +171,8 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   대기 상한(60초)보다 길면 다시 열지 않고 `EntryPageError`(`UPSTREAM_ERROR`, `retry_after_seconds`)로 멈춘다 (60초 뒤
   다시 열면 서버가 정한 시간보다 일찍 첫 화면 요청을 20건쯤 다시 보낸다). 그 밖의 4xx 나 다른 출처(로그인·보안 확인 화면 등)로
   넘어가면 `EntryPageError`(`JibsaError`, `UPSTREAM_ERROR`)이고 옛 쿠키 파일도 버린다 (거부된 방문자). 401·403·451 은 접속 차단이라
-  `blocked: true` 를 붙인다 (`ENTRY_BLOCKED_STATUSES`. 업데이트로 풀리지 않음을 에이전트와 매일 감시가 이 필드로 안다).
+  `blocked: true` 를 붙인다 (`ENTRY_BLOCKED_STATUSES`. 업데이트로 풀리지 않음을 에이전트와 매일 감시가 이 필드로 안다). 다른 출처로
+  넘어간 에러의 message 에는 넘어간 곳의 출처(스킴·호스트·포트)만 싣는다 (로그인·보안 확인 화면 주소의 쿼리에 토큰이 실릴 수 있다).
   문서가 본문 없이 4xx·5xx 면 Chromium 이 이동을 `net::ERR_HTTP_RESPONSE_CODE_FAILURE` 로 실패시켜 응답을 주지 않으므로, 첫 화면
   탭의 `response` 이벤트로 받아 둔 main frame 문서의 상태·`Retry-After` 로 위와 같이 판정한다 (`_launch`. 연결 오류로 보면 첫 화면을
   세 번 다시 열고 `NETWORK_ERROR` 로 알렸다). 4xx 를
