@@ -93,6 +93,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 라이브러리로 쓸 때: `jibsa.providers.daangn.find_station` 이 이름이 맞는 같은 이름 역의 첫 역(당근 웹이 고르는 역)에 위치 정보가 없으면, 그 역을 건너뛰고 위치가 있는 다음 역을 고르던 것과 모두 위치가 없으면 `None` 을 돌려주던 것 대신 `LocationMissingError`(`REGION_NOT_FOUND` 계열)를 던진다. `None` 만 역이 없는 경우로 처리하던 쪽은 이 에러(`JibsaError`)도 처리한다 (#393)
 - 라이브러리로 쓸 때: `DaangnClient.run_request_map_reviews` 에 넘기는 `DaangnMapReviewsRequestParameterModel` 에 읽을 지역 ID `region_id` 가 필수가 됨 (후기 페이지 스토어에 다른 지역 목록이 섞여 이 ID 의 것만 읽는다). `name1`·`name2` 만 주던 쪽은 `region_id` 를 더한다 (#393)
 - 당근 `compare` 의 배정 학교·주변 역 `distance_m`·`walk_minutes` 가 정수로 반올림하지 않고 당근 비교 화면처럼 값 그대로라 소수일 수 있음 (0 이면 0분). 읽는 쪽이 정수만 온다고 보았다면 소수도 받도록 고친다 (#393)
+- 사이트 첫 화면이 서버 오류(5xx, 또는 요청 제한을 끈 429)와 `Retry-After` 를 주면 그 시간만큼 쉬고 다시 엶 (전에는 1초 뒤 다시 열었다). 60초보다 길면 다시 열지 않고 `UPSTREAM_ERROR`(429 는 `RATE_LIMITED`)로 멈추며, `retry_after_seconds` 와 `hint` 가 몇 초 뒤에 다시 부를지 알림. CLI 의 `code` 는 전과 같다. 라이브러리로 쓸 때 이 경우 transport 가 `EntryStatusError`(`httpx.HTTPStatusError`) 대신 `EntryPageError`(`JibsaError`)를 던지니, `HTTPStatusError` 로 첫 화면 5xx 를 잡던 쪽은 `JibsaError` 도 잡는다 (#419, #423)
+- 사이트 첫 화면이 본문 없이 4xx·5xx 를 주면 연결 오류로 보고 브라우저를 새로 띄워 첫 화면을 세 번 연 뒤 `NETWORK_ERROR`("네트워크 상태를 확인")로 알리던 것을, 본문이 있을 때와 같게 판정함: 4xx 는 `UPSTREAM_ERROR`(401·403·451 은 `blocked: true`), 429 는 쿨다운(`RATE_LIMITED`), 5xx 는 `Retry-After` 만큼 쉬고 다시 연 뒤 `UPSTREAM_ERROR`. 이 경우를 `NETWORK_ERROR` 로 받아 다시 부르던 쪽은 `code`·`blocked` 대로 다른 소스를 쓰거나 쿨다운을 기다린다. 라이브러리로 쓸 때 transport 가 던지던 `EntryConnectError`(`httpx.ConnectError`)는 `EntryPageError`·`RateLimitedError`(`JibsaError`)나 `EntryStatusError`(`httpx.HTTPStatusError`)가 된다 (#426)
 
 ### 추가
 
@@ -244,7 +246,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 에러 JSON 의 `candidate_count` 를 모를 때(후보가 다 세어지지 않음) 키째 빼던 것을 문서대로 `null` 로 냄 (예: `jibsa daangn search listings --address 테헤란로`)
 - `--next` 의 조건이 다르다는 에러와 범위 옵션 순서 에러(`--area-min` 이 `--area-max` 보다 큼 등)가 소수를 유효숫자 6자리로 줄여 앞·지금 값이 똑같이 보이던 것을 받은 값 그대로 씀 (`--lat (앞: 37.497942, 지금: 37.497943)`)
 - `--next` 의 조건이 다르다는 에러의 `hint` 가 `--details` 가 없는 명령(네이버 `search listings`, 직방 `search listings apt`)에도 `--details` 를 바꿀 수 있다고 하던 것을 그 명령에 있는 옵션만 적게 고침
-- 사이트 첫 화면이 서버 오류(5xx, 또는 요청 제한을 끈 429)와 `Retry-After` 를 주면 그 시간만큼 쉬고 다시 엶 (전에는 1초 뒤 다시 열었다). 60초보다 길면 다시 열지 않고 `UPSTREAM_ERROR`(429 는 `RATE_LIMITED`)로 멈추며, `retry_after_seconds` 와 `hint` 가 몇 초 뒤에 다시 부를지 알림
+- 사이트 첫 화면이 다른 출처(로그인·보안 확인 화면 등)로 넘어갔다는 에러의 `message` 가 넘어간 주소를 경로·쿼리째 싣던 것을 출처(`https://호스트`)만 싣게 고침 (주소 쿼리에 토큰이 실릴 수 있다). `hint` 는 첫 화면 주소가 바뀌었을 수도 있다고 함께 알림 (#427)
+- 사이트가 준 4xx·5xx 본문을 에러 `message` 에 실을 때, 따옴표 친 키(HTML 안 JSON 의 `"accessToken":"…"`, JS 문자열 안의 `\"token\":\"…\"`)의 값, 공백이 든 따옴표 값의 뒤 토막, `Authorization: <스킴> …` 의 값, `Cookie:` 의 두 번째 쌍부터를 가리지 못하던 것을 고침 (#424)
 - 상태 폴더(`JIBSA_STATE_DIR`)의 잠깐 난 오류(잠금 경합 등)를 첫 화면 실패로 60초 동안 기억해 같은 프로세스의 다음 요청까지 실패시키던 것과, 첫 화면을 열다 실패했을 때 그 오류가 원래 에러를 덮던 것을 고침
 - 요청 제한 상태 파일(`<state_dir>/ratelimit/<소스>.json`)에 실수로 바꿀 수 없을 만큼 큰 정수(약 1.8×10³⁰⁸ 이상)가 들어 있으면 그 소스의 모든 명령과 `jibsa limits`·`jibsa limits --reset` 이 `INTERNAL_ERROR`(OverflowError)로 실패하던 것을 고침. 이제 그 값은 깨진 값으로 버린다. 브라우저 쿠키 상태 파일(`<state_dir>/browser/<소스>.json`)의 첫 화면 연 시각이 그런 정수일 때도 그 소스의 모든 명령이 같은 에러로 실패하고 `limits --reset` 으로도 풀리지 않던 것을, 이제 첫 화면을 다시 열게 고침
 - 당근 `search commute` 등 매물 목록에서 매물 하나의 인근 역(`subwayStations`·`nearbySubwayStations`)이 `null` 로 오면 검색 전체가 `PARSE_ERROR` 로 실패하던 것을 그 매물만 역 정보 없이 내게 고침 (#331)

@@ -24,6 +24,11 @@ pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 �
    CORS 사전 요청(OPTIONS)은 httpx 훅을 거치지 않아 transport 가 따로 센다 (`RateLimiter.record`, `count_preflight`).
    AGENTS.md 의 '모든 HTTP 요청은 요청 제한을 거친다'를 브라우저에서 지키는 계산이라, Chromium·patchright 가 이벤트를 바꿔
    빠지거나 두 번 세면 여기서 알 수 있다. 이 확인은 첫 화면 사이트와 CORS 를 허용하는 다른 출처 API 사이트를 따로 띄운다
+7. 첫 화면 문서가 본문 없이 403·429·503 이면 Chromium 이 이동을 실패시켜 응답을 주지 않는데, 그래도 본문 있을 때와 같이
+   판정하는지 (403 차단 `blocked`·429 쿨다운이 Retry-After 를 따름·503 재시도 에러에 Retry-After) 와 403 뒤 옛 쿠키 파일을
+   지우는지. 이 확인은 사이트를 모드마다 따로 띄운다
+8. 첫 화면이 다른 출처로 넘어가면 에러 message 에 그 출처만 싣고 경로·쿼리(토큰)는 싣지 않는지. 이 확인은 첫 화면 사이트와
+   넘어갈 로그인 사이트를 따로 띄운다
 
 하나라도 틀리면 exit 1 이다.
 """
@@ -39,7 +44,10 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import (
+    contextmanager,
+    suppress,
+)
 from http.server import (
     BaseHTTPRequestHandler,
     ThreadingHTTPServer,
@@ -67,10 +75,14 @@ from jibsa.core.browser import (  # noqa: E402
     AsyncBrowserTransport,
     BrowserOptions,
     BrowserTransport,
+    EntryPageError,
+    EntryStatusError,
 )
 from jibsa.core.ratelimit import (  # noqa: E402
+    RateLimitedError,
     RateLimiter,
     RateLimitPolicy,
+    state_dir,
 )
 
 
@@ -208,6 +220,34 @@ class CountingEntryHandler(EntryHandler):
             f".then(() => {{ document.cookie = '{READY_COOKIE}=1; path=/' }})"
         )
         self._send(200, f'<html><body><script>{script}</script></body></html>'.encode(), 'text/html')
+
+
+class EmptyEntryHandler(EntryHandler):
+    """첫 화면 문서를 본문 없이 4xx·5xx 로 주거나 다른 출처의 토큰 실린 주소로 넘기는 사이트 (7·8번 확인)."""
+
+    mode: str = ''
+    other_url: str = ''
+
+    def do_GET(self) -> None:
+        self._count()
+        if self.path != '/':
+            self._send(404, b'', 'text/plain')
+        elif self.mode == 'empty-403':
+            self._send(403, b'', 'text/html')
+        elif self.mode == 'empty-429':
+            self._send(429, b'', 'text/html', {'Retry-After': '600'})
+        elif self.mode == 'empty-503':
+            self._send(503, b'', 'text/html', {'Retry-After': '7'})
+        elif self.mode == 'redirect':
+            self._send(302, b'', 'text/html', {'Location': f'{self.other_url}login?token=secret-token&next=1'})
+
+
+class LoginHandler(EntryHandler):
+    """다른 출처의 로그인 화면 (8번 확인의 넘어간 곳)."""
+
+    def do_GET(self) -> None:
+        self._count()
+        self._send(200, b'<html><body>login</body></html>', 'text/html')
 
 
 class CorsApiHandler(QuietHandler):
@@ -352,6 +392,83 @@ def check_request_counts() -> None:
         print(f'     첫 화면 사이트 {entry.counts}, 다른 출처 API {api.counts}', flush=True)
 
 
+def empty_entry_site(mode: str, other_url: str = '') -> Site:
+    return Site(type('EmptyEntry', (EmptyEntryHandler,), {'mode': mode, 'other_url': other_url}))
+
+
+def entry_error(checker: Client, url: str) -> Exception | None:
+    """요청하며 난 예외를 돌려준다 (예외 없이 응답이 오면 None)."""
+    try:
+        checker.get(url)
+    except Exception as error:
+        return error
+    return None
+
+
+def describe(error: Exception | None) -> str:
+    return 'None' if error is None else f'{type(error).__name__}: {str(error)[:120]}'
+
+
+def check_bodyless_entry() -> None:
+    def limited_client(source: str, entry_url: str) -> tuple[Client, RateLimiter]:
+        limiter = RateLimiter(source, RateLimitPolicy(min_interval=0, max_per_minute=1000))
+        options = BrowserOptions(source=source, entry_url=entry_url, ready_cookie=READY_COOKIE, rate_limiter=limiter)
+        return Client(transport=BrowserTransport(options), timeout=20), limiter
+
+    site = empty_entry_site('empty-403')
+    checker, _ = limited_client('browser-check-bodyless-403', site.url)
+    with checker:
+        error = entry_error(checker, f'{site.url}api/data')
+    check(
+        isinstance(error, EntryPageError) and error.code == 'UPSTREAM_ERROR' and error.details == {'status': 403, 'blocked': True},
+        f'7. 본문 없는 403 첫 화면을 차단(blocked)으로 판정함 ({describe(error)})',
+    )
+
+    site = empty_entry_site('empty-429')
+    checker, limiter = limited_client('browser-check-bodyless-429', site.url)
+    with checker:
+        error = entry_error(checker, f'{site.url}api/data')
+    cooldown = limiter.status()['cooldown_remaining_seconds']
+    check(
+        isinstance(error, RateLimitedError) and cooldown >= 590,
+        f'7. 본문 없는 429 첫 화면이 Retry-After 600초를 따라 쿨다운을 검 ({describe(error)}, 쿨다운 {cooldown}초)',
+    )
+
+    site = empty_entry_site('empty-503')
+    checker, _ = limited_client('browser-check-bodyless-503', site.url)
+    with checker:
+        error = entry_error(checker, f'{site.url}api/data')
+    check(
+        isinstance(error, EntryStatusError) and error.response.status_code == 503 and error.response.headers.get('retry-after') == '7',
+        f'7. 본문 없는 503 첫 화면이 Retry-After 를 실은 재시도 에러로 끝남 ({describe(error)})',
+    )
+
+    # 30분이 지난 옛 쿠키 파일이 있어 첫 화면을 다시 열게 되는 상황. 403 으로 거부되면 그 파일을 지워야 한다
+    site = empty_entry_site('empty-403')
+    source = 'browser-check-bodyless-cleanup'
+    path = state_dir() / 'browser' / f'{source}.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({'opened_at': time.time() - 3600, 'page_url': site.url, 'cookies': []}), encoding='utf-8')
+    checker, _ = limited_client(source, site.url)
+    with suppress(Exception), checker:
+        checker.get(f'{site.url}api/data')
+    check(not path.exists(), '7. 본문 없는 403 첫 화면 뒤 옛 쿠키 파일을 지움')
+
+
+def check_other_origin_entry() -> None:
+    other = Site(LoginHandler)
+    entry = empty_entry_site('redirect', other.url)
+    with client('browser-check-other-origin', entry.url) as checker:
+        error = entry_error(checker, f'{entry.url}api/data')
+    message = str(error)
+    shown = urlsplit(other.url).netloc
+    check(
+        isinstance(error, EntryPageError) and error.code == 'UPSTREAM_ERROR' and shown in message
+        and not any(word in message for word in ('token', 'secret', '/login')),
+        f'8. 다른 출처로 넘어간 첫 화면의 message 에 출처만 실음 ({describe(error)})',
+    )
+
+
 def browser_processes() -> dict[int, str]:
     """jibsa 가 띄운 Chromium·드라이버로 보이는 프로세스 (pid → 명령줄)."""
     if sys.platform == 'win32':
@@ -432,6 +549,8 @@ def main() -> None:
     check_interrupt()
     check_async_requests(entry)
     check_request_counts()
+    check_bodyless_entry()
+    check_other_origin_entry()
     if failures:
         print(f'\n{len(failures)}개 실패', flush=True)
         sys.exit(1)

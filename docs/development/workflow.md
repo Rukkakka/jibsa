@@ -94,6 +94,6 @@ Python 3.11·3.12·3.13·3.14)·설치본 확인(`jibsa --version`, `jibsa guide
 다시 통과해야 머지할 수 있다. 머지 뒤 `main` 에서는 CI 를 다시 돌리지 않는다.
 브라우저·설치에 관련된 파일(`src/jibsa/core/`, `src/jibsa/cli/app.py`, `scripts/install/`, `scripts/ci/`, `pyproject.toml`,
 `ci.yml`)을 고친 PR 은 `브라우저 확인`도 돈다. Ubuntu·macOS·Windows 에서 한 줄 설치 스크립트로 설치하고, 설치된 jibsa 로
-가짜 사이트를 열어 브라우저 요청·남긴 쿠키·막힌 응답(CORS 없는 429) 알아보기·Ctrl+C·프로세스 정리를 본다 (`scripts/ci/browser_check.py`, 실제 사이트에는 요청하지
+가짜 사이트를 열어 브라우저 요청·남긴 쿠키·막힌 응답(CORS 없는 429) 알아보기·첫 화면 오류 판정·Ctrl+C·프로세스 정리를 본다 (`scripts/ci/browser_check.py`, 실제 사이트에는 요청하지
 않는다). 릴리스 직전과 매주 월요일 새벽에는 모든 검사가 돈다. 감시 파일(`scripts/monitor/`, [api-monitor.yml](../../.github/workflows/api-monitor.yml))을 고친 PR 에서는 실제 API 를
 부르는 [API 감시](README.md#매일-api-감시)도 한 번 돈다. 필수 검사는 아니라 막힌 날에도 머지할 수 있다.

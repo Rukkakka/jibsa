@@ -157,6 +157,13 @@
     다른 상태 파일도 함께 본다. 확인: 그 칸에 `1` 뒤에 0 을 400개 붙인 정수를 넣고 명령을 불러 본다.
     예: `core/ratelimit.py` `_is_time`, `core/browser.py` `usable_cookies` (`opened_at`, 요청 제한 쪽만 고치고 빠졌다, 2026-11-23).
     언제: 상태 파일을 읽는 코드나 거기서 읽은 시각·수를 계산하는 `+` 줄.
+25. **브라우저 이동 실패가 숨긴 상태 코드.** 첫 화면 문서의 4xx·5xx 판정을 `page.goto` 가 돌려준 응답에만 기대지 않는가. Chromium 은
+    본문 없는 4xx·5xx 문서에서 goto 를 `net::ERR_HTTP_RESPONSE_CODE_FAILURE` 로 실패시켜 응답을 돌려주지 않는다. 그 갈래에서 판정만 맞추고
+    정리를 빠뜨리기도 쉽다: `_close` 는 컨텍스트가 있을 때만 쿠키 정리(`finish`)를 하고, `discard_saved` 는 첫 화면 시각(`opened_at`)이
+    0 이면 옛 쿠키 파일을 지우지 않는다. 확인: 가짜 첫 화면이 `Content-Length: 0` 으로 403·429·503 을 주게 하고 에러 종류·쿨다운·옛 쿠키
+    파일이 본문 있는 경우와 같은지 본다 (`scripts/ci/browser_check.py` 7번). 예: `core/browser.py:1694` `_launch` 의 except 갈래 (그때 연결
+    오류로 보고 첫 화면을 세 번 다시 연 뒤 `NETWORK_ERROR` 로 냈고 쿨다운·차단 판정이 빠졌다, 2026-11-24).
+    언제: 첫 화면 문서 상태로 판정하는 코드나 `goto`·`_entry_error`·`_launch` 의 예외 처리를 바꾼 diff.
 
 ## `contract` 출력 계약
 
@@ -240,6 +247,16 @@
 17. **에러 `details` 의 None 을 빼지 않는가.** `details` 의 None 은 모름이라 출력에 `null` 로 남아야 한다 ([에러](output-contract.md#에러)). 확인: None 이 들어갈 수 있는 details 를 던지는 에러를 `handle_errors` 안에서 던져 stderr JSON 에 그 키가 `null` 로 있는지 본다.
     예: `cli/output.py` `emit_error` (2026-11-23 core 리뷰: `emit_error` 가 키워드 값의 None 을 빼 `RegionAmbiguousError(total=None)` 의 `candidate_count` 가 키째 빠졌다. 지금은 `details=` 로 따로 받아 None 을 싣는다).
     언제: 에러 details 에 None 일 수 있는 값을 넣거나 `emit_error`·`handle_errors` 를 고칠 때.
+18. **에러에 싣는 서버 글자에서 비밀 값을 가리는가.** 에러 message·hint·details 에 서버가 준 본문이나 주소(`page.url`, 리다이렉트 주소)를
+    실으면 토큰이 나갈 수 있다. 본문은 `core/http.py` 의 가리기를 거치게 하고([요청 메서드](provider-conventions.md#요청-메서드) 의
+    `raise_for_status`), 주소는 출처(스킴·호스트·포트)만 싣는다. 가리기 패턴은 글 모양마다 따로 빠진다: 키를 감싼 따옴표
+    (`"accessToken":"…"`, JS 문자열 안의 `\"token\":\"…\"`·`\\\"token\\\"`), 값의 모양(공백·`;` 가 든 따옴표 값, `[`·`{`·`(` 로 시작하는 값),
+    헤더 꼴(`Authorization: <스킴> …`, `Cookie: a=1; b=2`). 한 꼴을 잡으려고 값에서 끊는 글자를 늘리면 다른 꼴이 다시 나간다. 확인: 그
+    꼴들을 본문으로 준 500 에 `raise_for_status` 를 불러 보고(`tests/test_http.py`), 패턴을 바꿨으면 같은 입력을 옛 패턴(`git show HEAD:`)에도
+    돌려 전에 가리던 값이 나가지 않는지 견준다. 주소는 다른 출처의 `?token=secret` 주소로 302 하는 가짜 첫 화면의 에러를 본다
+    (`scripts/ci/browser_check.py` 8번). 예: `core/http.py:92` `SENSITIVE_TEXT_PATTERN`, `core/browser.py:1257` `finish_entry` 다른 출처 갈래
+    (그때 따옴표 친 키의 값과 넘어간 주소의 쿼리가 message 에 그대로 나갔고, 고치며 값을 따옴표 앞에서 끊자 `token=["…"]` 이 다시 나갔다, 2026-11-24).
+    언제: `SENSITIVE_*`·`_redact_*`·`_body_preview` 를 바꾼 diff, 서버 본문·`page.url`·`response.url`·리다이렉트 주소를 에러 문자열이나 로그에 넣는 `+` 줄.
 
 ## `web` 웹 대응
 

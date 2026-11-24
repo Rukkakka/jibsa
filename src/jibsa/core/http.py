@@ -82,11 +82,23 @@ SENSITIVE_KEY_PATTERN: re.Pattern[str] = re.compile(
     r'private[-_]?key|service[-_]?key|authorization|cookie|credential)',
     re.IGNORECASE,
 )
+# 따옴표 없는 값 한 낱말
+_SENSITIVE_WORD: str = r'[^,;\s&}<\n]+'
+# JSON 으로 읽히지 않는 본문(HTML·JS 안의 JSON, 잘린 JSON)에서 민감한 키 뒤의 값을 가린다. 키 뒤 따옴표(`"`·`'`·`\"`·`\\\"`)는
+# 건너뛰고, 값은 모양마다 끝까지 가린다: 따옴표로 시작하면 같은 꼴의 닫는 따옴표까지(공백·`;` 포함), `[`·`{`·`(` 로 시작하면 닫는
+# 괄호까지, 그 밖에는 한 낱말. `authorization` 은 스킴 낱말 뒤의 값까지(`Bearer`·`Token`·`KakaoAK` …), `cookie` 는 `;` 로 이은 쌍까지
+# 가린다 (2026-11-24 확인: 따옴표 친 키·`\"` 로 감싼 키의 값, 공백 든 따옴표 값의 뒤 토막, 스킴 뒤 값, cookie 의 두 번째 쌍이 에러
+# message 에 그대로 나갔다. 값을 따옴표 앞에서 끊으면 `token=["…"]` 처럼 괄호로 시작하는 값이 다시 나갔다)
 SENSITIVE_TEXT_PATTERN: re.Pattern[str] = re.compile(
-    r'([\w-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|'
-    r'private[-_]?key|service[-_]?key|authorization|cookie|credential)'
-    r'[\w-]*\s*[=:]\s*)'
-    r'([^,\s&}\n]+)',
+    r'(?P<head>(?:(?P<auth>[\w-]*authorization[\w-]*)|(?P<cookie>[\w-]*cookie[\w-]*)'
+    r'|[\w-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|'
+    r'private[-_]?key|service[-_]?key|credential)[\w-]*)'
+    r'(?:\\*["\'])?\s*[=:]\s*)'
+    r'(?:'
+    r'(?P<quote>\\*["\']).*?(?P=quote)'
+    r'|\[[^\]\n]*\]?|\{[^}\n]*\}?|\([^)\n]*\)?'
+    rf'|(?(auth)(?:[A-Za-z][\w.-]*[ \t]+)?){_SENSITIVE_WORD}(?(cookie)(?:;[ \t]*{_SENSITIVE_WORD})*)'
+    r')',
     re.IGNORECASE,
 )
 
@@ -114,7 +126,13 @@ def _redact_json(value: object) -> object:
 
 
 def _redact_text(value: str) -> str:
-    return SENSITIVE_TEXT_PATTERN.sub(r'\1<redacted>', value)
+    # 따옴표로 시작한 값은 따옴표를 남긴다 (맞지 않은 `quote` 는 빈 글자가 된다)
+    return SENSITIVE_TEXT_PATTERN.sub(r'\g<head>\g<quote><redacted>\g<quote>', value)
+
+
+def strip_userinfo(netloc: str) -> str:
+    """주소의 `netloc` 에서 사용자 정보(`user:pass@`)를 뗀 `호스트[:포트]`. 에러 문구에 싣는 주소에 쓴다."""
+    return netloc.rsplit('@', 1)[-1]
 
 
 class ResponseStatusError(HTTPStatusError):
@@ -133,8 +151,7 @@ def _request_origin(exc: HTTPStatusError) -> str:
         return '<unknown request>'
     # 주소의 사용자 정보(@ 앞)·쿼리·조각은 에러 문구에 남기지 않는다
     parts = urlsplit(str(request.url))
-    netloc = parts.netloc.rsplit('@', 1)[-1]
-    url = urlunsplit((parts.scheme, netloc, parts.path, '', ''))
+    url = urlunsplit((parts.scheme, strip_userinfo(parts.netloc), parts.path, '', ''))
     return f'{request.method} {url}'
 
 

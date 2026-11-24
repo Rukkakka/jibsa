@@ -18,6 +18,7 @@ from jibsa.core.browser import (
     _FailedFetch,
     _fetch_arguments,
     _proxy_settings,
+    _state_path,
     _to_response,
     returning_cookies,
     usable_cookies,
@@ -127,6 +128,25 @@ def test_entry_server_error_beyond_retry_cap_stops() -> None:
     state.page_url = ENTRY
     with pytest.raises(HTTPStatusError):
         state.finish_entry(503, '60')
+
+
+def test_finish_discards_rejected_cookies_even_if_recording_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 첫 화면 뒤 페이지가 더 보낸 요청을 남기다 상태 폴더 오류가 나도 403 으로 정한 쿠키 버리기는 한다 (건너뛰면 거부된 쿠키를
+    # 다음 명령들이 30분 동안 이어 썼다)
+    limiter = RateLimiter('naver', RateLimitPolicy())
+
+    def broken_record(count: int) -> None:
+        raise OSError('상태 폴더에 쓸 수 없음')
+
+    monkeypatch.setattr(limiter, 'record', broken_record)
+    state = _BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB', rate_limiter=limiter))
+    state.page_url, state.opened_at = ENTRY, NOW
+    state.save([])
+    assert _state_path('naver').exists()
+    state.routed = 2
+    state.discard = True
+    state.finish(None)
+    assert not _state_path('naver').exists()
 
 
 # --- proxy ------------------------------------------------------------------
