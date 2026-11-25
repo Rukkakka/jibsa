@@ -153,7 +153,13 @@ class NaverComplexReconstructionModel(NaverBaseResponseModel):
     ] = None
     building_area_to_land_ratio: Annotated[
         float | None,
-        Field(description='재건축 계획 용적률 (%)', alias='buildingAreaToLandRatio')
+        Field(
+            description=(
+                '재건축 계획 용적률 (%). 키 이름은 건폐율 같지만 웹 ComplexReconstruction.tsx(청크 b042d8aace_1okty1145x932)가 '
+                "'예상 용적률' 로 그린다 (2026-11-24 리뷰 오탐: 건폐율이 아니다)"
+            ),
+            alias='buildingAreaToLandRatio',
+        )
     ] = None
 
 

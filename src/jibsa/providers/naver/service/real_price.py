@@ -32,7 +32,6 @@ from jibsa.core.listing import (
     SAME_AREA_PYEONG_TRADES_NOTE,
     iso_date,
     months_ago,
-    normalize_date,
     note,
     null_items_note,
     won_to_manwon,
@@ -105,7 +104,7 @@ class NaverRealPrice(BaseModel):
 
     trade_date: Annotated[
         str | None,
-        Field(description="계약일 (YYYY-MM-DD). 네이버가 주지 않았거나 빈 값·'-' 로 주면 null")
+        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null')
     ]
     floor: Annotated[
         int | None,
@@ -400,12 +399,12 @@ NEARBY_TRADES_LIMIT_NOTE: str = note(
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
     return NaverRealPrice(
         trade_type=trade_type,
-        trade_date=normalize_date(item.trade_date),
+        trade_date=iso_date(item.trade_date),
         floor=item.floor,
         price_manwon=won_to_manwon(item.deal_price),
         deposit_manwon=won_to_manwon(item.deposit),
         rent_manwon=won_to_manwon(item.monthly_rent),
-        category=item.trade_category,
+        category=item.trade_category or None,
         cancelled=item.is_delete,
         renewal=item.is_renew,
         previous_deposit_manwon=won_to_manwon(item.already_deposit),
@@ -763,12 +762,12 @@ def _villa_real_prices(
         recent = [
             NaverRealPrice(
                 trade_type=trade_type,
-                trade_date=normalize_date(item.trade_date),
+                trade_date=iso_date(item.trade_date),
                 floor=item.floor,
                 price_manwon=won_to_manwon(item.deal_price),
                 deposit_manwon=won_to_manwon(item.deposit),
                 rent_manwon=won_to_manwon(item.monthly_rent),
-                category=item.trade_category,
+                category=item.trade_category or None,
                 cancelled=item.is_canceled,
                 renewal=_renewal_by_right(item.is_renew_request_right),
                 # 종전 보증금·월세: 빌라 실거래 행에도 alreadyDeposit·alreadyMonthlyDeposit(아파트의 alreadyMonthlyRent 와 키 이름이

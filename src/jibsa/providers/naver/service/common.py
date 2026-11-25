@@ -169,8 +169,14 @@ def complex_url(complex_number: int) -> str:
     return f'https://fin.land.naver.com/complexes/{complex_number}'
 
 
-def unwrap(response: NaverResponseModel[T], what: str) -> T:
+# 리뷰 오탐 (2026-11-24): hint 기본값은 번호 조회용이다. hint 없이 부르는 곳은 모두 평형·단지·구역·학교 번호로 부르고, 이름·좌표·목록 조회는 모두 hint 를 넘긴다
+def unwrap(response: NaverResponseModel[T], what: str, *, hint: str | None = '번호가 맞는지 확인하세요') -> T:
     """봉투의 `result` 를 꺼낸다. 실패 응답이면 `JibsaError`.
+
+    Args:
+        hint: NOT_FOUND 에 붙일 안내 (UPSTREAM_ERROR 는 이 뒤에 스펙이 바뀌었을 수 있다는 말을 잇는다). 기본값은 번호를
+            받는 호출용이다. 이름·좌표·목록을 받는 호출은 번호를 확인하라고 하지 않도록 그 입력에 맞는 안내를 넘기고,
+            `None` 이면 번호를 말하지 않는 일반 안내를 쓴다.
 
     Raises:
         JibsaError: 성공 응답인데 `result` 가 비었으면 NOT_FOUND (없는 단지 번호 등),
@@ -180,13 +186,13 @@ def unwrap(response: NaverResponseModel[T], what: str) -> T:
         raise JibsaError(
             code='NOT_FOUND',
             message=f'네이버 {what} 결과가 없습니다',
-            hint='번호가 맞는지 확인하세요',
+            hint=hint or '네이버가 결과를 주지 않았습니다. 잠시 뒤 다시 시도하세요',
         )
     if not response.is_success or response.result is None:
         raise JibsaError(
             code='UPSTREAM_ERROR',
             message=f'네이버 {what} 조회 실패: {response.detail_code or ""} {response.message or ""}'.strip(),
-            hint='번호가 맞는지 확인하세요. 비공식 API 라 스펙이 바뀌었을 수 있습니다',
+            hint=f'{hint}. 비공식 API 라 스펙이 바뀌었을 수 있습니다' if hint else '비공식 API 라 스펙이 바뀌었을 수 있습니다',
         )
     return response.result
 
@@ -229,7 +235,7 @@ class NaverAssignedSchool(BaseModel):
     ]
     assignment: Annotated[
         str | None,
-        Field(description='배정 방식 (배정, 선택)')
+        Field(description='배정 방식 (배정, 선택. 모르는 코드면 알 수 없는 값 (코드), 없으면 null)')
     ] = None
     operation_type: Annotated[
         str | None,
@@ -314,16 +320,22 @@ class NaverListing(Listing):
     ] = None
     price_range_manwon: Annotated[
         list[float | None] | None,
-        Field(description='묶음의 매매 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+        Field(description='묶음의 매매 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다. 네이버가 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 null')
     ] = None
     deposit_range_manwon: Annotated[
         list[float | None] | None,
-        Field(description='묶음의 보증금·전세금 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+        Field(description='묶음의 보증금·전세금 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다. 네이버가 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 null')
     ] = None
     rent_range_manwon: Annotated[
         list[float | None] | None,
-        Field(description='묶음의 월세 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다')
+        Field(description='묶음의 월세 호가 [보증금이 가장 낮은 매물의 월세, 가장 높은 매물의 월세] (만원). 월세 최저·최고가 아니라 거꾸로일 수 있다 '
+                          '(보증금이 같은 매물끼리는 앞 끝이 월세 낮은 쪽, 뒤 끝이 높은 쪽). 두 값이 같으면 키가 없지만 가운데 매물의 월세는 다를 수 있다. '
+                          '네이버가 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 null')
     ] = None
+    unknown_group_fields: Annotated[
+        frozenset[str],
+        Field(exclude=True, description='묶음 호가 범위를 몰라 null 로 낼 칸')
+    ] = frozenset()
     badges: Annotated[
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
@@ -341,7 +353,7 @@ class NaverListing(Listing):
         # 유형마다 웹이 칸을 그리지 않는 필드 (토지의 방 수·층·면적 등). 값을 모르는 null 이 아니라 키째 뺀다
         return (
             super().not_applicable_fields()
-            | {name for name in GROUP_FIELDS if getattr(self, name) is None}
+            | ({name for name in GROUP_FIELDS if getattr(self, name) is None} - self.unknown_group_fields)
             | NOT_APPLICABLE_FIELDS_BY_TYPE.get(self.real_estate_type or '', frozenset())
         )
 
@@ -350,27 +362,41 @@ class NaverListing(Listing):
 GROUP_FIELDS: tuple[str, ...] = ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon')
 
 
-def _group_range(price: NaverMinMaxPriceModel | None) -> list[float | None] | None:
-    """묶음의 호가 범위(원)를 만원으로. 중개사마다 같거나(최저 = 최고) 그 거래 가격이 아니면(0~0) None."""
-    if price is None or price.min_price == price.max_price:
+def _group_range(price: NaverMinMaxPriceModel) -> list[float | None] | None:
+    """묶음의 호가 범위(원)를 만원으로. 중개사마다 같거나(최저 = 최고) 그 거래 가격이 아니면(0~0) None. 가격을 모르는 경우는 부르는 쪽이 가린다."""
+    if price.min_price == price.max_price:
         return None
     return won_to_manwon_range(price.min_price, price.max_price)
 
 
 def group_fields(group: NaverDuplicatedArticleInfoModel | None, trade_type: str) -> dict[str, Any]:
-    """중복 묶음의 중개사 수와 거래 유형에 맞는 호가 범위 (`NaverListing`). 중개사가 하나뿐이면 비운다."""
+    """중복 묶음의 중개사 수와 거래 유형에 맞는 호가 범위 (`NaverListing`). 중개사가 하나뿐이면 비운다.
+
+    범위를 모르면(묶음의 호가 정보나 그 거래의 가격이 없거나 두 끝이 모두 null 이거나 한 끝은 0 이고 다른 끝은 null) 그 칸은 null 이고 이름을
+    `unknown_group_fields` 에 담는다. 0 은 받은 그대로 내고(보증금 0원 매물이 있다), 한 끝만 null 이면 그 끝만 null 로 `[null, 330000]` 처럼 낸다.
+    """
     if group is None or not group.realtor_count or group.realtor_count < 2:
         return {}
     prices = group.representative_price_info
     fields: dict[str, Any] = {'realtor_count': group.realtor_count}
-    if prices is None:
-        return fields
     if trade_type == '매매':
-        fields['price_range_manwon'] = _group_range(prices.deal_price)
+        ranges = [('price_range_manwon', prices.deal_price if prices else None)]
     else:
-        fields['deposit_range_manwon'] = _group_range(prices.warranty_price)
+        ranges = [('deposit_range_manwon', prices.warranty_price if prices else None)]
         if trade_type in ('월세', '단기임대'):
-            fields['rent_range_manwon'] = _group_range(prices.rent_price)
+            ranges.append(('rent_range_manwon', prices.rent_price if prices else None))
+    # 범위를 주지 않았거나 두 끝이 모두 null 이거나 한 끝은 0 이고 다른 끝은 null 이면 호가가 같다는 뜻이 아니라 모르는 것이라 null 로 낸다
+    # (`won_to_manwon_range` 가 None 을 돌려줘 키를 빼면 '호가가 모두 같다' 로 읽힌다). (0, 0) 은 그 거래 가격이 아니라는 뜻이라 `_group_range` 가
+    # 키를 뺀다. 한 끝만 null 이면 아는 끝을 버리지 않고 `_group_range` 가 [null, X] 로 낸다 (재개발 호가 범위와 같다, 2026-11-24 리뷰).
+    # 한 끝이 0 이고 다른 끝이 수이면 0 을 그대로 낸다 (보증금 0원 매물이 있다, 2026-11-25 리뷰)
+    unknown = frozenset(
+        name for name, price in ranges
+        if price is None or (not price.min_price and not price.max_price and None in (price.min_price, price.max_price))
+    )
+    for name, price in ranges:
+        fields[name] = None if price is None or name in unknown else _group_range(price)
+    if unknown:
+        fields['unknown_group_fields'] = unknown
     return fields
 
 
@@ -391,7 +417,10 @@ class NaverListingsResult(BaseModel):
     ]
     has_more: Annotated[
         bool,
-        Field(description='네이버 목록에 아직 받지 않은 매물이 남았는지. 있으면 CLI 가 이어 받기 표(next)를 붙인다')
+        Field(description=(
+            '같은 조건으로 더 받을 매물이 남았는지. 이어 받을 수 있으면 next_position 도 있어 CLI 가 이어 받기 표(next)를 붙인다. '
+            '네이버가 더 있다면서 새 매물을 주지 않아 멈췄으면 이어 받을 수 없어도(next 없음) true 다'
+        ))
     ] = False
     next_position: Annotated[
         dict[str, Any] | None,
@@ -449,7 +478,7 @@ def result_or_none(
 ) -> T | None:
     """부가 정보 조회. 실패하면 그 값만 모름(None)으로 두고 `notes` 에 `[실패]` 안내를 붙인다 (매물 상세·단지 요약 전체를 실패시키지 않는다).
 
-    `isSuccess` 는 보지 않는다 (예외만 실패로 본다).
+    예외면 `[실패]` 안내를 붙인다. `isSuccess` false·`result` null 은 안내 없이 None 이다.
 
     Args:
         notes: 안내를 붙일 목록. `None` 은 호출부가 실패를 스스로 알린다는 뜻이다 (지역 해석).
@@ -477,6 +506,7 @@ def result_with_null_items(
     except OPTIONAL_LOOKUP_ERRORS as exc:
         add_failure_note(notes, exc, what, unknown)
         return None, 0
+    # 리뷰 오탐 (2026-11-24): isSuccess false 를 [실패] 로 보지 않는다. 네이버는 고장이 아닌 응답에도 200 + isSuccess false 를 준다 (상가 2662726134·토지 2663300403 의 article/maintenanceFee 가 {isSuccess: false, result: {}}, 웹 ArticlePriceInfo 는 이를 무시하고 article/oldMaintenanceFee 로 넘어간다). 진짜 거절과 가릴 수 없어 값 없음으로 둔다
     result = response.result
     if result is None:
         return None, 0
@@ -493,7 +523,7 @@ def result_or_empty(
 ) -> T | None:
     """부가 정보 조회. 실패하면(예외·`isSuccess` false) 모름(None)이고 `notes` 에 `[실패]` 안내를 붙인다. 성공했는데 `result` 가 null 이면 네이버가 주지 않은 것이라 `empty()`.
 
-    `result_or_none` 은 둘을 모두 None 으로 합쳐, 성공 응답을 '조회 실패(모름)' 로 내게 된다. 서버가 빈 목록·빈 객체를 주는 자리에
+    `result_or_none` 은 `result` null 도 None 으로 합쳐, 성공 응답을 '조회 실패(모름)' 로 내게 된다. 서버가 빈 목록·빈 객체를 주는 자리에
     `result: null` 이 와도 그 빈 응답과 같게 읽을 때 쓴다 (`empty` 는 `list` 나 빈 모델 클래스처럼 빈 값을 만드는 호출 가능한 것).
 
     Args:
@@ -516,22 +546,32 @@ VILLA_COMPLEX_CODES: frozenset[str] = frozenset({'A05', 'A06', 'A07'})
 SCHOOL_ALLOCATION_LABELS: dict[str, str] = {'01': '배정', '02': '선택'}
 
 
-def assigned_schools(schools: list[NaverSchoolModel]) -> list[NaverAssignedSchool]:
-    """배정 초등학교 목록. 이름이 없는 항목은 뺀다."""
-    return [
-        NaverAssignedSchool(
+def assigned_schools(schools: list[NaverSchoolModel], notes: list[str]) -> list[NaverAssignedSchool]:
+    """배정 초등학교 목록. 이름이 없는 항목은 빼고 `notes` 에 `[제외]` 안내를 붙인다.
+
+    배정 방식 코드가 `SCHOOL_ALLOCATION_LABELS` 에 없으면 `unknown_code_label` 글자로 낸다 (코드가 없거나 '-' 면 null).
+    """
+    named = [school for school in schools if school.name]
+    if len(named) < len(schools):
+        notes.append(note('제외', f'이름이 없는 배정 학교 {len(schools) - len(named)}곳은 넣지 않았습니다'))
+    result: list[NaverAssignedSchool] = []
+    for school in named:
+        # 날짜·층 칸처럼 '-' 는 값 없음 표시다
+        allocation = (school.allocation_type or '').strip()
+        result.append(NaverAssignedSchool(
             school_code=school.code,
             name=school.name,
-            assignment=SCHOOL_ALLOCATION_LABELS.get(school.allocation_type or ''),
+            assignment=(
+                None if allocation in ('', '-')
+                else SCHOOL_ALLOCATION_LABELS.get(allocation) or unknown_code_label('값', allocation)
+            ),
             operation_type=school.operation_type,
             walking_minutes=school.walking_minute,
             distance_m=school.distance,
             students_per_class=school.students_per_classroom,
             students_per_teacher=school.students_per_teacher,
-        )
-        for school in schools
-        if school.name
-    ]
+        ))
+    return result
 
 
 def unknown_code_label(kind: str, code: str) -> str:
@@ -1014,7 +1054,7 @@ def resolve_dong_numbers(
         raise JibsaError(
             code='NOT_FOUND',
             message=f"단지 {complex_number} 에 {labels}{particle(labels, '이/가')} 없습니다",
-            hint=f'이 단지의 동: {available}' if available else '네이버에 동 정보가 없는 단지입니다. --dong 없이 조회하세요',
+            hint=f'이 단지의 동: {available}' if available else '없는 단지 번호이거나 네이버에 동 정보가 없는 단지입니다. 단지 번호를 확인하고, 맞으면 --dong 없이 조회하세요',
         )
     numbers: list[str] = []
     for name in dong_names:
@@ -1051,13 +1091,17 @@ class PageScan(BaseModel):
         bool,
         Field(description='받을 게 남았는데 요청 상한에 닿아 멈췄는지')
     ] = False
+    stalled: Annotated[
+        bool,
+        Field(description='서버가 다음 쪽이 있다고 했는데 그 쪽이 준 항목이 모두 이미 받은 것이거나 쪽이 비어 멈췄는지')
+    ] = False
     total: Annotated[
         int,
         Field(description='서버 집계 (마지막 페이지의 totalCount)')
     ] = 0
     seen: Annotated[
         set[Any],
-        Field(description='이미 받은 항목 번호. 처음 보는 항목이 없는 페이지면 커서가 멈춘 것으로 본다')
+        Field(description='이미 받은 항목 번호. 준 항목이 모두 이미 받은 번호면 커서가 멈춘 것으로 본다')
     ] = set()
     cursor: Annotated[
         tuple[str | None, Any] | None,
@@ -1066,6 +1110,23 @@ class PageScan(BaseModel):
             '이어 받기(--next)에 쓴다'
         ))
     ] = None
+
+    def stopped_short(self, *, resumed: bool) -> bool:
+        """네이버가 다음 쪽이 있다면서 새 항목을 주지 않아 멈췄고(`stalled`) 받지 못한 항목이 남았는지.
+
+        이어 받은 결과(`resumed`)의 `total` 은 앞 결과까지 센 수라 견주지 않고, 멈췄으면 남았다고 본다. 이어 받기가 아니면
+        받은 수가 서버가 센 수에 닿았을 때 다 받은 것이다 (2026-11-24 리뷰: 30건 중 30건에 '일부만 받았다').
+        `pagination_notes` 의 `stalled` 와 결과의 `has_more` 가 이 하나를 같이 쓴다.
+        """
+        return self.stalled and (resumed or self.total > self.received)
+
+    @property
+    def exhausted(self) -> bool:
+        """서버가 다음 쪽이 없다고 해 끝까지 받았는지. `fetch` 가 None 을 줘 `cursor` 가 None 이 된 경우도 포함한다.
+
+        마지막 쪽이 마침 `limit` 에 닿은 것을 '더 있다' 로 보지 않게 한다.
+        """
+        return self.cursor is None and not self.stalled
 
 
 def resume_cursor(position: dict[str, Any] | None) -> tuple[str | None, Any] | None:
@@ -1097,8 +1158,8 @@ def scan_pages(
 
     할당량(`scan.limit`)은 받은 개수로 센다. 받은 뒤 `keep` 이 버린 항목은 센 채로 두어 다시 채우지 않는다
     (docs/development/output-contract.md 의 개수 상한). 빈 항목(null)이라 빼고 읽은 자리도 서버가 센 자리라 센다
-    (`scan.null_items`). 할당량을 다 쓰거나, 다음 페이지가 없거나, 처음 보는 항목이
-    없는 페이지(커서가 멈춤)가 오거나, `fetch` 가 None 을 주면 멈춘다. 받을 게 남았는데 요청이
+    (`scan.null_items`). 할당량을 다 쓰거나, 다음 페이지가 없거나, 다음 페이지가 있다는데 준 항목이 모두
+    이미 받은 번호이거나 쪽이 완전히 빈 페이지(커서가 멈춤)가 오거나(`scan.stalled` 를 켜고 그 쪽은 세지 않는다), `fetch` 가 None 을 주면 멈춘다. 받을 게 남았는데 요청이
     `scan.max_requests` 에 닿으면 `scan.truncated` 를 켠다. 다음 요청에는 앞 페이지의 seed·lastInfo 를 넘긴다
     (seed 가 빠지면 랭킹순이 페이지마다 다시 섞인다).
 
@@ -1122,14 +1183,22 @@ def scan_pages(
         if page is None:
             scan.cursor = None
             return
-        # 빈 항목(null)을 뺐어도 서버는 그 자리를 센 쪽이라 받은 수에 더한다 (쪽 넘김이 일찍 멈추거나 같은 매물을 다시 받지 않게)
+        scan.total = page.total_count
+        ids = [keep(item) for item in page.items]
+        new_ids = set(ids) - {None} - scan.seen
         dropped = page.null_items('items')
+        # 다음 쪽이 있다는데 준 항목이 모두 이미 받은 번호이거나 쪽이 완전히 빈 쪽이면 되풀이된 쪽이라 세기 전에 멈추고 호출부가
+        # 일부만 받았다고 알리게 한다. 번호를 모르는 항목(keep 이 None)·빈 항목(null)은 되풀이인지 알 수 없어 세고 넘어간다
+        # (되풀이면 요청 상한에서 truncated 로 멈춘다)
+        if page.has_next_page and not new_ids and None not in ids and not dropped:
+            scan.stalled = True
+            scan.cursor = None
+            return
+        # 빈 항목(null)을 뺐어도 서버는 그 자리를 센 쪽이라 받은 수에 더한다 (쪽 넘김이 일찍 멈추거나 같은 매물을 다시 받지 않게)
         scan.received += len(page.items) + dropped
         scan.null_items += dropped
-        scan.total = page.total_count
-        new_ids = {keep(item) for item in page.items} - {None} - scan.seen
         scan.seen |= new_ids
-        if not page.has_next_page or not new_ids:
+        if not page.has_next_page:
             scan.cursor = None
             return
         # seed 는 첫 응답 값이 마지막 페이지까지 그대로 오고 null 로 온 적이 없어 응답 값을 그대로 넘긴다
@@ -1175,8 +1244,12 @@ def listing_keeper(
 # 동 전체·단지·재개발 구역 매물은 반경 없이 받아, '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다.
 # 목록 응답에는 매물 상태·노출 여부 필드가 없어 거래 불가로 빼는 매물은 없다. 빼는 것은 번호가 같은 중복과 모르는 거래 유형
 # 코드(`article_info_to_listing`)뿐이다 (2026-10-14 실측: 역삼동 동 전체 목록 20건의 모든 키에 상태 필드 없음)
+# 단지 목록(`search.py` `list_area_complexes`)은 거래 유형으로 빼지 않고 본문(단지 정보)이 없는 단지를 뺀다. 위치가 없는 단지는
+# 반경 안인지 알 수 없는 반경 검색에서만 빼고, 경계 검색은 위치로 빼지 않는다 (2026-11-24 리뷰)
 EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형인'
 RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의'
+COMPLEX_EXCLUDED_REASON: str = '중복이거나 단지 정보를 알 수 없는'
+COMPLEX_RADIUS_EXCLUDED_REASON: str = '중복이거나 단지 정보·위치를 알 수 없거나 검색 범위(반경) 밖의'
 # 반경 검색의 서버 집계(total)가 센 범위. 반경 원이 아니라 그 원을 감싼 사각형 안이라 반경 안 수보다 크다
 RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
 
@@ -1224,6 +1297,8 @@ def pagination_notes(
     scope: str = '',
     total_basis: str = '',
     null_items: int = 0,
+    stalled: bool,
+    exhausted: bool,
     narrow: str,
 ) -> list[str]:
     """조회 예산과 실제 제외 결과에 맞춰 추가 조회 없이 안내한다.
@@ -1244,6 +1319,8 @@ def pagination_notes(
             (2026-11-11 LLM 사용 시험: 합정역 1km 상가).
         null_items: `inspected` 에 든 빈 항목(null) 수 (`PageScan.null_items`). 서버가 센 자리라 `inspected` 에는 들어 있어 남은 매물을 셀 때 쓰지만,
             중복·거래 유형으로 뺀 수에서는 뺀다 (빈 항목은 따로 안내하므로 그 이유로 뺐다고 하지 않는다).
+        stalled: 호출부가 `scan.stopped_short(resumed=...)` 를 넘긴다. 켜지면 '전부' 대신 확인한 데까지만 알린다.
+        exhausted: 호출부가 `scan.exhausted` 를 넘긴다.
         narrow: 더 남았을 때 좁히라고 권할 것 (`more_hint`). 동·구 검색은 '조건·지역', 반경 검색은 '조건·반경', 단지·재개발
             구역 하나의 매물은 좁힐 지역이 없어 그 매물의 조건만 준다 (2026-11-10 리뷰·실측: 헬리오시티 111515 2,257건
             --limit 120 에 '조건·지역을 좁히세요'). 기본값을 두지 않는다. 두었더니 재개발 구역 반경 검색이 값을 빠뜨려
@@ -1253,16 +1330,18 @@ def pagination_notes(
     excluded = min(inspected - null_items, limit) - returned
     # 단지·구역은 다른 소스처럼 '곳' 으로 센다 (2026-11-10 리뷰: 재개발 구역이 '전체 45건 중 2건입니다')
     unit = '곳' if subject in ('단지', '구역') else '건'
-    # 이어 받을 수 있거나, 요청 상한에서 멈췄거나, 서버 수가 받은 수보다 많으면 더 받을 매물이 남았다. 이어 받은 결과의 total 은
-    # 앞 결과까지 센 수라 받은 수와 견주지 않는다 (next 가 없으면 남은 매물이 없다)
-    more = resumable or truncated or (not resumed and total > inspected)
+    # 할당량을 다 써서 멈췄으면 서버 수가 받은 수보다 클 때 더 받을 매물이 남았다. 서버가 더 주지 않고 끝났으면(할당량 전에 멈춤)
+    # 서버 수가 커도 남은 매물이 아니다. 이어 받을 수 있거나, 요청 상한에서 멈췄거나, 다음 쪽이 있다며 새 항목을 주지 않았으면(stalled)
+    # 더 있다. 이어 받은 결과의 total 은 앞 결과까지 센 수라 받은 수와 견주지 않는다 (next 가 없으면 남은 매물이 없다)
+    reached = inspected >= limit and not exhausted
+    more = resumable or truncated or stalled or (not resumed and reached and total > inspected)
     if returned < limit and excluded > 0:
         notes.append(note(
             '제외',
             f"{excluded_reason} {subject}{particle(subject, '을/를')} 빼고 {returned}{unit}입니다 "
             + ('(뺀 만큼 다시 채우지 않음)' if more else f'(더 받을 {subject} 없음)'),
         ))
-    elif returned < limit and not truncated:
+    elif returned < limit and not truncated and not stalled:
         what = scope + (f'남은 {subject}' if resumed else f'조건에 맞는 {subject}')
         # 0건이면 '이 0건이 전부입니다' 대신 없다고 한다 (2026-11-11 LLM 사용 시험: 수완동 아파트 전세 3억 이하)
         notes.append(
@@ -1282,12 +1361,27 @@ def pagination_notes(
     if resumable:
         notes.append(note('일부', f'{shown}. {NEXT_HINT}'))
         return notes
+    if stalled:
+        got = inspected - null_items
+        stall = f"네이버가 더 있다면서 새 {subject}{particle(subject, '을/를')} 주지 않아"
+        narrow_hint = f"더 보려면 {narrow}{particle(narrow, '을/를')} 좁혀 다시 찾으세요"
+        if resumed:
+            notes.append(note('일부', f'{stall} 이번에는 {got}{unit}까지만 받았습니다. {narrow_hint}'))
+        else:
+            notes.append(note('일부', f'{stall} {got}{unit}까지만 받았습니다 ({found}). {narrow_hint}'))
+        return notes
     # 이어 받은 결과의 returned 는 이번 몫이라 전체 수와 견주면 앞 결과에서 받은 매물을 빼먹는다
     if truncated or resumed:
         return notes
     # 더 받을 것이 남았는지는 받은 수(inspected)로 본다. 돌려준 수와 견주면 다 받고 뺐을 뿐인데 '더 있다' 고 하거나, 1건만
     # 빠져도 더 있다는 안내가 사라졌다 (2026-10-23 리뷰: 반경 단지 --limit 1 이 전체 89건에 '[제외] … 0건' 만 냈다)
-    if total > inspected and (limit >= MAX_LIST_LIMIT or inspected >= limit):
+    # 서버가 더 주지 않고 끝났으면(할당량 전에 멈춤) '더 보려면' 을 권하지 않는다. 반경 검색은 total 이 반경을 감싼 사각형 기준이라
+    # 받은 수보다 큰 것이 정상이므로 아무것도 더하지 않고, 경계 검색·단지·구역 매물만 총수가 다르다는 것을 알린다
+    if total > inspected and not reached:
+        if not total_basis:
+            notes.append(note('참고', f'네이버가 센 수는 {total}{unit}이지만 더 주지 않아 받은 {inspected - null_items}{unit}까지입니다'))
+        return notes
+    if total > inspected and reached:
         notes.append(note('일부', f'{shown}. {more_hint(limit, MAX_LIST_LIMIT, narrow)}'))
     return notes
 

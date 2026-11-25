@@ -4,6 +4,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
 )
 
 from jibsa.core.errors import JibsaError
@@ -100,7 +102,7 @@ class NaverRedevelopmentArea(BaseModel):
     ] = None
     legal_division: Annotated[
         str | None,
-        Field(description='구역 대표 위치의 법정동 (예: 서울시 용산구 보광동). 동 경계로 찾으면 그 동, 시·군·구 경계로 찾으면 그 시·군·구 (목록이 구역의 동을 주지 않는다)')
+        Field(description='구역 대표 위치의 법정동 (예: 서울특별시 용산구 보광동). 동 경계로 찾으면 그 동, 시·군·구 경계로 찾으면 그 시·군·구 (목록이 구역의 동을 주지 않는다)')
     ] = None
     households: Annotated[
         int | None,
@@ -208,7 +210,7 @@ def list_redevelopment_areas(
         filter_ = filter_.model_copy(update={'trade_types': [TRADE_CODE_BY_NAME[name] for name in trade_types]})
     sort_type = REDEVELOPMENT_SORT_TYPE_BY_NAME[sort]
     pins: dict[int, NaverRedevelopmentAreaPinModel] = {}
-    box = bounding_box(lat, lng, radius_km)
+    box = None if legal_division_code is not None else bounding_box(lat, lng, radius_km)
     if legal_division_code is not None:
         filter_ = boundary_filter(filter_, legal_division_code)
     else:
@@ -219,6 +221,7 @@ def list_redevelopment_areas(
                 )
             ),
             '재개발 구역 위치',
+            hint=None,
         )
         pins = {pin.redevelopment_area_number: pin for pin in markers.pins}
 
@@ -242,7 +245,7 @@ def list_redevelopment_areas(
                     redevelopment_area_paging_request=paging,
                 )
             )
-        return unwrap(response, '재개발 구역 목록')
+        return unwrap(response, '재개발 구역 목록', hint=None)
 
     def keep(item: NaverRedevelopmentAreaItemModel) -> int:
         number = item.info.redevelopment_area_number
@@ -269,6 +272,11 @@ def list_redevelopment_areas(
     result = list(areas.values())[:limit]
     notes: list[str] = []
     area_text = area_scope(legal_division_code, radius_km)
+    # --trade 는 서버가 구역을 거르지 않아 좁히는 효과가 없다. 구역 목록은 지역·반경만 좁히라고 한다
+    if legal_division_code is not None:
+        area_text = area_text._replace(narrow='지역', narrow_action='지역을 좁혀')
+    else:
+        area_text = area_text._replace(narrow='반경', narrow_action='반경을 줄여')
     if scan.truncated:
         notes.append(note(
             '일부',
@@ -285,9 +293,10 @@ def list_redevelopment_areas(
     if legal_division_code is not None:
         reason = '고른 거래 유형 매물이 없는' if trade_types else '중복된'
     else:
-        reason = '검색 범위(반경) 밖이거나 고른 거래 유형 매물이 없는' if trade_types else '중복이거나 검색 범위(반경) 밖의'
+        reason = '검색 범위(반경) 밖이거나 위치를 모르거나 고른 거래 유형 매물이 없는' if trade_types else '중복이거나 검색 범위(반경) 밖이거나 위치를 모르는'
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, subject='구역', truncated=scan.truncated, excluded_reason=reason,
+        stalled=scan.stopped_short(resumed=False), exhausted=scan.exhausted,
         scope=area_text.scope, total_basis=area_text.total_basis, null_items=scan.null_items, narrow=area_text.narrow,
     )
     notes += scan_null_items_notes(scan, '네이버 재개발 구역')
@@ -352,12 +361,14 @@ def list_redevelopment_articles(
     # 구역 하나라 지역 대신 구역 매물의 조건만 좁히라고 한다 (단지 매물과 같다)
     notes += pagination_notes(
         scan.total, len(result), limit, scan.received, truncated=scan.truncated, null_items=scan.null_items,
-        narrow='거래 유형·가격 조건',
+        stalled=scan.stopped_short(resumed=False), exhausted=scan.exhausted, narrow='거래 유형·가격 조건',
     )
     notes += scan_null_items_notes(scan, '네이버 재개발 구역 매물')
-    # 재개발 구역 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다
+    # 재개발 구역 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다. 멈췄어도 네이버가 센 수를 다 받았으면 false,
+    # 덜 받았으면 [일부] 안내와 같게 true 다 (단지 매물과 같다, 2026-11-24 리뷰)
     return NaverListingsResult(
-        total=scan.total, returned=len(result), has_more=scan.cursor is not None, listings=result, notes=notes,
+        total=scan.total, returned=len(result), has_more=scan.cursor is not None or scan.stopped_short(resumed=False), listings=result,
+        notes=notes,
     )
 
 
@@ -378,7 +389,7 @@ class NaverRedevelopmentDetail(BaseModel):
     ] = None
     legal_division: Annotated[
         str | None,
-        Field(description='대표 법정동 (예: 서울시 용산구 한남동)')
+        Field(description='대표 법정동 (예: 서울특별시 용산구 한남동)')
     ] = None
     households: Annotated[
         int | None,
@@ -406,16 +417,25 @@ class NaverRedevelopmentDetail(BaseModel):
     ]
     sale_asking_range_manwon: Annotated[
         list[float | None] | None,
-        Field(description='매매 호가 [최저, 최고] (만원). 매매 매물이 없으면 null')
+        Field(description='매매 호가 [최저, 최고] (만원). 매매 매물이 없으면 null. --trade 를 줬는데 매매가 빠졌으면 키 없음 (--trade 를 안 주면 늘 있다)')
     ] = None
     jeonse_asking_range_manwon: Annotated[
         list[float | None] | None,
-        Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null')
+        Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null. --trade 를 줬는데 전세가 빠졌으면 키 없음 (--trade 를 안 주면 늘 있다)')
     ] = None
     url: Annotated[
         str,
         Field(description='구역 페이지 URL')
     ]
+
+    @model_serializer(mode='wrap')
+    def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # --trade 로 고르지 않은 거래는 세지 않아 호가 범위도 해당 없음이다 (article_counts 에 그 거래 키가 없다)
+        for trade, field in (('매매', 'sale_asking_range_manwon'), ('전세', 'jeonse_asking_range_manwon')):
+            if trade not in self.article_counts:
+                data.pop(field, None)
+        return data
 
 
 def get_redevelopment(

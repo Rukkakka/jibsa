@@ -44,6 +44,8 @@ from jibsa.providers.naver.api.response.common import (
     NaverResponseModel,
 )
 from jibsa.providers.naver.service.common import (
+    COMPLEX_EXCLUDED_REASON,
+    COMPLEX_RADIUS_EXCLUDED_REASON,
     ENTRANCE_CODE_BY_NAME,
     EXCLUDED_REASON,
     MONTHLY_ASKING_DESCRIPTION,
@@ -377,7 +379,7 @@ def list_area_complexes(
                     complex_paging_request=paging,
                 )
             )
-        return unwrap(response, '단지 목록')
+        return unwrap(response, '단지 목록', hint=None)
 
     def keep(item: NaverComplexListItemModel) -> int | None:
         complex_ = _area_complex(item, (lat, lng))
@@ -401,8 +403,9 @@ def list_area_complexes(
         ))
     notes += pagination_notes(
         total, len(result), limit, inspected, subject='단지', truncated=truncated,
-        excluded_reason=EXCLUDED_REASON if legal_division_code is not None else RADIUS_EXCLUDED_REASON,
-        scope=area.scope, total_basis=area.total_basis, null_items=scan.null_items, narrow=area.narrow,
+        excluded_reason=COMPLEX_EXCLUDED_REASON if legal_division_code is not None else COMPLEX_RADIUS_EXCLUDED_REASON,
+        scope=area.scope, total_basis=area.total_basis, null_items=scan.null_items,
+        stalled=scan.stopped_short(resumed=False), exhausted=scan.exhausted, narrow=area.narrow,
     )
     notes += scan_null_items_notes(scan, '네이버 지역 단지')
     return NaverAreaComplexesResult(total=total, returned=len(result), complexes=result, notes=notes)
@@ -451,6 +454,7 @@ def _search_listing_pages(
                     NaverArticleLegalDivisionArticleListV1RequestPayloadModel(filter=filter_, article_paging_request=paging)
                 ),
                 f'{boundary_label} 매물 목록',
+                hint=None,
             )
         return unwrap(
             client.run_request_article_bounded_articles_v1(
@@ -459,6 +463,7 @@ def _search_listing_pages(
                 )
             ),
             '매물 목록',
+            hint=None,
         )
 
     scan_pages(
@@ -487,11 +492,14 @@ def _search_listing_pages(
         total, len(result), limit, inspected, truncated=truncated,
         excluded_reason=EXCLUDED_REASON if by_boundary else RADIUS_EXCLUDED_REASON,
         resumable=next_position is not None, resumed=start is not None,
-        scope=area.scope, total_basis=area.total_basis, null_items=scan.null_items, narrow=area.narrow,
+        scope=area.scope, total_basis=area.total_basis, null_items=scan.null_items,
+        stalled=scan.stopped_short(resumed=start is not None), exhausted=scan.exhausted, narrow=area.narrow,
     )
     notes += scan_null_items_notes(scan, '네이버 매물')
+    # 멈추면 커서가 None 이라 next_position 도 None 이다. has_more 는 true 이고 next 는 없다 (CLI 는 next_position 이 있을 때만 next 를 붙인다)
     return NaverListingsResult(
-        total=total, returned=len(result), has_more=next_position is not None, next_position=next_position,
+        total=total, returned=len(result),
+        has_more=next_position is not None or scan.stopped_short(resumed=start is not None), next_position=next_position,
         listings=result, notes=notes,
     )
 

@@ -566,6 +566,15 @@ class NaverArticleMaintenanceFeeModel(NaverBaseResponseModel):
     ] = None
 
 
+class NaverArticleOldMaintenanceFeeModel(NaverBaseResponseModel):
+    """옛 형식 관리비. 웹은 maintenanceFee 로 '관리비' 칸을 못 만들 때 이 금액으로 그린다."""
+
+    amount: Annotated[
+        int | float | None,
+        Field(description='월 관리비 (원). 값이 없으면 result 가 빈 객체 {} 라 null', alias='amount')
+    ] = None
+
+
 class NaverComplexVillaArticleListV1ResponseModel(NaverResponseModel[NaverArticlePageModel]):
     """`POST /front-api/v1/complex/villa/article/list` 응답."""
 
@@ -598,11 +607,11 @@ class NaverDevelopmentRailModel(NaverBaseResponseModel):
         Field(description="개통 예정 연도 ('2027', 문자열)", alias='openDate')
     ] = None
     distance: Annotated[
-        int | None,
+        int | float | None,
         Field(description='매물에서의 거리 (m)')
     ] = None
     walking_time: Annotated[
-        int | None,
+        int | float | None,
         Field(description='도보 시간 (분)', alias='walkingTime')
     ] = None
 
@@ -685,6 +694,10 @@ class NaverArticleAgentFeeV1ResponseModel(NaverResponseModel[NaverArticleAgentFe
 
 class NaverArticleMaintenanceFeeV1ResponseModel(NaverResponseModel[NaverArticleMaintenanceFeeModel]):
     """`GET /front-api/v1/article/maintenanceFee` 응답."""
+
+
+class NaverArticleOldMaintenanceFeeV1ResponseModel(NaverResponseModel[NaverArticleOldMaintenanceFeeModel]):
+    """`GET /front-api/v1/article/oldMaintenanceFee` 응답."""
 
 
 class NaverComplexArticleListV1ResponseModel(NaverResponseModel[NaverArticlePageModel]):

@@ -185,7 +185,7 @@ class NaverMarketPrice(BaseModel):
     ]
     base_date: Annotated[
         str | None,
-        Field(description='시세 기준일 (YYYY-MM-DD)')
+        Field(description='시세 기준일 (YYYY-MM-DD). 읽을 수 없으면 null')
     ] = None
     sale_average_manwon: Annotated[
         float | None,
@@ -222,7 +222,7 @@ class NaverRealPriceExtreme(BaseModel):
     ] = None
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD)')
+        Field(description='계약일 (YYYY-MM-DD). 네이버가 주지 않았거나 날짜로 읽지 못하면 null')
     ] = None
     floor: Annotated[
         int | None,
@@ -350,7 +350,7 @@ class NaverReconstructionStep(BaseModel):
     ]
     date: Annotated[
         str | None,
-        Field(description='그 단계에 이른 날 (YYYY-MM-DD)')
+        Field(description='그 단계에 이른 날 (YYYY-MM-DD). 날짜를 읽지 못하면 null')
     ] = None
 
 
@@ -367,7 +367,7 @@ class NaverReconstruction(BaseModel):
     ] = None
     current_step_date: Annotated[
         str | None,
-        Field(description='현재 단계에 이른 날 (YYYY-MM-DD)')
+        Field(description='현재 단계에 이른 날 (YYYY-MM-DD). 읽을 수 없으면 null')
     ] = None
     construction_company: Annotated[
         str | None,
@@ -472,7 +472,7 @@ class NaverComplexSummary(BaseModel):
     ] = None
     market_prices: Annotated[
         list[NaverMarketPrice] | None,
-        Field(description='--pyeong 평형의 기관별 최신 시세. 평형을 하나만 줄 때만 키가 있고, 시세가 없으면 []')
+        Field(description='--pyeong 평형의 기관별 최신 시세. 평형을 하나만 줄 때만 키가 있고, 시세가 없으면 []. 단지 유형을 몰라 시세를 묻지 않았거나 조회에 실패하면 null')
     ] = None
     real_price_summary: Annotated[
         NaverRealPriceSummary | None,
@@ -588,18 +588,20 @@ def _reconstruction(client: NaverClient, complex_number: int, notes: list[str]) 
     current = result.current_business_step
 
     def label(code: str | None) -> str | None:
-        return RECONSTRUCTION_STEP_LABELS.get(code or '', code)
+        return None if not code else RECONSTRUCTION_STEP_LABELS.get(code, code)
 
     return NaverReconstruction(
         current_step=label(current.step_type) if current else None,
-        current_step_date=normalize_date(current.implementation_date) if current else None,
+        current_step_date=iso_date(current.implementation_date) if current else None,
         construction_company=result.construction_company or None,
         planned_households=result.household_count,
         planned_floor_area_ratio=result.building_area_to_land_ratio,
+        # 날짜가 없는 단계(없음·빈 글자·'-')는 아직 거치지 않은 단계라 뺀다. 날짜가 있는데 읽지 못하면(연월만 등) 단계는 남기고
+        # date 는 모름(null)이다 (current_step_date 와 같다, 2026-11-24 리뷰)
         steps=[
-            NaverReconstructionStep(step=label(step.step_type), date=normalize_date(step.implementation_date))
+            NaverReconstructionStep(step=label(step.step_type), date=iso_date(step.implementation_date))
             for step in result.business_steps
-            if step.step_type and step.implementation_date
+            if step.step_type and normalize_date(step.implementation_date) is not None
         ],
     )
 
@@ -703,13 +705,13 @@ def get_complex(
 
     pyeong_details: dict[str, Any] = {}
     unique_pyeongs = list(dict.fromkeys(pyeong_numbers or []))
-    if len(unique_pyeongs) == 1 and not villa:
+    if villa and unique_pyeongs:
+        notes.append('빌라 단지는 네이버가 평형 관리비·시세·실거래 요약을 주지 않습니다. 실거래는 naver real-price 로 보세요')
+    elif len(unique_pyeongs) == 1:
         # 단지 유형이 빈 글자로 오면 유형을 모르는 것이다 (시세·평당가가 같은 판정으로 None 을 모름으로 읽는다)
         pyeong_details = _pyeong_details(
             client, complex_number, unique_pyeongs[0], complex_.type or None, today or kst_today(), notes,
         )
-    elif len(unique_pyeongs) == 1:
-        notes.append('빌라 단지는 네이버가 평형 관리비·시세·실거래 요약을 주지 않습니다. 실거래는 naver real-price 로 보세요')
     elif len(unique_pyeongs) > 1:
         notes.append('평형 관리비·시세·실거래 요약·평당가는 --pyeong 을 하나만 줄 때 붙습니다')
 
@@ -728,7 +730,7 @@ def get_complex(
         floor_area_ratio=complex_.building_ratio_info.floor_area_ratio if complex_.building_ratio_info else None,
         pyeongs=[_pyeong(pyeong, complex_.type == OFFICETEL_CODE) for pyeong in pyeongs],
         pyeong_groups=pyeong_groups,
-        schools=None if schools is None else assigned_schools(schools),
+        schools=None if schools is None else assigned_schools(schools, notes),
         reconstruction=reconstruction,
         url=complex_url(complex_number),
         notes=notes,
@@ -754,7 +756,7 @@ def _real_price_extreme(trade: NaverRealPriceSummaryTradeModel | None, jeonse: b
         return None
     return NaverRealPriceExtreme(
         price_manwon=won_to_manwon(trade.deposit if jeonse else trade.deal_price),
-        trade_date=normalize_date(trade.trade_date),
+        trade_date=iso_date(trade.trade_date),
         floor=trade.floor,
         trade_category=trade.trade_category or None,
         cancelled=trade.is_delete,
@@ -811,7 +813,7 @@ def _price_per_pyeong(
                 regions=None if regions is None else [
                     NaverPricePerPyeongRegion(
                         name=region.legal_division_name,
-                        level=PRICE_PER_PYEONG_LEVEL_LABELS.get(region.legal_division_level_type or '', region.legal_division_level_type),
+                        level=None if not region.legal_division_level_type else PRICE_PER_PYEONG_LEVEL_LABELS.get(region.legal_division_level_type, region.legal_division_level_type),
                         # 평당가 0 은 없음으로 본다 (시세 평균·범위와 같은 규칙)
                         manwon_per_pyeong=won_to_manwon(region.price_per_pyeong) if region.price_per_pyeong else None,
                     )
@@ -902,7 +904,7 @@ def _pyeong_details(
         'market_prices': None if market is None else [
             NaverMarketPrice(
                 provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
-                base_date=normalize_date(item.base_date),
+                base_date=iso_date(item.base_date),
                 # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다)
                 sale_average_manwon=won_to_manwon(item.deal_average_price) if item.deal_average_price else None,
                 sale_range_manwon=manwon_range(item.deal_price_range),
