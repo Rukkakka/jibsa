@@ -76,21 +76,21 @@ SORT_SPEC_BY_TRADE: dict[LocalTrade, dict[str, str]] = {
 # 거래 유형에 해당하지 않아 출력에서 키를 뺄 칸. 월세는 웹 줄이 신고가·신저가·갱신·비교를 그리지 않아 뺀다 (응답에 와도 낸 칸이 없다)
 SALE_ONLY_FIELDS: frozenset[str] = frozenset({
     'price_manwon',
-    'market_price_diff_manwon',
-    'market_price_diff_rate_percent',
+    'estimated_price_diff_manwon',
+    'estimated_price_diff_percent',
     'public_price_diff_manwon',
-    'public_price_diff_rate_percent',
-    'offer_price_diff_manwon',
-    'offer_price_diff_rate_percent',
+    'public_price_diff_percent',
+    'presale_price_diff_manwon',
+    'presale_price_diff_percent',
 })
 CHARTER_ONLY_FIELDS: frozenset[str] = frozenset({
-    'jeonse_price_diff_manwon',
-    'jeonse_price_diff_rate_percent',
+    'jeonse_comparison_diff_manwon',
+    'jeonse_comparison_diff_percent',
     'pre_move_in_contract',
     'renewal',
 })
-PREV_DIFF_FIELDS: frozenset[str] = frozenset({'prev_diff_manwon', 'prev_diff_rate_percent'})
-OFFER_DIFF_FIELDS: frozenset[str] = frozenset({'offer_price_diff_manwon', 'offer_price_diff_rate_percent'})
+PREV_DIFF_FIELDS: frozenset[str] = frozenset({'prev_trade_diff_manwon', 'prev_trade_diff_percent'})
+OFFER_DIFF_FIELDS: frozenset[str] = frozenset({'presale_price_diff_manwon', 'presale_price_diff_percent'})
 NOT_APPLICABLE_BY_TRADE: dict[LocalTrade, frozenset[str]] = {
     '매매': frozenset({'deposit_manwon', 'rent_manwon'}) | CHARTER_ONLY_FIELDS,
     '전세': frozenset({'rent_manwon'}) | SALE_ONLY_FIELDS,
@@ -121,7 +121,7 @@ class ZigbangRegionTrade(ZigbangLocalModel):
         str | None,
         Field(description="평형 이름 (웹 '{평형 이름}㎡', 예: 110D). 직방이 주지 않으면 null")
     ]
-    contract_date: Annotated[
+    trade_date: Annotated[
         str | None,
         Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null. 목록은 계약일 순이 아니라 등록일 기준이다')
     ]
@@ -141,7 +141,7 @@ class ZigbangRegionTrade(ZigbangLocalModel):
         int | float | None,
         Field(description='월세 (만원). 월세만 있고 매매·전세는 키가 없다')
     ]
-    prev_diff_manwon: Annotated[
+    prev_trade_diff_manwon: Annotated[
         int | float | None,
         Field(
             description=(
@@ -150,41 +150,41 @@ class ZigbangRegionTrade(ZigbangLocalModel):
             )
         )
     ]
-    prev_diff_rate_percent: Annotated[
+    prev_trade_diff_percent: Annotated[
         int | float | None,
-        Field(description='직전 거래 대비 변동률 (%, prev_diff_manwon 과 같은 규칙)')
+        Field(description='직전 거래 대비 변동률 (%, prev_trade_diff_manwon 과 같은 규칙)')
     ]
-    market_price_diff_manwon: Annotated[
+    estimated_price_diff_manwon: Annotated[
         int | float | None,
         Field(description="직방시세 대비 차액 (만원, 매매만). 분양권·입주권이거나 직방시세가 없으면(isNoMarketPriceGap) 웹이 '직방시세 없음' 이라 null. 직방시세가 있는데 0 이면 진짜 0")
     ]
-    market_price_diff_rate_percent: Annotated[
+    estimated_price_diff_percent: Annotated[
         int | float | None,
-        Field(description='직방시세 대비 변동률 (%, market_price_diff_manwon 과 같은 규칙)')
+        Field(description='직방시세 대비 변동률 (%, estimated_price_diff_manwon 과 같은 규칙)')
     ]
     public_price_diff_manwon: Annotated[
         int | float | None,
         Field(description="공시가격 대비 차액 (만원, 매매만). 공시가격이 없으면(isNoPublicPriceGap) 웹이 '공시가격 업데이트 예정' 이라 null. 공시가격이 있는데 0 이면 진짜 0")
     ]
-    public_price_diff_rate_percent: Annotated[
+    public_price_diff_percent: Annotated[
         int | float | None,
         Field(description='공시가격 대비 변동률 (%, public_price_diff_manwon 과 같은 규칙)')
     ]
-    offer_price_diff_manwon: Annotated[
+    presale_price_diff_manwon: Annotated[
         int | float | None,
         Field(description='분양가 대비 차액 (만원, 분양권·입주권 매매 줄에만 키가 있다). 직방이 분양가 대비 값을 주지 않으면(isNoOfferPriceGap) null')
     ]
-    offer_price_diff_rate_percent: Annotated[
+    presale_price_diff_percent: Annotated[
         int | float | None,
-        Field(description='분양가 대비 변동률 (%, offer_price_diff_manwon 과 같은 규칙)')
+        Field(description='분양가 대비 변동률 (%, presale_price_diff_manwon 과 같은 규칙)')
     ]
-    jeonse_price_diff_manwon: Annotated[
+    jeonse_comparison_diff_manwon: Annotated[
         int | float | None,
         Field(description="전세가 비교 차액 (만원, 전세만). 웹 '전세가 비교': 갱신 거래(renewal)는 이전 전세가 대비, 아니면 2년 전 평균 전세가 대비. 입주 전 계약 거래(pre_move_in_contract)는 웹이 차액을 그리지 않아 null")
     ]
-    jeonse_price_diff_rate_percent: Annotated[
+    jeonse_comparison_diff_percent: Annotated[
         int | float | None,
-        Field(description='전세가 비교 변동률 (%, jeonse_price_diff_manwon 과 같은 규칙)')
+        Field(description='전세가 비교 변동률 (%, jeonse_comparison_diff_manwon 과 같은 규칙)')
     ]
     pre_move_in_contract: Annotated[
         bool | None,
@@ -283,21 +283,21 @@ def _trade_of(item: ZigbangLocalTradeModel, trade: LocalTrade, level: LocalLevel
         complex_name=text_or_none(item.area_danji_name),
         dong=text_or_none(item.local),
         area_type=text_or_none(item.room_type),
-        contract_date=iso_date(item.rt_deal_date),
+        trade_date=iso_date(item.rt_deal_date),
         presale=presale,
         price_manwon=item.rt_price,
         deposit_manwon=item.rt_price,
         rent_manwon=item.monthly_rent_price,
-        prev_diff_manwon=None if hide_prev else item.prev_rt_price_gap,
-        prev_diff_rate_percent=None if hide_prev else item.prev_rt_price_gap_rate,
-        market_price_diff_manwon=None if presale is not None or item.is_no_market_price_gap is True else item.market_price_gap,
-        market_price_diff_rate_percent=None if presale is not None or item.is_no_market_price_gap is True else item.market_price_gap_rate,
+        prev_trade_diff_manwon=None if hide_prev else item.prev_rt_price_gap,
+        prev_trade_diff_percent=None if hide_prev else item.prev_rt_price_gap_rate,
+        estimated_price_diff_manwon=None if presale is not None or item.is_no_market_price_gap is True else item.market_price_gap,
+        estimated_price_diff_percent=None if presale is not None or item.is_no_market_price_gap is True else item.market_price_gap_rate,
         public_price_diff_manwon=None if item.is_no_public_price_gap is True else item.public_price_gap,
-        public_price_diff_rate_percent=None if item.is_no_public_price_gap is True else item.public_price_gap_rate,
-        offer_price_diff_manwon=None if item.is_no_offer_price_gap is True else item.offer_price_gap,
-        offer_price_diff_rate_percent=None if item.is_no_offer_price_gap is True else item.offer_price_gap_rate,
-        jeonse_price_diff_manwon=None if pre_move_in else item.charter_price_gap,
-        jeonse_price_diff_rate_percent=None if pre_move_in else item.charter_price_gap_rate,
+        public_price_diff_percent=None if item.is_no_public_price_gap is True else item.public_price_gap_rate,
+        presale_price_diff_manwon=None if item.is_no_offer_price_gap is True else item.offer_price_gap,
+        presale_price_diff_percent=None if item.is_no_offer_price_gap is True else item.offer_price_gap_rate,
+        jeonse_comparison_diff_manwon=None if pre_move_in else item.charter_price_gap,
+        jeonse_comparison_diff_percent=None if pre_move_in else item.charter_price_gap_rate,
         pre_move_in_contract=pre_move_in,
         new_high=bool(item.is_new_highest),
         new_low=bool(item.is_new_lowest),

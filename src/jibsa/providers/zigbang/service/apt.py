@@ -15,7 +15,10 @@ from jibsa.core.errors import (
     RegionNotFoundError,
 )
 from jibsa.core.geo import encode_geohash
-from jibsa.core.korean import is_dong_code
+from jibsa.core.korean import (
+    full_legal_division_code,
+    is_dong_code,
+)
 from jibsa.core.listing import (
     TradeType,
     in_range,
@@ -64,8 +67,10 @@ from jibsa.providers.zigbang.service.common.base import (
     MAX_LIST_LIMIT,
     OPTIONAL_LOOKUP_ERRORS,
     ZigbangAptRegion,
+    ZigbangEstimatedPrice,
     ZigbangListingDetail,
     apt_complex_id,
+    estimated_prices_of,
     text_or_none,
     unavailable_on_404,
 )
@@ -95,10 +100,6 @@ class ZigbangAptSearchResult(BaseModel):
     region: Annotated[
         ZigbangAptRegion,
         Field(description='검색한 동·구. 좌표(lat·lng)는 이름으로 찾았는데 직방이 주지 않았으면 모름(null)')
-    ]
-    local_code: Annotated[
-        str,
-        Field(description='조회한 직방 지역 코드 (법정동코드 앞 5·8자리)')
     ]
     total: Annotated[
         int,
@@ -149,7 +150,7 @@ def apt_dong_at(client: ZigbangClient, lat: float, lng: float) -> ZigbangAptRegi
             f'{lat}, {lng}',
             hint="아파트는 동·구 단위로 조회합니다. 동 이름(예: '역삼동')이나 구 이름(예: '강남구')으로 검색하세요",
         )
-    return ZigbangAptRegion(name=response.name or code, lat=lat, lng=lng, legal_division_code=f'{code}00')
+    return ZigbangAptRegion(name=response.name or code, lat=lat, lng=lng, legal_division_code=full_legal_division_code(code))
 
 
 class ZigbangAptConditions(RequestModel):
@@ -257,7 +258,7 @@ def search_apt_listings(
     tran_types = [APT_TRAN_TYPE_BY_TRADE[trade] for trade in conditions.trade_types if trade in APT_TRAN_TYPE_BY_TRADE]
     if conditions.trade_types and not tran_types:
         # 아파트에는 단기임대가 없다 (CLI 가 먼저 막는다). 조건을 비워 보내면 전체가 오므로 조회하지 않는다
-        return ZigbangAptSearchResult(region=region, local_code=local_code, total=0, returned=0, listings=[])
+        return ZigbangAptSearchResult(region=region, total=0, returned=0, listings=[])
     listings: list[ZigbangAptListing] = []
     total = 0
     offset = 0
@@ -348,7 +349,6 @@ def search_apt_listings(
             ))
     return ZigbangAptSearchResult(
         region=region,
-        local_code=local_code,
         total=total,
         returned=len(listings),
         has_more=has_more,
@@ -429,24 +429,24 @@ def apt_item_to_listing(
         bathroom_count=apt.bathroom_count,
         direction=DIRECTION_LABELS.get(direction.upper(), direction) if direction else None,
         move_in=move_in_label(apt.movein_date),
-        approved_at=normalize_date(apt.approval_date),
+        approved_date=normalize_date(apt.approval_date),
         parking=parking_label(None, f'세대당 {apt.parking_count_by_household:g}대') if apt.parking_count_by_household is not None else None,
         options=None,
         manage_cost_includes=cost.include_items if cost else None,
         complex_id=apt_complex_id(apt.area_danji_id) if apt.area_danji_id else None,
         complex_name=join_address(apt.area_danji_name, apt.area_building_name),
         supply_area_m2=apt.size_contract_m2,
-        total_parking_count=apt.parking_count,
+        parking_count=apt.parking_count,
         direction_criterion=criterion,
         listing_kind=apt_listing_kind(apt.item_type),
         pyeong_id=room_type.danji_room_type_id if room_type else None,
         pyeong_name=text_or_none(room_type.room_type_title.p) if room_type and room_type.room_type_title else None,
-        confirmed_at=iso_date(apt.effectiveness_updated_at),
+        confirmed_date=iso_date(apt.effectiveness_updated_at),
         actual_listing_checked=apt.is_actual_item_checked,
         non_compliant_building=apt.has_violations,
         residence_type=text_or_none(apt.real_type),
         hug_lessor=apt.is_hug_lessor,
-        zzim_count=apt.zzim_count,
+        favorite_count=apt.zzim_count,
         manage_cost_excludes=cost.exclude_items if cost else None,
         manage_cost_period=text_or_none(cost.period_basis) if cost else None,
         manage_cost_method=text_or_none(cost.cost_basis_description) if cost else None,
@@ -464,11 +464,11 @@ class ZigbangPublicPrice(BaseModel):
         int,
         Field(description='공시 연도')
     ]
-    price_manwon: Annotated[
+    public_price_manwon: Annotated[
         float | None,
         Field(description='공시가격 (만원, 직방이 원 단위로 준 값을 환산). 0 이거나 직방이 주지 않으면 null (모름)')
     ] = None
-    change_rate: Annotated[
+    change_percent: Annotated[
         float | None,
         Field(description='전년 대비 변동률 (%, 부호 있음. 예: 26.9, -28, 0. 웹은 절댓값과 색으로 그린다). 직방이 주지 않으면 null')
     ] = None
@@ -519,25 +519,14 @@ class ZigbangCatalogResult(BaseModel):
             'CLI 가 notice 아래에 붙인다'
         ))
     ] = []
-    estimated_sale_price_manwon: Annotated[
-        float | None,
+    estimated_prices: Annotated[
+        dict[str, ZigbangEstimatedPrice | None],
         Field(description=(
-            "이 호의 직방시세® 매매가 (만원. 웹 묶음 화면 '시세 정보' 탭). 직방이 실거래를 분석해 낸 추정값이라 호가·실거래가가 아니다. "
-            '직방이 주지 않거나 0 이면 null'
+            "이 호의 직방시세® (웹 묶음 화면 '시세 정보' 탭). 늘 'sale'·'jeonse' 두 키이고, sale 은 price_manwon·price_per_pyeong_manwon, jeonse 는 "
+            'deposit_manwon·price_per_pyeong_manwon (만원, 평당가는 3.3㎡당). 직방이 실거래를 분석해 낸 추정값이라 호가·실거래가가 아니다. '
+            '거래의 안 칸을 직방이 주지 않거나 0 이라 모두 모르면 그 거래가 null, 일부만 그러면 그 칸만 null'
         ))
-    ] = None
-    estimated_sale_price_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description='직방시세® 매매 평당가 (만원, 3.3㎡당). 직방이 주지 않거나 0 이면 null')
-    ] = None
-    estimated_jeonse_price_manwon: Annotated[
-        float | None,
-        Field(description='이 호의 직방시세® 전세가 (만원). 추정값이다. 직방이 주지 않거나 0 이면 null')
-    ] = None
-    estimated_jeonse_price_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description='직방시세® 전세 평당가 (만원, 3.3㎡당). 직방이 주지 않거나 0 이면 null')
-    ] = None
+    ]
     public_prices: Annotated[
         list[ZigbangPublicPrice] | None,
         Field(description='공시가격 (직방 응답 순서, 최근 해부터). 공시가격이 없으면 [], 호 정보를 받지 못했거나 직방이 주지 않으면 null')
@@ -549,14 +538,14 @@ class ZigbangCatalogResult(BaseModel):
             '직방이 주지 않거나 0 이면 null'
         ))
     ] = None
-    presale_average_price_manwon: Annotated[
+    presale_price_average_manwon: Annotated[
         float | None,
         Field(description=(
             "같은 타입의 평균 분양가 (만원, 직방 `averageHo분양가`). 웹은 호 분양가(`presale_price_manwon`)가 있을 때만 "
             "'이 매물과 같은 타입의 평균 분양가는 …입니다' 로 함께 보여 준다. 직방이 주지 않거나 0 이면 null"
         ))
     ] = None
-    presale_type_price_manwon: Annotated[
+    type_presale_price_manwon: Annotated[
         float | None,
         Field(description=(
             "이 호가 속한 타입(평형)의 분양가 (만원, 직방 `roomType분양가`). 웹은 호 분양가가 없을 때 이 값을 '이 매물 분양가' 로 보여 주고 "
@@ -600,7 +589,7 @@ def catalog_public_prices(price_info: ZigbangHoPriceInfoModel | None) -> list[Zi
         return None
     return [
         ZigbangPublicPrice(
-            year=price.year, price_manwon=won_to_manwon(_known_price(price.price)), change_rate=price.compare_price_rate,
+            year=price.year, public_price_manwon=won_to_manwon(_known_price(price.price)), change_percent=price.compare_price_rate,
         )
         for price in price_info.public_prices
     ]
@@ -730,13 +719,15 @@ def get_catalog(client: ZigbangClient, catalog_id: str) -> ZigbangCatalogResult:
         has_more=has_more,
         listings=listings,
         notes=notes,
-        estimated_sale_price_manwon=_known_price(sale.price if sale else None),
-        estimated_sale_price_per_pyeong_manwon=_known_price(sale.pyeong_price if sale else None),
-        estimated_jeonse_price_manwon=_known_price(jeonse.price if jeonse else None),
-        estimated_jeonse_price_per_pyeong_manwon=_known_price(jeonse.pyeong_price if jeonse else None),
+        estimated_prices=estimated_prices_of(
+            _known_price(sale.price if sale else None),
+            _known_price(sale.pyeong_price if sale else None),
+            _known_price(jeonse.price if jeonse else None),
+            _known_price(jeonse.pyeong_price if jeonse else None),
+        ),
         public_prices=catalog_public_prices(price_info),
         presale_price_manwon=_known_price(presale.ho if presale else None),
-        presale_average_price_manwon=_known_price(presale.average_ho if presale else None),
-        presale_type_price_manwon=_known_price(presale.room_type if presale else None),
+        presale_price_average_manwon=_known_price(presale.average_ho if presale else None),
+        type_presale_price_manwon=_known_price(presale.room_type if presale else None),
         presale_price_per_pyeong_manwon=_known_price(presale.pyeong_price if presale else None),
     )

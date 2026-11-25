@@ -254,7 +254,8 @@ def run_request_items_onerooms_v1(
   code 가 출력 계약이라, 검사를 모델로 옮겨 경로를 바꾸지 않는다. 모델은 `handle_errors` 안에서 만든다. 모델이 조합을
   검사하는 소스는 그 소스 개발 가이드에 적는다.
 - 여러 기능이 쓰는 모델은 `service/common.py`(`common/` 패키지로 나눈 소스는 그 주제 모듈 `common/<주제>.py`, 주제를 넘어 쓰면 `common/base.py`), 한 기능만 쓰면 그 모듈에(기능 폴더 안에서만 쓰면 그 폴더의 `base.py`) 둔다 ([나누는 기준](#service-모듈을-나누는-기준)).
-- 소스마다 다른 점(필드 이름, 일부 명령만 받는 조건)은 그 소스 개발 가이드에 적는다.
+- 출력 칸의 이름·모양은 네 소스가 같은 용어집을 따른다. 새 칸을 만들 때는 [칸 이름 규칙](output-contract.md#칸-이름-규칙)대로 이름을 짓고 거래별 값은 영어 거래 키(`sale`·`jeonse`·`wolse`·`short_term`·`yeonse`)로 묶고, 한국어 거래 이름에서 키를 만들 때는 `core.listing.TRADE_KEY_BY_NAME` 을 쓴다.
+- 소스마다 다른 점(일부 명령만 받는 조건, 사이트가 주는 값의 차이)은 그 소스 개발 가이드에 적는다.
 - CLI 옵션 별칭 중 네 소스가 도움말까지 똑같이 쓰는 것(`PrettyOption`, 보증금·월세·매매가 하한·상한)은 `cli/options.py`
   에 둔다. 도움말이 다르면 각 소스 CLI 에 둔다.
 - 같은 뜻의 조건도 옵션 이름·값은 소스 필터를 따라 다르다 (세대수 `--household-min` 과 다방 아파트 `--households-min`, 연식

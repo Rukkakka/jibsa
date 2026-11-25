@@ -84,7 +84,7 @@ class Step:
         command: CLI 명령 경로 (예: `('zigbang', 'search', 'listings', 'room')`). 그룹 옵션으로 부르는 경로는 그룹까지
             (`('zigbang', 'search', 'listings')` + `--complex`).
         args: 인자. `{name}` 은 앞 명령의 `Capture` 값으로 채운다.
-        expect: 값이 있어야 정상인 칸. 점으로 이어 안쪽 칸을 가리킨다 (`listing_count.weekly`).
+        expect: 값이 있어야 정상인 칸. 점으로 이어 안쪽 칸을 가리킨다 (`listing_count_trend.weeks`).
         captures: 이 결과에서 뒤 명령에 넘길 값.
         may_be_empty: 사이트가 같은 지역에도 빈 목록을 줄 때가 있는 칸이면 True. 비어 있으면 고장 대신 확인 못 함이다
             (다방 청약 일정).
@@ -148,12 +148,12 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 없어(2026-11-20 리뷰 실측: 서패동 분양 묶음 19034254-trade 는 시세 null·[실패] 안내 없음) 아래 단계가 고장으로 잘못 알린다.
         # 묶인 매물이 가장 많은 줄의 묶음을 본다 (여러 매물을 매물마다 상세로 바꾸는 길까지 확인)
         # 단지(`{apt}`)도 여기서 고른다: 신규분양 카드도 `apt-` 단지 ID 를 갖고 그 단지는 단지 직방시세가 없다(2026-11-20 리뷰 실측:
-        # 서패동 신규분양 카드의 apt-94091 은 estimated_sale_price_min_manwon 이 null 이고 [실패] 안내가 없다)
+        # 서패동 신규분양 카드의 apt-94091 은 직방시세 범위(지금 estimated_ranges.sale)가 null 이고 [실패] 안내가 없다)
         Step(
             '아파트 동 목록 신규분양 빼기 역삼동', APT, ('역삼동', '--no-new-sale', '--limit', '2'), 'listings',
             (
                 Capture('apt', 'listings', 'complex_id', prefix='apt-'),
-                Capture('apt_catalog', 'listings', 'catalog_id', largest='listing_count'),
+                Capture('apt_catalog', 'listings', 'catalog_id', largest='realtor_count'),
             ),
         ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
@@ -162,7 +162,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 정보를 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
         Step(
             '아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings',
-            also_expect=('estimated_sale_price_manwon',), may_be_empty=True,
+            also_expect=('estimated_prices.sale.price_manwon',), may_be_empty=True,
         ),
         # 역 이름은 그 역이 속한 동을 찾아(/apt/locals/polygon) 그 동의 지역 목록을 준다
         Step('아파트 역이 속한 동 강남역', APT, ('강남역', '--limit', '2'), 'listings'),
@@ -189,12 +189,12 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 지역 화면(동·구)은 평형대별 시세(/apt/locals/{코드} 응답의 price 칸)를 기대 칸으로 보고, 지역 거래량·평당 추이는 덤 조회라 같이 본다.
         # 인구·세대는 구에서만 받는 덤이다 (동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 키가 없다)
         Step(
-            '지역 정보 동 가락동', ('zigbang', 'region-info'), ('가락동',), 'estimated_prices',
+            '지역 정보 동 가락동', ('zigbang', 'region-info'), ('가락동',), 'by_pyeong_range',
             also_expect=('monthly_volumes', 'price_trend.lines'),
         ),
         Step(
-            '지역 정보 구 송파구', ('zigbang', 'region-info'), ('송파구',), 'estimated_prices',
-            also_expect=('population.people', 'population.households'),
+            '지역 정보 구 송파구', ('zigbang', 'region-info'), ('송파구',), 'by_pyeong_range',
+            also_expect=('population.people', 'population.household_months'),
         ),
         Step('지역 실거래 송파구', ('zigbang', 'region-trades'), ('송파구', '--period', '30일', '--limit', '3'), 'trades'),
         # 랭킹(거래량순)은 실거래 등록 기준이라 기본 기간(이번달)은 매달 1일 새벽(감시 시각)에 비어 고장으로 잡힐 수 있어 지난달로 부른다
@@ -203,12 +203,12 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 주지 않아 null 일 수 있다 (2026-11-21 실측: 아크로서초 minSalesPrice 가 null). 그래서 비면 고장 대신 확인 못 함이고,
         # 응답 형식이 바뀌어 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
         Step(
-            '아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'id'),),
-            also_expect=('estimated_sale_price_min_manwon',), may_be_empty=True,
+            '아파트 단지', ('zigbang', 'complex'), ('{apt}',), 'name', (Capture('apt_pyeong', 'pyeongs', 'pyeong_id'),),
+            also_expect=('estimated_ranges.sale',), may_be_empty=True,
         ),
-        Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'transactions'),
+        Step('아파트 실거래가', ('zigbang', 'real-price'), ('{apt}', '--limit', '3'), 'trades'),
         # 전체는 서버 거래 유형 all 을 보내 매매와 전월세를 한 목록으로 받는다 (거래마다 trade_type)
-        Step('아파트 실거래가 전체', ('zigbang', 'real-price'), ('{apt}', '--trade', '전체', '--limit', '3'), 'transactions'),
+        Step('아파트 실거래가 전체', ('zigbang', 'real-price'), ('{apt}', '--trade', '전체', '--limit', '3'), 'trades'),
         # 평형별 실거래는 다른 API 다. 고른 평형에 거래가 없을 수 있어 거래 칸 대신 평형 칸을 본다. API 가 바뀌면 첫 응답의 평형
         # 목록 확인(`get_real_prices` 의 첫 쪽 확인)이 NOT_FOUND 를 내 고장으로 잡힌다
         Step('아파트 평형 실거래가', ('zigbang', 'real-price'), ('{apt}', '--pyeong', '{apt_pyeong}', '--limit', '3'), 'pyeong_id'),
@@ -218,7 +218,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 리뷰 오탐 (2026-11-22): 시세가 없는 단지(apt-90913·apt-94457)도 구 줄(kind '구')은 와서 lines 가 비지 않는다. 그래서 '아파트 단지' 처럼 may_be_empty 를 걸지 않는다
         Step('아파트 시세 추이', ('zigbang', 'price-trend'), ('{apt}',), 'lines'),
         Step(
-            '아파트 평형 시세 추이', ('zigbang', 'price-trend'), ('{apt}', '--pyeong', '{apt_pyeong}', '--period', '최근1년'), 'pyeong_id',
+            '아파트 평형 시세 추이', ('zigbang', 'price-trend'), ('{apt}', '--pyeong', '{apt_pyeong}', '--period', '1년'), 'pyeong_id',
             also_expect=('months',), may_be_empty=True,
         ),
         Step('아파트 단지 매물', ZIGBANG_LISTINGS, ('--complex', '{apt}', '--limit', '2'), 'listings'),
@@ -248,9 +248,9 @@ GROUPS: dict[str, tuple[Step, ...]] = {
     ),
     'naver': (
         Step('하위 지역 강남구', ('naver', 'regions'), ('강남구',), 'regions'),
-        Step('동네 추이 역삼동', ('naver', 'trend'), ('역삼동',), 'listing_count.weekly'),
+        Step('동네 추이 역삼동', ('naver', 'trend'), ('역삼동',), 'listing_count_trend.weeks'),
         # 전국은 지역 해석 없이 법정동 코드 0000000000 으로 부른다
-        Step('전국 추이', ('naver', 'trend'), ('전국',), 'listing_count.weekly'),
+        Step('전국 추이', ('naver', 'trend'), ('전국',), 'listing_count_trend.weeks'),
         # 구·군 이름은 경계 전체(legalDivisionType GUN)로 찾는다
         Step('매물 구 전체 성동구', NAVER_LISTINGS, ('성동구', '--limit', '2'), 'listings'),
         # 구 없는 시는 하위 지역 목록 1회로 구가 없는지 본 뒤 시 경계 전체(GUN)로 찾는다
@@ -285,19 +285,19 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),
         Step(
             '단지 목록 역삼동', ('naver', 'search', 'complexes'), ('역삼동', '--sort', '세대수순', '--limit', '1'), 'complexes',
-            (Capture('complex', 'complexes', 'complex_number'),),
+            (Capture('complex', 'complexes', 'complex_id'),),
         ),
         Step(
             '단지', ('naver', 'complex'), ('{complex}',), 'pyeongs',
-            (Capture('pyeong', 'pyeongs', 'number', largest='household_count'), Capture('school', 'schools', 'school_code')),
+            (Capture('pyeong', 'pyeongs', 'pyeong_id', largest='household_count'), Capture('school', 'schools', 'school_code')),
         ),
         # 평형 하나를 주면 평형 관리비·시세·실거래 요약·평당가(complex/pyeongPrice/pyeongType)를 더 부른다. 그 경로의 고장을 잡는다
         # (사용자 결정 2026-11-18). 기대 칸은 세대수가 가장 많은 평형의 매매 평당가다. `price_per_pyeong` 만 보면 조회 실패
         # (`{sale: null, jeonse: null}`)도 비지 않은 dict 라 통과한다 (review-checklist convention-8)
-        Step('평형 요약', ('naver', 'complex'), ('{complex}', '--pyeong', '{pyeong}'), 'price_per_pyeong.sale'),
-        Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'transactions'),
+        Step('평형 요약', ('naver', 'complex'), ('{complex}', '--pyeong', '{pyeong}'), 'asking_price_per_pyeong.sale'),
+        Step('평형 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}'), 'trades'),
         # 평형 묶음(complex/pyeongGroups)으로 같은 묶음 평형의 실거래를 함께 받는다 (complex/pyeong/realPrice/group)
-        Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'transactions'),
+        Step('평형 묶음 실거래가', ('naver', 'real-price'), ('{complex}', '--pyeong', '{pyeong}', '--group'), 'trades'),
         # 빌라 단지 실거래는 평당 실거래가(complex/villa/realPricePyeongPrice)·단지 좌표(complex/villa)·주변 실거래
         # (complex/villa/realPriceAround)를 더 부른다. 아무 빌라 단지나 고르면 거래가 없어 빈 목록이 정상일 수 있어, 거래가 있는
         # 단지형 빌라를 고정한다 (네오스빌 572549 평형 4 전세: 2026-11-19 평당가 5건·주변 10건). 기대 칸은 주변 거래 목록과
@@ -305,7 +305,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 목록을 주면 이 칸으로만 잡힌다. 같은 명령을 두 번 부르지 않게 also_expect 로 함께 본다)
         Step(
             '빌라 단지 실거래 네오스빌', ('naver', 'real-price'), ('572549', '--pyeong', '4', '--trade', '전세'),
-            'nearby_transactions.trades', also_expect=('price_per_pyeong_trades',),
+            'nearby_trades.trades', also_expect=('price_per_pyeong_trades',),
         ),
         Step('평형 시세', ('naver', 'market-price'), ('{complex}', '--pyeong', '{pyeong}'), 'providers'),
         Step('학교', ('naver', 'school'), ('{school}',), 'school_code'),
@@ -314,17 +314,17 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('단지 매물', NAVER_LISTINGS, ('--complex', '{complex}', '--limit', '2'), 'listings'),
         Step(
             '재개발 구역 한남동', ('naver', 'search', 'redevelopment'), ('한남동', '--limit', '1'), 'areas',
-            (Capture('redevelopment', 'areas', 'redevelopment_number'),),
+            (Capture('redevelopment', 'areas', 'redevelopment_id'),),
         ),
-        Step('재개발 구역', ('naver', 'redevelopment'), ('{redevelopment}',), 'redevelopment_number'),
+        Step('재개발 구역', ('naver', 'redevelopment'), ('{redevelopment}',), 'redevelopment_id'),
         Step('재개발 구역 매물', NAVER_LISTINGS, ('--redevelopment', '{redevelopment}', '--limit', '2'), 'listings'),
         # 구역 이름은 재개발 자동완성(search/autocomplete/redevelopmentAreas)으로 번호를 찾는다. 이름이 하나로 정해지는 구역이어야
         # 한다 (한남제3재정비촉진구역은 한남동·보광동에 번호가 둘이라 REGION_AMBIGUOUS, 2026-11-18)
-        Step('재개발 구역 이름 성수전략정비구역제3지구', ('naver', 'redevelopment'), ('성수전략정비구역제3지구',), 'redevelopment_number'),
+        Step('재개발 구역 이름 성수전략정비구역제3지구', ('naver', 'redevelopment'), ('성수전략정비구역제3지구',), 'redevelopment_id'),
     ),
     'daangn': (
         # 웹 지도 검색창처럼 지역(searchRegion)·역·대학·학교·단지 검색을 한꺼번에 부른다
-        Step('지역 찾기 역삼동', ('daangn', 'search', 'locations'), ('역삼동',), 'results'),
+        Step('지역 찾기 역삼동', ('daangn', 'search', 'locations'), ('역삼동',), 'regions'),
         # 지역은 웹 지역 검색(searchRegion)으로 찾고, 동 매물은 웹 지도에서 동을 누른 목록(articleByClusterId)과 동 거품 수
         # (articleClusters)로 받는다. 이어 받기는 그 목록의 커서다
         Step(
@@ -380,23 +380,23 @@ GROUPS: dict[str, tuple[Step, ...]] = {
             '단지 매물', DAANGN_LISTINGS, ('--complex', '{complex}', '--limit', '2'), 'listings',
             (Capture('complex_article', 'listings', 'id'),),
         ),
-        Step('단지 실거래가', ('daangn', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
+        Step('단지 실거래가', ('daangn', 'real-price'), ('{complex}', '--limit', '3'), 'trades'),
         # --pyeong 은 단지 비교 칸으로 평형 타입 코드를 받아 실거래를 거른다 (웹 단지 화면 실거래와 같은 ptpCds)
-        Step('단지 실거래가 평형', ('daangn', 'real-price'), ('{complex}', '--pyeong', '{daangn_pyeong}', '--limit', '3'), 'transactions'),
+        Step('단지 실거래가 평형', ('daangn', 'real-price'), ('{complex}', '--pyeong', '{daangn_pyeong}', '--limit', '3'), 'trades'),
         # 매물 번호로 건물 실거래를 받는 쿼리(articleByOriginalArticleId). 동 매물은 사무실·빌라라 거래가 없을 수 있어 단지 매물로 본다
-        Step('매물 건물 실거래가', ('daangn', 'real-price'), ('--item', '{complex_article}', '--limit', '3'), 'transactions'),
-        Step('단지 시세 추이', ('daangn', 'price-trend'), ('{complex}',), 'points'),
+        Step('매물 건물 실거래가', ('daangn', 'real-price'), ('--item', '{complex_article}', '--limit', '3'), 'trades'),
+        Step('단지 시세 추이', ('daangn', 'price-trend'), ('{complex}',), 'months'),
         Step(
             '같은 동 단지', ('daangn', 'nearby-complexes'), ('{complex}', '--limit', '2'), 'complexes',
             (Capture('neighbor', 'complexes', 'complex_id'),),
         ),
         Step('단지 비교', ('daangn', 'compare'), ('{complex}', '{neighbor}'), 'complexes'),
         Step('학교 역삼초등학교', ('daangn', 'school'), ('역삼초등학교',), 'complexes'),
-        Step('동 실거래 역삼동', ('daangn', 'region-real-price'), ('역삼동', '--limit', '3'), 'transactions'),
+        Step('동 실거래 역삼동', ('daangn', 'region-real-price'), ('역삼동', '--limit', '3'), 'trades'),
         # 신고가는 다른 쿼리(realsaleNewHighFeed)다. 기본(웹처럼 최근 공개일 하루치)은 구도 비는 날이 있어 이전 공개일까지 본다
         Step(
             '신고가 강남구', ('daangn', 'region-real-price'), ('강남구', '--new-high', '--previous-days', '--limit', '3'),
-            'transactions',
+            'trades',
         ),
         # 구 후기 페이지 한 번에 단지·동별·건물별 후기 수가 함께 온다 (2026-11-20, 같은 HTML 저장소의 세 목록)
         Step(
@@ -412,7 +412,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 빈 목록이 된 것일 가능성이 커 고장으로 본다
         Step(
             '단지 근처 어린이집', ('daangn', 'preschools'), ('{complex}',), 'preschools',
-            (Capture('preschool', 'preschools', 'id'),),
+            (Capture('preschool', 'preschools', 'preschool_id'),),
         ),
         Step('어린이집', ('daangn', 'preschool'), ('{preschool}',), 'name'),
         Step(
@@ -469,12 +469,12 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         Step('오피스텔 단지 목록 역삼동', ('dabang', 'search', 'complexes'), ('역삼동', '-t', '오피스텔', '--limit', '2'), 'complexes'),
         Step('단지 목록 역 강남역', ('dabang', 'search', 'complexes'), ('강남역', '--limit', '2'), 'complexes'),
         Step(
-            '단지', ('dabang', 'complex'), ('{complex}',), 'recent_sale',
+            '단지', ('dabang', 'complex'), ('{complex}',), 'latest_trades.sale',
             # 진학 인원이 모두 비어도 초등학교 코드를 고르지 않게 중학교만 본다 (단계가 틀리면 500 이라 확인 못 함으로 묻힌다)
             (
                 Capture('middle_school', 'schools', 'school_code', largest='special_high_entrants', where=('level', '중학교')),
-                Capture('nursery', 'nurseries', 'code'),
-                Capture('kinder', 'kindergartens', 'code'),
+                Capture('nursery', 'nurseries', 'school_code'),
+                Capture('kinder', 'kindergartens', 'school_code'),
             ),
         ),
         # 학교 상세는 옛 방식(/api/3/education/{단계}/{코드}). 단계가 코드와 다르면 500 이라 단지의 중학교로 본다
@@ -487,11 +487,11 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # 평형대 평당가 비교(real-price/complex/price-per-py). 은마 대표 평형은 '30평대 비교' 가 있다 (2026-11-14 실측)
         Step('평형대 평당가 비교', ('dabang', 'nearby-complexes'), ('{complex}',), 'area_prices'),
         Step('단지 매물', DABANG_LISTINGS, ('--complex', '{listed_complex}', '--limit', '2'), 'listings'),
-        Step('단지 실거래가', ('dabang', 'real-price'), ('{complex}', '--limit', '3'), 'transactions'),
+        Step('단지 실거래가', ('dabang', 'real-price'), ('{complex}', '--limit', '3'), 'trades'),
         # --listing 은 단지 없는 매물만 받는다. 원룸 목록에는 오피스텔이 섞여 빌라 목록의 매물을 쓴다
-        Step('매물 실거래가', ('dabang', 'real-price'), ('--listing', '{villa}', '--trade', '전월세', '--limit', '3'), 'transactions'),
+        Step('매물 실거래가', ('dabang', 'real-price'), ('--listing', '{villa}', '--trade', '전월세', '--limit', '3'), 'trades'),
         # --trade 를 주지 않으면 매물의 거래 유형을 real-price/house/init 으로 먼저 받는다. --trade 를 준 줄은 init 을 부르지 않는다
-        Step('매물 실거래가 기본', ('dabang', 'real-price'), ('--listing', '{villa}', '--limit', '3'), 'transactions'),
+        Step('매물 실거래가 기본', ('dabang', 'real-price'), ('--listing', '{villa}', '--limit', '3'), 'trades'),
         Step('단지 시세 흐름', ('dabang', 'price-trend'), ('{complex}',), 'months'),
         # 동네정보는 탭마다 다른 주소다 (요약 3종·수 4종). 기본은 모든 주제
         Step('동네정보 역삼동', ('dabang', 'neighborhood'), ('역삼동',), 'safety'),
@@ -512,15 +512,15 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # (sale-list/category/bbox)이라 두 주소를 따로 본다. 분양이 적은 구는 빈 날이 있어(2026-10-27 실측: 강남구 2곳,
         # 송파구 0곳) 확인 못 함이 이어지면 막힘으로 잘못 알린다. 많은 곳(평택시)으로 본다
         Step(
-            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '3'), 'sales',
-            (Capture('sale', 'sales', 'sale_id'),),
+            '분양 찾기 평택시', DABANG_LISTINGS[:2] + ('sales',), ('평택시', '--limit', '3'), 'presales',
+            (Capture('sale', 'presales', 'presale_id'),),
         ),
         # 전국·시·도 이름은 장소 검색 없이 시·도 목록(region/states)에서 찾아 분양 지역 목록으로 받는다 (region-ranking 서울 도 같은
         # 시·도 목록을 쓴다). 감시가 이 주소를 보지 않으면 다방이 바꿔도 모른다
-        Step('분양 찾기 시·도 서울', DABANG_LISTINGS[:2] + ('sales',), ('서울', '--limit', '3'), 'sales'),
+        Step('분양 찾기 시·도 서울', DABANG_LISTINGS[:2] + ('sales',), ('서울', '--limit', '3'), 'presales'),
         # 지도 목록은 동 경계를 덮는 사각형에서 주소로 고른다. 분양이 많은 동(2026-11-14 실측: 평택 고덕동 사각형 27곳, 앞 24곳
         # 모두 고덕동)으로 본다. 한 쪽(24곳)이라 요청은 1회다
-        Step('분양 찾기 동 고덕동', DABANG_LISTINGS[:2] + ('sales',), ('평택시 고덕동', '--limit', '5'), 'sales'),
+        Step('분양 찾기 동 고덕동', DABANG_LISTINGS[:2] + ('sales',), ('평택시 고덕동', '--limit', '5'), 'presales'),
         Step('분양 상세', ('dabang', 'sale'), ('{sale}',), 'schedules'),
         # 분양 주변은 매물·단지 주변과 같은 두 주소에 대상만 sale 이다 (sale/{id}/near, transit/near/sale?saleId=). 역은 1km 안에
         # 없을 수 있어 버스·마트·편의점 같은 가까운 시설로 본다

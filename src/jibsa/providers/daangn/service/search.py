@@ -421,7 +421,7 @@ def search_dong(
     # 그 동의 클러스터 목록이라 모두 그 동 매물이다. 그 동의 구·동 이름은 동의 시·도로 미리 채워 시·도를 따로 찾지 않는다 (구
     # 이름만 같은 다른 시·도의 동은 이 목록에 오지 않는다). 이어 받기 표에 담지 않는다
     converted = _to_listings(
-        client, articles, conditions, (area.lat, area.lng), region, {(region.name2, region.name3): region.name1},
+        client, articles, conditions, (area.lat, area.lng), region, {(region.sigungu, region.dong): region.sido},
     )
     shown = [article for article, _ in converted]
     resumable = bool(has_more and cursor)

@@ -81,3 +81,11 @@ def is_ri_code(legal_division_code: str | None) -> bool:
     """10자리 법정동 코드가 리인지 (끝 두 자리가 00 이 아님)."""
     code = legal_division_code or ''
     return len(code) == 10 and code[8:] != '00'
+
+
+def full_legal_division_code(code: str) -> str:
+    """법정동 코드 앞자리(시·도 2자리, 시·군·구 5자리, 읍·면·동 8자리)를 10자리로 맞춘다.
+
+    예: '11' → '1100000000', '11680' → '1168000000', '11680101' → '1168010100'. 10자리는 그대로다.
+    """
+    return code.ljust(10, '0')

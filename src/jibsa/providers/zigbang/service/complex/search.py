@@ -136,13 +136,13 @@ class ZigbangPlaceComplex(BaseModel):
         str | None,
         Field(description='주소. 역은 지번 주소, 학교·동·구는 직방 단지 카드의 구·동까지의 주소 (예: 송파구 가락동)')
     ]
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수')
     ]
-    distance_m: Annotated[
-        int | None,
-        Field(description='역·학교에서의 거리 (m). 학교는 직방이 준 거리 문구(462m·1.1km)를 m 로 바꾼 값. 동·구에는 키가 없다')
+    distance_km: Annotated[
+        float | None,
+        Field(description='역·학교에서의 거리 (km). 직방이 준 m 값(학교는 거리 문구 462m·1.1km 를 m 로 바꾼 값)을 km 로 바꿔 소수 둘째 자리까지. 동·구에는 키가 없다')
     ]
     url: Annotated[
         str,
@@ -160,14 +160,14 @@ class ZigbangPlaceComplex(BaseModel):
     ]
     has_distance: Annotated[
         bool,
-        Field(exclude=True, description='거리가 있는 곳(역·학교)의 단지인지. 동·구는 해당 없어 출력에서 distance_m 키를 뺀다')
+        Field(exclude=True, description='거리가 있는 곳(역·학교)의 단지인지. 동·구는 해당 없어 출력에서 distance_km 키를 뺀다')
     ]
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         if not self.has_distance:
-            data.pop('distance_m', None)
+            data.pop('distance_km', None)
         return data
 
 
@@ -240,7 +240,7 @@ class ZigbangHighAdvancement(BaseModel):
 class ZigbangSchoolInfo(BaseModel):
     """학교 정보 (직방 웹 학교 화면 `/home/apt/schools/{학교코드}`, 출처 학교알리미·학구도안내서비스). 전화·홈페이지·주소·좌표는 담지 않는다.
 
-    `district_` 로 시작하는 값은 웹이 '{구} 평균' 으로 보여 주는 같은 구 학교 평균이다. 웹은 값이 없거나 0 인 칸을 숨기지만 여기서는 없으면
+    `sigungu_` 로 시작하는 값은 웹이 '{구} 평균' 으로 보여 주는 같은 구 학교 평균이다. 웹은 값이 없거나 0 인 칸을 숨기지만 여기서는 없으면
     null, 0 은 0 으로 낸다.
     """
 
@@ -268,7 +268,7 @@ class ZigbangSchoolInfo(BaseModel):
         str | None,
         Field(description="남녀 구분 (직방 글자 그대로, 예: '공학')")
     ]
-    founded_on: Annotated[
+    established_date: Annotated[
         str | None,
         Field(description='설립일 (YYYY-MM-DD). 직방이 주지 않거나 읽지 못하면 null')
     ]
@@ -288,19 +288,19 @@ class ZigbangSchoolInfo(BaseModel):
         int | float | None,
         Field(description='여학생 비율 (%)')
     ]
-    district: Annotated[
+    sigungu: Annotated[
         str | None,
         Field(description="같은 구 평균의 구 (직방 학교 정보의 구, 예: '송파구'). 직방이 주지 않으면 null")
     ]
-    district_avg_students: Annotated[
+    sigungu_students_average: Annotated[
         int | float | None,
         Field(description='같은 구 학교의 평균 학생 수 (명). 직방이 소수로 준 그대로 (웹은 반올림해 보여 준다)')
     ]
-    district_male_percent: Annotated[
+    sigungu_male_percent: Annotated[
         int | float | None,
         Field(description='같은 구 평균 남학생 비율 (%)')
     ]
-    district_female_percent: Annotated[
+    sigungu_female_percent: Annotated[
         int | float | None,
         Field(description='같은 구 평균 여학생 비율 (%)')
     ]
@@ -308,11 +308,11 @@ class ZigbangSchoolInfo(BaseModel):
         int | float | None,
         Field(description='입학생 수 (명)')
     ]
-    district_avg_freshmen: Annotated[
+    sigungu_freshmen_average: Annotated[
         int | float | None,
         Field(description='같은 구 학교의 평균 입학생 수 (명)')
     ]
-    district_freshmen_change_percent: Annotated[
+    sigungu_freshmen_change_percent: Annotated[
         int | float | None,
         Field(description='같은 구 평균 입학생의 전년 대비 증감 (%, 음수는 감소, 0 은 변화 없음). 웹 입학생 칸의 (전년대비 N% 감소)')
     ]
@@ -320,7 +320,7 @@ class ZigbangSchoolInfo(BaseModel):
         int | float | None,
         Field(description='학급당 학생 수 (명)')
     ]
-    district_students_per_class: Annotated[
+    sigungu_students_per_class: Annotated[
         int | float | None,
         Field(description='같은 구 평균 학급당 학생 수 (명)')
     ]
@@ -333,7 +333,7 @@ class ZigbangSchoolInfo(BaseModel):
             )
         )
     ]
-    district_tuition_manwon: Annotated[
+    sigungu_tuition_manwon: Annotated[
         int | float | None,
         Field(description='같은 구 평균 학비 (만원)')
     ]
@@ -345,7 +345,7 @@ class ZigbangSchoolInfo(BaseModel):
         str | None,
         Field(description="급식 방식 (직방 글자 그대로, 예: '직영'·'일부위탁')")
     ]
-    district_meal_cost_manwon: Annotated[
+    sigungu_meal_cost_manwon: Annotated[
         int | float | None,
         Field(description='같은 구 평균 급식비 (만원)')
     ]
@@ -515,25 +515,25 @@ def school_info_of(detail: ZigbangSchoolDetailModel) -> ZigbangSchoolInfo:
         level=SCHOOL_LEVEL_BY_STAGE.get(stage, stage) if stage else None,
         founding_type=text_or_none(detail.sullib),
         gender=text_or_none(detail.gender),
-        founded_on=iso_date(detail.foundation_date),
+        established_date=iso_date(detail.foundation_date),
         high_school_type=text_or_none(high_category) if stage == 'high' else None,
         students=_number(detail.all),
         male_percent=_number(detail.man_percent),
         female_percent=_number(detail.woman_percent),
-        district=text_or_none(detail.local2),
-        district_avg_students=_number(detail.local),
-        district_male_percent=_number(detail.local_man_percent),
-        district_female_percent=_number(detail.local_woman_percent),
+        sigungu=text_or_none(detail.local2),
+        sigungu_students_average=_number(detail.local),
+        sigungu_male_percent=_number(detail.local_man_percent),
+        sigungu_female_percent=_number(detail.local_woman_percent),
         freshmen=_number(detail.freshman),
-        district_avg_freshmen=_number(detail.local_freshman),
-        district_freshmen_change_percent=_number(detail.local_increase),
+        sigungu_freshmen_average=_number(detail.local_freshman),
+        sigungu_freshmen_change_percent=_number(detail.local_increase),
         students_per_class=_number(detail.class_),
-        district_students_per_class=_number(detail.local_class),
+        sigungu_students_per_class=_number(detail.local_class),
         tuition_manwon=won_to_manwon(_number(detail.expense)),
-        district_tuition_manwon=won_to_manwon(_number(detail.local_expense)),
+        sigungu_tuition_manwon=won_to_manwon(_number(detail.local_expense)),
         meal_cost_manwon=won_to_manwon(_number(detail.meal)),
         meal_type=text_or_none(detail.meal_type),
-        district_meal_cost_manwon=won_to_manwon(_number(detail.meal_local)),
+        sigungu_meal_cost_manwon=won_to_manwon(_number(detail.meal_local)),
         advancement=advancement,
     )
 
@@ -571,8 +571,8 @@ def _order_note(place_type: ZigbangComplexPlaceType, name: str, order: ZigbangCo
         text = f'직방 웹 {tab} 순서입니다 ({COMPLEX_ORDER_DESCRIPTIONS[order]})'
     if place_type in AROUND_PLACE_TYPES:
         text += (
-            '. 가까운 순이 아닙니다. 주변 단지 전체에서 가까운 곳은 --order 를 빼고(인기) --limit 을 늘려 받아 distance_m 으로 고르세요' if subset
-            else '. 가까운 순이 아닙니다. 가까운 단지는 distance_m 으로 고르세요'
+            '. 가까운 순이 아닙니다. 주변 단지 전체에서 가까운 곳은 --order 를 빼고(인기) --limit 을 늘려 받아 distance_km 로 고르세요' if subset
+            else '. 가까운 순이 아닙니다. 가까운 단지는 distance_km 로 고르세요'
         )
     return text
 
@@ -716,8 +716,8 @@ def place_complex_of(
         complex_id=apt_complex_id(danji_id),
         name=name,
         address=address,
-        households=households,
-        distance_m=distance_m,
+        household_count=households,
+        distance_km=None if distance_m is None else round(distance_m / 1000, 2),
         url=apt_danji_url(danji_id),
         highlight=text_or_none(card.desc2) if card else None,
         has_distance=place_type in AROUND_PLACE_TYPES,

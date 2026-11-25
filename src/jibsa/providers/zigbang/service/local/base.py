@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
+from jibsa.core.korean import full_legal_division_code
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.service.common.base import ZigbangAptRegion
 from jibsa.providers.zigbang.service.region import resolve_apt_area
@@ -59,9 +60,9 @@ class ZigbangLocalRegion(BaseModel):
         str | None,
         Field(description='찾은 지역의 전체 주소')
     ]
-    code: Annotated[
+    legal_division_code: Annotated[
         str,
-        Field(description='직방 지역 코드 (법정동코드 앞 8자리(동) 또는 5자리(구)). 직방 웹 지역 화면 주소 /home/apt/locals/{code} 에 들어간다')
+        Field(description='법정동코드 (10자리). 직방이 지역 화면에 쓰는 5자리(구)·8자리(동) 코드 뒤를 0 으로 채운 값이다. 리는 상위 읍·면 코드다')
     ]
 
 
@@ -124,7 +125,7 @@ def local_region_of(area: ZigbangLocalArea, name: str | None = None) -> ZigbangL
         name=name or area.region.name,
         level=area.level,
         address=area.region.address,
-        code=area.code,
+        legal_division_code=full_legal_division_code(area.code),
     )
 
 

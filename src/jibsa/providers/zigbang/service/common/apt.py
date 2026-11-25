@@ -118,7 +118,7 @@ class ZigbangAptListing(Listing):
         float | None,
         Field(description='공급면적 (㎡). --supply-area 조건은 이 값에 걸린다')
     ] = None
-    is_price_range: Annotated[
+    mixed_prices: Annotated[
         bool | None,
         Field(description='true 면 같은 호를 올린 매물끼리 가격이 달라 가격은 묶음의 최저가라 id 매물의 가격과 다를 수 있다. 매물별 가격은 catalog_id 를 zigbang catalog 에 넘겨 한 번에 본다')
     ] = None
@@ -130,7 +130,7 @@ class ZigbangAptListing(Listing):
         list[str],
         Field(description='같은 호를 올린 매물 중 상세를 볼 수 있는 ID 전부 (id 포함, id 가 맨 앞). zigbang listing 에 넘긴다')
     ] = []
-    listing_count: Annotated[
+    realtor_count: Annotated[
         int | None,
         Field(description='같은 호를 올린 매물(중개사) 수')
     ] = None
@@ -226,10 +226,10 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         complex_id=apt_complex_id(catalog.area_danji_id) if catalog.area_danji_id else None,
         complex_name=join_address(catalog.area_danji_name, catalog.dong),
         supply_area_m2=catalog.size_contract_m2,
-        is_price_range=catalog.is_price_range,
+        mixed_prices=catalog.is_price_range,
         catalog_id=apt_catalog_id(catalog.area_ho_id, catalog.tran_type) if catalog.area_ho_id is not None else None,
         listing_ids=listing_ids,
-        listing_count=catalog.item_count,
+        realtor_count=catalog.item_count,
         listing_kind=apt_listing_kind(catalog.item_type) if leads_bundle else None,
         pyeong_id=catalog.danji_room_type_id,
         pyeong_name=text_or_none(catalog.room_type_title.p) if catalog.room_type_title else None,

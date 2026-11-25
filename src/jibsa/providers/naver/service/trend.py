@@ -12,7 +12,9 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    NumberRange,
     null_items_note,
+    number_range,
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
@@ -96,19 +98,15 @@ class NaverListingCountTrend(BaseModel):
         int | float | None,
         Field(description='최근 주 매물 수')
     ] = None
-    min: Annotated[
-        int | float | None,
-        Field(description='기간 중 가장 적은 주')
+    count_range: Annotated[
+        NumberRange | None,
+        Field(description='기간 중 주별 매물 수의 가장 적은 주(lowest)와 가장 많은 주(highest). 네이버가 두 값을 모두 주지 않으면 null')
     ] = None
-    max: Annotated[
-        int | float | None,
-        Field(description='기간 중 가장 많은 주')
-    ] = None
-    change_rate_pct: Annotated[
+    change_percent: Annotated[
         float | None,
         Field(description='기간 첫 주 대비 최근 주 증감률 (%)')
     ] = None
-    weekly: Annotated[
+    weeks: Annotated[
         list[NaverWeeklyCount],
         Field(description='주별 평균 매물 수 (오래된 주부터)')
     ] = []
@@ -125,7 +123,7 @@ class NaverPriceTrend(BaseModel):
         float | None,
         Field(description='최근 주 평균 평당 호가 (만원). 네이버가 주간 목록에 빈 항목을 줘 최근 주를 알 수 없으면 null')
     ] = None
-    weekly: Annotated[
+    weeks: Annotated[
         list[NaverWeeklyPrice],
         Field(description='주별 평균 평당 호가 (오래된 주부터)')
     ] = []
@@ -146,7 +144,7 @@ class NaverTradeCountTrend(BaseModel):
         int | None,
         Field(description='최근 주 거래 건수')
     ] = None
-    weekly: Annotated[
+    weeks: Annotated[
         list[NaverWeeklyCount],
         Field(description='주별 거래 건수 (오래된 주부터)')
     ] = []
@@ -171,15 +169,15 @@ class NaverDistrictTrend(BaseModel):
         str,
         Field(description="평형대 (예: '30~40평'). 전체면 '전체'")
     ]
-    listing_count: Annotated[
+    listing_count_trend: Annotated[
         NaverListingCountTrend | None,
         Field(description='주간 매물 수. 조회 실패면 null')
     ] = None
-    price_per_pyeong: Annotated[
+    asking_price_per_pyeong: Annotated[
         NaverPriceTrend | None,
         Field(description='주간 평균 평당 호가. 조회 실패면 null')
     ] = None
-    trade_count: Annotated[
+    trade_count_trend: Annotated[
         NaverTradeCountTrend | None,
         Field(description='주간 실거래 건수. 조회 실패면 null')
     ] = None
@@ -222,13 +220,13 @@ def get_district_trend(
     notes: list[str] = []
     counts = result_or_none(lambda: client.run_request_legal_division_article_count_weekly_info_v1(
         NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel(**query)
-    ), notes=notes, what='매물 수 추이', unknown='모름(null)으로 낸 칸: listing_count')
+    ), notes=notes, what='매물 수 추이', unknown='모름(null)으로 낸 칸: listing_count_trend')
     prices, price_nulls = result_with_null_items(lambda: client.run_request_legal_division_pyeong_price_weekly_list_v1(
         NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel(**query)
-    ), notes=notes, what='평당가 추이', unknown='모름(null)으로 낸 칸: price_per_pyeong')
+    ), notes=notes, what='평당가 추이', unknown='모름(null)으로 낸 칸: asking_price_per_pyeong')
     trades = result_or_none(lambda: client.run_request_legal_division_real_trade_count_weekly_list_v1(
         NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel(**query)
-    ), notes=notes, what='실거래 수 추이', unknown='모름(null)으로 낸 칸: trade_count')
+    ), notes=notes, what='실거래 수 추이', unknown='모름(null)으로 낸 칸: trade_count_trend')
     if counts is None and prices is None and trades is None:
         raise JibsaError(
             code='UPSTREAM_ERROR',
@@ -243,29 +241,28 @@ def get_district_trend(
     ]
     if price_nulls:
         # 빈 항목을 뺀 목록의 마지막 주가 서버의 마지막 주가 아닐 수 있어 최근 주는 모름이다 (받은 주들은 그대로 둔다)
-        notes.append(null_items_note('네이버 평당가 추이', price_nulls, ('price_per_pyeong.latest_manwon',)))
+        notes.append(null_items_note('네이버 평당가 추이', price_nulls, ('asking_price_per_pyeong.latest_manwon',)))
     return NaverDistrictTrend(
         trade_type=trade_type,
         period=period,
         pyeong_range='전체' if pyeong_range is None else f'{pyeong_range}~{pyeong_range + TREND_PYEONG_RANGE_WIDTH}평',
-        listing_count=None if counts is None else NaverListingCountTrend(
+        listing_count_trend=None if counts is None else NaverListingCountTrend(
             period_average=counts.period_average_count,
             latest=counts.latest_weekly_count,
-            min=counts.min_weekly_count,
-            max=counts.max_weekly_count,
-            change_rate_pct=counts.count_change_rate,
-            weekly=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.average_count) for point in counts.weekly_counts],
+            count_range=number_range(counts.min_weekly_count, counts.max_weekly_count),
+            change_percent=counts.count_change_rate,
+            weeks=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.average_count) for point in counts.weekly_counts],
         ),
-        price_per_pyeong=None if prices is None else NaverPriceTrend(
+        asking_price_per_pyeong=None if prices is None else NaverPriceTrend(
             # 주간 목록 3종은 모두 오래된 주부터 온다. 매물 수·거래 건수의 서버 최신값(latest...)도 마지막 주와 같다
             # (2026-10-14 실측: 역삼동 52주 3종 모두 오름차순, latestWeeklyCount = 마지막 주 averageCount)
             latest_manwon=None if price_nulls or not price_weekly else price_weekly[-1].price_per_pyeong_manwon,
-            weekly=price_weekly,
+            weeks=price_weekly,
         ),
-        trade_count=None if trades is None else NaverTradeCountTrend(
+        trade_count_trend=None if trades is None else NaverTradeCountTrend(
             period_average=trades.period_average_trade_count,
             latest=trades.latest_weekly_trade_count,
-            weekly=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.trade_count) for point in trades.weekly_counts],
+            weeks=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.trade_count) for point in trades.weekly_counts],
         ),
         notes=notes,
     )

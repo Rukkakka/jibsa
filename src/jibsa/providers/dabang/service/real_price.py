@@ -17,12 +17,15 @@ from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     SAME_AREA_PYEONG_TRADES_NOTE,
     UPDATE_MAYBE_NEEDED,
+    AmountRange,
+    AmountSet,
     TradeType,
     normalize_address,
     normalize_date,
     normalize_floor,
     note,
     null_items_note,
+    with_floor_number,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.real_price import (
@@ -106,7 +109,7 @@ class DabangRealPrice(BaseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description='층. 모르면 null')
+        Field(description="층 ('5', '지하1'). 모르면 null. 바로 뒤 floor_number 는 몇 층인지 아는 층의 숫자 (지하는 음수, 모르면 null)")
     ] = None
     area_m2: Annotated[
         float | None,
@@ -136,9 +139,9 @@ class DabangRealPrice(BaseModel):
         bool | None,
         Field(description='신고 뒤 해제된 거래')
     ] = None
-    direct: Annotated[
-        bool | None,
-        Field(description='직거래')
+    deal_type: Annotated[
+        str | None,
+        Field(description="거래 방식 ('직거래'·'중개거래'). 다방이 직거래 여부를 주지 않으면 null")
     ] = None
     # 리뷰 오탐 (2026-11-13): 단독·다가구 줄에 isRegistration 이 없어 키를 빼야 한다는 지적. 웹 단독·다가구 표(room 청크 `ei`)도
     # 다세대 표처럼 `e.isRegistration` 이 참이면 등기 표시를 그린다. 다방이 이 줄에 값을 주지 않을 뿐이라 해당 없음이 아니라 모름(null)이다
@@ -170,7 +173,7 @@ class DabangRealPrice(BaseModel):
                 dropped.add('house_type')
         for field in dropped:
             data.pop(field, None)
-        return data
+        return with_floor_number(data)
 
 
 def _unknown_trade_note(count: int) -> list[str]:
@@ -197,7 +200,7 @@ def _real_price(row: DabangRealPriceHistoryModel, *, area_kind: AreaKind = 'none
         deposit_manwon=row.deposit,
         rent_manwon=row.monthly_price,
         cancelled=row.is_release,
-        direct=row.is_direct,
+        deal_type=None if row.is_direct is None else '직거래' if row.is_direct else '중개거래',
         registered=row.is_registration,
         newly_added=row.is_new,
         area_kind=area_kind,
@@ -219,19 +222,19 @@ class DabangRealPriceResult(BaseModel):
         str | None,
         Field(description='매물 ID (--listing 만)')
     ] = None
-    space_seq: Annotated[
+    pyeong_id: Annotated[
         int | None,
-        Field(description='평형 번호 (단지 실거래만)')
+        Field(description='평형 ID (단지 실거래만)')
     ] = None
-    trade: Annotated[
+    trade_tab: Annotated[
         RealPriceTrade,
         Field(description='매매 또는 전월세')
     ]
-    from_month: Annotated[
+    start_month: Annotated[
         str,
         Field(description='조회 시작 달 (YYYY-MM)')
     ]
-    to_month: Annotated[
+    end_month: Annotated[
         str,
         Field(description='조회 끝 달 (YYYY-MM)')
     ]
@@ -254,7 +257,7 @@ class DabangRealPriceResult(BaseModel):
         bool,
         Field(description='기간 안에 더 오래된 거래가 더 있는지')
     ]
-    transactions: Annotated[
+    trades: Annotated[
         list[DabangRealPrice],
         Field(description='최근 계약 순 실거래')
     ]
@@ -270,7 +273,7 @@ class DabangRealPriceResult(BaseModel):
     @model_serializer(mode='wrap')
     def drop_unused_keys(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for key in ('complex_id', 'listing_id', 'space_seq'):
+        for key in ('complex_id', 'listing_id', 'pyeong_id'):
             if data.get(key) is None:
                 data.pop(key, None)
         # 기준 범위는 매물 실거래(--listing)에만 해당한다. 그때 비면 모름(null)으로 남긴다
@@ -304,7 +307,7 @@ def _fetch_complex_space(fetch: Callable[[], T], complex_id: str, space_seq: int
                 raise JibsaError(
                     code='INVALID_ARGUMENT',
                     message=f'이 단지에 없는 평형 번호입니다: {space_seq}',
-                    hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].space_seq 를 주세요',
+                    hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].pyeong_id 를 주세요',
                 ) from None
             if '단지' in message:
                 raise complex_not_found(complex_id) from None
@@ -328,7 +331,7 @@ def primary_space(client: DabangClient, complex_id: str, *, verb: str) -> tuple[
         raise JibsaError(
             code='NOT_FOUND',
             message=f'다방 단지의 평형을 찾지 못했습니다: {complex_id}',
-            hint='jibsa dabang complex <단지ID> 결과의 pyeongs[].space_seq 를 --pyeong 으로 주세요',
+            hint='jibsa dabang complex <단지ID> 결과의 pyeongs[].pyeong_id 를 --pyeong 으로 주세요',
         )
     seq, from_dabang = chosen
     name = next((space.pyeong_type for space in result.spaces or [] if space.space_seq == seq), None)
@@ -344,12 +347,12 @@ def primary_space_note(name: str, space_seq: int, *, verb: str, from_dabang: boo
     if not from_dabang:
         return note(
             '참고',
-            f'--pyeong 을 주지 않았고 다방이 대표 평형을 주지 않아 다방 웹처럼 첫 평형({name}, space_seq {space_seq})으로 {verb}. '
+            f'--pyeong 을 주지 않았고 다방이 대표 평형을 주지 않아 다방 웹처럼 첫 평형({name}, pyeong_id {space_seq})으로 {verb}. '
             '다른 평형은 complex 결과의 pyeongs 에서 고르세요',
         )
     return note(
         '참고',
-        f'--pyeong 을 주지 않아 다방 대표 평형({name}, space_seq {space_seq})으로 {verb}. '
+        f'--pyeong 을 주지 않아 다방 대표 평형({name}, pyeong_id {space_seq})으로 {verb}. '
         '다른 평형은 complex 결과의 pyeongs 에서 고르세요',
     )
 
@@ -444,14 +447,14 @@ def get_real_prices(
         notes.append(null_items_note('다방 실거래', collected.dropped))
     return DabangRealPriceResult(
         complex_id=complex_id,
-        space_seq=space_seq,
-        trade=trade,
-        from_month=_month(from_month),
-        to_month=_month(to_month),
+        pyeong_id=space_seq,
+        trade_tab=trade,
+        start_month=_month(from_month),
+        end_month=_month(to_month),
         total=collected.total,
         returned=len(collected.prices),
         has_more=collected.has_more,
-        transactions=collected.prices,
+        trades=collected.prices,
         url=complex_url(complex_id),
         notes=notes + ([SAME_AREA_PYEONG_TRADES_NOTE] if collected.prices else []) + _unknown_trade_note(collected.unknown),
     )
@@ -583,14 +586,14 @@ def get_listing_real_prices(
         notes.append(null_items_note('다방 실거래', collected.dropped))
     return DabangRealPriceResult(
         listing_id=listing_id,
-        trade=trade,
-        from_month=_month(from_month),
-        to_month=_month(to_month),
+        trade_tab=trade,
+        start_month=_month(from_month),
+        end_month=_month(to_month),
         basis=basis,
         total=collected.total,
         returned=len(collected.prices),
         has_more=collected.has_more,
-        transactions=collected.prices,
+        trades=collected.prices,
         url=listing_url(listing_id),
         notes=notes,
     )
@@ -607,27 +610,18 @@ class DabangTrendMonth(BaseModel):
         str,
         Field(description='달 (YYYY-MM)')
     ]
-    sale_average_manwon: Annotated[
-        float | None,
-        Field(description='매매 평균 실거래가 (만원). 거래 없는 달은 다방이 앞 달 평균을 잇고, 이을 평균도 없으면 null')
-    ] = None
-    sale_count: Annotated[
-        int | None,
-        Field(description='매매 거래 수')
-    ] = None
-    lease_average_manwon: Annotated[
-        float | None,
-        Field(description='전세 평균 실거래가 (만원). 매매와 같이 이을 평균이 없으면 null')
-    ] = None
-    lease_count: Annotated[
-        int | None,
-        Field(description='전세 거래 수')
-    ] = None
-    rent_count: Annotated[
-        int | None,
-        Field(description='월세 거래 수')
-    ] = None
-    lease_rate_percent: Annotated[
+    trade_averages: Annotated[
+        dict[str, AmountSet | None],
+        Field(description=(
+            "거래별 평균 실거래가 (만원). 키는 'sale'(price_manwon)·'jeonse'(deposit_manwon) 늘 두 개. 거래 없는 달은 다방이 앞 달 평균을 "
+            '잇고, 이을 평균도 없으면 그 거래가 null'
+        ))
+    ]
+    trade_counts: Annotated[
+        dict[str, int | None],
+        Field(description="거래별 거래 수. 키는 'sale'·'jeonse'·'wolse' 늘 세 개 (모르면 null)")
+    ]
+    jeonse_ratio_percent: Annotated[
         float | None,
         Field(description='그 달 전세가율 (%, 다방 갭 그래프). 매매·전세 평균이 없으면 null')
     ] = None
@@ -637,20 +631,12 @@ class DabangTrendMonth(BaseModel):
     ] = None
 
 
-class DabangPriceRange(BaseModel):
-    """기간 안 최고·최저 (만원)."""
+class DabangTradeAverage(AmountSet):
+    """최근 평균 (만원). 매매는 평당 평균(`price_per_pyeong_manwon`)도 함께 낸다."""
 
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    highest_manwon: Annotated[
+    price_per_pyeong_manwon: Annotated[
         float | None,
-        Field(description='최고 (만원)')
-    ] = None
-    lowest_manwon: Annotated[
-        float | None,
-        Field(description='최저 (만원)')
+        Field(description='평당 평균 (만원). 매매에만 있다')
     ] = None
 
 
@@ -665,23 +651,18 @@ class DabangPriceTrend(BaseModel):
         str,
         Field(description='단지 ID')
     ]
-    space_seq: Annotated[
+    pyeong_id: Annotated[
         int,
-        Field(description='평형 번호')
+        Field(description='평형 ID')
     ]
-    sale_average_manwon: Annotated[
-        float | None,
-        Field(description='최근 매매 평균 (만원)')
-    ] = None
-    sale_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description='최근 매매 평당 평균 (만원)')
-    ] = None
-    lease_average_manwon: Annotated[
-        float | None,
-        Field(description='최근 전세 평균 (만원)')
-    ] = None
-    lease_rate_percent: Annotated[
+    trade_averages: Annotated[
+        dict[str, DabangTradeAverage | None],
+        Field(description=(
+            "거래별 최근 평균 (만원). 키는 'sale'(price_manwon, 평당 평균 price_per_pyeong_manwon)·'jeonse'(deposit_manwon) 늘 두 개이고 "
+            '다방이 그 거래 평균을 주지 않으면 그 거래가 null. 일부 칸만 모르면 그 칸만 null'
+        ))
+    ]
+    jeonse_ratio_percent: Annotated[
         float | None,
         Field(description='전세가율 (%) = 전세 평균 / 매매 평균')
     ] = None
@@ -689,21 +670,12 @@ class DabangPriceTrend(BaseModel):
         float | None,
         Field(description='매매 평균 − 전세 평균 (만원)')
     ] = None
-    sale_1y: Annotated[
-        DabangPriceRange | None,
-        Field(description='최근 1년 매매 최고·최저')
-    ] = None
-    sale_3y: Annotated[
-        DabangPriceRange | None,
-        Field(description='최근 3년 매매 최고·최저')
-    ] = None
-    lease_1y: Annotated[
-        DabangPriceRange | None,
-        Field(description='최근 1년 전세 최고·최저')
-    ] = None
-    lease_3y: Annotated[
-        DabangPriceRange | None,
-        Field(description='최근 3년 전세 최고·최저')
+    trade_ranges: Annotated[
+        dict[str, dict[str, AmountRange | None] | None] | None,
+        Field(description=(
+            "기간별 최저·최고 실거래가 (만원). 키는 'sale'(price_manwon)·'jeonse'(deposit_manwon) 아래 기간 'one_year'·'three_years'이고, 기간 안 "
+            '두 끝을 모두 모르면 그 기간은 null, 두 기간 모두 모르면 그 거래가 null. 다방이 기간별 값을 주지 않으면 전체가 null'
+        ))
     ] = None
     months: Annotated[
         list[DabangTrendMonth],
@@ -718,15 +690,25 @@ class DabangPriceTrend(BaseModel):
 def _average(value: float | None) -> float | None:
     """달 평균. 다방은 거래 없는 달에 앞 달 평균을 잇는데, 이을 앞 달 평균도 없으면(그때까지 거래가 없던 평형) 0 을 준다.
     0만원 평균은 없으니 모름(None)으로 둔다 (2026-10-26 실측: 거래가 한 번도 없는 6979662367f35b14fef7600dcb63 평형
-    311325 는 36달 모두 0 인데 같은 응답에서 읽은 최근 평균 sale_average_manwon 은 null).
+    311325 는 36달 모두 0 인데 같은 응답에서 읽은 최근 평균 trade_averages 의 sale price_manwon 은 null).
     """
     return value or None
 
 
-def _range(value: DabangHighLowModel | None) -> DabangPriceRange | None:
+def _range(value: DabangHighLowModel | None, trade: Literal['매매', '전세']) -> AmountRange | None:
+    """기간 하나의 최저·최고. 두 끝을 모두 모르면 None. 금액 칸은 매매 price_manwon, 전세 deposit_manwon 이다."""
     if value is None or (value.highest is None and value.lowest is None):
         return None
-    return DabangPriceRange(highest_manwon=value.highest, lowest_manwon=value.lowest)
+    if trade == '매매':
+        return AmountRange(lowest=AmountSet(price_manwon=value.lowest), highest=AmountSet(price_manwon=value.highest))
+    return AmountRange(lowest=AmountSet(deposit_manwon=value.lowest), highest=AmountSet(deposit_manwon=value.highest))
+
+
+def _trade_periods(one_year: AmountRange | None, three_years: AmountRange | None) -> dict[str, AmountRange | None] | None:
+    """한 거래의 기간별 범위. 두 기간 모두 모르면 그 거래가 None."""
+    if one_year is None and three_years is None:
+        return None
+    return {'one_year': one_year, 'three_years': three_years}
 
 
 def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | None) -> DabangPriceTrend:
@@ -758,13 +740,19 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     months = [
         DabangTrendMonth(
             month=_month(row.date),
-            sale_average_manwon=_average(row.average_price),
-            sale_count=row.volume,
-            lease_average_manwon=_average(lease_by_month[row.date].average_price) if row.date in lease_by_month else None,
-            lease_count=lease_by_month[row.date].lease_volume if row.date in lease_by_month else None,
-            rent_count=lease_by_month[row.date].monthly_volume if row.date in lease_by_month else None,
+            trade_averages={
+                'sale': None if (sale_average := _average(row.average_price)) is None else AmountSet(price_manwon=sale_average),
+                'jeonse': None if (lease_average := (
+                    _average(lease_by_month[row.date].average_price) if row.date in lease_by_month else None
+                )) is None else AmountSet(deposit_manwon=lease_average),
+            },
+            trade_counts={
+                'sale': row.volume,
+                'jeonse': lease_by_month[row.date].lease_volume if row.date in lease_by_month else None,
+                'wolse': lease_by_month[row.date].monthly_volume if row.date in lease_by_month else None,
+            },
             # 웹 갭 그래프는 전세가율이 0 이면 '-' 로 쓴다 (`leaseRate||'-'`). 0% 전세가율은 없으니 모름(None)으로 둔다
-            lease_rate_percent=gap_by_month[row.date].lease_rate or None if row.date in gap_by_month else None,
+            jeonse_ratio_percent=gap_by_month[row.date].lease_rate or None if row.date in gap_by_month else None,
             # 리뷰 오탐 (2026-11-13, 근거 고침 2026-11-20): 평균이 없는 달에 갭이 큰 숫자로 나온다는 지적. 웹 갭 그래프 툴팁
             # (ic_24_cook_gray600 청크)은 그 달 gap.statistics 의 rangeAveragePrice 를 그대로 그리고(price-unit 청크 `S` 는 숫자가
             # 아니면 '-'), 한쪽 평균만 없는 달에도 서버가 갭을 null 로 준다 (2026-11-20 은마 817: 202601 매매 null·전세 70212 →
@@ -778,18 +766,34 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
         notes.append(null_items_note('다방 시세 흐름 매매 월별', dropped))
     gap = result.gap.recent_info if result.gap else None
     year = result.year_price
+    per_space = sale.per_space
+    lease_per_space = lease.per_space
     return DabangPriceTrend(
         complex_id=complex_id,
-        space_seq=space_seq,
-        sale_average_manwon=sale.per_space.average_price if sale.per_space else None,
-        sale_per_pyeong_manwon=sale.per_space.average_pyeong_price if sale.per_space else None,
-        lease_average_manwon=lease.per_space.average_price if lease.per_space else None,
-        lease_rate_percent=gap.lease_rate if gap else None,
+        pyeong_id=space_seq,
+        trade_averages={
+            'sale': None if per_space is None or (
+                per_space.average_price is None and per_space.average_pyeong_price is None
+            ) else DabangTradeAverage(
+                price_manwon=per_space.average_price,
+                price_per_pyeong_manwon=per_space.average_pyeong_price,
+            ),
+            'jeonse': None if lease_per_space is None or lease_per_space.average_price is None else DabangTradeAverage(
+                deposit_manwon=lease_per_space.average_price,
+            ),
+        },
+        jeonse_ratio_percent=gap.lease_rate if gap else None,
         gap_manwon=gap.range_average_price if gap else None,
-        sale_1y=_range(year.sale.one_year) if year and year.sale else None,
-        sale_3y=_range(year.sale.three_years) if year and year.sale else None,
-        lease_1y=_range(year.lease.one_year) if year and year.lease else None,
-        lease_3y=_range(year.lease.three_years) if year and year.lease else None,
+        trade_ranges=None if year is None else {
+            'sale': _trade_periods(
+                _range(year.sale.one_year if year.sale else None, '매매'),
+                _range(year.sale.three_years if year.sale else None, '매매'),
+            ),
+            'jeonse': _trade_periods(
+                _range(year.lease.one_year if year.lease else None, '전세'),
+                _range(year.lease.three_years if year.lease else None, '전세'),
+            ),
+        },
         months=months,
         notes=notes,
     )
@@ -818,17 +822,17 @@ class DabangNearbyComplex(BaseModel):
         str | None,
         Field(description="주소 (동까지, '서울특별시 강남구 대치동')")
     ] = None
-    per_pyeong_manwon: Annotated[
+    price_per_pyeong_manwon: Annotated[
         float | None,
-        Field(description='그 평형대 평당가 (만원). sale_nearby 는 매매, lease_nearby 는 전세. 다방 웹이 빈 칸으로 두는 값은 null')
+        Field(description="그 평형대 평당가 (만원). nearby 의 'sale' 아래는 매매, 'jeonse' 아래는 전세. 다방 웹이 빈 칸으로 두는 값은 null")
     ] = None
     household_count: Annotated[
         int | None,
         Field(description='세대수')
     ] = None
-    years: Annotated[
+    occupancy_years: Annotated[
         int | None,
-        Field(description="입주 연차 (다방 '입주 37년차')")
+        Field(description="입주 N년차 (사용승인한 해를 1년차로 센다. 다방 '입주 37년차')")
     ] = None
     distance_m: Annotated[
         int | None,
@@ -847,9 +851,9 @@ class DabangNearbyComplexes(BaseModel):
         str,
         Field(description='단지 ID')
     ]
-    space_seq: Annotated[
+    pyeong_id: Annotated[
         int,
-        Field(description='고른 평형 번호 (그 평형이 든 평형대로 비교한다)')
+        Field(description='고른 평형 ID (그 평형이 든 평형대로 비교한다)')
     ]
     # 리뷰 오탐 (2026-11-14): 'N평대 비교' 탭을 주지 않는 것은 다방이 값을 주지 않은 모름이라 키를 빼지 않고 null 로 둔다
     # (해당 없음 아님). 웹도 이때 이 탭을 그리지 않는다 (소스 가이드 평형대 평당가 비교)
@@ -860,24 +864,18 @@ class DabangNearbyComplexes(BaseModel):
     area_prices: Annotated[
         list[DabangAreaPrice] | None,
         Field(description=(
-            "그 평형대의 평당 평균가 (이 단지·동·구, 만원). 다방 웹이 '정보 없음' 으로 쓰는 값(없거나 0)은 각 칸 안에서 null. "
+            "그 평형대의 평당 평균가 (이 단지·동·구, 만원). 다방 웹이 '정보 없음' 으로 쓰는 값(없거나 0)은 그 거래가 null. "
             "다방이 이 평형에 평형대 탭을 주지 않거나 이 목록을 null 로 주면 목록 전체가 null"
         ))
     ] = None
-    sale_nearby: Annotated[
-        list[DabangNearbyComplex] | None,
+    nearby: Annotated[
+        dict[str, list[DabangNearbyComplex] | None],
         Field(description=(
-            '반경 1km 주변 단지의 매매 평당가 (다방 순서 그대로: 평당가가 있는 단지를 가까운 순으로 앞에). 다방이 평형대 탭이나 '
-            '주변 단지(nearComplexes)나 매매 쪽을 null 로 주면 null, 주었는데 매매 쪽이 비었으면 []'
+            "반경 1km 주변 단지의 거래별 평당가. 키는 'sale'·'jeonse' 늘 두 개. 'sale'은 다방 순서 그대로(평당가가 있는 단지를 가까운 "
+            "순으로 앞에), 'jeonse'는 다방 웹 전월세 탭 순서 그대로. 다방이 평형대 탭이나 주변 단지(nearComplexes)나 그 거래 쪽을 "
+            'null 로 주면 그 값이 null, 주었는데 그 쪽이 비었으면 []'
         ))
-    ] = None
-    lease_nearby: Annotated[
-        list[DabangNearbyComplex] | None,
-        Field(description=(
-            '반경 1km 주변 단지의 전세 평당가 (다방 웹 전월세 탭, 다방 순서 그대로). 다방이 평형대 탭이나 주변 단지'
-            '(nearComplexes)나 전세 쪽을 null 로 주면 null, 주었는데 전세 쪽이 비었으면 []'
-        ))
-    ] = None
+    ]
     url: Annotated[
         str,
         Field(description='단지 페이지 URL')
@@ -899,9 +897,9 @@ def _nearby_complex(row: DabangNearComplexModel) -> DabangNearbyComplex | None:
         address=normalize_address(row.address),
         # 리뷰 오탐 (2026-11-14): 주변 단지 평당가는 0 을 null 로 바꾸지 않는다. 웹 complex 청크 `nn` 은 `averagePyeongPrice ?? ''` 를
         # 가격 글자로 바꿔 null 은 '-', 0 은 '0원' 으로 그린다 (area_prices 막대 `Yt` 와 다르다)
-        per_pyeong_manwon=row.average_pyeong_price,
+        price_per_pyeong_manwon=row.average_pyeong_price,
         household_count=row.household_num,
-        years=building_years(row.complex_desc),
+        occupancy_years=building_years(row.complex_desc),
         distance_m=row.distance,
     )
 
@@ -910,7 +908,7 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
     """평형대 평당가와 반경 1km 주변 단지 비교 (요청 1회, 평형을 안 주면 대표 평형을 찾느라 +1).
 
     다방 웹 단지 화면 평당가 칸의 기본 탭('N평대 비교')이다. 다방이 탭 이름을 비워 주면 웹은 이 탭을 그리지 않고 '전체 평형
-    비교'(complex 결과 area_prices)만 보여 주므로 area_prices·sale_nearby·lease_nearby 를 모름(null)으로 두고 안내를 낸다.
+    비교'(complex 결과 area_prices)만 보여 주므로 area_prices 와 nearby 의 sale·jeonse 를 모름(null)으로 두고 안내를 낸다.
 
     Raises:
         JibsaError: 단지가 없을 때 (NOT_FOUND), 단지에 없는 평형 번호를 줬을 때 (INVALID_ARGUMENT).
@@ -930,10 +928,12 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
     if result is None or not tab:
         notes.append(note(
             '참고',
-            f"다방이 이 평형(space_seq {space_seq})에는 'N평대 비교' 를 주지 않습니다 (다방 웹도 이 탭 없이 '전체 평형 비교' 만 "
+            f"다방이 이 평형(pyeong_id {space_seq})에는 'N평대 비교' 를 주지 않습니다 (다방 웹도 이 탭 없이 '전체 평형 비교' 만 "
             f'보여 줍니다). 단지 전체 평형의 평당가 비교는 jibsa dabang complex {complex_id} 의 area_prices 로 보세요',
         ))
-        return DabangNearbyComplexes(complex_id=complex_id, space_seq=space_seq, url=complex_url(complex_id), notes=notes)
+        return DabangNearbyComplexes(
+            complex_id=complex_id, pyeong_id=space_seq, nearby={'sale': None, 'jeonse': None}, url=complex_url(complex_id), notes=notes,
+        )
     near = result.near_complexes
     # 매매·전월세 쪽이 null 이면 그 쪽은 모름(null), 비어 있으면 []
     sale_rows = [_nearby_complex(row) for row in near.trade] if near and near.trade is not None else None
@@ -943,11 +943,13 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
         notes.append(note('제외', f'단지 ID 가 없는 주변 단지 {skipped}줄은 다방 웹처럼 넣지 않았습니다'))
     return DabangNearbyComplexes(
         complex_id=complex_id,
-        space_seq=space_seq,
+        pyeong_id=space_seq,
         pyeong_range=tab.removesuffix('비교').strip(),
         area_prices=None if result.area_average_price is None else [area_price(price) for price in result.area_average_price],
-        sale_nearby=None if sale_rows is None else [row for row in sale_rows if row is not None],
-        lease_nearby=None if lease_rows is None else [row for row in lease_rows if row is not None],
+        nearby={
+            'sale': None if sale_rows is None else [row for row in sale_rows if row is not None],
+            'jeonse': None if lease_rows is None else [row for row in lease_rows if row is not None],
+        },
         url=complex_url(complex_id),
         notes=notes,
     )

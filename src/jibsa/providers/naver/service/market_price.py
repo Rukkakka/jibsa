@@ -11,7 +11,6 @@ from pydantic import (
 from jibsa.core.listing import (
     iso_date,
     months_ago,
-    won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.market_price import (
@@ -20,10 +19,11 @@ from jibsa.providers.naver.api.request.market_price import (
 from jibsa.providers.naver.service.common import (
     MARKET_PRICE_PROVIDER_NAMES,
     PERIOD_MONTHS_BY_NAME,
+    NaverMarketBand,
     check_pyeong_numbers,
     complex_url,
     kst_today,
-    manwon_range,
+    market_price_fields,
     unwrap,
 )
 
@@ -31,7 +31,7 @@ from typing import Annotated
 
 
 class NaverMarketPricePoint(BaseModel):
-    """한 기준일의 기관 시세 (만원)."""
+    """한 기준일의 기관 시세 (만원). (`naver complex --pyeong` 의 `estimated_prices` 원소와 같은 모양)"""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -41,25 +41,21 @@ class NaverMarketPricePoint(BaseModel):
         str | None,
         Field(description="시세 기준일 (YYYY-MM-DD). 네이버가 날짜 자리를 빈 값·'-' 로 주거나 읽을 수 없으면 null")
     ]
-    sale_manwon: Annotated[
+    sale: Annotated[
+        NaverMarketBand | None,
+        Field(description='매매 시세 (평균·하위·상위, 만원). 세 값을 모두 모르면 null, 일부만 모르면 그 칸만 null')
+    ]
+    jeonse: Annotated[
+        NaverMarketBand | None,
+        Field(description='전세 시세 (평균·하위·상위, 만원). 세 값을 모두 모르면 null, 일부만 모르면 그 칸만 null')
+    ]
+    jeonse_ratio_low_percent: Annotated[
         float | None,
-        Field(description='매매 시세 평균 (만원). 없으면 null')
+        Field(description='전세가율 하한 (%). 시세가 없으면(0 포함) null')
     ] = None
-    sale_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 시세 [하한, 상한] (만원)')
-    ] = None
-    jeonse_manwon: Annotated[
+    jeonse_ratio_high_percent: Annotated[
         float | None,
-        Field(description='전세 시세 평균 (만원). 없으면 null')
-    ] = None
-    jeonse_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='전세 시세 [하한, 상한] (만원)')
-    ] = None
-    jeonse_ratio_percent: Annotated[
-        list[float | None] | None,
-        Field(description='전세가율 [하한, 상한] (%). 시세가 없으면(0 포함) null')
+        Field(description='전세가율 상한 (%). 시세가 없으면(0 포함) null')
     ] = None
 
 
@@ -74,9 +70,9 @@ class NaverMarketPriceSeries(BaseModel):
         str,
         Field(description='시세 기관 (한국부동산원, KB부동산, 부동산뱅크)')
     ]
-    points: Annotated[
+    weeks: Annotated[
         list[NaverMarketPricePoint],
-        Field(description='기준일별 시세 (오래된 것부터, 보통 주 1회)')
+        Field(description='기준일별 시세 (오래된 것부터, 보통 주 1회). 점마다 base_date 가 있다')
     ]
 
 
@@ -87,11 +83,11 @@ class NaverMarketPriceHistory(BaseModel):
         extra='forbid',
     )
 
-    complex_number: Annotated[
+    complex_id: Annotated[
         int,
         Field(description='단지 번호')
     ]
-    pyeong_number: Annotated[
+    pyeong_id: Annotated[
         int,
         Field(description='평형 번호')
     ]
@@ -99,7 +95,7 @@ class NaverMarketPriceHistory(BaseModel):
         str,
         Field(description='기간 (3개월, 1년, 3년, 5년)')
     ]
-    since: Annotated[
+    start_date: Annotated[
         str,
         Field(description='기간 시작일 (YYYY-MM-DD)')
     ]
@@ -158,24 +154,25 @@ def get_market_price_history(
             continue
         providers.append(NaverMarketPriceSeries(
             provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
-            points=[
+            weeks=[
                 NaverMarketPricePoint(
                     base_date=iso_date(day),
-                    # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (complex --pyeong 의 `_pyeong_details` 와 같다)
-                    sale_manwon=won_to_manwon(item.deal_prices.get(day)) or None,
-                    sale_range_manwon=manwon_range(item.deal_price_ranges.get(day)),
-                    jeonse_manwon=won_to_manwon(item.deposit_prices.get(day)) or None,
-                    jeonse_range_manwon=manwon_range(item.deposit_price_ranges.get(day)),
-                    jeonse_ratio_percent=manwon_range(item.lease_per_deal_rates.get(day), scale=False),
+                    **market_price_fields(
+                        item.deal_prices.get(day),
+                        item.deal_price_ranges.get(day),
+                        item.deposit_prices.get(day),
+                        item.deposit_price_ranges.get(day),
+                        item.lease_per_deal_rates.get(day),
+                    ),
                 )
                 for day in dates
             ],
         ))
     return NaverMarketPriceHistory(
-        complex_number=complex_number,
-        pyeong_number=pyeong_number,
+        complex_id=complex_number,
+        pyeong_id=pyeong_number,
         period=period,
-        since=since,
+        start_date=since,
         providers=providers,
         url=complex_url(complex_number),
     )

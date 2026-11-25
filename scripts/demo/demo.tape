@@ -52,7 +52,7 @@ Type "2"
 Type " --rent-max 70 --limit 1 | jq"
 Sleep 600ms
 Enter
-Wait+Screen /approved_at/
+Wait+Screen /approved_date/
 Sleep 8s
 
 Hide

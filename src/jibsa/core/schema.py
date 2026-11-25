@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from functools import cache
 from types import UnionType
 
@@ -168,6 +169,16 @@ def validate_dropping_nulls(model: type[BaseModel], data: Any, handler: Validato
     if counts and isinstance(result, ResponseModel):
         result._null_item_counts = counts
     return result
+
+
+def drop_unset_fields(model: BaseModel, data: dict[str, Any], fields: Iterable[str]) -> dict[str, Any]:
+    """`fields` 중 모델을 만들 때 넘기지 않은 칸(`model_fields_set` 에 없는 칸)을 뺀 새 dict.
+
+    직렬화 결과 `data` 에서 해당 없음을 키 없음으로 낸다. 넘긴 값이 None 이면 키는 남고 null(모름)이다.
+    `fields` 밖의 칸은 넘겼는지와 상관없이 남긴다. `data` 는 제자리에서 바꾸지 않는다.
+    """
+    names = frozenset(fields)
+    return {key: value for key, value in data.items() if key not in names or key in model.model_fields_set}
 
 
 def is_request_validation_error(exc: ValidationError) -> bool:

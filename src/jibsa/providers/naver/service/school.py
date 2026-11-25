@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    AmountRange,
     more_hint,
     normalize_address,
     normalize_date,
@@ -30,9 +31,7 @@ from jibsa.providers.naver.api.response.school import (
     NaverSchoolComplexItemModel,
 )
 from jibsa.providers.naver.service.common import (
-    MONTHLY_ASKING_DESCRIPTION,
-    SHORT_TERM_ASKING_DESCRIPTION,
-    NaverRentAskingRange,
+    ASKING_RANGES_DESCRIPTION,
     complex_row_fields,
     dong_label,
     result_or_none,
@@ -112,11 +111,11 @@ class NaverSchoolDetail(BaseModel):
         str | None,
         Field(description='설립 형태 (단설, 병설 ...)')
     ] = None
-    opened_at: Annotated[
+    opened_date: Annotated[
         str | None,
         Field(description='개교일 (YYYY-MM-DD)')
     ] = None
-    stats_date: Annotated[
+    base_date: Annotated[
         str | None,
         Field(description='학생 수 공시 기준일 (YYYY-MM-DD)')
     ] = None
@@ -132,15 +131,15 @@ class NaverSchoolDetail(BaseModel):
         float | None,
         Field(description='교원 1인당 학생 수')
     ] = None
-    city_average: Annotated[
+    sido_average: Annotated[
         NaverSchoolRegionAverage | None,
         Field(description='시·도 평균')
     ] = None
-    district_average: Annotated[
+    sigungu_average: Annotated[
         NaverSchoolRegionAverage | None,
         Field(description='시·군·구 평균')
     ] = None
-    complex_number: Annotated[
+    complex_id: Annotated[
         int | None,
         Field(description='--complex 로 준 단지 번호. 주지 않았으면 키가 없다')
     ] = None
@@ -164,8 +163,8 @@ class NaverSchoolDetail(BaseModel):
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        if self.complex_number is None:
-            for field in ('complex_number', 'all_dongs_assigned', 'assigned_dongs'):
+        if self.complex_id is None:
+            for field in ('complex_id', 'all_dongs_assigned', 'assigned_dongs'):
                 data.pop(field, None)
         return data
 
@@ -256,14 +255,14 @@ def get_school(
         office_of_education=school.office_of_education_in_charge,
         operation_type=school.operation_type,
         establishment_type=school.establishment_type,
-        opened_at=normalize_date(school.establishment_date),
-        stats_date=normalize_date(student.base_date) if student else None,
+        opened_date=normalize_date(school.establishment_date),
+        base_date=normalize_date(student.base_date) if student else None,
         students=student.total_count if student else None,
         students_per_class=student.count_per_classroom if student else None,
         students_per_teacher=student.count_per_teacher if student else None,
-        city_average=average(school.city_student),
-        district_average=average(school.division_student),
-        complex_number=complex_number,
+        sido_average=average(school.city_student),
+        sigungu_average=average(school.division_student),
+        complex_id=complex_number,
         all_dongs_assigned=all_assigned,
         assigned_dongs=assigned,
         notes=notes,
@@ -278,7 +277,7 @@ class NaverSchoolComplex(BaseModel):
         extra='forbid',
     )
 
-    complex_number: Annotated[
+    complex_id: Annotated[
         int,
         Field(description='단지 번호 (naver complex / school --complex / real-price 에 넘긴다)')
     ]
@@ -286,11 +285,11 @@ class NaverSchoolComplex(BaseModel):
         str,
         Field(description='단지명')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형 (아파트, 오피스텔, 빌라 ...). 표에 없는 유형 코드는 코드 그대로')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='총 세대수')
     ] = None
@@ -298,29 +297,17 @@ class NaverSchoolComplex(BaseModel):
         int | None,
         Field(description='동 수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
-    article_counts: Annotated[
+    listing_counts: Annotated[
         dict[str, int] | None,
         Field(description='거래 유형별 매물 수. 서버가 매물 수를 주지 않으면 null (모름)')
     ] = None
-    sale_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 호가 [최저, 최고] (만원). 매매 매물이 없으면 null')
-    ] = None
-    jeonse_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null')
-    ] = None
-    monthly_asking: Annotated[
-        NaverRentAskingRange | None,
-        Field(description=MONTHLY_ASKING_DESCRIPTION)
-    ] = None
-    short_term_asking: Annotated[
-        NaverRentAskingRange | None,
-        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
+    asking_ranges: Annotated[
+        dict[str, AmountRange] | None,
+        Field(description=ASKING_RANGES_DESCRIPTION)
     ] = None
     assigned_dongs: Annotated[
         list[str] | None,
@@ -364,7 +351,7 @@ def _school_complex(item: NaverSchoolComplexItemModel) -> NaverSchoolComplex | N
     if info is None:
         return None
     return NaverSchoolComplex(
-        complex_number=info.complex_number,
+        complex_id=info.complex_number,
         name=info.name,
         assigned_dongs=_assigned_dongs(item.is_all_building_assigned, item.converted_building_name_groups),
         **complex_row_fields(

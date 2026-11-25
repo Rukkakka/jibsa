@@ -16,10 +16,12 @@ from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
     KST,
     ListingDetail,
+    NumberRange,
     lookup_failure_note,
     m2_to_pyeong,
     normalize_date,
     null_items_note,
+    number_range,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -129,11 +131,11 @@ class ZigbangStayRefundRule(BaseModel):
 class ZigbangStayUnavailablePeriod(BaseModel):
     """예약할 수 없는 기간 하나."""
 
-    start: Annotated[
+    start_date: Annotated[
         str,
         Field(description='시작일 (YYYY-MM-DD)')
     ]
-    end: Annotated[
+    end_date: Annotated[
         str,
         Field(description='끝날 (YYYY-MM-DD, 이 날까지 막힌다)')
     ]
@@ -162,13 +164,9 @@ class ZigbangStayListingDetail(ListingDetail):
         list[str] | None,
         Field(description='할인 조건')
     ] = None
-    min_contract_weeks: Annotated[
-        int | None,
-        Field(description='최소 계약 주 수')
-    ] = None
-    max_contract_weeks: Annotated[
-        int | None,
-        Field(description='최대 계약 주 수')
+    contract_weeks_range: Annotated[
+        NumberRange | None,
+        Field(description='계약할 수 있는 주 수 범위 (lowest 최소, highest 최대). 직방이 한쪽만 주면 그 끝만 null, 둘 다 주지 않으면 null')
     ] = None
     max_guests: Annotated[
         int | None,
@@ -243,7 +241,7 @@ class ZigbangStayListingDetail(ListingDetail):
         bool | None,
         Field(description=(
             '입주일·마지막 날을 줬을 때 그 기간을 예약할 수 있는지. 직방 웹 날짜 고르기 창 규칙 그대로, 입주일이 오늘 이후이고 '
-            '기간이 최소 계약 주(min_contract_weeks) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약된·막힌 날이 없고 '
+            '기간이 최소 계약 주(contract_weeks_range.lowest) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약된·막힌 날이 없고 '
             '마지막 날이 막힌 날이 아니면 true. 직방이 일정을 주지 않거나 빈 항목을 줘 셀 수 없으면 null'
         ))
     ] = None
@@ -323,8 +321,8 @@ def stay_unavailable_periods(schedules: list[ZigbangStayScheduleModel] | None) -
             continue
         first, last = covered
         periods.append(ZigbangStayUnavailablePeriod(
-            start=first.isoformat(),
-            end=last.isoformat(),
+            start_date=first.isoformat(),
+            end_date=last.isoformat(),
             kind=STAY_SCHEDULE_KIND_LABELS.get(schedule.schedule_type or '', schedule.schedule_type or ''),
         ))
     return periods
@@ -382,11 +380,11 @@ def stay_detail_to_listing(
         address=detail.address,
         lat=detail.lat,
         lng=detail.lng,
-        registered_at=normalize_date(registered_at),
+        registered_date=normalize_date(registered_at),
         room_count=detail.room_count,
         bathroom_count=detail.bathroom_count,
         parking=stay_parking(detail),
-        elevator=detail.has_elevator,
+        has_elevator=detail.has_elevator,
         options=sent_or_none(
             detail, 'item_options',
             [
@@ -398,7 +396,7 @@ def stay_detail_to_listing(
             {'gas': '가스', 'water': '수도', 'electricity': '전기'}.get(key, key)
             for key, included in includes.items() if included
         ],
-        nearby_subways=sent_or_none(detail, 'nearby_stations', [
+        nearby_stations=sent_or_none(detail, 'nearby_stations', [
             f'{station.name} ({station.description})' if station.description else station.name
             for station in detail.nearby_stations
         ]),
@@ -406,8 +404,7 @@ def stay_detail_to_listing(
         weekly_manage_cost_manwon=manage_cost,
         cleaning_fee_manwon=0.0 if detail.cleaning_fee_free else won_to_manwon(detail.cleaning_fee),
         discounts=sent_or_none(detail, 'discounts', stay_discounts(detail.discounts, detail.weekly_rent)),
-        min_contract_weeks=detail.min_contract_weeks,
-        max_contract_weeks=detail.max_contract_weeks,
+        contract_weeks_range=number_range(detail.min_contract_weeks, detail.max_contract_weeks),
         max_guests=detail.max_guests,
         duplex=detail.is_duplex,
         refund_policy=_stay_label(STAY_REFUND_POLICY_LABELS, detail.refund_policy),

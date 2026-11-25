@@ -163,7 +163,7 @@ def stay_summary_to_listing(
         lat=summary.lat,
         lng=summary.lng,
         distance_km=None if distance_km is None else round(distance_km, 2),
-        registered_at=normalize_date(summary.reviewed_at),
+        registered_date=normalize_date(summary.reviewed_at),
         weekly_rent_manwon=won_to_manwon(summary.weekly_rent),
         weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
         room_count=summary.room_count,

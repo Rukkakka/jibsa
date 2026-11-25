@@ -96,10 +96,10 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   `[참고] 연세는 1년치 월세를 한 번에 내는 제주 거래입니다: yearly_rent_manwon 1400 = 1년에 1,400만 원 (월세 아님)`)을 억 환산
   안내 앞에 붙인다. 만원 숫자만 보면 월세로 읽기 쉬워서다.
 - 리스트를 그대로 내보내면 `notes` 를 붙이기 위해 `{"items": [...]}` 로 감싼다.
-- 매물 검색 결과의 찾은 위치 키는 소스마다 다르다 (직방·네이버 `region` + `boundary`·`radius_km`, 다방 `region` + `scope`, 당근 `region`, 지도 화면 범위면 `zoom`·`width_km`·`height_km` 도). 출력 계약이라 맞추지 않는다. 2026-10-31 에이전트 검증(6회)에서 이 차이로 틀린 일은 없었고, 에이전트는 범위를 `[범위]` 안내로 읽었다.
+- 매물·단지 검색 결과의 찾은 위치는 `region` 객체이고 안의 칸은 네 소스가 맞다: 직방·네이버·다방은 `name`·`address`·`lat`·`lng`·`legal_division_code`, 당근은 `name`(가장 작은 단위 이름)·`sido`·`sigungu`·`dong`·`region_id`다. 직방 지역 화면(`region-info`·`region-trades`·`region-ranking`)의 `region` 은 `name`·`level`·`address`·`legal_division_code` 로 따로다. 옆 키(직방·네이버 `boundary`·`radius_km`, 다방 `scope`, 당근 지도 화면 범위면 `zoom`·`width_km`·`height_km`)는 사이트마다 찾는 방식이 달라 맞추지 않는다. 옛 '맞추지 않는다' 결정을 `region` 객체 안에 한해 2026-11-25 에 바꿨다 (사용자 결정). 2026-10-31 에이전트 검증(6회)에서 옆 키 차이로 틀린 일은 없었고, 에이전트는 범위를 `[범위]` 안내로 읽었다.
 - 매물 목록은 `has_more`(같은 조건으로 더 받을 매물이 있는지)를 준다. 이어 받을 수 있는 검색은 서비스 결과의 `next_position`(출력하지 않음)을 CLI 가 `jibsa.cli.paging.encode_next` 로 감싸 `emit(..., next_token=...)` 으로 `has_more` 뒤에 `next` 로 붙인다. 이어 받기 표에는 명령·지역·조건과 소스가 이어 받을 위치(핀 순서·커서·지역마다 offset)를 담고, 소스에 따라 찾은 지역도 담아 이어 받을 때 지역을 다시 찾지 않는다. 표는 `<state_dir>/next/<번호>.json` 에 하루 동안 두고 `next` 에는 표 내용으로 만든 10자 번호만 준다 (표를 값에 담으면 500~600자라 에이전트가 베껴 쓰는 데 토큰이 들고 틀리기 쉽다). `--next` 는 `decode_next` 가 표를 읽어 명령·조건이 다르면 다른 옵션을 `message` 에 적어 `INVALID_ARGUMENT` 로 막고, 표가 없거나(하루 지남·다른 컴퓨터) 표를 만든 jibsa 버전(`jibsa --version` 한 줄)이 다르면 처음부터 다시 찾으라고 알린다. 업데이트로 옵션이 없어지거나 위치의 꼴이 바뀌면 옛 표를 조건 비교·소스가 읽지 못해서다. 둘 다 명령의 `handle_errors` 밖에서 부르므로 사용법 오류(`HintedBadParameter`)로만 끝낸다. `--limit`·`--details`·`--fields`·`--pretty` 는 이어 받는 동안 바꿀 수 있다 (`RESUMABLE_PARAMS`).
 - 좌표(`lat`·`lng`)는 `emit` 이 소수 일곱째 자리로 반올림한다 (원본의 부동소수점 찌꺼기 `127.04934499999999` 를 지운다). 소수점 아래가 없는 실수는 정수로 쓴다 (`1000.0` → `1000`, `_tidy_numbers`). 매물마다 금액·면적에 붙는 `.0` 이 토큰만 쓴다.
-- 매물 목록 명령은 `FieldsOption`(`--fields`)을 받아 `emit(..., fields=...)` 로 넘긴다. `emit` 은 `listings` 키의 매물(통근 검색은 역마다의 `listings`)에서 고른 필드와 `ALWAYS_FIELDS`(다음 명령에 넘길 `id`, 네이버 중복 묶음의 `realtor_count`·`*_range_manwon`, 직방 아파트 묶음의 `is_price_range`·`catalog_id`·`listing_ids`·`listing_count`)만 남긴다. 필드 이름은 `Listing` 과 하위 모델의 필드(`listing_field_names`)로 옵션을 읽을 때 검증해, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다. 한 명령도 모드(동·역·단지·`--details`)마다 매물 모델이 달라 이 검증은 모든 명령의 필드로 보므로, 결과의 매물 모델에 없는 필드를 골랐으면 `emit` 이 `missing_fields_note` 로 `notes` 에 이 명령의 매물 필드를 알린다. 매물 목록을 내는 새 명령도 이 옵션을 단다.
+- 매물 목록 명령은 `FieldsOption`(`--fields`)을 받아 `emit(..., fields=...)` 로 넘긴다. `emit` 은 `listings` 키의 매물(통근 검색은 역마다의 `listings`)에서 고른 필드와 `ALWAYS_FIELDS`(다음 명령에 넘길 `id`, 네이버 중복 묶음의 `realtor_count`·`asking_range`, 직방 아파트 묶음의 `mixed_prices`·`catalog_id`·`listing_ids`·`realtor_count`·`listing_kind`, 직방 상가 공실 묶음의 `vacant_section`)만 남긴다. 필드 이름은 `Listing` 과 하위 모델의 필드(`listing_field_names`)로 옵션을 읽을 때 검증해, 틀린 이름이 빠진 키(해당 없음)로 읽히지 않게 한다. 한 명령도 모드(동·역·단지·`--details`)마다 매물 모델이 달라 이 검증은 모든 명령의 필드로 보므로, 결과의 매물 모델에 없는 필드를 골랐으면 `emit` 이 `missing_fields_note` 로 `notes` 에 이 명령의 매물 필드를 알린다. 매물 목록을 내는 새 명령도 이 옵션을 단다.
 
 ### 값이 없을 때
 
@@ -130,7 +130,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
     (37.57 → `'37.57'`, 3.0 → `'3'`).
   - 돈이 아닌 값은 줄여도 된다: 거리(`distance_km` 는 소수 둘째 자리)·면적·평·비율.
 - 면적은 `area_m2` + `area_pyeong`.
-- 날짜 칸은 한국 날짜 `YYYY-MM-DD` 한 꼴로 낸다. 소스가 준 꼴(`20100706`·`2018.04.27`·`1991년 6월 5일`, 시각이 붙은 일시)은
+- 날짜 칸은 끝말이 꼴을 정한다 ([칸 이름 규칙](#칸-이름-규칙)): `_date` 는 한국 날짜 `YYYY-MM-DD` 한 꼴이고, `_month` 는 `YYYY-MM`, `_year` 는 숫자이고, 시각까지 있는 값만 `_at` 이다. 소스가 준 꼴(`20100706`·`2018.04.27`·`1991년 6월 5일`, 시각이 붙은 일시)은
   `normalize_date` 로 이 꼴로 바꾼다 (UTC 는 한국 날짜로 바꾸고 시각은 버린다).
   - 소스가 값 없음으로 준 것(없음·빈 글자·`-`)은 안내 없이 `null` 이다.
   - 값이 있는데 날짜로 읽지 못하면(연월만 `201005`, 문장, 달력에 없는 날 `2026-02-30`) 받은 글자를 내지 않고 `null` 로 낸 뒤
@@ -138,11 +138,12 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
     읽기는 `iso_date`(못 읽으면 None)로 한다. `normalize_date` 는 못 읽으면 원래 글자를 돌려주므로 출력 칸에 바로 쓰지 않는다.
   - 항목이 여럿인 목록(매물·실거래 등)은 항목마다 안내를 붙이지 않고 칸별로 모아 한 줄로 알린다 (못 읽은 수와 원래 글자 예).
   - 연월을 내기로 한 칸(실거래 월 등)과 날짜에 글자를 붙이는 칸(입주일 `move_in` 의 `2026-12-01 이내`)은 그 칸의 규칙을 따른다.
-  - 이 규칙은 2026-11-24 에 세웠다 (사용자 결정). 지금 따르는 곳은 네이버 `listing` 의 `registered_at`·`approved_at`(`_readable_date`)과
+  - 이 규칙은 2026-11-24 에 세웠다 (사용자 결정). 지금 따르는 곳은 네이버 `listing` 의 `registered_date`·`approved_date`(`_readable_date`)과
     입주일뿐이고, 다른 날짜 칸은 못 읽으면 안내 없이 `null`(`iso_date`)이거나 받은 글자 그대로(`normalize_date`)다. 날짜 칸을 새로
     만들거나 고칠 때 이 규칙으로 맞춘다. 목록에서 모아 알리는 공용 함수는 아직 없어 처음 맞추는 사람이 `core/` 에 만든다. 사용자
-    문서(`docs/common.md` 공통 필드)는 모든 날짜 칸이 맞춘 뒤에 바꾼다.
-- 층(`floor`)은 `normalize_floor` 로 표기를 맞춘다 (지하 `지하1`, 반지하, 저·중·고 → 저층·중층·고층). `Listing` 출력에는 `floor` 바로 뒤에 숫자 `floor_number` 가 붙는다 (지하는 음수, 몇 층인지 모르면 `null`). 매물 유형에 층 칸이 없어 `floor` 가 해당 없음(키 없음)이면 `floor_number` 도 없다.
+    문서(`docs/common.md` 공통 필드)는 지금 동작대로 '못 읽으면 받은 글자 그대로나 `null` 일 수 있다' 고 알리고, 모든 날짜 칸이
+    맞춘 뒤 이 규칙(`null` 과 `[참고]`)으로 바꾼다.
+- 층(`floor`)은 `normalize_floor` 로 표기를 맞춘다 (지하 `지하1`, 반지하, 저·중·고 → 저층·중층·고층). `Listing` 출력에는 `floor` 바로 뒤에 숫자 `floor_number` 가 붙는다 (지하는 음수, 몇 층인지 모르면 `null`). 매물 유형에 층 칸이 없어 `floor` 가 해당 없음(키 없음)이면 `floor_number` 도 없다. 실거래 행(`trades`)과 단지 요약의 최저·최고 거래 같은 거래 하나의 층도 같은 꼴이라 `floor`(글자) 뒤에 `floor_number` 가 붙는다 (`core.listing.with_floor_number`).
 - 주소의 시·도는 정식 명칭(`서울특별시`, `강원특별자치도`)으로 맞춘다. `Listing.address` 는 검증기가
   `normalize_address` 를 거치므로 provider 가 따로 부르지 않아도 된다. 단지 정보처럼 `Listing` 밖의 주소는 직접 부른다.
 
@@ -170,7 +171,7 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 jibsa 는 **찾기까지만** 한다. 원 사이트를 대신하게 되는 정보는 모델에 넣지 않는다.
 
 - 매물 출력에서는 사진, 본문(매물 설명), 중개사 정보(이름·전화·주소·등록번호), 도로명 주소, 조회수, 원본 응답 통째를 내보내지 않는다. 단지 정보의 구조화된 `road_address`는 제공할 수 있다.
-  관심(찜) 수(당근 `watch_count`)는 조회수가 아니라 매물을 고르는 데 쓰는 사실이라 내보낸다.
+  관심(찜) 수(`favorite_count`)는 조회수가 아니라 매물을 고르는 데 쓰는 사실이라 내보낸다.
 - 본문은 일부도 내보내지 않는다. 중개사가 쓴 자유 형식 글이라 전화번호·중개사 이름·사무소명이 섞이는데,
   정규식으로 가리면 빠짐이 생기고 넓히면 매물 설명이 지워진다. 고르는 데 필요한 사실은 구조화 필드로 준다.
 - 매물 좌표(`lat`/`lng`)는 거리 계산용으로 모델에 있지만 `Field(exclude=True)`라 출력되지 않는다. 위치 검색의 지역 후보·검색 중심 좌표는 이 금지 대상이 아니다. 단지 좌표는 내보내지 않는다.
@@ -186,6 +187,80 @@ jibsa 는 **찾기까지만** 한다. 원 사이트를 대신하게 되는 정�
 | 네이버 | 응답 `isSuccess: true`, 아는 거래 유형 코드 (`TRADE_NAME_BY_CODE`) | 노출 중인 매물만 온다. 모르는 코드는 제외 | `ListingUnavailableError` (모르는 거래 유형이면 `reason: UNKNOWN_TRADE_TYPE`, 모르는 매물 유형이면 `UNKNOWN_REAL_ESTATE_TYPE`) |
 | 당근 | `ON_GOING`(판매중)·`RESERVED`(예약중)이고 `isHide`·`invisibleReason`·`invisibleInfos` 없음 (`is_available`), 아는 거래 조건이 있음. 상세는 비활성 중개소(`bizProfile.status` 가 `ACTIVE` 아님)도 막는다 | 제외. 목록 카드에는 중개소 상태가 없어 비활성 중개소 매물은 당근 웹처럼 목록에 나온다 | `ListingUnavailableError` (상태·사유 포함, 거래 조건이 없으면 `reason: NO_TRADE_INFO`, 비활성 중개소면 `BIZ_PROFILE_INACTIVE`) |
 | 다방 | 상세 `status` 가 비공개(0·3·4)가 아니고 `is_contract` 아님, 아는 거래 유형 (`TRADE_BY_SELLING_CODE`) | 목록 칸에 상태가 없어 다방 웹 목록과 같은 매물이 온다. 가격·거래 유형을 읽지 못한 매물은 제외 | `ListingUnavailableError` (비공개면 `status`, 계약 완료면 `status: contract`, 모르는 거래 유형이면 `reason: UNKNOWN_TRADE_TYPE`) |
+
+## 칸 이름 규칙
+
+출력 칸의 이름과 모양은 네 소스가 용어집 하나로 맞춘다 (2026-11-25 사용자 결정). 같은 뜻의 칸은 소스가 달라도 같은 이름이고, 한 이름은 한 뜻만 가진다. **새 칸을 만들거나 고칠 때 이 절을 따른다.** 용어집에 없는 개념은 아래 짜는 순서로 이름을 만들고 이 표에 한 줄 더한다. 옛 이름에서 새 이름으로의 대응은 [옛 이름 → 새 이름 표](../field-renames.md)에 있다 (사용자·에이전트용 문서라 규칙은 여기에만 둔다).
+
+### 이름 짜는 순서
+
+`[재료]_[한정어(시점·기간·계절·지역·출처)]_[대상]_[통계]_[단위]` 순서이고 단위(`_manwon`·`_m2`·`_pyeong`·`_percent`·`_km`·`_m`·`_minutes`·`_years`)는 늘 맨 끝이다. 예: `estimated_price_per_pyeong_manwon`, `summer_manage_cost_manwon`, `presale_price_average_manwon`, `prev_trade_diff_manwon`.
+여러 거래에 한 통계면 통계를 부모 이름에 두고 키를 거래로 한다: `asking_ranges`, `asking_averages`, `trade_averages`, `trade_counts`, `estimated_prices`, `listing_counts`.
+
+### 규칙
+
+1. **거래별로 묶는 객체의 키는 용어집의 영어 거래 낱말이다**: `{"sale": …, "jeonse": …, "wolse": …, "short_term": …, "yeonse": …}`. 직방 평형 시세 추이의 탭 묶음만 `"jeonse_wolse"` 키를 쓴다. 매물 `trade_type` 값과 `--trade` 입력은 한국어 그대로라 `sale`=매매, `jeonse`=전세, `wolse`=월세, `short_term`=단기임대, `yeonse`=연세, `jeonse_wolse`=전월세 로 잇는다. 거래가 여럿인 값은 칸 이름에 거래를 넣지 않고(`sale_count`·`jeonse_count` 가 아니라 `trade_counts.sale`) 이 객체로 묶는다. 그 거래의 매물이 없어 해당 없으면 그 거래 키가 없고, 모든 거래가 없으면 `{}`(비어 있음)이다. 값을 모르면 키는 두고 `null`(모름)이다. 거래 값 안의 칸을 모두 모르면 그 거래 값이 `null` 이고, 안쪽만 `null` 인 객체(`{"jeonse": {"deposit_manwon": null}}`)로 내지 않는다. 한 거래 안에서 일부 칸만 모르면 객체를 두고 그 칸만 `null` 이다 (2026-11-25 사용자 결정). 다방 최근 실거래(`latest_trades`)는 다방이 거래가 없는 것과 받지 못한 것을 가르지 않아 `sale`·`jeonse` 키를 늘 두고 둘 다 `null`(모름)로 낸다.
+   - 코드의 속성 이름이 곧 출력 키다 (`sale`·`jeonse`·`wolse`·`short_term`·`yeonse`·`jeonse_wolse`). 출력할 때 한국어로 바꾸는 단계는 없다. 한국어 거래 이름(매물 값·`--trade` 입력)에서 출력 키를 만들 때는 `core.listing.TRADE_KEY_BY_NAME`(한국어 이름 → 키) 한 곳을 쓰고, 소스마다 따로 짝을 만들지 않는다.
+   - 낱말 기준: 외국에도 있는 거래는 영어 뜻(`sale`·`short_term`), 한국에만 있는 임대 제도는 소리대로(`jeonse`·`wolse`·`yeonse`·`jeonse_wolse`)다 (2026-11-25 사용자 결정).
+   - 다방 `price-trend` 의 `trade_ranges.<거래>` 안 기간 키도 jibsa 가 정한 키라 영어다 (`one_year`·`three_years`). 입력 옵션 `--period 1년` 과는 별개다.
+   - **한국어 키로 두는 예외 (2026-11-25 사용자 결정).** 사이트가 보내는 이름표를 그대로 키로 쓰는 칸이다: 다방 `neighborhood` 의 `schools`·`amenities`·`transport`·`safety`(예 `{"생활편의시설": {"편의점": 204}}`)와 `ranks[].counts`, 네이버 `listing` 의 `bus_routes`(예 `{"간선": ["146", "341"]}`). 거래 키는 여섯 개로 정해져 있고 영어 낱말도 용어집에 있지만, 이 칸들은 사이트가 그때 보내는 종류 이름을 그대로 키로 써서 어떤 이름이 올지 미리 다 알 수 없다. 영어로 바꾸려면 사이트에 없는 대응 표를 jibsa 가 지어야 하고, 사이트가 새 이름을 더하면 표에 없는 이름이 한국어로 섞이거나 빠진다. 다방 `neighborhood` 의 `schools` 안 `학원` 키는 다방이 이름 없이 따로 주는 칸이라 jibsa 가 붙이는 키지만, 같은 객체의 다른 키(`초등학교` 등)가 다방 이름표라 한 객체 안에서 두 말이 섞이지 않게 한국어로 둔다. 코드에도 같은 이유를 주석으로 남겼다 (`providers/dabang/service/neighborhood.py`, `providers/naver/service/listing.py`).
+2. **날짜의 끝말이 꼴을 정한다**: `_date` 는 `YYYY-MM-DD`, `_month` 는 `YYYY-MM`, `_year` 는 숫자, `_at` 은 시각까지 있는 값만, `_period` 는 소스 글자 그대로다 (`"2026년 상반기"`). 소스가 날짜로 읽을 수 없는 글자를 준 값은 [금액·단위](#금액단위)의 날짜 규칙을 따르고, 아직 맞추지 않은 칸은 받은 글자 그대로일 수 있다. 날짜 낱말은 `registered_date`·`approved_date`·`confirmed_date`·`opened_date`·`established_date`·`published_date` 처럼 `_date` 로 쓰고 `_on` 은 쓰지 않는다. 기간의 시작·끝은 `start_<단위>`·`end_<단위>`, 기준 시점은 `base_date`·`base_month`·`base_year`·`base_period` 다.
+3. **범위는 늘 `<무엇>_range: {"lowest": …, "highest": …}` 객체이고**, 거래가 여럿이면 `<무엇>_ranges: {거래: {lowest, highest}}` 다. 금액 범위의 두 끝 안은 매물 금액 칸 이름을 쓴다 (매매 `price_manwon`, 전세 `deposit_manwon`, 월세·단기임대 `deposit_manwon`+`rent_manwon` 짝). 숫자 하나짜리 범위(동 층수 등)는 `{"lowest": 5, "highest": 35}` 다. `min`·`max` 는 입력 옵션·조건 모델(`*Conditions`)에만 남는다. 기관 시세의 하위·일반·상위 띠는 범위가 아니라 `low_manwon`·`mid_manwon`(또는 `average_manwon`)·`high_manwon` 이다. 월세·단기임대의 두 끝은 월세 최저·최고가 아니라 보증금 순으로 첫 매물과 끝 매물의 짝이라 `lowest` 의 월세가 더 클 수 있다.
+4. **실거래 낱말은 `trade` 다**: 목록 `trades`, 계약일 `trade_date`, 수 `trade_count`·`trade_counts`, 평균 `trade_averages`, 범위 `trade_range(s)`, 가장 최근 한 건 `latest_trades`. `transaction`·`contract_date`·`deal`(`deal_type` 말고)은 칸 이름에 쓰지 않는다. 호가는 `asking`, 기관·직방 등의 추정 시세는 `estimated`(출처는 `provider` 칸)를 재료로 쓴다.
+5. **값의 규격도 맞춘다**: 퍼센트는 `_percent` 이고 0~100 이다 (0~1 비율을 칸 이름만 바꿔 내지 않는다). 층은 `floor`(글자)+`floor_number`(숫자)다. 법정동 코드는 늘 10자리 `legal_division_code` 다. 기간 값은 소스가 달라도 같은 표기다 (`1년`·`3년`·`전체`. 직방 `--period` 도 같다. 이는 입력과 `period` 값이고 다방 `trade_ranges` 의 기간 키는 위 규칙 1 대로 영어다). 매물 0건이라 해당 없는 거래는 `null` 이 아니라 키 없음이다.
+
+### 용어집
+
+한 개념에 영어 낱말 하나를 쓰고, 오른쪽 열의 이름은 쓰지 않는다.
+
+| 개념 | 낱말 | 없애는 이름 |
+| --- | --- | --- |
+| 매매 / 전세 / 월세 / 단기임대 / 연세 / 전월세 (칸 이름·코드 속성) | `sale` / `jeonse` / `wolse` / `short_term` / `yeonse` / `jeonse_wolse` — 외국에도 있는 거래는 영어 뜻, 한국에만 있는 임대 제도는 소리대로 (2026-11-25 사용자 결정). 칸 이름·코드 속성·거래별 묶음 키가 모두 이 낱말이다. 한국어 이름 → 키 짝은 `core.listing.TRADE_KEY_BY_NAME` 한 곳 | `lease`, `monthly`(월세 뜻), `rent`(월세 거래 뜻), `short_lease` |
+| 분양 | `presale` (`presale_id`, `presale_price_manwon`, `presale_household_count`) | 다방의 분양 뜻 `sale` (`sale_id` 등). 명령 이름 `sale` 은 그대로 |
+| 매물 | `listing` (`listing_count`, `listing_counts`) | `article` |
+| 실거래 | `trade` (결정 4) | `transaction`, `contract_date`, `deal` |
+| 중개거래·직거래 | `deal_type` ('중개거래'·'직거래') | `category`, `trade_category`, `direct` |
+| 거래 유형 / 거래 탭 묶음 | `trade_type` / `trade_tab` | 값이 거래 유형인 `trade` |
+| 매매가 / 보증금·전세금 / 월세액 / 연세액 | `price` / `deposit` / `rent` / `yearly_rent` | 전세금을 `price_manwon` 에 담는 것 |
+| 관리비 / 권리금 / 중개보수 | `manage_cost` / `key_money` / `broker_fee` | `maintenance_fee`, `agent_fee` |
+| 평당가 | `price_per_pyeong_manwon` | `manwon_per_pyeong`, `per_pyeong_manwon`, `sale_per_pyeong_manwon` |
+| 공시가격 / 전세 환산가 | `public_price` / `converted_price` | |
+| 호가 / 시세(추정·기관) / 실거래 (재료, 집계 값에만 붙임) | `asking` / `estimated` (출처는 `provider` 칸) / `trade` | `market_price`, `kb_`, `offer_price`(분양가 뜻이면 `presale_price`) |
+| 평균 / 변동(시점 간) / 차이(다른 기준과) / 갭(매매−전세) | `average` / `change` / `<기준>_diff` / `gap` | |
+| 가장 최근 한 건 / 최근 기간 / 직전 | `latest` / `recent` / `prev` | `previous` |
+| 전세가율 | `jeonse_ratio_percent` | `jeonse_ratio`(0~1), `jeonse_rate_percent`, `lease_rate_percent` |
+| 퍼센트 | `<개념>_percent` (0~100), 객체 자체가 비율이면 `percent` | `_pct`, `_rate`, `_rate_percent`, 0~1 값 |
+| N:1 배수 (경쟁률) | `<개념>_ratio` | `competition_rate` |
+| 용적률·건폐율 | `floor_area_ratio_percent` / `building_coverage_ratio_percent` | 단위 없는 `floor_area_ratio` |
+| 전용 / 공급 / 계약 면적 | `area` / `supply_area` / `contract_area` + `_m2`·`_pyeong` | `exclusive_area_*`, `exclusive_m2`, `supply_m2`, `contract_m2` |
+| 평형 / 평형 ID / 평형 이름 | `pyeong` / `pyeong_id`(목록 `pyeong_ids`, 대표 `representative_pyeong_id`) / `pyeong_name` | `pyeong_number`, `number`, `space_seq`, 평형 객체의 `id` |
+| 층(그 매물·거래) / 건물 층수 / 지하 층수 | `floor`(글자)+`floor_number` / `building_floor` / `basement_floor` | |
+| 단지 안 동 층수의 최소·최대 | `building_floor_range: {lowest, highest}` | `max_floor`, `min_floor`, `lowest_top_floor`, `highest_top_floor`, `lowest_floor`, `highest_floor` |
+| 세대수 / 동 수 / 주차 대수 / 세대당 주차 | `household_count` / `dong_count` / `parking_count` / `parking_per_household` | `households`, `buildings`, `building_count`, `total_parking_count` |
+| 준공 / 사용승인 / 연식 | `completed_*` / `approved_*` / `age_years` | `built_year`, `years`(연차) |
+| 단지 유형 / 매물 유형 / 건축물 용도 | `complex_type` / `property_type` / `residence_type` | 단지 유형의 `property_type`·`type`·`building_type`(다방) |
+| 시공사 / 난방 / 연료 / 현관 | `construction_company` / `heating` / `heating_fuel` / `entrance` | `builder`, `fuel`, `entrance_type` |
+| ID | `<대상>_id`, 목록 `_ids` (매물 자기 행만 `id`) | `complex_number`, `redevelopment_number`, 자기 행 `id`(매물 밖) |
+| 공공 코드 | `<대상>_code` (`school_code`), 법정동은 늘 10자리 `legal_division_code` | `local_code`, `code`, `parent_code` |
+| 이름 | 행이 그 대상이면 `name`, 다른 대상을 가리키면 `<대상>_name` | |
+| 시·도 / 시·군·구 / 읍·면·동 / 건물 동 | `sido` / `sigungu` / `dong` / `building_dong` | `name1~3`, `state`, `district`, `city`(지역 단계 뜻) |
+| 지역 단계 순위 / 평균 | `<단계>_rank` / `<단계>_average` | `national`·`state`·`district`(순위 int), `city_average`, `district_average` |
+| 지번 주소 / 도로명 주소 | `address` / `road_address` | `jibun_address`, `region_address` |
+| 거리 / 반경 | 검색 중심에서 결과까지·검색 반경·지도 범위는 `_km`, 시설·단지 사이와 사이트가 정한 시설 반경은 `_m` | |
+| 도보 시간 / 탑승 시간 / 수단이 섞인 시간 | `walk_minutes` / `subway_minutes` / `travel_minutes` | `walking_minutes`, `walk_to_station_minutes`, 조건의 `subway_minutes`(도보 상한) |
+| 역 / 노선 | `station`(`stations`, `nearby_stations`) / `line`·`lines` | `subways`, `nearby_subways` |
+| 외부 페이지 주소 | 원 사이트만 `url`, 다른 페이지는 `<무엇>_url` | 공시 페이지의 `url`, `homepage` |
+| 기간 시작·끝 / 기간 길이 | `start_<단위>` / `end_<단위>` / `<명사>_<단위>`(`span_months`) | `since`, `from_*`/`to_*`, `start`/`end`, 단위 없는 `years`·`months`·`weeks` int |
+| 기준일 | `base_date` / `base_month` / `base_year` / `base_period` | `as_of`, `survey_date`, `kb_survey_date`, `stats_date`, `stats_year`, `stats_period` |
+| 달 / 해 (객체 자체가 그 시점) | `month` / `year` | `year_month` |
+| 수 / 키별 수 / 결과 총수·반환 수 | `<명사>_count` / `<명사>_counts` / `total`·`returned` (껍데기에만) | 껍데기 밖 합계 `total`, int 인 `*_transactions` |
+| 찜 수 / 조회 수 / 조회한 사람 수 | `favorite_count` / `view_count` / `viewer_count` | `zzim_count`, `watch_count` |
+| 중개사 수 | `realtor_count` | 직방 아파트 목록의 `listing_count`(중개사 수 뜻) |
+| 불리언 | 접두어 없이 (`cancelled`·`duplex`), 있음은 `has_<명사>` | `is_` (`is_new_high`, `is_price_range`) |
+| 상태 / 단계 | `status` / `step`·`current_step` | 분양 상태 `state` |
+| 순위 | `rank`(int), `<기준>_rank`, 순위 객체 `ranking`, 순위 목록 `rankings` | 객체인 `rank` |
+| 위치 검색 껍데기 | 검색어 `query`, 지역 후보 `regions` | `keyword`, 지역만 담은 `results` |
+| 시계열 점 목록 | 달 `months`(점 안 `month`), 주 `weeks` | `points`, `weekly` |
 
 ## 개수 상한
 

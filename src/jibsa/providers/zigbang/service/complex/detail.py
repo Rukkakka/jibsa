@@ -14,7 +14,10 @@ from pydantic import (
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    TRADE_KEY_BY_NAME,
+    AmountRange,
     Listing,
+    NumberRange,
     iso_date,
     join_address,
     limit_notes,
@@ -23,6 +26,7 @@ from jibsa.core.listing import (
     normalize_date,
     note,
     null_items_note,
+    number_range,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.complex.base import (
@@ -56,10 +60,13 @@ from jibsa.providers.zigbang.service.common.base import (
     OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
     ComplexKind,
+    ZigbangEstimatedPrice,
     apt_danji_url,
     complex_not_found,
+    estimated_prices_of,
     fetch_danji,
     parse_complex_id,
+    sale_price_range,
     school_label,
     text_or_none,
 )
@@ -119,12 +126,11 @@ PROPERTY_TYPE_BY_COMPLEX_KIND: dict[ComplexKind, str] = {
 }
 # 단지 정보에서 한쪽 유형에만 있는 필드. 다른 유형은 출력에서 키를 뺀다
 APT_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({
-    'dong_count', 'approved_at', 'construction_company', 'parking_per_household',
-    'floor_area_ratio', 'heating', 'article_counts', 'pyeongs', 'review_count', 'schools',
-    'estimated_sale_price_min_manwon', 'estimated_sale_price_max_manwon', 'estimated_sale_price_per_pyeong_manwon',
-    'estimated_jeonse_price_per_pyeong_manwon', 'rank', 'related_complexes', 'land_trade_permits',
+    'dong_count', 'approved_date', 'construction_company', 'parking_per_household',
+    'floor_area_ratio_percent', 'heating', 'listing_counts', 'pyeongs', 'review_count', 'schools',
+    'estimated_ranges', 'estimated_prices', 'ranking', 'related_complexes', 'land_trade_permits',
 })
-OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_at', 'elevator'})
+OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_month', 'has_elevator'})
 DANJI_CATALOG_PAGE_SIZE: int = 50
 
 
@@ -139,7 +145,7 @@ class ZigbangComplexCandidate(BaseModel):
         str,
         Field(description='단지 ID (zigbang complex·items 에 넘긴다)')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str,
         Field(description='아파트 또는 오피스텔')
     ]
@@ -151,11 +157,11 @@ class ZigbangComplexCandidate(BaseModel):
         str | None,
         Field(description='단지가 있는 동까지의 주소')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -168,7 +174,7 @@ class ZigbangPyeong(BaseModel):
         extra='forbid',
     )
 
-    id: Annotated[
+    pyeong_id: Annotated[
         int,
         Field(description='평형 ID (zigbang search listings --complex --pyeong 에 넘긴다)')
     ]
@@ -188,15 +194,15 @@ class ZigbangPyeong(BaseModel):
         float | None,
         Field(description='공급면적 (평). 직방이 준 값 그대로')
     ] = None
-    exclusive_area_m2: Annotated[
+    area_m2: Annotated[
         float | None,
         Field(description='전용면적 (㎡)')
     ] = None
-    exclusive_area_pyeong: Annotated[
+    area_pyeong: Annotated[
         float | None,
         Field(description='전용면적 (평). 직방이 준 값 그대로')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='그 평형의 세대수 (웹 평형 이름 옆 괄호, 예: 107A㎡ (731세대))')
     ] = None
@@ -208,7 +214,7 @@ class ZigbangPyeong(BaseModel):
         int | None,
         Field(description='욕실 수')
     ] = None
-    entrance_type: Annotated[
+    entrance: Annotated[
         str | None,
         Field(description="현관 구조 (직방 글자 그대로, 예: '계단식'·'복도식'). 직방이 주지 않으면 null")
     ] = None
@@ -216,34 +222,26 @@ class ZigbangPyeong(BaseModel):
         int | float | None,
         Field(description='평균 월 관리비 (만원, 직방 정수 그대로). 웹 안내: K-apt 최소 3개월~최대 24개월 평균. 0 이거나 직방이 주지 않으면 null (웹은 이때 관리비 줄을 숨긴다)')
     ] = None
-    manage_cost_summer_manwon: Annotated[
+    summer_manage_cost_manwon: Annotated[
         int | float | None,
         Field(description='여름(6~8월) 월 관리비 (만원). 0 이거나 직방이 주지 않으면 null (웹은 이때 -)')
     ] = None
-    manage_cost_winter_manwon: Annotated[
+    winter_manage_cost_manwon: Annotated[
         int | float | None,
         Field(description='겨울(12~2월) 월 관리비 (만원). 0 이거나 직방이 주지 않으면 null (웹은 이때 -)')
     ] = None
-    resale_available_from: Annotated[
+    resale_available_date: Annotated[
         str | None,
         Field(description='전매제한이 풀려 매매할 수 있는 날 (직방 거래가능시점, YYYY-MM-DD). 이미 지난 날도 그대로 낸다 (웹은 오늘 뒤일 때만 안내). 직방이 주지 않으면 null')
     ] = None
-    estimated_sale_price_manwon: Annotated[
-        int | float | None,
-        Field(description='직방시세 매매 (만원, 직방 시세 범위의 최저값. 2026-11-19 표본 30개 평형은 최저 = 최고). 실거래를 머신러닝으로 분석한 직방 추정값이고 실거래 평균이 아니다. 0 이거나 없으면 null (웹 시세없음)')
-    ] = None
-    estimated_sale_price_per_pyeong_manwon: Annotated[
-        int | float | None,
-        Field(description='직방시세 매매의 평당 가격 (만원/3.3㎡, 공급면적 평 기준). 0 이거나 없으면 null')
-    ] = None
-    estimated_jeonse_price_manwon: Annotated[
-        int | float | None,
-        Field(description='직방시세 전세 (만원). 직방 추정값이고 실거래 평균이 아니다. 0 이거나 없으면 null (웹 전세 시세없음)')
-    ] = None
-    estimated_jeonse_price_per_pyeong_manwon: Annotated[
-        int | float | None,
-        Field(description='직방시세 전세의 평당 가격 (만원/3.3㎡, 공급면적 평 기준). 0 이거나 없으면 null')
-    ] = None
+    estimated_prices: Annotated[
+        dict[str, ZigbangEstimatedPrice | None],
+        Field(description=(
+            "직방시세 (실거래를 머신러닝으로 분석한 직방 추정값이고 실거래 평균이 아니다). 늘 'sale'·'jeonse' 두 키이고, sale 은 price_manwon"
+            '(직방 시세 범위의 최저값. 2026-11-19 표본 30개 평형은 최저 = 최고)·price_per_pyeong_manwon, jeonse 는 deposit_manwon·'
+            'price_per_pyeong_manwon (만원, 평당가는 3.3㎡당 공급면적 평 기준). 그 거래의 안 칸이 모두 0 이거나 없으면 그 거래가 null (웹 시세없음), 일부만 그러면 그 칸만 null'
+        ))
+    ]
 
 
 class ZigbangComplexRank(BaseModel):
@@ -299,7 +297,7 @@ class ZigbangComplex(BaseModel):
         str,
         Field(description='단지 이름')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str,
         Field(description='아파트 또는 오피스텔')
     ]
@@ -307,23 +305,23 @@ class ZigbangComplex(BaseModel):
         str | None,
         Field(description='지번 주소 (오피스텔은 동까지)')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='총 세대수')
     ] = None
-    max_floor: Annotated[
-        int | None,
-        Field(description='최고 층수')
+    building_floor_range: Annotated[
+        NumberRange | None,
+        Field(description='동 층수 범위. 직방은 최고 층수만 주어 lowest 는 늘 null(모름)이고 highest 가 최고 층수다 (오피스텔은 건물 층수). 직방이 최고 층수를 주지 않으면 null')
     ] = None
     dong_count: Annotated[
         int | None,
         Field(description='동 수 (아파트만)')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD, 아파트만)')
     ] = None
-    completed_at: Annotated[
+    completed_month: Annotated[
         str | None,
         Field(description='준공 연월 (YYYY-MM, 오피스텔만)')
     ] = None
@@ -335,7 +333,7 @@ class ZigbangComplex(BaseModel):
         float | None,
         Field(description='세대당 주차 대수 (아파트만)')
     ] = None
-    floor_area_ratio: Annotated[
+    floor_area_ratio_percent: Annotated[
         float | None,
         Field(description='용적률 (%, 아파트만)')
     ] = None
@@ -343,15 +341,15 @@ class ZigbangComplex(BaseModel):
         str | None,
         Field(description='난방 방식 (아파트만)')
     ] = None
-    elevator: Annotated[
+    has_elevator: Annotated[
         bool | None,
-        Field(description='엘리베이터 (오피스텔만). 있다고 확인되면 true, 그 밖에는 모름(null). 매물 상세의 elevator 가 정확하다')
+        Field(description='엘리베이터 (오피스텔만). 있다고 확인되면 true, 그 밖에는 모름(null). 매물 상세의 has_elevator 가 정확하다')
     ] = None
     listing_count: Annotated[
         int | None,
         Field(description='지금 올라온 매물 수. 아파트는 같은 호·거래 유형을 묶은 수. 직방이 주지 않으면 모름(null)')
     ]
-    article_counts: Annotated[
+    listing_counts: Annotated[
         dict[str, int | None],
         Field(description='거래 유형별 매물 수 (아파트만). 직방이 주지 않은 유형은 모름(null)')
     ] = {}
@@ -371,23 +369,21 @@ class ZigbangComplex(BaseModel):
         str,
         Field(description='단지 페이지 URL')
     ]
-    estimated_sale_price_min_manwon: Annotated[
-        int | None,
-        Field(description='단지 직방시세 매매 최저 (만원, 아파트만). 웹 전체 탭 "매매 18억 8,000 ~ 61억 1,000" 의 앞. 직방 추정값이고 실거래 평균이 아니다. 평형 정보를 받지 못했거나 0 이거나 없으면 null')
-    ] = None
-    estimated_sale_price_max_manwon: Annotated[
-        int | None,
-        Field(description='단지 직방시세 매매 최고 (만원, 아파트만). 웹 전체 탭 범위의 뒤. 0 이거나 없으면 null')
-    ] = None
-    estimated_sale_price_per_pyeong_manwon: Annotated[
-        int | float | None,
-        Field(description='단지 평균 직방시세 매매의 평당 가격 (만원/3.3㎡, 아파트만). 웹 전체 탭 "평균 1억 235/3.3㎡". 0 이거나 없으면 null')
-    ] = None
-    estimated_jeonse_price_per_pyeong_manwon: Annotated[
-        int | float | None,
-        Field(description='단지 평균 직방시세 전세의 평당 가격 (만원/3.3㎡, 아파트만). 0 이거나 없으면 null')
-    ] = None
-    rank: Annotated[
+    estimated_ranges: Annotated[
+        dict[str, AmountRange | None],
+        Field(description=(
+            "단지 직방시세 범위 (아파트만). 'sale' 키 하나이고 lowest·highest 는 price_manwon (만원). 웹 전체 탭 \"매매 18억 8,000 ~ 61억 1,000\" 의 앞·뒤. "
+            '직방 추정값이고 실거래 평균이 아니다. 평형 정보를 받지 못했거나 두 끝이 모두 0 이거나 없으면 "sale": null, 한 끝만 그러면 그 price_manwon 만 null'
+        ))
+    ] = {}
+    estimated_prices: Annotated[
+        dict[str, ZigbangEstimatedPrice | None],
+        Field(description=(
+            "단지 평균 직방시세의 평당 가격 (아파트만, 만원/3.3㎡). 늘 'sale'·'jeonse' 두 키이고 안은 price_per_pyeong_manwon. "
+            '웹 전체 탭 "평균 1억 235/3.3㎡". 0 이거나 없으면 그 거래가 null'
+        ))
+    ] = {}
+    ranking: Annotated[
         ZigbangComplexRank | None,
         Field(description="단지 순위 (아파트만, 웹 '<동>에서 이 단지의 랭킹은?'). 직방이 구·동 순위를 주지 않으면 웹이 절을 숨기므로 null")
     ] = None
@@ -407,7 +403,7 @@ class ZigbangComplex(BaseModel):
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        fields = OFFICETEL_ONLY_COMPLEX_FIELDS if self.property_type == '아파트' else APT_ONLY_COMPLEX_FIELDS
+        fields = OFFICETEL_ONLY_COMPLEX_FIELDS if self.complex_type == '아파트' else APT_ONLY_COMPLEX_FIELDS
         for field in fields:
             data.pop(field, None)
         return data
@@ -455,11 +451,11 @@ def complex_candidate_of(item: ZigbangSearchItemModel) -> ZigbangComplexCandidat
     source = item.source
     return ZigbangComplexCandidate(
         complex_id=f'{kind}-{item.id}',
-        property_type=PROPERTY_TYPE_BY_COMPLEX_KIND[kind],
+        complex_type=PROPERTY_TYPE_BY_COMPLEX_KIND[kind],
         name=item.name,
         address=normalize_address(item.description),
-        households=source.household if source else None,
-        approved_at=normalize_date(source.approval_date) if source else None,
+        household_count=source.household if source else None,
+        approved_date=normalize_date(source.approval_date) if source else None,
     )
 
 
@@ -531,15 +527,16 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         return ZigbangComplex(
             complex_id=complex_id,
             name=building.name,
-            property_type='오피스텔',
+            complex_type='오피스텔',
             # 건물 주소는 시·도를 줄여 주기도 한다 (2026-10-11 실측: '서울시 강남구 역삼동', '제주도 제주시 연동')
             address=normalize_address(building.address.full_text if building.address else None),
-            households=to_int(building.household),
-            max_floor=to_int(building.floor),
-            completed_at=f'{established[:4]}-{established[4:6]}' if re.fullmatch(r'\d{6}', established) else None,
+            household_count=to_int(building.household),
+            # 직방은 동 최고 층수만 줘서 lowest 는 늘 null(모름)이다. 최고 층수를 모르면 범위도 모름(None)
+            building_floor_range=number_range(None, to_int(building.floor)),
+            completed_month=f'{established[:4]}-{established[4:6]}' if re.fullmatch(r'\d{6}', established) else None,
             # 건물 API 의 false 는 믿을 수 없어 모름으로 둔다. 2026-10-10 실측: 건물 53곳 중 false 30곳(6~41층)이
             # 모두 그 건물 매물 상세에서는 엘리베이터 있음이었고, false 가 맞은 곳은 없었다 (true 23곳은 모두 일치)
-            elevator=True if building.elevator else None,
+            has_elevator=True if building.elevator else None,
             # 매물이 없으면 itemCount 0 이 온다 (2026-10-10 실측 29곳). 빠지면 0 이 아니라 모름이다
             listing_count=building.item_count,
             # 웹은 건물 ID 를 이 경로의 area_danji_id 자리에 넣는다
@@ -571,6 +568,8 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             '평형별 면적·관리비·직방시세와 단지 직방시세를 모릅니다 (url 의 직방 단지 페이지에서 확인)',
         )]
     details = {room_type.id: room_type for room_type in room_info.room_types or []} if room_info else {}
+    average_sales = _positive_or_none(room_info.average_sales_price) if room_info else None
+    average_rent = _positive_or_none(room_info.average_rent_price) if room_info else None
     pyeong_notes: list[str] = []
     if catalogs.room_types is None:
         # 평형 목록(매물 목록 응답의 danjiRoomTypes)이 없으면 모름이라, 평형이 없는 단지([])와 가른다
@@ -588,61 +587,68 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             sales = detail.sales_price if detail else None
             rent = detail.rent_price if detail else None
             pyeongs.append(ZigbangPyeong(
-                id=room_type.id,
+                pyeong_id=room_type.id,
                 name=title.m2 if title else None,
                 pyeong_name=text_or_none(title.p) if title else None,
                 supply_area_m2=supply.m2 if supply else None,
                 supply_area_pyeong=supply.p if supply else None,
-                exclusive_area_m2=exclusive.m2 if exclusive else None,
-                exclusive_area_pyeong=exclusive.p if exclusive else None,
-                households=detail.household_count if detail else None,
+                area_m2=exclusive.m2 if exclusive else None,
+                area_pyeong=exclusive.p if exclusive else None,
+                household_count=detail.household_count if detail else None,
                 room_count=detail.room_count if detail else None,
                 bathroom_count=detail.bathroom_count if detail else None,
-                entrance_type=text_or_none(detail.entrance_type) if detail else None,
+                entrance=text_or_none(detail.entrance_type) if detail else None,
                 # 웹 ManageCost 는 평균 관리비가 0 이나 null 이면 여름·겨울이 든 줄 전체를 숨기고, 평균이 있을 때 여름·겨울이 0 이나 null 이면 '-' 로
                 # 그린다 (2026-11-19 번들). jibsa 는 평균이 없어도 직방이 준 여름·겨울 값을 내므로 셋을 따로 거른다 (웹과 다른 점, 소스 가이드)
                 manage_cost_manwon=_positive_or_none(cost.average) if cost else None,
-                manage_cost_summer_manwon=_positive_or_none(cost.summer) if cost else None,
-                manage_cost_winter_manwon=_positive_or_none(cost.winter) if cost else None,
-                resale_available_from=iso_date(detail.resale_available_from) if detail else None,
-                estimated_sale_price_manwon=_positive_or_none(sales.min) if sales else None,
-                estimated_sale_price_per_pyeong_manwon=_positive_or_none(sales.per_area) if sales else None,
-                estimated_jeonse_price_manwon=_positive_or_none(rent.min) if rent else None,
-                estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(rent.per_area) if rent else None,
+                summer_manage_cost_manwon=_positive_or_none(cost.summer) if cost else None,
+                winter_manage_cost_manwon=_positive_or_none(cost.winter) if cost else None,
+                resale_available_date=iso_date(detail.resale_available_from) if detail else None,
+                estimated_prices=estimated_prices_of(
+                    _positive_or_none(sales.min) if sales else None,
+                    _positive_or_none(sales.per_area) if sales else None,
+                    _positive_or_none(rent.min) if rent else None,
+                    _positive_or_none(rent.per_area) if rent else None,
+                ),
             ))
     return ZigbangComplex(
         complex_id=complex_id,
         name=danji.name,
         # 아파트 API 로 받은 단지다. real_type('연립' 등)을 쓰면 오피스텔로 보고 아파트 필드를 지운다
-        property_type='아파트',
+        complex_type='아파트',
         address=normalize_address(join_address(danji.local1, danji.jibun_address)),
-        households=danji.households,
-        max_floor=danji.max_floor,
+        household_count=danji.households,
+        # 동 최고 층수만 줘서 lowest 는 null(모름)
+        building_floor_range=number_range(None, danji.max_floor),
         dong_count=danji.dong_count,
-        approved_at=normalize_date(danji.approval_date),
+        approved_date=normalize_date(danji.approval_date),
         construction_company=danji.construction_company,
         parking_per_household=danji.parking_per_household,
-        floor_area_ratio=danji.floor_area_ratio,
+        floor_area_ratio_percent=danji.floor_area_ratio,
         heating=danji.heating,
         # 응답 모델은 totalCount 가 빠지면 페이지 계산용으로 0 을 채우지만, 여기서는 모름(null)이다 (실측 40곳 모두 왔다)
         listing_count=catalogs.total_count if 'total_count' in catalogs.model_fields_set else None,
         # 매물 없는 유형도 0 으로 온다 (2026-10-10 실측 40곳 모두 세 유형). 빠진 유형은 모름이다
-        article_counts={
-            trade: catalogs.count_by_tran_type.get(tran_type)
+        listing_counts={
+            TRADE_KEY_BY_NAME[trade]: catalogs.count_by_tran_type.get(tran_type)
             for tran_type, trade in TRADE_BY_APT_TRAN_TYPE.items()
         },
         pyeongs=pyeongs,
         schools=schools,
         review_count=danji.review_count,
         url=apt_danji_url(number),
-        estimated_sale_price_min_manwon=_positive_or_none(room_info.min_sales_price) if room_info else None,
-        estimated_sale_price_max_manwon=_positive_or_none(room_info.max_sales_price) if room_info else None,
-        estimated_sale_price_per_pyeong_manwon=_positive_or_none(room_info.average_sales_price) if room_info else None,
-        estimated_jeonse_price_per_pyeong_manwon=_positive_or_none(room_info.average_rent_price) if room_info else None,
+        estimated_ranges={'sale': sale_price_range(
+            _positive_or_none(room_info.min_sales_price) if room_info else None,
+            _positive_or_none(room_info.max_sales_price) if room_info else None,
+        )},
+        estimated_prices={
+            'sale': None if average_sales is None else ZigbangEstimatedPrice(price_per_pyeong_manwon=average_sales),
+            'jeonse': None if average_rent is None else ZigbangEstimatedPrice(price_per_pyeong_manwon=average_rent),
+        },
         # 단지 상세의 순위를 웹 '<동>에서 이 단지의 랭킹은?' 절 값으로 낸다. 웹처럼 구·동 순위 중 하나라도 없으면 None 이다.
         # 웹은 `!순위 || !순위.local2 || !순위.local3` 이면 절을 그리지 않는다 (2026-11-19 번들 `Components_Rank`).
         # 순위 값 -1 은 웹이 '순위 없음' 으로 그리는 값이다
-        rank=(
+        ranking=(
             None if danji.rank is None or danji.rank.local2 is None or danji.rank.local3 is None
             else ZigbangComplexRank(
                 region=text_or_none(danji.rank.local3.name),
@@ -771,7 +777,7 @@ def list_complex_listings(
                     raise JibsaError(
                         code='INVALID_ARGUMENT',
                         message=f"{complex_id} 단지에 없는 평형 ID 입니다: {', '.join(map(str, unknown))}",
-                        hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
+                        hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].pyeong_id 를 --pyeong 에 주세요',
                     )
         total = response.total_count
         # 직방 offset 은 빈 항목(null)도 한 자리로 센다. 빈 항목을 빼고 읽었어도 받은 자리 수에 더해야 같은 매물을 다시 받거나 일찍 멈추지 않는다

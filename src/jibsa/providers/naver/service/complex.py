@@ -12,15 +12,19 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    AmountRange,
+    floor_text,
     iso_date,
     join_address,
     m2_to_pyeong,
     months_ago,
     normalize_address,
     normalize_date,
+    with_floor_number,
     won_to_manwon,
     years_ago,
 )
+from jibsa.core.schema import drop_unset_fields
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
     NaverComplexPyeongGroupsV1RequestParameterModel,
@@ -44,19 +48,18 @@ from jibsa.providers.naver.api.response.complex import (
     NaverRealPriceSummaryTradeModel,
 )
 from jibsa.providers.naver.service.common import (
+    ASKING_RANGES_DESCRIPTION,
     MARKET_PRICE_PROVIDER_NAMES,
-    MONTHLY_ASKING_DESCRIPTION,
     OFFICETEL_CODE,
-    SHORT_TERM_ASKING_DESCRIPTION,
     TRADE_NAME_BY_CODE,
     NaverAssignedSchool,
-    NaverRentAskingRange,
+    NaverMarketBand,
     assigned_schools,
     complex_row_fields,
     complex_url,
     group_pyeong_numbers,
     kst_today,
-    manwon_range,
+    market_price_fields,
     pyeong_list,
     raise_missing_pyeongs,
     resolve_dong_numbers,
@@ -80,27 +83,27 @@ class NaverPyeong(BaseModel):
         extra='forbid',
     )
 
-    number: Annotated[
+    pyeong_id: Annotated[
         int,
-        Field(description='평형 번호 (real-price 의 --pyeong)')
+        Field(description='평형 ID (real-price 의 --pyeong)')
     ]
     name: Annotated[
         str,
         Field(description='평형 이름 (공급면적 ㎡)')
     ]
-    exclusive_m2: Annotated[
+    area_m2: Annotated[
         float | None,
         Field(description='전용면적 (㎡)')
     ] = None
-    exclusive_pyeong: Annotated[
+    area_pyeong: Annotated[
         float | None,
         Field(description='전용면적 (평)')
     ] = None
-    supply_m2: Annotated[
+    supply_area_m2: Annotated[
         float | None,
         Field(description='공급면적 (㎡). 오피스텔은 전용+주거공용이라 평형 이름보다 작다. 오피스텔인데 계약면적과 같게 오면 공급 칸에 계약면적이 채워진 것이라 null')
     ] = None
-    contract_m2: Annotated[
+    contract_area_m2: Annotated[
         float | None,
         Field(description='계약면적 (㎡). 오피스텔은 평형 이름·매물 상세의 공급면적이 이 값이다')
     ] = None
@@ -129,17 +132,17 @@ class NaverPyeongGroup(BaseModel):
         str | None,
         Field(description='묶음 이름 (대표 평수, 예: 33평)')
     ] = None
-    representative_pyeong: Annotated[
+    representative_pyeong_id: Annotated[
         int | None,
-        Field(description='대표 평형 번호 (real-price 의 --pyeong). 묶음에 든 평형 번호 중 하나다')
+        Field(description='대표 평형 ID (real-price 의 --pyeong). 묶음에 든 평형 ID 중 하나다')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='묶음의 세대수')
     ] = None
-    pyeong_numbers: Annotated[
+    pyeong_ids: Annotated[
         list[int] | None,
-        Field(description='묶음에 든 평형 번호 (번호순, pyeongs[].number). 네이버가 이 묶음의 평형 목록을 주지 않으면 null (모름)')
+        Field(description='묶음에 든 평형 ID (번호순, pyeongs[].pyeong_id). 네이버가 이 묶음의 평형 목록을 주지 않으면 null (모름)')
     ] = None
 
 
@@ -150,23 +153,23 @@ class NaverComplexMaintenanceFee(BaseModel):
         extra='forbid',
     )
 
-    year_month: Annotated[
+    latest_month: Annotated[
         str | None,
         Field(description='가장 최근 달 (YYYY-MM)')
     ] = None
-    latest_manwon: Annotated[
+    latest_manage_cost_manwon: Annotated[
         float | None,
         Field(description='가장 최근 달 관리비 (만원)')
     ] = None
-    monthly_average_manwon: Annotated[
+    manage_cost_manwon: Annotated[
         float | None,
         Field(description='월평균 관리비 (만원)')
     ] = None
-    summer_average_manwon: Annotated[
+    summer_manage_cost_manwon: Annotated[
         float | None,
         Field(description='여름 평균 관리비 (만원)')
     ] = None
-    winter_average_manwon: Annotated[
+    winter_manage_cost_manwon: Annotated[
         float | None,
         Field(description='겨울 평균 관리비 (만원, 난방비 때문에 높다)')
     ] = None
@@ -187,30 +190,26 @@ class NaverMarketPrice(BaseModel):
         str | None,
         Field(description='시세 기준일 (YYYY-MM-DD). 읽을 수 없으면 null')
     ] = None
-    sale_average_manwon: Annotated[
+    sale: Annotated[
+        NaverMarketBand | None,
+        Field(description='매매 시세 (평균·하위·상위, 만원). 세 값을 모두 모르면 null, 일부만 모르면 그 칸만 null')
+    ]
+    jeonse: Annotated[
+        NaverMarketBand | None,
+        Field(description='전세 시세 (평균·하위·상위, 만원). 세 값을 모두 모르면 null, 일부만 모르면 그 칸만 null')
+    ]
+    jeonse_ratio_low_percent: Annotated[
         float | None,
-        Field(description='매매 시세 평균 (만원). 없으면 null')
+        Field(description='전세가율 하한 (%). 시세가 없으면(0 포함) null')
     ] = None
-    sale_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 시세 [하한, 상한] (만원)')
-    ] = None
-    jeonse_average_manwon: Annotated[
+    jeonse_ratio_high_percent: Annotated[
         float | None,
-        Field(description='전세 시세 평균 (만원). 없으면 null')
-    ] = None
-    jeonse_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='전세 시세 [하한, 상한] (만원)')
-    ] = None
-    jeonse_ratio_percent: Annotated[
-        list[float | None] | None,
-        Field(description='전세가율 [하한, 상한] (%). 시세가 없으면(0 포함) null')
+        Field(description='전세가율 상한 (%). 시세가 없으면(0 포함) null')
     ] = None
 
 
 class NaverRealPriceExtreme(BaseModel):
-    """실거래 요약의 최저·최고 거래 한 건."""
+    """실거래 요약의 최저·최고 거래 한 건. 매매는 `price_manwon`, 전세는 `deposit_manwon` 만 있다 (전세금을 `price_manwon` 에 담지 않는다)."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -218,17 +217,21 @@ class NaverRealPriceExtreme(BaseModel):
 
     price_manwon: Annotated[
         float | None,
-        Field(description='거래가 (만원, 매매는 매매가, 전세는 보증금)')
+        Field(description='매매가 (만원). 매매 거래에만 있다')
+    ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='전세 보증금 (만원). 전세 거래에만 있다')
     ] = None
     trade_date: Annotated[
         str | None,
         Field(description='계약일 (YYYY-MM-DD). 네이버가 주지 않았거나 날짜로 읽지 못하면 null')
     ] = None
     floor: Annotated[
-        int | None,
-        Field(description='층')
+        str | None,
+        Field(description="층 ('3'·'지하1'). 바로 뒤의 floor_number 는 층 숫자 (지하는 음수)")
     ] = None
-    trade_category: Annotated[
+    deal_type: Annotated[
         str | None,
         Field(description='중개거래 / 직거래. 직거래는 가족 간 거래처럼 시세와 동떨어진 값일 수 있다')
     ] = None
@@ -236,6 +239,29 @@ class NaverRealPriceExtreme(BaseModel):
         bool | None,
         Field(description='해제(취소)된 거래')
     ] = None
+
+    @model_serializer(mode='wrap')
+    def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # 거래 유형에 맞는 금액 칸만 만들어 넘긴다 (넘기지 않은 칸은 해당 없음이라 키를 뺀다)
+        data = drop_unset_fields(self, handler(self), ('price_manwon', 'deposit_manwon'))
+        return with_floor_number(data)
+
+
+class NaverRealPriceRange(BaseModel):
+    """실거래 요약의 최저·최고 거래 (두 끝이 거래 한 건이라 금액 범위 모델 대신 쓴다)."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    lowest: Annotated[
+        NaverRealPriceExtreme | None,
+        Field(description='최저가 거래')
+    ]
+    highest: Annotated[
+        NaverRealPriceExtreme | None,
+        Field(description='최고가 거래')
+    ]
 
 
 class NaverRealPriceTradeSummary(BaseModel):
@@ -245,7 +271,7 @@ class NaverRealPriceTradeSummary(BaseModel):
         extra='forbid',
     )
 
-    since: Annotated[
+    start_date: Annotated[
         str | None,
         Field(description='3년 안에 거래가 없어 5년으로 다시 받았을 때만 있는 시작일 (YYYY-MM-DD, 5년 전 오늘). 3년으로 받았으면 키가 없다')
     ] = None
@@ -253,24 +279,20 @@ class NaverRealPriceTradeSummary(BaseModel):
         float | None,
         Field(description='평균 거래가 (만원)')
     ] = None
-    average_3m_manwon: Annotated[
+    recent_3m_average_manwon: Annotated[
         float | None,
         Field(description='최근 3개월 평균 거래가 (만원). 3개월 안 거래가 없거나 조회 실패면 null')
     ] = None
-    lowest: Annotated[
-        NaverRealPriceExtreme | None,
-        Field(description='최저가 거래')
-    ] = None
-    highest: Annotated[
-        NaverRealPriceExtreme | None,
-        Field(description='최고가 거래')
+    trade_range: Annotated[
+        NaverRealPriceRange | None,
+        Field(description='최저·최고가 거래 {lowest, highest}. 매매는 price_manwon, 전세는 deposit_manwon. 두 거래를 모두 모르면 null')
     ] = None
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        if self.since is None:
-            data.pop('since', None)
+        if self.start_date is None:
+            data.pop('start_date', None)
         return data
 
 
@@ -281,9 +303,9 @@ class NaverRealPriceSummary(BaseModel):
         extra='forbid',
     )
 
-    since: Annotated[
+    start_date: Annotated[
         str,
-        Field(description='이 날짜 이후 거래 (YYYY-MM-DD, 3년 전 오늘). 3년 안 거래가 없는 유형은 5년으로 다시 받고 그 유형의 요약에 since 가 따로 있다')
+        Field(description='이 날짜 이후 거래 (YYYY-MM-DD, 3년 전 오늘). 3년 안 거래가 없는 유형은 5년으로 다시 받고 그 유형의 요약에 start_date 가 따로 있다')
     ]
     sale: Annotated[
         NaverRealPriceTradeSummary | None,
@@ -310,7 +332,7 @@ class NaverPricePerPyeongRegion(BaseModel):
         str | None,
         Field(description='지역 단위 (읍·면·동, 시·군·구, 시·도)')
     ] = None
-    manwon_per_pyeong: Annotated[
+    price_per_pyeong_manwon: Annotated[
         float | None,
         Field(description='그 지역 평균 평당 호가 (만원/평). 없으면(0 포함) null')
     ] = None
@@ -323,11 +345,11 @@ class NaverPricePerPyeong(BaseModel):
         extra='forbid',
     )
 
-    manwon_per_pyeong: Annotated[
+    price_per_pyeong_manwon: Annotated[
         float | None,
         Field(description='이 평형의 평당 호가 (만원/평)')
     ] = None
-    as_of: Annotated[
+    base_date: Annotated[
         str | None,
         Field(description='기준 주 첫날 (YYYY-MM-DD). 지역 목록에서 가장 늦은 날이고, 날짜를 읽지 못하거나 지역 목록이 비었거나 주지 않으면 null')
     ] = None
@@ -373,11 +395,11 @@ class NaverReconstruction(BaseModel):
         str | None,
         Field(description='선정된 시공사')
     ] = None
-    planned_households: Annotated[
+    planned_household_count: Annotated[
         int | None,
         Field(description='재건축 후 계획 세대수')
     ] = None
-    planned_floor_area_ratio: Annotated[
+    planned_floor_area_ratio_percent: Annotated[
         float | None,
         Field(description='재건축 계획 용적률 (%)')
     ] = None
@@ -394,7 +416,7 @@ class NaverComplexSummary(BaseModel):
         extra='forbid',
     )
 
-    complex_number: Annotated[
+    complex_id: Annotated[
         int,
         Field(description='단지 번호')
     ]
@@ -402,7 +424,7 @@ class NaverComplexSummary(BaseModel):
         str,
         Field(description='단지명')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형')
     ] = None
@@ -414,7 +436,7 @@ class NaverComplexSummary(BaseModel):
         str | None,
         Field(description='도로명 주소')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='총 세대수')
     ] = None
@@ -422,7 +444,7 @@ class NaverComplexSummary(BaseModel):
         int | None,
         Field(description='동 수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -434,29 +456,17 @@ class NaverComplexSummary(BaseModel):
         float | None,
         Field(description='세대당 주차 대수')
     ] = None
-    floor_area_ratio: Annotated[
+    floor_area_ratio_percent: Annotated[
         float | None,
         Field(description='용적률 (%)')
     ] = None
-    article_counts: Annotated[
+    listing_counts: Annotated[
         dict[str, int],
         Field(description='거래 유형별 매물 수')
     ] = {}
-    sale_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 호가 [최저, 최고] (만원)')
-    ] = None
-    jeonse_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='전세 호가 [최저, 최고] (만원)')
-    ] = None
-    monthly_asking: Annotated[
-        NaverRentAskingRange | None,
-        Field(description=MONTHLY_ASKING_DESCRIPTION)
-    ] = None
-    short_term_asking: Annotated[
-        NaverRentAskingRange | None,
-        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
+    asking_ranges: Annotated[
+        dict[str, AmountRange] | None,
+        Field(description=ASKING_RANGES_DESCRIPTION)
     ] = None
     pyeongs: Annotated[
         list[NaverPyeong],
@@ -466,25 +476,25 @@ class NaverComplexSummary(BaseModel):
         list[NaverPyeongGroup] | None,
         Field(description='평형 묶음 (대표 평수별 평형 번호). 빌라 단지는 키가 없고, 서버가 묶음을 주지 않으면 [], 조회 실패면 null. --pyeong 을 몇 개 주든 붙는다')
     ] = None
-    pyeong_maintenance_fee: Annotated[
+    pyeong_manage_cost: Annotated[
         NaverComplexMaintenanceFee | None,
         Field(description='--pyeong 평형의 월 관리비. 평형을 하나만 줄 때만 키가 있고, 자료가 없으면 null')
     ] = None
-    market_prices: Annotated[
+    estimated_prices: Annotated[
         list[NaverMarketPrice] | None,
         Field(description='--pyeong 평형의 기관별 최신 시세. 평형을 하나만 줄 때만 키가 있고, 시세가 없으면 []. 단지 유형을 몰라 시세를 묻지 않았거나 조회에 실패하면 null')
     ] = None
-    real_price_summary: Annotated[
+    trade_summary: Annotated[
         NaverRealPriceSummary | None,
         Field(description=(
             '--pyeong 평형의 최근 3년 매매·전세 실거래 요약. 평형을 하나만 줄 때만 키가 있다. 그 거래 유형의 3년 거래가 없으면 5년으로 '
-            '요약하고 그 유형에 since 가 붙는다. 3개월 평균 average_3m_manwon 은 5년으로 요약했으면 null 이다. 조회가 실패한 유형은 null'
+            '요약하고 그 유형에 start_date 가 붙는다. 3개월 평균 recent_3m_average_manwon 은 5년으로 요약했으면 null 이다. 조회가 실패한 유형은 null'
         ))
     ] = None
-    price_per_pyeong: Annotated[
+    asking_price_per_pyeong: Annotated[
         dict[str, NaverPricePerPyeong | None] | None,
         Field(description=(
-            '--pyeong 평형의 평당 호가(만원/평)와 같은 동·구·시 평균 비교. {sale: 매매, jeonse: 전세}. 공급 평수 기준, 네이버 매물 호가 기준 '
+            '--pyeong 평형의 평당 호가(만원/평)와 같은 동·구·시 평균 비교. {sale: …, jeonse: …}. 공급 평수 기준, 네이버 매물 호가 기준 '
             '주간값(매주 월요일 갱신)이다. 평형을 하나만 줄 때, 아파트·오피스텔·재건축·분양권 단지만 키가 있다(빌라 등 다른 단지는 키가 없고, '
             '단지 유형을 모르면 null). 네이버가 평당가를 주지 않는 거래 유형은 그 키가 없고(둘 다 없으면 {}), 조회가 실패한 유형은 null'
         ))
@@ -510,7 +520,7 @@ class NaverComplexSummary(BaseModel):
     _pyeong_scoped: bool = PrivateAttr(default=False)
     # 재건축 단지인지. 아니면 reconstruction 은 해당 없음이라 뺀다
     _reconstruction_scoped: bool = PrivateAttr(default=False)
-    # 평당가를 묻는 단지 유형이거나 유형을 모르는지 (`_pyeong_details` 가 키를 넣었는지). 아니면(빌라 등) price_per_pyeong 은 해당 없음이라 뺀다
+    # 평당가를 묻는 단지 유형이거나 유형을 모르는지 (`_pyeong_details` 가 키를 넣었는지). 아니면(빌라 등) asking_price_per_pyeong 은 해당 없음이라 뺀다
     _price_per_pyeong_scoped: bool = PrivateAttr(default=False)
     # 평형 묶음을 조회했는지. 빌라 단지는 웹도 묻지 않아 pyeong_groups 는 해당 없음이라 뺀다
     _pyeong_groups_scoped: bool = PrivateAttr(default=False)
@@ -521,10 +531,10 @@ class NaverComplexSummary(BaseModel):
         if not self._pyeong_scoped:
             for field in PYEONG_SCOPED_FIELDS:
                 data.pop(field, None)
-        # 평당가를 주지 않는 단지 유형(빌라 등)은 해당 없음이라 키를 뺀다. 단지 유형을 모르면 키는 있고 null(모름)이다 (시세 `market_prices` 와 같다).
+        # 평당가를 주지 않는 단지 유형(빌라 등)은 해당 없음이라 키를 뺀다. 단지 유형을 모르면 키는 있고 null(모름)이다 (시세 `estimated_prices` 와 같다).
         # 조회 실패는 거래 유형 안의 null 이다
         if not self._price_per_pyeong_scoped:
-            data.pop('price_per_pyeong', None)
+            data.pop('asking_price_per_pyeong', None)
         if not self._reconstruction_scoped:
             data.pop('reconstruction', None)
         if not self._pyeong_groups_scoped:
@@ -533,7 +543,7 @@ class NaverComplexSummary(BaseModel):
 
 
 # 단지 요약에서 --pyeong 을 하나만 줄 때만 붙이는 평형 정보
-PYEONG_SCOPED_FIELDS: frozenset[str] = frozenset({'pyeong_maintenance_fee', 'market_prices', 'real_price_summary', 'price_per_pyeong'})
+PYEONG_SCOPED_FIELDS: frozenset[str] = frozenset({'pyeong_manage_cost', 'estimated_prices', 'trade_summary', 'asking_price_per_pyeong'})
 # 평당가(complex/pyeongPrice/pyeongType)를 묻는 단지 유형: 아파트 A01·오피스텔 A02·재건축 A04·아파트분양권 B01·오피스텔분양권 B02.
 # 단지형 빌라(A05~A07)는 웹이 이 박스를 쓰는지 몰라 묻지 않는다. 웹 단지 화면 ComplexAreaPrice 는 pricePerPyeong 이 없으면
 # 박스를 그리지 않는다 (2026-11-18 번들 청크 b042d8aace_1okty1145x932)
@@ -557,12 +567,12 @@ def _pyeong(pyeong: NaverPyeongModel, is_officetel: bool = False) -> NaverPyeong
         # 매물 상세가 오피스텔 공급면적을 None 으로 두는 것과 맞춘다.
         supply = None
     return NaverPyeong(
-        number=pyeong.number,
+        pyeong_id=pyeong.number,
         name=pyeong.name,
-        exclusive_m2=pyeong.exclusive_area,
-        exclusive_pyeong=m2_to_pyeong(pyeong.exclusive_area),
-        supply_m2=supply,
-        contract_m2=pyeong.contract_area,
+        area_m2=pyeong.exclusive_area,
+        area_pyeong=m2_to_pyeong(pyeong.exclusive_area),
+        supply_area_m2=supply,
+        contract_area_m2=pyeong.contract_area,
         room_count=pyeong.room_count,
         bathroom_count=pyeong.bath_room_count,
         household_count=pyeong.household_count,
@@ -594,8 +604,8 @@ def _reconstruction(client: NaverClient, complex_number: int, notes: list[str]) 
         current_step=label(current.step_type) if current else None,
         current_step_date=iso_date(current.implementation_date) if current else None,
         construction_company=result.construction_company or None,
-        planned_households=result.household_count,
-        planned_floor_area_ratio=result.building_area_to_land_ratio,
+        planned_household_count=result.household_count,
+        planned_floor_area_ratio_percent=result.building_area_to_land_ratio,
         # 날짜가 없는 단계(없음·빈 글자·'-')는 아직 거치지 않은 단계라 뺀다. 날짜가 있는데 읽지 못하면(연월만 등) 단계는 남기고
         # date 는 모름(null)이다 (current_step_date 와 같다, 2026-11-24 리뷰)
         steps=[
@@ -610,7 +620,7 @@ def _pyeong_groups(client: NaverClient, complex_number: int, notes: list[str]) -
     """평형 묶음 (1회 호출). 네이버가 묶음을 주지 않으면(빈 목록이거나 성공인데 `result` 가 null) [], 조회가 실패하면 모름(None).
 
     `real-price --group` 의 `_find_pyeong_group` 도 성공인데 `result` 가 null 인 응답을 빈 목록과 같게 읽는다. 묶음의 평형 목록을 주지 않으면
-    (`pyeongTypes` null) 그 묶음만 `pyeong_numbers` 가 모름(None)이다. 조회가 실패하면 `notes` 에 `[실패]` 안내를 붙인다.
+    (`pyeongTypes` null) 그 묶음만 `pyeong_ids` 가 모름(None)이다. 조회가 실패하면 `notes` 에 `[실패]` 안내를 붙인다.
     """
     groups = result_or_empty(lambda: client.run_request_complex_pyeong_groups_v1(
         NaverComplexPyeongGroupsV1RequestParameterModel(complex_number=complex_number)
@@ -620,9 +630,9 @@ def _pyeong_groups(client: NaverClient, complex_number: int, notes: list[str]) -
     return [
         NaverPyeongGroup(
             name=group.representative_pyeong_name,
-            representative_pyeong=group.representative_pyeong_number,
-            households=group.household_count,
-            pyeong_numbers=group_pyeong_numbers(group),
+            representative_pyeong_id=group.representative_pyeong_number,
+            household_count=group.household_count,
+            pyeong_ids=group_pyeong_numbers(group),
         )
         for group in groups
     ]
@@ -717,7 +727,7 @@ def get_complex(
 
     address = complex_.address
     summary = NaverComplexSummary(
-        complex_number=complex_number,
+        complex_id=complex_number,
         name=complex_.name,
         address=normalize_address(
             join_address(address.city, address.division, address.sector, address.jibun)
@@ -727,7 +737,7 @@ def get_complex(
         ) if address and address.road_name else None,
         construction_company=complex_.construction_company,
         parking_per_household=complex_.parking_info.parking_count_per_household if complex_.parking_info else None,
-        floor_area_ratio=complex_.building_ratio_info.floor_area_ratio if complex_.building_ratio_info else None,
+        floor_area_ratio_percent=complex_.building_ratio_info.floor_area_ratio if complex_.building_ratio_info else None,
         pyeongs=[_pyeong(pyeong, complex_.type == OFFICETEL_CODE) for pyeong in pyeongs],
         pyeong_groups=pyeong_groups,
         schools=None if schools is None else assigned_schools(schools, notes),
@@ -745,7 +755,7 @@ def get_complex(
         **pyeong_details,
     )
     summary._pyeong_scoped = bool(pyeong_details)
-    summary._price_per_pyeong_scoped = 'price_per_pyeong' in pyeong_details
+    summary._price_per_pyeong_scoped = 'asking_price_per_pyeong' in pyeong_details
     summary._reconstruction_scoped = is_reconstruction
     summary._pyeong_groups_scoped = not villa
     return summary
@@ -754,11 +764,13 @@ def get_complex(
 def _real_price_extreme(trade: NaverRealPriceSummaryTradeModel | None, jeonse: bool) -> NaverRealPriceExtreme | None:
     if trade is None:
         return None
+    # 전세는 보증금을 deposit_manwon 에, 매매는 매매가를 price_manwon 에 담는다 (넘기지 않은 쪽은 키가 없다)
+    amount = {'deposit_manwon': won_to_manwon(trade.deposit)} if jeonse else {'price_manwon': won_to_manwon(trade.deal_price)}
     return NaverRealPriceExtreme(
-        price_manwon=won_to_manwon(trade.deposit if jeonse else trade.deal_price),
+        **amount,
         trade_date=iso_date(trade.trade_date),
-        floor=trade.floor,
-        trade_category=trade.trade_category or None,
+        floor=floor_text(trade.floor),
+        deal_type=trade.trade_category or None,
         cancelled=trade.is_delete,
     )
 
@@ -767,10 +779,12 @@ def _real_price_trade_summary(summary: NaverRealPriceSummaryModel | None, jeonse
     """거래가 없으면 서버가 빈 객체를 줘 None 이다."""
     if summary is None or (summary.avg_price is None and summary.min_price is None and summary.max_price is None):
         return None
+    lowest = _real_price_extreme(summary.min_price, jeonse)
+    highest = _real_price_extreme(summary.max_price, jeonse)
     return NaverRealPriceTradeSummary(
         average_manwon=won_to_manwon(summary.avg_price),
-        lowest=_real_price_extreme(summary.min_price, jeonse),
-        highest=_real_price_extreme(summary.max_price, jeonse),
+        # 두 거래를 모두 모르면 범위가 없어 null
+        trade_range=None if lowest is None and highest is None else NaverRealPriceRange(lowest=lowest, highest=highest),
     )
 
 
@@ -798,7 +812,7 @@ def _price_per_pyeong(
                 complex_number=complex_number, pyeong_type_number=pyeong_number, trade_type=trade_type,
             )
         ), NaverComplexPyeongPriceModel, notes=notes, what=f'{TRADE_NAME_BY_CODE[trade_type]} 평당 호가',
-            unknown=f'모름(null)으로 낸 칸: price_per_pyeong.{key}')
+            unknown=f'모름(null)으로 낸 칸: asking_price_per_pyeong.{key}')
         if result is None:
             # 조회 실패(모름)다. 평당가가 없는 것(키 삭제)과 섞지 않는다
             prices[key] = None
@@ -808,14 +822,14 @@ def _price_per_pyeong(
             regions = None if result.legal_division_price_per_pyeong_list is None else list(reversed(result.legal_division_price_per_pyeong_list))
             dates = [date_ for date_ in (iso_date(region.first_day_of_week) for region in regions or []) if date_]
             prices[key] = NaverPricePerPyeong(
-                manwon_per_pyeong=won_to_manwon(result.price_per_pyeong),
-                as_of=max(dates) if dates else None,
+                price_per_pyeong_manwon=won_to_manwon(result.price_per_pyeong),
+                base_date=max(dates) if dates else None,
                 regions=None if regions is None else [
                     NaverPricePerPyeongRegion(
                         name=region.legal_division_name,
                         level=None if not region.legal_division_level_type else PRICE_PER_PYEONG_LEVEL_LABELS.get(region.legal_division_level_type, region.legal_division_level_type),
                         # 평당가 0 은 없음으로 본다 (시세 평균·범위와 같은 규칙)
-                        manwon_per_pyeong=won_to_manwon(region.price_per_pyeong) if region.price_per_pyeong else None,
+                        price_per_pyeong_manwon=won_to_manwon(region.price_per_pyeong) if region.price_per_pyeong else None,
                     )
                     for region in regions
                 ],
@@ -835,7 +849,7 @@ def _pyeong_details(
 
     요청은 관리비 1 + 시세 1(단지 유형이 있을 때) + 매매·전세 실거래 각 1~2 + 평당가 매매·전세 각 1(단지 유형이 `PRICE_PER_PYEONG_COMPLEX_TYPES` 일 때)
     = 최대 8회, 단지 유형이 없으면 3~5회다. 조회가 실패하면 그 값만 None. 단지 유형이 `PRICE_PER_PYEONG_COMPLEX_TYPES` 가 아닌 값이면
-    (빌라 등) 평당가는 해당 없음이라 `price_per_pyeong` 키를 이 결과에 넣지 않고, 단지 유형을 모르면 요청 없이 `price_per_pyeong` 이 None(모름)이다.
+    (빌라 등) 평당가는 해당 없음이라 `asking_price_per_pyeong` 키를 이 결과에 넣지 않고, 단지 유형을 모르면 요청 없이 `asking_price_per_pyeong` 이 None(모름)이다.
     조회가 실패하면 `notes` 에 `[실패]` 안내를 붙인다 (같은 안내는 한 번만).
 
     Args:
@@ -844,7 +858,7 @@ def _pyeong_details(
     """
     fee = result_or_none(lambda: client.run_request_complex_maintenance_fee_v1(
         NaverComplexMaintenanceFeeV1RequestParameterModel(complex_number=complex_number, pyeong_type_number=pyeong_number)
-    ), notes=notes, what='평형 관리비', unknown='모름(null)으로 낸 칸: pyeong_maintenance_fee')
+    ), notes=notes, what='평형 관리비', unknown='모름(null)으로 낸 칸: pyeong_manage_cost')
     # 단지 유형은 늘 온다 (아파트·오피스텔·빌라 6곳). 시세가 없으면 서버가 [] 를 줘 그대로 [] 이고,
     # None 은 조회 실패(모름)일 때뿐이다 (2026-10-09 확인)
     market = None
@@ -853,13 +867,13 @@ def _pyeong_details(
             NaverComplexMarketPriceRecentV1RequestParameterModel(
                 complex_number=complex_number, pyeong_type_number=pyeong_number, real_estate_type=real_estate_type,
             )
-        ), notes=notes, what='시세', unknown='모름(null)으로 낸 칸: market_prices')
+        ), notes=notes, what='시세', unknown='모름(null)으로 낸 칸: estimated_prices')
     since = years_ago(today, REAL_PRICE_SUMMARY_YEARS)
 
     def real_price_summary(trade_type: str, start_date: str, *, average_3m: bool = False) -> NaverRealPriceSummaryModel | None:
         # 3년·5년 요약 조회가 실패하면 요약 칸 전체가, 3개월 평균 조회가 실패하면 그 평균 칸만 모름이다
         key = 'sale' if trade_type == 'A1' else 'jeonse'
-        column = f'real_price_summary.{key}' + ('.average_3m_manwon' if average_3m else '')
+        column = f'trade_summary.{key}' + ('.recent_3m_average_manwon' if average_3m else '')
         return result_or_none(lambda: client.run_request_complex_pyeong_real_price_summary_v1(
             NaverComplexPyeongRealPriceSummaryV1RequestParameterModel(
                 complex_number=complex_number, pyeong_type_number=pyeong_number, trade_type=trade_type, start_date=start_date,
@@ -878,13 +892,13 @@ def _pyeong_details(
             summary = _real_price_trade_summary(real_price_summary(trade_type, fallback_since), jeonse)
             if summary is None:
                 return None
-            summary.since = fallback_since
+            summary.start_date = fallback_since
             # 3개월 구간은 3년 구간 안이라 3년이 비었으면 3개월도 비어 요청하지 않는다
             return summary
         # 3개월 안 거래가 없으면 서버가 빈 객체를 줘 평균이 없다
         recent = real_price_summary(trade_type, months_ago(today, REAL_PRICE_RECENT_MONTHS), average_3m=True)
         if recent is not None and recent.avg_price:
-            summary.average_3m_manwon = won_to_manwon(recent.avg_price)
+            summary.recent_3m_average_manwon = won_to_manwon(recent.avg_price)
         return summary
 
     sale_summary = trade_summary('A1', jeonse=False)
@@ -892,35 +906,36 @@ def _pyeong_details(
     maintenance = None
     if fee is not None and fee.month_average_fee is not None:
         maintenance = NaverComplexMaintenanceFee(
-            year_month=fee.year_month,
-            latest_manwon=won_to_manwon(fee.year_month_fee),
-            monthly_average_manwon=won_to_manwon(fee.month_average_fee),
-            summer_average_manwon=won_to_manwon(fee.summer_average_fee),
-            winter_average_manwon=won_to_manwon(fee.winter_average_fee),
+            latest_month=fee.year_month,
+            latest_manage_cost_manwon=won_to_manwon(fee.year_month_fee),
+            manage_cost_manwon=won_to_manwon(fee.month_average_fee),
+            summer_manage_cost_manwon=won_to_manwon(fee.summer_average_fee),
+            winter_manage_cost_manwon=won_to_manwon(fee.winter_average_fee),
         )
     details: dict[str, Any] = {
-        'pyeong_maintenance_fee': maintenance,
+        'pyeong_manage_cost': maintenance,
         # 함께 오는 중개사 이름·전화(realtors)는 옮기지 않는다
-        'market_prices': None if market is None else [
+        'estimated_prices': None if market is None else [
             NaverMarketPrice(
                 provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
                 base_date=iso_date(item.base_date),
-                # 평균 0 은 범위(manwon_range)처럼 없음으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다)
-                sale_average_manwon=won_to_manwon(item.deal_average_price) if item.deal_average_price else None,
-                sale_range_manwon=manwon_range(item.deal_price_range),
-                jeonse_average_manwon=won_to_manwon(item.lease_average_price) if item.lease_average_price else None,
-                jeonse_range_manwon=manwon_range(item.deposit_price_range),
-                jeonse_ratio_percent=manwon_range(item.lease_per_deal_rate, scale=False),
+                **market_price_fields(
+                    item.deal_average_price,
+                    item.deal_price_range,
+                    item.lease_average_price,
+                    item.deposit_price_range,
+                    item.lease_per_deal_rate,
+                ),
             )
             for item in market
         ],
-        'real_price_summary': NaverRealPriceSummary(
-            since=since,
+        'trade_summary': NaverRealPriceSummary(
+            start_date=since,
             sale=sale_summary,
             jeonse=jeonse_summary,
         ),
     }
     # 평당가를 주지 않는 단지 유형(빌라 등)은 해당 없음이라 키를 두지 않는다. 단지 유형을 모르면 칸은 있는 것이라 null(모름)이다
     if real_estate_type is None or real_estate_type in PRICE_PER_PYEONG_COMPLEX_TYPES:
-        details['price_per_pyeong'] = _price_per_pyeong(client, complex_number, pyeong_number, real_estate_type, notes)
+        details['asking_price_per_pyeong'] = _price_per_pyeong(client, complex_number, pyeong_number, real_estate_type, notes)
     return details

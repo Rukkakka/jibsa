@@ -13,6 +13,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
+    AmountRange,
     lookup_failure_note,
     note,
     null_items_note,
@@ -33,6 +34,8 @@ from jibsa.providers.zigbang.api.response.local.info import (
 from jibsa.providers.zigbang.service.common.base import (
     OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
+    ZigbangEstimatedPrice,
+    sale_price_range,
     text_or_none,
 )
 from jibsa.providers.zigbang.service.local.base import (
@@ -78,21 +81,17 @@ class ZigbangRegionEstimatedPrice(BaseModel):
         extra='forbid',
     )
 
-    range: Annotated[
+    pyeong_range: Annotated[
         str | None,
         Field(description="평형대 (웹 이름표 그대로: 전체·10평 이하·10평대~50평대·60평대 이상). `--range` 값('10평이하'·'60평대이상')과 빈칸이 다르다. 표에 없는 구분은 직방 글자 그대로")
     ]
-    sale_price_per_pyeong_manwon: Annotated[
-        int | float | None,
-        Field(description='평균 매매 평당가 (만원/3.3㎡). 직방이 주지 않으면 null')
+    estimated_prices: Annotated[
+        dict[str, ZigbangEstimatedPrice | None],
+        Field(description="평균 직방시세. 'sale' 키 하나이고 안은 price_per_pyeong_manwon (평균 매매 평당가, 만원/3.3㎡). 직방이 주지 않으면 \"sale\": null")
     ]
-    sale_price_min_manwon: Annotated[
-        int | float | None,
-        Field(description='최저 매매가 (만원). 직방이 주지 않거나 0 이면 null')
-    ]
-    sale_price_max_manwon: Annotated[
-        int | float | None,
-        Field(description='최고 매매가 (만원). 직방이 주지 않거나 0 이면 null')
+    estimated_ranges: Annotated[
+        dict[str, AmountRange | None],
+        Field(description="직방시세 매매가 범위 (만원). 'sale' 키 하나이고 lowest 최저·highest 최고는 price_manwon. 두 끝이 모두 주지 않거나 0 이면 \"sale\": null, 한 끝만 그러면 그 price_manwon 만 null")
     ]
 
 
@@ -107,17 +106,9 @@ class ZigbangRegionMonthlyVolume(BaseModel):
         str | None,
         Field(description='월 (YYYY-MM)')
     ]
-    sale_count: Annotated[
-        int | None,
-        Field(description='매매 건수. 직방이 주지 않으면 null')
-    ]
-    jeonse_count: Annotated[
-        int | None,
-        Field(description='전세 건수. 직방이 주지 않으면 null')
-    ]
-    wolse_count: Annotated[
-        int | None,
-        Field(description='월세 건수. 직방이 주지 않으면 null')
+    trade_counts: Annotated[
+        dict[str, int | None],
+        Field(description="거래 유형별 건수. 늘 'sale'·'jeonse'·'wolse' 세 키이고 직방이 주지 않은 유형은 null")
     ]
 
 
@@ -153,7 +144,7 @@ class ZigbangPriceTrendLine(BaseModel):
         Literal['단지', '지역'] | None,
         Field(description="이름이 region.name 과 같으면 '지역', 아니면 '단지'. 줄 이름이나 지역 이름을 모르면 null")
     ]
-    points: Annotated[
+    months: Annotated[
         list[ZigbangPriceTrendPoint] | None,
         Field(description='월별 평당가 (오래된 달부터). 직방이 주지 않으면 null')
     ]
@@ -166,9 +157,9 @@ class ZigbangPriceTrend(BaseModel):
         extra='forbid',
     )
 
-    range: Annotated[
+    pyeong_range: Annotated[
         ZigbangPynAreaType,
-        Field(description="평형대 (--range 값: 전체·10평이하·10평대·20평대·30평대·40평대·50평대·60평대이상). estimated_prices[].range 의 웹 이름표('10평 이하')와 빈칸이 다르다")
+        Field(description="평형대 (--range 값: 전체·10평이하·10평대·20평대·30평대·40평대·50평대·60평대이상). by_pyeong_range[].pyeong_range 의 웹 이름표('10평 이하')와 빈칸이 다르다")
     ]
     lines: Annotated[
         list[ZigbangPriceTrendLine],
@@ -183,7 +174,7 @@ class ZigbangPriceMovement(BaseModel):
         extra='forbid',
     )
 
-    weeks: Annotated[
+    streak_weeks: Annotated[
         int,
         Field(description='같은 흐름이 이어진 주 수')
     ]
@@ -194,7 +185,7 @@ class ZigbangPriceMovement(BaseModel):
 
 
 class ZigbangPopulationMonth(BaseModel):
-    """한 달의 연령대별 인구 (명). 일곱 연령대의 합이 total 과 같다."""
+    """한 달의 연령대별 인구 (명). 일곱 연령대의 합이 population 과 같다."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -204,7 +195,7 @@ class ZigbangPopulationMonth(BaseModel):
         str | None,
         Field(description='월 (YYYY-MM)')
     ]
-    total: Annotated[
+    population: Annotated[
         int | None,
         Field(description='전체 인구 (명). 직방이 주지 않으면 null')
     ]
@@ -249,7 +240,7 @@ class ZigbangHouseholdMonth(BaseModel):
         str | None,
         Field(description='월 (YYYY-MM)')
     ]
-    total: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='전체 세대 (세대). 직방이 주지 않으면 null')
     ]
@@ -286,7 +277,7 @@ class ZigbangRegionPopulation(BaseModel):
         list[ZigbangPopulationMonth] | None,
         Field(description='월별 연령대별 인구 (오래된 달부터). 직방이 빈 목록을 주면 [], 받지 못했으면 null')
     ]
-    households: Annotated[
+    household_months: Annotated[
         list[ZigbangHouseholdMonth] | None,
         Field(description='월별 가구원 수별 세대 (오래된 달부터). 직방이 빈 목록을 주면 [], 받지 못했으면 null')
     ]
@@ -299,23 +290,22 @@ class ZigbangRegionInfoResult(ZigbangLocalModel):
         ZigbangLocalRegion,
         Field(description='조회한 동·구')
     ]
-    complexes: Annotated[
+    complex_count: Annotated[
         int | None,
         Field(description="단지 수 (웹 머리 '39 단지 · 23,634 세대' 의 글자에서 읽은 값). 읽지 못하면 null")
     ]
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수 (웹 머리 글자에서 읽은 값). 읽지 못하면 null')
     ]
-    estimated_sale_price_min_manwon: Annotated[
-        int | float | None,
-        Field(description="전체 평형의 최저 직방시세 매매가 (만원. 웹 '매매 {최저} ~ {최고}' 의 앞). 직방이 주지 않거나 0 이면 null")
+    estimated_ranges: Annotated[
+        dict[str, AmountRange | None],
+        Field(description=(
+            "전체 평형의 직방시세 매매가 범위 (만원. 웹 '매매 {최저} ~ {최고}'). 'sale' 키 하나이고 lowest 최저·highest 최고는 price_manwon. "
+            '두 끝이 모두 주지 않거나 0 이면 "sale": null, 한 끝만 그러면 그 price_manwon 만 null'
+        ))
     ]
-    estimated_sale_price_max_manwon: Annotated[
-        int | float | None,
-        Field(description="전체 평형의 최고 직방시세 매매가 (만원. 웹 '매매 {최저} ~ {최고}' 의 뒤). 직방이 주지 않거나 0 이면 null")
-    ]
-    estimated_prices: Annotated[
+    by_pyeong_range: Annotated[
         list[ZigbangRegionEstimatedPrice] | None,
         Field(
             description=(
@@ -376,11 +366,10 @@ def _estimated_prices(prices: list[ZigbangLocalPriceModel] | None) -> list[Zigba
     return [
         ZigbangRegionEstimatedPrice(
             # 표에 없는 구분은 직방 글자 그대로 둔다
-            range=AREA_LABELS.get(price.area, price.area) if price.area is not None else None,
-            sale_price_per_pyeong_manwon=price.sales_price,
-            # 전체 줄의 최저·최고는 결과 머리의 estimated_sale_price_min/max_manwon 과 같은 칸이라 같은 규칙(0 은 웹이 그리지 않아 null)이다
-            sale_price_min_manwon=price.min_sales_price or None,
-            sale_price_max_manwon=price.max_sales_price or None,
+            pyeong_range=AREA_LABELS.get(price.area, price.area) if price.area is not None else None,
+            estimated_prices={'sale': None if price.sales_price is None else ZigbangEstimatedPrice(price_per_pyeong_manwon=price.sales_price)},
+            # 전체 줄의 최저·최고는 결과 머리의 estimated_ranges 와 같은 칸이라 같은 규칙(0 은 웹이 그리지 않아 null)이다
+            estimated_ranges={'sale': sale_price_range(price.min_sales_price or None, price.max_sales_price or None)},
         )
         for price in kept
     ]
@@ -441,13 +430,13 @@ def _price_trend(
         lines.append(ZigbangPriceTrendLine(
             name=label,
             kind=None if label is None or region_name is None else ('지역' if label == region_name else '단지'),
-            points=None if line.data is None else [
+            months=None if line.data is None else [
                 # 직방시세 0 은 값 없음이다 (단지 추이·평형대별 시세와 같다). 점은 남기고 값만 모름이다
                 ZigbangPriceTrendPoint(month=text_or_none(point.date), price_per_pyeong_manwon=None if point.price == 0 else point.price)
                 for point in line.data
             ],
         ))
-    return ZigbangPriceTrend(range=price_range, lines=lines), notes
+    return ZigbangPriceTrend(pyeong_range=price_range, lines=lines), notes
 
 
 def get_region_info(
@@ -460,7 +449,7 @@ def get_region_info(
 
     지역 정보(`locals`)가 본 조회이고 404 면 직방에 그 지역 정보가 없다고 알린다 (NOT_FOUND). 나머지는 덤 조회라 본 조회 뒤에 부르고, 하나가 실패하면(요청 제한
     포함) 그 값만 null 로 두고 `[실패]` 로 알린다 (인구와 세대는 따로). 평형대(`price_range`)는 평당가 추이 그래프만 정하고 평형대별 시세
-    (`estimated_prices`)는 늘 모든 평형대다. 덤 조회가 예외 없이 끝났어도 직방이 목록을 주지 않으면 `[실패]` + 업데이트 문구로 알린다.
+    (`by_pyeong_range`)는 늘 모든 평형대다. 덤 조회가 예외 없이 끝났어도 직방이 목록을 주지 않으면 `[실패]` + 업데이트 문구로 알린다.
 
     Raises:
         JibsaError: 시·도 이름일 때 (INVALID_ARGUMENT), 직방이 그 지역 정보를 주지 않을 때 (NOT_FOUND, 404).
@@ -495,9 +484,7 @@ def get_region_info(
         monthly_volumes = None if months is None else [
             ZigbangRegionMonthlyVolume(
                 month=text_or_none(month.date),
-                sale_count=month.sales_volume,
-                jeonse_count=month.charter_volume,
-                wolse_count=month.rent_volume,
+                trade_counts={'sale': month.sales_volume, 'jeonse': month.charter_volume, 'wolse': month.rent_volume},
             )
             for month in months
         ]
@@ -523,7 +510,7 @@ def get_region_info(
             price_movement = (
                 None
                 if movement is None or not movement.updown_week_count or not movement.updown_sign
-                else ZigbangPriceMovement(weeks=movement.updown_week_count, direction=movement.updown_sign)
+                else ZigbangPriceMovement(streak_weeks=movement.updown_week_count, direction=movement.updown_sign)
             )
 
     population: ZigbangRegionPopulation | None = None
@@ -546,7 +533,7 @@ def get_region_info(
             people = [
                 ZigbangPopulationMonth(
                     month=_year_month(item.yearmonth),
-                    total=item.age_all,
+                    population=item.age_all,
                     age_0_9=item.age_0_9,
                     age_10_19=item.age_10_19,
                     age_20_29=item.age_20_29,
@@ -562,12 +549,12 @@ def get_region_info(
                 ZigbangLocalsTotalHouseholdsTimeRequestParameterModel(local_code=area.code, start_date=start_date, end_date=end_date)
             )
         except OPTIONAL_LOOKUP_ERRORS as exc:
-            notes.append(_lookup_failure('지역 세대', exc, 'population.households'))
+            notes.append(_lookup_failure('지역 세대', exc, 'population.household_months'))
         else:
             households = [
                 ZigbangHouseholdMonth(
                     month=_year_month(item.yearmonth),
-                    total=item.people_all,
+                    household_count=item.people_all,
                     one=item.people_1,
                     two=item.people_2,
                     three=item.people_3,
@@ -576,17 +563,16 @@ def get_region_info(
                 )
                 for item in households_response.root
             ]
-        population = ZigbangRegionPopulation(people=people, households=households)
+        population = ZigbangRegionPopulation(people=people, household_months=households)
 
     complexes, households_count = _description_counts(local.description)
     sale_min, sale_max = _sale_price_bounds(local.price)
     return ZigbangRegionInfoResult(
         region=region,
-        complexes=complexes,
-        households=households_count,
-        estimated_sale_price_min_manwon=sale_min,
-        estimated_sale_price_max_manwon=sale_max,
-        estimated_prices=_estimated_prices(local.price),
+        complex_count=complexes,
+        household_count=households_count,
+        estimated_ranges={'sale': sale_price_range(sale_min, sale_max)},
+        by_pyeong_range=_estimated_prices(local.price),
         monthly_volumes=monthly_volumes,
         price_trend=price_trend,
         price_movement=price_movement,

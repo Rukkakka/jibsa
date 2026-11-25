@@ -95,8 +95,8 @@ def list_popular_listings(
     dropped = ranking.null_items('articles')
     # 순위는 그 동이 속한 구 안이라 카드는 모두 그 구 매물이다. 구 이름은 그 동의 시·도로 미리 채워 시·도를 따로 찾지 않는다
     # (`search_dong` 과 같다). 예전에는 카드마다 구 이름으로 찾아 여러 시·도에 있는 구 이름이면 그 이름 검색을 끝까지 받았다
-    # (2026-11-13 리뷰·실측: '서울 중구 명동2가' 가 요청 5회. 도움말은 2회). 세종은 구가 없어(name2 '') `with_center_sido` 가 채운다
-    sido_cache: dict[tuple[str, str], str | None] = {(region.name2, ''): region.name1} if region.name2 else {}
+    # (2026-11-13 리뷰·실측: '서울 중구 명동2가' 가 요청 5회. 도움말은 2회). 세종은 구가 없어(sigungu '') `with_center_sido` 가 채운다
+    sido_cache: dict[tuple[str, str], str | None] = {(region.sigungu, ''): region.sido} if region.sigungu else {}
     listings: list[DaangnRankedListing] = []
     shown: list[DaangnArticleModel] = []
     for rank, article in enumerate(articles, start=1):
@@ -110,11 +110,11 @@ def list_popular_listings(
         region=region,
         returned=len(listings),
         listings=listings,
-        # 순위 범위는 동이 속한 구다. 세종은 시·군·구가 없어(name2 '') 그 동 안에서만 매긴다 (2026-10-11 실측: 새롬동 7건·
+        # 순위 범위는 동이 속한 구다. 세종은 시·군·구가 없어(sigungu '') 그 동 안에서만 매긴다 (2026-10-11 실측: 새롬동 7건·
         # 아름동 4건·반곡동 1건·소담동 0건이 모두 그 동 매물. 자곡동은 강남구 다른 동 매물 28건)
         notes=[
-            note('범위', f'순위는 {region.name2} 전체 조회수 기준입니다') if region.name2
-            else note('범위', f'구가 없는 지역이라 순위는 {region.name3} 안 조회수 기준입니다')
+            note('범위', f'순위는 {region.sigungu} 전체 조회수 기준입니다') if region.sigungu
+            else note('범위', f'구가 없는 지역이라 순위는 {region.dong} 안 조회수 기준입니다')
         ]
         # 서버가 순위를 limit 건에서 잘라 주므로 limit 건을 다 받았으면 뒤 순위가 남아 있다 (2026-10-14 실측: 역삼동
         # --limit 30 에서 30건을 받고 1건을 빼자 '더 조회할 매물이 없습니다' 라고 했다)

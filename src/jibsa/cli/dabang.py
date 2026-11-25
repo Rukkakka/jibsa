@@ -35,6 +35,7 @@ from jibsa.cli.paging import (
 )
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import DEFAULT_RADIUS_KM
+from jibsa.core.korean import full_legal_division_code
 from jibsa.core.listing import (
     KST,
     normalize_address,
@@ -123,7 +124,6 @@ from jibsa.providers.dabang.service.real_price import (
 from jibsa.providers.dabang.service.region import (
     find_scope,
     is_national_or_state,
-    legal_division_code,
     resolve_dong,
     resolve_places,
     resolve_scope,
@@ -272,7 +272,7 @@ RegionInfoLimitOption = Annotated[
     int, typer.Option(min=1, max=REGION_INFO_MAX_LIMIT, help=f'받을 수 (다방은 {REGION_INFO_PAGE_LIMIT}곳씩 준다. 그만큼마다 요청 1회)'),
 ]
 PrimaryPyeongOption = Annotated[
-    int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].space_seq). 기본 다방 대표 평형'),
+    int | None, typer.Option('--pyeong', min=1, help='평형 번호 (complex 결과의 pyeongs[].pyeong_id). 기본 다방 대표 평형'),
 ]
 RentIncludesManageOption = Annotated[
     bool, typer.Option('--rent-includes-manage-cost', help='--rent-min/--rent-max 를 월세 + 관리비로 본다 (다방 필터)'),
@@ -281,7 +281,7 @@ DetailsOption = Annotated[
     bool,
     typer.Option(
         '--details',
-        help='매물마다 상세를 1회씩 더 받아 사용승인일(approved_at)과 건물 용도(residence_type)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건)',
+        help='매물마다 상세를 1회씩 더 받아 사용승인일(approved_date)과 건물 용도(residence_type)를 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건)',
     ),
 ]
 BuiltWithinOption = Annotated[
@@ -492,7 +492,7 @@ def locations_command(
 ) -> None:
     """이름으로 다방의 동·역·대학·단지·분양 후보를 찾는다 (요청 1회). 후보는 다방 순서 그대로다.
 
-    complexes[].complex_id 를 jibsa dabang complex·search listings --complex·real-price 에, sales[].sale_id 를 sale 에 넘긴다.
+    complexes[].complex_id 를 jibsa dabang complex·search listings --complex·real-price 에, presales[].presale_id 를 sale 에 넘긴다.
 
     예: jibsa dabang search locations 강남역
         jibsa dabang search locations 은마
@@ -518,7 +518,7 @@ def locations_command(
                     {
                         'name': region.name,
                         'address': normalize_address(region.full_name),
-                        'legal_division_code': legal_division_code(region.code),
+                        'legal_division_code': full_legal_division_code(region.code),
                         'lat': region.location.lat if region.location else None,
                         'lng': region.location.lng if region.location else None,
                     }
@@ -551,8 +551,8 @@ def locations_command(
                     }
                     for complex_ in result.complex_list[:limit]
                 ],
-                'sales': [
-                    {'sale_id': sale.id, 'name': sale.name, 'state': sale.format_state, 'address': normalize_address(sale.address)}
+                'presales': [
+                    {'presale_id': sale.id, 'name': sale.name, 'status': sale.format_state, 'address': normalize_address(sale.address)}
                     for sale in result.sale_in_lots_list[:limit]
                 ],
             },
@@ -587,7 +587,7 @@ def room_command(
 ) -> None:
     """원룸·투룸 (다방 '원룸·투룸' 목록). 원룸은 방 하나짜리라 원룸형 오피스텔도 나온다. 매매는 없다.
 
-    다방 목록 순으로 준다 (거리순이 아니다). 단기임대를 받는 월세 매물은 short_lease: true 다.
+    다방 목록 순으로 준다 (거리순이 아니다). 단기임대를 받는 월세 매물은 short_term: true 다.
 
     예: jibsa dabang search listings room 역삼동 --trade 월세 --deposit-max 1000 --rent-max 70
         jibsa dabang search listings room 강남역 --room 투룸 --condition 주차,엘리베이터
@@ -738,7 +738,7 @@ def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> str:
     return value
 
 
-SALE_ID_HELP: str = '분양 ID (search sales·search locations 결과의 sale_id, 28자리)'
+SALE_ID_HELP: str = '분양 ID (search sales·search locations 결과의 presale_id, 28자리)'
 
 
 def _require_sale_id(sale_id: str, param_hint: str = 'SALE_ID') -> str:
@@ -755,7 +755,7 @@ def complex_listings_command(
     complex_id: Annotated[str | None, typer.Option('--complex', help='아파트·오피스텔 단지 ID (28자리)')] = None,
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (complex 결과의 pyeongs[].space_seq). 반복하거나 쉼표로 구분 (OR). 기본 전체'),
+        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (complex 결과의 pyeongs[].pyeong_id). 반복하거나 쉼표로 구분 (OR). 기본 전체'),
     ] = None,
     trade: Annotated[list[str] | None, typer.Option('--trade', help='거래 유형: 월세, 전세, 매매. 반복하거나 쉼표로 구분. 기본 전체')] = None,
     deposit_min: DepositMinOption = None,
@@ -877,7 +877,7 @@ def complex_command(
     complex_id: Annotated[str, typer.Argument(help='단지 ID (search locations·search complexes 결과의 complex_id)')],
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보: 세대수·동 수·주차·층·용적률·건폐율·시공사·사용승인일·최근 거래 수·꼬리표, 평형(pyeongs[].space_seq), 평당가 비교,
+    """단지 정보: 세대수·동 수·주차·층·용적률·건폐율·시공사·사용승인일·최근 거래 수·꼬리표, 평형(pyeongs[].pyeong_id), 평당가 비교,
     최근 실거래, 대출 비율 50% 제한 지역 여부, 학교·어린이집·유치원 (요청 3회).
 
     예: jibsa dabang complex 58291f830ff9bd73a07ca123c632
@@ -893,7 +893,7 @@ def school_command(
     school_code: Annotated[
         str,
         typer.Argument(help=(
-            '학교·유치원·어린이집 코드 (complex 결과 schools[].school_code·nurseries[].code·kindergartens[].code, search schools '
+            '학교·유치원·어린이집 코드 (complex 결과 schools[].school_code·nurseries[].school_code·kindergartens[].school_code, search schools '
             '결과의 school_code. 예: S010000704)'
         )),
     ],
@@ -1262,7 +1262,7 @@ def sales_command(
     """분양 단지 (새 아파트·오피스텔 청약). 상태·공급 유형·다음 일정·대표 분양가를 다방 목록 순으로 준다.
 
     전국·시·도·시·군·구는 다방 분양 지역 목록(웹 '분양정보' 목록)과 같은 목록·순서·총 수다. 동·역·대학·좌표는 지도 목록이다.
-    상세(일정·평형별 분양가)는 결과의 sale_id 로 jibsa dabang sale <sale_id>.
+    상세(일정·평형별 분양가)는 결과의 presale_id 로 jibsa dabang sale <presale_id>.
 
     예: jibsa dabang search sales 강남구 --state 분양예정,접수중
         jibsa dabang search sales 서울 -t 아파트
@@ -1311,7 +1311,8 @@ def sale_command(
     """
     value = _require_sale_id(sale_id)
     with handle_errors(SOURCE), DabangClient() as client:
-        emit(get_sale(client, value), pretty)
+        detail = get_sale(client, value)
+        emit(detail, pretty, notes=detail.notes)
 
 
 @app.command('sale-schedule')

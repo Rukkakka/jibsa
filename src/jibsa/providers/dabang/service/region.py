@@ -5,6 +5,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
 )
 
 from jibsa.core.errors import (
@@ -14,6 +16,7 @@ from jibsa.core.errors import (
 )
 from jibsa.core.geo import MultiPolygon
 from jibsa.core.korean import (
+    full_legal_division_code,
     legal_dong_hint,
     particle,
 )
@@ -44,6 +47,7 @@ from jibsa.providers.dabang.service.common import (
 
 from typing import (
     Annotated,
+    Any,
     Literal,
     NamedTuple,
 )
@@ -88,11 +92,6 @@ def _without_parens(text: str) -> str:
     return ' '.join(re.sub(r'[()]', ' ', text).split())
 
 
-def legal_division_code(code: str) -> str:
-    """다방 동 코드(법정동코드 앞 8자리)를 10자리 법정동코드로 ('11680101' → '1168010100')."""
-    return code + '00' if len(code) == 8 else code
-
-
 def _lat_lng(location: DabangLocationModel | None, name: str) -> tuple[float, float]:
     """후보 좌표. 없으면 (0, 0) 으로 채우지 않고 에러로 알린다 (거리·반경 사각형이 엉뚱해진다).
 
@@ -115,7 +114,7 @@ def place_of_region(region: DabangLocRegionModel) -> DabangPlace:
         address=normalize_address(region.full_name),
         lat=lat,
         lng=lng,
-        legal_division_code=legal_division_code(region.code),
+        legal_division_code=full_legal_division_code(region.code),
         code=region.code,
         gid=region.gid,
     )
@@ -385,7 +384,10 @@ class DabangScope(BaseModel):
     ]
     code: Annotated[
         str | None,
-        Field(description='법정동 코드 (시·도 앞 2자리, 시·군·구 앞 5자리, 동 10자리)')
+        Field(description=(
+            "다방 지역 코드 (시·도 2자리, 시·군·구 5자리, 동 10자리). 출력에서는 legal_division_code 로 10자리를 채워 낸다 "
+            "(시·도 '11' → '1100000000'). 전국은 null"
+        ))
     ] = None
     state_code: Annotated[
         str | None,
@@ -395,6 +397,15 @@ class DabangScope(BaseModel):
         int | None,
         Field(exclude=True, description='다방 지역 번호 (전국은 없음)')
     ] = None
+
+    @model_serializer(mode='wrap')
+    def full_legal_division_code_key(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # 출력은 키 이름을 법정동코드(legal_division_code)로 바꾸고 앞자리 코드를 10자리로 채운다. 요청에는 다방 코드를 그대로 쓴다
+        data: dict[str, Any] = handler(self)
+        return {
+            ('legal_division_code' if key == 'code' else key): (full_legal_division_code(value) if key == 'code' and value else value)
+            for key, value in data.items()
+        }
 
 
 def _states(client: DabangClient) -> list[DabangRegionModel]:

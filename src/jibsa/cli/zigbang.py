@@ -483,7 +483,7 @@ app.add_typer(search_app, name='search')
 listings_app = typer.Typer(
     help=(
         '매물 유형별 검색 또는 --complex로 단지 매물 검색.\n\n'
-        '--complex 결과의 상세는 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(is_price_range true) 줄은 가격이 묶음 '
+        '--complex 결과의 상세는 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(mixed_prices true) 줄은 가격이 묶음 '
         '최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.'
     ),
     invoke_without_command=True,
@@ -511,6 +511,7 @@ def locations_command(
         emit(
             {
                 'query': query,
+                # 리뷰 오탐 (2026-11-25): 직방 results 는 주소·역·학교 후보가 섞여(type) 용어집이 regions 로 바꾸는 '지역만 담은 results' 가 아니다 (다방은 지역 regions·역 stations 를 나눠 준다)
                 'results': [
                     {
                         'type': item.type,
@@ -548,7 +549,7 @@ def complexes_command(
 
     이름 끝이 '역' 이면 역(1.5km 안 '<역> 주변단지'), '학교' 면 학교('<학교> 배정단지'), 그 밖은 동·구다. 목록은 --order
     탭(인기·최근입주·시세급변동·평당가)으로 고르고 가까운 순이 아니다. 최근입주·시세급변동은 순서가 아니라 그 조건에 든 단지만
-    담은 목록이라 total 도 그 수이고 그 곳의 전체 단지 수가 아니다. 역·학교는 단지마다 거리(distance_m)가 있으니 가까운
+    담은 목록이라 total 도 그 수이고 그 곳의 전체 단지 수가 아니다. 역·학교는 단지마다 거리(distance_km)가 있으니 가까운
     단지는 그 값으로 고른다. 동·구는 웹 지역 화면에 최근입주 목록뿐이라 --order 는 최근입주만 받고 거리가 없다. highlight 는
     웹 단지 카드 둘째 줄이고 --order 마다 뜻이 다르다 (인기는 지역 순위, 최근입주는 입주 시기, 시세급변동은 1주 변동률,
     평당가는 평당가). 학교는 결과 맨 끝의 school 에 학교 정보(학생 수·입학생·학급·학비·급식비와 같은 구 평균, 진학 현황)가 붙고 배정단지가
@@ -618,7 +619,7 @@ def search_room_command(
         typer.Option(
             '--details',
             help=(
-                f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)와 사용승인일(approved_at)을 붙인다. '
+                f'매물마다 상세를 1회씩 더 받아 건물 용도(residence_type, 근린생활시설·고시원 등)와 사용승인일(approved_date)을 붙인다. '
                 f'요청이 매물 수만큼 늘어난다 (앞 {DETAILS_MAX}건). 직방에는 연식 조건이 없어 연식은 이것으로 본다'
             ),
         ),
@@ -736,8 +737,8 @@ def search_apt_command(
     역·학교 이름이나 --lat/--lng 를 주면 그 위치가 속한 동의 목록을 준다 (직방 웹 지도의 '○○동 주변 매물보기').
     그 위치에서 가까운 순이 아니고 이웃 동은 빠진다. 성수동(성수동1가·2가)·성남시(분당구·수정구·중원구)처럼 직방이
     따로 보여 주는 지역 여럿에 걸리는 이름은 REGION_AMBIGUOUS 로 후보를 알려 주니 하나를 골라 다시 찾는다.
-    결과는 같은 호·거래 유형의 매물을 묶은 것이다 (listing_count). 상세는 결과의 id 로 jibsa zigbang listing <id>.
-    가격 범위(is_price_range true) 줄은 가격이 묶음 최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.
+    결과는 같은 호·거래 유형의 매물을 묶은 것이다 (realtor_count 는 같은 호를 올린 중개사 수). 상세는 결과의 id 로 jibsa zigbang listing <id>.
+    가격 범위(mixed_prices true) 줄은 가격이 묶음 최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.
 
     예: jibsa zigbang search listings apt 강남구 --trade 매매 --price-max 200000
         jibsa zigbang search listings apt 역삼동 --trade 전세 --area-min 59
@@ -864,7 +865,7 @@ def complex_listings_command(
     ] = None,
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 ID (complex 결과의 pyeongs[].id, 아파트만. 아파트 매물의 pyeong_id 와 같은 번호). 반복하거나 쉼표로 구분 (OR)')
+        typer.Option('--pyeong', metavar='<int>', help='평형 ID (complex 결과의 pyeongs[].pyeong_id, 아파트만. 아파트 매물의 pyeong_id 와 같은 번호). 반복하거나 쉼표로 구분 (OR)')
     ] = None,
     limit: Annotated[int | None, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수. 기본 아파트 20, 오피스텔 15')] = None,
     deposit_min: DepositMinOption = None,
@@ -902,7 +903,7 @@ def complex_listings_command(
 ) -> None:
     """단지 하나의 매물 목록 (직방 목록 순, 거리가 없다). 조건은 직방 서버에서 거른다.
 
-    상세는 결과의 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(is_price_range true) 줄은 가격이 묶음 최저가라
+    상세는 결과의 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(mixed_prices true) 줄은 가격이 묶음 최저가라
     매물별 가격은 jibsa zigbang catalog <catalog_id>.
 
     예: jibsa zigbang search listings --complex apt-68579 --trade 전세 --deposit-max 150000
@@ -1276,7 +1277,7 @@ def real_price_command(
     trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세, 전체 중 하나. 전체는 매매와 전월세를 계약일 최신 순으로 한 목록에 주고, 거래마다 trade_type 이 붙는다')] = '매매',
     pyeong: Annotated[
         int | None,
-        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id, 아파트 매물의 pyeong_id 와 같은 번호). 기본 전체 평형')
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].pyeong_id, 아파트 매물의 pyeong_id 와 같은 번호). 기본 전체 평형')
     ] = None,
     # 기본 120건(약 4~5천 토큰)이지만 낮추지 않는다. 에이전트는 대개 가이드의 '처음에는 작게' 를 따라 --limit 을 직접 준다
     # (2026-10-23 에이전트 검증: 당근 실거래를 부른 sonnet 2명 모두 --limit 8 을 줬다. 직방 실거래는 부르지 않았다)
@@ -1321,7 +1322,7 @@ def price_trend_command(
     ] = None,
     pyeong: Annotated[
         int | None,
-        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].id). 주면 그 평형의 월별 시세·거래 추이를 준다 (단지 추이 대신)')
+        typer.Option('--pyeong', min=1, help='평형 ID (complex 결과의 pyeongs[].pyeong_id). 주면 그 평형의 월별 시세·거래 추이를 준다 (단지 추이 대신)')
     ] = None,
     trade: Annotated[
         str | None,
@@ -1341,7 +1342,7 @@ def price_trend_command(
     (요청 2회: 단지 평형 정보로 평형 확인, 평형 시세 그래프). 거래 점·전세가율은 내지 않는다.
 
     예: jibsa zigbang price-trend apt-38487
-        jibsa zigbang price-trend apt-38487 --period 최근1년 --compare apt-16629
+        jibsa zigbang price-trend apt-38487 --period 1년 --compare apt-16629
         jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
     """
     _require_complex_id(complex_id)
@@ -1357,7 +1358,7 @@ def price_trend_command(
     if pyeong is not None and compare_ids:
         raise HintedUsageError('--compare 와 --pyeong 은 함께 쓸 수 없습니다', '단지끼리 견주려면 --pyeong 을 빼세요')
     if chosen_trade is not None and pyeong is None:
-        raise HintedUsageError('--trade 는 평형 추이(--pyeong)에만 있습니다', '--trade 는 --pyeong 과 함께 씁니다 (평형 ID 는 complex 결과의 pyeongs[].id)')
+        raise HintedUsageError('--trade 는 평형 추이(--pyeong)에만 있습니다', '--trade 는 --pyeong 과 함께 씁니다 (평형 ID 는 complex 결과의 pyeongs[].pyeong_id)')
     with handle_errors(SOURCE), ZigbangClient() as client:
         if pyeong is not None:
             pyeong_result = get_pyeong_price_trend(
@@ -1389,13 +1390,13 @@ def region_info_command(
     query: RegionQueryArgument,
     price_range: Annotated[
         str,
-        typer.Option('--range', help=f"평당가 추이 그래프의 평형대: {', '.join(PRICE_RANGES)}. 평형대별 시세(estimated_prices)는 늘 모든 평형대다")
+        typer.Option('--range', help=f"평당가 추이 그래프의 평형대: {', '.join(PRICE_RANGES)}. 평형대별 시세(by_pyeong_range)는 늘 모든 평형대다")
     ] = '전체',
     pretty: PrettyOption = None,
 ) -> None:
     """동·구의 지역 정보 (직방 웹 지역정보 화면): 단지·세대 수, 평형대별 직방시세, 월별 거래량, 평당가 추이, 구는 인구·세대도.
 
-    직방시세(estimated_prices)는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다. 평당가 추이(price_trend)는 웹 그래프처럼 평당가 높은
+    직방시세(estimated_ranges·by_pyeong_range)는 직방이 실거래를 분석한 추정값이고 실거래가가 아니다. 평당가 추이(price_trend)는 웹 그래프처럼 평당가 높은
     단지 최대 3개와 그 지역 줄이고 --range 로 평형대를 고른다. 요청은 지역 검색과 지역 정보에 거래량·평당가 추이를 더해 동 4회, 구는
     인구·세대까지 6회다. 거래량·평당가 추이·인구·세대는 덤 조회라 하나가 실패하면 그 값만 null 이고 [실패] 로 알린다.
 
@@ -1460,8 +1461,8 @@ def region_ranking_command(
 
     웹 랭킹 화면처럼 10건씩 쪽을 넘겨 받아(요청은 지역 검색 1회와 ceil(--limit / 10) 쪽) 앞 --limit 곳을 준다. 서버는 200위까지 주지만
     웹이 100위까지만 보여 줘 101위부터는 받지 않는다. 같은 순위가 여럿일 수 있다 (1·1·1·4). 정렬마다 줄에 오는 값이 다르다:
-    거래량(trade_count), 하락·상승률(price_manwon·diff_manwon·change_rate_percent), 시세(estimated_price_manwon), 평당가
-    (estimated_price_per_pyeong_manwon), 인기(view_count), 전세가율(jeonse_rate_percent·gap_manwon). 구 단위 조회는 줄마다 dong 이 있다.
+    거래량(trade_count), 하락·상승률(price_manwon·prev_trade_diff_manwon·prev_trade_diff_percent), 시세(estimated_price_manwon), 평당가
+    (estimated_price_per_pyeong_manwon), 인기(view_count), 전세가율(jeonse_ratio_percent·gap_manwon). 구 단위 조회는 줄마다 dong 이 있다.
 
     예: jibsa zigbang region-ranking 송파구
         jibsa zigbang region-ranking 송파구 --sort 하락률높은순 --period 지난달
@@ -1515,7 +1516,7 @@ def catalog_command(
 ) -> None:
     """같은 호를 여러 중개사가 올린 아파트 매물 묶음(직방 웹 묶음 화면)의 매물 전부. 매물마다 가격·관리비·입주일 등 listing 상세와 같은 필드.
 
-    검색 결과의 is_price_range 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (매물은 20건마다 요청 1회,
+    검색 결과의 mixed_prices 가 true 면 가격이 묶음 최저가라, 매물별 가격을 이 명령 한 번으로 본다 (매물은 20건마다 요청 1회,
     다 받은 뒤 호 정보 요청 1회를 더 해 호의 직방시세·공시가격·분양가를 붙인다. 호 정보를 못 받으면 그 값만 null 이고 [실패] 로 알린다).
 
     예: jibsa zigbang catalog 8260358-trade --fields id,price_manwon,floor,move_in

@@ -115,9 +115,9 @@ class DaangnSchool(BaseModel):
         float | None,
         Field(description='교원 1인당 학생 수')
     ] = None
-    stats_year: Annotated[
-        str | None,
-        Field(description='학생 수 기준 연도')
+    base_year: Annotated[
+        int | None,
+        Field(description='학생 수 기준 연도 (예: 2026). 당근이 주지 않으면 null')
     ] = None
 
 
@@ -132,7 +132,7 @@ class DaangnSchoolResult(BaseModel):
         DaangnSchool,
         Field(description='학교')
     ]
-    total_complexes: Annotated[
+    total: Annotated[
         int | None,
         Field(description='조건에 맞는 배정 단지 수 (limit 적용 전. 당근이 단지 ID 를 주지 않아 complexes 에서 뺀 단지도 센다). 당근이 배정 단지를 주지 않았거나 빈 항목을 줬거나, 단지 유형·세대수를 몰라 조건을 확인할 수 없는 단지가 있으면 null (모름)')
     ]
@@ -340,9 +340,9 @@ def get_school(
     보여 주고, 단지마다 최근 매매 실거래는 취소되지 않은 첫 1건이다 (ComplexListItem). 예전에는 세대수 많은 순으로 다시 세우고
     3건을 붙였다 (#215, 2026-11-12 실측: 대치초 15곳에서 래미안대치팰리스가 웹은 맨 뒤, jibsa 는 맨 앞). `complex_types`
     ('아파트' 는 주상복합 포함)·`household_min`·`limit` 은 서버가 받지 않는 조건이라 그 순서에서 거르고 자른다. 단지 유형이나
-    세대수를 몰라 조건을 확인할 수 없는 단지는 빼고 그 수를 [제외] 로 알리며, 맞는지 모르는 단지가 있으니 `total_complexes` 는
-    null 이다. 조건에 맞지만 단지 ID 가 없는 단지도 빼고 [제외] 로 알리되 `total_complexes` 에는 센다. 당근이 배정 단지를
-    주지 않으면(null) `complexes`·`total_complexes` 를 null 로 낸다.
+    세대수를 몰라 조건을 확인할 수 없는 단지는 빼고 그 수를 [제외] 로 알리며, 맞는지 모르는 단지가 있으니 `total` 은
+    null 이다. 조건에 맞지만 단지 ID 가 없는 단지도 빼고 [제외] 로 알리되 `total` 에는 센다. 당근이 배정 단지를
+    주지 않으면(null) `complexes`·`total` 을 null 로 낸다.
 
     Raises:
         JibsaError: 학교를 찾지 못했을 때 (NOT_FOUND), 여럿일 때 (REGION_AMBIGUOUS), GraphQL 에러 (UPSTREAM_ERROR).
@@ -375,7 +375,7 @@ def get_school(
     # 조건에 맞지만 당근이 단지 ID 를 주지 않아 뺀 단지 수 (ID 가 없으면 가리킬 수 없다)
     no_id_count = 0
     # 배정 단지 목록에서 빈 항목을 뺐으면 단지 수를 알 수 없다 (null). 안내 문장의 수도 뺀다. 조건을 확인하지 못한 단지가 있어도 수를
-    # 모른다 (null). ID 가 없는 단지는 조건에 맞는 것이 확실해 total_complexes 에 센다
+    # 모른다 (null). ID 가 없는 단지는 조건에 맞는 것이 확실해 total 에 센다
     dropped = detail.null_items('assigned_complexes')
     for node in assigned or []:
         checks: list[tuple[str, bool | None]] = []
@@ -412,12 +412,12 @@ def get_school(
         if unknown_count:
             columns = '·'.join(column for column in ('유형', '세대수') if column in unknown_columns)
             marker = particle(columns, '을/를')
-            # dropped 가 있으면 아래 null_items_note 가 이미 total_complexes 가 null 이라고 말한다
-            total_null = '' if dropped else '. 조건에 맞는 단지 수를 몰라 total_complexes 는 null 입니다'
+            # dropped 가 있으면 아래 null_items_note 가 이미 total 이 null 이라고 말한다
+            total_null = '' if dropped else '. 조건에 맞는 단지 수를 몰라 total 은 null 입니다'
             notes.append(note('제외', f'{columns}{marker} 몰라 조건을 확인할 수 없는 단지 {unknown_count}곳은 뺐습니다{total_null}'))
         if no_id_count:
-            # total_complexes 가 숫자로 나갈 때만 ID 없는 단지를 센다고 알린다
-            counted = '' if unknown_count or dropped else ' (total_complexes 에는 셉니다)'
+            # total 이 숫자로 나갈 때만 ID 없는 단지를 센다고 알린다
+            counted = '' if unknown_count or dropped else ' (total 에는 셉니다)'
             notes.append(note('제외', f'당근이 단지 ID 를 주지 않은 {no_id_count}곳은 뺐습니다{counted}'))
         if not complexes:
             # 안내가 없으면 배정 단지가 없는 학교와 구별되지 않았다 (2026-11-12 리뷰). 조건을 확인하지 못해 뺀 단지, ID 가 없어 뺀
@@ -435,7 +435,7 @@ def get_school(
                 + more_hint(limit, COMPLEX_LIST_MAX_LIMIT, '단지 유형(-t)·세대수(--household-min) 조건'),
             ))
     if dropped:
-        notes.append(null_items_note('당근 배정 단지', dropped, ('total_complexes',)))
+        notes.append(null_items_note('당근 배정 단지', dropped, ('total',)))
     shown = complexes[:limit]
     return DaangnSchoolResult(
         school=DaangnSchool(
@@ -448,9 +448,9 @@ def get_school(
             students=detail.tot_std_cnt,
             students_per_class=detail.cls_std_cnt,
             students_per_teacher=detail.tch_std_cnt,
-            stats_year=detail.student_std_date,
+            base_year=int(detail.student_std_date) if detail.student_std_date and detail.student_std_date.isdecimal() else None,
         ),
-        total_complexes=(
+        total=(
             len(complexes) + no_id_count if assigned is not None and not dropped and not unknown_count else None
         ),
         returned=len(shown),
@@ -478,7 +478,7 @@ class DaangnPreschoolSummary(BaseModel):
         extra='forbid',
     )
 
-    id: Annotated[
+    preschool_id: Annotated[
         str,
         Field(description='시설 번호 (preschool 에 넘긴다)')
     ]
@@ -486,9 +486,9 @@ class DaangnPreschoolSummary(BaseModel):
         str | None,
         Field(description='시설 이름')
     ] = None
-    distance_km: Annotated[
-        float | None,
-        Field(description='단지에서 직선거리 (km). 단지나 시설 좌표가 없으면 null')
+    distance_m: Annotated[
+        int | None,
+        Field(description='단지에서 직선거리 (m, 웹과 같은 반올림). 단지나 시설 좌표가 없으면 null')
     ] = None
     resident_count: Annotated[
         int | None,
@@ -552,7 +552,7 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
     # 학군 정보(proptierDanji)나 근처 시설 목록이 null 이면 모름이다. 웹(ComplexSchoolSection `nearbyPreschools??[]`)은 빈 목록과
     # 똑같이 유치원 탭을 비우지만, 출력은 complex·compare 의 학교처럼 모름(null)과 빈 목록([])을 나눈다
     nearby = danji.nearby_preschools if danji else None
-    # (웹이 견주는 미터 정수 거리, 시설). 출력의 distance_km 는 그 거리를 km 소수 둘째 자리로 반올림해 순서와 어긋나지 않는다
+    # (웹이 견주는 미터 정수 거리, 시설). 출력의 distance_m 도 그 미터 거리다
     rows: list[tuple[int | None, DaangnPreschoolSummary]] = []
     for preschool in nearby or []:
         target = coordinate_point(preschool.coordinate)
@@ -560,9 +560,9 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
         # 어린이집 순서가 웹과 어긋날 수 있어 웹 반지름을 준다
         meters = js_round(haversine_km(*origin, *target, radius_km=WEB_EARTH_RADIUS_KM) * 1000) if origin and target else None
         rows.append((meters, DaangnPreschoolSummary(
-            id=str(preschool.pre_school_no),
+            preschool_id=str(preschool.pre_school_no),
             name=preschool.school_nm,
-            distance_km=None if meters is None else round(meters / 1000, 2),
+            distance_m=meters,
             resident_count=preschool.complex_resident_count,
             # 당근은 설문 응답이 없는 시설의 surveyResult 를 null 로 준다 (2026-11-11 실측: 역삼래미안 20곳 중 17곳 null, 나머지
             # 3곳 reviewCount 1). 그래서 0 은 모름이 아니라 후기 없음이고, 웹도 `surveyResult?.reviewCount ?? 0` 으로 0개로
@@ -605,7 +605,7 @@ class DaangnPreschool(BaseModel):
         extra='forbid',
     )
 
-    id: Annotated[str, Field(description='시설 번호')]
+    preschool_id: Annotated[str, Field(description='시설 번호')]
     name: Annotated[
         str | None,
         Field(description='시설 이름')
@@ -622,7 +622,7 @@ class DaangnPreschool(BaseModel):
         str | None,
         Field(description='구·동 (예: 강남구 역삼동)')
     ] = None
-    open_time: Annotated[
+    operating_hours: Annotated[
         str | None,
         Field(description='운영 시간')
     ] = None
@@ -630,11 +630,11 @@ class DaangnPreschool(BaseModel):
         str | None,
         Field(description='설립 유형 (국공립·민간·직장 등)')
     ] = None
-    established_at: Annotated[
+    established_date: Annotated[
         str | None,
         Field(description="설립일 (YYYY-MM-DD, 읽을 수 없는 꼴은 원래 글자 그대로, 당근이 '-' 로 비운 값은 null)")
     ] = None
-    opened_at: Annotated[
+    opened_date: Annotated[
         str | None,
         Field(description="개원일 (YYYY-MM-DD, 읽을 수 없는 꼴은 원래 글자 그대로, 당근이 '-' 로 비운 값은 null)")
     ] = None
@@ -654,7 +654,7 @@ class DaangnPreschool(BaseModel):
         int | None,
         Field(description='교사 수')
     ] = None
-    school_bus: Annotated[
+    has_school_bus: Annotated[
         bool | None,
         Field(description='통학버스 운영')
     ] = None
@@ -677,27 +677,27 @@ def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:
         raise JibsaError(
             code='NOT_FOUND',
             message=f'당근 어린이집·유치원을 찾지 못했습니다: {preschool_id}',
-            hint="시설 번호는 'jibsa daangn preschools <단지 ID>' 결과의 id 에서 얻습니다",
+            hint="시설 번호는 'jibsa daangn preschools <단지 ID>' 결과의 preschool_id 에서 얻습니다",
         )
     preschool = unwrap_graphql(response, found, '어린이집·유치원', conditions=False)
     region = preschool.region
     return DaangnPreschool(
-        id=str(preschool_id),
+        preschool_id=str(preschool_id),
         name=preschool.school_nm,
         type=code_label(PRESCHOOL_LABEL_BY_TYPE, preschool.type),
         # 어린이집 주소는 옛 시·도 이름으로 온다 (2026-10-11 실측: 동구푸른길어린이집 '광주광역시 동구 …')
         address=normalize_address(preschool.addr),
         region=' '.join(part for part in (region.name2, region.name3) if part) or None if region else None,
-        open_time=preschool.open_time,
+        operating_hours=preschool.open_time,
         establishment_type=preschool.estbshm_type,
-        established_at=normalize_date(preschool.estbshm_date),
-        opened_at=normalize_date(preschool.open_date),
+        established_date=normalize_date(preschool.estbshm_date),
+        opened_date=normalize_date(preschool.open_date),
         authority=preschool.jrsdt_admnstrt,
         # 당근 웹은 childCnt 를 '정원' 으로 보여 준다 (PreschoolDetailPanel). 예전 이름 children 은 다니는 원아 수로 읽혔다 (#215)
         capacity=preschool.child_cnt,
         classes=preschool.class_cnt,
         teachers=preschool.teacher_cnt,
-        school_bus=preschool.school_bus,
+        has_school_bus=preschool.school_bus,
         # 웹 상세(`Mu`)는 `surveyResult?.responseCount ?? 0` 이라 설문이 없어도 0 이다 (목록의 review_count 와 같다)
         survey_responses=(preschool.survey_result.response_count if preschool.survey_result else None) or 0,
     )

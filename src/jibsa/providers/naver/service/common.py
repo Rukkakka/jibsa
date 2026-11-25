@@ -27,6 +27,8 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     KST,
     NEXT_HINT,
+    AmountRange,
+    AmountSet,
     Listing,
     format_manwon,
     iso_date,
@@ -62,7 +64,6 @@ from jibsa.providers.naver.api.response.common import (
     NaverDuplicatedArticleInfoModel,
     NaverFacilityInfoModel,
     NaverListBuildingInfoModel,
-    NaverMinMaxPriceModel,
     NaverPriceRangeModel,
     NaverPyeongGroupModel,
     NaverPyeongModel,
@@ -241,7 +242,7 @@ class NaverAssignedSchool(BaseModel):
         str | None,
         Field(description='운영 구분 (공립, 사립, 혁신 ...)')
     ] = None
-    walking_minutes: Annotated[
+    walk_minutes: Annotated[
         int | None,
         Field(description='도보 시간 (분)')
     ] = None
@@ -268,17 +269,16 @@ BADGES_DESCRIPTION: str = (
 
 CONFIRMED_AT_DESCRIPTION: str = (
     "네이버가 매물을 확인한 날 (YYYY-MM-DD). 웹 목록은 협회 매물이 아니면 이 날짜로 '25.11.17. 확인매물' 날짜 배지를, 협회 매물이면 "
-    "노출 시작일(`registered_at`)로 '등록' 배지를 그린다. 목록과 상세의 글자 규칙이 달라 날짜만 낸다. 모르면 null"
+    "노출 시작일(`registered_date`)로 '등록' 배지를 그린다. 목록과 상세의 글자 규칙이 달라 날짜만 낸다. 모르면 null"
 )
-MONTHLY_ASKING_DESCRIPTION: str = (
-    '월세 호가 범위 (보증금·월세 짝). 월세 매물이 없거나 네이버가 값을 주지 않으면 null (빌라 단지는 대개 null). '
-    '한 짝의 월세만 0 이면 그 rent_manwon 만 null, 한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
+ASKING_RANGES_DESCRIPTION: str = (
+    '거래 유형별 호가 범위 {sale·jeonse·wolse·short_term: {lowest, highest}}. sale 은 price_manwon, jeonse 는 deposit_manwon, wolse·short_term 은 보증금·월세 짝 '
+    '(deposit_manwon·rent_manwon). 월세·단기임대의 두 끝은 월세 최저·최고가 아니라 가격순 첫 매물의 짝이라 rent_manwon 이 거꾸로일 수 있다 '
+    '(빌라 단지는 월세가 대개 없다). 그 거래 매물이 없거나(네이버가 값을 주지 않거나 0) 가격 정보가 없는 거래 유형은 키가 없고, 네이버가 호가 정보 '
+    '자체를 주지 않으면 null. 한 끝만 비면 그 끝 금액만 null. 월세·단기임대는 한 짝의 월세만 0 이면 그 rent_manwon 만 null, '
+    '한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
 )
-SHORT_TERM_ASKING_DESCRIPTION: str = (
-    '단기임대 호가 범위 (보증금·월세 짝). 단기임대 매물이 없거나 네이버가 값을 주지 않으면 null. '
-    '한 짝의 월세만 0 이면 그 rent_manwon 만 null, 한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
-)
-"""`NaverListing`·상세 모델의 `confirmed_at` 설명, 단지·단지 검색 모델의 `monthly_asking`·`short_term_asking` 설명. 모델끼리 필드를 함께 쓸 수 없어 상수로 공유한다."""
+"""`NaverComplexSummary`·`NaverAreaComplex`·`NaverSchoolComplex` 의 `asking_ranges` 설명. 모델끼리 필드를 함께 쓸 수 없어 상수로 공유한다. `confirmed_date` 설명(`CONFIRMED_AT_DESCRIPTION`)도 목록·상세가 함께 쓴다."""
 
 
 # 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
@@ -289,12 +289,12 @@ NOT_APPLICABLE_FIELDS_BY_TYPE: dict[str, frozenset[str]] = {
     # 토지
     'E03': frozenset({
         'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
-        'supply_area_m2', 'approved_at', 'heating', 'heating_fuel', 'entrance', 'parking', 'elevator', 'options',
+        'supply_area_m2', 'approved_date', 'heating', 'heating_fuel', 'entrance', 'parking', 'has_elevator', 'options',
     }),
-    # 고시원: 시설 칸은 있어 elevator·options 는 남긴다
+    # 고시원: 시설 칸은 있어 has_elevator·options 는 남긴다
     'G01': frozenset({
         'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
-        'supply_area_m2', 'approved_at', 'heating', 'heating_fuel', 'entrance', 'parking', 'loan_manwon',
+        'supply_area_m2', 'approved_date', 'heating', 'heating_fuel', 'entrance', 'parking', 'loan_manwon',
     }),
     # 재개발
     'F01': frozenset({'room_count', 'bathroom_count', 'room_type', 'area_m2', 'area_pyeong', 'supply_area_m2'}),
@@ -318,19 +318,16 @@ class NaverListing(Listing):
         int | None,
         Field(description='같은 집을 올린 중개사 수 (네이버가 한 매물로 묶음). 묶음이 아니면 키가 없다')
     ] = None
-    price_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='묶음의 매매 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다. 네이버가 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 null')
-    ] = None
-    deposit_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='묶음의 보증금·전세금 호가 범위 [최저, 최고] (만원). 중개사마다 호가가 다를 때만 있다. 네이버가 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 null')
-    ] = None
-    rent_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='묶음의 월세 호가 [보증금이 가장 낮은 매물의 월세, 가장 높은 매물의 월세] (만원). 월세 최저·최고가 아니라 거꾸로일 수 있다 '
-                          '(보증금이 같은 매물끼리는 앞 끝이 월세 낮은 쪽, 뒤 끝이 높은 쪽). 두 값이 같으면 키가 없지만 가운데 매물의 월세는 다를 수 있다. '
-                          '네이버가 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 null')
+    asking_range: Annotated[
+        AmountRange | None,
+        Field(description=(
+            '묶음의 호가 범위 {lowest, highest}. 중개사마다 호가가 다를 때만 있다. 매매는 price_manwon, 전세는 deposit_manwon, '
+            '월세·단기임대는 보증금·월세 짝(deposit_manwon·rent_manwon)이고, 월세 두 끝은 월세 최저·최고가 아니라 (보증금 순 첫·끝 매물의 짝이라) '
+            'rent_manwon 이 거꾸로일 수 있다 (보증금이 같은 매물끼리는 lowest 가 월세 낮은 쪽, highest 가 높은 쪽). 보증금이 같고 월세만 다르면 '
+            '두 끝의 deposit_manwon 이 같은 값이고, 월세가 같고 보증금만 다르면 두 끝의 rent_manwon 이 같은 값이다. 가운데 매물의 월세는 달라도 두 끝이 '
+            '같을 수 있다. 네이버가 어느 금액의 범위를 주지 않거나 두 끝이 모두 비거나 0 과 null 이 섞이면 그 금액만 null 이고, 모든 금액을 모르면 '
+            'asking_range 가 null 이다. 묶음이 아니거나 모든 금액의 두 끝이 같으면 키가 없다'
+        ))
     ] = None
     unknown_group_fields: Annotated[
         frozenset[str],
@@ -340,7 +337,7 @@ class NaverListing(Listing):
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
     ] = None
-    confirmed_at: Annotated[
+    confirmed_date: Annotated[
         str | None,
         Field(description=CONFIRMED_AT_DESCRIPTION)
     ] = None
@@ -359,44 +356,59 @@ class NaverListing(Listing):
 
 
 # 묶음이 아니거나 중개사마다 호가가 같으면 해당 없는(키를 빼는) 필드
-GROUP_FIELDS: tuple[str, ...] = ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon')
-
-
-def _group_range(price: NaverMinMaxPriceModel) -> list[float | None] | None:
-    """묶음의 호가 범위(원)를 만원으로. 중개사마다 같거나(최저 = 최고) 그 거래 가격이 아니면(0~0) None. 가격을 모르는 경우는 부르는 쪽이 가린다."""
-    if price.min_price == price.max_price:
-        return None
-    return won_to_manwon_range(price.min_price, price.max_price)
+GROUP_FIELDS: tuple[str, ...] = ('realtor_count', 'asking_range')
 
 
 def group_fields(group: NaverDuplicatedArticleInfoModel | None, trade_type: str) -> dict[str, Any]:
     """중복 묶음의 중개사 수와 거래 유형에 맞는 호가 범위 (`NaverListing`). 중개사가 하나뿐이면 비운다.
 
-    범위를 모르면(묶음의 호가 정보나 그 거래의 가격이 없거나 두 끝이 모두 null 이거나 한 끝은 0 이고 다른 끝은 null) 그 칸은 null 이고 이름을
-    `unknown_group_fields` 에 담는다. 0 은 받은 그대로 내고(보증금 0원 매물이 있다), 한 끝만 null 이면 그 끝만 null 로 `[null, 330000]` 처럼 낸다.
+    금액 종류(매매 `price_manwon`, 전세 `deposit_manwon`, 월세·단기임대 `deposit_manwon`+`rent_manwon`)마다 두 끝을 만원으로 묶어
+    `asking_range` 로 낸다. 두 끝이 같아도 그 종류를 버리지 않고 두 끝 모두 낸다 (월세는 보증금이 같고 월세만 다른 묶음이 있다).
+    모든 종류의 두 끝이 같으면 호가가 모두 같은 묶음이라 `asking_range` 는 해당 없음(키 없음)이다.
+
+    종류의 범위를 모르면(묶음의 호가 정보나 그 거래의 가격이 없거나 두 끝이 모두 null 이거나 한 끝은 0 이고 다른 끝은 null) 두 끝의 그 칸을
+    null 로 낸다. 모든 종류를 모르면 `asking_range` 가 null 이고 그 이름을 `unknown_group_fields` 에 담는다. 보증금·매매가의 0 은 받은 그대로
+    내고(보증금 0원 매물이 있다), 월세의 0 은 서버가 비운 값이라 그 끝을 null 로 읽는다(`_rent_amount` 와 같은 규칙). 한 끝만 null 이면 그 끝만
+    null 이다.
     """
     if group is None or not group.realtor_count or group.realtor_count < 2:
         return {}
     prices = group.representative_price_info
     fields: dict[str, Any] = {'realtor_count': group.realtor_count}
     if trade_type == '매매':
-        ranges = [('price_range_manwon', prices.deal_price if prices else None)]
+        kinds = [('price_manwon', prices.deal_price if prices else None)]
     else:
-        ranges = [('deposit_range_manwon', prices.warranty_price if prices else None)]
+        kinds = [('deposit_manwon', prices.warranty_price if prices else None)]
         if trade_type in ('월세', '단기임대'):
-            ranges.append(('rent_range_manwon', prices.rent_price if prices else None))
+            kinds.append(('rent_manwon', prices.rent_price if prices else None))
+    # 월세는 0원 매물이 없어 0 을 비운 값(None)으로 읽는다. 보증금·매매가의 0 은 받은 그대로다
+    ends = {
+        name: (
+            (price.min_price or None, price.max_price or None) if name == 'rent_manwon' else (price.min_price, price.max_price)
+        ) if price is not None else None
+        for name, price in kinds
+    }
     # 범위를 주지 않았거나 두 끝이 모두 null 이거나 한 끝은 0 이고 다른 끝은 null 이면 호가가 같다는 뜻이 아니라 모르는 것이라 null 로 낸다
-    # (`won_to_manwon_range` 가 None 을 돌려줘 키를 빼면 '호가가 모두 같다' 로 읽힌다). (0, 0) 은 그 거래 가격이 아니라는 뜻이라 `_group_range` 가
-    # 키를 뺀다. 한 끝만 null 이면 아는 끝을 버리지 않고 `_group_range` 가 [null, X] 로 낸다 (재개발 호가 범위와 같다, 2026-11-24 리뷰).
-    # 한 끝이 0 이고 다른 끝이 수이면 0 을 그대로 낸다 (보증금 0원 매물이 있다, 2026-11-25 리뷰)
+    # (키를 빼면 '호가가 모두 같다' 로 읽힌다). 보증금·매매가의 (0, 0) 은 두 끝이 같은 값이라 모르는 것이 아니다. 한 끝만 null 이면 아는 끝을 버리지
+    # 않고 그 끝만 null 이다 (재개발 호가 범위와 같다, 2026-11-24 리뷰). 한 끝이 0 이고 다른 끝이 수이면 0 을 그대로 낸다 (보증금 0원 매물이
+    # 있다, 2026-11-25 리뷰)
     unknown = frozenset(
-        name for name, price in ranges
-        if price is None or (not price.min_price and not price.max_price and None in (price.min_price, price.max_price))
+        name for name, end in ends.items()
+        if end is None or (not end[0] and not end[1] and None in end)
     )
-    for name, price in ranges:
-        fields[name] = None if price is None or name in unknown else _group_range(price)
-    if unknown:
-        fields['unknown_group_fields'] = unknown
+    if len(unknown) == len(kinds):
+        fields['asking_range'] = None
+        fields['unknown_group_fields'] = frozenset({'asking_range'})
+        return fields
+    if not unknown and all(end[0] == end[1] for end in ends.values() if end is not None):
+        return fields
+    lowest: dict[str, float | None] = {}
+    highest: dict[str, float | None] = {}
+    for name, end in ends.items():
+        known = end is not None and name not in unknown
+        lowest[name] = won_to_manwon(end[0]) if end is not None and known else None
+        highest[name] = won_to_manwon(end[1]) if end is not None and known else None
+    fields['asking_range'] = AmountRange(lowest=AmountSet(**lowest), highest=AmountSet(**highest))
     return fields
 
 
@@ -566,7 +578,7 @@ def assigned_schools(schools: list[NaverSchoolModel], notes: list[str]) -> list[
                 else SCHOOL_ALLOCATION_LABELS.get(allocation) or unknown_code_label('값', allocation)
             ),
             operation_type=school.operation_type,
-            walking_minutes=school.walking_minute,
+            walk_minutes=school.walking_minute,
             distance_m=school.distance,
             students_per_class=school.students_per_classroom,
             students_per_teacher=school.students_per_teacher,
@@ -720,14 +732,14 @@ def article_info_to_listing(
         lat=lat,
         lng=lng,
         distance_km=distance,
-        registered_at=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
-        approved_at=building_approved_at(info.building_info),
+        registered_date=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
+        approved_date=building_approved_at(info.building_info),
         badges=listing_badges(
             info.verification_info.verification_type if info.verification_info else None,
             info.real_estate_type,
             info.article_detail.is_safe_lessor_of_hug if info.article_detail else None,
         ),
-        confirmed_at=iso_date(info.verification_info.article_confirm_date) if info.verification_info else None,
+        confirmed_date=iso_date(info.verification_info.article_confirm_date) if info.verification_info else None,
         real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )
@@ -744,55 +756,33 @@ def won_to_manwon_range(low: float | None, high: float | None) -> list[float | N
     return [won_to_manwon(low), won_to_manwon(high)]
 
 
-class NaverAskingPair(BaseModel):
-    """월세·단기임대 호가의 보증금·월세 짝 (만원)."""
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    deposit_manwon: Annotated[
-        float | None,
-        Field(description='보증금 (만원)')
-    ] = None
-    rent_manwon: Annotated[
-        float | None,
-        Field(description='월세 (만원)')
-    ] = None
+def amount_range(
+    field: Literal['price_manwon', 'deposit_manwon'],
+    low: float | None,
+    high: float | None,
+) -> AmountRange | None:
+    """원 단위 호가 범위를 `field` 금액의 만원 범위로 (`won_to_manwon_range` 가 None 이면 그 거래 매물이 없어 None)."""
+    values = won_to_manwon_range(low, high)
+    if values is None:
+        return None
+    return AmountRange(lowest=AmountSet(**{field: values[0]}), highest=AmountSet(**{field: values[1]}))
 
 
-class NaverRentAskingRange(BaseModel):
-    """월세·단기임대 호가 범위. 두 끝이 월세 최저·최고가 아니라 가격순 첫 매물의 짝이다."""
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    lowest: Annotated[
-        NaverAskingPair,
-        Field(description='가격 낮은 순 첫 매물의 보증금·월세 짝 (월세 최저가 아님)')
-    ]
-    highest: Annotated[
-        NaverAskingPair,
-        Field(description='가격 높은 순 첫 매물의 보증금·월세 짝 (월세 최고가 아님)')
-    ]
-
-
-def _asking_pair(deposit: int | None, rent: int | None) -> NaverAskingPair:
+def _rent_amount(deposit: int | None, rent: int | None) -> AmountSet:
     """한 짝의 보증금·월세(원)를 만원 짝으로. 월세만 0 이면 월세만 null, 보증금과 월세가 모두 0(또는 없음)이면 두 값 모두 null."""
     if not deposit and not rent:
-        return NaverAskingPair(deposit_manwon=None, rent_manwon=None)
-    return NaverAskingPair(deposit_manwon=won_to_manwon(deposit), rent_manwon=won_to_manwon(rent or None))
+        return AmountSet(deposit_manwon=None, rent_manwon=None)
+    return AmountSet(deposit_manwon=won_to_manwon(deposit), rent_manwon=won_to_manwon(rent or None))
 
 
 def rent_asking_range(
     price: NaverComplexArticlePriceModel | None,
     kind: Literal['monthly', 'short'],
-) -> NaverRentAskingRange | None:
+) -> AmountRange | None:
     """단지 호가 범위(`NaverComplexArticlePriceModel`)의 월세·단기임대 짝을 만원으로 묶는다.
 
     웹 호가 범위가 '보증금min/월세min ~ 보증금max/월세max' 로 그리는 것과 같은 짝이다. 보증금이 낮은 매물이 월세는
-    높을 수 있어 월세 Min 이 Max 보다 클 수 있다. `price` 가 없거나 그 종류의 네 값이 모두 없거나 0 이면 None 이다
+    높을 수 있어 월세 lowest 가 highest 보다 클 수 있다. 그 종류의 네 값이 모두 없거나 0 이면 None 이다
     (단기임대 매물이 없으면 단기 키는 오지 않는다). 그 밖에 한 짝의 월세만 0 이면 서버가 비운 값이라 그 월세만 null 이고,
     한 짝의 보증금과 월세가 모두 0 이면 그 짝은 비어 있어 두 값 모두 null 이다. 월세가 있는 짝의 보증금 0 은 그대로 0 으로 낸다.
 
@@ -811,25 +801,41 @@ def rent_asking_range(
             price.rent_short_lease_min_price, price.rent_short_min_price,
             price.rent_short_lease_max_price, price.rent_short_max_price,
         )
-    # 월세 0원 매물은 없어 네 값이 모두 0 이면 서버가 0 으로 비운 것이라 null 이고, 한 짝의 월세만 0 이어도 비운 값이라
+    # 월세 0원 매물은 없어 네 값이 모두 0 이면 서버가 0 으로 비운 것이라 그 거래 키가 없고, 한 짝의 월세만 0 이어도 비운 값이라
     # 그 월세만 null(모름)이다. 한 짝의 보증금과 월세가 모두 0 이면 그 짝이 비어 있어 두 값 모두 null 이다. 월세가 있는 짝의
     # 보증금 0 은 실제로 있을 수 있어 그대로 0 으로 낸다 (`won_to_manwon_range` 도 0 을 시세 없음으로 본다)
     if not any(values):
         return None
     low_deposit, low_rent, high_deposit, high_rent = values
-    return NaverRentAskingRange(
-        lowest=_asking_pair(low_deposit, low_rent),
-        highest=_asking_pair(high_deposit, high_rent),
+    return AmountRange(
+        lowest=_rent_amount(low_deposit, low_rent),
+        highest=_rent_amount(high_deposit, high_rent),
     )
 
 
+def asking_ranges(prices: NaverComplexArticlePriceModel | None) -> dict[str, AmountRange] | None:
+    """단지의 거래 유형별 호가 범위 (`asking_ranges`). 키 순서는 sale·jeonse·wolse·short_term 이다.
+
+    `prices` 가 없으면(서버가 호가를 주지 않음) None(모름)이고, 그 거래 매물이 없으면(값이 모두 없거나 0) 그 거래 키를 뺀다.
+    """
+    if prices is None:
+        return None
+    ranges: dict[str, AmountRange | None] = {
+        'sale': amount_range('price_manwon', prices.deal_min_price, prices.deal_max_price),
+        'jeonse': amount_range('deposit_manwon', prices.rent_min_price, prices.rent_max_price),
+        'wolse': rent_asking_range(prices, 'monthly'),
+        'short_term': rent_asking_range(prices, 'short'),
+    }
+    return {name: value for name, value in ranges.items() if value is not None}
+
+
 def trade_article_counts(counts: NaverComplexArticleCountModel | NaverRedevelopmentAreaCountModel) -> dict[str, int]:
-    """거래 유형별 매물 수 (단지·단지 목록·재개발 구역 목록·재개발 상세의 `article_counts`)."""
+    """거래 유형별 매물 수 (단지·단지 목록·재개발 구역 목록·재개발 상세의 `listing_counts`)."""
     return {
-        '매매': counts.deal_count,
-        '전세': counts.lease_deposit_count,
-        '월세': counts.lease_monthly_count,
-        '단기임대': counts.lease_short_term,
+        'sale': counts.deal_count,
+        'jeonse': counts.lease_deposit_count,
+        'wolse': counts.lease_monthly_count,
+        'short_term': counts.lease_short_term,
     }
 
 
@@ -842,7 +848,7 @@ def complex_row_fields(
     counts: NaverComplexArticleCountModel | None,
     prices: NaverComplexArticlePriceModel | None,
 ) -> dict[str, Any]:
-    """단지 한 곳의 공통 칸을 만든다: 단지 유형·세대수·동 수·사용승인일·거래 유형별 매물 수·매매·전세 호가 범위·월세·단기임대 호가 짝.
+    """단지 한 곳의 공통 칸을 만든다: 단지 유형·세대수·동 수·사용승인일·거래 유형별 매물 수·거래 유형별 호가 범위.
 
     학교 배정 단지(`school`)·지역 단지 목록(`search complexes`)·단지 요약(`complex`)이 같은 값을 같은 식으로 내도록 한 곳에 둔다.
     호출부는 각 모델 생성자에 `**` 로 풀어 넣는다 (각 모델의 필드 순서와 `address`·`distance_km`·`url`·`assigned_dongs` 같은 자기 칸은
@@ -856,15 +862,12 @@ def complex_row_fields(
     """
     return {
         # 빈 글자는 단지 유형을 모르는 것이라 None 이다 (`complex` 의 시세·평당가 판정이 빈 글자를 모름으로 읽는 것과 같다)
-        'property_type': PROPERTY_NAME_BY_CODE.get(type_code or '', type_code or None),
-        'households': households,
+        'complex_type': PROPERTY_NAME_BY_CODE.get(type_code or '', type_code or None),
+        'household_count': households,
         'dong_count': dong_count,
-        'approved_at': normalize_date(use_approval_date),
-        'article_counts': trade_article_counts(counts) if counts is not None else None,
-        'sale_asking_range_manwon': won_to_manwon_range(prices.deal_min_price, prices.deal_max_price) if prices is not None else None,
-        'jeonse_asking_range_manwon': won_to_manwon_range(prices.rent_min_price, prices.rent_max_price) if prices is not None else None,
-        'monthly_asking': rent_asking_range(prices, 'monthly'),
-        'short_term_asking': rent_asking_range(prices, 'short'),
+        'approved_date': normalize_date(use_approval_date),
+        'listing_counts': trade_article_counts(counts) if counts is not None else None,
+        'asking_ranges': asking_ranges(prices),
     }
 
 
@@ -973,6 +976,38 @@ def kst_today() -> date:
     return datetime.now(KST).date()
 
 
+class NaverMarketBand(BaseModel):
+    """기관 시세 한 거래 유형의 평균과 하위·상위 띠 (만원). 띠는 범위가 아니라 기관이 준 하위·상위 값이다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    average_manwon: Annotated[
+        float | None,
+        Field(description='시세 평균 (만원). 없으면(0 포함) null')
+    ] = None
+    low_manwon: Annotated[
+        float | None,
+        Field(description='시세 하위 (만원). 기관이 띠를 주지 않으면 null')
+    ] = None
+    high_manwon: Annotated[
+        float | None,
+        Field(description='시세 상위 (만원). 기관이 띠를 주지 않으면 null')
+    ] = None
+
+
+def market_band(average: float | None, price_range: list[float | None] | None) -> NaverMarketBand | None:
+    """시세 평균(만원)과 [하한, 상한] 목록(`manwon_range`)을 한 거래 유형의 시세로. 목록이 None 이면 하위·상위 둘 다 null.
+
+    평균·하위·상위를 모두 모르면 None(거래 값 null)이고, 하나라도 있으면 모르는 칸만 null 인 객체다.
+    """
+    low, high = price_range if price_range is not None else (None, None)
+    if average is None and low is None and high is None:
+        return None
+    return NaverMarketBand(average_manwon=average, low_manwon=low, high_manwon=high)
+
+
 def manwon_range(price_range: NaverPriceRangeModel | None, scale: bool = True) -> list[float | None] | None:
     """시세 범위(하한·상한)를 만원으로 (`won_to_manwon_range`). `scale` 이 False 면 비율(전세가율 %, 37~41)이라 그대로 둔다.
 
@@ -985,6 +1020,26 @@ def manwon_range(price_range: NaverPriceRangeModel | None, scale: bool = True) -
     if not price_range.floor and not price_range.ceiling:
         return None
     return [price_range.floor, price_range.ceiling]
+
+
+def market_price_fields(
+    deal_average_won: int | float | None,
+    deal_range: NaverPriceRangeModel | None,
+    deposit_average_won: int | float | None,
+    deposit_range: NaverPriceRangeModel | None,
+    lease_per_deal_rate: NaverPriceRangeModel | None,
+) -> dict[str, Any]:
+    """기관 시세 한 점의 매매·전세 띠와 전세가율 하한·상한 (`NaverMarketPrice`·`NaverMarketPricePoint` 의 같은 칸).
+
+    평균 0 은 범위(`manwon_range`)처럼 없음(None)으로 본다 (네이버 웹도 0 이면 시세를 그리지 않는다).
+    """
+    ratio = manwon_range(lease_per_deal_rate, scale=False)
+    return {
+        'sale': market_band(won_to_manwon(deal_average_won) or None, manwon_range(deal_range)),
+        'jeonse': market_band(won_to_manwon(deposit_average_won) or None, manwon_range(deposit_range)),
+        'jeonse_ratio_low_percent': ratio[0] if ratio is not None else None,
+        'jeonse_ratio_high_percent': ratio[1] if ratio is not None else None,
+    }
 
 
 DONG_LETTER_BY_SPELLING: dict[str, str] = {
@@ -1427,9 +1482,15 @@ def group_sort_notes(sort_type: str | None, listings: list[Listing]) -> list[str
     for listing in listings:
         if not isinstance(listing, NaverListing):
             continue
-        bounds = listing.price_range_manwon or listing.deposit_range_manwon
-        if bounds and (end := bounds[1] if descending else bounds[0]) is not None:
-            ends.append((end, listing))
+        if listing.asking_range is None:
+            continue
+        # 주 금액(매매가, 그 밖에는 보증금)의 범위만 본다. 주 금액의 두 끝이 같거나 모르면 이 매물은 범위가 없어 건너뛴다
+        field = 'price_manwon' if listing.trade_type == '매매' else 'deposit_manwon'
+        lowest, highest = listing.asking_range.lowest, listing.asking_range.highest
+        low = getattr(lowest, field) if lowest is not None else None
+        high = getattr(highest, field) if highest is not None else None
+        if low != high and (end_price := high if descending else low) is not None:
+            ends.append((end_price, listing))
     if not ends:
         return []
     end, pick = (max if descending else min)(ends, key=lambda pair: pair[0])

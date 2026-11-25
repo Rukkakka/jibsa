@@ -126,7 +126,7 @@ class DaangnListingDetail(ListingDetail):
         float | None,
         Field(description='보여 주는 거래 조건의 중개보수 (만원, 부가세 포함). 당근이 법정 상한 요율로 계산한 값이다')
     ] = None
-    watch_count: Annotated[
+    favorite_count: Annotated[
         int | None,
         Field(description='당근에서 이 매물을 관심 목록에 넣은 사람 수')
     ] = None
@@ -356,7 +356,7 @@ def detail_to_listing(
         direction=code_label(DIRECTION_LABELS, article.building_orientation),
         move_in=move_in,
         parking=parking,
-        elevator=elevator,
+        has_elevator=elevator,
         # 상세 SSR 에는 options·subwayStations·nearbySubwayStations 키가 늘 있어 빈 목록은 '모름'(null) 이 아니라 '없음' 이다
         # (2026-10-11 실측: 원룸·아파트·상가·토지·공장·주택 8건 모두 키 있음. 상가·토지·공장은 options 가 빈 목록)
         options=[
@@ -366,11 +366,11 @@ def detail_to_listing(
         ],
         manage_cost_includes=manage_cost_includes,
         manage_cost_excludes=manage_cost_excludes,
-        nearby_subways=_nearby_subways(article),
+        nearby_stations=_nearby_subways(article),
         key_money_manwon=article.premium_money,
         key_money_negotiable=article.premium_money_negotiable,
         broker_fee_manwon=won_to_manwon(commission.total) if commission else None,
-        watch_count=article.watch_count,
+        favorite_count=article.watch_count,
         complex_id=article.complex.original_id if article.complex else None,
         complex_name=article.complex.name if article.complex and article.complex.original_id else None,
         complex_type=(
@@ -449,9 +449,9 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
             continue
         update = {
             'manage_cost_manwon': detail.manage_cost_manwon,
-            'registered_at': detail.registered_at,
+            'registered_date': detail.registered_date,
             'address': detail.address,
-            'approved_at': detail.approved_at,
+            'approved_date': detail.approved_date,
             'room_type': detail.room_type,
             'status': detail.status,
         }

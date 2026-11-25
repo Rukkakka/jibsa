@@ -17,7 +17,9 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import quoted
 from jibsa.core.listing import (
+    AmountSet,
     Listing,
+    NumberRange,
     join_address,
     m2_to_pyeong,
     more_hint,
@@ -25,6 +27,7 @@ from jibsa.core.listing import (
     normalize_date,
     note,
     null_items_note,
+    number_range,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -87,6 +90,7 @@ from jibsa.providers.daangn.service.common import (
     no_trade_notes,
     partial_failure_note,
     region_complex_of,
+    region_name_parts,
     stalled_page,
     station_name,
     trade_of,
@@ -133,8 +137,8 @@ COMPLEX_SORT_BY_LABEL: dict[str, DaangnComplexSort] = {
 }
 # 입주일 순은 사용승인일 순과 어긋나는 단지가 섞여 온다 (2026-10 역삼동 실측)
 MOVE_IN_SORT_NOTE: str = (
-    '입주일 순은 당근이 정한 순서라 사용승인일(approved_at) 순서와 어긋나는 단지가 있습니다. '
-    '새 단지·오래된 단지는 approved_at 으로 다시 확인하세요'
+    '입주일 순은 당근이 정한 순서라 사용승인일(approved_date) 순서와 어긋나는 단지가 있습니다. '
+    '새 단지·오래된 단지는 approved_date 로 다시 확인하세요'
 )
 # 단지 매물 목록은 20건씩 최대 6페이지. 제외된 만큼 추가 조회하지 않는다
 COMPLEX_LISTINGS_PAGE_SIZE: int = 20
@@ -148,19 +152,19 @@ class DaangnPyeong(BaseModel):
         extra='forbid',
     )
 
-    exclusive_m2: Annotated[
+    area_m2: Annotated[
         float | None,
         Field(description='전용면적 (㎡)')
     ] = None
-    exclusive_pyeong: Annotated[
+    area_pyeong: Annotated[
         float | None,
         Field(description='전용면적 (평)')
     ] = None
-    supply_m2: Annotated[
+    supply_area_m2: Annotated[
         float | None,
         Field(description='공급면적 (㎡)')
     ] = None
-    supply_pyeong: Annotated[
+    supply_area_pyeong: Annotated[
         float | None,
         Field(description='공급면적 (평). 흔히 말하는 "34평형" 이 이 값이다')
     ] = None
@@ -213,7 +217,7 @@ class DaangnComplex(BaseModel):
         str,
         Field(description='단지 이름')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형 (아파트, 오피스텔, 주상복합 ...)')
     ] = None
@@ -225,7 +229,7 @@ class DaangnComplex(BaseModel):
         str | None,
         Field(description='도로명 주소')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='총 세대수')
     ] = None
@@ -233,17 +237,13 @@ class DaangnComplex(BaseModel):
         int | None,
         Field(description='동 수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
-    lowest_top_floor: Annotated[
-        int | None,
-        Field(description='가장 낮은 동의 층수')
-    ] = None
-    highest_top_floor: Annotated[
-        int | None,
-        Field(description='가장 높은 동의 층수')
+    building_floor_range: Annotated[
+        NumberRange | None,
+        Field(description='동 꼭대기 층수의 최소(lowest)·최대(highest). 모르면 null')
     ] = None
     construction_company: Annotated[
         str | None,
@@ -259,13 +259,17 @@ class DaangnComplex(BaseModel):
     ] = None
     heating: Annotated[
         str | None,
-        Field(description='난방 방식·연료 (예: 개별난방, 도시가스)')
+        Field(description='난방 방식 (예: 개별난방)')
     ] = None
-    floor_area_ratio: Annotated[
+    heating_fuel: Annotated[
+        str | None,
+        Field(description='난방 연료 (예: 도시가스)')
+    ] = None
+    floor_area_ratio_percent: Annotated[
         float | None,
         Field(description='용적률 (%)')
     ] = None
-    building_coverage_ratio: Annotated[
+    building_coverage_ratio_percent: Annotated[
         float | None,
         Field(description='건폐율 (%)')
     ] = None
@@ -277,7 +281,7 @@ class DaangnComplex(BaseModel):
         list[DaangnPyeong] | None,
         Field(description='평형 목록 (전용면적 순). 아파트형 단지는 공급 평 묶음(pyeong)이 붙는다. 단지 공공 정보가 없으면 null')
     ] = []
-    nearby_subways: Annotated[
+    nearby_stations: Annotated[
         list[str] | None,
         Field(description='가까운 지하철역 (예: 신사역 (신분당선, 도보 4분)). 도보 시간이 짧은 순 (당근 웹 단지 화면 가까운 역 순서). 단지 공공 정보가 없으면 null')
     ] = []
@@ -310,7 +314,7 @@ class DaangnComplexCandidate(BaseModel):
         str,
         Field(description='단지 ID (daangn complex 에 넘긴다)')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형 (아파트, 오피스텔, 주상복합 ...)')
     ] = None
@@ -412,10 +416,10 @@ def complex_pyeongs(complex_type: str | None, danji: DaangnProptierDanjiModel) -
     supply, groups = _pyeong_groups(complex_type, danji)
     return [
         DaangnPyeong(
-            exclusive_m2=info.exclusive_area,
-            exclusive_pyeong=m2_to_pyeong(info.exclusive_area),
-            supply_m2=info.supply_area,
-            supply_pyeong=m2_to_pyeong(info.supply_area),
+            area_m2=info.exclusive_area,
+            area_pyeong=m2_to_pyeong(info.exclusive_area),
+            supply_area_m2=info.supply_area,
+            supply_area_pyeong=m2_to_pyeong(info.supply_area),
             room_count=info.room_count,
             bathroom_count=info.bathroom_count,
             # 평형에서 빈 항목을 뺐으면 묶음의 평형이 하나였는지 알 수 없어 세대수도 모른다 (null)
@@ -443,7 +447,6 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
         schools = [_school(item, assigned=True) for item in _web_school_order(danji.assigned_schools, assigned=True)]
         schools += [_school(item) for item in _web_school_card(danji.middle_schools)]
         schools += [_school(item) for item in _web_school_card(danji.high_schools)]
-    heating = ', '.join(value for value in (danji.heating_method, danji.heating_fuel) if value) if danji else ''
     review_count = complex_.lived_review_count
     url = complex_url(complex_.original_id)
     notes = [
@@ -458,9 +461,9 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
     # 당근 웹 단지 화면 '가까운 역' 순서 (`Ye`): 도보 시간이 짧은 순 (모르면 뒤). 같으면 서버 순서를 지킨다 (안정 정렬).
     # 웹은 같을 때 거리도 견주지만 jibsa 가 받는 단지 응답의 역(`DaangnSubwayInfoModel`)에는 거리 칸이 없다. 웹과 달리 같은 이름 역을 합치거나
     # 앞 2곳으로 자르지 않고 (역, 노선)마다 모두 낸다.
-    nearby_subways: list[str] | None = None
+    nearby_stations: list[str] | None = None
     if danji:
-        nearby_subways = []
+        nearby_stations = []
         for subway_item in sorted(danji.subways, key=lambda subway: _or_inf(subway.walking_time_min)):
             if not subway_item.station_name:
                 continue
@@ -468,31 +471,32 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
             if subway_item.walking_time_min is not None:
                 details.append(f'도보 {web_minutes(subway_item.walking_time_min)}분')
             name = station_name(subway_item.station_name)
-            nearby_subways.append(f'{name} ({", ".join(details)})' if details else name)
+            nearby_stations.append(f'{name} ({", ".join(details)})' if details else name)
     return DaangnComplex(
         complex_id=complex_.original_id,
         name=complex_.name,
-        property_type=code_label(COMPLEX_TYPE_LABELS, complex_.type),
+        complex_type=code_label(COMPLEX_TYPE_LABELS, complex_.type),
         address=normalize_address(
             address.jibun_address if address and address.jibun_address
             else join_address(region.name1, region.name2, region.name3) if region else None
         ),
         road_address=normalize_address(address.road_address if address else None),
-        households=danji.households if danji and danji.households is not None else complex_.households,
+        household_count=danji.households if danji and danji.households is not None else complex_.households,
         dong_count=danji.dong_count if danji and danji.dong_count is not None else complex_.building_count,
-        approved_at=normalize_date(complex_.approval_date),
-        lowest_top_floor=danji.min_floor if danji else None,
-        highest_top_floor=danji.max_floor if danji else None,
+        approved_date=normalize_date(complex_.approval_date),
+        building_floor_range=number_range(danji.min_floor, danji.max_floor) if danji else None,
         construction_company=danji.constructor_name if danji else None,
         parking_count=danji.parking_count if danji else None,
         parking_per_household=danji.parking_per_household if danji else None,
-        heating=heating or None,
-        floor_area_ratio=danji.floor_area_ratio if danji else None,
-        building_coverage_ratio=danji.building_coverage_ratio if danji else None,
+        # 값이 없는 방식·연료는 모름(null)이다 (빈 글자도 같다)
+        heating=(danji.heating_method or None) if danji else None,
+        heating_fuel=(danji.heating_fuel or None) if danji else None,
+        floor_area_ratio_percent=danji.floor_area_ratio if danji else None,
+        building_coverage_ratio_percent=danji.building_coverage_ratio if danji else None,
         listing_count=complex_.live_article_count.total if complex_.live_article_count else None,
         # 단지 공공 정보가 없으면 평형·역·학교는 모른다 (null). 2026-10-10 실측: 아파트·오피스텔·주상복합·도시형 13곳 모두 있었다
-        pyeongs=sorted(pyeongs, key=lambda pyeong: pyeong.exclusive_m2 or 0) if danji else None,
-        nearby_subways=nearby_subways,
+        pyeongs=sorted(pyeongs, key=lambda pyeong: pyeong.area_m2 or 0) if danji else None,
+        nearby_stations=nearby_stations,
         schools=[school for school in schools if school] if danji else None,
         review_count=review_count,
         url=url,
@@ -565,7 +569,7 @@ def search_complexes(
                 address = address or next((building.road_address for building in buildings if building.road_address), None)
                 candidates.append(DaangnComplexCandidate(
                     complex_id=node.original_id,
-                    property_type=code_label(COMPLEX_TYPE_LABELS, node.type),
+                    complex_type=code_label(COMPLEX_TYPE_LABELS, node.type),
                     name=node.name,
                     address=normalize_address(address),
                 ))
@@ -1180,7 +1184,7 @@ class DaangnTrendingComplex(BaseModel):
         str | None,
         Field(description='단지 이름')
     ] = None
-    type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='아파트 / 오피스텔 ...')
     ] = None
@@ -1188,11 +1192,11 @@ class DaangnTrendingComplex(BaseModel):
         str | None,
         Field(description='시·도·구')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -1200,10 +1204,10 @@ class DaangnTrendingComplex(BaseModel):
         float | None,
         Field(description='대표 평형 전용면적 (㎡). 당근이 빈 항목을 줘 셀 수 없으면 null')
     ] = None
-    recent_sale_manwon: Annotated[
-        int | None,
-        Field(description='대표 평형 최근 매매가 (만원). 당근이 빈 항목을 줘 셀 수 없으면 null')
-    ] = None
+    latest_trades: Annotated[
+        dict[str, AmountSet | None],
+        Field(description="대표 평형의 가장 최근 실거래. 거래 키('sale')이고 그 안 price_manwon 은 최근 매매가 (만원). 최근 매매가 없거나 매매가가 0 이면(당근 웹도 비운다) 키가 없고({}), 대표 평형을 모르거나(당근이 빈 항목을 줘 셀 수 없을 때 포함) 당근이 실거래 칸이나 그 목록을 주지 않거나 목록에 빈 항목이 섞이거나 매매가를 모르면 'sale' 이 null")
+    ]
 
 
 class DaangnTrendingRegion(BaseModel):
@@ -1213,7 +1217,14 @@ class DaangnTrendingRegion(BaseModel):
         extra='forbid',
     )
 
-    name: Annotated[str, Field(description="범위 이름 ('전국', '서울특별시', '서울특별시 강남구')")]
+    sido: Annotated[
+        str,
+        Field(description='시/도. 전국이면 빈 문자열이고 출력에서 키를 뺀다')
+    ] = ''
+    sigungu: Annotated[
+        str,
+        Field(description='시/군/구. 시·도 범위면 빈 문자열이고 출력에서 키를 뺀다')
+    ] = ''
     region_id: Annotated[
         int | None,
         Field(description='당근 지역 ID. 전국이면 null')
@@ -1222,6 +1233,12 @@ class DaangnTrendingRegion(BaseModel):
         Literal['전국', '시도', '구'],
         Field(description='전국·시도·구(시·군 포함)')
     ]
+
+    @model_serializer
+    def with_name(self) -> dict[str, Any]:
+        if self.level == '전국':
+            return {'name': '전국', 'region_id': self.region_id, 'level': self.level}
+        return {**region_name_parts(self.sido, self.sigungu), 'region_id': self.region_id, 'level': self.level}
 
 
 class DaangnTrendingComplexesResult(BaseModel):
@@ -1247,14 +1264,19 @@ def trending_region_of(area: DaangnArea | None) -> DaangnTrendingRegion:
         JibsaError: 동이면 INVALID_ARGUMENT. 당근 웹은 전국·시·도 탭과 시·군·구 페이지로만 부른다 (2026-11-12 번들 대조).
     """
     if area is None:
-        return DaangnTrendingRegion(name='전국', level='전국')
+        return DaangnTrendingRegion(level='전국')
     if area.level == '동':
         raise JibsaError(
             code='INVALID_ARGUMENT',
             message=f"인기 급상승 단지는 전국·시·도·구 단위만 있습니다 ({quoted(area.full_name, '은/는')} 동입니다)",
             hint=f"구로 찾으려면 jibsa daangn trending-complexes '{join_address(area.name1, area.name2)}'. 지역을 빼면 전국입니다",
         )
-    return DaangnTrendingRegion(name=area.full_name, region_id=area.region_id, level='시도' if area.level == '시도' else '구')
+    return DaangnTrendingRegion(
+        sido=area.name1,
+        sigungu=area.name2 if area.level == '구' else '',
+        region_id=area.region_id,
+        level='시도' if area.level == '시도' else '구',
+    )
 
 
 def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) -> DaangnTrendingComplexesResult:
@@ -1274,6 +1296,7 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
     # 목록에서 빈 항목을 빼고 읽었으면 순위를 매길 자리를 알 수 없어 순위는 모두 모른다 (null)
     dropped_complexes = response.data.null_items('trending_complexes') if response.data else 0
     dropped_pyeongs = 0
+    dropped_trades = 0
     complexes: list[DaangnTrendingComplex] = []
     for rank, item in enumerate(found, start=1):
         danji = item.proptier_danji
@@ -1287,31 +1310,45 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
         if dropped:
             info = None
             dropped_pyeongs += dropped
-        sale = next(
-            (edge.node.trade_price for edge in info.sale_realsale.edges if edge.node),
-            None,
-        ) if info and info.sale_realsale else None
+        latest_trades: dict[str, AmountSet | None]
+        realsale = info.sale_realsale if info else None
+        # 실거래 칸이나 그 목록(edges)이 null 이거나 목록에 빈 항목(null 원소, node 가 null 인 항목)이 있으면 최근 매매가 있는지 모른다
+        # (null). 빈 목록 [] 만 해당 없음이다
+        blank_trades = (
+            realsale.null_items('edges') + sum(1 for edge in realsale.edges or [] if edge.node is None) if realsale else 0
+        )
+        if realsale is None or realsale.edges is None or blank_trades:
+            latest_trades = {'sale': None}
+            dropped_trades += blank_trades
+        else:
+            # 최근 매매가 없거나(노드가 없음) 매매가가 0 이면 해당 없음이라 키를 뺀다 (웹 카드 `zu` 의 `price:o?…:null` 도 0 이면 비운다)
+            node = realsale.edges[0].node if realsale.edges else None
+            if node is None or node.trade_price == 0:
+                latest_trades = {}
+            else:
+                latest_trades = {'sale': None if node.trade_price is None else AmountSet(price_manwon=node.trade_price)}
         approval = APPROVAL_DATE_PATTERN.search(item.approval_date_text or '')
         complexes.append(DaangnTrendingComplex(
             rank=None if dropped_complexes else rank,
             complex_id=item.original_id,
             name=item.name,
-            type=code_label(COMPLEX_TYPE_LABELS, item.type),
+            complex_type=code_label(COMPLEX_TYPE_LABELS, item.type),
             address=normalize_address(join_address(item.region.name1, item.region.name2)) if item.region else None,
-            households=item.households,
-            approved_at='-'.join(approval.groups()) if approval else None,
+            household_count=item.households,
+            approved_date='-'.join(approval.groups()) if approval else None,
             representative_area_m2=info.exclusive_area if info else None,
-            # 웹 카드(`zu` 의 `price:o?…:null`)는 최근 매매가가 0 이면 가격을 비운다. 0만원은 틀린 값이라 compare 의 recent_sale
-            # 처럼 값이 없는 것으로 둔다
-            recent_sale_manwon=sale or None,
+            latest_trades=latest_trades,
         ))
     # 동으로 부를 때는 이른 아침마다 비었다 (2026-10-27 실측). 웹 범위(전국·시·도·구)에서도 비면 단지가 없다는 뜻으로 읽히지 않게 알린다
+    region_name = ' '.join(part for part in (region.sido, region.sigungu) if part) or '전국'
     notes = [] if complexes else [
-        f'당근이 {region.name} 인기 급상승 단지를 주지 않았습니다. 단지가 없다는 뜻은 아닙니다. 때에 따라 달라 나중에 다시 부르면 '
+        f'당근이 {region_name} 인기 급상승 단지를 주지 않았습니다. 단지가 없다는 뜻은 아닙니다. 때에 따라 달라 나중에 다시 부르면 '
         '나올 수 있고, 지역 단지 목록은 jibsa daangn search complexes <동·구> 에서 봅니다'
     ]
     if dropped_complexes:
         notes.append(null_items_note('당근 인기 급상승 단지', dropped_complexes, ('rank',)))
     if dropped_pyeongs:
-        notes.append(null_items_note('당근 인기 단지 평형', dropped_pyeongs, ('representative_area_m2', 'recent_sale_manwon')))
+        notes.append(null_items_note('당근 인기 단지 평형', dropped_pyeongs, ('representative_area_m2', 'latest_trades 의 sale')))
+    if dropped_trades:
+        notes.append(null_items_note('당근 인기 단지 최근 매매', dropped_trades, ('latest_trades 의 sale',)))
     return DaangnTrendingComplexesResult(region=region, returned=len(complexes), complexes=complexes, notes=notes)

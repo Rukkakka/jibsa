@@ -21,11 +21,14 @@ from jibsa.core.geo import (
 )
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
+    AmountRange,
+    AmountSet,
     more_hint,
     normalize_address,
     note,
     null_items_note,
 )
+from jibsa.core.schema import drop_unset_fields
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.sale import (
     ALL_SALE_BUILDING_TYPES,
@@ -76,6 +79,7 @@ from jibsa.providers.dabang.service.region import (
 from typing import (
     Annotated,
     Any,
+    Literal,
 )
 
 
@@ -101,6 +105,9 @@ SALE_SUPPLY_BY_LABEL: dict[str, DabangSaleSupplyType] = {
 # 분양 일정 날짜 꼴: '26.09.07' (날), '26.08월' (달)
 SALE_DAY_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})\.(\d{1,2})$')
 SALE_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})월$')
+# `sale_date` 가 바꾼 꼴
+SALE_ISO_DAY_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+SALE_ISO_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}$')
 # sale-schedule 의 --limit 최대값. CLI 옵션의 max 와 더 보는 법 안내가 함께 쓴다
 SALE_SCHEDULE_MAX_LIMIT: int = 300
 # 청약 일정 글: '[청약접수] 인천 인천계양 A17블록 … (~10/27)'
@@ -108,16 +115,29 @@ SCHEDULE_REGION_PATTERN: re.Pattern[str] = re.compile(r'^(?:\[[^\]]+\]\s*)+(\S+)
 # 웹은 공급 유형 코드가 4·5(공공임대·민간임대)면 가격 이름표를 '임대가', 아니면 '분양가' 로 쓴다 (ic_24_download 청크 `x`,
 # 2026-11-13. 민간임대 6acca80f… 화면 '임대가 4억7770')
 RENTAL_SUPPLY_TYPES: frozenset[int] = frozenset({4, 5})
+# 목록의 가격 이름표가 이 값이면 금액이 임대 보증금이라 `deposit_manwon` 에 담는다 (군포대야미 A-1블록 6년 분양전환공공임대 55A
+# 다방 임대가 8561 = 모집공고 임대보증금 85,614,000원, 2026-11-25. '보증금' 은 예전 지도 목록 이름표)
+RENTAL_PRICE_KINDS: frozenset[str] = frozenset({'임대가', '보증금'})
+
+
+GIVEN_AMOUNT_FIELDS: tuple[str, ...] = ('price_manwon', 'deposit_manwon')
+"""분양가·임대 보증금 칸. 생성할 때 넘기지 않은 칸은 해당 없음이라 키를 빼고(`drop_unset_fields`), 넘긴 None 은 null 이다."""
 
 
 def sale_date(text: str | None) -> str | None:
-    """다방 분양 날짜 글을 'YYYY-MM-DD' 나 'YYYY-MM' 으로 ('26.09.07' → '2026-09-07', '26.08월' → '2026-08'). 다른 꼴은 그대로."""
-    if text is None or not text.strip():
+    """다방 분양 날짜 글을 'YYYY-MM-DD' 나 'YYYY-MM' 으로 ('26.09.07' → '2026-09-07', '26.08월' → '2026-08').
+
+    값이 없다는 표시 `-` 와 빈 글자는 None 이다. 다른 꼴과 달력에 없는 날·달('26.02.30')은 그대로 둔다.
+    """
+    if text is None or text.strip() in ('', '-'):
         return None
     value = text.strip()
     if (match := SALE_DAY_PATTERN.fullmatch(value)) is not None:
-        return f'20{match.group(1)}-{int(match.group(2)):02d}-{int(match.group(3)):02d}'
-    if (match := SALE_MONTH_PATTERN.fullmatch(value)) is not None:
+        try:
+            return date(2000 + int(match.group(1)), int(match.group(2)), int(match.group(3))).isoformat()
+        except ValueError:
+            return value
+    if (match := SALE_MONTH_PATTERN.fullmatch(value)) is not None and 1 <= int(match.group(2)) <= 12:
         return f'20{match.group(1)}-{int(match.group(2)):02d}'
     return value
 
@@ -129,7 +149,7 @@ class DabangSaleSummary(BaseModel):
         extra='forbid',
     )
 
-    sale_id: Annotated[
+    presale_id: Annotated[
         str,
         Field(description='분양 ID. jibsa dabang sale 에 넘긴다')
     ]
@@ -137,11 +157,11 @@ class DabangSaleSummary(BaseModel):
         str,
         Field(description='단지 이름')
     ]
-    state: Annotated[
+    status: Annotated[
         str | None,
         Field(description='분양 상태 (분양예정·접수중·접수마감·입주예정·입주모집)')
     ] = None
-    building_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='건물 유형')
     ] = None
@@ -153,7 +173,7 @@ class DabangSaleSummary(BaseModel):
         str | None,
         Field(description='동까지의 주소')
     ] = None
-    sale_household_count: Annotated[
+    presale_household_count: Annotated[
         int | None,
         Field(description='분양 세대수 (다방 목록의 세대수 칸. 총세대수가 아니다, 총세대수는 household_count)')
     ] = None
@@ -163,11 +183,15 @@ class DabangSaleSummary(BaseModel):
     ] = None
     price_kind: Annotated[
         str | None,
-        Field(description="가격 종류 (다방 표시. 보통 '분양가', 임대 공급이면 지역 목록은 '임대가', 지도 목록은 '보증금')")
+        Field(description="가격 종류 (다방 표시. 보통 '분양가', 공공·민간임대 공급이면 '임대가'(임대 보증금이라 금액이 deposit_manwon 에 있다))")
     ] = None
     price_manwon: Annotated[
         float | None,
-        Field(description='대표 가격 (만원, 다방 표시). 아직 없으면 null')
+        Field(description="분양가 (만원, 다방 표시). price_kind 가 '임대가'면 키가 없고 deposit_manwon 이다. 아직 없으면 null")
+    ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description="임대 보증금 (만원, 다방 표시. price_kind '임대가'). 분양가면 키가 없다. 아직 없으면 null")
     ] = None
     next_schedule: Annotated[
         str | None,
@@ -177,6 +201,10 @@ class DabangSaleSummary(BaseModel):
         str,
         Field(description='분양 페이지 URL')
     ]
+
+    @model_serializer(mode='wrap')
+    def keep_given_amounts(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return drop_unset_fields(self, handler(self), GIVEN_AMOUNT_FIELDS)
 
 
 class DabangSaleListResult(BaseModel):
@@ -205,7 +233,7 @@ class DabangSaleListResult(BaseModel):
         bool,
         Field(description='더 받을 단지가 있는지')
     ] = False
-    sales: Annotated[
+    presales: Annotated[
         list[DabangSaleSummary],
         Field(description='다방 목록 순 분양 단지')
     ]
@@ -217,16 +245,17 @@ class DabangSaleListResult(BaseModel):
 
 def _summary(item: DabangSaleItemModel) -> DabangSaleSummary:
     """지도 목록(`sale-list/category/bbox`)의 한 줄. 총세대수가 오지 않는다."""
+    amount = manwon_from_text(item.price_title)
     return DabangSaleSummary(
-        sale_id=item.id,
+        presale_id=item.id,
         name=item.building_name,
-        state=item.state_name,
-        building_type=item.building_type_title,
+        status=item.state_name,
+        complex_type=item.building_type_title,
         supply_type=item.supply_type_name,
         address=normalize_address(item.address),
-        sale_household_count=household_count(item.household_num_title),
+        presale_household_count=household_count(item.household_num_title),
         price_kind=item.supply_price_type_name,
-        price_manwon=manwon_from_text(item.price_title),
+        **({'deposit_manwon': amount} if item.supply_price_type_name in RENTAL_PRICE_KINDS else {'price_manwon': amount}),
         next_schedule=item.schedule_title,
         url=sale_url(item.id),
     )
@@ -237,17 +266,18 @@ def _in_lots_fields(item: DabangSaleInLotsRowModel) -> dict[str, Any]:
 
     두 목록은 같은 줄 꼴이라 `DabangSaleSummary`·`DabangSaleScheduleSale` 가 같이 쓴다. 웹 목록의 세대수 칸은 분양
     세대수(`lots_household_num`)다. 응답 줄은 공통 칸을 부모(`DabangSaleInLotsRowModel`)로 올렸지만 출력 모델 두 개의 필드
-    선언은 올리지 않는다 (pydantic 은 부모 필드를 앞에 둬 search sales 의 키 순서가 sale_id·name 보다 앞으로 바뀐다).
+    선언은 올리지 않는다 (pydantic 은 부모 필드를 앞에 둬 search sales 의 키 순서가 presale_id·name 보다 앞으로 바뀐다).
     """
+    amount_key = 'deposit_manwon' if item.price_supply_type_str in RENTAL_PRICE_KINDS else 'price_manwon'
     return {
-        'state': item.state_title,
-        'building_type': item.building_types_title,
+        'status': item.state_title,
+        'complex_type': item.building_types_title,
         'supply_type': item.supply_type_title,
         'address': normalize_address(item.address),
-        'sale_household_count': item.lots_household_num,
+        'presale_household_count': item.lots_household_num,
         'household_count': item.total_household_num,
         'price_kind': item.price_supply_type_str,
-        'price_manwon': manwon_from_text(item.price_str),
+        amount_key: manwon_from_text(item.price_str),
     }
 
 
@@ -342,7 +372,7 @@ def search_sales(
     # 역·대학·좌표(place)는 반경 사각형이라 반경을, 동은 지역을 좁히라고 한다
     notes += _sale_list_notes(pages, limit, in_box=True, narrow_end='반경' if place is not None else '지역')
     return DabangSaleListResult(
-        scope=scope_name, total=pages.total, returned=len(sales), has_more=pages.has_more, sales=sales, notes=notes,
+        scope=scope_name, total=pages.total, returned=len(sales), has_more=pages.has_more, presales=sales, notes=notes,
     )
 
 
@@ -378,9 +408,9 @@ def _search_region_sales(
     notes += _sale_list_notes(pages, limit, in_box=False, narrow_end='지역')
     return DabangSaleListResult(
         scope=scope.name if scope.kind == 'national' else f'{scope.name} 안', total=pages.total, returned=len(pages.rows),
-        has_more=pages.has_more, sales=[
+        has_more=pages.has_more, presales=[
             DabangSaleSummary(
-                sale_id=item.id, name=item.building_name, **_in_lots_fields(item), next_schedule=item.title, url=sale_url(item.id),
+                presale_id=item.id, name=item.building_name, **_in_lots_fields(item), next_schedule=item.title, url=sale_url(item.id),
             )
             for item in pages.rows
         ],
@@ -389,7 +419,7 @@ def _search_region_sales(
 
 
 class DabangSaleStep(BaseModel):
-    """분양 일정 한 단계."""
+    """분양 일정 한 단계. 시작·끝은 날이면 `*_date`, 달만 알면 `*_month` 키 하나만 있다."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -399,16 +429,47 @@ class DabangSaleStep(BaseModel):
         str,
         Field(description="단계 ('모집공고', '특별공급', '1순위 청약', '2순위 청약', '당첨자발표', '계약기간', '입주예정일')")
     ]
-    start: Annotated[
+    start_date: Annotated[
         str | None,
-        Field(description='시작 (YYYY-MM-DD, 달만 알면 YYYY-MM)')
+        Field(description='시작 날 (YYYY-MM-DD). 달만 알면 키 없이 start_month. 다방이 시작을 주지 않았거나 읽지 못하면 null')
+    ] = None
+    start_month: Annotated[
+        str | None,
+        Field(description='시작 달 (YYYY-MM, 달만 아는 단계. 날을 알면 키 없음)')
     ] = None
     # 다방은 한 시점인 단계에만 끝을 주지 않는다. 하루짜리 청약은 끝이 시작과 같은 날로 온다 (2026-10-28 실측: 분양 3곳
     # 모두 모집공고·당첨자발표·입주예정일만 끝이 없음). 끝이 해당 없는 단계라 null(모름) 대신 키를 뺀다
-    end: Annotated[
+    end_date: Annotated[
         str | None,
-        Field(exclude_if=lambda value: value is None, description='끝 (하루짜리는 시작과 같은 날. 모집공고·당첨자발표·입주예정일처럼 한 시점인 단계는 키 없음)')
+        Field(description='끝 날 (YYYY-MM-DD, 하루짜리는 시작과 같은 날. 달만 알면 키 없이 end_month. 모집공고·당첨자발표·입주예정일처럼 한 시점인 단계는 키 없음. 다방이 준 끝을 읽지 못하면 null)')
     ] = None
+    end_month: Annotated[
+        str | None,
+        Field(description='끝 달 (YYYY-MM, 달만 아는 단계. 날을 알면 키 없음)')
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def keep_given_times(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # 생성할 때 넘긴 시각 칸만 낸다 (넘기지 않은 칸은 해당 없음)
+        data: dict[str, Any] = handler(self)
+        return drop_unset_fields(self, data, data.keys() - {'step'})
+
+
+def _step_time(text: str | None, name: Literal['start', 'end'], unreadable: list[str]) -> dict[str, str | None]:
+    """분양 단계 시작·끝 글자를 낼 칸 하나로 ('2026-09-07' → `<name>_date`, '2026-08' → `<name>_month`).
+
+    시작이 비거나 `-` 면 `start_date` 가 None 이고(모름), 끝이 비거나 `-` 면 칸이 없다 (한 시점인 단계는 끝이 해당 없음). 두 꼴이 아닌 글자면
+    `<name>_date` 를 None 으로 내고 `unreadable` 에 원래 글자를 모은다.
+    """
+    value = sale_date(text)
+    if value is None:
+        return {} if name == 'end' else {'start_date': None}
+    if SALE_ISO_DAY_PATTERN.fullmatch(value):
+        return {f'{name}_date': value}
+    if SALE_ISO_MONTH_PATTERN.fullmatch(value):
+        return {f'{name}_month': value}
+    unreadable.append(value)
+    return {f'{name}_date': None}
 
 
 class DabangSalePyeong(BaseModel):
@@ -436,8 +497,16 @@ class DabangSalePyeong(BaseModel):
     ] = None
     price_manwon: Annotated[
         float | None,
-        Field(description='분양가, 임대 공급이면 임대가 (만원, 대표값. 단지의 price_kind)')
+        Field(description="분양가 (만원, 대표값). 임대 공급(단지 price_kind '임대가')이면 키가 없고 deposit_manwon 이다")
     ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description="임대 보증금 (만원, 대표값, 단지 price_kind '임대가'). 분양가면 키가 없다")
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def keep_given_amounts(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return drop_unset_fields(self, handler(self), GIVEN_AMOUNT_FIELDS)
 
 
 class DabangSubscriptionPyeong(BaseModel):
@@ -451,11 +520,11 @@ class DabangSubscriptionPyeong(BaseModel):
         str | None,
         Field(description="평형 ('59A')")
     ] = None
-    household_count: Annotated[
+    presale_household_count: Annotated[
         int | None,
         Field(description="이 평형의 분양 세대수 (다방 '분양/총세대' 의 앞 값)")
     ] = None
-    competition_rate: Annotated[
+    competition_ratio: Annotated[
         float | None,
         Field(description="경쟁률 (5.52 = '5.52:1'). 다방 표시가 숫자가 아니면 null")
     ] = None
@@ -472,11 +541,11 @@ class DabangSubscriptionResult(BaseModel):
         extra='forbid',
     )
 
-    min_winning_point: Annotated[
+    lowest_winning_point: Annotated[
         int | None,
         Field(description="최저 당첨가점 (점, 다방 '당첨가점(커트라인)')")
     ] = None
-    max_competition_rate: Annotated[
+    highest_competition_ratio: Annotated[
         float | None,
         Field(description="최고 경쟁률 (5.52 = '5.52:1')")
     ] = None
@@ -493,7 +562,7 @@ class DabangSaleDetail(BaseModel):
         extra='forbid',
     )
 
-    sale_id: Annotated[
+    presale_id: Annotated[
         str,
         Field(description='분양 ID')
     ]
@@ -501,11 +570,11 @@ class DabangSaleDetail(BaseModel):
         str,
         Field(description='단지 이름')
     ]
-    state: Annotated[
+    status: Annotated[
         str | None,
         Field(description='분양 상태')
     ] = None
-    building_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='건물 유형')
     ] = None
@@ -525,23 +594,23 @@ class DabangSaleDetail(BaseModel):
         int | None,
         Field(description='총 세대수')
     ] = None
-    sale_household_count: Annotated[
+    presale_household_count: Annotated[
         int | None,
         Field(description='분양 세대수')
     ] = None
-    building_count: Annotated[
+    dong_count: Annotated[
         int | None,
         Field(description='동 수')
     ] = None
-    floors: Annotated[
+    building_floor: Annotated[
         int | None,
         Field(description='지상 층수')
     ] = None
-    basement_floors: Annotated[
+    basement_floor: Annotated[
         int | None,
         Field(description='지하 층수')
     ] = None
-    builder: Annotated[
+    construction_company: Annotated[
         str | None,
         Field(description='시공사')
     ] = None
@@ -551,21 +620,17 @@ class DabangSaleDetail(BaseModel):
     ] = None
     price_kind: Annotated[
         str,
-        Field(description="가격이 무엇인지 ('분양가', 공공임대·민간임대는 '임대가'. 다방 화면 이름표)")
+        Field(description="가격이 무엇인지 ('분양가', 공공임대·민간임대는 '임대가'. 다방 화면 이름표. 임대가는 임대 보증금이다)")
     ]
-    price_min_manwon: Annotated[
-        float | None,
-        Field(description='가격 최저 (만원, price_kind 의 분양가 또는 임대가)')
-    ] = None
-    price_max_manwon: Annotated[
-        float | None,
-        Field(description='가격 최고 (만원, price_kind 의 분양가 또는 임대가)')
+    price_range: Annotated[
+        AmountRange | None,
+        Field(description='가격 범위 (만원). 두 끝 안은 분양가면 price_manwon, 임대가(공공·민간임대)면 deposit_manwon(임대 보증금). 최저·최고를 모두 모르면 null')
     ] = None
     price_per_pyeong_manwon: Annotated[
         float | None,
-        Field(description='평당가 (만원/3.3㎡, price_kind 기준)')
+        Field(description='평당가 (만원/3.3㎡, price_kind 기준. 임대가면 보증금 평당가)')
     ] = None
-    region_average_price_per_pyeong_manwon: Annotated[
+    region_price_per_pyeong_average_manwon: Annotated[
         float | None,
         Field(description='최근 6개월 이 지역 평균 평당가 (만원/3.3㎡, 다방 표시). 다방이 주지 않으면 null')
     ] = None
@@ -609,6 +674,10 @@ class DabangSaleDetail(BaseModel):
         str,
         Field(description='분양 페이지 URL')
     ]
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='못 읽은 일정 날짜 안내')
+    ] = []
 
 
 def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
@@ -625,7 +694,7 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
             raise JibsaError(
                 code='NOT_FOUND',
                 message=f'다방 분양 단지를 찾지 못했습니다: {sale_id}',
-                hint='jibsa dabang search sales 나 search locations 결과의 sale_id 를 그대로 주세요',
+                hint='jibsa dabang search sales 나 search locations 결과의 presale_id 를 그대로 주세요',
             ) from None
         raise
     info = response.sale_in_lots
@@ -633,55 +702,68 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
     # 최고가를 모르는 것이라 null 로 둔다 (최저가로 채우면 범위가 정해진 것처럼 보인다)
     low, separator, high = ((info.price_info.price_str if info.price_info else None) or '').partition('~')
     subscription = response.subscription_result
+    price_low, price_high = manwon_from_text(low), manwon_from_text(high if separator else low)
+    # 일정 단계의 시작·끝 중 날·달 꼴로 읽지 못한 글자
+    unreadable: list[str] = []
+    schedules = [
+        DabangSaleStep(
+            step=step.type_str or '', **_step_time(step.from_str, 'start', unreadable), **_step_time(step.to_str, 'end', unreadable),
+        )
+        for step in response.schedules
+    ]
+    notes = [note(
+        '참고',
+        f"다방이 준 분양 일정 날짜를 읽지 못해 start_date·end_date 를 null 로 두었습니다 ({len(unreadable)}건, 원래 글자 예: '{unreadable[0]}')",
+    )] if unreadable else []
+    rental = info.supply_type in RENTAL_SUPPLY_TYPES
+    amount_key = 'deposit_manwon' if rental else 'price_manwon'
     return DabangSaleDetail(
-        sale_id=info.id,
+        presale_id=info.id,
         name=info.building_name,
-        state=info.state_str,
-        building_type=info.building_types_str,
+        status=info.state_str,
+        complex_type=info.building_types_str,
         supply_type=info.supply_type_str,
         address=normalize_address(info.jibun_address or info.address),
         road_address=normalize_address(info.road_address),
         household_count=info.total_household_num,
-        sale_household_count=info.lots_household_num,
-        building_count=info.dong_count,
-        floors=info.ground_floor,
-        basement_floors=info.underground_floor,
-        builder=info.provider_name,
+        presale_household_count=info.lots_household_num,
+        dong_count=info.dong_count,
+        building_floor=info.ground_floor,
+        basement_floor=info.underground_floor,
+        construction_company=info.provider_name,
         developer=info.constructor_name,
-        price_kind='임대가' if info.supply_type in RENTAL_SUPPLY_TYPES else '분양가',
-        price_min_manwon=manwon_from_text(low),
-        price_max_manwon=manwon_from_text(high if separator else low),
+        price_kind='임대가' if rental else '분양가',
+        price_range=None if price_low is None and price_high is None else AmountRange(
+            lowest=AmountSet(**{amount_key: price_low}), highest=AmountSet(**{amount_key: price_high}),
+        ),
         price_per_pyeong_manwon=manwon_from_text(info.price_info.pyeong_price) if info.price_info else None,
-        region_average_price_per_pyeong_manwon=(
+        region_price_per_pyeong_average_manwon=(
             manwon_from_text(info.price_info.region_average_pyeong_price) if info.price_info else None
         ),
         move_in=sale_date(info.moving_date_str),
         regulation_area=info.regulation_area_str,
         price_cap=info.is_price_cap,
         resalable=info.is_resalable,
-        schedules=[
-            DabangSaleStep(step=step.type_str or '', start=sale_date(step.from_str), end=sale_date(step.to_str))
-            for step in response.schedules
-        ],
+        schedules=schedules,
         pyeongs=[
             DabangSalePyeong(
                 name=space.space_name,
                 area_m2=space.exclusive_space,
                 supply_area_m2=space.supply_space,
                 household_count=space.household_num,
-                price_manwon=manwon_from_text(space.price_str),
+                **{amount_key: manwon_from_text(space.price_str)},
             )
             for space in response.spaces
         ],
         subscription_result=None if subscription is None else DabangSubscriptionResult(
-            min_winning_point=count_of(subscription.min_winning_point_str),
-            max_competition_rate=number_of(subscription.max_competitive_rate_str),
+            lowest_winning_point=count_of(subscription.min_winning_point_str),
+            highest_competition_ratio=number_of(subscription.max_competitive_rate_str),
             # 평형별 결과가 null 이면 모름이라 [] (없음) 로 바꾸지 않는다
             pyeongs=None if subscription.subscription_spaces is None else [
                 DabangSubscriptionPyeong(
                     name=space.space_name,
-                    household_count=count_of(space.household_num_str),
-                    competition_rate=number_of(space.competitive_rate_str),
+                    presale_household_count=count_of(space.household_num_str),
+                    competition_ratio=number_of(space.competitive_rate_str),
                     winning_point=count_of(space.winning_point_str),
                 )
                 for space in subscription.subscription_spaces
@@ -690,6 +772,7 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
         notice_url=info.notice_url,
         applyhome_url=info.applyhome_link,
         url=sale_url(info.id),
+        notes=notes,
     )
 
 
@@ -700,11 +783,11 @@ class DabangSaleScheduleSale(BaseModel):
         extra='forbid',
     )
 
-    state: Annotated[
+    status: Annotated[
         str | None,
         Field(description='분양 상태 (분양예정·접수중·접수마감·입주예정·입주모집)')
     ] = None
-    building_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='건물 유형')
     ] = None
@@ -716,7 +799,7 @@ class DabangSaleScheduleSale(BaseModel):
         str | None,
         Field(description='동까지의 주소')
     ] = None
-    sale_household_count: Annotated[
+    presale_household_count: Annotated[
         int | None,
         Field(description='분양 세대수 (다방 표의 세대수 칸. 총세대수가 아니다)')
     ] = None
@@ -726,12 +809,20 @@ class DabangSaleScheduleSale(BaseModel):
     ] = None
     price_kind: Annotated[
         str | None,
-        Field(description="가격 종류 ('분양가', 공공임대·민간임대는 '임대가')")
+        Field(description="가격 종류 (다방 표시. '분양가', 공공·민간임대 공급이면 '임대가'(임대 보증금이라 금액이 deposit_manwon 에 있다))")
     ] = None
     price_manwon: Annotated[
         float | None,
-        Field(description='대표 가격 (만원, 다방 표시). 아직 없으면 null')
+        Field(description="분양가 (만원, 다방 표시). price_kind 가 '임대가'면 키가 없고 deposit_manwon 이다. 아직 없으면 null")
     ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description="임대 보증금 (만원, 다방 표시. price_kind '임대가'). 분양가면 키가 없다. 아직 없으면 null")
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def keep_given_amounts(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return drop_unset_fields(self, handler(self), GIVEN_AMOUNT_FIELDS)
 
 
 class DabangSaleScheduleItem(BaseModel):
@@ -749,7 +840,7 @@ class DabangSaleScheduleItem(BaseModel):
         str | None,
         Field(description="종류 ('접수', '당첨자발표' 등 다방 표시)")
     ] = None
-    region: Annotated[
+    sido: Annotated[
         str | None,
         Field(description="일정 글의 시·도 ('서울', '경기'). 글이 시·도 없이 시나 단지 이름으로 시작하면 null")
     ] = None
@@ -757,26 +848,26 @@ class DabangSaleScheduleItem(BaseModel):
         str,
         Field(description="일정 글 ('[청약접수] 인천 … (~10/27)')")
     ]
-    sale_id: Annotated[
+    presale_id: Annotated[
         str | None,
         Field(description='분양 ID')
     ] = None
     # 그 날 상세를 받지 않은 줄(--details·--region 없이)은 해당 없음이라 키를 빼고, 받았는데 그 날
     # 상세에서 이 줄을 찾지 못하면 모름이라 null 로 낸다 (`fetched`)
-    sale: Annotated[
+    presale: Annotated[
         DabangSaleScheduleSale | None,
         Field(description='분양 단지 정보 (--details·--region 일 때만. 그 날 상세에서 같은 분양·종류를 찾지 못한 줄은 null)')
     ] = None
     fetched: Annotated[
         bool,
-        Field(exclude=True, description='그 날 분양 단지 표(상세)를 받았는지. 받지 않았으면 sale 키를 뺀다')
+        Field(exclude=True, description='그 날 분양 단지 표(상세)를 받았는지. 받지 않았으면 presale 키를 뺀다')
     ] = False
 
     @model_serializer(mode='wrap')
     def drop_unfetched_sale(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         if not self.fetched:
-            data.pop('sale', None)
+            data.pop('presale', None)
         return data
 
 
@@ -787,11 +878,11 @@ class DabangSaleSchedule(BaseModel):
         extra='forbid',
     )
 
-    from_date: Annotated[
+    start_date: Annotated[
         str,
         Field(description='시작 날')
     ]
-    to_date: Annotated[
+    end_date: Annotated[
         str,
         Field(description='끝 날')
     ]
@@ -898,14 +989,14 @@ def get_sale_schedule(
                     unknown += state is None
                     continue
             rows.append(DabangSaleScheduleItem(
-                date=day.date, kind=kind, region=where, text=text, sale_id=entry.id,
-                sale=None if found is None else DabangSaleScheduleSale(**_in_lots_fields(found)), fetched=sales is not None,
+                date=day.date, kind=kind, sido=where, text=text, presale_id=entry.id,
+                presale=None if found is None else DabangSaleScheduleSale(**_in_lots_fields(found)), fetched=sales is not None,
             ))
             matched_lookup.append(looked_up)
     shown = rows[:limit]
     # 맞춰 본 줄만 찾지 못한 것으로 센다. 표를 받았어도 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못한 줄은 따로 센다
     tried = sum(matched_lookup[:len(shown)])
-    unmatched = sum(item.sale is None and looked for item, looked in zip(shown, matched_lookup))
+    unmatched = sum(item.presale is None and looked for item, looked in zip(shown, matched_lookup))
     unchecked = sum(item.fetched and not looked for item, looked in zip(shown, matched_lookup))
     notes: list[str] = []
     if requests:
@@ -914,12 +1005,12 @@ def get_sale_schedule(
         # 한 줄도 맞추지 못했으면 다방이 두 목록의 꼴을 바꾼 것이다 (매일 감시가 이 말로 고장을 찾는다)
         notes.append(note(
             '참고',
-            f'{unmatched}건은 그 날 분양 단지 표에서 같은 분양·종류를 찾지 못해 sale 이 null 입니다'
+            f'{unmatched}건은 그 날 분양 단지 표에서 같은 분양·종류를 찾지 못해 presale 이 null 입니다'
             + (f'. {UPDATE_MAYBE_NEEDED}' if unmatched == tried else ''),
         ))
     if unchecked:
         # 맞춰 보지 못했으니 다방이 두 목록의 꼴을 바꾼 신호가 아니다 (업데이트 안내를 붙이지 않는다)
-        notes.append(note('참고', f'{unchecked}건은 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 sale 이 null 입니다'))
+        notes.append(note('참고', f'{unchecked}건은 다방이 분양 ID·종류를 주지 않아 맞춰 보지 못해 presale 이 null 입니다'))
     if wanted is not None and stopped_at is None:
         among = f'{total}건 중 ' if total is not None else ''
         notes.append(note('참고', f"주소의 시·도가 '{region}' 인 일정만 남겼습니다 ({among}{len(rows)}건)"))
@@ -947,5 +1038,5 @@ def get_sale_schedule(
     if table_dropped:
         notes.append(null_items_note('다방 분양 단지 표', table_dropped))
     return DabangSaleSchedule(
-        from_date=start.isoformat(), to_date=end.isoformat(), total=total, returned=len(shown), schedules=shown, notes=notes,
+        start_date=start.isoformat(), end_date=end.isoformat(), total=total, returned=len(shown), schedules=shown, notes=notes,
     )

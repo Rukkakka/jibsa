@@ -195,7 +195,7 @@ CITY_NAME_SUFFIX: str = '시'
 MODE_ACCEPTED_OPTIONS: dict[str, str] = {
     '--complex': (
         '단지 모드는 거래 유형·평형(--pyeong)·동(--dong)·가격·정렬·--limit 만 받습니다. 면적으로 고르려면 '
-        'naver complex <단지> 결과의 pyeongs[] 에서 exclusive_m2 로 평형 번호(number)를 찾아 --pyeong 으로 주세요'
+        'naver complex <단지> 결과의 pyeongs[] 에서 area_m2 로 평형 ID(pyeong_id)를 찾아 --pyeong 으로 주세요'
     ),
     '--redevelopment': '재개발 모드는 거래 유형·가격·정렬·--limit 만 받습니다',
 }
@@ -484,7 +484,7 @@ def complex_command(
     ],
     pyeong: Annotated[
         list[str] | None,
-        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].number). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래·평당가도 붙인다 (요청 최대 8회 추가). 반복하거나 쉼표로 구분')
+        typer.Option('--pyeong', metavar='<int>', help='평형 번호 (평형 ID, 평수 아님; 결과의 pyeongs[].pyeong_id). 주면 매물 수·호가 범위를 그 평형만으로 센다. 하나만 주면 그 평형의 관리비·시세·최근 3년(없으면 5년) 실거래 요약과 3개월 평균 실거래·평당가도 붙인다 (요청 최대 8회 추가). 반복하거나 쉼표로 구분')
     ] = None,
     dong: Annotated[
         list[str] | None,
@@ -492,7 +492,7 @@ def complex_command(
     ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """단지 정보·거래유형별 매물 수·호가 범위·평형 목록·평형 묶음(pyeong_groups). 결과의 complex_number 를 search listings --complex·real-price 에 넘긴다.
+    """단지 정보·거래유형별 매물 수·호가 범위·평형 목록·평형 묶음(pyeong_groups). 결과의 complex_id 를 search listings --complex·real-price 에 넘긴다.
 
     예: jibsa naver complex 개포자이 --pyeong 1   # 1번 평형 매물 수·호가·관리비·시세·실거래 요약
     """
@@ -508,7 +508,7 @@ def complex_command(
             scope.append(', '.join(dong_label(key) for key in dict.fromkeys(map(dong_key, dong_names))))
         if scope:
             notes.append(
-                f"article_counts·호가 범위는 {' · '.join(scope)} 매물만 센 값입니다 (단지 정보와 pyeongs·pyeong_groups 는 단지 전체)"
+                f"listing_counts·호가 범위는 {' · '.join(scope)} 매물만 센 값입니다 (단지 정보와 pyeongs·pyeong_groups 는 단지 전체)"
             )
         emit(summary, pretty, notes=notes + summary.notes)
 
@@ -541,7 +541,7 @@ def complexes_command(
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     pretty: PrettyOption = None,
 ) -> None:
-    """지역 안 단지 목록 (세대수·준공일·매물 수·호가 범위). 결과의 complex_number 를 complex·search listings --complex 에 넘긴다.
+    """지역 안 단지 목록 (세대수·준공일·매물 수·호가 범위). 결과의 complex_id 를 complex·search listings --complex 에 넘긴다.
 
     위치는 naver search listings 와 같이 찾는다. 동·구·군·구 없는 시·세종 이름이면 그 경계 안 단지 전체(boundary), 그 밖은 반경 안(radius_km)이다.
 
@@ -636,7 +636,7 @@ def _search_complex_listings(
         )
         # 이름으로 찾았으면 고른 단지 번호를 함께 줘야 real-price·complex 로 이어 조회할 수 있다
         emit(
-            {'complex_number': complex_number, **result.model_dump(mode='json')},
+            {'complex_id': complex_number, **result.model_dump(mode='json')},
             pretty,
             notes=trade_notes + notes + result.notes,
             fields=fields,
@@ -660,7 +660,7 @@ def _search_redevelopment_listings(
         area_number, notes = _redevelopment_number(client, area, '--redevelopment')
         result = list_redevelopment_articles(client, area_number, conditions=conditions, sort=sort, limit=limit)
         emit(
-            {'redevelopment_number': area_number, **result.model_dump(mode='json')},
+            {'redevelopment_id': area_number, **result.model_dump(mode='json')},
             pretty,
             notes=trade_notes + notes + result.notes,
             fields=fields,
@@ -691,10 +691,10 @@ def redevelopment_command(
     limit: Annotated[int, typer.Option(min=1, max=MAX_LIST_LIMIT, help='최대 결과 수')] = 30,
     pretty: PrettyOption = None,
 ) -> None:
-    """지역 안 재개발 구역 (사업 단계·세대수·거래 유형별 매물 수·매매 호가). 결과의 redevelopment_number 를 search listings --redevelopment 에 넘긴다.
+    """지역 안 재개발 구역 (사업 단계·세대수·거래 유형별 매물 수·매매 호가). 결과의 redevelopment_id 를 search listings --redevelopment 에 넘긴다.
 
     위치는 naver search listings 와 같이 찾는다. 동·구·군·구 없는 시·세종 이름이면 그 경계 안 구역 전체(boundary), 그 밖은 반경 안(radius_km)이다.
-    네이버는 한 구역을 법정동마다 따로 등록하기도 해 같은 이름이 여러 번 나올 수 있다 (구역 번호 redevelopment_number 로
+    네이버는 한 구역을 법정동마다 따로 등록하기도 해 같은 이름이 여러 번 나올 수 있다 (구역 번호 redevelopment_id 로
     구분한다. 반경 결과는 legal_division 도 다르지만 동·구·군·구 없는 시·세종 경계 결과의 legal_division 은 모두 그 경계다).
 
     예: jibsa naver search redevelopment 한남동
@@ -826,12 +826,12 @@ def trend_command(
         else:
             code, division, notes = _trend_district(client, query, lat, lng)
         trend = get_district_trend(client, code, trade_type=trade, period=period, pyeong_range=pyeong_range)
-        if trend.trade_count is not None:
+        if trend.trade_count_trend is not None:
             # 거래는 계약 주에 세어지는데 신고가 계약 뒤 30일 안이라 최근 주일수록 덜 모였다. 안내가 없으면 줄어드는 끝을
             # 거래가 줄었다고 전했다 (2026-11-11 LLM 사용 시험·실측: 마포구 6개월 주간 거래 19·13·6·0, latest 0)
             notes.append(note(
                 '참고',
-                '실거래는 계약 뒤 30일 안에 신고해 최근 4주쯤의 trade_count 는 신고가 덜 모여 적게 나옵니다 '
+                '실거래는 계약 뒤 30일 안에 신고해 최근 4주쯤의 trade_count_trend 는 신고가 덜 모여 적게 나옵니다 '
                 '(마지막 주 0건도 거래가 없었다는 뜻이 아닐 수 있습니다). 거래 흐름은 한 달 넘게 지난 주로 보세요',
             ))
         emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes + trend.notes)
@@ -840,7 +840,7 @@ def trend_command(
 @app.command('real-price')
 def real_price_command(
     complex_number: Annotated[int, typer.Argument(min=1, help='단지 번호')],
-    pyeong: Annotated[int, typer.Option('--pyeong', min=1, help='평형 번호 (평형 ID, 평수 아님; complex 결과의 pyeongs[].number)')],
+    pyeong: Annotated[int, typer.Option('--pyeong', min=1, help='평형 번호 (평형 ID, 평수 아님; complex 결과의 pyeongs[].pyeong_id)')],
     trade: Annotated[str, typer.Option('--trade', help='매매, 전세, 월세')] = '매매',
     pages: Annotated[
         int | None,
@@ -898,7 +898,7 @@ def market_price_command(
         str,
         typer.Argument(metavar='COMPLEX', help='단지 번호 또는 단지 이름 (예: 개포자이)')
     ],
-    pyeong: Annotated[int, typer.Option('--pyeong', min=1, help='평형 번호 (평형 ID, 평수 아님; complex 결과의 pyeongs[].number)')],
+    pyeong: Annotated[int, typer.Option('--pyeong', min=1, help='평형 번호 (평형 ID, 평수 아님; complex 결과의 pyeongs[].pyeong_id)')],
     period: Annotated[
         str,
         typer.Option('--period', help=f"기간: {', '.join(PERIOD_MONTHS_BY_NAME)}")
@@ -921,7 +921,7 @@ def market_price_command(
 def redevelopment_detail_command(
     area: Annotated[
         str,
-        typer.Argument(metavar='REDEVELOPMENT', help='재개발 구역 번호(search redevelopment 결과의 redevelopment_number) 또는 이름 (예: 성수전략정비구역제3지구). 같은 이름이 여러 구역이면 후보의 구역 번호를 준다')
+        typer.Argument(metavar='REDEVELOPMENT', help='재개발 구역 번호(search redevelopment 결과의 redevelopment_id) 또는 이름 (예: 성수전략정비구역제3지구). 같은 이름이 여러 구역이면 후보의 구역 번호를 준다')
     ],
     trade: Annotated[
         list[str] | None,
@@ -941,7 +941,7 @@ def redevelopment_detail_command(
         area_number, notes = _redevelopment_number(client, area, 'REDEVELOPMENT')
         detail = get_redevelopment(client, area_number, trade_types=trade_types)
         if trade_types:
-            notes.append(f"article_counts·호가 범위는 {', '.join(trade_types)} 매물만 센 값입니다")
+            notes.append(f"listing_counts·호가 범위는 {', '.join(trade_types)} 매물만 센 값입니다")
         emit(detail, pretty, notes=notes)
 
 
@@ -1142,7 +1142,7 @@ def search_command(
     complex_: Annotated[str | None, typer.Option('--complex', help='단지 이름 또는 번호. 지역·좌표와 함께 사용할 수 없다')] = None,
     redevelopment: Annotated[
         str | None,
-        typer.Option('--redevelopment', help='재개발 구역 번호(search redevelopment 결과의 redevelopment_number) 또는 이름 (예: 성수전략정비구역제3지구). 그 구역 매물을 찾는다. 같은 이름이 여러 구역이면 후보의 구역 번호를 준다. 지역·좌표·--complex 와 함께 사용할 수 없다')
+        typer.Option('--redevelopment', help='재개발 구역 번호(search redevelopment 결과의 redevelopment_id) 또는 이름 (예: 성수전략정비구역제3지구). 그 구역 매물을 찾는다. 같은 이름이 여러 구역이면 후보의 구역 번호를 준다. 지역·좌표·--complex 와 함께 사용할 수 없다')
     ] = None,
     pyeong: Annotated[list[str] | None, typer.Option('--pyeong', metavar='<int>', help='--complex 전용: 평형 ID (평수 아님). 반복하거나 쉼표로 구분')] = None,
     dong: Annotated[list[str] | None, typer.Option('--dong', help='--complex 전용: 동 이름 (104 또는 104동). 반복하거나 쉼표로 구분')] = None,

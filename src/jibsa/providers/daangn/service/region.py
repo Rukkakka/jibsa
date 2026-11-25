@@ -66,6 +66,7 @@ from jibsa.providers.daangn.service.common import (
     coordinate_point,
     next_cursor,
     partial_failure_note,
+    region_name_parts,
     stalled_page,
     station_name,
     unwrap_graphql,
@@ -177,7 +178,7 @@ class DaangnArea(BaseModel):
 
     def as_region(self) -> DaangnRegion:
         """동 단위 검색이 쓰는 동 (`DaangnRegion`)."""
-        return DaangnRegion(name1=self.name1, name2=self.name2, name3=self.name3, region_id=self.region_id)
+        return DaangnRegion(sido=self.name1, sigungu=self.name2, dong=self.name3, region_id=self.region_id)
 
 
 def relay_id(region: DaangnRegionModel) -> str | None:
@@ -632,7 +633,7 @@ def with_center_sido(
     않고 세종으로 채운다.
     """
     known = article.region
-    if center is not None and center.name1 == SEJONG and known is not None and known.name2 == '' and known.name3:
+    if center is not None and center.sido == SEJONG and known is not None and known.name2 == '' and known.name3:
         cache.setdefault(('', known.name3), SEJONG)
     return with_sido(client, article, cache)
 
@@ -762,9 +763,9 @@ def region_by_coordinate(client: DaangnClient, lat: float, lng: float) -> Daangn
         )
     region = unwrap_graphql(response, found, '좌표 지역', conditions=False)
     return DaangnRegion(
-        name1=region.name1 or '',
-        name2=region.name2 or '',
-        name3=region.name3 or '',
+        sido=region.name1 or '',
+        sigungu=region.name2 or '',
+        dong=region.name3 or '',
         region_id=region.original_id or 0,
     )
 
@@ -1152,11 +1153,11 @@ class DaangnAddress(BaseModel):
         str,
         Field(description="도로명 주소 (예: '서울특별시 강남구 테헤란로 152 (역삼동)')")
     ]
-    region_address: Annotated[
+    address: Annotated[
         str | None,
         Field(description="지번 주소 (건물 이름까지, 예: '서울특별시 강남구 역삼동 737 강남파이낸스센터')")
     ] = None
-    place: Annotated[
+    building_name: Annotated[
         str | None,
         Field(description='그 주소의 당근 단지·건물 이름. 당근이 모르면 null')
     ] = None
@@ -1176,7 +1177,7 @@ class DaangnAddress(BaseModel):
     @property
     def label(self) -> str:
         """안내에 쓰는 주소 이름 (`'서울특별시 강남구 테헤란로 152 (역삼동)' (강남파이낸스센터)`). 당근이 모르는 건물이면 이름을 붙이지 않는다."""
-        return f"'{self.road_address}'" + (f' ({self.place})' if self.place else '')
+        return f"'{self.road_address}'" + (f' ({self.building_name})' if self.building_name else '')
 
     @model_serializer(mode='wrap')
     def drop_missing_complex(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -1306,8 +1307,8 @@ def find_address(client: DaangnClient, query: str) -> DaangnAddress:
         )
     return DaangnAddress(
         road_address=chosen.road_address,
-        region_address=chosen.region_address,
-        place=(place.name or place.building_name) if place else None,
+        address=chosen.region_address,
+        building_name=(place.name or place.building_name) if place else None,
         complex_id=unit.complex.original_id if unit.complex else None,
         lat=point[0],
         lng=point[1],
@@ -1323,7 +1324,7 @@ class DaangnRealsaleRegion(BaseModel):
 
     name: Annotated[
         str,
-        Field(description="지역 이름 (예: '서울특별시 강남구 역삼동', '서울특별시 강남구')")
+        Field(description="지역 전체 이름 ('서울특별시 강남구 역삼동'). 안내 문구에 쓴다. 출력의 name 은 가장 작은 단위 이름이다 (`region_name_parts`)")
     ]
     region_id: Annotated[
         int,
@@ -1345,6 +1346,11 @@ class DaangnRealsaleRegion(BaseModel):
         str,
         Field(exclude=True, description='읍/면/동 (동일 때만)')
     ] = ''
+
+    @model_serializer
+    def with_name_parts(self) -> dict[str, Any]:
+        # 검색 중심 region 은 네 소스가 같은 칸이다 (`DaangnRegion` 과 같은 name·sido·sigungu·dong, 2026-11-25 사용자 결정)
+        return {**region_name_parts(self.name1, self.name2, self.name3), 'region_id': self.region_id, 'level': self.level}
 
 
 def resolve_realsale_region(

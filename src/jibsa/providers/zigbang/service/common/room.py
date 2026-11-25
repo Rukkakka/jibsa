@@ -165,7 +165,7 @@ def summary_to_listing(
         lat=summary.location.lat if summary.location else None,
         lng=summary.location.lng if summary.location else None,
         distance_km=None if distance_km is None else round(distance_km, 2),
-        registered_at=normalize_date(summary.reg_date),
+        registered_date=normalize_date(summary.reg_date),
         complex_id=officetel_complex_id(building_id) if building_id else None,
         hug_lessor=badge_flag(summary.listed_badges, HUG_BADGE),
         actual_listing_checked=badge_flag(summary.listed_badges, VERIFICATION_BADGE),

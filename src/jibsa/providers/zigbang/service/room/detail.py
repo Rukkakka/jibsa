@@ -151,7 +151,7 @@ def _facility(poi: ZigbangItemsDetailV1NearbyPoiModel, transport: str) -> Zigban
     # 분은 웹 `resolveMinute` (`Math.round((timeTaken||1)/60)||1`)와 같다. 초를 분으로 반올림하되 .5분은 올리고 0분이면 1분이다
     return ZigbangNearbyFacility(
         type=poi.poi_type,
-        minutes=js_round((poi.time_taken or 1) / 60) or 1,
+        travel_minutes=js_round((poi.time_taken or 1) / 60) or 1,
         transport=transport,
         distance_m=poi.distance,
     )
@@ -199,7 +199,7 @@ def building_real_trades(response: ZigbangBlsRtsV2ResponseModel) -> list[Zigbang
             price_manwon=trade.sale_price,
             deposit_manwon=trade.deposit,
             rent_manwon=trade.monthly_rent,
-            exclusive_area_m2=trade.exclusive_area,
+            area_m2=trade.exclusive_area,
             land_area_m2=trade.land_area,
         )
         for trade in response.rts
@@ -425,26 +425,26 @@ def detail_to_listing(
         address=address,
         lat=item.location.lat if item.location else None,
         lng=item.location.lng if item.location else None,
-        registered_at=normalize_date(registered_at),
+        registered_date=normalize_date(registered_at),
         bathroom_count=to_int(residence.bathroom_count),
         direction=DIRECTION_LABELS.get(residence.direction or '', residence.direction),
         move_in=move_in,
-        approved_at=normalize_date(residence.approved_at),
+        approved_date=normalize_date(residence.approved_at),
         parking=parking,
-        elevator=residence.elevator,
+        has_elevator=residence.elevator,
         options=sent_or_none(item, 'options', [option.name for option in item.options if option.name]),
         manage_cost_includes=includes,
-        nearby_subways=sent_or_none(response, 'subways', [
+        nearby_stations=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
         ]),
         # 표시 문구를 정규화하지 않는다. 코드는 원룸·빌라가 대부분 '그외'라 문구가 더 정확하다 (2026-10-10 실측).
         # 원본 문구 끝에 공백이 붙어 오기도 해('주택   ') 앞뒤 공백만 뗀다
         residence_type=(residence.residence_description or residence.residence_type or '').strip() or None,
-        total_parking_count=residence.total_parking_count,
+        parking_count=residence.total_parking_count,
         household_count=residence.household_count,
         direction_criterion=residence.direction_criterion,
-        confirmed_at=iso_date(meta.status_checked_at) if meta else None,
+        confirmed_date=iso_date(meta.status_checked_at) if meta else None,
         actual_listing_checked=badge_flag(badges, VERIFICATION_BADGE),
         non_compliant_building=residence.non_compliant_building,
         hug_lessor=badge_flag(badges, HUG_BADGE),

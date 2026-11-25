@@ -1051,9 +1051,9 @@ class NaverRegionList(BaseModel):
         str | None,
         Field(description='상위 지역 (예: 서울시 강남구). 시·도 전체 목록이면 null')
     ] = None
-    parent_code: Annotated[
+    parent_legal_division_code: Annotated[
         str | None,
-        Field(description='상위 지역 법정동 코드. 시·도 전체 목록이거나 구가 있는 시면 null')
+        Field(description='상위 지역 법정동 코드 (10자리). 시·도 전체 목록이거나 구가 있는 시면 null')
     ] = None
     regions: Annotated[
         list[NaverRegionEntry],
@@ -1222,13 +1222,13 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
             # 'regions 세종시' 가 다시 같은 목록을 준다 (2026-10-11 실측). 하나뿐이면 그 아래 읍·면·동을 준다 (요청 1회 더)
             return NaverRegionList(
                 parent=name,
-                parent_code=only.legal_division_number,
+                parent_legal_division_code=only.legal_division_number,
                 regions=[_region_entry(item) for item in _sub_regions(client, 'EUP', only.legal_division_number)],
                 notes=notes + [f"{name}{particle(name, '은/는')} 시·군·구가 {only.legal_division_name} 하나뿐이라 그 아래 읍·면·동입니다"],
             )
         return NaverRegionList(
             parent=name,
-            parent_code=province.legal_division_number,
+            parent_legal_division_code=province.legal_division_number,
             regions=[_region_entry(item) for item in children],
             notes=notes,
         )
@@ -1315,7 +1315,7 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         )
     return NaverRegionList(
         parent=normalize_address(best.legal_division_name),
-        parent_code=best.legal_division_number,
+        parent_legal_division_code=best.legal_division_number,
         regions=[_region_entry(item) for item in _sub_regions(client, 'EUP', best.legal_division_number)],
         notes=notes,
     )

@@ -83,8 +83,8 @@ MANWON_PER_EOK: int = 10000
 # - 직방 상가 공실 묶음: 빠지면 `--business` 결과 뒤쪽 공실 줄을 업종 매물과 가를 수 없는데 [참고] 안내는 이 키를 읽으라고 한다
 #   (2026-11-20 리뷰 재현: --fields id,business,rent_manwon 에 키가 없었다)
 ALWAYS_FIELD_GROUPS: dict[str, tuple[str, ...]] = {
-    '네이버 중복 묶음': ('realtor_count', 'price_range_manwon', 'deposit_range_manwon', 'rent_range_manwon'),
-    '직방 아파트 묶음': ('is_price_range', 'catalog_id', 'listing_ids', 'listing_count', 'listing_kind'),
+    '네이버 중복 묶음': ('realtor_count', 'asking_range'),
+    '직방 아파트 묶음': ('mixed_prices', 'catalog_id', 'listing_ids', 'realtor_count', 'listing_kind'),
     '직방 상가 공실 묶음': ('vacant_section',),
 }
 # 다음 명령에 넘길 id 와 묶음 필드. 당근 주변 동 표시(in_regions)는 동 검색이 그 동 매물만 주게 되어 없앴다 (#215)
@@ -159,7 +159,7 @@ def missing_fields_note(data: Any, fields: list[str]) -> str | None:
 
     `check_fields` 는 모든 명령의 매물 필드로 보아, 다른 명령에만 있는 필드는 통과한 뒤 출력에서 조용히 빠진다 (2026-10-23
     실측: 통근 검색을 맡긴 에이전트 2명 모두 당근 역 검색의 walk_minutes 를 골라 역까지 도보 시간 walk_to_station_minutes 를
-    받지 못했다). 한 명령도 모드(동·역·단지·--details)마다 매물 모델이 달라 요청 전에는 가릴 수 없어, 요청 뒤에 알린다.
+    받지 못했다. 그때 이름이고 지금은 통근 검색도 walk_minutes 로 같다). 한 명령도 모드(동·역·단지·--details)마다 매물 모델이 달라 요청 전에는 가릴 수 없어, 요청 뒤에 알린다.
     """
     models = _listing_models(data)
     if not models:
@@ -176,7 +176,7 @@ def missing_fields_note(data: Any, fields: list[str]) -> str | None:
     if not missing:
         return None
     # 목록만 주면 다시 부르지 않고 넘어가서 비슷한 이름을 앞에 둔다 (2026-10-23 에이전트 검증: walk_minutes 안내를 받은
-    # 에이전트가 walk_to_station_minutes 로 다시 부르지 않았다)
+    # 에이전트가 walk_to_station_minutes 로 다시 부르지 않았다. 당시 이름이고 지금은 통근 검색도 walk_minutes 로 같다)
     similar = [f'{field} 대신 {match[0]}' for field in missing if (match := get_close_matches(field, names, n=1, cutoff=0.6))]
     return note(
         '참고',
