@@ -17,6 +17,7 @@ from pydantic import (
     PrivateAttr,
     SerializerFunctionWrapHandler,
     model_serializer,
+    model_validator,
 )
 
 from jibsa.core.errors import JibsaError
@@ -266,22 +267,36 @@ def map_view_bounds(lat: float, lng: float, zoom: int) -> tuple[DaangnBoundsLoca
     return bounds, round(haversine_km(lat, west, lat, east), 1), round(haversine_km(north, lng, south, lng), 1)
 
 
+def region_name_parts(sido: str, sigungu: str = '', dong: str = '') -> dict[str, str]:
+    """검색 중심 지역의 이름 칸 (`name`·`sido`·`sigungu`·`dong`). 출력의 지역 칸 규칙을 한 곳에 둔다.
+
+    `name` 은 가장 작은 단위 이름이다 (동, 없으면 시·군·구, 없으면 시·도). 빈 단계는 해당 없음이라 키를 뺀다. 세종은 시·군·구가
+    없어(당근이 name2 를 '' 로 준다) `sigungu` 가 없고, 구를 찾은 결과(지도 범위 검색)는 `dong` 이 없다.
+    """
+    parts = {'name': dong or sigungu or sido, 'sido': sido}
+    if sigungu:
+        parts['sigungu'] = sigungu
+    if dong:
+        parts['dong'] = dong
+    return parts
+
+
 class DaangnRegion(BaseModel):
-    """조회한 동이나 구 (구는 `name3` 가 빈 문자열이다. 구 이름의 지도 범위 검색)."""
+    """조회한 동이나 구 (구는 `dong` 이 빈 문자열이다. 구 이름의 지도 범위 검색)."""
 
     model_config = ConfigDict(
         extra='forbid',
     )
 
-    name1: Annotated[
+    sido: Annotated[
         str,
         Field(description='시/도')
     ]
-    name2: Annotated[
+    sigungu: Annotated[
         str,
         Field(description='시/군/구. 세종처럼 없으면 빈 문자열이고 출력에서 키를 뺀다')
     ] = ''
-    name3: Annotated[
+    dong: Annotated[
         str,
         Field(description='읍/면/동. 구를 찾은 결과(지도 범위 검색)는 빈 문자열이고 출력에서 키를 뺀다')
     ] = ''
@@ -290,15 +305,17 @@ class DaangnRegion(BaseModel):
         Field(description='당근 지역 ID')
     ]
 
-    @model_serializer(mode='wrap')
-    def drop_missing_district(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        data: dict[str, Any] = handler(self)
-        # 세종은 시·군·구가 없어 당근이 name2 를 '' 로 준다 (해당 없음). 구를 찾은 결과는 name3 이 '' 다. 이어 받기 표에서 다시
-        # 읽을 때는 기본값 '' 로 돌아온다
-        for key in ('name2', 'name3'):
-            if not getattr(self, key):
-                data.pop(key, None)
+    @model_validator(mode='before')
+    @classmethod
+    def ignore_name(cls, data: Any) -> Any:
+        # 출력의 name 은 sido·sigungu·dong 에서 만든 값이라(`region_name_parts`) 이어 받기 표의 dump 를 다시 읽을 때는 버린다
+        if isinstance(data, dict) and 'name' in data:
+            return {key: value for key, value in data.items() if key != 'name'}
         return data
+
+    @model_serializer
+    def with_name(self) -> dict[str, Any]:
+        return {**region_name_parts(self.sido, self.sigungu, self.dong), 'region_id': self.region_id}
 
 
 class FeedQueryRejectedError(JibsaError):
@@ -483,10 +500,28 @@ def article_to_listing(
         # 지도 피드(목록)에는 날짜 필드가 아예 없어 search 결과는 None 이다. 등록일은
         # 상세 페이지에만 있다. 매물마다 상세를 더 조회하면 동마다 최대 20회 요청이
         # 늘어(약 10초) 목록에서는 채우지 않는다. 필요하면 daangn listing 으로 확인한다.
-        registered_at=normalize_date(article.published_at),
+        registered_date=normalize_date(article.published_at),
         # 사용승인일도 상세 페이지에만 있어 목록에서는 None 이다.
-        approved_at=normalize_date(article.building_approval_date),
+        approved_date=normalize_date(article.building_approval_date),
     )
+
+
+class DaangnKbEstimatedPrices(BaseModel):
+    """KB 시세의 공통 칸. 출력 맨 앞에 출처 `provider`('KB부동산')를 붙인다. 거래 칸(`sale`·`jeonse`·`wolse`)은 이름 그대로 출력 키다."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    base_date: Annotated[
+        str | None,
+        Field(description='KB 시세 조사 기준일 (YYYY-MM-DD)')
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def with_provider(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        return {'provider': 'KB부동산', **data}
 
 
 def amount_range(low: int | None, high: int | None) -> DaangnAmountRangeModel | None:
@@ -1266,21 +1301,21 @@ class DaangnRegionComplex(BaseModel):
         str | None,
         Field(description='단지 이름. 당근이 주지 않으면 null')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형 (아파트, 오피스텔, 주상복합 ...). 당근이 주지 않으면 null, 표에 없는 코드는 원래 코드')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
     listing_counts: Annotated[
         dict[str, int | None],
-        Field(description='당근에 올라온 거래 유형별 현재 매물 수 (매매·전세·월세)')
+        Field(description='당근에 올라온 거래 유형별 현재 매물 수 (sale·jeonse·wolse)')
     ]
     recent_trades: Annotated[
         list[DaangnRecentTrade] | None,
@@ -1369,13 +1404,13 @@ def region_complex_of(
     return DaangnRegionComplex(
         complex_id=node.original_id,
         name=node.name,
-        property_type=code_label(COMPLEX_TYPE_LABELS, node.type),
-        households=danji.households if danji else None,
-        approved_at=normalize_date(danji.build_date) if danji else None,
+        complex_type=code_label(COMPLEX_TYPE_LABELS, node.type),
+        household_count=danji.households if danji else None,
+        approved_date=normalize_date(danji.build_date) if danji else None,
         listing_counts={
-            '매매': counts.buy if counts else None,
-            '전세': counts.borrow if counts else None,
-            '월세': counts.month if counts else None,
+            'sale': counts.buy if counts else None,
+            'jeonse': counts.borrow if counts else None,
+            'wolse': counts.month if counts else None,
         },
         recent_trades=_recent_trades(node, trade_type, max_trades),
         near_station=node.near_station,

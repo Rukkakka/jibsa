@@ -18,6 +18,7 @@ from jibsa.providers.naver.api.client import (
 )
 from jibsa.providers.naver.api.response.common import (
     NaverComplexArticlePriceModel,
+    NaverDuplicatedArticleInfoModel,
     NaverFacilityInfoModel,
     NaverResponseModel,
 )
@@ -29,6 +30,7 @@ from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
     PageScan,
     article_info_to_listing,
+    group_fields,
     pagination_notes,
     rent_asking_range,
     result_or_empty,
@@ -183,16 +185,16 @@ def test_officetel_pyeong_supply_equal_to_contract_is_unknown() -> None:
         )
 
     copied = _pyeong(pyeong(30.59, 30.59), is_officetel=True)
-    assert (copied.supply_m2, copied.contract_m2) == (None, 30.59)
-    assert _pyeong(pyeong(40.66, 57.51), is_officetel=True).supply_m2 == 40.66
-    assert _pyeong(pyeong(30.59, 30.59)).supply_m2 == 30.59
+    assert (copied.supply_area_m2, copied.contract_area_m2) == (None, 30.59)
+    assert _pyeong(pyeong(40.66, 57.51), is_officetel=True).supply_area_m2 == 40.66
+    assert _pyeong(pyeong(30.59, 30.59)).supply_area_m2 == 30.59
 
 
 def test_real_prices_in_manwon() -> None:
     requests: list[httpx.Request] = []
     with make_client(requests) as client:
         result = get_real_prices(client, 100001, 1, pages=3)
-    first = result.transactions[0]
+    first = result.trades[0]
     assert (first.trade_date, first.price_manwon) == ('2026-01-10', 145000)
     # v2 는 페이지가 0부터고, 다음 페이지가 없다고 하면(hasNextPage false) 더 묻지 않는다
     [request] = requests
@@ -253,7 +255,7 @@ def test_complex_articles_and_real_price_omit_not_applicable() -> None:
         articles = list_complex_articles(client, 100001, limit=1).model_dump(mode='json')
         real = get_real_prices(client, 100001, 1).model_dump(mode='json')
     assert 'distance_km' not in articles['listings'][0]
-    sale = real['transactions'][0]
+    sale = real['trades'][0]
     assert 'price_manwon' in sale and 'deposit_manwon' not in sale and 'trade_type' not in sale
     # 갱신 계약은 전월세에만 있다
     assert 'renewal' not in sale
@@ -273,12 +275,12 @@ def test_detail_without_complex_omits_complex_fields() -> None:
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
         dumped = get_listing(client, '1000000001').model_dump(mode='json')
-    assert not {'complex_number', 'complex_name', 'dong', 'pyeong_number'} & set(dumped)
+    assert not {'complex_id', 'complex_name', 'building_dong', 'pyeong_id'} & set(dumped)
 
     # 단지 매물은 그대로 낸다
     with make_client() as client:
         dumped = get_listing(client, '1000000001').model_dump(mode='json')
-    assert (dumped['complex_number'], dumped['complex_name'], dumped['dong'], dumped['pyeong_number']) == (100001, '테스트아파트', '101', 1)
+    assert (dumped['complex_id'], dumped['complex_name'], dumped['building_dong'], dumped['pyeong_id']) == (100001, '테스트아파트', '101', 1)
 
 
 def test_loan_distinguishes_none_from_unknown() -> None:
@@ -517,7 +519,7 @@ def test_detail_surroundings_failure_is_unknown() -> None:
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
         detail = get_listing(client, '1000000001')
-    assert (detail.nearby_subways, detail.bus_routes, detail.schools) == (None, None, None)
+    assert (detail.nearby_stations, detail.bus_routes, detail.schools) == (None, None, None)
     assert detail.price_manwon is not None
 
 
@@ -541,7 +543,7 @@ def test_real_prices_keep_zero_deposit() -> None:
     data['result']['list'] = [{**data['result']['list'][0], 'dealPrice': 0, 'deposit': 0, 'monthlyRent': 1500000}]
     with make_path_client([], {'/complex/v2/pyeong/realPrice': data}) as client:
         result = get_real_prices(client, 100001, 1, trade_type='월세')
-    dumped = result.transactions[0].model_dump()
+    dumped = result.trades[0].model_dump()
     assert (dumped['deposit_manwon'], dumped['rent_manwon']) == (0, 150)
     assert 'price_manwon' not in dumped
 
@@ -611,7 +613,7 @@ def test_monthly_rent_detail_has_agent_fee_but_no_taxes() -> None:
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
         dumped = get_listing(client, '1000000002').model_dump(mode='json')
-    assert dumped['agent_fee_manwon'] == 1050
+    assert dumped['broker_fee_manwon'] == 1050
     assert not {'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon'} & set(dumped)
     paths = _paths(requests)
     assert '/article/agentFee' in paths and '/article/tax' not in paths
@@ -677,8 +679,8 @@ def test_unknown_direct_trade_skips_agent_fee_and_keeps_keys_null() -> None:
     with client:
         dumped = get_listing(client, '1000000001').model_dump(mode='json')
     assert '/article/agentFee' not in _paths(requests)
-    assert dumped['agent_fee_manwon'] is None
-    assert dumped['agent_fee_individual_check_required'] is None
+    assert dumped['broker_fee_manwon'] is None
+    assert dumped['broker_fee_individual_check_required'] is None
 
 
 # --- 매매 매물 중개보수·세금 -------------------------------------------------
@@ -695,7 +697,7 @@ def test_sale_cost_lookup_failure_is_unknown() -> None:
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
         detail = get_listing(client, '1000000001')
-    assert detail.agent_fee_manwon == 1050
+    assert detail.broker_fee_manwon == 1050
     assert detail.model_dump()['acquisition_tax_manwon'] is None
 
 
@@ -757,7 +759,7 @@ def test_detail_transport_error_is_unknown(monkeypatch: pytest.MonkeyPatch) -> N
     client.__dict__['_client'] = httpx.Client(base_url=client.base_url, transport=httpx.MockTransport(handler))
     with client:
         detail = get_listing(client, '1000000001')
-    assert (detail.nearby_subways, detail.bus_routes) == (None, None)
+    assert (detail.nearby_stations, detail.bus_routes) == (None, None)
     assert detail.schools
 
 
@@ -870,7 +872,7 @@ def test_district_trend_partial_failure_and_total_failure() -> None:
 
     with failing({'pyeongPriceWeeklyList'}) as client:
         trend = get_district_trend(client, '1100010100')
-    assert trend.price_per_pyeong is None and trend.listing_count is not None
+    assert trend.asking_price_per_pyeong is None and trend.listing_count_trend is not None
     all_paths = {'articleCountWeeklyInfo', 'pyeongPriceWeeklyList', 'realTradeCountWeeklyList'}
     with failing(all_paths) as client, pytest.raises(JibsaError) as exc:
         get_district_trend(client, '1100010100')
@@ -1387,11 +1389,11 @@ def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() ->
         {'representativePyeongName': '40평', 'representativePyeongNumber': 3, 'householdCount': 5, 'pyeongTypes': [{'number': 3}, {'number': 2, 'name': None}]},
     ]
     with make_path_client([], {'/complex/pyeongGroups': _ok(groups)}) as client:
-        # complex: 그 묶음만 pyeong_numbers 가 null(모름)이다
-        assert [group.pyeong_numbers for group in _pyeong_groups(client, 100001, []) or []] == [None, [2, 3]]
+        # complex: 그 묶음만 pyeong_ids 가 null(모름)이다
+        assert [group.pyeong_ids for group in _pyeong_groups(client, 100001, []) or []] == [None, [2, 3]]
         # real-price --group: 번호를 모르는 묶음은 건너뛰고 번호가 든 묶음에서 짝을 찾는다
         group, request_numbers = _find_pyeong_group(client, 100001, 2)
-        assert (group.name, group.pyeong_numbers, request_numbers) == ('40평', [2, 3], [3, 2])
+        assert (group.name, group.pyeong_ids, request_numbers) == ('40평', [2, 3], [3, 2])
         with pytest.raises(JibsaError) as exc:
             _find_pyeong_group(client, 100001, 1)
     assert exc.value.code == 'NOT_FOUND'
@@ -1405,7 +1407,7 @@ def test_price_per_pyeong_null_region_list_keeps_the_price() -> None:
     with make_path_client([], {'/complex/pyeongPrice/pyeongType': null_regions}) as client:
         trade = _price_per_pyeong(client, 100001, 1, 'A01', [])['sale']
     assert trade is not None
-    assert (trade.manwon_per_pyeong, trade.as_of, trade.regions) == (15000, None, None)
+    assert (trade.price_per_pyeong_manwon, trade.base_date, trade.regions) == (15000, None, None)
     # 성공인데 result 가 null 이면 평당가를 주지 않은 것이라 키를 빼고(월세와 같다), 조회 실패만 null(모름)이다
     with make_path_client([], {'/complex/pyeongPrice/pyeongType': _ok(None)}) as client:
         assert _price_per_pyeong(client, 100001, 1, 'A01', []) == {}
@@ -1467,18 +1469,18 @@ def test_villa_real_price_adds_per_pyeong_and_sorted_nearby_trades() -> None:
         data = get_real_prices(client, 100002, 4, trade_type='전세', today=date(2026, 11, 19)).model_dump(mode='json')
     # 평당 실거래가는 서버 순서 그대로다 (모르는 칸은 null)
     assert data['price_per_pyeong_trades'] == [
-        {'trade_date': '2026-09-30', 'manwon_per_pyeong': 1850}, {'trade_date': None, 'manwon_per_pyeong': None},
+        {'trade_date': '2026-09-30', 'price_per_pyeong_manwon': 1850}, {'trade_date': None, 'price_per_pyeong_manwon': None},
     ]
-    nearby = data['nearby_transactions']
+    nearby = data['nearby_trades']
     # 웹 작은 지도 크기 (위도 37.5 에서 위도 폭 약 0.001702°·경도 폭 0.0041628°)
-    assert nearby['range'] == {'north_south_m': 188, 'east_west_m': 365}
+    assert (nearby['height_km'], nearby['width_km']) == (0.188, 0.365)
     # 계약일 내림차순 → 준공연도 내림차순 → 전용면적 내림차순
-    assert [(trade['contract_date'], trade['built_year']) for trade in nearby['trades']] == [
+    assert [(trade['trade_date'], trade['completed_year']) for trade in nearby['trades']] == [
         ('2026-09-18', 2017), ('2026-09-18', 2012), ('2026-09-05', 2012), ('2020-01-01', None),
     ]
     other, same, _, unknown = nearby['trades']
-    assert (same['same_complex'], same['distance_m'], same['renewal']) == (True, 0, True)
-    assert other['same_complex'] is False and 300 < other['distance_m'] < 400 and other['renewal'] is None
+    assert (same['same_complex'], same['distance_m'], same['renewal_right']) == (True, 0, True)
+    assert other['same_complex'] is False and 300 < other['distance_m'] < 400 and other['renewal_right'] is None
     # 전세 거래에 없는 가격 키는 빼고, 층이 '-' 이거나 금액이 비면 null 이다
     assert other['deposit_manwon'] == 25000 and not {'price_manwon', 'rent_manwon', 'trade_type'} & set(other)
     assert (unknown['floor'], unknown['deposit_manwon'], unknown['distance_m'], unknown['same_complex']) == (None, None, None, None)
@@ -1502,7 +1504,7 @@ def test_villa_period_keeps_unknown_trade_date_and_does_not_stop_on_it() -> None
     with make_path_client(requests, overrides) as client:
         result = get_real_prices(client, 100002, 4, trade_type='전세', period='1년', today=date(2026, 11, 19))
     assert _paths(requests).count('/complex/villa/realPricePage') == MAX_VILLA_PERIOD_PAGES
-    assert [trade.trade_date for trade in result.transactions[:2]] == [None, '2026-09-05']
+    assert [trade.trade_date for trade in result.trades[:2]] == [None, '2026-09-05']
     assert any(text.startswith('[일부]') for text in result.notes)
 
 
@@ -1513,10 +1515,10 @@ def test_villa_around_km_sends_the_box_and_monthly_has_no_per_pyeong_key() -> No
     # 월세는 웹이 평당 실거래가 칸을 그리지 않아 키가 없고 요청도 하지 않는다. 주변 실거래는 그대로 있다
     assert 'price_per_pyeong_trades' not in data
     assert '/complex/villa/realPricePyeongPrice' not in _paths(requests)
-    assert data['nearby_transactions']['range'] == {'north_south_m': 1000, 'east_west_m': 1000}
+    assert (data['nearby_trades']['height_km'], data['nearby_trades']['width_km']) == (1.0, 1.0)
     params = requests[-1].url.params
     assert abs(float(params['top']) - float(params['bottom']) - 0.5 * 2 / 110.574) < 1e-6
-    assert 'deposit_manwon' in data['nearby_transactions']['trades'][0] and 'rent_manwon' in data['nearby_transactions']['trades'][0]
+    assert 'deposit_manwon' in data['nearby_trades']['trades'][0] and 'rent_manwon' in data['nearby_trades']['trades'][0]
 
 
 def test_villa_trade_info_failure_is_unknown_and_empty_is_empty() -> None:
@@ -1525,7 +1527,7 @@ def test_villa_trade_info_failure_is_unknown_and_empty_is_empty() -> None:
     with make_path_client([], _villa_overrides(coordinates=None, **{'/complex/villa/realPricePyeongPrice': failure})) as client:
         result = get_real_prices(client, 100002, 4, trade_type='매매')
     data = result.model_dump(mode='json')
-    assert data['price_per_pyeong_trades'] is None and data['nearby_transactions'] is None
+    assert data['price_per_pyeong_trades'] is None and data['nearby_trades'] is None
     # 실패한 평당 실거래가만 [실패] 안내를 남긴다 (isSuccess false 라 업데이트 안내가 붙는다). 단지 좌표가 성공인데 없는 것은 실패가 아니라 안내가 없다
     failure_notes = [text for text in result.notes if text.startswith('[실패] ')]
     assert len(failure_notes) == 1 and '평당 실거래가' in failure_notes[0] and UPDATE_MAYBE_NEEDED in failure_notes[0]
@@ -1537,7 +1539,7 @@ def test_villa_trade_info_failure_is_unknown_and_empty_is_empty() -> None:
     }
     with make_path_client([], _villa_overrides(**empty)) as client:
         data = get_real_prices(client, 100002, 4, trade_type='매매').model_dump(mode='json')
-    assert data['price_per_pyeong_trades'] == [] and data['nearby_transactions']['trades'] == []
+    assert data['price_per_pyeong_trades'] == [] and data['nearby_trades']['trades'] == []
 
 
 def _raise(exc: Exception):
@@ -1650,7 +1652,7 @@ def test_real_price_around_km_is_rejected_for_apartment_complex() -> None:
     assert exc.value.code == 'INVALID_ARGUMENT' and exc.value.hint == '옵션을 빼고 다시 부르세요'
     assert len(requests) == 1
     with make_client() as client:
-        assert 'nearby_transactions' not in get_real_prices(client, 100001, 1).model_dump(mode='json')
+        assert 'nearby_trades' not in get_real_prices(client, 100001, 1).model_dump(mode='json')
 
 
 # --- 사용법 오류 ----------------------------------------------------------------
@@ -1694,6 +1696,21 @@ def test_rent_asking_range_empties_a_pair_whose_deposit_and_rent_are_both_zero()
     assert (result.highest.deposit_manwon, result.highest.rent_manwon) == (10000.0, 100.0)
 
 
+def test_group_fields_reads_zero_rent_as_unknown() -> None:
+    # 월세 0원 매물은 없어 서버가 비운 값이다 (보증금 0 과 달리 null). 보증금이 아는 값이면 그 칸은 그대로 낸다
+    for max_rent, expected_rent in ((0, None), (500000, 50)):
+        model = NaverDuplicatedArticleInfoModel.model_validate({
+            'realtorCount': 3,
+            'representativePriceInfo': {
+                'warrantyPrice': {'minPrice': 5000000, 'maxPrice': 10000000},
+                'rentPrice': {'minPrice': 0, 'maxPrice': max_rent},
+            },
+        })
+        result = group_fields(model, '월세')['asking_range'].model_dump()
+        assert result['lowest'] == {'deposit_manwon': 500, 'rent_manwon': None}
+        assert result['highest'] == {'deposit_manwon': 1000, 'rent_manwon': expected_rent}
+
+
 def test_months_ago_clamps_to_month_end_and_matches_years_ago() -> None:
     assert months_ago(date(2026, 5, 31), 3) == '2026-02-28'
     assert months_ago(date(2026, 1, 31), 3) == '2025-10-31'
@@ -1726,8 +1743,8 @@ def test_null_items_make_computed_values_unknown() -> None:
     weekly = _ok([{'firstDayOfWeek': '2026-11-02', 'averagePyeongPrice': 50_000_000}, None])
     with make_path_client([], {'/legalDivision/pyeongPriceWeeklyList': weekly}) as client:
         trend = get_district_trend(client, '1100010100')
-    assert trend.price_per_pyeong is not None
+    assert trend.asking_price_per_pyeong is not None
     # 받은 주는 그대로 두고 최근 주만 모른다 (빈 항목이 마지막 주였는지 알 수 없다)
-    assert [week.week_start for week in trend.price_per_pyeong.weekly] == ['2026-11-02']
-    assert trend.price_per_pyeong.latest_manwon is None
+    assert [week.week_start for week in trend.asking_price_per_pyeong.weeks] == ['2026-11-02']
+    assert trend.asking_price_per_pyeong.latest_manwon is None
     assert any(note.startswith('[제외] 네이버 평당가 추이 목록에 빈 항목 1개') for note in trend.notes)

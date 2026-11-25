@@ -74,6 +74,7 @@ from jibsa.providers.daangn.service.common import (
     DaangnRegion,
     FeedQueryRejectedError,
     partial_failure_note,
+    region_name_parts,
 )
 from jibsa.providers.daangn.service.commute import (
     COMMUTE_STATION_DEFAULT_LIMIT,
@@ -750,7 +751,7 @@ def region_command(
                 region = region_by_coordinate(client, lat, lng)
             except FeedQueryRejectedError:
                 raise map_query_rejected_error('search locations', by='좌표') from None
-            emit({'lat': lat, 'lng': lng, 'results': [region.model_dump()]}, pretty)
+            emit({'lat': lat, 'lng': lng, 'regions': [region.model_dump()]}, pretty)
             return
         # 좌표가 없으면 _require_one_place 가 이름을 요구했다
         assert keyword is not None
@@ -765,22 +766,16 @@ def region_command(
         # 웹 검색창처럼 검색어를 통째로 보낸다. 지역 검색은 띄어 쓴 이름도 받아 resolve_area(마지막 낱말로 찾고 앞 낱말로 좁힘)와
         # 같은 곳을 준다 (2026-11-12 실측: '강남구 신사동' → 서울특별시 강남구 신사동 1곳. 2026-11-12 리뷰 오탐)
         areas, more_areas, unusable_areas = search_areas(client, query)
-        # 지역 후보 하나. 비어 있는 시·군·구(시·도·세종 동)·동(시·도·구)은 해당 없음이라 키를 뺀다
-        results = [
-            {
-                'level': area.level,
-                'name1': area.name1,
-                **({'name2': area.name2} if area.name2 else {}),
-                **({'name3': area.name3} if area.name3 else {}),
-                'region_id': area.region_id,
-            }
+        # 지역 후보 하나. 비어 있는 시·군·구(시·도·세종 동)·동(시·도·구)은 해당 없음이라 키를 뺀다 (`region_name_parts`)
+        regions = [
+            {'level': area.level, **region_name_parts(area.name1, area.name2, area.name3), 'region_id': area.region_id}
             for area in areas
         ]
         notes: list[str] = []
         if more_areas:
             # 지역 검색은 100곳씩 받고 이 명령은 첫 쪽만 준다. 알리지 않으면 잘린 목록이 전부로 읽혀 찾는 지역이 당근에 없다고 볼 수
             # 있다 ('중구' 는 222곳, 2026-11-19 리뷰·실측). 대학·학교 칸의 안내와 같은 [일부] 다
-            notes.append(note('일부', f'지역 후보는 앞 {len(results) + unusable_areas}곳만 받았습니다. 시·도나 구 이름을 붙여 좁히세요'))
+            notes.append(note('일부', f'지역 후보는 앞 {len(regions) + unusable_areas}곳만 받았습니다. 시·도나 구 이름을 붙여 좁히세요'))
         if unusable_areas:
             notes.append(note('제외', f'위치·ID·시·도 이름이 없거나 단계를 몰라 이름으로 찾을 수 없는 지역 후보 {unusable_areas}곳은 뺐습니다'))
         # 지역 칸 말고는 덤 후보라, 한 칸이 실패해도 다른 칸과 받은 후보는 돌려주고 notes 로 알린다 (search_complexes 와 같다).
@@ -802,8 +797,8 @@ def region_command(
             found_complexes = search_complexes(client, query, limit=limit, notes=notes)
             complexes = None if found_complexes is None else [candidate.model_dump() for candidate in found_complexes]
         emit({
-            'keyword': query,
-            'results': results,
+            'query': query,
+            'regions': regions,
             'stations': stations,
             'universities': universities,
             'schools': schools,
@@ -1173,7 +1168,7 @@ def search_command(
             result = search_dong(client, area, conditions=conditions, limit=limit)
             emit_listings(result, common_notes + result.notes, {'m': 'dong', 'area': area.model_dump()})
             return
-        district = DaangnRegion(name1=area.name1, name2=area.name2, region_id=area.region_id)
+        district = DaangnRegion(sido=area.name1, sigungu=area.name2, region_id=area.region_id)
         emit_map(area.lat, area.lng, zoom or area.zoom, [note(
             '범위',
             f'{area.full_name}{particle(area.full_name, "은/는")} 구라 웹 지도의 구 화면처럼 구 중심의 지도 범위로 찾았습니다. '
@@ -1673,7 +1668,7 @@ def preschools_command(
 
 @app.command('preschool')
 def preschool_command(
-    preschool_id: Annotated[int, typer.Argument(min=1, help='시설 번호 (preschools 결과의 id)')],
+    preschool_id: Annotated[int, typer.Argument(min=1, help='시설 번호 (preschools 결과의 preschool_id)')],
     pretty: PrettyOption = None,
 ) -> None:
     """어린이집·유치원 하나의 운영 시간·설립 유형·정원·학급·교사 수. 정원은 지금 다니는 원아 수가 아니다. 전화번호는 주지 않는다. 요청 1회.

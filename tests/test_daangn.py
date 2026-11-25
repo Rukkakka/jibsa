@@ -192,7 +192,7 @@ def test_dong_search_uses_web_cluster_list_and_bubble_count() -> None:
         },
         'includeBoundaries': False,
     }
-    assert result.total == 726 and result.region.name3 == '역삼동'
+    assert result.total == 726 and result.region.dong == '역삼동'
     assert [listing.id for listing in result.listings] == ['1000101', '1000102', '1000103']
     assert result.has_more and result.next_position == {'after': 'cursor-5', 'total': 726, 'received': 3}
 
@@ -1200,8 +1200,8 @@ def test_commute_station_groups_carry_route() -> None:
     routes = {group.station_name: group.route for group in result.stations}
     # 서버 경로(회사 역 → 타는 역, 역마다 다음 구간 노선)를 타는 역에서 회사 역으로 가는 구간으로 뒤집는다
     assert routes['먼역'] == [
-        DaangnCommuteLeg(from_station='먼역', to_station='환승역', line='테스트2호선'),
-        DaangnCommuteLeg(from_station='환승역', to_station='테스트역', line='테스트1호선'),
+        DaangnCommuteLeg(from_station_name='먼역', to_station_name='환승역', line='테스트2호선'),
+        DaangnCommuteLeg(from_station_name='환승역', to_station_name='테스트역', line='테스트1호선'),
     ]
     assert routes['가까운역'] is None
 
@@ -1213,7 +1213,7 @@ def test_real_prices_month_is_sent_as_trade_year_month_and_splits_contract_field
         without_month = get_real_prices(client, 9000001, trade_type='월세', limit=3).model_dump()
     assert requests[0]['tradeYearMonth'] == '202608' and result.month == '2026-08'
     assert 'tradeYearMonth' not in requests[-1] and 'month' not in without_month
-    first = result.transactions[0].model_dump()
+    first = result.trades[0].model_dump()
     # 예전 renewal 은 계약 종류와 갱신요구권을 합쳤다. 웹 배지처럼 둘로 나눈다 (NEW → 신규, useRenewalOfContractRight → renewal_right)
     assert (first['contract_type'], first['renewal_right']) == ('신규', False) and 'renewal' not in first
 
@@ -1255,12 +1255,12 @@ def test_region_real_prices_mark_new_high_like_web_card_and_add_summary() -> Non
     requests: list[httpx.Request] = []
     with _realsale_feed_client(requests) as client:
         result = get_region_real_prices(client, '강남구 역삼동', limit=10)
-    rows = [row.model_dump() for row in result.transactions]
+    rows = [row.model_dump() for row in result.trades]
     # 웹 카드(MapShell `yc`): 신고가 배지는 isNewHigh 이고 해제되지 않은 거래, '직전 최고가 대비' 는 웹과 같은 비율의 소수 둘째 자리
-    assert [(row['is_new_high'], row.get('previous_high_change_percent')) for row in rows] == [(True, 22.03), (False, -16.67), (False, None), (False, None)]
-    assert rows[0]['previous_high_manwon'] == 295000 and rows[0]['previous_high_date'] == '2025-05-09'
+    assert [(row['new_high'], row.get('prev_high_diff_percent')) for row in rows] == [(True, 22.03), (False, -16.67), (False, None), (False, None)]
+    assert rows[0]['prev_high_manwon'] == 295000 and rows[0]['prev_high_date'] == '2025-05-09'
     assert 'renewal' not in rows[0] and 'contract_type' not in rows[0]
-    assert result.summary is not None and result.summary.model_dump() == {'data_date': '2026-11-12', 'sale_count': 4, 'new_high_count': 1}
+    assert result.summary is not None and result.summary.model_dump() == {'latest_published_date': '2026-11-12', 'sale_count': 4, 'new_high_count': 1}
     # 요약은 본 조회 뒤의 덤 조회다
     hashes = [json.loads(request.content)['extensions']['persistedQuery']['sha256Hash'] for request in requests]
     assert hashes.index(DaangnClient.realsale_feed_summary_query_id) > hashes.index(DaangnClient.realsale_feed_query_id)
@@ -1288,12 +1288,14 @@ def test_previous_high_change_percent_rounds_to_two_decimals(price: int, previou
 
 def test_kb_sale_is_converted_from_won() -> None:
     from jibsa.providers.daangn.api.response.real_price import DaangnPriceChartModel
-    from jibsa.providers.daangn.service.real_price import kb_sale_of
+    from jibsa.providers.daangn.service.real_price import estimated_prices_of
 
     chart = DaangnPriceChartModel.model_validate({'averagePoints': [], 'latestKbSale': {'surveyBaseDate': '20261102', 'lower': 2700000000, 'upper': 2910000000}})
-    kb_sale = kb_sale_of(chart)
-    assert kb_sale is not None and kb_sale.model_dump() == {'low_manwon': 270000, 'high_manwon': 291000, 'survey_date': '2026-11-02'}
-    assert kb_sale_of(DaangnPriceChartModel.model_validate({'averagePoints': []})) is None
+    estimated = estimated_prices_of(chart)
+    assert estimated is not None and estimated.model_dump() == {
+        'provider': 'KB부동산', 'base_date': '2026-11-02', 'sale': {'low_manwon': 270000, 'high_manwon': 291000},
+    }
+    assert estimated_prices_of(DaangnPriceChartModel.model_validate({'averagePoints': []})) is None
 
 
 def test_preschool_survey_responses_default_to_zero_like_web() -> None:
@@ -1356,7 +1358,7 @@ def test_find_address_resolves_one_candidate_and_refuses_many() -> None:
     with _address_client([candidate(152)], unit) as client:
         found = find_address(client, '테스트로 152')
     # 좌표는 웹처럼 주소 좌표(location)이고, 단지가 아니라 complex_id 키가 없다
-    assert (found.lat, found.lng, found.place) == (37.5, 127.0365, '테스트빌딩') and 'complex_id' not in found.model_dump()
+    assert (found.lat, found.lng, found.building_name) == (37.5, 127.0365, '테스트빌딩') and 'complex_id' not in found.model_dump()
     with _address_client([candidate(101), candidate(103)], unit) as client:
         with pytest.raises(RegionAmbiguousError) as ambiguous:
             find_address(client, '테스트로')
@@ -1403,19 +1405,46 @@ def test_null_items_make_computed_values_unknown() -> None:
     point = {'yearMonth': '202610', 'averageAmount': 100000000, 'transactionCount': 2}
     later = {'yearMonth': '202611', 'averageAmount': 110000000, 'transactionCount': 3}
     normal = trend([point, later])
-    assert normal.total_transactions == 5 and normal.summary is not None
+    assert normal.total_trade_count == 5 and normal.summary is not None
     assert not any('빈 항목' in note for note in normal.notes)
     dropped = trend([point, None, later])
-    assert [item.year_month for item in dropped.points] == ['2026-10', '2026-11']
-    assert (dropped.total_transactions, dropped.summary, dropped.recent_average_manwon, dropped.recent_transactions) == (None, None, None, None)
+    assert [item.month for item in dropped.months] == ['2026-10', '2026-11']
+    assert (dropped.total_trade_count, dropped.summary, dropped.recent_average_manwon, dropped.recent_trade_count) == (None, None, None, None)
     assert sum(note.startswith('[제외]') and '빈 항목 1개' in note and UPDATE_MAYBE_NEEDED in note for note in dropped.notes) == 1
 
     article = _yeoksam_articles()[0].model_dump(by_alias=True)
     ranking = {'data': {'getViewRankingArticles': {'articles': [article, None]}}}
     client = make_graphql_client({DaangnClient.get_view_ranking_articles_query_id: ranking})
-    region = DaangnRegion(name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035)
+    region = DaangnRegion(sido='서울특별시', sigungu='강남구', dong='역삼동', region_id=6035)
     popular = list_popular_listings(client, region, limit=2)
     # 받은 매물은 1건이지만 서버는 빈 자리까지 limit(2) 건을 줬으니 뒤 순위가 남아 있다. 순위는 자리를 몰라 null 이다
     assert [listing.rank for listing in popular.listings] == [None]
     assert any(note.startswith('[일부]') for note in popular.notes)
     assert any(note.startswith('[제외]') and '빈 항목 1개' in note for note in popular.notes)
+
+
+# 인기 단지의 최근 매매 목록이 null 이거나 빈 항목이 섞이면 없다고 하지 않고 모름(null)으로 낸다. 빈 목록만 해당 없음({})이다
+def test_trending_latest_trade_is_unknown_when_realsale_list_is_null_or_has_blank_items() -> None:
+    from jibsa.providers.daangn.service.complex import (
+        DaangnTrendingRegion,
+        list_trending_complexes,
+    )
+
+    def danji(original_id: str, sale_realsale: dict) -> dict:
+        return {
+            'originalId': original_id, 'name': original_id,
+            'proptierDanji': {'exclusiveAreaGroups': [{'isRepresentative': True, 'pyInfos': [{
+                'ptpTotHsehCnt': 10, 'exclusiveArea': 59, 'saleRealsale': sale_realsale,
+            }]}]},
+        }
+
+    items = [
+        danji('1', {'edges': None}),
+        danji('2', {'edges': [None]}),
+        danji('3', {'edges': [{'node': None}]}),
+        danji('4', {'edges': []}),
+    ]
+    client = make_graphql_client({DaangnClient.trending_complexes_query_id: {'data': {'trendingComplexes': items}}})
+    result = list_trending_complexes(client, DaangnTrendingRegion(level='전국'))
+    assert [complex_.latest_trades for complex_ in result.complexes] == [{'sale': None}, {'sale': None}, {'sale': None}, {}]
+    assert sum(note.startswith('[제외]') and '당근 인기 단지 최근 매매' in note and '빈 항목 2개' in note for note in result.notes) == 1

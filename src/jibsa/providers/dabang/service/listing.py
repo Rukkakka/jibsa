@@ -137,7 +137,7 @@ DETAILS_MAX: int = 30
 
 
 class DabangDetailedListing(DabangListing):
-    """`--details` 로 매물 상세를 1회 더 받아 사용승인일(`approved_at`)을 채우고 건물 용도를 붙인 목록 매물."""
+    """`--details` 로 매물 상세를 1회 더 받아 사용승인일(`approved_date`)을 채우고 건물 용도를 붙인 목록 매물."""
 
     residence_type: Annotated[
         str | None,
@@ -146,7 +146,7 @@ class DabangDetailedListing(DabangListing):
 
 
 class DabangListingDetail(ListingDetail):
-    """다방 매물 상세. 단기임대는 월세 매물에 붙는 표시라 `short_lease_term` 으로 받는 기간을 알린다."""
+    """다방 매물 상세. 단기임대는 월세 매물에 붙는 표시라 `short_term_period` 로 받는 기간을 알린다."""
 
     listing_number: Annotated[
         int | None,
@@ -184,7 +184,7 @@ class DabangListingDetail(ListingDetail):
         float | None,
         Field(description='세입자 낀 매매의 기존 월세 (만원). 기존 세입자가 월세일 때만 키가 있다')
     ] = None
-    lh_lease: Annotated[
+    lh_jeonse: Annotated[
         bool,
         Field(description='LH 전세임대 가능 (다방 표시). 매매는 키가 없다')
     ] = False
@@ -200,7 +200,7 @@ class DabangListingDetail(ListingDetail):
         bool | None,
         Field(description="위반건축물 여부 (다방 '해당'·'해당없음'). 다방이 알려 주지 않으면 null")
     ] = None
-    short_lease_term: Annotated[
+    short_term_period: Annotated[
         str | None,
         Field(description="단기임대를 받는 기간 (예 '1개월(이상 협의가능)'). 단기임대를 받지 않는 매물은 키가 없다")
     ] = None
@@ -231,8 +231,8 @@ class DabangListingDetail(ListingDetail):
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
-        if self.trade_type != '월세' or self.short_lease_term is None:
-            fields = fields | {'short_lease_term'}
+        if self.trade_type != '월세' or self.short_term_period is None:
+            fields = fields | {'short_term_period'}
         # 상세 유형은 '오피스텔(분리형)'·'원룸(분리형,복층)' 처럼 구조를 붙여 온다 (2026-10-25 실측). 다방이 단지 ID 를 주면
         # 유형과 상관없이 두고, 없을 때만 유형으로 해당 없음(키 삭제)과 모름(null)을 가른다
         if self.complex_id is None and not is_complex_type(self.property_type):
@@ -250,8 +250,8 @@ class DabangListingDetail(ListingDetail):
         elif self.tenant_deposit_manwon is not None and self.tenant_rent_manwon is None:
             # 기존 세입자가 전세라 월세가 없다 ('20억')
             fields = fields | {'tenant_rent_manwon'}
-        if self.trade_type == '매매' and not self.lh_lease:
-            fields = fields | {'lh_lease'}
+        if self.trade_type == '매매' and not self.lh_jeonse:
+            fields = fields | {'lh_jeonse'}
         return fields
 
 
@@ -421,7 +421,7 @@ def search_listings(
             '참고',
             f'다방은 사용승인 연도로 셉니다. --built-within {years} 결과에는 {today.year - years}-01-01 이후 승인이 모두 들어가, '
             f'오늘 기준 {years}년 이내({years_ago(today, years)} 이후 승인)가 아닌 건물도 섞입니다. 날짜로 고르려면 --details 의 '
-            'approved_at 으로 확인하세요',
+            'approved_date 로 확인하세요',
         ))
 
     addresses = {place.gid: place.address} if place.gid is not None and place.address else {}
@@ -652,22 +652,22 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         contract_area_m2=room.contract_size or None,
         with_tenant=with_tenant,
         **tenant_prices,
-        lh_lease=bool(room.is_lh_lease),
+        lh_jeonse=bool(room.is_lh_lease),
         leasehold_registration=bool(room.is_leasehold),
         unregistered_building=bool(room.is_new_construction),
         non_compliant_building=room.is_non_compliant_building,
         floor=floor_label(room.room_floor_str),
         building_floor=floor_label(room.building_floor_str),
         address=room.full_jibun_address_str,
-        registered_at=normalize_date(room.saved_time_str),
-        approved_at=normalize_date(room.building_approval_date_str),
+        registered_date=normalize_date(room.saved_time_str),
+        approved_date=normalize_date(room.building_approval_date_str),
         room_count=room.beds_num,
         bathroom_count=room.bath_num,
         direction=room.direction_str,
         direction_criterion=room.direction_measurement_base_type_str,
         move_in=move_in_label(room.moving_date),
         parking=parking_label(room.parking, f'총 {parking_count:g}대' if parking_count else None),
-        elevator=ELEVATOR_BY_TEXT.get(room.elevator_str or ''),
+        has_elevator=ELEVATOR_BY_TEXT.get(room.elevator_str or ''),
         options=None if room.room_options is None else [
             f'{option.name} 에어컨' if option.name in AIR_CONDITIONER_OPTIONS else option.name for option in room.room_options
         ],
@@ -675,7 +675,7 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         heating=room.heating,
         residence_type=', '.join(room.building_use_types_str) or None,
         loan=None if room.loan_str in (None, '', '-') else room.loan_str,
-        short_lease_term=room.short_lease_str,
+        short_term_period=room.short_lease_str,
         complex_id=room.complex_id,
         listing_number=room.seq,
         notes=notes,
@@ -728,7 +728,7 @@ def attach_details(
             failures.add(exc)
             listings.append(listing_as(DabangDetailedListing, listing))
             continue
-        dated = listing.model_copy(update={'approved_at': detail.approved_at or listing.approved_at})
+        dated = listing.model_copy(update={'approved_date': detail.approved_date or listing.approved_date})
         listings.append(listing_as(DabangDetailedListing, dated, residence_type=detail.residence_type))
     notes = []
     if gone:
@@ -744,11 +744,11 @@ def attach_details(
         notes.append(f'사용승인일·건물 용도(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다')
     if built_within_years is not None:
         cutoff = years_ago(datetime.now(KST).date(), built_within_years)
-        older = [listing for listing in listings if listing.approved_at and listing.approved_at < cutoff]
+        older = [listing for listing in listings if listing.approved_date and listing.approved_date < cutoff]
         if older:
             notes.append(note(
                 '참고',
                 f'이 중 {len(older)}건은 오늘 기준 {built_within_years}년이 넘었습니다 ({cutoff} 전 승인): '
-                + ', '.join(f'{listing.id}({listing.approved_at})' for listing in older),
+                + ', '.join(f'{listing.id}({listing.approved_date})' for listing in older),
             ))
     return result.model_copy(update={'listings': listings, 'returned': len(listings), 'notes': result.notes + notes})

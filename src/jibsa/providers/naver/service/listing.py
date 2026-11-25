@@ -174,7 +174,7 @@ MANAGE_COST_ITEM_LABELS: dict[str, str] = {
 }
 # 시설 코드 이름. 2026-11-17 네이버 웹 번들의 시설 이름 표와 똑같이 화면 글자 그대로 쓴다. 그 뒤 네이버가 더한 코드는 이 표에
 # 없어 '알 수 없는 시설 (코드)' 로 낸다 (2026-10-24: 사설경비·에어컨·가스오븐·소파가 빠져 PRIVATE_SECURITY 같은 영어 코드가 options 에 그대로 나갔다).
-# ELEVATOR 는 options 가 아니라 elevator 로 낸다
+# ELEVATOR 는 options 가 아니라 has_elevator 로 낸다
 # 리뷰 오탐 (2026-11-17): 직방·당근의 options 글자(인덕션 등)와 다르다. options 는 소스끼리 글자를 맞추는 약속이 없고
 # 네이버는 화면 글자를 따른다
 # 리뷰 오탐 (2026-11-17): 표에서 지운 DRESSING_TABLE·DRYER·GAS_RANGE·OVEN·ROOF_TOP·CENTRAL·DOOR_LOCK 은 첫 커밋의 추정 이름이고 웹 시설 표(ARTICLE_FACILITY_*)에 없다
@@ -413,11 +413,11 @@ def _sum_manwon(*amounts: int | None) -> float | None:
 
 
 def _agent_fee(client: NaverClient, article_number: str, notes: list[str]) -> dict[str, Any]:
-    """중개보수 상한(`agent_fee_manwon`, 만원)과 '개별확인' 여부 (1회 호출). 직거래가 아니면 모든 거래 유형에서 조회한다 (웹도 월세 매물에 '최대 28만원' 을 보여 준다).
+    """중개보수 상한(`broker_fee_manwon`, 만원)과 '개별확인' 여부 (1회 호출). 직거래가 아니면 모든 거래 유형에서 조회한다 (웹도 월세 매물에 '최대 28만원' 을 보여 준다).
 
     네이버 웹은 `isIndividualCheckRequired` 가 참이면 금액 대신 '개별확인' 을 그리므로 금액은 None 이고 여부가 True 다.
     플래그가 없거나 거짓이면 웹도 금액을 그린다. 조회가 실패하면 둘 다 모름(None)이고 `notes` 에 `[실패]` 안내를 붙인다.
-    금액(fee)이 비어 오고 플래그가 참이 아니면 agent_fee_manwon 만 None 이고 여부는 False 다. 웹(ArticleRealtorFee)도
+    금액(fee)이 비어 오고 플래그가 참이 아니면 broker_fee_manwon 만 None 이고 여부는 False 다. 웹(ArticleRealtorFee)도
     그때 '개별확인' 이 아니라 금액 줄을 그린다 (리뷰 오탐, 2026-11-17).
     """
     fee = result_or_none(
@@ -426,14 +426,14 @@ def _agent_fee(client: NaverClient, article_number: str, notes: list[str]) -> di
         ),
         notes=notes,
         what='중개보수',
-        unknown='모름(null)으로 낸 칸: agent_fee_manwon, agent_fee_individual_check_required',
+        unknown='모름(null)으로 낸 칸: broker_fee_manwon, broker_fee_individual_check_required',
     )
     if fee is None:
-        return {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None}
+        return {'broker_fee_manwon': None, 'broker_fee_individual_check_required': None}
     individual = fee.is_individual_check_required is True
     return {
-        'agent_fee_manwon': None if individual else won_to_manwon(fee.fee),
-        'agent_fee_individual_check_required': individual,
+        'broker_fee_manwon': None if individual else won_to_manwon(fee.fee),
+        'broker_fee_individual_check_required': individual,
     }
 
 
@@ -499,19 +499,21 @@ def _surroundings(client: NaverClient, article_number: str, key: NaverArticleKey
     조회가 실패하거나 교통이 통째로 비어 있으면 그 값만 모름(None)으로 둔다. 조회가 실패했을 때만 `notes` 에 `[실패]` 안내를 붙인다
     (교통이 비어 온 것은 실패가 아니다).
     """
-    result: dict[str, Any] = {'nearby_subways': None, 'bus_routes': None, 'schools': None, 'has_school_lookup': False}
+    result: dict[str, Any] = {'nearby_stations': None, 'bus_routes': None, 'schools': None, 'has_school_lookup': False}
     transport = result_or_none(
         lambda: client.run_request_data_service_transport_v1(
             NaverDataServiceTransportV1RequestParameterModel(item_id=int(article_number))
         ),
         notes=notes,
         what='교통 정보',
-        unknown='모름(null)으로 낸 칸: nearby_subways, bus_routes',
+        unknown='모름(null)으로 낸 칸: nearby_stations, bus_routes',
     )
     # 역도 버스도 없으면 네이버에 교통 정보가 없는 매물이다 (역삼동 단지형 빌라에서 둘 다 빈 목록,
     # 2026-10-09 확인). 주변에 정말 아무것도 없다는 뜻이 아니라 모름(None)으로 둔다
     if transport is not None and (transport.subway_list or transport.bus_list):
-        result['nearby_subways'] = [label for label in map(_subway_label, transport.subway_list) if label]
+        result['nearby_stations'] = [label for label in map(_subway_label, transport.subway_list) if label]
+        # 버스 종류(간선·지선 등)는 네이버가 보내는 이름표 그대로 키로 쓴다. 거래 키(sale 등)와 달리 어떤 종류가 올지 미리 다 알 수
+        # 없어, 영어로 바꾸려면 네이버에 없는 대응 표를 jibsa 가 지어야 한다 (출력 규약 '칸 이름 규칙' 의 예외)
         routes: dict[str, list[str]] = {}
         for bus in transport.bus_list:
             if bus.type_name and bus.routes:
@@ -547,7 +549,7 @@ class NaverNearbyRail(BaseModel):
         extra='forbid',
     )
 
-    station: Annotated[
+    name: Annotated[
         str | None,
         Field(description="역 이름 (서버 글자 그대로, 개통 예정 연도가 붙는다: '탄천역(2027년예정)')")
     ] = None
@@ -555,22 +557,22 @@ class NaverNearbyRail(BaseModel):
         str | None,
         Field(description="노선 이름 (서버 글자 그대로: '위례신사선(예정)')")
     ] = None
-    opens: Annotated[
-        str | None,
-        Field(description="개통 예정 연도 (서버 글자 그대로: '2027'). 없으면 null")
+    open_year: Annotated[
+        int | None,
+        Field(description='개통 예정 연도 (2027). 없거나 숫자로 읽지 못하면 null')
     ] = None
     distance_m: Annotated[
         int | float | None,
         Field(description='매물에서의 거리 (m)')
     ] = None
-    walking_minutes: Annotated[
+    walk_minutes: Annotated[
         int | float | None,
         Field(description='도보 시간 (분)')
     ] = None
 
 
 class NaverNearbyArea(BaseModel):
-    """매물 근처 개발 지구 한 곳. 사업 기간이 없으면 `period` 키를 뺀다 (웹도 그 줄을 그리지 않는다)."""
+    """매물 근처 개발 지구 한 곳. 사업 기간이 없으면 `project_period` 키를 뺀다 (웹도 그 줄을 그리지 않는다)."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -588,7 +590,7 @@ class NaverNearbyArea(BaseModel):
         int | str | None,
         Field(description='사업 단계 (서버 값 그대로). 빈 글자나 없으면 null')
     ] = None
-    period: Annotated[
+    project_period: Annotated[
         str | None,
         Field(description="사업 기간 ('2010-07-14~2027-12-31', 서버 글자 그대로). 없으면 키를 뺀다")
     ] = None
@@ -596,8 +598,8 @@ class NaverNearbyArea(BaseModel):
     @model_serializer(mode='wrap')
     def drop_missing_period(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        if self.period is None:
-            data.pop('period', None)
+        if self.project_period is None:
+            data.pop('project_period', None)
         return data
 
 
@@ -633,11 +635,12 @@ def _nearby_development(client: NaverClient, article_number: str, notes: list[st
     return NaverNearbyDevelopment(
         rail=[
             NaverNearbyRail(
-                station=rail.station_name or None,
+                name=rail.station_name or None,
                 line=rail.rail_name or None,
-                opens=rail.open_date or None,
+                # 개통 예정 연도 글자('2027')를 정수로. 비었거나 숫자가 아니면 None
+                open_year=int(rail.open_date.strip()) if rail.open_date and rail.open_date.strip().isdecimal() else None,
                 distance_m=rail.distance,
-                walking_minutes=rail.walking_time,
+                walk_minutes=rail.walking_time,
             )
             for rail in development.rail_list
         ] if development.rail_list is not None else None,
@@ -647,7 +650,7 @@ def _nearby_development(client: NaverClient, article_number: str, notes: list[st
                 type=area.type_name or None,
                 # 단계는 숫자일 수 있어 `or None` 이면 0 이 모름으로 바뀐다. 빈 글자만 모름(None)으로 본다
                 step=None if area.step == '' else area.step,
-                period=area.period or None,
+                project_period=area.period or None,
             )
             for area in development.jigu_list
         ] if development.jigu_list is not None else None,
@@ -657,7 +660,7 @@ def _nearby_development(client: NaverClient, article_number: str, notes: list[st
 class NaverListingDetail(ListingDetail):
     """상세 조회로 보강한 네이버 매물. 단지 번호로 실거래가·단지 정보를 이어서 조회할 수 있다."""
 
-    complex_number: Annotated[
+    complex_id: Annotated[
         int | None,
         Field(description='단지 번호 (naver complex / real-price 에 넘긴다)')
     ] = None
@@ -665,13 +668,13 @@ class NaverListingDetail(ListingDetail):
         str | None,
         Field(description='단지명')
     ] = None
-    dong: Annotated[
+    building_dong: Annotated[
         str | None,
-        Field(description='동')
+        Field(description="건물 동 ('1')")
     ] = None
-    pyeong_number: Annotated[
+    pyeong_id: Annotated[
         int | None,
-        Field(description='평형 번호 (naver real-price --pyeong 에 넘긴다)')
+        Field(description='평형 ID (naver real-price --pyeong 에 넘긴다)')
     ] = None
     building_name: Annotated[
         str | None,
@@ -709,7 +712,7 @@ class NaverListingDetail(ListingDetail):
         list[str] | None,
         Field(description=BADGES_DESCRIPTION)
     ] = None
-    confirmed_at: Annotated[
+    confirmed_date: Annotated[
         str | None,
         Field(description=CONFIRMED_AT_DESCRIPTION)
     ] = None
@@ -717,13 +720,13 @@ class NaverListingDetail(ListingDetail):
         float | None,
         Field(description='융자금 (만원)')
     ] = None
-    agent_fee_manwon: Annotated[
+    broker_fee_manwon: Annotated[
         float | None,
-        Field(description="중개보수 상한 (만원, 네이버 계산). 네이버가 '개별확인' 으로 보여 주는 매물(agent_fee_individual_check_required)이면 null. 조회가 실패하거나 값이 없어도 null. 직거래면 키 없음, 직거래인지 모르면 null")
+        Field(description="중개보수 상한 (만원, 네이버 계산). 네이버가 '개별확인' 으로 보여 주는 매물(broker_fee_individual_check_required)이면 null. 조회가 실패하거나 값이 없어도 null. 직거래면 키 없음, 직거래인지 모르면 null")
     ] = None
-    agent_fee_individual_check_required: Annotated[
+    broker_fee_individual_check_required: Annotated[
         bool | None,
-        Field(description="중개보수를 네이버가 금액 대신 '개별확인' 으로 보여 주는 매물인지 (중개사에게 따로 확인). true 면 agent_fee_manwon 은 null. 조회가 실패하면 null. 직거래면 키 없음, 직거래인지 모르면 null")
+        Field(description="중개보수를 네이버가 금액 대신 '개별확인' 으로 보여 주는 매물인지 (중개사에게 따로 확인). true 면 broker_fee_manwon 은 null. 조회가 실패하면 null. 직거래면 키 없음, 직거래인지 모르면 null")
     ] = None
     acquisition_tax_manwon: Annotated[
         float | None,
@@ -779,8 +782,8 @@ class NaverListingDetail(ListingDetail):
     def not_applicable_fields(self) -> frozenset[str]:
         # 단지에 속하지 않는 매물(빌라 등)은 단지·동·평형 번호가 원래 없다.
         fields = super().not_applicable_fields()
-        if self.complex_number is None:
-            fields = fields | {'complex_number', 'complex_name', 'dong', 'pyeong_number'}
+        if self.complex_id is None:
+            fields = fields | {'complex_id', 'complex_name', 'building_dong', 'pyeong_id'}
         # 배정 학교는 단지·동 번호가 있는 매물만 있다. null 은 조회 실패(모름)로만 남긴다
         if not self.has_school_lookup:
             fields = fields | {'schools'}
@@ -793,14 +796,14 @@ class NaverListingDetail(ListingDetail):
         # 네이버 웹도 단지 여부와 상관없이 값이 있으면 칸을 그리고 없으면 숨겨, 값이 없으면 해당 없음이 아니라 모름(null)이다.
         # 단지형 빌라(A05·A06·A07)는 웹 화면(ArticleVillaBuildingInfo)에 현관 구조 칸이 없지만 값을 내는 것이 의도한 차이다
         # (docs/development/providers/naver.md '단지형 빌라의 현관 구조'). 그래서 이것도 지우지 않는다
-        if self.complex_number is not None:
+        if self.complex_id is not None:
             fields = fields | {'building_name', 'building_type'}
         elif self.has_article_detail and self.building_name is None:
             fields = fields | {'building_name'}
         # 직거래는 중개사가 없어 네이버 웹도 중개보수 칸을 그리지 않는다 (2026-11-17 번들 ArticleMain 청크 0l4pkwg0qhg2t:
         # `!articleDetailInfo.isDirectTrade` 일 때만 ArticleRealtorFee 를 붙인다). agentFee 는 직거래에도 금액을 준다 (토지 2661679787)
         if self.is_direct_trade:
-            fields = fields | {'agent_fee_manwon', 'agent_fee_individual_check_required'}
+            fields = fields | {'broker_fee_manwon', 'broker_fee_individual_check_required'}
         # 유형마다 웹이 칸을 그리지 않는 필드 (토지의 방 수·층·난방 등)
         fields = fields | NOT_APPLICABLE_FIELDS_BY_TYPE.get(self.real_estate_type or '', frozenset())
         # 세금은 매매 매물만 조회한다 (중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형). 원룸·고시원·일반분양권이 아닌 분양권은
@@ -1149,7 +1152,7 @@ def _complex_overview(
             ),
             notes=notes,
             what='단지 정보',
-            unknown='모름(null)으로 낸 칸: approved_at, parking. 단지 값 없이 낸 칸: heating, heating_fuel',
+            unknown='모름(null)으로 낸 칸: approved_date, parking. 단지 값 없이 낸 칸: heating, heating_fuel',
         )
     if real_estate_type in VILLA_COMPLEX_CODES:
         return result_or_none(
@@ -1193,7 +1196,7 @@ def _complex_approved_at(
             ),
             notes=notes,
             what='사용승인일',
-            unknown='모름(null)으로 낸 칸: approved_at',
+            unknown='모름(null)으로 낸 칸: approved_date',
         )
         building = next((item for item in buildings or [] if item.number == building_number), None)
         return normalize_date(building.use_approval_date) if building is not None else None
@@ -1205,7 +1208,7 @@ def _complex_approved_at(
         ),
         notes=notes,
         what='사용승인일',
-        unknown='모름(null)으로 낸 칸: approved_at',
+        unknown='모름(null)으로 낸 칸: approved_date',
     )
     return normalize_date(other_complex.use_approval_date) if other_complex is not None else None
 
@@ -1518,7 +1521,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         # 웹(ArticleComplexInfo)은 단지 유형의 사용승인일을 단지 정보(useApprovalDate)에서만 그리고 매물 facilityInfo 날짜는 보지 않는다.
         # 단지 조회가 실패해 complex_ 가 None 이면 모름이다 (매물 날짜로 대신하지 않는다)
         approved_at = _complex_approved_at(client, complex_number, key, complex_, notes)
-    elif 'approved_at' in NOT_APPLICABLE_FIELDS_BY_TYPE.get(real_estate_type or '', frozenset()):
+    elif 'approved_date' in NOT_APPLICABLE_FIELDS_BY_TYPE.get(real_estate_type or '', frozenset()):
         # 토지·고시원은 사용승인일 칸이 없어(출력에서 키를 뺀다) 받을 값이 없다. 단지 조회를 부르면 요청만 쓰고, 실패하면
         # 출력에 없는 칸을 모름이라고 안내하게 된다 (2026-11-19 사용자 결정)
         approved_at = None
@@ -1575,13 +1578,13 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         address=address,
         lat=coordinates.y_coordinate if coordinates else None,
         lng=coordinates.x_coordinate if coordinates else None,
-        registered_at=_readable_date(normalize_date(article.exposure_start_date), '등록일', notes) if article else None,
+        registered_date=_readable_date(normalize_date(article.exposure_start_date), '등록일', notes) if article else None,
         # 상세 응답의 건물 날짜를 먼저 쓰고, 없을 때만 단지 정보를 쓴다 (단지 유형은 이미 받은 단지 정보, 그 밖은 필요할 때만 조회)
-        approved_at=approved_at,
-        complex_number=complex_number,
+        approved_date=approved_at,
+        complex_id=complex_number,
         complex_name=complex_info.complex_name if complex_info else None,
-        dong=complex_info.dong_name if complex_info else None,
-        pyeong_number=key.key.pyeong_type_number if key.key else None,
+        building_dong=complex_info.dong_name if complex_info else None,
+        pyeong_id=key.key.pyeong_type_number if key.key else None,
         building_name=building_name,
         building_type=_coded_label(BUILDING_TYPE_LABELS, article.building_type if article else None),
         has_article_detail=article is not None,
@@ -1598,7 +1601,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         # 엘리베이터는 중개사가 고르는 기타시설(etc) 항목 하나라 없으면 고르지 않은 것인지 없는 것인지 모른다. 그래서 False 를
         # 내지 않는다 (2026-10-14 실측: 신림동 원룸 상세 3건 중 1건이 시설 13개를 골랐지만 ELEVATOR 는 없었고, 다른 1건은
         # 보안시설을 비워 두었다. 엘리베이터 없음을 따로 알리는 필드는 없다)
-        elevator=True if 'ELEVATOR' in facility_codes else None,
+        has_elevator=True if 'ELEVATOR' in facility_codes else None,
         options=[
             FACILITY_LABELS.get(code) or unknown_code_label('시설', code)
             for code in facility_codes
@@ -1612,12 +1615,12 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
             real_estate_type,
             article.is_safe_lessor_of_hug if article else None,
         ),
-        confirmed_at=iso_date(verification.article_confirm_date) if verification else None,
+        confirmed_date=iso_date(verification.article_confirm_date) if verification else None,
         loan_manwon=_loan_manwon(price),
         # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
         # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교, 개발 예정)
         **(
-            {'agent_fee_manwon': None, 'agent_fee_individual_check_required': None} if is_direct_trade is None
+            {'broker_fee_manwon': None, 'broker_fee_individual_check_required': None} if is_direct_trade is None
             else {} if is_direct_trade
             else _agent_fee(client, article_number, notes)
         ),

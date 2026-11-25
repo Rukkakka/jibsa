@@ -91,7 +91,7 @@ class DabangSaleItemModel(DabangBaseResponseModel):
     ] = None
     supply_price_type_name: Annotated[
         str | None,
-        Field(description="가격 종류 ('분양가', '보증금')", alias='supplyPriceTypeName')
+        Field(description="가격 종류 ('분양가', 공공·민간임대 공급이면 '임대가')", alias='supplyPriceTypeName')
     ] = None
     price_title: Annotated[
         str | None,

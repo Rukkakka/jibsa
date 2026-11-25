@@ -181,7 +181,7 @@ class DabangSchoolDetail(BaseModel):
         str | None,
         Field(description='관할 교육청')
     ] = None
-    stats_period: Annotated[
+    base_period: Annotated[
         str | None,
         Field(description="공시 기준 ('2026년 상반기')")
     ] = None
@@ -197,11 +197,11 @@ class DabangSchoolDetail(BaseModel):
         float | None,
         Field(description='방과후 프로그램 수 (초등학교는 대개 null)')
     ] = None
-    city_average: Annotated[
+    sido_average: Annotated[
         DabangSchoolAverage,
         Field(description='시·도 평균')
     ]
-    district_average: Annotated[
+    sigungu_average: Annotated[
         DabangSchoolAverage,
         Field(description='시·군·구 평균')
     ]
@@ -209,7 +209,7 @@ class DabangSchoolDetail(BaseModel):
         list[DabangAdvancement] | None,
         Field(description='졸업생 진학 (중·고등학교). 초등학교는 키가 없다')
     ] = None
-    url: Annotated[
+    disclosure_url: Annotated[
         str | None,
         Field(description='학교알리미 공시 페이지 URL')
     ] = None
@@ -263,8 +263,8 @@ class DabangTeacherGrade(BaseModel):
 class DabangChildcareDetail(BaseModel):
     """유치원·어린이집 하나의 공시 (다방 제공: 유치원알리미·어린이집정보공개포털). 다방 웹 상세 화면이 그리는 값이다.
 
-    어린이집에만 `school_bus`, 유치원에만 `school_bus_vehicles`·`homepage` 키가 있다. 유치원 교육비는 다방 값이 유치원알리미
-    공시의 학부모 부담금과 맞지 않아 내지 않는다 (원비는 `url` 의 '비용·회계' 에서 본다).
+    어린이집에만 `school_bus`, 유치원에만 `school_bus_vehicles`·`homepage_url` 키가 있다. 유치원 교육비는 다방 값이 유치원알리미
+    공시의 학부모 부담금과 맞지 않아 내지 않는다 (원비는 `disclosure_url` 의 '비용·회계' 에서 본다).
     """
 
     model_config = ConfigDict(
@@ -273,7 +273,7 @@ class DabangChildcareDetail(BaseModel):
 
     school_code: Annotated[
         str,
-        Field(description='시설 코드 (complex 결과 nurseries[]·kindergartens[] 의 code, search schools 결과의 school_code)')
+        Field(description='시설 코드 (complex 결과 nurseries[]·kindergartens[] 의 school_code, search schools 결과의 school_code)')
     ]
     level: Annotated[
         ChildcareLevel,
@@ -291,7 +291,7 @@ class DabangChildcareDetail(BaseModel):
         str | None,
         Field(description='주소')
     ] = None
-    stats_period: Annotated[
+    base_period: Annotated[
         str | None,
         Field(description="공시 기준 ('2026년 상반기')")
     ] = None
@@ -307,7 +307,7 @@ class DabangChildcareDetail(BaseModel):
         int | None,
         Field(description="통학 차량 수 (대, 유치원. 유치원알리미 '통학차량 현황'의 운행 차량수라 0 은 통학차량을 운영하지 않는 것이다. 다방 웹은 0 을 '-' 로 쓴다)")
     ] = None
-    homepage: Annotated[
+    homepage_url: Annotated[
         str | None,
         Field(description='홈페이지 (유치원)')
     ] = None
@@ -331,7 +331,7 @@ class DabangChildcareDetail(BaseModel):
         list[str] | None,
         Field(description="제공 서비스 (어린이집 '야간연장형'·'일반', 유치원 '방과후 과정' 등). 다방이 주지 않으면 null")
     ] = None
-    url: Annotated[
+    disclosure_url: Annotated[
         str | None,
         Field(description="공시 페이지 URL (어린이집정보공개포털·유치원알리미). 유치원 원비는 이 페이지의 '비용·회계' 에서 본다")
     ] = None
@@ -340,7 +340,7 @@ class DabangChildcareDetail(BaseModel):
     def drop_other_level_keys(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         if self.level == '어린이집':
-            for key in ('school_bus_vehicles', 'homepage'):
+            for key in ('school_bus_vehicles', 'homepage_url'):
                 data.pop(key, None)
         else:
             data.pop('school_bus', None)
@@ -388,7 +388,7 @@ def _fetch_education(fetch: Callable[[], T], level: EducationLevel, school_code:
             raise
         status = exc.response.status_code
         hint = (
-            'complex 결과 schools[] 의 school_code·level, nurseries[]·kindergartens[] 의 code, search schools 결과의 '
+            'complex 결과 schools[] 의 school_code·level, nurseries[]·kindergartens[] 의 school_code, search schools 결과의 '
             'school_code·level 을 그대로 옮기세요 (jibsa dabang school <코드> --level <level>)'
         )
         if is_missing_id(exc):
@@ -461,7 +461,7 @@ def get_school(client: DabangClient, school_code: str, level: EducationLevel) ->
             name=nursery.name,
             establishment=nursery.type,
             address=normalize_address(nursery.address),
-            stats_period=_stats_period(nursery.base_date),
+            base_period=_stats_period(nursery.base_date),
             operating_hours=nursery.operating_time,
             school_bus=nursery.schoolbus,
             children_total=nursery.total_class,
@@ -469,7 +469,7 @@ def get_school(client: DabangClient, school_code: str, level: EducationLevel) ->
             teachers=_teachers(nursery, NURSERY_TEACHERS),
             children_per_teacher=nursery.child_per_teacher,
             services=_services(nursery.provide_service),
-            url=nursery.link_url,
+            disclosure_url=nursery.link_url,
         )
     if level == '유치원':
         kinder = _fetch_education(
@@ -488,16 +488,16 @@ def get_school(client: DabangClient, school_code: str, level: EducationLevel) ->
             name=kinder.name,
             establishment=kinder.establish_divide,
             address=normalize_address(kinder.road_address),
-            stats_period=_stats_period(kinder.base_date),
+            base_period=_stats_period(kinder.base_date),
             operating_hours=kinder.operating_hour,
             school_bus_vehicles=int(vehicles_text) if vehicles_text.isdecimal() else None,
-            homepage=kinder.homepage or None,
+            homepage_url=kinder.homepage or None,
             children_total=kinder.total_current,
             children=_groups(kinder, KINDER_GROUPS),
             teachers=_teachers(kinder, KINDER_TEACHERS),
             children_per_teacher=kinder.child_per_teacher,
             services=_services(kinder.provide_service),
-            url=kinder.link_url,
+            disclosure_url=kinder.link_url,
         )
     school_level: SchoolLevel = level
     school = _fetch_education(
@@ -514,24 +514,24 @@ def get_school(client: DabangClient, school_code: str, level: EducationLevel) ->
         establishment=school.establish_divide,
         address=normalize_address(school.address),
         office_of_education=school.office_edu_name,
-        stats_period=_stats_period(school.base_date),
+        base_period=_stats_period(school.base_date),
         students_per_class=school.avg_students_per_class,
         students_per_teacher=school.students_per_teacher,
         afterschool_programs=school.afterschool_program,
-        city_average=DabangSchoolAverage(
+        sido_average=DabangSchoolAverage(
             region=school.state_name,
             students_per_class=school.avg_students_per_class_state,
             students_per_teacher=school.students_per_teacher_state,
             afterschool_programs=school.afterschool_program_state,
         ),
-        district_average=DabangSchoolAverage(
+        sigungu_average=DabangSchoolAverage(
             region=school.city_name,
             students_per_class=school.avg_students_per_class_city,
             students_per_teacher=school.students_per_teacher_city,
             afterschool_programs=school.afterschool_program_city,
         ),
         advancement=_advancement(school, school_level),
-        url=school.link_url,
+        disclosure_url=school.link_url,
     )
 
 

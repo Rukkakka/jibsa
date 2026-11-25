@@ -17,10 +17,12 @@ from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     UPDATE_MAYBE_NEEDED,
     TradeType,
+    floor_text,
     normalize_date,
-    normalize_floor,
     note,
     null_items_note,
+    rescale,
+    with_floor_number,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.real_price import (
@@ -123,7 +125,7 @@ class ZigbangRealPrice(BaseModel):
         float | None,
         Field(description='월세 (만원)')
     ] = None
-    category: Annotated[
+    deal_type: Annotated[
         str | None,
         Field(description='중개거래 / 직거래 (매매만)')
     ] = None
@@ -139,7 +141,7 @@ class ZigbangRealPrice(BaseModel):
         bool | None,
         Field(description='갱신·재계약 (전월세만). 직방은 알려 주지 않아 항상 null')
     ] = None
-    dong: Annotated[
+    building_dong: Annotated[
         str | None,
         Field(description="동 ('132' 처럼 '동' 없이 직방 글자 그대로, 모든 거래). 직방이 주지 않으면 null (지금까지 본 전월세는 늘 null)")
     ] = None
@@ -162,14 +164,14 @@ class ZigbangRealPrice(BaseModel):
         int | None,
         Field(description='공급면적 3.3㎡당 가격 (만원 정수). 직방이 계산해 만원으로 반올림한 값을 그대로 낸다 (매매만, 직방이 주지 않으면 null). 전월세는 키가 없다')
     ] = None
-    jeonse_ratio: Annotated[
+    jeonse_ratio_percent: Annotated[
         float | None,
         Field(description=(
-            '전세가율 (0~1 비율, 반올림하지 않은 직방 값. 웹은 정수 % 로 반올림해 보여 준다). 분모는 그 달 직방 시세다 (실거래 평균이 아님). '
+            '전세가율 (%, 직방이 준 0~1 비율에 100 을 곱한 반올림하지 않은 값. 웹은 정수 % 로 반올림해 보여 준다). 분모는 그 달 직방 시세다 (실거래 평균이 아님). '
             '전세이고 직방이 값을 준 거래에만 키가 있다 (평형을 지정한 조회에서만 온다)'
         ))
     ] = None
-    offer_price_diff_manwon: Annotated[
+    presale_price_diff_manwon: Annotated[
         int | None,
         Field(description='분양가 대비 차액 (만원 정수, 양수면 거래가가 분양가보다 높고 0·음수도 그대로). 분양권 거래에 있고 직방이 주지 않으면 null. 분양권이 아닌 거래(입주권 포함)는 직방이 값을 주지 않으면 키가 없다')
     ] = None
@@ -181,7 +183,7 @@ class ZigbangRealPrice(BaseModel):
         if self.trade_type == '매매':
             fields.add('renewal')
         else:
-            fields |= {'category', 'cancelled', 'presale'}
+            fields |= {'deal_type', 'cancelled', 'presale'}
         if self.presale is None:
             fields.add('presale')
         # 등기·평당가는 직방이 매매에만 주고(동은 웹이 전월세에도 그려 모든 거래에 낸다), 신고가·신저가는 월세에는 주지 않는다. 전세가율은 전세에 값이 있을 때만 키를 둔다.
@@ -190,15 +192,16 @@ class ZigbangRealPrice(BaseModel):
             fields |= {'registered', 'price_per_pyeong_manwon'}
         if self.trade_type == '월세':
             fields |= {'new_high', 'new_low'}
-        if self.trade_type != '전세' or self.jeonse_ratio is None:
-            fields.add('jeonse_ratio')
-        if self.offer_price_diff_manwon is None and self.presale != '분양권':
-            fields.add('offer_price_diff_manwon')
+        if self.trade_type != '전세' or self.jeonse_ratio_percent is None:
+            fields.add('jeonse_ratio_percent')
+        if self.presale_price_diff_manwon is None and self.presale != '분양권':
+            fields.add('presale_price_diff_manwon')
         # 후보가 하나면 해당 없음이라 키를 지운다. 후보를 주지 않았으면(None) 모름이라 null 로 둔다. 빈 항목을 뺐으면 하나인지 알 수 없어 둔다
         if self.pyeong_names is not None and len(self.pyeong_names) == 1 and not self.dropped_candidates:
             fields.add('pyeong_names')
         for field in fields:
             data.pop(field, None)
+        data = with_floor_number(data)
         if self.show_trade_type:
             data = {'trade_type': self.trade_type, **data}
         return data
@@ -231,7 +234,7 @@ class ZigbangRealPriceResult(BaseModel):
         bool,
         Field(description='더 오래된 거래가 더 있는지')
     ]
-    transactions: Annotated[
+    trades: Annotated[
         list[ZigbangRealPrice],
         Field(description='최근 계약 순 실거래')
     ]
@@ -282,22 +285,22 @@ def rt_price_to_real_price(transaction: ZigbangRtPriceModel, *, show_trade_type:
         ),
         pyeong_names=names or None,
         # 매물 목록·상세(Listing 검증기)와 당근 실거래가처럼 지하층을 '지하1' 로 맞춘다
-        floor=None if transaction.floor is None else normalize_floor(str(transaction.floor)),
+        floor=floor_text(transaction.floor),
         price_manwon=transaction.price if is_sale else None,
         deposit_manwon=None if is_sale else transaction.price,
         rent_manwon=transaction.price_rent if trade_type == '월세' else None,
-        category=REAL_PRICE_CATEGORY_BY_METHOD.get(transaction.method or '', transaction.method),
+        deal_type=REAL_PRICE_CATEGORY_BY_METHOD.get(transaction.method or '', transaction.method),
         cancelled=transaction.is_cancellation,
         presale=transaction.offer_type or None,
-        dong=transaction.dong_name or None,
+        building_dong=transaction.dong_name or None,
         # 직방은 등기·신고가·신저가를 참일 때만 값을 준다. 신고가·신저가는 표시가 없으면 아닌 것이지만(false), 등기는
         # 표시가 없는 이유를 알 수 없어 null 로 둔다 (2023년 이전 계약이거나 아직 등기 전)
         registered=True if transaction.is_registration else None,
         new_high=bool(transaction.is_new_highest),
         new_low=bool(transaction.is_new_lowest),
         price_per_pyeong_manwon=transaction.pyn_price,
-        jeonse_ratio=transaction.charter_rate,
-        offer_price_diff_manwon=transaction.offer_price_diff,
+        jeonse_ratio_percent=rescale(transaction.charter_rate, '100'),
+        presale_price_diff_manwon=transaction.offer_price_diff,
     )
 
 
@@ -361,7 +364,7 @@ def get_real_prices(
                 raise JibsaError(
                     code='INVALID_ARGUMENT',
                     message=f'{complex_id} 단지에 없는 평형 ID 입니다: {pyeong_id}',
-                    hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
+                    hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].pyeong_id 를 --pyeong 에 주세요',
                 )
         page += 1
         has_next = response.has_next
@@ -422,7 +425,7 @@ def get_real_prices(
         pyeong_id=pyeong_id,
         returned=len(transactions),
         has_more=has_more,
-        transactions=transactions,
+        trades=transactions,
         url=url,
         notes=notes,
     )

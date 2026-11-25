@@ -272,9 +272,9 @@ class DaangnCompareRealsaleConnectionModel(DaangnBaseResponseModel):
     """실거래 연결 (매매 1건·전월세 5건, 최근 순)."""
 
     edges: Annotated[
-        list[DaangnCompareRealsaleEdgeModel],
-        Field(description='실거래')
-    ] = []
+        list[DaangnCompareRealsaleEdgeModel] | None,
+        Field(description='실거래. null 이거나 키가 없으면 실거래 목록을 모르는 것이고(0건이면 []), 빈 목록으로 바꾸지 않는다')
+    ] = None
 
 
 class DaangnComparePyInfoModel(DaangnBaseResponseModel):

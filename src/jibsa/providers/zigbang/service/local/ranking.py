@@ -90,15 +90,15 @@ SORT_TYPE_BY_TRADE: dict[LocalTrade, dict[str, ZigbangDanjiRankingSortType]] = {
 }
 # 정렬마다 줄에 오는 칸 (2026-11-22 표본: 정렬 일곱 가지를 모두 불렀다). 거래량·시세·평당가·인기·전세가율은 사용승인일·총세대수가 오고, 하락률·상승률은
 # 직전 거래 대비 값이 오며 사용승인일·총세대수는 오지 않는다. 하락·상승률의 가격 칸은 거래 유형이 정한다 (`_rank_of`)
-RATE_FIELDS: frozenset[str] = frozenset({'contract_date', 'diff_manwon', 'change_rate_percent', 'area_type'})
+RATE_FIELDS: frozenset[str] = frozenset({'latest_trade_date', 'prev_trade_diff_manwon', 'prev_trade_diff_percent', 'area_type'})
 RANK_FIELDS_BY_SORT: dict[ZigbangDanjiRankingSortType, frozenset[str]] = {
-    'volume_desc': frozenset({'trade_count', 'approved_at', 'households'}),
+    'volume_desc': frozenset({'trade_count', 'approved_date', 'household_count'}),
     'decrease_rate_desc': RATE_FIELDS,
     'increase_rate_desc': RATE_FIELDS,
-    'price_desc': frozenset({'estimated_price_manwon', 'approved_at', 'households'}),
-    'unit_price_desc': frozenset({'estimated_price_per_pyeong_manwon', 'approved_at', 'households'}),
-    'view_count_desc': frozenset({'view_count', 'approved_at', 'households'}),
-    'charter_rate_desc': frozenset({'jeonse_rate_percent', 'gap_manwon', 'approved_at', 'households'}),
+    'price_desc': frozenset({'estimated_price_manwon', 'approved_date', 'household_count'}),
+    'unit_price_desc': frozenset({'estimated_price_per_pyeong_manwon', 'approved_date', 'household_count'}),
+    'view_count_desc': frozenset({'view_count', 'approved_date', 'household_count'}),
+    'charter_rate_desc': frozenset({'jeonse_ratio_percent', 'gap_manwon', 'approved_date', 'household_count'}),
 }
 SORT_ONLY_FIELDS: frozenset[str] = frozenset({'price_manwon', 'deposit_manwon'}).union(*RANK_FIELDS_BY_SORT.values())
 # 결과 머리에서 서버가 주지 않는 정렬이라 키를 뺄 날짜 (2026-11-22 표본): 시세·평당가·전세가율은 기준일(end_date)뿐이고, 인기는 갱신 시각이 없다
@@ -122,7 +122,7 @@ class ZigbangDanjiRank(ZigbangLocalModel):
         str | None,
         Field(description='단지 ID (apt-<번호>. jibsa zigbang complex·real-price·search listings --complex 에 넘긴다). 직방이 주지 않으면 null')
     ]
-    complex_name: Annotated[
+    name: Annotated[
         str | None,
         Field(description='단지 이름')
     ]
@@ -134,15 +134,15 @@ class ZigbangDanjiRank(ZigbangLocalModel):
         int | None,
         Field(description='기간 안 거래 건수 (건, 거래량 많은순만)')
     ]
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD, 하락률·상승률 정렬에는 키가 없다). 읽지 못하면 null')
     ]
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='총세대수 (하락률·상승률 정렬에는 키가 없다)')
     ]
-    contract_date: Annotated[
+    latest_trade_date: Annotated[
         str | None,
         Field(description='가장 최근 계약일 (YYYY-MM-DD, 하락률·상승률 정렬만). 읽지 못하면 null')
     ]
@@ -154,11 +154,11 @@ class ZigbangDanjiRank(ZigbangLocalModel):
         int | float | None,
         Field(description='가장 최근 거래의 보증금 (만원, 전세의 하락률·상승률 정렬만)')
     ]
-    diff_manwon: Annotated[
+    prev_trade_diff_manwon: Annotated[
         int | float | None,
         Field(description='직전 거래 대비 차액 (만원, 하락률·상승률 정렬만)')
     ]
-    change_rate_percent: Annotated[
+    prev_trade_diff_percent: Annotated[
         int | float | None,
         Field(description='직전 거래 대비 변동률 (%, 하락률·상승률 정렬만)')
     ]
@@ -178,7 +178,7 @@ class ZigbangDanjiRank(ZigbangLocalModel):
         int | None,
         Field(description='기간 안 조회수 (인기 단지순만)')
     ]
-    jeonse_rate_percent: Annotated[
+    jeonse_ratio_percent: Annotated[
         int | float | None,
         Field(description='직방 매매 시세 대비 전세 시세 비율 (%, 전세가율 높은순만)')
     ]
@@ -269,21 +269,21 @@ def _rank_of(
     return ZigbangDanjiRank(
         rank=item.ranking_number,
         complex_id=None if item.area_danji_id is None else apt_complex_id(item.area_danji_id),
-        complex_name=text_or_none(item.area_danji_name),
+        name=text_or_none(item.area_danji_name),
         dong=text_or_none(item.local),
         trade_count=item.volume,
-        approved_at=iso_date(item.approved_date),
-        households=item.household_count,
-        contract_date=iso_date(item.rt_deal_date),
+        approved_date=iso_date(item.approved_date),
+        household_count=item.household_count,
+        latest_trade_date=iso_date(item.rt_deal_date),
         price_manwon=item.rt_price,
         deposit_manwon=item.rt_price,
-        diff_manwon=item.diff_rt_price,
-        change_rate_percent=item.percent_rt_price,
+        prev_trade_diff_manwon=item.diff_rt_price,
+        prev_trade_diff_percent=item.percent_rt_price,
         area_type=text_or_none(item.danji_room_type_name),
         estimated_price_manwon=item.price,
         estimated_price_per_pyeong_manwon=item.unit_price,
         view_count=item.view_count,
-        jeonse_rate_percent=item.charter_rate,
+        jeonse_ratio_percent=item.charter_rate,
         gap_manwon=item.gap,
         not_applicable=(SORT_ONLY_FIELDS - present) | dong_not_applicable(level),
     )

@@ -23,12 +23,13 @@ from jibsa.core.listing import (
     KST,
     NOT_APPLICABLE_PRICE_FIELDS,
     UPDATE_MAYBE_NEEDED,
+    floor_text,
     js_to_fixed,
     normalize_address,
     normalize_date,
-    normalize_floor,
     note,
     null_items_note,
+    with_floor_number,
     won_to_manwon,
     years_ago,
 )
@@ -62,6 +63,7 @@ from jibsa.providers.daangn.api.response.real_price import (
 )
 from jibsa.providers.daangn.service.common import (
     OPTIONAL_LOOKUP_ERRORS,
+    DaangnKbEstimatedPrices,
     T,
     article_url,
     code_label,
@@ -148,7 +150,7 @@ class DaangnRealPrice(BaseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description='층')
+        Field(description="층 (예: '3', '지하1'). 숫자는 floor_number")
     ] = None
     price_manwon: Annotated[
         float | None,
@@ -199,7 +201,7 @@ class DaangnRealPrice(BaseModel):
             fields.add('presale')
         for field in fields:
             data.pop(field, None)
-        return data
+        return with_floor_number(data)
 
 
 class DaangnRealPriceBaseResult(BaseModel):
@@ -221,7 +223,7 @@ class DaangnRealPriceBaseResult(BaseModel):
         bool | None,
         Field(description='더 오래된 거래가 더 있는지 (--years 를 줬으면 그 기간 안에서). 당근이 거래 목록을 주지 않았으면 null (모름)')
     ]
-    since: Annotated[
+    start_date: Annotated[
         str | None,
         Field(description='--years 로 준 기간의 시작일 (YYYY-MM-DD, 이날부터 계약). 주지 않았으면 키가 없다')
     ] = None
@@ -229,7 +231,7 @@ class DaangnRealPriceBaseResult(BaseModel):
         str | None,
         Field(description='--month 로 준 계약 연월 (YYYY-MM). 그 달 거래만이다. 주지 않았으면 키가 없다')
     ] = None
-    transactions: Annotated[
+    trades: Annotated[
         list[DaangnRealPrice] | None,
         Field(description='최근 계약 순 실거래. 거래가 없으면 [], 당근이 거래 목록을 주지 않았으면 null (모름)')
     ]
@@ -247,7 +249,7 @@ class DaangnRealPriceBaseResult(BaseModel):
 
     def unused_keys(self) -> list[str]:
         """해당 없음이라 출력에서 뺄 키. 결과마다 더할 키는 이 메서드를 넓힌다 (직렬화 함수를 복사하지 않는다)."""
-        return [field for field in ('since', 'month') if getattr(self, field) is None]
+        return [field for field in ('start_date', 'month') if getattr(self, field) is None]
 
 
 class DaangnRealPriceResult(DaangnRealPriceBaseResult):
@@ -317,7 +319,7 @@ def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> 
         trade_type=trade_type,
         trade_date=_trade_date(node),
         area_m2=node.exclusive_use_area,
-        floor=normalize_floor(node.floor),
+        floor=floor_text(node.floor),
         price_manwon=node.deal_amount if buy else None,
         deposit_manwon=None if buy else node.deposit,
         rent_manwon=node.monthly_rent if trade_type == '월세' else None,
@@ -686,7 +688,7 @@ def get_real_prices(
     `pyeong` 은 당근 웹처럼 아파트형 단지의 공급 평형 묶음이고 그 평형 타입 코드(ptpCds)로 거른다 (단지 비교 칸 요청 1회 더).
     웹은 `exclusiveUseAreaGroup: 84` 같은 전용면적 묶음을 아파트형에 쓰지 않아 jibsa 도 막는다. 84㎡ 묶음은 32평·33평이 섞여
     웹의 32평 목록과 달랐다 (2026-11-12 실측: 헬리오시티 매매 50건 중 28건이 33평, #215). `area_group` 은 아파트형이 아닌 단지의
-    전용면적 묶음이다. 당근이 거래 연결(또는 그 `edges`)을 null 로 주면 거래가 0건인 것이 아니라 모름이라 `transactions`·`has_more` 를
+    전용면적 묶음이다. 당근이 거래 연결(또는 그 `edges`)을 null 로 주면 거래가 0건인 것이 아니라 모름이라 `trades`·`has_more` 를
     null 로 내고 알린다 (정말 0건이면 `[]`).
 
     Raises:
@@ -729,7 +731,7 @@ def get_real_prices(
         remaining=f'{month} 의 거래가 더 남아 있습니다' if month else '더 오래된 거래가 남아 있습니다',
     )
     notes = found.notes
-    # 당근이 거래 목록을 주지 않았으면 거래가 0건인 것이 아니라 모름이라 transactions·has_more 를 null 로 낸다.
+    # 당근이 거래 목록을 주지 않았으면 거래가 0건인 것이 아니라 모름이라 trades·has_more 를 null 로 낸다.
     # 단지 실거래는 빈 결과에 '없다' 고 단정하지 않지만, 기간 앞·다른 유형에 거래가 있으면 매물 실거래처럼 알린다
     if found.unknown:
         notes.append(note('실패', f'당근이 이 단지의 {trade_type} 거래 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
@@ -742,9 +744,9 @@ def get_real_prices(
         pyeong=pyeong,
         returned=len(found.items),
         has_more=None if found.unknown else found.has_more,
-        since=since,
+        start_date=since,
         month=month,
-        transactions=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
+        trades=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
         url=complex_url(complex_id),
         notes=notes,
     )
@@ -757,7 +759,7 @@ class DaangnPricePoint(BaseModel):
         extra='forbid',
     )
 
-    year_month: Annotated[
+    month: Annotated[
         str,
         Field(description='계약 연월 (YYYY-MM)')
     ]
@@ -765,7 +767,7 @@ class DaangnPricePoint(BaseModel):
         float | None,
         Field(description='그 달 실거래 평균가 (만원, 전세는 보증금)')
     ] = None
-    transaction_count: Annotated[
+    trade_count: Annotated[
         int | None,
         Field(description='그 달 거래 수. 적으면 평균이 튈 수 있다')
     ] = None
@@ -794,7 +796,7 @@ class DaangnPriceTrendSummary(BaseModel):
         float,
         Field(description='마지막 거래 달 평균가 (만원)')
     ]
-    months: Annotated[
+    span_months: Annotated[
         int,
         Field(description='두 달 사이 개월 수 (웹의 "N개월간"·"N년간")')
     ]
@@ -823,25 +825,31 @@ class DaangnKbSale(BaseModel):
         float | None,
         Field(description='상위 평균가 (만원)')
     ] = None
-    survey_date: Annotated[
-        str | None,
-        Field(description='KB 시세 조사 기준일 (YYYY-MM-DD)')
-    ] = None
 
 
-def kb_sale_of(chart: DaangnPriceChartModel | None) -> DaangnKbSale | None:
+class DaangnChartEstimatedPrices(DaangnKbEstimatedPrices):
+    """KB 시세 (출처 `provider`, 기준일 `base_date`). `sale` 안에 하위·상위 평균가가 있다. 단지 비교의 `DaangnCompareEstimatedPrices` 와 달리 매매만 있다."""
+
+    sale: Annotated[
+        DaangnKbSale | None,
+        Field(description='KB 매매 시세. 하위·상위를 모두 모르면 null')
+    ]
+
+
+def estimated_prices_of(chart: DaangnPriceChartModel | None) -> DaangnChartEstimatedPrices | None:
     """시세 그래프 응답의 `latestKbSale`(원)을 만원으로. 없으면 None (모름).
 
     웹은 KB 시세를 매매 그래프의 띠로만 그리지만 응답에는 전세 그래프에도 함께 와서 거래 유형과 상관없이 낸다. KB 월세·전세 시세는
-    이 응답에 없다 (단지 비교 `compare` 의 `pyeong.kb_*` 에 있다).
+    이 응답에 없다 (단지 비교 `compare` 의 `pyeong.estimated_prices` 에 있다).
     """
     kb = chart.latest_kb_sale if chart else None
     if kb is None:
         return None
-    return DaangnKbSale(
-        low_manwon=won_to_manwon(kb.lower),
-        high_manwon=won_to_manwon(kb.upper),
-        survey_date=normalize_date(kb.survey_base_date),
+    low = won_to_manwon(kb.lower)
+    high = won_to_manwon(kb.upper)
+    return DaangnChartEstimatedPrices(
+        base_date=normalize_date(kb.survey_base_date),
+        sale=None if low is None and high is None else DaangnKbSale(low_manwon=low, high_manwon=high),
     )
 
 
@@ -870,29 +878,29 @@ class DaangnPriceTrendResult(BaseModel):
     ] = None
     period: Annotated[
         Literal['1년', '3년', '전체'],
-        Field(description='points 기간이자 변화율을 보는 기간')
+        Field(description='months 기간이자 변화율을 보는 기간')
     ]
     recent_average_manwon: Annotated[
         float | None,
         Field(description='최근 3개월(이번 달과 그 전 3개월) 거래 수 가중 평균 (만원). 없으면 12개월 안 마지막 거래 달. 그것도 없거나 당근이 시세 그래프를 주지 않았으면 null. 당근이 빈 항목을 줘 셀 수 없어도, 연월이나 평균 가격을 주지 않은 시세 점을 뺐어도 null')
     ] = None
-    recent_transactions: Annotated[
+    recent_trade_count: Annotated[
         int | None,
         Field(description='recent_average_manwon 의 거래 수. 당근이 빈 항목을 줘 셀 수 없거나 연월이나 평균 가격을 주지 않은 시세 점을 뺐으면 null')
     ] = None
-    kb_sale: Annotated[
-        DaangnKbSale | None,
-        Field(description='이 평형의 최근 KB 매매 시세 (하위~상위 평균가, 조사 기준일). 당근이 주지 않으면 null')
+    estimated_prices: Annotated[
+        DaangnChartEstimatedPrices | None,
+        Field(description='이 평형의 최근 KB 매매 시세 (sale 키 안 하위·상위 평균가, 조사 기준일). 당근이 주지 않으면 null')
     ] = None
-    total_transactions: Annotated[
+    total_trade_count: Annotated[
         int | None,
-        Field(description='points 기간의 거래 수. 당근이 시세 그래프를 주지 않았거나 빈 항목을 줘 셀 수 없거나 연월이나 평균 가격을 주지 않은 시세 점을 뺐으면 null (모름)')
+        Field(description='months 기간의 거래 수. 당근이 시세 그래프를 주지 않았거나 빈 항목을 줘 셀 수 없거나 연월이나 평균 가격을 주지 않은 시세 점을 뺐으면 null (모름)')
     ]
     summary: Annotated[
         DaangnPriceTrendSummary | None,
         Field(description='기간 안 첫·마지막 거래 달 비교. 거래 달이 둘이 안 되거나 당근이 시세 그래프를 주지 않았으면 null. 당근이 빈 항목을 줘 셀 수 없어도, 연월이나 평균 가격을 주지 않은 시세 점을 뺐어도 null')
     ] = None
-    points: Annotated[
+    months: Annotated[
         list[DaangnPricePoint] | None,
         Field(description='월별 평균 (오래된 달부터). 거래가 없는 달은 빠진다. 평형 묶음이 없는 단지는 당근 웹처럼 그래프가 없어 []. 당근이 시세 그래프를 주지 않았으면 null (모름)')
     ]
@@ -935,12 +943,12 @@ def get_price_trend(
     웹처럼 평형 하나로 본다. `pyeong`(아파트형의 공급 평형)·`area_group`(전용면적 묶음)이 없으면 웹이 처음 보여 주는 대표
     평형이다. 크기가 다른 평형을 섞은 평균은 큰 평형 거래가 몰린 달에 튀어 추이가 틀어져서, 예전의 '모든 평형 평균' 기본을
     바꿨다 (#215, 2026-11-12 사용자 결정). 고를 평형이 없는 단지(평형 묶음이 없거나 대표 묶음에 평형 값이 없다)는 웹처럼 그래프를
-    받지 않고 빈 `points` 를 준다 (요청 1회). 기간은 웹 탭(1년·3년·전체)이고, 오늘(한국 날짜)이 든 달과 그 전 N개월의 거래 달을
-    `points` 로 준다. 변화율은 웹(PriceChart `Z`)처럼 기간 안 첫 거래 달과 마지막 거래 달 평균을 견준다. 예전에는 마지막 거래 달
+    받지 않고 빈 `months` 를 준다 (요청 1회). 기간은 웹 탭(1년·3년·전체)이고, 오늘(한국 날짜)이 든 달과 그 전 N개월의 거래 달을
+    `months` 로 준다. 변화율은 웹(PriceChart `Z`)처럼 기간 안 첫 거래 달과 마지막 거래 달 평균을 견준다. 예전에는 마지막 거래 달
     까지 3개월과 N년 전 3개월을 가중 평균해 웹과 숫자가 달랐다 (2026-11-12 실측: 헬리오시티 32평 1년, 웹 -0.6%). 변화율의 반올림은
     계산 자리 주석에 있다. 당근이 시세 그래프를 주지 않으면(`priceChart` null) 거래 달이 없는 것이 아니라
-    모름이라 `points`·`total_transactions` 를 null 로 내고 알린다. 거래가 있는데 연월이나 평균 가격이 없는 점은 빼고 알리며, 어느 달의
-    얼마인지 몰라 `total_transactions`·`summary`·`recent_*` 도 빈 항목을 뺐을 때처럼 null 이다.
+    모름이라 `months`·`total_trade_count` 를 null 로 내고 알린다. 거래가 있는데 연월이나 평균 가격이 없는 점은 빼고 알리며, 어느 달의
+    얼마인지 몰라 `total_trade_count`·`summary`·`recent_*` 도 빈 항목을 뺐을 때처럼 null 이다.
 
     Raises:
         JibsaError: 없는 단지면 NOT_FOUND, 고를 수 없는 평형이면 INVALID_ARGUMENT, 그 밖의 GraphQL 에러면 UPSTREAM_ERROR.
@@ -958,8 +966,8 @@ def get_price_trend(
             complex_id=str(complex_id),
             trade_type=trade_type,
             period=cast(Literal['1년', '3년', '전체'], period),
-            total_transactions=0,
-            points=[],
+            total_trade_count=0,
+            months=[],
             url=complex_url(complex_id),
             notes=[note(
                 '참고',
@@ -983,7 +991,7 @@ def get_price_trend(
         )
     )
     node = unwrap_graphql(response, response.data.node if response.data else None, '시세 그래프', conditions=False)
-    # 그래프를 주지 않았으면(null) 거래가 있는 달이 0개인 것이 아니라 모름이다. 그래프가 왔는데 거래 달이 없으면 points 는 []
+    # 그래프를 주지 않았으면(null) 거래가 있는 달이 0개인 것이 아니라 모름이다. 그래프가 왔는데 거래 달이 없으면 months 는 []
     # 점 목록(averagePoints)이 null 인 것도 그래프를 주지 않은 것과 같은 모름이다 ([] 는 거래 달 0개)
     chart = node.price_chart
     no_graph = chart is None or chart.average_points is None
@@ -1001,7 +1009,7 @@ def get_price_trend(
         year_month = point.year_month
         # 거래가 있는데 평균 가격이 없거나 0 이거나(0 은 실제 거래가가 아니라 빈 값이다. 넣으면 변화율이 0 으로 나뉜다), 연월이
         # 없거나 꼴이 틀린 점(null·''·'-' 등)은 어느 달의 얼마인지 몰라 뺀다 (int 로 읽다 명령 전체가 실패하지 않게). 뺀 점이 기간
-        # 안 첫 달·마지막 달·최근 3개월이었을 수 있어 달 목록으로 계산한 값(total_transactions·summary·recent_*)은 모른다 (null).
+        # 안 첫 달·마지막 달·최근 3개월이었을 수 있어 달 목록으로 계산한 값(total_trade_count·summary·recent_*)은 모른다 (null).
         # 당근 웹 시세 그래프도 달을 모르는 점은 그리지 못할 것이다 (jibsa 가 웹으로 확인하지는 않았다)
         if not average or year_month is None or not is_year_month(year_month):
             unreadable += 1
@@ -1015,7 +1023,7 @@ def get_price_trend(
     # 웹은 new Date(올해, 이번 달 - N, 1) 부터라 이번 달까지 N+1 개 달이다 (1년이면 작년 같은 달부터)
     shown = sorted(index for index in monthly if index >= this_month - PRICE_TREND_PERIODS[period])
     points = [
-        DaangnPricePoint(year_month=_month_label(index), average_manwon=monthly[index][0], transaction_count=monthly[index][1])
+        DaangnPricePoint(month=_month_label(index), average_manwon=monthly[index][0], trade_count=monthly[index][1])
         for index in shown
     ]
     # 최근 N개월 거래 수로 가중 평균한 평균가와 거래 수. 거래가 없으면 None
@@ -1039,7 +1047,7 @@ def get_price_trend(
         notes.append(note('실패', f'당근이 이 평형의 시세 그래프 자료를 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
     elif dropped:
         notes.append(null_items_note(
-            '당근 시세 그래프 월별 평균', dropped, ('total_transactions', 'summary', 'recent_average_manwon', 'recent_transactions'),
+            '당근 시세 그래프 월별 평균', dropped, ('total_trade_count', 'summary', 'recent_average_manwon', 'recent_trade_count'),
         ))
     elif unreadable:
         # 연월이나 평균 가격을 모르는 점을 뺐으면 summary 는 모름(null)이다. 아래 [제외] 안내가 알리므로 여기서는 더하지 않는다
@@ -1067,7 +1075,7 @@ def get_price_trend(
             start_average_manwon=start[0],
             end_month=_month_label(last_index),
             end_average_manwon=end[0],
-            months=last_index - first,
+            span_months=last_index - first,
             change_percent=change_percent,
             change_manwon=round(end[0] - start[0], 4),
         )
@@ -1075,12 +1083,12 @@ def get_price_trend(
             notes.append(note(
                 '참고',
                 f'비교한 달의 거래가 적어({_month_label(first)} {start[1]}건, {_month_label(last_index)} {end[1]}건) 변화율이 실제 '
-                '시세 변화와 크게 다를 수 있습니다. points 의 흐름을 함께 보세요',
+                '시세 변화와 크게 다를 수 있습니다. months 의 흐름을 함께 보세요',
             ))
     if shown and not dropped and not unreadable and this_month - shown[-1] >= PRICE_TREND_STALE_MONTHS:
         notes.append(f'마지막 거래가 {_month_label(shown[-1])} 에 있어 최근 시세와 다를 수 있습니다')
     if shown:
-        notes.append('월별 평균은 그 달 실거래 평균이라 거래가 적은 달(transaction_count)은 튈 수 있습니다')
+        notes.append('월별 평균은 그 달 실거래 평균이라 거래가 적은 달(trade_count)은 튈 수 있습니다')
     if unreadable:
         if dropped:
             # 빈 항목 안내(null_items_note)가 네 칸이 null 이라고 이미 알렸다
@@ -1089,7 +1097,7 @@ def get_price_trend(
             notes.append(note(
                 '제외',
                 f'당근이 연월이나 평균 가격을 주지 않은 시세 점 {unreadable}개는 뺐습니다. 어느 달의 얼마인지 몰라 '
-                'total_transactions, summary, recent_average_manwon, recent_transactions 값은 알 수 없어 null 입니다',
+                'total_trade_count, summary, recent_average_manwon, recent_trade_count 값은 알 수 없어 null 입니다',
             ))
     return DaangnPriceTrendResult(
         complex_id=str(complex_id),
@@ -1098,11 +1106,11 @@ def get_price_trend(
         area_group=choice.area_group,
         period=cast(Literal['1년', '3년', '전체'], period),
         recent_average_manwon=recent[0] if recent and not dropped and not unreadable else None,
-        recent_transactions=recent[1] if recent and not dropped and not unreadable else None,
-        kb_sale=kb_sale_of(chart),
-        total_transactions=sum(monthly[index][1] for index in shown) if not no_graph and not dropped and not unreadable else None,
+        recent_trade_count=recent[1] if recent and not dropped and not unreadable else None,
+        estimated_prices=estimated_prices_of(chart),
+        total_trade_count=sum(monthly[index][1] for index in shown) if not no_graph and not dropped and not unreadable else None,
         summary=summary,
-        points=points if not no_graph else None,
+        months=points if not no_graph else None,
         url=complex_url(complex_id),
         notes=notes + pyeong_notes,
     )
@@ -1121,7 +1129,7 @@ def get_listing_real_prices(
 
     `years` 는 `get_real_prices` 와 같다. 당근이 매물의 건물을 찾은 경우에만 거래가 온다. 오피스텔·아파트는 대개 있고 빌라·주택은 대부분
     없어, 없으면 그 이유를 `notes` 로 알린다. 거래가 기간 앞이나 다른 유형(전세·월세)에만 있어 비었으면 그렇게 알린다. 당근이 거래
-    연결(또는 그 `edges`)을 null 로 주면 모름이라 `transactions`·`has_more` 를 null 로 내고 알린다 (`get_real_prices` 와 같다).
+    연결(또는 그 `edges`)을 null 로 주면 모름이라 `trades`·`has_more` 를 null 로 내고 알린다 (`get_real_prices` 와 같다).
 
     Raises:
         ListingUnavailableError: 없거나 지워진 매물.
@@ -1160,7 +1168,7 @@ def get_listing_real_prices(
     # '최근 전월세 실거래 N건 중 전세 0건' [참고] 가 이미 알리는데, 같은 결과에 '없습니다' 가 붙으면 에이전트가 없다고 전한다
     # (2026-11-11 리뷰). 기간 앞이나 다른 유형에 거래가 있으면 그 까닭을 알리고(`_empty_result_note`), 거래를 하나도 받지
     # 못했을 때만 건물을 찾지 못한 경우를 알린다
-    # 당근이 거래 목록을 주지 않았으면(연결이나 edges 가 null) 모름이라 transactions·has_more 를 null 로 낸다. 연결이 있고 비어
+    # 당근이 거래 목록을 주지 않았으면(연결이나 edges 가 null) 모름이라 trades·has_more 를 null 로 낸다. 연결이 있고 비어
     # 있을 때(edges [])의 아래 '없습니다' 안내와 다르다
     if found.unknown:
         notes.append(note('실패', f'당근이 이 건물의 {trade_type} 거래 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'))
@@ -1176,8 +1184,8 @@ def get_listing_real_prices(
         trade_type=trade_type,
         returned=len(found.items),
         has_more=None if found.unknown else found.has_more,
-        since=since,
-        transactions=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
+        start_date=since,
+        trades=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
         url=article_url(original_id),
         notes=notes,
     )
@@ -1194,16 +1202,16 @@ class DaangnRegionRealPrice(BaseModel):
         str,
         Field(exclude=True, description='거래 유형. 필드를 고르는 데만 쓰고 출력하지 않는다')
     ]
-    new_high: Annotated[
+    from_new_high_feed: Annotated[
         bool,
-        Field(exclude=True, description='신고가 피드인지. 신고가 피드에 없는 published_at 키를 빼는 데만 쓴다')
+        Field(exclude=True, description='신고가 피드인지. 신고가 피드에 없는 published_date 키를 빼는 데만 쓴다')
     ] = False
 
     trade_date: Annotated[
         str | None,
         Field(description='계약일 (YYYY-MM-DD)')
     ] = None
-    published_at: Annotated[
+    published_date: Annotated[
         str | None,
         Field(description='실거래가 공개된 날 (YYYY-MM-DD). 신고가 피드에는 없다')
     ] = None
@@ -1219,11 +1227,11 @@ class DaangnRegionRealPrice(BaseModel):
         str | None,
         Field(description='당근 단지 ID (daangn complex·real-price 에 넘긴다). 당근 단지가 아니면 키가 없다')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -1233,7 +1241,7 @@ class DaangnRegionRealPrice(BaseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description='층')
+        Field(description="층 (예: '3', '지하1'). 숫자는 floor_number")
     ] = None
     price_manwon: Annotated[
         float | None,
@@ -1259,19 +1267,19 @@ class DaangnRegionRealPrice(BaseModel):
         str | None,
         Field(description="계약 종류 (전월세만): '신규' / '재계약' (당근 웹 카드 배지 '갱신' 은 재계약이다). 당근이 주지 않으면 null, 표에 없는 코드는 원래 코드. 갱신요구권 사용 여부는 지역 피드에 없다")
     ] = None
-    is_new_high: Annotated[
+    new_high: Annotated[
         bool | None,
         Field(description="이 거래가 이 단지·평형의 신고가인지 (매매만, 당근 웹 카드의 '신고가' 배지. 해제된 거래는 false)")
     ] = None
-    previous_high_manwon: Annotated[
+    prev_high_manwon: Annotated[
         float | None,
         Field(description='직전 최고가 (만원, 매매만). 당근이 비교 자료를 주지 않으면 null')
     ] = None
-    previous_high_date: Annotated[
+    prev_high_date: Annotated[
         str | None,
         Field(description='직전 최고가 계약일 (YYYY-MM-DD, 매매만)')
     ] = None
-    previous_high_change_percent: Annotated[
+    prev_high_diff_percent: Annotated[
         float | None,
         Field(description="직전 최고가 대비 변화율 (%, 소수 둘째 자리, 매매만. 당근 웹 카드의 '직전 최고가 대비 ±N%' 와 같은 비율이고 웹은 정수로 보여 준다). 해제된 거래나 직전 최고가가 없으면 null")
     ] = None
@@ -1285,14 +1293,14 @@ class DaangnRegionRealPrice(BaseModel):
         else:
             # 거래 취소는 웹 카드가 거래 유형과 상관없이 보여 준다 (`yc` 의 `s.cancel===!0`). 직거래 표시와 신고가·직전 최고가는
             # 매매에만 둔다 (웹 카드도 SALE 에만 계산한다)
-            fields |= {'deal_type', 'is_new_high', 'previous_high_manwon', 'previous_high_date', 'previous_high_change_percent'}
-        if self.new_high:
-            fields.add('published_at')
+            fields |= {'deal_type', 'new_high', 'prev_high_manwon', 'prev_high_date', 'prev_high_diff_percent'}
+        if self.from_new_high_feed:
+            fields.add('published_date')
         if self.complex_id is None:
             fields.add('complex_id')
         for field in fields:
             data.pop(field, None)
-        return data
+        return with_floor_number(data)
 
 
 class DaangnRealsaleSummary(BaseModel):
@@ -1302,7 +1310,7 @@ class DaangnRealsaleSummary(BaseModel):
         extra='forbid',
     )
 
-    data_date: Annotated[
+    latest_published_date: Annotated[
         str | None,
         Field(description='가장 최근 공개일 (YYYY-MM-DD)')
     ] = None
@@ -1331,7 +1339,7 @@ class DaangnRegionRealPriceResult(BaseModel):
         str,
         Field(description='거래 유형')
     ]
-    new_high: Annotated[
+    new_high_only: Annotated[
         bool,
         Field(description='신고가 매매만 모았는지')
     ]
@@ -1351,7 +1359,7 @@ class DaangnRegionRealPriceResult(BaseModel):
         bool,
         Field(description='더 있는지')
     ]
-    transactions: Annotated[
+    trades: Annotated[
         list[DaangnRegionRealPrice],
         Field(description='실거래')
     ]
@@ -1395,26 +1403,26 @@ def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, n
     cancelled = realsale.cancel is True
     return DaangnRegionRealPrice(
         trade_type=trade_type,
-        new_high=new_high,
+        from_new_high_feed=new_high,
         trade_date=normalize_date(realsale.contact_date),
-        published_at=normalize_date(item.data_date),
+        published_date=normalize_date(item.data_date),
         address=normalize_address(item.region_name),
         building_name=(danji.name if danji else None) or (item.complex.name if item.complex else None),
         complex_id=item.complex.original_id if item.complex else None,
-        households=danji.households if danji else None,
-        approved_at=normalize_date(danji.build_date) if danji else None,
+        household_count=danji.households if danji else None,
+        approved_date=normalize_date(danji.build_date) if danji else None,
         area_m2=realsale.exclusive_area,
-        floor=normalize_floor(realsale.floor),
+        floor=floor_text(realsale.floor),
         price_manwon=realsale.trade_price if buy else None,
         deposit_manwon=None if buy else realsale.deposit,
         rent_manwon=realsale.month_rent_fee if trade_type == '월세' else None,
         cancelled=realsale.cancel,
         deal_type=code_label(DEAL_TYPE_LABELS, realsale.transaction_type) if buy else None,
         contract_type=None if buy else contract_type_of(realsale.lease_contract_type),
-        is_new_high=(bool(insight and insight.is_new_high) and not cancelled) if buy else None,
-        previous_high_manwon=insight.previous_max_price if buy and insight else None,
-        previous_high_date=normalize_date(insight.previous_max_contact_date) if buy and insight else None,
-        previous_high_change_percent=(
+        new_high=(bool(insight and insight.is_new_high) and not cancelled) if buy else None,
+        prev_high_manwon=insight.previous_max_price if buy and insight else None,
+        prev_high_date=normalize_date(insight.previous_max_contact_date) if buy and insight else None,
+        prev_high_diff_percent=(
             previous_high_change_percent(realsale.trade_price, insight.previous_max_price if insight else None)
             if buy and not cancelled else None
         ),
@@ -1443,7 +1451,7 @@ def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> 
     sale = data.realsale_feed_summary
     new_high = data.realsale_new_high_feed_summary
     return DaangnRealsaleSummary(
-        data_date=normalize_date(sale.data_date) if sale else None,
+        latest_published_date=normalize_date(sale.data_date) if sale else None,
         sale_count=sale.sale_count if sale else None,
         new_high_count=new_high.new_high_count if new_high else None,
     )
@@ -1542,11 +1550,11 @@ def get_region_real_prices(
     return DaangnRegionRealPriceResult(
         region=region,
         trade_type=trade_type,
-        new_high=new_high,
+        new_high_only=new_high,
         sort=REALSALE_SORT_LABEL_BY_SORT['TRADE_PRICE_DESC' if new_high else sort],
         summary=summary,
         returned=len(collected),
         has_more=found.has_more,
-        transactions=[realsale_to_real_price(item, trade_type, new_high) for item in collected],
+        trades=[realsale_to_real_price(item, trade_type, new_high) for item in collected],
         notes=notes,
     )

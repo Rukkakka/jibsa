@@ -22,8 +22,11 @@ from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     UPDATE_MAYBE_NEEDED,
+    AmountRange,
+    AmountSet,
     Listing,
     ListingDetail,
+    with_floor_number,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -65,14 +68,14 @@ APT_LISTING_KIND_DESCRIPTION: str = (
 )
 # 아파트 매물 줄·상세가 함께 쓰는 평형 필드 설명. 이름 규칙은 real-price 의 pyeong_name(평 기준)과 같다
 APT_PYEONG_ID_DESCRIPTION: str = (
-    '평형 ID (complex 의 pyeongs[].id 와 같은 번호). search listings --complex <단지> --pyeong·real-price <단지> --pyeong 에 넘긴다. 모르면 null'
+    '평형 ID (complex 의 pyeongs[].pyeong_id 와 같은 번호). search listings --complex <단지> --pyeong·real-price <단지> --pyeong 에 넘긴다. 모르면 null'
 )
 APT_PYEONG_NAME_DESCRIPTION: str = '평형 이름 (평 기준, 예: 34A. complex 의 pyeongs[].pyeong_name 과 같다). 모르면 null'
 # 단지·건물이 있는 유형(아파트·오피스텔)의 상세에만 있는 필드, 아파트 상세에만 있는 필드, 원룸·빌라·오피스텔 상세에만 있는 필드.
 # 없는 유형은 키를 뺀다. 찜 수는 웹 www 의 원룸·빌라·오피스텔 화면에 보이지 않아 아파트만이다. 아파트 학군은 단지 정보
 # (zigbang complex)에서 주고, 아파트 상세 응답에는 주변 시설·배송 업체가 없다
 COMPLEX_DETAIL_FIELDS: frozenset[str] = frozenset({'complex_id', 'complex_name'})
-APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2', 'listing_kind', 'pyeong_id', 'pyeong_name', 'zzim_count'})
+APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2', 'listing_kind', 'pyeong_id', 'pyeong_name', 'favorite_count'})
 ROOM_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'schools', 'nearby_facilities', 'delivery_services', 'building_trades'})
 # 방향 코드 → 라벨. 주거 상세(`room.detail`)와 아파트 상세(`apt`)가 함께 쓴다
 DIRECTION_LABELS: dict[str, str] = {
@@ -228,7 +231,7 @@ class ZigbangNearbyFacility(BaseModel):
         str | None,
         Field(description='시설 종류 (지하철역·버스정류장·편의점·카페·약국·세탁소·대형마트. 직방이 준 글자 그대로). 직방이 종류를 주지 않으면 null')
     ] = None
-    minutes: Annotated[
+    travel_minutes: Annotated[
         int,
         Field(description='걸리는 시간 (분). 웹처럼 직방이 준 초를 분으로 반올림하고 (.5분은 올림) 0분이 되면 1분으로 쓴다')
     ]
@@ -273,7 +276,7 @@ class ZigbangBuildingTrade(BaseModel):
         float | None,
         Field(description='월세 (만원). 월세만 있고 매매·전세는 키가 없다')
     ] = None
-    exclusive_area_m2: Annotated[
+    area_m2: Annotated[
         float | None,
         Field(description='전용면적 (㎡). 직방이 주지 않으면 null')
     ] = None
@@ -288,7 +291,52 @@ class ZigbangBuildingTrade(BaseModel):
         # 거래 유형을 모르면(None) 뺄 가격 필드가 없다
         for field in NOT_APPLICABLE_PRICE_FIELDS.get(self.trade_type or '', frozenset()):
             data.pop(field, None)
-        return data
+        return with_floor_number(data)
+
+
+class ZigbangEstimatedPrice(AmountSet):
+    """직방시세® 거래 하나의 값 (estimated_prices 의 sale·jeonse). 생성할 때 넘긴 칸만 출력한다 (`AmountSet` 의 직렬화기).
+
+    넘긴 None 은 모름(null)이고, 넘기지 않은 칸은 그 거래에 해당 없음이라 키가 없다 (매매는 price_manwon, 전세는 deposit_manwon).
+    안 칸을 모두 모르면 이 객체를 만들지 않고 그 거래를 null 로 낸다.
+    """
+
+    price_manwon: Annotated[
+        float | None,
+        Field(description='직방시세® 매매가 (만원, 추정값). 직방이 주지 않거나 0 이면 null')
+    ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='직방시세® 전세가 (만원, 추정값). 직방이 주지 않거나 0 이면 null')
+    ] = None
+    price_per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description='직방시세® 평당가 (만원, 3.3㎡당). 직방이 주지 않거나 0 이면 null')
+    ] = None
+
+
+def estimated_prices_of(
+    sale_price_manwon: float | None,
+    sale_price_per_pyeong_manwon: float | None,
+    jeonse_price_manwon: float | None,
+    jeonse_price_per_pyeong_manwon: float | None,
+) -> dict[str, ZigbangEstimatedPrice | None]:
+    """직방시세® 매매·전세 값을 estimated_prices 로 묶는다. 늘 'sale'·'jeonse' 두 키이고, 거래의 안 값이 모두 없으면 그 거래가 모름(null), 일부만 없으면 그 칸만 null 이다."""
+    return {
+        'sale': None if sale_price_manwon is None and sale_price_per_pyeong_manwon is None else ZigbangEstimatedPrice(
+            price_manwon=sale_price_manwon, price_per_pyeong_manwon=sale_price_per_pyeong_manwon,
+        ),
+        'jeonse': None if jeonse_price_manwon is None and jeonse_price_per_pyeong_manwon is None else ZigbangEstimatedPrice(
+            deposit_manwon=jeonse_price_manwon, price_per_pyeong_manwon=jeonse_price_per_pyeong_manwon,
+        ),
+    }
+
+
+def sale_price_range(lowest_manwon: float | None, highest_manwon: float | None) -> AmountRange | None:
+    """매매가 범위 (직방시세 estimated_ranges 의 'sale', 평형 추이 trade_range). 두 끝이 모두 없으면 모름(None)이고, 한 끝만 없으면 그 price_manwon 만 null 이다."""
+    if lowest_manwon is None and highest_manwon is None:
+        return None
+    return AmountRange(lowest=AmountSet(price_manwon=lowest_manwon), highest=AmountSet(price_manwon=highest_manwon))
 
 
 class ZigbangListingDetail(ListingDetail):
@@ -311,7 +359,7 @@ class ZigbangListingDetail(ListingDetail):
         float | None,
         Field(description='공급면적 (㎡, 아파트만)')
     ] = None
-    total_parking_count: Annotated[
+    parking_count: Annotated[
         int | float | None,
         Field(description='총 주차 대수 (아파트는 단지 전체). 직방이 소수(0.4)로 주기도 해 그대로 준다')
     ] = None
@@ -339,7 +387,7 @@ class ZigbangListingDetail(ListingDetail):
         str | None,
         Field(description=APT_PYEONG_NAME_DESCRIPTION + ' (아파트만)')
     ] = None
-    confirmed_at: Annotated[
+    confirmed_date: Annotated[
         str | None,
         Field(description=(
             "직방이 매물을 마지막으로 확인한 날짜 (YYYY-MM-DD, 한국 시간). 웹 매물 화면은 이 시각으로 아파트는 '2주 전 확인', 원룸·빌라·오피스텔은 "
@@ -358,7 +406,7 @@ class ZigbangListingDetail(ListingDetail):
         bool | None,
         Field(description=HUG_LESSOR_DESCRIPTION + ' (아파트는 직방이 준 isHugLessor 그대로)')
     ] = None
-    zzim_count: Annotated[
+    favorite_count: Annotated[
         int | None,
         Field(description='찜 수 (웹 하트 옆 숫자, 아파트만. 0 이면 웹은 숫자를 그리지 않지만 0 그대로 낸다). 직방이 주지 않으면 null')
     ] = None

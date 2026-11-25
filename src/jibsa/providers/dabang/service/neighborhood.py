@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    AmountSet,
     Listing,
     limit_notes,
     listing_as,
@@ -123,23 +124,23 @@ class DabangRank(BaseModel):
         extra='forbid',
     )
 
-    national: Annotated[
+    national_rank: Annotated[
         int | None,
         Field(description='전국 순위')
     ] = None
-    state: Annotated[
+    sido_rank: Annotated[
         int | None,
         Field(description='시·도 안 순위')
     ] = None
-    state_name: Annotated[
+    sido: Annotated[
         str | None,
         Field(description="시·도 ('서울')")
     ] = None
-    district: Annotated[
+    sigungu_rank: Annotated[
         int | None,
         Field(description='시·군·구 안 순위')
     ] = None
-    district_name: Annotated[
+    sigungu: Annotated[
         str | None,
         Field(description="시·군·구 ('강남구')")
     ] = None
@@ -149,11 +150,11 @@ def _rank(group: DabangRankingGroupModel | None) -> DabangRank | None:
     if group is None:
         return None
     return DabangRank(
-        national=count_of(group.formatted_national_rank),
-        state=count_of(group.formatted_state_rank),
-        state_name=group.state_name,
-        district=count_of(group.formatted_city_rank),
-        district_name=group.city_name,
+        national_rank=count_of(group.formatted_national_rank),
+        sido_rank=count_of(group.formatted_state_rank),
+        sido=group.state_name,
+        sigungu_rank=count_of(group.formatted_city_rank),
+        sigungu=group.city_name,
     )
 
 
@@ -164,26 +165,18 @@ class DabangTypeCount(BaseModel):
         extra='forbid',
     )
 
-    type: Annotated[
+    property_type: Annotated[
         str,
         Field(description='매물 유형 (주택/빌라, 오피스텔, 아파트)')
     ]
-    total: Annotated[
+    count: Annotated[
         int | None,
         Field(description='수')
     ] = None
-    rent: Annotated[
-        int | None,
-        Field(description='월세')
-    ] = None
-    lease: Annotated[
-        int | None,
-        Field(description='전세')
-    ] = None
-    sale: Annotated[
-        int | None,
-        Field(description='매매')
-    ] = None
+    counts: Annotated[
+        dict[str, int | None],
+        Field(description="거래별 수. 키는 'sale'·'jeonse'·'wolse' 늘 세 개 (다방이 주지 않은 수는 null). 매물 수(listings)나 거래 수(trades)다")
+    ]
 
 
 class DabangCountStats(BaseModel):
@@ -193,7 +186,7 @@ class DabangCountStats(BaseModel):
         extra='forbid',
     )
 
-    total: Annotated[
+    count: Annotated[
         int | None,
         Field(description='합계')
     ] = None
@@ -201,7 +194,7 @@ class DabangCountStats(BaseModel):
         list[DabangTypeCount],
         Field(description='매물 유형별')
     ]
-    rank: Annotated[
+    ranking: Annotated[
         DabangRank | None,
         Field(description='합계 순위')
     ] = None
@@ -214,18 +207,14 @@ class DabangTypePrice(BaseModel):
         extra='forbid',
     )
 
-    type: Annotated[
+    complex_type: Annotated[
         str,
         Field(description='단지 유형 (아파트, 오피스텔)')
     ]
-    sale_average_manwon: Annotated[
-        float | None,
-        Field(description='평균 매매가 (만원)')
-    ] = None
-    lease_average_manwon: Annotated[
-        float | None,
-        Field(description='평균 전세가 (만원)')
-    ] = None
+    trade_averages: Annotated[
+        dict[str, AmountSet | None],
+        Field(description="거래별 평균가 (만원). 키는 'sale'(price_manwon)·'jeonse'(deposit_manwon) 늘 두 개이고, 다방이 평균을 주지 않으면 그 거래가 null")
+    ]
 
 
 class DabangPriceStats(BaseModel):
@@ -239,7 +228,7 @@ class DabangPriceStats(BaseModel):
         list[DabangTypePrice],
         Field(description='단지 유형별 평균가')
     ]
-    rank: Annotated[
+    ranking: Annotated[
         DabangRank | None,
         Field(description="아파트 평균 매매가 순위 (다방 화면 '아파트/매매 기준'. 오피스텔·전세가는 순위에 들지 않는다)")
     ] = None
@@ -273,7 +262,7 @@ class DabangPopulation(BaseModel):
         extra='forbid',
     )
 
-    total: Annotated[
+    population: Annotated[
         int | None,
         Field(description='인구')
     ] = None
@@ -289,7 +278,7 @@ class DabangPopulation(BaseModel):
         list[DabangAgeGroup],
         Field(description='연령대별')
     ]
-    rank: Annotated[
+    ranking: Annotated[
         DabangRank | None,
         Field(description='인구 순위')
     ] = None
@@ -310,7 +299,7 @@ class DabangCategoryRank(BaseModel):
         str,
         Field(description="종류 (다방 요약 칸 이름표: '어린이집', '생활 편의시설', '교통시설', '안전시설' 등)")
     ]
-    total: Annotated[
+    count: Annotated[
         int | None,
         Field(description='그 종류의 합계 (시설·학교 수)')
     ] = None
@@ -318,7 +307,7 @@ class DabangCategoryRank(BaseModel):
         dict[str, int | None] | None,
         Field(description="구성 ({'편의점': 204, '세탁소': 62}, 어린이집은 설립 구분 {'공공': 3})")
     ] = None
-    rank: Annotated[
+    ranking: Annotated[
         DabangRank | None,
         Field(description='합계 순위 (전국·시도·구)')
     ] = None
@@ -405,9 +394,9 @@ def _dropped_types(result: DabangRegionInfoSummaryResultModel) -> int:
 
 
 def _dropped_type_notes(result: DabangRegionInfoSummaryResultModel | None, topic: str, field: str) -> list[str]:
-    """유형 목록에서 빈 항목을 뺐으면 그 주제의 합계(`<field>.total`)를 모른다는 안내."""
+    """유형 목록에서 빈 항목을 뺐으면 그 주제의 합계(`<field>.count`)를 모른다는 안내."""
     dropped = 0 if result is None else _dropped_types(result)
-    return [null_items_note(f'다방 동네정보 {topic} 유형별', dropped, (f'{field}.total',))] if dropped else []
+    return [null_items_note(f'다방 동네정보 {topic} 유형별', dropped, (f'{field}.count',))] if dropped else []
 
 
 def _type_counts(result: DabangRegionInfoSummaryResultModel) -> DabangCountStats:
@@ -416,15 +405,13 @@ def _type_counts(result: DabangRegionInfoSummaryResultModel) -> DabangCountStats
     for item in details:
         parts = {part.name: int(part.value) if part.value is not None else None for part in item.composition_list}
         by_type.append(DabangTypeCount(
-            type=item.name,
-            total=int(item.value) if item.value is not None else None,
-            rent=parts.get('월세'),
-            lease=parts.get('전세'),
-            sale=parts.get('매매'),
+            property_type=item.name,
+            count=int(item.value) if item.value is not None else None,
+            counts={'sale': parts.get('매매'), 'jeonse': parts.get('전세'), 'wolse': parts.get('월세')},
         ))
     # 빈 항목을 뺐으면 그 유형의 수를 몰라 합계를 낼 수 없다 (받은 유형만 더하면 적은 합계가 완전한 값처럼 나간다)
-    total = sum(item.total or 0 for item in by_type) if by_type and not _dropped_types(result) else None
-    return DabangCountStats(total=total, by_type=by_type, rank=_rank(result.ranking_group))
+    count = sum(item.count or 0 for item in by_type) if by_type and not _dropped_types(result) else None
+    return DabangCountStats(count=count, by_type=by_type, ranking=_rank(result.ranking_group))
 
 
 def _count_items(items: list[DabangCountModel]) -> dict[str, int | None]:
@@ -488,10 +475,13 @@ def get_neighborhood(
         result = summary('real-estate', 'AVERAGE_PRICE')
         data['prices'] = None if result is None else DabangPriceStats(
             by_type=[
-                DabangTypePrice(type=item.name, sale_average_manwon=item.sale_price, lease_average_manwon=item.lease_price)
+                DabangTypePrice(complex_type=item.name, trade_averages={
+                    'sale': None if item.sale_price is None else AmountSet(price_manwon=item.sale_price),
+                    'jeonse': None if item.lease_price is None else AmountSet(deposit_manwon=item.lease_price),
+                })
                 for item in result.distribution_list or []
             ],
-            rank=_rank(result.ranking_group),
+            ranking=_rank(result.ranking_group),
         )
     if '인구' in chosen:
         result = summary('population')
@@ -500,14 +490,14 @@ def get_neighborhood(
         else:
             genders = {group.gender_type_name: group.count for group in result.gender_distribution_list}
             data['population'] = DabangPopulation(
-                total=result.total_count,
+                population=result.total_count,
                 male=genders.get('남성'),
                 female=genders.get('여성'),
                 ages=[
                     DabangAgeGroup(age=group.age_type_name or '', count=group.count, percent=group.percent)
                     for group in result.age_distribution_list
                 ],
-                rank=_rank(result.ranking_group),
+                ranking=_rank(result.ranking_group),
             )
     for topic, api_topic in COUNT_TOPIC_BY_LABEL.items():
         if topic not in chosen:
@@ -518,12 +508,17 @@ def get_neighborhood(
         if counts is None:
             data[FIELD_BY_TOPIC[topic]] = None
             continue
+        # 시설·학교 종류 이름(묶음과 그 안 항목)은 다방이 보내는 이름표 그대로 키로 쓴다. 거래 키(sale 등)와 달리 어떤 이름이 올지
+        # 미리 다 알 수 없어, 영어로 바꾸려면 다방에 없는 대응 표를 jibsa 가 지어야 하고 표에 없는 새 이름은 한국어로 섞이거나 빠진다
+        # (출력 규약 '칸 이름 규칙' 의 예외)
         values: dict[str, dict[str, int | None]] = {}
         for group in counts.facility_count_list or counts.school_count_list:
             name = group.amenity_type_name or group.mobility_type_name or group.life_safety_type_name or group.school_type_name
             if name:
                 values[name] = _count_items(group.count_list)
         if counts.academy_count is not None:
+            # 학원은 다방이 이름 없이 따로 주는 칸이라 jibsa 가 키를 붙이지만, 같은 객체의 다른 키(초등학교 등)가 다방 이름표라
+            # 한 객체 안에서 두 말이 섞이지 않게 한국어로 둔다 (출력 규약 '칸 이름 규칙' 의 예외)
             values['학원'] = _count_items(counts.academy_count.count_list)
         data[FIELD_BY_TOPIC[topic]] = values
     rank_list: list[DabangCategoryRank] = []
@@ -541,13 +536,14 @@ def get_neighborhood(
                 rank_list.append(DabangCategoryRank(
                     topic=topic,
                     type=label,
-                    total=count_of(result.formatted_total_count),
+                    count=count_of(result.formatted_total_count),
                     # 다방이 구성을 null 로 주면 모름(null), 빈 목록으로 주면 없음({})이다
+                    # 구성 항목 이름도 다방 이름표 그대로 키로 쓴다 (위 학교·시설 수와 같은 예외)
                     counts=None if result.distribution_list is None else {
                         item.name: item.count if item.count is not None else count_of(item.formatted_count)
                         for item in result.distribution_list
                     },
-                    rank=_rank(result.ranking_group),
+                    ranking=_rank(result.ranking_group),
                 ))
     return DabangNeighborhood(
         region=place,

@@ -38,7 +38,7 @@ def test_detail_has_no_distance() -> None:
     detail = ListingDetail(source='naver', id='1', url='https://example.com/1', trade_type='매매', property_type='아파트')
     dumped = detail.model_dump(mode='json')
     assert 'distance_km' not in dumped
-    assert dumped['elevator'] is None and dumped['options'] is None
+    assert dumped['has_elevator'] is None and dumped['options'] is None
 
 
 def test_rule_applies_inside_wrapper_models() -> None:
@@ -53,9 +53,9 @@ def test_rule_applies_inside_wrapper_models() -> None:
 
 def test_list_fields_distinguish_unknown_from_empty() -> None:
     unknown = ListingDetail(source='naver', id='1', url='u', trade_type='매매', property_type='아파트')
-    empty = unknown.model_copy(update={'nearby_subways': []})
-    assert unknown.model_dump(mode='json')['nearby_subways'] is None
-    assert empty.model_dump(mode='json')['nearby_subways'] == []
+    empty = unknown.model_copy(update={'nearby_stations': []})
+    assert unknown.model_dump(mode='json')['nearby_stations'] is None
+    assert empty.model_dump(mode='json')['nearby_stations'] == []
 
 
 def test_normalize_date_drops_time_in_kst() -> None:
@@ -126,3 +126,15 @@ def test_limit_notes_only_when_more_than_returned() -> None:
     )
 
 
+
+
+def test_amount_set_dumps_only_given_fields() -> None:
+    from jibsa.core.listing import AmountRange, AmountSet
+
+    assert AmountSet(price_manwon=None).model_dump(mode='json') == {'price_manwon': None}
+    assert AmountSet().model_dump(mode='json') == {}
+    amount_range = AmountRange(lowest=AmountSet(deposit_manwon=1000, rent_manwon=58), highest=None)
+    dumped = amount_range.model_dump(mode='json')
+    assert dumped == {'lowest': {'deposit_manwon': 1000.0, 'rent_manwon': 58.0}, 'highest': None}
+    # dump 한 dict 로 다시 만들어도 같은 키가 나온다
+    assert AmountRange.model_validate(dumped).model_dump(mode='json') == dumped

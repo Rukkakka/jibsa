@@ -187,7 +187,7 @@ def test_detail_to_listing_keeps_only_discovery_fields() -> None:
     assert detail.address == '서울특별시 서초구 서초동 100-1'
     assert detail.bathroom_count == 1
     # 직방은 사용승인일을 '20000101' / '2020.01.22' 로 준다
-    assert detail.approved_at == '2000-01-01'
+    assert detail.approved_date == '2000-01-01'
     # 본문은 내보내지 않는다 (원 사이트에서 확인)
     assert 'description_excerpt' not in detail.model_dump(mode='json')
     dumped = detail.model_dump(mode='json', exclude_none=True)
@@ -523,7 +523,7 @@ def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
     line = catalog_to_listing(ZigbangItemCatalogModel.model_validate(card), '서울특별시')
     assert line is not None and (line.pyeong_id, line.pyeong_name) == (8001, '33A')
     dumped = line.model_dump()
-    assert 'confirmed_at' not in dumped and 'actual_listing_checked' not in dumped
+    assert 'confirmed_date' not in dumped and 'actual_listing_checked' not in dumped
 
     # 직방 매물: 값이 그대로 나오고 확인 시각은 한국 날짜가 된다
     item = load('item_catalogs_items')['item']
@@ -533,7 +533,7 @@ def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
     })
     detail = apt_item_to_listing(ZigbangItemCatalogsItemsResponseModel.model_validate({'item': item}).item, 'zigbang').model_dump()
     assert (detail['pyeong_id'], detail['pyeong_name']) == (8001, '33A')
-    assert detail['confirmed_at'] == '2026-01-02' and detail['actual_listing_checked'] is True
+    assert detail['confirmed_date'] == '2026-01-02' and detail['actual_listing_checked'] is True
     assert detail['non_compliant_building'] is False and detail['residence_type'] == item['realType']
     assert 'plan.png' not in json.dumps(detail, ensure_ascii=False)
 
@@ -541,17 +541,17 @@ def test_apt_line_and_detail_carry_pyeong_and_web_only_fields() -> None:
     for key in ('hasViolations', 'realType', 'roomTypeInfo', 'effectivenessUpdatedAt', 'isActualItemChecked'):
         item.pop(key)
     partner = apt_item_to_listing(ZigbangItemCatalogsItemsResponseModel.model_validate({'item': item}).item, 'coalition').model_dump()
-    for key in ('non_compliant_building', 'residence_type', 'pyeong_id', 'pyeong_name', 'confirmed_at', 'actual_listing_checked'):
+    for key in ('non_compliant_building', 'residence_type', 'pyeong_id', 'pyeong_name', 'confirmed_date', 'actual_listing_checked'):
         assert key in partner and partner[key] is None
 
 
 def test_non_apt_detail_omits_apt_only_keys_and_has_web_checks() -> None:
     dumped = detail_to_listing(ZigbangItemsDetailV1ResponseModel.model_validate(load('items_detail_v1'))).model_dump()
     # 평형·찜 수·공급면적·매물 종류는 아파트에만 있어 키가 없다
-    for key in ('complex_name', 'pyeong_id', 'pyeong_name', 'zzim_count', 'supply_area_m2', 'listing_kind'):
+    for key in ('complex_name', 'pyeong_id', 'pyeong_name', 'favorite_count', 'supply_area_m2', 'listing_kind'):
         assert key not in dumped
     # 확인일·실매물·위반 건축물은 원룸·빌라·오피스텔 상세에도 나온다 (값은 모를 수 있어 null)
-    for key in ('confirmed_at', 'actual_listing_checked', 'non_compliant_building'):
+    for key in ('confirmed_date', 'actual_listing_checked', 'non_compliant_building'):
         assert key in dumped
 
 
@@ -580,8 +580,8 @@ def test_store_detail_drops_contact_and_photos() -> None:
     with make_client(lambda request: httpx.Response(200, json=load('store_article_store_v2'))) as client:
         detail = get_store_listing(client, 4000001).model_dump()
     assert detail['id'] == 'store-4000001'
-    assert detail['building_floor'] == '5' and detail['elevator'] is True
-    assert detail['nearby_subways'] == ['가상역 (2호선)']
+    assert detail['building_floor'] == '5' and detail['has_elevator'] is True
+    assert detail['nearby_stations'] == ['가상역 (2호선)']
     text = json.dumps(detail, ensure_ascii=False)
     assert '010-0000-0000' not in text and 'photo.jpg' not in text and '가상 설명' not in text
 
@@ -715,7 +715,7 @@ def test_stay_unavailable_periods_empty_schedule_is_empty_list() -> None:
     assert stay_output(schedules=[])['unavailable_periods'] == []
     blocked = {'scheduleType': 'BLOCKED', 'startDate': '2099-01-01', 'endDate': '2099-01-10'}
     assert stay_output(schedules=[blocked])['unavailable_periods'] == [
-        {'start': '2099-01-01', 'end': '2099-01-10', 'kind': '막힘'},
+        {'start_date': '2099-01-01', 'end_date': '2099-01-10', 'kind': '막힘'},
     ]
     assert stay_output()['unavailable_periods'] is None
 
@@ -1032,40 +1032,40 @@ def test_real_price_sale_registered_null_without_mark() -> None:
     plain, marked = _real_prices([
         _tx('sales', dongName='000', pynPrice=1111),
         _tx('sales', isRegistration=True, isNewHighest=True),
-    ], '매매')['transactions']
+    ], '매매')['trades']
     assert plain['registered'] is None
     assert plain['new_high'] is False
     assert plain['new_low'] is False
-    assert plain['dong'] == '000'
+    assert plain['building_dong'] == '000'
     assert plain['price_per_pyeong_manwon'] == 1111
     assert marked['registered'] is True
     assert marked['new_high'] is True
     # 동·평당가는 직방이 안 줘도 모름(null) 으로 키가 남는다
-    assert marked['dong'] is None
+    assert marked['building_dong'] is None
     assert marked['price_per_pyeong_manwon'] is None
-    assert 'jeonse_ratio' not in plain
-    assert 'offer_price_diff_manwon' not in plain
+    assert 'jeonse_ratio_percent' not in plain
+    assert 'presale_price_diff_manwon' not in plain
 
 
 def test_real_price_monthly_rent_has_no_sale_only_keys() -> None:
-    rent = _real_prices([_tx('rent', rtPriceRent=10, dongName='000', pynPrice=1)], '월세')['transactions'][0]
-    for key in ('registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio'):
+    rent = _real_prices([_tx('rent', rtPriceRent=10, dongName='000', pynPrice=1)], '월세')['trades'][0]
+    for key in ('registered', 'new_high', 'new_low', 'price_per_pyeong_manwon', 'jeonse_ratio_percent'):
         assert key not in rent
     # 동은 웹이 전월세에도 그려 모든 거래에 낸다 (직방이 주지 않으면 null)
-    assert rent['dong'] == '000'
-    charter = _real_prices([_tx('charter')], '전세')['transactions'][0]
+    assert rent['building_dong'] == '000'
+    charter = _real_prices([_tx('charter')], '전세')['trades'][0]
     assert charter['new_high'] is False
-    assert charter['dong'] is None
+    assert charter['building_dong'] is None
     assert 'registered' not in charter
 
 
 def test_real_price_jeonse_ratio_only_for_charter_with_value() -> None:
-    with_ratio, without = _real_prices([_tx('charter', charterRate=0.123456789), _tx('charter')], '전세')['transactions']
-    assert with_ratio['jeonse_ratio'] == 0.123456789
-    assert 'jeonse_ratio' not in without
+    with_ratio, without = _real_prices([_tx('charter', charterRate=0.123456789), _tx('charter')], '전세')['trades']
+    assert with_ratio['jeonse_ratio_percent'] == 12.3456789
+    assert 'jeonse_ratio_percent' not in without
     # 분양가 대비 차액은 0 이어도 값이 있으면 낸다
-    sale = _real_prices([_tx('sales', offerPriceDiff=0)], '매매')['transactions'][0]
-    assert sale['offer_price_diff_manwon'] == 0
+    sale = _real_prices([_tx('sales', offerPriceDiff=0)], '매매')['trades'][0]
+    assert sale['presale_price_diff_manwon'] == 0
 
 
 def test_real_price_all_requests_deal_type_all_and_keeps_order() -> None:
@@ -1073,13 +1073,13 @@ def test_real_price_all_requests_deal_type_all_and_keeps_order() -> None:
     result = _real_prices([_tx('rent', rtPriceRent=10), _tx('sales'), _tx('charter')], '전체', requests)
     assert [request.url.params['dealType'] for request in requests if request.url.path.endswith('/rt-prices')] == ['all']
     assert result['trade_type'] == '전체'
-    assert [transaction['trade_type'] for transaction in result['transactions']] == ['월세', '매매', '전세']
+    assert [transaction['trade_type'] for transaction in result['trades']] == ['월세', '매매', '전세']
     # 거래마다 유형이 맨 앞에 오고 유형별 필드 규칙은 그대로다
-    assert list(result['transactions'][0])[0] == 'trade_type'
-    assert 'new_high' not in result['transactions'][0]
-    assert 'new_high' in result['transactions'][1]
+    assert list(result['trades'][0])[0] == 'trade_type'
+    assert 'new_high' not in result['trades'][0]
+    assert 'new_high' in result['trades'][1]
     # 매매·전세·월세 조회는 거래마다 유형을 내지 않는다
-    assert 'trade_type' not in _real_prices([_tx('sales')], '매매')['transactions'][0]
+    assert 'trade_type' not in _real_prices([_tx('sales')], '매매')['trades'][0]
 
 
 def test_real_price_all_drops_unknown_deal_type_and_notes_it() -> None:
@@ -1091,13 +1091,13 @@ def test_real_price_all_drops_unknown_deal_type_and_notes_it() -> None:
     with make_client(handler) as client:
         result = get_real_prices(client, 'apt-100', trade_type='전체')
         capped = get_real_prices(client, 'apt-100', trade_type='전체', limit=1)
-    assert [transaction.trade_type for transaction in result.transactions] == ['매매', '전세']
+    assert [transaction.trade_type for transaction in result.trades] == ['매매', '전세']
     assert '[제외] 거래 유형을 읽지 못한 실거래 2건을 뺐습니다. jibsa 업데이트가 필요할 수 있습니다' in result.notes
     assert not any(text.startswith('[제외]') for text in capped.notes)
     # 분양권은 차액을 안 줘도 키를 null 로 두고, 입주권은 값이 없으면 키를 뺀다
-    presale = _real_prices([_tx('sales', offerType='분양권'), _tx('sales', offerType='입주권')], '매매')['transactions']
-    assert presale[0]['offer_price_diff_manwon'] is None
-    assert 'offer_price_diff_manwon' not in presale[1]
+    presale = _real_prices([_tx('sales', offerType='분양권'), _tx('sales', offerType='입주권')], '매매')['trades']
+    assert presale[0]['presale_price_diff_manwon'] is None
+    assert 'presale_price_diff_manwon' not in presale[1]
 
 
 def _search_items(*names: tuple[str, str]) -> dict:
@@ -1312,9 +1312,9 @@ def test_station_complexes_keep_view_count_order_and_add_distance_and_card() -> 
         'serviceType[0]': 'apt', 'serviceType[1]': 'offer', 'serviceType[2]': 'preOffer',
     }
     assert (result.place, result.place_type, result.place_address) == ('가상역', '역', '서울특별시 가상구 가상동')
-    assert [(c.complex_id, c.name, c.households, c.distance_m, c.highlight) for c in result.complexes] == [
-        ('apt-1003', '[가상] 먼단지', None, 300, '가상동 2위 · 가상구 2위'),
-        ('apt-1001', '[가상] 가까운단지', 1000, 100, '가상동 1위 · 가상구 1위'),
+    assert [(c.complex_id, c.name, c.household_count, c.distance_km, c.highlight) for c in result.complexes] == [
+        ('apt-1003', '[가상] 먼단지', None, 0.3, '가상동 2위 · 가상구 2위'),
+        ('apt-1001', '[가상] 가까운단지', 1000, 0.1, '가상동 1위 · 가상구 1위'),
         ('apt-1009', None, None, None, None),
     ]
     assert result.complexes[1].address == '서울특별시 가상구 가상동 000-1'
@@ -1345,12 +1345,12 @@ def test_region_complexes_only_take_newest_order_and_drop_distance_key() -> None
         {'id': 88494, 'name': '[가상] 단지', 'desc1': '송파구 가락동 · 1,179세대', 'desc2': '2026. 1 입주'},
     )
     region_line = place_complex_of(88494, '동', None, card).model_dump()
-    assert 'distance_m' not in region_line
-    assert (region_line['name'], region_line['address'], region_line['households'], region_line['highlight']) == (
+    assert 'distance_km' not in region_line
+    assert (region_line['name'], region_line['address'], region_line['household_count'], region_line['highlight']) == (
         '[가상] 단지', '송파구 가락동', 1179, '2026. 1 입주',
     )
-    # 역 줄은 주변 단지 정보를 못 받아도 distance_m 이 모름(null)으로 남는다
-    assert place_complex_of(88494, '역', None, card).model_dump()['distance_m'] is None
+    # 역 줄은 주변 단지 정보를 못 받아도 distance_km 가 모름(null)으로 남는다
+    assert place_complex_of(88494, '역', None, card).model_dump()['distance_km'] is None
 
 
 def test_complexes_stop_when_upstream_gives_count_without_ids() -> None:
@@ -1400,10 +1400,10 @@ def test_complex_rank_minus_one_and_zero_prices_are_unknown() -> None:
 
     both = {'local2': {'name': '송파구', 'rank': 1, 'total': 10}, 'local3': {'name': '가락동', 'rank': 1, 'total': 3}}
     # -1 은 웹이 '순위 없음' 으로 그리는 값이다
-    rank = get_apt_complex([], **{'순위': {**both, 'viewCountRank': 7, 'tradePriceRank': -1}}).rank
+    rank = get_apt_complex([], **{'순위': {**both, 'viewCountRank': 7, 'tradePriceRank': -1}}).ranking
     assert rank is not None and (rank.region, rank.price_rank, rank.popularity_rank) == ('가락동', None, 7)
     # 웹은 구·동 순위 중 하나라도 없으면 절을 그리지 않는다
-    assert get_apt_complex([], **{'순위': {'local3': both['local3'], 'viewCountRank': 7}}).rank is None
+    assert get_apt_complex([], **{'순위': {'local3': both['local3'], 'viewCountRank': 7}}).ranking is None
     # 0 인 시세·관리비는 웹이 '시세없음'·'-' 로 그리므로 모름(null)이다. 빠진 평형이면 새 값이 모두 null 이다
     detail = {
         'id': 1, '총세대수': 731, '현관구조': '', 'manage_cost': {'관리비': 0, '여름관리비': 0, '겨울관리비': 45},
@@ -1416,11 +1416,13 @@ def test_complex_rank_minus_one_and_zero_prices_are_unknown() -> None:
         return pyeongs[0].model_dump()
 
     pyeong = complex_pyeong([detail])
-    assert (pyeong['manage_cost_manwon'], pyeong['manage_cost_summer_manwon'], pyeong['manage_cost_winter_manwon']) == (None, None, 45)
-    assert (pyeong['estimated_sale_price_manwon'], pyeong['estimated_sale_price_per_pyeong_manwon']) == (None, 10533)
-    assert (pyeong['estimated_jeonse_price_manwon'], pyeong['estimated_jeonse_price_per_pyeong_manwon']) == (145000, None)
-    assert (pyeong['households'], pyeong['entrance_type'], pyeong['resale_available_from']) == (731, None, '2016-06-01')
-    assert complex_pyeong([{'id': 2}])['households'] is None
+    assert (pyeong['manage_cost_manwon'], pyeong['summer_manage_cost_manwon'], pyeong['winter_manage_cost_manwon']) == (None, None, 45)
+    assert pyeong['estimated_prices'] == {
+        'sale': {'price_manwon': None, 'price_per_pyeong_manwon': 10533},
+        'jeonse': {'deposit_manwon': 145000, 'price_per_pyeong_manwon': None},
+    }
+    assert (pyeong['household_count'], pyeong['entrance'], pyeong['resale_available_date']) == (731, None, '2016-06-01')
+    assert complex_pyeong([{'id': 2}])['household_count'] is None
 
 
 # --- 원룸·빌라·오피스텔 상세 보강 -----------------------------------------------
@@ -1446,7 +1448,7 @@ def test_nearby_facilities_follow_web_order_and_minutes() -> None:
     ]
     detail = detail_to_listing(_room_detail(neighborhoods={'nearbyPois': pois}))
     dumped = detail.model_dump(mode='json')['nearby_facilities']
-    assert [(f['type'], f['minutes'], f['transport']) for f in dumped] == [
+    assert [(f['type'], f['travel_minutes'], f['transport']) for f in dumped] == [
         ('세탁소', 1, '도보'), ('편의점', 1, '도보'), ('카페', 2, '도보'), ('약국', 3, '도보'), ('대형마트', 1, '차'),
     ]
     assert dumped[0]['distance_m'] == 5
@@ -1732,20 +1734,20 @@ def test_trade_row_keys_by_trade_and_presale() -> None:
     }
     row = region_trades._trade_of(_trade(**sale), '매매', '구').model_dump(mode='json')
     # 직방시세가 있는데 0 이면 진짜 0, 공시가격이 없으면 null. 분양권·입주권이 아니면 분양가 대비·presale 키가 없다. 매매에는 갱신 키가 없다
-    assert (row['market_price_diff_manwon'], row['public_price_diff_manwon'], row['prev_diff_manwon']) == (0, None, 500)
-    assert not {'presale', 'offer_price_diff_manwon', 'renewal', 'deposit_manwon', 'rent_manwon'} & row.keys() and row['dong'] == '가상동'
+    assert (row['estimated_price_diff_manwon'], row['public_price_diff_manwon'], row['prev_trade_diff_manwon']) == (0, None, 500)
+    assert not {'presale', 'presale_price_diff_manwon', 'renewal', 'deposit_manwon', 'rent_manwon'} & row.keys() and row['dong'] == '가상동'
 
     # 분양권: 직방시세 없음(null), 분양가 대비 키가 있다. 입주권은 직전 거래 대비 키가 없다. 동 단위는 dong 키가 없다
     presale = {**sale, 'offerType': '분양권', 'isNoMarketPriceGap': True, 'offerPriceGap': 2138, 'offerPriceGapRate': 1.1, 'isNoOfferPriceGap': False}
     row = region_trades._trade_of(_trade(**presale), '매매', '동').model_dump(mode='json')
-    assert (row['presale'], row['market_price_diff_manwon'], row['offer_price_diff_manwon']) == ('분양권', None, 2138) and 'dong' not in row
+    assert (row['presale'], row['estimated_price_diff_manwon'], row['presale_price_diff_manwon']) == ('분양권', None, 2138) and 'dong' not in row
     row = region_trades._trade_of(_trade(**{**presale, 'offerType': '입주권'}), '매매', '구').model_dump(mode='json')
-    assert row['presale'] == '입주권' and 'prev_diff_manwon' not in row
+    assert row['presale'] == '입주권' and 'prev_trade_diff_manwon' not in row
 
     # 월세는 응답에 신고가·갱신이 와도 키를 내지 않고 보증금·월세만 낸다
     row = region_trades._trade_of(_trade(monthlyRentPrice=410, isContractRenewal=True), '월세', '구').model_dump(mode='json')
     assert (row['deposit_manwon'], row['rent_manwon']) == (90000, 410)
-    assert not {'price_manwon', 'new_high', 'new_low', 'renewal', 'prev_diff_manwon', 'market_price_diff_manwon'} & row.keys()
+    assert not {'price_manwon', 'new_high', 'new_low', 'renewal', 'prev_trade_diff_manwon', 'estimated_price_diff_manwon'} & row.keys()
 
 
 def test_region_info_price_tabs_and_population_period(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1761,8 +1763,8 @@ def test_region_info_price_tabs_and_population_period(monkeypatch: pytest.Monkey
     ]
     # 웹 탭처럼 평균 평당가가 0 인 평형대만 빼고 (값이 없는 칸은 남긴다), 전체 먼저 작은 평형대 순이다
     result = region_info._estimated_prices(prices)
-    assert result is not None and [item.range for item in result] == ['전체', '20평대', '30평대']
-    assert result[1].sale_price_per_pyeong_manwon is None
+    assert result is not None and [item.pyeong_range for item in result] == ['전체', '20평대', '30평대']
+    assert result[1].estimated_prices['sale'] is None
     assert region_info._sale_price_bounds(prices) == (7500, 95000)
     assert region_info._description_counts('4,923 단지 · 1,876,379 세대') == (4923, 1876379) and region_info._description_counts('') == (None, None)
     # 인구 그래프 기간: 끝은 지난달, 시작은 그 5년 전 같은 달 (2026-11-19 캡처 202110~202610)
@@ -1844,8 +1846,8 @@ def test_price_trend_line_kinds_follow_name_not_position() -> None:
         ('가짜파크', '비교 단지', 'apt-900002'), ('가짜헬리', '단지', None), ('송파구', '구', None),
     ]
     # 0 은 점을 남기고 값만 null
-    assert dumped['lines'][0]['points'] == [
-        {'month': '2026-01', 'price_per_pyeong_manwon': 100}, {'month': '2026-02', 'price_per_pyeong_manwon': None},
+    assert dumped['lines'][0]['months'] == [
+        {'month': '2026-01', 'estimated_price_per_pyeong_manwon': 100}, {'month': '2026-02', 'estimated_price_per_pyeong_manwon': None},
     ]
     assert client.calls == ['related', 'chart 900001 [900002]']
     # 조회 단지가 비교보다 작으면 조회 단지가 첫 줄이다. 비교 둘은 이름으로 찾는다
@@ -1894,16 +1896,19 @@ def test_pyeong_price_trend_zero_months_and_month_merge() -> None:
     dumped = {month['month']: month for month in result.model_dump()['months']}
     assert list(dumped) == ['2018-11', '2018-12', '2019-01', '2019-02']
     assert dumped['2018-11']['sale'] == {
-        'estimated_price_manwon': None, 'min_price_manwon': None, 'max_price_manwon': None, 'count': 3, 'change_manwon': None,
+        'estimated_price_manwon': None, 'trade_range': None, 'trade_count': 3, 'estimated_price_change_manwon': None,
     }
     assert dumped['2018-11']['jeonse_wolse'] is None
     # 변화 0 은 시세가 있는 달에서는 진짜 0
-    assert dumped['2018-12']['sale']['change_manwon'] == 0 and dumped['2018-12']['sale']['min_price_manwon'] == 285000
-    assert dumped['2018-12']['jeonse_wolse']['wolse_count'] == 0
-    assert dumped['2019-01']['sale']['count'] == 0 and dumped['2019-01']['sale']['min_price_manwon'] is None
+    assert dumped['2018-12']['sale']['estimated_price_change_manwon'] == 0
+    assert dumped['2018-12']['sale']['trade_range']['lowest'] == {'price_manwon': 285000}
+    assert dumped['2018-12']['jeonse_wolse']['trade_counts'] == {'jeonse': 4, 'wolse': 0}
+    # 전월세 범위의 두 끝은 보증금이 아니라 환산가다
+    assert dumped['2018-12']['jeonse_wolse']['trade_range']['highest'] == {'converted_price_manwon': 120000}
+    assert dumped['2019-01']['sale']['trade_count'] == 0 and dumped['2019-01']['sale']['trade_range'] is None
     assert dumped['2019-01']['sale']['estimated_price_manwon'] == 292000
-    # 전월세만 있는 달은 sale 이 null, 전세·월세 모두 0건이면 최저·최고가 null
-    assert dumped['2019-02']['sale'] is None and dumped['2019-02']['jeonse_wolse']['min_price_manwon'] is None
+    # 전월세만 있는 달은 매매가 null, 전세·월세 모두 0건이면 거래 범위가 null
+    assert dumped['2019-02']['sale'] is None and dumped['2019-02']['jeonse_wolse']['trade_range'] is None
     # 거래 탭을 고르면 다른 탭의 키가 없다
     only_sale = get_pyeong_price_trend(client, 'apt-900001', 900004, trade='매매').model_dump()['months']  # type: ignore[arg-type]
     assert all('jeonse_wolse' not in month and 'sale' in month for month in only_sale)
@@ -1926,12 +1931,12 @@ def test_school_info_text_numbers_and_advancement() -> None:
         'onlyHighNew': {'highCategory': '일반고'},
     })
     dumped = school_info_of(middle).model_dump()
-    assert dumped['level'] == '중학교' and dumped['students_per_class'] == 28 and dumped['district_students_per_class'] is None
-    assert dumped['tuition_manwon'] == 107.7702 and dumped['district_tuition_manwon'] == 44.3151
-    assert dumped['meal_cost_manwon'] == 0.459 and dumped['district_meal_cost_manwon'] is None
+    assert dumped['level'] == '중학교' and dumped['students_per_class'] == 28 and dumped['sigungu_students_per_class'] is None
+    assert dumped['tuition_manwon'] == 107.7702 and dumped['sigungu_tuition_manwon'] == 44.3151
+    assert dumped['meal_cost_manwon'] == 0.459 and dumped['sigungu_meal_cost_manwon'] is None
     assert dumped['female_percent'] is None and dumped['male_percent'] == 52
-    assert dumped['district_freshmen_change_percent'] == 0 and dumped['district_avg_students'] == 627.89
-    assert dumped['founded_on'] == '2019-03-01'
+    assert dumped['sigungu_freshmen_change_percent'] == 0 and dumped['sigungu_students_average'] == 627.89
+    assert dumped['established_date'] == '2019-03-01'
     # 중학교: 진학 현황 칸이 모두 비면 null, 고등학교 구분은 키가 없다
     assert dumped['advancement'] is None and 'high_school_type' not in dumped
     # 고등학교: 0 은 값이라 진학 현황이 남고 고등학교 구분이 있다

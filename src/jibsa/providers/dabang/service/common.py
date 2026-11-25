@@ -323,14 +323,14 @@ class DabangListing(Listing):
     """다방 매물 (목록). 가격·층·면적·관리비는 다방 목록 글자를 읽은 값이다.
 
     목록의 주소는 동 이름뿐이다 (찾은 동의 매물만 시·구까지). 단기임대는 따로 있는 거래가 아니라 월세 매물에 붙는
-    표시라 `trade_type` 은 '월세' 이고 `short_lease` 로 알린다. 아파트 면적은 공급면적이라 `supply_area_m2` 에 둔다.
+    표시라 `trade_type` 은 '월세' 이고 `short_term` 으로 알린다. 아파트 면적은 공급면적이라 `supply_area_m2` 에 둔다.
     """
 
     listing_number: Annotated[
         int | None,
         Field(description='다방 화면의 매물번호 (listing 에 id 대신 줄 수 있다)')
     ] = None
-    short_lease: Annotated[
+    short_term: Annotated[
         bool,
         Field(description='단기임대(1개월 이상) 계약도 받는 월세 매물. 보증금이 월세 한두 달치(예 95/95)면 단기 계약 가격일 수 있다')
     ] = False
@@ -346,7 +346,7 @@ class DabangListing(Listing):
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()
         if self.trade_type != '월세':
-            fields = fields | {'short_lease'}
+            fields = fields | {'short_term'}
         if self.complex_name is None and not is_complex_type(self.property_type):
             fields = fields | {'complex_name'}
         if self.supply_area_m2 is None and (self.property_type is None or not self.property_type.startswith(APARTMENT_TYPE)):
@@ -428,7 +428,7 @@ def room_item_to_listing(
         lng=location.lng if location else None,
         distance_km=distance,
         listing_number=item.seq,
-        short_lease=short and trade_type == '월세',
+        short_term=short and trade_type == '월세',
         complex_name=item.complex_name,
         **prices,
     )
@@ -918,7 +918,7 @@ def fetch_complex(client: DabangClient, complex_id: str) -> DabangComplexResultM
 def primary_space_of(result: DabangComplexResultModel) -> tuple[int, bool] | None:
     """`--pyeong` 이 없을 때 쓰는 평형 (평형 번호, 다방이 대표로 준 평형인지). 단지에 평형이 없으면 None.
 
-    다방이 대표를 주지 않으면(없거나 0) 웹처럼 첫 평형이다. complex 의 primary_space_seq 와 real-price·price-trend·
+    다방이 대표를 주지 않으면(없거나 0) 웹처럼 첫 평형이다. complex 의 representative_pyeong_id 와 real-price·price-trend·
     nearby-complexes 가 같이 써서 단지 정보가 알리는 대표 평형과 조회하는 평형이 같다.
     """
     if not result.spaces:
@@ -947,6 +947,19 @@ def first_space_notes(result: DabangComplexResultModel) -> list[str]:
     ]
 
 
+class DabangPricePerPyeong(BaseModel):
+    """거래 하나의 평당 평균가."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    price_per_pyeong_manwon: Annotated[
+        float | None,
+        Field(description='거래별 평당 평균가 (만원/3.3㎡)')
+    ]
+
+
 class DabangAreaPrice(BaseModel):
     """평당 평균가 비교 한 칸."""
 
@@ -958,14 +971,10 @@ class DabangAreaPrice(BaseModel):
         str,
         Field(description="범위 ('해당 단지', 동 이름, 구 이름)")
     ]
-    sale_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description="매매 평당 평균가 (만원). 다방 웹이 '정보 없음' 으로 쓰는 값(없거나 0)은 null")
-    ] = None
-    lease_per_pyeong_manwon: Annotated[
-        float | None,
-        Field(description="전세 평당 평균가 (만원). 다방 웹이 '정보 없음' 으로 쓰는 값(없거나 0)은 null")
-    ] = None
+    price_per_pyeong: Annotated[
+        dict[str, DabangPricePerPyeong | None],
+        Field(description="거래별 평당 평균가. 키는 'sale'·'jeonse' 늘 두 개이고, 값이 없으면(0 포함) 그 거래가 null")
+    ]
 
 
 def area_price(price: DabangAreaAveragePriceModel) -> DabangAreaPrice:
@@ -974,6 +983,8 @@ def area_price(price: DabangAreaAveragePriceModel) -> DabangAreaPrice:
     # 탭이 ALL 이면 단지 상세의 areaAveragePrice, 아니면 price-per-py 의 값, 2026-11-14). 0만원 평당가는 없으니 모름으로 둔다
     return DabangAreaPrice(
         scope=price.scope,
-        sale_per_pyeong_manwon=price.trade_average_pyeong_price or None,
-        lease_per_pyeong_manwon=price.lease_average_pyeong_price or None,
+        price_per_pyeong={
+            'sale': DabangPricePerPyeong(price_per_pyeong_manwon=sale) if (sale := price.trade_average_pyeong_price) else None,
+            'jeonse': DabangPricePerPyeong(price_per_pyeong_manwon=lease) if (lease := price.lease_average_pyeong_price) else None,
+        },
     )

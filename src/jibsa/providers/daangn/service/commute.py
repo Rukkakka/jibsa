@@ -112,24 +112,24 @@ class DaangnCommuteListing(DaangnNearbyListing):
         str,
         Field(exclude=True, description='타는 역 (매물 주변 역). 출력은 역 묶음의 station_name')
     ]
-    walk_to_station_minutes: Annotated[
+    walk_minutes: Annotated[
         int | None,
         Field(description='매물에서 타는 역까지 도보 (분). 당근이 알려 주지 않으면 null. 역 묶음의 one_way_minutes 에 더하면 문 앞까지의 편도다')
     ] = None
 
 
 class DaangnCommuteLeg(BaseModel):
-    """출근 방향 경로의 한 구간: 한 노선을 타고 `from_station` 에서 `to_station` 까지 간다."""
+    """출근 방향 경로의 한 구간: 한 노선을 타고 `from_station_name` 에서 `to_station_name` 까지 간다."""
 
     model_config = ConfigDict(
         extra='forbid',
     )
 
-    from_station: Annotated[
+    from_station_name: Annotated[
         str,
-        Field(description="이 구간을 타는 역 ('역' 까지). 첫 구간은 역 묶음의 station_name, 그다음은 앞 구간의 to_station")
+        Field(description="이 구간을 타는 역 ('역' 까지). 첫 구간은 역 묶음의 station_name, 그다음은 앞 구간의 to_station_name")
     ]
-    to_station: Annotated[
+    to_station_name: Annotated[
         str,
         Field(description="이 구간에서 내리는 역 ('역' 까지). 갈아타는 역이고, 마지막 구간은 회사 역 (workplace_station)")
     ]
@@ -198,7 +198,7 @@ class DaangnCommuteResult(BaseModel):
         int,
         Field(description='타는 역에서 회사 역까지 지하철 시간 상한 (분)')
     ]
-    reachable_stations: Annotated[
+    reachable_station_count: Annotated[
         int,
         Field(description='지하철 시간 상한 안에서 조건에 맞는 매물이 있는 역 수 (당근은 그런 역만 준다. stations 와 같은 기준, 회사 역은 들지 않는다)')
     ]
@@ -345,7 +345,7 @@ def search_commute(
     return DaangnCommuteResult(
         workplace_station=workplace,
         max_minutes=max_minutes,
-        reachable_stations=len(stations),
+        reachable_station_count=len(stations),
         returned=len(listings),
         unique_returned=len({listing.id for listing in listings}),
         stations=groups,
@@ -388,7 +388,7 @@ def _route(waypoints: list[DaangnCommuteWaypointModel], workplace: str, boarding
     ):
         return None
     return [
-        DaangnCommuteLeg(from_station=later, to_station=name, line=line)
+        DaangnCommuteLeg(from_station_name=later, to_station_name=name, line=line)
         for (name, line), (later, _) in reversed(list(pairwise(stops)))
     ]
 
@@ -642,6 +642,6 @@ def _commute_listings(
                 commute_station=name,
                 # 매물 카드의 인근 역 이름에는 출퇴근 API 의 노선 꼬리가 없다 (2026-11-13 실측: 출퇴근 '양평역(경의중앙선)' 주변
                 # 매물 카드는 '양평역'. 꼬리째 견주면 그 역 매물의 도보가 모두 null 이었다)
-                walk_to_station_minutes=walk_minutes_to(article, station_base_name(name)),
+                walk_minutes=walk_minutes_to(article, station_base_name(name)),
             ))
     return listings, list(shown.values())

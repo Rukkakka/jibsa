@@ -720,8 +720,8 @@ def get_store_listing(client: ZigbangClient, item_id: int) -> ZigbangStoreListin
         lat=item.lat,
         lng=item.lng,
         parking=store_parking(item.parking),
-        elevator=elevator,
-        nearby_subways=sent_or_none(response, 'subways', [
+        has_elevator=elevator,
+        nearby_stations=sent_or_none(response, 'subways', [
             f'{subway.name} ({subway.description})' if subway.description else subway.name
             for subway in response.subways
         ]),

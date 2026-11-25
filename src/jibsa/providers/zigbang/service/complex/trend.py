@@ -12,6 +12,8 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
+    AmountRange,
+    AmountSet,
     iso_date,
     lookup_failure_note,
     note,
@@ -42,6 +44,7 @@ from jibsa.providers.zigbang.service.common.base import (
     UPSTREAM_RETRY_HINT,
     apt_complex_id,
     parse_complex_id,
+    sale_price_range,
     text_or_none,
 )
 from jibsa.providers.zigbang.service.complex.base import (
@@ -57,15 +60,15 @@ from typing import (
 )
 
 
-ZigbangPriceTrendPeriod = Literal['최근1년', '최근3년', '전체기간']
+ZigbangPriceTrendPeriod = Literal['1년', '3년', '전체']
 ZigbangPyeongTrendTrade = Literal['전체', '매매', '전월세']
-# 웹 기간 탭 이름 (번들 `convertDueNameForZams`: 최근1년·최근3년·전체기간, 기본은 두 번째인 최근3년) → 요청의 period
-PRICE_TREND_PERIODS: tuple[ZigbangPriceTrendPeriod, ...] = ('최근1년', '최근3년', '전체기간')
-DEFAULT_PRICE_TREND_PERIOD: ZigbangPriceTrendPeriod = '최근3년'
+# 웹 기간 탭 이름 (번들 `convertDueNameForZams`: 최근1년·최근3년·전체기간, 기본은 두 번째인 최근3년)을 jibsa 는 1년·3년·전체 로 쓴다 → 요청의 period
+PRICE_TREND_PERIODS: tuple[ZigbangPriceTrendPeriod, ...] = ('1년', '3년', '전체')
+DEFAULT_PRICE_TREND_PERIOD: ZigbangPriceTrendPeriod = '3년'
 CHART_PERIOD_BY_LABEL: dict[ZigbangPriceTrendPeriod, ZigbangPriceChartPeriod] = {
-    '최근1년': '1y',
-    '최근3년': '3y',
-    '전체기간': 'all',
+    '1년': '1y',
+    '3년': '3y',
+    '전체': 'all',
 }
 # 웹 평형 그래프의 거래 탭 이름 (번들 `convertStatusForZams`) → 요청의 dealType
 PYEONG_TREND_TRADES: tuple[ZigbangPyeongTrendTrade, ...] = ('전체', '매매', '전월세')
@@ -93,7 +96,7 @@ class ZigbangComplexPricePoint(BaseModel):
         str | None,
         Field(description='월 (YYYY-MM). 직방이 날짜를 주지 않았거나 읽지 못하면 null')
     ]
-    price_per_pyeong_manwon: Annotated[
+    estimated_price_per_pyeong_manwon: Annotated[
         int | float | None,
         Field(description='그 달의 매매 직방시세 평당가 (만원/3.3㎡). 직방이 0 을 준 달은 시세가 없는 달이라 null (점은 남는다)')
     ]
@@ -125,7 +128,7 @@ class ZigbangComplexPriceLine(BaseModel):
         str | None,
         Field(description="비교 단지의 단지 ID (kind 가 '비교 단지' 인 줄에만 있고 그 밖은 키가 없다)")
     ] = None
-    points: Annotated[
+    months: Annotated[
         list[ZigbangComplexPricePoint] | None,
         Field(description='월별 매매 직방시세 평당가 (오래된 달부터). 직방이 월 목록을 주지 않으면 null')
     ]
@@ -151,7 +154,7 @@ class ZigbangPriceTrendResult(BaseModel):
     ]
     period: Annotated[
         ZigbangPriceTrendPeriod,
-        Field(description='기간 (--period 값: 최근1년·최근3년·전체기간)')
+        Field(description='기간 (--period 값: 1년·3년·전체)')
     ]
     comparable_complexes: Annotated[
         list[ZigbangRelatedComplex] | None,
@@ -190,19 +193,15 @@ class ZigbangPyeongSale(BaseModel):
         int | float | None,
         Field(description='그 달의 매매 직방시세 (직방이 실거래를 분석한 추정값). 직방이 0 을 준 달(입주 전 등)은 시세가 없어 null')
     ]
-    min_price_manwon: Annotated[
-        int | float | None,
-        Field(description='그 달 매매 거래의 최저가. 시세가 없는 달과, 거래가 0건인 달(직방이 시세 값을 대신 채워 준다)은 null')
+    trade_range: Annotated[
+        AmountRange | None,
+        Field(description='그 달 매매 거래의 가격 범위 (lowest 최저가·highest 최고가, price_manwon). 시세가 없는 달과, 거래가 0건인 달(직방이 시세 값을 대신 채워 준다)은 null')
     ]
-    max_price_manwon: Annotated[
-        int | float | None,
-        Field(description='그 달 매매 거래의 최고가. 시세가 없는 달과, 거래가 0건인 달은 null')
-    ]
-    count: Annotated[
+    trade_count: Annotated[
         int | None,
         Field(description='그 달 매매 거래 건수 (0 도 진짜 값)')
     ]
-    change_manwon: Annotated[
+    estimated_price_change_manwon: Annotated[
         int | float | None,
         Field(description='전달 대비 직방시세 변화. 시세가 없는 달은 null (변화가 없으면 0)')
     ]
@@ -215,32 +214,24 @@ class ZigbangPyeongJeonseWolse(BaseModel):
         extra='forbid',
     )
 
-    estimated_jeonse_price_manwon: Annotated[
+    estimated_deposit_manwon: Annotated[
         int | float | None,
         Field(description='그 달의 전세 직방시세 (직방이 실거래를 분석한 추정값). 직방이 0 을 준 달은 시세가 없어 null')
     ]
-    min_price_manwon: Annotated[
-        int | float | None,
+    trade_range: Annotated[
+        AmountRange | None,
         Field(
             description=(
-                '그 달 전세·월세 거래를 합친 최저가. 월세는 직방이 보증금 + 월세 × 300 으로 환산한 값이다 (2026-11-22 실측). '
-                '시세가 없는 달과, 거래가 0건인 달은 null'
+                '그 달 전세·월세 거래를 합친 가격 범위 (lowest 최저가·highest 최고가, 둘 다 converted_price_manwon 하나뿐). 월세는 직방이 '
+                '보증금 + 월세 × 300 으로 환산한 값이고 (2026-11-22 실측) 보증금이 아니다. 시세가 없는 달과, 거래가 0건인 달은 null'
             )
         )
     ]
-    max_price_manwon: Annotated[
-        int | float | None,
-        Field(description='그 달 전세·월세 거래를 합친 최고가 (월세는 보증금 + 월세 × 300 환산). 시세가 없는 달과, 거래가 0건인 달은 null')
+    trade_counts: Annotated[
+        dict[str, int | None],
+        Field(description="그 달 거래 건수. 늘 'jeonse'·'wolse' 두 키이고 값은 건수 (0 도 진짜 값, 직방이 주지 않으면 null)")
     ]
-    jeonse_count: Annotated[
-        int | None,
-        Field(description='그 달 전세 거래 건수 (0 도 진짜 값)')
-    ]
-    wolse_count: Annotated[
-        int | None,
-        Field(description='그 달 월세 거래 건수 (0 도 진짜 값)')
-    ]
-    change_manwon: Annotated[
+    estimated_deposit_change_manwon: Annotated[
         int | float | None,
         Field(description='전달 대비 전세 직방시세 변화. 시세가 없는 달은 null (변화가 없으면 0)')
     ]
@@ -293,13 +284,13 @@ class ZigbangPyeongPriceTrendResult(BaseModel):
     ]
     pyeong_id: Annotated[
         int,
-        Field(description='평형 ID (complex 결과의 pyeongs[].id)')
+        Field(description='평형 ID (complex 결과의 pyeongs[].pyeong_id)')
     ]
     period: Annotated[
         ZigbangPriceTrendPeriod,
-        Field(description='기간 (--period 값: 최근1년·최근3년·전체기간)')
+        Field(description='기간 (--period 값: 1년·3년·전체)')
     ]
-    trade: Annotated[
+    trade_tab: Annotated[
         ZigbangPyeongTrendTrade,
         Field(description='거래 탭 (--trade 값: 전체·매매·전월세)')
     ]
@@ -506,7 +497,7 @@ def get_price_trend(
 
     Args:
         complex_id: 아파트 단지 ID (apt-…).
-        period: 웹 기간 탭 (기본 최근3년).
+        period: 웹 기간 탭 (1년·3년·전체, 기본 3년).
         compare: 함께 볼 비교 단지 ID (비교 후보 안에서, 최대 `MAX_COMPARE_DANJIS`곳).
 
     Raises:
@@ -559,9 +550,9 @@ def get_price_trend(
                 name=text_or_none(line.label),
                 kind=kind.kind,
                 complex_id=kind.complex_id,
-                points=None if line.data is None else [
+                months=None if line.data is None else [
                     # 웹은 0 을 그리지 않는 '값 없음' 으로 본다. 점은 남기고 값만 모름이다
-                    ZigbangComplexPricePoint(month=_month_of(point.date), price_per_pyeong_manwon=None if point.price == 0 else point.price)
+                    ZigbangComplexPricePoint(month=_month_of(point.date), estimated_price_per_pyeong_manwon=None if point.price == 0 else point.price)
                     for point in line.data
                 ],
             )
@@ -634,12 +625,21 @@ def _check_pyeong(complex_id: str, pyeong_id: int, room_info: ZigbangDanjisRoomT
     raise JibsaError(
         code='INVALID_ARGUMENT',
         message=f'{complex_id} 단지에 없는 평형입니다 (평형 ID: {pyeong_id})',
-        hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].id 를 --pyeong 에 주세요',
+        hint=f'jibsa zigbang complex {complex_id} 결과의 pyeongs[].pyeong_id 를 --pyeong 에 주세요',
     )
 
 
 def _gap_price(item: ZigbangRoomTypePriceMonthModel) -> int | float | None:
     return item.monthly_gap.price if item.monthly_gap else None
+
+
+def _converted_price_range(lowest_manwon: float | None, highest_manwon: float | None) -> AmountRange | None:
+    """전월세 거래 범위 (두 끝이 보증금이 아니라 환산가). 두 끝이 모두 없으면 모름(None)."""
+    if lowest_manwon is None and highest_manwon is None:
+        return None
+    return AmountRange(
+        lowest=AmountSet(converted_price_manwon=lowest_manwon), highest=AmountSet(converted_price_manwon=highest_manwon),
+    )
 
 
 def _jeonse_wolse_of(item: ZigbangRoomTypePriceMonthModel) -> ZigbangPyeongJeonseWolse:
@@ -650,12 +650,11 @@ def _jeonse_wolse_of(item: ZigbangRoomTypePriceMonthModel) -> ZigbangPyeongJeons
     counts = [count for count in (item.volume, item.rent_volume) if count is not None]
     no_trades = bool(counts) and sum(counts) == 0
     return ZigbangPyeongJeonseWolse(
-        estimated_jeonse_price_manwon=None if no_price else item.average_price,
-        min_price_manwon=None if no_price or no_trades else item.min_price,
-        max_price_manwon=None if no_price or no_trades else item.max_price,
-        jeonse_count=item.volume,
-        wolse_count=item.rent_volume,
-        change_manwon=None if no_price else _gap_price(item),
+        estimated_deposit_manwon=None if no_price else item.average_price,
+        # 두 끝이 환산가 하나뿐이라 보증금(deposit_manwon)이 아니라 converted_price_manwon 이다
+        trade_range=None if no_price or no_trades else _converted_price_range(item.min_price, item.max_price),
+        trade_counts={'jeonse': item.volume, 'wolse': item.rent_volume},
+        estimated_deposit_change_manwon=None if no_price else _gap_price(item),
     )
 
 
@@ -676,10 +675,9 @@ def _merge_months(
         no_trades = item.volume == 0
         sale = ZigbangPyeongSale(
             estimated_price_manwon=None if no_price else item.average_price,
-            min_price_manwon=None if no_price or no_trades else item.min_price,
-            max_price_manwon=None if no_price or no_trades else item.max_price,
-            count=item.volume,
-            change_manwon=None if no_price else _gap_price(item),
+            trade_range=None if no_price or no_trades else sale_price_range(item.min_price, item.max_price),
+            trade_count=item.volume,
+            estimated_price_change_manwon=None if no_price else _gap_price(item),
         )
         row = ZigbangPyeongPriceMonth(trade=trade, month=month, sale=sale, jeonse_wolse=None)
         rows.append(row)
@@ -698,9 +696,10 @@ def _merge_months(
 
 def _no_records_text(period: ZigbangPriceTrendPeriod, trade: ZigbangPyeongTrendTrade) -> str:
     """평형에 시세·거래 기록이 없다는 안내. 탭과 기간을 넣는다 (한 탭만 비는 평형이 있어 탭을 빼면 거짓이 된다)."""
+    span = '전체 기간' if period == '전체' else f'{period} 동안'
     if trade == '전체':
-        return f'이 평형에 {period} 동안 직방 시세·거래 기록이 없습니다'
-    return f'이 평형에 {period} 동안 직방 {trade} 시세·거래 기록이 없습니다'
+        return f'이 평형에 {span} 직방 시세·거래 기록이 없습니다'
+    return f'이 평형에 {span} 직방 {trade} 시세·거래 기록이 없습니다'
 
 
 def get_pyeong_price_trend(
@@ -724,8 +723,8 @@ def get_pyeong_price_trend(
 
     Args:
         complex_id: 아파트 단지 ID (apt-…).
-        pyeong_id: 평형 ID (complex 결과의 pyeongs[].id).
-        period: 웹 기간 탭 (기본 최근3년).
+        pyeong_id: 평형 ID (complex 결과의 pyeongs[].pyeong_id).
+        period: 웹 기간 탭 (1년·3년·전체, 기본 3년).
         trade: 웹 거래 탭 (기본 전체).
 
     Raises:
@@ -755,7 +754,7 @@ def get_pyeong_price_trend(
         if notes:
             reason = (
                 '위 [제외] 때문에 평형을 확인하지 못해 단지에 없는 평형 ID 일 수 있습니다 '
-                f'(jibsa zigbang complex {shown_id} 결과의 pyeongs[].id 로 확인하세요)'
+                f'(jibsa zigbang complex {shown_id} 결과의 pyeongs[].pyeong_id 로 확인하세요)'
             )
         else:
             reason = UNEXPECTED_FORMAT_TEXT
@@ -775,7 +774,7 @@ def get_pyeong_price_trend(
         complex_id=shown_id,
         pyeong_id=pyeong_id,
         period=period,
-        trade=trade,
+        trade_tab=trade,
         months=months,
         notes=notes,
     )

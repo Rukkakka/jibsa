@@ -9,6 +9,7 @@ from pydantic import (
 from jibsa.core.geo import haversine_km
 from jibsa.core.korean import is_district_code
 from jibsa.core.listing import (
+    AmountRange,
     Listing,
     join_address,
     normalize_address,
@@ -44,20 +45,18 @@ from jibsa.providers.naver.api.response.common import (
     NaverResponseModel,
 )
 from jibsa.providers.naver.service.common import (
+    ASKING_RANGES_DESCRIPTION,
     COMPLEX_EXCLUDED_REASON,
     COMPLEX_RADIUS_EXCLUDED_REASON,
     ENTRANCE_CODE_BY_NAME,
     EXCLUDED_REASON,
-    MONTHLY_ASKING_DESCRIPTION,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
     RADIUS_EXCLUDED_REASON,
     SEARCH_CODES_BY_PROPERTY,
-    SHORT_TERM_ASKING_DESCRIPTION,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
     WON_PER_MANWON,
     NaverListingsResult,
-    NaverRentAskingRange,
     NaverTradeConditions,
     PageScan,
     area_scope,
@@ -209,7 +208,7 @@ class NaverAreaComplex(BaseModel):
         extra='forbid',
     )
 
-    complex_number: Annotated[
+    complex_id: Annotated[
         int,
         Field(description='단지 번호 (naver complex / items / real-price 에 넘긴다)')
     ]
@@ -217,7 +216,7 @@ class NaverAreaComplex(BaseModel):
         str,
         Field(description='단지명')
     ]
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형 (아파트, 오피스텔, 빌라, 재건축, 분양권, 오피스텔분양권)')
     ] = None
@@ -225,7 +224,7 @@ class NaverAreaComplex(BaseModel):
         str | None,
         Field(description='지번 주소')
     ] = None
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='총 세대수')
     ] = None
@@ -233,7 +232,7 @@ class NaverAreaComplex(BaseModel):
         int | None,
         Field(description='동 수')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -241,25 +240,13 @@ class NaverAreaComplex(BaseModel):
         float | None,
         Field(description='검색 중심(동·시·군·구면 그 지역 중심)에서의 거리 (km)')
     ] = None
-    article_counts: Annotated[
+    listing_counts: Annotated[
         dict[str, int] | None,
         Field(description='거래 유형별 매물 수. 서버가 매물 수를 주지 않으면 null (모름)')
     ] = None
-    sale_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 호가 [최저, 최고] (만원). 매매 매물이 없으면 null')
-    ] = None
-    jeonse_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null')
-    ] = None
-    monthly_asking: Annotated[
-        NaverRentAskingRange | None,
-        Field(description=MONTHLY_ASKING_DESCRIPTION)
-    ] = None
-    short_term_asking: Annotated[
-        NaverRentAskingRange | None,
-        Field(description=SHORT_TERM_ASKING_DESCRIPTION)
+    asking_ranges: Annotated[
+        dict[str, AmountRange] | None,
+        Field(description=ASKING_RANGES_DESCRIPTION)
     ] = None
     url: Annotated[
         str,
@@ -307,7 +294,7 @@ def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) 
         base = sector if ' ' in sector else join_address(info.address.city, info.address.division, sector)
         address = normalize_address(join_address(base, info.address.jibun))
     return NaverAreaComplex(
-        complex_number=info.complex_number,
+        complex_id=info.complex_number,
         name=info.name,
         address=address,
         distance_km=round(
@@ -387,8 +374,8 @@ def list_area_complexes(
             return None
         # 사각형 모서리(반경 밖) 단지는 뺀다. 좌표를 모르면 반경 안인지 알 수 없어 뺀다
         if legal_division_code is not None or (complex_.distance_km is not None and complex_.distance_km <= radius_km):
-            complexes.setdefault(complex_.complex_number, complex_)
-        return complex_.complex_number
+            complexes.setdefault(complex_.complex_id, complex_)
+        return complex_.complex_id
 
     scan_pages(scan, fetch, keep, page_size=COMPLEX_LIST_PAGE_SIZE)
     total, inspected, truncated = scan.total, scan.received, scan.truncated

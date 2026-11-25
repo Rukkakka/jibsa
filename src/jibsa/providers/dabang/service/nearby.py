@@ -13,6 +13,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import box_around
 from jibsa.core.listing import (
+    AmountSet,
     js_round,
     js_to_fixed,
     normalize_address,
@@ -253,10 +254,18 @@ class DabangNearby(BaseModel):
         str,
         Field(description="'매물', '단지' 또는 '분양'")
     ]
-    id: Annotated[
-        str,
-        Field(description='매물 ID, 단지 ID 또는 분양 ID')
-    ]
+    listing_id: Annotated[
+        str | None,
+        Field(description="매물 ID. target 이 '매물'일 때만 있다")
+    ] = None
+    complex_id: Annotated[
+        str | None,
+        Field(description="단지 ID. target 이 '단지'일 때만 있다")
+    ] = None
+    presale_id: Annotated[
+        str | None,
+        Field(description="분양 ID. target 이 '분양'일 때만 있다")
+    ] = None
     stations: Annotated[
         list[DabangNearbyStation],
         Field(description='반경(station_radius_m) 안 지하철역, 가까운 순')
@@ -307,6 +316,10 @@ class DabangNearby(BaseModel):
     @model_serializer(mode='wrap')
     def drop_unrequested(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
+        # 대상 ID 는 target 에 맞는 키 하나만 낸다
+        for key in ('listing_id', 'complex_id', 'presale_id'):
+            if data[key] is None:
+                del data[key]
         if '반려동물' not in self.extras:
             data.pop('pet_places', None)
         if '카셰어링' not in self.extras:
@@ -419,9 +432,9 @@ def get_nearby(
                 code='NOT_FOUND',
                 message=f'다방에서 찾지 못한 {TARGET_LABELS[target]}입니다: {target_id}',
                 hint=(
-                    '분양 ID 는 jibsa dabang search sales 결과의 sale_id 를 그대로 주세요 (단지 ID 는 --sale 없이 줍니다)'
+                    '분양 ID 는 jibsa dabang search sales 결과의 presale_id 를 그대로 주세요 (단지 ID 는 --sale 없이 줍니다)'
                     if sale else 'ID 를 같은 소스(dabang) 결과에서 그대로 옮겼는지 확인하세요'
-                    + (' (분양 ID 는 단지 ID 와 자릿수가 같습니다. search sales 의 sale_id 면 --sale <ID> 로 주세요)' if target == 'complex' else '')
+                    + (' (분양 ID 는 단지 ID 와 자릿수가 같습니다. search sales 의 presale_id 면 --sale <ID> 로 주세요)' if target == 'complex' else '')
                 ),
             ) from None
         raise
@@ -430,7 +443,9 @@ def get_nearby(
     route = transit.route if transit else None
     return DabangNearby(
         target=TARGET_LABELS[target],
-        id=target_id,
+        listing_id=target_id if target == 'room' else None,
+        complex_id=target_id if target == 'complex' else None,
+        presale_id=target_id if target == 'sale' else None,
         stations=[
             DabangNearbyStation(
                 name=station.name,
@@ -458,26 +473,22 @@ class DabangStationPrice(BaseModel):
         extra='forbid',
     )
 
-    building_type: Annotated[
+    property_type: Annotated[
         str,
-        Field(description='건물 유형 (빌라, 오피스텔, 아파트)')
+        Field(description='매물 유형 (빌라, 오피스텔, 아파트)')
     ]
-    room: Annotated[
+    room_type: Annotated[
         str,
         Field(description='방 개수 (원룸, 투룸)')
     ]
-    lease_average_manwon: Annotated[
-        float | None,
-        Field(description='전세 매물 평균 전세금 (만원). 매물이 없으면 null')
-    ] = None
-    rent_deposit_average_manwon: Annotated[
-        float | None,
-        Field(description='월세 매물 평균 보증금 (만원)')
-    ] = None
-    rent_average_manwon: Annotated[
-        float | None,
-        Field(description='월세 매물 평균 월세 (만원)')
-    ] = None
+    asking_averages: Annotated[
+        dict[str, AmountSet | None],
+        Field(description=(
+            "거래별 평균 매물가 (만원). 키는 'jeonse'(평균 전세금 deposit_manwon)·'wolse'(평균 보증금 deposit_manwon, "
+            "평균 월세 rent_manwon) 늘 두 개다. 다방이 그 거래 평균을 주지 않으면(웹은 '-') 그 거래가 null(모름)이다. 월세는 보증금·월세 중 하나만 모르면 그 칸만 null 이다. "
+            '다방이 매물 수를 주지 않아 그 거래 매물이 없는 것인지는 가를 수 없다'
+        ))
+    ]
 
 
 class DabangStationPrices(BaseModel):
@@ -487,7 +498,7 @@ class DabangStationPrices(BaseModel):
         extra='forbid',
     )
 
-    station: Annotated[
+    station_name: Annotated[
         str,
         Field(description='역 이름')
     ]
@@ -533,15 +544,21 @@ def get_station_prices(client: DabangClient, place: DabangPlace) -> DabangStatio
     prices = []
     for item in station.average_price_list:
         deposit, _, rent = (item.monthly_rent or '').partition('/')
+        monthly_deposit = manwon_from_text(deposit) if rent else None
+        monthly_rent = manwon_from_text(rent) if rent else None
         prices.append(DabangStationPrice(
-            building_type=BUILDING_LABEL_BY_CATEGORY.get(item.building_category or '', item.building_category or ''),
-            room=ROOM_LABELS.get(item.room_type or '', item.room_type or ''),
-            lease_average_manwon=manwon_from_text(item.lease),
-            rent_deposit_average_manwon=manwon_from_text(deposit) if rent else None,
-            rent_average_manwon=manwon_from_text(rent) if rent else None,
+            property_type=BUILDING_LABEL_BY_CATEGORY.get(item.building_category or '', item.building_category or ''),
+            room_type=ROOM_LABELS.get(item.room_type or '', item.room_type or ''),
+            asking_averages={
+                'jeonse': None if (lease := manwon_from_text(item.lease)) is None else AmountSet(deposit_manwon=lease),
+                'wolse': None if monthly_deposit is None and monthly_rent is None else AmountSet(
+                    deposit_manwon=monthly_deposit,
+                    rent_manwon=monthly_rent,
+                ),
+            },
         ))
     return DabangStationPrices(
-        station=station.name,
+        station_name=station.name,
         radius_m=station.radius,
         basis="다방 '평균 매물가': 역 반경 안에 지금 올라온 원룸·투룸 목록 매물(방 1~2개)의 평균 (실거래가 아님)",
         prices=prices,

@@ -29,6 +29,7 @@ from pydantic import (
 
 from jibsa.core.korean import particle
 from jibsa.core.ratelimit import RateLimitedError
+from jibsa.core.schema import drop_unset_fields
 
 from typing import (
     Annotated,
@@ -252,6 +253,30 @@ def insert_after(data: dict[str, Any], anchor: str, key: str, value: Any) -> dic
         if name == anchor:
             result[key] = value
     return result
+
+
+def rescale(value: float | int | None, factor: str) -> float | None:
+    """단위를 바꾸는 곱셈. 부동소수점 찌꺼기 없이 곱하고 반올림하지 않는다. None 은 None.
+
+    예: `rescale(0.6523, '100')` → 65.23, `rescale(850, '0.001')` → 0.85, `rescale(0.85, '1000')` → 850.0.
+    """
+    if value is None:
+        return None
+    return float(Decimal(str(value)) * Decimal(factor))
+
+
+def floor_text(value: int | str | None) -> str | None:
+    """거래·실거래 행의 층 값을 매물과 같은 글자로 쓴다. None 은 None (`3` → '3', `-1` → '지하1')."""
+    if value is None:
+        return None
+    return normalize_floor(str(value))
+
+
+def with_floor_number(data: dict[str, Any]) -> dict[str, Any]:
+    """직렬화한 dict 에 `floor` 키가 있으면 바로 뒤에 `floor_number` 를 붙인다. 층 키가 없으면(해당 없음) 그대로 돌려준다."""
+    if 'floor' not in data:
+        return data
+    return insert_after(data, 'floor', 'floor_number', floor_number(data['floor']))
 
 
 def years_ago(today: date, years: int) -> str:
@@ -640,6 +665,80 @@ def limit_notes(
     return [note('일부', f'{shown}. {more_hint(limit, max_limit, narrow)}')]
 
 
+# 한국어 거래 이름(매물 trade_type 값·--trade 입력) → 거래별로 묶은 출력 객체의 키. 키는 용어집 낱말이라 코드 속성 이름과 같다:
+# 외국에도 있는 거래는 영어 뜻, 한국에만 있는 임대 제도는 소리대로 쓴다 (출력 규약 '칸 이름 규칙')
+TRADE_KEY_BY_NAME: dict[str, str] = {
+    '매매': 'sale',
+    '전세': 'jeonse',
+    '월세': 'wolse',
+    '단기임대': 'short_term',
+    '연세': 'yeonse',
+    '전월세': 'jeonse_wolse',
+}
+
+
+class AmountSet(BaseModel):
+    """거래 하나의 금액 묶음 (범위의 한 끝, 거래별 평균 등). 칸 이름은 매물 금액 칸과 같다.
+
+    생성할 때 넘긴 칸만 출력한다. 넘긴 None 은 모름(null)이고, 넘기지 않은 칸은 그 거래에 해당 없음이라 키가 없다
+    (매매는 price_manwon, 전세는 deposit_manwon, 월세·단기임대는 deposit_manwon·rent_manwon 만 넘긴다).
+    """
+
+    price_manwon: Annotated[
+        float | None,
+        Field(description='매매가 (만원)')
+    ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='보증금 또는 전세금 (만원)')
+    ] = None
+    rent_manwon: Annotated[
+        float | None,
+        Field(description='월세 (만원)')
+    ] = None
+    converted_price_manwon: Annotated[
+        float | None,
+        Field(description='전월세 환산가 (만원). 직방 평형 시세 추이의 전월세 거래 범위에만 있다')
+    ] = None
+
+    @model_serializer(mode='wrap')
+    def keep_given_fields(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return drop_unset_fields(self, handler(self), type(self).model_fields)
+
+
+class AmountRange(BaseModel):
+    """금액 범위. 두 끝은 거래 하나의 금액 묶음이다 (월세는 보증금·월세 짝)."""
+
+    lowest: Annotated[
+        AmountSet | None,
+        Field(description='낮은 쪽 끝')
+    ]
+    highest: Annotated[
+        AmountSet | None,
+        Field(description='높은 쪽 끝')
+    ]
+
+
+class NumberRange(BaseModel):
+    """숫자 하나짜리 범위 (단지 동 층수, 계약 주 수 등)."""
+
+    lowest: Annotated[
+        int | float | None,
+        Field(description='낮은 쪽 끝. 모르면 null')
+    ]
+    highest: Annotated[
+        int | float | None,
+        Field(description='높은 쪽 끝. 모르면 null')
+    ]
+
+
+def number_range(lowest: int | float | None, highest: int | float | None) -> NumberRange | None:
+    """두 끝으로 만든 숫자 범위 (동 층수, 계약 주 수 등). 두 끝을 모두 모르면 범위도 모름(None)이고, 한 끝만 모르면 그 끝만 null 이다."""
+    if lowest is None and highest is None:
+        return None
+    return NumberRange(lowest=lowest, highest=highest)
+
+
 class Listing(BaseModel):
     """소스와 무관하게 정규화한 매물 한 건 (목록 결과).
 
@@ -655,7 +754,7 @@ class Listing(BaseModel):
     - 해당 없음 (그 거래 유형에 원래 없는 항목, 예: 월세의 `price_manwon`): 키를 뺀다
     - 모름 (해당은 되지만 소스가 알려 주지 않은 항목): `null`
 
-    목록에서 소스가 늘 주지 않는 필드(당근 `manage_cost_manwon`·`registered_at`, 네이버
+    목록에서 소스가 늘 주지 않는 필드(당근 `manage_cost_manwon`·`registered_date`, 네이버
     `room_type`)도 키를 빼지 않고 `null` 이다. 키를 빼면 해당 없음으로 읽혀 관리비 없는 매물로 셈한다 (`null` 이면 상세를
     보라고 docs/llm.md 가 이른다). 결과 전체가 같은 값인 `source`·`trade_type` 도 소스를 섞어 비교할 때 매물 하나만 보고
     읽도록 남긴다. 출력을 줄이는 길은 `--fields` 다 (2026-10-23 실측: 직방 room 30건 14,424자 → docs/llm.md 권장 9필드
@@ -688,8 +787,8 @@ class Listing(BaseModel):
         lat: 위도. 거리 계산용이며 출력하지 않는다. Defaults to None.
         lng: 경도. 거리 계산용이며 출력하지 않는다. Defaults to None.
         distance_km: 검색 중심점에서의 거리(km). Defaults to None.
-        registered_at: 등록·노출 시작일 (YYYY-MM-DD). Defaults to None.
-        approved_at: 사용승인일 (YYYY-MM-DD).
+        registered_date: 등록·노출 시작일 (YYYY-MM-DD). Defaults to None.
+        approved_date: 사용승인일 (YYYY-MM-DD).
             Defaults to None.
     """
 
@@ -781,11 +880,11 @@ class Listing(BaseModel):
         float | None,
         Field(description='검색 중심점에서의 거리 (km)')
     ] = None
-    registered_at: Annotated[
+    registered_date: Annotated[
         str | None,
         Field(description='등록·노출 시작일 (YYYY-MM-DD, 한국 날짜)')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -816,14 +915,11 @@ class Listing(BaseModel):
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        not_applicable = self.not_applicable_fields()
-        for field in not_applicable:
+        for field in self.not_applicable_fields():
             data.pop(field, None)
-        # 층이 해당 없는 매물(네이버 토지 등)은 층 숫자도 해당 없다
-        if 'floor' in not_applicable:
-            return data
+        # 층이 해당 없는 매물(네이버 토지 등)은 floor 키가 없어 층 숫자도 붙지 않는다
         # 층이 '3'·'지하1'·'중층' 처럼 섞여 와 층으로 거르거나 정렬하기 어려워 숫자를 floor 바로 뒤에 붙인다
-        return insert_after(data, 'floor', 'floor_number', floor_number(self.floor))
+        return with_floor_number(data)
 
 
 class ListingDetail(Listing):
@@ -834,7 +930,7 @@ class ListingDetail(Listing):
     `move_in`·`parking` 은 모든 소스가 같은 꼴이다 (`move_in_label`·`parking_label`: '2026-10-24', '즉시입주',
     뒤에 ' (협의 가능)' / '가능', '불가', '가능 (총 4대)'). 네이버 `move_in` 만 '2026-12-01 이내'·'2026-12-01 이후'·
     '2026-11 초순'(중순·하순도)도 쓴다. 네이버 단지 유형(아파트·오피스텔·재건축·분양권) `parking` 만 가능·불가 없이 단지 대수
-    `'단지 전체 N대 (세대당 M대)'` 다 (웹 칸에 주차가능여부가 없어 `parking_label` 을 쓰지 않는다). `nearby_subways` 는 소스 표기대로라 괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
+    `'단지 전체 N대 (세대당 M대)'` 다 (웹 칸에 주차가능여부가 없어 `parking_label` 을 쓰지 않는다). `nearby_stations` 는 소스 표기대로라 괄호 안 내용이 소스마다 다르다 (노선 / 도보 분).
 
     Args:
         room_count: 방 수. Defaults to None.
@@ -842,10 +938,10 @@ class ListingDetail(Listing):
         direction: 방향. Defaults to None.
         move_in: 입주 가능일. Defaults to None.
         parking: 주차 가능 여부·대수. Defaults to None.
-        elevator: 엘리베이터 유무. Defaults to None.
+        has_elevator: 엘리베이터 유무. Defaults to None.
         options: 옵션·시설. 소스가 주지 않으면 None, 줬는데 없으면 []. Defaults to None.
         manage_cost_includes: 관리비 포함 항목. Defaults to None.
-        nearby_subways: 인근 지하철역. Defaults to None.
+        nearby_stations: 인근 지하철역. Defaults to None.
     """
 
     room_count: Annotated[
@@ -871,7 +967,7 @@ class ListingDetail(Listing):
         str | None,
         Field(description="주차 ('가능', '불가', 대수가 있으면 '가능 (총 4대)'. 가능 여부를 모르면 대수만)")
     ] = None
-    elevator: Annotated[
+    has_elevator: Annotated[
         bool | None,
         Field(description='엘리베이터 유무')
     ] = None
@@ -883,7 +979,7 @@ class ListingDetail(Listing):
         list[str] | None,
         Field(description='관리비 포함 항목. 소스가 알려 주지 않거나 소스가 빈 항목을 줘 셀 수 없으면 null')
     ] = None
-    nearby_subways: Annotated[
+    nearby_stations: Annotated[
         list[str] | None,
         Field(description='인근 지하철역. 소스가 알려 주지 않으면 null. 직방은 노선, 당근은 도보 시간을 붙인다')
     ] = None

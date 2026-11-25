@@ -4,13 +4,13 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SerializerFunctionWrapHandler,
-    model_serializer,
 )
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
+    TRADE_KEY_BY_NAME,
+    AmountRange,
     Listing,
     normalize_address,
     note,
@@ -45,6 +45,7 @@ from jibsa.providers.naver.service.common import (
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
+    amount_range,
     area_scope,
     boundary_filter,
     bounding_box,
@@ -57,7 +58,6 @@ from jibsa.providers.naver.service.common import (
     scan_pages,
     trade_article_counts,
     unwrap,
-    won_to_manwon_range,
 )
 
 from typing import (
@@ -92,7 +92,7 @@ class NaverRedevelopmentArea(BaseModel):
         extra='forbid',
     )
 
-    redevelopment_number: Annotated[
+    redevelopment_id: Annotated[
         int,
         Field(description='구역 번호. naver search listings --redevelopment 에 넘긴다')
     ]
@@ -104,7 +104,7 @@ class NaverRedevelopmentArea(BaseModel):
         str | None,
         Field(description='구역 대표 위치의 법정동 (예: 서울특별시 용산구 보광동). 동 경계로 찾으면 그 동, 시·군·구 경계로 찾으면 그 시·군·구 (목록이 구역의 동을 주지 않는다)')
     ] = None
-    households: Annotated[
+    planned_household_count: Annotated[
         int | None,
         Field(description='계획 세대수')
     ] = None
@@ -116,13 +116,13 @@ class NaverRedevelopmentArea(BaseModel):
         float | None,
         Field(description='검색 중심에서 구역 대표 위치까지 거리 (km). 동·시·군·구 경계로 찾으면 좌표를 받지 않아 null')
     ] = None
-    article_counts: Annotated[
+    listing_counts: Annotated[
         dict[str, int] | None,
         Field(description='거래 유형별 매물 수 (매매·전세·월세·단기임대). 서버가 매물 수를 주지 않으면 null (모름)')
     ]
-    sale_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 호가 범위 [최저, 최고] (만원). 매매 매물이 없으면 null')
+    asking_ranges: Annotated[
+        dict[str, AmountRange] | None,
+        Field(description='거래 유형별 호가 범위 {sale: {lowest, highest}} (구역 목록은 매매만, 만원). 매매 매물이 없으면 sale 키가 없어 {}. 네이버가 호가 정보를 주지 않으면 null')
     ] = None
     url: Annotated[
         str,
@@ -162,17 +162,18 @@ def _redevelopment_area(
 ) -> NaverRedevelopmentArea:
     info, counts, price = item.info, item.count, item.price
     return NaverRedevelopmentArea(
-        redevelopment_number=info.redevelopment_area_number,
+        redevelopment_id=info.redevelopment_area_number,
         name=info.name,
         # 마커의 법정동 이름은 '서울시 관악구 봉천동' 처럼 줄인 시·도라 상세(redevelopment)와 같은 정식 명칭으로 맞춘다
         legal_division=normalize_address(legal_division),
-        households=info.total_household_number,
+        planned_household_count=info.total_household_number,
         business_step=info.business_step,
         distance_km=distance_km,
         # 서버는 필터의 tradeTypes·hasArticle 과 상관없이 네 거래를 모두 센다 (한강진역 1.5km 7곳: 단기임대·매매·기본 필터
         # 모두 같은 수, 한남4 목록 매매 43 = 상세 redevelopment 43, 2026-10-10). 그래서 상세와 숫자가 어긋나지 않는다
-        article_counts=trade_article_counts(counts) if counts else None,
-        sale_asking_range_manwon=won_to_manwon_range(price.deal_min_price, price.deal_max_price) if price else None,
+        listing_counts=trade_article_counts(counts) if counts else None,
+        # 그 거래 매물이 없으면 키를 뺀다. 구역 목록은 매매 호가만 준다
+        asking_ranges=None if not price else ({'sale': sale} if (sale := amount_range('price_manwon', price.deal_min_price, price.deal_max_price)) else {}),
         url=redevelopment_url(info.redevelopment_area_number),
     )
 
@@ -261,8 +262,8 @@ def list_redevelopment_areas(
                 return number
             area = _redevelopment_area(item, distance, pin.legal_division_name)
         # 서버가 거래 유형으로 거르지 않아 매물 수로 거른다. 매물 수를 모르는 구역도 그 거래 매물이 있는지 알 수 없어 뺀다
-        counts = area.article_counts
-        if trade_types and not (counts and any(counts[name] for name in trade_types)):
+        counts = area.listing_counts
+        if trade_types and not (counts and any(counts[TRADE_KEY_BY_NAME[name]] for name in trade_types)):
             no_trade.add(number)
             return number
         areas.setdefault(number, area)
@@ -379,7 +380,7 @@ class NaverRedevelopmentDetail(BaseModel):
         extra='forbid',
     )
 
-    redevelopment_number: Annotated[
+    redevelopment_id: Annotated[
         int,
         Field(description='구역 번호. naver search listings --redevelopment 에 넘긴다')
     ]
@@ -391,7 +392,7 @@ class NaverRedevelopmentDetail(BaseModel):
         str | None,
         Field(description='대표 법정동 (예: 서울특별시 용산구 한남동)')
     ] = None
-    households: Annotated[
+    planned_household_count: Annotated[
         int | None,
         Field(description='계획 세대수')
     ] = None
@@ -403,39 +404,26 @@ class NaverRedevelopmentDetail(BaseModel):
         str | None,
         Field(description='시공사')
     ] = None
-    floor_area_ratio: Annotated[
+    floor_area_ratio_percent: Annotated[
         float | None,
         Field(description='계획 용적률 (%)')
     ] = None
-    building_coverage_ratio: Annotated[
+    building_coverage_ratio_percent: Annotated[
         float | None,
         Field(description='계획 건폐율 (%)')
     ] = None
-    article_counts: Annotated[
+    listing_counts: Annotated[
         dict[str, int],
         Field(description='거래 유형별 현재 매물 수 (매매·전세·월세·단기임대). 거래 유형을 고르면 그 유형만')
     ]
-    sale_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='매매 호가 [최저, 최고] (만원). 매매 매물이 없으면 null. --trade 를 줬는데 매매가 빠졌으면 키 없음 (--trade 를 안 주면 늘 있다)')
-    ] = None
-    jeonse_asking_range_manwon: Annotated[
-        list[float | None] | None,
-        Field(description='전세 호가 [최저, 최고] (만원). 전세 매물이 없으면 null. --trade 를 줬는데 전세가 빠졌으면 키 없음 (--trade 를 안 주면 늘 있다)')
-    ] = None
+    asking_ranges: Annotated[
+        dict[str, AmountRange],
+        Field(description='거래 유형별 호가 범위 {sale: {lowest, highest}, jeonse: …} (만원). sale 은 price_manwon, jeonse 는 deposit_manwon. 그 거래 매물이 없거나 --trade 로 고르지 않은 거래는 키가 없다. 한 끝만 비면 그 끝 금액만 null')
+    ]
     url: Annotated[
         str,
         Field(description='구역 페이지 URL')
     ]
-
-    @model_serializer(mode='wrap')
-    def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        data: dict[str, Any] = handler(self)
-        # --trade 로 고르지 않은 거래는 세지 않아 호가 범위도 해당 없음이다 (article_counts 에 그 거래 키가 없다)
-        for trade, field in (('매매', 'sale_asking_range_manwon'), ('전세', 'jeonse_asking_range_manwon')):
-            if trade not in self.article_counts:
-                data.pop(field, None)
-        return data
 
 
 def get_redevelopment(
@@ -463,7 +451,7 @@ def get_redevelopment(
         raise JibsaError(
             code='NOT_FOUND',
             message=f'네이버 재개발 구역을 찾지 못했습니다: {area_number}',
-            hint='구역 번호는 naver search redevelopment 결과의 redevelopment_number 를 쓰세요',
+            hint='구역 번호는 naver search redevelopment 결과의 redevelopment_id 를 쓰세요',
         )
     stats = unwrap(
         client.run_request_complex_redevelopment_area_article_stats_v1(
@@ -476,20 +464,28 @@ def get_redevelopment(
     )
     counts, prices = stats.count, stats.price
     ratio = info.building_ratio_info
+    # 서버가 고른 거래 유형만 세고 나머지를 0 으로 준다. 세지 않은 유형은 0건이 아니라 해당 없음이라 호가 범위의 키도 없고, 0건 거래도 키가 없다
+    selected_keys = {TRADE_KEY_BY_NAME[name] for name in trade_types or ()}
+    asking_ranges = {
+        TRADE_KEY_BY_NAME[name]: value for name, value in (
+            ('매매', amount_range('price_manwon', prices.deal_min_price, prices.deal_max_price)),
+            ('전세', amount_range('deposit_manwon', prices.rent_min_price, prices.rent_max_price)),
+        )
+        if value is not None and (not trade_types or name in trade_types)
+    }
     return NaverRedevelopmentDetail(
-        redevelopment_number=area_number,
+        redevelopment_id=area_number,
         name=info.name,
         legal_division=normalize_address(info.legal_division_address) if info.legal_division_address else None,
-        households=info.total_household_number,
+        planned_household_count=info.total_household_number,
         business_step=info.business_step,
         construction_company=info.construction_company or None,
-        floor_area_ratio=ratio.floor_area_ratio if ratio else None,
-        building_coverage_ratio=ratio.building_coverage_ratio if ratio else None,
+        floor_area_ratio_percent=ratio.floor_area_ratio if ratio else None,
+        building_coverage_ratio_percent=ratio.building_coverage_ratio if ratio else None,
         # 서버가 고른 거래 유형만 세고 나머지를 0 으로 준다 (매매만 고르면 전세·월세 0). 세지 않은 유형은 0건이 아니라 해당 없음이다
-        article_counts={
-            name: count for name, count in trade_article_counts(counts).items() if not trade_types or name in trade_types
+        listing_counts={
+            key: count for key, count in trade_article_counts(counts).items() if not trade_types or key in selected_keys
         },
-        sale_asking_range_manwon=won_to_manwon_range(prices.deal_min_price, prices.deal_max_price),
-        jeonse_asking_range_manwon=won_to_manwon_range(prices.rent_min_price, prices.rent_max_price),
+        asking_ranges=asking_ranges,
         url=redevelopment_url(area_number),
     )

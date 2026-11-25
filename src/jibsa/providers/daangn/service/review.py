@@ -74,7 +74,7 @@ class DaangnReviewComplex(BaseModel):
         str | None,
         Field(description='단지 이름. 당근이 주지 않으면 null')
     ] = None
-    property_type: Annotated[
+    complex_type: Annotated[
         str | None,
         Field(description='단지 유형. 당근이 주지 않으면 null. 동으로 찾으면 동 후기 페이지가 유형을 주지 않아 늘 null')
     ] = None
@@ -128,7 +128,7 @@ class DaangnReviewBuilding(BaseModel):
         str | None,
         Field(description='도로명 주소. 당근이 주지 않으면 null')
     ] = None
-    jibun_address: Annotated[
+    address: Annotated[
         str | None,
         Field(description='지번 주소. 당근이 주지 않으면 null')
     ] = None
@@ -270,7 +270,7 @@ def _review_buildings(
             building_id=building.original_id,
             name=building.building_name,
             road_address=building.road_address,
-            jibun_address=building.jibun_address,
+            address=building.jibun_address,
             review_count=building.lived_review_count,
             url=f'https://realty.daangn.com/lived-reviews/buildings/{building.original_id}',
         )
@@ -326,7 +326,7 @@ def _review_complexes(
             complex_id=complex_id,
             name=item.name if item.name and item.name.strip() else None,
             # 동 후기 페이지의 단지 레코드는 유형(type)이 일부에만 실려 있어(역삼동 260곳 중 9곳) 쓰지 않는다
-            property_type=None if dong_page else code_label(COMPLEX_TYPE_LABELS, item.type),
+            complex_type=None if dong_page else code_label(COMPLEX_TYPE_LABELS, item.type),
             review_count=item.lived_review_count,
         )
         for complex_id, item in candidates[:top]

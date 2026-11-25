@@ -643,7 +643,7 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
             continue
         residence = item.residence
         building_use = (residence.residence_description or residence.residence_type or '').strip() or None
-        approved = listing.model_copy(update={'approved_at': normalize_date(residence.approved_at) or listing.approved_at})
+        approved = listing.model_copy(update={'approved_date': normalize_date(residence.approved_at) or listing.approved_date})
         listings.append(listing_as(ZigbangDetailedListing, approved, residence_type=building_use))
     notes = []
     if gone:

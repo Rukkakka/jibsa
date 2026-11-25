@@ -34,7 +34,7 @@ class ZigbangRelatedComplex(BaseModel):
         str | None,
         Field(description='단지 이름')
     ]
-    households: Annotated[
+    household_count: Annotated[
         int | None,
         Field(description='세대수')
     ]
@@ -49,6 +49,6 @@ def related_complex_of(item: ZigbangRelatedDanjiModel) -> ZigbangRelatedComplex:
     return ZigbangRelatedComplex(
         complex_id=apt_complex_id(item.id) if item.id is not None else None,
         name=item.name,
-        households=household_count(item.household),
+        household_count=household_count(item.household),
         address=normalize_address(join_address(item.local1, item.local2, item.local3)),
     )

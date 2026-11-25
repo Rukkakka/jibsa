@@ -13,12 +13,16 @@ from jibsa.core.geo import (
     box_around,
 )
 from jibsa.core.listing import (
+    AmountSet,
+    NumberRange,
     limit_notes,
     lookup_failure_note,
     m2_to_pyeong,
     normalize_address,
     normalize_date,
     note,
+    number_range,
+    with_floor_number,
     won_to_manwon,
 )
 from jibsa.providers.dabang.api.client import DabangClient
@@ -153,9 +157,9 @@ class DabangComplexSummary(BaseModel):
         str | None,
         Field(description='아파트 / 오피스텔')
     ] = None
-    years: Annotated[
+    occupancy_years: Annotated[
         int | None,
-        Field(description='입주 연차 (년)')
+        Field(description='입주 N년차 (사용승인한 해를 1년차로 센다. 연식 age_years 보다 1 크다)')
     ] = None
     household_count: Annotated[
         int | None,
@@ -169,26 +173,17 @@ class DabangComplexSummary(BaseModel):
         int | None,
         Field(description='지금 올라온 매물 수')
     ] = None
-    rent_listing_count: Annotated[
-        int | None,
-        Field(description='월세 매물 수')
-    ] = None
-    lease_listing_count: Annotated[
-        int | None,
-        Field(description='전세 매물 수')
-    ] = None
-    sale_listing_count: Annotated[
-        int | None,
-        Field(description='매매 매물 수')
-    ] = None
-    recent_sale_manwon: Annotated[
-        float | None,
-        Field(description='최근 매매 실거래가 (만원, 평형과 상관없이 단지의 가장 최근 거래. 다방 목록 카드와 같다)')
-    ] = None
-    recent_lease_manwon: Annotated[
-        float | None,
-        Field(description='최근 전세 실거래가 (만원, 평형과 상관없이 단지의 가장 최근 거래)')
-    ] = None
+    listing_counts: Annotated[
+        dict[str, int | None],
+        Field(description="거래별 매물 수. 키는 'sale'·'jeonse'·'wolse' 늘 세 개 (다방이 주지 않은 수는 null)")
+    ]
+    latest_trades: Annotated[
+        dict[str, AmountSet | None],
+        Field(description=(
+            "거래별 가장 최근 실거래가 (평형과 상관없이 단지의 가장 최근 거래. 다방 목록 카드와 같다). 키는 'sale'(price_manwon)·"
+            "'jeonse'(deposit_manwon) 늘 두 개이고 거래가 없거나 받지 못하면 null (complex 의 latest_trades 와 같다)"
+        ))
+    ]
 
 
 class DabangComplexListResult(BaseModel):
@@ -231,19 +226,25 @@ class DabangComplexListResult(BaseModel):
 def _summary(item: DabangComplexListItemModel) -> DabangComplexSummary:
     counts = item.room_count
     price = item.real_price
+    sale = manwon_from_text(price.sale) if price else None
+    lease = manwon_from_text(price.lease) if price else None
     return DabangComplexSummary(
         complex_id=item.complex_id,
         name=item.complex_name,
         complex_type=COMPLEX_KIND_BY_TYPE.get(item.complex_type or ''),
-        years=building_years(item.complex_desc),
+        occupancy_years=building_years(item.complex_desc),
         household_count=household_count(item.complex_desc),
         address=normalize_address(item.address),
         listing_count=counts.total_count if counts else None,
-        rent_listing_count=counts.monthly_rent_count if counts else None,
-        lease_listing_count=counts.lease_count if counts else None,
-        sale_listing_count=counts.sell_count if counts else None,
-        recent_sale_manwon=manwon_from_text(price.sale) if price else None,
-        recent_lease_manwon=manwon_from_text(price.lease) if price else None,
+        listing_counts={
+            'sale': counts.sell_count if counts else None,
+            'jeonse': counts.lease_count if counts else None,
+            'wolse': counts.monthly_rent_count if counts else None,
+        },
+        latest_trades={
+            'sale': None if sale is None else AmountSet(price_manwon=sale),
+            'jeonse': None if lease is None else AmountSet(deposit_manwon=lease),
+        },
     )
 
 
@@ -352,9 +353,9 @@ class DabangPyeong(BaseModel):
         extra='forbid',
     )
 
-    space_seq: Annotated[
+    pyeong_id: Annotated[
         int,
-        Field(description='평형 번호. real-price·price-trend·search listings --complex 의 --pyeong 값')
+        Field(description='평형 ID. real-price·price-trend·search listings --complex 의 --pyeong 값')
     ]
     name: Annotated[
         str | None,
@@ -399,7 +400,11 @@ class DabangRecentTrade(BaseModel):
 
     price_manwon: Annotated[
         float | None,
-        Field(description='매매가 또는 전세금 (만원)')
+        Field(description='매매가 (만원). 매매 거래에만 있다')
+    ] = None
+    deposit_manwon: Annotated[
+        float | None,
+        Field(description='전세금 (만원). 전세 거래에만 있다')
     ] = None
     trade_date: Annotated[
         str | None,
@@ -407,7 +412,7 @@ class DabangRecentTrade(BaseModel):
     ] = None
     floor: Annotated[
         str | None,
-        Field(description='층')
+        Field(description="층 ('5', '지하1', '고층'). 바로 뒤 floor_number 는 몇 층인지 아는 층의 숫자 (지하는 음수, 모르면 null)")
     ] = None
     supply_area_m2: Annotated[
         float | None,
@@ -417,24 +422,29 @@ class DabangRecentTrade(BaseModel):
         float | None,
         Field(description='거래 계약면적 (㎡, 오피스텔. 다방 화면의 면적)')
     ] = None
-    space_seq: Annotated[
+    pyeong_id: Annotated[
         int | None,
-        Field(description='거래한 평형 번호 (pyeongs[].space_seq). 면적이 맞는 평형이 하나일 때만, 없거나 여럿이면 null')
+        Field(description='거래한 평형 ID (pyeongs[].pyeong_id). 면적이 맞는 평형이 하나일 때만, 없거나 여럿이면 null')
     ] = None
     area_m2: Annotated[
         float | None,
-        Field(description='거래한 평형의 전용면적 (㎡). space_seq 가 null 이면 null')
+        Field(description='거래한 평형의 전용면적 (㎡). pyeong_id 가 null 이면 null')
     ] = None
     area_key: Annotated[
         RecentAreaKey,
         Field(exclude=True, description='단지 유형에 맞는 면적 키')
-    ] = 'supply_area_m2'
+    ]
+    trade_type: Annotated[
+        Literal['매매', '전세'],
+        Field(exclude=True, description='어느 거래의 최근 거래인지. 금액 칸 이름(매매 price_manwon, 전세 deposit_manwon)을 정한다')
+    ]
 
     @model_serializer(mode='wrap')
     def drop_other_area(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         data.pop('contract_area_m2' if self.area_key == 'supply_area_m2' else 'supply_area_m2', None)
-        return data
+        data.pop('deposit_manwon' if self.trade_type == '매매' else 'price_manwon', None)
+        return with_floor_number(data)
 
 
 class DabangComplexSchool(BaseModel):
@@ -503,9 +513,9 @@ class DabangChildcare(BaseModel):
         extra='forbid',
     )
 
-    code: Annotated[
+    school_code: Annotated[
         str | None,
-        Field(description='다방 시설 코드. jibsa dabang school <code> --level 어린이집 (nurseries) 또는 --level 유치원 (kindergartens) 으로 상세를 본다')
+        Field(description='다방 시설 코드. jibsa dabang school <school_code> --level 어린이집 (nurseries) 또는 --level 유치원 (kindergartens) 으로 상세를 본다')
     ] = None
     name: Annotated[
         str | None,
@@ -556,7 +566,7 @@ class DabangComplexDetail(BaseModel):
         int | None,
         Field(description='세대수')
     ] = None
-    building_count: Annotated[
+    dong_count: Annotated[
         int | None,
         Field(description='동 수')
     ] = None
@@ -568,27 +578,23 @@ class DabangComplexDetail(BaseModel):
         float | None,
         Field(description='세대당 주차 대수')
     ] = None
-    lowest_floor: Annotated[
-        int | None,
-        Field(description='최저층')
+    building_floor_range: Annotated[
+        NumberRange | None,
+        Field(description='동 층수의 최소·최대. 둘 다 모르면 null')
     ] = None
-    highest_floor: Annotated[
-        int | None,
-        Field(description='최고층')
-    ] = None
-    floor_area_ratio: Annotated[
+    floor_area_ratio_percent: Annotated[
         float | None,
         Field(description='용적률 (%)')
     ] = None
-    building_coverage_ratio: Annotated[
+    building_coverage_ratio_percent: Annotated[
         float | None,
         Field(description='건폐율 (%)')
     ] = None
-    builder: Annotated[
+    construction_company: Annotated[
         str | None,
         Field(description='시공사')
     ] = None
-    approved_at: Annotated[
+    approved_date: Annotated[
         str | None,
         Field(description='사용승인일 (YYYY-MM-DD)')
     ] = None
@@ -596,7 +602,7 @@ class DabangComplexDetail(BaseModel):
         str | None,
         Field(description='난방')
     ] = None
-    fuel: Annotated[
+    heating_fuel: Annotated[
         str | None,
         Field(description='연료')
     ] = None
@@ -608,7 +614,7 @@ class DabangComplexDetail(BaseModel):
         int | None,
         Field(description='지금 올라온 매물 수')
     ] = None
-    recent_deal_count: Annotated[
+    recent_trade_count: Annotated[
         int | None,
         Field(description="최근 거래 수 (다방 화면의 '최근 거래수 N건', 다방이 기간을 밝히지 않는다)")
     ] = None
@@ -620,10 +626,10 @@ class DabangComplexDetail(BaseModel):
         list[DabangPyeong] | None,
         Field(description='평형. null 이면 다방이 평형을 주지 않은 것이라 모름')
     ]
-    primary_space_seq: Annotated[
+    representative_pyeong_id: Annotated[
         int | None,
         Field(description=(
-            '대표 평형 번호 (real-price·price-trend·nearby-complexes 에 --pyeong 이 없을 때 쓴다). 다방이 대표를 주지 않으면 '
+            '대표 평형 ID (real-price·price-trend·nearby-complexes 에 --pyeong 이 없을 때 쓴다). 다방이 대표를 주지 않으면 '
             '다방 웹처럼 첫 평형이고, 평형이 없으면 null'
         ))
     ] = None
@@ -634,14 +640,10 @@ class DabangComplexDetail(BaseModel):
             'jibsa dabang nearby-complexes <complex_id>. null 이면 다방이 주지 않은 것이라 모름'
         ))
     ]
-    recent_sale: Annotated[
-        DabangRecentTrade | None,
-        Field(description='최근 매매 실거래 (없거나 받지 못하면 null)')
-    ] = None
-    recent_lease: Annotated[
-        DabangRecentTrade | None,
-        Field(description='최근 전세 실거래 (없거나 받지 못하면 null)')
-    ] = None
+    latest_trades: Annotated[
+        dict[str, DabangRecentTrade | None],
+        Field(description="거래별 가장 최근 실거래. 키는 'sale'·'jeonse' 늘 두 개이고 거래가 없거나 받지 못하면 null")
+    ]
     overheated_district: Annotated[
         bool | None,
         Field(description=(
@@ -696,7 +698,7 @@ def _childcare(facility: DabangComplexChildcareModel) -> DabangChildcare:
     else:
         establishment = None
     return DabangChildcare(
-        code=facility.code,
+        school_code=facility.code,
         name=facility.name,
         establishment=establishment,
         distance_m=facility.distance,
@@ -708,14 +710,14 @@ def _recent(
     trade: DabangLatelyPriceModel | None,
     spaces: list[DabangComplexSpaceModel] | None,
     category: DabangComplexCategory,
-    label: str,
+    label: Literal['매매', '전세'],
 ) -> tuple[DabangRecentTrade | None, list[str]]:
     """단지 요약의 최근 거래와 안내. 요약 면적은 전용이 아니라 아파트는 공급면적, 오피스텔은 계약면적이고 평형 번호가 없다
     (2026-10-26 실측: 은마 매매 115.54㎡ = 34평 공급, 전용 84.43㎡ / 역삼SK허브블루 매매 55.19㎡ = 16평 계약, 전용 30.06㎡).
 
-    웹 요약은 면적만 보여 주므로 그 면적을 그대로 내고, 평형표에서 그 면적인 평형이 하나뿐일 때만 평형 번호·전용면적을 붙인다.
+    웹 요약은 면적만 보여 주므로 그 면적을 그대로 내고, 평형표에서 그 면적인 평형이 하나뿐일 때만 평형 ID·전용면적을 붙인다.
     공급면적이 같은 평형이 여럿인 단지가 있어 고르지 않는다 (2026-11-13 실측: 삼호1차 82.08㎡ 는 3526(24A)·286028(24C)).
-    다방이 평형 목록을 주지 않으면(`spaces` 가 None) 맞출 평형이 없어 평형 번호·전용면적이 null 이다. '평형 없음' 같은 안내는
+    다방이 평형 목록을 주지 않으면(`spaces` 가 None) 맞출 평형이 없어 평형 ID·전용면적이 null 이다. '평형 없음' 같은 안내는
     쓰지 않는다 (모르는 것이라 pyeongs 가 null 이고, 이 두 칸은 원래 맞는 평형이 하나가 아니면 null 이다).
     """
     if trade is None or trade.format_price is None:
@@ -734,18 +736,21 @@ def _recent(
         # 고르지 않고 비운 것이라 '하나를 골랐다' 는 뜻의 [모호] 가 아니라 [참고] 로 알린다 (output-contract.md 의 꼬리표)
         notes.append(note(
             '참고',
-            f'최근 {label} 거래의 면적 {size:g}㎡ 인 평형이 여럿이라 space_seq·area_m2 를 null 로 두었습니다. 후보 평형: {candidates}',
+            f'최근 {label} 거래의 면적 {size:g}㎡ 인 평형이 여럿이라 pyeong_id·area_m2 를 null 로 두었습니다. 후보 평형: {candidates}',
         ))
     area_key: RecentAreaKey = 'contract_area_m2' if category == 'officetel' else 'supply_area_m2'
+    amount = manwon_from_text(trade.format_price)
     return DabangRecentTrade(
-        price_manwon=manwon_from_text(trade.format_price),
+        price_manwon=amount if label == '매매' else None,
+        deposit_manwon=amount if label == '전세' else None,
         trade_date=normalize_date(f'20{trade.format_contract_date}') if trade.format_contract_date else None,
         floor=floor_label(trade.format_floor),
         supply_area_m2=size if area_key == 'supply_area_m2' else None,
         contract_area_m2=size if area_key == 'contract_area_m2' else None,
-        space_seq=space.space_seq if space else None,
+        pyeong_id=space.space_seq if space else None,
         area_m2=space.room_space if space else None,
         area_key=area_key,
+        trade_type=label,
     ), notes
 
 
@@ -761,7 +766,7 @@ def _category_of(result: DabangComplexResultModel) -> DabangComplexCategory:
 def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     """단지 정보 (요청 3회: 단지 상세 + 최근 실거래 요약 + 대출 계산 조건). 사진·관리사무소 전화·광고 중개사는 옮기지 않는다.
 
-    최근 실거래 요약과 대출 계산 조건은 덤이라 실패해도 단지 정보는 돌려주고 recent_sale·recent_lease·overheated_district 를
+    최근 실거래 요약과 대출 계산 조건은 덤이라 실패해도 단지 정보는 돌려주고 latest_trades 의 sale·jeonse·overheated_district 를
     모름(null)으로 둔다.
     """
     result = fetch_complex(client, complex_id)
@@ -774,7 +779,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         ).result
     except OPTIONAL_LOOKUP_ERRORS as exc:
         summary = None
-        notes.append(lookup_failure_note(exc, '다방', '최근 실거래 요약', 'recent_sale·recent_lease 는 모름(null)입니다. 실거래는 real-price 로 보세요'))
+        notes.append(lookup_failure_note(exc, '다방', '최근 실거래 요약', 'latest_trades 의 sale·jeonse 는 모름(null)입니다. 실거래는 real-price 로 보세요'))
     # 웹 단지 화면이 단지 상세 바로 뒤에 부르는 대출 계산 조건이다 (complex 청크 `je`). 금리는 다방 계산기 기본값이라 내지 않는다
     try:
         loan = client.run_request_complex_loan_calc_condition_v5(
@@ -812,6 +817,8 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     recent_lease, lease_notes = _recent(summary.lease_lately_price if summary else None, result.spaces, category, '전세')
     approved = info.building_approval_date_name
     primary = primary_space_of(result)
+    lowest_floor = _floor_int(info.complex_lowest_floor)
+    highest_floor = _floor_int(info.complex_highest_floor)
     return DabangComplexDetail(
         complex_id=info.complex_id,
         name=info.complex_name,
@@ -819,24 +826,23 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         address=normalize_address(info.jibun_address or info.address),
         road_address=normalize_address(info.road_address),
         household_count=info.household_num,
-        building_count=info.building_num,
+        dong_count=info.building_num,
         parking_count=info.parking_num,
         parking_per_household=info.parking_average,
-        lowest_floor=_floor_int(info.complex_lowest_floor),
-        highest_floor=_floor_int(info.complex_highest_floor),
-        floor_area_ratio=info.floor_area_ratio,
-        building_coverage_ratio=info.building_coverage_ratio,
-        builder=info.provider_name,
-        approved_at=normalize_date(approved) if approved else None,
+        building_floor_range=number_range(lowest_floor, highest_floor),
+        floor_area_ratio_percent=info.floor_area_ratio,
+        building_coverage_ratio_percent=info.building_coverage_ratio,
+        construction_company=info.provider_name,
+        approved_date=normalize_date(approved) if approved else None,
         heating=info.heat_type_name,
-        fuel=info.fuel_type_name,
+        heating_fuel=info.fuel_type_name,
         entrance=info.entrance_type_name,
         listing_count=result.room_count,
-        recent_deal_count=info.recent_deal_count,
+        recent_trade_count=info.recent_deal_count,
         tags=info.hash_tags,
         pyeongs=None if result.spaces is None else [
             DabangPyeong(
-                space_seq=space.space_seq,
+                pyeong_id=space.space_seq,
                 name=space.pyeong_type,
                 area_m2=space.room_space,
                 area_pyeong=m2_to_pyeong(space.room_space),
@@ -848,10 +854,9 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
             )
             for space in result.spaces
         ],
-        primary_space_seq=primary[0] if primary else None,
+        representative_pyeong_id=primary[0] if primary else None,
         area_prices=None if result.area_average_price is None else [area_price(price) for price in result.area_average_price],
-        recent_sale=recent_sale,
-        recent_lease=recent_lease,
+        latest_trades={'sale': recent_sale, 'jeonse': recent_lease},
         overheated_district=loan.is_overheated_district if loan else None,
         schools=schools,
         nurseries=nurseries,
@@ -876,9 +881,9 @@ class DabangComplexListingsResult(BaseModel):
         str,
         Field(description='단지 이름')
     ]
-    space_seqs: Annotated[
+    pyeong_ids: Annotated[
         list[int] | None,
-        Field(description='고른 평형 번호. null 이면 전체 평형')
+        Field(description='고른 평형 ID. null 이면 전체 평형')
     ] = None
     sort: Annotated[
         str,
@@ -935,7 +940,7 @@ def list_complex_listings(
         raise JibsaError(
             code='INVALID_ARGUMENT',
             message=f"이 단지에 없는 평형 번호입니다: {', '.join(map(str, unknown))}",
-            hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].space_seq 를 주세요',
+            hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].pyeong_id 를 주세요',
         )
     # 단지 상세는 평형을 늘 하나 이상 준다 (2026-10-25 실측: 아파트·오피스텔·주상복합·재건축 62곳 모두). 요청은 평형 번호가
     # 하나 이상 있어야 해서, 평형을 안 주거나 비어 있고 --pyeong 도 없으면 보낼 번호가 없다
@@ -999,7 +1004,7 @@ def list_complex_listings(
     return DabangComplexListingsResult(
         complex_id=complex_id,
         name=result.complex.complex_name,
-        space_seqs=space_seqs,
+        pyeong_ids=space_seqs,
         sort=sort,
         total=total,
         returned=len(listings),

@@ -168,7 +168,7 @@ def test_change_count_decrease_is_negative(kind: ValueKind, values: dict[str, st
     # 다방은 인구·거래·매물 변화 수를 부호 없이('327명') 준다. 앞·지금 수가 있으면 그 차로 내서, changeStatus 가 빠지고
     # 변화율이 '0%' 로 반올림돼도 줄었으면 음수다
     row = DabangRegionRankingItemModel.model_validate({'rank': 1, 'regionName': '[가상]동', **values})
-    entry = _entry(row, kind)
+    entry = _entry(row, kind, {})
     assert (entry.count, entry.prev_count, entry.change_count, entry.change_percent) == (2000, 2001, -1, 0)
 
 
@@ -241,9 +241,9 @@ def test_null_items_make_computed_values_unknown() -> None:
         neighborhood = get_neighborhood(client, dong, ['매물'])
         popular = get_popular_listings(client, dong, building_types=[], trade_types=[], limit=3)
     # 유형별 합계: 뺀 유형의 수를 몰라 받은 유형만 더한 5 를 내지 않고 null 이다
-    assert neighborhood.listings is not None and neighborhood.listings.total is None
-    assert [item.type for item in neighborhood.listings.by_type] == ['아파트', '오피스텔']
-    assert any(text.startswith('[제외]') and 'listings.total' in text for text in neighborhood.notes)
+    assert neighborhood.listings is not None and neighborhood.listings.count is None
+    assert [item.property_type for item in neighborhood.listings.by_type] == ['아파트', '오피스텔']
+    assert any(text.startswith('[제외]') and 'listings.count' in text for text in neighborhood.notes)
     # 인기 매물 순위: 빈 항목을 뺀 쪽은 어느 자리가 빠졌는지 몰라 순위를 셀 수 없다 (받은 순서로 1·2 를 매기면 틀린다)
     assert [listing.rank for listing in popular.listings] == [None, None]
     assert any(text.startswith('[제외]') and 'rank' in text for text in popular.notes)

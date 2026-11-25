@@ -12,6 +12,7 @@ from pydantic import (
 )
 
 from jibsa.core.errors import JibsaError
+from jibsa.core.korean import full_legal_division_code
 from jibsa.core.listing import (
     more_hint,
     normalize_address,
@@ -59,7 +60,6 @@ from jibsa.providers.dabang.service.common import (
 from jibsa.providers.dabang.service.region import (
     DONG_NAME_PATTERN,
     DabangScope,
-    legal_division_code,
 )
 
 from typing import (
@@ -288,7 +288,7 @@ class DabangWatchRanking(BaseModel):
         str | None,
         Field(description='동의 법정동코드 (동 순위, 10자리)')
     ] = None
-    view_count: Annotated[
+    viewer_count: Annotated[
         int | None,
         Field(description="기간 안 조회한 사람 수 (다방 화면 'N명'. 조회 횟수가 아니다)")
     ] = None
@@ -361,8 +361,8 @@ def get_watch_rankings(
                 complex_id=row.complex_id,
                 name=row.complex_name or row.dong_name,
                 address=normalize_address(row.address) if unit == '단지' else row.state_name,
-                legal_division_code=legal_division_code(row.dong_code) if row.dong_code else None,
-                view_count=row.watch_count,
+                legal_division_code=full_legal_division_code(row.dong_code) if row.dong_code else None,
+                viewer_count=row.watch_count,
                 change=(
                     None if row.fluctuation is None or row.fluctuation.type is None
                     else f'{FLUCTUATION_LABELS.get(row.fluctuation.type, row.fluctuation.type)} {row.fluctuation.rank}'
@@ -398,9 +398,9 @@ class DabangTradeRanking(BaseModel):
         int | None,
         Field(description='기간 안 거래 수 (국토교통부 신고)')
     ] = None
-    years: Annotated[
+    occupancy_years: Annotated[
         int | None,
-        Field(description='입주 연차')
+        Field(description='입주 N년차 (사용승인한 해를 1년차로 센다)')
     ] = None
     household_count: Annotated[
         int | None,
@@ -423,7 +423,7 @@ class DabangTradeRankings(BaseModel):
         str,
         Field(description='아파트 / 오피스텔')
     ]
-    trade: Annotated[
+    trade_type: Annotated[
         str,
         Field(description='매매 / 전세')
     ]
@@ -467,7 +467,7 @@ def get_trade_rankings(
         address = next((part for part in parts if part and not part.endswith(('년차', '세대'))), None)
         rankings.append(DabangTradeRanking(
             rank=row.rank, complex_id=row.complex_id, name=row.complex_name, trade_count=row.trade_count,
-            years=building_years(row.description), household_count=household_count(row.description),
+            occupancy_years=building_years(row.description), household_count=household_count(row.description),
             address=normalize_address(address),
         ))
     notes = []
@@ -478,7 +478,7 @@ def get_trade_rankings(
         )))
     return DabangTradeRankings(
         complex_type=complex_type,
-        trade=trade,
+        trade_type=trade,
         period=period,
         base_period=result.format_base_period if result else None,
         returned=len(rankings),
@@ -555,21 +555,21 @@ class DabangRegionRankingEntry(BaseModel):
         float | None,
         Field(description='비교 기준 금액 (만원, 시세증감은 앞 시세, 최고가증감은 앞 최고가)')
     ] = None
-    prev_price_date: Annotated[
+    prev_price_month: Annotated[
         str | None,
-        Field(description="앞 최고가 달 (최고가증감, '23년 10월')")
+        Field(description="앞 최고가 달 (최고가증감, '2023-10'). 다방 글자를 읽지 못하면 null")
     ] = None
     age_years: Annotated[
         int | None,
         Field(description='연식 (년, 연식)')
     ] = None
-    pyeong: Annotated[
+    pyeong_name: Annotated[
         str | None,
-        Field(description="평형 ('93평', 단지)")
+        Field(description="평형 이름 ('93평', 단지)")
     ] = None
-    price_date: Annotated[
+    price_month: Annotated[
         str | None,
-        Field(description="금액 기준 ('26년 5월', 최고가증감 단지는 새 최고가 달)")
+        Field(description="금액 기준 달 ('2026-05', 최고가증감 단지는 새 최고가 달). 다방 글자를 읽지 못하면 null")
     ] = None
     price_detail: Annotated[
         str | None,
@@ -618,7 +618,7 @@ class DabangRegionRanking(BaseModel):
             "(세대수·연식·동네정보)과 '매물정보' 탭 순위는 키 없음"
         ))
     ] = None
-    building_type: Annotated[
+    property_type: Annotated[
         str | None,
         Field(description=(
             "'매물정보' 탭 순위의 매물 유형 ('주택/빌라', 여럿이면 '주택/빌라·아파트 합산'). 다른 탭은 키 없음"
@@ -662,7 +662,7 @@ class DabangRegionRanking(BaseModel):
     @model_serializer(mode='wrap')
     def drop_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for key in ('complex_type', 'building_type', 'kind', 'comparison', 'base_month'):
+        for key in ('complex_type', 'property_type', 'kind', 'comparison', 'base_month'):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -674,7 +674,19 @@ def _month(text: str | None) -> str | None:
     return f'20{match.group(1)}-{int(match.group(2)):02d}' if match else None
 
 
-def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRankingEntry:
+def _price_month(text: str | None, field: str, unreadable: dict[str, list[str]]) -> str | None:
+    """다방 기준 달 글자('26년 10월')를 'YYYY-MM' 으로. 값이 없으면('-'·빈 글자) 안내 없이 None 이고, 글자가 있는데 읽지 못하면
+    None 으로 내면서 `unreadable[field]` 에 원래 글자를 모은다 (`get_region_ranking` 이 칸별로 한 줄 알린다).
+    """
+    if text is None or text.strip() in ('', '-'):
+        return None
+    month = _month(text)
+    if month is None:
+        unreadable.setdefault(field, []).append(text)
+    return month
+
+
+def _entry(row: DabangRegionRankingItemModel, kind: ValueKind, unreadable: dict[str, list[str]]) -> DabangRegionRankingEntry:
     text = (
         row.formatted_price or row.formatted_count or row.formatted_percentage or row.formatted_age
         or row.formatted_change_rate or row.formatted_score or row.formatted_volume
@@ -685,8 +697,8 @@ def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRa
         area=row.parent_region_name,
         complex_id=row.complex_id,
         value_text=text,
-        pyeong=row.formatted_pyeong,
-        price_date=row.formatted_price_date,
+        pyeong_name=row.formatted_pyeong,
+        price_month=_price_month(row.formatted_price_date, 'price_month', unreadable),
         price_detail=row.formatted_price_detail,
     )
     if kind == 'price':
@@ -706,7 +718,7 @@ def _entry(row: DabangRegionRankingItemModel, kind: ValueKind) -> DabangRegionRa
             entry.change_manwon = -abs(entry.change_manwon)
         # 최고가증감은 앞 최고가가 formattedMaxPrice 로 온다 (시세증감은 formattedPrevPrice)
         entry.prev_price_manwon = _manwon(row.formatted_prev_price or row.formatted_max_price)
-        entry.prev_price_date = row.formatted_max_price_date
+        entry.prev_price_month = _price_month(row.formatted_max_price_date, 'prev_price_month', unreadable)
     elif kind == 'population-change':
         _fill_count_change(entry, row, row.formatted_year_of_year_change_count, row.formatted_year_of_year_change_percentage)
     elif kind == 'count-change':
@@ -893,6 +905,8 @@ def get_region_ranking(
             )).result
 
     entries: list[DabangRegionRankingEntry] = []
+    # 못 읽은 기준 달 글자 (칸 이름 → 원래 글자들)
+    unreadable: dict[str, list[str]] = {}
     total: int | None = None
     base_month: str | None = None
     has_more = False
@@ -908,10 +922,10 @@ def get_region_ranking(
             break
         total = ranking.total if total is None else total
         base_month = base_month or _month(result.formatted_price_date)
-        rows = [_entry(row, spec.kind) for row in ranking.list_]
+        rows = ranking.list_
         page_dropped = ranking.null_items('list_')
         dropped += page_dropped
-        taken = rows[:limit - len(entries)]
+        taken = [_entry(row, spec.kind, unreadable) for row in rows[:limit - len(entries)]]
         entries += taken
         # 둘째 쪽부터는 한도만큼 받아 limit 에 맞춰 자르므로, 자른 줄이 있으면 서버 hasMore 가 false 여도 더 있다
         # (2026-10-25 실측: 울산 동 84곳을 --limit 70 으로 받으면 둘째 쪽 34곳 중 20곳만 넣는다). 빈 쪽이면 hasMore 가 와도 더 없다
@@ -923,6 +937,8 @@ def get_region_ranking(
     # 해당하는 칸이라 '-' 인 줄에서는 키를 지우지 않고 null(모름)로 둔다
     applicable = frozenset({'rank', 'name', *VALUE_FIELDS_BY_KIND[spec.kind]})
     applicable |= {key for entry in entries for key, value in entry if value is not None}
+    # 글자가 있었는데 못 읽어 null 로 낸 칸은 모름이라 키를 지우지 않는다
+    applicable |= set(unreadable)
     for entry in entries:
         entry._applicable = applicable
     shown_kind = kind_label if isinstance(spec, InfoMetricSpec) and spec.kinds else None
@@ -946,11 +962,17 @@ def get_region_ranking(
         notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. {more}'))
     if dropped:
         notes.append(null_items_note('다방 순위', dropped))
+    for field, texts in unreadable.items():
+        what = '시세 기준 달' if field == 'price_month' else '앞 최고가 달'
+        notes.append(note(
+            '참고',
+            f"다방이 준 지역 순위의 {what}을 읽지 못해 {field} 를 null 로 두었습니다 ({len(texts)}곳, 원래 글자 예: '{texts[0]}')",
+        ))
     # 학원수·진학률 순위는 상위 지역을 시·도까지만 준다 (2026-10-25 실측: 전국 외국어 학원 1위 '신사동' area '서울')
     if scope.kind not in ('district', 'dong') and any(entry.area and ' ' not in entry.area for entry in entries):
         notes.append(note('참고', 'area 가 시·도까지만 와서 같은 이름의 동은 어느 시·군·구인지 알 수 없습니다. 범위를 시·군·구로 주면 그 안의 동만 나옵니다'))
     return DabangRegionRanking(
-        scope=scope, unit=unit, metric=metric_label, tab=tab, complex_type=shown_type, building_type=shown_building, kind=shown_kind,
+        scope=scope, unit=unit, metric=metric_label, tab=tab, complex_type=shown_type, property_type=shown_building, kind=shown_kind,
         comparison=spec.comparison if isinstance(spec, MetricSpec) else None, base_month=base_month, total=total,
         returned=len(entries), has_more=has_more, rankings=entries, notes=notes,
     )
