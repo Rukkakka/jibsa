@@ -70,17 +70,17 @@ jibsa daangn search locations 역삼
 
 **반환값**
 
-이름 검색은 `keyword` 와 칸별 후보를 준다 (기본 `--limit` 이면 요청 5회. 단지 후보는 50곳씩 받아 `--limit` 이 50곳을 넘으면 50곳마다 1회 더).
+이름 검색은 `query` 와 칸별 후보를 준다 (기본 `--limit` 이면 요청 5회. 단지 후보는 50곳씩 받아 `--limit` 이 50곳을 넘으면 50곳마다 1회 더).
 
 | 칸 | 내용 | 넘기는 곳 |
 | --- | --- | --- |
-| `results[]` | 지역: `level`(`시도`·`구`·`동`), `name1`·`name2`·`name3`, `region_id`. 시·도 → 구 → 동 순 | `search listings <지역>` 등 지역을 받는 명령 |
+| `regions[]` | 지역: `level`(`시도`·`구`·`동`), `name`(가장 작은 단위 이름), `sido`·`sigungu`·`dong`, `region_id`. 시·도 → 구 → 동 순 | `search listings <지역>` 등 지역을 받는 명령 |
 | `stations[]` | 지하철역: `name`(노선을 붙인 이름, 예: `서울2호선 역삼역`) | `search listings --station`, `search commute --station` |
 | `universities[]` | 대학 캠퍼스: `name`(캠퍼스까지 붙인 이름), `address` | `search listings --university` |
 | `schools[]` | 초·중·고: `name`, `address`, `school_code` | `school` |
-| `complexes[]` | 단지: `complex_id`, `property_type`, `name`, `address` | `complex`, `search listings --complex` |
+| `complexes[]` | 단지: `complex_id`, `complex_type`, `name`, `address` | `complex`, `search listings --complex` |
 
-좌표 검색은 `lat`, `lng`, `results[]`(좌표가 속한 동)다.
+좌표 검색은 `lat`, `lng`, `regions[]`(좌표가 속한 동)다.
 
 **오류와 대응**
 
@@ -88,7 +88,7 @@ jibsa daangn search locations 역삼
 
 **주의사항**
 
-후보는 앞부분이 비슷한 이름까지 모두 준다 (`역삼` → 역삼동). 다른 명령은 이름이 정확히 같은 곳만 찾으므로 후보의 이름을 그대로 넘긴다. 같은 이름 지역은 `name1`·`name2` 를 붙여 넘긴다 (`'강남구 신사동'`). 지역 후보는 법정동만 나온다 (행정동 `역삼1동` 은 없다). 같은 단지 이름이 다른 지역에도 있을 수 있으니 주소로 고른다.
+후보는 앞부분이 비슷한 이름까지 모두 준다 (`역삼` → 역삼동). 다른 명령은 이름이 정확히 같은 곳만 찾으므로 후보의 이름을 그대로 넘긴다. 같은 이름 지역은 `sigungu` 를 앞에 붙여 넘긴다 (`'강남구 신사동'`). 지역 후보는 법정동만 나온다 (행정동 `역삼1동` 은 없다). 같은 단지 이름이 다른 지역에도 있을 수 있으니 주소로 고른다.
 
 `--limit`은 단지 후보에 적용하며 기본 20곳·최대 1200곳이다. 당근 단지 검색은 이름이 조금 비슷한 단지까지 이름이 맞는 순으로 주므로 찾는 단지는 앞쪽에 있다 ('헬리오시티' 100곳 중 관련 5곳이 1~5위). '○○아파트' 처럼 이름이 흔해 더 봐야 하면 `--limit` 을 늘린다. 단지 후보를 50곳씩 커서로 이어 받고, 더 남으면 조회 한도와 검색어 안내를 제공한다. 지역 후보는 100곳까지이고, 더 있으면(`중구` 는 222곳) `[일부] 지역 후보는 앞 N곳만 받았습니다. 시·도나 구 이름을 붙여 좁히세요` 로 알린다 (N 은 쓸 수 없어 뺀 곳까지 센 실제로 받은 수). 위치·ID·시·도 이름이 없거나 단계를 몰라 쓸 수 없는 지역 후보는 이름으로 찾을 수 없어 목록에서 빼고 `[제외] 위치·ID·시·도 이름이 없거나 단계를 몰라 이름으로 찾을 수 없는 지역 후보 N곳은 뺐습니다` 로 알린다. 역 후보는 당근이 한 번에 주는 만큼 준다. 위치 정보가 없는 역·캠퍼스는 `--station`·`--university` 로 찾을 수 없어 목록에서 빼고 `[제외] 위치 정보가 없는 역 N곳은 --station 으로 찾을 수 없어 뺐습니다` (대학은 `위치 정보가 없는 캠퍼스 N곳은 --university 로 찾을 수 없어 뺐습니다`)로 알린다. 대학 후보는 50곳까지다. 당근이 대학 목록에 빈 항목을 섞어 보내 빼고 읽었으면 그 `[제외]` 안내가 따로 붙으므로, 위치 정보가 없는 캠퍼스 안내와 둘 다 나올 수 있다. 당근 대학 검색은 다음 쪽을 주지 않아 50곳이 다 오면 뒤에 더 있을 수 있다고 `[일부]` `notes` 로 알리니, 찾는 캠퍼스·대학원이 없으면 그 이름까지 붙여 다시 찾는다. 학교 후보는 50곳까지이고 더 있으면 `[일부]` `notes` 로 알린다 (이름이 그대로 같은 학교가 먼저 온다). 흔한 이름(`중앙초등학교` 86곳)은 이름 앞에 지역을 붙여 다시 찾는다.
 
@@ -157,8 +157,8 @@ jibsa daangn search listings 노형동 --trade 연세 --yearly-rent-max 1000
 
 **반환값**
 
-- 동: `region`(찾은 동), `total`(그 동에서 조건에 맞는 매물 수. 웹 지도의 동 거품 "매물 N개"와 같고 1000 에서 잘리지 않는다. 받지 못하면 `null`이고 이유를 `notes`로 알린다), `returned`, `has_more`, `next`, `listings`
-- 구·좌표·주소 (지도 화면): `region`(구로 찾았으면 그 구, 좌표·주소면 화면 가운데의 동. 받지 못하면 `null`), 주소로 찾았으면 `address`(`road_address` 도로명 주소, `region_address` 지번 주소와 건물 이름, `place` 그 자리의 당근 단지·건물 이름, 단지면 `complex_id`, `lat`·`lng`), `zoom`, `width_km`·`height_km`(화면 범위), `total`(범위 안 당근 집계, 1000 에서 잘림), `returned`, `has_more`, `next`, `listings`
+- 동: `region`(찾은 동: `name`(동 이름)·`sido`·`sigungu`·`dong`·`region_id`), `total`(그 동에서 조건에 맞는 매물 수. 웹 지도의 동 거품 "매물 N개"와 같고 1000 에서 잘리지 않는다. 받지 못하면 `null`이고 이유를 `notes`로 알린다), `returned`, `has_more`, `next`, `listings`
+- 구·좌표·주소 (지도 화면): `region`(구로 찾았으면 그 구, 좌표·주소면 화면 가운데의 동. 받지 못하면 `null`), 주소로 찾았으면 `address`(`road_address` 도로명 주소, `address` 지번 주소와 건물 이름, `building_name` 그 자리의 당근 단지·건물 이름, 단지면 `complex_id`, `lat`·`lng`), `zoom`, `width_km`·`height_km`(화면 범위), `total`(범위 안 당근 집계, 1000 에서 잘림), `returned`, `has_more`, `next`, `listings`
 - 역: `region`(찾은 역의 이름·노선·좌표), `returned`, `has_more`, `next`, `listings`(매물마다 `walk_minutes`)
 - 대학: `region`(찾은 캠퍼스 이름·주소·좌표), `returned`, `has_more`, `next`, `listings`
 
@@ -185,7 +185,7 @@ jibsa daangn search listings 노형동 --trade 연세 --yearly-rent-max 1000
 
 `--structure`는 `-t 원룸`과 함께 쓴다. 세대수·세대당 주차 조건은 당근 웹처럼 `-t` 를 주지 않거나 아파트·오피스텔을 넣을 때 쓴다 (단지에 있는 매물에 걸린다). `--with-manage-cost`는 월세 범위를 월세+관리비로 비교한다 (`--rent-min`/`--rent-max` 없이 주면 `INVALID_ARGUMENT`). ㎡ 조건은 일반 매물의 전용면적, 주택·건물·공장·창고의 연면적, 토지의 대지면적을 사용한다. 서로 다른 유형을 함께 검색하면 면적 기준도 섞인다.
 
-당근 목록(`search listings`)은 원래 번지·등록일·관리비·방 수를 주지 않아 `address` 가 동까지, `registered_at`·`manage_cost_manwon` 이 `null` 이다. `-t 투룸` 은 당근 카테고리대로 투룸 이상이라 목록의 `room_type` 이 `null` 이다. 목록의 원룸 `room_type`(오픈형·분리형)은 당근 원룸 구조라 방이 2개인 매물에도 붙을 수 있다. 상세(`listing`)에서는 번지까지 있는 지번 주소(당근이 빈 글자나 `-` 로 주면 지역 이름 `시·도 구 동` 으로 채우고, 지역도 모르면 `null`)와 등록일, 관리비, 그리고 유형과 상관없이 방 수로 정한 `room_type`(방 2개 투룸, 3개 쓰리룸, 4개 이상 포룸이상)이 나온다. 방 1개는 원룸만 오픈형·분리형이고, 오피스텔·아파트 등은 구조를 몰라 `null`이며 `room_count`로 방 수를 확인한다.
+당근 목록(`search listings`)은 원래 번지·등록일·관리비·방 수를 주지 않아 `address` 가 동까지, `registered_date`·`manage_cost_manwon` 이 `null` 이다. `-t 투룸` 은 당근 카테고리대로 투룸 이상이라 목록의 `room_type` 이 `null` 이다. 목록의 원룸 `room_type`(오픈형·분리형)은 당근 원룸 구조라 방이 2개인 매물에도 붙을 수 있다. 상세(`listing`)에서는 번지까지 있는 지번 주소(당근이 빈 글자나 `-` 로 주면 지역 이름 `시·도 구 동` 으로 채우고, 지역도 모르면 `null`)와 등록일, 관리비, 그리고 유형과 상관없이 방 수로 정한 `room_type`(방 2개 투룸, 3개 쓰리룸, 4개 이상 포룸이상)이 나온다. 방 1개는 원룸만 오픈형·분리형이고, 오피스텔·아파트 등은 구조를 몰라 `null`이며 `room_count`로 방 수를 확인한다.
 
 `-t 원룸`은 당근의 원룸 카테고리(오픈형·분리형)를 찾는다. 당근 매물 종류는 작성자가 고른 하나라서, 같은 오피스텔 건물의 방 1개짜리도 원룸 또는 오피스텔로 갈린다. 아파트·오피스텔·주택으로 등록된 방 1개짜리 매물까지 찾는 조건이 아니고, 원룸으로 등록했어도 방이 2개인 매물이 있다. 빌라 원룸도 작성자가 원룸 카테고리로 등록한 경우에 포함되며 건축물의 법적 용도를 보장하지 않는다. 오피스텔 원룸을 빠짐없이 보려면 `-t 원룸,오피스텔`로 함께 찾는다. 모든 건물 유형의 방 1개짜리 집이 필요하면 해당 유형도 검색하고 `listing`의 `room_count`를 확인한다. `null`이면 방 수를 알 수 없다. 당근 웹처럼 `--room-count`는 2개·3개·4개 이상만 지원한다. `--structure`를 주면 당근은 거의 원룸만 돌려주므로 함께 준 다른 유형은 대부분 빠지고 `notes`로 알린다. 당근이 원룸 조건으로 돌려준 매물은 다른 유형으로 표시돼도 빼지 않으므로 결과의 `property_type`으로 확인한다. 원룸·투룸으로 등록됐지만 오피스텔·아파트 단지에 있는 매물은 빼지 않고 매물 ID·단지 이름·건물 종류를 `notes`로 알린다. `property_type`은 작성자가 고른 종류다.
 
@@ -287,7 +287,7 @@ jibsa daangn complex 100001
 
 **반환값**
 
-단지 ID·이름·주소·유형, 세대수·층수·주차·사용승인일·난방·시공사, `pyeongs`(평형마다 전용·공급면적, 방·욕실 수, `area_group` 전용면적 묶음, 아파트형 단지는 `pyeong` 공급 평형 묶음, `representative` 대표 평형), `nearby_subways`, `schools`, `listing_count`, `review_count`, `url`을 준다. 단지 공공 정보가 없으면 `pyeongs`·`nearby_subways`·`schools` 는 `null`(모름)이다. `nearby_subways` 는 도보 시간이 짧은 순이라 첫 항목이 가장 가까운 역이다 (같은 분이면 당근이 준 순서, 시간을 모르는 역은 뒤). 도보 분은 당근 웹처럼 반올림하고 최소 1분이다 (0.3분도 1분).
+단지 ID·이름·주소·유형, 세대수·층수·주차·사용승인일·난방·시공사, `pyeongs`(평형마다 전용·공급면적, 방·욕실 수, `area_group` 전용면적 묶음, 아파트형 단지는 `pyeong` 공급 평형 묶음, `representative` 대표 평형), `nearby_stations`, `schools`, `listing_count`, `review_count`, `url`을 준다. 단지 공공 정보가 없으면 `pyeongs`·`nearby_stations`·`schools` 는 `null`(모름)이다. `nearby_stations` 는 도보 시간이 짧은 순이라 첫 항목이 가장 가까운 역이다 (같은 분이면 당근이 준 순서, 시간을 모르는 역은 뒤). 도보 분은 당근 웹처럼 반올림하고 최소 1분이다 (0.3분도 1분).
 
 **오류와 대응**
 
@@ -295,7 +295,7 @@ jibsa daangn complex 100001
 
 **주의사항**
 
-단지 이름 대신 `search locations`·`search complexes`·`school` 또는 매물 상세의 `complex_id`를 사용한다. 평형·세대수·학교·역·현재 매물 수·후기 수 등을 제공한다. 당근 웹처럼 아파트형 단지(아파트·주상복합·재개발)는 평형을 공급 평 묶음(`pyeongs[].pyeong`, 예: 32평)으로 나누고, 그 밖은 전용면적 묶음(`pyeongs[].area_group`, 예: 84㎡)으로 나눈다. `pyeong` 은 `real-price`·`price-trend` 의 `--pyeong` 에, `area_group` 은 `--area` 에 넣는다. 전용 84㎡ 묶음에는 32평·33평처럼 공급 평형이 다른 평형이 섞이니 아파트는 `--pyeong` 으로 고른다. `nearby_subways` 는 당근 웹 단지 화면의 '가까운 역' 순서를 따르지만 웹처럼 같은 이름 역을 합치거나 2곳으로 자르지 않고 (역, 노선)마다 모두 준다 (선릉역이 2호선·수인분당선이면 두 항목). `schools` 는 배정 초등학교와, 당근 웹 학군 카드처럼 이 단지 주민이 많이 다니는 순(같으면 도보 순)으로 고른 중·고등학교 2곳씩이다 (도보 20분 안 학교, 없으면 가장 가까운 곳, 이 단지 주민이 다니는 곳). 주민이 다니면 `이 단지 N명 이상` 이 붙는다. 요청은 단지 페이지 1회(약 2MB)다.
+단지 이름 대신 `search locations`·`search complexes`·`school` 또는 매물 상세의 `complex_id`를 사용한다. 평형·세대수·학교·역·현재 매물 수·후기 수 등을 제공한다. 당근 웹처럼 아파트형 단지(아파트·주상복합·재개발)는 평형을 공급 평 묶음(`pyeongs[].pyeong`, 예: 32평)으로 나누고, 그 밖은 전용면적 묶음(`pyeongs[].area_group`, 예: 84㎡)으로 나눈다. `pyeong` 은 `real-price`·`price-trend` 의 `--pyeong` 에, `area_group` 은 `--area` 에 넣는다. 전용 84㎡ 묶음에는 32평·33평처럼 공급 평형이 다른 평형이 섞이니 아파트는 `--pyeong` 으로 고른다. `nearby_stations` 는 당근 웹 단지 화면의 '가까운 역' 순서를 따르지만 웹처럼 같은 이름 역을 합치거나 2곳으로 자르지 않고 (역, 노선)마다 모두 준다 (선릉역이 2호선·수인분당선이면 두 항목). `schools` 는 배정 초등학교와, 당근 웹 학군 카드처럼 이 단지 주민이 많이 다니는 순(같으면 도보 순)으로 고른 중·고등학교 2곳씩이다 (도보 20분 안 학교, 없으면 가장 가까운 곳, 이 단지 주민이 다니는 곳). 주민이 다니면 `이 단지 N명 이상` 이 붙는다. 요청은 단지 페이지 1회(약 2MB)다.
 
 ## 6. `search listings --complex` — 단지 안 현재 매물
 
@@ -376,7 +376,7 @@ jibsa daangn real-price 100001 --pyeong 32 --month 2026-08
 
 **반환값**
 
-`trade_type`, `returned`, `has_more`, `transactions`, `url`; 단지 모드는 `complex_id` 와 `area_group`(`null` 이면 전체 평형. `--pyeong` 이면 대신 `pyeong`), 건물 모드는 `listing_id`를 준다. 당근이 거래 목록을 주지 않으면 `transactions`·`has_more` 가 `null`(모름)이고 `[실패] 당근이 이 단지의(건물의) {매매|전세|월세} 거래 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다` 로 알린다 (목록이 왔는데 거래가 0건이면 `transactions` 는 `[]` 다). `--years` 를 주면 기간 시작일 `since`(이날부터 계약), `--month` 를 주면 `month`(YYYY-MM)도 준다. 전월세 거래의 계약 종류는 `contract_type`(`신규`·`재계약`)과 갱신요구권 사용 `renewal_right` 다 ([단지·건물 실거래 필드](#단지건물-실거래-real-price)).
+`trade_type`, `returned`, `has_more`, `trades`, `url`; 단지 모드는 `complex_id` 와 `area_group`(`null` 이면 전체 평형. `--pyeong` 이면 대신 `pyeong`), 건물 모드는 `listing_id`를 준다. 당근이 거래 목록을 주지 않으면 `trades`·`has_more` 가 `null`(모름)이고 `[실패] 당근이 이 단지의(건물의) {매매|전세|월세} 거래 목록을 주지 않았습니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다` 로 알린다 (목록이 왔는데 거래가 0건이면 `trades` 는 `[]` 다). `--years` 를 주면 기간 시작일 `start_date`(이날부터 계약), `--month` 를 주면 `month`(YYYY-MM)도 준다. 전월세 거래의 계약 종류는 `contract_type`(`신규`·`재계약`)과 갱신요구권 사용 `renewal_right` 다 ([단지·건물 실거래 필드](#단지건물-실거래-real-price)).
 
 **오류와 대응**
 
@@ -415,7 +415,7 @@ jibsa daangn region-real-price 역삼동 --new-high --previous-days
 
 **반환값**
 
-`region`, `trade_type`, `new_high`, `sort`, `summary`, `returned`, `has_more`, `transactions`를 준다. `summary` 는 당근 웹 실거래 화면 머리의 요약(`data_date` 가장 최근 공개일, 그날의 `sale_count` 매매 수·`new_high_count` 신고가 수)이고 요청 1회가 더 든다 (받지 못하면 `null` 이고 `notes` 가 알린다). 각 거래의 계약일과 공개일을 구분한다. 매매 거래마다 당근 웹 카드와 같은 신고가 배지 `is_new_high` 와 직전 최고가 `previous_high_manwon`·`previous_high_date`·`previous_high_change_percent` 가 `--new-high` 없이도 온다 ([지역 실거래 필드](#지역-실거래-region-real-price)).
+`region`, `trade_type`, `new_high_only`, `sort`, `summary`, `returned`, `has_more`, `trades`를 준다. `summary` 는 당근 웹 실거래 화면 머리의 요약(`latest_published_date` 가장 최근 공개일, 그날의 `sale_count` 매매 수·`new_high_count` 신고가 수)이고 요청 1회가 더 든다 (받지 못하면 `null` 이고 `notes` 가 알린다). 각 거래의 계약일과 공개일을 구분한다. 매매 거래마다 당근 웹 카드와 같은 신고가 배지 `new_high` 와 직전 최고가 `prev_high_manwon`·`prev_high_date`·`prev_high_diff_percent` 가 `--new-high` 없이도 온다 ([지역 실거래 필드](#지역-실거래-region-real-price)).
 
 **오류와 대응**
 
@@ -449,7 +449,7 @@ jibsa daangn price-trend 100001 --pyeong 32 --trade 매매 --period 3년
 
 **반환값**
 
-`complex_id`, `trade_type`, `pyeong`(아파트형) 또는 `area_group`, `period`, `recent_average_manwon`·`recent_transactions`(웹 그래프 머리의 최근 3개월 평균과 거래 수), `kb_sale`(이 평형의 최근 KB 매매 시세: `low_manwon` 하위~`high_manwon` 상위 평균가와 조사 기준일 `survey_date`. 웹 그래프의 KB 시세 띠. 당근이 주지 않으면 `null`), `total_transactions`, `summary`(`start_month`·`start_average_manwon`·`end_month`·`end_average_manwon`·`months`·`change_percent`·`change_manwon`), `points`, `url`을 준다. `points`는 거래가 있는 달만 포함한다. `kb_sale` 은 전세 그래프에도 매매 시세가 온다 (KB 전세·월세 시세는 `compare` 의 `pyeong` 에 있다). 평형 묶음 정보가 없는 단지는 당근 웹처럼 시세 그래프가 없어(웹은 '아직 등록된 실거래가가 없어요') `pyeong`·`area_group` 이 없고 `points: []`·`total_transactions: 0`, `summary`·`recent_average_manwon`·`recent_transactions`·`kb_sale` 은 `null` 이며 `notes` 로 알린다. 평형은 있는데 당근이 시세 그래프 자료를 주지 않으면 거래 달이 0개인 것이 아니라 모름이라 `points`·`total_transactions`·`summary`·`recent_average_manwon`·`recent_transactions` 가 `null` 이고 `[실패] 당근이 이 평형의 시세 그래프 자료를 주지 않았습니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다` 로 알린다 (그래프가 왔는데 거래 달이 없으면 `[]`·0). 그래프는 왔는데 점 목록만 `null` 로 줘도 같다 (`kb_sale` 은 점 목록과 별개라 왔으면 낸다). 거래가 있는 점의 연월이 없거나(`null`·빈 값·`-`) 읽을 수 없거나 평균 가격이 없으면(`null`·0) 어느 달의 얼마인지 몰라 그 점을 빼고 `[제외] 당근이 연월이나 평균 가격을 주지 않은 시세 점 N개는 뺐습니다` 로 알리며, 뺀 점이 첫 달·마지막 달·최근 3개월이었을 수 있어 빈 항목을 뺐을 때처럼 `total_transactions`·`summary`·`recent_average_manwon`·`recent_transactions` 가 `null`(모름)이다 (`[제외]` 안내가 이 칸들이 `null` 이라고 알린다. 마지막 거래가 오래됐다는 안내와 변화율을 내지 못했다는 `[참고]` 도 내지 않고, `points` 는 연월과 평균을 아는 달만 준다. 거래 수가 없거나 0 인 점은 거래가 없는 달이라 세지 않고 말없이 넘긴다). 당근이 월별 목록에 빈 항목을 섞어 보내 빼고 읽었으면 그 목록으로 센 `total_transactions`(숫자가 아니라 `null`)·`summary`·`recent_average_manwon`·`recent_transactions` 가 `null`(모름)이고 `[제외]` 로 알린다 (`points` 는 받은 대로).
+`complex_id`, `trade_type`, `pyeong`(아파트형) 또는 `area_group`, `period`, `recent_average_manwon`·`recent_trade_count`(웹 그래프 머리의 최근 3개월 평균과 거래 수), `estimated_prices`(이 평형의 최근 KB 매매 시세: 출처 `provider`, 조사 기준일 `base_date`, `sale` 키 안 `low_manwon` 하위~`high_manwon` 상위 평균가. 웹 그래프의 KB 시세 띠. 당근이 주지 않으면 `null`. 하위·상위를 모두 모르면 `sale` 이 `null`), `total_trade_count`, `summary`(`start_month`·`start_average_manwon`·`end_month`·`end_average_manwon`·`span_months`·`change_percent`·`change_manwon`), `months`, `url`을 준다. `months`는 거래가 있는 달만 포함한다. `estimated_prices` 는 전세 그래프에도 매매 시세가 온다 (KB 전세·월세 시세는 `compare` 의 `pyeong` 에 있다). 평형 묶음 정보가 없는 단지는 당근 웹처럼 시세 그래프가 없어(웹은 '아직 등록된 실거래가가 없어요') `pyeong`·`area_group` 이 없고 `months: []`·`total_trade_count: 0`, `summary`·`recent_average_manwon`·`recent_trade_count`·`estimated_prices` 는 `null` 이며 `notes` 로 알린다. 평형은 있는데 당근이 시세 그래프 자료를 주지 않으면 거래 달이 0개인 것이 아니라 모름이라 `months`·`total_trade_count`·`summary`·`recent_average_manwon`·`recent_trade_count` 가 `null` 이고 `[실패] 당근이 이 평형의 시세 그래프 자료를 주지 않았습니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다` 로 알린다 (그래프가 왔는데 거래 달이 없으면 `[]`·0). 그래프는 왔는데 점 목록만 `null` 로 줘도 같다 (`estimated_prices` 는 점 목록과 별개라 왔으면 낸다). 거래가 있는 점의 연월이 없거나(`null`·빈 값·`-`) 읽을 수 없거나 평균 가격이 없으면(`null`·0) 어느 달의 얼마인지 몰라 그 점을 빼고 `[제외] 당근이 연월이나 평균 가격을 주지 않은 시세 점 N개는 뺐습니다` 로 알리며, 뺀 점이 첫 달·마지막 달·최근 3개월이었을 수 있어 빈 항목을 뺐을 때처럼 `total_trade_count`·`summary`·`recent_average_manwon`·`recent_trade_count` 가 `null`(모름)이다 (`[제외]` 안내가 이 칸들이 `null` 이라고 알린다. 마지막 거래가 오래됐다는 안내와 변화율을 내지 못했다는 `[참고]` 도 내지 않고, `months` 는 연월과 평균을 아는 달만 준다. 거래 수가 없거나 0 인 점은 거래가 없는 달이라 세지 않고 말없이 넘긴다). 당근이 월별 목록에 빈 항목을 섞어 보내 빼고 읽었으면 그 목록으로 센 `total_trade_count`(숫자가 아니라 `null`)·`summary`·`recent_average_manwon`·`recent_trade_count` 가 `null`(모름)이고 `[제외]` 로 알린다 (`months` 는 받은 대로).
 
 **오류와 대응**
 
@@ -457,9 +457,9 @@ jibsa daangn price-trend 100001 --pyeong 32 --trade 매매 --period 3년
 
 **주의사항**
 
-당근 웹 단지 화면의 시세 그래프와 같은 데이터·계산이다. 매매·전세만 지원하며 월세 그래프는 없다. 웹처럼 평형 하나로 보고, `--pyeong`·`--area` 를 주지 않으면 웹이 처음 보여 주는 대표 평형이다 (`notes` 로 알린다). 크기가 다른 평형을 섞은 평균은 큰 평형 거래가 몰린 달에 튀어 쓰지 않는다. `--period` 는 표시 기간과 변화율 기간을 함께 정하며, 오늘이 든 달과 그 전 12·36·180개월이다. `points`는 거래가 있는 달만 오래된 순이며 `transaction_count`로 표본 수를 확인한다. 요청은 2회다 (단지 비교 칸 → 시세 그래프). 평형 묶음 정보가 없는 단지는 그래프를 받지 않아 1회다.
+당근 웹 단지 화면의 시세 그래프와 같은 데이터·계산이다. 매매·전세만 지원하며 월세 그래프는 없다. 웹처럼 평형 하나로 보고, `--pyeong`·`--area` 를 주지 않으면 웹이 처음 보여 주는 대표 평형이다 (`notes` 로 알린다). 크기가 다른 평형을 섞은 평균은 큰 평형 거래가 몰린 달에 튀어 쓰지 않는다. `--period` 는 표시 기간과 변화율 기간을 함께 정하며, 오늘이 든 달과 그 전 12·36·180개월이다. `months`는 거래가 있는 달만 오래된 순이며 `trade_count`로 표본 수를 확인한다. 요청은 2회다 (단지 비교 칸 → 시세 그래프). 평형 묶음 정보가 없는 단지는 그래프를 받지 않아 1회다.
 
-변화율(`summary`)은 웹 그래프처럼 기간 안 첫 거래 달과 마지막 거래 달의 평균가를 견준다 (`months` 개월간 `change_percent`%, 웹과 같은 식이고 소수 첫째 자리로 반올림한다). 두 달 중 거래가 3건 미만인 달이 있거나 마지막 거래가 6개월 넘게 지났으면 `notes`로 알린다.
+변화율(`summary`)은 웹 그래프처럼 기간 안 첫 거래 달과 마지막 거래 달의 평균가를 견준다 (`span_months` 개월간 `change_percent`%, 웹과 같은 식이고 소수 첫째 자리로 반올림한다). 두 달 중 거래가 3건 미만인 달이 있거나 마지막 거래가 6개월 넘게 지났으면 `notes`로 알린다.
 
 ## 10. `school` — 학교·배정 단지
 
@@ -481,7 +481,7 @@ jibsa daangn school B100000749
 
 **반환값**
 
-`school`(`school_code` 포함. 학교 종류 `school_type`·남녀공학 `coed` 는 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드), `total_complexes`(단지 유형·세대수 조건에 맞는 배정 단지 수, `--limit` 적용 전. 당근이 단지 ID 를 주지 않아 `complexes` 에서 뺀 단지도 센다. 아래처럼 셀 수 없으면 `null`), `returned`, `complexes`(당근 웹 학교 화면과 같은 순서), `url`을 준다. 당근이 이 학교의 배정 단지를 주지 않으면 `total_complexes`·`complexes` 는 `null`(모름)이고 `[실패] 당근이 이 학교의 배정 단지 정보를 주지 않았습니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다` 로 알린다 (배정 단지가 정말 없으면 `[]`·0). 당근이 배정 단지 목록에 빈 항목을 섞어 보내 빼고 읽었으면 셀 수 없어 `total_complexes` 만 `null` 이고 `complexes` 는 받은 대로이며 `[제외]` 로 알린다. 단지 유형(`-t`)·세대수(`--household-min`)를 몰라 조건을 확인할 수 없는 단지가 있을 때도 맞는 단지 수를 알 수 없어 `total_complexes` 가 `null` 이다.
+`school`(`school_code` 포함. 학교 종류 `school_type`·남녀공학 `coed` 는 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드), `total`(단지 유형·세대수 조건에 맞는 배정 단지 수, `--limit` 적용 전. 당근이 단지 ID 를 주지 않아 `complexes` 에서 뺀 단지도 센다. 아래처럼 셀 수 없으면 `null`), `returned`, `complexes`(당근 웹 학교 화면과 같은 순서), `url`을 준다. 당근이 이 학교의 배정 단지를 주지 않으면 `total`·`complexes` 는 `null`(모름)이고 `[실패] 당근이 이 학교의 배정 단지 정보를 주지 않았습니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다` 로 알린다 (배정 단지가 정말 없으면 `[]`·0). 당근이 배정 단지 목록에 빈 항목을 섞어 보내 빼고 읽었으면 셀 수 없어 `total` 만 `null` 이고 `complexes` 는 받은 대로이며 `[제외]` 로 알린다. 단지 유형(`-t`)·세대수(`--household-min`)를 몰라 조건을 확인할 수 없는 단지가 있을 때도 맞는 단지 수를 알 수 없어 `total` 가 `null` 이다.
 
 **오류와 대응**
 
@@ -489,7 +489,7 @@ jibsa daangn school B100000749
 
 **주의사항**
 
-당근 웹 검색창처럼 이름이 들어간 학교를 찾고 좌표가 없는 학교는 뺀다. 이름이 그대로 같은 학교가 하나뿐이어도 검색 결과에 다음 쪽이 남았으면 뒤쪽에 같은 이름이 더 있을 수 있어, 검색어마다 첫 쪽을 포함해 최대 3쪽(150곳)까지 이어 받아 센다 (같은 이름이 더 나오면 후보를 알리고, 3쪽을 넘게 남으면 고르지 않는다). 다음 쪽이 없거나 3쪽 안에서 끝나고 같은 이름이 하나뿐일 때만 그 학교다. 이름이 그대로 같은 학교가 없고 후보가 하나뿐일 때도 검색 결과에 다음 쪽이 남지 않았을 때만 그 학교를 고른다. 요청은 보통 1~2회이고, 같은 이름 학교 하나에 다음 쪽이 있으면 검색어마다 최대 2회 더 든다. `대치초등학교` 처럼 종류 이름까지 주고 이름이 그대로 같은 학교가 하나뿐이 아니면(없거나 여럿이면) `대치초` 로도 한 번 더 찾아 합친다. 당근 검색은 `대치초등학교` 로 `서울대치초등학교` 를 못 찾아(당근 웹도 0건) jibsa 가 더하는 것이다 (요청 1회 더). 학교 코드는 `search locations <학교 이름>` 의 `schools[].school_code` 에도 있다. 배정 단지는 초등학교만 제공하고 중·고등학교는 학교 정보만 제공한다 (배정 단지가 없을 때 학교 종류가 중·고등학교일 때만 '중·고등학교는 학교군으로 배정돼 단지 목록이 없습니다' 로 알리고, 종류를 모르거나 기타·초등학교면 '당근에 이 학교의 배정 단지 정보가 없습니다' 로 알린다). 단지는 당근 웹 학교 화면과 같은 순서이고 소규모 빌라형 단지도 섞일 수 있다. 단지 유형·세대수 조건과 `--limit` 은 그 순서에서 거르고 자른다. 단지 유형(`-t`)이나 세대수(`--household-min`)를 몰라 조건에 맞는지 확인할 수 없는 단지는 빼고 `[제외] 유형·세대수를 몰라 조건을 확인할 수 없는 단지 N곳은 뺐습니다` 로 알린다 (실제로 몰랐던 칸만 적고, 다른 조건이 이미 틀린 단지는 세지 않으며, `--household-min 0` 은 아무것도 빼지 않는다). 이때 맞는 단지 수를 알 수 없어 `total_complexes` 는 `null` 이고 `--limit` 으로 잘린 `[일부]` 안내도 단지 수를 쓰지 않는다. 당근이 단지 ID 를 주지 않아 뺀 단지는 조건에 맞는 것이 확실해 `[제외] 당근이 단지 ID 를 주지 않은 N곳은 뺐습니다` 로 알리고 `total_complexes` 에는 센다 (`[일부]` 안내의 단지 수도 이 값이다). 남은 단지가 없고 뺀 단지가 있으면 조건에 맞는 곳이 없다고 단정하지 않고 이 안내만 낸다. 유형을 모르는 학교에 배정 단지가 와도 목록과 `--limit` 안내는 정상으로 나온다. 배정 단지 카드의 `recent_trades`는 웹처럼 취소되지 않은 최근 매매 1건이다. 학교 전화·좌표는 출력하지 않는다.
+당근 웹 검색창처럼 이름이 들어간 학교를 찾고 좌표가 없는 학교는 뺀다. 이름이 그대로 같은 학교가 하나뿐이어도 검색 결과에 다음 쪽이 남았으면 뒤쪽에 같은 이름이 더 있을 수 있어, 검색어마다 첫 쪽을 포함해 최대 3쪽(150곳)까지 이어 받아 센다 (같은 이름이 더 나오면 후보를 알리고, 3쪽을 넘게 남으면 고르지 않는다). 다음 쪽이 없거나 3쪽 안에서 끝나고 같은 이름이 하나뿐일 때만 그 학교다. 이름이 그대로 같은 학교가 없고 후보가 하나뿐일 때도 검색 결과에 다음 쪽이 남지 않았을 때만 그 학교를 고른다. 요청은 보통 1~2회이고, 같은 이름 학교 하나에 다음 쪽이 있으면 검색어마다 최대 2회 더 든다. `대치초등학교` 처럼 종류 이름까지 주고 이름이 그대로 같은 학교가 하나뿐이 아니면(없거나 여럿이면) `대치초` 로도 한 번 더 찾아 합친다. 당근 검색은 `대치초등학교` 로 `서울대치초등학교` 를 못 찾아(당근 웹도 0건) jibsa 가 더하는 것이다 (요청 1회 더). 학교 코드는 `search locations <학교 이름>` 의 `schools[].school_code` 에도 있다. 배정 단지는 초등학교만 제공하고 중·고등학교는 학교 정보만 제공한다 (배정 단지가 없을 때 학교 종류가 중·고등학교일 때만 '중·고등학교는 학교군으로 배정돼 단지 목록이 없습니다' 로 알리고, 종류를 모르거나 기타·초등학교면 '당근에 이 학교의 배정 단지 정보가 없습니다' 로 알린다). 단지는 당근 웹 학교 화면과 같은 순서이고 소규모 빌라형 단지도 섞일 수 있다. 단지 유형·세대수 조건과 `--limit` 은 그 순서에서 거르고 자른다. 단지 유형(`-t`)이나 세대수(`--household-min`)를 몰라 조건에 맞는지 확인할 수 없는 단지는 빼고 `[제외] 유형·세대수를 몰라 조건을 확인할 수 없는 단지 N곳은 뺐습니다` 로 알린다 (실제로 몰랐던 칸만 적고, 다른 조건이 이미 틀린 단지는 세지 않으며, `--household-min 0` 은 아무것도 빼지 않는다). 이때 맞는 단지 수를 알 수 없어 `total` 는 `null` 이고 `--limit` 으로 잘린 `[일부]` 안내도 단지 수를 쓰지 않는다. 당근이 단지 ID 를 주지 않아 뺀 단지는 조건에 맞는 것이 확실해 `[제외] 당근이 단지 ID 를 주지 않은 N곳은 뺐습니다` 로 알리고 `total` 에는 센다 (`[일부]` 안내의 단지 수도 이 값이다). 남은 단지가 없고 뺀 단지가 있으면 조건에 맞는 곳이 없다고 단정하지 않고 이 안내만 낸다. 유형을 모르는 학교에 배정 단지가 와도 목록과 `--limit` 안내는 정상으로 나온다. 배정 단지 카드의 `recent_trades`는 웹처럼 취소되지 않은 최근 매매 1건이다. 학교 전화·좌표는 출력하지 않는다.
 
 배정 단지는 기본 120곳·최대 1200곳을 표시한다. 일부만 표시하면 전체 개수와 표시 개수를 알리고, 최대값에서는 유형·세대수 조건으로 좁히도록 안내한다.
 
@@ -539,7 +539,7 @@ jibsa daangn search commute --address '테헤란로 152' --max-minutes 20 -t 원
 
 **반환값**
 
-`workplace_station`, `max_minutes`, `reachable_stations`(시간 상한 안에서 조건에 맞는 매물이 있는 역 수, 회사 역은 빼고 센다. 당근은 그런 역만 준다), `returned`, `unique_returned`, 역별 `stations[]`를 준다. 찾아본 역은 지하철 시간 짧은 순으로 모두 `stations[]` 에 있고(매물이 없는 역도), 역마다 지하철 시간·환승·편도 시간(`one_way_minutes`, 당근 웹의 "편도 N분" = 지하철 + 회사 역에서 회사까지 도보), 타는 역에서 회사 역까지 출근 방향 구간 `route[]`(`from_station`·`to_station`·`line`, 당근 출퇴근 지도의 역 상세 경로와 역·노선이 같다)와 그 역 주변 매물(`listings`)이 묶여 있다. 매물에는 역까지 도보 분이 붙는다. 같은 안내가 여러 역에 붙으면 `notes` 한 줄에 역을 모아 알린다 (모든 역이면 `찾아본 10곳 모두`).
+`workplace_station`, `max_minutes`, `reachable_station_count`(시간 상한 안에서 조건에 맞는 매물이 있는 역 수, 회사 역은 빼고 센다. 당근은 그런 역만 준다), `returned`, `unique_returned`, 역별 `stations[]`를 준다. 찾아본 역은 지하철 시간 짧은 순으로 모두 `stations[]` 에 있고(매물이 없는 역도), 역마다 지하철 시간·환승·편도 시간(`one_way_minutes`, 당근 웹의 "편도 N분" = 지하철 + 회사 역에서 회사까지 도보), 타는 역에서 회사 역까지 출근 방향 구간 `route[]`(`from_station_name`·`to_station_name`·`line`, 당근 출퇴근 지도의 역 상세 경로와 역·노선이 같다)와 그 역 주변 매물(`listings`)이 묶여 있다. 매물에는 역까지 도보 분이 붙는다. 같은 안내가 여러 역에 붙으면 `notes` 한 줄에 역을 모아 알린다 (모든 역이면 `찾아본 10곳 모두`).
 
 **오류와 대응**
 
@@ -547,7 +547,7 @@ jibsa daangn search commute --address '테헤란로 152' --max-minutes 20 -t 원
 
 **주의사항**
 
-회사에서 가까운 역을 찾고 그 역까지 지하철로 갈 수 있고 조건에 맞는 매물이 있는 역 전부를 요청 1회로 받아(당근 웹 출퇴근 지도의 역 핀과 같다), 지하철 시간 짧은 역부터(같으면 당근 순서) 주변 매물을 보여 준다. 회사 역 자체의 주변 매물은 웹처럼 넣지 않으니 `search listings --station <회사 역>` 으로 따로 본다. `--max-minutes`는 총 통근 시간이 아니라 역 사이 지하철 시간의 상한이다. 당근은 지하철 60분 안 역까지만 주어 60을 넘게 주면 60분까지의 역만 찾고 `notes`로 알린다. `reachable_stations` 는 상한 안 역 전부를 센 수다. 상한 안에 역이 없으면 에러가 아니라 빈 결과에 회사 역 주변을 볼 명령을 `notes`로 알린다 (이름이 같은 다른 역으로 가지 않게 노선을 붙인 역 이름, 예: `--station '서울5호선 양평역'`). 당근이 지하철 시간을 알려 준 역이 있을 때만 `--max-minutes` 를 늘리라고 한다. 당근이 준 역이 모두 지하철 시간을 모르면 '역이 없다' 는 안내 대신 `[범위] 당근이 준 역 N곳 모두 지하철 시간을 몰라 --max-minutes 안인지 확인할 수 없습니다` 와 회사 역 주변을 볼 명령 한 줄만 알린다 (일부만 모르면 모르는 역을 제외했다는 안내가 따로 붙는다). 당근이 역을 하나도 주지 않으면 대신 `조건을 넓히라` 고 알린다 (조건을 하나도 주지 않았으면 이 말도 없다). 가까운 역부터 최대 10곳을 조회하며 `--limit`은 전체가 아닌 역당 개수다. 기본 5건(10역이면 50건)·최대 120건을 받은 수로 세어 100건씩 다음 페이지를 이어 받고, 같은 역 안의 중복·거래 불가·거래 조건이 없는 매물은 제외해도 추가로 채우지 않는다. 여러 역에 걸친 같은 매물은 각 역에 유지한다. 결과는 `stations[]`로 묶이며 역 안의 매물은 당근이 준 순서 그대로다 (통근 시간으로 다시 세우지 않는다). `returned`는 역별 합계, `unique_returned`는 전체 서로 다른 매물 수다. 역 묶음의 `one_way_minutes` 는 당근 웹이 보여 주는 편도 시간(지하철 + 회사 역→회사 도보)이고 회사 도보를 모르면 `null` 이다. 문 앞까지 보려면 매물의 `walk_to_station_minutes` 를 더한다 (대기 시간은 없다. 예전의 합산 `commute_minutes` 는 웹에 없는 계산이라 뺐다). 지하철 시간을 모르는 역은 시간 상한을 확인할 수 없어 제외하고 안내한다. 환승 횟수를 모르면 `transfers`는 `null`이다.
+회사에서 가까운 역을 찾고 그 역까지 지하철로 갈 수 있고 조건에 맞는 매물이 있는 역 전부를 요청 1회로 받아(당근 웹 출퇴근 지도의 역 핀과 같다), 지하철 시간 짧은 역부터(같으면 당근 순서) 주변 매물을 보여 준다. 회사 역 자체의 주변 매물은 웹처럼 넣지 않으니 `search listings --station <회사 역>` 으로 따로 본다. `--max-minutes`는 총 통근 시간이 아니라 역 사이 지하철 시간의 상한이다. 당근은 지하철 60분 안 역까지만 주어 60을 넘게 주면 60분까지의 역만 찾고 `notes`로 알린다. `reachable_station_count` 는 상한 안 역 전부를 센 수다. 상한 안에 역이 없으면 에러가 아니라 빈 결과에 회사 역 주변을 볼 명령을 `notes`로 알린다 (이름이 같은 다른 역으로 가지 않게 노선을 붙인 역 이름, 예: `--station '서울5호선 양평역'`). 당근이 지하철 시간을 알려 준 역이 있을 때만 `--max-minutes` 를 늘리라고 한다. 당근이 준 역이 모두 지하철 시간을 모르면 '역이 없다' 는 안내 대신 `[범위] 당근이 준 역 N곳 모두 지하철 시간을 몰라 --max-minutes 안인지 확인할 수 없습니다` 와 회사 역 주변을 볼 명령 한 줄만 알린다 (일부만 모르면 모르는 역을 제외했다는 안내가 따로 붙는다). 당근이 역을 하나도 주지 않으면 대신 `조건을 넓히라` 고 알린다 (조건을 하나도 주지 않았으면 이 말도 없다). 가까운 역부터 최대 10곳을 조회하며 `--limit`은 전체가 아닌 역당 개수다. 기본 5건(10역이면 50건)·최대 120건을 받은 수로 세어 100건씩 다음 페이지를 이어 받고, 같은 역 안의 중복·거래 불가·거래 조건이 없는 매물은 제외해도 추가로 채우지 않는다. 여러 역에 걸친 같은 매물은 각 역에 유지한다. 결과는 `stations[]`로 묶이며 역 안의 매물은 당근이 준 순서 그대로다 (통근 시간으로 다시 세우지 않는다). `returned`는 역별 합계, `unique_returned`는 전체 서로 다른 매물 수다. 역 묶음의 `one_way_minutes` 는 당근 웹이 보여 주는 편도 시간(지하철 + 회사 역→회사 도보)이고 회사 도보를 모르면 `null` 이다. 문 앞까지 보려면 매물의 `walk_minutes` 를 더한다 (대기 시간은 없다. 예전의 합산 `commute_minutes` 는 웹에 없는 계산이라 뺐다). 지하철 시간을 모르는 역은 시간 상한을 확인할 수 없어 제외하고 안내한다. 환승 횟수를 모르면 `transfers`는 `null`이다.
 
 당근 웹 출퇴근 지도는 회사 위치를 카카오 장소 검색으로 찾는다. 당근 API 가 아니라 jibsa 는 쓰지 않고, 당근 웹 검색창이 찾는 역·대학·도로명 주소(`--address`)의 좌표나 동·구의 중심을 회사 위치로 쓴다. 다른 곳이면 `--lat/--lng` 로 준다. 매물의 `distance_km`는 회사까지 직선거리다. 주소를 숨긴 매물은 `null` 이다. [통근 매물 필드](#통근-매물-search-commute)를 함께 확인한다.
 
@@ -572,8 +572,8 @@ jibsa daangn region-reviews '강남구 역삼동' --top 10
 
 `region`, `has_reviews`, `review_count`, `dongs`(구만), `top_complexes`, `top_buildings`, `url`을 준다. `has_reviews` 는 후기 수가 1 이상이거나 후기 미리보기·후기 많은 단지·건물·동이 있으면 `true`, 후기 수가 0 이고 미리보기도 비면 `false`('이 지역에는 당근 동네 후기가 아직 없습니다'), 당근이 후기 수를 주지 않고 나머지도 비면 `null`(모름, `[실패] 당근이 후기 수를 주지 않아 이 지역에 후기가 있는지 모릅니다. API 가 바뀌었을 수 있어 jibsa 업데이트가 필요할 수 있습니다`)이다. 후기 본문·작성자·사진·좌표와 요약은 없다. 후기 수 조회에 더해 그 지역의 후기 페이지 하나(요청 1회)로 칸을 채운다. 구를 주면 구 후기 페이지, 동을 주면 동 후기 페이지(`/map/{시도}/{구}/{동}/reviews`)이고 동일 때 구 후기 페이지는 받지 않는다. 후기 많은 순 목록은 `--top` 개까지 준다.
 
-- `top_complexes`: 후기가 있는 단지(`complex_id`, `name`, `property_type`, `review_count`)다. `name` 은 당근이 주지 않으면 `null` 이다. 구는 그 구의 단지를 구 후기 페이지의 20곳까지, 동은 그 동의 단지를 동 후기 페이지의 500곳까지 준다 (예: 역삼동은 역삼래미안 44·역삼푸르지오 32 … 후기 있는 단지 154곳). 동 후기 페이지는 단지 유형을 주지 않아 동으로 찾으면 `property_type` 이 늘 `null` 이다. 세종처럼 구가 없는 시의 동은 동 이름을 구 자리에 둔 후기 페이지(`/map/세종특별자치시/반곡동/reviews`)에서 받아 그 동의 단지를 20곳까지 준다.
-- `top_buildings`: 후기가 있는 건물(빌라·원룸 등. `building_id`, `name`, `road_address`, `jibun_address`, `review_count`, `url`)이다. 구는 그 구의 건물, 동은 그 동의 건물이고 당근이 개수를 제한하지 않는다. `name` 은 없을 때가 많아 `null` 이니 주소로 알아본다. `url` 은 `https://realty.daangn.com/lived-reviews/buildings/<건물 ID>` 로 건물 후기는 여기서 본다.
+- `top_complexes`: 후기가 있는 단지(`complex_id`, `name`, `complex_type`, `review_count`)다. `name` 은 당근이 주지 않으면 `null` 이다. 구는 그 구의 단지를 구 후기 페이지의 20곳까지, 동은 그 동의 단지를 동 후기 페이지의 500곳까지 준다 (예: 역삼동은 역삼래미안 44·역삼푸르지오 32 … 후기 있는 단지 154곳). 동 후기 페이지는 단지 유형을 주지 않아 동으로 찾으면 `complex_type` 이 늘 `null` 이다. 세종처럼 구가 없는 시의 동은 동 이름을 구 자리에 둔 후기 페이지(`/map/세종특별자치시/반곡동/reviews`)에서 받아 그 동의 단지를 20곳까지 준다.
+- `top_buildings`: 후기가 있는 건물(빌라·원룸 등. `building_id`, `name`, `road_address`, `address`, `review_count`, `url`)이다. 구는 그 구의 건물, 동은 그 동의 건물이고 당근이 개수를 제한하지 않는다. `name` 은 없을 때가 많아 `null` 이니 주소로 알아본다. `url` 은 `https://realty.daangn.com/lived-reviews/buildings/<건물 ID>` 로 건물 후기는 여기서 본다.
 - `dongs`: 구로 찾았을 때만 오고(동으로 찾으면 키가 없다) 그 구에서 후기가 있는 동(`name`, `region_id`, `review_count`, `url` 동의 후기 페이지)을 후기 많은 순으로 모두 준다 (자르지 않는다. 강남구 14곳, 영양군 3곳). 이름을 찾지 못한 동은 빼고 `[제외]` `notes` 로 수를 알린다. 동의 단지·건물은 `region-reviews '<구 동>'` 으로 본다.
 - 후기 페이지가 없으면(404) `top_complexes`·`top_buildings`·(구는) `dongs` 가 `null`(모름)이고 `[실패]` 로 알리며 `url` 은 당근 지도 페이지다. 후기 페이지는 왔는데 당근이 동별(구)·건물 목록을 주지 않으면 그 칸(`dongs`·`top_buildings`)이 `null` 이다. 단지 목록은 후기 있는 단지가 없는 지역에도 빈 목록으로 늘 오므로 그 목록이 없으면 페이지 구조가 바뀐 것이라 `PARSE_ERROR` 다 (`top_complexes` 가 `null` 인 것은 후기 페이지가 404 일 때뿐이다). 후기가 있는 단지·건물이 정말 없으면 `[]` 다.
 
@@ -596,7 +596,7 @@ jibsa daangn region-reviews '강남구 역삼동' --top 10
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
 | `COMPLEX_ID` (`preschools`) | 단지 ID (`search complexes`·`search locations <단지 이름>` 결과, 아파트·오피스텔 매물의 `complex_id`) | 필수 |
-| `PRESCHOOL_ID` (`preschool`) | 시설 번호 (`preschools` 결과의 `id`) | 필수 |
+| `PRESCHOOL_ID` (`preschool`) | 시설 번호 (`preschools` 결과의 `preschool_id`) | 필수 |
 
 **사용 예시**
 
@@ -607,7 +607,7 @@ jibsa daangn preschool 37033
 
 **반환값**
 
-`preschools` 는 `complex_id`, `returned`, `preschools[]`(`id`, `name`, `distance_km` 단지에서 직선거리, `resident_count` 이 단지 주민 중 다니는 수, `review_count` 당근 설문 후기 수. 당근이 근처 시설 정보를 주지 않으면 `null`), `url`(당근 단지 페이지). `preschool` 은 어린이집·유치원 구분(`type`, 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드), 주소, 구·동, 운영 시간, 설립 유형(국공립·민간·직장 등), 설립·개원일(`YYYY-MM-DD`, 읽을 수 없는 꼴은 원래 글자, 당근이 `-` 로 주면 `null`), 관할 기관, 정원(`capacity`, 지금 다니는 원아 수가 아니다)·학급(`classes`)·교사(`teachers`) 수, 통학버스, 당근 학부모 설문 응답 수(`survey_responses`, 웹 '후기 N'. 설문이 없으면 0)다. 설문 내용은 `url` 이 없어 당근 앱에서 본다.
+`preschools` 는 `complex_id`, `returned`, `preschools[]`(`preschool_id`, `name`, `distance_m` 단지에서 직선거리(m, 웹과 같은 정수), `resident_count` 이 단지 주민 중 다니는 수, `review_count` 당근 설문 후기 수. 당근이 근처 시설 정보를 주지 않으면 `null`), `url`(당근 단지 페이지). `preschool` 은 어린이집·유치원 구분(`type`, 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드), 주소, 구·동, 운영 시간(`operating_hours`), 설립 유형(국공립·민간·직장 등), 설립·개원일(`established_date`·`opened_date`, `YYYY-MM-DD`, 읽을 수 없는 꼴은 원래 글자, 당근이 `-` 로 주면 `null`), 관할 기관, 정원(`capacity`, 지금 다니는 원아 수가 아니다)·학급(`classes`)·교사(`teachers`) 수, 통학버스(`has_school_bus`), 당근 학부모 설문 응답 수(`survey_responses`, 웹 '후기 N'. 설문이 없으면 0)다. 설문 내용은 `url` 이 없어 당근 앱에서 본다.
 
 **오류와 대응**
 
@@ -635,7 +635,7 @@ jibsa daangn compare 10697092 10667600 --area 84
 
 **반환값**
 
-`returned`, `complexes[]`. 단지마다 이름·유형·주소, 사용승인일, 동·세대수, 세대당 주차, 최저·최고 층(`min_floor`·`max_floor`), 현재 매물 수, `asking`(현재 평균 호가: `sale`·`jeonse`·`monthly_deposit` 마다 `average_manwon`·`count`), 관리비(`manage_cost_manwon` 비교한 평형의 월 관리비 추정, `manage_cost_per_m2_manwon`, `manage_cost_period`), 후기 수, 배정 학교(거리·도보), 주변 역(거리·도보), `pyeong`(비교한 평형: `pyeong`(아파트형)·`area_group`·`representative`·`type_name`·`households`·전용·공급면적, KB 시세 `kb_sale`·`kb_jeonse`·`kb_monthly`, 최근 실거래 `recent_sale`·`recent_jeonse`·`recent_monthly`(계약일 `contract_date`, 층 `floor`). 거래 유형에 없는 금액 키는 빠져 전세는 `rent_manwon` 이 없다), `url`. 단지 공공 정보가 없으면 배정 학교·주변 역·`pyeong` 은 `null`(모름)이다.
+`returned`, `complexes[]`. 단지마다 이름·유형(`complex_type`)·주소(`address` 지번, `road_address` 도로명), 사용승인일, 동 수(`dong_count`)·세대수(`household_count`), 세대당 주차, 동 최고층의 최저·최고(`building_floor_range`: `lowest`·`highest`), 현재 매물 수, `asking_averages`(현재 평균 호가: `sale`·`jeonse`·`wolse` 키마다 금액 하나(`price_manwon`·`deposit_manwon`)와 평균을 낸 조건 수 `count`. 매물이 없는 거래는 키가 없고 모두 없으면 `{}`), 관리비(`manage_cost_manwon` 비교한 평형의 월 관리비 추정, `manage_cost_per_m2_manwon`, `manage_cost_period`), 후기 수, 배정 학교(거리·도보), 주변 역(거리·도보), `pyeong`(비교한 평형: `pyeong`(아파트형)·`area_group`·`representative`·`type_name`·`household_count`·전용·공급면적, KB 시세 `estimated_prices`(출처 `provider`, 기준일 `base_date`, `sale`·`jeonse` 키 안 `low_manwon`·`mid_manwon`·`high_manwon`, `wolse` 키 안 `deposit_manwon`·`rent_low_manwon`·`rent_high_manwon`), 최근 실거래 `latest_trades`(최근 실거래가 없는 거래는 키가 없고 모두 없으면 `{}`. 당근이 매매 또는 전월세 실거래 칸이나 그 목록을 주지 않거나(`null`) 목록에 빈 항목이 섞이면 있는지 몰라 그 거래 키가 `null` 이고(전월세는 빈 항목이 하나라도 있으면 `jeonse`·`wolse` 모두 `null`, `[제외]` 로 알린다), 빈 목록이면 키가 없다. `sale`·`jeonse`·`wolse` 키마다 계약일 `trade_date`, 층 `floor`+`floor_number`와 금액). 거래 유형에 없는 금액 키는 빠져 전세는 `rent_manwon` 이 없다), `url`. 단지 공공 정보가 없으면 배정 학교·주변 역·`pyeong` 은 `null`(모름)이다.
 
 **오류와 대응**
 
@@ -643,7 +643,7 @@ jibsa daangn compare 10697092 10667600 --area 84
 
 **주의사항**
 
-단지마다 요청 1회다. 당근 웹 비교처럼 첫 단지는 대표 평형, 나머지 단지는 그 전용면적과 가장 비슷한 평형(묶음마다 세대수가 가장 많은 평형끼리 견주고, 같으면 대표 묶음)으로 비교한다. `--area` 를 주면 모든 단지를 그 면적에 맞춘다. 첫 단지에 평형 자료가 없으면 모든 단지를 대표 평형으로 본다. 웹은 매매·전세·월세를 탭으로 하나씩 보여 주지만 jibsa 는 한 번에 준다. `asking` 은 당근에 올라온 아파트 매물 앞 30건의 거래 유형별 평균 호가(0원 제외, 월세는 보증금 평균. 웹은 만원 정수로 반올림해 보여 주고 jibsa 는 원 단위까지 낸다)라 실제 거래가는 `pyeong` 의 실거래를 본다. 최근 실거래는 그 평형의 매매 첫 건, 전월세 5건 중 전세·월세 첫 건이다. 관리비는 K-apt 의 받은 달 ㎡당 관리비 평균에 비교한 평형의 전용면적을 곱한 값이다. 평균은 웹처럼 ㎡당 값이 비어 온 달(`null`)도 0 으로 세어 넣고(달이 1~12 로 읽히는 달만 센다), 받은 달이 있는데 값이 모두 비어 오면 0 이다. 배정 학교와 주변 역의 거리·도보 시간이 소수로 와도 읽고 당근 값 그대로 낸다 (`distance_m`·`walk_minutes` 모두 반올림·최소 1분 없이 소수일 수 있고 0 이면 0이다. 당근 비교 화면도 값을 그대로 보여 준다. `complex` 의 `nearby_subways` 와 다르다). 단기임대는 세지 않는다. 후기 요약 글은 주지 않는다 (후기 수만). `pyeong.pyeong` 은 `real-price`·`price-trend` 의 `--pyeong` 에, 아파트형이 아닌 단지의 `pyeong.area_group` 은 `--area` 에 넣는다.
+단지마다 요청 1회다. 당근 웹 비교처럼 첫 단지는 대표 평형, 나머지 단지는 그 전용면적과 가장 비슷한 평형(묶음마다 세대수가 가장 많은 평형끼리 견주고, 같으면 대표 묶음)으로 비교한다. `--area` 를 주면 모든 단지를 그 면적에 맞춘다. 첫 단지에 평형 자료가 없으면 모든 단지를 대표 평형으로 본다. 웹은 매매·전세·월세를 탭으로 하나씩 보여 주지만 jibsa 는 한 번에 준다. `asking_averages` 는 당근에 올라온 아파트 매물 앞 30건의 거래 유형별 평균 호가(0원 제외, 월세는 보증금 평균. 웹은 만원 정수로 반올림해 보여 주고 jibsa 는 원 단위까지 낸다)라 실제 거래가는 `pyeong` 의 실거래를 본다. 최근 실거래는 그 평형의 매매 첫 건, 전월세 5건 중 전세·월세 첫 건이다. 관리비는 K-apt 의 받은 달 ㎡당 관리비 평균에 비교한 평형의 전용면적을 곱한 값이다. 평균은 웹처럼 ㎡당 값이 비어 온 달(`null`)도 0 으로 세어 넣고(달이 1~12 로 읽히는 달만 센다), 받은 달이 있는데 값이 모두 비어 오면 0 이다. 배정 학교와 주변 역의 거리·도보 시간이 소수로 와도 읽고 당근 값 그대로 낸다 (`distance_m`·`walk_minutes` 모두 반올림·최소 1분 없이 소수일 수 있고 0 이면 0이다. 당근 비교 화면도 값을 그대로 보여 준다. `complex` 의 `nearby_stations` 와 다르다). 단기임대는 세지 않는다. 후기 요약 글은 주지 않는다 (후기 수만). `pyeong.pyeong` 은 `real-price`·`price-trend` 의 `--pyeong` 에, 아파트형이 아닌 단지의 `pyeong.area_group` 은 `--area` 에 넣는다.
 
 ## 15. `nearby-complexes` — 같은 동 단지
 
@@ -662,7 +662,7 @@ jibsa daangn nearby-complexes 10697092 --limit 20
 
 **반환값**
 
-`complex_id`, `region`(동), `total`(당근이 단지 카드 목록에 빈 항목을 섞어 보내 빼고 읽었으면 셀 수 없어 `null`, `[제외]` 로 알린다), `returned`, `sort`(늘 `세대수`), `complexes[]`(`complex_id`, `name`, `type`, `households`, `listing_counts`: 매매·전세·월세별 현재 매물 수).
+`complex_id`, `region`(동), `total`(당근이 단지 카드 목록에 빈 항목을 섞어 보내 빼고 읽었으면 셀 수 없어 `null`, `[제외]` 로 알린다), `returned`, `sort`(늘 `세대수`), `complexes[]`(`complex_id`, `name`, `complex_type`, `household_count`, `listing_counts`: `sale`·`jeonse`·`wolse` 별 현재 매물 수).
 
 **오류와 대응**
 
@@ -717,7 +717,7 @@ jibsa daangn trending-complexes 강남구
 
 **반환값**
 
-`region`(`name`, `region_id`(전국은 `null`), `level`: `전국`·`시도`·`구`), `returned`, `complexes[]`(`rank`, `complex_id`, `name`, `type`, `address`, `households`, `approved_at`, 대표 평형 전용면적, 대표 평형 최근 매매가. 매매가가 0 으로 오면 당근 웹처럼 보여 주지 않아 `null`). 당근이 목록에 빈 항목을 섞어 보내 빼고 읽었으면 순위를 셀 수 없어 모든 `rank` 가 `null` 이고, 대표 묶음·평형 목록에서 뺐으면 그 단지의 대표 평형 전용면적·최근 매매가도 `null` 이다 (`[제외]` 로 알린다).
+`region`(`name` 가장 작은 단위 이름, `sido`·`sigungu`, `region_id`(전국은 `null`), `level`: `전국`·`시도`·`구`. 전국은 `{"name": "전국", "region_id": null, "level": "전국"}`, 시·도는 `{"name": "서울특별시", "sido": "서울특별시", "region_id": 1, "level": "시도"}`, 구는 `{"name": "강남구", "sido": "서울특별시", "sigungu": "강남구", "region_id": 381, "level": "구"}`), `returned`, `complexes[]`(`rank`, `complex_id`, `name`, `complex_type`, `address`, `household_count`, `approved_date`, 대표 평형 전용면적(`representative_area_m2`), 대표 평형 최근 매매가(`latest_trades` 의 `sale` 키 안 `price_manwon`)). 최근 매매가 없으면 매매가가 0 이어도(당근 웹도 가격을 비운다) `latest_trades` 에 키가 없어 `{}`(해당 없음)이고, 대표 평형을 모르거나 당근이 실거래 칸이나 그 목록을 주지 않거나(`null`, `compare` 와 같다) 목록에 빈 항목이 섞이거나 매매가를 모르면 `{"sale": null}`(모름)이다. 당근이 목록에 빈 항목을 섞어 보내 빼고 읽었으면 순위를 셀 수 없어 모든 `rank` 가 `null` 이고, 대표 묶음·평형 목록에서 뺐으면 그 단지의 대표 평형 전용면적이 `null`, 최근 매매가는 `{"sale": null}` 이다 (`[제외]` 로 알린다).
 
 **오류와 대응**
 
@@ -725,7 +725,7 @@ jibsa daangn trending-complexes 강남구
 
 **주의사항**
 
-당근 웹의 인기 급상승 단지 더 보기 화면처럼 50곳까지 받아 `--limit` 이 없다 (2026-11-12 실측: 전국·서울 50곳, 강남구 13곳). 사진은 주지 않는다. 대표 평형은 웹처럼 대표 전용면적 묶음에서 세대수가 가장 많은 평형이다. 비면 `returned: 0` 이고 `notes` 로 나중에 다시 부르거나 `search complexes` 를 쓰라고 알린다. 단지가 없다는 뜻은 아니다. 사용승인 문구가 '입주 2020.08' 처럼 날짜가 아니면 `approved_at` 은 `null` 이다.
+당근 웹의 인기 급상승 단지 더 보기 화면처럼 50곳까지 받아 `--limit` 이 없다 (2026-11-12 실측: 전국·서울 50곳, 강남구 13곳). 사진은 주지 않는다. 대표 평형은 웹처럼 대표 전용면적 묶음에서 세대수가 가장 많은 평형이다. 비면 `returned: 0` 이고 `notes` 로 나중에 다시 부르거나 `search complexes` 를 쓰라고 알린다. 단지가 없다는 뜻은 아니다. 사용승인 문구가 '입주 2020.08' 처럼 날짜가 아니면 `approved_date` 은 `null` 이다.
 
 ## 18. `popular-listings` — 조회수 많은 매물
 
@@ -794,7 +794,7 @@ jibsa daangn popular-listings 역삼동 -t 원룸
 | 역 주변 `walk_minutes` | 매물에서 검색한 역까지 도보 분 (`search listings --station`) |
 | `search locations` 의 `stations[].name`·`universities[].name` | `--station`·`--university` 에 그대로 전달 |
 | 인기 매물·단지 `rank` | `popular-listings`·`trending-complexes` 의 순위 |
-| 어린이집·유치원 `id` (`preschools`) | `preschool` 에 전달 |
+| 어린이집·유치원 `preschool_id` (`preschools`) | `preschool` 에 전달 |
 | `pyeongs[].pyeong` (`complex`), `pyeong.pyeong` (`compare`) | 아파트형 단지의 공급 평형. `real-price --pyeong`·`price-trend --pyeong`에 전달 |
 | `pyeong.area_group` (`compare`) | 아파트형이 아닌 단지만 `real-price --area`·`price-trend --area`에 전달 |
 | 추천 동 `region_id` | 당근 동 ID. 매물은 법정동 이름으로 `search listings` 에서 찾는다 |
@@ -824,16 +824,16 @@ jibsa daangn real-price --help
 | 당근 | `manage_cost_excludes` | 관리비와 따로 내는 항목 (쓴 만큼 내는 전기·수도 등, 예: `["전기", "수도"]`). `manage_cost_includes` 는 관리비에 들어 있는 항목(예: `["공용"]`). 작성자가 항목을 밝히지 않았거나 당근이 항목 목록에 빈 항목을 섞어 보내 빼고 읽었으면(뒤의 경우 `[제외]` 로 알린다) 둘 다 `null`, 항목은 있는데 이름을 하나도 모르면 그 칸만 `null`, 일부만 알면 아는 이름만 준다 (코드가 `null`·빈 글자·`-` 인 항목은 뺀다). 직거래 매물은 당근이 미포함 항목 목록 자체를 주지 않으면(`null`·키 없음) `manage_cost_excludes` 가 `null`(모름)이고, 목록이 있는데 항목이 없으면 `[]` 다 |
 | 당근 | `broker_fee_manwon` | 보여 주는 거래 조건의 중개보수 (만원, 부가세 포함). 당근이 법정 상한 요율로 계산한 값이라 실제는 협의로 더 낮을 수 있다. 직거래 매물은 키가 없다 |
 | 당근 상가 | `key_money_manwon`, `key_money_negotiable` | 권리금 (만원, 직방 상가와 같은 이름)과 협의 가능 여부. `null` 은 작성자가 밝히지 않음. 협의 가능이면 권리금이 `1` 처럼 자리만 채운 값이기도 해서 금액을 그대로 믿지 않는다. 매물 유형(`property_type`)을 모르는(`null`) 매물도 상가인지 알 수 없어 두 칸이 키로 남고 `null` 이다. 키가 없는 것은 상가가 아닌 것으로 알고 권리금도 없을 때다 |
-| 당근 | `watch_count` | 당근에서 이 매물을 관심 목록에 넣은 사람 수 (조회수가 아니다) |
+| 당근 | `favorite_count` | 당근에서 이 매물을 관심 목록에 넣은 사람 수 (조회수가 아니다) |
 | 당근 아파트·오피스텔 등 단지 매물 | `complex_id`, `complex_name`, `complex_type` | 단지 ID·이름·종류(아파트, 오피스텔, 주상복합 .... 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드). 단지 ID 는 `daangn complex` 에 넘긴다. `complex_type` 은 당근 단지 종류라 작성자가 고른 `property_type` 과 다를 수 있다 (예: 원룸으로 올린 오피스텔 건물 매물). 이름에 "(도시형)"이 붙은 단지는 도시형생활주택인데 당근이 아파트·주상복합으로 분류해 그대로 나온다. 단지가 없는 원룸·빌라 등은 키가 없다 |
 
 ### 지역 단지 카드 (`search complexes`, `school`)
 
 | 필드 | 뜻 |
 |---|---|
-| `complex_id`, `name`, `property_type` | 단지 ID(`complex`·`search listings --complex`·`real-price` 에 넘긴다)·이름·유형 (이름·유형은 당근이 주지 않으면 `null`, 표에 없는 유형 코드는 원래 코드). 당근이 단지 ID 를 주지 않은 단지는 가리킬 수 없어 빼고 `[제외] 당근이 단지 ID 를 주지 않은 N곳은 뺐습니다` 로 알린다 |
-| `households`, `approved_at` | 세대수, 사용승인일 |
-| `listing_counts` | 당근에 올라온 거래 유형별 현재 매물 수 (`{"매매": 2, "전세": 0, "월세": 1}`) |
+| `complex_id`, `name`, `complex_type` | 단지 ID(`complex`·`search listings --complex`·`real-price` 에 넘긴다)·이름·유형 (이름·유형은 당근이 주지 않으면 `null`, 표에 없는 유형 코드는 원래 코드). 당근이 단지 ID 를 주지 않은 단지는 가리킬 수 없어 빼고 `[제외] 당근이 단지 ID 를 주지 않은 N곳은 뺐습니다` 로 알린다 |
+| `household_count`, `approved_date` | 세대수, 사용승인일 |
+| `listing_counts` | 당근에 올라온 거래 유형별 현재 매물 수 (`{"sale": 2, "jeonse": 0, "wolse": 1}`) |
 | `recent_trades` | 해제되지 않은 최근 실거래 (당근이 실거래 연결(`transactions`)이나 그 목록(`edges`)을 `null` 로 주면 `null`(모름), 거래가 없으면 `[]`). `search complexes` 는 `--trade` 거래 유형의 최대 3건, `school` 은 매매 1건이다 (`area_m2`, 매매는 `price_manwon`, 전세는 `deposit_manwon`, 월세는 `deposit_manwon`·`rent_manwon`). 계약일·층은 없어 `real-price <complex_id>` 로 본다 |
 | `near_station` | 역에서 가까운 단지인지 (당근 기준) |
 | `has_reviews` | 거주 후기가 있는지 (당근이 후기 요약을 주지 않고 후기 연결(`livedReviews`)이나 그 목록(`edges`)을 `null` 로 주면 `null`(모름)). 후기 본문과 당근 요약은 내보내지 않고, 내용은 `url` 에서 보라고 `notes` 로 알린다 |
@@ -843,16 +843,16 @@ jibsa daangn real-price --help
 
 | 필드 | 뜻 |
 |---|---|
-| `complex_id`, `name`, `property_type` | 단지 ID·이름·유형 (아파트, 오피스텔, 주상복합 .... 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드) |
+| `complex_id`, `name`, `complex_type` | 단지 ID·이름·유형 (아파트, 오피스텔, 주상복합 .... 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드) |
 | `address`, `road_address` | 지번·도로명 주소 |
-| `households`, `dong_count`, `approved_at` | 세대수, 동 수, 사용승인일 |
-| `lowest_top_floor`, `highest_top_floor` | 가장 낮은·높은 동의 최고층 |
-| `construction_company`, `heating` | 시공사, 난방 방식·연료 |
+| `household_count`, `dong_count`, `approved_date` | 세대수, 동 수, 사용승인일 |
+| `building_floor_range` | 가장 낮은·높은 동의 최고층 (`lowest`·`highest`) |
+| `construction_company`, `heating`, `heating_fuel` | 시공사, 난방 방식, 난방 연료 |
 | `parking_count`, `parking_per_household` | 총 주차 대수, 세대당 주차 대수 |
-| `floor_area_ratio`, `building_coverage_ratio` | 용적률·건폐율 (%) |
+| `floor_area_ratio_percent`, `building_coverage_ratio_percent` | 용적률·건폐율 (%) |
 | `listing_count` | 당근에 올라온 이 단지의 현재 주거용 매물 수 |
 | `pyeongs` | 평형: 전용·공급면적(㎡·평), 방·욕실 수, 세대수 (한 묶음에 평형이 여럿이면 `null`, 평형이 하나뿐인 묶음이어도 당근이 평형 목록에 빈 항목을 섞어 보내 빼고 읽었으면 `null`), 전용면적 묶음 `area_group` (아파트형이 아닌 단지만 `--area` 에 넘긴다), 아파트형 단지의 공급 평형 묶음 `pyeong` (`--pyeong` 에 넘긴다), 대표 평형 `representative` |
-| `nearby_subways` | 가까운 역 (예: `"신사역 (신분당선, 도보 4분)"`). 도보 분이 짧은 순이고 (역, 노선)마다 한 항목이다 |
+| `nearby_stations` | 가까운 역 (예: `"신사역 (신분당선, 도보 4분)"`). 도보 분이 짧은 순이고 (역, 노선)마다 한 항목이다 |
 | `schools` | 배정 초등학교와 당근 웹 학군 카드의 중·고등학교 2곳씩. 이 단지 주민이 많이 다니는 순, 같으면 도보 순 (예: `"서울논현초등학교 (배정, 도보 16분)"`) |
 | `review_count` | 거주 후기 수. 내용은 `url` 의 단지 페이지에서 본다 |
 | `url` | 당근 단지 페이지 |
@@ -861,31 +861,31 @@ jibsa daangn real-price --help
 
 | 필드 | 뜻 |
 |---|---|
-| `region` | 조회한 지역 (`name`, `region_id`, `level`: `동`·`구`) |
-| `trade_date`, `published_at` | 계약일, 실거래가 공개된 날 (신고가에는 공개일이 없다) |
+| `region` | 조회한 지역 (`name` 가장 작은 단위 이름, `sido`·`sigungu`·`dong`, `region_id`, `level`: `동`·`구`) |
+| `trade_date`, `published_date` | 계약일, 실거래가 공개된 날 (신고가에는 공개일이 없다) |
 | `address`, `building_name`, `complex_id` | 동까지 주소, 건물·단지 이름, 당근 단지 ID (`daangn complex`·`real-price` 에 넘긴다. 당근 단지가 아니면 키가 없다) |
-| `households`, `approved_at` | 건물·단지 세대수, 사용승인일 |
-| `area_m2`, `floor` | 전용면적, 층 (당근이 층을 빈 값·`-` 로 주면 `floor` 는 `null`) |
+| `household_count`, `approved_date` | 건물·단지 세대수, 사용승인일 |
+| `area_m2`, `floor`, `floor_number` | 전용면적, 층(글자), 층(숫자, 지하는 음수) (당근이 층을 빈 값·`-` 로 주면 `floor`·`floor_number` 는 `null`) |
 | `price_manwon` / `deposit_manwon`, `rent_manwon` | 매매가 / 보증금, 월세 (만원) |
 | `cancelled`, `deal_type` | 해제된 거래 (당근 웹처럼 매매·전월세 모두), 중개거래·직거래 (매매만. 당근이 주지 않으면 `null`, 표에 없는 코드는 원래 코드) |
 | `contract_type` | 계약 종류 `신규`·`재계약` (전월세만. 당근 웹 카드의 `갱신` 배지가 재계약이다). 당근이 계약 종류를 주지 않으면 `null` (지역 실거래 전월세의 2%쯤), 표에 없는 코드는 원래 코드. 갱신요구권 사용 여부는 지역 피드에 없어 키가 없다 |
-| `is_new_high` | 이 단지·평형의 신고가인지 (매매만, 당근 웹 카드의 `신고가` 배지. 해제된 거래는 `false` 이고 `--new-high` 결과도 같다) |
-| `previous_high_manwon`, `previous_high_date`, `previous_high_change_percent` | 직전 최고가와 그 계약일, 직전 최고가 대비 변화율 (%, 매매만. 당근 웹 카드의 '직전 최고가 대비 ±N%' 와 같은 비율을 소수 둘째 자리까지 준다. 웹은 정수로 보여 준다. 값이 바뀌었는데 0.00 이 되면 ±0.01). 당근이 비교 자료를 주지 않으면 `null`, 해제된 거래는 변화율이 `null` |
-| `summary` | 결과 맨 위: 가장 최근 공개일(`data_date`)과 그날의 매매 수(`sale_count`)·신고가 수(`new_high_count`). 당근 웹 실거래 화면 머리와 같다 |
+| `new_high` | 이 단지·평형의 신고가인지 (매매만, 당근 웹 카드의 `신고가` 배지. 해제된 거래는 `false` 이고 `--new-high` 결과도 같다) |
+| `prev_high_manwon`, `prev_high_date`, `prev_high_diff_percent` | 직전 최고가와 그 계약일, 직전 최고가 대비 변화율 (%, 매매만. 당근 웹 카드의 '직전 최고가 대비 ±N%' 와 같은 비율을 소수 둘째 자리까지 준다. 웹은 정수로 보여 준다. 값이 바뀌었는데 0.00 이 되면 ±0.01). 당근이 비교 자료를 주지 않으면 `null`, 해제된 거래는 변화율이 `null` |
+| `summary` | 결과 맨 위: 가장 최근 공개일(`latest_published_date`)과 그날의 매매 수(`sale_count`)·신고가 수(`new_high_count`). 당근 웹 실거래 화면 머리와 같다 |
 
 ### 통근 매물 (`search commute`)
 
-타는 역과 그 역에서 회사 역까지 지하철 시간(분)·환승 횟수·편도 시간·경로는 매물마다 붙지 않고 매물이 들어 있는 역 묶음(`stations[]` 의 `station_name`·`subway_minutes`·`transfers`·`one_way_minutes`·`route`)에 있다. `route[]` 는 출근 방향 구간 목록이다. 구간마다 타는 역(`from_station`)에서 내리는 역(`to_station`)까지 한 노선(`line`)으로 가고, 첫 구간은 묶음의 `station_name` 에서 시작해 마지막 구간은 회사 역(`workplace_station`)에서 끝난다. 구간 수는 환승 + 1 이다 (예: 남부터미널역 → 교대역 서울3호선, 교대역 → 강남역 서울2호선). 당근 웹 역 상세는 같은 역·노선을 회사 역부터 그린다. 당근이 경로를 주지 않았거나 경로 모양이 달라 읽을 수 없거나, 경유역 목록에 빈 항목이 섞여 와서 빼고 읽었으면 `null` 이다.
+타는 역과 그 역에서 회사 역까지 지하철 시간(분)·환승 횟수·편도 시간·경로는 매물마다 붙지 않고 매물이 들어 있는 역 묶음(`stations[]` 의 `station_name`·`subway_minutes`·`transfers`·`one_way_minutes`·`route`)에 있다. `route[]` 는 출근 방향 구간 목록이다. 구간마다 타는 역(`from_station_name`)에서 내리는 역(`to_station_name`)까지 한 노선(`line`)으로 가고, 첫 구간은 묶음의 `station_name` 에서 시작해 마지막 구간은 회사 역(`workplace_station`)에서 끝난다. 구간 수는 환승 + 1 이다 (예: 남부터미널역 → 교대역 서울3호선, 교대역 → 강남역 서울2호선). 당근 웹 역 상세는 같은 역·노선을 회사 역부터 그린다. 당근이 경로를 주지 않았거나 경로 모양이 달라 읽을 수 없거나, 경유역 목록에 빈 항목이 섞여 와서 빼고 읽었으면 `null` 이다.
 
 | 필드 | 뜻 |
 |---|---|
-| `walk_to_station_minutes` | 매물에서 타는 역까지 도보(분). 당근이 모르면 `null` |
+| `walk_minutes` | 매물에서 타는 역까지 도보(분). 당근이 모르면 `null` |
 
 ### 단지·건물 실거래 (`real-price`)
 
 | 필드 | 뜻 |
 |---|---|
-| `trade_date`, `area_m2`, `floor` | 계약일, 전용면적(㎡), 층 (당근이 층을 빈 값·`-` 로 주면 `floor` 는 `null`) |
+| `trade_date`, `area_m2`, `floor`, `floor_number` | 계약일, 전용면적(㎡), 층(글자), 층(숫자, 지하는 음수) (당근이 층을 빈 값·`-` 로 주면 `floor`·`floor_number` 는 `null`) |
 | `price_manwon` / `deposit_manwon`, `rent_manwon` | 매매가 / 보증금, 월세 (만원). 거래 유형에 없는 필드는 키가 없다 |
 | `cancelled`, `registered` | 신고 뒤 해제된 거래, 등기까지 마친 거래 (매매만. 등기일이 없거나 빈 글자·`-` 면 `false`) |
 | `presale` | `분양권`·`입주권` 거래 (매매만). 일반 거래(소유 구분 `REGISTERED_OWNER`)는 키가 없고, 당근이 소유 구분을 주지 않았으면 `null`(모름), 표에 없는 코드는 원래 코드 |

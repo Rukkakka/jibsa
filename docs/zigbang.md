@@ -31,7 +31,7 @@
 단지 골라 집 찾기  search locations → complex → search listings --complex → listing
                             └→ real-price (아파트)
 역·학교·동 단지    search complexes → complex / search listings --complex → listing
-아파트 묶음 가격   search listings apt / --complex (is_price_range: true) → catalog
+아파트 묶음 가격   search listings apt / --complex (mixed_prices: true) → catalog
 동·구 시세·실거래  region-info / region-trades / region-ranking → complex / real-price
 단지 시세 추이     complex → price-trend (아파트, 평형은 --pyeong)
 ```
@@ -64,7 +64,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 
 **반환값**
 
-`results`(지역 후보), `complexes`(단지 후보)를 준다.
+`results`(지역·역·학교 후보, `type` 으로 가른다), `complexes`(단지 후보)를 준다.
 
 **오류와 대응**
 
@@ -72,7 +72,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 
 **주의사항**
 
-`results[]`는 지역 후보, `complexes[]`는 아파트·오피스텔 후보다. `complexes[].complex_id`를 `complex`·`search listings --complex`에 넘긴다. 이름·별칭이 비슷한 다른 단지가 섞일 수 있으므로 주소·세대수로 고른다. `--limit`은 두 후보 목록에 각각 적용한다. 역·학교·동·구 주변 아파트 단지 목록은 [`search complexes`](#11-search-complexes--역학교동구-주변-아파트-단지)로 본다.
+`results[]`는 주소·역·학교 후보(`type`: `address`·`subway`·`school`), `complexes[]`는 아파트·오피스텔 후보다. `complexes[].complex_id`를 `complex`·`search listings --complex`에 넘긴다. 이름·별칭이 비슷한 다른 단지가 섞일 수 있으므로 주소·세대수로 고른다. `--limit`은 두 후보 목록에 각각 적용한다. 역·학교·동·구 주변 아파트 단지 목록은 [`search complexes`](#11-search-complexes--역학교동구-주변-아파트-단지)로 본다.
 
 ## 2. `search listings room` — 원룸·빌라·오피스텔 매물 찾기
 
@@ -105,7 +105,7 @@ jibsa zigbang search locations 디에이치퍼스티어아이파크
 | `--bathroom` | 욕실 수. 1·2 는 정확히 그 수, 3 은 3개 이상 범위: 1~3. | 미지정 |
 | `--option` | 옵션: 에어컨, 냉장고, 세탁기, 가스레인지, 인덕션, 전자레인지, 책상, 책장, 침대, 옷장, 신발장, 싱크대. 반복하거나 쉼표로 구분 (AND, 모두 갖춘 매물) | 미지정 |
 | `--condition` | 기타 조건: 즉시입주, 남향, 엘리베이터, 주차, CCTV, 반려동물, 전세대출, 전기차충전. 반복하거나 쉼표로 구분 (AND) | 미지정 |
-| `--details` | 매물마다 상세를 1회씩 더 받아 건물 용도(`residence_type`)와 사용승인일(`approved_at`)을 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건) | 꺼짐 |
+| `--details` | 매물마다 상세를 1회씩 더 받아 건물 용도(`residence_type`)와 사용승인일(`approved_date`)을 붙인다. 요청이 매물 수만큼 늘어난다 (앞 30건) | 꺼짐 |
 | `--next` | 앞 결과의 `next` 값. 지역·조건을 그대로 두고 주면 받은 매물 다음부터 이어 받는다 (`--limit`·`--details`·`--fields` 는 바꿀 수 있다) | 미지정 |
 
 **사용 예시**
@@ -117,7 +117,7 @@ jibsa zigbang search listings room 역삼동 -t 원룸 --trade 월세 --deposit-
 
 **반환값**
 
-`region`, `boundary` 또는 `radius_km`, `total`, `returned`, `has_more`, `next`(더 있을 때만), `listings`를 준다. 매물의 `manage_cost_manwon` 은 직방 웹 목록 카드와 같은 관리비를 원 단위까지 낸 값이라 (375,700원 → `37.57`. 웹 카드는 0.1만원 아래를 버려 37.5만원으로 보여 준다) `0` 은 관리비 없음, `null` 은 모름이다. `listings` 는 직방 목록 순서이고 거리순이 아니다. 매물마다 검색 중심에서 잰 `distance_km` 가 있으니 가까운 매물은 그 값으로 고른다. `total` 은 범위(반경·동 경계, 역은 직방이 준 역 주변 목록) 안 서로 다른 매물 수의 근사값이다 (거래 불가를 빼기 전, 여러 종류 목록에 함께 있는 매물은 한 번). 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 종류마다 직방 목록에서 앞 결과가 받은 자리 다음부터 받는다 (지도 핀은 다시 받고 요약은 새 매물 것만 받는다). `--details` 를 주면 매물마다 `residence_type`(건축물 용도, 예: `다가구`, `근린생활시설`, `고시원`)이 붙고 `approved_at`(사용승인일)이 채워진다. 목록 API 는 용도·사용승인일을 주지 않아 상세를 1회씩 더 부르고, 그 사이 거래가 끝난 매물은 빼고 `notes` 로 알린다. 상세 한 건이 다른 이유(요청 제한·서버 오류·연결 실패·거절(4xx)·응답 형식 오류)로 실패해도 목록을 버리지 않고 그 매물은 목록 값만 둔다 (`residence_type`·`approved_at` 은 31번째부터와 같이 `null`). 못 붙인 매물 수와 이유는 `[실패] 매물 N건의 상세(건물 용도·사용승인일)를 받지 못해 목록 값만 넣었습니다: <이유>` 로 알린다. 이유는 실패 순서가 아니라 할 일로 고른다. 거절(4xx)·응답 형식 오류가 한 건이라도 있으면 그 이유(요청 제한도 왔으면 뒤에 '요청 제한에도 걸려 그 뒤로는 요청하지 않았습니다. <제한 안내>' 가 붙는다), 없으면 요청 제한(그때부터 남은 매물은 상세를 요청하지 않는다), 없으면 첫 실패의 이유다. 이유 문장은 거절·응답 형식 오류면 '직방이 매물 상세 요청을 거절했거나 응답 형식이 바뀌었습니다. jibsa 업데이트가 필요할 수 있습니다', 요청 제한이면 '요청 제한에 걸렸습니다. <제한 안내>', 서버 오류·연결 실패면 '직방 매물 상세 요청이 실패했습니다 (예외 이름). 잠시 뒤 다시 시도하세요' 이다. 상세는 앞 30건만 받아 31번째부터는 `residence_type`·`approved_at` 이 `null`(모름)이다. 직방에는 연식 조건이 없어 '지은 지 N년 이내' 는 `--details` 의 `approved_at` 으로 고른다. 매물마다 `hug_lessor`(직방 웹 목록 카드의 'HUG안심임대인' 꼬리표)와 `actual_listing_checked`(웹의 '실매물 확인' 꼬리표)도 있다. 직방 요약의 배지 목록에 해당 코드(`HUG`·`ITEM_VERIFICATION`)가 있으면 `true`, 배지 목록을 받았는데 없으면 `false`, 직방이 배지 목록을 주지 않으면 `null` 이다. `actual_listing_checked: false` 는 확인을 하지 않은 매물과 확인에 실패한 매물(`ITEM_VERIFICATION_FAILED`)을 모두 포함하니 '확인 실패' 로 읽지 않는다. 직방이 이 꼬리표가 무엇을 확인한 것인지 설명하지 않아 거래 가능하다는 보증으로 읽지 않는다 (확인은 `url` 의 원 사이트에서).
+`region`, `boundary` 또는 `radius_km`, `total`, `returned`, `has_more`, `next`(더 있을 때만), `listings`를 준다. 매물의 `manage_cost_manwon` 은 직방 웹 목록 카드와 같은 관리비를 원 단위까지 낸 값이라 (375,700원 → `37.57`. 웹 카드는 0.1만원 아래를 버려 37.5만원으로 보여 준다) `0` 은 관리비 없음, `null` 은 모름이다. `listings` 는 직방 목록 순서이고 거리순이 아니다. 매물마다 검색 중심에서 잰 `distance_km` 가 있으니 가까운 매물은 그 값으로 고른다. `total` 은 범위(반경·동 경계, 역은 직방이 준 역 주변 목록) 안 서로 다른 매물 수의 근사값이다 (거래 불가를 빼기 전, 여러 종류 목록에 함께 있는 매물은 한 번). 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 종류마다 직방 목록에서 앞 결과가 받은 자리 다음부터 받는다 (지도 핀은 다시 받고 요약은 새 매물 것만 받는다). `--details` 를 주면 매물마다 `residence_type`(건축물 용도, 예: `다가구`, `근린생활시설`, `고시원`)이 붙고 `approved_date`(사용승인일)이 채워진다. 목록 API 는 용도·사용승인일을 주지 않아 상세를 1회씩 더 부르고, 그 사이 거래가 끝난 매물은 빼고 `notes` 로 알린다. 상세 한 건이 다른 이유(요청 제한·서버 오류·연결 실패·거절(4xx)·응답 형식 오류)로 실패해도 목록을 버리지 않고 그 매물은 목록 값만 둔다 (`residence_type`·`approved_date` 은 31번째부터와 같이 `null`). 못 붙인 매물 수와 이유는 `[실패] 매물 N건의 상세(건물 용도·사용승인일)를 받지 못해 목록 값만 넣었습니다: <이유>` 로 알린다. 이유는 실패 순서가 아니라 할 일로 고른다. 거절(4xx)·응답 형식 오류가 한 건이라도 있으면 그 이유(요청 제한도 왔으면 뒤에 '요청 제한에도 걸려 그 뒤로는 요청하지 않았습니다. <제한 안내>' 가 붙는다), 없으면 요청 제한(그때부터 남은 매물은 상세를 요청하지 않는다), 없으면 첫 실패의 이유다. 이유 문장은 거절·응답 형식 오류면 '직방이 매물 상세 요청을 거절했거나 응답 형식이 바뀌었습니다. jibsa 업데이트가 필요할 수 있습니다', 요청 제한이면 '요청 제한에 걸렸습니다. <제한 안내>', 서버 오류·연결 실패면 '직방 매물 상세 요청이 실패했습니다 (예외 이름). 잠시 뒤 다시 시도하세요' 이다. 상세는 앞 30건만 받아 31번째부터는 `residence_type`·`approved_date` 이 `null`(모름)이다. 직방에는 연식 조건이 없어 '지은 지 N년 이내' 는 `--details` 의 `approved_date` 으로 고른다. 매물마다 `hug_lessor`(직방 웹 목록 카드의 'HUG안심임대인' 꼬리표)와 `actual_listing_checked`(웹의 '실매물 확인' 꼬리표)도 있다. 직방 요약의 배지 목록에 해당 코드(`HUG`·`ITEM_VERIFICATION`)가 있으면 `true`, 배지 목록을 받았는데 없으면 `false`, 직방이 배지 목록을 주지 않으면 `null` 이다. `actual_listing_checked: false` 는 확인을 하지 않은 매물과 확인에 실패한 매물(`ITEM_VERIFICATION_FAILED`)을 모두 포함하니 '확인 실패' 로 읽지 않는다. 직방이 이 꼬리표가 무엇을 확인한 것인지 설명하지 않아 거래 가능하다는 보증으로 읽지 않는다 (확인은 `url` 의 원 사이트에서).
 
 **오류와 대응**
 
@@ -177,13 +177,13 @@ jibsa zigbang search listings apt 역삼동 --trade 전세 --limit 20 --next <�
 
 **반환값**
 
-`region`(찾은 동·구. 이름으로 찾았는데 직방이 좌표를 주지 않았으면 `lat`·`lng` 가 `null`), `local_code`(조회한 직방 지역 코드 하나), `total`, `returned`, `has_more`(받지 않은 매물이 남았는지), `next`(더 있을 때만), `listings`를 준다. 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 직방 목록 순서로 앞 결과 다음부터 받는다. 거리(`distance_km`)는 없다.
+`region`(찾은 동·구. 이름으로 찾았는데 직방이 좌표를 주지 않았으면 `lat`·`lng` 가 `null`), `total`, `returned`, `has_more`(받지 않은 매물이 남았는지), `next`(더 있을 때만), `listings`를 준다. 같은 지역·조건에 `--next <결과의 next 값>` 을 붙이면 직방 목록 순서로 앞 결과 다음부터 받는다. 거리(`distance_km`)는 없다.
 
-매물 한 줄은 같은 호·거래 유형을 올린 여러 매물을 직방 웹 카드처럼 묶은 것이다 (`listing_count` 는 묶인 매물 수). `listing_ids` 에 그중 `listing` 으로 상세를 볼 수 있는 ID 가 모두 오고, `id` 는 그 맨 앞이다 (직방이 준 순서 그대로라, 직방 웹 카드가 대표로 보여 주는 매물이다. 제휴 매물이면 `coalition-123`). 줄의 제목(`title`)·층(`floor`)·`listing_kind` 는 `id` 매물의 값이다. `url` 은 직방 웹 카드를 누르면 가는 그 호의 묶음 화면(중개사별 매물 목록)이다. 묶인 매물끼리 가격이 다르면 `is_price_range: true` 이고, 이때 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다. 매물별 가격은 `catalog_id` 를 [`catalog`](#10-catalog--아파트-같은-호-묶음의-매물-전부)에 넘겨 한 번에 본다 (`listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). 직방이 호 ID 를 주지 않은 줄은 `catalog_id` 가 `null` 이고 `url` 은 `id` 매물의 직방 웹 페이지다. 이때 묶음은 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 하나씩 본다.
+매물 한 줄은 같은 호·거래 유형을 올린 여러 매물을 직방 웹 카드처럼 묶은 것이다 (`realtor_count` 는 묶인 매물 수, 곧 중개사 수). `listing_ids` 에 그중 `listing` 으로 상세를 볼 수 있는 ID 가 모두 오고, `id` 는 그 맨 앞이다 (직방이 준 순서 그대로라, 직방 웹 카드가 대표로 보여 주는 매물이다. 제휴 매물이면 `coalition-123`). 줄의 제목(`title`)·층(`floor`)·`listing_kind` 는 `id` 매물의 값이다. `url` 은 직방 웹 카드를 누르면 가는 그 호의 묶음 화면(중개사별 매물 목록)이다. 묶인 매물끼리 가격이 다르면 `mixed_prices: true` 이고, 이때 가격은 묶음의 최저가라 `id` 매물의 가격과 다를 수 있다. 매물별 가격은 `catalog_id` 를 [`catalog`](#10-catalog--아파트-같은-호-묶음의-매물-전부)에 넘겨 한 번에 본다 (`listing_ids` 를 `listing` 으로 하나씩 보면 매물마다 요청 2회다). 직방이 호 ID 를 주지 않은 줄은 `catalog_id` 가 `null` 이고 `url` 은 `id` 매물의 직방 웹 페이지다. 이때 묶음은 `catalog` 로 볼 수 없어 `listing_ids` 를 `listing` 으로 하나씩 본다.
 
 `listing_kind` 는 `id` 매물이 어떤 종류인지 알린다. `신규분양`(분양 매물, 가격은 분양가)·`집주인`(집주인이 내놓은 매물)·`중개사`(중개사무소가 등록한 매물) 중 하나이고, 처음 보는 종류는 직방 코드 그대로, 직방이 주지 않거나 `id` 매물의 종류를 알 수 없으면(묶인 매물 ID 목록에 빈 항목이 섞여 와서 맨 앞 매물을 알 수 없을 때 포함) `null` 이다. `--fields` 로 필드를 골라도 늘 나온다. 아파트 매물에만 있는 키라 원룸·빌라·오피스텔·상가·단기임대 출력에는 없다. `coalition-` ID 줄에는 집주인이 내놓은 매물과 신규분양 매물이 함께 있어 `listing_kind` 로 가른다. 신규분양 줄은 `floor` 가 `null` 이다.
 
-줄마다 `pyeong_id`(평형 ID)와 `pyeong_name`(평 기준 평형 이름, 예: `34A`)이 있고, 직방이 주지 않으면 `null` 이다. `pyeong_id` 는 `complex` 의 `pyeongs[].id` 와 같은 번호라 같은 단지의 그 평형 매물은 `search listings --complex <단지> --pyeong <pyeong_id>`, 실거래는 `real-price <단지> --pyeong <pyeong_id>` 에 그대로 넘긴다 (평수가 아니다).
+줄마다 `pyeong_id`(평형 ID)와 `pyeong_name`(평 기준 평형 이름, 예: `34A`)이 있고, 직방이 주지 않으면 `null` 이다. `pyeong_id` 는 `complex` 의 `pyeongs[].pyeong_id` 와 같은 번호라 같은 단지의 그 평형 매물은 `search listings --complex <단지> --pyeong <pyeong_id>`, 실거래는 `real-price <단지> --pyeong <pyeong_id>` 에 그대로 넘긴다 (평수가 아니다).
 
 **오류와 대응**
 
@@ -322,31 +322,30 @@ jibsa zigbang complex apt-68579
 
 **반환값**
 
-- 아파트: 사용승인일·세대수·동 수·시공사·주차·용적률·난방, 거래 유형별 매물 수(`article_counts`), 평형 목록(`pyeongs`, 평형마다 면적·세대수·방·욕실·현관 구조·관리비·전매제한 해제일·직방시세), 단지 직방시세(`estimated_*`), 단지 순위(`rank`), 함께 보면 좋은 단지(`related_complexes`), 토지거래허가(`land_trade_permits`), 학군(`schools`, 배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩), 거주 후기 수(`review_count`)
-- 오피스텔 건물: 세대수·층수·준공 연월(`completed_at`)·엘리베이터와 매물 수. `elevator` 는 있다고 확인될 때만 `true` 이고 그 밖에는 `null` 이다 (직방 건물 정보의 '없음'은 엘리베이터가 있는 고층 건물에도 붙어 믿을 수 없다). 정확한 값은 그 건물 매물의 `listing` 상세 `elevator` 로 본다
+- 아파트: 사용승인일·세대수·동 수·시공사·주차·용적률·난방, 거래 유형별 매물 수(`listing_counts`), 평형 목록(`pyeongs`, 평형마다 면적·세대수·방·욕실·현관 구조·관리비·전매제한 해제일·직방시세), 단지 직방시세(`estimated_ranges`·`estimated_prices`), 단지 순위(`ranking`), 함께 보면 좋은 단지(`related_complexes`), 토지거래허가(`land_trade_permits`), 학군(`schools`, 배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩), 거주 후기 수(`review_count`)
+- 오피스텔 건물: 세대수·층수·준공 연월(`completed_month`)·엘리베이터와 매물 수. `has_elevator` 는 있다고 확인될 때만 `true` 이고 그 밖에는 `null` 이다 (직방 건물 정보의 '없음'은 엘리베이터가 있는 고층 건물에도 붙어 믿을 수 없다). 정확한 값은 그 건물 매물의 `listing` 상세 `has_elevator` 로 본다
 
 직방이 주는 정보가 달라 한쪽에만 있는 필드는 키가 없다.
 
-아파트 `pyeongs[]` 에는 `id`·`name`·`pyeong_name` 말고 직방 웹 단지 화면의 평형 정보가 아래처럼 있다. 직방 평형 정보를 받지 못했거나 그 평형이 없으면 모두 `null` 이다. 평형이 아직 없는 단지(분양예정)는 `pyeongs` 가 `[]` 이고, 직방이 평형 목록 자체를 주지 않으면 `pyeongs` 가 `null` 이며 `[참고]` 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다.
+아파트 `pyeongs[]` 에는 `pyeong_id`·`name`·`pyeong_name` 말고 직방 웹 단지 화면의 평형 정보가 아래처럼 있다. 직방 평형 정보를 받지 못했거나 그 평형이 없으면 모두 `null` 이다. 평형이 아직 없는 단지(분양예정)는 `pyeongs` 가 `[]` 이고, 직방이 평형 목록 자체를 주지 않으면 `pyeongs` 가 `null` 이며 `[참고]` 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
 | `supply_area_m2`·`supply_area_pyeong` | 공급면적 (㎡·평). 웹은 단위를 눌러 바꿔 보이지만 jibsa 는 둘 다 낸다 | `null` |
-| `exclusive_area_m2`·`exclusive_area_pyeong` | 전용면적 (㎡·평) | `null` |
-| `households` | 그 평형의 세대수 (웹 평형 이름 옆 괄호) | `null` |
+| `area_m2`·`area_pyeong` | 전용면적 (㎡·평) | `null` |
+| `household_count` | 그 평형의 세대수 (웹 평형 이름 옆 괄호) | `null` |
 | `room_count`·`bathroom_count` | 방·욕실 수 | `null` |
-| `entrance_type` | 현관 구조 (직방 글자 그대로, 예: `계단식`·`복도식`) | `null` |
-| `manage_cost_manwon`·`manage_cost_summer_manwon`·`manage_cost_winter_manwon` | 평균·여름(6~8월)·겨울(12~2월) 월 관리비 (만원, 직방 값 그대로). 웹 안내는 'K-apt 최소 3개월~최대 24개월 평균' | `0` 이거나 직방이 주지 않으면 `null` (웹은 평균이 이러면 여름·겨울이 든 줄 전체를 숨기고 여름·겨울이 이러면 `-` 로 그린다. jibsa 는 평균이 `null` 이어도 직방이 준 여름·겨울 값은 낸다) |
-| `resale_available_from` | 전매제한이 풀려 매매할 수 있는 날 (`YYYY-MM-DD`). 이미 지난 날도 그대로 낸다 (웹은 오늘 뒤일 때만 안내한다) | 직방이 주지 않으면 `null` |
-| `estimated_sale_price_manwon`·`estimated_sale_price_per_pyeong_manwon` | 직방시세 매매 (만원)와 평당 가격 (만원/3.3㎡, 공급면적 평 기준) | `0` 이거나 없으면 `null` (웹의 '시세없음') |
-| `estimated_jeonse_price_manwon`·`estimated_jeonse_price_per_pyeong_manwon` | 직방시세 전세 (만원)와 평당 가격 | `0` 이거나 없으면 `null` |
+| `entrance` | 현관 구조 (직방 글자 그대로, 예: `계단식`·`복도식`) | `null` |
+| `manage_cost_manwon`·`summer_manage_cost_manwon`·`winter_manage_cost_manwon` | 평균·여름(6~8월)·겨울(12~2월) 월 관리비 (만원, 직방 값 그대로). 웹 안내는 'K-apt 최소 3개월~최대 24개월 평균' | `0` 이거나 직방이 주지 않으면 `null` (웹은 평균이 이러면 여름·겨울이 든 줄 전체를 숨기고 여름·겨울이 이러면 `-` 로 그린다. jibsa 는 평균이 `null` 이어도 직방이 준 여름·겨울 값은 낸다) |
+| `resale_available_date` | 전매제한이 풀려 매매할 수 있는 날 (`YYYY-MM-DD`). 이미 지난 날도 그대로 낸다 (웹은 오늘 뒤일 때만 안내한다) | 직방이 주지 않으면 `null` |
+| `estimated_prices` | 직방시세. `sale` 키 안 `price_manwon`(매매 만원)·`price_per_pyeong_manwon`(평당 가격 만원/3.3㎡, 공급면적 평 기준), `jeonse` 키 안 `deposit_manwon`(전세 만원)·`price_per_pyeong_manwon` | 늘 `sale`·`jeonse` 두 키이고 그 거래의 안 칸이 모두 `0` 이거나 없으면 그 거래가 `null`, 일부만 그러면 그 칸만 `null` (웹의 '시세없음') |
 
-단지에는 직방시세 `estimated_sale_price_min_manwon`·`estimated_sale_price_max_manwon`(매매 범위, 웹 전체 탭의 '매매 18억 8,000 ~ 61억 1,000'), `estimated_sale_price_per_pyeong_manwon`·`estimated_jeonse_price_per_pyeong_manwon`(단지 평균 평당 가격, 만원/3.3㎡)도 있고 평형 정보를 받지 못했거나 `0` 이거나 없으면 `null` 이다. 이 값들과 아래 단지 값은 아파트에만 있고 오피스텔 건물에는 키가 없다.
+단지에는 직방시세 `estimated_ranges`(매매 범위, `sale` 키 안 `lowest`·`highest` 의 `price_manwon`. 웹 전체 탭의 '매매 18억 8,000 ~ 61억 1,000')와 `estimated_prices`(단지 평균 평당 가격, `sale`·`jeonse` 키 안 `price_per_pyeong_manwon`, 만원/3.3㎡)도 있다. 평형 정보를 받지 못했거나 `0` 이거나 없으면 `estimated_prices` 는 그 거래(`sale`·`jeonse`)가 `null` 이고 `estimated_ranges` 는 그 칸이 `null` 이다 (`estimated_ranges` 는 두 끝이 모두 그러면 `sale` 이 `null`, 한 끝만 그러면 그 끝의 `price_manwon` 만 `null`). 이 값들과 아래 단지 값은 아파트에만 있고 오피스텔 건물에는 키가 없다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `rank` | 웹 '<동>에서 이 단지의 랭킹은?' 절: `region`(웹 제목 속 동 이름), `price_rank`(웹 '시세 N위', 직방은 실거래가 순위로 준다), `popularity_rank`(웹 '인기순 N위', 직방은 조회수 순위로 준다) | 직방이 구 순위나 동 순위 중 하나라도 주지 않으면 웹이 절을 숨기므로 `null`. 순위 없음(직방 `-1`)은 `price_rank`·`popularity_rank` 가 `null` |
-| `related_complexes` | 웹 '함께 보면 좋은 단지'. `complex_id`·`name`·`households`·`address`(동까지) | 직방이 주지 않으면 `null`, 없으면 `[]`. 직방이 id 를 주지 않은 줄은 그 줄의 `complex_id` 만 `null` |
+| `ranking` | 웹 '<동>에서 이 단지의 랭킹은?' 절: `region`(웹 제목 속 동 이름), `price_rank`(웹 '시세 N위', 직방은 실거래가 순위로 준다), `popularity_rank`(웹 '인기순 N위', 직방은 조회수 순위로 준다) | 직방이 구 순위나 동 순위 중 하나라도 주지 않으면 웹이 절을 숨기므로 `null`. 순위 없음(직방 `-1`)은 `price_rank`·`popularity_rank` 가 `null` |
+| `related_complexes` | 웹 '함께 보면 좋은 단지'. `complex_id`·`name`·`household_count`·`address`(동까지) | 직방이 주지 않으면 `null`, 없으면 `[]`. 직방이 id 를 주지 않은 줄은 그 줄의 `complex_id` 만 `null` |
 | `land_trade_permits` | 최근 7일 토지거래허가 일별 건수 (`date`·`count`, 직방 순서). 웹은 총 0건이면 절을 숨기지만 일별 건수를 그대로 낸다 | 직방이 주지 않으면 `null` |
 
 **오류와 대응**
@@ -357,7 +356,7 @@ ID 접두사·형식 위반은 `INVALID_ARGUMENT`, 없는 단지·건물은 `NOT
 
 단지 이름 대신 ID를 넣는다. 단지 ID 는 `search locations <단지 이름>` 결과의 `complexes[].complex_id`, 역·학교·동·구 주변 단지 `search complexes <이름>` 결과의 `complexes[].complex_id`, `search listings apt`·`search listings room` 오피스텔 결과와 아파트 상세의 `complex_id` 에서 얻는다. 아파트 단지와 오피스텔 건물은 번호 체계가 달라 `apt-`·`officetel-` 을 붙인다.
 
-`pyeongs[].id`는 `search listings --complex`·`real-price`의 `--pyeong`에 넣는 평형 ID이며 평수가 아니다. 후기는 본문을 내보내지 않고, 후기가 있으면 단지 페이지에서 보라고 `notes` 로 알린다. 관리사무소 연락처는 출력하지 않는다.
+`pyeongs[].pyeong_id`는 `search listings --complex`·`real-price`의 `--pyeong`에 넣는 평형 ID이며 평수가 아니다. 후기는 본문을 내보내지 않고, 후기가 있으면 단지 페이지에서 보라고 `notes` 로 알린다. 관리사무소 연락처는 출력하지 않는다.
 
 `estimated_*` 는 직방시세다. 직방이 실거래를 분석해 낸 추정값이라 실거래가도 호가도 아니다. 실제 거래는 [`real-price`](#8-real-price--아파트-실거래가), 지금 올라온 값은 `search listings --complex`, 직방시세가 달마다 어떻게 변했는지는 [`price-trend`](#12-price-trend--단지평형-직방시세-추이)로 본다. 아파트는 단지 정보·매물 수·학군에 평형 정보 조회가 더해 요청이 4회이고 (오피스텔 건물은 1회), 평형 정보는 덤이라 받지 못하면 평형별 면적·관리비·직방시세와 단지 직방시세만 `null` 이 되고 `notes` 의 `[실패]` 가 알린다 (학군 `schools` 도 덤이라 받지 못하면 그 값만 `null` 이고 `[실패]` 로 알린다). 순위·함께 보면 좋은 단지·토지거래허가는 단지 정보에 있어 요청이 늘지 않는다.
 
@@ -369,7 +368,7 @@ ID 접두사·형식 위반은 `INVALID_ARGUMENT`, 없는 단지·건물은 `NOT
 | --- | --- | --- |
 | `--complex` | 단지 ID. search locations 결과의 complexes[].complex_id 나 search 결과의 complex_id (예: apt-68579, officetel-20227) | 필수 |
 | `--trade` | 거래 유형: 전세, 월세, 매매, 단기임대(오피스텔만). 반복하거나 쉼표로 구분. 기본 전체 | 미지정 |
-| `--pyeong` | 평형 ID (complex 결과의 pyeongs[].id, 아파트만). 반복하거나 쉼표로 구분 (OR) 범위: 1~제한 없음. | 미지정 |
+| `--pyeong` | 평형 ID (complex 결과의 pyeongs[].pyeong_id, 아파트만). 반복하거나 쉼표로 구분 (OR) 범위: 1~제한 없음. | 미지정 |
 | `--limit` | 아파트는 조회할 매물 수(제외 전), 오피스텔은 최대 결과 수. 범위: 1~120. | 아파트 20 / 오피스텔 15 |
 | `--deposit-min` | 보증금/전세금 하한 (만원) 범위: 0~제한 없음. | 미지정 |
 | `--deposit-max` | 보증금/전세금 상한 (만원) 범위: 0~제한 없음. | 미지정 |
@@ -406,7 +405,7 @@ jibsa zigbang search listings --complex apt-68579 --trade 전세 --pyeong 400085
 
 **주의사항**
 
-`apt-…` 또는 `officetel-…` ID를 받는다. 기본은 거래 유형 전체다. 공통 조건은 `--trade`, 가격(`--deposit-*`, `--rent-*`, `--price-*`)이다. `--pyeong`은 아파트 전용 평형 ID이며 반복하거나 쉼표로 준 값은 OR다. 단지에 없는 평형 ID 를 주면 0건 대신 `INVALID_ARGUMENT` 이니 `complex` 결과의 `pyeongs[].id` 를 쓴다. 직방이 단지 평형 목록을 주지 않으면 평형 ID 를 확인하지 못한 채 그 평형으로 찾고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'). 아파트에는 단기임대가 없어, 아파트 단지에 단기임대만 주면 입력 오류이고 다른 거래 유형과 함께 주면 단기임대를 빼고 찾은 뒤 `notes` 로 알린다.
+`apt-…` 또는 `officetel-…` ID를 받는다. 기본은 거래 유형 전체다. 공통 조건은 `--trade`, 가격(`--deposit-*`, `--rent-*`, `--price-*`)이다. `--pyeong`은 아파트 전용 평형 ID이며 반복하거나 쉼표로 준 값은 OR다. 단지에 없는 평형 ID 를 주면 0건 대신 `INVALID_ARGUMENT` 이니 `complex` 결과의 `pyeongs[].pyeong_id` 를 쓴다. 직방이 단지 평형 목록을 주지 않으면 평형 ID 를 확인하지 못한 채 그 평형으로 찾고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'). 아파트에는 단기임대가 없어, 아파트 단지에 단기임대만 주면 입력 오류이고 다른 거래 유형과 함께 주면 단기임대를 빼고 찾은 뒤 `notes` 로 알린다.
 
 오피스텔은 `search listings room` 과 같은 관리비·방 구조·면적(전용 ㎡·평)·층·욕실·옵션·시설 조건도 서버에서 적용한다. 이 조건을 아파트 ID와 함께 쓰거나, `--no-manage-cost`와 관리비 범위를 함께 쓰면 `INVALID_ARGUMENT`다.
 
@@ -416,7 +415,7 @@ jibsa zigbang search listings --complex officetel-20227 --trade 월세 --rent-ma
 
 오피스텔 건물 매물은 직방 웹 건물 화면처럼 직방 목록의 묶음 순서(안심추천 → 안심일반 → 일반 등)로 준다. 묶음 안은 매물 번호순이고, 가격순·최신순은 없다. 매물 줄에는 `hug_lessor`·`actual_listing_checked` 도 있다 ([`search listings room`](#2-search-listings-room--원룸빌라오피스텔-매물-찾기) 반환값과 같다).
 
-아파트 결과는 `search listings apt` 와 같은 모양(같은 호·거래 유형을 묶은 매물)이다. `listing_kind`·`pyeong_id`·`pyeong_name` 도 `search listings apt` 와 같다. 상세는 각 매물의 `id`로 `listing`을 사용한다. `is_price_range: true` 인 줄은 가격이 묶음 최저가라 매물별 가격은 [`catalog <catalog_id>`](#10-catalog--아파트-같은-호-묶음의-매물-전부) 로 본다.
+아파트 결과는 `search listings apt` 와 같은 모양(같은 호·거래 유형을 묶은 매물)이다. `listing_kind`·`pyeong_id`·`pyeong_name` 도 `search listings apt` 와 같다. 상세는 각 매물의 `id`로 `listing`을 사용한다. `mixed_prices: true` 인 줄은 가격이 묶음 최저가라 매물별 가격은 [`catalog <catalog_id>`](#10-catalog--아파트-같은-호-묶음의-매물-전부) 로 본다.
 
 ## 8. `real-price` — 아파트 실거래가
 
@@ -426,7 +425,7 @@ jibsa zigbang search listings --complex officetel-20227 --trade 월세 --rent-ma
 | --- | --- | --- |
 | `COMPLEX_ID` | 아파트 단지 ID (search locations 결과의 complexes[].complex_id, search listings apt·listing의 complex_id, 예: apt-68579) | 필수 |
 | `--trade` | 매매, 전세, 월세, 전체 중 하나. 전체는 매매와 전월세를 계약일 최신 순으로 한 목록에 준다 (거래마다 `trade_type`) | 매매 |
-| `--pyeong` | 평형 ID (complex 결과의 pyeongs[].id, 아파트 매물의 `pyeong_id` 도 같은 번호). 기본 전체 평형 범위: 1~제한 없음. | 미지정 |
+| `--pyeong` | 평형 ID (complex 결과의 pyeongs[].pyeong_id, 아파트 매물의 `pyeong_id` 도 같은 번호). 기본 전체 평형 범위: 1~제한 없음. | 미지정 |
 | `--limit` | 최대 거래 수 범위: 1~1200. | 120 |
 
 **사용 예시**
@@ -438,20 +437,20 @@ jibsa zigbang real-price apt-68579 --trade 전체 --limit 20
 
 **반환값**
 
-단지·평형·거래 유형, `returned`, `has_more`, `transactions`, `url`을 준다. 거래의 `pyeong_name` 은 공급 평 기준 평형 이름(`34A`)이다. 실거래 신고에는 전용면적만 있어 같은 전용면적의 평형이 여럿이면 직방도 어느 평형인지 몰라 후보를 모두 주는데, 이때 `pyeong_name` 은 `"32A 외 4"` 처럼 첫 후보와 나머지 수이고 `pyeong_names` 에 후보 전부가 응답 순서로 온다 (후보가 하나면 `pyeong_names` 키가 없고, 직방이 후보를 주지 않은 거래는 `pyeong_name`·`pyeong_names` 모두 `null` 이다). 직방이 평 이름을 주지 않은 후보는 `pyeong_names` 에서 `null` 이고, 그것이 첫 후보면 `pyeong_name` 도 `null` 이다. 후보 목록에 빈 항목이 섞여 와서 빼고 읽었으면 후보가 몇인지 알 수 없어 `pyeong_name` 이 `null` 이고 `pyeong_names` 는 받은 후보 그대로이며 (후보가 하나여도 키가 남는다) `[제외]` 로 알린다.
+단지·평형·거래 유형, `returned`, `has_more`, `trades`, `url`을 준다. 거래마다 층은 `floor`(글자)와 숫자 `floor_number`(지하는 음수, 몇 층인지 모르면 `null`)로 둘 다 있다. 거래의 `pyeong_name` 은 공급 평 기준 평형 이름(`34A`)이다. 실거래 신고에는 전용면적만 있어 같은 전용면적의 평형이 여럿이면 직방도 어느 평형인지 몰라 후보를 모두 주는데, 이때 `pyeong_name` 은 `"32A 외 4"` 처럼 첫 후보와 나머지 수이고 `pyeong_names` 에 후보 전부가 응답 순서로 온다 (후보가 하나면 `pyeong_names` 키가 없고, 직방이 후보를 주지 않은 거래는 `pyeong_name`·`pyeong_names` 모두 `null` 이다). 직방이 평 이름을 주지 않은 후보는 `pyeong_names` 에서 `null` 이고, 그것이 첫 후보면 `pyeong_name` 도 `null` 이다. 후보 목록에 빈 항목이 섞여 와서 빼고 읽었으면 후보가 몇인지 알 수 없어 `pyeong_name` 이 `null` 이고 `pyeong_names` 는 받은 후보 그대로이며 (후보가 하나여도 키가 남는다) `[제외]` 로 알린다.
 
 거래마다 직방 웹 실거래 탭이 보여 주는 아래 값도 있다. 그 거래 유형에 없는 값은 키가 없고, 있는 유형인데 직방이 주지 않으면 `null` 이다.
 
 | 필드 | 있는 거래 | 뜻 | 값이 없을 때 |
 | --- | --- | --- | --- |
-| `dong` | 매매·전세·월세 | 동 (`"132"` 처럼 '동' 글자 없이 직방이 준 그대로) | 직방이 주지 않으면 `null`. 지금까지 본 전월세는 늘 `null` 이다 |
+| `building_dong` | 매매·전세·월세 | 동 (`"132"` 처럼 '동' 글자 없이 직방이 준 그대로) | 직방이 주지 않으면 `null`. 지금까지 본 전월세는 늘 `null` 이다 |
 | `registered` | 매매 | 등기까지 마무리된 거래. 값은 `true` 또는 `null` 뿐이다 | 표시가 없으면 `null`. '등기 안 됨' 이 아니라 모름이다 (아래). 전월세는 키가 없다 |
 | `new_high`·`new_low` | 매매·전세 | 신고가·신저가 거래 (최근 3년 안 최고·최저가를 경신) | 직방이 표시하지 않았으면 `false`. 월세는 키가 없다 |
 | `price_per_pyeong_manwon` | 매매 | 공급면적 3.3㎡당 가격 (만원 정수). 직방이 계산해 반올림한 값을 그대로 낸다 | 직방이 주지 않으면 `null`. 전월세는 키가 없다 |
-| `jeonse_ratio` | 전세, `--pyeong` 을 준 조회 | 전세가율 (`0.305` 처럼 0~1 비율, 반올림하지 않은 직방 값) | 전세가 아닌 거래, `--pyeong` 없는 조회, 직방이 값을 주지 않은 거래는 키가 없다 |
-| `offer_price_diff_manwon` | 분양권 거래 | 분양가 대비 차액 (만원 정수. 거래가가 분양가보다 높으면 양수, 낮으면 음수, 같으면 `0`) | 분양권인데 직방이 값을 주지 않으면 `null`. 분양권이 아닌 거래(입주권 포함)는 직방이 값을 주지 않으면 키가 없다 |
+| `jeonse_ratio_percent` | 전세, `--pyeong` 을 준 조회 | 전세가율 (`30.5` 처럼 % 값(0~100), 반올림하지 않은 직방 값) | 전세가 아닌 거래, `--pyeong` 없는 조회, 직방이 값을 주지 않은 거래는 키가 없다 |
+| `presale_price_diff_manwon` | 분양권 거래 | 분양가 대비 차액 (만원 정수. 거래가가 분양가보다 높으면 양수, 낮으면 음수, 같으면 `0`) | 분양권인데 직방이 값을 주지 않으면 `null`. 분양권이 아닌 거래(입주권 포함)는 직방이 값을 주지 않으면 키가 없다 |
 
-`registered` 는 직방이 2023년 1월 이후에 계약한 거래만 등기 여부를 표시하고 등기된 거래에만 값을 준다. 그래서 `null` 은 2023년 이전 계약이거나 아직 등기 전이라는 뜻이지 '등기가 안 됐다' 가 아니다. `false` 는 나오지 않는다. `new_high` 는 단지 역대 최고가가 아니라 최근 3년 안에서 가장 높은 거래가를 경신했다는 직방 표시다 (`new_low` 도 같다). `jeonse_ratio` 는 백분율이 아니라 0~1 비율이고 (0.305 는 30.5%), 분모는 그 달의 직방 시세라 단지 실거래 매매가로 다시 나눈 값과 다를 수 있다. 직방은 전세가율을 평형 하나를 지정한 조회에서만 주므로 `--pyeong` 없이 부르면 전세 거래에도 키가 없다. `offer_price_diff_manwon` 의 분양가는 직방이 층별 분양가(없으면 청약홈 분양가)로 정한 값이다. 거래의 `pyeong_name` 과 `--pyeong` 의 평형 ID 는 아파트 매물·`complex` 의 `pyeong_id`·`pyeongs[].id` 와 같은 체계다.
+`registered` 는 직방이 2023년 1월 이후에 계약한 거래만 등기 여부를 표시하고 등기된 거래에만 값을 준다. 그래서 `null` 은 2023년 이전 계약이거나 아직 등기 전이라는 뜻이지 '등기가 안 됐다' 가 아니다. `false` 는 나오지 않는다. `new_high` 는 단지 역대 최고가가 아니라 최근 3년 안에서 가장 높은 거래가를 경신했다는 직방 표시다 (`new_low` 도 같다). `jeonse_ratio_percent` 는 0~100 백분율이고 (30.5 는 30.5%), 분모는 그 달의 직방 시세라 단지 실거래 매매가로 다시 나눈 값과 다를 수 있다. 직방은 전세가율을 평형 하나를 지정한 조회에서만 주므로 `--pyeong` 없이 부르면 전세 거래에도 키가 없다. `presale_price_diff_manwon` 의 분양가는 직방이 층별 분양가(없으면 청약홈 분양가)로 정한 값이다. 거래의 `pyeong_name` 과 `--pyeong` 의 평형 ID 는 아파트 매물·`complex` 의 `pyeong_id`·`pyeongs[].pyeong_id` 와 같은 체계다.
 
 **오류와 대응**
 
@@ -459,7 +458,7 @@ jibsa zigbang real-price apt-68579 --trade 전체 --limit 20
 
 **주의사항**
 
-아파트 `apt-…` ID만 받는다 (오피스텔 건물은 `INVALID_ARGUMENT`). `--trade`는 매매·전세·월세·전체 중 하나, 기본 매매다. 평형을 지정하지 않으면 전체 평형이며 `--pyeong`에는 `complex`의 `pyeongs[].id`나 아파트 매물의 `pyeong_id`를 넣는다.
+아파트 `apt-…` ID만 받는다 (오피스텔 건물은 `INVALID_ARGUMENT`). `--trade`는 매매·전세·월세·전체 중 하나, 기본 매매다. 평형을 지정하지 않으면 전체 평형이며 `--pyeong`에는 `complex`의 `pyeongs[].pyeong_id`나 아파트 매물의 `pyeong_id`를 넣는다.
 
 `--trade 전체` 는 직방이 합쳐 주는 목록 그대로라 매매와 전월세가 계약일 최신 순으로 섞여 나오고, 계약일이 같으면 전월세가 매매 앞이다. 결과 맨 위 `trade_type` 은 `전체` 이고 거래마다 `trade_type`(`매매`·`전세`·`월세`)이 맨 앞에 붙는다 (한 유형만 조회하면 거래마다 없다). 전월세가 많은 단지는 앞쪽 `--limit` 건이 전월세뿐일 수 있으니 매매가 필요하면 `--trade 매매` 로 따로 부른다. 평형을 주는 `--pyeong` 과 함께 쓸 수 있다. 전체는 유형으로 거르지 않고 받은 그대로 내서, 전세·월세만 고를 때 쓰는 아래 쪽 수 안내가 붙지 않는다. 직방이 거래 유형을 모르는 값이나 빈 값으로 준 거래는 어느 `--trade` 에서든 빼고 `notes` 에 `[제외] 거래 유형을 읽지 못한 실거래 N건을 뺐습니다. jibsa 업데이트가 필요할 수 있습니다` 로 알린다.
 
@@ -501,7 +500,7 @@ jibsa zigbang listing store-123
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `confirmed_at` | 직방이 이 매물을 마지막으로 확인한 날짜 (`YYYY-MM-DD`, 한국 시간). 웹 매물 화면의 '5일 전 확인'(아파트)·개요의 '33일 전'(원룸·빌라·오피스텔) 같은 글자는 이 시각으로 만든 상대 표기다 | `null` |
+| `confirmed_date` | 직방이 이 매물을 마지막으로 확인한 날짜 (`YYYY-MM-DD`, 한국 시간). 웹 매물 화면의 '5일 전 확인'(아파트)·개요의 '33일 전'(원룸·빌라·오피스텔) 같은 글자는 이 시각으로 만든 상대 표기다 | `null` |
 | `actual_listing_checked` | 웹의 '실매물 확인' 꼬리표가 붙은 매물인지. 원룸·빌라·오피스텔은 직방 배지 목록에 `ITEM_VERIFICATION` 이 있으면 `true`, 배지 목록을 받았는데 없으면 `false` (확인 실패 `ITEM_VERIFICATION_FAILED` 도 `false`), 아파트는 직방이 준 값 그대로 | 직방이 배지·값을 주지 않으면 `null` |
 | `non_compliant_building` | 웹 매물 정보의 '위반건축물 여부' 해당(`true`)·해당 없음(`false`) | 직방이 주지 않으면(제휴 매물 등) `null` |
 | `hug_lessor` | 웹의 'HUG안심임대인' 꼬리표. 원룸·빌라·오피스텔은 직방 배지 목록에 `HUG` 가 있으면 `true`, 배지 목록을 받았는데 없으면 `false`, 아파트는 직방이 준 값 그대로 | 직방이 배지·값을 주지 않으면 `null` |
@@ -513,27 +512,27 @@ jibsa zigbang listing store-123
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `nearby_facilities` | 웹 '주변 생활 시설'. 가까운 시설이 있는 것만 `type`(지하철역·버스정류장·편의점·카페·약국·세탁소·대형마트), `minutes`(걸리는 분), `transport`(`도보`·`차`), `distance_m`(거리, m)를 도보 시설을 걸리는 시간 순으로, 그다음 차 시설을 같은 순으로 낸다 (웹 그림의 순서). `minutes` 는 웹처럼 직방이 준 초를 분으로 반올림하고 (.5분은 올림) 0분이면 1분이다. 웹은 거리를 그리지 않고 분만 그린다 | 가까운 시설이 하나도 없으면 `[]`, 직방이 주변 정보를 주지 않으면 `null`. `distance_m` 은 직방이 주지 않으면 `null` |
+| `nearby_facilities` | 웹 '주변 생활 시설'. 가까운 시설이 있는 것만 `type`(지하철역·버스정류장·편의점·카페·약국·세탁소·대형마트), `travel_minutes`(걸리는 분), `transport`(`도보`·`차`), `distance_m`(거리, m)를 도보 시설을 걸리는 시간 순으로, 그다음 차 시설을 같은 순으로 낸다 (웹 그림의 순서). `travel_minutes` 는 웹처럼 직방이 준 초를 분으로 반올림하고 (.5분은 올림) 0분이면 1분이다. 웹은 거리를 그리지 않고 분만 그린다 | 가까운 시설이 하나도 없으면 `[]`, 직방이 주변 정보를 주지 않으면 `null`. `distance_m` 은 직방이 주지 않으면 `null` |
 | `delivery_services` | 이 주소로 배송하는 업체 이름 (웹 '이 지역은 하루 배송권이에요', 예: 쿠팡·SSG·마켓컬리, 직방 순서) | 배송 업체가 없으면 `[]` (웹은 이 칸을 숨긴다), 직방이 주변 정보를 주지 않으면 `null` |
-| `building_trades` | 웹 매물 화면의 건물 실거래가: 같은 건물(필지)의 실거래 전부를 계약일 최신순으로 낸다 (웹은 3건만 보이고 더보기로 5건씩 연다). 이 매물의 거래가 아니라 같은 건물의 다른 호 거래도 든다. `trade_date`(`YYYY-MM-DD`)·`trade_type`(매매·전세·월세)·`floor`(예: `4`, `지하1`)·`exclusive_area_m2`(전용면적, ㎡)·`land_area_m2`(대지권면적, ㎡)와 거래 유형에 맞는 금액(매매 `price_manwon`, 전세 `deposit_manwon`, 월세 `deposit_manwon`·`rent_manwon`, 모두 직방이 만원으로 준 값 그대로)을 준다. 웹은 날짜를 연·월만, 면적을 정수로 버려 그린다 | 필지가 없거나 받지 못하면 `null`, 거래가 없으면 `[]`. 직방은 빌라가 아니면 거래를 주지 않아 `[]` 로 나올 수 있다. 직방이 거래 유형을 모르는 값으로 주면 `trade_type` 이 `null` 이고 금액 칸을 직방이 준 대로 모두 낸다. 면적·층·날짜를 직방이 주지 않으면 `null` |
+| `building_trades` | 웹 매물 화면의 건물 실거래가: 같은 건물(필지)의 실거래 전부를 계약일 최신순으로 낸다 (웹은 3건만 보이고 더보기로 5건씩 연다). 이 매물의 거래가 아니라 같은 건물의 다른 호 거래도 든다. `trade_date`(`YYYY-MM-DD`)·`trade_type`(매매·전세·월세)·`floor`(예: `4`, `지하1`)·`floor_number`(숫자, 지하는 음수)·`area_m2`(전용면적, ㎡)·`land_area_m2`(대지권면적, ㎡)와 거래 유형에 맞는 금액(매매 `price_manwon`, 전세 `deposit_manwon`, 월세 `deposit_manwon`·`rent_manwon`, 모두 직방이 만원으로 준 값 그대로)을 준다. 웹은 날짜를 연·월만, 면적을 정수로 버려 그린다 | 필지가 없거나 받지 못하면 `null`, 거래가 없으면 `[]`. 직방은 빌라가 아니면 거래를 주지 않아 `[]` 로 나올 수 있다. 직방이 거래 유형을 모르는 값으로 주면 `trade_type` 이 `null` 이고 금액 칸을 직방이 준 대로 모두 낸다. 면적·층·날짜를 직방이 주지 않으면 `null` |
 
 `nearby_facilities`·`building_trades` 의 시설 종류·거래 금액은 직방이 준 값이고 jibsa 가 다시 계산하지 않는다. 원룸·빌라·오피스텔 상세는 기존 요청에 필지가 있으면 건물 학군 1회에 더해 건물 실거래 1회가 든다 (둘 다 덤이라 받지 못하면(요청 제한 포함) 그 값만 `null` 이고 상세는 내며, `notes` 에 `[실패]` 안내가 붙는다. 필지가 없어 부르지 않은 값은 안내가 없다).
 
-숫자 ID 가 아파트 매물이면 직방 웹 아파트 매물 화면과 같은 아파트 상세 하나로 만든다. 단지(`complex_id`·`complex_name`)·공급면적·방·욕실 수·사용승인일·관리비는 아파트 상세의 값이고, `total_parking_count` 는 단지 전체 주차 대수다. 관리비가 0원으로 오면 직방 웹이 관리비 칸을 비워 두어 `manage_cost_manwon` 은 `null` 이다 (`catalog` 도 같다). 층은 `"저층"`·`"중층"`·`"고층"` 으로만 와서 `floor_number` 가 `null` 이다 (직방 웹에도 정확한 층이 없다). 직방이 제목·층·방향·중개대상물 종류를 빈 글자(공백뿐인 글자 포함)로 주면 `title`·`floor`·`direction`·`residence_type` 은 `null` 이다. 등록일(`registered_at`)·인근 역(`nearby_subways`)·`elevator`·`room_type`·`household_count` 는 직방이 주지 않아 `null` 이다 (방 구조는 `room_count` 로 본다). 옵션은 직방이 아파트에 받지 않아 `null` 이고, 학군은 `complex` 에서 본다. 아파트 매물에는 `listing_kind`(신규분양·집주인·중개사, 처음 보는 종류는 직방 코드 그대로, 직방이 주지 않으면 `null`)도 있다. `residence_type` 은 직방 웹 매물 화면의 '중개대상물 종류'(예: `"아파트"`)다. `address` 는 직방이 지번 주소를 주지 않아 `null` 이다 (직방 웹 매물 화면도 지번을 보여 주지 않는다). 지번은 `complex` 의 `address` 로 본다.
+숫자 ID 가 아파트 매물이면 직방 웹 아파트 매물 화면과 같은 아파트 상세 하나로 만든다. 단지(`complex_id`·`complex_name`)·공급면적·방·욕실 수·사용승인일·관리비는 아파트 상세의 값이고, `parking_count` 는 단지 전체 주차 대수다. 관리비가 0원으로 오면 직방 웹이 관리비 칸을 비워 두어 `manage_cost_manwon` 은 `null` 이다 (`catalog` 도 같다). 층은 `"저층"`·`"중층"`·`"고층"` 으로만 와서 `floor_number` 가 `null` 이다 (직방 웹에도 정확한 층이 없다). 직방이 제목·층·방향·중개대상물 종류를 빈 글자(공백뿐인 글자 포함)로 주면 `title`·`floor`·`direction`·`residence_type` 은 `null` 이다. 등록일(`registered_date`)·인근 역(`nearby_stations`)·`has_elevator`·`room_type`·`household_count` 는 직방이 주지 않아 `null` 이다 (방 구조는 `room_count` 로 본다). 옵션은 직방이 아파트에 받지 않아 `null` 이고, 학군은 `complex` 에서 본다. 아파트 매물에는 `listing_kind`(신규분양·집주인·중개사, 처음 보는 종류는 직방 코드 그대로, 직방이 주지 않으면 `null`)도 있다. `residence_type` 은 직방 웹 매물 화면의 '중개대상물 종류'(예: `"아파트"`)다. `address` 는 직방이 지번 주소를 주지 않아 `null` 이다 (직방 웹 매물 화면도 지번을 보여 주지 않는다). 지번은 `complex` 의 `address` 로 본다.
 
-제휴 매물(`coalition-123`)도 같은 아파트 상세로 만든다. 집주인이 내놓은 매물과 신규분양 매물이 있고 `listing_kind` 로 가른다 (신규분양이면 가격은 분양가다). 층은 숫자로 오고, 등록일·주차(`parking`·`total_parking_count`)·옵션·인근 역을 주지 않아 `null` 이다. 관리비는 확인 중인 경우가 많다. 제휴 매물의 `address` 는 지번 주소다. 아파트·제휴 매물 상세의 `url` 은 그 매물의 직방 웹 페이지다.
+제휴 매물(`coalition-123`)도 같은 아파트 상세로 만든다. 집주인이 내놓은 매물과 신규분양 매물이 있고 `listing_kind` 로 가른다 (신규분양이면 가격은 분양가다). 층은 숫자로 오고, 등록일·주차(`parking`·`parking_count`)·옵션·인근 역을 주지 않아 `null` 이다. 관리비는 확인 중인 경우가 많다. 제휴 매물의 `address` 는 지번 주소다. 아파트·제휴 매물 상세의 `url` 은 그 매물의 직방 웹 페이지다.
 
-아파트 매물 상세(`catalog` 매물 포함)에는 직방 웹 매물 화면이 보여 주는 아래 값도 있다. 아파트에만 있는 키라 다른 유형 상세에는 없고, 아파트 목록 줄에는 `pyeong_id`·`pyeong_name` 만 있다 (위 공통 값 `confirmed_at`·`actual_listing_checked`·`non_compliant_building`·`hug_lessor`·`manage_cost_*` 는 목록 줄에 없다).
+아파트 매물 상세(`catalog` 매물 포함)에는 직방 웹 매물 화면이 보여 주는 아래 값도 있다. 아파트에만 있는 키라 다른 유형 상세에는 없고, 아파트 목록 줄에는 `pyeong_id`·`pyeong_name` 만 있다 (위 공통 값 `confirmed_date`·`actual_listing_checked`·`non_compliant_building`·`hug_lessor`·`manage_cost_*` 는 목록 줄에 없다).
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `pyeong_id`·`pyeong_name` | 평형 ID와 평 기준 평형 이름 (예: `34A`). `pyeong_id` 는 `complex` 의 `pyeongs[].id` 와 같은 번호라 `search listings --complex <단지> --pyeong`·`real-price <단지> --pyeong` 에 그대로 넘긴다 | 직방이 주지 않으면 `null` |
-| `zzim_count` | 웹 하트 옆의 찜 수. 0 도 그대로 낸다 (웹은 0 이면 숫자를 그리지 않는다). 원룸·빌라·오피스텔은 웹 www 에서 찜 수를 그리지 않아(앱만) 키가 없다 | 직방이 주지 않으면 `null` |
+| `pyeong_id`·`pyeong_name` | 평형 ID와 평 기준 평형 이름 (예: `34A`). `pyeong_id` 는 `complex` 의 `pyeongs[].pyeong_id` 와 같은 번호라 `search listings --complex <단지> --pyeong`·`real-price <단지> --pyeong` 에 그대로 넘긴다 | 직방이 주지 않으면 `null` |
+| `favorite_count` | 웹 하트 옆의 찜 수. 0 도 그대로 낸다 (웹은 0 이면 숫자를 그리지 않는다). 원룸·빌라·오피스텔은 웹 www 에서 찜 수를 그리지 않아(앱만) 키가 없다 | 직방이 주지 않으면 `null` |
 | `residence_type` | 직방의 중개대상물 종류 (예: `"아파트"`). 원룸·빌라·오피스텔의 건축물 용도와는 다른 값이다 | 제휴 매물은 직방이 주지 않아 `null`. 빈 글자·공백뿐인 글자로 주어도 `null` |
 
-`actual_listing_checked` 가 무엇을 확인한 것인지는 직방이 설명하지 않는다. 꼬리표가 있다는 사실만 전하고 매물이 지금 거래 가능하다는 보증으로 읽지 않는다 (확인은 `url` 의 원 사이트에서). `confirmed_at` 은 매물 상세·묶음 매물에만 있고 목록 줄에는 없다.
+`actual_listing_checked` 가 무엇을 확인한 것인지는 직방이 설명하지 않는다. 꼬리표가 있다는 사실만 전하고 매물이 지금 거래 가능하다는 보증으로 읽지 않는다 (확인은 `url` 의 원 사이트에서). `confirmed_date` 은 매물 상세·묶음 매물에만 있고 목록 줄에는 없다.
 
-`--check-in`·`--check-out`은 `stay-…` 전용이고 함께 지정한다. `--check-out` 은 나가는 날이 아니라 마지막으로 머무는 날이다 (직방은 이 날까지 이용일로 센다). 날짜를 주면 직방 웹 날짜 고르기 창이 막는 규칙대로 그 기간을 예약할 수 있는지 `available` 을 붙인다 (요청이 늘지 않는다): 입주일이 오늘(한국 날짜) 이후이고, 기간이 그 매물의 최소 계약 주(`min_contract_weeks`) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약됐거나 막힌 날이 없고 마지막 날이 막힌 날이 아니면 `true` 다. 직방이 일정을 주지 않으면 `null` 이다. 일정 목록에 빈 항목이 섞여 와서 빼고 읽었으면 그 항목이 막힌 날이었을 수 있어 `available` 도 `unavailable_periods` 도 `null` 이고 `[제외]` 로 알린다. 최소 계약은 매물마다 달라 1주보다 긴 매물도 있다. 그 기간의 총비용(청소비·직방 이용료·할인을 더한 금액)은 직방이 로그인한 사용자에게만 계산해 보여 줘서 주지 않는다. 청소비·보증금·할인 조건은 상세의 `cleaning_fee_manwon`·`deposit_manwon`·`discounts` 로 본다. 직방의 예약 달력 API(`guest/items/{id}/calendar`)는 로그인해야 열려 쓰지 않는다. 예약할 수 없는 기간은 로그인 없이 오는 상세 응답의 일정으로 `unavailable_periods` 에 낸다.
+`--check-in`·`--check-out`은 `stay-…` 전용이고 함께 지정한다. `--check-out` 은 나가는 날이 아니라 마지막으로 머무는 날이다 (직방은 이 날까지 이용일로 센다). 날짜를 주면 직방 웹 날짜 고르기 창이 막는 규칙대로 그 기간을 예약할 수 있는지 `available` 을 붙인다 (요청이 늘지 않는다): 입주일이 오늘(한국 날짜) 이후이고, 기간이 그 매물의 최소 계약 주(`contract_weeks_range.lowest`) 이상·84일 이하이며, 입주일부터 마지막 날 전날까지 예약됐거나 막힌 날이 없고 마지막 날이 막힌 날이 아니면 `true` 다. 직방이 일정을 주지 않으면 `null` 이다. 일정 목록에 빈 항목이 섞여 와서 빼고 읽었으면 그 항목이 막힌 날이었을 수 있어 `available` 도 `unavailable_periods` 도 `null` 이고 `[제외]` 로 알린다. 최소 계약은 매물마다 달라 1주보다 긴 매물도 있다. 그 기간의 총비용(청소비·직방 이용료·할인을 더한 금액)은 직방이 로그인한 사용자에게만 계산해 보여 줘서 주지 않는다. 청소비·보증금·할인 조건은 상세의 `cleaning_fee_manwon`·`deposit_manwon`·`discounts` 로 본다. 직방의 예약 달력 API(`guest/items/{id}/calendar`)는 로그인해야 열려 쓰지 않는다. 예약할 수 없는 기간은 로그인 없이 오는 상세 응답의 일정으로 `unavailable_periods` 에 낸다.
 
 ```bash
 jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29
@@ -549,7 +548,7 @@ jibsa zigbang listing stay-123 --check-in 2026-11-02 --check-out 2026-11-29
 | `pet_cleaning_fee_manwon` | 반려동물을 데려올 때 추가 청소비 (만원). 직방 웹처럼 동반 가능 여부와 상관없이 0 보다 크면 나온다 | 동반 가능이면 추가 청소비가 없을 때 `0`, 직방이 주지 않으면 `null`. 동반 불가면 0 보다 클 때만 값이 있고 아니면 키가 없다. 동반 가능 여부를 모르면(`pet_allowed` 가 `null`) 0 보다 클 때 그 값, 아니면 `null` |
 | `check_in_time`·`check_out_time` | 입주·퇴실 시각 (`"15:00"`) | 직방이 주지 않으면 `null` |
 | `check_in_method`·`check_out_method` | 입주·퇴실 방식 (`비대면`·`임대인 대면`·`키박스`, 모르는 값은 직방 코드 그대로) | 직방이 주지 않으면 `null` |
-| `unavailable_periods` | 예약할 수 없는 기간 목록 (`start`·`end`·`kind`). `start`·`end` 는 `YYYY-MM-DD` 이고 `end` 는 그날까지 막힌다는 뜻이고 `kind` 는 `예약`(다른 손님)·`막힘`(임대인). 직방이 1년 뒤까지 준다 | 막힌 기간이 없으면 `[]`, 직방이 일정을 주지 않거나 일정 목록에서 빈 항목을 빼고 읽었으면 `null` |
+| `unavailable_periods` | 예약할 수 없는 기간 목록 (`start_date`·`end_date`·`kind`). `start_date`·`end_date` 는 `YYYY-MM-DD` 이고 `end_date` 는 그날까지 막힌다는 뜻이고 `kind` 는 `예약`(다른 손님)·`막힘`(임대인). 직방이 1년 뒤까지 준다 | 막힌 기간이 없으면 `[]`, 직방이 일정을 주지 않거나 일정 목록에서 빈 항목을 빼고 읽었으면 `null` |
 | `refund_rules` | 위약금 표 (`refund_policy` 에 해당하는 5행, 행마다 `when`·`penalty`. 예: `입주 7일전`·`임대료의 30%`) | 정책을 모르거나 표에 없는 정책이면 `null` |
 | `review_count` | 후기 수 (웹 상세의 후기 배지) | 후기가 없으면 `0`, 후기를 받지 못했으면 `null` |
 | `review_rating` | 평균 평점 (직방 원값. 웹은 소수 첫째 자리로 반올림해 '★ 4.8' 로 그린다). 청결·위치 같은 항목별 점수는 직방이 주지 않는다 | 후기가 없으면(`review_count` 0) 키가 없다. 후기를 받지 못했으면 `null` |
@@ -577,18 +576,17 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 
 **반환값**
 
-`catalog_id`, `url`(직방 웹 묶음 화면), `trade_type`, `total`(묶음의 매물 수, 직방이 알려 주지 않으면 `null`), `returned`, `has_more`, `listings`. `listings` 의 매물마다 아파트 [`listing`](#9-listing--매물-하나-상세) 상세와 같은 필드다 (`id` 는 `listing` 에 그대로 넘길 수 있고 `listing_kind`·`pyeong_id`·`confirmed_at` 등도 있다). 사진·중개사·매물 설명은 `url` 의 원 사이트에서 본다.
+`catalog_id`, `url`(직방 웹 묶음 화면), `trade_type`, `total`(묶음의 매물 수, 직방이 알려 주지 않으면 `null`), `returned`, `has_more`, `listings`. `listings` 의 매물마다 아파트 [`listing`](#9-listing--매물-하나-상세) 상세와 같은 필드다 (`id` 는 `listing` 에 그대로 넘길 수 있고 `listing_kind`·`pyeong_id`·`confirmed_date` 등도 있다). 사진·중개사·매물 설명은 `url` 의 원 사이트에서 본다.
 
 묶음(호) 단위로 직방 웹 묶음 화면 '시세 정보' 탭의 값도 있다. 직방 호 정보를 받지 못하면 모두 `null` 이고 `notes` 의 `[실패]` 가 알린다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `estimated_sale_price_manwon`·`estimated_sale_price_per_pyeong_manwon` | 이 호의 직방시세 매매가 (만원)와 평당 가격 (만원/3.3㎡). 직방이 실거래를 분석해 낸 추정값이라 호가도 실거래가도 아니다 | 직방이 주지 않거나 `0` 이면 `null` |
-| `estimated_jeonse_price_manwon`·`estimated_jeonse_price_per_pyeong_manwon` | 이 호의 직방시세 전세가 (만원)와 평당 가격. 추정값이다 | 직방이 주지 않거나 `0` 이면 `null` |
-| `public_prices` | 공시가격 (직방 순서, 최근 해부터). 해마다 `year`·`price_manwon`(직방이 원 단위로 준 값을 만원으로 환산)·`change_rate`(전년 대비 변동률 %, 부호 있음, 예: `26.9`·`-28`·`0`. 웹은 절댓값과 색으로 그린다) | 공시가격이 없으면 `[]`, 호 정보를 받지 못했거나 직방이 주지 않으면 `null`. 가격이 0 이거나 직방이 주지 않으면 `price_manwon` 이 `null`, 변동률을 주지 않으면 `change_rate` 가 `null` |
+| `estimated_prices` | 이 호의 직방시세. `sale` 키 안 `price_manwon`(매매가 만원)·`price_per_pyeong_manwon`(평당 가격 만원/3.3㎡), `jeonse` 키 안 `deposit_manwon`(전세가 만원)·`price_per_pyeong_manwon`. 직방이 실거래를 분석해 낸 추정값이라 호가도 실거래가도 아니다 | 늘 `sale`·`jeonse` 두 키이고 그 거래의 안 칸을 직방이 주지 않거나 `0` 이라 모두 모르면 그 거래가 `null`, 일부만 그러면 그 칸만 `null` |
+| `public_prices` | 공시가격 (직방 순서, 최근 해부터). 해마다 `year`·`public_price_manwon`(직방이 원 단위로 준 값을 만원으로 환산)·`change_percent`(전년 대비 변동률 %, 부호 있음, 예: `26.9`·`-28`·`0`. 웹은 절댓값과 색으로 그린다) | 공시가격이 없으면 `[]`, 호 정보를 받지 못했거나 직방이 주지 않으면 `null`. 가격이 0 이거나 직방이 주지 않으면 `public_price_manwon` 이 `null`, 변동률을 주지 않으면 `change_percent` 가 `null` |
 | `presale_price_manwon` | 이 호의 분양가 (만원). 웹은 이 값이 있으면 '이 매물 분양가' 로 보여 준다 | 직방이 주지 않거나 `0` 이면 `null` |
-| `presale_average_price_manwon` | 같은 타입의 평균 분양가 (만원). 웹은 호 분양가가 있을 때 '이 매물과 같은 타입의 평균 분양가는 …입니다' 로 함께 보여 준다 | 직방이 주지 않거나 `0` 이면 `null` |
-| `presale_type_price_manwon` | 이 호가 속한 타입(평형)의 분양가 (만원). 웹은 호 분양가가 없을 때 이 값을 '이 매물 분양가' 로 보여 주고 '이 타입의 평균 분양가를 표시합니다' 를 붙인다 | 직방이 주지 않거나 `0` 이면 `null` |
+| `presale_price_average_manwon` | 같은 타입의 평균 분양가 (만원). 웹은 호 분양가가 있을 때 '이 매물과 같은 타입의 평균 분양가는 …입니다' 로 함께 보여 준다 | 직방이 주지 않거나 `0` 이면 `null` |
+| `type_presale_price_manwon` | 이 호가 속한 타입(평형)의 분양가 (만원). 웹은 호 분양가가 없을 때 이 값을 '이 매물 분양가' 로 보여 주고 '이 타입의 평균 분양가를 표시합니다' 를 붙인다 | 직방이 주지 않거나 `0` 이면 `null` |
 | `presale_price_per_pyeong_manwon` | 웹이 보여 주는 분양가(호 분양가가 있으면 그 호, 없으면 타입 분양가)의 평당가 (만원/3.3㎡) | 직방이 주지 않거나 `0` 이면 `null` |
 
 **오류와 대응**
@@ -597,7 +595,7 @@ jibsa zigbang catalog 8260358-trade --fields id,price_manwon,deposit_manwon,floo
 
 **주의사항**
 
-`is_price_range: true` 인 줄의 가격은 묶음 최저가라, 매물별 가격은 이 명령 한 번으로 본다 (20건마다 요청 1회에 매물을 다 받은 뒤 호 정보 요청 1회가 더 든다. 호 정보는 덤이라 받지 못해도 받은 매물은 낸다). 같은 매물을 `listing_ids` 로 하나씩 `listing` 하면 매물마다 요청 2회다. 묶음이 120건을 넘으면 앞 120건만 받고 `[일부]` 로 알린다. 받는 사이 묶음이 줄어 직방이 다음 쪽을 주지 않으면 받은 데까지 내고 `[일부]` 로 알린다 (`has_more: true`, 다시 부르면 지금 묶음을 받는다). 직방이 묶음 매물 수를 알려 주지 않으면(`total: null`) 쪽이 가득 찬 동안 120건까지 받고, 120건에 닿아 멈췄는데 마지막 쪽이 가득 찼을 때만 `has_more: true` 와 `[일부]` 로 알린다. 직방·제휴 밖 출처처럼 상세를 볼 수 없는 매물은 `listing_ids` 와 같이 빼고 `[제외]` 로 알린다 (`total` 에는 센다).
+`mixed_prices: true` 인 줄의 가격은 묶음 최저가라, 매물별 가격은 이 명령 한 번으로 본다 (20건마다 요청 1회에 매물을 다 받은 뒤 호 정보 요청 1회가 더 든다. 호 정보는 덤이라 받지 못해도 받은 매물은 낸다). 같은 매물을 `listing_ids` 로 하나씩 `listing` 하면 매물마다 요청 2회다. 묶음이 120건을 넘으면 앞 120건만 받고 `[일부]` 로 알린다. 받는 사이 묶음이 줄어 직방이 다음 쪽을 주지 않으면 받은 데까지 내고 `[일부]` 로 알린다 (`has_more: true`, 다시 부르면 지금 묶음을 받는다). 직방이 묶음 매물 수를 알려 주지 않으면(`total: null`) 쪽이 가득 찬 동안 120건까지 받고, 120건에 닿아 멈췄는데 마지막 쪽이 가득 찼을 때만 `has_more: true` 와 `[일부]` 로 알린다. 직방·제휴 밖 출처처럼 상세를 볼 수 없는 매물은 `listing_ids` 와 같이 빼고 `[제외]` 로 알린다 (`total` 에는 센다).
 
 ## 11. `search complexes` — 역·학교·동·구 주변 아파트 단지
 
@@ -619,31 +617,31 @@ jibsa zigbang search complexes 가락동
 
 **반환값**
 
-`place`(찾은 이름), `place_type`(`역`·`학교`·`동`·`구`, 시·군은 `구`, 리는 상위 읍·면이라 `동`), `place_address`(찾은 곳의 주소), `total`(고른 목록(`--order`)의 단지 수, 역은 1.5km 안. 직방이 주지 않으면 `null`), `returned`, `has_more`, `complexes`를 준다. 단지마다 `complex_id`(`apt-…`), `name`, `address`, `households`(세대수), `distance_m`, `url`(직방 단지 페이지), `highlight`가 있다. 단지 좌표는 주지 않는다. 학교 이름을 주면 직방 웹 학교 화면의 학교 정보 `school` 이 결과 맨 끝에 붙는다 (아래 표, 학교가 아니면 키가 없다).
+`place`(찾은 이름), `place_type`(`역`·`학교`·`동`·`구`, 시·군은 `구`, 리는 상위 읍·면이라 `동`), `place_address`(찾은 곳의 주소), `total`(고른 목록(`--order`)의 단지 수, 역은 1.5km 안. 직방이 주지 않으면 `null`), `returned`, `has_more`, `complexes`를 준다. 단지마다 `complex_id`(`apt-…`), `name`, `address`, `household_count`(세대수), `distance_km`, `url`(직방 단지 페이지), `highlight`가 있다. 단지 좌표는 주지 않는다. 학교 이름을 주면 직방 웹 학교 화면의 학교 정보 `school` 이 결과 맨 끝에 붙는다 (아래 표, 학교가 아니면 키가 없다).
 
-- `total`: 최근입주·시세급변동은 그 조건에 든 단지만 담아 그 곳의 전체 단지 수가 아니다 (2026-11-20 실측: 강남역 인기 112곳·최근입주 2곳·시세급변동 55곳, 가락동 최근입주 1곳). 동·구는 최근입주 목록뿐이라 `total` 이 그 동·구의 전체 단지 수가 아니다. 역·학교 주변 단지 전체에서 가까운 곳을 고르려면 `--order` 를 빼고(인기) `--limit` 을 늘려 받아 `distance_m` 으로 고른다.
+- `total`: 최근입주·시세급변동은 그 조건에 든 단지만 담아 그 곳의 전체 단지 수가 아니다 (2026-11-20 실측: 강남역 인기 112곳·최근입주 2곳·시세급변동 55곳, 가락동 최근입주 1곳). 동·구는 최근입주 목록뿐이라 `total` 이 그 동·구의 전체 단지 수가 아니다. 역·학교 주변 단지 전체에서 가까운 곳을 고르려면 `--order` 를 빼고(인기) `--limit` 을 늘려 받아 `distance_km` 로 고른다.
 
 - `address`: 역은 지번 주소, 학교·동·구는 직방 단지 카드의 구·동까지의 주소(예: `송파구 가락동`)다.
-- `distance_m`: 역·학교에서의 거리(m)다. 학교는 직방이 거리를 '462m'·'1.1km' 같은 글자로만 줘서 그 글자를 m 정수로 바꾼 값이다. 동·구는 거리가 없어 키가 없다.
+- `distance_km`: 역·학교에서의 거리(km)다. 직방이 준 m 값을 km 로 바꿔 소수 둘째 자리까지 내고, 학교는 직방이 거리를 '462m'·'1.1km' 같은 글자로만 줘서 그 글자를 km 로 바꾼 값이다. 동·구는 거리가 없어 키가 없다.
 - `highlight`: 직방 웹 단지 카드의 둘째 줄을 그 글자 그대로 낸다. `--order` 마다 뜻이 다르다. 인기는 지역 순위(예: `가락동 1위 · 송파구 1위`), 최근입주는 입주 시기(예: `2026. 1 입주`), 시세급변동은 1주 시세 변동률(예: `-3.23%`), 평당가는 평당 가격(예: `14,758만 / 3.3㎡`)이다. 카드를 받지 못했거나 직방이 주지 않으면 `null`.
 
-학교 이름이면 `school`(학교 정보)이 붙는다. 직방 웹 학교 화면(`/home/apt/schools/{학교코드}`)의 값이고 출처는 학교알리미·학구도안내서비스다. 전화·홈페이지·주소·좌표는 내지 않는다. `district_` 로 시작하는 값은 웹이 '{구} 평균' 으로 보여 주는 같은 구 학교 평균이다. 웹은 값이 없거나 `0` 인 칸을 숨기지만 jibsa 는 없으면 `null`, `0` 은 `0` 으로 낸다.
+학교 이름이면 `school`(학교 정보)이 붙는다. 직방 웹 학교 화면(`/home/apt/schools/{학교코드}`)의 값이고 출처는 학교알리미·학구도안내서비스다. 전화·홈페이지·주소·좌표는 내지 않는다. `sigungu` 는 학교가 있는 구 이름이고 `sigungu_` 로 시작하는 값은 웹이 '{구} 평균' 으로 보여 주는 같은 구 학교 평균이다. 웹은 값이 없거나 `0` 인 칸을 숨기지만 jibsa 는 없으면 `null`, `0` 은 `0` 으로 낸다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `name`·`level`·`founding_type`·`gender`·`founded_on` | 학교 이름, 학교급(`초등학교`·`중학교`·`고등학교`), 설립 구분(`공립` 등)·남녀 구분(`공학` 등, 직방 글자 그대로), 설립일 (`YYYY-MM-DD`) | `null` |
+| `name`·`level`·`founding_type`·`gender`·`established_date` | 학교 이름, 학교급(`초등학교`·`중학교`·`고등학교`), 설립 구분(`공립` 등)·남녀 구분(`공학` 등, 직방 글자 그대로), 설립일 (`YYYY-MM-DD`) | `null` |
 | `high_school_type` | 고등학교 구분 (예: `일반고`, 직방 글자 그대로) | 고등학교만 있고 초·중학교는 키가 없다. 직방이 주지 않으면 `null` |
 | `students`·`male_percent`·`female_percent` | 전체 학생 수(명), 남·여학생 비율(%) | `null` |
-| `district`·`district_avg_students`·`district_male_percent`·`district_female_percent` | 같은 구와 그 구 학교 평균 학생 수·남·여학생 비율. 평균 학생 수는 직방이 소수로 준 그대로다 (웹은 반올림해 보여 준다) | `null` |
-| `freshmen`·`district_avg_freshmen`·`district_freshmen_change_percent` | 입학생 수(명), 같은 구 평균 입학생 수, 같은 구 평균 입학생의 전년 대비 증감(%, 음수는 감소) | `null` |
-| `students_per_class`·`district_students_per_class` | 학급당 학생 수와 같은 구 평균 (명) | `null` |
-| `tuition_manwon`·`district_tuition_manwon`·`meal_cost_manwon`·`district_meal_cost_manwon` | 학비·급식비와 같은 구 평균 (만원). 직방이 원 단위로 준 값을 만원으로 바꾼 그대로라 웹이 만원 미만을 버려 보여 주는 값(`78만원`)과 소수 자리가 다르다. 학비가 연간인지 월인지, 급식비가 1식인지 기간 합인지는 웹도 적지 않아 모른다 | `null` |
+| `sigungu`·`sigungu_students_average`·`sigungu_male_percent`·`sigungu_female_percent` | 같은 구와 그 구 학교 평균 학생 수·남·여학생 비율. 평균 학생 수는 직방이 소수로 준 그대로다 (웹은 반올림해 보여 준다) | `null` |
+| `freshmen`·`sigungu_freshmen_average`·`sigungu_freshmen_change_percent` | 입학생 수(명), 같은 구 평균 입학생 수, 같은 구 평균 입학생의 전년 대비 증감(%, 음수는 감소) | `null` |
+| `students_per_class`·`sigungu_students_per_class` | 학급당 학생 수와 같은 구 평균 (명) | `null` |
+| `tuition_manwon`·`sigungu_tuition_manwon`·`meal_cost_manwon`·`sigungu_meal_cost_manwon` | 학비·급식비와 같은 구 평균 (만원). 직방이 원 단위로 준 값을 만원으로 바꾼 그대로라 웹이 만원 미만을 버려 보여 주는 값(`78만원`)과 소수 자리가 다르다. 학비가 연간인지 월인지, 급식비가 1식인지 기간 합인지는 웹도 적지 않아 모른다 | `null` |
 | `meal_type` | 급식 방식 (직방 글자 그대로, 예: `직영`·`일부위탁`) | `null` |
 | `advancement` | 진학 현황. 중학교는 고등학교 진학(`special_high`·`general_high`·`other` 와 각 `_percent`), 고등학교는 대학 진학(`university`·`college`·`other` 와 각 `_percent`)이다 | 초등학교는 키가 없다. 직방이 아직 채우지 않은 학교가 많아 칸이 모두 비면 `null` |
 
 학교 정보는 학교 상세 한 번(배정단지 정보와 같은 응답)에서 오므로, 학교는 배정단지가 0곳이어도 그 조회를 부른다. 학교 상세는 본 조회라 받지 못하면 결과 없이 그 에러이고(`[실패]` 안내가 아니다), 직방이 학교 정보나 학교 ID 를 주지 않으면 `UPSTREAM_ERROR` 다.
 
-직방 역·학교 주변 단지 정보에 없는 단지는 빼지 않고 역은 `name`·`address`·`households`·`distance_m`, 학교는 `name`·`households`·`distance_m` 을 `null` 로 두고 `notes` 로 알린다. 단지 카드에 없는 단지는 `highlight`(학교는 `address`, 동·구는 `name`·`address`·`households` 도)를 `null` 로 두고 알린다. 역 주변 단지 정보나 카드를 받지 못하면(요청 실패) 순서·수는 그대로 내고 그 값을 `null` 로 두어 `[실패]` 로 알린다. `total` 이 `null` 이면 `--limit` 만큼 꽉 찼을 때 `has_more: true` 다 (더 있을 수 있음).
+직방 역·학교 주변 단지 정보에 없는 단지는 빼지 않고 역은 `name`·`address`·`household_count`·`distance_km`, 학교는 `name`·`household_count`·`distance_km` 을 `null` 로 두고 `notes` 로 알린다. 단지 카드에 없는 단지는 `highlight`(학교는 `address`, 동·구는 `name`·`address`·`household_count` 도)를 `null` 로 두고 알린다. 역 주변 단지 정보나 카드를 받지 못하면(요청 실패) 순서·수는 그대로 내고 그 값을 `null` 로 두어 `[실패]` 로 알린다. `total` 이 `null` 이면 `--limit` 만큼 꽉 찼을 때 `has_more: true` 다 (더 있을 수 있음).
 
 **오류와 대응**
 
@@ -656,7 +654,7 @@ jibsa zigbang search complexes 가락동
 
 **주의사항**
 
-순서는 `--order` 탭의 직방 웹 목록 순서라 역·학교도 가까운 순이 아니니 가까운 단지는 `distance_m` 으로 고른다. `notes` 가 어느 웹 목록인지 알리고, 최근입주·시세급변동이면 '…만 담아 그 곳의 전체 단지가 아닙니다' 를, 그 가운데 역·학교는 `--order` 를 빼고(인기) `--limit` 을 늘려 받아 `distance_m` 으로 고르라는 말도 덧붙인다. 동·구는 직방 웹 지역 화면에 최근입주 목록뿐이라 다른 순서는 받지 않는다. 리(양근리)는 직방 지역 목록이 받지 않아 상위 읍·면(양평읍)의 목록이라 `place` 는 찾은 이름 그대로이고 순서 안내의 이름은 읍·면이며, 단지 `address` 가 읍·면까지라 리 안의 단지를 가를 수 없다고 `[범위]` 로 알린다 (단지 위치는 `url` 의 단지 페이지에서 확인). 학교 목록에는 직방 웹 학교 화면 하단의 '학군배정 정보는 지역에 따라 실제 배정과 다소 차이가 있을 수 있습니다' 가 `notes` 로 붙으니 최종 배정은 교육청 학구도로 확인한다. 이어 받기(`--next`)는 없고, 단지가 `--limit` 보다 많으면 `[일부]` 로 알리니 `--limit` 을 늘린다 (안내는 역을 '주변 단지 N곳 중 앞 M곳', 학교를 '배정단지 N곳 중 앞 M곳', 동·구를 '단지 N곳 중 앞 M곳' 으로 부르고, 최근입주·시세급변동이면 앞에 순서 이름을 붙여 어느 목록의 수인지 밝힌다: '시세급변동 주변 단지 …'). 직방이 `--limit` 보다 적게 줬으면 `total` 이 더 커도 더 받을 수 없어 `has_more` 가 `false` 이고 `[참고]` 로 알린다. 요청은 이름 찾기 1회, 학교는 학교 상세 1회(웹처럼 그 `detail.id` 로 배정단지를 찾는다. 검색 결과의 번호는 직방이 학교 번호를 다시 매겨 쓰지 않는다. 배정단지 이름·세대수·거리와 `school` 도 이 응답이라 배정단지가 0곳이어도 부른다), 단지 ID 1회, 역은 주변 단지 정보 1회(단지가 있을 때만), 그리고 단지 카드가 받는 단지 15곳마다 1회라 `--limit` 이 크면 늘어난다 (동·구는 주변 단지 정보가 없다). 역·학교·동·구는 좌표를 쓰지 않아 직방이 그 곳의 좌표를 주지 않아도 찾는다. 분양·분양 예정 단지도 직방 웹처럼 함께 나온다. 단지의 매물은 `complex_id` 를 [`search listings --complex`](#7-search-listings---complex--단지건물-안-매물-목록)에, 단지 정보는 [`complex`](#6-complex--단지건물-하나-정보)에 넘긴다. 역 이름으로 아파트 매물을 찾는 [`search listings apt <역 이름>`](#3-search-listings-apt--아파트-매물-찾기)은 역 주변 단지가 아니라 역이 속한 동의 목록이다.
+순서는 `--order` 탭의 직방 웹 목록 순서라 역·학교도 가까운 순이 아니니 가까운 단지는 `distance_km` 로 고른다. `notes` 가 어느 웹 목록인지 알리고, 최근입주·시세급변동이면 '…만 담아 그 곳의 전체 단지가 아닙니다' 를, 그 가운데 역·학교는 `--order` 를 빼고(인기) `--limit` 을 늘려 받아 `distance_km` 로 고르라는 말도 덧붙인다. 동·구는 직방 웹 지역 화면에 최근입주 목록뿐이라 다른 순서는 받지 않는다. 리(양근리)는 직방 지역 목록이 받지 않아 상위 읍·면(양평읍)의 목록이라 `place` 는 찾은 이름 그대로이고 순서 안내의 이름은 읍·면이며, 단지 `address` 가 읍·면까지라 리 안의 단지를 가를 수 없다고 `[범위]` 로 알린다 (단지 위치는 `url` 의 단지 페이지에서 확인). 학교 목록에는 직방 웹 학교 화면 하단의 '학군배정 정보는 지역에 따라 실제 배정과 다소 차이가 있을 수 있습니다' 가 `notes` 로 붙으니 최종 배정은 교육청 학구도로 확인한다. 이어 받기(`--next`)는 없고, 단지가 `--limit` 보다 많으면 `[일부]` 로 알리니 `--limit` 을 늘린다 (안내는 역을 '주변 단지 N곳 중 앞 M곳', 학교를 '배정단지 N곳 중 앞 M곳', 동·구를 '단지 N곳 중 앞 M곳' 으로 부르고, 최근입주·시세급변동이면 앞에 순서 이름을 붙여 어느 목록의 수인지 밝힌다: '시세급변동 주변 단지 …'). 직방이 `--limit` 보다 적게 줬으면 `total` 이 더 커도 더 받을 수 없어 `has_more` 가 `false` 이고 `[참고]` 로 알린다. 요청은 이름 찾기 1회, 학교는 학교 상세 1회(웹처럼 그 `detail.id` 로 배정단지를 찾는다. 검색 결과의 번호는 직방이 학교 번호를 다시 매겨 쓰지 않는다. 배정단지 이름·세대수·거리와 `school` 도 이 응답이라 배정단지가 0곳이어도 부른다), 단지 ID 1회, 역은 주변 단지 정보 1회(단지가 있을 때만), 그리고 단지 카드가 받는 단지 15곳마다 1회라 `--limit` 이 크면 늘어난다 (동·구는 주변 단지 정보가 없다). 역·학교·동·구는 좌표를 쓰지 않아 직방이 그 곳의 좌표를 주지 않아도 찾는다. 분양·분양 예정 단지도 직방 웹처럼 함께 나온다. 단지의 매물은 `complex_id` 를 [`search listings --complex`](#7-search-listings---complex--단지건물-안-매물-목록)에, 단지 정보는 [`complex`](#6-complex--단지건물-하나-정보)에 넘긴다. 역 이름으로 아파트 매물을 찾는 [`search listings apt <역 이름>`](#3-search-listings-apt--아파트-매물-찾기)은 역 주변 단지가 아니라 역이 속한 동의 목록이다.
 
 ## 12. `price-trend` — 단지·평형 직방시세 추이
 
@@ -665,16 +663,16 @@ jibsa zigbang search complexes 가락동
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
 | `COMPLEX_ID` | 아파트 단지 ID (`complex` 결과의 `complex_id`, 예: apt-38487). 오피스텔은 시세 추이가 없다 | 필수 |
-| `--period` | 기간 (웹 기간 탭): 최근1년, 최근3년, 전체기간 | 최근3년 |
+| `--period` | 기간: 1년, 3년, 전체 (직방 웹 기간 탭 '최근1년'·'최근3년'·'전체기간' 과 같은 기간이다) | 3년 |
 | `--compare` | 함께 볼 비교 단지 ID. 결과의 `comparable_complexes` 에 있는 단지만 받는다. 반복하거나 쉼표로 구분, 최대 3곳 (웹은 1곳). `--pyeong` 과 함께 못 쓴다 | 미지정 |
-| `--pyeong` | 평형 ID (`complex` 결과의 `pyeongs[].id`). 주면 단지 추이 대신 그 평형의 월별 추이를 준다. 범위: 1~제한 없음. | 미지정 |
+| `--pyeong` | 평형 ID (`complex` 결과의 `pyeongs[].pyeong_id`). 주면 단지 추이 대신 그 평형의 월별 추이를 준다. 범위: 1~제한 없음. | 미지정 |
 | `--trade` | 평형 추이의 거래 탭: 전체, 매매, 전월세. `--pyeong` 과 함께만 쓴다 | 전체 |
 
 **사용 예시**
 
 ```bash
 jibsa zigbang price-trend apt-38487
-jibsa zigbang price-trend apt-38487 --period 최근1년 --compare apt-16629
+jibsa zigbang price-trend apt-38487 --period 1년 --compare apt-16629
 jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
 ```
 
@@ -684,30 +682,30 @@ jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `comparable_complexes` | 웹 '단지 비교하기' 의 후보 (직방이 준 순서). 항목은 `complex_id`·`name`·`households`·`address`(동까지) | 후보가 없으면 `[]`, 직방이 목록을 주지 않았거나 받지 못했으면 `null` 이고 `[실패]` 로 알린다 |
-| `lines[]` | 그래프의 줄 (직방 응답 순서). `name`, `kind`, `points[]`(`month` `YYYY-MM`·`price_per_pyeong_manwon` 만원/3.3㎡, 오래된 달부터) | 직방이 줄 목록을 주지 않으면 `lines` 가 `null` 이고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'), 줄이 없으면 `[]` 다. 직방시세가 없는 단지는 조회 단지 줄 없이 구 줄만 온다 (아래). 직방이 0 을 준 달은 시세가 없어 `price_per_pyeong_manwon` 이 `null` (점은 남는다) |
+| `comparable_complexes` | 웹 '단지 비교하기' 의 후보 (직방이 준 순서). 항목은 `complex_id`·`name`·`household_count`·`address`(동까지) | 후보가 없으면 `[]`, 직방이 목록을 주지 않았거나 받지 못했으면 `null` 이고 `[실패]` 로 알린다 |
+| `lines[]` | 그래프의 줄 (직방 응답 순서). `name`, `kind`, `months[]`(`month` `YYYY-MM`·`estimated_price_per_pyeong_manwon` 만원/3.3㎡, 오래된 달부터) | 직방이 줄 목록을 주지 않으면 `lines` 가 `null` 이고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'), 줄이 없으면 `[]` 다. 직방시세가 없는 단지는 조회 단지 줄 없이 구 줄만 온다 (아래). 직방이 0 을 준 달은 시세가 없어 `estimated_price_per_pyeong_manwon` 이 `null` (그 달 항목은 남는다) |
 | `lines[].kind` | `단지`(조회 단지)·`비교 단지`·`구`(그 구·시·군 평균). 비교 단지 줄에만 `complex_id` 가 붙는다 | 줄 구성을 판정할 수 없으면 `null` (아래) |
 
 직방은 줄을 단지 ID 오름차순으로 주고 구를 끝에 붙여, 첫 줄이 조회 단지가 아닐 수 있다. 위치로 읽지 말고 `kind` 로 가른다. `kind` 는 줄 이름으로 정한다: `--compare` 로 준 단지의 이름이면 `비교 단지`, 마지막 줄이면 `구`, 남은 줄이 `단지` 다. 직방시세가 없는 단지(분양예정 등)는 조회 단지 줄 없이 구 줄만 와서(비교 단지가 있으면 비교 단지 줄과 구 줄) 줄 수가 비교 단지 + 구이고, 마지막 줄이 `구`, 나머지가 `비교 단지` 다 (비교 없이 한 줄이면 그 줄이 `구`). 이때 `[참고]` 가 '구 줄만 있다' 고 알린다. 이름이 겹치거나 줄 수가 (조회 단지 + 비교 단지 + 구) 도 (비교 단지 + 구) 도 아니거나 빈 줄을 뺐으면 판정하지 않고 모든 줄의 `kind` 가 `null` 이다.
 
-평형 추이(`--pyeong`): `complex_id`, `pyeong_id`, `period`, `trade`, `months[]` 를 준다. 달마다 `month` 와 `sale`(매매)·`jeonse_wolse`(전월세) 가 있고, 고르지 않은 탭의 키는 없다 (`--trade 전체` 는 둘 다, `매매` 는 `sale` 만, `전월세` 는 `jeonse_wolse` 만). 직방이 그 달의 그 탭 기록을 주지 않으면 그 값이 `null` 이다. 매매·전월세 기록은 월로 맞춘 목록이다. 금액은 만원이다.
+평형 추이(`--pyeong`): `complex_id`, `pyeong_id`, `period`, `trade_tab`(고른 `--trade` 값), `months[]` 를 준다. 달마다 `month` 와 `sale`·`jeonse_wolse` 키가 있고, 고르지 않은 탭의 키는 없다 (`--trade 전체` 는 둘 다, `매매` 는 `sale` 만, `전월세` 는 `jeonse_wolse` 만). 직방이 그 달의 그 탭 기록을 주지 않으면 그 값이 `null` 이다. 매매·전월세 기록은 월로 맞춘 목록이다. 금액은 만원이다.
 
-`months` 가 비는 모양은 아래와 같다. 직방이 그 평형의 월 목록 자체를 주지 않으면 `months` 가 `null`(모름)이고 `[참고]` 로 알린다: 평형을 확인했으면 직방 응답 형식이 바뀐 것이라 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙고, 평형 목록의 빈 항목 때문에 평형을 확인하지 못했으면 단지에 없는 평형 ID 일 수 있다며 `complex` 결과의 `pyeongs[].id` 로 확인하라고 한다. 월 목록은 왔는데 고른 탭의 기록이 모두 없으면 평형을 확인했을 때 `[]` 이고 `[참고]` '이 평형에 {기간} 동안 직방 {매매·전월세} 시세·거래 기록이 없습니다' 다 (`--trade 전체` 는 탭 이름 없이 '직방 시세·거래'). 한 탭만 기록이 없는 평형이 있어 탭을 밝힌다. 평형을 확인하지 못했으면 같은 응답이 없는 평형 ID 와 구별되지 않아 `[]` 가 아니라 `null` 이다. 직방이 월 목록을 빈 목록으로 주면 `[]` 이고 같은 '기록이 없습니다' `[참고]` 다. 빈 항목을 빼서 비면 `[]` 이고 `[제외]` 만 나온다.
+`months` 가 비는 모양은 아래와 같다. 직방이 그 평형의 월 목록 자체를 주지 않으면 `months` 가 `null`(모름)이고 `[참고]` 로 알린다: 평형을 확인했으면 직방 응답 형식이 바뀐 것이라 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙고, 평형 목록의 빈 항목 때문에 평형을 확인하지 못했으면 단지에 없는 평형 ID 일 수 있다며 `complex` 결과의 `pyeongs[].pyeong_id` 로 확인하라고 한다. 월 목록은 왔는데 고른 탭의 기록이 모두 없으면 평형을 확인했을 때 `[]` 이고 `[참고]` '이 평형에 {기간} 동안 직방 {매매·전월세} 시세·거래 기록이 없습니다' 다 (`--trade 전체` 는 탭 이름 없이 '직방 시세·거래'). 한 탭만 기록이 없는 평형이 있어 탭을 밝힌다. 평형을 확인하지 못했으면 같은 응답이 없는 평형 ID 와 구별되지 않아 `[]` 가 아니라 `null` 이다. 직방이 월 목록을 빈 목록으로 주면 `[]` 이고 같은 '기록이 없습니다' `[참고]` 다. 빈 항목을 빼서 비면 `[]` 이고 `[제외]` 만 나온다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
 | `sale.estimated_price_manwon` | 그 달의 매매 직방시세 | 직방이 0 을 준 달(입주 전 등)은 시세가 없어 `null` |
-| `sale.min_price_manwon`·`max_price_manwon` | 그 달 매매 거래의 최저·최고가 | 시세가 없는 달, 그리고 거래가 0건인 달은 `null` (직방은 0건인 달에 시세 값을 대신 채워 주는데 거래가가 아니라 내지 않는다) |
-| `sale.count`·`sale.change_manwon` | 그 달 매매 거래 건수(`0` 도 진짜 값), 전달 대비 직방시세 변화(변화가 없으면 `0`) | `change_manwon` 은 시세가 없는 달 `null` |
-| `jeonse_wolse.estimated_jeonse_price_manwon` | 그 달의 전세 직방시세 | 직방이 0 을 준 달은 `null` |
-| `jeonse_wolse.min_price_manwon`·`max_price_manwon` | 그 달 전세·월세 거래를 합친 최저·최고가. 월세는 직방이 보증금 + 월세 × 300 으로 환산한 값이다 | 시세가 없는 달, 전세·월세 건수 중 아는 것의 합이 0 인 달은 `null` (둘 다 모르면 직방 값 그대로) |
-| `jeonse_wolse.jeonse_count`·`wolse_count`·`change_manwon` | 그 달 전세·월세 거래 건수(`0` 도 진짜 값), 전달 대비 전세 직방시세 변화 | `change_manwon` 은 시세가 없는 달 `null` |
+| `sale.trade_range` | 그 달 매매 거래의 가격 범위 (`lowest` 최저가·`highest` 최고가, 안은 `price_manwon`) | 시세가 없는 달, 그리고 거래가 0건인 달은 `null` (직방은 0건인 달에 시세 값을 대신 채워 주는데 거래가가 아니라 내지 않는다) |
+| `sale.trade_count`·`sale.estimated_price_change_manwon` | 그 달 매매 거래 건수(`0` 도 진짜 값), 전달 대비 직방시세 변화(변화가 없으면 `0`) | `estimated_price_change_manwon` 은 시세가 없는 달 `null` |
+| `jeonse_wolse.estimated_deposit_manwon` | 그 달의 전세 직방시세 | 직방이 0 을 준 달은 `null` |
+| `jeonse_wolse.trade_range` | 그 달 전세·월세 거래를 합친 가격 범위 (`lowest`·`highest`, 안은 `converted_price_manwon`). 월세는 직방이 보증금 + 월세 × 300 으로 환산한 값이다 | 시세가 없는 달, 전세·월세 건수 중 아는 것의 합이 0 인 달은 `null` (둘 다 모르면 직방 값 그대로) |
+| `jeonse_wolse.trade_counts`·`jeonse_wolse.estimated_deposit_change_manwon` | 그 달 전세·월세 거래 건수(`jeonse`·`wolse` 두 키, `0` 도 진짜 값), 전달 대비 전세 직방시세 변화 | `estimated_deposit_change_manwon` 은 시세가 없는 달 `null` |
 
 거래 점(웹 그래프의 개별 거래 표시)과 전세가율은 내지 않는다.
 
 **오류와 대응**
 
-오피스텔 ID·형식 위반, `--compare` 가 4곳 이상이거나 후보 밖 단지·조회 단지 자신·같은 단지 두 번, `--compare` 와 `--pyeong` 을 함께 줌, `--trade` 만 줌(`--pyeong` 없이), `--period`·`--trade` 허용값 밖은 `INVALID_ARGUMENT`. 후보 밖 단지는 `hint` 가 후보를 알린다. 직방 비교 후보 목록에 빈 항목이나 단지 ID 가 없는 후보가 와서 빼고 읽었으면 그것도 `hint` 끝에 알린다 (그런 후보는 직방 웹에서도 고를 수 없어 후보 밖과 같이 `INVALID_ARGUMENT` 다). 그 단지에 없는 평형 ID 도 `INVALID_ARGUMENT` 이고 `hint` 가 `complex` 결과의 `pyeongs[].id` 를 쓰라고 알린다 (직방은 다른 단지의 평형 ID 에도 값을 줘서 단지 평형 정보로 먼저 확인한다). 직방에 평형 정보가 없는 단지도 `INVALID_ARGUMENT` 이고 `hint` 가 `--pyeong` 을 빼고 단지 추이를 보라고 알린다. 직방이 단지 평형 목록 자체를 주지 않으면(평형 정보가 없는 단지와 다르다) 평형을 확인할 수 없어 `UPSTREAM_ERROR` 이고 `hint` 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다. `--compare` 를 줬는데 직방이 비교 후보 목록 자체를 주지 않아도(후보가 `[]` 인 단지와 다르다) 후보를 확인할 수 없어 `UPSTREAM_ERROR` 이고 `hint` 끝에 같은 문구가 붙는다.
+오피스텔 ID·형식 위반, `--compare` 가 4곳 이상이거나 후보 밖 단지·조회 단지 자신·같은 단지 두 번, `--compare` 와 `--pyeong` 을 함께 줌, `--trade` 만 줌(`--pyeong` 없이), `--period`·`--trade` 허용값 밖은 `INVALID_ARGUMENT`. 후보 밖 단지는 `hint` 가 후보를 알린다. 직방 비교 후보 목록에 빈 항목이나 단지 ID 가 없는 후보가 와서 빼고 읽었으면 그것도 `hint` 끝에 알린다 (그런 후보는 직방 웹에서도 고를 수 없어 후보 밖과 같이 `INVALID_ARGUMENT` 다). 그 단지에 없는 평형 ID 도 `INVALID_ARGUMENT` 이고 `hint` 가 `complex` 결과의 `pyeongs[].pyeong_id` 를 쓰라고 알린다 (직방은 다른 단지의 평형 ID 에도 값을 줘서 단지 평형 정보로 먼저 확인한다). 직방에 평형 정보가 없는 단지도 `INVALID_ARGUMENT` 이고 `hint` 가 `--pyeong` 을 빼고 단지 추이를 보라고 알린다. 직방이 단지 평형 목록 자체를 주지 않으면(평형 정보가 없는 단지와 다르다) 평형을 확인할 수 없어 `UPSTREAM_ERROR` 이고 `hint` 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙는다. `--compare` 를 줬는데 직방이 비교 후보 목록 자체를 주지 않아도(후보가 `[]` 인 단지와 다르다) 후보를 확인할 수 없어 `UPSTREAM_ERROR` 이고 `hint` 끝에 같은 문구가 붙는다.
 
 **주의사항**
 
@@ -720,7 +718,7 @@ jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
 | 인자·옵션 | 설명·허용값 | 기본값 |
 | --- | --- | --- |
 | `QUERY` | 동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다 | 필수 |
-| `--range` | 평당가 추이 그래프의 평형대: 전체, 10평이하, 10평대, 20평대, 30평대, 40평대, 50평대, 60평대이상. 평형대별 시세(`estimated_prices`)는 늘 모든 평형대다 | 전체 |
+| `--range` | 평당가 추이 그래프의 평형대: 전체, 10평이하, 10평대, 20평대, 30평대, 40평대, 50평대, 60평대이상. 평형대별 시세(`by_pyeong_range`)는 늘 모든 평형대다 | 전체 |
 
 **사용 예시**
 
@@ -731,17 +729,17 @@ jibsa zigbang region-info 가락동 --range 30평대
 
 **반환값**
 
-`region`, `complexes`, `households`, `estimated_sale_price_min_manwon`, `estimated_sale_price_max_manwon`, `estimated_prices`, `monthly_volumes`, `price_trend`, `price_movement`, 구는 `population` 을 준다. `region` 은 `name`(직방 지역 정보의 이름, 예: `성남시 분당구`)·`level`(`동`·`구`, 시·군·구는 `구`)·`address`·`code`(직방 지역 코드)이고 `region-trades`·`region-ranking` 도 같은 모양이다.
+`region`, `complex_count`, `household_count`, `estimated_ranges`, `by_pyeong_range`, `monthly_volumes`, `price_trend`, `price_movement`, 구는 `population` 을 준다. `region` 은 `name`(직방 지역 정보의 이름, 예: `성남시 분당구`)·`level`(`동`·`구`, 시·군·구는 `구`)·`address`·`legal_division_code`(법정동코드 10자리)이고 `region-trades`·`region-ranking` 도 같은 모양이다.
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `complexes`·`households` | 단지 수·세대수. 웹 머리 '39 단지 · 23,634 세대' 의 글자에서 읽은 값이다 | 읽지 못하면 `null` |
-| `estimated_sale_price_min_manwon`·`max` | 전체 평형의 최저·최고 직방시세 매매가 (웹 '매매 {최저} ~ {최고}') | 직방이 주지 않거나 `0` 이면 `null` |
-| `estimated_prices[]` | 평형대별 직방시세 (웹 평형 탭). `range`(`전체`·`10평 이하`·`10평대`~`50평대`·`60평대 이상`)·`sale_price_per_pyeong_manwon`(평균 매매 평당가, 만원/3.3㎡)·`sale_price_min_manwon`·`sale_price_max_manwon`. 전체 먼저 작은 평형대 순이고, 웹처럼 평균 매매 평당가나 전월세 평당가가 `0` 인 평형대는 뺀다. 직방이 실거래를 분석한 추정값이지 실거래가가 아니다 | 직방이 주지 않으면 `null`, 모두 빠졌으면 `[]`. 칸 하나가 없으면 그 칸만 `null` 이고, 최저·최고 매매가가 `0` 이면 그 칸이 `null` |
-| `monthly_volumes[]` | 월별 거래량 (건). `month`(`YYYY-MM`)·`sale_count`·`jeonse_count`·`wolse_count`. 오래된 달부터이고 마지막 달은 이번 달이라 아직 채워지는 중이다. 웹 '전체' 는 셋의 합이지만 합은 내지 않는다 | 조회를 받지 못했거나 직방이 목록을 주지 않았으면 `null` 이고 `[실패]` |
-| `price_trend` | 평당가 추이 (웹: 평당가 높은 단지 최대 3개와 그 지역 1줄). `range`(`--range` 값. `estimated_prices[].range` 의 이름표와 빈칸이 다르다)와 `lines[]`(`name`·`kind`(`단지`·`지역`)·`points[]`(`month`·`price_per_pyeong_manwon`, 직방이 0 을 준 달은 점을 남기고 값만 `null`)). 줄 이름이 `region.name` 과 같으면 `지역`, 아니면 `단지` 다. 줄 이름이나 지역 이름이 빈 글자라 판정할 수 없으면 `kind` 가 `null` (줄 이름이 빈 글자면 `name` 도 `null`) | 조회를 받지 못했거나 직방이 평당가 추이나 줄 목록을 주지 않았으면 `null` 이고 `[실패]` |
-| `price_movement` | 웹 그래프 위 문구('3주 연속 시세가 상승하고 있어요'): `weeks`·`direction`(`상승`·`하락`·`지속`) | 직방이 주 수와 흐름을 모두 주지 않았거나(웹도 그리지 않는다) 평당가 추이를 받지 못했거나 직방이 평당가 추이를 주지 않았으면 `null` (뒤의 둘은 `[실패]`) |
-| `population` | 구만. `people[]`(월별 연령대별 인구: `month`·`total`·`age_0_9`·`age_10_19`·`age_20_29`·`age_30_39`·`age_40_49`·`age_50_59`·`age_60_over`)와 `households[]`(월별 가구원 수별 세대: `month`·`total`·`one`·`two`·`three`·`four`·`five_plus`). `age_60_over` 는 60세 이상 전체다 (직방 칸 이름은 `age_60_69` 지만 일곱 칸의 합이 `total` 과 같다). 기간은 지난달까지 5년이다 | 동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 `population` 키가 없다. 직방이 빈 목록을 주면 `[]`, 받지 못했으면 `null` (인구와 세대는 따로) |
+| `complex_count`·`household_count` | 단지 수·세대수. 웹 머리 '39 단지 · 23,634 세대' 의 글자에서 읽은 값이다 | 읽지 못하면 `null` |
+| `estimated_ranges` | 전체 평형의 최저·최고 직방시세 매매가 (`sale` 키 안 `lowest`·`highest` 의 `price_manwon`. 웹 '매매 {최저} ~ {최고}') | 두 끝이 모두 직방이 주지 않거나 `0` 이면 `sale` 이 `null`, 한 끝만 그러면 그 `price_manwon` 만 `null` |
+| `by_pyeong_range[]` | 평형대별 직방시세 (웹 평형 탭). `pyeong_range`(`전체`·`10평 이하`·`10평대`~`50평대`·`60평대 이상`)·`estimated_prices`(`sale` 키 안 `price_per_pyeong_manwon`, 평균 매매 평당가 만원/3.3㎡)·`estimated_ranges`(`sale` 키 안 `lowest`·`highest` 의 `price_manwon`). 전체 먼저 작은 평형대 순이고, 웹처럼 평균 매매 평당가나 전월세 평당가가 `0` 인 평형대는 뺀다. 직방이 실거래를 분석한 추정값이지 실거래가가 아니다 | 직방이 주지 않으면 `null`, 모두 빠졌으면 `[]`. 직방이 평균 매매 평당가를 주지 않으면 `estimated_prices` 의 `sale` 이 `null` 이고, 최저·최고 매매가가 모두 `0` 이면 `estimated_ranges` 의 `sale` 이 `null`, 한 끝만 `0` 이면 그 끝의 `price_manwon` 만 `null` |
+| `monthly_volumes[]` | 월별 거래량 (건). `month`(`YYYY-MM`)·`trade_counts`(`sale`·`jeonse`·`wolse` 키별 건수). 오래된 달부터이고 마지막 달은 이번 달이라 아직 채워지는 중이다. 웹 '전체' 는 셋의 합이지만 합은 내지 않는다 | 조회를 받지 못했거나 직방이 목록을 주지 않았으면 `null` 이고 `[실패]` |
+| `price_trend` | 평당가 추이 (웹: 평당가 높은 단지 최대 3개와 그 지역 1줄). `pyeong_range`(`--range` 값. `by_pyeong_range[].pyeong_range` 의 이름표와 빈칸이 다르다)와 `lines[]`(`name`·`kind`(`단지`·`지역`)·`months[]`(`month`·`price_per_pyeong_manwon`, 직방이 0 을 준 달은 그 달 항목을 남기고 값만 `null`)). 줄 이름이 `region.name` 과 같으면 `지역`, 아니면 `단지` 다. 줄 이름이나 지역 이름이 빈 글자라 판정할 수 없으면 `kind` 가 `null` (줄 이름이 빈 글자면 `name` 도 `null`) | 조회를 받지 못했거나 직방이 평당가 추이나 줄 목록을 주지 않았으면 `null` 이고 `[실패]` |
+| `price_movement` | 웹 그래프 위 문구('3주 연속 시세가 상승하고 있어요'): `streak_weeks`·`direction`(`상승`·`하락`·`지속`) | 직방이 주 수와 흐름을 모두 주지 않았거나(웹도 그리지 않는다) 평당가 추이를 받지 못했거나 직방이 평당가 추이를 주지 않았으면 `null` (뒤의 둘은 `[실패]`) |
+| `population` | 구만. `people[]`(월별 연령대별 인구: `month`·`population`·`age_0_9`·`age_10_19`·`age_20_29`·`age_30_39`·`age_40_49`·`age_50_59`·`age_60_over`)와 `household_months[]`(월별 가구원 수별 세대: `month`·`household_count`·`one`·`two`·`three`·`four`·`five_plus`). `age_60_over` 는 60세 이상 전체다 (직방 칸 이름은 `age_60_69` 지만 일곱 칸의 합이 `population` 과 같다). 기간은 지난달까지 5년이다 | 동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 `population` 키가 없다. 직방이 빈 목록을 주면 `[]`, 받지 못했으면 `null` (`people` 과 `household_months` 는 따로) |
 
 **오류와 대응**
 
@@ -781,16 +779,16 @@ jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --pe
 | `complex_id`·`complex_name` | 모두 | 단지 ID(`apt-…`, `complex`·`real-price`·`search listings --complex` 에 넘긴다)와 이름 | `null` |
 | `dong` | 모두 | 줄의 동 (직방이 준 local, 예: `가락동`) | 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 구 단위인데 직방이 주지 않으면 `null` |
 | `area_type` | 모두 | 평형 이름 (웹 `{평형 이름}㎡`) | `null` |
-| `contract_date` | 모두 | 계약일 (`YYYY-MM-DD`). 목록은 계약일 순이 아니다 | 읽지 못하면 `null` |
+| `trade_date` | 모두 | 계약일 (`YYYY-MM-DD`). 목록은 계약일 순이 아니다 | 읽지 못하면 `null` |
 | `presale` | 모두 | 분양권·입주권 거래 ([`real-price`](#8-real-price--아파트-실거래가)의 `presale` 과 같다) | 해당할 때만 키가 있다 |
 | `price_manwon` | 매매 | 매매가 | — |
 | `deposit_manwon` | 전세·월세 | 보증금·전세금 | — |
 | `rent_manwon` | 월세 | 월세 | — |
-| `prev_diff_manwon`·`prev_diff_rate_percent` | 매매·전세 | 직전 거래 대비 차액(만원)·변동률(%). `0` 은 웹 '차이 없음' | 직방이 칸을 주지 않으면 `null` (웹 '직전거래 없음'). 입주권 줄은 웹이 그리지 않아 키가 없다. 입주 전 계약 전세 줄도 웹이 그리지 않아 `null` |
-| `market_price_diff_manwon`·`market_price_diff_rate_percent` | 매매 | 직방시세 대비 차액·변동률 | 분양권·입주권이거나 직방시세가 없으면 `null` (웹 '직방시세 없음'). 직방시세가 있는데 `0` 이면 진짜 `0` |
-| `public_price_diff_manwon`·`public_price_diff_rate_percent` | 매매 | 공시가격 대비 차액·변동률 | 공시가격이 없으면 `null` (웹 '공시가격 업데이트 예정'). 있는데 `0` 이면 진짜 `0` |
-| `offer_price_diff_manwon`·`offer_price_diff_rate_percent` | 분양권·입주권 매매 | 분양가 대비 차액·변동률 ([`real-price`](#8-real-price--아파트-실거래가)의 `offer_price_diff_manwon` 과 같은 규칙) | 직방이 값을 주지 않으면 `null`. 그 밖의 줄은 키가 없다 |
-| `jeonse_price_diff_manwon`·`jeonse_price_diff_rate_percent` | 전세 | 웹 '전세가 비교' 차액·변동률. 갱신 거래(`renewal`)는 이전 전세가 대비, 아니면 2년 전 평균 전세가 대비다 | 입주 전 계약 거래(`pre_move_in_contract`)는 웹이 차액을 그리지 않아 `null` |
+| `prev_trade_diff_manwon`·`prev_trade_diff_percent` | 매매·전세 | 직전 거래 대비 차액(만원)·변동률(%). `0` 은 웹 '차이 없음' | 직방이 칸을 주지 않으면 `null` (웹 '직전거래 없음'). 입주권 줄은 웹이 그리지 않아 키가 없다. 입주 전 계약 전세 줄도 웹이 그리지 않아 `null` |
+| `estimated_price_diff_manwon`·`estimated_price_diff_percent` | 매매 | 직방시세 대비 차액·변동률 | 분양권·입주권이거나 직방시세가 없으면 `null` (웹 '직방시세 없음'). 직방시세가 있는데 `0` 이면 진짜 `0` |
+| `public_price_diff_manwon`·`public_price_diff_percent` | 매매 | 공시가격 대비 차액·변동률 | 공시가격이 없으면 `null` (웹 '공시가격 업데이트 예정'). 있는데 `0` 이면 진짜 `0` |
+| `presale_price_diff_manwon`·`presale_price_diff_percent` | 분양권·입주권 매매 | 분양가 대비 차액·변동률 ([`real-price`](#8-real-price--아파트-실거래가)의 `presale_price_diff_manwon` 과 같은 규칙) | 직방이 값을 주지 않으면 `null`. 그 밖의 줄은 키가 없다 |
+| `jeonse_comparison_diff_manwon`·`jeonse_comparison_diff_percent` | 전세 | 웹 '전세가 비교' 차액·변동률. 갱신 거래(`renewal`)는 이전 전세가 대비, 아니면 2년 전 평균 전세가 대비다 | 입주 전 계약 거래(`pre_move_in_contract`)는 웹이 차액을 그리지 않아 `null` |
 | `pre_move_in_contract`·`renewal` | 전세 | 입주 전 계약 거래, 갱신 계약 (웹 배지) | 직방이 칸을 주지 않으면 `false` |
 | `new_high`·`new_low` | 매매·전세 | 신고가·신저가 배지 | 직방이 칸을 주지 않으면 `false`. 월세는 키가 없다 |
 
@@ -834,16 +832,16 @@ jibsa zigbang region-ranking 가락동 --trade 전세 --sort 전세가율높은�
 | `end_date` | 집계 끝 날짜. 시세·평당가·전세가율은 직방 시세 기준일이다 | 읽지 못하면 `null` |
 | `updated_at` | 갱신 시각 (`YYYY-MM-DD HH:MM`, 한국 시간. 거래량·하락률·상승률 기준만) | 시세·평당가·전세가율·인기는 키가 없다. 읽지 못하면 `null` |
 
-줄(`rankings[]`)에는 공통으로 `rank`(순위)·`complex_id`(`apt-…`)·`complex_name`·`dong` 이 있고, 같은 순위가 여럿일 수 있다 (1·1·1·4 처럼 다음 순위가 건너뛴다). `dong` 은 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 기준마다 나머지 칸이 다르고, 그 기준에 없는 칸은 키가 없다.
+줄(`rankings[]`)에는 공통으로 `rank`(순위)·`complex_id`(`apt-…`)·`name`(단지 이름)·`dong` 이 있고, 같은 순위가 여럿일 수 있다 (1·1·1·4 처럼 다음 순위가 건너뛴다). `dong` 은 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 기준마다 나머지 칸이 다르고, 그 기준에 없는 칸은 키가 없다.
 
 | `--sort` | 줄의 칸 |
 | --- | --- |
-| 거래량 많은순 | `trade_count`(기간 안 거래 건수), `approved_at`(사용승인일), `households`(총세대수) |
-| 하락률 높은순·상승률 높은순 | `contract_date`(가장 최근 계약일), `price_manwon`(매매)·`deposit_manwon`(전세), `diff_manwon`(직전 거래 대비 차액), `change_rate_percent`(변동률 %), `area_type`(평형 이름). 사용승인일·총세대수는 직방이 주지 않는다 |
-| 시세 높은순 | `estimated_price_manwon`(직방시세. 단지에서 가장 시세가 높은 타입 기준), `approved_at`, `households` |
-| 평당가 높은순 | `estimated_price_per_pyeong_manwon`(직방시세 기준 평당가, 만원/3.3㎡), `approved_at`, `households` |
-| 인기 단지순 | `view_count`(기간 안 조회수), `approved_at`, `households` |
-| 전세가율 높은순 | `jeonse_rate_percent`(직방 매매 시세 대비 전세 시세 비율 %), `gap_manwon`(매매·전세 시세 차이), `approved_at`, `households` |
+| 거래량 많은순 | `trade_count`(기간 안 거래 건수), `approved_date`(사용승인일), `household_count`(총세대수) |
+| 하락률 높은순·상승률 높은순 | `latest_trade_date`(가장 최근 계약일), `price_manwon`(매매)·`deposit_manwon`(전세), `prev_trade_diff_manwon`(직전 거래 대비 차액), `prev_trade_diff_percent`(변동률 %), `area_type`(평형 이름). 사용승인일·총세대수는 직방이 주지 않는다 |
+| 시세 높은순 | `estimated_price_manwon`(직방시세. 단지에서 가장 시세가 높은 타입 기준), `approved_date`, `household_count` |
+| 평당가 높은순 | `estimated_price_per_pyeong_manwon`(직방시세 기준 평당가, 만원/3.3㎡), `approved_date`, `household_count` |
+| 인기 단지순 | `view_count`(기간 안 조회수), `approved_date`, `household_count` |
+| 전세가율 높은순 | `jeonse_ratio_percent`(직방 매매 시세 대비 전세 시세 비율 %), `gap_manwon`(매매·전세 시세 차이), `approved_date`, `household_count` |
 
 칸 하나를 직방이 주지 않으면 `null` 이다.
 
@@ -914,8 +912,8 @@ jibsa zigbang region-ranking 가락동 --trade 전세 --sort 전세가율높은�
 | 아파트 목록 `catalog_id` | `catalog` 에 그대로 전달 |
 | 아파트 목록 `listing_ids` | 하나씩 `listing` 에 그대로 전달 |
 | `complex_id` | `complex`·`search listings --complex`, 아파트는 `real-price`에도 전달 |
-| `pyeongs[].id` | 아파트 평형 필터 `--pyeong` |
-| 아파트 매물 `pyeong_id` | `search listings --complex <단지> --pyeong`·`real-price <단지> --pyeong` (`pyeongs[].id` 와 같은 번호) |
+| `pyeongs[].pyeong_id` | 아파트 평형 필터 `--pyeong` |
+| 아파트 매물 `pyeong_id` | `search listings --complex <단지> --pyeong`·`real-price <단지> --pyeong` (`pyeongs[].pyeong_id` 와 같은 번호) |
 | `returned` | 실제 반환 개수 |
 | `boundary` / `radius_km` | 동·지역 경계 검색 또는 반경 검색 범위 |
 | `notes` | 조회 범위·부족한 결과·정렬 등의 안내 |
@@ -948,19 +946,19 @@ jibsa zigbang search listings room --help
 | --- | --- | --- |
 | 직방 | `residence_type` | 건축물 용도 (예: `"다가구"`, `"다세대"`, `"오피스텔"`, `"제2종근린생활시설"`). 중개사가 입력한 문구라 같은 용도도 `"다가구"`·`"다가구주택"`·`"다가구용단독주택"` 처럼 다르게 온다 (앞뒤 공백만 뗀다). 아파트 상세에서는 직방의 중개대상물 종류(예: `"아파트"`)이고 제휴 매물은 `null` |
 | 직방 원룸·빌라·오피스텔 (`listing`) | `schools` | 배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩 (예: `"서울논현초등학교 (배정, 1.1km)"`, `"언주중학교 (강남서초1학교군, 2.2km)"`). 아파트는 `zigbang complex` 에서 준다. 못 받으면 `null` |
-| 직방 주거 상세 (`listing`) | `total_parking_count`, `household_count`, `direction_criterion` | 총 주차 대수(직방이 `0.4` 처럼 소수로 주기도 한다, 아파트는 단지 전체), 주차 계산에 쓰는 매물 측 세대수(단지 전체 세대수와 다를 수 있음, 아파트는 직방이 주지 않아 `null`), 방향 기준(안방·거실). 모르면 `null` |
+| 직방 주거 상세 (`listing`) | `parking_count`, `household_count`, `direction_criterion` | 총 주차 대수(직방이 `0.4` 처럼 소수로 주기도 한다, 아파트는 단지 전체), 주차 계산에 쓰는 매물 측 세대수(단지 전체 세대수와 다를 수 있음, 아파트는 직방이 주지 않아 `null`), 방향 기준(안방·거실). 모르면 `null` |
 | 직방 오피스텔 (`search listings room`, `search listings --complex`, `listing`) | `complex_id`, `complex_name`(상세만) | 건물 ID (예: `"officetel-20227"`)와 건물 이름. `zigbang complex`·`search listings --complex` 에 넘겨 그 건물 매물을 본다. 원룸·빌라는 키가 없다 |
-| 직방 원룸·빌라·오피스텔 (`search listings room`, `search listings --complex officetel-…`, `listing`) | `hug_lessor`, `actual_listing_checked`, `nearby_facilities`, `delivery_services`, `building_trades` | 목록 줄과 상세의 HUG 안심임대인·실매물 확인 꼬리표(`true`·`false`, 직방이 배지 목록을 주지 않으면 `null`), 상세의 주변 생활 시설·배송 업체 이름·같은 건물(필지) 실거래. 앞의 둘은 상세에서도 같은 값이고, 뒤의 셋은 상세에만 있다. 값이 없을 때(`null`·`[]`)와 상세 공통 값(`confirmed_at`·`non_compliant_building`·`manage_cost_*`)은 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
-| 직방 아파트 (`search listings apt`, `search listings --complex`) | `complex_id`, `complex_name`, `supply_area_m2`, `is_price_range`, `catalog_id`, `listing_ids`, `listing_count`, `listing_kind`, `pyeong_id`, `pyeong_name` | 단지 ID(`zigbang complex`·`search listings --complex` 에 넘긴다), 단지명·동, 공급면적(㎡), 같은 호를 올린 매물끼리 가격이 달라 가격이 묶음 최저가인지, 묶음 ID(`zigbang catalog` 에 넘긴다), 상세를 볼 수 있는 묶인 매물 ID 전부, 같은 호를 올린 매물(중개사) 수, 매물 종류(신규분양·집주인·중개사, 신규분양이면 가격은 분양가, 처음 보는 종류는 직방 코드 그대로, 모르면 `null`), 평형 ID(`--pyeong` 에 넘긴다)와 평 기준 평형 이름(모르면 `null`). `is_price_range`·`catalog_id`·`listing_ids`·`listing_count` 는 목록에만 있고 (`listing_kind` 와 함께 `--fields` 로 골라도 늘 나온다) ([`search listings apt`](#3-search-listings-apt--아파트-매물-찾기) 반환값), `complex_id`·`complex_name`·`supply_area_m2`·`listing_kind`·`pyeong_id`·`pyeong_name` 은 아파트 `listing` 상세와 `catalog` 매물에도 있고, 상세·`catalog` 에는 `zzim_count` 와 원룸·빌라·오피스텔 상세와 같은 공통 값(`confirmed_at`·`actual_listing_checked`·`non_compliant_building`·`hug_lessor`·`manage_cost_excludes`·`manage_cost_period`·`manage_cost_method`)도 있다. 아파트 상세에서 비는 값은 [`listing`](#9-listing--매물-하나-상세)에 있다 |
+| 직방 원룸·빌라·오피스텔 (`search listings room`, `search listings --complex officetel-…`, `listing`) | `hug_lessor`, `actual_listing_checked`, `nearby_facilities`, `delivery_services`, `building_trades` | 목록 줄과 상세의 HUG 안심임대인·실매물 확인 꼬리표(`true`·`false`, 직방이 배지 목록을 주지 않으면 `null`), 상세의 주변 생활 시설·배송 업체 이름·같은 건물(필지) 실거래. 앞의 둘은 상세에서도 같은 값이고, 뒤의 셋은 상세에만 있다. 값이 없을 때(`null`·`[]`)와 상세 공통 값(`confirmed_date`·`non_compliant_building`·`manage_cost_*`)은 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
+| 직방 아파트 (`search listings apt`, `search listings --complex`) | `complex_id`, `complex_name`, `supply_area_m2`, `mixed_prices`, `catalog_id`, `listing_ids`, `realtor_count`, `listing_kind`, `pyeong_id`, `pyeong_name` | 단지 ID(`zigbang complex`·`search listings --complex` 에 넘긴다), 단지명·동, 공급면적(㎡), 같은 호를 올린 매물끼리 가격이 달라 가격이 묶음 최저가인지, 묶음 ID(`zigbang catalog` 에 넘긴다), 상세를 볼 수 있는 묶인 매물 ID 전부, 같은 호를 올린 매물(중개사) 수, 매물 종류(신규분양·집주인·중개사, 신규분양이면 가격은 분양가, 처음 보는 종류는 직방 코드 그대로, 모르면 `null`), 평형 ID(`--pyeong` 에 넘긴다)와 평 기준 평형 이름(모르면 `null`). `mixed_prices`·`catalog_id`·`listing_ids`·`realtor_count` 는 목록에만 있고 (`listing_kind` 와 함께 `--fields` 로 골라도 늘 나온다) ([`search listings apt`](#3-search-listings-apt--아파트-매물-찾기) 반환값), `complex_id`·`complex_name`·`supply_area_m2`·`listing_kind`·`pyeong_id`·`pyeong_name` 은 아파트 `listing` 상세와 `catalog` 매물에도 있고, 상세·`catalog` 에는 `favorite_count` 와 원룸·빌라·오피스텔 상세와 같은 공통 값(`confirmed_date`·`actual_listing_checked`·`non_compliant_building`·`hug_lessor`·`manage_cost_excludes`·`manage_cost_period`·`manage_cost_method`)도 있다. 아파트 상세에서 비는 값은 [`listing`](#9-listing--매물-하나-상세)에 있다 |
 | 직방 상가 (`search listings store`) | `business`, `key_money_manwon`, `vacant_section` | 업종(현재·직전, 공실이면 `기타`), 권리금(만원, 업종이 사무실이고 직방이 주지 않으면 키가 없다), 이 지역 비어있는 상가 묶음에서 온 줄인지(공실 묶음이 있거나 `--business` 를 줄 때만 있고 `--fields` 로 골라도 늘 나온다. [`search listings store`](#4-search-listings-store--상가사무실-매물-찾기) 주의사항). 상세는 `recommended_business`·`vacancy`·`lease_unit`·`interior`·`toilet`·`heating` 도 준다. 직방 상가에는 방 정보가 없어 `room_type`(목록·상세)과 `room_count`·`bathroom_count`·`direction`·`move_in`·`options`·`manage_cost_includes`(상세) 키가 없다 |
-| 직방 단기임대 (`search listings stay`) | `weekly_rent_manwon`, `weekly_manage_cost_manwon`, `room_count`, `bathroom_count`, `discounts` | 주당 임대료·관리비(만원), 방·욕실 수, 할인 조건(예: `"4주 이상 10% 할인"`, `"오늘부터 1일 이내 입주 시 7만원 할인"`. 직방 웹 상세처럼 장기계약은 주 수·할인율·주당 임대료가 모두 있을 때, 즉시입주는 금액이 있을 때만 나온다. 주당 임대료가 없거나 0 이면 장기계약 할인이 있어도 빠지므로, 이때 `discounts` 가 `[]` 여도 할인이 없다는 뜻은 아니다. 즉시입주 할인 금액은 원 단위까지 만원으로 써 2,500원이면 `"오늘 입주 시 0.25만원 할인"` 이다. 그 기간에 실제로 깎이는 금액은 직방이 로그인해야 계산해 보여 줘서 주지 않는다). 요금이 주 단위라 `rent_manwon`·`manage_cost_manwon` 키가 없다. 상세는 `review_count`·`review_rating`(후기 수·평균 평점)과 `host_other_listings`·`host_other_listing_count`(임대인의 다른 방 앞 10건과 전체 수)도 준다 ([`listing`](#9-listing--매물-하나-상세) 표). 상세는 `deposit_manwon`·`cleaning_fee_manwon`·`min_contract_weeks`·`max_contract_weeks`·`max_guests`·`duplex`·`refund_policy`(유연·표준·엄격), `parking`(`가능`·`가능 (유료)`·`가능 (무료)`·`제한적 가능`·`제한적 가능 (유료)`·`제한적 가능 (무료)`·`불가`) 도 준다. 상세에 `--check-in/--check-out` 을 주면 그 기간을 예약할 수 있는지 `available`(직방 일정이 없거나 일정 목록에서 빈 항목을 빼고 읽었으면 `null`)이 붙는다. 상세에는 주방·거실 수(`kitchen_count`·`living_room_count`), 주차 대수·방식(`parking_count`·`parking_method`), 반려동물 동반(`pet_allowed`·`pet_cleaning_fee_manwon`), 입·퇴실 시각·방식(`check_in_time`·`check_out_time`·`check_in_method`·`check_out_method`), 예약 불가 기간(`unavailable_periods`), 위약금 표(`refund_rules`)도 있다. 값이 없을 때(키 없음·`null`·`0`)는 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
+| 직방 단기임대 (`search listings stay`) | `weekly_rent_manwon`, `weekly_manage_cost_manwon`, `room_count`, `bathroom_count`, `discounts` | 주당 임대료·관리비(만원), 방·욕실 수, 할인 조건(예: `"4주 이상 10% 할인"`, `"오늘부터 1일 이내 입주 시 7만원 할인"`. 직방 웹 상세처럼 장기계약은 주 수·할인율·주당 임대료가 모두 있을 때, 즉시입주는 금액이 있을 때만 나온다. 주당 임대료가 없거나 0 이면 장기계약 할인이 있어도 빠지므로, 이때 `discounts` 가 `[]` 여도 할인이 없다는 뜻은 아니다. 즉시입주 할인 금액은 원 단위까지 만원으로 써 2,500원이면 `"오늘 입주 시 0.25만원 할인"` 이다. 그 기간에 실제로 깎이는 금액은 직방이 로그인해야 계산해 보여 줘서 주지 않는다). 요금이 주 단위라 `rent_manwon`·`manage_cost_manwon` 키가 없다. 상세는 `review_count`·`review_rating`(후기 수·평균 평점)과 `host_other_listings`·`host_other_listing_count`(임대인의 다른 방 앞 10건과 전체 수)도 준다 ([`listing`](#9-listing--매물-하나-상세) 표). 상세는 `deposit_manwon`·`cleaning_fee_manwon`·`contract_weeks_range`(`lowest`·`highest`, 주)·`max_guests`·`duplex`·`refund_policy`(유연·표준·엄격), `parking`(`가능`·`가능 (유료)`·`가능 (무료)`·`제한적 가능`·`제한적 가능 (유료)`·`제한적 가능 (무료)`·`불가`) 도 준다. 상세에 `--check-in/--check-out` 을 주면 그 기간을 예약할 수 있는지 `available`(직방 일정이 없거나 일정 목록에서 빈 항목을 빼고 읽었으면 `null`)이 붙는다. 상세에는 주방·거실 수(`kitchen_count`·`living_room_count`), 주차 대수·방식(`parking_count`·`parking_method`), 반려동물 동반(`pet_allowed`·`pet_cleaning_fee_manwon`), 입·퇴실 시각·방식(`check_in_time`·`check_out_time`·`check_in_method`·`check_out_method`), 예약 불가 기간(`unavailable_periods`), 위약금 표(`refund_rules`)도 있다. 값이 없을 때(키 없음·`null`·`0`)는 [`listing`](#9-listing--매물-하나-상세) 표에 있다 |
 
 ## 매물 해석 시 주의사항
 
-아파트 넓이는 `area_m2`(전용면적)와 `supply_area_m2`(공급면적)를 구분한다. 같은 호를 묶은 목록의 가격은 `is_price_range: true` 면 묶음 최저가라, 매물별 가격은 `catalog <catalog_id>` 로 확인한다. 제휴 매물의 누락 정보는 없는 것으로 단정하지 않는다.
+아파트 넓이는 `area_m2`(전용면적)와 `supply_area_m2`(공급면적)를 구분한다. 같은 호를 묶은 목록의 가격은 `mixed_prices: true` 면 묶음 최저가라, 매물별 가격은 `catalog <catalog_id>` 로 확인한다. 제휴 매물의 누락 정보는 없는 것으로 단정하지 않는다.
 
 상세 `residence_type`에 `다가구`가 들어가면(`다가구`·`다가구주택`·`다가구용단독주택`) 건물 전체의 다른 세입자 선순위 보증금도 계약 전 확인한다. `근린생활시설`이 들어가면(`제2종근린생활시설` 등, 이른바 근생 원룸) 주거용 건물이 아니라 전입신고·전세대출·전세보증보험이 막힐 수 있으니 계약 전 확인한다. 등록일·입주일·주차는 조회 유형에 따라 제공 여부가 다르며 `null`을 없다고 해석하지 않는다.
 
-`estimated_*`(`complex` 의 평형·단지 직방시세, `catalog` 의 호 직방시세, `region-info` 의 평형대별 직방시세)와 `price-trend`·`region-info` 의 평당가 추이는 직방이 실거래를 분석해 낸 추정값이라 실거래가도 호가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물(필지)의 실거래이고, `actual_listing_checked: false` 는 확인 실패도 포함한다. 실거래의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이고, `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니며, `jeonse_ratio` 는 0~1 비율이다 ([`real-price`](#8-real-price--아파트-실거래가) 표). 단기임대 반려동물은 `options` 가 아니라 `pet_allowed` 로 보고 (`null` 은 동반 불가가 아니라 모름), 위약금 표(`refund_rules`)는 직방 웹에 고정된 표라 임대인 설정에 따라 다를 수 있으니 계약 전 `url` 에서 확인한다.
+`estimated_*`(`complex` 의 평형·단지 직방시세, `catalog` 의 호 직방시세, `region-info` 의 평형대별 직방시세)와 `price-trend`·`region-info` 의 평당가 추이는 직방이 실거래를 분석해 낸 추정값이라 실거래가도 호가도 아니다. 원룸·빌라·오피스텔 상세의 `building_trades` 는 그 매물이 아니라 같은 건물(필지)의 실거래이고, `actual_listing_checked: false` 는 확인 실패도 포함한다. 실거래의 `registered: null` 은 '등기 안 됨' 이 아니라 모름이고, `new_high`·`new_low` 는 최근 3년 안 경신이라 단지 역대 최고·최저가가 아니며, `jeonse_ratio_percent` 는 0~100 백분율이다 ([`real-price`](#8-real-price--아파트-실거래가) 표). 단기임대 반려동물은 `options` 가 아니라 `pet_allowed` 로 보고 (`null` 은 동반 불가가 아니라 모름), 위약금 표(`refund_rules`)는 직방 웹에 고정된 표라 임대인 설정에 따라 다를 수 있으니 계약 전 `url` 에서 확인한다.
 
 상가 권리금은 `0`이면 무권리, `null`이면 모름이다 (업종이 사무실이고 직방이 주지 않으면 키가 없다). 단기임대의 주당 가격과 월세를 직접 비교하지 않는다. 주당 금액 × 주 수는 기간 비용이 아니고(청소비·직방 이용료가 더해진다), 기간 총비용은 직방이 로그인해야 보여 줘서 jibsa 는 주지 않는다.

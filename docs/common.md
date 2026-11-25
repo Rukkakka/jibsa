@@ -6,13 +6,14 @@
 
 - 결과는 stdout 에 JSON. 터미널이면 들여쓰기, 파이프면 한 줄 (`--pretty` / `--compact` 로 강제)
 - 소수점 아래가 없는 숫자는 정수로 쓴다 (`1000.0` 이 아니라 `1000`). 같은 필드도 값에 따라 `1000` 과 `24.2` 처럼 섞여 나온다
-- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex` 와 `catalog`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`, 다방 `search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 묶음 필드(네이버 중복 묶음의 `realtor_count`·`*_range_manwon`, 직방 아파트 묶음의 `is_price_range`·`catalog_id`·`listing_ids`·`listing_count`·`listing_kind`, 직방 상가의 공실 표시 `vacant_section`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
+- 매물 목록 명령(직방 `room`·`apt`·`store`·`stay`·`--complex` 와 `catalog`, 네이버 `search listings`, 당근 `search listings`·`search commute`·`popular-listings`, 다방 `search listings` 의 `room`·`villa`·`officetel`·`apt`·`--complex` 와 `popular-listings`)은 `--fields id,deposit_manwon,rent_manwon` 처럼 매물마다 낼 필드만 고를 수 있다. 결과의 매물 키 이름을 쉼표로 주고, `id` 와 묶음 필드(네이버 중복 묶음의 `realtor_count`·`asking_range`, 직방 아파트 묶음의 `mixed_prices`·`catalog_id`·`listing_ids`·`realtor_count`·`listing_kind`, 직방 상가의 공실 표시 `vacant_section`)는 늘 나온다. 고르지 않은 필드는 키가 없으니 이때는 키 없음을 해당 없음으로 읽지 않는다. 결과 머리(`total`·`notes` 등)는 그대로이고, 어느 명령에도 없는 필드 이름은 요청 전에 `INVALID_ARGUMENT` 로 막는다. 다른 명령에만 있는 필드(당근 역 검색의 `walk_minutes` 를 `search commute` 에)는 결과에서 빠지고 `notes` 에 이 명령의 매물 필드를 알린다
+- 같은 뜻의 칸은 소스가 달라도 같은 이름이다. 거래별로 묶은 값은 영어 거래 키 객체(`{"sale": …, "jeonse": …, "wolse": …}`, 키는 `sale`=매매·`jeonse`=전세·`wolse`=월세·`short_term`=단기임대·`yeonse`=연세, 직방 평형 추이 탭만 `jeonse_wolse`=전월세이고 `trade_type`·`--trade` 값은 한국어 그대로, 그 거래에 해당 없으면 키가 없고 모두 없으면 `{}`), 범위는 `{"lowest": …, "highest": …}` 객체, 날짜 칸은 `_date`(`YYYY-MM-DD`)·`_month`(`YYYY-MM`)·`_year`(소스가 날짜로 읽을 수 없는 글자를 주면 받은 글자 그대로나 `null` 일 수 있다), 퍼센트는 `_percent`(0~100)다. 옛 이름으로 칸을 읽던 곳은 [옛 이름 → 새 이름 표](https://github.com/Rukkakka/jibsa/blob/main/docs/field-renames.md)로 고친다
 - 매물 필드에 값이 없을 때는 의미에 따라 다르게 나타낸다
 
   | 상태 | 표현 | 예 |
   |---|---|---|
   | 해당 없음 (그 거래·조회에 원래 없는 항목) | **키를 뺀다** | 월세의 `price_manwon`, 매매의 `deposit_manwon`·`rent_manwon`, 당근 연세의 `rent_manwon`, 상세 조회의 `distance_km` |
-  | 모름 (해당은 되지만 소스가 알려 주지 않음) | **`null`** | 당근 목록의 `manage_cost_manwon`·투룸 이상 `room_type`, 네이버 목록의 `room_type`, 네이버 상세에서 교통 정보가 없는 매물의 `nearby_subways`·`bus_routes`, 단지가 없는 매물의 `schools` |
+  | 모름 (해당은 되지만 소스가 알려 주지 않음) | **`null`** | 당근 목록의 `manage_cost_manwon`·투룸 이상 `room_type`, 네이버 목록의 `room_type`, 네이버 상세에서 교통 정보가 없는 매물의 `nearby_stations`·`bus_routes`, 단지가 없는 매물의 `schools` |
   | 알려 줬는데 비어 있음 | `[]` | 옵션이 하나도 없는 매물의 `options` |
 - 지역이 모호하거나(같은 이름이 여러 곳) 너무 넓으면(시·도·구 단위), 또는 가격 조건으로 거래 유형을 좁혔으면 검색 결과 맨 앞에 `notes` 로 안내한다. 안내할 게 없으면 키가 없다
 - 결과에 1억(`10000` 만원) 이상 금액이 있으면 `notes` 끝에 그 결과의 값으로 억 환산 예시를 붙인다 (`[참고] 금액은 만원 단위입니다: 440000 = 44억 원, 119700 = 11억 9,700만 원`). 사용자에게 억으로 옮길 때 이 예시대로 자리를 맞춘다
@@ -54,10 +55,10 @@
 | `area_m2`, `area_pyeong` | 전용면적 ㎡·평 |
 | `floor`, `floor_number`, `building_floor` | 해당 층·그 층의 숫자·전체 층수. `floor` 는 `"3"`·`"지하1"`·`"반지하"`·`"저층"`·`"중층"`·`"고층"`·`"옥탑"` 처럼 오고, `floor_number` 는 지상 양수·지하 음수다 (`"지하1"` → `-1`). 반지하·저층처럼 몇 층인지 모르면 `floor_number` 는 `null` |
 | `address`, `distance_km` | 지번 주소·검색 중심까지 거리. 주소 상세도와 거리 제공 여부는 조회 모드별로 다름. 결과가 거리순이 아닌 검색도 있어 가까운 매물은 이 값으로 고른다. 반경으로 거르는 검색은 대개 출력한 `distance_km`(km, 소수 둘째 자리)로 반경 안·밖을 가르고 `total`·반경 밖 안내도 같은 기준이다 (다른 기준과 반경 밖 매물을 주는지는 소스 문서). 거리를 모르는 매물(`null`)은 반경 안으로 세지 않는다 |
-| `registered_at`, `approved_at` | 등록일·사용승인일 (`YYYY-MM-DD`). 소스가 알려 주지 않으면 `null` |
-| 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `elevator`, `options` 등 |
+| `registered_date`, `approved_date` | 등록일·사용승인일 (`YYYY-MM-DD`). 소스가 알려 주지 않으면 `null` |
+| 상세 방·시설 | `room_count`, `bathroom_count`, `direction`, `move_in`, `parking`, `has_elevator`, `options` 등 |
 | `move_in`, `parking` | 입주 가능일은 모든 소스가 `"2026-10-24"`·`"즉시입주"`, 협의할 수 있으면 뒤에 `" (협의 가능)"`. 네이버 `listing` 만 이내입주·이후입주에 날짜 뒤 `이내`·`이후`(`"2026-12-01 이내"`·`"2026-12-01 이후"`, 연월만 오면 `"2026-12 이내"`)를, 달 단위로 정한 매물에 `"2026-11 초순"`(중순·하순도)을 쓰고, 날짜 지정 매물에 연월만 오면 `"2026-12"` 로 낸다. 다른 소스는 같은 뜻의 문구에서 날짜만 남긴다. 날짜로 읽을 수 없는 글자는 직방·다방·당근이 서버가 준 글자를 그대로 두고(협의할 수 있으면 그 뒤에도 `" (협의 가능)"` 이 붙는다), 네이버 `listing` 은 읽지 못한 날짜를 넣지 않고 `[참고]` 로 알린다. 당근은 입주일이 오늘이거나 지난 날이면 `"즉시입주"` 이고 그때는 협의를 붙이지 않는다. 날짜 없이 협의만 있으면 네이버는 `"협의 가능"`, 당근은 `null` 이다 (당근 웹은 그 줄을 그리지 않는다). 주차는 모든 소스가 `"가능"`·`"불가"`, 대수가 있으면 `"가능 (총 4대)"` 처럼 괄호로 붙는다. 다만 네이버 `listing` 의 아파트·오피스텔·재건축·분양권은 가능·불가 없이 단지 대수 `"단지 전체 12602대 (세대당 1.32대)"` 를 낸다 ([네이버 `parking`](https://github.com/Rukkakka/jibsa/blob/main/docs/naver.md#소스별-반환-필드와-해석)) |
-| 상세 관리비·교통 | `manage_cost_includes`, `nearby_subways` 등. 소스별 추가 필드는 해당 문서 참고 |
+| 상세 관리비·교통 | `manage_cost_includes`, `nearby_stations` 등. 소스별 추가 필드는 해당 문서 참고 |
 
 입주·주차·역 설명에 작성자가 입력한 문구가 포함될 수 있다. 목록과 상세에서 제공하는 주소·필드는 다르며 상세에 거리처럼 해당하지 않는 키는 없다.
 
@@ -114,7 +115,7 @@
   "trade_type": "매매",
   "returned": 1,
   "has_more": false,
-  "transactions": [
+  "trades": [
     {
       "trade_date": "2026-09-01",
       "price_manwon": 50000,

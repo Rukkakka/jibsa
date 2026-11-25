@@ -68,7 +68,8 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
 ```json
 {
   "notes": [
-    "[일부] 조건에 맞는 매물이 약 12건 있고, 그중 검색 중심에서 가까운 순으로 1건만 보여 줍니다. 이어 보려면 같은 명령에 --next <결과의 next 값> 을 붙이세요"
+    "[일부] 조건에 맞는 매물이 약 12건 있고, 그중 직방 목록 순으로 1건만 보여 줍니다. 이어 보려면 같은 명령에 --next <결과의 next 값> 을 붙이세요",
+    "[참고] 직방은 매물 종류마다 목록이 따로라 --limit 을 종류별로 나눠 각 목록 순서대로 받았습니다: 원룸 약 6건 중 1건 (1번째), 오피스텔 약 3건 중 0건, 빌라 약 3건 중 0건"
   ],
   "region": {
     "name": "강남역",
@@ -81,7 +82,7 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
   "total": 12,
   "returned": 1,
   "has_more": true,
-  "next": "5f22170f83",
+  "next": "a654422641",
   "listings": [
     {
       "source": "zigbang",
@@ -101,8 +102,10 @@ uv 로 설치하고 직접 조회해 본 장면이다. 설치는 실제 PyPI 설
       "building_floor": "1",
       "address": "서울특별시 강남구 역삼동 000-1",
       "distance_km": 0.15,
-      "registered_at": "2026-10-09",
-      "approved_at": null
+      "registered_date": "2026-10-09",
+      "approved_date": null,
+      "hug_lessor": null,
+      "actual_listing_checked": null
     }
   ]
 }

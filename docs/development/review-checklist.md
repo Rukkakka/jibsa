@@ -226,7 +226,7 @@
 11. **문서에 적은 값의 뜻을 응답 키·번들 상수로.** 문서·Field description 이 적은 값의 뜻(빈 목록이 무엇을 뜻하는지, 날짜가
    어느 날짜인지)이 그 필드를 채우는 응답 키와 번들 상수(코드 표)의 모든 값과 맞는가. 확인: 필드를 채우는 줄의 응답 키를 보고,
    jibsa 표에 없는 코드까지 번들 상수에서 grep 한다. 예: `providers/naver/service/common.py` `verification_badges` (`[]` 에
-   무검증 `NONE` 도 드는데 '확인하지 않은 매물이 아니다' 라고 적었다), 네이버 `registered_at` (노출 시작일인데 '확인 날짜' 라고
+   무검증 `NONE` 도 드는데 '확인하지 않은 매물이 아니다' 라고 적었다), 네이버 `registered_date` (노출 시작일인데 '확인 날짜' 라고
    적었다, 2026-11-17), 같은 `badges` 에 HUG 배지를 더한 뒤에도 "방식 배지가 없으면 `[]`" 가 남아 HUG 만 있는 매물과
    어긋났다 (2026-11-18).
    언제: 새 출력 필드의 뜻이나 빈 값의 뜻을 문서·Field description 에 적은 diff, 기존 필드에 값이 나오는 곳(갈래·출처)을 더한
@@ -245,7 +245,7 @@
     `[참고]` 로 칸과 원래 글자를 알린다 (목록은 칸별로 모아 한 줄, [금액·단위](output-contract.md#금액단위) 날짜 규칙). `normalize_date` 는
     못 읽으면 원래 글자를 돌려줘(소스가 값 없음으로 주는 `-` 만 `null`) 출력 칸에 바로 쓰지 않고 `iso_date` 로 읽는다. 확인: 날짜
     필드를 채우는 줄이 어느 함수를 부르는지와 Field 설명을 대 보고, `'201005'` 를 넣어 `null` 과 안내가 나오는지 본다.
-    예: `providers/naver/service/common.py` `confirmed_at` (못 읽으면 원래 글자, 2026-11-18), `providers/naver/service/listing.py`
+    예: `providers/naver/service/common.py` `confirmed_date` (못 읽으면 원래 글자, 2026-11-18), `providers/naver/service/listing.py`
     `_readable_date` (규칙대로 `null` + `[참고]`, 2026-11-24).
     언제: 날짜 필드를 더하거나 그 필드를 채우는 줄을 바꾼 diff.
 15. **유형을 모르면 줄을 통째로 버리는 변환.** `… | None` 을 돌려주는 변환 함수가 모르는 유형에 `None` 을 주고 호출부가 그 줄을 빼면, 버린 수를 세어 `[제외]` 로 알리는가 (다방 `_unknown_trade_note`). 알리지 않으면 거래가 말없이 사라진다. 확인: 변환 결과가 `None` 일 때 건너뛰기로 끝나는 자리마다 센 수가 notes 에 가는지 본다 (`--limit` 으로 어차피 잘릴 자리는 세지 않아도 된다).
@@ -273,6 +273,10 @@
     확인: 대체 조회가 채우는 칸과 원래 실패 안내가 모름이라고 적은 칸을 견준다. 예: `providers/naver/service/listing.py` `get_listing` 의 관리비 (`maintenanceFee` 가 실패하고
     `oldMaintenanceFee` 가 금액만 줘 `manage_cost_includes` 의 `[실패]` 가 사라졌다, 2026-11-25).
     언제: 실패 안내를 임시 목록에 모았다가 대체 조회 결과로 버리거나 옮기는 diff.
+20. **칸 이름을 바꿀 때 같은 이름의 다른 명령 칸도 같은 뜻·같은 빈 값 규칙인가.** 한 이름은 한 뜻만 가진다 ([칸 이름 규칙](output-contract.md#칸-이름-규칙)). 같은 이름이 한 명령에서는 가장 작은 단위 이름, 다른 명령에서는 전체 이름이면 안 된다. 거래 키 객체는 그 거래가 없으면 키 없음, 모르면 `null` 이다.
+    확인: 바꾼 칸 이름으로 같은 소스·다른 소스의 출력 모델을 grep 해 뜻(Field 설명)과 빈 값 모양을 견준다.
+    예: `providers/daangn/service/complex.py` 의 `trending_region_of`(`region.name` 만 전체 이름이었다)와 같은 파일 `list_trending_complexes` 의 `latest_trades`(최근 매매가 없는 단지를 `{"sale": {"price_manwon": null}}` 로 냈다. `compare` 는 키를 뺀다), 2026-11-25.
+    언제: 칸 이름·모양을 여러 명령에 걸쳐 바꾼 diff.
 
 ## `web` 웹 대응
 
@@ -280,7 +284,7 @@
    `round`·`f'{x:.nf}'`(정확히 반인 값을 짝수로)·`Decimal(str(x))`(이진 값이 반보다 작은 소수를 올림), 정수 버림, 안정 정렬,
    "첫 항목 기준" 같은 기준점. `Math.round` 는 공용 `js_round`, `toFixed` 는 공용 `js_to_fixed` 로 옮기고 곳마다 따로 흉내 내지
    않는다. 확인: 주석의 번들 식과 한 줄씩 대조하고 0·x.5·동점·첫 항목 없음과 반올림이면 0.15·0.25·x.125·1.005·2.675 를 넣어 본다.
-   예: `providers/daangn/service/real_price.py:1355` 의 `previous_high_change_percent`(Python `round` 로 0.25% 가 웹 0.3 과
+   예: `providers/daangn/service/real_price.py:1355` 의 `prev_high_diff_percent`(Python `round` 로 0.25% 가 웹 0.3 과
    달랐다), `providers/daangn/service/complex.py:385` 의 `_web_school_card`(`??` 를 `or` 로 옮겨 0 이 모름이 됐다),
    `core/listing.py:161` 의 `js_to_fixed`
    (다방 거리·당근 면적이 따로 흉내 내다 어긋났다, 2026-11-20).
@@ -444,11 +448,11 @@
    응답 키가 바뀌면 빈 값(`[]`·`{}`·null)이 되는지 본다. 예: `scripts/monitor/api_check.py:214` (네이버 `school --complexes`
    단계가 바깥 dict 만 봤다, 2026-11-18). 명령 하나가 덤 엔드포인트를 여럿 부르면 덤마다 그 값을 기대 칸으로 보는 `Step` 이
    있는가도 본다. 덤 조회는 실패하면 `null` 로만 남아, 다른 덤을 보는 단계로는 못 잡는다 (네이버 빌라 `real-price` 가
-   `nearby_transactions.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19). 반대로 사이트가
+   `nearby_trades.trades` 만 보고 평당 실거래가 `price_per_pyeong_trades` 를 보지 않았다, 2026-11-19). 반대로 사이트가
    정상이어도 빌 수 있는 값을 기대 칸으로 걸면 고장 알림이 거짓으로 난다: 조건으로 고른 목록(최근입주), 시세 0 을 `null` 로
    내는 값, 신규분양처럼 값이 없는 대상을 고를 수 있는 `Capture` 는 `may_be_empty` 로 두거나 그 대상을 피해 고른다
    (`scripts/monitor/api_check.py` 의 직방 가락동 최근입주·`catalog` 직방시세·`{apt}` Capture, 2026-11-20). 안내 없이 `null` 이 되는 조건이 있는 값(단기임대 `host_other_listing_count` 는 임대인 ID 가 없으면 안내 없이 `null`)이나 정상 단지에도 `null` 일 수 있는 값(직방 `complex` 단지 직방시세, 2026-11-21)도 `also_expect` 에 걸지 않는다. 기간 기본값으로 부르는 단계도 감시 시각에 빌 수 있다: 등록 기준 '이번달' 집계(한국 날짜 기준)는 매달 1일 새벽(감시 04:17)에 비어 거짓 고장을 낼 수 있어 지난 기간(지난달·30일)으로 부른다 (`scripts/monitor/api_check.py` 의 직방 `region-ranking`, 2026-11-22).
-   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸(`expect`·`also_expect`)을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff.
+   언제: `GROUPS` 에 `Step` 을 더하거나 기대 칸(`expect`·`also_expect`)을 바꾼 diff, 기존 명령에 덤 엔드포인트를 더한 diff, 칸 이름·모양을 바꿔 기대 칸의 값 하나가 늘 거래 키를 채운 객체가 된 diff (예: `scripts/monitor/api_check.py` 의 직방 `catalog`·`complex`, 다방 `complex` 단계가 `estimated_prices`·`estimated_ranges`·`latest_trades` 바깥 객체를 봤다, 2026-11-25).
 9. **CHANGELOG 의 '예전에는' 을 HEAD 코드로 확인했는가.** 바뀐 안내·동작의 예전 모습을 적을 때 기억이나 비슷한 자리의 문구로 쓰면 다른 명령의 문구가 들어간다.
    확인: `git show HEAD:<파일>` 로 그 자리의 예전 코드를 열어 문구를 맞춘다. 예: `CHANGELOG.md` 네이버 재개발 구역 목록 `[일부]` 줄 (구역 매물의 '거래 유형·가격 조건' 을 적었다, 2026-11-25).
    언제: `CHANGELOG.md` 에 '예전에는' 을 적은 diff.
