@@ -145,14 +145,18 @@ search_app = typer.Typer(help='지역에서 매물 또는 단지를 찾는다', 
 app.add_typer(search_app, name='search')
 
 
-def _complex_number(client: NaverClient, complex_: str) -> tuple[int, bool | None, list[str]]:
-    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS."""
+def _complex_number(client: NaverClient, complex_: str, param_hint: str) -> tuple[int, bool | None, list[str]]:
+    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS.
+
+    Args:
+        param_hint: 단지를 받은 인자·옵션 이름 (번호가 0 일 때의 사용법 오류에 쓴다).
+    """
     # 붙여 넣은 번호의 앞뒤 공백(' 8928')을 먼저 떼야 번호를 이름으로 찾지 않는다
     complex_ = complex_.strip()
     if NUMBER_PATTERN.fullmatch(complex_) is None:
         return resolve_complex_number(client, complex_)
     if int(complex_) < 1:
-        raise typer.BadParameter('단지 번호는 1 이상입니다', param_hint='COMPLEX')
+        raise typer.BadParameter('단지 번호는 1 이상입니다', param_hint=param_hint)
     return int(complex_), None, []
 
 
@@ -379,6 +383,11 @@ def _search_scope(region: NaverRegion, whole: bool, radius: float | None) -> dic
     return {'boundary': region.name} if whole else {'radius_km': radius or DEFAULT_RADIUS_KM}
 
 
+def _without_wide_note(notes: list[str]) -> list[str]:
+    """지역 해석이 붙인 '넓은 지역이라 … 반경 안만 검색했습니다' 안내를 뺀다."""
+    return [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+
+
 def _area_location(
     client: NaverClient,
     query: str | None,
@@ -408,11 +417,11 @@ def _area_location(
         # 시·군·구가 하나뿐인 시·도(세종)는 그 시·군·구 경계가 시·도 전체다. 지역 해석의 '시·도 단위의 넓은 지역이라 … 반경 안만
         # 검색했습니다' 안내는 경계로 찾으면 맞지 않아 뺀다. 결과 범위의 이름은 사용자가 준 이름이다
         district_code, district_name = sole
-        notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+        notes = _without_wide_note(notes)
         notes.append(SOLE_DISTRICT_NOTE.format(name=region.name, district=district_name))
         return region, notes, district_code, _search_scope(region, True, radius)
     if sole == 'unknown':
-        notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+        notes = _without_wide_note(notes)
         notes.append(note(
             '실패',
             f"'{query}': 시·도 아래 시·군·구를 확인하지 못해 시·도 전체 대신 중심({region.address or region.name})에서 "
@@ -424,7 +433,7 @@ def _area_location(
         if city_districts is None:
             # 지역 해석이 붙인 '넓은 지역이라 … 반경 안만 검색했습니다' 안내 대신 구를 확인하지 못해 반경으로 찾았다는 이유를 알린다
             # (이유가 다른 두 안내를 함께 내지 않는다)
-            notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+            notes = _without_wide_note(notes)
             notes.append(note(
                 '실패',
                 f"'{query}': 구가 있는 시인지 확인하지 못해 시 전체 대신 중심({region.address or region.name})에서 "
@@ -433,26 +442,33 @@ def _area_location(
             ))
         elif city_districts:
             # 지역 해석이 붙인 '시·군·구 단위의 넓은 지역이라 …' 안내 대신 구 있는 시라서라는 이유와 구 이름을 알린다
-            notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+            notes = _without_wide_note(notes)
             notes.append(note(
                 '범위',
                 f"'{query}': 구가 있는 시라 시 전체로 찾을 수 없어 중심({region.address or region.name})에서 "
                 f"반경 {DEFAULT_RADIUS_KM:g}km 안만 검색했습니다. 구 이름({', '.join(city_districts)})으로 찾으면 그 구 전체를 찾습니다",
             ))
-        elif radius is not None and kind == '지역' and region.legal_division_code and is_district_code(region.legal_division_code):
-            # 지역 해석의 '시·군·구 단위의 넓은 지역이라 …' 안내는 --radius 를 줬기 때문에 반경으로 찾았다는 사실과 어긋난다.
-            # 그 안내가 있었을 때만 바꾼다 (구 있는 시인지는 묻지 않아 시 경우도 한 문장에 담는다)
+        elif radius is not None and kind == '지역' and (is_district_code(code) or is_province_code(code)):
+            # 지역 해석의 '시·군·구(시·도) 단위의 넓은 지역이라 …' 안내는 --radius 를 줬기 때문에 반경으로 찾았다는 사실과 어긋난다.
+            # 그 안내가 있었을 때만 바꾼다 (구 있는 시인지, 시·군·구가 하나뿐인 시·도인지는 묻지 않아 한 문장에 담는다)
             if any(WIDE_REGION_NOTE_MARK in text for text in notes):
-                notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
-                notes.append(note(
-                    '범위',
-                    f"'{query}': --radius 를 줘 중심({region.address or region.name})에서 반경 {radius:g}km 안만 검색했습니다. "
-                    '--radius 를 빼면 그 구·군·시 경계 전체를 찾습니다 (구가 있는 시는 구 이름으로 찾으세요)',
-                ))
+                notes = _without_wide_note(notes)
+                if is_province_code(code):
+                    notes.append(note(
+                        '범위',
+                        f"'{query}': --radius 를 줘 중심({region.address or region.name})에서 반경 {radius:g}km 안만 검색했습니다. "
+                        f"--radius 를 빼면 시·군·구가 하나뿐인 시·도(세종)는 그 전체를, 그 밖의 시·도는 중심 반경 {DEFAULT_RADIUS_KM:g}km 를 찾습니다",
+                    ))
+                else:
+                    notes.append(note(
+                        '범위',
+                        f"'{query}': --radius 를 줘 중심({region.address or region.name})에서 반경 {radius:g}km 안만 검색했습니다. "
+                        '--radius 를 빼면 그 구·군·시 경계 전체를 찾습니다 (구가 있는 시는 구 이름으로 찾으세요)',
+                    ))
         return region, notes, None, _search_scope(region, False, radius)
     if unit == '시·군·구':
         # 지역 해석은 시·군·구 이름이면 늘 '반경 안만 검색했습니다' 를 붙인다. 경계로 찾으면 맞지 않는 안내라 뺀다
-        notes = [text for text in notes if WIDE_REGION_NOTE_MARK not in text]
+        notes = _without_wide_note(notes)
     notes.append(WHOLE_BOUNDARY_NOTE.format(name=region.name))
     return region, notes, region.legal_division_code, _search_scope(region, True, radius)
 
@@ -483,7 +499,7 @@ def complex_command(
     dong_names = _split_dongs(dong)
     pyeong_numbers = split_ints(pyeong, '--pyeong')
     with handle_errors(SOURCE), NaverClient() as client:
-        complex_number, villa, notes = _complex_number(client, complex_)
+        complex_number, villa, notes = _complex_number(client, complex_, 'COMPLEX')
         summary = get_complex(client, complex_number, pyeong_numbers=pyeong_numbers, dong_names=dong_names, villa=villa)
         scope: list[str] = []
         if pyeong_numbers:
@@ -492,7 +508,7 @@ def complex_command(
             scope.append(', '.join(dong_label(key) for key in dict.fromkeys(map(dong_key, dong_names))))
         if scope:
             notes.append(
-                f"article_counts·호가 범위는 {' · '.join(scope)} 매물만 센 값입니다 (단지 정보와 pyeongs 는 단지 전체)"
+                f"article_counts·호가 범위는 {' · '.join(scope)} 매물만 센 값입니다 (단지 정보와 pyeongs·pyeong_groups 는 단지 전체)"
             )
         emit(summary, pretty, notes=notes + summary.notes)
 
@@ -607,7 +623,7 @@ def _search_complex_listings(
     """
     dong_names = _split_dongs(dong)
     with handle_errors(SOURCE), NaverClient() as client:
-        complex_number, villa, notes = _complex_number(client, complex_)
+        complex_number, villa, notes = _complex_number(client, complex_, '--complex')
         result = list_complex_articles(
             client,
             complex_number,
@@ -739,7 +755,9 @@ def _trend_district(
             f"값이 모두 0 이면 jibsa naver regions '{region.name}' 로 구 이름을 보고 구 이름으로 다시 부르세요",
         ))
     division: str | None
-    code, division = region.legal_division_code, normalize_address(region.address or region.name)
+    code = region.legal_division_code
+    # 단지는 이름이 단지 이름이라 주소로만 정한다 (비면 아래 안내가 법정동 코드를 쓴다)
+    division = normalize_address(region.address) if kind == '단지' else normalize_address(region.address or region.name)
     # 리 코드(…21)는 네이버가 매물 수·호가·거래를 모두 0 으로 준다 (장현리 매물 0, 같은 진접읍 1,394, 2026-10-10)
     ri = is_ri_code(code)
     if ri or kind == '주소':
@@ -755,10 +773,12 @@ def _trend_district(
             # 입력이 틀린 게 아니라 그 자리에 법정동이 없는 것이다 (바다 좌표 35.5,125.8 → searchByCoordinate 빈 결과, 2026-10-10)
             raise RegionNotFoundError(region.name, hint="동·구 이름(예: '역삼동')으로 다시 주세요")
         code, division = found[0], normalize_address(found[1])
+    # 법정동 이름을 모르면 안내에 글자 None 이 찍히지 않게 코드로 쓴다
+    label = division or f'법정동 코드 {code}'
     if ri:
-        notes.append(note('범위', f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {division} 추이입니다"))
+        notes.append(note('범위', f"'{region.name}': 리 단위 추이는 네이버가 주지 않아 {label} 추이입니다"))
     elif at_spot:
-        notes.append(note('범위', f"'{region.name}' 자리의 법정동({division}) 추이입니다"))
+        notes.append(note('범위', f"'{region.name}' 자리의 법정동({label}) 추이입니다"))
     return code, division, notes
 
 
@@ -845,7 +865,7 @@ def real_price_command(
 ) -> None:
     """평형별 실거래가 (국토부 신고 기준, 최근 순). 빌라 단지는 웹 빌라 실거래 탭의 두 칸도 준다: 최근 5년 평당 실거래가(매매·전세)와 주변 실거래(범위 안 10건까지).
 
-    요청은 아파트 단지 1회+쪽 수(거래가 없으면 단지 종류 확인 1~2회 더)이고, 빌라 단지는 평당 실거래가 1회(월세는 없음)·단지 좌표 1회·주변 실거래 1회가 더 든다.
+    요청은 쪽 수(--group 이면 평형 묶음 조회 1회 더, 거래가 없으면 단지 종류 확인 1~2회 더)이고, 빌라 단지는 평당 실거래가 1회(월세는 없음)·단지 좌표 1회·주변 실거래 1회가 더 든다.
 
     예: jibsa naver real-price 12345 --pyeong 2 --trade 전세 --period 3년
     예: jibsa naver real-price 12345 --pyeong 2 --group --pages 2
@@ -893,7 +913,7 @@ def market_price_command(
     """
     period = check_choice(period, PERIOD_MONTHS_BY_NAME, '--period')
     with handle_errors(SOURCE), NaverClient() as client:
-        complex_number, villa, notes = _complex_number(client, complex_)
+        complex_number, villa, notes = _complex_number(client, complex_, 'COMPLEX')
         emit(get_market_price_history(client, complex_number, pyeong, period=period, villa=villa), pretty, notes=notes)
 
 
@@ -933,7 +953,7 @@ def regions_command(
     ] = None,
     pretty: PrettyOption = None,
 ) -> None:
-    """지역의 바로 아래 지역 목록과 법정동 코드: 시·도 → 시·군·구, 시·군·구 → 읍·면·동 (요청 1~3회).
+    """지역의 바로 아래 지역 목록과 법정동 코드: 시·도 → 시·군·구, 시·군·구 → 읍·면·동 (요청 1~5회: 같은 이름이 첫 쪽을 채우면 다음 쪽 최대 2회 더).
 
     동네를 하나씩 찾아볼 때 동 이름 목록을 얻는 데 쓴다. 결과의 name 을 search listings·trend 등에 넣는다.
 
@@ -986,7 +1006,7 @@ def school_command(
         notes: list[str] = []
         complex_number, villa = None, None
         if complex_ is not None:
-            complex_number, villa, notes = _complex_number(client, complex_)
+            complex_number, villa, notes = _complex_number(client, complex_, '--complex')
         school = get_school(client, school_code, complex_number=complex_number, villa=villa)
         if not complexes:
             emit(school, pretty, notes=notes + school.notes)

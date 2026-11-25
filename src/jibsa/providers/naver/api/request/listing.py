@@ -54,6 +54,10 @@ class NaverArticleMaintenanceFeeV1RequestParameterModel(NaverArticleRequestParam
     """`GET /front-api/v1/article/maintenanceFee` 쿼리."""
 
 
+class NaverArticleOldMaintenanceFeeV1RequestParameterModel(NaverArticleRequestParameterModel):
+    """`GET /front-api/v1/article/oldMaintenanceFee` 쿼리."""
+
+
 class NaverDevelopmentArticleV1RequestParameterModel(NaverArticleRequestParameterModel):
     """`GET /front-api/v1/development/article` 쿼리. 매물 근처의 개발 예정 (예정 지하철역·개발 지구)."""
 

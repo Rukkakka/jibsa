@@ -39,16 +39,16 @@ class NaverArticleCountWeeklyInfoModel(NaverBaseResponseModel):
         Field(description='기간 평균 매물 수. 평균이라 소수로 와도 받는다', alias='periodAverageCount')
     ] = None
     min_weekly_count: Annotated[
-        int | None,
-        Field(description='기간 중 가장 적은 주', alias='minWeeklyCount')
+        int | float | None,
+        Field(description='기간 중 가장 적은 주. 평균이라 소수로 와도 받는다', alias='minWeeklyCount')
     ] = None
     max_weekly_count: Annotated[
-        int | None,
-        Field(description='기간 중 가장 많은 주', alias='maxWeeklyCount')
+        int | float | None,
+        Field(description='기간 중 가장 많은 주. 평균이라 소수로 와도 받는다', alias='maxWeeklyCount')
     ] = None
     latest_weekly_count: Annotated[
-        int | None,
-        Field(description='최근 주', alias='latestWeeklyCount')
+        int | float | None,
+        Field(description='최근 주. 평균이라 소수로 와도 받는다', alias='latestWeeklyCount')
     ] = None
     count_change_rate: Annotated[
         float | None,

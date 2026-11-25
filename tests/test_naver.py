@@ -27,10 +27,13 @@ from jibsa.providers.naver.api.response.search import (
 )
 from jibsa.providers.naver.service.common import (
     NaverTradeConditions,
+    PageScan,
     article_info_to_listing,
+    pagination_notes,
     rent_asking_range,
     result_or_empty,
     result_or_none,
+    scan_pages,
 )
 from jibsa.providers.naver.service.listing import (
     get_listing,
@@ -57,6 +60,8 @@ from jibsa.providers.naver.service.search import (
     search_area,
 )
 from jibsa.providers.naver.service.trend import get_district_trend
+
+from typing import Any
 
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'naver'
@@ -383,6 +388,9 @@ def test_detail_manage_cost_zero_is_known_unchecked_is_unknown(fee: dict, expect
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith('/maintenanceFee'):
             return httpx.Response(200, json={'isSuccess': True, 'result': fee})
+        if request.url.path.endswith('/oldMaintenanceFee'):
+            # 관리비 칸을 못 만들면 옛 형식 관리비를 묻는다. 금액이 없으면 웹처럼 빈 객체다 (토지 2663300403, 2026-11-24)
+            return httpx.Response(200, json={'isSuccess': True, 'result': {}})
         return httpx.Response(200, json=load(ROUTES[request.url.path]))
 
     client = NaverClient()
@@ -402,10 +410,10 @@ def test_detail_move_in_within_and_after_keep_the_bound() -> None:
     from jibsa.providers.naver.api.response.listing import NaverMovingInInfoModel
     from jibsa.providers.naver.service.listing import _move_in_label
 
-    def label(code: str, date: str | None, negotiation: bool = False) -> str | None:
+    def label(code: str, date: str | None, negotiation: bool = False, notes: list[str] | None = None) -> str | None:
         return _move_in_label(NaverMovingInInfoModel.model_validate(
             {'movingInType': code, 'movingInDate': date, 'movingInNegotiation': negotiation},
-        ))
+        ), [] if notes is None else notes)
 
     assert label('MV002', '20261201') == '2026-12-01 이내'
     assert label('MV003', '20261201', True) == '2026-12-01 이후 (협의 가능)'
@@ -418,10 +426,20 @@ def test_detail_move_in_within_and_after_keep_the_bound() -> None:
     assert label('EARLY', '-') is None
     # 이내·이후도 연월만 오면 연월로 낸다. 못 읽는 글자도 협의 가능은 붙인다 (2026-11-16 리뷰)
     assert label('MV003', '202612') == '2026-12 이후'
-    assert label('MID', 'abc', True) == 'abc (협의 가능)'
-    # 꼴만 맞고 없는 날짜는 날짜로 읽지 않고 받은 글자 그대로 둔다 ('0000-00 초순' 을 내지 않는다, 2026-11-17 리뷰)
-    assert label('EARLY', '0000-00-00') == '0000-00-00'
-    assert label('MV002', '2026-02-30') == '2026-02-30'
+    # 못 읽는 날짜는 입주일로 내지 않고 [참고] 안내를 붙인다. 협의 가능이면 '협의 가능' 만 낸다 ('0000-00 초순' 을 내지 않는다, 2026-11-17 리뷰)
+    notes: list[str] = []
+    assert label('MID', 'abc', True, notes) == '협의 가능'
+    assert len(notes) == 1 and "(중순입주, 날짜 'abc')" in notes[0]
+    # 날짜 지정도 연월만 오면 연월로 낸다 (안내 없음)
+    notes = []
+    assert label('MV004', '202612', True, notes) == '2026-12 (협의 가능)'
+    assert notes == []
+    notes = []
+    assert label('EARLY', '0000-00-00', notes=notes) is None
+    assert len(notes) == 1
+    notes = []
+    assert label('MV002', '2026-02-30', notes=notes) is None
+    assert len(notes) == 1
 
 
 def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -> None:
@@ -566,7 +584,11 @@ def test_list_complex_articles_stops_when_cursor_stalls() -> None:
         result = list_complex_articles(client, 100001, limit=90)
     assert _paths(requests) == ['/complex/article/list', '/complex/article/list']
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
-    assert any('중복' in note for note in result.notes)
+    # 되풀이된 쪽은 세지 않고, 더 있다면서 새 매물을 주지 않아 멈췄다고 알린다 ('전부입니다' 가 아니다)
+    assert any(note.startswith('[일부]') and '새 매물을 주지 않아' in note for note in result.notes)
+    assert not any('전부입니다' in note for note in result.notes)
+    # 단지 매물은 이어 받지 않아 has_more 가 받지 않은 매물이 남았다는 뜻이다. [일부] 안내와 같게 true 다
+    assert result.has_more is True
 
 
 # --- 매물 상세 중개보수·세금·시설 글자 ------------------------------------------
@@ -679,7 +701,7 @@ def test_sale_cost_lookup_failure_is_unknown() -> None:
 
 def test_detail_optional_lookup_failure_is_unknown() -> None:
     # 관리비·법정동·단지 조회가 HTTP 오류가 아닌 이유(응답 모양이 바뀜)로 실패해도 상세는 내보내고 그 값만 모름이다
-    broken = ('/article/maintenanceFee', '/legalDivision/infoList', '/complex')
+    broken = ('/article/maintenanceFee', '/article/oldMaintenanceFee', '/legalDivision/infoList', '/complex')
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.removeprefix('/front-api/v1') in broken:
@@ -798,8 +820,9 @@ def test_whole_dong_stops_when_cursor_stalls() -> None:
         result = search_area(client, 37.5, 127.0, legal_division_code='1168010100', sort='랭킹순', limit=120)
     assert len(requests) == 2
     assert [listing.id for listing in result.listings] == ['1000000001', '1000000002']
-    # 끝 문구(더 받을 매물이 남았는지)는 받은 수와 서버 수로 정해져 여기서는 보지 않는다
-    assert any(note.startswith('[제외]') for note in result.notes)
+    # 되풀이된 쪽은 세지 않고, 더 있다면서 새 매물을 주지 않아 멈췄다고 알린다 ('전부입니다' 가 아니다)
+    assert any(note.startswith('[일부]') and '새 매물을 주지 않아' in note for note in result.notes)
+    assert not any('전부입니다' in note for note in result.notes)
 
 
 def _short_page_client(requests: list[httpx.Request], path: str, make_page) -> NaverClient:
@@ -1546,6 +1569,77 @@ def test_result_or_empty_is_success_false_notes_update_hint() -> None:
     assert len(notes) == 1 and notes[0].startswith('[실패] ') and UPDATE_MAYBE_NEEDED in notes[0]
     # notes 가 None 이면 호출부가 스스로 알리는 것이라 안내를 더하지 않는다
     assert result_or_empty(lambda: response, list, notes=None, what='관리비', unknown='') is None
+
+
+def test_pagination_notes_do_not_say_both_all_and_partial() -> None:
+    # 인자는 (total, returned, limit, inspected). 서버가 더 주지 않고 끝났으면 '전부' 와 '[일부]' 를 함께 내지 않는다
+    def notes(total: int, returned: int, limit: int, inspected: int, **kwargs: Any) -> list[str]:
+        kwargs.setdefault('stalled', False)
+        kwargs.setdefault('exhausted', False)
+        return pagination_notes(total, returned, limit, inspected, narrow='조건·지역', **kwargs)
+
+    # 다음 쪽이 있다며 새 항목을 주지 않고 멈췄다 → '없습니다' 없이 확인한 데까지만 알린다
+    stalled = notes(500, 0, 120, 0, stalled=True)
+    assert len(stalled) == 1 and stalled[0].startswith('[일부] ') and '없습니다' not in stalled[0] and '500건' in stalled[0]
+    # 같은 쪽을 되풀이했어도 서버가 센 수를 다 받았으면 멈춘 게 아니라 다 받은 것이다 (판정은 PageScan.stopped_short, 이어 받기는 견주지 않는다)
+    assert not PageScan(limit=120, max_requests=5, received=30, total=30, stalled=True).stopped_short(resumed=False)
+    assert PageScan(limit=120, max_requests=5, received=30, total=500, stalled=True).stopped_short(resumed=False)
+    assert PageScan(limit=120, max_requests=5, received=30, total=30, stalled=True).stopped_short(resumed=True)
+    assert notes(30, 30, 120, 30) == ['조건에 맞는 매물은 이 30건이 전부입니다']
+    # 끝까지 받았는데 서버 수가 더 크면 '전부' 와 [참고]. 반경 검색(total_basis)은 총수가 사각형 기준이라 [참고] 가 없다
+    done = notes(150, 40, 120, 40)
+    assert '전부입니다' in done[0] and done[1].startswith('[참고] ') and len(done) == 2
+    radius = notes(150, 40, 120, 40, total_basis='반경을 감싼 사각형 안')
+    assert len(radius) == 1 and '전부입니다' in radius[0]
+    excluded = notes(150, 30, 120, 40)
+    assert '더 받을 매물 없음' in excluded[0] and excluded[1].startswith('[참고] ') and len(excluded) == 2
+    # 할당량을 다 쓰고 서버 수가 더 크면 [일부]
+    assert '최대값' in notes(1000, 120, 120, 120)[0] and '--limit 을 늘리' in notes(1000, 20, 20, 20)[0]
+    # 이어 받은 결과의 total 은 앞 결과까지 센 수라 [참고] 를 붙이지 않는다
+    assert all(not item.startswith('[참고]') for item in notes(500, 10, 120, 40, resumed=True))
+    # 이어 받다 멈추면 전체 수 대신 이번에 받은 수만 말한다
+    resumed_stalled = notes(500, 10, 120, 10, stalled=True, resumed=True)
+    assert len(resumed_stalled) == 1 and '500건' not in resumed_stalled[0] and '이번에는 10건까지만' in resumed_stalled[0]
+    # 서버가 끝났다고 한 마지막 쪽이 마침 --limit 에 닿았으면 더 있다고 하지 않는다 ([참고] 만, 경계 검색)
+    exhausted = notes(500, 120, 120, 120, exhausted=True)
+    assert len(exhausted) == 1 and exhausted[0].startswith('[참고] ')
+
+
+class _FakePage:
+    """`scan_pages` 가 읽는 것만 가진 가짜 쪽."""
+
+    def __init__(self, items: list[Any], has_next_page: bool = True) -> None:
+        self.items = items
+        self.has_next_page = has_next_page
+        self.total_count = 99
+        self.seed = None
+        self.last_info = None
+
+    def null_items(self, field: str) -> int:
+        return 0
+
+
+def _scan_fake_pages(pages: list[_FakePage], keep: Any) -> PageScan:
+    scan = PageScan(limit=100, max_requests=2)
+    queue = iter(pages)
+    scan_pages(scan, lambda size, seed, last_info: next(queue), keep, page_size=10)
+    return scan
+
+
+def test_scan_pages_counts_pages_without_ids_or_with_only_empty_items() -> None:
+    # 번호를 모르는 항목(keep 이 None)뿐인 쪽은 되풀이인지 알 수 없어 멈추지 않고 센다
+    scan = _scan_fake_pages([_FakePage(['a', 'b']), _FakePage(['c', 'd'])], lambda item: 1 if item in 'ab' else None)
+    assert not scan.stalled and scan.received == 4
+    scan = _scan_fake_pages([_FakePage(['a']), _FakePage(['x', 'y'])], lambda item: None)
+    assert not scan.stalled and scan.received == 3 and scan.truncated
+    # 이미 받은 번호만 되풀이하면 멈춘다
+    scan = _scan_fake_pages([_FakePage(['a']), _FakePage(['a'])], lambda item: item)
+    assert scan.stalled and scan.received == 1
+    # 항목 없이 빈 항목(null)만 있는 쪽은 서버가 센 자리라 null_items 에 세고 멈추지 않는다
+    empty = _FakePage([])
+    empty.null_items = lambda field: 2
+    scan = _scan_fake_pages([_FakePage(['a']), empty], lambda item: item)
+    assert not scan.stalled and scan.received == 3 and scan.null_items == 2
 
 
 def test_real_price_around_km_is_rejected_for_apartment_complex() -> None:

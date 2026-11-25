@@ -1,13 +1,17 @@
 """매물 상세 (listing)."""
 
+from datetime import datetime
+
 from httpx import HTTPStatusError
 from pydantic import Field
 
 from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
+    KST,
     ListingDetail,
     ListingT,
     LookupFailures,
+    iso_date,
     listing_as,
     move_in_label,
     note,
@@ -324,7 +328,13 @@ def detail_to_listing(
     if option_values.get('ELEVATOR') in ('YES', 'NO'):
         elevator = option_values['ELEVATOR'] == 'YES'
 
-    move_in = move_in_label(article.move_in_date, negotiable=bool(article.move_in_date_negotiable))
+    # 당근 웹은 오늘·지난 입주일을 '즉시 입주 가능' 으로 그리고 협의를 붙이지 않는다 (services2 번들 vs, 2026-11-24 확인). 날짜가 없으면 웹은 줄을 그리지 않아 null 그대로다
+    move_in_date = iso_date(article.move_in_date)
+    move_in: str | None
+    if move_in_date is not None and move_in_date <= datetime.now(KST).date().isoformat():
+        move_in = '즉시입주'
+    else:
+        move_in = move_in_label(article.move_in_date, negotiable=bool(article.move_in_date_negotiable))
 
     manage_cost_includes, manage_cost_excludes = _manage_cost_items(article)
     if article.null_items('manage_cost_options'):

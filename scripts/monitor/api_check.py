@@ -267,6 +267,19 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         # address 는 매물 법정동 코드로 법정동 이름을 받는 덤 조회(legalDivision/infoList)라, 실패해도 id 는 있고 address 만
         # null + [실패] 다. id 만 보면 그 고장을 정상으로 넘긴다 (2026-11-20 리뷰)
         Step('매물 상세', ('naver', 'listing'), ('{article}',), 'id', also_expect=('address',)),
+        # 옛 형식 관리비(article/oldMaintenanceFee)는 관리비 정보(article/maintenanceFee)로 칸을 만들지 못하는 매물에서만 더 부른다.
+        # 상가에 그런 매물이 많아 상가 상세로 부른다 (상가 2662726134·2662924651 모두 불렀다, 2026-11-24). 그날 첫 상가가 관리비
+        # 정보로 칸을 만들면 옛 형식은 부르지 않고 지나간다. 요청이 실패하거나 응답 자료형이 바뀌면 [실패] 업데이트 안내로 고장이 된다.
+        # 금액 칸 이름(amount)이 바뀌거나 isSuccess false 가 오면 안내 없이 manage_cost_manwon 만 null 이라 그 칸도 본다. 관리비가
+        # 원래 없는 상가도 있어 비면 고장 대신 확인 못 함이고, 사흘 이어지면 알린다 (직방 덤 조회 단계와 같다, 2026-11-24 리뷰)
+        Step(
+            '상가 매물 동 전체 역삼동', NAVER_LISTINGS, ('역삼동', '-t', '상가', '--limit', '1'), 'listings',
+            (Capture('shop_article', 'listings', 'id'),),
+        ),
+        Step(
+            '상가 매물 상세 (옛 형식 관리비)', ('naver', 'listing'), ('{shop_article}',), 'id',
+            also_expect=('manage_cost_manwon',), may_be_empty=True,
+        ),
         Step('매물 역 반경 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2'), 'listings', (Capture('near_next', '', 'next'),)),
         # 반경 검색은 지도 범위 목록(boundedArticles)의 커서로 이어 받는다
         Step('매물 역 반경 이어 받기 강남역', NAVER_LISTINGS, ('강남역', '--limit', '2', '--next', '{near_next}'), 'listings'),

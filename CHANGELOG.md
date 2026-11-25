@@ -7,6 +7,10 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ### ⚠️ 호환 깨짐
 
+- 네이버 `regions` 에 같은 이름의 동이 여럿인 이름(`신사동`)을 주면 `REGION_AMBIGUOUS` 로 후보를 묻던 것을 바로 `NOT_FOUND`(읍·면·동이라 하위 지역이 없다)로 냄. 동은 하위 지역이 없어 후보를 골라도 목록이 없다
+- 네이버 묶음 매물의 `price_range_manwon`·`deposit_range_manwon`·`rent_range_manwon` 을 네이버가 범위를 주지 않거나 두 끝이 모두 비면(둘 다 `null`, 또는 한 끝은 0 이고 다른 끝은 `null`) 키 없이 내던 것을 `null`(모름)로 냄. 예전에는 키를 지워 중개사마다 호가가 같은 것으로 읽혔다. 한 끝만 `null` 이면 예전처럼 `[null, 330000]` 이고, 한 끝이 0 이고 다른 끝이 수이면 예전처럼 0 을 그대로 낸다 (보증금 0원). 읽는 쪽은 이 키가 `null` 일 때를 처리한다
+- 네이버 `redevelopment --trade` 로 고르지 않은 거래의 호가 범위(`sale_asking_range_manwon`·`jeonse_asking_range_manwon`)를 `null` 대신 키 없이 냄 (`article_counts` 와 같다). 읽는 쪽은 키가 없을 때를 처리한다
+- 네이버 `listing` 의 `move_in` 이 날짜를 읽지 못하면 받은 글자를 그대로 내던 것을 내지 않음. 협의할 수 있으면 `협의 가능`, 아니면 `null` 이고 `notes` 의 `[참고]` 가 입주 유형과 원래 글자를 알린다. 날짜 없이 협의만 가능해도 `협의 가능` 이다 (네이버 웹과 같다). 원래 글자가 필요하면 `url` 에서 본다
 - 네이버 `listing`(상세)과 `search listings` 목록의 매물이 매물 유형에 따라 네이버 웹 상세에 칸이 없는 필드를 `null` 대신 키 없이 냄 (해당 없음. 목록에 없는 필드는 해당하지 않는다). 토지: `room_count`·`bathroom_count`·`room_type`·`direction`·`floor`·`building_floor`·`area_m2`·`area_pyeong`·`supply_area_m2`·`approved_at`·`heating`·`heating_fuel`·`entrance`·`parking`·`elevator`·`options`. 고시원: 토지와 같되 `elevator`·`options` 는 남고 `loan_manwon` 이 빠진다. 재개발: 방·욕실·방 구조·면적. 사무실·상가·지식산업센터: `room_count`·`room_type`. 건물·상가건물·숙박·공장·창고·기타: `room_count`·`room_type`·`floor`·`supply_area_m2`. 매매 세금은 웹이 그리는 것만 내 `property_tax_manwon`·`comprehensive_real_estate_tax_manwon` 은 아파트·재건축·단지형 빌라에만 있고, 원룸·고시원과 일반분양권이 아닌 분양권·오피스텔분양권 매매는 세금 요청을 하지 않아 세 키가 없고, 분양 상태를 모르는 분양권 매매도 세금을 요청하지 않아 `acquisition_tax_manwon` 이 `null` 이다 (두 키는 없다). 직거래 매물은 중개사가 없어 네이버 웹이 중개보수를 보여 주지 않으므로 `agent_fee_manwon`·`agent_fee_individual_check_required` 키가 없고 중개보수 요청도 하지 않는다 (예전에는 금액이 나갔다). 아파트·오피스텔·재건축·분양권 상세의 `parking` 은 매물 값(`가능 (단지 전체 12456대)`) 대신 네이버 웹 단지 칸과 같은 단지 값(`단지 전체 12602대 (세대당 1.32대)`)이고 가능·불가는 붙지 않는다. 같은 상세의 `approved_at` 도 네이버 웹처럼 단지 정보의 사용승인일만 쓴다 (예전에는 매물의 건물 날짜가 있으면 그것을 먼저 썼고, 단지 조회가 실패하면 `null` 이다). `floor` 가 없는 매물은 `floor_number` 도 없다. 이 필드를 늘 있다고 보고 읽던 쪽은 키가 없을 때와 `parking` 에 가능·불가가 없을 때를 처리한다 (#303, #304, #305)
 - 라이브러리로 쓸 때: `core.browser` 의 `BrowserTransport` 는 설정을 `BrowserOptions` 하나로 받고(모두 키워드), `AsyncBrowserTransport` 는 감쌀 `BrowserTransport` 하나를 받는다. `BrowserTransport('naver', url, ready_cookie='NNB')` 는 `BrowserTransport(BrowserOptions(source='naver', entry_url=url, ready_cookie='NNB'))` 로, `AsyncBrowserTransport('naver', url, ready_cookie='NNB')` 는 `AsyncBrowserTransport(BrowserTransport(BrowserOptions(...)))` 로 고친다. 소스 client 의 `browser_transport()`·`async_browser_transport()` 를 쓰면 고칠 것이 없다 (#216)
 - 라이브러리로 쓸 때: `core.browser` 의 `ProxyUnreachableError`·`SHARED_BROWSER_ERRORS` 와 브라우저 transport 의 `no_cors_hosts`(`BaseHTTPClient.browser_no_cors_hosts`)를 뺌. 프록시 오류는 모두 `ProxyError` 로 잡는다. 출처 탭(`no_cors_hosts`)과 소스 간 공통 실패 구분은 쓰던 당근 옛 지역 API·다른 소스로 위치 찾기를 빼 쓰는 곳이 없다 (#215)
@@ -183,6 +187,20 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 
 ### 변경
 
+- 당근 `listing` 의 `move_in` 이 입주일이 오늘(한국 시간)이거나 지난 날이면 `즉시입주` 로 내고 `(협의 가능)` 을 붙이지 않음 (당근 웹과 같다). 날짜가 없으면 `null` 이다
+- 네이버 목록(`search listings`·`search complexes`·`search redevelopment`)이 다음 쪽이 있다면서 새 항목을 주지 않으면 '전부입니다' 대신 `[일부] 네이버가 더 있다면서 새 매물을 주지 않아 N건까지만 받았습니다 (조건에 맞는 매물이 M건). 더 보려면 조건·지역을 좁혀 다시 찾으세요` 로 알림 (이때 매물 목록의 `has_more` 는 `true` 이고, `search listings` 의 지역 검색은 같은 자리에서 다시 멈춰 `next` 가 없다. 네이버가 센 수만큼 받은 뒤 멈췄으면 '전부입니다' 이고 `has_more` 는 `false` 다. 이어 받기는 전체 수 없이 `이번에는 N건까지만 받았습니다`. `--limit` 을 늘리라고 하지 않는다). 번호를 모르는 항목·빈 항목뿐인 쪽은 멈춘 것으로 보지 않고 세고 넘어간다. 경계·단지·구역 검색이 끝까지 받았는데(마지막 쪽이 마침 `--limit` 에 닿은 때 포함) 네이버가 센 수가 더 크면 `[일부]` 가 아니라 `[참고]` 로 알리고 `--limit` 을 늘리라고 하지 않는다
+- 네이버 단지 목록의 `[제외]` 사유가 '단지 정보를 알 수 없는'(반경 검색은 '단지 정보·위치를 알 수 없거나 검색 범위(반경) 밖의') 단지를 뺐다고 알림 (예전에는 '알 수 없는 거래 유형'). 재개발 구역 목록의 반경 사유에는 '위치를 모르는' 이 들어가고, 구역 목록의 `[일부]` 는 경계 검색이면 지역, 반경 검색이면 반경을 좁히라고 알린다 (예전에는 조건·지역, 반경 검색은 조건·반경)
+- 네이버 `listing`·`complex` 의 배정 학교 `assignment` 가 모르는 배정 방식 코드를 `알 수 없는 값 (코드)` 로, `-`·빈 글자는 `null` 로 내고, 이름이 없는 학교는 넣지 않고 `[제외]` 로 알림
+- 네이버 `listing` 의 관리비 합계 금액이 비고 포함 항목만 온 응답에서 `manage_cost_includes` 를 받은 항목 대신 `null` 로 냄 (금액을 모르면 네이버 웹도 그 항목으로 칸을 그리지 않는다)
+- 네이버 `listing` 의 단지 정보 조회 실패 안내가 한 안내 안에 `모름(null)으로 낸 칸: …` 과 `단지 값 없이 낸 칸: …` 을 함께 냄
+- 네이버 `regions`·단지 이름·재개발 구역 이름에 공백뿐인 값을 주면 한국어 `INVALID_ARGUMENT`(`지역 이름이 비었습니다`·`단지 이름이 비었습니다`·`재개발 구역 이름이 비었습니다`)로 알리고, `--complex 0` 사용법 오류가 그 옵션 이름(`--complex`)을 가리킴
+- 네이버 시·도 이름에 `--radius` 를 주면 안내가 '시·군·구가 하나뿐인 시·도(세종)는 그 전체를, 그 밖의 시·도는 기본 반경을 찾는다' 고 알림 (예전에는 구·군·시 문구)
+- 네이버 `trend` 의 범위 안내가 법정동 이름을 모를 때 글자 `None` 대신 `법정동 코드 N` 으로 알리고, 단지 이름으로 찾았을 때는 단지 이름 대신 `address` 로만 법정동을 정함 (`legal_division` 이 `null` 일 수 있다)
+- 네이버 지역·목록 조회 실패 `hint` 가 이름 검색에서만 '이름이 맞는지 확인하세요' 이고 좌표·목록 조회에는 번호를 말하지 않음. `--dong` 의 동 목록이 비었을 때 `hint` 문구도 바뀜
+- 네이버 도움말 몇 곳을 맞춤 (`complex` 의 `pyeong_groups`, `real-price` 요청 수, `regions` 요청 수 1~5회, `legal_division` 예시)
+- 네이버 `listing` 의 `move_in` 이 날짜 지정·모르는 입주 유형에 연월만 오면 `2026-12` 처럼 연월로 내고, 못 읽는 날짜의 `[참고]` 가 입주 유형을 '이내입주'·'중순입주'·'날짜 지정' 처럼 알림
+- 네이버 `regions` 에 읍·면·동 후보를 다 받지 못했을 때(같은 이름 동이 여럿) `REGION_AMBIGUOUS` `hint` 가 '읍·면·동은 하위 지역이 없습니다. 시·도나 시·군·구 이름을 주세요' 로 바뀜
+- 네이버 `listing` 의 `parking` 이 단지형 빌라에서 단지 정보를 받지 못했고 매물 대수가 0 이면 `가능 (단지 전체 0대)` 대신 대수 없이 `가능`·`불가` 만 냄. 단지 세대당 주차 대수는 웹처럼 소수 둘째 자리 아래를 버리고, 버려 0 이 되면(`0.009`) 웹처럼 `세대당 0대` 로 냄 (`1.329` → `1.32`)
 - 분당 요청 상한(`RATE_LIMITED`, reason `budget`)의 `hint` 가 그 옵션이 없는 명령에도 `--limit, --radius` 를 권하던 것을 "조회 범위를 줄이거나 잠시 뒤 다시 시도하세요" 로 바꿈
 - Chromium 을 띄우지 못했을 때(리눅스 밖)의 `hint` 가 `jibsa install-browser` 로 "다시 받아" 보라고 하던 것을 "설치와 실행을 확인" 으로 바꿈 (그 명령은 이미 받은 Chromium 을 다시 받지 않는다)
 - `limits`·`install-browser` 의 `--pretty/--compact` 도움말을 다른 명령과 같게 하고, `--next` 도움말에 이어 받는 동안 바꿀 수 있는 옵션(`--limit`·`--details`·`--fields`)을 적음
@@ -244,6 +262,12 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 ### 수정
 
 - macOS·Linux 설치 스크립트를 설치한 창에서 다시 실행하면, PATH 가 이미 셸 설정 파일에 들어 있는데도 "셸 설정 파일에 PATH 를 넣지 못했다" 며 직접 넣으라고 안내하던 것을 "이미 들어 있다 (새 터미널부터 잡힌다)" 로 고침 (#429)
+- 네이버 `listing` 상세의 `registered_at`·`approved_at` 이 날짜로 읽지 못하는 글자(연월만 등)를 받은 그대로 내던 것을 `null` 로 내고 `notes` 에 `[참고]` 로 원래 글자를 알림. `search listings` 목록의 같은 칸과 단지 쪽 `approved_at` 은 받은 글자 그대로다
+- 네이버 `listing` 이 상가처럼 네이버 관리비 정보(`article/maintenanceFee`)가 없는 매물의 `manage_cost_manwon` 을 `null` 로 내던 문제. 네이버 웹처럼 옛 형식 관리비(총액)를 1회 더 받아 채운다 (상가 2662726134: 60만원). 이때 `manage_cost_includes` 는 `null` 이고, 옛 형식에도 금액이 없으면(토지 등) 둘 다 `null` 이다. 관리비 정보 조회가 실패해(5xx·연결 실패·거절·응답 형식 오류) 옛 형식으로 채웠으면 `notes` 의 `[실패]` 가 `manage_cost_includes` 를 모름이라고 알리고, 옛 형식에도 금액이 없으면 두 칸을 알린다. 상세 요청은 최대 12회다
+- 네이버 `trend` 의 주간 매물 수(`min`·`max`·`latest`)와 `market-price` 의 시세가 소수(평균)나 `null` 로 오면 칸이 `null` 이 되거나 명령이 `PARSE_ERROR` 로 실패하던 것을 받아 그대로 냄. `listing` 의 주변 개발 예정 `distance_m`·`walking_minutes` 도 소수를 받는다
+- 네이버 `complex --pyeong` 의 빌라 단지 안내('빌라 단지는 네이버가 평형 관리비·시세·실거래 요약을 주지 않습니다')가 평형을 여럿 줘도 나옴. 재건축 단계(`reconstruction.steps`)에서 날짜 없는 단계를 빼고, 재건축 `current_step`·평당가 `level` 이 빈 글자로 오면 `null` 로 냄
+- 네이버 `real-price`·`complex` 실거래의 계약일을 읽지 못하면 받은 글자 대신 `null` 로 내고, `category` 가 빈 글자면 `null` 로 냄. `complex` 재건축의 `current_step_date`·단계 `date`(날짜를 읽을 수 없어도 단계는 남는다)·`market_prices[].base_date` 와 `market-price` 의 `points[].base_date` 도 읽을 수 없는 날짜면 `null` 이다
+- 네이버 묶음 매물의 `rent_range_manwon` 을 월세 [최저, 최고] 라고 적던 문서 오류. 보증금이 가장 낮은 매물과 가장 높은 매물의 월세라 `[58, 55]` 처럼 거꾸로일 수 있고, 두 값이 같아 키가 없어도 가운데 매물의 월세는 다를 수 있다 (출력은 그대로)
 - 에러 JSON 의 `candidate_count` 를 모를 때(후보가 다 세어지지 않음) 키째 빼던 것을 문서대로 `null` 로 냄 (예: `jibsa daangn search listings --address 테헤란로`)
 - `--next` 의 조건이 다르다는 에러와 범위 옵션 순서 에러(`--area-min` 이 `--area-max` 보다 큼 등)가 소수를 유효숫자 6자리로 줄여 앞·지금 값이 똑같이 보이던 것을 받은 값 그대로 씀 (`--lat (앞: 37.497942, 지금: 37.497943)`)
 - `--next` 의 조건이 다르다는 에러의 `hint` 가 `--details` 가 없는 명령(네이버 `search listings`, 직방 `search listings apt`)에도 `--details` 를 바꿀 수 있다고 하던 것을 그 명령에 있는 옵션만 적게 고침
@@ -289,8 +313,8 @@ jibsa 의 버전별 변경 기록. 사용자(에이전트 포함)에게 보이�
 - 다방 `trending-complexes` 의 `view_count` 를 조회 수로, `neighborhood` 의 `prices.rank` 를 평균가 순위로만 적던 문서 오류. `view_count` 는 기간 안 조회한 사람 수(다방 화면의 'N명'), `prices.rank` 는 아파트 매매 기준 순위다 (#235)
 - 다방 `search complexes --radius` 도움말이 반경 밖 단지를 뺀다고 하던 문제 (반경을 덮는 사각형을 그대로 받는다). 매물 검색의 방 크기 옵션 도움말이 아파트 공급 평만 적던 것도 고쳐 유형별 기준 면적(원룸·투룸 매물 유형별, 빌라 전용, 오피스텔 계약, 아파트 공급)을 적는다 (#235)
 - 네이버 `listing` 의 `move_in` 이 이내입주·이후입주 매물에 날짜만(`2026-12-01`) 내 '이내' 와 '이후' 가 구분되지 않던 문제. 네이버 매물 화면처럼 `2026-12-01 이내`·`2026-12-01 이후` 로 낸다 (네이버가 연월만 주면 `2026-12 이내`)
-- 네이버 `listing` 의 `move_in` 이 초순·중순·하순 매물에 네이버가 날짜를 비우거나 날짜로 읽을 수 없는 값을 주면 `"  초순"` 같은 글자를 내던 문제. 날짜 지정 매물과 같은 규칙으로 날짜 자리가 `-` 거나 비었으면 `null`, 읽을 수 없으면 받은 글자 그대로 낸다. 꼴만 맞고 달력에 없는 날짜(`0000-00-00`·`2026-02-30`)도 읽을 수 없는 값으로 본다 (예전에는 `0000-00 초순` 을 낼 수 있었다). 네이버가 연월만(`2026-11`) 줘도 `2026-11 초순` 으로 낸다
-- 네이버·당근 `listing` 의 `move_in` 이 날짜로 읽을 수 없는 글자를 그대로 낼 때 협의 가능 매물이어도 ` (협의 가능)` 을 붙이지 않던 문제. 날짜일 때처럼 뒤에 붙인다
+- 네이버 `listing` 의 `move_in` 이 초순·중순·하순 매물에 네이버가 날짜를 비우거나 날짜로 읽을 수 없는 값을 주면 `"  초순"` 같은 글자를 내던 문제. 날짜 지정 매물과 같은 규칙으로 날짜 자리가 `-` 거나 비었으면 `null`, 읽을 수 없으면 입주일로 내지 않는다 (위 호환 깨짐의 `move_in` 항목). 꼴만 맞고 달력에 없는 날짜(`0000-00-00`·`2026-02-30`)도 읽을 수 없는 값으로 본다 (예전에는 `0000-00 초순` 을 낼 수 있었다). 네이버가 연월만(`2026-11`) 줘도 `2026-11 초순` 으로 낸다
+- 당근 `listing` 의 `move_in` 이 날짜로 읽을 수 없는 글자를 그대로 낼 때 협의 가능 매물이어도 ` (협의 가능)` 을 붙이지 않던 문제. 날짜일 때처럼 뒤에 붙인다
 - 네이버 `regions` 가 같은 이름의 시·군·구를 검색창 첫 쪽(다섯 곳)만 보고 세어, 여섯 곳 이상이면 `5곳입니다` 로 단정하고 첫 쪽에 하나뿐이면 다음 쪽을 보지 않고 고를 수 있던 문제. 이름이 맞는 곳이 첫 쪽 끝까지 이어지면 다음 쪽을 최대 2회 더 받아 센다 (`중구`·`동구` 는 요청 1회 더)
 - 네이버 `listing` 이 네이버가 관리비 '없음' 으로 보여 주는 매물의 `manage_cost_manwon`·`manage_cost_includes` 를 모름(`null`)으로 내던 문제. `0`·`[]` 로 낸다 (관리비를 확인할 수 없는 다른 사유는 그대로 `null`)
 - 로컬 폴더·파일에서 설치한 jibsa(`uv tool install .`·`pip install .`)가 같은 버전 번호로 코드만 바꿔 다시 설치해도 그 전에 받은 `next` 를 받아, 위치 꼴이 바뀐 명령이 엉뚱한 오류를 내거나 앞 결과와 겹쳐 이어 받을 수 있던 문제. 이제 `다른 버전의 jibsa 가 만든 next` 로 멈춰 처음부터 다시 찾게 한다. `jibsa --version` 출력은 그대로다

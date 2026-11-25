@@ -170,10 +170,6 @@ class NaverSchoolDetail(BaseModel):
         return data
 
 
-def school_url(school_code: str) -> str:
-    return f'https://fin.land.naver.com/schools/elementary/{school_code}'
-
-
 def _assigned_dongs(is_all_assigned: bool | None, groups: list[list[str]] | None) -> list[str] | None:
     """사이트(`formatAssignedDong`)처럼 배정 동 글자를. 전체 배정이면 ['전체 동'], 아니면 묶음마다 첫~끝 동 ('101동~105동').
 
@@ -271,7 +267,7 @@ def get_school(
         all_dongs_assigned=all_assigned,
         assigned_dongs=assigned,
         notes=notes,
-        url=school_url(school.school_code),
+        url=f'https://fin.land.naver.com/schools/elementary/{school.school_code}',
     )
 
 

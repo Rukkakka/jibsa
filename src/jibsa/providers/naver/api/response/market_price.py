@@ -19,11 +19,11 @@ class NaverMarketPriceHistoryModel(NaverBaseResponseModel):
         Field(description='제공처 (kab 한국부동산원, kbstar KB부동산, neonet 부동산뱅크)')
     ] = None
     deal_prices: Annotated[
-        dict[str, int | None],
+        dict[str, int | float | None],
         Field(description='기준일별 매매 시세 평균', alias='dealPrices')
     ] = {}
     deposit_prices: Annotated[
-        dict[str, int | None],
+        dict[str, int | float | None],
         Field(description='기준일별 전세 시세 평균', alias='depositPrices')
     ] = {}
     deal_price_ranges: Annotated[

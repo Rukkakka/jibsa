@@ -15,6 +15,7 @@ from jibsa.core.errors import (
     RegionNotFoundError,
 )
 from jibsa.core.korean import (
+    is_district_code,
     is_dong_code,
     is_province_code,
     particle,
@@ -205,6 +206,7 @@ def _find_legal_division(
             NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel(keyword=query)
         ),
         '지역 검색',
+        hint='이름이 맞는지 확인하세요',
     )
     # 좌표 없는 후보도 센다. 먼저 빼면 웹에는 후보가 둘인데 하나가 좌표 없을 때 남은 하나를 '하나뿐' 으로 골라 버린다
     items = page.items or []
@@ -342,6 +344,7 @@ def _find_subway_station(
                 NaverSearchAutocompleteSubwayStationsV1RequestParameterModel(keyword=query, page=number)
             ),
             '역 검색',
+            hint='이름이 맞는지 확인하세요',
         )
 
     page = fetch(0)
@@ -412,6 +415,7 @@ def _search_complexes(
             NaverSearchAutocompleteComplexesV1RequestParameterModel(keyword=keyword)
         ),
         '단지 검색',
+        hint='이름이 맞는지 확인하세요',
     )
     return page.items or [], page.total_count, page.has_next_page, page.null_items('items')
 
@@ -576,6 +580,7 @@ def _search_address(client: NaverClient, query: str) -> tuple[list[NaverAddressM
     result = unwrap(
         client.run_request_maps_search_address_v1(NaverMapsSearchAddressV1RequestParameterModel(query=query)),
         '주소 검색',
+        hint='이름이 맞는지 확인하세요',
     )
     block = result.road_address if result.type == 'road-address' else result.jibun_address
     if block is None:
@@ -651,6 +656,7 @@ def _check_ga_dongs(
                 NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel(keyword=base)
             ),
             '지역 검색',
+            hint='이름이 맞는지 확인하세요',
         )
         if notes is not None and page.null_items('items'):
             notes.append(null_items_note('네이버 법정동 자동완성', page.null_items('items')))
@@ -714,6 +720,10 @@ def _find_address(
     Raises:
         RegionAmbiguousError: 같은 이름의 동·주소가 여러 곳일 때 (신사동 3곳, 중앙동 1 은 21곳, 송정 15곳), '○가' 로
             나뉜 동의 앞 이름일 때 (성수동 → 성수동1가·성수동2가, 충정로 → 중구 충정로1가·서대문구 충정로2가·3가).
+
+    리뷰 오탐 (2026-11-24): 시·군·구 이름(서초·송파)은 주소 검색이 같은 이름 동까지 total 2곳 이상으로 줘 위에서
+    REGION_AMBIGUOUS 로 멈추고, 대표 한 곳만 주는 것은 동 이름 일부('송정')라 이름 전체로 다시 묻는다. 분당은 같은 이름
+    법정동이 없어 하나로 정해진다 (2026-11-24 리뷰 오탐 실측).
     """
     items, total = _search_address(client, query)
     if not items:
@@ -870,6 +880,8 @@ def resolve_complex_number(client: NaverClient, name: str) -> tuple[int, bool | 
         JibsaError: 단지를 찾지 못하면 NOT_FOUND.
         RegionAmbiguousError: 후보가 여럿이라 정할 수 없을 때. 후보에 단지 번호를 붙여 번호로 다시 묻게 한다.
     """
+    if not name.strip():
+        raise JibsaError(code='INVALID_ARGUMENT', message='단지 이름이 비었습니다', hint='단지 번호나 이름을 주세요')
     items, total, has_next_page, dropped = _search_complexes(client, name)
     if not items:
         raise JibsaError(
@@ -928,11 +940,14 @@ def resolve_redevelopment_number(client: NaverClient, name: str) -> tuple[int, l
         JibsaError: 이름에 맞는 구역이 없으면 NOT_FOUND (단지 이름과 같다. 구역 번호로 조회하는 명령에서 없는 번호가 NOT_FOUND 인 것과 같은 코드).
         RegionAmbiguousError: 후보가 여럿이라 정할 수 없을 때. 후보에 구역 번호를 붙여 번호로 다시 묻게 한다.
     """
+    if not name.strip():
+        raise JibsaError(code='INVALID_ARGUMENT', message='재개발 구역 이름이 비었습니다', hint='재개발 구역 번호나 이름을 주세요')
     page = unwrap(
         client.run_request_search_autocomplete_redevelopment_areas_v1(
             NaverSearchAutocompleteRedevelopmentAreasV1RequestParameterModel(keyword=name)
         ),
         '재개발 구역 검색',
+        hint='이름이 맞는지 확인하세요',
     )
     items = page.items or []
     if not items:
@@ -979,7 +994,7 @@ def legal_division_code_at(client: NaverClient, lat: float, lng: float) -> tuple
     # 실패 봉투(isSuccess false)는 실측으로 재현되지 않았다. 다른 엔드포인트처럼 실패 봉투가 오면 법정동 없음으로 보지 않는다
     if response.is_success and response.result is None:
         return None
-    division = unwrap(response, '좌표의 법정동')
+    division = unwrap(response, '좌표의 법정동', hint=None)
     if not division.legal_division_number:
         return None
     return division.legal_division_number, division.legal_division_name
@@ -1085,7 +1100,7 @@ def _sub_regions_response(
 
 def _sub_regions(client: NaverClient, level: Literal['GUN', 'EUP'], code: str) -> list[NaverLegalDivisionInfoModel]:
     """하위 지역 목록. 실패하면 예외다."""
-    return unwrap(_sub_regions_response(client, level, code), '하위 지역')
+    return unwrap(_sub_regions_response(client, level, code), '하위 지역', hint=None)
 
 
 def _city_districts(sub_regions: list[NaverLegalDivisionInfoModel], city_code: str) -> list[NaverLegalDivisionInfoModel]:
@@ -1151,8 +1166,16 @@ def only_district_of_province(client: NaverClient, sido_code: str) -> tuple[str,
     return None if only is None else (only.legal_division_number, only.legal_division_name or only.legal_division_number)
 
 
+def _is_district_level(item: NaverAutocompleteLegalDivisionModel) -> bool:
+    """자동완성 항목이 시·군·구인지. 단위(`legal_division_level_type`)가 있으면 그것, null 이면 법정동 코드가 시·군·구인지로 본다."""
+    if item.legal_division_level_type is not None:
+        return item.legal_division_level_type == 'GUN'
+    code = item.legal_division_number
+    return is_district_code(code)
+
+
 def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionList:
-    """지역 하나의 바로 아래 지역 (2~3회 호출). 지역을 주지 않으면 시·도 전체 (1회 호출).
+    """지역 하나의 바로 아래 지역 (요청 1~5회: 시·도 목록 1회, 이름을 주면 자동완성 첫 쪽 1회에 같은 이름이 첫 쪽을 채우면 다음 쪽 최대 2회, 하위 지역 1회). 지역을 주지 않으면 시·도 전체 (1회).
 
     시·도 이름(서울, 경기도, 충북)이면 시·군·구, 시·군·구 이름(강남구, 부산시 중구)이면 읍·면·동을 준다. 시·군·구가 하나뿐인
     세종(세종·세종시)은 그 아래 읍·면·동을 준다.
@@ -1160,11 +1183,18 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
 
     Raises:
         RegionNotFoundError: 지역을 찾지 못했을 때.
-        JibsaError: 읍·면·동처럼 하위 지역이 없는 단위면 NOT_FOUND.
+        JibsaError: 읍·면·동처럼 하위 지역이 없는 단위면 NOT_FOUND. 이름이 공백뿐이면 INVALID_ARGUMENT.
     """
+    if query is not None and not query.strip():
+        raise JibsaError(
+            code='INVALID_ARGUMENT',
+            message='지역 이름이 비었습니다',
+            hint='시·도(서울, 경기도)나 시·군·구(강남구) 이름을 주거나, 이름 없이 불러 시·도 목록을 보세요',
+        )
     provinces = unwrap(
         client.run_request_legal_division_info_list_by_level_v1(NaverLegalDivisionInfoListByLevelV1RequestParameterModel()),
         '시·도 목록',
+        hint=None,
     )
     if query is None:
         return NaverRegionList(regions=[_region_entry(item, item.city_full_name) for item in provinces])
@@ -1178,7 +1208,7 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         assert name is not None
         # 하위 지역 목록과, 그 목록에서 빈 항목(null)을 빼고 읽은 수. 실패하면 예외다
         response = _sub_regions_response(client, 'GUN', province.legal_division_number)
-        children, dropped = unwrap(response, '하위 지역'), response.null_items('result')
+        children, dropped = unwrap(response, '하위 지역', hint=None), response.null_items('result')
         notes = [
             f"{name} 의 하위 지역입니다. 네이버 시·도 목록에는 옛 이름 '{query}' 대신 {name} 만 있습니다"
             + (f'. {FORMER_PROVINCE_NAME_HINTS[query]}' if query in FORMER_PROVINCE_NAME_HINTS else '')
@@ -1216,6 +1246,7 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
                 NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel(keyword=keyword, page=number)
             ),
             '지역 검색',
+            hint='이름이 맞는지 확인하세요',
         )
 
     def is_exact(item: NaverAutocompleteLegalDivisionModel) -> bool:
@@ -1239,7 +1270,7 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         under = next(
             (
                 item for item in items
-                if item.legal_division_level_type == 'GUN' and city_words(item)[-len(query_words):] == query_words
+                if _is_district_level(item) and city_words(item)[-len(query_words):] == query_words
             ),
             None,
         )
@@ -1256,26 +1287,31 @@ def list_regions(client: NaverClient, query: str | None = None) -> NaverRegionLi
         return NaverRegionList(parent=' '.join(parent), regions=entries, notes=null_notes)
 
     # 시·군·구를 먼저 본다 (하위 지역이 있는 쪽)
-    exact.sort(key=lambda item: item.legal_division_level_type != 'GUN')
+    exact.sort(key=lambda item: not _is_district_level(item))
     best = exact[0]
+    notes = null_notes
+    if not _is_district_level(best) and not incomplete:
+        # 읍·면·동은 같은 이름이 여럿이어도 하위 지역이 없어 후보를 묻지 않고 알린다 (신사동: 은평구·강남구, 2026-11-24).
+        # 여럿이면 그중 한 곳을 고른 것처럼 보이지 않게 받은 이름으로 말한다
+        name = best.legal_division_name if len(exact) == 1 else query
+        raise JibsaError(
+            code='NOT_FOUND',
+            message=f"{quoted(name, '은/는')} 읍·면·동이라 하위 지역이 없습니다",
+            hint='시·도(서울, 경기도)나 시·군·구(강남구) 이름을 주세요. 동은 search listings 등에 바로 넣으면 됩니다',
+        )
     same = [
         item.legal_division_name or item.legal_division_number for item in exact
-        if item.legal_division_level_type == best.legal_division_level_type
+        if _is_district_level(item) == _is_district_level(best)
     ]
     if len(same) > 1 or incomplete:
         # 첫 곳으로 고르면 다른 곳의 동 목록이 나온다. search listings 처럼 후보를 알리고 멈춘다 (2026-10-15).
         # 쪽 상한에 닿아 다 받지 못했으면 하나뿐이어도 고르지 않고 수는 모름이다
         candidates = [normalize_address(name) or name for name in same[:MAX_CANDIDATE_NOTES]]
+        # 고른 곳이 읍·면·동이면(다 받지 못해 `incomplete` 일 때만 온다) 시·도를 붙여도 바로 NOT_FOUND 라 예시를 주지 않는다
         raise RegionAmbiguousError(
             query, candidates, None if incomplete else len(same),
-            hint=f"시·도 이름을 붙여 다시 주세요 (예: '{candidates[0]}')",
-        )
-    notes = null_notes
-    if best.legal_division_level_type != 'GUN':
-        raise JibsaError(
-            code='NOT_FOUND',
-            message=f"{quoted(best.legal_division_name, '은/는')} 읍·면·동이라 하위 지역이 없습니다",
-            hint='시·도(서울, 경기도)나 시·군·구(강남구) 이름을 주세요. 동은 search listings 등에 바로 넣으면 됩니다',
+            hint=f"시·도 이름을 붙여 다시 주세요 (예: '{candidates[0]}')" if _is_district_level(best)
+            else '읍·면·동은 하위 지역이 없습니다. 시·도(서울, 경기도)나 시·군·구(강남구) 이름을 주세요. 동은 search listings 등에 바로 넣으면 됩니다',
         )
     return NaverRegionList(
         parent=normalize_address(best.legal_division_name),

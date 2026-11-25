@@ -93,15 +93,15 @@ class NaverListingCountTrend(BaseModel):
         Field(description='기간 평균 매물 수')
     ] = None
     latest: Annotated[
-        int | None,
+        int | float | None,
         Field(description='최근 주 매물 수')
     ] = None
     min: Annotated[
-        int | None,
+        int | float | None,
         Field(description='기간 중 가장 적은 주')
     ] = None
     max: Annotated[
-        int | None,
+        int | float | None,
         Field(description='기간 중 가장 많은 주')
     ] = None
     change_rate_pct: Annotated[
@@ -235,6 +235,8 @@ def get_district_trend(
             message='네이버 동네 추이를 받지 못했습니다',
             hint='법정동·구 이름으로 다시 찾거나 잠시 뒤 다시 시도하세요',
         )
+    # 리뷰 오탐 (2026-11-24): 0 평당가를 null 로 바꾸지 않는다. 서버는 값 없는 주를 null 로 주고(청운동 52주), 0 이 오는 구 있는 시는 cli `_trend_district` 가
+    # REGION_AMBIGUOUS 로 막거나 확인 실패 [실패] 안내로 알리고, 리 코드는 같은 함수가 읍·면 법정동으로 바꾼다
     price_weekly = [
         NaverWeeklyPrice(week_start=point.first_day_of_week, price_per_pyeong_manwon=won_to_manwon(point.average_pyeong_price))
         for point in prices or []

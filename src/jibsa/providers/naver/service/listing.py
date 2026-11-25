@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from jibsa.core.errors import ListingUnavailableError
+from jibsa.core.korean import particle
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
@@ -44,6 +45,7 @@ from jibsa.providers.naver.api.request.listing import (
     NaverArticleBasicInfoV1RequestParameterModel,
     NaverArticleKeyV1RequestParameterModel,
     NaverArticleMaintenanceFeeV1RequestParameterModel,
+    NaverArticleOldMaintenanceFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
     NaverComplexArticleListV1RequestPayloadModel,
     NaverComplexBuildingRegistrationV1RequestParameterModel,
@@ -59,12 +61,14 @@ from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
     NaverComplexModel,
     NaverFacilityInfoModel,
+    NaverResponseModel,
 )
 from jibsa.providers.naver.api.response.listing import (
     NaverArticleBasicInfoModel,
     NaverArticleDetailInfoModel,
     NaverArticleKeyModel,
     NaverArticleMaintenanceFeeModel,
+    NaverArticleOldMaintenanceFeeModel,
     NaverDevelopmentArticleModel,
     NaverMovingInInfoModel,
     NaverPriceInfoModel,
@@ -79,6 +83,7 @@ from jibsa.providers.naver.service.common import (
     NOT_APPLICABLE_FIELDS_BY_TYPE,
     OFFICETEL_CODE,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
+    OPTIONAL_LOOKUP_ERRORS,
     PROPERTY_NAME_BY_CODE,
     TRADE_CODE_BY_NAME,
     TRADE_NAME_BY_CODE,
@@ -531,7 +536,7 @@ def _surroundings(client: NaverClient, article_number: str, key: NaverArticleKey
         unknown='모름(null)으로 낸 칸: schools',
     )
     if schools is not None:
-        result['schools'] = assigned_schools(schools)
+        result['schools'] = assigned_schools(schools, notes)
     return result
 
 
@@ -555,11 +560,11 @@ class NaverNearbyRail(BaseModel):
         Field(description="개통 예정 연도 (서버 글자 그대로: '2027'). 없으면 null")
     ] = None
     distance_m: Annotated[
-        int | None,
+        int | float | None,
         Field(description='매물에서의 거리 (m)')
     ] = None
     walking_minutes: Annotated[
-        int | None,
+        int | float | None,
         Field(description='도보 시간 (분)')
     ] = None
 
@@ -855,7 +860,7 @@ def list_complex_articles(
     빌라 단지(A05·A06·A07)는 아파트 단지 목록이 0건으로 오므로, 첫 페이지가 비면 빌라 단지 목록으로
     다시 묻는다 (매물이 없는 아파트 단지도 한 번 더 묻고, 빌라 쪽이 실패하면 0건이다. `villa` 를 주었거나
     동 목록을 조회했으면 단지 종류를 이미 알아 다시 묻지 않는다). 요청은 `MAX_COMPLEX_ARTICLE_PAGE_REQUESTS` 회에서
-    멈추고 `notes` 로 알린다. 처음 보는 매물이 없는 페이지가 오면 커서가 멈춘 것으로 보고 끝낸다.
+    멈추고 `notes` 로 알린다. 다음 쪽이 있다는데 준 매물이 모두 이미 받은 것이거나 쪽이 비면 커서가 멈춘 것으로 보고 끝낸다.
     평형 번호를 주었는데 0건이면 평형 목록으로 번호를 확인한다 (1~2회 추가, 아파트로 정해지면 빌라 목록은 묻지 않는다).
     단지 종류를 모른 채 0건이면 단지 정보로 단지가 있는지 확인한다 (1~2회 추가).
 
@@ -888,9 +893,11 @@ def list_complex_articles(
         # 경우라 따로 알리지 않는다
         if last_info is not None and not isinstance(last_info, list):
             return None
-        # lastInfo 가 비었으면 첫 쪽으로 본다. 리뷰 오탐 (2026-10-19, 근거 고침 2026-11-20): 첫 쪽 요청은 jibsa 가 `last_info=[]` 로
-        # 보내므로, 서버가 다음 커서로 [] 를 줬다면 다음 요청은 서버에게도 첫 쪽 요청과 같다. 같은 쪽이 다시 오면 새 매물 번호가 없어
-        # `scan_pages` 가 멈추고 (common.py `new_ids` 가 비면 중단), 빈 쪽이어도 멈춘다. 그래서 어떤 응답에서도 끝없이 돌거나 중복이
+        # lastInfo 가 비었으면 첫 쪽으로 본다. 리뷰 오탐 (2026-10-19, 근거 고침 2026-11-20·2026-11-25): 첫 쪽 요청은 jibsa 가 `last_info=[]` 로
+        # 보내므로, 서버가 다음 커서로 [] 를 줬다면 다음 요청은 서버에게도 첫 쪽 요청과 같다. 같은 쪽이 다시 오면 새 매물 번호가 없고,
+        # `scan_pages` 는 다음 쪽이 있다는데 새 번호가 없고 번호를 모르는 항목·빈 항목도 없으면 `stalled` 로 멈춰 `[일부]`·`has_more: true` 로
+        # 알린다 (다음 쪽이 있다는 빈 쪽도 같다. 마지막 쪽이 비면 정상 종료). 번호를 모르는 항목·빈 항목이 섞이면 세고 넘어가 요청 상한에서
+        # 멈춘다. 그래서 어떤 응답에서도 끝없이 돌거나 중복이
         # 나오지 않고, 드는 것은 빌라 목록 요청 한 번 정도다. 2026-10-19 실측은 덧붙임이다 (헬리오시티 단지 번호로 랭킹순 4쪽·최신순
         # 월세 4쪽 모두 값이 든 리스트)
         first = not last_info
@@ -953,14 +960,17 @@ def list_complex_articles(
     notes += group_sort_notes(sort_type, result)
     # 단지 하나라 지역 대신 단지 매물의 조건만 좁히라고 한다 (직방·다방 단지 매물과 같다)
     notes += pagination_notes(
-        total, len(result), limit, inspected, truncated=truncated, null_items=scan.null_items, narrow='거래 유형·평형·동·가격 조건',
+        total, len(result), limit, inspected, truncated=truncated, null_items=scan.null_items,
+        stalled=scan.stopped_short(resumed=False), exhausted=scan.exhausted,
+        narrow='거래 유형·평형·동·가격 조건',
     )
     notes += scan_null_items_notes(scan, '네이버 단지 매물')
     return NaverListingsResult(
         total=total,
         returned=len(result),
-        # 단지 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다
-        has_more=scan.cursor is not None,
+        # 단지 매물은 이어 받지 않는다 (next 없음). 더 있는지만 알린다. 네이버가 더 있다면서 새 매물을 주지 않아 멈췄어도(stalled)
+        # 네이버가 센 수를 다 받았으면 false, 덜 받았으면 [일부] 안내와 같게 true 다 (2026-11-24 리뷰)
+        has_more=scan.cursor is not None or scan.stopped_short(resumed=False),
         listings=result,
         notes=notes,
     )
@@ -988,13 +998,14 @@ def _year_month(value: str | None) -> str | None:
     return f'{match.group(1)}-{match.group(2)}'
 
 
-def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
+def _move_in_label(moving: NaverMovingInInfoModel | None, notes: list[str]) -> str | None:
     """입주 시기 코드를 읽을 수 있는 문구로 바꾼다.
 
     이내입주('MV002')·이후입주('MV003')는 날짜 뒤에 '이내'·'이후' 를 붙인다 (웹과 같다). 날짜 지정('MV004')·모르는 코드는
-    날짜만 쓰고, 날짜도 없으면 모름(None)이다. 코드('MV004')를 그대로 내보내지 않는다. 초순·중순·하순과 이내·이후는 연월만
-    와도 만든다 ('2026-12 초순'·'2026-12 이내'. 이내·이후는 전체 날짜면 '2026-12-01 이내'). '-'·빈 날짜는 모름(None)이고,
-    못 읽는 글자는 받은 그대로 둔다.
+    날짜만 쓰고, 연월만 오면 연월('2026-12')을 쓴다. 코드('MV004')를 그대로 내보내지 않는다. 초순·중순·하순과 이내·이후는 연월만
+    와도 만든다 ('2026-12 초순'·'2026-12 이내'. 이내·이후는 전체 날짜면 '2026-12-01 이내'). 날짜가 없으면('-'·빈 글자)
+    웹처럼 협의 가능일 때만 '협의 가능', 아니면 모름(None)이다. 날짜는 있는데 못 읽으면 같은 값을 내고 `notes` 에 `[참고]` 안내를 붙인다
+    (못 읽는 글자를 입주일로 내지 않는다).
     """
     if moving is None:
         return None
@@ -1011,7 +1022,30 @@ def _move_in_label(moving: NaverMovingInInfoModel | None) -> str | None:
         return with_negotiable(f'{month} {MOVING_IN_PERIOD_LABELS[code]}', negotiable)
     if code in MOVING_IN_BOUND_LABELS and month is not None:
         return with_negotiable(f'{day or month} {MOVING_IN_BOUND_LABELS[code]}', negotiable)
-    return move_in_label(MOVING_IN_LABELS.get(code, date), negotiable=bool(negotiable))
+    if code in MOVING_IN_LABELS:
+        return move_in_label(MOVING_IN_LABELS[code], negotiable=bool(negotiable))
+    if date is None:
+        return '협의 가능' if negotiable else None
+    if day is None and month is None:
+        if code in MOVING_IN_BOUND_LABELS:
+            kind = f'{MOVING_IN_BOUND_LABELS[code]}입주'
+        elif code == 'MV004':
+            kind = '날짜 지정'
+        else:
+            kind = f'{MOVING_IN_PERIOD_LABELS[code]}입주' if code in MOVING_IN_PERIOD_LABELS else f'입주 유형 {code}' if code else '입주 유형 모름'
+        notes.append(note('참고', f"네이버가 준 입주일을 읽지 못했습니다 ({kind}, 날짜 '{date}'). url 의 매물 화면에서 확인하세요"))
+        return '협의 가능' if negotiable else None
+    return move_in_label(day or month, negotiable=bool(negotiable))
+
+
+def _readable_date(value: str | None, what: str, notes: list[str]) -> str | None:
+    """`normalize_date` 를 거친 날짜 글자를 `YYYY-MM-DD` 로 낸다. 읽지 못하는 글자(연월만 등)는 모름(None)이고 `notes` 에 `[참고]` 안내로 원래 글자를 알린다."""
+    if value is None:
+        return None
+    date = iso_date(value)
+    if date is None:
+        notes.append(note('참고', f"네이버가 준 {what}{particle(what, '을/를')} 읽지 못했습니다 ('{value}'). url 의 매물 화면에서 확인하세요"))
+    return date
 
 
 def _manage_cost_item_label(code: str) -> str:
@@ -1031,8 +1065,9 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None, notes: list[str]) 
     정액으로 내는 관리비가 0원이고 공과금은 따로 낸다는 뜻이라 모름(None)이 아니다 (docs/naver.md 의 manage_cost_includes 설명과 같은 규칙).
     미확인('03')은 etcDetail·fixNonDetailList 가 null 이고 uncheckDetail 로 사유가 와서 대개 모름이다 (빌라 2654619539·
     2653716463, 2026-10-11). 다만 사유가 '99'(없음)이면 웹이 관리비 '없음' 으로 보여 주므로 0만원·[] 이다 (직방의 '관리비
-    없음' 과 같은 꼴, 웹 번들 getMaintenanceFeeLabel 대조 2026-11-16). 다른 사유('01'~'04')·사유 없음은 웹도 '확인 어려움'
-    이라 모름이다. 그래서 금액은 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
+    없음' 과 같은 꼴, 웹 번들 getMaintenanceFeeLabel 대조 2026-11-16). 다른 사유('01'~'04')는 웹도 '확인 어려움' 이라 모름이다.
+    사유가 없으면 웹이 옛 형식 관리비로 넘어가(`_has_fee_cell` 이 False) 호출부가 옛 형식 금액을 쓰고, 거기에도 금액이 없으면
+    모름이다. 그래서 금액은 typeCode 를 따로 보지 않고 값이 온 키로 정한다. 세 키(etcDetail·fixNonDetailList·fixDetailList)
     중 하나만 오고 나머지는 null 이라(신림동 월세 29건: '04' 18·'02' 10·'01' 1, 2026-10-11) 객체가 있는지만 본다.
     금액 없는 빈 etcDetail 이 다른 키와 함께 오는 응답은 없었다.
     항목별형 목록에서 빈 항목(null)을 빼고 읽었으면 합계도 포함 항목도 모자랄 수 있어 둘 다 모름(None)이고 `notes` 에 `[제외]` 안내를 붙인다.
@@ -1040,7 +1075,9 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None, notes: list[str]) 
     if fee is None:
         return None, None
     summary = fee.etc_detail or fee.fix_non_detail_list
-    if summary is not None:
+    # 합계 객체는 금액이 수일 때만 쓴다. 금액이 없으면 웹도 이 값으로 칸을 그리지 않고 옛 형식 관리비로 넘어가므로(`_has_fee_cell`)
+    # 포함 항목만 내지 않는다 (2026-11-24 리뷰: 금액 null·항목 목록이 온 응답에서 항목만 나가고 [실패] 안내와 어긋났다)
+    if summary is not None and summary.amount is not None:
         codes = summary.category_list
         includes = None if codes is None else [_manage_cost_item_label(code) for code in codes]
         return won_to_manwon(summary.amount), includes
@@ -1057,11 +1094,28 @@ def _manage_cost(fee: NaverArticleMaintenanceFeeModel | None, notes: list[str]) 
     return None, None
 
 
+def _has_fee_cell(fee: NaverArticleMaintenanceFeeModel | None) -> bool:
+    """웹이 maintenanceFee 만으로 '관리비' 칸을 그리는 응답인가 (`_manage_cost` 의 갈래와 같다).
+
+    미확인('03')이면서 사유(uncheckDetail.type)가 있으면 사유 글자, 항목별형은 fixDetailList(빈 항목을 뺐으면 그 자리)가 있으면 합계,
+    합계형('02')·정액 합계형('04')은 금액이 수일 때다. 못 만들면 웹은 옛 형식 관리비(`oldMaintenanceFee`)로 넘어간다.
+    """
+    if fee is None:
+        return False
+    if fee.type_code == '03' and fee.uncheck_detail is not None and fee.uncheck_detail.type:
+        return True
+    summary = fee.etc_detail or fee.fix_non_detail_list
+    if summary is not None and summary.amount is not None:
+        return True
+    return bool(fee.fix_detail_list) or bool(fee.null_items('fix_detail_list'))
+
+
 def _parking_label(facility: NaverFacilityInfoModel | None, in_complex: bool) -> str | None:
     """매물 상세(facilityInfo)의 주차 가능 여부와 총 주차 대수를 문구로 만든다 ('불가 (총 4대)', '단지 전체 398대').
 
     아파트·오피스텔·재건축·분양권(`COMPLEX_INFO_TYPES`)은 웹이 매물 주차 값을 쓰지 않아 이 함수를 거치지 않고, 단지형 빌라는
-    매물 대수가 0 보다 클 때와 단지 조회가 실패했을 때만 이 함수를 쓴다 (`_facility_values`).
+    매물 대수가 0 보다 클 때만 이 함수를 쓴다 (`_facility_values`). 단지 조회가 실패했고 매물 대수가 0 이거나 없으면
+    이 함수를 거치지 않고 가능 여부만 낸다.
     건축물대장 유형(원룸·빌라·단독 등 `BUILDING_REGISTRATION_TYPES`)은 `_building_parking` 으로 가 이 함수를 거치지 않는다.
     이 함수는 단지형 빌라와, 마지막 갈래에 오는 단지 번호 없는 단지 유형·토지·고시원 등이 쓴다.
     대수가 있어도 이 매물은 주차 불가일 수 있어(2026-10-10 실측: 총 6대·불가) 가능 여부를
@@ -1095,7 +1149,7 @@ def _complex_overview(
             ),
             notes=notes,
             what='단지 정보',
-            unknown='단지 값 없이 낸 칸: approved_at, heating, heating_fuel, parking',
+            unknown='모름(null)으로 낸 칸: approved_at, parking. 단지 값 없이 낸 칸: heating, heating_fuel',
         )
     if real_estate_type in VILLA_COMPLEX_CODES:
         return result_or_none(
@@ -1104,7 +1158,7 @@ def _complex_overview(
             ),
             notes=notes,
             what='단지 정보',
-            unknown='단지 값 없이 낸 칸: heating, heating_fuel, parking',
+            unknown='모름(null)으로 낸 칸: heating, heating_fuel. 단지 값 없이 낸 칸: parking',
         )
     return None
 
@@ -1168,7 +1222,8 @@ class _FacilityValues(NamedTuple):
 def _complex_parking_text(complex_: NaverComplexModel | None, *, with_parentheses: bool) -> str | None:
     """단지 주차 대수 글자 ('단지 전체 12602대 (세대당 1.32대)'). 대수를 모르거나 단지 조회가 실패했으면 None.
 
-    세대당 대수는 불필요한 0 없이 낸다 (1.32·0.5). 세대당 대수가 없으면 대수만. `with_parentheses` 가 거짓이면 가능 여부 뒤 괄호 안에
+    세대당 대수는 불필요한 0 없이 낸다 (1.32·0.5). 버려 0 이 되는 값(0.009)·0 은 '세대당 0대' 로 낸다 (웹 단지 쪽은 0 이어도 붙이고,
+    건축물대장 쪽 `_building_parking` 은 붙이지 않는다). 세대당 대수가 없으면 대수만. `with_parentheses` 가 거짓이면 가능 여부 뒤 괄호 안에
     들어갈 꼴('단지 전체 8대, 세대당 0.5대')이다.
     """
     info = complex_.parking_info if complex_ else None
@@ -1178,6 +1233,9 @@ def _complex_parking_text(complex_: NaverComplexModel | None, *, with_parenthese
     per_household = info.parking_count_per_household
     if per_household is None:
         return text
+    # 웹 ComplexParkingInfo(청크 00-c-lsvp5jax, 2026-11-25 번들 확인)는 floor(parkingCountPerHousehold ?? 0, 2) 를 조건 없이 '(세대당 N대)' 로 그리고,
+    # 호출하는 ArticleComplexInfo 도 주차 칸을 조건 없이 넣는다. 그래서 버려 0 이 되는 값(0.009)·0 도 '세대당 0대' 로 낸다
+    per_household = _floor_per_household(per_household) or 0
     return f'{text} ({_per_household_text(per_household)})' if with_parentheses else f'{text}, {_per_household_text(per_household)}'
 
 
@@ -1186,17 +1244,11 @@ def _per_household_text(per_household: float) -> str:
     return f'세대당 {per_household:g}대'
 
 
-class _ParkingCount(NamedTuple):
-    """총 주차 대수와 세대당 대수 (웹 ArticleBuildingInfo 의 `[W, J]`)."""
-
-    total: int
-    per_household: float | None
-
-
 def _floor_per_household(per_household: float | None) -> float | None:
     """세대당 주차 대수를 소수 둘째 자리 아래를 버려 정한다 (웹 lodash `floor(값 || 0, 2)`). 0 이거나 없으면 None.
 
-    웹은 이 값이 0 이면 '(세대당 N대)' 를 붙이지 않는다. 버림은 십진 글자로 계산해 1.33 이 1.32 가 되지 않게 한다.
+    건축물대장 쪽 웹(ArticleBuildingInfo)은 이 값이 0 이면 '(세대당 N대)' 를 붙이지 않는다. 단지 쪽(`_complex_parking_text`)은 웹이 0 이어도 붙여
+    이 함수가 None 을 주면 0 으로 쓴다. 버림은 십진 글자로 계산해 1.33 이 1.32 가 되지 않게 한다.
     """
     if not per_household:
         return None
@@ -1215,8 +1267,10 @@ def _building_parking(
     대장에도 대수가 없으면 대수는 모름이라 가능 여부만 낸다. 세대당 대수가 0 이거나 없으면 붙이지 않는다.
     """
     possible = facility.is_parking_possible if facility else None
+    # 총 주차 대수와 세대당 대수 (웹 ArticleBuildingInfo 의 `[W, J]`)
     if facility is not None and facility.total_parking_count:
-        parking = _ParkingCount(facility.total_parking_count, _floor_per_household(facility.parking_count_per_household))
+        total = facility.total_parking_count
+        per_household = _floor_per_household(facility.parking_count_per_household)
     else:
         # 건축물대장 조회가 실패했을 때만 `notes` 에 `[실패]` 안내를 붙인다 (pnu 가 없거나 대장에 대수가 없는 것은 실패가 아니다).
         # 웹(ArticleBuildingInfo)은 pnu 가 없으면 이 요청을 보내지 않는다 (`enabled: !!pnu`). 0 대도 대수라 그대로 쓴다.
@@ -1234,13 +1288,14 @@ def _building_parking(
         info = registration.parking_info if registration else None
         if info is None or info.total_parking_count is None:
             return parking_label(possible)
-        parking = _ParkingCount(info.total_parking_count, _floor_per_household(info.parking_count_per_household))
+        total = info.total_parking_count
+        per_household = _floor_per_household(info.parking_count_per_household)
     # 웹 건축물 정보(ArticleBuildingInfo)는 '주차 N대' 하나뿐이라 매물 대수도 '단지 전체' 없이 늘 '총' 이다
-    detail = f'총 {parking.total}대'
-    if parking.per_household is not None:
+    detail = f'총 {total}대'
+    if per_household is not None:
         # 가능 여부가 있으면 그 뒤 괄호 안에 함께 넣고, 없으면 대수가 앞이라 세대당을 괄호로 붙인다
-        per_household = _per_household_text(parking.per_household)
-        detail = f'{detail}, {per_household}' if possible is not None else f'{detail} ({per_household})'
+        per_household_text = _per_household_text(per_household)
+        detail = f'{detail}, {per_household_text}' if possible is not None else f'{detail} ({per_household_text})'
     return parking_label(possible, detail)
 
 
@@ -1274,7 +1329,7 @@ def _facility_values(
       (가능 여부를 모르면 '총 8대 (세대당 0.5대)', 세대당이 0·없음이면 '가능 (총 8대)').
       pnu 는 article/key 의 key.pnu 고, 없으면 웹도 요청하지 않는다. 원룸 2661724695 는 매물이 0대·불가이고 대장이 0대라 웹이 '주차 0대',
       2661862868 은 매물이 8대라 대장을 부르지 않는다. 대장 조회가 실패하거나 대수가 없으면 대수는 모름이라 가능 여부만 낸다 (`_building_parking`).
-    그 밖의 유형은 매물 값 그대로다. 단지 조회(`complex_`)가 실패하면 그 값만 모름이다 (단지형 빌라 주차는 매물 값으로 되돌린다).
+    그 밖의 유형은 매물 값 그대로다. 단지 조회(`complex_`)가 실패하면 그 값만 모름이다 (단지형 빌라 주차는 매물 대수가 0 보다 클 때만 매물 값이고, 0 이거나 없으면 대수 없이 가능 여부만 낸다).
     이 함수가 보내는 조회(평형·건축물대장)가 실패하면 `notes` 에 `[실패]` 안내를 붙인다 (`complex_` 의 실패 안내는 `_complex_overview` 가 붙인다).
     """
     real_estate_type = key.type.real_estate_type
@@ -1304,8 +1359,11 @@ def _facility_values(
             parking=_complex_parking_text(complex_, with_parentheses=True),
         )
     if complex_number is not None and real_estate_type in VILLA_COMPLEX_CODES:
-        if complex_ is None or (facility is not None and (facility.total_parking_count or 0) > 0):
+        if facility is not None and (facility.total_parking_count or 0) > 0:
             parking = _parking_label(facility, True)
+        elif complex_ is None:
+            # 매물 대수 0 은 웹이 단지 대수로 바꿔 그리는 '모름' 이라, 단지 값도 없으면 대수 없이 가능 여부만 낸다 (2026-11-24 리뷰: '가능 (단지 전체 0대)' 가 나갔다)
+            parking = parking_label(facility.is_parking_possible if facility else None)
         else:
             # 가능 여부를 모르면 parking_label 이 대수 글자만 돌려주므로 단지 유형과 같은 괄호 꼴로 낸다
             possible = facility.is_parking_possible if facility else None
@@ -1333,7 +1391,10 @@ def _facility_values(
 
 
 def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
-    """매물 상세: key → basicInfo → maintenanceFee → 법정동 코드의 지역 이름 → 단지·중개보수·세금·교통·학교·개발 예정 (최대 11회 호출, 단지부터는 필요할 때만).
+    """매물 상세: key → basicInfo → maintenanceFee → 법정동 코드의 지역 이름 → 단지·중개보수·세금·교통·학교·개발 예정 (최대 12회 호출, 단지부터는 필요할 때만).
+
+    관리비는 maintenanceFee 로 '관리비' 칸을 못 만들 때(응답이 비었거나 실패, 금액·사유 없음)만 옛 형식 관리비(`oldMaintenanceFee`)를 1회 더 받아
+    금액을 채운다 (상가 등, 웹도 그렇게 그린다). 포함 항목은 몰라 null 이다.
 
     단지는 아파트·오피스텔·재건축·분양권이면 단지 정보(`/complex`)를, 단지형 빌라면 `/complex/villa` 를 늘 받아 난방·주차를 웹처럼
     단지 값으로 채우고, 거기에 아파트·오피스텔·재건축·분양권은 매물에 현관 구조가 없을 때
@@ -1343,9 +1404,9 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     중개보수(agentFee)는 직거래가 아니면(직거래이거나 직거래인지 모를 때는 조회하지 않는다) 모든 거래 유형에서, 세금(tax)은 매매 매물만 더 조회한다
     (원룸·고시원 매매, 일반분양권이 아니거나 분양 상태를 모르는 분양권은 조회하지 않는다) (1회 더, 매매는 2회 더). 주변 교통(지하철·버스)은 늘,
     배정 초등학교는 단지·동 번호가 있는 매물만 더 조회한다 (1~2회 더). 주변 개발 예정(`development/article`)은 유형과 상관없이 늘
-    1회 더 조회한다 (웹도 모든 매물 상세에 그린다). 최대 11회.
+    1회 더 조회한다 (웹도 모든 매물 상세에 그린다). 최대 12회.
     건축물대장 유형(원룸·빌라 등 15개)은 매물 주차 대수가 0 이거나 없고 article/key 에 pnu 가 있을 때만 건축물대장(`/complex/buildingRegistration`)을
-    1회 더 조회하고, 그 대수와 세대당 대수로 주차를 채운다 (`_facility_values`). 이 유형은 단지 정보를 받아도 1회뿐이라 최대 11회를 넘지 않는다.
+    1회 더 조회하고, 그 대수와 세대당 대수로 주차를 채운다 (`_facility_values`). 이 유형은 단지 정보를 받아도 1회뿐이라 최대 12회를 넘지 않는다.
 
     중개사 정보와 본문은 내보내지 않는다 (문의·상세 설명은 원 사이트에서). 주소는 웹 위치 칸처럼 article/key 의 법정동 코드로 받은
     지역 이름(`legalDivision/infoList`)에 리와 지번을 붙여 만든다 (`_jibun_address`). 이 조회는 article/key 에 법정동 코드가 있으면 좌표와
@@ -1363,14 +1424,50 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     key, trade_type = _article_key(client, article_number)
     basic = _article_basic(client, article_number, key)
     notes: list[str] = []
-    fee = result_or_none(
-        lambda: client.run_request_article_maintenance_fee_v1(
-            NaverArticleMaintenanceFeeV1RequestParameterModel(article_number=article_number)
-        ),
-        notes=notes,
-        what='관리비',
-        unknown='모름(null)으로 낸 칸: manage_cost_manwon, manage_cost_includes',
-    )
+    # 관리비 조회 실패 안내는 옛 형식 관리비로 금액을 얻으면 사실과 달라지므로(모름이 된 칸이 다르다) 바로 붙이지 않는다.
+    # maintenanceFee 의 예외는 남겨 두고 옛 형식 조회가 끝난 뒤 붙인다
+    fee_errors: list[Exception] = []
+
+    def request_fee() -> NaverResponseModel[NaverArticleMaintenanceFeeModel]:
+        try:
+            return client.run_request_article_maintenance_fee_v1(
+                NaverArticleMaintenanceFeeV1RequestParameterModel(article_number=article_number)
+            )
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            fee_errors.append(exc)
+            raise
+
+    unknown_both = '모름(null)으로 낸 칸: manage_cost_manwon, manage_cost_includes'
+    fee = result_or_none(request_fee, notes=None, what='관리비', unknown=unknown_both)
+    # 웹 ArticlePriceInfo(청크 0l4pkwg0qhg2t)와 상가 2662726134 실측 (2026-11-24): 웹은 maintenanceFee·oldMaintenanceFee 를 늘 둘 다 부르고
+    # 앞의 것으로 칸을 못 만들 때 뒤의 amount 로 '관리비 <금액>' 칸을 그린다. jibsa 는 앞의 것으로 칸을 못 만들 때만 부른다 (요청을 아낀다)
+    old_fee: NaverArticleOldMaintenanceFeeModel | None = None
+    old_notes: list[str] = []
+    if not _has_fee_cell(fee):
+        old_fee = result_or_none(
+            lambda: client.run_request_article_old_maintenance_fee_v1(
+                NaverArticleOldMaintenanceFeeV1RequestParameterModel(article_number=article_number)
+            ),
+            notes=old_notes,
+            what='관리비',
+            unknown=unknown_both,
+        )
+    # 리뷰 오탐 (2026-11-24): 옛 형식 금액 0 도 칸으로 낸다. 웹 isValidNumber(amount)(청크 414mp5_jlfont)는 0 도 수로 봐 '관리비 0원' 을 그린다
+    # 리뷰 오탐 (2026-11-24): 두 조회가 서로 다른 이유로 실패하면 [실패] 가 두 줄이다. 두 요청의 실패를 각각 맞게 알리는 것이라 합치지 않는다
+    old_amount = old_fee.amount if old_fee else None
+    # maintenanceFee 가 예외로 실패했으면 안내를 먼저 붙인다. 옛 형식 금액을 받았으면 금액 칸은 채워졌고 포함 항목만 모름이다
+    if fee_errors:
+        add_failure_note(
+            notes,
+            fee_errors[0],
+            '관리비',
+            unknown_both if old_amount is None else '모름(null)으로 낸 칸: manage_cost_includes',
+        )
+    # 옛 형식 조회의 실패 안내는 금액을 못 얻었을 때만 붙인다 (금액을 얻었으면 실패가 아닌 것으로 읽힌다)
+    if old_amount is None:
+        for text in old_notes:
+            if text not in notes:
+                notes.append(text)
 
     price = basic.price_info
     detail = basic.detail_info
@@ -1389,8 +1486,12 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
     title = ' '.join(part for part in title_parts if part)
     if article and article.article_feature_description:
         title = f'{title} · {article.article_feature_description}' if title else article.article_feature_description
-    move_in = _move_in_label(moving)
-    manage_cost, manage_cost_includes = _manage_cost(fee, notes)
+    move_in = _move_in_label(moving, notes)
+    if old_amount is None:
+        manage_cost, manage_cost_includes = _manage_cost(fee, notes)
+    else:
+        # 옛 형식은 금액뿐이라 포함 항목은 모른다 (웹도 항목을 보여 주지 않는다)
+        manage_cost, manage_cost_includes = won_to_manwon(old_amount), None
 
     exclusive = size.exclusive_space if size else None
     # 상세의 supplySpace 는 오피스텔이면 계약면적이다 (평형표의 contractArea 와 같고 supplyArea 보다 크다).
@@ -1423,6 +1524,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         approved_at = None
     else:
         approved_at = building_approved_at(facility) or _complex_approved_at(client, complex_number, key, complex_, notes)
+    approved_at = _readable_date(approved_at, '사용승인일', notes)
     facility_values = _facility_values(client, key, facility, complex_number, complex_, notes)
 
     # 웹 제목의 건물 이름. 건물 이름이 없으면 None. 건물 하위 이름은 매물 유형이 C01·D05 이거나
@@ -1473,7 +1575,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         address=address,
         lat=coordinates.y_coordinate if coordinates else None,
         lng=coordinates.x_coordinate if coordinates else None,
-        registered_at=normalize_date(article.exposure_start_date) if article else None,
+        registered_at=_readable_date(normalize_date(article.exposure_start_date), '등록일', notes) if article else None,
         # 상세 응답의 건물 날짜를 먼저 쓰고, 없을 때만 단지 정보를 쓴다 (단지 유형은 이미 받은 단지 정보, 그 밖은 필요할 때만 조회)
         approved_at=approved_at,
         complex_number=complex_number,

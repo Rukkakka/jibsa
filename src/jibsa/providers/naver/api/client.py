@@ -50,6 +50,7 @@ from jibsa.providers.naver.api.request.listing import (
     NaverArticleBasicInfoV1RequestParameterModel,
     NaverArticleKeyV1RequestParameterModel,
     NaverArticleMaintenanceFeeV1RequestParameterModel,
+    NaverArticleOldMaintenanceFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
     NaverComplexArticleListV1RequestPayloadModel,
     NaverComplexBuildingRegistrationV1RequestParameterModel,
@@ -134,6 +135,7 @@ from jibsa.providers.naver.api.response.listing import (
     NaverArticleBasicInfoV1ResponseModel,
     NaverArticleKeyV1ResponseModel,
     NaverArticleMaintenanceFeeV1ResponseModel,
+    NaverArticleOldMaintenanceFeeV1ResponseModel,
     NaverArticleTaxV1ResponseModel,
     NaverComplexArticleListV1ResponseModel,
     NaverComplexBuildingRegistrationV1ResponseModel,
@@ -278,6 +280,7 @@ class NaverClient(BaseHTTPClient):
     article_basic_info_v1_endpoint: ClassVar[str] = '/front-api/v1/article/basicInfo'
     article_agent_v1_endpoint: ClassVar[str] = '/front-api/v1/article/agent'
     article_maintenance_fee_v1_endpoint: ClassVar[str] = '/front-api/v1/article/maintenanceFee'
+    article_old_maintenance_fee_v1_endpoint: ClassVar[str] = '/front-api/v1/article/oldMaintenanceFee'
     article_tax_v1_endpoint: ClassVar[str] = '/front-api/v1/article/tax'
     article_agent_fee_v1_endpoint: ClassVar[str] = '/front-api/v1/article/agentFee'
     complex_building_registration_v1_endpoint: ClassVar[str] = '/front-api/v1/complex/buildingRegistration'
@@ -1278,6 +1281,35 @@ class NaverClient(BaseHTTPClient):
         """Async variant of `run_request_article_maintenance_fee_v1`."""
         return await self._aget(
             self.article_maintenance_fee_v1_endpoint, parameter, NaverArticleMaintenanceFeeV1ResponseModel
+        )
+
+    @naver_retry
+    def run_request_article_old_maintenance_fee_v1(
+        self,
+        parameter: NaverArticleOldMaintenanceFeeV1RequestParameterModel
+    ) -> NaverArticleOldMaintenanceFeeV1ResponseModel:
+        """Fetch the old-format maintenance fee via `GET /front-api/v1/article/oldMaintenanceFee`.
+
+        옛 형식 관리비 금액. 웹은 maintenanceFee 로 칸을 못 만들 때 이 amount 로 '관리비' 칸을 그린다.
+
+        Args:
+            parameter: `article_number`.
+
+        Returns:
+            NaverArticleOldMaintenanceFeeV1ResponseModel: 월 관리비 (원). 값이 없으면 빈 객체.
+        """
+        return self._get(
+            self.article_old_maintenance_fee_v1_endpoint, parameter, NaverArticleOldMaintenanceFeeV1ResponseModel
+        )
+
+    @naver_retry
+    async def arun_request_article_old_maintenance_fee_v1(
+        self,
+        parameter: NaverArticleOldMaintenanceFeeV1RequestParameterModel
+    ) -> NaverArticleOldMaintenanceFeeV1ResponseModel:
+        """Async variant of `run_request_article_old_maintenance_fee_v1`."""
+        return await self._aget(
+            self.article_old_maintenance_fee_v1_endpoint, parameter, NaverArticleOldMaintenanceFeeV1ResponseModel
         )
 
     @naver_retry
