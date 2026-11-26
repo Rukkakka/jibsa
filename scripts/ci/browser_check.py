@@ -43,7 +43,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import (
     contextmanager,
     suppress,
@@ -333,7 +333,7 @@ def check_async_requests(entry: Site) -> None:
 
 
 @contextmanager
-def allow_local_network() -> Iterator[None]:
+def allow_local_network() -> Generator[None, None, None]:
     """(이 확인에서만) Chromium 의 로컬 네트워크 접근 차단(Local Network Access)을 끈 채 브라우저를 띄우게 한다.
 
     jibsa 는 첫 화면 탭을 브라우저 안에서 만든 빈 페이지로 바꿔 두는데(`_fulfill_blank`), Chromium 은 주소가 없는 이 페이지를

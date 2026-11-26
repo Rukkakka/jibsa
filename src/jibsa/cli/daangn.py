@@ -2,7 +2,7 @@ import logging
 import re
 from collections.abc import (
     Callable,
-    Iterator,
+    Generator,
 )
 from contextlib import contextmanager
 
@@ -534,7 +534,7 @@ def _complex_guide(query: str, found: str) -> str:
 @contextmanager
 def _complex_name_hint(
     client: DaangnClient, query: str, *, station_alternative: str = '', station_hint: str = '',
-) -> Iterator[None]:
+) -> Generator[None, None, None]:
     """동·구를 받는 명령(search listings·search commute·region-real-price·region-reviews·search complexes)에 단지 이름을 주어
     지역을 못 찾았으면, 단지 ID 와 단지 명령을 힌트로 알린다.
 
