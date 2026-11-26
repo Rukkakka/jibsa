@@ -12,9 +12,9 @@ from jibsa.core.listing import (
     AmountRange,
     more_hint,
     normalize_address,
-    normalize_date,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
@@ -255,8 +255,8 @@ def get_school(
         office_of_education=school.office_of_education_in_charge,
         operation_type=school.operation_type,
         establishment_type=school.establishment_type,
-        opened_date=normalize_date(school.establishment_date),
-        base_date=normalize_date(student.base_date) if student else None,
+        opened_date=read_date(school.establishment_date, '개교일'),
+        base_date=read_date(student.base_date, '학생 수 기준일') if student else None,
         students=student.total_count if student else None,
         students_per_class=student.count_per_classroom if student else None,
         students_per_teacher=student.count_per_teacher if student else None,

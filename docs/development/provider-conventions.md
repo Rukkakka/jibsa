@@ -228,7 +228,7 @@ def run_request_items_onerooms_v1(
 
 - 첫 인자는 client. 옵션은 키워드 전용(`*,`)으로 받는다.
 - 소스 응답을 `Listing` / `ListingDetail` (또는 그 서브클래스 `<Source>ListingDetail`) 로 바꾼다.
-  금액은 만원(`won_to_manwon`), 날짜는 `iso_date`(못 읽으면 `null` + `[참고]`, `output-contract.md` 의 금액·단위 날짜 규칙), 면적 평은 `m2_to_pyeong`,
+  금액은 만원(`won_to_manwon`), 날짜는 `read_date`(못 읽으면 `null` + `[참고]`, `output-contract.md` 의 금액·단위 날짜 규칙), 면적 평은 `m2_to_pyeong`,
   주소는 `join_address`. 본문(매물 설명)은 옮기지 않는다 (`output-contract.md` 의 내보내지 않는 정보).
 - **만료 판정은 service 에서 한다.** 목록은 거래 불가 매물을 건너뛰고, 상세는
   `ListingUnavailableError(source, id, status=..., reason=...)` 를 던진다. 404 도

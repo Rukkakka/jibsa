@@ -17,6 +17,7 @@ from jibsa.core.listing import (
     lookup_failure_note,
     note,
     null_items_note,
+    read_month,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.local.info import (
@@ -104,7 +105,7 @@ class ZigbangRegionMonthlyVolume(BaseModel):
 
     month: Annotated[
         str | None,
-        Field(description='월 (YYYY-MM)')
+        Field(description='월 (YYYY-MM). 읽지 못하면 null ([참고] 안내)')
     ]
     trade_counts: Annotated[
         dict[str, int | None],
@@ -121,7 +122,7 @@ class ZigbangPriceTrendPoint(BaseModel):
 
     month: Annotated[
         str | None,
-        Field(description='월 (YYYY-MM)')
+        Field(description='월 (YYYY-MM). 읽지 못하면 null ([참고] 안내)')
     ]
     price_per_pyeong_manwon: Annotated[
         int | float | None,
@@ -432,7 +433,7 @@ def _price_trend(
             kind=None if label is None or region_name is None else ('지역' if label == region_name else '단지'),
             months=None if line.data is None else [
                 # 직방시세 0 은 값 없음이다 (단지 추이·평형대별 시세와 같다). 점은 남기고 값만 모름이다
-                ZigbangPriceTrendPoint(month=text_or_none(point.date), price_per_pyeong_manwon=None if point.price == 0 else point.price)
+                ZigbangPriceTrendPoint(month=read_month(point.date, '시세 추이 월'), price_per_pyeong_manwon=None if point.price == 0 else point.price)
                 for point in line.data
             ],
         ))
@@ -483,7 +484,7 @@ def get_region_info(
             notes.append(_missing_list('지역 거래량 목록을', 'monthly_volumes'))
         monthly_volumes = None if months is None else [
             ZigbangRegionMonthlyVolume(
-                month=text_or_none(month.date),
+                month=read_month(month.date, '거래량 월'),
                 trade_counts={'sale': month.sales_volume, 'jeonse': month.charter_volume, 'wolse': month.rent_volume},
             )
             for month in months

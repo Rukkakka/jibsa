@@ -254,7 +254,7 @@ class ZigbangBuildingTrade(BaseModel):
 
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null')
+        Field(description='계약일 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ] = None
     trade_type: Annotated[
         str | None,

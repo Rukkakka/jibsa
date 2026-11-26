@@ -7,11 +7,11 @@ from pydantic import Field
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
-    iso_date,
     lookup_failure_note,
     more_hint,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import ZigbangAptTranType
@@ -136,7 +136,7 @@ class ZigbangDanjiRank(ZigbangLocalModel):
     ]
     approved_date: Annotated[
         str | None,
-        Field(description='사용승인일 (YYYY-MM-DD, 하락률·상승률 정렬에는 키가 없다). 읽지 못하면 null')
+        Field(description='사용승인일 (YYYY-MM-DD, 하락률·상승률 정렬에는 키가 없다). 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     household_count: Annotated[
         int | None,
@@ -144,7 +144,7 @@ class ZigbangDanjiRank(ZigbangLocalModel):
     ]
     latest_trade_date: Annotated[
         str | None,
-        Field(description='가장 최근 계약일 (YYYY-MM-DD, 하락률·상승률 정렬만). 읽지 못하면 null')
+        Field(description='가장 최근 계약일 (YYYY-MM-DD, 하락률·상승률 정렬만). 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     price_manwon: Annotated[
         int | float | None,
@@ -209,11 +209,11 @@ class ZigbangRegionRankingResult(ZigbangLocalModel):
     ]
     start_date: Annotated[
         str | None,
-        Field(description='집계 시작일 (YYYY-MM-DD, 한국 날짜. 서버는 UTC 로 주지만 한국 날짜로 바꾼다). 거래량·하락률·상승률·인기 정렬만 있고 시세·평당가·전세가율에는 키가 없다. 읽지 못하면 null')
+        Field(description='집계 시작일 (YYYY-MM-DD, 한국 날짜. 서버는 UTC 로 주지만 한국 날짜로 바꾼다). 거래량·하락률·상승률·인기 정렬만 있고 시세·평당가·전세가율에는 키가 없다. 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     end_date: Annotated[
         str | None,
-        Field(description='집계 끝 날짜 (YYYY-MM-DD, 한국 날짜). 거래량·하락률·상승률은 집계 기간의 끝, 시세·평당가·전세가율은 직방 시세 기준일, 인기는 조회 집계의 끝이다. 읽지 못하면 null')
+        Field(description='집계 끝 날짜 (YYYY-MM-DD, 한국 날짜). 거래량·하락률·상승률은 집계 기간의 끝, 시세·평당가·전세가율은 직방 시세 기준일, 인기는 조회 집계의 끝이다. 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     updated_at: Annotated[
         str | None,
@@ -272,9 +272,9 @@ def _rank_of(
         name=text_or_none(item.area_danji_name),
         dong=text_or_none(item.local),
         trade_count=item.volume,
-        approved_date=iso_date(item.approved_date),
+        approved_date=read_date(item.approved_date, '사용승인일'),
         household_count=item.household_count,
-        latest_trade_date=iso_date(item.rt_deal_date),
+        latest_trade_date=read_date(item.rt_deal_date, '최근 실거래 계약일'),
         price_manwon=item.rt_price,
         deposit_manwon=item.rt_price,
         prev_trade_diff_manwon=item.diff_rt_price,
@@ -421,8 +421,8 @@ def get_region_ranking(
         trade_type=trade,
         sort=sort_label,
         period=period,
-        start_date=iso_date(pages.first.start_date),
-        end_date=iso_date(pages.first.end_date),
+        start_date=read_date(pages.first.start_date, '집계 시작일'),
+        end_date=read_date(pages.first.end_date, '집계 끝 날짜'),
         updated_at=updated_at,
         total=total,
         returned=len(rankings),

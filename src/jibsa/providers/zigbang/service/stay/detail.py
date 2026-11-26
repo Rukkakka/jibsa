@@ -19,9 +19,9 @@ from jibsa.core.listing import (
     NumberRange,
     lookup_failure_note,
     m2_to_pyeong,
-    normalize_date,
     null_items_note,
     number_range,
+    read_date,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -380,7 +380,7 @@ def stay_detail_to_listing(
         address=detail.address,
         lat=detail.lat,
         lng=detail.lng,
-        registered_date=normalize_date(registered_at),
+        registered_date=read_date(registered_at, '등록일'),
         room_count=detail.room_count,
         bathroom_count=detail.bathroom_count,
         parking=stay_parking(detail),

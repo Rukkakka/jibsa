@@ -22,10 +22,10 @@ from jibsa.core.listing import (
     join_address,
     js_round,
     normalize_address,
-    normalize_date,
     note,
     null_items_note,
     number_range,
+    read_date,
     with_floor_number,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -424,7 +424,7 @@ def _trade(
     if node is None:
         return None
     return DaangnCompareRecentTrade(
-        trade_date=normalize_date(node.contact_date),
+        trade_date=read_date(node.contact_date, '최근 실거래 계약일'),
         floor=floor_text(node.floor),
         price_manwon=node.trade_price if trade_type == '매매' else None,
         deposit_manwon=None if trade_type == '매매' else node.deposit,
@@ -533,7 +533,7 @@ def _compare_pyeong(column: DaangnCompareComplexModel, target_m2: float | None, 
     kb_monthly = DaangnKbMonthly(
         deposit_manwon=kb.monthly_deposit, rent_low_manwon=kb.monthly_lower_limit, rent_high_manwon=kb.monthly_upper_limit,
     ) if kb and kb.monthly_deposit and kb.monthly_upper_limit else None
-    kb_base_date = normalize_date(kb.survey_base_date) if kb else None
+    kb_base_date = read_date(kb.survey_base_date, 'KB 시세 기준일') if kb else None
     return DaangnComparePyeong(
         pyeong=group.label if supply else None,
         area_group=exclusive_group.label,
@@ -579,7 +579,7 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None, no
         complex_type=code_label(COMPLEX_TYPE_LABELS, complex_.type),
         address=normalize_address(building.jibun_address) if building else None,
         road_address=normalize_address(building.road_address) if building else None,
-        approved_date=normalize_date(danji.build_date) if danji else None,
+        approved_date=read_date(danji.build_date, '사용승인일') if danji else None,
         dong_count=danji.tot_dong_cnt if danji else None,
         household_count=danji.total_tot_hseh_cnt if danji else None,
         parking_per_household=danji.hseh_parking_cnt if danji else None,

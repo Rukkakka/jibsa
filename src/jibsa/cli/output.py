@@ -44,7 +44,9 @@ from jibsa.core.listing import (
     listing_field_names,
     note,
     null_items_total_note,
+    reset_unread_dates,
     tagged_notes,
+    unread_date_notes,
 )
 from jibsa.core.schema import (
     is_request_validation_error,
@@ -61,7 +63,7 @@ from typing import (
 )
 
 
-# 소스 이름 -> 안내에 쓰는 사이트 이름. 응답에서 뺀 빈 항목의 공통 안내(`null_items_total_note`)에 쓴다
+# 소스 이름 -> 안내에 쓰는 사이트 이름. 응답에서 뺀 빈 항목의 공통 안내(`null_items_total_note`)와 못 읽은 날짜 안내(`unread_date_notes`)에 쓴다
 SITE_NAMES: dict[str, str] = {
     'zigbang': '직방',
     'naver': '네이버',
@@ -286,7 +288,8 @@ def emit(
     늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 를 이미 dict 로 만들어 넘기면(네이버처럼 지역·범위를 앞에 붙이는 명령)
     매물 모델을 알 수 없으니, 이 명령에 없는 필드를 알리는 안내(`missing_fields_note`)를 위해 원래 결과를 `fields_source` 로 준다.
     출력에 연세(`yearly_rent_manwon`)나 1억 이상 금액이 있으면 그 값으로 만든 읽는 법(`yearly_rent_note`·`manwon_note`)을
-    `notes` 끝에 붙인다. 명령이 응답에서 빈 항목을 뺐는데 `notes` 에 빈 항목 안내가 없으면 공통 안내도 붙인다.
+    `notes` 끝에 붙인다. 출력 날짜 칸에서 읽지 못한 날짜가 있으면 칸마다 `[참고]` 한 줄을 붙인다 (`unread_date_notes`).
+    명령이 응답에서 빈 항목을 뺐는데 `notes` 에 빈 항목 안내가 없으면 공통 안내도 붙인다.
     """
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
@@ -303,9 +306,12 @@ def emit(
         notes = [*(notes or []), yearly]
     if money := manwon_note(payload):
         notes = [*(notes or []), money]
+    site = SITE_NAMES.get(_command_source or '')
+    # 읽지 못한 날짜 안내(`unread_date_notes`): 출력 날짜 칸이 `read_date` 로 모은 원래 글자를 칸마다 한 줄로 알린다. 명령 밖에서 부른 `emit` 은 붙이지 않는다. `--fields` 로 고르지 않은 날짜 칸의 안내는 뺀다
+    if site is not None and (unread := unread_date_notes(site, frozenset(fields) if fields else None)):
+        notes = [*(notes or []), *unread]
     # 빈 항목 공통 안내(`null_items_total_note`): 계산에 쓰는 자리는 소스가 `null_items_note` 로 따로 알리므로 겹쳐 붙이지 않는다. 보여 주기만 하는 목록처럼 안내 없이
     # 빼는 자리가 있어도 뺀 것을 늘 알린다. 명령 밖(`handle_errors` 밖)에서 부른 `emit` 은 소스를 몰라 붙이지 않는다
-    site = SITE_NAMES.get(_command_source or '')
     count = null_item_tally()
     if site is not None and count > 0 and not any(NULL_ITEMS_PHRASE in text for text in notes or []):
         notes = [*(notes or []), null_items_total_note(site, count)]
@@ -343,10 +349,11 @@ def handle_errors(source: str) -> Generator[None, None, None]:
 
     LLM 이 실패 원인을 읽고 다음 행동(재시도, 조건 수정)을 고를 수 있도록
     코드와 힌트를 함께 남긴다. 예상하지 못한 예외도 traceback 대신 INTERNAL_ERROR 로 쓴다.
-    명령이 시작할 때 응답에서 뺀 빈 항목의 합을 0 으로 돌리고, 명령이 도는 동안 `emit` 이 그 소스를 읽을 수 있게 정해 둔다.
+    명령이 시작할 때 응답에서 뺀 빈 항목의 합과 못 읽은 날짜 모음을 비우고, 명령이 도는 동안 `emit` 이 그 소스를 읽을 수 있게 정해 둔다.
     """
     global _command_source
     reset_null_item_tally()
+    reset_unread_dates()
     _command_source = source
     try:
         yield

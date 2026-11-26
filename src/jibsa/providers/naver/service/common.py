@@ -31,7 +31,7 @@ from jibsa.core.listing import (
     AmountSet,
     Listing,
     format_manwon,
-    iso_date,
+    holding_unread_dates,
     join_address,
     lookup_failure_note,
     m2_to_pyeong,
@@ -39,6 +39,7 @@ from jibsa.core.listing import (
     normalize_date,
     note,
     null_items_note,
+    read_date,
     won_to_manwon,
 )
 from jibsa.core.schema import RequestModel
@@ -732,14 +733,18 @@ def article_info_to_listing(
         lat=lat,
         lng=lng,
         distance_km=distance,
-        registered_date=normalize_date(info.verification_info.exposure_start_date) if info.verification_info else None,
-        approved_date=building_approved_at(info.building_info),
+        registered_date=read_date(info.verification_info.exposure_start_date, '등록일') if info.verification_info else None,
+        # 토지·고시원처럼 사용승인일 칸이 없는 유형(출력에서 키를 뺀다)은 읽지 않는다. 읽으면 출력에 없는 칸을 [참고] 로 알린다 (상세와 같다)
+        approved_date=(
+            None if 'approved_date' in NOT_APPLICABLE_FIELDS_BY_TYPE.get(info.real_estate_type or '', frozenset())
+            else read_date(building_approved_at(info.building_info), '사용승인일')
+        ),
         badges=listing_badges(
             info.verification_info.verification_type if info.verification_info else None,
             info.real_estate_type,
             info.article_detail.is_safe_lessor_of_hug if info.article_detail else None,
         ),
-        confirmed_date=iso_date(info.verification_info.article_confirm_date) if info.verification_info else None,
+        confirmed_date=read_date(info.verification_info.article_confirm_date, '매물 확인일') if info.verification_info else None,
         real_estate_type=info.real_estate_type,
         **group_fields(item.duplicated_article_info, trade_type),
     )
@@ -865,7 +870,7 @@ def complex_row_fields(
         'complex_type': PROPERTY_NAME_BY_CODE.get(type_code or '', type_code or None),
         'household_count': households,
         'dong_count': dong_count,
-        'approved_date': normalize_date(use_approval_date),
+        'approved_date': read_date(use_approval_date, '사용승인일'),
         'listing_counts': trade_article_counts(counts) if counts is not None else None,
         'asking_ranges': asking_ranges(prices),
     }
@@ -1278,18 +1283,23 @@ def listing_keeper(
     listings: dict[str, Listing],
     center: tuple[float, float] | None,
     radius_km: float | None = None,
+    *,
+    held: dict[str, list[tuple[str, str]]],
 ) -> Callable[[NaverArticleListItemModel], str]:
     """`scan_pages` 의 `keep`. 매물로 바꿔 (반경 안이면) 담고, 매물 번호를 돌려준다.
 
     검색 조건은 서버가 걸었으므로 다시 거르지 않는다 (provider-conventions 의 서버 필터 절).
     `radius_km` 를 주면 반경 밖이거나 좌표를 모르는 매물은 반경 안인지 알 수 없어 뺀다.
+    매물마다 못 읽은 날짜를 `held` 에 맡겨 두고, 부르는 쪽이 자른 뒤 남은 매물의 것만 `keep_unread_dates` 로 넣는다.
     """
     def keep(item: NaverArticleListItemModel) -> str:
-        listing = article_info_to_listing(item, center)
-        if listing is not None and (
+        with holding_unread_dates() as dates:
+            listing = article_info_to_listing(item, center)
+        if listing is not None and listing.id not in listings and (
             radius_km is None or (listing.distance_km is not None and listing.distance_km <= radius_km)
         ):
-            listings.setdefault(listing.id, listing)
+            listings[listing.id] = listing
+            held[listing.id] = dates
         return item.representative_article_info.article_number
 
     return keep

@@ -17,11 +17,11 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import (
-    iso_date,
     lookup_failure_note,
     more_hint,
     normalize_address,
     note,
+    read_date,
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -270,7 +270,7 @@ class ZigbangSchoolInfo(BaseModel):
     ]
     established_date: Annotated[
         str | None,
-        Field(description='설립일 (YYYY-MM-DD). 직방이 주지 않거나 읽지 못하면 null')
+        Field(description='설립일 (YYYY-MM-DD). 직방이 주지 않으면 null, 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     high_school_type: Annotated[
         str | None,
@@ -515,7 +515,7 @@ def school_info_of(detail: ZigbangSchoolDetailModel) -> ZigbangSchoolInfo:
         level=SCHOOL_LEVEL_BY_STAGE.get(stage, stage) if stage else None,
         founding_type=text_or_none(detail.sullib),
         gender=text_or_none(detail.gender),
-        established_date=iso_date(detail.foundation_date),
+        established_date=read_date(detail.foundation_date, '학교 설립일'),
         high_school_type=text_or_none(high_category) if stage == 'high' else None,
         students=_number(detail.all),
         male_percent=_number(detail.man_percent),

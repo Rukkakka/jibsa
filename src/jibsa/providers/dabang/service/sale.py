@@ -23,6 +23,7 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     AmountRange,
     AmountSet,
+    add_unread_date,
     more_hint,
     normalize_address,
     note,
@@ -140,6 +141,19 @@ def sale_date(text: str | None) -> str | None:
     if (match := SALE_MONTH_PATTERN.fullmatch(value)) is not None and 1 <= int(match.group(2)) <= 12:
         return f'20{match.group(1)}-{int(match.group(2)):02d}'
     return value
+
+
+def sale_move_in(text: str | None) -> str | None:
+    """분양 입주 예정을 'YYYY-MM-DD' 나 'YYYY-MM' 으로 (`sale_date`).
+
+    날짜·연월로 읽지 못하면 받은 글자를 내지 않고 None 이고, 원래 글자는 `[참고]` 안내로 알린다 (`add_unread_date`,
+    다른 소스의 입주일 `move_in_label` 과 같다, 2026-11-26 사용자 결정). 값이 없다는 `-` 와 빈 글자는 안내 없는 None 이다.
+    """
+    value = sale_date(text)
+    if value is None or SALE_ISO_DAY_PATTERN.fullmatch(value) or SALE_ISO_MONTH_PATTERN.fullmatch(value):
+        return value
+    add_unread_date('입주일', value)
+    return None
 
 
 class DabangSaleSummary(BaseModel):
@@ -636,7 +650,7 @@ class DabangSaleDetail(BaseModel):
     ] = None
     move_in: Annotated[
         str | None,
-        Field(description='입주 예정 (YYYY-MM)')
+        Field(description='입주 예정 (YYYY-MM, 날까지 주면 YYYY-MM-DD). 날짜로 읽지 못하면 null 이고 notes 의 [참고] 가 원래 글자를 알린다')
     ] = None
     regulation_area: Annotated[
         str | None,
@@ -740,7 +754,7 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
         region_price_per_pyeong_average_manwon=(
             manwon_from_text(info.price_info.region_average_pyeong_price) if info.price_info else None
         ),
-        move_in=sale_date(info.moving_date_str),
+        move_in=sale_move_in(info.moving_date_str),
         regulation_area=info.regulation_area_str,
         price_cap=info.is_price_cap,
         resalable=info.is_resalable,

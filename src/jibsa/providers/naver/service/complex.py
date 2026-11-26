@@ -14,12 +14,15 @@ from pydantic import (
 from jibsa.core.listing import (
     AmountRange,
     floor_text,
-    iso_date,
+    holding_unread_dates,
     join_address,
+    keep_unread_dates,
     m2_to_pyeong,
     months_ago,
     normalize_address,
     normalize_date,
+    read_date,
+    read_month,
     with_floor_number,
     won_to_manwon,
     years_ago,
@@ -155,7 +158,7 @@ class NaverComplexMaintenanceFee(BaseModel):
 
     latest_month: Annotated[
         str | None,
-        Field(description='가장 최근 달 (YYYY-MM)')
+        Field(description='가장 최근 달 (YYYY-MM). 읽지 못하면 null ([참고] 안내)')
     ] = None
     latest_manage_cost_manwon: Annotated[
         float | None,
@@ -188,7 +191,7 @@ class NaverMarketPrice(BaseModel):
     ]
     base_date: Annotated[
         str | None,
-        Field(description='시세 기준일 (YYYY-MM-DD). 읽을 수 없으면 null')
+        Field(description='시세 기준일 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ] = None
     sale: Annotated[
         NaverMarketBand | None,
@@ -225,7 +228,7 @@ class NaverRealPriceExtreme(BaseModel):
     ] = None
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD). 네이버가 주지 않았거나 날짜로 읽지 못하면 null')
+        Field(description='계약일 (YYYY-MM-DD). 네이버가 주지 않았으면 null, 날짜로 읽지 못하면 null ([참고] 안내)')
     ] = None
     floor: Annotated[
         str | None,
@@ -351,7 +354,7 @@ class NaverPricePerPyeong(BaseModel):
     ] = None
     base_date: Annotated[
         str | None,
-        Field(description='기준 주 첫날 (YYYY-MM-DD). 지역 목록에서 가장 늦은 날이고, 날짜를 읽지 못하거나 지역 목록이 비었거나 주지 않으면 null')
+        Field(description='기준 주 첫날 (YYYY-MM-DD). 지역 목록에서 가장 늦은 날이고, 날짜를 읽지 못한 지역이 하나라도 있거나 지역 목록이 비었거나 주지 않으면 null (읽지 못한 날짜는 [참고] 안내)')
     ] = None
     regions: Annotated[
         list[NaverPricePerPyeongRegion] | None,
@@ -372,7 +375,7 @@ class NaverReconstructionStep(BaseModel):
     ]
     date: Annotated[
         str | None,
-        Field(description='그 단계에 이른 날 (YYYY-MM-DD). 날짜를 읽지 못하면 null')
+        Field(description='그 단계에 이른 날 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ] = None
 
 
@@ -389,7 +392,7 @@ class NaverReconstruction(BaseModel):
     ] = None
     current_step_date: Annotated[
         str | None,
-        Field(description='현재 단계에 이른 날 (YYYY-MM-DD). 읽을 수 없으면 null')
+        Field(description='현재 단계에 이른 날 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ] = None
     construction_company: Annotated[
         str | None,
@@ -602,14 +605,14 @@ def _reconstruction(client: NaverClient, complex_number: int, notes: list[str]) 
 
     return NaverReconstruction(
         current_step=label(current.step_type) if current else None,
-        current_step_date=iso_date(current.implementation_date) if current else None,
+        current_step_date=read_date(current.implementation_date, '재건축 현재 단계 날짜') if current else None,
         construction_company=result.construction_company or None,
         planned_household_count=result.household_count,
         planned_floor_area_ratio_percent=result.building_area_to_land_ratio,
         # 날짜가 없는 단계(없음·빈 글자·'-')는 아직 거치지 않은 단계라 뺀다. 날짜가 있는데 읽지 못하면(연월만 등) 단계는 남기고
         # date 는 모름(null)이다 (current_step_date 와 같다, 2026-11-24 리뷰)
         steps=[
-            NaverReconstructionStep(step=label(step.step_type), date=iso_date(step.implementation_date))
+            NaverReconstructionStep(step=label(step.step_type), date=read_date(step.implementation_date, '재건축 단계 날짜'))
             for step in result.business_steps
             if step.step_type and normalize_date(step.implementation_date) is not None
         ],
@@ -768,7 +771,7 @@ def _real_price_extreme(trade: NaverRealPriceSummaryTradeModel | None, jeonse: b
     amount = {'deposit_manwon': won_to_manwon(trade.deposit)} if jeonse else {'price_manwon': won_to_manwon(trade.deal_price)}
     return NaverRealPriceExtreme(
         **amount,
-        trade_date=iso_date(trade.trade_date),
+        trade_date=read_date(trade.trade_date, '최저·최고 실거래 계약일'),
         floor=floor_text(trade.floor),
         deal_type=trade.trade_category or None,
         cancelled=trade.is_delete,
@@ -820,10 +823,18 @@ def _price_per_pyeong(
             # 서버 목록은 큰 단위부터(서울시·송파구·가락동)라 웹 막대 순서(동·구·시)로 뒤집는다. 목록을 주지 않으면(null)
             # 평당가는 그대로 내고 지역·기준일만 모름(None)이다
             regions = None if result.legal_division_price_per_pyeong_list is None else list(reversed(result.legal_division_price_per_pyeong_list))
-            dates = [date_ for date_ in (iso_date(region.first_day_of_week) for region in regions or []) if date_]
+            texts = [region.first_day_of_week for region in regions or []]
+            with holding_unread_dates() as held:
+                days = [read_date(text, '평당 호가 기준일') for text in texts]
+            # 날짜가 있는데 못 읽은 지역이 있으면 가장 늦은 날을 알 수 없어 기준일을 모름으로 둔다. 지역 항목에는 날짜 칸이 없고
+            # null 이 되는 칸은 거래마다 기준일 하나라 처음 못 읽은 글자 하나만 [참고] 로 알린다
+            unreadable = any(day is None and normalize_date(text) is not None for text, day in zip(texts, days))
+            if unreadable:
+                keep_unread_dates(held[:1])
+            readable = [day for day in days if day]
             prices[key] = NaverPricePerPyeong(
                 price_per_pyeong_manwon=won_to_manwon(result.price_per_pyeong),
-                base_date=max(dates) if dates else None,
+                base_date=None if unreadable or not readable else max(readable),
                 regions=None if regions is None else [
                     NaverPricePerPyeongRegion(
                         name=region.legal_division_name,
@@ -906,7 +917,7 @@ def _pyeong_details(
     maintenance = None
     if fee is not None and fee.month_average_fee is not None:
         maintenance = NaverComplexMaintenanceFee(
-            latest_month=fee.year_month,
+            latest_month=read_month(fee.year_month, '관리비 최근 달'),
             latest_manage_cost_manwon=won_to_manwon(fee.year_month_fee),
             manage_cost_manwon=won_to_manwon(fee.month_average_fee),
             summer_manage_cost_manwon=won_to_manwon(fee.summer_average_fee),
@@ -918,7 +929,7 @@ def _pyeong_details(
         'estimated_prices': None if market is None else [
             NaverMarketPrice(
                 provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
-                base_date=iso_date(item.base_date),
+                base_date=read_date(item.base_date, '추정 시세 기준일'),
                 **market_price_fields(
                     item.deal_average_price,
                     item.deal_price_range,

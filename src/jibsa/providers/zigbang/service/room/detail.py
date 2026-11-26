@@ -10,15 +10,14 @@ from jibsa.core.errors import (
 )
 from jibsa.core.http import error_body
 from jibsa.core.listing import (
-    iso_date,
     js_round,
     lookup_failure_note,
     m2_to_pyeong,
     move_in_label,
-    normalize_date,
     normalize_floor,
     null_items_note,
     parking_label,
+    read_date,
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
@@ -38,6 +37,7 @@ from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1NearbyPoiModel,
     ZigbangItemsDetailV1NeighborhoodsModel,
+    ZigbangItemsDetailV1ResidenceModel,
     ZigbangItemsDetailV1ResponseModel,
     ZigbangManageCostEntryModel,
     ZigbangManageCostUsageFeeModel,
@@ -192,7 +192,7 @@ def building_real_trades(response: ZigbangBlsRtsV2ResponseModel) -> list[Zigbang
         return None
     return [
         ZigbangBuildingTrade(
-            trade_date=iso_date(trade.deal_date),
+            trade_date=read_date(trade.deal_date, '건물 실거래 계약일'),
             trade_type=trade.sales_type if trade.sales_type in BUILDING_TRADE_TYPES else None,
             # 지하층이 음수로 올 수 있어 실거래(real-price)·매물 층과 같은 표기('지하1')로 맞춘다
             floor=None if trade.floor is None else normalize_floor(str(trade.floor)),
@@ -328,6 +328,15 @@ def manage_cost_includes(manage: ZigbangItemsDetailV1ManageCostModel) -> list[st
     return includes
 
 
+def _has_move_in_at(residence: ZigbangItemsDetailV1ResidenceModel) -> bool:
+    """새 상세가 입주 날짜(`moveInAt`)를 줬는지. null·빈 글자·`-` 는 주지 않은 것이라 기존 상세(`/v3/items`)의 입주 문구로 보완한다.
+
+    직방 웹 매물 화면은 `moveInAt`·`moveInDateExtra` 를 읽지 않고 기존 상세의 문장(`moveinDate`)만 그린다 (2026-11-26 번들 조사:
+    청크 274 `renderItemInfoData` 의 `입주가능:y||""`). 날짜를 주지 않은 매물을 웹과 같은 문장으로 채우려는 것이다.
+    """
+    return (residence.move_in_at or '').strip() not in ('', '-')
+
+
 def detail_to_listing(
     response: ZigbangItemsDetailV1ResponseModel,
     *,
@@ -338,7 +347,7 @@ def detail_to_listing(
     """새 주거 상세(`/items/{id}/detail`) 응답을 `ZigbangListingDetail` 로 바꾼다 (원룸·빌라·오피스텔).
 
     사진·본문·중개사 정보는 응답에 있어도 옮기지 않는다 (원 사이트에서 확인).
-    입주일(`moveInAt`)이 null 이면 기존 상세(`/v3/items`, `legacy`)의 입주 문구로 보완하고, 그때는 주차도
+    입주일(`moveInAt`)이 null·빈 글자·`-` 면 기존 상세(`/v3/items`, `legacy`)의 입주 문구로 보완하고 (`_has_move_in_at`), 그때는 주차도
     기존 상세의 문구를 쓴다. 상세 응답에는 등록일이 없어 요약 응답의 `reg_date` 를 `registered_at` 으로 받는다.
     없으면 모름(None). 단기임대 여부도 상세 응답에는 없어 요약 응답(`trade_type_of`)에서 `short_term` 으로 받는다.
     관리비가 확인 불가(`UnknownManageCost`)면 웹처럼 금액도 항목도 부과 기준·방식도 모름(None)이다. 금액은 본문의 `manage_cost` 계산이 정한다.
@@ -380,7 +389,7 @@ def detail_to_listing(
     if item.address.jibun and origin and origin.local1:
         address = f'{origin.local1} {item.address.jibun}'
     move_in: str | None
-    if residence.move_in_at is not None:
+    if _has_move_in_at(residence):
         extra = residence.move_in_extra
         move_in = move_in_label(f'{residence.move_in_at} ({extra})' if extra else residence.move_in_at)
     else:
@@ -425,11 +434,11 @@ def detail_to_listing(
         address=address,
         lat=item.location.lat if item.location else None,
         lng=item.location.lng if item.location else None,
-        registered_date=normalize_date(registered_at),
+        registered_date=read_date(registered_at, '등록일'),
         bathroom_count=to_int(residence.bathroom_count),
         direction=DIRECTION_LABELS.get(residence.direction or '', residence.direction),
         move_in=move_in,
-        approved_date=normalize_date(residence.approved_at),
+        approved_date=read_date(residence.approved_at, '사용승인일'),
         parking=parking,
         has_elevator=residence.elevator,
         options=sent_or_none(item, 'options', [option.name for option in item.options if option.name]),
@@ -444,7 +453,7 @@ def detail_to_listing(
         parking_count=residence.total_parking_count,
         household_count=residence.household_count,
         direction_criterion=residence.direction_criterion,
-        confirmed_date=iso_date(meta.status_checked_at) if meta else None,
+        confirmed_date=read_date(meta.status_checked_at, '매물 확인일') if meta else None,
         actual_listing_checked=badge_flag(badges, VERIFICATION_BADGE),
         non_compliant_building=residence.non_compliant_building,
         hug_lessor=badge_flag(badges, HUG_BADGE),
@@ -510,7 +519,7 @@ def get_listing(client: ZigbangClient, item_id: int) -> ZigbangListingDetail | N
         )
     residence = structured.item.residence
     legacy = None
-    if residence.move_in_at is None:
+    if not _has_move_in_at(residence):
         # null을 즉시 입주로 추측하지 않고 기존 API의 설명으로 보완한다.
         # 실측: 두 API 의 status 는 늘 같다(open·close·cancel).
         with unavailable_on_404(item_id):

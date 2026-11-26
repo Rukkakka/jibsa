@@ -20,14 +20,16 @@ from jibsa.core.listing import (
     AmountSet,
     Listing,
     NumberRange,
+    holding_unread_dates,
     join_address,
+    keep_unread_dates,
     m2_to_pyeong,
     more_hint,
     normalize_address,
-    normalize_date,
     note,
     null_items_note,
     number_range,
+    read_date,
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -483,7 +485,7 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
         road_address=normalize_address(address.road_address if address else None),
         household_count=danji.households if danji and danji.households is not None else complex_.households,
         dong_count=danji.dong_count if danji and danji.dong_count is not None else complex_.building_count,
-        approved_date=normalize_date(complex_.approval_date),
+        approved_date=read_date(complex_.approval_date, '사용승인일'),
         building_floor_range=number_range(danji.min_floor, danji.max_floor) if danji else None,
         construction_company=danji.constructor_name if danji else None,
         parking_count=danji.parking_count if danji else None,
@@ -837,6 +839,8 @@ def _collect_complexes(
     """
     complexes: list[DaangnRegionComplex] = []
     seen: set[str] = set()
+    # 단지별로 못 읽은 날짜를 맡아 뒀다가 자른 뒤 남은 단지의 것만 안내에 센다
+    held: dict[str, list[tuple[str, str]]] = {}
     after: str | None = None
     inspected = 0
     # 서버는 빈 edge(null)도 한 자리로 세므로 빼고 읽은 수를 받은 자리에 더한다
@@ -857,10 +861,12 @@ def _collect_complexes(
             if node.original_id is None:
                 no_id_count += 1
                 continue
-            complex_ = region_complex_of(node, trade_type)
+            with holding_unread_dates() as dates:
+                complex_ = region_complex_of(node, trade_type)
             if complex_.complex_id not in seen:
                 seen.add(complex_.complex_id)
                 complexes.append(complex_)
+                held[complex_.complex_id] = dates
         page_info = connection.page_info
         has_more = bool(page_info and page_info.has_next_page)
         if inspected >= limit or not has_more:
@@ -875,6 +881,8 @@ def _collect_complexes(
     # 서버가 first 보다 많이 주면 자른 만큼을 '더 있음' 으로 센다 (COMPLEX_PAGE_SIZE 주석)
     has_more = has_more or len(complexes) > limit
     complexes = complexes[:limit]
+    for complex_ in complexes:
+        keep_unread_dates(held[complex_.complex_id])
     if stopped:
         notes.append(note('일부', cursor_stopped_note('단지 목록', f'{len(complexes)}곳') + '. 지원되는 필터로 범위를 좁히세요'))
     elif has_more:
@@ -1328,6 +1336,11 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
             else:
                 latest_trades = {'sale': None if node.trade_price is None else AmountSet(price_manwon=node.trade_price)}
         approval = APPROVAL_DATE_PATTERN.search(item.approval_date_text or '')
+        # 응답 설명이 '사용승인일 2022.04.28(4년차)' 꼴인데 날짜가 없는 단지가 어떤 글자를 주는지 확인되지 않았다.
+        # 그래서 매치되지 않는 글자는 값 없음으로 보고, 매치됐는데 없는 날이면 못 읽은 날짜로 알린다
+        approved_date = (
+            read_date('-'.join(approval.groups()), '사용승인일', raw=item.approval_date_text) if approval else None
+        )
         complexes.append(DaangnTrendingComplex(
             rank=None if dropped_complexes else rank,
             complex_id=item.original_id,
@@ -1335,7 +1348,7 @@ def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) 
             complex_type=code_label(COMPLEX_TYPE_LABELS, item.type),
             address=normalize_address(join_address(item.region.name1, item.region.name2)) if item.region else None,
             household_count=item.households,
-            approved_date='-'.join(approval.groups()) if approval else None,
+            approved_date=approved_date,
             representative_area_m2=info.exclusive_area if info else None,
             latest_trades=latest_trades,
         ))

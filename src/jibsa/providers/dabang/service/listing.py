@@ -25,15 +25,17 @@ from jibsa.core.listing import (
     ListingDetail,
     LookupFailures,
     TradeType,
+    holding_unread_dates,
+    keep_unread_dates,
     limit_notes,
     listing_as,
     lookup_failure_reason,
     m2_to_pyeong,
     move_in_label,
-    normalize_date,
     note,
     null_items_note,
     parking_label,
+    read_date,
     won_to_manwon,
     years_ago,
 )
@@ -659,8 +661,8 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         floor=floor_label(room.room_floor_str),
         building_floor=floor_label(room.building_floor_str),
         address=room.full_jibun_address_str,
-        registered_date=normalize_date(room.saved_time_str),
-        approved_date=normalize_date(room.building_approval_date_str),
+        registered_date=read_date(room.saved_time_str, '등록일'),
+        approved_date=read_date(room.building_approval_date_str, '사용승인일'),
         room_count=room.beds_num,
         bathroom_count=room.bath_num,
         direction=room.direction_str,
@@ -720,7 +722,8 @@ def attach_details(
             listings.append(listing_as(DabangDetailedListing, listing))
             continue
         try:
-            detail = get_listing(client, listing.id)
+            with holding_unread_dates() as dates:
+                detail = get_listing(client, listing.id)
         except ListingUnavailableError:
             gone += 1
             continue
@@ -729,6 +732,9 @@ def attach_details(
             listings.append(listing_as(DabangDetailedListing, listing))
             continue
         dated = listing.model_copy(update={'approved_date': detail.approved_date or listing.approved_date})
+        # 결과에 옮기는 칸은 사용승인일뿐이라 그 칸이 null 로 나갈 때만 알린다
+        if dated.approved_date is None:
+            keep_unread_dates(dates, only=('사용승인일',))
         listings.append(listing_as(DabangDetailedListing, dated, residence_type=detail.residence_type))
     notes = []
     if gone:

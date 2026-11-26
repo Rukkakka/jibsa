@@ -29,6 +29,7 @@ from jibsa.core.listing import (
     more_hint,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
@@ -271,6 +272,16 @@ def building_years(text: str | None) -> int | None:
     """연차 글자('48년차')의 연차. 단지 목록·거래 순위가 함께 쓴다. 없으면 None."""
     match = YEARS_TEXT_PATTERN.search(text or '')
     return int(match.group(1)) if match else None
+
+
+def contract_date(text: str | None, what: str) -> str | None:
+    """두 자리 연도로 오는 다방 계약일 글자를 'YYYY-MM-DD' 로 (`read_date`, 원래 글자로 알린다). 실거래 목록과 단지 최근 실거래가 함께 쓴다.
+
+    다방이 값 없음으로 주는 `-`·빈 글자는 안내 없는 None 이다 (앞에 '20' 을 붙이면 '20-' 가 되어 못 읽은 날짜로 알려진다).
+    """
+    if text is None or text.strip() in ('', '-'):
+        return None
+    return read_date(f'20{text}', what, raw=text)
 
 
 def listing_prices(trade_type: TradeType, price_title: str | None) -> dict[str, float] | None:

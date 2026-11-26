@@ -7,7 +7,7 @@ from jibsa.core.listing import (
     format_manwon,
     join_address,
     m2_to_pyeong,
-    normalize_date,
+    read_date,
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.response.stay.base import (
@@ -163,7 +163,7 @@ def stay_summary_to_listing(
         lat=summary.lat,
         lng=summary.lng,
         distance_km=None if distance_km is None else round(distance_km, 2),
-        registered_date=normalize_date(summary.reviewed_at),
+        registered_date=read_date(summary.reviewed_at, '등록일'),
         weekly_rent_manwon=won_to_manwon(summary.weekly_rent),
         weekly_manage_cost_manwon=won_to_manwon(summary.weekly_manage_cost),
         room_count=summary.room_count,

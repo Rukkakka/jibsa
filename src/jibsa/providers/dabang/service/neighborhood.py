@@ -11,10 +11,13 @@ from pydantic import (
 from jibsa.core.listing import (
     AmountSet,
     Listing,
+    holding_unread_dates,
+    keep_unread_dates,
     limit_notes,
     listing_as,
     normalize_address,
     null_items_note,
+    read_month,
 )
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
@@ -422,12 +425,21 @@ def _count_items(items: list[DabangCountModel]) -> dict[str, int | None]:
     }
 
 
-def _month(update_date: str | None) -> str | None:
-    """'26.10' → '2026-10'."""
-    if not update_date or '.' not in update_date:
-        return None
-    year, month = update_date.split('.', 1)
-    return f'20{year}-{int(month):02d}' if year.isdecimal() and month.isdecimal() else None
+def _base_month(update_dates: list[str | None]) -> str | None:
+    """요약·쪽마다 받은 갱신일 글자('26.10') 중 처음 읽은 달을 'YYYY-MM' 으로 (`read_month`, 13월 같은 달은 못 읽음).
+
+    값 없음(None·빈 글자·`-`)은 건너뛴다. 읽은 달이 없는데 못 읽은 글자가 있으면 출력 칸 `base_month` 하나가 null 이라 처음 못 읽은
+    글자 하나만 `[참고]` 로 알린다.
+    """
+    with holding_unread_dates() as held:
+        months = [
+            read_month(f'20{text.strip()}', '기준 달', raw=text)
+            for text in update_dates if text is not None and text.strip() not in ('', '-')
+        ]
+    month = next((value for value in months if value), None)
+    if month is None:
+        keep_unread_dates(held[:1])
+    return month
 
 
 def get_neighborhood(
@@ -443,7 +455,7 @@ def get_neighborhood(
     place, gid = dong
     chosen = list(topics or NEIGHBORHOOD_TOPICS)
     data: dict[str, Any] = {}
-    months: list[str | None] = []
+    update_dates: list[str | None] = []
     notes: list[str] = []
 
     def summary(
@@ -460,7 +472,7 @@ def get_neighborhood(
             DabangRegionInfoRegionalSummaryV5RequestParameterModel.model_validate(params)
         ).result
         if result is not None:
-            months.append(_month(result.update_date))
+            update_dates.append(result.update_date)
         return result
 
     if '매물' in chosen:
@@ -547,7 +559,7 @@ def get_neighborhood(
                 ))
     return DabangNeighborhood(
         region=place,
-        base_month=next((month for month in months if month), None),
+        base_month=_base_month(update_dates),
         topics=chosen,
         ranks=rank_list,
         with_ranks=ranks,
@@ -753,7 +765,7 @@ def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, l
     사진 주소는 내보내지 않는다.
     """
     place, gid = dong
-    month: list[str | None] = []
+    update_dates: list[str | None] = []
 
     def fetch(page: int) -> DabangPage[DabangHotPlaceModel] | None:
         result = client.run_request_region_info_hot_places_v5(DabangRegionInfoHotPlacesV5RequestParameterModel(
@@ -761,7 +773,7 @@ def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, l
         )).result
         if result is None:
             return None
-        month.append(_month(result.update_date))
+        update_dates.append(result.update_date)
         return DabangPage(result.list_ or [], result.total, bool(result.has_more), result.null_items('list_'))
 
     pages = fetch_pages(fetch, limit, page_size=REGION_INFO_PAGE_LIMIT, max_limit=REGION_INFO_MAX_LIMIT)
@@ -780,7 +792,7 @@ def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, l
         region=place,
         type=type_label,
         basis="다방 동네정보 '핫플레이스': 미쉐린·블루리본 가이드에 오른 식당 (출처 미쉐린·블루리본)",
-        base_month=next((value for value in month if value), None),
+        base_month=_base_month(update_dates),
         total=pages.total,
         returned=len(places),
         has_more=pages.has_more,
