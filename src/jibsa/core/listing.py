@@ -4,8 +4,8 @@ from calendar import monthrange
 from collections.abc import (
     Callable,
     Container,
+    Generator,
     Iterable,
-    Iterator,
     Sequence,
 )
 from contextlib import contextmanager
@@ -753,7 +753,7 @@ def add_unread_date(what: str, raw: str) -> None:
 
 
 @contextmanager
-def holding_unread_dates() -> Iterator[list[tuple[str, str]]]:
+def holding_unread_dates() -> Generator[list[tuple[str, str]], None, None]:
     """블록 안에서 모은 못 읽은 날짜를 명령 모음에 넣지 않고 돌려준다 ((칸 이름, 원래 글자) 목록).
 
     변환한 뒤에 거르거나(반경·중복) 자르는(`--limit`) 목록이 출력에 남지 않는 항목의 날짜까지 세지 않도록, 항목마다 이 블록
