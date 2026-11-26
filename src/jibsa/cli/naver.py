@@ -45,7 +45,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.service.common import (
+from jibsa.providers.naver.service.common.functions import (
     AREA_BASES,
     ENTRANCE_CODE_BY_NAME,
     MAX_LIST_LIMIT,
@@ -55,26 +55,27 @@ from jibsa.providers.naver.service.common import (
     SEARCH_CODES_BY_PROPERTY,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
-    NaverTradeConditions,
     dong_key,
     dong_label,
 )
-from jibsa.providers.naver.service.complex import get_complex
-from jibsa.providers.naver.service.listing import (
+from jibsa.providers.naver.service.common.models import NaverTradeConditions
+from jibsa.providers.naver.service.complex.functions import get_complex
+from jibsa.providers.naver.service.listing.functions import (
     get_listing,
     list_complex_articles,
 )
-from jibsa.providers.naver.service.market_price import get_market_price_history
-from jibsa.providers.naver.service.real_price import get_real_prices
-from jibsa.providers.naver.service.redevelopment import (
+from jibsa.providers.naver.service.market_price.functions import (
+    get_market_price_history,
+)
+from jibsa.providers.naver.service.real_price.functions import get_real_prices
+from jibsa.providers.naver.service.redevelopment.functions import (
     REDEVELOPMENT_SORT_TYPE_BY_NAME,
     get_redevelopment,
     list_redevelopment_areas,
     list_redevelopment_articles,
 )
-from jibsa.providers.naver.service.region import (
+from jibsa.providers.naver.service.region.functions import (
     WIDE_REGION_NOTE_MARK,
-    NaverRegion,
     city_district_names,
     legal_division_code_at,
     list_regions,
@@ -83,13 +84,14 @@ from jibsa.providers.naver.service.region import (
     resolve_redevelopment_number,
     resolve_search_region,
 )
-from jibsa.providers.naver.service.school import (
+from jibsa.providers.naver.service.region.models import NaverRegion
+from jibsa.providers.naver.service.school.functions import (
     MAX_SCHOOL_COMPLEX_LIMIT,
     SCHOOL_COMPLEX_SORT_TYPE_BY_NAME,
     get_school,
     list_school_complexes,
 )
-from jibsa.providers.naver.service.search import (
+from jibsa.providers.naver.service.search.functions import (
     AREA_COMPLEX_CODES_BY_TYPE,
     BATHROOM_CODE_BY_NAME,
     COMPLEX_LIST_SORT_TYPE_BY_NAME,
@@ -101,11 +103,11 @@ from jibsa.providers.naver.service.search import (
     MOVE_IN_CODE_BY_NAME,
     PARKING_CODE_BY_NAME,
     ROOM_COUNT_CODE_BY_NAME,
-    NaverListingConditions,
     list_area_complexes,
     search_area,
 )
-from jibsa.providers.naver.service.trend import (
+from jibsa.providers.naver.service.search.models import NaverListingConditions
+from jibsa.providers.naver.service.trend.functions import (
     NATIONWIDE_CODE,
     NATIONWIDE_NAME,
     TREND_PERIOD_BY_NAME,

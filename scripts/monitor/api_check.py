@@ -158,7 +158,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         # 호 정보(item_catalogs/ho-info)는 덤이라 실패해도 값이 null 로 남고 명령은 성공한다. 직방은 시세가 없는 호에 0 을 주기도 해
-        # jibsa 가 null 로 낸다(service/apt.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다. 응답 형식이 바뀌어 호
+        # jibsa 가 null 로 낸다(service/apt/functions.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다. 응답 형식이 바뀌어 호
         # 정보를 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
         Step(
             '아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings',

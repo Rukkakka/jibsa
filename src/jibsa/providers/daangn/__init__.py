@@ -1,58 +1,62 @@
 from jibsa.core.listing import with_notes
 
 from .api.client import DaangnClient
-from .service.common import DaangnRegion
-from .service.commute import DaangnCommuteResult
-from .service.commute import search_commute as _search_commute
-from .service.complex import (
+from .service.common.models import DaangnRegion
+from .service.commute.functions import search_commute as _search_commute
+from .service.commute.models import DaangnCommuteResult
+from .service.complex.functions import get_complex as _get_complex
+from .service.complex.functions import list_bounds_complexes as _list_bounds_complexes
+from .service.complex.functions import list_complex_listings as _list_complex_listings
+from .service.complex.functions import list_region_complexes as _list_region_complexes
+from .service.complex.functions import search_complexes as _search_complexes
+from .service.complex.models import (
     DaangnBoundsComplexesResult,
     DaangnComplex,
     DaangnComplexCandidate,
     DaangnComplexListingsResult,
     DaangnRegionComplexesResult,
 )
-from .service.complex import get_complex as _get_complex
-from .service.complex import list_bounds_complexes as _list_bounds_complexes
-from .service.complex import list_complex_listings as _list_complex_listings
-from .service.complex import list_region_complexes as _list_region_complexes
-from .service.complex import search_complexes as _search_complexes
-from .service.listing import DaangnListingDetail
-from .service.listing import get_listing as _get_listing
-from .service.real_price import (
+from .service.listing.functions import get_listing as _get_listing
+from .service.listing.models import DaangnListingDetail
+from .service.real_price.functions import (
+    get_listing_real_prices as _get_listing_real_prices,
+)
+from .service.real_price.functions import get_price_trend as _get_price_trend
+from .service.real_price.functions import get_real_prices as _get_real_prices
+from .service.real_price.functions import (
+    get_region_real_prices as _get_region_real_prices,
+)
+from .service.real_price.models import (
     DaangnListingRealPriceResult,
     DaangnPriceTrendResult,
     DaangnRealPriceResult,
     DaangnRegionRealPriceResult,
 )
-from .service.real_price import get_listing_real_prices as _get_listing_real_prices
-from .service.real_price import get_price_trend as _get_price_trend
-from .service.real_price import get_real_prices as _get_real_prices
-from .service.real_price import get_region_real_prices as _get_region_real_prices
-from .service.region import (
+from .service.region.functions import find_address as _find_address
+from .service.region.functions import find_station as _find_station
+from .service.region.functions import find_university as _find_university
+from .service.region.functions import resolve_area as _resolve_area
+from .service.region.functions import search_areas as _search_areas
+from .service.region.models import (
     DaangnAddress,
     DaangnArea,
     DaangnStation,
     DaangnUniversity,
 )
-from .service.region import find_address as _find_address
-from .service.region import find_station as _find_station
-from .service.region import find_university as _find_university
-from .service.region import resolve_area as _resolve_area
-from .service.region import search_areas as _search_areas
-from .service.review import DaangnRegionReviews
-from .service.review import get_region_reviews as _get_region_reviews
-from .service.school import DaangnSchoolResult
-from .service.school import get_school as _get_school
-from .service.search import (
+from .service.review.functions import get_region_reviews as _get_region_reviews
+from .service.review.models import DaangnRegionReviews
+from .service.school.functions import get_school as _get_school
+from .service.school.models import DaangnSchoolResult
+from .service.search.functions import search_dong as _search_dong
+from .service.search.functions import search_map_area as _search_map_area
+from .service.search.functions import search_station as _search_station
+from .service.search.functions import search_university as _search_university
+from .service.search.models import (
     DaangnDongSearchResult,
     DaangnMapSearchResult,
     DaangnStationSearchResult,
     DaangnUniversitySearchResult,
 )
-from .service.search import search_dong as _search_dong
-from .service.search import search_map_area as _search_map_area
-from .service.search import search_station as _search_station
-from .service.search import search_university as _search_university
 
 
 # 파이썬에서 부르는 정문 함수는 with_notes 로 감싸 결과 notes 에 못 읽은 날짜·뺀 빈 항목 안내를 넣는다.

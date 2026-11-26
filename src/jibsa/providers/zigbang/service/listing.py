@@ -7,21 +7,17 @@ from jibsa.core.errors import (
     ListingUnavailableError,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.service.apt import get_apt_listing
+from jibsa.providers.zigbang.service.apt.functions import get_apt_listing
 from jibsa.providers.zigbang.service.common.apt import (
     APT_ID_PREFIXES,
     apt_item_source,
 )
-from jibsa.providers.zigbang.service.common.base import ZigbangListingDetail
+from jibsa.providers.zigbang.service.common.models import ZigbangListingDetail
 from jibsa.providers.zigbang.service.room.detail import get_listing as get_room_listing
-from jibsa.providers.zigbang.service.stay.detail import (
-    ZigbangStayListingDetail,
-    get_stay_listing,
-)
-from jibsa.providers.zigbang.service.store import (
-    ZigbangStoreListingDetail,
-    get_store_listing,
-)
+from jibsa.providers.zigbang.service.stay.detail import get_stay_listing
+from jibsa.providers.zigbang.service.stay.models import ZigbangStayListingDetail
+from jibsa.providers.zigbang.service.store.functions import get_store_listing
+from jibsa.providers.zigbang.service.store.models import ZigbangStoreListingDetail
 
 
 # 접두어: 상가·단기임대와, 아파트 매물 ID 가 출처 앞에 붙이는 것 (coalition)

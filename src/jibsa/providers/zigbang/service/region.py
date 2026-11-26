@@ -33,7 +33,7 @@ from jibsa.providers.zigbang.api.request.region import (
     ZigbangSearchV2RequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.models import (
     ZigbangAptRegion,
     ZigbangBoundary,
     ZigbangRegion,

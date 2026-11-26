@@ -67,25 +67,21 @@ from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerMo
 from jibsa.providers.zigbang.api.response.store import (
     ZigbangStoreArticleStoresV2ResponseModel,
 )
-from jibsa.providers.zigbang.service.apt import (
-    ZigbangAptConditions,
+from jibsa.providers.zigbang.service.apt.functions import (
     apt_item_to_listing,
     search_apt_listings,
 )
+from jibsa.providers.zigbang.service.apt.models import ZigbangAptConditions
 from jibsa.providers.zigbang.service.common.apt import catalog_to_listing
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.base import sent_or_none
+from jibsa.providers.zigbang.service.common.models import (
     ZigbangAptRegion,
     ZigbangRegion,
-    sent_or_none,
-)
-from jibsa.providers.zigbang.service.common.room import (
     ZigbangRoomConditions,
-    summary_to_listing,
 )
-from jibsa.providers.zigbang.service.complex.detail import (
-    ZigbangComplex,
-    get_complex,
-)
+from jibsa.providers.zigbang.service.common.room import summary_to_listing
+from jibsa.providers.zigbang.service.complex.detail import get_complex
+from jibsa.providers.zigbang.service.complex.models import ZigbangComplex
 from jibsa.providers.zigbang.service.complex.search import (
     complex_order_of,
     distance_m_of,
@@ -108,7 +104,7 @@ from jibsa.providers.zigbang.service.local import (
     trades as region_trades,
 )
 from jibsa.providers.zigbang.service.local.base import ZigbangLocalArea
-from jibsa.providers.zigbang.service.real_price import get_real_prices
+from jibsa.providers.zigbang.service.real_price.functions import get_real_prices
 from jibsa.providers.zigbang.service.region import (
     divided_region_error,
     region_scope_items,
@@ -127,16 +123,18 @@ from jibsa.providers.zigbang.service.room.detail import (
 from jibsa.providers.zigbang.service.room.search import search_listings
 from jibsa.providers.zigbang.service.stay.detail import (
     STAY_REFUND_RULES,
-    ZigbangStayListingDetail,
     stay_detail_to_listing,
 )
+from jibsa.providers.zigbang.service.stay.models import ZigbangStayListingDetail
 from jibsa.providers.zigbang.service.stay.search import stay_marker_order
-from jibsa.providers.zigbang.service.store import (
+from jibsa.providers.zigbang.service.store.functions import (
     STORE_VACANT_SECTION,
-    ZigbangStoreConditions,
-    ZigbangStoreSearchResult,
     get_store_listing,
     search_store_listings,
+)
+from jibsa.providers.zigbang.service.store.models import (
+    ZigbangStoreConditions,
+    ZigbangStoreSearchResult,
 )
 
 
@@ -475,7 +473,7 @@ def test_apt_listing_uses_apt_detail_when_house_detail_rejects_apartment() -> No
 
 
 def test_apt_listing_kind_from_item_type() -> None:
-    from jibsa.providers.zigbang.service.common.apt import ZigbangAptListing
+    from jibsa.providers.zigbang.service.common.models import ZigbangAptListing
     # 신규분양 카드는 출처가 coalition 이라 coalition- 줄이 되고, 분양가가 집주인 호가로 읽히지 않게 종류를 알린다
     card = load('locals_item_catalogs')['list'][0]
     card['itemIdList'] = [{'itemSource': 'coalition', 'itemId': 3000009}]
@@ -1142,7 +1140,7 @@ def test_apt_region_divided_into_several_lists_is_ambiguous(query: str, items: l
 
 def test_store_dong_codes_never_send_a_code_the_server_does_not_know() -> None:
     # 직방 상가는 모르는 법정동 코드(리 코드 등)에 에러 없이 전국 매물을 준다. 리는 읍·면 코드로 바꾸고 코드가 없으면 막는다
-    from jibsa.providers.zigbang.service.store import store_region_codes
+    from jibsa.providers.zigbang.service.store.functions import store_region_codes
 
     ri = ZigbangRegion(name='가상리', lat=37.49, lng=127.49, legal_division_code='4183025021')
     codes, notes = store_region_codes([ri])

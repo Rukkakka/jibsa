@@ -5,8 +5,6 @@ from collections.abc import (
     Iterable,
 )
 
-from pydantic import Field
-
 from jibsa.core.listing import (
     TradeType,
     join_address,
@@ -16,10 +14,7 @@ from jibsa.core.listing import (
     read_date,
     won_to_manwon,
 )
-from jibsa.core.schema import (
-    RequestModel,
-    ResponseModel,
-)
+from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
     ZigbangFloorFilter,
@@ -34,13 +29,15 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemSummaryModel,
 )
 from jibsa.providers.zigbang.service.common.base import (
-    ZigbangListing,
     item_url,
     officetel_complex_id,
 )
+from jibsa.providers.zigbang.service.common.models import (
+    ZigbangListing,
+    ZigbangRoomConditions,
+)
 
 from typing import (
-    Annotated,
     NamedTuple,
     Protocol,
 )
@@ -170,91 +167,6 @@ def summary_to_listing(
         hug_lessor=badge_flag(summary.listed_badges, HUG_BADGE),
         actual_listing_checked=badge_flag(summary.listed_badges, VERIFICATION_BADGE),
     )
-
-
-class ZigbangRoomConditions(RequestModel):
-    """원룸·빌라·오피스텔 매물 조건 (search listings room, search listings --complex). 금액은 만원.
-
-    라벨은 `TRADE_TYPES`·`ROOM_TYPES`·`FLOOR_FILTERS`·`OPTION_FILTERS`·`CONDITIONS` 의 값이다. 값의 범위·조합은
-    CLI 가 먼저 검사한다. 거래 유형·가격은 `filters` 처럼 유형마다 따로 넣고, 나머지는 `room_filter_of` 로 바꾼다.
-    """
-
-    trade_types: Annotated[
-        list[TradeType],
-        Field(description='거래 유형. 비면 전체')
-    ] = []
-    deposit_min: Annotated[
-        int | None,
-        Field(description='보증금·전세금 하한 (만원)')
-    ] = None
-    deposit_max: Annotated[
-        int | None,
-        Field(description='보증금·전세금 상한 (만원)')
-    ] = None
-    rent_min: Annotated[
-        int | None,
-        Field(description='월세 하한 (만원)')
-    ] = None
-    rent_max: Annotated[
-        int | None,
-        Field(description='월세 상한 (만원)')
-    ] = None
-    price_min: Annotated[
-        int | None,
-        Field(description='매매가 하한 (만원)')
-    ] = None
-    price_max: Annotated[
-        int | None,
-        Field(description='매매가 상한 (만원)')
-    ] = None
-    room_types: Annotated[
-        list[str],
-        Field(description='방 구조 (ROOM_TYPES). 비면 유형별 기본')
-    ] = []
-    manage_cost_min: Annotated[
-        int | None,
-        Field(description='월 관리비 하한 (만원)')
-    ] = None
-    manage_cost_max: Annotated[
-        int | None,
-        Field(description='월 관리비 상한 (만원)')
-    ] = None
-    no_manage_cost: Annotated[
-        bool,
-        Field(description='관리비 없는 매물만')
-    ] = False
-    area_min_m2: Annotated[
-        float | None,
-        Field(description='면적 하한 (㎡)')
-    ] = None
-    area_max_m2: Annotated[
-        float | None,
-        Field(description='면적 상한 (㎡)')
-    ] = None
-    area_min_pyeong: Annotated[
-        float | None,
-        Field(description='면적 하한 (평)')
-    ] = None
-    area_max_pyeong: Annotated[
-        float | None,
-        Field(description='면적 상한 (평)')
-    ] = None
-    floors: Annotated[
-        list[ZigbangFloorFilter],
-        Field(description='층 (FLOOR_FILTERS, OR)')
-    ] = []
-    bathroom_count: Annotated[
-        int | None,
-        Field(description='욕실 수 (3 은 3개 이상)')
-    ] = None
-    options: Annotated[
-        list[ZigbangOptionFilter],
-        Field(description='옵션 (OPTION_FILTERS, AND)')
-    ] = []
-    extra_conditions: Annotated[
-        list[str],
-        Field(description='기타 조건 (CONDITIONS, AND)')
-    ] = []
 
 
 def room_filter_of(conditions: ZigbangRoomConditions) -> dict[str, object]:

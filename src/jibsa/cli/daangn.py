@@ -50,49 +50,47 @@ from jibsa.core.listing import (
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.service.common import (
-    BUILDING_APPROVAL_FILTER_BY_LABEL,
+from jibsa.providers.daangn.service.common.functions import (
     COMMUTE_STATION_MAX_LIMIT,
     COMPARE_MAX_COMPLEXES,
     COMPLEX_LIST_MAX_LIMIT,
     COMPLEX_TYPE_FILTER_BY_LABEL,
-    DEAL_FILTER_BY_LABEL,
-    FLOOR_FILTER_BY_LABEL,
     LISTING_MAX_LIMIT,
     MAP_ZOOM_MAX,
     MAP_ZOOM_MIN,
-    OPTION_FILTER_BY_LABEL,
     OPTIONAL_LOOKUP_ERRORS,
     POINT_ZOOM,
     POPULAR_PROPERTY_TYPES,
     PROPERTY_TYPES,
     REAL_PRICE_TRADE_TYPES,
-    ROOM_COUNT_FILTER_BY_LABEL,
-    STRUCTURE_FILTER_BY_LABEL,
     TRADE_TYPES,
-    DaangnListingConditions,
-    DaangnRegion,
     FeedQueryRejectedError,
     partial_failure_note,
+)
+from jibsa.providers.daangn.service.common.models import (
+    BUILDING_APPROVAL_FILTER_BY_LABEL,
+    DEAL_FILTER_BY_LABEL,
+    FLOOR_FILTER_BY_LABEL,
+    OPTION_FILTER_BY_LABEL,
+    ROOM_COUNT_FILTER_BY_LABEL,
+    STRUCTURE_FILTER_BY_LABEL,
+    DaangnListingConditions,
+    DaangnRegion,
     region_name_parts,
 )
-from jibsa.providers.daangn.service.commute import (
+from jibsa.providers.daangn.service.commute.functions import (
     COMMUTE_STATION_DEFAULT_LIMIT,
     search_commute,
 )
-from jibsa.providers.daangn.service.compare import (
+from jibsa.providers.daangn.service.compare.functions import (
     NEARBY_COMPLEXES_MAX,
     compare_complexes,
     list_nearby_complexes,
 )
-from jibsa.providers.daangn.service.complex import (
+from jibsa.providers.daangn.service.complex.functions import (
     COMPLEX_CANDIDATE_LIMIT,
     COMPLEX_SORT_BY_LABEL,
     DEFAULT_COMPLEX_TRADE_TYPE,
-    DaangnBoundsComplexesResult,
-    DaangnComplexConditions,
-    DaangnComplexListingsResult,
-    DaangnRegionComplexesResult,
     get_complex,
     list_bounds_complexes,
     list_complex_listings,
@@ -101,35 +99,37 @@ from jibsa.providers.daangn.service.complex import (
     search_complexes,
     trending_region_of,
 )
-from jibsa.providers.daangn.service.listing import (
+from jibsa.providers.daangn.service.complex.models import (
+    DaangnBoundsComplexesResult,
+    DaangnComplexConditions,
+    DaangnComplexListingsResult,
+    DaangnRegionComplexesResult,
+)
+from jibsa.providers.daangn.service.listing.functions import (
     DETAILS_MAX,
     attach_details,
     get_listing,
 )
-from jibsa.providers.daangn.service.neighborhood import (
+from jibsa.providers.daangn.service.neighborhood.functions import (
     LIFESTYLE_INDICATORS,
     recommend_neighborhoods,
 )
-from jibsa.providers.daangn.service.popular import (
+from jibsa.providers.daangn.service.popular.functions import (
     POPULAR_MAX_LIMIT,
     list_popular_listings,
 )
-from jibsa.providers.daangn.service.real_price import (
+from jibsa.providers.daangn.service.real_price.functions import (
     PRICE_CHART_TRADE_BY_TRADE_TYPE,
     PRICE_TREND_PERIODS,
     REAL_PRICE_MAX_LIMIT,
-    DaangnRealPriceBaseResult,
     get_listing_real_prices,
     get_price_trend,
     get_real_prices,
     get_region_real_prices,
 )
-from jibsa.providers.daangn.service.region import (
+from jibsa.providers.daangn.service.real_price.models import DaangnRealPriceBaseResult
+from jibsa.providers.daangn.service.region.functions import (
     UNIVERSITY_CANDIDATES,
-    DaangnAddress,
-    DaangnArea,
-    DaangnStation,
-    DaangnUniversity,
     LocationMissingError,
     SimilarAreasError,
     find_address,
@@ -149,28 +149,36 @@ from jibsa.providers.daangn.service.region import (
     station_label,
     university_label,
 )
-from jibsa.providers.daangn.service.review import (
+from jibsa.providers.daangn.service.region.models import (
+    DaangnAddress,
+    DaangnArea,
+    DaangnStation,
+    DaangnUniversity,
+)
+from jibsa.providers.daangn.service.review.functions import (
     TOP_DEFAULT,
     TOP_MAX,
     get_region_reviews,
 )
-from jibsa.providers.daangn.service.school import (
+from jibsa.providers.daangn.service.school.functions import (
     SCHOOL_CANDIDATE_LIMIT,
     get_preschool,
     get_school,
     list_preschools,
     search_school_candidates,
 )
-from jibsa.providers.daangn.service.search import (
-    DaangnDongSearchResult,
-    DaangnMapSearchResult,
-    DaangnStationSearchResult,
-    DaangnUniversitySearchResult,
+from jibsa.providers.daangn.service.search.functions import (
     property_type_notes,
     search_dong,
     search_map_area,
     search_station,
     search_university,
+)
+from jibsa.providers.daangn.service.search.models import (
+    DaangnDongSearchResult,
+    DaangnMapSearchResult,
+    DaangnStationSearchResult,
+    DaangnUniversitySearchResult,
 )
 
 from typing import (
