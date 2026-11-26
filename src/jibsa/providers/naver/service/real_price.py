@@ -30,6 +30,7 @@ from jibsa.core.geo import (
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     SAME_AREA_PYEONG_TRADES_NOTE,
+    Result,
     floor_text,
     months_ago,
     note,
@@ -293,8 +294,11 @@ class NaverNearbyTransactions(BaseModel):
     ]
 
 
-class NaverRealPriceResult(BaseModel):
-    """평형별 실거래 내역."""
+class NaverRealPriceResult(Result):
+    """평형별 실거래 내역.
+
+    `notes`: 기간 안 거래를 다 받지 못했다는 안내 등. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -339,10 +343,6 @@ class NaverRealPriceResult(BaseModel):
         NaverNearbyTransactions | None,
         Field(description='단지 둘레 범위 안 주변 실거래. 빌라 단지만 키가 있다 (아파트는 키가 없다). 단지 좌표를 모르거나 조회가 실패하면 null')
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='기간 안 거래를 다 받지 못했다는 안내 등. CLI 가 결과 위에 붙인다')
-    ] = []
 
     # 빌라 단지의 평당 실거래가를 물었는지(매매·전세). 아니면(아파트·월세) price_per_pyeong_trades 는 해당 없음이라 키를 뺀다
     _price_per_pyeong_scoped: bool = PrivateAttr(default=False)

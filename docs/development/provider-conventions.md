@@ -7,7 +7,7 @@
 
 ```
 providers/<source>/
-├── __init__.py       # 자주 쓰는 공개 진입점만 re-export (CLI 는 service 모듈에서 바로 가져와 전부 내보낼 필요는 없다)
+├── __init__.py       # 자주 쓰는 공개 진입점만 re-export, 함수는 `with_notes` 로 감싼다 (CLI 는 service 모듈에서 바로 가져와 전부 내보낼 필요는 없다)
 ├── api/              # 아래층: 소스 API 를 그대로 옮긴 것. service 를 가져다 쓰지 않는다
 │   ├── __init__.py   # 안내 docstring 만
 │   ├── client.py     # <Source>Client(BaseHTTPClient) + run_request_* / arun_request_*
@@ -45,9 +45,10 @@ providers/<source>/
   대표 고르기를 하거나 쪽 넘김·`--limit` 자리를 세는 코드는 `null_items` 를 본다**: 계산한 값은 `null`(모름)로 두어 빼고 센 적은 값이 완전한
   값처럼 나가지 않게 하고, 자리를 세는 값은 `len(목록)` 에 뺀 수를 더해 (빈 항목도 서버가 센 한 자리다) 같은 항목을 다시 받거나 덜 받지
   않게 하며, 뺀 것은 `null_items_note`(`core/listing.py`)로 `[제외]` 안내를 붙인다. 이 안내의 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API
-  감시가 그런 응답을 고장으로 알린다. 목록을 그대로 보여 주기만 하면 뺀 것만으로 값이 틀리지 않아 `null_items` 를 보지 않아도 되고 자리별 안내도 만들지 않아도 된다: 명령 하나 동안 뺀 수는 `core.schema` 가 합으로 모으고(`reset_null_item_tally`·`add_null_item_tally`·`null_item_tally`, 기반 모델의 검증기와 루트 목록 모델 `DabangRootListModel` 이 더한다. 집계는 `handle_errors` 가 명령 시작에 0 으로 돌린다), `emit` 이 그 합이 0 보다 큰데 결과 `notes` 에 빈 항목 안내가 없으면 어느 목록인지 말하지 않는 공통 안내(`null_items_total_note`) 한 줄을 붙인다. 소스가 `null_items_note` 로 자리별 안내를 이미 붙였으면 공통 안내는 붙지 않는다.
+  감시가 그런 응답을 고장으로 알린다. 목록을 그대로 보여 주기만 하면 뺀 것만으로 값이 틀리지 않아 `null_items` 를 보지 않아도 되고 자리별 안내도 만들지 않아도 된다: 명령 하나 동안 뺀 수는 `core.schema` 가 합으로 모으고(`reset_null_item_tally`·`add_null_item_tally`·`null_item_tally`, 기반 모델의 검증기와 루트 목록 모델 `DabangRootListModel` 이 더한다. 집계는 `handle_errors` 가 명령 시작에, 정문 함수는 `with_notes` 가 부를 때마다 0 으로 돌린다), `emit`(정문 함수는 `with_notes` 가 결과 `notes` 에)이 그 합이 0 보다 큰데 결과 `notes` 에 빈 항목 안내가 없으면 어느 목록인지 말하지 않는 공통 안내(`null_items_total_note`) 한 줄을 붙인다. 소스가 `null_items_note` 로 자리별 안내를 이미 붙였으면 공통 안내는 붙지 않는다.
 - service 결과 모델(`ZigbangSearchResult`, `NaverComplexSummary`, `<Source>ListingDetail` 등)은
-  CLI 출력용이므로 그 기능의 service 모듈에 두고 `BaseModel` + `extra='forbid'` 로 만든다.
+  CLI 출력용이므로 그 기능의 service 모듈에 두고 `extra='forbid'` 로 만든다. 명령이 돌려주는 결과 모델은 `BaseModel` 이 아니라
+  `core.listing.Result` 를 물려받는다 ([Service 함수](#service-함수)). `Result` 에는 `extra='forbid'` 가 없어 모델마다 `model_config` 에 둔다.
 - HTML 파싱처럼 소스 고유의 응답 처리 단계가 있으면 `api/` 안의 별도 모듈로 뺀다 (당근의 `api/relay.py`, `api/parser.py`).
 - import 는 `service` → `api` 한 방향이다. `api/` 는 소스 API 를 그대로 옮긴 아래층이라 service·CLI 를 모른다.
 
@@ -230,6 +231,10 @@ def run_request_items_onerooms_v1(
 - 소스 응답을 `Listing` / `ListingDetail` (또는 그 서브클래스 `<Source>ListingDetail`) 로 바꾼다.
   금액은 만원(`won_to_manwon`), 날짜는 `read_date`(못 읽으면 `null` + `[참고]`, `output-contract.md` 의 금액·단위 날짜 규칙), 면적 평은 `m2_to_pyeong`,
   주소는 `join_address`. 본문(매물 설명)은 옮기지 않는다 (`output-contract.md` 의 내보내지 않는 정보).
+- 명령이 돌려주는 결과 모델은 `core.listing.Result` 를 물려받고(`ListingDetail` 도 `Result` 다) `notes` 를 따로 정의하지 않는다.
+  `notes` 는 출력 JSON 의 칸이 아니라 `emit` 이 결과 맨 위 `notes` 로 붙이는 안내다. 어떤 안내가 들어가는지는 모델 docstring 끝의 `` `notes`: `` 문단에 적는다.
+  `emit` 은 결과의 `notes` 를 명령이 넘긴 `notes`(CLI 가 만든 안내) 뒤에 스스로 붙인다. 결과 앞에 모델에 없는 칸(지역·범위·단지 번호)을 붙일 때는 결과를 dict 로 풀지 않고
+  `emit(result, …, head={…})` 로 준다. 결과 둘을 한 JSON 으로 합치는 곳(네이버 `school --complexes`)만 두 결과의 `notes` 를 넘긴다.
 - **만료 판정은 service 에서 한다.** 목록은 거래 불가 매물을 건너뛰고, 상세는
   `ListingUnavailableError(source, id, status=..., reason=...)` 를 던진다. 404 도
   `ListingUnavailableError` 로 바꾼다.
@@ -374,7 +379,9 @@ jibsa 는 사이트를 대체하는 도구가 아니라, 사이트가 로그인 
 2. 그 엔드포인트를 부를 기능의 `api/request/<기능>.py` / `api/response/<기능>.py` (기능이 폴더면 `<기능>/search.py` 처럼 service 와 같은 경로)에 모델([기준 7](#service-모듈을-나누는-기준)),
    `api/client.py` 에 ClassVar + sync/async 메서드.
 3. 필요하면 [나누는 기준](#service-모듈을-나누는-기준)에 맞는 service 모듈에서 조합한다. 자주 쓰는 공개 진입점이면
-   provider `__init__.py` 에 re-export 한다 (`service/__init__.py` 에는 하지 않는다).
+   provider `__init__.py` 에 re-export 한다 (`service/__init__.py` 에는 하지 않는다). 함수는 `core.listing.with_notes('<source>')` 로 감싸
+   내놓는다 (파이썬에서 불러도 결과 `notes` 에 못 읽은 날짜·뺀 빈 항목 안내가 들어간다. service 함수 정의에는 쓰지 않는다: CLI 는 감싸지 않은
+   함수를 쓰고 명령 하나가 여러 함수를 부르므로, 감싸면 뒤 호출이 앞의 안내를 지우고 `emit` 이 같은 안내를 또 붙인다).
 4. CLI 직접 조회로 실제 동작을 확인한다. 테스트는 [추가 기준](README.md#검증과-테스트)에 맞을 때만
    픽스처 + `httpx.MockTransport` 로 추가한다. 픽스처는 그 테스트가 읽을 때만
    `tests/fixtures/<source>/<action_id>.json` 으로 만든다. 실제 응답 구조를 본뜨되 값은 모두 가상으로 바꾸고

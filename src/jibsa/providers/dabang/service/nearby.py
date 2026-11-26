@@ -14,6 +14,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.geo import box_around
 from jibsa.core.listing import (
     AmountSet,
+    Result,
     js_round,
     js_to_fixed,
     normalize_address,
@@ -243,7 +244,7 @@ class DabangCarShareResult(BaseModel):
     ]
 
 
-class DabangNearby(BaseModel):
+class DabangNearby(Result):
     """매물·단지·분양 둘레 교통과 가까운 시설."""
 
     model_config = ConfigDict(
@@ -491,7 +492,7 @@ class DabangStationPrice(BaseModel):
     ]
 
 
-class DabangStationPrices(BaseModel):
+class DabangStationPrices(Result):
     """역 둘레 평균 매물가."""
 
     model_config = ConfigDict(

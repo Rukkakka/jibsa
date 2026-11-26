@@ -14,6 +14,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import full_legal_division_code
 from jibsa.core.listing import (
+    Result,
     add_unread_date,
     more_hint,
     normalize_address,
@@ -306,7 +307,7 @@ class DabangWatchRanking(BaseModel):
         return data
 
 
-class DabangWatchRankings(BaseModel):
+class DabangWatchRankings(Result):
     """전국 조회 순위."""
 
     model_config = ConfigDict(
@@ -413,8 +414,11 @@ class DabangTradeRanking(BaseModel):
     ] = None
 
 
-class DabangTradeRankings(BaseModel):
-    """전국 거래 순위."""
+class DabangTradeRankings(Result):
+    """전국 거래 순위.
+
+    `notes`: 빈 순위 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -444,10 +448,6 @@ class DabangTradeRankings(BaseModel):
         list[DabangTradeRanking],
         Field(description='순위')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='빈 순위 안내')
-    ] = []
 
 
 def get_trade_rankings(
@@ -586,8 +586,11 @@ class DabangRegionRankingEntry(BaseModel):
         return {key: value for key, value in data.items() if value is not None or key in self._applicable}
 
 
-class DabangRegionRanking(BaseModel):
-    """범위 안 동·단지 순위."""
+class DabangRegionRanking(Result):
+    """범위 안 동·단지 순위.
+
+    `notes`: 일부 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -655,10 +658,6 @@ class DabangRegionRanking(BaseModel):
         list[DabangRegionRankingEntry],
         Field(description='순위')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부 안내')
-    ] = []
     # 다방이 기준 달 글자를 줬는데 읽지 못해 base_month 가 null 이면 모름이라 키를 지우지 않는다 ([참고] 로 알린다)
     _base_month_unread: bool = PrivateAttr(default=False)
 

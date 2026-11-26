@@ -13,6 +13,7 @@ from pydantic import (
 
 from jibsa.core.listing import (
     AmountRange,
+    Result,
     floor_text,
     holding_unread_dates,
     join_address,
@@ -412,8 +413,11 @@ class NaverReconstruction(BaseModel):
     ] = []
 
 
-class NaverComplexSummary(BaseModel):
-    """단지 요약. 매물과 마찬가지로 좌표는 담지 않는다 (위치는 주소와 원 사이트로)."""
+class NaverComplexSummary(Result):
+    """단지 요약. 매물과 마찬가지로 좌표는 담지 않는다 (위치는 주소와 원 사이트로).
+
+    `notes`: 평형 정보를 붙이지 못한 이유 등. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -514,10 +518,6 @@ class NaverComplexSummary(BaseModel):
         str,
         Field(description='단지 페이지 URL')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='평형 정보를 붙이지 못한 이유 등. CLI 가 결과 위에 붙인다')
-    ] = []
 
     # --pyeong 을 하나만 줘서 평형 정보(관리비·시세·실거래 요약·평당가)를 조회했는지. 아니면 그 키는 해당 없음이라 뺀다
     _pyeong_scoped: bool = PrivateAttr(default=False)

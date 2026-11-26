@@ -16,6 +16,7 @@ from jibsa.core.listing import (
     AmountRange,
     Listing,
     NumberRange,
+    Result,
     holding_unread_dates,
     join_address,
     keep_unread_dates,
@@ -282,8 +283,11 @@ class ZigbangLandTradePermitDay(BaseModel):
     ]
 
 
-class ZigbangComplex(BaseModel):
-    """직방 단지 정보. 아파트와 오피스텔 건물은 직방이 주는 정보가 달라 한쪽에만 있는 필드는 키를 뺀다."""
+class ZigbangComplex(Result):
+    """직방 단지 정보. 아파트와 오피스텔 건물은 직방이 주는 정보가 달라 한쪽에만 있는 필드는 키를 뺀다.
+
+    `notes`: 후기가 있다는 안내와, 학군·평형 정보를 받지 못해 그 값을 모른다는 [실패] 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -395,10 +399,6 @@ class ZigbangComplex(BaseModel):
         list[ZigbangLandTradePermitDay] | None,
         Field(description="최근 7일 토지거래허가 일별 건수 (아파트만, 직방이 준 순서). 웹 '토지거래허가 총 N건 (최근 7일)' 과 날짜별 그래프. 직방이 주지 않으면 모름(null)")
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='후기가 있다는 안내와, 학군·평형 정보를 받지 못해 그 값을 모른다는 [실패] 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -409,8 +409,11 @@ class ZigbangComplex(BaseModel):
         return data
 
 
-class ZigbangComplexListingsResult(BaseModel):
-    """단지 하나의 매물 목록."""
+class ZigbangComplexListingsResult(Result):
+    """단지 하나의 매물 목록.
+
+    `notes`: 일부만 보여 준다는 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -437,10 +440,6 @@ class ZigbangComplexListingsResult(BaseModel):
         list[SerializeAsAny[Listing]],
         Field(description='직방 목록 순서의 매물')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def complex_candidate_of(item: ZigbangSearchItemModel) -> ZigbangComplexCandidate | None:

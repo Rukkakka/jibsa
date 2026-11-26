@@ -18,6 +18,7 @@ from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     AmountSet,
     NumberRange,
+    Result,
     floor_text,
     join_address,
     js_round,
@@ -357,8 +358,11 @@ class DaangnComplexComparison(BaseModel):
     url: Annotated[str, Field(description='당근 단지 페이지')]
 
 
-class DaangnCompareResult(BaseModel):
-    """단지 비교 결과."""
+class DaangnCompareResult(Result):
+    """단지 비교 결과.
+
+    `notes`: 비교한 평형 기준과 평균 호가 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -366,10 +370,6 @@ class DaangnCompareResult(BaseModel):
 
     returned: Annotated[int, Field(description='비교한 단지 수')]
     complexes: Annotated[list[DaangnComplexComparison], Field(description='넣은 순서대로 단지')]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='비교한 평형 기준과 평균 호가 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def _asking_averages(complex_: DaangnCompareComplexModel) -> dict[str, DaangnAskingAverage]:
@@ -695,8 +695,11 @@ class DaangnNearbyComplex(BaseModel):
     ]
 
 
-class DaangnNearbyComplexesResult(BaseModel):
-    """같은 동 단지 목록."""
+class DaangnNearbyComplexesResult(Result):
+    """같은 동 단지 목록.
+
+    `notes`: 조회 한도 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -711,10 +714,6 @@ class DaangnNearbyComplexesResult(BaseModel):
     returned: Annotated[int, Field(description='반환한 단지 수')]
     sort: Annotated[str, Field(description="정렬. 늘 '세대수' (많은 순. jibsa 정렬이며 웹 검색 엔진용 본문은 단지 ID 순 10곳이다)")]
     complexes: Annotated[list[DaangnNearbyComplex], Field(description='세대수 많은 순 단지')]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='조회 한도 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int = 50) -> DaangnNearbyComplexesResult:

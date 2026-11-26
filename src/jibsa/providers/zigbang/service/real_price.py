@@ -16,6 +16,7 @@ from jibsa.core.listing import (
     KST,
     NOT_APPLICABLE_PRICE_FIELDS,
     UPDATE_MAYBE_NEEDED,
+    Result,
     TradeType,
     floor_text,
     note,
@@ -207,8 +208,11 @@ class ZigbangRealPrice(BaseModel):
         return data
 
 
-class ZigbangRealPriceResult(BaseModel):
-    """아파트 단지 실거래 내역."""
+class ZigbangRealPriceResult(Result):
+    """아파트 단지 실거래 내역.
+
+    `notes`: 전월세를 넘겨 본 범위 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -242,10 +246,6 @@ class ZigbangRealPriceResult(BaseModel):
         str,
         Field(description='단지 페이지 URL (시세 추이는 `jibsa zigbang price-trend <complex_id>` 로 본다)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='전월세를 넘겨 본 범위 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def rt_deal_date(value: str | None) -> str | None:

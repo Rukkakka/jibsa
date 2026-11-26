@@ -13,6 +13,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NumberRange,
+    Result,
     null_items_note,
     number_range,
     won_to_manwon,
@@ -150,8 +151,11 @@ class NaverTradeCountTrend(BaseModel):
     ] = []
 
 
-class NaverDistrictTrend(BaseModel):
-    """동네 아파트 주간 추이 (매물 수·평당 호가·실거래 건수)."""
+class NaverDistrictTrend(Result):
+    """동네 아파트 주간 추이 (매물 수·평당 호가·실거래 건수).
+
+    `notes`: 덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -181,10 +185,6 @@ class NaverDistrictTrend(BaseModel):
         NaverTradeCountTrend | None,
         Field(description='주간 실거래 건수. 조회 실패면 null')
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def get_district_trend(

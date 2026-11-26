@@ -3,7 +3,6 @@
 import re
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
@@ -22,6 +21,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
+    Result,
     TradeType,
     in_range,
     join_address,
@@ -187,8 +187,11 @@ class ZigbangStoreListingDetail(ListingDetail):
         )
 
 
-class ZigbangStoreSearchResult(BaseModel):
-    """상가·사무실 검색 결과."""
+class ZigbangStoreSearchResult(Result):
+    """상가·사무실 검색 결과.
+
+    `notes`: 일부만 보여 준다·공실 묶음을 이었다는 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -233,10 +236,6 @@ class ZigbangStoreSearchResult(BaseModel):
         list[ZigbangStoreListing],
         Field(description='직방 목록 순서 그대로의 매물 (거리순이 아니다)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다·공실 묶음을 이었다는 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_unused_scope(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

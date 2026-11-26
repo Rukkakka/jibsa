@@ -20,6 +20,7 @@ from jibsa.core.korean import (
     is_dong_code,
 )
 from jibsa.core.listing import (
+    Result,
     TradeType,
     in_range,
     join_address,
@@ -89,8 +90,11 @@ LOCAL_CATALOG_PAGE_SIZE: int = 20
 CATALOG_PAGE_SIZE: int = 20
 
 
-class ZigbangAptSearchResult(BaseModel):
-    """아파트 지역 매물 검색 결과."""
+class ZigbangAptSearchResult(Result):
+    """아파트 지역 매물 검색 결과.
+
+    `notes`: 일부만 보여 준다는 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -120,10 +124,6 @@ class ZigbangAptSearchResult(BaseModel):
         list[ZigbangAptListing],
         Field(description='직방이 보여 주는 순서의 매물')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 # 좌표가 속한 동을 물을 geohash 정밀도. 칸이 크면 옆 동이 잡힌다 (2026-11-15 실측: 강남역은 정밀도 5 에 논현동, 6 에 역삼동,
@@ -473,8 +473,11 @@ class ZigbangPublicPrice(BaseModel):
     ] = None
 
 
-class ZigbangCatalogResult(BaseModel):
-    """같은 호·거래 유형의 아파트 매물 묶음 (catalog). 호의 직방시세·공시가격·분양가(호 정보)도 함께 준다."""
+class ZigbangCatalogResult(Result):
+    """같은 호·거래 유형의 아파트 매물 묶음 (catalog). 호의 직방시세·공시가격·분양가(호 정보)도 함께 준다.
+
+    `notes`: 뺀 매물·일부만 받았다는 안내와, 호 정보를 받지 못해 직방시세·공시가격·분양가를 모른다는 [실패] 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -511,13 +514,6 @@ class ZigbangCatalogResult(BaseModel):
         list[ZigbangListingDetail],
         Field(description='묶음 매물 (직방이 준 순서 그대로). 매물마다 listing 상세와 같은 필드')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description=(
-            '뺀 매물·일부만 받았다는 안내와, 호 정보를 받지 못해 직방시세·공시가격·분양가를 모른다는 [실패] 안내. '
-            'CLI 가 notice 아래에 붙인다'
-        ))
-    ] = []
     estimated_prices: Annotated[
         dict[str, ZigbangEstimatedPrice | None],
         Field(description=(

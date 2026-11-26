@@ -20,6 +20,7 @@ from jibsa.core.listing import (
     AmountSet,
     Listing,
     NumberRange,
+    Result,
     holding_unread_dates,
     join_address,
     keep_unread_dates,
@@ -204,8 +205,11 @@ class DaangnPyeong(BaseModel):
         return data
 
 
-class DaangnComplex(BaseModel):
-    """단지 정보. 매물과 마찬가지로 좌표·사진·관리사무소 전화·후기 본문은 담지 않는다."""
+class DaangnComplex(Result):
+    """단지 정보. 매물과 마찬가지로 좌표·사진·관리사무소 전화·후기 본문은 담지 않는다.
+
+    `notes`: 후기를 원 사이트에서 보라는 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -299,10 +303,6 @@ class DaangnComplex(BaseModel):
         str,
         Field(description='단지 페이지 URL')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='후기를 원 사이트에서 보라는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 class DaangnComplexCandidate(BaseModel):
@@ -601,8 +601,11 @@ def search_complexes(
     return candidates[:limit]
 
 
-class DaangnRegionComplexesResult(BaseModel):
-    """동·구의 단지 목록."""
+class DaangnRegionComplexesResult(Result):
+    """동·구의 단지 목록.
+
+    `notes`: 지역을 고른 방법, 정렬·후기 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -632,10 +635,6 @@ class DaangnRegionComplexesResult(BaseModel):
         list[DaangnRegionComplex],
         Field(description='정렬 순 단지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='지역을 고른 방법, 정렬·후기 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 class DaangnComplexConditions(RequestModel):
@@ -899,8 +898,11 @@ def _collect_complexes(
     return complexes, has_more
 
 
-class DaangnBoundsComplexesResult(BaseModel):
-    """지도 화면 범위의 단지 목록 (웹 지도 단지 탭의 '이 영역 단지')."""
+class DaangnBoundsComplexesResult(Result):
+    """지도 화면 범위의 단지 목록 (웹 지도 단지 탭의 '이 영역 단지').
+
+    `notes`: 범위·정렬·후기 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -942,10 +944,6 @@ class DaangnBoundsComplexesResult(BaseModel):
         list[DaangnRegionComplex],
         Field(description='정렬 순 단지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='범위·정렬·후기 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def list_bounds_complexes(
@@ -1011,8 +1009,11 @@ def list_bounds_complexes(
     )
 
 
-class DaangnComplexListingsResult(BaseModel):
-    """단지 하나의 매물 목록."""
+class DaangnComplexListingsResult(Result):
+    """단지 하나의 매물 목록.
+
+    `notes`: 일부만 보여 준다·더 받지 못하고 멈췄다는 안내, 거래를 몰라 뺀 매물·빈 항목을 뺐다는 안내, 원룸·투룸으로 올린 단지 매물 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -1034,7 +1035,6 @@ class DaangnComplexListingsResult(BaseModel):
         list[Listing],
         Field(description='단지 매물 (당근 단지 화면 순)')
     ]
-    notes: Annotated[list[str], Field(exclude=True)] = []
     url: Annotated[
         str,
         Field(description='단지 페이지 URL')
@@ -1249,8 +1249,11 @@ class DaangnTrendingRegion(BaseModel):
         return {**region_name_parts(self.sido, self.sigungu), 'region_id': self.region_id, 'level': self.level}
 
 
-class DaangnTrendingComplexesResult(BaseModel):
-    """인기 급상승 단지 목록."""
+class DaangnTrendingComplexesResult(Result):
+    """인기 급상승 단지 목록.
+
+    `notes`: 빈 결과 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -1259,10 +1262,6 @@ class DaangnTrendingComplexesResult(BaseModel):
     region: Annotated[DaangnTrendingRegion, Field(description='본 범위')]
     returned: Annotated[int, Field(description='반환한 단지 수')]
     complexes: Annotated[list[DaangnTrendingComplex], Field(description='어제 대비 오늘 조회가 급상승한 순 단지')]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='빈 결과 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def trending_region_of(area: DaangnArea | None) -> DaangnTrendingRegion:

@@ -63,7 +63,6 @@ from jibsa.providers.zigbang.service.common.base import (
     COMPLEX_ID_PATTERN,
     MAX_LIST_LIMIT,
     ZigbangBoundary,
-    ZigbangListingDetail,
     ZigbangRegion,
 )
 from jibsa.providers.zigbang.service.common.room import (
@@ -143,7 +142,6 @@ from jibsa.providers.zigbang.service.room.search import (
     unsearchable_note,
     unsearchable_types,
 )
-from jibsa.providers.zigbang.service.stay.detail import ZigbangStayListingDetail
 from jibsa.providers.zigbang.service.stay.search import (
     STAY_BUILDING_TYPE_BY_LABEL,
     STAY_DISCOUNT_TYPE_BY_LABEL,
@@ -562,7 +560,7 @@ def complexes_command(
     chosen_order = check_choice(order, COMPLEX_ORDERS, '--order') if order is not None else None
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = search_place_complexes(client, query, order=chosen_order, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @listings_app.command('room')
@@ -693,7 +691,7 @@ def search_room_command(
         )
         if details:
             result = attach_building_use(client, result)
-        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
+        emit(result, pretty, notes=trade_notes + notes, next_token=encode_next(result.next_position), fields=fields)
 
 
 @listings_app.command('apt')
@@ -821,7 +819,7 @@ def search_apt_command(
                     ),
                 )]
         result = search_apt_listings(client, district, conditions=conditions, limit=limit, start=position)
-        emit(result, pretty, notes=trade_notes + notes + result.notes, next_token=encode_next(result.next_position), fields=fields)
+        emit(result, pretty, notes=trade_notes + notes, next_token=encode_next(result.next_position), fields=fields)
 
 
 def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None:
@@ -851,7 +849,7 @@ def complex_command(
     _require_complex_id(complex_id)
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_complex(client, complex_id.strip())
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @listings_app.callback()
@@ -981,7 +979,7 @@ def complex_listings_command(
             pyeong_ids=pyeong_ids,
             limit=limit,
         )
-        emit(result, pretty, notes=trade_notes + result.notes, fields=fields)
+        emit(result, pretty, notes=trade_notes, fields=fields)
 
 
 @listings_app.command('store')
@@ -1087,7 +1085,7 @@ def store_command(
             dongs=dongs,
             limit=limit,
         )
-        emit(result, pretty, notes=price_notes + notes + result.notes, fields=fields)
+        emit(result, pretty, notes=price_notes + notes, fields=fields)
 
 
 @listings_app.command('stay')
@@ -1264,7 +1262,7 @@ def stay_command(
             )
         if check_in is not None and result.listings:
             notes.append(STAY_WEEKLY_PRICE_NOTE)
-        emit(result, pretty, notes=notes + result.notes, fields=fields)
+        emit(result, pretty, notes=notes, fields=fields)
 
 
 @app.command('real-price')
@@ -1295,7 +1293,7 @@ def real_price_command(
         raise typer.BadParameter('실거래가는 거래 유형을 하나만 받습니다 (매매, 전세, 월세, 전체 중 하나)', param_hint='--trade')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_real_prices(client, complex_id.strip(), trade_type=trade_types[0], pyeong_id=pyeong, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('price-trend')
@@ -1367,10 +1365,10 @@ def price_trend_command(
                 period=chosen_period,
                 trade=chosen_trade or DEFAULT_PYEONG_TREND_TRADE,
             )
-            emit(pyeong_result, pretty, notes=pyeong_result.notes)
+            emit(pyeong_result, pretty)
         else:
             result = get_price_trend(client, complex_id.strip(), period=chosen_period, compare=compare_ids)
-            emit(result, pretty, notes=result.notes)
+            emit(result, pretty)
 
 
 RegionQueryArgument = Annotated[
@@ -1405,7 +1403,7 @@ def region_info_command(
     chosen_range = check_choice(price_range, PRICE_RANGES, '--range')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_region_info(client, query, price_range=chosen_range)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('region-trades')
@@ -1435,7 +1433,7 @@ def region_trades_command(
     # 정렬 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_region_trades(client, query, trade=chosen_trade, period=chosen_period, sort=sort, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('region-ranking')
@@ -1472,7 +1470,7 @@ def region_ranking_command(
     # 순위 기준 이름은 거래마다 달라 서비스가 지역 검색 전에 검사한다
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_region_ranking(client, query, trade=chosen_trade, sort=sort, period=chosen_period, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('listing')
@@ -1500,8 +1498,7 @@ def listing_command(
         raise typer.BadParameter('--check-in 과 --check-out 은 함께 주세요', param_hint='--check-in')
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_any_listing(client, item_id, check_in=check_in, check_out=check_out)
-        # 주거(원룸·빌라·오피스텔·아파트)·단기임대 상세는 덤 조회(학군·건물 실거래, 후기·임대인의 다른 방) 실패 안내를 notes 로 갖는다
-        emit(result, pretty, notes=result.notes if isinstance(result, ZigbangListingDetail | ZigbangStayListingDetail) else None)
+        emit(result, pretty)
 
 
 @app.command('catalog')
@@ -1523,4 +1520,4 @@ def catalog_command(
     # 묶음 ID 형식은 서비스(`parse_catalog_id`)가 요청 전에 검사해 INVALID_ARGUMENT 로 낸다
     with handle_errors(SOURCE), ZigbangClient() as client:
         result = get_catalog(client, catalog_id.strip())
-        emit(result, pretty, notes=result.notes, fields=fields)
+        emit(result, pretty, fields=fields)

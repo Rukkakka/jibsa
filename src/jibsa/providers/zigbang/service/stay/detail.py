@@ -146,7 +146,10 @@ class ZigbangStayUnavailablePeriod(BaseModel):
 
 
 class ZigbangStayListingDetail(ListingDetail):
-    """상세 조회로 보강한 직방 단기임대 매물. 입주일·마지막 날을 주면 예약 가능 여부(`available`)가 붙는다."""
+    """상세 조회로 보강한 직방 단기임대 매물. 입주일·마지막 날을 주면 예약 가능 여부(`available`)가 붙는다.
+
+    `notes`: 후기 요약·임대인의 다른 방 조회가 실패했다는 안내와, 직방이 빈 항목을 줘 모름(null)으로 둔 칸의 안내. CLI 가 결과 위에 붙인다
+    """
 
     weekly_rent_manwon: Annotated[
         float | None,
@@ -271,10 +274,6 @@ class ZigbangStayListingDetail(ListingDetail):
             '실패했거나 직방이 수를 주지 않거나 빈 항목을 줘 셀 수 없으면 null'
         ))
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='후기 요약·임대인의 다른 방 조회가 실패했다는 안내와, 직방이 빈 항목을 줘 모름(null)으로 둔 칸의 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}

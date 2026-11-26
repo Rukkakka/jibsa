@@ -16,6 +16,7 @@ from jibsa.core.korean import (
 )
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
+    Result,
     holding_unread_dates,
     js_round,
     keep_unread_dates,
@@ -123,8 +124,11 @@ class DaangnSchool(BaseModel):
     ] = None
 
 
-class DaangnSchoolResult(BaseModel):
-    """학교 정보와 배정 단지."""
+class DaangnSchoolResult(Result):
+    """학교 정보와 배정 단지.
+
+    `notes`: 배정 단지 안내 (중·고등학교, 정보 없음, 조건·limit 으로 줄임, 조건을 확인할 수 없어 뺀 단지). CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -150,10 +154,6 @@ class DaangnSchoolResult(BaseModel):
         str,
         Field(description='당근 학교 페이지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='배정 단지 안내 (중·고등학교, 정보 없음, 조건·limit 으로 줄임, 조건을 확인할 수 없어 뺀 단지). CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def school_url(school_code: str) -> str:
@@ -508,8 +508,11 @@ class DaangnPreschoolSummary(BaseModel):
     ]
 
 
-class DaangnPreschoolsResult(BaseModel):
-    """단지 근처 어린이집·유치원 목록 (당근 단지 화면 학군의 유치원 탭)."""
+class DaangnPreschoolsResult(Result):
+    """단지 근처 어린이집·유치원 목록 (당근 단지 화면 학군의 유치원 탭).
+
+    `notes`: 정보 없음·빈 결과·20곳 한도 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -531,10 +534,6 @@ class DaangnPreschoolsResult(BaseModel):
         str,
         Field(description='당근 단지 페이지 (학군에 같은 목록이 있다)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='정보 없음·빈 결과·20곳 한도 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsResult:
@@ -606,7 +605,7 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
     )
 
 
-class DaangnPreschool(BaseModel):
+class DaangnPreschool(Result):
     """어린이집·유치원 상세. 전화번호·홈페이지는 내보내지 않는다."""
 
     model_config = ConfigDict(

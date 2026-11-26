@@ -24,6 +24,7 @@ from jibsa.core.listing import (
     Listing,
     ListingDetail,
     LookupFailures,
+    Result,
     TradeType,
     holding_unread_dates,
     keep_unread_dates,
@@ -148,7 +149,10 @@ class DabangDetailedListing(DabangListing):
 
 
 class DabangListingDetail(ListingDetail):
-    """다방 매물 상세. 단기임대는 월세 매물에 붙는 표시라 `short_term_period` 로 받는 기간을 알린다."""
+    """다방 매물 상세. 단기임대는 월세 매물에 붙는 표시라 `short_term_period` 로 받는 기간을 알린다.
+
+    `notes`: 빈 항목 안내
+    """
 
     listing_number: Annotated[
         int | None,
@@ -170,10 +174,6 @@ class DabangListingDetail(ListingDetail):
         float | None,
         Field(description='계약면적 (㎡, 공급 + 주차장 등 기타 공용. 다방이 오피스텔에 주는 값). 오피스텔에만 키가 있고 모르면 null')
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='빈 항목 안내')
-    ] = []
     with_tenant: Annotated[
         bool,
         Field(description='세입자를 끼고 파는 매매 (다방 기 보증금/월세 표시). 매매만')
@@ -287,8 +287,11 @@ class DabangListPosition(BaseModel):
     ] = None
 
 
-class DabangSearchResult(BaseModel):
-    """매물 검색 결과."""
+class DabangSearchResult(Result):
+    """매물 검색 결과.
+
+    `notes`: 범위·제외·일부 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -326,10 +329,6 @@ class DabangSearchResult(BaseModel):
         list[SerializeAsAny[Listing]],
         Field(description='다방 목록 순 매물')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='범위·제외·일부 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_unused_radius(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

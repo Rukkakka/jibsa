@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    Result,
     months_ago,
     read_date,
 )
@@ -76,7 +77,7 @@ class NaverMarketPriceSeries(BaseModel):
     ]
 
 
-class NaverMarketPriceHistory(BaseModel):
+class NaverMarketPriceHistory(Result):
     """평형의 기관별 시세 추이."""
 
     model_config = ConfigDict(

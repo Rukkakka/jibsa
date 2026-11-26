@@ -15,6 +15,7 @@ from jibsa.core.listing import (
     SIDO_OFFICIAL_NAMES,
     UPDATE_MAYBE_NEEDED,
     UPDATE_NEEDED,
+    Result,
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
@@ -76,8 +77,11 @@ class DaangnNeighborhood(BaseModel):
     ] = None
 
 
-class DaangnNeighborhoodsResult(BaseModel):
-    """좋은 동네 추천 결과."""
+class DaangnNeighborhoodsResult(Result):
+    """좋은 동네 추천 결과.
+
+    `notes`: 기본 지역([범위], --region 을 주지 않았을 때)·동 이름 안내. CLI 가 notes 로 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -88,10 +92,6 @@ class DaangnNeighborhoodsResult(BaseModel):
     regions: Annotated[list[str], Field(description='찾은 지역. --region 을 주지 않으면 당근 웹 첫 화면처럼 서울 (전국 순위는 없다)')]
     returned: Annotated[int, Field(description='반환한 동 수')]
     neighborhoods: Annotated[list[DaangnNeighborhood], Field(description='순위 순 동')]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='기본 지역([범위], --region 을 주지 않았을 때)·동 이름 안내. CLI 가 notes 로 붙인다')
-    ] = []
 
 
 def _scope_sidos(scopes: list[DaangnLivableSidoModel], name: str) -> list[DaangnLivableSidoModel]:

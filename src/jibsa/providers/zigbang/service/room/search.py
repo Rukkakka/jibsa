@@ -6,7 +6,6 @@ from collections.abc import (
 )
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     SerializeAsAny,
@@ -22,6 +21,7 @@ from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     Listing,
     LookupFailures,
+    Result,
     limit_notes,
     listing_as,
     lookup_failure_note,
@@ -90,8 +90,11 @@ ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '�
 DETAILS_MAX: int = 30
 
 
-class ZigbangSearchResult(BaseModel):
-    """매물 검색 결과."""
+class ZigbangSearchResult(Result):
+    """매물 검색 결과.
+
+    `notes`: 매물이 limit 보다 많아 일부만 보여 준다는 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -133,10 +136,6 @@ class ZigbangSearchResult(BaseModel):
         list[SerializeAsAny[Listing]],
         Field(description='직방 목록 순서의 매물. 종류 여럿이면 요청한 종류 순서로 종류별 묶음을 잇는다')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='매물이 limit 보다 많아 일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_unused_scope(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

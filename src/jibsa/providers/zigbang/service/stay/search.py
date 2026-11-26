@@ -4,7 +4,6 @@ from collections.abc import Callable
 
 from httpx import HTTPStatusError
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
@@ -19,6 +18,7 @@ from jibsa.core.geo import haversine_km
 from jibsa.core.http import error_body
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
+    Result,
     join_address,
     limit_notes,
     normalize_address,
@@ -113,8 +113,11 @@ STAY_SORT_ORDERS: dict[StaySort, str] = {
 STAY_SUBWAY_RADIUS_KM: float = 1.0
 
 
-class ZigbangStaySearchResult(BaseModel):
-    """직방 단기임대 검색 결과."""
+class ZigbangStaySearchResult(Result):
+    """직방 단기임대 검색 결과.
+
+    `notes`: 일부만 보여 준다는 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -154,10 +157,6 @@ class ZigbangStaySearchResult(BaseModel):
         list[ZigbangStayListing],
         Field(description='선택한 정렬 순서의 매물 (직방이 준 순서 또는 웹 지도 목록과 같은 순서)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다는 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_unused_scope(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

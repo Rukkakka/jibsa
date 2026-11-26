@@ -12,6 +12,7 @@ from jibsa.core.listing import (
     TRADE_KEY_BY_NAME,
     AmountRange,
     Listing,
+    Result,
     keep_unread_dates,
     normalize_address,
     note,
@@ -131,8 +132,11 @@ class NaverRedevelopmentArea(BaseModel):
     ]
 
 
-class NaverRedevelopmentAreasResult(BaseModel):
-    """지역 재개발 구역 목록."""
+class NaverRedevelopmentAreasResult(Result):
+    """지역 재개발 구역 목록.
+
+    `notes`: 일부만 보여 준다는 안내 등
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -150,10 +154,6 @@ class NaverRedevelopmentAreasResult(BaseModel):
         list[NaverRedevelopmentArea],
         Field(description='구역 (네이버 정렬 순서)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다는 안내 등. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def _redevelopment_area(
@@ -377,7 +377,7 @@ def list_redevelopment_articles(
     )
 
 
-class NaverRedevelopmentDetail(BaseModel):
+class NaverRedevelopmentDetail(Result):
     """재개발 구역 하나의 정보와 현재 매물 통계. 조합 연락처와 좌표는 담지 않는다."""
 
     model_config = ConfigDict(

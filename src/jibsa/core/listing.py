@@ -20,6 +20,7 @@ from decimal import (
     Context,
     Decimal,
 )
+from functools import wraps
 
 from httpx import HTTPStatusError
 from pydantic import (
@@ -33,18 +34,25 @@ from pydantic import (
 
 from jibsa.core.korean import particle
 from jibsa.core.ratelimit import RateLimitedError
-from jibsa.core.schema import drop_unset_fields
+from jibsa.core.schema import (
+    drop_unset_fields,
+    null_item_tally,
+    reset_null_item_tally,
+)
 
 from typing import (
     Annotated,
     Any,
     Literal,
+    ParamSpec,
     TypeVar,
     get_args,
     overload,
 )
 
 
+P = ParamSpec('P')
+R = TypeVar('R')
 SQUARE_METERS_PER_PYEONG: float = 3.305785
 KST: timezone = timezone(timedelta(hours=9), 'KST')
 # 구분자가 없으면 8자리만 받는다. 월·일을 한 자리로도 받으면 연월('202411')이 2024-01-01 로 읽힌다.
@@ -357,8 +365,7 @@ def iso_date(value: str | None) -> str | None:
 # 이 명령이 받은 날짜 중 값이 있는데 날짜로 읽지 못한 원래 글자 (안내에 쓰는 칸 이름 -> 받은 차례대로의 글자). `read_date`·`move_in_label` 이
 # 모으고 `cli.output.emit` 이 칸마다 [참고] 안내 한 줄로 붙인다 (`unread_date_notes`). 명령 시작에 `handle_errors` 가 `reset_unread_dates` 로
 # 비운다. 응답에서 뺀 빈 항목의 합(`core.schema.null_item_tally`)과 같은 방식이라 변환 함수마다 notes 를 넘기지 않는다
-# 라이브러리로 부르면(`jibsa.providers.<source>` 의 함수) 이 안내가 결과 `notes` 에 들어가지 않고 모음도 비워지지 않는다 (`null_item_tally` 와 같다).
-# CHANGELOG 에 알렸고 고칠 방법은 저장소 맨 위 service-refactor.md 에 있다 (2026-11-26 사용자 결정: 지금은 알리기만 한다)
+# 파이썬에서 부르는 정문(`jibsa.providers.<source>`) 함수는 `with_notes` 가 부를 때마다 비우고 결과 `notes` 에 붙인다
 _unread_dates: dict[str, list[str]] = {}
 # `holding_unread_dates` 블록이 받는 곳. 안쪽 블록이 끝이다
 _held_unread_dates: list[list[tuple[str, str]]] = []
@@ -370,10 +377,17 @@ UNREAD_DATE_FIELDS: dict[str, str] = {
     '매물 확인일': 'confirmed_date',
     '입주일': 'move_in',
 }
+# 소스 이름 -> 안내에 쓰는 사이트 이름. 응답에서 뺀 빈 항목의 공통 안내(`null_items_total_note`)와 못 읽은 날짜 안내(`unread_date_notes`)에 쓴다
+SITE_NAMES: dict[str, str] = {
+    'zigbang': '직방',
+    'naver': '네이버',
+    'daangn': '당근',
+    'dabang': '다방',
+}
 
 
 def reset_unread_dates() -> None:
-    """못 읽은 날짜 모음을 비운다. 명령이 시작할 때 `cli.output.handle_errors` 가 부른다."""
+    """못 읽은 날짜 모음을 비운다. 명령이 시작할 때 `cli.output.handle_errors` 가, 정문 함수를 부르기 전에 `with_notes` 가 부른다."""
     _unread_dates.clear()
 
 
@@ -449,7 +463,7 @@ def read_month(value: str | None, what: str, *, raw: str | None = None) -> str |
 
 
 def unread_date_notes(site: str, fields: Container[str] | None = None) -> list[str]:
-    """이 명령에서 읽지 못한 날짜를 칸마다 `[참고]` 한 줄로. 모은 것이 없으면 빈 목록. `cli.output.emit` 이 notes 끝에 붙인다.
+    """이 명령에서 읽지 못한 날짜를 칸마다 `[참고]` 한 줄로. 모은 것이 없으면 빈 목록. `collected_notes` 가 모아 `cli.output.emit`·`with_notes` 가 notes 끝에 붙인다.
 
     Args:
         site: 사이트 이름 ('직방', '네이버', '당근', '다방'). 조사는 끝 글자에 맞춘다.
@@ -575,13 +589,56 @@ def null_items_total_note(site: str, count: int) -> str:
     """응답 어디에서든 빈 항목(null) `count` 개를 빼고 읽었다는 공통 안내. 어느 목록인지는 말하지 않는다.
 
     계산에 쓰지 않고 보여 주기만 하는 목록도 조용히 빼지 않게, 명령이 뺀 수의 합이 0 보다 크고 결과 notes 에 `null_items_note` 가
-    없을 때 `cli.output.emit` 이 붙인다 (`core.schema.null_item_tally`). 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API 감시가 알린다.
+    없을 때 `collected_notes` 를 거쳐 `cli.output.emit`·`with_notes` 가 붙인다 (`core.schema.null_item_tally`). 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API 감시가 알린다.
 
     Args:
         site: 사이트 이름 ('직방', '네이버', '당근', '다방').
         count: 응답에서 빼고 읽은 빈 항목 수.
     """
     return null_items_note(f'{site} 응답의', count)
+
+
+def collected_notes(site: str, notes: Sequence[str], fields: Container[str] | None = None) -> list[str]:
+    """명령(또는 정문 함수 한 번) 동안 모은 안내: 못 읽은 날짜 `[참고]`(`unread_date_notes`)와, 응답에서 빈 항목을 뺐는데
+    `notes` 에 빈 항목 안내가 없으면 공통 `[제외]` 안내(`null_items_total_note`). `cli.output.emit` 과 정문 함수를 감싸는 `with_notes` 가 쓴다.
+
+    Args:
+        site: 사이트 이름 ('직방', '네이버', '당근', '다방').
+        notes: 이 안내 앞에 이미 있는 안내. 빈 항목 안내가 이미 있는지 본다.
+        fields: `--fields` 로 고른 칸. 고르지 않은 날짜 칸의 안내는 뺀다.
+    """
+    collected = unread_date_notes(site, fields)
+    count = null_item_tally()
+    if count > 0 and not any(NULL_ITEMS_PHRASE in text for text in [*notes, *collected]):
+        collected.append(null_items_total_note(site, count))
+    return collected
+
+
+def with_notes(source: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """정문(`jibsa.providers.<source>`) 함수를 감싼다. 부르기 전에 못 읽은 날짜·뺀 빈 항목 모음을 비우고, 결과가 `Result` 면
+    `collected_notes` 를 결과 `notes` 끝에 붙인다. 파이썬에서 바로 불러도 CLI 출력과 같은 안내를 받고, 앞 호출의 안내가 섞이지 않는다.
+
+    service 함수 정의에는 쓰지 않는다: CLI 는 감싸지 않은 service 함수를 쓰고 명령 하나가 여러 함수를 부르므로, 감싸면 뒤 호출이 앞의 안내를
+    지우고 `emit` 이 같은 안내를 또 붙인다. 모음이 전역이라 여러 스레드에서 동시에 부르면 안내가 섞일 수 있다.
+
+    Args:
+        source: 소스 이름 ('zigbang', 'naver', 'daangn', 'dabang'). `SITE_NAMES` 로 안내의 사이트 이름을 정한다.
+    """
+    site = SITE_NAMES[source]
+
+    def wrap(func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            reset_unread_dates()
+            reset_null_item_tally()
+            result = func(*args, **kwargs)
+            if isinstance(result, Result):
+                result.notes = [*result.notes, *collected_notes(site, result.notes)]
+            return result
+
+        return wrapper
+
+    return wrap
 
 
 def is_rejected(exc: Exception | None) -> bool:
@@ -872,6 +929,18 @@ def number_range(lowest: int | float | None, highest: int | float | None) -> Num
     return NumberRange(lowest=lowest, highest=highest)
 
 
+class Result(BaseModel):
+    """명령이 돌려주는 결과의 공통 부모. `notes` 는 CLI 가 결과 맨 위 `notes` 로 붙이는 안내다 (출력 JSON 의 칸이 아니다).
+
+    결과 모델마다 `notes` 에 어떤 안내가 들어가는지는 그 모델 docstring 의 `notes`: 문단에 적는다.
+    """
+
+    notes: Annotated[
+        list[str],
+        Field(exclude=True, description='CLI 가 결과 맨 위 notes 로 붙이는 안내. 출력 칸이 아니다')
+    ] = []
+
+
 class Listing(BaseModel):
     """소스와 무관하게 정규화한 매물 한 건 (목록 결과).
 
@@ -1055,7 +1124,7 @@ class Listing(BaseModel):
         return with_floor_number(data)
 
 
-class ListingDetail(Listing):
+class ListingDetail(Listing, Result):
     """상세 조회로 보강한 매물. 매물을 고르는 데 필요한 사실만 더한다.
 
     사진, 본문, 중개사 연락처, 도로명 주소, 조회수는 담지 않는다.

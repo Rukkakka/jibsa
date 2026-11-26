@@ -30,6 +30,7 @@ from jibsa.core.listing import (
     AmountRange,
     AmountSet,
     Listing,
+    Result,
     format_manwon,
     holding_unread_dates,
     join_address,
@@ -413,8 +414,11 @@ def group_fields(group: NaverDuplicatedArticleInfoModel | None, trade_type: str)
     return fields
 
 
-class NaverListingsResult(BaseModel):
-    """매물 목록 결과."""
+class NaverListingsResult(Result):
+    """매물 목록 결과.
+
+    `notes`: 요청 상한으로 일부만 훑었다는 안내 등
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -444,10 +448,6 @@ class NaverListingsResult(BaseModel):
         list[SerializeAsAny[Listing]],
         Field(description='매물')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='요청 상한으로 일부만 훑었다는 안내 등. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 MARKET_PRICE_PROVIDER_NAMES: dict[str, str] = {'kab': '한국부동산원', 'kbstar': 'KB부동산', 'neonet': '부동산뱅크'}

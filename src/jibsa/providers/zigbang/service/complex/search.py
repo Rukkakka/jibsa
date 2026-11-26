@@ -17,6 +17,7 @@ from jibsa.core.korean import (
     quoted,
 )
 from jibsa.core.listing import (
+    Result,
     lookup_failure_note,
     more_hint,
     normalize_address,
@@ -370,8 +371,11 @@ class ZigbangSchoolInfo(BaseModel):
         return data
 
 
-class ZigbangPlaceComplexesResult(BaseModel):
-    """역·학교·동·구 주변 아파트 단지 목록 (직방 웹 목록 --order 탭의 단지와 순서)."""
+class ZigbangPlaceComplexesResult(Result):
+    """역·학교·동·구 주변 아파트 단지 목록 (직방 웹 목록 --order 탭의 단지와 순서).
+
+    `notes`: 어느 웹 목록인지·일부만 보여 준다는 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -414,10 +418,6 @@ class ZigbangPlaceComplexesResult(BaseModel):
         ZigbangSchoolInfo | None,
         Field(description='학교 정보 (직방 웹 학교 화면). 학교가 아닌 곳에는 키가 없다')
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='어느 웹 목록인지·일부만 보여 준다는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

@@ -3,8 +3,10 @@ import httpx
 import pytest
 
 from jibsa.core.listing import (
+    NULL_ITEMS_PHRASE,
     Listing,
     ListingDetail,
+    Result,
     add_unread_date,
     holding_unread_dates,
     keep_unread_dates,
@@ -15,8 +17,13 @@ from jibsa.core.listing import (
     read_month,
     reset_unread_dates,
     unread_date_notes,
+    with_notes,
 )
 from jibsa.core.ratelimit import RateLimitedError
+from jibsa.core.schema import (
+    add_null_item_tally,
+    reset_null_item_tally,
+)
 
 
 def listing(trade_type: str, **values: object) -> Listing:
@@ -203,3 +210,23 @@ def test_amount_set_dumps_only_given_fields() -> None:
     assert dumped == {'lowest': {'deposit_manwon': 1000.0, 'rent_manwon': 58.0}, 'highest': None}
     # dump 한 dict 로 다시 만들어도 같은 키가 나온다
     assert AmountRange.model_validate(dumped).model_dump(mode='json') == dumped
+
+
+def test_with_notes_puts_collected_notes_in_result_once() -> None:
+    # 파이썬에서 정문 함수를 부르면 CLI 처럼 [참고]·[제외] 가 결과 notes 에 들어가고, 연달아 불러도 앞 호출의 안내가 섞이지 않는다
+    def fake() -> Result:
+        add_unread_date('등록일', '어제')
+        add_null_item_tally(2)
+        return Result(notes=['[일부] 앞 안내'])
+
+    wrapped = with_notes('naver')(fake)
+    try:
+        for _ in range(2):
+            notes = wrapped().notes
+            assert notes[0] == '[일부] 앞 안내'
+            assert sum(text.startswith('[참고]') and '등록일' in text for text in notes) == 1
+            assert sum(NULL_ITEMS_PHRASE in text for text in notes) == 1
+        assert with_notes('naver')(lambda: ['그대로'])() == ['그대로']
+    finally:
+        reset_unread_dates()
+        reset_null_item_tally()

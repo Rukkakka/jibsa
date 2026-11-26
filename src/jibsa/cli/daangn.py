@@ -1024,14 +1024,18 @@ def search_command(
         # 서비스가 준 다음 위치에 검색 방식·찾은 위치를 더해 이어 받기 표를 만든다 (단지 매물은 이어 받지 않는다)
         next_position = getattr(result, 'next_position', None)
         next_token = encode_next({**resume, **next_position}) if resume is not None and next_position else None
+        # 상세·관리비 안내는 결과 안내 뒤에 나가야 해 결과의 notes 끝에 넣는다 (emit 이 결과 notes 를 넘긴 notes 뒤에 붙인다)
         if details:
             # 결과마다 매물 모델이 달라(동·지도·역·대학·단지) 공통 Listing 으로 넘긴다. 하위 모델은 그대로 남는다
             found: list[Listing] = list(result.listings)
             listings, detail_notes = attach_details(client, found)
-            result = result.model_copy(update={'listings': listings, 'returned': len(listings)})
-            notes = notes + detail_notes
+            result = result.model_copy(
+                update={'listings': listings, 'returned': len(listings), 'notes': [*result.notes, *detail_notes]},
+            )
         elif with_manage_cost and any(listing.manage_cost_manwon is None for listing in result.listings):
-            notes = notes + [_manage_cost_filtered_note('--details 로 채웁니다 (매물당 요청 1회)')]
+            result = result.model_copy(
+                update={'notes': [*result.notes, _manage_cost_filtered_note('--details 로 채웁니다 (매물당 요청 1회)')]},
+            )
         emit(result, pretty, notes=notes, next_token=next_token, fields=fields)
 
     def emit_map(
@@ -1062,7 +1066,7 @@ def search_command(
             '범위를 바꾸려면 --zoom 을 주세요 (1 작으면 가로·세로 2배)',
         )]
         emit_listings(
-            map_result, common_notes + place_notes + scope + map_result.notes,
+            map_result, common_notes + place_notes + scope,
             {
                 'm': 'map', 'lat': center_lat, 'lng': center_lng, 'zoom': map_zoom,
                 **({'address': found_address.model_dump()} if found_address else {}),
@@ -1090,21 +1094,21 @@ def search_command(
                 client, found_station, conditions=conditions, limit=limit, after=str(position['after']), region=found_region,
                 sidos=sidos,
             )
-            emit_listings(station_result, common_notes + station_result.notes, _station_resume(found_station))
+            emit_listings(station_result, common_notes, _station_resume(found_station))
         elif mode == 'university':
             found_university = DaangnUniversity.model_validate(position['university'])
             university_result = search_university(
                 client, found_university, conditions=conditions, limit=limit, after=str(position['after']),
                 region=found_region, sidos=sidos,
             )
-            emit_listings(university_result, common_notes + university_result.notes, _university_resume(found_university))
+            emit_listings(university_result, common_notes, _university_resume(found_university))
         else:
             area = DaangnArea.model_validate(position['area'])
             dong_result = search_dong(
                 client, area, conditions=conditions, limit=limit, after=str(position['after']), total=position.get('total'),
                 received=int(position.get('received') or 0),
             )
-            emit_listings(dong_result, common_notes + dong_result.notes, {'m': 'dong', 'area': area.model_dump()})
+            emit_listings(dong_result, common_notes, {'m': 'dong', 'area': area.model_dump()})
 
     with handle_errors(SOURCE), DaangnClient() as client:
         conditions, common_notes = _listing_conditions(
@@ -1122,7 +1126,7 @@ def search_command(
         if complex_id is not None:
             # 단지 하나의 현재 매물 (당근 단지 화면 순이라 거리가 없다)
             complex_result = list_complex_listings(client, complex_id, conditions=conditions, limit=limit)
-            emit_listings(complex_result, common_notes + complex_result.notes, None)
+            emit_listings(complex_result, common_notes, None)
             return
         if lat is not None and lng is not None:
             emit_map(lat, lng, zoom or POINT_ZOOM, [], by='좌표')
@@ -1141,7 +1145,7 @@ def search_command(
             emit_listings(station_result, common_notes + [note(
                 '범위',
                 f'{found_station.name} 주변 매물을 당근 웹 역 화면의 목록 순서로 줍니다 (walk_minutes 는 역까지 도보 분)',
-            )] + same_station_notes(found_station) + station_result.notes, _station_resume(found_station))
+            )] + same_station_notes(found_station), _station_resume(found_station))
             return
         if university is not None:
             found_university = find_university(client, university)
@@ -1150,7 +1154,7 @@ def search_command(
                 '범위',
                 f'{found_university.name} 주변 매물을 당근 웹 대학 페이지의 목록 순서로 줍니다 (범위는 당근이 정한다. '
                 'distance_km 는 대학까지의 직선거리)',
-            )] + same_university_notes(found_university) + university_result.notes, _university_resume(found_university))
+            )] + same_university_notes(found_university), _university_resume(found_university))
             return
         # _require_one_target 이 나머지는 지역 이름을 요구했다
         assert region is not None
@@ -1166,7 +1170,7 @@ def search_command(
                     param_hint='--zoom',
                 )
             result = search_dong(client, area, conditions=conditions, limit=limit)
-            emit_listings(result, common_notes + result.notes, {'m': 'dong', 'area': area.model_dump()})
+            emit_listings(result, common_notes, {'m': 'dong', 'area': area.model_dump()})
             return
         district = DaangnRegion(sido=area.name1, sigungu=area.name2, region_id=area.region_id)
         emit_map(area.lat, area.lng, zoom or area.zoom, [note(
@@ -1194,7 +1198,7 @@ def item_command(
         raise typer.BadParameter(f"거래 조건은 하나만 받습니다 ({', '.join(TRADE_TYPES)} 중 하나)", param_hint='--trade')
     with handle_errors(SOURCE), DaangnClient() as client:
         detail = get_listing(client, item_id, trade_type[0] if trade_type else None)
-        emit(detail, pretty, notes=detail.notes)
+        emit(detail, pretty)
 
 
 @app.command('complex')
@@ -1210,7 +1214,7 @@ def complex_command(
     """단지 정보·평형·가까운 역·학교·현재 매물 수. 거주 후기는 수만 주고 내용은 url 의 원 사이트에서."""
     with handle_errors(SOURCE), DaangnClient() as client:
         result = get_complex(client, complex_id)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('real-price')
@@ -1290,7 +1294,7 @@ def real_price_command(
                 client, complex_id, trade_type=trade_types[0], area_group=area, pyeong=pyeong, limit=limit, years=years,
                 month=month,
             )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('region-real-price')
@@ -1326,7 +1330,7 @@ def region_real_price_command(
             previous_days=previous_days,
             limit=limit,
         )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @search_app.command('commute')
@@ -1440,7 +1444,7 @@ def commute_command(
             ) from None
         if with_manage_cost and any(listing.manage_cost_manwon is None for listing in result.listings):
             notes.append(_manage_cost_filtered_note('jibsa daangn listing <id> 로 봅니다'))
-        emit(result, pretty, notes=notes + result.notes, fields=fields)
+        emit(result, pretty, notes=notes, fields=fields)
 
 
 @app.command('region-reviews')
@@ -1455,7 +1459,7 @@ def region_reviews_command(
     """동네 거주 후기가 있는지·몇 개인지와 후기 많은 단지·건물, 구는 동별 후기 수. 후기 내용은 url 의 원 사이트에서."""
     with handle_errors(SOURCE), DaangnClient() as client, _complex_name_hint(client, region):
         result = get_region_reviews(client, region, top=top)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @search_app.command('complexes')
@@ -1556,7 +1560,7 @@ def complexes_command(
                 '범위',
                 f'당근 웹 지도 화면(데스크톱, 줌 {result.zoom}, 가로 {result.width_km:g}km × 세로 {result.height_km:g}km) 안 단지를 '
                 '웹 단지 탭처럼 줍니다. 범위를 바꾸려면 --zoom 을 주세요 (1 작으면 가로·세로 2배)',
-            )] + result.notes)
+            )])
             return
         # _require_one_place 가 좌표가 없으면 지역 이름을 요구했다
         assert region is not None
@@ -1565,7 +1569,7 @@ def complexes_command(
             station_alternative='역 근처 단지는 jibsa dabang search complexes <역 이름> 이나 jibsa naver search complexes <역 이름> 으로 찾으세요',
         ):
             result = list_region_complexes(client, region, conditions=conditions, sort=sorts[0], limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('school')
@@ -1595,7 +1599,7 @@ def school_command(
             household_min=household_min,
             limit=limit,
         )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('price-trend')
@@ -1641,7 +1645,7 @@ def price_trend_command(
         result = get_price_trend(
             client, complex_id, trade_type=trade_types[0], pyeong=pyeong, area_group=area, period=periods[0],
         )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('preschools')
@@ -1663,7 +1667,7 @@ def preschools_command(
     """
     with handle_errors(SOURCE), DaangnClient() as client:
         result = list_preschools(client, complex_id)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('preschool')
@@ -1704,7 +1708,7 @@ def compare_command(
     require_finite('--area', area)
     with handle_errors(SOURCE), DaangnClient() as client:
         result = compare_complexes(client, complex_ids, area_m2=area)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('nearby-complexes')
@@ -1719,7 +1723,7 @@ def nearby_complexes_command(
     """
     with handle_errors(SOURCE), DaangnClient() as client:
         result = list_nearby_complexes(client, complex_id, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('good-neighborhoods')
@@ -1747,7 +1751,7 @@ def good_neighborhoods_command(
     regions = [name for item in region or [] for name in item.split(',') if name.strip()]
     with handle_errors(SOURCE), DaangnClient() as client:
         result = recommend_neighborhoods(client, lifestyles[0], regions=[name.strip() for name in regions])
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('trending-complexes')
@@ -1767,7 +1771,7 @@ def trending_complexes_command(
         # 웹은 전국·시·도 탭과 시·군·구 페이지로만 부른다. 동을 주면 trending_region_of 가 그 구를 권한다 (#215)
         area = None if name in ('', '전국') else resolve_area(client, name, levels=frozenset({'구', '시도'}))
         result = list_trending_complexes(client, trending_region_of(area))
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('popular-listings')
@@ -1797,4 +1801,4 @@ def popular_listings_command(
         result = list_popular_listings(
             client, resolve_dong(client, dong), property_type=property_types[0] if property_types else None, limit=limit,
         )
-        emit(result, pretty, notes=result.notes, fields=fields)
+        emit(result, pretty, fields=fields)

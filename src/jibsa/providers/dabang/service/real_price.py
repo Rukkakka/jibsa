@@ -19,6 +19,7 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     AmountRange,
     AmountSet,
+    Result,
     TradeType,
     normalize_address,
     normalize_floor,
@@ -208,8 +209,11 @@ def _real_price(row: DabangRealPriceHistoryModel, *, area_kind: AreaKind = 'none
     )
 
 
-class DabangRealPriceResult(BaseModel):
-    """실거래 내역."""
+class DabangRealPriceResult(Result):
+    """실거래 내역.
+
+    `notes`: 평형·범위 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -266,10 +270,6 @@ class DabangRealPriceResult(BaseModel):
         str,
         Field(description='단지·매물 페이지 URL')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='평형·범위 안내')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_unused_keys(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -641,8 +641,11 @@ class DabangTradeAverage(AmountSet):
     ] = None
 
 
-class DabangPriceTrend(BaseModel):
-    """평형 하나의 시세 흐름 (월별 평균 실거래가, 국토부 신고 기준)."""
+class DabangPriceTrend(Result):
+    """평형 하나의 시세 흐름 (월별 평균 실거래가, 국토부 신고 기준).
+
+    `notes`: 평형 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -682,10 +685,6 @@ class DabangPriceTrend(BaseModel):
         list[DabangTrendMonth],
         Field(description='오래된 달부터 36달')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='평형 안내')
-    ] = []
 
 
 def _average(value: float | None) -> float | None:
@@ -841,8 +840,11 @@ class DabangNearbyComplex(BaseModel):
     ] = None
 
 
-class DabangNearbyComplexes(BaseModel):
-    """단지 평형대 평당가와 반경 1km 주변 단지 비교 (다방 웹 단지 화면 평당가 칸의 기본 탭 'N평대 비교')."""
+class DabangNearbyComplexes(Result):
+    """단지 평형대 평당가와 반경 1km 주변 단지 비교 (다방 웹 단지 화면 평당가 칸의 기본 탭 'N평대 비교').
+
+    `notes`: 평형 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -881,10 +883,6 @@ class DabangNearbyComplexes(BaseModel):
         str,
         Field(description='단지 페이지 URL')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='평형 안내')
-    ] = []
 
 
 def _nearby_complex(row: DabangNearComplexModel) -> DabangNearbyComplex | None:
