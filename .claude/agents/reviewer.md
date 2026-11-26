@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: jibsa 변경분이나 한 소스의 명령 묶음을 혼자 한 맥락에서 리뷰해 지적 후보를 모으는 리뷰어 (읽기 전용, 재현하지 않음). /review-diff 는 하나만, /review 는 명령 묶음마다 하나씩 띄운다.
-tools: Bash, Read, Glob, Grep
+tools: Bash, Read, Glob, Grep, LSP
 model: sonnet
 effort: medium
 ---
