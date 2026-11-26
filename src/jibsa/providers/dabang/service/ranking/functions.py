@@ -107,6 +107,44 @@ AGE_YEARS_PATTERN: re.Pattern[str] = re.compile(r'(\d+)\s*년')
 MONTH_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d{2})년\s*(\d{1,2})월')
 ValueKind = Literal['price', 'count', 'percent', 'change', 'age', 'score', 'population-change', 'count-change']
 
+# --kind 값: 웹 고르기 이름에서 띄어쓰기·'/'·괄호를 뺀 것 (school·facility·traffic·life-safety 청크, 2026-10-25)
+ACADEMY_KIND_BY_LABEL: dict[str, str] = {
+    '입시': 'ADMISSION_EXAM', '예체능': 'ARTS_SPORTS', '외국어': 'FOREIGN_LANGUAGE', '특성화': 'SPECIALIZED',
+    '종합': 'COMPREHENSIVE', '인문사회': 'HUMANITIES_SOCIAL', '코딩': 'PROGRAMMING',
+}
+FACILITY_KIND_BY_LABEL: dict[DabangRegionInfoRankingMetric, dict[str, str]] = {
+    'living': {'편의점': 'CONVENIENCE_STORE', '세탁소': 'LAUNDRY', '헬스장': 'GYM', '공원': 'PARK', '도서관': 'LIBRARY'},
+    'medical': {'병원': 'HOSPITAL', '의원': 'CLINIC', '약국': 'PHARMACY', '응급의료센터': 'EMERGENCY'},
+    'dining': {'음식점': 'FOOD', '카페': 'CAFE', '주점': 'BAR'},
+    'shopping': {'대형마트': 'LARGE_STORE', '백화점': 'DEPARTMENT_STORE', '복합쇼핑몰': 'SHOPPING_MALL'},
+    'sports': {
+        '수영장': 'SWIMMING_POOL', '테니스장': 'TENNIS_COURT', '암벽장': 'CLIMBING_WALL', '골프장': 'GOLF_COURSE',
+        '축구장': 'SOCCER_FIELD', '야구장': 'BASEBALL_FIELD', '당구장': 'BILLIARD_ROOM', '체육관': 'GYM', '기타': 'ETC',
+    },
+    'transit': {'지하철': 'SUBWAY', '버스': 'BUS_STOP'},
+    'parking-lot': {'공영': 'PUBLIC_PARKING_LOT', '민영': 'COMMERCIAL_PARKING_LOT'},
+    'charge-station': {'주유소': 'GAS_STATION', '전기차충전소': 'EV_CHARGING_STATION'},
+    'maintenance-shop': {'자동차수리점': 'CAR_REPAIR_SHOP', '세차장': 'CAR_WASH', '타이어전문점': 'TIRE_SHOP'},
+    'safety-facility': {'CCTV': 'CCTV', '가로등': 'STREET_LAMP'},
+    'safety-organization': {
+        '경찰서': 'POLICE_STATION', '지구대파출소': 'LOCAL_SUBSTATION', '치안센터': 'SECURITY_CENTER', '소방서': 'FIRE_STATION',
+        '119안전센터': 'SAFETY_CENTER',
+    },
+    'inconvenience': {'공사현장': 'CONSTRUCTION', '소음구역': 'NOISE'},
+}
+
+# 항목의 값 종류마다 늘 해당하는 값 칸
+VALUE_FIELDS_BY_KIND: dict[ValueKind, frozenset[str]] = {
+    'price': frozenset({'value_manwon'}),
+    'count': frozenset({'count'}),
+    'percent': frozenset({'percent'}),
+    'change': frozenset({'change_manwon', 'change_percent', 'prev_price_manwon'}),
+    'age': frozenset({'age_years'}),
+    'score': frozenset({'score'}),
+    'population-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
+    'count-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
+}
+
 
 class MetricSpec(NamedTuple):
     """부동산 순위 항목 하나 (동·단지): 경로 이름, 값 종류, 받는 거래 유형 꼴, 받는 단지 유형 꼴, 단지만인지.
@@ -140,33 +178,6 @@ class InfoMetricSpec(NamedTuple):
     kind_field: Literal['academy_type', 'school_establishment_type', 'facility_type'] | None = None
     kinds: Mapping[str, str] | None = None
     default_kind: str | None = None
-
-
-# --kind 값: 웹 고르기 이름에서 띄어쓰기·'/'·괄호를 뺀 것 (school·facility·traffic·life-safety 청크, 2026-10-25)
-ACADEMY_KIND_BY_LABEL: dict[str, str] = {
-    '입시': 'ADMISSION_EXAM', '예체능': 'ARTS_SPORTS', '외국어': 'FOREIGN_LANGUAGE', '특성화': 'SPECIALIZED',
-    '종합': 'COMPREHENSIVE', '인문사회': 'HUMANITIES_SOCIAL', '코딩': 'PROGRAMMING',
-}
-FACILITY_KIND_BY_LABEL: dict[DabangRegionInfoRankingMetric, dict[str, str]] = {
-    'living': {'편의점': 'CONVENIENCE_STORE', '세탁소': 'LAUNDRY', '헬스장': 'GYM', '공원': 'PARK', '도서관': 'LIBRARY'},
-    'medical': {'병원': 'HOSPITAL', '의원': 'CLINIC', '약국': 'PHARMACY', '응급의료센터': 'EMERGENCY'},
-    'dining': {'음식점': 'FOOD', '카페': 'CAFE', '주점': 'BAR'},
-    'shopping': {'대형마트': 'LARGE_STORE', '백화점': 'DEPARTMENT_STORE', '복합쇼핑몰': 'SHOPPING_MALL'},
-    'sports': {
-        '수영장': 'SWIMMING_POOL', '테니스장': 'TENNIS_COURT', '암벽장': 'CLIMBING_WALL', '골프장': 'GOLF_COURSE',
-        '축구장': 'SOCCER_FIELD', '야구장': 'BASEBALL_FIELD', '당구장': 'BILLIARD_ROOM', '체육관': 'GYM', '기타': 'ETC',
-    },
-    'transit': {'지하철': 'SUBWAY', '버스': 'BUS_STOP'},
-    'parking-lot': {'공영': 'PUBLIC_PARKING_LOT', '민영': 'COMMERCIAL_PARKING_LOT'},
-    'charge-station': {'주유소': 'GAS_STATION', '전기차충전소': 'EV_CHARGING_STATION'},
-    'maintenance-shop': {'자동차수리점': 'CAR_REPAIR_SHOP', '세차장': 'CAR_WASH', '타이어전문점': 'TIRE_SHOP'},
-    'safety-facility': {'CCTV': 'CCTV', '가로등': 'STREET_LAMP'},
-    'safety-organization': {
-        '경찰서': 'POLICE_STATION', '지구대파출소': 'LOCAL_SUBSTATION', '치안센터': 'SECURITY_CENTER', '소방서': 'FIRE_STATION',
-        '119안전센터': 'SAFETY_CENTER',
-    },
-    'inconvenience': {'공사현장': 'CONSTRUCTION', '소음구역': 'NOISE'},
-}
 
 
 def _facility(topic: DabangRegionInfoTopic, metric: DabangRegionInfoRankingMetric) -> InfoMetricSpec:
@@ -228,19 +239,6 @@ METRIC_BY_LABEL: dict[str, MetricSpec | InfoMetricSpec] = {
     '안전시설': _facility('life-safety', 'safety-facility'),
     '안전기관': _facility('life-safety', 'safety-organization'),
     '불편요소': _facility('life-safety', 'inconvenience'),
-}
-
-
-# 항목의 값 종류마다 늘 해당하는 값 칸
-VALUE_FIELDS_BY_KIND: dict[ValueKind, frozenset[str]] = {
-    'price': frozenset({'value_manwon'}),
-    'count': frozenset({'count'}),
-    'percent': frozenset({'percent'}),
-    'change': frozenset({'change_manwon', 'change_percent', 'prev_price_manwon'}),
-    'age': frozenset({'age_years'}),
-    'score': frozenset({'score'}),
-    'population-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
-    'count-change': frozenset({'count', 'prev_count', 'change_count', 'change_percent'}),
 }
 
 

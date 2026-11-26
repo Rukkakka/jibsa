@@ -105,6 +105,21 @@ STAY_SORT_ORDERS: dict[StaySort, str] = {
 # 역 검색(type=subway)은 직방이 역에서 약 1km 안만 준다 (2026-11-15 실측: 강남역 71건, 가장 먼 것 0.979km)
 STAY_SUBWAY_RADIUS_KM: float = 1.0
 
+# 날짜를 준 검색의 금액·가격순이 기간 비용이 아니라는 안내. 2026-10-31 에이전트 검증: 강남역 4주 가격순 1위를 주당 32만 × 4 =
+# 128만으로 답했지만 청소비·이용료를 더한 실제 결제는 151만 2천이었고, 주당 요금 3위는 기간 비용으로 4위였다. 기간 비용은
+# 웹이 로그인했을 때만 계산해 보여 주어(2026-11-15) jibsa 는 내지 않는다
+STAY_WEEKLY_PRICE_NOTE: str = note(
+    '참고',
+    '목록 금액과 가격순은 주당 임대료+관리비 기준이라 청소비·직방 이용료·장기 할인이 빠져 있습니다. 그 기간에 실제로 내는 돈은 '
+    '직방에 로그인해야 계산해 보여 줘서 jibsa 는 주지 않습니다. 청소비·보증금·할인 조건은 listing stay-… 상세에서 보세요',
+)
+
+
+# 단기임대 검색 API 의 기간 오류. 로컬에서 7~84일을 먼저 막지만 직방이 제한을 바꿔도 소스 장애로 보이지 않게 한다
+STAY_PERIOD_ERRORS: frozenset[str] = frozenset({'MIN_DURATION_VIOLATION', 'MAX_DURATION_VIOLATION'})
+StayResponse = TypeVar('StayResponse')
+StayParameter = TypeVar('StayParameter')
+
 
 def check_stay_sort(sort: str) -> StaySort:
     """단기임대 정렬 값을 검사해 돌려준다. CLI 는 지역을 찾기 전에 같은 검사로 막는다.
@@ -380,22 +395,6 @@ def _stay_summaries(
             if summary.id in requested:
                 summaries.setdefault(summary.id, summary)
     return [summaries[item_id] for item_id in item_ids if item_id in summaries]
-
-
-# 날짜를 준 검색의 금액·가격순이 기간 비용이 아니라는 안내. 2026-10-31 에이전트 검증: 강남역 4주 가격순 1위를 주당 32만 × 4 =
-# 128만으로 답했지만 청소비·이용료를 더한 실제 결제는 151만 2천이었고, 주당 요금 3위는 기간 비용으로 4위였다. 기간 비용은
-# 웹이 로그인했을 때만 계산해 보여 주어(2026-11-15) jibsa 는 내지 않는다
-STAY_WEEKLY_PRICE_NOTE: str = note(
-    '참고',
-    '목록 금액과 가격순은 주당 임대료+관리비 기준이라 청소비·직방 이용료·장기 할인이 빠져 있습니다. 그 기간에 실제로 내는 돈은 '
-    '직방에 로그인해야 계산해 보여 줘서 jibsa 는 주지 않습니다. 청소비·보증금·할인 조건은 listing stay-… 상세에서 보세요',
-)
-
-
-# 단기임대 검색 API 의 기간 오류. 로컬에서 7~84일을 먼저 막지만 직방이 제한을 바꿔도 소스 장애로 보이지 않게 한다
-STAY_PERIOD_ERRORS: frozenset[str] = frozenset({'MIN_DURATION_VIOLATION', 'MAX_DURATION_VIOLATION'})
-StayResponse = TypeVar('StayResponse')
-StayParameter = TypeVar('StayParameter')
 
 
 def _stay_400_body(exc: HTTPStatusError) -> dict[str, Any] | None:

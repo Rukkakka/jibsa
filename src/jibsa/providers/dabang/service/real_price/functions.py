@@ -80,6 +80,26 @@ REAL_PRICE_MAX_YEARS: int = 3
 REAL_PRICE_MAX_PAGES: int = 4
 REAL_PRICE_MAX_LIMIT: int = REAL_PRICE_PAGE_LIMIT * REAL_PRICE_MAX_PAGES
 
+BUILDING_VIEW_LABELS: dict[str, str] = {'DETACHED': '단독·다가구', 'MULTIPLEX': '다세대·연립', 'APARTMENT': '아파트', 'OFFICETEL': '오피스텔'}
+
+
+class _Page(NamedTuple):
+    """실거래 한 쪽 (단지·매물 응답에서 같은 뜻의 칸)."""
+
+    histories: list[DabangRealPriceHistoryModel]
+    total: int | None
+    has_more: bool
+    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목 수
+    dropped: int = 0
+
+
+class _Collected(NamedTuple):
+    prices: list[DabangRealPrice]
+    total: int | None
+    has_more: bool
+    unknown: int
+    dropped: int
+
 
 def period_months(years: int, today: datetime | None = None) -> tuple[str, str]:
     """`years` 년 기간의 (시작 달, 끝 달) `YYYYMM`. 화면처럼 이번 달을 끝으로 `12 × years` 달 (3년 = 36달)."""
@@ -122,9 +142,6 @@ def _real_price(row: DabangRealPriceHistoryModel, *, area_kind: AreaKind = 'none
 
 def _month(value: str) -> str:
     return f'{value[:4]}-{value[4:]}'
-
-
-BUILDING_VIEW_LABELS: dict[str, str] = {'DETACHED': '단독·다가구', 'MULTIPLEX': '다세대·연립', 'APARTMENT': '아파트', 'OFFICETEL': '오피스텔'}
 
 
 def _fetch_complex_space(fetch: Callable[[], T], complex_id: str, space_seq: int) -> T:
@@ -193,24 +210,6 @@ def primary_space_note(name: str, space_seq: int, *, verb: str, from_dabang: boo
         f'--pyeong 을 주지 않아 다방 대표 평형({name}, pyeong_id {space_seq})으로 {verb}. '
         '다른 평형은 complex 결과의 pyeongs 에서 고르세요',
     )
-
-
-class _Page(NamedTuple):
-    """실거래 한 쪽 (단지·매물 응답에서 같은 뜻의 칸)."""
-
-    histories: list[DabangRealPriceHistoryModel]
-    total: int | None
-    has_more: bool
-    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목 수
-    dropped: int = 0
-
-
-class _Collected(NamedTuple):
-    prices: list[DabangRealPrice]
-    total: int | None
-    has_more: bool
-    unknown: int
-    dropped: int
 
 
 def _page_size(limit: int) -> int:

@@ -67,6 +67,12 @@ from typing import (
 )
 
 
+# 같은 동 단지를 한 번에 받을 수이자 CLI --limit 최대값. 웹은 300 을 보내지만 300 을 넘는 동이 있고 페이지
+# 정보가 오지 않아 한 번에 크게 받는다. 당근의 다른 목록 최대값(1200)에 맞췄다 (2026-10-10 실측: 화곡동 703곳,
+# 봉천동 380곳. 1200 을 보내도 거절하지 않고, 단지 카드도 703개를 한 번에 준다)
+NEARBY_COMPLEXES_MAX: int = 1200
+
+
 def _asking_averages(complex_: DaangnCompareComplexModel) -> dict[str, DaangnAskingAverage]:
     """호가 매물 거래 조건을 매매·전세·월세로 나눠 평균을 낸다 (당근 웹 비교 화면 `je`). 매물 하나에 거래 조건이 여럿이면 각각 센다.
 
@@ -356,12 +362,6 @@ def compare_complexes(client: DaangnClient, complex_ids: list[int], *, area_m2: 
             ),
         ] + ([null_items_note('당근 대표 평형 후보', dropped)] if dropped else []) + trade_notes,
     )
-
-
-# 같은 동 단지를 한 번에 받을 수이자 CLI --limit 최대값. 웹은 300 을 보내지만 300 을 넘는 동이 있고 페이지
-# 정보가 오지 않아 한 번에 크게 받는다. 당근의 다른 목록 최대값(1200)에 맞췄다 (2026-10-10 실측: 화곡동 703곳,
-# 봉천동 380곳. 1200 을 보내도 거절하지 않고, 단지 카드도 703개를 한 번에 준다)
-NEARBY_COMPLEXES_MAX: int = 1200
 
 
 def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int = 50) -> DaangnNearbyComplexesResult:

@@ -24,6 +24,22 @@ from typing import (
 )
 
 
+# 단지 정보에서 한쪽 유형에만 있는 필드. 다른 유형은 출력에서 키를 뺀다
+APT_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({
+    'dong_count', 'approved_date', 'construction_company', 'parking_per_household',
+    'floor_area_ratio_percent', 'heating', 'listing_counts', 'pyeongs', 'review_count', 'schools',
+    'estimated_ranges', 'estimated_prices', 'ranking', 'related_complexes', 'land_trade_permits',
+})
+OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_month', 'has_elevator'})
+
+ZigbangComplexPlaceType = Literal['역', '학교', '동', '구']
+
+ZigbangPriceTrendPeriod = Literal['1년', '3년', '전체']
+ZigbangPyeongTrendTrade = Literal['전체', '매매', '전월세']
+
+ZigbangPriceLineKind = Literal['단지', '비교 단지', '구']
+
+
 class ZigbangRelatedComplex(BaseModel):
     """직방이 단지끼리 이어 주는 단지 하나: 웹 단지 화면의 '함께 보면 좋은 단지', 직방시세 그래프 '단지 비교하기' 의 후보 ('단지 선택' 창)."""
 
@@ -47,15 +63,6 @@ class ZigbangRelatedComplex(BaseModel):
         str | None,
         Field(description='동까지의 주소')
     ]
-
-
-# 단지 정보에서 한쪽 유형에만 있는 필드. 다른 유형은 출력에서 키를 뺀다
-APT_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({
-    'dong_count', 'approved_date', 'construction_company', 'parking_per_household',
-    'floor_area_ratio_percent', 'heating', 'listing_counts', 'pyeongs', 'review_count', 'schools',
-    'estimated_ranges', 'estimated_prices', 'ranking', 'related_complexes', 'land_trade_permits',
-})
-OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_month', 'has_elevator'})
 
 
 class ZigbangComplexCandidate(BaseModel):
@@ -365,9 +372,6 @@ class ZigbangComplexListingsResult(Result):
     ]
 
 
-ZigbangComplexPlaceType = Literal['역', '학교', '동', '구']
-
-
 class ZigbangPlaceComplex(BaseModel):
     """역·학교·동·구 주변 아파트 단지 하나. 좌표는 담지 않는다."""
 
@@ -675,12 +679,6 @@ class ZigbangPlaceComplexesResult(Result):
         if self.place_type != '학교':
             data.pop('school', None)
         return data
-
-
-ZigbangPriceTrendPeriod = Literal['1년', '3년', '전체']
-ZigbangPyeongTrendTrade = Literal['전체', '매매', '전월세']
-
-ZigbangPriceLineKind = Literal['단지', '비교 단지', '구']
 
 
 class ZigbangComplexPricePoint(BaseModel):

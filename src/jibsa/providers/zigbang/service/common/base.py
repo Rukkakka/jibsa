@@ -54,6 +54,22 @@ DIRECTION_LABELS: dict[str, str] = {
     'SW': '남서향',
 }
 
+# 학교군 안 중·고등학교는 10곳 넘게 오기도 해 가까운 곳만 (당근과 같은 수)
+NEAREST_SCHOOLS: int = 2
+
+
+# 응답 형식이 달라 값을 모를 때 안내 끝 문장. 매일 API 감시가 이 안의 UPDATE_MAYBE_NEEDED 로 고장을 잡는다
+UNEXPECTED_FORMAT_TEXT: str = f'직방 응답이 예상한 형식과 달라 {UPDATE_MAYBE_NEEDED}'
+# 본 조회 목록을 주지 않아 UPSTREAM_ERROR 로 멈출 때의 hint
+UPSTREAM_RETRY_HINT: str = f'잠시 뒤 다시 시도하세요. 계속되면 직방 API 가 바뀐 것일 수 있어 {UPDATE_MAYBE_NEEDED}'
+
+ComplexKind = Literal['apt', 'officetel']
+# 아파트 단지 ID 와 오피스텔 건물 ID 는 번호 체계가 달라 같은 숫자가 다른 단지일 수 있어 접두어로 구분한다
+COMPLEX_ID_PATTERN: re.Pattern[str] = re.compile(r'^(apt|officetel)-(\d+)$')
+
+# 세대수 문구 (예: '38세대', '1,161세대'). 관련 단지(complex)와 주변 단지 카드·학교·역 응답(search complexes)이 쓴다
+HOUSEHOLD_TEXT_PATTERN: re.Pattern[str] = re.compile(r'([\d,]+)\s*세대')
+
 
 def estimated_prices_of(
     sale_price_manwon: float | None,
@@ -82,16 +98,6 @@ def sale_price_range(lowest_manwon: float | None, highest_manwon: float | None) 
 def item_url(service_type: str | None, item_id: int) -> str:
     path = WEB_PATH_BY_SERVICE_TYPE.get(service_type or '', 'oneroom')
     return f'https://www.zigbang.com/home/{path}/items/{item_id}'
-
-
-# 학교군 안 중·고등학교는 10곳 넘게 오기도 해 가까운 곳만 (당근과 같은 수)
-NEAREST_SCHOOLS: int = 2
-
-
-# 응답 형식이 달라 값을 모를 때 안내 끝 문장. 매일 API 감시가 이 안의 UPDATE_MAYBE_NEEDED 로 고장을 잡는다
-UNEXPECTED_FORMAT_TEXT: str = f'직방 응답이 예상한 형식과 달라 {UPDATE_MAYBE_NEEDED}'
-# 본 조회 목록을 주지 않아 UPSTREAM_ERROR 로 멈출 때의 hint
-UPSTREAM_RETRY_HINT: str = f'잠시 뒤 다시 시도하세요. 계속되면 직방 API 가 바뀐 것일 수 있어 {UPDATE_MAYBE_NEEDED}'
 
 
 def text_or_none(value: str | None) -> str | None:
@@ -142,11 +148,6 @@ def drop_unused_scope(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-ComplexKind = Literal['apt', 'officetel']
-# 아파트 단지 ID 와 오피스텔 건물 ID 는 번호 체계가 달라 같은 숫자가 다른 단지일 수 있어 접두어로 구분한다
-COMPLEX_ID_PATTERN: re.Pattern[str] = re.compile(r'^(apt|officetel)-(\d+)$')
-
-
 def apt_complex_id(danji_id: int) -> str:
     return f'apt-{danji_id}'
 
@@ -157,10 +158,6 @@ def officetel_complex_id(building_id: int) -> str:
 
 def apt_danji_url(danji_id: int) -> str:
     return f'https://www.zigbang.com/home/apt/danjis/{danji_id}'
-
-
-# 세대수 문구 (예: '38세대', '1,161세대'). 관련 단지(complex)와 주변 단지 카드·학교·역 응답(search complexes)이 쓴다
-HOUSEHOLD_TEXT_PATTERN: re.Pattern[str] = re.compile(r'([\d,]+)\s*세대')
 
 
 def household_count(text: str | None) -> int | None:

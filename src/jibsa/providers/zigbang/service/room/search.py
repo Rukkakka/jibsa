@@ -84,6 +84,26 @@ ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '�
 # --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
 DETAILS_MAX: int = 30
 
+# 유형 하나의 (거래 유형 필터, 요청 필드)
+_TypeQuery = tuple[list[ZigbangSalesType], dict[str, object]]
+
+
+class _ScopePins(NamedTuple):
+    """`_collect_pins` 결과: 종류마다 범위 안 매물 ID(직방 목록 순서), 매물별 중심 거리·건물 ID, 원룸 조회 조건과 지도 칸."""
+
+    ids_by_type: dict[ZigbangPropertyType, list[int]]
+    distances: dict[int, float]
+    # 오피스텔 핀의 건물 ID. 원룸 목록에 섞여 온 같은 매물의 핀에는 없어 종류와 상관없이 매물 ID 로 찾는다
+    buildings: dict[int, int]
+    # 원룸 목록에 섞여 온 오피스텔의 건물 ID 를 같은 조건의 오피스텔 목록으로 채울 때 쓴다
+    oneroom_query: _TypeQuery | None
+    # 원룸 핀을 받은 지도 칸. 건물 ID 가 빠진 매물이 있던 칸만 오피스텔 목록을 다시 받는다
+    oneroom_cells: dict[int, str]
+    # 앞 종류 목록에도 있어 그 종류 목록에서 뺀 매물 수 (원룸 목록의 '이 지역 오피스텔' 은 오피스텔 목록에도 있다)
+    overlaps: dict[ZigbangPropertyType, int]
+    # 핀·섹션 목록에서 빈 항목(null)을 빼고 읽었다는 안내 (없으면 빈 목록)
+    null_notes: list[str]
+
 
 def unsearchable_types(property_types: Sequence[str], trade_types: Sequence[str]) -> list[str]:
     """거래 유형 조건 때문에 직방에서 조회할 수 없는 유형. 원룸은 매매가 없다 (전세·월세·단기임대만).
@@ -146,27 +166,6 @@ def _scope_pins(
                 geohash=geohash, sales_types=sales_types, **type_filters,
             ))
         yield geohash, response
-
-
-# 유형 하나의 (거래 유형 필터, 요청 필드)
-_TypeQuery = tuple[list[ZigbangSalesType], dict[str, object]]
-
-
-class _ScopePins(NamedTuple):
-    """`_collect_pins` 결과: 종류마다 범위 안 매물 ID(직방 목록 순서), 매물별 중심 거리·건물 ID, 원룸 조회 조건과 지도 칸."""
-
-    ids_by_type: dict[ZigbangPropertyType, list[int]]
-    distances: dict[int, float]
-    # 오피스텔 핀의 건물 ID. 원룸 목록에 섞여 온 같은 매물의 핀에는 없어 종류와 상관없이 매물 ID 로 찾는다
-    buildings: dict[int, int]
-    # 원룸 목록에 섞여 온 오피스텔의 건물 ID 를 같은 조건의 오피스텔 목록으로 채울 때 쓴다
-    oneroom_query: _TypeQuery | None
-    # 원룸 핀을 받은 지도 칸. 건물 ID 가 빠진 매물이 있던 칸만 오피스텔 목록을 다시 받는다
-    oneroom_cells: dict[int, str]
-    # 앞 종류 목록에도 있어 그 종류 목록에서 뺀 매물 수 (원룸 목록의 '이 지역 오피스텔' 은 오피스텔 목록에도 있다)
-    overlaps: dict[ZigbangPropertyType, int]
-    # 핀·섹션 목록에서 빈 항목(null)을 빼고 읽었다는 안내 (없으면 빈 목록)
-    null_notes: list[str]
 
 
 def search_listings(

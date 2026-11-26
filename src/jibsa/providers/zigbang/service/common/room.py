@@ -97,6 +97,23 @@ VERIFICATION_BADGE: str = 'ITEM_VERIFICATION'
 HUG_BADGE: str = 'HUG'
 
 
+class SectionedPins(Protocol):
+    """핀과 섹션을 함께 주는 응답 (지도 칸·역 반경·오피스텔 건물)."""
+
+    @property
+    def items(self) -> list[ZigbangItemPinModel]: ...
+
+    @property
+    def sections(self) -> list[ZigbangItemSectionModel]: ...
+
+
+class TradeableSummaries(NamedTuple):
+    """`tradeable_summaries` 의 결과: 거래 중인 요약 목록과, 요약 응답에서 뺀 빈 항목(null)의 수."""
+
+    items: list[ZigbangItemSummaryModel]
+    null_items: int
+
+
 def trade_type_of(summary: ZigbangItemSummaryModel) -> str:
     """요약 응답의 거래 유형. 직방은 단기임대를 월세로 주고 `contract` 로만 구분한다.
 
@@ -186,16 +203,6 @@ def room_filter_of(conditions: ZigbangRoomConditions) -> dict[str, object]:
     }
 
 
-class SectionedPins(Protocol):
-    """핀과 섹션을 함께 주는 응답 (지도 칸·역 반경·오피스텔 건물)."""
-
-    @property
-    def items(self) -> list[ZigbangItemPinModel]: ...
-
-    @property
-    def sections(self) -> list[ZigbangItemSectionModel]: ...
-
-
 def section_ordered_ids(
     responses: Iterable[SectionedPins],
     keep: Callable[[ZigbangItemPinModel | None], bool] = lambda pin: True,
@@ -237,13 +244,6 @@ def pin_null_notes(what: str, responses: Iterable[ResponseModel]) -> list[str]:
     """
     dropped = sum(response.null_items('items', 'sections') for response in responses)
     return [null_items_note(what, dropped)] if dropped else []
-
-
-class TradeableSummaries(NamedTuple):
-    """`tradeable_summaries` 의 결과: 거래 중인 요약 목록과, 요약 응답에서 뺀 빈 항목(null)의 수."""
-
-    items: list[ZigbangItemSummaryModel]
-    null_items: int
 
 
 def tradeable_summaries(client: ZigbangClient, ids: list[int]) -> TradeableSummaries:

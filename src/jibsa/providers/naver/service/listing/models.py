@@ -51,23 +51,6 @@ GENERAL_PRE_SALE_STATUS: str = '10'
 ALL_TAX_TYPES: frozenset[str] = frozenset({'A01', 'A04', 'A05', 'A06', 'A07'})
 
 
-def _draws_sale_taxes(trade_type: str, real_estate_type: str | None, pre_sale_status_type: str | None) -> bool | None:
-    """이 매물에 네이버 웹이 세금 칸을 그리는지 (세금 요청과 키 제거가 같은 조건을 쓰도록 한 곳에 둔다). 칸이 있는지 모르면 None.
-
-    매매가 아니거나 원룸·고시원이면 없다. 분양권(B01·B02)은 웹 getArticleTaxExposeInfo(청크 0n-xsnd22pdxz)가 매매이면서
-    분양권 상태(preSaleStatusType)가 일반분양권('10')일 때만 세금 칸을 그려서, 상태가 없으면 칸이 없다. 그래서 상태를 모르는
-    분양권 매매는 칸이 있다고도 없다고도 단정하지 않으려고 요청하지 않고 모름(None)으로 둔다 (직거래 여부를 모를 때 중개보수를
-    요청하지 않는 것과 같은 기준). 빈 글자도 None 과 같게 본다 (`_coded_label` 과 같은 기준). 상태가 일반분양권이 아니면 없다.
-    """
-    if trade_type != '매매' or real_estate_type in NO_TAX_TYPES:
-        return False
-    if real_estate_type in PRE_SALE_TYPES:
-        if not pre_sale_status_type:
-            return None
-        return pre_sale_status_type == GENERAL_PRE_SALE_STATUS
-    return True
-
-
 class NaverNearbyRail(BaseModel):
     """매물 근처에 생길 지하철역 한 곳. 좌표·ID 는 담지 않는다."""
 
@@ -303,3 +286,20 @@ class NaverListingDetail(ListingDetail):
         elif self.real_estate_type not in ALL_TAX_TYPES:
             fields = fields | (SALE_TAX_FIELDS - {'acquisition_tax_manwon'})
         return fields
+
+
+def _draws_sale_taxes(trade_type: str, real_estate_type: str | None, pre_sale_status_type: str | None) -> bool | None:
+    """이 매물에 네이버 웹이 세금 칸을 그리는지 (세금 요청과 키 제거가 같은 조건을 쓰도록 한 곳에 둔다). 칸이 있는지 모르면 None.
+
+    매매가 아니거나 원룸·고시원이면 없다. 분양권(B01·B02)은 웹 getArticleTaxExposeInfo(청크 0n-xsnd22pdxz)가 매매이면서
+    분양권 상태(preSaleStatusType)가 일반분양권('10')일 때만 세금 칸을 그려서, 상태가 없으면 칸이 없다. 그래서 상태를 모르는
+    분양권 매매는 칸이 있다고도 없다고도 단정하지 않으려고 요청하지 않고 모름(None)으로 둔다 (직거래 여부를 모를 때 중개보수를
+    요청하지 않는 것과 같은 기준). 빈 글자도 None 과 같게 본다 (`_coded_label` 과 같은 기준). 상태가 일반분양권이 아니면 없다.
+    """
+    if trade_type != '매매' or real_estate_type in NO_TAX_TYPES:
+        return False
+    if real_estate_type in PRE_SALE_TYPES:
+        if not pre_sale_status_type:
+            return None
+        return pre_sale_status_type == GENERAL_PRE_SALE_STATUS
+    return True

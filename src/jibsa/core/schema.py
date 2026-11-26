@@ -25,27 +25,6 @@ from typing import (
 _null_item_tally: int = 0
 
 
-def reset_null_item_tally() -> None:
-    """뺀 빈 항목의 합을 0 으로 돌린다. 명령이 시작할 때 부른다 (`cli.output.handle_errors`). 정문 함수는 `with_notes` 가 부르기 전에 부른다."""
-    global _null_item_tally
-    _null_item_tally = 0
-
-
-def add_null_item_tally(count: int) -> None:
-    """응답에서 빈 항목을 `count` 개 빼고 읽었다고 합에 더한다. `validate_dropping_nulls` 와 소스의 루트 목록 모델이 부른다."""
-    global _null_item_tally
-    _null_item_tally += count
-
-
-def null_item_tally() -> int:
-    """이 명령이 응답에서 뺀 빈 항목의 합. 어느 칸에서 빼 어디에 쓰이는지와 상관없이 센다.
-
-    `cli.output.emit` 과 정문 함수를 감싼 `with_notes` 가 0 보다 크면 공통 안내를 붙인다. 소스가 따로 `null_items_note` 를 붙인 자리와 보여 주기만 하는 목록에서
-    뺀 자리가 모두 들어 있어, 조용히 빼는 자리가 없게 한다.
-    """
-    return _null_item_tally
-
-
 class RequestModel(BaseModel):
     """Base request model with strict field validation."""
     model_config = ConfigDict(
@@ -77,6 +56,27 @@ class ResponseModel(BaseModel):
         if not names:
             return sum(self._null_item_counts.values())
         return sum(self._null_item_counts.get(name, 0) for name in names)
+
+
+def reset_null_item_tally() -> None:
+    """뺀 빈 항목의 합을 0 으로 돌린다. 명령이 시작할 때 부른다 (`cli.output.handle_errors`). 정문 함수는 `with_notes` 가 부르기 전에 부른다."""
+    global _null_item_tally
+    _null_item_tally = 0
+
+
+def add_null_item_tally(count: int) -> None:
+    """응답에서 빈 항목을 `count` 개 빼고 읽었다고 합에 더한다. `validate_dropping_nulls` 와 소스의 루트 목록 모델이 부른다."""
+    global _null_item_tally
+    _null_item_tally += count
+
+
+def null_item_tally() -> int:
+    """이 명령이 응답에서 뺀 빈 항목의 합. 어느 칸에서 빼 어디에 쓰이는지와 상관없이 센다.
+
+    `cli.output.emit` 과 정문 함수를 감싼 `with_notes` 가 0 보다 크면 공통 안내를 붙인다. 소스가 따로 `null_items_note` 를 붙인 자리와 보여 주기만 하는 목록에서
+    뺀 자리가 모두 들어 있어, 조용히 빼는 자리가 없게 한다.
+    """
+    return _null_item_tally
 
 
 def drop_null_lists(model: type[BaseModel], data: Any) -> Any:

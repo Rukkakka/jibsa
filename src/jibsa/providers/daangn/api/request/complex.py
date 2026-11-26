@@ -18,6 +18,11 @@ from typing import (
 )
 
 
+DaangnComplexSort = Literal[
+    'HOUSEHOLD_COUNT_DESC', 'TRADE_PRICE_DESC', 'TRADE_PRICE_ASC', 'MOVE_IN_DATE_DESC', 'MOVE_IN_DATE_ASC',
+]
+
+
 class DaangnComplexesRequestParameterModel(RequestModel):
     """`GET realty.daangn.com/complexes/{originalId}` 경로."""
 
@@ -101,11 +106,6 @@ class DaangnComplexArticlesRequestPayloadModel(RequestModel):
         DaangnComplexArticlesInputModel,
         Field(description='매물 조건')
     ] = Field(default_factory=DaangnComplexArticlesInputModel)
-
-
-DaangnComplexSort = Literal[
-    'HOUSEHOLD_COUNT_DESC', 'TRADE_PRICE_DESC', 'TRADE_PRICE_ASC', 'MOVE_IN_DATE_DESC', 'MOVE_IN_DATE_ASC',
-]
 
 
 class DaangnComplexByClusterIdInputModel(RequestModel):

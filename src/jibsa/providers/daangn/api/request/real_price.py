@@ -12,6 +12,12 @@ from typing import (
 )
 
 
+DaangnRealsaleTradeType = Literal['SALE', 'BORROW']
+DaangnRealsaleSort = Literal['LATEST', 'TRADE_PRICE_DESC']
+
+DaangnPriceChartTradeType = Literal['BUY', 'BORROW']
+
+
 class DaangnComplexByOriginalIdRequestPayloadModel(RequestModel):
     """GraphQL `complexByOriginalId` 쿼리 변수 (웹의 `useTransactionComplexPagination_Query`, 단지 실거래가).
 
@@ -89,10 +95,6 @@ class DaangnArticleByOriginalArticleIdRequestPayloadModel(RequestModel):
         str | None,
         Field(description='전월세 다음 페이지 커서', alias='borrowAfter')
     ] = None
-
-
-DaangnRealsaleTradeType = Literal['SALE', 'BORROW']
-DaangnRealsaleSort = Literal['LATEST', 'TRADE_PRICE_DESC']
 
 
 class DaangnRealsaleFeedInputModel(RequestModel):
@@ -197,9 +199,6 @@ class DaangnRealsaleFeedSummaryRequestPayloadModel(RequestModel):
         DaangnRealsaleSummaryInputModel,
         Field(description='신고가 요약의 지역 (같은 지역)', alias='newHighInput')
     ]
-
-
-DaangnPriceChartTradeType = Literal['BUY', 'BORROW']
 
 
 class DaangnComplexPriceChartRequestPayloadModel(RequestModel):

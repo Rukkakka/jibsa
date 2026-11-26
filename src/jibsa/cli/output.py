@@ -89,6 +89,79 @@ OptionT = TypeVar('OptionT')
 TradeT = TypeVar('TradeT', bound=str)
 
 
+class UsageHints(NamedTuple):
+    """다른 소스의 옵션·값을 옮겨 써 틀린 사용법에, 이 명령에서 주는 법을 알리는 표. 값을 바꿔 받지는 않는다.
+
+    같은 조건이 소스마다 옵션·값이 달라(직방 `--condition 반려동물`, 당근 `--option 반려동물가능`) 다른 소스 명령을
+    옮겨 쓰다 틀리기 쉽다. 목록 옵션의 틀린 값은 `split_csv` 가, 없는 옵션·숫자로 못 바꾸는 값은 `jibsa.cli.app.run` 이
+    이 표로 찾는다. 안내는 옵션(`--condition 반려동물`), 다른 명령(`jibsa zigbang search listings apt`), 그 조건이
+    이 명령에 없다는 문장 중 하나다. 뜻이 조금 다른 조건(네이버 `탑층` 과 직방 `옥탑방`)은 넣지 않는다.
+
+    Attributes:
+        by_value: 옵션과 상관없이 값만으로 정해지는 안내 (`'반려동물가능': '--condition 반려동물'`). 이 명령 옵션의 값도
+            넣어, 없는 옵션에 준 값(`--facility 엘리베이터`)을 맞는 옵션으로 안내한다.
+        by_option_value: 옵션마다 뜻이 다른 값 (`'--room': {'2': '--room 투룸'}`). `by_value` 보다 먼저 본다.
+        by_option: 이 명령에 없는 옵션의 안내 (`'--move-in-now': '--condition 즉시입주'`). 값으로 못 정할 때 쓴다.
+    """
+
+    by_value: Mapping[str, str] = {}
+    by_option_value: Mapping[str, Mapping[str, str]] = {}
+    by_option: Mapping[str, str] = {}
+
+    def hint(self, option: str, value: str | None) -> str | None:
+        """`option` 에 `value`(쉼표로 여럿)를 줘 틀렸을 때의 힌트. 표에 없으면 None."""
+        option_values = self.by_option_value.get(option, {})
+        parts = [part.strip() for part in (value or '').split(',') if part.strip()]
+        usages = list(dict.fromkeys(
+            usage for part in parts if (usage := option_values.get(part) or self.by_value.get(part))
+        ))
+        if not usages and option in self.by_option:
+            usages = [self.by_option[option]]
+        if not usages:
+            return None
+        if all(usage.startswith('-') for usage in usages):
+            # 여러 값이 각각 다른 옵션이면 이어 붙여 그대로 쓸 수 있는 옵션 줄로 준다
+            return f"이 명령에서는 이렇게 주세요: {' '.join(usages)}"
+        return ' / '.join(
+            f'이 명령에서는 이렇게 주세요: {usage}' if usage.startswith('-')
+            else f'{usage} 로 찾으세요' if usage.startswith('jibsa ')
+            else usage
+            for usage in usages
+        )
+
+
+class ChangedUsage(NamedTuple):
+    """예전 문서대로 부른 사용법 오류에 바뀐 사용법을 알리는 안내 (`jibsa.cli.app.changed_usage_hint`).
+
+    Attributes:
+        hint: 바뀐 사용법.
+        removed_options: 뺀 옵션. 주면 이 옵션을 줬을 때만 알리고, 새 사용법의 다른 오류(옵션 오타·인자 누락)는
+            원래 힌트에 맡긴다. 없앤 명령은 비워 둔다.
+    """
+
+    hint: str
+    removed_options: frozenset[str] = frozenset()
+
+
+class HintedUsageError(UsageError):
+    """기본 힌트('--help 로 확인') 대신 정해 둔 힌트를 싣는 사용법 오류."""
+
+    def __init__(self, message: str, hint: str) -> None:
+        super().__init__(message)
+        self.hint = hint
+
+
+class HintedBadParameter(typer.BadParameter):
+    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다.
+
+    `option` 이 None 이면 Click 이 오류 난 인자·옵션 이름('complex_id', '--complex')을 채운다 (`parser` 안에서 던질 때).
+    """
+
+    def __init__(self, message: str, option: str | None, hint: str) -> None:
+        super().__init__(message, param_hint=option)
+        self.hint = hint
+
+
 def _dumps(data: Any, pretty: bool | None) -> str:
     if pretty is None:
         pretty = sys.stdout.isatty()
@@ -470,60 +543,6 @@ def handle_errors(source: str) -> Generator[None, None, None]:
         _command_source = None
 
 
-class UsageHints(NamedTuple):
-    """다른 소스의 옵션·값을 옮겨 써 틀린 사용법에, 이 명령에서 주는 법을 알리는 표. 값을 바꿔 받지는 않는다.
-
-    같은 조건이 소스마다 옵션·값이 달라(직방 `--condition 반려동물`, 당근 `--option 반려동물가능`) 다른 소스 명령을
-    옮겨 쓰다 틀리기 쉽다. 목록 옵션의 틀린 값은 `split_csv` 가, 없는 옵션·숫자로 못 바꾸는 값은 `jibsa.cli.app.run` 이
-    이 표로 찾는다. 안내는 옵션(`--condition 반려동물`), 다른 명령(`jibsa zigbang search listings apt`), 그 조건이
-    이 명령에 없다는 문장 중 하나다. 뜻이 조금 다른 조건(네이버 `탑층` 과 직방 `옥탑방`)은 넣지 않는다.
-
-    Attributes:
-        by_value: 옵션과 상관없이 값만으로 정해지는 안내 (`'반려동물가능': '--condition 반려동물'`). 이 명령 옵션의 값도
-            넣어, 없는 옵션에 준 값(`--facility 엘리베이터`)을 맞는 옵션으로 안내한다.
-        by_option_value: 옵션마다 뜻이 다른 값 (`'--room': {'2': '--room 투룸'}`). `by_value` 보다 먼저 본다.
-        by_option: 이 명령에 없는 옵션의 안내 (`'--move-in-now': '--condition 즉시입주'`). 값으로 못 정할 때 쓴다.
-    """
-
-    by_value: Mapping[str, str] = {}
-    by_option_value: Mapping[str, Mapping[str, str]] = {}
-    by_option: Mapping[str, str] = {}
-
-    def hint(self, option: str, value: str | None) -> str | None:
-        """`option` 에 `value`(쉼표로 여럿)를 줘 틀렸을 때의 힌트. 표에 없으면 None."""
-        option_values = self.by_option_value.get(option, {})
-        parts = [part.strip() for part in (value or '').split(',') if part.strip()]
-        usages = list(dict.fromkeys(
-            usage for part in parts if (usage := option_values.get(part) or self.by_value.get(part))
-        ))
-        if not usages and option in self.by_option:
-            usages = [self.by_option[option]]
-        if not usages:
-            return None
-        if all(usage.startswith('-') for usage in usages):
-            # 여러 값이 각각 다른 옵션이면 이어 붙여 그대로 쓸 수 있는 옵션 줄로 준다
-            return f"이 명령에서는 이렇게 주세요: {' '.join(usages)}"
-        return ' / '.join(
-            f'이 명령에서는 이렇게 주세요: {usage}' if usage.startswith('-')
-            else f'{usage} 로 찾으세요' if usage.startswith('jibsa ')
-            else usage
-            for usage in usages
-        )
-
-
-class ChangedUsage(NamedTuple):
-    """예전 문서대로 부른 사용법 오류에 바뀐 사용법을 알리는 안내 (`jibsa.cli.app.changed_usage_hint`).
-
-    Attributes:
-        hint: 바뀐 사용법.
-        removed_options: 뺀 옵션. 주면 이 옵션을 줬을 때만 알리고, 새 사용법의 다른 오류(옵션 오타·인자 누락)는
-            원래 힌트에 맡긴다. 없앤 명령은 비워 둔다.
-    """
-
-    hint: str
-    removed_options: frozenset[str] = frozenset()
-
-
 def not_allowed_message(value: object, allowed: Iterable[object]) -> str:
     """허용 밖 라벨 값의 에러 문장. `split_csv` 와 따로 검사하는 옵션도 같은 문장을 쓴다."""
     return f"허용되지 않는 값입니다: '{value}'. 가능한 값: {', '.join(map(str, allowed))}"
@@ -733,25 +752,6 @@ def infer_trade_types(
     )
     # 좁힌 값은 세 소스가 같이 쓰는 거래 유형 이름(매매·전세·월세·단기임대)이다
     return cast(list[TradeT], inferred), [narrowed]
-
-
-class HintedUsageError(UsageError):
-    """기본 힌트('--help 로 확인') 대신 정해 둔 힌트를 싣는 사용법 오류."""
-
-    def __init__(self, message: str, hint: str) -> None:
-        super().__init__(message)
-        self.hint = hint
-
-
-class HintedBadParameter(typer.BadParameter):
-    """`HintedUsageError` 처럼 정해 둔 힌트를 싣는 옵션 값 오류. 메시지는 'Invalid value for --옵션: …' 꼴이다.
-
-    `option` 이 None 이면 Click 이 오류 난 인자·옵션 이름('complex_id', '--complex')을 채운다 (`parser` 안에서 던질 때).
-    """
-
-    def __init__(self, message: str, option: str | None, hint: str) -> None:
-        super().__init__(message, param_hint=option)
-        self.hint = hint
 
 
 def require_korea(lat: float | None, lng: float | None) -> None:

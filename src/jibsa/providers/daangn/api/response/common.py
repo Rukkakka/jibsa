@@ -20,52 +20,6 @@ from typing import (
 )
 
 
-def _to_float(v: Any) -> Any:
-    """스토어의 숫자는 문자열('29.75', '3.0')로 오기도 해서 float 로 바꾼다. 빈 문자열은 None.
-
-    유한하지 않은 수('NaN'·'Infinity'·'-inf' 글자, 파이썬 nan·inf)도 모름(None)이다. 그대로 두면 출력 JSON 이 `NaN` 으로
-    깨진다 (`jibsa.cli.output._dumps`).
-    """
-    if isinstance(v, str):
-        v = v.strip()
-        if not v:
-            return None
-        try:
-            v = float(v)
-        except ValueError:
-            return None
-    if isinstance(v, float) and not isfinite(v):
-        return None
-    return v
-
-
-def _to_str(v: Any) -> Any:
-    """층 글자를 다듬는다. '3.0' 처럼 오면 정수일 때 '3' 으로 바꾼다.
-
-    앞뒤 공백을 지운 글자가 빈 글자나 '-' 면 모름(None)이다. '-' 를 그대로 두면 `Listing.floor` 검증기의 `normalize_floor` 가
-    돌려줘 층 칸에 '-' 가 나간다. 당근이 층을 '-' 로 비워 주는 것은 실측이 아니라 코드상 가능성이다. '-1'·'-0.5' 처럼
-    숫자로 읽히는 글자는 지하층이라 그대로 다듬는다.
-    """
-    if v is None:
-        return None
-    if isinstance(v, str):
-        v = v.strip()
-        if v in ('', '-'):
-            return None
-    try:
-        number = float(v)
-    except (TypeError, ValueError):
-        return str(v)
-    # 'NaN'·'Infinity' 같은 글자는 float 로 읽혀 'nan'·'inf' 층이 되므로 모름이다 (`_to_float` 와 같은 규칙)
-    if not isfinite(number):
-        return None
-    return str(int(number)) if number.is_integer() else str(number)
-
-
-LooseFloat = Annotated[float | None, BeforeValidator(_to_float)]
-FloorText = Annotated[str | None, BeforeValidator(_to_str)]
-
-
 class DaangnBaseResponseModel(ResponseModel):
     """당근 응답 모델의 기반. 목록 칸의 null 은 키가 없는 것과 같게, 객체 목록 안의 null 원소는 빼고 `null_items` 로 센다 (`validate_dropping_nulls`)."""
 
@@ -73,48 +27,6 @@ class DaangnBaseResponseModel(ResponseModel):
     @classmethod
     def null_lists_as_missing(cls, data: Any, handler: ValidatorFunctionWrapHandler) -> Any:
         return validate_dropping_nulls(cls, data, handler)
-
-
-class DaangnCoordinateModel(DaangnBaseResponseModel):
-    """좌표. 스토어에는 문자열로 들어 있다."""
-
-    lat: Annotated[
-        LooseFloat,
-        Field(description='위도')
-    ] = None
-    lon: Annotated[
-        LooseFloat,
-        Field(description='경도')
-    ] = None
-
-
-class DaangnRegionModel(DaangnBaseResponseModel):
-    """매물이 속한 지역."""
-
-    name1: Annotated[
-        str | None,
-        Field(description='시/도')
-    ] = None
-    name2: Annotated[
-        str | None,
-        Field(description='시/군/구')
-    ] = None
-    name3: Annotated[
-        str | None,
-        Field(description='읍/면/동')
-    ] = None
-    original_id: Annotated[
-        int | None,
-        Field(description='지역 ID', alias='originalId')
-    ] = None
-    depth: Annotated[
-        int | None,
-        Field(description='행정 단계. 1 시·도, 2 구, 3 동/읍/면 (좌표 → 지역·지역 검색·단지 지역 조회가 준다, 2026-11-12 실측)')
-    ] = None
-    center_coordinate: Annotated[
-        DaangnCoordinateModel | None,
-        Field(description='지역 중심 좌표', alias='centerCoordinate')
-    ] = None
 
 
 class DaangnSalesTypeModel(DaangnBaseResponseModel):
@@ -259,6 +171,195 @@ class DaangnArticleOptionModel(DaangnBaseResponseModel):
     ] = None
 
 
+class DaangnComplexRefModel(DaangnBaseResponseModel):
+    """매물이 속한 단지 (아파트·오피스텔 등). 목록 피드에는 `originalId` 가 없고 상세 페이지에만 있다."""
+
+    original_id: Annotated[
+        str | None,
+        Field(description='숫자 단지 ID. 단지 페이지 /complexes/{originalId}', alias='originalId')
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(description='단지 이름')
+    ] = None
+    type: Annotated[
+        str | None,
+        Field(description='APARTMENT, OFFICETEL, MIXED_USE(주상복합) ...')
+    ] = None
+
+
+# ---------------------------------------------------------------------------
+# POST realty.kr.karrotmarket.com/graphql — 공통
+# ---------------------------------------------------------------------------
+
+class DaangnGraphQLErrorModel(DaangnBaseResponseModel):
+    """GraphQL 에러 한 건. 잘못된 조건에도 이유 없이 "알 수 없는 오류" 가 온다."""
+
+    message: Annotated[
+        str | None,
+        Field(description='에러 메시지')
+    ] = None
+    extensions: Annotated[
+        dict[str, Any] | None,
+        Field(description='에러 코드 등 (예: code=PERSISTED_QUERY_NOT_IN_LIST)')
+    ] = None
+
+
+class DaangnGraphQLResponseModel(DaangnBaseResponseModel):
+    """GraphQL 응답 공통. 실패도 HTTP 200 에 `errors` 로 온다."""
+
+    errors: Annotated[
+        list[DaangnGraphQLErrorModel],
+        Field(description='에러. 없으면 []. null 로 와도 에러가 없다는 뜻이라 []')
+    ] = []
+
+
+class DaangnPageInfoModel(DaangnBaseResponseModel):
+    """커서 페이지 정보."""
+
+    end_cursor: Annotated[
+        str | None,
+        Field(description='다음 페이지를 받을 커서', alias='endCursor')
+    ] = None
+    has_next_page: Annotated[
+        bool | None,
+        Field(description='다음 페이지 존재 여부', alias='hasNextPage')
+    ] = None
+
+
+class DaangnLiveArticleCountModel(DaangnBaseResponseModel):
+    """단지의 현재 매물 수."""
+
+    total: Annotated[
+        int | None,
+        Field(description='매물 수')
+    ] = None
+
+
+class DaangnRealsaleDanjiModel(DaangnBaseResponseModel):
+    """거래가 난 건물·단지 (공공 데이터). 빌라 같은 소규모 건물도 있다."""
+
+    name: Annotated[
+        str | None,
+        Field(description='건물·단지 이름', alias='danjiAreaNm')
+    ] = None
+    households: Annotated[
+        int | None,
+        Field(description='세대수', alias='totalTotHsehCnt')
+    ] = None
+    build_date: Annotated[
+        str | None,
+        Field(description='사용승인일 (YYYY-MM-DD)', alias='buildDate')
+    ] = None
+
+
+class DaangnCompareRegionModel(DaangnBaseResponseModel):
+    """단지 지역."""
+
+    name1: Annotated[
+        str | None,
+        Field(description='시/도')
+    ] = None
+    name2: Annotated[
+        str | None,
+        Field(description='시/군/구')
+    ] = None
+    name3: Annotated[
+        str | None,
+        Field(description='읍/면/동')
+    ] = None
+
+
+class DaangnTradeArticleCountModel(DaangnBaseResponseModel):
+    """단지의 거래 유형별 현재 매물 수."""
+
+    buy: Annotated[
+        int | None,
+        Field(description='매매 매물 수')
+    ] = None
+    borrow: Annotated[
+        int | None,
+        Field(description='전세 매물 수')
+    ] = None
+    month: Annotated[
+        int | None,
+        Field(description='월세 매물 수')
+    ] = None
+
+
+class DaangnLivedReviewPreviewModel(DaangnBaseResponseModel):
+    """단지 목록 카드의 거주 후기 미리보기. 본문은 내보내지 않으므로 있는지만 본다."""
+
+    edges: Annotated[
+        list[dict[str, Any]] | None,
+        Field(description='후기 (웹은 1건만 받는다). null 이거나 키가 없으면 후기가 있는지 모르는 것이고(없으면 []), 빈 목록으로 바꾸지 않는다')
+    ] = None
+
+
+def _to_float(v: Any) -> Any:
+    """스토어의 숫자는 문자열('29.75', '3.0')로 오기도 해서 float 로 바꾼다. 빈 문자열은 None.
+
+    유한하지 않은 수('NaN'·'Infinity'·'-inf' 글자, 파이썬 nan·inf)도 모름(None)이다. 그대로 두면 출력 JSON 이 `NaN` 으로
+    깨진다 (`jibsa.cli.output._dumps`).
+    """
+    if isinstance(v, str):
+        v = v.strip()
+        if not v:
+            return None
+        try:
+            v = float(v)
+        except ValueError:
+            return None
+    if isinstance(v, float) and not isfinite(v):
+        return None
+    return v
+
+
+LooseFloat = Annotated[float | None, BeforeValidator(_to_float)]
+
+
+class DaangnCoordinateModel(DaangnBaseResponseModel):
+    """좌표. 스토어에는 문자열로 들어 있다."""
+
+    lat: Annotated[
+        LooseFloat,
+        Field(description='위도')
+    ] = None
+    lon: Annotated[
+        LooseFloat,
+        Field(description='경도')
+    ] = None
+
+
+class DaangnRegionModel(DaangnBaseResponseModel):
+    """매물이 속한 지역."""
+
+    name1: Annotated[
+        str | None,
+        Field(description='시/도')
+    ] = None
+    name2: Annotated[
+        str | None,
+        Field(description='시/군/구')
+    ] = None
+    name3: Annotated[
+        str | None,
+        Field(description='읍/면/동')
+    ] = None
+    original_id: Annotated[
+        int | None,
+        Field(description='지역 ID', alias='originalId')
+    ] = None
+    depth: Annotated[
+        int | None,
+        Field(description='행정 단계. 1 시·도, 2 구, 3 동/읍/면 (좌표 → 지역·지역 검색·단지 지역 조회가 준다, 2026-11-12 실측)')
+    ] = None
+    center_coordinate: Annotated[
+        DaangnCoordinateModel | None,
+        Field(description='지역 중심 좌표', alias='centerCoordinate')
+    ] = None
+
+
 class DaangnManageCostOptionModel(DaangnBaseResponseModel):
     """관리비 항목 한 건 (상세 페이지에만).
 
@@ -312,21 +413,30 @@ class DaangnBrokerCommissionModel(DaangnBaseResponseModel):
     ] = None
 
 
-class DaangnComplexRefModel(DaangnBaseResponseModel):
-    """매물이 속한 단지 (아파트·오피스텔 등). 목록 피드에는 `originalId` 가 없고 상세 페이지에만 있다."""
+def _to_str(v: Any) -> Any:
+    """층 글자를 다듬는다. '3.0' 처럼 오면 정수일 때 '3' 으로 바꾼다.
 
-    original_id: Annotated[
-        str | None,
-        Field(description='숫자 단지 ID. 단지 페이지 /complexes/{originalId}', alias='originalId')
-    ] = None
-    name: Annotated[
-        str | None,
-        Field(description='단지 이름')
-    ] = None
-    type: Annotated[
-        str | None,
-        Field(description='APARTMENT, OFFICETEL, MIXED_USE(주상복합) ...')
-    ] = None
+    앞뒤 공백을 지운 글자가 빈 글자나 '-' 면 모름(None)이다. '-' 를 그대로 두면 `Listing.floor` 검증기의 `normalize_floor` 가
+    돌려줘 층 칸에 '-' 가 나간다. 당근이 층을 '-' 로 비워 주는 것은 실측이 아니라 코드상 가능성이다. '-1'·'-0.5' 처럼
+    숫자로 읽히는 글자는 지하층이라 그대로 다듬는다.
+    """
+    if v is None:
+        return None
+    if isinstance(v, str):
+        v = v.strip()
+        if v in ('', '-'):
+            return None
+    try:
+        number = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    # 'NaN'·'Infinity' 같은 글자는 float 로 읽혀 'nan'·'inf' 층이 되므로 모름이다 (`_to_float` 와 같은 규칙)
+    if not isfinite(number):
+        return None
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+FloorText = Annotated[str | None, BeforeValidator(_to_str)]
 
 
 class DaangnArticleModel(DaangnBaseResponseModel):
@@ -540,54 +650,6 @@ class DaangnArticleModel(DaangnBaseResponseModel):
     ] = None
 
 
-# ---------------------------------------------------------------------------
-# POST realty.kr.karrotmarket.com/graphql — 공통
-# ---------------------------------------------------------------------------
-
-class DaangnGraphQLErrorModel(DaangnBaseResponseModel):
-    """GraphQL 에러 한 건. 잘못된 조건에도 이유 없이 "알 수 없는 오류" 가 온다."""
-
-    message: Annotated[
-        str | None,
-        Field(description='에러 메시지')
-    ] = None
-    extensions: Annotated[
-        dict[str, Any] | None,
-        Field(description='에러 코드 등 (예: code=PERSISTED_QUERY_NOT_IN_LIST)')
-    ] = None
-
-
-class DaangnGraphQLResponseModel(DaangnBaseResponseModel):
-    """GraphQL 응답 공통. 실패도 HTTP 200 에 `errors` 로 온다."""
-
-    errors: Annotated[
-        list[DaangnGraphQLErrorModel],
-        Field(description='에러. 없으면 []. null 로 와도 에러가 없다는 뜻이라 []')
-    ] = []
-
-
-class DaangnPageInfoModel(DaangnBaseResponseModel):
-    """커서 페이지 정보."""
-
-    end_cursor: Annotated[
-        str | None,
-        Field(description='다음 페이지를 받을 커서', alias='endCursor')
-    ] = None
-    has_next_page: Annotated[
-        bool | None,
-        Field(description='다음 페이지 존재 여부', alias='hasNextPage')
-    ] = None
-
-
-class DaangnLiveArticleCountModel(DaangnBaseResponseModel):
-    """단지의 현재 매물 수."""
-
-    total: Annotated[
-        int | None,
-        Field(description='매물 수')
-    ] = None
-
-
 class DaangnTransactionModel(DaangnBaseResponseModel):
     """국토부 실거래 한 건. 매매(`TransactionBuy`)와 전월세(`TransactionRent`)가 필드를 나눠 쓴다. 금액은 **만원**."""
 
@@ -679,23 +741,6 @@ class DaangnTransactionConnectionModel(DaangnBaseResponseModel):
     ] = None
 
 
-class DaangnRealsaleDanjiModel(DaangnBaseResponseModel):
-    """거래가 난 건물·단지 (공공 데이터). 빌라 같은 소규모 건물도 있다."""
-
-    name: Annotated[
-        str | None,
-        Field(description='건물·단지 이름', alias='danjiAreaNm')
-    ] = None
-    households: Annotated[
-        int | None,
-        Field(description='세대수', alias='totalTotHsehCnt')
-    ] = None
-    build_date: Annotated[
-        str | None,
-        Field(description='사용승인일 (YYYY-MM-DD)', alias='buildDate')
-    ] = None
-
-
 class DaangnCommuteArticleModel(DaangnBaseResponseModel):
     """역·대학 주변·출퇴근 역별 매물 카드 (CommuteArticleConnection). 상태·거래 조건이 다 있어 다시 받지 않고 그대로 쓴다.
 
@@ -727,49 +772,6 @@ class DaangnCommuteStationArticleConnectionModel(DaangnBaseResponseModel):
     page_info: Annotated[
         DaangnPageInfoModel | None,
         Field(description='페이지 정보', alias='pageInfo')
-    ] = None
-
-
-class DaangnCompareRegionModel(DaangnBaseResponseModel):
-    """단지 지역."""
-
-    name1: Annotated[
-        str | None,
-        Field(description='시/도')
-    ] = None
-    name2: Annotated[
-        str | None,
-        Field(description='시/군/구')
-    ] = None
-    name3: Annotated[
-        str | None,
-        Field(description='읍/면/동')
-    ] = None
-
-
-class DaangnTradeArticleCountModel(DaangnBaseResponseModel):
-    """단지의 거래 유형별 현재 매물 수."""
-
-    buy: Annotated[
-        int | None,
-        Field(description='매매 매물 수')
-    ] = None
-    borrow: Annotated[
-        int | None,
-        Field(description='전세 매물 수')
-    ] = None
-    month: Annotated[
-        int | None,
-        Field(description='월세 매물 수')
-    ] = None
-
-
-class DaangnLivedReviewPreviewModel(DaangnBaseResponseModel):
-    """단지 목록 카드의 거주 후기 미리보기. 본문은 내보내지 않으므로 있는지만 본다."""
-
-    edges: Annotated[
-        list[dict[str, Any]] | None,
-        Field(description='후기 (웹은 1건만 받는다). null 이거나 키가 없으면 후기가 있는지 모르는 것이고(없으면 []), 빈 목록으로 바꾸지 않는다')
     ] = None
 
 

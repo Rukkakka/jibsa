@@ -203,6 +203,49 @@ FLOOR_LABELS: dict[str, str] = {'반지층': '반지하'}
 # 요청 제한(분당 상한 대기·429 쿨다운)을 더한다. 받아 둔 단지 정보·매물 목록까지 버리지 않는다 (당근 `OPTIONAL_LOOKUP_ERRORS` 와 같은 뜻)
 OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, RateLimitedError)
 
+T = TypeVar('T')
+
+# 없는 ID 의 400 사유에 늘 든 말. 2026-10-28 실측: 매물번호 '존재하지 않는 방입니다.', 매물 상세 '존재하지 않는 매물입니다.',
+# 단지·단지 둘레 '존재하지 않는 단지입니다.', 매물 둘레 '존재하지 않는 방입니다.', 분양 '존재하지 않는 분양정보입니다.'
+MISSING_ID_MESSAGE: str = '존재하지 않'
+
+
+class DabangPage(NamedTuple, Generic[T]):
+    """다방 목록 한 쪽 (`fetch_pages` 에 넘기는 값)."""
+
+    rows: list[T]
+    total: int | None
+    # 서버 hasMore (다음 쪽이 있는지)
+    has_more: bool
+    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목(null) 수. 뺀 자리도 서버의 칸이라 빈 쪽인지 가를 때와 이어 받을 위치를 셀 때 더한다
+    dropped: int = 0
+
+
+class DabangPages(NamedTuple, Generic[T]):
+    """`fetch_pages` 가 따라간 결과."""
+
+    # limit 까지 받은 줄 (다방 목록 순). 부르는 쪽이 중복·다른 동을 빼도 limit 은 이 수로 센다 (뺀 것은 다시 채우지 않는다)
+    rows: list[T]
+    # 처음 받은 쪽의 total
+    total: int | None
+    # 다방에 더 있는지
+    has_more: bool
+    # 쪽 수 상한(`max_pages`)까지 받고도 limit 을 못 채웠는데 다방에 더 있는지 (`fetch_stop_notes`)
+    capped: bool
+    # 앞 쪽이 hasMore 라 다음 쪽을 물었는데 다방이 결과(result null)를 주지 않아 멈췄는지 (`fetch_stop_notes`)
+    cut_short: bool
+    # 다음에 물을 쪽과 그 쪽에서 건너뛸 칸. 쪽 중간에서 멈췄으면 그 쪽과 쓴 칸 수, 쪽을 다 썼으면 다음 쪽과 0
+    page: int
+    skip: int
+    # 그 목록의 한 쪽 크기
+    page_size: int
+    # 이번 호출의 쪽 수 상한 (`fetch_pages` 가 쪽 크기와 --limit 최대값으로 정한다)
+    max_pages: int
+    # 받은 쪽들에서 뺀 빈 항목 수 (안내용, 쪽 중간에서 멈춘 쪽의 몫도 든다)
+    dropped: int = 0
+    # 그중 다 쓴 쪽의 몫. 쪽 중간에서 멈춘 쪽은 이어 받을 때 같은 쪽을 다시 받아 그때 세므로 뺀다 (받은 칸 수를 셀 때)
+    dropped_used: int = 0
+
 
 def listing_url(room_id: str) -> str:
     return LISTING_URL.format(room_id=room_id)
@@ -449,46 +492,6 @@ def filters_of(kind: ListingKind, conditions: DabangListingConditions) -> Dabang
     )
 
 
-T = TypeVar('T')
-
-
-class DabangPage(NamedTuple, Generic[T]):
-    """다방 목록 한 쪽 (`fetch_pages` 에 넘기는 값)."""
-
-    rows: list[T]
-    total: int | None
-    # 서버 hasMore (다음 쪽이 있는지)
-    has_more: bool
-    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목(null) 수. 뺀 자리도 서버의 칸이라 빈 쪽인지 가를 때와 이어 받을 위치를 셀 때 더한다
-    dropped: int = 0
-
-
-class DabangPages(NamedTuple, Generic[T]):
-    """`fetch_pages` 가 따라간 결과."""
-
-    # limit 까지 받은 줄 (다방 목록 순). 부르는 쪽이 중복·다른 동을 빼도 limit 은 이 수로 센다 (뺀 것은 다시 채우지 않는다)
-    rows: list[T]
-    # 처음 받은 쪽의 total
-    total: int | None
-    # 다방에 더 있는지
-    has_more: bool
-    # 쪽 수 상한(`max_pages`)까지 받고도 limit 을 못 채웠는데 다방에 더 있는지 (`fetch_stop_notes`)
-    capped: bool
-    # 앞 쪽이 hasMore 라 다음 쪽을 물었는데 다방이 결과(result null)를 주지 않아 멈췄는지 (`fetch_stop_notes`)
-    cut_short: bool
-    # 다음에 물을 쪽과 그 쪽에서 건너뛸 칸. 쪽 중간에서 멈췄으면 그 쪽과 쓴 칸 수, 쪽을 다 썼으면 다음 쪽과 0
-    page: int
-    skip: int
-    # 그 목록의 한 쪽 크기
-    page_size: int
-    # 이번 호출의 쪽 수 상한 (`fetch_pages` 가 쪽 크기와 --limit 최대값으로 정한다)
-    max_pages: int
-    # 받은 쪽들에서 뺀 빈 항목 수 (안내용, 쪽 중간에서 멈춘 쪽의 몫도 든다)
-    dropped: int = 0
-    # 그중 다 쓴 쪽의 몫. 쪽 중간에서 멈춘 쪽은 이어 받을 때 같은 쪽을 다시 받아 그때 세므로 뺀다 (받은 칸 수를 셀 때)
-    dropped_used: int = 0
-
-
 def more_after(server_has_more: bool, rows: int, *, cut: int = 0) -> bool:
     """다방 목록 한 쪽 뒤에 더 있는지.
 
@@ -704,11 +707,6 @@ def error_message(exc: HTTPStatusError) -> str | None:
     """다방 400 본문의 사유 ("존재하지 않는 단지입니다." 등). 없거나 JSON 이 아니면 None."""
     message = (error_body(exc) or {}).get('msg')
     return message if isinstance(message, str) else None
-
-
-# 없는 ID 의 400 사유에 늘 든 말. 2026-10-28 실측: 매물번호 '존재하지 않는 방입니다.', 매물 상세 '존재하지 않는 매물입니다.',
-# 단지·단지 둘레 '존재하지 않는 단지입니다.', 매물 둘레 '존재하지 않는 방입니다.', 분양 '존재하지 않는 분양정보입니다.'
-MISSING_ID_MESSAGE: str = '존재하지 않'
 
 
 def is_missing_id(exc: HTTPStatusError, *, in_path: bool = True) -> bool:

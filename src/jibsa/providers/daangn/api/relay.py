@@ -54,25 +54,6 @@ class RelayRecordNotFoundError(ValueError):
     """
 
 
-def extract_relay_store(html: str) -> RelayStore:
-    """SSR HTML 에 박힌 라우터 상태에서 Relay 스토어(`dehydratedData.relayRecords`)를 꺼낸다.
-
-    라우터 상태는 JSON 이 아니라 seroval 의 JS 식이라 `_SerovalReader` 로 읽는다.
-
-    Raises:
-        RelayStoreNotFoundError: 라우터 상태나 스토어를 찾지 못했거나 읽을 수 없을 때.
-    """
-    start = html.find(TSR_ROUTER_MARKER)
-    if start < 0:
-        raise RelayStoreNotFoundError('TanStack router state ($_TSR.router) not found in HTML')
-    state = _SerovalReader(html, start + len(TSR_ROUTER_MARKER)).value()
-    dehydrated = state.get('dehydratedData') if isinstance(state, dict) else None
-    records = dehydrated.get('relayRecords') if isinstance(dehydrated, dict) else None
-    if not isinstance(records, dict):
-        raise RelayStoreNotFoundError('dehydratedData.relayRecords not found in router state')
-    return records
-
-
 class _SerovalReader:
     """seroval 이 직렬화한 JS 식에서 값 하나를 읽는다.
 
@@ -169,6 +150,25 @@ class _SerovalReader:
             elif match.group('punct') != ']':
                 raise self._error('expected , or ]')
         return target
+
+
+def extract_relay_store(html: str) -> RelayStore:
+    """SSR HTML 에 박힌 라우터 상태에서 Relay 스토어(`dehydratedData.relayRecords`)를 꺼낸다.
+
+    라우터 상태는 JSON 이 아니라 seroval 의 JS 식이라 `_SerovalReader` 로 읽는다.
+
+    Raises:
+        RelayStoreNotFoundError: 라우터 상태나 스토어를 찾지 못했거나 읽을 수 없을 때.
+    """
+    start = html.find(TSR_ROUTER_MARKER)
+    if start < 0:
+        raise RelayStoreNotFoundError('TanStack router state ($_TSR.router) not found in HTML')
+    state = _SerovalReader(html, start + len(TSR_ROUTER_MARKER)).value()
+    dehydrated = state.get('dehydratedData') if isinstance(state, dict) else None
+    records = dehydrated.get('relayRecords') if isinstance(dehydrated, dict) else None
+    if not isinstance(records, dict):
+        raise RelayStoreNotFoundError('dehydratedData.relayRecords not found in router state')
+    return records
 
 
 def _js_string(raw: str) -> str:

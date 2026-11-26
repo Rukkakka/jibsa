@@ -192,6 +192,78 @@ SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType] = {
 # NEAREST_SORT_HINT)는 search_command 가 지역 검색 모드에만 붙인다
 COMPLEX_SORT_TYPE_BY_NAME: dict[str, NaverArticleSortType] = SORT_TYPE_BY_NAME
 
+ASKING_RANGES_DESCRIPTION: str = (
+    '거래 유형별 호가 범위 {sale·jeonse·wolse·short_term: {lowest, highest}}. sale 은 price_manwon, jeonse 는 deposit_manwon, wolse·short_term 은 보증금·월세 짝 '
+    '(deposit_manwon·rent_manwon). 월세·단기임대의 두 끝은 월세 최저·최고가 아니라 가격순 첫 매물의 짝이라 rent_manwon 이 거꾸로일 수 있다 '
+    '(빌라 단지는 월세가 대개 없다). 그 거래 매물이 없거나(네이버가 값을 주지 않거나 0) 가격 정보가 없는 거래 유형은 키가 없고, 네이버가 호가 정보 '
+    '자체를 주지 않으면 null. 한 끝만 비면 그 끝 금액만 null. 월세·단기임대는 한 짝의 월세만 0 이면 그 rent_manwon 만 null, '
+    '한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
+)
+
+
+"""`NaverComplexSummary`·`NaverAreaComplex`·`NaverSchoolComplex` 의 `asking_ranges` 설명. 모델끼리 필드를 함께 쓸 수 없어 상수로 공유한다. `confirmed_date` 설명(`CONFIRMED_AT_DESCRIPTION`)도 목록·상세가 함께 쓴다."""
+
+MARKET_PRICE_PROVIDER_NAMES: dict[str, str] = {'kab': '한국부동산원', 'kbstar': 'KB부동산', 'neonet': '부동산뱅크'}
+
+
+# 부가 정보 조회에서 그 값만 모름(None)으로 두는 오류: 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`, 압축이 깨진
+# 응답도 HTTPError)만 잡는다. 요청 제한(RateLimitedError)은 JibsaError 라 잡지 않아 그대로 올라간다.
+# 제한을 끈 정책(RateLimitPolicy(enabled=False))이면 429 가 HTTPStatusError 로 와 여기서 모름이 되지만, 그 정책은
+# 라이브러리로 직접 만들 때만 쓰이고 CLI 는 늘 켜 둔다 (core/ratelimit.py on_rate_limited, 2026-10-11 확인).
+# ValidationError 는 람다 안에서 만드는 요청 모델 오류도 잡지만, 요청 값은 CLI 가 검증한 값이나 네이버 응답 값
+# (법정동 코드 10자리, 단지 유형 코드 등)이라 사용자 입력으로는 생기지 않는다 (2026-10-10 확인)
+OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = OPTIONAL_LOOKUP_BASE_ERRORS
+
+# 단지형 빌라(연립·다세대·도시형생활주택 단지). 학교는 이 유형이면 villa 로 묻는다
+VILLA_COMPLEX_CODES: frozenset[str] = frozenset({'A05', 'A06', 'A07'})
+
+
+SCHOOL_ALLOCATION_LABELS: dict[str, str] = {'01': '배정', '02': '선택'}
+
+HUG_SAFE_LESSOR_BADGE: str = 'HUG 안심임대인'
+
+DONG_LETTER_BY_SPELLING: dict[str, str] = {
+    '에이': 'A', '비': 'B', '씨': 'C', '디': 'D', '이': 'E', '에프': 'F', '지': 'G', '에이치': 'H',
+}
+
+
+"""한글로 쓴 영문 동 이름. 단지마다 'A' 로도 '에이' 로도 온다 (성재하이빌 '에이'·'비', 2026-10-09 확인)."""
+
+_Page = NaverArticlePageModel | NaverComplexListPageModel | NaverRedevelopmentAreaPageModel
+
+# `pagination_notes` 의 제외 사유. 반경 밖은 사각형으로 받아 반경으로 거르는 검색(반경 매물·단지·재개발 구역)에만 있다.
+# 동 전체·단지·재개발 구역 매물은 반경 없이 받아, '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다.
+# 목록 응답에는 매물 상태·노출 여부 필드가 없어 거래 불가로 빼는 매물은 없다. 빼는 것은 번호가 같은 중복과 모르는 거래 유형
+# 코드(`article_info_to_listing`)뿐이다 (2026-10-14 실측: 역삼동 동 전체 목록 20건의 모든 키에 상태 필드 없음)
+# 단지 목록(`search.py` `list_area_complexes`)은 거래 유형으로 빼지 않고 본문(단지 정보)이 없는 단지를 뺀다. 위치가 없는 단지는
+# 반경 안인지 알 수 없는 반경 검색에서만 빼고, 경계 검색은 위치로 빼지 않는다 (2026-11-24 리뷰)
+EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형인'
+
+
+RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의'
+
+
+COMPLEX_EXCLUDED_REASON: str = '중복이거나 단지 정보를 알 수 없는'
+
+
+COMPLEX_RADIUS_EXCLUDED_REASON: str = '중복이거나 단지 정보·위치를 알 수 없거나 검색 범위(반경) 밖의'
+
+
+# 반경 검색의 서버 집계(total)가 센 범위. 반경 원이 아니라 그 원을 감싼 사각형 안이라 반경 안 수보다 크다
+RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
+
+# real-price·market-price 의 --period (이름 → 달 수). 웹 실거래·시세 기간 선택지는 startDate 로 보내는 3개월·3년·5년이고 1년은 jibsa 가 더한 값이다
+PERIOD_MONTHS_BY_NAME: dict[str, int] = {'3개월': 3, '1년': 12, '3년': 36, '5년': 60}
+
+
+class AreaScope(NamedTuple):
+    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동·시·군·구 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
+
+    scope: str  # pagination_notes 의 scope ('전부'·'없습니다' 가 어느 범위인지)
+    total_basis: str  # pagination_notes 의 total_basis
+    narrow: str  # pagination_notes 의 narrow
+    narrow_action: str  # 요청 상한 안내 끝의 좁히는 법 ('조건을 좁혀' / '반경을 줄이거나 조건을 좁혀')
+
 
 def article_url(article_number: str) -> str:
     return f'https://fin.land.naver.com/articles/{article_number}'
@@ -253,18 +325,6 @@ def villa_by_complex_response(response: NaverResponseModel[Any]) -> bool:
 """목록 매물(`NaverListing`)과 상세(`NaverListingDetail`)의 `badges` 설명. 두 모델은 상속이 갈려 필드를 함께 쓸 수 없다."""
 
 
-ASKING_RANGES_DESCRIPTION: str = (
-    '거래 유형별 호가 범위 {sale·jeonse·wolse·short_term: {lowest, highest}}. sale 은 price_manwon, jeonse 는 deposit_manwon, wolse·short_term 은 보증금·월세 짝 '
-    '(deposit_manwon·rent_manwon). 월세·단기임대의 두 끝은 월세 최저·최고가 아니라 가격순 첫 매물의 짝이라 rent_manwon 이 거꾸로일 수 있다 '
-    '(빌라 단지는 월세가 대개 없다). 그 거래 매물이 없거나(네이버가 값을 주지 않거나 0) 가격 정보가 없는 거래 유형은 키가 없고, 네이버가 호가 정보 '
-    '자체를 주지 않으면 null. 한 끝만 비면 그 끝 금액만 null. 월세·단기임대는 한 짝의 월세만 0 이면 그 rent_manwon 만 null, '
-    '한 짝이 보증금·월세 모두 0 이면 그 짝 두 값 모두 null'
-)
-
-
-"""`NaverComplexSummary`·`NaverAreaComplex`·`NaverSchoolComplex` 의 `asking_ranges` 설명. 모델끼리 필드를 함께 쓸 수 없어 상수로 공유한다. `confirmed_date` 설명(`CONFIRMED_AT_DESCRIPTION`)도 목록·상세가 함께 쓴다."""
-
-
 def group_fields(group: NaverDuplicatedArticleInfoModel | None, trade_type: str) -> dict[str, Any]:
     """중복 묶음의 중개사 수와 거래 유형에 맞는 호가 범위 (`NaverListing`). 중개사가 하나뿐이면 비운다.
 
@@ -316,18 +376,6 @@ def group_fields(group: NaverDuplicatedArticleInfoModel | None, trade_type: str)
         highest[name] = won_to_manwon(end[1]) if end is not None and known else None
     fields['asking_range'] = AmountRange(lowest=AmountSet(**lowest), highest=AmountSet(**highest))
     return fields
-
-
-MARKET_PRICE_PROVIDER_NAMES: dict[str, str] = {'kab': '한국부동산원', 'kbstar': 'KB부동산', 'neonet': '부동산뱅크'}
-
-
-# 부가 정보 조회에서 그 값만 모름(None)으로 두는 오류: 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`, 압축이 깨진
-# 응답도 HTTPError)만 잡는다. 요청 제한(RateLimitedError)은 JibsaError 라 잡지 않아 그대로 올라간다.
-# 제한을 끈 정책(RateLimitPolicy(enabled=False))이면 429 가 HTTPStatusError 로 와 여기서 모름이 되지만, 그 정책은
-# 라이브러리로 직접 만들 때만 쓰이고 CLI 는 늘 켜 둔다 (core/ratelimit.py on_rate_limited, 2026-10-11 확인).
-# ValidationError 는 람다 안에서 만드는 요청 모델 오류도 잡지만, 요청 값은 CLI 가 검증한 값이나 네이버 응답 값
-# (법정동 코드 10자리, 단지 유형 코드 등)이라 사용자 입력으로는 생기지 않는다 (2026-10-10 확인)
-OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = OPTIONAL_LOOKUP_BASE_ERRORS
 
 
 def add_failure_note(notes: list[str] | None, exc: Exception | None, what: str, unknown: str) -> None:
@@ -422,13 +470,6 @@ def result_or_empty(
     return empty() if response.result is None else response.result
 
 
-# 단지형 빌라(연립·다세대·도시형생활주택 단지). 학교는 이 유형이면 villa 로 묻는다
-VILLA_COMPLEX_CODES: frozenset[str] = frozenset({'A05', 'A06', 'A07'})
-
-
-SCHOOL_ALLOCATION_LABELS: dict[str, str] = {'01': '배정', '02': '선택'}
-
-
 def assigned_schools(schools: list[NaverSchoolModel], notes: list[str]) -> list[NaverAssignedSchool]:
     """배정 초등학교 목록. 이름이 없는 항목은 빼고 `notes` 에 `[제외]` 안내를 붙인다.
 
@@ -468,9 +509,6 @@ def unknown_code_label(kind: str, code: str) -> str:
         code: 응답의 코드.
     """
     return f'알 수 없는 {kind} ({code})'
-
-
-HUG_SAFE_LESSOR_BADGE: str = 'HUG 안심임대인'
 
 
 def listing_badges(
@@ -896,14 +934,6 @@ def market_price_fields(
     }
 
 
-DONG_LETTER_BY_SPELLING: dict[str, str] = {
-    '에이': 'A', '비': 'B', '씨': 'C', '디': 'D', '이': 'E', '에프': 'F', '지': 'G', '에이치': 'H',
-}
-
-
-"""한글로 쓴 영문 동 이름. 단지마다 'A' 로도 '에이' 로도 온다 (성재하이빌 '에이'·'비', 2026-10-09 확인)."""
-
-
 def dong_key(name: str) -> str:
     """'104동'·'104 동'·'104' 를 같은 동으로 본다. 'A'·'a'·'에이'·'에이동' 도 같은 동이다."""
     name = name.strip().replace(' ', '')
@@ -987,9 +1017,6 @@ def cursor_position(cursor: tuple[str | None, Any] | None) -> dict[str, Any]:
     if cursor is None:
         return {}
     return {'seed': cursor[0], 'last_info': cursor[1]}
-
-
-_Page = NaverArticlePageModel | NaverComplexListPageModel | NaverRedevelopmentAreaPageModel
 
 
 def scan_pages(
@@ -1091,28 +1118,6 @@ def listing_keeper(
     return keep
 
 
-# `pagination_notes` 의 제외 사유. 반경 밖은 사각형으로 받아 반경으로 거르는 검색(반경 매물·단지·재개발 구역)에만 있다.
-# 동 전체·단지·재개발 구역 매물은 반경 없이 받아, '반경 밖' 이라고 하면 쓸 수 없는 --radius 를 바꾸게 만든다.
-# 목록 응답에는 매물 상태·노출 여부 필드가 없어 거래 불가로 빼는 매물은 없다. 빼는 것은 번호가 같은 중복과 모르는 거래 유형
-# 코드(`article_info_to_listing`)뿐이다 (2026-10-14 실측: 역삼동 동 전체 목록 20건의 모든 키에 상태 필드 없음)
-# 단지 목록(`search.py` `list_area_complexes`)은 거래 유형으로 빼지 않고 본문(단지 정보)이 없는 단지를 뺀다. 위치가 없는 단지는
-# 반경 안인지 알 수 없는 반경 검색에서만 빼고, 경계 검색은 위치로 빼지 않는다 (2026-11-24 리뷰)
-EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형인'
-
-
-RADIUS_EXCLUDED_REASON: str = '중복이거나 알 수 없는 거래 유형 또는 검색 범위(반경) 밖의'
-
-
-COMPLEX_EXCLUDED_REASON: str = '중복이거나 단지 정보를 알 수 없는'
-
-
-COMPLEX_RADIUS_EXCLUDED_REASON: str = '중복이거나 단지 정보·위치를 알 수 없거나 검색 범위(반경) 밖의'
-
-
-# 반경 검색의 서버 집계(total)가 센 범위. 반경 원이 아니라 그 원을 감싼 사각형 안이라 반경 안 수보다 크다
-RADIUS_TOTAL_BASIS: str = '반경을 감싼 사각형 안'
-
-
 def boundary_filter(filter_: NaverArticleFilterModel, legal_division_code: str) -> NaverArticleFilterModel:
     """경계 검색 필터. 법정동 코드 하나를 넣는다. 시·군·구 코드면 시·군·구 단위(GUN), 아니면 읍·면·동 단위(EUP)다.
 
@@ -1121,15 +1126,6 @@ def boundary_filter(filter_: NaverArticleFilterModel, legal_division_code: str) 
     """
     unit = 'GUN' if is_district_code(legal_division_code) else 'EUP'
     return filter_.model_copy(update={'legal_division_numbers': [legal_division_code], 'legal_division_type': unit})
-
-
-class AreaScope(NamedTuple):
-    """지역 안을 찾는 검색(매물·단지·재개발 구역)이 동·시·군·구 경계인지 반경인지에 따라 달라지는 안내 말 (`area_scope`)."""
-
-    scope: str  # pagination_notes 의 scope ('전부'·'없습니다' 가 어느 범위인지)
-    total_basis: str  # pagination_notes 의 total_basis
-    narrow: str  # pagination_notes 의 narrow
-    narrow_action: str  # 요청 상한 안내 끝의 좁히는 법 ('조건을 좁혀' / '반경을 줄이거나 조건을 좁혀')
 
 
 def area_scope(legal_division_code: str | None, radius_km: float) -> AreaScope:
@@ -1320,10 +1316,6 @@ def price_filter_of(conditions: NaverTradeConditions) -> dict[str, int]:
         )
         if value is not None
     }
-
-
-# real-price·market-price 의 --period (이름 → 달 수). 웹 실거래·시세 기간 선택지는 startDate 로 보내는 3개월·3년·5년이고 1년은 jibsa 가 더한 값이다
-PERIOD_MONTHS_BY_NAME: dict[str, int] = {'3개월': 3, '1년': 12, '3년': 36, '5년': 60}
 
 
 def bounding_box(lat: float, lng: float, radius_km: float) -> NaverBoundingBoxModel:

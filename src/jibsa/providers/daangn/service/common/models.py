@@ -116,20 +116,6 @@ OPTION_FILTER_BY_LABEL: dict[str, DaangnOption] = {
 COMPLEX_RECENT_TRADES: int = 3
 
 
-def region_name_parts(sido: str, sigungu: str = '', dong: str = '') -> dict[str, str]:
-    """검색 중심 지역의 이름 칸 (`name`·`sido`·`sigungu`·`dong`). 출력의 지역 칸 규칙을 한 곳에 둔다.
-
-    `name` 은 가장 작은 단위 이름이다 (동, 없으면 시·군·구, 없으면 시·도). 빈 단계는 해당 없음이라 키를 뺀다. 세종은 시·군·구가
-    없어(당근이 name2 를 '' 로 준다) `sigungu` 가 없고, 구를 찾은 결과(지도 범위 검색)는 `dong` 이 없다.
-    """
-    parts = {'name': dong or sigungu or sido, 'sido': sido}
-    if sigungu:
-        parts['sigungu'] = sigungu
-    if dong:
-        parts['dong'] = dong
-    return parts
-
-
 class DaangnRegion(BaseModel):
     """조회한 동이나 구 (구는 `dong` 이 빈 문자열이다. 구 이름의 지도 범위 검색)."""
 
@@ -194,16 +180,6 @@ class DaangnKbEstimatedPrices(BaseModel):
     def with_provider(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         return {'provider': 'KB부동산', **data}
-
-
-def amount_range(low: int | None, high: int | None) -> DaangnAmountRangeModel | None:
-    if low is None and high is None:
-        return None
-    return DaangnAmountRangeModel(min_amount=low, max_amount=high)
-
-
-def label_codes(labels: list[str] | None, codes: Mapping[str, str]) -> list[str] | None:
-    return [codes[label] for label in labels] if labels else None
 
 
 class DaangnListingConditions(RequestModel):
@@ -321,38 +297,6 @@ class DaangnListingConditions(RequestModel):
         return self._property_filter
 
 
-def property_filter_of(conditions: DaangnListingConditions) -> DaangnPropertyFilterModel:
-    """한국어 라벨 조건을 당근 웹 지도 필터(`propertyFilter`)로 바꾼다.
-
-    Raises:
-        ValidationError: 원룸이 아닌데 방 구조를, 아파트·오피스텔이 없는 유형에 세대수·주차대수를 줬을 때.
-    """
-    return DaangnPropertyFilterModel(
-        sales_types=label_codes(conditions.property_types, SALES_TYPE_BY_PROPERTY_TYPE) or [],
-        trade_types=label_codes(conditions.trade_types, TRADE_FILTER_BY_TRADE_TYPE),
-        deposit_pay=amount_range(conditions.deposit_min, conditions.deposit_max),
-        monthly_pay=amount_range(conditions.rent_min, conditions.rent_max),
-        yearly_pay=amount_range(conditions.yearly_rent_min, conditions.yearly_rent_max),
-        price_pay=amount_range(conditions.price_min, conditions.price_max),
-        monthly_pay_includes_manage_cost=conditions.rent_includes_manage_cost or None,
-        min_area=conditions.area_min,
-        max_area=conditions.area_max,
-        floor=label_codes(conditions.floors, FLOOR_FILTER_BY_LABEL),
-        room_counts=label_codes(conditions.room_counts, ROOM_COUNT_FILTER_BY_LABEL),
-        sub_sales_types=label_codes(conditions.structures, STRUCTURE_FILTER_BY_LABEL),
-        building_approval_date=label_codes(
-            [conditions.building_approval] if conditions.building_approval else None,
-            BUILDING_APPROVAL_FILTER_BY_LABEL,
-        ),
-        deal_type=DEAL_FILTER_BY_LABEL[conditions.deal] if conditions.deal else None,
-        options=label_codes(conditions.options, OPTION_FILTER_BY_LABEL),
-        move_in_now=conditions.move_in_now or None,
-        min_household_count=conditions.household_min,
-        max_household_count=conditions.household_max,
-        min_parking_per_household=conditions.parking_min,
-    )
-
-
 class DaangnRecentTrade(BaseModel):
     """단지 목록에 붙는 최근 실거래 한 건 (만원, 국토부 신고 기준). 거래 유형에 없는 필드는 출력에서 뺀다."""
 
@@ -439,3 +383,59 @@ class DaangnRegionComplex(BaseModel):
         str,
         Field(description='당근 단지 페이지')
     ]
+
+
+def region_name_parts(sido: str, sigungu: str = '', dong: str = '') -> dict[str, str]:
+    """검색 중심 지역의 이름 칸 (`name`·`sido`·`sigungu`·`dong`). 출력의 지역 칸 규칙을 한 곳에 둔다.
+
+    `name` 은 가장 작은 단위 이름이다 (동, 없으면 시·군·구, 없으면 시·도). 빈 단계는 해당 없음이라 키를 뺀다. 세종은 시·군·구가
+    없어(당근이 name2 를 '' 로 준다) `sigungu` 가 없고, 구를 찾은 결과(지도 범위 검색)는 `dong` 이 없다.
+    """
+    parts = {'name': dong or sigungu or sido, 'sido': sido}
+    if sigungu:
+        parts['sigungu'] = sigungu
+    if dong:
+        parts['dong'] = dong
+    return parts
+
+
+def amount_range(low: int | None, high: int | None) -> DaangnAmountRangeModel | None:
+    if low is None and high is None:
+        return None
+    return DaangnAmountRangeModel(min_amount=low, max_amount=high)
+
+
+def label_codes(labels: list[str] | None, codes: Mapping[str, str]) -> list[str] | None:
+    return [codes[label] for label in labels] if labels else None
+
+
+def property_filter_of(conditions: DaangnListingConditions) -> DaangnPropertyFilterModel:
+    """한국어 라벨 조건을 당근 웹 지도 필터(`propertyFilter`)로 바꾼다.
+
+    Raises:
+        ValidationError: 원룸이 아닌데 방 구조를, 아파트·오피스텔이 없는 유형에 세대수·주차대수를 줬을 때.
+    """
+    return DaangnPropertyFilterModel(
+        sales_types=label_codes(conditions.property_types, SALES_TYPE_BY_PROPERTY_TYPE) or [],
+        trade_types=label_codes(conditions.trade_types, TRADE_FILTER_BY_TRADE_TYPE),
+        deposit_pay=amount_range(conditions.deposit_min, conditions.deposit_max),
+        monthly_pay=amount_range(conditions.rent_min, conditions.rent_max),
+        yearly_pay=amount_range(conditions.yearly_rent_min, conditions.yearly_rent_max),
+        price_pay=amount_range(conditions.price_min, conditions.price_max),
+        monthly_pay_includes_manage_cost=conditions.rent_includes_manage_cost or None,
+        min_area=conditions.area_min,
+        max_area=conditions.area_max,
+        floor=label_codes(conditions.floors, FLOOR_FILTER_BY_LABEL),
+        room_counts=label_codes(conditions.room_counts, ROOM_COUNT_FILTER_BY_LABEL),
+        sub_sales_types=label_codes(conditions.structures, STRUCTURE_FILTER_BY_LABEL),
+        building_approval_date=label_codes(
+            [conditions.building_approval] if conditions.building_approval else None,
+            BUILDING_APPROVAL_FILTER_BY_LABEL,
+        ),
+        deal_type=DEAL_FILTER_BY_LABEL[conditions.deal] if conditions.deal else None,
+        options=label_codes(conditions.options, OPTION_FILTER_BY_LABEL),
+        move_in_now=conditions.move_in_now or None,
+        min_household_count=conditions.household_min,
+        max_household_count=conditions.household_max,
+        min_parking_per_household=conditions.parking_min,
+    )

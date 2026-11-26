@@ -138,67 +138,6 @@ class RateLimitPolicy(BaseModel):
     ] = True
 
 
-def _is_time(value: Any) -> bool:
-    """상태 파일에서 읽은 값을 시각으로 쓸 수 있는지. 숫자이고 유한한 실수로 바꿀 수 있어야 한다.
-
-    약 1.8×10³⁰⁸ 이상인 정수는 실수로 바꿀 수 없어 `isfinite` 가 OverflowError 를 낸다. 잡지 않으면 깨진 값을 버리려던 정리가
-    그 소스의 모든 요청과 `limits`·`limits --reset` 을 INTERNAL_ERROR 로 실패시켰다 (2026-11-23 리뷰·재현).
-    """
-    if not isinstance(value, (int, float)):
-        return False
-    try:
-        return isfinite(value)
-    except OverflowError:
-        return False
-
-
-def state_dir() -> Path:
-    """상태 파일 디렉터리. `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`."""
-    override = os.environ.get('JIBSA_STATE_DIR')
-    if override:
-        return Path(override)
-    cache_home = os.environ.get('XDG_CACHE_HOME')
-    base = Path(cache_home) if cache_home else Path.home() / '.cache'
-    return base / 'jibsa'
-
-
-def replace_file(tmp: Path, path: Path) -> None:
-    """임시 파일로 상태 파일을 바꿔치기한다. Windows 에서 다른 프로세스가 읽는 중이라 거절되면 잠깐 뒤 다시 한다."""
-    for attempt in range(REPLACE_ATTEMPTS):
-        try:
-            tmp.replace(path)
-            return
-        except PermissionError:
-            if attempt == REPLACE_ATTEMPTS - 1:
-                raise
-            time.sleep(REPLACE_RETRY_SECONDS)
-
-
-def write_text_atomic(path: Path, text: str) -> None:
-    """상태 폴더의 파일을 원자적으로 바꿔 쓴다: 같은 폴더의 임시 파일에 쓴 뒤 바꿔치기한다 (`replace_file`).
-
-    잠그지 않고 읽는 쪽(브라우저 쿠키, 이어 받기 표)도 반쯤 쓴 파일을 보지 않는다. 여러 jibsa 프로세스나 한 프로세스의 여러
-    스레드가 동시에 써도 서로의 임시 파일을 덮지 않게 임시 파일 이름에 PID 와 스레드 ID 를 붙인다. PID 만 붙였을 때는 같은
-    소스 클라이언트 둘을 두 스레드에서 같이 닫으면 반쯤 쓴 쿠키 파일이 올라가거나 FileNotFoundError 가 났다 (2026-11-09
-    실측: 두 스레드가 300번씩 쓰니 쓰기 실패 86번, 깨진 읽기 14번). 요청 제한 상태 파일·브라우저 쿠키(`core/browser.py`)·이어
-    받기 표(`cli/paging.py`)가 같이 쓴다. 폴더는 부르는 쪽이 만든다.
-
-    임시 파일은 쓰기와 바꿔치기 사이에 프로세스가 죽었을 때만 남는다. 그 사이가 아주 짧고 남아도 읽는 쪽이 보지 않아 따로
-    지우지 않는다 (이어 받기 폴더는 `cli/paging.py` 가 하루 지난 파일을 지운다).
-
-    Raises:
-        OSError: 쓰거나 바꾸지 못했을 때. 임시 파일은 지운다.
-    """
-    tmp = path.with_name(f'{path.name}.{os.getpid()}.{threading.get_ident()}.tmp')
-    try:
-        tmp.write_text(text, encoding='utf-8')
-        replace_file(tmp, path)
-    except OSError:
-        with suppress(OSError):
-            tmp.unlink()
-        raise
-
-
 class RateLimiter:
     """파일 기반 요청 제한기. 프로세스가 달라도 같은 소스는 같은 파일을 공유한다.
 
@@ -432,3 +371,64 @@ class RateLimiter:
                 await asyncio.to_thread(self.on_rate_limited, response)
 
         return {'request': [on_request], 'response': [on_response]}
+
+
+def _is_time(value: Any) -> bool:
+    """상태 파일에서 읽은 값을 시각으로 쓸 수 있는지. 숫자이고 유한한 실수로 바꿀 수 있어야 한다.
+
+    약 1.8×10³⁰⁸ 이상인 정수는 실수로 바꿀 수 없어 `isfinite` 가 OverflowError 를 낸다. 잡지 않으면 깨진 값을 버리려던 정리가
+    그 소스의 모든 요청과 `limits`·`limits --reset` 을 INTERNAL_ERROR 로 실패시켰다 (2026-11-23 리뷰·재현).
+    """
+    if not isinstance(value, (int, float)):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
+
+
+def state_dir() -> Path:
+    """상태 파일 디렉터리. `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`."""
+    override = os.environ.get('JIBSA_STATE_DIR')
+    if override:
+        return Path(override)
+    cache_home = os.environ.get('XDG_CACHE_HOME')
+    base = Path(cache_home) if cache_home else Path.home() / '.cache'
+    return base / 'jibsa'
+
+
+def replace_file(tmp: Path, path: Path) -> None:
+    """임시 파일로 상태 파일을 바꿔치기한다. Windows 에서 다른 프로세스가 읽는 중이라 거절되면 잠깐 뒤 다시 한다."""
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_RETRY_SECONDS)
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """상태 폴더의 파일을 원자적으로 바꿔 쓴다: 같은 폴더의 임시 파일에 쓴 뒤 바꿔치기한다 (`replace_file`).
+
+    잠그지 않고 읽는 쪽(브라우저 쿠키, 이어 받기 표)도 반쯤 쓴 파일을 보지 않는다. 여러 jibsa 프로세스나 한 프로세스의 여러
+    스레드가 동시에 써도 서로의 임시 파일을 덮지 않게 임시 파일 이름에 PID 와 스레드 ID 를 붙인다. PID 만 붙였을 때는 같은
+    소스 클라이언트 둘을 두 스레드에서 같이 닫으면 반쯤 쓴 쿠키 파일이 올라가거나 FileNotFoundError 가 났다 (2026-11-09
+    실측: 두 스레드가 300번씩 쓰니 쓰기 실패 86번, 깨진 읽기 14번). 요청 제한 상태 파일·브라우저 쿠키(`core/browser.py`)·이어
+    받기 표(`cli/paging.py`)가 같이 쓴다. 폴더는 부르는 쪽이 만든다.
+
+    임시 파일은 쓰기와 바꿔치기 사이에 프로세스가 죽었을 때만 남는다. 그 사이가 아주 짧고 남아도 읽는 쪽이 보지 않아 따로
+    지우지 않는다 (이어 받기 폴더는 `cli/paging.py` 가 하루 지난 파일을 지운다).
+
+    Raises:
+        OSError: 쓰거나 바꾸지 못했을 때. 임시 파일은 지운다.
+    """
+    tmp = path.with_name(f'{path.name}.{os.getpid()}.{threading.get_ident()}.tmp')
+    try:
+        tmp.write_text(text, encoding='utf-8')
+        replace_file(tmp, path)
+    except OSError:
+        with suppress(OSError):
+            tmp.unlink()
+        raise

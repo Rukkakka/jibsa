@@ -97,6 +97,15 @@ FEED_PAGE_SIZE: int = 20
 REGION_CLUSTER_ZOOM: int = 12
 
 
+class _AroundListings(NamedTuple):
+    """역·대학 주변 목록에서 한 번 받은 매물 (`_around_listings`)."""
+
+    converted: list[tuple[DaangnArticleModel, DaangnNearbyListing]]
+    has_more: bool
+    next_position: dict[str, Any] | None
+    notes: list[str]
+
+
 def unwrap_feed(response: DaangnArticleFeedResponseModel, *, conditions: bool) -> DaangnArticleFeedModel:
     """GraphQL 응답에서 피드를 꺼낸다 (`unwrap_graphql`). `conditions` 는 요청에 사용자가 고른 매물 조건이 들어갔는지다."""
     return unwrap_graphql(response, response.data.article_feed if response.data else None, '매물 피드', conditions=conditions)
@@ -221,15 +230,6 @@ def _listing_notes(
         + complex_building_notes(shown)
         + hidden_location_notes(shown)
     )
-
-
-class _AroundListings(NamedTuple):
-    """역·대학 주변 목록에서 한 번 받은 매물 (`_around_listings`)."""
-
-    converted: list[tuple[DaangnArticleModel, DaangnNearbyListing]]
-    has_more: bool
-    next_position: dict[str, Any] | None
-    notes: list[str]
 
 
 def _around_listings(

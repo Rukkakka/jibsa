@@ -286,6 +286,44 @@ AreaMaxOption = Annotated[float | None, typer.Option(min=0, help='면적 상한 
 AreaPyeongMinOption = Annotated[float | None, typer.Option(min=0, help='면적 하한 (평). ㎡ 조건과 함께 주면 둘 다 만족')]
 AreaPyeongMaxOption = Annotated[float | None, typer.Option(min=0, help='면적 상한 (평)')]
 
+ScopeRadiusOption = Annotated[
+    float | None,
+    typer.Option(
+        min=0.1,
+        max=MAX_RADIUS_KM,
+        help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 안을 찾는다. 반경 안 매물이 모자라도 반경 밖 매물로 채우지 않는다',
+    ),
+]
+
+search_app = typer.Typer(
+    help=(
+        '직방 장소 후보(locations), 역·학교·동·구 주변 아파트 단지(complexes)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), '
+        '상가·사무실(store), 단기임대 서비스(stay). '
+        '상세는 결과의 id 로 jibsa zigbang listing <id>'
+    ),
+    no_args_is_help=True,
+)
+
+# 이 그룹의 --help 는 콜백(`complex_listings_command`) docstring 이 아니라 이 help 를 보여 준다. 콜백 docstring 의 안내를 여기에도 둔다
+listings_app = typer.Typer(
+    help=(
+        '매물 유형별 검색 또는 --complex로 단지 매물 검색.\n\n'
+        '--complex 결과의 상세는 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(mixed_prices true) 줄은 가격이 묶음 '
+        '최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.'
+    ),
+    invoke_without_command=True,
+)
+
+ComplexIdArgument = Annotated[
+    str,
+    typer.Argument(help='단지 ID. search locations 결과의 complexes[].complex_id 나 search 결과의 complex_id (예: apt-68579, officetel-20227)'),
+]
+
+RegionQueryArgument = Annotated[
+    str,
+    typer.Argument(help='동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다'),
+]
+
 
 def _region(
     client: ZigbangClient,
@@ -299,16 +337,6 @@ def _region(
     if lat is not None and lng is not None:
         return ZigbangRegion(name=query or f'{lat},{lng}', lat=lat, lng=lng), []
     return resolve_region_with_notes(client, query or '', radius_km=radius, items=items)
-
-
-ScopeRadiusOption = Annotated[
-    float | None,
-    typer.Option(
-        min=0.1,
-        max=MAX_RADIUS_KM,
-        help=f'검색 반경 (km, 기본 {DEFAULT_RADIUS_KM:g}). 동 이름에 --radius 를 주지 않으면 반경 대신 그 동 안을 찾는다. 반경 안 매물이 모자라도 반경 밖 매물로 채우지 않는다',
-    ),
-]
 
 
 def _scope(
@@ -468,26 +496,9 @@ def _room_conditions(
     )
 
 
-search_app = typer.Typer(
-    help=(
-        '직방 장소 후보(locations), 역·학교·동·구 주변 아파트 단지(complexes)와 매물 찾기: 원룸·오피스텔·빌라(room), 아파트(apt), '
-        '상가·사무실(store), 단기임대 서비스(stay). '
-        '상세는 결과의 id 로 jibsa zigbang listing <id>'
-    ),
-    no_args_is_help=True,
-)
 app.add_typer(search_app, name='search')
 
 
-# 이 그룹의 --help 는 콜백(`complex_listings_command`) docstring 이 아니라 이 help 를 보여 준다. 콜백 docstring 의 안내를 여기에도 둔다
-listings_app = typer.Typer(
-    help=(
-        '매물 유형별 검색 또는 --complex로 단지 매물 검색.\n\n'
-        '--complex 결과의 상세는 id 로 jibsa zigbang listing <id>. 아파트의 가격 범위(mixed_prices true) 줄은 가격이 묶음 '
-        '최저가라 매물별 가격은 jibsa zigbang catalog <catalog_id>.'
-    ),
-    invoke_without_command=True,
-)
 search_app.add_typer(listings_app, name='listings')
 
 
@@ -831,12 +842,6 @@ def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> None
             "complex_id 를 그대로 주세요 (예: apt-68579, officetel-20227)",
             param_hint=param_hint,
         )
-
-
-ComplexIdArgument = Annotated[
-    str,
-    typer.Argument(help='단지 ID. search locations 결과의 complexes[].complex_id 나 search 결과의 complex_id (예: apt-68579, officetel-20227)'),
-]
 
 
 @app.command('complex')
@@ -1371,12 +1376,6 @@ def price_trend_command(
         else:
             result = get_price_trend(client, complex_id.strip(), period=chosen_period, compare=compare_ids)
             emit(result, pretty)
-
-
-RegionQueryArgument = Annotated[
-    str,
-    typer.Argument(help='동·구 이름 (예: 송파구, 가락동). 시·도, 역·학교·단지 이름은 받지 않는다'),
-]
 
 
 def _sort_help(sorts_by_trade: Mapping[str, Mapping[str, object]]) -> str:

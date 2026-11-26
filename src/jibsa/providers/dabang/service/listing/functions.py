@@ -139,6 +139,14 @@ class _Target(NamedTuple):
     bbox: DabangBboxModel | None = None
 
 
+class _ManageCost(NamedTuple):
+    manwon: float | None
+    includes: list[str] | None
+    excludes: list[str] | None
+    # 정액관리비 항목 목록에서 뺀 빈 항목 수 (뺐으면 포함·실비 항목을 모른다)
+    dropped: int = 0
+
+
 def search_listings(
     client: DabangClient,
     kind: ListingKind,
@@ -296,14 +304,6 @@ def search_listings(
         listings=collected,
         notes=notes,
     )
-
-
-class _ManageCost(NamedTuple):
-    manwon: float | None
-    includes: list[str] | None
-    excludes: list[str] | None
-    # 정액관리비 항목 목록에서 뺀 빈 항목 수 (뺐으면 포함·실비 항목을 모른다)
-    dropped: int = 0
 
 
 def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
@@ -474,7 +474,6 @@ def get_listing(client: DabangClient, listing_ref: str) -> DabangListingDetail:
         notes=notes,
         **prices,
     )
-
 
 
 def attach_details(

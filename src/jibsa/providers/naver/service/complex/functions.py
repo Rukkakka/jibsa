@@ -102,6 +102,18 @@ REAL_PRICE_SUMMARY_FALLBACK_YEARS: int = 5
 # 요약에 덧붙이는 최근 평균 기간 (웹 매물 상세 RecentTransaction 의 '3개월 평균 실거래' 와 같은 요청)
 REAL_PRICE_RECENT_MONTHS: int = 3
 
+# 재건축 단지 유형. 이 유형이면 사업 단계를 함께 묻는다
+RECONSTRUCTION_CODE: str = 'A04'
+
+
+RECONSTRUCTION_STEP_LABELS: dict[str, str] = {
+    '01': '기본계획수립', '02': '안전진단', '03': '구역지정', '04': '추진위승인', '05': '조합설립인가',
+    '06': '사업시행인가', '07': '관리처분인가', '08': '이주 및 철거', '09': '착공 및 분양', '10': '준공', '11': '이전고지',
+}
+
+
+"""재건축 사업 단계 코드 (사이트 COMPLEX_RECONSTRUCTION_STEP, 2026-10-10 확인)."""
+
 
 def _pyeong(pyeong: NaverPyeongModel, is_officetel: bool = False) -> NaverPyeong:
     supply = pyeong.supply_area
@@ -121,19 +133,6 @@ def _pyeong(pyeong: NaverPyeongModel, is_officetel: bool = False) -> NaverPyeong
         bathroom_count=pyeong.bath_room_count,
         household_count=pyeong.household_count,
     )
-
-
-# 재건축 단지 유형. 이 유형이면 사업 단계를 함께 묻는다
-RECONSTRUCTION_CODE: str = 'A04'
-
-
-RECONSTRUCTION_STEP_LABELS: dict[str, str] = {
-    '01': '기본계획수립', '02': '안전진단', '03': '구역지정', '04': '추진위승인', '05': '조합설립인가',
-    '06': '사업시행인가', '07': '관리처분인가', '08': '이주 및 철거', '09': '착공 및 분양', '10': '준공', '11': '이전고지',
-}
-
-
-"""재건축 사업 단계 코드 (사이트 COMPLEX_RECONSTRUCTION_STEP, 2026-10-10 확인)."""
 
 
 def _reconstruction(client: NaverClient, complex_number: int, notes: list[str]) -> NaverReconstruction | None:

@@ -410,6 +410,15 @@ COMPLEX_PAGE_SIZE: int = 30
 MAX_COMPLEX_ARTICLE_PAGE_REQUESTS: int = 5
 
 
+class _FacilityValues(NamedTuple):
+    """난방·난방 연료·현관 구조·주차 (`NaverListingDetail` 의 같은 이름 필드)."""
+
+    heating: str | None
+    heating_fuel: str | None
+    entrance: str | None
+    parking: str | None
+
+
 def _sum_manwon(*amounts: int | None) -> float | None:
     """원 단위 금액들의 합을 만원으로. 모두 모르면 None.
 
@@ -976,15 +985,6 @@ def _complex_approved_at(
         unknown='모름(null)으로 낸 칸: approved_date',
     )
     return normalize_date(other_complex.use_approval_date) if other_complex is not None else None
-
-
-class _FacilityValues(NamedTuple):
-    """난방·난방 연료·현관 구조·주차 (`NaverListingDetail` 의 같은 이름 필드)."""
-
-    heating: str | None
-    heating_fuel: str | None
-    entrance: str | None
-    parking: str | None
 
 
 def _complex_parking_text(complex_: NaverComplexModel | None, *, with_parentheses: bool) -> str | None:

@@ -288,6 +288,17 @@ ENTRY_BLOCKED_STATUSES: frozenset[int] = frozenset({401, 403, 451})
 _FailureKey = tuple[str, str | None, tuple[tuple[str, str], ...] | None, bool]
 _failed_entries: dict[_FailureKey, tuple[float, Exception]] = {}
 
+# route 가 하나라도 걸린 탭에서는 patchright 가 CORS 사전 요청(OPTIONS)을 서버에 보내지 않고 브라우저 안에서 허용(204)으로
+# 답하고 HTTP 캐시도 끈다 (patchright coreBundle.js `needsRequestInterception`). 실제 Chrome 과 달리 직방·당근 API 에
+# OPTIONS 없이 본 요청만 가므로, route 는 빈 탭 띄우기(`_fulfill_blank`)에만 잠깐 쓰고 모두 걷는다. 첫 화면의 정적 파일은
+# route 가 아니라 CDP Fetch 로 막는다 (`BLOCKED_FETCH_PATTERNS`)
+# (2026-11-09 로컬 실측: route 가 있으면 사전 요청을 403 으로 거절하는 서버에도 본 요청이 200, 걷으면 OPTIONS 가 간다)
+UNROUTE_BEHAVIOR: Literal['ignoreErrors'] = 'ignoreErrors'
+
+# 브라우저 스레드의 일이 끝나기를 기다리며 Ctrl+C 를 확인하는 간격 (`BrowserTransport._wait`). 끝까지 한 번에 기다리면
+# Windows 에서는 그 기다림(lock)이 Ctrl+C 로 끊기지 않는다. 일이 끝나면 바로 돌아와 요청이 늦어지지는 않는다
+WAIT_POLL_SECONDS: float = 0.1
+
 
 class EntryOpenError(Exception):
     """브라우저를 띄워 사이트 첫 화면을 여는 단계에서 실패했다는 표식. 같은 클라이언트의 본 요청도 같은 단계부터 다시 한다.
@@ -352,245 +363,6 @@ class CertificateError(TransportError):
     """
 
 
-def _playwright_error() -> type[Exception]:
-    """patchright 에러 클래스. 동기·비동기 API 가 같은 클래스를 쓴다."""
-    # 모듈 docstring 대로 브라우저를 쓸 때만 불러온다
-    from patchright.sync_api import Error
-    return Error
-
-
-def _playwright_timeout_error() -> type[Exception]:
-    """patchright 시간 초과 에러 클래스. 동기·비동기 API 가 같은 클래스를 쓴다."""
-    # 모듈 docstring 대로 브라우저를 쓸 때만 불러온다
-    from patchright.sync_api import TimeoutError as PlaywrightTimeoutError
-    return PlaywrightTimeoutError
-
-
-def _first_line(error: Exception) -> str:
-    return (str(error).splitlines() or [''])[0]
-
-
-def _missing_libraries_hint() -> str:
-    return (
-        f"리눅스는 Chromium 이 쓰는 시스템 라이브러리가 없으면 'sudo {sys.executable} -m patchright install-deps chromium' "
-        "을 한 번 실행한 뒤 'jibsa install-browser' 로 확인하세요"
-    )
-
-
-def _launch_error(error: Exception) -> BrowserUnavailableError:
-    """Chromium 을 띄우다 난 에러. 모든 소스가 같이 실패하고 다시 띄워도 같아 재시도하지 않는 jibsa 에러로 낸다."""
-    if isinstance(error, OSError):
-        # patchright 드라이버(node)를 실행하지 못했다. Chromium·시스템 라이브러리가 아니라 설치된 jibsa 쪽 문제다
-        return BrowserUnavailableError(
-            message=f'브라우저 드라이버(patchright)를 실행하지 못했습니다: {error}',
-            hint=(
-                'jibsa 설치가 깨졌거나 보안 프로그램이 드라이버 실행을 막았을 수 있습니다. jibsa 를 다시 설치하고, 같은 에러면 '
-                'message 의 원인을 사용자에게 알리세요'
-            ),
-        )
-    if isinstance(error, _playwright_timeout_error()):
-        # 시스템 라이브러리가 아니라 늦게 뜬 것이다. 띄우기 제한 시간(Playwright 기본 3분)을 다시 기다리지 않게 재시도는 하지 않는다
-        return BrowserUnavailableError(
-            message=f'Chromium 이 제시간에 뜨지 않았습니다: {_first_line(error)}',
-            hint=(
-                '컴퓨터가 바쁘거나 보안 프로그램이 Chromium 첫 실행을 검사 중일 수 있습니다. 잠시 뒤 한 번 다시 실행하고, 같으면 '
-                'message 의 원인을 사용자에게 알리세요'
-            ),
-        )
-    # Chromium 이 없거나 시스템 라이브러리가 없어 못 띄운 에러면 설치 안내가 든 jibsa 에러를 내고, 아니면 아래 일반 에러를 낸다
-    text = str(error)
-    if "Executable doesn't exist" in text:
-        return BrowserUnavailableError(
-            message='브라우저로 요청할 수 없습니다: Chromium 이 설치되어 있지 않습니다',
-            hint="'jibsa install-browser' 로 Chromium 을 설치하세요 (jibsa 를 업데이트한 뒤에도 한 번 실행합니다)",
-        )
-    # Playwright 계열이 시스템 라이브러리가 없을 때 내는 문구 (사전 검사 문구, 실행 파일의 동적 링크 실패)
-    if 'missing dependencies' in text or 'error while loading shared libraries' in text:
-        return BrowserUnavailableError(
-            message='브라우저로 요청할 수 없습니다: Chromium 에 필요한 시스템 라이브러리가 없습니다',
-            hint=_missing_libraries_hint(),
-        )
-    return BrowserUnavailableError(
-        message=f'Chromium 을 띄우지 못했습니다: {_first_line(error)}',
-        hint=_missing_libraries_hint() if sys.platform.startswith('linux') else (
-            "'jibsa install-browser' 로 설치와 실행을 확인하세요. 같은 에러면 message 의 원인"
-            '(보안 프로그램이 실행을 막았는지 등)을 사용자에게 알리세요'
-        ),
-    )
-
-
-def _proxy_error(net_error: str, request: Request | None = None) -> ProxyError:
-    """Chromium 프록시 오류를 `ProxyError` 로 만든다. 프록시가 이 사이트 연결만 거절한 것(`SITE_PROXY_NET_ERRORS`)은 메시지로 가른다.
-
-    예전에는 프록시에 아예 닿지 못한 것을 `ProxyUnreachableError` 로 따로 두어, 실패하면 다른 소스로 넘기던 곳(당근 위치 찾기)이
-    어느 소스로 보내도 같은 실패를 넘기지 않게 했다. 그 넘기기를 뺀 뒤 가르는 곳이 없어 하나로 합쳤다 (2026-11-12 리뷰).
-    """
-    site_refused = any(code in net_error for code in SITE_PROXY_NET_ERRORS)
-    reason = '프록시가 이 사이트 연결을 거절했습니다' if site_refused else '브라우저가 프록시로 연결하지 못했습니다'
-    return ProxyError(f'{reason}: {net_error}', request=request)
-
-
-def _entry_error(error: Exception, entry_url: str, opening_entry: bool) -> Exception:
-    """첫 화면 탭을 준비하다 난 patchright 에러를 재시도 술어가 아는 에러로 바꾼다. 모두 첫 화면 단계 실패(`EntryOpenError`)다.
-
-    사이트 첫 화면 문서를 기다리다 난 시간 초과(`opening_entry`)는 `EntryPageError`, 프록시에 닿지 못한 것은
-    `ProxyError`, 프록시가 이 사이트만 거절한 것은 `EntryPageError`(NETWORK_ERROR, 프록시 hint), 인증서를 믿지
-    못한 것(`net::ERR_CERT_*`)은 `EntryPageError`(NETWORK_ERROR, `CERT_HINT`)로 낸다. 모두 다시 열어도 같아 재시도하지
-    않는다. 그 밖의 시간 초과(서버에 묻지 않고 띄우는 빈 페이지, 쿠키 넣기 등)는 사이트가 아니라
-    브라우저가 멈춘 것이라 다른 연결 실패처럼 재시도하는 `EntryConnectError` 다. 재시도는 브라우저를 새로 띄운다. 첫 화면
-    시간 초과로 내면 60초 동안 기억돼(`remember_if_fatal`) 다시 띄우면 됐을 실패를 '첫 화면을 40초 안에 열지 못했다'로 잘못
-    알렸다 (2026-11-10 리뷰).
-
-    본문 없는 4xx·5xx 첫 화면 문서(`HTTP_RESPONSE_CODE_NET_ERROR`)는 `_launch` 가 받아 둔 문서 상태로 `finish_entry` 를 불러
-    판정하므로 보통 여기로 오지 않는다. 받아 둔 문서가 없을 때만 마지막 줄의 `EntryConnectError` 가 된다.
-    """
-    line = _first_line(error)
-    if isinstance(error, _playwright_timeout_error()):
-        if opening_entry:
-            return EntryPageError(
-                code='NETWORK_ERROR',
-                message=f'브라우저로 첫 화면({entry_url})을 {ENTRY_TIMEOUT_MS / 1000:g}초 안에 열지 못했습니다: {line}',
-                hint='사이트가 느리거나 네트워크·프록시가 막혔을 수 있습니다. 잠시 뒤 한 번만 다시 부르고, 같으면 다른 소스를 쓰세요',
-            )
-        return EntryConnectError(f'브라우저 탭을 준비하다 시간이 초과됐습니다: {line}')
-    if any(code in line for code in SITE_PROXY_NET_ERRORS):
-        return EntryPageError(
-            code='NETWORK_ERROR',
-            message=f'프록시가 첫 화면({entry_url}) 연결을 거절했습니다: {line}',
-            hint=PROXY_HINT,
-        )
-    if any(code in line for code in PROXY_NET_ERRORS):
-        return _proxy_error(line)
-    if CERT_NET_ERROR in line:
-        return EntryPageError(
-            code='NETWORK_ERROR',
-            message=f'브라우저가 첫 화면({entry_url})의 인증서를 믿지 못했습니다: {line}',
-            hint=CERT_HINT,
-        )
-    return EntryConnectError(f'브라우저로 첫 화면을 열지 못했습니다: {line}')
-
-
-def install_chromium() -> dict[str, str]:
-    """jibsa 가 쓰는 Chromium 을 내려받고(이미 있으면 건너뛴다) 실제로 한 번 띄워 본다 (`jibsa install-browser`).
-
-    jibsa 의 patchright 로 받으므로 patchright 버전에 맞는 Chromium 이 깔린다. jibsa 는 전체 Chromium
-    (`channel='chromium'`)만 띄워 headless 셸은 받지 않는다 (`--no-shell`, 약 270MB 덜 받는다). 내려받기 진행은
-    사람이 볼 때(stderr 가 터미널이거나 `--verbose`)만 patchright 가 stderr(fd 2)에 바로 쓴다. 에이전트처럼 stderr 를
-    파이프로 읽으면 에러 JSON 만 가도록 진행 출력을 받아 두었다가, 실패하면 원인 몇 줄을 에러 JSON 의 `output` 에 싣는다.
-
-    Raises:
-        JibsaError: 내려받지 못했으면 BROWSER_INSTALL_FAILED, 받았는데 띄우지 못했으면 BROWSER_UNAVAILABLE.
-    """
-    show_progress = sys.stderr.isatty() or logger.isEnabledFor(logging.INFO)
-    done = subprocess.run(
-        [sys.executable, '-m', 'patchright', 'install', '--no-shell', 'chromium'],
-        stdout=2 if show_progress else subprocess.PIPE, stderr=None if show_progress else subprocess.STDOUT, check=False,
-    )
-    if done.returncode != 0:
-        # Node 스택 줄(`at ...`)은 빼고 원인 문장만 싣는다
-        output = [] if show_progress else [
-            line for line in done.stdout.decode(errors='replace').splitlines()
-            if line.strip() and not line.lstrip().startswith('at ')
-        ][-5:]
-        raise JibsaError(
-            code='BROWSER_INSTALL_FAILED',
-            message=f'Chromium 을 내려받지 못했습니다 (patchright install 종료 코드 {done.returncode})',
-            hint=(
-                f"{'위에 나온 patchright 메시지' if show_progress else '이 에러의 output'}에 원인(네트워크·권한 등)이 있습니다. "
-                '네트워크(회사망·프록시 차단 등)면 확인하고 다시 실행하고, 권한 오류(PermissionError 등)면 보안 프로그램이 '
-                '막았거나 설치가 깨진 것이라 jibsa 를 다시 설치하세요'
-            ),
-            details={'output': output} if output else None,
-        )
-    # 모듈 docstring 대로 브라우저를 쓸 때만 불러온다
-    from patchright.sync_api import sync_playwright
-
-    # OSError(드라이버 node 를 실행하지 못함)는 `_launch` 와 달리 잡지 않는다. 그때는 위 `patchright install` 하위 프로세스가
-    # 같은 드라이버를 먼저 실행하다 실패해 BROWSER_INSTALL_FAILED 로 끝나 여기까지 오지 않는다 (2026-11-10 실측: 드라이버
-    # 실행 권한을 뺀 patchright 사본에서 install 이 PermissionError, 종료 코드 1)
-    try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, channel='chromium')
-            version = browser.version
-            browser.close()
-            executable = playwright.chromium.executable_path
-    except _playwright_error() as error:
-        raise _launch_error(error) from error
-    return {'browser': 'chromium', 'version': version, 'executable': executable}
-
-
-def _has_cookie(cookies: Sequence[Mapping[str, object]], name: str) -> bool:
-    return any(cookie.get('name') == name for cookie in cookies)
-
-
-def _state_path(source: str) -> Path:
-    return state_dir() / 'browser' / f'{source}.json'
-
-
-def _load_state(source: str) -> dict[str, Any]:
-    """남긴 쿠키 상태. 없거나 깨졌으면 빈 상태라 첫 화면부터 연다. 쓰기는 원자적이라 잠그지 않고 읽는다."""
-    try:
-        data = json.loads(_state_path(source).read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def usable_cookies(
-    state: Mapping[str, Any], entry_url: str, ready_cookie: str | None, now: float
-) -> list[dict[str, Any]] | None:
-    """남긴 쿠키로 바로 요청해도 되면 아직 살아 있는 쿠키, 첫 화면을 다시 열어야 하면 None.
-
-    첫 화면을 연 지 `REFRESH_SECONDS` 가 지났거나, 시각이 앞뒤가 안 맞거나, 남긴 페이지 주소가 지금 첫 화면(`entry_url`)과
-    출처가 다르거나, `ready_cookie` 가 없거나 만료됐으면 다시 연다. 출처를 보는 것은 jibsa 를 업데이트해 첫 화면 출처가
-    바뀌었을 때 옛 주소로 띄우면 `finish_entry` 가 다른 출처로 보고 명령을 실패시키기 때문이다.
-
-    `ready_cookie` 가 없는 상태는 첫 화면이 `READY_COOKIE_TIMEOUT_SECONDS` 안에 그 쿠키를 심지 못한 것이다. 이어 쓰지 않고
-    다음 명령이 첫 화면을 다시 열어 쿠키를 받게 한다. 일부러 그렇다: 그 쿠키는 사이트가 사람 브라우저마다 심는 식별 쿠키라
-    (네이버 `NNB`) 없는 채로 30분을 이어 보내는 것보다 다시 여는 쪽이 사람 방문과 같다. 늦게 심는 환경이면 명령마다 첫 화면
-    요청(네이버 18~22건)이 더 나가지만 `RateLimiter.record` 로 세어 요청 제한은 지킨다. 실측으로는 2초 안에 생긴다.
-    """
-    opened_at, page_url, cookies = state.get('opened_at'), state.get('page_url'), state.get('cookies')
-    # 빼지 않고 비교만 한다. 상태 파일에 실수로 바꿀 수 없을 만큼 큰 정수가 있으면 `now - opened_at` 이 OverflowError 를
-    # 내 그 소스의 모든 명령이 INTERNAL_ERROR 로 실패했다 (2026-11-23 리뷰·재현). 비교는 크기와 상관없이 터지지 않는다
-    if not isinstance(opened_at, (int, float)) or not now - REFRESH_SECONDS < opened_at <= now:
-        return None
-    if not isinstance(page_url, str) or not isinstance(cookies, list) or _origin(page_url) != _origin(entry_url):
-        return None
-    alive = [
-        cookie for cookie in cookies
-        if isinstance(cookie, dict) and isinstance(cookie.get('name'), str)
-        and not (isinstance(cookie.get('expires'), (int, float)) and 0 < cookie['expires'] <= now)
-    ]
-    if ready_cookie is not None and not _has_cookie(alive, ready_cookie):
-        return None
-    return alive
-
-
-def returning_cookies(state: Mapping[str, Any], entry_url: str, now: float) -> list[dict[str, Any]]:
-    """첫 화면을 다시 열 때 먼저 넣을 쿠키. 남긴 쿠키 중 만료 시각이 있고 아직 살아 있는 것(방문자 식별 쿠키 등)이다.
-
-    브라우저를 닫았다 다시 들어온 사람과 같게, 닫으면 사라지는 세션 쿠키(만료 시각 없음)는 넣지 않는다. 아무것도 넣지
-    않으면 30분마다 사이트가 400일짜리 방문자 쿠키를 새로 심었다 (2026-11-10 실측: 네이버 `NNB`·`BUC` 가 새 값, 넣고 열면
-    `NNB` 그대로). 403 으로 버린 쿠키는 파일이 없어 넣지 않고, 남긴 페이지 출처가 지금 첫 화면과 다르면(`usable_cookies` 와
-    같은 이유) 넣지 않는다.
-    """
-    page_url, cookies = state.get('page_url'), state.get('cookies')
-    if not isinstance(page_url, str) or not isinstance(cookies, list) or _origin(page_url) != _origin(entry_url):
-        return []
-    return [
-        cookie for cookie in cookies
-        if isinstance(cookie, dict) and isinstance(cookie.get('name'), str)
-        and isinstance(cookie.get('expires'), (int, float)) and cookie['expires'] > now
-    ]
-
-
-def _cookie_keys(cookies: Sequence[Mapping[str, object]]) -> frozenset[tuple[object, ...]]:
-    return frozenset(
-        (cookie.get('name'), cookie.get('domain'), cookie.get('path'), cookie.get('value')) for cookie in cookies
-    )
-
-
 class _EntryCookies:
     """새로 연 첫 화면이 쿠키를 다 심었는지 본다 (`_launch` 가 load 뒤 `READY_COOKIE_POLL_MS` 마다 부른다).
 
@@ -615,185 +387,6 @@ class _EntryCookies:
             _has_cookie(cookies, self.ready_cookie) and bool(keys - self.returning)
             and now - self.changed_at >= READY_COOKIE_SETTLE_SECONDS
         )
-
-
-def _proxy_settings(proxy: str | None, target_url: str) -> dict[str, str] | Literal['direct'] | None:
-    """브라우저에 넘길 Playwright 프록시 설정. 'direct' 면 프록시 없이 바로 연결하고, None 이면 Chromium 이 OS 프록시 설정을 쓴다.
-
-    `proxy` 를 주지 않았으면 환경 변수(`HTTPS_PROXY`·`ALL_PROXY`·`NO_PROXY`, 소문자도)를 읽는다. httpx 는 transport 를
-    넘기면 환경 변수 프록시를 쓰지 않고, Chromium 은 GNOME 리눅스·Windows·macOS 에서 환경 변수 대신 OS 설정을 봐서
-    예전(httpx)처럼 환경 변수에 기대던 사용자가 프록시를 잃는다 (2026-11-09 실측: GNOME 세션에서 HTTP_PROXY 무시).
-    `NO_PROXY=*` 는 httpx 처럼 어떤 프록시도 쓰지 않는다는 뜻이라, None 으로 두면 Chromium 이 OS 프록시로 보내 'direct' 다.
-    scrapling 의 문자열 `proxy` 는 비밀번호의 `%XX` 를 풀지 않고 스킴 없는 주소(`127.0.0.1:8080`)를 받지 않아 직접 나눈다.
-
-    Chromium 은 http·https·socks4·socks5 프록시만 받는다. curl·httpx 의 `socks5h`(프록시가 이름을 푼다)·`socks4a` 는 Chromium 의
-    socks5·socks4 가 이미 그렇게 해 바꿔 넘긴다. 그대로 넘기면 `ERR_NO_SUPPORTED_PROXIES` 였다 (2026-11-09 실측).
-
-    Raises:
-        ProxyError: 프록시 주소를 해석할 수 없거나(포트가 숫자가 아님 등), Chromium 이 받지 않는 스킴이거나, SOCKS 프록시에
-            아이디·비밀번호가 있을 때 (Chromium 이 지원하지 않아 띄우다 실패하고 BROWSER_UNAVAILABLE 이 됐다, 같은 날 실측).
-            메시지에 비밀번호는 넣지 않는다.
-    """
-    bypass: list[str] = []
-    # 빈 문자열(`proxy=''`)은 '프록시 없음'이 아니라 잘못된 주소로 보고 아래에서 ProxyError 를 낸다. 0.10.0 의 httpx
-    # 도 `proxy=''` 를 `ValueError: Unknown scheme for proxy URL` 로 거절했다 (2026-11-10 리뷰에서 확인하고 그대로 둠). 환경
-    # 변수를 따르려면 None, 프록시 없이 바로 연결하려면 `NO_PROXY=*` 다
-    if proxy is None:
-        proxies = urllib.request.getproxies_environment()
-        proxy = proxies.get(urlsplit(target_url).scheme) or proxies.get('all')
-        no_proxy = [entry.strip() for entry in proxies.get('no', '').split(',') if entry.strip()]
-        if '*' in no_proxy:
-            return 'direct'
-        if not proxy:
-            return None
-        for entry in no_proxy:
-            entry = entry.split('://', 1)[-1]
-            # 스킴만 적은 항목(`http://`)은 뺄 호스트가 없어 건너뛴다 (빈 문자열이면 아래 entry[0] 이 IndexError 였다)
-            if not entry:
-                continue
-            bypass.append(entry)
-            # curl·httpx 처럼 example.com 이 하위 도메인까지 덮게 한다 (Chromium 은 그 호스트만 뺀다)
-            if entry[0].isalpha() and entry != 'localhost' and not entry.startswith('.'):
-                bypass.append(f'*.{entry}')
-    parts = urlsplit(proxy if '://' in proxy else f'http://{proxy}')
-    # 아이디·비밀번호를 뺀 주소. 에러 메시지에 쓴다
-    shown = f'{parts.scheme}://{parts.netloc.rpartition("@")[2]}'
-    scheme = PROXY_SCHEME_ALIASES.get(parts.scheme.lower(), parts.scheme.lower())
-    hostname = parts.hostname
-    try:
-        port = parts.port
-    except ValueError as error:
-        raise ProxyError(f'프록시 주소를 해석하지 못했습니다 ({shown}): {error}') from None
-    if scheme not in BROWSER_PROXY_SCHEMES or not hostname:
-        raise ProxyError(
-            f'브라우저가 쓸 수 없는 프록시 주소입니다 ({shown}). http·https·socks4·socks5 프록시만 쓸 수 있습니다'
-        )
-    if scheme.startswith('socks') and (parts.username or parts.password):
-        raise ProxyError(f'브라우저(Chromium)는 아이디·비밀번호가 있는 SOCKS 프록시를 쓰지 못합니다 ({shown})')
-    host = f'[{hostname}]' if ':' in hostname else hostname
-    settings = {'server': f'{scheme}://{host}' + (f':{port}' if port else '')}
-    if parts.username:
-        settings['username'] = unquote(parts.username)
-    if parts.password:
-        settings['password'] = unquote(parts.password)
-    if bypass:
-        settings['bypass'] = ','.join(bypass)
-    return settings
-
-
-def _origin(url: str) -> tuple[str, str]:
-    parts = urlsplit(url)
-    return parts.scheme, parts.netloc
-
-
-def _count_preflights(session: 'CDPSession', state: '_BrowserState') -> None:
-    """CDP 세션의 `Network.requestWillBeSent` 중 CORS 사전 요청(OPTIONS)을 요청 제한에 센다 (`_BrowserState.count_preflight`).
-
-    사전 요청 표식은 `_BlockedResponses._on_request` 와 같다. `Network.enable` 은 부르는 쪽이 보낸다.
-    """
-
-    def on_request(event: dict[str, Any]) -> None:
-        initiator = event.get('initiator') or {}
-        if initiator.get('type') == 'preflight':
-            state.count_preflight(event['request']['url'])
-
-    session.on('Network.requestWillBeSent', on_request)
-
-
-def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState') -> 'CDPSession':
-    """첫 화면을 여는 동안 정적 파일을 CDP Fetch 로 막고(`BLOCKED_FETCH_PATTERNS`), 첫 화면 JS 가 보낸 CORS 사전 요청을
-    요청 제한에 센다 (`_BrowserState.count_preflight`). 첫 화면을 다 연 뒤 `detach` 한다."""
-    session = context.new_cdp_session(page)
-
-    def fail(event: dict[str, Any]) -> None:
-        # 떼는(`detach`) 사이에 온 요청은 답할 세션이 없다. 그 에러를 두면 patchright 가 traceback 을 stderr 로 내보냈다
-        # (2026-11-10 다방 실측). 떼면 Chromium 이 멈춘 요청을 풀어 주고, 첫 화면은 곧 빈 페이지로 바뀐다
-        with suppress(_playwright_error()):
-            session.send('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'BlockedByClient'})
-
-    session.on('Fetch.requestPaused', fail)
-    _count_preflights(session, state)
-    session.send('Fetch.enable', {'patterns': list(BLOCKED_FETCH_PATTERNS)})
-    session.send('Network.enable')
-    return session
-
-
-# route 가 하나라도 걸린 탭에서는 patchright 가 CORS 사전 요청(OPTIONS)을 서버에 보내지 않고 브라우저 안에서 허용(204)으로
-# 답하고 HTTP 캐시도 끈다 (patchright coreBundle.js `needsRequestInterception`). 실제 Chrome 과 달리 직방·당근 API 에
-# OPTIONS 없이 본 요청만 가므로, route 는 빈 탭 띄우기(`_fulfill_blank`)에만 잠깐 쓰고 모두 걷는다. 첫 화면의 정적 파일은
-# route 가 아니라 CDP Fetch 로 막는다 (`BLOCKED_FETCH_PATTERNS`)
-# (2026-11-09 로컬 실측: route 가 있으면 사전 요청을 403 으로 거절하는 서버에도 본 요청이 200, 걷으면 OPTIONS 가 간다)
-UNROUTE_BEHAVIOR: Literal['ignoreErrors'] = 'ignoreErrors'
-
-
-def _browser_owned(name: str) -> bool:
-    """fetch 에 넘기지 않고 브라우저 값을 그대로 쓸 헤더인지 (`BROWSER_OWNED_HEADERS`·`BROWSER_OWNED_HEADER_PREFIXES`)."""
-    lowered = name.lower()
-    return lowered in BROWSER_OWNED_HEADERS or lowered.startswith(BROWSER_OWNED_HEADER_PREFIXES)
-
-
-def _fulfill_blank(state: '_BrowserState', route: 'Route') -> None:
-    """탭을 이 주소로 띄울 때만 서버에 묻지 않고 브라우저 안에서 빈 페이지를 돌려준다 (그 출처의 탭만 필요할 때).
-
-    같은 주소로 보내는 우리 fetch 는 다음 route 로 넘겨 서버에 보낸다. 넘기지 않으면 남긴 쿠키로 띄운 당근 지도 페이지와
-    같은 주소의 HTML 요청까지 빈 페이지가 되어 PARSE_ERROR 가 났다 (2026-11-09 감시 실행).
-
-    빈 페이지에도 아이콘 링크(`data:`)를 둔다. 없으면 Chromium 이 스스로 그 사이트의 `/favicon.ico` 를 쿠키를 실어 요청했고,
-    이 요청은 route·`request` 이벤트·CDP Fetch 어디에도 잡히지 않아 요청 제한에도 세지 않았다 (2026-11-10 로컬 재현).
-
-    이때 크롬이 페이지를 열며 붙인 헤더(`accept`·`upgrade-insecure-requests`)를 남겨 둔다 (`navigation_headers`). 페이지 HTML
-    요청에 붙여 웹에서 페이지를 열 때와 같게 한다. 값이 크롬 버전마다 달라(Chromium 156 은 `accept` 에 `image/jxl` 이 있다)
-    고정하지 않고 띄울 때마다 읽는다. 서버로 나가는 첫 화면 문서 요청과 같은 값이다 (2026-11-12 실측). 브라우저를 띄울 때마다
-    이 빈 페이지를 거치므로(첫 화면을 새로 열 때도, 남긴 쿠키로 띄울 때도) 쿠키 파일에 남기지 않는다.
-    """
-    if route.request.is_navigation_request():
-        state.navigation_headers = {
-            name: value for name, value in route.request.headers.items() if not _browser_owned(name)
-        }
-        route.fulfill(status=200, content_type='text/html', body=BLANK_PAGE_HTML)
-    else:
-        route.fallback()
-
-
-def _fetch_arguments(
-    request: Request, default_timeout: float, navigation_headers: Mapping[str, str],
-) -> tuple[dict[str, Any], float]:
-    """`FETCH_SCRIPT` 에 넘길 인자와 timeout(초). 브라우저가 정하는 헤더는 뺀다.
-
-    헤더는 provider 가 붙인 것(사이트 웹 코드가 붙이는 헤더, 2026-11-12 소스별 실측)을 그대로 넘긴다. 페이지 HTML 요청
-    (`NAVIGATION_EXTENSION`)은 그 위에 크롬이 페이지를 열 때 붙이는 헤더(`navigation_headers`)를 얹는다. 웹에서는 페이지
-    열기라 `sec-fetch-mode: navigate` 등도 다르지만 `sec-*` 는 fetch 가 바꿀 수 없어 브라우저 값(`cors`)이 나간다.
-
-    본문은 sync `read()` 로 읽는다. 비동기 transport 는 부르기 전에 `aread()` 로 읽어 둔다 (이미 읽은 본문은 그대로 준다).
-
-    timeout 은 httpx 의 read 값을 응답 헤더가 올 때까지(CORS 사전 요청·연결 포함)와 본문 조각 사이 간격의 제한으로 쓴다. httpx 의
-    읽기 제한처럼 조금씩 계속 오는 응답은 전체가 timeout 보다 길어도 받는다. 예전에는 fetch 하나 전체의 제한이라 조금씩 계속 오는
-    22초짜리 응답이 20초에 `ReadTimeout` 이었다 (2026-11-10 로컬 실측). jibsa 소스 응답은 1초 안팎이라(같은 날 실측) 평소엔
-    차이가 없다. client 의 timeout 을 httpx 의 timeout 과 같은 뜻으로 두려고 조각 사이로 잰다.
-    요청 하나 전체의 상한은 따로 두지 않는다. 조각이 timeout 안에 끝없이 이어지는 응답은 브라우저 스레드를 Ctrl+C 까지 붙잡지만,
-    예전 httpx 도 읽기 제한만 있어 같았고 jibsa 소스 응답은 1초 안팎에 끝나는 JSON 이라 그런 응답이 없다. 상한을 두면 timeout 에
-    두 번째 뜻이 생긴다 (2026-11-12 리뷰에서 검토하고 그대로 둠).
-
-    요청에 timeout 이 없으면 클라이언트의 timeout(`default_timeout`)을 쓴다. httpx 는 인증 흐름(httpx `Auth`)이 만든 요청에
-    timeout 을 붙이지 않아, 고정값을 쓰면 `timeout=60` 클라이언트에서도 그 요청만 20초에 끊겼다 (2026-11-10 로컬 실측, 그때
-    있던 직방 익명 토큰 요청. 예전 httpx 는 이 요청을 시간 제한 없이 기다렸다).
-    read 가 None(httpx `Timeout(None)`, 무제한)이어도 무제한으로 두지 않고 클라이언트 timeout 을 쓴다. 브라우저 fetch 를
-    끝없이 기다리면 그 transport 의 브라우저 스레드가 묶여 Ctrl+C 로만 풀린다. CLI 는 늘 숫자 timeout 이라(`BaseHTTPClient
-    .timeout` 은 0보다 큰 수) 라이브러리에서 무제한을 준 경우만 다르다 (2026-11-10 리뷰에서 검토하고 그대로 둠).
-    """
-    headers = {name: value for name, value in request.headers.items() if not _browser_owned(name)}
-    if request.extensions.get(NAVIGATION_EXTENSION):
-        headers.update(navigation_headers)
-    content = request.read()
-    timeout = min((request.extensions.get('timeout') or {}).get('read') or default_timeout, MAX_TIMER_MS / 1000)
-    return {
-        'url': str(request.url),
-        'method': request.method,
-        'headers': headers,
-        'body': base64.b64encode(content).decode() if content else None,
-        'timeoutMs': timeout * 1000,
-        'inlineBytes': BODY_CHUNK_BYTES,
-    }, timeout
 
 
 class _FailedFetch(NamedTuple):
@@ -914,103 +507,6 @@ class _BlockedResponses:
         self._first_response.clear()
         self._failed.clear()
         return result
-
-
-def _response_headers(headers: Iterable[tuple[str, str]]) -> list[tuple[bytes, bytes]]:
-    """브라우저가 준 응답 헤더를 httpx 응답에 넣을 바이트 쌍으로 바꾼다. 브라우저가 이미 푼 본문의 헤더는 뺀다.
-
-    fetch 는 헤더 값을 바이트 하나당 글자 하나(latin-1)인 문자열로 준다. 문자열 그대로 넣으면 httpx 가 ASCII 로 바꾸다
-    `UnicodeEncodeError`(ValueError) 를 내, 값에 한글·é 같은 글자가 있는 헤더 하나로 정상 응답이 PARSE_ERROR 가 됐다 (예전
-    httpx 전송은 받았다, 2026-11-10 리뷰·로컬 재현). latin-1 로 되돌리면 서버가 보낸 바이트 그대로다. Playwright·CDP 가 이미
-    UTF-8 로 풀어 준 값처럼 latin-1 로 안 되는 글자가 있으면 UTF-8 로 넣는다. httpx 는 헤더 바이트를 ASCII·UTF-8·latin-1
-    순으로 읽는다.
-    """
-    def raw(text: str) -> bytes:
-        try:
-            return text.encode('latin-1')
-        except UnicodeEncodeError:
-            return text.encode('utf-8')
-
-    return [(raw(name), raw(value)) for name, value in headers if name.lower() not in DECODED_RESPONSE_HEADERS]
-
-
-def _fetched_headers(result: dict[str, Any], page_headers: Mapping[str, Mapping[str, str]]) -> list[tuple[str, str]]:
-    """fetch 가 받은 응답 헤더에, CORS 가 페이지 JS 에 감춘 헤더를 브라우저 `response` 이벤트의 헤더(`page_headers`)로 채운다."""
-    headers = [(name, value) for name, value in result['headers']]
-    shown = {name for name, _ in headers}
-    return headers + [(name, value) for name, value in page_headers.get(result['url'], {}).items() if name not in shown]
-
-
-def _to_response(
-    request: Request,
-    result: dict[str, Any],
-    timeout: float,
-    page_headers: Mapping[str, Mapping[str, str]],
-    failed: _FailedFetch | None
-) -> Response:
-    """`FETCH_SCRIPT` 결과를 httpx 응답으로 바꾼다. fetch 실패는 재시도 술어가 아는 httpx 예외로 낸다.
-
-    다른 출처 응답은 CORS 가 허용한 헤더만 페이지 JS 에 보여 `Retry-After` 등이 빠진다 (직방 apis.zigbang.com 은
-    `Access-Control-Expose-Headers` 가 없다, 2026-11-09 실측). 브라우저 `response` 이벤트가 받은 전체 헤더(`page_headers`,
-    최종 URL 별)에서 빠진 것을 채운다.
-
-    fetch 가 실패하면 `failed`(`_BlockedResponses.pop`)로 이유를 가른다.
-
-    - CORS 에 막혔는데 응답을 받았으면 그 상태·헤더로 본문 없는 응답을 만든다. 그러면 429 는 요청 제한 훅이, 3xx·4xx·5xx 는
-      `raise_for_status` 와 재시도 술어가 예전(httpx)처럼 다룬다. 2xx 는 본문이 있어야 하는 응답이라 빈 본문으로 넘기지 않고
-      `CorsBlockedError` 로 낸다 (빈 본문 200 이 성공으로 넘어갔다, 2026-11-09 로컬 실측).
-    - CORS 사전 요청(OPTIONS)이 거절돼 본 요청이 나가지 못했으면, 사전 요청이 받은 429·5xx 만 응답으로 만든다 (예전 httpx 는
-      사전 요청 없이 본 요청이 그 응답을 받았다). 그 밖의 사전 요청 실패는 사이트가 이 요청 헤더를 허용하지 않는 것이라
-      `CorsBlockedError` 다. 사전 요청의 403·404 를 응답으로 넘기면 404·403 을 '없는 ID'로 읽는 호출부(다방 `is_missing_id`
-      등)가 없는 매물로 알린다.
-    - 프록시 오류(`PROXY_NET_ERRORS`)는 재시도하지 않는 `ProxyError`, 인증서
-      오류(`CERT_NET_ERROR`)는 재시도하지 않는 `CertificateError`, 그 밖의 연결 실패는 Chromium 오류를 메시지에 붙인
-      `ConnectError` 다. 첫 화면을 남긴 쿠키로 띄우면 서버에 묻지 않아, 프록시·인증서 오류는 우리 요청에서 처음 드러난다.
-    """
-    if result.get('error') == 'BodyTimeout':
-        # 본문이 멈췄어도 상태·헤더는 받았다. 3xx 이상은 CORS 에 막힌 응답처럼 본문 없이 넘겨 429 는 요청 제한 훅이 Retry-After 로
-        # 쿨다운을 걸고, 그 밖은 `raise_for_status`·재시도 술어가 다룬다 (예전 httpx 도 응답 훅이 본문을 읽기 전에 돌았다).
-        # 2xx 는 본문이 있어야 하는 응답이라 `ReadTimeout` 이다
-        if result['status'] >= 300:
-            return Response(
-                status_code=result['status'],
-                headers=_response_headers(_fetched_headers(result, page_headers)),
-                content=b'',
-                request=request,
-            )
-        raise ReadTimeout(f'브라우저 요청의 응답 본문이 {timeout:.10g}초 동안 오지 않았습니다', request=request)
-    if 'error' in result:
-        if result['error'] == 'AbortError':
-            raise ReadTimeout(f'브라우저 요청의 응답이 {timeout:.10g}초 안에 오지 않았습니다', request=request)
-        if failed is not None and failed.cors_error is not None:
-            status = failed.response[0] if failed.response is not None else None
-            if failed.response is not None and status is not None and (
-                status >= 300 and not failed.preflight or status == 429 or status >= 500
-            ):
-                return Response(
-                    status_code=status,
-                    headers=_response_headers(failed.response[1].items()),
-                    content=b'',
-                    request=request,
-                )
-            received = '' if status is None else f'{"CORS 사전 요청 " if failed.preflight else ""}HTTP {status} 응답, '
-            raise CorsBlockedError(
-                f'브라우저가 CORS 로 응답을 막았습니다 ({request.url.host}, {received}{failed.cors_error})',
-                request=request,
-            )
-        if failed is not None and failed.error_text.startswith(PROXY_NET_ERRORS):
-            raise _proxy_error(failed.error_text, request)
-        if failed is not None and failed.error_text.startswith(CERT_NET_ERROR):
-            raise CertificateError(f'브라우저가 {request.url.host} 의 인증서를 믿지 못했습니다: {failed.error_text}', request=request)
-        reason = f' ({failed.error_text})' if failed is not None and failed.error_text else ''
-        raise ConnectError(f'브라우저 fetch 실패: {result["error"]}: {result["message"]}{reason}', request=request)
-    return Response(
-        status_code=result['status'],
-        headers=_response_headers(_fetched_headers(result, page_headers)),
-        # 큰 본문은 `_handle_request` 가 조각으로 읽어 `content` 에 넣었다
-        content=result['content'] if 'content' in result else base64.b64decode(result['body']),
-        request=request,
-    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1422,11 +918,6 @@ class _BrowserState:
             '브라우저 준비 %.2f초 (%s, 쿠키 %d개%s, 첫 화면을 연 지 %d분)',
             time.perf_counter() - started, how, len(cookies), ready, (time.time() - self.opened_at) // 60,
         )
-
-
-# 브라우저 스레드의 일이 끝나기를 기다리며 Ctrl+C 를 확인하는 간격 (`BrowserTransport._wait`). 끝까지 한 번에 기다리면
-# Windows 에서는 그 기다림(lock)이 Ctrl+C 로 끊기지 않는다. 일이 끝나면 바로 돌아와 요청이 늦어지지는 않는다
-WAIT_POLL_SECONDS: float = 0.1
 
 
 class _BrowserThread:
@@ -1873,3 +1364,510 @@ class AsyncBrowserTransport(AsyncBaseTransport):
     async def aclose(self) -> None:
         # 닫기는 브라우저 스레드가 쿠키를 남기고 브라우저를 닫을 때까지 기다리므로 작업 스레드에서 해 이벤트 루프를 막지 않는다
         await asyncio.to_thread(self._sync.close)
+
+
+def _playwright_error() -> type[Exception]:
+    """patchright 에러 클래스. 동기·비동기 API 가 같은 클래스를 쓴다."""
+    # 모듈 docstring 대로 브라우저를 쓸 때만 불러온다
+    from patchright.sync_api import Error
+    return Error
+
+
+def _playwright_timeout_error() -> type[Exception]:
+    """patchright 시간 초과 에러 클래스. 동기·비동기 API 가 같은 클래스를 쓴다."""
+    # 모듈 docstring 대로 브라우저를 쓸 때만 불러온다
+    from patchright.sync_api import TimeoutError as PlaywrightTimeoutError
+    return PlaywrightTimeoutError
+
+
+def _first_line(error: Exception) -> str:
+    return (str(error).splitlines() or [''])[0]
+
+
+def _missing_libraries_hint() -> str:
+    return (
+        f"리눅스는 Chromium 이 쓰는 시스템 라이브러리가 없으면 'sudo {sys.executable} -m patchright install-deps chromium' "
+        "을 한 번 실행한 뒤 'jibsa install-browser' 로 확인하세요"
+    )
+
+
+def _launch_error(error: Exception) -> BrowserUnavailableError:
+    """Chromium 을 띄우다 난 에러. 모든 소스가 같이 실패하고 다시 띄워도 같아 재시도하지 않는 jibsa 에러로 낸다."""
+    if isinstance(error, OSError):
+        # patchright 드라이버(node)를 실행하지 못했다. Chromium·시스템 라이브러리가 아니라 설치된 jibsa 쪽 문제다
+        return BrowserUnavailableError(
+            message=f'브라우저 드라이버(patchright)를 실행하지 못했습니다: {error}',
+            hint=(
+                'jibsa 설치가 깨졌거나 보안 프로그램이 드라이버 실행을 막았을 수 있습니다. jibsa 를 다시 설치하고, 같은 에러면 '
+                'message 의 원인을 사용자에게 알리세요'
+            ),
+        )
+    if isinstance(error, _playwright_timeout_error()):
+        # 시스템 라이브러리가 아니라 늦게 뜬 것이다. 띄우기 제한 시간(Playwright 기본 3분)을 다시 기다리지 않게 재시도는 하지 않는다
+        return BrowserUnavailableError(
+            message=f'Chromium 이 제시간에 뜨지 않았습니다: {_first_line(error)}',
+            hint=(
+                '컴퓨터가 바쁘거나 보안 프로그램이 Chromium 첫 실행을 검사 중일 수 있습니다. 잠시 뒤 한 번 다시 실행하고, 같으면 '
+                'message 의 원인을 사용자에게 알리세요'
+            ),
+        )
+    # Chromium 이 없거나 시스템 라이브러리가 없어 못 띄운 에러면 설치 안내가 든 jibsa 에러를 내고, 아니면 아래 일반 에러를 낸다
+    text = str(error)
+    if "Executable doesn't exist" in text:
+        return BrowserUnavailableError(
+            message='브라우저로 요청할 수 없습니다: Chromium 이 설치되어 있지 않습니다',
+            hint="'jibsa install-browser' 로 Chromium 을 설치하세요 (jibsa 를 업데이트한 뒤에도 한 번 실행합니다)",
+        )
+    # Playwright 계열이 시스템 라이브러리가 없을 때 내는 문구 (사전 검사 문구, 실행 파일의 동적 링크 실패)
+    if 'missing dependencies' in text or 'error while loading shared libraries' in text:
+        return BrowserUnavailableError(
+            message='브라우저로 요청할 수 없습니다: Chromium 에 필요한 시스템 라이브러리가 없습니다',
+            hint=_missing_libraries_hint(),
+        )
+    return BrowserUnavailableError(
+        message=f'Chromium 을 띄우지 못했습니다: {_first_line(error)}',
+        hint=_missing_libraries_hint() if sys.platform.startswith('linux') else (
+            "'jibsa install-browser' 로 설치와 실행을 확인하세요. 같은 에러면 message 의 원인"
+            '(보안 프로그램이 실행을 막았는지 등)을 사용자에게 알리세요'
+        ),
+    )
+
+
+def _proxy_error(net_error: str, request: Request | None = None) -> ProxyError:
+    """Chromium 프록시 오류를 `ProxyError` 로 만든다. 프록시가 이 사이트 연결만 거절한 것(`SITE_PROXY_NET_ERRORS`)은 메시지로 가른다.
+
+    예전에는 프록시에 아예 닿지 못한 것을 `ProxyUnreachableError` 로 따로 두어, 실패하면 다른 소스로 넘기던 곳(당근 위치 찾기)이
+    어느 소스로 보내도 같은 실패를 넘기지 않게 했다. 그 넘기기를 뺀 뒤 가르는 곳이 없어 하나로 합쳤다 (2026-11-12 리뷰).
+    """
+    site_refused = any(code in net_error for code in SITE_PROXY_NET_ERRORS)
+    reason = '프록시가 이 사이트 연결을 거절했습니다' if site_refused else '브라우저가 프록시로 연결하지 못했습니다'
+    return ProxyError(f'{reason}: {net_error}', request=request)
+
+
+def _entry_error(error: Exception, entry_url: str, opening_entry: bool) -> Exception:
+    """첫 화면 탭을 준비하다 난 patchright 에러를 재시도 술어가 아는 에러로 바꾼다. 모두 첫 화면 단계 실패(`EntryOpenError`)다.
+
+    사이트 첫 화면 문서를 기다리다 난 시간 초과(`opening_entry`)는 `EntryPageError`, 프록시에 닿지 못한 것은
+    `ProxyError`, 프록시가 이 사이트만 거절한 것은 `EntryPageError`(NETWORK_ERROR, 프록시 hint), 인증서를 믿지
+    못한 것(`net::ERR_CERT_*`)은 `EntryPageError`(NETWORK_ERROR, `CERT_HINT`)로 낸다. 모두 다시 열어도 같아 재시도하지
+    않는다. 그 밖의 시간 초과(서버에 묻지 않고 띄우는 빈 페이지, 쿠키 넣기 등)는 사이트가 아니라
+    브라우저가 멈춘 것이라 다른 연결 실패처럼 재시도하는 `EntryConnectError` 다. 재시도는 브라우저를 새로 띄운다. 첫 화면
+    시간 초과로 내면 60초 동안 기억돼(`remember_if_fatal`) 다시 띄우면 됐을 실패를 '첫 화면을 40초 안에 열지 못했다'로 잘못
+    알렸다 (2026-11-10 리뷰).
+
+    본문 없는 4xx·5xx 첫 화면 문서(`HTTP_RESPONSE_CODE_NET_ERROR`)는 `_launch` 가 받아 둔 문서 상태로 `finish_entry` 를 불러
+    판정하므로 보통 여기로 오지 않는다. 받아 둔 문서가 없을 때만 마지막 줄의 `EntryConnectError` 가 된다.
+    """
+    line = _first_line(error)
+    if isinstance(error, _playwright_timeout_error()):
+        if opening_entry:
+            return EntryPageError(
+                code='NETWORK_ERROR',
+                message=f'브라우저로 첫 화면({entry_url})을 {ENTRY_TIMEOUT_MS / 1000:g}초 안에 열지 못했습니다: {line}',
+                hint='사이트가 느리거나 네트워크·프록시가 막혔을 수 있습니다. 잠시 뒤 한 번만 다시 부르고, 같으면 다른 소스를 쓰세요',
+            )
+        return EntryConnectError(f'브라우저 탭을 준비하다 시간이 초과됐습니다: {line}')
+    if any(code in line for code in SITE_PROXY_NET_ERRORS):
+        return EntryPageError(
+            code='NETWORK_ERROR',
+            message=f'프록시가 첫 화면({entry_url}) 연결을 거절했습니다: {line}',
+            hint=PROXY_HINT,
+        )
+    if any(code in line for code in PROXY_NET_ERRORS):
+        return _proxy_error(line)
+    if CERT_NET_ERROR in line:
+        return EntryPageError(
+            code='NETWORK_ERROR',
+            message=f'브라우저가 첫 화면({entry_url})의 인증서를 믿지 못했습니다: {line}',
+            hint=CERT_HINT,
+        )
+    return EntryConnectError(f'브라우저로 첫 화면을 열지 못했습니다: {line}')
+
+
+def install_chromium() -> dict[str, str]:
+    """jibsa 가 쓰는 Chromium 을 내려받고(이미 있으면 건너뛴다) 실제로 한 번 띄워 본다 (`jibsa install-browser`).
+
+    jibsa 의 patchright 로 받으므로 patchright 버전에 맞는 Chromium 이 깔린다. jibsa 는 전체 Chromium
+    (`channel='chromium'`)만 띄워 headless 셸은 받지 않는다 (`--no-shell`, 약 270MB 덜 받는다). 내려받기 진행은
+    사람이 볼 때(stderr 가 터미널이거나 `--verbose`)만 patchright 가 stderr(fd 2)에 바로 쓴다. 에이전트처럼 stderr 를
+    파이프로 읽으면 에러 JSON 만 가도록 진행 출력을 받아 두었다가, 실패하면 원인 몇 줄을 에러 JSON 의 `output` 에 싣는다.
+
+    Raises:
+        JibsaError: 내려받지 못했으면 BROWSER_INSTALL_FAILED, 받았는데 띄우지 못했으면 BROWSER_UNAVAILABLE.
+    """
+    show_progress = sys.stderr.isatty() or logger.isEnabledFor(logging.INFO)
+    done = subprocess.run(
+        [sys.executable, '-m', 'patchright', 'install', '--no-shell', 'chromium'],
+        stdout=2 if show_progress else subprocess.PIPE, stderr=None if show_progress else subprocess.STDOUT, check=False,
+    )
+    if done.returncode != 0:
+        # Node 스택 줄(`at ...`)은 빼고 원인 문장만 싣는다
+        output = [] if show_progress else [
+            line for line in done.stdout.decode(errors='replace').splitlines()
+            if line.strip() and not line.lstrip().startswith('at ')
+        ][-5:]
+        raise JibsaError(
+            code='BROWSER_INSTALL_FAILED',
+            message=f'Chromium 을 내려받지 못했습니다 (patchright install 종료 코드 {done.returncode})',
+            hint=(
+                f"{'위에 나온 patchright 메시지' if show_progress else '이 에러의 output'}에 원인(네트워크·권한 등)이 있습니다. "
+                '네트워크(회사망·프록시 차단 등)면 확인하고 다시 실행하고, 권한 오류(PermissionError 등)면 보안 프로그램이 '
+                '막았거나 설치가 깨진 것이라 jibsa 를 다시 설치하세요'
+            ),
+            details={'output': output} if output else None,
+        )
+    # 모듈 docstring 대로 브라우저를 쓸 때만 불러온다
+    from patchright.sync_api import sync_playwright
+
+    # OSError(드라이버 node 를 실행하지 못함)는 `_launch` 와 달리 잡지 않는다. 그때는 위 `patchright install` 하위 프로세스가
+    # 같은 드라이버를 먼저 실행하다 실패해 BROWSER_INSTALL_FAILED 로 끝나 여기까지 오지 않는다 (2026-11-10 실측: 드라이버
+    # 실행 권한을 뺀 patchright 사본에서 install 이 PermissionError, 종료 코드 1)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, channel='chromium')
+            version = browser.version
+            browser.close()
+            executable = playwright.chromium.executable_path
+    except _playwright_error() as error:
+        raise _launch_error(error) from error
+    return {'browser': 'chromium', 'version': version, 'executable': executable}
+
+
+def _has_cookie(cookies: Sequence[Mapping[str, object]], name: str) -> bool:
+    return any(cookie.get('name') == name for cookie in cookies)
+
+
+def _state_path(source: str) -> Path:
+    return state_dir() / 'browser' / f'{source}.json'
+
+
+def _load_state(source: str) -> dict[str, Any]:
+    """남긴 쿠키 상태. 없거나 깨졌으면 빈 상태라 첫 화면부터 연다. 쓰기는 원자적이라 잠그지 않고 읽는다."""
+    try:
+        data = json.loads(_state_path(source).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def usable_cookies(
+    state: Mapping[str, Any], entry_url: str, ready_cookie: str | None, now: float
+) -> list[dict[str, Any]] | None:
+    """남긴 쿠키로 바로 요청해도 되면 아직 살아 있는 쿠키, 첫 화면을 다시 열어야 하면 None.
+
+    첫 화면을 연 지 `REFRESH_SECONDS` 가 지났거나, 시각이 앞뒤가 안 맞거나, 남긴 페이지 주소가 지금 첫 화면(`entry_url`)과
+    출처가 다르거나, `ready_cookie` 가 없거나 만료됐으면 다시 연다. 출처를 보는 것은 jibsa 를 업데이트해 첫 화면 출처가
+    바뀌었을 때 옛 주소로 띄우면 `finish_entry` 가 다른 출처로 보고 명령을 실패시키기 때문이다.
+
+    `ready_cookie` 가 없는 상태는 첫 화면이 `READY_COOKIE_TIMEOUT_SECONDS` 안에 그 쿠키를 심지 못한 것이다. 이어 쓰지 않고
+    다음 명령이 첫 화면을 다시 열어 쿠키를 받게 한다. 일부러 그렇다: 그 쿠키는 사이트가 사람 브라우저마다 심는 식별 쿠키라
+    (네이버 `NNB`) 없는 채로 30분을 이어 보내는 것보다 다시 여는 쪽이 사람 방문과 같다. 늦게 심는 환경이면 명령마다 첫 화면
+    요청(네이버 18~22건)이 더 나가지만 `RateLimiter.record` 로 세어 요청 제한은 지킨다. 실측으로는 2초 안에 생긴다.
+    """
+    opened_at, page_url, cookies = state.get('opened_at'), state.get('page_url'), state.get('cookies')
+    # 빼지 않고 비교만 한다. 상태 파일에 실수로 바꿀 수 없을 만큼 큰 정수가 있으면 `now - opened_at` 이 OverflowError 를
+    # 내 그 소스의 모든 명령이 INTERNAL_ERROR 로 실패했다 (2026-11-23 리뷰·재현). 비교는 크기와 상관없이 터지지 않는다
+    if not isinstance(opened_at, (int, float)) or not now - REFRESH_SECONDS < opened_at <= now:
+        return None
+    if not isinstance(page_url, str) or not isinstance(cookies, list) or _origin(page_url) != _origin(entry_url):
+        return None
+    alive = [
+        cookie for cookie in cookies
+        if isinstance(cookie, dict) and isinstance(cookie.get('name'), str)
+        and not (isinstance(cookie.get('expires'), (int, float)) and 0 < cookie['expires'] <= now)
+    ]
+    if ready_cookie is not None and not _has_cookie(alive, ready_cookie):
+        return None
+    return alive
+
+
+def returning_cookies(state: Mapping[str, Any], entry_url: str, now: float) -> list[dict[str, Any]]:
+    """첫 화면을 다시 열 때 먼저 넣을 쿠키. 남긴 쿠키 중 만료 시각이 있고 아직 살아 있는 것(방문자 식별 쿠키 등)이다.
+
+    브라우저를 닫았다 다시 들어온 사람과 같게, 닫으면 사라지는 세션 쿠키(만료 시각 없음)는 넣지 않는다. 아무것도 넣지
+    않으면 30분마다 사이트가 400일짜리 방문자 쿠키를 새로 심었다 (2026-11-10 실측: 네이버 `NNB`·`BUC` 가 새 값, 넣고 열면
+    `NNB` 그대로). 403 으로 버린 쿠키는 파일이 없어 넣지 않고, 남긴 페이지 출처가 지금 첫 화면과 다르면(`usable_cookies` 와
+    같은 이유) 넣지 않는다.
+    """
+    page_url, cookies = state.get('page_url'), state.get('cookies')
+    if not isinstance(page_url, str) or not isinstance(cookies, list) or _origin(page_url) != _origin(entry_url):
+        return []
+    return [
+        cookie for cookie in cookies
+        if isinstance(cookie, dict) and isinstance(cookie.get('name'), str)
+        and isinstance(cookie.get('expires'), (int, float)) and cookie['expires'] > now
+    ]
+
+
+def _cookie_keys(cookies: Sequence[Mapping[str, object]]) -> frozenset[tuple[object, ...]]:
+    return frozenset(
+        (cookie.get('name'), cookie.get('domain'), cookie.get('path'), cookie.get('value')) for cookie in cookies
+    )
+
+
+def _proxy_settings(proxy: str | None, target_url: str) -> dict[str, str] | Literal['direct'] | None:
+    """브라우저에 넘길 Playwright 프록시 설정. 'direct' 면 프록시 없이 바로 연결하고, None 이면 Chromium 이 OS 프록시 설정을 쓴다.
+
+    `proxy` 를 주지 않았으면 환경 변수(`HTTPS_PROXY`·`ALL_PROXY`·`NO_PROXY`, 소문자도)를 읽는다. httpx 는 transport 를
+    넘기면 환경 변수 프록시를 쓰지 않고, Chromium 은 GNOME 리눅스·Windows·macOS 에서 환경 변수 대신 OS 설정을 봐서
+    예전(httpx)처럼 환경 변수에 기대던 사용자가 프록시를 잃는다 (2026-11-09 실측: GNOME 세션에서 HTTP_PROXY 무시).
+    `NO_PROXY=*` 는 httpx 처럼 어떤 프록시도 쓰지 않는다는 뜻이라, None 으로 두면 Chromium 이 OS 프록시로 보내 'direct' 다.
+    scrapling 의 문자열 `proxy` 는 비밀번호의 `%XX` 를 풀지 않고 스킴 없는 주소(`127.0.0.1:8080`)를 받지 않아 직접 나눈다.
+
+    Chromium 은 http·https·socks4·socks5 프록시만 받는다. curl·httpx 의 `socks5h`(프록시가 이름을 푼다)·`socks4a` 는 Chromium 의
+    socks5·socks4 가 이미 그렇게 해 바꿔 넘긴다. 그대로 넘기면 `ERR_NO_SUPPORTED_PROXIES` 였다 (2026-11-09 실측).
+
+    Raises:
+        ProxyError: 프록시 주소를 해석할 수 없거나(포트가 숫자가 아님 등), Chromium 이 받지 않는 스킴이거나, SOCKS 프록시에
+            아이디·비밀번호가 있을 때 (Chromium 이 지원하지 않아 띄우다 실패하고 BROWSER_UNAVAILABLE 이 됐다, 같은 날 실측).
+            메시지에 비밀번호는 넣지 않는다.
+    """
+    bypass: list[str] = []
+    # 빈 문자열(`proxy=''`)은 '프록시 없음'이 아니라 잘못된 주소로 보고 아래에서 ProxyError 를 낸다. 0.10.0 의 httpx
+    # 도 `proxy=''` 를 `ValueError: Unknown scheme for proxy URL` 로 거절했다 (2026-11-10 리뷰에서 확인하고 그대로 둠). 환경
+    # 변수를 따르려면 None, 프록시 없이 바로 연결하려면 `NO_PROXY=*` 다
+    if proxy is None:
+        proxies = urllib.request.getproxies_environment()
+        proxy = proxies.get(urlsplit(target_url).scheme) or proxies.get('all')
+        no_proxy = [entry.strip() for entry in proxies.get('no', '').split(',') if entry.strip()]
+        if '*' in no_proxy:
+            return 'direct'
+        if not proxy:
+            return None
+        for entry in no_proxy:
+            entry = entry.split('://', 1)[-1]
+            # 스킴만 적은 항목(`http://`)은 뺄 호스트가 없어 건너뛴다 (빈 문자열이면 아래 entry[0] 이 IndexError 였다)
+            if not entry:
+                continue
+            bypass.append(entry)
+            # curl·httpx 처럼 example.com 이 하위 도메인까지 덮게 한다 (Chromium 은 그 호스트만 뺀다)
+            if entry[0].isalpha() and entry != 'localhost' and not entry.startswith('.'):
+                bypass.append(f'*.{entry}')
+    parts = urlsplit(proxy if '://' in proxy else f'http://{proxy}')
+    # 아이디·비밀번호를 뺀 주소. 에러 메시지에 쓴다
+    shown = f'{parts.scheme}://{parts.netloc.rpartition("@")[2]}'
+    scheme = PROXY_SCHEME_ALIASES.get(parts.scheme.lower(), parts.scheme.lower())
+    hostname = parts.hostname
+    try:
+        port = parts.port
+    except ValueError as error:
+        raise ProxyError(f'프록시 주소를 해석하지 못했습니다 ({shown}): {error}') from None
+    if scheme not in BROWSER_PROXY_SCHEMES or not hostname:
+        raise ProxyError(
+            f'브라우저가 쓸 수 없는 프록시 주소입니다 ({shown}). http·https·socks4·socks5 프록시만 쓸 수 있습니다'
+        )
+    if scheme.startswith('socks') and (parts.username or parts.password):
+        raise ProxyError(f'브라우저(Chromium)는 아이디·비밀번호가 있는 SOCKS 프록시를 쓰지 못합니다 ({shown})')
+    host = f'[{hostname}]' if ':' in hostname else hostname
+    settings = {'server': f'{scheme}://{host}' + (f':{port}' if port else '')}
+    if parts.username:
+        settings['username'] = unquote(parts.username)
+    if parts.password:
+        settings['password'] = unquote(parts.password)
+    if bypass:
+        settings['bypass'] = ','.join(bypass)
+    return settings
+
+
+def _origin(url: str) -> tuple[str, str]:
+    parts = urlsplit(url)
+    return parts.scheme, parts.netloc
+
+
+def _count_preflights(session: 'CDPSession', state: '_BrowserState') -> None:
+    """CDP 세션의 `Network.requestWillBeSent` 중 CORS 사전 요청(OPTIONS)을 요청 제한에 센다 (`_BrowserState.count_preflight`).
+
+    사전 요청 표식은 `_BlockedResponses._on_request` 와 같다. `Network.enable` 은 부르는 쪽이 보낸다.
+    """
+
+    def on_request(event: dict[str, Any]) -> None:
+        initiator = event.get('initiator') or {}
+        if initiator.get('type') == 'preflight':
+            state.count_preflight(event['request']['url'])
+
+    session.on('Network.requestWillBeSent', on_request)
+
+
+def _watch_entry(context: 'BrowserContext', page: 'Page', state: '_BrowserState') -> 'CDPSession':
+    """첫 화면을 여는 동안 정적 파일을 CDP Fetch 로 막고(`BLOCKED_FETCH_PATTERNS`), 첫 화면 JS 가 보낸 CORS 사전 요청을
+    요청 제한에 센다 (`_BrowserState.count_preflight`). 첫 화면을 다 연 뒤 `detach` 한다."""
+    session = context.new_cdp_session(page)
+
+    def fail(event: dict[str, Any]) -> None:
+        # 떼는(`detach`) 사이에 온 요청은 답할 세션이 없다. 그 에러를 두면 patchright 가 traceback 을 stderr 로 내보냈다
+        # (2026-11-10 다방 실측). 떼면 Chromium 이 멈춘 요청을 풀어 주고, 첫 화면은 곧 빈 페이지로 바뀐다
+        with suppress(_playwright_error()):
+            session.send('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'BlockedByClient'})
+
+    session.on('Fetch.requestPaused', fail)
+    _count_preflights(session, state)
+    session.send('Fetch.enable', {'patterns': list(BLOCKED_FETCH_PATTERNS)})
+    session.send('Network.enable')
+    return session
+
+
+def _browser_owned(name: str) -> bool:
+    """fetch 에 넘기지 않고 브라우저 값을 그대로 쓸 헤더인지 (`BROWSER_OWNED_HEADERS`·`BROWSER_OWNED_HEADER_PREFIXES`)."""
+    lowered = name.lower()
+    return lowered in BROWSER_OWNED_HEADERS or lowered.startswith(BROWSER_OWNED_HEADER_PREFIXES)
+
+
+def _fulfill_blank(state: '_BrowserState', route: 'Route') -> None:
+    """탭을 이 주소로 띄울 때만 서버에 묻지 않고 브라우저 안에서 빈 페이지를 돌려준다 (그 출처의 탭만 필요할 때).
+
+    같은 주소로 보내는 우리 fetch 는 다음 route 로 넘겨 서버에 보낸다. 넘기지 않으면 남긴 쿠키로 띄운 당근 지도 페이지와
+    같은 주소의 HTML 요청까지 빈 페이지가 되어 PARSE_ERROR 가 났다 (2026-11-09 감시 실행).
+
+    빈 페이지에도 아이콘 링크(`data:`)를 둔다. 없으면 Chromium 이 스스로 그 사이트의 `/favicon.ico` 를 쿠키를 실어 요청했고,
+    이 요청은 route·`request` 이벤트·CDP Fetch 어디에도 잡히지 않아 요청 제한에도 세지 않았다 (2026-11-10 로컬 재현).
+
+    이때 크롬이 페이지를 열며 붙인 헤더(`accept`·`upgrade-insecure-requests`)를 남겨 둔다 (`navigation_headers`). 페이지 HTML
+    요청에 붙여 웹에서 페이지를 열 때와 같게 한다. 값이 크롬 버전마다 달라(Chromium 156 은 `accept` 에 `image/jxl` 이 있다)
+    고정하지 않고 띄울 때마다 읽는다. 서버로 나가는 첫 화면 문서 요청과 같은 값이다 (2026-11-12 실측). 브라우저를 띄울 때마다
+    이 빈 페이지를 거치므로(첫 화면을 새로 열 때도, 남긴 쿠키로 띄울 때도) 쿠키 파일에 남기지 않는다.
+    """
+    if route.request.is_navigation_request():
+        state.navigation_headers = {
+            name: value for name, value in route.request.headers.items() if not _browser_owned(name)
+        }
+        route.fulfill(status=200, content_type='text/html', body=BLANK_PAGE_HTML)
+    else:
+        route.fallback()
+
+
+def _fetch_arguments(
+    request: Request, default_timeout: float, navigation_headers: Mapping[str, str],
+) -> tuple[dict[str, Any], float]:
+    """`FETCH_SCRIPT` 에 넘길 인자와 timeout(초). 브라우저가 정하는 헤더는 뺀다.
+
+    헤더는 provider 가 붙인 것(사이트 웹 코드가 붙이는 헤더, 2026-11-12 소스별 실측)을 그대로 넘긴다. 페이지 HTML 요청
+    (`NAVIGATION_EXTENSION`)은 그 위에 크롬이 페이지를 열 때 붙이는 헤더(`navigation_headers`)를 얹는다. 웹에서는 페이지
+    열기라 `sec-fetch-mode: navigate` 등도 다르지만 `sec-*` 는 fetch 가 바꿀 수 없어 브라우저 값(`cors`)이 나간다.
+
+    본문은 sync `read()` 로 읽는다. 비동기 transport 는 부르기 전에 `aread()` 로 읽어 둔다 (이미 읽은 본문은 그대로 준다).
+
+    timeout 은 httpx 의 read 값을 응답 헤더가 올 때까지(CORS 사전 요청·연결 포함)와 본문 조각 사이 간격의 제한으로 쓴다. httpx 의
+    읽기 제한처럼 조금씩 계속 오는 응답은 전체가 timeout 보다 길어도 받는다. 예전에는 fetch 하나 전체의 제한이라 조금씩 계속 오는
+    22초짜리 응답이 20초에 `ReadTimeout` 이었다 (2026-11-10 로컬 실측). jibsa 소스 응답은 1초 안팎이라(같은 날 실측) 평소엔
+    차이가 없다. client 의 timeout 을 httpx 의 timeout 과 같은 뜻으로 두려고 조각 사이로 잰다.
+    요청 하나 전체의 상한은 따로 두지 않는다. 조각이 timeout 안에 끝없이 이어지는 응답은 브라우저 스레드를 Ctrl+C 까지 붙잡지만,
+    예전 httpx 도 읽기 제한만 있어 같았고 jibsa 소스 응답은 1초 안팎에 끝나는 JSON 이라 그런 응답이 없다. 상한을 두면 timeout 에
+    두 번째 뜻이 생긴다 (2026-11-12 리뷰에서 검토하고 그대로 둠).
+
+    요청에 timeout 이 없으면 클라이언트의 timeout(`default_timeout`)을 쓴다. httpx 는 인증 흐름(httpx `Auth`)이 만든 요청에
+    timeout 을 붙이지 않아, 고정값을 쓰면 `timeout=60` 클라이언트에서도 그 요청만 20초에 끊겼다 (2026-11-10 로컬 실측, 그때
+    있던 직방 익명 토큰 요청. 예전 httpx 는 이 요청을 시간 제한 없이 기다렸다).
+    read 가 None(httpx `Timeout(None)`, 무제한)이어도 무제한으로 두지 않고 클라이언트 timeout 을 쓴다. 브라우저 fetch 를
+    끝없이 기다리면 그 transport 의 브라우저 스레드가 묶여 Ctrl+C 로만 풀린다. CLI 는 늘 숫자 timeout 이라(`BaseHTTPClient
+    .timeout` 은 0보다 큰 수) 라이브러리에서 무제한을 준 경우만 다르다 (2026-11-10 리뷰에서 검토하고 그대로 둠).
+    """
+    headers = {name: value for name, value in request.headers.items() if not _browser_owned(name)}
+    if request.extensions.get(NAVIGATION_EXTENSION):
+        headers.update(navigation_headers)
+    content = request.read()
+    timeout = min((request.extensions.get('timeout') or {}).get('read') or default_timeout, MAX_TIMER_MS / 1000)
+    return {
+        'url': str(request.url),
+        'method': request.method,
+        'headers': headers,
+        'body': base64.b64encode(content).decode() if content else None,
+        'timeoutMs': timeout * 1000,
+        'inlineBytes': BODY_CHUNK_BYTES,
+    }, timeout
+
+
+def _response_headers(headers: Iterable[tuple[str, str]]) -> list[tuple[bytes, bytes]]:
+    """브라우저가 준 응답 헤더를 httpx 응답에 넣을 바이트 쌍으로 바꾼다. 브라우저가 이미 푼 본문의 헤더는 뺀다.
+
+    fetch 는 헤더 값을 바이트 하나당 글자 하나(latin-1)인 문자열로 준다. 문자열 그대로 넣으면 httpx 가 ASCII 로 바꾸다
+    `UnicodeEncodeError`(ValueError) 를 내, 값에 한글·é 같은 글자가 있는 헤더 하나로 정상 응답이 PARSE_ERROR 가 됐다 (예전
+    httpx 전송은 받았다, 2026-11-10 리뷰·로컬 재현). latin-1 로 되돌리면 서버가 보낸 바이트 그대로다. Playwright·CDP 가 이미
+    UTF-8 로 풀어 준 값처럼 latin-1 로 안 되는 글자가 있으면 UTF-8 로 넣는다. httpx 는 헤더 바이트를 ASCII·UTF-8·latin-1
+    순으로 읽는다.
+    """
+    def raw(text: str) -> bytes:
+        try:
+            return text.encode('latin-1')
+        except UnicodeEncodeError:
+            return text.encode('utf-8')
+
+    return [(raw(name), raw(value)) for name, value in headers if name.lower() not in DECODED_RESPONSE_HEADERS]
+
+
+def _fetched_headers(result: dict[str, Any], page_headers: Mapping[str, Mapping[str, str]]) -> list[tuple[str, str]]:
+    """fetch 가 받은 응답 헤더에, CORS 가 페이지 JS 에 감춘 헤더를 브라우저 `response` 이벤트의 헤더(`page_headers`)로 채운다."""
+    headers = [(name, value) for name, value in result['headers']]
+    shown = {name for name, _ in headers}
+    return headers + [(name, value) for name, value in page_headers.get(result['url'], {}).items() if name not in shown]
+
+
+def _to_response(
+    request: Request,
+    result: dict[str, Any],
+    timeout: float,
+    page_headers: Mapping[str, Mapping[str, str]],
+    failed: _FailedFetch | None
+) -> Response:
+    """`FETCH_SCRIPT` 결과를 httpx 응답으로 바꾼다. fetch 실패는 재시도 술어가 아는 httpx 예외로 낸다.
+
+    다른 출처 응답은 CORS 가 허용한 헤더만 페이지 JS 에 보여 `Retry-After` 등이 빠진다 (직방 apis.zigbang.com 은
+    `Access-Control-Expose-Headers` 가 없다, 2026-11-09 실측). 브라우저 `response` 이벤트가 받은 전체 헤더(`page_headers`,
+    최종 URL 별)에서 빠진 것을 채운다.
+
+    fetch 가 실패하면 `failed`(`_BlockedResponses.pop`)로 이유를 가른다.
+
+    - CORS 에 막혔는데 응답을 받았으면 그 상태·헤더로 본문 없는 응답을 만든다. 그러면 429 는 요청 제한 훅이, 3xx·4xx·5xx 는
+      `raise_for_status` 와 재시도 술어가 예전(httpx)처럼 다룬다. 2xx 는 본문이 있어야 하는 응답이라 빈 본문으로 넘기지 않고
+      `CorsBlockedError` 로 낸다 (빈 본문 200 이 성공으로 넘어갔다, 2026-11-09 로컬 실측).
+    - CORS 사전 요청(OPTIONS)이 거절돼 본 요청이 나가지 못했으면, 사전 요청이 받은 429·5xx 만 응답으로 만든다 (예전 httpx 는
+      사전 요청 없이 본 요청이 그 응답을 받았다). 그 밖의 사전 요청 실패는 사이트가 이 요청 헤더를 허용하지 않는 것이라
+      `CorsBlockedError` 다. 사전 요청의 403·404 를 응답으로 넘기면 404·403 을 '없는 ID'로 읽는 호출부(다방 `is_missing_id`
+      등)가 없는 매물로 알린다.
+    - 프록시 오류(`PROXY_NET_ERRORS`)는 재시도하지 않는 `ProxyError`, 인증서
+      오류(`CERT_NET_ERROR`)는 재시도하지 않는 `CertificateError`, 그 밖의 연결 실패는 Chromium 오류를 메시지에 붙인
+      `ConnectError` 다. 첫 화면을 남긴 쿠키로 띄우면 서버에 묻지 않아, 프록시·인증서 오류는 우리 요청에서 처음 드러난다.
+    """
+    if result.get('error') == 'BodyTimeout':
+        # 본문이 멈췄어도 상태·헤더는 받았다. 3xx 이상은 CORS 에 막힌 응답처럼 본문 없이 넘겨 429 는 요청 제한 훅이 Retry-After 로
+        # 쿨다운을 걸고, 그 밖은 `raise_for_status`·재시도 술어가 다룬다 (예전 httpx 도 응답 훅이 본문을 읽기 전에 돌았다).
+        # 2xx 는 본문이 있어야 하는 응답이라 `ReadTimeout` 이다
+        if result['status'] >= 300:
+            return Response(
+                status_code=result['status'],
+                headers=_response_headers(_fetched_headers(result, page_headers)),
+                content=b'',
+                request=request,
+            )
+        raise ReadTimeout(f'브라우저 요청의 응답 본문이 {timeout:.10g}초 동안 오지 않았습니다', request=request)
+    if 'error' in result:
+        if result['error'] == 'AbortError':
+            raise ReadTimeout(f'브라우저 요청의 응답이 {timeout:.10g}초 안에 오지 않았습니다', request=request)
+        if failed is not None and failed.cors_error is not None:
+            status = failed.response[0] if failed.response is not None else None
+            if failed.response is not None and status is not None and (
+                status >= 300 and not failed.preflight or status == 429 or status >= 500
+            ):
+                return Response(
+                    status_code=status,
+                    headers=_response_headers(failed.response[1].items()),
+                    content=b'',
+                    request=request,
+                )
+            received = '' if status is None else f'{"CORS 사전 요청 " if failed.preflight else ""}HTTP {status} 응답, '
+            raise CorsBlockedError(
+                f'브라우저가 CORS 로 응답을 막았습니다 ({request.url.host}, {received}{failed.cors_error})',
+                request=request,
+            )
+        if failed is not None and failed.error_text.startswith(PROXY_NET_ERRORS):
+            raise _proxy_error(failed.error_text, request)
+        if failed is not None and failed.error_text.startswith(CERT_NET_ERROR):
+            raise CertificateError(f'브라우저가 {request.url.host} 의 인증서를 믿지 못했습니다: {failed.error_text}', request=request)
+        reason = f' ({failed.error_text})' if failed is not None and failed.error_text else ''
+        raise ConnectError(f'브라우저 fetch 실패: {result["error"]}: {result["message"]}{reason}', request=request)
+    return Response(
+        status_code=result['status'],
+        headers=_response_headers(_fetched_headers(result, page_headers)),
+        # 큰 본문은 `_handle_request` 가 조각으로 읽어 `content` 에 넣었다
+        content=result['content'] if 'content' in result else base64.b64decode(result['body']),
+        request=request,
+    )

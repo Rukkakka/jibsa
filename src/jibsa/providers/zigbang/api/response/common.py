@@ -210,16 +210,6 @@ class ZigbangAddressOriginModel(ZigbangBaseResponseModel):
     ] = None
 
 
-def badge_codes_or_none(value: Any) -> list[str] | None:
-    """배지 코드 목록. 문자열 목록이 아니면 None (모름).
-
-    배지는 꼬리표 두 칸에만 쓰는 덤 값이라, 읽지 못해도 그 요약(`items`)이나 웹 관리비(`itemSummaries`)까지 잃지 않게 한다.
-    """
-    if isinstance(value, list) and all(isinstance(code, str) for code in value):
-        return value
-    return None
-
-
 class ZigbangWebItemSummaryModel(ZigbangBaseResponseModel):
     """웹 목록 카드가 쓰는 매물 요약 한 건 (`itemSummaries`, camelCase). 관리비(`fee`)와 배지(`badges`)만 읽는다."""
 
@@ -737,3 +727,13 @@ class ZigbangDanjisResponseModel(ZigbangBaseResponseModel):
         ZigbangLandTradePermitModel | None,
         Field(description='토지거래허가 일별 건수', alias='landTradePermit')
     ] = None
+
+
+def badge_codes_or_none(value: Any) -> list[str] | None:
+    """배지 코드 목록. 문자열 목록이 아니면 None (모름).
+
+    배지는 꼬리표 두 칸에만 쓰는 덤 값이라, 읽지 못해도 그 요약(`items`)이나 웹 관리비(`itemSummaries`)까지 잃지 않게 한다.
+    """
+    if isinstance(value, list) and all(isinstance(code, str) for code in value):
+        return value
+    return None

@@ -27,19 +27,6 @@ from jibsa.providers.zigbang.service.common.models import ZigbangAptListing
 from typing import get_args
 
 
-def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
-    # 웹 아파트 매물 페이지(v2). 옛 경로 /home/apt/item/{id} 는 /error 로 보낸다.
-    # 마지막 칸은 대표로 띄울 중개사 번호인데 빠지면 404 라, 0 을 넣어 직방이 고르게 한다.
-    return f'https://www.zigbang.com/home/apt/item/v2/{item_id}/{item_source}/0'
-
-
-def apt_catalog_url(area_ho_id: int, tran_type: str) -> str:
-    # 같은 호를 여러 중개사가 올린 묶음 화면. 웹 아파트 카드를 누르면 가격 범위(isPriceRange)와 상관없이 가는 곳이다
-    # (2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress). 신규분양 카드는 누르면 그 매물 상세 화면으로 가지만
-    # (`onPressOfferItem` → `HomeAptItemDetail`), 이 묶음 화면도 그 매물 1건과 '일반 매매가 아닌 신규분양 매물입니다' 를 보여 준다
-    return f'https://www.zigbang.com/home/apt/item-catalog?areaHoId={area_ho_id}&tranType={tran_type}'
-
-
 # 아파트 거래 유형 코드. 요청은 영어 코드(`ZigbangAptTranType`)를 받는다
 APT_TRAN_TYPE_BY_TRADE: dict[TradeType, ZigbangAptTranType] = {
     '매매': 'trade',
@@ -54,6 +41,30 @@ TRADE_BY_APT_TRAN_TYPE: dict[str, TradeType] = {
 CATALOG_ID_PATTERN: re.Pattern[str] = re.compile(rf"^([1-9]\d*)-({'|'.join(TRADE_BY_APT_TRAN_TYPE)})$")
 # 묶음 ID 형식이 틀렸을 때 안내 (`parse_catalog_id` 의 INVALID_ARGUMENT hint)
 CATALOG_ID_HINT: str = 'search listings apt·search listings --complex <apt-…> 결과의 catalog_id 를 그대로 주세요 (예: 8260358-trade)'
+
+# 상세를 볼 수 있는 아파트 매물 출처
+APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
+
+
+# 아파트 카드·상세의 매물 종류 코드(`itemType`) → 웹 카드가 보여 주는 말. 신규분양은 가격이 분양가다. 필드 설명
+# (`APT_LISTING_KIND_DESCRIPTION`)은 상세 결과 모델(`common.base` 의 `ZigbangListingDetail`)도 써 `common.base` 에 있다
+APT_LISTING_KIND_LABELS: dict[str, str] = {'offer': '신규분양', 'partner': '집주인', 'self_ad': '중개사'}
+
+# 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다
+APT_ID_PREFIXES: tuple[ZigbangAptItemSource, ...] = tuple(source for source in APT_ITEM_SOURCES if source != 'zigbang')
+
+
+def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
+    # 웹 아파트 매물 페이지(v2). 옛 경로 /home/apt/item/{id} 는 /error 로 보낸다.
+    # 마지막 칸은 대표로 띄울 중개사 번호인데 빠지면 404 라, 0 을 넣어 직방이 고르게 한다.
+    return f'https://www.zigbang.com/home/apt/item/v2/{item_id}/{item_source}/0'
+
+
+def apt_catalog_url(area_ho_id: int, tran_type: str) -> str:
+    # 같은 호를 여러 중개사가 올린 묶음 화면. 웹 아파트 카드를 누르면 가격 범위(isPriceRange)와 상관없이 가는 곳이다
+    # (2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress). 신규분양 카드는 누르면 그 매물 상세 화면으로 가지만
+    # (`onPressOfferItem` → `HomeAptItemDetail`), 이 묶음 화면도 그 매물 1건과 '일반 매매가 아닌 신규분양 매물입니다' 를 보여 준다
+    return f'https://www.zigbang.com/home/apt/item-catalog?areaHoId={area_ho_id}&tranType={tran_type}'
 
 
 def apt_catalog_id(area_ho_id: int, tran_type: str) -> str:
@@ -81,22 +92,9 @@ def parse_catalog_id(catalog_id: str) -> tuple[int, ZigbangAptTranType]:
     return int(match.group(1)), tran_type
 
 
-# 상세를 볼 수 있는 아파트 매물 출처
-APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
-
-
-# 아파트 카드·상세의 매물 종류 코드(`itemType`) → 웹 카드가 보여 주는 말. 신규분양은 가격이 분양가다. 필드 설명
-# (`APT_LISTING_KIND_DESCRIPTION`)은 상세 결과 모델(`common.base` 의 `ZigbangListingDetail`)도 써 `common.base` 에 있다
-APT_LISTING_KIND_LABELS: dict[str, str] = {'offer': '신규분양', 'partner': '집주인', 'self_ad': '중개사'}
-
-
 def apt_listing_kind(item_type: str | None) -> str | None:
     """아파트 매물 종류 코드를 말로 바꾼다. 코드가 없으면 모름(None), 모르는 코드는 직방 코드 그대로 둔다."""
     return None if item_type is None else APT_LISTING_KIND_LABELS.get(item_type, item_type)
-
-
-# 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다
-APT_ID_PREFIXES: tuple[ZigbangAptItemSource, ...] = tuple(source for source in APT_ITEM_SOURCES if source != 'zigbang')
 
 
 def apt_listing_id(item_id: int, item_source: ZigbangAptItemSource) -> str:

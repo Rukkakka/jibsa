@@ -153,6 +153,14 @@ dabang_retry = retry(
 )
 """조회 전용 엔드포인트 공통 재시도: 최대 3회, 1초(또는 `Retry-After`) 간격, 5xx·429·timeout·transport 오류만."""
 
+# 새 방식(`/api/v5/`) 요청에 웹이 붙이는 헤더 (fetch 청크 `requestHeaders`, 2026-10-25. 2026-11-12 실측도 같다). 웹은 v5 용
+# axios 인스턴스만 이 헤더를 더 붙인다. 옛 방식(`/api/3/`)은 헤더 대신 쿼리에 버전을 붙인다 (`DabangV3RequestParameterModel`)
+V5_HEADERS: dict[str, str] = {
+    'D-Api-Version': '5.0.0',
+    'D-App-Version': '1',
+    'D-Call-Type': 'web',
+}
+
 
 def should_retry_education(exc: BaseException) -> bool:
     """학교·유치원·어린이집 상세 재시도 술어. 500 만 빼고 `should_retry_idempotent` 와 같다.
@@ -174,14 +182,6 @@ dabang_education_retry = retry(
     before_sleep=log_retry_before_sleep,
 )
 """학교·유치원·어린이집 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
-
-# 새 방식(`/api/v5/`) 요청에 웹이 붙이는 헤더 (fetch 청크 `requestHeaders`, 2026-10-25. 2026-11-12 실측도 같다). 웹은 v5 용
-# axios 인스턴스만 이 헤더를 더 붙인다. 옛 방식(`/api/3/`)은 헤더 대신 쿼리에 버전을 붙인다 (`DabangV3RequestParameterModel`)
-V5_HEADERS: dict[str, str] = {
-    'D-Api-Version': '5.0.0',
-    'D-App-Version': '1',
-    'D-Call-Type': 'web',
-}
 
 
 class DabangClient(BaseHTTPClient):

@@ -232,12 +232,11 @@ search_app = typer.Typer(
     help='다방 장소 후보(locations), 매물 찾기(listings room·villa·officetel·apt), 단지 목록(complexes), 분양(sales), 동 안 학교 목록(schools)',
     no_args_is_help=True,
 )
-app.add_typer(search_app, name='search')
+
 listings_app = typer.Typer(
     help='매물 유형별 검색(room 원룸·투룸, villa 주택·빌라, officetel, apt) 또는 --complex 로 단지 매물',
     invoke_without_command=True,
 )
-search_app.add_typer(listings_app, name='listings')
 
 QueryArgument = Annotated[
     str | None,
@@ -246,27 +245,6 @@ QueryArgument = Annotated[
 LatOption = Annotated[float | None, typer.Option(help='중심 위도 (이름 대신)')]
 LngOption = Annotated[float | None, typer.Option(help='중심 경도 (이름 대신)')]
 
-
-def _radius_option(help: str) -> object:
-    """반경 옵션 (km). 범위는 명령마다 같고 도움말만 다르다 (매물·단지·분양 검색)."""
-    return typer.Option('--radius', min=MIN_RADIUS_KM, max=MAX_RADIUS_KM, help=help)
-
-
-RadiusOption = Annotated[
-    float | None,
-    _radius_option(
-        f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받고 반경 밖은 뺀다. 없으면 동은 그 동 안, 역은 다방이 정한 '
-        f'역 반경, 대학은 대학 둘레, 좌표는 {DEFAULT_RADIUS_KM:g}km'
-    ),
-]
-ComplexRadiusOption = Annotated[
-    float | None,
-    _radius_option(
-        f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받는다 (단지 목록은 사각형 모서리의 반경 밖 단지도 빼지 않는다). '
-        f'없으면 동은 그 동 안, 역은 다방이 정한 역 반경, 대학은 대학 둘레(아파트는 {DEFAULT_RADIUS_KM:g}km 사각형), '
-        f'좌표는 {DEFAULT_RADIUS_KM:g}km 사각형'
-    ),
-]
 LimitOption = Annotated[
     int, typer.Option(min=1, max=MAX_LIST_LIMIT, help=f'받을 매물 수 (제외 전, 다방은 24건씩 준다, 최대 {MAX_LIST_LIMIT})'),
 ]
@@ -303,6 +281,48 @@ ParkingMinOption = Annotated[
             "단지 세대당 주차 대수 하한 (대, 정수). 다방 웹 주차 필터의 '세대당 1대 이상'·'2대 이상'. "
             '이 매물에 주차할 수 있는지와는 다른 조건이다'
         ),
+    ),
+]
+
+SALE_ID_HELP: str = '분양 ID (search sales·search locations 결과의 presale_id, 28자리)'
+
+# --ranks 도움말: 주제마다 종류 수 ('학교 5·편의 5·교통 4·안전 3'), 고른 주제를 모두 받을 때의 요청 수. 종류마다 요청 1회다
+RANK_TYPE_COUNTS: str = '·'.join(f'{topic} {len(types)}' for topic, types in RANK_TYPES_BY_TOPIC.items())
+RANK_ALL_REQUESTS: int = sum(len(types) for types in RANK_TYPES_BY_TOPIC.values())
+
+WATCH_UNITS: tuple[str, ...] = ('단지', '동')
+RANKING_UNITS: tuple[str, ...] = ('동', '단지')
+RANKING_ORDERS: tuple[str, ...] = ('높은순', '낮은순')
+TRADE_RANKING_TRADES: tuple[str, ...] = ('매매', '전세')
+
+REAL_ESTATE_METRICS: tuple[str, ...] = tuple(label for label, spec in METRIC_BY_LABEL.items() if not isinstance(spec, InfoMetricSpec))
+INFO_METRICS: tuple[str, ...] = tuple(label for label, spec in METRIC_BY_LABEL.items() if isinstance(spec, InfoMetricSpec))
+
+
+app.add_typer(search_app, name='search')
+
+
+search_app.add_typer(listings_app, name='listings')
+
+
+def _radius_option(help: str) -> object:
+    """반경 옵션 (km). 범위는 명령마다 같고 도움말만 다르다 (매물·단지·분양 검색)."""
+    return typer.Option('--radius', min=MIN_RADIUS_KM, max=MAX_RADIUS_KM, help=help)
+
+
+RadiusOption = Annotated[
+    float | None,
+    _radius_option(
+        f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받고 반경 밖은 뺀다. 없으면 동은 그 동 안, 역은 다방이 정한 '
+        f'역 반경, 대학은 대학 둘레, 좌표는 {DEFAULT_RADIUS_KM:g}km'
+    ),
+]
+ComplexRadiusOption = Annotated[
+    float | None,
+    _radius_option(
+        f'반경 (km). 주면 이름의 중심에서 반경을 덮는 사각형으로 받는다 (단지 목록은 사각형 모서리의 반경 밖 단지도 빼지 않는다). '
+        f'없으면 동은 그 동 안, 역은 다방이 정한 역 반경, 대학은 대학 둘레(아파트는 {DEFAULT_RADIUS_KM:g}km 사각형), '
+        f'좌표는 {DEFAULT_RADIUS_KM:g}km 사각형'
     ),
 ]
 
@@ -740,9 +760,6 @@ def _require_complex_id(complex_id: str, param_hint: str = 'COMPLEX_ID') -> str:
     return value
 
 
-SALE_ID_HELP: str = '분양 ID (search sales·search locations 결과의 presale_id, 28자리)'
-
-
 def _require_sale_id(sale_id: str, param_hint: str = 'SALE_ID') -> str:
     value = sale_id.strip()
     # 분양 ID 는 단지 ID 와 같은 28자리다
@@ -1050,11 +1067,6 @@ def nearby_complexes_command(
         emit(result, pretty)
 
 
-# --ranks 도움말: 주제마다 종류 수 ('학교 5·편의 5·교통 4·안전 3'), 고른 주제를 모두 받을 때의 요청 수. 종류마다 요청 1회다
-RANK_TYPE_COUNTS: str = '·'.join(f'{topic} {len(types)}' for topic, types in RANK_TYPES_BY_TOPIC.items())
-RANK_ALL_REQUESTS: int = sum(len(types) for types in RANK_TYPES_BY_TOPIC.values())
-
-
 @app.command('neighborhood')
 def neighborhood_command(
     query: Annotated[str, typer.Argument(help="법정동 이름 (예: 역삼동, '강남구 신사동')")],
@@ -1202,12 +1214,6 @@ def station_prices_command(
     """
     with handle_errors(SOURCE), DabangClient() as client:
         emit(get_station_prices(client, resolve_places(client, station, only='station')), pretty)
-
-
-WATCH_UNITS: tuple[str, ...] = ('단지', '동')
-RANKING_UNITS: tuple[str, ...] = ('동', '단지')
-RANKING_ORDERS: tuple[str, ...] = ('높은순', '낮은순')
-TRADE_RANKING_TRADES: tuple[str, ...] = ('매매', '전세')
 
 
 def _one(values: list[str] | None, allowed: tuple[str, ...], option: str, default: str) -> str:
@@ -1402,10 +1408,6 @@ def trade_rankings_command(
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_trade_rankings(client, complex_type=chosen_type, trade=chosen_trade, period=chosen_period, limit=limit)
         emit(result, pretty)
-
-
-REAL_ESTATE_METRICS: tuple[str, ...] = tuple(label for label, spec in METRIC_BY_LABEL.items() if not isinstance(spec, InfoMetricSpec))
-INFO_METRICS: tuple[str, ...] = tuple(label for label, spec in METRIC_BY_LABEL.items() if isinstance(spec, InfoMetricSpec))
 
 
 @app.command('region-ranking')
