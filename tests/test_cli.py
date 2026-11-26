@@ -296,7 +296,7 @@ def test_dropped_null_items_get_a_note_even_in_display_lists(
     from jibsa.providers.zigbang.api.response.room.detail import (
         ZigbangBlsSchoolZonesV1ResponseModel,
     )
-    from jibsa.providers.zigbang.service.common.base import ZigbangListingDetail
+    from jibsa.providers.zigbang.service.common.models import ZigbangListingDetail
 
     school ={'name': '가상초등학교', 'distance': 300}
     source_notes: list[str] = []
@@ -412,7 +412,7 @@ def test_daangn_coordinate_search_with_rejected_map_query_is_upstream_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     import jibsa.cli.daangn as daangn_cli
-    from jibsa.providers.daangn.service.common import FeedQueryRejectedError
+    from jibsa.providers.daangn.service.common.functions import FeedQueryRejectedError
 
     def rejected(*args, **kwargs):
         raise FeedQueryRejectedError('PERSISTED_QUERY_NOT_IN_LIST')

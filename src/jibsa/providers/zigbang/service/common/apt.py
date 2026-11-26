@@ -1,13 +1,10 @@
-"""직방 service 공통(아파트 목록·묶음): 매물 ID·URL, 묶음 ID, 아파트 매물 모델, 카탈로그 → 매물 변환, 쪽 넘김 안내."""
+"""직방 service 공통(아파트 목록·묶음): 매물 ID·URL, 묶음 ID, 카탈로그 → 매물 변환, 쪽 넘김 안내. 아파트 매물 모델은 common.models 에 있다."""
 
 import re
-
-from pydantic import Field
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NEXT_HINT,
-    Listing,
     TradeType,
     join_address,
     m2_to_pyeong,
@@ -21,18 +18,13 @@ from jibsa.providers.zigbang.api.request.common import (
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangItemCatalogModel
 from jibsa.providers.zigbang.service.common.base import (
-    APT_LISTING_KIND_DESCRIPTION,
-    APT_PYEONG_ID_DESCRIPTION,
-    APT_PYEONG_NAME_DESCRIPTION,
     MAX_LIST_LIMIT,
     apt_complex_id,
     text_or_none,
 )
+from jibsa.providers.zigbang.service.common.models import ZigbangAptListing
 
-from typing import (
-    Annotated,
-    get_args,
-)
+from typing import get_args
 
 
 def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
@@ -101,51 +93,6 @@ APT_LISTING_KIND_LABELS: dict[str, str] = {'offer': '신규분양', 'partner': '
 def apt_listing_kind(item_type: str | None) -> str | None:
     """아파트 매물 종류 코드를 말로 바꾼다. 코드가 없으면 모름(None), 모르는 코드는 직방 코드 그대로 둔다."""
     return None if item_type is None else APT_LISTING_KIND_LABELS.get(item_type, item_type)
-
-
-class ZigbangAptListing(Listing):
-    """직방 아파트 매물. 같은 호·거래 유형의 매물(중개사별)을 하나로 묶은 카탈로그 한 건이다."""
-
-    complex_id: Annotated[
-        str | None,
-        Field(description='단지 ID (예: apt-68579). zigbang complex·items 에 넘긴다')
-    ] = None
-    complex_name: Annotated[
-        str | None,
-        Field(description='단지 이름')
-    ] = None
-    supply_area_m2: Annotated[
-        float | None,
-        Field(description='공급면적 (㎡). --supply-area 조건은 이 값에 걸린다')
-    ] = None
-    mixed_prices: Annotated[
-        bool | None,
-        Field(description='true 면 같은 호를 올린 매물끼리 가격이 달라 가격은 묶음의 최저가라 id 매물의 가격과 다를 수 있다. 매물별 가격은 catalog_id 를 zigbang catalog 에 넘겨 한 번에 본다')
-    ] = None
-    catalog_id: Annotated[
-        str | None,
-        Field(description='같은 호·거래 유형의 매물 묶음 ID (예: 8260358-trade). zigbang catalog 에 넘기면 묶음 매물 전부를 매물마다의 가격·상세와 함께 준다. 직방이 호 ID 를 주지 않으면 모름(null)이고, 그때 url 은 id 매물 페이지이며 묶음은 catalog 로 볼 수 없어 listing_ids 를 listing 으로 하나씩 본다')
-    ] = None
-    listing_ids: Annotated[
-        list[str],
-        Field(description='같은 호를 올린 매물 중 상세를 볼 수 있는 ID 전부 (id 포함, id 가 맨 앞). zigbang listing 에 넘긴다')
-    ] = []
-    realtor_count: Annotated[
-        int | None,
-        Field(description='같은 호를 올린 매물(중개사) 수')
-    ] = None
-    listing_kind: Annotated[
-        str | None,
-        Field(description=APT_LISTING_KIND_DESCRIPTION)
-    ] = None
-    pyeong_id: Annotated[
-        int | None,
-        Field(description=APT_PYEONG_ID_DESCRIPTION)
-    ] = None
-    pyeong_name: Annotated[
-        str | None,
-        Field(description=APT_PYEONG_NAME_DESCRIPTION)
-    ] = None
 
 
 # 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다

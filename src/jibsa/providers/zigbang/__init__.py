@@ -1,13 +1,13 @@
 from jibsa.core.listing import with_notes
 
 from .api.client import ZigbangClient
-from .service.common.base import (
+from .service.common.models import (
     ZigbangListingDetail,
     ZigbangRegion,
 )
 from .service.listing import get_listing as _get_listing
 from .service.region import search_regions as _search_regions
-from .service.room.search import ZigbangSearchResult
+from .service.room.models import ZigbangSearchResult
 from .service.room.search import search_listings as _search_listings
 
 

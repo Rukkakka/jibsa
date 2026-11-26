@@ -52,18 +52,21 @@ from jibsa.providers.zigbang.api.request.stay.search import (
     ZigbangGuestItemsFiltersRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
-from jibsa.providers.zigbang.service.apt import (
+from jibsa.providers.zigbang.service.apt.functions import (
     APT_TRADE_TYPES,
-    ZigbangAptConditions,
     apt_dong_at,
     get_catalog,
     search_apt_listings,
 )
+from jibsa.providers.zigbang.service.apt.models import ZigbangAptConditions
 from jibsa.providers.zigbang.service.common.base import (
     COMPLEX_ID_PATTERN,
     MAX_LIST_LIMIT,
+)
+from jibsa.providers.zigbang.service.common.models import (
     ZigbangBoundary,
     ZigbangRegion,
+    ZigbangRoomConditions,
 )
 from jibsa.providers.zigbang.service.common.room import (
     CONDITIONS,
@@ -71,7 +74,6 @@ from jibsa.providers.zigbang.service.common.room import (
     OPTION_FILTERS,
     ROOM_TYPES,
     TRADE_TYPES,
-    ZigbangRoomConditions,
     room_filter_of,
 )
 from jibsa.providers.zigbang.service.complex.detail import (
@@ -112,7 +114,7 @@ from jibsa.providers.zigbang.service.local.trades import (
     TRADE_PERIODS,
     get_region_trades,
 )
-from jibsa.providers.zigbang.service.real_price import (
+from jibsa.providers.zigbang.service.real_price.functions import (
     REAL_PRICE_MAX_LIMIT,
     REAL_PRICE_TRADE_TYPES,
     get_real_prices,
@@ -142,6 +144,7 @@ from jibsa.providers.zigbang.service.room.search import (
     unsearchable_note,
     unsearchable_types,
 )
+from jibsa.providers.zigbang.service.stay.models import ZigbangStayConditions
 from jibsa.providers.zigbang.service.stay.search import (
     STAY_BUILDING_TYPE_BY_LABEL,
     STAY_DISCOUNT_TYPE_BY_LABEL,
@@ -149,18 +152,17 @@ from jibsa.providers.zigbang.service.stay.search import (
     STAY_GEOHASH_PRECISION,
     STAY_OPTION_BY_LABEL,
     STAY_WEEKLY_PRICE_NOTE,
-    ZigbangStayConditions,
     check_stay_sort,
     search_stay_listings,
     stay_distance_sort_error,
 )
-from jibsa.providers.zigbang.service.store import (
+from jibsa.providers.zigbang.service.store.functions import (
     STORE_BUSINESS_NAMES,
     STORE_TRADE_TYPES,
-    ZigbangStoreConditions,
     search_store_listings,
     store_price_trade,
 )
+from jibsa.providers.zigbang.service.store.models import ZigbangStoreConditions
 
 from typing import Annotated
 

@@ -1,0 +1,133 @@
+"""법정동 매물 수·호가·거래 추이의 조회·변환 함수. 모델은 같은 폴더의 models 에 있다."""
+
+from jibsa.core.errors import JibsaError
+from jibsa.core.listing import (
+    null_items_note,
+    number_range,
+    won_to_manwon,
+)
+from jibsa.providers.naver.api.client import NaverClient
+from jibsa.providers.naver.api.request.trend import (
+    NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel,
+    NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel,
+    NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel,
+    NaverTrendOffset,
+)
+from jibsa.providers.naver.service.common.functions import (
+    SALE_JEONSE_CODE_BY_NAME,
+    result_or_none,
+    result_with_null_items,
+)
+from jibsa.providers.naver.service.trend.models import (
+    NaverDistrictTrend,
+    NaverListingCountTrend,
+    NaverPriceTrend,
+    NaverTradeCountTrend,
+    NaverWeeklyCount,
+    NaverWeeklyPrice,
+)
+
+
+TREND_PERIOD_BY_NAME: dict[str, NaverTrendOffset] = {
+    '1개월': 'P-1M',
+    '6개월': 'P-6M',
+    '1년': 'P-1Y',
+    '3년': 'P-3Y',
+    '5년': 'P-5Y',
+}
+
+
+# 평형대 하한 (평)과 폭. 사이트처럼 10평 단위로 하한~하한+10 평
+TREND_PYEONG_RANGES: tuple[int, ...] = (10, 20, 30, 40, 50)
+
+
+TREND_PYEONG_RANGE_WIDTH: int = 10
+
+
+# 전국 추이. 웹 홈 아파트 동향의 시·도 '전체' 가 `ALL_LEGAL_DIVISION_CODE` 를 세 엔드포인트의 legalDivisionNumber 로 보낸다
+# (2026-11-18 번들 청크 2d10adcfe2_2rlr6s-93gudx). 세 엔드포인트 모두 200 이고 값이 있다
+NATIONWIDE_NAME: str = '전국'
+
+
+NATIONWIDE_CODE: str = '0000000000'
+
+
+def get_district_trend(
+    client: NaverClient,
+    legal_division_code: str,
+    *,
+    trade_type: str = '매매',
+    period: str = '1년',
+    pyeong_range: int | None = None,
+) -> NaverDistrictTrend:
+    """법정동(또는 구·시·도, 전국)의 아파트 주간 매물 수·평당 호가·실거래 건수 (3회 호출).
+
+    하나가 실패하면 그 값만 모름(None)으로 두고, 셋 다 실패하면 에러다.
+
+    Args:
+        legal_division_code: 법정동 코드 10자리. 전국은 `NATIONWIDE_CODE`.
+        trade_type: `SALE_JEONSE_CODE_BY_NAME` 의 이름 (매매, 전세).
+        period: `TREND_PERIOD_BY_NAME` 의 이름.
+        pyeong_range: 평형대 하한 (`TREND_PYEONG_RANGES`). 주면 하한~하한+`TREND_PYEONG_RANGE_WIDTH` 평만.
+
+    Raises:
+        JibsaError: 셋 다 조회에 실패하면 UPSTREAM_ERROR.
+    """
+    query = {
+        'legal_division_number': legal_division_code,
+        'trade_type': SALE_JEONSE_CODE_BY_NAME[trade_type],
+        'offset': TREND_PERIOD_BY_NAME[period],
+        'pyeong_range_lower': pyeong_range,
+        'pyeong_range_upper': None if pyeong_range is None else pyeong_range + TREND_PYEONG_RANGE_WIDTH,
+    }
+    # 동·구뿐 아니라 시·도 코드(서울 1100000000, 2026-10-10)와 전국 코드도 세 엔드포인트가 200 으로 답한다. 429 는 응답 훅이
+    # RateLimitedError 로 바꿔 result_or_none 이 삼키지 않으므로, 셋 다 실패한 UPSTREAM_ERROR 는 일시 장애다
+    notes: list[str] = []
+    counts = result_or_none(lambda: client.run_request_legal_division_article_count_weekly_info_v1(
+        NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel(**query)
+    ), notes=notes, what='매물 수 추이', unknown='모름(null)으로 낸 칸: listing_count_trend')
+    prices, price_nulls = result_with_null_items(lambda: client.run_request_legal_division_pyeong_price_weekly_list_v1(
+        NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel(**query)
+    ), notes=notes, what='평당가 추이', unknown='모름(null)으로 낸 칸: asking_price_per_pyeong')
+    trades = result_or_none(lambda: client.run_request_legal_division_real_trade_count_weekly_list_v1(
+        NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel(**query)
+    ), notes=notes, what='실거래 수 추이', unknown='모름(null)으로 낸 칸: trade_count_trend')
+    if counts is None and prices is None and trades is None:
+        raise JibsaError(
+            code='UPSTREAM_ERROR',
+            message='네이버 동네 추이를 받지 못했습니다',
+            hint='법정동·구 이름으로 다시 찾거나 잠시 뒤 다시 시도하세요',
+        )
+    # 리뷰 오탐 (2026-11-24): 0 평당가를 null 로 바꾸지 않는다. 서버는 값 없는 주를 null 로 주고(청운동 52주), 0 이 오는 구 있는 시는 cli `_trend_district` 가
+    # REGION_AMBIGUOUS 로 막거나 확인 실패 [실패] 안내로 알리고, 리 코드는 같은 함수가 읍·면 법정동으로 바꾼다
+    price_weekly = [
+        NaverWeeklyPrice(week_start=point.first_day_of_week, price_per_pyeong_manwon=won_to_manwon(point.average_pyeong_price))
+        for point in prices or []
+    ]
+    if price_nulls:
+        # 빈 항목을 뺀 목록의 마지막 주가 서버의 마지막 주가 아닐 수 있어 최근 주는 모름이다 (받은 주들은 그대로 둔다)
+        notes.append(null_items_note('네이버 평당가 추이', price_nulls, ('asking_price_per_pyeong.latest_manwon',)))
+    return NaverDistrictTrend(
+        trade_type=trade_type,
+        period=period,
+        pyeong_range='전체' if pyeong_range is None else f'{pyeong_range}~{pyeong_range + TREND_PYEONG_RANGE_WIDTH}평',
+        listing_count_trend=None if counts is None else NaverListingCountTrend(
+            period_average=counts.period_average_count,
+            latest=counts.latest_weekly_count,
+            count_range=number_range(counts.min_weekly_count, counts.max_weekly_count),
+            change_percent=counts.count_change_rate,
+            weeks=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.average_count) for point in counts.weekly_counts],
+        ),
+        asking_price_per_pyeong=None if prices is None else NaverPriceTrend(
+            # 주간 목록 3종은 모두 오래된 주부터 온다. 매물 수·거래 건수의 서버 최신값(latest...)도 마지막 주와 같다
+            # (2026-10-14 실측: 역삼동 52주 3종 모두 오름차순, latestWeeklyCount = 마지막 주 averageCount)
+            latest_manwon=None if price_nulls or not price_weekly else price_weekly[-1].price_per_pyeong_manwon,
+            weeks=price_weekly,
+        ),
+        trade_count_trend=None if trades is None else NaverTradeCountTrend(
+            period_average=trades.period_average_trade_count,
+            latest=trades.latest_weekly_trade_count,
+            weeks=[NaverWeeklyCount(week_start=point.first_day_of_week, count=point.trade_count) for point in trades.weekly_counts],
+        ),
+        notes=notes,
+    )

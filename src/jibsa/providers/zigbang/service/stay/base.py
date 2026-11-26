@@ -1,9 +1,6 @@
-"""직방 service 공통(단기임대 목록): 방 종류·옵션 표시 이름, 목록 줄 모델, 할인 조건 글, 요약 → 매물 변환."""
-
-from pydantic import Field
+"""직방 service 공통(단기임대 목록): 방 종류·옵션 표시 이름, 할인 조건 글, 요약 → 매물 변환. 목록 줄 모델은 stay.models 에 있다."""
 
 from jibsa.core.listing import (
-    Listing,
     format_manwon,
     join_address,
     m2_to_pyeong,
@@ -15,8 +12,7 @@ from jibsa.providers.zigbang.api.response.stay.base import (
     ZigbangStayItemSummaryModel,
 )
 from jibsa.providers.zigbang.service.common.base import sent_or_none
-
-from typing import Annotated
+from jibsa.providers.zigbang.service.stay.models import ZigbangStayListing
 
 
 # 단기임대 검색 결과 줄(`ZigbangStayListing`)과 상세의 '임대인의 다른 방' 이 같이 쓰는 것, 검색 조건과 상세가 같이 쓰는 이름표.
@@ -75,35 +71,6 @@ STAY_OPTION_LABELS: dict[str, str] = {
 def stay_item_url(stay_id: int | str) -> str:
     """단기임대 매물 웹 페이지 주소. 로그인 없이 열린다."""
     return f'https://www.zigbang.com/stay/item/{stay_id}'
-
-
-class ZigbangStayListing(Listing):
-    """직방 단기임대 서비스 매물. 요금이 주 단위라 월세·월 관리비 대신 주당 금액을 준다."""
-
-    weekly_rent_manwon: Annotated[
-        float | None,
-        Field(description='주당 임대료 (만원)')
-    ] = None
-    weekly_manage_cost_manwon: Annotated[
-        float | None,
-        Field(description='주당 관리비 (만원)')
-    ] = None
-    room_count: Annotated[
-        int | None,
-        Field(description='방 수')
-    ] = None
-    bathroom_count: Annotated[
-        int | None,
-        Field(description='욕실 수')
-    ] = None
-    discounts: Annotated[
-        list[str] | None,
-        Field(description="할인 조건 (예: '4주 이상 10% 할인')")
-    ] = None
-
-    def not_applicable_fields(self) -> frozenset[str]:
-        # 요금이 주 단위라 월세·월 관리비가 해당 없다
-        return super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
 
 
 def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | None) -> str | None:

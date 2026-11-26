@@ -52,15 +52,17 @@ from jibsa.providers.zigbang.service.common.base import (
     DIRECTION_LABELS,
     NEAREST_SCHOOLS,
     OPTIONAL_LOOKUP_ERRORS,
-    ZigbangBuildingTrade,
-    ZigbangListingDetail,
-    ZigbangNearbyFacility,
     item_url,
     officetel_complex_id,
     school_label,
     sent_or_none,
     text_or_none,
     unavailable_on_404,
+)
+from jibsa.providers.zigbang.service.common.models import (
+    ZigbangBuildingTrade,
+    ZigbangListingDetail,
+    ZigbangNearbyFacility,
 )
 from jibsa.providers.zigbang.service.common.room import (
     HUG_BADGE,
