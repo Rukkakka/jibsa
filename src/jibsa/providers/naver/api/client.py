@@ -44,17 +44,21 @@ from jibsa.providers.naver.api.request.complex import (
     NaverComplexVillaArticleStatsV1RequestParameterModel,
     NaverEducationComplexSchoolV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.listing import (
-    NaverArticleAgentFeeV1RequestParameterModel,
+from jibsa.providers.naver.api.request.listing.base import (
     NaverArticleAgentV1RequestParameterModel,
+)
+from jibsa.providers.naver.api.request.listing.complex import (
+    NaverComplexArticleListV1RequestPayloadModel,
+    NaverComplexVillaArticleListV1RequestPayloadModel,
+)
+from jibsa.providers.naver.api.request.listing.detail import (
+    NaverArticleAgentFeeV1RequestParameterModel,
     NaverArticleBasicInfoV1RequestParameterModel,
     NaverArticleKeyV1RequestParameterModel,
     NaverArticleMaintenanceFeeV1RequestParameterModel,
     NaverArticleOldMaintenanceFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
-    NaverComplexArticleListV1RequestPayloadModel,
     NaverComplexBuildingRegistrationV1RequestParameterModel,
-    NaverComplexVillaArticleListV1RequestPayloadModel,
     NaverDataServiceTransportV1RequestParameterModel,
     NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
@@ -70,13 +74,17 @@ from jibsa.providers.naver.api.request.real_price import (
     NaverComplexVillaRealPricePageV1RequestParameterModel,
     NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.redevelopment import (
-    NaverComplexRedevelopmentAreaArticleListV1RequestPayloadModel,
+from jibsa.providers.naver.api.request.redevelopment.detail import (
     NaverComplexRedevelopmentAreaArticleStatsV1RequestParameterModel,
+    NaverComplexRedevelopmentV1RequestParameterModel,
+)
+from jibsa.providers.naver.api.request.redevelopment.listings import (
+    NaverComplexRedevelopmentAreaArticleListV1RequestPayloadModel,
+)
+from jibsa.providers.naver.api.request.redevelopment.search import (
     NaverComplexRedevelopmentAreaLegalDivisionListV1RequestPayloadModel,
     NaverComplexRedevelopmentAreaListV1RequestPayloadModel,
     NaverComplexRedevelopmentAreaMarkersV1RequestPayloadModel,
-    NaverComplexRedevelopmentV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.region import (
     NaverLegalDivisionInfoListByLevelV1RequestParameterModel,
@@ -93,13 +101,17 @@ from jibsa.providers.naver.api.request.school import (
     NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel,
     NaverEducationSchoolV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.search import (
-    NaverArticleBoundedArticlesV1RequestPayloadModel,
+from jibsa.providers.naver.api.request.search.base import (
     NaverArticleClusteredArticlesV1RequestPayloadModel,
-    NaverArticleLegalDivisionArticleListV1RequestPayloadModel,
     NaverArticleMapArticleClustersV1RequestPayloadModel,
+)
+from jibsa.providers.naver.api.request.search.complexes import (
     NaverComplexBoundedComplexesV1RequestPayloadModel,
     NaverComplexLegalDivisionComplexListV1RequestPayloadModel,
+)
+from jibsa.providers.naver.api.request.search.listings import (
+    NaverArticleBoundedArticlesV1RequestPayloadModel,
+    NaverArticleLegalDivisionArticleListV1RequestPayloadModel,
 )
 from jibsa.providers.naver.api.request.trend import (
     NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel,
@@ -129,17 +141,21 @@ from jibsa.providers.naver.api.response.complex import (
     NaverComplexVillaArticleStatsV1ResponseModel,
     NaverEducationComplexSchoolV1ResponseModel,
 )
-from jibsa.providers.naver.api.response.listing import (
-    NaverArticleAgentFeeV1ResponseModel,
+from jibsa.providers.naver.api.response.listing.base import (
     NaverArticleAgentV1ResponseModel,
+)
+from jibsa.providers.naver.api.response.listing.complex import (
+    NaverComplexArticleListV1ResponseModel,
+    NaverComplexVillaArticleListV1ResponseModel,
+)
+from jibsa.providers.naver.api.response.listing.detail import (
+    NaverArticleAgentFeeV1ResponseModel,
     NaverArticleBasicInfoV1ResponseModel,
     NaverArticleKeyV1ResponseModel,
     NaverArticleMaintenanceFeeV1ResponseModel,
     NaverArticleOldMaintenanceFeeV1ResponseModel,
     NaverArticleTaxV1ResponseModel,
-    NaverComplexArticleListV1ResponseModel,
     NaverComplexBuildingRegistrationV1ResponseModel,
-    NaverComplexVillaArticleListV1ResponseModel,
     NaverDataServiceTransportV1ResponseModel,
     NaverDevelopmentArticleV1ResponseModel,
     NaverEducationBuildingSchoolV1ResponseModel,
@@ -155,13 +171,17 @@ from jibsa.providers.naver.api.response.real_price import (
     NaverComplexVillaRealPricePageV1ResponseModel,
     NaverComplexVillaRealPricePyeongPriceV1ResponseModel,
 )
-from jibsa.providers.naver.api.response.redevelopment import (
-    NaverComplexRedevelopmentAreaArticleListV1ResponseModel,
+from jibsa.providers.naver.api.response.redevelopment.detail import (
     NaverComplexRedevelopmentAreaArticleStatsV1ResponseModel,
+    NaverComplexRedevelopmentV1ResponseModel,
+)
+from jibsa.providers.naver.api.response.redevelopment.listings import (
+    NaverComplexRedevelopmentAreaArticleListV1ResponseModel,
+)
+from jibsa.providers.naver.api.response.redevelopment.search import (
     NaverComplexRedevelopmentAreaLegalDivisionListV1ResponseModel,
     NaverComplexRedevelopmentAreaListV1ResponseModel,
     NaverComplexRedevelopmentAreaMarkersV1ResponseModel,
-    NaverComplexRedevelopmentV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.region import (
     NaverLegalDivisionInfoListByLevelV1ResponseModel,
@@ -178,13 +198,17 @@ from jibsa.providers.naver.api.response.school import (
     NaverEducationComplexSchoolAllocationDongsV1ResponseModel,
     NaverEducationSchoolV1ResponseModel,
 )
-from jibsa.providers.naver.api.response.search import (
-    NaverArticleBoundedArticlesV1ResponseModel,
+from jibsa.providers.naver.api.response.search.base import (
     NaverArticleClusteredArticlesV1ResponseModel,
-    NaverArticleLegalDivisionArticleListV1ResponseModel,
     NaverArticleMapArticleClustersV1ResponseModel,
+)
+from jibsa.providers.naver.api.response.search.complexes import (
     NaverComplexBoundedComplexesV1ResponseModel,
     NaverComplexLegalDivisionComplexListV1ResponseModel,
+)
+from jibsa.providers.naver.api.response.search.listings import (
+    NaverArticleBoundedArticlesV1ResponseModel,
+    NaverArticleLegalDivisionArticleListV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.trend import (
     NaverLegalDivisionArticleCountWeeklyInfoV1ResponseModel,

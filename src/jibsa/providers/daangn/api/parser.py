@@ -10,7 +10,9 @@ from jibsa.providers.daangn.api.relay import (
     root_field,
 )
 from jibsa.providers.daangn.api.response.common import DaangnArticleModel
-from jibsa.providers.daangn.api.response.complex import DaangnComplexesResponseModel
+from jibsa.providers.daangn.api.response.complex.detail import (
+    DaangnComplexesResponseModel,
+)
 from jibsa.providers.daangn.api.response.listing import DaangnArticlesResponseModel
 from jibsa.providers.daangn.api.response.review import DaangnMapReviewsResponseModel
 

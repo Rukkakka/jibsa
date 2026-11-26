@@ -32,18 +32,26 @@ from jibsa.providers.daangn.api.request.commute import (
     DaangnCommuteStationsRequestPayloadModel,
     DaangnNearestCommuteStationRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.compare import (
+from jibsa.providers.daangn.api.request.compare.base import (
     DaangnComplexCompareRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.compare.nearby import (
     DaangnComplexesByOriginalComplexIdsRequestPayloadModel,
     DaangnComplexRegionRequestPayloadModel,
     DaangnNearbyComplexesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.complex import (
-    DaangnComplexArticlesRequestPayloadModel,
-    DaangnComplexByClusterIdRequestPayloadModel,
-    DaangnComplexesRequestParameterModel,
+from jibsa.providers.daangn.api.request.complex.base import (
     DaangnSearchComplexesRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.complex.detail import (
+    DaangnComplexArticlesRequestPayloadModel,
+    DaangnComplexesRequestParameterModel,
+)
+from jibsa.providers.daangn.api.request.complex.search import (
+    DaangnComplexByClusterIdRequestPayloadModel,
     DaangnSearchComplexesViewportRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.complex.trending import (
     DaangnTrendingComplexesRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.request.listing import (
@@ -56,13 +64,17 @@ from jibsa.providers.daangn.api.request.neighborhood import (
 from jibsa.providers.daangn.api.request.popular import (
     DaangnGetViewRankingArticlesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.real_price import (
+from jibsa.providers.daangn.api.request.real_price.complex import (
     DaangnArticleByOriginalArticleIdRequestPayloadModel,
     DaangnComplexByOriginalIdRequestPayloadModel,
-    DaangnComplexPriceChartRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.real_price.region import (
     DaangnRealsaleFeedRequestPayloadModel,
     DaangnRealsaleFeedSummaryRequestPayloadModel,
     DaangnRealsaleNewHighFeedRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.real_price.trend import (
+    DaangnComplexPriceChartRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.request.region import (
     DaangnGetRegionByCoordinateRequestPayloadModel,
@@ -76,9 +88,11 @@ from jibsa.providers.daangn.api.request.review import (
     DaangnLivedReviewsByRegionRequestPayloadModel,
     DaangnMapReviewsRequestParameterModel,
 )
-from jibsa.providers.daangn.api.request.school import (
+from jibsa.providers.daangn.api.request.school.preschool import (
     DaangnComplexSchoolsRequestPayloadModel,
     DaangnPreschoolByNoRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.school.school import (
     DaangnSchoolByCodeRequestPayloadModel,
     DaangnSearchSchoolsRequestPayloadModel,
 )
@@ -95,18 +109,26 @@ from jibsa.providers.daangn.api.response.commute import (
     DaangnCommuteStationsResponseModel,
     DaangnNearestCommuteStationResponseModel,
 )
-from jibsa.providers.daangn.api.response.compare import (
+from jibsa.providers.daangn.api.response.compare.base import (
     DaangnComplexCompareResponseModel,
+)
+from jibsa.providers.daangn.api.response.compare.nearby import (
     DaangnComplexesByOriginalComplexIdsResponseModel,
     DaangnComplexRegionResponseModel,
     DaangnNearbyComplexesResponseModel,
 )
-from jibsa.providers.daangn.api.response.complex import (
-    DaangnComplexArticlesResponseModel,
-    DaangnComplexByClusterIdResponseModel,
-    DaangnComplexesResponseModel,
+from jibsa.providers.daangn.api.response.complex.base import (
     DaangnSearchComplexesResponseModel,
+)
+from jibsa.providers.daangn.api.response.complex.detail import (
+    DaangnComplexArticlesResponseModel,
+    DaangnComplexesResponseModel,
+)
+from jibsa.providers.daangn.api.response.complex.search import (
+    DaangnComplexByClusterIdResponseModel,
     DaangnSearchComplexesViewportResponseModel,
+)
+from jibsa.providers.daangn.api.response.complex.trending import (
     DaangnTrendingComplexesResponseModel,
 )
 from jibsa.providers.daangn.api.response.listing import DaangnArticlesResponseModel
@@ -117,13 +139,17 @@ from jibsa.providers.daangn.api.response.neighborhood import (
 from jibsa.providers.daangn.api.response.popular import (
     DaangnGetViewRankingArticlesResponseModel,
 )
-from jibsa.providers.daangn.api.response.real_price import (
+from jibsa.providers.daangn.api.response.real_price.complex import (
     DaangnArticleByOriginalArticleIdResponseModel,
     DaangnComplexByOriginalIdResponseModel,
-    DaangnComplexPriceChartResponseModel,
+)
+from jibsa.providers.daangn.api.response.real_price.region import (
     DaangnRealsaleFeedResponseModel,
     DaangnRealsaleFeedSummaryResponseModel,
     DaangnRealsaleNewHighFeedResponseModel,
+)
+from jibsa.providers.daangn.api.response.real_price.trend import (
+    DaangnComplexPriceChartResponseModel,
 )
 from jibsa.providers.daangn.api.response.region import (
     DaangnGetRegionByCoordinateResponseModel,
@@ -137,9 +163,11 @@ from jibsa.providers.daangn.api.response.review import (
     DaangnLivedReviewsByRegionResponseModel,
     DaangnMapReviewsResponseModel,
 )
-from jibsa.providers.daangn.api.response.school import (
+from jibsa.providers.daangn.api.response.school.preschool import (
     DaangnComplexSchoolsResponseModel,
     DaangnPreschoolByNoResponseModel,
+)
+from jibsa.providers.daangn.api.response.school.school import (
     DaangnSchoolByCodeResponseModel,
     DaangnSearchSchoolsResponseModel,
 )

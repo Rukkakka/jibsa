@@ -52,7 +52,7 @@ from jibsa.providers.dabang.api.request.common import (
     DabangSearchType,
     DabangSellingType,
 )
-from jibsa.providers.dabang.api.request.school import DabangSchoolEstablishmentType
+from jibsa.providers.dabang.api.request.school.base import DabangSchoolEstablishmentType
 from jibsa.providers.dabang.api.response.common import (
     DabangAreaAveragePriceModel,
     DabangComplexResultModel,

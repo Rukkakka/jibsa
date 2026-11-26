@@ -12,7 +12,9 @@ from jibsa.providers.dabang.api.response.common import (
     DabangComplexEducationModel,
     DabangRoomListResultModel,
 )
-from jibsa.providers.dabang.api.response.ranking import DabangRegionRankingItemModel
+from jibsa.providers.dabang.api.response.ranking.region import (
+    DabangRegionRankingItemModel,
+)
 from jibsa.providers.dabang.service.common.functions import (
     is_missing_id,
     listing_prices,
@@ -20,13 +22,11 @@ from jibsa.providers.dabang.service.common.functions import (
     parse_room_desc,
 )
 from jibsa.providers.dabang.service.common.models import DabangPlace
-from jibsa.providers.dabang.service.complex.functions import list_complex_listings
+from jibsa.providers.dabang.service.complex.detail import list_complex_listings
 from jibsa.providers.dabang.service.listing.functions import search_listings
-from jibsa.providers.dabang.service.neighborhood.functions import (
-    get_neighborhood,
-    get_popular_listings,
-)
-from jibsa.providers.dabang.service.ranking.functions import (
+from jibsa.providers.dabang.service.neighborhood.info import get_neighborhood
+from jibsa.providers.dabang.service.neighborhood.popular import get_popular_listings
+from jibsa.providers.dabang.service.ranking.region import (
     ValueKind,
     _entry,
     get_region_ranking,

@@ -21,16 +21,22 @@ from jibsa.providers.daangn.api.response.common import (
 from jibsa.providers.daangn.service.common.functions import article_to_listing
 from jibsa.providers.daangn.service.common.models import DaangnListingConditions
 from jibsa.providers.daangn.service.commute.functions import search_commute
-from jibsa.providers.daangn.service.complex.functions import (
-    list_complex_listings,
-    list_region_complexes,
+from jibsa.providers.daangn.service.complex.base import (
     search_complexes,
+)
+from jibsa.providers.daangn.service.complex.detail import (
+    list_complex_listings,
+)
+from jibsa.providers.daangn.service.complex.search import (
+    list_region_complexes,
 )
 from jibsa.providers.daangn.service.listing.functions import (
     detail_to_listing,
     get_listing,
 )
-from jibsa.providers.daangn.service.real_price.functions import get_real_prices
+from jibsa.providers.daangn.service.real_price.complex import (
+    get_real_prices,
+)
 from jibsa.providers.daangn.service.region.functions import resolve_area
 
 
@@ -1246,7 +1252,7 @@ def _realsale_feed_client(requests: list[httpx.Request], *, summary_rejected: bo
 
 
 def test_region_real_prices_mark_new_high_like_web_card_and_add_summary() -> None:
-    from jibsa.providers.daangn.service.real_price.functions import (
+    from jibsa.providers.daangn.service.real_price.region import (
         get_region_real_prices,
     )
 
@@ -1265,7 +1271,7 @@ def test_region_real_prices_mark_new_high_like_web_card_and_add_summary() -> Non
 
 
 def test_region_real_prices_summary_failure_keeps_transactions() -> None:
-    from jibsa.providers.daangn.service.real_price.functions import (
+    from jibsa.providers.daangn.service.real_price.region import (
         get_region_real_prices,
     )
 
@@ -1281,7 +1287,7 @@ def test_region_real_prices_summary_failure_keeps_transactions() -> None:
     [(295000, 295000, 0.0), (80200, 80000, 0.25), (100125, 100000, 0.13), (250001, 250000, 0.01), (294999, 295000, -0.01), (1000, 0, None)],
 )
 def test_previous_high_change_percent_rounds_to_two_decimals(price: int, previous: int, expected: float | None) -> None:
-    from jibsa.providers.daangn.service.real_price.functions import (
+    from jibsa.providers.daangn.service.real_price.region import (
         previous_high_change_percent,
     )
 
@@ -1289,8 +1295,12 @@ def test_previous_high_change_percent_rounds_to_two_decimals(price: int, previou
 
 
 def test_kb_sale_is_converted_from_won() -> None:
-    from jibsa.providers.daangn.api.response.real_price import DaangnPriceChartModel
-    from jibsa.providers.daangn.service.real_price.functions import estimated_prices_of
+    from jibsa.providers.daangn.api.response.real_price.trend import (
+        DaangnPriceChartModel,
+    )
+    from jibsa.providers.daangn.service.real_price.trend import (
+        estimated_prices_of,
+    )
 
     chart = DaangnPriceChartModel.model_validate({'averagePoints': [], 'latestKbSale': {'surveyBaseDate': '20261102', 'lower': 2700000000, 'upper': 2910000000}})
     estimated = estimated_prices_of(chart)
@@ -1301,7 +1311,9 @@ def test_kb_sale_is_converted_from_won() -> None:
 
 
 def test_preschool_survey_responses_default_to_zero_like_web() -> None:
-    from jibsa.providers.daangn.service.school.functions import get_preschool
+    from jibsa.providers.daangn.service.school.preschool import (
+        get_preschool,
+    )
 
     bodies = iter([{'surveyResult': {'responseCount': 3}}, {'surveyResult': None}])
 
@@ -1318,7 +1330,9 @@ def test_preschool_survey_responses_default_to_zero_like_web() -> None:
 
 def test_bounds_complexes_send_map_view_bounds_instead_of_cluster() -> None:
     from jibsa.providers.daangn.service.common.functions import map_view_bounds
-    from jibsa.providers.daangn.service.complex.functions import list_bounds_complexes
+    from jibsa.providers.daangn.service.complex.search import (
+        list_bounds_complexes,
+    )
 
     requests: list[httpx.Request] = []
     with make_graphql_client({DaangnClient.search_complexes_viewport_query_id: fixture('search_complexes_viewport')}, requests) as client:
@@ -1393,7 +1407,9 @@ def test_null_items_make_computed_values_unknown() -> None:
 
     from jibsa.providers.daangn.service.common.models import DaangnRegion
     from jibsa.providers.daangn.service.popular.functions import list_popular_listings
-    from jibsa.providers.daangn.service.real_price.functions import get_price_trend
+    from jibsa.providers.daangn.service.real_price.trend import (
+        get_price_trend,
+    )
 
     def trend(points: list[dict | None]):
         compare = {'data': {'complexByOriginalId': {'complex': {
@@ -1427,8 +1443,10 @@ def test_null_items_make_computed_values_unknown() -> None:
 
 # 인기 단지의 최근 매매 목록이 null 이거나 빈 항목이 섞이면 없다고 하지 않고 모름(null)으로 낸다. 빈 목록만 해당 없음({})이다
 def test_trending_latest_trade_is_unknown_when_realsale_list_is_null_or_has_blank_items() -> None:
-    from jibsa.providers.daangn.service.complex.functions import list_trending_complexes
     from jibsa.providers.daangn.service.complex.models import DaangnTrendingRegion
+    from jibsa.providers.daangn.service.complex.trending import (
+        list_trending_complexes,
+    )
 
     def danji(original_id: str, sale_realsale: dict) -> dict:
         return {

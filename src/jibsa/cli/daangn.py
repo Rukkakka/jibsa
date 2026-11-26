@@ -82,28 +82,36 @@ from jibsa.providers.daangn.service.commute.functions import (
     COMMUTE_STATION_DEFAULT_LIMIT,
     search_commute,
 )
-from jibsa.providers.daangn.service.compare.functions import (
-    NEARBY_COMPLEXES_MAX,
+from jibsa.providers.daangn.service.compare.complexes import (
     compare_complexes,
+)
+from jibsa.providers.daangn.service.compare.nearby import (
+    NEARBY_COMPLEXES_MAX,
     list_nearby_complexes,
 )
-from jibsa.providers.daangn.service.complex.functions import (
+from jibsa.providers.daangn.service.complex.base import (
     COMPLEX_CANDIDATE_LIMIT,
-    COMPLEX_SORT_BY_LABEL,
-    DEFAULT_COMPLEX_TRADE_TYPE,
-    get_complex,
-    list_bounds_complexes,
-    list_complex_listings,
-    list_region_complexes,
-    list_trending_complexes,
     search_complexes,
-    trending_region_of,
+)
+from jibsa.providers.daangn.service.complex.detail import (
+    get_complex,
+    list_complex_listings,
 )
 from jibsa.providers.daangn.service.complex.models import (
     DaangnBoundsComplexesResult,
     DaangnComplexConditions,
     DaangnComplexListingsResult,
     DaangnRegionComplexesResult,
+)
+from jibsa.providers.daangn.service.complex.search import (
+    COMPLEX_SORT_BY_LABEL,
+    DEFAULT_COMPLEX_TRADE_TYPE,
+    list_bounds_complexes,
+    list_region_complexes,
+)
+from jibsa.providers.daangn.service.complex.trending import (
+    list_trending_complexes,
+    trending_region_of,
 )
 from jibsa.providers.daangn.service.listing.functions import (
     DETAILS_MAX,
@@ -118,16 +126,22 @@ from jibsa.providers.daangn.service.popular.functions import (
     POPULAR_MAX_LIMIT,
     list_popular_listings,
 )
-from jibsa.providers.daangn.service.real_price.functions import (
-    PRICE_CHART_TRADE_BY_TRADE_TYPE,
-    PRICE_TREND_PERIODS,
+from jibsa.providers.daangn.service.real_price.base import (
     REAL_PRICE_MAX_LIMIT,
+)
+from jibsa.providers.daangn.service.real_price.complex import (
     get_listing_real_prices,
-    get_price_trend,
     get_real_prices,
-    get_region_real_prices,
 )
 from jibsa.providers.daangn.service.real_price.models import DaangnRealPriceBaseResult
+from jibsa.providers.daangn.service.real_price.region import (
+    get_region_real_prices,
+)
+from jibsa.providers.daangn.service.real_price.trend import (
+    PRICE_CHART_TRADE_BY_TRADE_TYPE,
+    PRICE_TREND_PERIODS,
+    get_price_trend,
+)
 from jibsa.providers.daangn.service.region.functions import (
     UNIVERSITY_CANDIDATES,
     LocationMissingError,
@@ -160,11 +174,13 @@ from jibsa.providers.daangn.service.review.functions import (
     TOP_MAX,
     get_region_reviews,
 )
-from jibsa.providers.daangn.service.school.functions import (
-    SCHOOL_CANDIDATE_LIMIT,
+from jibsa.providers.daangn.service.school.preschool import (
     get_preschool,
-    get_school,
     list_preschools,
+)
+from jibsa.providers.daangn.service.school.school import (
+    SCHOOL_CANDIDATE_LIMIT,
+    get_school,
     search_school_candidates,
 )
 from jibsa.providers.daangn.service.search.functions import (

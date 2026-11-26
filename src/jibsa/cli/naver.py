@@ -60,19 +60,19 @@ from jibsa.providers.naver.service.common.functions import (
 )
 from jibsa.providers.naver.service.common.models import NaverTradeConditions
 from jibsa.providers.naver.service.complex.functions import get_complex
-from jibsa.providers.naver.service.listing.functions import (
-    get_listing,
-    list_complex_articles,
-)
+from jibsa.providers.naver.service.listing.complex import list_complex_articles
+from jibsa.providers.naver.service.listing.detail import get_listing
 from jibsa.providers.naver.service.market_price.functions import (
     get_market_price_history,
 )
 from jibsa.providers.naver.service.real_price.functions import get_real_prices
-from jibsa.providers.naver.service.redevelopment.functions import (
-    REDEVELOPMENT_SORT_TYPE_BY_NAME,
-    get_redevelopment,
-    list_redevelopment_areas,
+from jibsa.providers.naver.service.redevelopment.detail import get_redevelopment
+from jibsa.providers.naver.service.redevelopment.listings import (
     list_redevelopment_articles,
+)
+from jibsa.providers.naver.service.redevelopment.search import (
+    REDEVELOPMENT_SORT_TYPE_BY_NAME,
+    list_redevelopment_areas,
 )
 from jibsa.providers.naver.service.region.functions import (
     WIDE_REGION_NOTE_MARK,
@@ -91,10 +91,13 @@ from jibsa.providers.naver.service.school.functions import (
     get_school,
     list_school_complexes,
 )
-from jibsa.providers.naver.service.search.functions import (
+from jibsa.providers.naver.service.search.complexes import (
     AREA_COMPLEX_CODES_BY_TYPE,
-    BATHROOM_CODE_BY_NAME,
     COMPLEX_LIST_SORT_TYPE_BY_NAME,
+    list_area_complexes,
+)
+from jibsa.providers.naver.service.search.listings import (
+    BATHROOM_CODE_BY_NAME,
     DEFAULT_SEARCH_PROPERTY_TYPES,
     DIRECTION_FILTER_CODE_BY_NAME,
     FACILITY_CODE_BY_NAME,
@@ -103,7 +106,6 @@ from jibsa.providers.naver.service.search.functions import (
     MOVE_IN_CODE_BY_NAME,
     PARKING_CODE_BY_NAME,
     ROOM_COUNT_CODE_BY_NAME,
-    list_area_complexes,
     search_area,
 )
 from jibsa.providers.naver.service.search.models import NaverListingConditions
