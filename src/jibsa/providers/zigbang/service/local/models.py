@@ -31,6 +31,10 @@ LOCAL_DONG_DESCRIPTION: str = (
     '구 단위인데 직방이 주지 않으면 null'
 )
 
+LocalRankingPeriod = Literal['이번주', '지난주', '이번달', '지난달', '올해', '작년']
+
+LocalTradePeriod = Literal['오늘', '어제', '7일', '15일', '30일']
+
 
 class ZigbangLocalRegion(BaseModel):
     """지역 화면 명령 결과의 머리: 조회한 동·구."""
@@ -345,9 +349,6 @@ class ZigbangRegionInfoResult(ZigbangLocalModel, Result):
     ] = None
 
 
-LocalRankingPeriod = Literal['이번주', '지난주', '이번달', '지난달', '올해', '작년']
-
-
 class ZigbangDanjiRank(ZigbangLocalModel):
     """단지 랭킹 한 줄. 정렬마다 오는 칸이 달라 해당하지 않는 칸은 키가 없다. 금액은 만원이다."""
 
@@ -475,9 +476,6 @@ class ZigbangRegionRankingResult(ZigbangLocalModel, Result):
         list[ZigbangDanjiRank],
         Field(description='단지 랭킹 (직방 순위 순서 그대로)')
     ]
-
-
-LocalTradePeriod = Literal['오늘', '어제', '7일', '15일', '30일']
 
 
 class ZigbangRegionTrade(ZigbangLocalModel):

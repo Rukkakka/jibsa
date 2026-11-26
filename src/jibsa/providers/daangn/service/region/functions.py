@@ -116,6 +116,17 @@ AREA_LEVEL_LABELS: dict[AreaLevel, tuple[str, str]] = {'동': ('동', '역삼동
 
 SEJONG: str = '세종특별자치시'
 
+# 역·대학 주변 매물(`connection_edges`)은 요청당 100건까지 준다 (2026-10-10 실측: first=200 이어도 100건)
+STATION_PAGE_SIZE: int = 100
+
+
+# 대학 검색에서 한 번에 받는 후보 수 (요청 모델의 상한). 웹 대학 검색 쿼리는 다음 쪽을 받을 수 없어 이만큼만 본다 (`search_universities`)
+UNIVERSITY_CANDIDATES: int = 50
+
+
+# 위치(좌표)가 없는 후보를 이름 목록에 보일 때 붙이는 말. 그 후보는 `--station`·`--university` 로 고를 수 없다
+NO_LOCATION: str = ' (위치 정보 없음)'
+
 
 class SimilarAreasError(JibsaError):
     """이름이 같은 지역 없이 비슷한 지역만 있을 때 (`REGION_AMBIGUOUS`, `resolve_area`).
@@ -139,16 +150,6 @@ class LocationMissingError(RegionNotFoundError):
         self.args = (message,)
 
 
-def relay_id(region: DaangnRegionModel) -> str | None:
-    """지역의 Relay id (`id`). 매물 카드·지역 검색·좌표 → 지역이 같은 동에 같은 값을 줘, 이름이 같은 동을 가른다.
-
-    2026-11-12 실측: '중구 태평로2가' 카드의 id 는 지역 검색의 서울 중구 태평로2가와 같고 대구 중구 태평로2가와 다르다. 응답
-    모델에 필드가 없어 `extra='allow'` 로 남은 값을 읽는다.
-    """
-    value = (region.model_extra or {}).get('id')
-    return value if isinstance(value, str) and value else None
-
-
 class _AreaPage(NamedTuple):
     """지역 검색 한 쪽 (`_search_area_page`)."""
 
@@ -161,6 +162,16 @@ class _AreaPage(NamedTuple):
     stalled: bool
     # 위치·ID·시·도 이름이 없거나 단계를 몰라 `DaangnArea` 가 되지 못한 지역. 이름이 같은 지역 수에만 센다
     unusable: list[DaangnSearchRegionNodeModel]
+
+
+def relay_id(region: DaangnRegionModel) -> str | None:
+    """지역의 Relay id (`id`). 매물 카드·지역 검색·좌표 → 지역이 같은 동에 같은 값을 줘, 이름이 같은 동을 가른다.
+
+    2026-11-12 실측: '중구 태평로2가' 카드의 id 는 지역 검색의 서울 중구 태평로2가와 같고 대구 중구 태평로2가와 다르다. 응답
+    모델에 필드가 없어 `extra='allow'` 로 남은 값을 읽는다.
+    """
+    value = (region.model_extra or {}).get('id')
+    return value if isinstance(value, str) and value else None
 
 
 def _search_area_page(client: DaangnClient, query: str, after: str | None = None) -> _AreaPage:
@@ -765,18 +776,6 @@ def map_query_rejected_error(command: str, *, by: str) -> JibsaError:
         message=f'당근 지도 API 가 바뀌어(웹 쿼리 해시 거절) {by} 조회를 할 수 없습니다',
         hint=f"동 이름으로 검색하세요 (예: 'jibsa daangn {command} 역삼동'). {UPDATE_NEEDED}",
     )
-
-
-# 역·대학 주변 매물(`connection_edges`)은 요청당 100건까지 준다 (2026-10-10 실측: first=200 이어도 100건)
-STATION_PAGE_SIZE: int = 100
-
-
-# 대학 검색에서 한 번에 받는 후보 수 (요청 모델의 상한). 웹 대학 검색 쿼리는 다음 쪽을 받을 수 없어 이만큼만 본다 (`search_universities`)
-UNIVERSITY_CANDIDATES: int = 50
-
-
-# 위치(좌표)가 없는 후보를 이름 목록에 보일 때 붙이는 말. 그 후보는 `--station`·`--university` 로 고를 수 없다
-NO_LOCATION: str = ' (위치 정보 없음)'
 
 
 def _station_label(lines: list[str], name: str) -> str:

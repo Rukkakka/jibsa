@@ -17,6 +17,9 @@ DEFAULT_RADIUS_KM: float = 1.0
 KOREA_LAT_RANGE: tuple[float, float] = (33.0, 39.0)
 KOREA_LNG_RANGE: tuple[float, float] = (124.0, 132.0)
 
+# GeoJSON MultiPolygon 좌표: [폴리곤[링[[경도, 위도], ...], ...], ...]. 링 첫째는 바깥, 나머지는 구멍.
+MultiPolygon = list[list[list[list[float]]]]
+
 
 def encode_geohash(lat: float, lng: float, precision: int = 5) -> str:
     """Encode a coordinate as a geohash of `precision` characters.
@@ -175,10 +178,6 @@ def in_korea(lat: float, lng: float) -> bool:
         KOREA_LAT_RANGE[0] <= lat <= KOREA_LAT_RANGE[1]
         and KOREA_LNG_RANGE[0] <= lng <= KOREA_LNG_RANGE[1]
     )
-
-
-# GeoJSON MultiPolygon 좌표: [폴리곤[링[[경도, 위도], ...], ...], ...]. 링 첫째는 바깥, 나머지는 구멍.
-MultiPolygon = list[list[list[list[float]]]]
 
 
 def _in_ring(lat: float, lng: float, ring: list[list[float]]) -> bool:

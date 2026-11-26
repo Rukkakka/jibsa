@@ -27,6 +27,10 @@ from typing import (
 )
 
 
+# 상세에 싣는 '임대인의 다른 방' 수. 웹은 모두 받아 가로 카드로 보여 주지만 jibsa 는 앞쪽만 내고 전체 수를 따로 알린다
+STAY_HOST_OTHER_LIMIT: int = 10
+
+
 class ZigbangStayListing(Listing):
     """직방 단기임대 서비스 매물. 요금이 주 단위라 월세·월 관리비 대신 주당 금액을 준다."""
 
@@ -54,10 +58,6 @@ class ZigbangStayListing(Listing):
     def not_applicable_fields(self) -> frozenset[str]:
         # 요금이 주 단위라 월세·월 관리비가 해당 없다
         return super().not_applicable_fields() | {'rent_manwon', 'manage_cost_manwon'}
-
-
-# 상세에 싣는 '임대인의 다른 방' 수. 웹은 모두 받아 가로 카드로 보여 주지만 jibsa 는 앞쪽만 내고 전체 수를 따로 알린다
-STAY_HOST_OTHER_LIMIT: int = 10
 
 
 class ZigbangStayRefundRule(BaseModel):

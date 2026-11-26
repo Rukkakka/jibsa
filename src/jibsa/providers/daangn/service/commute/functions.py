@@ -86,6 +86,49 @@ COMMUTE_SERVER_MAX_MINUTES: int = 60
 COMMUTE_MAX_WALK_TO_STATION: int = 60
 
 
+class _Station(NamedTuple):
+    """찾아볼 역 하나 (`_reachable_stations`): 이름, 회사 역까지 지하철 시간, 환승 횟수, 경로."""
+
+    name: str
+    minutes: int
+    transfers: int | None
+    # 출근 방향 구간. 모르면 None (`_route`)
+    route: list[DaangnCommuteLeg] | None
+
+
+class _Reachable(NamedTuple):
+    """회사 역에서 지하철 시간 상한 안에 갈 수 있고 조건에 맞는 매물이 있는 역 (`_reachable_stations`)."""
+
+    stations: list[_Station]
+    notes: list[str]
+    # 지하철 시간을 모르는 역 수 (서버가 준 역 중)
+    unknown_time_count: int
+    # 시간 상한과 상관없이 서버가 시간을 알려 준 역(조건에 맞는 매물이 있는 역)이 있었는지. 시간을 모르는 역은 상한을 늘려도 들어오지 않아 세지 않는다
+    offered: bool
+
+
+class _StationArticlesUnknown(Exception):
+    """역 하나의 첫 쪽에 매물 목록(edges)이 없다 (`_station_articles`). 빈 목록이 아니라 모름이라 그 역만 알리고 다음 역으로 간다."""
+
+
+class _StationArticles(NamedTuple):
+    """역마다 받은 매물 (`_station_articles`). 역 안에서는 중복을 제거하고, 역 사이에서는 같은 매물을 각각 유지한다."""
+
+    articles_by_id: dict[str, DaangnArticleModel]
+    # 역마다 받은 매물 ID (서버 순서)
+    ids_by_station: dict[str, list[str]]
+    # 역마다 예산에 센 수 (빼고 읽은 빈 edge 포함)와 그중 빈 edge 수
+    inspected_by_station: dict[str, int]
+    dropped_by_station: dict[str, int]
+    has_more_by_station: dict[str, bool]
+    # 다음이 있다면서 이어 받을 쪽을 주지 않아 멈춘 역 (`connection_edges` 의 stopped)
+    stopped_stations: set[str]
+    # 역 주변 매물 목록에서 빈 edge 를 빼고 읽은 안내 (역 이름을 붙였다)
+    notes: list[str]
+    # 당근이 첫 쪽의 매물 목록(edges)을 주지 않아 매물을 모르는 역
+    unknown_stations: set[str]
+
+
 def search_commute(
     client: DaangnClient,
     lat: float,
@@ -216,16 +259,6 @@ def search_commute(
     )
 
 
-class _Station(NamedTuple):
-    """찾아볼 역 하나 (`_reachable_stations`): 이름, 회사 역까지 지하철 시간, 환승 횟수, 경로."""
-
-    name: str
-    minutes: int
-    transfers: int | None
-    # 출근 방향 구간. 모르면 None (`_route`)
-    route: list[DaangnCommuteLeg] | None
-
-
 # 리뷰 오탐 (2026-11-19, 근거 고침 2026-11-20): 노선 꼬리가 붙은 역(양평역(경의중앙선))의 이름 비교가 어긋나도 틀린 경로는 나가지
 # 않는다. 꼬리가 어긋나면 `stops[-1][0] != station_name(boarding)` 이라 `_route` 가 None(모름)을 준다 (실측: 왕십리역 60분 447곳
 # 중 꼬리 역 2곳은 waypoint 이름에도 꼬리가 같이 와 route 가 채워졌다)
@@ -262,39 +295,6 @@ def _station_note(name: str, text: str) -> str:
         if text.startswith(tag):
             return f'{tag}{name}: {text.removeprefix(tag)}'
     return f'{name}: {text}'
-
-
-class _Reachable(NamedTuple):
-    """회사 역에서 지하철 시간 상한 안에 갈 수 있고 조건에 맞는 매물이 있는 역 (`_reachable_stations`)."""
-
-    stations: list[_Station]
-    notes: list[str]
-    # 지하철 시간을 모르는 역 수 (서버가 준 역 중)
-    unknown_time_count: int
-    # 시간 상한과 상관없이 서버가 시간을 알려 준 역(조건에 맞는 매물이 있는 역)이 있었는지. 시간을 모르는 역은 상한을 늘려도 들어오지 않아 세지 않는다
-    offered: bool
-
-
-class _StationArticlesUnknown(Exception):
-    """역 하나의 첫 쪽에 매물 목록(edges)이 없다 (`_station_articles`). 빈 목록이 아니라 모름이라 그 역만 알리고 다음 역으로 간다."""
-
-
-class _StationArticles(NamedTuple):
-    """역마다 받은 매물 (`_station_articles`). 역 안에서는 중복을 제거하고, 역 사이에서는 같은 매물을 각각 유지한다."""
-
-    articles_by_id: dict[str, DaangnArticleModel]
-    # 역마다 받은 매물 ID (서버 순서)
-    ids_by_station: dict[str, list[str]]
-    # 역마다 예산에 센 수 (빼고 읽은 빈 edge 포함)와 그중 빈 edge 수
-    inspected_by_station: dict[str, int]
-    dropped_by_station: dict[str, int]
-    has_more_by_station: dict[str, bool]
-    # 다음이 있다면서 이어 받을 쪽을 주지 않아 멈춘 역 (`connection_edges` 의 stopped)
-    stopped_stations: set[str]
-    # 역 주변 매물 목록에서 빈 edge 를 빼고 읽은 안내 (역 이름을 붙였다)
-    notes: list[str]
-    # 당근이 첫 쪽의 매물 목록(edges)을 주지 않아 매물을 모르는 역
-    unknown_stations: set[str]
 
 
 def _workplace_station(

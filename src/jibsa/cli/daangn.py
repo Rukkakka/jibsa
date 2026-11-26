@@ -206,7 +206,6 @@ app = typer.Typer(
 )
 
 search_app = typer.Typer(help='매물·지역·단지·통근 검색', no_args_is_help=True)
-app.add_typer(search_app, name='search')
 
 LatOption = Annotated[float | None, typer.Option(help='중심 위도 (지역 이름 대신)')]
 LngOption = Annotated[float | None, typer.Option(help='중심 경도 (지역 이름 대신)')]
@@ -422,6 +421,88 @@ COMPLEX_COMMANDS_HINT: str = (
 )
 COMPLEX_NAME_SEARCH_HINT: str = '단지 이름이면 jibsa daangn search locations <단지 이름> 으로 단지 ID 를 찾으세요'
 
+# 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run). 통근 검색도 매물 조건을 같이 받는다
+USAGE_HINTS: dict[str, UsageHints] = {
+    'jibsa daangn search listings': LISTING_HINTS,
+    'jibsa daangn search commute': COMMUTE_HINTS,
+}
+# 단지 ID 자리에 단지·지역 이름처럼 숫자가 아닌 값이나 preschools 의 예전 사용법을 줬을 때 단지 ID 를 찾는 법.
+# 다음에 할 일을 알리는 힌트라 '--help 로 사용법을 확인하세요' 를 붙이지 않는다 (UsageHints·--fields·--next 힌트와 같다)
+COMPLEX_ID_HINT: str = (
+    "단지 ID 는 'jibsa daangn search complexes <동>' 이나 'jibsa daangn search locations <단지 이름>' 으로 찾습니다"
+)
+# 개발 호재 명령을 뺀 뒤 재개발·재건축 구역을 보는 곳
+REDEVELOPMENT_HINT: str = (
+    "당근 웹이 개발 호재를 없애 이 명령을 뺐습니다. 재개발·재건축 구역은 'jibsa naver search redevelopment <지역>' 으로 "
+    "찾고 'jibsa naver redevelopment <구역 번호>' 로 봅니다"
+)
+# real-price --month 의 계약 연월 (YYYY-MM). 서버에는 YYYYMM 으로 보낸다
+MONTH_PATTERN: re.Pattern[str] = re.compile(r'\d{4}-(0[1-9]|1[0-2])')
+# 동·구를 받는 명령(지역 실거래·후기·단지 목록)의 지역 인자
+REGION_ARGUMENT_HELP: str = "동 이름(예: '역삼동') 또는 구 이름(예: '강남구', '수원시 장안구'). 같은 이름이 여러 곳이면 '강남구 신사동' 처럼 구·시·도를 붙인다"
+# 예전 문서(0.12.0 까지)대로 부른 사용법 오류에 바뀐 사용법을 알린다 (jibsa.cli.app.changed_usage_hint, #192). 없앤 명령은
+# 그룹 경로 뒤에 그 이름을 붙여 찾는다. preschools 는 뺀 옵션을 줬을 때만 알리고, 지역·역 이름(띄어 써도)은 단지 ID
+# 검사(`complex_id_value`)가 알린다
+CHANGED_USAGE: dict[str, ChangedUsage] = {
+    'jibsa daangn preschools': ChangedUsage(
+        f'이 명령은 지역·역 이름·반경 대신 단지 ID 하나만 받습니다 (예: jibsa daangn preschools 10697092). {COMPLEX_ID_HINT}',
+        removed_options=frozenset({'--lat', '--lng', '--radius', '--type', '-t', '--limit'}),
+    ),
+    'jibsa daangn price-trend': ChangedUsage(
+        "--years 를 없앴습니다. 당근 웹 시세 그래프 탭처럼 --period '1년'·'3년'·'전체' 로 주세요 (예: --period 3년)",
+        removed_options=frozenset({'--years'}),
+    ),
+    'jibsa daangn good-neighborhoods': ChangedUsage(
+        '--limit 을 없앴습니다. 당근 웹 좋은 동네 추천처럼 늘 5곳입니다. 다른 동은 --region 으로 지역을 바꿔 찾으세요',
+        removed_options=frozenset({'--limit'}),
+    ),
+    'jibsa daangn developments': ChangedUsage(REDEVELOPMENT_HINT),
+    'jibsa daangn development': ChangedUsage(REDEVELOPMENT_HINT),
+    **{
+        f'jibsa daangn {command}': ChangedUsage(CITY_REMOVED_HINT, removed_options=frozenset({'--city'}))
+        for command in ('search listings', 'region-reviews', 'search complexes')
+    },
+    # 동·구를 다 받지 않는 명령은 공용 안내의 예시('강남구 신사동'·'서울 중구')를 따르면 또 막힌다. 인기 급상승 단지는 동을 받지
+    # 않아 예전 사용법('역삼동 --city 강남구')의 --city 값인 구를 권한다 (2026-11-13 리뷰·실측: '강남구 신사동' 을 따르면 '동입니다')
+    'jibsa daangn trending-complexes': ChangedUsage(
+        '--city 를 없앴습니다. 이 명령은 동을 받지 않고 시·도·구 이름 하나를 받습니다. --city 에 주던 구 이름을 그대로 주세요 '
+        "(예: jibsa daangn trending-complexes 강남구, 같은 이름 구는 '서울 중구' 처럼 시·도를 붙입니다). 지역을 빼면 전국입니다",
+        removed_options=frozenset({'--city'}),
+    ),
+    'jibsa daangn popular-listings': ChangedUsage(
+        "--city 를 없앴습니다. 이 명령은 동 이름만 받습니다. 같은 이름 동은 '강남구 신사동' 처럼 동 이름 앞에 구·시·도를 붙여 주세요",
+        removed_options=frozenset({'--city'}),
+    ),
+    # 지역 실거래 정렬은 당근 웹처럼 서버 값 하나(매매 가격 순·전월세 최신 순)라 --sort 를 없앴다 (#215). 힌트는 명령마다
+    # 하나라 두 옵션을 함께 앞에 둔다 (--sort 만 줬는데 --city 안내부터 읽지 않게, 2026-11-12 리뷰)
+    'jibsa daangn region-real-price': ChangedUsage(
+        f'--city·--sort 를 없앴습니다. {SAME_NAME_REGION_HINT}. '
+        '정렬은 당근 웹처럼 매매는 가격 순(최근 공개일부터), 전세·월세는 최신 순으로 정해져 있습니다',
+        removed_options=frozenset({'--city', '--sort'}),
+    ),
+    # 학교는 같은 이름이 여러 곳이면 후보의 학교 코드로 고른다 (#215)
+    'jibsa daangn school': ChangedUsage(
+        '--city 를 없앴습니다. 같은 이름 학교가 여러 곳이면 에러의 candidates 에 나온 school_code 로 다시 부르세요 '
+        '(예: jibsa daangn school B100000749)',
+        removed_options=frozenset({'--city'}),
+    ),
+}
+# --trade 없이 가격만 준 매물 검색의 안내 (_listing_conditions)
+NO_TRADE_WITH_PRICE_NOTE: str = (
+    '--trade 없이 가격 조건만 주면 당근 웹처럼 거래 유형을 고르지 않아, 그 금액이 없는 다른 거래(전세·매매 등) 매물도 나옵니다. '
+    '한 거래 유형만 찾으려면 --trade 를 함께 주세요 (예: --trade 월세)'
+)
+# 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
+HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 를 주지 않거나 아파트·오피스텔을 넣을 때)')]
+HouseholdMaxOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 상한 (-t 를 주지 않거나 아파트·오피스텔을 넣을 때)')]
+ParkingMinOption = Annotated[float | None, typer.Option(min=0, help='세대당 주차대수 하한 (-t 를 주지 않거나 아파트·오피스텔을 넣을 때)')]
+
+# 지역 이름을 받는 매물·통근 검색이 지역을 못 찾았을 때 덧붙이는 다른 입력
+OTHER_PLACE_INPUTS: str = '역은 --station, 대학은 --university, 도로명 주소는 --address, 좌표는 --lat/--lng 로 찾습니다'
+
+
+app.add_typer(search_app, name='search')
+
 
 def _complex_guide(query: str, found: str) -> str:
     """지역 힌트 뒤에 덧붙이는 단지 안내 (`_complex_name_hint`). 이름에 `query` 가 든 단지(`found`)가 있으면 그 단지와 단지 명령을, 없으면 찾는 법을 준다.
@@ -523,83 +604,6 @@ def _manage_cost_filtered_note(how: str) -> str:
         '--with-manage-cost 로 당근이 월세+관리비 기준으로 걸렀습니다. 목록에는 관리비가 없어 manage_cost_manwon 이 '
         f'null 이어도 조건에는 맞습니다. 관리비 금액은 {how}',
     )
-
-
-# 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run). 통근 검색도 매물 조건을 같이 받는다
-USAGE_HINTS: dict[str, UsageHints] = {
-    'jibsa daangn search listings': LISTING_HINTS,
-    'jibsa daangn search commute': COMMUTE_HINTS,
-}
-# 단지 ID 자리에 단지·지역 이름처럼 숫자가 아닌 값이나 preschools 의 예전 사용법을 줬을 때 단지 ID 를 찾는 법.
-# 다음에 할 일을 알리는 힌트라 '--help 로 사용법을 확인하세요' 를 붙이지 않는다 (UsageHints·--fields·--next 힌트와 같다)
-COMPLEX_ID_HINT: str = (
-    "단지 ID 는 'jibsa daangn search complexes <동>' 이나 'jibsa daangn search locations <단지 이름>' 으로 찾습니다"
-)
-# 개발 호재 명령을 뺀 뒤 재개발·재건축 구역을 보는 곳
-REDEVELOPMENT_HINT: str = (
-    "당근 웹이 개발 호재를 없애 이 명령을 뺐습니다. 재개발·재건축 구역은 'jibsa naver search redevelopment <지역>' 으로 "
-    "찾고 'jibsa naver redevelopment <구역 번호>' 로 봅니다"
-)
-# real-price --month 의 계약 연월 (YYYY-MM). 서버에는 YYYYMM 으로 보낸다
-MONTH_PATTERN: re.Pattern[str] = re.compile(r'\d{4}-(0[1-9]|1[0-2])')
-# 동·구를 받는 명령(지역 실거래·후기·단지 목록)의 지역 인자
-REGION_ARGUMENT_HELP: str = "동 이름(예: '역삼동') 또는 구 이름(예: '강남구', '수원시 장안구'). 같은 이름이 여러 곳이면 '강남구 신사동' 처럼 구·시·도를 붙인다"
-# 예전 문서(0.12.0 까지)대로 부른 사용법 오류에 바뀐 사용법을 알린다 (jibsa.cli.app.changed_usage_hint, #192). 없앤 명령은
-# 그룹 경로 뒤에 그 이름을 붙여 찾는다. preschools 는 뺀 옵션을 줬을 때만 알리고, 지역·역 이름(띄어 써도)은 단지 ID
-# 검사(`complex_id_value`)가 알린다
-CHANGED_USAGE: dict[str, ChangedUsage] = {
-    'jibsa daangn preschools': ChangedUsage(
-        f'이 명령은 지역·역 이름·반경 대신 단지 ID 하나만 받습니다 (예: jibsa daangn preschools 10697092). {COMPLEX_ID_HINT}',
-        removed_options=frozenset({'--lat', '--lng', '--radius', '--type', '-t', '--limit'}),
-    ),
-    'jibsa daangn price-trend': ChangedUsage(
-        "--years 를 없앴습니다. 당근 웹 시세 그래프 탭처럼 --period '1년'·'3년'·'전체' 로 주세요 (예: --period 3년)",
-        removed_options=frozenset({'--years'}),
-    ),
-    'jibsa daangn good-neighborhoods': ChangedUsage(
-        '--limit 을 없앴습니다. 당근 웹 좋은 동네 추천처럼 늘 5곳입니다. 다른 동은 --region 으로 지역을 바꿔 찾으세요',
-        removed_options=frozenset({'--limit'}),
-    ),
-    'jibsa daangn developments': ChangedUsage(REDEVELOPMENT_HINT),
-    'jibsa daangn development': ChangedUsage(REDEVELOPMENT_HINT),
-    **{
-        f'jibsa daangn {command}': ChangedUsage(CITY_REMOVED_HINT, removed_options=frozenset({'--city'}))
-        for command in ('search listings', 'region-reviews', 'search complexes')
-    },
-    # 동·구를 다 받지 않는 명령은 공용 안내의 예시('강남구 신사동'·'서울 중구')를 따르면 또 막힌다. 인기 급상승 단지는 동을 받지
-    # 않아 예전 사용법('역삼동 --city 강남구')의 --city 값인 구를 권한다 (2026-11-13 리뷰·실측: '강남구 신사동' 을 따르면 '동입니다')
-    'jibsa daangn trending-complexes': ChangedUsage(
-        '--city 를 없앴습니다. 이 명령은 동을 받지 않고 시·도·구 이름 하나를 받습니다. --city 에 주던 구 이름을 그대로 주세요 '
-        "(예: jibsa daangn trending-complexes 강남구, 같은 이름 구는 '서울 중구' 처럼 시·도를 붙입니다). 지역을 빼면 전국입니다",
-        removed_options=frozenset({'--city'}),
-    ),
-    'jibsa daangn popular-listings': ChangedUsage(
-        "--city 를 없앴습니다. 이 명령은 동 이름만 받습니다. 같은 이름 동은 '강남구 신사동' 처럼 동 이름 앞에 구·시·도를 붙여 주세요",
-        removed_options=frozenset({'--city'}),
-    ),
-    # 지역 실거래 정렬은 당근 웹처럼 서버 값 하나(매매 가격 순·전월세 최신 순)라 --sort 를 없앴다 (#215). 힌트는 명령마다
-    # 하나라 두 옵션을 함께 앞에 둔다 (--sort 만 줬는데 --city 안내부터 읽지 않게, 2026-11-12 리뷰)
-    'jibsa daangn region-real-price': ChangedUsage(
-        f'--city·--sort 를 없앴습니다. {SAME_NAME_REGION_HINT}. '
-        '정렬은 당근 웹처럼 매매는 가격 순(최근 공개일부터), 전세·월세는 최신 순으로 정해져 있습니다',
-        removed_options=frozenset({'--city', '--sort'}),
-    ),
-    # 학교는 같은 이름이 여러 곳이면 후보의 학교 코드로 고른다 (#215)
-    'jibsa daangn school': ChangedUsage(
-        '--city 를 없앴습니다. 같은 이름 학교가 여러 곳이면 에러의 candidates 에 나온 school_code 로 다시 부르세요 '
-        '(예: jibsa daangn school B100000749)',
-        removed_options=frozenset({'--city'}),
-    ),
-}
-# --trade 없이 가격만 준 매물 검색의 안내 (_listing_conditions)
-NO_TRADE_WITH_PRICE_NOTE: str = (
-    '--trade 없이 가격 조건만 주면 당근 웹처럼 거래 유형을 고르지 않아, 그 금액이 없는 다른 거래(전세·매매 등) 매물도 나옵니다. '
-    '한 거래 유형만 찾으려면 --trade 를 함께 주세요 (예: --trade 월세)'
-)
-# 아파트 단지 조건. 단지 하나를 보는 --complex 와는 함께 쓸 수 없다
-HouseholdMinOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 하한 (-t 를 주지 않거나 아파트·오피스텔을 넣을 때)')]
-HouseholdMaxOption = Annotated[int | None, typer.Option(min=0, help='단지 세대수 상한 (-t 를 주지 않거나 아파트·오피스텔을 넣을 때)')]
-ParkingMinOption = Annotated[float | None, typer.Option(min=0, help='세대당 주차대수 하한 (-t 를 주지 않거나 아파트·오피스텔을 넣을 때)')]
 
 
 def complex_id_value(value: str) -> int:
@@ -923,10 +927,6 @@ def _require_one_target(
         raise typer.BadParameter(
             '지역 이름, --station, --university, --address, --lat/--lng 는 함께 줄 수 없습니다. 하나만 주세요', param_hint=param_hint,
         )
-
-
-# 지역 이름을 받는 매물·통근 검색이 지역을 못 찾았을 때 덧붙이는 다른 입력
-OTHER_PLACE_INPUTS: str = '역은 --station, 대학은 --university, 도로명 주소는 --address, 좌표는 --lat/--lng 로 찾습니다'
 
 
 @search_app.command('listings')

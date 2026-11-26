@@ -172,6 +172,8 @@ async 변형은 `Async variant of ...` 한 줄로 쓴다. 비공개 헬퍼는 �
 ## 7. 상수와 이름
 
 - 매직 넘버는 모듈 상단의 대문자 상수로 뺀다 (`ITEMS_LIST_BATCH_SIZE = 15`, `GEOHASH_PRECISION = 5`).
+- 모듈 안 순서는 docstring → import → 상수·타입 별칭·`TypeVar` → 클래스 → 함수다. 상수 값이 같은 모듈의 클래스·함수를 쓰면
+  (`METRIC_BY_LABEL` 이 지표 함수를 담는 표 등) 그 정의 바로 뒤에 둔다. 상수 바로 위 주석과 바로 아래 설명 문자열은 상수와 함께 둔다.
 - 코드값 → 한국어 라벨 매핑은 `<WHAT>_BY_<KEY>` / `<WHAT>_LABELS` dict 상수로 둔다
   (`ROOM_TYPE_BY_CODE`, `DIRECTION_LABELS`).
 - 비공개 헬퍼는 `_` 로 시작한다.

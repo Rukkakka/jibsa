@@ -144,43 +144,6 @@ app = typer.Typer(
 )
 
 search_app = typer.Typer(help='지역에서 매물 또는 단지를 찾는다', no_args_is_help=True)
-app.add_typer(search_app, name='search')
-
-
-def _complex_number(client: NaverClient, complex_: str, param_hint: str) -> tuple[int, bool | None, list[str]]:
-    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS.
-
-    Args:
-        param_hint: 단지를 받은 인자·옵션 이름 (번호가 0 일 때의 사용법 오류에 쓴다).
-    """
-    # 붙여 넣은 번호의 앞뒤 공백(' 8928')을 먼저 떼야 번호를 이름으로 찾지 않는다
-    complex_ = complex_.strip()
-    if NUMBER_PATTERN.fullmatch(complex_) is None:
-        return resolve_complex_number(client, complex_)
-    if int(complex_) < 1:
-        raise typer.BadParameter('단지 번호는 1 이상입니다', param_hint=param_hint)
-    return int(complex_), None, []
-
-
-def _redevelopment_number(client: NaverClient, area: str, param_hint: str) -> tuple[int, list[str]]:
-    """구역 번호면 그대로, 이름이면 네이버 재개발 구역 검색으로 번호를 찾는다 (안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS.
-
-    Args:
-        param_hint: 구역을 받은 인자·옵션 이름 (번호가 0 일 때의 사용법 오류에 쓴다).
-    """
-    # 붙여 넣은 번호의 앞뒤 공백(' 10017678')을 먼저 떼야 번호를 이름으로 찾지 않는다
-    area = area.strip()
-    if NUMBER_PATTERN.fullmatch(area) is None:
-        return resolve_redevelopment_number(client, area)
-    if int(area) < 1:
-        raise typer.BadParameter('재개발 구역 번호는 1 이상입니다', param_hint=param_hint)
-    return int(area), []
-
-
-def _split_dongs(values: list[str] | None) -> list[str]:
-    """`--dong 101 --dong 102동` 과 `--dong 101,102동` 을 모두 받는다 (이름 확인은 동 목록 조회 뒤)."""
-    return list(dict.fromkeys(part.strip() for value in values or [] for part in value.split(',') if part.strip()))
-
 
 # 직방(zigbang search)의 동 경계 검색과 같은 안내. 동과 시·군·구 경계 검색이 함께 쓴다
 WHOLE_BOUNDARY_NOTE: str = note('범위', '{name} 경계 안을 찾았습니다 (반경으로 찾으려면 --radius)')
@@ -259,6 +222,44 @@ LISTING_HINTS: UsageHints = UsageHints(
 )
 # 사용법 오류가 난 명령(command_path)으로 힌트 표를 찾는다 (jibsa.cli.app.run)
 USAGE_HINTS: dict[str, UsageHints] = {'jibsa naver search listings': LISTING_HINTS}
+
+
+app.add_typer(search_app, name='search')
+
+
+def _complex_number(client: NaverClient, complex_: str, param_hint: str) -> tuple[int, bool | None, list[str]]:
+    """단지 번호면 그대로, 이름이면 네이버 단지 검색으로 번호를 찾는다 (빌라 단지인지와 안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS.
+
+    Args:
+        param_hint: 단지를 받은 인자·옵션 이름 (번호가 0 일 때의 사용법 오류에 쓴다).
+    """
+    # 붙여 넣은 번호의 앞뒤 공백(' 8928')을 먼저 떼야 번호를 이름으로 찾지 않는다
+    complex_ = complex_.strip()
+    if NUMBER_PATTERN.fullmatch(complex_) is None:
+        return resolve_complex_number(client, complex_)
+    if int(complex_) < 1:
+        raise typer.BadParameter('단지 번호는 1 이상입니다', param_hint=param_hint)
+    return int(complex_), None, []
+
+
+def _redevelopment_number(client: NaverClient, area: str, param_hint: str) -> tuple[int, list[str]]:
+    """구역 번호면 그대로, 이름이면 네이버 재개발 구역 검색으로 번호를 찾는다 (안내를 함께 준다). 후보가 여럿이면 REGION_AMBIGUOUS.
+
+    Args:
+        param_hint: 구역을 받은 인자·옵션 이름 (번호가 0 일 때의 사용법 오류에 쓴다).
+    """
+    # 붙여 넣은 번호의 앞뒤 공백(' 10017678')을 먼저 떼야 번호를 이름으로 찾지 않는다
+    area = area.strip()
+    if NUMBER_PATTERN.fullmatch(area) is None:
+        return resolve_redevelopment_number(client, area)
+    if int(area) < 1:
+        raise typer.BadParameter('재개발 구역 번호는 1 이상입니다', param_hint=param_hint)
+    return int(area), []
+
+
+def _split_dongs(values: list[str] | None) -> list[str]:
+    """`--dong 101 --dong 102동` 과 `--dong 101,102동` 을 모두 받는다 (이름 확인은 동 목록 조회 뒤)."""
+    return list(dict.fromkeys(part.strip() for value in values or [] for part in value.split(',') if part.strip()))
 
 
 def _price_trade_types(

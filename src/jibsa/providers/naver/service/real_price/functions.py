@@ -70,12 +70,6 @@ from jibsa.providers.naver.service.real_price.models import (
 )
 
 
-def _renewal_by_right(is_renew_request_right: bool | None) -> bool | None:
-    """빌라 실거래의 갱신 여부. 갱신 계약 여부 대신 계약갱신요구권 사용 여부만 준다. 썼으면 갱신이지만,
-    안 썼어도 합의 갱신일 수 있어 그때는 모름(None)이다."""
-    return True if is_renew_request_right else None
-
-
 # 실거래가 한 페이지 크기. 예전 엔드포인트(complex/pyeong/realPrice)와 같은 10건으로 둬 --pages 의 뜻을 유지한다
 REAL_PRICE_PAGE_SIZE: int = 10
 
@@ -122,6 +116,12 @@ NEARBY_TRADES_LIMIT_NOTE: str = note(
     f'네이버는 범위 안 거래를 {AROUND_TRADES_LIMIT}건까지만 줍니다 (고르는 기준은 확인하지 못했습니다). '
     '범위(--around-km)를 바꾸면 보이는 거래가 달라질 수 있습니다',
 )
+
+
+def _renewal_by_right(is_renew_request_right: bool | None) -> bool | None:
+    """빌라 실거래의 갱신 여부. 갱신 계약 여부 대신 계약갱신요구권 사용 여부만 준다. 썼으면 갱신이지만,
+    안 썼어도 합의 갱신일 수 있어 그때는 모름(None)이다."""
+    return True if is_renew_request_right else None
 
 
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:

@@ -60,6 +60,16 @@ DONG_SCOPE_HINT: str = (
     '하나를 주세요'
 )
 
+NATIONAL_NAMES: frozenset[str] = frozenset({'전국', '전체', '대한민국'})
+
+
+class DabangDong(NamedTuple):
+    """동 하나와 그 동 번호. 동 하나를 받는 명령(neighborhood·hot-places·popular-listings·search schools)에 넘긴다."""
+
+    place: DabangPlace
+    # 다방 동 번호 (동네정보 요청의 regionGid)
+    gid: int
+
 
 def search_locations(
     client: DabangClient, query: str, columns: list[DabangLocColumn] | None = None,
@@ -291,14 +301,6 @@ def resolve_places(
     raise RegionNotFoundError(text, hint=legal_dong_hint(text) or REGION_HINT)
 
 
-class DabangDong(NamedTuple):
-    """동 하나와 그 동 번호. 동 하나를 받는 명령(neighborhood·hot-places·popular-listings·search schools)에 넘긴다."""
-
-    place: DabangPlace
-    # 다방 동 번호 (동네정보 요청의 regionGid)
-    gid: int
-
-
 def resolve_dong(client: DabangClient, query: str, *, subject: str, elsewhere: str | None) -> DabangDong:
     """동 이름을 동 하나로 찾는다 (위치 찾기 1회). 동네정보·인기 매물·핫플레이스·동 안 학교는 동 하나를 받는다.
     '○가' 로 나뉜 동(성수동)은 위치 찾기(`resolve_places`)가 하나를 고르게 한다.
@@ -340,9 +342,6 @@ def dong_bbox(client: DabangClient, place: DabangPlace) -> DabangBboxModel:
     lats = [point[1] for point in points]
     lngs = [point[0] for point in points]
     return bbox_of(min(lats), max(lats), min(lngs), max(lngs))
-
-
-NATIONAL_NAMES: frozenset[str] = frozenset({'전국', '전체', '대한민국'})
 
 
 def state_name(text: str) -> str | None:

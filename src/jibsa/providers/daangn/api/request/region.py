@@ -12,6 +12,11 @@ from typing import (
 )
 
 
+# 대학 검색의 학교 종류. 웹 검색창은 셋을 모두 보낸다 (MapShell 의 대학 칸)
+DaangnSchoolPoiType = Literal['UNIVERSITY', 'UNIVERSITY_ETC', 'GRADUATE']
+SCHOOL_POI_TYPES: tuple[DaangnSchoolPoiType, ...] = ('UNIVERSITY', 'UNIVERSITY_ETC', 'GRADUATE')
+
+
 class DaangnGetRegionByCoordinateRequestPayloadModel(RequestModel):
     """GraphQL `getRegionByCoordinate` 쿼리 변수 (웹의 `regionByCoordinateQuery`)."""
 
@@ -112,11 +117,6 @@ class DaangnUnitByAddressRequestPayloadModel(RequestModel):
         DaangnUnitByAddressInputModel,
         Field(description='주소 검색 후보')
     ]
-
-
-# 대학 검색의 학교 종류. 웹 검색창은 셋을 모두 보낸다 (MapShell 의 대학 칸)
-DaangnSchoolPoiType = Literal['UNIVERSITY', 'UNIVERSITY_ETC', 'GRADUATE']
-SCHOOL_POI_TYPES: tuple[DaangnSchoolPoiType, ...] = ('UNIVERSITY', 'UNIVERSITY_ETC', 'GRADUATE')
 
 
 class DaangnSchoolPoiSearchInputModel(RequestModel):

@@ -38,15 +38,6 @@ INDEXED_ARRAY_KEYS: tuple[str, ...] = (
 )
 
 
-def _index_arrays(data: dict[str, Any]) -> dict[str, Any]:
-    """배열 값을 `key[0]=a&key[1]=b` 모양의 쿼리 키로 펼친다. 빈 배열은 키째 뺀다."""
-    for key in INDEXED_ARRAY_KEYS:
-        values = data.pop(key, None) or []
-        for index, value in enumerate(values):
-            data[f'{key}[{index}]'] = value
-    return data
-
-
 class ZigbangItemsFiltersRequestParameterModel(RequestModel):
     """원룸·오피스텔·빌라 목록(지도 칸·역 반경·오피스텔 건물)이 공유하는 조건.
 
@@ -214,3 +205,12 @@ class ZigbangDanjisRequestParameterModel(RequestModel):
         int,
         Field(gt=0, exclude=True, description='단지 ID. 경로에 들어가며 쿼리로는 보내지 않는다')
     ]
+
+
+def _index_arrays(data: dict[str, Any]) -> dict[str, Any]:
+    """배열 값을 `key[0]=a&key[1]=b` 모양의 쿼리 키로 펼친다. 빈 배열은 키째 뺀다."""
+    for key in INDEXED_ARRAY_KEYS:
+        values = data.pop(key, None) or []
+        for index, value in enumerate(values):
+            data[f'{key}[{index}]'] = value
+    return data

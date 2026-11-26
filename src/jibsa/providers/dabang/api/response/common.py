@@ -22,19 +22,6 @@ from typing import (
 T = TypeVar('T')
 
 
-def _round_meters(value: Any) -> Any:
-    """거리는 정수(m)로 온다 (2026-11-14 단지 38곳 학교, 어린이집 329곳·유치원 89곳 모두). 소수로 와도 단지 정보 전체가 파싱
-    에러로 끝나지 않게 반올림해 받는다.
-
-    웹이 역·반려동물·카셰어링 거리를 그리는 함수 `x`(distance-km-m 청크)는 `e>=1e3 ? (e/1e3).toFixed(2)+'km' : e+'m'` 로 반올림
-    없이 서버 값을 쓰고, 다방이 이 셋을 JSON 정수로 줘서(2026-11-20 확인) 이 검증기는 정수에는 아무것도 바꾸지 않는다.
-    """
-    return round(value) if isinstance(value, float) else value
-
-
-Meters = Annotated[int | None, BeforeValidator(_round_meters)]
-
-
 class DabangBaseResponseModel(ResponseModel):
     """다방 응답 모델의 기반. 목록 칸의 null 은 키가 없는 것과 같게, 객체 목록 안의 null 원소는 빼고 `null_items` 로 센다 (`validate_dropping_nulls`)."""
 
@@ -381,6 +368,28 @@ class DabangAreaAveragePriceModel(DabangBaseResponseModel):
     ] = None
 
 
+class DabangComplexRegionModel(DabangBaseResponseModel):
+    """단지가 있는 동."""
+
+    full_name: Annotated[
+        str | None,
+        Field(description='전체 이름', alias='fullName')
+    ] = None
+
+
+def _round_meters(value: Any) -> Any:
+    """거리는 정수(m)로 온다 (2026-11-14 단지 38곳 학교, 어린이집 329곳·유치원 89곳 모두). 소수로 와도 단지 정보 전체가 파싱
+    에러로 끝나지 않게 반올림해 받는다.
+
+    웹이 역·반려동물·카셰어링 거리를 그리는 함수 `x`(distance-km-m 청크)는 `e>=1e3 ? (e/1e3).toFixed(2)+'km' : e+'m'` 로 반올림
+    없이 서버 값을 쓰고, 다방이 이 셋을 JSON 정수로 줘서(2026-11-20 확인) 이 검증기는 정수에는 아무것도 바꾸지 않는다.
+    """
+    return round(value) if isinstance(value, float) else value
+
+
+Meters = Annotated[int | None, BeforeValidator(_round_meters)]
+
+
 class DabangComplexSchoolModel(DabangBaseResponseModel):
     """단지 근처 학교 하나. 초등학교의 `hakgudoName` 은 통학구역(배정 학구), 중·고등학교는 학교군 이름이다.
 
@@ -489,15 +498,6 @@ class DabangComplexEducationModel(DabangBaseResponseModel):
         list[DabangComplexSchoolModel] | None,
         Field(description='고등학교', alias='highSchool')
     ] = []
-
-
-class DabangComplexRegionModel(DabangBaseResponseModel):
-    """단지가 있는 동."""
-
-    full_name: Annotated[
-        str | None,
-        Field(description='전체 이름', alias='fullName')
-    ] = None
 
 
 class DabangComplexResultModel(DabangBaseResponseModel):

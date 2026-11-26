@@ -223,6 +223,83 @@ MAP_RESOLUTION_MIN: int = 5
 # articlesCount 는 이 수에서 잘린다 (웹은 '999+' 로 보여 준다)
 COUNT_CAP: int = 1000
 
+T = TypeVar('T')
+
+# 덤 조회(매물 수·시·도·좌표의 동·단지 후보·후기 수·검색창 후보)가 잡는 실패.
+# 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`: HTTPError, 응답 형식 변경의 ValueError)에 JibsaError(해시 거절·GraphQL
+# 에러·요청 제한)를 더한다. 요청 제한을 바로 올릴 곳은 이보다 먼저 잡는다.
+# 전에는 ValueError 를 잡지 않아 덤 조회 하나가 차단 페이지를 받으면 모아 둔 매물(최대 120건)까지 잃고 PARSE_ERROR 로
+# 끝났다. 2026-10-11 사용자 결정으로 결과는 돌려주고 `notes` 로 알린다 (주된 조회는 그대로 PARSE_ERROR).
+# 걸리는 다른 경우도 결과는 맞다 (2026-10-11 실측):
+# - 상태 폴더 오류(StateDirError, JibsaError)도 잡히지만 다음 요청이 같은 이유로 실패해 결국 그 에러와
+#   '다른 소스로 다시 시도하지 마세요' 힌트로 끝난다
+OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, JibsaError)
+
+_EdgeT_co = TypeVar('_EdgeT_co', covariant=True)
+
+
+class FeedQueryRejectedError(JibsaError):
+    """GraphQL 이 persisted query 해시를 거절했을 때. 웹이 쿼리를 바꿨다는 신호다.
+
+    대체 경로나 따로 안내할 말이 있는 곳(단지 후보, 지도 범위·출퇴근 검색 등)은 이 예외를 먼저 잡아 처리하고,
+    따로 처리하지 않은 명령은 `JibsaError` 라 `UPSTREAM_ERROR` 로 나간다.
+
+    Args:
+        codes: GraphQL 이 준 에러 코드 (예: PERSISTED_QUERY_NOT_IN_LIST).
+        what: 에러 메시지에 쓸 조회 이름 (예: '매물 피드'). Defaults to '조회'.
+    """
+
+    def __init__(self, codes: str, what: str = '조회') -> None:
+        super().__init__(
+            code='UPSTREAM_ERROR',
+            message=f'당근 {what} API 가 바뀌어(웹 쿼리 해시 거절) 조회할 수 없습니다 ({codes})',
+            hint=f'{UPDATE_NEEDED}. 그동안 같은 조회가 다른 소스(직방·네이버·다방)에 있으면 그 소스를 쓰세요',
+        )
+
+
+class DaangnListingNode(Protocol):
+    """매물 목록 edge 의 node (`connection_edges`). 매물은 `article` 에 든다."""
+
+    @property
+    def article(self) -> object | None: ...
+
+
+class DaangnListingEdge(Protocol):
+    """매물 목록의 edge (`connection_edges`). node 가 null 이거나 node 의 `article` 이 null 인 edge 는 받은 항목으로 세지 않는다 (`next_cursor`)."""
+
+    @property
+    def node(self) -> DaangnListingNode | None: ...
+
+
+EdgeT = TypeVar('EdgeT', bound=DaangnListingEdge)
+
+
+class DaangnListingConnection(Protocol[_EdgeT_co]):
+    """쪽마다 `edges`·`pageInfo` 를 주는 매물 목록 (`connection_edges`). 동·지도 범위 피드와 역·대학 주변 매물이 이 꼴이다."""
+
+    @property
+    def edges(self) -> Sequence[_EdgeT_co] | None: ...
+
+    @property
+    def page_info(self) -> DaangnPageInfoModel | None: ...
+
+    def null_items(self, *names: str) -> int: ...
+
+
+class ConnectionEdges(NamedTuple, Generic[EdgeT]):
+    """`connection_edges` 가 이어 받은 매물 목록."""
+
+    edges: list[EdgeT]
+    # 서버에 더 있는지. 멈췄을 때(`stopped`)도 서버가 더 있다고 했으니 True 다
+    has_more: bool
+    # 다음 쪽 커서. 더 없거나 멈췄으면 None 이라 이어 받기(`--next`)를 내지 않는다
+    cursor: str | None
+    # 다음이 있다면서 빈 쪽·커서 없음·같은 커서 되풀이를 줘 멈췄는지 (`next_cursor`). 호출부가 `cursor_stopped_note` 로 알린다
+    stopped: bool
+    # 빼고 읽은 빈 edge(null) 수. 예산(`limit`)에는 받은 자리로 세었으므로, 받은 수를 예산과 견주는 호출부(출퇴근 역별 매물)는
+    # `len(edges)` 에 더한다
+    dropped: int
+
 
 def map_resolution(zoom: float) -> int:
     """웹 데스크톱 지도가 줌마다 목록·매물 수 요청에 보내는 `resolution` (H3 해상도)."""
@@ -250,25 +327,6 @@ def map_view_bounds(lat: float, lng: float, zoom: int) -> tuple[DaangnBoundsLoca
         sw_coordinate=DaangnCoordinateInputModel(lat=south, lon=west),
     )
     return bounds, round(haversine_km(lat, west, lat, east), 1), round(haversine_km(north, lng, south, lng), 1)
-
-
-class FeedQueryRejectedError(JibsaError):
-    """GraphQL 이 persisted query 해시를 거절했을 때. 웹이 쿼리를 바꿨다는 신호다.
-
-    대체 경로나 따로 안내할 말이 있는 곳(단지 후보, 지도 범위·출퇴근 검색 등)은 이 예외를 먼저 잡아 처리하고,
-    따로 처리하지 않은 명령은 `JibsaError` 라 `UPSTREAM_ERROR` 로 나간다.
-
-    Args:
-        codes: GraphQL 이 준 에러 코드 (예: PERSISTED_QUERY_NOT_IN_LIST).
-        what: 에러 메시지에 쓸 조회 이름 (예: '매물 피드'). Defaults to '조회'.
-    """
-
-    def __init__(self, codes: str, what: str = '조회') -> None:
-        super().__init__(
-            code='UPSTREAM_ERROR',
-            message=f'당근 {what} API 가 바뀌어(웹 쿼리 해시 거절) 조회할 수 없습니다 ({codes})',
-            hint=f'{UPDATE_NEEDED}. 그동안 같은 조회가 다른 소스(직방·네이버·다방)에 있으면 그 소스를 쓰세요',
-        )
 
 
 def is_available(article: DaangnArticleModel) -> bool:
@@ -470,9 +528,6 @@ def web_minutes(walk: float) -> int:
     return max(1, js_round(walk))
 
 
-T = TypeVar('T')
-
-
 def unwrap_graphql(response: DaangnGraphQLResponseModel, value: T | None, what: str, *, conditions: bool) -> T:
     """GraphQL 응답에서 결과(`value`, 응답의 `data` 에서 꺼낸 값)를 꺼낸다.
 
@@ -500,17 +555,6 @@ def unwrap_graphql(response: DaangnGraphQLResponseModel, value: T | None, what: 
             hint='조건을 줄여 다시 시도하거나, 잠시 뒤 다시 시도하세요' if conditions else '잠시 뒤 다시 시도하세요',
         )
     return value
-
-
-# 덤 조회(매물 수·시·도·좌표의 동·단지 후보·후기 수·검색창 후보)가 잡는 실패.
-# 세 소스 공통 범위(`OPTIONAL_LOOKUP_BASE_ERRORS`: HTTPError, 응답 형식 변경의 ValueError)에 JibsaError(해시 거절·GraphQL
-# 에러·요청 제한)를 더한다. 요청 제한을 바로 올릴 곳은 이보다 먼저 잡는다.
-# 전에는 ValueError 를 잡지 않아 덤 조회 하나가 차단 페이지를 받으면 모아 둔 매물(최대 120건)까지 잃고 PARSE_ERROR 로
-# 끝났다. 2026-10-11 사용자 결정으로 결과는 돌려주고 `notes` 로 알린다 (주된 조회는 그대로 PARSE_ERROR).
-# 걸리는 다른 경우도 결과는 맞다 (2026-10-11 실측):
-# - 상태 폴더 오류(StateDirError, JibsaError)도 잡히지만 다음 요청이 같은 이유로 실패해 결국 그 에러와
-#   '다른 소스로 다시 시도하지 마세요' 힌트로 끝난다
-OPTIONAL_LOOKUP_ERRORS: tuple[type[Exception], ...] = (*OPTIONAL_LOOKUP_BASE_ERRORS, JibsaError)
 
 
 def partial_failure_note(exc: Exception, what: str, missing: str) -> str:
@@ -632,53 +676,6 @@ def cursor_stopped_note(subject: str, received: str) -> str:
         f'당근이 {subject} 다음 페이지가 있다고 하면서 이어 받을 페이지를 주지 않아 {received}에서 멈췄습니다. '
         f'API 가 바뀌었을 수 있어 {UPDATE_MAYBE_NEEDED}'
     )
-
-
-class DaangnListingNode(Protocol):
-    """매물 목록 edge 의 node (`connection_edges`). 매물은 `article` 에 든다."""
-
-    @property
-    def article(self) -> object | None: ...
-
-
-class DaangnListingEdge(Protocol):
-    """매물 목록의 edge (`connection_edges`). node 가 null 이거나 node 의 `article` 이 null 인 edge 는 받은 항목으로 세지 않는다 (`next_cursor`)."""
-
-    @property
-    def node(self) -> DaangnListingNode | None: ...
-
-
-_EdgeT_co = TypeVar('_EdgeT_co', covariant=True)
-
-
-EdgeT = TypeVar('EdgeT', bound=DaangnListingEdge)
-
-
-class DaangnListingConnection(Protocol[_EdgeT_co]):
-    """쪽마다 `edges`·`pageInfo` 를 주는 매물 목록 (`connection_edges`). 동·지도 범위 피드와 역·대학 주변 매물이 이 꼴이다."""
-
-    @property
-    def edges(self) -> Sequence[_EdgeT_co] | None: ...
-
-    @property
-    def page_info(self) -> DaangnPageInfoModel | None: ...
-
-    def null_items(self, *names: str) -> int: ...
-
-
-class ConnectionEdges(NamedTuple, Generic[EdgeT]):
-    """`connection_edges` 가 이어 받은 매물 목록."""
-
-    edges: list[EdgeT]
-    # 서버에 더 있는지. 멈췄을 때(`stopped`)도 서버가 더 있다고 했으니 True 다
-    has_more: bool
-    # 다음 쪽 커서. 더 없거나 멈췄으면 None 이라 이어 받기(`--next`)를 내지 않는다
-    cursor: str | None
-    # 다음이 있다면서 빈 쪽·커서 없음·같은 커서 되풀이를 줘 멈췄는지 (`next_cursor`). 호출부가 `cursor_stopped_note` 로 알린다
-    stopped: bool
-    # 빼고 읽은 빈 edge(null) 수. 예산(`limit`)에는 받은 자리로 세었으므로, 받은 수를 예산과 견주는 호출부(출퇴근 역별 매물)는
-    # `len(edges)` 에 더한다
-    dropped: int
 
 
 def connection_edges(

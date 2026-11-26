@@ -38,34 +38,9 @@ DaangnBuildingApprovalDate = Literal[
 DaangnDealType = Literal['DIRECT', 'BROKER']
 DaangnOption = Literal['PARKING', 'PET', 'MORTGAGE', 'ELEVATOR', 'ROOFTOP', 'LOFT']
 
-
-def _validate_range(low: float | None, high: float | None, label: str) -> None:
-    if any(value is not None and not isfinite(value) for value in (low, high)):
-        raise ValueError(f"{label}{particle(label, '은/는')} 유한한 숫자여야 합니다")
-    if low is not None and high is not None and low > high:
-        raise ValueError(f'{label} 하한은 상한보다 클 수 없습니다')
-
-
-def _validate_area_household(
-    model: 'DaangnPropertyFilterModel | DaangnComplexFilterModel',
-) -> None:
-    """매물·단지 조건에 같이 있는 면적·세대수·주차 범위를 검사하고, 면적 조건이 있으면 단위를 채운다."""
-    _validate_range(model.min_area, model.max_area, '면적')
-    _validate_range(model.min_household_count, model.max_household_count, '세대수')
-    _validate_range(model.min_parking_per_household, None, '세대당 주차 대수')
-    if model.min_area is not None or model.max_area is not None:
-        model.area_unit = 'SQUARE_METER'
-
-
-def _area_text(value: float | None) -> str | None:
-    # 면적은 문자열로 보내야 한다. 숫자로 보내면 "알 수 없는 오류" 가 난다. 웹과 같은 꼴이다: 웹은 면적 필터 상태를
-    # `toSquareMeter(..).toFixed(2)` 글자로 만들고(PriceFiltersSection 청크), 매물 필터와 단지 필터(complexFilter 청크 `p` 의
-    # `minArea:e.minArea`)가 같은 글자를 그대로 보낸다. 그래서 소수 둘째 자리 고정이다 (84.95 → '84.95', 84.9 → '84.90',
-    # 1000000 → '1000000.00'). 예전 `:g` 는 유효숫자 6자리라 1만㎡ 이상이면 소수 첫째 자리 이하가 반올림됐다 (12345.67 → '12345.7',
-    # 123456.7 → '123457'). 같은 청크의 `f`(숫자 Number, 한쪽이 없으면 0 / 2^53-1)는 단지 최근 실거래의 전용면적 범위라
-    # `DaangnExclusiveUseAreaModel` 이 숫자로 보낸다 (2026-10-18 리뷰 오탐, 근거 고침 2026-11-20)
-    # `.2f` 가 아닌 이유: 정확히 반인 이진 값을 짝수로 보내 `toFixed` 와 다르다 (84.125 → 웹 '84.13'. 2026-11-20 리뷰)
-    return None if value is None else str(js_to_fixed(value, 2))
+# 지역 단지 목록(웹 지도 단지 탭)의 코드값. 매물 조건(`DaangnSalesType` 등)과 이름·값이 다르다
+DaangnComplexType = Literal['APARTMENT', 'OFFICETEL']
+DaangnComplexTradeType = Literal['BUY', 'BORROW', 'MONTH']
 
 
 class DaangnAmountRangeModel(RequestModel):
@@ -193,35 +168,6 @@ class DaangnPropertyFilterModel(RequestModel):
         return _area_text(value)
 
 
-def is_empty_property_filter(property_filter: DaangnPropertyFilterModel) -> bool:
-    """조건이 하나도 없는 필터인지 (웹 지도 필터 atom 이 null 인 상태. `salesTypes` 는 늘 있어 빈 목록이면 없는 것으로 본다).
-
-    기본값 모델과 비교해, None 이 아닌 기본값을 가진 필드가 늘어도 빈 조건으로 본다 (2026-11-12 리뷰).
-    """
-    return property_filter == DaangnPropertyFilterModel()
-
-
-def with_null_property_filter(
-    property_filter: DaangnPropertyFilterModel,
-    data: dict[str, Any],
-    info: SerializationInfo,
-) -> dict[str, Any]:
-    """`input` 모델의 매물 조건이 하나도 없으면 직렬화 결과에 null 로 넣는다 (`input` 모델의 `model_serializer` 용).
-
-    웹은 동 클러스터 목록(`articleByClusterId`)과 지역 거품(`articleClusters`)에 조건이 없으면 `propertyFilter: null` 을 명시해
-    보낸다 (mapQueryFilter 의 atom 이 null, 2026-11-12 번들 대조). GraphQL 은 변수 생략과 null 을 구분할 수 있어 웹과 같게 null
-    을 보낸다. client 가 변수를 `exclude_none` 으로 직렬화해도 여기서 넣은 null 은 남는다. 빈 조건인지(`is_empty_property_filter`)
-    여기서 가려 부르는 쪽은 조건을 그대로 넘긴다. 예전에는 부르는 쪽이 빈 조건을 None 으로 바꿔 넘겨야 해서, 빠뜨리면 빈 필터
-    `{salesTypes: []}` 가 나갔다 (2026-11-12 리뷰. 결과는 같았다: 역삼동 둘레 거품 142개·역삼동 6,426건).
-
-    키 이름은 직렬화하는 이름을 따른다 (alias 면 `propertyFilter`, 아니면 `property_filter`). 늘 `propertyFilter` 로 넣으면 alias
-    없이 직렬화할 때 `property_filter` 와 `propertyFilter: None` 이 함께 나왔다 (2026-11-12 리뷰).
-    """
-    if is_empty_property_filter(property_filter):
-        data['propertyFilter' if info.by_alias else 'property_filter'] = None
-    return data
-
-
 class DaangnCoordinateInputModel(RequestModel):
     """GraphQL 좌표 입력. 서버가 문자열만 받는다 (숫자로 보내면 "알 수 없는 오류")."""
 
@@ -250,11 +196,6 @@ class DaangnBoundsLocationFilterModel(RequestModel):
         DaangnCoordinateInputModel,
         Field(description='남서 꼭짓점', alias='swCoordinate')
     ]
-
-
-# 지역 단지 목록(웹 지도 단지 탭)의 코드값. 매물 조건(`DaangnSalesType` 등)과 이름·값이 다르다
-DaangnComplexType = Literal['APARTMENT', 'OFFICETEL']
-DaangnComplexTradeType = Literal['BUY', 'BORROW', 'MONTH']
 
 
 class DaangnComplexFilterModel(RequestModel):
@@ -335,3 +276,61 @@ class DaangnExclusiveUseAreaModel(RequestModel):
         float,
         Field(ge=0, description='상한 (㎡)')
     ] = 2 ** 53 - 1
+
+
+def _validate_range(low: float | None, high: float | None, label: str) -> None:
+    if any(value is not None and not isfinite(value) for value in (low, high)):
+        raise ValueError(f"{label}{particle(label, '은/는')} 유한한 숫자여야 합니다")
+    if low is not None and high is not None and low > high:
+        raise ValueError(f'{label} 하한은 상한보다 클 수 없습니다')
+
+
+def _validate_area_household(
+    model: 'DaangnPropertyFilterModel | DaangnComplexFilterModel',
+) -> None:
+    """매물·단지 조건에 같이 있는 면적·세대수·주차 범위를 검사하고, 면적 조건이 있으면 단위를 채운다."""
+    _validate_range(model.min_area, model.max_area, '면적')
+    _validate_range(model.min_household_count, model.max_household_count, '세대수')
+    _validate_range(model.min_parking_per_household, None, '세대당 주차 대수')
+    if model.min_area is not None or model.max_area is not None:
+        model.area_unit = 'SQUARE_METER'
+
+
+def _area_text(value: float | None) -> str | None:
+    # 면적은 문자열로 보내야 한다. 숫자로 보내면 "알 수 없는 오류" 가 난다. 웹과 같은 꼴이다: 웹은 면적 필터 상태를
+    # `toSquareMeter(..).toFixed(2)` 글자로 만들고(PriceFiltersSection 청크), 매물 필터와 단지 필터(complexFilter 청크 `p` 의
+    # `minArea:e.minArea`)가 같은 글자를 그대로 보낸다. 그래서 소수 둘째 자리 고정이다 (84.95 → '84.95', 84.9 → '84.90',
+    # 1000000 → '1000000.00'). 예전 `:g` 는 유효숫자 6자리라 1만㎡ 이상이면 소수 첫째 자리 이하가 반올림됐다 (12345.67 → '12345.7',
+    # 123456.7 → '123457'). 같은 청크의 `f`(숫자 Number, 한쪽이 없으면 0 / 2^53-1)는 단지 최근 실거래의 전용면적 범위라
+    # `DaangnExclusiveUseAreaModel` 이 숫자로 보낸다 (2026-10-18 리뷰 오탐, 근거 고침 2026-11-20)
+    # `.2f` 가 아닌 이유: 정확히 반인 이진 값을 짝수로 보내 `toFixed` 와 다르다 (84.125 → 웹 '84.13'. 2026-11-20 리뷰)
+    return None if value is None else str(js_to_fixed(value, 2))
+
+
+def is_empty_property_filter(property_filter: DaangnPropertyFilterModel) -> bool:
+    """조건이 하나도 없는 필터인지 (웹 지도 필터 atom 이 null 인 상태. `salesTypes` 는 늘 있어 빈 목록이면 없는 것으로 본다).
+
+    기본값 모델과 비교해, None 이 아닌 기본값을 가진 필드가 늘어도 빈 조건으로 본다 (2026-11-12 리뷰).
+    """
+    return property_filter == DaangnPropertyFilterModel()
+
+
+def with_null_property_filter(
+    property_filter: DaangnPropertyFilterModel,
+    data: dict[str, Any],
+    info: SerializationInfo,
+) -> dict[str, Any]:
+    """`input` 모델의 매물 조건이 하나도 없으면 직렬화 결과에 null 로 넣는다 (`input` 모델의 `model_serializer` 용).
+
+    웹은 동 클러스터 목록(`articleByClusterId`)과 지역 거품(`articleClusters`)에 조건이 없으면 `propertyFilter: null` 을 명시해
+    보낸다 (mapQueryFilter 의 atom 이 null, 2026-11-12 번들 대조). GraphQL 은 변수 생략과 null 을 구분할 수 있어 웹과 같게 null
+    을 보낸다. client 가 변수를 `exclude_none` 으로 직렬화해도 여기서 넣은 null 은 남는다. 빈 조건인지(`is_empty_property_filter`)
+    여기서 가려 부르는 쪽은 조건을 그대로 넘긴다. 예전에는 부르는 쪽이 빈 조건을 None 으로 바꿔 넘겨야 해서, 빠뜨리면 빈 필터
+    `{salesTypes: []}` 가 나갔다 (2026-11-12 리뷰. 결과는 같았다: 역삼동 둘레 거품 142개·역삼동 6,426건).
+
+    키 이름은 직렬화하는 이름을 따른다 (alias 면 `propertyFilter`, 아니면 `property_filter`). 늘 `propertyFilter` 로 넣으면 alias
+    없이 직렬화할 때 `property_filter` 와 `propertyFilter: None` 이 함께 나왔다 (2026-11-12 리뷰).
+    """
+    if is_empty_property_filter(property_filter):
+        data['propertyFilter' if info.by_alias else 'property_filter'] = None
+    return data

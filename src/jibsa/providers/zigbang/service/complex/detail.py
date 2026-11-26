@@ -90,6 +90,20 @@ from jibsa.providers.zigbang.service.region import (
 from typing import TypeVar
 
 
+COMPLEX_KIND_BY_SEARCH_TYPE: dict[str, ComplexKind] = {
+    'apartment': 'apt',
+    'officetel': 'officetel',
+}
+PROPERTY_TYPE_BY_COMPLEX_KIND: dict[ComplexKind, str] = {
+    'apt': '아파트',
+    'officetel': '오피스텔',
+}
+
+DANJI_CATALOG_PAGE_SIZE: int = 50
+
+NumberT = TypeVar('NumberT', bound=float)
+
+
 def danji_schools(response: ZigbangDanjisSchoolsResponseModel) -> list[str]:
     """아파트 단지 학군을 당근 `schools` 와 같은 문구로 바꾼다.
 
@@ -107,18 +121,6 @@ def danji_schools(response: ZigbangDanjisSchoolsResponseModel) -> list[str]:
                 for school in level.schools[:NEAREST_SCHOOLS]
             ]
     return [label for label in labels if label]
-
-
-COMPLEX_KIND_BY_SEARCH_TYPE: dict[str, ComplexKind] = {
-    'apartment': 'apt',
-    'officetel': 'officetel',
-}
-PROPERTY_TYPE_BY_COMPLEX_KIND: dict[ComplexKind, str] = {
-    'apt': '아파트',
-    'officetel': '오피스텔',
-}
-
-DANJI_CATALOG_PAGE_SIZE: int = 50
 
 
 def complex_candidate_of(item: ZigbangSearchItemModel) -> ZigbangComplexCandidate | None:
@@ -184,9 +186,6 @@ def _fetch_building(
         if exc.response.status_code in (400, 404):
             raise complex_not_found(complex_id) from None
         raise
-
-
-NumberT = TypeVar('NumberT', bound=float)
 
 
 def _positive_or_none(value: NumberT | None) -> NumberT | None:

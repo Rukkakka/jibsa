@@ -22,16 +22,6 @@ from typing import (
 )
 
 
-def _drop_trade_type_fields(data: dict[str, Any], trade_type: str) -> None:
-    """출력 dict 에서 거래 유형에 없는 가격 필드와 (매매의) 갱신 키를 뺀다. 실거래 행과 주변 실거래 행이 같은 규칙을 쓴다."""
-    for field in NOT_APPLICABLE_PRICE_FIELDS.get(trade_type, frozenset()):
-        data.pop(field, None)
-    # 갱신 계약은 전월세에만 있다
-    if trade_type == '매매':
-        data.pop('renewal', None)
-        data.pop('renewal_right', None)
-
-
 class NaverRealPrice(BaseModel):
     """실거래 한 건 (만원). 거래 유형에 없는 가격 필드는 출력에서 뺀다."""
 
@@ -299,3 +289,13 @@ class NaverRealPriceResult(Result):
         if not self._nearby_scoped:
             data.pop('nearby_trades', None)
         return data
+
+
+def _drop_trade_type_fields(data: dict[str, Any], trade_type: str) -> None:
+    """출력 dict 에서 거래 유형에 없는 가격 필드와 (매매의) 갱신 키를 뺀다. 실거래 행과 주변 실거래 행이 같은 규칙을 쓴다."""
+    for field in NOT_APPLICABLE_PRICE_FIELDS.get(trade_type, frozenset()):
+        data.pop(field, None)
+    # 갱신 계약은 전월세에만 있다
+    if trade_type == '매매':
+        data.pop('renewal', None)
+        data.pop('renewal_right', None)

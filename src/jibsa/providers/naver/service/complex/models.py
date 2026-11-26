@@ -29,6 +29,10 @@ from typing import (
 )
 
 
+# 단지 요약에서 --pyeong 을 하나만 줄 때만 붙이는 평형 정보
+PYEONG_SCOPED_FIELDS: frozenset[str] = frozenset({'pyeong_manage_cost', 'estimated_prices', 'trade_summary', 'asking_price_per_pyeong'})
+
+
 class NaverPyeong(BaseModel):
     """평형."""
 
@@ -492,7 +496,3 @@ class NaverComplexSummary(Result):
         if not self._pyeong_groups_scoped:
             data.pop('pyeong_groups', None)
         return data
-
-
-# 단지 요약에서 --pyeong 을 하나만 줄 때만 붙이는 평형 정보
-PYEONG_SCOPED_FIELDS: frozenset[str] = frozenset({'pyeong_manage_cost', 'estimated_prices', 'trade_summary', 'asking_price_per_pyeong'})

@@ -27,26 +27,6 @@ STAY_SEARCH_MIN_DAYS: int = 7
 STAY_SEARCH_MAX_DAYS: int = 84
 
 
-def validate_stay_dates(check_in: str, check_out: str) -> None:
-    """입주일·마지막 날이 실제 날짜이고, 입주일이 한국 날짜로 오늘 이후이며, 마지막 날이 입주일보다 뒤인지 본다.
-
-    Raises:
-        ValueError: 위 조건을 어길 때 (요청 모델 검증 안에서 불러 CLI 는 INVALID_ARGUMENT).
-    """
-    # 2026-10-09 비로그인 API 실측: 검색은 오늘 입주를 허용하고 과거는 400. 2027-02-30 은 검색에서 500 이므로 서버에 맡기지
-    # 않고 달력을 검증한다. 상세(listing stay-…)는 날짜를 서버에 보내지 않지만, 웹 날짜 고르기 창도 지난 날을 고를 수 없어
-    # 같은 검사를 한다. 기간이 매물 계약 범위에 맞는지는 매물마다 달라(최소 1~8주) 여기서 보지 않는다
-    try:
-        start = date.fromisoformat(check_in)
-        end = date.fromisoformat(check_out)
-    except ValueError:
-        raise ValueError('입주일·마지막 날은 실제 존재하는 YYYY-MM-DD 날짜여야 합니다') from None
-    if start < datetime.now(KST).date():
-        raise ValueError('입주일은 한국 날짜 기준 오늘 이후여야 합니다')
-    if end <= start:
-        raise ValueError('마지막으로 머무는 날(--check-out)은 입주일보다 뒤여야 합니다')
-
-
 class ZigbangStayDatesMixin(RequestModel):
     """단기임대 검색(지도·지역)과 요약(by-ids)이 함께 받는 입주·퇴거일. 둘 다 검색 기간(7~84일)을 받는다."""
 
@@ -89,3 +69,23 @@ class ZigbangGuestItemsByIdsRequestParameterModel(ZigbangStayDatesMixin):
         list[int],
         Field(min_length=1, max_length=100, description='요약을 받을 매물 ID 목록 (같은 키 반복)', alias='itemIds')
     ]
+
+
+def validate_stay_dates(check_in: str, check_out: str) -> None:
+    """입주일·마지막 날이 실제 날짜이고, 입주일이 한국 날짜로 오늘 이후이며, 마지막 날이 입주일보다 뒤인지 본다.
+
+    Raises:
+        ValueError: 위 조건을 어길 때 (요청 모델 검증 안에서 불러 CLI 는 INVALID_ARGUMENT).
+    """
+    # 2026-10-09 비로그인 API 실측: 검색은 오늘 입주를 허용하고 과거는 400. 2027-02-30 은 검색에서 500 이므로 서버에 맡기지
+    # 않고 달력을 검증한다. 상세(listing stay-…)는 날짜를 서버에 보내지 않지만, 웹 날짜 고르기 창도 지난 날을 고를 수 없어
+    # 같은 검사를 한다. 기간이 매물 계약 범위에 맞는지는 매물마다 달라(최소 1~8주) 여기서 보지 않는다
+    try:
+        start = date.fromisoformat(check_in)
+        end = date.fromisoformat(check_out)
+    except ValueError:
+        raise ValueError('입주일·마지막 날은 실제 존재하는 YYYY-MM-DD 날짜여야 합니다') from None
+    if start < datetime.now(KST).date():
+        raise ValueError('입주일은 한국 날짜 기준 오늘 이후여야 합니다')
+    if end <= start:
+        raise ValueError('마지막으로 머무는 날(--check-out)은 입주일보다 뒤여야 합니다')

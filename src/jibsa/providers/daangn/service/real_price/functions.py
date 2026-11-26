@@ -154,6 +154,34 @@ PRICE_TREND_STALE_MONTHS: int = 6
 # 비교하는 달의 거래가 이보다 적으면 변화율이 튈 수 있다고 알린다
 PRICE_TREND_FEW_TRANSACTIONS: int = 3
 
+TransactionFetch = Callable[[int, str | None], DaangnComplexTransactionsModel]
+
+
+# (받을 수, 커서) → (한 페이지의 거래, 페이지 정보). 당근이 그 페이지를 주지 않았으면(연결이나 edges 가 null) 거래가 None 이다
+PageFetch = Callable[[int, str | None], tuple[list[T] | None, DaangnPageInfoModel | None]]
+
+
+class _Collected(NamedTuple, Generic[T]):
+    """`_collect_pages` 가 모은 실거래와, 거래가 없을 때 그 까닭을 가를 값."""
+
+    items: list[T]
+    has_more: bool
+    notes: list[str]
+    # 기간(since) 시작일 앞의 거래가 나와 멈췄는지. 그렇다면 기간 앞에는 거래가 있다
+    reached_since: bool
+    # 받은 원본 거래 수 (기간·거래 유형으로 고르기 전)
+    scanned: int
+    # 당근이 첫 쪽을 주지 않아(연결이나 edges 가 null) 거래가 없는 것이 아니라 모르는지. 그렇다면 items·has_more 는 모름이라 뜻이 없다
+    unknown: bool = False
+
+
+class DaangnPyeongChoice(NamedTuple):
+    """실거래·시세 그래프를 거를 평형. 공급 평형(아파트형)이면 평형 타입 코드를, 아니면 전용면적 묶음을 보낸다."""
+
+    pyeong: int | None
+    area_group: int | None
+    ptp_cds: list[int] | None
+
 
 def _trade_date(node: DaangnTransactionModel) -> str | None:
     if node.deal_year is None or node.deal_month is None or node.deal_day is None:
@@ -197,27 +225,6 @@ def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> 
         contract_type=None if buy else contract_type_of(node.contract_type),
         renewal_right=None if buy else node.use_renewal_of_contract_right,
     )
-
-
-TransactionFetch = Callable[[int, str | None], DaangnComplexTransactionsModel]
-
-
-# (받을 수, 커서) → (한 페이지의 거래, 페이지 정보). 당근이 그 페이지를 주지 않았으면(연결이나 edges 가 null) 거래가 None 이다
-PageFetch = Callable[[int, str | None], tuple[list[T] | None, DaangnPageInfoModel | None]]
-
-
-class _Collected(NamedTuple, Generic[T]):
-    """`_collect_pages` 가 모은 실거래와, 거래가 없을 때 그 까닭을 가를 값."""
-
-    items: list[T]
-    has_more: bool
-    notes: list[str]
-    # 기간(since) 시작일 앞의 거래가 나와 멈췄는지. 그렇다면 기간 앞에는 거래가 있다
-    reached_since: bool
-    # 받은 원본 거래 수 (기간·거래 유형으로 고르기 전)
-    scanned: int
-    # 당근이 첫 쪽을 주지 않아(연결이나 edges 가 null) 거래가 없는 것이 아니라 모르는지. 그렇다면 items·has_more 는 모름이라 뜻이 없다
-    unknown: bool = False
 
 
 def _site_note(url: str) -> str:
@@ -433,14 +440,6 @@ def _empty_result_note(found: _Collected[DaangnTransactionModel], trade_type: st
         # 기간 앞에서 멈추지 않았고 남은 거래도 없으니 받은 전월세가 그 조건(평형·--month·--years)의 전부다
         return note('참고', f'당근이 준 전월세 실거래 {found.scanned}건 중 {trade_type} 거래는 0건입니다')
     return None
-
-
-class DaangnPyeongChoice(NamedTuple):
-    """실거래·시세 그래프를 거를 평형. 공급 평형(아파트형)이면 평형 타입 코드를, 아니면 전용면적 묶음을 보낸다."""
-
-    pyeong: int | None
-    area_group: int | None
-    ptp_cds: list[int] | None
 
 
 def _supply_choice(column: DaangnCompareComplexModel, group: DaangnCompareAreaGroupModel) -> DaangnPyeongChoice:

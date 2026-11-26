@@ -129,9 +129,37 @@ app = typer.Typer(
     no_args_is_help=True,
     pretty_exceptions_enable=False,
 )
+
+
+class PlainHelpFormatter(HelpFormatter):
+    """터미널이 아닐 때 쓰는 Click 도움말 형식. 폭을 넓게 잡고 설명은 docstring 의 줄바꿈대로 쓴다.
+
+    Click 기본 형식은 설명 문단의 줄을 이어 붙여 예시 명령 여러 개가 한 줄로 붙는다. Rich 도움말(터미널)처럼
+    줄바꿈을 그대로 둔다.
+    """
+
+    def __init__(self, indent_increment: int = 2, width: int | None = None, max_width: int | None = None) -> None:
+        super().__init__(indent_increment, width=PLAIN_HELP_WIDTH, max_width=PLAIN_HELP_WIDTH)
+
+    def write_text(self, text: str) -> None:
+        indent = ' ' * self.current_indent
+        for line in text.splitlines():
+            self.write(f'{indent}{line}\n' if line.strip() else '\n')
+
+
+class PlainHelpContext(Context):
+    formatter_class = PlainHelpFormatter
+
+
 app.add_typer(zigbang.app, name='zigbang')
+
+
 app.add_typer(naver.app, name='naver')
+
+
 app.add_typer(daangn.app, name='daangn')
+
+
 app.add_typer(dabang.app, name='dabang')
 
 
@@ -386,26 +414,6 @@ def build_text() -> str:
         digest.update(path.relative_to(package).as_posix().encode())
         digest.update(path.read_bytes())
     return f'{text} 코드 {digest.hexdigest()[:SHORT_COMMIT_LENGTH]}'
-
-
-class PlainHelpFormatter(HelpFormatter):
-    """터미널이 아닐 때 쓰는 Click 도움말 형식. 폭을 넓게 잡고 설명은 docstring 의 줄바꿈대로 쓴다.
-
-    Click 기본 형식은 설명 문단의 줄을 이어 붙여 예시 명령 여러 개가 한 줄로 붙는다. Rich 도움말(터미널)처럼
-    줄바꿈을 그대로 둔다.
-    """
-
-    def __init__(self, indent_increment: int = 2, width: int | None = None, max_width: int | None = None) -> None:
-        super().__init__(indent_increment, width=PLAIN_HELP_WIDTH, max_width=PLAIN_HELP_WIDTH)
-
-    def write_text(self, text: str) -> None:
-        indent = ' ' * self.current_indent
-        for line in text.splitlines():
-            self.write(f'{indent}{line}\n' if line.strip() else '\n')
-
-
-class PlainHelpContext(Context):
-    formatter_class = PlainHelpFormatter
 
 
 def use_plain_help(command: Command) -> None:

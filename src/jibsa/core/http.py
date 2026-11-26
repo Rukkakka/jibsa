@@ -105,6 +105,163 @@ SENSITIVE_TEXT_PATTERN: re.Pattern[str] = re.compile(
 _T = TypeVar('_T', bound='BaseHTTPClient')
 
 
+class ResponseStatusError(HTTPStatusError):
+    """`HTTPStatusError` whose message carries a truncated response body."""
+
+
+class BaseHTTPClient(BaseModel, ABC):
+    """Shared base model for the httpx-based provider clients.
+
+    Defines the connection options every provider shares and a unified
+    lifecycle for the sync/async httpx clients. Subclasses declare their own
+    `host` and build `_client` / `_async_client` with ``@cached_property``.
+
+    Args:
+        verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
+            내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
+        proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
+        timeout: 브라우저 요청의 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한(초). httpx 의 읽기 제한처럼
+            조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`). Defaults to 20.
+        rate_limit: 프로세스 간 공유 요청 제한 정책. None 이면 클래스의
+            `default_rate_limit` 을 쓴다. Defaults to None.
+
+    Attributes:
+        source_name: 요청 제한 상태 파일 이름 (서브클래스가 지정).
+        default_rate_limit: 서브클래스 기본 제한 정책.
+        rate_limiter: `source_name` 과 정책으로 만든 `RateLimiter`. 서브클래스는
+            `rate_limit_hooks()` / `async_rate_limit_hooks()` 를 httpx 클라이언트의
+            `event_hooks` 로 넘긴다.
+        browser_entry_url: 브라우저가 처음 열 사이트 화면 (서브클래스가 지정). 서브클래스는
+            `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다.
+        browser_ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
+        browser_api_hosts: 첫 화면이 보낸 요청을 요청 제한에 셀 사이트 API 호스트. 비면 `browser_entry_url` 의 호스트.
+            호스트 필드에서 만드는 property 라, 호스트 필드를 바꿔도 맞는다 (서브클래스가 덮어쓴다). 서브클래스의 호스트
+            필드(`host` 등)를 바꾸면 `browser_api_hosts` 는 따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 요청은
+            첫 화면 탭에서 보내므로 호스트를 다른 출처로 바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다.
+        browser_discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태.
+    """
+
+    source_name: ClassVar[str] = 'default'
+    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy()
+    browser_entry_url: ClassVar[str] = ''
+    browser_ready_cookie: ClassVar[str | None] = None
+    browser_discard_statuses: ClassVar[frozenset[int]] = DISCARD_STATE_STATUSES
+
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+    verify: bool = True
+
+    proxy: str | None = None
+
+    timeout: Annotated[
+        int,
+        Field(gt=0)
+    ] = 20
+
+    rate_limit: RateLimitPolicy | None = None
+
+    @cached_property
+    def rate_limiter(self) -> RateLimiter:
+        policy = self.rate_limit or self.default_rate_limit
+        return RateLimiter(self.source_name, policy)
+
+    def rate_limit_hooks(self) -> dict[str, list[Callable[..., None]]]:
+        return self.rate_limiter.event_hooks()
+
+    def async_rate_limit_hooks(self) -> dict[str, list[Callable[..., Awaitable[None]]]]:
+        # async 쪽(이 훅, `_async_client`, provider 의 `arun_request_*`)은 CLI 가 부르지 않지만 라이브러리로 쓸 때의 공개 API 라
+        # 일부러 둔다 (provider-conventions.md '요청 메서드'). 호출부 0건은 죽은 코드가 아니다. 2026-10-11 실측: 세 소스
+        # arun_request_* 를 한 번씩 실제로 불러 모두 200 (직방 search_v2, 당근 livable_region_scopes, 네이버 시·도 목록)
+        return self.rate_limiter.async_event_hooks()
+
+    @property
+    def browser_api_hosts(self) -> frozenset[str]:
+        # 비면 첫 화면 호스트를 쓴다 (`BrowserOptions`). 서브클래스는 호스트 필드에서 만든다. 클래스 상수로 따로 적으면 호스트
+        # 필드를 바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은
+        # 그 호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`)
+        return frozenset()
+
+    def _browser_options(self) -> BrowserOptions:
+        return BrowserOptions(
+            source=self.source_name, entry_url=self.browser_entry_url, ready_cookie=self.browser_ready_cookie,
+            api_hosts=self.browser_api_hosts, discard_statuses=self.browser_discard_statuses,
+            rate_limiter=self.rate_limiter, proxy=self.proxy, verify=self.verify, timeout=self.timeout,
+        )
+
+    def browser_transport(self) -> BrowserTransport:
+        """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser.py`). 프록시도 브라우저가 쓴다."""
+        return BrowserTransport(self._browser_options())
+
+    def async_browser_transport(self) -> AsyncBrowserTransport:
+        """`browser_transport()` 의 비동기판."""
+        return AsyncBrowserTransport(BrowserTransport(self._browser_options()))
+
+    @property
+    @abstractmethod
+    def _client(self) -> Client:
+        """
+        Synchronous HTTP client. Subclasses must override this with
+        ``@cached_property`` so `close()` can locate it via
+        ``__dict__.pop('_client', None)``. ``@cached_property`` cannot be
+        combined with ``@abstractmethod``, so the abstract declaration stays a
+        plain property.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def _async_client(self) -> AsyncClient:
+        """
+        Asynchronous HTTP client. Subclasses must override this with
+        ``@cached_property``; see ``_client``.
+        """
+        ...
+
+    def close(self) -> None:
+        """
+        Close the sync client only: an async client cannot be closed from
+        sync code. If ``arun_request_*`` was used, close with ``aclose()`` or
+        ``async with`` instead (a plain ``with`` leaves the async pool open).
+        """
+        client: Client | None = self.__dict__.pop('_client', None)
+        if client is not None:
+            client.close()
+
+    async def aclose(self) -> None:
+        """
+        Close the async client and the sync client too. 동기 클라이언트의 브라우저는 브라우저 스레드가 앞의 일(첫 화면이면 Chromium 띄우기에 문서
+        40초·load 10초·쿠키 5초까지)을 마친 뒤 닫아(`core/browser.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
+        """
+        async_client: AsyncClient | None = self.__dict__.pop('_async_client', None)
+        if async_client is not None:
+            await async_client.aclose()
+        await asyncio.to_thread(self.close)
+
+    def __enter__(self: _T) -> _T:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None
+    ) -> None:
+        self.close()
+
+    async def __aenter__(self: _T) -> _T:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None
+    ) -> None:
+        await self.aclose()
+
+
 def create_base_url(host: str) -> str:
     """`https://<host>`. 요청은 https 첫 화면을 연 브라우저가 보내 http 는 혼합 콘텐츠로 막혀 스킴은 https 하나다."""
     return f'https://{host}'
@@ -133,10 +290,6 @@ def _redact_text(value: str) -> str:
 def strip_userinfo(netloc: str) -> str:
     """주소의 `netloc` 에서 사용자 정보(`user:pass@`)를 뗀 `호스트[:포트]`. 에러 문구에 싣는 주소에 쓴다."""
     return netloc.rsplit('@', 1)[-1]
-
-
-class ResponseStatusError(HTTPStatusError):
-    """`HTTPStatusError` whose message carries a truncated response body."""
 
 
 def _request_origin(exc: HTTPStatusError) -> str:
@@ -300,157 +453,3 @@ def log_retry_before_sleep(retry_state: RetryCallState) -> None:
         describe_failed_attempt(outcome.exception()),
         next_action.sleep,
     )
-
-
-class BaseHTTPClient(BaseModel, ABC):
-    """Shared base model for the httpx-based provider clients.
-
-    Defines the connection options every provider shares and a unified
-    lifecycle for the sync/async httpx clients. Subclasses declare their own
-    `host` and build `_client` / `_async_client` with ``@cached_property``.
-
-    Args:
-        verify: TLS 인증서 검증. 요청은 Chromium 이 보내므로 켜기·끄기만 받는다 (Chromium 은 인증서 파일을 받지 않고
-            내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
-        proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
-        timeout: 브라우저 요청의 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한(초). httpx 의 읽기 제한처럼
-            조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`). Defaults to 20.
-        rate_limit: 프로세스 간 공유 요청 제한 정책. None 이면 클래스의
-            `default_rate_limit` 을 쓴다. Defaults to None.
-
-    Attributes:
-        source_name: 요청 제한 상태 파일 이름 (서브클래스가 지정).
-        default_rate_limit: 서브클래스 기본 제한 정책.
-        rate_limiter: `source_name` 과 정책으로 만든 `RateLimiter`. 서브클래스는
-            `rate_limit_hooks()` / `async_rate_limit_hooks()` 를 httpx 클라이언트의
-            `event_hooks` 로 넘긴다.
-        browser_entry_url: 브라우저가 처음 열 사이트 화면 (서브클래스가 지정). 서브클래스는
-            `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다.
-        browser_ready_cookie: 첫 화면을 연 뒤 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 볼 쿠키 이름.
-        browser_api_hosts: 첫 화면이 보낸 요청을 요청 제한에 셀 사이트 API 호스트. 비면 `browser_entry_url` 의 호스트.
-            호스트 필드에서 만드는 property 라, 호스트 필드를 바꿔도 맞는다 (서브클래스가 덮어쓴다). 서브클래스의 호스트
-            필드(`host` 등)를 바꾸면 `browser_api_hosts` 는 따라 바뀌지만 첫 화면(`browser_entry_url`)은 그대로다. 요청은
-            첫 화면 탭에서 보내므로 호스트를 다른 출처로 바꾸면 그 서버가 첫 화면 출처의 CORS 를 허용해야 한다.
-        browser_discard_statuses: 우리 요청이 받으면 남긴 쿠키를 버릴 HTTP 상태.
-    """
-
-    source_name: ClassVar[str] = 'default'
-    default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy()
-    browser_entry_url: ClassVar[str] = ''
-    browser_ready_cookie: ClassVar[str | None] = None
-    browser_discard_statuses: ClassVar[frozenset[int]] = DISCARD_STATE_STATUSES
-
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-
-    verify: bool = True
-
-    proxy: str | None = None
-
-    timeout: Annotated[
-        int,
-        Field(gt=0)
-    ] = 20
-
-    rate_limit: RateLimitPolicy | None = None
-
-    @cached_property
-    def rate_limiter(self) -> RateLimiter:
-        policy = self.rate_limit or self.default_rate_limit
-        return RateLimiter(self.source_name, policy)
-
-    def rate_limit_hooks(self) -> dict[str, list[Callable[..., None]]]:
-        return self.rate_limiter.event_hooks()
-
-    def async_rate_limit_hooks(self) -> dict[str, list[Callable[..., Awaitable[None]]]]:
-        # async 쪽(이 훅, `_async_client`, provider 의 `arun_request_*`)은 CLI 가 부르지 않지만 라이브러리로 쓸 때의 공개 API 라
-        # 일부러 둔다 (provider-conventions.md '요청 메서드'). 호출부 0건은 죽은 코드가 아니다. 2026-10-11 실측: 세 소스
-        # arun_request_* 를 한 번씩 실제로 불러 모두 200 (직방 search_v2, 당근 livable_region_scopes, 네이버 시·도 목록)
-        return self.rate_limiter.async_event_hooks()
-
-    @property
-    def browser_api_hosts(self) -> frozenset[str]:
-        # 비면 첫 화면 호스트를 쓴다 (`BrowserOptions`). 서브클래스는 호스트 필드에서 만든다. 클래스 상수로 따로 적으면 호스트
-        # 필드를 바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은
-        # 그 호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`)
-        return frozenset()
-
-    def _browser_options(self) -> BrowserOptions:
-        return BrowserOptions(
-            source=self.source_name, entry_url=self.browser_entry_url, ready_cookie=self.browser_ready_cookie,
-            api_hosts=self.browser_api_hosts, discard_statuses=self.browser_discard_statuses,
-            rate_limiter=self.rate_limiter, proxy=self.proxy, verify=self.verify, timeout=self.timeout,
-        )
-
-    def browser_transport(self) -> BrowserTransport:
-        """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser.py`). 프록시도 브라우저가 쓴다."""
-        return BrowserTransport(self._browser_options())
-
-    def async_browser_transport(self) -> AsyncBrowserTransport:
-        """`browser_transport()` 의 비동기판."""
-        return AsyncBrowserTransport(BrowserTransport(self._browser_options()))
-
-    @property
-    @abstractmethod
-    def _client(self) -> Client:
-        """
-        Synchronous HTTP client. Subclasses must override this with
-        ``@cached_property`` so `close()` can locate it via
-        ``__dict__.pop('_client', None)``. ``@cached_property`` cannot be
-        combined with ``@abstractmethod``, so the abstract declaration stays a
-        plain property.
-        """
-        ...
-
-    @property
-    @abstractmethod
-    def _async_client(self) -> AsyncClient:
-        """
-        Asynchronous HTTP client. Subclasses must override this with
-        ``@cached_property``; see ``_client``.
-        """
-        ...
-
-    def close(self) -> None:
-        """
-        Close the sync client only: an async client cannot be closed from
-        sync code. If ``arun_request_*`` was used, close with ``aclose()`` or
-        ``async with`` instead (a plain ``with`` leaves the async pool open).
-        """
-        client: Client | None = self.__dict__.pop('_client', None)
-        if client is not None:
-            client.close()
-
-    async def aclose(self) -> None:
-        """
-        Close the async client and the sync client too. 동기 클라이언트의 브라우저는 브라우저 스레드가 앞의 일(첫 화면이면 Chromium 띄우기에 문서
-        40초·load 10초·쿠키 5초까지)을 마친 뒤 닫아(`core/browser.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
-        """
-        async_client: AsyncClient | None = self.__dict__.pop('_async_client', None)
-        if async_client is not None:
-            await async_client.aclose()
-        await asyncio.to_thread(self.close)
-
-    def __enter__(self: _T) -> _T:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None
-    ) -> None:
-        self.close()
-
-    async def __aenter__(self: _T) -> _T:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None
-    ) -> None:
-        await self.aclose()
-

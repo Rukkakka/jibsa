@@ -60,11 +60,6 @@ class DabangListing(Listing):
         return fields
 
 
-def is_complex_type(property_type: str | None) -> bool:
-    """단지가 있는 유형인지 ('오피스텔', '오피스텔(분리형)', '아파트'). 유형이 없으면(None) 아니다."""
-    return property_type is not None and property_type.startswith(COMPLEX_PROPERTY_TYPES)
-
-
 class DabangListingConditions(RequestModel):
     """다방 매물 검색 조건 (한국어 라벨·만원). 모두 다방 서버가 거른다."""
 
@@ -217,3 +212,8 @@ class DabangAreaPrice(BaseModel):
         dict[str, DabangPricePerPyeong | None],
         Field(description="거래별 평당 평균가. 키는 'sale'·'jeonse' 늘 두 개이고, 값이 없으면(0 포함) 그 거래가 null")
     ]
+
+
+def is_complex_type(property_type: str | None) -> bool:
+    """단지가 있는 유형인지 ('오피스텔', '오피스텔(분리형)', '아파트'). 유형이 없으면(None) 아니다."""
+    return property_type is not None and property_type.startswith(COMPLEX_PROPERTY_TYPES)

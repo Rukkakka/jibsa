@@ -162,6 +162,8 @@ COMPLEX_LISTINGS_PAGE_SIZE: int = 20
 
 COMPLEX_LISTINGS_MAX_PAGES: int = 6
 
+APPROVAL_DATE_PATTERN: re.Pattern[str] = re.compile(r'(\d{4})\.(\d{2})\.(\d{2})')
+
 
 def _school_walk(item: DaangnNearbySchoolModel, assigned: bool) -> float | None:
     """웹이 쓰는 도보 시간. 배정 학교는 walkingTimeMin 이 없으면 길찾기 시간(workingTime)이다 (ComplexSchoolSection `Re`)."""
@@ -825,9 +827,6 @@ def list_complex_listings(
             + complex_building_notes(shown)
             + ([null_items_note('당근 단지 매물', null_edges)] if null_edges else []),
     )
-
-
-APPROVAL_DATE_PATTERN: re.Pattern[str] = re.compile(r'(\d{4})\.(\d{2})\.(\d{2})')
 
 
 def trending_region_of(area: DaangnArea | None) -> DaangnTrendingRegion:

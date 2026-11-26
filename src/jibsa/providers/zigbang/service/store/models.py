@@ -36,13 +36,6 @@ STORE_NOT_APPLICABLE_DETAIL_FIELDS: frozenset[str] = STORE_NOT_APPLICABLE_FIELDS
 STORE_OFFICE_BUSINESS: str = '사무실'
 
 
-def _store_not_applicable_key_money(business: str | None, key_money_manwon: float | None) -> frozenset[str]:
-    """업종이 사무실이고 직방이 권리금을 주지 않았으면 키를 뺄 권리금 필드."""
-    if business == STORE_OFFICE_BUSINESS and key_money_manwon is None:
-        return frozenset({'key_money_manwon'})
-    return frozenset()
-
-
 class ZigbangStoreListing(Listing):
     """직방 상가·사무실 매물."""
 
@@ -240,3 +233,10 @@ class ZigbangStoreConditions(RequestModel):
         int | None,
         Field(description='권리금 상한 (만원)')
     ] = None
+
+
+def _store_not_applicable_key_money(business: str | None, key_money_manwon: float | None) -> frozenset[str]:
+    """업종이 사무실이고 직방이 권리금을 주지 않았으면 키를 뺄 권리금 필드."""
+    if business == STORE_OFFICE_BUSINESS and key_money_manwon is None:
+        return frozenset({'key_money_manwon'})
+    return frozenset()

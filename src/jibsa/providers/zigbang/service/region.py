@@ -52,6 +52,9 @@ MAX_RADIUS_KM: float = 5.0
 # 이 명령에는 좌표 옵션이 없어 기본 안내(--lat/--lng)를 쓰지 않는다
 STATION_QUERY_HINT: str = "역 이름 전체를 주세요 (예: 강남역). 학교는 '해누리중학교', 동·구는 '가락동'·'송파구' 처럼 주세요"
 
+# 경계를 물을 geohash 정밀도. 7 에서 옆 동이 잡히면 8 로 한 번 더 묻는다
+BOUNDARY_GEOHASH_PRECISIONS: tuple[int, ...] = (7, 8)
+
 
 def search_regions(
     client: ZigbangClient,
@@ -707,10 +710,6 @@ def to_int(value: str | None) -> int | None:
         return int(value) if value not in (None, '') else None
     except ValueError:
         return None
-
-
-# 경계를 물을 geohash 정밀도. 7 에서 옆 동이 잡히면 8 로 한 번 더 묻는다
-BOUNDARY_GEOHASH_PRECISIONS: tuple[int, ...] = (7, 8)
 
 
 def dong_boundary(client: ZigbangClient, region: ZigbangRegion) -> ZigbangBoundary | None:
