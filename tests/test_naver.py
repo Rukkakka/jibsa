@@ -22,8 +22,10 @@ from jibsa.providers.naver.api.response.common import (
     NaverFacilityInfoModel,
     NaverResponseModel,
 )
-from jibsa.providers.naver.api.response.listing import NaverDevelopmentArticleModel
-from jibsa.providers.naver.api.response.search import (
+from jibsa.providers.naver.api.response.listing.detail import (
+    NaverDevelopmentArticleModel,
+)
+from jibsa.providers.naver.api.response.search.base import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
 from jibsa.providers.naver.service.common.functions import (
@@ -39,10 +41,8 @@ from jibsa.providers.naver.service.common.models import (
     NaverTradeConditions,
     PageScan,
 )
-from jibsa.providers.naver.service.listing.functions import (
-    get_listing,
-    list_complex_articles,
-)
+from jibsa.providers.naver.service.listing.complex import list_complex_articles
+from jibsa.providers.naver.service.listing.detail import get_listing
 from jibsa.providers.naver.service.real_price.functions import (
     MAX_VILLA_PERIOD_PAGES,
     get_real_prices,
@@ -55,7 +55,7 @@ from jibsa.providers.naver.service.region.functions import (
     resolve_search_region,
 )
 from jibsa.providers.naver.service.school.functions import list_school_complexes
-from jibsa.providers.naver.service.search.functions import (
+from jibsa.providers.naver.service.search.listings import (
     COMPLEX_FILTER_NOTE,
     ENTRANCE_FILTER_NOTE,
     ENTRANCE_WITH_COMPLEX_FILTER_NOTE,
@@ -222,7 +222,7 @@ def test_get_listing_monthly_rent_uses_warranty_and_rent_amount() -> None:
 
 def test_removed_article_is_unavailable() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.naver.api.response.listing import (
+    from jibsa.providers.naver.api.response.listing.detail import (
         NaverArticleKeyV1ResponseModel,
     )
 
@@ -286,8 +286,8 @@ def test_detail_without_complex_omits_complex_fields() -> None:
 
 
 def test_loan_distinguishes_none_from_unknown() -> None:
-    from jibsa.providers.naver.api.response.listing import NaverPriceInfoModel
-    from jibsa.providers.naver.service.listing.functions import _loan_manwon
+    from jibsa.providers.naver.api.response.listing.detail import NaverPriceInfoModel
+    from jibsa.providers.naver.service.listing.detail import _loan_manwon
 
     assert _loan_manwon(NaverPriceInfoModel.model_validate({'loan': 755150000, 'loanCode': '2'})) == 75515
     assert _loan_manwon(NaverPriceInfoModel.model_validate({'loan': 0, 'loanCode': '0'})) == 0
@@ -411,8 +411,8 @@ def test_detail_manage_cost_zero_is_known_unchecked_is_unknown(fee: dict, expect
 
 def test_detail_move_in_within_and_after_keep_the_bound() -> None:
     # 웹은 이내입주·이후입주를 날짜 뒤에 붙여 구분해 보여 준다
-    from jibsa.providers.naver.api.response.listing import NaverMovingInInfoModel
-    from jibsa.providers.naver.service.listing.functions import _move_in_label
+    from jibsa.providers.naver.api.response.listing.detail import NaverMovingInInfoModel
+    from jibsa.providers.naver.service.listing.detail import _move_in_label
 
     def label(code: str, date: str | None, negotiation: bool = False, notes: list[str] | None = None) -> str | None:
         return _move_in_label(NaverMovingInInfoModel.model_validate(
@@ -448,10 +448,10 @@ def test_detail_move_in_within_and_after_keep_the_bound() -> None:
 
 def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -> None:
     # 웹은 항목별형의 합계에 정액·실비를 가리지 않고 모든 항목 금액을 더한다. 포함 항목은 정액 항목만 남긴다
-    from jibsa.providers.naver.api.response.listing import (
+    from jibsa.providers.naver.api.response.listing.detail import (
         NaverArticleMaintenanceFeeModel,
     )
-    from jibsa.providers.naver.service.listing.functions import _manage_cost
+    from jibsa.providers.naver.service.listing.detail import _manage_cost
 
     fee = NaverArticleMaintenanceFeeModel.model_validate({'typeCode': '01', 'fixDetailList': [
         {'type': '01', 'unitType': '01', 'amount': 100000},
@@ -562,7 +562,7 @@ def _complex_article_page(numbers: list[str], has_next: bool) -> dict:
 
 def test_list_complex_articles_stops_at_request_cap() -> None:
     # 페이지마다 매물이 적어 limit 을 못 채워도 요청은 상한에서 멈추고 안내한다
-    from jibsa.providers.naver.service.listing.functions import (
+    from jibsa.providers.naver.service.listing.complex import (
         MAX_COMPLEX_ARTICLE_PAGE_REQUESTS,
     )
 
@@ -851,7 +851,7 @@ def _short_article_page(index: int) -> dict:
 def test_whole_dong_stops_at_request_cap() -> None:
     # 받은 개수로 세므로 덜 찬 페이지가 이어지면 limit 전에 요청 상한에서 멈춘다.
     # 안내의 건수는 상한 × 페이지 크기가 아니라 실제로 받은 수다
-    from jibsa.providers.naver.service.search.functions import (
+    from jibsa.providers.naver.service.search.listings import (
         MAX_LEGAL_DIVISION_PAGE_REQUESTS,
     )
 

@@ -11,7 +11,7 @@
 
 - 진짜 문제의 가장 큰 덩어리는 **출력 값은 맞는데 안내(`notes`·`hint`)가 틀린 것**이다. 관점과 상관없이 첫 질문은 "이 안내를
   그대로 따라 하면 성공하는가" 다.
-- 사례 경로는 `src/jibsa/` 기준이고 줄 번호는 적은 날의 것이라, 어긋나면 그 자리 주석의 날짜로 찾는다. 2026-11-26 에 service 모듈을 기능 폴더의 `models.py`·`functions.py` 로 나눠, 그 전 사례의 `service/<기능>.py` 는 `service/<기능>/models.py`(모델)나 `functions.py`(함수)다.
+- 사례 경로는 `src/jibsa/` 기준이고 줄 번호는 적은 날의 것이라, 어긋나면 그 자리 주석의 날짜로 찾는다. 2026-11-26 에 service 모듈을 기능 폴더의 `models.py`·`functions.py` 로 나눠, 그 전 사례의 `service/<기능>.py` 는 `service/<기능>/models.py`(모델)나 `functions.py`(함수)다. 명령 둘 이상을 맡는 기능의 `functions.py` 는 같은 날 명령별 모듈(`<기능>/search.py` 등)과 `base.py` 로 나눴다.
 - 새 패턴을 더하는 법은 [코드 리뷰](agents.md#코드-리뷰) 6단계다.
 
 ## `correctness` 정확성·버그

@@ -11,25 +11,25 @@
 | `search locations` | `loc/search` (동·역·대학·단지 한 번에) | `region` |
 | `search listings room·villa·officetel·apt` | 이름 해석(`loc/search`) → `room-list/category/{유형}/{region·subway·univ·bbox}` 24건씩. 아파트 동은 동 경계(CDN) → `bbox` | `listing` |
 | `listing` | (매물번호면 `room/get-room-id`) → `new-room/detail` | `listing` |
-| `search complexes` | 이름 해석 → `complex-list/category/{apt·officetel}/{…}` | `complex` |
-| `complex` | `complex/{id}` + `complex/{apt·officetel}/summary` + `complex/{id}/loan-calc-condition` (뒤의 둘은 덤 조회) | `complex` |
-| `school` | `3/education/{elementary·middle·high}-school/{코드}`, 유치원·어린이집은 `3/education/{kinder·nursery}-school/{코드}` | `school` |
-| `search schools` | 이름 해석(동만) → `region-info/school/regional/{elementary·middle·high·kinder·nursery}-school` 30곳씩 | `school` |
-| `search listings --complex` | `complex/{id}` (평형·유형) → `room-list/category/{apt·officetel}/complex` (`order` 정렬) | `complex` |
-| `real-price` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/histories`, `--listing` 은 `real-price/house/init` → `real-price/house/history` | `real_price` |
-| `price-trend` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/charts` | `real_price` |
-| `nearby-complexes` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/price-per-py` | `real_price` |
-| `neighborhood` | 이름 해석 → 주제마다 `region-info/{room·real-estate·population}/regional/summary` 또는 `region-info/{school·amenity·mobility·life-safety}/regional/count`. `--ranks` 면 + 학교·편의·교통·안전의 종류마다 `region-info/{school·amenity·mobility·life-safety}/regional/summary` | `neighborhood` |
-| `hot-places` | 이름 해석(동만) → `region-info/hot-places` 30곳씩 | `neighborhood` |
-| `popular-listings` | 이름 해석 → `region-info/room/regional/popular-room` 50건씩 | `neighborhood` |
-| `nearby` | `transit/near/{room·complex·sale}` + `{room·complex·sale}/{id}/near`. `--with` 면 + 반려동물 `pet-places?complexId=`, 카셰어링 `public-data/{room·complex}/car-share-zone` | `nearby` |
-| `station-prices` | 이름 해석 → `markers/category/one-two` (역을 덮는 지도 범위, 확대 16) | `nearby` |
-| `search sales` | 전국·시도·시군구: 범위 해석(`region/states` → `region/cities`) → `3/sale-in-lots/list/search3` 24곳씩 / 동: 동 경계(CDN) → `sale-list/category/bbox` / 역·대학·좌표: 반경 사각형 → `sale-list/category/bbox` 24곳씩 | `sale` |
-| `sale` | `3/sale-in-lots/detail2` | `sale` |
-| `sale-schedule` | `3/sale-in-lots/list/schedule` (7일까지). `--details`·`--region` 이면 + 날마다 `3/sale-in-lots/list/schedule/search?from=yyyy-MM-d` | `sale` |
-| `trending-complexes` | `real-time-watch-rankings/{complex·region}` | `ranking` |
-| `trade-rankings` | `real-price/trade/rankings/complex` | `ranking` |
-| `region-ranking` | 범위 해석(`region/states` → `region/cities?stateCode=`, 시·도 없는 시·군·구는 `loc/search` 로 시·도를 찾고 `region/cities`, 단지 순위의 동 범위는 `loc/search` 의 동 `gid`) → 부동산 `region-info/real-estate/ranking/{region·complex}/{항목}` 50곳씩 (증감 항목은 `…/trade-volume-change`·`…/room-count-change`), `-t 빌라` 는 `region-info/room/ranking/{room-count·trade-volume·reaction-score}` 30곳씩, 동네정보 `region-info/{school·population·amenity·mobility·life-safety}/ranking/{항목}` 30곳씩 | `ranking` |
+| `search complexes` | 이름 해석 → `complex-list/category/{apt·officetel}/{…}` | `complex.search` |
+| `complex` | `complex/{id}` + `complex/{apt·officetel}/summary` + `complex/{id}/loan-calc-condition` (뒤의 둘은 덤 조회) | `complex.detail` |
+| `school` | `3/education/{elementary·middle·high}-school/{코드}`, 유치원·어린이집은 `3/education/{kinder·nursery}-school/{코드}` | `school.detail` |
+| `search schools` | 이름 해석(동만) → `region-info/school/regional/{elementary·middle·high·kinder·nursery}-school` 30곳씩 | `school.search` |
+| `search listings --complex` | `complex/{id}` (평형·유형) → `room-list/category/{apt·officetel}/complex` (`order` 정렬) | `complex.detail` |
+| `real-price` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/histories`, `--listing` 은 `real-price/house/init` → `real-price/house/history` | `real_price.trades` |
+| `price-trend` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/charts` | `real_price.trend` |
+| `nearby-complexes` | (`--pyeong` 없으면 `complex/{id}`) → `real-price/complex/price-per-py` | `real_price.nearby` |
+| `neighborhood` | 이름 해석 → 주제마다 `region-info/{room·real-estate·population}/regional/summary` 또는 `region-info/{school·amenity·mobility·life-safety}/regional/count`. `--ranks` 면 + 학교·편의·교통·안전의 종류마다 `region-info/{school·amenity·mobility·life-safety}/regional/summary` | `neighborhood.info` |
+| `hot-places` | 이름 해석(동만) → `region-info/hot-places` 30곳씩 | `neighborhood.hot_places` |
+| `popular-listings` | 이름 해석 → `region-info/room/regional/popular-room` 50건씩 | `neighborhood.popular` |
+| `nearby` | `transit/near/{room·complex·sale}` + `{room·complex·sale}/{id}/near`. `--with` 면 + 반려동물 `pet-places?complexId=`, 카셰어링 `public-data/{room·complex}/car-share-zone` | `nearby.places` |
+| `station-prices` | 이름 해석 → `markers/category/one-two` (역을 덮는 지도 범위, 확대 16) | `nearby.station` |
+| `search sales` | 전국·시도·시군구: 범위 해석(`region/states` → `region/cities`) → `3/sale-in-lots/list/search3` 24곳씩 / 동: 동 경계(CDN) → `sale-list/category/bbox` / 역·대학·좌표: 반경 사각형 → `sale-list/category/bbox` 24곳씩 | `sale.search` |
+| `sale` | `3/sale-in-lots/detail2` | `sale.detail` |
+| `sale-schedule` | `3/sale-in-lots/list/schedule` (7일까지). `--details`·`--region` 이면 + 날마다 `3/sale-in-lots/list/schedule/search?from=yyyy-MM-d` | `sale.schedule` |
+| `trending-complexes` | `real-time-watch-rankings/{complex·region}` | `ranking.trending` |
+| `trade-rankings` | `real-price/trade/rankings/complex` | `ranking.trade` |
+| `region-ranking` | 범위 해석(`region/states` → `region/cities?stateCode=`, 시·도 없는 시·군·구는 `loc/search` 로 시·도를 찾고 `region/cities`, 단지 순위의 동 범위는 `loc/search` 의 동 `gid`) → 부동산 `region-info/real-estate/ranking/{region·complex}/{항목}` 50곳씩 (증감 항목은 `…/trade-volume-change`·`…/room-count-change`), `-t 빌라` 는 `region-info/room/ranking/{room-count·trade-volume·reaction-score}` 30곳씩, 동네정보 `region-info/{school·population·amenity·mobility·life-safety}/ranking/{항목}` 30곳씩 | `ranking.region` |
 
 단지 상세(`complex/{id}`)는 `complex`·`real_price` 가 같이 불러 요청·응답 모델과 `fetch_complex` 가 `common` 에 있다.
 
@@ -161,7 +161,7 @@
 
 ### 목록 안 빈 항목 (`null_items`)
 
-- 다방이 객체 목록 안에 null 원소를 주면 기반 모델 `DabangBaseResponseModel` 이 빼고 칸마다 센다 (`result.null_items('list_')`). 봉투 없이 목록 하나가 루트로 오는 분양 일정 응답 둘(`DabangSaleInLotsListScheduleV3ResponseModel`·`DabangSaleInLotsListScheduleSearchV3ResponseModel`)은 core 가 닿지 않아 `DabangRootListModel`(`api/response/sale.py`, `RootModel[list[T]]`)이 같은 규칙으로 빼고 `null_items()` 로 센다. 공통 규칙(계산한 값은 null, 자리 세기는 뺀 수를 더함, `[제외]` 안내)은 [모듈 구성](../provider-conventions.md#모듈-구성)에 있고, 다방의 자리별 처리는 아래와 같다. 안내는 `null_items_note` 라 끝말이 `UPDATE_MAYBE_NEEDED` 다.
+- 다방이 객체 목록 안에 null 원소를 주면 기반 모델 `DabangBaseResponseModel` 이 빼고 칸마다 센다 (`result.null_items('list_')`). 봉투 없이 목록 하나가 루트로 오는 분양 일정 응답 둘(`DabangSaleInLotsListScheduleV3ResponseModel`·`DabangSaleInLotsListScheduleSearchV3ResponseModel`)은 core 가 닿지 않아 `DabangRootListModel`(`api/response/sale/schedule.py`, `RootModel[list[T]]`)이 같은 규칙으로 빼고 `null_items()` 로 센다. 공통 규칙(계산한 값은 null, 자리 세기는 뺀 수를 더함, `[제외]` 안내)은 [모듈 구성](../provider-conventions.md#모듈-구성)에 있고, 다방의 자리별 처리는 아래와 같다. 안내는 `null_items_note` 라 끝말이 `UPDATE_MAYBE_NEEDED` 다.
   - **쪽으로 받는 목록(`fetch_pages`)**: 호출부가 한 쪽의 뺀 수를 `DabangPage.dropped` 로 넘기면(`DabangPage(rows, total, has_more, result.null_items('list_'))` 꼴. 매물·단지 목록·단지 매물·학교·핫플레이스·분양 목록. 실거래는 같은 꼴의 `_Page`) `DabangPages.dropped`(안내용)와 `dropped_used`(다 쓴 쪽의 몫)로 모은다. 뺀 줄은 `--limit` 의 줄로 세지 않지만 서버의 칸이라, 빈 항목만 온 쪽은 빈 쪽으로 보지 않고 `has_more` 와 이어 받을 위치(`received`)는 뺀 칸을 더해 센다. 쪽 중간에서 멈춘 쪽의 몫은 이어 받을 때 같은 쪽을 다시 받아 그때 세므로 `dropped_used` 에서 뺀다. 안내는 `fetch_pages` 를 부른 명령이 붙인다 (매물 `search_listings`, 동네정보 `region_info_list_notes`, 분양 `_sale_list_notes`, 실거래·시세 흐름 매매 월별, 인기 매물).
   - **광고 묶음(`room_list_page`)**: 묶음 안의 빈 항목은 광고 자리로 센다. 묶음 자체가 null 로 빠진 몫은 안의 매물 수를 알 수 없어 세지 못하고, 광고 건수가 적게 나갈 수 있다 (자리별 안내는 없고 뺀 수는 공통 안내가 알린다).
   - **지역 랭킹(`get_region_ranking`)**: 둘째 쪽을 부르는 판정(`len(entries) + dropped < limit`)과 빈 쪽 판정에 뺀 칸을 더하고 안내한다.
@@ -169,7 +169,7 @@
   - **인기 매물 순위(`get_popular_listings`)**: 빈 항목을 뺀 쪽의 `rank` 만 null 이다. 순위는 쪽 번호로 `(page-1)*page_size+index+1` 을 세고 서버도 칸 단위로 같은 offset 을 주므로 뒤 쪽 순위는 맞아서, 모르는 쪽만 null 로 둔다.
   - **분양 일정(`get_sale_schedule`)**: 날 목록(루트)·종류 묶음·일정 어느 층에서든 뺐으면 `total`(`int | None`)이 null 이고 안내 문장의 건수는 '적어도' 로 쓴다. `--details` 로 받는 그 날의 분양 단지 표(`DabangSaleInLotsListScheduleSearchV3ResponseModel`)에서 뺀 수는 `[제외]` 로 알리기만 한다.
   - **매물 상세 관리비**: 정액관리비 항목 목록(`maintenance_fixed_fee_charge_detail_list`)에서 뺐으면 `manage_cost_includes`·`manage_cost_excludes` 가 null 이다 (`_manage_cost`).
-  - **대표 평형(`first_space_notes`)**: 다방이 대표 평형을 주지 않아 평형 목록의 첫 평형으로 대신하는데(`primary_space_of`) 그 목록에서 뺐으면 뺀 항목이 웹의 첫 평형이었을 수 있어 안내만 한다. 단지 상세(`complex/functions.py`)와 실거래·시세 흐름의 평형 고르기(`primary_space`)가 부른다.
+  - **대표 평형(`first_space_notes`)**: 다방이 대표 평형을 주지 않아 평형 목록의 첫 평형으로 대신하는데(`primary_space_of`) 그 목록에서 뺐으면 뺀 항목이 웹의 첫 평형이었을 수 있어 안내만 한다. 단지 상세(`service/complex/detail.py`)와 실거래·시세 흐름의 평형 고르기(`primary_space`)가 부른다.
   - **실거래**: 거래 목록(`histories`)·시세 흐름 매매 월별(`statistics`)에서 뺐으면 안내만 한다.
 - 손대지 않은 자리: `search locations` 의 후보 수 판정(`cli/dabang.py` 의 `counts`)은 서버 칸 수가 아니라 jibsa 가 `[:limit]` 로 자른 줄이 있는지 보는 것이라 뺀 뒤의 줄 수로 센다 (칸 수로 세면 빈 항목 하나 때문에 자르지도 않았는데 '11곳 중 10곳' `[일부]` 안내가 나간다).
 

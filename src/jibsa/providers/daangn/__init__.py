@@ -4,11 +4,9 @@ from .api.client import DaangnClient
 from .service.common.models import DaangnRegion
 from .service.commute.functions import search_commute as _search_commute
 from .service.commute.models import DaangnCommuteResult
-from .service.complex.functions import get_complex as _get_complex
-from .service.complex.functions import list_bounds_complexes as _list_bounds_complexes
-from .service.complex.functions import list_complex_listings as _list_complex_listings
-from .service.complex.functions import list_region_complexes as _list_region_complexes
-from .service.complex.functions import search_complexes as _search_complexes
+from .service.complex.base import search_complexes as _search_complexes
+from .service.complex.detail import get_complex as _get_complex
+from .service.complex.detail import list_complex_listings as _list_complex_listings
 from .service.complex.models import (
     DaangnBoundsComplexesResult,
     DaangnComplex,
@@ -16,22 +14,24 @@ from .service.complex.models import (
     DaangnComplexListingsResult,
     DaangnRegionComplexesResult,
 )
+from .service.complex.search import list_bounds_complexes as _list_bounds_complexes
+from .service.complex.search import list_region_complexes as _list_region_complexes
 from .service.listing.functions import get_listing as _get_listing
 from .service.listing.models import DaangnListingDetail
-from .service.real_price.functions import (
+from .service.real_price.complex import (
     get_listing_real_prices as _get_listing_real_prices,
 )
-from .service.real_price.functions import get_price_trend as _get_price_trend
-from .service.real_price.functions import get_real_prices as _get_real_prices
-from .service.real_price.functions import (
-    get_region_real_prices as _get_region_real_prices,
-)
+from .service.real_price.complex import get_real_prices as _get_real_prices
 from .service.real_price.models import (
     DaangnListingRealPriceResult,
     DaangnPriceTrendResult,
     DaangnRealPriceResult,
     DaangnRegionRealPriceResult,
 )
+from .service.real_price.region import (
+    get_region_real_prices as _get_region_real_prices,
+)
+from .service.real_price.trend import get_price_trend as _get_price_trend
 from .service.region.functions import find_address as _find_address
 from .service.region.functions import find_station as _find_station
 from .service.region.functions import find_university as _find_university
@@ -45,8 +45,8 @@ from .service.region.models import (
 )
 from .service.review.functions import get_region_reviews as _get_region_reviews
 from .service.review.models import DaangnRegionReviews
-from .service.school.functions import get_school as _get_school
 from .service.school.models import DaangnSchoolResult
+from .service.school.school import get_school as _get_school
 from .service.search.functions import search_dong as _search_dong
 from .service.search.functions import search_map_area as _search_map_area
 from .service.search.functions import search_station as _search_station

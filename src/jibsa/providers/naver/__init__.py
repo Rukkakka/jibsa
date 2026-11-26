@@ -4,8 +4,8 @@ from .api.client import NaverClient
 from .service.common.models import NaverListingsResult
 from .service.complex.functions import get_complex as _get_complex
 from .service.complex.models import NaverComplexSummary
-from .service.listing.functions import get_listing as _get_listing
-from .service.listing.functions import list_complex_articles as _list_complex_articles
+from .service.listing.complex import list_complex_articles as _list_complex_articles
+from .service.listing.detail import get_listing as _get_listing
 from .service.listing.models import NaverListingDetail
 from .service.market_price.functions import (
     get_market_price_history as _get_market_price_history,
@@ -13,16 +13,16 @@ from .service.market_price.functions import (
 from .service.market_price.models import NaverMarketPriceHistory
 from .service.real_price.functions import get_real_prices as _get_real_prices
 from .service.real_price.models import NaverRealPriceResult
-from .service.redevelopment.functions import get_redevelopment as _get_redevelopment
-from .service.redevelopment.functions import (
-    list_redevelopment_areas as _list_redevelopment_areas,
-)
-from .service.redevelopment.functions import (
+from .service.redevelopment.detail import get_redevelopment as _get_redevelopment
+from .service.redevelopment.listings import (
     list_redevelopment_articles as _list_redevelopment_articles,
 )
 from .service.redevelopment.models import (
     NaverRedevelopmentAreasResult,
     NaverRedevelopmentDetail,
+)
+from .service.redevelopment.search import (
+    list_redevelopment_areas as _list_redevelopment_areas,
 )
 from .service.region.functions import list_regions as _list_regions
 from .service.region.functions import resolve_complex_number as _resolve_complex_number
@@ -32,7 +32,7 @@ from .service.region.models import (
 )
 from .service.school.functions import get_school as _get_school
 from .service.school.models import NaverSchoolDetail
-from .service.search.functions import search_area as _search_area
+from .service.search.listings import search_area as _search_area
 from .service.trend.functions import get_district_trend as _get_district_trend
 from .service.trend.models import NaverDistrictTrend
 

@@ -37,7 +37,7 @@ from jibsa.providers.daangn.api.request.common import (
     DaangnCoordinateInputModel,
     DaangnSalesType,
 )
-from jibsa.providers.daangn.api.request.compare import (
+from jibsa.providers.daangn.api.request.compare.base import (
     DaangnComplexCompareRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.response.common import (
@@ -48,7 +48,7 @@ from jibsa.providers.daangn.api.response.common import (
     DaangnRegionComplexNodeModel,
     DaangnTradeModel,
 )
-from jibsa.providers.daangn.api.response.compare import (
+from jibsa.providers.daangn.api.response.compare.base import (
     DaangnCompareAreaGroupModel,
     DaangnCompareComplexModel,
 )

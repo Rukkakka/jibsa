@@ -13,7 +13,7 @@ effort: high
    - 그 소스의 `api/client.py` docstring, `api/response/` 모델, `docs/development/providers/<소스>.md` 를 읽어 이미 있는 기능·모듈과 겹치지 않는지, 어느 기능 모듈에 들어갈지 본다.
    - 출력에 사진·중개사 연락처·본문·매물 좌표가 섞이지 않는지, 금액을 만원으로 바꿀 곳, 만료 매물을 거를 곳.
 2. **계획을 설명하고 허락받는다** (AGENTS.md 작업 절차). 고칠 파일을 순서대로 적는다:
-   `api/client.py`(ClassVar + sync/async 메서드, docstring 에 엔드포인트·필드 의미) → `api/request/<기능>.py` → `api/response/<기능>.py` → `service/<기능>/models.py`·`functions.py` (request·response 는 같은 기능 이름의 모듈. 직방처럼 기능이 여러 모듈이면 세 곳이 `<기능>/search.py` 처럼 같은 경로이고 모델은 `service/<기능>/models.py`) → `cli/<소스>.py` → 문서.
+   `api/client.py`(ClassVar + sync/async 메서드, docstring 에 엔드포인트·필드 의미) → `api/request/<기능>.py` → `api/response/<기능>.py` → `service/<기능>/models.py`·`functions.py` (명령 하나를 맡는 기능. 명령 둘 이상을 맡는 기능은 세 곳이 `<기능>/search.py` 처럼 명령별 모듈로 같은 경로이고, 둘 이상이 같이 쓰는 것은 `<기능>/base.py`, 모델은 `service/<기능>/models.py`) → `cli/<소스>.py` → 문서.
    함께 고칠 곳 (AGENTS.md "문서 갱신" 표):
    - `docs/<소스>.md` 의 그 명령 절
    - 명령을 더했으면 `docs/llm.md` 와 `scripts/monitor/api_check.py` 의 `GROUPS`. 매물을 찾는 새 방식이면 그 방식도 `GROUPS` 에
