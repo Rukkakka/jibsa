@@ -11,6 +11,7 @@ from pydantic import (
 
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
+    Result,
     join_address,
     more_hint,
     note,
@@ -142,8 +143,11 @@ class DaangnReviewBuilding(BaseModel):
     ]
 
 
-class DaangnRegionReviews(BaseModel):
-    """동네 거주 후기 안내. 후기 본문과 당근이 만든 요약 글은 담지 않는다 (url 의 원 사이트에서 본다)."""
+class DaangnRegionReviews(Result):
+    """동네 거주 후기 안내. 후기 본문과 당근이 만든 요약 글은 담지 않는다 (url 의 원 사이트에서 본다).
+
+    `notes`: 후기를 원 사이트에서 보라는 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -177,10 +181,6 @@ class DaangnRegionReviews(BaseModel):
         str,
         Field(description='당근 동네 후기 페이지 (동이면 그 동의 후기 페이지, 구가 없는 시는 동 이름을 구 자리에 둔 후기 페이지). 후기 페이지가 없으면 당근 지도 페이지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='후기를 원 사이트에서 보라는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_not_applicable(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

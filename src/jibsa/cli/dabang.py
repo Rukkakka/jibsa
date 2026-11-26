@@ -479,7 +479,7 @@ def _search(
             }}
         if details:
             result = attach_details(client, result, built_within_years=built_within)
-        emit(result, pretty, notes=trade_notes + result.notes, next_token=encode_next(next_position), fields=fields)
+        emit(result, pretty, notes=trade_notes, next_token=encode_next(next_position), fields=fields)
 
 
 @search_app.command('locations')
@@ -819,7 +819,7 @@ def complex_listings_command(
         result = list_complex_listings(
             client, value, conditions=conditions, space_seqs=space_seqs, sort=chosen_sort, limit=limit,
         )
-        emit(result, pretty, notes=trade_notes + result.notes, fields=fields)
+        emit(result, pretty, notes=trade_notes, fields=fields)
 
 
 @search_app.command('complexes')
@@ -845,7 +845,7 @@ def complexes_command(
     with handle_errors(SOURCE), DabangClient() as client:
         place = _place(client, query, lat, lng)
         result = search_complexes(client, chosen_type, place, limit=limit, radius_km=radius)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('listing')
@@ -869,7 +869,7 @@ def listing_command(
         )
     with handle_errors(SOURCE), DabangClient() as client:
         detail = get_listing(client, value)
-        emit(detail, pretty, notes=detail.notes)
+        emit(detail, pretty)
 
 
 @app.command('complex')
@@ -885,7 +885,7 @@ def complex_command(
     value = _require_complex_id(complex_id)
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_complex(client, value)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('school')
@@ -960,7 +960,7 @@ def schools_command(
             client, resolve_dong(client, query, subject='동 안 학교', elsewhere=None), chosen_level,
             establishment=chosen_establishment, limit=limit,
         )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('real-price')
@@ -1004,12 +1004,12 @@ def real_price_command(
             raise typer.BadParameter(f"다방 매물 ID(24자리)가 아닙니다: '{listing}'", param_hint='--listing')
         with handle_errors(SOURCE), DabangClient() as client:
             result = get_listing_real_prices(client, listing_id, trade=given_trade, years=years, limit=limit)
-            emit(result, pretty, notes=result.notes)
+            emit(result, pretty)
         return
     value = _require_complex_id(complex_id or '')
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_real_prices(client, value, space_seq=pyeong, trade=given_trade or '매매', years=years, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('price-trend')
@@ -1025,7 +1025,7 @@ def price_trend_command(
     value = _require_complex_id(complex_id)
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_price_trend(client, value, space_seq=pyeong)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('nearby-complexes')
@@ -1045,7 +1045,7 @@ def nearby_complexes_command(
     value = _require_complex_id(complex_id)
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_nearby_complexes(client, value, space_seq=pyeong)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 # --ranks 도움말: 주제마다 종류 수 ('학교 5·편의 5·교통 4·안전 3'), 고른 주제를 모두 받을 때의 요청 수. 종류마다 요청 1회다
@@ -1086,7 +1086,7 @@ def neighborhood_command(
             client, query, subject='동네정보', elsewhere='jibsa dabang station-prices <역> 이나 search listings',
         )
         result = get_neighborhood(client, dong, topics, ranks=ranks)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('hot-places')
@@ -1110,7 +1110,7 @@ def hot_places_command(
     with handle_errors(SOURCE), DabangClient() as client:
         dong = resolve_dong(client, query, subject='핫플레이스', elsewhere=None)
         result = get_hot_places(client, dong, type_label=chosen_type, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('popular-listings')
@@ -1139,7 +1139,7 @@ def popular_listings_command(
             client, resolve_dong(client, query, subject='인기 매물', elsewhere='jibsa dabang search listings'),
             building_types=building_types, trade_types=trade_types, limit=limit,
         )
-        emit(result, pretty, notes=result.notes, fields=fields)
+        emit(result, pretty, fields=fields)
 
 
 @app.command('nearby')
@@ -1295,7 +1295,7 @@ def sales_command(
                 result = find(dong=place)
             else:
                 result = find(place=place, radius_km=radius)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('sale')
@@ -1312,7 +1312,7 @@ def sale_command(
     value = _require_sale_id(sale_id)
     with handle_errors(SOURCE), DabangClient() as client:
         detail = get_sale(client, value)
-        emit(detail, pretty, notes=detail.notes)
+        emit(detail, pretty)
 
 
 @app.command('sale-schedule')
@@ -1349,7 +1349,7 @@ def sale_schedule_command(
         raise typer.BadParameter(f"YYYY-MM-DD 꼴로 주세요: '{from_date}'", param_hint='--from') from None
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_sale_schedule(client, start=start, days=days, region=region, details=details, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('trending-complexes')
@@ -1399,7 +1399,7 @@ def trade_rankings_command(
     chosen_period = _one(period, tuple(TRADE_PERIOD_BY_LABEL), '--period', '이번주')
     with handle_errors(SOURCE), DabangClient() as client:
         result = get_trade_rankings(client, complex_type=chosen_type, trade=chosen_trade, period=chosen_period, limit=limit)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 REAL_ESTATE_METRICS: tuple[str, ...] = tuple(label for label, spec in METRIC_BY_LABEL.items() if not isinstance(spec, InfoMetricSpec))
@@ -1523,4 +1523,4 @@ def region_ranking_command(
             limit=limit,
             kind_label=chosen_kind,
         )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)

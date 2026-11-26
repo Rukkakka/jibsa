@@ -15,6 +15,7 @@ from jibsa.core.geo import (
 from jibsa.core.listing import (
     AmountSet,
     NumberRange,
+    Result,
     limit_notes,
     lookup_failure_note,
     m2_to_pyeong,
@@ -187,8 +188,11 @@ class DabangComplexSummary(BaseModel):
     ]
 
 
-class DabangComplexListResult(BaseModel):
-    """단지 목록."""
+class DabangComplexListResult(Result):
+    """단지 목록.
+
+    `notes`: 범위·제외 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -218,10 +222,6 @@ class DabangComplexListResult(BaseModel):
         list[DabangComplexSummary],
         Field(description='다방 목록 순 단지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='범위·제외 안내')
-    ] = []
 
 
 def _summary(item: DabangComplexListItemModel) -> DabangComplexSummary:
@@ -536,8 +536,11 @@ class DabangChildcare(BaseModel):
     ] = None
 
 
-class DabangComplexDetail(BaseModel):
-    """단지 정보."""
+class DabangComplexDetail(Result):
+    """단지 정보.
+
+    `notes`: 덤 조회 실패·최근 거래 평형 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -669,10 +672,6 @@ class DabangComplexDetail(BaseModel):
         str,
         Field(description='단지 페이지 URL')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='덤 조회 실패·최근 거래 평형 안내')
-    ] = []
 
 
 def _school(school: DabangComplexSchoolModel, level: SchoolLevel) -> DabangComplexSchool:
@@ -867,8 +866,11 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     )
 
 
-class DabangComplexListingsResult(BaseModel):
-    """단지 하나의 매물."""
+class DabangComplexListingsResult(Result):
+    """단지 하나의 매물.
+
+    `notes`: 평형·제외·일부 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -906,10 +908,6 @@ class DabangComplexListingsResult(BaseModel):
         list[DabangListing],
         Field(description='sort 순서 그대로의 매물 (다방이 정렬한 순서)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='평형·제외·일부 안내')
-    ] = []
 
 
 def list_complex_listings(

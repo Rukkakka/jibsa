@@ -659,7 +659,10 @@ def _nearby_development(client: NaverClient, article_number: str, notes: list[st
 
 
 class NaverListingDetail(ListingDetail):
-    """상세 조회로 보강한 네이버 매물. 단지 번호로 실거래가·단지 정보를 이어서 조회할 수 있다."""
+    """상세 조회로 보강한 네이버 매물. 단지 번호로 실거래가·단지 정보를 이어서 조회할 수 있다.
+
+    `notes`: 덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다
+    """
 
     complex_id: Annotated[
         int | None,
@@ -775,10 +778,6 @@ class NaverListingDetail(ListingDetail):
         str | None,
         Field(exclude=True, description='네이버 매물 유형 코드 (A01 …). 유형마다 웹에 없는 칸을 가리는 데만 쓴다')
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
-    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         # 단지에 속하지 않는 매물(빌라 등)은 단지·동·평형 번호가 원래 없다.

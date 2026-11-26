@@ -106,6 +106,8 @@ class DaangnListingDetail(ListingDetail):
 
     `key_money_manwon`·`key_money_negotiable` 은 상가에만, `broker_fee_manwon` 은 중개사 매물에만 있다
     (그 밖에는 키를 뺀다). 권리금 설명 글(`premiumMoneyDescription`)은 작성자가 쓴 자유 글이라 옮기지 않는다.
+
+    `notes`: --trade 조건이 없어 대표 조건을 보여 준다는 안내. CLI 가 결과 위에 붙인다
     """
 
     other_trades: Annotated[
@@ -148,10 +150,6 @@ class DaangnListingDetail(ListingDetail):
         bool,
         Field(exclude=True, description='직거래 매물인지. 중개보수가 해당 없는지 가리는 데만 쓴다')
     ] = False
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='--trade 조건이 없어 대표 조건을 보여 준다는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()

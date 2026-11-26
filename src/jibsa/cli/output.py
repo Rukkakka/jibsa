@@ -37,20 +37,19 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
-    NULL_ITEMS_PHRASE,
     SHARED_TRADE_TYPES,
+    SITE_NAMES,
     Listing,
+    Result,
+    collected_notes,
     insert_after,
     listing_field_names,
     note,
-    null_items_total_note,
     reset_unread_dates,
     tagged_notes,
-    unread_date_notes,
 )
 from jibsa.core.schema import (
     is_request_validation_error,
-    null_item_tally,
     reset_null_item_tally,
 )
 
@@ -63,13 +62,6 @@ from typing import (
 )
 
 
-# 소스 이름 -> 안내에 쓰는 사이트 이름. 응답에서 뺀 빈 항목의 공통 안내(`null_items_total_note`)와 못 읽은 날짜 안내(`unread_date_notes`)에 쓴다
-SITE_NAMES: dict[str, str] = {
-    'zigbang': '직방',
-    'naver': '네이버',
-    'daangn': '당근',
-    'dabang': '다방',
-}
 # 지금 도는 명령의 소스. `handle_errors` 가 명령이 도는 동안만 정해 두고, `emit` 이 읽는다 (명령 코드 85곳이 소스를 다시 넘기지 않게).
 # 명령 밖에서 부른 `emit` 은 소스를 몰라 공통 안내를 붙이지 않는다
 _command_source: str | None = None
@@ -277,7 +269,7 @@ def emit(
     notes: list[str] | None = None,
     next_token: str | None = None,
     fields: list[str] | None = None,
-    fields_source: BaseModel | None = None,
+    head: dict[str, Any] | None = None,
 ) -> None:
     """결과를 JSON 으로 stdout 에 쓴다.
 
@@ -285,21 +277,26 @@ def emit(
     키째 뺀다 (`Listing.not_applicable_fields`). `notes` 가 있으면 맨 앞에 붙이고,
     없으면 키를 뺀다 (모호하거나 넓은 지역 안내 등). `next_token`(이어 받기 표, `jibsa.cli.paging`)이 있으면
     `has_more` 바로 뒤에 `next` 로 붙이고, 없으면 키를 뺀다. `fields`(`--fields`)를 주면 매물마다 그 필드와
-    늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 를 이미 dict 로 만들어 넘기면(네이버처럼 지역·범위를 앞에 붙이는 명령)
-    매물 모델을 알 수 없으니, 이 명령에 없는 필드를 알리는 안내(`missing_fields_note`)를 위해 원래 결과를 `fields_source` 로 준다.
+    늘 내는 필드(`ALWAYS_FIELDS`)만 남긴다. `data` 가 `Result` 면 그 `notes` 를 넘겨받은 `notes` 뒤에 붙인다. 지역·범위처럼 결과 모델에 없는 칸을 출력 맨 앞에 붙일 때는 결과를
+    dict 로 풀지 말고 `head` 로 준다 (dict 로 풀면 결과의 `notes` 와 매물 모델을 알 수 없다).
     출력에 연세(`yearly_rent_manwon`)나 1억 이상 금액이 있으면 그 값으로 만든 읽는 법(`yearly_rent_note`·`manwon_note`)을
     `notes` 끝에 붙인다. 출력 날짜 칸에서 읽지 못한 날짜가 있으면 칸마다 `[참고]` 한 줄을 붙인다 (`unread_date_notes`).
     명령이 응답에서 빈 항목을 뺐는데 `notes` 에 빈 항목 안내가 없으면 공통 안내도 붙인다.
     """
+    # 결과의 안내는 명령이 넘긴 안내 뒤에 붙인다 (명령마다 `notes=… + result.notes` 로 넘기던 순서)
+    if isinstance(data, Result):
+        notes = [*(notes or []), *data.notes]
     if isinstance(data, BaseModel):
         payload: Any = data.model_dump(mode='json')
     elif isinstance(data, list):
         payload = [item.model_dump(mode='json') for item in data]
     else:
         payload = data
+    if head and isinstance(payload, dict):
+        payload = {**head, **payload}
     if fields:
         payload = _select_fields(payload, frozenset(fields) | ALWAYS_FIELDS)
-        if missing := missing_fields_note(data if fields_source is None else fields_source, fields):
+        if missing := missing_fields_note(data, fields):
             notes = [*(notes or []), missing]
     # 고른 필드만 남긴 뒤에 만든다 (예시 값이 출력에 있어야 한다)
     if yearly := yearly_rent_note(payload):
@@ -307,14 +304,10 @@ def emit(
     if money := manwon_note(payload):
         notes = [*(notes or []), money]
     site = SITE_NAMES.get(_command_source or '')
-    # 읽지 못한 날짜 안내(`unread_date_notes`): 출력 날짜 칸이 `read_date` 로 모은 원래 글자를 칸마다 한 줄로 알린다. 명령 밖에서 부른 `emit` 은 붙이지 않는다. `--fields` 로 고르지 않은 날짜 칸의 안내는 뺀다
-    if site is not None and (unread := unread_date_notes(site, frozenset(fields) if fields else None)):
-        notes = [*(notes or []), *unread]
-    # 빈 항목 공통 안내(`null_items_total_note`): 계산에 쓰는 자리는 소스가 `null_items_note` 로 따로 알리므로 겹쳐 붙이지 않는다. 보여 주기만 하는 목록처럼 안내 없이
-    # 빼는 자리가 있어도 뺀 것을 늘 알린다. 명령 밖(`handle_errors` 밖)에서 부른 `emit` 은 소스를 몰라 붙이지 않는다
-    count = null_item_tally()
-    if site is not None and count > 0 and not any(NULL_ITEMS_PHRASE in text for text in notes or []):
-        notes = [*(notes or []), null_items_total_note(site, count)]
+    # 못 읽은 날짜 `[참고]` 와 빈 항목 공통 `[제외]` 안내 (`collected_notes`). 명령 밖(`handle_errors` 밖)에서 부른 `emit` 은 소스를 몰라 붙이지 않는다.
+    # `--fields` 로 고르지 않은 날짜 칸의 안내는 뺀다
+    if site is not None and (collected := collected_notes(site, notes or [], frozenset(fields) if fields else None)):
+        notes = [*(notes or []), *collected]
     if not isinstance(payload, dict) and notes:
         payload = {'items': payload}
     if next_token is not None and isinstance(payload, dict):

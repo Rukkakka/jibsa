@@ -4,6 +4,7 @@ from pydantic import Field
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
+    Result,
     more_hint,
     note,
     null_items_note,
@@ -204,8 +205,11 @@ class ZigbangRegionTrade(ZigbangLocalModel):
     ]
 
 
-class ZigbangRegionTradesResult(ZigbangLocalModel):
-    """동·구의 최근 실거래 (직방 웹 지역 화면 '실거래', 등록일 기준). 기간이 오늘이 아니면 `updated_today` 키가 없다."""
+class ZigbangRegionTradesResult(ZigbangLocalModel, Result):
+    """동·구의 최근 실거래 (직방 웹 지역 화면 '실거래', 등록일 기준). 기간이 오늘이 아니면 `updated_today` 키가 없다.
+
+    `notes`: 일부만 받았다는 안내·실거래가 없다는 안내·아직 반영 전이라는 안내·빈 항목을 빼고 읽었다는 안내. CLI 가 결과 위에 붙인다
+    """
 
     region: Annotated[
         ZigbangLocalRegion,
@@ -257,10 +261,6 @@ class ZigbangRegionTradesResult(ZigbangLocalModel):
         list[ZigbangRegionTrade],
         Field(description='최근 실거래 (정렬 순서 그대로)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 받았다는 안내·실거래가 없다는 안내·아직 반영 전이라는 안내·빈 항목을 빼고 읽었다는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def _trade_of(item: ZigbangLocalTradeModel, trade: LocalTrade, level: LocalLevel) -> ZigbangRegionTrade:

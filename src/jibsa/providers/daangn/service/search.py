@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
@@ -12,6 +11,7 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
+    Result,
     listing_as,
     note,
 )
@@ -153,8 +153,11 @@ def property_type_notes(property_types: list[str], structures: list[str] | None 
     return notes
 
 
-class DaangnDongSearchResult(BaseModel):
-    """동 매물 검색 결과 (웹 지도의 동 클러스터 매물 목록)."""
+class DaangnDongSearchResult(Result):
+    """동 매물 검색 결과 (웹 지도의 동 클러스터 매물 목록).
+
+    `notes`: 매물 수·조회 한도 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -187,10 +190,6 @@ class DaangnDongSearchResult(BaseModel):
         list[DaangnNearbyListing],
         Field(description='웹 목록 순서(최근 순) 매물. 모두 그 동 매물이다. distance_km 는 동 중심까지의 직선거리다')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='매물 수·조회 한도 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def _to_listings(
@@ -447,8 +446,11 @@ class DaangnStationListing(DaangnNearbyListing):
     ] = None
 
 
-class DaangnStationSearchResult(BaseModel):
-    """역 주변 매물 검색 결과."""
+class DaangnStationSearchResult(Result):
+    """역 주변 매물 검색 결과.
+
+    `notes`: 조회 한도·제외 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -474,10 +476,6 @@ class DaangnStationSearchResult(BaseModel):
         list[DaangnStationListing],
         Field(description='당근 웹 역 주변 목록 순서 매물')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='조회 한도·제외 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def search_station(
@@ -537,8 +535,11 @@ def search_station(
     )
 
 
-class DaangnMapSearchResult(BaseModel):
-    """지도 화면 범위 매물 검색 결과 (웹 지도의 매물 목록)."""
+class DaangnMapSearchResult(Result):
+    """지도 화면 범위 매물 검색 결과 (웹 지도의 매물 목록).
+
+    `notes`: 범위·매물 수·조회 한도 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -587,10 +588,6 @@ class DaangnMapSearchResult(BaseModel):
         list[DaangnNearbyListing],
         Field(description='웹 지도 목록 순서(최근 순) 매물. distance_km 는 화면 가운데까지의 직선거리다 (순서와는 상관없다)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='범위·매물 수·조회 한도 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_missing_address(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -699,8 +696,11 @@ def search_map_area(
     )
 
 
-class DaangnUniversitySearchResult(BaseModel):
-    """대학 주변 매물 검색 결과 (웹 대학 페이지의 매물 목록)."""
+class DaangnUniversitySearchResult(Result):
+    """대학 주변 매물 검색 결과 (웹 대학 페이지의 매물 목록).
+
+    `notes`: 조회 한도·제외 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -726,10 +726,6 @@ class DaangnUniversitySearchResult(BaseModel):
         list[DaangnNearbyListing],
         Field(description='웹 대학 페이지 목록 순서 매물 (대체로 가까운 순). distance_km 는 대학까지의 직선거리다')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='조회 한도·제외 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def search_university(

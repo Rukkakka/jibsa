@@ -14,6 +14,7 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
     AmountRange,
+    Result,
     lookup_failure_note,
     note,
     null_items_note,
@@ -284,8 +285,11 @@ class ZigbangRegionPopulation(BaseModel):
     ]
 
 
-class ZigbangRegionInfoResult(ZigbangLocalModel):
-    """동·구의 지역 정보 (직방 웹 지역정보 화면 /home/apt/locals/{지역 코드})."""
+class ZigbangRegionInfoResult(ZigbangLocalModel, Result):
+    """동·구의 지역 정보 (직방 웹 지역정보 화면 /home/apt/locals/{지역 코드}).
+
+    `notes`: 덤 조회 실패 안내(조회를 받지 못했거나 직방이 목록을 주지 않았을 때의 `[실패]`)와 평당가 추이 줄이 모자란다는 안내. CLI 가 결과 위에 붙인다
+    """
 
     region: Annotated[
         ZigbangLocalRegion,
@@ -335,10 +339,6 @@ class ZigbangRegionInfoResult(ZigbangLocalModel):
         ZigbangRegionPopulation | None,
         Field(description='인구·세대 (구만. 동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 키가 없다)')
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='덤 조회 실패 안내(조회를 받지 못했거나 직방이 목록을 주지 않았을 때의 `[실패]`)와 평당가 추이 줄이 모자란다는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def _description_counts(description: str | None) -> tuple[int | None, int | None]:

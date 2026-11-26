@@ -11,6 +11,7 @@ from pydantic import (
 from jibsa.core.listing import (
     AmountSet,
     Listing,
+    Result,
     holding_unread_dates,
     keep_unread_dates,
     limit_notes,
@@ -316,8 +317,11 @@ class DabangCategoryRank(BaseModel):
     ] = None
 
 
-class DabangNeighborhood(BaseModel):
-    """다방 동네정보 요약. 고르지 않은 주제는 키가 없다."""
+class DabangNeighborhood(Result):
+    """다방 동네정보 요약. 고르지 않은 주제는 키가 없다.
+
+    `notes`: 빈 항목 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -366,10 +370,6 @@ class DabangNeighborhood(BaseModel):
     ranks: Annotated[
         list[DabangCategoryRank],
         Field(description='학교·편의·교통·안전 종류마다 합계·구성과 전국·시도·구 순위 (--ranks 일 때만)')
-    ] = []
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='빈 항목 안내')
     ] = []
     topics: Annotated[
         list[str],
@@ -577,8 +577,11 @@ class DabangRankedListing(DabangListing):
     ]
 
 
-class DabangPopularResult(BaseModel):
-    """동 안 인기 매물."""
+class DabangPopularResult(Result):
+    """동 안 인기 매물.
+
+    `notes`: 제외·일부 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -604,10 +607,6 @@ class DabangPopularResult(BaseModel):
         list[SerializeAsAny[Listing]],
         Field(description='선호도 높은 순 매물')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='제외·일부 안내')
-    ] = []
 
 
 def get_popular_listings(
@@ -714,8 +713,11 @@ class DabangHotPlace(BaseModel):
     ]
 
 
-class DabangHotPlacesResult(BaseModel):
-    """동 안 핫플레이스."""
+class DabangHotPlacesResult(Result):
+    """동 안 핫플레이스.
+
+    `notes`: 일부 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -753,10 +755,6 @@ class DabangHotPlacesResult(BaseModel):
         list[DabangHotPlace],
         Field(description='다방 목록 순 식당')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부 안내')
-    ] = []
 
 
 def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, limit: int) -> DabangHotPlacesResult:

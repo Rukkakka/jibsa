@@ -1,13 +1,13 @@
 """구 안 인기 매물 순위 (popular-listings)."""
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
 )
 
 from jibsa.core.listing import (
     Listing,
+    Result,
     listing_as,
     note,
     null_items_note,
@@ -47,8 +47,11 @@ class DaangnRankedListing(Listing):
     ]
 
 
-class DaangnPopularListingsResult(BaseModel):
-    """조회수 많은 매물 목록."""
+class DaangnPopularListingsResult(Result):
+    """조회수 많은 매물 목록.
+
+    `notes`: 순위 범위·제외 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -57,10 +60,6 @@ class DaangnPopularListingsResult(BaseModel):
     region: Annotated[DaangnRegion, Field(description='기준 동 (순위는 그 구 전체)')]
     returned: Annotated[int, Field(description='반환한 매물 수')]
     listings: Annotated[list[DaangnRankedListing], Field(description='조회수 순위 순 매물')]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='순위 범위·제외 안내. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def list_popular_listings(

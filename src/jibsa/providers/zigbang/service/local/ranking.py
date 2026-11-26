@@ -7,6 +7,7 @@ from pydantic import Field
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     KST,
+    Result,
     lookup_failure_note,
     more_hint,
     note,
@@ -188,8 +189,11 @@ class ZigbangDanjiRank(ZigbangLocalModel):
     ]
 
 
-class ZigbangRegionRankingResult(ZigbangLocalModel):
-    """동·구의 단지 랭킹 (직방 웹 지역 화면 '단지랭킹', 웹처럼 100위까지)."""
+class ZigbangRegionRankingResult(ZigbangLocalModel, Result):
+    """동·구의 단지 랭킹 (직방 웹 지역 화면 '단지랭킹', 웹처럼 100위까지).
+
+    `notes`: 일부만 받았다는 안내·100위까지만 본다는 안내·쪽을 받지 못했다는 안내. CLI 가 결과 위에 붙인다
+    """
 
     region: Annotated[
         ZigbangLocalRegion,
@@ -235,10 +239,6 @@ class ZigbangRegionRankingResult(ZigbangLocalModel):
         list[ZigbangDanjiRank],
         Field(description='단지 랭킹 (직방 순위 순서 그대로)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 받았다는 안내·100위까지만 본다는 안내·쪽을 받지 못했다는 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 class _RankingPages(NamedTuple):

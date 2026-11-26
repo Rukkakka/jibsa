@@ -24,6 +24,7 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     CITY_NAMES_NOT_SIDO,
     SIDO_OFFICIAL_NAMES,
+    Result,
     normalize_address,
     note,
     null_items_note,
@@ -1040,8 +1041,11 @@ class NaverRegionEntry(BaseModel):
     ] = None
 
 
-class NaverRegionList(BaseModel):
-    """지역 하나의 바로 아래 지역 목록 (지역을 주지 않으면 시·도 전체)."""
+class NaverRegionList(Result):
+    """지역 하나의 바로 아래 지역 목록 (지역을 주지 않으면 시·도 전체).
+
+    `notes`: 같은 이름이 여러 곳일 때 안내 등. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -1059,10 +1063,6 @@ class NaverRegionList(BaseModel):
         list[NaverRegionEntry],
         Field(description='하위 지역 (네이버 순서, 대개 가나다순)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='같은 이름이 여러 곳일 때 안내 등. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def _region_entry(item: NaverLegalDivisionInfoModel, name: str | None = None) -> NaverRegionEntry:

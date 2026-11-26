@@ -11,6 +11,7 @@ from jibsa.core.korean import is_district_code
 from jibsa.core.listing import (
     AmountRange,
     Listing,
+    Result,
     holding_unread_dates,
     join_address,
     keep_unread_dates,
@@ -256,8 +257,11 @@ class NaverAreaComplex(BaseModel):
     ]
 
 
-class NaverAreaComplexesResult(BaseModel):
-    """지역 단지 목록."""
+class NaverAreaComplexesResult(Result):
+    """지역 단지 목록.
+
+    `notes`: 일부만 보여 준다는 안내 등
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -275,10 +279,6 @@ class NaverAreaComplexesResult(BaseModel):
         list[NaverAreaComplex],
         Field(description='단지 (네이버 정렬 순서)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다는 안내 등. CLI 가 notice 아래에 붙인다')
-    ] = []
 
 
 def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) -> NaverAreaComplex | None:

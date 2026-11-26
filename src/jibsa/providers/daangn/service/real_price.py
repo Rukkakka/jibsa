@@ -23,6 +23,7 @@ from jibsa.core.listing import (
     KST,
     NOT_APPLICABLE_PRICE_FIELDS,
     UPDATE_MAYBE_NEEDED,
+    Result,
     floor_text,
     js_to_fixed,
     normalize_address,
@@ -204,8 +205,11 @@ class DaangnRealPrice(BaseModel):
         return with_floor_number(data)
 
 
-class DaangnRealPriceBaseResult(BaseModel):
-    """실거래 내역 공통."""
+class DaangnRealPriceBaseResult(Result):
+    """실거래 내역 공통.
+
+    `notes`: 전월세를 넘겨 본 범위, 거래가 없는 이유 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -235,10 +239,6 @@ class DaangnRealPriceBaseResult(BaseModel):
         list[DaangnRealPrice] | None,
         Field(description='최근 계약 순 실거래. 거래가 없으면 [], 당근이 거래 목록을 주지 않았으면 null (모름)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='전월세를 넘겨 본 범위, 거래가 없는 이유 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_unused_keys(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -855,8 +855,11 @@ def estimated_prices_of(chart: DaangnPriceChartModel | None) -> DaangnChartEstim
     )
 
 
-class DaangnPriceTrendResult(BaseModel):
-    """단지 시세 추이 (국토부 실거래 월별 평균, 당근 웹 단지 화면 시세 그래프)."""
+class DaangnPriceTrendResult(Result):
+    """단지 시세 추이 (국토부 실거래 월별 평균, 당근 웹 단지 화면 시세 그래프).
+
+    `notes`: 평균의 한계, 평형·기간 안내, 시세 그래프를 받지 못한 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -910,10 +913,6 @@ class DaangnPriceTrendResult(BaseModel):
         str,
         Field(description='당근 단지 페이지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='평균의 한계, 평형·기간 안내, 시세 그래프를 받지 못한 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
     @model_serializer(mode='wrap')
     def drop_other_pyeong_kind(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -1326,8 +1325,11 @@ class DaangnRealsaleSummary(BaseModel):
     ] = None
 
 
-class DaangnRegionRealPriceResult(BaseModel):
-    """동·구의 최근 실거래 또는 신고가."""
+class DaangnRegionRealPriceResult(Result):
+    """동·구의 최근 실거래 또는 신고가.
+
+    `notes`: 지역을 고른 방법, 넘겨 본 범위 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -1365,10 +1367,6 @@ class DaangnRegionRealPriceResult(BaseModel):
         list[DaangnRegionRealPrice],
         Field(description='실거래')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='지역을 고른 방법, 넘겨 본 범위 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 def previous_high_change_percent(price: int | None, previous_high: int | None) -> float | None:

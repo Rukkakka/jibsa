@@ -14,6 +14,7 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     AmountRange,
     AmountSet,
+    Result,
     lookup_failure_note,
     note,
     null_items_note,
@@ -141,8 +142,11 @@ class ZigbangComplexPriceLine(BaseModel):
         return data
 
 
-class ZigbangPriceTrendResult(BaseModel):
-    """단지 직방시세 추이 (웹 단지 화면 직방시세 그래프 '3.3㎡ 당 평균가격', 기간 탭·단지 비교)."""
+class ZigbangPriceTrendResult(Result):
+    """단지 직방시세 추이 (웹 단지 화면 직방시세 그래프 '3.3㎡ 당 평균가격', 기간 탭·단지 비교).
+
+    `notes`: 비교 후보를 받지 못했다는 [실패] 안내, 시세 추이가 없다·줄 목록을 주지 않았다·구 줄만 있다는 [참고] 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -176,10 +180,6 @@ class ZigbangPriceTrendResult(BaseModel):
             )
         )
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='비교 후보를 받지 못했다는 [실패] 안내, 시세 추이가 없다·줄 목록을 주지 않았다·구 줄만 있다는 [참고] 안내. CLI 가 결과 위에 붙인다')
-    ] = []
 
 
 class ZigbangPyeongSale(BaseModel):
@@ -271,8 +271,11 @@ class ZigbangPyeongPriceMonth(BaseModel):
         return data
 
 
-class ZigbangPyeongPriceTrendResult(BaseModel):
-    """평형 하나의 월별 시세·거래 추이 (웹 단지 화면 평형 탭의 직방시세 그래프, 전체·매매·전월세 탭). 거래 점과 전세가율은 내지 않는다."""
+class ZigbangPyeongPriceTrendResult(Result):
+    """평형 하나의 월별 시세·거래 추이 (웹 단지 화면 평형 탭의 직방시세 그래프, 전체·매매·전월세 탭). 거래 점과 전세가율은 내지 않는다.
+
+    `notes`: 평형 시세 기록이 없다는 [참고] 안내, 월 목록을 주지 않았다는 [참고] 안내, 빈 항목을 뺐다는 [제외] 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -298,13 +301,6 @@ class ZigbangPyeongPriceTrendResult(BaseModel):
         list[ZigbangPyeongPriceMonth] | None,
         Field(description='월별 시세·거래 (오래된 달부터). 매매·전월세 기록을 월로 맞춘 목록이고 기록이 없으면 [], 직방이 월 목록을 주지 않았으면 null')
     ]
-    notes: Annotated[
-        list[str],
-        Field(
-            exclude=True,
-            description='평형 시세 기록이 없다는 [참고] 안내, 월 목록을 주지 않았다는 [참고] 안내, 빈 항목을 뺐다는 [제외] 안내. CLI 가 결과 위에 붙인다',
-        )
-    ] = []
 
 
 class _LineKind(NamedTuple):

@@ -21,12 +21,12 @@ from typing import (
 
 
 # 명령 하나가 도는 동안 응답에서 뺀 빈 항목(null 원소)의 합. CLI 는 한 프로세스가 명령 하나를 돌려 모듈 변수 하나로 센다.
-# 테스트처럼 한 프로세스에서 명령을 여러 번 돌리면 명령 시작에 `reset_null_item_tally` 로 0 으로 돌린다
+# 테스트처럼 한 프로세스에서 명령을 여러 번 돌리면 명령 시작에 `reset_null_item_tally` 로 0 으로 돌린다. 정문 함수는 `core.listing.with_notes` 가 부르기 전에 돌린다
 _null_item_tally: int = 0
 
 
 def reset_null_item_tally() -> None:
-    """뺀 빈 항목의 합을 0 으로 돌린다. 명령이 시작할 때 부른다 (`cli.output.handle_errors`)."""
+    """뺀 빈 항목의 합을 0 으로 돌린다. 명령이 시작할 때 부른다 (`cli.output.handle_errors`). 정문 함수는 `with_notes` 가 부르기 전에 부른다."""
     global _null_item_tally
     _null_item_tally = 0
 
@@ -40,7 +40,7 @@ def add_null_item_tally(count: int) -> None:
 def null_item_tally() -> int:
     """이 명령이 응답에서 뺀 빈 항목의 합. 어느 칸에서 빼 어디에 쓰이는지와 상관없이 센다.
 
-    `cli.output.emit` 이 0 보다 크면 공통 안내를 붙인다. 소스가 따로 `null_items_note` 를 붙인 자리와 보여 주기만 하는 목록에서
+    `cli.output.emit` 과 정문 함수를 감싼 `with_notes` 가 0 보다 크면 공통 안내를 붙인다. 소스가 따로 `null_items_note` 를 붙인 자리와 보여 주기만 하는 목록에서
     뺀 자리가 모두 들어 있어, 조용히 빼는 자리가 없게 한다.
     """
     return _null_item_tally

@@ -13,7 +13,7 @@ from pydantic import (
 
 from jibsa.core.browser import EntryOpenError
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import normalize_address
+from jibsa.core.listing import Result, normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
 from jibsa.providers.dabang.api.request.school import (
@@ -150,7 +150,7 @@ class DabangAdvancement(BaseModel):
     ] = None
 
 
-class DabangSchoolDetail(BaseModel):
+class DabangSchoolDetail(Result):
     """학교 하나의 학교알리미 공시 (다방 제공). 진학은 중·고등학교에만 키가 있다."""
 
     model_config = ConfigDict(
@@ -260,7 +260,7 @@ class DabangTeacherGrade(BaseModel):
     ] = None
 
 
-class DabangChildcareDetail(BaseModel):
+class DabangChildcareDetail(Result):
     """유치원·어린이집 하나의 공시 (다방 제공: 유치원알리미·어린이집정보공개포털). 다방 웹 상세 화면이 그리는 값이다.
 
     어린이집에만 `school_bus`, 유치원에만 `school_bus_vehicles`·`homepage_url` 키가 있다. 유치원 교육비는 다방 값이 유치원알리미
@@ -592,8 +592,11 @@ class DabangRegionalSchool(BaseModel):
         return data
 
 
-class DabangSchoolListResult(BaseModel):
-    """동 안 학교·유치원·어린이집 목록 (다방 동네정보 '학군' 상세 목록, 다방 목록 순)."""
+class DabangSchoolListResult(Result):
+    """동 안 학교·유치원·어린이집 목록 (다방 동네정보 '학군' 상세 목록, 다방 목록 순).
+
+    `notes`: 일부만 받은 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -627,10 +630,6 @@ class DabangSchoolListResult(BaseModel):
         list[DabangRegionalSchool],
         Field(description='학교 (다방 목록 순)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 받은 안내')
-    ] = []
 
 
 def search_schools(

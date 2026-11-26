@@ -14,6 +14,7 @@ from jibsa.core.listing import (
     NOTE_KINDS,
     UPDATE_MAYBE_NEEDED,
     Listing,
+    Result,
     listing_as,
     note,
     null_items_note,
@@ -183,8 +184,11 @@ class DaangnCommuteStationListings(BaseModel):
     ]
 
 
-class DaangnCommuteResult(BaseModel):
-    """출퇴근 검색 결과."""
+class DaangnCommuteResult(Result):
+    """출퇴근 검색 결과.
+
+    `notes`: 찾아본 역 범위·조회 한도·제외 안내. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -217,10 +221,6 @@ class DaangnCommuteResult(BaseModel):
     stations: Annotated[
         list[DaangnCommuteStationListings],
         Field(description='찾아본 역마다의 매물 (지하철 시간 짧은 순)')
-    ] = []
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='찾아본 역 범위·조회 한도·제외 안내. CLI 가 결과 위에 붙인다')
     ] = []
 
 

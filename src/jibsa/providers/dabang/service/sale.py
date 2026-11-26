@@ -23,6 +23,7 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     AmountRange,
     AmountSet,
+    Result,
     add_unread_date,
     more_hint,
     normalize_address,
@@ -221,8 +222,11 @@ class DabangSaleSummary(BaseModel):
         return drop_unset_fields(self, handler(self), GIVEN_AMOUNT_FIELDS)
 
 
-class DabangSaleListResult(BaseModel):
-    """분양 단지 목록."""
+class DabangSaleListResult(Result):
+    """분양 단지 목록.
+
+    `notes`: 범위·제외 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -251,10 +255,6 @@ class DabangSaleListResult(BaseModel):
         list[DabangSaleSummary],
         Field(description='다방 목록 순 분양 단지')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='범위·제외 안내')
-    ] = []
 
 
 def _summary(item: DabangSaleItemModel) -> DabangSaleSummary:
@@ -569,8 +569,11 @@ class DabangSubscriptionResult(BaseModel):
     ] = None
 
 
-class DabangSaleDetail(BaseModel):
-    """분양 단지 정보. 상담 전화·사진·좌표는 내보내지 않는다."""
+class DabangSaleDetail(Result):
+    """분양 단지 정보. 상담 전화·사진·좌표는 내보내지 않는다.
+
+    `notes`: 못 읽은 일정 날짜 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -688,10 +691,6 @@ class DabangSaleDetail(BaseModel):
         str,
         Field(description='분양 페이지 URL')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='못 읽은 일정 날짜 안내')
-    ] = []
 
 
 def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
@@ -885,8 +884,11 @@ class DabangSaleScheduleItem(BaseModel):
         return data
 
 
-class DabangSaleSchedule(BaseModel):
-    """날짜별 청약 일정."""
+class DabangSaleSchedule(Result):
+    """날짜별 청약 일정.
+
+    `notes`: 일부·거르기 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -912,10 +914,6 @@ class DabangSaleSchedule(BaseModel):
         list[DabangSaleScheduleItem],
         Field(description='날짜 순 일정')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부·거르기 안내')
-    ] = []
 
 
 def get_sale_schedule(

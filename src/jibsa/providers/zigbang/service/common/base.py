@@ -341,7 +341,10 @@ def sale_price_range(lowest_manwon: float | None, highest_manwon: float | None) 
 
 class ZigbangListingDetail(ListingDetail):
     """상세 조회로 보강한 직방 매물. `complex_id`·`complex_name` 은 아파트·오피스텔, 아파트 전용 필드(`APT_ONLY_DETAIL_FIELDS`)는 아파트에만,
-    원룸·빌라·오피스텔 전용 필드(`ROOM_ONLY_DETAIL_FIELDS`)는 아파트를 뺀 유형에만 있다."""
+    원룸·빌라·오피스텔 전용 필드(`ROOM_ONLY_DETAIL_FIELDS`)는 아파트를 뺀 유형에만 있다.
+
+    `notes`: 덤 조회(건물 학군·건물 실거래) 실패 안내와, 직방이 빈 항목을 줘 모름(null)으로 둔 칸의 [제외] 안내. CLI 가 결과 위에 붙인다
+    """
 
     residence_type: Annotated[
         str | None,
@@ -454,12 +457,6 @@ class ZigbangListingDetail(ListingDetail):
             '필지가 없거나 조회에 실패하면 null, 거래가 없으면 []'
         ))
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description=(
-            '덤 조회(건물 학군·건물 실거래) 실패 안내와, 직방이 빈 항목을 줘 모름(null)으로 둔 칸의 [제외] 안내. CLI 가 결과 위에 붙인다'
-        ))
-    ] = []
 
     def not_applicable_fields(self) -> frozenset[str]:
         fields = super().not_applicable_fields()

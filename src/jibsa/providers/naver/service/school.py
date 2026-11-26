@@ -10,6 +10,7 @@ from pydantic import (
 
 from jibsa.core.listing import (
     AmountRange,
+    Result,
     more_hint,
     normalize_address,
     note,
@@ -80,8 +81,11 @@ class NaverSchoolRegionAverage(BaseModel):
     ] = None
 
 
-class NaverSchoolDetail(BaseModel):
-    """초등학교 상세 (학교알리미 공시 기준). 전화·홈페이지·좌표·학구도 경계는 담지 않는다."""
+class NaverSchoolDetail(Result):
+    """초등학교 상세 (학교알리미 공시 기준). 전화·홈페이지·좌표·학구도 경계는 담지 않는다.
+
+    `notes`: 덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -151,10 +155,6 @@ class NaverSchoolDetail(BaseModel):
         list[str] | None,
         Field(description="그 단지에서 이 학교에 배정되는 동 (예: '101동~105동'). 전체 배정이면 ['전체 동']. --complex 를 주지 않았으면 키가 없고, 조회 실패이거나 전체 배정이 아니거나 전체 배정 여부를 주지 않았는데 네이버가 어느 동인지(동 묶음) 주지 않으면 null (일부 동만 배정된 단지와 배정되지 않은 단지가 같은 모양이다)")
     ] = None
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='덤 조회가 실패한 [실패] 안내 등. CLI 가 결과 위에 붙인다')
-    ] = []
     url: Annotated[
         str,
         Field(description='학교 페이지 URL')
@@ -315,8 +315,11 @@ class NaverSchoolComplex(BaseModel):
     ] = None
 
 
-class NaverSchoolComplexesResult(BaseModel):
-    """학교에 배정되는 단지 목록."""
+class NaverSchoolComplexesResult(Result):
+    """학교에 배정되는 단지 목록.
+
+    `notes`: 일부만 보여 준다는 안내
+    """
 
     model_config = ConfigDict(
         extra='forbid',
@@ -338,10 +341,6 @@ class NaverSchoolComplexesResult(BaseModel):
         list[NaverSchoolComplex],
         Field(description='단지 (선택한 정렬 순서. 거리순은 학교에서 가까운 순)')
     ]
-    notes: Annotated[
-        list[str],
-        Field(exclude=True, description='일부만 보여 준다는 안내. CLI 가 notes 아래에 붙인다')
-    ] = []
 
 
 def _school_complex(item: NaverSchoolComplexItemModel) -> NaverSchoolComplex | None:

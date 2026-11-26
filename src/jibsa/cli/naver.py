@@ -510,7 +510,7 @@ def complex_command(
             notes.append(
                 f"listing_counts·호가 범위는 {' · '.join(scope)} 매물만 센 값입니다 (단지 정보와 pyeongs·pyeong_groups 는 단지 전체)"
             )
-        emit(summary, pretty, notes=notes + summary.notes)
+        emit(summary, pretty, notes=notes)
 
 
 @search_app.command('complexes')
@@ -570,11 +570,7 @@ def complexes_command(
             building_age_max=building_age_max,
             limit=limit,
         )
-        emit(
-            {'region': region.model_dump(mode='json'), **scope, **result.model_dump(mode='json')},
-            pretty,
-            notes=notes + result.notes,
-        )
+        emit(result, pretty, notes=notes, head={'region': region.model_dump(mode='json'), **scope})
 
 
 def _trade_conditions(
@@ -635,13 +631,7 @@ def _search_complex_listings(
             limit=limit,
         )
         # 이름으로 찾았으면 고른 단지 번호를 함께 줘야 real-price·complex 로 이어 조회할 수 있다
-        emit(
-            {'complex_id': complex_number, **result.model_dump(mode='json')},
-            pretty,
-            notes=trade_notes + notes + result.notes,
-            fields=fields,
-            fields_source=result,
-        )
+        emit(result, pretty, notes=trade_notes + notes, fields=fields, head={'complex_id': complex_number})
 
 
 def _search_redevelopment_listings(
@@ -659,13 +649,7 @@ def _search_redevelopment_listings(
         # 이름으로 찾았으면 고른 구역 번호를 함께 줘야 redevelopment 로 이어 조회할 수 있다
         area_number, notes = _redevelopment_number(client, area, '--redevelopment')
         result = list_redevelopment_articles(client, area_number, conditions=conditions, sort=sort, limit=limit)
-        emit(
-            {'redevelopment_id': area_number, **result.model_dump(mode='json')},
-            pretty,
-            notes=trade_notes + notes + result.notes,
-            fields=fields,
-            fields_source=result,
-        )
+        emit(result, pretty, notes=trade_notes + notes, fields=fields, head={'redevelopment_id': area_number})
 
 
 @search_app.command('redevelopment')
@@ -717,11 +701,7 @@ def redevelopment_command(
             sort=sort,
             limit=limit,
         )
-        emit(
-            {'region': region.model_dump(mode='json'), **scope, **result.model_dump(mode='json')},
-            pretty,
-            notes=notes + result.notes,
-        )
+        emit(result, pretty, notes=notes, head={'region': region.model_dump(mode='json'), **scope})
 
 
 def _trend_district(
@@ -834,7 +814,7 @@ def trend_command(
                 '실거래는 계약 뒤 30일 안에 신고해 최근 4주쯤의 trade_count_trend 는 신고가 덜 모여 적게 나옵니다 '
                 '(마지막 주 0건도 거래가 없었다는 뜻이 아닐 수 있습니다). 거래 흐름은 한 달 넘게 지난 주로 보세요',
             ))
-        emit({'legal_division': division, **trend.model_dump(mode='json')}, pretty, notes=notes + trend.notes)
+        emit(trend, pretty, notes=notes, head={'legal_division': division})
 
 
 @app.command('real-price')
@@ -889,7 +869,7 @@ def real_price_command(
             client, complex_number, pyeong, trade_type=trade_types[0], pages=pages or 1, period=period, group=group,
             around_km=around_km,
         )
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('market-price')
@@ -961,7 +941,7 @@ def regions_command(
     """
     with handle_errors(SOURCE), NaverClient() as client:
         result = list_regions(client, query)
-        emit(result, pretty, notes=result.notes)
+        emit(result, pretty)
 
 
 @app.command('school')
@@ -1009,11 +989,12 @@ def school_command(
             complex_number, villa, notes = _complex_number(client, complex_, '--complex')
         school = get_school(client, school_code, complex_number=complex_number, villa=villa)
         if not complexes:
-            emit(school, pretty, notes=notes + school.notes)
+            emit(school, pretty, notes=notes)
             return
         assigned = list_school_complexes(
             client, school_code, sort=sort, limit=SCHOOL_COMPLEX_DEFAULT_LIMIT if limit is None else limit,
         )
+        # 결과 둘(학교·배정 단지)을 한 JSON 으로 합쳐 emit 이 결과의 notes 를 스스로 읽지 못하므로 둘의 notes 를 넘긴다
         emit(
             {**school.model_dump(mode='json'), 'assigned_complexes': assigned.model_dump(mode='json')},
             pretty,
@@ -1033,7 +1014,7 @@ def listing_command(
         raise typer.BadParameter('매물 ID 는 숫자입니다 (search listings 결과의 id)', param_hint='ITEM_ID')
     with handle_errors(SOURCE), NaverClient() as client:
         detail = get_listing(client, item_id)
-        emit(detail, pretty, notes=detail.notes)
+        emit(detail, pretty)
 
 
 def _listing_conditions(
@@ -1324,12 +1305,12 @@ def search_command(
                 limit=limit, start=position,
             )
             emit(
-                {'region': target['region'], **target['scope'], **result.model_dump(mode='json')},
+                result,
                 pretty,
-                notes=trade_notes + result.notes,
+                notes=trade_notes,
                 next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
                 fields=fields,
-                fields_source=result,
+                head={'region': target['region'], **target['scope']},
             )
             return
         # 동·구·군·구 없는 시·세종 이름이면 그 경계 전체를 찾는다. 반경을 직접 주면 그 뜻대로 중심 반경으로 찾는다.
@@ -1352,14 +1333,10 @@ def search_command(
             'region': region.model_dump(mode='json'), 'scope': scope, 'sort': sort, 'code': code,
         }
         emit(
-            {
-                'region': region.model_dump(mode='json'),
-                **scope,
-                **result.model_dump(mode='json'),
-            },
+            result,
             pretty,
-            notes=trade_notes + notes + result.notes,
+            notes=trade_notes + notes,
             next_token=encode_next({'target': target, **result.next_position}) if result.next_position else None,
             fields=fields,
-            fields_source=result,
+            head={'region': region.model_dump(mode='json'), **scope},
         )

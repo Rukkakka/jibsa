@@ -422,7 +422,9 @@
    동작과 맞는가. 예: `providers/naver/service/common.py:161` 위 주석 (단지 모드에도 붙는 hint 를 지역 검색에만 붙인다고 적었다, 2026-11-16),
    `providers/naver/service/complex.py` `_reconstruction` 의 `리뷰 오탐` 주석 (근거는 '날짜 없는 단계' 인데 코드는 날짜를 읽지 못한
    단계까지 뺐다, 2026-11-24).
-   언제: 동작을 바꾼 diff 에서 그 함수의 docstring·주석이 함께 바뀌지 않았을 때.
+   description·주석을 다른 자리로 옮긴 diff 면, 옮긴 글에 이미 없어진 칸·동작 이름이 남았는지도 본다. 예: 결과 모델 `notes` 의
+   description 을 docstring 으로 옮기며 없어진 `notice` 칸을 가리키는 "CLI 가 notice 아래에 붙인다" 를 14곳에 그대로 옮겼다 (2026-11-26).
+   언제: 동작을 바꾼 diff 에서 그 함수의 docstring·주석이 함께 바뀌지 않았을 때, description·주석을 다른 자리로 옮긴 diff.
 4. **금액을 줄이지 않기.** 금액은 만원이고 반올림·버림·올림 없이 원 단위까지 낸다 ([금액·단위](output-contract.md#금액단위)). 금액
    필드·라벨·안내 문구에 `round`·`floor`·`:g`·`.1f` 나 반올림하는 식을 새로 쓰지 않았는가
    (`won_to_manwon`·`format_manwon` 을 쓴다). 거리·면적·비율은 줄여도 된다.
