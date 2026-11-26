@@ -26,8 +26,8 @@ from jibsa.core.listing import (
     listing_as,
     lookup_failure_note,
     lookup_failure_reason,
-    normalize_date,
     note,
+    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.common import ZigbangSalesType
@@ -643,7 +643,7 @@ def attach_building_use(client: ZigbangClient, result: ZigbangSearchResult) -> Z
             continue
         residence = item.residence
         building_use = (residence.residence_description or residence.residence_type or '').strip() or None
-        approved = listing.model_copy(update={'approved_date': normalize_date(residence.approved_at) or listing.approved_date})
+        approved = listing.model_copy(update={'approved_date': read_date(residence.approved_at, '사용승인일') or listing.approved_date})
         listings.append(listing_as(ZigbangDetailedListing, approved, residence_type=building_use))
     notes = []
     if gone:

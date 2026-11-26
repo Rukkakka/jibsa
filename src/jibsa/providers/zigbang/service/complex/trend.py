@@ -14,10 +14,10 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     AmountRange,
     AmountSet,
-    iso_date,
     lookup_failure_note,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.complex.base import (
@@ -94,7 +94,7 @@ class ZigbangComplexPricePoint(BaseModel):
 
     month: Annotated[
         str | None,
-        Field(description='월 (YYYY-MM). 직방이 날짜를 주지 않았거나 읽지 못하면 null')
+        Field(description='월 (YYYY-MM). 직방이 날짜를 주지 않았으면 null, 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     estimated_price_per_pyeong_manwon: Annotated[
         int | float | None,
@@ -250,7 +250,7 @@ class ZigbangPyeongPriceMonth(BaseModel):
     ]
     month: Annotated[
         str | None,
-        Field(description='월 (YYYY-MM). 직방이 날짜를 주지 않았거나 읽지 못하면 null')
+        Field(description='월 (YYYY-MM). 직방이 날짜를 주지 않았으면 null, 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     sale: Annotated[
         ZigbangPyeongSale | None,
@@ -476,8 +476,8 @@ def _line_kinds(
 
 
 def _month_of(date_text: str | None) -> str | None:
-    """직방 월 항목의 날짜('2026-01-01')를 'YYYY-MM' 으로. 읽지 못하면 None."""
-    date = iso_date(date_text)
+    """직방 월 항목의 날짜('2026-01-01')를 'YYYY-MM' 으로. 읽지 못하면 None 이고 원래 글자를 [참고] 로 알린다 (`read_date`)."""
+    date = read_date(date_text, '추이 월')
     return date[:7] if date else None
 
 

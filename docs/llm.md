@@ -22,7 +22,7 @@
 
 - 거래별로 묶은 값은 영어 거래 키 객체다 (`{"sale": …, "jeonse": …, "wolse": …, "short_term": …, "yeonse": …}`, 직방 평형 `price-trend` 의 탭 묶음만 `jeonse_wolse`). `sale`=매매, `jeonse`=전세, `wolse`=월세, `short_term`=단기임대, `yeonse`=연세, `jeonse_wolse`=전월세 이고 매물 `trade_type`·`--trade` 는 한국어라 이 대응으로 잇는다 (`trade_type: "전세"` 의 묶음 값은 `jeonse`). 사이트 종류 이름을 키로 쓰는 칸(다방 `neighborhood` 시설·학교, 네이버 `bus_routes`)은 사이트 이름표 그대로 한국어 키다. 금액 묶음에 거래 키가 없으면 그 거래에 해당 없음(매물이 없음 등)이고 모두 없으면 `{}` 이다. `null` 은 모름이다. 한 거래의 값을 모두 모르면 안쪽만 `null` 인 객체가 아니라 거래 값이 `null` 이고(`{"jeonse": null}`), 일부 칸만 모르면 그 칸만 `null` 이다.
 - 범위는 `<무엇>_range: {"lowest": …, "highest": …}` 이고 거래마다 다르면 `<무엇>_ranges: {거래: {lowest, highest}}` 다. 금액 범위의 두 끝 안은 매물과 같은 금액 칸(`price_manwon`·`deposit_manwon`·`rent_manwon`)이다.
-- 날짜 칸은 `_date`(`YYYY-MM-DD`)·`_month`(`YYYY-MM`)·`_year`(숫자)이고 시각이 든 값만 `_at` 이다. `_percent` 는 0~100 이다 (`jeonse_ratio_percent` 31 = 31%).
+- 날짜 칸은 `_date`(`YYYY-MM-DD`)·`_month`(`YYYY-MM`)·`_year`(숫자)이고 시각이 든 값만 `_at` 이다. `_date`·`_month` 칸과 입주일은 소스가 준 날짜를 읽지 못하면 `null` 이고 `notes` 의 `[참고]` 가 칸과 원래 글자를 알린다 (없는 날짜와 다르다. `_year` 는 들지 않고, `--fields` 로 고르지 않은 날짜 칸은 안내가 없다). `_percent` 는 0~100 이다 (`jeonse_ratio_percent` 31 = 31%).
 - 실거래는 `trade`(목록 `trades`, 계약일 `trade_date`), 지금 올라온 호가는 `asking`, 기관 추정 시세는 `estimated` 로 시작하는 칸이다. 평균·변동·가장 최근 한 건은 `average`·`change`·`latest` 가 든 칸이다.
 - 옛 칸 이름(`complex_number`·`registered_at` 등)을 만나면 [옛 이름 → 새 이름 표](https://github.com/Rukkakka/jibsa/blob/main/docs/field-renames.md)로 새 이름을 찾는다.
 

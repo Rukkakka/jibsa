@@ -1,7 +1,7 @@
 ---
 name: brief-checker
 description: implement-bundles(또는 항목이 다섯 개를 넘는 단독 coder·doc-writer)의 지시서를 작업자를 띄우기 전에 읽고 빈틈·틀린 사실을 찾는 검사자 (읽기 전용). 지시서와 묶음별 고칠 파일만 받는다.
-tools: Bash, Read, Glob, Grep
+tools: Bash, Read, Glob, Grep, LSP
 model: sonnet
 effort: medium
 ---

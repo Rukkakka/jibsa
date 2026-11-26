@@ -9,8 +9,8 @@ from pydantic import (
 )
 
 from jibsa.core.listing import (
-    iso_date,
     months_ago,
+    read_date,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.market_price import (
@@ -39,7 +39,7 @@ class NaverMarketPricePoint(BaseModel):
 
     base_date: Annotated[
         str | None,
-        Field(description="시세 기준일 (YYYY-MM-DD). 네이버가 날짜 자리를 빈 값·'-' 로 주거나 읽을 수 없으면 null")
+        Field(description="시세 기준일 (YYYY-MM-DD). 네이버가 날짜 자리를 빈 값·'-' 로 주면 null, 날짜로 읽지 못하면 null ([참고] 안내)")
     ]
     sale: Annotated[
         NaverMarketBand | None,
@@ -148,7 +148,7 @@ def get_market_price_history(
     providers: list[NaverMarketPriceSeries] = []
     for item in items:
         # dates 는 dict 키라 None 은 없다. ''·'-' 와 못 읽는 글자는 base_date null 이 된다. 정렬은 원 글자 키로 하므로 빈 값·'-' 인
-        # 점은 맨 앞에, 못 읽는 글자인 점은 원 글자 순서 자리에 온다. 점은 빼지 않는다 (이 결과에는 notes 가 없어 뺀 것을 알릴 곳이 없다)
+        # 점은 맨 앞에, 못 읽는 글자인 점은 원 글자 순서 자리에 온다. 점은 빼지 않는다 (못 읽는 글자는 `read_date` 가 모아 출력할 때 [참고] 로 알린다)
         dates = sorted(set(item.deal_prices) | set(item.deposit_prices))
         if not dates:
             continue
@@ -156,7 +156,7 @@ def get_market_price_history(
             provider=MARKET_PRICE_PROVIDER_NAMES.get(item.cp or '', item.cp or '알 수 없음'),
             weeks=[
                 NaverMarketPricePoint(
-                    base_date=iso_date(day),
+                    base_date=read_date(day, '시세 기준일'),
                     **market_price_fields(
                         item.deal_prices.get(day),
                         item.deal_price_ranges.get(day),

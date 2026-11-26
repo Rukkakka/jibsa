@@ -16,12 +16,12 @@ from pydantic import (
 )
 
 from jibsa.core.errors import ListingUnavailableError
-from jibsa.core.korean import particle
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
     iso_date,
     join_address,
+    keep_unread_dates,
     m2_to_pyeong,
     move_in_label,
     normalize_address,
@@ -29,6 +29,7 @@ from jibsa.core.listing import (
     note,
     null_items_note,
     parking_label,
+    read_date,
     with_negotiable,
     won_to_manwon,
 )
@@ -886,6 +887,7 @@ def list_complex_articles(
     known_at_start = villa is not None
     price_filter = price_filter_of(conditions)
     listings: dict[str, Listing] = {}
+    held: dict[str, list[tuple[str, str]]] = {}
     scan = PageScan(limit=limit, max_requests=MAX_COMPLEX_ARTICLE_PAGE_REQUESTS)
 
     def fetch(size: int, seed: str | None, last_info: Any) -> NaverArticlePageModel | None:
@@ -938,7 +940,7 @@ def list_complex_articles(
             villa = True
         return unwrap(response, '단지 매물')
 
-    scan_pages(scan, fetch, listing_keeper(listings, None), page_size=COMPLEX_PAGE_SIZE)
+    scan_pages(scan, fetch, listing_keeper(listings, None, held=held), page_size=COMPLEX_PAGE_SIZE)
     total, inspected, truncated = scan.total, scan.received, scan.truncated
     if pyeong_numbers and not inspected and known_at_start:
         # 단지 종류를 알아 빌라로 다시 묻지 않았어도, 0건이면 평형 번호가 틀린 것인지 확인한다. 모르고 시작했으면
@@ -960,6 +962,8 @@ def list_complex_articles(
         ))
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
+    for listing in result:
+        keep_unread_dates(held.get(listing.id, ()))
     notes += group_sort_notes(sort_type, result)
     # 단지 하나라 지역 대신 단지 매물의 조건만 좁히라고 한다 (직방·다방 단지 매물과 같다)
     notes += pagination_notes(
@@ -1029,7 +1033,8 @@ def _move_in_label(moving: NaverMovingInInfoModel | None, notes: list[str]) -> s
         return move_in_label(MOVING_IN_LABELS[code], negotiable=bool(negotiable))
     if date is None:
         return '협의 가능' if negotiable else None
-    if day is None and month is None:
+    label = day or month
+    if label is None:
         if code in MOVING_IN_BOUND_LABELS:
             kind = f'{MOVING_IN_BOUND_LABELS[code]}입주'
         elif code == 'MV004':
@@ -1038,17 +1043,8 @@ def _move_in_label(moving: NaverMovingInInfoModel | None, notes: list[str]) -> s
             kind = f'{MOVING_IN_PERIOD_LABELS[code]}입주' if code in MOVING_IN_PERIOD_LABELS else f'입주 유형 {code}' if code else '입주 유형 모름'
         notes.append(note('참고', f"네이버가 준 입주일을 읽지 못했습니다 ({kind}, 날짜 '{date}'). url 의 매물 화면에서 확인하세요"))
         return '협의 가능' if negotiable else None
-    return move_in_label(day or month, negotiable=bool(negotiable))
-
-
-def _readable_date(value: str | None, what: str, notes: list[str]) -> str | None:
-    """`normalize_date` 를 거친 날짜 글자를 `YYYY-MM-DD` 로 낸다. 읽지 못하는 글자(연월만 등)는 모름(None)이고 `notes` 에 `[참고]` 안내로 원래 글자를 알린다."""
-    if value is None:
-        return None
-    date = iso_date(value)
-    if date is None:
-        notes.append(note('참고', f"네이버가 준 {what}{particle(what, '을/를')} 읽지 못했습니다 ('{value}'). url 의 매물 화면에서 확인하세요"))
-    return date
+    # 연월('2026-12')은 날짜로 읽지 못하는 꼴이라 `move_in_label` 에 넘기면 못 읽은 입주일로 모아 None 이 된다. day·month 는 이미 읽은 값이라 협의만 붙인다
+    return with_negotiable(label, bool(negotiable))
 
 
 def _manage_cost_item_label(code: str) -> str:
@@ -1527,7 +1523,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         approved_at = None
     else:
         approved_at = building_approved_at(facility) or _complex_approved_at(client, complex_number, key, complex_, notes)
-    approved_at = _readable_date(approved_at, '사용승인일', notes)
+    approved_at = read_date(approved_at, '사용승인일')
     facility_values = _facility_values(client, key, facility, complex_number, complex_, notes)
 
     # 웹 제목의 건물 이름. 건물 이름이 없으면 None. 건물 하위 이름은 매물 유형이 C01·D05 이거나
@@ -1578,7 +1574,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
         address=address,
         lat=coordinates.y_coordinate if coordinates else None,
         lng=coordinates.x_coordinate if coordinates else None,
-        registered_date=_readable_date(normalize_date(article.exposure_start_date), '등록일', notes) if article else None,
+        registered_date=read_date(article.exposure_start_date, '등록일') if article else None,
         # 상세 응답의 건물 날짜를 먼저 쓰고, 없을 때만 단지 정보를 쓴다 (단지 유형은 이미 받은 단지 정보, 그 밖은 필요할 때만 조회)
         approved_date=approved_at,
         complex_id=complex_number,
@@ -1615,7 +1611,7 @@ def get_listing(client: NaverClient, article_number: str) -> NaverListingDetail:
             real_estate_type,
             article.is_safe_lessor_of_hug if article else None,
         ),
-        confirmed_date=iso_date(verification.article_confirm_date) if verification else None,
+        confirmed_date=read_date(verification.article_confirm_date, '매물 확인일') if verification else None,
         loan_manwon=_loan_manwon(price),
         # 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회하고(모르면 둘 다 null, 직거래면 키를 뺀다), 세금은 웹이
         # 세금 칸을 그리는 매매(원룸·고시원·일반분양권이 아닌 분양권·분양 상태를 모르는 분양권 제외)만 조회한다 (요청 순서: agentFee, tax, 교통·학교, 개발 예정)

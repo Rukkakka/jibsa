@@ -11,7 +11,9 @@ from jibsa.core.listing import (
     ListingDetail,
     ListingT,
     LookupFailures,
+    holding_unread_dates,
     iso_date,
+    keep_unread_dates,
     listing_as,
     move_in_label,
     note,
@@ -439,7 +441,8 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
             kept.append(listing)
             continue
         try:
-            detail = get_listing(client, int(listing.id), listing.trade_type)
+            with holding_unread_dates() as dates:
+                detail = get_listing(client, int(listing.id), listing.trade_type)
         except ListingUnavailableError:
             gone += 1
             continue
@@ -466,6 +469,11 @@ def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list
                 'yearly_rent_manwon': detail.yearly_rent_manwon,
             }
         kept.append(listing.model_copy(update=update))
+        # 상세에서 옮기는 날짜 칸(등록일·사용승인일)이 null 로 나갈 때만 알린다. 입주일은 목록에 칸이 없어 알리지 않는다
+        # (다방 attach_details 와 같다). 당근 목록은 두 날짜를 주지 않아 목록 변환이 따로 알린 것과 겹치지 않는다
+        keep_unread_dates(dates, only=[
+            what for what, value in (('등록일', detail.registered_date), ('사용승인일', detail.approved_date)) if value is None
+        ])
     notes = []
     if retraded:
         shown = (

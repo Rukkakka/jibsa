@@ -1,7 +1,5 @@
 """아파트 단지·오피스텔 건물 정보와 단지 매물 목록 (complex, search listings --complex)."""
 
-import re
-
 from httpx import HTTPStatusError
 from pydantic import (
     BaseModel,
@@ -18,15 +16,17 @@ from jibsa.core.listing import (
     AmountRange,
     Listing,
     NumberRange,
-    iso_date,
+    holding_unread_dates,
     join_address,
+    keep_unread_dates,
     limit_notes,
     lookup_failure_note,
     normalize_address,
-    normalize_date,
     note,
     null_items_note,
     number_range,
+    read_date,
+    read_month,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.complex.base import (
@@ -274,7 +274,7 @@ class ZigbangLandTradePermitDay(BaseModel):
 
     date: Annotated[
         str | None,
-        Field(description='날짜 (YYYY-MM-DD). 직방이 준 날짜를 읽지 못하면 모름(null)')
+        Field(description='날짜 (YYYY-MM-DD). 직방이 준 날짜를 읽지 못하면 모름(null, [참고] 안내)')
     ]
     count: Annotated[
         int | None,
@@ -323,7 +323,7 @@ class ZigbangComplex(BaseModel):
     ] = None
     completed_month: Annotated[
         str | None,
-        Field(description='준공 연월 (YYYY-MM, 오피스텔만)')
+        Field(description='준공 연월 (YYYY-MM, 오피스텔만). 읽지 못하면 null ([참고] 안내)')
     ] = None
     construction_company: Annotated[
         str | None,
@@ -455,13 +455,15 @@ def complex_candidate_of(item: ZigbangSearchItemModel) -> ZigbangComplexCandidat
         name=item.name,
         address=normalize_address(item.description),
         household_count=source.household if source else None,
-        approved_date=normalize_date(source.approval_date) if source else None,
+        approved_date=read_date(source.approval_date, '사용승인일') if source else None,
     )
 
 
 def search_regions_and_complexes(
     client: ZigbangClient,
     query: str,
+    *,
+    limit: int,
 ) -> tuple[list[ZigbangSearchItemModel], list[ZigbangComplexCandidate]]:
     """이름으로 지역·역·학교와 아파트 단지·오피스텔 건물 후보를 함께 찾는다 (2회 호출, 관련도 순).
 
@@ -471,18 +473,24 @@ def search_regions_and_complexes(
     예전 이름·별칭으로도 맞추므로 이름이 달라 보이는 후보가 섞일 수 있다.
 
     Returns:
-        (지역 결과, 단지 후보). 지역 결과에는 단지가 없다.
+        (지역 결과, 단지 후보). 지역 결과에는 단지가 없다. 단지 후보는 `limit` 곳까지.
     """
     # 후보 목록이라 하나를 고르지 않고 좌표(`search locations` 가 지역마다 lat·lng 로 낸다)를 그대로 내보낸다. 좌표 없는 후보는
     # 위치를 줄 수 없어 지금처럼 뺀다
     officetel_items = search_regions(client, query, service_type='오피스텔', require_coordinates=True)
     regions = [item for item in officetel_items if item.type not in COMPLEX_KIND_BY_SEARCH_TYPE]
     candidates: dict[str, ZigbangComplexCandidate] = {}
+    held: dict[str, list[tuple[str, str]]] = {}
     for item in [*search_regions(client, query, service_type='아파트', require_coordinates=True), *officetel_items]:
-        candidate = complex_candidate_of(item)
-        if candidate is not None:
-            candidates.setdefault(candidate.complex_id, candidate)
-    return regions, list(candidates.values())
+        with holding_unread_dates() as dates:
+            candidate = complex_candidate_of(item)
+        if candidate is not None and candidate.complex_id not in candidates:
+            candidates[candidate.complex_id] = candidate
+            held[candidate.complex_id] = dates
+    result = list(candidates.values())[:limit]
+    for candidate in result:
+        keep_unread_dates(held[candidate.complex_id])
+    return regions, result
 
 
 def _fetch_building(
@@ -523,7 +531,6 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         building = _fetch_building(
             client, complex_id, ZigbangItemsOfficetelsBuildingV1RequestParameterModel(building_id=number)
         ).building
-        established = building.established or ''
         return ZigbangComplex(
             complex_id=complex_id,
             name=building.name,
@@ -533,7 +540,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
             household_count=to_int(building.household),
             # 직방은 동 최고 층수만 줘서 lowest 는 늘 null(모름)이다. 최고 층수를 모르면 범위도 모름(None)
             building_floor_range=number_range(None, to_int(building.floor)),
-            completed_month=f'{established[:4]}-{established[4:6]}' if re.fullmatch(r'\d{6}', established) else None,
+            completed_month=read_month(building.established, '준공 연월'),
             # 건물 API 의 false 는 믿을 수 없어 모름으로 둔다. 2026-10-10 실측: 건물 53곳 중 false 30곳(6~41층)이
             # 모두 그 건물 매물 상세에서는 엘리베이터 있음이었고, false 가 맞은 곳은 없었다 (true 23곳은 모두 일치)
             has_elevator=True if building.elevator else None,
@@ -603,7 +610,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
                 manage_cost_manwon=_positive_or_none(cost.average) if cost else None,
                 summer_manage_cost_manwon=_positive_or_none(cost.summer) if cost else None,
                 winter_manage_cost_manwon=_positive_or_none(cost.winter) if cost else None,
-                resale_available_date=iso_date(detail.resale_available_from) if detail else None,
+                resale_available_date=read_date(detail.resale_available_from, '전매 가능일') if detail else None,
                 estimated_prices=estimated_prices_of(
                     _positive_or_none(sales.min) if sales else None,
                     _positive_or_none(sales.per_area) if sales else None,
@@ -621,7 +628,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         # 동 최고 층수만 줘서 lowest 는 null(모름)
         building_floor_range=number_range(None, danji.max_floor),
         dong_count=danji.dong_count,
-        approved_date=normalize_date(danji.approval_date),
+        approved_date=read_date(danji.approval_date, '사용승인일'),
         construction_company=danji.construction_company,
         parking_per_household=danji.parking_per_household,
         floor_area_ratio_percent=danji.floor_area_ratio,
@@ -664,7 +671,7 @@ def get_complex(client: ZigbangClient, complex_id: str) -> ZigbangComplex:
         # 최근 7일 토지거래허가 일별 건수를 직방이 준 순서대로. 일별 건수를 주지 않았으면(키 없음·null) 모름(None)
         land_trade_permits=(
             None if danji.land_trade_permit is None or danji.land_trade_permit.daily_counts is None
-            else [ZigbangLandTradePermitDay(date=iso_date(day.date), count=day.count) for day in danji.land_trade_permit.daily_counts]
+            else [ZigbangLandTradePermitDay(date=read_date(day.date, '토지거래허가 날짜'), count=day.count) for day in danji.land_trade_permit.daily_counts]
         ),
         notes=school_notes + lookup_notes + pyeong_notes + (
             [f'이 단지에 거주 후기 {danji.review_count}개가 있습니다. 후기 내용은 직방 단지 페이지({apt_danji_url(number)})에서 확인하세요']

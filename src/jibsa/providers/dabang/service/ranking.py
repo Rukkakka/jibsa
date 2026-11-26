@@ -14,6 +14,7 @@ from pydantic import (
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import full_legal_division_code
 from jibsa.core.listing import (
+    add_unread_date,
     more_hint,
     normalize_address,
     note,
@@ -658,31 +659,34 @@ class DabangRegionRanking(BaseModel):
         list[str],
         Field(exclude=True, description='일부 안내')
     ] = []
+    # 다방이 기준 달 글자를 줬는데 읽지 못해 base_month 가 null 이면 모름이라 키를 지우지 않는다 ([참고] 로 알린다)
+    _base_month_unread: bool = PrivateAttr(default=False)
 
     @model_serializer(mode='wrap')
     def drop_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
         for key in ('complex_type', 'property_type', 'kind', 'comparison', 'base_month'):
-            if data.get(key) is None:
+            if data.get(key) is None and not (key == 'base_month' and self._base_month_unread):
                 data.pop(key, None)
         return data
 
 
 def _month(text: str | None) -> str | None:
-    """'26년 10월' → '2026-10'."""
+    """'26년 10월' → '2026-10'. 꼴이 다르거나 달력에 없는 달('26년 13월')이면 None."""
     match = MONTH_TEXT_PATTERN.search(text or '')
-    return f'20{match.group(1)}-{int(match.group(2)):02d}' if match else None
+    return f'20{match.group(1)}-{int(match.group(2)):02d}' if match and 1 <= int(match.group(2)) <= 12 else None
 
 
 def _price_month(text: str | None, field: str, unreadable: dict[str, list[str]]) -> str | None:
     """다방 기준 달 글자('26년 10월')를 'YYYY-MM' 으로. 값이 없으면('-'·빈 글자) 안내 없이 None 이고, 글자가 있는데 읽지 못하면
-    None 으로 내면서 `unreadable[field]` 에 원래 글자를 모은다 (`get_region_ranking` 이 칸별로 한 줄 알린다).
+    None 으로 내면서 `unreadable[field]` 에 원래 글자를 모으고 공용 모음(`add_unread_date`)에 넣어 `emit` 이 칸별로 한 줄 알린다.
     """
     if text is None or text.strip() in ('', '-'):
         return None
     month = _month(text)
     if month is None:
         unreadable.setdefault(field, []).append(text)
+        add_unread_date('시세 기준 달' if field == 'price_month' else '앞 최고가 달', text)
     return month
 
 
@@ -908,7 +912,8 @@ def get_region_ranking(
     # 못 읽은 기준 달 글자 (칸 이름 → 원래 글자들)
     unreadable: dict[str, list[str]] = {}
     total: int | None = None
-    base_month: str | None = None
+    # 쪽마다 받은 기준 달 글자. 처음 읽은 달이 base_month 다
+    base_texts: list[str] = []
     has_more = False
     # 다방이 순위 목록에 섞어 줘서 뺀 빈 항목 수. 뺀 자리도 서버의 순위 칸이라 limit 을 채웠는지 셀 때 더한다 (빼고 센 수로
     # 첫 쪽이 찼는지 보면 limit 이 한도보다 작을 때 다음 쪽을 한도 크기로 물어 첫 쪽 뒤 순위를 건너뛴다)
@@ -921,7 +926,8 @@ def get_region_ranking(
         if result is None or ranking is None:
             break
         total = ranking.total if total is None else total
-        base_month = base_month or _month(result.formatted_price_date)
+        if result.formatted_price_date is not None:
+            base_texts.append(result.formatted_price_date)
         rows = ranking.list_
         page_dropped = ranking.null_items('list_')
         dropped += page_dropped
@@ -933,6 +939,11 @@ def get_region_ranking(
         if not ranking.has_more or not (ranking.list_ or page_dropped):
             break
         page += 1
+    base_month = next((month for text in base_texts if (month := _month(text))), None)
+    unread_base = [text for text in base_texts if text.strip() not in ('', '-')] if base_month is None else []
+    if unread_base:
+        # 출력 칸 base_month 하나가 null 이라 처음 못 읽은 글자 하나만 알린다
+        add_unread_date('순위 기준 달', unread_base[0])
     # 다방은 값이 없는 줄을 '-' 로 준다 (2026-10-25 실측: 세종 동 평균가 33곳 중 8곳). 다른 줄에 값이 있는 칸은 이 항목에
     # 해당하는 칸이라 '-' 인 줄에서는 키를 지우지 않고 null(모름)로 둔다
     applicable = frozenset({'rank', 'name', *VALUE_FIELDS_BY_KIND[spec.kind]})
@@ -962,17 +973,13 @@ def get_region_ranking(
         notes.append(note('일부', f'{scope.name} 안 {unit}{among} {label} {order} 앞 {len(entries)}곳입니다. {more}'))
     if dropped:
         notes.append(null_items_note('다방 순위', dropped))
-    for field, texts in unreadable.items():
-        what = '시세 기준 달' if field == 'price_month' else '앞 최고가 달'
-        notes.append(note(
-            '참고',
-            f"다방이 준 지역 순위의 {what}을 읽지 못해 {field} 를 null 로 두었습니다 ({len(texts)}곳, 원래 글자 예: '{texts[0]}')",
-        ))
     # 학원수·진학률 순위는 상위 지역을 시·도까지만 준다 (2026-10-25 실측: 전국 외국어 학원 1위 '신사동' area '서울')
     if scope.kind not in ('district', 'dong') and any(entry.area and ' ' not in entry.area for entry in entries):
         notes.append(note('참고', 'area 가 시·도까지만 와서 같은 이름의 동은 어느 시·군·구인지 알 수 없습니다. 범위를 시·군·구로 주면 그 안의 동만 나옵니다'))
-    return DabangRegionRanking(
+    ranking_result = DabangRegionRanking(
         scope=scope, unit=unit, metric=metric_label, tab=tab, complex_type=shown_type, property_type=shown_building, kind=shown_kind,
         comparison=spec.comparison if isinstance(spec, MetricSpec) else None, base_month=base_month, total=total,
         returned=len(entries), has_more=has_more, rankings=entries, notes=notes,
     )
+    ranking_result._base_month_unread = bool(unread_base)
+    return ranking_result

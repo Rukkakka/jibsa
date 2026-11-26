@@ -18,9 +18,9 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     TradeType,
     floor_text,
-    normalize_date,
     note,
     null_items_note,
+    read_date,
     rescale,
     with_floor_number,
 )
@@ -249,17 +249,21 @@ class ZigbangRealPriceResult(BaseModel):
 
 
 def rt_deal_date(value: str | None) -> str | None:
-    """직방 계약일 '26. 9. 8' 을 2026-09-08 로 바꾼다. 두 자리 연도는 올해 이후면 1900년대로 본다."""
+    """직방 계약일 '26. 9. 8' 을 2026-09-08 로 바꾼다. 두 자리 연도는 올해 이후면 1900년대로 본다.
+
+    날짜로 읽지 못하면(꼴이 다르거나 달력에 없는 날) None 이고 원래 글자를 [참고] 로 알린다 (`read_date`).
+    """
     if value is None:
         return None
-    match = RT_DEAL_DATE_PATTERN.match(value.strip())
+    text = value.strip()
+    match = RT_DEAL_DATE_PATTERN.match(text)
     if match is None:
-        return value.strip() or None
+        return read_date(text, '계약일')
     year, month, day = (int(part) for part in match.groups())
     if year < 100:
         this_year = datetime.now(KST).year
         year += 2000 if 2000 + year <= this_year + 1 else 1900
-    return normalize_date(f'{year:04d}{month:02d}{day:02d}')
+    return read_date(f'{year:04d}{month:02d}{day:02d}', '계약일', raw=text)
 
 
 def rt_price_to_real_price(transaction: ZigbangRtPriceModel, *, show_trade_type: bool = False) -> ZigbangRealPrice | None:
@@ -334,13 +338,14 @@ def get_real_prices(
         )
     deal_type = REAL_PRICE_DEAL_TYPE_BY_TRADE[trade_type]
     all_types = trade_type == '전체'
-    transactions: list[ZigbangRealPrice] = []
+    # 고른 거래 (받은 꼴 그대로). --limit 에서 자른 뒤에 출력 꼴로 바꾼다 (아래 `transactions`)
+    kept: list[ZigbangRtPriceModel] = []
     has_next = False
     unknown = 0
     # 쪽의 거래 목록에서 뺀 빈 항목(null) 수 (받은 쪽 전부의 합)
     dropped_transactions = 0
     page = 0
-    while len(transactions) < limit and page < REAL_PRICE_MAX_PAGES:
+    while len(kept) < limit and page < REAL_PRICE_MAX_PAGES:
         if pyeong_id is None:
             response: ZigbangDanjisRtPricesResponseModel = client.run_request_danjis_rt_prices(
                 ZigbangDanjisRtPricesRequestParameterModel(
@@ -370,18 +375,19 @@ def get_real_prices(
         has_next = response.has_next
         dropped_transactions += response.null_items('transactions')
         for transaction in response.transactions:
-            real_price = rt_price_to_real_price(transaction, show_trade_type=all_types)
-            if real_price is None:
+            # 거래 유형은 `rt_price_to_real_price` 와 같은 표로 가린다
+            transaction_trade = TRADE_BY_RT_DEAL_TYPE.get(transaction.deal_type or '')
+            if transaction_trade is None:
                 # 이미 limit 건을 모았으면 이 거래는 어차피 잘려 안 보일 자리라 세지 않는다
-                if len(transactions) < limit:
+                if len(kept) < limit:
                     unknown += 1
-            elif all_types or real_price.trade_type == trade_type:
-                transactions.append(real_price)
+            elif all_types or transaction_trade == trade_type:
+                kept.append(transaction)
         # 빈 항목만 온 쪽을 빈 쪽으로 보고 멈추지 않는다
         if not has_next or not (response.transactions or response.null_items('transactions')):
             break
     notes: list[str] = []
-    if deal_type == 'rent' and has_next and len(transactions) < limit:
+    if deal_type == 'rent' and has_next and len(kept) < limit:
         # 몇 건 중에서 골랐는지 설명이라 [참고] 다. 더 있다는 [일부] 는 아래 안내 하나 (2026-11-10 실측: 헬리오시티 월세
         # --limit 1200 에 '최근 거래 1200건 중 월세만' [참고] 과 '직방에서 직접 확인' [일부])
         notes.append(note(
@@ -395,9 +401,14 @@ def get_real_prices(
             '매매와 전월세를 계약일 최신 순으로 합친 목록입니다 (거래마다 trade_type). '
             '전월세가 많은 단지는 앞쪽이 전월세뿐일 수 있으니 매매만 보려면 --trade 매매',
         ))
-    has_more = has_next or len(transactions) > limit
-    filled = len(transactions) >= limit
-    transactions = transactions[:limit]
+    has_more = has_next or len(kept) > limit
+    filled = len(kept) >= limit
+    # 잘려 안 보일 거래까지 바꾸면 그 계약일을 못 읽은 날짜 안내([참고], `rt_deal_date`)에 세어 건수가 출력과 어긋난다.
+    # 거래 유형을 위에서 가렸으므로 None 은 나오지 않는다
+    transactions = [
+        real_price for transaction in kept[:limit]
+        if (real_price := rt_price_to_real_price(transaction, show_trade_type=all_types)) is not None
+    ]
     url = apt_danji_url(number)
     if not has_more:
         notes.append(note('참고', '직방이 주는 실거래를 끝까지 받았습니다'))

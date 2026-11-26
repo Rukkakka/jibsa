@@ -16,12 +16,14 @@ from jibsa.core.korean import (
 )
 from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
+    holding_unread_dates,
     js_round,
+    keep_unread_dates,
     more_hint,
     normalize_address,
-    normalize_date,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.school import (
@@ -368,6 +370,8 @@ def get_school(
     # 배정 단지를 주지 않았으면(null) 빈 목록([])과 다른 모름이다 (`list_preschools` 의 근처 시설과 같다)
     assigned = detail.assigned_complexes
     complexes: list[DaangnRegionComplex] = []
+    # complexes 와 같은 차례로 맡아 둔 못 읽은 날짜. 자른 뒤 보여 주는 단지의 것만 안내에 센다
+    held: list[list[tuple[str, str]]] = []
     # 조건을 확인할 수 없어 뺀 단지 수와 그때 몰랐던 칸. 단지 유형(-t)이나 세대수(--household-min)를 모르면 조건에 맞는지 알 수 없어
     # 빼되 센다 (조용히 빼면 알리지 않은 채 결과가 줄어든다). 다른 조건이 이미 틀린 단지는 모르는 칸과 상관없이 빠지니 세지 않는다
     unknown_count = 0
@@ -396,7 +400,9 @@ def get_school(
         if node.original_id is None:
             no_id_count += 1
             continue
-        complexes.append(region_complex_of(node, '매매', max_trades=1))
+        with holding_unread_dates() as dates:
+            complexes.append(region_complex_of(node, '매매', max_trades=1))
+        held.append(dates)
 
     # 배정 단지가 있는지를 먼저 본다. 학교 유형 안내는 배정 단지가 없을 때만 붙인다 (유형을 모르는 학교에 단지가 오면 목록과
     # '단지 목록이 없습니다' 가 함께 나가고 --limit 으로 잘려도 [일부] 가 빠졌다)
@@ -437,6 +443,8 @@ def get_school(
     if dropped:
         notes.append(null_items_note('당근 배정 단지', dropped, ('total',)))
     shown = complexes[:limit]
+    for dates in held[:len(shown)]:
+        keep_unread_dates(dates)
     return DaangnSchoolResult(
         school=DaangnSchool(
             school_code=detail.sch_cd,
@@ -632,11 +640,11 @@ class DaangnPreschool(BaseModel):
     ] = None
     established_date: Annotated[
         str | None,
-        Field(description="설립일 (YYYY-MM-DD, 읽을 수 없는 꼴은 원래 글자 그대로, 당근이 '-' 로 비운 값은 null)")
+        Field(description="설립일 (YYYY-MM-DD, 당근이 '-' 로 비운 값은 null, 날짜로 읽지 못하면 null ([참고] 안내))")
     ] = None
     opened_date: Annotated[
         str | None,
-        Field(description="개원일 (YYYY-MM-DD, 읽을 수 없는 꼴은 원래 글자 그대로, 당근이 '-' 로 비운 값은 null)")
+        Field(description="개원일 (YYYY-MM-DD, 당근이 '-' 로 비운 값은 null, 날짜로 읽지 못하면 null ([참고] 안내))")
     ] = None
     authority: Annotated[
         str | None,
@@ -690,8 +698,8 @@ def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:
         region=' '.join(part for part in (region.name2, region.name3) if part) or None if region else None,
         operating_hours=preschool.open_time,
         establishment_type=preschool.estbshm_type,
-        established_date=normalize_date(preschool.estbshm_date),
-        opened_date=normalize_date(preschool.open_date),
+        established_date=read_date(preschool.estbshm_date, '설립일'),
+        opened_date=read_date(preschool.open_date, '개원일'),
         authority=preschool.jrsdt_admnstrt,
         # 당근 웹은 childCnt 를 '정원' 으로 보여 준다 (PreschoolDetailPanel). 예전 이름 children 은 다니는 원아 수로 읽혔다 (#215)
         capacity=preschool.child_cnt,

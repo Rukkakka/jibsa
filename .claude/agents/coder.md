@@ -1,7 +1,7 @@
 ---
 name: coder
 description: jibsa 코드를 지시서대로 고치는 작업자. 모델·effort 는 CLAUDE.md 의 기준으로 호출 때 정한다.
-tools: Bash, Read, Edit, Write, Glob, Grep
+tools: Bash, Read, Edit, Write, Glob, Grep, LSP
 model: sonnet
 effort: medium
 ---

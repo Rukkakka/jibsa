@@ -11,7 +11,9 @@ from jibsa.core.korean import is_district_code
 from jibsa.core.listing import (
     AmountRange,
     Listing,
+    holding_unread_dates,
     join_address,
+    keep_unread_dates,
     normalize_address,
     note,
 )
@@ -350,6 +352,7 @@ def list_area_complexes(
         filter_ = boundary_filter(filter_, legal_division_code)
     sort_type = COMPLEX_LIST_SORT_TYPE_BY_NAME[sort]
     complexes: dict[int, NaverAreaComplex] = {}
+    held_complexes: dict[int, list[tuple[str, str]]] = {}
     scan = PageScan(limit=limit, max_requests=MAX_COMPLEX_LIST_PAGE_REQUESTS)
 
     def fetch(size: int, seed: str | None, last_info: Any) -> NaverComplexListPageModel:
@@ -369,18 +372,24 @@ def list_area_complexes(
         return unwrap(response, '단지 목록', hint=None)
 
     def keep(item: NaverComplexListItemModel) -> int | None:
-        complex_ = _area_complex(item, (lat, lng))
+        with holding_unread_dates() as dates:
+            complex_ = _area_complex(item, (lat, lng))
         if complex_ is None:
             return None
         # 사각형 모서리(반경 밖) 단지는 뺀다. 좌표를 모르면 반경 안인지 알 수 없어 뺀다
-        if legal_division_code is not None or (complex_.distance_km is not None and complex_.distance_km <= radius_km):
-            complexes.setdefault(complex_.complex_id, complex_)
+        if complex_.complex_id not in complexes and (
+            legal_division_code is not None or (complex_.distance_km is not None and complex_.distance_km <= radius_km)
+        ):
+            complexes[complex_.complex_id] = complex_
+            held_complexes[complex_.complex_id] = dates
         return complex_.complex_id
 
     scan_pages(scan, fetch, keep, page_size=COMPLEX_LIST_PAGE_SIZE)
     total, inspected, truncated = scan.total, scan.received, scan.truncated
 
     result = list(complexes.values())[:limit]
+    for complex_row in result:
+        keep_unread_dates(held_complexes.get(complex_row.complex_id, ()))
     notes: list[str] = []
     area = area_scope(legal_division_code, radius_km)
     if truncated:
@@ -426,6 +435,7 @@ def _search_listing_pages(
     `start` 는 이어 받기 위치(목록 커서)다.
     """
     listings: dict[str, Listing] = {}
+    held: dict[str, list[tuple[str, str]]] = {}
     by_boundary = legal_division_code is not None
     boundary_label = '시·군·구' if is_district_code(legal_division_code) else '동'
     if legal_division_code is not None:
@@ -454,13 +464,15 @@ def _search_listing_pages(
         )
 
     scan_pages(
-        scan, fetch, listing_keeper(listings, (lat, lng), None if by_boundary else radius_km),
+        scan, fetch, listing_keeper(listings, (lat, lng), None if by_boundary else radius_km, held=held),
         page_size=LEGAL_DIVISION_PAGE_SIZE if by_boundary else BOUNDED_PAGE_SIZE, start=resume_cursor(start),
     )
     total, inspected, truncated = scan.total, scan.received, scan.truncated
     next_position = cursor_position(scan.cursor) or None
 
     result = list(listings.values())[:limit]
+    for listing in result:
+        keep_unread_dates(held.get(listing.id, ()))
     notes: list[str] = []
     area = area_scope(legal_division_code, radius_km)
     if truncated:

@@ -4,10 +4,10 @@ from pydantic import Field
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
-    iso_date,
     more_hint,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.local.trades import (
@@ -123,7 +123,7 @@ class ZigbangRegionTrade(ZigbangLocalModel):
     ]
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null. 목록은 계약일 순이 아니라 등록일 기준이다')
+        Field(description='계약일 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내). 목록은 계약일 순이 아니라 등록일 기준이다')
     ]
     presale: Annotated[
         str | None,
@@ -283,7 +283,7 @@ def _trade_of(item: ZigbangLocalTradeModel, trade: LocalTrade, level: LocalLevel
         complex_name=text_or_none(item.area_danji_name),
         dong=text_or_none(item.local),
         area_type=text_or_none(item.room_type),
-        trade_date=iso_date(item.rt_deal_date),
+        trade_date=read_date(item.rt_deal_date, '계약일'),
         presale=presale,
         price_manwon=item.rt_price,
         deposit_manwon=item.rt_price,

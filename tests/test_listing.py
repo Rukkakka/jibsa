@@ -5,8 +5,16 @@ import pytest
 from jibsa.core.listing import (
     Listing,
     ListingDetail,
+    add_unread_date,
+    holding_unread_dates,
+    keep_unread_dates,
     lookup_failure_note,
+    move_in_label,
     normalize_date,
+    read_date,
+    read_month,
+    reset_unread_dates,
+    unread_date_notes,
 )
 from jibsa.core.ratelimit import RateLimitedError
 
@@ -77,6 +85,63 @@ def test_normalize_date_drops_time_in_kst() -> None:
     assert normalize_date('-') is None
     assert normalize_date(' - ') is None
     assert normalize_date('') is None
+
+
+def test_read_date_collects_unreadable_dates_per_field() -> None:
+    # 값 없음은 안내 없이 None, 값이 있는데 못 읽으면 None 과 칸별 [참고] 한 줄 (output-contract.md 날짜 칸)
+    reset_unread_dates()
+    assert read_date(None, '계약일') is None
+    assert read_date('', '계약일') is None
+    assert read_date(' - ', '계약일') is None
+    assert read_date('20260908', '계약일') == '2026-09-08'
+    assert read_date('201005', '계약일') is None
+    assert read_date('2026-02-30', '계약일') is None
+    assert read_date('201005', '계약일') is None
+    assert read_date('20260230', '사용승인일', raw='26.02.30') is None
+    assert unread_date_notes('직방') == [
+        "[참고] 직방이 준 계약일 3건을 읽지 못해 null 로 냈습니다 (예: '201005', '2026-02-30'). 사이트 화면에서 확인하세요",
+        "[참고] 직방이 준 사용승인일을 읽지 못해 null 로 냈습니다 ('26.02.30'). 사이트 화면에서 확인하세요",
+    ]
+    # 입주일도 못 읽으면 받은 글자 대신 None 이고 원래 글자(괄호 포함)를 알린다
+    reset_unread_dates()
+    assert move_in_label('2026.10.15 이후 입주 가능 (협의가능)') == '2026-10-15 (협의 가능)'
+    # '협의가능' 이 아닌 괄호 설명은 직방 웹처럼 그대로 붙인다
+    assert move_in_label('2026.10.15 이후 입주 가능 (입주협의)') == '2026-10-15 (입주협의)'
+    assert move_in_label('2026.13.01 (협의 가능)') is None
+    assert unread_date_notes('다방') == [
+        "[참고] 다방이 준 입주일을 읽지 못해 null 로 냈습니다 ('2026.13.01 (협의 가능)'). 사이트 화면에서 확인하세요",
+    ]
+    # 입주일 '-' 는 값 없음이라 안내가 없다 (날짜 자리가 비고 괄호 설명만 있어도 같다)
+    reset_unread_dates()
+    assert move_in_label('-') is None
+    assert move_in_label('- (협의가능)') is None
+    assert unread_date_notes('다방') == []
+    # 연월 칸: 받는 꼴, 값 없음, 못 읽음
+    assert read_month('2026-07', '관리비 최근 달') == '2026-07'
+    assert read_month('202607', '관리비 최근 달') == '2026-07'
+    assert read_month('2026.7', '관리비 최근 달') == '2026-07'
+    assert read_month('-', '관리비 최근 달') is None
+    assert read_month('2026-13', '관리비 최근 달') is None
+    assert unread_date_notes('네이버') == [
+        "[참고] 네이버가 준 관리비 최근 달을 읽지 못해 null 로 냈습니다 ('2026-13'). 사이트 화면에서 확인하세요",
+    ]
+    # 블록 안에서 모은 것은 남긴 항목의 것만 넣는다
+    reset_unread_dates()
+    with holding_unread_dates() as dropped:
+        read_date('201005', '등록일')
+    with holding_unread_dates() as kept:
+        read_date('2026-02-30', '등록일')
+    assert unread_date_notes('네이버') == []
+    keep_unread_dates(kept)
+    assert dropped == [('등록일', '201005')]
+    assert len(unread_date_notes('네이버')) == 1 and "('2026-02-30')" in unread_date_notes('네이버')[0]
+    # --fields 로 고르지 않은 날짜 칸의 안내는 뺀다. 표에 없는 이름은 늘 낸다
+    add_unread_date('계약일', '미상')
+    only_id = unread_date_notes('네이버', frozenset({'id'}))
+    assert len(only_id) == 1 and '준 계약일을 읽지 못해' in only_id[0]
+    assert len(unread_date_notes('네이버', frozenset({'registered_date'}))) == 2
+    reset_unread_dates()
+    assert unread_date_notes('다방') == []
 
 
 @pytest.mark.parametrize(

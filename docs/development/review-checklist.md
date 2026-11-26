@@ -243,10 +243,9 @@
     언제: 지역 해석 뒤에 검사·갈래를 한 명령에 더한 diff.
 14. **출력 날짜를 읽지 못하면 `null` 과 `[참고]` 로 내는가.** 날짜 칸은 `YYYY-MM-DD` 아니면 `null` 이고, 값이 있는데 못 읽었으면
     `[참고]` 로 칸과 원래 글자를 알린다 (목록은 칸별로 모아 한 줄, [금액·단위](output-contract.md#금액단위) 날짜 규칙). `normalize_date` 는
-    못 읽으면 원래 글자를 돌려줘(소스가 값 없음으로 주는 `-` 만 `null`) 출력 칸에 바로 쓰지 않고 `iso_date` 로 읽는다. 확인: 날짜
-    필드를 채우는 줄이 어느 함수를 부르는지와 Field 설명을 대 보고, `'201005'` 를 넣어 `null` 과 안내가 나오는지 본다.
-    예: `providers/naver/service/common.py` `confirmed_date` (못 읽으면 원래 글자, 2026-11-18), `providers/naver/service/listing.py`
-    `_readable_date` (규칙대로 `null` + `[참고]`, 2026-11-24).
+    못 읽으면 원래 글자를 돌려줘(소스가 값 없음으로 주는 `-` 만 `null`) 출력 칸에 바로 쓰지 않고 `read_date` 로 읽는다 (`iso_date` 는 거르기·비교용이라
+    출력 칸에 쓰면 안내가 빠진다. `_month` 연월 칸은 `read_month`). 확인: 날짜 필드를 채우는 줄이 어느 함수를 부르는지와 Field 설명을 대 보고, `'201005'` 를 넣어 `null` 과 안내가 나오는지 본다.
+    예: `providers/naver/service/common.py` `confirmed_date` 가 못 읽은 글자를 그대로 낸 것 (2026-11-18).
     언제: 날짜 필드를 더하거나 그 필드를 채우는 줄을 바꾼 diff.
 15. **유형을 모르면 줄을 통째로 버리는 변환.** `… | None` 을 돌려주는 변환 함수가 모르는 유형에 `None` 을 주고 호출부가 그 줄을 빼면, 버린 수를 세어 `[제외]` 로 알리는가 (다방 `_unknown_trade_note`). 알리지 않으면 거래가 말없이 사라진다. 확인: 변환 결과가 `None` 일 때 건너뛰기로 끝나는 자리마다 센 수가 notes 에 가는지 본다 (`--limit` 으로 어차피 잘릴 자리는 세지 않아도 된다).
     예: `providers/zigbang/service/real_price.py:374` 의 `unknown` 을 세는 줄 (`--trade 전체`, 2026-11-17).
@@ -277,6 +276,9 @@
     확인: 바꾼 칸 이름으로 같은 소스·다른 소스의 출력 모델을 grep 해 뜻(Field 설명)과 빈 값 모양을 견준다.
     예: `providers/daangn/service/complex.py` 의 `trending_region_of`(`region.name` 만 전체 이름이었다)와 같은 파일 `list_trending_complexes` 의 `latest_trades`(최근 매매가 없는 단지를 `{"sale": {"price_manwon": null}}` 로 냈다. `compare` 는 키를 뺀다), 2026-11-25.
     언제: 칸 이름·모양을 여러 명령에 걸쳐 바꾼 diff.
+21. **명령 단위로 모으는 안내가 출력에 없는 항목까지 세지 않는가.** `read_date`·`read_month`·`null_item_tally` 처럼 명령 안에서 모았다가 `emit` 이 한 줄로 알리는 안내는, 변환한 뒤에 거르거나(반경·중복) 자르는(`[:limit]`) 목록이면 출력에 없는 항목의 것까지 센다. 확인: 그 변환 뒤에 거르기·자르기·`continue` 가 있는지 보고, 있으면 변환을 `holding_unread_dates` 블록 안에서 하고 남은 항목의 것만 `keep_unread_dates` 로 넣는지(`--limit 1`·결과 0건·반경 밖 항목에 못 읽은 날짜를 넣어 안내 건수가 출력과 같은지) 본다.
+    예: `providers/naver/service/common.py` `listing_keeper` (2026-11-26 리뷰: 반경 밖으로 걸러져 매물이 0건인데 "등록일 30건" 안내가 나왔다).
+    언제: 날짜·연월을 읽는 변환(`read_date`·`read_month`)이나 notes 에 건수를 모으는 변환 뒤에 거르기·자르기를 더하거나 순서를 바꾼 diff.
 
 ## `web` 웹 대응
 

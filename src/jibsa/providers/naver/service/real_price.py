@@ -31,10 +31,10 @@ from jibsa.core.listing import (
     NOT_APPLICABLE_PRICE_FIELDS,
     SAME_AREA_PYEONG_TRADES_NOTE,
     floor_text,
-    iso_date,
     months_ago,
     note,
     null_items_note,
+    read_date,
     rescale,
     with_floor_number,
     won_to_manwon,
@@ -109,7 +109,7 @@ class NaverRealPrice(BaseModel):
 
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null')
+        Field(description='계약일 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     floor: Annotated[
         str | None,
@@ -198,7 +198,7 @@ class NaverRealPricePerPyeong(BaseModel):
 
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null')
+        Field(description='계약일 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     price_per_pyeong_manwon: Annotated[
         float | None,
@@ -220,7 +220,7 @@ class NaverNearbyTrade(BaseModel):
 
     trade_date: Annotated[
         str | None,
-        Field(description='계약일 (YYYY-MM-DD). 읽지 못하면 null')
+        Field(description='계약일 (YYYY-MM-DD). 날짜로 읽지 못하면 null ([참고] 안내)')
     ]
     area_m2: Annotated[
         float | None,
@@ -396,7 +396,7 @@ NEARBY_TRADES_LIMIT_NOTE: str = note(
 def _real_price(item: NaverRealPriceModel, trade_type: str) -> NaverRealPrice:
     return NaverRealPrice(
         trade_type=trade_type,
-        trade_date=iso_date(item.trade_date),
+        trade_date=read_date(item.trade_date, '계약일'),
         floor=floor_text(item.floor),
         price_manwon=won_to_manwon(item.deal_price),
         deposit_manwon=won_to_manwon(item.deposit),
@@ -475,7 +475,7 @@ def get_real_prices(
                 unknown='모름(null)으로 낸 칸: price_per_pyeong_trades',
             )
             result.price_per_pyeong_trades = None if rows is None else [
-                NaverRealPricePerPyeong(trade_date=iso_date(row.trade_date), price_per_pyeong_manwon=won_to_manwon(row.pyeong_price))
+                NaverRealPricePerPyeong(trade_date=read_date(row.trade_date, '평당가 실거래 계약일'), price_per_pyeong_manwon=won_to_manwon(row.pyeong_price))
                 for row in rows
             ]
             result._price_per_pyeong_scoped = True
@@ -539,7 +539,7 @@ def get_real_prices(
                         completion = (trade.completion_year_month or '').strip()
                         trades.append(NaverNearbyTrade(
                             trade_type=result.trade_type,
-                            trade_date=iso_date(trade.contract_date),
+                            trade_date=read_date(trade.contract_date, '주변 실거래 계약일'),
                             area_m2=trade.exclusive_area,
                             # 준공 연월일(`20100628`)의 연도. 앞 네 자리가 숫자가 아니거나 0000 이면 모름(None)이다
                             completed_year=(
@@ -760,7 +760,7 @@ def _villa_real_prices(
         recent = [
             NaverRealPrice(
                 trade_type=trade_type,
-                trade_date=iso_date(item.trade_date),
+                trade_date=read_date(item.trade_date, '계약일'),
                 floor=floor_text(item.floor),
                 price_manwon=won_to_manwon(item.deal_price),
                 deposit_manwon=won_to_manwon(item.deposit),

@@ -21,10 +21,10 @@ from jibsa.core.listing import (
     AmountSet,
     TradeType,
     normalize_address,
-    normalize_date,
     normalize_floor,
     note,
     null_items_note,
+    read_month,
     with_floor_number,
 )
 from jibsa.providers.dabang.api.client import DabangClient
@@ -53,6 +53,7 @@ from jibsa.providers.dabang.service.common import (
     building_years,
     complex_not_found,
     complex_url,
+    contract_date,
     error_message,
     fetch_complex,
     first_space_notes,
@@ -190,7 +191,7 @@ def _real_price(row: DabangRealPriceHistoryModel, *, area_kind: AreaKind = 'none
     floor = row.format_floor if row.format_floor not in (None, '', 'null') else None
     return DabangRealPrice(
         trade_type=trade_type,
-        trade_date=normalize_date(f'20{contract}') if contract else None,
+        trade_date=contract_date(contract, '계약일'),
         # 지하는 음수로 온다 ('-1', 2026-10-25 실측: 망원동 다세대 매매 50건 중 6건)
         floor=normalize_floor(str(int(floor))) if floor and floor.lstrip('-').isdecimal() else floor,
         area_m2=row.size if area_kind == 'exclusive' else None,
@@ -607,9 +608,9 @@ class DabangTrendMonth(BaseModel):
     )
 
     month: Annotated[
-        str,
-        Field(description='달 (YYYY-MM)')
-    ]
+        str | None,
+        Field(description='달 (YYYY-MM). 읽지 못하면 null ([참고] 안내)')
+    ] = None
     trade_averages: Annotated[
         dict[str, AmountSet | None],
         Field(description=(
@@ -739,7 +740,7 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     # 거래 0건인 36달로 온다 (2026-10-25 실측: 은마·오피스텔 2곳 8개 평형, 매매 0건인 메이플자이 299902)
     months = [
         DabangTrendMonth(
-            month=_month(row.date),
+            month=read_month(row.date, '시세 흐름 달'),
             trade_averages={
                 'sale': None if (sale_average := _average(row.average_price)) is None else AmountSet(price_manwon=sale_average),
                 'jeonse': None if (lease_average := (

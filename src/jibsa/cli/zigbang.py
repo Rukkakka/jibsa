@@ -505,9 +505,8 @@ def locations_command(
     예: jibsa zigbang search locations 디에이치퍼스티어아이파크
     """
     with handle_errors(SOURCE), ZigbangClient() as client:
-        regions, complexes = search_regions_and_complexes(client, query)
+        regions, complexes = search_regions_and_complexes(client, query, limit=limit)
         items = regions[:limit]
-        complexes = complexes[:limit]
         emit(
             {
                 'query': query,

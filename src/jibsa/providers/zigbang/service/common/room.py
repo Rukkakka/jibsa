@@ -11,9 +11,9 @@ from jibsa.core.listing import (
     TradeType,
     join_address,
     m2_to_pyeong,
-    normalize_date,
     note,
     null_items_note,
+    read_date,
     won_to_manwon,
 )
 from jibsa.core.schema import (
@@ -165,7 +165,7 @@ def summary_to_listing(
         lat=summary.location.lat if summary.location else None,
         lng=summary.location.lng if summary.location else None,
         distance_km=None if distance_km is None else round(distance_km, 2),
-        registered_date=normalize_date(summary.reg_date),
+        registered_date=read_date(summary.reg_date, '등록일'),
         complex_id=officetel_complex_id(building_id) if building_id else None,
         hug_lessor=badge_flag(summary.listed_badges, HUG_BADGE),
         actual_listing_checked=badge_flag(summary.listed_badges, VERIFICATION_BADGE),

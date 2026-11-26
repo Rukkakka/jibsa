@@ -1,7 +1,7 @@
 ---
 name: review-verifier
 description: 리뷰어가 낸 지적 목록을 혼자 받아 하나하나 실제 CLI 조회·원본 API 응답으로 재현해 진짜 문제·오탐·미확인·일어날 수 없음으로 가른다 (읽기 전용). /review-diff·/review 에서 지적이 다섯 건을 넘을 때 하나만 띄운다.
-tools: Bash, Read, Glob, Grep
+tools: Bash, Read, Glob, Grep, LSP
 model: sonnet
 effort: medium
 ---

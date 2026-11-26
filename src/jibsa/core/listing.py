@@ -3,8 +3,12 @@ import re
 from calendar import monthrange
 from collections.abc import (
     Callable,
+    Container,
+    Iterable,
+    Iterator,
     Sequence,
 )
+from contextlib import contextmanager
 from datetime import (
     date,
     datetime,
@@ -51,7 +55,11 @@ DATE_DIGITS_PATTERN: re.Pattern[str] = re.compile(
 # 입주 가능일 문구 끝의 괄호 설명 ('2026.10.15 이후 입주 가능 (입주협의)')
 MOVE_IN_PAREN_PATTERN: re.Pattern[str] = re.compile(r'^(.*?)\s*\(([^()]*)\)$')
 ISO_DATE_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+# 연월 칸의 'YYYY-MM'·'YYYY.M'·'YYYYMM'. 구분자 없이는 두 자리 달만 받는다
+YEAR_MONTH_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d{4})(?:[-.](\d{1,2})|(\d{2}))')
 MOVE_IN_NOW: str = '즉시입주'
+# 입주 문구 괄호 안에서 협의 가능으로 읽는 설명 (띄어쓰기를 지우고 견준다). 다른 설명은 그대로 붙인다 (`move_in_label`)
+MOVE_IN_NEGOTIABLE: str = '협의가능'
 # 네이버 매물의 지하층 표기 ('B1' = 지하 1층)
 BASEMENT_FLOOR_PATTERN: re.Pattern[str] = re.compile(r'^B(\d+)$')
 RELATIVE_FLOOR_LABELS: dict[str, str] = {'저': '저층', '중': '중층', '고': '고층'}
@@ -334,6 +342,7 @@ def iso_date(value: str | None) -> str | None:
 
     입주일처럼 날짜인지 가려야 할 때 쓴다 (`normalize_date` 는 못 읽으면 원래 값을 돌려준다). 꼴만 맞고 없는
     날짜('0000-00-00'·'2026-02-30')는 `normalize_date` 가 원래 값 그대로 돌려줘 꼴만 보면 날짜로 통과하므로 달력으로 확인한다.
+    출력 날짜 칸에는 못 읽은 글자를 `[참고]` 로 알리는 `read_date` 를 쓴다.
     """
     text = normalize_date(value)
     if text is None or not ISO_DATE_PATTERN.match(text):
@@ -345,31 +354,155 @@ def iso_date(value: str | None) -> str | None:
     return text
 
 
+# 이 명령이 받은 날짜 중 값이 있는데 날짜로 읽지 못한 원래 글자 (안내에 쓰는 칸 이름 -> 받은 차례대로의 글자). `read_date`·`move_in_label` 이
+# 모으고 `cli.output.emit` 이 칸마다 [참고] 안내 한 줄로 붙인다 (`unread_date_notes`). 명령 시작에 `handle_errors` 가 `reset_unread_dates` 로
+# 비운다. 응답에서 뺀 빈 항목의 합(`core.schema.null_item_tally`)과 같은 방식이라 변환 함수마다 notes 를 넘기지 않는다
+# 라이브러리로 부르면(`jibsa.providers.<source>` 의 함수) 이 안내가 결과 `notes` 에 들어가지 않고 모음도 비워지지 않는다 (`null_item_tally` 와 같다).
+# CHANGELOG 에 알렸고 고칠 방법은 저장소 맨 위 service-refactor.md 에 있다 (2026-11-26 사용자 결정: 지금은 알리기만 한다)
+_unread_dates: dict[str, list[str]] = {}
+# `holding_unread_dates` 블록이 받는 곳. 안쪽 블록이 끝이다
+_held_unread_dates: list[list[tuple[str, str]]] = []
+# 매물 목록 `--fields` 에서 고를 수 있는 날짜 칸의 안내 이름 -> 출력 칸 이름. 소스가 이 이름으로 `read_date`·`move_in_label` 을 부른다.
+# `--fields` 로 칸을 고르지 않았으면 `unread_date_notes` 가 그 안내를 뺀다
+UNREAD_DATE_FIELDS: dict[str, str] = {
+    '등록일': 'registered_date',
+    '사용승인일': 'approved_date',
+    '매물 확인일': 'confirmed_date',
+    '입주일': 'move_in',
+}
+
+
+def reset_unread_dates() -> None:
+    """못 읽은 날짜 모음을 비운다. 명령이 시작할 때 `cli.output.handle_errors` 가 부른다."""
+    _unread_dates.clear()
+
+
+def add_unread_date(what: str, raw: str) -> None:
+    """값이 있는데 날짜·연월로 읽지 못한 원래 글자를 명령 모음에 넣는다. `holding_unread_dates` 블록 안이면 그 블록이 받는다."""
+    entry = raw.strip()
+    if _held_unread_dates:
+        _held_unread_dates[-1].append((what, entry))
+    else:
+        _unread_dates.setdefault(what, []).append(entry)
+
+
+@contextmanager
+def holding_unread_dates() -> Iterator[list[tuple[str, str]]]:
+    """블록 안에서 모은 못 읽은 날짜를 명령 모음에 넣지 않고 돌려준다 ((칸 이름, 원래 글자) 목록).
+
+    변환한 뒤에 거르거나(반경·중복) 자르는(`--limit`) 목록이 출력에 남지 않는 항목의 날짜까지 세지 않도록, 항목마다 이 블록
+    안에서 바꾸고 최종 목록이 정해진 뒤 남은 항목의 것만 `keep_unread_dates` 로 넣는다.
+    """
+    held: list[tuple[str, str]] = []
+    _held_unread_dates.append(held)
+    try:
+        yield held
+    finally:
+        _held_unread_dates.pop()
+
+
+def keep_unread_dates(held: Iterable[tuple[str, str]], *, only: Container[str] | None = None) -> None:
+    """`holding_unread_dates` 가 돌려준 것을 명령 모음에 넣는다. `only` 를 주면 그 칸 이름만 넣는다."""
+    for what, raw in held:
+        if only is None or what in only:
+            add_unread_date(what, raw)
+
+
+def read_date(value: str | None, what: str, *, raw: str | None = None) -> str | None:
+    """출력 날짜 칸의 값을 `YYYY-MM-DD` 로 읽는다 (output-contract.md 날짜 칸 규칙).
+
+    소스가 값 없음으로 준 것(None·빈 글자·'-')은 안내 없이 None 이다. 값이 있는데 날짜로 읽지 못하면(연월만·문장·달력에
+    없는 날) 받은 글자를 내지 않고 None 을 돌려주며, 원래 글자를 `what` 칸으로 모아 `emit` 이 `[참고]` 로 알리게 한다.
+    거르기·비교처럼 출력 칸이 아닌 자리는 `iso_date`·`normalize_date` 를 쓴다 (여기 쓰면 안내가 붙는다).
+
+    Args:
+        value: 소스가 준 날짜 글자.
+        what: 안내에 쓰는 한국어 칸 이름 ('사용승인일', '계약일'). 같은 이름은 한 줄로 모인다.
+        raw: 안내에 보일 원래 글자. 부르는 쪽이 글자를 조립해 넘길 때 소스가 준 글자를 준다 (다방 '20' + 계약일).
+    """
+    text = normalize_date(value)
+    if text is None:
+        return None
+    date = iso_date(text)
+    if date is None:
+        add_unread_date(what, text if raw is None else raw)
+    return date
+
+
+def read_month(value: str | None, what: str, *, raw: str | None = None) -> str | None:
+    """출력 연월 칸(`_month`)을 `YYYY-MM` 으로 읽는다. 'YYYY-MM'·'YYYYMM'·'YYYY.MM' 을 받는다.
+
+    값 없음(None·빈 글자·'-')은 안내 없이 None 이다. 값이 있는데 못 읽으면(꼴이 다르거나 13월) None 을 돌려주고
+    원래 글자를 `what` 칸으로 모은다 (`read_date` 와 같다).
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if text in ('', '-'):
+        return None
+    match = YEAR_MONTH_TEXT_PATTERN.fullmatch(text)
+    month = (match.group(2) or match.group(3)) if match else None
+    if match is not None and month is not None and 1 <= int(month) <= 12:
+        return f'{match.group(1)}-{int(month):02d}'
+    add_unread_date(what, text if raw is None else raw)
+    return None
+
+
+def unread_date_notes(site: str, fields: Container[str] | None = None) -> list[str]:
+    """이 명령에서 읽지 못한 날짜를 칸마다 `[참고]` 한 줄로. 모은 것이 없으면 빈 목록. `cli.output.emit` 이 notes 끝에 붙인다.
+
+    Args:
+        site: 사이트 이름 ('직방', '네이버', '당근', '다방'). 조사는 끝 글자에 맞춘다.
+        fields: `--fields` 로 고른 칸. 고르지 않은 날짜 칸의 안내는 출력에 그 칸이 없어 뺀다.
+    """
+    notes: list[str] = []
+    for what, texts in _unread_dates.items():
+        if fields is not None and what in UNREAD_DATE_FIELDS and UNREAD_DATE_FIELDS[what] not in fields:
+            continue
+        # 예는 겹치지 않게 앞 셋만 보인다 (같은 글자가 여러 건이면 한 번만)
+        examples = ', '.join(f"'{text}'" for text in list(dict.fromkeys(texts))[:3])
+        subject = f"{site}{particle(site, '이/가')} 준 {what}"
+        if len(texts) == 1:
+            body = f"{subject}{particle(what, '을/를')} 읽지 못해 null 로 냈습니다 ({examples})"
+        else:
+            body = f'{subject} {len(texts)}건을 읽지 못해 null 로 냈습니다 (예: {examples})'
+        notes.append(note('참고', f'{body}. 사이트 화면에서 확인하세요'))
+    return notes
+
+
 def move_in_label(value: str | None, *, negotiable: bool = False) -> str | None:
     """입주 가능일을 모든 소스가 같은 꼴로 쓴다: 날짜는 `YYYY-MM-DD`, 날짜 없이 바로면 `즉시입주`, 협의 가능하면
     뒤에 ` (협의 가능)`.
 
-    직방 옛 상세 API 의 문장('즉시 입주 가능 (협의 가능)', '2026.10.15 이후 입주 가능 (입주협의)')도 받는다. 괄호 안이
-    협의·즉시입주가 아닌 다른 설명이면 뒤에 그대로 붙이고, 날짜를 읽지 못하면 원래 문구를 그대로 둔다 (정보를 버리지 않는다).
+    직방 옛 상세 API 의 문장('즉시 입주 가능 (협의가능)', '2026.10.15 이후 입주 가능 (입주협의)')도 받는다. 괄호 안이
+    '협의가능'(띄어쓰기 무시)이면 협의 가능, 즉시입주면 뺀다. 그 밖의 설명('입주협의'·'현세입자 빠른협의')은 직방 웹 화면처럼
+    뒤에 그대로 붙인다 (2026-11-26 사용자 결정: 전에는 '협의' 가 든 설명을 모두 '협의 가능' 으로 바꿔 중개사가 쓴 뜻이 사라졌다).
+    날짜를 읽지 못하면 모름(None)이고 원래 문구는 `[참고]` 안내로 알린다 (`read_date`). 날짜 자리가 비었거나 `-` 면 소스가
+    값 없음으로 준 것이라 안내 없는 모름이다.
     """
-    if value is None or not value.strip():
+    # 소스가 값 없음으로 주는 '-' 는 안내 없는 모름이다 (read_date 와 같다)
+    if value is None or value.strip() in ('', '-'):
         return None
     text = value.strip()
     match = MOVE_IN_PAREN_PATTERN.match(text)
     head, extra = (match.group(1).strip(), match.group(2).strip()) if match else (text, '')
-    if '협의' in extra:
+    if extra.replace(' ', '') == MOVE_IN_NEGOTIABLE:
         negotiable, extra = True, ''
     elif extra.replace(' ', '') == MOVE_IN_NOW:
         extra = ''
     head = head.replace('이후 입주 가능', '').strip()
+    if head in ('', '-'):
+        # 날짜 자리가 값 없음이면 괄호 설명만 있어도 안내 없는 모름이다 (read_date 와 같다)
+        return None
     if '즉시' in head:
         label = MOVE_IN_NOW
     else:
         date = iso_date(head)
         if date is None:
-            # 못 읽은 글자도 소스가 따로 준 협의 가능(네이버 movingInNegotiation, 당근)은 붙인다. 괄호 안에서 읽은 협의는 이미
-            # 글자에 있어 겹쳐 붙이지 않는다
-            return with_negotiable(text, negotiable and '협의' not in text)
+            # 못 읽은 입주일은 받은 글자를 내지 않고 모름(None)이다. 원래 글자(괄호 안 협의 문구 포함)는 `[참고]` 안내로 알린다
+            # (`read_date` 와 같다, 2026-11-26 사용자 결정)
+            add_unread_date('입주일', text)
+            return None
         label = date
     if extra:
         label += f' ({extra})'

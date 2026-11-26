@@ -323,7 +323,7 @@ jibsa zigbang complex apt-68579
 **반환값**
 
 - 아파트: 사용승인일·세대수·동 수·시공사·주차·용적률·난방, 거래 유형별 매물 수(`listing_counts`), 평형 목록(`pyeongs`, 평형마다 면적·세대수·방·욕실·현관 구조·관리비·전매제한 해제일·직방시세), 단지 직방시세(`estimated_ranges`·`estimated_prices`), 단지 순위(`ranking`), 함께 보면 좋은 단지(`related_complexes`), 토지거래허가(`land_trade_permits`), 학군(`schools`, 배정 초등학교와 학교군 안 가까운 중·고등학교 2곳씩), 거주 후기 수(`review_count`)
-- 오피스텔 건물: 세대수·층수·준공 연월(`completed_month`)·엘리베이터와 매물 수. `has_elevator` 는 있다고 확인될 때만 `true` 이고 그 밖에는 `null` 이다 (직방 건물 정보의 '없음'은 엘리베이터가 있는 고층 건물에도 붙어 믿을 수 없다). 정확한 값은 그 건물 매물의 `listing` 상세 `has_elevator` 로 본다
+- 오피스텔 건물: 세대수·층수·준공 연월(`completed_month` `YYYY-MM`, 읽지 못하면 `null` 이고 `[참고]` 로 알린다)·엘리베이터와 매물 수. `has_elevator` 는 있다고 확인될 때만 `true` 이고 그 밖에는 `null` 이다 (직방 건물 정보의 '없음'은 엘리베이터가 있는 고층 건물에도 붙어 믿을 수 없다). 정확한 값은 그 건물 매물의 `listing` 상세 `has_elevator` 로 본다
 
 직방이 주는 정보가 달라 한쪽에만 있는 필드는 키가 없다.
 
@@ -683,12 +683,12 @@ jibsa zigbang price-trend apt-38487 --pyeong 161661 --trade 매매
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
 | `comparable_complexes` | 웹 '단지 비교하기' 의 후보 (직방이 준 순서). 항목은 `complex_id`·`name`·`household_count`·`address`(동까지) | 후보가 없으면 `[]`, 직방이 목록을 주지 않았거나 받지 못했으면 `null` 이고 `[실패]` 로 알린다 |
-| `lines[]` | 그래프의 줄 (직방 응답 순서). `name`, `kind`, `months[]`(`month` `YYYY-MM`·`estimated_price_per_pyeong_manwon` 만원/3.3㎡, 오래된 달부터) | 직방이 줄 목록을 주지 않으면 `lines` 가 `null` 이고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'), 줄이 없으면 `[]` 다. 직방시세가 없는 단지는 조회 단지 줄 없이 구 줄만 온다 (아래). 직방이 0 을 준 달은 시세가 없어 `estimated_price_per_pyeong_manwon` 이 `null` (그 달 항목은 남는다) |
+| `lines[]` | 그래프의 줄 (직방 응답 순서). `name`, `kind`, `months[]`(`month` `YYYY-MM`·`estimated_price_per_pyeong_manwon` 만원/3.3㎡, 오래된 달부터) | 직방이 줄 목록을 주지 않으면 `lines` 가 `null` 이고 `[참고]` 로 알린다 (끝에 'jibsa 업데이트가 필요할 수 있습니다'), 줄이 없으면 `[]` 다. 직방시세가 없는 단지는 조회 단지 줄 없이 구 줄만 온다 (아래). 직방이 0 을 준 달은 시세가 없어 `estimated_price_per_pyeong_manwon` 이 `null` (그 달 항목은 남는다). `month` 를 날짜로 읽지 못하면 `null` 이고 `[참고]` 가 `추이 월` 로 알린다 |
 | `lines[].kind` | `단지`(조회 단지)·`비교 단지`·`구`(그 구·시·군 평균). 비교 단지 줄에만 `complex_id` 가 붙는다 | 줄 구성을 판정할 수 없으면 `null` (아래) |
 
 직방은 줄을 단지 ID 오름차순으로 주고 구를 끝에 붙여, 첫 줄이 조회 단지가 아닐 수 있다. 위치로 읽지 말고 `kind` 로 가른다. `kind` 는 줄 이름으로 정한다: `--compare` 로 준 단지의 이름이면 `비교 단지`, 마지막 줄이면 `구`, 남은 줄이 `단지` 다. 직방시세가 없는 단지(분양예정 등)는 조회 단지 줄 없이 구 줄만 와서(비교 단지가 있으면 비교 단지 줄과 구 줄) 줄 수가 비교 단지 + 구이고, 마지막 줄이 `구`, 나머지가 `비교 단지` 다 (비교 없이 한 줄이면 그 줄이 `구`). 이때 `[참고]` 가 '구 줄만 있다' 고 알린다. 이름이 겹치거나 줄 수가 (조회 단지 + 비교 단지 + 구) 도 (비교 단지 + 구) 도 아니거나 빈 줄을 뺐으면 판정하지 않고 모든 줄의 `kind` 가 `null` 이다.
 
-평형 추이(`--pyeong`): `complex_id`, `pyeong_id`, `period`, `trade_tab`(고른 `--trade` 값), `months[]` 를 준다. 달마다 `month` 와 `sale`·`jeonse_wolse` 키가 있고, 고르지 않은 탭의 키는 없다 (`--trade 전체` 는 둘 다, `매매` 는 `sale` 만, `전월세` 는 `jeonse_wolse` 만). 직방이 그 달의 그 탭 기록을 주지 않으면 그 값이 `null` 이다. 매매·전월세 기록은 월로 맞춘 목록이다. 금액은 만원이다.
+평형 추이(`--pyeong`): `complex_id`, `pyeong_id`, `period`, `trade_tab`(고른 `--trade` 값), `months[]` 를 준다. 달마다 `month`(`YYYY-MM`, 날짜로 읽지 못하면 `null` 이고 `[참고]` 가 `추이 월` 로 알린다)와 `sale`·`jeonse_wolse` 키가 있고, 고르지 않은 탭의 키는 없다 (`--trade 전체` 는 둘 다, `매매` 는 `sale` 만, `전월세` 는 `jeonse_wolse` 만). 직방이 그 달의 그 탭 기록을 주지 않으면 그 값이 `null` 이다. 매매·전월세 기록은 월로 맞춘 목록이다. 금액은 만원이다.
 
 `months` 가 비는 모양은 아래와 같다. 직방이 그 평형의 월 목록 자체를 주지 않으면 `months` 가 `null`(모름)이고 `[참고]` 로 알린다: 평형을 확인했으면 직방 응답 형식이 바뀐 것이라 끝에 'jibsa 업데이트가 필요할 수 있습니다' 가 붙고, 평형 목록의 빈 항목 때문에 평형을 확인하지 못했으면 단지에 없는 평형 ID 일 수 있다며 `complex` 결과의 `pyeongs[].pyeong_id` 로 확인하라고 한다. 월 목록은 왔는데 고른 탭의 기록이 모두 없으면 평형을 확인했을 때 `[]` 이고 `[참고]` '이 평형에 {기간} 동안 직방 {매매·전월세} 시세·거래 기록이 없습니다' 다 (`--trade 전체` 는 탭 이름 없이 '직방 시세·거래'). 한 탭만 기록이 없는 평형이 있어 탭을 밝힌다. 평형을 확인하지 못했으면 같은 응답이 없는 평형 ID 와 구별되지 않아 `[]` 가 아니라 `null` 이다. 직방이 월 목록을 빈 목록으로 주면 `[]` 이고 같은 '기록이 없습니다' `[참고]` 다. 빈 항목을 빼서 비면 `[]` 이고 `[제외]` 만 나온다.
 
@@ -736,8 +736,8 @@ jibsa zigbang region-info 가락동 --range 30평대
 | `complex_count`·`household_count` | 단지 수·세대수. 웹 머리 '39 단지 · 23,634 세대' 의 글자에서 읽은 값이다 | 읽지 못하면 `null` |
 | `estimated_ranges` | 전체 평형의 최저·최고 직방시세 매매가 (`sale` 키 안 `lowest`·`highest` 의 `price_manwon`. 웹 '매매 {최저} ~ {최고}') | 두 끝이 모두 직방이 주지 않거나 `0` 이면 `sale` 이 `null`, 한 끝만 그러면 그 `price_manwon` 만 `null` |
 | `by_pyeong_range[]` | 평형대별 직방시세 (웹 평형 탭). `pyeong_range`(`전체`·`10평 이하`·`10평대`~`50평대`·`60평대 이상`)·`estimated_prices`(`sale` 키 안 `price_per_pyeong_manwon`, 평균 매매 평당가 만원/3.3㎡)·`estimated_ranges`(`sale` 키 안 `lowest`·`highest` 의 `price_manwon`). 전체 먼저 작은 평형대 순이고, 웹처럼 평균 매매 평당가나 전월세 평당가가 `0` 인 평형대는 뺀다. 직방이 실거래를 분석한 추정값이지 실거래가가 아니다 | 직방이 주지 않으면 `null`, 모두 빠졌으면 `[]`. 직방이 평균 매매 평당가를 주지 않으면 `estimated_prices` 의 `sale` 이 `null` 이고, 최저·최고 매매가가 모두 `0` 이면 `estimated_ranges` 의 `sale` 이 `null`, 한 끝만 `0` 이면 그 끝의 `price_manwon` 만 `null` |
-| `monthly_volumes[]` | 월별 거래량 (건). `month`(`YYYY-MM`)·`trade_counts`(`sale`·`jeonse`·`wolse` 키별 건수). 오래된 달부터이고 마지막 달은 이번 달이라 아직 채워지는 중이다. 웹 '전체' 는 셋의 합이지만 합은 내지 않는다 | 조회를 받지 못했거나 직방이 목록을 주지 않았으면 `null` 이고 `[실패]` |
-| `price_trend` | 평당가 추이 (웹: 평당가 높은 단지 최대 3개와 그 지역 1줄). `pyeong_range`(`--range` 값. `by_pyeong_range[].pyeong_range` 의 이름표와 빈칸이 다르다)와 `lines[]`(`name`·`kind`(`단지`·`지역`)·`months[]`(`month`·`price_per_pyeong_manwon`, 직방이 0 을 준 달은 그 달 항목을 남기고 값만 `null`)). 줄 이름이 `region.name` 과 같으면 `지역`, 아니면 `단지` 다. 줄 이름이나 지역 이름이 빈 글자라 판정할 수 없으면 `kind` 가 `null` (줄 이름이 빈 글자면 `name` 도 `null`) | 조회를 받지 못했거나 직방이 평당가 추이나 줄 목록을 주지 않았으면 `null` 이고 `[실패]` |
+| `monthly_volumes[]` | 월별 거래량 (건). `month`(`YYYY-MM`, 읽지 못하면 `null` 이고 `[참고]` 로 알린다)·`trade_counts`(`sale`·`jeonse`·`wolse` 키별 건수). 오래된 달부터이고 마지막 달은 이번 달이라 아직 채워지는 중이다. 웹 '전체' 는 셋의 합이지만 합은 내지 않는다 | 조회를 받지 못했거나 직방이 목록을 주지 않았으면 `null` 이고 `[실패]` |
+| `price_trend` | 평당가 추이 (웹: 평당가 높은 단지 최대 3개와 그 지역 1줄). `pyeong_range`(`--range` 값. `by_pyeong_range[].pyeong_range` 의 이름표와 빈칸이 다르다)와 `lines[]`(`name`·`kind`(`단지`·`지역`)·`months[]`(`month`(읽지 못하면 `null` 이고 `[참고]` 로 알린다)·`price_per_pyeong_manwon`, 직방이 0 을 준 달은 그 달 항목을 남기고 값만 `null`)). 줄 이름이 `region.name` 과 같으면 `지역`, 아니면 `단지` 다. 줄 이름이나 지역 이름이 빈 글자라 판정할 수 없으면 `kind` 가 `null` (줄 이름이 빈 글자면 `name` 도 `null`) | 조회를 받지 못했거나 직방이 평당가 추이나 줄 목록을 주지 않았으면 `null` 이고 `[실패]` |
 | `price_movement` | 웹 그래프 위 문구('3주 연속 시세가 상승하고 있어요'): `streak_weeks`·`direction`(`상승`·`하락`·`지속`) | 직방이 주 수와 흐름을 모두 주지 않았거나(웹도 그리지 않는다) 평당가 추이를 받지 못했거나 직방이 평당가 추이를 주지 않았으면 `null` (뒤의 둘은 `[실패]`) |
 | `population` | 구만. `people[]`(월별 연령대별 인구: `month`·`population`·`age_0_9`·`age_10_19`·`age_20_29`·`age_30_39`·`age_40_49`·`age_50_59`·`age_60_over`)와 `household_months[]`(월별 가구원 수별 세대: `month`·`household_count`·`one`·`two`·`three`·`four`·`five_plus`). `age_60_over` 는 60세 이상 전체다 (직방 칸 이름은 `age_60_69` 지만 일곱 칸의 합이 `population` 과 같다). 기간은 지난달까지 5년이다 | 동은 서버가 빈 목록을 주고 웹도 인구 탭이 없어 `population` 키가 없다. 직방이 빈 목록을 주면 `[]`, 받지 못했으면 `null` (`people` 과 `household_months` 는 따로) |
 
@@ -779,7 +779,7 @@ jibsa zigbang region-trades 가락동 --trade 전세 --sort 가격높은순 --pe
 | `complex_id`·`complex_name` | 모두 | 단지 ID(`apt-…`, `complex`·`real-price`·`search listings --complex` 에 넘긴다)와 이름 | `null` |
 | `dong` | 모두 | 줄의 동 (직방이 준 local, 예: `가락동`) | 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 구 단위인데 직방이 주지 않으면 `null` |
 | `area_type` | 모두 | 평형 이름 (웹 `{평형 이름}㎡`) | `null` |
-| `trade_date` | 모두 | 계약일 (`YYYY-MM-DD`). 목록은 계약일 순이 아니다 | 읽지 못하면 `null` |
+| `trade_date` | 모두 | 계약일 (`YYYY-MM-DD`). 목록은 계약일 순이 아니다 | 읽지 못하면 `null` 이고 `[참고]` 로 알린다 |
 | `presale` | 모두 | 분양권·입주권 거래 ([`real-price`](#8-real-price--아파트-실거래가)의 `presale` 과 같다) | 해당할 때만 키가 있다 |
 | `price_manwon` | 매매 | 매매가 | — |
 | `deposit_manwon` | 전세·월세 | 보증금·전세금 | — |
@@ -828,8 +828,8 @@ jibsa zigbang region-ranking 가락동 --trade 전세 --sort 전세가율높은�
 
 | 필드 | 뜻 | 값이 없을 때 |
 | --- | --- | --- |
-| `start_date` | 집계 시작일 (거래량·하락률·상승률·인기 기준만) | 시세·평당가·전세가율은 키가 없다. 읽지 못하면 `null` |
-| `end_date` | 집계 끝 날짜. 시세·평당가·전세가율은 직방 시세 기준일이다 | 읽지 못하면 `null` |
+| `start_date` | 집계 시작일 (거래량·하락률·상승률·인기 기준만) | 시세·평당가·전세가율은 키가 없다. 읽지 못하면 `null` 이고 `[참고]` 로 알린다 |
+| `end_date` | 집계 끝 날짜. 시세·평당가·전세가율은 직방 시세 기준일이다 | 읽지 못하면 `null` 이고 `[참고]` 로 알린다 |
 | `updated_at` | 갱신 시각 (`YYYY-MM-DD HH:MM`, 한국 시간. 거래량·하락률·상승률 기준만) | 시세·평당가·전세가율·인기는 키가 없다. 읽지 못하면 `null` |
 
 줄(`rankings[]`)에는 공통으로 `rank`(순위)·`complex_id`(`apt-…`)·`name`(단지 이름)·`dong` 이 있고, 같은 순위가 여럿일 수 있다 (1·1·1·4 처럼 다음 순위가 건너뛴다). `dong` 은 구 단위 조회에만 있고 동 단위 조회는 키가 없다. 기준마다 나머지 칸이 다르고, 그 기준에 없는 칸은 키가 없다.

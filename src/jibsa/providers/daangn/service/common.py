@@ -35,9 +35,9 @@ from jibsa.core.listing import (
     js_round,
     m2_to_pyeong,
     more_hint,
-    normalize_date,
     note,
     null_items_note,
+    read_date,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import RequestModel
@@ -500,9 +500,9 @@ def article_to_listing(
         # 지도 피드(목록)에는 날짜 필드가 아예 없어 search 결과는 None 이다. 등록일은
         # 상세 페이지에만 있다. 매물마다 상세를 더 조회하면 동마다 최대 20회 요청이
         # 늘어(약 10초) 목록에서는 채우지 않는다. 필요하면 daangn listing 으로 확인한다.
-        registered_date=normalize_date(article.published_at),
+        registered_date=read_date(article.published_at, '등록일'),
         # 사용승인일도 상세 페이지에만 있어 목록에서는 None 이다.
-        approved_date=normalize_date(article.building_approval_date),
+        approved_date=read_date(article.building_approval_date, '사용승인일'),
     )
 
 
@@ -1406,7 +1406,7 @@ def region_complex_of(
         name=node.name,
         complex_type=code_label(COMPLEX_TYPE_LABELS, node.type),
         household_count=danji.households if danji else None,
-        approved_date=normalize_date(danji.build_date) if danji else None,
+        approved_date=read_date(danji.build_date, '사용승인일') if danji else None,
         listing_counts={
             'sale': counts.buy if counts else None,
             'jeonse': counts.borrow if counts else None,

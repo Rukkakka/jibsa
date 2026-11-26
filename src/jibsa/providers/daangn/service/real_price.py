@@ -26,9 +26,9 @@ from jibsa.core.listing import (
     floor_text,
     js_to_fixed,
     normalize_address,
-    normalize_date,
     note,
     null_items_note,
+    read_date,
     with_floor_number,
     won_to_manwon,
     years_ago,
@@ -317,7 +317,9 @@ def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> 
     not_presale = (node.ownership or '').strip() == NOT_PRESALE_OWNERSHIP
     return DaangnRealPrice(
         trade_type=trade_type,
-        trade_date=_trade_date(node),
+        # 달력에 없는 날(정수 연·월·일을 검사 없이 이어 붙였다)은 null 과 [참고]. `_trade_date` 는 기간 거르기(`date_of`)에도 쓰여 거기서 읽으면
+        # 출력하지 않는 거래까지 안내에 센다
+        trade_date=read_date(_trade_date(node), '계약일'),
         area_m2=node.exclusive_use_area,
         floor=floor_text(node.floor),
         price_manwon=node.deal_amount if buy else None,
@@ -848,7 +850,7 @@ def estimated_prices_of(chart: DaangnPriceChartModel | None) -> DaangnChartEstim
     low = won_to_manwon(kb.lower)
     high = won_to_manwon(kb.upper)
     return DaangnChartEstimatedPrices(
-        base_date=normalize_date(kb.survey_base_date),
+        base_date=read_date(kb.survey_base_date, 'KB 시세 기준일'),
         sale=None if low is None and high is None else DaangnKbSale(low_manwon=low, high_manwon=high),
     )
 
@@ -1404,13 +1406,13 @@ def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, n
     return DaangnRegionRealPrice(
         trade_type=trade_type,
         from_new_high_feed=new_high,
-        trade_date=normalize_date(realsale.contact_date),
-        published_date=normalize_date(item.data_date),
+        trade_date=read_date(realsale.contact_date, '계약일'),
+        published_date=None if new_high else read_date(item.data_date, '공개일'),
         address=normalize_address(item.region_name),
         building_name=(danji.name if danji else None) or (item.complex.name if item.complex else None),
         complex_id=item.complex.original_id if item.complex else None,
         household_count=danji.households if danji else None,
-        approved_date=normalize_date(danji.build_date) if danji else None,
+        approved_date=read_date(danji.build_date, '사용승인일') if danji else None,
         area_m2=realsale.exclusive_area,
         floor=floor_text(realsale.floor),
         price_manwon=realsale.trade_price if buy else None,
@@ -1421,7 +1423,7 @@ def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, n
         contract_type=None if buy else contract_type_of(realsale.lease_contract_type),
         new_high=(bool(insight and insight.is_new_high) and not cancelled) if buy else None,
         prev_high_manwon=insight.previous_max_price if buy and insight else None,
-        prev_high_date=normalize_date(insight.previous_max_contact_date) if buy and insight else None,
+        prev_high_date=read_date(insight.previous_max_contact_date, '직전 최고가 계약일') if buy and insight else None,
         prev_high_diff_percent=(
             previous_high_change_percent(realsale.trade_price, insight.previous_max_price if insight else None)
             if buy and not cancelled else None
@@ -1451,7 +1453,7 @@ def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> 
     sale = data.realsale_feed_summary
     new_high = data.realsale_new_high_feed_summary
     return DaangnRealsaleSummary(
-        latest_published_date=normalize_date(sale.data_date) if sale else None,
+        latest_published_date=read_date(sale.data_date, '최근 공개일') if sale else None,
         sale_count=sale.sale_count if sale else None,
         new_high_count=new_high.new_high_count if new_high else None,
     )

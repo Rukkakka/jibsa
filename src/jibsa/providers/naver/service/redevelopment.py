@@ -12,6 +12,7 @@ from jibsa.core.listing import (
     TRADE_KEY_BY_NAME,
     AmountRange,
     Listing,
+    keep_unread_dates,
     normalize_address,
     note,
 )
@@ -325,6 +326,7 @@ def list_redevelopment_articles(
     sort_type = COMPLEX_SORT_TYPE_BY_NAME[sort]
     price_filter = price_filter_of(conditions)
     listings: dict[str, Listing] = {}
+    held: dict[str, list[tuple[str, str]]] = {}
     scan = PageScan(limit=limit, max_requests=MAX_REDEVELOPMENT_ARTICLE_PAGE_REQUESTS)
 
     # 구역 매물의 lastInfo 는 마지막 페이지까지 리스트로 온다 ([1, 710.5, '2652597531'] → [0, -279.6, …], 봉천4-1-3구역
@@ -348,7 +350,7 @@ def list_redevelopment_articles(
             '재개발 구역 매물',
         )
 
-    scan_pages(scan, fetch, listing_keeper(listings, None), page_size=REDEVELOPMENT_PAGE_SIZE)
+    scan_pages(scan, fetch, listing_keeper(listings, None, held=held), page_size=REDEVELOPMENT_PAGE_SIZE)
     notes: list[str] = []
     if scan.truncated:
         notes.append(note(
@@ -358,6 +360,8 @@ def list_redevelopment_articles(
         ))
     notes += price_sort_notes(sort_type, conditions.trade_types)
     result = list(listings.values())[:limit]
+    for listing in result:
+        keep_unread_dates(held.get(listing.id, ()))
     notes += group_sort_notes(sort_type, result)
     # 구역 하나라 지역 대신 구역 매물의 조건만 좁히라고 한다 (단지 매물과 같다)
     notes += pagination_notes(

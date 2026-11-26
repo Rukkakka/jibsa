@@ -160,3 +160,8 @@ warn_redundant_casts = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
+
+# 타입 검사는 mypy 만 한다. pyright(Claude Code 의 pyright-lsp 플러그인, VS Code 의 Pylance)는 정의·참조 찾기에만 쓰고
+# 타입 진단은 끈다. mypy 의 pydantic 플러그인을 몰라 모델 생성자에 글자를 넘기는 자리마다 오류를 낸다 (2026-11-26 확인: mypy 0건, pyright 270건)
+[tool.pyright]
+typeCheckingMode = 'off'
