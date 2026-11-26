@@ -80,14 +80,16 @@ Claude Code 의 도구(`Read`·scratchpad·도구 호출)를 쓰는 규칙이라
 
 ## 코드 찾기 (LSP)
 
-pyright-lsp 플러그인(`/plugin install pyright-lsp@claude-plugins-official`, pyright 는 `uv tool install pyright`)을 깔았으면
+pyright-lsp 플러그인(`/plugin install pyright-lsp@claude-plugins-official`. VS Code 확장에는 `/plugin` 이 없어 터미널에서
+`claude plugin install pyright-lsp@claude-plugins-official` 로 깐다. pyright 는 `uv tool install pyright`)을 깔았으면
 `LSP` 도구로 정의·참조·호출 관계를 찾는다. 함수·칸을 어디서 쓰는지 빠짐없이 찾을 때는 grep 보다 이것을 먼저 쓴다 (2026-11-26
 시험: `won_to_manwon` 호출 69곳이 grep 과 같았고 이름이 비슷한 다른 함수·주석은 섞이지 않았다). 호출 꼴(`name(`)로 grep 하면
 함수를 부르지 않고 넘기는 자리(`date_of=_trade_date`)를 놓친다 (2026-11-26 날짜 칸 작업: 지시서와 지시서 검사 모두 놓쳐 고친 뒤에야
 찾았다). `coder`·`reviewer`·`review-verifier`·`brief-checker`·`doc-writer` 정의에 넣었다.
 
 - 주 에이전트·`Explore` 는 처음에 도구 목록에 이름만 있어 `ToolSearch` 로 `select:LSP` 를 불러 쓴다. `tools:` 에 `LSP` 를 적은
-  정의는 처음부터 받는다. 정의를 고친 뒤에는 `/reload-plugins` 나 새 세션 뒤에야 반영된다.
+  정의는 처음부터 받는다. 정의를 고친 뒤에는 `/reload-plugins` 나 새 세션 뒤에야 반영된다. 플러그인을 깐 뒤에도
+  `/reload-plugins` 를 치면 그 세션에서 바로 쓸 수 있다 (2026-11-26 VS Code 확장에서 확인).
 - 서버가 색인하는 동안은 오류 없이 결과가 잘린다 (첫 `findReferences` 가 정의 하나만 돌려줬다). 정의 하나뿐이면 다시 부른다.
 - 타입 판정은 mypy 만 따른다. pyright 진단은 `pyproject.toml` 의 `[tool.pyright]` 에서 껐다 (mypy 의 pydantic 플러그인을 몰라
   오탐이 많다).
