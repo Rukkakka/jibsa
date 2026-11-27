@@ -19,17 +19,21 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.stay.base import (
+from jibsa.providers.zigbang.api.models.request.stay.common import (
     STAY_SEARCH_MAX_DAYS,
     STAY_SEARCH_MIN_DAYS,
     ZigbangGuestItemsByIdsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.stay.search import (
+from jibsa.providers.zigbang.api.models.request.stay.search import (
     ZigbangGuestItemsMarkersRequestParameterModel,
     ZigbangGuestItemsSearchRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.stay.base import ZigbangStayItemSummaryModel
-from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
+from jibsa.providers.zigbang.api.models.response.stay.common import (
+    ZigbangStayItemSummaryModel,
+)
+from jibsa.providers.zigbang.api.models.response.stay.search import (
+    ZigbangStayMarkerModel,
+)
 from jibsa.providers.zigbang.service.common.constants import (
     MAX_LIST_LIMIT,
 )

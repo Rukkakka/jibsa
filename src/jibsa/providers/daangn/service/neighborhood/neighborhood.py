@@ -12,13 +12,15 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.neighborhood import (
+from jibsa.providers.daangn.api.models.request.neighborhood import (
     DaangnLivableRegionScopesRequestPayloadModel,
     DaangnNeighborhoodIndicatorModel,
     DaangnRecommendNeighborhoodsInputModel,
     DaangnRecommendNeighborhoodsRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.neighborhood import DaangnLivableSidoModel
+from jibsa.providers.daangn.api.models.response.neighborhood import (
+    DaangnLivableSidoModel,
+)
 from jibsa.providers.daangn.service.common.response import unwrap_graphql
 from jibsa.providers.daangn.service.neighborhood.constants import (
     LIFESTYLE_INDICATORS,

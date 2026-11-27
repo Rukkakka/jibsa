@@ -14,10 +14,10 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.complex.detail import (
+from jibsa.providers.daangn.api.models.request.complex.detail import (
     DaangnComplexesRequestParameterModel,
 )
-from jibsa.providers.daangn.api.response.complex.detail import (
+from jibsa.providers.daangn.api.models.response.complex.detail import (
     DaangnAreaGroupModel,
     DaangnComplexModel,
     DaangnNearbySchoolModel,

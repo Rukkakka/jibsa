@@ -18,11 +18,11 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.region import (
+from jibsa.providers.naver.api.models.request.region import (
     NaverLegalDivisionInfoListByLevelV1RequestParameterModel,
     NaverSearchAutocompleteLegalDivisionsV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.region import (
+from jibsa.providers.naver.api.models.response.region import (
     NaverAutocompleteLegalDivisionModel,
     NaverAutocompletePageModel,
     NaverLegalDivisionInfoModel,

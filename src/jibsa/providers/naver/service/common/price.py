@@ -12,7 +12,7 @@ from jibsa.core.listing import (
     read_date,
     won_to_manwon,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverComplexArticleCountModel,
     NaverComplexArticlePriceModel,
     NaverPriceRangeModel,

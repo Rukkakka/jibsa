@@ -10,20 +10,22 @@ from jibsa.core.listing import (
     parking_label,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.listing.detail import (
+from jibsa.providers.naver.api.models.request.listing.detail import (
     NaverComplexBuildingRegistrationV1RequestParameterModel,
     NaverComplexPyeongV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverComplexModel,
     NaverFacilityInfoModel,
 )
-from jibsa.providers.naver.api.response.listing.detail import NaverArticleKeyModel
+from jibsa.providers.naver.api.models.response.listing.detail import (
+    NaverArticleKeyModel,
+)
 from jibsa.providers.naver.service.common.constants import VILLA_COMPLEX_CODES
 from jibsa.providers.naver.service.common.response import result_or_none
 from jibsa.providers.naver.service.listing.common import coded_label

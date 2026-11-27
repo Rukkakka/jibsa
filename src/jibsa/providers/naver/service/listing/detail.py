@@ -15,15 +15,15 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.listing.detail import (
+from jibsa.providers.naver.api.models.request.listing.detail import (
     NaverArticleBasicInfoV1RequestParameterModel,
     NaverArticleKeyV1RequestParameterModel,
     NaverArticleMaintenanceFeeV1RequestParameterModel,
     NaverArticleOldMaintenanceFeeV1RequestParameterModel,
     NaverLegalDivisionInfoListV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.common import NaverResponseModel
-from jibsa.providers.naver.api.response.listing.detail import (
+from jibsa.providers.naver.api.models.response.common import NaverResponseModel
+from jibsa.providers.naver.api.models.response.listing.detail import (
     NaverArticleBasicInfoModel,
     NaverArticleDetailInfoModel,
     NaverArticleKeyModel,

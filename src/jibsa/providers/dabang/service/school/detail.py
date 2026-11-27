@@ -8,12 +8,12 @@ from jibsa.core.browser import EntryOpenError
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.school.detail import (
+from jibsa.providers.dabang.api.models.request.school.detail import (
     DabangEducationKinderSchoolV3RequestParameterModel,
     DabangEducationNurserySchoolV3RequestParameterModel,
     DabangEducationV3RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.school.detail import (
+from jibsa.providers.dabang.api.models.response.school.detail import (
     DabangEducationV3ResponseModel,
 )
 from jibsa.providers.dabang.service.common.constants import SchoolLevel

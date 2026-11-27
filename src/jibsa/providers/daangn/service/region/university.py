@@ -10,11 +10,13 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.region.university import (
+from jibsa.providers.daangn.api.models.request.region.university import (
     DaangnSchoolPoiSearchInputModel,
     DaangnSearchSchoolPoisRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.region.university import DaangnSchoolPoiModel
+from jibsa.providers.daangn.api.models.response.region.university import (
+    DaangnSchoolPoiModel,
+)
 from jibsa.providers.daangn.service.common.location import coordinate_point
 from jibsa.providers.daangn.service.common.response import unwrap_graphql
 from jibsa.providers.daangn.service.region.common import (

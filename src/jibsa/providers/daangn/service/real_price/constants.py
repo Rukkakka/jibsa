@@ -1,6 +1,6 @@
 """실거래가(real-price·region-real-price·price-trend)의 상수: 계약 종류·쪽 크기·정렬·시세 추이 기준."""
 
-from jibsa.providers.daangn.api.request.real_price.trend import (
+from jibsa.providers.daangn.api.models.request.real_price.trend import (
     DaangnPriceChartTradeType,
 )
 

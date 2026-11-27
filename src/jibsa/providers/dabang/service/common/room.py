@@ -6,7 +6,7 @@ from jibsa.core.listing import (
     m2_to_pyeong,
     note,
 )
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     ALL_ROOM_COUNTS,
     ALL_ROOM_FLOORS,
     ALL_ROOM_TYPES,
@@ -18,7 +18,7 @@ from jibsa.providers.dabang.api.request.common import (
     DabangOneTwoFiltersModel,
     DabangRangeModel,
 )
-from jibsa.providers.dabang.api.response.common import DabangRoomItemModel
+from jibsa.providers.dabang.api.models.response.common import DabangRoomItemModel
 from jibsa.providers.dabang.service.common.constants import (
     APARTMENT_TYPE,
     CATEGORY_BY_KIND,

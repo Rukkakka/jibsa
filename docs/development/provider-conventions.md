@@ -11,8 +11,9 @@ providers/<source>/
 ├── api/              # 아래층: 소스 API 를 그대로 옮긴 것. service 를 가져다 쓰지 않는다
 │   ├── __init__.py   # 안내 docstring 만
 │   ├── client.py     # <Source>Client(BaseHTTPClient) + run_request_* / arun_request_*
-│   ├── request/      # 요청 파라미터·본문 모델 (service 와 같은 기능 이름, 기준 7)
-│   └── response/     # 응답 모델 (최상위 + 중첩 모델 모두, service 와 같은 기능 이름, 기준 7)
+│   └── models/       # 사이트 API 를 그대로 옮긴 pydantic 모델 (안내 docstring 만 있는 `__init__.py`)
+│       ├── request/  # 요청 파라미터·본문 모델 (service 와 같은 기능 이름, 기준 7)
+│       └── response/ # 응답 모델 (최상위 + 중첩 모델 모두, service 와 같은 기능 이름, 기준 7)
 └── service/          # 윗층: api 를 조합해 Listing 으로 정규화
     ├── __init__.py   # 모듈 안내 docstring 만 (re-export 없음)
     ├── common/       # 여러 기능이 쓰는 것. 안의 파일은 모두 내용 이름 (기준 2)
@@ -30,9 +31,9 @@ providers/<source>/
 ```
 
 - jibsa 에는 `dto.py` 가 없다. 중첩·공통 응답 모델(`ZigbangItemPinModel`,
-  `NaverResponseModel[T]` 등)도 `response/` 에 둔다 (여러 기능이 쓰면 `response/common.py`). 공통 베이스는 최상위
+  `NaverResponseModel[T]` 등)도 `api/models/response/` 에 둔다 (여러 기능이 쓰면 `response/common.py`). 공통 베이스는 최상위
   모델보다 위에 둔다.
-- 소스마다 `api/response/common.py` 에 기반 응답 모델 `<Source>BaseResponseModel(ResponseModel)` 을 두고 그 소스의 모든
+- 소스마다 `api/models/response/common.py` 에 기반 응답 모델 `<Source>BaseResponseModel(ResponseModel)` 을 두고 그 소스의 모든
   응답 모델이 물려받는다 (응답 봉투 `NaverResponseModel[T]`·`DabangV5ResponseModel[T]`·`DaangnGraphQLResponseModel` 도 이
   기반 모델 위에 있다). 새 응답 모델도 `ResponseModel` 이 아니라 이 기반 모델을 물려받는다. 기반 모델의 wrap 검증기
   (`core/schema.py` 의 `validate_dropping_nulls`)가 목록 칸의 null 을 키가 없는 것으로 읽는 규칙(`drop_null_lists`)과 객체 목록 안의
@@ -67,7 +68,7 @@ providers/<source>/
    | `models.py` | 데이터 모양 (결과·조건 모델, 타입 별칭). 기능 폴더마다 하나이고 나누지 않는다 |
    | 명령·주제 파일 | 하는 일 이름 (`search.py`·`detail.py`·`facility.py`). 명령 하나인 폴더는 명령 이름이다 (`trend/trend.py`, `complex/complex.py`) |
 
-   service 에는 `functions.py`·`base.py` 라는 이름이 없다. `api/request/`·`api/response/` 의 `base.py`·`common.py` 는 모델 파일이라 그대로 둔다 (기준 7). 직방은 `common/` 을 `constants`·`models`·`ids`·`text`·`unavailable`(바닥)과 `danji`·`price`·`room`·`apt`(주제)로 나누고, 당근은 `constants`·`models`·`response`·`location`·`listing`·`nearby`·`complex`, `region/` 은 `constants`·`models`·`common`·`area`·`station`·`university`·`address` 로 나눈다.
+   service 와 `api/models/` 모두 `functions.py`·`base.py` 라는 이름이 없고, 폴더 안 공용은 `common.py` 다. `api/models/request/`·`response/` 바로 아래 `common.py` 는 소스 전체가 같이 쓰는 요청·응답 모델이고, 그 아래 기능 폴더의 `common.py` 는 그 기능 안에서 같이 쓰는 요청·응답 모델이다 (기준 7). 직방은 `common/` 을 `constants`·`models`·`ids`·`text`·`unavailable`(바닥)과 `danji`·`price`·`room`·`apt`(주제)로 나누고, 당근은 `constants`·`models`·`response`·`location`·`listing`·`nearby`·`complex`, `region/` 은 `constants`·`models`·`common`·`area`·`station`·`university`·`address` 로 나눈다.
    다른 파일이 부르게 된 이름은 밑줄을 떼 공개한다. 값 안에 함수를 담은 표나 service 의 함수·모델로 만드는 값(다방 `METRIC_BY_LABEL`, 직방 `USAGE_FEES`)은 `constants.py` 로 옮기지 않고 쓰는 파일에 두며 바로 위에 이유 주석을 단다. 리터럴과 그 조합, 표준 라이브러리·`core`·`httpx`·api 모델 타입으로 만든 값(`re.compile(...)`, 예외 클래스 튜플)은 `constants.py` 로 간다.
 3. **import 는 `constants` → `models` → `<기능>/common.py` → 명령·주제 파일 방향으로만 한다.** `service/common/` 은 두 층이다: 바닥 파일(`constants`·`models`·`response`·`text` 처럼 상수·모양·응답 꺼내기·이름표·글자 다듬기. 매물·단지 주소 틀은 `constants` 에 둔다)과 주제 파일(매물·쪽 넘김·시세·평형 등). 주제 파일은 바닥 파일만 가져다 쓰고 주제 파일끼리는 가져다 쓰지 않는다. 두 주제가 같이 쓰는 함수는 바닥 파일로 내린다. 바닥 파일은 모두 `constants` 를 가져다 쓸 수 있고, `constants` 를 뺀 바닥 파일끼리는 가져다 쓰지 않는다. 기능 폴더 안도 같다: 그 폴더의 `common.py` 가 바닥이고 명령·주제 파일끼리는 서로 가져다 쓰지 않는다 (입구 파일이 주제 파일을 부르는 것은 된다: 네이버 `listing/detail.py` → `facility`·`cost`·`nearby`). `models.py` 는 같은 기능의 함수 모듈을 가져다 쓰지 않는다. 기능 모듈은 다른 기능 모듈을 가져다 쓰지 않고, 두 기능이 같이 쓰게 되면 그 심볼을 `service/common/` 의 내용 파일(상수는 `common/constants.py`)로 옮긴다. 입구 모듈(직방 `listing`: `listing` 명령의 ID 분기)만 기능 모듈을 가져다 쓴다. 지역 해석(`region`)은 `service/common/` 바로 위층이라 기능 모듈이 가져다 쓸 수 있고, `region` 은 기능 모듈을 가져다 쓰지 않는다 (소스마다 `service/__init__.py` docstring 에 그 소스의 방향이 있다).
 4. **한 파일에는 한 주제만 둔다. 주제가 섞이면 나눈다.** 섞임은 셋으로 본다: (1) 파일 안 함수를 쓰는 기능(명령)이 갈린다, (2) 서로 부르지 않는 덩어리가 한 파일에 있다, (3) 덩어리마다 부르는 API·웹 화면 칸이 다르다. 길이는 살펴볼 신호일 뿐 나누는 기준이 아니다. 명령 하나를 맡는 파일도 주제로 나눈다 (네이버 매물 상세는 입구 `listing/detail.py` 와 웹 구역별 `facility`·`cost`·`nearby`). 경계 사례는 기준대로 나눈다: 덩어리가 대략 100줄을 넘고 진입 명령이나 주제가 다르면 나눈다 (당근 `complex` 에서 비교·주변 단지를 `compare` 로 뺐다).
@@ -77,17 +78,17 @@ providers/<source>/
    상수는 `from jibsa.providers.zigbang.service.stay.constants import ...`,
    모델은 `from jibsa.providers.daangn.service.complex.models import ...`).
    테스트가 상수를 바꿔 끼울 때(`monkeypatch.setattr`)도 그 상수를 읽는 코드가 있는 모듈을 고친다 (함수가 `constants` 나 `models` 에서 가져다 쓰는 상수는 함수 모듈의 이름을 바꿔 끼운다).
-7. **요청·응답 모델(`request/`·`response/`)은 service 와 같은 기능 이름으로 나눈다.** 엔드포인트의 요청·응답 모델은
+7. **요청·응답 모델(`api/models/request/`·`api/models/response/`)은 service 와 같은 기능 이름으로 나눈다.** 엔드포인트의 요청·응답 모델은
    그 엔드포인트를 부르는 service 기능과 같은 이름의 모듈에 둔다 (명령 하나를 맡는 `service/review/` 가 부르면 `request/review.py`·`response/review.py`,
    명령 둘 이상을 맡아 폴더로 나뉜 `service/stay/search.py` 면 `request/stay/search.py`·`response/stay/search.py`, 당근 `service/complex/search.py` 면
    `request/complex/search.py`·`response/complex/search.py`, `service/search/map.py` 면 `request/search/map.py`, `service/region/area.py` 면 `request/region/area.py`). 그래서 기능 하나를 고칠 때 같은 이름의 세 곳만 보면 된다.
    service 의 `models.py` 는 결과·조건 모델이고 `request/`·`response/` 는 사이트 API 를 그대로 옮긴 모델이라 따로 둔다.
-   - 명령 둘 이상이 같이 쓰는 모델(검색·상세가 같이 쓰는 요청·요약 모델 등)은 그 폴더의 `base.py` 에 둔다. 명령 모듈끼리는 서로 가져다 쓰지 않는다. 같은 소스의 다른 기능·client 만 쓰는 모델(라이브러리용 엔드포인트 등)도 `base` 다.
+   - 명령 둘 이상이 같이 쓰는 모델(검색·상세가 같이 쓰는 요청·요약 모델 등)은 그 폴더의 `common.py` 에 둔다 (service 의 폴더 안 공용과 같은 이름). 명령 모듈끼리는 서로 가져다 쓰지 않는다. 같은 소스의 다른 기능·client 만 쓰는 모델(라이브러리용 엔드포인트 등)도 그 폴더의 `common` 이다.
    - 여러 기능이
      부르는 엔드포인트의 모델, 여러 기능의 모델이 같이 쓰는 중첩 모델, 기반 모델은 `common` 에 둔다.
-     그래서 기능 모듈은 같은 패키지(`request/`·`response/`)의 `common` 과 자기 폴더의 `base` 만 가져다 쓴다. 주제별로 나누는
-     내용 이름 파일로 나누는 `common/` 폴더는 service 에만 있고 `request/`·`response/` 의 공용은 `common.py` 하나다.
-   - service 가 부르지 않는 엔드포인트(라이브러리용)는 그 기능 폴더의 `base`(명령 하나를 맡는 기능은 같은 이름의 모듈)에 둔다.
+     그래서 기능 모듈은 같은 패키지(`request/`·`response/`) 바로 아래 `common` 과 자기 폴더의 `common` 만 가져다 쓴다. 내용 이름 파일로
+     나누는 `common/` 폴더는 service 에만 있고 `request/`·`response/` 의 소스 전체 공용은 `common.py` 하나다.
+   - service 가 부르지 않는 엔드포인트(라이브러리용)는 그 기능 폴더의 `common`(명령 하나를 맡는 기능은 같은 이름의 모듈)에 둔다.
    - 모듈이 작아도(모델 하나여도) 같은 이름으로 둔다. `client.py` 는 클래스 하나라 나누지 않는다.
 
 ## Action id 명명
@@ -377,8 +378,8 @@ jibsa 는 사이트를 대체하는 도구가 아니라, 사이트가 로그인 
 ## 새 엔드포인트 추가 순서
 
 1. 실제 응답을 확인하고, 엔드포인트 설명과 필드 의미는 별도 문서 대신 `api/client.py` docstring 과
-   `api/response/` 모델에 적는다.
-2. 그 엔드포인트를 부를 기능의 `api/request/<기능>.py` / `api/response/<기능>.py` (명령 둘 이상을 맡는 기능은 `<기능>/search.py` 처럼 service 와 같은 경로)에 모델([기준 7](#service-모듈을-나누는-기준)),
+   `api/models/response/` 모델에 적는다.
+2. 그 엔드포인트를 부를 기능의 `api/models/request/<기능>.py` / `api/models/response/<기능>.py` (명령 둘 이상을 맡는 기능은 `<기능>/search.py` 처럼 service 와 같은 경로)에 모델([기준 7](#service-모듈을-나누는-기준)),
    `api/client.py` 에 ClassVar + sync/async 메서드.
 3. 필요하면 [나누는 기준](#service-모듈을-나누는-기준)에 맞는 service 모듈에서 조합한다. 자주 쓰는 공개 진입점이면
    provider `__init__.py` 에 re-export 한다 (`service/__init__.py` 에는 하지 않는다). 함수는 `core.listing.with_notes('<source>')` 로 감싸

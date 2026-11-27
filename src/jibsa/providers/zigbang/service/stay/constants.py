@@ -4,7 +4,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL
-from jibsa.providers.zigbang.api.request.stay.search import (
+from jibsa.providers.zigbang.api.models.request.stay.search import (
     ZigbangStayBuildingType,
     ZigbangStayDiscountType,
     ZigbangStayFloorType,

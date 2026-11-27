@@ -9,10 +9,10 @@ from jibsa.core.listing import (
     note,
     null_items_note,
 )
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangAptItemSource,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangItemCatalogModel
+from jibsa.providers.zigbang.api.models.response.common import ZigbangItemCatalogModel
 from jibsa.providers.zigbang.service.common.constants import (
     APT_CATALOG_URL,
     APT_ID_PREFIXES,

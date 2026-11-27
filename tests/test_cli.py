@@ -293,7 +293,7 @@ def test_dropped_null_items_get_a_note_even_in_display_lists(
     # 알려야 한다 (예전에는 PARSE_ERROR 라 매일 감시가 알았다). 집계는 명령마다 0 에서 시작한다
     import jibsa.cli.zigbang as zigbang_cli
     from jibsa.core.listing import null_items_note
-    from jibsa.providers.zigbang.api.response.room.detail import (
+    from jibsa.providers.zigbang.api.models.response.room.detail import (
         ZigbangBlsSchoolZonesV1ResponseModel,
     )
     from jibsa.providers.zigbang.service.common.models import ZigbangListingDetail

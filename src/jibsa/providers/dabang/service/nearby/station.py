@@ -7,8 +7,8 @@ from jibsa.core.listing import (
     AmountSet,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import DabangOneTwoFiltersModel
-from jibsa.providers.dabang.api.request.nearby.station import (
+from jibsa.providers.dabang.api.models.request.common import DabangOneTwoFiltersModel
+from jibsa.providers.dabang.api.models.request.nearby.station import (
     DabangMarkersCategoryV5RequestParameterModel,
 )
 from jibsa.providers.dabang.service.common.bbox import bbox_of

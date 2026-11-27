@@ -1,6 +1,6 @@
 """매물 검색(search listings)의 상수: 쪽 크기·거품 줌·지도 해상도·집계 상한·대학 기본 매물 종류."""
 
-from jibsa.providers.daangn.api.request.common import DaangnSalesType
+from jibsa.providers.daangn.api.models.request.common import DaangnSalesType
 
 
 FEED_PAGE_SIZE: int = 20

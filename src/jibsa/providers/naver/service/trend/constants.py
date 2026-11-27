@@ -1,6 +1,6 @@
 """네이버 동네 추이의 상수: 기간 이름표, 평형대 하한과 폭, 전국 이름·코드."""
 
-from jibsa.providers.naver.api.request.trend import (
+from jibsa.providers.naver.api.models.request.trend import (
     NaverTrendOffset,
 )
 

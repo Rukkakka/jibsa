@@ -2,11 +2,11 @@
 
 import re
 
-from jibsa.providers.daangn.api.request.common import (
+from jibsa.providers.daangn.api.models.request.common import (
     DaangnComplexTradeType,
     DaangnSalesType,
 )
-from jibsa.providers.daangn.api.request.complex.search import DaangnComplexSort
+from jibsa.providers.daangn.api.models.request.complex.search import DaangnComplexSort
 
 
 # 단지 이름 검색 후보 수. 당근 단지 검색은 이름이 조금 비슷한 단지까지 이름이 맞는 순으로 100곳 넘게 줘서, 찾는 단지는 앞쪽에

@@ -10,12 +10,14 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.compare.nearby import (
+from jibsa.providers.daangn.api.models.request.compare.nearby import (
     DaangnComplexesByOriginalComplexIdsRequestPayloadModel,
     DaangnComplexRegionRequestPayloadModel,
     DaangnNearbyComplexesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.compare.nearby import DaangnComplexCardModel
+from jibsa.providers.daangn.api.models.response.compare.nearby import (
+    DaangnComplexCardModel,
+)
 from jibsa.providers.daangn.service.common.complex import (
     complex_not_found,
     truncation_notes,

@@ -16,7 +16,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.apt.search import (
+from jibsa.providers.zigbang.api.models.request.apt.search import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
     ZigbangLocalsPolygonRequestParameterModel,
 )

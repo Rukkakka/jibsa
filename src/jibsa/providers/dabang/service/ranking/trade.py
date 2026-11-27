@@ -5,7 +5,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.ranking.trade import (
+from jibsa.providers.dabang.api.models.request.ranking.trade import (
     DabangRealPriceTradeRankingsComplexV5RequestParameterModel,
 )
 from jibsa.providers.dabang.service.common.constants import COMPLEX_TYPE_BY_LABEL

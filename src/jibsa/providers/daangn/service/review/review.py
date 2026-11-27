@@ -10,11 +10,11 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DAANGN_WEB_URL, DaangnClient
-from jibsa.providers.daangn.api.request.review import (
+from jibsa.providers.daangn.api.models.request.review import (
     DaangnLivedReviewsByRegionRequestPayloadModel,
     DaangnMapReviewsRequestParameterModel,
 )
-from jibsa.providers.daangn.api.response.review import (
+from jibsa.providers.daangn.api.models.response.review import (
     DaangnMapReviewsResponseModel,
     DaangnReviewComplexModel,
 )

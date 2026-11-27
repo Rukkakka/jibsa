@@ -42,7 +42,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     REGION_INFO_PAGE_LIMIT,
     UNBOUNDED_MAX,
 )

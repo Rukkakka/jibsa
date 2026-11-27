@@ -18,11 +18,11 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.common import DaangnExclusiveUseAreaModel
-from jibsa.providers.daangn.api.request.real_price.trend import (
+from jibsa.providers.daangn.api.models.request.common import DaangnExclusiveUseAreaModel
+from jibsa.providers.daangn.api.models.request.real_price.trend import (
     DaangnComplexPriceChartRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.real_price.trend import (
+from jibsa.providers.daangn.api.models.response.real_price.trend import (
     DaangnPriceChartModel,
 )
 from jibsa.providers.daangn.service.common.complex import (

@@ -19,68 +19,68 @@ from jibsa.core.http import (
     wait_retry_after,
 )
 from jibsa.core.ratelimit import RateLimitPolicy
-from jibsa.providers.zigbang.api.request.apt.detail import (
+from jibsa.providers.zigbang.api.models.request.apt.detail import (
     ZigbangItemCatalogsHoInfoRequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
     ZigbangItemCatalogsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.apt.search import (
+from jibsa.providers.zigbang.api.models.request.apt.search import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
     ZigbangLocalsPolygonRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangDanjisRequestParameterModel,
     ZigbangItemsListV1RequestPayloadModel,
 )
-from jibsa.providers.zigbang.api.request.complex.base import (
+from jibsa.providers.zigbang.api.models.request.complex.common import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
     ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.complex.info import (
+from jibsa.providers.zigbang.api.models.request.complex.info import (
     ZigbangDanjisSchoolsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.complex.search import (
+from jibsa.providers.zigbang.api.models.request.complex.search import (
     ZigbangDanjisDetailsRequestParameterModel,
     ZigbangDanjisIdsRequestParameterModel,
     ZigbangSchoolsRequestParameterModel,
     ZigbangSubwaysRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.complex.trend import (
+from jibsa.providers.zigbang.api.models.request.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel,
     ZigbangDanjisPriceChartRequestParameterModel,
     ZigbangDanjisRoomTypesPriceChartRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.local.info import (
+from jibsa.providers.zigbang.api.models.request.local.info import (
     ZigbangLocalsPynChartPriceRequestParameterModel,
     ZigbangLocalsRequestParameterModel,
     ZigbangLocalsTotalHouseholdsTimeRequestParameterModel,
     ZigbangLocalsTotalPeopleTimeRequestParameterModel,
     ZigbangLocalsTradingVolumeChartRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.local.ranking import (
+from jibsa.providers.zigbang.api.models.request.local.ranking import (
     ZigbangLocalsDanjiRankingRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.local.trades import (
+from jibsa.providers.zigbang.api.models.request.local.trades import (
     ZigbangLocalsTradingHistoriesRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.real_price import (
+from jibsa.providers.zigbang.api.models.request.real_price import (
     ZigbangDanjisRoomTypesRtPricesRequestParameterModel,
     ZigbangDanjisRtPricesRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.region import (
+from jibsa.providers.zigbang.api.models.request.region import (
     ZigbangLocalPolygonV2RequestParameterModel,
     ZigbangSearchV2RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.room.base import (
+from jibsa.providers.zigbang.api.models.request.room.common import (
     ZigbangItemsDetailV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.room.detail import (
+from jibsa.providers.zigbang.api.models.request.room.detail import (
     ZigbangBlsRtsV2RequestParameterModel,
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemsV3RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.room.search import (
+from jibsa.providers.zigbang.api.models.request.room.search import (
     ZigbangItemsOfficetelsV1RequestParameterModel,
     ZigbangItemsOneroomsV1RequestParameterModel,
     ZigbangItemsSubwaysOfficetelsV1RequestParameterModel,
@@ -88,85 +88,85 @@ from jibsa.providers.zigbang.api.request.room.search import (
     ZigbangItemsSubwaysVillasV1RequestParameterModel,
     ZigbangItemsVillasV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.stay.base import (
+from jibsa.providers.zigbang.api.models.request.stay.common import (
     ZigbangGuestItemsByIdsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.stay.detail import (
+from jibsa.providers.zigbang.api.models.request.stay.detail import (
     ZigbangGuestItemsHostRequestParameterModel,
     ZigbangGuestItemsRequestParameterModel,
     ZigbangGuestItemsReviewsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.stay.search import (
+from jibsa.providers.zigbang.api.models.request.stay.search import (
     ZigbangGuestItemsMarkersRequestParameterModel,
     ZigbangGuestItemsSearchRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.store import (
+from jibsa.providers.zigbang.api.models.request.store import (
     ZigbangStoreArticleStoresListV2RequestPayloadModel,
     ZigbangStoreArticleStoresV2RequestPayloadModel,
     ZigbangStoreArticleStoreV2RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.apt.detail import (
+from jibsa.providers.zigbang.api.models.response.apt.detail import (
     ZigbangItemCatalogsHoInfoResponseModel,
     ZigbangItemCatalogsItemsResponseModel,
     ZigbangItemCatalogsResponseModel,
 )
-from jibsa.providers.zigbang.api.response.apt.search import (
+from jibsa.providers.zigbang.api.models.response.apt.search import (
     ZigbangLocalsItemCatalogsResponseModel,
     ZigbangLocalsPolygonResponseModel,
 )
-from jibsa.providers.zigbang.api.response.common import (
+from jibsa.providers.zigbang.api.models.response.common import (
     ZigbangDanjisResponseModel,
     ZigbangItemsListV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.base import (
+from jibsa.providers.zigbang.api.models.response.complex.common import (
     ZigbangDanjisItemCatalogsResponseModel,
     ZigbangDanjisRoomTypesResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.info import (
+from jibsa.providers.zigbang.api.models.response.complex.info import (
     ZigbangDanjisSchoolsResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.search import (
+from jibsa.providers.zigbang.api.models.response.complex.search import (
     ZigbangDanjisDetailsResponseModel,
     ZigbangDanjisIdsResponseModel,
     ZigbangSchoolsResponseModel,
     ZigbangSubwaysResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.trend import (
+from jibsa.providers.zigbang.api.models.response.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisResponseModel,
     ZigbangDanjisPriceChartResponseModel,
     ZigbangDanjisRoomTypesPriceChartResponseModel,
 )
-from jibsa.providers.zigbang.api.response.local.info import (
+from jibsa.providers.zigbang.api.models.response.local.info import (
     ZigbangLocalsPynChartPriceResponseModel,
     ZigbangLocalsResponseModel,
     ZigbangLocalsTotalHouseholdsTimeResponseModel,
     ZigbangLocalsTotalPeopleTimeResponseModel,
     ZigbangLocalsTradingVolumeChartResponseModel,
 )
-from jibsa.providers.zigbang.api.response.local.ranking import (
+from jibsa.providers.zigbang.api.models.response.local.ranking import (
     ZigbangLocalsDanjiRankingResponseModel,
 )
-from jibsa.providers.zigbang.api.response.local.trades import (
+from jibsa.providers.zigbang.api.models.response.local.trades import (
     ZigbangLocalsTradingHistoriesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.real_price import (
+from jibsa.providers.zigbang.api.models.response.real_price import (
     ZigbangDanjisRoomTypesRtPricesResponseModel,
     ZigbangDanjisRtPricesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.region import (
+from jibsa.providers.zigbang.api.models.response.region import (
     ZigbangLocalPolygonV2ResponseModel,
     ZigbangSearchV2ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.room.base import (
+from jibsa.providers.zigbang.api.models.response.room.common import (
     ZigbangItemsDetailV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.room.detail import (
+from jibsa.providers.zigbang.api.models.response.room.detail import (
     ZigbangBlsRtsV2ResponseModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemsV3ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.room.search import (
+from jibsa.providers.zigbang.api.models.response.room.search import (
     ZigbangItemsOfficetelsV1ResponseModel,
     ZigbangItemsOneroomsV1ResponseModel,
     ZigbangItemsSubwaysOfficetelsV1ResponseModel,
@@ -174,19 +174,19 @@ from jibsa.providers.zigbang.api.response.room.search import (
     ZigbangItemsSubwaysVillasV1ResponseModel,
     ZigbangItemsVillasV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay.base import (
+from jibsa.providers.zigbang.api.models.response.stay.common import (
     ZigbangGuestItemsByIdsResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay.detail import (
+from jibsa.providers.zigbang.api.models.response.stay.detail import (
     ZigbangGuestItemsHostResponseModel,
     ZigbangGuestItemsResponseModel,
     ZigbangGuestItemsReviewsResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay.search import (
+from jibsa.providers.zigbang.api.models.response.stay.search import (
     ZigbangGuestItemsMarkersResponseModel,
     ZigbangGuestItemsSearchResponseModel,
 )
-from jibsa.providers.zigbang.api.response.store import (
+from jibsa.providers.zigbang.api.models.response.store import (
     ZigbangStoreArticleStoresListV2ResponseModel,
     ZigbangStoreArticleStoresV2ResponseModel,
     ZigbangStoreArticleStoreV2ResponseModel,

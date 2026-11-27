@@ -6,11 +6,13 @@ from jibsa.core.korean import (
 )
 from jibsa.core.listing import note
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.region.base import DaangnQueryInputModel
-from jibsa.providers.daangn.api.request.region.station import (
+from jibsa.providers.daangn.api.models.request.region.common import (
+    DaangnQueryInputModel,
+)
+from jibsa.providers.daangn.api.models.request.region.station import (
     DaangnSearchSubwayStationPoisRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.region.station import (
+from jibsa.providers.daangn.api.models.response.region.station import (
     DaangnSubwayStationPoiModel,
 )
 from jibsa.providers.daangn.service.common.location import (

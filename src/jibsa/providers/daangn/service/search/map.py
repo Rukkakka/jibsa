@@ -4,12 +4,12 @@ import logging
 
 from jibsa.core.listing import note
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.common import (
+from jibsa.providers.daangn.api.models.request.common import (
     DaangnBoundsLocationFilterModel,
     DaangnPropertyFilterModel,
     is_empty_property_filter,
 )
-from jibsa.providers.daangn.api.request.search.map import (
+from jibsa.providers.daangn.api.models.request.search.map import (
     DaangnArticleByClusterIdInputModel,
     DaangnArticleByClusterIdRequestPayloadModel,
     DaangnArticleClustersInputModel,
@@ -19,7 +19,7 @@ from jibsa.providers.daangn.api.request.search.map import (
     DaangnArticlesCountInputModel,
     DaangnArticlesCountRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.search.map import (
+from jibsa.providers.daangn.api.models.response.search.map import (
     DaangnArticleFeedEdgeModel,
     DaangnArticleFeedModel,
     DaangnArticleFeedResponseModel,

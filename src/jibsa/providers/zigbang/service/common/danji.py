@@ -4,10 +4,12 @@ from httpx import HTTPStatusError
 
 from jibsa.core.errors import JibsaError
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangDanjisRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangDanjisResponseModel
+from jibsa.providers.zigbang.api.models.response.common import (
+    ZigbangDanjisResponseModel,
+)
 
 
 def complex_not_found(complex_id: str) -> JibsaError:

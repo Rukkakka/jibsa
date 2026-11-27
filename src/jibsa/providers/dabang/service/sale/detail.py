@@ -14,7 +14,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.sale.detail import (
+from jibsa.providers.dabang.api.models.request.sale.detail import (
     DabangSaleInLotsDetail2V3RequestParameterModel,
 )
 from jibsa.providers.dabang.service.common.constants import SALE_URL

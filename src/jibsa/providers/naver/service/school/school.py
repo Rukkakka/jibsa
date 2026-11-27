@@ -8,16 +8,16 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.school import (
+from jibsa.providers.naver.api.models.request.school import (
     NaverEducationComplexPagesV1RequestParameterModel,
     NaverEducationComplexSchoolAllocationDongsV1RequestParameterModel,
     NaverEducationSchoolV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.school import (
+from jibsa.providers.naver.api.models.response.school import (
     NaverRegionStudentModel,
     NaverSchoolComplexItemModel,
 )

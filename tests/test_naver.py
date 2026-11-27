@@ -16,16 +16,16 @@ from jibsa.providers.naver.api.client import (
     NaverClient,
     should_retry_naver,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverComplexArticlePriceModel,
     NaverDuplicatedArticleInfoModel,
     NaverFacilityInfoModel,
     NaverResponseModel,
 )
-from jibsa.providers.naver.api.response.listing.detail import (
+from jibsa.providers.naver.api.models.response.listing.detail import (
     NaverDevelopmentArticleModel,
 )
-from jibsa.providers.naver.api.response.search.base import (
+from jibsa.providers.naver.api.models.response.search.common import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
 from jibsa.providers.naver.service.common.listing import (
@@ -188,7 +188,7 @@ def test_naver_does_not_retry_429() -> None:
 def test_officetel_pyeong_supply_equal_to_contract_is_unknown() -> None:
     # 오피스텔 평형표의 공급 칸에 계약면적이 그대로 오면(공급 = 계약) 공급면적을 모름으로 둔다.
     # 실제 공급면적이 따로 오면(공급 40.66 < 계약 57.51) 그대로 둔다. 아파트는 손대지 않는다.
-    from jibsa.providers.naver.api.response.common import NaverPyeongModel
+    from jibsa.providers.naver.api.models.response.common import NaverPyeongModel
     from jibsa.providers.naver.service.complex.complex import _pyeong
 
     def pyeong(supply: float, contract: float) -> NaverPyeongModel:
@@ -232,7 +232,7 @@ def test_get_listing_monthly_rent_uses_warranty_and_rent_amount() -> None:
 
 def test_removed_article_is_unavailable() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.naver.api.response.listing.detail import (
+    from jibsa.providers.naver.api.models.response.listing.detail import (
         NaverArticleKeyV1ResponseModel,
     )
 
@@ -296,7 +296,9 @@ def test_detail_without_complex_omits_complex_fields() -> None:
 
 
 def test_loan_distinguishes_none_from_unknown() -> None:
-    from jibsa.providers.naver.api.response.listing.detail import NaverPriceInfoModel
+    from jibsa.providers.naver.api.models.response.listing.detail import (
+        NaverPriceInfoModel,
+    )
     from jibsa.providers.naver.service.listing.detail import _loan_manwon
 
     assert _loan_manwon(NaverPriceInfoModel.model_validate({'loan': 755150000, 'loanCode': '2'})) == 75515
@@ -421,7 +423,9 @@ def test_detail_manage_cost_zero_is_known_unchecked_is_unknown(fee: dict, expect
 
 def test_detail_move_in_within_and_after_keep_the_bound() -> None:
     # 웹은 이내입주·이후입주를 날짜 뒤에 붙여 구분해 보여 준다
-    from jibsa.providers.naver.api.response.listing.detail import NaverMovingInInfoModel
+    from jibsa.providers.naver.api.models.response.listing.detail import (
+        NaverMovingInInfoModel,
+    )
     from jibsa.providers.naver.service.listing.detail import _move_in_label
 
     def label(code: str, date: str | None, negotiation: bool = False, notes: list[str] | None = None) -> str | None:
@@ -458,7 +462,7 @@ def test_detail_move_in_within_and_after_keep_the_bound() -> None:
 
 def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -> None:
     # 웹은 항목별형의 합계에 정액·실비를 가리지 않고 모든 항목 금액을 더한다. 포함 항목은 정액 항목만 남긴다
-    from jibsa.providers.naver.api.response.listing.detail import (
+    from jibsa.providers.naver.api.models.response.listing.detail import (
         NaverArticleMaintenanceFeeModel,
     )
     from jibsa.providers.naver.service.listing.cost import manage_cost as _manage_cost

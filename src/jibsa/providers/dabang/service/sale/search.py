@@ -11,7 +11,7 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.sale.search import (
+from jibsa.providers.dabang.api.models.request.sale.search import (
     ALL_SALE_BUILDING_TYPES,
     ALL_SALE_STATES,
     ALL_SALE_SUPPLY_TYPES,
@@ -24,7 +24,7 @@ from jibsa.providers.dabang.api.request.sale.search import (
     DabangSaleInLotsSearchFiltersModel,
     DabangSaleListCategoryBboxV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.sale.search import (
+from jibsa.providers.dabang.api.models.response.sale.search import (
     DabangSaleInLotsItemModel,
     DabangSaleItemModel,
 )

@@ -7,21 +7,21 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverArticleFilterModel,
 )
-from jibsa.providers.naver.api.request.redevelopment.search import (
+from jibsa.providers.naver.api.models.request.redevelopment.search import (
     NaverComplexRedevelopmentAreaLegalDivisionListV1RequestPayloadModel,
     NaverComplexRedevelopmentAreaListV1RequestPayloadModel,
     NaverComplexRedevelopmentAreaMarkersV1RequestPayloadModel,
     NaverRedevelopmentAreaPagingRequestModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverRedevelopmentAreaItemModel,
     NaverRedevelopmentAreaPageModel,
     NaverResponseModel,
 )
-from jibsa.providers.naver.api.response.redevelopment.search import (
+from jibsa.providers.naver.api.models.response.redevelopment.search import (
     NaverRedevelopmentAreaPinModel,
 )
 from jibsa.providers.naver.service.common.constants import (

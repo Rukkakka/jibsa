@@ -1,6 +1,8 @@
 """단지 정보·단지 매물이 같이 쓰는 함수: 단지 유형 읽기."""
-from jibsa.providers.dabang.api.request.complex.base import DabangComplexCategory
-from jibsa.providers.dabang.api.response.common import DabangComplexResultModel
+from jibsa.providers.dabang.api.models.request.complex.common import (
+    DabangComplexCategory,
+)
+from jibsa.providers.dabang.api.models.response.common import DabangComplexResultModel
 
 
 def category_of(result: DabangComplexResultModel) -> DabangComplexCategory:

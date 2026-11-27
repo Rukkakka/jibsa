@@ -12,7 +12,7 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.response.compare.base import (
+from jibsa.providers.daangn.api.models.response.compare.common import (
     DaangnCompareAreaGroupModel,
     DaangnCompareComplexModel,
     DaangnComparePyInfoModel,

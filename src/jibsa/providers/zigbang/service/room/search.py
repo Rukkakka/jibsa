@@ -21,11 +21,11 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.common import ZigbangSalesType
-from jibsa.providers.zigbang.api.request.room.base import (
+from jibsa.providers.zigbang.api.models.request.common import ZigbangSalesType
+from jibsa.providers.zigbang.api.models.request.room.common import (
     ZigbangItemsDetailV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.room.search import (
+from jibsa.providers.zigbang.api.models.request.room.search import (
     ZigbangItemsOfficetelsV1RequestParameterModel,
     ZigbangItemsOneroomsV1RequestParameterModel,
     ZigbangItemsSubwaysOfficetelsV1RequestParameterModel,
@@ -33,8 +33,10 @@ from jibsa.providers.zigbang.api.request.room.search import (
     ZigbangItemsSubwaysVillasV1RequestParameterModel,
     ZigbangItemsVillasV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangItemPinModel
-from jibsa.providers.zigbang.api.response.room.search import ZigbangItemsResponseModel
+from jibsa.providers.zigbang.api.models.response.common import ZigbangItemPinModel
+from jibsa.providers.zigbang.api.models.response.room.search import (
+    ZigbangItemsResponseModel,
+)
 from jibsa.providers.zigbang.service.common.constants import (
     MAX_LIST_LIMIT,
     OPTIONAL_LOOKUP_ERRORS,

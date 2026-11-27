@@ -1,5 +1,5 @@
 """주변(nearby)·역 둘레 평균 매물가(station-prices)의 이름표·종류 코드표·한도."""
-from jibsa.providers.dabang.api.request.nearby.places import DabangNearTarget
+from jibsa.providers.dabang.api.models.request.nearby.places import DabangNearTarget
 from jibsa.providers.dabang.service.common.constants import (
     COMPLEX_URL,
     LISTING_URL,

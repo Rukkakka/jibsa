@@ -1,11 +1,15 @@
 """학교 기능(school)의 상수: 교육 단계·학교 단계 경로·학교 코드 패턴·시설 그룹 이름."""
 import re
 
-from jibsa.providers.dabang.api.request.school.base import (
+from jibsa.providers.dabang.api.models.request.school.common import (
     DabangSchoolLevelPath,
 )
-from jibsa.providers.dabang.api.request.school.detail import SCHOOL_CODE_PATTERN_TEXT
-from jibsa.providers.dabang.api.request.school.search import DabangRegionalSchoolPath
+from jibsa.providers.dabang.api.models.request.school.detail import (
+    SCHOOL_CODE_PATTERN_TEXT,
+)
+from jibsa.providers.dabang.api.models.request.school.search import (
+    DabangRegionalSchoolPath,
+)
 from jibsa.providers.dabang.service.common.constants import (
     SCHOOL_LEVELS,
     SchoolLevel,

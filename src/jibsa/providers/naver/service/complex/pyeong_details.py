@@ -14,13 +14,13 @@ from jibsa.core.listing import (
     years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.complex import (
+from jibsa.providers.naver.api.models.request.complex import (
     NaverComplexMaintenanceFeeV1RequestParameterModel,
     NaverComplexMarketPriceRecentV1RequestParameterModel,
     NaverComplexPyeongPricePyeongTypeV1RequestParameterModel,
     NaverComplexPyeongRealPriceSummaryV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.complex import (
+from jibsa.providers.naver.api.models.response.complex import (
     NaverComplexPyeongPriceModel,
     NaverRealPriceSummaryModel,
     NaverRealPriceSummaryTradeModel,

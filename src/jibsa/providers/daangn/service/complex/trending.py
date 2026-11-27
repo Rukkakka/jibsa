@@ -10,7 +10,7 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.complex.trending import (
+from jibsa.providers.daangn.api.models.request.complex.trending import (
     DaangnTrendingComplexesRequestPayloadModel,
 )
 from jibsa.providers.daangn.service.common.complex import most_households

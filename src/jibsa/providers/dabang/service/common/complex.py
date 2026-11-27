@@ -7,10 +7,10 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     DabangComplexV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.common import (
+from jibsa.providers.dabang.api.models.response.common import (
     DabangAreaAveragePriceModel,
     DabangComplexResultModel,
 )

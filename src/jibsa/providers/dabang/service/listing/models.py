@@ -13,7 +13,7 @@ from jibsa.core.listing import (
     ListingDetail,
     Result,
 )
-from jibsa.providers.dabang.api.request.common import DabangBboxModel
+from jibsa.providers.dabang.api.models.request.common import DabangBboxModel
 from jibsa.providers.dabang.service.common.constants import OFFICETEL_TYPE
 from jibsa.providers.dabang.service.common.models import (
     DabangListing,

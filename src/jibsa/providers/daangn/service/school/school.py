@@ -15,13 +15,13 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.school.school import (
+from jibsa.providers.daangn.api.models.request.school.school import (
     DaangnSchoolByCodeRequestPayloadModel,
     DaangnSearchSchoolsInputModel,
     DaangnSearchSchoolsRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.common import DaangnPageInfoModel
-from jibsa.providers.daangn.api.response.school.school import (
+from jibsa.providers.daangn.api.models.response.common import DaangnPageInfoModel
+from jibsa.providers.daangn.api.models.response.school.school import (
     DaangnSchoolSearchNodeModel,
 )
 from jibsa.providers.daangn.service.common.complex import (

@@ -13,19 +13,19 @@ from jibsa.core.listing import (
     read_month,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.complex.base import (
+from jibsa.providers.zigbang.api.models.request.complex.common import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
     ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.complex.info import (
+from jibsa.providers.zigbang.api.models.request.complex.info import (
     ZigbangDanjisSchoolsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
-from jibsa.providers.zigbang.api.response.complex.base import (
+from jibsa.providers.zigbang.api.models.response.common import ZigbangSearchItemModel
+from jibsa.providers.zigbang.api.models.response.complex.common import (
     ZigbangDanjisRoomTypesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.info import (
+from jibsa.providers.zigbang.api.models.response.complex.info import (
     ZigbangDanjisSchoolsResponseModel,
 )
 from jibsa.providers.zigbang.service.common.constants import (

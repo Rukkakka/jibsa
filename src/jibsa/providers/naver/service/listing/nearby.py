@@ -1,12 +1,12 @@
 """매물 상세의 주변 (지하철역·버스 노선·배정 초등학교·개발 예정)."""
 
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.listing.detail import (
+from jibsa.providers.naver.api.models.request.listing.detail import (
     NaverDataServiceTransportV1RequestParameterModel,
     NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.listing.detail import (
+from jibsa.providers.naver.api.models.response.listing.detail import (
     NaverArticleKeyModel,
     NaverDevelopmentArticleModel,
     NaverTransportSubwayModel,

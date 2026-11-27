@@ -1,10 +1,12 @@
 """당근 지역·역·대학·주소 해석이 함께 쓰는 에러와 좌표 확인."""
 
 from jibsa.core.errors import RegionNotFoundError
-from jibsa.providers.daangn.api.response.region.station import (
+from jibsa.providers.daangn.api.models.response.region.station import (
     DaangnSubwayStationPoiModel,
 )
-from jibsa.providers.daangn.api.response.region.university import DaangnSchoolPoiModel
+from jibsa.providers.daangn.api.models.response.region.university import (
+    DaangnSchoolPoiModel,
+)
 from jibsa.providers.daangn.service.common.location import coordinate_point
 
 

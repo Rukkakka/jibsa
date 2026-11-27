@@ -13,11 +13,11 @@ from jibsa.core.listing import (
     rescale,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.real_price import (
+from jibsa.providers.zigbang.api.models.request.real_price import (
     ZigbangDanjisRoomTypesRtPricesRequestParameterModel,
     ZigbangDanjisRtPricesRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.real_price import (
+from jibsa.providers.zigbang.api.models.response.real_price import (
     ZigbangDanjisRtPricesResponseModel,
     ZigbangRtPriceModel,
 )

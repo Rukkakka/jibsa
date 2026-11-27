@@ -2,7 +2,7 @@
 
 [CLI 사용법](../../dabang.md) · [개발 환경·검증](../README.md) · [공통 아키텍처](../architecture.md) · [provider 작성 규약](../provider-conventions.md) · [출력 계약](../output-contract.md) · [코드 형식](../code-style.md)
 
-공통 규약에 없는, 다방에만 있는 구현과 예외를 적는다. 엔드포인트와 필드의 뜻은 `api/client.py` docstring 과 `api/response/` 모델에 있다.
+공통 규약에 없는, 다방에만 있는 구현과 예외를 적는다. 엔드포인트와 필드의 뜻은 `api/client.py` docstring 과 `api/models/response/` 모델에 있다.
 
 ## 명령과 요청 흐름
 
@@ -161,7 +161,7 @@
 
 ### 목록 안 빈 항목 (`null_items`)
 
-- 다방이 객체 목록 안에 null 원소를 주면 기반 모델 `DabangBaseResponseModel` 이 빼고 칸마다 센다 (`result.null_items('list_')`). 봉투 없이 목록 하나가 루트로 오는 분양 일정 응답 둘(`DabangSaleInLotsListScheduleV3ResponseModel`·`DabangSaleInLotsListScheduleSearchV3ResponseModel`)은 core 가 닿지 않아 `DabangRootListModel`(`api/response/sale/schedule.py`, `RootModel[list[T]]`)이 같은 규칙으로 빼고 `null_items()` 로 센다. 공통 규칙(계산한 값은 null, 자리 세기는 뺀 수를 더함, `[제외]` 안내)은 [모듈 구성](../provider-conventions.md#모듈-구성)에 있고, 다방의 자리별 처리는 아래와 같다. 안내는 `null_items_note` 라 끝말이 `UPDATE_MAYBE_NEEDED` 다.
+- 다방이 객체 목록 안에 null 원소를 주면 기반 모델 `DabangBaseResponseModel` 이 빼고 칸마다 센다 (`result.null_items('list_')`). 봉투 없이 목록 하나가 루트로 오는 분양 일정 응답 둘(`DabangSaleInLotsListScheduleV3ResponseModel`·`DabangSaleInLotsListScheduleSearchV3ResponseModel`)은 core 가 닿지 않아 `DabangRootListModel`(`api/models/response/sale/schedule.py`, `RootModel[list[T]]`)이 같은 규칙으로 빼고 `null_items()` 로 센다. 공통 규칙(계산한 값은 null, 자리 세기는 뺀 수를 더함, `[제외]` 안내)은 [모듈 구성](../provider-conventions.md#모듈-구성)에 있고, 다방의 자리별 처리는 아래와 같다. 안내는 `null_items_note` 라 끝말이 `UPDATE_MAYBE_NEEDED` 다.
   - **쪽으로 받는 목록(`fetch_pages`)**: 호출부가 한 쪽의 뺀 수를 `DabangPage.dropped` 로 넘기면(`DabangPage(rows, total, has_more, result.null_items('list_'))` 꼴. 매물·단지 목록·단지 매물·학교·핫플레이스·분양 목록. 실거래는 같은 꼴의 `_Page`) `DabangPages.dropped`(안내용)와 `dropped_used`(다 쓴 쪽의 몫)로 모은다. 뺀 줄은 `--limit` 의 줄로 세지 않지만 서버의 칸이라, 빈 항목만 온 쪽은 빈 쪽으로 보지 않고 `has_more` 와 이어 받을 위치(`received`)는 뺀 칸을 더해 센다. 쪽 중간에서 멈춘 쪽의 몫은 이어 받을 때 같은 쪽을 다시 받아 그때 세므로 `dropped_used` 에서 뺀다. 안내는 `fetch_pages` 를 부른 명령이 붙인다 (매물 `search_listings`, 동네정보 `region_info_list_notes`, 분양 `_sale_list_notes`, 실거래·시세 흐름 매매 월별, 인기 매물).
   - **광고 묶음(`room_list_page`)**: 묶음 안의 빈 항목은 광고 자리로 센다. 묶음 자체가 null 로 빠진 몫은 안의 매물 수를 알 수 없어 세지 못하고, 광고 건수가 적게 나갈 수 있다 (자리별 안내는 없고 뺀 수는 공통 안내가 알린다).
   - **지역 랭킹(`get_region_ranking`)**: 둘째 쪽을 부르는 판정(`len(entries) + dropped < limit`)과 빈 쪽 판정에 뺀 칸을 더하고 안내한다.

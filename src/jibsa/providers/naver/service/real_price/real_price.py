@@ -30,11 +30,11 @@ from jibsa.core.listing import (
     years_ago,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverComplexPyeongGroupsV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.real_price import (
+from jibsa.providers.naver.api.models.request.real_price import (
     NaverComplexPyeongRealPriceGroupV1RequestParameterModel,
     NaverComplexPyeongRealPriceListV1RequestParameterModel,
     NaverComplexPyeongRealPriceV2RequestParameterModel,
@@ -42,8 +42,8 @@ from jibsa.providers.naver.api.request.real_price import (
     NaverComplexVillaRealPricePageV1RequestParameterModel,
     NaverComplexVillaRealPricePyeongPriceV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.common import NaverResponseModel
-from jibsa.providers.naver.api.response.real_price import (
+from jibsa.providers.naver.api.models.response.common import NaverResponseModel
+from jibsa.providers.naver.api.models.response.real_price import (
     NaverRealPriceListModel,
     NaverRealPriceModel,
     NaverVillaAroundModel,

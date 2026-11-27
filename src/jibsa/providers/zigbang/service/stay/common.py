@@ -7,7 +7,7 @@ from jibsa.core.listing import (
     read_date,
     won_to_manwon,
 )
-from jibsa.providers.zigbang.api.response.stay.base import (
+from jibsa.providers.zigbang.api.models.response.stay.common import (
     ZigbangStayDiscountModel,
     ZigbangStayItemSummaryModel,
 )

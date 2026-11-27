@@ -6,14 +6,16 @@ from jibsa.core.errors import (
     RegionNotFoundError,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.region.address import (
+from jibsa.providers.daangn.api.models.request.region.address import (
     DaangnJusoAddressInputModel,
     DaangnSearchAddressRequestPayloadModel,
     DaangnUnitByAddressInputModel,
     DaangnUnitByAddressRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.region.base import DaangnQueryInputModel
-from jibsa.providers.daangn.api.response.region.address import DaangnAddressModel
+from jibsa.providers.daangn.api.models.request.region.common import (
+    DaangnQueryInputModel,
+)
+from jibsa.providers.daangn.api.models.response.region.address import DaangnAddressModel
 from jibsa.providers.daangn.service.common.location import coordinate_point
 from jibsa.providers.daangn.service.common.response import unwrap_graphql
 from jibsa.providers.daangn.service.region.common import LocationMissingError

@@ -19,7 +19,7 @@ from jibsa.core.listing import (
     Listing,
 )
 from jibsa.core.schema import RequestModel
-from jibsa.providers.daangn.api.request.common import (
+from jibsa.providers.daangn.api.models.request.common import (
     DaangnAmountRangeModel,
     DaangnPropertyFilterModel,
 )

@@ -1,15 +1,15 @@
 """동네정보 기능(neighborhood)의 상수: 동네정보 주제·순위 종류 이름표, 핫플레이스 가이드, 인기 매물 이름표."""
-from jibsa.providers.dabang.api.request.neighborhood.hot_places import (
+from jibsa.providers.dabang.api.models.request.neighborhood.hot_places import (
     DabangHotPlaceType,
 )
-from jibsa.providers.dabang.api.request.neighborhood.info import (
+from jibsa.providers.dabang.api.models.request.neighborhood.info import (
     DabangAmenitySummaryType,
     DabangLifeSafetySummaryType,
     DabangMobilitySummaryType,
     DabangRegionInfoCountTopic,
     DabangSchoolSummaryType,
 )
-from jibsa.providers.dabang.api.request.neighborhood.popular import (
+from jibsa.providers.dabang.api.models.request.neighborhood.popular import (
     DabangPopularPriceType,
 )
 from jibsa.providers.dabang.service.common.constants import (

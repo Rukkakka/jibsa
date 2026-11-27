@@ -19,16 +19,16 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.apt.detail import (
+from jibsa.providers.zigbang.api.models.request.apt.detail import (
     ZigbangItemCatalogsHoInfoRequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
     ZigbangItemCatalogsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangAptItemSource,
     ZigbangAptTranType,
 )
-from jibsa.providers.zigbang.api.response.apt.detail import (
+from jibsa.providers.zigbang.api.models.response.apt.detail import (
     ZigbangAptItemModel,
     ZigbangHoPriceInfoModel,
 )

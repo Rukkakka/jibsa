@@ -6,10 +6,10 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.redevelopment.listings import (
+from jibsa.providers.naver.api.models.request.redevelopment.listings import (
     NaverComplexRedevelopmentAreaArticleListV1RequestPayloadModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverArticlePageModel,
 )
 from jibsa.providers.naver.service.common.constants import (

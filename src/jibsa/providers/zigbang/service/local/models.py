@@ -12,7 +12,7 @@ from jibsa.core.listing import (
     AmountRange,
     Result,
 )
-from jibsa.providers.zigbang.api.request.local.info import ZigbangPynAreaType
+from jibsa.providers.zigbang.api.models.request.local.info import ZigbangPynAreaType
 from jibsa.providers.zigbang.service.common.models import ZigbangEstimatedPrice
 from jibsa.providers.zigbang.service.local.constants import (
     LOCAL_DONG_DESCRIPTION,

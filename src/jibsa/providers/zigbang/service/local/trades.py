@@ -8,10 +8,12 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.local.trades import (
+from jibsa.providers.zigbang.api.models.request.local.trades import (
     ZigbangLocalsTradingHistoriesRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.local.trades import ZigbangLocalTradeModel
+from jibsa.providers.zigbang.api.models.response.local.trades import (
+    ZigbangLocalTradeModel,
+)
 from jibsa.providers.zigbang.service.common.constants import (
     MAX_LIST_LIMIT,
     UPSTREAM_RETRY_HINT,

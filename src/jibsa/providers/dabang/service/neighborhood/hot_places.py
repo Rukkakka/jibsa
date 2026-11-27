@@ -3,11 +3,11 @@ from jibsa.core.listing import (
     normalize_address,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
-from jibsa.providers.dabang.api.request.neighborhood.hot_places import (
+from jibsa.providers.dabang.api.models.request.common import REGION_INFO_PAGE_LIMIT
+from jibsa.providers.dabang.api.models.request.neighborhood.hot_places import (
     DabangRegionInfoHotPlacesV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.neighborhood.hot_places import (
+from jibsa.providers.dabang.api.models.response.neighborhood.hot_places import (
     DabangHotPlaceModel,
 )
 from jibsa.providers.dabang.service.common.constants import REGION_INFO_MAX_LIMIT

@@ -9,7 +9,7 @@ from jibsa.core.listing import (
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangAptItemSource,
     ZigbangAptTranType,
     ZigbangFloorFilter,

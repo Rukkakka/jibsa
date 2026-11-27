@@ -18,7 +18,7 @@ from jibsa.core.listing import (
     with_floor_number,
 )
 from jibsa.core.schema import RequestModel
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangFloorFilter,
     ZigbangOptionFilter,
 )

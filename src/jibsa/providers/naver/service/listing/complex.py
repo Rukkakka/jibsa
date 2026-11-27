@@ -7,15 +7,15 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.listing.complex import (
+from jibsa.providers.naver.api.models.request.listing.complex import (
     NaverComplexArticleListV1RequestPayloadModel,
     NaverComplexVillaArticleListV1RequestPayloadModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverArticlePageModel,
 )
 from jibsa.providers.naver.service.common.constants import (

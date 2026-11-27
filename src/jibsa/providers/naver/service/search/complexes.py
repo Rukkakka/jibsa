@@ -9,15 +9,15 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverArticleFilterModel,
 )
-from jibsa.providers.naver.api.request.search.complexes import (
+from jibsa.providers.naver.api.models.request.search.complexes import (
     NaverComplexBoundedComplexesV1RequestPayloadModel,
     NaverComplexLegalDivisionComplexListV1RequestPayloadModel,
     NaverComplexPagingRequestModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverComplexListItemModel,
     NaverComplexListPageModel,
     NaverResponseModel,

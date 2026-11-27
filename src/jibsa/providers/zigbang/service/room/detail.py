@@ -21,18 +21,18 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangItemsListV1RequestPayloadModel,
 )
-from jibsa.providers.zigbang.api.request.room.base import (
+from jibsa.providers.zigbang.api.models.request.room.common import (
     ZigbangItemsDetailV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.room.detail import (
+from jibsa.providers.zigbang.api.models.request.room.detail import (
     ZigbangBlsRtsV2RequestParameterModel,
     ZigbangBlsSchoolZonesV1RequestParameterModel,
     ZigbangItemsV3RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.room.base import (
+from jibsa.providers.zigbang.api.models.response.room.common import (
     ZigbangItemsDetailV1ManageCostDetailModel,
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1NearbyPoiModel,
@@ -43,7 +43,7 @@ from jibsa.providers.zigbang.api.response.room.base import (
     ZigbangManageCostUsageFeeModel,
     ZigbangStructuredOptionModel,
 )
-from jibsa.providers.zigbang.api.response.room.detail import (
+from jibsa.providers.zigbang.api.models.response.room.detail import (
     ZigbangBlsRtsV2ResponseModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemDetailModel,

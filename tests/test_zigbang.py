@@ -20,51 +20,57 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.apt.search import (
+from jibsa.providers.zigbang.api.models.request.apt.search import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.room.search import (
+from jibsa.providers.zigbang.api.models.request.room.search import (
     ZigbangItemsVillasV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.apt.detail import (
+from jibsa.providers.zigbang.api.models.response.apt.detail import (
     ZigbangAptManageCostModel,
     ZigbangItemCatalogsItemsResponseModel,
 )
-from jibsa.providers.zigbang.api.response.common import (
+from jibsa.providers.zigbang.api.models.response.common import (
     ZigbangItemCatalogModel,
     ZigbangItemsListV1ResponseModel,
     ZigbangItemSummaryModel,
 )
-from jibsa.providers.zigbang.api.response.complex.base import (
+from jibsa.providers.zigbang.api.models.response.complex.common import (
     ZigbangDanjisRoomTypesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.search import (
+from jibsa.providers.zigbang.api.models.response.complex.search import (
     ZigbangDanjiCardModel,
     ZigbangSchoolDetailModel,
 )
-from jibsa.providers.zigbang.api.response.complex.trend import (
+from jibsa.providers.zigbang.api.models.response.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisResponseModel,
     ZigbangDanjisPriceChartResponseModel,
     ZigbangDanjisRoomTypesPriceChartResponseModel,
 )
-from jibsa.providers.zigbang.api.response.local.info import ZigbangLocalPriceModel
-from jibsa.providers.zigbang.api.response.local.ranking import (
+from jibsa.providers.zigbang.api.models.response.local.info import (
+    ZigbangLocalPriceModel,
+)
+from jibsa.providers.zigbang.api.models.response.local.ranking import (
     ZigbangLocalsDanjiRankingResponseModel,
 )
-from jibsa.providers.zigbang.api.response.local.trades import ZigbangLocalTradeModel
-from jibsa.providers.zigbang.api.response.room.base import (
+from jibsa.providers.zigbang.api.models.response.local.trades import (
+    ZigbangLocalTradeModel,
+)
+from jibsa.providers.zigbang.api.models.response.room.common import (
     ZigbangItemsDetailV1ManageCostModel,
     ZigbangItemsDetailV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.room.detail import (
+from jibsa.providers.zigbang.api.models.response.room.detail import (
     ZigbangBlsRtsV2ResponseModel,
     ZigbangBlsSchoolZonesV1ResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay.detail import (
+from jibsa.providers.zigbang.api.models.response.stay.detail import (
     ZigbangGuestItemsResponseModel,
 )
-from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
-from jibsa.providers.zigbang.api.response.store import (
+from jibsa.providers.zigbang.api.models.response.stay.search import (
+    ZigbangStayMarkerModel,
+)
+from jibsa.providers.zigbang.api.models.response.store import (
     ZigbangStoreArticleStoresV2ResponseModel,
 )
 from jibsa.providers.zigbang.service.apt.detail import (

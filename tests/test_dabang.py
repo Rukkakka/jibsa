@@ -8,11 +8,11 @@ from httpx import (
 )
 
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.response.common import (
+from jibsa.providers.dabang.api.models.response.common import (
     DabangComplexEducationModel,
     DabangRoomListResultModel,
 )
-from jibsa.providers.dabang.api.response.ranking.region import (
+from jibsa.providers.dabang.api.models.response.ranking.region import (
     DabangRegionRankingItemModel,
 )
 from jibsa.providers.dabang.service.common.error import is_missing_id

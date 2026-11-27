@@ -19,15 +19,15 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.complex.search import (
+from jibsa.providers.zigbang.api.models.request.complex.search import (
     ZigbangDanjiOrder,
     ZigbangDanjisDetailsRequestParameterModel,
     ZigbangDanjisIdsRequestParameterModel,
     ZigbangSchoolsRequestParameterModel,
     ZigbangSubwaysRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
-from jibsa.providers.zigbang.api.response.complex.search import (
+from jibsa.providers.zigbang.api.models.response.common import ZigbangSearchItemModel
+from jibsa.providers.zigbang.api.models.response.complex.search import (
     ZigbangDanjiCardModel,
     ZigbangSchoolDetailModel,
     ZigbangSchoolsResponseModel,

@@ -1,7 +1,7 @@
 """분양 기능(sale)의 상수: 임대 가격 이름표·날짜 패턴·`--building-type`·`--state`·`--supply` 이름표·청약 일정 한도."""
 import re
 
-from jibsa.providers.dabang.api.request.sale.search import (
+from jibsa.providers.dabang.api.models.request.sale.search import (
     DabangSaleBuildingType,
     DabangSaleState,
     DabangSaleSupplyType,

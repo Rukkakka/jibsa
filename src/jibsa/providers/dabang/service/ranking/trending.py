@@ -5,7 +5,7 @@ from jibsa.core.listing import (
     normalize_address,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.ranking.trending import (
+from jibsa.providers.dabang.api.models.request.ranking.trending import (
     DabangRealTimeWatchRankingsV5RequestParameterModel,
 )
 from jibsa.providers.dabang.service.common.constants import (

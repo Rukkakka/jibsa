@@ -1,6 +1,6 @@
 """지도 매물 검색·지역 단지 목록이 같이 쓰는 것: 범위 필터 변환, 정렬 목록의 지도 줌."""
 
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverRangeModel,
 )
 

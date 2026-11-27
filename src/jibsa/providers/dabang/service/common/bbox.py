@@ -1,5 +1,5 @@
 """다방 지도 범위 모델 만들기."""
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     DabangBboxModel,
     DabangPointModel,
 )

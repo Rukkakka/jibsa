@@ -15,10 +15,10 @@ from jibsa.core.listing import (
 )
 from jibsa.core.schema import ResponseModel
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL, ZigbangClient
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangItemsListV1RequestPayloadModel,
 )
-from jibsa.providers.zigbang.api.response.common import (
+from jibsa.providers.zigbang.api.models.response.common import (
     ZigbangItemPinModel,
     ZigbangItemSectionModel,
     ZigbangItemSummaryModel,
