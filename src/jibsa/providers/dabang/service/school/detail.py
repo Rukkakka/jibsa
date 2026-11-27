@@ -1,5 +1,4 @@
 """학교·유치원·어린이집 상세 (school)."""
-import re
 from collections.abc import Callable
 
 from httpx import HTTPStatusError
@@ -10,7 +9,6 @@ from jibsa.core.errors import JibsaError
 from jibsa.core.listing import normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.school.detail import (
-    SCHOOL_CODE_PATTERN_TEXT,
     DabangEducationKinderSchoolV3RequestParameterModel,
     DabangEducationNurserySchoolV3RequestParameterModel,
     DabangEducationV3RequestParameterModel,
@@ -18,12 +16,16 @@ from jibsa.providers.dabang.api.request.school.detail import (
 from jibsa.providers.dabang.api.response.school.detail import (
     DabangEducationV3ResponseModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.constants import SchoolLevel
+from jibsa.providers.dabang.service.common.error import is_missing_id
+from jibsa.providers.dabang.service.school.constants import (
+    KINDER_GROUPS,
+    KINDER_TEACHERS,
+    LEVEL_PATH_BY_LABEL,
+    NURSERY_GROUPS,
+    NURSERY_TEACHERS,
     EducationLevel,
-    SchoolLevel,
-    is_missing_id,
 )
-from jibsa.providers.dabang.service.school.base import LEVEL_PATH_BY_LABEL
 from jibsa.providers.dabang.service.school.models import (
     DabangAdvancement,
     DabangChildcareDetail,
@@ -37,38 +39,6 @@ from typing import TypeVar
 
 
 T = TypeVar('T')
-
-# 학교 코드 (학교 'S010000743', 어린이집 '11680000021', 유치원 UUID). 경로에 들어가 영문·숫자·'-' 만 받는다
-SCHOOL_CODE_PATTERN: re.Pattern[str] = re.compile(SCHOOL_CODE_PATTERN_TEXT)
-
-# 어린이집 반 이름 (웹 '원아구성', school 청크 `w`, 2026-11-13). 웹은 원아가 있는 반만 그린다
-NURSERY_GROUPS: tuple[tuple[str, str], ...] = (
-    ('0세반', 'class_0'),
-    ('1세반', 'class_1'),
-    ('2세반', 'class_2'),
-    ('3세반', 'class_3'),
-    ('4세반', 'class_4'),
-    ('5세반', 'class_5'),
-    ('영아 혼합', 'class_baby_mix'),
-    ('유아 혼합', 'class_child_mix'),
-    ('영유아 혼합', 'class_baby_child_mix'),
-    ('특수/장애아', 'class_special'),
-)
-# 유치원 나이 이름 (웹 '원아구성', school 청크 `Ie`)
-KINDER_GROUPS: tuple[tuple[str, str], ...] = (
-    ('만 3세', 'current_three'),
-    ('만 4세', 'current_four'),
-    ('만 5세 이상', 'current_five_over'),
-    ('혼합', 'current_mix'),
-)
-# 교사 급수 이름 (웹 '교사현황', school 청크 `ee`·`Le`). 웹은 0 명인 급수도 그린다
-NURSERY_TEACHERS: tuple[tuple[str, str], ...] = (('1급', 'teacher_1st'), ('2급', 'teacher_2nd'), ('3급', 'teacher_3rd'))
-KINDER_TEACHERS: tuple[tuple[str, str], ...] = (
-    ('수석교사', 'staff_license_top_teacher'),
-    ('정교사 1급', 'staff_license_first_teacher'),
-    ('정교사 2급', 'staff_license_second_teacher'),
-    ('준교사', 'staff_license_equivalent_teacher'),
-)
 
 
 def _advancement(school: DabangEducationV3ResponseModel, level: SchoolLevel) -> list[DabangAdvancement] | None:

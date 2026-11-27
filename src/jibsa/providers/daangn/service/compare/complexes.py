@@ -20,16 +20,18 @@ from jibsa.providers.daangn.api.response.compare.base import (
     DaangnCompareRealsaleModel,
     DaangnCompareSubwayModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
-    COMPLEX_TYPE_LABELS,
-    code_label,
+from jibsa.providers.daangn.service.common.complex import (
     compare_column,
-    complex_url,
     is_year_month,
     most_households,
     pyeong_groups,
     pyeong_null_items,
 )
+from jibsa.providers.daangn.service.common.constants import (
+    COMPLEX_TYPE_LABELS,
+    COMPLEX_URL,
+)
+from jibsa.providers.daangn.service.common.response import code_label
 from jibsa.providers.daangn.service.compare.models import (
     DaangnAskingAverage,
     DaangnCompareEstimatedPrices,
@@ -43,9 +45,7 @@ from jibsa.providers.daangn.service.compare.models import (
     DaangnKbRange,
 )
 
-from typing import (
-    Literal,
-)
+from typing import Literal
 
 
 def _asking_averages(complex_: DaangnCompareComplexModel) -> dict[str, DaangnAskingAverage]:
@@ -291,7 +291,7 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None, no
         ] if danji else None,
         stations=_subways(danji.subway_info) if danji else None,
         pyeong=pyeong,
-        url=complex_url(complex_.original_id),
+        url=COMPLEX_URL.format(complex_.original_id),
     )
 
 

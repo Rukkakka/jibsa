@@ -11,22 +11,18 @@ from jibsa.providers.dabang.api.request.common import DabangOneTwoFiltersModel
 from jibsa.providers.dabang.api.request.nearby.station import (
     DabangMarkersCategoryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
-    BUILDING_LABEL_BY_CATEGORY,
-    bbox_of,
-    manwon_from_text,
-)
+from jibsa.providers.dabang.service.common.bbox import bbox_of
 from jibsa.providers.dabang.service.common.models import DabangPlace
+from jibsa.providers.dabang.service.common.text import manwon_from_text
+from jibsa.providers.dabang.service.nearby.constants import (
+    BUILDING_LABEL_BY_CATEGORY,
+    ROOM_LABELS,
+    STATION_BOX_KM,
+)
 from jibsa.providers.dabang.service.nearby.models import (
     DabangStationPrice,
     DabangStationPrices,
 )
-
-
-ROOM_LABELS: dict[str, str] = {'ONE_ROOM': '원룸', 'TWO_ROOM': '투룸'}
-
-# 역 둘레 평균 매물가를 받으려고 역을 덮는 지도 범위 (km). 확대 수준 16 이면 범위 안 역 표시에 평균이 붙는다
-STATION_BOX_KM: float = 0.3
 
 
 def get_station_prices(client: DabangClient, place: DabangPlace) -> DabangStationPrices:

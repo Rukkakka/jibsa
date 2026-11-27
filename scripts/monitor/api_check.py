@@ -158,7 +158,7 @@ GROUPS: dict[str, tuple[Step, ...]] = {
         ),
         Step('아파트 상세', ZIGBANG_LISTING, ('{apt_listing}',), 'id'),
         # 호 정보(item_catalogs/ho-info)는 덤이라 실패해도 값이 null 로 남고 명령은 성공한다. 직방은 시세가 없는 호에 0 을 주기도 해
-        # jibsa 가 null 로 낸다(service/apt/functions.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다. 응답 형식이 바뀌어 호
+        # jibsa 가 null 로 낸다(service/apt/detail.py `_known_price`). 그래서 시세가 비면 고장 대신 확인 못 함이다. 응답 형식이 바뀌어 호
         # 정보를 읽지 못하면 [실패] 안내에 업데이트 문구가 붙어 고장으로 잡힌다
         Step(
             '아파트 같은 호 묶음', ('zigbang', 'catalog'), ('{apt_catalog}',), 'listings',
@@ -965,7 +965,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
         다르면 고장 (jibsa 가 틀린 위약금을 내보낸다).
     """
     from jibsa.providers.zigbang.api.client import ZigbangClient
-    from jibsa.providers.zigbang.service.stay.detail import (
+    from jibsa.providers.zigbang.service.stay.constants import (
         STAY_REFUND_POLICY_LABELS,
         STAY_REFUND_RULES,
     )
@@ -1019,7 +1019,7 @@ def check_zigbang_stay_refund_rules() -> dict[str, str]:
             **step, 'status': BROKEN,
             'detail': (
                 f"웹 위약금 표가 jibsa 와 다름 ({'; '.join(diffs)}). "
-                'zigbang service/stay/detail.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
+                'zigbang service/stay/constants.py 의 STAY_REFUND_RULES·STAY_REFUND_POLICY_LABELS 를 갱신'
             ),
         }
     return {**step, 'status': OK, 'detail': f"웹과 같음 ({', '.join(STAY_REFUND_RULES)} 정책 {sum(len(rows) for rows in STAY_REFUND_RULES.values())}행)"}

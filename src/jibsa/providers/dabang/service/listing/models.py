@@ -14,8 +14,8 @@ from jibsa.core.listing import (
     Result,
 )
 from jibsa.providers.dabang.api.request.common import DabangBboxModel
+from jibsa.providers.dabang.service.common.constants import OFFICETEL_TYPE
 from jibsa.providers.dabang.service.common.models import (
-    OFFICETEL_TYPE,
     DabangListing,
     DabangPlace,
     is_complex_type,

@@ -7,7 +7,6 @@ from jibsa.core.listing import (
     KST,
     SAME_AREA_PYEONG_TRADES_NOTE,
     UPDATE_MAYBE_NEEDED,
-    TradeType,
     normalize_floor,
     note,
     null_items_note,
@@ -18,7 +17,6 @@ from jibsa.providers.dabang.api.request.real_price.trades import (
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
     DabangRealPriceHouseInitV5RequestParameterModel,
-    DabangRealPriceSearchType,
 )
 from jibsa.providers.dabang.api.response.real_price.trades import (
     DabangRealPriceHistoryModel,
@@ -26,37 +24,30 @@ from jibsa.providers.dabang.api.response.real_price.trades import (
     DabangRealPriceHouseInitResultModel,
     DabangRealPriceHouseScopeModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
-    complex_url,
-    contract_date,
-    listing_url,
-    more_after,
-)
-from jibsa.providers.dabang.service.real_price.base import (
-    _fetch_complex_space,
+from jibsa.providers.dabang.service.common.constants import COMPLEX_URL, LISTING_URL
+from jibsa.providers.dabang.service.common.paging import more_after
+from jibsa.providers.dabang.service.common.text import contract_date
+from jibsa.providers.dabang.service.real_price.common import (
+    fetch_complex_space,
     primary_space,
+)
+from jibsa.providers.dabang.service.real_price.constants import (
+    BUILDING_VIEW_LABELS,
+    REAL_PRICE_MAX_PAGES,
+    SEARCH_TYPE_BY_TRADE,
+    TRADE_BY_PRICE_TYPE,
+    TRADE_BY_SEARCH_TYPE,
+    RealPriceTrade,
 )
 from jibsa.providers.dabang.service.real_price.models import (
     AreaKind,
     DabangRealPrice,
     DabangRealPriceResult,
-    RealPriceTrade,
 )
 
 from typing import (
     NamedTuple,
 )
-
-
-SEARCH_TYPE_BY_TRADE: dict[RealPriceTrade, DabangRealPriceSearchType] = {'매매': 'SALE', '전월세': 'LEASE'}
-TRADE_BY_SEARCH_TYPE: dict[str, RealPriceTrade] = {search_type: trade for trade, search_type in SEARCH_TYPE_BY_TRADE.items()}
-
-TRADE_BY_PRICE_TYPE: dict[str, TradeType] = {'SALE': '매매', 'LEASE': '전세', 'MONTHLY': '월세'}
-REAL_PRICE_MAX_YEARS: int = 3
-REAL_PRICE_MAX_PAGES: int = 4
-REAL_PRICE_MAX_LIMIT: int = REAL_PRICE_PAGE_LIMIT * REAL_PRICE_MAX_PAGES
-
-BUILDING_VIEW_LABELS: dict[str, str] = {'DETACHED': '단독·다가구', 'MULTIPLEX': '다세대·연립', 'APARTMENT': '아파트', 'OFFICETEL': '오피스텔'}
 
 
 class _Page(NamedTuple):
@@ -177,7 +168,7 @@ def get_real_prices(
     from_month, to_month = period_months(years)
 
     def fetch(page: int, page_size: int) -> _Page | None:
-        result = _fetch_complex_space(
+        result = fetch_complex_space(
             lambda: client.run_request_real_price_complex_histories_v5(DabangRealPriceComplexHistoriesV5RequestParameterModel(
                 complex_id=complex_id, space_seq=space_seq, from_date=from_month, to_date=to_month,
                 search_type=SEARCH_TYPE_BY_TRADE[trade], page=page, limit=page_size,
@@ -200,7 +191,7 @@ def get_real_prices(
         returned=len(collected.prices),
         has_more=collected.has_more,
         trades=collected.prices,
-        url=complex_url(complex_id),
+        url=COMPLEX_URL.format(complex_id),
         notes=notes + ([SAME_AREA_PYEONG_TRADES_NOTE] if collected.prices else []) + _unknown_trade_note(collected.unknown),
     )
 
@@ -339,6 +330,6 @@ def get_listing_real_prices(
         returned=len(collected.prices),
         has_more=collected.has_more,
         trades=collected.prices,
-        url=listing_url(listing_id),
+        url=LISTING_URL.format(listing_id),
         notes=notes,
     )

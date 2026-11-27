@@ -501,31 +501,6 @@ class NaverTotalRealEstateTaxModel(NaverBaseResponseModel):
     ] = None
 
 
-class NaverLegalDivisionModel(NaverBaseResponseModel):
-    """좌표가 속한 법정동."""
-
-    legal_division_number: Annotated[
-        str,
-        Field(description='법정동 코드 (10자리)', alias='legalDivisionNumber')
-    ]
-    legal_division_name: Annotated[
-        str | None,
-        Field(description='법정동 전체 이름', alias='legalDivisionName')
-    ] = None
-    city_name: Annotated[
-        str | None,
-        Field(description='시/도', alias='cityName')
-    ] = None
-    division_name: Annotated[
-        str | None,
-        Field(description='시/군/구', alias='divisionName')
-    ] = None
-    sector_name: Annotated[
-        str | None,
-        Field(description='읍/면/동', alias='sectorName')
-    ] = None
-
-
 class NaverFacilityInfoModel(NaverBaseResponseModel):
     """시설.
 
@@ -1131,17 +1106,9 @@ class NaverComplexPyeongGroupsV1ResponseModel(NaverResponseModel[list[NaverPyeon
     """`GET /front-api/v1/complex/pyeongGroups` 응답."""
 
 
-class NaverComplexPyeongV1ResponseModel(NaverResponseModel[NaverPyeongModel]):
-    """`GET /front-api/v1/complex/pyeong` 응답. 평형 하나. 항목 모양은 pyeongList 와 같다."""
-
-
 class NaverComplexBuildingListV1ResponseModel(NaverResponseModel[list[NaverBuildingModel]]):
     """`GET /front-api/v1/complex/buildingList` 응답."""
 
 
 class NaverComplexVillaBuildingListV1ResponseModel(NaverResponseModel[list[NaverBuildingModel]]):
     """`GET /front-api/v1/complex/villa/buildingList` 응답."""
-
-
-class NaverLegalDivisionSearchByCoordinateV1ResponseModel(NaverResponseModel[NaverLegalDivisionModel]):
-    """`GET /front-api/v1/legalDivision/searchByCoordinate` 응답."""

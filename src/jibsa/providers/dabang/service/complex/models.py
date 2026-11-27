@@ -13,11 +13,15 @@ from jibsa.core.listing import (
     Result,
     with_floor_number,
 )
-from jibsa.providers.dabang.service.common.functions import SchoolLevel
+from jibsa.providers.dabang.service.common.constants import SchoolLevel
 from jibsa.providers.dabang.service.common.models import (
     DabangAreaPrice,
     DabangListing,
     DabangPlace,
+)
+from jibsa.providers.dabang.service.complex.constants import (
+    DEFAULT_COMPLEX_SORT,
+    NEAREST_SCHOOLS,
 )
 
 from typing import (
@@ -29,12 +33,6 @@ from typing import (
 
 # 최근 거래의 면적을 내는 키. 다방 요약의 면적은 아파트면 공급, 오피스텔이면 계약이다
 RecentAreaKey = Literal['supply_area_m2', 'contract_area_m2']
-
-# 중·고등학교·어린이집·유치원은 가까운 순 3곳. 웹 '주변 보육/교육시설' 탭이 3곳씩 보이고 '더보기' 로 3곳씩 늘린다
-# (education 청크 `Y`·`X`·`Q`·`$` = 3, 2026-11-13)
-NEAREST_SCHOOLS: int = 3
-
-DEFAULT_COMPLEX_SORT: str = '랭킹순'
 
 
 class DabangComplexSummary(BaseModel):

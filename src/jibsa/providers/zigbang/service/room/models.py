@@ -12,10 +12,10 @@ from jibsa.core.listing import (
     Listing,
     Result,
 )
-from jibsa.providers.zigbang.service.common.base import drop_unused_scope
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangListing,
     ZigbangRegion,
+    drop_unused_scope,
 )
 
 from typing import (

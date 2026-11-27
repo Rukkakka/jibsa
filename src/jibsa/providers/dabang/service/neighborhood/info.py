@@ -6,14 +6,10 @@ from jibsa.core.listing import (
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.neighborhood.info import (
     SUMMARY_TYPE_FIELD_BY_TOPIC,
-    DabangAmenitySummaryType,
-    DabangLifeSafetySummaryType,
-    DabangMobilitySummaryType,
     DabangRegionInfoCountTopic,
     DabangRegionInfoRegionalCountV5RequestParameterModel,
     DabangRegionInfoRegionalSummaryV5RequestParameterModel,
     DabangRegionInfoSummaryTopic,
-    DabangSchoolSummaryType,
 )
 from jibsa.providers.dabang.api.response.neighborhood.info import (
     DabangCountModel,
@@ -21,12 +17,18 @@ from jibsa.providers.dabang.api.response.neighborhood.info import (
     DabangRankingGroupModel,
     DabangRegionInfoSummaryResultModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.text import (
     count_of,
 )
-from jibsa.providers.dabang.service.neighborhood.base import _base_month
-from jibsa.providers.dabang.service.neighborhood.models import (
+from jibsa.providers.dabang.service.neighborhood.common import base_month
+from jibsa.providers.dabang.service.neighborhood.constants import (
+    COUNT_TOPIC_BY_LABEL,
     FIELD_BY_TOPIC,
+    NEIGHBORHOOD_TOPICS,
+    RANK_TYPES_BY_TOPIC,
+    NeighborhoodTopic,
+)
+from jibsa.providers.dabang.service.neighborhood.models import (
     DabangAgeGroup,
     DabangCategoryRank,
     DabangCountStats,
@@ -37,45 +39,11 @@ from jibsa.providers.dabang.service.neighborhood.models import (
     DabangTypeCount,
     DabangTypePrice,
 )
-from jibsa.providers.dabang.service.region.functions import DabangDong
+from jibsa.providers.dabang.service.region.models import DabangDong
 
 from typing import (
     Any,
-    Literal,
 )
-
-
-NeighborhoodTopic = Literal['매물', '거래', '시세', '인구', '학교', '편의', '교통', '안전']
-NEIGHBORHOOD_TOPICS: tuple[NeighborhoodTopic, ...] = ('매물', '거래', '시세', '인구', '학교', '편의', '교통', '안전')
-COUNT_TOPIC_BY_LABEL: dict[str, DabangRegionInfoCountTopic] = {
-    '학교': 'school',
-    '편의': 'amenity',
-    '교통': 'mobility',
-    '안전': 'life-safety',
-}
-
-# --ranks: 학교·편의·교통·안전 탭의 요약 칸 종류 (웹 이름표, 요청 값). 웹 요약 칸의 고르기 순서 그대로다 (school·facility·
-# traffic·life-safety 청크 tabList, 2026-11-13). 종류마다 요청 1회. 요청 값은 주제마다 그 탭의 Literal 로 검사한다
-SCHOOL_RANK_TYPE_BY_LABEL: dict[str, DabangSchoolSummaryType] = {
-    '어린이집': 'NURSERY_SCHOOL', '유치원': 'KINDER_SCHOOL', '초등학교': 'ELEMENTARY_SCHOOL', '중학교': 'MIDDLE_SCHOOL',
-    '고등학교': 'HIGH_SCHOOL',
-}
-AMENITY_RANK_TYPE_BY_LABEL: dict[str, DabangAmenitySummaryType] = {
-    '생활 편의시설': 'LIVING', '의료시설': 'MEDICAL', '외식시설': 'DINING', '대형 쇼핑시설': 'SHOPPING', '체육시설': 'SPORTS',
-}
-MOBILITY_RANK_TYPE_BY_LABEL: dict[str, DabangMobilitySummaryType] = {
-    '교통시설': 'TRANSIT', '주차시설': 'PARKING_LOT', '주유시설': 'CHARGE_STATION', '차량관리시설': 'MAINTENANCE_SHOP',
-}
-LIFE_SAFETY_RANK_TYPE_BY_LABEL: dict[str, DabangLifeSafetySummaryType] = {
-    '안전시설': 'SAFETY_FACILITY', '안전기관': 'SAFETY_ORGANIZATION', '불편요소': 'INCONVENIENCE',
-}
-RANK_TYPES_BY_TOPIC: dict[str, dict[str, str]] = {
-    '학교': dict(SCHOOL_RANK_TYPE_BY_LABEL),
-    '편의': dict(AMENITY_RANK_TYPE_BY_LABEL),
-    '교통': dict(MOBILITY_RANK_TYPE_BY_LABEL),
-    '안전': dict(LIFE_SAFETY_RANK_TYPE_BY_LABEL),
-}
-RANK_TOPICS: tuple[str, ...] = tuple(RANK_TYPES_BY_TOPIC)
 
 
 def _rank(group: DabangRankingGroupModel | None) -> DabangRank | None:
@@ -241,7 +209,7 @@ def get_neighborhood(
                 ))
     return DabangNeighborhood(
         region=place,
-        base_month=_base_month(update_dates),
+        base_month=base_month(update_dates),
         topics=chosen,
         ranks=rank_list,
         with_ranks=ranks,

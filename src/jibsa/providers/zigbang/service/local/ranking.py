@@ -22,88 +22,44 @@ from jibsa.providers.zigbang.api.response.local.ranking import (
     ZigbangDanjiRankingModel,
     ZigbangLocalsDanjiRankingResponseModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
     UPSTREAM_RETRY_HINT,
+)
+from jibsa.providers.zigbang.service.common.ids import (
     apt_complex_id,
+)
+from jibsa.providers.zigbang.service.common.text import (
     text_or_none,
 )
-from jibsa.providers.zigbang.service.local.base import (
+from jibsa.providers.zigbang.service.local.common import (
     dong_not_applicable,
     local_region_of,
     local_sort_of,
     resolve_local_area,
 )
-from jibsa.providers.zigbang.service.local.models import (
-    LocalLevel,
+from jibsa.providers.zigbang.service.local.constants import (
+    DEFAULT_RANKING_LIMIT,
+    RANK_FIELDS_BY_SORT,
+    RANKING_MAX_RANKS,
+    RANKING_PAGE_SIZE,
+    SORT_ONLY_FIELDS,
+    SORT_TYPE_BY_TRADE,
+    SORTS_WITH_START_DATE,
+    SORTS_WITH_UPDATED_AT,
+    TRAN_TYPE_BY_TRADE,
+    VIEW_PERIOD_BY_LABEL,
     LocalRankingPeriod,
     LocalTrade,
+)
+from jibsa.providers.zigbang.service.local.models import (
+    LocalLevel,
     ZigbangDanjiRank,
     ZigbangRegionRankingResult,
 )
 
 from typing import NamedTuple
-
-
-RANKING_PERIODS: tuple[LocalRankingPeriod, ...] = ('이번주', '지난주', '이번달', '지난달', '올해', '작년')
-DEFAULT_RANKING_LIMIT: int = 10
-# 쪽 크기. 서버는 11 이상이면 400 이다 (2026-11-22 실측)
-RANKING_PAGE_SIZE: int = 10
-# 웹이 보여 주는 최대 순위. 랭킹 화면은 `list.length>=100` 에서 넘기기를 멈추고 '단지 랭킹은 100위까지만 제공됩니다.' 를 보여 준다
-# (2026-11-22 번들 `onEndReached`). 서버는 200위까지 주지만 101위부터는 웹에서 볼 수 없어 받지 않는다
-RANKING_MAX_RANKS: int = 100
-# 웹 기간 탭 → 서버 viewPeriod
-VIEW_PERIOD_BY_LABEL: dict[LocalRankingPeriod, ZigbangDanjiRankingViewPeriod] = {
-    '이번주': 'this_week',
-    '지난주': 'last_week',
-    '이번달': 'this_month',
-    '지난달': 'last_month',
-    '올해': 'this_year',
-    '작년': 'last_year',
-}
-TRAN_TYPE_BY_TRADE: dict[LocalTrade, ZigbangAptTranType] = {'매매': 'trade', '전세': 'charter', '월세': 'rental'}
-# 웹 정렬 이름 → 서버 sortType (2026-11-19 번들 `T`). 첫 항목이 지역 화면 '단지랭킹' 패널의 기본이고(랭킹 화면 주소를 바로 열면 평당가
-# 높은순이다, 2026-11-22 웹 조사) 거래 유형마다 정렬이 다르다 (월세는 거래량뿐)
-SORT_TYPE_BY_TRADE: dict[LocalTrade, dict[str, ZigbangDanjiRankingSortType]] = {
-    '매매': {
-        '거래량 많은순': 'volume_desc',
-        '하락률 높은순': 'decrease_rate_desc',
-        '상승률 높은순': 'increase_rate_desc',
-        '시세 높은순': 'price_desc',
-        '평당가 높은순': 'unit_price_desc',
-        '인기 단지순': 'view_count_desc',
-    },
-    '전세': {
-        '거래량 많은순': 'volume_desc',
-        '하락률 높은순': 'decrease_rate_desc',
-        '상승률 높은순': 'increase_rate_desc',
-        '시세 높은순': 'price_desc',
-        '전세가율 높은순': 'charter_rate_desc',
-    },
-    '월세': {'거래량 많은순': 'volume_desc'},
-}
-# 정렬마다 줄에 오는 칸 (2026-11-22 표본: 정렬 일곱 가지를 모두 불렀다). 거래량·시세·평당가·인기·전세가율은 사용승인일·총세대수가 오고, 하락률·상승률은
-# 직전 거래 대비 값이 오며 사용승인일·총세대수는 오지 않는다. 하락·상승률의 가격 칸은 거래 유형이 정한다 (`_rank_of`)
-RATE_FIELDS: frozenset[str] = frozenset({'latest_trade_date', 'prev_trade_diff_manwon', 'prev_trade_diff_percent', 'area_type'})
-RANK_FIELDS_BY_SORT: dict[ZigbangDanjiRankingSortType, frozenset[str]] = {
-    'volume_desc': frozenset({'trade_count', 'approved_date', 'household_count'}),
-    'decrease_rate_desc': RATE_FIELDS,
-    'increase_rate_desc': RATE_FIELDS,
-    'price_desc': frozenset({'estimated_price_manwon', 'approved_date', 'household_count'}),
-    'unit_price_desc': frozenset({'estimated_price_per_pyeong_manwon', 'approved_date', 'household_count'}),
-    'view_count_desc': frozenset({'view_count', 'approved_date', 'household_count'}),
-    'charter_rate_desc': frozenset({'jeonse_ratio_percent', 'gap_manwon', 'approved_date', 'household_count'}),
-}
-SORT_ONLY_FIELDS: frozenset[str] = frozenset({'price_manwon', 'deposit_manwon'}).union(*RANK_FIELDS_BY_SORT.values())
-# 결과 머리에서 서버가 주지 않는 정렬이라 키를 뺄 날짜 (2026-11-22 표본): 시세·평당가·전세가율은 기준일(end_date)뿐이고, 인기는 갱신 시각이 없다
-# (웹 머리 `56955`: 거래량·하락률·상승률은 '{시작} ~ {끝} 실거래 등록 기준 {갱신 시각} 업데이트', 인기는 '{시작} ~ {끝} 조회 기준', 그 밖은 '{기준일} 직방 시세 기준')
-SORTS_WITH_START_DATE: frozenset[ZigbangDanjiRankingSortType] = frozenset({
-    'volume_desc', 'decrease_rate_desc', 'increase_rate_desc', 'view_count_desc',
-})
-SORTS_WITH_UPDATED_AT: frozenset[ZigbangDanjiRankingSortType] = frozenset({
-    'volume_desc', 'decrease_rate_desc', 'increase_rate_desc',
-})
 
 
 class _RankingPages(NamedTuple):

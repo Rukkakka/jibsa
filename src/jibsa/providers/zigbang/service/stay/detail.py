@@ -29,21 +29,34 @@ from jibsa.providers.zigbang.api.response.stay.detail import (
     ZigbangGuestItemsResponseModel,
     ZigbangStayScheduleModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     OPTIONAL_LOOKUP_ERRORS,
+)
+from jibsa.providers.zigbang.service.common.text import (
     sent_or_none,
     text_or_none,
+)
+from jibsa.providers.zigbang.service.common.unavailable import (
     unavailable_on_404,
 )
-from jibsa.providers.zigbang.service.stay.base import (
-    STAY_BUILDING_TYPE_LABELS,
-    STAY_OPTION_LABELS,
+from jibsa.providers.zigbang.service.stay.common import (
     stay_discounts,
-    stay_item_url,
     stay_summary_to_listing,
 )
-from jibsa.providers.zigbang.service.stay.models import (
+from jibsa.providers.zigbang.service.stay.constants import (
+    STAY_BUILDING_TYPE_LABELS,
+    STAY_CHECK_METHOD_LABELS,
     STAY_HOST_OTHER_LIMIT,
+    STAY_MAX_CHECK_OUT_DAYS,
+    STAY_OPTION_LABELS,
+    STAY_PARKING_METHOD_LABELS,
+    STAY_REFUND_POLICY_LABELS,
+    STAY_REFUND_RULES,
+    STAY_SCHEDULE_KIND_LABELS,
+    STAY_UNAVAILABLE_SCHEDULES,
+    STAY_URL,
+)
+from jibsa.providers.zigbang.service.stay.models import (
     ZigbangStayListingDetail,
     ZigbangStayPeriod,
     ZigbangStayRefundRule,
@@ -51,59 +64,6 @@ from jibsa.providers.zigbang.service.stay.models import (
 )
 
 from typing import Any
-
-
-STAY_REFUND_POLICY_LABELS: dict[str, str] = {
-    'FLEXIBLE': '유연',
-    'STANDARD': '표준',
-    'STRICT': '엄격',
-}
-# 위약금 표. 직방 응답은 정책 이름(refundPolicy)만 주고 표는 웹 번들(`RefundPolicySection`)에 고정돼 있어 옮겨 적은 것이다
-# (2026-11-17). 직방이 표를 바꾸면 주 1회 감시(`scripts/monitor/api_check.py` 의 `WEEKLY_CHECKS`)가 알린다. 값은 (취소 시점,
-# 위약금) 다섯 쌍이고 글자는 웹 표기 그대로다
-STAY_REFUND_RULES: dict[str, tuple[tuple[str, str], ...]] = {
-    'FLEXIBLE': (
-        ('입주 14일전', '없음'),
-        ('입주 7일전', '임대료의 15%'),
-        ('입주 3일전', '임대료의 30%'),
-        ('입주 1일전', '임대료의 40%'),
-        ('입주 당일 이후', '취소불가'),
-    ),
-    'STANDARD': (
-        ('입주 14일전', '임대료의 10%'),
-        ('입주 7일전', '임대료의 30%'),
-        ('입주 3일전', '임대료의 40%'),
-        ('입주 1일전', '임대료의 50%'),
-        ('입주 당일 이후', '취소불가'),
-    ),
-    'STRICT': (
-        ('입주 14일전', '임대료의 20%'),
-        ('입주 7일전', '임대료의 50%'),
-        ('입주 3일전', '임대료의 60%'),
-        ('입주 1일전', '임대료의 70%'),
-        ('입주 당일 이후', '취소불가'),
-    ),
-}
-STAY_PARKING_METHOD_LABELS: dict[str, str] = {
-    'SELF': '자주식',
-    'MECHANICAL': '기계식',
-}
-# 입주·퇴실 방식 (웹 표기. 모르는 코드는 웹도 그대로 쓴다)
-STAY_CHECK_METHOD_LABELS: dict[str, str] = {
-    'SELF': '비대면',
-    'MEET': '임대인 대면',
-    'KEYBOX': '키박스',
-}
-# 달력에서 막힌 날의 종류. 웹이 날짜를 막는 일정 종류(STAY_UNAVAILABLE_SCHEDULES)가 이 표의 키라 한쪽만 고치지 않는다
-STAY_SCHEDULE_KIND_LABELS: dict[str, str] = {
-    'RESERVED': '예약',
-    'BLOCKED': '막힘',
-}
-
-# 웹 날짜 고르기 창이 받는 가장 늦은 마지막 날은 입주일 + 83일이다 (번들 `getMaxCheckOut`)
-STAY_MAX_CHECK_OUT_DAYS: int = 83
-# 웹이 날짜를 막는 일정 종류 (번들 `isUnavailableSchedule`). 이름 표(STAY_SCHEDULE_KIND_LABELS)의 키와 같아 표를 고치면 따라간다
-STAY_UNAVAILABLE_SCHEDULES: frozenset[str] = frozenset(STAY_SCHEDULE_KIND_LABELS)
 
 
 def stay_parking(detail: ZigbangGuestItemsResponseModel) -> str | None:
@@ -182,7 +142,7 @@ def stay_detail_to_listing(
     return ZigbangStayListingDetail(
         source='zigbang',
         id=f'stay-{detail.id}',
-        url=stay_item_url(detail.id),
+        url=STAY_URL.format(detail.id),
         trade_type='단기임대',
         property_type=STAY_BUILDING_TYPE_LABELS.get(detail.building_type or '', detail.building_type or '단기임대'),
         title=detail.title,

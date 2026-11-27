@@ -19,37 +19,40 @@ from jibsa.providers.dabang.api.request.sale.search import (
     SALE_SEARCH_PAGE_SIZE,
     SALE_STATE_NUMBERS,
     SALE_SUPPLY_TYPE_NUMBERS,
-    DabangSaleBuildingType,
     DabangSaleInLotsFiltersModel,
     DabangSaleInLotsListSearch3V3RequestParameterModel,
     DabangSaleInLotsSearchFiltersModel,
     DabangSaleListCategoryBboxV5RequestParameterModel,
-    DabangSaleState,
-    DabangSaleSupplyType,
 )
 from jibsa.providers.dabang.api.response.sale.search import (
     DabangSaleInLotsItemModel,
     DabangSaleItemModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
-    MAX_LIST_LIMIT,
+from jibsa.providers.dabang.service.common.bbox import bbox_of
+from jibsa.providers.dabang.service.common.constants import MAX_LIST_LIMIT, SALE_URL
+from jibsa.providers.dabang.service.common.models import (
     DabangPage,
     DabangPages,
-    bbox_of,
+    DabangPlace,
+)
+from jibsa.providers.dabang.service.common.paging import (
     fetch_pages,
+    more_list_notes,
+)
+from jibsa.providers.dabang.service.common.text import (
     household_count,
     manwon_from_text,
-    more_list_notes,
-    sale_url,
-)
-from jibsa.providers.dabang.service.common.models import DabangPlace
-from jibsa.providers.dabang.service.region.functions import (
-    dong_bbox,
 )
 from jibsa.providers.dabang.service.region.models import DabangScope
-from jibsa.providers.dabang.service.sale.base import (
+from jibsa.providers.dabang.service.region.region import (
+    dong_bbox,
+)
+from jibsa.providers.dabang.service.sale.common import in_lots_fields
+from jibsa.providers.dabang.service.sale.constants import (
     RENTAL_PRICE_KINDS,
-    _in_lots_fields,
+    SALE_BUILDING_TYPE_BY_LABEL,
+    SALE_STATE_BY_LABEL,
+    SALE_SUPPLY_BY_LABEL,
 )
 from jibsa.providers.dabang.service.sale.models import (
     DabangSaleListResult,
@@ -59,27 +62,6 @@ from jibsa.providers.dabang.service.sale.models import (
 from typing import (
     Any,
 )
-
-
-SALE_BUILDING_TYPE_BY_LABEL: dict[str, DabangSaleBuildingType] = {
-    '아파트': 'APT',
-    '오피스텔': 'OFFICETEL',
-    '도시형생활주택': 'URBAN_HOUSE',
-    '지식산업센터': 'KNOWLEDGE_INDUSTRY_CENTER',
-}
-SALE_STATE_BY_LABEL: dict[str, DabangSaleState] = {
-    '분양예정': 'EXPECTED',
-    '접수중': 'ACCEPTING',
-    '접수마감': 'ACCEPT_COMPLETE',
-    '입주예정': 'MOVE_IN_EXPECTED',
-    '입주모집': 'MOVE_IN_RECRUIT',
-}
-SALE_SUPPLY_BY_LABEL: dict[str, DabangSaleSupplyType] = {
-    '공공분양': 'PUBLIC_SALE',
-    '민간분양': 'PRIVATE_SALE',
-    '공공임대': 'PUBLIC_RENTAL',
-    '민간임대': 'PRIVATE_RENTAL',
-}
 
 
 def _summary(item: DabangSaleItemModel) -> DabangSaleSummary:
@@ -96,7 +78,7 @@ def _summary(item: DabangSaleItemModel) -> DabangSaleSummary:
         price_kind=item.supply_price_type_name,
         **({'deposit_manwon': amount} if item.supply_price_type_name in RENTAL_PRICE_KINDS else {'price_manwon': amount}),
         next_schedule=item.schedule_title,
-        url=sale_url(item.id),
+        url=SALE_URL.format(item.id),
     )
 
 
@@ -229,7 +211,7 @@ def _search_region_sales(
         scope=scope.name if scope.kind == 'national' else f'{scope.name} 안', total=pages.total, returned=len(pages.rows),
         has_more=pages.has_more, presales=[
             DabangSaleSummary(
-                presale_id=item.id, name=item.building_name, **_in_lots_fields(item), next_schedule=item.title, url=sale_url(item.id),
+                presale_id=item.id, name=item.building_name, **in_lots_fields(item), next_schedule=item.title, url=SALE_URL.format(item.id),
             )
             for item in pages.rows
         ],

@@ -16,8 +16,8 @@ from jibsa.providers.dabang.api.response.real_price.trend import (
     DabangChartSeriesModel,
     DabangHighLowModel,
 )
-from jibsa.providers.dabang.service.real_price.base import (
-    _fetch_complex_space,
+from jibsa.providers.dabang.service.real_price.common import (
+    fetch_complex_space,
     primary_space,
 )
 from jibsa.providers.dabang.service.real_price.models import (
@@ -65,7 +65,7 @@ def get_price_trend(client: DabangClient, complex_id: str, *, space_seq: int | N
     if space_seq is None:
         space_seq, space_notes = primary_space(client, complex_id, verb='찾았습니다')
         notes += space_notes
-    result = _fetch_complex_space(
+    result = fetch_complex_space(
         lambda: client.run_request_real_price_complex_charts_v5(
             DabangRealPriceComplexChartsV5RequestParameterModel(complex_id=complex_id, space_seq=space_seq)
         ).result,

@@ -1,7 +1,5 @@
 """학교 (school)."""
 
-import re
-
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import (
     particle,
@@ -26,73 +24,41 @@ from jibsa.providers.daangn.api.response.common import DaangnPageInfoModel
 from jibsa.providers.daangn.api.response.school.school import (
     DaangnSchoolSearchNodeModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
+from jibsa.providers.daangn.service.common.complex import (
+    complex_list_notes,
+    region_complex_of,
+)
+from jibsa.providers.daangn.service.common.constants import (
     COMPLEX_LIST_MAX_LIMIT,
     COMPLEX_TYPE_FILTER_BY_LABEL,
+)
+from jibsa.providers.daangn.service.common.location import coordinate_point
+from jibsa.providers.daangn.service.common.models import DaangnRegionComplex
+from jibsa.providers.daangn.service.common.response import (
     code_label,
-    complex_list_notes,
-    coordinate_point,
     next_cursor,
-    region_complex_of,
     stalled_page,
     unwrap_graphql,
 )
-from jibsa.providers.daangn.service.common.models import DaangnRegionComplex
+from jibsa.providers.daangn.service.school.constants import (
+    COEDU_LABELS,
+    SCHOOL_AMBIGUOUS_SHOWN,
+    SCHOOL_CANDIDATE_LIMIT,
+    SCHOOL_CODE_PATTERN,
+    SCHOOL_KIND_SHORT_NAMES,
+    SCHOOL_NAME_CHECK_MAX_PAGES,
+    SCHOOL_TYPE_LABELS,
+    SCHOOL_URL,
+)
 from jibsa.providers.daangn.service.school.models import (
     DaangnSchool,
     DaangnSchoolResult,
 )
 
 
-# 학교 (당근 웹 표기)
-SCHOOL_TYPE_LABELS: dict[str, str] = {'ELEMENTARY': '초등학교', 'MIDDLE': '중학교', 'HIGH': '고등학교', 'ETC': '기타'}
-
-
-
-COEDU_LABELS: dict[str, str] = {'MALE': '남학교', 'COED': '남녀공학', 'FEMALE': '여학교'}
-
-
-
-# 학교 이름 검색이 한 번에 받는 후보 수. 웹 검색창은 4곳씩 넘기지만 한 번에 더 받는다 ('중앙초등학교' 는 전국에 86곳이다)
-SCHOOL_CANDIDATE_LIMIT: int = 50
-
-
-
-# 이름이 똑같은 학교가 하나뿐일 때 같은 이름이 더 있는지 보려고 검색어마다 받는 쪽 수 (첫 쪽 포함, 50곳씩 150곳). 같은 이름 학교는
-# 첫 쪽 맨 앞에 오지만(2026-11-20 실측: '중앙초등학교' 86곳·2쪽에서 이름이 똑같은 6곳이 모두 첫 쪽 1~6번째, '중앙초' 도 86곳·2쪽)
-# 서버가 늘 그렇게 준다는 보장은 없어, 다음 쪽이 있으면 3쪽까지 보고 그래도 남으면 고르지 않는다 (2026-11-20 사용자 결정)
-SCHOOL_NAME_CHECK_MAX_PAGES: int = 3
-
-
-
-# 학교 코드 (당근·학교알리미, 2026-11-12 실측: 52곳 모두 지역 글자 하나 + 숫자 9자리, 예: B100000749). 소문자로 줘도 코드로
-# 보고 대문자로 바꾼다
-SCHOOL_CODE_PATTERN: re.Pattern[str] = re.compile(r'[A-Za-z]\d{9}')
-
-
-
-# 학교가 여럿일 때 에러에 실을 후보 수
-SCHOOL_AMBIGUOUS_SHOWN: int = 10
-
-
-
-# 학교 종류 이름과 그 줄임. 당근 검색은 '○○초등학교' 로 '서울○○초등학교' 를 찾기도 못 찾기도 해서 줄임으로 한 번 더 찾는다
-# (2026-10-23 실측: '대치초등학교' 0건·'대치초' 서울대치초등학교, '도곡초등학교' 는 경기 광주·화순 도곡초등학교만이고
-# '도곡초' 에는 서울도곡초등학교도 나온다, '역삼초등학교' 는 서울역삼초등학교. 진선여자고·숙명여자중·단국대학교사범대학부속중
-# 처럼 줄인 이름은 시험한 학교 모두 원래 이름의 결과를 포함했다)
-SCHOOL_KIND_SHORT_NAMES: tuple[tuple[str, str], ...] = (('초등학교', '초'), ('중학교', '중'), ('고등학교', '고'))
-
-
-
-def school_url(school_code: str) -> str:
-    return f'https://realty.daangn.com/schools/{school_code}'
-
-
-
 def _searchable(nodes: list[DaangnSchoolSearchNodeModel]) -> list[DaangnSchoolSearchNodeModel]:
     """좌표가 있는 학교만. 당근 웹 검색창도 좌표 없는 학교를 뺀다 (2026-11-12 실측: '중앙초등학교' 50곳 중 1곳)."""
     return [node for node in nodes if coordinate_point(node.coordinate) is not None]
-
 
 
 def _school_page(
@@ -108,7 +74,6 @@ def _school_page(
     return [edge.node for edge in found.edges if edge.node], found.page_info
 
 
-
 def search_school_candidates(client: DaangnClient, name: str) -> tuple[list[DaangnSchoolSearchNodeModel], bool]:
     """이름이 들어간 초·중·고 후보 첫 쪽 (`searchSchools`, 요청 1회). 웹 지도 검색창의 학교 칸이다.
 
@@ -122,7 +87,6 @@ def search_school_candidates(client: DaangnClient, name: str) -> tuple[list[Daan
     """
     nodes, page_info = _school_page(client, name)
     return _searchable(nodes), bool(page_info and page_info.has_next_page)
-
 
 
 def _confirm_unique_name(
@@ -161,14 +125,12 @@ def _confirm_unique_name(
     return True
 
 
-
 def _school_not_found(name: str) -> JibsaError:
     return JibsaError(
         code='NOT_FOUND',
         message=f"당근에서 '{name}' 학교를 찾지 못했습니다",
         hint="당근 학교 이름은 '서울대치초등학교' 처럼 시·도가 붙기도 합니다. '대치초' 처럼 줄이거나 시·도를 붙여 다시 찾으세요",
     )
-
 
 
 def resolve_school(client: DaangnClient, name: str) -> str:
@@ -260,7 +222,6 @@ def resolve_school(client: DaangnClient, name: str) -> str:
         # 다 받지 못했으면 전체 수를 모른다 (모름 → null)
         details={'candidates': shown, 'candidate_count': None if truncated else len(candidates)},
     )
-
 
 
 def get_school(
@@ -398,6 +359,6 @@ def get_school(
         ),
         returned=len(shown),
         complexes=shown if assigned is not None else None,
-        url=school_url(detail.sch_cd),
+        url=SCHOOL_URL.format(detail.sch_cd),
         notes=notes + complex_list_notes(shown),
     )

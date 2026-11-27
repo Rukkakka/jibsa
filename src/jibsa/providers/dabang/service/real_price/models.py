@@ -16,6 +16,7 @@ from jibsa.core.listing import (
     with_floor_number,
 )
 from jibsa.providers.dabang.service.common.models import DabangAreaPrice
+from jibsa.providers.dabang.service.real_price.constants import RealPriceTrade
 
 from typing import (
     Annotated,
@@ -23,8 +24,6 @@ from typing import (
     Literal,
 )
 
-
-RealPriceTrade = Literal['매매', '전월세']
 
 # 매물 실거래 줄의 면적 칸. 단지 실거래는 평형으로 고르므로 면적이 없다(none). 매물 실거래는 웹처럼 다세대·연립(MULTIPLEX)이면
 # 전용면적·층, 그 밖(DETACHED 단독·다가구)이면 연면적·주택유형(매매만)이다 (room 청크 `ii` 가 MULTIPLEX 만 `Kr`, 나머지는 `ei`)

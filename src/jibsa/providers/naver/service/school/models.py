@@ -12,7 +12,7 @@ from jibsa.core.listing import (
     AmountRange,
     Result,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     ASKING_RANGES_DESCRIPTION,
 )
 

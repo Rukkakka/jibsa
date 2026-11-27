@@ -8,12 +8,12 @@ from pydantic import (
 )
 
 from jibsa.core.listing import Result
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.constants import SchoolLevel
+from jibsa.providers.dabang.service.common.models import DabangPlace
+from jibsa.providers.dabang.service.school.constants import (
     ChildcareLevel,
     EducationLevel,
-    SchoolLevel,
 )
-from jibsa.providers.dabang.service.common.models import DabangPlace
 
 from typing import (
     Annotated,

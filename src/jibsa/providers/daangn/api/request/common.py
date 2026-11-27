@@ -4,7 +4,6 @@ from math import isfinite
 
 from pydantic import (
     Field,
-    SerializationInfo,
     field_serializer,
     model_validator,
 )
@@ -15,7 +14,6 @@ from jibsa.core.schema import RequestModel
 
 from typing import (
     Annotated,
-    Any,
     Literal,
     Self,
 )
@@ -198,6 +196,8 @@ class DaangnBoundsLocationFilterModel(RequestModel):
     ]
 
 
+# `request/complex/search.py` 로 옮기지 않는 이유: `_validate_area_household` 가 `DaangnPropertyFilterModel | DaangnComplexFilterModel`
+# 을 함께 받아, 옮기면 `TYPE_CHECKING` import 가 필요하다 (2026-11-27 정리)
 class DaangnComplexFilterModel(RequestModel):
     """지역 단지 목록의 `input.propertyFilter` (웹의 complexFilter).
 
@@ -313,24 +313,3 @@ def is_empty_property_filter(property_filter: DaangnPropertyFilterModel) -> bool
     기본값 모델과 비교해, None 이 아닌 기본값을 가진 필드가 늘어도 빈 조건으로 본다 (2026-11-12 리뷰).
     """
     return property_filter == DaangnPropertyFilterModel()
-
-
-def with_null_property_filter(
-    property_filter: DaangnPropertyFilterModel,
-    data: dict[str, Any],
-    info: SerializationInfo,
-) -> dict[str, Any]:
-    """`input` 모델의 매물 조건이 하나도 없으면 직렬화 결과에 null 로 넣는다 (`input` 모델의 `model_serializer` 용).
-
-    웹은 동 클러스터 목록(`articleByClusterId`)과 지역 거품(`articleClusters`)에 조건이 없으면 `propertyFilter: null` 을 명시해
-    보낸다 (mapQueryFilter 의 atom 이 null, 2026-11-12 번들 대조). GraphQL 은 변수 생략과 null 을 구분할 수 있어 웹과 같게 null
-    을 보낸다. client 가 변수를 `exclude_none` 으로 직렬화해도 여기서 넣은 null 은 남는다. 빈 조건인지(`is_empty_property_filter`)
-    여기서 가려 부르는 쪽은 조건을 그대로 넘긴다. 예전에는 부르는 쪽이 빈 조건을 None 으로 바꿔 넘겨야 해서, 빠뜨리면 빈 필터
-    `{salesTypes: []}` 가 나갔다 (2026-11-12 리뷰. 결과는 같았다: 역삼동 둘레 거품 142개·역삼동 6,426건).
-
-    키 이름은 직렬화하는 이름을 따른다 (alias 면 `propertyFilter`, 아니면 `property_filter`). 늘 `propertyFilter` 로 넣으면 alias
-    없이 직렬화할 때 `property_filter` 와 `propertyFilter: None` 이 함께 나왔다 (2026-11-12 리뷰).
-    """
-    if is_empty_property_filter(property_filter):
-        data['propertyFilter' if info.by_alias else 'property_filter'] = None
-    return data

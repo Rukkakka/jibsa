@@ -48,7 +48,7 @@ class ZigbangDanjisPriceChartRequestParameterModel(RequestModel):
         handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
         data = handler(self)
-        # 웹과 같은 순서(period 다음)로 `addDanjiIds[0]=…` 로 펼친다. `_index_arrays` 는 정해진 키만 펼쳐 쓰지 않는다
+        # 웹과 같은 순서(period 다음)로 `addDanjiIds[0]=…` 로 펼친다. `index_arrays` 는 정해진 키만 펼쳐 쓰지 않는다
         add_danji_ids = data.pop('addDanjiIds', None) or []
         return {**data, **{f'addDanjiIds[{index}]': danji_id for index, danji_id in enumerate(add_danji_ids)}}
 

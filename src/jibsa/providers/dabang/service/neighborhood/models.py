@@ -17,24 +17,12 @@ from jibsa.providers.dabang.service.common.models import (
     DabangListing,
     DabangPlace,
 )
+from jibsa.providers.dabang.service.neighborhood.constants import FIELD_BY_TOPIC
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 출력 키 (주제 라벨 → 결과 필드)
-FIELD_BY_TOPIC: dict[str, str] = {
-    '매물': 'listings',
-    '거래': 'trades',
-    '시세': 'prices',
-    '인구': 'population',
-    '학교': 'schools',
-    '편의': 'amenities',
-    '교통': 'transport',
-    '안전': 'safety',
-}
 
 
 class DabangRank(BaseModel):

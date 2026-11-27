@@ -15,22 +15,19 @@ from jibsa.core.listing import (
     with_floor_number,
 )
 from jibsa.core.schema import drop_unset_fields
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     ASKING_RANGES_DESCRIPTION,
 )
 from jibsa.providers.naver.service.common.models import (
     NaverAssignedSchool,
     NaverMarketBand,
 )
+from jibsa.providers.naver.service.complex.constants import PYEONG_SCOPED_FIELDS
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 단지 요약에서 --pyeong 을 하나만 줄 때만 붙이는 평형 정보
-PYEONG_SCOPED_FIELDS: frozenset[str] = frozenset({'pyeong_manage_cost', 'estimated_prices', 'trade_summary', 'asking_price_per_pyeong'})
 
 
 class NaverPyeong(BaseModel):
@@ -476,7 +473,7 @@ class NaverComplexSummary(Result):
     _pyeong_scoped: bool = PrivateAttr(default=False)
     # 재건축 단지인지. 아니면 reconstruction 은 해당 없음이라 뺀다
     _reconstruction_scoped: bool = PrivateAttr(default=False)
-    # 평당가를 묻는 단지 유형이거나 유형을 모르는지 (`_pyeong_details` 가 키를 넣었는지). 아니면(빌라 등) asking_price_per_pyeong 은 해당 없음이라 뺀다
+    # 평당가를 묻는 단지 유형이거나 유형을 모르는지 (`pyeong_details` 가 키를 넣었는지). 아니면(빌라 등) asking_price_per_pyeong 은 해당 없음이라 뺀다
     _price_per_pyeong_scoped: bool = PrivateAttr(default=False)
     # 평형 묶음을 조회했는지. 빌라 단지는 웹도 묻지 않아 pyeong_groups 는 해당 없음이라 뺀다
     _pyeong_groups_scoped: bool = PrivateAttr(default=False)

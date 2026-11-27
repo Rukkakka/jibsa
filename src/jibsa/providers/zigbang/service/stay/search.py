@@ -27,15 +27,12 @@ from jibsa.providers.zigbang.api.request.stay.base import (
 from jibsa.providers.zigbang.api.request.stay.search import (
     ZigbangGuestItemsMarkersRequestParameterModel,
     ZigbangGuestItemsSearchRequestParameterModel,
-    ZigbangStayBuildingType,
-    ZigbangStayDiscountType,
-    ZigbangStayFloorType,
-    ZigbangStayOption,
-    ZigbangStaySearchSort,
 )
 from jibsa.providers.zigbang.api.response.stay.base import ZigbangStayItemSummaryModel
 from jibsa.providers.zigbang.api.response.stay.search import ZigbangStayMarkerModel
-from jibsa.providers.zigbang.service.common.base import MAX_LIST_LIMIT
+from jibsa.providers.zigbang.service.common.constants import (
+    MAX_LIST_LIMIT,
+)
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangBoundary,
     ZigbangRegion,
@@ -44,10 +41,23 @@ from jibsa.providers.zigbang.service.region import (
     outside_boundary,
     scope_geohashes,
 )
-from jibsa.providers.zigbang.service.stay.base import (
-    STAY_BUILDING_TYPE_LABELS,
-    STAY_OPTION_LABELS,
+from jibsa.providers.zigbang.service.stay.common import (
     stay_summary_to_listing,
+)
+from jibsa.providers.zigbang.service.stay.constants import (
+    STAY_BUILDING_TYPE_BY_LABEL,
+    STAY_BY_IDS_BATCH_SIZE,
+    STAY_DISCOUNT_TYPE_BY_LABEL,
+    STAY_FLOOR_TYPE_BY_LABEL,
+    STAY_GEOHASH_PRECISION,
+    STAY_NARROW,
+    STAY_OPTION_BY_LABEL,
+    STAY_PERIOD_ERRORS,
+    STAY_SERVER_SORTS,
+    STAY_SORT_ORDERS,
+    STAY_SORTS,
+    STAY_SUBWAY_RADIUS_KM,
+    StaySort,
 )
 from jibsa.providers.zigbang.service.stay.models import (
     ZigbangStayConditions,
@@ -56,67 +66,10 @@ from jibsa.providers.zigbang.service.stay.models import (
 
 from typing import (
     Any,
-    Literal,
     TypeVar,
 )
 
 
-# 방 종류·옵션의 표시 이름(STAY_BUILDING_TYPE_LABELS·STAY_OPTION_LABELS)은 상세·목록 줄과 같이 써서 `stay.base` 에 있고, 아래는 그 거꾸로 표다
-STAY_BUILDING_TYPE_BY_LABEL: dict[str, ZigbangStayBuildingType] = {
-    label: code for code, label in STAY_BUILDING_TYPE_LABELS.items()  # type: ignore[misc]
-}
-STAY_OPTION_BY_LABEL: dict[str, ZigbangStayOption] = {
-    label: code for code, label in STAY_OPTION_LABELS.items()  # type: ignore[misc]
-}
-# 직방 웹 층 필터의 다섯 선택지 (2026-11-17). 10층 매물은 2-10층에 들고, 11층이상의 코드는 FLOOR_10_PLUS 다
-# (FLOOR_11_OVER 는 서버가 400 을 준다)
-STAY_FLOOR_TYPE_BY_LABEL: dict[str, ZigbangStayFloorType] = {
-    '지하': 'BASEMENT',
-    '1층': 'FIRST',
-    '2-10층': 'FLOOR_2_10',
-    '11층이상': 'FLOOR_10_PLUS',
-    '옥탑': 'ROOFTOP',
-}
-STAY_DISCOUNT_TYPE_BY_LABEL: dict[str, ZigbangStayDiscountType] = {
-    '장기계약': 'LONG_TERM',
-    '즉시': 'INSTANT',
-}
-STAY_GEOHASH_PRECISION: int = 5
-# 결과가 limit 보다 많을 때 좁히라고 권할 조건. 주 단위 단기임대에는 거래 유형·매물 유형 옵션이 없다
-STAY_NARROW: str = '방 종류·가격·날짜 조건'
-STAY_BY_IDS_BATCH_SIZE: int = 50
-# 웹 정렬 넷과 같다: 추천순(기본), 낮은 가격순, 최근 등록순, 역 가까운 순. 역 가까운 순은 웹도 지하철역 검색에서만 고를 수
-# 있다 (2026-11-15 웹)
-StaySort = Literal['recommended', 'price', 'newest', 'distance']
-STAY_SORTS: tuple[StaySort, ...] = ('recommended', 'price', 'newest', 'distance')
-STAY_SERVER_SORTS: dict[StaySort, ZigbangStaySearchSort] = {
-    'recommended': 'RECOMMENDED',
-    'price': 'PRICE_ASC',
-    'newest': 'NEWEST',
-    'distance': 'STATION_DISTANCE_ASC',
-}
-# limit_notes 의 '… 순으로' 앞말
-STAY_SORT_ORDERS: dict[StaySort, str] = {
-    'recommended': '직방 추천',
-    'price': '주당 임대료·관리비 합계가 낮은',
-    'newest': '최근 등록된',
-    'distance': '역에서 가까운',
-}
-# 역 검색(type=subway)은 직방이 역에서 약 1km 안만 준다 (2026-11-15 실측: 강남역 71건, 가장 먼 것 0.979km)
-STAY_SUBWAY_RADIUS_KM: float = 1.0
-
-# 날짜를 준 검색의 금액·가격순이 기간 비용이 아니라는 안내. 2026-10-31 에이전트 검증: 강남역 4주 가격순 1위를 주당 32만 × 4 =
-# 128만으로 답했지만 청소비·이용료를 더한 실제 결제는 151만 2천이었고, 주당 요금 3위는 기간 비용으로 4위였다. 기간 비용은
-# 웹이 로그인했을 때만 계산해 보여 주어(2026-11-15) jibsa 는 내지 않는다
-STAY_WEEKLY_PRICE_NOTE: str = note(
-    '참고',
-    '목록 금액과 가격순은 주당 임대료+관리비 기준이라 청소비·직방 이용료·장기 할인이 빠져 있습니다. 그 기간에 실제로 내는 돈은 '
-    '직방에 로그인해야 계산해 보여 줘서 jibsa 는 주지 않습니다. 청소비·보증금·할인 조건은 listing stay-… 상세에서 보세요',
-)
-
-
-# 단기임대 검색 API 의 기간 오류. 로컬에서 7~84일을 먼저 막지만 직방이 제한을 바꿔도 소스 장애로 보이지 않게 한다
-STAY_PERIOD_ERRORS: frozenset[str] = frozenset({'MIN_DURATION_VIOLATION', 'MAX_DURATION_VIOLATION'})
 StayResponse = TypeVar('StayResponse')
 StayParameter = TypeVar('StayParameter')
 

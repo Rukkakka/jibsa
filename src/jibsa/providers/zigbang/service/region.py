@@ -42,15 +42,8 @@ from jibsa.providers.zigbang.service.common.models import (
 from typing import Literal
 
 
-# 검색어가 가리키는 곳의 종류. `search complexes` 가 검색어 끝 글자로 가른다 (`query_place_kind`)
-QueryPlaceKind = Literal['역', '학교', '동·구']
-
 # room·store·stay 의 --radius 최대. room·stay 의 동 경계 검색도 이 원보다 지도 칸이 많으면 반경으로 바꾼다 (wide_boundary_note)
 MAX_RADIUS_KM: float = 5.0
-
-# 역 이름으로 역을 찾지 못했을 때 `search complexes` 가 권하는 말 (지역 검색 0건의 REGION_NOT_FOUND 와 역 결과 없음의 INVALID_ARGUMENT 가 같이 쓴다).
-# 이 명령에는 좌표 옵션이 없어 기본 안내(--lat/--lng)를 쓰지 않는다
-STATION_QUERY_HINT: str = "역 이름 전체를 주세요 (예: 강남역). 학교는 '해누리중학교', 동·구는 '가락동'·'송파구' 처럼 주세요"
 
 # 경계를 물을 geohash 정밀도. 7 에서 옆 동이 잡히면 8 로 한 번 더 묻는다
 BOUNDARY_GEOHASH_PRECISIONS: tuple[int, ...] = (7, 8)
@@ -243,7 +236,7 @@ def resolve_region_with_notes(
     return region, [note for note in (wide_note, split_note) if note]
 
 
-def _dong_name(query: str) -> str:
+def dong_name(query: str) -> str:
     """검색어의 마지막 낱말. '○가' 동은 이 이름으로 비교한다.
 
     `settled_item` 이 권하는 대로 구 이름을 앞에 붙여도('성동구 성수동') 직방은 같은 동 후보를 주는데, 검색어 전체로
@@ -266,7 +259,7 @@ def best_region_item(
     찾는다 (2026-10-10 실측). 같은 이름의 지역이 뒤에 있어도 첫 결과를 둔다 (남동 → 남동구, 하동 → 하동군).
     `require_code` 면 법정동코드가 있는 지역만 본다 (아파트 지역 목록은 코드로 부른다).
     """
-    name = _dong_name(query)
+    name = dong_name(query)
     # 리뷰 오탐 (2026-11-22): 지역 화면 명령(region-info·region-trades·region-ranking)이 역·학교·단지 이름을 첫 지역 결과의 다른 동으로
     # 바꾼다는 지적. 직방 지역 검색은 이름이 검색어로 시작하는 결과만 줘서 '잠실역'·'서울역'·'잠실중학교' 는 address 없이 역·학교만 오고
     # '잠실' 은 잠실동과 역·학교가 온다 (2026-11-22 실측). 그래서 완전한 역·학교 이름에 다른 동이 섞이지 않는다
@@ -341,62 +334,6 @@ def resolve_region_scope(
     )
 
 
-def query_place_kind(query: str) -> QueryPlaceKind:
-    """검색어(마지막 낱말)의 끝 글자로 역('…역')·학교('…학교')·그 밖(동·구)을 가른다.
-
-    `search complexes` 가 무엇의 주변 단지인지 정하려고 쓴다. 이름을 찾아보기 전에 정해야 지역 검색을 한 번만 부르고, 동·구에
-    받지 않는 조건을 요청 전에 막을 수 있다.
-    """
-    name = _dong_name(query)
-    if name.endswith('역'):
-        return '역'
-    if name.endswith('학교'):
-        return '학교'
-    return '동·구'
-
-
-def resolve_station(client: ZigbangClient, query: str) -> ZigbangSearchItemModel | None:
-    """역 이름을 역 검색 결과 하나로 바꾼다 (search complexes 의 역 경로). 검색어(마지막 낱말)와 이름이 같은 역이 없으면 None.
-
-    다른 검색처럼 지역(address) 결과를 먼저 고르면, 동 이름('신사동')에 같은 이름 동의 `REGION_AMBIGUOUS` 를 내고 그 힌트
-    ('은평구 신사동')를 따르면 '역이 아닙니다' 가 됐다 (2026-11-16 리뷰). 역 결과만 보고, 같은 이름 역이 여럿이면 다른
-    검색과 같이 멈춘다 ('창천동 신촌역' 은 검색어 앞 낱말로 가린다). 이 경로는 역 ID·이름·주소만 써서 지역(`ZigbangRegion`)으로
-    바꾸지 않는다. 직방이 좌표를 주지 않은 역도 찾는다.
-
-    Raises:
-        RegionNotFoundError: 결과가 하나도 없을 때 (`STATION_QUERY_HINT`. 이 명령에는 좌표 옵션이 없다).
-        RegionAmbiguousError: 같은 이름의 역이 여러 곳일 때 (`settled_item`).
-    """
-    items = search_regions(client, query)
-    if not items:
-        raise RegionNotFoundError(query, hint=STATION_QUERY_HINT)
-    name = _dong_name(query)
-    station = next((item for item in items if item.type == 'subway' and item.name == name), None)
-    return settled_item(query, items, station) if station else None
-
-
-def resolve_school(client: ZigbangClient, query: str) -> ZigbangSearchItemModel:
-    """학교 이름을 학교 하나로 바꾼다 (search complexes 의 학교 경로). 검색어(마지막 낱말)와 이름이 같은 학교를 찾는다.
-
-    학교 화면 코드(`source.school_code`)는 '아파트' 서비스로 찾은 결과에 있어 (2026-11-19 실측: 해누리중학교) 그 서비스로 찾는다.
-    같은 이름 학교가 여러 곳이면 다른 검색처럼 멈춘다 (`settled_item`, 검색어 앞 낱말로 한 곳이 가려지면 그 학교).
-    결과의 `id` 는 학교 목록 번호이고 학교 코드와 다르다. 직방이 이 번호를 다시 매기는 일이 있어 배정단지 목록에는 쓰지 않고,
-    부르는 쪽이 학교 코드로 학교 정보를 받아 그 `detail.id` 를 쓴다 (웹 학교 화면과 같다). 아파트 서비스 검색에는 대학교가 나오지
-    않아(`search_regions_and_complexes`) 대학교 이름은 찾지 못한다. 좌표 없는 같은 이름 학교도 후보로 센다 (`search_regions` 는
-    좌표를 거르지 않는다). 학교 코드만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
-
-    Raises:
-        RegionNotFoundError: 그 이름의 초·중·고등학교가 없을 때.
-        RegionAmbiguousError: 같은 이름의 학교가 여러 곳일 때 (`settled_item`).
-    """
-    items = search_regions(client, query, service_type='아파트')
-    name = _dong_name(query)
-    school = next((item for item in items if item.type == 'school' and item.name == name), None)
-    if school is None:
-        raise RegionNotFoundError(query, hint="초등학교·중학교·고등학교 이름 전체를 주세요 (예: '해누리중학교'). 대학교는 받지 않습니다")
-    return settled_item(query, items, school)
-
-
 def ga_dong_siblings(
     query: str,
     items: list[ZigbangSearchItemModel],
@@ -409,7 +346,7 @@ def ga_dong_siblings(
     이름·주소가 같은 중복 결과는 한 동으로 줄이고 좌표 있는 쪽을 남긴다 (`_located_first`, 순서는 처음 나온 자리). 줄이지
     않으면 room·store 가 같은 동을 두 번 합치거나 좌표 없는 쪽에 멈춘다.
     """
-    name = _dong_name(query)
+    name = dong_name(query)
     if best.type != 'address' or not name.endswith('동') or not best.description:
         return []
     parent = best.description.rsplit(' ', 1)[0]
@@ -432,7 +369,7 @@ def ga_dong_split(
 ) -> list[ZigbangSearchItemModel]:
     """함께 찾을 '○가' 동 (검색 중심 포함). 검색어와 같은 이름의 동이 따로 있거나(당산동) 고른 지역이 '○가' 동이
     아니면 [] 라 그 동만 찾는다."""
-    return [] if best.name == _dong_name(query) or best not in siblings else siblings
+    return [] if best.name == dong_name(query) or best not in siblings else siblings
 
 
 def ga_dong_note(
@@ -455,7 +392,7 @@ def ga_dong_note(
         return '·'.join(values) if len(values) <= 3 else f'{values[0]}~{values[-1]}'
 
     # '○가' 로 끝나 조사는 받침 없는 꼴(는·를·로)로 고정한다
-    if best.name == _dong_name(query):
+    if best.name == dong_name(query):
         return note(
             '범위',
             f'이번 검색은 {best.name}만 찾았습니다. {span(others)}는 따로 있는 동이라 빠졌습니다. '
@@ -483,7 +420,7 @@ def city_gu_items(
     동은 그 뒤, '성남' 아파트는 분당구 283건만 찾았다). 검색 중심이 '<이름>시 ○구' 가 아니면
     (동 이름 등 다른 뜻) 그대로 [] 다.
     """
-    city = _dong_name(query)
+    city = dong_name(query)
     if not city.endswith('시'):
         city += '시'
     if not (best.name or '').startswith(f'{city} ') or not best.description:
@@ -703,13 +640,6 @@ def merge_dong_boundaries(client: ZigbangClient, regions: list[ZigbangRegion]) -
         code=boundaries[0].code,
         polygons=[polygon for boundary in boundaries for polygon in boundary.polygons],
     )
-
-
-def to_int(value: str | None) -> int | None:
-    try:
-        return int(value) if value not in (None, '') else None
-    except ValueError:
-        return None
 
 
 def dong_boundary(client: ZigbangClient, region: ZigbangRegion) -> ZigbangBoundary | None:

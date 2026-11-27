@@ -21,20 +21,24 @@ from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import DaangnExclusiveUseAreaModel
 from jibsa.providers.daangn.api.request.real_price.trend import (
     DaangnComplexPriceChartRequestPayloadModel,
-    DaangnPriceChartTradeType,
 )
 from jibsa.providers.daangn.api.response.real_price.trend import (
     DaangnPriceChartModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
+from jibsa.providers.daangn.service.common.complex import (
     compare_column,
-    complex_url,
     is_year_month,
     pyeong_null_items,
-    unwrap_graphql,
 )
-from jibsa.providers.daangn.service.real_price.base import (
-    choose_pyeong,
+from jibsa.providers.daangn.service.common.constants import COMPLEX_URL
+from jibsa.providers.daangn.service.common.response import unwrap_graphql
+from jibsa.providers.daangn.service.real_price.common import choose_pyeong
+from jibsa.providers.daangn.service.real_price.constants import (
+    PRICE_CHART_TRADE_BY_TRADE_TYPE,
+    PRICE_TREND_FEW_TRANSACTIONS,
+    PRICE_TREND_PERIODS,
+    PRICE_TREND_RECENT_MONTHS,
+    PRICE_TREND_STALE_MONTHS,
 )
 from jibsa.providers.daangn.service.real_price.models import (
     DaangnChartEstimatedPrices,
@@ -48,32 +52,6 @@ from typing import (
     Literal,
     cast,
 )
-
-
-# 단지 시세 추이의 거래 유형 (라벨 → 당근 값). 차트는 매매·전세만 있다. 변화율은 웹처럼 기간의 첫 거래 달과 마지막 거래 달을
-# 견주고(`get_price_trend`), 그 달의 거래가 적으면 `PRICE_TREND_FEW_TRANSACTIONS` 로 알린다
-PRICE_CHART_TRADE_BY_TRADE_TYPE: dict[str, DaangnPriceChartTradeType] = {'매매': 'BUY', '전세': 'BORROW'}
-
-
-
-# 시세 추이 기간: 당근 웹 시세 그래프의 탭 (1년·3년·전체, PriceChart `X`). 전체는 쿼리가 받는 15년(180개월)이다
-PRICE_TREND_PERIODS: dict[str, int] = {'1년': 12, '3년': 36, '전체': 180}
-
-
-
-# 웹 그래프 머리의 '최근 3개월 평균': 이번 달과 그 전 3개월 (4개 달)
-PRICE_TREND_RECENT_MONTHS: int = 3
-
-
-
-# 마지막 거래가 이만큼 지났으면 오래된 시세라고 알린다
-PRICE_TREND_STALE_MONTHS: int = 6
-
-
-
-# 비교하는 달의 거래가 이보다 적으면 변화율이 튈 수 있다고 알린다
-PRICE_TREND_FEW_TRANSACTIONS: int = 3
-
 
 
 def estimated_prices_of(chart: DaangnPriceChartModel | None) -> DaangnChartEstimatedPrices | None:
@@ -139,7 +117,7 @@ def get_price_trend(
             period=cast(Literal['1년', '3년', '전체'], period),
             total_trade_count=0,
             months=[],
-            url=complex_url(complex_id),
+            url=COMPLEX_URL.format(complex_id),
             notes=[note(
                 '참고',
                 "당근에 이 단지 평형 묶음 정보가 없어 당근 웹도 시세 그래프 없이 '아직 등록된 실거래가가 없어요' 로 보여 줍니다",
@@ -282,6 +260,6 @@ def get_price_trend(
         total_trade_count=sum(monthly[index][1] for index in shown) if not no_graph and not dropped and not unreadable else None,
         summary=summary,
         months=points if not no_graph else None,
-        url=complex_url(complex_id),
+        url=COMPLEX_URL.format(complex_id),
         notes=notes + pyeong_notes,
     )

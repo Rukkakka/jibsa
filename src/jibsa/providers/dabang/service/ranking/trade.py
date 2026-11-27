@@ -7,28 +7,20 @@ from jibsa.core.listing import (
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.ranking.trade import (
     DabangRealPriceTradeRankingsComplexV5RequestParameterModel,
-    DabangTradeBaseOn,
 )
-from jibsa.providers.dabang.service.common.functions import (
-    COMPLEX_TYPE_BY_LABEL,
+from jibsa.providers.dabang.service.common.constants import COMPLEX_TYPE_BY_LABEL
+from jibsa.providers.dabang.service.common.text import (
     building_years,
     household_count,
+)
+from jibsa.providers.dabang.service.ranking.constants import (
+    PREVIOUS_TRADE_PERIOD,
+    TRADE_PERIOD_BY_LABEL,
 )
 from jibsa.providers.dabang.service.ranking.models import (
     DabangTradeRanking,
     DabangTradeRankings,
 )
-
-
-TRADE_PERIOD_BY_LABEL: dict[str, DabangTradeBaseOn] = {
-    '이번주': 'CURRENT_WEEK',
-    '지난주': 'LAST_WEEK',
-    '이번달': 'CURRENT_MONTH',
-    '지난달': 'LAST_MONTH',
-    '올해': 'CURRENT_YEAR',
-}
-# 막 시작한 기간은 다방이 아직 세지 않아 순위가 빈다 (2026-10-26 월 아침 실측: 이번주 0곳, 지난주·이번달은 있음). 비면 권할 기간
-PREVIOUS_TRADE_PERIOD: dict[str, str] = {'이번주': '지난주', '이번달': '지난달', '올해': '지난달'}
 
 
 def get_trade_rankings(

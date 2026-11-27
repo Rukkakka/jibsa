@@ -48,16 +48,15 @@ from jibsa.providers.zigbang.api.response.room.detail import (
     ZigbangBlsSchoolZonesV1ResponseModel,
     ZigbangItemDetailModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     DIRECTION_LABELS,
+    HUG_BADGE,
     NEAREST_SCHOOLS,
     OPTIONAL_LOOKUP_ERRORS,
-    item_url,
+    VERIFICATION_BADGE,
+)
+from jibsa.providers.zigbang.service.common.ids import (
     officetel_complex_id,
-    school_label,
-    sent_or_none,
-    text_or_none,
-    unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangBuildingTrade,
@@ -65,20 +64,41 @@ from jibsa.providers.zigbang.service.common.models import (
     ZigbangNearbyFacility,
 )
 from jibsa.providers.zigbang.service.common.room import (
-    HUG_BADGE,
-    VERIFICATION_BADGE,
     badge_flag,
+    item_url,
     trade_type_of,
 )
-from jibsa.providers.zigbang.service.region import to_int
+from jibsa.providers.zigbang.service.common.text import (
+    school_label,
+    sent_or_none,
+    text_or_none,
+    to_int,
+)
+from jibsa.providers.zigbang.service.common.unavailable import (
+    unavailable_on_404,
+)
+from jibsa.providers.zigbang.service.room.constants import (
+    APT_DETAIL_NOT_SUPPORTED_CODE,
+    BUILDING_TRADE_TYPES,
+    CAR_LABEL,
+    CAR_TRANSPORT,
+    ETC_MANAGE_COST_LABEL,
+    FIXED_MANAGE_COST_TYPE,
+    LEGACY_PARKING_AVAILABLE,
+    MANAGE_COST_METHOD_ETC_CODE,
+    MANAGE_COST_METHOD_LABELS,
+    MANAGE_COST_PERIOD_ETC_CODE,
+    MANAGE_COST_PERIOD_LABELS,
+    MANAGE_COST_UNINFORMED_CODE,
+    NORMAL_MANAGE_COST_LABEL,
+    UNKNOWN_MANAGE_COST_TYPE,
+    WALKING_LABEL,
+)
 
 
-# 기존 상세(/v3/items)의 주차 문장과 가능 여부
-LEGACY_PARKING_AVAILABLE: dict[str, bool] = {'주차 가능': True, '주차 불가능': False, '주차 불가': False}
-# 새 주거 상세가 아파트 매물에 주는 404 의 본문 code. 없는 매물의 404 는 code 가 없다 (2026-11-15 실측)
-APT_DETAIL_NOT_SUPPORTED_CODE: str = 'ITEM_QUERY_DETAIL_SERVICE_TYPE_NOT_SUPPORTED'
 # 정액 관리비 사용료 항목 (관리비 포함 항목 include 가 쓰는 이름, 응답에서 그 항목을 꺼내는 함수). 순서는 웹 매물 화면의
 # 순서라 응답 모델의 필드 순서와 다르다. 필드를 직접 읽어 이름이 어긋나면 mypy 가 잡는다
+# constants.py 로 옮기지 않는다: 값에 람다(응답에서 항목을 꺼내는 함수)가 들어 있다 (2026-11-27 정리)
 USAGE_FEES: tuple[tuple[str, Callable[[ZigbangManageCostUsageFeeModel], ZigbangManageCostEntryModel | None]], ...] = (
     ('전기', lambda usage: usage.electricity),
     ('수도', lambda usage: usage.water),
@@ -87,41 +107,13 @@ USAGE_FEES: tuple[tuple[str, Callable[[ZigbangManageCostUsageFeeModel], ZigbangM
     ('인터넷', lambda usage: usage.internet),
     ('TV', lambda usage: usage.tv),
 )
-NORMAL_MANAGE_COST_LABEL: str = '일반(공용) 관리비'
-ETC_MANAGE_COST_LABEL: str = '기타 관리비'
 # 웹 매물 화면의 관리비 항목 순서 (`getFixedManageCostDetailKeys`, 2026-11-15 번들). 웹은 include 목록도 이 이름 순서로
 # 정렬하고, 이 이름이 아니면 원래 순서대로 뒤에 둔다. 웹의 기타 관리비 이름은 붙여 쓴 '기타관리비' 라, include 에
 # 띄어 써 오는 '기타 관리비' 는 맨 뒤로 간다 (2026-11-15 실측: 50905571 의 include 가 일반·기타·인터넷·TV 순)
+# constants.py 로 옮기지 않는다: USAGE_FEES 에서 만든 값이라 같은 파일에 있어야 한다 (constants 가 room/detail 을 가져올 수 없다) (2026-11-27 정리)
 MANAGE_COST_ORDER: dict[str, int] = {
     name: index for index, name in enumerate((NORMAL_MANAGE_COST_LABEL, *(label for label, _ in USAGE_FEES), '기타관리비'))
 }
-FIXED_MANAGE_COST_TYPE: str = 'FixedManageCost'
-UNKNOWN_MANAGE_COST_TYPE: str = 'UnknownManageCost'
-# 관리비 부과 기준(`manageCostCriteria`)·부과 방식(`basis`) 코드 → 웹 문구 (2026-11-19 번들 `_app` 의 코드표 그대로). 코드 '04'(기준)·'07'(방식)은
-# 중개사가 직접 쓴 글자(`manageCostCriteriaEtcDescription`·`basisEtcDescription`)를 웹이 그대로 보여 준다. 표에 없는 코드는 모름(null)으로 둔다
-MANAGE_COST_PERIOD_LABELS: dict[str, str] = {
-    '01': '직전 월 관리비 기준',
-    '02': '최근 3개월 관리비 평균',
-    '03': '최근 1년 관리비 평균',
-}
-MANAGE_COST_PERIOD_ETC_CODE: str = '04'
-MANAGE_COST_METHOD_LABELS: dict[str, str] = {
-    '01': '관리규약에 따라 부과해요.',
-    '02': '공용관리비는 면적/세대별로 부과하고, 사용료는 사용량에 따라 부과해요.',
-    '03': '전체 사용량을 세대수로 나누어 부과해요.',
-    '04': '세대별 사용량(별도 계량기)에 따라 부과해요.',
-    '05': '중개 의뢰인이 세부내역을 고지하지 않아 전세입자 등을 통해 추정된 관리비를 안내해요.',
-    '06': '관리비 월 10만원 미만이에요.',
-}
-MANAGE_COST_METHOD_ETC_CODE: str = '07'
-# 정액 관리비가 항목별 내역을 알리지 않았을 때 웹이 보여 주는 설명의 방식 코드 (`renderManageCostData` 가 `I.gW["05"]` 를 쓴다)
-MANAGE_COST_UNINFORMED_CODE: str = '05'
-# 주변 시설의 이동 수단. 웹(`mapTransportType`)은 'car' 만 차로 보고 'foot' 과 모르는 값은 도보로 그린다
-CAR_TRANSPORT: str = 'car'
-WALKING_LABEL: str = '도보'
-CAR_LABEL: str = '차'
-# 건물 실거래의 거래 유형 (직방 `sales_type`). 그 밖의 값이면 거래 유형을 모름(null)으로 둔다
-BUILDING_TRADE_TYPES: tuple[str, ...] = ('매매', '전세', '월세')
 
 
 def _distance_text(meters: int | None) -> str | None:

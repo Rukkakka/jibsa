@@ -5,29 +5,27 @@ from jibsa.core.listing import (
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
 from jibsa.providers.dabang.api.request.neighborhood.hot_places import (
-    DabangHotPlaceType,
     DabangRegionInfoHotPlacesV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.neighborhood.hot_places import (
     DabangHotPlaceModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
-    REGION_INFO_MAX_LIMIT,
-    DabangPage,
+from jibsa.providers.dabang.service.common.constants import REGION_INFO_MAX_LIMIT
+from jibsa.providers.dabang.service.common.models import DabangPage
+from jibsa.providers.dabang.service.common.paging import (
     fetch_pages,
     region_info_list_notes,
 )
-from jibsa.providers.dabang.service.neighborhood.base import _base_month
+from jibsa.providers.dabang.service.neighborhood.common import base_month
+from jibsa.providers.dabang.service.neighborhood.constants import (
+    HOT_PLACE_GUIDE_LABELS,
+    HOT_PLACE_TYPE_BY_LABEL,
+)
 from jibsa.providers.dabang.service.neighborhood.models import (
     DabangHotPlace,
     DabangHotPlacesResult,
 )
-from jibsa.providers.dabang.service.region.functions import DabangDong
-
-
-# 핫플레이스 가이드 고르기 (웹 이름표 → 요청 값, hot-place 청크 2026-11-13)와 줄의 가이드 이름표
-HOT_PLACE_TYPE_BY_LABEL: dict[str, DabangHotPlaceType] = {'전체': 'ALL', '미쉐린': 'MICHELIN_GUIDE', '블루리본': 'BLUE_RIBBON'}
-HOT_PLACE_GUIDE_LABELS: dict[str, str] = {value: label for label, value in HOT_PLACE_TYPE_BY_LABEL.items() if value != 'ALL'}
+from jibsa.providers.dabang.service.region.models import DabangDong
 
 
 def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, limit: int) -> DabangHotPlacesResult:
@@ -63,7 +61,7 @@ def get_hot_places(client: DabangClient, dong: DabangDong, *, type_label: str, l
         region=place,
         type=type_label,
         basis="다방 동네정보 '핫플레이스': 미쉐린·블루리본 가이드에 오른 식당 (출처 미쉐린·블루리본)",
-        base_month=_base_month(update_dates),
+        base_month=base_month(update_dates),
         total=pages.total,
         returned=len(places),
         has_more=pages.has_more,

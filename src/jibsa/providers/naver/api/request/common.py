@@ -113,23 +113,6 @@ class NaverComplexPyeongRequestParameterModel(NaverComplexRequestParameterModel)
     ]
 
 
-class NaverComplexPyeongV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
-    """`GET /front-api/v1/complex/pyeong` 쿼리. 평형 하나의 상세 (현관 구조·방향·세대수 등)."""
-
-
-class NaverLegalDivisionSearchByCoordinateV1RequestParameterModel(RequestModel):
-    """`GET /front-api/v1/legalDivision/searchByCoordinate` 쿼리."""
-
-    longitude: Annotated[
-        float,
-        Field(ge=-180, le=180, description='경도')
-    ]
-    latitude: Annotated[
-        float,
-        Field(ge=-90, le=90, description='위도')
-    ]
-
-
 class NaverPriceFilterModel(RequestModel):
     """단지 매물 목록·재개발 구역 매물 목록·구역 매물 집계가 공유하는 가격 키 (원, 경계 포함)."""
 

@@ -18,26 +18,22 @@ from jibsa.providers.daangn.api.response.common import (
     DaangnArticleModel,
     DaangnSubwayStationModel,
 )
-from jibsa.providers.daangn.service.common.functions import article_to_listing
+from jibsa.providers.daangn.service.common.listing import article_to_listing
 from jibsa.providers.daangn.service.common.models import DaangnListingConditions
-from jibsa.providers.daangn.service.commute.functions import search_commute
-from jibsa.providers.daangn.service.complex.base import (
-    search_complexes,
-)
-from jibsa.providers.daangn.service.complex.detail import (
-    list_complex_listings,
-)
+from jibsa.providers.daangn.service.commute.commute import search_commute
+from jibsa.providers.daangn.service.complex.common import search_complexes
+from jibsa.providers.daangn.service.complex.listings import list_complex_listings
 from jibsa.providers.daangn.service.complex.search import (
     list_region_complexes,
 )
-from jibsa.providers.daangn.service.listing.functions import (
+from jibsa.providers.daangn.service.listing.listing import (
     detail_to_listing,
     get_listing,
 )
 from jibsa.providers.daangn.service.real_price.complex import (
     get_real_prices,
 )
-from jibsa.providers.daangn.service.region.functions import resolve_area
+from jibsa.providers.daangn.service.region.area import resolve_area
 
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'daangn'
@@ -109,7 +105,7 @@ def _feed_payloads(requests: list[httpx.Request]) -> list[dict]:
 
 def _feed_articles() -> list:
     """피드 픽스처의 매물 6건 (역삼동 5건·논현동 1건, 모두 판매중)."""
-    from jibsa.providers.daangn.api.response.search import (
+    from jibsa.providers.daangn.api.response.search.map import (
         DaangnArticleFeedResponseModel,
     )
 
@@ -128,7 +124,7 @@ def _yeoksam_area():
 
 
 def _cluster_page(articles: list, first: int, *, has_next: bool = False, errors: list | None = None):
-    from jibsa.providers.daangn.api.response.search import (
+    from jibsa.providers.daangn.api.response.search.map import (
         DaangnArticleByClusterIdResponseModel,
     )
 
@@ -143,7 +139,7 @@ def _dong_client(articles: list, *, count: int | None = 30, payloads: list | Non
     """동 클러스터 목록은 `articles` (또는 GraphQL `errors`), 동 거품 수는 `count` 를 주는 가짜 client. count 가 None 이면 수 조회가 실패한다."""
     from types import SimpleNamespace
 
-    from jibsa.providers.daangn.api.response.search import (
+    from jibsa.providers.daangn.api.response.search.map import (
         DaangnArticleClustersResponseModel,
     )
 
@@ -165,11 +161,9 @@ def _dong_client(articles: list, *, count: int | None = 30, payloads: list | Non
 
 # 동 매물은 조건이 있든 없든 웹 지도에서 동을 누른 목록(articleByClusterId)으로 받고, 수는 그 동 거품의 수다
 def test_dong_search_uses_web_cluster_list_and_bubble_count() -> None:
-    from jibsa.providers.daangn.service.common.functions import map_view_bounds
-    from jibsa.providers.daangn.service.search.functions import (
-        REGION_CLUSTER_ZOOM,
-        search_dong,
-    )
+    from jibsa.providers.daangn.service.common.location import map_view_bounds
+    from jibsa.providers.daangn.service.search.constants import REGION_CLUSTER_ZOOM
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     area = _yeoksam_area()
     feed = article_feed()['data']['articleFeed']
@@ -213,10 +207,10 @@ def test_dong_search_uses_web_cluster_list_and_bubble_count() -> None:
 # 동 목록은 매물이 남았는데도 hasNextPage 를 false 로 준다 (2026-11-12 실측: 홍천군 내면 26건이 20건 쪽에서 false). 쪽이 꽉 차면
 # 다음 쪽도 받고, 받은 수가 동 거품 수에 닿으면 더 없다고 한다
 def test_dong_search_reads_past_false_has_next_page() -> None:
-    from jibsa.providers.daangn.api.response.search import (
+    from jibsa.providers.daangn.api.response.search.map import (
         DaangnArticleByClusterIdResponseModel,
     )
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     template = _feed_articles()[0]
     articles = [template.model_copy(update={'original_id': str(9000000 + index)}) for index in range(26)]
@@ -249,7 +243,7 @@ def test_dong_search_reads_past_false_has_next_page() -> None:
 
 def test_dong_search_continues_when_count_fails() -> None:
     # 수 조회가 실패해도 검색은 하고, 모르는 수는 내지 않는다
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     result = search_dong(_dong_client(_yeoksam_articles(), count=None), _yeoksam_area())
     assert result.listings
@@ -259,7 +253,7 @@ def test_dong_search_continues_when_count_fails() -> None:
 
 def test_dong_count_rate_limit_keeps_received_listings() -> None:
     # 수는 매물을 받은 뒤 세어, 요청 제한을 올리면 받은 매물까지 잃는다 (2026-11-12 리뷰)
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     client = _dong_client(_yeoksam_articles())
     client.run_request_article_clusters = _rate_limited
@@ -270,7 +264,7 @@ def test_dong_count_rate_limit_keeps_received_listings() -> None:
 
 def test_dong_graphql_error_is_upstream_error() -> None:
     from jibsa.core.errors import JibsaError
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     with pytest.raises(JibsaError) as exc:
         search_dong(_dong_client([], errors=[{'message': '알 수 없는 오류가 발생했어요'}]), _yeoksam_area())
@@ -279,7 +273,7 @@ def test_dong_graphql_error_is_upstream_error() -> None:
 
 
 def test_dong_budget_does_not_refill_expired_articles() -> None:
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     template = _feed_articles()[0]
     articles = [
@@ -297,7 +291,7 @@ def test_dong_budget_does_not_refill_expired_articles() -> None:
 
 
 def test_dong_search_excludes_invisible_and_keeps_reserved() -> None:
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     articles = _feed_articles()
     blocked = articles[0].model_copy(update={'invisible_infos': [{'__typename': 'CheckDenyInvisibleInfo'}]})
@@ -321,7 +315,7 @@ def _not_found(_) -> None:
 # 시·도 채우기는 주소를 다듬는 보조 조회라, 요청 제한에 걸려도 받아 둔 매물을 버리지 않는다
 @pytest.mark.parametrize('lookup', [_not_found, _rate_limited])
 def test_missing_sido_stays_when_lookup_fails(lookup) -> None:
-    from jibsa.providers.daangn.service.search.functions import search_dong
+    from jibsa.providers.daangn.service.search.map import search_dong
 
     article = _feed_articles()[0]
     neighbor = article.region.model_copy(update={'name1': None, 'name2': '고양시 덕양구', 'name3': '향동동'})
@@ -340,7 +334,7 @@ def test_missing_sido_stays_when_lookup_fails(lookup) -> None:
 ])
 def test_trade_of_picks_by_trade_type_like_web(conditions: dict, expected: str) -> None:
     from jibsa.providers.daangn.api.response.common import DaangnTradeModel
-    from jibsa.providers.daangn.service.common.functions import trade_of
+    from jibsa.providers.daangn.service.common.listing import trade_of
 
     article = _feed_articles()[3].model_copy(update={
         'trades': [
@@ -474,7 +468,7 @@ def test_same_name_dong_hint_resolves_when_reentered() -> None:
 
 def test_unavailable_articles_are_excluded() -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.daangn.service.common.functions import is_available
+    from jibsa.providers.daangn.service.common.listing import is_available
 
     articles = _feed_articles()
     traded = articles[0].model_copy(update={'status': 'TRADED'})
@@ -646,8 +640,8 @@ REJECTED = {'errors': [{'message': 'PersistedQueryNotFound', 'extensions': {'cod
 
 # 웹 지도 목록과 같이 데스크톱 화면 범위와 줌의 resolution 을 보내고, 순서를 바꾸지 않는다
 def test_map_area_sends_web_view_bounds_and_keeps_order() -> None:
-    from jibsa.providers.daangn.service.common.functions import map_view_bounds
-    from jibsa.providers.daangn.service.search.functions import search_map_area
+    from jibsa.providers.daangn.service.common.location import map_view_bounds
+    from jibsa.providers.daangn.service.search.map import search_map_area
 
     requests: list[httpx.Request] = []
     with make_graphql_client(requests=requests) as client:
@@ -662,8 +656,8 @@ def test_map_area_sends_web_view_bounds_and_keeps_order() -> None:
 
 
 def test_map_area_rejected_feed_query_raises() -> None:
-    from jibsa.providers.daangn.service.common.functions import FeedQueryRejectedError
-    from jibsa.providers.daangn.service.search.functions import search_map_area
+    from jibsa.providers.daangn.service.common.response import FeedQueryRejectedError
+    from jibsa.providers.daangn.service.search.map import search_map_area
 
     with make_graphql_client({DaangnClient.article_feed_query_id: REJECTED}) as client:
         with pytest.raises(FeedQueryRejectedError):
@@ -673,7 +667,7 @@ def test_map_area_rejected_feed_query_raises() -> None:
 # 첫 결과가 동을 못 찾았으면(region None) 역·대학 주변 목록처럼 이어 받기에서 다시 찾는다. 매물 수는 다시 세지 않는다
 # (첫 결과의 좌표 → 동 조회 실패는 실제 API 로 만들 수 없다)
 def test_map_area_resume_finds_missing_region_again() -> None:
-    from jibsa.providers.daangn.service.search.functions import search_map_area
+    from jibsa.providers.daangn.service.search.map import search_map_area
 
     requests: list[httpx.Request] = []
     with make_graphql_client(requests=requests) as client:
@@ -709,7 +703,7 @@ def _same_name_stations_client(requests: list[httpx.Request]) -> DaangnClient:
 
 # 같은 이름의 역은 웹 역 화면처럼 첫 역을 쓰고 다른 역을 알린다. 안내에 나온 노선 붙인 이름을 주면 그 역을 고른다
 def test_same_name_station_is_noted_and_line_picks_it() -> None:
-    from jibsa.providers.daangn.service.region.functions import (
+    from jibsa.providers.daangn.service.region.station import (
         find_station,
         same_station_notes,
     )
@@ -1124,7 +1118,7 @@ def test_complex_listings_null_articles_after_next_page_stops_with_notice() -> N
 
 def test_search_station_counts_received_cards_and_keeps_walk_minutes() -> None:
     from jibsa.providers.daangn.service.region.models import DaangnStation
-    from jibsa.providers.daangn.service.search.functions import search_station
+    from jibsa.providers.daangn.service.search.around import search_station
 
     page = fixture('subway_station_article_connection')
     sent: list[dict] = []
@@ -1329,7 +1323,7 @@ def test_preschool_survey_responses_default_to_zero_like_web() -> None:
 
 
 def test_bounds_complexes_send_map_view_bounds_instead_of_cluster() -> None:
-    from jibsa.providers.daangn.service.common.functions import map_view_bounds
+    from jibsa.providers.daangn.service.common.location import map_view_bounds
     from jibsa.providers.daangn.service.complex.search import (
         list_bounds_complexes,
     )
@@ -1363,7 +1357,7 @@ def test_find_address_resolves_one_candidate_and_refuses_many() -> None:
         RegionAmbiguousError,
         RegionNotFoundError,
     )
-    from jibsa.providers.daangn.service.region.functions import find_address
+    from jibsa.providers.daangn.service.region.address import find_address
 
     def candidate(number: int) -> dict:
         return {'regionAddress': f'서울특별시 강남구 역삼동 {number} 테스트빌딩', 'roadAddress': f'서울특별시 강남구 테스트로 {number} (역삼동)',
@@ -1406,7 +1400,7 @@ def test_null_items_make_computed_values_unknown() -> None:
     from datetime import date
 
     from jibsa.providers.daangn.service.common.models import DaangnRegion
-    from jibsa.providers.daangn.service.popular.functions import list_popular_listings
+    from jibsa.providers.daangn.service.popular.popular import list_popular_listings
     from jibsa.providers.daangn.service.real_price.trend import (
         get_price_trend,
     )

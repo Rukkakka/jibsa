@@ -12,7 +12,6 @@ from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.common import (
     DabangAptFiltersModel,
     DabangBboxModel,
-    DabangComplexCategory,
     DabangOfficetelFiltersModel,
     DabangSearchType,
 )
@@ -22,31 +21,33 @@ from jibsa.providers.dabang.api.request.complex.search import (
 from jibsa.providers.dabang.api.response.complex.search import (
     DabangComplexListItemModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.bbox import bbox_of
+from jibsa.providers.dabang.service.common.constants import (
     COMPLEX_KIND_BY_TYPE,
     MAX_LIST_LIMIT,
     ZOOM_BY_SEARCH_TYPE,
     ComplexKind,
-    DabangPage,
-    bbox_of,
-    building_years,
-    duplicate_note,
-    fetch_pages,
-    household_count,
-    manwon_from_text,
-    more_list_notes,
 )
 from jibsa.providers.dabang.service.common.models import (
+    DabangPage,
     DabangPlace,
 )
+from jibsa.providers.dabang.service.common.paging import (
+    duplicate_note,
+    fetch_pages,
+    more_list_notes,
+)
+from jibsa.providers.dabang.service.common.text import (
+    building_years,
+    household_count,
+    manwon_from_text,
+)
+from jibsa.providers.dabang.service.complex.constants import CATEGORY_BY_COMPLEX_KIND
 from jibsa.providers.dabang.service.complex.models import (
     DabangComplexListResult,
     DabangComplexSummary,
 )
-from jibsa.providers.dabang.service.region.functions import dong_bbox
-
-
-CATEGORY_BY_COMPLEX_KIND: dict[ComplexKind, DabangComplexCategory] = {'아파트': 'apt', '오피스텔': 'officetel'}
+from jibsa.providers.dabang.service.region.region import dong_bbox
 
 
 def _summary(item: DabangComplexListItemModel) -> DabangComplexSummary:

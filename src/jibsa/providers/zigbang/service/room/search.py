@@ -35,11 +35,14 @@ from jibsa.providers.zigbang.api.request.room.search import (
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangItemPinModel
 from jibsa.providers.zigbang.api.response.room.search import ZigbangItemsResponseModel
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     MAX_LIST_LIMIT,
     OPTIONAL_LOOKUP_ERRORS,
+    ROOM_TYPE_FILTER_BY_LABEL,
+    SALES_TYPE_BY_TRADE,
+)
+from jibsa.providers.zigbang.service.common.ids import (
     officetel_complex_id,
-    unavailable_on_404,
 )
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangBoundary,
@@ -48,8 +51,6 @@ from jibsa.providers.zigbang.service.common.models import (
     ZigbangRoomConditions,
 )
 from jibsa.providers.zigbang.service.common.room import (
-    ROOM_TYPE_FILTER_BY_LABEL,
-    SALES_TYPE_BY_TRADE,
     excluded_notes,
     pin_null_notes,
     room_filter_of,
@@ -57,9 +58,19 @@ from jibsa.providers.zigbang.service.common.room import (
     summary_to_listing,
     tradeable_summaries,
 )
+from jibsa.providers.zigbang.service.common.unavailable import (
+    unavailable_on_404,
+)
 from jibsa.providers.zigbang.service.region import (
     outside_boundary,
     scope_geohashes,
+)
+from jibsa.providers.zigbang.service.room.constants import (
+    DETAILS_MAX,
+    GEOHASH_PRECISION,
+    ONE_ROOM_STRUCTURES,
+    PROPERTY_TYPES,
+    ZigbangPropertyType,
 )
 from jibsa.providers.zigbang.service.room.models import (
     ZigbangDetailedListing,
@@ -68,21 +79,9 @@ from jibsa.providers.zigbang.service.room.models import (
 
 from typing import (
     Any,
-    Literal,
     NamedTuple,
 )
 
-
-ZigbangPropertyType = Literal['원룸', '오피스텔', '빌라']
-
-PROPERTY_TYPES: tuple[ZigbangPropertyType, ...] = ('원룸', '오피스텔', '빌라')
-GEOHASH_PRECISION: int = 5
-# 방 하나짜리 구조. 원룸 유형은 이 구조만 서버에 요청한다 (직방 원룸 목록에는 투룸 오피스텔도 섞여 온다)
-# 방 하나짜리 아파트는 아파트 목록에만 있고 아파트 API 에는 방 구조 조건이 없다. 공급면적 50㎡ 이하로 찾으면
-# 대부분 방 1개다 (2026-10-10 실측: 역삼동 32건 중 단지별 6건 상세에서 5건이 방 1개)
-ONE_ROOM_STRUCTURES: tuple[str, ...] = ('오픈형원룸', '분리형원룸', '복층형원룸')
-# --details 로 상세를 붙이는 매물 수. 한 건에 요청 1회라 목록이 길면 오래 걸린다
-DETAILS_MAX: int = 30
 
 # 유형 하나의 (거래 유형 필터, 요청 필드)
 _TypeQuery = tuple[list[ZigbangSalesType], dict[str, object]]

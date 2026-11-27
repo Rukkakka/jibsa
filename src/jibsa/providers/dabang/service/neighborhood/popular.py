@@ -8,30 +8,28 @@ from jibsa.core.listing import (
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.neighborhood.popular import (
     POPULAR_ROOM_PAGE_LIMIT,
-    DabangPopularPriceType,
     DabangRegionInfoRoomRegionalPopularRoomV5RequestParameterModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.constants import (
     POPULAR_BUILDING_BY_LABEL,
-    VILLA_LABEL,
     ListingKind,
-    more_after,
+)
+from jibsa.providers.dabang.service.common.paging import more_after
+from jibsa.providers.dabang.service.common.room import (
     room_item_to_listing,
     unreadable_note,
+)
+from jibsa.providers.dabang.service.neighborhood.constants import (
+    POPULAR_KIND_BY_BUILDING,
+    POPULAR_KIND_BY_ROOM_TYPE,
+    POPULAR_MAX_LIMIT,
+    POPULAR_PRICE_BY_TRADE,
 )
 from jibsa.providers.dabang.service.neighborhood.models import (
     DabangPopularResult,
     DabangRankedListing,
 )
-from jibsa.providers.dabang.service.region.functions import DabangDong
-
-
-POPULAR_PRICE_BY_TRADE: dict[str, DabangPopularPriceType] = {'월세': 'MONTHLY_RENT', '전세': 'LEASE', '매매': 'SALE'}
-POPULAR_KIND_BY_BUILDING: dict[str, ListingKind] = {VILLA_LABEL: 'villa', '오피스텔': 'officetel', '아파트': 'apt'}
-# 유형을 섞어 받으면 칸에 건물 유형이 없다. 오피스텔·아파트는 그 이름으로, 주택·빌라는 방 개수('원룸'·'투룸')로 표시한다
-# (2026-10-25 실측: 역삼동·대치동 유형별 50건씩)
-POPULAR_KIND_BY_ROOM_TYPE: dict[str, ListingKind] = {'오피스텔': 'officetel', '아파트': 'apt'}
-POPULAR_MAX_LIMIT: int = 100
+from jibsa.providers.dabang.service.region.models import DabangDong
 
 
 def get_popular_listings(

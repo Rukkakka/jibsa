@@ -11,7 +11,7 @@ from jibsa.core.listing import (
     TradeType,
 )
 from jibsa.core.schema import RequestModel
-from jibsa.providers.zigbang.service.common.base import MAX_LIST_LIMIT
+from jibsa.providers.zigbang.service.common.constants import MAX_LIST_LIMIT
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangAptListing,
     ZigbangAptRegion,

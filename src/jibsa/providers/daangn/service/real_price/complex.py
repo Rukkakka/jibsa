@@ -29,35 +29,32 @@ from jibsa.providers.daangn.api.response.common import (
 from jibsa.providers.daangn.api.response.real_price.complex import (
     DaangnComplexTransactionsModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
-    article_url,
-    code_label,
+from jibsa.providers.daangn.service.common.complex import (
     compare_column,
     complex_not_found,
-    complex_url,
+)
+from jibsa.providers.daangn.service.common.constants import ARTICLE_URL, COMPLEX_URL
+from jibsa.providers.daangn.service.common.response import (
+    code_label,
     unwrap_graphql,
 )
-from jibsa.providers.daangn.service.real_price.base import (
-    _collect_pages,
-    _Collected,
-    _is_rent_type,
-    _site_note,
+from jibsa.providers.daangn.service.real_price.common import (
+    Collected,
     choose_pyeong,
+    collect_pages,
     contract_type_of,
+    is_rent_type,
+    site_note,
+)
+from jibsa.providers.daangn.service.real_price.constants import (
+    NOT_PRESALE_OWNERSHIP,
+    PRESALE_LABELS,
 )
 from jibsa.providers.daangn.service.real_price.models import (
     DaangnListingRealPriceResult,
     DaangnRealPrice,
     DaangnRealPriceResult,
 )
-
-
-# 매매 실거래의 소유 구분 (서버 ownership). 분양권·입주권만 라벨이 있고, 일반 거래(REGISTERED_OWNER)는 분양권이 아니라 해당 없음이다
-PRESALE_LABELS: dict[str, str] = {'PRE_SALE_RIGHT': '분양권', 'PRE_SALE_OWNER': '입주권'}
-
-
-
-NOT_PRESALE_OWNERSHIP: str = 'REGISTERED_OWNER'
 
 
 TransactionFetch = Callable[[int, str | None], DaangnComplexTransactionsModel]
@@ -107,8 +104,8 @@ def _collect_transactions(
     url: str,
     since: str | None = None,
     remaining: str = '더 오래된 거래가 남아 있습니다',
-) -> _Collected[DaangnTransactionModel]:
-    """단지·매물 실거래를 최근 계약 순으로 `limit` 건까지 모은다 (`_collect_pages`).
+) -> Collected[DaangnTransactionModel]:
+    """단지·매물 실거래를 최근 계약 순으로 `limit` 건까지 모은다 (`collect_pages`).
 
     Args:
         fetch: (받을 수, 커서) → 단지·매물의 실거래 연결. 매매면 매매 연결의, 아니면 전월세 연결의 크기·커서다.
@@ -116,27 +113,27 @@ def _collect_transactions(
         limit: 최대 거래 수.
         url: `--limit` 을 늘려도 받을 수 없는 거래가 남았을 때 확인하라고 안내할 당근 페이지.
         since: 이날(YYYY-MM-DD)부터의 계약만 받는다 (`--years`).
-        remaining: 남은 거래 안내의 앞말 (`_collect_pages`). 한 달만 받으면 '더 오래된' 이 아니라 그 달 거래가 남았다고 한다.
+        remaining: 남은 거래 안내의 앞말 (`collect_pages`). 한 달만 받으면 '더 오래된' 이 아니라 그 달 거래가 남았다고 한다.
 
     Returns:
-        모은 거래와 안내 (`_collect_pages`). 당근이 첫 쪽의 거래 연결(또는 그 `edges`)을 주지 않았으면 `unknown` 이 True 다.
+        모은 거래와 안내 (`collect_pages`). 당근이 첫 쪽의 거래 연결(또는 그 `edges`)을 주지 않았으면 `unknown` 이 True 다.
     """
     buy = trade_type == '매매'
 
     def page(size: int, after: str | None) -> tuple[list[DaangnTransactionModel] | None, DaangnPageInfoModel | None]:
         transactions = fetch(size, after)
         connection = transactions.buy_transactions if buy else transactions.borrow_transactions
-        # 연결이나 edges 가 null 이면 거래가 0건인 것(edges []) 과 달라 모름이다 (`_collect_pages`)
+        # 연결이나 edges 가 null 이면 거래가 0건인 것(edges []) 과 달라 모름이다 (`collect_pages`)
         if connection is None or connection.edges is None:
             return None, None
         return [edge.node for edge in connection.edges if edge.node], connection.page_info
 
-    return _collect_pages(
+    return collect_pages(
         page,
-        lambda node: buy or _is_rent_type(node.monthly_rent, trade_type),
+        lambda node: buy or is_rent_type(node.monthly_rent, trade_type),
         trade_type,
         limit,
-        site=_site_note(url),
+        site=site_note(url),
         remaining=remaining,
         since=since,
         date_of=_trade_date,
@@ -144,7 +141,7 @@ def _collect_transactions(
 
 
 
-def _empty_result_note(found: _Collected[DaangnTransactionModel], trade_type: str, since: str | None) -> str | None:
+def _empty_result_note(found: Collected[DaangnTransactionModel], trade_type: str, since: str | None) -> str | None:
     """받은 단지·매물 실거래가 없을 때, 거래가 있는데 요청 범위 밖이라 비었다면 그 까닭. 아니면 None.
 
     거래가 더 남았으면(`has_more`) 남았다는 [일부] 안내가 이미 있어 None 이다. 기간(`since`) 시작일 앞의 거래가 나와 멈췄으면
@@ -227,7 +224,7 @@ def get_real_prices(
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     found = _collect_transactions(
         fetch, trade_type, limit,
-        url=complex_url(complex_id),
+        url=COMPLEX_URL.format(complex_id),
         since=since,
         remaining=f'{month} 의 거래가 더 남아 있습니다' if month else '더 오래된 거래가 남아 있습니다',
     )
@@ -248,7 +245,7 @@ def get_real_prices(
         start_date=since,
         month=month,
         trades=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
-        url=complex_url(complex_id),
+        url=COMPLEX_URL.format(complex_id),
         notes=notes,
     )
 
@@ -298,7 +295,7 @@ def get_listing_real_prices(
     since = years_ago(today or datetime.now(KST).date(), years) if years is not None else None
     found = _collect_transactions(
         fetch, trade_type, limit,
-        url=article_url(original_id),
+        url=ARTICLE_URL.format(original_id),
         since=since,
     )
     notes = found.notes
@@ -324,6 +321,6 @@ def get_listing_real_prices(
         has_more=None if found.unknown else found.has_more,
         start_date=since,
         trades=None if found.unknown else [transaction_to_real_price(node, trade_type) for node in found.items],
-        url=article_url(original_id),
+        url=ARTICLE_URL.format(original_id),
         notes=notes,
     )

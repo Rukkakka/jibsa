@@ -12,76 +12,55 @@ from jibsa.core.listing import (
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.common import (
     DaangnComplexFilterModel,
-    DaangnComplexTradeType,
     DaangnExclusiveUseAreaModel,
 )
 from jibsa.providers.daangn.api.request.complex.search import (
     DaangnComplexByClusterIdInputModel,
     DaangnComplexByClusterIdRequestPayloadModel,
-    DaangnComplexSort,
     DaangnSearchComplexesViewportInputModel,
     DaangnSearchComplexesViewportRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.response.complex.search import (
     DaangnRegionComplexesModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
+from jibsa.providers.daangn.service.common.complex import (
+    complex_list_notes,
+    region_complex_of,
+)
+from jibsa.providers.daangn.service.common.constants import (
+    BUILDING_APPROVAL_FILTER_BY_LABEL,
     COMPLEX_LIST_MAX_LIMIT,
     COMPLEX_TYPE_FILTER_BY_LABEL,
     POINT_ZOOM,
-    complex_list_notes,
-    cursor_stopped_note,
-    map_view_bounds,
-    next_cursor,
-    region_complex_of,
-    stalled_page,
-    unwrap_graphql,
 )
+from jibsa.providers.daangn.service.common.location import map_view_bounds
 from jibsa.providers.daangn.service.common.models import (
-    BUILDING_APPROVAL_FILTER_BY_LABEL,
     DaangnRegionComplex,
     amount_range,
     label_codes,
 )
-from jibsa.providers.daangn.service.complex.base import (
+from jibsa.providers.daangn.service.common.response import (
+    cursor_stopped_note,
+    next_cursor,
+    stalled_page,
+    unwrap_graphql,
+)
+from jibsa.providers.daangn.service.complex.constants import (
     COMPLEX_PAGE_SIZE,
+    COMPLEX_SORT_BY_LABEL,
+    COMPLEX_TRADE_BY_TRADE_TYPE,
+    DEFAULT_COMPLEX_TRADE_TYPE,
+    MOVE_IN_SORT_NOTE,
 )
 from jibsa.providers.daangn.service.complex.models import (
     DaangnBoundsComplexesResult,
     DaangnComplexConditions,
     DaangnRegionComplexesResult,
 )
-from jibsa.providers.daangn.service.region.functions import (
+from jibsa.providers.daangn.service.region.area import (
     region_or_none,
     resolve_realsale_region,
 )
-
-
-COMPLEX_TRADE_BY_TRADE_TYPE: dict[str, DaangnComplexTradeType] = {'매매': 'BUY', '전세': 'BORROW', '월세': 'MONTH'}
-
-
-
-# 웹 지도 단지 탭의 기본 거래 유형 (ChatPanelActionsContext `d`: 거래 칩이 없으면 BUY)
-DEFAULT_COMPLEX_TRADE_TYPE: str = '매매'
-
-
-
-COMPLEX_SORT_BY_LABEL: dict[str, DaangnComplexSort] = {
-    '세대수': 'HOUSEHOLD_COUNT_DESC',
-    '가격높은순': 'TRADE_PRICE_DESC',
-    '가격낮은순': 'TRADE_PRICE_ASC',
-    '입주최신순': 'MOVE_IN_DATE_DESC',
-    '입주오래된순': 'MOVE_IN_DATE_ASC',
-}
-
-
-
-# 입주일 순은 사용승인일 순과 어긋나는 단지가 섞여 온다 (2026-10 역삼동 실측)
-MOVE_IN_SORT_NOTE: str = (
-    '입주일 순은 당근이 정한 순서라 사용승인일(approved_date) 순서와 어긋나는 단지가 있습니다. '
-    '새 단지·오래된 단지는 approved_date 로 다시 확인하세요'
-)
-
 
 
 def complex_filter_of(conditions: DaangnComplexConditions) -> DaangnComplexFilterModel:

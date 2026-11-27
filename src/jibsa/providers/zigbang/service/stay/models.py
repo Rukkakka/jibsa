@@ -17,18 +17,19 @@ from jibsa.core.listing import (
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.request.stay.base import validate_stay_dates
-from jibsa.providers.zigbang.service.common.base import drop_unused_scope
-from jibsa.providers.zigbang.service.common.models import ZigbangRegion
+from jibsa.providers.zigbang.service.common.models import (
+    ZigbangRegion,
+    drop_unused_scope,
+)
+from jibsa.providers.zigbang.service.stay.constants import (
+    STAY_HOST_OTHER_LIMIT,
+)
 
 from typing import (
     Annotated,
     Any,
     Self,
 )
-
-
-# 상세에 싣는 '임대인의 다른 방' 수. 웹은 모두 받아 가로 카드로 보여 주지만 jibsa 는 앞쪽만 내고 전체 수를 따로 알린다
-STAY_HOST_OTHER_LIMIT: int = 10
 
 
 class ZigbangStayListing(Listing):

@@ -1,6 +1,5 @@
 """주변 단지 목록 (nearby-complexes)."""
 
-
 from jibsa.core.errors import (
     JibsaError,
     RegionNotFoundError,
@@ -16,30 +15,22 @@ from jibsa.providers.daangn.api.request.compare.nearby import (
     DaangnComplexRegionRequestPayloadModel,
     DaangnNearbyComplexesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.compare.nearby import (
-    DaangnComplexCardModel,
-)
-from jibsa.providers.daangn.service.common.functions import (
-    COMPLEX_TYPE_LABELS,
-    code_label,
+from jibsa.providers.daangn.api.response.compare.nearby import DaangnComplexCardModel
+from jibsa.providers.daangn.service.common.complex import (
     complex_not_found,
     truncation_notes,
+)
+from jibsa.providers.daangn.service.common.constants import COMPLEX_TYPE_LABELS
+from jibsa.providers.daangn.service.common.models import DaangnRegion
+from jibsa.providers.daangn.service.common.response import (
+    code_label,
     unwrap_graphql,
 )
-from jibsa.providers.daangn.service.common.models import (
-    DaangnRegion,
-)
+from jibsa.providers.daangn.service.compare.constants import NEARBY_COMPLEXES_MAX
 from jibsa.providers.daangn.service.compare.models import (
     DaangnNearbyComplex,
     DaangnNearbyComplexesResult,
 )
-
-
-# 같은 동 단지를 한 번에 받을 수이자 CLI --limit 최대값. 웹은 300 을 보내지만 300 을 넘는 동이 있고 페이지
-# 정보가 오지 않아 한 번에 크게 받는다. 당근의 다른 목록 최대값(1200)에 맞췄다 (2026-10-10 실측: 화곡동 703곳,
-# 봉천동 380곳. 1200 을 보내도 거절하지 않고, 단지 카드도 703개를 한 번에 준다)
-NEARBY_COMPLEXES_MAX: int = 1200
-
 
 
 def list_nearby_complexes(client: DaangnClient, complex_id: int, *, limit: int = 50) -> DaangnNearbyComplexesResult:

@@ -1,6 +1,5 @@
 """어린이집 (preschools, preschool)."""
 
-
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
@@ -15,39 +14,26 @@ from jibsa.providers.daangn.api.request.school.preschool import (
     DaangnComplexSchoolsRequestPayloadModel,
     DaangnPreschoolByNoRequestPayloadModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
-    code_label,
+from jibsa.providers.daangn.service.common.complex import (
     complex_not_found,
-    complex_url,
-    coordinate_point,
+)
+from jibsa.providers.daangn.service.common.constants import COMPLEX_URL
+from jibsa.providers.daangn.service.common.location import coordinate_point
+from jibsa.providers.daangn.service.common.response import (
+    code_label,
     unwrap_graphql,
+)
+from jibsa.providers.daangn.service.school.constants import (
+    PRESCHOOL_LABEL_BY_TYPE,
+    PRESCHOOL_SERVER_MAX,
+    PRESCHOOL_SERVER_RADIUS_KM,
+    WEB_EARTH_RADIUS_KM,
 )
 from jibsa.providers.daangn.service.school.models import (
     DaangnPreschool,
     DaangnPreschoolsResult,
     DaangnPreschoolSummary,
 )
-
-
-# 어린이집·유치원 종류 (당근 표기). 상세(preschoolByNo)에만 온다
-PRESCHOOL_LABEL_BY_TYPE: dict[str, str] = {'DAYCARE': '어린이집', 'KINDERGARTEN': '유치원'}
-
-
-
-# 당근이 단지 근처 어린이집·유치원을 주는 범위: 단지에서 1km 안을 가까운 순으로 20곳까지 (2026-11-11 실측, 예전 반경 쿼리
-# educationMapPoints 와 대조: 역삼래미안 10697092 는 1km 안 31곳 중 0.6km 안의 20곳, 양평역한라비발디2단지 20839190 은
-# 1km 안 11곳 모두이고 1.23km 부터 빠짐)
-PRESCHOOL_SERVER_RADIUS_KM: float = 1.0
-
-
-
-PRESCHOOL_SERVER_MAX: int = 20
-
-
-
-# 당근 웹 거리 계산(services2 하버사인)의 지구 반지름 (km)
-WEB_EARTH_RADIUS_KM: float = 6371.0
-
 
 
 def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsResult:
@@ -114,7 +100,7 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
         complex_id=str(complex_id),
         returned=len(preschools),
         preschools=preschools if nearby is not None else None,
-        url=complex_url(complex_id),
+        url=COMPLEX_URL.format(complex_id),
         notes=notes,
     )
 

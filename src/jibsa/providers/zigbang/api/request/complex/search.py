@@ -8,7 +8,7 @@ from pydantic import (
 )
 
 from jibsa.core.schema import RequestModel
-from jibsa.providers.zigbang.api.request.common import _index_arrays
+from jibsa.providers.zigbang.api.request.common import index_arrays
 
 from typing import (
     Annotated,
@@ -97,7 +97,7 @@ class ZigbangDanjisIdsRequestParameterModel(RequestModel):
         self,
         handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
-        return _index_arrays(handler(self))
+        return index_arrays(handler(self))
 
 
 class ZigbangDanjisDetailsRequestParameterModel(RequestModel):
@@ -136,6 +136,6 @@ class ZigbangDanjisDetailsRequestParameterModel(RequestModel):
         handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
         data = handler(self)
-        # 웹과 같은 순서(apts 가 맨 앞)로 `apts[0]=…&apts[1]=…` 로 펼친다. `_index_arrays` 는 serviceType 같은 정해진 키만 펼친다
+        # 웹과 같은 순서(apts 가 맨 앞)로 `apts[0]=…&apts[1]=…` 로 펼친다. `index_arrays` 는 serviceType 같은 정해진 키만 펼친다
         indexed = {f'apts[{index}]': apt_id for index, apt_id in enumerate(data.pop('apts'))}
         return {**indexed, **data}

@@ -21,99 +21,24 @@ from jibsa.core.listing import (
 from jibsa.core.schema import RequestModel
 from jibsa.providers.daangn.api.request.common import (
     DaangnAmountRangeModel,
-    DaangnBuildingApprovalDate,
-    DaangnDealType,
-    DaangnFloor,
-    DaangnOption,
     DaangnPropertyFilterModel,
-    DaangnRoomCount,
-    DaangnSalesType,
-    DaangnSubSalesType,
-    DaangnTradeType,
+)
+from jibsa.providers.daangn.service.common.constants import (
+    BUILDING_APPROVAL_FILTER_BY_LABEL,
+    COMPLEX_RECENT_TRADES,
+    DEAL_FILTER_BY_LABEL,
+    FLOOR_FILTER_BY_LABEL,
+    OPTION_FILTER_BY_LABEL,
+    ROOM_COUNT_FILTER_BY_LABEL,
+    SALES_TYPE_BY_PROPERTY_TYPE,
+    STRUCTURE_FILTER_BY_LABEL,
+    TRADE_FILTER_BY_TRADE_TYPE,
 )
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 필터로 보내는 매물 종류. 원룸(ONE_ROOM)은 오픈형·분리형 원룸을 함께 찾는다
-SALES_TYPE_BY_PROPERTY_TYPE: dict[str, DaangnSalesType] = {
-    '아파트': 'APART',
-    '오피스텔': 'OFFICETEL',
-    '원룸': 'ONE_ROOM',
-    '투룸': 'TWO_ROOM',
-    '주택': 'HOUSE',
-    '상가': 'STORE',
-    '사무실': 'OFFICE',
-    '건물': 'BUILDING',
-    '토지': 'LAND',
-    '공장·창고': 'FACTORY',
-}
-
-
-TRADE_FILTER_BY_TRADE_TYPE: dict[str, DaangnTradeType] = {
-    '월세': 'MONTH',
-    '전세': 'BORROW',
-    '매매': 'BUY',
-    '단기임대': 'SHORT',
-    '연세': 'YEAR',
-}
-
-
-# 아래 필터 라벨은 당근 웹 지도 필터의 이름 그대로다 (띄어쓰기만 뺐다)
-FLOOR_FILTER_BY_LABEL: dict[str, DaangnFloor] = {
-    '반지하': 'SEMI_BASEMENT',
-    '1층': 'FIRST',
-    '2~5층': 'SECOND_TO_FIFTH',
-    '6~9층': 'SIX_TO_NINTH',
-    '10층이상': 'TENTH_OR_MORE',
-}
-
-
-ROOM_COUNT_FILTER_BY_LABEL: dict[str, DaangnRoomCount] = {
-    '2개': 'TWO',
-    '3개': 'THREE',
-    '4개이상': 'FOUR_OR_MORE',
-}
-
-
-STRUCTURE_FILTER_BY_LABEL: dict[str, DaangnSubSalesType] = {
-    '오픈형': 'OPEN_ROOM',
-    '분리형': 'SPLIT_ROOM',
-}
-
-
-BUILDING_APPROVAL_FILTER_BY_LABEL: dict[str, DaangnBuildingApprovalDate] = {
-    '5년이내': 'LESS_5YEARS',
-    '10년이내': 'LESS_10YEARS',
-    '15년이내': 'LESS_15YEARS',
-    '20년이내': 'LESS_20YEARS',
-    '25년이내': 'LESS_25YEARS',
-    '30년이내': 'LESS_30YEARS',
-    '30년이상': 'MORE_30YEARS',
-}
-
-
-DEAL_FILTER_BY_LABEL: dict[str, DaangnDealType] = {
-    '직거래': 'DIRECT',
-    '중개': 'BROKER',
-}
-
-
-OPTION_FILTER_BY_LABEL: dict[str, DaangnOption] = {
-    '주차가능': 'PARKING',
-    '반려동물가능': 'PET',
-    '대출가능': 'MORTGAGE',
-    '엘리베이터': 'ELEVATOR',
-    '옥탑': 'ROOFTOP',
-    '복층': 'LOFT',
-}
-
-
-# 단지마다 보여 줄 최근 실거래 수 (당근은 10건을 준다)
-COMPLEX_RECENT_TRADES: int = 3
 
 
 class DaangnRegion(BaseModel):

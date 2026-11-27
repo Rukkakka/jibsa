@@ -9,14 +9,12 @@ from jibsa.core.listing import (
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
     NaverArticleFilterModel,
-    NaverRealEstateType,
 )
 from jibsa.providers.naver.api.request.redevelopment.search import (
     NaverComplexRedevelopmentAreaLegalDivisionListV1RequestPayloadModel,
     NaverComplexRedevelopmentAreaListV1RequestPayloadModel,
     NaverComplexRedevelopmentAreaMarkersV1RequestPayloadModel,
     NaverRedevelopmentAreaPagingRequestModel,
-    NaverRedevelopmentAreaSortType,
 )
 from jibsa.providers.naver.api.response.common import (
     NaverRedevelopmentAreaItemModel,
@@ -26,24 +24,34 @@ from jibsa.providers.naver.api.response.common import (
 from jibsa.providers.naver.api.response.redevelopment.search import (
     NaverRedevelopmentAreaPinModel,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     TRADE_CODE_BY_NAME,
-    amount_range,
+)
+from jibsa.providers.naver.service.common.models import (
+    PageScan,
+)
+from jibsa.providers.naver.service.common.paging import (
     area_scope,
     boundary_filter,
     bounding_box,
     pagination_notes,
     scan_null_items_notes,
     scan_pages,
+)
+from jibsa.providers.naver.service.common.price import (
+    amount_range,
     trade_article_counts,
+)
+from jibsa.providers.naver.service.common.response import (
     unwrap,
 )
-from jibsa.providers.naver.service.common.models import (
-    PageScan,
-)
-from jibsa.providers.naver.service.redevelopment.base import (
+from jibsa.providers.naver.service.redevelopment.constants import (
+    MAX_REDEVELOPMENT_PAGE_REQUESTS,
+    REDEVELOPMENT_CODE,
     REDEVELOPMENT_PAGE_SIZE,
-    redevelopment_url,
+    REDEVELOPMENT_PRECISION,
+    REDEVELOPMENT_SORT_TYPE_BY_NAME,
+    REDEVELOPMENT_URL,
 )
 from jibsa.providers.naver.service.redevelopment.models import (
     NaverRedevelopmentArea,
@@ -53,25 +61,6 @@ from jibsa.providers.naver.service.redevelopment.models import (
 from typing import (
     Any,
 )
-
-
-# 재개발 구역(F01) 목록·매물. 페이지는 30건까지(31부터 400, 2026-10-10 확인). 네이버 목록 공통으로 기본 30·최대 120
-REDEVELOPMENT_CODE: NaverRealEstateType = 'F01'
-
-
-MAX_REDEVELOPMENT_PAGE_REQUESTS: int = 4
-
-
-# 목록·마커의 지도 줌. 12 이하는 400 이고 높을수록 중심 근처만 준다. 14 는 반경 1·3km 안 구역을 모두 주면서
-# 반경 밖은 13 보다 덜 섞인다 (역 3곳 × 반경 2가지 모두 13 과 같은 구역, 15 는 3km 에서 1~4곳 빠짐, 2026-10-10).
-# 반경 밖은 마커 좌표로 뺀다
-REDEVELOPMENT_PRECISION: int = 14
-
-
-REDEVELOPMENT_SORT_TYPE_BY_NAME: dict[str, NaverRedevelopmentAreaSortType] = {
-    '매물수순': 'ARTICLE_COUNT_DESC',
-    '세대수순': 'HOUSEHOLD_NUMBER_DESC',
-}
 
 
 def _redevelopment_area(
@@ -93,7 +82,7 @@ def _redevelopment_area(
         listing_counts=trade_article_counts(counts) if counts else None,
         # 그 거래 매물이 없으면 키를 뺀다. 구역 목록은 매매 호가만 준다
         asking_ranges=None if not price else ({'sale': sale} if (sale := amount_range('price_manwon', price.deal_min_price, price.deal_max_price)) else {}),
-        url=redevelopment_url(info.redevelopment_area_number),
+        url=REDEVELOPMENT_URL.format(info.redevelopment_area_number),
     )
 
 

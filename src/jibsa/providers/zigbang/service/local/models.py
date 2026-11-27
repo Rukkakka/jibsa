@@ -14,6 +14,12 @@ from jibsa.core.listing import (
 )
 from jibsa.providers.zigbang.api.request.local.info import ZigbangPynAreaType
 from jibsa.providers.zigbang.service.common.models import ZigbangEstimatedPrice
+from jibsa.providers.zigbang.service.local.constants import (
+    LOCAL_DONG_DESCRIPTION,
+    LocalRankingPeriod,
+    LocalTrade,
+    LocalTradePeriod,
+)
 
 from typing import (
     Annotated,
@@ -23,17 +29,6 @@ from typing import (
 
 
 LocalLevel = Literal['동', '구']
-LocalTrade = Literal['매매', '전세', '월세']
-
-# 줄의 동(`dong`) 필드 설명. 실거래·랭킹 줄이 같이 쓴다
-LOCAL_DONG_DESCRIPTION: str = (
-    "줄이 속한 동 (직방이 준 local, 예: '가락동'). 구 단위 조회에만 있고 동 단위 조회는 서버가 빈 글자를 줘 키가 없다. "
-    '구 단위인데 직방이 주지 않으면 null'
-)
-
-LocalRankingPeriod = Literal['이번주', '지난주', '이번달', '지난달', '올해', '작년']
-
-LocalTradePeriod = Literal['오늘', '어제', '7일', '15일', '30일']
 
 
 class ZigbangLocalRegion(BaseModel):

@@ -7,10 +7,13 @@ from jibsa.core.listing import (
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.ranking.trending import (
     DabangRealTimeWatchRankingsV5RequestParameterModel,
-    DabangWatchBaseOn,
 )
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.constants import (
     COMPLEX_TYPE_BY_LABEL,
+)
+from jibsa.providers.dabang.service.ranking.constants import (
+    FLUCTUATION_LABELS,
+    WATCH_PERIOD_BY_LABEL,
 )
 from jibsa.providers.dabang.service.ranking.models import (
     DabangWatchRanking,
@@ -20,16 +23,6 @@ from jibsa.providers.dabang.service.ranking.models import (
 from typing import (
     Literal,
 )
-
-
-WATCH_PERIOD_BY_LABEL: dict[str, DabangWatchBaseOn] = {
-    '방금전': 'JUST_BEFORE',
-    '어제': 'YESTERDAY',
-    '지난주': 'LAST_WEEK',
-    '지난달': 'LAST_MONTH',
-}
-
-FLUCTUATION_LABELS: dict[str, str] = {'UP': '상승', 'DOWN': '하락', 'STEADY': '유지', 'NEW': '신규'}
 
 
 def get_watch_rankings(

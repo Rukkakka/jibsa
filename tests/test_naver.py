@@ -28,42 +28,52 @@ from jibsa.providers.naver.api.response.listing.detail import (
 from jibsa.providers.naver.api.response.search.base import (
     NaverArticleClusteredArticlesV1ResponseModel,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.listing import (
     article_info_to_listing,
     group_fields,
-    pagination_notes,
-    rent_asking_range,
-    result_or_empty,
-    result_or_none,
-    scan_pages,
 )
 from jibsa.providers.naver.service.common.models import (
     NaverTradeConditions,
     PageScan,
 )
+from jibsa.providers.naver.service.common.paging import (
+    pagination_notes,
+    scan_pages,
+)
+from jibsa.providers.naver.service.common.price import (
+    rent_asking_range,
+)
+from jibsa.providers.naver.service.common.response import (
+    result_or_empty,
+    result_or_none,
+)
 from jibsa.providers.naver.service.listing.complex import list_complex_articles
 from jibsa.providers.naver.service.listing.detail import get_listing
-from jibsa.providers.naver.service.real_price.functions import (
+from jibsa.providers.naver.service.real_price.constants import (
     MAX_VILLA_PERIOD_PAGES,
-    get_real_prices,
 )
-from jibsa.providers.naver.service.region.functions import (
+from jibsa.providers.naver.service.real_price.real_price import get_real_prices
+from jibsa.providers.naver.service.region.constants import (
     WIDE_REGION_NOTE_MARK,
-    legal_division_code_at,
+)
+from jibsa.providers.naver.service.region.resolve import (
     resolve_complex_number,
     resolve_redevelopment_number,
+)
+from jibsa.providers.naver.service.region.search import (
+    legal_division_code_at,
     resolve_search_region,
 )
-from jibsa.providers.naver.service.school.functions import list_school_complexes
-from jibsa.providers.naver.service.search.listings import (
+from jibsa.providers.naver.service.school.school import list_school_complexes
+from jibsa.providers.naver.service.search.constants import (
     COMPLEX_FILTER_NOTE,
     ENTRANCE_FILTER_NOTE,
     ENTRANCE_WITH_COMPLEX_FILTER_NOTE,
     ONE_ROOM_SHAPE_NOTE,
-    search_area,
 )
+from jibsa.providers.naver.service.search.listings import search_area
 from jibsa.providers.naver.service.search.models import NaverListingConditions
-from jibsa.providers.naver.service.trend.functions import get_district_trend
+from jibsa.providers.naver.service.trend.trend import get_district_trend
 
 from typing import Any
 
@@ -179,7 +189,7 @@ def test_officetel_pyeong_supply_equal_to_contract_is_unknown() -> None:
     # 오피스텔 평형표의 공급 칸에 계약면적이 그대로 오면(공급 = 계약) 공급면적을 모름으로 둔다.
     # 실제 공급면적이 따로 오면(공급 40.66 < 계약 57.51) 그대로 둔다. 아파트는 손대지 않는다.
     from jibsa.providers.naver.api.response.common import NaverPyeongModel
-    from jibsa.providers.naver.service.complex.functions import _pyeong
+    from jibsa.providers.naver.service.complex.complex import _pyeong
 
     def pyeong(supply: float, contract: float) -> NaverPyeongModel:
         return NaverPyeongModel.model_validate(
@@ -451,7 +461,7 @@ def test_detail_manage_cost_itemized_sums_every_item_and_includes_only_fixed() -
     from jibsa.providers.naver.api.response.listing.detail import (
         NaverArticleMaintenanceFeeModel,
     )
-    from jibsa.providers.naver.service.listing.detail import _manage_cost
+    from jibsa.providers.naver.service.listing.cost import manage_cost as _manage_cost
 
     fee = NaverArticleMaintenanceFeeModel.model_validate({'typeCode': '01', 'fixDetailList': [
         {'type': '01', 'unitType': '01', 'amount': 100000},
@@ -562,7 +572,7 @@ def _complex_article_page(numbers: list[str], has_next: bool) -> dict:
 
 def test_list_complex_articles_stops_at_request_cap() -> None:
     # 페이지마다 매물이 적어 limit 을 못 채워도 요청은 상한에서 멈추고 안내한다
-    from jibsa.providers.naver.service.listing.complex import (
+    from jibsa.providers.naver.service.listing.constants import (
         MAX_COMPLEX_ARTICLE_PAGE_REQUESTS,
     )
 
@@ -851,7 +861,7 @@ def _short_article_page(index: int) -> dict:
 def test_whole_dong_stops_at_request_cap() -> None:
     # 받은 개수로 세므로 덜 찬 페이지가 이어지면 limit 전에 요청 상한에서 멈춘다.
     # 안내의 건수는 상한 × 페이지 크기가 아니라 실제로 받은 수다
-    from jibsa.providers.naver.service.search.listings import (
+    from jibsa.providers.naver.service.search.constants import (
         MAX_LEGAL_DIVISION_PAGE_REQUESTS,
     )
 
@@ -1035,9 +1045,9 @@ def test_ga_dong_base_name_is_ambiguous(
 
 
 def test_ga_dong_check_sees_total_count_when_has_next_page_is_empty() -> None:
-    # hasNextPage 가 비어 와도 totalCount 가 받은 수보다 크면 다음 쪽이 남았다 (`_has_more`). 첫 쪽에 '○가' 동이 없는
+    # hasNextPage 가 비어 와도 totalCount 가 받은 수보다 크면 다음 쪽이 남았다 (`has_more`). 첫 쪽에 '○가' 동이 없는
     # '종로'(totalCount 90)에서 하위 지역 목록을 부르지 않으면 종로1가 하나만 남아 말없이 골랐다 (2026-11-16 리뷰)
-    from jibsa.providers.naver.service.region.functions import _check_ga_dongs
+    from jibsa.providers.naver.service.region.search import _check_ga_dongs
 
     requests: list[httpx.Request] = []
     autocomplete = _ok({'hasNextPage': None, 'totalCount': 90, 'list': [
@@ -1058,7 +1068,7 @@ def test_ga_dong_check_sees_total_count_when_has_next_page_is_empty() -> None:
 def test_ga_dong_check_stops_on_single_dong_when_next_page_remains() -> None:
     # 하위 지역 목록은 찾은 동의 시·구만 덮는다. 자동완성 다음 쪽이 남았는데 '○가' 동이 한 곳만 모이면 다음 쪽에 다른
     # 시·구의 '○가' 동이 있을 수 있어 고르지 않는다 (2026-11-17 리뷰. 실제로 이런 앞 이름은 아직 찾지 못했다)
-    from jibsa.providers.naver.service.region.functions import _check_ga_dongs
+    from jibsa.providers.naver.service.region.search import _check_ga_dongs
 
     requests: list[httpx.Request] = []
     autocomplete = _ok({'hasNextPage': True, 'totalCount': 7, 'list': [
@@ -1372,7 +1382,7 @@ def test_real_price_group_without_groups_is_one_not_found(groups: list | None) -
 
 
 def test_complex_pyeong_groups_null_result_is_empty_but_failure_is_unknown() -> None:
-    from jibsa.providers.naver.service.complex.functions import _pyeong_groups
+    from jibsa.providers.naver.service.complex.complex import _pyeong_groups
 
     # 성공인데 result 가 null 이면 real-price --group 과 같게 묶음 없음([])이고, 조회 실패(isSuccess false)만 모름(null)이다
     with make_path_client([], {'/complex/pyeongGroups': _ok(None)}) as client:
@@ -1386,8 +1396,8 @@ def test_complex_pyeong_groups_null_result_is_empty_but_failure_is_unknown() -> 
 
 
 def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() -> None:
-    from jibsa.providers.naver.service.complex.functions import _pyeong_groups
-    from jibsa.providers.naver.service.real_price.functions import _find_pyeong_group
+    from jibsa.providers.naver.service.complex.complex import _pyeong_groups
+    from jibsa.providers.naver.service.real_price.real_price import _find_pyeong_group
 
     groups = [
         {'representativePyeongName': '33평', 'representativePyeongNumber': 1, 'householdCount': 10, 'pyeongTypes': None},
@@ -1406,7 +1416,7 @@ def test_pyeong_group_with_null_pyeong_types_is_unknown_for_that_group_only() ->
 
 
 def test_price_per_pyeong_null_region_list_keeps_the_price() -> None:
-    from jibsa.providers.naver.service.complex.functions import _price_per_pyeong
+    from jibsa.providers.naver.service.complex.pyeong_details import _price_per_pyeong
 
     # 지역 목록이 null 이어도 평당가는 그대로 내고 지역·기준일만 모름(null)이다
     null_regions = _ok({'pricePerPyeong': 150000000, 'legalDivisionPricePerPyeongList': None})

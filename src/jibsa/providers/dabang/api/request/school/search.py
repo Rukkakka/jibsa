@@ -7,9 +7,9 @@ from pydantic import (
 from jibsa.core.schema import RequestModel
 from jibsa.providers.dabang.api.request.common import (
     REGION_INFO_PAGE_LIMIT,
+    DabangSchoolEstablishmentType,
 )
 from jibsa.providers.dabang.api.request.school.base import (
-    DabangSchoolEstablishmentType,
     DabangSchoolLevelPath,
 )
 

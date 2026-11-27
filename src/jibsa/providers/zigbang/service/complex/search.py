@@ -1,9 +1,11 @@
 """역·학교·동·구 주변 아파트 단지 (search complexes)."""
 
 import math
-import re
 
-from jibsa.core.errors import JibsaError
+from jibsa.core.errors import (
+    JibsaError,
+    RegionNotFoundError,
+)
 from jibsa.core.korean import (
     is_ri_code,
     quoted,
@@ -19,7 +21,6 @@ from jibsa.core.listing import (
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.complex.search import (
     ZigbangDanjiOrder,
-    ZigbangDanjiPlaceType,
     ZigbangDanjisDetailsRequestParameterModel,
     ZigbangDanjisIdsRequestParameterModel,
     ZigbangSchoolsRequestParameterModel,
@@ -31,17 +32,37 @@ from jibsa.providers.zigbang.api.response.complex.search import (
     ZigbangSchoolDetailModel,
     ZigbangSchoolsResponseModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
+    APT_DANJI_URL,
     MAX_LIST_LIMIT,
     OPTIONAL_LOOKUP_ERRORS,
     UPSTREAM_RETRY_HINT,
+)
+from jibsa.providers.zigbang.service.common.ids import (
     apt_complex_id,
-    apt_danji_url,
-    household_count,
-    text_or_none,
+)
+from jibsa.providers.zigbang.service.common.text import text_or_none
+from jibsa.providers.zigbang.service.complex.common import household_count
+from jibsa.providers.zigbang.service.complex.constants import (
+    AROUND_FIELDS_BY_PLACE_TYPE,
+    AROUND_PLACE_TYPES,
+    CARD_FIELDS_BY_PLACE_TYPE,
+    COMPLEX_ORDER_DESCRIPTIONS,
+    DANJI_CARD_BATCH_SIZE,
+    DANJI_ORDER_BY_LABEL,
+    DISTANCE_TEXT_PATTERN,
+    SCHOOL_ASSIGNMENT_NOTICE,
+    SCHOOL_LEVEL_BY_STAGE,
+    SCOPE_NAME_BY_PLACE_TYPE,
+    SEARCH_TYPE_BY_PLACE_TYPE,
+    STATION_QUERY_HINT,
+    SUBSET_ORDERS,
+    TAB_TITLE_BY_PLACE_TYPE,
+    ZigbangComplexOrder,
+    ZigbangComplexPlaceType,
 )
 from jibsa.providers.zigbang.service.complex.models import (
-    ZigbangComplexPlaceType,
+    QueryPlaceKind,
     ZigbangHighAdvancement,
     ZigbangMiddleAdvancement,
     ZigbangPlaceComplex,
@@ -49,70 +70,13 @@ from jibsa.providers.zigbang.service.complex.models import (
     ZigbangSchoolInfo,
 )
 from jibsa.providers.zigbang.service.region import (
-    STATION_QUERY_HINT,
-    QueryPlaceKind,
-    query_place_kind,
+    dong_name,
     resolve_apt_area,
-    resolve_school,
-    resolve_station,
+    search_regions,
+    settled_item,
 )
 
-from typing import (
-    Literal,
-    NamedTuple,
-)
-
-
-# 학교 주변 단지의 거리 문구 (예: '462m', '1.1km'). 웹 학교 응답에는 숫자 거리가 없다
-DISTANCE_TEXT_PATTERN: re.Pattern[str] = re.compile(r'(\d+(?:\.\d+)?)\s*(km|m)')
-# 단지 카드(`danjis/details`)를 한 번에 받는 수. 웹 더보기 화면이 15곳씩 보낸다
-DANJI_CARD_BATCH_SIZE: int = 15
-
-ZigbangComplexOrder = Literal['인기', '최근입주', '시세급변동', '평당가']
-
-COMPLEX_ORDERS: tuple[ZigbangComplexOrder, ...] = ('인기', '최근입주', '시세급변동', '평당가')
-# 웹 탭 이름 → `danjis/ids`·`danjis/details` 의 order
-DANJI_ORDER_BY_LABEL: dict[ZigbangComplexOrder, ZigbangDanjiOrder] = {
-    '인기': 'viewCount',
-    '최근입주': 'newest',
-    '시세급변동': 'priceChange',
-    '평당가': 'areaPrice',
-}
-# 웹 탭 설명 (2026-11-19 웹 캡처). 카드 둘째 줄(highlight)의 뜻도 탭마다 다르다
-COMPLEX_ORDER_DESCRIPTIONS: dict[ZigbangComplexOrder, str] = {
-    '인기': '사용자들이 많이 본 단지 순서',
-    '최근입주': '곧 입주 예정이거나 최근 1년 내 입주한 단지',
-    '시세급변동': '1주간 시세가 급변동한 단지',
-    '평당가': '평당 가격이 높은 단지 순서',
-}
-# 그 조건에 든 단지만 담는 탭. 순서가 아니라 부분 목록이라 total 이 그 곳의 전체 단지 수가 아니다
-# (2026-11-20 실측: 강남역 인기 112곳·최근입주 2곳·시세급변동 55곳, 가락동 최근입주 1곳)
-SUBSET_ORDERS: tuple[ZigbangComplexOrder, ...] = ('최근입주', '시세급변동')
-# 웹 목록 이름. 동·구는 지역 화면의 최근입주 목록뿐이라 따로 없다
-TAB_TITLE_BY_PLACE_TYPE: dict[ZigbangComplexPlaceType, str] = {'역': '주변단지', '학교': '배정단지', '동': '', '구': ''}
-# [일부] 안내가 단지를 부르는 말. 학교는 같은 결과의 순서 안내(`TAB_TITLE_BY_PLACE_TYPE`)와 어긋나지 않게 '배정단지' 다
-SCOPE_NAME_BY_PLACE_TYPE: dict[ZigbangComplexPlaceType, str] = {'역': '주변 단지', '학교': '배정단지', '동': '단지', '구': '단지'}
-SEARCH_TYPE_BY_PLACE_TYPE: dict[ZigbangComplexPlaceType, ZigbangDanjiPlaceType] = {
-    '역': 'subway',
-    '학교': 'school',
-    '동': 'local',
-    '구': 'local',
-}
-# 주변 단지 정보(`subways`·`schools`)가 있고 거리를 주는 곳. 동·구는 없다
-AROUND_PLACE_TYPES: tuple[ZigbangComplexPlaceType, ...] = ('역', '학교')
-# 주변 단지 정보(역 `subways`·학교 상세 `schools` 의 배정단지)에서 오는 값. 학교 쪽에는 주소가 없어 주소는 단지 카드에서 받는다
-AROUND_FIELDS_BY_PLACE_TYPE: dict[ZigbangComplexPlaceType, str] = {'역': '이름·주소·세대수·거리', '학교': '이름·세대수·거리'}
-# 단지 카드(`danjis/details`)에서 오는 값. 동·구는 주변 단지 정보가 없어 이름·주소·세대수도 카드에서 받는다
-CARD_FIELDS_BY_PLACE_TYPE: dict[ZigbangComplexPlaceType, str] = {
-    '역': 'highlight',
-    '학교': '주소·highlight',
-    '동': '이름·주소·세대수·highlight',
-    '구': '이름·주소·세대수·highlight',
-}
-# 웹 학교 화면 하단 안내
-SCHOOL_ASSIGNMENT_NOTICE: str = '학군배정 정보는 지역에 따라 실제 배정과 다소 차이가 있을 수 있습니다 (직방 웹 학교 화면 하단 안내)'
-# 직방 학교급(stage) → 학교 이름의 급. 모르는 값은 원문 그대로 낸다
-SCHOOL_LEVEL_BY_STAGE: dict[str, str] = {'elementary': '초등학교', 'middle': '중학교', 'high': '고등학교'}
+from typing import NamedTuple
 
 
 class _ComplexPlace(NamedTuple):
@@ -265,6 +229,62 @@ def _order_note(place_type: ZigbangComplexPlaceType, name: str, order: ZigbangCo
     return text
 
 
+def query_place_kind(query: str) -> QueryPlaceKind:
+    """검색어(마지막 낱말)의 끝 글자로 역('…역')·학교('…학교')·그 밖(동·구)을 가른다.
+
+    `search complexes` 가 무엇의 주변 단지인지 정하려고 쓴다. 이름을 찾아보기 전에 정해야 지역 검색을 한 번만 부르고, 동·구에
+    받지 않는 조건을 요청 전에 막을 수 있다.
+    """
+    name = dong_name(query)
+    if name.endswith('역'):
+        return '역'
+    if name.endswith('학교'):
+        return '학교'
+    return '동·구'
+
+
+def resolve_station(client: ZigbangClient, query: str) -> ZigbangSearchItemModel | None:
+    """역 이름을 역 검색 결과 하나로 바꾼다 (search complexes 의 역 경로). 검색어(마지막 낱말)와 이름이 같은 역이 없으면 None.
+
+    다른 검색처럼 지역(address) 결과를 먼저 고르면, 동 이름('신사동')에 같은 이름 동의 `REGION_AMBIGUOUS` 를 내고 그 힌트
+    ('은평구 신사동')를 따르면 '역이 아닙니다' 가 됐다 (2026-11-16 리뷰). 역 결과만 보고, 같은 이름 역이 여럿이면 다른
+    검색과 같이 멈춘다 ('창천동 신촌역' 은 검색어 앞 낱말로 가린다). 이 경로는 역 ID·이름·주소만 써서 지역(`ZigbangRegion`)으로
+    바꾸지 않는다. 직방이 좌표를 주지 않은 역도 찾는다.
+
+    Raises:
+        RegionNotFoundError: 결과가 하나도 없을 때 (`STATION_QUERY_HINT`. 이 명령에는 좌표 옵션이 없다).
+        RegionAmbiguousError: 같은 이름의 역이 여러 곳일 때 (`settled_item`).
+    """
+    items = search_regions(client, query)
+    if not items:
+        raise RegionNotFoundError(query, hint=STATION_QUERY_HINT)
+    name = dong_name(query)
+    station = next((item for item in items if item.type == 'subway' and item.name == name), None)
+    return settled_item(query, items, station) if station else None
+
+
+def resolve_school(client: ZigbangClient, query: str) -> ZigbangSearchItemModel:
+    """학교 이름을 학교 하나로 바꾼다 (search complexes 의 학교 경로). 검색어(마지막 낱말)와 이름이 같은 학교를 찾는다.
+
+    학교 화면 코드(`source.school_code`)는 '아파트' 서비스로 찾은 결과에 있어 (2026-11-19 실측: 해누리중학교) 그 서비스로 찾는다.
+    같은 이름 학교가 여러 곳이면 다른 검색처럼 멈춘다 (`settled_item`, 검색어 앞 낱말로 한 곳이 가려지면 그 학교).
+    결과의 `id` 는 학교 목록 번호이고 학교 코드와 다르다. 직방이 이 번호를 다시 매기는 일이 있어 배정단지 목록에는 쓰지 않고,
+    부르는 쪽이 학교 코드로 학교 정보를 받아 그 `detail.id` 를 쓴다 (웹 학교 화면과 같다). 아파트 서비스 검색에는 대학교가 나오지
+    않아(`search_regions_and_complexes`) 대학교 이름은 찾지 못한다. 좌표 없는 같은 이름 학교도 후보로 센다 (`search_regions` 는
+    좌표를 거르지 않는다). 학교 코드만 쓰고 지역(`ZigbangRegion`)으로 바꾸지 않아 좌표 없는 학교도 고를 수 있다.
+
+    Raises:
+        RegionNotFoundError: 그 이름의 초·중·고등학교가 없을 때.
+        RegionAmbiguousError: 같은 이름의 학교가 여러 곳일 때 (`settled_item`).
+    """
+    items = search_regions(client, query, service_type='아파트')
+    name = dong_name(query)
+    school = next((item for item in items if item.type == 'school' and item.name == name), None)
+    if school is None:
+        raise RegionNotFoundError(query, hint="초등학교·중학교·고등학교 이름 전체를 주세요 (예: '해누리중학교'). 대학교는 받지 않습니다")
+    return settled_item(query, items, school)
+
+
 def _station_place(client: ZigbangClient, query: str) -> _ComplexPlace:
     station = resolve_station(client, query)
     # 역 ID 가 0 이하면 단지 목록과 주변 단지 정보를 받을 수 없다
@@ -406,7 +426,7 @@ def place_complex_of(
         address=address,
         household_count=households,
         distance_km=None if distance_m is None else round(distance_m / 1000, 2),
-        url=apt_danji_url(danji_id),
+        url=APT_DANJI_URL.format(danji_id),
         highlight=text_or_none(card.desc2) if card else None,
         has_distance=place_type in AROUND_PLACE_TYPES,
     )
