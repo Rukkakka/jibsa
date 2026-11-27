@@ -16,7 +16,7 @@ REPLACE_RETRY_SECONDS: float = 0.05
 
 
 class StateDirError(JibsaError):
-    """요청 제한 상태 파일을 읽거나 쓰지 못했을 때 (권한·샌드박스·디스크).
+    """요청 제한 기록·브라우저 쿠키·이어 받기 표를 담는 상태 폴더를 읽거나 쓰지 못했을 때 (권한·샌드박스·디스크).
 
     모든 요청이 상태 파일을 거치므로 어느 소스를 써도 같은 이유로 실패한다. 기본 INTERNAL_ERROR 힌트('다른
     소스를 쓰세요')를 따르면 에이전트가 세 소스를 헛되이 돌기 때문에 원인과 `JIBSA_STATE_DIR` 를 알린다
@@ -30,7 +30,7 @@ class StateDirError(JibsaError):
     def __init__(self, directory: Path, exc: OSError) -> None:
         super().__init__(
             code='INTERNAL_ERROR',
-            message=f'요청 제한 상태 폴더({directory})를 쓸 수 없습니다 ({type(exc).__name__}: {exc.strerror or exc})',
+            message=f'상태 폴더({directory})를 쓸 수 없습니다 ({type(exc).__name__}: {exc.strerror or exc})',
             hint=(
                 '모든 소스가 같은 이유로 실패하니 다른 소스로 다시 시도하지 마세요. '
                 'JIBSA_STATE_DIR 환경 변수로 쓸 수 있는 폴더(예: 작업 폴더 안)를 지정하고, '
