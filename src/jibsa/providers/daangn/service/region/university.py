@@ -28,7 +28,7 @@ from jibsa.providers.daangn.service.region.constants import (
     NO_LOCATION,
     UNIVERSITY_CANDIDATES,
 )
-from jibsa.providers.daangn.service.region.models import DaangnUniversity
+from jibsa.providers.daangn.service.region.models.university import DaangnUniversity
 
 
 def same_university_notes(university: DaangnUniversity) -> list[str]:

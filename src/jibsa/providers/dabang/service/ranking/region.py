@@ -54,7 +54,7 @@ from jibsa.providers.dabang.service.ranking.constants import (
     VALUE_FIELDS_BY_KIND,
     ValueKind,
 )
-from jibsa.providers.dabang.service.ranking.models import (
+from jibsa.providers.dabang.service.ranking.models.region import (
     DabangRegionRanking,
     DabangRegionRankingEntry,
 )

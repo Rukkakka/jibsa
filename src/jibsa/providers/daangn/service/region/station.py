@@ -28,7 +28,7 @@ from jibsa.providers.daangn.service.region.constants import (
     NO_LOCATION,
     NUMBER_ONLY_LINE_PATTERN,
 )
-from jibsa.providers.daangn.service.region.models import DaangnStation
+from jibsa.providers.daangn.service.region.models.station import DaangnStation
 
 
 def _station_label(lines: list[str], name: str) -> str:

@@ -17,7 +17,7 @@ from jibsa.providers.dabang.service.ranking.constants import (
     PREVIOUS_TRADE_PERIOD,
     TRADE_PERIOD_BY_LABEL,
 )
-from jibsa.providers.dabang.service.ranking.models import (
+from jibsa.providers.dabang.service.ranking.models.trade import (
     DabangTradeRanking,
     DabangTradeRankings,
 )

@@ -24,7 +24,7 @@ from jibsa.providers.daangn.service.common.response import (
     unwrap_graphql,
 )
 from jibsa.providers.daangn.service.region.area import resolve_realsale_region
-from jibsa.providers.daangn.service.region.models import DaangnRealsaleRegion
+from jibsa.providers.daangn.service.region.models.area import DaangnRealsaleRegion
 from jibsa.providers.daangn.service.review.constants import (
     DISTRICT_PAGE_COMPLEXES,
     DONG_PAGE_COMPLEXES,

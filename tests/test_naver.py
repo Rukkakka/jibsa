@@ -72,7 +72,7 @@ from jibsa.providers.naver.service.search.constants import (
     ONE_ROOM_SHAPE_NOTE,
 )
 from jibsa.providers.naver.service.search.listings import search_area
-from jibsa.providers.naver.service.search.models import NaverListingConditions
+from jibsa.providers.naver.service.search.models.listings import NaverListingConditions
 from jibsa.providers.naver.service.trend.trend import get_district_trend
 
 from typing import Any

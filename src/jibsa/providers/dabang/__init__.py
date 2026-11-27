@@ -6,10 +6,8 @@ from .service.common.models import (
     DabangPlace,
 )
 from .service.listing.detail import get_listing as _get_listing
-from .service.listing.models import (
-    DabangListingDetail,
-    DabangSearchResult,
-)
+from .service.listing.models.common import DabangSearchResult
+from .service.listing.models.detail import DabangListingDetail
 from .service.listing.search import search_listings as _search_listings
 from .service.region.region import resolve_places as _resolve_places
 

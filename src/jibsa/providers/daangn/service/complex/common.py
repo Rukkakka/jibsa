@@ -28,7 +28,7 @@ from jibsa.providers.daangn.service.complex.constants import (
     COMPLEX_CANDIDATE_LIMIT,
     COMPLEX_PAGE_SIZE,
 )
-from jibsa.providers.daangn.service.complex.models import DaangnComplexCandidate
+from jibsa.providers.daangn.service.complex.models.common import DaangnComplexCandidate
 
 
 logger = logging.getLogger(__name__)

@@ -21,7 +21,7 @@ from jibsa.providers.dabang.service.neighborhood.constants import (
     HOT_PLACE_GUIDE_LABELS,
     HOT_PLACE_TYPE_BY_LABEL,
 )
-from jibsa.providers.dabang.service.neighborhood.models import (
+from jibsa.providers.dabang.service.neighborhood.models.hot_places import (
     DabangHotPlace,
     DabangHotPlacesResult,
 )

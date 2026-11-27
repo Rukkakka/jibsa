@@ -7,11 +7,11 @@ from .service.commute.models import DaangnCommuteResult
 from .service.complex.common import search_complexes as _search_complexes
 from .service.complex.detail import get_complex as _get_complex
 from .service.complex.listings import list_complex_listings as _list_complex_listings
-from .service.complex.models import (
+from .service.complex.models.common import DaangnComplexCandidate
+from .service.complex.models.detail import DaangnComplex
+from .service.complex.models.listings import DaangnComplexListingsResult
+from .service.complex.models.search import (
     DaangnBoundsComplexesResult,
-    DaangnComplex,
-    DaangnComplexCandidate,
-    DaangnComplexListingsResult,
     DaangnRegionComplexesResult,
 )
 from .service.complex.search import list_bounds_complexes as _list_bounds_complexes
@@ -22,12 +22,12 @@ from .service.real_price.complex import (
     get_listing_real_prices as _get_listing_real_prices,
 )
 from .service.real_price.complex import get_real_prices as _get_real_prices
-from .service.real_price.models import (
+from .service.real_price.models.complex import (
     DaangnListingRealPriceResult,
-    DaangnPriceTrendResult,
     DaangnRealPriceResult,
-    DaangnRegionRealPriceResult,
 )
+from .service.real_price.models.region import DaangnRegionRealPriceResult
+from .service.real_price.models.trend import DaangnPriceTrendResult
 from .service.real_price.region import (
     get_region_real_prices as _get_region_real_prices,
 )
@@ -35,27 +35,27 @@ from .service.real_price.trend import get_price_trend as _get_price_trend
 from .service.region.address import find_address as _find_address
 from .service.region.area import resolve_area as _resolve_area
 from .service.region.area import search_areas as _search_areas
-from .service.region.models import (
-    DaangnAddress,
-    DaangnArea,
-    DaangnStation,
-    DaangnUniversity,
-)
+from .service.region.models.address import DaangnAddress
+from .service.region.models.area import DaangnArea
+from .service.region.models.station import DaangnStation
+from .service.region.models.university import DaangnUniversity
 from .service.region.station import find_station as _find_station
 from .service.region.university import find_university as _find_university
 from .service.review.models import DaangnRegionReviews
 from .service.review.review import get_region_reviews as _get_region_reviews
-from .service.school.models import DaangnSchoolResult
+from .service.school.models.school import DaangnSchoolResult
 from .service.school.school import get_school as _get_school
 from .service.search.around import search_station as _search_station
 from .service.search.around import search_university as _search_university
 from .service.search.map import search_dong as _search_dong
 from .service.search.map import search_map_area as _search_map_area
-from .service.search.models import (
-    DaangnDongSearchResult,
-    DaangnMapSearchResult,
+from .service.search.models.around import (
     DaangnStationSearchResult,
     DaangnUniversitySearchResult,
+)
+from .service.search.models.map import (
+    DaangnDongSearchResult,
+    DaangnMapSearchResult,
 )
 
 

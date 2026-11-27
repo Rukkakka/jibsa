@@ -13,7 +13,7 @@ from jibsa.providers.zigbang.service.common.constants import APT_ID_PREFIXES
 from jibsa.providers.zigbang.service.common.models import ZigbangListingDetail
 from jibsa.providers.zigbang.service.room.detail import get_listing as get_room_listing
 from jibsa.providers.zigbang.service.stay.detail import get_stay_listing
-from jibsa.providers.zigbang.service.stay.models import ZigbangStayListingDetail
+from jibsa.providers.zigbang.service.stay.models.detail import ZigbangStayListingDetail
 from jibsa.providers.zigbang.service.store.models import ZigbangStoreListingDetail
 from jibsa.providers.zigbang.service.store.store import get_store_listing
 

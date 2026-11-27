@@ -42,7 +42,7 @@ from jibsa.providers.daangn.service.real_price.constants import (
     REALSALE_SORT_BY_TRADE_TYPE,
     REALSALE_SORT_LABEL_BY_SORT,
 )
-from jibsa.providers.daangn.service.real_price.models import (
+from jibsa.providers.daangn.service.real_price.models.region import (
     DaangnRealsaleSummary,
     DaangnRegionRealPrice,
     DaangnRegionRealPriceResult,

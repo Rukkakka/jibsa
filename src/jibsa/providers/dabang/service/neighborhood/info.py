@@ -28,7 +28,7 @@ from jibsa.providers.dabang.service.neighborhood.constants import (
     RANK_TYPES_BY_TOPIC,
     NeighborhoodTopic,
 )
-from jibsa.providers.dabang.service.neighborhood.models import (
+from jibsa.providers.dabang.service.neighborhood.models.info import (
     DabangAgeGroup,
     DabangCategoryRank,
     DabangCountStats,

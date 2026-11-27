@@ -24,7 +24,7 @@ from jibsa.providers.zigbang.service.apt.constants import (
     APT_DONG_GEOHASH_PRECISION,
     LOCAL_CATALOG_PAGE_SIZE,
 )
-from jibsa.providers.zigbang.service.apt.models import (
+from jibsa.providers.zigbang.service.apt.models.search import (
     ZigbangAptConditions,
     ZigbangAptSearchResult,
 )

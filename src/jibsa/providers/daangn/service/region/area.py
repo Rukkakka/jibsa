@@ -56,7 +56,7 @@ from jibsa.providers.daangn.service.region.constants import (
     SEJONG,
     AreaLevel,
 )
-from jibsa.providers.daangn.service.region.models import (
+from jibsa.providers.daangn.service.region.models.area import (
     DaangnArea,
     DaangnRealsaleRegion,
 )

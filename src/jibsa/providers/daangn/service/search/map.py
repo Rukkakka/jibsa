@@ -40,10 +40,8 @@ from jibsa.providers.daangn.service.region.area import (
     sido_cache_from_rows,
     sido_cache_rows,
 )
-from jibsa.providers.daangn.service.region.models import (
-    DaangnAddress,
-    DaangnArea,
-)
+from jibsa.providers.daangn.service.region.models.address import DaangnAddress
+from jibsa.providers.daangn.service.region.models.area import DaangnArea
 from jibsa.providers.daangn.service.search.common import (
     listing_notes,
     to_listings,
@@ -55,7 +53,7 @@ from jibsa.providers.daangn.service.search.constants import (
     MAP_RESOLUTION_MIN,
     REGION_CLUSTER_ZOOM,
 )
-from jibsa.providers.daangn.service.search.models import (
+from jibsa.providers.daangn.service.search.models.map import (
     DaangnDongSearchResult,
     DaangnMapSearchResult,
 )

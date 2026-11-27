@@ -76,7 +76,7 @@ from jibsa.providers.zigbang.api.models.response.store import (
 from jibsa.providers.zigbang.service.apt.detail import (
     apt_item_to_listing,
 )
-from jibsa.providers.zigbang.service.apt.models import ZigbangAptConditions
+from jibsa.providers.zigbang.service.apt.models.search import ZigbangAptConditions
 from jibsa.providers.zigbang.service.apt.search import (
     search_apt_listings,
 )
@@ -93,7 +93,7 @@ from jibsa.providers.zigbang.service.common.text import (
 from jibsa.providers.zigbang.service.complex.info import (
     get_complex,
 )
-from jibsa.providers.zigbang.service.complex.models import ZigbangComplex
+from jibsa.providers.zigbang.service.complex.models.info import ZigbangComplex
 from jibsa.providers.zigbang.service.complex.search import (
     complex_order_of,
     distance_m_of,
@@ -143,7 +143,7 @@ from jibsa.providers.zigbang.service.stay.constants import (
 from jibsa.providers.zigbang.service.stay.detail import (
     stay_detail_to_listing,
 )
-from jibsa.providers.zigbang.service.stay.models import ZigbangStayListingDetail
+from jibsa.providers.zigbang.service.stay.models.detail import ZigbangStayListingDetail
 from jibsa.providers.zigbang.service.stay.search import stay_marker_order
 from jibsa.providers.zigbang.service.store.constants import (
     STORE_VACANT_SECTION,

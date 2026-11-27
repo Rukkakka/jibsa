@@ -50,7 +50,7 @@ from jibsa.providers.zigbang.service.complex.constants import (
     ZigbangPriceTrendPeriod,
     ZigbangPyeongTrendTrade,
 )
-from jibsa.providers.zigbang.service.complex.models import (
+from jibsa.providers.zigbang.service.complex.models.trend import (
     ZigbangComplexPriceLine,
     ZigbangComplexPricePoint,
     ZigbangPriceLineKind,

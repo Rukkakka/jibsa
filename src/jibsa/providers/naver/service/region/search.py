@@ -57,7 +57,7 @@ from jibsa.providers.naver.service.region.constants import (
     MAX_CANDIDATE_NOTES,
     WIDE_REGION_NOTE_MARK,
 )
-from jibsa.providers.naver.service.region.models import NaverRegion
+from jibsa.providers.naver.service.region.models.search import NaverRegion
 
 from typing import (
     Literal,

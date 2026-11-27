@@ -48,7 +48,7 @@ from jibsa.providers.dabang.service.common.room import (
     room_item_to_listing,
     unreadable_note,
 )
-from jibsa.providers.dabang.service.listing.models import (
+from jibsa.providers.dabang.service.listing.models.common import (
     DabangListPosition,
     DabangSearchResult,
 )

@@ -37,7 +37,9 @@ from jibsa.providers.zigbang.service.common.room import (
 )
 from jibsa.providers.zigbang.service.complex.common import fetch_building
 from jibsa.providers.zigbang.service.complex.constants import DANJI_CATALOG_PAGE_SIZE
-from jibsa.providers.zigbang.service.complex.models import ZigbangComplexListingsResult
+from jibsa.providers.zigbang.service.complex.models.listings import (
+    ZigbangComplexListingsResult,
+)
 
 
 def list_complex_listings(

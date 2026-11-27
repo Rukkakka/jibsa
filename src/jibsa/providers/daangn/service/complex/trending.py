@@ -20,12 +20,12 @@ from jibsa.providers.daangn.service.common.response import (
     unwrap_graphql,
 )
 from jibsa.providers.daangn.service.complex.constants import APPROVAL_DATE_PATTERN
-from jibsa.providers.daangn.service.complex.models import (
+from jibsa.providers.daangn.service.complex.models.trending import (
     DaangnTrendingComplex,
     DaangnTrendingComplexesResult,
     DaangnTrendingRegion,
 )
-from jibsa.providers.daangn.service.region.models import DaangnArea
+from jibsa.providers.daangn.service.region.models.area import DaangnArea
 
 
 def trending_region_of(area: DaangnArea | None) -> DaangnTrendingRegion:

@@ -43,7 +43,7 @@ from jibsa.providers.dabang.service.common.text import (
     manwon_from_text,
 )
 from jibsa.providers.dabang.service.complex.constants import CATEGORY_BY_COMPLEX_KIND
-from jibsa.providers.dabang.service.complex.models import (
+from jibsa.providers.dabang.service.complex.models.search import (
     DabangComplexListResult,
     DabangComplexSummary,
 )

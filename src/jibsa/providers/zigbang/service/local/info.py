@@ -47,7 +47,7 @@ from jibsa.providers.zigbang.service.local.constants import (
     PRICE_TREND_EMPTY_ALL,
     PRICE_TREND_EMPTY_RANGE,
 )
-from jibsa.providers.zigbang.service.local.models import (
+from jibsa.providers.zigbang.service.local.models.info import (
     ZigbangHouseholdMonth,
     ZigbangPopulationMonth,
     ZigbangPriceMovement,

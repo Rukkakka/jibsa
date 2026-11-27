@@ -19,7 +19,7 @@ from jibsa.providers.dabang.service.nearby.constants import (
     ROOM_LABELS,
     STATION_BOX_KM,
 )
-from jibsa.providers.dabang.service.nearby.models import (
+from jibsa.providers.dabang.service.nearby.models.station import (
     DabangStationPrice,
     DabangStationPrices,
 )

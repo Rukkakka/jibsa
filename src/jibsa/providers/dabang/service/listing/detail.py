@@ -58,10 +58,10 @@ from jibsa.providers.dabang.service.listing.constants import (
     MANAGE_ITEM_LABELS,
     TRADE_BY_SELLING_CODE,
 )
-from jibsa.providers.dabang.service.listing.models import (
+from jibsa.providers.dabang.service.listing.models.common import DabangSearchResult
+from jibsa.providers.dabang.service.listing.models.detail import (
     DabangDetailedListing,
     DabangListingDetail,
-    DabangSearchResult,
 )
 
 from typing import NamedTuple

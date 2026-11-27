@@ -50,7 +50,7 @@ from jibsa.providers.dabang.service.complex.constants import (
     NEAREST_SCHOOLS,
     NURSERY_ESTABLISHMENT_LABELS,
 )
-from jibsa.providers.dabang.service.complex.models import (
+from jibsa.providers.dabang.service.complex.models.detail import (
     DabangChildcare,
     DabangComplexDetail,
     DabangComplexSchool,

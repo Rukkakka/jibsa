@@ -34,7 +34,7 @@ from jibsa.providers.daangn.service.common.constants import (
 from jibsa.providers.daangn.service.common.location import station_name
 from jibsa.providers.daangn.service.common.response import code_label
 from jibsa.providers.daangn.service.complex.constants import NEAREST_SCHOOLS
-from jibsa.providers.daangn.service.complex.models import (
+from jibsa.providers.daangn.service.complex.models.detail import (
     DaangnComplex,
     DaangnPyeong,
 )

@@ -53,7 +53,7 @@ from jibsa.providers.naver.service.redevelopment.constants import (
     REDEVELOPMENT_SORT_TYPE_BY_NAME,
     REDEVELOPMENT_URL,
 )
-from jibsa.providers.naver.service.redevelopment.models import (
+from jibsa.providers.naver.service.redevelopment.models.search import (
     NaverRedevelopmentArea,
     NaverRedevelopmentAreasResult,
 )

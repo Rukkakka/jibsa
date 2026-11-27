@@ -61,7 +61,7 @@ from jibsa.providers.zigbang.service.complex.constants import (
     ZigbangComplexOrder,
     ZigbangComplexPlaceType,
 )
-from jibsa.providers.zigbang.service.complex.models import (
+from jibsa.providers.zigbang.service.complex.models.search import (
     QueryPlaceKind,
     ZigbangHighAdvancement,
     ZigbangMiddleAdvancement,

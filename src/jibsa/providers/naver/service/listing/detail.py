@@ -85,7 +85,7 @@ from jibsa.providers.naver.service.listing.facility import (
 from jibsa.providers.naver.service.listing.facility import (
     facility_values as _facility_values,
 )
-from jibsa.providers.naver.service.listing.models import (
+from jibsa.providers.naver.service.listing.models.detail import (
     NaverListingDetail,
     draws_sale_taxes,
 )

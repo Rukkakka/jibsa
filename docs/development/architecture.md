@@ -10,7 +10,7 @@ jibsa 의 계층 구조와, 명령 하나가 실행될 때 요청이 흐르는 �
 
 ```
 cli/                 Typer 명령. 인자 검증 → service 호출 → emit / handle_errors
- └─ providers/<source>/service/     여러 엔드포인트를 묶어 Listing 으로 정규화 (기능별 폴더: `constants.py` 상수 · `models.py` 모델 · 폴더 안 공용 `common.py` · 명령·주제 이름 모듈(`search`·`detail`, 명령 하나면 그 명령 이름). 소스 전체가 쓰는 것은 `service/common/` 의 내용 이름 파일)
+ └─ providers/<source>/service/     여러 엔드포인트를 묶어 Listing 으로 정규화 (기능별 폴더: `constants.py` 상수 · `models.py` 모델(명령마다 갈리면 `models/` 폴더) · 폴더 안 공용 `common.py` · 명령·주제 이름 모듈(`search`·`detail`, 명령 하나면 그 명령 이름). 소스 전체가 쓰는 것은 `service/common/` 의 내용 이름 파일)
      └─ providers/<source>/api/        소스 API 그대로: client.py (엔드포인트 하나 = 메서드 하나, run_request_*),
                                         models/request/·models/response/ 모델
          └─ core/http.py BaseHTTPClient   httpx 클라이언트 + 요청 제한 훅

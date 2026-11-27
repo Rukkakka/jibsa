@@ -17,7 +17,7 @@ from jibsa.providers.zigbang.api.models.response.complex.common import (
 from jibsa.providers.zigbang.service.common.danji import complex_not_found
 from jibsa.providers.zigbang.service.common.ids import apt_complex_id
 from jibsa.providers.zigbang.service.complex.constants import HOUSEHOLD_TEXT_PATTERN
-from jibsa.providers.zigbang.service.complex.models import ZigbangRelatedComplex
+from jibsa.providers.zigbang.service.complex.models.common import ZigbangRelatedComplex
 
 
 def related_complex_of(item: ZigbangRelatedDanjiModel) -> ZigbangRelatedComplex:

@@ -37,7 +37,7 @@ from jibsa.providers.zigbang.service.apt.constants import (
     CATALOG_ID_PATTERN,
     CATALOG_PAGE_SIZE,
 )
-from jibsa.providers.zigbang.service.apt.models import (
+from jibsa.providers.zigbang.service.apt.models.detail import (
     ZigbangCatalogResult,
     ZigbangPublicPrice,
 )

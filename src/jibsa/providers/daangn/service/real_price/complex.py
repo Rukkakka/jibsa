@@ -50,7 +50,7 @@ from jibsa.providers.daangn.service.real_price.constants import (
     NOT_PRESALE_OWNERSHIP,
     PRESALE_LABELS,
 )
-from jibsa.providers.daangn.service.real_price.models import (
+from jibsa.providers.daangn.service.real_price.models.complex import (
     DaangnListingRealPriceResult,
     DaangnRealPrice,
     DaangnRealPriceResult,

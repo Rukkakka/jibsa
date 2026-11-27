@@ -32,7 +32,7 @@ from jibsa.providers.daangn.service.common.constants import (
     COMPLEX_URL,
 )
 from jibsa.providers.daangn.service.common.response import code_label
-from jibsa.providers.daangn.service.compare.models import (
+from jibsa.providers.daangn.service.compare.models.complexes import (
     DaangnAskingAverage,
     DaangnCompareEstimatedPrices,
     DaangnComparePyeong,

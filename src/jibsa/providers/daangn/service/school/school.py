@@ -50,7 +50,7 @@ from jibsa.providers.daangn.service.school.constants import (
     SCHOOL_TYPE_LABELS,
     SCHOOL_URL,
 )
-from jibsa.providers.daangn.service.school.models import (
+from jibsa.providers.daangn.service.school.models.school import (
     DaangnSchool,
     DaangnSchoolResult,
 )

@@ -42,7 +42,7 @@ from jibsa.providers.naver.service.complex.constants import (
     REAL_PRICE_SUMMARY_FALLBACK_YEARS,
     REAL_PRICE_SUMMARY_YEARS,
 )
-from jibsa.providers.naver.service.complex.models import (
+from jibsa.providers.naver.service.complex.models.common import (
     NaverComplexMaintenanceFee,
     NaverMarketPrice,
     NaverPricePerPyeong,

@@ -14,7 +14,7 @@ from jibsa.providers.naver.api.models.response.listing.detail import (
 from jibsa.providers.naver.service.common.constants import VILLA_COMPLEX_CODES
 from jibsa.providers.naver.service.common.response import result_or_none
 from jibsa.providers.naver.service.common.schools import assigned_schools
-from jibsa.providers.naver.service.listing.models import (
+from jibsa.providers.naver.service.listing.models.common import (
     NaverNearbyArea,
     NaverNearbyDevelopment,
     NaverNearbyRail,

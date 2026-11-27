@@ -25,7 +25,7 @@ from jibsa.providers.dabang.service.neighborhood.constants import (
     POPULAR_MAX_LIMIT,
     POPULAR_PRICE_BY_TRADE,
 )
-from jibsa.providers.dabang.service.neighborhood.models import (
+from jibsa.providers.dabang.service.neighborhood.models.popular import (
     DabangPopularResult,
     DabangRankedListing,
 )

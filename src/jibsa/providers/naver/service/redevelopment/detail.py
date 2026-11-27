@@ -21,7 +21,7 @@ from jibsa.providers.naver.service.common.response import (
     unwrap,
 )
 from jibsa.providers.naver.service.redevelopment.constants import REDEVELOPMENT_URL
-from jibsa.providers.naver.service.redevelopment.models import (
+from jibsa.providers.naver.service.redevelopment.models.detail import (
     NaverRedevelopmentDetail,
 )
 

@@ -52,7 +52,7 @@ from jibsa.providers.daangn.service.complex.constants import (
     DEFAULT_COMPLEX_TRADE_TYPE,
     MOVE_IN_SORT_NOTE,
 )
-from jibsa.providers.daangn.service.complex.models import (
+from jibsa.providers.daangn.service.complex.models.search import (
     DaangnBoundsComplexesResult,
     DaangnComplexConditions,
     DaangnRegionComplexesResult,

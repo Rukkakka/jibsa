@@ -39,7 +39,7 @@ from jibsa.providers.dabang.service.real_price.constants import (
     TRADE_BY_SEARCH_TYPE,
     RealPriceTrade,
 )
-from jibsa.providers.dabang.service.real_price.models import (
+from jibsa.providers.dabang.service.real_price.models.trades import (
     AreaKind,
     DabangRealPrice,
     DabangRealPriceResult,
