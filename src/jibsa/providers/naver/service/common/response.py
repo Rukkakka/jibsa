@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import lookup_failure_note
+from jibsa.core.notes import lookup_failure_note
 from jibsa.providers.naver.api.models.response.common import NaverResponseModel
 from jibsa.providers.naver.service.common.constants import OPTIONAL_LOOKUP_ERRORS
 
@@ -71,7 +71,7 @@ def add_failure_note(notes: list[str] | None, exc: Exception | None, what: str, 
     한 명령에서 같은 조회를 여러 번 부르는 자리(평형마다 등)가 있어 같은 글자를 거듭 붙이지 않는다.
 
     갈래(네이버가 거절(4xx·`isSuccess` false)했거나 응답 형식이 바뀌면 업데이트 안내, 서버 오류·연결 실패면 붙이지 않음)와
-    문구는 core/listing.py 의 `lookup_failure_note` 다. 요청 제한 `RateLimitedError` 는 덤 조회가 잡지 않아 여기 오지 않는다.
+    문구는 core/notes.py 의 `lookup_failure_note` 다. 요청 제한 `RateLimitedError` 는 덤 조회가 잡지 않아 여기 오지 않는다.
 
     Args:
         exc: 실패 예외. `None` 이면 `isSuccess` 가 false 였던 것이다.
@@ -98,7 +98,7 @@ def result_or_none(
 
     Args:
         notes: 안내를 붙일 목록. `None` 은 호출부가 실패를 스스로 알린다는 뜻이다 (지역 해석).
-        what: 조회 이름 ('관리비'). core/listing.py 의 `lookup_failure_note` 를 보라.
+        what: 조회 이름 ('관리비'). core/notes.py 의 `lookup_failure_note` 를 보라.
         unknown: 모름이 된 칸 ('모름(null)으로 낸 칸: a, b').
     """
     return result_with_null_items(request, notes=notes, what=what, unknown=unknown)[0]

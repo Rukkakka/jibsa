@@ -2,7 +2,7 @@
 
 jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형식이 곧 공개 API 다.
 여기 적힌 규칙을 바꾸는 변경은 `docs/common.md`와 해당 소스 CLI 문서의 출력 규칙·사용 지침도 함께 고친다.
-구현은 `cli/output.py`, `cli/app.py` 의 `run()`, `core/listing.py`.
+구현은 `cli/output.py`, `cli/app.py` 의 `run()`, `core/listing.py`, `core/notes.py`(`notes` 안내 문구), `core/dates.py`(날짜 읽기).
 
 ## stdout / stderr
 
@@ -42,9 +42,9 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 | pydantic `ValidationError` — 요청 모델(`RequestModel`) | `INVALID_ARGUMENT` | 2 |
 | pydantic `ValidationError` — 응답 모델·`Listing` (응답 형식 변경) | `PARSE_ERROR` | 1 |
 | `HTTPStatusError` 404 / 429 / 그 밖 | `NOT_FOUND` / `RATE_LIMITED` / `UPSTREAM_ERROR` | 1 |
-| `CorsBlockedError` (브라우저가 CORS 로 응답을 막음, `core/browser.py`) | `UPSTREAM_ERROR` (다른 소스를 가리키는 hint) | 1 |
+| `CorsBlockedError` (브라우저가 CORS 로 응답을 막음, `core/browser/errors.py`) | `UPSTREAM_ERROR` (다른 소스를 가리키는 hint) | 1 |
 | httpx `ProxyError` (프록시 주소를 해석하지 못함·브라우저가 쓸 수 없는 프록시·프록시에 닿지 못함·프록시가 이 사이트를 거절함) | `NETWORK_ERROR` (프록시 설정을 가리키는 hint) | 1 |
-| `CertificateError` (브라우저가 우리 요청의 사이트 인증서를 믿지 못함, `core/browser.py`) | `NETWORK_ERROR` (인증서를 OS 에 설치하라는 hint) | 1 |
+| `CertificateError` (브라우저가 우리 요청의 사이트 인증서를 믿지 못함, `core/browser/errors.py`) | `NETWORK_ERROR` (인증서를 OS 에 설치하라는 hint) | 1 |
 | 그 밖의 `HTTPError` | `NETWORK_ERROR` | 1 |
 | `ValueError` (JSON 아닌 응답의 `JSONDecodeError`, `RelayStoreNotFoundError`·`RelayRecordNotFoundError`) | `PARSE_ERROR` | 1 |
 | 그 밖의 모든 예외 | `INTERNAL_ERROR` | 1 |
@@ -87,9 +87,9 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
 
 ## 매물 출력
 
-- 넓은 지역 안내(직방 `wide_area_note` 등), 거래 유형을 좁힌 안내(`infer_trade_types`), 조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려준다는 안내(`core.listing.limit_notes`)는 `emit(..., notes=...)` 로 맨 앞 `notes` 에 붙이고, 없으면 키를 뺀다. 안내는 짧게 쓴다 (매번 나오는 안내는 출력 토큰을 늘린다). 예전의 `notice`(원 사이트에서 확인하라는 같은 문장)는 매 응답 토큰만 늘려 뺐다. 그 안내는 `docs/llm.md` 에 있다.
-- 안내마다 앞에 종류 태그를 붙인다 (`core.listing.note`, `NoteKind`): `[일부]` 더 받을 결과가 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 받은 것 중 뺀 매물·후보가 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 짐작해 좁혔다, `[실패]` 덤 조회가 실패했거나 대체 경로로 찾았다, `[참고]` 그 밖. 새 안내는 만드는 자리에서 `note(종류, 문장)` 으로 만든다. 태그 없이 둔 안내는 `emit` 이 `[참고]` 를 붙이고(`tagged_notes`), 같은 안내가 두 번이면 하나만 남긴다. 태그는 `[실패]` 처럼 LLM 이 문장을 다 읽지 않고도 사용자에게 알릴지 가르는 데 쓴다.
-- `[제외]` 중 응답의 객체 목록 안에 빈 항목(null)이 섞여 와서 빼고 읽었다는 안내는 `core.listing.null_items_note` 로 만든다. 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API 감시가 그런 응답을 고장으로 알리고, 그 목록으로 계산한 값은 `null`(모름)이다. 계산에 쓰지 않고 보여 주기만 하는 목록처럼 자리별 안내가 없는 곳은 `emit` 이 명령 전체의 뺀 수 합(`core.schema.null_item_tally`)으로 공통 안내(`core.listing.null_items_total_note`, 어느 목록인지는 말하지 않는다)를 `notes` 끝에 붙인다. 결과에 `null_items_note` 가 이미 있으면 붙이지 않고, 끝말은 같아 매일 API 감시가 알린다. `handle_errors` 가 명령 시작에 집계를 0 으로 돌리고 소스를 `emit` 에 넘긴다. 파이썬에서 부르는 정문(`jibsa.providers.<source>`) 함수는 `core.listing.with_notes` 가 부를 때마다 집계를 0 으로 돌리고 같은 규칙(`collected_notes`)으로 결과 `notes` 끝에 붙인다. 어디서 뺀 수를 보고 무엇을 null 로 두는지의 규칙은 [모듈 구성](provider-conventions.md#모듈-구성)에 있다.
+- 넓은 지역 안내(직방 `wide_area_note` 등), 거래 유형을 좁힌 안내(`infer_trade_types`), 조건에 맞는 매물이 `limit` 보다 많아 일부만 돌려준다는 안내(`core.notes.limit_notes`)는 `emit(..., notes=...)` 로 맨 앞 `notes` 에 붙이고, 없으면 키를 뺀다. 안내는 짧게 쓴다 (매번 나오는 안내는 출력 토큰을 늘린다). 예전의 `notice`(원 사이트에서 확인하라는 같은 문장)는 매 응답 토큰만 늘려 뺐다. 그 안내는 `docs/llm.md` 에 있다.
+- 안내마다 앞에 종류 태그를 붙인다 (`core.notes.note`, `NoteKind`): `[일부]` 더 받을 결과가 있다, `[범위]` 찾은 범위가 요청과 다르다, `[제외]` 받은 것 중 뺀 매물·후보가 있다, `[모호]` 같은 이름 중 하나를 골랐다, `[거래]` 거래 유형을 짐작해 좁혔다, `[실패]` 덤 조회가 실패했거나 대체 경로로 찾았다, `[참고]` 그 밖. 새 안내는 만드는 자리에서 `note(종류, 문장)` 으로 만든다. 태그 없이 둔 안내는 `emit` 이 `[참고]` 를 붙이고(`tagged_notes`), 같은 안내가 두 번이면 하나만 남긴다. 태그는 `[실패]` 처럼 LLM 이 문장을 다 읽지 않고도 사용자에게 알릴지 가르는 데 쓴다.
+- `[제외]` 중 응답의 객체 목록 안에 빈 항목(null)이 섞여 와서 빼고 읽었다는 안내는 `core.notes.null_items_note` 로 만든다. 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API 감시가 그런 응답을 고장으로 알리고, 그 목록으로 계산한 값은 `null`(모름)이다. 계산에 쓰지 않고 보여 주기만 하는 목록처럼 자리별 안내가 없는 곳은 `emit` 이 명령 전체의 뺀 수 합(`core.schema.null_item_tally`)으로 공통 안내(`core.notes.null_items_total_note`, 어느 목록인지는 말하지 않는다)를 `notes` 끝에 붙인다. 결과에 `null_items_note` 가 이미 있으면 붙이지 않고, 끝말은 같아 매일 API 감시가 알린다. `handle_errors` 가 명령 시작에 집계를 0 으로 돌리고 소스를 `emit` 에 넘긴다. 파이썬에서 부르는 정문(`jibsa.providers.<source>`) 함수는 `core.listing.with_notes` 가 부를 때마다 집계를 0 으로 돌리고 같은 규칙(`collected_notes`)으로 결과 `notes` 끝에 붙인다. 어디서 뺀 수를 보고 무엇을 null 로 두는지의 규칙은 [모듈 구성](provider-conventions.md#모듈-구성)에 있다.
 - 출력 날짜 칸을 날짜로 읽지 못해 `null` 로 낸 것은 `emit` 이 못 읽은 날짜 안내(`unread_date_notes`)를 칸마다 한 줄로 `notes` 끝에 붙인다. `read_date` 가 명령 안에서 못 읽은 글자를 모으고, `handle_errors` 가 명령 시작에 비운다 (`null_item_tally` 와 같은 방식, 정문 함수는 `with_notes` 가 비우고 결과 `notes` 에 붙인다). 규칙은 [금액·단위](#금액단위)의 날짜 규칙에 있다.
 - 찾을 때마다 같은 안내 중 거의 모든 세션이 부르는 매물 검색의 것(직방·당근 원룸 종류의 한계)은 `notes` 에 붙이지 않고 `docs/llm.md` 에 둔다. 드물게 부르는 명령의 같은 안내(당근 단지 목록의 `recent_trades`·후기 안내, `complex_list_notes`)는 `notes` 에 둔다. 가이드는 모든 세션이 읽어, 그 명령을 쓰지 않는 세션까지 토큰을 쓴다.
 - 출력에 1억(`10000` 만원) 이상 `*_manwon` 값이 있으면 `emit` 이 그 값으로 만든 억 환산 예시(`manwon_note`)를 `notes` 끝에 붙인다. 가이드의 환산 규칙만으로는 에이전트가 큰 금액의 자리를 틀려(440000 → 4억 4,000만) 숫자 옆에 정답을 둔다. `--fields` 로 고른 뒤의 값으로 만든다.
@@ -136,11 +136,11 @@ jibsa 는 LLM 에이전트가 셸로 호출하는 도구라, CLI 의 출력 형�
   - 소스가 값 없음으로 준 것(없음·빈 글자·`-`)은 안내 없이 `null` 이다.
   - 값이 있는데 날짜로 읽지 못하면(연월만 `201005`, 문장, 달력에 없는 날 `2026-02-30`) 받은 글자를 내지 않고 `null` 로 낸 뒤
     `notes` 의 `[참고]` 로 어느 칸을 못 읽었는지와 원래 글자를 알린다: `[참고] 네이버가 준 사용승인일을 읽지 못해 null 로 냈습니다 ('201005'). 사이트 화면에서 확인하세요`.
-    출력 칸은 `read_date`(`core/listing.py`)로 읽는다 (못 읽은 글자를 모아 `emit` 이 칸마다 한 줄로 붙인다). 거르기·비교처럼 출력 칸이 아닌 자리는 `iso_date`(못 읽으면 None)를 쓴다.
+    출력 칸은 `read_date`(`core/dates.py`)로 읽는다 (못 읽은 글자를 모아 `emit` 이 칸마다 한 줄로 붙인다). 거르기·비교처럼 출력 칸이 아닌 자리는 `iso_date`(못 읽으면 None)를 쓴다.
     `normalize_date` 는 못 읽으면 원래 글자를 돌려주므로 출력 칸에 바로 쓰지 않는다. 변환 함수에 notes 를 넘기지 않는다.
   - 항목이 여럿인 목록(매물·실거래 등)은 항목마다 안내를 붙이지 않고 같은 이름의 칸을 한 줄로 모아 알린다: `[참고] 직방이 준 계약일 3건을 읽지 못해 null 로 냈습니다 (예: '201005', '2026-02-30'). 사이트 화면에서 확인하세요` (예는 겹치지 않게 앞 셋).
     건수는 **출력에 남은 항목만** 센다. 변환한 뒤 거르거나(반경·중복) `--limit` 으로 자르는 목록은 항목마다 `holding_unread_dates` 블록 안에서 바꿔 못 읽은 날짜를 돌려받아 두고, 거르고 자른 최종 목록의 것만 `keep_unread_dates` 로 명령 안내에 넣는다 (바로 `read_date` 만 부르면 출력에 없는 항목까지 센다). 못 읽은 것을 항목이 아닌 값에서 직접 모을 때는 `add_unread_date`. 목록 `--fields` 로 고르지 않은 날짜 칸(`UNREAD_DATE_FIELDS`: `registered_date`·`approved_date`·`confirmed_date`·`move_in`)은 `emit` 이 안내를 뺀다. 상세 조회를 덧붙이는 명령(다방 `search listings --details`)은 결과에 옮긴 값이 `null` 로 나갈 때만 알린다.
-  - 연월 칸(`_month`)은 `read_month`(`core/listing.py`)로 읽는다. `YYYY-MM`·`YYYYMM`·`YYYY.MM` 을 받고, 값이 있는데 못 읽으면 `null` 이고 `[참고]` 가 칸과 원래 글자를 알린다 (`read_date` 와 같은 모음). 해당 칸: 직방·다방 `price-trend` 의 `month`, 직방 `region-info` 의 시세 추이·거래량 `month`, 직방 `complex` 의 `completed_month`, 네이버 `complex --pyeong` 관리비 `latest_month`, 다방 `region-ranking` 의 `price_month`·`prev_price_month`. jibsa 가 직접 계산한 연월과 사용자가 준 기간 칸은 해당하지 않고, `_year` 칸(네이버 주변 실거래 `completed_year`)은 읽지 못하면 안내 없이 `null` 이다.
+  - 연월 칸(`_month`)은 `read_month`(`core/dates.py`)로 읽는다. `YYYY-MM`·`YYYYMM`·`YYYY.MM` 을 받고, 값이 있는데 못 읽으면 `null` 이고 `[참고]` 가 칸과 원래 글자를 알린다 (`read_date` 와 같은 모음). 해당 칸: 직방·다방 `price-trend` 의 `month`, 직방 `region-info` 의 시세 추이·거래량 `month`, 직방 `complex` 의 `completed_month`, 네이버 `complex --pyeong` 관리비 `latest_month`, 다방 `region-ranking` 의 `price_month`·`prev_price_month`. jibsa 가 직접 계산한 연월과 사용자가 준 기간 칸은 해당하지 않고, `_year` 칸(네이버 주변 실거래 `completed_year`)은 읽지 못하면 안내 없이 `null` 이다.
   - 날짜에 글자를 붙이는 칸(입주일 `move_in` 의 `2026-12-01 이내`)은 그 칸의 규칙을 따른다. 입주일은 날짜를 읽지 못하면 받은 글자를 내지 않고 `null` 이고 원래 글자를 `입주일` 칸으로 같은 안내에 알린다 (`move_in_label`. 소스가 값 없음으로 준 `-` 는 안내 없는 `null`. 네이버 `listing` 은 입주 유형을 함께 알리는 자기 문구를 쓴다).
   - 네 소스의 모든 출력 날짜·연월 칸과 입주일(네이버는 자기 문구)이 따른다 (2026-11-26 사용자 결정). 날짜 칸을 새로 만들거나 고칠 때도 이 규칙으로 맞춘다.
     다방 분양 상세의 입주 예정 `move_in` 도 날짜·연월로 못 읽으면 `null` 이고 `입주일` 로 알린다 (`sale_move_in`). 분양 일정표(`schedules`)의 시작·끝은 날짜·연월을 한 쌍의 칸으로 가르는 자기 `[참고]`(`_step_time`)를 쓴다.
@@ -271,7 +271,7 @@ jibsa 는 **찾기까지만** 한다. 원 사이트를 대신하게 되는 정�
 - 요청보다 적게 받으면 남은 몫을 다음 페이지·지도 칸·단지에서 받을 수 있다. 다음 페이지가 없거나 커서가 진행하지 않거나 요청 횟수 상한에 닿으면 중단한다.
 - `returned`는 실제 반환 수이며 요청한 `limit`과 같다는 보장이 없다. 집계 범위·일부 조회·제외 사유는 `notes`로 설명한다.
 - 단지·지역 후보, 실거래, 통근처럼 결과 상한과 원본 조회 상한·페이지·역별 예산이 따로 있는 명령도 있다.
-- 더 남았을 때 더 보는 법(`--limit` 을 늘리거나 좁히라는 말, 이미 최대값이면 `--limit 의 최대값은 N입니다`)은 `core/listing.py` 의 `more_hint` 로 만든다. 좁히라고 권할 것은 그 명령에 있는 옵션만 기본값 없이 넘기고, 반경 검색은 '지역' 대신 '반경', 단지 하나처럼 좁힐 범위가 없으면 조건만 넘긴다. 좁힐 옵션을 이미 다 골라 권할 것이 없으면 `narrow` 에 None 을 넘겨 `--limit` 만 말한다 (최대값보다 작으면 `더 보려면 --limit 을 늘리세요`, 이미 최대값이면 `--limit 의 최대값은 N입니다` 로 끝낸다). '~을 좁히세요' 꼴에 맞지 않는 안내(더 구체적인 이름으로 찾기, 정렬 바꾸기, 기간 줄이기, 최대 몇 건까지 받는지 밝히기)는 직접 쓰되, 그때도 `--limit` 이 최대값이면 늘리라고 하지 않는다.
+- 더 남았을 때 더 보는 법(`--limit` 을 늘리거나 좁히라는 말, 이미 최대값이면 `--limit 의 최대값은 N입니다`)은 `core/notes.py` 의 `more_hint` 로 만든다. 좁히라고 권할 것은 그 명령에 있는 옵션만 기본값 없이 넘기고, 반경 검색은 '지역' 대신 '반경', 단지 하나처럼 좁힐 범위가 없으면 조건만 넘긴다. 좁힐 옵션을 이미 다 골라 권할 것이 없으면 `narrow` 에 None 을 넘겨 `--limit` 만 말한다 (최대값보다 작으면 `더 보려면 --limit 을 늘리세요`, 이미 최대값이면 `--limit 의 최대값은 N입니다` 로 끝낸다). '~을 좁히세요' 꼴에 맞지 않는 안내(더 구체적인 이름으로 찾기, 정렬 바꾸기, 기간 줄이기, 최대 몇 건까지 받는지 밝히기)는 직접 쓰되, 그때도 `--limit` 이 최대값이면 늘리라고 하지 않는다.
 
 조회 방식별 예산과 한 소스에만 있는 예외는 그 소스의 provider 가이드(`docs/development/providers/`)에, 명령별 기본값·최대값은
 사용자 문서의 해당 명령 절에 적는다. 상한을 올리면 요청 수가 늘 수 있으므로 요청 제한 정책과 함께 검토한다.

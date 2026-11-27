@@ -1,8 +1,8 @@
 """단지 매물 목록 (search listings --complex): 아파트 단지와 오피스텔 건물의 매물."""
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
-    Listing,
+from jibsa.core.listing import Listing
+from jibsa.core.notes import (
     limit_notes,
     note,
     null_items_note,

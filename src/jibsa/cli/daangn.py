@@ -43,9 +43,9 @@ from jibsa.core.korean import (
     particle,
     quoted,
 )
-from jibsa.core.listing import (
+from jibsa.core.listing import Listing
+from jibsa.core.notes import (
     UPDATE_NEEDED,
-    Listing,
     note,
 )
 from jibsa.core.ratelimit import RateLimitedError

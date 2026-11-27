@@ -6,8 +6,8 @@ from jibsa.core.geo import (
 from jibsa.core.listing import (
     AmountSet,
     normalize_address,
-    note,
 )
+from jibsa.core.notes import note
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.models.request.common import (
     DabangAptFiltersModel,

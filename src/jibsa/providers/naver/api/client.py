@@ -348,7 +348,7 @@ class NaverClient(BaseHTTPClient):
     source_name: ClassVar[str] = 'naver'
     default_rate_limit: ClassVar[RateLimitPolicy] = RateLimitPolicy(
         min_interval=1.0,
-        # 첫 화면이 스스로 부르는 사이트 API(18~22건, 30분에 한 번, core/browser.py)와 우리 요청을 합친 수에 건다. 남긴 쿠키로만
+        # 첫 화면이 스스로 부르는 사이트 API(18~22건, 30분에 한 번, core/browser/)와 우리 요청을 합친 수에 건다. 남긴 쿠키로만
         # 보내는 명령은 우리 요청만 분당 60건(1초 간격의 최대)까지 나간다. 예전 상한은 30이었지만, 브라우저로 1분 창 60건을 10분
         # 이어 보내도 429 가 없었다 (2026-11-09 실측, docs/development/providers/naver.md '브라우저 요청')
         max_per_minute=60,
@@ -370,7 +370,7 @@ class NaverClient(BaseHTTPClient):
 
     @property
     def base_header(self) -> dict[str, str]:
-        # 브라우저가 연 첫 화면에서 보내므로 UA·Origin·Referer·쿠키·언어는 브라우저가 붙인다 (`core/browser.py`)
+        # 브라우저가 연 첫 화면에서 보내므로 UA·Origin·Referer·쿠키·언어는 브라우저가 붙인다 (`core/browser/`)
         return {
             'Accept': 'application/json, text/plain, */*',
         }

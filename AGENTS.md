@@ -13,9 +13,12 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 | --- | --- |
 | `cli/` | Typer 명령 (`limits`, `guide`, `install-browser`, `zigbang`/`naver`/`daangn`/`dabang` 하위 명령), JSON·에러 출력, 공용 옵션 별칭 (`options.py`), 매물 검색 이어 받기 표 (`paging.py`) |
 | `core/http.py` | `BaseHTTPClient` — httpx 클라이언트 수명주기, 재시도 술어, `raise_for_status` |
-| `core/browser.py` | `BrowserTransport` — httpx 요청을 사이트 첫 화면을 연 Chromium(scrapling) 안의 fetch 로 보낸다. 쿠키 남기기, `jibsa install-browser` |
+| `core/browser/` | `BrowserTransport` (`transport.py`) — httpx 요청을 사이트 첫 화면을 연 Chromium(scrapling) 안의 fetch 로 보낸다. 한 명령의 기록 `session.py`, 남긴 쿠키 `cookies.py`, 프록시 설정 `proxy.py`, 브라우저 안 fetch `fetch.py`, 브라우저 에러 `errors.py`, `jibsa install-browser` (`install.py`) |
+| `core/state.py` | 상태 폴더(요청 제한 기록·브라우저 쿠키·이어 받기 표)의 위치와 안전한 쓰기 (`state_dir`, `write_text_atomic`, `StateDirError`) |
 | `core/ratelimit.py` | 프로세스 간 공유 요청 제한 (`RateLimiter`, `RateLimitedError`) |
-| `core/listing.py` | 명령 결과의 공통 부모 `Result` (`emit` 이 결과 맨 위에 붙이는 `notes`), 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 날짜, 주소), 출력 날짜 칸을 읽고 못 읽은 글자를 모아 `emit` 이 `[참고]` 로 알리게 하는 `read_date`, 빈 항목을 뺐다는 `[제외]` 안내 `null_items_note`, 정문 함수(`providers/<source>/__init__.py`)를 파이썬에서 불러도 `[참고]`·`[제외]` 가 결과 `notes` 에 들어가게 하는 포장 `with_notes`, 네 소스가 함께 쓰는 범위·금액 묶음 모델 (`AmountRange`·`AmountSet`·`NumberRange`)과 한국어 거래 이름 → 거래별 묶음 출력 키 짝 `TRADE_KEY_BY_NAME` (`매매` → `sale`) |
+| `core/notes.py` | 결과 `notes` 안내 문구: 종류 태그 `note`, 빈 항목을 뺐다는 `[제외]` 안내 `null_items_note`, 덤 조회 실패 `[실패]` 안내 `lookup_failure_note`, 더 보는 법 `more_hint`, 업데이트 필요 끝말 `UPDATE_NEEDED` |
+| `core/dates.py` | 날짜 읽기. 출력 날짜 칸을 읽고 못 읽은 글자를 모아 `emit` 이 `[참고]` 로 알리게 하는 `read_date`·`read_month`, 거르기용 `iso_date` |
+| `core/listing.py` | 명령 결과의 공통 부모 `Result` (`emit` 이 결과 맨 위에 붙이는 `notes`), 공통 `Listing` / `ListingDetail` 모델과 정규화 헬퍼 (만원 환산, 주소), 정문 함수(`providers/<source>/__init__.py`)를 파이썬에서 불러도 `[참고]`·`[제외]` 가 결과 `notes` 에 들어가게 하는 포장 `with_notes`, 네 소스가 함께 쓰는 범위·금액 묶음 모델 (`AmountRange`·`AmountSet`·`NumberRange`)과 한국어 거래 이름 → 거래별 묶음 출력 키 짝 `TRADE_KEY_BY_NAME` (`매매` → `sale`) |
 | `core/errors.py` | `JibsaError` 계열 — CLI 가 `{"error": {...}}` 로 내보내는 에러 |
 | `core/schema.py` | `RequestModel` (`extra='forbid'`) / `ResponseModel` (`extra='allow'`), 목록 칸 null 을 키 없음으로 읽는 `drop_null_lists` 와 객체 목록 안 null 원소를 빼고 칸마다 세는 `drop_null_items`·`null_items` (소스 기반 응답 모델이 wrap 검증기 `validate_dropping_nulls` 로 부른다. `| None` 칸의 null 은 모름으로 둔다) |
 | `core/geo.py` | geohash·거리 계산, 한국 좌표 범위, 기본 검색 반경 |

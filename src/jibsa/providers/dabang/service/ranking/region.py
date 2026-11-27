@@ -1,9 +1,9 @@
 """범위 안 동·단지 순위 (region-ranking)."""
 from collections.abc import Mapping
 
+from jibsa.core.dates import add_unread_date
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
-    add_unread_date,
+from jibsa.core.notes import (
     more_hint,
     note,
     null_items_note,

@@ -4,9 +4,7 @@ from collections.abc import Callable
 from httpx import HTTPStatusError
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
-    note,
-)
+from jibsa.core.notes import note
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.service.common.complex import (
     complex_not_found,

@@ -13,8 +13,10 @@ from jibsa.core.http import error_body
 from jibsa.core.korean import is_ri_code
 from jibsa.core.listing import (
     join_address,
-    limit_notes,
     normalize_address,
+)
+from jibsa.core.notes import (
+    limit_notes,
     note,
     null_items_note,
 )

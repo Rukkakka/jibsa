@@ -22,10 +22,8 @@ from jibsa.core.korean import (
     legal_dong_hint,
     quoted,
 )
-from jibsa.core.listing import (
-    normalize_address,
-    note,
-)
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import note
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.models.request.region import (
     ZigbangLocalPolygonV2RequestParameterModel,

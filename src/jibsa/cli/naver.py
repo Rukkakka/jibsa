@@ -40,10 +40,8 @@ from jibsa.core.korean import (
     is_province_code,
     is_ri_code,
 )
-from jibsa.core.listing import (
-    normalize_address,
-    note,
-)
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.service.common.constants import (
     ENTRANCE_CODE_BY_NAME,

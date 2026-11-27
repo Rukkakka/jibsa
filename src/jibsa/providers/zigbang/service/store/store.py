@@ -14,12 +14,14 @@ from jibsa.core.listing import (
     TradeType,
     in_range,
     join_address,
-    limit_notes,
     m2_to_pyeong,
+    parking_label,
+)
+from jibsa.core.notes import (
+    limit_notes,
     more_hint,
     note,
     null_items_note,
-    parking_label,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.models.request.store import (

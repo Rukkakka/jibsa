@@ -4,8 +4,8 @@ from jibsa.core.errors import (
     JibsaError,
     RegionNotFoundError,
 )
-from jibsa.core.listing import (
-    join_address,
+from jibsa.core.listing import join_address
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

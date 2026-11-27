@@ -13,7 +13,7 @@ from pydantic import (
 )
 
 import jibsa
-from jibsa.core.listing import null_items_note
+from jibsa.core.notes import null_items_note
 from jibsa.core.schema import (
     ResponseModel,
     validate_dropping_nulls,
@@ -90,7 +90,7 @@ def test_aliased_models_accept_field_names() -> None:
     assert rejecting == []
 
 
-# --- 목록 안 null 원소 (core/schema.py validate_dropping_nulls, core/listing.py null_items_note) ---
+# --- 목록 안 null 원소 (core/schema.py validate_dropping_nulls, core/notes.py null_items_note) ---
 
 def test_null_items_in_model_lists_are_dropped_and_counted() -> None:
     class Item(ResponseModel):

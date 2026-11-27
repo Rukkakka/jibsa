@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from httpx import HTTPStatusError
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
     UPDATE_NEEDED,
 )

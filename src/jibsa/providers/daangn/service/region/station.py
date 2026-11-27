@@ -4,7 +4,7 @@ from jibsa.core.korean import (
     LINE_NAME_PATTERN,
     quoted,
 )
-from jibsa.core.listing import note
+from jibsa.core.notes import note
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.models.request.region.common import (
     DaangnQueryInputModel,

@@ -1,13 +1,15 @@
 """지역 단지 목록 (search complexes)."""
 
+from jibsa.core.dates import (
+    holding_unread_dates,
+    keep_unread_dates,
+)
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
-    holding_unread_dates,
     join_address,
-    keep_unread_dates,
     normalize_address,
-    note,
 )
+from jibsa.core.notes import note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.common import (
     NaverArticleFilterModel,

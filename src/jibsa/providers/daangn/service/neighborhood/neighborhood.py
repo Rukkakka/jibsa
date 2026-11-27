@@ -5,8 +5,8 @@ from jibsa.core.errors import (
     RegionAmbiguousError,
     RegionNotFoundError,
 )
-from jibsa.core.listing import (
-    SIDO_OFFICIAL_NAMES,
+from jibsa.core.listing import SIDO_OFFICIAL_NAMES
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
     UPDATE_NEEDED,
     note,

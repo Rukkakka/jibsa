@@ -15,8 +15,8 @@ from jibsa.core.listing import (
     CITY_NAMES_NOT_SIDO,
     SIDO_OFFICIAL_NAMES,
     normalize_address,
-    null_items_note,
 )
+from jibsa.core.notes import null_items_note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.region import (
     NaverLegalDivisionInfoListByLevelV1RequestParameterModel,

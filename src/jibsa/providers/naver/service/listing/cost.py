@@ -1,9 +1,7 @@
 """매물 상세의 비용 (관리비·중개보수·세금)."""
 
-from jibsa.core.listing import (
-    null_items_note,
-    won_to_manwon,
-)
+from jibsa.core.listing import won_to_manwon
+from jibsa.core.notes import null_items_note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.listing.detail import (
     NaverArticleAgentFeeV1RequestParameterModel,

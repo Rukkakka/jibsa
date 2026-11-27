@@ -1,8 +1,6 @@
 """직방 service 단기임대 상수: 정렬·건물·옵션 이름표, 환불 정책·일정 이름표, 검색 한도 (search listings stay·listing)."""
 
-from jibsa.core.listing import (
-    note,
-)
+from jibsa.core.notes import note
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL
 from jibsa.providers.zigbang.api.models.request.stay.search import (
     ZigbangStayBuildingType,

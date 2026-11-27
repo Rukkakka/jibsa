@@ -1,9 +1,7 @@
 """전국에서 기간 안 거래가 많은 단지 (trade-rankings)."""
 
-from jibsa.core.listing import (
-    normalize_address,
-    note,
-)
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import note
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.models.request.ranking.trade import (
     DabangRealPriceTradeRankingsComplexV5RequestParameterModel,

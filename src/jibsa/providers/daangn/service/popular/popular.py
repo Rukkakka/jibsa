@@ -1,7 +1,7 @@
 """구 안 인기 매물 순위의 조회·변환 함수. 모델은 같은 폴더의 models 에 있다."""
 
-from jibsa.core.listing import (
-    listing_as,
+from jibsa.core.listing import listing_as
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

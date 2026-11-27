@@ -1,6 +1,6 @@
 """동·지도 범위·역·대학 주변 검색이 같이 쓰는 매물 변환과 안내."""
 
-from jibsa.core.listing import note
+from jibsa.core.notes import note
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.models.response.common import DaangnArticleModel
 from jibsa.providers.daangn.service.common.constants import LISTING_MAX_LIMIT

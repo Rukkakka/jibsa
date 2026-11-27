@@ -5,10 +5,10 @@ from datetime import (
 )
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
     more_hint,
-    normalize_address,
     note,
     null_items_note,
 )

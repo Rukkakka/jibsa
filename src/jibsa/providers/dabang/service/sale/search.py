@@ -5,8 +5,8 @@ from jibsa.core.geo import (
     DEFAULT_RADIUS_KM,
     box_around,
 )
-from jibsa.core.listing import (
-    normalize_address,
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

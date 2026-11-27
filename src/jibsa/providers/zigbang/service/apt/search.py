@@ -11,10 +11,8 @@ from jibsa.core.korean import (
     full_legal_division_code,
     is_dong_code,
 )
-from jibsa.core.listing import (
-    in_range,
-    note,
-)
+from jibsa.core.listing import in_range
+from jibsa.core.notes import note
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.models.request.apt.search import (
     ZigbangLocalsItemCatalogsRequestParameterModel,

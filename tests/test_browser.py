@@ -8,21 +8,25 @@ from httpx import (
 
 from jibsa.core.browser import (
     NAVIGATION_EXTENSION,
-    REFRESH_SECONDS,
     BrowserOptions,
     CertificateError,
     CorsBlockedError,
     EntryPageError,
-    _BlockedResponses,
-    _BrowserState,
-    _FailedFetch,
-    _fetch_arguments,
-    _proxy_settings,
-    _state_path,
-    _to_response,
+)
+from jibsa.core.browser.cookies import (
+    REFRESH_SECONDS,
     returning_cookies,
+    state_path,
     usable_cookies,
 )
+from jibsa.core.browser.fetch import (
+    BlockedResponses,
+    _FailedFetch,
+    fetch_arguments,
+    to_response,
+)
+from jibsa.core.browser.proxy import proxy_settings
+from jibsa.core.browser.session import BrowserState
 from jibsa.core.ratelimit import (
     RateLimitedError,
     RateLimiter,
@@ -82,7 +86,7 @@ def test_entry_429_cooldown_follows_retry_after() -> None:
     # 첫 화면 API 의 429 도 우리 요청의 429 처럼 정책 값과 Retry-After 중 긴 쪽으로 쉰다. 정책 값만 쓰면 서버가 600초
     # 쉬라고 한 사이트에 120초 뒤 다시 보냈다. 사이트 밖(광고) 응답의 Retry-After 로는 늘리지 않는다
     limiter = RateLimiter('zigbang', RateLimitPolicy(cooldown=120))
-    state = _BrowserState(BrowserOptions(
+    state = BrowserState(BrowserOptions(
         source='zigbang', entry_url='https://www.zigbang.com/', api_hosts=frozenset({'apis.zigbang.com'}),
         rate_limiter=limiter,
     ))
@@ -95,7 +99,7 @@ def test_entry_429_cooldown_follows_retry_after() -> None:
 
 
 def test_entry_server_error_keeps_saved_visitor_cookies() -> None:
-    state = _BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB'))
+    state = BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB'))
     state.page_url = ENTRY
     # 5xx 는 사이트 장애라 그 첫 화면의 쿠키로 덮지도, 다시 넣은 방문자 쿠키를 버리지도 않는다 (버리면 재시도가 새 NNB 를 받았다)
     assert not state.keeps_entry_cookies(503)
@@ -115,7 +119,7 @@ def test_entry_server_error_keeps_saved_visitor_cookies() -> None:
 def test_entry_server_error_beyond_retry_cap_stops() -> None:
     # 재시도 대기 상한(60초)보다 오래 쉬라는 5xx 는 다시 열지 않는다. 60초 뒤 다시 열면 장애 중인 사이트에 서버가 정한
     # 시간보다 일찍 첫 화면 요청을 20건쯤 다시 보냈다 (2026-11-23 리뷰)
-    state = _BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB'))
+    state = BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB'))
     state.page_url = ENTRY
     with pytest.raises(EntryPageError) as caught:
         state.finish_entry(503, '300')
@@ -139,24 +143,24 @@ def test_finish_discards_rejected_cookies_even_if_recording_fails(monkeypatch: p
         raise OSError('상태 폴더에 쓸 수 없음')
 
     monkeypatch.setattr(limiter, 'record', broken_record)
-    state = _BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB', rate_limiter=limiter))
+    state = BrowserState(BrowserOptions(source='naver', entry_url=ENTRY, ready_cookie='NNB', rate_limiter=limiter))
     state.page_url, state.opened_at = ENTRY, NOW
     state.save([])
-    assert _state_path('naver').exists()
+    assert state_path('naver').exists()
     state.routed = 2
     state.discard = True
     state.finish(None)
-    assert not _state_path('naver').exists()
+    assert not state_path('naver').exists()
 
 
 # --- proxy ------------------------------------------------------------------
 
 def test_proxy_settings_translate_curl_schemes_and_reject_what_chromium_cannot_use() -> None:
-    assert _proxy_settings('socks5h://127.0.0.1:1080', ENTRY) == {'server': 'socks5://127.0.0.1:1080'}
+    assert proxy_settings('socks5h://127.0.0.1:1080', ENTRY) == {'server': 'socks5://127.0.0.1:1080'}
     # 에러 메시지에 비밀번호를 싣지 않는다
     for proxy in ('http://user:secret@proxy:80a', 'socks5://user:secret@127.0.0.1:1080', 'ftp://user:secret@proxy:21'):
         with pytest.raises(ProxyError) as caught:
-            _proxy_settings(proxy, ENTRY)
+            proxy_settings(proxy, ENTRY)
         assert 'secret' not in str(caught.value)
 
 
@@ -168,7 +172,7 @@ def test_proxy_settings_skip_scheme_only_no_proxy_entry(monkeypatch: pytest.Monk
     # 스킴만 적은 항목은 IndexError 로 모든 명령을 INTERNAL_ERROR 로 만들었다
     monkeypatch.setenv('HTTPS_PROXY', 'http://proxy:3128')
     monkeypatch.setenv('NO_PROXY', 'localhost,http://')
-    assert _proxy_settings(None, ENTRY) == {'server': 'http://proxy:3128', 'bypass': 'localhost'}
+    assert proxy_settings(None, ENTRY) == {'server': 'http://proxy:3128', 'bypass': 'localhost'}
 
 
 # --- failed fetch -----------------------------------------------------------
@@ -184,7 +188,7 @@ def test_failed_fetch_is_classified_by_chromium_event() -> None:
     request = Request('GET', FETCH_FAILED['requestUrl'])
 
     def convert(failed: _FailedFetch | None) -> object:
-        return _to_response(request, FETCH_FAILED, 20, {}, failed)
+        return to_response(request, FETCH_FAILED, 20, {}, failed)
 
     # 프록시에 닿지 못한 것은 재시도하지 않는 ProxyError (남긴 쿠키로 띄우면 우리 요청에서 처음 드러난다)
     with pytest.raises(ProxyError):
@@ -207,7 +211,7 @@ def test_failed_fetch_is_classified_by_chromium_event() -> None:
 def test_cors_failure_waits_for_blocked_status_event() -> None:
     # CDP 는 실패 이벤트와 받은 상태 이벤트의 순서를 정하지 않는다. 실패만 보고 멈추면 막힌 429 가 CorsBlockedError 가 됐다
     url = FETCH_FAILED['requestUrl']
-    blocked = _BlockedResponses()
+    blocked = BlockedResponses()
     blocked._on_request({'requestId': '1', 'type': 'Fetch', 'request': {'url': url}})
     blocked._on_failed({'requestId': '1', 'errorText': 'net::ERR_FAILED', 'corsErrorStatus': {'corsError': 'MissingAllowOriginHeader'}})
     assert not blocked.settled(url)
@@ -224,8 +228,8 @@ def test_navigation_headers_only_on_page_requests() -> None:
     page = Request('GET', 'https://realty.daangn.com/articles/1', headers={'accept': '*/*'}, extensions={NAVIGATION_EXTENSION: True})
     api = Request('POST', 'https://realty.kr.karrotmarket.com/graphql', headers={'x-realty-platform': 'realty-web'}, json={})
 
-    page_headers = _fetch_arguments(page, 20, navigation)[0]['headers']
-    api_headers = _fetch_arguments(api, 20, navigation)[0]['headers']
+    page_headers = fetch_arguments(page, 20, navigation)[0]['headers']
+    api_headers = fetch_arguments(api, 20, navigation)[0]['headers']
 
     assert (page_headers['accept'], page_headers['upgrade-insecure-requests']) == ('text/html,application/xhtml+xml', '1')
     assert 'upgrade-insecure-requests' not in api_headers
@@ -241,7 +245,7 @@ def test_non_ascii_response_headers_keep_server_bytes() -> None:
 
     def convert(fetched: list[list[str]], page: dict[str, str]) -> object:
         result = {'requestUrl': url, 'url': url, 'status': 200, 'headers': fetched, 'body': ''}
-        return _to_response(Request('GET', url), result, 20, {url: page}, None)
+        return to_response(Request('GET', url), result, 20, {url: page}, None)
 
     utf8 = convert([['x-msg', '역삼동'.encode().decode('latin-1')], ['content-encoding', 'gzip']], {'x-name': '역삼동'})
     assert (utf8.headers['x-msg'], utf8.headers['x-name']) == ('역삼동', '역삼동')

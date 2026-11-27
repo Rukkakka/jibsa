@@ -7,7 +7,7 @@ from jibsa.core.korean import (
     is_district_code,
     particle,
 )
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     NEXT_HINT,
     more_hint,
     note,

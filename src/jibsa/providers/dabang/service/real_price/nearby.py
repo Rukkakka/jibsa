@@ -1,10 +1,8 @@
 """평형대 평당가와 주변 단지 비교 (nearby-complexes)."""
 
 
-from jibsa.core.listing import (
-    normalize_address,
-    note,
-)
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import note
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.models.request.real_price.nearby import (
     DabangRealPriceComplexPricePerPyV5RequestParameterModel,

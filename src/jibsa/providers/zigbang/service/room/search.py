@@ -5,6 +5,7 @@ from collections.abc import (
     Sequence,
 )
 
+from jibsa.core.dates import read_date
 from jibsa.core.errors import (
     JibsaError,
     ListingUnavailableError,
@@ -12,13 +13,14 @@ from jibsa.core.errors import (
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     Listing,
+    listing_as,
+)
+from jibsa.core.notes import (
     LookupFailures,
     limit_notes,
-    listing_as,
     lookup_failure_note,
     lookup_failure_reason,
     note,
-    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.models.request.common import ZigbangSalesType

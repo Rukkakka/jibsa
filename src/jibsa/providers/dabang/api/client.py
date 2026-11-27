@@ -352,7 +352,7 @@ class DabangClient(BaseHTTPClient):
     def base_header(self) -> dict[str, str]:
         # 웹의 axios 인스턴스(v5·v3 둘 다)가 모든 요청에 붙이는 기본 헤더 (fetch 청크 2026-10-25, 2026-11-12 웹 화면 8개 요청
         # 109건 실측). 번들의 Content-Type 은 axios 가 본문 없는 GET 에서 지워 넣지 않는다 (본문이 있으면 httpx 가 붙인다).
-        # UA·Referer·쿠키·언어는 브라우저가 연 첫 화면 기준으로 붙인다 (`core/browser.py`)
+        # UA·Referer·쿠키·언어는 브라우저가 연 첫 화면 기준으로 붙인다 (`core/browser/`)
         return {
             'Accept': 'application/json, text/plain, */*',
             'csrf': 'token',

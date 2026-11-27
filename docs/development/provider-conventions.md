@@ -22,6 +22,7 @@ providers/<source>/
     │   ├── models.py     # 여러 기능이 쓰는 결과·조건 모델과 그 모델이 쓰는 타입 별칭·작은 함수
     │   └── <내용>.py     # 내용 이름의 공용 함수 (response·listing·paging·price·text …. `common.py`·`functions.py` 같은 모음 파일은 두지 않는다)
     ├── region/       # 지역 이름·좌표 해석 (직방은 `region.py` 하나)
+    │                 #   직방은 `listing.py` 도 파일 하나다: listing 명령이 매물 ID 형식을 보고 아파트·원룸·상가·단기임대 상세로 나눠 보내는 입구
     └── <기능>/        # CLI 명령 묶음 하나 (real_price, store, complex …)
         ├── __init__.py   # 모듈 안내 docstring 만 (re-export 없음)
         ├── constants.py  # 그 기능만 쓰는 상수·코드표·이름표 (상수가 없으면 두지 않는다)
@@ -46,7 +47,7 @@ providers/<source>/
   읽는다 (이름을 주지 않으면 모든 칸의 합). 원소가 객체가 아닌 목록(`list[int]` 등)의 null 은 건드리지 않는다. **그 목록으로 합계·평균·개수·순위·
   대표 고르기를 하거나 쪽 넘김·`--limit` 자리를 세는 코드는 `null_items` 를 본다**: 계산한 값은 `null`(모름)로 두어 빼고 센 적은 값이 완전한
   값처럼 나가지 않게 하고, 자리를 세는 값은 `len(목록)` 에 뺀 수를 더해 (빈 항목도 서버가 센 한 자리다) 같은 항목을 다시 받거나 덜 받지
-  않게 하며, 뺀 것은 `null_items_note`(`core/listing.py`)로 `[제외]` 안내를 붙인다. 이 안내의 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API
+  않게 하며, 뺀 것은 `null_items_note`(`core/notes.py`)로 `[제외]` 안내를 붙인다. 이 안내의 끝말이 `UPDATE_MAYBE_NEEDED` 라 매일 API
   감시가 그런 응답을 고장으로 알린다. 목록을 그대로 보여 주기만 하면 뺀 것만으로 값이 틀리지 않아 `null_items` 를 보지 않아도 되고 자리별 안내도 만들지 않아도 된다: 명령 하나 동안 뺀 수는 `core.schema` 가 합으로 모으고(`reset_null_item_tally`·`add_null_item_tally`·`null_item_tally`, 기반 모델의 검증기와 루트 목록 모델 `DabangRootListModel` 이 더한다. 집계는 `handle_errors` 가 명령 시작에, 정문 함수는 `with_notes` 가 부를 때마다 0 으로 돌린다), `emit`(정문 함수는 `with_notes` 가 결과 `notes` 에)이 그 합이 0 보다 큰데 결과 `notes` 에 빈 항목 안내가 없으면 어느 목록인지 말하지 않는 공통 안내(`null_items_total_note`) 한 줄을 붙인다. 소스가 `null_items_note` 로 자리별 안내를 이미 붙였으면 공통 안내는 붙지 않는다.
 - service 결과 모델(`ZigbangSearchResult`, `NaverComplexSummary`, `<Source>ListingDetail` 등)은
   CLI 출력용이므로 그 기능의 service 모듈에 두고 `extra='forbid'` 로 만든다. 명령이 돌려주는 결과 모델은 `BaseModel` 이 아니라
@@ -153,7 +154,7 @@ GraphQL 은 오퍼레이션의 루트 필드 이름을 snake_case 로 쓴다. �
       첫 화면 탭에서 보내므로 사이트 API 가 첫 화면 출처의 CORS 를 허용해야 한다
     - 이것은 호스트 필드(`host`·`graphql_host` 등)에서 만드는 property 로 쓴다. 호스트를 상수로 따로 적으면 호스트 필드를
       바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은 그
-      호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`). 나머지는 ClassVar 다
+      호스트의 429 도 놓친다 (`core/browser/session.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`). 나머지는 ClassVar 다
     - `browser_discard_statuses` — 소스가 403 을 거부가 아닌 뜻으로 쓰면 바꾼다 (다방은 없는 주소)
 - `_client` / `_async_client` 는 `@cached_property` 로 만들고 반드시
   `event_hooks=self.rate_limit_hooks()` (async 는 `async_rate_limit_hooks()`), `timeout`,

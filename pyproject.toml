@@ -52,7 +52,7 @@ dependencies = [
     # cli 가 typer 에 내장된 click(typer._click)을 쓰는데 0.26 부터 들어 있다. 비공개 경로라 0.x 의 새 마이너 버전에서
     # 옮겨질 수 있어, 새 버전은 확인한 뒤 상한을 올린다
     'typer>=0.26,<0.28',
-    # 모든 요청을 사이트 첫 화면을 연 위장 브라우저 안에서 보낸다 (core/browser.py). 0.x 라 새 마이너 버전은 확인한 뒤
+    # 모든 요청을 사이트 첫 화면을 연 위장 브라우저 안에서 보낸다 (core/browser/). 0.x 라 새 마이너 버전은 확인한 뒤
     # 상한을 올린다. Chromium 은 pip 로 오지 않아 'jibsa install-browser' 로 따로 받는다
     'scrapling>=0.5,<0.6',
     # scrapling[fetchers] 대신 그 목록에서 playwright 만 빼고 적는다. scrapling 0.5 는 patchright 만 쓰고 playwright 는
@@ -69,7 +69,7 @@ dependencies = [
     'anyio>=4.14.0',
     'protego>=0.6.2',
     'click>=8.3.0',
-    # core/browser.py 가 직접 import 한다. 버전마다 맞는 Chromium 빌드가 달라 올리면 Chromium 을 다시 설치해야 하므로,
+    # core/browser/ 가 직접 import 한다. 버전마다 맞는 Chromium 빌드가 달라 올리면 Chromium 을 다시 설치해야 하므로,
     # 확인한 버전으로 묶는다
     'patchright>=1.64,<1.65',
 ]

@@ -84,7 +84,7 @@
    예: `providers/daangn/service/search/map.py:305`, `providers/dabang/service/common/paging.py:97`.
    언제: `resumed`·`--next`·커서 이어 받기(`cli/paging.py` 포함)를 건드리거나, 첫 쪽에만 붙는 안내를 더한 diff.
 9. **실패·취소 경로 (주로 `core/`).** 예외·Ctrl+C·다른 프로세스와 겹칠 때 브라우저·잠금·쿠키 파일을 정리하는가, 다른 프로세스가
-   새로 쓴 파일을 덮지 않는가, 잠깐의 실패에 오래 남는 상태를 만들지 않는가. 예: `core/browser.py:1389`·`:1308`·`:1667`.
+   새로 쓴 파일을 덮지 않는가, 잠깐의 실패에 오래 남는 상태를 만들지 않는가. 예: `core/browser/errors.py:123`·`core/browser/transport.py:516`·`core/browser/proxy.py:78`.
    언제: `core/` 의 `try`·`except`·`finally`·잠금·파일 쓰기·브라우저 열고 닫기를 바꾼 diff.
 10. **공백뿐이거나 앞뒤 공백이 붙은 사용자 입력.** 앞뒤 공백을 떼지 않으면 이름 비교(`==`·`endswith`)가 어긋나 맞는 후보를
     못 찾는다 (웹 검색창은 trim 해서 보낸다). 예: `providers/naver/service/region/search.py:645` ('파크리오 ' 가 후보 3곳으로 멈췄다,
@@ -158,13 +158,13 @@
     넘기면, 약 1.8×10³⁰⁸ 이상인 정수에서 OverflowError 가 나 그 소스의 모든 명령이 `INTERNAL_ERROR` 다. 한 번 비교에만 쓰면 빼지
     않고 비교로 쓰고(비교는 크기와 상관없이 터지지 않는다), 뒤에서 실수로 바꿔 쓰면 읽는 자리에서 버린다. 같은 종류 값을 읽는
     다른 상태 파일도 함께 본다. 확인: 그 칸에 `1` 뒤에 0 을 400개 붙인 정수를 넣고 명령을 불러 본다.
-    예: `core/ratelimit.py` `_is_time`, `core/browser.py` `usable_cookies` (`opened_at`, 요청 제한 쪽만 고치고 빠졌다, 2026-11-23).
+    예: `core/ratelimit.py` `_is_time`, `core/browser/cookies.py` `usable_cookies` (`opened_at`, 요청 제한 쪽만 고치고 빠졌다, 2026-11-23).
     언제: 상태 파일을 읽는 코드나 거기서 읽은 시각·수를 계산하는 `+` 줄.
 25. **브라우저 이동 실패가 숨긴 상태 코드.** 첫 화면 문서의 4xx·5xx 판정을 `page.goto` 가 돌려준 응답에만 기대지 않는가. Chromium 은
     본문 없는 4xx·5xx 문서에서 goto 를 `net::ERR_HTTP_RESPONSE_CODE_FAILURE` 로 실패시켜 응답을 돌려주지 않는다. 그 갈래에서 판정만 맞추고
     정리를 빠뜨리기도 쉽다: `_close` 는 컨텍스트가 있을 때만 쿠키 정리(`finish`)를 하고, `discard_saved` 는 첫 화면 시각(`opened_at`)이
     0 이면 옛 쿠키 파일을 지우지 않는다. 확인: 가짜 첫 화면이 `Content-Length: 0` 으로 403·429·503 을 주게 하고 에러 종류·쿨다운·옛 쿠키
-    파일이 본문 있는 경우와 같은지 본다 (`scripts/ci/browser_check.py` 7번). 예: `core/browser.py:1694` `_launch` 의 except 갈래 (그때 연결
+    파일이 본문 있는 경우와 같은지 본다 (`scripts/ci/browser_check.py` 7번). 예: `core/browser/transport.py:393` `_launch` 의 except 갈래 (그때 연결
     오류로 보고 첫 화면을 세 번 다시 연 뒤 `NETWORK_ERROR` 로 냈고 쿨다운·차단 판정이 빠졌다, 2026-11-24).
     언제: 첫 화면 문서 상태로 판정하는 코드나 `goto`·`_entry_error`·`_launch` 의 예외 처리를 바꾼 diff.
 26. **쪽 넘김의 멈춤(되풀이) 판정을 서버가 준 항목으로 하는가.** 거른(`keep` 이 번호를 모름)·빈(null) 항목뿐인 쪽을 '새 항목
@@ -177,7 +177,7 @@
 1. **안내를 따르면 되는가 (모든 모드에서).** `--limit` 이 이미 최대값인데 늘리라고 하지 않는가. 좁히라고 권하는 것('지역'·
    '반경'·평형)이 그 명령·검색 방식에 실제로 있는가. 한 명령의 여러 모드(`--complex`·`--redevelopment` 등)가 같은 hint 표를
    쓰면, 그 hint 가 권하는 옵션을 모든 모드가 받는가. 조건과 상관없이 섞이는 묶음(직방 상가의 공실 줄)이 `total` 에 들면 그 조건은 좁혀도 그 줄이 줄지 않으니 권하지 않는다. 확인: `more_hint`·`pagination_notes`·`UsageHints` 의 값을 그 모드의 옵션
-   검사와 대조한다. 예: `core/listing.py:531`, `cli/naver.py:1260` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16), `providers/zigbang/service/store/constants.py` `STORE_VACANT_NARROW` (공실 묶음이 있는데 업종을 좁히라고 권함, 2026-11-21).
+   검사와 대조한다. 예: `core/notes.py:184`, `cli/naver.py:1260` (단지 모드에 받지 않는 `--radius` 를 권함, 2026-11-16), `providers/zigbang/service/store/constants.py` `STORE_VACANT_NARROW` (공실 묶음이 있는데 업종을 좁히라고 권함, 2026-11-21).
    언제: `more_hint`·`pagination_notes`·`UsageHints`·`hint=` 를 바꾸거나, 한 명령에 모드·옵션을 더한 diff, 조건과 상관없는 묶음을 `total` 에 넣은 diff, `core/`·`cli/` 공용 모듈이 모든 명령에 붙이는 hint(`core/ratelimit.py` `RateLimitedError` 의 budget hint 가 `--limit`·`--radius` 가 없는 명령에도 그 옵션을 권했다, 2026-11-23 core 리뷰).
 2. **예시 이름과 권하는 명령.** hint 의 예시·명령을 그대로 넣으면 그 명령이 받는가 (동을 받지 않는 명령에 동 이름, 여전히 모호한
    예시, 필수 옵션을 빼라는 안내). 확인: 예시를 그 명령의 인자 검사·resolver 에 넣어 따라간다.
@@ -194,7 +194,7 @@
    함께 참이 되는 입력을 찾는다. 예: `providers/zigbang/service/common/apt.py` `apt_pagination_notes`.
    언제: 한 결과에 안내를 붙이는 갈래가 둘 이상인 함수를 바꾼 diff, 같은 목록을 가리키는 안내 문구(순서 안내·`[일부]` 안내)를 따로 쓰거나 고친 diff (`providers/zigbang/service/complex/constants.py` `SCOPE_NAME_BY_PLACE_TYPE`, 2026-11-21).
 5. **에러 code·hint 가 원인과 맞는가.** 첫 화면 5xx 를 "스펙 변경" 으로, 형식 오류 400 을 "없는 ID" 로, 정상 0건을 에러로 알리지
-   않는가. 감시·에이전트가 hint 문구가 아니라 `code`·`blocked` 같은 필드로 가르는가. 예: `cli/output.py:402`·`core/browser.py:1237`.
+   않는가. 감시·에이전트가 hint 문구가 아니라 `code`·`blocked` 같은 필드로 가르는가. 예: `cli/output.py:477`·`core/browser/transport.py:445`.
    언제: 에러 클래스·`code`·hint 를 고르는 갈래나 `raise ...Error(` 를 더하거나 바꾼 diff.
 6. **사용법 오류 안내가 그 명령 기준인가.** 다른 명령의 hint 를 물려받아 원래 없던 옵션을 "없앴습니다" 라고 하지 않는가.
    한 값 옵션을 반복하면 마지막 값만 남는 것은 공통 층(`cli/app.py` 의 `repeated_option`)이 요청 전에 막고, 붙여 쓴 짧은 옵션
@@ -213,7 +213,7 @@
    여러 명령을 한 문장에 묶어 설명한 diff.
 8. **가격·값을 읽는 데 필요한 새 필드는 `--fields` 로 골라도 나오나.** 빠지면 다른 필드를 잘못 읽게 되는 필드(가격이 분양가인지,
    묶음 최저가인지)는 `cli/output.py` 의 `ALWAYS_FIELD_GROUPS` 에 넣는다. 확인: `--fields id,price_manwon` 으로 불러 그 필드가
-   남는지 본다. 예: `cli/output.py:68` (`listing_kind` 가 빠져 분양가를 호가로 읽었다, 2026-11-17).
+   남는지 본다. 예: `cli/output.py:83` (`listing_kind` 가 빠져 분양가를 호가로 읽었다, 2026-11-17).
    언제: 묶음·매물 목록에 가격 해석을 바꾸는 필드를 더하는 diff.
 9. **코드를 말로 바꾸는 표에서 모르는 코드.** `.get(코드)` 로 모르는 코드를 `None` 으로 버리면 '서버가 주지 않음(null)' 으로
    읽힌다. 다른 표처럼 `.get(코드, 코드)` 로 원본을 남기거나, 버린다면 설명에 적었는가. 확인: 새 이름표 dict 를 쓰는 `.get(`
@@ -263,7 +263,7 @@
     헤더 꼴(`Authorization: <스킴> …`, `Cookie: a=1; b=2`). 한 꼴을 잡으려고 값에서 끊는 글자를 늘리면 다른 꼴이 다시 나간다. 확인: 그
     꼴들을 본문으로 준 500 에 `raise_for_status` 를 불러 보고(`tests/test_http.py`), 패턴을 바꿨으면 같은 입력을 옛 패턴(`git show HEAD:`)에도
     돌려 전에 가리던 값이 나가지 않는지 견준다. 주소는 다른 출처의 `?token=secret` 주소로 302 하는 가짜 첫 화면의 에러를 본다
-    (`scripts/ci/browser_check.py` 8번). 예: `core/http.py:92` `SENSITIVE_TEXT_PATTERN`, `core/browser.py:1257` `finish_entry` 다른 출처 갈래
+    (`scripts/ci/browser_check.py` 8번). 예: `core/http.py:92` `SENSITIVE_TEXT_PATTERN`, `core/browser/session.py:245` `finish_entry` 다른 출처 갈래
     (그때 따옴표 친 키의 값과 넘어간 주소의 쿼리가 message 에 그대로 나갔고, 고치며 값을 따옴표 앞에서 끊자 `token=["…"]` 이 다시 나갔다, 2026-11-24).
     언제: `SENSITIVE_*`·`_redact_*`·`_body_preview` 를 바꾼 diff, 서버 본문·`page.url`·`response.url`·리다이렉트 주소를 에러 문자열이나 로그에 넣는 `+` 줄.
 19. **대체 조회가 칸 일부를 채웠을 때 원래 조회의 `[실패]` 안내를 통째로 버리지 않는가.** 덤 조회 실패 안내를 임시 목록에 모았다가 대체 조회가 값을 주면 버리는 코드에서,
@@ -288,7 +288,7 @@
    않는다. 확인: 주석의 번들 식과 한 줄씩 대조하고 0·x.5·동점·첫 항목 없음과 반올림이면 0.15·0.25·x.125·1.005·2.675 를 넣어 본다.
    예: `providers/daangn/service/real_price/region.py:110` 의 `prev_high_diff_percent`(Python `round` 로 0.25% 가 웹 0.3 과
    달랐다), `providers/daangn/service/complex/detail.py:81` 의 `_web_school_card`(`??` 를 `or` 로 옮겨 0 이 모름이 됐다),
-   `core/listing.py:161` 의 `js_to_fixed`
+   `core/listing.py:505` 의 `js_to_fixed`
    (다방 거리·당근 면적이 따로 흉내 내다 어긋났다, 2026-11-20).
    그 식이 **그 칸을 그리는 화면**의 식인가. 같은 값도 화면마다 다르게 그린다. 다른 화면 식을 함수로 가져다 쓰면 근거 주석의 청크·함수가
    이 화면 것인지 본다. 예: `providers/daangn/service/compare/complexes.py` `_subways` (단지 화면 `Math.max(1, Math.round)` 를 썼는데 비교 화면은
@@ -357,15 +357,15 @@
    아래 "지적하지 말 것"). 예: `providers/dabang/service/ranking/region.py:299`.
    언제: 입력 검사·에러를 요청 뒤에 두는 `+` 줄.
 5. **transport 밖 요청과 서버 신호 (`core/`).** CORS 사전 요청·redirect·첫 화면도 세는가, `Retry-After` 보다 짧게 쉬지 않는가,
-   429 에 쿠키를 버려 첫 화면 요청을 다시 쏟지 않는가. 예: `core/browser.py:1227`·`:1189`.
-   언제: `core/browser.py`·`core/http.py`·`core/ratelimit.py` 를 바꾼 diff.
+   429 에 쿠키를 버려 첫 화면 요청을 다시 쏟지 않는가. 예: `core/browser/transport.py:435`·`:397`.
+   언제: `core/browser/`·`core/http.py`·`core/ratelimit.py`·`core/state.py` 를 바꾼 diff.
 
 ## `design` 구조·중복·단순화
 
 1. **같은 규칙 두 벌.** 같은 판정식·문구·흐름·필터가 다른 함수·파일에 또 있는가, 이미 있는 helper 를 다시 만들었는가.
-   확인: 새 함수·식·문구의 핵심 낱말로 grep 한다. 예: `core/listing.py:531`, `providers/daangn/service/common/nearby.py` `connection_edges`,
+   확인: 새 함수·식·문구의 핵심 낱말로 grep 한다. 예: `core/listing.py:487`, `providers/daangn/service/common/nearby.py` `connection_edges`,
    `providers/naver/service/common/paging.py` `area_scope` (동 경계/반경 갈래가 세 함수에 따로 있었다, 2026-11-16). 공통 함수가 생긴 뒤에도 한 소스가 손으로
-   쓴 문장을 남기면 그 소스만 갈래(요청 제한의 대기 시간 등)가 빠진다. 예: 직방 덤 조회 `[실패]` 14곳이 `core/listing.py` `lookup_failure_note`
+   쓴 문장을 남기면 그 소스만 갈래(요청 제한의 대기 시간 등)가 빠진다. 예: 직방 덤 조회 `[실패]` 14곳이 `core/notes.py` `lookup_failure_note`
    대신 `({type(exc).__name__})` 문장이라 요청 제한에 대기 시간이 없었다 (2026-11-22). `core/korean.py` `is_province_code` 를 더하며
    직방 `providers/zigbang/service/region.py` 의 `endswith('00000000')` 두 곳을 놓쳤고, `AGENTS.md` 구조 표의 `core/korean.py` 칸에도
    이름을 넣지 않았다 (2026-11-23 리뷰).
@@ -375,7 +375,7 @@
    언제: 기본값이 있는 인자를 더하거나, 설정 dict 를 `**` 로 넘기는 `+` 줄.
 3. **닿지 않는 갈래·쓰지 않는 인자.** 부르는 곳이 사라진 갈래·예외 클래스, 받기만 하고 쓰지 않는 인자, 늘 같은 값(`[]`·`None`)만
    돌려주게 된 반환값과 그 값을 받아 잇는 호출부가 남지 않았는가. 확인: 갈래를 지운 함수의 `return` 을 모두 보고 호출부를 grep 한다.
-   예: `core/browser.py:448`, `providers/zigbang/service/region.py` `region_notes` (안내 갈래를 지운 뒤 늘 `[]` 였고 호출부 여섯 곳이
+   예: `core/browser/fetch.py:186`, `providers/zigbang/service/region.py` `region_notes` (안내 갈래를 지운 뒤 늘 `[]` 였고 호출부 여섯 곳이
    이었다. 검사 함수 `settled_item` 으로 바꿨다, 2026-11-16), `providers/naver/service/real_price/models.py` `drop_not_applicable`
    (빌라도 종전 금액을 늘 넘기게 바꾼 뒤 '넘기지 않은 행' 갈래와 주석이 남았다, 2026-11-18). 공통 층을 새로 만들면 그것이 대신하는
    옛 개별 처리가 남지 않았는가도 같다 (당근 `--deal`·`--approval`·`--lifestyle` 을 `list[str]` 로 받아 옵션마다 막은 처리가 공통
@@ -406,7 +406,7 @@
    `파일:줄` 은 밀린 수만큼 숫자만 옮기지 말고 그 줄을 열어 설명한 코드에 맞춘다 (원래 어긋나 있던 번호가 그대로 남는다, 2026-11-23 리뷰).
    예: `cli/naver.py` 의 옛 `_is_province_region` (한 곳에서만 부르던 3줄 판정, 2026-11-23 규칙을 둘 때 본 예. 같은 날 종류 검사(`kind == '지역'`)는
    `_area_location` 에 합치고, 코드 모양 판정은 같은 판정을 하던 네이버 `_wide_region_unit` 과 함께 `core/korean.py` `is_province_code` 로 모았다).
-   `core/browser.py` `raise_if_entry_failed` (`_fresh_error` 를 합치며 같은 이유가 docstring 과 주석에 근거 날짜를 나눠 두 번
+   `core/browser/session.py` `raise_if_entry_failed` (`_fresh_error` 를 합치며 같은 이유가 docstring 과 주석에 근거 날짜를 나눠 두 번
    적혔다, 2026-11-23 리뷰). `providers/daangn/service/region/area.py` `_search_area_page` (`_area_of` docstring 을 옮긴 주석이
    바로 아래 조건의 시·도 이름 빠짐을 적지 않았다, 2026-11-23 리뷰). 같은 파일 `resolve_area` 의 `dong_hint` 주석
    (`_same_dong_hint` docstring 을 옮긴 주석이 쓸 수 있는 동의 빈 구 이름을 견주는 것을 빠뜨렸다, 2026-11-23 리뷰).
@@ -495,7 +495,7 @@
 7. **응답 필드 표기·정밀도.** 엔드포인트마다 snake_case·camelCase 가 다르고(`providers/dabang/api/models/response/sale/search.py:134`), 거리를
    소수로 받는 것은 정렬 뒤 출력할 때만 웹 `d` 식(`_nearest` 의 `distance_m`)으로 반올림하려는 것이다 (`providers/dabang/service/nearby/places.py:98`).
 8. **검토하고 그대로 둔 설계.** `proxy=''` 를 잘못된 주소로 보기, 요청 하나 전체에 시간 상한 없음, 탭이 닫히면 닫고 다시 띄우기
-   (`core/browser.py:671`·`:818`·`:1761`), 평형 코드가 없을 때 전체 평균으로 물러서지 않기
+   (`core/browser/session.py:231`·`:378`, `core/browser/fetch.py:279`), 평형 코드가 없을 때 전체 평균으로 물러서지 않기
    (`providers/daangn/service/compare/complexes.py:176`).
 9. **꺼진 상태가 정상인 기능 스위치의 기본값.** 한 호출부만 켜고 나머지는 꺼야 맞는 bool(`listing_search`)은 `design` 2 가
    아니다. 지금 호출부는 모두 맞고, 틀리려면 호출부가 바뀌어야 한다. 예: `providers/naver/service/region/search.py:325`.

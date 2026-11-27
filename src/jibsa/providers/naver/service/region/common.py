@@ -5,8 +5,8 @@ from collections.abc import Callable
 from jibsa.core.errors import (
     RegionAmbiguousError,
 )
-from jibsa.core.listing import (
-    normalize_address,
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

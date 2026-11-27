@@ -4,10 +4,12 @@ from itertools import pairwise
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
-    NOTE_KINDS,
-    UPDATE_MAYBE_NEEDED,
     Listing,
     listing_as,
+)
+from jibsa.core.notes import (
+    NOTE_KINDS,
+    UPDATE_MAYBE_NEEDED,
     note,
     null_items_note,
 )

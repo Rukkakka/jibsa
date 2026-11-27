@@ -1,7 +1,7 @@
 """다방 글자 해석기 (금액·숫자·세대수·연차·계약일·층)."""
 from math import isfinite
 
-from jibsa.core.listing import read_date
+from jibsa.core.dates import read_date
 from jibsa.providers.dabang.service.common.constants import (
     FLOOR_LABELS,
     FLOOR_NUMBER_PATTERN,

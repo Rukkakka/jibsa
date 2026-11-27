@@ -1,8 +1,10 @@
 """동 안 인기 매물 (popular-listings)."""
 from jibsa.core.listing import (
     Listing,
-    limit_notes,
     listing_as,
+)
+from jibsa.core.notes import (
+    limit_notes,
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient

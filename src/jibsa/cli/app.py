@@ -53,7 +53,7 @@ from jibsa.cli.output import (
 from jibsa.core.browser import install_chromium
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import LINE_NAME_PATTERN
-from jibsa.core.ratelimit import state_dir
+from jibsa.core.state import state_dir
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.naver.api.client import NaverClient
