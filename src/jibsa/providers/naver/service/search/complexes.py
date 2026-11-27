@@ -11,39 +11,49 @@ from jibsa.core.listing import (
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
     NaverArticleFilterModel,
-    NaverRealEstateType,
 )
 from jibsa.providers.naver.api.request.search.complexes import (
     NaverComplexBoundedComplexesV1RequestPayloadModel,
     NaverComplexLegalDivisionComplexListV1RequestPayloadModel,
     NaverComplexPagingRequestModel,
-    NaverComplexSortType,
 )
 from jibsa.providers.naver.api.response.common import (
     NaverComplexListItemModel,
     NaverComplexListPageModel,
     NaverResponseModel,
 )
-from jibsa.providers.naver.service.common.functions import (
-    COMPLEX_EXCLUDED_REASON,
-    COMPLEX_RADIUS_EXCLUDED_REASON,
+from jibsa.providers.naver.service.common.constants import (
+    COMPLEX_URL,
     TRADE_CODE_BY_NAME,
-    area_scope,
-    boundary_filter,
-    bounded_precision,
-    bounding_box,
-    complex_row_fields,
-    complex_url,
-    pagination_notes,
-    scan_null_items_notes,
-    scan_pages,
-    unwrap,
 )
 from jibsa.providers.naver.service.common.models import (
     PageScan,
 )
-from jibsa.providers.naver.service.search.base import (
-    _filter_range,
+from jibsa.providers.naver.service.common.paging import (
+    area_scope,
+    boundary_filter,
+    bounding_box,
+    pagination_notes,
+    scan_null_items_notes,
+    scan_pages,
+)
+from jibsa.providers.naver.service.common.price import (
+    complex_row_fields,
+)
+from jibsa.providers.naver.service.common.response import (
+    unwrap,
+)
+from jibsa.providers.naver.service.search.common import (
+    bounded_precision,
+    filter_range,
+)
+from jibsa.providers.naver.service.search.constants import (
+    AREA_COMPLEX_CODES_BY_TYPE,
+    COMPLEX_EXCLUDED_REASON,
+    COMPLEX_LIST_PAGE_SIZE,
+    COMPLEX_LIST_SORT_TYPE_BY_NAME,
+    COMPLEX_RADIUS_EXCLUDED_REASON,
+    MAX_COMPLEX_LIST_PAGE_REQUESTS,
 )
 from jibsa.providers.naver.service.search.models import (
     NaverAreaComplex,
@@ -53,34 +63,6 @@ from jibsa.providers.naver.service.search.models import (
 from typing import (
     Any,
 )
-
-
-# 지역 단지 목록(naver complexes). 페이지는 30곳(사이트 COMPLEX_PAGINATION_SIZE), 요청은 이 횟수에서 멈춘다
-AREA_COMPLEX_CODES_BY_TYPE: dict[str, tuple[NaverRealEstateType, ...]] = {
-    '아파트': ('A01',),
-    '오피스텔': ('A02',),
-    # 단지로 등록된 연립·다세대·도시형생활주택. 역삼동만 779곳이고 대부분 매물이 없다
-    '빌라': ('A05', 'A06', 'A07'),
-    # 이름은 `SEARCH_CODES_BY_PROPERTY` 와 같다. 응답 모양이 아파트와 같다 (2026-11-18 실측: 재건축 A04 대치동 5곳,
-    # 분양권 B01 둔촌동 1곳, 오피스텔분양권 B02 는 넷 지역 모두 0곳이고 서버 답 그대로 낸다)
-    '재건축': ('A04',),
-    '분양권': ('B01',),
-    '오피스텔분양권': ('B02',),
-}
-
-
-COMPLEX_LIST_SORT_TYPE_BY_NAME: dict[str, NaverComplexSortType] = {
-    '인기순': 'POPULARITY_DESC',
-    '세대수순': 'HOUSEHOLD_NUMBER_DESC',
-    '최근입주순': 'USE_APPROVAL_DATE_DESC',
-    '매물수순': 'ARTICLE_COUNT_DESC',
-}
-
-
-COMPLEX_LIST_PAGE_SIZE: int = 30
-
-
-MAX_COMPLEX_LIST_PAGE_REQUESTS: int = 4
 
 
 def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) -> NaverAreaComplex | None:
@@ -104,7 +86,7 @@ def _area_complex(item: NaverComplexListItemModel, center: tuple[float, float]) 
         distance_km=round(
             haversine_km(center[0], center[1], coordinates.y_coordinate, coordinates.x_coordinate), 2,
         ) if coordinates else None,
-        url=complex_url(info.complex_number),
+        url=COMPLEX_URL.format(info.complex_number),
         **complex_row_fields(
             type_code=info.type,
             households=info.total_household_number,
@@ -147,8 +129,8 @@ def list_area_complexes(
         trade_types=list(TRADE_CODE_BY_NAME.values()),
         real_estate_types=[code for name in property_types or ['아파트'] for code in AREA_COMPLEX_CODES_BY_TYPE[name]],
         has_article=listed_only,
-        household_number=_filter_range(household_min, household_max),
-        approval_elapsed_year=_filter_range(building_age_min, building_age_max),
+        household_number=filter_range(household_min, household_max),
+        approval_elapsed_year=filter_range(building_age_min, building_age_max),
     )
     if legal_division_code is not None:
         filter_ = boundary_filter(filter_, legal_division_code)

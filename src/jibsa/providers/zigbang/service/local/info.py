@@ -1,6 +1,5 @@
 """동·구의 지역 정보 (region-info): 단지·세대 수, 평형대별 직방시세, 월별 거래량, 평당가 추이, 구의 인구·세대."""
 
-import re
 from datetime import datetime
 
 from httpx import HTTPStatusError
@@ -26,16 +25,27 @@ from jibsa.providers.zigbang.api.response.local.info import (
     ZigbangLocalPriceModel,
     ZigbangLocalsPynChartPriceDataModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
-    sale_price_range,
-    text_or_none,
 )
 from jibsa.providers.zigbang.service.common.models import ZigbangEstimatedPrice
-from jibsa.providers.zigbang.service.local.base import (
+from jibsa.providers.zigbang.service.common.price import (
+    sale_price_range,
+)
+from jibsa.providers.zigbang.service.common.text import (
+    text_or_none,
+)
+from jibsa.providers.zigbang.service.local.common import (
     local_region_of,
     resolve_local_area,
+)
+from jibsa.providers.zigbang.service.local.constants import (
+    AREA_LABELS,
+    DESCRIPTION_PATTERN,
+    POPULATION_YEARS,
+    PRICE_TREND_EMPTY_ALL,
+    PRICE_TREND_EMPTY_RANGE,
 )
 from jibsa.providers.zigbang.service.local.models import (
     ZigbangHouseholdMonth,
@@ -49,29 +59,6 @@ from jibsa.providers.zigbang.service.local.models import (
     ZigbangRegionMonthlyVolume,
     ZigbangRegionPopulation,
 )
-
-
-# 평당 추이 그래프의 평형대 탭 (`--range`). 직방 서버의 pynAreaType 값 그대로다 (2026-11-22 실측: 모두 200)
-PRICE_RANGES: tuple[ZigbangPynAreaType, ...] = (
-    '전체', '10평이하', '10평대', '20평대', '30평대', '40평대', '50평대', '60평대이상',
-)
-# 지역 정보 `price` 의 평형대 구분(area) → 웹 평형 이름표 (2026-11-19 번들 지역정보 화면 `e_`). 'total' 먼저, 그다음 작은 평형대부터다
-AREA_LABELS: dict[str, str] = {
-    'total': '전체',
-    '0': '10평 이하',
-    '10': '10평대',
-    '20': '20평대',
-    '30': '30평대',
-    '40': '40평대',
-    '50': '50평대',
-    '60': '60평대 이상',
-}
-# 지역 정보 머리 문구 ('39 단지 · 23,634 세대'). 웹 머리가 이 글자를 그린다
-DESCRIPTION_PATTERN: re.Pattern[str] = re.compile(r'([\d,]+)\s*단지\s*·\s*([\d,]+)\s*세대')
-# 웹 인구 그래프가 보내는 기간 길이 (2026-11-19 캡처: startDate=202110&endDate=202610). 번들에서 근거는 찾지 못했다
-POPULATION_YEARS: int = 5
-PRICE_TREND_EMPTY_ALL: str = '직방 시세가 있는 아파트 단지가 없습니다'
-PRICE_TREND_EMPTY_RANGE: str = '선택하신 평형대의 단지가 없습니다'
 
 
 def _description_counts(description: str | None) -> tuple[int | None, int | None]:

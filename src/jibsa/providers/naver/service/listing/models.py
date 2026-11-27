@@ -11,44 +11,24 @@ from pydantic import (
 from jibsa.core.listing import (
     ListingDetail,
 )
-from jibsa.providers.naver.service.common.models import (
+from jibsa.providers.naver.service.common.constants import (
     BADGES_DESCRIPTION,
     CONFIRMED_AT_DESCRIPTION,
     NOT_APPLICABLE_FIELDS_BY_TYPE,
-    NaverAssignedSchool,
+)
+from jibsa.providers.naver.service.common.models import NaverAssignedSchool
+from jibsa.providers.naver.service.listing.constants import (
+    ALL_TAX_TYPES,
+    GENERAL_PRE_SALE_STATUS,
+    NO_TAX_TYPES,
+    PRE_SALE_TYPES,
+    SALE_TAX_FIELDS,
 )
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 매매 매물 상세에만 붙이는 세금 필드 (요청을 아끼려고 전월세는 세금을 조회하지 않는다. 원룸·고시원과 일반분양권이 아닌 분양권은
-# 웹에 세금 칸이 없어 매매여도 조회하지 않는다. 분양권은 분양 상태를 모르면 칸이 있는지 몰라 요청하지 않고 모름(null)으로 둔다.
-# 중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형에서 조회한다)
-SALE_TAX_FIELDS: frozenset[str] = frozenset({
-    'acquisition_tax_manwon', 'property_tax_manwon', 'comprehensive_real_estate_tax_manwon',
-})
-
-
-# 세금 칸이 없는 매물 유형 (원룸 C01·고시원 G01). 웹 getArticleTaxExposeInfo (2026-11-17 번들 대조, 청크 0n-xsnd22pdxz) 는
-# 이 둘에 세금 칸을 그리지 않는다
-NO_TAX_TYPES: frozenset[str] = frozenset({'C01', 'G01'})
-
-
-# 분양권(B01)·오피스텔분양권(B02). 웹 getArticleTaxExposeInfo 는 이 둘이면 매매이면서 분양권 상태(preSaleStatusType)가
-# 일반분양권('10')일 때만 세금 칸을 그린다 (2026-11-17 번들 대조, 둔촌동 분양권 2661144592 '10'·2659804873 '20')
-PRE_SALE_TYPES: frozenset[str] = frozenset({'B01', 'B02'})
-
-
-GENERAL_PRE_SALE_STATUS: str = '10'
-
-
-# 세 세금을 모두 그리는 매매 유형 (아파트 A01·재건축 A04·빌라 단지 A05~A07). 그 밖의 유형은 취득세만 그린다. 일반분양권이
-# 아닌 분양권 매매는 세금 칸이 없어, 분양 상태를 모르는 분양권 매매는 칸이 있는지 몰라 요청하지 않는다 (`_draws_sale_taxes`)
-# 리뷰 오탐 (2026-11-17): A05~A07 은 common.VILLA_COMPLEX_CODES 와 코드가 같지만 규칙이 다르다 (그쪽은 학교 조회 itemType=villa 를 물을 단지형 빌라, 이쪽은 웹 getArticleTaxExposeInfo 가 세 세금을 모두 그리는 유형). 합치면 한쪽 변경이 다른 쪽에 번진다
-ALL_TAX_TYPES: frozenset[str] = frozenset({'A01', 'A04', 'A05', 'A06', 'A07'})
 
 
 class NaverNearbyRail(BaseModel):
@@ -280,7 +260,7 @@ class NaverListingDetail(ListingDetail):
         # 세금은 매매 매물만 조회한다 (중개보수는 직거래가 아님이 확인된 매물만 모든 거래 유형). 원룸·고시원·일반분양권이 아닌 분양권은
         # 세금 칸이 없고, 세 세금을 모두 그리는 유형 밖의 매매는 취득세만 그린다. 분양 상태를 모르는 분양권 매매는 요청하지 않아
         # 칸이 있는지 몰라서, 취득세는 null 로 남긴다 (모름)
-        draws_taxes = _draws_sale_taxes(self.trade_type, self.real_estate_type, self.pre_sale_status_type)
+        draws_taxes = draws_sale_taxes(self.trade_type, self.real_estate_type, self.pre_sale_status_type)
         if draws_taxes is False:
             fields = fields | SALE_TAX_FIELDS
         elif self.real_estate_type not in ALL_TAX_TYPES:
@@ -288,13 +268,13 @@ class NaverListingDetail(ListingDetail):
         return fields
 
 
-def _draws_sale_taxes(trade_type: str, real_estate_type: str | None, pre_sale_status_type: str | None) -> bool | None:
+def draws_sale_taxes(trade_type: str, real_estate_type: str | None, pre_sale_status_type: str | None) -> bool | None:
     """이 매물에 네이버 웹이 세금 칸을 그리는지 (세금 요청과 키 제거가 같은 조건을 쓰도록 한 곳에 둔다). 칸이 있는지 모르면 None.
 
     매매가 아니거나 원룸·고시원이면 없다. 분양권(B01·B02)은 웹 getArticleTaxExposeInfo(청크 0n-xsnd22pdxz)가 매매이면서
     분양권 상태(preSaleStatusType)가 일반분양권('10')일 때만 세금 칸을 그려서, 상태가 없으면 칸이 없다. 그래서 상태를 모르는
     분양권 매매는 칸이 있다고도 없다고도 단정하지 않으려고 요청하지 않고 모름(None)으로 둔다 (직거래 여부를 모를 때 중개보수를
-    요청하지 않는 것과 같은 기준). 빈 글자도 None 과 같게 본다 (`_coded_label` 과 같은 기준). 상태가 일반분양권이 아니면 없다.
+    요청하지 않는 것과 같은 기준). 빈 글자도 None 과 같게 본다 (`coded_label` 과 같은 기준). 상태가 일반분양권이 아니면 없다.
     """
     if trade_type != '매매' or real_estate_type in NO_TAX_TYPES:
         return False

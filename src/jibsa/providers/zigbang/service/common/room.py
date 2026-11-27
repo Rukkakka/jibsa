@@ -6,7 +6,6 @@ from collections.abc import (
 )
 
 from jibsa.core.listing import (
-    TradeType,
     join_address,
     m2_to_pyeong,
     note,
@@ -15,23 +14,26 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.core.schema import ResponseModel
-from jibsa.providers.zigbang.api.client import ZigbangClient
+from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL, ZigbangClient
 from jibsa.providers.zigbang.api.request.common import (
-    ZigbangFloorFilter,
     ZigbangItemsListV1RequestPayloadModel,
-    ZigbangOptionFilter,
-    ZigbangRoomTypeFilter,
-    ZigbangSalesType,
 )
 from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemPinModel,
     ZigbangItemSectionModel,
     ZigbangItemSummaryModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
-    item_url,
-    officetel_complex_id,
+from jibsa.providers.zigbang.service.common.constants import (
+    CONDITION_FIELD_BY_LABEL,
+    HUG_BADGE,
+    ITEMS_LIST_BATCH_SIZE,
+    ROOM_TYPE_BY_CODE,
+    SECTION_ORDER,
+    SHORT_TERM_CONTRACT,
+    VERIFICATION_BADGE,
+    WEB_PATH_BY_SERVICE_TYPE,
 )
+from jibsa.providers.zigbang.service.common.ids import officetel_complex_id
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangListing,
     ZigbangRoomConditions,
@@ -41,60 +43,6 @@ from typing import (
     NamedTuple,
     Protocol,
 )
-
-
-TRADE_TYPES: tuple[TradeType, ...] = ('전세', '월세', '매매', '단기임대')
-# jibsa 거래 유형 → 직방 거래 유형 필터 값. 단기임대만 이름이 다르다.
-SALES_TYPE_BY_TRADE: dict[str, ZigbangSalesType] = {
-    '전세': '전세',
-    '월세': '월세',
-    '매매': '매매',
-    '단기임대': '단기',
-}
-SHORT_TERM_CONTRACT: str = '단기'
-ITEMS_LIST_BATCH_SIZE: int = 15
-# 웹 목록이 섹션을 잇는 순서: VIP → 안심추천 → 안심일반 → 추천(원룸 목록은 '이 지역 오피스텔') → 일반 (2026-11-15 번들 `_app` 의
-# `createSectionsToUpdate`·`loadItemsV2`. 실측: 강남역 3km 지도 칸 18곳 모두 다섯 섹션을 이 순서로 주고 빈 섹션도 ids [] 로 둔다)
-SECTION_ORDER: tuple[str, ...] = ('VIP', 'PREMIUM_RECOMMEND', 'PREMIUM', 'RECOMMEND', 'NORMAL')
-ROOM_TYPE_BY_CODE: dict[str, str] = {
-    '01': '오픈형원룸',
-    '02': '분리형원룸',
-    '03': '복층형원룸',
-    '04': '투룸',
-    '05': '쓰리룸',
-    '06': '포룸이상',
-}
-ROOM_TYPES: tuple[str, ...] = tuple(ROOM_TYPE_BY_CODE.values())
-# 방 구조 라벨 → 목록 API 의 방 구조 필터 값. 쓰리룸·포룸이상만 필터 이름이 다르다.
-ROOM_TYPE_FILTER_BY_LABEL: dict[str, ZigbangRoomTypeFilter] = {
-    '오픈형원룸': '오픈형원룸',
-    '분리형원룸': '분리형원룸',
-    '복층형원룸': '복층형원룸',
-    '투룸': '투룸',
-    '쓰리룸': '쓰리룸플러스',
-    '포룸이상': '포룸플러스',
-}
-FLOOR_FILTERS: tuple[ZigbangFloorFilter, ...] = ('지상', '반지하', '옥탑방', '1층')
-OPTION_FILTERS: tuple[ZigbangOptionFilter, ...] = (
-    '에어컨', '냉장고', '세탁기', '가스레인지', '인덕션', '전자레인지',
-    '책상', '책장', '침대', '옷장', '신발장', '싱크대',
-)
-# 기타 조건 라벨 → 목록 요청 모델의 참/거짓 필드.
-CONDITION_FIELD_BY_LABEL: dict[str, str] = {
-    '즉시입주': 'immediate_move',
-    '남향': 'south_facing',
-    '엘리베이터': 'elevator',
-    '주차': 'parking',
-    'CCTV': 'cctv',
-    '반려동물': 'pet',
-    '전세대출': 'loan_lease',
-    '전기차충전': 'ev_station',
-}
-CONDITIONS: tuple[str, ...] = tuple(CONDITION_FIELD_BY_LABEL)
-# 원룸·빌라·오피스텔 매물 요약·상세의 배지 코드. 웹은 배지 목록에 이 코드가 정확히 있는지로 꼬리표를 붙인다 (2026-11-19 번들
-# `useVerifiedItemTag`·`useLessorHugTag`). 'ITEM_VERIFICATION_FAILED' 는 실매물 확인이 아니다
-VERIFICATION_BADGE: str = 'ITEM_VERIFICATION'
-HUG_BADGE: str = 'HUG'
 
 
 class SectionedPins(Protocol):
@@ -112,6 +60,11 @@ class TradeableSummaries(NamedTuple):
 
     items: list[ZigbangItemSummaryModel]
     null_items: int
+
+
+def item_url(service_type: str | None, item_id: int) -> str:
+    path = WEB_PATH_BY_SERVICE_TYPE.get(service_type or '', 'oneroom')
+    return f'{ZIGBANG_WEB_URL}/home/{path}/items/{item_id}'
 
 
 def trade_type_of(summary: ZigbangItemSummaryModel) -> str:

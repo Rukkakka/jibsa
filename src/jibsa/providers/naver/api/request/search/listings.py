@@ -33,7 +33,7 @@ class NaverArticleBoundedArticlesV1RequestPayloadModel(RequestModel):
     ]
     precision: Annotated[
         int,
-        Field(ge=10, le=18, description='지도 줌. 높을수록 중심 근처만 줘서 반경에 맞춰 고른다 (service.common.functions.bounded_precision)')
+        Field(ge=10, le=18, description='지도 줌. 높을수록 중심 근처만 줘서 반경에 맞춰 고른다 (service.search.common.bounded_precision)')
     ] = 16
     article_paging_request: Annotated[
         NaverArticlePagingRequestModel,

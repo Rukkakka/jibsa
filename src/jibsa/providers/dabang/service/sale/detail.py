@@ -1,5 +1,4 @@
 """분양 단지 상세 (sale)."""
-import re
 from datetime import (
     date,
 )
@@ -18,12 +17,19 @@ from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.request.sale.detail import (
     DabangSaleInLotsDetail2V3RequestParameterModel,
 )
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.constants import SALE_URL
+from jibsa.providers.dabang.service.common.error import is_missing_id
+from jibsa.providers.dabang.service.common.text import (
     count_of,
-    is_missing_id,
     manwon_from_text,
     number_of,
-    sale_url,
+)
+from jibsa.providers.dabang.service.sale.constants import (
+    RENTAL_SUPPLY_TYPES,
+    SALE_DAY_PATTERN,
+    SALE_ISO_DAY_PATTERN,
+    SALE_ISO_MONTH_PATTERN,
+    SALE_MONTH_PATTERN,
 )
 from jibsa.providers.dabang.service.sale.models import (
     DabangSaleDetail,
@@ -36,18 +42,6 @@ from jibsa.providers.dabang.service.sale.models import (
 from typing import (
     Literal,
 )
-
-
-# 분양 일정 날짜 꼴: '26.09.07' (날), '26.08월' (달)
-SALE_DAY_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})\.(\d{1,2})$')
-SALE_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^(\d{2})\.(\d{1,2})월$')
-# `sale_date` 가 바꾼 꼴
-SALE_ISO_DAY_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}-\d{2}$')
-SALE_ISO_MONTH_PATTERN: re.Pattern[str] = re.compile(r'^\d{4}-\d{2}$')
-
-# 웹은 공급 유형 코드가 4·5(공공임대·민간임대)면 가격 이름표를 '임대가', 아니면 '분양가' 로 쓴다 (ic_24_download 청크 `x`,
-# 2026-11-13. 민간임대 6acca80f… 화면 '임대가 4억7770')
-RENTAL_SUPPLY_TYPES: frozenset[int] = frozenset({4, 5})
 
 
 def sale_date(text: str | None) -> str | None:
@@ -189,6 +183,6 @@ def get_sale(client: DabangClient, sale_id: str) -> DabangSaleDetail:
         ),
         notice_url=info.notice_url,
         applyhome_url=info.applyhome_link,
-        url=sale_url(info.id),
+        url=SALE_URL.format(info.id),
         notes=notes,
     )

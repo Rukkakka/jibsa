@@ -1,5 +1,4 @@
 """청약 일정 (sale-schedule)."""
-import re
 from datetime import (
     date,
     timedelta,
@@ -21,21 +20,19 @@ from jibsa.providers.dabang.api.request.sale.schedule import (
 from jibsa.providers.dabang.api.response.sale.schedule import (
     DabangSaleScheduleTableRowModel,
 )
-from jibsa.providers.dabang.service.region.functions import (
+from jibsa.providers.dabang.service.region.region import (
     state_name,
 )
-from jibsa.providers.dabang.service.sale.base import _in_lots_fields
+from jibsa.providers.dabang.service.sale.common import in_lots_fields
+from jibsa.providers.dabang.service.sale.constants import (
+    SALE_SCHEDULE_MAX_LIMIT,
+    SCHEDULE_REGION_PATTERN,
+)
 from jibsa.providers.dabang.service.sale.models import (
     DabangSaleSchedule,
     DabangSaleScheduleItem,
     DabangSaleScheduleSale,
 )
-
-
-# sale-schedule 의 --limit 최대값. CLI 옵션의 max 와 더 보는 법 안내가 함께 쓴다
-SALE_SCHEDULE_MAX_LIMIT: int = 300
-# 청약 일정 글: '[청약접수] 인천 인천계양 A17블록 … (~10/27)'
-SCHEDULE_REGION_PATTERN: re.Pattern[str] = re.compile(r'^(?:\[[^\]]+\]\s*)+(\S+)')
 
 
 def get_sale_schedule(
@@ -124,7 +121,7 @@ def get_sale_schedule(
                     continue
             rows.append(DabangSaleScheduleItem(
                 date=day.date, kind=kind, sido=where, text=text, presale_id=entry.id,
-                presale=None if found is None else DabangSaleScheduleSale(**_in_lots_fields(found)), fetched=sales is not None,
+                presale=None if found is None else DabangSaleScheduleSale(**in_lots_fields(found)), fetched=sales is not None,
             ))
             matched_lookup.append(looked_up)
     shown = rows[:limit]

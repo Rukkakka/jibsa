@@ -14,26 +14,20 @@ from jibsa.core.listing import (
 )
 from jibsa.core.schema import RequestModel
 from jibsa.providers.zigbang.api.request.store import ZigbangStoreSalesType
-from jibsa.providers.zigbang.service.common.base import drop_unused_scope
-from jibsa.providers.zigbang.service.common.models import ZigbangRegion
+from jibsa.providers.zigbang.service.common.models import (
+    ZigbangRegion,
+    drop_unused_scope,
+)
+from jibsa.providers.zigbang.service.store.constants import (
+    STORE_NOT_APPLICABLE_DETAIL_FIELDS,
+    STORE_NOT_APPLICABLE_FIELDS,
+    STORE_OFFICE_BUSINESS,
+)
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 상가 응답에 방·욕실·방향·입주·옵션 정보가 아예 없어(2026-10-10 실측: 상세 원본 키 35개, 상세 12건·목록 10건 모두 비어 있음)
-# 모름이 아니라 해당 없음으로 키를 뺀다
-STORE_NOT_APPLICABLE_FIELDS: frozenset[str] = frozenset({'room_type'})
-STORE_NOT_APPLICABLE_DETAIL_FIELDS: frozenset[str] = STORE_NOT_APPLICABLE_FIELDS | frozenset({
-    'room_count', 'bathroom_count', 'direction', 'move_in', 'options', 'manage_cost_includes',
-})
-# 업종 '사무실' 에는 권리금이 없다. 웹 상세는 이 업종이면 권리금 줄을 숨기고, 직방도 값을 주지 않는다 (2026-11-17 번들
-# `renderItemInfoData`, 상가 340건 중 권리금이 없는 199건이 모두 사무실). 그래서 직방이 값을 주지 않은 사무실은 모름이
-# 아니라 해당 없음으로 `key_money_manwon` 키를 뺀다. 값을 줬으면(0 포함) 그대로 낸다. 권리금 조건을 걸면 이런 사무실은
-# 빼고(해당 없음을 0 으로 치지 않는다) `search_store_listings` 가 [제외] 로 알린다
-STORE_OFFICE_BUSINESS: str = '사무실'
 
 
 class ZigbangStoreListing(Listing):

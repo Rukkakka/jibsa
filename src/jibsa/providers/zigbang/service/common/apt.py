@@ -1,11 +1,8 @@
-"""직방 service 공통(아파트 목록·묶음): 매물 ID·URL, 묶음 ID, 카탈로그 → 매물 변환, 쪽 넘김 안내. 아파트 매물 모델은 common.models 에 있다."""
+"""직방 service 공통(아파트 목록·묶음): 매물 ID, 묶음 ID, 카탈로그 → 매물 변환, 쪽 넘김 안내. 아파트 매물 모델은 common.models 에 있다."""
 
-import re
 
-from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     NEXT_HINT,
-    TradeType,
     join_address,
     m2_to_pyeong,
     more_hint,
@@ -14,82 +11,25 @@ from jibsa.core.listing import (
 )
 from jibsa.providers.zigbang.api.request.common import (
     ZigbangAptItemSource,
-    ZigbangAptTranType,
 )
 from jibsa.providers.zigbang.api.response.common import ZigbangItemCatalogModel
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
+    APT_CATALOG_URL,
+    APT_ID_PREFIXES,
+    APT_ITEM_SOURCES,
+    APT_ITEM_URL,
+    APT_LISTING_KIND_LABELS,
     MAX_LIST_LIMIT,
-    apt_complex_id,
-    text_or_none,
+    TRADE_BY_APT_TRAN_TYPE,
 )
+from jibsa.providers.zigbang.service.common.ids import apt_complex_id
 from jibsa.providers.zigbang.service.common.models import ZigbangAptListing
-
-from typing import get_args
-
-
-# 아파트 거래 유형 코드. 요청은 영어 코드(`ZigbangAptTranType`)를 받는다
-APT_TRAN_TYPE_BY_TRADE: dict[TradeType, ZigbangAptTranType] = {
-    '매매': 'trade',
-    '전세': 'charter',
-    '월세': 'rental',
-}
-# 응답의 거래 유형 코드 → 거래 유형 (응답 코드는 글자라 모르는 코드도 올 수 있다)
-TRADE_BY_APT_TRAN_TYPE: dict[str, TradeType] = {
-    tran_type: trade for trade, tran_type in APT_TRAN_TYPE_BY_TRADE.items()
-}
-# 같은 호·거래 유형의 아파트 매물 묶음 ID (`<호 ID>-<거래 유형 코드>`, 예: 8260358-trade). 묶음 화면 API 가 이 둘을 받는다
-CATALOG_ID_PATTERN: re.Pattern[str] = re.compile(rf"^([1-9]\d*)-({'|'.join(TRADE_BY_APT_TRAN_TYPE)})$")
-# 묶음 ID 형식이 틀렸을 때 안내 (`parse_catalog_id` 의 INVALID_ARGUMENT hint)
-CATALOG_ID_HINT: str = 'search listings apt·search listings --complex <apt-…> 결과의 catalog_id 를 그대로 주세요 (예: 8260358-trade)'
-
-# 상세를 볼 수 있는 아파트 매물 출처
-APT_ITEM_SOURCES: tuple[ZigbangAptItemSource, ...] = get_args(ZigbangAptItemSource)
-
-
-# 아파트 카드·상세의 매물 종류 코드(`itemType`) → 웹 카드가 보여 주는 말. 신규분양은 가격이 분양가다. 필드 설명
-# (`APT_LISTING_KIND_DESCRIPTION`)은 상세 결과 모델(`common.base` 의 `ZigbangListingDetail`)도 써 `common.base` 에 있다
-APT_LISTING_KIND_LABELS: dict[str, str] = {'offer': '신규분양', 'partner': '집주인', 'self_ad': '중개사'}
-
-# 아파트 매물 ID 앞에 출처를 붙이는 출처 (`apt_listing_id`). 직방 매물은 접두어 없이 숫자만이다
-APT_ID_PREFIXES: tuple[ZigbangAptItemSource, ...] = tuple(source for source in APT_ITEM_SOURCES if source != 'zigbang')
-
-
-def apt_item_url(item_id: int, item_source: ZigbangAptItemSource) -> str:
-    # 웹 아파트 매물 페이지(v2). 옛 경로 /home/apt/item/{id} 는 /error 로 보낸다.
-    # 마지막 칸은 대표로 띄울 중개사 번호인데 빠지면 404 라, 0 을 넣어 직방이 고르게 한다.
-    return f'https://www.zigbang.com/home/apt/item/v2/{item_id}/{item_source}/0'
-
-
-def apt_catalog_url(area_ho_id: int, tran_type: str) -> str:
-    # 같은 호를 여러 중개사가 올린 묶음 화면. 웹 아파트 카드를 누르면 가격 범위(isPriceRange)와 상관없이 가는 곳이다
-    # (2026-11-15 번들 ItemCard_AptItemCatalogCard 의 onPress). 신규분양 카드는 누르면 그 매물 상세 화면으로 가지만
-    # (`onPressOfferItem` → `HomeAptItemDetail`), 이 묶음 화면도 그 매물 1건과 '일반 매매가 아닌 신규분양 매물입니다' 를 보여 준다
-    return f'https://www.zigbang.com/home/apt/item-catalog?areaHoId={area_ho_id}&tranType={tran_type}'
+from jibsa.providers.zigbang.service.common.text import text_or_none
 
 
 def apt_catalog_id(area_ho_id: int, tran_type: str) -> str:
     """아파트 목록 줄의 `catalog_id` (`zigbang catalog` 에 넘긴다). 읽는 쪽은 `parse_catalog_id` 다."""
     return f'{area_ho_id}-{tran_type}'
-
-
-def parse_catalog_id(catalog_id: str) -> tuple[int, ZigbangAptTranType]:
-    """`catalog_id` 를 (호 ID, 거래 유형 코드) 로 나눈다. 거래 유형(한글)은 `TRADE_BY_APT_TRAN_TYPE` 으로 꺼낸다.
-
-    `zigbang catalog` 명령은 형식을 따로 검사하지 않고 이 에러를 그대로 낸다.
-
-    Raises:
-        JibsaError: 형식이 맞지 않을 때 (INVALID_ARGUMENT).
-    """
-    match = CATALOG_ID_PATTERN.match(catalog_id.strip())
-    if match is None:
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f"직방 아파트 묶음 ID 형식이 아닙니다: '{catalog_id}'",
-            hint=CATALOG_ID_HINT,
-        )
-    # 정규식이 이 표의 코드만 받으므로 늘 찾는다. 글자를 표의 값으로 바꿔 거래 유형 코드 타입으로 돌려준다
-    tran_type = next(code for code in APT_TRAN_TYPE_BY_TRADE.values() if code == match.group(2))
-    return int(match.group(1)), tran_type
 
 
 def apt_listing_kind(item_type: str | None) -> str | None:
@@ -154,9 +94,9 @@ def catalog_to_listing(catalog: ZigbangItemCatalogModel, local1: str | None) -> 
         source='zigbang',
         id=listing_ids[0],
         url=(
-            apt_catalog_url(catalog.area_ho_id, catalog.tran_type)
+            APT_CATALOG_URL.format(catalog.area_ho_id, catalog.tran_type)
             if catalog.area_ho_id is not None
-            else apt_item_url(item_id, item_source)
+            else APT_ITEM_URL.format(item_id, item_source)
         ),
         trade_type=trade_type,
         property_type='아파트',

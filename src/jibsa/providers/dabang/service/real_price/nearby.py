@@ -10,14 +10,14 @@ from jibsa.providers.dabang.api.request.real_price.nearby import (
     DabangRealPriceComplexPricePerPyV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.real_price.nearby import DabangNearComplexModel
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.complex import area_price
+from jibsa.providers.dabang.service.common.constants import (
     COMPLEX_KIND_BY_TYPE,
-    area_price,
-    building_years,
-    complex_url,
+    COMPLEX_URL,
 )
-from jibsa.providers.dabang.service.real_price.base import (
-    _fetch_complex_space,
+from jibsa.providers.dabang.service.common.text import building_years
+from jibsa.providers.dabang.service.real_price.common import (
+    fetch_complex_space,
     primary_space,
 )
 from jibsa.providers.dabang.service.real_price.models import (
@@ -57,7 +57,7 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
     if space_seq is None:
         space_seq, space_notes = primary_space(client, complex_id, verb='비교했습니다')
         notes += space_notes
-    result = _fetch_complex_space(
+    result = fetch_complex_space(
         lambda: client.run_request_real_price_complex_price_per_py_v5(
             DabangRealPriceComplexPricePerPyV5RequestParameterModel(complex_id=complex_id, space_seq=space_seq)
         ).result,
@@ -72,7 +72,7 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
             f'보여 줍니다). 단지 전체 평형의 평당가 비교는 jibsa dabang complex {complex_id} 의 area_prices 로 보세요',
         ))
         return DabangNearbyComplexes(
-            complex_id=complex_id, pyeong_id=space_seq, nearby={'sale': None, 'jeonse': None}, url=complex_url(complex_id), notes=notes,
+            complex_id=complex_id, pyeong_id=space_seq, nearby={'sale': None, 'jeonse': None}, url=COMPLEX_URL.format(complex_id), notes=notes,
         )
     near = result.near_complexes
     # 매매·전월세 쪽이 null 이면 그 쪽은 모름(null), 비어 있으면 []
@@ -90,6 +90,6 @@ def get_nearby_complexes(client: DabangClient, complex_id: str, *, space_seq: in
             'sale': None if sale_rows is None else [row for row in sale_rows if row is not None],
             'jeonse': None if lease_rows is None else [row for row in lease_rows if row is not None],
         },
-        url=complex_url(complex_id),
+        url=COMPLEX_URL.format(complex_id),
         notes=notes,
     )

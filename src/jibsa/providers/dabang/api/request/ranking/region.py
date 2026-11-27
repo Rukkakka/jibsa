@@ -8,12 +8,12 @@ from jibsa.core.schema import RequestModel
 from jibsa.providers.dabang.api.request.common import (
     REGION_INFO_PAGE_LIMIT,
     DabangRoomBuildingCategory,
+    DabangSchoolEstablishmentType,
 )
 from jibsa.providers.dabang.api.request.ranking.base import (
     DabangRankingComplexType,
     DabangRankingUnit,
 )
-from jibsa.providers.dabang.api.request.school.base import DabangSchoolEstablishmentType
 
 from typing import (
     Annotated,

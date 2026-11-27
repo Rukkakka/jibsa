@@ -10,19 +10,21 @@ from jibsa.core.listing import (
     TradeType,
 )
 from jibsa.core.schema import RequestModel
+from jibsa.providers.dabang.service.common.constants import (
+    APARTMENT_TYPE,
+    COMPLEX_PROPERTY_TYPES,
+)
 
 from typing import (
     Annotated,
+    Generic,
     Literal,
+    NamedTuple,
+    TypeVar,
 )
 
 
-# 목록 면적이 전용이 아니라 공급면적인 매물 유형 (`room_item_to_listing`)
-APARTMENT_TYPE: str = '아파트'
-# 다방이 계약면적을 주는 매물 유형 (`DabangListingDetail.contract_area_m2`)
-OFFICETEL_TYPE: str = '오피스텔'
-# 단지가 있는 매물 유형. 상세 유형은 '오피스텔(분리형)' 처럼 뒤에 구조를 붙여 와서 앞부분으로 본다
-COMPLEX_PROPERTY_TYPES: tuple[str, ...] = (OFFICETEL_TYPE, APARTMENT_TYPE)
+T = TypeVar('T')
 
 
 class DabangListing(Listing):
@@ -212,6 +214,43 @@ class DabangAreaPrice(BaseModel):
         dict[str, DabangPricePerPyeong | None],
         Field(description="거래별 평당 평균가. 키는 'sale'·'jeonse' 늘 두 개이고, 값이 없으면(0 포함) 그 거래가 null")
     ]
+
+
+class DabangPage(NamedTuple, Generic[T]):
+    """다방 목록 한 쪽 (`fetch_pages` 에 넘기는 값)."""
+
+    rows: list[T]
+    total: int | None
+    # 서버 hasMore (다음 쪽이 있는지)
+    has_more: bool
+    # 다방이 줄 목록에 섞어 줘서 뺀 빈 항목(null) 수. 뺀 자리도 서버의 칸이라 빈 쪽인지 가를 때와 이어 받을 위치를 셀 때 더한다
+    dropped: int = 0
+
+
+class DabangPages(NamedTuple, Generic[T]):
+    """`fetch_pages` 가 따라간 결과."""
+
+    # limit 까지 받은 줄 (다방 목록 순). 부르는 쪽이 중복·다른 동을 빼도 limit 은 이 수로 센다 (뺀 것은 다시 채우지 않는다)
+    rows: list[T]
+    # 처음 받은 쪽의 total
+    total: int | None
+    # 다방에 더 있는지
+    has_more: bool
+    # 쪽 수 상한(`max_pages`)까지 받고도 limit 을 못 채웠는데 다방에 더 있는지 (`fetch_stop_notes`)
+    capped: bool
+    # 앞 쪽이 hasMore 라 다음 쪽을 물었는데 다방이 결과(result null)를 주지 않아 멈췄는지 (`fetch_stop_notes`)
+    cut_short: bool
+    # 다음에 물을 쪽과 그 쪽에서 건너뛸 칸. 쪽 중간에서 멈췄으면 그 쪽과 쓴 칸 수, 쪽을 다 썼으면 다음 쪽과 0
+    page: int
+    skip: int
+    # 그 목록의 한 쪽 크기
+    page_size: int
+    # 이번 호출의 쪽 수 상한 (`fetch_pages` 가 쪽 크기와 --limit 최대값으로 정한다)
+    max_pages: int
+    # 받은 쪽들에서 뺀 빈 항목 수 (안내용, 쪽 중간에서 멈춘 쪽의 몫도 든다)
+    dropped: int = 0
+    # 그중 다 쓴 쪽의 몫. 쪽 중간에서 멈춘 쪽은 이어 받을 때 같은 쪽을 다시 받아 그때 세므로 뺀다 (받은 칸 수를 셀 때)
+    dropped_used: int = 0
 
 
 def is_complex_type(property_type: str | None) -> bool:

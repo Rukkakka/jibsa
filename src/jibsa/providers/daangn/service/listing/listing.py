@@ -1,0 +1,413 @@
+"""매물 상세의 조회·변환 함수. 모델은 같은 폴더의 models 에 있다."""
+
+from datetime import datetime
+
+from httpx import HTTPStatusError
+
+from jibsa.core.errors import JibsaError, ListingUnavailableError
+from jibsa.core.listing import (
+    KST,
+    ListingT,
+    LookupFailures,
+    holding_unread_dates,
+    iso_date,
+    keep_unread_dates,
+    listing_as,
+    move_in_label,
+    note,
+    null_items_note,
+    parking_label,
+    won_to_manwon,
+)
+from jibsa.core.ratelimit import RateLimitedError
+from jibsa.providers.daangn.api.client import DaangnClient
+from jibsa.providers.daangn.api.request.listing import (
+    DaangnArticlesRequestParameterModel,
+)
+from jibsa.providers.daangn.api.response.common import (
+    DaangnArticleModel,
+    DaangnManageCostOptionModel,
+    DaangnTradeModel,
+)
+from jibsa.providers.daangn.api.response.listing import DaangnArticlesResponseModel
+from jibsa.providers.daangn.service.common.constants import (
+    COMPLEX_TYPE_LABELS,
+    MONTHLY_TRADES,
+    OPTIONAL_LOOKUP_ERRORS,
+    TRADE_TYPE_BY_TRADE,
+)
+from jibsa.providers.daangn.service.common.listing import (
+    article_to_listing,
+    is_available,
+    trades_preferred_first,
+)
+from jibsa.providers.daangn.service.common.location import station_name
+from jibsa.providers.daangn.service.common.response import (
+    FeedQueryRejectedError,
+    code_label,
+    partial_failure_note,
+)
+from jibsa.providers.daangn.service.listing.constants import (
+    DETAILS_MAX,
+    DIRECTION_LABELS,
+    MANAGE_COST_OPTION_LABELS,
+    OPTION_LABELS,
+)
+from jibsa.providers.daangn.service.listing.models import (
+    DaangnListingDetail,
+)
+
+
+def needs_update(exc: Exception) -> bool:
+    """덤 조회 실패에 업데이트 안내를 붙이는지. `partial_failure_note` 가 `UPDATE_NEEDED`·`UPDATE_MAYBE_NEEDED` 를 붙이는 갈래와 같다.
+
+    참: 해시 거절(`FeedQueryRejectedError`)·GraphQL 에러(`UPSTREAM_ERROR`)·응답 형식 변경(`ValueError`)·4xx. 거짓: 요청 제한,
+    그 밖의 `JibsaError`, 서버 오류(5xx)·연결 실패. `LookupFailures` 가 안내 이유를 고르는 데 쓴다.
+    한쪽을 바꾸면 `partial_failure_note` 도 바꾼다.
+    """
+    if isinstance(exc, FeedQueryRejectedError):
+        return True
+    if isinstance(exc, RateLimitedError):
+        return False
+    if isinstance(exc, JibsaError):
+        return exc.code == 'UPSTREAM_ERROR'
+    if isinstance(exc, ValueError):
+        return True
+    return isinstance(exc, HTTPStatusError) and exc.response.status_code < 500
+
+
+def _describe_trade(trade: DaangnTradeModel) -> str:
+    """거래 조건 한 줄 표기 ('월세 500/50', 연세는 웹 카드처럼 보증금/1년치 '연세 1000/1400').
+
+    당근은 거래 유형마다 금액을 늘 주어 None 을 따로 다루지 않는다 (2026-10-11 실측: 역삼역·신림역·오산역 주변 매물
+    580건의 거래 600개 모두 매매가·보증금·월세가 있었다).
+    """
+    # 이 표기는 아는 거래(`trades_preferred_first`)에만 쓰지만 `type` 이 null 일 수 있는 모델이라 빈 글자로 받는다
+    label = TRADE_TYPE_BY_TRADE.get(trade.type or '', '')
+    if trade.type == 'BUY':
+        return f'{label} {trade.price}'
+    if trade.type in MONTHLY_TRADES:
+        return f'{label} {trade.deposit}/{trade.monthly_pay}'
+    if trade.type == 'YEAR':
+        return f'{label} {trade.deposit}/{trade.yearly_pay}'
+    return f'{label} {trade.deposit}'
+
+
+def _nearby_subways(article: DaangnArticleModel) -> list[str]:
+    """도보 시간이 붙은 `subwayStations` 를 쓰고, 비어 있으면 이름뿐인 `nearbySubwayStations` 로 채운다.
+
+    상세 페이지에서 `subwayStations` 가 비고 `nearbySubwayStations` 에만 역이 있는 매물이 있다
+    (2026-10 실측). 뒤쪽은 '역' 없이 오므로 ('역삼') 앞쪽 표기('역삼역')에 맞춰 붙인다.
+    """
+    stations = [
+        f'{item.station.station_name} (도보 {item.duration_minutes}분)'
+        if item.duration_minutes is not None else item.station.station_name
+        for item in article.subway_stations
+        if item.station and item.station.station_name
+    ]
+    if stations:
+        return stations
+    names = [
+        edge.node.station_name
+        for edge in article.nearby_subway_stations
+        if edge.node and edge.node.station_name
+    ]
+    return [station_name(name) for name in dict.fromkeys(names)]
+
+
+def _known_labels(labels: list[str | None]) -> list[str] | None:
+    """항목 이름들에서 아는 것만 남긴다. 항목이 처음부터 없으면 [], 있는데 이름을 하나도 모르면 None(모름)이다."""
+    if not labels:
+        return []
+    return [label for label in labels if label is not None] or None
+
+
+def _manage_cost_labels(options: list[DaangnManageCostOptionModel]) -> list[str] | None:
+    """관리비 항목들의 이름 (`_known_labels`). 이름을 모르는 항목은 건너뛴다."""
+    labels: list[str | None] = []
+    for option in options:
+        # 항목 하나의 이름. 직접 입력한 이름은 항목 코드가 'ETC' 이거나 코드를 모를 때(null·빈 글자·'-') 쓴다.
+        # 직접 입력한 이름은 앞뒤 공백을 지우고, 비었거나 '-' 면 없는 것으로 본다 (코드 라벨을 낸다).
+        # 코드를 모르는데 직접 입력한 이름도 없으면 어느 항목인지 몰라 None 이다. 표에 없는 코드는 원래 코드 그대로.
+        label = code_label(MANAGE_COST_OPTION_LABELS, option.option)
+        custom_name = (option.custom_option_name or '').strip()
+        if custom_name not in ('', '-') and (option.option == 'ETC' or label is None):
+            labels.append(custom_name)
+        else:
+            labels.append(label)
+    return _known_labels(labels)
+
+
+def _manage_cost_items(article: DaangnArticleModel) -> tuple[list[str] | None, list[str] | None]:
+    """관리비에 포함된 항목과 따로 내는 항목. 소스가 알려 주지 않으면 (None, None).
+
+    중개사 매물은 항목마다 정액(FIXED, 관리비에 포함)·쓴 만큼(USED, 따로 냄)을 밝히고, 없음(NONE)·
+    확인 필요(NEED_TO_CHECK)는 어느 쪽에도 넣지 않는다. 항목을 밝히지 않은 매물
+    (`manageCostDetailIsDisclosed: false`)도 껍데기 항목이 오므로 모름으로 둔다. 직거래 매물은
+    포함 항목 목록과 미포함 항목 목록(`excludeManageCostOption`)을 따로 준다. 항목 목록에서 빈 항목(null)을 빼고 읽었으면
+    어느 항목이 빠졌는지 몰라 포함·미포함 모두 모름이다 (`[]` 로 두면 '없음' 으로 읽힌다).
+
+    한 쪽에 들어갈 항목이 있는데 이름을 하나도 모르면(코드가 빈 글자·'-') 그 쪽은 None(모름)이고, 일부만 알면 아는 이름 목록이다.
+    그 쪽에 들어갈 항목이 처음부터 없으면 [].
+
+    직거래 미포함 목록이 null(또는 키 없음)이면 당근이 알려 주지 않은 것이라 모름(None)이다. 항목이 없으면 당근이 []
+    로 준다 (2026-11-20 실측: 역삼동 직거래 3건의 상세 스토어 `Article` 이 모두 키를 주고 null 은 없었다. 항목 없는 매물
+    4661752·4151723 은 `[]`, 있는 매물 3643410 은 `["WATERWORKS", "ELECTRIC", "INTERNET", "GAS"]`).
+    """
+    options = article.manage_cost_options
+    if options is None or article.manage_cost_detail_is_disclosed is False or article.null_items('manage_cost_options'):
+        return None, None
+    if article.manage_cost_charge_type is not None:
+        includes = _manage_cost_labels([item for item in options if item.pay_option == 'FIXED'])
+        excludes = _manage_cost_labels([item for item in options if item.pay_option == 'USED'])
+        return includes, excludes
+    excludes = None
+    if article.exclude_manage_cost_options is not None:
+        excludes = _known_labels([code_label(MANAGE_COST_OPTION_LABELS, code) for code in article.exclude_manage_cost_options])
+    return _manage_cost_labels(options), excludes
+
+
+def detail_to_listing(
+    response: DaangnArticlesResponseModel,
+    trade_type: str | None = None,
+) -> DaangnListingDetail:
+    """상세 페이지 결과를 `DaangnListingDetail` 로 바꾼다.
+
+    사진·본문·중개사 정보·도로명 주소는 옮기지 않는다 (원 사이트에서 확인).
+
+    거래 조건이 여러 개인 매물(예: 매매 + 월세)은 기본으로 대표 조건을 보여 준다. 목록은 필터의 거래 유형으로 고른
+    조건으로 내보내므로(월세로 찾으면 월세), `trade_type` 으로 그 조건을 골라 목록과 같은 가격을 보여 준다. 당근 웹 상세도
+    목록 필터의 거래 유형(`filteredTradeTypes`)으로 가격을 보여 준다. 그 조건이 없으면 웹처럼 대표 조건을 보여 주고 `notes` 로
+    알린다 (예전에는 TRADE_NOT_OFFERED 에러였다). 나머지 조건은 `other_trades` 로 간다.
+
+    Raises:
+        ListingUnavailableError: 거래 완료·숨김·노출 제한 매물이거나(목록에서 빠지는 매물과 같다), 비활성 중개소의 매물이거나
+            (reason BIZ_PROFILE_INACTIVE), 아는 거래 조건(월세·전세·매매·단기임대·연세)이 없을 때
+            (reason NO_TRADE_INFO). 예약중 매물은 막지 않고 `status` 로 알린다. 연세만 있는 제주 매물은 예전에 여기서
+            NO_TRADE_INFO 로 막혔다 (2026-11-13 연세 지원 전: 웹에서는 판매중인 5014421).
+    """
+    article = response.article
+    if not is_available(article):
+        # 노출 제한은 `invisibleReason` 대신 `invisibleInfos` 로만 올 수 있어 그 종류(`__typename`)도 사유로 쓴다. 없으면 진행 중
+        # 매물이 왜 안 되는지 사유가 null 로 나갔다
+        restriction = next(
+            (str(info['__typename']) for info in article.invisible_infos or [] if info.get('__typename')), None,
+        )
+        raise ListingUnavailableError(
+            'daangn',
+            article.original_id,
+            status=article.status,
+            reason=article.invisible_reason or restriction or ('HIDDEN' if article.is_hide else None),
+        )
+    # 비활성 중개소 매물. 당근 웹 상세는 `bizProfile.status !== 'ACTIVE'` 면 "비활성화된 중개소의 매물이에요" 로 막는다.
+    # 상태 키가 없으면(직거래 매물·응답이 바뀜) 막지 않는다. 웹은 키가 없어도 막지만, 응답 모양이 바뀌었을 때 중개사 매물
+    # 상세가 모두 막히는 것보다 낫다. 목록에서 막지 않는 이유는 `common.listing.is_available` docstring 에 있다.
+    if article.biz_profile is not None and article.biz_profile.status not in (None, 'ACTIVE'):
+        raise ListingUnavailableError('daangn', article.original_id, status=article.status, reason='BIZ_PROFILE_INACTIVE')
+    trades = trades_preferred_first(article)
+    trade = trades[0] if trades else None
+    notes: list[str] = []
+    if trade_type is not None and trade is not None:
+        wanted = next((item for item in trades if TRADE_TYPE_BY_TRADE.get(item.type or '') == trade_type), None)
+        if wanted is None:
+            shown = f'이 매물에는 {trade_type} 조건이 없어 대표 조건({_describe_trade(trade)})을 보여 줍니다'
+            # 거래가 하나뿐이면 other_trades 가 비어 있어 그쪽을 보라고 하지 않는다 (2026-11-11 실측: 4998393 월세 하나)
+            notes.append(note('참고', f'{shown}. 다른 조건은 other_trades 에 있습니다' if len(trades) > 1 else shown))
+        else:
+            trade = wanted
+    base = article_to_listing(article, fallback_title=response.title, trade=trade)
+    if base is None:
+        raise ListingUnavailableError('daangn', article.original_id, status=article.status, reason='NO_TRADE_INFO')
+    # 거래 조건이 없으면 article_to_listing 이 None 을 줘 위에서 끝났다
+    assert trade is not None
+
+    # 이름이 null·빈 글자·'-' 인 옵션은 어느 옵션인지 몰라 건너뛴다. 이름은 앞뒤 공백을 지워 읽는다
+    option_values = {
+        name: option.value
+        for option in article.options
+        if (name := (option.name or '').strip()) not in ('', '-')
+    }
+
+    parking = None
+    # 작성자가 고른 불가는 주차 대수가 있어도 뒤집지 않는다 (2026-11-20 리뷰: 불가인데 대수가 있으면 가능으로 냈다.
+    # 당근 웹도 작성자 옵션으로 불가를 보여 준다는 분석이 있으나 jibsa 가 웹으로 확인하지는 않았다)
+    spots = article.available_total_parking_spots
+    parking_option = option_values.get('PARKING')
+    if parking_option == 'NO':
+        parking = parking_label(False)
+    elif parking_option == 'YES' or (spots or 0) > 0:
+        parking = parking_label(True, f'{spots}대' if spots else None)
+
+    elevator = None
+    if option_values.get('ELEVATOR') in ('YES', 'NO'):
+        elevator = option_values['ELEVATOR'] == 'YES'
+
+    # 당근 웹은 오늘·지난 입주일을 '즉시 입주 가능' 으로 그리고 협의를 붙이지 않는다 (services2 번들 vs, 2026-11-24 확인). 날짜가 없으면 웹은 줄을 그리지 않아 null 그대로다
+    move_in_date = iso_date(article.move_in_date)
+    move_in: str | None
+    if move_in_date is not None and move_in_date <= datetime.now(KST).date().isoformat():
+        move_in = '즉시입주'
+    else:
+        move_in = move_in_label(article.move_in_date, negotiable=bool(article.move_in_date_negotiable))
+
+    manage_cost_includes, manage_cost_excludes = _manage_cost_items(article)
+    if article.null_items('manage_cost_options'):
+        notes.append(null_items_note(
+            '당근 관리비 항목', article.null_items('manage_cost_options'), ('manage_cost_includes', 'manage_cost_excludes'),
+        ))
+    direct_deal = article.writer_type is not None and article.writer_type != 'BROKER'
+
+    # 보여 주는 거래 조건의 중개보수 (부가세 포함, 만원)
+    commission = None if direct_deal else next(
+        (item for item in article.broker_commissions or [] if item.trade_type == trade.type),
+        None,
+    )
+    return listing_as(
+        DaangnListingDetail,
+        base,
+        room_count=article.room_count,
+        bathroom_count=article.bathroom_count,
+        direction=code_label(DIRECTION_LABELS, article.building_orientation),
+        move_in=move_in,
+        parking=parking,
+        has_elevator=elevator,
+        # 상세 SSR 에는 options·subwayStations·nearbySubwayStations 키가 늘 있어 빈 목록은 '모름'(null) 이 아니라 '없음' 이다
+        # (2026-10-11 실측: 원룸·아파트·상가·토지·공장·주택 8건 모두 키 있음. 상가·토지·공장은 options 가 빈 목록)
+        options=[
+            OPTION_LABELS.get(name, name)
+            for name, value in option_values.items()
+            if value == 'YES' and name not in ('PARKING', 'ELEVATOR')
+        ],
+        manage_cost_includes=manage_cost_includes,
+        manage_cost_excludes=manage_cost_excludes,
+        nearby_stations=_nearby_subways(article),
+        key_money_manwon=article.premium_money,
+        key_money_negotiable=article.premium_money_negotiable,
+        broker_fee_manwon=won_to_manwon(commission.total) if commission else None,
+        favorite_count=article.watch_count,
+        complex_id=article.complex.original_id if article.complex else None,
+        complex_name=article.complex.name if article.complex and article.complex.original_id else None,
+        complex_type=(
+            code_label(COMPLEX_TYPE_LABELS, article.complex.type)
+            if article.complex and article.complex.original_id else None
+        ),
+        direct_deal=direct_deal,
+        other_trades=[
+            _describe_trade(item)
+            for item in article.trades
+            if item is not trade and item.type in TRADE_TYPE_BY_TRADE
+        ],
+        notes=notes,
+    )
+
+
+def get_listing(
+    client: DaangnClient,
+    original_id: int,
+    trade_type: str | None = None,
+) -> DaangnListingDetail:
+    """매물 하나의 상세를 조회한다. `trade_type` 은 보여 줄 거래 조건 (`detail_to_listing`)."""
+    try:
+        response = client.run_request_articles(
+            DaangnArticlesRequestParameterModel(original_id=original_id)
+        )
+    except HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise ListingUnavailableError('daangn', original_id) from None
+        raise
+    return detail_to_listing(response, trade_type)
+
+
+def attach_details(client: DaangnClient, listings: list[ListingT]) -> tuple[list[ListingT], list[str]]:
+    """목록 매물마다 상세를 1회씩 받아 목록에 없는 관리비·등록일·번지 주소·사용승인일·방 구조를 채운다 (`--details`).
+
+    당근 목록은 관리비·등록일·번지를 주지 않아 `null` 이고, 방 구조도 원룸만 붙는다. 앞 `DETAILS_MAX` 건만 보고, 상세에서
+    볼 수 없는 매물(거래완료·숨김·노출 제한·비활성 중개소)은 `listing` 과 같은 규칙으로 뺀다. 상태(`status`)도 상세 값으로 바꾼다
+    (목록을 받은 뒤 예약중이 됐을 수 있다). 목록을 받은 뒤 목록의 거래 조건이 내려갔으면 `listing --trade` 처럼 대표 조건의 거래
+    유형·가격으로 바꾸고 알린다. 목록의 가격을 두면 없어진 조건을 보여 주고, 상세의 안내(`notes`)도 목록에는 실리지 않았다
+    (2026-11-12 리뷰. 예전에는 TRADE_NOT_OFFERED 에러라 뺐다).
+
+    그 밖의 덤 조회 실패(`OPTIONAL_LOOKUP_ERRORS`: 네트워크·상태 코드·응답 형식 오류·요청 제한)는 그 매물을 목록 값 그대로 두고
+    상세로 채우는 칸은 목록이 아는 값 그대로(모르면 null)로 둔다. 상세 한 건 때문에 이미 받은 목록(최대 120건)을 버리지 않는다
+    (2026-11-19 리뷰). 요청 제한이면 다음 요청도 같은 제한에 걸리므로 남은 매물의 상세는 요청하지 않고 목록 값 그대로 둔다.
+    상세를 못 붙인 매물(실패한 것과 요청하지 않은 것)은 `[실패]` 안내 하나로 수를 알린다 (직방·다방 `--details` 와 같다).
+    이유는 거절·응답 형식 변경이 한 건이라도 있으면 그 이유(요청 제한도 왔으면 덧붙임), 없으면 요청 제한, 없으면 첫 실패 이유다
+    (`LookupFailures`. 직방·다방과 같다).
+
+    Returns:
+        (채운 매물, 안내).
+    """
+    kept: list[ListingT] = []
+    gone = 0
+    # 상세를 못 붙인 매물 수(실패한 것 + 요청 제한 뒤라 요청하지 않은 것)와 안내 이유. 업데이트 안내를 붙이는 갈래는 partial_failure_note 와 같다
+    failures = LookupFailures(needs_update=needs_update)
+    # 목록의 거래 조건이 상세에서 없어져 대표 조건으로 바꾼 매물 ID, 그중 다른 조건(other_trades)이 남은 매물이 있는지
+    retraded: list[str] = []
+    other_trades_left = False
+    for index, listing in enumerate(listings):
+        if index >= DETAILS_MAX:
+            kept.append(listing)
+            continue
+        if failures.stopped:
+            failures.skip()
+            kept.append(listing)
+            continue
+        try:
+            with holding_unread_dates() as dates:
+                detail = get_listing(client, int(listing.id), listing.trade_type)
+        except ListingUnavailableError:
+            gone += 1
+            continue
+        except OPTIONAL_LOOKUP_ERRORS as exc:
+            failures.add(exc)
+            kept.append(listing)
+            continue
+        update = {
+            'manage_cost_manwon': detail.manage_cost_manwon,
+            'registered_date': detail.registered_date,
+            'address': detail.address,
+            'approved_date': detail.approved_date,
+            'room_type': detail.room_type,
+            'status': detail.status,
+        }
+        if detail.trade_type != listing.trade_type:
+            retraded.append(listing.id)
+            other_trades_left = other_trades_left or bool(detail.other_trades)
+            update |= {
+                'trade_type': detail.trade_type,
+                'price_manwon': detail.price_manwon,
+                'deposit_manwon': detail.deposit_manwon,
+                'rent_manwon': detail.rent_manwon,
+                'yearly_rent_manwon': detail.yearly_rent_manwon,
+            }
+        kept.append(listing.model_copy(update=update))
+        # 상세에서 옮기는 날짜 칸(등록일·사용승인일)이 null 로 나갈 때만 알린다. 입주일은 목록에 칸이 없어 알리지 않는다
+        # (다방 attach_details 와 같다). 당근 목록은 두 날짜를 주지 않아 목록 변환이 따로 알린 것과 겹치지 않는다
+        keep_unread_dates(dates, only=[
+            what for what, value in (('등록일', detail.registered_date), ('사용승인일', detail.approved_date)) if value is None
+        ])
+    notes = []
+    if retraded:
+        shown = (
+            f"{len(retraded)}건({', '.join(retraded)})은 상세를 보니 목록의 거래 조건이 없어져 대표 조건의 거래 유형·가격으로 "
+            '바꿨습니다'
+        )
+        # 거래가 하나만 남았으면 other_trades 가 비어 있어 그쪽을 보라고 하지 않는다 (`detail_to_listing` 과 같다)
+        more = '. 다른 조건은 jibsa daangn listing <ID> 의 other_trades 에 있습니다' if other_trades_left else ''
+        notes.append(note('참고', shown + more))
+    if gone:
+        # 검색이 만든 안내('이 N건이 전부입니다' 등)는 빼기 전 개수라 returned 와 다를 수 있다. 받은 것 중 뺀 매물이라 [제외] 다
+        # (직방 attach_building_use 와 같다. 태그 없이 두면 emit 이 [참고] 를 붙였다)
+        notes.append(note(
+            '제외',
+            f'{gone}건은 상세를 보니 거래가 끝났거나 볼 수 없는 매물(숨김·노출 제한·비활성 중개소)이라 뺐습니다 (앞 안내의 건수는 빼기 전 기준)',
+        ))
+    reason = failures.reason(
+        lambda exc: partial_failure_note(exc, '매물 상세', f'매물 {failures.count}건의 상세(관리비·등록일·번지·사용승인일·방 구조)를')
+    )
+    if reason is not None:
+        notes.append(note('실패', reason + '. 그 매물은 목록 값만 넣었습니다'))
+    if len(listings) > DETAILS_MAX:
+        # 직방의 같은 안내('건물 용도(--details)는 앞 N건에만')와 같은 [참고] 다
+        notes.append(note('참고', f'상세(--details)는 앞 {DETAILS_MAX}건에만 붙였습니다'))
+    return kept, notes

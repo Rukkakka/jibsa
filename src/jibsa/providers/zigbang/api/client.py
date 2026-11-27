@@ -19,10 +19,12 @@ from jibsa.core.http import (
     wait_retry_after,
 )
 from jibsa.core.ratelimit import RateLimitPolicy
-from jibsa.providers.zigbang.api.request.apt import (
+from jibsa.providers.zigbang.api.request.apt.detail import (
     ZigbangItemCatalogsHoInfoRequestParameterModel,
     ZigbangItemCatalogsItemsRequestParameterModel,
     ZigbangItemCatalogsRequestParameterModel,
+)
+from jibsa.providers.zigbang.api.request.apt.search import (
     ZigbangLocalsItemCatalogsRequestParameterModel,
     ZigbangLocalsPolygonRequestParameterModel,
 )
@@ -31,12 +33,12 @@ from jibsa.providers.zigbang.api.request.common import (
     ZigbangItemsListV1RequestPayloadModel,
 )
 from jibsa.providers.zigbang.api.request.complex.base import (
-    ZigbangDanjisRoomTypesRequestParameterModel,
-)
-from jibsa.providers.zigbang.api.request.complex.detail import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
-    ZigbangDanjisSchoolsRequestParameterModel,
+    ZigbangDanjisRoomTypesRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
+)
+from jibsa.providers.zigbang.api.request.complex.info import (
+    ZigbangDanjisSchoolsRequestParameterModel,
 )
 from jibsa.providers.zigbang.api.request.complex.search import (
     ZigbangDanjisDetailsRequestParameterModel,
@@ -103,10 +105,12 @@ from jibsa.providers.zigbang.api.request.store import (
     ZigbangStoreArticleStoresV2RequestPayloadModel,
     ZigbangStoreArticleStoreV2RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.apt import (
+from jibsa.providers.zigbang.api.response.apt.detail import (
     ZigbangItemCatalogsHoInfoResponseModel,
     ZigbangItemCatalogsItemsResponseModel,
     ZigbangItemCatalogsResponseModel,
+)
+from jibsa.providers.zigbang.api.response.apt.search import (
     ZigbangLocalsItemCatalogsResponseModel,
     ZigbangLocalsPolygonResponseModel,
 )
@@ -115,12 +119,12 @@ from jibsa.providers.zigbang.api.response.common import (
     ZigbangItemsListV1ResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex.base import (
-    ZigbangDanjisRoomTypesResponseModel,
-)
-from jibsa.providers.zigbang.api.response.complex.detail import (
     ZigbangDanjisItemCatalogsResponseModel,
-    ZigbangDanjisSchoolsResponseModel,
+    ZigbangDanjisRoomTypesResponseModel,
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
+)
+from jibsa.providers.zigbang.api.response.complex.info import (
+    ZigbangDanjisSchoolsResponseModel,
 )
 from jibsa.providers.zigbang.api.response.complex.search import (
     ZigbangDanjisDetailsResponseModel,
@@ -224,6 +228,10 @@ STAY_HEADERS: dict[str, str] = {
 }
 
 
+# 웹 사이트 주소. API 는 다른 호스트(`host`, apis.zigbang.com)다. 첫 화면과 출력 url 칸의 링크가 이 주소를 쓴다
+ZIGBANG_WEB_URL: str = 'https://www.zigbang.com'
+
+
 class ZigbangClient(BaseHTTPClient):
     """직방 (apis.zigbang.com) 비공식 API 클라이언트.
 
@@ -314,7 +322,7 @@ class ZigbangClient(BaseHTTPClient):
         cooldown=120,
     )
 
-    browser_entry_url: ClassVar[str] = 'https://www.zigbang.com/'
+    browser_entry_url: ClassVar[str] = f'{ZIGBANG_WEB_URL}/'
     # 직방 API 는 다른 출처(apis·stay-apis)라 원래 쿠키 없이 응답해 기다릴 쿠키가 없다. 두 호스트 모두
     # www.zigbang.com 에서 부르는 것을 CORS 로 허용한다 (2026-11-09 실측: 첫 화면이 apis 를 4번 부른다)
     browser_ready_cookie: ClassVar[str | None] = None

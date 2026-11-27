@@ -1,1 +1,1 @@
-"""직방 service 원룸·빌라·오피스텔: models(검색 결과 모델), search(매물 검색)와 detail(매물 상세). 서로 가져다 쓰지 않는다."""
+"""직방 service 원룸·빌라·오피스텔: constants(상수·이름표), models(검색 결과 모델), search(매물 검색)와 detail(매물 상세). 서로 가져다 쓰지 않는다."""

@@ -13,51 +13,17 @@ from jibsa.core.listing import (
     Result,
 )
 from jibsa.core.schema import RequestModel
+from jibsa.providers.naver.service.common.constants import (
+    BADGES_DESCRIPTION,
+    CONFIRMED_AT_DESCRIPTION,
+    GROUP_FIELDS,
+    NOT_APPLICABLE_FIELDS_BY_TYPE,
+)
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-BADGES_DESCRIPTION: str = (
-    "네이버 화면의 확인 배지 (집주인·소유자·현장). 확인 정보가 있으면 그 뒤에 집주인이 HUG 안심임대인일 때 'HUG 안심임대인' 이 붙는다. "
-    '방식 배지·HUG 배지가 모두 없으면 [], 모르면 null. 전화·서류로 확인한 매물과 확인하지 않은 매물도 HUG 안심임대인이면 '
-    "['HUG 안심임대인'] 이라, 비어 있지 않다고 집주인·현장 확인 매물인 것은 아니다"
-)
-
-
-CONFIRMED_AT_DESCRIPTION: str = (
-    "네이버가 매물을 확인한 날 (YYYY-MM-DD). 웹 목록은 협회 매물이 아니면 이 날짜로 '25.11.17. 확인매물' 날짜 배지를, 협회 매물이면 "
-    "노출 시작일(`registered_date`)로 '등록' 배지를 그린다. 목록과 상세의 글자 규칙이 달라 날짜만 낸다. 모르면 null"
-)
-
-
-# 매물 유형(realEstateType)마다 웹 화면이 칸을 아예 그리지 않는 필드. 키째 뺀다 (칸이 있는데 값을 모르면 null 이다). 상세(`NaverListingDetail`)와
-# 목록(`NaverListing`)이 함께 쓴다. 목록 모델에 없는 필드 이름은 출력에서 그냥 지나간다.
-# 2026-11-17 네이버 웹 번들 대조: 기본 정보 칸은 청크 0n-xsnd22pdxz 의 getBasicInfoSpaceTarget·면적 함수, 건축물 정보
-# ArticleBuildingInfo 는 isBuildingRegistrationType 유형만, 시설 ArticleFacilityInfo 는 토지_임야(E03) 만 제외 (청크 0l4pkwg0qhg2t)
-NOT_APPLICABLE_FIELDS_BY_TYPE: dict[str, frozenset[str]] = {
-    # 토지
-    'E03': frozenset({
-        'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
-        'supply_area_m2', 'approved_date', 'heating', 'heating_fuel', 'entrance', 'parking', 'has_elevator', 'options',
-    }),
-    # 고시원: 시설 칸은 있어 has_elevator·options 는 남긴다
-    'G01': frozenset({
-        'room_count', 'bathroom_count', 'room_type', 'direction', 'floor', 'building_floor', 'area_m2', 'area_pyeong',
-        'supply_area_m2', 'approved_date', 'heating', 'heating_fuel', 'entrance', 'parking', 'loan_manwon',
-    }),
-    # 재개발
-    'F01': frozenset({'room_count', 'bathroom_count', 'room_type', 'area_m2', 'area_pyeong', 'supply_area_m2'}),
-    # 사무실·상가·지식산업센터: 웹은 방/욕실 대신 '화장실 수' 만 그린다 (bathroom_count 는 남긴다)
-    **dict.fromkeys(('D01', 'D02', 'E04'), frozenset({'room_count', 'room_type'})),
-    # 건물·상가건물·숙박·공장창고·기타: 웹은 해당층 대신 지상/지하 층수만 그리고 공급면적 칸이 없다 (building_floor 는 그대로)
-    **dict.fromkeys(('D03', 'D04', 'E01', 'E02', 'Z00'), frozenset({'room_count', 'room_type', 'floor', 'supply_area_m2'})),
-}
-
-# 묶음이 아니거나 중개사마다 호가가 같으면 해당 없는(키를 빼는) 필드
-GROUP_FIELDS: tuple[str, ...] = ('realtor_count', 'asking_range')
 
 
 class NaverAssignedSchool(BaseModel):

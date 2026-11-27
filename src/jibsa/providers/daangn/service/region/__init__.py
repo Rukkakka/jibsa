@@ -6,5 +6,6 @@
 `--station`, `--university`, `--address`)을 따로 받고 이름이 정확히 같은 곳만 쓴다 (주소는 후보가 하나거나 입력과 정확히 같은
 하나일 때만).
 
-모델은 models, 함수는 functions 에 있다.
+constants(상수), models(결과·조건 모델), common(LocationMissingError·has_location), area(지역), station(역),
+university(대학), address(주소)에 있다. 명령·주제 모듈끼리는 서로 가져다 쓰지 않는다.
 """

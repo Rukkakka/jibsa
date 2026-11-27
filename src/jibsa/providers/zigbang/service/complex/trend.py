@@ -19,8 +19,6 @@ from jibsa.providers.zigbang.api.request.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel,
     ZigbangDanjisPriceChartRequestParameterModel,
     ZigbangDanjisRoomTypesPriceChartRequestParameterModel,
-    ZigbangPriceChartDealType,
-    ZigbangPriceChartPeriod,
 )
 from jibsa.providers.zigbang.api.response.complex.base import (
     ZigbangDanjisRoomTypesResponseModel,
@@ -30,52 +28,40 @@ from jibsa.providers.zigbang.api.response.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisResponseModel,
     ZigbangRoomTypePriceMonthModel,
 )
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     OPTIONAL_LOOKUP_ERRORS,
     UNEXPECTED_FORMAT_TEXT,
     UPSTREAM_RETRY_HINT,
+)
+from jibsa.providers.zigbang.service.common.ids import (
     apt_complex_id,
     parse_complex_id,
-    sale_price_range,
-    text_or_none,
 )
-from jibsa.providers.zigbang.service.complex.base import related_complex_of
+from jibsa.providers.zigbang.service.common.price import sale_price_range
+from jibsa.providers.zigbang.service.common.text import text_or_none
+from jibsa.providers.zigbang.service.complex.common import related_complex_of
+from jibsa.providers.zigbang.service.complex.constants import (
+    CHART_PERIOD_BY_LABEL,
+    DEAL_TYPE_BY_TRADE,
+    DEFAULT_PRICE_TREND_PERIOD,
+    DEFAULT_PYEONG_TREND_TRADE,
+    MAX_CANDIDATES_IN_HINT,
+    MAX_COMPARE_DANJIS,
+    ZigbangPriceTrendPeriod,
+    ZigbangPyeongTrendTrade,
+)
 from jibsa.providers.zigbang.service.complex.models import (
     ZigbangComplexPriceLine,
     ZigbangComplexPricePoint,
     ZigbangPriceLineKind,
-    ZigbangPriceTrendPeriod,
     ZigbangPriceTrendResult,
     ZigbangPyeongJeonseWolse,
     ZigbangPyeongPriceMonth,
     ZigbangPyeongPriceTrendResult,
     ZigbangPyeongSale,
-    ZigbangPyeongTrendTrade,
 )
 
 from typing import NamedTuple
-
-
-# 웹 기간 탭 이름 (번들 `convertDueNameForZams`: 최근1년·최근3년·전체기간, 기본은 두 번째인 최근3년)을 jibsa 는 1년·3년·전체 로 쓴다 → 요청의 period
-PRICE_TREND_PERIODS: tuple[ZigbangPriceTrendPeriod, ...] = ('1년', '3년', '전체')
-DEFAULT_PRICE_TREND_PERIOD: ZigbangPriceTrendPeriod = '3년'
-CHART_PERIOD_BY_LABEL: dict[ZigbangPriceTrendPeriod, ZigbangPriceChartPeriod] = {
-    '1년': '1y',
-    '3년': '3y',
-    '전체': 'all',
-}
-# 웹 평형 그래프의 거래 탭 이름 (번들 `convertStatusForZams`) → 요청의 dealType
-PYEONG_TREND_TRADES: tuple[ZigbangPyeongTrendTrade, ...] = ('전체', '매매', '전월세')
-DEFAULT_PYEONG_TREND_TRADE: ZigbangPyeongTrendTrade = '전체'
-DEAL_TYPE_BY_TRADE: dict[ZigbangPyeongTrendTrade, ZigbangPriceChartDealType] = {
-    '전체': 'all',
-    '매매': 'sales',
-    '전월세': 'rent',
-}
-# 웹은 비교 단지를 하나만 고르게 하고 서버는 셋까지 실측했다 (2026-11-22 표본: 단지·비교 셋·구 다섯 줄)
-MAX_COMPARE_DANJIS: int = 3
-# 비교 후보 안내(hint)에 적는 후보 수. 후보는 보통 세 곳 안팎이다 (2026-11-19 캡처: 헬리오시티 3곳)
-MAX_CANDIDATES_IN_HINT: int = 10
 
 
 class _LineKind(NamedTuple):

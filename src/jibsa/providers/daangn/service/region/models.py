@@ -15,15 +15,13 @@ from jibsa.providers.daangn.service.common.models import (
     DaangnRegion,
     region_name_parts,
 )
+from jibsa.providers.daangn.service.region.constants import AreaLevel
 
 from typing import (
     Annotated,
     Any,
     Literal,
 )
-
-
-AreaLevel = Literal['동', '구', '시도']
 
 
 class DaangnArea(BaseModel):

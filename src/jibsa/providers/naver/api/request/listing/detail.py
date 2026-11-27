@@ -6,6 +6,7 @@ from pydantic import (
 
 from jibsa.core.schema import RequestModel
 from jibsa.providers.naver.api.request.common import (
+    NaverComplexPyeongRequestParameterModel,
     NaverRealEstateType,
     NaverTradeType,
 )
@@ -103,4 +104,20 @@ class NaverEducationBuildingSchoolV1RequestParameterModel(RequestModel):
     building_number: Annotated[
         int,
         Field(gt=0, description='동 번호 (article/key 의 buildingNumber)', alias='buildingNumber')
+    ]
+
+
+class NaverComplexPyeongV1RequestParameterModel(NaverComplexPyeongRequestParameterModel):
+    """`GET /front-api/v1/complex/pyeong` 쿼리. 평형 하나의 상세 (현관 구조·방향·세대수 등)."""
+
+
+class NaverLegalDivisionInfoListV1RequestParameterModel(RequestModel):
+    """`GET /front-api/v1/legalDivision/infoList` 쿼리. 법정동 코드로 지역 이름을 찾는다 (매물 상세 화면의 위치 칸이 쓴다).
+
+    웹은 쉼표로 여러 코드를 보낼 수 있지만 jibsa 는 매물 하나의 코드 하나만 보낸다.
+    """
+
+    legal_division_numbers: Annotated[
+        str,
+        Field(pattern=r'^\d{10}$', description='법정동 코드 (10자리)', alias='legalDivisionNumbers')
     ]

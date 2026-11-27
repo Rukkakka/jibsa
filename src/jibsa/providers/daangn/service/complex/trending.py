@@ -1,7 +1,5 @@
 """인기 단지 (trending-complexes)."""
 
-import re
-
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import quoted
 from jibsa.core.listing import (
@@ -15,24 +13,19 @@ from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.request.complex.trending import (
     DaangnTrendingComplexesRequestPayloadModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
-    COMPLEX_TYPE_LABELS,
+from jibsa.providers.daangn.service.common.complex import most_households
+from jibsa.providers.daangn.service.common.constants import COMPLEX_TYPE_LABELS
+from jibsa.providers.daangn.service.common.response import (
     code_label,
-    most_households,
     unwrap_graphql,
 )
+from jibsa.providers.daangn.service.complex.constants import APPROVAL_DATE_PATTERN
 from jibsa.providers.daangn.service.complex.models import (
     DaangnTrendingComplex,
     DaangnTrendingComplexesResult,
     DaangnTrendingRegion,
 )
-from jibsa.providers.daangn.service.region.models import (
-    DaangnArea,
-)
-
-
-APPROVAL_DATE_PATTERN: re.Pattern[str] = re.compile(r'(\d{4})\.(\d{2})\.(\d{2})')
-
+from jibsa.providers.daangn.service.region.models import DaangnArea
 
 
 def trending_region_of(area: DaangnArea | None) -> DaangnTrendingRegion:

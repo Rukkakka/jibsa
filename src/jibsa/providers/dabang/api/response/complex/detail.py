@@ -1,17 +1,12 @@
-"""응답 모델: 단지 정보와 단지 매물 목록 (complex, search listings --complex)."""
+"""응답 모델: 단지 정보 (complex)."""
 from pydantic import Field
 
 from jibsa.providers.dabang.api.response.common import (
     DabangBaseResponseModel,
-    DabangRoomListResponseModel,
     DabangV5ResponseModel,
 )
 
 from typing import Annotated
-
-
-class DabangRoomListCategoryComplexV5ResponseModel(DabangRoomListResponseModel):
-    """`GET /api/v5/room-list/category/{category}/complex` 응답 (단지 하나의 매물)."""
 
 
 class DabangLatelyPriceModel(DabangBaseResponseModel):

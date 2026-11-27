@@ -8,11 +8,13 @@ from pydantic import (
 )
 
 from jibsa.core.korean import full_legal_division_code
+from jibsa.providers.dabang.service.common.models import DabangPlace
 
 from typing import (
     Annotated,
     Any,
     Literal,
+    NamedTuple,
 )
 
 
@@ -55,3 +57,11 @@ class DabangScope(BaseModel):
             ('legal_division_code' if key == 'code' else key): (full_legal_division_code(value) if key == 'code' and value else value)
             for key, value in data.items()
         }
+
+
+class DabangDong(NamedTuple):
+    """동 하나와 그 동 번호. 동 하나를 받는 명령(neighborhood·hot-places·popular-listings·search schools)에 넘긴다."""
+
+    place: DabangPlace
+    # 다방 동 번호 (동네정보 요청의 regionGid)
+    gid: int

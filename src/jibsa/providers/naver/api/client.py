@@ -25,12 +25,10 @@ from jibsa.providers.naver.api.request.common import (
     NaverComplexBuildingListV1RequestParameterModel,
     NaverComplexPyeongGroupsV1RequestParameterModel,
     NaverComplexPyeongListV1RequestParameterModel,
-    NaverComplexPyeongV1RequestParameterModel,
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaPyeongListV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
-    NaverLegalDivisionSearchByCoordinateV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.complex import (
     NaverComplexArticleStatsV1RequestParameterModel,
@@ -59,9 +57,11 @@ from jibsa.providers.naver.api.request.listing.detail import (
     NaverArticleOldMaintenanceFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
     NaverComplexBuildingRegistrationV1RequestParameterModel,
+    NaverComplexPyeongV1RequestParameterModel,
     NaverDataServiceTransportV1RequestParameterModel,
     NaverDevelopmentArticleV1RequestParameterModel,
     NaverEducationBuildingSchoolV1RequestParameterModel,
+    NaverLegalDivisionInfoListV1RequestParameterModel,
 )
 from jibsa.providers.naver.api.request.market_price import (
     NaverComplexMarketPriceListV1RequestParameterModel,
@@ -88,7 +88,7 @@ from jibsa.providers.naver.api.request.redevelopment.search import (
 )
 from jibsa.providers.naver.api.request.region import (
     NaverLegalDivisionInfoListByLevelV1RequestParameterModel,
-    NaverLegalDivisionInfoListV1RequestParameterModel,
+    NaverLegalDivisionSearchByCoordinateV1RequestParameterModel,
     NaverLegalDivisionSubInfoListV1RequestParameterModel,
     NaverMapsSearchAddressV1RequestParameterModel,
     NaverSearchAutocompleteComplexesV1RequestParameterModel,
@@ -122,12 +122,10 @@ from jibsa.providers.naver.api.response.common import (
     NaverComplexBuildingListV1ResponseModel,
     NaverComplexPyeongGroupsV1ResponseModel,
     NaverComplexPyeongListV1ResponseModel,
-    NaverComplexPyeongV1ResponseModel,
     NaverComplexV1ResponseModel,
     NaverComplexVillaBuildingListV1ResponseModel,
     NaverComplexVillaPyeongListV1ResponseModel,
     NaverComplexVillaV1ResponseModel,
-    NaverLegalDivisionSearchByCoordinateV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.complex import (
     NaverComplexArticleStatsV1ResponseModel,
@@ -156,9 +154,11 @@ from jibsa.providers.naver.api.response.listing.detail import (
     NaverArticleOldMaintenanceFeeV1ResponseModel,
     NaverArticleTaxV1ResponseModel,
     NaverComplexBuildingRegistrationV1ResponseModel,
+    NaverComplexPyeongV1ResponseModel,
     NaverDataServiceTransportV1ResponseModel,
     NaverDevelopmentArticleV1ResponseModel,
     NaverEducationBuildingSchoolV1ResponseModel,
+    NaverLegalDivisionInfoListV1ResponseModel,
 )
 from jibsa.providers.naver.api.response.market_price import (
     NaverComplexMarketPriceListV1ResponseModel,
@@ -185,7 +185,7 @@ from jibsa.providers.naver.api.response.redevelopment.search import (
 )
 from jibsa.providers.naver.api.response.region import (
     NaverLegalDivisionInfoListByLevelV1ResponseModel,
-    NaverLegalDivisionInfoListV1ResponseModel,
+    NaverLegalDivisionSearchByCoordinateV1ResponseModel,
     NaverLegalDivisionSubInfoListV1ResponseModel,
     NaverMapsSearchAddressV1ResponseModel,
     NaverSearchAutocompleteComplexesV1ResponseModel,
@@ -244,6 +244,11 @@ naver_retry = retry(
     before_sleep=log_retry_before_sleep,
 )
 """조회 전용 엔드포인트 공통 재시도: 최대 3회, 1초 간격, 5xx·timeout·transport 오류만."""
+
+
+# 웹 사이트와 front-api 가 같은 호스트다. 출력 url 칸의 링크는 바꿀 수 있는 클라이언트 `host` 가 아니라 이 웹 주소로 만든다
+NAVER_HOST: str = 'fin.land.naver.com'
+NAVER_WEB_URL: str = create_base_url(NAVER_HOST)
 
 
 class NaverClient(BaseHTTPClient):
@@ -353,11 +358,11 @@ class NaverClient(BaseHTTPClient):
         cooldown=300,
     )
 
-    browser_entry_url: ClassVar[str] = 'https://fin.land.naver.com/'
+    browser_entry_url: ClassVar[str] = f'{NAVER_WEB_URL}/'
     # 네이버 브라우저 식별 쿠키 (400일). 첫 화면 JS 가 load 뒤에 심는다 (2026-11-09 실측)
     browser_ready_cookie: ClassVar[str | None] = 'NNB'
 
-    host: str = 'fin.land.naver.com'
+    host: str = NAVER_HOST
 
     @property
     def base_url(self) -> str:

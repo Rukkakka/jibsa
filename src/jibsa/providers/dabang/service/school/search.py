@@ -3,38 +3,34 @@
 
 from jibsa.core.listing import normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import REGION_INFO_PAGE_LIMIT
-from jibsa.providers.dabang.api.request.school.base import (
+from jibsa.providers.dabang.api.request.common import (
+    REGION_INFO_PAGE_LIMIT,
     DabangSchoolEstablishmentType,
 )
 from jibsa.providers.dabang.api.request.school.search import (
-    DabangRegionalSchoolPath,
     DabangRegionInfoSchoolRegionalV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.school.search import DabangRegionalSchoolModel
-from jibsa.providers.dabang.service.common.functions import (
+from jibsa.providers.dabang.service.common.constants import (
     ESTABLISHMENT_BY_LABEL,
     NURSERY_ESTABLISHMENT_BY_LABEL,
     REGION_INFO_MAX_LIMIT,
-    DabangPage,
-    EducationLevel,
+)
+from jibsa.providers.dabang.service.common.models import DabangPage
+from jibsa.providers.dabang.service.common.paging import (
     fetch_pages,
     region_info_list_notes,
 )
-from jibsa.providers.dabang.service.region.functions import DabangDong
-from jibsa.providers.dabang.service.school.base import LEVEL_PATH_BY_LABEL
+from jibsa.providers.dabang.service.region.models import DabangDong
+from jibsa.providers.dabang.service.school.constants import (
+    REGIONAL_PATH_BY_LEVEL,
+    EducationLevel,
+)
 from jibsa.providers.dabang.service.school.models import (
     DabangRegionalAdvancement,
     DabangRegionalSchool,
     DabangSchoolListResult,
 )
-
-
-REGIONAL_PATH_BY_LEVEL: dict[EducationLevel, DabangRegionalSchoolPath] = dict([
-    *LEVEL_PATH_BY_LABEL.items(),
-    ('유치원', 'kinder-school'),
-    ('어린이집', 'nursery-school'),
-])
 
 
 def establishment_labels(level: EducationLevel) -> dict[str, DabangSchoolEstablishmentType]:

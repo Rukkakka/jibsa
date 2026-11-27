@@ -12,33 +12,37 @@ from jibsa.providers.naver.api.request.redevelopment.listings import (
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     COMPLEX_SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
+)
+from jibsa.providers.naver.service.common.listing import (
     group_sort_notes,
     listing_keeper,
-    pagination_notes,
     price_filter_of,
     price_sort_notes,
-    scan_null_items_notes,
-    scan_pages,
-    unwrap,
 )
 from jibsa.providers.naver.service.common.models import (
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
 )
-from jibsa.providers.naver.service.redevelopment.base import (
+from jibsa.providers.naver.service.common.paging import (
+    pagination_notes,
+    scan_null_items_notes,
+    scan_pages,
+)
+from jibsa.providers.naver.service.common.response import (
+    unwrap,
+)
+from jibsa.providers.naver.service.redevelopment.constants import (
+    MAX_REDEVELOPMENT_ARTICLE_PAGE_REQUESTS,
     REDEVELOPMENT_PAGE_SIZE,
 )
 
 from typing import (
     Any,
 )
-
-
-MAX_REDEVELOPMENT_ARTICLE_PAGE_REQUESTS: int = 5
 
 
 def list_redevelopment_articles(

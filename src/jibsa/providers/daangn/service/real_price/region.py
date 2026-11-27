@@ -8,7 +8,7 @@ from jibsa.core.listing import (
     note,
     read_date,
 )
-from jibsa.providers.daangn.api.client import DaangnClient
+from jibsa.providers.daangn.api.client import DAANGN_WEB_URL, DaangnClient
 from jibsa.providers.daangn.api.request.real_price.region import (
     DaangnRealsaleFeedInputModel,
     DaangnRealsaleFeedRequestPayloadModel,
@@ -24,46 +24,33 @@ from jibsa.providers.daangn.api.response.real_price.region import (
     DaangnRealsaleFeedItemModel,
     DaangnRealsaleFeedModel,
 )
-from jibsa.providers.daangn.service.common.functions import (
-    OPTIONAL_LOOKUP_ERRORS,
+from jibsa.providers.daangn.service.common.constants import OPTIONAL_LOOKUP_ERRORS
+from jibsa.providers.daangn.service.common.response import (
     code_label,
     partial_failure_note,
     unwrap_graphql,
 )
-from jibsa.providers.daangn.service.real_price.base import (
-    _collect_pages,
-    _is_rent_type,
-    _site_note,
+from jibsa.providers.daangn.service.real_price.common import (
+    collect_pages,
     contract_type_of,
+    is_rent_type,
+    site_note,
+)
+from jibsa.providers.daangn.service.real_price.constants import (
+    DEAL_TYPE_LABELS,
+    PREVIOUS_HIGH_PERCENT_DIGITS,
+    REALSALE_SORT_BY_TRADE_TYPE,
+    REALSALE_SORT_LABEL_BY_SORT,
 )
 from jibsa.providers.daangn.service.real_price.models import (
     DaangnRealsaleSummary,
     DaangnRegionRealPrice,
     DaangnRegionRealPriceResult,
 )
-from jibsa.providers.daangn.service.region.functions import resolve_realsale_region
+from jibsa.providers.daangn.service.region.area import resolve_realsale_region
 
 
 logger = logging.getLogger(__name__)
-
-
-# 매매 실거래의 거래 방식 (서버 transactionType)
-DEAL_TYPE_LABELS: dict[str, str] = {'DIRECT': '직거래', 'BROKERED': '중개거래'}
-
-
-
-# '직전 최고가 대비' 비율의 소수 자릿수 (`previous_high_change_percent`). 웹 카드는 정수로 보여 준다
-PREVIOUS_HIGH_PERCENT_DIGITS: int = 2
-
-
-# 지역 실거래 피드 정렬. 웹 실거래 화면은 매매를 가격 순(`TRADE_PRICE_DESC`)으로만 부른다 (RealsaleFeedListQuery `Z`). 전월세는
-# 웹에 없고 서버가 가격 순을 거절해 최신 순(`LATEST`)이다. 둘 다 서버 값이라 고르는 옵션은 두지 않는다 (2026-11-12 번들 대조)
-REALSALE_SORT_BY_TRADE_TYPE: dict[str, str] = {'매매': 'TRADE_PRICE_DESC', '전세': 'LATEST', '월세': 'LATEST'}
-
-
-
-REALSALE_SORT_LABEL_BY_SORT: dict[str, str] = {'TRADE_PRICE_DESC': '가격', 'LATEST': '최신'}
-
 
 
 def previous_high_change_percent(price: int | None, previous_high: int | None) -> float | None:
@@ -172,7 +159,7 @@ def get_region_real_prices(
     가격 높은 순)으로 부르고 정렬·거래 유형을 바꾸는 버튼이 없다. 매매는 웹처럼 가격 순이고 정렬 옵션은 없다 (예전에는 기본
     최신 순에 `--sort` 가 있었다, #215). 전세·월세는 같은 API(`tradeType: BORROW`)로 받는 jibsa 옵션이고, 서버가 가격 순을
     거절해 최신 순(`LATEST`)이다 (`REALSALE_SORT_BY_TRADE_TYPE`). 당근은 전월세를 섞어 주므로 전세·월세는 50건씩 최근 1200건까지
-    넘겨 보며 월세 유무(`monthRentFee`, 웹 카드가 전세·월세 표시를 가르는 값)로 고른다 (`_collect_pages`). 주소(`regionName`)는
+    넘겨 보며 월세 유무(`monthRentFee`, 웹 카드가 전세·월세 표시를 가르는 값)로 고른다 (`collect_pages`). 주소(`regionName`)는
     웹 카드처럼 그대로 준다 (예전에는 읍·면으로 조회하면 리 앞에 읍·면을 끼워 넣었다, #215).
 
     신고가는 매매만이고 웹처럼 가격 높은 순이다. 웹 신고가 화면처럼 가장 최근 공개일의 신고가만 받고, `previous_days` 를
@@ -222,14 +209,14 @@ def get_region_real_prices(
     # 알린다 (개발 가이드 지역 실거래 절). 구는 동 이름으로 좁히면 더 받는다
     narrow = region.level == '구'
     if buy and not (new_high and previous_days):
-        site = ('동 이름으로 좁혀 다시 조회하거나 ' if narrow else '') + _site_note('https://realty.daangn.com/')
+        site = ('동 이름으로 좁혀 다시 조회하거나 ' if narrow else '') + site_note(f'{DAANGN_WEB_URL}/')
     else:
         site = '동 이름으로 좁혀 다시 조회하세요' if narrow else '이 조건의 남은 거래는 당근 웹에도 없어 더 받을 수 없습니다'
     # 매매·전월세는 서버가 `tradeType` 으로 거르고 신고가는 매매만 와 거래 종류를 다시 보지 않는다 (2026-10-11 실측: SALE 피드 172건·BORROW 피드 293건 모두 요청한 종류)
-    found = _collect_pages(
+    found = collect_pages(
         page,
         lambda item: item.realsale is not None and (
-            buy or _is_rent_type(item.realsale.month_rent_fee, trade_type)
+            buy or is_rent_type(item.realsale.month_rent_fee, trade_type)
         ),
         trade_type, limit,
         site=site,

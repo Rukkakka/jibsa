@@ -12,15 +12,12 @@ from jibsa.core.listing import (
     Result,
 )
 from jibsa.core.schema import drop_unset_fields
+from jibsa.providers.dabang.service.sale.constants import GIVEN_AMOUNT_FIELDS
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-GIVEN_AMOUNT_FIELDS: tuple[str, ...] = ('price_manwon', 'deposit_manwon')
-"""분양가·임대 보증금 칸. 생성할 때 넘기지 않은 칸은 해당 없음이라 키를 빼고(`drop_unset_fields`), 넘긴 None 은 null 이다."""
 
 
 class DabangSaleSummary(BaseModel):

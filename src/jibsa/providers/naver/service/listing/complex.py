@@ -1,7 +1,6 @@
 """단지 매물 목록 (search listings --complex)."""
 
 
-
 from jibsa.core.listing import (
     Listing,
     keep_unread_dates,
@@ -19,39 +18,43 @@ from jibsa.providers.naver.api.request.listing.complex import (
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     COMPLEX_SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
-    check_pyeong_numbers,
+)
+from jibsa.providers.naver.service.common.listing import (
     group_sort_notes,
     listing_keeper,
-    pagination_notes,
     price_filter_of,
     price_sort_notes,
-    resolve_dong_numbers,
-    scan_null_items_notes,
-    scan_pages,
-    unwrap,
-    villa_by_complex_response,
-    villa_fallback_found,
 )
 from jibsa.providers.naver.service.common.models import (
     NaverListingsResult,
     NaverTradeConditions,
     PageScan,
 )
+from jibsa.providers.naver.service.common.paging import (
+    pagination_notes,
+    scan_null_items_notes,
+    scan_pages,
+)
+from jibsa.providers.naver.service.common.pyeong import (
+    check_pyeong_numbers,
+    resolve_dong_numbers,
+)
+from jibsa.providers.naver.service.common.response import (
+    unwrap,
+    villa_by_complex_response,
+    villa_fallback_found,
+)
+from jibsa.providers.naver.service.listing.constants import (
+    COMPLEX_PAGE_SIZE,
+    MAX_COMPLEX_ARTICLE_PAGE_REQUESTS,
+)
 
 from typing import (
     Any,
 )
-
-
-COMPLEX_PAGE_SIZE: int = 30
-
-
-# 단지 매물 목록 요청 상한 (빌라 단지로 다시 묻는 1회 포함). limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로
-# 빠져도 그만큼 다시 받지 않는다
-MAX_COMPLEX_ARTICLE_PAGE_REQUESTS: int = 5
 
 
 def list_complex_articles(

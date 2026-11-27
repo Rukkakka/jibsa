@@ -11,15 +11,12 @@ from jibsa.core.listing import (
     AmountSet,
     Result,
 )
+from jibsa.providers.dabang.service.nearby.constants import NEAR_PLACES_PER_TYPE
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 종류마다 내는 가까운 시설 수. 웹은 받은 시설 전부(편의 종류는 15곳)를 지도에 찍는다
-NEAR_PLACES_PER_TYPE: int = 3
 
 
 class DabangNearbyStation(BaseModel):

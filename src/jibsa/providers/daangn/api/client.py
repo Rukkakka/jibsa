@@ -44,8 +44,10 @@ from jibsa.providers.daangn.api.request.complex.base import (
     DaangnSearchComplexesRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.request.complex.detail import (
-    DaangnComplexArticlesRequestPayloadModel,
     DaangnComplexesRequestParameterModel,
+)
+from jibsa.providers.daangn.api.request.complex.listings import (
+    DaangnComplexArticlesRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.request.complex.search import (
     DaangnComplexByClusterIdRequestPayloadModel,
@@ -76,13 +78,19 @@ from jibsa.providers.daangn.api.request.real_price.region import (
 from jibsa.providers.daangn.api.request.real_price.trend import (
     DaangnComplexPriceChartRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.region import (
-    DaangnGetRegionByCoordinateRequestPayloadModel,
+from jibsa.providers.daangn.api.request.region.address import (
     DaangnSearchAddressRequestPayloadModel,
-    DaangnSearchRegionRequestPayloadModel,
-    DaangnSearchSchoolPoisRequestPayloadModel,
-    DaangnSearchSubwayStationPoisRequestPayloadModel,
     DaangnUnitByAddressRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.region.area import (
+    DaangnGetRegionByCoordinateRequestPayloadModel,
+    DaangnSearchRegionRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.region.station import (
+    DaangnSearchSubwayStationPoisRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.region.university import (
+    DaangnSearchSchoolPoisRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.request.review import (
     DaangnLivedReviewsByRegionRequestPayloadModel,
@@ -96,13 +104,15 @@ from jibsa.providers.daangn.api.request.school.school import (
     DaangnSchoolByCodeRequestPayloadModel,
     DaangnSearchSchoolsRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.search import (
+from jibsa.providers.daangn.api.request.search.around import (
+    DaangnSubwayStationArticleConnectionRequestPayloadModel,
+    DaangnUniversityArticleConnectionRequestPayloadModel,
+)
+from jibsa.providers.daangn.api.request.search.map import (
     DaangnArticleByClusterIdRequestPayloadModel,
     DaangnArticleClustersRequestPayloadModel,
     DaangnArticleFeedRequestPayloadModel,
     DaangnArticlesCountRequestPayloadModel,
-    DaangnSubwayStationArticleConnectionRequestPayloadModel,
-    DaangnUniversityArticleConnectionRequestPayloadModel,
 )
 from jibsa.providers.daangn.api.response.commute import (
     DaangnCommuteStationArticleConnectionResponseModel,
@@ -121,8 +131,10 @@ from jibsa.providers.daangn.api.response.complex.base import (
     DaangnSearchComplexesResponseModel,
 )
 from jibsa.providers.daangn.api.response.complex.detail import (
-    DaangnComplexArticlesResponseModel,
     DaangnComplexesResponseModel,
+)
+from jibsa.providers.daangn.api.response.complex.listings import (
+    DaangnComplexArticlesResponseModel,
 )
 from jibsa.providers.daangn.api.response.complex.search import (
     DaangnComplexByClusterIdResponseModel,
@@ -151,13 +163,19 @@ from jibsa.providers.daangn.api.response.real_price.region import (
 from jibsa.providers.daangn.api.response.real_price.trend import (
     DaangnComplexPriceChartResponseModel,
 )
-from jibsa.providers.daangn.api.response.region import (
-    DaangnGetRegionByCoordinateResponseModel,
+from jibsa.providers.daangn.api.response.region.address import (
     DaangnSearchAddressResponseModel,
-    DaangnSearchRegionResponseModel,
-    DaangnSearchSchoolPoisResponseModel,
-    DaangnSearchSubwayStationPoisResponseModel,
     DaangnUnitByAddressResponseModel,
+)
+from jibsa.providers.daangn.api.response.region.area import (
+    DaangnGetRegionByCoordinateResponseModel,
+    DaangnSearchRegionResponseModel,
+)
+from jibsa.providers.daangn.api.response.region.station import (
+    DaangnSearchSubwayStationPoisResponseModel,
+)
+from jibsa.providers.daangn.api.response.region.university import (
+    DaangnSearchSchoolPoisResponseModel,
 )
 from jibsa.providers.daangn.api.response.review import (
     DaangnLivedReviewsByRegionResponseModel,
@@ -171,13 +189,15 @@ from jibsa.providers.daangn.api.response.school.school import (
     DaangnSchoolByCodeResponseModel,
     DaangnSearchSchoolsResponseModel,
 )
-from jibsa.providers.daangn.api.response.search import (
+from jibsa.providers.daangn.api.response.search.around import (
+    DaangnSubwayStationArticleConnectionResponseModel,
+    DaangnUniversityArticleConnectionResponseModel,
+)
+from jibsa.providers.daangn.api.response.search.map import (
     DaangnArticleByClusterIdResponseModel,
     DaangnArticleClustersResponseModel,
     DaangnArticleFeedResponseModel,
     DaangnArticlesCountResponseModel,
-    DaangnSubwayStationArticleConnectionResponseModel,
-    DaangnUniversityArticleConnectionResponseModel,
 )
 
 from typing import ClassVar
@@ -195,6 +215,11 @@ daangn_retry = retry(
 # 페이지 HTML 요청(매물 상세·단지·구 후기 페이지)에 다는 표시. 웹에서는 API 요청이 아니라 페이지 열기라, transport 가 크롬이
 # 페이지를 열 때 붙이는 `accept`·`upgrade-insecure-requests` 를 붙인다 (`core/browser.py` 의 `NAVIGATION_EXTENSION`)
 PAGE_REQUEST_EXTENSIONS: dict[str, object] = {NAVIGATION_EXTENSION: True}
+
+
+# 웹 사이트와 API 가 같은 호스트다. 출력 url 칸의 링크는 바꿀 수 있는 클라이언트 `host` 가 아니라 이 웹 주소로 만든다
+DAANGN_HOST: str = 'realty.daangn.com'
+DAANGN_WEB_URL: str = create_base_url(DAANGN_HOST)
 
 
 class DaangnClient(BaseHTTPClient):
@@ -412,11 +437,11 @@ class DaangnClient(BaseHTTPClient):
     # '홈 55·지도 22'는 머문 시간에 따른 수였다). 한 동의 경로라 당근이 지도 주소 꼴을 바꾸면 첫 화면이 4xx 가 되어 모든 당근
     # 명령이 UPSTREAM_ERROR 로 끝난다. API 경로가 바뀔 때와 같아 매일 API 감시가 잡으면 이 주소를 고친다. 홈으로 다시 여는
     # 경로는 두지 않는다 (평소에 타지 않는 경로라 깨져도 알 수 없다)
-    browser_entry_url: ClassVar[str] = 'https://realty.daangn.com/map/서울특별시/강남구/역삼동'
+    browser_entry_url: ClassVar[str] = f'{DAANGN_WEB_URL}/map/서울특별시/강남구/역삼동'
     # 첫 화면에서 생기는 쿠키는 분석용(_ga·_clck)뿐이고 당근 API 는 쿠키 없이 응답해 기다릴 쿠키가 없다 (같은 날 실측)
     browser_ready_cookie: ClassVar[str | None] = None
 
-    host: str = 'realty.daangn.com'
+    host: str = DAANGN_HOST
 
     graphql_host: str = 'realty.kr.karrotmarket.com'
 

@@ -166,7 +166,7 @@ class ZigbangItemsFiltersRequestParameterModel(RequestModel):
         data: dict[str, Any] = handler(self)
         # 참/거짓 조건은 켤 때만 보낸다. False 는 '조건 없음' 과 같다.
         data = {key: value for key, value in data.items() if value is not False}
-        return _index_arrays(data)
+        return index_arrays(data)
 
 
 class ZigbangOfficetelOrderMixin(RequestModel):
@@ -207,7 +207,7 @@ class ZigbangDanjisRequestParameterModel(RequestModel):
     ]
 
 
-def _index_arrays(data: dict[str, Any]) -> dict[str, Any]:
+def index_arrays(data: dict[str, Any]) -> dict[str, Any]:
     """배열 값을 `key[0]=a&key[1]=b` 모양의 쿼리 키로 펼친다. 빈 배열은 키째 뺀다."""
     for key in INDEXED_ARRAY_KEYS:
         values = data.pop(key, None) or []

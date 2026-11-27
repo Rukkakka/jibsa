@@ -16,6 +16,13 @@ from jibsa.core.listing import (
     Result,
 )
 from jibsa.providers.zigbang.service.common.models import ZigbangEstimatedPrice
+from jibsa.providers.zigbang.service.complex.constants import (
+    APT_ONLY_COMPLEX_FIELDS,
+    OFFICETEL_ONLY_COMPLEX_FIELDS,
+    ZigbangComplexPlaceType,
+    ZigbangPriceTrendPeriod,
+    ZigbangPyeongTrendTrade,
+)
 
 from typing import (
     Annotated,
@@ -24,20 +31,10 @@ from typing import (
 )
 
 
-# 단지 정보에서 한쪽 유형에만 있는 필드. 다른 유형은 출력에서 키를 뺀다
-APT_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({
-    'dong_count', 'approved_date', 'construction_company', 'parking_per_household',
-    'floor_area_ratio_percent', 'heating', 'listing_counts', 'pyeongs', 'review_count', 'schools',
-    'estimated_ranges', 'estimated_prices', 'ranking', 'related_complexes', 'land_trade_permits',
-})
-OFFICETEL_ONLY_COMPLEX_FIELDS: frozenset[str] = frozenset({'completed_month', 'has_elevator'})
-
-ZigbangComplexPlaceType = Literal['역', '학교', '동', '구']
-
-ZigbangPriceTrendPeriod = Literal['1년', '3년', '전체']
-ZigbangPyeongTrendTrade = Literal['전체', '매매', '전월세']
-
 ZigbangPriceLineKind = Literal['단지', '비교 단지', '구']
+
+# 검색어가 가리키는 곳의 종류. `search complexes` 가 검색어 끝 글자로 가른다 (`query_place_kind`)
+QueryPlaceKind = Literal['역', '학교', '동·구']
 
 
 class ZigbangRelatedComplex(BaseModel):

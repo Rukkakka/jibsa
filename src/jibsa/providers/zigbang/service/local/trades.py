@@ -10,87 +10,41 @@ from jibsa.core.listing import (
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.request.local.trades import (
     ZigbangLocalsTradingHistoriesRequestParameterModel,
-    ZigbangLocalTradeDealType,
-    ZigbangLocalTradePeriodType,
 )
 from jibsa.providers.zigbang.api.response.local.trades import ZigbangLocalTradeModel
-from jibsa.providers.zigbang.service.common.base import (
+from jibsa.providers.zigbang.service.common.constants import (
     MAX_LIST_LIMIT,
     UPSTREAM_RETRY_HINT,
+)
+from jibsa.providers.zigbang.service.common.ids import (
     apt_complex_id,
+)
+from jibsa.providers.zigbang.service.common.text import (
     text_or_none,
 )
-from jibsa.providers.zigbang.service.local.base import (
+from jibsa.providers.zigbang.service.local.common import (
     dong_not_applicable,
     local_region_of,
     local_sort_of,
     resolve_local_area,
 )
-from jibsa.providers.zigbang.service.local.models import (
-    LocalLevel,
+from jibsa.providers.zigbang.service.local.constants import (
+    DEAL_TYPE_BY_TRADE,
+    DEFAULT_TRADE_LIMIT,
+    NOT_APPLICABLE_BY_TRADE,
+    OFFER_DIFF_FIELDS,
+    PERIOD_TYPE_BY_LABEL,
+    PRESALE_RIGHT,
+    PREV_DIFF_FIELDS,
+    SORT_SPEC_BY_TRADE,
     LocalTrade,
     LocalTradePeriod,
+)
+from jibsa.providers.zigbang.service.local.models import (
+    LocalLevel,
     ZigbangRegionTrade,
     ZigbangRegionTradesResult,
 )
-
-
-TRADE_PERIODS: tuple[LocalTradePeriod, ...] = ('오늘', '어제', '7일', '15일', '30일')
-DEFAULT_TRADE_LIMIT: int = 20
-# 웹 기간 탭 (2026-11-19 번들 `h`: 오늘·어제·최근 일주일·최근 15일·최근 30일) → 서버 periodType
-PERIOD_TYPE_BY_LABEL: dict[LocalTradePeriod, ZigbangLocalTradePeriodType] = {
-    '오늘': 'today',
-    '어제': 'yesterday',
-    '7일': 'last_7_days',
-    '15일': 'last_15_days',
-    '30일': 'last_30_days',
-}
-DEAL_TYPE_BY_TRADE: dict[LocalTrade, ZigbangLocalTradeDealType] = {'매매': 'sales', '전세': 'charter', '월세': 'rent'}
-# 웹 정렬 이름 → 서버 sortSpec (2026-11-19 번들 `D`). 첫 항목이 웹 기본이다. 거래 유형마다 정렬이 다르다
-SORT_SPEC_BY_TRADE: dict[LocalTrade, dict[str, str]] = {
-    '매매': {
-        '최신 등록순': 'sales_latest_registration',
-        '가격 낮은순': 'sales_lowest_price',
-        '가격 높은순': 'sales_highest_price',
-        '시세 비교순': 'sales_market_price_comparison',
-        '공시가격 대비 낮은순': 'sales_lower_than_public_price',
-    },
-    '전세': {
-        '최신 등록순': 'charters_latest_registration',
-        '가격 낮은순': 'charters_lowest_price',
-        '가격 높은순': 'charters_highest_price',
-        '전세가 비교순': 'charters_lease_price',
-    },
-    '월세': {
-        '최신 등록순': 'rents_latest_registration',
-        '월세 높은순': 'rents_highest_monthly_rent_price',
-        '보증금 높은순': 'rents_highest_deposit',
-    },
-}
-# 거래 유형에 해당하지 않아 출력에서 키를 뺄 칸. 월세는 웹 줄이 신고가·신저가·갱신·비교를 그리지 않아 뺀다 (응답에 와도 낸 칸이 없다)
-SALE_ONLY_FIELDS: frozenset[str] = frozenset({
-    'price_manwon',
-    'estimated_price_diff_manwon',
-    'estimated_price_diff_percent',
-    'public_price_diff_manwon',
-    'public_price_diff_percent',
-    'presale_price_diff_manwon',
-    'presale_price_diff_percent',
-})
-CHARTER_ONLY_FIELDS: frozenset[str] = frozenset({
-    'jeonse_comparison_diff_manwon',
-    'jeonse_comparison_diff_percent',
-    'pre_move_in_contract',
-    'renewal',
-})
-PREV_DIFF_FIELDS: frozenset[str] = frozenset({'prev_trade_diff_manwon', 'prev_trade_diff_percent'})
-OFFER_DIFF_FIELDS: frozenset[str] = frozenset({'presale_price_diff_manwon', 'presale_price_diff_percent'})
-NOT_APPLICABLE_BY_TRADE: dict[LocalTrade, frozenset[str]] = {
-    '매매': frozenset({'deposit_manwon', 'rent_manwon'}) | CHARTER_ONLY_FIELDS,
-    '전세': frozenset({'rent_manwon'}) | SALE_ONLY_FIELDS,
-    '월세': frozenset({'new_high', 'new_low'}) | SALE_ONLY_FIELDS | CHARTER_ONLY_FIELDS | PREV_DIFF_FIELDS,
-}
-PRESALE_RIGHT: str = '입주권'
 
 
 def _trade_of(item: ZigbangLocalTradeModel, trade: LocalTrade, level: LocalLevel) -> ZigbangRegionTrade:

@@ -21,7 +21,6 @@ COMPLEX_ID_PATTERN_TEXT: str = r'^[0-9a-f]{28}$'
 LISTING_ID_PATTERN_TEXT: str = r'^[0-9a-f]{24}$'
 
 DabangCategory = Literal['one-two', 'house-villa', 'officetel', 'apt']
-DabangComplexCategory = Literal['officetel', 'apt']
 DabangSearchType = Literal['region', 'subway', 'univ', 'bbox']
 DabangSellingType = Literal['MONTHLY_RENT', 'LEASE', 'SELL']
 DabangRoomFloor = Literal['GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP']
@@ -29,6 +28,9 @@ DabangRoomType = Literal['ONE_ROOM', 'TWO_ROOM']
 DabangRoomCount = Literal['ONE_ROOM', 'TWO_ROOM', 'THREE_ROOM', 'FOUR_ROOM']
 # 동네정보 '매물정보' 계열의 buildingCategoryList — 인기 매물·동 매물수 순위
 DabangRoomBuildingCategory = Literal['HOUSE_VILLA', 'OFFICETEL', 'APT']
+# 설립 구분. 학교·유치원은 PUBLIC 국공립·PRIVATE 사립, 어린이집은 PUBLIC 공공·PRIVATE 민간·HOME 가정·WORKPLACE 직장·
+# COOPERATIVE 협동이다 (school-regional 청크의 탭, 2026-11-13). 웹은 '전체' 면 값을 보내지 않는다
+DabangSchoolEstablishmentType = Literal['PUBLIC', 'PRIVATE', 'HOME', 'WORKPLACE', 'COOPERATIVE']
 
 ALL_SELLING_TYPES: tuple[DabangSellingType, ...] = ('MONTHLY_RENT', 'LEASE', 'SELL')
 ALL_ROOM_FLOORS: tuple[DabangRoomFloor, ...] = ('GROUND_FIRST', 'GROUND_SECOND_OVER', 'SEMI_BASEMENT', 'ROOFTOP')

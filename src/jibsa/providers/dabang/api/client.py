@@ -28,6 +28,8 @@ from jibsa.providers.dabang.api.request.common import (
 from jibsa.providers.dabang.api.request.complex.detail import (
     DabangComplexLoanCalcConditionV5RequestParameterModel,
     DabangComplexSummaryV5RequestParameterModel,
+)
+from jibsa.providers.dabang.api.request.complex.listings import (
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.request.complex.search import (
@@ -108,6 +110,8 @@ from jibsa.providers.dabang.api.response.common import DabangComplexV5ResponseMo
 from jibsa.providers.dabang.api.response.complex.detail import (
     DabangComplexLoanCalcConditionV5ResponseModel,
     DabangComplexSummaryV5ResponseModel,
+)
+from jibsa.providers.dabang.api.response.complex.listings import (
     DabangRoomListCategoryComplexV5ResponseModel,
 )
 from jibsa.providers.dabang.api.response.complex.search import (
@@ -228,6 +232,11 @@ dabang_education_retry = retry(
 """학교·유치원·어린이집 상세 전용 재시도: `dabang_retry` 와 같고 500 은 다시 보내지 않는다 (`should_retry_education`)."""
 
 
+# 웹 사이트와 API 가 같은 호스트다. 출력 url 칸의 링크는 바꿀 수 있는 클라이언트 `host` 가 아니라 이 웹 주소로 만든다
+DABANG_HOST: str = 'www.dabangapp.com'
+DABANG_WEB_URL: str = create_base_url(DABANG_HOST)
+
+
 class DabangClient(BaseHTTPClient):
     """다방 (www.dabangapp.com) 비공식 웹 API 클라이언트.
 
@@ -317,7 +326,7 @@ class DabangClient(BaseHTTPClient):
         cooldown=300,
     )
 
-    browser_entry_url: ClassVar[str] = 'https://www.dabangapp.com/'
+    browser_entry_url: ClassVar[str] = f'{DABANG_WEB_URL}/'
     # 다방 API 는 쿠키 없이도 응답하고, 첫 화면에서 다방이 심는 쿠키는 분석·광고용뿐이라 기다릴 쿠키가 없다 (2026-11-09 실측)
     browser_ready_cookie: ClassVar[str | None] = None
     # 다방은 없는 주소에 404 대신 403 빈 응답을 준다. 거부가 아니라 쿠키를 버리지 않는다. 다방 API 는 쿠키를 보지 않아(위 줄,
@@ -325,7 +334,7 @@ class DabangClient(BaseHTTPClient):
     # 시작하면 그때 본문이 있는 403 만 버리게 바꾼다
     browser_discard_statuses: ClassVar[frozenset[int]] = frozenset()
 
-    host: str = 'www.dabangapp.com'
+    host: str = DABANG_HOST
 
     geojson_host: str = 'd2pi55cyzoqmrc.cloudfront.net'
 

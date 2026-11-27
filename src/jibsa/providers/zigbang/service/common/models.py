@@ -22,38 +22,21 @@ from jibsa.providers.zigbang.api.request.common import (
     ZigbangFloorFilter,
     ZigbangOptionFilter,
 )
+from jibsa.providers.zigbang.service.common.constants import (
+    ACTUAL_LISTING_CHECKED_DESCRIPTION,
+    APT_LISTING_KIND_DESCRIPTION,
+    APT_ONLY_DETAIL_FIELDS,
+    APT_PYEONG_ID_DESCRIPTION,
+    APT_PYEONG_NAME_DESCRIPTION,
+    COMPLEX_DETAIL_FIELDS,
+    HUG_LESSOR_DESCRIPTION,
+    ROOM_ONLY_DETAIL_FIELDS,
+)
 
 from typing import (
     Annotated,
     Any,
 )
-
-
-# 목록 줄(`ZigbangListing`)과 상세가 함께 쓰는 HUG안심임대인·실매물 확인 필드 설명. 배지 코드는 `common.room` 의 `HUG_BADGE`·`VERIFICATION_BADGE`
-HUG_LESSOR_DESCRIPTION: str = (
-    "HUG 안심임대인 (웹의 'HUG안심임대인' 꼬리표). 직방 배지에 HUG 가 있으면 true, 배지를 받았는데 없으면 false, 직방이 배지를 주지 않으면 null"
-)
-ACTUAL_LISTING_CHECKED_DESCRIPTION: str = (
-    "직방 웹의 '실매물 확인' 꼬리표. 직방이 뜻을 설명하지 않는다. 직방 배지에 ITEM_VERIFICATION 이 있으면 true, 배지를 받았는데 없으면 false "
-    '(확인 실패 ITEM_VERIFICATION_FAILED 도 false), 직방이 배지를 주지 않으면 null'
-)
-# 아파트 목록 줄(`common.apt` 의 `ZigbangAptListing`)과 상세가 함께 쓰는 매물 종류 필드 설명. 종류 코드 표(`APT_LISTING_KIND_LABELS`)는 `common.apt` 에 있다
-APT_LISTING_KIND_DESCRIPTION: str = (
-    '매물 종류: 신규분양(분양 매물, 가격은 분양가)·집주인(집주인이 내놓은 매물)·중개사(중개사무소가 등록한 매물). '
-    '모르는 코드는 직방 코드 그대로, 직방이 주지 않으면 null (묶음 줄은 묶음 맨 앞 매물이 상세를 볼 수 없는 출처라 id 가 맨 앞 매물이 아닐 때도 null. '
-    '묶인 매물 ID 목록에 직방이 빈 항목을 줘 맨 앞 매물을 알 수 없을 때도 null)'
-)
-# 아파트 매물 줄·상세가 함께 쓰는 평형 필드 설명. 이름 규칙은 real-price 의 pyeong_name(평 기준)과 같다
-APT_PYEONG_ID_DESCRIPTION: str = (
-    '평형 ID (complex 의 pyeongs[].pyeong_id 와 같은 번호). search listings --complex <단지> --pyeong·real-price <단지> --pyeong 에 넘긴다. 모르면 null'
-)
-APT_PYEONG_NAME_DESCRIPTION: str = '평형 이름 (평 기준, 예: 34A. complex 의 pyeongs[].pyeong_name 과 같다). 모르면 null'
-# 단지·건물이 있는 유형(아파트·오피스텔)의 상세에만 있는 필드, 아파트 상세에만 있는 필드, 원룸·빌라·오피스텔 상세에만 있는 필드.
-# 없는 유형은 키를 뺀다. 찜 수는 웹 www 의 원룸·빌라·오피스텔 화면에 보이지 않아 아파트만이다. 아파트 학군은 단지 정보
-# (zigbang complex)에서 주고, 아파트 상세 응답에는 주변 시설·배송 업체가 없다
-COMPLEX_DETAIL_FIELDS: frozenset[str] = frozenset({'complex_id', 'complex_name'})
-APT_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'supply_area_m2', 'listing_kind', 'pyeong_id', 'pyeong_name', 'favorite_count'})
-ROOM_ONLY_DETAIL_FIELDS: frozenset[str] = frozenset({'schools', 'nearby_facilities', 'delivery_services', 'building_trades'})
 
 
 class ZigbangRegion(BaseModel):
@@ -539,3 +522,11 @@ class ZigbangRoomConditions(RequestModel):
         list[str],
         Field(description='기타 조건 (CONDITIONS, AND)')
     ] = []
+
+
+def drop_unused_scope(data: dict[str, Any]) -> dict[str, Any]:
+    """검색 결과에서 쓰지 않은 범위 키(반경이면 boundary, 경계면 radius_km)를 뺀다."""
+    for field in ('radius_km', 'boundary'):
+        if data.get(field) is None:
+            data.pop(field, None)
+    return data

@@ -10,13 +10,6 @@ from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.request.common import (
     NaverArticleFilterModel,
     NaverArticleSortType,
-    NaverDirectionType,
-    NaverFloorType,
-    NaverLoanRatioType,
-    NaverMoveInType,
-    NaverOptionType,
-    NaverParkingType,
-    NaverRoomCount,
 )
 from jibsa.providers.naver.api.request.search.base import NaverArticlePagingRequestModel
 from jibsa.providers.naver.api.request.search.listings import (
@@ -26,35 +19,58 @@ from jibsa.providers.naver.api.request.search.listings import (
 from jibsa.providers.naver.api.response.common import (
     NaverArticlePageModel,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     ENTRANCE_CODE_BY_NAME,
     EXCLUDED_REASON,
     ONE_ROOM_SHAPE_CODE_BY_NAME,
-    RADIUS_EXCLUDED_REASON,
     SEARCH_CODES_BY_PROPERTY,
     SORT_TYPE_BY_NAME,
     TRADE_CODE_BY_NAME,
     WON_PER_MANWON,
-    area_scope,
-    boundary_filter,
-    bounded_precision,
-    bounding_box,
-    cursor_position,
+)
+from jibsa.providers.naver.service.common.listing import (
     group_sort_notes,
     listing_keeper,
-    pagination_notes,
     price_sort_notes,
-    resume_cursor,
-    scan_null_items_notes,
-    scan_pages,
-    unwrap,
 )
 from jibsa.providers.naver.service.common.models import (
     NaverListingsResult,
     PageScan,
 )
-from jibsa.providers.naver.service.search.base import (
-    _filter_range,
+from jibsa.providers.naver.service.common.paging import (
+    area_scope,
+    boundary_filter,
+    bounding_box,
+    pagination_notes,
+    scan_null_items_notes,
+    scan_pages,
+)
+from jibsa.providers.naver.service.common.response import (
+    unwrap,
+)
+from jibsa.providers.naver.service.search.common import (
+    bounded_precision,
+    filter_range,
+)
+from jibsa.providers.naver.service.search.constants import (
+    BATHROOM_CODE_BY_NAME,
+    BOUNDED_PAGE_SIZE,
+    COMPLEX_FILTER_NOTE,
+    DEFAULT_SEARCH_PROPERTY_TYPES,
+    DIRECTION_FILTER_CODE_BY_NAME,
+    ENTRANCE_FILTER_NOTE,
+    ENTRANCE_WITH_COMPLEX_FILTER_NOTE,
+    FACILITY_CODE_BY_NAME,
+    FLOOR_CODE_BY_NAME,
+    LEGAL_DIVISION_PAGE_SIZE,
+    LOAN_CODE_BY_NAME,
+    MAX_BOUNDED_PAGE_REQUESTS,
+    MAX_LEGAL_DIVISION_PAGE_REQUESTS,
+    MOVE_IN_CODE_BY_NAME,
+    ONE_ROOM_SHAPE_NOTE,
+    PARKING_CODE_BY_NAME,
+    RADIUS_EXCLUDED_REASON,
+    ROOM_COUNT_CODE_BY_NAME,
 )
 from jibsa.providers.naver.service.search.models import (
     NaverListingConditions,
@@ -65,125 +81,18 @@ from typing import (
 )
 
 
-# 유형을 주지 않으면 주거용 전체 (재건축·분양권·재개발·비주거는 빼고).
-DEFAULT_SEARCH_PROPERTY_TYPES: tuple[str, ...] = ('아파트', '오피스텔', '빌라', '원룸', '단독·다가구', '전원주택', '상가주택')
+def resume_cursor(position: dict[str, Any] | None) -> tuple[str | None, Any] | None:
+    """이어 받기 위치에 담긴 (seed, lastInfo). 목록 처음부터면 None."""
+    if not position or position.get('seed') is None and position.get('last_info') is None:
+        return None
+    return position.get('seed'), position.get('last_info')
 
 
-# 지도 필터 코드. 방 수는 방 구조 이름(`Listing.room_type`)으로 받되 원룸은 방 1개 전체(오픈형·분리형·복층형)다.
-# 코드는 fin.land 지도 URL 과 매물 수·상세 대조로 확인했다 (2026-10-08).
-ROOM_COUNT_CODE_BY_NAME: dict[str, NaverRoomCount] = {
-    '원룸': 'RCF01',
-    '투룸': 'RCF02',
-    '쓰리룸': 'RCF03',
-    '포룸이상': 'RCF04',
-}
-
-
-FLOOR_CODE_BY_NAME: dict[str, NaverFloorType] = {
-    '1층': 'FLF01',
-    '저층': 'FLF02',
-    '중층': 'FLF03',
-    '고층': 'FLF04',
-    '탑층': 'FLF05',
-    '지하층': 'FLF06',
-}
-
-
-DIRECTION_FILTER_CODE_BY_NAME: dict[str, NaverDirectionType] = {
-    '동향': 'EE',
-    '서향': 'WW',
-    '남향': 'SS',
-    '북향': 'NN',
-    '북동향': 'EN',
-    '남동향': 'ES',
-    '북서향': 'WN',
-    '남서향': 'WS',
-}
-
-
-BATHROOM_CODE_BY_NAME: dict[str, NaverRoomCount] = {
-    '1개': 'RCF01',
-    '2개': 'RCF02',
-    '3개': 'RCF03',
-    '4개이상': 'RCF04',
-}
-
-
-# 코드마다 서로 다른 지도 칸의 매물 4건씩을 상세(basicInfo)와 대조했다. 주차 가능·에어컨·엘리베이터·풀옵션은
-# 표본으로 가르지 못해 사이트 URL(주차 가능+에어컨 = OPF02·OPF05)과 소거로 정했다.
-FACILITY_CODE_BY_NAME: dict[str, NaverOptionType] = {
-    '엘리베이터': 'OPF01',
-    '주차': 'OPF02',
-    '보안시설': 'OPF03',
-    '풀옵션': 'OPF04',
-    '에어컨': 'OPF05',
-    '테라스': 'OPF06',
-    '베란다': 'OPF07',
-    '마당': 'OPF08',
-    '복층': 'OPF09',
-}
-
-
-# 원룸 구조는 상세에 구조(shape)가 있는 매물에만 걸린다. 단지 매물(아파트·오피스텔·재건축·단지형 빌라·분양권)은
-# 구조 값이 없어 모두 빠지고 (역삼동 방 1개: 아파트 435건·오피스텔 2,074건 → 0건, 대치동 재건축 1,024건 → 0건),
-# 원룸·빌라·상가주택 등도 중개사가 구조를 입력하지 않은 매물은 빠진다 (역삼동 원룸 전세 35건 → 26건, 빠진 매물은
-# shape 가 null. 상가주택 73건 → 11건, 2026-10-10). 서버 필터라 다시 거르지 않고 줄 때마다 알린다
-ONE_ROOM_SHAPE_NOTE: str = note(
-    '제외',
-    '원룸 구조(오픈형·분리형)는 중개사가 구조를 입력한 매물만 걸립니다. 단지로 등록된 매물(아파트·오피스텔·단지형 빌라)은 '
-    '구조 값이 없어 모두 빠지고, 다른 매물도 구조를 입력하지 않았으면 빠집니다. 빠짐없이 보려면 --one-room-shape 없이 '
-    '--room 원룸 으로 찾고 listing 의 room_type 으로 구조를 확인하세요',
-)
-
-
-MOVE_IN_CODE_BY_NAME: dict[str, NaverMoveInType] = {
-    '바로입주': 'MVF01',
-    '90일내': 'MVF02',
-}
-
-
-LOAN_CODE_BY_NAME: dict[str, NaverLoanRatioType] = {
-    '없음': '00',
-    '30%이하': '10',
-}
-
-
-PARKING_CODE_BY_NAME: dict[str, NaverParkingType] = {
-    '세대당1대': 'PKF01',
-    '세대당1.5대': 'PKF02',
-    '전기차충전': 'PKF03',
-}
-
-
-COMPLEX_FILTER_NOTE: str = note(
-    '제외', '세대수·단지 주차는 네이버에 단지로 등록된 매물에만 있어, 단지가 없는 매물(빌라 대부분)은 빠졌습니다',
-)
-
-
-# 현관 구조는 단지 여부가 아니라 매물에 현관 구조가 등록됐는지로 걸린다 (2026-11-17 실측: 연남동 빌라 --entrance 계단식에
-# 단지가 아닌 빌라 2661884425·2661802815·2661884583 이 남고, --household-min·--parking 에는 셋 다 빠졌다)
-ENTRANCE_FILTER_NOTE: str = note(
-    '제외', '현관 구조가 등록된 매물만 걸려, 등록되지 않은 매물은 빠졌습니다 (단지가 아닌 빌라도 등록돼 있으면 나옵니다)',
-)
-
-
-# 세대수·단지 주차 조건과 함께면 단지 아닌 매물은 그 조건이 이미 빼므로 ENTRANCE_FILTER_NOTE 의 괄호 말을 뺀다 (2026-11-17 실측:
-# 연남동 -t 빌라 --entrance 계단식 --household-min 1 32건 중 5건을 열어 보니 모두 단지 매물이었다)
-ENTRANCE_WITH_COMPLEX_FILTER_NOTE: str = note('제외', '현관 구조가 등록된 매물만 걸려, 등록되지 않은 매물은 빠졌습니다')
-
-
-BOUNDED_PAGE_SIZE: int = 30
-
-
-MAX_BOUNDED_PAGE_REQUESTS: int = 10
-
-
-# 동·시·군·구 경계 전체 검색(legalDivisionArticleList)의 페이지 크기. 서버 상한이 30 이다 (50부터 400, 2026-10-09 확인).
-# limit 건까지만 받고, 받은 뒤 중복·모르는 거래 유형으로 빠져도 그만큼 다시 받지 않는다
-LEGAL_DIVISION_PAGE_SIZE: int = 30
-
-
-MAX_LEGAL_DIVISION_PAGE_REQUESTS: int = 5
+def cursor_position(cursor: tuple[str | None, Any] | None) -> dict[str, Any]:
+    """`resume_cursor` 가 되읽을 수 있게 (seed, lastInfo) 를 이어 받기 위치로 담는다."""
+    if cursor is None:
+        return {}
+    return {'seed': cursor[0], 'last_info': cursor[1]}
 
 
 def _search_listing_pages(
@@ -329,17 +238,17 @@ def search_area(
         # 사각형에 걸쳤지만 찍히지 않은 동의 매물이 통째로 빠진다 (2026-10-07 확인)
         legal_division_numbers=[],
         # 가격 필터는 원 단위다
-        deal_price=_filter_range(conditions.price_min, conditions.price_max, WON_PER_MANWON),
-        warranty_price=_filter_range(conditions.deposit_min, conditions.deposit_max, WON_PER_MANWON),
-        rent_price=_filter_range(conditions.rent_min, conditions.rent_max, WON_PER_MANWON),
-        management_fee=_filter_range(conditions.manage_cost_min, conditions.manage_cost_max, WON_PER_MANWON),
+        deal_price=filter_range(conditions.price_min, conditions.price_max, WON_PER_MANWON),
+        warranty_price=filter_range(conditions.deposit_min, conditions.deposit_max, WON_PER_MANWON),
+        rent_price=filter_range(conditions.rent_min, conditions.rent_max, WON_PER_MANWON),
+        management_fee=filter_range(conditions.manage_cost_min, conditions.manage_cost_max, WON_PER_MANWON),
         # 기본은 jibsa 의 area_m2 와 같은 전용면적. 공급이면 스위치를 꺼 더 큰 공급면적으로 비교한다
-        space=_filter_range(conditions.area_min, conditions.area_max),
+        space=filter_range(conditions.area_min, conditions.area_max),
         filters_exclusive_space=conditions.area_basis == '전용' and (
             conditions.area_min is not None or conditions.area_max is not None
         ),
-        household_number=_filter_range(conditions.household_min, conditions.household_max),
-        approval_elapsed_year=_filter_range(conditions.building_age_min, conditions.building_age_max),
+        household_number=filter_range(conditions.household_min, conditions.household_max),
+        approval_elapsed_year=filter_range(conditions.building_age_min, conditions.building_age_max),
         loan_ratio_type=LOAN_CODE_BY_NAME[conditions.loan] if conditions.loan else None,
         room_count=[ROOM_COUNT_CODE_BY_NAME[name] for name in conditions.room_types],
         bath_room_count=[BATHROOM_CODE_BY_NAME[name] for name in conditions.bathrooms],
@@ -352,7 +261,7 @@ def search_area(
         entrance_types=[ENTRANCE_CODE_BY_NAME[name] for name in conditions.entrances],
         # 사이트처럼 하한 0 을 함께 보낸다 (역삼역 주변 오피스텔 월세 1062건 → 5분 이내 670건, 2026-10-08)
         walking_minute_to_subway_station=(
-            _filter_range(0, conditions.subway_minutes) if conditions.subway_minutes is not None else None
+            filter_range(0, conditions.subway_minutes) if conditions.subway_minutes is not None else None
         ),
     )
     # 서버 필터가 특정 매물 유형을 통째로 빼는 조건은 notes 로 알린다 (결과는 다시 거르지 않는다)

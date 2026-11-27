@@ -1,7 +1,5 @@
-"""단지 정보와 단지 매물 목록 (complex, search listings --complex)."""
-from jibsa.core.errors import JibsaError
+"""단지 정보 (complex)."""
 from jibsa.core.listing import (
-    limit_notes,
     lookup_failure_note,
     m2_to_pyeong,
     normalize_address,
@@ -11,107 +9,53 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
-    DabangAptFiltersModel,
-    DabangComplexCategory,
-    DabangOfficetelFiltersModel,
-)
+from jibsa.providers.dabang.api.request.complex.base import DabangComplexCategory
 from jibsa.providers.dabang.api.request.complex.detail import (
     DabangComplexLoanCalcConditionV5RequestParameterModel,
-    DabangComplexRoomFiltersModel,
-    DabangComplexRoomOrder,
     DabangComplexSummaryV5RequestParameterModel,
-    DabangRoomListCategoryComplexV5RequestParameterModel,
 )
 from jibsa.providers.dabang.api.response.common import (
     DabangComplexChildcareModel,
-    DabangComplexResultModel,
     DabangComplexSchoolModel,
     DabangComplexSpaceModel,
-    DabangRoomItemModel,
 )
 from jibsa.providers.dabang.api.response.complex.detail import DabangLatelyPriceModel
-from jibsa.providers.dabang.service.common.functions import (
-    COMPLEX_KIND_BY_TYPE,
-    MAX_LIST_LIMIT,
-    OPTIONAL_LOOKUP_ERRORS,
-    DabangPage,
-    ListingKind,
-    SchoolLevel,
+from jibsa.providers.dabang.service.common.complex import (
     area_price,
-    complex_url,
+    fetch_complex,
+    first_space_notes,
+    primary_space_of,
+)
+from jibsa.providers.dabang.service.common.constants import (
+    COMPLEX_KIND_BY_TYPE,
+    COMPLEX_URL,
+    OPTIONAL_LOOKUP_ERRORS,
+    SchoolLevel,
+)
+from jibsa.providers.dabang.service.common.text import (
     contract_date,
     count_of,
-    duplicate_note,
-    fetch_complex,
-    fetch_pages,
-    fetch_stop_notes,
-    filters_of,
-    first_space_notes,
     floor_label,
     manwon_from_text,
-    narrow_again,
     number_of,
-    premium_note,
-    primary_space_of,
-    room_item_to_listing,
-    room_list_page,
-    unreadable_note,
 )
-from jibsa.providers.dabang.service.common.models import (
-    DabangListing,
-    DabangListingConditions,
+from jibsa.providers.dabang.service.complex.common import category_of
+from jibsa.providers.dabang.service.complex.constants import (
+    AREA_MATCH_TOLERANCE_M2,
+    KINDER_ESTABLISHMENT_LABELS,
+    NEAREST_SCHOOLS,
+    NURSERY_ESTABLISHMENT_LABELS,
 )
 from jibsa.providers.dabang.service.complex.models import (
-    DEFAULT_COMPLEX_SORT,
-    NEAREST_SCHOOLS,
     DabangChildcare,
     DabangComplexDetail,
-    DabangComplexListingsResult,
     DabangComplexSchool,
     DabangPyeong,
     DabangRecentTrade,
     RecentAreaKey,
 )
 
-from typing import (
-    Literal,
-    NamedTuple,
-)
-
-
-LISTING_KIND_BY_CATEGORY: dict[DabangComplexCategory, ListingKind] = {'apt': 'apt', 'officetel': 'officetel'}
-
-# 단지 응답의 설립 유형 글자를 다방 학군 화면(`search schools`·`school`)의 이름으로 맞춘다. 다방은 같은 시설을 화면마다 다르게
-# 부른다 (2026-11-14 실측: 방배본동 행복한 어린이집은 단지 화면 '국공립'·상세 '공공', 서울서래초병설유치원은 단지 화면
-# '공립'·상세 '국공립'). 표에 없는 글자는 그대로 낸다
-# 리뷰 오탐 (2026-11-14): nurseries·kindergartens 는 v0.12.0 뒤 Unreleased 에 처음 생긴 필드라 값 정리가 호환 깨짐이 아니다
-# (CHANGELOG 의 호환 깨짐 절에 적지 않는다)
-NURSERY_ESTABLISHMENT_LABELS: dict[str, str] = {'국공립': '공공'}
-KINDER_ESTABLISHMENT_LABELS: dict[str, str] = {'공립': '국공립'}
-# 요약 면적('115.54㎡')과 평형표 면적이 같은지 볼 때 허용하는 차 (둘 다 소수 둘째 자리라 반올림 차만 둔다)
-AREA_MATCH_TOLERANCE_M2: float = 0.01
-
-
-class ComplexSort(NamedTuple):
-    """단지 매물 정렬 하나."""
-
-    # 다방 요청의 order 값
-    order: DabangComplexRoomOrder
-    # `[일부]` 안내에 쓰는 정렬 이름 ('… 순으로 앞 N건')
-    text: str
-
-
-# 단지 매물 정렬 (--sort). 다방 웹 단지 매물 탭의 정렬 메뉴 이름 그대로다 (complex 청크 `xt`, 2026-11-13. 기본 랭킹순). 은마
-# 5건이 낮은가격순 30억7000 → 34억, 높은가격순은 그 반대로 왔다 (같은 날 실측). 다방이 정렬한 순서를 그대로 낸다
-COMPLEX_SORT_BY_LABEL: dict[str, ComplexSort] = {
-    '랭킹순': ComplexSort('RANKING', '다방 랭킹'),
-    '최신순': ComplexSort('LATEST', '다방 최신'),
-    '높은가격순': ComplexSort('SELLING_HIGHEST', '다방 높은 가격'),
-    '낮은가격순': ComplexSort('SELLING_LOWEST', '다방 낮은 가격'),
-    '면적넓은순': ComplexSort('ROOM_SIZE_LARGEST', '다방 넓은 면적'),
-    '면적좁은순': ComplexSort('ROOM_SIZE_SMALLEST', '다방 좁은 면적'),
-}
+from typing import Literal
 
 
 def _school(school: DabangComplexSchoolModel, level: SchoolLevel) -> DabangComplexSchool:
@@ -198,10 +142,6 @@ def _floor_int(value: str | None) -> int | None:
     return int(value) if value and value.isdecimal() else None
 
 
-def _category_of(result: DabangComplexResultModel) -> DabangComplexCategory:
-    """단지 상세의 유형 (아파트·오피스텔). 단지 매물·요약 요청의 경로 값이다."""
-    return 'officetel' if result.complex.complex_type == 'OFFICETEL' else 'apt'
-
 
 def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     """단지 정보 (요청 3회: 단지 상세 + 최근 실거래 요약 + 대출 계산 조건). 사진·관리사무소 전화·광고 중개사는 옮기지 않는다.
@@ -211,7 +151,7 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     """
     result = fetch_complex(client, complex_id)
     info = result.complex
-    category = _category_of(result)
+    category = category_of(result)
     notes: list[str] = []
     try:
         summary = client.run_request_complex_summary_v5(
@@ -301,109 +241,6 @@ def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
         schools=schools,
         nurseries=nurseries,
         kindergartens=kindergartens,
-        url=complex_url(info.complex_id),
+        url=COMPLEX_URL.format(info.complex_id),
         notes=notes + sale_notes + lease_notes + first_space_notes(result),
-    )
-
-
-def list_complex_listings(
-    client: DabangClient,
-    complex_id: str,
-    *,
-    conditions: DabangListingConditions | None = None,
-    space_seqs: list[int] | None = None,
-    sort: str = DEFAULT_COMPLEX_SORT,
-    limit: int,
-) -> DabangComplexListingsResult:
-    """단지 하나의 매물 (`sort` 순, 24건씩). 요청은 단지 상세 1회 + 쪽마다 1회.
-
-    Args:
-        sort: 다방 웹 단지 매물 정렬 이름 (`COMPLEX_SORT_BY_LABEL`). 다방이 정렬한 순서를 다시 세우지 않는다.
-
-    Raises:
-        JibsaError: 단지가 없을 때 (NOT_FOUND), 단지에 없는 평형 번호를 줬을 때 (INVALID_ARGUMENT),
-        다방이 평형을 주지 않았는데 --pyeong 도 없을 때 (NOT_FOUND).
-    """
-    conditions = conditions or DabangListingConditions()
-    result = fetch_complex(client, complex_id)
-    category = _category_of(result)
-    kind = LISTING_KIND_BY_CATEGORY[category]
-    # 다방이 평형 목록을 주지 않으면(None) 어떤 번호가 없는지 모르니 막지 않고 그대로 보낸다 (모르는데 '없다' 고 하지 않는다)
-    all_seqs = None if result.spaces is None else [space.space_seq for space in result.spaces]
-    unknown = [seq for seq in space_seqs or [] if all_seqs is not None and seq not in all_seqs]
-    if unknown:
-        raise JibsaError(
-            code='INVALID_ARGUMENT',
-            message=f"이 단지에 없는 평형 번호입니다: {', '.join(map(str, unknown))}",
-            hint=f'jibsa dabang complex {complex_id} 결과의 pyeongs[].pyeong_id 를 주세요',
-        )
-    # 단지 상세는 평형을 늘 하나 이상 준다 (2026-10-25 실측: 아파트·오피스텔·주상복합·재건축 62곳 모두). 요청은 평형 번호가
-    # 하나 이상 있어야 해서, 평형을 안 주거나 비어 있고 --pyeong 도 없으면 보낼 번호가 없다
-    seqs = space_seqs or all_seqs
-    if not seqs:
-        raise JibsaError(
-            code='NOT_FOUND',
-            message=f'다방이 단지의 평형을 주지 않아 매물을 조회하지 못했습니다: {complex_id}',
-            hint='평형 번호를 알면 --pyeong 으로 직접 주세요',
-        )
-    filters = filters_of(kind, conditions)
-    assert isinstance(filters, DabangAptFiltersModel | DabangOfficetelFiltersModel)  # 단지는 아파트·오피스텔뿐이다
-    room_filters = DabangComplexRoomFiltersModel(
-        selling_type_list=filters.selling_type_list,
-        space_seq_list=seqs,
-    )
-    order = COMPLEX_SORT_BY_LABEL[sort]
-    premium = 0
-
-    def fetch(page: int) -> DabangPage[DabangRoomItemModel] | None:
-        nonlocal premium
-        result = client.run_request_room_list_category_complex_v5(DabangRoomListCategoryComplexV5RequestParameterModel(
-            category=category, complex_id=complex_id, main_filters=filters, filters=room_filters,
-            order=order.order, page=page,
-        )).result
-        if result is None:
-            return None
-        page_rows, count = room_list_page(result)
-        premium += count
-        return page_rows
-
-    # 쪽 수는 limit 을 24건으로 나눠 정하지 않고 limit 이 찰 때까지 받는다 (`fetch_pages`). 다방이 한 쪽을 23건만 줄 때가
-    # 있어 다섯 쪽으로는 120건을 못 채울 수 있고, 단지 매물에는 이어 받기(--next)가 없어 남은 매물을 받을 길이 없다
-    pages = fetch_pages(fetch, limit)
-    total, has_more, received = pages.total, pages.has_more, len(pages.rows)
-    listings: list[DabangListing] = []
-    unreadable = duplicate = 0
-    # 단지 목록(`search_complexes`)처럼 쪽이 겹칠 수 있어 같은 매물은 한 번만 넣는다. 다방 단지 매물은 적어 둘째 쪽을 실제로
-    # 받아 보지 못했다 (2026-10-26 실측: 가장 많은 곳이 아파트 14건 잠실 우성4차·개포 현대2차, 오피스텔 8건 빅토리아)
-    seen_ids: set[str] = set()
-    for item in pages.rows:
-        if item.id in seen_ids:
-            duplicate += 1
-            continue
-        seen_ids.add(item.id)
-        listing = room_item_to_listing(item, kind)
-        if listing is None:
-            unreadable += 1
-            continue
-        listings.append(listing)
-    notes: list[str] = []
-    notes += unreadable_note(unreadable)
-    notes += duplicate_note(duplicate)
-    notes += premium_note(premium)
-    # 단지 하나라 지역·반경 대신 단지 매물의 조건만 좁히라고 한다
-    narrow = '거래 유형·평형·가격 조건'
-    notes += limit_notes(
-        total, len(listings), limit, max_limit=MAX_LIST_LIMIT, order=order.text, narrow=narrow, inspected=received, has_more=has_more,
-    )
-    notes += fetch_stop_notes(pages, limit, cap_next=narrow_again(narrow))
-    return DabangComplexListingsResult(
-        complex_id=complex_id,
-        name=result.complex.complex_name,
-        pyeong_ids=space_seqs,
-        sort=sort,
-        total=total,
-        returned=len(listings),
-        has_more=has_more,
-        listings=listings,
-        notes=notes,
     )

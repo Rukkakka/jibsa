@@ -412,7 +412,7 @@ def test_daangn_coordinate_search_with_rejected_map_query_is_upstream_error(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     import jibsa.cli.daangn as daangn_cli
-    from jibsa.providers.daangn.service.common.functions import FeedQueryRejectedError
+    from jibsa.providers.daangn.service.common.response import FeedQueryRejectedError
 
     def rejected(*args, **kwargs):
         raise FeedQueryRejectedError('PERSISTED_QUERY_NOT_IN_LIST')

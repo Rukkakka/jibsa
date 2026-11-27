@@ -40,7 +40,7 @@ message=f"'{query}' 에 해당하는 지역을 찾지 못했습니다"
   4. `typing`
 - `from x import ...` 로 둘 이상 가져오면 괄호로 여러 줄, 한 줄에 하나, 마지막에 쉼표.
 - 프로젝트 import 는 ruff(isort)가 모듈 이름순으로 정렬한다. `jibsa.core.*` → `jibsa.providers.<source>.api.*`
-  (`client` → `request.*` → `response.*`) → `jibsa.providers.<source>.service.*` 도 이름순이다 (`functions` 가 `models` 보다 앞이다). 의존 방향은 이름순이 아니라 [service 모듈을 나누는 기준](provider-conventions.md#service-모듈을-나누는-기준) 3 이 정한다.
+  (`client` → `request.*` → `response.*`) → `jibsa.providers.<source>.service.*` 도 이름순이다 (`constants` 가 `models` 보다 앞이다). 의존 방향은 이름순이 아니라 [service 모듈을 나누는 기준](provider-conventions.md#service-모듈을-나누는-기준) 3 이 정한다.
 - 절대 import (`from jibsa...`) 를 쓴다. 패키지 `__init__.py` 의 re-export 만 상대 import (`from .client import ...`).
 - 순환 import 를 피하려고 함수 안에서 import 할 때는 이유를 주석으로 남긴다 (`RateLimiter.on_rate_limited` 참고).
 

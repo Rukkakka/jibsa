@@ -10,15 +10,17 @@ from jibsa.providers.naver.api.request.redevelopment.detail import (
     NaverComplexRedevelopmentAreaArticleStatsV1RequestParameterModel,
     NaverComplexRedevelopmentV1RequestParameterModel,
 )
-from jibsa.providers.naver.service.common.functions import (
+from jibsa.providers.naver.service.common.constants import (
     TRADE_CODE_BY_NAME,
+)
+from jibsa.providers.naver.service.common.price import (
     amount_range,
     trade_article_counts,
+)
+from jibsa.providers.naver.service.common.response import (
     unwrap,
 )
-from jibsa.providers.naver.service.redevelopment.base import (
-    redevelopment_url,
-)
+from jibsa.providers.naver.service.redevelopment.constants import REDEVELOPMENT_URL
 from jibsa.providers.naver.service.redevelopment.models import (
     NaverRedevelopmentDetail,
 )
@@ -85,5 +87,5 @@ def get_redevelopment(
             key: count for key, count in trade_article_counts(counts).items() if not trade_types or key in selected_keys
         },
         asking_ranges=asking_ranges,
-        url=redevelopment_url(area_number),
+        url=REDEVELOPMENT_URL.format(area_number),
     )
