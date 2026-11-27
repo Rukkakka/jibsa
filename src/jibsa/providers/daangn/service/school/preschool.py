@@ -10,7 +10,7 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.school.preschool import (
+from jibsa.providers.daangn.api.models.request.school.preschool import (
     DaangnComplexSchoolsRequestPayloadModel,
     DaangnPreschoolByNoRequestPayloadModel,
 )

@@ -2,7 +2,7 @@
 import re
 
 from jibsa.core.listing import TradeType
-from jibsa.providers.dabang.api.request.common import LISTING_ID_PATTERN_TEXT
+from jibsa.providers.dabang.api.models.request.common import LISTING_ID_PATTERN_TEXT
 
 
 # 상세 화면이 '비공개 처리된 매물' 로 닫는 상태 (room 청크 `[0,3,4].includes(t.room.status)`, 2026-10-25)

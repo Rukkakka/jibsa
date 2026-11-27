@@ -9,7 +9,7 @@ from jibsa.core.listing import (
     note,
     null_items_note,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnArticleModel,
     DaangnPageInfoModel,
 )

@@ -3,11 +3,11 @@
 import re
 
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL
-from jibsa.providers.zigbang.api.request.complex.search import (
+from jibsa.providers.zigbang.api.models.request.complex.search import (
     ZigbangDanjiOrder,
     ZigbangDanjiPlaceType,
 )
-from jibsa.providers.zigbang.api.request.complex.trend import (
+from jibsa.providers.zigbang.api.models.request.complex.trend import (
     ZigbangPriceChartDealType,
     ZigbangPriceChartPeriod,
 )

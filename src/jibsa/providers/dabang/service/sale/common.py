@@ -4,7 +4,9 @@
 from jibsa.core.listing import (
     normalize_address,
 )
-from jibsa.providers.dabang.api.response.sale.base import DabangSaleInLotsRowModel
+from jibsa.providers.dabang.api.models.response.sale.common import (
+    DabangSaleInLotsRowModel,
+)
 from jibsa.providers.dabang.service.common.text import (
     manwon_from_text,
 )

@@ -1,6 +1,6 @@
 """실거래가 기능(real_price)의 상수: 거래 유형 이름표·조회 한도·건물 종류 이름."""
 from jibsa.core.listing import TradeType
-from jibsa.providers.dabang.api.request.real_price.trades import (
+from jibsa.providers.dabang.api.models.request.real_price.trades import (
     REAL_PRICE_PAGE_LIMIT,
     DabangRealPriceSearchType,
 )

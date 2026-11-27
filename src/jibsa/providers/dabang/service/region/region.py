@@ -18,16 +18,16 @@ from jibsa.core.listing import (
     normalize_address,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import DabangBboxModel
-from jibsa.providers.dabang.api.request.region import (
+from jibsa.providers.dabang.api.models.request.common import DabangBboxModel
+from jibsa.providers.dabang.api.models.request.region import (
     DabangGeojsonRegionRequestParameterModel,
     DabangLocColumn,
     DabangLocSearchV5RequestParameterModel,
     DabangRegionCitiesV5RequestParameterModel,
     DabangRegionStatesV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.common import DabangLocationModel
-from jibsa.providers.dabang.api.response.region import (
+from jibsa.providers.dabang.api.models.response.common import DabangLocationModel
+from jibsa.providers.dabang.api.models.response.region import (
     DabangLocRegionModel,
     DabangLocSearchResultModel,
     DabangRegionModel,

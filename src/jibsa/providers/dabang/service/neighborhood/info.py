@@ -4,14 +4,14 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.neighborhood.info import (
+from jibsa.providers.dabang.api.models.request.neighborhood.info import (
     SUMMARY_TYPE_FIELD_BY_TOPIC,
     DabangRegionInfoCountTopic,
     DabangRegionInfoRegionalCountV5RequestParameterModel,
     DabangRegionInfoRegionalSummaryV5RequestParameterModel,
     DabangRegionInfoSummaryTopic,
 )
-from jibsa.providers.dabang.api.response.neighborhood.info import (
+from jibsa.providers.dabang.api.models.response.neighborhood.info import (
     DabangCountModel,
     DabangDistributionModel,
     DabangRankingGroupModel,

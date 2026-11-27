@@ -13,7 +13,9 @@ from jibsa.core.ratelimit import (
     RateLimitPolicy,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import NaverComplexV1RequestParameterModel
+from jibsa.providers.naver.api.models.request.common import (
+    NaverComplexV1RequestParameterModel,
+)
 
 
 def limiter(**policy: object) -> RateLimiter:
@@ -166,7 +168,7 @@ def test_cli_reports_cooldown_as_rate_limited() -> None:
 def test_429_on_retrying_client_fails_fast_without_waiting() -> None:
     # 직방·당근은 429 를 재시도 대상으로 두지만, 쿨다운이 걸리므로 Retry-After 만큼 기다리지 않는다.
     from jibsa.providers.zigbang.api.client import ZigbangClient
-    from jibsa.providers.zigbang.api.request.region import (
+    from jibsa.providers.zigbang.api.models.request.region import (
         ZigbangSearchV2RequestParameterModel,
     )
 

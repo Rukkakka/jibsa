@@ -11,11 +11,13 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.compare.base import (
+from jibsa.providers.daangn.api.models.request.compare.common import (
     DaangnComplexCompareRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.common import DaangnRegionComplexNodeModel
-from jibsa.providers.daangn.api.response.compare.base import (
+from jibsa.providers.daangn.api.models.response.common import (
+    DaangnRegionComplexNodeModel,
+)
+from jibsa.providers.daangn.api.models.response.compare.common import (
     DaangnCompareAreaGroupModel,
     DaangnCompareComplexModel,
 )

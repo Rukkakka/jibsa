@@ -1,10 +1,10 @@
 """재개발 구역 목록·매물의 상수: 쪽 크기, 요청 상한, 구역 유형 코드, 지도 줌, 정렬 이름표."""
 
 from jibsa.providers.naver.api.client import NAVER_WEB_URL
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverRealEstateType,
 )
-from jibsa.providers.naver.api.request.redevelopment.search import (
+from jibsa.providers.naver.api.models.request.redevelopment.search import (
     NaverRedevelopmentAreaSortType,
 )
 

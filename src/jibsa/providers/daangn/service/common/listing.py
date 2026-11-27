@@ -12,7 +12,7 @@ from jibsa.core.listing import (
     note,
     read_date,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnArticleModel,
     DaangnTradeModel,
 )

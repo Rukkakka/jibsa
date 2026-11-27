@@ -6,7 +6,7 @@ from jibsa.core.listing import (
     normalize_address,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.redevelopment.detail import (
+from jibsa.providers.naver.api.models.request.redevelopment.detail import (
     NaverComplexRedevelopmentAreaArticleStatsV1RequestParameterModel,
     NaverComplexRedevelopmentV1RequestParameterModel,
 )

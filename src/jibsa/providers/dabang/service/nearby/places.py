@@ -9,7 +9,7 @@ from jibsa.core.listing import (
     normalize_address,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.nearby.places import (
+from jibsa.providers.dabang.api.models.request.nearby.places import (
     DabangCarShareTarget,
     DabangNearTarget,
     DabangNearV5RequestParameterModel,
@@ -17,7 +17,7 @@ from jibsa.providers.dabang.api.request.nearby.places import (
     DabangPublicDataCarShareZoneV5RequestParameterModel,
     DabangTransitNearV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.nearby.places import (
+from jibsa.providers.dabang.api.models.response.nearby.places import (
     DabangCarShareZoneModel,
     DabangNearGroupModel,
     DabangNearPoiModel,

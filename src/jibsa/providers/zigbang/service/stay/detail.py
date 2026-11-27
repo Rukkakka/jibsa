@@ -17,15 +17,15 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.stay.base import (
+from jibsa.providers.zigbang.api.models.request.stay.common import (
     ZigbangGuestItemsByIdsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.stay.detail import (
+from jibsa.providers.zigbang.api.models.request.stay.detail import (
     ZigbangGuestItemsHostRequestParameterModel,
     ZigbangGuestItemsRequestParameterModel,
     ZigbangGuestItemsReviewsRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.stay.detail import (
+from jibsa.providers.zigbang.api.models.response.stay.detail import (
     ZigbangGuestItemsResponseModel,
     ZigbangStayScheduleModel,
 )

@@ -9,16 +9,16 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     DabangAptFiltersModel,
     DabangBboxModel,
     DabangOfficetelFiltersModel,
     DabangSearchType,
 )
-from jibsa.providers.dabang.api.request.complex.search import (
+from jibsa.providers.dabang.api.models.request.complex.search import (
     DabangComplexListCategoryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.complex.search import (
+from jibsa.providers.dabang.api.models.response.complex.search import (
     DabangComplexListItemModel,
 )
 from jibsa.providers.dabang.service.common.bbox import bbox_of

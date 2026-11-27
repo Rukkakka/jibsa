@@ -2,7 +2,7 @@
 
 import re
 
-from jibsa.providers.naver.api.request.common import NaverRealEstateType
+from jibsa.providers.naver.api.models.request.common import NaverRealEstateType
 from jibsa.providers.naver.service.common.constants import (
     ENTRANCE_CODE_BY_NAME,
     ONE_ROOM_SHAPE_CODE_BY_NAME,

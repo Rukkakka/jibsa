@@ -7,7 +7,7 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.complex.base import (
+from jibsa.providers.daangn.api.models.request.complex.common import (
     DaangnSearchComplexesInputModel,
     DaangnSearchComplexesRequestPayloadModel,
 )

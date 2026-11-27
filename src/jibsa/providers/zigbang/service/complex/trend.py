@@ -12,18 +12,18 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.complex.base import (
+from jibsa.providers.zigbang.api.models.request.complex.common import (
     ZigbangDanjisRoomTypesRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.request.complex.trend import (
+from jibsa.providers.zigbang.api.models.request.complex.trend import (
     ZigbangDanjisPriceChartRelatedDanjisRequestParameterModel,
     ZigbangDanjisPriceChartRequestParameterModel,
     ZigbangDanjisRoomTypesPriceChartRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.complex.base import (
+from jibsa.providers.zigbang.api.models.response.complex.common import (
     ZigbangDanjisRoomTypesResponseModel,
 )
-from jibsa.providers.zigbang.api.response.complex.trend import (
+from jibsa.providers.zigbang.api.models.response.complex.trend import (
     ZigbangDanjiPriceChartLineModel,
     ZigbangDanjisPriceChartRelatedDanjisResponseModel,
     ZigbangRoomTypePriceMonthModel,

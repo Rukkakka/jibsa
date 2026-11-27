@@ -13,11 +13,11 @@ from jibsa.core.listing import (
     note,
     null_items_note,
 )
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverArticleFilterModel,
     NaverBoundingBoxModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverArticlePageModel,
     NaverComplexListPageModel,
     NaverRedevelopmentAreaPageModel,

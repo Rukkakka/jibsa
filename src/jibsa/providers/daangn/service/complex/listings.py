@@ -7,12 +7,12 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.common import is_empty_property_filter
-from jibsa.providers.daangn.api.request.complex.listings import (
+from jibsa.providers.daangn.api.models.request.common import is_empty_property_filter
+from jibsa.providers.daangn.api.models.request.complex.listings import (
     DaangnComplexArticlesInputModel,
     DaangnComplexArticlesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnArticleModel,
     DaangnTradeModel,
 )

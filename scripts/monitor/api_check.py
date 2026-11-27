@@ -1032,7 +1032,9 @@ def check_dabang_versions() -> dict[str, str]:
     모두 있다). 요청 제한(0.5초 간격·분당 60회) 안에서 첫 화면 1건과 스크립트 수십 건 이하다.
     """
     from jibsa.providers.dabang.api.client import V5_HEADERS, DabangClient
-    from jibsa.providers.dabang.api.request.common import DabangV3RequestParameterModel
+    from jibsa.providers.dabang.api.models.request.common import (
+        DabangV3RequestParameterModel,
+    )
 
     def collect(client: Any, home: Any) -> dict[str, set[str]]:
         found: dict[str, set[str]] = {'D-Api-Version': set(), 'D-App-Version': set(), 'api_version': set(), 'version': set()}
@@ -1057,7 +1059,7 @@ def check_dabang_versions() -> dict[str, str]:
             ('v3 api_version', 'api_version', v3.api_version),
             ('v3 version', 'version', v3.version),
         ],
-        'dabang api/client.py 의 V5_HEADERS·api/request/common.py 의 DabangV3RequestParameterModel 을 갱신',
+        'dabang api/client.py 의 V5_HEADERS·api/models/request/common.py 의 DabangV3RequestParameterModel 을 갱신',
     )
 
 

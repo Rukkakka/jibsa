@@ -20,10 +20,10 @@ CLI 코드는 모두 `src/jibsa/` 아래에 있다.
 | `core/schema.py` | `RequestModel` (`extra='forbid'`) / `ResponseModel` (`extra='allow'`), 목록 칸 null 을 키 없음으로 읽는 `drop_null_lists` 와 객체 목록 안 null 원소를 빼고 칸마다 세는 `drop_null_items`·`null_items` (소스 기반 응답 모델이 wrap 검증기 `validate_dropping_nulls` 로 부른다. `| None` 칸의 null 은 모름으로 둔다) |
 | `core/geo.py` | geohash·거리 계산, 한국 좌표 범위, 기본 검색 반경 |
 | `core/korean.py` | 한글 이름 뒤 조사 고르기 (`particle`, `quoted`), 행정동 검색어에 법정동 힌트 (`legal_dong_hint`), 법정동 코드 단위 (`is_province_code`, `is_district_code`, `is_dong_code`, `is_ri_code`)와 10자리로 채우기 (`full_legal_division_code`) |
-| `providers/<source>/` | `api/` 아래층 (`client.py` · `request/` · `response/`, 당근은 `relay.py` · `parser.py` 도) → `service/` 윗층. service 는 기능별 폴더(`constants.py` 상수 · `models.py` 모델 · 폴더 안 공용 `common.py` · 명령·주제 이름 모듈, 소스 전체가 쓰는 것은 `service/common/` 의 내용 이름 파일), request·response 는 같은 기능 이름의 모듈(명령별로 나뉜 기능은 같은 경로의 폴더) ([모듈 구성](docs/development/provider-conventions.md#모듈-구성)) |
+| `providers/<source>/` | `api/` 아래층 (`client.py` · `models/`(`request/` · `response/` 요청·응답 모델), 당근은 `relay.py` · `parser.py` 도) → `service/` 윗층. service 는 기능별 폴더(`constants.py` 상수 · `models.py` 모델 · 폴더 안 공용 `common.py` · 명령·주제 이름 모듈, 소스 전체가 쓰는 것은 `service/common/` 의 내용 이름 파일), request·response 는 같은 기능 이름의 모듈(명령별로 나뉜 기능은 같은 경로의 폴더) ([모듈 구성](docs/development/provider-conventions.md#모듈-구성)) |
 
 소스별 비공식 API 의 엔드포인트·필드 의미는 각 provider 의 `api/client.py` docstring 과
-`api/response/` 모델 설명에 있다. 엔드포인트를 추가·수정하기 전에 먼저 읽고, 응답 형태는
+`api/models/response/` 모델 설명에 있다. 엔드포인트를 추가·수정하기 전에 먼저 읽고, 응답 형태는
 CLI 직접 조회나 원본 응답으로 확인한다.
 
 ## 자주 쓰는 명령

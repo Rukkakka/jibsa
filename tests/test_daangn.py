@@ -9,15 +9,15 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
+from jibsa.providers.daangn.api.models.response.common import (
+    DaangnArticleModel,
+    DaangnSubwayStationModel,
+)
 from jibsa.providers.daangn.api.parser import (
     parse_articles_html,
     parse_complexes_html,
 )
 from jibsa.providers.daangn.api.relay import resolve
-from jibsa.providers.daangn.api.response.common import (
-    DaangnArticleModel,
-    DaangnSubwayStationModel,
-)
 from jibsa.providers.daangn.service.common.listing import article_to_listing
 from jibsa.providers.daangn.service.common.models import DaangnListingConditions
 from jibsa.providers.daangn.service.commute.commute import search_commute
@@ -105,7 +105,7 @@ def _feed_payloads(requests: list[httpx.Request]) -> list[dict]:
 
 def _feed_articles() -> list:
     """피드 픽스처의 매물 6건 (역삼동 5건·논현동 1건, 모두 판매중)."""
-    from jibsa.providers.daangn.api.response.search.map import (
+    from jibsa.providers.daangn.api.models.response.search.map import (
         DaangnArticleFeedResponseModel,
     )
 
@@ -124,7 +124,7 @@ def _yeoksam_area():
 
 
 def _cluster_page(articles: list, first: int, *, has_next: bool = False, errors: list | None = None):
-    from jibsa.providers.daangn.api.response.search.map import (
+    from jibsa.providers.daangn.api.models.response.search.map import (
         DaangnArticleByClusterIdResponseModel,
     )
 
@@ -139,7 +139,7 @@ def _dong_client(articles: list, *, count: int | None = 30, payloads: list | Non
     """동 클러스터 목록은 `articles` (또는 GraphQL `errors`), 동 거품 수는 `count` 를 주는 가짜 client. count 가 None 이면 수 조회가 실패한다."""
     from types import SimpleNamespace
 
-    from jibsa.providers.daangn.api.response.search.map import (
+    from jibsa.providers.daangn.api.models.response.search.map import (
         DaangnArticleClustersResponseModel,
     )
 
@@ -207,7 +207,7 @@ def test_dong_search_uses_web_cluster_list_and_bubble_count() -> None:
 # 동 목록은 매물이 남았는데도 hasNextPage 를 false 로 준다 (2026-11-12 실측: 홍천군 내면 26건이 20건 쪽에서 false). 쪽이 꽉 차면
 # 다음 쪽도 받고, 받은 수가 동 거품 수에 닿으면 더 없다고 한다
 def test_dong_search_reads_past_false_has_next_page() -> None:
-    from jibsa.providers.daangn.api.response.search.map import (
+    from jibsa.providers.daangn.api.models.response.search.map import (
         DaangnArticleByClusterIdResponseModel,
     )
     from jibsa.providers.daangn.service.search.map import search_dong
@@ -333,7 +333,7 @@ def test_missing_sido_stays_when_lookup_fails(lookup) -> None:
     ({'trade_types': ['매매', '월세']}, 'BUY'),
 ])
 def test_trade_of_picks_by_trade_type_like_web(conditions: dict, expected: str) -> None:
-    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+    from jibsa.providers.daangn.api.models.response.common import DaangnTradeModel
     from jibsa.providers.daangn.service.common.listing import trade_of
 
     article = _feed_articles()[3].model_copy(update={
@@ -348,7 +348,7 @@ def test_trade_of_picks_by_trade_type_like_web(conditions: dict, expected: str) 
 
 def test_short_trade_is_short_term_rent() -> None:
     # 당근 단기임대(ShortTrade)는 보증금·월세가 있다. 모르는 조건으로 버리지 않고 단기임대로 내보낸다.
-    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+    from jibsa.providers.daangn.api.models.response.common import DaangnTradeModel
 
     short = DaangnTradeModel.model_validate(
         {'__typename': 'ShortTrade', 'type': 'SHORT', 'preferred': True, 'deposit': 200, 'monthlyPay': 130}
@@ -359,7 +359,7 @@ def test_short_trade_is_short_term_rent() -> None:
 
 def test_year_trade_is_yearly_rent_without_monthly_rent() -> None:
     # 제주 연세(YearTrade)는 1년치를 한 번에 내는 거래라 월세로 읽히지 않게 rent_manwon 키 없이 yearly_rent_manwon 으로 낸다
-    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+    from jibsa.providers.daangn.api.models.response.common import DaangnTradeModel
 
     year = DaangnTradeModel.model_validate(
         {'__typename': 'YearTrade', 'type': 'YEAR', 'preferred': True, 'deposit': 1000, 'yearlyPay': 1400}
@@ -500,7 +500,7 @@ def test_unavailable_articles_are_excluded() -> None:
 @pytest.mark.parametrize(('status', 'blocked'), [('INACTIVE', True), ('ACTIVE', False), (None, False)])
 def test_detail_blocks_inactive_broker(status: str | None, blocked: bool) -> None:
     from jibsa.core.errors import ListingUnavailableError
-    from jibsa.providers.daangn.api.response.common import DaangnBizProfileModel
+    from jibsa.providers.daangn.api.models.response.common import DaangnBizProfileModel
 
     response = parse_articles_html(html('articles'), 1000001)
     article = response.article.model_copy(update={'biz_profile': DaangnBizProfileModel(originalId='1', status=status)})
@@ -526,7 +526,7 @@ def test_missing_article_is_unavailable() -> None:
 
 
 def _multi_trade_detail():
-    from jibsa.providers.daangn.api.response.common import DaangnTradeModel
+    from jibsa.providers.daangn.api.models.response.common import DaangnTradeModel
 
     response = parse_articles_html(html('articles'), 1000001)
     trades = [
@@ -1289,7 +1289,7 @@ def test_previous_high_change_percent_rounds_to_two_decimals(price: int, previou
 
 
 def test_kb_sale_is_converted_from_won() -> None:
-    from jibsa.providers.daangn.api.response.real_price.trend import (
+    from jibsa.providers.daangn.api.models.response.real_price.trend import (
         DaangnPriceChartModel,
     )
     from jibsa.providers.daangn.service.real_price.trend import (

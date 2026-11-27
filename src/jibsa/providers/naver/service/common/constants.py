@@ -2,7 +2,7 @@
 
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
 from jibsa.providers.naver.api.client import NAVER_WEB_URL
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverArticleSortType,
     NaverEntranceType,
     NaverOneRoomShape,

@@ -1,6 +1,10 @@
 """단지 기능(complex)의 상수: 단지 매물 종류·정렬 표·설립 구분 이름표·평형 허용 차·가까운 학교 수."""
-from jibsa.providers.dabang.api.request.complex.base import DabangComplexCategory
-from jibsa.providers.dabang.api.request.complex.listings import DabangComplexRoomOrder
+from jibsa.providers.dabang.api.models.request.complex.common import (
+    DabangComplexCategory,
+)
+from jibsa.providers.dabang.api.models.request.complex.listings import (
+    DabangComplexRoomOrder,
+)
 from jibsa.providers.dabang.service.common.constants import (
     ComplexKind,
     ListingKind,

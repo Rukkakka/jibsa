@@ -5,11 +5,11 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.listing.detail import (
+from jibsa.providers.naver.api.models.request.listing.detail import (
     NaverArticleAgentFeeV1RequestParameterModel,
     NaverArticleTaxV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.listing.detail import (
+from jibsa.providers.naver.api.models.response.listing.detail import (
     NaverArticleMaintenanceFeeModel,
 )
 from jibsa.providers.naver.service.common.labels import unknown_code_label

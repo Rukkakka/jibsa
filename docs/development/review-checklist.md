@@ -71,9 +71,9 @@
 6. **서버 값 한 칸이 결과 전체를 깨뜨림.** 서버 글자·목록·헤더를 `int()`·`[0]`·`del`·`.encode` 로 바로 다루지 않는가 (그 칸만
    `null`·건너뛰기여야 한다). 확인: diff 의 그 호출과 Optional 아닌 list 필드에 빈 글자·'-'·null·소수를 넣어 본다.
    예: `providers/daangn/service/compare/complexes.py:254` (`is_year_month`. 연월 `int()` 로 비교 전체가 PARSE_ERROR).
-   언제: 서버 값에 `int(`·`float(`·`[0]`·`del `·`.split(`·`.encode` 를 바로 쓰는 `+` 줄, `api/response/` 의 필드 자료형을 바꾸거나
+   언제: 서버 값에 `int(`·`float(`·`[0]`·`del `·`.split(`·`.encode` 를 바로 쓰는 `+` 줄, `api/models/response/` 의 필드 자료형을 바꾸거나
    응답 모델을 새로 더한 diff (나눗셈·평균으로 나오는 값(원/평 등)을 `int` 로 받으면 소수 한 행에 ValidationError 가 나고, 덤
-   조회면 `result_or_empty` 가 삼켜 목록 전체가 `null` 이 된다: `providers/naver/api/response/real_price.py`
+   조회면 `result_or_empty` 가 삼켜 목록 전체가 `null` 이 된다: `providers/naver/api/models/response/real_price.py`
    `NaverVillaPyeongPriceModel.pyeong_price`, 2026-11-19). 한 필드를 이 이유로 `float` 로 바꿨으면 같은 응답 모델 파일들의 다른 평균·나눗셈 필드(`average*`·`avg*`·`*AverageFee`)도 함께 본다 (2026-11-19 네이버 빌라 real-price 리뷰: 평당 호가 둘만 바꾸고 평균 관리비·시세 평균·실거래 평균·주간 평균 매물 수를 `int` 로 남김). 개수 평균은 출력 모델도 `int | float` 로 바꿔야 하고, `float` 만 쓰면 정수가 `1006.0` 으로 나가 출력이 바뀐다.
 7. **지운 줄이 받던 입력.** `git diff` 의 `-` 줄이 받던 꼴(더 짧은 날짜, 다른 구분자, 빈 값)을 `+` 줄도 받는가. 고친 코드가
    예전보다 정보를 버리면 퇴보다. 확인: 지운 분기와 새 분기에 같은 입력을 넣어 비교한다.
@@ -296,8 +296,8 @@
    언제: 주석에 번들 식(JS)이 붙은 계산, 또는 `round(`·`//`·`sorted(`·`max(`·`min(` 이 든 `+` 줄, 웹 식을 옮긴 공용 함수
    (`web_minutes` 등)를 새 화면에서 부르는 `+` 줄.
 2. **웹이 보내는 변수 모양 그대로인가.** 조건이 없으면 웹처럼 null 을 보내는가(빈 객체·빈 목록이 아니라), 웹 화면이 받는 단위를
-   넘는 조합을 만들지 않는가. 예: `providers/daangn/api/request/common.py:213` (`{salesTypes: []}`).
-   언제: `api/request/` 의 변수·쿼리 모양이나 그 기본값을 바꾼 diff.
+   넘는 조합을 만들지 않는가. 예: `providers/daangn/api/models/request/common.py:213` (`{salesTypes: []}`).
+   언제: `api/models/request/` 의 변수·쿼리 모양이나 그 기본값을 바꾼 diff.
 3. **사이트에 없는 결과.** 받은 결과를 같은 조건으로 다시 거르거나 다른 소스로 대신 찾지 않는가, 후보 중 하나를 임의로 고르지
    않는가 (위 `correctness` 4), `[제외]` 문구가 실제로 없는 사유("조건 불일치")를 말하지 않는가.
    예: `providers/daangn/service/common/listing.py:252`.
@@ -492,7 +492,7 @@
    이름 하나에 노선 여럿으로 묶어 줘(신촌역은 두 노선이 한 역) 한 역이 둘로 오지 않는다. 이름이 같은 다른 역이 한 카드에 함께
    오지 않는다는 것은 코드로 막힌 것이 아니라 추론이다. 출퇴근 경로 `_route` 는 노선 꼬리가 어긋나 처음·끝 역 이름이 맞지 않으면
    None(모름)을 줘 틀린 경로가 나가지 않는다 (`providers/daangn/service/common/location.py`, `providers/daangn/service/commute/commute.py`).
-7. **응답 필드 표기·정밀도.** 엔드포인트마다 snake_case·camelCase 가 다르고(`providers/dabang/api/response/sale/search.py:134`), 거리를
+7. **응답 필드 표기·정밀도.** 엔드포인트마다 snake_case·camelCase 가 다르고(`providers/dabang/api/models/response/sale/search.py:134`), 거리를
    소수로 받는 것은 정렬 뒤 출력할 때만 웹 `d` 식(`_nearest` 의 `distance_m`)으로 반올림하려는 것이다 (`providers/dabang/service/nearby/places.py:98`).
 8. **검토하고 그대로 둔 설계.** `proxy=''` 를 잘못된 주소로 보기, 요청 하나 전체에 시간 상한 없음, 탭이 닫히면 닫고 다시 띄우기
    (`core/browser.py:671`·`:818`·`:1761`), 평형 코드가 없을 때 전체 평균으로 물러서지 않기

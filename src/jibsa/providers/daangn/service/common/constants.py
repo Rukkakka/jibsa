@@ -9,7 +9,7 @@ from jibsa.core.listing import (
     TradeType,
 )
 from jibsa.providers.daangn.api.client import DAANGN_WEB_URL
-from jibsa.providers.daangn.api.request.common import (
+from jibsa.providers.daangn.api.models.request.common import (
     DaangnBuildingApprovalDate,
     DaangnComplexType,
     DaangnDealType,

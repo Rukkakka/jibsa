@@ -8,7 +8,7 @@ from jibsa.core.listing import (
     note,
     null_items_note,
 )
-from jibsa.providers.dabang.api.response.common import (
+from jibsa.providers.dabang.api.models.response.common import (
     DabangRoomItemModel,
     DabangRoomListResultModel,
 )

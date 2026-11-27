@@ -13,7 +13,7 @@ from jibsa.core.listing import (
     Result,
 )
 from jibsa.core.schema import RequestModel
-from jibsa.providers.zigbang.api.request.store import ZigbangStoreSalesType
+from jibsa.providers.zigbang.api.models.request.store import ZigbangStoreSalesType
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangRegion,
     drop_unused_scope,

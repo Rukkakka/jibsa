@@ -9,10 +9,10 @@ from jibsa.core.listing import (
     read_month,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.real_price.trend import (
+from jibsa.providers.dabang.api.models.request.real_price.trend import (
     DabangRealPriceComplexChartsV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.real_price.trend import (
+from jibsa.providers.dabang.api.models.response.real_price.trend import (
     DabangChartSeriesModel,
     DabangHighLowModel,
 )

@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import lookup_failure_note
-from jibsa.providers.naver.api.response.common import NaverResponseModel
+from jibsa.providers.naver.api.models.response.common import NaverResponseModel
 from jibsa.providers.naver.service.common.constants import OPTIONAL_LOOKUP_ERRORS
 
 from typing import (

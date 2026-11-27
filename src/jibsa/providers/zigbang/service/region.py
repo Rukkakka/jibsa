@@ -27,12 +27,12 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.region import (
+from jibsa.providers.zigbang.api.models.request.region import (
     ZigbangLocalPolygonV2RequestParameterModel,
     ZigbangSearchServiceType,
     ZigbangSearchV2RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
+from jibsa.providers.zigbang.api.models.response.common import ZigbangSearchItemModel
 from jibsa.providers.zigbang.service.common.models import (
     ZigbangAptRegion,
     ZigbangBoundary,

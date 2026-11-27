@@ -10,10 +10,10 @@ effort: high
 1. **먼저 확인한다** (파일을 고치지 않는 조사).
    - 로그인 없이 호출되는가 (계정·쿠키·API 키 없이). 아니면 넣지 않는다고 보고하고 멈춘다.
    - 웹 화면이 이 기능에 쓰는 API·변수·기본값·정렬·계산 (당근은 persisted query 해시까지). `docs/development/provider-conventions.md` "웹 화면과의 대응" 의 "안 되는 것" 에 해당하면 넣지 않고, "되는 것" 에 해당하면 그 소스 가이드 "웹과 다른 점" 에 적는다. 웹 캡처가 필요하면 출력이 커서 `web-parity-investigator` 하나에 맡긴다 (`model: opus`, effort xhigh, 범위가 좁으면 high).
-   - 그 소스의 `api/client.py` docstring, `api/response/` 모델, `docs/development/providers/<소스>.md` 를 읽어 이미 있는 기능·모듈과 겹치지 않는지, 어느 기능 모듈에 들어갈지 본다.
+   - 그 소스의 `api/client.py` docstring, `api/models/response/` 모델, `docs/development/providers/<소스>.md` 를 읽어 이미 있는 기능·모듈과 겹치지 않는지, 어느 기능 모듈에 들어갈지 본다.
    - 출력에 사진·중개사 연락처·본문·매물 좌표가 섞이지 않는지, 금액을 만원으로 바꿀 곳, 만료 매물을 거를 곳.
 2. **계획을 설명하고 허락받는다** (AGENTS.md 작업 절차). 고칠 파일을 순서대로 적는다:
-   `api/client.py`(ClassVar + sync/async 메서드, docstring 에 엔드포인트·필드 의미) → `api/request/<기능>.py` → `api/response/<기능>.py` → `service/<기능>/constants.py`(상수)·`models.py`(모델)와 명령 이름 모듈 (명령 하나를 맡는 기능은 `<기능>/<기능>.py`, 둘 이상이면 세 곳이 `<기능>/search.py` 처럼 같은 경로이고, 폴더 안에서 둘 이상이 같이 쓰는 함수는 `<기능>/common.py`, 여러 기능이 쓰는 것은 `service/common/` 의 내용 이름 파일. `docs/development/provider-conventions.md` "service 모듈을 나누는 기준") → `cli/<소스>.py` → 문서.
+   `api/client.py`(ClassVar + sync/async 메서드, docstring 에 엔드포인트·필드 의미) → `api/models/request/<기능>.py` → `api/models/response/<기능>.py` → `service/<기능>/constants.py`(상수)·`models.py`(모델)와 명령 이름 모듈 (명령 하나를 맡는 기능은 `<기능>/<기능>.py`, 둘 이상이면 세 곳이 `<기능>/search.py` 처럼 같은 경로이고, 폴더 안에서 둘 이상이 같이 쓰는 함수는 `<기능>/common.py`, 여러 기능이 쓰는 것은 `service/common/` 의 내용 이름 파일. `docs/development/provider-conventions.md` "service 모듈을 나누는 기준") → `cli/<소스>.py` → 문서.
    함께 고칠 곳 (AGENTS.md "문서 갱신" 표):
    - `docs/<소스>.md` 의 그 명령 절
    - 명령을 더했으면 `docs/llm.md` 와 `scripts/monitor/api_check.py` 의 `GROUPS`. 매물을 찾는 새 방식이면 그 방식도 `GROUPS` 에

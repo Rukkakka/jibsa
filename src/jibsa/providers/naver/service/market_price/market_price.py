@@ -7,7 +7,7 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.market_price import (
+from jibsa.providers.naver.api.models.request.market_price import (
     NaverComplexMarketPriceListV1RequestParameterModel,
 )
 from jibsa.providers.naver.service.common.constants import (

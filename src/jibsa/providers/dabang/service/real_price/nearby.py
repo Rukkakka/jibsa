@@ -6,10 +6,12 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.real_price.nearby import (
+from jibsa.providers.dabang.api.models.request.real_price.nearby import (
     DabangRealPriceComplexPricePerPyV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.real_price.nearby import DabangNearComplexModel
+from jibsa.providers.dabang.api.models.response.real_price.nearby import (
+    DabangNearComplexModel,
+)
 from jibsa.providers.dabang.service.common.complex import area_price
 from jibsa.providers.dabang.service.common.constants import (
     COMPLEX_KIND_BY_TYPE,

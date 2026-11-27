@@ -8,7 +8,7 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.complex.base import (
+from jibsa.providers.zigbang.api.models.request.complex.common import (
     ZigbangDanjisItemCatalogsRequestParameterModel,
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )

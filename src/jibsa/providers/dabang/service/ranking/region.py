@@ -9,10 +9,10 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     REGION_INFO_PAGE_LIMIT,
 )
-from jibsa.providers.dabang.api.request.ranking.region import (
+from jibsa.providers.dabang.api.models.request.ranking.region import (
     RANKING_PAGE_LIMIT,
     DabangRankingMetric,
     DabangRegionInfoRankingMetric,
@@ -22,7 +22,7 @@ from jibsa.providers.dabang.api.request.ranking.region import (
     DabangRegionInfoTopic,
     DabangSchoolAdvancementType,
 )
-from jibsa.providers.dabang.api.response.ranking.region import (
+from jibsa.providers.dabang.api.models.response.ranking.region import (
     DabangRegionRankingItemModel,
     DabangRegionRankingResultModel,
 )

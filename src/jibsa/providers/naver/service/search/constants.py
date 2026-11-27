@@ -1,7 +1,7 @@
 """네이버 지도 매물 검색·지역 단지 목록의 상수: 필터 코드표, 안내 문구, 쪽 크기와 요청 상한."""
 
 from jibsa.core.listing import note
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverDirectionType,
     NaverFloorType,
     NaverLoanRatioType,
@@ -11,7 +11,7 @@ from jibsa.providers.naver.api.request.common import (
     NaverRealEstateType,
     NaverRoomCount,
 )
-from jibsa.providers.naver.api.request.search.complexes import (
+from jibsa.providers.naver.api.models.request.search.complexes import (
     NaverComplexSortType,
 )
 

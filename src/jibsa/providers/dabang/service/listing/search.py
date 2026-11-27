@@ -15,14 +15,14 @@ from jibsa.core.listing import (
     years_ago,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     DabangBboxModel,
     DabangSearchType,
 )
-from jibsa.providers.dabang.api.request.listing import (
+from jibsa.providers.dabang.api.models.request.listing import (
     DabangRoomListCategoryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.common import DabangRoomItemModel
+from jibsa.providers.dabang.api.models.response.common import DabangRoomItemModel
 from jibsa.providers.dabang.service.common.bbox import bbox_of
 from jibsa.providers.dabang.service.common.constants import (
     CATEGORY_BY_KIND,

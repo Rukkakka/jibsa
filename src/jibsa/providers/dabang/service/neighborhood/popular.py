@@ -6,7 +6,7 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.neighborhood.popular import (
+from jibsa.providers.dabang.api.models.request.neighborhood.popular import (
     POPULAR_ROOM_PAGE_LIMIT,
     DabangRegionInfoRoomRegionalPopularRoomV5RequestParameterModel,
 )

@@ -12,13 +12,13 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.common import ZigbangAptTranType
-from jibsa.providers.zigbang.api.request.local.ranking import (
+from jibsa.providers.zigbang.api.models.request.common import ZigbangAptTranType
+from jibsa.providers.zigbang.api.models.request.local.ranking import (
     ZigbangDanjiRankingSortType,
     ZigbangDanjiRankingViewPeriod,
     ZigbangLocalsDanjiRankingRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.local.ranking import (
+from jibsa.providers.zigbang.api.models.response.local.ranking import (
     ZigbangDanjiRankingModel,
     ZigbangLocalsDanjiRankingResponseModel,
 )

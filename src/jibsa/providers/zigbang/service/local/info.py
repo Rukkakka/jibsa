@@ -13,7 +13,7 @@ from jibsa.core.listing import (
     read_month,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.local.info import (
+from jibsa.providers.zigbang.api.models.request.local.info import (
     ZigbangLocalsPynChartPriceRequestParameterModel,
     ZigbangLocalsRequestParameterModel,
     ZigbangLocalsTotalHouseholdsTimeRequestParameterModel,
@@ -21,7 +21,7 @@ from jibsa.providers.zigbang.api.request.local.info import (
     ZigbangLocalsTradingVolumeChartRequestParameterModel,
     ZigbangPynAreaType,
 )
-from jibsa.providers.zigbang.api.response.local.info import (
+from jibsa.providers.zigbang.api.models.response.local.info import (
     ZigbangLocalPriceModel,
     ZigbangLocalsPynChartPriceDataModel,
 )

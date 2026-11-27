@@ -7,16 +7,18 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverArticleFilterModel,
     NaverArticleSortType,
 )
-from jibsa.providers.naver.api.request.search.base import NaverArticlePagingRequestModel
-from jibsa.providers.naver.api.request.search.listings import (
+from jibsa.providers.naver.api.models.request.search.common import (
+    NaverArticlePagingRequestModel,
+)
+from jibsa.providers.naver.api.models.request.search.listings import (
     NaverArticleBoundedArticlesV1RequestPayloadModel,
     NaverArticleLegalDivisionArticleListV1RequestPayloadModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverArticlePageModel,
 )
 from jibsa.providers.naver.service.common.constants import (

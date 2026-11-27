@@ -3,14 +3,16 @@
 
 from jibsa.core.listing import normalize_address
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     REGION_INFO_PAGE_LIMIT,
     DabangSchoolEstablishmentType,
 )
-from jibsa.providers.dabang.api.request.school.search import (
+from jibsa.providers.dabang.api.models.request.school.search import (
     DabangRegionInfoSchoolRegionalV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.school.search import DabangRegionalSchoolModel
+from jibsa.providers.dabang.api.models.response.school.search import (
+    DabangRegionalSchoolModel,
+)
 from jibsa.providers.dabang.service.common.constants import (
     ESTABLISHMENT_BY_LABEL,
     NURSERY_ESTABLISHMENT_BY_LABEL,

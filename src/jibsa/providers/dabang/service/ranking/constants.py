@@ -1,15 +1,15 @@
 """순위(region-ranking·trade-rankings·trending-complexes)의 이름표·탭·기간·패턴·값 종류."""
 import re
 
-from jibsa.providers.dabang.api.request.common import DabangRoomBuildingCategory
-from jibsa.providers.dabang.api.request.ranking.region import (
+from jibsa.providers.dabang.api.models.request.common import DabangRoomBuildingCategory
+from jibsa.providers.dabang.api.models.request.ranking.region import (
     DabangRankingPriceType,
     DabangRegionInfoRankingMetric,
     DabangRegionInfoTopic,
     DabangRoomRankingMetric,
 )
-from jibsa.providers.dabang.api.request.ranking.trade import DabangTradeBaseOn
-from jibsa.providers.dabang.api.request.ranking.trending import DabangWatchBaseOn
+from jibsa.providers.dabang.api.models.request.ranking.trade import DabangTradeBaseOn
+from jibsa.providers.dabang.api.models.request.ranking.trending import DabangWatchBaseOn
 from jibsa.providers.dabang.service.common.constants import (
     POPULAR_BUILDING_BY_LABEL,
     VILLA_LABEL,

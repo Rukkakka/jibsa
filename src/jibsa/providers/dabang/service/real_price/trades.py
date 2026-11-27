@@ -12,13 +12,13 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.real_price.trades import (
+from jibsa.providers.dabang.api.models.request.real_price.trades import (
     REAL_PRICE_PAGE_LIMIT,
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
     DabangRealPriceHouseInitV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.real_price.trades import (
+from jibsa.providers.dabang.api.models.response.real_price.trades import (
     DabangRealPriceHistoryModel,
     DabangRealPriceHouseHistoryResultModel,
     DabangRealPriceHouseInitResultModel,

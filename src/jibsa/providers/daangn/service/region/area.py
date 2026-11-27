@@ -19,17 +19,21 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.common import DaangnCoordinateInputModel
-from jibsa.providers.daangn.api.request.region.area import (
+from jibsa.providers.daangn.api.models.request.common import DaangnCoordinateInputModel
+from jibsa.providers.daangn.api.models.request.region.area import (
     DaangnGetRegionByCoordinateRequestPayloadModel,
     DaangnSearchRegionRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.request.region.base import DaangnQueryInputModel
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.request.region.common import (
+    DaangnQueryInputModel,
+)
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnArticleModel,
     DaangnRegionModel,
 )
-from jibsa.providers.daangn.api.response.region.area import DaangnSearchRegionNodeModel
+from jibsa.providers.daangn.api.models.response.region.area import (
+    DaangnSearchRegionNodeModel,
+)
 from jibsa.providers.daangn.service.common.constants import OPTIONAL_LOOKUP_ERRORS
 from jibsa.providers.daangn.service.common.location import coordinate_point
 from jibsa.providers.daangn.service.common.models import DaangnRegion

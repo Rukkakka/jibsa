@@ -22,7 +22,7 @@ from jibsa.core.listing import (
     parking_label,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.store import (
+from jibsa.providers.zigbang.api.models.request.store import (
     ZigbangStoreArticleStoresListV2RequestPayloadModel,
     ZigbangStoreArticleStoresV2RequestPayloadModel,
     ZigbangStoreArticleStoreV2RequestParameterModel,
@@ -30,7 +30,7 @@ from jibsa.providers.zigbang.api.request.store import (
     ZigbangStoreCircleModel,
     ZigbangStoreSalesType,
 )
-from jibsa.providers.zigbang.api.response.store import (
+from jibsa.providers.zigbang.api.models.response.store import (
     ZigbangStoreSummaryModel,
 )
 from jibsa.providers.zigbang.service.common.constants import (

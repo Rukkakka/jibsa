@@ -10,7 +10,7 @@ from jibsa.core.listing import (
     UPDATE_NEEDED,
 )
 from jibsa.core.ratelimit import RateLimitedError
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnGraphQLResponseModel,
     DaangnPageInfoModel,
 )

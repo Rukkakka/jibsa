@@ -6,7 +6,7 @@ from jibsa.core.listing import (
     TradeType,
 )
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL
-from jibsa.providers.zigbang.api.request.store import (
+from jibsa.providers.zigbang.api.models.request.store import (
     ZigbangStoreSalesType,
 )
 

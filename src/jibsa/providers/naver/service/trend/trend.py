@@ -7,7 +7,7 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.trend import (
+from jibsa.providers.naver.api.models.request.trend import (
     NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel,
     NaverLegalDivisionPyeongPriceWeeklyListV1RequestParameterModel,
     NaverLegalDivisionRealTradeCountWeeklyListV1RequestParameterModel,

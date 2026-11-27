@@ -3,13 +3,13 @@
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import particle
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverComplexBuildingListV1RequestParameterModel,
     NaverComplexPyeongListV1RequestParameterModel,
     NaverComplexVillaBuildingListV1RequestParameterModel,
     NaverComplexVillaPyeongListV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.common import (
+from jibsa.providers.naver.api.models.response.common import (
     NaverPyeongGroupModel,
     NaverPyeongModel,
 )

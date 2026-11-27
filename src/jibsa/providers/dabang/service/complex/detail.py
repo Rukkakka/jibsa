@@ -9,17 +9,21 @@ from jibsa.core.listing import (
     won_to_manwon,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.complex.base import DabangComplexCategory
-from jibsa.providers.dabang.api.request.complex.detail import (
+from jibsa.providers.dabang.api.models.request.complex.common import (
+    DabangComplexCategory,
+)
+from jibsa.providers.dabang.api.models.request.complex.detail import (
     DabangComplexLoanCalcConditionV5RequestParameterModel,
     DabangComplexSummaryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.common import (
+from jibsa.providers.dabang.api.models.response.common import (
     DabangComplexChildcareModel,
     DabangComplexSchoolModel,
     DabangComplexSpaceModel,
 )
-from jibsa.providers.dabang.api.response.complex.detail import DabangLatelyPriceModel
+from jibsa.providers.dabang.api.models.response.complex.detail import (
+    DabangLatelyPriceModel,
+)
 from jibsa.providers.dabang.service.common.complex import (
     area_price,
     fetch_complex,

@@ -2,7 +2,7 @@
 
 from jibsa.core.listing import note
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.response.common import DaangnArticleModel
+from jibsa.providers.daangn.api.models.response.common import DaangnArticleModel
 from jibsa.providers.daangn.service.common.constants import LISTING_MAX_LIMIT
 from jibsa.providers.daangn.service.common.listing import (
     article_to_listing,

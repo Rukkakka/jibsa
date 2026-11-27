@@ -22,11 +22,13 @@ from jibsa.core.listing import (
     years_ago,
 )
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.listing import (
+from jibsa.providers.dabang.api.models.request.listing import (
     DabangNewRoomDetailV3RequestParameterModel,
     DabangRoomGetRoomIdV3RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.listing import DabangNewRoomDetailRoomModel
+from jibsa.providers.dabang.api.models.response.listing import (
+    DabangNewRoomDetailRoomModel,
+)
 from jibsa.providers.dabang.service.common.constants import (
     LISTING_URL,
     OPTIONAL_LOOKUP_ERRORS,

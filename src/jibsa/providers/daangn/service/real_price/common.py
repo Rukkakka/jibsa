@@ -9,10 +9,10 @@ from jibsa.core.listing import (
     UPDATE_MAYBE_NEEDED,
     note,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnPageInfoModel,
 )
-from jibsa.providers.daangn.api.response.compare.base import (
+from jibsa.providers.daangn.api.models.response.compare.common import (
     DaangnCompareAreaGroupModel,
     DaangnCompareComplexModel,
 )

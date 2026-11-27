@@ -48,10 +48,10 @@ from jibsa.core.listing import (
     note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.stay.search import (
+from jibsa.providers.zigbang.api.models.request.stay.search import (
     ZigbangGuestItemsFiltersRequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangSearchItemModel
+from jibsa.providers.zigbang.api.models.response.common import ZigbangSearchItemModel
 from jibsa.providers.zigbang.service.apt.constants import (
     APT_TRADE_TYPES,
 )

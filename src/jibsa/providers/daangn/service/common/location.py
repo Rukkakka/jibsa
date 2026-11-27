@@ -3,11 +3,11 @@
 import math
 
 from jibsa.core.geo import haversine_km
-from jibsa.providers.daangn.api.request.common import (
+from jibsa.providers.daangn.api.models.request.common import (
     DaangnBoundsLocationFilterModel,
     DaangnCoordinateInputModel,
 )
-from jibsa.providers.daangn.api.response.common import DaangnCoordinateModel
+from jibsa.providers.daangn.api.models.response.common import DaangnCoordinateModel
 from jibsa.providers.daangn.service.common.constants import (
     MAP_TILE_PX,
     MAP_VIEW_HEIGHT_PX,

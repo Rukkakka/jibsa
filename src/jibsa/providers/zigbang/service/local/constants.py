@@ -2,17 +2,17 @@
 
 import re
 
-from jibsa.providers.zigbang.api.request.common import (
+from jibsa.providers.zigbang.api.models.request.common import (
     ZigbangAptTranType,
 )
-from jibsa.providers.zigbang.api.request.local.info import (
+from jibsa.providers.zigbang.api.models.request.local.info import (
     ZigbangPynAreaType,
 )
-from jibsa.providers.zigbang.api.request.local.ranking import (
+from jibsa.providers.zigbang.api.models.request.local.ranking import (
     ZigbangDanjiRankingSortType,
     ZigbangDanjiRankingViewPeriod,
 )
-from jibsa.providers.zigbang.api.request.local.trades import (
+from jibsa.providers.zigbang.api.models.request.local.trades import (
     ZigbangLocalTradeDealType,
     ZigbangLocalTradePeriodType,
 )

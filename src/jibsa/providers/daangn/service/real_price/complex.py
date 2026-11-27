@@ -18,15 +18,15 @@ from jibsa.core.listing import (
     years_ago,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.real_price.complex import (
+from jibsa.providers.daangn.api.models.request.real_price.complex import (
     DaangnArticleByOriginalArticleIdRequestPayloadModel,
     DaangnComplexByOriginalIdRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnPageInfoModel,
     DaangnTransactionModel,
 )
-from jibsa.providers.daangn.api.response.real_price.complex import (
+from jibsa.providers.daangn.api.models.response.real_price.complex import (
     DaangnComplexTransactionsModel,
 )
 from jibsa.providers.daangn.service.common.complex import (

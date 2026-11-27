@@ -9,7 +9,7 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.daangn.api.client import DAANGN_WEB_URL, DaangnClient
-from jibsa.providers.daangn.api.request.real_price.region import (
+from jibsa.providers.daangn.api.models.request.real_price.region import (
     DaangnRealsaleFeedInputModel,
     DaangnRealsaleFeedRequestPayloadModel,
     DaangnRealsaleFeedSummaryRequestPayloadModel,
@@ -17,10 +17,10 @@ from jibsa.providers.daangn.api.request.real_price.region import (
     DaangnRealsaleNewHighFeedRequestPayloadModel,
     DaangnRealsaleSummaryInputModel,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnPageInfoModel,
 )
-from jibsa.providers.daangn.api.response.real_price.region import (
+from jibsa.providers.daangn.api.models.response.real_price.region import (
     DaangnRealsaleFeedItemModel,
     DaangnRealsaleFeedModel,
 )

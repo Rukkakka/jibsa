@@ -12,21 +12,21 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.common import (
+from jibsa.providers.daangn.api.models.request.common import (
     DaangnCoordinateInputModel,
     DaangnPropertyFilterModel,
     is_empty_property_filter,
 )
-from jibsa.providers.daangn.api.request.commute import (
+from jibsa.providers.daangn.api.models.request.commute import (
     DaangnCommuteStationArticleConnectionRequestPayloadModel,
     DaangnCommuteStationsRequestPayloadModel,
     DaangnNearestCommuteStationRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.common import (
+from jibsa.providers.daangn.api.models.response.common import (
     DaangnArticleModel,
     DaangnCommuteStationArticleConnectionModel,
 )
-from jibsa.providers.daangn.api.response.commute import (
+from jibsa.providers.daangn.api.models.response.commute import (
     DaangnCommuteReachableStationModel,
     DaangnCommuteWaypointModel,
     DaangnNearestCommuteStationModel,

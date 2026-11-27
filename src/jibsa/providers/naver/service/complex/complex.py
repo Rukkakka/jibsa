@@ -10,18 +10,18 @@ from jibsa.core.listing import (
     read_date,
 )
 from jibsa.providers.naver.api.client import NaverClient
-from jibsa.providers.naver.api.request.common import (
+from jibsa.providers.naver.api.models.request.common import (
     NaverComplexPyeongGroupsV1RequestParameterModel,
     NaverComplexV1RequestParameterModel,
     NaverComplexVillaV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.request.complex import (
+from jibsa.providers.naver.api.models.request.complex import (
     NaverComplexArticleStatsV1RequestParameterModel,
     NaverComplexReconstructionV1RequestParameterModel,
     NaverComplexVillaArticleStatsV1RequestParameterModel,
     NaverEducationComplexSchoolV1RequestParameterModel,
 )
-from jibsa.providers.naver.api.response.common import NaverPyeongModel
+from jibsa.providers.naver.api.models.response.common import NaverPyeongModel
 from jibsa.providers.naver.service.common.constants import COMPLEX_URL, OFFICETEL_CODE
 from jibsa.providers.naver.service.common.price import (
     complex_row_fields,

@@ -7,11 +7,11 @@ from jibsa.core.listing import (
     normalize_address,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
-from jibsa.providers.zigbang.api.request.complex.base import (
+from jibsa.providers.zigbang.api.models.request.complex.common import (
     ZigbangItemsOfficetelsBuildingV1RequestParameterModel,
 )
-from jibsa.providers.zigbang.api.response.common import ZigbangRelatedDanjiModel
-from jibsa.providers.zigbang.api.response.complex.base import (
+from jibsa.providers.zigbang.api.models.response.common import ZigbangRelatedDanjiModel
+from jibsa.providers.zigbang.api.models.response.complex.common import (
     ZigbangItemsOfficetelsBuildingV1ResponseModel,
 )
 from jibsa.providers.zigbang.service.common.danji import complex_not_found

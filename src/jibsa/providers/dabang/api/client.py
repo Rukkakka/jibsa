@@ -22,170 +22,172 @@ from jibsa.core.http import (
     wait_retry_after,
 )
 from jibsa.core.ratelimit import RateLimitPolicy
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     DabangComplexV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.complex.detail import (
+from jibsa.providers.dabang.api.models.request.complex.detail import (
     DabangComplexLoanCalcConditionV5RequestParameterModel,
     DabangComplexSummaryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.complex.listings import (
+from jibsa.providers.dabang.api.models.request.complex.listings import (
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.complex.search import (
+from jibsa.providers.dabang.api.models.request.complex.search import (
     DabangComplexListCategoryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.listing import (
+from jibsa.providers.dabang.api.models.request.listing import (
     DabangNewRoomDetailV3RequestParameterModel,
     DabangRoomGetRoomIdV3RequestParameterModel,
     DabangRoomListCategoryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.nearby.places import (
+from jibsa.providers.dabang.api.models.request.nearby.places import (
     DabangNearV5RequestParameterModel,
     DabangPetPlacesV5RequestParameterModel,
     DabangPublicDataCarShareZoneV5RequestParameterModel,
     DabangTransitNearV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.nearby.station import (
+from jibsa.providers.dabang.api.models.request.nearby.station import (
     DabangMarkersCategoryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.neighborhood.hot_places import (
+from jibsa.providers.dabang.api.models.request.neighborhood.hot_places import (
     DabangRegionInfoHotPlacesV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.neighborhood.info import (
+from jibsa.providers.dabang.api.models.request.neighborhood.info import (
     DabangRegionInfoRegionalCountV5RequestParameterModel,
     DabangRegionInfoRegionalSummaryV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.neighborhood.popular import (
+from jibsa.providers.dabang.api.models.request.neighborhood.popular import (
     DabangRegionInfoRoomRegionalPopularRoomV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.ranking.region import (
+from jibsa.providers.dabang.api.models.request.ranking.region import (
     DabangRegionInfoRankingV5RequestParameterModel,
     DabangRegionInfoRealEstateRankingV5RequestParameterModel,
     DabangRegionInfoRoomRankingV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.ranking.trade import (
+from jibsa.providers.dabang.api.models.request.ranking.trade import (
     DabangRealPriceTradeRankingsComplexV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.ranking.trending import (
+from jibsa.providers.dabang.api.models.request.ranking.trending import (
     DabangRealTimeWatchRankingsV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.real_price.nearby import (
+from jibsa.providers.dabang.api.models.request.real_price.nearby import (
     DabangRealPriceComplexPricePerPyV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.real_price.trades import (
+from jibsa.providers.dabang.api.models.request.real_price.trades import (
     DabangRealPriceComplexHistoriesV5RequestParameterModel,
     DabangRealPriceHouseHistoryV5RequestParameterModel,
     DabangRealPriceHouseInitV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.real_price.trend import (
+from jibsa.providers.dabang.api.models.request.real_price.trend import (
     DabangRealPriceComplexChartsV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.region import (
+from jibsa.providers.dabang.api.models.request.region import (
     DabangGeojsonRegionRequestParameterModel,
     DabangLocSearchV5RequestParameterModel,
     DabangRegionCitiesV5RequestParameterModel,
     DabangRegionStatesV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.sale.detail import (
+from jibsa.providers.dabang.api.models.request.sale.detail import (
     DabangSaleInLotsDetail2V3RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.sale.schedule import (
+from jibsa.providers.dabang.api.models.request.sale.schedule import (
     DabangSaleInLotsListScheduleSearchV3RequestParameterModel,
     DabangSaleInLotsListScheduleV3RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.sale.search import (
+from jibsa.providers.dabang.api.models.request.sale.search import (
     DabangSaleInLotsListSearch3V3RequestParameterModel,
     DabangSaleListCategoryBboxV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.school.detail import (
+from jibsa.providers.dabang.api.models.request.school.detail import (
     DabangEducationKinderSchoolV3RequestParameterModel,
     DabangEducationNurserySchoolV3RequestParameterModel,
     DabangEducationV3RequestParameterModel,
 )
-from jibsa.providers.dabang.api.request.school.search import (
+from jibsa.providers.dabang.api.models.request.school.search import (
     DabangRegionInfoSchoolRegionalV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.common import DabangComplexV5ResponseModel
-from jibsa.providers.dabang.api.response.complex.detail import (
+from jibsa.providers.dabang.api.models.response.common import (
+    DabangComplexV5ResponseModel,
+)
+from jibsa.providers.dabang.api.models.response.complex.detail import (
     DabangComplexLoanCalcConditionV5ResponseModel,
     DabangComplexSummaryV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.complex.listings import (
+from jibsa.providers.dabang.api.models.response.complex.listings import (
     DabangRoomListCategoryComplexV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.complex.search import (
+from jibsa.providers.dabang.api.models.response.complex.search import (
     DabangComplexListCategoryV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.listing import (
+from jibsa.providers.dabang.api.models.response.listing import (
     DabangNewRoomDetailV3ResponseModel,
     DabangRoomGetRoomIdV3ResponseModel,
     DabangRoomListCategoryV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.nearby.places import (
+from jibsa.providers.dabang.api.models.response.nearby.places import (
     DabangNearV5ResponseModel,
     DabangPetPlacesV5ResponseModel,
     DabangPublicDataCarShareZoneV5ResponseModel,
     DabangTransitNearV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.nearby.station import (
+from jibsa.providers.dabang.api.models.response.nearby.station import (
     DabangMarkersCategoryV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.neighborhood.hot_places import (
+from jibsa.providers.dabang.api.models.response.neighborhood.hot_places import (
     DabangRegionInfoHotPlacesV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.neighborhood.info import (
+from jibsa.providers.dabang.api.models.response.neighborhood.info import (
     DabangRegionInfoRegionalCountV5ResponseModel,
     DabangRegionInfoRegionalSummaryV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.neighborhood.popular import (
+from jibsa.providers.dabang.api.models.response.neighborhood.popular import (
     DabangRegionInfoRoomRegionalPopularRoomV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.ranking.region import (
+from jibsa.providers.dabang.api.models.response.ranking.region import (
     DabangRegionInfoRankingV5ResponseModel,
     DabangRegionInfoRealEstateRankingV5ResponseModel,
     DabangRegionInfoRoomRankingV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.ranking.trade import (
+from jibsa.providers.dabang.api.models.response.ranking.trade import (
     DabangRealPriceTradeRankingsComplexV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.ranking.trending import (
+from jibsa.providers.dabang.api.models.response.ranking.trending import (
     DabangRealTimeWatchRankingsV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.real_price.nearby import (
+from jibsa.providers.dabang.api.models.response.real_price.nearby import (
     DabangRealPriceComplexPricePerPyV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.real_price.trades import (
+from jibsa.providers.dabang.api.models.response.real_price.trades import (
     DabangRealPriceComplexHistoriesV5ResponseModel,
     DabangRealPriceHouseHistoryV5ResponseModel,
     DabangRealPriceHouseInitV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.real_price.trend import (
+from jibsa.providers.dabang.api.models.response.real_price.trend import (
     DabangRealPriceComplexChartsV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.region import (
+from jibsa.providers.dabang.api.models.response.region import (
     DabangGeojsonRegionResponseModel,
     DabangLocSearchV5ResponseModel,
     DabangRegionCitiesV5ResponseModel,
     DabangRegionStatesV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.sale.detail import (
+from jibsa.providers.dabang.api.models.response.sale.detail import (
     DabangSaleInLotsDetail2V3ResponseModel,
 )
-from jibsa.providers.dabang.api.response.sale.schedule import (
+from jibsa.providers.dabang.api.models.response.sale.schedule import (
     DabangSaleInLotsListScheduleSearchV3ResponseModel,
     DabangSaleInLotsListScheduleV3ResponseModel,
 )
-from jibsa.providers.dabang.api.response.sale.search import (
+from jibsa.providers.dabang.api.models.response.sale.search import (
     DabangSaleInLotsListSearch3V3ResponseModel,
     DabangSaleListCategoryBboxV5ResponseModel,
 )
-from jibsa.providers.dabang.api.response.school.detail import (
+from jibsa.providers.dabang.api.models.response.school.detail import (
     DabangEducationV3ResponseModel,
     DabangKinderEducationV3ResponseModel,
     DabangNurseryEducationV3ResponseModel,
 )
-from jibsa.providers.dabang.api.response.school.search import (
+from jibsa.providers.dabang.api.models.response.school.search import (
     DabangRegionInfoSchoolRegionalV5ResponseModel,
 )
 

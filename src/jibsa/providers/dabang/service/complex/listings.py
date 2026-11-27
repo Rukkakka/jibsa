@@ -2,15 +2,15 @@
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import limit_notes
 from jibsa.providers.dabang.api.client import DabangClient
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     DabangAptFiltersModel,
     DabangOfficetelFiltersModel,
 )
-from jibsa.providers.dabang.api.request.complex.listings import (
+from jibsa.providers.dabang.api.models.request.complex.listings import (
     DabangComplexRoomFiltersModel,
     DabangRoomListCategoryComplexV5RequestParameterModel,
 )
-from jibsa.providers.dabang.api.response.common import DabangRoomItemModel
+from jibsa.providers.dabang.api.models.response.common import DabangRoomItemModel
 from jibsa.providers.dabang.service.common.complex import fetch_complex
 from jibsa.providers.dabang.service.common.constants import MAX_LIST_LIMIT
 from jibsa.providers.dabang.service.common.models import (

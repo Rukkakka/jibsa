@@ -8,7 +8,7 @@ from jibsa.core.listing import (
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.dabang.api.client import DABANG_WEB_URL
-from jibsa.providers.dabang.api.request.common import (
+from jibsa.providers.dabang.api.models.request.common import (
     COMPLEX_ID_PATTERN_TEXT,
     REGION_INFO_PAGE_LIMIT,
     DabangCategory,

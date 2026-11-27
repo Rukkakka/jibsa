@@ -6,10 +6,10 @@ from jibsa.core.listing import (
     null_items_note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient
-from jibsa.providers.daangn.api.request.popular import (
+from jibsa.providers.daangn.api.models.request.popular import (
     DaangnGetViewRankingArticlesRequestPayloadModel,
 )
-from jibsa.providers.daangn.api.response.common import DaangnArticleModel
+from jibsa.providers.daangn.api.models.response.common import DaangnArticleModel
 from jibsa.providers.daangn.service.common.constants import SALES_TYPE_BY_PROPERTY_TYPE
 from jibsa.providers.daangn.service.common.listing import (
     article_to_listing,
