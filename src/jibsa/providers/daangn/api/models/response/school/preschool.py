@@ -24,7 +24,6 @@ class DaangnSchoolSurveyResultModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnNearbyPreschoolModel(DaangnBaseResponseModel):
     """단지 근처 어린이집·유치원 하나 (`ProptierPreschool`). 어린이집·유치원 구분은 오지 않는다."""
 
@@ -52,7 +51,6 @@ class DaangnNearbyPreschoolModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexSchoolsDanjiModel(DaangnBaseResponseModel):
     """단지의 학군 정보 (`proptierDanji`). 배정 초등학교·중·고등학교도 오지만 읽지 않는다."""
 
@@ -72,7 +70,6 @@ class DaangnComplexSchoolsDanjiModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexSchoolsComplexModel(DaangnBaseResponseModel):
     """단지 (좌표와 학군 정보만 받는다)."""
 
@@ -86,7 +83,6 @@ class DaangnComplexSchoolsComplexModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexSchoolsOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 `complex` 가 null 이다."""
 
@@ -94,7 +90,6 @@ class DaangnComplexSchoolsOutputModel(DaangnBaseResponseModel):
         DaangnComplexSchoolsComplexModel | None,
         Field(description='단지')
     ] = None
-
 
 
 class DaangnComplexSchoolsDataModel(DaangnBaseResponseModel):
@@ -106,7 +101,6 @@ class DaangnComplexSchoolsDataModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexSchoolsResponseModel(DaangnGraphQLResponseModel):
     """GraphQL 단지 근처 학교·어린이집 응답 (웹의 `ComplexSchoolListPanelQuery`)."""
 
@@ -114,7 +108,6 @@ class DaangnComplexSchoolsResponseModel(DaangnGraphQLResponseModel):
         DaangnComplexSchoolsDataModel | None,
         Field(description='결과')
     ] = None
-
 
 
 class DaangnPreschoolRegionModel(DaangnBaseResponseModel):
@@ -130,7 +123,6 @@ class DaangnPreschoolRegionModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnPreschoolSurveyResultModel(DaangnBaseResponseModel):
     """어린이집·유치원 상세의 당근 설문 (`surveyResult`). 목록 쿼리와 달리 `responseCount` 이름 그대로 온다."""
 
@@ -138,7 +130,6 @@ class DaangnPreschoolSurveyResultModel(DaangnBaseResponseModel):
         int | None,
         Field(description='설문 응답 수', alias='responseCount')
     ] = None
-
 
 
 class DaangnPreschoolModel(DaangnBaseResponseModel):
@@ -202,7 +193,6 @@ class DaangnPreschoolModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnPreschoolByNoDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -210,7 +200,6 @@ class DaangnPreschoolByNoDataModel(DaangnBaseResponseModel):
         DaangnPreschoolModel | None,
         Field(description='시설 상세. 없는 번호면 null', alias='preschoolByNo')
     ] = None
-
 
 
 class DaangnPreschoolByNoResponseModel(DaangnGraphQLResponseModel):

@@ -35,7 +35,7 @@ from jibsa.providers.dabang.service.nearby.constants import (
     URL_BY_TARGET,
     NearbyExtra,
 )
-from jibsa.providers.dabang.service.nearby.models import (
+from jibsa.providers.dabang.service.nearby.models.places import (
     DabangCarShareResult,
     DabangCarShareZone,
     DabangNearby,

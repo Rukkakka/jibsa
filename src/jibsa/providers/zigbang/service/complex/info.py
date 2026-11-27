@@ -58,7 +58,7 @@ from jibsa.providers.zigbang.service.complex.constants import (
     OFFICETEL_DANJI_ITEMS_URL,
     PROPERTY_TYPE_BY_COMPLEX_KIND,
 )
-from jibsa.providers.zigbang.service.complex.models import (
+from jibsa.providers.zigbang.service.complex.models.info import (
     ZigbangComplex,
     ZigbangComplexCandidate,
     ZigbangComplexRank,

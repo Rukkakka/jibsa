@@ -29,7 +29,7 @@ from jibsa.providers.daangn.service.common.response import (
     unwrap_graphql,
 )
 from jibsa.providers.daangn.service.compare.constants import NEARBY_COMPLEXES_MAX
-from jibsa.providers.daangn.service.compare.models import (
+from jibsa.providers.daangn.service.compare.models.nearby import (
     DaangnNearbyComplex,
     DaangnNearbyComplexesResult,
 )

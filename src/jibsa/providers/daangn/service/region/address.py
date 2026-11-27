@@ -23,7 +23,7 @@ from jibsa.providers.daangn.service.region.constants import (
     ADDRESS_CANDIDATES,
     AMBIGUOUS_CANDIDATES_SHOWN,
 )
-from jibsa.providers.daangn.service.region.models import DaangnAddress
+from jibsa.providers.daangn.service.region.models.address import DaangnAddress
 
 
 def search_addresses(client: DaangnClient, query: str) -> tuple[list[DaangnAddressModel], bool]:

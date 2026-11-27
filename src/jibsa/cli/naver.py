@@ -80,7 +80,7 @@ from jibsa.providers.naver.service.redevelopment.search import (
 from jibsa.providers.naver.service.region.constants import (
     WIDE_REGION_NOTE_MARK,
 )
-from jibsa.providers.naver.service.region.models import NaverRegion
+from jibsa.providers.naver.service.region.models.search import NaverRegion
 from jibsa.providers.naver.service.region.regions import list_regions
 from jibsa.providers.naver.service.region.resolve import (
     resolve_complex_number,
@@ -120,7 +120,7 @@ from jibsa.providers.naver.service.search.constants import (
 from jibsa.providers.naver.service.search.listings import (
     search_area,
 )
-from jibsa.providers.naver.service.search.models import NaverListingConditions
+from jibsa.providers.naver.service.search.models.listings import NaverListingConditions
 from jibsa.providers.naver.service.trend.constants import (
     NATIONWIDE_CODE,
     NATIONWIDE_NAME,

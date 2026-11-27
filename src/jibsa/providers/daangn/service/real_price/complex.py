@@ -50,7 +50,7 @@ from jibsa.providers.daangn.service.real_price.constants import (
     NOT_PRESALE_OWNERSHIP,
     PRESALE_LABELS,
 )
-from jibsa.providers.daangn.service.real_price.models import (
+from jibsa.providers.daangn.service.real_price.models.complex import (
     DaangnListingRealPriceResult,
     DaangnRealPrice,
     DaangnRealPriceResult,
@@ -60,12 +60,10 @@ from jibsa.providers.daangn.service.real_price.models import (
 TransactionFetch = Callable[[int, str | None], DaangnComplexTransactionsModel]
 
 
-
 def _trade_date(node: DaangnTransactionModel) -> str | None:
     if node.deal_year is None or node.deal_month is None or node.deal_day is None:
         return None
     return f'{node.deal_year:04d}-{node.deal_month:02d}-{node.deal_day:02d}'
-
 
 
 def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> DaangnRealPrice:
@@ -93,7 +91,6 @@ def transaction_to_real_price(node: DaangnTransactionModel, trade_type: str) -> 
         contract_type=None if buy else contract_type_of(node.contract_type),
         renewal_right=None if buy else node.use_renewal_of_contract_right,
     )
-
 
 
 def _collect_transactions(
@@ -140,7 +137,6 @@ def _collect_transactions(
     )
 
 
-
 def _empty_result_note(found: Collected[DaangnTransactionModel], trade_type: str, since: str | None) -> str | None:
     """받은 단지·매물 실거래가 없을 때, 거래가 있는데 요청 범위 밖이라 비었다면 그 까닭. 아니면 None.
 
@@ -162,7 +158,6 @@ def _empty_result_note(found: Collected[DaangnTransactionModel], trade_type: str
         # 기간 앞에서 멈추지 않았고 남은 거래도 없으니 받은 전월세가 그 조건(평형·--month·--years)의 전부다
         return note('참고', f'당근이 준 전월세 실거래 {found.scanned}건 중 {trade_type} 거래는 0건입니다')
     return None
-
 
 
 def get_real_prices(
@@ -248,7 +243,6 @@ def get_real_prices(
         url=COMPLEX_URL.format(complex_id),
         notes=notes,
     )
-
 
 
 def get_listing_real_prices(

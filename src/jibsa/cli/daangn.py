@@ -99,10 +99,12 @@ from jibsa.providers.daangn.service.complex.constants import (
 )
 from jibsa.providers.daangn.service.complex.detail import get_complex
 from jibsa.providers.daangn.service.complex.listings import list_complex_listings
-from jibsa.providers.daangn.service.complex.models import (
+from jibsa.providers.daangn.service.complex.models.listings import (
+    DaangnComplexListingsResult,
+)
+from jibsa.providers.daangn.service.complex.models.search import (
     DaangnBoundsComplexesResult,
     DaangnComplexConditions,
-    DaangnComplexListingsResult,
     DaangnRegionComplexesResult,
 )
 from jibsa.providers.daangn.service.complex.search import (
@@ -136,7 +138,9 @@ from jibsa.providers.daangn.service.real_price.constants import (
     PRICE_TREND_PERIODS,
     REAL_PRICE_MAX_LIMIT,
 )
-from jibsa.providers.daangn.service.real_price.models import DaangnRealPriceBaseResult
+from jibsa.providers.daangn.service.real_price.models.complex import (
+    DaangnRealPriceBaseResult,
+)
 from jibsa.providers.daangn.service.real_price.region import (
     get_region_real_prices,
 )
@@ -155,12 +159,10 @@ from jibsa.providers.daangn.service.region.common import (
     has_location,
 )
 from jibsa.providers.daangn.service.region.constants import UNIVERSITY_CANDIDATES
-from jibsa.providers.daangn.service.region.models import (
-    DaangnAddress,
-    DaangnArea,
-    DaangnStation,
-    DaangnUniversity,
-)
+from jibsa.providers.daangn.service.region.models.address import DaangnAddress
+from jibsa.providers.daangn.service.region.models.area import DaangnArea
+from jibsa.providers.daangn.service.region.models.station import DaangnStation
+from jibsa.providers.daangn.service.region.models.university import DaangnUniversity
 from jibsa.providers.daangn.service.region.station import (
     find_station,
     same_station_notes,
@@ -196,11 +198,13 @@ from jibsa.providers.daangn.service.search.map import (
     search_dong,
     search_map_area,
 )
-from jibsa.providers.daangn.service.search.models import (
-    DaangnDongSearchResult,
-    DaangnMapSearchResult,
+from jibsa.providers.daangn.service.search.models.around import (
     DaangnStationSearchResult,
     DaangnUniversitySearchResult,
+)
+from jibsa.providers.daangn.service.search.models.map import (
+    DaangnDongSearchResult,
+    DaangnMapSearchResult,
 )
 
 from typing import (

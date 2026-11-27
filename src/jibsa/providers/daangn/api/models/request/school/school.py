@@ -16,7 +16,6 @@ class DaangnSearchSchoolsInputModel(RequestModel):
     ]
 
 
-
 class DaangnSearchSchoolsRequestPayloadModel(RequestModel):
     """GraphQL `searchSchools` 쿼리 변수 (웹의 `fetchSchoolSearchResultQuery`, 학교 이름 검색)."""
 
@@ -32,7 +31,6 @@ class DaangnSearchSchoolsRequestPayloadModel(RequestModel):
         DaangnSearchSchoolsInputModel,
         Field(description='검색어')
     ]
-
 
 
 class DaangnSchoolByCodeRequestPayloadModel(RequestModel):

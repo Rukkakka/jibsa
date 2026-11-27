@@ -44,7 +44,7 @@ from jibsa.providers.naver.service.complex.constants import (
     RECONSTRUCTION_CODE,
     RECONSTRUCTION_STEP_LABELS,
 )
-from jibsa.providers.naver.service.complex.models import (
+from jibsa.providers.naver.service.complex.models.complex import (
     NaverComplexSummary,
     NaverPyeong,
     NaverPyeongGroup,

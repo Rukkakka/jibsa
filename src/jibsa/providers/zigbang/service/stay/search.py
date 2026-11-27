@@ -63,7 +63,7 @@ from jibsa.providers.zigbang.service.stay.constants import (
     STAY_SUBWAY_RADIUS_KM,
     StaySort,
 )
-from jibsa.providers.zigbang.service.stay.models import (
+from jibsa.providers.zigbang.service.stay.models.search import (
     ZigbangStayConditions,
     ZigbangStaySearchResult,
 )

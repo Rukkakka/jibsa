@@ -74,9 +74,7 @@ from jibsa.providers.naver.service.search.constants import (
     RADIUS_EXCLUDED_REASON,
     ROOM_COUNT_CODE_BY_NAME,
 )
-from jibsa.providers.naver.service.search.models import (
-    NaverListingConditions,
-)
+from jibsa.providers.naver.service.search.models.listings import NaverListingConditions
 
 from typing import (
     Any,

@@ -31,7 +31,7 @@ from jibsa.providers.dabang.service.sale.constants import (
     SALE_ISO_MONTH_PATTERN,
     SALE_MONTH_PATTERN,
 )
-from jibsa.providers.dabang.service.sale.models import (
+from jibsa.providers.dabang.service.sale.models.detail import (
     DabangSaleDetail,
     DabangSalePyeong,
     DabangSaleStep,

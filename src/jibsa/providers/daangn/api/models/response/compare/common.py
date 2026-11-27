@@ -38,7 +38,6 @@ class DaangnCompareTradeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareArticleModel(DaangnBaseResponseModel):
     """호가 매물 하나 (거래 조건만)."""
 
@@ -46,7 +45,6 @@ class DaangnCompareArticleModel(DaangnBaseResponseModel):
         list[DaangnCompareTradeModel],
         Field(description='거래 조건')
     ] = []
-
 
 
 class DaangnCompareArticleEdgeModel(DaangnBaseResponseModel):
@@ -58,7 +56,6 @@ class DaangnCompareArticleEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareArticleConnectionModel(DaangnBaseResponseModel):
     """호가 매물 연결 (아파트 매물 앞 30건)."""
 
@@ -66,7 +63,6 @@ class DaangnCompareArticleConnectionModel(DaangnBaseResponseModel):
         list[DaangnCompareArticleEdgeModel],
         Field(description='매물')
     ] = []
-
 
 
 class DaangnCompareBuildingModel(DaangnBaseResponseModel):
@@ -82,7 +78,6 @@ class DaangnCompareBuildingModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareBuildingEdgeModel(DaangnBaseResponseModel):
     """건물 edge."""
 
@@ -92,7 +87,6 @@ class DaangnCompareBuildingEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareBuildingConnectionModel(DaangnBaseResponseModel):
     """건물 연결."""
 
@@ -100,7 +94,6 @@ class DaangnCompareBuildingConnectionModel(DaangnBaseResponseModel):
         list[DaangnCompareBuildingEdgeModel],
         Field(description='건물')
     ] = []
-
 
 
 class DaangnKaptCostModel(DaangnBaseResponseModel):
@@ -116,7 +109,6 @@ class DaangnKaptCostModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnKaptModel(DaangnBaseResponseModel):
     """공동주택 관리정보 (K-apt). 없는 단지면 null."""
 
@@ -124,7 +116,6 @@ class DaangnKaptModel(DaangnBaseResponseModel):
         list[DaangnKaptCostModel],
         Field(description='최근 월별 ㎡당 관리비', alias='monthlyManagementCostsPerSquareMeter')
     ] = []
-
 
 
 class DaangnCompareSchoolModel(DaangnBaseResponseModel):
@@ -138,7 +129,6 @@ class DaangnCompareSchoolModel(DaangnBaseResponseModel):
         str | None,
         Field(description='ELEMENTARY ...', alias='schType')
     ] = None
-
 
 
 class DaangnAssignedSchoolModel(DaangnBaseResponseModel):
@@ -156,7 +146,6 @@ class DaangnAssignedSchoolModel(DaangnBaseResponseModel):
         DaangnCompareSchoolModel | None,
         Field(description='학교')
     ] = None
-
 
 
 class DaangnCompareSubwayModel(DaangnBaseResponseModel):
@@ -178,7 +167,6 @@ class DaangnCompareSubwayModel(DaangnBaseResponseModel):
         LooseFloat,
         Field(description='값 (서버는 글자로 준다. 숫자로 읽지 못하면 None)', alias='dataValue')
     ] = None
-
 
 
 class DaangnKbPriceModel(DaangnBaseResponseModel):
@@ -226,7 +214,6 @@ class DaangnKbPriceModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnKbPriceEdgeModel(DaangnBaseResponseModel):
     """KB 시세 edge."""
 
@@ -236,7 +223,6 @@ class DaangnKbPriceEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnKbPriceConnectionModel(DaangnBaseResponseModel):
     """KB 시세 연결 (최신 1건)."""
 
@@ -244,7 +230,6 @@ class DaangnKbPriceConnectionModel(DaangnBaseResponseModel):
         list[DaangnKbPriceEdgeModel],
         Field(description='시세')
     ] = []
-
 
 
 class DaangnCompareRealsaleModel(DaangnBaseResponseModel):
@@ -272,7 +257,6 @@ class DaangnCompareRealsaleModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareRealsaleEdgeModel(DaangnBaseResponseModel):
     """실거래 edge."""
 
@@ -282,7 +266,6 @@ class DaangnCompareRealsaleEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareRealsaleConnectionModel(DaangnBaseResponseModel):
     """실거래 연결 (매매 1건·전월세 5건, 최근 순)."""
 
@@ -290,7 +273,6 @@ class DaangnCompareRealsaleConnectionModel(DaangnBaseResponseModel):
         list[DaangnCompareRealsaleEdgeModel] | None,
         Field(description='실거래. null 이거나 키가 없으면 실거래 목록을 모르는 것이고(0건이면 []), 빈 목록으로 바꾸지 않는다')
     ] = None
-
 
 
 class DaangnComparePyInfoModel(DaangnBaseResponseModel):
@@ -330,7 +312,6 @@ class DaangnComparePyInfoModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareAreaGroupModel(DaangnBaseResponseModel):
     """평형 묶음. 전용면적 묶음(예: 59㎡)이나 공급 평 묶음(예: 24평)이다."""
 
@@ -350,7 +331,6 @@ class DaangnCompareAreaGroupModel(DaangnBaseResponseModel):
         list[DaangnComparePyInfoModel],
         Field(description='평형', alias='pyInfos')
     ] = []
-
 
 
 class DaangnCompareDanjiModel(DaangnBaseResponseModel):
@@ -396,7 +376,6 @@ class DaangnCompareDanjiModel(DaangnBaseResponseModel):
         list[DaangnCompareAreaGroupModel],
         Field(description='공급 평 묶음별 평형 (아파트형 단지)', alias='supplyPyeongAreaGroups')
     ] = []
-
 
 
 class DaangnCompareComplexModel(DaangnBaseResponseModel):
@@ -448,7 +427,6 @@ class DaangnCompareComplexModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnCompareOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과."""
 
@@ -458,7 +436,6 @@ class DaangnCompareOutputModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexCompareDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -466,7 +443,6 @@ class DaangnComplexCompareDataModel(DaangnBaseResponseModel):
         DaangnCompareOutputModel | None,
         Field(description='단지', alias='complexByOriginalId')
     ] = None
-
 
 
 class DaangnComplexCompareResponseModel(DaangnGraphQLResponseModel):

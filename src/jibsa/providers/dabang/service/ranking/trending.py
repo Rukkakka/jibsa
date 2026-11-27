@@ -15,7 +15,7 @@ from jibsa.providers.dabang.service.ranking.constants import (
     FLUCTUATION_LABELS,
     WATCH_PERIOD_BY_LABEL,
 )
-from jibsa.providers.dabang.service.ranking.models import (
+from jibsa.providers.dabang.service.ranking.models.trending import (
     DabangWatchRanking,
     DabangWatchRankings,
 )

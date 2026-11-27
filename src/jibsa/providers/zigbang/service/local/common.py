@@ -11,7 +11,7 @@ from jibsa.providers.zigbang.service.local.constants import (
     LOCAL_SIDO_MESSAGE,
     LocalTrade,
 )
-from jibsa.providers.zigbang.service.local.models import (
+from jibsa.providers.zigbang.service.local.models.common import (
     LocalLevel,
     ZigbangLocalRegion,
 )

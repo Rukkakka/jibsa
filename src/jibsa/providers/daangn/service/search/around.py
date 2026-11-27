@@ -32,10 +32,8 @@ from jibsa.providers.daangn.service.region.area import (
     sido_cache_from_rows,
     sido_cache_rows,
 )
-from jibsa.providers.daangn.service.region.models import (
-    DaangnStation,
-    DaangnUniversity,
-)
+from jibsa.providers.daangn.service.region.models.station import DaangnStation
+from jibsa.providers.daangn.service.region.models.university import DaangnUniversity
 from jibsa.providers.daangn.service.search.common import (
     listing_notes,
     to_listings,
@@ -43,7 +41,7 @@ from jibsa.providers.daangn.service.search.common import (
 from jibsa.providers.daangn.service.search.constants import (
     UNIVERSITY_DEFAULT_SALES_TYPES,
 )
-from jibsa.providers.daangn.service.search.models import (
+from jibsa.providers.daangn.service.search.models.around import (
     DaangnStationListing,
     DaangnStationSearchResult,
     DaangnUniversitySearchResult,

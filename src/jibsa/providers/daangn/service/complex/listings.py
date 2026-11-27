@@ -43,7 +43,9 @@ from jibsa.providers.daangn.service.complex.constants import (
     COMPLEX_LISTINGS_MAX_PAGES,
     COMPLEX_LISTINGS_PAGE_SIZE,
 )
-from jibsa.providers.daangn.service.complex.models import DaangnComplexListingsResult
+from jibsa.providers.daangn.service.complex.models.listings import (
+    DaangnComplexListingsResult,
+)
 from jibsa.providers.daangn.service.region.area import with_sido
 
 

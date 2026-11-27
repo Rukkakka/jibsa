@@ -28,7 +28,6 @@ class DaangnComplexTransactionsModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexByOriginalIdModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 `complex` 가 null 이다."""
 
@@ -36,7 +35,6 @@ class DaangnComplexByOriginalIdModel(DaangnBaseResponseModel):
         DaangnComplexTransactionsModel | None,
         Field(description='단지')
     ] = None
-
 
 
 class DaangnComplexByOriginalIdDataModel(DaangnBaseResponseModel):
@@ -48,7 +46,6 @@ class DaangnComplexByOriginalIdDataModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexByOriginalIdResponseModel(DaangnGraphQLResponseModel):
     """GraphQL `complexByOriginalId` (단지 실거래가) 응답."""
 
@@ -56,7 +53,6 @@ class DaangnComplexByOriginalIdResponseModel(DaangnGraphQLResponseModel):
         DaangnComplexByOriginalIdDataModel | None,
         Field(description='결과')
     ] = None
-
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +66,6 @@ class DaangnArticleByOriginalArticleIdDataModel(DaangnBaseResponseModel):
         DaangnComplexTransactionsModel | None,
         Field(description='매물 (실거래 연결만 받는다). 없는 매물이면 null 과 recordNotFound 에러', alias='articleByOriginalArticleId')
     ] = None
-
 
 
 class DaangnArticleByOriginalArticleIdResponseModel(DaangnGraphQLResponseModel):

@@ -37,7 +37,9 @@ from jibsa.providers.dabang.service.complex.constants import (
     DEFAULT_COMPLEX_SORT,
     LISTING_KIND_BY_CATEGORY,
 )
-from jibsa.providers.dabang.service.complex.models import DabangComplexListingsResult
+from jibsa.providers.dabang.service.complex.models.listings import (
+    DabangComplexListingsResult,
+)
 
 
 def list_complex_listings(

@@ -55,7 +55,7 @@ from jibsa.providers.naver.service.search.constants import (
     COMPLEX_RADIUS_EXCLUDED_REASON,
     MAX_COMPLEX_LIST_PAGE_REQUESTS,
 )
-from jibsa.providers.naver.service.search.models import (
+from jibsa.providers.naver.service.search.models.complexes import (
     NaverAreaComplex,
     NaverAreaComplexesResult,
 )

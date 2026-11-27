@@ -29,7 +29,6 @@ class DaangnNearbyComplexNodeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnNearbyComplexEdgeModel(DaangnBaseResponseModel):
     """같은 동 단지 edge."""
 
@@ -37,7 +36,6 @@ class DaangnNearbyComplexEdgeModel(DaangnBaseResponseModel):
         DaangnNearbyComplexNodeModel | None,
         Field(description='단지')
     ] = None
-
 
 
 class DaangnNearbyComplexesModel(DaangnBaseResponseModel):
@@ -49,7 +47,6 @@ class DaangnNearbyComplexesModel(DaangnBaseResponseModel):
     ] = []
 
 
-
 class DaangnNearbyComplexesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -57,7 +54,6 @@ class DaangnNearbyComplexesDataModel(DaangnBaseResponseModel):
         DaangnNearbyComplexesModel | None,
         Field(description='같은 동 단지')
     ] = None
-
 
 
 class DaangnNearbyComplexesResponseModel(DaangnGraphQLResponseModel):
@@ -69,7 +65,6 @@ class DaangnNearbyComplexesResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-
 class DaangnComplexCardDanjiModel(DaangnBaseResponseModel):
     """단지 카드의 공공 정보."""
 
@@ -77,7 +72,6 @@ class DaangnComplexCardDanjiModel(DaangnBaseResponseModel):
         int | None,
         Field(description='세대수', alias='totalTotHsehCnt')
     ] = None
-
 
 
 class DaangnComplexCardModel(DaangnBaseResponseModel):
@@ -105,7 +99,6 @@ class DaangnComplexCardModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexesByOriginalComplexIdsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -115,7 +108,6 @@ class DaangnComplexesByOriginalComplexIdsDataModel(DaangnBaseResponseModel):
     ] = []
 
 
-
 class DaangnComplexesByOriginalComplexIdsResponseModel(DaangnGraphQLResponseModel):
     """GraphQL `complexesByOriginalComplexIds` 응답 (웹의 `ComplexListPanelMapPinsQuery`)."""
 
@@ -123,7 +115,6 @@ class DaangnComplexesByOriginalComplexIdsResponseModel(DaangnGraphQLResponseMode
         DaangnComplexesByOriginalComplexIdsDataModel | None,
         Field(description='결과')
     ] = None
-
 
 
 class DaangnComplexRegionComplexModel(DaangnBaseResponseModel):
@@ -143,7 +134,6 @@ class DaangnComplexRegionComplexModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexRegionOutputModel(DaangnBaseResponseModel):
     """`complexByOriginalId` 결과. 없는 단지면 complex 가 null 이다."""
 
@@ -153,7 +143,6 @@ class DaangnComplexRegionOutputModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexRegionDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -161,7 +150,6 @@ class DaangnComplexRegionDataModel(DaangnBaseResponseModel):
         DaangnComplexRegionOutputModel | None,
         Field(description='단지', alias='complexByOriginalId')
     ] = None
-
 
 
 class DaangnComplexRegionResponseModel(DaangnGraphQLResponseModel):

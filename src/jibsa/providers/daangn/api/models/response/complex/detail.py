@@ -51,7 +51,6 @@ class DaangnPyInfoModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnAreaGroupModel(DaangnBaseResponseModel):
     """평형 묶음 (웹의 평형 탭 하나). 전용면적 묶음이나 공급 평 묶음이다. 같은 묶음에 평형이 여러 개일 수 있다."""
 
@@ -73,7 +72,6 @@ class DaangnAreaGroupModel(DaangnBaseResponseModel):
     ] = []
 
 
-
 class DaangnSubwayInfoModel(DaangnBaseResponseModel):
     """단지에서 가까운 지하철역."""
 
@@ -89,7 +87,6 @@ class DaangnSubwayInfoModel(DaangnBaseResponseModel):
         LooseFloat,
         Field(description='도보 시간 (분)', alias='walkingTimeMin')
     ] = None
-
 
 
 class DaangnSchoolModel(DaangnBaseResponseModel):
@@ -117,7 +114,6 @@ class DaangnSchoolModel(DaangnBaseResponseModel):
         str | None,
         Field(description='ELEMENTARY / MIDDLE / HIGH', alias='schType')
     ] = None
-
 
 
 class DaangnNearbySchoolModel(DaangnBaseResponseModel):
@@ -149,7 +145,6 @@ class DaangnNearbySchoolModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnDoroAddrModel(DaangnBaseResponseModel):
     """단지 주소. 시·도가 '서울' 처럼 줄여 온다."""
 
@@ -161,7 +156,6 @@ class DaangnDoroAddrModel(DaangnBaseResponseModel):
         str | None,
         Field(description='지번 주소', alias='jibunAddr')
     ] = None
-
 
 
 class DaangnProptierDanjiModel(DaangnBaseResponseModel):
@@ -241,7 +235,6 @@ class DaangnProptierDanjiModel(DaangnBaseResponseModel):
     ] = []
 
 
-
 class DaangnComplexModel(DaangnBaseResponseModel):
     """`__typename == "PropComplex"` 레코드를 참조까지 펼친 것 (단지 페이지)."""
 
@@ -285,7 +278,6 @@ class DaangnComplexModel(DaangnBaseResponseModel):
         int | None,
         Field(description='거주 후기 수. 후기가 없으면 null 로 오기도 한다', alias='livedReviewCount')
     ] = None
-
 
 
 class DaangnComplexesResponseModel(DaangnBaseResponseModel):

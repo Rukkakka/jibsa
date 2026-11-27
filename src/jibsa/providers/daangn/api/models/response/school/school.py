@@ -38,7 +38,6 @@ class DaangnSchoolSearchNodeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnSchoolSearchEdgeModel(DaangnBaseResponseModel):
     """학교 검색 연결의 edge."""
 
@@ -46,7 +45,6 @@ class DaangnSchoolSearchEdgeModel(DaangnBaseResponseModel):
         DaangnSchoolSearchNodeModel | None,
         Field(description='학교')
     ] = None
-
 
 
 class DaangnSchoolSearchModel(DaangnBaseResponseModel):
@@ -62,7 +60,6 @@ class DaangnSchoolSearchModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnSearchSchoolsDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -72,7 +69,6 @@ class DaangnSearchSchoolsDataModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnSearchSchoolsResponseModel(DaangnGraphQLResponseModel):
     """GraphQL `searchSchools` 응답."""
 
@@ -80,7 +76,6 @@ class DaangnSearchSchoolsResponseModel(DaangnGraphQLResponseModel):
         DaangnSearchSchoolsDataModel | None,
         Field(description='결과')
     ] = None
-
 
 
 class DaangnSchoolDetailModel(DaangnBaseResponseModel):
@@ -136,7 +131,6 @@ class DaangnSchoolDetailModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnSchoolByCodeDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -144,7 +138,6 @@ class DaangnSchoolByCodeDataModel(DaangnBaseResponseModel):
         DaangnSchoolDetailModel | None,
         Field(description='학교. 없는 코드면 null', alias='schoolByCode')
     ] = None
-
 
 
 class DaangnSchoolByCodeResponseModel(DaangnGraphQLResponseModel):

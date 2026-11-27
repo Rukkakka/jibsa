@@ -26,6 +26,7 @@ providers/<source>/
         ├── __init__.py   # 모듈 안내 docstring 만 (re-export 없음)
         ├── constants.py  # 그 기능만 쓰는 상수·코드표·이름표 (상수가 없으면 두지 않는다)
         ├── models.py     # 그 기능의 결과·조건 모델과, 모델이 정의·메서드에서 쓰는 타입 별칭·작은 함수
+        │                 #   (쓰는 명령이 갈리면 `models/` 폴더: 명령·주제 파일과 같은 이름 파일 + 같이 쓰는 `common.py`, 기준 2)
         ├── common.py     # 그 기능 폴더 안의 여러 파일이 같이 쓰는 함수 (필요할 때만)
         └── <명령·주제>.py  # 조회·변환 함수. 명령 하나인 폴더는 명령 이름 (`trend/trend.py`), 둘 이상이면 하는 일 이름 (`search.py`·`detail.py`, 기준 2)
 ```
@@ -65,24 +66,24 @@ providers/<source>/
    | `service/common/` 폴더 | 소스 전체(여러 기능)가 같이 쓰는 것. 안의 파일은 모두 내용 이름이다 (`response.py`·`listing.py`·`paging.py`·`price.py` …). `common.py`·`functions.py`·`base.py` 같은 모음 파일은 두지 않고, 작은 도우미도 쓰는 곳에 맞는 내용 파일에 넣는다 |
    | `<기능>/common.py` | 그 기능 폴더 안의 여러 파일이 같이 쓰는 함수 |
    | `constants.py` | 상수·코드표·이름표(선택지 `Literal` 별칭 포함). 한 기능 폴더 안에서만 쓰면 그 폴더의 `constants.py`, 여러 기능이 쓰면 `service/common/constants.py` 한 곳이다 (같은 값을 두 폴더에 복사하지 않는다). 모델 정의에 쓰는 상수도 여기에 두고 `models.py` 가 가져다 쓴다. 폴더가 아니라 파일 하나뿐인 기능은 그 파일 안에 두고, 상수가 없는 폴더에는 만들지 않는다 |
-   | `models.py` | 데이터 모양 (결과·조건 모델, 타입 별칭). 기능 폴더마다 하나이고 나누지 않는다 |
+   | `models.py` · `models/` | 데이터 모양 (결과·조건 모델, 타입 별칭·작은 함수). 기능 폴더마다 `models.py` 하나가 기본이다. 폴더 안 명령·주제 파일 둘 이상이 모델을 나눠 쓰면 `models/` 폴더로 바꾸고, 정의마다 폴더 안에서 쓰는 파일(그 정의를 쓰는 다른 정의를 쓰는 파일도 센다)이 하나면 그 파일과 같은 이름(`models/search.py` ← `search.py`), 둘 이상이거나 그 폴더의 `common.py` 가 쓰면 `models/common.py` 에 둔다. 폴더 밖(CLI·다른 기능)에서 쓰는 것은 세지 않는다 (직방 `complex/models/` 는 `info`·`search`·`trend`·`listings`·`common`). 나눠도 한 파일뿐이면 `models.py` 로 둔다 |
    | 명령·주제 파일 | 하는 일 이름 (`search.py`·`detail.py`·`facility.py`). 명령 하나인 폴더는 명령 이름이다 (`trend/trend.py`, `complex/complex.py`) |
 
    service 와 `api/models/` 모두 `functions.py`·`base.py` 라는 이름이 없고, 폴더 안 공용은 `common.py` 다. `api/models/request/`·`response/` 바로 아래 `common.py` 는 소스 전체가 같이 쓰는 요청·응답 모델이고, 그 아래 기능 폴더의 `common.py` 는 그 기능 안에서 같이 쓰는 요청·응답 모델이다 (기준 7). 직방은 `common/` 을 `constants`·`models`·`ids`·`text`·`unavailable`(바닥)과 `danji`·`price`·`room`·`apt`(주제)로 나누고, 당근은 `constants`·`models`·`response`·`location`·`listing`·`nearby`·`complex`, `region/` 은 `constants`·`models`·`common`·`area`·`station`·`university`·`address` 로 나눈다.
    다른 파일이 부르게 된 이름은 밑줄을 떼 공개한다. 값 안에 함수를 담은 표나 service 의 함수·모델로 만드는 값(다방 `METRIC_BY_LABEL`, 직방 `USAGE_FEES`)은 `constants.py` 로 옮기지 않고 쓰는 파일에 두며 바로 위에 이유 주석을 단다. 리터럴과 그 조합, 표준 라이브러리·`core`·`httpx`·api 모델 타입으로 만든 값(`re.compile(...)`, 예외 클래스 튜플)은 `constants.py` 로 간다.
-3. **import 는 `constants` → `models` → `<기능>/common.py` → 명령·주제 파일 방향으로만 한다.** `service/common/` 은 두 층이다: 바닥 파일(`constants`·`models`·`response`·`text` 처럼 상수·모양·응답 꺼내기·이름표·글자 다듬기. 매물·단지 주소 틀은 `constants` 에 둔다)과 주제 파일(매물·쪽 넘김·시세·평형 등). 주제 파일은 바닥 파일만 가져다 쓰고 주제 파일끼리는 가져다 쓰지 않는다. 두 주제가 같이 쓰는 함수는 바닥 파일로 내린다. 바닥 파일은 모두 `constants` 를 가져다 쓸 수 있고, `constants` 를 뺀 바닥 파일끼리는 가져다 쓰지 않는다. 기능 폴더 안도 같다: 그 폴더의 `common.py` 가 바닥이고 명령·주제 파일끼리는 서로 가져다 쓰지 않는다 (입구 파일이 주제 파일을 부르는 것은 된다: 네이버 `listing/detail.py` → `facility`·`cost`·`nearby`). `models.py` 는 같은 기능의 함수 모듈을 가져다 쓰지 않는다. 기능 모듈은 다른 기능 모듈을 가져다 쓰지 않고, 두 기능이 같이 쓰게 되면 그 심볼을 `service/common/` 의 내용 파일(상수는 `common/constants.py`)로 옮긴다. 입구 모듈(직방 `listing`: `listing` 명령의 ID 분기)만 기능 모듈을 가져다 쓴다. 지역 해석(`region`)은 `service/common/` 바로 위층이라 기능 모듈이 가져다 쓸 수 있고, `region` 은 기능 모듈을 가져다 쓰지 않는다 (소스마다 `service/__init__.py` docstring 에 그 소스의 방향이 있다).
+3. **import 는 `constants` → `models` → `<기능>/common.py` → 명령·주제 파일 방향으로만 한다.** `service/common/` 은 두 층이다: 바닥 파일(`constants`·`models`·`response`·`text` 처럼 상수·모양·응답 꺼내기·이름표·글자 다듬기. 매물·단지 주소 틀은 `constants` 에 둔다)과 주제 파일(매물·쪽 넘김·시세·평형 등). 주제 파일은 바닥 파일만 가져다 쓰고 주제 파일끼리는 가져다 쓰지 않는다. 두 주제가 같이 쓰는 함수는 바닥 파일로 내린다. 바닥 파일은 모두 `constants` 를 가져다 쓸 수 있고, `constants` 를 뺀 바닥 파일끼리는 가져다 쓰지 않는다. 기능 폴더 안도 같다: 그 폴더의 `common.py` 가 바닥이고 명령·주제 파일끼리는 서로 가져다 쓰지 않는다 (입구 파일이 주제 파일을 부르는 것은 된다: 네이버 `listing/detail.py` → `facility`·`cost`·`nearby`). `models.py`·`models/` 는 같은 기능의 함수 모듈을 가져다 쓰지 않고, `models/` 안도 명령 이름 파일은 `models/common.py` 만 가져다 쓴다. 기능 모듈은 다른 기능 모듈을 가져다 쓰지 않고, 두 기능이 같이 쓰게 되면 그 심볼을 `service/common/` 의 내용 파일(상수는 `common/constants.py`)로 옮긴다. 입구 모듈(직방 `listing`: `listing` 명령의 ID 분기)만 기능 모듈을 가져다 쓴다. 지역 해석(`region`)은 `service/common/` 바로 위층이라 기능 모듈이 가져다 쓸 수 있고, `region` 은 기능 모듈을 가져다 쓰지 않는다 (소스마다 `service/__init__.py` docstring 에 그 소스의 방향이 있다).
 4. **한 파일에는 한 주제만 둔다. 주제가 섞이면 나눈다.** 섞임은 셋으로 본다: (1) 파일 안 함수를 쓰는 기능(명령)이 갈린다, (2) 서로 부르지 않는 덩어리가 한 파일에 있다, (3) 덩어리마다 부르는 API·웹 화면 칸이 다르다. 길이는 살펴볼 신호일 뿐 나누는 기준이 아니다. 명령 하나를 맡는 파일도 주제로 나눈다 (네이버 매물 상세는 입구 `listing/detail.py` 와 웹 구역별 `facility`·`cost`·`nearby`). 경계 사례는 기준대로 나눈다: 덩어리가 대략 100줄을 넘고 진입 명령이나 주제가 다르면 나눈다 (당근 `complex` 에서 비교·주변 단지를 `compare` 로 뺐다).
 5. **새 명령은 맞는 모듈에 넣는다.** 맞는 모듈이 없으면 새 모듈을 만들고(기능이 폴더면 그 안의 명령·주제 파일) 소스 문서의
    표에 한 줄 추가한다.
 6. CLI 와 테스트는 이름이 정의된 모듈에서 바로 가져온다 (`from jibsa.providers.zigbang.service.stay.search import ...`,
    상수는 `from jibsa.providers.zigbang.service.stay.constants import ...`,
-   모델은 `from jibsa.providers.daangn.service.complex.models import ...`).
+   모델은 `from jibsa.providers.daangn.service.complex.models.detail import ...`, 나누지 않은 기능은 `….service.review.models`).
    테스트가 상수를 바꿔 끼울 때(`monkeypatch.setattr`)도 그 상수를 읽는 코드가 있는 모듈을 고친다 (함수가 `constants` 나 `models` 에서 가져다 쓰는 상수는 함수 모듈의 이름을 바꿔 끼운다).
 7. **요청·응답 모델(`api/models/request/`·`api/models/response/`)은 service 와 같은 기능 이름으로 나눈다.** 엔드포인트의 요청·응답 모델은
    그 엔드포인트를 부르는 service 기능과 같은 이름의 모듈에 둔다 (명령 하나를 맡는 `service/review/` 가 부르면 `request/review.py`·`response/review.py`,
    명령 둘 이상을 맡아 폴더로 나뉜 `service/stay/search.py` 면 `request/stay/search.py`·`response/stay/search.py`, 당근 `service/complex/search.py` 면
    `request/complex/search.py`·`response/complex/search.py`, `service/search/map.py` 면 `request/search/map.py`, `service/region/area.py` 면 `request/region/area.py`). 그래서 기능 하나를 고칠 때 같은 이름의 세 곳만 보면 된다.
-   service 의 `models.py` 는 결과·조건 모델이고 `request/`·`response/` 는 사이트 API 를 그대로 옮긴 모델이라 따로 둔다.
+   service 의 `models` 는 결과·조건 모델이고 `request/`·`response/` 는 사이트 API 를 그대로 옮긴 모델이라 따로 둔다.
    - 명령 둘 이상이 같이 쓰는 모델(검색·상세가 같이 쓰는 요청·요약 모델 등)은 그 폴더의 `common.py` 에 둔다 (service 의 폴더 안 공용과 같은 이름). 명령 모듈끼리는 서로 가져다 쓰지 않는다. 같은 소스의 다른 기능·client 만 쓰는 모델(라이브러리용 엔드포인트 등)도 그 폴더의 `common` 이다.
    - 여러 기능이
      부르는 엔드포인트의 모델, 여러 기능의 모델이 같이 쓰는 중첩 모델, 기반 모델은 `common` 에 둔다.

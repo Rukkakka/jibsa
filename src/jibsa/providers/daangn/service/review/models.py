@@ -11,7 +11,7 @@ from pydantic import (
 from jibsa.core.listing import (
     Result,
 )
-from jibsa.providers.daangn.service.region.models import DaangnRealsaleRegion
+from jibsa.providers.daangn.service.region.models.area import DaangnRealsaleRegion
 
 from typing import (
     Annotated,

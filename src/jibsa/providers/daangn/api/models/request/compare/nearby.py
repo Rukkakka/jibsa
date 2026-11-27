@@ -21,7 +21,6 @@ class DaangnNearbyComplexesRequestPayloadModel(RequestModel):
     ]
 
 
-
 class DaangnComplexesByOriginalComplexIdsRequestPayloadModel(RequestModel):
     """GraphQL `complexesByOriginalComplexIds` 쿼리 변수 (웹의 `ComplexListPanelMapPinsQuery`, 지도 단지 목록 카드).
 
@@ -37,7 +36,6 @@ class DaangnComplexesByOriginalComplexIdsRequestPayloadModel(RequestModel):
         DaangnComplexTradeType,
         Field(description='카드의 최근 실거래 거래 유형 (jibsa 는 읽지 않는다)', alias='tradeType')
     ] = 'BUY'
-
 
 
 class DaangnComplexRegionRequestPayloadModel(RequestModel):

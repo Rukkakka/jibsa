@@ -18,7 +18,7 @@ from jibsa.providers.zigbang.service.stay.constants import (
     STAY_BUILDING_TYPE_LABELS,
     STAY_URL,
 )
-from jibsa.providers.zigbang.service.stay.models import ZigbangStayListing
+from jibsa.providers.zigbang.service.stay.models.common import ZigbangStayListing
 
 
 def stay_discount_label(discount: ZigbangStayDiscountModel, weekly_rent: int | None) -> str | None:

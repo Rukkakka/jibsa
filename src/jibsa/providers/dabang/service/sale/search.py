@@ -54,7 +54,7 @@ from jibsa.providers.dabang.service.sale.constants import (
     SALE_STATE_BY_LABEL,
     SALE_SUPPLY_BY_LABEL,
 )
-from jibsa.providers.dabang.service.sale.models import (
+from jibsa.providers.dabang.service.sale.models.search import (
     DabangSaleListResult,
     DabangSaleSummary,
 )

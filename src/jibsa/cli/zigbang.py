@@ -58,7 +58,7 @@ from jibsa.providers.zigbang.service.apt.constants import (
 from jibsa.providers.zigbang.service.apt.detail import (
     get_catalog,
 )
-from jibsa.providers.zigbang.service.apt.models import ZigbangAptConditions
+from jibsa.providers.zigbang.service.apt.models.search import ZigbangAptConditions
 from jibsa.providers.zigbang.service.apt.search import (
     apt_dong_at,
     search_apt_listings,
@@ -166,7 +166,7 @@ from jibsa.providers.zigbang.service.stay.constants import (
     STAY_OPTION_BY_LABEL,
     STAY_WEEKLY_PRICE_NOTE,
 )
-from jibsa.providers.zigbang.service.stay.models import ZigbangStayConditions
+from jibsa.providers.zigbang.service.stay.models.search import ZigbangStayConditions
 from jibsa.providers.zigbang.service.stay.search import (
     check_stay_sort,
     search_stay_listings,

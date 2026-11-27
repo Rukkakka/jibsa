@@ -3,10 +3,10 @@ from jibsa.core.listing import with_notes
 from .api.client import NaverClient
 from .service.common.models import NaverListingsResult
 from .service.complex.complex import get_complex as _get_complex
-from .service.complex.models import NaverComplexSummary
+from .service.complex.models.complex import NaverComplexSummary
 from .service.listing.complex import list_complex_articles as _list_complex_articles
 from .service.listing.detail import get_listing as _get_listing
-from .service.listing.models import NaverListingDetail
+from .service.listing.models.detail import NaverListingDetail
 from .service.market_price.market_price import (
     get_market_price_history as _get_market_price_history,
 )
@@ -17,17 +17,13 @@ from .service.redevelopment.detail import get_redevelopment as _get_redevelopmen
 from .service.redevelopment.listings import (
     list_redevelopment_articles as _list_redevelopment_articles,
 )
-from .service.redevelopment.models import (
-    NaverRedevelopmentAreasResult,
-    NaverRedevelopmentDetail,
-)
+from .service.redevelopment.models.detail import NaverRedevelopmentDetail
+from .service.redevelopment.models.search import NaverRedevelopmentAreasResult
 from .service.redevelopment.search import (
     list_redevelopment_areas as _list_redevelopment_areas,
 )
-from .service.region.models import (
-    NaverRegion,
-    NaverRegionList,
-)
+from .service.region.models.regions import NaverRegionList
+from .service.region.models.search import NaverRegion
 from .service.region.regions import list_regions as _list_regions
 from .service.region.resolve import resolve_complex_number as _resolve_complex_number
 from .service.school.models import NaverSchoolDetail

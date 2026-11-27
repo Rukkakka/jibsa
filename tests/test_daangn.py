@@ -119,7 +119,7 @@ def _yeoksam_articles() -> list:
 
 
 def _yeoksam_area():
-    from jibsa.providers.daangn.service.region.models import DaangnArea
+    from jibsa.providers.daangn.service.region.models.area import DaangnArea
     return DaangnArea(level='동', name1='서울특별시', name2='강남구', name3='역삼동', region_id=6035, lat=37.4954, lng=127.0333, zoom=14)
 
 
@@ -1117,7 +1117,7 @@ def test_complex_listings_null_articles_after_next_page_stops_with_notice() -> N
 
 
 def test_search_station_counts_received_cards_and_keeps_walk_minutes() -> None:
-    from jibsa.providers.daangn.service.region.models import DaangnStation
+    from jibsa.providers.daangn.service.region.models.station import DaangnStation
     from jibsa.providers.daangn.service.search.around import search_station
 
     page = fixture('subway_station_article_connection')
@@ -1437,7 +1437,9 @@ def test_null_items_make_computed_values_unknown() -> None:
 
 # 인기 단지의 최근 매매 목록이 null 이거나 빈 항목이 섞이면 없다고 하지 않고 모름(null)으로 낸다. 빈 목록만 해당 없음({})이다
 def test_trending_latest_trade_is_unknown_when_realsale_list_is_null_or_has_blank_items() -> None:
-    from jibsa.providers.daangn.service.complex.models import DaangnTrendingRegion
+    from jibsa.providers.daangn.service.complex.models.trending import (
+        DaangnTrendingRegion,
+    )
     from jibsa.providers.daangn.service.complex.trending import (
         list_trending_complexes,
     )

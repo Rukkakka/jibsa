@@ -50,7 +50,7 @@ from jibsa.providers.dabang.service.complex.constants import (
     NEAREST_SCHOOLS,
     NURSERY_ESTABLISHMENT_LABELS,
 )
-from jibsa.providers.dabang.service.complex.models import (
+from jibsa.providers.dabang.service.complex.models.detail import (
     DabangChildcare,
     DabangComplexDetail,
     DabangComplexSchool,
@@ -144,7 +144,6 @@ def _recent(
 
 def _floor_int(value: str | None) -> int | None:
     return int(value) if value and value.isdecimal() else None
-
 
 
 def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:

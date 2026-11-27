@@ -41,7 +41,7 @@ from jibsa.providers.naver.service.region.constants import (
     MAX_CANDIDATE_NOTES,
     REGION_LEVEL_LABELS,
 )
-from jibsa.providers.naver.service.region.models import (
+from jibsa.providers.naver.service.region.models.regions import (
     NaverRegionEntry,
     NaverRegionList,
 )

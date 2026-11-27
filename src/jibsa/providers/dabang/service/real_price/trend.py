@@ -20,7 +20,7 @@ from jibsa.providers.dabang.service.real_price.common import (
     fetch_complex_space,
     primary_space,
 )
-from jibsa.providers.dabang.service.real_price.models import (
+from jibsa.providers.dabang.service.real_price.models.trend import (
     DabangPriceTrend,
     DabangTradeAverage,
     DabangTrendMonth,

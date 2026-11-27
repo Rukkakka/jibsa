@@ -242,7 +242,7 @@
 
 검색 조건 묶음([공통 규칙](../provider-conventions.md#검색-조건-묶음))은 유형마다 따로 있다: `ZigbangRoomConditions`
 (원룸·빌라·오피스텔 검색과 오피스텔 건물 매물, `common.models`), `ZigbangAptConditions`(`apt.models`), `ZigbangStoreConditions`(`store.models`),
-`ZigbangStayConditions`(`stay.models`). `--condition`(기타 조건)은 모델에서 `extra_conditions` 다 (`conditions` 는 묶음 이름이라).
+`ZigbangStayConditions`(`stay.models.search`). `--condition`(기타 조건)은 모델에서 `extra_conditions` 다 (`conditions` 는 묶음 이름이라).
 매물 유형(`property_types`)은 단지 매물 목록에 없어 `search_listings` 인자로 따로 받고, 단기임대 정렬은 `StaySort` 로 받는다.
 
 핀 집계·조회한 원본 수·가격 확인 후보 수·최종 반환 수를 구분한다. 가격·관리비 없음 옵션의 충돌은 CLI에서 거절한다. 라벨 옵션(업종·방 구조·단기임대 방 종류·옵션·할인·층)은 CLI 의 `split_csv` 가 허용값으로 검증하고, service 는 검증된 라벨만 받는다. 라벨 → 서버 코드 사전(`*_BY_LABEL`) 조회의 KeyError 는 입력 오류가 아니라 내부 오류라 따로 잡지 않는다 (2026-10-10 실측: 잘못된 라벨 7종 모두 요청 전에 `INVALID_ARGUMENT`). 실거래 전세·월세는 혼합 응답에서 필터하며, 쪽 수 상한 없이 넘기면 `--limit 1000` 에 요청이 62회까지 나가(2026-10-10 실측: 헬리오시티 전세) 당근처럼 24쪽(최근 1200건)에서 멈추고 `notes` 로 본 범위를 알린다. 매매는 받은 거래를 모두 써서 `--limit` 최대 1200 도 24쪽이면 된다. 갱신 여부는 알려지지 않았으면 `null`이다.

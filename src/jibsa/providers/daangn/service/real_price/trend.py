@@ -40,7 +40,7 @@ from jibsa.providers.daangn.service.real_price.constants import (
     PRICE_TREND_RECENT_MONTHS,
     PRICE_TREND_STALE_MONTHS,
 )
-from jibsa.providers.daangn.service.real_price.models import (
+from jibsa.providers.daangn.service.real_price.models.trend import (
     DaangnChartEstimatedPrices,
     DaangnKbSale,
     DaangnPricePoint,
@@ -71,10 +71,8 @@ def estimated_prices_of(chart: DaangnPriceChartModel | None) -> DaangnChartEstim
     )
 
 
-
 def _month_label(index: int) -> str:
     return f'{index // 12:04d}-{index % 12 + 1:02d}'
-
 
 
 def get_price_trend(

@@ -32,7 +32,7 @@ from jibsa.providers.daangn.service.common.constants import (
     COMPLEX_URL,
 )
 from jibsa.providers.daangn.service.common.response import code_label
-from jibsa.providers.daangn.service.compare.models import (
+from jibsa.providers.daangn.service.compare.models.complexes import (
     DaangnAskingAverage,
     DaangnCompareEstimatedPrices,
     DaangnComparePyeong,
@@ -78,7 +78,6 @@ def _asking_averages(complex_: DaangnCompareComplexModel) -> dict[str, DaangnAsk
     return averages
 
 
-
 def _subways(rows: list[DaangnCompareSubwayModel]) -> list[DaangnCompareSubway]:
     """역마다 거리·도보 두 줄로 오는 것을 한 줄로 합친다. 값은 웹처럼 당근 값 그대로 낸다 (반올림·최소 1분 없음)."""
     merged: dict[tuple[str, str | None], DaangnCompareSubway] = {}
@@ -95,7 +94,6 @@ def _subways(rows: list[DaangnCompareSubwayModel]) -> list[DaangnCompareSubway]:
     return list(merged.values())
 
 
-
 def _trade(
     node: DaangnCompareRealsaleModel | None, trade_type: Literal['매매', '전세', '월세'],
 ) -> DaangnCompareRecentTrade | None:
@@ -109,7 +107,6 @@ def _trade(
         rent_manwon=node.month_rent_fee if trade_type == '월세' else None,
         trade_type=trade_type,
     )
-
 
 
 def _select_pyeong(
@@ -145,7 +142,6 @@ def _select_pyeong(
     return supply, group, info
 
 
-
 def _compared_area(area_m2: float) -> str:
     """안내에 적는 목표 면적. 고를 때 견준 값(웹처럼 정수로 버림, `_select_pyeong`)이다.
 
@@ -154,13 +150,11 @@ def _compared_area(area_m2: float) -> str:
     return f'{trunc(area_m2)}㎡' + ('(소수점 아래 버림)' if area_m2 != trunc(area_m2) else '')
 
 
-
 def _blank_trades(connection: DaangnCompareRealsaleConnectionModel | None) -> int:
     """실거래 연결에서 빈 항목(null 원소, node 가 null 인 항목) 수. 연결이나 목록이 null 이면 0 이다 (그 경우는 호출부가 모름으로 본다)."""
     if connection is None:
         return 0
     return connection.null_items('edges') + sum(1 for edge in connection.edges or [] if edge.node is None)
-
 
 
 def _compare_pyeong(column: DaangnCompareComplexModel, target_m2: float | None, notes: list[str]) -> DaangnComparePyeong | None:
@@ -240,7 +234,6 @@ def _compare_pyeong(column: DaangnCompareComplexModel, target_m2: float | None, 
     )
 
 
-
 def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None, notes: list[str]) -> DaangnComplexComparison:
     danji = complex_.proptier_danji
     building = next((edge.node for edge in complex_.buildings.edges if edge.node), None) if complex_.buildings else None
@@ -293,7 +286,6 @@ def _comparison(complex_: DaangnCompareComplexModel, target_m2: float | None, no
         pyeong=pyeong,
         url=COMPLEX_URL.format(complex_.original_id),
     )
-
 
 
 def compare_complexes(client: DaangnClient, complex_ids: list[int], *, area_m2: float | None = None) -> DaangnCompareResult:

@@ -18,7 +18,6 @@ class DaangnSearchComplexesInputModel(RequestModel):
     ]
 
 
-
 class DaangnSearchComplexesRequestPayloadModel(RequestModel):
     """GraphQL `searchComplexes` 쿼리 변수 (웹의 `fetchComplexSearchResultQuery`)."""
 

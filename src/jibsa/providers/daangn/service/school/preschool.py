@@ -29,7 +29,7 @@ from jibsa.providers.daangn.service.school.constants import (
     PRESCHOOL_SERVER_RADIUS_KM,
     WEB_EARTH_RADIUS_KM,
 )
-from jibsa.providers.daangn.service.school.models import (
+from jibsa.providers.daangn.service.school.models.preschool import (
     DaangnPreschool,
     DaangnPreschoolsResult,
     DaangnPreschoolSummary,
@@ -103,7 +103,6 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
         url=COMPLEX_URL.format(complex_id),
         notes=notes,
     )
-
 
 
 def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:

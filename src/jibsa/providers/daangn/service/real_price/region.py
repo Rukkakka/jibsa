@@ -42,7 +42,7 @@ from jibsa.providers.daangn.service.real_price.constants import (
     REALSALE_SORT_BY_TRADE_TYPE,
     REALSALE_SORT_LABEL_BY_SORT,
 )
-from jibsa.providers.daangn.service.real_price.models import (
+from jibsa.providers.daangn.service.real_price.models.region import (
     DaangnRealsaleSummary,
     DaangnRegionRealPrice,
     DaangnRegionRealPriceResult,
@@ -71,7 +71,6 @@ def previous_high_change_percent(price: int | None, previous_high: int | None) -
     # |diff| / previous_high * 100 * scale 를 .5 올림한 정수 (floor(x + 0.5))
     units = max((abs(diff) * 100 * scale * 2 + previous_high) // (2 * previous_high), 1)
     return units / scale * (1 if diff > 0 else -1)
-
 
 
 def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, new_high: bool) -> DaangnRegionRealPrice:
@@ -114,7 +113,6 @@ def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, n
     )
 
 
-
 def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> DaangnRealsaleSummary | None:
     """지역 실거래 화면 머리의 요약 (`realsaleFeedSummary`, 요청 1회). 덤 조회라 실패하면 None 과 `notes` 로 알린다.
 
@@ -141,7 +139,6 @@ def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> 
         sale_count=sale.sale_count if sale else None,
         new_high_count=new_high.new_high_count if new_high else None,
     )
-
 
 
 def get_region_real_prices(

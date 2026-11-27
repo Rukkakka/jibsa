@@ -53,8 +53,8 @@ from jibsa.providers.zigbang.service.local.constants import (
     LocalRankingPeriod,
     LocalTrade,
 )
-from jibsa.providers.zigbang.service.local.models import (
-    LocalLevel,
+from jibsa.providers.zigbang.service.local.models.common import LocalLevel
+from jibsa.providers.zigbang.service.local.models.ranking import (
     ZigbangDanjiRank,
     ZigbangRegionRankingResult,
 )

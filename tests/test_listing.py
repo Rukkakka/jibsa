@@ -198,8 +198,6 @@ def test_limit_notes_only_when_more_than_returned() -> None:
     )
 
 
-
-
 def test_amount_set_dumps_only_given_fields() -> None:
     from jibsa.core.listing import AmountRange, AmountSet
 

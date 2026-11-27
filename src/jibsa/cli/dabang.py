@@ -80,7 +80,7 @@ from jibsa.providers.dabang.service.listing.detail import (
     attach_details,
     get_listing,
 )
-from jibsa.providers.dabang.service.listing.models import DabangListPosition
+from jibsa.providers.dabang.service.listing.models.common import DabangListPosition
 from jibsa.providers.dabang.service.listing.search import search_listings
 from jibsa.providers.dabang.service.nearby.constants import (
     NEARBY_EXTRAS,

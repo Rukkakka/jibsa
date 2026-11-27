@@ -58,10 +58,10 @@ from jibsa.providers.dabang.service.listing.constants import (
     MANAGE_ITEM_LABELS,
     TRADE_BY_SELLING_CODE,
 )
-from jibsa.providers.dabang.service.listing.models import (
+from jibsa.providers.dabang.service.listing.models.common import DabangSearchResult
+from jibsa.providers.dabang.service.listing.models.detail import (
     DabangDetailedListing,
     DabangListingDetail,
-    DabangSearchResult,
 )
 
 from typing import NamedTuple
@@ -73,7 +73,6 @@ class _ManageCost(NamedTuple):
     excludes: list[str] | None
     # 정액관리비 항목 목록에서 뺀 빈 항목 수 (뺐으면 포함·실비 항목을 모른다)
     dropped: int = 0
-
 
 
 def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:

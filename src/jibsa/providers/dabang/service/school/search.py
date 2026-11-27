@@ -28,7 +28,7 @@ from jibsa.providers.dabang.service.school.constants import (
     REGIONAL_PATH_BY_LEVEL,
     EducationLevel,
 )
-from jibsa.providers.dabang.service.school.models import (
+from jibsa.providers.dabang.service.school.models.search import (
     DabangRegionalAdvancement,
     DabangRegionalSchool,
     DabangSchoolListResult,

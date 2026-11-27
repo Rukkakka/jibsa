@@ -48,7 +48,7 @@ from jibsa.providers.dabang.service.common.room import (
     room_item_to_listing,
     unreadable_note,
 )
-from jibsa.providers.dabang.service.listing.models import (
+from jibsa.providers.dabang.service.listing.models.common import (
     DabangListPosition,
     DabangSearchResult,
 )
@@ -64,8 +64,6 @@ class _Target(NamedTuple):
     code: str | None = None
     place_id: int | None = None
     bbox: DabangBboxModel | None = None
-
-
 
 
 def search_listings(

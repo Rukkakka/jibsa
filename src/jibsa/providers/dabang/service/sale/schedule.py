@@ -28,7 +28,7 @@ from jibsa.providers.dabang.service.sale.constants import (
     SALE_SCHEDULE_MAX_LIMIT,
     SCHEDULE_REGION_PATTERN,
 )
-from jibsa.providers.dabang.service.sale.models import (
+from jibsa.providers.dabang.service.sale.models.schedule import (
     DabangSaleSchedule,
     DabangSaleScheduleItem,
     DabangSaleScheduleSale,

@@ -25,7 +25,6 @@ class DaangnTrendingRealsaleNodeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnTrendingRealsaleEdgeModel(DaangnBaseResponseModel):
     """실거래 edge."""
 
@@ -35,7 +34,6 @@ class DaangnTrendingRealsaleEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnTrendingRealsaleConnectionModel(DaangnBaseResponseModel):
     """실거래 연결 (최근 1건)."""
 
@@ -43,7 +41,6 @@ class DaangnTrendingRealsaleConnectionModel(DaangnBaseResponseModel):
         list[DaangnTrendingRealsaleEdgeModel] | None,
         Field(description='실거래. null 이거나 키가 없으면 실거래 목록을 모르는 것이고(0건이면 []), 빈 목록으로 바꾸지 않는다')
     ] = None
-
 
 
 class DaangnTrendingPyInfoModel(DaangnBaseResponseModel):
@@ -63,7 +60,6 @@ class DaangnTrendingPyInfoModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnTrendingAreaGroupModel(DaangnBaseResponseModel):
     """인기 단지 전용면적 묶음."""
 
@@ -77,7 +73,6 @@ class DaangnTrendingAreaGroupModel(DaangnBaseResponseModel):
     ] = []
 
 
-
 class DaangnTrendingDanjiModel(DaangnBaseResponseModel):
     """인기 단지 공공 정보."""
 
@@ -85,7 +80,6 @@ class DaangnTrendingDanjiModel(DaangnBaseResponseModel):
         list[DaangnTrendingAreaGroupModel],
         Field(description='전용면적 묶음', alias='exclusiveAreaGroups')
     ] = []
-
 
 
 class DaangnTrendingComplexModel(DaangnBaseResponseModel):
@@ -121,7 +115,6 @@ class DaangnTrendingComplexModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnTrendingComplexesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -129,7 +122,6 @@ class DaangnTrendingComplexesDataModel(DaangnBaseResponseModel):
         list[DaangnTrendingComplexModel],
         Field(description='인기 순 단지', alias='trendingComplexes')
     ] = []
-
 
 
 class DaangnTrendingComplexesResponseModel(DaangnGraphQLResponseModel):

@@ -42,8 +42,8 @@ from jibsa.providers.zigbang.service.local.constants import (
     LocalTrade,
     LocalTradePeriod,
 )
-from jibsa.providers.zigbang.service.local.models import (
-    LocalLevel,
+from jibsa.providers.zigbang.service.local.models.common import LocalLevel
+from jibsa.providers.zigbang.service.local.models.trades import (
     ZigbangRegionTrade,
     ZigbangRegionTradesResult,
 )

@@ -26,7 +26,7 @@ from jibsa.providers.dabang.service.school.constants import (
     NURSERY_TEACHERS,
     EducationLevel,
 )
-from jibsa.providers.dabang.service.school.models import (
+from jibsa.providers.dabang.service.school.models.detail import (
     DabangAdvancement,
     DabangChildcareDetail,
     DabangChildGroup,

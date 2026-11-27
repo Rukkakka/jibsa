@@ -56,7 +56,7 @@ from jibsa.providers.zigbang.service.stay.constants import (
     STAY_UNAVAILABLE_SCHEDULES,
     STAY_URL,
 )
-from jibsa.providers.zigbang.service.stay.models import (
+from jibsa.providers.zigbang.service.stay.models.detail import (
     ZigbangStayListingDetail,
     ZigbangStayPeriod,
     ZigbangStayRefundRule,

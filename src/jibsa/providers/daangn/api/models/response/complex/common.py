@@ -32,7 +32,6 @@ class DaangnBuildingModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnBuildingEdgeModel(DaangnBaseResponseModel):
     """건물 연결의 edge."""
 
@@ -42,7 +41,6 @@ class DaangnBuildingEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnBuildingConnectionModel(DaangnBaseResponseModel):
     """건물 연결."""
 
@@ -50,7 +48,6 @@ class DaangnBuildingConnectionModel(DaangnBaseResponseModel):
         list[DaangnBuildingEdgeModel],
         Field(description='건물')
     ] = []
-
 
 
 class DaangnSearchComplexNodeModel(DaangnBaseResponseModel):
@@ -74,7 +71,6 @@ class DaangnSearchComplexNodeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnSearchComplexEdgeModel(DaangnBaseResponseModel):
     """단지 검색 연결의 edge."""
 
@@ -82,7 +78,6 @@ class DaangnSearchComplexEdgeModel(DaangnBaseResponseModel):
         DaangnSearchComplexNodeModel | None,
         Field(description='단지')
     ] = None
-
 
 
 class DaangnSearchComplexesModel(DaangnBaseResponseModel):
@@ -98,7 +93,6 @@ class DaangnSearchComplexesModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnSearchComplexesDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -106,7 +100,6 @@ class DaangnSearchComplexesDataModel(DaangnBaseResponseModel):
         DaangnSearchComplexesModel | None,
         Field(description='단지 검색 결과', alias='searchComplexes')
     ] = None
-
 
 
 class DaangnSearchComplexesResponseModel(DaangnGraphQLResponseModel):
