@@ -33,6 +33,7 @@ from jibsa.core.browser import (
     CorsBlockedError,
     EntryStatusError,
 )
+from jibsa.core.dates import reset_unread_dates
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import in_korea
 from jibsa.core.listing import (
@@ -44,8 +45,9 @@ from jibsa.core.listing import (
     collected_notes,
     insert_after,
     listing_field_names,
+)
+from jibsa.core.notes import (
     note,
-    reset_unread_dates,
     tagged_notes,
 )
 from jibsa.core.schema import (

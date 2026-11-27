@@ -15,7 +15,7 @@ from jibsa.core.geo import (
     geohashes_covering,
     haversine_km,
 )
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     NEXT_HINT,
     UPDATE_MAYBE_NEEDED,
 )

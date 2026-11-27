@@ -12,7 +12,7 @@ pytest 는 가짜 응답만 써서 Chromium 을 띄우지 않는다. 그래서 �
    429 로 알아보는지도 본다. 실제 소스 응답은 1초 안팎·1MB 미만이라 이 경로들은 여기서만 돈다
 2. 다시 띄우면 첫 화면을 열지 않고 남긴 쿠키로 바로 요청하는지
 3. 다른 출처가 CORS 없이 준 429 를 Retry-After 와 함께 429 로 알아보는지. 브라우저는 이런 응답을 가려 fetch 가 이유 없이
-   실패하므로 jibsa 는 CDP 네트워크 이벤트로 상태를 알아낸다 (`_BlockedResponses`). 그래야 요청 제한이 쿨다운을 건다.
+   실패하므로 jibsa 는 CDP 네트워크 이벤트로 상태를 알아낸다 (`BlockedResponses`). 그래야 요청 제한이 쿨다운을 건다.
    이 확인에서만 Chromium 의 로컬 네트워크 접근 차단을 끈다 (`allow_local_network`)
 4. 느린 첫 화면을 여는 중에 Ctrl+C 를 받으면 1초 안에 끝나고, 끝난 뒤 Chromium·드라이버(node)가 남지 않는지.
    CI 에는 키보드가 없어 `_thread.interrupt_main()` 으로 흉내 낸다. 메인 스레드가 브라우저 스레드를 기다리는 동안 Ctrl+C 를
@@ -82,8 +82,8 @@ from jibsa.core.ratelimit import (  # noqa: E402
     RateLimitedError,
     RateLimiter,
     RateLimitPolicy,
-    state_dir,
 )
+from jibsa.core.state import state_dir  # noqa: E402
 
 
 # 첫 화면 JS 가 심는 쿠키. jibsa 는 이 쿠키가 생길 때까지 기다리고, 남긴 쿠키를 쓸 수 있는지 이것으로 본다

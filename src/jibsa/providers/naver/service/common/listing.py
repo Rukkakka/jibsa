@@ -2,20 +2,22 @@
 
 from collections.abc import Callable
 
+from jibsa.core.dates import (
+    holding_unread_dates,
+    normalize_date,
+    read_date,
+)
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     AmountRange,
     AmountSet,
     Listing,
     format_manwon,
-    holding_unread_dates,
     join_address,
     m2_to_pyeong,
-    normalize_date,
-    note,
-    read_date,
     won_to_manwon,
 )
+from jibsa.core.notes import note
 from jibsa.providers.naver.api.models.response.common import (
     NaverArticleListItemModel,
     NaverDuplicatedArticleInfoModel,

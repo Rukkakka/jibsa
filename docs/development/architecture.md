@@ -14,7 +14,7 @@ cli/                 Typer 명령. 인자 검증 → service 호출 → emit / h
      └─ providers/<source>/api/        소스 API 그대로: client.py (엔드포인트 하나 = 메서드 하나, run_request_*),
                                         models/request/·models/response/ 모델
          └─ core/http.py BaseHTTPClient   httpx 클라이언트 + 요청 제한 훅
-             └─ core/browser.py BrowserTransport   httpx 요청을 사이트 첫 화면을 연 Chromium 안의 fetch 로 보낸다
+             └─ core/browser/    BrowserTransport   httpx 요청을 사이트 첫 화면을 연 Chromium 안의 fetch 로 보낸다
 ```
 
 각 계층은 아래 계층만 안다. 새 소스를 추가하면 `cli/app.py` 의 `limits` 명령 client 목록도 함께 고친다.
@@ -45,7 +45,7 @@ pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩
 - 공통 필드: `verify`, `proxy`, `timeout`, `rate_limit`. `extra='forbid'` 라 오타 난 설정은 생성 시점에 실패한다.
   UA 는 브라우저가 맡아 필드가 없다. `verify`·`proxy` 는 브라우저에 넘긴다. `verify` 는 Chromium 이 받는 켜기·끄기만 받는다
   (Chromium 은 인증서 파일을 받지 않고 내장 목록과 OS 에 설치된 인증서를 믿는다). `timeout` 은 응답 헤더가 올 때까지(연결 포함)와
-  본문 조각 사이 간격의 제한이다. httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`).
+  본문 조각 사이 간격의 제한이다. httpx 의 읽기 제한처럼 조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser.fetch.fetch_arguments`).
 - 브라우저 설정: ClassVar `browser_entry_url`(처음 열 화면)·`browser_ready_cookie`·`browser_discard_statuses` 와, 호스트
   필드에서 만드는 property `browser_api_hosts` (호스트 필드를 바꿔도 어긋나지 않게). 서브클래스는
   `browser_transport()` / `async_browser_transport()` 를 httpx 클라이언트의 `transport` 로 넘긴다
@@ -62,7 +62,7 @@ pydantic 모델이 **검증된 설정 객체**이자 **httpx 클라이언트 팩
 `core/ratelimit.py`. 비공식 API 가 봇 차단(429)을 걸기 때문에, **같은 소스를 쓰는 모든
 jibsa 프로세스가 하나의 상태 파일을 공유**한다. LLM 이 명령을 연달아 실행해도 간격이 지켜진다.
 
-- 상태 파일: `<state_dir>/ratelimit/<source>.json`. `state_dir` 은
+- 상태 파일: `<state_dir>/ratelimit/<source>.json`. `state_dir`(`core/state.py`)은
   `JIBSA_STATE_DIR` > `$XDG_CACHE_HOME/jibsa` > `~/.cache/jibsa`. 같은 폴더의 `next/` 에는 매물 검색
   이어 받기 표(`jibsa.cli.paging`)를 하루 동안 둔다.
 - `RateLimiter.reserve()` 가 `flock` 잠금 안에서 다음 슬롯을 예약하고, 실제 대기(`sleep`)는
@@ -86,7 +86,7 @@ jibsa 프로세스가 하나의 상태 파일을 공유**한다. LLM 이 명령�
   첫 화면 문서나 그 요청 중 429 가 있으면 쿨다운을 건다 (제한을 끈 정책이면 걸지 않고, 우리 요청이 받는 429 를 보통 재시도가
   다룬다). 쿨다운은 우리 요청의 429 처럼 정책 값과 그 응답의 `Retry-After` 중 긴 쪽이고, 사이트 밖(광고·분석) 응답의 429 는
   보지 않는다. 다른 출처 API 가 CORS 허용 없이 준 429(직방·당근)와 load·쿠키 기다림 뒤에 온 429 는 첫 화면 단계에서 보지
-  못하지만, 다음 우리 요청이 같은 429 를 받아 쉬므로 손해는 요청 1건이라 두었다 (`_BrowserState.on_entry_rate_limited`). 첫 화면을 연 뒤 페이지 JS 가 더 부른 요청은 명령이 끝날 때 센다 (탭을 빈 페이지로 바꿔 거의 없다). 첫 화면 탭에서
+  못하지만, 다음 우리 요청이 같은 429 를 받아 쉬므로 손해는 요청 1건이라 두었다 (`BrowserState.on_entry_rate_limited`, `core/browser/session.py`). 첫 화면을 연 뒤 페이지 JS 가 더 부른 요청은 명령이 끝날 때 센다 (탭을 빈 페이지로 바꿔 거의 없다). 첫 화면 탭에서
   보낸 우리 요청 중 사이트 API 호스트로 간 것만 보낼 때 세어 빼므로, 다른 호스트로 간 요청이나 실패한 요청 때문에 어긋나지 않는다.
 - 첫 화면 요청은 미리 슬롯을 잡지 않고 연 뒤에 센다. 몇 건일지 열기 전에는 모르고(네이버 18~22건), 사람이 페이지를 열 때
   나가는 묶음과 같기 때문이다. 그래서 첫 화면을 새로 여는 명령(소스마다 30분에 한 번, 남긴 쿠키를 버린 뒤)은 분당 상한을 그
@@ -99,7 +99,7 @@ jibsa 프로세스가 하나의 상태 파일을 공유**한다. LLM 이 명령�
 
 ## 브라우저 요청
 
-`core/browser.py`. 모든 요청은 httpx `Client` 의 `transport` 자리에 끼운 `BrowserTransport` 가 보낸다. base_url·auth·
+`core/browser/`. 모든 요청은 httpx `Client` 의 `transport` 자리에 끼운 `BrowserTransport` 가 보낸다. base_url·auth·
 요청 제한 훅·재시도는 httpx 그대로이고, 맨 아래 전송만 바뀐다.
 
 ```
@@ -143,7 +143,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   넣는다. 문자열 그대로 넣으면 한글 같은 글자가 든 헤더 하나로 정상 응답이 PARSE_ERROR 가 됐다 (`_response_headers`).
 - CORS 에 막힌 응답: `Access-Control-Allow-Origin` 이 없는 다른 출처 응답(WAF 의 429·5xx 등)은 fetch 가 `TypeError` 로만
   실패하고 `response` 이벤트도 오지 않는다. 탭마다 CDP `Network` 이벤트(`responseReceivedExtraInfo`·`loadingFailed`)를
-  받아 두었다가(`_BlockedResponses`) 그 상태·헤더로 본문 없는 응답을 만든다. 그래서 429 는 쿨다운, 5xx 는 재시도로
+  받아 두었다가(`BlockedResponses`, `core/browser/fetch.py`) 그 상태·헤더로 본문 없는 응답을 만든다. 그래서 429 는 쿨다운, 5xx 는 재시도로
   예전(httpx)처럼 다룬다. 2xx 는 본문이 있어야 해 빈 본문으로 넘기지 않고 `CorsBlockedError`(재시도하지 않음, CLI 는
   `UPSTREAM_ERROR`)로 낸다. CORS 사전 요청(OPTIONS)이 거절돼 본 요청이 나가지 못하면 본 요청엔 응답이 없다. 사전 요청은
   다른 요청 ID 로 오고 `initiator` 가 본 요청을 가리켜 그 응답을 이어 둔다. 사전 요청이 받은 429·5xx 는 위처럼 응답으로
@@ -203,7 +203,7 @@ client.close() → 쿠키를 <state_dir>/browser/<source>.json 에 남기고 브
   때까지 남고, 메모리에서 정리될 때 자동으로 닫지 않는다 (브라우저 일은 브라우저 스레드에서만 할 수 있다). 비동기 `aclose()`
   는 동기 클라이언트도 다른 스레드에서 닫아 이벤트 루프를 막지 않는다. 여러 스레드가 같이 쓰다 한 스레드가 닫으면 그 뒤
   요청은 httpx 처럼 `RuntimeError` 다. 쿠키 파일은 다른 jibsa 프로세스가 그사이 지웠거나 첫 화면을 더 늦게 새로 열었으면
-  남기지도 지우지도 않는다 (`_BrowserState.finish`·`discard_saved`).
+  남기지도 지우지도 않는다 (`BrowserState.finish`·`discard_saved`).
 - 클라이언트마다 Chromium 을 따로 띄운다. 한 명령에서 같은 소스를 여러 번 부르면 클라이언트 하나를 넘겨 쓴다 (당근 위치
   찾기는 본 조회의 클라이언트로 한다). 소스끼리는 부르지 않아([계층](#계층)) 한 명령이 다른 소스의 Chromium 을 띄우지 않는다.
 - 첫 화면에서 받지 않는 것: 이미지·폰트·미디어·스타일과 지도 타일. 쿠키는 그대로 생긴다. 사이트 자체 API 는

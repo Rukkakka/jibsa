@@ -1,9 +1,11 @@
 """다방 목록 한 칸(방 매물)을 `DabangListing` 으로 바꾸고 조건을 필터로 만들기, 목록 안내."""
 from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
-    UPDATE_MAYBE_NEEDED,
     TradeType,
     m2_to_pyeong,
+)
+from jibsa.core.notes import (
+    UPDATE_MAYBE_NEEDED,
     note,
 )
 from jibsa.providers.dabang.api.models.request.common import (

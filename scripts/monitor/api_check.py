@@ -733,7 +733,7 @@ def _judge(step: Step, done: subprocess.CompletedProcess[str]) -> StepResult:
     # partial_failure_note, 다방 단지 최근 실거래 요약, 직방 덤 조회의 거절·응답 형식 오류), 가격·거래 유형을 읽지 못한 줄을 뺐다(다방 목록·실거래).
     # 문구를 베끼면 jibsa 쪽 문구가 바뀔 때 감시만 조용히 멈춰 상수를 가져온다. jibsa 는 조회 잡에만 설치돼(정리 잡은 표만
     # 만든다) 여기서 가져온다
-    from jibsa.core.listing import (
+    from jibsa.core.notes import (
         UPDATE_MAYBE_NEEDED,
         UPDATE_NEEDED,
     )

@@ -1,11 +1,11 @@
 """학교 상세와 배정 동·배정 단지의 조회·변환 함수. 모델은 같은 폴더의 models 에 있다."""
 
-from jibsa.core.listing import (
+from jibsa.core.dates import read_date
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import (
     more_hint,
-    normalize_address,
     note,
     null_items_note,
-    read_date,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.common import (

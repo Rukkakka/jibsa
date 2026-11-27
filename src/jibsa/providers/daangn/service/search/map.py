@@ -2,7 +2,7 @@
 
 import logging
 
-from jibsa.core.listing import note
+from jibsa.core.notes import note
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.models.request.common import (
     DaangnBoundsLocationFilterModel,

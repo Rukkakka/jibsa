@@ -2,10 +2,10 @@
 
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
-    null_items_note,
     number_range,
     won_to_manwon,
 )
+from jibsa.core.notes import null_items_note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.trend import (
     NaverLegalDivisionArticleCountWeeklyInfoV1RequestParameterModel,

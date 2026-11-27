@@ -5,14 +5,14 @@ from datetime import (
 
 from httpx import HTTPStatusError
 
+from jibsa.core.dates import add_unread_date
 from jibsa.core.errors import JibsaError
 from jibsa.core.listing import (
     AmountRange,
     AmountSet,
-    add_unread_date,
     normalize_address,
-    note,
 )
+from jibsa.core.notes import note
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.models.request.sale.detail import (
     DabangSaleInLotsDetail2V3RequestParameterModel,

@@ -2,22 +2,26 @@
 import httpx
 import pytest
 
-from jibsa.core.listing import (
-    NULL_ITEMS_PHRASE,
-    Listing,
-    ListingDetail,
-    Result,
+from jibsa.core.dates import (
     add_unread_date,
     holding_unread_dates,
     keep_unread_dates,
-    lookup_failure_note,
-    move_in_label,
     normalize_date,
     read_date,
     read_month,
     reset_unread_dates,
     unread_date_notes,
+)
+from jibsa.core.listing import (
+    Listing,
+    ListingDetail,
+    Result,
+    move_in_label,
     with_notes,
+)
+from jibsa.core.notes import (
+    NULL_ITEMS_PHRASE,
+    lookup_failure_note,
 )
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.core.schema import (
@@ -166,7 +170,10 @@ def test_lookup_failure_note_branches(exc: Exception | None, expected: str) -> N
 
 
 def test_limit_notes_only_when_more_than_returned() -> None:
-    from jibsa.core.listing import NEXT_HINT, limit_notes
+    from jibsa.core.notes import (
+        NEXT_HINT,
+        limit_notes,
+    )
 
     # limit 을 다 못 채웠거나, 전체 수를 모르거나, 더 없으면 안내가 없다
     assert limit_notes(100, 5, 10, max_limit=120, narrow='조건·지역', inspected=5, has_more=True) == []

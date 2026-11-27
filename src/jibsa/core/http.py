@@ -121,7 +121,7 @@ class BaseHTTPClient(BaseModel, ABC):
             내장 목록과 OS 에 설치된 인증서를 믿는다). Defaults to True.
         proxy: 브라우저가 쓸 프록시 URL. Defaults to None.
         timeout: 브라우저 요청의 응답 헤더가 올 때까지(연결 포함)와 본문 조각 사이 간격의 제한(초). httpx 의 읽기 제한처럼
-            조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser._fetch_arguments`). Defaults to 20.
+            조금씩 계속 오는 응답은 전체가 더 길어도 받는다 (`core.browser.fetch.fetch_arguments`). Defaults to 20.
         rate_limit: 프로세스 간 공유 요청 제한 정책. None 이면 클래스의
             `default_rate_limit` 을 쓴다. Defaults to None.
 
@@ -180,7 +180,7 @@ class BaseHTTPClient(BaseModel, ABC):
     def browser_api_hosts(self) -> frozenset[str]:
         # 비면 첫 화면 호스트를 쓴다 (`BrowserOptions`). 서브클래스는 호스트 필드에서 만든다. 클래스 상수로 따로 적으면 호스트
         # 필드를 바꿨을 때 어긋나, 첫 화면이 그 호스트로 보낸 요청과 CORS 사전 요청을 요청 제한에 세지 못하고 첫 화면에서 받은
-        # 그 호스트의 429 도 놓친다 (`core/browser.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`)
+        # 그 호스트의 429 도 놓친다 (`core/browser/session.py` 의 `count_request`·`count_preflight`·`on_entry_rate_limited`)
         return frozenset()
 
     def _browser_options(self) -> BrowserOptions:
@@ -191,7 +191,7 @@ class BaseHTTPClient(BaseModel, ABC):
         )
 
     def browser_transport(self) -> BrowserTransport:
-        """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser.py`). 프록시도 브라우저가 쓴다."""
+        """사이트 첫 화면을 연 브라우저로 요청을 보내는 transport (`core/browser/`). 프록시도 브라우저가 쓴다."""
         return BrowserTransport(self._browser_options())
 
     def async_browser_transport(self) -> AsyncBrowserTransport:
@@ -232,7 +232,7 @@ class BaseHTTPClient(BaseModel, ABC):
     async def aclose(self) -> None:
         """
         Close the async client and the sync client too. 동기 클라이언트의 브라우저는 브라우저 스레드가 앞의 일(첫 화면이면 Chromium 띄우기에 문서
-        40초·load 10초·쿠키 5초까지)을 마친 뒤 닫아(`core/browser.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
+        40초·load 10초·쿠키 5초까지)을 마친 뒤 닫아(`core/browser/transport.py` `_BrowserThread`), 다른 스레드에서 기다려 이벤트 루프를 막지 않는다.
         """
         async_client: AsyncClient | None = self.__dict__.pop('_async_client', None)
         if async_client is not None:

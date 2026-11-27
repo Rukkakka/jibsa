@@ -1,6 +1,6 @@
 """네이버 실거래가의 상수: 쪽 크기·요청 상한, 빌라 주변 실거래의 지도 범위와 줌, 안내 문구."""
 
-from jibsa.core.listing import note
+from jibsa.core.notes import note
 
 
 # 실거래가 한 페이지 크기. 예전 엔드포인트(complex/pyeong/realPrice)와 같은 10건으로 둬 --pages 의 뜻을 유지한다

@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from jibsa.core.listing import (
+from jibsa.core.dates import (
     months_ago,
     read_date,
 )

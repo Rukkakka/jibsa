@@ -1,8 +1,8 @@
 """단지 매물 목록 (search listings --complex)."""
 
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
-    Listing,
+from jibsa.core.listing import Listing
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

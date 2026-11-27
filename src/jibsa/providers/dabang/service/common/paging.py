@@ -3,7 +3,7 @@ from collections.abc import Callable
 from math import ceil
 
 from jibsa.core.korean import particle
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     more_hint,
     note,
     null_items_note,

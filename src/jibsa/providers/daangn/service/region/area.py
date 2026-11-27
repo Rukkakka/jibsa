@@ -14,8 +14,10 @@ from jibsa.core.korean import (
 from jibsa.core.listing import (
     CITY_NAMES_NOT_SIDO,
     SIDO_OFFICIAL_NAMES,
-    UPDATE_NEEDED,
     join_address,
+)
+from jibsa.core.notes import (
+    UPDATE_NEEDED,
     note,
 )
 from jibsa.providers.daangn.api.client import DaangnClient

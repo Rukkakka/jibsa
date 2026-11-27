@@ -3,10 +3,8 @@
 import re
 
 from jibsa.core.http import OPTIONAL_LOOKUP_BASE_ERRORS
-from jibsa.core.listing import (
-    UPDATE_MAYBE_NEEDED,
-    TradeType,
-)
+from jibsa.core.listing import TradeType
+from jibsa.core.notes import UPDATE_MAYBE_NEEDED
 from jibsa.core.ratelimit import RateLimitedError
 from jibsa.providers.zigbang.api.client import ZIGBANG_WEB_URL
 from jibsa.providers.zigbang.api.models.request.common import (

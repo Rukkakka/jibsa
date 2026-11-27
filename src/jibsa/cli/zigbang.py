@@ -42,9 +42,9 @@ from jibsa.core.korean import (
     particle,
     quoted,
 )
-from jibsa.core.listing import (
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
-    normalize_address,
     note,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient

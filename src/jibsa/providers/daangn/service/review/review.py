@@ -2,9 +2,9 @@
 
 from httpx import HTTPStatusError
 
-from jibsa.core.listing import (
+from jibsa.core.listing import join_address
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
-    join_address,
     more_hint,
     note,
     null_items_note,

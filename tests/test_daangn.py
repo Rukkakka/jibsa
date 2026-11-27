@@ -5,9 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jibsa.core.listing import (
-    UPDATE_MAYBE_NEEDED,
-)
+from jibsa.core.notes import UPDATE_MAYBE_NEEDED
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.models.response.common import (
     DaangnArticleModel,

@@ -1,6 +1,6 @@
 """네이버 배정 초등학교 목록 (`assigned_schools`)."""
 
-from jibsa.core.listing import note
+from jibsa.core.notes import note
 from jibsa.providers.naver.api.models.response.common import NaverSchoolModel
 from jibsa.providers.naver.service.common.constants import SCHOOL_ALLOCATION_LABELS
 from jibsa.providers.naver.service.common.labels import unknown_code_label

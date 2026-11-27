@@ -5,7 +5,7 @@ from collections.abc import Callable
 from jibsa.core.errors import (
     JibsaError,
 )
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
     note,
 )

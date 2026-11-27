@@ -4,8 +4,8 @@ from jibsa.core.geo import haversine_km
 from jibsa.core.listing import (
     TRADE_KEY_BY_NAME,
     normalize_address,
-    note,
 )
+from jibsa.core.notes import note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.common import (
     NaverArticleFilterModel,

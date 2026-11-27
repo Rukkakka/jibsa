@@ -5,7 +5,7 @@ from collections.abc import (
     Sequence,
 )
 
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

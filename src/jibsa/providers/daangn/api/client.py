@@ -215,7 +215,7 @@ daangn_retry = retry(
 """조회 전용 엔드포인트 공통 재시도: 최대 3회, 1초(또는 `Retry-After`) 간격, 5xx·429·timeout·transport 오류만."""
 
 # 페이지 HTML 요청(매물 상세·단지·구 후기 페이지)에 다는 표시. 웹에서는 API 요청이 아니라 페이지 열기라, transport 가 크롬이
-# 페이지를 열 때 붙이는 `accept`·`upgrade-insecure-requests` 를 붙인다 (`core/browser.py` 의 `NAVIGATION_EXTENSION`)
+# 페이지를 열 때 붙이는 `accept`·`upgrade-insecure-requests` 를 붙인다 (`core/browser/fetch.py` 의 `NAVIGATION_EXTENSION`)
 PAGE_REQUEST_EXTENSIONS: dict[str, object] = {NAVIGATION_EXTENSION: True}
 
 
@@ -465,7 +465,7 @@ class DaangnClient(BaseHTTPClient):
         # 웹 API 클라이언트(ky)가 보내기 전 훅에서 모든 요청에 붙이는 헤더. 로그인 토큰(`Authorization`)은 로그인했을 때만,
         # `x-realty-ip`·`x-realty-ssr-user-agent` 는 서버 렌더링 때만 붙는다 (2026-11-12 번들·실측). Accept 는 넣지 않아
         # fetch 기본값 `*/*` 이고 content-type 은 httpx 가 `json=` 으로 붙인다. 없으면 403 Forbidden 이다 (같은 날 실측).
-        # UA·Origin·Referer 는 브라우저가 붙인다 (`core/browser.py`)
+        # UA·Origin·Referer 는 브라우저가 붙인다 (`core/browser/`)
         return {
             'x-realty-platform': 'realty-web',
         }

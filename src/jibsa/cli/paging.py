@@ -30,7 +30,7 @@ from jibsa.cli.output import (
     HintedBadParameter,
     number_text,
 )
-from jibsa.core.ratelimit import (
+from jibsa.core.state import (
     StateDirError,
     state_dir,
     write_text_atomic,

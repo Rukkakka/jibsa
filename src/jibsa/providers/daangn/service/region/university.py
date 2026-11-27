@@ -5,7 +5,7 @@ from jibsa.core.errors import (
     RegionAmbiguousError,
     RegionNotFoundError,
 )
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     note,
     null_items_note,
 )

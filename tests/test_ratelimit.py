@@ -63,7 +63,7 @@ def test_per_minute_budget_refuses_long_waits() -> None:
 
 
 def test_recorded_outside_requests_count_toward_budget() -> None:
-    # 브라우저 첫 화면이 스스로 부른 사이트 API 도 분당 상한에 든다 (core/browser.py)
+    # 브라우저 첫 화면이 스스로 부른 사이트 API 도 분당 상한에 든다 (core/browser/)
     budget = limiter(min_interval=0, max_per_minute=3, max_wait=5)
     budget.record(3)
     with pytest.raises(RateLimitedError) as exc:
@@ -98,9 +98,6 @@ def test_cooldown_set_while_waiting_stops_reserved_request(monkeypatch: pytest.M
     waited: list[float] = []
 
     def sleep(seconds: float) -> None:
-        if seconds < 1:  # 상태 파일 바꿔치기 재시도는 그대로 쉰다
-            time.sleep(seconds)
-            return
         waited.append(seconds)
         first.block()
 

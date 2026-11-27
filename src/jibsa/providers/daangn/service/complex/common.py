@@ -2,10 +2,8 @@
 
 import logging
 
-from jibsa.core.listing import (
-    normalize_address,
-    note,
-)
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import note
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.models.request.complex.common import (
     DaangnSearchComplexesInputModel,

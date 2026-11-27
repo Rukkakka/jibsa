@@ -208,7 +208,7 @@ zigbang_retry = retry(
 # 직방 웹 axios 인스턴스가 붙이는 헤더 (2026-11-12 웹 화면 8개 요청 137건 실측과 번들). 웹은 API 묶음마다 인스턴스가 달라
 # 헤더도 다르다. 모든 요청에 붙는 `Accept` 는 `base_header` 에 있고, 옛 API(`/v2/search`·`/v2/local/polygon`)는 그것만 붙인다.
 # 로그인하지 않은 웹은 `Authorization` 을 붙이지 않는다. UA·Origin·Referer 는 브라우저가, content-type 은 httpx 가 본문에 맞춰
-# 붙인다 (`core/browser.py`)
+# 붙인다 (`core/browser/`)
 # 주거·상가 API (`/house/property`, `/v3/items`, `/v2/store`). 없으면 일부 매물(오피스텔 등) 상세가 "x-zigbang-platform 를
 # 확인해 주세요" 404 를 준다
 PLATFORM_HEADERS: dict[str, str] = {
@@ -347,7 +347,7 @@ class ZigbangClient(BaseHTTPClient):
     @property
     def base_header(self) -> dict[str, str]:
         # 웹 axios 의 기본 Accept 로, 모든 요청에 붙는다. 묶음마다 다른 헤더는 요청마다 `headers=` 로 붙인다 (2026-11-12 실측).
-        # UA·Origin·Referer 는 브라우저가 연 첫 화면(www.zigbang.com) 기준으로 붙인다 (`core/browser.py`)
+        # UA·Origin·Referer 는 브라우저가 연 첫 화면(www.zigbang.com) 기준으로 붙인다 (`core/browser/`)
         return {
             'Accept': 'application/json, text/plain, */*',
         }

@@ -1,15 +1,17 @@
 """아파트 단지 직방시세 추이 (price-trend): 단지 화면 '직방시세' 그래프(단지·비교 단지·구)와 평형 그래프(월별 시세·거래)."""
 
+from jibsa.core.dates import read_date
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import particle
 from jibsa.core.listing import (
-    UPDATE_MAYBE_NEEDED,
     AmountRange,
     AmountSet,
+)
+from jibsa.core.notes import (
+    UPDATE_MAYBE_NEEDED,
     lookup_failure_note,
     note,
     null_items_note,
-    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.models.request.complex.common import (

@@ -1,8 +1,6 @@
 """동 하나의 동네정보 (neighborhood)."""
-from jibsa.core.listing import (
-    AmountSet,
-    null_items_note,
-)
+from jibsa.core.listing import AmountSet
+from jibsa.core.notes import null_items_note
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.models.request.neighborhood.info import (
     SUMMARY_TYPE_FIELD_BY_TOPIC,

@@ -2,9 +2,11 @@
 
 
 from jibsa.core.listing import (
-    NEXT_HINT,
     join_address,
     m2_to_pyeong,
+)
+from jibsa.core.notes import (
+    NEXT_HINT,
     more_hint,
     note,
     null_items_note,

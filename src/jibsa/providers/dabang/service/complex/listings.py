@@ -1,6 +1,6 @@
 """단지 매물 목록 (search listings --complex)."""
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import limit_notes
+from jibsa.core.notes import limit_notes
 from jibsa.providers.dabang.api.client import DabangClient
 from jibsa.providers.dabang.api.models.request.common import (
     DabangAptFiltersModel,

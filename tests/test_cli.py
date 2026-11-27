@@ -292,7 +292,7 @@ def test_dropped_null_items_get_a_note_even_in_display_lists(
     # 근처 학교처럼 보여 주기만 하는 목록은 서비스가 세지 않아 소스 안내(null_items_note)가 없다. 거기서 뺀 빈 항목도 결과가
     # 알려야 한다 (예전에는 PARSE_ERROR 라 매일 감시가 알았다). 집계는 명령마다 0 에서 시작한다
     import jibsa.cli.zigbang as zigbang_cli
-    from jibsa.core.listing import null_items_note
+    from jibsa.core.notes import null_items_note
     from jibsa.providers.zigbang.api.models.response.room.detail import (
         ZigbangBlsSchoolZonesV1ResponseModel,
     )

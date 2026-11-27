@@ -2,18 +2,20 @@
 
 from httpx import HTTPStatusError
 
+from jibsa.core.dates import (
+    iso_date,
+    read_date,
+)
 from jibsa.core.errors import ListingUnavailableError
 from jibsa.core.listing import (
-    iso_date,
     join_address,
     m2_to_pyeong,
     move_in_label,
     normalize_address,
-    note,
-    read_date,
     with_negotiable,
     won_to_manwon,
 )
+from jibsa.core.notes import note
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.listing.detail import (
     NaverArticleBasicInfoV1RequestParameterModel,

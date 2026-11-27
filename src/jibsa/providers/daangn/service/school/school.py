@@ -1,16 +1,18 @@
 """학교 (school)."""
 
+from jibsa.core.dates import (
+    holding_unread_dates,
+    keep_unread_dates,
+)
 from jibsa.core.errors import JibsaError
 from jibsa.core.korean import (
     particle,
     quoted,
 )
-from jibsa.core.listing import (
+from jibsa.core.listing import normalize_address
+from jibsa.core.notes import (
     UPDATE_MAYBE_NEEDED,
-    holding_unread_dates,
-    keep_unread_dates,
     more_hint,
-    normalize_address,
     note,
     null_items_note,
 )

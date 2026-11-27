@@ -1,11 +1,11 @@
 """동·구의 최근 실거래 (region-trades): 직방 웹 지역 화면의 '실거래' 패널과 더보기 화면의 등록일 기준 목록."""
 
+from jibsa.core.dates import read_date
 from jibsa.core.errors import JibsaError
-from jibsa.core.listing import (
+from jibsa.core.notes import (
     more_hint,
     note,
     null_items_note,
-    read_date,
 )
 from jibsa.providers.zigbang.api.client import ZigbangClient
 from jibsa.providers.zigbang.api.models.request.local.trades import (

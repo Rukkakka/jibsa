@@ -12,6 +12,11 @@ from math import (
     tan,
 )
 
+from jibsa.core.dates import (
+    months_ago,
+    read_date,
+    years_ago,
+)
 from jibsa.core.errors import JibsaError
 from jibsa.core.geo import (
     KM_PER_LAT_DEGREE,
@@ -19,15 +24,14 @@ from jibsa.core.geo import (
     haversine_km,
 )
 from jibsa.core.listing import (
-    SAME_AREA_PYEONG_TRADES_NOTE,
     floor_text,
-    months_ago,
-    note,
-    null_items_note,
-    read_date,
     rescale,
     won_to_manwon,
-    years_ago,
+)
+from jibsa.core.notes import (
+    SAME_AREA_PYEONG_TRADES_NOTE,
+    note,
+    null_items_note,
 )
 from jibsa.providers.naver.api.client import NaverClient
 from jibsa.providers.naver.api.models.request.common import (

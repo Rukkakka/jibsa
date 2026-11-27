@@ -4,15 +4,15 @@ from math import inf
 
 from httpx import HTTPStatusError
 
+from jibsa.core.dates import read_date
 from jibsa.core.listing import (
     join_address,
     js_round,
     m2_to_pyeong,
     normalize_address,
-    null_items_note,
     number_range,
-    read_date,
 )
+from jibsa.core.notes import null_items_note
 from jibsa.providers.daangn.api.client import DaangnClient
 from jibsa.providers.daangn.api.models.request.complex.detail import (
     DaangnComplexesRequestParameterModel,

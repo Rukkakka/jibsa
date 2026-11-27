@@ -1,5 +1,5 @@
 """동네정보 기능(neighborhood)의 핫플레이스·동네정보가 같이 쓰는 것: 기준 달."""
-from jibsa.core.listing import (
+from jibsa.core.dates import (
     holding_unread_dates,
     keep_unread_dates,
     read_month,
