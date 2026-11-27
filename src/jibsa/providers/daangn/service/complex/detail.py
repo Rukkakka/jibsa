@@ -50,11 +50,9 @@ def _school_walk(item: DaangnNearbySchoolModel, assigned: bool) -> float | None:
     return item.walking_time_min if item.walking_time_min is not None or not assigned else item.working_time
 
 
-
 def _school_distance(item: DaangnNearbySchoolModel, assigned: bool) -> float | None:
     """웹이 쓰는 도보 거리. 배정 학교는 walkingDistanceMeters 가 없으면 직선거리(distance)다 (ComplexSchoolSection `Re`)."""
     return item.walking_distance_m if item.walking_distance_m is not None or not assigned else item.distance
-
 
 
 def _or_inf(value: float | None) -> float:
@@ -62,10 +60,8 @@ def _or_inf(value: float | None) -> float:
     return inf if value is None else value
 
 
-
 def _resident_count(item: DaangnNearbySchoolModel) -> int:
     return (item.school.resident_count if item.school else None) or 0
-
 
 
 def _web_school_order(items: list[DaangnNearbySchoolModel], assigned: bool) -> list[DaangnNearbySchoolModel]:
@@ -75,7 +71,6 @@ def _web_school_order(items: list[DaangnNearbySchoolModel], assigned: bool) -> l
         distance = _school_distance(item, assigned)
         return (-_resident_count(item), walk is None, walk or 0, distance is None, distance or 0)
     return sorted(items, key=key)
-
 
 
 def _web_school_card(items: list[DaangnNearbySchoolModel]) -> list[DaangnNearbySchoolModel]:
@@ -106,7 +101,6 @@ def _web_school_card(items: list[DaangnNearbySchoolModel]) -> list[DaangnNearbyS
     return kept[:NEAREST_SCHOOLS]
 
 
-
 def _school(item: DaangnNearbySchoolModel, assigned: bool = False) -> str | None:
     if item.school is None or not item.school.name:
         return None
@@ -119,12 +113,10 @@ def _school(item: DaangnNearbySchoolModel, assigned: bool = False) -> str | None
     return f'{item.school.name} ({", ".join(details)})' if details else item.school.name
 
 
-
 def _pyeong_groups(complex_type: str | None, danji: DaangnProptierDanjiModel) -> tuple[bool, list[DaangnAreaGroupModel]]:
     """단지 평형을 묶는 평형 묶음과, 그것이 공급 평 묶음인지 (`complex_pyeongs`)."""
     supply = uses_supply_pyeong(complex_type, danji.supply_pyeong_area_groups)
     return supply, danji.supply_pyeong_area_groups if supply else danji.area_groups
-
 
 
 def complex_pyeongs(complex_type: str | None, danji: DaangnProptierDanjiModel) -> list[DaangnPyeong]:
@@ -156,7 +148,6 @@ def complex_pyeongs(complex_type: str | None, danji: DaangnProptierDanjiModel) -
         for group in groups
         for info in group.py_infos
     ]
-
 
 
 def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
@@ -228,7 +219,6 @@ def complex_to_summary(complex_: DaangnComplexModel) -> DaangnComplex:
         url=url,
         notes=notes,
     )
-
 
 
 def get_complex(client: DaangnClient, complex_id: int) -> DaangnComplex:

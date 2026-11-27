@@ -44,7 +44,6 @@ from typing import (
 PageFetch = Callable[[int, str | None], tuple[list[T] | None, DaangnPageInfoModel | None]]
 
 
-
 class Collected(NamedTuple, Generic[T]):
     """`collect_pages` 가 모은 실거래와, 거래가 없을 때 그 까닭을 가를 값."""
 
@@ -59,14 +58,12 @@ class Collected(NamedTuple, Generic[T]):
     unknown: bool = False
 
 
-
 class DaangnPyeongChoice(NamedTuple):
     """실거래·시세 그래프를 거를 평형. 공급 평형(아파트형)이면 평형 타입 코드를, 아니면 전용면적 묶음을 보낸다."""
 
     pyeong: int | None
     area_group: int | None
     ptp_cds: list[int] | None
-
 
 
 def contract_type_of(contract_type: str | None) -> str | None:
@@ -80,11 +77,9 @@ def contract_type_of(contract_type: str | None) -> str | None:
     return code_label(CONTRACT_TYPE_LABELS, contract_type)
 
 
-
 def site_note(url: str) -> str:
     """`--limit` 을 늘려도 받을 수 없는 거래를 당근 웹에서 보라는 말 (`collect_pages` 의 `site`)."""
     return f'당근에서 직접 확인하세요: {url}'
-
 
 
 def is_rent_type(monthly_rent: int | None, trade_type: str) -> bool:
@@ -94,7 +89,6 @@ def is_rent_type(monthly_rent: int | None, trade_type: str) -> bool:
     """
     monthly = (monthly_rent or 0) > 0
     return monthly if trade_type == '월세' else not monthly
-
 
 
 def collect_pages(
@@ -231,7 +225,6 @@ def collect_pages(
     return Collected(collected[:limit], has_more, notes, reached_since, scanned)
 
 
-
 def _supply_choice(column: DaangnCompareComplexModel, group: DaangnCompareAreaGroupModel) -> DaangnPyeongChoice:
     """공급 평 묶음의 평형 타입 코드로 고른 평형.
 
@@ -251,7 +244,6 @@ def _supply_choice(column: DaangnCompareComplexModel, group: DaangnCompareAreaGr
             hint=f'응답 형식이 바뀌었을 수 있습니다. {UPDATE_MAYBE_NEEDED}',
         )
     return DaangnPyeongChoice(group.label, None, ptp_cds)
-
 
 
 def choose_pyeong(

@@ -59,7 +59,6 @@ class DaangnComplexByOriginalIdRequestPayloadModel(RequestModel):
     ] = None
 
 
-
 class DaangnArticleByOriginalArticleIdRequestPayloadModel(RequestModel):
     """GraphQL `articleByOriginalArticleId` 쿼리 변수 (웹의 `useTransactionArticlePagination_Query`, 매물 실거래가).
 

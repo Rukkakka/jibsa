@@ -71,10 +71,8 @@ def estimated_prices_of(chart: DaangnPriceChartModel | None) -> DaangnChartEstim
     )
 
 
-
 def _month_label(index: int) -> str:
     return f'{index // 12:04d}-{index % 12 + 1:02d}'
-
 
 
 def get_price_trend(

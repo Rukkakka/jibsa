@@ -20,7 +20,6 @@ class DaangnComplexSchoolsRequestPayloadModel(RequestModel):
     ]
 
 
-
 class DaangnPreschoolByNoRequestPayloadModel(RequestModel):
     """GraphQL `preschoolByNo` 쿼리 변수 (웹의 `PreschoolDetailPanelQuery`, 어린이집·유치원 상세).
 

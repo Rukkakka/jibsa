@@ -96,11 +96,9 @@ def complex_filter_of(conditions: DaangnComplexConditions) -> DaangnComplexFilte
     )
 
 
-
 def has_complex_conditions(conditions: DaangnComplexConditions) -> bool:
     """사용자가 단지 조건을 하나라도 줬는지 (기본값 모델과 견준다). 에러 hint 가 조건을 줄이라고 권할지 정한다."""
     return conditions != DaangnComplexConditions()
-
 
 
 def list_region_complexes(
@@ -164,7 +162,6 @@ def list_region_complexes(
     )
 
 
-
 def _exclusive_use_area(conditions: DaangnComplexConditions) -> DaangnExclusiveUseAreaModel | None:
     """면적 조건을 단지마다 보여 줄 최근 실거래의 전용면적 범위로. 조건이 없으면 None (전체)."""
     if conditions.area_min is None and conditions.area_max is None:
@@ -173,7 +170,6 @@ def _exclusive_use_area(conditions: DaangnComplexConditions) -> DaangnExclusiveU
         min=conditions.area_min or 0,
         **({'max': conditions.area_max} if conditions.area_max is not None else {}),
     )
-
 
 
 def _collect_complexes(
@@ -260,7 +256,6 @@ def _collect_complexes(
         notes.append(MOVE_IN_SORT_NOTE)
     notes += complex_list_notes(complexes)
     return complexes, has_more
-
 
 
 def list_bounds_complexes(

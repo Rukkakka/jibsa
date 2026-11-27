@@ -73,7 +73,6 @@ def previous_high_change_percent(price: int | None, previous_high: int | None) -
     return units / scale * (1 if diff > 0 else -1)
 
 
-
 def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, new_high: bool) -> DaangnRegionRealPrice:
     """지역 피드 한 칸을 `DaangnRegionRealPrice` 로 바꾼다. 금액은 원래 만원이다.
 
@@ -114,7 +113,6 @@ def realsale_to_real_price(item: DaangnRealsaleFeedItemModel, trade_type: str, n
     )
 
 
-
 def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> DaangnRealsaleSummary | None:
     """지역 실거래 화면 머리의 요약 (`realsaleFeedSummary`, 요청 1회). 덤 조회라 실패하면 None 과 `notes` 로 알린다.
 
@@ -141,7 +139,6 @@ def realsale_summary(client: DaangnClient, region_id: int, notes: list[str]) -> 
         sale_count=sale.sale_count if sale else None,
         new_high_count=new_high.new_high_count if new_high else None,
     )
-
 
 
 def get_region_real_prices(

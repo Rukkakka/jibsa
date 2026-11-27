@@ -21,7 +21,6 @@ DaangnComplexSort = Literal[
 ]
 
 
-
 class DaangnComplexByClusterIdInputModel(RequestModel):
     """동·구 단지 목록의 `input` (웹 지도 단지 탭에서 지역 거품을 누른 목록)."""
 
@@ -37,7 +36,6 @@ class DaangnComplexByClusterIdInputModel(RequestModel):
         DaangnComplexSort,
         Field(description='정렬. 웹 기본은 세대수 많은 순')
     ] = 'HOUSEHOLD_COUNT_DESC'
-
 
 
 class DaangnComplexByClusterIdRequestPayloadModel(RequestModel):
@@ -68,7 +66,6 @@ class DaangnComplexByClusterIdRequestPayloadModel(RequestModel):
     ] = None
 
 
-
 class DaangnSearchComplexesViewportInputModel(RequestModel):
     """지도 범위 단지 목록의 `input` (웹 지도 단지 탭의 '이 영역 단지' 목록, `searchComplexes`).
 
@@ -89,7 +86,6 @@ class DaangnSearchComplexesViewportInputModel(RequestModel):
         DaangnComplexSort,
         Field(description='정렬. 웹 기본은 세대수 많은 순')
     ] = 'HOUSEHOLD_COUNT_DESC'
-
 
 
 class DaangnSearchComplexesViewportRequestPayloadModel(RequestModel):

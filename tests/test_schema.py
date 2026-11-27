@@ -61,7 +61,6 @@ def test_assignment_field_only_holds_default_factory() -> None:
     assert misplaced == []
 
 
-
 def test_defaults_are_not_inside_annotated() -> None:
     # Annotated 안 Field() 의 기본값은 검사기가 읽지 않아 필드를 필수로 본다. 런타임은 선택이라 둘이 어긋난다
     misplaced: set[str] = set()

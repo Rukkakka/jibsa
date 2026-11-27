@@ -31,7 +31,6 @@ class DaangnPriceChartPointModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnKbSaleSummaryModel(DaangnBaseResponseModel):
     """시세 차트에 붙는 최근 KB 매매 시세 (`latestKbSale`). 금액은 **원** 단위다 (2026-11-12 실측: 역삼래미안 27억~29.1억)."""
 
@@ -49,7 +48,6 @@ class DaangnKbSaleSummaryModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnPriceChartModel(DaangnBaseResponseModel):
     """단지 시세 차트."""
 
@@ -61,7 +59,6 @@ class DaangnPriceChartModel(DaangnBaseResponseModel):
         DaangnKbSaleSummaryModel | None,
         Field(description='최근 KB 매매 시세 (웹 그래프의 KB 시세 띠). 전세 그래프에도 매매 시세가 온다. 없으면 null', alias='latestKbSale')
     ] = None
-
 
 
 class DaangnComplexPriceChartNodeModel(DaangnBaseResponseModel):
@@ -77,7 +74,6 @@ class DaangnComplexPriceChartNodeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexPriceChartDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -85,7 +81,6 @@ class DaangnComplexPriceChartDataModel(DaangnBaseResponseModel):
         DaangnComplexPriceChartNodeModel | None,
         Field(description='단지 노드. 없는 노드면 null')
     ] = None
-
 
 
 class DaangnComplexPriceChartResponseModel(DaangnGraphQLResponseModel):

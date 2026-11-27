@@ -68,7 +68,6 @@ class DaangnRealsaleModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnPriceInsightModel(DaangnBaseResponseModel):
     """이전 최고가와의 비교 (매매)."""
 
@@ -84,7 +83,6 @@ class DaangnPriceInsightModel(DaangnBaseResponseModel):
         bool | None,
         Field(description='신고가인지', alias='isNewHigh')
     ] = None
-
 
 
 class DaangnRealsaleFeedItemModel(DaangnBaseResponseModel):
@@ -116,7 +114,6 @@ class DaangnRealsaleFeedItemModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnRealsaleFeedEdgeModel(DaangnBaseResponseModel):
     """지역 실거래 피드 edge."""
 
@@ -124,7 +121,6 @@ class DaangnRealsaleFeedEdgeModel(DaangnBaseResponseModel):
         DaangnRealsaleFeedItemModel | None,
         Field(description='피드 칸')
     ] = None
-
 
 
 class DaangnRealsaleFeedModel(DaangnBaseResponseModel):
@@ -140,7 +136,6 @@ class DaangnRealsaleFeedModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnRealsaleFeedDataModel(DaangnBaseResponseModel):
     """GraphQL `data` (`realsaleFeed`)."""
 
@@ -148,7 +143,6 @@ class DaangnRealsaleFeedDataModel(DaangnBaseResponseModel):
         DaangnRealsaleFeedModel | None,
         Field(description='최근 실거래', alias='realsaleFeed')
     ] = None
-
 
 
 class DaangnRealsaleFeedResponseModel(DaangnGraphQLResponseModel):
@@ -160,7 +154,6 @@ class DaangnRealsaleFeedResponseModel(DaangnGraphQLResponseModel):
     ] = None
 
 
-
 class DaangnRealsaleNewHighFeedDataModel(DaangnBaseResponseModel):
     """GraphQL `data` (`realsaleNewHighFeed`)."""
 
@@ -170,7 +163,6 @@ class DaangnRealsaleNewHighFeedDataModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnRealsaleNewHighFeedResponseModel(DaangnGraphQLResponseModel):
     """GraphQL `realsaleNewHighFeed` 응답."""
 
@@ -178,7 +170,6 @@ class DaangnRealsaleNewHighFeedResponseModel(DaangnGraphQLResponseModel):
         DaangnRealsaleNewHighFeedDataModel | None,
         Field(description='결과')
     ] = None
-
 
 
 class DaangnRealsaleFeedSummaryModel(DaangnBaseResponseModel):
@@ -194,7 +185,6 @@ class DaangnRealsaleFeedSummaryModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnRealsaleNewHighSummaryModel(DaangnBaseResponseModel):
     """지역 실거래 화면 머리의 신고가 요약 (`realsaleNewHighFeedSummary`)."""
 
@@ -202,7 +192,6 @@ class DaangnRealsaleNewHighSummaryModel(DaangnBaseResponseModel):
         int | None,
         Field(description='가장 최근 공개일의 신고가 수', alias='newHighCount')
     ] = None
-
 
 
 class DaangnRealsaleFeedSummaryDataModel(DaangnBaseResponseModel):
@@ -216,7 +205,6 @@ class DaangnRealsaleFeedSummaryDataModel(DaangnBaseResponseModel):
         DaangnRealsaleNewHighSummaryModel | None,
         Field(description='신고가 요약', alias='realsaleNewHighFeedSummary')
     ] = None
-
 
 
 class DaangnRealsaleFeedSummaryResponseModel(DaangnGraphQLResponseModel):

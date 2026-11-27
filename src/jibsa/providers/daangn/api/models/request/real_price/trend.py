@@ -14,7 +14,6 @@ from typing import (
 DaangnPriceChartTradeType = Literal['BUY', 'BORROW']
 
 
-
 class DaangnComplexPriceChartRequestPayloadModel(RequestModel):
     """GraphQL `node(id:) { ... on PropComplex { priceChart } }` 쿼리 변수 (웹 단지 화면의 `useTransactionComplexRefetchQuery`).
 

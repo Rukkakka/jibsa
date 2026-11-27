@@ -146,7 +146,6 @@ def _floor_int(value: str | None) -> int | None:
     return int(value) if value and value.isdecimal() else None
 
 
-
 def get_complex(client: DabangClient, complex_id: str) -> DabangComplexDetail:
     """단지 정보 (요청 3회: 단지 상세 + 최근 실거래 요약 + 대출 계산 조건). 사진·관리사무소 전화·광고 중개사는 옮기지 않는다.
 

@@ -50,7 +50,6 @@ def trending_region_of(area: DaangnArea | None) -> DaangnTrendingRegion:
     )
 
 
-
 def list_trending_complexes(client: DaangnClient, region: DaangnTrendingRegion) -> DaangnTrendingComplexesResult:
     """어제 대비 오늘 조회가 급상승한 단지 (`trendingComplexes`, 요청 1회). 웹의 인기 급상승 단지 패널처럼 50곳까지다.
 

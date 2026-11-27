@@ -29,7 +29,6 @@ class DaangnRegionComplexEdgeModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnRegionComplexesModel(DaangnBaseResponseModel):
     """지역 단지 목록 연결. 요청한 정렬 순이다."""
 
@@ -43,7 +42,6 @@ class DaangnRegionComplexesModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexByClusterIdDataModel(DaangnBaseResponseModel):
     """GraphQL `data`."""
 
@@ -53,7 +51,6 @@ class DaangnComplexByClusterIdDataModel(DaangnBaseResponseModel):
     ] = None
 
 
-
 class DaangnComplexByClusterIdResponseModel(DaangnGraphQLResponseModel):
     """GraphQL `complexByClusterId` 응답 (동·구 단지 목록)."""
 
@@ -61,7 +58,6 @@ class DaangnComplexByClusterIdResponseModel(DaangnGraphQLResponseModel):
         DaangnComplexByClusterIdDataModel | None,
         Field(description='결과')
     ] = None
-
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +71,6 @@ class DaangnSearchComplexesViewportDataModel(DaangnBaseResponseModel):
         DaangnRegionComplexesModel | None,
         Field(description='화면 범위 안 단지 목록', alias='searchComplexes')
     ] = None
-
 
 
 class DaangnSearchComplexesViewportResponseModel(DaangnGraphQLResponseModel):

@@ -66,8 +66,6 @@ class _Target(NamedTuple):
     bbox: DabangBboxModel | None = None
 
 
-
-
 def search_listings(
     client: DabangClient,
     kind: ListingKind,

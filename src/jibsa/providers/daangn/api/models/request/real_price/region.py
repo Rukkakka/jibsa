@@ -15,7 +15,6 @@ DaangnRealsaleTradeType = Literal['SALE', 'BORROW']
 DaangnRealsaleSort = Literal['LATEST', 'TRADE_PRICE_DESC']
 
 
-
 class DaangnRealsaleFeedInputModel(RequestModel):
     """`realsaleFeed` 의 `input`."""
 
@@ -37,7 +36,6 @@ class DaangnRealsaleFeedInputModel(RequestModel):
     ] = True
 
 
-
 class DaangnRealsaleFeedRequestPayloadModel(RequestModel):
     """GraphQL `realsaleFeed` 쿼리 변수 (웹의 `RealsaleFeedListQuery`, 지역 최근 실거래)."""
 
@@ -53,7 +51,6 @@ class DaangnRealsaleFeedRequestPayloadModel(RequestModel):
         DaangnRealsaleFeedInputModel,
         Field(description='지역·거래 유형·정렬')
     ]
-
 
 
 class DaangnRealsaleNewHighFeedInputModel(RequestModel):
@@ -79,7 +76,6 @@ class DaangnRealsaleNewHighFeedInputModel(RequestModel):
     ] = False
 
 
-
 class DaangnRealsaleNewHighFeedRequestPayloadModel(RequestModel):
     """GraphQL `realsaleNewHighFeed` 쿼리 변수 (웹의 `NewHighFeedListQuery`, 지역 신고가)."""
 
@@ -97,7 +93,6 @@ class DaangnRealsaleNewHighFeedRequestPayloadModel(RequestModel):
     ]
 
 
-
 class DaangnRealsaleSummaryInputModel(RequestModel):
     """`realsaleFeedSummary`·`realsaleNewHighFeedSummary` 의 `input`. 지역 ID 하나다."""
 
@@ -105,7 +100,6 @@ class DaangnRealsaleSummaryInputModel(RequestModel):
         int,
         Field(gt=0, description='당근 지역 ID (동 또는 구)', alias='regionId')
     ]
-
 
 
 class DaangnRealsaleFeedSummaryRequestPayloadModel(RequestModel):

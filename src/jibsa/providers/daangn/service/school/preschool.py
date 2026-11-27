@@ -105,7 +105,6 @@ def list_preschools(client: DaangnClient, complex_id: int) -> DaangnPreschoolsRe
     )
 
 
-
 def get_preschool(client: DaangnClient, preschool_id: int) -> DaangnPreschool:
     """어린이집·유치원 하나의 운영 정보 (`preschoolByNo`, 요청 1회).
 

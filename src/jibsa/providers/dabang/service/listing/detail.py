@@ -75,7 +75,6 @@ class _ManageCost(NamedTuple):
     dropped: int = 0
 
 
-
 def _manage_cost(room: DabangNewRoomDetailRoomModel) -> _ManageCost:
     """월 관리비(만원), 포함 항목, 실비로 따로 내는 항목. 웹 관리비 칸과 상세보기(safety-option-chunk `E`, room-chunk)를 따른다.
 
